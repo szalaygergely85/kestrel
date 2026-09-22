@@ -9,19 +9,19 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 |---|---|---|---|---|---|
 | 1 | US-001 | Char-grid canvas + game loop | P0 | testing (PO OK 2026-09-22; real-Chrome bench numbers pending from user) | **Tester NOW** |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
-| 3 | US-003 | Sector map format + test room loader | P0 | po-review (rework #1 done) | PO |
+| 3 | US-003 | Sector map format + test room loader | P0 | testing (PO OK 2026-09-22, format v2) | **Tester NOW** |
 | 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer, after US-001 rework #2 + US-003 v2 (uses `setCellRGB`, D-005) |
 | 5 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer |
 | 6 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer |
 | 7 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
 | 8 | US-008 | Physics: player capsule, gravity, walk/run, collision | P0 | todo | Programmer |
 | 9 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
-| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved 2026-09-22; designer does the small start-field alignment; programmer ports after US-003 v2 |
+| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; start fields aligned (v2) and loads cleanly. **Port unblocked**: programmer can port now (walk/jump criteria verified once US-008/009 land) |
 | 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | todo | Art PO-approved 2026-09-22; Programmer after US-004 + US-006 |
 | 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 14 | US-014 | Lever opens the grate | P0 | todo | Programmer |
-| 15 | US-015 | Wake sequence + title card + control hints | P0 | design | Designer (title logo) then Programmer |
+| 15 | US-015 | Wake sequence + title card + control hints | P0 | design | **PO: preview ready for review** (`design/preview/title.html`), then Programmer |
 | 16 | US-016 | Far overworld view through the breach | P0 | design | Designer (overworld heightmap/colors) then Programmer |
 | 17 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 18 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (can be done alongside US-004) |
@@ -148,7 +148,7 @@ Designer note (2026-09-22): **Preview ready for PO review.** Open `design/previe
 - Open points resolved: (1) the US-015 hint text changed to ASCII `WASD move - Mouse look`; (2) emissive cells, hit height above the sector floor (tintBand) and texture fade are folded into US-004 / US-011 as acceptance criteria.
 - Small README fix for the designer (non-blocking): README section 1.1 says "US-001 has to open straight from disk". Per the US-001 review the game is served over http (ES modules); keep `palette.js` as a plain script (correct for both) and just correct that sentence.
 
-### US-003 Sector map format + test room loader  [Priority: P0] [Status: po-review]
+### US-003 Sector map format + test room loader  [Priority: P0] [Status: testing]
 As a player, I want the world to have real floors at different heights, so that stairs, ledges and a roofless tower are possible.
 Acceptance criteria:
 - [x] A level is a JS data file (`game/js/world/levels/<name>.js`) with a 2D grid of cells; each cell references a sector with: `floorH`, `ceilH` (number or `"sky"`), `wallMat`, `floorMat`, `ceilMat`, `solid` flag.
@@ -156,7 +156,7 @@ Acceptance criteria:
 - [x] Loader validates: rectangular grid, every char in legend, player start defined; errors are printed to the console with row/column.
 - [x] Query API: `sectorAt(x, y)`, `floorAt(x, y)`, `ceilAt(x, y)` in world meters (1 cell = 1 m).
 - [x] A test level `test_room` (16x16) with: flat floor at 0, a 3-step staircase (0.3 m steps), a raised platform at 1.0 m, a pillar, and a sky-ceiling region.
-- [ ] (added on review) Format v2 covers the approved tower (US-010) and has one heading convention. See rework list.
+- [x] (added on review) Format v2 covers the approved tower (US-010) and has one heading convention. See rework list.
 Design needed: no.
 Notes / dependencies: US-001.
 
@@ -189,6 +189,22 @@ The 5 original criteria pass and the code is clean. The problem: the format as d
    - a 1-cell (1 m) gap onto +0.3 m and a 2-cell (2 m) gap at equal height (for US-009).
    - Update `world-test.html` if the new fields need display.
 7. Bump the `MAP_FORMAT.md` change log to v2.
+
+**PO OK (2026-09-22) – US-003 ready for testing.** I checked all 7 rework items by reading `Level.js`, `MAP_FORMAT.md` and `test_room.js`:
+1. Compass `facingDeg` everywhere. The old "0 = east" text is corrected and flagged as such. Start v2 fields have defaults (0 / 0 / 1.6 / standing), and the `S` marker is now `facingDeg: 90` (east).
+2. MAP_FORMAT section 2.4 has the solid-cell semantics. Consumer notes: the raycaster draws a column up to `floorH` with a top face and rays continue above; physics treats solid cells as full-height.
+3. `topH` (defaults to `ceilH`) and `upperMat` (defaults to `wallMat`) are resolved once per legend char. The face rule (higher sector's `wallMat`) is in section 2.7.
+4. `level.def` is kept untouched, unknown sector fields pass through (spread), `layers` are validated for row count and row length, and `layerAt()` exists.
+5. Type checks name the legend char. `ceilMat === 'sky'` if and only if `ceilH === 'sky'`, and `ceilH >= floorH` on non-solid cells. Invalid entries are not double-reported per cell.
+6. `test_room` is 20x18 with: a 1.0 m low wall `w` directly south of the sky region, a `stone_moss` stub `m`, a lintel `D` (2.2 / 3.0) in a wall line, a 1 m gap onto +0.3 m (row 15), and a 2 m gap at equal height (row 16).
+7. Change log v2 is present. `design/levels/tower.js` loads with zero errors (reported: Node + browser).
+
+Fix-forward note (non-blocking, assigned to US-009): the `test_room` pit `v` is at -1.0 m. Getting out needs a jump whose apex (1.05 m) clears the lip by only 5 cm, especially once step-up is disallowed mid-air (US-009). Raise the pit floor to -0.6 m so it can't be walked out of but is easy to jump out of. That keeps the gap tests meaningful and avoids a test-room trap.
+
+For the tester:
+- In `game/world-test.html`, hover-inspect every legend char.
+- Break `test_room` on purpose, one error each: a non-rectangular row, an unknown char, no start, two starts, `ceilMat 'sky'` with a numeric `ceilH`, `floorH: 'x'`, and a layer with the wrong size. Confirm each is reported with its row/col or legend char, and that `loadLevel` returns null.
+- Confirm that `sectorAt`/`floorAt`/`ceilAt` return null outside the grid.
 
 ### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: todo]
 As a player, I want to see the room in first-person 3D made of characters, so that I feel present in the space.
@@ -271,6 +287,7 @@ Acceptance criteria:
 - [ ] Jump on Space: initial velocity 6.5 m/s (apex about 1.05 m); only when grounded, with 100 ms coyote time and 100 ms jump buffer.
 - [ ] Air control 35% of ground acceleration.
 - [ ] Walking jump reliably clears the `test_room` 1-cell (1.0 m) gap onto a floor 0.3 m higher (10 of 10 tries, taking off anywhere within the last 0.3 m before the edge). Running jump clears the 2-cell (2.0 m) gap at equal height. (The 1 m grid makes gaps 1 m or 2 m; the tower gap is 1 m, PO decision on US-010.)
+- [ ] (from the US-003 review) Raise the `test_room` pit `v` floor from -1.0 m to -0.6 m: it can't be walked out of (0.6 m > 0.45 m step-up) but is easy to jump out of.
 - [ ] Step-up only applies while grounded: never while airborne, and never during coyote time. Walking or running across a 1-cell gap without pressing Space always falls, including onto a +0.3 m landing. The capsule footprint must not "bridge" the gap by stepping up from mid-air. Test: 10 runs across the tower gap at run speed without Space, and all 10 fall onto the debris.
 - [ ] Landing dip: 0.08 m for falls > 0.5 m, 0.15 m for falls > 2 m, recovering in 0.2 s. Subtle head bob 0.03 m while walking.
 - [ ] No double jump; holding Space does not auto-repeat jumps.
@@ -417,6 +434,11 @@ Acceptance criteria – Programmer:
 - [ ] Interact prompts from US-012 are not hints; they always show when targeting.
 Design needed: yes – title logo.
 Notes / dependencies: US-010, US-012.
+Designer note (2026-09-22): **Preview ready for PO review.**
+- **Where:** `design/preview/title.html`. A 160x60 mock plays the full start sequence: black 1.0 s, blink with the half-close, title fade in 1 s / hold 3 s with shine / fade out 1 s, then the first hint. Buttons show all hints, the prompt with the active crosshair, the pause overlay, and both end-screen variants. It runs its own checks.
+- **Data:** `design/models/title.js`, containing `ASSETS.models.title` (68x8 logo, gold-white > gold > flame > ember, top to bottom), `ASSETS.models.subtitle`, and `ASSETS.uiStyle` (fade rule, hint/prompt/crosshair/end/pause styling, eyelid curve). Format: `design/README.md` section 5.
+- **Text:** all UI text is ASCII 32-126; the hint is exactly `WASD move - Mouse look`.
+- Status stays `design`.
 
 ### US-016 Far overworld view through the breach  [Priority: P0] [Status: design]
 As a player, I want to see a vast, colorful landscape and a distant dark tower from the summit, so that I feel the world is huge and I want to go out there.

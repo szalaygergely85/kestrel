@@ -219,8 +219,34 @@ Frame = { S: { glyphs: [h strings of w], fg: [h strings of w key chars], n?: [h 
 
 ---
 
+## 5. Title and UI styling (`design/models/title.js`, US-015)
+
+`title.js` sets three things:
+
+**`ASSETS.models.title`** (68x8 logo) and **`ASSETS.models.subtitle`** (1 row). These use the sprite format from section 4, with `ui: true`. Every key is emissive: drawn at full palette color over the 3D view.
+- **Layout:** the logo anchor goes at `layout.centerX = 80`, row `layout.top = 18` of the 160x60 grid. The subtitle sits `belowTitle = 1` row under the logo.
+- **Hold-phase shine:** `title.shine` sweeps a diagonal band across the `#` cells once per 2.2 s, lerping them toward white by 0.55.
+
+**`ASSETS.uiStyle`**: styling data for everything that draws text:
+- **`fade`**: the rule every UI fade uses, including US-017's fade to black. Glyphs dim **down** the default ramp: `ramp[round(a * index)]`, where letters count as index 9. fg is multiplied by `0.25 + 0.75a`, and nothing is drawn at a = 0. No alpha blending.
+- **`titleCard`**: fade in 1.0 s, hold 3.0 s, fade out 1.0 s.
+- **`hint` + `hints[]`**:
+  - bottom-left at x 2, 2 rows above the bottom, stacking upward
+  - prefix `> ` in `uiDim`, text in `uiHint`, key words in `gold`
+  - a soft **plate**: scene bg (and fg) multiplied by 0.35, 1 cell around the text, with the texture calmed to ramp index <= 2
+  - fade in 0.3 s, fade out 0.5 s, timeout 8 s
+  - texts exactly as in US-015
+- **`crosshair`**: `+`, `uiDim` idle, `gold` when targeting.
+- **`prompt`**: 2 rows below the crosshair, centred, `[E]` in gold, same plate.
+- **`endText`** (US-017): centred from row 24, 30 cps with a blinking `_` cursor. The beacon-lit alt line is included.
+- **`pause`**: `Click to resume`.
+- **`blink`**: the eyelid curve `[t, open]` including the half-close. The lid edge row is `-` in `emberDark` at 50%.
+
+---
+
 ## Change log
 - **v1 (2026-09-22, US-002)**: initial palette, ramps, lights, fog, time of day, 9 materials, reference shader, preview.
 - **v1.0.1 (2026-09-22)**: section 1.1 corrected. The game is served over http (ES modules); palette.js stays a plain script.
 - **v1.1 (2026-09-22, US-010)**: palette materials `grass` and `rock` added (outside the tower). New section 3, level data format: `design/levels/tower.js`, `tower_layout.md`, `preview/tower.html`.
 - **v1.2 (2026-09-22, US-011)**: palette material `grate` (texel `hole: true` = see-through gap) and `util.shadeSprite`. New section 4, sprite models: `design/models/*.js`, `preview/props.html`. Tower: the bowl cells `O` are now a stone plinth under the bowl sprite. `start` uses the map format v2 names (`eyeH`, `pitchDeg`, `pose`).
+- **v1.3 (2026-09-22, US-015)**: `design/models/title.js` (`title`, `subtitle`, `uiStyle`), `preview/title.html`. New section 5.

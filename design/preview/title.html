@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Quest - Title card and UI text (US-015)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:13px; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  #checks div, .mono { font-family:Consolas, monospace; font-size:12px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; }
+</style>
+</head>
+<body>
+<h1>ASCII Quest : title card, subtitle, hints, prompts, end text (US-015)</h1>
+<div class="note">Loads <code>../palette.js</code> and <code>../models/title.js</code>. The big canvas is a <b>160x60</b> mock of the game screen at true proportions.
+  It plays the start sequence: black 1.0 s, eye-blink reveal 1.5 s (with the half-close), title fade in 1 s / hold 3 s / fade out 1 s, then the first hint.
+  The 3D view is a static stand-in (tower wall, sun patch, torch glow). UI fades use the glyph-ramp rule (<code>uiStyle.fade</code>), not alpha.</div>
+
+<div class="controls">
+  <button id="replay">Replay start sequence</button>
+  <button id="hold">Jump to title hold</button>
+  <button id="hints">Show all hints</button>
+  <button id="prompt">Prompt + active crosshair</button>
+  <button id="pauseO">Pause overlay</button>
+  <button id="end">End screen</button>
+  <button id="endLit">End screen (beacon lit)</button>
+  <span class="note">t = <span class="val" id="tV"></span></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<h2>Game screen mock (160x60)</h2>
+<canvas id="screen"></canvas>
+
+<h2>Logo at a larger font, with the hold-phase shine</h2>
+<canvas id="logo"></canvas>
+
+<h2>Fade steps (glyphs dim down the ramp): a = 0.15, 0.3, 0.5, 0.7, 0.85, 1.0</h2>
+<canvas id="fades"></canvas>
+
+<script src="../palette.js"></script>
+<script src="../models/title.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS || {}, P = A.palette, M = A.models, ST = A.uiStyle;
+  if (!P || !M || !M.title || !ST) { document.body.innerHTML = '<p class="fail">palette.js or models/title.js did not load.</p>'; return; }
+  var U = P.util, rgb = P.rgb, FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+  var GW = 160, GH = 60;
+
+  function makeGrid(canvas, cols, rows, px) {
+    var ctx = canvas.getContext('2d'); ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25), dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return { cols: cols, rows: rows,
+      cell: function (x, y, g, fg, bg) { ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch); if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); } } };
+  }
+  function css(c) { return 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')'; }
+
+  // ---------------- checks ----------------
+  var checks = [];
+  function check(n, ok, d) { checks.push({ n: n, ok: !!ok, d: d || '' }); }
+  var T = M.title, S1 = T.animations.show.frames[0].S, SUB = M.subtitle;
+  function ascii(s) { for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); if (c < 32 || c > 126) return false; } return true; }
+  var consistent = S1.glyphs.every(function (r, y) { if (r.length !== T.size.w || S1.fg[y].length !== T.size.w) return false;
+    for (var x = 0; x < r.length; x++) { var k = S1.fg[y].charAt(x); if ((r.charAt(x) === ' ') !== (k === ' ')) return false; if (k !== ' ' && !T.keys[k]) return false; } return true; });
+  var used = 0; S1.glyphs.forEach(function (r) { var l = r.replace(/\s+$/, '').length; if (l > used) used = l; });
+  check('Logo "ASCII QUEST" fits max 70x9 (size ' + T.size.w + 'x' + T.size.h + ', inked width ' + used + ')', T.size.w <= 70 && T.size.h <= 9 && used <= 70);
+  check('Logo data consistent (rows, glyph/key alignment, keys exist)', consistent && S1.glyphs.length === T.size.h);
+  var keysOk = Object.keys(T.keys).concat([]).every(function (k) { return !!P.colors[T.keys[k].c]; }) && Object.keys(SUB.keys).every(function (k) { return !!P.colors[SUB.keys[k].c]; });
+  check('All UI colors are palette keys', keysOk);
+  var rowCols = S1.fg.slice(0, 6).map(function (r) { var m = r.replace(/[^a-e]/g, ''); return m.charAt(0); }).join('');
+  check('Warm gold into ember orange, top to bottom (row keys ' + rowCols + ' = ' + ['a', 'b', 'c', 'd', 'e'].map(function (k) { return T.keys[k].c; }).join(' > ') + ')', rowCols === 'abbcde');
+  var texts = [SUB.animations.show.frames[0].S.glyphs[0]].concat(ST.hints.map(function (h) { return h.text; }), ST.prompt.examples,
+    ST.endText.lines.map(function (l) { return l.text; }), ST.endText.lines.filter(function (l) { return l.alt; }).map(function (l) { return l.alt; }), [ST.pause.text]).concat(S1.glyphs);
+  check('All UI text is ASCII 32-126', texts.every(ascii), texts.filter(function (t) { return !ascii(t); }).join(' | '));
+  check('Hint text exactly "WASD move - Mouse look"', ST.hints[0].text === 'WASD move - Mouse look');
+  var nf = checks.filter(function (c) { return !c.ok; }).length;
+  document.getElementById('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
+    checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.n + (c.d ? ' <span class="fail">' + c.d + '</span>' : '') + '</div>'; }).join('');
+
+  // ---------------- static stand-in scene ----------------
+  var sg = [], sfg = [], sbg = [], out = { fg: [0, 0, 0], bg: [0, 0, 0] }, L = [0, 0, 0];
+  function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+  (function buildScene() {
+    var Tm = P.timeOfDay.morning;
+    for (var y = 0; y < GH; y++) for (var x = 0; x < GW; x++) {
+      var top = 9 + Math.round(4 * Math.sin(x * 0.09) + 3 * hash(x) + (x > 96 && x < 112 ? 6 : 0));
+      if (y < top) U.shadeSky(70 + x * 0.6, 12 + (top - y) * 2.2, out, 'morning');
+      else {
+        L[0] = L[1] = L[2] = 0; U.addLight(L, Tm.ambient, Tm.ambientI);
+        var dx = (x - 128) / 26, dy = (y - 44) / 13, d = Math.sqrt(dx * dx + dy * dy);
+        U.addLight(L, 'torch', 1.0 * U.falloff(d * 3, 6));
+        if (y < 44) U.shade(x > 118 ? 'stone_scorched' : x < 40 ? 'stone_moss' : 'stone', L, x * 0.1, (44 - y) * 0.2, 6, out, { z: (44 - y) * 0.2 });
+        else {
+          var ex = (x - 64) / 30, ey = (y - 52) / 6; if (ex * ex + ey * ey < 1) U.addLight(L, Tm.sun, 0.87);
+          U.shade('floor', L, x * 0.1, (y - 44) * 0.35, 6, out, { z: 0 });
+        }
+      }
+      sg.push(out.glyph); sfg.push(out.fg.slice()); sbg.push(out.bg.slice());
+    }
+  })();
+
+  // ---------------- fade rule ----------------
+  var RAMP = P.ramps[ST.fade.ramp];
+  function fadeGlyph(g, a) {
+    if (a >= 0.999 || g === ' ') return g;
+    var i = RAMP.indexOf(g); if (i < 0) i = ST.fade.letterIndex;
+    return RAMP.charAt(Math.round(a * i));
+  }
+  function gainOf(a) { return a <= 0 ? 0 : ST.fade.minGain + (1 - ST.fade.minGain) * a; }
+
+  // ---------------- frame buffer ----------------
+  var FG = [], BG = [], GL = [], PLATE = [];
+  function reset(sceneA) {
+    for (var i = 0; i < GW * GH; i++) {
+      var a = sceneA, g = gainOf(a);
+      GL[i] = a >= 1 ? sg[i] : fadeGlyph(sg[i], a);
+      FG[i] = [sfg[i][0] * g, sfg[i][1] * g, sfg[i][2] * g];
+      BG[i] = [sbg[i][0] * a, sbg[i][1] * a, sbg[i][2] * a];
+      PLATE[i] = false;
+    }
+  }
+  function plate(x0, y0, w, h, pad, mul) {
+    for (var y = y0 - pad; y < y0 + h + pad; y++) for (var x = x0 - pad; x < x0 + w + pad; x++) {
+      if (x < 0 || y < 0 || x >= GW || y >= GH) continue; var i = x + y * GW; if (PLATE[i]) continue; PLATE[i] = true;
+      BG[i] = [BG[i][0] * mul, BG[i][1] * mul, BG[i][2] * mul];
+      FG[i] = [FG[i][0] * mul, FG[i][1] * mul, FG[i][2] * mul];
+      if (GL[i] !== ' ') GL[i] = RAMP.charAt(Math.min(2, Math.max(0, RAMP.indexOf(GL[i]))));   // calm texture under text
+    }
+  }
+  function put(x, y, g, colorKey, a, mix) {
+    if (x < 0 || y < 0 || x >= GW || y >= GH || g === ' ' || a <= 0) return;
+    var i = x + y * GW, c = rgb[colorKey], k = gainOf(a);
+    var col = [c[0] * k, c[1] * k, c[2] * k];
+    if (mix) col = [col[0] + (255 - col[0]) * mix, col[1] + (255 - col[1]) * mix, col[2] + (255 - col[2]) * mix];
+    GL[i] = fadeGlyph(g, a); FG[i] = col;
+  }
+  function text(x, y, s, baseKey, keyWords, a) {
+    var spans = []; (keyWords || []).forEach(function (w) { var p = s.indexOf(w); if (p >= 0) spans.push([p, p + w.length]); });
+    for (var i = 0; i < s.length; i++) {
+      var isKey = spans.some(function (sp) { return i >= sp[0] && i < sp[1]; });
+      put(x + i, y, s.charAt(i), isKey ? ST.hint.key : baseKey, a);
+    }
+  }
+
+  // ---------------- UI elements ----------------
+  function drawTitle(a, t, shine) {
+    var S = T.animations.show.frames[0].S, x0 = T.layout.centerX - T.anchor.x, y0 = T.layout.top;
+    var sh = T.shine, pos = -16 + ((t % sh.period) / sh.period) * (T.size.w + 32);
+    for (var y = 0; y < T.size.h; y++) for (var x = 0; x < T.size.w; x++) {
+      var g = S.glyphs[y].charAt(x); if (g === ' ') continue;
+      var m = 0; if (shine && g === '#') { var q = x - sh.slope * y - pos; if (q >= 0 && q < sh.width) m = sh.amount; }
+      put(x0 + x, y0 + y, g, T.keys[S.fg[y].charAt(x)].c, a, m);
+    }
+    var SS = SUB.animations.show.frames[0].S, sx = T.layout.centerX - SUB.anchor.x, sy = y0 + T.size.h + SUB.layout.belowTitle;
+    for (x = 0; x < SUB.size.w; x++) { var sg2 = SS.glyphs[0].charAt(x); if (sg2 !== ' ') put(sx + x, sy, sg2, SUB.keys[SS.fg[0].charAt(x)].c, a); }
+  }
+  function drawHints(list, alphas) {
+    var H = ST.hint;
+    list.forEach(function (h, n) {
+      var s = H.prefix + h.text, y = GH - 1 - H.yFromBottom - n * (1 + H.lineGap);
+      plate(H.x, y, s.length, 1, H.plate.pad, H.plate.bgMul);
+    });
+    list.forEach(function (h, n) {
+      var y = GH - 1 - H.yFromBottom - n * (1 + H.lineGap), a = alphas[n];
+      text(H.x, y, H.prefix, H.prefixColor, [], a);
+      text(H.x + H.prefix.length, y, h.text, H.text, h.keys, a);
+    });
+  }
+  function drawCrosshair(active, promptText) {
+    var cx = GW / 2, cy = GH / 2;
+    put(cx, cy, ST.crosshair.glyph, active ? ST.crosshair.active : ST.crosshair.idle, 1);
+    if (promptText) {
+      var y = cy + ST.prompt.rowsBelowCrosshair, x = Math.round(cx - promptText.length / 2);
+      plate(x, y, promptText.length, 1, ST.prompt.plate.pad, ST.prompt.plate.bgMul);
+      text(x, y, promptText, ST.prompt.text, ['[E]'], 1);
+    }
+  }
+  function drawEnd(t, lit) {
+    var E = ST.endText, row = E.top, typed = Math.max(0, t - 2.2) * E.cps, lines = E.lines, n = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var s = (i === 0 && lit) ? lines[i].alt : lines[i].text;
+      if (lines[i].delay) typed -= lines[i].delay * E.cps;
+      var show = Math.max(0, Math.min(s.length, Math.floor(typed)));
+      var x = Math.round(GW / 2 - s.length / 2);
+      text(x, row, s.slice(0, show), lines[i].color, lines[i].keys || [], 1);
+      if (show < s.length) {                       // still typing this line (or waiting on its delay)
+        if (typed >= 0 && Math.floor(t * E.cursor.blinkHz * 2) % 2 === 0) put(x + show, row, E.cursor.glyph, E.dim, 1);
+        break;
+      }
+      typed -= s.length; row += 1 + E.lineGap;
+    }
+  }
+
+  // ---------------- timeline ----------------
+  var mode = 'intro', t0 = performance.now() / 1000, extra = {};
+  function blinkOpen(tt) {
+    var c = ST.blink.curve; if (tt <= 0) return 0; if (tt >= c[c.length - 1][0]) return 1;
+    for (var i = 1; i < c.length; i++) if (tt <= c[i][0]) { var k = (tt - c[i - 1][0]) / (c[i][0] - c[i - 1][0]); return c[i - 1][1] + (c[i][1] - c[i - 1][1]) * k; }
+    return 1;
+  }
+  function setMode(m, e) { mode = m; extra = e || {}; t0 = performance.now() / 1000; }
+  document.getElementById('replay').onclick = function () { setMode('intro'); };
+  document.getElementById('hold').onclick = function () { setMode('intro'); t0 -= 4.0; };
+  document.getElementById('hints').onclick = function () { setMode('hints'); };
+  document.getElementById('prompt').onclick = function () { setMode('prompt'); };
+  document.getElementById('pauseO').onclick = function () { setMode('pause'); };
+  document.getElementById('end').onclick = function () { setMode('end', { lit: false }); };
+  document.getElementById('endLit').onclick = function () { setMode('end', { lit: true }); };
+
+  var screen = makeGrid(document.getElementById('screen'), GW, GH, 9);
+  function render() {
+    var t = performance.now() / 1000 - t0;
+    document.getElementById('tV').textContent = t.toFixed(1) + ' s (' + mode + ')';
+    if (mode === 'end') {
+      reset(Math.max(0, 1 - t / 2.0));        // US-017: glyphs dim down the ramp over 2 s
+      drawEnd(t, extra.lit);
+    } else if (mode === 'intro') {
+      reset(1);
+      var tc = ST.titleCard, tStart = 2.5, ta = 0, th = t - tStart;
+      if (th >= 0 && th < tc.fadeIn) ta = th / tc.fadeIn; else if (th >= tc.fadeIn && th < tc.fadeIn + tc.hold) ta = 1;
+      else if (th >= tc.fadeIn + tc.hold && th < tc.fadeIn + tc.hold + tc.fadeOut) ta = 1 - (th - tc.fadeIn - tc.hold) / tc.fadeOut;
+      if (ta > 0) drawTitle(ta, t, ta >= 1);
+      var hs = tStart + tc.fadeIn + tc.hold + tc.fadeOut, ht = t - hs;
+      if (ht >= 0 && ht < ST.hint.timeout + ST.hint.fadeOut) {
+        var ha = ht < ST.hint.fadeIn ? ht / ST.hint.fadeIn : ht < ST.hint.timeout ? 1 : 1 - (ht - ST.hint.timeout) / ST.hint.fadeOut;
+        drawHints([ST.hints[0]], [ha]);
+      }
+      drawCrosshair(false);
+      // blink mask
+      var o = blinkOpen(t - 1.0), half = GH / 2;
+      for (var y = 0; y < GH; y++) {
+        var dist = Math.abs(y + 0.5 - half) / half, edge = dist <= o && dist > o - 1.5 / half;
+        for (var x = 0; x < GW; x++) {
+          var i = x + y * GW;
+          if (t < 1.0 || dist > o) { GL[i] = ' '; BG[i] = [0, 0, 0]; }
+          else if (edge && o < 1) { GL[i] = ST.blink.edgeGlyph; var ec = rgb[ST.blink.edgeColor]; FG[i] = [ec[0] * 0.5, ec[1] * 0.5, ec[2] * 0.5]; BG[i] = [BG[i][0] * 0.4, BG[i][1] * 0.4, BG[i][2] * 0.4]; }
+        }
+      }
+    } else if (mode === 'hints') {
+      reset(1); drawHints(ST.hints, ST.hints.map(function () { return 1; })); drawCrosshair(false);
+    } else if (mode === 'prompt') {
+      reset(1); drawCrosshair(true, ST.prompt.examples[Math.floor(t / 2) % ST.prompt.examples.length]);
+    } else if (mode === 'pause') {
+      reset(1); var pt = ST.pause.text, px = Math.round(GW / 2 - pt.length / 2);
+      plate(px, ST.pause.row, pt.length, 1, ST.pause.plate.pad, ST.pause.plate.bgMul); text(px, ST.pause.row, pt, ST.pause.color, [], 1);
+    }
+    for (var j = 0; j < GW * GH; j++) screen.cell(j % GW, Math.floor(j / GW), GL[j], css(FG[j]), css(BG[j]));
+  }
+
+  // ---------------- logo + fade strips ----------------
+  var logo = makeGrid(document.getElementById('logo'), T.size.w + 4, T.size.h + 4, 14);
+  function drawLogo(t) {
+    var S = T.animations.show.frames[0].S, sh = T.shine, pos = -16 + ((t % sh.period) / sh.period) * (T.size.w + 32);
+    for (var y = 0; y < T.size.h + 4; y++) for (var x = 0; x < T.size.w + 4; x++) logo.cell(x, y, ' ', '#000', '#000');
+    for (y = 0; y < T.size.h; y++) for (x = 0; x < T.size.w; x++) {
+      var g = S.glyphs[y].charAt(x); if (g === ' ') continue;
+      var c = rgb[T.keys[S.fg[y].charAt(x)].c].slice(), q = x - sh.slope * y - pos;
+      if (g === '#' && q >= 0 && q < sh.width) c = [c[0] + (255 - c[0]) * sh.amount, c[1] + (255 - c[1]) * sh.amount, c[2] + (255 - c[2]) * sh.amount];
+      logo.cell(x + 2, y + 1, g, css(c), '#000');
+    }
+    var SS = SUB.animations.show.frames[0].S, sx = 2 + T.anchor.x - SUB.anchor.x;
+    for (x = 0; x < SUB.size.w; x++) { var s2 = SS.glyphs[0].charAt(x); if (s2 !== ' ') logo.cell(sx + x, T.size.h + 2, s2, css(rgb[SUB.keys[SS.fg[0].charAt(x)].c]), '#000'); }
+  }
+  (function drawFades() {
+    var AS = [0.15, 0.3, 0.5, 0.7, 0.85, 1.0], S = T.animations.show.frames[0].S, cropW = 30;
+    var g = makeGrid(document.getElementById('fades'), AS.length * (cropW + 2), T.size.h + 2, 11);
+    AS.forEach(function (a, n) {
+      for (var y = 0; y < T.size.h; y++) for (var x = 0; x < cropW; x++) {
+        var gl = S.glyphs[y].charAt(x), k = S.fg[y].charAt(x), ox = n * (cropW + 2) + 1;
+        if (gl === ' ') { g.cell(ox + x, y + 1, ' ', '#000', '#000'); continue; }
+        var c = rgb[T.keys[k].c], m = gainOf(a);
+        g.cell(ox + x, y + 1, fadeGlyph(gl, a), css([c[0] * m, c[1] * m, c[2] * m]), '#000');
+      }
+    });
+  })();
+
+  var last = 0;
+  requestAnimationFrame(function loop(now) {
+    requestAnimationFrame(loop);
+    if (now - last < 33) return; last = now;
+    render(); drawLogo(now / 1000);
+  });
+})();
+</script>
+</body>
+</html>
