@@ -1,0 +1,160 @@
+# design/ - data formats
+
+Owner: Designer. The programmer uses these files directly. Every format change goes in the change log at the bottom.
+
+| File | What |
+|---|---|
+| `palette.js` | Master palette, glyph ramps, lights, fog, time of day, materials, reference shader (US-002) |
+| `style-guide.md` | Color language, readability rules, glyph usage |
+| `preview/palette.html` | PO review page: vignette, materials under dark/torch/sun/lantern + interactive light, ramps, fog, sky, UI colors, named colors |
+| `preview/materials.html` | Alias that redirects to `palette.html` (the name used in the US-002 acceptance criteria) |
+
+---
+
+## 1. palette.js
+
+### 1.1 Loading
+
+`palette.js` is a **plain script with no `export` statement**. It sets `window.ASSETS.palette`.
+
+The game is served over http and uses ES modules. Load the palette in either of two ways:
+
+```html
+<!-- game/index.html: classic tag before the game's module entry point -->
+<script src="../design/palette.js"></script>
+<script type="module" src="js/main.js"></script>
+```
+```js
+// or, inside a module: side-effect import (no named exports)
+import '../../design/palette.js';
+const P = window.ASSETS.palette;
+```
+
+There are no named exports on purpose. Design data files stay plain scripts so the standalone preview pages in `design/preview/` also work when opened straight from disk. Under Node it also sets `module.exports` (for tests).
+
+### 1.2 Export shape (`ASSETS.palette`)
+
+```
+{
+  version: 1,
+  colors:    { [key]: '#rrggbb' },            // THE source of truth, named colors
+  rgb:       { [key]: [r,g,b] },              // derived at load, 0..255
+  hue:       { [key]: [r,g,b] },              // derived, normalised so max channel = 1 (use for LIGHT colors)
+  ramps:     { [key]: ' .:...' },             // glyph strings, index 0 = space (darkest), last = brightest
+  shading:   { cutoff, rampGamma, fgMin, fgGamma, fgMaxGain, tint, overbright, overbrightMax, glyphOverrideMinIndex },
+  lights:    { ambient, sun, torch, lantern, beacon },   // GDD 7.3 values, colors by key
+  fog:       { glyphLevel, interior:{color,start,full,curve}, far:{color,colorFar,start,full,curve} },
+  timeOfDay: { morning|noon|dusk|night: { ambient, ambientI, sun, sunI, sunElev, sky:[{t,c}], cloud, fog } },
+  defaultTime: 'morning',
+  materials: { [key]: Material },
+  semantic:  { hero, danger, magic, interact, warmSafe, coolShadow, theDim },   // -> color keys
+  ui:        { text, hint, dim, crosshair, crosshairActive, prompt, promptKey, title:[keys], subtitle, endText },
+  util:      { shade, shadeSky, addLight, falloff, rampIndex, rampGlyph, buildLUT, fogFactor, bandFactor,
+               texel, skyGradient, hexToRgb, rgbToHex, css, clamp01, smoothstep, validate }
+}
+```
+
+Rule: everything outside `colors` refers to colors **by key**, never by hex. Sprites (US-011 and later) use these keys in their fg/bg rows.
+
+### 1.3 Required colors (US-002)
+`ambient #2a3550`, `sun #fff2d0`, `torch #ff9a3c`, `lantern #ffd27a`, `fog`, `skyTop`, `skyHorizon`, `stoneLight`, `stoneMid`, `stoneDark`, `moss`, `wood`, `iron`, `brass`, `ash`, `straw`. All present, plus variants (`...Light`, `...Dark`), fire, far-overworld, UI and time-of-day colors.
+
+### 1.4 Ramps
+| key | glyphs | use |
+|---|---|---|
+| `default` | ` .,:;-=+*o#%&@` (14) | Generic. Contains the D-002 / US-001 ramp ` .:-=+*#%@` in the same order |
+| `fine` | 70-step classic | Smooth gradients (fades, far view, UI) |
+| `stone` | ` .,:;+%#&@` | walls |
+| `wood` | ` .-:=+\|IH#` | planks, beams, lever |
+| `iron` | ` .:-=+xX#M` | brazier, bowl, grate frame |
+| `floor` | ` .,-:;=+*#%` | flagstone floors |
+| `ash` | ` .,':;"^*%` | cold ash |
+| `rubble` | ` .,:;oO%#&@` | fallen blocks |
+| `sky` | ` .'-~=+*` | cloud density |
+| `fire`, `grass`, `foliage`, `water` | | US-011 flames, US-016 far terrain |
+
+**Brightness to glyph** (`util.rampIndex(len, b, gamma)`):
+```
+if b < shading.cutoff (0.03)      -> index 0 (space)
+t = min(b,1) ^ gamma              (gamma = material.rampGamma || shading.rampGamma = 0.85)
+index = 1 + min(len-2, floor(t * (len-1)))
+```
+Any lit surface (b >= 0.03) gets at least the first visible glyph. This covers the GDD rule "glyph `.` at minimum on lit-less walls". Use `util.buildLUT(ramp, 256)` to get a lookup table for speed.
+
+### 1.5 Lights
+- A light color is a **hue** (`P.hue[key]`, max channel = 1). Intensity carries the energy. So ambient `#2a3550` at 0.12 gives brightness 0.12 with a cool blue hue. It is not multiplied down by its own dark hex a second time.
+- Accumulate per surface cell: `L = [0,0,0]`, then `addLight(L, key, amount)` for each light, where
+  `amount = intensity * flicker * falloff(d, radius) * max(0, N.L) * shadow` (ambient: `amount = intensity`).
+- `falloff(d, r) = (1 - (d/r)^2)^2`, exactly 0 at `r`, no ring edge (US-006).
+- Sun: `elevation` 60, `azimuth` 112.5 (compass degrees, 0 = north, clockwise, the direction the light comes FROM, so ESE). Note that a vertical wall facing the sun gets at most N.L = cos(60) = 0.5 and a floor gets sin(60) = 0.87. Floors are the bright surfaces in the shaft, as the GDD intends.
+- Flicker: `{hzMin, hzMax, amount, jitter}`. Use smooth value noise, not per-frame random. The preview uses two octaves at 8 and 12 Hz: `1 + amount * (0.6*n(t*8) + 0.4*n(t*12))`.
+- `lights.beacon` holds the US-022 values (radius 12, which may be tuned down to 8).
+
+### 1.6 Materials
+```
+Material = {
+  kind?: 'sky',                    // only the sky; everything else is a lit surface
+  desc: string,
+  base: colorKey,                  // fg color at full light
+  albedo: 0..1,                    // brightness multiplier
+  ramp: rampKey,
+  rampGamma?: number,              // optional override
+  bg: { mode: 'darken', k } | { mode: 'black' } | { mode: 'fixed', color: colorKey },
+  spec?: 0..1,                     // metal highlight: fg pushed toward the light hue at high b
+  emissive?: 0..1,                 // added to brightness (not used by M1 surfaces)
+  tintBand?: { full: m, zero: m }, // texel tints (moss, soot) at 100% up to `full` m above the sector floor, 0% at `zero`
+  textureFade: [start m, end m],   // texture contrast fades out with camera distance (stops shimmer)
+  texture?: {
+    w, h,                          // texels
+    scale: [u, v],                 // texels per meter (sky: per degree)
+    rows: [h strings of w chars],  // written TOP-DOWN as seen on the wall
+    key: { [char]: { shade, tint?: colorKey, amount?: 0..1, glyph?: char } }
+  }
+}
+```
+M1 materials: `stone`, `stone_moss`, `stone_scorched`, `floor`, `ash`, `wood`, `iron`, `rubble`, `sky`.
+
+**Texture coordinates** (`util.texel(tex, u, v)`):
+- Walls: `u` = distance along the wall in meters (continuous across adjacent cells, i.e. world x or y of the hit), `v` = world height `z` in meters. **v grows upward**. The row used is `rows[h-1 - (floor(v*scale[1]) mod h)]`.
+- Floors / ceilings: `u` = world x, `v` = world y.
+- Sky: `u` = azimuth in degrees, `v` = elevation in degrees.
+- Stone scale `[16,16]` with a 16x8 pattern means blocks are 0.5 m wide and 0.25 m tall, with mortar every 0.25 m and courses staggered by half a block. At 3 m that is about 2 columns and 1 row per texel.
+- Glyph overrides (`glyph` in a key, e.g. rivets and knots `o`) apply only while texture fade is above 0.5 and the ramp index is at least `shading.glyphOverrideMinIndex` (2), so they never appear in darkness.
+
+### 1.7 Shading pipeline (reference: `util.shade(mat, L, u, v, dist, out, opt)`)
+Per visible surface cell:
+1. **Texel**: look up `e = texel(tex, u, v)`. Texture fade: `tf = 1 - smoothstep(fadeStart, fadeEnd, dist)`. Band factor: `bf = bandFactor(tintBand, z)` for tinted texels, else 1. Then `s = 1 + (e.shade-1)*tf*bf`, and the base color is lerped toward `e.tint` by `amount*tf*bf`.
+2. **Brightness**: `b = max(L.r, L.g, L.b) * albedo * s + emissive`.
+3. **Fog factor** (interior): `f = 0` below 12 m, `((d-12)/(60-12))^curve` up to 60 m, then 1.
+4. **Glyph**: `ramp[rampIndex(len, b*(1-f) + fog.glyphLevel*f)]`. Glyphs thin out to space in fog.
+5. **Color**: light hue `h = L / max(L)`. Tint `t = 1 + (h-1)*0.85`. Gain `= fgMin + (1-fgMin) * min(b,1)^fgGamma` (0.32 and 0.75). Above b = 1 the gain rises by 0.5 per unit, capped at 1.2. `fg = base * t * gain`.
+6. **Hot highlight**: `hot = spec*min(b,1)^3 + min(0.5, (b-1)*0.6 if b>1)`, capped at 0.8. `fg` is lerped toward `255*(0.5+0.5*h)`. Clamp to 255.
+7. **Background**: `darken` gives `bg = fg * k`, `black` gives 0, `fixed` gives that color.
+8. **Fog color**: `fg` and `bg` are lerped toward `rgb[fog.interior.color]` by `f`.
+
+Output: `out.glyph`, `out.fg[3]`, `out.bg[3]` (0..255 floats) and `out.b`. Pass a reused `out` object: the function allocates nothing when `out` has `fg` and `bg` arrays.
+
+**Sky** (`shadeSky(az, elev, out, timeKey)`): `bg` = gradient of `timeOfDay[t].sky` stops at `t = elev / 60`. Cloud density `d` = texel shade, faded in over 0 to 2 deg of elevation and out over 35 to 55 deg. Glyph = sky ramp at `d`, `fg = lerp(bg, cloud color, 0.35 + 0.65*d)`. Not lit, not fogged.
+
+### 1.8 Fog
+- **Interior** (`fog.interior`): color `fog #262f45`, start 12 m, full 60 m, linear. Glyphs fade to space. The tower is about 10 m across, so this mostly affects looking up the tower and long diagonals, and keeps distant cells calm.
+- **Far overworld** (`fog.far`, US-016): start 50 m, full 1500 m, curve 0.7. The fog color itself is lerped from `fogFarNear #8fa8c4` to `fogFar #c4dcef` (= `skyHorizon`) by the same factor, and terrain fg/bg are lerped toward it. The far horizon therefore meets the sky seamlessly.
+- Texture fade (above) happens earlier than fog (6 to 16 m for stone), so far walls read as clean shaded shapes rather than noise.
+
+### 1.9 Self-check
+`P.util.validate()` returns `[]` when every texture row has the right length, every texel char is in its key, every color key exists and every ramp starts with a space and is pure ASCII. The preview shows the result at the top.
+
+---
+
+## 2. Engine notes for the PO / programmer
+
+1. **Per-cell emissive**: the sky is emissive (not lit, not fogged). The brazier flame (US-011) and beacon fire (US-022) will also mark cells emissive, drawn at full color and ignoring light and fog.
+2. **tintBand needs the hit height above the sector floor** (`opt.z`), so moss and soot stay near the ground on full-height tower walls. Cheap: the raycaster already knows the wall hit height.
+3. **Texture fade by distance** needs only `dist`, which the raycaster already has for fog.
+4. **Hint text must be ASCII**: the GDD/US-015 hint `WASD move · Mouse look` contains `·` (non-ASCII). The design uses `WASD move - Mouse look`. The PO should update the story text.
+5. The reference `shade()` is correct but not tuned for speed. For 160x60 at 60 fps the engine may precompute `buildLUT` per ramp and inline the math. Results should match the preview.
+
+---
+
+## Change log
+- **v1 (2026-09-22, US-002)**: initial palette, ramps, lights, fog, time of day, 9 materials, reference shader, preview.

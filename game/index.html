@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASCII Quest</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    #screen {
+      display: block;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      image-rendering: pixelated;
+    }
+    #debug-overlay {
+      user-select: none;
+    }
+    #file-protocol-notice {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2em;
+      background: #000;
+      color: #e8e2d0;
+      font: 16px "Courier New", monospace;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="screen"></canvas>
+
+  <script>
+    // ES modules (js/main.js) refuse to load over file:// (CORS). Catch that
+    // case early with a friendly one-line message instead of a silent blank
+    // canvas + a console error nobody sees.
+    if (location.protocol === 'file:') {
+      document.write(
+        '<div id="file-protocol-notice">Run a static server, e.g. <code>python -m http.server 8000</code>' +
+        ' from the project root, then open <code>http://localhost:8000/game/index.html</code></div>'
+      );
+    }
+  </script>
+
+  <!-- Designer's palette/glyph-ramp/material data (US-002). Loaded as a
+       classic script (works even from file://, and runs before the deferred
+       module below) so window.ASSETS.palette is always ready before
+       js/render/palette.js's getPalette() is first called. -->
+  <script src="../design/palette.js"></script>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

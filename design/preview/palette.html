@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Quest - Palette, glyph ramps, materials (US-002)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:30px 0 8px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:13px; margin:14px 0 4px; color:#c9c2ad; font-weight:600; }
+  .note { color:#8a8778; font-size:12px; }
+  .ok { color:#4fd66a; } .bad { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:16px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:6px; }
+  .controls input[type=range] { width:140px; }
+  .controls .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  button.preset { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.preset.on { border-color:#ffd24a; color:#ffd24a; }
+  .matrow { margin:12px 0 18px; }
+  .matrow .hdr { display:flex; font-size:12px; color:#9c9888; margin-bottom:3px; }
+  .matrow .hdr span { display:inline-block; }
+  .matrow .stats { font-family:Consolas, monospace; font-size:12px; color:#8a8778; margin-top:3px; }
+  .matrow .name { font-family:Consolas, monospace; color:#ffd27a; font-size:14px; }
+  .swatches { display:flex; flex-wrap:wrap; gap:6px; }
+  .sw { width:150px; font-size:12px; font-family:Consolas, monospace; }
+  .sw .chip { height:34px; border-radius:3px; border:1px solid #ffffff18; display:flex; align-items:center; justify-content:center; font-size:15px; letter-spacing:2px; }
+  .sw .k { color:#d8d2c0; } .sw .h { color:#8a8778; }
+  .ramp { margin:8px 0 14px; }
+  .ramp .lbl { font-family:Consolas, monospace; font-size:12px; color:#9c9888; }
+  .ramp .lbl b { color:#ffd27a; font-weight:normal; }
+  code { font-family:Consolas, monospace; color:#ffd27a; }
+  .row { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+</style>
+</head>
+<body>
+<h1>ASCII Quest : palette, glyph ramps, materials</h1>
+<div class="note">US-002 preview (format v1). Loads <code>../palette.js</code>. Every cell below is produced by the palette's reference shader
+  <code>ASSETS.palette.util.shade()</code>, so the game should look like this when it follows <code>design/README.md</code>.
+  Data check: <span id="check"></span></div>
+
+<div class="controls">
+  <span>Interactive light:</span>
+  <span id="presets"></span>
+  <label>custom <input type="color" id="color" value="#ff9a3c"></label>
+  <label>intensity <input type="range" id="intensity" min="0" max="1.5" step="0.01" value="1"><span class="val" id="intensityV"></span></label>
+  <label>light pos / direction <input type="range" id="dir" min="0" max="100" step="1" value="50"><span class="val" id="dirV"></span></label>
+  <label>distance <input type="range" id="dist" min="0" max="70" step="0.5" value="3"><span class="val" id="distV"></span></label>
+  <label><input type="checkbox" id="ambientOn" checked> + ambient</label>
+  <label><input type="checkbox" id="texture" checked> texture</label>
+  <label><input type="checkbox" id="flicker" checked> flicker / animate</label>
+  <label>time of day <select id="time"></select></label>
+</div>
+
+<h2>1. Scene vignette : torch, sun shaft, lantern, moss, soot, sky</h2>
+<div class="note">Not a render of the game, a mood target. Left wall = north side (moss band near the floor), right = brazier (scorched stone, cold ash on the floor),
+  sun patch on the floor with dust motes in the shaft, lantern on its hook glinting brass. The broken wall top shows the sky. Uses the time-of-day selector.</div>
+<canvas id="vignette"></canvas>
+
+<h2>2. Materials under light</h2>
+<div class="note">Each swatch = 2.4 m x 2.5 m of wall, 1 texel per cell (about the look at 3 m). Bottom row = floor level (for moss / soot bands).
+  Columns: <b>Dark</b> = ambient 0.12 only | <b>Torch</b> = brazier 1.0, r 6 m, 1.2 m in front | <b>Sun</b> = directional, N.L 0.8, left part in shadow |
+  <b>Lantern</b> = 0.8, r 5 m, 1.4 m in front | <b>Interactive</b> = the controls above (distance slider applies fog + texture fade here only).
+  The sky row shows the four times of day instead.</div>
+<div id="materials"></div>
+
+<h2>3. Glyph ramps</h2>
+<div class="note">Index 0 is always space (darkest). Top line = the ramp string; bottom = brightness 0 to 1 mapped through <code>util.rampGlyph</code>
+  (cutoff 0.03, gamma 0.85, 1 is brightest), tinted with the material color.</div>
+<div id="ramps"></div>
+
+<h2>4. Distance fog and texture fade</h2>
+<div class="note">Interior rule: stone lit at torch level, seen at 0 to 60 m. Texture contrast fades between 6 and 16 m (anti-shimmer), fog starts at 12 m
+  and is full at 60 m (color <code>fog</code>, glyphs fade to space). Second strip = far overworld rule (US-016): 50 m to 1500 m, fog color itself goes
+  from <code>fogFarNear</code> to <code>fogFar</code> (= horizon).</div>
+<canvas id="fog"></canvas>
+<div style="height:8px"></div>
+<canvas id="farfog"></canvas>
+
+<h2>5. Sky by time of day</h2>
+<div class="note">Elevation 0 (bottom) to 50 deg (top). Emissive, not fogged. M1 uses <b>morning</b> only; the rest are ready for M2 day/night.</div>
+<canvas id="sky"></canvas>
+
+<h2>6. Color language and UI</h2>
+<div class="note">Warm = light, safety, the player's goal. Cool = shadow, distance, the Dim. Gold/brass = "you can use this". See style-guide.md.</div>
+<canvas id="lang"></canvas>
+
+<h2>7. Named colors</h2>
+<div id="colors"></div>
+
+<script src="../palette.js"></script>
+<script>
+(function () {
+  'use strict';
+  var P = window.ASSETS && window.ASSETS.palette;
+  if (!P) { document.body.innerHTML = '<p class="bad">palette.js did not load.</p>'; return; }
+  var U = P.util;
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+
+  // ---------- data check ----------
+  var errs = U.validate();
+  document.getElementById('check').innerHTML = errs.length
+    ? '<span class="bad">' + errs.length + ' problem(s): ' + errs.join('; ') + '</span>'
+    : '<span class="ok">OK (' + Object.keys(P.colors).length + ' colors, ' + Object.keys(P.ramps).length +
+      ' ramps, ' + Object.keys(P.materials).length + ' materials)</span>';
+
+  // ---------- char grid helper ----------
+  function makeGrid(canvas, cols, rows, px) {
+    px = px || 14;
+    var ctx = canvas.getContext('2d');
+    ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25);
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return {
+      cols: cols, rows: rows, cw: cw, ch: ch, ctx: ctx,
+      cell: function (x, y, g, fg, bg) {
+        ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch);
+        if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); }
+      },
+      glyph: function (x, y, g, fg) { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); },
+      clear: function (bg) { ctx.fillStyle = bg || '#000'; ctx.fillRect(0, 0, cols * cw, rows * ch); },
+      text: function (x, y, s, fg, bg) { for (var i = 0; i < s.length; i++) this.cell(x + i, y, s.charAt(i), fg, bg || '#000'); }
+    };
+  }
+  var css = U.css;
+  function hexHue(hex) { var c = U.hexToRgb(hex), m = Math.max(c[0], c[1], c[2]) || 1; return [c[0] / m, c[1] / m, c[2] / m]; }
+  function addHue(L, h, a) { L[0] += h[0] * a; L[1] += h[1] * a; L[2] += h[2] * a; }
+
+  // ---------- smooth value noise for flicker (8-12 Hz, not per-frame random) ----------
+  function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+  function vnoise(t) { var i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return (hash(i) * (1 - u) + hash(i + 1) * u) * 2 - 1; }
+  function flick(t, seed, fl) {
+    return 1 + fl.amount * (0.6 * vnoise(t * fl.hzMin + seed) + 0.4 * vnoise(t * fl.hzMax + seed * 1.7 + 50));
+  }
+
+  // ---------- state + controls ----------
+  var S = { time: 'morning', preset: 'torch', color: P.colors.torch, intensity: 1.0, dir: 50, dist: 3,
+            ambientOn: true, texture: true, flicker: true };
+  var PRESETS = {
+    ambient: { color: P.colors.ambient, intensity: P.lights.ambient.intensity, type: 'flat' },
+    sun:     { color: P.colors.sun,     intensity: P.lights.sun.intensity,     type: 'dir' },
+    torch:   { color: P.colors.torch,   intensity: P.lights.torch.intensity,   type: 'point', radius: 6, fl: P.lights.torch.flicker },
+    lantern: { color: P.colors.lantern, intensity: P.lights.lantern.intensity, type: 'point', radius: 5, fl: P.lights.lantern.flicker },
+    custom:  { type: 'point', radius: 6 }
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  var presetBox = $('presets');
+  ['ambient', 'sun', 'torch', 'lantern'].forEach(function (k) {
+    var b = document.createElement('button'); b.className = 'preset'; b.textContent = k; b.dataset.k = k;
+    b.onclick = function () {
+      S.preset = k; S.color = PRESETS[k].color; S.intensity = PRESETS[k].intensity;
+      $('color').value = S.color; $('intensity').value = S.intensity; syncUI(); redrawAll();
+    };
+    presetBox.appendChild(b); presetBox.appendChild(document.createTextNode(' '));
+  });
+  Object.keys(P.timeOfDay).forEach(function (k) {
+    var o = document.createElement('option'); o.value = k; o.textContent = k; $('time').appendChild(o);
+  });
+  $('color').oninput = function () { S.preset = 'custom'; S.color = this.value; syncUI(); redrawAll(); };
+  $('intensity').oninput = function () { S.intensity = +this.value; syncUI(); redrawAll(); };
+  $('dir').oninput = function () { S.dir = +this.value; syncUI(); redrawAll(); };
+  $('dist').oninput = function () { S.dist = +this.value; syncUI(); redrawAll(); };
+  $('ambientOn').onchange = function () { S.ambientOn = this.checked; redrawAll(); };
+  $('texture').onchange = function () { S.texture = this.checked; redrawAll(); };
+  $('flicker').onchange = function () { S.flicker = this.checked; redrawAll(); };
+  $('time').onchange = function () { S.time = this.value; redrawAll(); };
+  function syncUI() {
+    $('intensityV').textContent = S.intensity.toFixed(2);
+    var p = PRESETS[S.preset];
+    $('dirV').textContent = p.type === 'dir' ? Math.round((S.dir - 50) / 50 * 85) + ' deg' : (S.dir / 100 * 2.4).toFixed(2) + ' m';
+    $('distV').textContent = S.dist.toFixed(1) + ' m';
+    [].forEach.call(presetBox.children, function (b) { b.classList.toggle('on', b.dataset.k === S.preset); });
+  }
+
+  // ---------- 2. materials ----------
+  var SW = 24, SH = 10, GAP = 2, MODES = ['dark', 'torch', 'sun', 'lantern', 'custom'];
+  var TITLES = ['Dark (ambient)', 'Torch', 'Sun / shadow', 'Lantern', 'Interactive'];
+  var SKY_TITLES = ['morning', 'noon', 'dusk', 'night', 'selected time'];
+  var L = [0, 0, 0], out = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  var flatMats = {};
+  Object.keys(P.materials).forEach(function (k) {
+    var m = P.materials[k], c = {}, f; for (f in m) c[f] = m[f]; c.texture = null; flatMats[k] = c;
+  });
+
+  function ambient(T) { L[0] = L[1] = L[2] = 0; U.addLight(L, T.ambient, T.ambientI); }
+  function pointLight(hue, I, radius, lx, lz, dz, px, pz) {
+    var dx = px - lx, dy = pz - lz, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    addHue(L, hue, I * U.falloff(d, radius) * (dz / d));
+  }
+  function swatchLight(mode, x, y, t) {
+    var T = P.timeOfDay[S.time];
+    var px = (x + 0.5) * 0.1, pz = (SH - 1 - y + 0.5) * 0.25;
+    if (mode === 'custom' && !S.ambientOn) { L[0] = L[1] = L[2] = 0; } else ambient(T);
+    if (mode === 'dark') return;
+    if (mode === 'torch' || mode === 'lantern') {
+      var lt = P.lights[mode], fl = S.flicker ? flick(t, mode === 'torch' ? 1.3 : 7.7, lt.flicker) : 1;
+      var jx = S.flicker ? lt.flicker.jitter * vnoise(t * 9 + 3) : 0;
+      pointLight(P.hue[lt.color], lt.intensity * fl, lt.radius, 1.2 + jx, 1.25, mode === 'torch' ? 1.2 : 1.4, px, pz);
+      return;
+    }
+    if (mode === 'sun') {
+      if (x + (SH - 1 - y) * 0.9 > SW * 0.42) U.addLight(L, T.sun, T.sunI * 0.8);
+      return;
+    }
+    // custom
+    var p = PRESETS[S.preset], hue = hexHue(S.color);
+    var fl2 = (S.flicker && p.fl) ? flick(t, 4.4, p.fl) : 1;
+    if (p.type === 'flat') addHue(L, hue, S.intensity * fl2);
+    else if (p.type === 'dir') addHue(L, hue, S.intensity * Math.max(0, Math.cos((S.dir - 50) / 50 * 85 * Math.PI / 180)));
+    else pointLight(hue, S.intensity * fl2, p.radius || 6, S.dir / 100 * 2.4, 1.25, 1.2, px, pz);
+  }
+
+  var matGrids = {};
+  function buildMaterials() {
+    var host = $('materials');
+    Object.keys(P.materials).forEach(function (mk) {
+      var m = P.materials[mk], row = document.createElement('div'); row.className = 'matrow';
+      var html = '<div><span class="name">' + mk + '</span> <span class="note">' + (m.desc || '') + '</span></div><div class="hdr">';
+      var g0 = makeGrid(document.createElement('canvas'), 1, 1);
+      (m.kind === 'sky' ? SKY_TITLES : TITLES).forEach(function (t) {
+        html += '<span style="width:' + ((SW + GAP) * g0.cw) + 'px">' + t + '</span>';
+      });
+      html += '</div>';
+      row.innerHTML = html;
+      var cv = document.createElement('canvas'); row.appendChild(cv);
+      var st = document.createElement('div'); st.className = 'stats'; row.appendChild(st);
+      st.textContent = statsFor(mk);
+      host.appendChild(row);
+      matGrids[mk] = makeGrid(cv, MODES.length * (SW + GAP) - GAP, SH);
+    });
+  }
+  function idxFor(m, Lx) {
+    var r = P.ramps[m.ramp], b = Math.max(Lx[0], Lx[1], Lx[2]) * m.albedo;
+    return U.rampIndex(r.length, b, m.rampGamma);
+  }
+  function statsFor(mk) {
+    var m = P.materials[mk], r = P.ramps[m.ramp];
+    if (m.kind === 'sky') return 'ramp "' + m.ramp + '" (' + r.length + ' steps) = cloud density; color from gradient stops';
+    var T = P.timeOfDay.morning;
+    var La = [0, 0, 0]; U.addLight(La, T.ambient, T.ambientI);
+    var Ls = [0, 0, 0]; U.addLight(Ls, T.ambient, T.ambientI); U.addLight(Ls, T.sun, T.sunI * 0.87);
+    var Lt = [0, 0, 0]; U.addLight(Lt, T.ambient, T.ambientI); U.addLight(Lt, 'torch', U.falloff(1, 6));
+    var ia = idxFor(m, La), is = idxFor(m, Ls), it = idxFor(m, Lt);
+    return 'ramp "' + m.ramp + '" ' + JSON.stringify(r) + ' (' + r.length + ' steps) | ambient only: "' + r.charAt(ia) +
+      '" idx ' + ia + ' | torch @1 m: "' + r.charAt(it) + '" idx ' + it + ' | sunlit floor vs shadow: +' + (is - ia) +
+      ' steps | bg: ' + (m.bg.mode === 'darken' ? 'fg x ' + m.bg.k : m.bg.mode) + (m.spec ? ' | spec ' + m.spec : '') +
+      (m.tintBand ? ' | tint band full to ' + m.tintBand.full + ' m, gone at ' + m.tintBand.zero + ' m' : '');
+  }
+  function drawMaterials(t) {
+    Object.keys(matGrids).forEach(function (mk) {
+      var g = matGrids[mk], m = P.materials[mk], mat = S.texture ? m : flatMats[mk];
+      var sc = m.texture ? m.texture.scale : [16, 16];
+      g.clear('#07080c');
+      MODES.forEach(function (mode, i) {
+        var ox = i * (SW + GAP), x, y;
+        for (y = 0; y < SH; y++) for (x = 0; x < SW; x++) {
+          if (m.kind === 'sky') {
+            var tk = i < 4 ? SKY_TITLES[i] : S.time;
+            U.shadeSky(30 + x * 4, 2 + (SH - 1 - y) * 5, out, tk);
+          } else {
+            swatchLight(mode, x, y, t);
+            U.shade(mat, L, (x + 0.5) / sc[0], (SH - 1 - y + 0.5) / sc[1], mode === 'custom' ? S.dist : 3, out,
+                    { z: (SH - 1 - y + 0.5) * 0.25 });
+          }
+          g.cell(ox + x, y, out.glyph, css(out.fg), css(out.bg));
+        }
+      });
+    });
+  }
+
+  // ---------- 3. ramps ----------
+  var RAMP_COLOR = { 'default': 'uiText', fine: 'uiText', stone: 'stoneMid', wood: 'woodLight', iron: 'ironLight', floor: 'flagstone',
+                     ash: 'ashLight', rubble: 'rubble', sky: 'cloudLit', fire: null, grass: 'grass', foliage: 'grassDark', water: 'riverLight' };
+  function buildRamps() {
+    var host = $('ramps');
+    Object.keys(P.ramps).forEach(function (rk) {
+      var r = P.ramps[rk], d = document.createElement('div'); d.className = 'ramp';
+      d.innerHTML = '<div class="lbl"><b>' + rk + '</b> (' + r.length + ' steps) ' + JSON.stringify(r).replace(/</g, '&lt;') + '</div>';
+      var cv = document.createElement('canvas'); d.appendChild(cv); host.appendChild(d);
+      var cols = Math.max(72, r.length), g = makeGrid(cv, cols, 2, 16), x;
+      g.clear('#000');
+      var base = RAMP_COLOR[rk] ? P.rgb[RAMP_COLOR[rk]] : null;
+      for (x = 0; x < r.length; x++) g.cell(x, 0, r.charAt(x), '#d8d2c0', '#101218');
+      for (x = 0; x < cols; x++) {
+        var b = x / (cols - 1), ch = U.rampGlyph(rk, b), fg;
+        if (rk === 'fire') fg = P.colors[b > 0.85 ? 'flameCore' : b > 0.65 ? 'flameMid' : b > 0.4 ? 'flameOuter' : 'flameTip'];
+        else {
+          var gain = P.shading.fgMin + (1 - P.shading.fgMin) * Math.pow(b, P.shading.fgGamma);
+          fg = css([base[0] * gain, base[1] * gain, base[2] * gain]);
+        }
+        var bgc = rk === 'sky' ? P.colors.skyMid : '#000';
+        g.cell(x, 1, ch, fg, bgc);
+      }
+    });
+  }
+
+  // ---------- 4. fog ----------
+  var FOG_D = [0, 6, 12, 18, 24, 30, 40, 50, 60], FW = 10, FH = 6, fogGrid, farGrid;
+  function drawFog() {
+    if (!fogGrid) fogGrid = makeGrid($('fog'), FOG_D.length * (FW + 1), FH + 1);
+    var g = fogGrid; g.clear('#07080c');
+    var T = P.timeOfDay[S.time];
+    FOG_D.forEach(function (d, i) {
+      var ox = i * (FW + 1), x, y;
+      for (y = 0; y < FH; y++) for (x = 0; x < FW; x++) {
+        L[0] = L[1] = L[2] = 0; U.addLight(L, T.ambient, T.ambientI); U.addLight(L, 'torch', 0.85);
+        U.shade('stone', L, (x + 0.5) / 16, (FH - 1 - y + 0.5) / 16, d, out);
+        g.cell(ox + x, y, out.glyph, css(out.fg), css(out.bg));
+      }
+      g.text(ox, FH, (d + ' m').slice(0, FW), P.colors.uiHint, '#07080c');
+    });
+    // far rule
+    var FWN = 96;
+    if (!farGrid) farGrid = makeGrid($('farfog'), FWN, 4);
+    var h = farGrid; h.clear('#07080c');
+    var fN = P.rgb[P.fog.far.color], fF = P.rgb[P.fog.far.colorFar], sunH = P.hue[T.sun];
+    for (var x = 0; x < FWN; x++) {
+      var dist = 50 * Math.pow(1500 / 50, x / (FWN - 1));
+      var f = U.fogFactor(dist, 'far');
+      var fc = [fN[0] + (fF[0] - fN[0]) * f, fN[1] + (fF[1] - fN[1]) * f, fN[2] + (fF[2] - fN[2]) * f];
+      for (var y = 0; y < 3; y++) {
+        var key = y === 0 ? 'forest' : y === 1 ? 'grass' : 'river';
+        var ramp = y === 0 ? 'foliage' : y === 1 ? 'grass' : 'water';
+        var b = (0.75 + 0.2 * hash(x * 3 + y)) * T.sunI * 0.9, base = P.rgb[key];
+        var gain = P.shading.fgMin + (1 - P.shading.fgMin) * Math.pow(Math.min(b, 1), P.shading.fgGamma);
+        var fg = [0, 0, 0], bg = [0, 0, 0];
+        for (var c = 0; c < 3; c++) {
+          var v = base[c] * (1 + (sunH[c] - 1) * P.shading.tint) * gain;
+          fg[c] = v + (fc[c] - v) * f; bg[c] = v * 0.2 + (fc[c] - v * 0.2) * f;
+        }
+        h.cell(x, y, U.rampGlyph(ramp, b * (1 - f)), css(fg), css(bg));
+      }
+    }
+    h.text(0, 3, '50 m', P.colors.uiHint, '#07080c');
+    h.text(44, 3, '~240 m', P.colors.uiHint, '#07080c');
+    h.text(FWN - 7, 3, '1500 m', P.colors.uiHint, '#07080c');
+  }
+
+  // ---------- 5. sky ----------
+  var skyGrid, SKW = 34, SKH = 12;
+  function drawSky() {
+    var keys = Object.keys(P.timeOfDay);
+    if (!skyGrid) skyGrid = makeGrid($('sky'), keys.length * (SKW + 2), SKH + 1);
+    var g = skyGrid; g.clear('#07080c');
+    keys.forEach(function (k, i) {
+      var ox = i * (SKW + 2), x, y;
+      for (y = 0; y < SKH; y++) for (x = 0; x < SKW; x++) {
+        U.shadeSky(20 + x * 3, (SKH - 1 - y) / (SKH - 1) * 50, out, k);
+        g.cell(ox + x, y, out.glyph, css(out.fg), css(out.bg));
+      }
+      g.text(ox, SKH, k, P.colors.uiHint, '#07080c');
+    });
+  }
+
+  // ---------- 6. color language ----------
+  var langGrid;
+  function drawLang(t) {
+    if (!langGrid) langGrid = makeGrid($('lang'), 92, 13);
+    var g = langGrid, C = P.colors, blink = (Math.sin(t * 3) * 0.5 + 0.5);
+    g.clear('#000');
+    g.text(2, 1, 'crosshair idle:', C.uiHint); g.cell(18, 1, '+', C[P.ui.crosshair], '#000');
+    g.text(24, 1, 'crosshair on target:', C.uiHint); g.cell(45, 1, '+', C[P.ui.crosshairActive], '#000');
+    g.text(2, 3, 'prompt:', C.uiHint);
+    g.text(10, 3, '[E]', C[P.ui.promptKey]); g.text(14, 3, 'Take lantern', C[P.ui.prompt]);
+    g.text(30, 3, '[E]', C[P.ui.promptKey]); g.text(34, 3, 'Pull lever', C[P.ui.prompt]);
+    g.text(2, 5, 'hint:', C.uiHint); g.text(10, 5, 'WASD move - Mouse look', C[P.ui.hint]);
+    g.text(36, 5, '[Space] Jump', C[P.ui.hint]);
+    g.text(2, 7, 'end:', C.uiHint); g.text(10, 7, 'The beacons are dark.', C.uiText); g.text(33, 7, 'The world waits.', C.uiText);
+    var sem = [['hero', 'heroGreen', '@ hero, friendly'], ['danger', 'danger', '! danger, harm'], ['magic', 'magic', '* magic, spirit'],
+               ['interact', 'brassLight', 'o use me (glint)'], ['warm', 'torch', '^ light = safe'], ['cool', 'ambient', '. shadow, far'],
+               ['the Dim', 'dim', '% the Dim']];
+    sem.forEach(function (s, i) {
+      var x = 2 + (i % 4) * 22, y = 9 + Math.floor(i / 4) * 2;
+      var col = C[s[1]];
+      if (s[1] === 'brassLight' && blink > 0.85) col = C.white;
+      if (s[1] === 'ambient') col = css(P.rgb.ambient.map(function (v) { return Math.min(255, v * 2.2); }));
+      g.text(x, y, s[2], col);
+    });
+    // title color ramp
+    var title = 'ASCII QUEST';
+    P.ui.title.forEach(function (k, i) { g.cell(62 + i, 1, '#', C[k], '#000'); });
+    g.text(62, 3, title, C.gold); g.text(62, 4, 'The Awakening', C[P.ui.subtitle]);
+  }
+
+  // ---------- 1. vignette ----------
+  var VW = 96, VH = 26, WR = 16, vGrid, wallTop = [], bgBuf = new Array(VW * VH), isSky = new Array(VW * VH);
+  for (var i = 0; i < VW; i++) wallTop[i] = 2.35 + 0.55 * (0.5 + 0.5 * Math.sin(i * 0.31) * Math.cos(i * 0.093 + 1)) + hash(i) * 0.3 +
+                                           (i > 58 && i < 66 ? -0.9 : 0);
+  var TORCH = { x: 7.0, y: 0.9, z: 1.0 };
+  function wallMat(xm) {
+    if (Math.abs(xm - TORCH.x) < 1.3) return 'stone_scorched';
+    if (xm < 3.0) return 'stone_moss';
+    return 'stone';
+  }
+  function drawVignette(t) {
+    if (!vGrid) vGrid = makeGrid($('vignette'), VW, VH, 14);
+    var g = vGrid, T = P.timeOfDay[S.time], tl = P.lights.torch;
+    var fl = S.flicker ? flick(t, 3.1, tl.flicker) : 1;
+    var lx = TORCH.x + (S.flicker ? tl.flicker.jitter * vnoise(t * 9 + 7) : 0);
+    var lz = TORCH.z + (S.flicker ? tl.flicker.jitter * vnoise(t * 9 + 19) : 0);
+    var th = P.hue[tl.color], x, y, d, dx, dy, dz, fgc, bgc;
+    for (y = 0; y < VH; y++) for (x = 0; x < VW; x++) {
+      var xm = (x + 0.5) * 0.1, idx = x + y * VW;
+      isSky[idx] = false;
+      if (y < WR) {
+        var z = (WR - 1 - y + 0.5) * 0.2;
+        if (z > wallTop[x]) {
+          U.shadeSky(60 + x * 1.1, 10 + (WR - y) * 2.4, out, S.time); isSky[idx] = true;
+        } else {
+          ambient(T);
+          dx = xm - lx; dy = TORCH.y; dz = z - lz; d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          addHue(L, th, tl.intensity * fl * U.falloff(d, tl.radius) * (TORCH.y / d));
+          if (z > wallTop[x] - 0.3) U.addLight(L, T.sun, T.sunI * 0.55);     // sun-caught broken rim
+          U.shade(wallMat(xm), L, xm, z, 6, out, { z: z });
+        }
+      } else {
+        var ym = (y - WR + 0.5) / (VH - WR) * 5;
+        ambient(T);
+        dx = xm - lx; dy = ym - TORCH.y; dz = lz; d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        addHue(L, th, tl.intensity * fl * U.falloff(d, tl.radius) * (lz / d));
+        var ex = (xm - 3.6) / 1.6, ey = (ym - 2.7) / 1.1;
+        if (ex * ex + ey * ey < 1) U.addLight(L, T.sun, T.sunI * 0.87);
+        var fdx = xm - TORCH.x, fdy = ym - TORCH.y;
+        var mk = (fdx * fdx + fdy * fdy < 0.9 * 0.9 + hash(x * 7 + y) * 0.35) ? 'ash' : 'floor';
+        U.shade(mk, L, xm, ym, 6 - ym * 0.9, out, { z: 0 });
+      }
+      fgc = css(out.fg); bgc = css(out.bg); bgBuf[idx] = bgc;
+      g.cell(x, y, out.glyph, fgc, bgc);
+    }
+    // dust motes in the sun shaft (US-019 look)
+    var sunC = P.rgb[T.sun];
+    for (i = 0; i < 16; i++) {
+      var s = (hash(i * 13) + t * (0.012 + 0.01 * hash(i * 5))) % 1;
+      var my = Math.round(WR + 3 - s * 17), mx = Math.round(28 + s * 22 + hash(i * 3) * 10 + Math.sin(t * 0.6 + i) * 1.5);
+      if (my < 0 || my >= VH || mx < 0 || mx >= VW) continue;
+      var id2 = mx + my * VW; if (isSky[id2]) continue;
+      var a = 0.55 + 0.45 * Math.sin(t * 2 + i * 1.7);
+      g.cell(mx, my, i % 3 ? '.' : "'", css([sunC[0] * a, sunC[1] * a, sunC[2] * a]), bgBuf[id2]);
+    }
+    // brazier: flame (emissive) + iron bowl + stone ring
+    var cx = Math.round(TORCH.x / 0.1) - 1, fy, fx;
+    for (fy = 0; fy < 4; fy++) for (fx = -3; fx <= 3; fx++) {
+      var prof = (1 - Math.abs(fx) / 3.4) * (0.25 + fy * 0.25);
+      var n = S.flicker ? vnoise(t * 10 + fx * 1.9 + fy * 3.1) : 0;
+      var v = prof + n * 0.28 * fl;
+      if (v < 0.12) continue;
+      var ck = v > 0.85 ? 'flameCore' : v > 0.62 ? 'flameMid' : v > 0.4 ? 'flameOuter' : 'flameTip';
+      var id3 = (cx + fx) + (12 + fy) * VW;
+      g.cell(cx + fx, 12 + fy, U.rampGlyph('fire', Math.min(1, v + 0.1)), P.colors[ck], bgBuf[id3]);
+    }
+    var ironF = css([P.rgb.ironLight[0], P.rgb.ironLight[1] * 0.8, P.rgb.ironLight[2] * 0.6]);
+    g.text(cx - 3, 16, '\\=#=#=/', ironF, css(P.rgb.emberDark.map(function (c) { return c * 0.5; })));
+    g.text(cx - 2, 17, '|-+-|', css(P.rgb.iron), bgBuf[(cx - 2) + 17 * VW]);
+    g.text(cx - 4, 18, '(#%#%#%#)', css(P.rgb.stoneMid.map(function (c, k) { return c * (k ? 0.85 : 1.05); })), bgBuf[(cx - 4) + 18 * VW]);
+    // lantern on its hook, brass glint every ~2.6 s
+    var lxc = 83, gl = ((t % 2.6) < 0.3);
+    g.cell(lxc, 8, 'j', css(P.rgb.iron), bgBuf[lxc + 8 * VW]);
+    g.cell(lxc - 1, 9, '[', P.colors.brass, bgBuf[lxc - 1 + 9 * VW]);
+    g.cell(lxc, 9, gl ? '*' : 'o', gl ? P.colors.white : P.colors.brassLight, bgBuf[lxc + 9 * VW]);
+    g.cell(lxc + 1, 9, ']', P.colors.brass, bgBuf[lxc + 1 + 9 * VW]);
+    g.text(lxc - 1, 10, "'-'", P.colors.brassDark, bgBuf[lxc - 1 + 10 * VW]);
+  }
+
+  // ---------- loop ----------
+  function redrawAll() {
+    var t = performance.now() / 1000;
+    drawVignette(t); drawMaterials(t); drawFog(); drawSky(); drawLang(t);
+  }
+  buildMaterials(); buildRamps(); syncUI(); redrawAll();
+  var last = 0;
+  function loop(now) {
+    requestAnimationFrame(loop);
+    if (!S.flicker || now - last < 50) return;   // ~20 fps is plenty for flicker
+    last = now;
+    var t = now / 1000;
+    drawVignette(t); drawMaterials(t); drawLang(t);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- 7. named colors ----------
+  var GROUPS = [
+    ['Light sources', ['ambient', 'sun', 'torch', 'lantern']],
+    ['Fog + sky (morning)', ['fog', 'fogFarNear', 'fogFar', 'skyTop', 'skyMid', 'skyHorizon', 'cloudLit']],
+    ['Stone', ['stoneLight', 'stoneMid', 'stoneDark', 'mortar', 'flagstone', 'rubble', 'scorch', 'moss', 'mossDark']],
+    ['Wood, metal', ['woodLight', 'wood', 'woodDark', 'ironLight', 'iron', 'ironDark', 'rust', 'brassLight', 'brass', 'brassDark']],
+    ['Ash, straw', ['ashLight', 'ash', 'ashDark', 'strawLight', 'straw', 'strawDark']],
+    ['Fire (emissive)', ['flameCore', 'flameMid', 'flameOuter', 'flameTip', 'ember', 'emberDark']],
+    ['Far overworld', ['grassLight', 'grass', 'grassDark', 'forest', 'forestDark', 'riverLight', 'river', 'rock', 'farTower']],
+    ['Semantic / UI', ['heroGreen', 'danger', 'magic', 'gold', 'uiText', 'uiHint', 'uiDim', 'dim', 'black', 'white']]
+  ];
+  var used = {}, host = $('colors');
+  GROUPS.forEach(function (gr) { gr[1].forEach(function (k) { used[k] = 1; }); });
+  var rest = Object.keys(P.colors).filter(function (k) { return !used[k]; });
+  GROUPS.push(['Time-of-day variants (M2+)', rest]);
+  GROUPS.forEach(function (gr) {
+    var h = document.createElement('h3'); h.textContent = gr[0]; host.appendChild(h);
+    var box = document.createElement('div'); box.className = 'swatches'; host.appendChild(box);
+    gr[1].forEach(function (k) {
+      var hex = P.colors[k], c = P.rgb[k], lum = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      var d = document.createElement('div'); d.className = 'sw';
+      d.innerHTML = '<div class="chip" style="background:' + hex + ';color:' + (lum > 110 ? '#000' : '#fff') + '">#%&amp;@</div>' +
+        '<div class="chip" style="background:#000;color:' + hex + ';height:22px">#%&amp;@ .:;</div>' +
+        '<div><span class="k">' + k + '</span> <span class="h">' + hex + '</span></div>';
+      box.appendChild(d);
+    });
+  });
+})();
+</script>
+</body>
+</html>
