@@ -12,6 +12,8 @@
 // resolves them through a small color cache into bytes. `setCellRGB` is an
 // allocation-free numeric fast path for hot callers (the raycaster, US-004).
 
+const MAX_COLOR_CACHE = 1024;
+
 export class CellBuffer {
   constructor(cols, rows) {
     this.cols = cols;
@@ -28,11 +30,16 @@ export class CellBuffer {
     }
     for (let i = 3; i < this.bg.length; i += 4) this.bg[i] = 255;
 
-    this._colorCache = new Map(); // "#rrggbb"/"#rgb" -> [r,g,b]
+    this._colorCache = new Map(); // "#rrggbb"/"#rgb" -> [r,g,b], bounded - see MAX_COLOR_CACHE
   }
 
   // Parses a "#rgb" / "#rrggbb" string to [r,g,b], caching the result since
-  // the same palette colors recur across many cells and frames.
+  // the same palette colors recur across many cells and frames. Bounded to
+  // MAX_COLOR_CACHE entries (evicting the oldest - Map preserves insertion
+  // order) so a caller that generates many one-off colors per frame (e.g. a
+  // continuously-animated hue, only ever expected from `setCell`/debug/UI
+  // text, never the raycaster's hot path which uses `setCellRGB` instead)
+  // cannot grow this unboundedly.
   _parseColor(str) {
     let rgb = this._colorCache.get(str);
     if (rgb) return rgb;
@@ -50,6 +57,9 @@ export class CellBuffer {
       }
     }
     rgb = [r, g, b];
+    if (this._colorCache.size >= MAX_COLOR_CACHE) {
+      this._colorCache.delete(this._colorCache.keys().next().value);
+    }
     this._colorCache.set(str, rgb);
     return rgb;
   }

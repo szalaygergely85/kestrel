@@ -5,6 +5,12 @@ import { DebugOverlay } from './ui/debugOverlay.js';
 import { drawDemoScene } from './render/demoScene.js';
 import { drawGlyphsScreen } from './render/glyphsScene.js';
 import { fillWorstCase } from './render/benchScene.js';
+import { castScene } from './render/raycaster.js';
+import { DepthBuffer } from './render/DepthBuffer.js';
+import { runShadeTest } from './render/shadeTest.js';
+import { loadLevel } from './world/Level.js';
+import testRoomDef from './world/levels/test_room.js';
+import { DebugCamera } from './engine/debugCamera.js';
 
 const params = new URLSearchParams(window.location.search);
 
@@ -21,18 +27,53 @@ window.__debug = { input, overlay, rt };
 
 if (params.get('bench') === '1') {
   runBenchmark(rt, overlay);
+} else if (params.get('shadetest') === '1') {
+  runShadeTest(window.ASSETS.palette);
+} else if (params.get('glyphs') === '1') {
+  runGame('glyphs');
+} else if (params.get('demo') === '1') {
+  runGame('demo');
 } else {
-  runGame(params.get('glyphs') === '1' ? 'glyphs' : 'demo');
+  runGame('raycast'); // default: US-004 sector raycaster on test_room
 }
 
 function runGame(mode) {
   if (params.get('debug') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`
 
   let simTime = 0;
+  let level = null;
+  let camera = null;
+  let depthBuffer = null;
+  let origin = { x: 0, y: 0, z: 0 };
+
+  if (mode === 'raycast') {
+    level = loadLevel(testRoomDef);
+    if (!level) {
+      console.error('[main] test_room failed to load (see errors above) - falling back to the demo scene.');
+      mode = 'demo';
+    } else {
+      camera = new DebugCamera(level, input);
+      depthBuffer = new DepthBuffer(rt.cols, rt.rows);
+
+      // D-008 item 3 test switch: `?origin=1480,1018` renders test_room as
+      // if it were a structure placed at that world offset. `DebugCamera`
+      // keeps moving/colliding in the level's own LOCAL coordinates
+      // (unaffected); only the camera position handed to castScene (below)
+      // is translated to world coordinates (+origin) - castScene converts
+      // it back internally, so the rendered image should be pixel-identical
+      // to origin (0,0,0) - see docs/backlog.md US-004.
+      const originParam = params.get('origin');
+      if (originParam) {
+        const [ox, oy] = originParam.split(',').map(Number);
+        if (Number.isFinite(ox) && Number.isFinite(oy)) origin = { x: ox, y: oy, z: 0 };
+      }
+    }
+  }
 
   function update(dt) {
     simTime += dt;
     if (input.pressed('F3')) overlay.toggle();
+    if (camera) camera.update(dt);
     input.endFrame();
   }
 
@@ -41,6 +82,16 @@ function runGame(mode) {
 
     if (mode === 'glyphs') {
       drawGlyphsScreen(rt);
+    } else if (mode === 'raycast') {
+      // test_room is the whole world for now (origin = {0,0,0} unless
+      // ?origin=... - see above) and there is no terrain pass yet, so
+      // `skyFallback` restores this story's original stand-alone look; a
+      // placed structure with a real terrain pass behind it would pass a
+      // non-zero `origin` and leave `skyFallback` off (D-008).
+      castScene(rt, level, {
+        x: camera.x + origin.x, y: camera.y + origin.y, z: camera.z + origin.z,
+        yawDeg: camera.yawDeg, pitchDeg: camera.pitchDeg,
+      }, window.ASSETS.palette, { origin, depthBuffer, skyFallback: true });
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t);
@@ -48,11 +99,18 @@ function runGame(mode) {
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
-    overlay.update(loop.fps, loop.frameMs, `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`);
+    const extra = mode === 'raycast'
+      ? `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}\n` +
+        `pos (${camera.x.toFixed(2)}, ${camera.y.toFixed(2)}) yaw ${camera.yawDeg.toFixed(0)} pitch ${camera.pitchDeg.toFixed(0)}`
+      : `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`;
+    overlay.update(loop.fps, loop.frameMs, extra);
   }
 
   const loop = new Loop(update, render);
   window.__debug.loop = loop;
+  window.__debug.level = level;
+  window.__debug.camera = camera;
+  window.__debug.depthBuffer = depthBuffer;
   loop.start();
 }
 
