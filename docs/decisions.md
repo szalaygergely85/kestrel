@@ -145,3 +145,112 @@ Direction to the programmer (US-001 rework #2):
 - Any future "post effects" (fade to black in US-017, glyph dimming, vignette) can be done in the shader for free, but are not required to be.
 - Fallback users on non-WebGL2 browsers get a softer image; that is accepted for M1.
 - Shader code lives in JS template strings (no build step, no external libraries).
+
+---
+
+## D-006 Engine / game split: `engine/` is a standalone, data-driven library; `game/` and `design/` are the product built on it
+
+**Date:** 2026-09-22
+**Status:** Accepted
+
+### Context
+User direction: the engine must become a reusable product with its own UI (editor, asset tools) later. Today everything is under `game/js/`, and the renderer/raycaster read `window.ASSETS.palette` globals set by classic scripts in `design/`.
+
+### Options
+1. Keep one tree, tag engine files by convention. Cheap now, rots immediately; no enforceable boundary.
+2. Separate top-level `engine/` package with an explicit public API, dependency injection for all data, game and content on top. One move story now, clean forever.
+3. Full monorepo/package tooling (npm workspaces, bundler). Violates "no build step".
+
+### Decision
+**Option 2.** Layout (ES modules everywhere; no build step; served statically):
+
+```
+engine/                      # reusable library. NEVER imports from game/, design/, tools/
+  index.js                   # the only public entry: re-exports the API below
+  core/     loop.js input.js events.js assets.js (AssetRegistry: palette, models, levels, terrain recipes)
+  render/   RenderTarget*.js CellBuffer.js glyphMetrics.js DepthBuffer.js sectorCaster.js terrainCaster.js sprites.js compositor.js textDraw.js
+  world/    Level.js (sector grid) Terrain.js (heightmap sampler + chunks) World.js (terrain + placed structures + entities) serialize.js
+  physics/  config.js capsule.js sphere.js terrainCollide.js integrate.js
+  entities/ Entity.js (plain-data entities, id/type/transform/components) Camera.js
+  ui/       debugOverlay.js overlay primitives (hints, prompts, fades) - engine-level, skinnable
+game/                        # ASCII Quest, the product
+  index.html world-test.html
+  js/main.js                 # bootstrap: builds AssetRegistry from design/, creates engine, runs the quest
+  js/quest/  (wake sequence, interactions: lantern/lever/beacon, end trigger, hints, story text)
+design/                      # content pack: palette, models, levels, terrain recipes, previews (unchanged owner: designer)
+tools/                       # future editor UI (level/terrain/prop editors). Not built in M1/M2; layout reserved.
+docs/
+```
+
+Rules:
+1. **Dependency direction:** `game/ -> engine/`, `game/ -> design/` (as data), `tools/ -> engine/`. `engine/` imports nothing outside itself. Enforced by `tools/check-deps.mjs` (a 30-line Node script that greps import paths; run manually / by the tester, not a build step).
+2. **No globals in the engine.** The engine never reads `window.ASSETS`. `game/js/main.js` reads the classic-script globals from `design/` and passes them into `new AssetRegistry({ palette, models, levels, terrain })`. Later, the editor loads the same shapes from JSON files. `design/*.js` stay classic scripts for now (previews depend on them); a JSON export is an M2+ tool.
+3. **Engine defines interfaces, content implements them.** The engine documents the shape of a palette (`ramps`, `materials`, `lights`, `util.shade/shadeSky`), a model (frames, anchor, emissive cells), a level (MAP_FORMAT v2), a terrain recipe (`heightAt`, type rules). `design/` supplies instances. Type shapes live as JSDoc typedefs in `engine/core/assets.js`.
+4. **Everything the editor will need to touch is plain data.** Levels, placed structures, props, lights, interactables, triggers, entity spawns and terrain overrides are declared in level/world data (JSON-serializable objects), not constructed in code. Game code registers *behaviours* by name (`registerInteraction('lantern.take', fn)`); data references them by name. `engine/world/serialize.js` round-trips world + entity state to JSON (needed for the editor and for save games).
+5. **Public API** (`engine/index.js`): `createEngine({canvas, assets, cols, rows})` returning `{ renderTarget, world, input, loop, camera, events }`; `World.load(worldDef)`, `World.placeStructure(levelDef, origin)`, `World.floorAt/sectorAt/heightAt`; render passes `castSectors`, `castTerrain`, `drawSprites`, `drawText`; physics `moveCapsule`, `moveSphere`, `integrate`; `Entity`, `Camera`; `serialize/deserialize`. Anything not exported from `engine/index.js` is private.
+6. **Timing:** the physical move is one story (US-023), executed **after** US-004 and US-008 reach `po-review` and **before** US-006 starts. New files created from now on go straight to the new paths.
+
+### Consequences
+- One-time import-path churn (US-023). Programmers must not start new engine work under `game/js/` after D-006.
+- The designer's reference shader (`palette.util.shade`) remains the shading oracle; the engine consumes it through the injected palette.
+- The editor (tools/) becomes possible without engine changes: it is a second client of `engine/index.js`.
+
+---
+
+## D-007 Open world architecture: hybrid renderer (sector caster for structures + heightmap terrain caster), one world frame, deterministic chunked terrain
+
+**Date:** 2026-09-22
+**Status:** Accepted (extends D-002; D-002's "separate far pass" becomes the coarse LOD of a first-class terrain renderer)
+
+### Context
+The game is open-world. D-002 chose a Doom-lite sector raycaster with a cheap far heightmap view. US-004 (sector caster) and US-008 (capsule physics vs sectors) are in flight; the designer's US-016 terrain recipe (seeded analytic noise, 256x256 at 8 m) exists.
+
+### Options
+- **(i) Hybrid, both first-class:** sector caster renders "structures" (tower, houses, dungeons: sector grids placed in the world); a per-column heightmap caster renders terrain; the two composite through a shared per-cell depth buffer. Physics queries one `World` that answers from the structure if inside a footprint, else from terrain.
+- **(ii) Unified ray-marched terrain with sector interiors embedded.** One algorithm, but ray-marching a heightfield per cell in JS at 160x60 with interiors is slower and would discard US-004.
+- **(iii) Full software rasterizer with meshes.** Most general, most code, no reuse of anything built.
+
+### Decision
+**(i) Hybrid.** Both passes are per-column algorithms writing (row, depth) into a shared `DepthBuffer` (Float32Array cols*rows) and a per-column open vertical span, so compositing is natural and cheap.
+
+World model:
+- **One world frame** in meters: x east, y south, z up (same as MAP_FORMAT v2 and the designer's recipe). The camera and all entities live in world coordinates.
+- **Terrain** = deterministic recipe (seed + analytic noise, the US-016 recipe generalised) providing `heightAt(x,y)` and `typeAt(x,y)`, plus optional authored overrides (per-chunk JSON deltas: height stamps, type paints) for the editor. Evaluated at **2 m cells near** (within ~300 m, with distance-scaled step LOD) and **8 m cells far** (300-1500 m, the existing US-016 grid). Same function, two sample densities: no seam.
+- **Chunks** 64x64 near-cells (128 m). Keep 3x3 resident around the player; generation is deterministic and a few ms, so "streaming" is regeneration, no IO. Far grid is baked once at load (65k cells).
+- **Structures** = existing sector levels (1 m cells) placed with `World.placeStructure(levelDef, {x, y, z, yawSteps})`. Inside a structure footprint the structure owns floor/ceiling/collision and terrain is not drawn; the structure's outer ring cells define the ground blend (the tower's 2.4 m grass ring already matches the recipe's hilltop). The Hollow Watchtower is placed at recipe coordinates (1480, 1018).
+- **Physics on terrain:** `World.floorAt(x,y)` returns bilinear terrain height outside structures; walkable slope limit 50 degrees (steeper = slide), same capsule and sphere code (`terrainCollide.js` adds the slope test). Boulder and player share it.
+- **Lighting on terrain:** ambient + sun N dot L from height-grid normals; point lights apply within radius; no terrain shadow rays in M1/M2. Sector-caster sun shadow test is unchanged.
+- **Budget (8 ms JS):** sectors 2-3 ms, terrain 2-3 ms, sprites 1 ms, UI < 0.5 ms. Present is 0.1 ms (D-005). Measured in US-018.
+- **ASCII grid constraint:** 160 rays means a 2 m cell subtends less than a column beyond ~150 m; the step-LOD handles it, and the designer's glyph bands (near/mid/far) already encode that.
+
+### Consequences
+- US-016 is implemented as `engine/render/terrainCaster.js` at far LOD writing through the `DepthBuffer`, not as a one-off background pass. Near LOD + walking on terrain is the first M2 story.
+- US-004 must write depths and treat out-of-level rays as open (see D-008).
+- Level.js stays as the structure format; `World.js` is new (US-024).
+- Interiors with multiple structures, caves and dungeons are just more placed structures; no renderer change.
+
+---
+
+## D-008 In-flight work and Milestone 1 scope after D-006/D-007
+
+**Date:** 2026-09-22
+**Status:** Accepted
+
+### Decision
+M1 content is **unchanged** (wake in the tower, climb, breach, see the world, step out, optional beacon). M1 is now built on the open-world-capable engine: the tower is a placed structure in a world, the far view is the terrain caster at far LOD. M1 exit criteria unchanged (all P0 done). New engine plumbing is P0 because everything after depends on it.
+
+In-flight work:
+- **US-004 (sector caster) - continue as-is, plus three small additions** to its acceptance criteria: (1) write per-cell depth into a shared `DepthBuffer` (Float32Array cols*rows, meters) alongside `setCellRGB`; (2) when a ray leaves the level grid, do **not** paint void/sky: leave the remaining open span for the next pass (expose per-column `[topRow, bottomRow, depth]` of the unresolved span); (3) accept an optional level origin offset `{x,y,z}` in the camera/level call so the same code works when the level is placed in the world. No move of files yet.
+- **US-008 (physics) - continue as-is**, with one change: all "is this cell passable / what is the floor here" answers must come from the passed-in `level`/`world` object (`sectorAt`, `floorAt`), never from a hardcoded "outside the grid = wall" branch. Make `isSectorPassable(null)` a query on the world (`world.outsideSector()` or equivalent) so terrain can later stand in for out-of-grid cells. No move of files yet.
+- **US-016 (designer) - delivered 2026-09-22 and accepted by the manager as the seed of the world terrain system; release it to the PO as-is.** It already matches D-007: same world axes, tower at (1480, 1018), hilltop 2.4 m matching the level's grass ring, seeded analytic recipe, per-column projection sharing the sector horizon, drawn only where the sector pass leaves the column open, 4 ms budget. The recipe is promoted to the **world terrain recipe**. Follow-up **US-016b (design, P0, small)** rather than rework: (a) confirm `heightAt(x,y)`/`typeAt(x,y)` are continuous analytic functions usable at any sample spacing (2 m near, 8 m far), (b) near-LOD look spec for 2 m cells within 300 m (the existing near glyph bands are the start), (c) flat 2.4 m crown radius covering tower footprint + outcrop, and the **handover rule**: within 6 m of a structure's outer ring the terrain height blends linearly to the ring height, so the current 1.8 m mismatch becomes exactly 0 where the player can stand (needed by US-024/US-025, cosmetic for M1's far view), (d) one-paragraph sketch of per-chunk overrides (height stamp, type paint) for the future editor. The programmer side of US-016 (terrain caster far LOD through `DepthBuffer`) is unchanged.
+- **US-010/011/012/014/015/017 (props, interactions, hints, end):** add one criterion each: props, lights, interactables, triggers and hint zones are declared in the tower level data (`def.props`, `def.lights`, `def.interactables`, `def.triggers`), behaviours referenced by name and registered from `game/js/quest/`.
+
+New P0 stories for the PO (in build order, all M1):
+- **US-023 Engine/game split** (after US-004 and US-008 reach po-review, before US-006): move per D-006 layout, `engine/index.js` public API, `AssetRegistry` injection replacing `window.ASSETS` reads inside the engine, `tools/check-deps.mjs`, both HTML pages still work, `?bench=1`/`?glyphs=1`/`?shadetest=1` still work.
+- **US-024 World model**: `World.js` (terrain sampler from recipe, `placeStructure`, `floorAt/sectorAt/heightAt` in world coords, chunk cache 3x3), tower placed at recipe coordinates, player and camera in world coordinates, `serialize.js` round-trip of world + entity state.
+- **US-016 (rewrite as engine story)**: terrain caster far LOD through `DepthBuffer` + compositor with the sector caster; acceptance from the current US-016 stays.
+- **US-025 (M2, first story)**: terrain caster near LOD, walking on terrain with slope limit, chunk regeneration on movement, step out of the breach without a fade.
+- **US-026 (M2)**: JSON export of `design/` content packs + world file loading from JSON (editor prerequisite).
+
+### Consequences
+- Roadmap M1 gains US-023/US-024 and reframes US-016; M2 becomes "step out onto the terrain". Budget risk: two extra P0 stories in M1, accepted because they are prerequisites, not features.
