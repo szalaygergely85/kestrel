@@ -10,7 +10,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 1 | US-001 | Char-grid canvas + game loop | P0 | done (tester PASS 2026-09-22; real-Chrome bench numbers still pending from user, non-blocking) | Programmer moves on |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
-| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | po-review | Programmer #1 NOW |
+| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | testing (PO OK 2026-09-22; 2 ASK ARCHITECT items: hot-loop allocations, frame budget) | **Tester NOW**; Architect review before US-006/US-016 |
 | 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev (PO REJECT #1: wall-slide float stick + 4-side slide tests) | Programmer #2 NOW (small rework) |
 | 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
 | 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
@@ -219,7 +219,7 @@ For the tester:
 
 **Tester result (2026-09-22): PASS.** All 7 rework items and all original criteria re-verified; all 360 `test_room` cells cross-checked against the legend (hover-equivalent), all 9 single-fault negative cases correctly named their row/col or legend char and returned `null`, out-of-bounds queries return `null`, `design/preview/tower.html` shows zero console errors and 18/18 internal checks pass. No bugs found. Full report: `docs/test-reports/US-003.md`. Note: the shared browser pane was at its tab cap this session, so `game/world-test.html` was verified via the identical `Level.js`/`sectorAt()` calls in Node rather than live DOM hovering - see the report's environment note.
 
-### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: po-review]
+### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: testing]
 As a player, I want to see the room in first-person 3D made of characters, so that I feel present in the space.
 Acceptance criteria:
 - [x] One ray per screen column (160); walls drawn with correct perspective, including partial walls (step fronts, ledge fronts, pillars) where floor/ceiling heights change between sectors.
@@ -245,6 +245,24 @@ Acceptance criteria:
 - [x] (D-008 #3) **Level origin offset:** `castScene(rt, level, camera, palette, { origin: {x,y,z} })` - camera position is translated to the level's local frame once at the top of the function; all `sectorAt`/`floorAt` queries and projection math use local coordinates, so distance (and the DepthBuffer) is unaffected by translation. Verified two ways: (a) a `?origin=1480,1018` query-string switch on the game page itself (shifts the camera by the same offset; the debug camera keeps moving/colliding in local coordinates, only the world-frame handoff to `castScene` changes) - confirmed byte-identical `CellBuffer.glyphIdx` output vs `?origin` absent; (b) an equivalent direct console check during development.
 Design needed: no (consumes US-002).
 Notes / dependencies: US-001 (rework #2, WebGL2 back-end + `setCellRGB`), US-003 (format v2).
+
+**PO OK (2026-09-22) – US-004 ready for testing** (commit 35b575c). I reviewed against the criteria and the programmer's verification notes, spot-reading `raycaster.js` for structure. Deep code review is for the architect (see below).
+- All criteria are met or verified by the programmer:
+  - the DDA with perpendicular distance (no fisheye), 75 degree FOV, y-shear clamped at ±35;
+  - portal-style narrowing open spans (see over low walls and steps), solid-cell columns with top faces, and `topH`/`upperMat` upper faces;
+  - step fronts use the higher sector's `wallMat`, and `tintBand` z is taken from the standing floor;
+  - `shadeSky` for sky, `?shadetest=1` all pass, `setCellRGB` only, the color cache bounded at 1024 FIFO, and the demo moved to `?demo=1`;
+  - DepthBuffer, per-column open span, and origin offset with `?origin=X,Y`.
+  - The overdraw bug the programmer found and fixed (boundary rows shaded 2-4x) was a good catch.
+- **Waived: the per-cell emissive flag.** The architecture turned out simpler than I assumed: every pass decides emissive at shading time (sky via `shadeSky` here, flames via `shadeSprite(..., emissive=true)` in US-011). No pass re-lights the framebuffer afterwards, so a stored flag has no reader. The criterion is covered by US-011's emissive criterion.
+- **Accepted deviation, provisional:** `openSpans` is an array of up to 160 small objects per frame instead of typed arrays. It must become typed arrays (e.g. `Int16Array` top/bottom plus `Float32Array` depth, reused) no later than US-016, which is its consumer. That criterion is now on US-016.
+- **Tester notes:**
+  - Walk `test_room` with `?debug=1`: stair fronts, the 1.0 m platform top from the ground, pillar squareness, the low wall with sky beyond, moss only below about 1-2 m on the `m` stub, and sky through the `^` region.
+  - Pitch to ±35 with no tearing; `?origin=1480,1018` gives an identical image; run `?shadetest=1`, `?bench=1`, `?glyphs=1`, `?force2d=1`; no console errors.
+  - The lintel `D` is hard to see with ambient-only light. Verify it if possible (look for the 0.8 m band above the opening, which uses `upperMat`), otherwise mark it "deferred to US-006 test". That alone is not a FAIL.
+- **ASK ARCHITECT (both before US-006 / US-016 start):**
+  1. **Hot-loop allocations.** `ddaStep()` returns a `{ side, perpDist }` object per DDA step, and exits and spans are objects. Per frame that is likely thousands of short-lived objects. The criterion says no per-cell allocation; this is per step, not per cell, but US-018 requires no GC stutter. Does V8 escape analysis reliably remove these, or should they become out-params or reused scratch now, while the code is small?
+  2. **Frame budget.** `castScene` is 6.5-7.3 ms in the sandbox with **ambient-only** light. D-007 budgets sectors at 2-3 ms, and US-006/007 (point lights, sun shadow rays), US-016 (terrain 2-3 ms) and US-011 (sprites 1 ms) still have to fit in 8 ms total. Is the sandbox inflating pure-JS timing (as it did for Canvas2D in US-001), or is there real headroom to find (e.g. per-row floor casting vs per-cell `util.shade` calls, LUT shading instead of the reference shader)? Please give a profiling verdict and, if needed, an optimisation story before lighting lands. If US-006/007 would push us over 8 ms, that is a scope/architecture question for the manager.
 
 **Programmer notes (2026-09-22):**
 - Files: `game/js/render/raycaster.js` (new, the caster itself), `game/js/render/DepthBuffer.js` (new), `game/js/render/shadeTest.js` (new, `?shadetest=1`), `game/js/engine/debugCamera.js` (new, minimal noclip-with-collision test camera per the coordinator's "US-005 not needed yet, minimal debug camera is fine"), `game/js/render/CellBuffer.js` (bounded color cache, 1024 entries, FIFO eviction), `game/js/main.js` (wires `raycast` as the new default mode; `?demo=1`/`?glyphs=1`/`?bench=1`/`?shadetest=1`/`?force2d=1`/`?origin=` all still work; `?debug=1` overlay now also shows camera pos/yaw/pitch). Did not touch `game/js/world/**` (Level.js, test_room.js) - read-only consumer of its query API as instructed.
@@ -537,7 +555,7 @@ Acceptance criteria – Designer:
 
 Acceptance criteria – Programmer (rewritten per D-007/D-008: engine terrain caster, far LOD):
 - [ ] `engine/render/terrainCaster.js` (exported via `engine/index.js` as `castTerrain`) renders the world terrain from the injected terrain recipe (`AssetRegistry`, US-024) at **far LOD**: 8 m grid, 300-1500 m. For M1 it may also cover 0-300 m at 8 m spacing (near LOD is US-026). The far grid is baked once at load: height, type and lighting `b` per cell.
-- [ ] Per column, it draws only inside the **open span** left by the sector caster (US-004 item: `[topRow, bottomRow, depth]`), and writes depth into the shared `DepthBuffer`. A small `engine/render/compositor.js` sequences the passes: sectors, then terrain, then sky fill for the rest of the span, then sprites (US-011), then UI. It never draws terrain over structure cells.
+- [ ] Per column, it draws only inside the **open span** left by the sector caster (US-004 item: `[topRow, bottomRow, depth]`), and writes depth into the shared `DepthBuffer`. (From the US-004 review) The open spans become reused typed arrays (e.g. `Int16Array` top/bottom plus `Float32Array` depth, sized to `cols`) instead of per-frame objects, with zero per-frame allocation between the two passes. A small `engine/render/compositor.js` sequences the passes: sectors, then terrain, then sky fill for the rest of the span, then sprites (US-011), then UI. It never draws terrain over structure cells.
 - [ ] Projection uses the same `horizonRow` / `focalRows` / y-shear as the sector caster. The horizon lines up at every pitch in the ±35 degree clamp (no seam or jump), and the terrain at the tower's outer ring meets the ring cells with no visible step once US-016b's blend lands.
 - [ ] Look and fog exactly per `overworld_far.md` sections 3 and 4: type glyph bands by distance, sun N.L lighting from the level's sun, fog to `fogFar` with glyphs thinning to haze, and the river glint at 1.5 Hz.
 - [ ] Far tower drawn per section 5 as a billboard at (713.8, 1232.1), depth-tested against the terrain, never smaller than the 3x4 minimum sprite, dark and unlit (fog cap 0.40), and unchanged by US-022.
