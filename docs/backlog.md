@@ -9,7 +9,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 |---|---|---|---|---|---|
 | 1 | US-001 | Char-grid canvas + game loop | P0 | done (tester PASS 2026-09-22; real-Chrome bench numbers still pending from user, non-blocking) | Programmer moves on |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
-| 3 | US-003 | Sector map format + test room loader | P0 | testing (PO OK 2026-09-22, format v2) | **Tester NOW** |
+| 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer, after US-001 rework #2 + US-003 v2 (uses `setCellRGB`, D-005) |
 | 5 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer |
 | 6 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer |
@@ -150,7 +150,7 @@ Designer note (2026-09-22): **Preview ready for PO review.** Open `design/previe
 - Open points resolved: (1) the US-015 hint text changed to ASCII `WASD move - Mouse look`; (2) emissive cells, hit height above the sector floor (tintBand) and texture fade are folded into US-004 / US-011 as acceptance criteria.
 - Small README fix for the designer (non-blocking): README section 1.1 says "US-001 has to open straight from disk". Per the US-001 review the game is served over http (ES modules); keep `palette.js` as a plain script (correct for both) and just correct that sentence.
 
-### US-003 Sector map format + test room loader  [Priority: P0] [Status: testing]
+### US-003 Sector map format + test room loader  [Priority: P0] [Status: done]
 As a player, I want the world to have real floors at different heights, so that stairs, ledges and a roofless tower are possible.
 Acceptance criteria:
 - [x] A level is a JS data file (`game/js/world/levels/<name>.js`) with a 2D grid of cells; each cell references a sector with: `floorH`, `ceilH` (number or `"sky"`), `wallMat`, `floorMat`, `ceilMat`, `solid` flag.
@@ -207,6 +207,8 @@ For the tester:
 - In `game/world-test.html`, hover-inspect every legend char.
 - Break `test_room` on purpose, one error each: a non-rectangular row, an unknown char, no start, two starts, `ceilMat 'sky'` with a numeric `ceilH`, `floorH: 'x'`, and a layer with the wrong size. Confirm each is reported with its row/col or legend char, and that `loadLevel` returns null.
 - Confirm that `sectorAt`/`floorAt`/`ceilAt` return null outside the grid.
+
+**Tester result (2026-09-22): PASS.** All 7 rework items and all original criteria re-verified; all 360 `test_room` cells cross-checked against the legend (hover-equivalent), all 9 single-fault negative cases correctly named their row/col or legend char and returned `null`, out-of-bounds queries return `null`, `design/preview/tower.html` shows zero console errors and 18/18 internal checks pass. No bugs found. Full report: `docs/test-reports/US-003.md`. Note: the shared browser pane was at its tab cap this session, so `game/world-test.html` was verified via the identical `Level.js`/`sectorAt()` calls in Node rather than live DOM hovering - see the report's environment note.
 
 ### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: todo]
 As a player, I want to see the room in first-person 3D made of characters, so that I feel present in the space.
