@@ -10,29 +10,30 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 1 | US-001 | Char-grid canvas + game loop | P0 | done (tester PASS 2026-09-22; real-Chrome bench numbers still pending from user, non-blocking) | Programmer moves on |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
-| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; 2 ASK ARCHITECT items still open: hot-loop allocations, frame budget) | Architect review before US-006/US-016 |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | po-review (rework #1 done: skin + fixed-axis skip, 65/65 tests) | Programmer #2 NOW (small rework) |
-| 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
-| 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
-| 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
-| 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | po-review | Programmer (can run alongside; new files go to `engine/`) |
-| 10 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 |
-| 11 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
-| 12 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
-| 13 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
-| 14 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-006 (`engine/render/sprites.js`) |
-| 15 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
-| 16 | US-013 | Rolling boulder | P0 | todo | Programmer |
-| 17 | US-014 | Lever opens the grate | P0 | todo | Programmer |
-| 18 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012 |
-| 19 | US-016 | Far overworld view = engine terrain caster, far LOD | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); Programmer after US-025 + US-007 |
-| 20 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
-| 21 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (final M1 check) |
-| 22 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
-| 23 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
-| 24 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
-| 25 | US-021 | Readable wall scrawl | P2 | design | Designer |
-| 26 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
+| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; both ASK ARCHITECT items answered 2026-09-22 -> follow-up US-004b) | - |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev (PO REJECT #2 2026-09-22: regression tests do not exercise the bug; outer-corner push-back) | Programmer #2 NOW (small rework, tests + one clamp) |
+| 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | todo | Programmer NOW (free track); must be `done` before US-006 and US-016. Tech notes = architect sketch under US-004 + architecture.md 12 |
+| 7 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006. Phase A must not move `raycaster.js` while US-004b is in dev (see US-004b notes) |
+| 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
+| 9 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
+| 10 | US-005 | First-person camera controls (keyboard + mouse) | P0 | dev (PO REJECT #1 2026-09-22: mouse delta accumulated while unlocked makes the view jump on resume) | Programmer #1 (tiny rework) |
+| 11 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 and US-004b `done` |
+| 12 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
+| 13 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
+| 14 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
+| 15 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-006 (`engine/render/sprites.js`) |
+| 16 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
+| 17 | US-013 | Rolling boulder | P0 | todo | Programmer |
+| 18 | US-014 | Lever opens the grate | P0 | todo | Programmer |
+| 19 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012 |
+| 20 | US-016 | Far overworld view = engine terrain caster, far LOD | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); Programmer after US-025 + US-007 + US-004b `done` |
+| 21 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
+| 22 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (final M1 check) |
+| 23 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
+| 24 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
+| 25 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
+| 26 | US-021 | Readable wall scrawl | P2 | design | Designer |
+| 27 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
 
 M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.mjs` reports no engine imports from `game/` or `design/`. US-022 (P1) and P2 stories are not exit criteria.
 
@@ -281,12 +282,53 @@ Notes / dependencies: US-001 (rework #2, WebGL2 back-end + `setCellRGB`), US-003
    - **Lighting (US-006/007) must not add per-cell shadow rays.** Per light: a 2D visibility grid over the structure recomputed only when the light moves (the lantern moves, but only within 5 m = 11x11 cells); sun: a per-cell sunlit mask computed once per level (sun fixed in M1) plus the hit-height test. Then lighting is ~N x 20 flops per cell, no grid walks.
    - **Verdict:** with overdraw at 1.0x and the fast shader, sectors ambient-only is ~2 ms and with 4 lights + sun ~3-3.5 ms. Total projected: sim 1 + sectors 3.5 + terrain 3 + sprites 1 + UI 0.5 = ~9 ms worst pose, ~7 ms typical - inside 8 ms only if every sub-budget holds. **Not an ESCALATE yet**; escalate to the manager if, after US-004b, `tools/bench-cast.mjs` shows sectors > 3.5 ms ambient-only, or US-006/007 add more than 1.5 ms. Scope levers if that happens, in order: 140x52 grid, terrain far LOD step growth, fewer point lights at the summit.
    - **US-004b "Sector caster: overdraw to 1.0x, allocation-free ray loop, fast shader, headless bench" (P0, before US-006/US-016; PO to write).** Acceptance sketch: (1) `tools/bench-cast.mjs` (Node, no deps) reports avg/p50/p95/max ms, cells written per frame and, with `--gc`, GC events for N frames at 4 fixed poses on `test_room`; (2) cells written per frame == cols*rows on all poses; (3) zero allocations per frame in `castScene` after warm-up (no scavenge in 600 frames under `--trace-gc`); (4) `OpenSpans` typed struct replaces the object array; (5) fast shading path with `?shadetest=1` extended to all materials x 8 distances x 4 heights, all within tolerance; (6) headless p50 <= 2.5 ms ambient-only on `test_room`, image checksum (`CellBuffer.glyphIdx`) identical to today's output before step 5 and within tolerance after it. Can be done under `game/js/render/` if it lands before US-024, or in `engine/render/sectorCaster.js` after; either way it is a pure refactor of one file plus the bench script.
+   - **PO (2026-09-22): written as US-004b below** (after US-004), as a pure caster refactor exactly per this sketch. Not included, per architecture.md 12.3: dirty-cell present, distance LOD, idle re-render skip. The conditional Canvas2D dirty-cell story (12.1) is not opened: the fallback is not a performance target (D-005 item 6).
 
-### US-005 First-person camera controls  [Priority: P0] [Status: po-review]
+### US-004b Sector caster: overdraw to 1.0x, allocation-free ray loop, fast shader, headless bench  [Priority: P0] [Status: todo]
+As a player, I want the tower to render in a fraction of the frame budget, so that torchlight, sunlight, the far view and props can all be added later and the game still runs at a smooth 60 fps.
+**Engine story.** This is a pure refactor of the sector caster. It adds no new visuals, no lighting, no dirty-cell present and no LOD. Tech notes: the architect's answers under US-004 ("Architect answers 2026-09-22", including the 6-point sketch) and `docs/architecture.md` sections 8, 9 and 12 (12.1-12.3). No separate architect tech-note pass is needed. Architect code review (`ARCH OK`) is still required before PO review.
+Acceptance criteria:
+- [ ] **Baseline first.** Before changing the caster, the programmer records the `CellBuffer.glyphIdx` checksum (e.g. FNV-1a over the bytes, plus the same over `fg` and `bg`) and the timing at the 4 bench poses (next criterion) from the current code. These numbers go into the programmer notes of this story, and the bench script keeps them as the reference values.
+- [ ] **`tools/bench-cast.mjs`** (Node, no dependencies, no build step): `node tools/bench-cast.mjs [--frames N] [--gc]`. Default N = 600, after a 120-frame warm-up that is not counted.
+  - It runs `castScene` on `test_room` at 160x60 at **4 fixed poses** that are documented in the script. At minimum: (1) the start pose; (2) facing the stair and the 1.0 m platform; (3) facing the sky region over the low wall, pitch +35; (4) a long diagonal view across the room, pitch -35.
+  - Per pose, it prints avg / p50 / p95 / max ms, cells written per frame, and the checksum.
+  - With `--gc`, it also reports GC events during the measured frames (via `--trace-gc`, `PerformanceObserver('gc')` or equivalent; document how to run it).
+  - It exits non-zero if any pose fails the write-count or checksum criteria below, so the tester and the architect can rerun it.
+- [ ] **Overdraw 1.0x:** cells written per frame == cols x rows (9,600) on all 4 poses, and every cell is written exactly once, with `skyFallback: true` (today's `test_room` mode). With `skyFallback: false`: cells written + open-span cells == 9,600, with no cell written twice. The two sources in architecture.md 12 item 1 are fixed:
+  - the solid-wall branch is capped at the near floor row;
+  - sky is never painted mid-column. It is painted once, at the end, into the remaining open rows, using a floor high-water mark like `ceilingFilledTo`.
+- [ ] **Zero allocations per frame** in `castScene` after warm-up: no scavenge during 600 measured frames under `--gc`. The code follows architecture.md section 9:
+  - no per-DDA-step object returns (`ddaStep` writes into a reused ray state);
+  - no closures created per column;
+  - no destructuring of returned objects;
+  - `castPlane` / `castFloorCeiling` use scratch state or number returns.
+- [ ] **`OpenSpans` typed struct** replaces the `openSpans` object array, with the API in architecture.md section 8: `Int16Array top/bottom`, `Float32Array depth`, `reset / isOpen / narrowTop / narrowBottom / openCount`, allocated once and reused. The file is `game/js/render/OpenSpans.js` if this lands before US-024, or `engine/render/OpenSpans.js` after. `main.js` and any other consumer are updated. `skyFallback: true` looks the same as before.
+- [ ] **Fast shading path:**
+  - Materials are resolved to records once per legend entry (at `loadLevel` or first bind), not by `materials[key]` per cell. Texels are `Uint8Array` grids. Ramp, gamma, fog and texture fade use 256-entry (or 0.25 m-step) LUTs, and the output is integer bytes straight into `setCellRGB`.
+  - There is no `Math.pow`, `charAt` or string work per cell (architecture.md 9, rules 5 and 6).
+  - The reference `palette.util.shade` / `shadeSky` stay untouched, as the reference.
+  - `?shadetest=1` is extended to **every material in `palette.materials` x 8 distances (spanning 0.5 m to past fog-full 60 m) x 4 hit heights (including inside and above a `tintBand`)**, plus sky samples (at least 4 azimuth/elevation pairs). It keeps the original 5 reference cells. Every sample must have an equal glyph and fg/bg within ±4 per channel. It prints a pass/fail count and the worst deviation.
+- [ ] **Performance:** headless p50 <= 2.5 ms (ambient-only, `test_room`, 160x60) on every pose in `tools/bench-cast.mjs`. Record all 4 poses' avg / p50 / p95 / max, before and after, in the programmer notes.
+- [ ] **Image identity:**
+  - Before the fast shader is switched on (overdraw, allocation and `OpenSpans` work only), the checksum at all 4 poses is **byte-identical** to the baseline.
+  - After the fast shader, the glyph checksum is identical to the baseline, and fg/bg are within ±4 per channel of the baseline on every cell. The bench checks this per cell, not only via the checksum.
+  - This can be done as two commits, or with a switch that selects the reference shader in the bench.
+- [ ] **Nothing regresses:** `game/index.html` default, `?debug=1`, `?bench=1`, `?glyphs=1`, `?shadetest=1`, `?force2d=1`, `?demo=1` and `?origin=1480,1018` all work, the last one with a byte-identical `glyphIdx` against no origin. No console errors. `node game/js/physics/physics.test.js` still passes. `node tools/check-deps.mjs` is OK if it exists by then.
+- [ ] **Scope:** changes are limited to the caster file (`raycaster.js`, or `sectorCaster.js` after US-024), `OpenSpans.js`, `shadeTest.js`, the consumer lines in `main.js`, the material/LUT binding it needs, and `tools/bench-cast.mjs`. Public signatures are unchanged except that `openSpans` is now the typed struct.
+Design needed: no.
+Notes / dependencies:
+- Depends on US-004 (done). It must be `done` before **US-006** and **US-016** start. It is independent of US-005, US-008 and US-009.
+- **Collision with US-024:** if US-024 Phase A starts while this story is in `dev`, Phase A must **not** move `raycaster.js` (or create `OpenSpans.js`) until this story is merged. Alternatively, this story is done directly in the moved `engine/render/sectorCaster.js`. The main session decides which and tells both programmers.
+- The fog early-out (fog factor >= 0.98 means write the fog colour and the darkest glyph, skipping texel/ramp work) is an allowed implementation detail of the fast shader (architecture.md 12.2). It has no separate criterion: the `?shadetest=1` tolerance covers it.
+- **Out of scope** (architecture.md 12.3): dirty-cell/changed-cells present, distance/shading/caster LOD, idle re-render skip (M5 editor), lighting (US-006/007). The conditional Canvas2D dirty-cell story from 12.1 is not opened (the fallback is not a performance target, D-005 item 6).
+- **Escalation trigger (manager decision):** if, after this story, `tools/bench-cast.mjs` shows sectors **> 3.5 ms ambient-only** (avg or p50 on any pose), the PO sends "ESCALATE TO MANAGER" with the numbers. Scope levers per the architect, in order: 140x52 grid, terrain far-LOD step growth, fewer point lights at the summit. The same applies later if US-006/007 add more than 1.5 ms.
+- For the tester: run `node tools/bench-cast.mjs` and `node tools/bench-cast.mjs --gc` (exit 0, numbers match the notes within noise). Run `?shadetest=1` (all pass). Walk `test_room` and compare it by eye with the US-004 look at the same poses; there must be no visible change.
+
+### US-005 First-person camera controls  [Priority: P0] [Status: dev]
 As a player, I want to look around with the mouse and move with WASD, so that exploring feels natural.
 Acceptance criteria:
 - [x] Click on the canvas requests pointer lock; Esc releases it and shows a small "Click to resume" overlay.
-- [x] Mouse yaw/pitch at 0.15 deg per pixel; pitch clamped ±35 degrees.
+- [ ] Mouse yaw/pitch at 0.15 deg per pixel; pitch clamped ±35 degrees. (Rate and clamp are correct; mouse movement made while unlocked must not be applied on resume, see PO REJECT #1.)
 - [x] Arrow keys: yaw 120 deg/s, pitch 60 deg/s (fallback when pointer lock is unavailable).
 - [x] WASD moves relative to yaw; diagonal movement is normalized (not faster).
 - [x] Input module exposes `isDown(key)`, `pressed(key)` (edge-triggered once per sim step) and mouse delta; keys are released when the window loses focus.
@@ -302,6 +344,24 @@ Design needed: no.
 Notes / dependencies: US-004.
 
 - **User check (2026-09-22, real Chrome tab):** pointer lock + Esc release confirmed working by the user. Covers the item the sandbox could not verify.
+
+**PO REJECT #1 (2026-09-22) – one blocking item, tiny.** I reviewed `playerLook.js`, `input.js`, `pauseOverlay.js` and the `update`/`render` wiring in `main.js`.
+- What passes:
+  - pointer lock on click, with try/catch and `.catch()`; lock state comes from `pointerlockchange`, and Esc shows the plate-styled `Click to resume` from `uiStyle.pause` (the user confirmed this in real Chrome);
+  - 0.15 deg/px mouse look with the correct signs (mouse right = yaw clockwise, mouse up = pitch up), and the ±35 clamp;
+  - arrow keys at 120/60 deg/s when not locked;
+  - WASD relative to yaw, with diagonals normalized in `Player`;
+  - `pressed()` is cleared in `update()`, so it is edge-triggered once per sim step;
+  - keys are released on blur.
+1. **The view jumps when mouse look resumes. Blocking.**
+   - `Input._onMouseMove` accumulates `movementX/Y` all the time, but `PlayerLook.update` only calls `consumeMouseDelta()` while locked.
+   - So every mouse movement made while unlocked (before the first click, or after Esc while moving the cursor back to the canvas) is applied in one go on the first locked step. For example, 800 px of cursor travel gives a 120-degree yaw snap on resume. The comment "accumulation while unlocked is harmless - just never consumed" is wrong: it is consumed on lock.
+   - **Fix:** discard the delta while unlocked (call `consumeMouseDelta()` in the unlocked branch too), and also reset it on the `pointerlockchange` to locked.
+   - **Test:** a synthetic check (the same style as your existing `PlayerLook.update` checks): send 500 px of `mousemove` while unlocked, set locked, then call `update(dt)` once. Yaw and pitch must be unchanged. Then send 100 px while locked, and yaw must change by exactly 15 deg.
+2. Non-blocking, optional in the same session: also clear `_pressedThisFrame` on blur.
+3. Non-blocking, no action now: when pointer lock is unsupported or denied, `Click to resume` stays up permanently while the arrow keys work. That is acceptable for M1 (desktop Chrome target). US-015's `Click to capture mouse` hint replaces the first-click case later.
+
+For the tester (after rework): real Chrome tab. Move the mouse a lot outside or over the canvas before the first click and after Esc, then click. The view must not jump. Also do the checks the user already did (lock, Esc, overlay), arrow keys while unlocked, WASD plus diagonals, and alt-tab while holding W (the player stops).
 
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]
 As a player, I want a torch to throw flickering warm light across the stone, so that the room feels alive.
@@ -329,7 +389,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: po-review]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: dev]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [x] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
@@ -338,7 +398,7 @@ Acceptance criteria:
 - [x] Gravity 20 m/s^2; walking off a ledge makes the player fall and land on the lower floor.
 - [x] Head collision: cannot enter a sector whose `ceilH - floorH` is less than 1.70 m.
 - [x] All values in one tuning config object (`game/js/physics/config.js` for now; moves to `engine/physics/config.js` in US-024).
-- [ ] (D-008) **Out-of-grid world query:** every "is this passable / what is the floor here" answer comes from the passed-in `level`/`world` object (`sectorAt`, `floorAt`). There is no hard-coded "outside the grid = wall" branch in the physics code. Out-of-grid cells are answered by a query on the world object (e.g. `world.outsideSector(x, y)`), which returns a solid sector for M1's bare level, so later the terrain (US-025) can stand in without any physics change. Test: a stub world whose `outsideSector` returns a flat walkable floor lets the capsule walk off the grid edge.
+- [x] (D-008, verified on PO review #1) **Out-of-grid world query:** every "is this passable / what is the floor here" answer comes from the passed-in `level`/`world` object (`sectorAt`, `floorAt`). There is no hard-coded "outside the grid = wall" branch in the physics code. Out-of-grid cells are answered by a query on the world object (e.g. `world.outsideSector(x, y)`), which returns a solid sector for M1's bare level, so later the terrain (US-025) can stand in without any physics change. Test: a stub world whose `outsideSector` returns a flat walkable floor lets the capsule walk off the grid edge.
 Design needed: no.
 Notes / dependencies: US-005.
 
@@ -363,6 +423,33 @@ Notes / dependencies: US-005.
      - (e) A 1000-step random-walk fuzz in `test_room` (fixed seed): the capsule never overlaps an impassable cell by more than 1e-6 and is never stuck (after 30 consecutive blocked steps with input, a reversed input must move it).
    - If (a) to (e) pass on the current code without a fix, report that and I will re-review. The requirement is the tests, not a particular fix.
 2. (Non-blocking, moved to US-009.) Entering a cell whose `ceilH` is below the capsule's head (`footZ + height > ceilH`, e.g. jumping or stepping down under the `test_room` lintel from higher ground) is not checked; only the cell's own headroom is. It cannot happen in M1 without jumping, so it is added as a US-009 criterion.
+
+**PO REJECT #2 (2026-09-22) – the fix looks right, but the tests do not prove it, and there is one corner defect.** I re-reviewed `capsule.js` (SKIN plus the fixed-axis skip), `Player.js` and the new block in `physics.test.js` against the rework #1 list. (The rework notes were not added to this backlog. Please add them this time.)
+- **Code:** the skin on the overlap test plus "skip a cell whose overlap is only on the fixed axis" fixes the reported west/north stick correctly. The Y pass handles those cells with the already-resolved X. I accept this fix.
+- **Tests:** the 65/65 pass count does not matter, because four of the five requested tests do not reproduce the conditions that caused the bug. Pure along-wall movement never triggered it, even in the old code: the X pass is not "blocked" when the X move is 0.
+
+Rework list:
+1. **(a) Wall slide on 4 sides: rewrite.** Now: pure forward along the wall, about 0.43 s, and a speed check only. Required as specified:
+   - **diagonal input, 45 degrees into the wall**, for **2 s** (120 steps), on N, E, S and W, at walk and at run;
+   - start once from a hand-set position exactly at `radius`, and once after a real push-out contact;
+   - tangential **travel** >= 95% of `speed * cos45 * 2 s`;
+   - on **every step**, the distance from the capsule centre to the wall face is within [radius - 1e-6, radius + 0.01].
+   - Use a room long enough for 2 s of run (about 8.5 m of tangential travel), e.g. 24x24.
+2. **(b) Near-miss walk: wrong distance.** The test puts the capsule **edge** 0.300001 m from the face (centre at 0.600001), which is nowhere near the float boundary. Required: centre-to-face distance **0.300001 m** (edge clearance 1e-6), walking 5 m parallel on each of the 4 sides. `blockedX`/`blockedY` are never true, and travel equals a free walk within 1e-6.
+3. **(c) Inner corner: tolerance too loose.** Now: 0.01 m over 10 steps. Required: after settling, position change < 1e-6 **per step over 60 steps**. Backing out moves more than 1e-4 on the **first** step of reversed input.
+4. **(d) Outer corner: no contact.** Now: it passes 0.01 m clear of the pillar, so it never touches it. Required:
+   - The capsule slides along the pillar face **in contact** (diagonal input into the face) and continues past its end. Tangential speed never drops more than 5% while passing the corner.
+   - **New invariant, blocking (defect found on review).** When a move makes the circle overlap a cell's **corner** (`dx != 0` and `dy != 0` in `resolveAxis`), the moving axis is pushed out to the full `col - radius` / `col + 1 + radius`. That can put the capsule **behind its own pre-step position**.
+     - Worked example: pillar cell (5,5), capsule at x = 4.834, y = 4.75 (clear of the corner), moving +0.05 in x. It overlaps the corner (5,5) at distance 0.276. It is resolved to x = 4.70, which is 0.134 m **backwards**. Then `blockedX` zeroes vx, and this repeats every step while the player walks diagonally into the corner. The result is jitter and "catching" at outer corners, which AC 3 forbids ("never stuck on corners").
+     - **Requirement:** on each axis, when the pre-step position did not overlap any impassable cell, the resolved coordinate lies between the pre-step and target coordinates (it never moves backwards). Suggested fixes: clamp to the pre-step coordinate for corner contacts, or resolve circle-vs-corner exactly (`col - sqrt(r^2 - dy^2)`). The requirement is the invariant, not a particular fix.
+     - **Test:** approach the corner of a 1-cell pillar from 16 directions (every 22.5 degrees) at walk and run for 1 s each, and assert the invariant on every step.
+5. **(e) Random-walk fuzz: make it able to fail.**
+   - Check overlap against **impassable** cells (use `isSectorPassable` with the capsule's `footZ`/`grounded`, so too-high floors and low headroom count), not only `solid`, with a tolerance of 1e-6.
+   - Hold each random input for 15-60 steps instead of re-rolling it every step. As written, the capsule mostly jitters in place, and `totalPath > 20` over 1000 steps proves little.
+   - Add the stuck check as specified: after 30 consecutive steps with non-zero input and less than 1e-4 displacement, the reversed input must move the capsule more than 1e-4 within 1 step. Assert that it is never stuck.
+   - Keep 1000 steps with the fixed seed. Also run it at 5 seeds.
+6. Test 7's `y > 2.0` can stay as a smoke test, but it is superseded by (a).
+7. Add the rework #2 programmer notes to this story: files, what changed, and the new test count.
 
 For the tester (after rework): `node game/js/physics/physics.test.js` passes all tests. In `game/physics-test.html`, hug every wall of `test_room` in both directions, run into inner corners and around pillar `O` and the `m` stub, walk off the 1.0 m platform, step up the 0.3/0.6/0.9 stair, and fail to walk into the closed-headroom and low-wall cells.
 
