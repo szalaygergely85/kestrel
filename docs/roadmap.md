@@ -14,7 +14,7 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 - WebGL2 char-grid RenderTarget (D-005) - done.
 - Palette, ramps, materials (US-002) - done. Sector map format v2 (US-003) - done.
 - Sector caster for structures with shared DepthBuffer (US-004), capsule physics (US-008/009).
-- **Engine/game split per D-006 (US-023)** and **World model per D-007 (US-024)**: tower placed in one world frame, terrain sampler, serializable world/entity state.
+- **Engine/game split per D-006 (US-024)** and **World model per D-007 (US-025)**: tower placed in one world frame, terrain sampler, serializable world/entity state.
 - Lighting: ambient + sun shaft with shadow + torch flicker + carried lantern.
 - The tower structure: wake spot, brazier, lantern, boulder, broken stair with jump gap, mid ledge with lever + grate, summit breach. Props/lights/interactables/triggers declared as level data.
 - Far overworld view = terrain caster at far LOD composited with the sector caster (US-016).
@@ -22,7 +22,7 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 - 60 fps at 160x60 cells, <= 8 ms JS render (US-018).
 - **P1 (after all P0):** light the summit beacon (US-022, D-003).
 
-**P2 stretch (not exit criteria):** dust motes (US-019), procedural WebAudio (US-020, D-004), wall scrawl (US-021).
+**P2 stretch (not exit criteria):** dust motes (US-019), procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).
 
 **Out**
 - Walking on terrain, combat, enemies, inventory, dialogue, NPCs, saving UI, audio asset files, editor UI.
@@ -30,7 +30,7 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 **Exit criteria:** PO OK + tester PASS on every P0 story; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
 
 ## Milestone 2 – "First Steps" — status: planned
-Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-025), JSON content packs / world files (US-026), day/night sun cycle, first melee enemy, sword + lock-on, a hidden chest, save point at the tower.
+Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs / world files (US-027), day/night sun cycle, first melee enemy, sword + lock-on, a hidden chest, save point at the tower.
 
 ## Milestone 3 – "The Dark Beacons" — status: planned
 Open region with 3 beacons to relight (each a placed structure), a village with 3–5 NPCs and dialogue, second enemy type, ranged tool, terrain overrides authored as data.

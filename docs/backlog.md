@@ -10,28 +10,37 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 1 | US-001 | Char-grid canvas + game loop | P0 | done (tester PASS 2026-09-22; real-Chrome bench numbers still pending from user, non-blocking) | Programmer moves on |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
-| 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer, after US-001 rework #2 + US-003 v2 (uses `setCellRGB`, D-005) |
-| 5 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer |
-| 6 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer |
-| 7 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
-| 8 | US-008 | Physics: player capsule, gravity, walk/run, collision | P0 | todo | Programmer |
-| 9 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
-| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; start fields aligned (v2) and loads cleanly. **Port unblocked**: programmer can port now (walk/jump criteria verified once US-008/009 land) |
-| 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | todo | Art PO-approved 2026-09-22; Programmer after US-004 + US-006 |
-| 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
-| 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
-| 14 | US-014 | Lever opens the grate | P0 | todo | Programmer |
-| 15 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved 2026-09-22 (preview render check pending in a browser); Programmer after US-010 + US-012 |
-| 16 | US-016 | Far overworld view through the breach | P0 | design | **PO: preview ready for review** (`design/preview/overworld.html`), then Programmer |
-| 17 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
-| 18 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (can be done alongside US-004) |
-| 19 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done; Designer reuses brazier flame frames |
-| 20 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
-| 21 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
-| 22 | US-021 | Readable wall scrawl | P2 | design | Designer |
-| 23 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
+| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | dev | Programmer #1 NOW |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev | Programmer NOW |
+| 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
+| 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
+| 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | design | **Designer NOW** (in progress) |
+| 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer (can run alongside; new files go to `engine/`) |
+| 10 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 |
+| 11 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
+| 12 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
+| 13 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
+| 14 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-006 (`engine/render/sprites.js`) |
+| 15 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
+| 16 | US-013 | Rolling boulder | P0 | todo | Programmer |
+| 17 | US-014 | Lever opens the grate | P0 | todo | Programmer |
+| 18 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012 |
+| 19 | US-016 | Far overworld view = engine terrain caster, far LOD | P0 | todo | Design PO-approved 2026-09-22 (browser check pending); Programmer after US-025 + US-007 |
+| 20 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
+| 21 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (final M1 check) |
+| 22 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
+| 23 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
+| 24 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
+| 25 | US-021 | Readable wall scrawl | P2 | design | Designer |
+| 26 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
 
-M1 exit criteria = all P0 stories `done` (roadmap). US-022 (P1) and P2 stories are not exit criteria.
+M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.mjs` reports no engine imports from `game/` or `design/`. US-022 (P1) and P2 stories are not exit criteria.
+
+## Milestone 2 "First Steps" (sketched, see bottom of file)
+| ID | Title | Priority | Status |
+|---|---|---|---|
+| US-026 | Walk out onto the terrain: near LOD, slope physics, chunk regeneration | P0 (M2) | todo (sketch) |
+| US-027 | JSON content packs and world files | P1 (M2) | todo (sketch) |
 
 ---
 
@@ -210,7 +219,7 @@ For the tester:
 
 **Tester result (2026-09-22): PASS.** All 7 rework items and all original criteria re-verified; all 360 `test_room` cells cross-checked against the legend (hover-equivalent), all 9 single-fault negative cases correctly named their row/col or legend char and returned `null`, out-of-bounds queries return `null`, `design/preview/tower.html` shows zero console errors and 18/18 internal checks pass. No bugs found. Full report: `docs/test-reports/US-003.md`. Note: the shared browser pane was at its tab cap this session, so `game/world-test.html` was verified via the identical `Level.js`/`sectorAt()` calls in Node rather than live DOM hovering - see the report's environment note.
 
-### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: todo]
+### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: dev]
 As a player, I want to see the room in first-person 3D made of characters, so that I feel present in the space.
 Acceptance criteria:
 - [ ] One ray per screen column (160); walls drawn with correct perspective, including partial walls (step fronts, ledge fronts, pillars) where floor/ceiling heights change between sectors.
@@ -231,6 +240,9 @@ Acceptance criteria:
 - [ ] (carried over from the US-001 review) The `CellBuffer` hex color cache is bounded (e.g. at most 1024 entries, cleared or LRU when full), so `setCell` with many unique hex strings cannot grow memory without limit. The default page no longer runs the US-001 demo scene; it stays reachable with `?demo=1`.
 - [ ] (MAP_FORMAT v2) Solid cells are drawn as columns up to their `floorH` (wall top), with a lit top face in `floorMat`, and rays continue above them. In `test_room` the sky is visible over the 1.0 m low wall. In the tower, broken wall tops (6.5-8.5 m) show a ragged silhouette against the sky from the ground floor.
 - [ ] (MAP_FORMAT v2) Non-solid cells with a numeric `ceilH` draw their upper face from `ceilH` to `topH`, using `upperMat` if set, else `wallMat`. The `test_room` lintel cell shows a 0.8 m lintel above a 2.2 m opening. Step and ledge fronts use the higher sector's `wallMat`.
+- [ ] (D-008 #1) **DepthBuffer:** for every cell it writes, the caster also writes the hit distance in meters into a shared `DepthBuffer` (Float32Array cols*rows, `Infinity` = nothing drawn), alongside `setCellRGB`. It is cleared once per frame, allocation-free. US-011 sprites and US-016 terrain depth-test against it.
+- [ ] (D-008 #2) **Open span per column:** when a ray leaves the level grid, the caster does **not** paint void or sky for the remaining cells. It leaves them unresolved and exposes per column the open span `[topRow, bottomRow, depth]` (typed arrays, no per-frame allocation) for the next pass. Sky ceilings inside the level still use `shadeSky`. For the M1 view, a fallback sky fill of any span left open after all passes is done by the compositor (US-016), so looking out of `test_room` over a low outer wall shows sky, not garbage.
+- [ ] (D-008 #3) **Level origin offset:** the cast call accepts an optional level origin `{x, y, z}` (world meters). With origin (1480, 1018, 0) and the camera moved by the same offset, the rendered image is identical to origin (0, 0, 0). Test: a `?origin=1480,1018` switch on the test page, or an equivalent console check.
 Design needed: no (consumes US-002).
 Notes / dependencies: US-001 (rework #2, WebGL2 back-end + `setCellRGB`), US-003 (format v2).
 
@@ -272,7 +284,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: todo]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: dev]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [ ] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
@@ -280,7 +292,8 @@ Acceptance criteria:
 - [ ] Collision vs solid cells and vs sector walls higher than the step threshold; sliding along walls when moving diagonally into them; never tunnelling through a 1-cell wall at run speed; never stuck on corners.
 - [ ] Gravity 20 m/s^2; walking off a ledge makes the player fall and land on the lower floor.
 - [ ] Head collision: cannot enter a sector whose `ceilH - floorH` is less than 1.70 m.
-- [ ] All values in one tuning config object (`game/js/physics/config.js`).
+- [ ] All values in one tuning config object (`game/js/physics/config.js` for now; moves to `engine/physics/config.js` in US-024).
+- [ ] (D-008) **Out-of-grid world query:** every "is this passable / what is the floor here" answer comes from the passed-in `level`/`world` object (`sectorAt`, `floorAt`). There is no hard-coded "outside the grid = wall" branch in the physics code. Out-of-grid cells are answered by a query on the world object (e.g. `world.outsideSector(x, y)`), which returns a solid sector for M1's bare level, so later the terrain (US-025) can stand in without any physics change. Test: a stub world whose `outsideSector` returns a flat walkable floor lets the capsule walk off the grid edge.
 Design needed: no.
 Notes / dependencies: US-005.
 
@@ -306,11 +319,12 @@ Acceptance criteria – Designer:
 - [x] Irregular broken wall-top heights (6.5 to 8.5 m) so the silhouette against the sky reads as ruined.
 - [x] Marks player start position and facing (lying, facing the sun shaft), and positions of all lights and props.
 - [x] Wall materials assigned (stone variants, moss near the ground on the north side, scorched stone near the brazier).
-Acceptance criteria – Programmer (port). Blocked until US-003 rework #1 is PO OK and the designer alignment below is done:
-- [ ] `game/js/world/levels/tower.js` built from the layout; loads with no validation errors and becomes the default level (test_room still reachable with `?level=test_room`).
+Acceptance criteria – Programmer (integration). Unblocked: US-003 v2 is done and the designer alignment is done. Updated for D-006: no copy of the file.
+- [ ] The tower is loaded from `design/levels/tower.js` itself (content pack): `game/js/main.js` passes it into the `AssetRegistry` (US-024), and `loadLevel` validates it with no errors. There is no hand-copied `game/js/world/levels/tower.js`, so nothing can drift. It becomes the default level, placed in the world at recipe coordinates (1480, 1018) per US-025. `test_room` stays reachable with `?level=test_room`.
 - [ ] Every stair step is climbable, the gap is jumpable walking, falling from any stair lands safely on ground level, the summit is only reachable through the grate path.
 - [ ] The slice is completable without ever taking the lantern (wake to breach end; the lantern is a soft gate only, D-004 notes).
-- [ ] Content is ported unchanged from `design/levels/tower.js`, including the extension fields (props, lights, triggers, markers, layers.tilt), accessible via `level.def`. `design/levels/tower.js` stays the single source: any later layout change is made there first and re-ported.
+- [ ] All extension fields (props, lights, triggers, markers, layers.tilt) are reachable via `level.def`. `design/levels/tower.js` is the single source.
+- [ ] (D-006 / D-008) Props, lights, interactables, triggers and hint zones are all declared in the tower level data (`def.props`, `def.lights`, `def.interactables`, `def.triggers`, and hint zones as `def.triggers` of type `hint` or `def.markers`, per the designer's format). The designer adds the missing `interactables` entries (lantern, lever, beacon bowl) and the hint zones (gap edge `[Space] Jump`) to `design/levels/tower.js`. Behaviours are referenced by name (e.g. `interact: 'lantern.take'`, `trigger: 'quest.end'`) and registered from `game/js/quest/`. No tower-specific coordinates in engine or quest code.
 - [ ] Walking or running across the 1 m gap without Space always falls (depends on US-009; re-verify in the tower).
 Design needed: yes – level layout map + legend.
 Notes / dependencies: US-003 format. The designer may start now using the US-003 legend format described above.
@@ -362,6 +376,7 @@ Acceptance criteria – Programmer:
   - Timing: `fps` or per-frame `durations` (ms) for the lantern glint, and `fps: 0` = frame driven by gameplay (boulder: distance rolled, lever: pull progress).
   - Lit cells use `util.shadeSprite` (engine re-implementation allowed, same results as the preview). The optional `n` rows (per-cell normals) may be ignored with `nf = 1` in M1.
 - [ ] Props and lights are placed from `level.def.props` / `level.def.lights` (tower data), not hard-coded. `beaconBowl.mounts.fire` gives the US-022 fire anchor.
+- [ ] (D-006 / D-008) Sprite rendering lives in `engine/render/sprites.js` (`drawSprites`). Models come from the injected `AssetRegistry`, never from `window.ASSETS`. Prop behaviour (animation state such as lever progress, lantern lit/empty) is set by name-registered behaviours from `game/js/quest/`, never by tower-specific engine code.
 - [ ] Grate material: gap texels (`hole: true`) are drawn **dark** in M1: the solid fallback shown in the preview, with no see-through. See-through grates are US-023 (P2).
 Design needed: yes – all props listed above (delivered).
 Notes / dependencies: US-002 (palette keys), US-004, US-006.
@@ -397,6 +412,7 @@ Acceptance criteria:
 - [ ] Pressing E on the lantern removes the hook sprite (hook remains, empty) and attaches a point light: `#ffd27a`, 0.8 intensity, 5 m radius, held 0.3 m right / 0.3 m down / 0.4 m forward of the eye, sway with walk, ±5% flicker.
 - [ ] The lantern light makes the upper stairwell (ambient-only areas) visibly readable: gap edges at least 3 glyph-ramp steps brighter than without it.
 - [ ] Once taken, the lantern stays with the player for the rest of the run: there is no drop action and nothing consumes it (lighting the beacon in US-022 shares its flame, the player keeps it). One pickup only.
+- [ ] (D-006 / D-008) The interaction system is engine-level and generic (targeting, prompt, `registerInteraction(name, fn)`). The lantern is a `def.interactables` entry in the tower data (position, radius, prompt, `interact: 'lantern.take'`). The `lantern.take` behaviour is registered from `game/js/quest/` and attaches the `P.lights.lantern` light. The engine has no lantern-specific code.
 - [ ] The slice is completable without ever taking the lantern: the gap edges stay visible with ambient light only (dim, but readable), and no later interaction requires it except the optional US-022 beacon.
 Design needed: no (uses US-011 lantern sprite).
 Notes / dependencies: US-006, US-010, US-011.
@@ -423,13 +439,14 @@ Acceptance criteria:
 - [ ] Before pulling: the upper stair is impassable. After: passable.
 - [ ] One-way: after use, the lever shows no prompt.
 - [ ] Grate is visible from the lever position, so the player sees it move.
+- [ ] (D-006 / D-008) The lever is a `def.interactables` entry (`interact: 'lever.pull'`). The grate animation is driven by the grate sector's `dynamic` data (`ceilOpen`, `openTime`, `ease`) through a generic engine "animate sector ceiling" call. `lever.pull` is registered from `game/js/quest/` and names its target by tag (`grate`), not by cell coordinates. Grate open/closed state is part of the serialized world state (US-025).
 Design needed: no (uses US-011 lever + grate).
 Notes / dependencies: US-010, US-011, US-012.
 
 ### US-015 Wake sequence + title card + control hints  [Priority: P0] [Status: todo]
 As a player, I want to open my eyes on the tower floor, see the title, and get just enough hints, so that I understand the start without reading a manual.
 Acceptance criteria – Designer:
-- [x] `design/models/title.js`: `ASCII QUEST` logo, max 70x9 cells, colored (warm gold into ember orange), plus subtitle style for `The Awakening`. Preview in `design/preview/title.html`. (Data approved; the preview has not yet been opened in a browser, see the PO note.)
+- [x] `design/models/title.js`: `ASCII QUEST` logo, max 70x9 cells, colored (warm gold into ember orange), plus subtitle style for `The Awakening`. Preview in `design/preview/title.html`. (Preview verified in the browser: 6/6 checks.)
 
 **PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer. Reviewed by reading `design/models/title.js`:
 - **Logo:** 68x8, within 70x9. It reads "ASCII QUEST" at 6-row block height, with 1-cell letter gaps and a 3-cell word gap.
@@ -442,7 +459,7 @@ Acceptance criteria – Designer:
   - US-005: `Click to resume`.
   - All text is ASCII 32-126.
 - **Fade rule:** fades step down the glyph ramp (letters count as ramp index 9) instead of using alpha. This fits the style guide, and US-017 reuses it.
-- **Not yet verified:** nobody has opened `design/preview/title.html` in a browser; only the JS syntax and loading were checked in Node. When a browser pane is free, the coordinator or tester opens it and confirms that it renders with no console errors and that its 6 checks pass. If the preview is broken, the designer fixes the preview only. The art data stays approved unless the rendered logo differs from what the data describes.
+- **Verified in the browser (coordinator, 2026-09-22):** `design/preview/title.html` renders with no console errors and 6/6 checks pass. The render check pending on this approval is closed.
 
 Acceptance criteria – Programmer:
 - [ ] (added on design review) All UI is drawn from `ASSETS.models.title` / `subtitle` / `ASSETS.uiStyle`: layout (logo top row 18, centred), colors, hint plate (scene bg x 0.35, no box), `> ` prefix, gold key words, and the ramp-step fade rule. Texts are not hard-coded in engine code; they come from `uiStyle`. UI cells are emissive (unlit, no fog).
@@ -452,6 +469,7 @@ Acceptance criteria – Programmer:
 - [ ] Title card fades in 1 s, holds 3 s, fades out 1 s, drawn over the 3D view.
 - [ ] Hints bottom-left, fade in 0.3 s, each shown once, disappears when performed or after 8 s: `WASD move - Mouse look` (after title; all UI text is ASCII 32-126 only), `Shift run` (after 10 s of walking), `[Space] Jump` (when within 2 m of the gap edge), `Click to capture mouse` (if pointer not locked).
 - [ ] Interact prompts from US-012 are not hints; they always show when targeting.
+- [ ] (D-006 / D-008) The wake sequence, title card and hint logic live in `game/js/quest/`. They use the engine's generic overlay primitives (`engine/ui/`: fade, hint, prompt, text), skinned by `uiStyle`. The start pose comes from `def.start` (`pose: 'lying'`, `eyeH`, `pitchDeg`). Hint trigger zones (e.g. the gap-edge `[Space] Jump` zone) are declared in level data, not as coordinates in code.
 Design needed: yes – title logo.
 Notes / dependencies: US-010, US-012.
 Designer note (2026-09-22): **Preview ready for PO review.**
@@ -460,19 +478,40 @@ Designer note (2026-09-22): **Preview ready for PO review.**
 - **Text:** all UI text is ASCII 32-126; the hint is exactly `WASD move - Mouse look`.
 - Status stays `design`.
 
-### US-016 Far overworld view through the breach  [Priority: P0] [Status: design]
+### US-016 Far overworld view through the breach  [Priority: P0] [Status: todo]
 As a player, I want to see a vast, colorful landscape and a distant dark tower from the summit, so that I feel the world is huge and I want to go out there.
 Acceptance criteria – Designer:
-- [ ] `design/levels/overworld_far.md` (+ data file if useful): a low-res heightmap (e.g. 128x128 or 256x256 cells, 8 m per cell) or a procedural recipe (seed + noise params) for rolling hills, a river, forests; color/glyph rules per terrain type (grass `" ' , ;` greens, forest `& % @` dark greens, river `~ -` blues, rock `# %` greys) and fog colors by distance (near 50 m to far 1500 m).
-- [ ] Position and silhouette of the distant second tower (~800 m, on a hill, dark, no light).
-- [ ] Mock-up in `design/preview/overworld.html` showing the intended view through the breach.
-Acceptance criteria – Programmer:
-- [ ] Separate heightmap-projection pass drawn where the sector raycaster sees `"sky"`/out-of-map through the breach and above the parapet.
-- [ ] Terrain lit by the same sun direction; atmospheric fog toward a pale blue horizon; the second tower silhouette is visible and clearly unlit.
-- [ ] Far pass costs <= 4 ms per frame; overall still 60 fps when looking out of the breach.
-- [ ] Horizon of the far view lines up with the sector view horizon at all pitches (no seam or jump).
-Design needed: yes – far terrain data/recipe, colors, tower silhouette.
-Notes / dependencies: US-004, US-007, US-010.
+- [x] `design/levels/overworld_far.md` (+ data file if useful): a low-res heightmap (e.g. 128x128 or 256x256 cells, 8 m per cell) or a procedural recipe (seed + noise params) for rolling hills, a river, forests; color/glyph rules per terrain type (grass `" ' , ;` greens, forest `& % @` dark greens, river `~ -` blues, rock `# %` greys) and fog colors by distance (near 50 m to far 1500 m).
+- [x] Position and silhouette of the distant second tower (~800 m, on a hill, dark, no light).
+- [x] Mock-up in `design/preview/overworld.html` showing the intended view through the breach. (Data approved; browser render check pending, see the PO note.)
+
+**PO APPROVED – design part (2026-09-22); the manager accepted it as the seed of the world terrain recipe (D-008).** Reviewed by reading `design/levels/overworld_far.md` / `.js`:
+- **Recipe:** seeded 7331, 256x256 at 8 m, in the same world axes as the tower, with the tower at (1480, 1018).
+- **Terrain:** the hilltop matches the tower's 2.4 m grass ring (1.8 m residual, fixed to 0 by US-016b), with rolling hills, a meandering river with a valley, western ridges, a path down to a ford, and slope-based rock and forest.
+- **Look:** glyph/color rules per terrain type and per near/mid/far band, using palette keys only. Fog runs 50 to 1500 m from `fogFarNear` to `fogFar` = `skyHorizon`, so there is no seam with the sky.
+- **Far tower:** 800 m at azimuth 255, 15 degrees left of centre, framed by the breach, and breaking the skyline. It is darker than every terrain color, unlit, not emissive, with fog capped at 0.40 so it stays a readable dark notch. It uses a 3x4 minimum sprite with the notch of its cold bowl. This serves the M1 hook well.
+- **Budget:** about 42k samples, within budget.
+- **Pending:** a browser check of `design/preview/overworld.html` (renders, no console errors, 10/10 checks). If the preview is broken, the designer fixes the preview only.
+
+Acceptance criteria – Programmer (rewritten per D-007/D-008: engine terrain caster, far LOD):
+- [ ] `engine/render/terrainCaster.js` (exported via `engine/index.js` as `castTerrain`) renders the world terrain from the injected terrain recipe (`AssetRegistry`, US-024) at **far LOD**: 8 m grid, 300-1500 m. For M1 it may also cover 0-300 m at 8 m spacing (near LOD is US-026). The far grid is baked once at load: height, type and lighting `b` per cell.
+- [ ] Per column, it draws only inside the **open span** left by the sector caster (US-004 item: `[topRow, bottomRow, depth]`), and writes depth into the shared `DepthBuffer`. A small `engine/render/compositor.js` sequences the passes: sectors, then terrain, then sky fill for the rest of the span, then sprites (US-011), then UI. It never draws terrain over structure cells.
+- [ ] Projection uses the same `horizonRow` / `focalRows` / y-shear as the sector caster. The horizon lines up at every pitch in the ±35 degree clamp (no seam or jump), and the terrain at the tower's outer ring meets the ring cells with no visible step once US-016b's blend lands.
+- [ ] Look and fog exactly per `overworld_far.md` sections 3 and 4: type glyph bands by distance, sun N.L lighting from the level's sun, fog to `fogFar` with glyphs thinning to haze, and the river glint at 1.5 Hz.
+- [ ] Far tower drawn per section 5 as a billboard at (713.8, 1232.1), depth-tested against the terrain, never smaller than the 3x4 minimum sprite, dark and unlit (fog cap 0.40), and unchanged by US-022.
+- [ ] Cost: the terrain pass is <= 4 ms per frame on its own (target 2-3 ms per D-007) when looking out of the breach, and the total JS render stays within 8 ms (US-018).
+Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b.
+Notes / dependencies: US-004 (DepthBuffer + open span), US-007 (sun), US-010, US-024 (engine layout, AssetRegistry), US-025 (World: terrain sampler, tower placement at recipe coords).
+
+### US-016b Terrain recipe follow-up for the world model  [Priority: P0] [Status: design]
+As a player, I want the land outside the tower to be one continuous world, so that it meets the tower seamlessly and can later be walked on.
+Acceptance criteria – Designer (small, D-008):
+- [ ] `heightAt(x, y)` and `typeAt(x, y)` are documented and implemented as continuous analytic functions usable at any sample spacing (2 m near, 8 m far), with the baked 8 m grid equal to sampling them.
+- [ ] Near-LOD look spec for 2 m cells within 300 m, with glyph bands and colors extending the current near band, and a preview swatch.
+- [ ] Flat 2.4 m crown radius covering the tower footprint and outcrop, plus the handover rule: within 6 m of a structure's outer ring, terrain height blends linearly to the ring height. The mismatch where the player can stand is exactly 0; the preview check shows max |delta| = 0.00 m along the ring.
+- [ ] One-paragraph sketch of per-chunk overrides (height stamp, type paint) as JSON for the future editor.
+Design needed: yes (recipe + doc + preview update).
+Notes / dependencies: feeds US-025 (World terrain sampler) and US-026 (near LOD). Cosmetic for the M1 far view. The designer is already working on it.
 Designer note (2026-09-22): **Preview ready for PO review.**
 - **Where:** `design/preview/overworld.html`. A 160x60 heightmap-projection mock from the breach eye, with yaw, pitch, step-back, fog and glint controls. The near part samples the real `tower.js` sectors. The page also shows the top-down map with the view cone and towers, terrain swatches by distance, the far-tower silhouette and automated checks.
 - **Data:** `design/levels/overworld_far.js` (seeded recipe plus reference `generate()`, 256x256 x 8 m). Doc: `design/levels/overworld_far.md`.
@@ -489,6 +528,7 @@ Acceptance criteria:
 - [ ] Screen fades to black over 2 s (glyphs dim down the ramp, not just an overlay alpha). Use the `ASSETS.uiStyle.fade` rule (US-015 art) for both the 3D view and the text. End-text layout, colors and blinking cursor come from `uiStyle.endText`.
 - [ ] Text, centred, typed on at 30 chars/s. First line depends on the beacon state (D-003): unlit (default, and always if US-022 is not built) = `The beacons are dark.`; lit = `One beacon burns. The others are dark.`. Then `The world waits.`, then after 1.5 s `- to be continued -`, then `[R] Wake again`.
 - [ ] R restarts the slice from the wake sequence with all state reset (lantern on hook, boulder on stair, lever up, grate down, beacon unlit, hints reset).
+- [ ] (D-006 / D-008) The end trigger is the `def.triggers` entry `end` (cells tagged `trigger:end`, `walkTo`, `pitchTo`) with behaviour `quest.end`, registered from `game/js/quest/`. Restart = reload the world from the level data + `deserialize` of the initial state (US-025), not a hand-written reset list, so nothing can be forgotten.
 Design needed: no.
 Notes / dependencies: US-010, US-015, US-016.
 
@@ -550,3 +590,85 @@ Acceptance criteria:
 - [ ] Cost: at most 0.5 ms extra per frame when the grate fills the view; US-018 still holds.
 Design needed: no (the `grate` material with `hole` texels was delivered with US-011).
 Notes / dependencies: US-004, US-011, US-014. Picked up only after every P0 story is `done`. Not an M1 exit criterion. Until then the M1 fallback draws the gaps dark (US-011).
+
+### US-024 Engine/game split (D-006)  [Priority: P0] [Status: todo]
+As a player (and as the future editor's first user), I want the engine to be a clean, reusable library underneath the game, so that the world can grow and an editor can later build on it without rewrites.
+Acceptance criteria:
+- [ ] **Layout per D-006:** `engine/{core,render,world,physics,entities,ui}/`, `game/{index.html, world-test.html, js/main.js, js/quest/}`, `design/` unchanged, and `tools/check-deps.mjs`. Everything built so far is moved (git-less: move plus fixed imports):
+  - RenderTarget*, CellBuffer, glyphMetrics, DepthBuffer, the US-004 caster as `sectorCaster.js`
+  - loop, input
+  - Level.js (plus `MAP_FORMAT.md` next to it)
+  - debugOverlay
+  - US-008 physics
+  - `test_room` moves to `design/levels/` or `engine/world/testdata/`. PO preference: `design/levels/test_room.js` as a content-pack level. It must stay loadable.
+  - Nothing engine-level stays under `game/js/` (only `main.js` and `quest/`).
+- [ ] **Public API:** `engine/index.js` is the only public entry. It re-exports the D-006 rule 5 API:
+  - `createEngine({ canvas, assets, cols, rows })` returns `{ renderTarget, world, input, loop, camera, events }`
+  - `AssetRegistry`, `loadLevel`, `World` (a stub until US-025), `castSectors`
+  - `castTerrain` and `drawSprites` stubs (throw "not implemented" until US-016 / US-011), `drawText`
+  - `moveCapsule`, `moveSphere`, `integrate`, `Entity`, `Camera`, and `serialize` / `deserialize` stubs (US-025)
+  - `game/` imports only from `engine/index.js`, never from deep engine paths.
+- [ ] **No globals in the engine:**
+  - `engine/` never reads `window.ASSETS` (or any `window.*` other than DOM/timing APIs it needs: `requestAnimationFrame`, `devicePixelRatio`, events).
+  - `game/js/main.js` builds `new AssetRegistry({ palette, models, levels, terrain })` from the `design/` classic-script globals and passes it in.
+  - `AssetRegistry` documents the palette, model, level and terrain-recipe shapes as JSDoc typedefs (`engine/core/assets.js`) and throws a clear error for an unknown key.
+- [ ] **`tools/check-deps.mjs`** (Node, no dependencies, run manually: `node tools/check-deps.mjs`):
+  - Scans `engine/**/*.js` imports and exits non-zero, listing file and line, if any import resolves outside `engine/`.
+  - Also flags `window.ASSETS` inside `engine/`.
+  - Reports OK on the moved codebase. The tester runs it for every later story.
+- [ ] **Nothing regresses:**
+  - `game/index.html` (default, `?debug=1`, `?bench=1`, `?glyphs=1`, `?shadetest=1`, `?force2d=1`, `?demo=1`) and `game/world-test.html` work as before.
+  - `?level=test_room` still loads.
+  - The US-004 view looks pixel-identical before and after the move (screenshot compare at the same camera).
+  - No console errors. `?bench=1` numbers are unchanged within noise.
+- [ ] Docs: a short `engine/README.md` (purpose, folder map, public API list, "engine never imports game/design" rule, how to run `check-deps`). `CLAUDE.md` layout section updated. Coordinate that edit with the manager, since CLAUDE.md is project instructions.
+Design needed: no.
+Notes / dependencies: after US-004 and US-008 reach `po-review`, before US-006 starts (D-006 rule 6). New files created before then should already go to the new paths. The designer's previews must keep working; they load `design/*.js` directly and do not depend on the engine.
+
+### US-025 World model: terrain + placed structures in one world frame (D-007)  [Priority: P0] [Status: todo]
+As a player, I want the tower to stand on a real hill in a real world, so that what I see from the breach is the same world I will later walk into.
+Acceptance criteria:
+- [ ] **`engine/world/Terrain.js`:** a sampler over the injected terrain recipe (`AssetRegistry.terrain`, from `design/levels/overworld_far.js` plus US-016b).
+  - `heightAt(x, y)` is bilinear on the baked grid for the far LOD and analytic for near queries; `typeAt(x, y)`.
+  - The far 8 m grid (256x256) is baked once at load, in <= 150 ms.
+  - Near chunks: 64x64 cells of 2 m (128 m), generated deterministically on demand. A **3x3 chunk cache** around the player is kept resident; moving one chunk regenerates only the new row/column (<= 5 ms per chunk, off the frame budget, or amortised over frames).
+  - The same seed always gives bit-identical heights.
+- [ ] **`engine/world/World.js`:**
+  - `World.load(worldDef)`, where `worldDef` = `{ terrain: recipeKey, structures: [{ level: key, origin: {x, y, z}, yawSteps }], entities: [...] }`.
+  - `placeStructure(levelDef, origin)` (yawSteps 0 only in M1; others may throw "not in M1").
+  - World-coordinate queries `sectorAt(x, y)`, `floorAt(x, y)`, `heightAt(x, y)`, `outsideSector(x, y)`: inside a structure footprint the structure answers; outside it the terrain answers as a walkable floor at terrain height.
+  - The US-004 caster and US-008 physics run unchanged against `World`, via the origin offset and the world query (US-004/008 D-008 items).
+- [ ] **The tower is placed at recipe coordinates (1480, 1018, z = terrain crown).** `game/js/main.js` builds the world from a small world definition in `design/` (e.g. `design/levels/world_m1.js`: terrain `overworld_far` + tower at (1480, 1018)).
+  - Camera and player live in world coordinates. The start pose is `def.start` offset by the origin.
+  - The debug overlay shows world x, y, z plus structure id and sector char.
+- [ ] **Entities** (`engine/entities/Entity.js`): plain-data `{ id, type, transform: {x, y, z, yawDeg, pitchDeg}, components: {...} }` with no class instances in state. The player, the boulder, and the prop state (lantern taken, lever progress, grate open, beacon lit) are entities or world state.
+- [ ] **`engine/world/serialize.js`:** `serialize(world)` returns a JSON-safe object, and `deserialize(json)` restores the world. Round-trip test (console or `?serializetest=1`): serialize, go through `JSON.stringify` and `JSON.parse`, deserialize, then serialize again, and the result is deep-equal to the first. Positions are exact. Covers terrain seed + overrides, structures + origins, and entity state including grate `ceilH` and the boulder position. US-017 restart uses it.
+- [ ] **Performance:** world queries are O(1) (grid lookup, structure bounding-box test first), with no allocation per query. US-018 budget unchanged.
+- [ ] `node tools/check-deps.mjs` is OK. Only `game/js/main.js` knows the tower or its coordinates, and it reads them from data.
+Design needed: minor. The designer supplies `design/levels/world_m1.js` (world definition) and US-016b (continuous `heightAt`/`typeAt`, handover blend).
+Notes / dependencies: US-024; US-016b (for exact-0 seam; M1 can start with the 1.8 m residual, as it is cosmetic in the far view). Unblocks US-006 onward in world coordinates, US-016 programmer, US-017 restart, and M2 US-026.
+
+---
+
+## Milestone 2 "First Steps" – sketches (not yet refined; not M1 scope)
+
+### US-026 Walk out onto the terrain: near LOD, slope physics, chunk regeneration  [Priority: P0 (M2)] [Status: todo]
+As a player, I want to step out of the breach and keep walking down the hill, so that the open world is really open.
+Acceptance criteria (sketch):
+- [ ] `terrainCaster` near LOD: 2 m cells within ~300 m with distance-scaled step LOD, the US-016b near look, no seam with the 8 m far LOD (same function), and the combined terrain pass <= 3 ms.
+- [ ] `engine/physics/terrainCollide.js`: capsule and sphere stand on bilinear terrain height. Slopes up to 50 degrees are walkable; steeper slopes make you slide. The structure-to-terrain handover at the tower ring has no bump (US-016b blend = 0).
+- [ ] Chunk regeneration as the player moves (3x3 resident) with no frame hitch above 25 ms.
+- [ ] The M1 end trigger is replaced (M2 flag) by a seamless walk-out. The M1 fade stays available behind a flag for the M1 build.
+- [ ] Terrain lighting: ambient + sun N.L from grid normals; point lights within radius; no terrain shadow rays.
+Design needed: yes (US-016b near look; walkable path detail near the tower).
+Notes / dependencies: US-025, US-016b, US-016.
+
+### US-027 JSON content packs and world files  [Priority: P1 (M2)] [Status: todo]
+As a (future) level designer using the editor, I want all content to load from JSON files, so that I can edit the world without touching code.
+Acceptance criteria (sketch):
+- [ ] `tools/export-content.mjs` (Node): exports the `design/` classic-script data (palette, models, levels, terrain recipe parameters, world definition) to `content/*.json`. The functions in the palette `util` and in the terrain recipe are engine-side implementations selected by name and version, not serialized code.
+- [ ] `AssetRegistry.fromJSON(urls)` loads a content pack via `fetch`. `game/index.html?content=json` runs the full M1 slice from JSON, identical to the script path.
+- [ ] World files: `World.load` accepts a world JSON (`structures`, `entities`, terrain overrides as per-chunk deltas per US-016b), and save games reuse `serialize` output.
+- [ ] Schema version field plus a clear error for unknown or old versions.
+Design needed: no (the designer keeps authoring in `design/`; export is a tool).
+Notes / dependencies: US-024, US-025. Editor prerequisite (M5).
