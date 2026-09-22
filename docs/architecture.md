@@ -161,7 +161,12 @@ export function renderWorld(fb: FrameBuffers, world: World, cam: CameraPose): vo
 
 // ---- physics (pure functions over a WorldQuery, see 7) -------------------------
 export const PHYSICS_DEFAULTS: PhysicsConfig
-export function moveCapsule(world: WorldQuery, x, y, dx, dy, radius, footZ, grounded, opts): {x,y,blockedX,blockedY}
+export function moveCapsule(world: WorldQuery, x, y, dx, dy, radius, footZ, grounded, opts, out: MoveResult): MoveResult
+       // MoveResult = {x, y, blockedX, blockedY, nx, ny}: blockedX/Y = a FACE contact on that axis; nx/ny = unit normal of the
+       // last CORNER contact (0,0 if none). `out` is caller-owned scratch (rule 9.3: no per-step object returns). Resolution is an
+       // iterative minimum-translation push-out, deepest contact first (max 4 iterations); see US-008 ARCH CHANGES for the algorithm
+       // and the two invariants ((res-pre).d >= 0, |res-target| <= |d|). Velocity response: zero blocked axes, then clip v against n.
+       // WorldQuery.outsideSector is mandatory (Player dereferences the resolved sector).
 export function moveSphere (world: WorldQuery, x, y, dx, dy, radius, z, opts): {x,y,hitX,hitY}                 // US-013
 export function integrate  (entity: Entity, dt: number, controls: Controls, world: WorldQuery, cfg: PhysicsConfig): void  // the Player.update core, generic
 export function isSectorPassable(sector, footZ, grounded, opts): boolean

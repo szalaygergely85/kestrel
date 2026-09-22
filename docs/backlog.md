@@ -11,7 +11,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; both ASK ARCHITECT items answered 2026-09-22 -> follow-up US-004b) | - |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | po-review | Rework #2 done 2026-09-22 (tests rewritten + corner push-out fix); engine story, needs architect review before PO |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev | ARCH CHANGES 2026-09-22 (rework #3: convex-corner freeze -> minimum-translation push-out + contact normal; per-step allocations). See US-008 section |
 | 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | todo | Programmer NOW (free track); must be `done` before US-006 and US-016. Tech notes = architect sketch under US-004 + architecture.md 12 |
 | 7 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006. Phase A must not move `raycaster.js` while US-004b is in dev (see US-004b notes) |
 | 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
@@ -408,7 +408,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: po-review]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: dev]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [x] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
@@ -495,6 +495,44 @@ For the tester (after rework): `node game/js/physics/physics.test.js` passes all
 - **Not touched:** `game/js/engine/input.js` / `playerLook.js` (US-005, being reworked in parallel by another programmer track) and nothing outside the US-008 backlog section.
 - Status set to `po-review`. **US-008 is an engine story (physics/), so per the workflow it goes to the architect for a technical review before the PO re-reviews**, not straight back to the PO.
 - **Still open / not addressed here:** PO REJECT #1 item 2 (ceiling-below-current-head-height on entry) - already deferred to US-009 by the PO, unchanged. Nothing else outstanding from REJECT #1 or REJECT #2 as far as I can tell; flagging for the architect/PO to confirm.
+
+**ARCH CHANGES (architect, 2026-09-22, review of rework #2 / commit 972d3f7).** Status back to `dev`.
+
+What is right: the exact `sqrt(r^2 - d^2)` corner push is correct geometry and does remove the backward move; the SKIN + fixed-axis skip is sound; the 138 tests genuinely recreate the PO's conditions (a)-(e) (I re-ran them: 138/138); D-008 holds (`sectorOrOutside` is the single resolution point, no hard-coded wall, Player never assumes a `Level`); no tunnelling at run speed (0.1 m/step vs 0.3 m radius, face contact always dominates a shared corner of two solid cells because face penetration >= corner penetration); deterministic (pure math, fixed scan order). Step-up/gravity/ceiling state is the right shape for US-009 and for US-025's `World` (same `sectorAt`/`outsideSector`/`floorAt` shape).
+
+What is wrong - one blocking defect that the PO's tests cannot see, plus one rule violation:
+
+1. **Blocking: the capsule still freezes on convex corners (AC3 "never stuck on corners").** The per-axis push against a *point* contact cannot express a tangential slide. Whenever the input direction has both components pointing into a corner, the X pass pulls x back to the touch position and the Y pass pulls y back to the touch position; both `blocked*` flags then zero both velocities, and the next step repeats from zero. Verified with probes against the current code (`node` scratch, not committed):
+   - Pillar at (5,5), running/walking SE (yaw 135) at its NW corner from 1.5 m out, aimed 0.02 / 0.05 / 0.10 m off the exact diagonal: **stuck for the full 10 s (600 steps), 578-586 of them with vx=vy=0**, final position within 0.1 m of the start of contact. Only a 0.20 m offset gets round. A real circle-vs-point response slides round at ~33% speed at 0.10 m offset.
+   - 1-cell-wide doorway, walking straight at it 0.25 or 0.35 m off centre (i.e. 0.05-0.15 m into a jamb corner): **stuck forever** instead of being funnelled in. `test_room` has such doorways; the tester's "run around pillar `O` and the `m` stub" will hit this.
+   - Why the (d) tests pass anyway: the outer-corner slide test slides along a *face* (only Y is corner-resolved, X is free), and the 16-direction invariant test asserts "never backwards" - a total freeze satisfies it. The fuzz only requires that *reversed* input moves you.
+   - Zeroing only the into-normal velocity component (Quake-style clip) is **not** sufficient on its own - I tried it: the per-step acceleration (0.58-1.0 m/s per step) re-pushes the axis into the corner faster than the small tangential velocity can move it off. The position resolution itself must move along the contact normal.
+   - **Required fix (verified in a scratch implementation, results below): replace the two `resolveAxis` passes with an iterative minimum-translation push-out in `moveCapsule`:**
+     ```
+     cx = x + dx; cy = y + dy;
+     repeat up to 4 times:
+       scan cells in [floor(c - r), floor(c + r)] on both axes; for each impassable cell compute the clamped
+       nearest point q and d = c - q; skip if |d|^2 >= (r - SKIN)^2; keep the DEEPEST one (largest r - |d|).
+       none -> done.
+       face contact (d.y == 0): cx = q.x +/- r (sign of d.x); out.blockedX = true.
+       face contact (d.x == 0): cy = q.y +/- r (sign of d.y); out.blockedY = true.
+       corner contact (both != 0): n = d / |d|; cx = q.x + n.x * r; cy = q.y + n.y * r; out.nx = n.x; out.ny = n.y.
+       centre inside the cell (d == 0): revert to (x, y), blockedX = blockedY = true, stop (defensive only; unreachable at 0.1 m/step).
+     ```
+     "Deepest first" is load-bearing: at a shared corner of two wall cells the face (deeper) resolves first and the corner then no longer overlaps; scanning in grid order instead can pick the corner first and produce a spurious diagonal nudge along a flat wall.
+   - **Result shape:** `moveCapsule(...) -> {x, y, blockedX, blockedY, nx, ny}`; `blockedX/blockedY` = a *face* contact on that axis (as today); `nx, ny` = unit normal of the last *corner* contact, both 0 when none. **Player velocity response:** `if (blockedX) vx = 0; if (blockedY) vy = 0; if (nx || ny) { vn = vx*nx + vy*ny; if (vn < 0) { vx -= vn*nx; vy -= vn*ny; } }`. Face normals are axis-aligned, so wall behaviour is unchanged.
+   - Scratch results of exactly this algorithm with the Player's accel model: pillar corner cleared at 0.02/0.05/0.10/0.20 m offsets in 63-70 steps walking, 36-43 running (free path ~51 / ~30); exact head-on diagonal (offset 0.000) stops, which is correct - that is a wall hit with zero tangential component, same as walking straight into a face. Doorway funnels in at 0.25/0.35/0.45 m off centre (0.60 = centre in front of the jamb face = clean stop). West-wall diagonal slide: face distance exactly [0.3000000, 0.3000000] over 120 steps, travel 4.88 m walk / 8.37 m run (targets 4.70 / 8.06). Inner corner: per-step jitter 0.00, first back-out step 2.4e-2. `test_room` fuzz, 5 seeds x 1000: max penetration 6.7e-16, 3 stuck events, 0 reverse failures. Max penetration anywhere 5.6e-16.
+   - **The PO's per-axis invariant must be replaced** - it is geometrically incompatible with any corner slide (a slide moves the *other* axis too, e.g. the PO's own worked example correctly resolves to (4.874, 4.728): y moves although dy = 0). Use instead, whenever the pre-step position did not overlap: **(i)** `(res - pre) . d >= -1e-9` (never backwards along the step), **(ii)** `|res - target| <= |d| + 1e-9` (the push-out never exceeds the step length; the PO's bug pushed 0.184 m on a 0.05 m step). Verified: 0 violations in 9840 checks (64 directions x walk/run at the pillar, 9 headings x walk/run at the doorway). I will tell the PO; the programmer should just implement (i)+(ii) in the 16-direction test.
+   - **Tests to add** (in `physics.test.js`, both walk and run): pillar-corner approach with 0.02, 0.05, 0.10 m offsets off the diagonal - must pass x >= 6.5 or y >= 6.5 within 1.5x the free-path step count and never have more than 5 consecutive steps with `|v| < 0.1`; doorway funnel at 0.25 and 0.35 m off centre - must pass through within 2x the free time; keep (a)-(e) as they are (they must still pass unchanged, incl. (c)'s `< 1e-6` jitter).
+
+2. **architecture.md section 9 (hot paths include "per sim step"): remove the per-step allocations.** Today each `Player.update` allocates the `collideOpts` object, the `passable` closure inside `moveCapsule`, and the result object (rule 3: no closures, no object returns from per-step helpers). Fix: `collideOpts` becomes a module-level const built from `PHYSICS` (or a Player field set in the constructor); `moveCapsule` takes an `out` parameter (`moveCapsule(world, x, y, dx, dy, radius, footZ, grounded, opts, out)`; returns `out`) and Player owns one reused `this._move` scratch; no closure - the passability test is inlined in the scan loop (the iterative algorithm above has no `resolveAxis` callback any more). `getEyeTransform()` allocating per frame is acceptable for now (render-side, 1/frame) but note it for US-024's `Camera.fromEntity` which should write into a `CameraPose`.
+
+Non-blocking, record only:
+- With the centre inside an impassable cell `moveCapsule` is a no-op today (probe: `(5.5, 5.5)` inside the pillar, `+0.05` -> moves freely). Unreachable at 0.1 m/step from a legal position, but it becomes reachable when a sector turns solid/impassable under the player (animated grate US-010, `placeStructure` US-025). The fallback branch above at least stops the move; a real depenetration (shortest axis) is a US-025 item, not this story.
+- `Player.update` dereferences `sector.floorH` after `sectorOrOutside`; a world without `outsideSector` would throw. Fine for `Level` (always has it); US-025's `World` must provide it too - I will make it mandatory in the `WorldQuery` typedef.
+- US-009 readiness: yes, once item 1 lands. `grounded`/`vz`/floor tracking and the ceiling clamp are the right hooks; US-009's head-clearance rule slots into `isSectorPassable` as a `footZ + height <= ceilH` check on numeric ceilings. The corner normal from item 1 is also what US-009's jump needs so a jump grazing a corner deflects instead of stopping dead mid-air.
+
+Tests to run after rework: `node game/js/physics/physics.test.js` (all existing + the new corner/doorway tests). Then back to me for ARCH review.
 
 ### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: todo]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
