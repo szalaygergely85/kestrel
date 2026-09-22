@@ -11,7 +11,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; both ASK ARCHITECT items answered 2026-09-22 -> follow-up US-004b) | - |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | po-review | ARCH OK 2026-09-22 on rework #3 (efd8737): minimum-translation push-out + contact normal, no per-step allocations, 187/187. To PO for re-review (note on the replaced corner invariant in the US-008 section) |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | testing | PO OK 2026-09-22 on rework #3 (efd8737), after ARCH OK: all ACs + REJECT #1/#2 items met, projection invariants (i)/(ii) accepted in place of the per-axis one, 187/187. To tester (checklist in the US-008 section) |
 | 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | todo | Programmer NOW (free track); must be `done` before US-006 and US-016. Tech notes = architect sketch under US-004 + architecture.md 12 |
 | 7 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006. Phase A must not move `raycaster.js` while US-004b is in dev (see US-004b notes) |
 | 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
@@ -408,12 +408,12 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: po-review]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: testing]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [x] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
 - [x] Walk 3.5 m/s, run (Shift) 6.0 m/s, full speed in 0.10 s, stop in 0.08 s (GDD section 5).
-- [ ] Collision vs solid cells and vs sector walls higher than the step threshold; sliding along walls when moving diagonally into them; never tunnelling through a 1-cell wall at run speed; never stuck on corners. (Sliding: see rework item 1.)
+- [x] Collision vs solid cells and vs sector walls higher than the step threshold; sliding along walls when moving diagonally into them; never tunnelling through a 1-cell wall at run speed; never stuck on corners. (Sliding: see rework item 1. Verified on PO review #3, after rework #3.)
 - [x] Gravity 20 m/s^2; walking off a ledge makes the player fall and land on the lower floor.
 - [x] Head collision: cannot enter a sector whose `ceilH - floorH` is less than 1.70 m.
 - [x] All values in one tuning config object (`game/js/physics/config.js` for now; moves to `engine/physics/config.js` in US-024).
@@ -560,6 +560,29 @@ Tests: `node game/js/physics/physics.test.js` -> **187 passed, 0 failed, ALL PAS
 - Tests: re-ran, 187/187. The new tests can fail on a freeze (pillar: must clear within 90/55 steps and never >5 consecutive `|v| < 0.1` steps; doorway: must pass within 200/120 steps with straight input). Projection invariants (i)/(ii) are implemented as specified over 16 directions x walk/run. Probe numbers (70/66/63/61 walk, 43/40/38/36 run; doorway 89/92/132 and 53/56/76) match my scratch run.
 - Non-blocking, carried forward (not for this story): `nx/ny` report the *last* corner contact even if a later iteration resolved a face - the clip is conservative so it is harmless; the centre-inside depenetration remains a US-025 item; `getEyeTransform()` allocation goes to US-024's `Camera.fromEntity`.
 - **Note for the PO:** the per-axis invariant from REJECT #2 item 4 ("resolved coordinate lies between pre-step and target on each axis") is *replaced*, not dropped. It is geometrically incompatible with a corner slide (a slide legitimately moves the other axis: your worked example now resolves to (4.874, 4.728), y moving although dy = 0). The replacement, checked on every step of the same 16-direction test: (i) `(res - pre) . d >= -1e-9` (never backwards along the step), (ii) `|res - target| <= |d| + 1e-9` (push-out never exceeds the step length - your bug pushed 0.184 m on a 0.05 m step and would fail this). Everything else in REJECT #1/#2 stands and passes unchanged.
+
+**PO OK (2026-09-22, PO review #3 of rework #3 / commit efd8737, after ARCH OK) - US-008 ready for testing.** Status -> `testing`. I read `capsule.js`, `Player.js` and the (a)-(e), invariant, pillar-corner and doorway blocks of `physics.test.js`.
+- **Invariant replacement accepted.** The architect is right: my per-axis "never behind pre-step" rule forbids a real corner slide. Worked example: a +x step legitimately moves y. The purpose of the rule was "no backward shove, no push-out bigger than the step". Invariants (i) and (ii) express exactly that, and (ii) would have caught the original 0.184 m on 0.05 m bug. They are checked on every step over 16 directions x walk/run, plus the worked example resolving to about (4.874, 4.728).
+- **REJECT #1 item 1** (west/north wall stick): the `SKIN` is still on the overlap test. Face push-out goes to `q +/- r`. (a) covers 4 walls x walk/run x hand-set/pushed-in starts: 45-degree input into the wall for 120 steps, per-step face distance in [r - 1e-6, r + 0.01], travel >= 95%. Pass.
+- **REJECT #1 item 2**: still deferred to US-009 (head clearance on entry, US-009 AC5). Unchanged, correct.
+- **REJECT #2 items 1-7**: (a) as above. (b) uses a 0.300001 m centre-to-face distance on 4 sides, with `blockedX/Y` never set and travel within 1e-6. (c) requires < 1e-6 jitter on every one of 60 steps and > 1e-4 on the first reversed step. (d) is a real face-contact slide past the pillar end with a <= 5% tangential speed drop. Item 4 is replaced as accepted above. (e) checks impassable-cell overlap with live `footZ`/`grounded`, 15-60 step input holds, the exact stuck/reverse check, and 5 seeds x 1000 steps. Test 7 stays as a smoke test. Rework notes are recorded for #1, #2 and #3. Pass.
+- **Convex-corner freeze (architect finding):** fixed at the root. Deepest-first minimum-translation push-out, a corner pushed along its unit normal, and in `Player` a face-axis zero plus a corner-normal clip only when `vn < 0`. The new tests can actually fail on a freeze. Pillar corner at 0.02/0.05/0.10/0.20 m off-diagonal must clear within 90/55 steps with never more than 5 consecutive `|v| < 0.1` steps. The doorway at +-0.25/0.35/0.45 m off centre, with purely straight input, must pass within 200/120 steps with no jamb penetration on any step. The head-on exact-diagonal hit stopping dead is correct behaviour (zero tangential component, same as a flat face).
+- **AC status:** AC1, 2, 4, 5, 6 and 7 (D-008) are unchanged since review #1 and still pass; `sectorOrOutside` is still the single resolution point. AC3 is now met: slide, no tunnelling (0.1 m/step vs 0.3 m radius), not stuck on corners. The architecture.md section 9 allocation rule is met (`COLLIDE_OPTS`, the `this._move` scratch, no closure).
+- Non-blocking, for whoever next edits the tests: the pillar-corner test's "never penetrates" check only looks at the **final** position (the doorway test checks every step). (e) and invariant (ii) cover penetration indirectly, so I am not rejecting for this. Make it per-step next time the file is touched.
+- Carried forward, not this story: centre-inside depenetration (US-025), and `getEyeTransform()` allocation (US-024 `Camera.fromEntity`).
+
+**For the tester:**
+1. `node game/js/physics/physics.test.js` -> 187 passed, 0 failed.
+2. In `game/physics-test.html` with `test_room`:
+   - Hug every wall in both directions with diagonal input into the wall: continuous slide, no stutter.
+   - Push diagonally into every inner corner: clean stop, no jitter, and backing out responds immediately.
+   - Run diagonally at pillar `O` and the `m` stub corners, slightly off-diagonal: the player slides round and does not freeze. Exactly head-on may stop; that is expected.
+   - Walk straight at each 1-cell doorway about a quarter to half a metre off centre: the player is funnelled through.
+   - Walk off the 1.0 m platform: the player falls and lands.
+   - Walk up the 0.3/0.6/0.9 stair: each 0.3 m rise is under `stepUpMax` (0.45), so it is climbed without jumping.
+   - Fail to enter the closed-headroom and low-wall cells.
+   - Run at a 1-cell wall at full run speed for 10 tries: never tunnels.
+3. Report any case where the player is stuck for more than about 0.1 s with non-zero input that is not a head-on hit.
 
 ### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: todo]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
