@@ -111,7 +111,21 @@
     skyNightMid:    '#0e1630',
     skyNightHorizon:'#1f2c4a',
     cloudNight:     '#3a4668',
-    fogNight:       '#101626'
+    fogNight:       '#101626',
+    // --- detail pass v2 (PROPOSED, design/detail-pass.js). No live material uses these yet, ---
+    // --- so the rendered image and the US-004b checksum are unchanged.                    ---
+    stoneCool:      '#7e838c', // per-block stone tones (with stoneMid, stoneDeep)
+    stoneWarm:      '#9c8c72',
+    stoneDeep:      '#655d52',
+    flagWarm:       '#8c7e68', // per-slab floor tones (with flagstone, flagDark)
+    flagCool:       '#6f7174',
+    flagDark:       '#5b544a',
+    brickLight:     '#b8664a',
+    brick:          '#9a4a36',
+    brickDark:      '#6c3226',
+    mossLight:      '#93ad4c',
+    fogV2:          '#1f2638', // v2 interior fog: bg target (dark cool)
+    fogV2Glyph:     '#5a6a90'  // v2 interior fog: fg target (lighter haze, glyphs stay visible)
   };
 
   // ---------------------------------------------------------------------------

@@ -77,5 +77,26 @@ Density order matters more than the character's shape. Each ramp in `palette.ram
 - Motion reads through glyph swaps: anticipation (`-` to `=`), follow-through, squash and stretch (`o` to `O` to `0`), arcs with trailing `- = ~ / \ |`.
 - Fire animates at 10 fps with 6 frames. Idle glints happen every 2 to 3 s and last about 0.3 s. Do not make everything move all the time. Stillness makes the moving things readable.
 
+## 7b. Detail pass v2 rules (PROPOSED, `detail-pass.md`)
+Once the engine supports v2, these rules apply:
+- **One brightness is never one glyph.** Every density level has 2 to 4 equal-density alternates, picked by a world-anchored hash.
+- **Structure is drawn as lines, texture as fill.** Joints, seams and beam edges are 1-cell oriented lines (`_ - / \ |`). Faces use the material's fill set. Lines stop before they get denser than about 1 per 2 cells.
+- **Each material has its own vocabulary**:
+  - stone: `, : ; + x %`
+  - floor: `. , ' = +`, sparser and sitting lower in the cell
+  - timber ceiling: grain `- ~ =` plus beams `= #`
+  - moss: `" , ; % &`
+  - rubble: `o O` with `,` gaps
+  - brick: `= :` with `|___|`
+  - grass: `" ' v w`
+- **Every block or slab has its own tone** (2 to 4 per material). Big surfaces are never one flat color.
+- **Faces differ by orientation**: E 1.00, S 0.90, W 0.80, N 0.72, floor 0.94, ceiling 0.62. Corners read by value even without edge glyphs.
+- **Edges** (see the table in `detail-pass.md`):
+  - caps `=` and convex corners are brighter
+  - lips `_`, inside corners and seams are darker
+  - one cell wide, never black
+- **Fog is haze**: far glyphs thin to a lighter blue `. :` on a dark cool bg, never blank-black.
+- Ambient-only surfaces sit at level 3 of 8 or above. No surface in view shows only `.`.
+
 ## 8. Mood target for M1 (the Awakening)
 Morning. Dark cool-blue stone, one warm orange pool of light around the brazier with soot-darkened walls above it, a pale warm sun ellipse on the floor with dust motes, a strip of blue sky above broken wall tops, moss low on the north wall. The preview vignette (`preview/palette.html`, section 1) is the reference picture.

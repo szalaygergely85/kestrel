@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Quest - Detail pass v2 (proposal): today vs proposed</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:30px 0 8px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:13px; margin:10px 0 4px; color:#c9c2ad; font-weight:600; }
+  .note { color:#8a8778; font-size:12px; max-width:1500px; }
+  .ok { color:#4fd66a; } .bad { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:6px 12px; margin:8px 0; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; font-size:13px; }
+  .controls.sub { position:static; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:120px; }
+  .controls .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button.preset { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.preset.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
+  .stats { font-family:Consolas, monospace; font-size:12px; color:#8a8778; margin-top:4px; max-width:900px; }
+  .stats b { color:#ffd27a; font-weight:normal; }
+  code { font-family:Consolas, monospace; color:#ffd27a; }
+  table.diag { border-collapse:collapse; font-family:Consolas, monospace; font-size:12px; margin:6px 0 12px; }
+  table.diag td, table.diag th { border:1px solid #22252e; padding:2px 8px; text-align:left; }
+  table.diag th { color:#c9c2ad; font-weight:600; background:#0d0f16; }
+  .chip { display:inline-block; width:44px; height:14px; vertical-align:middle; border:1px solid #ffffff18; margin-right:4px; }
+  table.close { border-collapse:collapse; margin:4px 0 16px; }
+  table.close td { padding:3px 5px; vertical-align:top; font-size:11px; color:#8a8778; }
+  table.close td.lbl { font-family:Consolas, monospace; color:#ffd27a; font-size:12px; width:90px; }
+  .mat { margin:14px 0 4px; }
+  .mat .name { font-family:Consolas, monospace; color:#ffd27a; font-size:14px; }
+  .mat .desc { color:#9c9888; font-size:12px; }
+  pre.vocab { font-family:Consolas, "Cascadia Mono", monospace; font-size:14px; line-height:1.35; background:#0b0c12; border:1px solid #22252e;
+              padding:8px 12px; margin:4px 0; white-space:pre-wrap; }
+  .legend span.sw { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #fff3; }
+</style>
+</head>
+<body>
+<h1>ASCII Quest : detail pass v2 (proposal), today vs proposed</h1>
+<div class="note">
+  Designer proposal answering the owner's feedback "it should be much more detailed... it hurts my eye that everything is the same char".
+  Loads <code>../palette.js</code> (v1, unchanged values) and <code>../detail-pass.js</code> (v2 proposal, <b>not loaded by the game</b>).
+  Both panels use the <b>same geometry</b>: a port of the US-004 caster (<code>game/js/render/raycaster.js</code>) that writes a per-cell
+  surface sample (a G-buffer) instead of shading directly. <b>Today</b> = the v1 reference shader <code>ASSETS.palette.util.shade</code>
+  on those samples (what the game shows at the same pose). <b>Proposed</b> = <code>ASSETS.detailPass.util.shade</code> +
+  <code>edgePass</code>. The lights are the same in both panels. Spec and engine requests: <code>design/detail-pass.md</code>.
+  Data check: <span id="check"></span>
+</div>
+
+<div class="controls">
+  <span>View:</span><span id="poses"></span>
+  <label>yaw <input type="range" id="yaw" min="0" max="359" step="1"><span class="val" id="yawV"></span></label>
+  <label>pitch <input type="range" id="pitch" min="-35" max="35" step="1"><span class="val" id="pitchV"></span></label>
+  <span>|</span>
+  <span>Light:</span>
+  <label><input type="checkbox" id="lLantern"> lantern (carried)</label>
+  <label><input type="checkbox" id="lTorch"> torch (7.5, 5.5)</label>
+  <label><input type="checkbox" id="lSun"> sun</label>
+  <label>light direction (sun azimuth) <input type="range" id="sunAz" min="0" max="359" step="1" value="112"><span class="val" id="sunAzV"></span></label>
+  <span>|</span>
+  <label>layout <select id="layout"><option value="side">side by side</option><option value="flip">A/B flip (key F)</option></select></label>
+  <button class="preset" id="flipBtn" style="display:none">showing: today</button>
+  <label>cell px <select id="px"><option>7</option><option selected>8</option><option>10</option><option>12</option></select></label>
+</div>
+
+<div class="controls sub">
+  <span>Proposed features (switch off one at a time to see what each adds):</span>
+  <label><input type="checkbox" class="feat" data-f="lift" checked> readability lift</label>
+  <label><input type="checkbox" class="feat" data-f="sets" checked> glyph sets by texel class</label>
+  <label><input type="checkbox" class="feat" data-f="detail" checked> alternates</label>
+  <label><input type="checkbox" class="feat" data-f="joints" checked> joint grid</label>
+  <label><input type="checkbox" class="feat" data-f="tones" checked> tones + jitter</label>
+  <label><input type="checkbox" class="feat" data-f="faces" checked> face factors</label>
+  <label><input type="checkbox" class="feat" data-f="ao" checked> seam AO</label>
+  <label><input type="checkbox" class="feat" data-f="overlay" checked> moss/dust</label>
+  <label><input type="checkbox" class="feat" data-f="fog" checked> fog v2</label>
+  <label><input type="checkbox" class="feat" data-f="edges" checked> edge pass</label>
+  <label><input type="checkbox" id="edgeMap"> show edge map</label>
+</div>
+
+<h2>1. test_room at 160 x 60: today vs proposed</h2>
+<div class="note">The default is ambient light only, which is what the game renders until US-006/007. That is the case the owner saw. Tick the lights to compare lit states.
+  In the stats line, "only '.' or ' '" counts surface cells (not sky) that show nothing but a dot or a blank.</div>
+<div class="row" id="mainRow">
+  <div id="boxA"><h3 id="titleA">Today (v1 shader)</h3><canvas id="cA"></canvas><div class="stats" id="statsA"></div></div>
+  <div id="boxB"><h3>Proposed (v2 shader + edge pass)</h3><canvas id="cB"></canvas><div class="stats" id="statsB"></div></div>
+</div>
+
+<h2>2. Why today collapses to one glyph (numbers, ambient only)</h2>
+<div class="note">Every texel class of the materials test_room uses, shaded by the v1 reference at 3 m with ambient 0.12. The texture only changes brightness,
+  so all the classes land on ramp index 1 or 2. That gives <code>.</code> or <code>,</code>, in colors about 10/255 apart.</div>
+<div id="diag"></div>
+
+<h2>3. Material close-ups: near / mid / far, dark / lit</h2>
+<div class="note">Each swatch is a flat patch facing the camera, sampled at the game's 160 x 60 projection scale for that distance (near 2 m, mid 6 m, far 14 m).
+  <b>Dark</b> = ambient 0.12 only. <b>Lit</b> = torch 1.0 (r 6 m) 1.2 m in front of the patch. The bottom row of a wall swatch is 4 cm above the floor (moss, soot and seam AO).
+  "Today" uses the nearest v1 material (brick and the timber ceiling have none, so today's test_room ceiling shows <code>stone</code>).</div>
+<div id="closeups"></div>
+
+<h2>4. Distance: texture LOD and fog</h2>
+<div class="note">A stone wall, then a floor, seen from 1 m (left) to 40 m (right). Today, the texture fades from 6 to 16 m and the glyphs go to blank in fog (12 to 60 m).
+  Proposed: near/mid/far glyph sets with a hashed dither (mid from 6 m, far from 13 m). Joints stop when they would be denser than 1 per ~2 cells.
+  Fog starts at 6 m, full at 36 m, and turns into a lighter blue <code>. :</code> haze instead of black.</div>
+<div id="strips"></div>
+
+<h2>5. Glyph vocabulary (sets)</h2>
+<div class="note">Each set is a list of density levels (the darkest is left). A group like <code>,:;</code> is a set of alternates with equal density: brightness picks the level,
+  and a world-anchored hash picks the alternate. So a wall at one brightness still shows three or more glyphs, and they don't shimmer when you move.
+  Joints are not in any set. They are drawn as oriented lines <code>_ - / \ |</code> that follow the line's on-screen direction.</div>
+<div id="vocab"></div>
+
+<h2>6. Edge pass rules</h2>
+<div class="note">Runs over the finished cell grid. It needs depth, the plane id and the surface kind per cell. Tick "show edge map" above to color every cell a rule touched.
+  One cell wide, never a full black outline (style guide 5.9). The rule gains brighten or darken the cell's own color.</div>
+<div id="edgeLegend" class="legend"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script>
+(function () {
+  'use strict';
+  var P = window.ASSETS && window.ASSETS.palette, DP = window.ASSETS && window.ASSETS.detailPass;
+  if (!P || !DP) { document.body.innerHTML = '<p class="bad">palette.js or detail-pass.js did not load.</p>'; return; }
+  var U = P.util, D = DP.util;
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+  var COLS = 160, ROWS = 60;
+
+  // ---------- data check ----------
+  var e1 = U.validate(), e2 = D.validate();
+  document.getElementById('check').innerHTML =
+    (e1.length ? '<span class="bad">palette: ' + e1.join('; ') + '</span>' : '<span class="ok">palette OK</span>') + ', ' +
+    (e2.length ? '<span class="bad">detail-pass: ' + e2.join('; ') + '</span>'
+               : '<span class="ok">detail-pass OK (' + Object.keys(DP.materials).length + ' materials, ' + Object.keys(DP.sets).length + ' glyph sets)</span>');
+
+  // ---------- char grid ----------
+  function makeGrid(canvas, cols, rows, px) {
+    var ctx = canvas.getContext('2d');
+    ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25);
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return {
+      cols: cols, rows: rows, cw: cw, ch: ch, ctx: ctx,
+      draw: function (cells) {
+        for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+          var c = cells[y * cols + x];
+          if (!c) { ctx.fillStyle = '#000'; ctx.fillRect(x * cw, y * ch, cw, ch); continue; }
+          ctx.fillStyle = css(c.bg); ctx.fillRect(x * cw, y * ch, cw, ch);
+          if (c.glyph !== ' ') { ctx.fillStyle = css(c.fg); ctx.fillText(c.glyph, x * cw + cw / 2, y * ch + ch / 2 + 1); }
+        }
+      },
+      text: function (x, y, s, fg) {
+        ctx.fillStyle = fg || '#8a8778';
+        for (var i = 0; i < s.length; i++) ctx.fillText(s.charAt(i), (x + i) * cw + cw / 2, y * ch + ch / 2 + 1);
+      }
+    };
+  }
+  function css(c) { return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')'; }
+  function copyOut(o) { return { glyph: o.glyph, fg: [o.fg[0], o.fg[1], o.fg[2]], bg: [o.bg[0], o.bg[1], o.bg[2]], f: o.f || 0 }; }
+  function hex(c) { return U.rgbToHex(c); }
+
+  // ---------- test_room (copy of game/js/world/levels/test_room.js, v2) ----------
+  var TEST_ROOM = {
+    name: 'test_room',
+    legend: {
+      '#': { floorH: 3.0, ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: true },
+      '.': { floorH: 0,   ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+      '^': { floorH: 0,   ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: false },
+      'O': { floorH: 3.0, ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: true },
+      'w': { floorH: 1.0, ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: true },
+      'm': { floorH: 3.0, ceilH: 'sky', wallMat: 'stone_moss', floorMat: 'floor', ceilMat: 'sky', solid: true },
+      'D': { floorH: 0,   ceilH: 2.2,   wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false, topH: 3.0 },
+      'S': { floorH: 0,   ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+      '1': { floorH: 0.3, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+      '2': { floorH: 0.6, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+      '3': { floorH: 0.9, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+      'P': { floorH: 1.0, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+      'v': { floorH: -1.0, ceilH: 3,    wallMat: 'rubble',     floorMat: 'rubble', ceilMat: 'stone', solid: false }
+    },
+    rows: [
+      '####################',
+      '#..................#',
+      '#.S.....^^^^.......#',
+      '#.......^^^^.......#',
+      '#.......^^^^.......#',
+      '#.......^^^^.......#',
+      '#.......wwww.......#',
+      '#.............O....#',
+      '#..##D###..........#',
+      '#............m.....#',
+      '#............m.....#',
+      '#..................#',
+      '#..................#',
+      '#..123........PP...#',
+      '#.............PP...#',
+      '#........v1........#',
+      '#........vv........#',
+      '####################'
+    ]
+  };
+  function resolveLevel(def) {
+    var legend = {}, ch, k;
+    for (ch in def.legend) {
+      var r = def.legend[ch], o = {};
+      for (k in r) o[k] = r[k];
+      if (o.topH === undefined) o.topH = o.ceilH;
+      if (o.upperMat === undefined) o.upperMat = o.wallMat;
+      legend[ch] = o;
+    }
+    var W = def.rows[0].length, H = def.rows.length;
+    return {
+      name: def.name, width: W, height: H,
+      sectorAt: function (x, y) {
+        var c = Math.floor(x), r = Math.floor(y);
+        if (c < 0 || r < 0 || c >= W || r >= H) return null;
+        return legend[def.rows[r].charAt(c)] || null;
+      }
+    };
+  }
+  var LEVEL = resolveLevel(TEST_ROOM);
+  var VOID = { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'stone' };
+
+  // ---------- caster port (US-004 raycaster.js), writes surface samples ----------
+  var HFOV_DEG = 75, MAX_STEPS = 96, MAX_DIST = 120;
+  var NRM = { E: [1, 0, 0], W: [-1, 0, 0], N: [0, -1, 0], S: [0, 1, 0], U: [0, 0, 1], D: [0, 0, -1] };
+
+  function castG(level, cam, cols, rows, cellWH) {
+    var tanH = Math.tan(HFOV_DEG * Math.PI / 360);
+    var yaw = cam.yaw * Math.PI / 180, dirX = Math.sin(yaw), dirY = -Math.cos(yaw);
+    var planeX = -dirY * tanH, planeY = dirX * tanH;
+    var screenAspect = (cols * cellWH) / rows;
+    var pdy = (rows / 2) * screenAspect / tanH;
+    var c = { level: level, G: new Array(cols * rows), cols: cols, rows: rows, posX: cam.x, posY: cam.y, eyeH: cam.z,
+              horizon: rows / 2 + Math.tan(cam.pitch * Math.PI / 180) * pdy, pdy: pdy, tanH: tanH };
+    for (var x = 0; x < cols; x++) {
+      var camX = (2 * (x + 0.5)) / cols - 1;
+      c.rdx = dirX + planeX * camX; c.rdy = dirY + planeY * camX;
+      column(c, x);
+    }
+    derivs(c);
+    return c;
+  }
+  function rowAt(c, h, d) { if (d < 1e-4) d = 1e-4; return c.horizon - ((h - c.eyeH) / d) * c.pdy; }
+  function hAt(c, row, d) { if (d < 1e-4) d = 1e-4; return c.eyeH - (row - c.horizon) * d / c.pdy; }
+  function dAtRow(c, row, h) { var den = c.horizon - row; if (Math.abs(den) < 1e-5) return Infinity; return ((h - c.eyeH) * c.pdy) / den; }
+  function elevAt(c, row) { return Math.atan2(c.horizon - row, c.pdy) * 180 / Math.PI; }
+  function put(c, x, row, s) { c.G[row * c.cols + x] = s; }
+
+  function column(c, x) {
+    var L = c.level, rows = c.rows, posX = c.posX, posY = c.posY, rdx = c.rdx, rdy = c.rdy;
+    var az = Math.atan2(rdx, -rdy) * 180 / Math.PI; if (az < 0) az += 360;
+    var mapX = Math.floor(posX), mapY = Math.floor(posY);
+    var ddx = rdx === 0 ? 1e30 : Math.abs(1 / rdx), ddy = rdy === 0 ? 1e30 : Math.abs(1 / rdy);
+    var stepX, stepY, sdx, sdy, side = 0, perp = 0;
+    if (rdx < 0) { stepX = -1; sdx = (posX - mapX) * ddx; } else { stepX = 1; sdx = (mapX + 1 - posX) * ddx; }
+    if (rdy < 0) { stepY = -1; sdy = (posY - mapY) * ddy; } else { stepY = 1; sdy = (mapY + 1 - posY) * ddy; }
+    function dda() {
+      if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; } else { sdy += ddy; mapY += stepY; side = 1; }
+      perp = side === 0 ? (mapX - posX + (1 - stepX) / 2) / rdx : (mapY - posY + (1 - stepY) / 2) / rdy;
+    }
+    var st = { openTop: 0, openBottom: rows - 1, skyClosed: false, ceilFilled: -1 };
+    var prevDist = 0, near = L.sectorAt(posX, posY) || VOID, row, h, r0, r1;
+    for (var i = 0; i < MAX_STEPS && st.openTop <= st.openBottom; i++) {
+      dda();
+      if (perp > MAX_DIST) break;
+      var hitX = posX + perp * rdx, hitY = posY + perp * rdy, u = side === 0 ? hitY : hitX;
+      floorCeil(c, x, near, prevDist, perp, st, az);
+      var far = L.sectorAt(mapX + 0.5, mapY + 0.5);
+      if (!far) { skyFill(c, x, st.openTop, st.openBottom, az); return; }
+      var normal = side === 0 ? (stepX > 0 ? 'W' : 'E') : (stepY > 0 ? 'N' : 'S');
+      var pid = normal + (side === 0 ? (stepX > 0 ? mapX : mapX + 1) : (stepY > 0 ? mapY : mapY + 1));
+      var wf = { side: side, mapX: mapX, mapY: mapY, ox: side === 0 ? mapX - stepX : mapX, oy: side === 1 ? mapY - stepY : mapY, hitX: hitX, hitY: hitY };
+      if (far.solid) {
+        var entry = perp;
+        var ws = Math.max(st.openTop, Math.ceil(rowAt(c, far.floorH, entry)));
+        for (row = ws; row <= st.openBottom; row++) {
+          h = hAt(c, row, entry);
+          put(c, x, row, wallS(c, 'wall', far.wallMat, normal, pid, u, h, h - near.floorH, entry, wf, near));
+        }
+        dda();
+        var exitD = Math.min(perp, MAX_DIST);
+        plane(c, x, far.floorMat, far.floorH, entry, exitD, st.openTop, ws - 1, far.floorH, 'top');
+        st.openBottom = Math.min(st.openBottom, ws - 1);
+        prevDist = exitD;
+        near = L.sectorAt(mapX + 0.5, mapY + 0.5) || VOID;
+        if (st.openTop > st.openBottom) break;
+        continue;
+      }
+      if (far.floorH !== near.floorH) {
+        var higher = far.floorH > near.floorH ? far : near;
+        var lo = Math.min(far.floorH, near.floorH), hi = Math.max(far.floorH, near.floorH);
+        r0 = Math.max(st.openTop, Math.ceil(rowAt(c, hi, perp)));
+        r1 = Math.min(st.openBottom, Math.floor(rowAt(c, lo, perp)));
+        for (row = r0; row <= r1; row++) {
+          h = hAt(c, row, perp);
+          put(c, x, row, wallS(c, 'step', higher.wallMat, normal, pid, u, h, h - near.floorH, perp, wf, near));
+        }
+        st.openBottom = Math.min(st.openBottom, r0 - 1);
+      }
+      if (!st.skyClosed && far.ceilH !== 'sky' && near.ceilH !== 'sky' && far.ceilH !== near.ceilH) {
+        var lower = far.ceilH < near.ceilH ? far : near;
+        var loC = Math.min(far.ceilH, near.ceilH), hiC = Math.max(lower.topH, Math.max(far.ceilH, near.ceilH));
+        r0 = Math.max(st.openTop, Math.ceil(rowAt(c, hiC, perp)));
+        r1 = Math.min(st.openBottom, Math.floor(rowAt(c, loC, perp)));
+        for (row = r0; row <= r1; row++) {
+          h = hAt(c, row, perp);
+          put(c, x, row, wallS(c, 'upper', lower.upperMat || lower.wallMat, normal, pid, u, h, h - near.floorH, perp, wf, near));
+        }
+        st.openTop = Math.max(st.openTop, r1 + 1);
+      }
+      prevDist = perp;
+      near = far;
+    }
+    skyFill(c, x, st.openTop, st.openBottom, az);
+  }
+  function floorCeil(c, x, sec, dN, dF, st, az) {
+    if (dF <= dN || st.openTop > st.openBottom) return;
+    plane(c, x, sec.floorMat, sec.floorH, dN, dF, st.openTop, st.openBottom, sec.floorH, sec.solid ? 'top' : 'floor');
+    if (st.skyClosed) return;
+    var top = Math.max(st.openTop, st.ceilFilled + 1);
+    if (top > st.openBottom) return;
+    if (sec.ceilH === 'sky') { skySeg(c, x, dN, top, st.openBottom, az, sec.floorH); st.skyClosed = true; return; }
+    var r = plane(c, x, sec.ceilMat, sec.ceilH, dN, dF, top, st.openBottom, sec.floorH, 'ceil');
+    if (r.r1 >= r.r0) st.ceilFilled = Math.max(st.ceilFilled, r.r1);
+  }
+  function plane(c, x, mat, h, dN, dF, oT, oB, fz, kind) {
+    var rN = rowAt(c, h, Math.max(dN, 1e-3)), rF = rowAt(c, h, Math.max(dF, 1e-3)), r0, r1;
+    if (rN <= rF) { r0 = Math.ceil(rN); r1 = Math.ceil(rF) - 1; } else { r0 = Math.floor(rF) + 1; r1 = Math.floor(rN); }
+    r0 = Math.max(oT, r0); r1 = Math.min(oB, r1);
+    for (var row = r0; row <= r1; row++) {
+      var d = dAtRow(c, row, h);
+      if (!isFinite(d) || d <= 0) continue;
+      put(c, x, row, planeS(c, kind, mat, h, c.posX + c.rdx * d, c.posY + c.rdy * d, h - fz, d));
+    }
+    return { r0: r0, r1: r1 };
+  }
+  function skySeg(c, x, dN, oT, oB, az, floorH) {
+    var r1 = Math.min(oB, Math.floor(rowAt(c, floorH, Math.max(dN, 1e-3))) - 1);
+    for (var row = oT; row <= r1; row++) put(c, x, row, { kind: 'sky', az: az, elev: elevAt(c, row), dist: Infinity, planeId: 'sky' });
+  }
+  function skyFill(c, x, oT, oB, az) {
+    for (var row = oT; row <= oB; row++) put(c, x, row, { kind: 'sky', az: az, elev: elevAt(c, row), dist: Infinity, planeId: 'sky' });
+  }
+  function blocks(L, cx, cy, h) { var s = L.sectorAt(cx + 0.5, cy + 0.5); return !s || s.floorH > h; }
+  function wallS(c, kind, mat, normal, pid, u, h, z, dist, wf, near) {
+    var n = NRM[normal], L = c.level;
+    var s = { kind: kind, mat: mat, normal: normal, planeId: pid, u: u, v: h, z: z, dist: dist,
+              wx: wf.hitX + n[0] * 0.02, wy: wf.hitY + n[1] * 0.02, wz: h };
+    var d = Math.max(0, z), zc = near.ceilH === 'sky' ? Infinity : near.ceilH - h, fr;
+    if (zc < d) d = Math.max(0, zc);
+    if (wf.side === 0) {
+      fr = wf.hitY - wf.mapY;
+      if (blocks(L, wf.ox, wf.mapY - 1, h)) d = Math.min(d, fr);
+      if (blocks(L, wf.ox, wf.mapY + 1, h)) d = Math.min(d, 1 - fr);
+    } else {
+      fr = wf.hitX - wf.mapX;
+      if (blocks(L, wf.mapX - 1, wf.oy, h)) d = Math.min(d, fr);
+      if (blocks(L, wf.mapX + 1, wf.oy, h)) d = Math.min(d, 1 - fr);
+    }
+    s.aoD = d;
+    return s;
+  }
+  function planeS(c, kind, mat, h, wx, wy, z, d) {
+    var s = { kind: kind, mat: mat, normal: kind === 'ceil' ? 'D' : 'U', planeId: kind.charAt(0) + h, u: wx, v: wy, z: z, dist: d, wx: wx, wy: wy, wz: h };
+    var L = c.level, cx = Math.floor(wx), cy = Math.floor(wy), fx = wx - cx, fy = wy - cy, a = Infinity;
+    function rises(nx, ny) {
+      var q = L.sectorAt(nx + 0.5, ny + 0.5);
+      if (!q) return true;
+      if (kind === 'ceil') return q.solid || (q.ceilH !== 'sky' && q.ceilH < h - 0.01);
+      return q.floorH > h + 0.01;
+    }
+    if (rises(cx - 1, cy)) a = Math.min(a, fx);
+    if (rises(cx + 1, cy)) a = Math.min(a, 1 - fx);
+    if (rises(cx, cy - 1)) a = Math.min(a, fy);
+    if (rises(cx, cy + 1)) a = Math.min(a, 1 - fy);
+    s.aoD = a;
+    return s;
+  }
+  function isVertKind(k) { return k === 'wall' || k === 'step' || k === 'upper'; }
+  // Texture-space derivatives per screen cell, from neighbours on the same plane (engine request E1).
+  function derivs(c) {
+    var G = c.G, cols = c.cols, rows = c.rows;
+    for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+      var i = y * cols + x, s = G[i];
+      if (!s || s.kind === 'sky') continue;
+      var l = x > 0 ? G[i - 1] : null, r = x < cols - 1 ? G[i + 1] : null;
+      var okL = l && l.planeId === s.planeId, okR = r && r.planeId === s.planeId;
+      if (okL && okR) { s.dudx = (r.u - l.u) / 2; s.dvdx = (r.v - l.v) / 2; }
+      else if (okR) { s.dudx = r.u - s.u; s.dvdx = r.v - s.v; }
+      else if (okL) { s.dudx = s.u - l.u; s.dvdx = s.v - l.v; }
+      else { s.dudx = s.dist * 2 * c.tanH / cols; s.dvdx = 0; }
+      var t = y > 0 ? G[i - cols] : null, b = y < rows - 1 ? G[i + cols] : null;
+      var okT = t && t.planeId === s.planeId, okB = b && b.planeId === s.planeId;
+      if (okT && okB) { s.dudy = (b.u - t.u) / 2; s.dvdy = (b.v - t.v) / 2; }
+      else if (okB) { s.dudy = b.u - s.u; s.dvdy = b.v - s.v; }
+      else if (okT) { s.dudy = s.u - t.u; s.dvdy = s.v - t.v; }
+      else { s.dudy = 0; s.dvdy = isVertKind(s.kind) ? -s.dist / c.pdy : s.dist / c.pdy; }
+    }
+  }
+
+  // ---------- preview lighting (same for both panels; no point-light shadows, mock only) ----------
+  function lightAt(s, LS) {
+    var L = [0, 0, 0], a = P.lights.ambient, n = NRM[s.normal] || NRM.S, i;
+    U.addLight(L, a.color, a.intensity);
+    for (i = 0; i < LS.points.length; i++) {
+      var p = LS.points[i], dx = p.x - s.wx, dy = p.y - s.wy, dz = p.z - s.wz, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d >= p.r || d < 1e-4) continue;
+      var nl = (n[0] * dx + n[1] * dy + n[2] * dz) / d;
+      if (nl > 0) U.addLight(L, p.color, p.I * U.falloff(d, p.r) * nl);
+    }
+    if (LS.sun) {
+      var sv = LS.sun.v, snl = n[0] * sv[0] + n[1] * sv[1] + n[2] * sv[2];
+      if (snl > 0 && (!LS.sun.level || sunlit(LS.sun.level, s.wx, s.wy, s.wz, sv))) U.addLight(L, 'sun', LS.sun.I * snl);
+    }
+    return L;
+  }
+  function sunlit(level, x, y, z, v) {
+    for (var t = 0.05; t < 9; t += 0.08) {
+      var px = x + v[0] * t, py = y + v[1] * t, pz = z + v[2] * t;
+      if (pz > 3.3) return true;
+      var q = level.sectorAt(px, py);
+      if (!q) return pz > 3;
+      if (q.solid) { if (pz < q.floorH) return false; }
+      else if (q.ceilH !== 'sky' && pz > q.ceilH - 0.01) return false;
+    }
+    return true;
+  }
+  function sunVec(azDeg, elDeg) {
+    var a = azDeg * Math.PI / 180, e = elDeg * Math.PI / 180;
+    return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)];
+  }
+
+  // ---------- UI state ----------
+  var POSES = [
+    { name: 'start (wake)', x: 2.5, y: 2.5, z: 1.6, yaw: 90, pitch: 0 },
+    { name: 'platform + moss', x: 8.0, y: 12.0, z: 1.6, yaw: 95, pitch: -5 },
+    { name: 'sky over low wall', x: 9.5, y: 8.5, z: 1.6, yaw: 0, pitch: 25 },
+    { name: 'doorway', x: 5.5, y: 11.5, z: 1.6, yaw: 0, pitch: 5 },
+    { name: 'stairs + pit', x: 12.5, y: 11.5, z: 1.6, yaw: 235, pitch: -15 },
+    { name: 'long diagonal', x: 17.5, y: 15.5, z: 1.6, yaw: 305, pitch: -20 }
+  ];
+  var poseIdx = 0, cam = clonePose(POSES[0]), flipShow = 'A';
+  function clonePose(p) { return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch }; }
+  var $ = function (id) { return document.getElementById(id); };
+  var poseBox = $('poses');
+  POSES.forEach(function (p, i) {
+    var b = document.createElement('button'); b.className = 'preset' + (i === 0 ? ' on' : ''); b.textContent = p.name;
+    b.onclick = function () {
+      poseIdx = i; cam = clonePose(p);
+      Array.prototype.forEach.call(poseBox.children, function (x, j) { x.className = 'preset' + (j === i ? ' on' : ''); });
+      syncSliders(); renderMain();
+    };
+    poseBox.appendChild(b);
+  });
+  function syncSliders() { $('yaw').value = cam.yaw; $('pitch').value = cam.pitch; $('yawV').textContent = cam.yaw + ''; $('pitchV').textContent = cam.pitch + ''; }
+  syncSliders();
+  $('yaw').oninput = function () { cam.yaw = +this.value; $('yawV').textContent = this.value; renderMain(); };
+  $('pitch').oninput = function () { cam.pitch = +this.value; $('pitchV').textContent = this.value; renderMain(); };
+  ['lLantern', 'lTorch', 'lSun'].forEach(function (id) { $(id).onchange = function () { renderMain(); }; });
+  $('sunAz').oninput = function () { $('sunAzV').textContent = this.value; renderMain(); };
+  $('sunAzV').textContent = $('sunAz').value;
+  $('edgeMap').onchange = function () { renderMain(); };
+  Array.prototype.forEach.call(document.querySelectorAll('.feat'), function (el) { el.onchange = function () { renderMain(); renderCloseups(); renderStrips(); }; });
+  $('px').onchange = function () { setupMain(); renderMain(); };
+  $('layout').onchange = function () { applyLayout(); renderMain(); };
+  $('flipBtn').onclick = function () { flipShow = flipShow === 'A' ? 'B' : 'A'; renderMain(); };
+  document.addEventListener('keydown', function (e) {
+    if ((e.key === 'f' || e.key === 'F') && $('layout').value === 'flip') { flipShow = flipShow === 'A' ? 'B' : 'A'; renderMain(); }
+  });
+  function flags() {
+    var F = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.feat'), function (el) { F[el.getAttribute('data-f')] = el.checked; });
+    return F;
+  }
+  function applyLayout() {
+    var flip = $('layout').value === 'flip';
+    $('boxB').style.display = flip ? 'none' : '';
+    $('flipBtn').style.display = flip ? '' : 'none';
+  }
+  function lightSet(level, c) {
+    var LS = { points: [], sun: null };
+    var yaw = c.yaw * Math.PI / 180, dx = Math.sin(yaw), dy = -Math.cos(yaw), rx = -dy, ry = dx;
+    if ($('lLantern').checked) {
+      var h = P.lights.lantern.hold, pl = P.lights.lantern;
+      LS.points.push({ x: c.x + dx * h.forward + rx * h.right, y: c.y + dy * h.forward + ry * h.right, z: c.z - h.down, r: pl.radius, I: pl.intensity, color: pl.color });
+    }
+    if ($('lTorch').checked) LS.points.push({ x: 7.5, y: 5.5, z: 0.9, r: P.lights.torch.radius, I: P.lights.torch.intensity, color: 'torch' });
+    if ($('lSun').checked) LS.sun = { v: sunVec(+$('sunAz').value, P.lights.sun.elevation), I: P.lights.sun.intensity, level: level };
+    return LS;
+  }
+
+  // ---------- main render ----------
+  var gA, gB;
+  function setupMain() {
+    var px = +$('px').value;
+    gA = makeGrid($('cA'), COLS, ROWS, px);
+    gB = makeGrid($('cB'), COLS, ROWS, px);
+  }
+  var EDGE_COL = { cap: [255, 210, 74], lip: [255, 90, 31], side: [60, 232, 255], convex: [79, 214, 106], concave: [176, 88, 122],
+                   seamFloor: [201, 160, 74], seamCeil: [143, 168, 196], nosing: [255, 255, 255] };
+
+  function shadeFrame(c, LS, F, levelName, outA, outB) {
+    var G = c.G, n = G.length, i, tmp = { fg: [0, 0, 0], bg: [0, 0, 0] };
+    for (i = 0; i < n; i++) {
+      var s = G[i];
+      if (!s) { outA[i] = outB[i] = null; continue; }
+      if (s.kind === 'sky') {
+        U.shadeSky(s.az, s.elev, tmp, P.defaultTime);
+        outA[i] = copyOut(tmp); outB[i] = copyOut(tmp);
+        continue;
+      }
+      var L = lightAt(s, LS);
+      U.shade(s.mat, L, s.u, s.v, s.dist, tmp, { z: s.z, fog: 'interior' });
+      outA[i] = copyOut(tmp);
+      var k2 = D.resolve(s.kind, s.mat, levelName);
+      if (k2) { var s2 = Object.create(s); s2.mat = k2; D.shade(s2, L, tmp, F); outB[i] = copyOut(tmp); }
+      else outB[i] = copyOut(tmp);
+    }
+  }
+  function stats(G, C) {
+    var cnt = {}, tot = 0, dots = 0, lum = 0, i;
+    for (i = 0; i < G.length; i++) {
+      var s = G[i];
+      if (!s || s.kind === 'sky' || !C[i]) continue;
+      tot++;
+      var g = C[i].glyph; cnt[g] = (cnt[g] || 0) + 1;
+      if (g === ' ' || g === '.') dots++;
+      lum += 0.2126 * C[i].fg[0] + 0.7152 * C[i].fg[1] + 0.0722 * C[i].fg[2];
+    }
+    var keys = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
+    var top = keys.slice(0, 6).map(function (k) { return '<b>' + (k === ' ' ? 'space' : k.replace(/&/g, '&amp;').replace(/</g, '&lt;')) + '</b> ' + Math.round(100 * cnt[k] / tot) + '%'; }).join(', ');
+    return 'surface cells ' + tot + ' | distinct glyphs <b>' + keys.length + '</b> | only "." or " ": <b>' + (tot ? Math.round(100 * dots / tot) : 0) +
+      '%</b> | mean fg luma <b>' + (tot ? Math.round(lum / tot) : 0) + '</b>/255 | top: ' + top;
+  }
+  function renderMain() {
+    var F = flags();
+    DP.shading.cellAspect = gA.ch / gA.cw;
+    var c = castG(LEVEL, cam, COLS, ROWS, gA.cw / gA.ch);
+    var LS = lightSet(LEVEL, cam);
+    var A = new Array(COLS * ROWS), B = new Array(COLS * ROWS);
+    shadeFrame(c, LS, F, 'test_room', A, B);
+    var rules = F.edges ? D.edgePass(COLS, ROWS, c.G, B) : null;
+    if ($('edgeMap').checked && rules) {
+      for (var i = 0; i < rules.length; i++) if (rules[i]) {
+        var ec = EDGE_COL[rules[i]];
+        B[i] = { glyph: B[i].glyph, fg: ec, bg: [ec[0] * 0.35, ec[1] * 0.35, ec[2] * 0.35] };
+      }
+    }
+    var flip = $('layout').value === 'flip';
+    if (flip) {
+      gA.draw(flipShow === 'A' ? A : B);
+      $('titleA').textContent = flipShow === 'A' ? 'Today (v1 shader)  [F = flip]' : 'Proposed (v2 shader + edge pass)  [F = flip]';
+      $('flipBtn').textContent = 'showing: ' + (flipShow === 'A' ? 'today' : 'proposed');
+      $('statsA').innerHTML = stats(c.G, flipShow === 'A' ? A : B);
+    } else {
+      $('titleA').textContent = 'Today (v1 shader)';
+      gA.draw(A); gB.draw(B);
+      $('statsA').innerHTML = stats(c.G, A);
+      $('statsB').innerHTML = stats(c.G, B);
+    }
+  }
+
+  // ---------- section 2: diagnosis numbers ----------
+  function renderDiag() {
+    var amb = P.lights.ambient, L = [0, 0, 0];
+    U.addLight(L, amb.color, amb.intensity);
+    var used = [['stone', 'walls, pillar, low wall, lintel, steps AND ceilings'], ['floor', 'floors, solid tops'], ['stone_moss', 'moss stub'], ['rubble', 'pit']];
+    var html = '<table class="diag"><tr><th>material</th><th>used for</th><th>texel</th><th>shade</th><th>b</th><th>ramp</th><th>index</th><th>glyph</th><th>fg</th><th>bg</th></tr>';
+    var all = {}, out = { fg: [0, 0, 0], bg: [0, 0, 0] };
+    used.forEach(function (u) {
+      var m = P.materials[u[0]], keys = Object.keys(m.texture.key), first = true;
+      keys.forEach(function (k) {
+        var one = {}; for (var q in m) one[q] = m[q];
+        one.texture = { w: 1, h: 1, scale: [1, 1], key: m.texture.key, rows: [k] };
+        U.shade(one, L, 0.5, 0.5, 3, out, { z: 0.5, fog: 'interior' });
+        var idx = P.ramps[m.ramp].indexOf(out.glyph);
+        all[out.glyph] = 1;
+        html += '<tr><td>' + (first ? u[0] : '') + '</td><td>' + (first ? u[1] : '') + '</td><td>' + k + '</td><td>' + m.texture.key[k].shade.toFixed(2) +
+          '</td><td>' + out.b.toFixed(3) + '</td><td>"' + P.ramps[m.ramp] + '"</td><td>' + idx + '</td><td>"' + out.glyph + '"</td>' +
+          '<td><span class="chip" style="background:' + css(out.fg) + '"></span>' + hex(out.fg) + '</td>' +
+          '<td><span class="chip" style="background:' + css(out.bg) + '"></span>' + hex(out.bg) + '</td></tr>';
+        first = false;
+      });
+    });
+    html += '</table>';
+    html += '<div class="note">All test_room texels at ambient: glyphs <code>' + Object.keys(all).map(function (g) { return '"' + g + '"'; }).join(' ') +
+      '</code>. Ambient gives b = 0.12 x albedo x shade = 0.04 to 0.11. The ramp curve (b^0.85) puts that on index 1 or 2. The fg gain' +
+      ' (0.32 + 0.68 b^0.75) is about 0.4 for all of them. The strong ambient tint (0.85) pulls every material to the same blue-grey, and the bg is 0.2 x fg, about #080a0e.' +
+      ' The ceiling uses the same material as the walls, and nothing in the pipeline knows which way a face points. So walls, ceiling and corners come out identical.</div>';
+    $('diag').innerHTML = html;
+  }
+
+  // ---------- section 3: close-ups ----------
+  var CW = 48, CH = 14, CLOSE_D = [2, 6, 14];
+  var CLOSE = [
+    ['stone', 'stone', 'wall'], ['stone_moss', 'stone_moss', 'wall'], ['stone_scorched', 'stone_scorched', 'wall'], ['brick', 'stone', 'wall'],
+    ['floor', 'floor', 'floor'], ['ceiling_timber', 'stone', 'ceil'], ['wood', 'wood', 'wall'], ['rubble', 'rubble', 'floor'], ['grass', 'grass', 'floor']
+  ];
+  var closeGrids = [];
+  function swatch(kind, dist, cellWH, cols, rows, uOff) {
+    var tanH = Math.tan(HFOV_DEG * Math.PI / 360), screenAspect = COLS * cellWH / ROWS, pdy = (ROWS / 2) * screenAspect / tanH;
+    var du = dist * 2 * tanH / COLS, dv = dist / pdy, arr = [], x, y;
+    for (y = 0; y < rows; y++) for (x = 0; x < cols; x++) {
+      var u = (uOff || 7) + (x + 0.5) * du, s;
+      if (kind === 'wall') {
+        var v = rows * dv + 0.04 - (y + 0.5) * dv;
+        s = { kind: 'wall', normal: 'S', u: u, v: v, z: v, aoD: v, dist: dist, dudx: du, dvdx: 0, dudy: 0, dvdy: -dv, wx: u, wy: 0.02, wz: v, planeId: 'w' };
+      } else {
+        var vv = 7 + (y + 0.5) * dv, ceil = kind === 'ceil';
+        s = { kind: kind, normal: ceil ? 'D' : 'U', u: u, v: vv, z: ceil ? 3 : 0, aoD: Infinity, dist: dist, dudx: du, dvdx: 0, dudy: 0, dvdy: dv,
+              wx: u, wy: vv, wz: ceil ? 3 : 0, planeId: 'p' };
+      }
+      arr.push(s);
+    }
+    return { samples: arr, uc: (uOff || 7) + cols * du / 2, vc: kind === 'wall' ? rows * dv / 2 : 7 + rows * dv / 2 };
+  }
+  function renderCloseups() {
+    var F = flags(), box = $('closeups');
+    if (!closeGrids.length) {
+      CLOSE.forEach(function (row) {
+        var m = DP.materials[row[0]];
+        var div = document.createElement('div'); div.className = 'mat';
+        div.innerHTML = '<span class="name">' + row[0] + '</span> <span class="desc">(' + row[2] + '; today = v1 <code>' + row[1] + '</code>) ' + m.desc + '</span>';
+        var t = document.createElement('table'); t.className = 'close';
+        var hdr = '<tr><td class="lbl"></td>' + ['dark', 'lit'].map(function (l) { return CLOSE_D.map(function (d) { return '<td>' + l + ', ' + d + ' m</td>'; }).join(''); }).join('') + '</tr>';
+        t.innerHTML = hdr;
+        var gs = { A: [], B: [] };
+        ['A', 'B'].forEach(function (which) {
+          var tr = document.createElement('tr');
+          var td0 = document.createElement('td'); td0.className = 'lbl'; td0.textContent = which === 'A' ? 'today' : 'proposed'; tr.appendChild(td0);
+          for (var j = 0; j < 6; j++) {
+            var td = document.createElement('td'), cv = document.createElement('canvas');
+            td.appendChild(cv); tr.appendChild(td);
+            gs[which].push(makeGrid(cv, CW, CH, 9));
+          }
+          t.appendChild(tr);
+        });
+        div.appendChild(t); box.appendChild(div);
+        closeGrids.push(gs);
+      });
+    }
+    CLOSE.forEach(function (row, ri) {
+      var gs = closeGrids[ri], g0 = gs.A[0];
+      DP.shading.cellAspect = g0.ch / g0.cw;
+      for (var j = 0; j < 6; j++) {
+        var lit = j >= 3, dist = CLOSE_D[j % 3];
+        var sw = swatch(row[2], dist, g0.cw / g0.ch, CW, CH);
+        var LS = { points: [], sun: null };
+        if (lit) {
+          var tp = row[2] === 'wall' ? { x: sw.uc, y: 1.2, z: 1.3 } : row[2] === 'ceil' ? { x: sw.uc, y: sw.vc, z: 3 - 1.2 } : { x: sw.uc, y: sw.vc, z: 1.2 };
+          LS.points.push({ x: tp.x, y: tp.y, z: tp.z, r: P.lights.torch.radius, I: 1.0, color: 'torch' });
+        }
+        var A = [], B = [], tmp = { fg: [0, 0, 0], bg: [0, 0, 0] };
+        sw.samples.forEach(function (s) {
+          var L = lightAt(s, LS);
+          U.shade(row[1], L, s.u, s.v, s.dist, tmp, { z: s.z, fog: 'interior' }); A.push(copyOut(tmp));
+          var s2 = Object.create(s); s2.mat = row[0];
+          D.shade(s2, L, tmp, F); B.push(copyOut(tmp));
+        });
+        gs.A[j].draw(A); gs.B[j].draw(B);
+      }
+    });
+  }
+
+  // ---------- section 4: distance strips ----------
+  var stripGrids = null, SW = 160, SH = 12;
+  function renderStrips() {
+    var F = flags(), box = $('strips');
+    if (!stripGrids) {
+      stripGrids = [];
+      [['stone', 'stone', 'wall'], ['floor', 'floor', 'floor']].forEach(function (r) {
+        ['A', 'B'].forEach(function (w) {
+          var h = document.createElement('h3'); h.textContent = r[0] + ' - ' + (w === 'A' ? 'today' : 'proposed');
+          var cv = document.createElement('canvas'); box.appendChild(h); box.appendChild(cv);
+          stripGrids.push({ mat: r, which: w, g: makeGrid(cv, SW, SH + 1, 9) });
+        });
+      });
+    }
+    stripGrids.forEach(function (sg) {
+      var g = sg.g, tanH = Math.tan(HFOV_DEG * Math.PI / 360), screenAspect = COLS * (g.cw / g.ch) / ROWS, pdy = (ROWS / 2) * screenAspect / tanH;
+      DP.shading.cellAspect = g.ch / g.cw;
+      var cells = [], tmp = { fg: [0, 0, 0], bg: [0, 0, 0] }, LS = { points: [], sun: null };
+      for (var y = 0; y < SH + 1; y++) for (var x = 0; x < SW; x++) {
+        if (y === SH) { cells.push({ glyph: ' ', fg: [0, 0, 0], bg: [7, 8, 12] }); continue; }
+        var dist = 1 + x * 39 / (SW - 1), du = dist * 2 * tanH / COLS, dv = dist / pdy, wall = sg.mat[2] === 'wall';
+        var u = 3 + x * 0.09, v = wall ? 1.2 - (y - SH / 2) * dv : 3 + (y - SH / 2) * dv;
+        var s = { kind: sg.mat[2], normal: wall ? 'S' : 'U', u: u, v: v, z: wall ? v : 0, aoD: Infinity, dist: dist,
+                  dudx: du, dvdx: 0, dudy: 0, dvdy: wall ? -dv : dv, wx: u, wy: wall ? 0.02 : v, wz: wall ? v : 0, planeId: 'x' };
+        var L = lightAt(s, LS);
+        if (sg.which === 'A') U.shade(sg.mat[1], L, s.u, s.v, s.dist, tmp, { z: s.z, fog: 'interior' });
+        else { var s2 = Object.create(s); s2.mat = sg.mat[0]; D.shade(s2, L, tmp, F); }
+        cells.push(copyOut(tmp));
+      }
+      g.draw(cells);
+      [1, 6, 12, 16, 20, 30, 36, 40].forEach(function (d) {
+        var x = Math.round((d - 1) * (SW - 1) / 39);
+        g.text(Math.min(SW - 4, x), SH, '^' + d + 'm', '#8a8778');
+      });
+    });
+  }
+
+  // ---------- section 5: vocabulary ----------
+  function renderVocab() {
+    var html = '', k, S, stone = css(P.rgb.stoneLight);
+    function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    for (k in DP.sets) {
+      S = DP.sets[k];
+      if (S.orient) {
+        html += '<span style="color:#ffd27a">' + k + '</span>  (oriented, lines of constant ' + S.orient + ')\n';
+        ['h', 'v', 'd1', 'd2'].forEach(function (f) {
+          html += '   ' + (f + '  ').slice(0, 3) + '<span style="color:' + stone + '">' + esc(S.dark.join('  ') + '  ' + S.fam[f].join('  ')) + '</span>\n';
+        });
+      } else {
+        html += (k + '            ').slice(0, 12) + '<span style="color:' + stone + '">' + esc(S.map(function (x) { return (x + '   ').slice(0, 3); }).join(' ')) + '</span>\n';
+      }
+    }
+    html += '\n<span style="color:#ffd27a">joints</span>      oriented line glyph by on-screen direction:  _ or - (horizontal, by position in the cell)   |   /   \\    cross: | (walls) + (floors)';
+    $('vocab').innerHTML = '<pre class="vocab">' + html + '</pre>';
+  }
+  function renderEdgeLegend() {
+    var R = DP.edges.rules, html = '<table class="diag"><tr><th>rule</th><th>glyph</th><th>gain</th><th>when</th></tr>';
+    for (var k in R) {
+      html += '<tr><td><span class="sw" style="background:' + css(EDGE_COL[k]) + '"></span>' + k + '</td><td>"' + R[k].glyph + '"</td><td>' + R[k].gain + '</td><td>' + R[k].desc + '</td></tr>';
+    }
+    html += '</table><div class="note">Neighbour counts as "farther" when it is sky, or on a different plane and farther than d x ' + DP.edges.depthRatio + ' + ' + DP.edges.depthAbs +
+      ' m. Corners: two wall planes meet between two columns; convex if both sides recede from the corner, concave if both come toward it. No edges above fog ' + DP.edges.fogMax + '.</div>';
+    $('edgeLegend').innerHTML = html;
+  }
+
+  setupMain();
+  applyLayout();
+  renderMain();
+  renderDiag();
+  renderCloseups();
+  renderStrips();
+  renderVocab();
+  renderEdgeLegend();
+})();
+</script>
+</body>
+</html>
