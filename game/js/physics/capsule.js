@@ -134,6 +134,39 @@ const SKIN = 1e-6;
 // instead - let the axis pass that actually owns that coordinate (the
 // other call to resolveAxis) decide it. A cell only pushes back on the
 // axis it is genuinely blocking.
+// PO REJECT #2 (US-008) bugfix: a CORNER contact (the moving circle's
+// nearest point on a cell is the cell's corner, not one of its edges - i.e.
+// `dx !== 0 AND dy !== 0` below) was pushing the moving-axis coordinate all
+// the way out to `col - radius` / `col + 1 + radius`, exactly as a face
+// contact does. For a face contact that's correct (the whole face is the
+// obstruction, at a fixed perpendicular distance of exactly `radius`), but
+// a corner is a single POINT: the circle only needs to clear it by
+// `radius` in straight-line distance, not by `radius` measured along the
+// axis. Pushing the full face offset overshoots past that point and can
+// put the capsule BEHIND where it started the step. Worked example
+// (backlog): a pillar at cell (5,5), capsule at x=4.834, y=4.75 (clear of
+// the corner), moving dx=+0.05. The target x=4.884 overlaps the (5,5)
+// corner at distance 0.276 (< radius 0.30), so the old code resolved x to
+// `5 - 0.3` = 4.70 - 0.134 m *backwards* of the pre-step 4.834. `blockedX`
+// then zeroed vx and the capsule caught on the corner instead of grazing
+// past it (AC3: "never stuck on corners").
+// (A first attempt clamped the corner result into [pre-step, target] on
+// this axis instead of fixing the math - that stopped the overshoot, but
+// for a corner close enough that the circle GENUINELY penetrates it this
+// step, clamping merely refused to move at all, freezing the capsule
+// against a corner it was actually overlapping. That's worse: permanently
+// stuck, not just briefly caught - caught by test 7's mini-level smoke
+// test and the (a) wall-slide rewrite below.)
+// Fix: resolve the corner EXACTLY as a circle-vs-point contact. With the
+// other axis's distance to the corner already known (`dy` here, still the
+// fixed/not-yet-moved coordinate for this pass), the moving axis only needs
+// to be pushed out by `sqrt(radius^2 - dy^2)` (the remaining reach of the
+// radius at that fixed offset) instead of the full `radius` - the exact
+// point on the circle's edge that is `radius` from the corner. That is
+// always <= the face offset, so it can never move the capsule further from
+// the corner than the pre-step position needed to be, which is what keeps
+// it from overshooting backward - without the clamp's freezing failure
+// mode, because it's an exact geometric answer, not a refusal to move.
 function resolveAxis(cx, cy, movingAxis, radius, passable) {
   let resolved = movingAxis === 'x' ? cx : cy;
   const colMin = Math.floor(cx - radius), colMax = Math.floor(cx + radius);
@@ -153,11 +186,13 @@ function resolveAxis(cx, cy, movingAxis, radius, passable) {
 
       if (movingAxis === 'x') {
         if (dx === 0) continue; // this cell only touches on Y (see the function comment) - not our concern here
-        resolved = dx > 0 ? col + 1 + radius : col - radius;
+        const reach = dy === 0 ? radius : Math.sqrt(Math.max(radius * radius - dy * dy, 0));
+        resolved = dx > 0 ? col + 1 + reach : col - reach;
         cx = resolved;
       } else {
         if (dy === 0) continue; // this cell only touches on X - not our concern here
-        resolved = dy > 0 ? row + 1 + radius : row - radius;
+        const reach = dx === 0 ? radius : Math.sqrt(Math.max(radius * radius - dx * dx, 0));
+        resolved = dy > 0 ? row + 1 + reach : row - reach;
         cy = resolved;
       }
     }

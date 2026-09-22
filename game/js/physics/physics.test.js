@@ -171,7 +171,15 @@ function stepN(player, level, controls, n) {
 {
   const level = miniLevel();
   const player = new Player(level);
-  player.x = 1.5; player.y = 1.5;
+  // y=1.3 (not 1.5): starting exactly on the (1.5,1.5)-to-(2,2) diagonal
+  // aims dead-on at the 'h' cell's corner POINT with zero tangential
+  // velocity relative to it - a genuine head-on hit (see the PO reject #2
+  // corner-push-out fix in capsule.js), which correctly just stops, same
+  // as test (d)'s "a real overlap moving with zero lateral velocity has
+  // nothing to deflect it". Offsetting y off that exact diagonal restores
+  // this smoke test's intent: a real face/near-corner graze with a
+  // tangential component to slide along.
+  player.x = 1.5; player.y = 1.3;
   player.z = 0; player.grounded = true;
   // Aim at the wall (2,2) diagonally (SE): forward=east(yaw90)+strafe=south.
   const controls = { forward: 1, strafe: 1, run: true, yawDeg: 90 };
@@ -363,17 +371,20 @@ function stepN(player, level, controls, n) {
 }
 
 // =======================================================================
-// PO REJECT #1 (US-008) bugfix regression tests: capsule.js resolveAxis
-// could stick a capsule to a WEST or NORTH wall while sliding along it (a
-// float-rounding false "overlap" on the fixed axis fell back to refusing
-// ANY movement on the axis being resolved, instead of recognizing the cell
-// only touched on the other axis). Fixed with a skin tolerance on the
-// overlap test and by skipping (not blocking on) a cell that only touches
-// the fixed axis. The five checks below are exactly what the PO asked for.
+// PO REJECT #1 (US-008) bugfix regression tests, REWRITTEN for PO REJECT #2
+// (2026-09-22): the reject #1 tests below did not actually reproduce the
+// float-rounding stick (pure along-wall movement, near-misses far from the
+// real rounding boundary, loose tolerances, no real pillar contact, and a
+// random walk that re-rolled every step and only checked `solid`). These
+// versions exercise the exact conditions from the review. See
+// docs/backlog.md US-008 "PO REJECT #2" for the itemised requirements this
+// section implements, and capsule.js for the corner-push-out fix these
+// also cover (test group 4b below).
 // =======================================================================
 
 // A 12x12 room, single ring of border walls, fully open 10x10 interior -
-// generous room to slide along every wall face far from corners.
+// enough to test near-wall clearance without touching, but too small for a
+// full 2 s run-speed slide (see longRoom() for that).
 function bigRoom() {
   const legend = {
     '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
@@ -384,6 +395,39 @@ function bigRoom() {
     rows.push(y === 0 || y === 11 ? '#'.repeat(12) : '#' + '.'.repeat(10) + '#');
   }
   return loadLevel({ name: 'bigroom', legend, rows, start: { x: 6, y: 6, facingDeg: 90 } });
+}
+
+// A 24x24 room (22 m open interior per side) - long enough for 2 s of run
+// (about 8.5 m of tangential travel) along any wall without also hitting a
+// perpendicular wall (PO reject #2, item 1).
+function longRoom() {
+  const legend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'stone', solid: false },
+  };
+  const rows = [];
+  for (let y = 0; y < 24; y++) {
+    rows.push(y === 0 || y === 23 ? '#'.repeat(24) : '#' + '.'.repeat(22) + '#');
+  }
+  return loadLevel({ name: 'longroom', legend, rows, start: { x: 12, y: 12, facingDeg: 90 } });
+}
+
+// A single 1-cell pillar (solid) at grid cell (5,5) in an otherwise open
+// 10x10 room, used for the outer-corner slide test and the corner
+// push-out invariant tests.
+function pillarLevel() {
+  const legend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'stone', solid: false },
+    'O': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+  };
+  const rows = [];
+  for (let y = 0; y < 10; y++) {
+    let row = '.'.repeat(10);
+    if (y === 5) row = row.slice(0, 5) + 'O' + row.slice(6); // single pillar at (5,5)
+    rows.push(row);
+  }
+  return loadLevel({ name: 'pillar', legend, rows, start: { x: 1, y: 5, facingDeg: 90 } });
 }
 
 // Does a capsule (radius r) at (x,y) overlap any solid cell? Independent of
@@ -404,73 +448,148 @@ function circleOverlapsSolid(level, x, y, r) {
   return false;
 }
 
+// Same, but against whatever `isSectorPassable` (footZ/grounded aware)
+// considers impassable, not just `solid` - a too-high floor or too-low
+// ceiling counts too (PO reject #2, item 5).
+function circleOverlapsImpassable(level, x, y, r, footZ, grounded, opts) {
+  const colMin = Math.floor(x - r), colMax = Math.floor(x + r);
+  const rowMin = Math.floor(y - r), rowMax = Math.floor(y + r);
+  for (let row = rowMin; row <= rowMax; row++) {
+    for (let col = colMin; col <= colMax; col++) {
+      const sector = sectorOrOutside(level, col + 0.5, row + 0.5);
+      if (isSectorPassable(sector, footZ, grounded, opts)) continue;
+      const cx = Math.min(Math.max(x, col), col + 1);
+      const cy = Math.min(Math.max(y, row), row + 1);
+      const d = Math.hypot(x - cx, y - cy);
+      if (d < r - 1e-6) return true;
+    }
+  }
+  return false;
+}
+
 // -----------------------------------------------------------------------
-// 1. Slide along all 4 wall sides, at walk and run: >= 95% of the target
-//    ground speed, starting from resting exactly against the wall (the
-//    bug's actual trigger condition - see the capsule.js comment).
+// (a) Slide along all 4 wall sides, at walk and run, with 45-degree
+//     DIAGONAL input pressed INTO the wall for 2 s (120 steps) - the bug's
+//     actual trigger condition, not pure forward travel. Checked both from
+//     a hand-set exact-radius start and after a real run-in push-out
+//     contact. On every one of the 120 steps: distance from the capsule
+//     centre to the wall face stays within [radius - 1e-6, radius + 0.01],
+//     and tangential travel over the 2 s is >= 95% of speed*cos(45)*2s.
 // -----------------------------------------------------------------------
 {
-  const level = bigRoom();
+  const level = longRoom();
+  const diagSteps = Math.round(2 / PHYSICS.fixedDt); // 2 s
+  // face: distance from centre to the wall face; tangential: the along-wall
+  // coordinate; approachYaw: straight into the wall (for the "pushed" start
+  // mode); diagonalYaw: 45 degrees between "into the wall" and "tangential".
   const walls = [
-    // name, start x, start y, resting axis setter, tangential yaw (pure forward, no strafe)
-    { name: 'west',  x: () => 1 + PHYSICS.radius,  y: 3, yawDeg: 180 }, // slide south along the west wall (col 0)
-    { name: 'east',  x: () => 11 - PHYSICS.radius, y: 3, yawDeg: 180 }, // slide south along the east wall (col 11)
-    { name: 'north', x: 3, y: () => 1 + PHYSICS.radius,  yawDeg: 90 },  // slide east along the north wall (row 0)
-    { name: 'south', x: 3, y: () => 11 - PHYSICS.radius, yawDeg: 90 },  // slide east along the south wall (row 11)
+    { name: 'west',  face: (x) => x - 1,  tangential: (x, y) => y, approachYaw: 270, diagonalYaw: 225, fixedCoord: (x, y) => y },
+    { name: 'east',  face: (x) => 23 - x, tangential: (x, y) => y, approachYaw: 90,  diagonalYaw: 135, fixedCoord: (x, y) => y },
+    { name: 'north', face: (x, y) => y - 1,  tangential: (x, y) => x, approachYaw: 0,   diagonalYaw: 45,  fixedCoord: (x, y) => x },
+    { name: 'south', face: (x, y) => 23 - y, tangential: (x, y) => x, approachYaw: 180, diagonalYaw: 135, fixedCoord: (x, y) => x },
   ];
+
   for (const wall of walls) {
     for (const run of [false, true]) {
-      const player = new Player(level);
-      player.x = typeof wall.x === 'function' ? wall.x() : wall.x;
-      player.y = typeof wall.y === 'function' ? wall.y() : wall.y;
-      player.z = 0; player.grounded = true; player.vx = 0; player.vy = 0;
-      const controls = { forward: 1, strafe: 0, run, yawDeg: wall.yawDeg };
-      const accelSteps = Math.round(PHYSICS.accelTime / PHYSICS.fixedDt);
-      stepN(player, level, controls, accelSteps + 20); // reach full speed, then a bit more
-      const speed = Math.hypot(player.vx, player.vy);
-      const target = run ? PHYSICS.runSpeed : PHYSICS.walkSpeed;
-      ok(
-        `slide along ${wall.name} wall at ${run ? 'run' : 'walk'} speed reaches >= 95% of target`,
-        speed >= target * 0.95,
-        `speed=${speed} target=${target}`
-      );
+      const speed = run ? PHYSICS.runSpeed : PHYSICS.walkSpeed;
+      for (const startMode of ['exact radius', 'real push-out']) {
+        const player = new Player(level);
+        player.z = 0; player.grounded = true; player.vx = 0; player.vy = 0;
+
+        // Tangential start near the low end of the 22 m interior, so 2 s of
+        // run (up to ~12 m) never reaches the far perpendicular wall.
+        const tangentialLow = 2;
+        if (wall.name === 'west')  { player.x = 1 + PHYSICS.radius;  player.y = tangentialLow; }
+        if (wall.name === 'east')  { player.x = 23 - PHYSICS.radius; player.y = tangentialLow; }
+        if (wall.name === 'north') { player.y = 1 + PHYSICS.radius;  player.x = tangentialLow; }
+        if (wall.name === 'south') { player.y = 23 - PHYSICS.radius; player.x = tangentialLow; }
+
+        if (startMode === 'real push-out') {
+          // Start 2 m clear of the wall face (same tangential coordinate)
+          // and run straight in to get a REAL push-out contact, not a
+          // hand-set one.
+          if (wall.name === 'west')  player.x += 2;
+          if (wall.name === 'east')  player.x -= 2;
+          if (wall.name === 'north') player.y += 2;
+          if (wall.name === 'south') player.y -= 2;
+          const approachControls = { forward: 1, strafe: 0, run: true, yawDeg: wall.approachYaw };
+          stepN(player, level, approachControls, 60); // 1 s at run - plenty to reach and settle
+        }
+
+        let minFace = Infinity, maxFace = -Infinity;
+        const tangentialStart = wall.tangential(player.x, player.y);
+        const diagControls = { forward: 1, strafe: 0, run, yawDeg: wall.diagonalYaw };
+        for (let i = 0; i < diagSteps; i++) {
+          player.update(PHYSICS.fixedDt, diagControls, level);
+          const d = wall.face(player.x, player.y);
+          if (d < minFace) minFace = d;
+          if (d > maxFace) maxFace = d;
+        }
+        const tangentialTravel = wall.tangential(player.x, player.y) - tangentialStart;
+        const targetTravel = speed * Math.cos(Math.PI / 4) * 2;
+
+        ok(
+          `(a) ${wall.name} wall, ${run ? 'run' : 'walk'}, start=${startMode}: distance to wall face stays in [r-1e-6, r+0.01] every step`,
+          minFace >= PHYSICS.radius - 1e-6 && maxFace <= PHYSICS.radius + 0.01,
+          `min=${minFace} max=${maxFace} radius=${PHYSICS.radius}`
+        );
+        ok(
+          `(a) ${wall.name} wall, ${run ? 'run' : 'walk'}, start=${startMode}: tangential travel over 2 s >= 95% of target`,
+          tangentialTravel >= targetTravel * 0.95,
+          `travel=${tangentialTravel} target=${targetTravel}`
+        );
+      }
     }
   }
 }
 
 // -----------------------------------------------------------------------
-// 2. Walking parallel to a wall at 0.300001 m clearance (i.e. NOT touching
-//    it - just outside the radius) for 5 m must be identical to walking
-//    the same input with no wall nearby at all: the wall must never be
-//    triggered when there is no real overlap.
+// (b) Near-miss walk: capsule CENTRE 0.300001 m from the wall face (edge
+//     clearance exactly 1e-6, at the real float-rounding boundary this bug
+//     lived at), walking 5 m parallel on each of the 4 sides. `blockedX`/
+//     `blockedY` (checked directly via moveCapsule) must never be true, and
+//     the travel must equal a free walk (no wall) within 1e-6.
 // -----------------------------------------------------------------------
 {
   const level = bigRoom();
-  const controls = { forward: 1, strafe: 0, run: false, yawDeg: 180 }; // walk south
-  const steps = Math.ceil(5 / PHYSICS.walkSpeed / PHYSICS.fixedDt) + 30; // enough to cover 5 m plus accel ramp
+  const opts = { height: PHYSICS.height, stepUpMax: PHYSICS.stepUpMax };
+  const dist = 0.300001; // capsule centre to wall face
+  const dt = PHYSICS.fixedDt;
+  const speed = PHYSICS.walkSpeed;
+  const steps = Math.ceil(5 / speed / dt);
+  const step = speed * dt;
 
-  const nearWall = new Player(level);
-  // Wall face at x=1; clearance from the FACE to the capsule EDGE is
-  // 0.300001 m, i.e. capsule center = wallFace + radius + 0.300001.
-  nearWall.x = 1 + PHYSICS.radius + 0.300001;
-  nearWall.y = 2; nearWall.z = 0; nearWall.grounded = true;
-  stepN(nearWall, level, controls, steps);
+  const sides = [
+    { name: 'west',  x0: 1 + dist,  y0: 2,       dx: 0,    dy: step },
+    { name: 'east',  x0: 11 - dist, y0: 2,       dx: 0,    dy: step },
+    { name: 'north', x0: 2,         y0: 1 + dist,  dx: step, dy: 0 },
+    { name: 'south', x0: 2,         y0: 11 - dist, dx: step, dy: 0 },
+  ];
 
-  const farFromWall = new Player(level);
-  farFromWall.x = 6; farFromWall.y = 2; farFromWall.z = 0; farFromWall.grounded = true; // center of the room, no wall within reach
-  stepN(farFromWall, level, controls, steps);
-
-  ok(
-    'walking at 0.300001 m clearance from a wall matches walking with no wall nearby',
-    approxEqual(nearWall.y - 2, farFromWall.y - 2, 1e-6),
-    `near-wall dy=${nearWall.y - 2} free dy=${farFromWall.y - 2}`
-  );
-  ok('and actually covered ~5 m', nearWall.y - 2 >= 4.9, `dy=${nearWall.y - 2}`);
+  for (const side of sides) {
+    let x = side.x0, y = side.y0;
+    let everBlocked = false;
+    for (let i = 0; i < steps; i++) {
+      const res = moveCapsule(level, x, y, side.dx, side.dy, PHYSICS.radius, 0, true, opts);
+      if (res.blockedX || res.blockedY) everBlocked = true;
+      x = res.x; y = res.y;
+    }
+    ok(`(b) near-miss (0.300001 m centre-to-face clearance) along ${side.name} wall never sets blockedX/blockedY`, !everBlocked);
+    const freeTravel = step * steps;
+    const actualTravel = side.dx !== 0 ? Math.abs(x - side.x0) : Math.abs(y - side.y0);
+    ok(
+      `(b) travel along ${side.name} wall at the near-miss distance equals a free walk within 1e-6`,
+      approxEqual(actualTravel, freeTravel, 1e-6),
+      `actual=${actualTravel} free=${freeTravel}`
+    );
+  }
 }
 
 // -----------------------------------------------------------------------
-// 3. Pushing into an inner (concave) corner: stops without jitter, and
-//    backs out immediately once the input reverses.
+// (c) Inner corner: after settling, position change is < 1e-6 PER STEP over
+//     60 steps (no jitter at all, not just a loose bound on the total), and
+//     backing out moves the capsule > 1e-4 on the FIRST step of reversed
+//     input.
 // -----------------------------------------------------------------------
 {
   const legend = {
@@ -491,62 +610,136 @@ function circleOverlapsSolid(level, x, y, r) {
 
   const player = new Player(level);
   player.x = 8; player.y = 8; player.z = 0; player.grounded = true;
-  // Drive straight into the notch (NW: forward=north, strafe=west of that = ... use yaw 315 (NW) pure forward).
+  // Drive straight into the notch (NW: yaw 315, pure forward).
   const intoCorner = { forward: 1, strafe: 0, run: true, yawDeg: 315 };
-  stepN(player, level, intoCorner, 90);
+  stepN(player, level, intoCorner, 90); // let it settle first
 
-  const posAfterFirst = { x: player.x, y: player.y };
-  stepN(player, level, intoCorner, 10);
-  ok(
-    'settles against the inner corner without jitter (position stable)',
-    approxEqual(player.x, posAfterFirst.x, 0.01) && approxEqual(player.y, posAfterFirst.y, 0.01),
-    `moved (${player.x - posAfterFirst.x}, ${player.y - posAfterFirst.y}) over 10 more steps`
-  );
-  ok('resting position is outside the wall corner (no penetration)', !circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius));
+  let maxStepDelta = 0;
+  for (let i = 0; i < 60; i++) {
+    const before = { x: player.x, y: player.y };
+    player.update(PHYSICS.fixedDt, intoCorner, level);
+    const delta = Math.hypot(player.x - before.x, player.y - before.y);
+    if (delta > maxStepDelta) maxStepDelta = delta;
+  }
+  ok('(c) inner corner: settled position change < 1e-6 PER STEP over 60 steps', maxStepDelta < 1e-6, `maxStepDelta=${maxStepDelta}`);
+  ok('(c) resting position is outside the wall corner (no penetration)', !circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius));
 
   const settledX = player.x, settledY = player.y;
   const outOfCorner = { forward: 1, strafe: 0, run: true, yawDeg: 135 }; // reverse (SE)
-  stepN(player, level, outOfCorner, 5);
-  const moved = Math.hypot(player.x - settledX, player.y - settledY);
-  ok('backs out of the corner immediately once input reverses', moved > 0.1, `moved=${moved}`);
+  player.update(PHYSICS.fixedDt, outOfCorner, level); // first step only
+  const firstStepMoved = Math.hypot(player.x - settledX, player.y - settledY);
+  ok('(c) backs out of the corner: FIRST step of reversed input moves > 1e-4', firstStepMoved > 1e-4, `moved=${firstStepMoved}`);
 }
 
 // -----------------------------------------------------------------------
-// 4. Sliding around the end of a pillar (grazing past its corner) without
-//    catching on it.
+// (d) Outer corner: the capsule slides along the pillar face IN CONTACT
+//     (diagonal input pressed into the face, not a near-miss), and
+//     continues past the pillar's end without catching. Tangential speed
+//     never drops more than 5% while passing the corner.
 // -----------------------------------------------------------------------
 {
-  const legend = {
-    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
-    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'stone', solid: false },
-    'O': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
-  };
-  const rows = [];
-  for (let y = 0; y < 10; y++) {
-    let row = '.'.repeat(10);
-    if (y === 5) row = row.slice(0, 5) + 'O' + row.slice(6); // single pillar at (5,5)
-    rows.push(row);
-  }
-  const level = loadLevel({ name: 'pillar', legend, rows, start: { x: 1, y: 5, facingDeg: 90 } });
+  const level = pillarLevel();
+  const accelSteps = Math.round(PHYSICS.accelTime / PHYSICS.fixedDt);
+  for (const run of [false, true]) {
+    const speed = run ? PHYSICS.runSpeed : PHYSICS.walkSpeed;
+    const player = new Player(level);
+    player.z = 0; player.grounded = true; player.vx = 0; player.vy = 0;
+    // Start touching the pillar's south face (row 5 spans y in [5,6), so
+    // the face is at y=6, the side facing away from the pillar), already
+    // within the pillar's column (x in [5,6)) so contact is established
+    // immediately, pressing NE (north = into the face from below, east =
+    // tangential) so contact is real, not a near-miss. (South, not north,
+    // would move AWAY from this face - it only blocks entry from below.)
+    player.x = 5.2; player.y = 6 + PHYSICS.radius;
+    const controls = { forward: 1, strafe: 0, run, yawDeg: 45 }; // NE
+    stepN(player, level, controls, accelSteps + 5); // reach steady sliding speed first
 
-  const player = new Player(level);
-  // Graze the pillar's south edge: row 5 spans y in [5,6); pass with just
-  // 0.01 m of clearance from the pillar's corner (a clean near-miss - a
-  // real overlap moving with zero lateral velocity has nothing to deflect
-  // it and correctly stops, that's not "catching", it's a head-on hit).
-  // This is what the float-rounding bug could spuriously turn into a stop.
-  player.x = 1; player.y = 6 + PHYSICS.radius + 0.01; player.z = 0; player.grounded = true;
-  const controls = { forward: 1, strafe: 0, run: true, yawDeg: 90 }; // run east, straight across the room
-  const steps = Math.round(8 / PHYSICS.runSpeed / PHYSICS.fixedDt) + 30;
-  stepN(player, level, controls, steps);
-  ok('slides past the pillar end without catching (reaches the far side)', player.x >= 8, `x=${player.x}`);
-  ok('never penetrated the pillar while passing', !circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius));
+    let minSpeed = Infinity;
+    const steps = Math.round(6 / speed / PHYSICS.fixedDt); // cross the pillar and well beyond
+    for (let i = 0; i < steps; i++) {
+      player.update(PHYSICS.fixedDt, controls, level);
+      const v = Math.hypot(player.vx, player.vy);
+      if (v < minSpeed) minSpeed = v;
+    }
+    const tangentialTarget = speed * Math.cos(Math.PI / 4);
+    ok(
+      `(d) outer corner, ${run ? 'run' : 'walk'}: tangential speed never drops more than 5% while passing`,
+      minSpeed >= tangentialTarget * 0.95,
+      `minSpeed=${minSpeed} target=${tangentialTarget}`
+    );
+    ok(`(d) outer corner, ${run ? 'run' : 'walk'}: reaches the far side without catching`, player.x >= 8, `x=${player.x}`);
+    ok(`(d) outer corner, ${run ? 'run' : 'walk'}: never penetrated the pillar while passing`, !circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius));
+  }
 }
 
 // -----------------------------------------------------------------------
-// 5. Seeded 1000-step random walk in test_room: the capsule must never
-//    overlap a solid cell, and must remain generally mobile (not
-//    permanently frozen by a spurious block).
+// (d, blocking defect) Corner push-out invariant: resolveAxis must never
+// move the capsule BEHIND its pre-step position when the pre-step position
+// did not already overlap an impassable cell. Checked directly via
+// moveCapsule (so the pre-collision target on this axis is known exactly),
+// approaching the pillar corner from 16 directions (every 22.5 degrees) at
+// walk and run for 1 s each, asserted on EVERY step - plus the exact
+// worked example from the backlog review.
+// -----------------------------------------------------------------------
+{
+  // The exact worked example from the PO review: pillar at (5,5), capsule
+  // at x=4.834, y=4.75 (clear of the corner), moving +0.05 in x. The old
+  // code resolved x to 4.70 - 0.134 m behind the pre-step 4.834.
+  const level = pillarLevel();
+  const opts = { height: PHYSICS.height, stepUpMax: PHYSICS.stepUpMax };
+  const example = moveCapsule(level, 4.834, 4.75, 0.05, 0, PHYSICS.radius, 0, true, opts);
+  ok(
+    'corner push-out worked example (pillar 5,5; x=4.834,y=4.75; dx=+0.05): resolved x never behind the pre-step x',
+    example.x >= 4.834 - 1e-9,
+    `x=${example.x}`
+  );
+
+  const pillarCenterX = 5.5, pillarCenterY = 5.5;
+  const dt = PHYSICS.fixedDt;
+  for (const run of [false, true]) {
+    const speed = run ? PHYSICS.runSpeed : PHYSICS.walkSpeed;
+    for (let dir = 0; dir < 16; dir++) {
+      const angle = (dir * 22.5) * Math.PI / 180;
+      // Start 1.5 m out from the pillar centre along this direction,
+      // moving straight at the centre - a mix of face-on and corner-on
+      // approaches across the 16 directions.
+      let x = pillarCenterX + Math.cos(angle) * 1.5;
+      let y = pillarCenterY + Math.sin(angle) * 1.5;
+      const dxStep = -Math.cos(angle) * speed * dt;
+      const dyStep = -Math.sin(angle) * speed * dt;
+
+      let violation = null;
+      const steps = Math.round(1 / dt); // 1 s
+      for (let i = 0; i < steps; i++) {
+        const preOverlapped = circleOverlapsSolid(level, x, y, PHYSICS.radius);
+        const targetX = x + dxStep, targetY = y + dyStep;
+        const res = moveCapsule(level, x, y, dxStep, dyStep, PHYSICS.radius, 0, true, opts);
+        if (!preOverlapped) {
+          const loX = Math.min(x, targetX), hiX = Math.max(x, targetX);
+          const loY = Math.min(y, targetY), hiY = Math.max(y, targetY);
+          if (res.x < loX - 1e-9 || res.x > hiX + 1e-9) violation = `x=${res.x} outside [${loX},${hiX}]`;
+          if (!violation && (res.y < loY - 1e-9 || res.y > hiY + 1e-9)) violation = `y=${res.y} outside [${loY},${hiY}]`;
+        }
+        x = res.x; y = res.y;
+        if (violation) break;
+      }
+      ok(
+        `(d) corner push-out never moves behind the pre-step position (dir=${(dir * 22.5).toFixed(1)} deg, ${run ? 'run' : 'walk'})`,
+        !violation,
+        violation || ''
+      );
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// (e) Seeded random-walk fuzz in test_room: overlap is checked against
+//     whatever `isSectorPassable` considers IMPASSABLE (not only `solid`),
+//     each random input is held for 15-60 steps (not re-rolled every
+//     step), and the stuck check is exactly as specified: after 30
+//     consecutive steps of non-zero input producing < 1e-4 displacement,
+//     reversing the input must move the capsule > 1e-4 within 1 step. Run
+//     at 5 seeds, 1000 steps each.
 // -----------------------------------------------------------------------
 {
   function mulberry32(seed) {
@@ -558,26 +751,58 @@ function circleOverlapsSolid(level, x, y, r) {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-  const rand = mulberry32(20260922);
-  const level = loadLevel(testRoomDef);
-  const player = new Player(level);
-  let totalPath = 0;
-  let everOverlapped = false;
-  for (let i = 0; i < 1000; i++) {
-    const controls = {
-      forward: rand() * 2 - 1,
-      strafe: rand() * 2 - 1,
-      run: rand() > 0.5,
-      yawDeg: rand() * 360,
-      jumpPressed: false,
-    };
-    const before = { x: player.x, y: player.y };
-    player.update(PHYSICS.fixedDt, controls, level);
-    totalPath += Math.hypot(player.x - before.x, player.y - before.y);
-    if (circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius)) { everOverlapped = true; break; }
+  const opts = { height: PHYSICS.height, stepUpMax: PHYSICS.stepUpMax };
+  const seeds = [20260922, 1, 2, 3, 4];
+
+  for (const seed of seeds) {
+    const rand = mulberry32(seed);
+    const level = loadLevel(testRoomDef);
+    const player = new Player(level);
+    let everOverlapped = false;
+    let stuckSteps = 0;
+    let currentControls = null;
+    let stepsRemaining = 0;
+
+    for (let i = 0; i < 1000; i++) {
+      if (stepsRemaining <= 0) {
+        currentControls = {
+          forward: rand() * 2 - 1,
+          strafe: rand() * 2 - 1,
+          run: rand() > 0.5,
+          yawDeg: rand() * 360,
+          jumpPressed: false,
+        };
+        stepsRemaining = 15 + Math.floor(rand() * 46); // hold for 15-60 steps
+      }
+      stepsRemaining--;
+
+      const before = { x: player.x, y: player.y };
+      player.update(PHYSICS.fixedDt, currentControls, level);
+      const disp = Math.hypot(player.x - before.x, player.y - before.y);
+
+      if (circleOverlapsImpassable(level, player.x, player.y, PHYSICS.radius, player.z, player.grounded, opts)) {
+        everOverlapped = true;
+        break;
+      }
+
+      const hasInput = Math.abs(currentControls.forward) > 1e-6 || Math.abs(currentControls.strafe) > 1e-6;
+      if (hasInput && disp < 1e-4) {
+        stuckSteps++;
+        if (stuckSteps >= 30) {
+          const reversed = { ...currentControls, forward: -currentControls.forward, strafe: -currentControls.strafe };
+          const beforeReverse = { x: player.x, y: player.y };
+          player.update(PHYSICS.fixedDt, reversed, level);
+          const reverseMoved = Math.hypot(player.x - beforeReverse.x, player.y - beforeReverse.y);
+          ok(`(e) seed ${seed}: reversed input moves the capsule > 1e-4 after 30 stuck steps`, reverseMoved > 1e-4, `moved=${reverseMoved}`);
+          stuckSteps = 0;
+          stepsRemaining = 0; // pick a fresh random input next iteration
+        }
+      } else {
+        stuckSteps = 0;
+      }
+    }
+    ok(`(e) seed ${seed}: 1000-step random walk never overlaps an impassable cell`, !everOverlapped);
   }
-  ok('1000-step random walk never overlaps a solid cell', !everOverlapped);
-  ok('1000-step random walk stays generally mobile (not permanently stuck)', totalPath > 20, `totalPath=${totalPath}`);
 }
 
 // ---------------------------------------------------------------------
