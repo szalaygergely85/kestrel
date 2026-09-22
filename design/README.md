@@ -158,7 +158,7 @@ Output: `out.glyph`, `out.fg[3]`, `out.bg[3]` (0..255 floats) and `out.b`. Pass 
 
 ## 3. Levels (`design/levels/*.js`)
 
-Plain scripts that set `ASSETS.levels.<name>`. Each has a companion `design/levels/<name>_layout.md` and a preview. The format is the US-003 legend format:
+Plain scripts that set `ASSETS.levels.<name>`. Each has a companion `design/levels/<name>_layout.md` and a preview. The format is **`game/js/world/MAP_FORMAT.md` v1**, validated by `loadLevel` in `game/js/world/Level.js`. The preview runs the real loader when served over http. In summary:
 - `rows[y]` strings, one char per 1 m cell; x = east, y = south.
 - `legend[char]` = sector `{ floorH, ceilH: number | 'sky', wallMat, floorMat, ceilMat, solid }`.
 - Optional extensions (full list in `tower_layout.md` section 6):
@@ -173,7 +173,54 @@ Lights reference `palette.lights` presets and props reference US-011 model names
 
 ---
 
+## 4. Sprite models (`design/models/*.js`, US-011)
+
+Plain scripts that set `ASSETS.models.<name>`. Files and models:
+- `brazier.js`: `brazier`, plus `beaconFire`
+- `lantern.js`: `lantern`
+- `lever.js`: `lever`
+- `boulder.js`: `boulder`
+- `rubble.js`: `rubble` (variants), `pallet`, `beaconBowl`
+
+The grate is **not** a sprite. It is the palette material `grate` (wall pattern).
+
+```
+Model = {
+  name, desc,
+  size:   { w, h },            // cells
+  anchor: { x, y },            // cell that sits on the floor point (feet), usually bottom-centre
+  world:  { w, h },            // metres: the billboard's real size, used for distance scaling
+  directions: ['S'],           // billboards: one view for every angle
+  billboard: true,
+  keys: { [char]: { c: paletteColorKey, e?: true } },   // e = emissive (flames, embers, glints)
+  animations: { [name]: { fps | durations: [ms per frame], loop, frames: [Frame] } },
+  lods: { half: { size, anchor, animations: {same names} } },   // hand-drawn half-scale version
+  // model-specific: light, flameUnit, grow, mounts, mountOn, roll, interact, variants
+}
+Frame = { S: { glyphs: [h strings of w], fg: [h strings of w key chars], n?: [h strings], bg?: [h strings] } }
+```
+- **Cells**: `glyphs[r][c]` is drawn in `keys[fg[r][c]].c`. A space glyph (fg char space) is **transparent**. `bg` is omitted: sprites have no background, so the wall shows through behind every glyph.
+- **Emissive** (`e: true`): full palette color, **ignores light and fog** (`util.shadeSprite(..., emissive=true)`). This is the US-004 emissive flag.
+- **Lit cells**: `util.shadeSprite(key, L, nf, false, fogF)`, with L = the light at the sprite position, same as for surfaces. `nf` is the normal factor. `n` rows give a rough cell normal:
+  - `f` front, `l` left, `r` right, `u` up, `d` down; `.` or missing = `f`
+  - vectors in billboard space (x right, y up, z toward camera): f (0,0,1), l (-.7,0,.7), r (.7,0,.7), u (0,.7,.7), d (0,-.7,.7)
+  - `nf = max(0, dot(n, lightDirInBillboardSpace))`; the brightness factor is `0.35 + 0.65*nf`
+  - the engine may pass `nf = 1` everywhere to skip it
+- **Timing**: `fps`, or `durations` (ms per frame, for idle glints: long rest, short flash). `fps: 0` = driven by gameplay (boulder: distance rolled).
+- **Scaling / LOD**: on-screen height in cells = `world.h * projectionScale / distance`, and `scale` = that / `size.h`.
+  - If `scale < 0.75` and `lods.half` exists, use the half version with `scale * 2`.
+  - Sample nearest: screen cell (i,j) of the sprite rect maps to sprite cell (floor(i/scale), floor(j/scale)).
+  - Never upscale beyond 3x.
+  - The preview shows near (2x), mid (1x) and far (half LOD).
+- **Mounts**: `beaconBowl.mounts.fire = {x,y}` is the bowl cell where the `beaconFire` anchor goes, so the fire's bottom row covers the ash row.
+- **Grow-in** (`beaconFire.grow`), at growth g in 0..1 over 1 s:
+  - show a flame cell only if `rowFromBottom < ceil(g*4)`
+  - lower its heat by `round((1-g)*2)` and hide it below heat 1
+
+---
+
 ## Change log
 - **v1 (2026-09-22, US-002)**: initial palette, ramps, lights, fog, time of day, 9 materials, reference shader, preview.
 - **v1.0.1 (2026-09-22)**: section 1.1 corrected. The game is served over http (ES modules); palette.js stays a plain script.
 - **v1.1 (2026-09-22, US-010)**: palette materials `grass` and `rock` added (outside the tower). New section 3, level data format: `design/levels/tower.js`, `tower_layout.md`, `preview/tower.html`.
+- **v1.2 (2026-09-22, US-011)**: palette material `grate` (texel `hole: true` = see-through gap) and `util.shadeSprite`. New section 4, sprite models: `design/models/*.js`, `preview/props.html`. Tower: the bowl cells `O` are now a stone plinth under the bowl sprite. `start` uses the map format v2 names (`eyeH`, `pitchDeg`, `pose`).

@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Quest - Props (US-011)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:120px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:50px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .anim { display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap; margin:6px 0 12px; }
+  .cell { font-size:11px; color:#8a8778; font-family:Consolas, monospace; }
+  .meta { font-family:Consolas, monospace; font-size:12px; color:#9c9888; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>ASCII Quest : props (US-011)</h1>
+<div class="note">Loads <code>../palette.js</code> and <code>../models/*.js</code>. Every animation is shown at <b>near</b> (2x, nearest sampling, as the engine enlarges up close),
+  <b>mid</b> (1x) and <b>far</b> (the hand-drawn half LOD), plus the full frame strip. Lit cells use <code>util.shadeSprite</code>; <b>emissive</b> cells (flames, embers, glints)
+  ignore light and fog. The background is dark by default; tick "lit stone backdrop" to test readability against a torch-lit wall.</div>
+
+<div class="controls">
+  <span>Light:</span><span id="presets"></span>
+  <label>intensity <input type="range" id="int" min="0" max="1.5" step="0.01" value="1"><span class="val" id="intV"></span></label>
+  <label>direction <input type="range" id="dir" min="-180" max="180" step="1" value="-50"><span class="val" id="dirV"></span></label>
+  <label>elevation <input type="range" id="elev" min="-30" max="80" step="1" value="35"><span class="val" id="elevV"></span></label>
+  <label>distance (fog) <input type="range" id="dist" min="0" max="60" step="0.5" value="3"><span class="val" id="distV"></span></label>
+  <label><input type="checkbox" id="backdrop"> lit stone backdrop (off = dark)</label>
+  <label><input type="checkbox" id="normals" checked> normals</label>
+  <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option></select></label>
+  <button id="pause">pause</button>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<h2>Beacon (US-022 reuse): bowl + fire from the brazier flame unit</h2>
+<div class="note">The 12x4 fire is 3 copies of the brazier's 5x4 flame unit at columns 0 / 4 / 7, frame phases 0 / 3 / 1, middle one mirrored, max-heat compositing.
+  <button id="light">Light the beacon</button> <button id="douse">Douse</button> replays the 1.0 s grow-in rule.</div>
+<div class="anim" id="beacon"></div>
+
+<h2>Grate (portcullis) : palette material <code>grate</code></h2>
+<div class="note">Wall pattern, tileable. The texture is anchored to the grate's bottom edge, so the bars slide up with the rising ceiling (US-014: 3.0 -> 5.4 m over 1.5 s, ease in-out).
+  Gap texels are <code>hole:true</code>. Left: masked (the dark stair behind shows through). Right: fallback without masked walls (gaps drawn dark). <button id="raise">Raise / lower</button></div>
+<div class="anim" id="grate"></div>
+
+<div id="props"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/brazier.js"></script>
+<script src="../models/lantern.js"></script>
+<script src="../models/lever.js"></script>
+<script src="../models/boulder.js"></script>
+<script src="../models/rubble.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS || {}, P = A.palette, M = A.models;
+  if (!P || !M) { document.body.innerHTML = '<p class="fail">palette.js or models did not load.</p>'; return; }
+  var U = P.util, css = U.css, C = P.colors, D2R = Math.PI / 180;
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+
+  function makeGrid(canvas, cols, rows, px) {
+    var ctx = canvas.getContext('2d'); ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25), dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return { cols: cols, rows: rows,
+      cell: function (x, y, g, fg, bg) { ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch); if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); } } };
+  }
+
+  // ---------------- entries ----------------
+  var ENTRIES = [
+    { id: 'brazier', m: M.brazier }, { id: 'beaconFire', m: M.beaconFire }, { id: 'lantern', m: M.lantern }, { id: 'lever', m: M.lever },
+    { id: 'boulder', m: M.boulder }, { id: 'rubble0', m: M.rubble.variants[0] }, { id: 'rubble1', m: M.rubble.variants[1] },
+    { id: 'rubble2', m: M.rubble.variants[2] }, { id: 'pallet', m: M.pallet }, { id: 'beaconBowl', m: M.beaconBowl }
+  ];
+
+  // ---------------- checks ----------------
+  var checks = [];
+  function check(name, ok, detail) { checks.push({ name: name, ok: !!ok, detail: detail || '' }); }
+  function frameErrors(id, model, lodName, size, keys) {
+    var errs = [], anims = model.animations;
+    Object.keys(anims).forEach(function (an) {
+      anims[an].frames.forEach(function (fr, fi) {
+        var S = fr.S, where = id + (lodName ? '.' + lodName : '') + '.' + an + '[' + fi + ']';
+        if (!S || !S.glyphs || !S.fg) { errs.push(where + ': missing S.glyphs/fg'); return; }
+        if (S.glyphs.length !== size.h || S.fg.length !== size.h) errs.push(where + ': ' + S.glyphs.length + ' rows, expected ' + size.h);
+        S.glyphs.forEach(function (row, r) {
+          var fgRow = S.fg[r] || '';
+          if (row.length !== size.w || fgRow.length !== size.w) errs.push(where + ' row ' + r + ': width ' + row.length + '/' + fgRow.length + ', expected ' + size.w);
+          for (var c = 0; c < row.length; c++) {
+            var g = row.charAt(c), k = fgRow.charAt(c), cc = row.charCodeAt(c);
+            if (cc < 32 || cc > 126) errs.push(where + ' r' + r + 'c' + c + ': non-ASCII');
+            if ((g === ' ') !== (k === ' ')) errs.push(where + ' r' + r + 'c' + c + ': glyph/fg space mismatch');
+            if (k !== ' ' && !keys[k]) errs.push(where + ' r' + r + 'c' + c + ': key "' + k + '" not in keys');
+          }
+        });
+        if (S.n) S.n.forEach(function (row, r) { if (row.length !== size.w) errs.push(where + ' n row ' + r + ' width'); });
+      });
+      var a = anims[an];
+      if (a.durations && a.durations.length !== a.frames.length) errs.push(id + '.' + an + ': durations length');
+    });
+    return errs;
+  }
+  (function () {
+    var all = [];
+    ENTRIES.forEach(function (e) {
+      var m = e.m;
+      Object.keys(m.keys).forEach(function (k) { if (!P.colors[m.keys[k].c]) all.push(e.id + ': key ' + k + ' -> unknown color ' + m.keys[k].c); });
+      all = all.concat(frameErrors(e.id, m, '', m.size, m.keys));
+      if (!m.lods || !m.lods.half) all.push(e.id + ': no half LOD');
+      else {
+        all = all.concat(frameErrors(e.id, m.lods.half, 'half', m.lods.half.size, m.keys));
+        Object.keys(m.animations).forEach(function (an) { if (!m.lods.half.animations[an]) all.push(e.id + '.half: missing animation ' + an); });
+      }
+      if (m.anchor.y !== m.size.h - 1) all.push(e.id + ': anchor is not on the bottom row (feet)');
+    });
+    check('Data: frame sizes, key maps, palette keys, ASCII only, glyph/transparency consistency, half LODs', !all.length, all.slice(0, 12).join('; '));
+    var b = M.brazier;
+    check('Brazier 7x9, burn = 6 frames at 10 fps', b.size.w === 7 && b.size.h === 9 && b.animations.burn.frames.length === 6 && b.animations.burn.fps === 10);
+    var flameEmissive = ['1', '2', '3', '4'].every(function (k) { return b.keys[k].e; }), glyphsOk = true, colorsOk = true;
+    b.animations.burn.frames.forEach(function (f) { for (var r = 0; r < 4; r++) for (var c = 0; c < 7; c++) {
+      var k = f.S.fg[r].charAt(c), g = f.S.glyphs[r].charAt(c);
+      if (k !== ' ' && "^*'.".indexOf(g) < 0) glyphsOk = false;
+      if (k !== ' ' && !b.keys[k].e) colorsOk = false;
+    } });
+    check('Brazier flame: glyphs only ^ * \' . , every flame cell emissive, heat 1..4 = tip red -> outer -> mid -> core yellow', flameEmissive && glyphsOk && colorsOk,
+      'tip ' + b.keys['1'].c + ', outer ' + b.keys['2'].c + ', mid ' + b.keys['3'].c + ', core ' + b.keys['4'].c);
+    var bf = M.beaconFire, fullCover = bf.animations.burn.frames.every(function (f) { return f.S.fg[3].indexOf(' ') < 0; });
+    check('Beacon fire: 12x4, 6 frames, built only from brazier flame-unit cells (all emissive); bottom row fully burning in every frame',
+      bf.size.w === 12 && bf.size.h === 4 && bf.animations.burn.frames.length === 6 && fullCover && bf.keys === b.flameUnit.keys);
+    var l = M.lantern;
+    check('Lantern 3x4: unlit on hook (2-frame glint), lit, empty hook', l.size.w === 3 && l.size.h === 4 && l.animations.unlit.frames.length === 2 && !!l.animations.lit && !!l.animations.hookEmpty);
+    check('Lever 3x5: pull = 5 frames (up, 3 in-betweens, down) over 0.4 s', M.lever.size.w === 3 && M.lever.size.h === 5 && M.lever.animations.pull.frames.length === 5 &&
+      Math.abs(M.lever.animations.pull.frames.length / M.lever.animations.pull.fps - 0.4) < 1e-6);
+    check('Boulder 5x4, 8 rotation frames, mossy stone', M.boulder.size.w === 5 && M.boulder.size.h === 4 && M.boulder.animations.roll.frames.length === 8 &&
+      JSON.stringify(M.boulder.animations.roll.frames).indexOf('m') > 0);
+    check('Rubble x3, pallet, beacon bowl 12x4', M.rubble.variants.length === 3 && !!M.pallet && M.beaconBowl.size.w === 12 && M.beaconBowl.size.h === 4);
+    var g = P.materials.grate, gerr = U.validate().filter(function (e) { return e.indexOf('grate') === 0; });
+    check('Grate is palette material "grate" (| bars, = crossbars, # joints), tileable', !!g && !gerr.length && g.texture.rows.length === g.texture.h, gerr.join('; '));
+  })();
+  var nFail = checks.filter(function (c) { return !c.ok; }).length;
+  document.getElementById('checks').innerHTML = '<div class="' + (nFail ? 'fail' : 'pass') + '">' + (checks.length - nFail) + ' / ' + checks.length + ' checks pass</div>' +
+    checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.name +
+      (c.detail ? ' <span class="' + (c.ok ? 'note' : 'fail') + '">(' + c.detail.replace(/</g, '&lt;') + ')</span>' : '') + '</div>'; }).join('');
+
+  // ---------------- light state ----------------
+  var S = { preset: 'torch', intensity: 1, dir: -50, elev: 35, dist: 3, backdrop: false, normals: true, speed: 1, paused: false, t: 0 };
+  var PRESETS = { ambient: 'ambient only', torch: 'torch', sun: 'sun', lantern: 'lantern' };
+  var pbox = document.getElementById('presets');
+  Object.keys(PRESETS).forEach(function (k) {
+    var b = document.createElement('button'); b.textContent = PRESETS[k]; b.dataset.k = k;
+    b.onclick = function () { S.preset = k; S.intensity = k === 'ambient' ? 0 : P.lights[k].intensity; document.getElementById('int').value = S.intensity; sync(); };
+    pbox.appendChild(b); pbox.appendChild(document.createTextNode(' '));
+  });
+  function $(id) { return document.getElementById(id); }
+  $('int').oninput = function () { S.intensity = +this.value; sync(); };
+  $('dir').oninput = function () { S.dir = +this.value; sync(); };
+  $('elev').oninput = function () { S.elev = +this.value; sync(); };
+  $('dist').oninput = function () { S.dist = +this.value; sync(); };
+  $('backdrop').onchange = function () { S.backdrop = this.checked; };
+  $('normals').onchange = function () { S.normals = this.checked; };
+  $('speed').onchange = function () { S.speed = +this.value; };
+  $('pause').onclick = function () { S.paused = !S.paused; this.classList.toggle('on', S.paused); };
+  function sync() {
+    $('intV').textContent = S.intensity.toFixed(2);
+    $('dirV').textContent = S.dir + ' deg';
+    $('elevV').textContent = S.elev + ' deg';
+    $('distV').textContent = S.dist.toFixed(1) + ' m';
+    [].forEach.call(pbox.children, function (b) { b.classList.toggle('on', b.dataset.k === S.preset); });
+  }
+  sync();
+
+  var L = [0, 0, 0], out = { fg: [0, 0, 0], bg: [0, 0, 0] }, NV = {
+    f: [0, 0, 1], l: [-0.7, 0, 0.7], r: [0.7, 0, 0.7], u: [0, 0.7, 0.7], d: [0, -0.7, 0.7] };
+  function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+  function vnoise(t) { var i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return (hash(i) * (1 - u) + hash(i + 1) * u) * 2 - 1; }
+  function lightNow() {
+    var T = P.timeOfDay.morning, fl = 1;
+    if (S.preset === 'torch' || S.preset === 'lantern') fl = 1 + P.lights[S.preset].flicker.amount * vnoise(S.t * 10);
+    L[0] = L[1] = L[2] = 0; U.addLight(L, T.ambient, T.ambientI);
+    if (S.preset !== 'ambient') U.addLight(L, P.lights[S.preset].color, S.intensity * fl);
+    var ld = [Math.sin(S.dir * D2R) * Math.cos(S.elev * D2R), Math.sin(S.elev * D2R), Math.cos(S.dir * D2R) * Math.cos(S.elev * D2R)];
+    return ld;
+  }
+  function frameAt(anim, t) {
+    var n = anim.frames.length;
+    if (anim.durations) {
+      var tot = anim.durations.reduce(function (a, b) { return a + b; }, 0), ms = (t * 1000) % tot, acc = 0;
+      for (var i = 0; i < n; i++) { acc += anim.durations[i]; if (ms < acc) return i; }
+      return n - 1;
+    }
+    var fps = anim.fps || 6;
+    if (anim.loop) return Math.floor(t * fps) % n;
+    var cyc = n / fps + 1.0, tt = t % cyc;                     // non-looping: play, hold 1 s on the last frame, replay
+    return Math.min(n - 1, Math.floor(tt * fps));
+  }
+
+  // draw a sprite frame into a grid at (ox, oy) with integer upscale s; transparent cells show the backdrop
+  function backdrop(g, ld) {
+    var fogF = U.fogFactor(S.dist, 'interior');
+    for (var y = 0; y < g.rows; y++) for (var x = 0; x < g.cols; x++) {
+      if (!S.backdrop) { g.cell(x, y, ' ', '#000', '#000'); g.bgc = g.bgc || []; g.bgc[x + y * g.cols] = '#000'; continue; }
+      var Lb = [L[0] * 0.7, L[1] * 0.7, L[2] * 0.7];
+      U.shade('stone', Lb, (x + 0.5) / 16, (g.rows - y) / 16, S.dist, out);
+      var bg = css(out.bg); g.cell(x, y, out.glyph, css([out.fg[0] * 0.55, out.fg[1] * 0.55, out.fg[2] * 0.55]), bg);
+      g.bgc = g.bgc || []; g.bgc[x + y * g.cols] = bg;
+    }
+  }
+  function drawSprite(g, model, frame, ox, oy, s, ld, heatFn) {
+    var fs = frame.S, keys = model.keys || M.brazier.keys, fogF = U.fogFactor(S.dist, 'interior');
+    var h = fs.glyphs.length, w = fs.glyphs[0].length;
+    for (var y = 0; y < h * s; y++) for (var x = 0; x < w * s; x++) {
+      var r = Math.floor(y / s), c = Math.floor(x / s), gl = fs.glyphs[r].charAt(c), k = fs.fg[r].charAt(c);
+      if (heatFn) { var hk = heatFn(r, c, k, h); if (hk === null) continue; k = hk; }
+      if (gl === ' ' || k === ' ') continue;
+      var key = keys[k], nf = 1;
+      if (S.normals && fs.n) { var nv = NV[fs.n[r].charAt(c)] || NV.f; nf = Math.max(0, nv[0] * ld[0] + nv[1] * ld[1] + nv[2] * ld[2]); }
+      U.shadeSprite(key.c, L, nf, !!key.e, fogF, out);
+      if (!out.visible) continue;
+      var gx = ox + x, gy = oy + y;
+      g.cell(gx, gy, gl, css(out.fg), (g.bgc && g.bgc[gx + gy * g.cols]) || '#000');
+    }
+  }
+
+  // ---------------- build prop cards ----------------
+  var cards = [], host = $('props');
+  function lodOf(m) { return m.lods && m.lods.half; }
+  ENTRIES.forEach(function (e) {
+    var m = e.m, h2 = document.createElement('h2');
+    h2.textContent = e.id + '  (' + m.size.w + 'x' + m.size.h + ', anchor ' + m.anchor.x + ',' + m.anchor.y + ', world ' + m.world.w + ' x ' + m.world.h + ' m)';
+    host.appendChild(h2);
+    var meta = document.createElement('div'); meta.className = 'meta';
+    var em = Object.keys(m.keys).filter(function (k) { return m.keys[k].e; }).map(function (k) { return k + '=' + m.keys[k].c; });
+    meta.textContent = (m.desc || '') + '  | keys: ' + Object.keys(m.keys).map(function (k) { return k + '=' + m.keys[k].c + (m.keys[k].e ? '*' : ''); }).join(' ') +
+      (em.length ? '  (* emissive)' : '');
+    host.appendChild(meta);
+    Object.keys(m.animations).forEach(function (an) {
+      var a = m.animations[an], row = document.createElement('div'); row.className = 'anim';
+      var lab = document.createElement('div'); lab.className = 'cell';
+      lab.innerHTML = '<b style="color:#ffd27a">' + an + '</b><br>' + a.frames.length + ' frames<br>' + (a.durations ? 'durations ' + a.durations.join('/') + ' ms' : a.fps ? a.fps + ' fps' : 'gameplay-driven') + '<br>' + (a.loop ? 'loop' : 'once (replays)');
+      row.appendChild(lab);
+      var mk = function (label, cols, rows) { var d = document.createElement('div'), t = document.createElement('div'), cv = document.createElement('canvas');
+        t.className = 'cell'; t.textContent = label; d.appendChild(cv); d.appendChild(t); row.appendChild(d); return makeGrid(cv, cols, rows, 12); };
+      var lod = lodOf(m), P2 = 1;
+      var card = { e: e, an: an, a: a,
+        near: mk('near 2x', m.size.w * 2 + P2 * 2, m.size.h * 2 + P2 * 2),
+        mid: mk('mid 1x', m.size.w + P2 * 2, m.size.h + P2 * 2),
+        far: lod ? mk('far: half LOD ' + lod.size.w + 'x' + lod.size.h, lod.size.w + P2 * 2, lod.size.h + P2 * 2) : null,
+        strip: mk('all frames', a.frames.length * (m.size.w + 1) + 1, m.size.h + 2) };
+      host.appendChild(row); cards.push(card);
+    });
+  });
+
+  // ---------------- beacon composite ----------------
+  var bowl = M.beaconBowl, fire = M.beaconFire, beacon = { g: 0, lit: false, t0: 0, dir: 0 };
+  var bHost = $('beacon'), bGrids = {};
+  function mkB(label, cols, rows, key) { var d = document.createElement('div'), t = document.createElement('div'), cv = document.createElement('canvas');
+    t.className = 'cell'; t.textContent = label; d.appendChild(cv); d.appendChild(t); bHost.appendChild(d); bGrids[key] = makeGrid(cv, cols, rows, 12); }
+  mkB('near 2x', 12 * 2 + 2, 7 * 2 + 2, 'near'); mkB('mid 1x', 12 + 2, 7 + 2, 'mid'); mkB('far half LOD', 6 + 2, 3 + 2, 'far');
+  mkB('tiles: units at x 0 / 4 / 7 (phase 0/3/1)', 12 + 2 + 18, 4 + 2, 'tiles');
+  $('light').onclick = function () { beacon.lit = true; beacon.t0 = S.t; };
+  $('douse').onclick = function () { beacon.lit = false; beacon.g = 0; };
+  function growFn(g) {
+    return function (r, c, k, h) {
+      if (k === ' ') return null;
+      var fromBottom = h - 1 - r; if (fromBottom >= Math.ceil(g * h)) return null;
+      var heat = +k - Math.round((1 - g) * 2); if (heat < 1) return null; return String(heat);
+    };
+  }
+  function drawBeacon(ld) {
+    if (beacon.lit) beacon.g = Math.min(1, (S.t - beacon.t0) / fire.grow.duration);
+    [['near', 2, bowl, fire, 3], ['mid', 1, bowl, fire, 3], ['far', 1, bowl.lods.half, fire.lods.half, 1]].forEach(function (v) {
+      var g = bGrids[v[0]], s = v[1], bm = v[2], fm = v[3], fireH = fm.size.h;
+      backdrop(g, ld);
+      var ox = 1, oy = 1 + (fireH - 1) * s;                    // bowl top row sits where the fire's bottom row goes
+      var bf = bm.animations.idle.frames[0];
+      drawSprite(g, { keys: bowl.keys }, bf, ox, oy, s, ld);
+      if (beacon.g > 0) {
+        var ff = fm.animations.burn.frames[frameAt(fm.animations.burn, S.t)];
+        var mx = (bm.mounts || bowl.mounts).fire;
+        drawSprite(g, { keys: fire.keys }, ff, ox + (mx.x - fm.anchor.x) * s, oy + (mx.y - fm.anchor.y) * s, s, ld, growFn(beacon.g));
+      }
+    });
+    // tiles breakdown
+    var tg = bGrids.tiles; backdrop(tg, ld);
+    var fi = frameAt(fire.animations.burn, S.t), units = M.brazier.flameUnit.frames;
+    fire.tiles.forEach(function (T, i) {
+      var u = units[(fi + T.phase) % 6];
+      var fr = { S: { glyphs: u.g.map(function (row) { return T.mirror ? row.split('').reverse().join('') : row; }),
+                     fg: u.h.map(function (row) { return T.mirror ? row.split('').reverse().join('') : row; }) } };
+      drawSprite(tg, { keys: fire.keys }, fr, 1 + i * 6, 1, 1, ld);
+    });
+    drawSprite(tg, { keys: fire.keys }, fire.animations.burn.frames[fi], 1 + 18 + 1, 1, 1, ld);
+  }
+
+  // ---------------- grate demo ----------------
+  var gHost = $('grate'), gr = { open: false, k: 0, t0: -10 }, gGrids = [];
+  ['masked (hole = see-through)', 'fallback (gaps dark)'].forEach(function (lab) {
+    var d = document.createElement('div'), t = document.createElement('div'), cv = document.createElement('canvas');
+    t.className = 'cell'; t.textContent = lab; d.appendChild(cv); d.appendChild(t); gHost.appendChild(d); gGrids.push(makeGrid(cv, 36, 22, 12));
+  });
+  $('raise').onclick = function () { gr.open = !gr.open; gr.t0 = S.t; };
+  function drawGrate() {
+    var p = U.clamp01((S.t - gr.t0) / 1.5), e = p * p * (3 - 2 * p), k = gr.open ? e : 1 - e;
+    var floorZ = 3.0, ceil = 3.0 + (5.4 - 3.0) * k, topZ = 6.6;   // grate face spans [ceil, 5.4]; lintel [5.4, 6.6]
+    var rowsM = 22, zTop = 6.8, zBot = 2.6;
+    gGrids.forEach(function (g, gi) {
+      for (var y = 0; y < rowsM; y++) for (var x = 0; x < 36; x++) {
+        var z = zTop - (y + 0.5) / rowsM * (zTop - zBot), u = (x + 0.5) / 12;
+        L[0] = L[1] = L[2] = 0; U.addLight(L, 'ambient', 0.12); U.addLight(L, 'torch', 0.55 * S.intensity + 0.1);
+        var inOpening = x >= 6 && x < 30, mat;
+        if (!inOpening || z > topZ || z < floorZ - 0.02) { mat = z < floorZ ? 'floor' : 'stone'; U.shade(mat, L, u, z, 3, out, { z: z - floorZ }); }
+        else if (z >= 5.4) { U.shade('stone', L, u, z, 3, out, { z: z - floorZ }); }
+        else if (z >= ceil) {
+          var tex = P.materials.grate.texture, te = U.texel(tex, u, z - ceil);   // v anchored to the grate bottom edge
+          if (te && te.hole) {
+            if (gi === 0) { var Ld = [L[0] * 0.35, L[1] * 0.35, L[2] * 0.35]; U.shade('stone', Ld, u * 0.7, z * 0.7, 6, out); }
+            else U.shade('grate', L, u, z - ceil, 3, out);
+          } else U.shade('grate', L, u, z - ceil, 3, out);
+        } else { var Lo = [L[0] * 0.3, L[1] * 0.3, L[2] * 0.3]; U.shade('stone', Lo, u * 0.7, z * 0.7, 6, out); }   // open passage: dark stair behind
+        g.cell(x, y, out.glyph, css(out.fg), css(out.bg));
+      }
+    });
+  }
+
+  // ---------------- loop ----------------
+  var last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (!S.paused) S.t += dt * S.speed;
+    if (frame.acc === undefined) frame.acc = 1;
+    frame.acc += dt; if (frame.acc < 0.05) return; frame.acc = 0;
+    var ld = lightNow();
+    cards.forEach(function (cd) {
+      var m = cd.e.m, a = cd.a, fi = cd.a.fps === 0 ? Math.floor(S.t * 6) % a.frames.length : frameAt(a, S.t), fr = a.frames[fi];
+      backdrop(cd.near, ld); drawSprite(cd.near, m, fr, 1, 1, 2, ld);
+      backdrop(cd.mid, ld); drawSprite(cd.mid, m, fr, 1, 1, 1, ld);
+      if (cd.far) {
+        var la = m.lods.half.animations[cd.an], lfi = la.fps === 0 ? Math.floor(S.t * 6) % la.frames.length : frameAt(la, S.t);
+        backdrop(cd.far, ld); drawSprite(cd.far, m, la.frames[lfi], 1, 1, 1, ld);
+      }
+      backdrop(cd.strip, ld);
+      a.frames.forEach(function (f, i) { drawSprite(cd.strip, m, f, 1 + i * (m.size.w + 1), 1, 1, ld); });
+    });
+    drawBeacon(ld); drawGrate();
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

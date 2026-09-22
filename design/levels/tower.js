@@ -112,8 +112,8 @@
       'J': step(5.7, 'stone', 'upper', 'upper step 9'),
       'd': step(6.0, 'stone', 'summit', 'doorway through the west wall onto the summit (10th rise)'),
       '=': step(6.0, 'stone', 'summit', 'summit walkway (ring around the beacon bowl)'),
-      'O': S({ floorH: 6.6, wallMat: 'iron', floorMat: 'ash', ceilMat: null, zone: 'summit', tag: 'beaconBowl',
-               desc: 'beacon bowl 2x2 m: iron sides 0.6 m, full of grey ash' }),
+      'O': S({ floorH: 6.6, wallMat: 'stone', floorMat: 'floor', ceilMat: null, zone: 'summit', tag: 'beaconBowl',
+               desc: 'stone plinth 2x2 m, 0.6 m high: the beacon bowl sprite (US-011, 12x4) stands on it; collision for the bowl' }),
       'b': S({ floorH: 6.0, wallMat: 'rubble', floorMat: 'rubble', ceilMat: null, zone: 'summit', tag: 'breach',
                desc: 'THE BREACH: 2 m hole in the west parapet' }),
       'K': S({ floorH: 4.0, ceilH: 6.4, topH: 8.0, wallMat: 'stone', floorMat: 'rubble', ceilMat: 'stone', zone: 'wall', tag: 'sunCrack',
@@ -161,8 +161,8 @@
     // player start (MAP_FORMAT 2.3, explicit form): lying on the straw pallet against the south stair wall,
     // looking up at the sun shaft. facingDeg is compass (0 = north, 90 = east), as the camera code uses it.
     // Explicit rather than a legend start char because the pallet centre lies on a cell edge (x = 17.0).
-    // Extra fields (eye, eyeStand, pitchDeg, pose) are US-015 wake-sequence data; loadLevel ignores them.
-    start: { x: 17.0, y: 9.5, facingDeg: 330, eye: 0.3, eyeStand: 1.6, pitchDeg: 30, pose: 'lying' },
+    // Map format v2 start fields: pitchDeg, eyeH, pose (US-015 wake sequence; standing eye 1.6 m comes from physics config).
+    start: { x: 17.0, y: 9.5, facingDeg: 330, pitchDeg: 30, eyeH: 0.3, pose: 'lying' },
 
     sun: { preset: 'sun', elevation: 60, azimuth: 112.5 },
     ambient: { preset: 'ambient' },
@@ -183,7 +183,7 @@
       { id: 'lever', model: 'lever', pose: 'up', x: 19.25, y: 9.3, z: 3.0, facing: 90,
         interact: { prompt: '[E] Pull lever', radius: 1.8 }, note: 'post at the NW corner of the ledge; pulled facing west, grate 30 deg left of view centre' },
       { id: 'chains', model: 'chains', from: { x: 19.25, y: 9.3, z: 3.2 }, to: { x: 19.0, y: 10.5, z: 5.4 }, note: 'decal/sprite: chain from lever to grate head' },
-      { id: 'beaconBowl', model: 'beaconBowl', x: 9.0, y: 7.0, z: 6.6, facing: 90, note: 'bowl sprite sits on the O cells (iron sides + ash floor are sector geometry)' },
+      { id: 'beaconBowl', model: 'beaconBowl', x: 9.0, y: 7.0, z: 6.6, facing: 90, note: 'bowl sprite (iron bowl on legs, ash mound) stands on the O plinth; US-022 fire mounts on its ash row' },
       { id: 'rubble1', model: 'rubble', variant: 0, x: 19.5, y: 8.5, z: 0.3 },
       { id: 'rubble2', model: 'rubble', variant: 1, x: 14.5, y: 8.5, z: 0.6 },
       { id: 'rubble3', model: 'rubble', variant: 2, x: 12.5, y: 6.5, z: 0.9 },

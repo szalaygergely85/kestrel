@@ -375,6 +375,30 @@
         'acahdcad'
       ] }
     },
+    grate: {
+      desc: 'US-011 portcullis: iron bars | every 0.25 m, crossbar = every 0.5 m, # at joints. Tileable in both axes, ' +
+            'so the grate face can slide with the rising ceiling (texture v anchored to the grate bottom edge). ' +
+            'Gap texels are marked hole:true (see-through if the engine supports masked walls, else dark).',
+      base: 'iron', albedo: 0.65, ramp: 'iron', spec: 0.35,
+      bg: { mode: 'darken', k: 0.12 },
+      textureFade: [6, 18],
+      texture: { w: 4, h: 8, scale: [16, 16], key: {
+        j: { shade: 1.15, glyph: '#' },                          // joint (bar x crossbar)
+        c: { shade: 0.95, glyph: '=' },                          // crossbar
+        b: { shade: 1.00, glyph: '|' },                          // bar
+        B: { shade: 0.85, tint: 'rust', amount: 0.45, glyph: '|' }, // rusty bar section
+        g: { shade: 0.06, hole: true }                           // gap between bars
+      }, rows: [
+        'jccc',
+        'bggg',
+        'bggg',
+        'Bggg',
+        'bggg',
+        'bggg',
+        'Bggg',
+        'bggg'
+      ] }
+    },
     grass: {
       desc: 'Hill turf outside the tower (US-010 outcrop path, outside ring). Sampled with world x,y.',
       base: 'grass', albedo: 0.80, ramp: 'grass',
@@ -629,6 +653,33 @@
     return out;
   }
 
+  // Reference SPRITE shader (US-011 billboards). The glyph is fixed art; only the color is lit.
+  //   colorKey : palette key of the cell (from the model's key map)
+  //   L        : [r,g,b] light at the sprite (same accumulation as surfaces)
+  //   nf       : normal factor 0..1 for this cell (see design/README.md section 4; 1 = facing the light)
+  //   emissive : true -> full palette color, ignores light AND fog (flames, glints)
+  //   fogF     : 0..1 fog factor at the sprite distance (util.fogFactor), optional
+  //   out      : { fg:[r,g,b], visible, b } written in place
+  function shadeSprite(colorKey, L, nf, emissive, fogF, out) {
+    out = ensureOut(out);
+    var base = rgb[colorKey];
+    if (emissive) { out.fg[0] = base[0]; out.fg[1] = base[1]; out.fg[2] = base[2]; out.visible = true; out.b = 1; return out; }
+    var Lm = Math.max(L[0], L[1], L[2]);
+    var b = Lm * (0.35 + 0.65 * (nf == null ? 1 : nf));
+    var f = fogF || 0;
+    out.b = b;
+    out.visible = b * (1 - f) >= shading.cutoff;
+    var hr = 1, hg = 1, hb = 1;
+    if (Lm > 1e-6) { hr = L[0] / Lm; hg = L[1] / Lm; hb = L[2] / Lm; }
+    var k = shading.tint, bc = b < 0 ? 0 : b;
+    var gain = shading.fgMin + (1 - shading.fgMin) * Math.pow(bc > 1 ? 1 : bc, shading.fgGamma);
+    if (bc > 1) gain = Math.min(shading.fgMaxGain, gain + (bc - 1) * 0.5);
+    var r = base[0] * (1 + (hr - 1) * k) * gain, g = base[1] * (1 + (hg - 1) * k) * gain, bl = base[2] * (1 + (hb - 1) * k) * gain;
+    if (f > 0) { var fc = rgb[fog.interior.color]; r += (fc[0] - r) * f; g += (fc[1] - g) * f; bl += (fc[2] - bl) * f; }
+    out.fg[0] = r > 255 ? 255 : r; out.fg[1] = g > 255 ? 255 : g; out.fg[2] = bl > 255 ? 255 : bl;
+    return out;
+  }
+
   // Data self-check: returns [] when everything is consistent.
   function validate() {
     var errs = [], mk, m, t, i, j, ch, ek;
@@ -684,7 +735,7 @@
       hexToRgb: hexToRgb, rgbToHex: rgbToHex, css: css, clamp01: clamp01, smoothstep: smoothstep,
       addLight: addLight, falloff: falloff, rampIndex: rampIndex, rampGlyph: rampGlyph, buildLUT: buildLUT,
       fogFactor: fogFactor, bandFactor: bandFactor, texel: texel, skyGradient: skyGradient,
-      shade: shade, shadeSky: shadeSky, validate: validate
+      shade: shade, shadeSky: shadeSky, shadeSprite: shadeSprite, validate: validate
     }
   };
 

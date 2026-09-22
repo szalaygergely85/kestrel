@@ -7,7 +7,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 | Order | ID | Title | Priority | Status | Who picks up |
 |---|---|---|---|---|---|
-| 1 | US-001 | Char-grid canvas + game loop | P0 | po-review (rework #2 done: WebGL2 back-end per D-005) | **Programmer NOW** |
+| 1 | US-001 | Char-grid canvas + game loop | P0 | testing (PO OK 2026-09-22; real-Chrome bench numbers pending from user) | **Tester NOW** |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | dev (PO REJECT #1: format v2) | Programmer #2 NOW (small rework) |
 | 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer, after US-001 rework #2 + US-003 v2 (uses `setCellRGB`, D-005) |
@@ -17,7 +17,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 8 | US-008 | Physics: player capsule, gravity, walk/run, collision | P0 | todo | Programmer |
 | 9 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
 | 10 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved 2026-09-22; designer does the small start-field alignment; programmer ports after US-003 v2 |
-| 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | design | **Designer NOW** (art), then Programmer |
+| 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | design | **PO: preview ready for review** (`design/preview/props.html`), then Programmer |
 | 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 14 | US-014 | Lever opens the grate | P0 | todo | Programmer |
@@ -34,7 +34,7 @@ M1 exit criteria = all P0 stories `done` (roadmap). US-022 (P1) and P2 stories a
 
 ---
 
-### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: po-review]
+### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: testing]
 As a player, I want the game to open in my browser as a crisp grid of colored characters running smoothly, so that everything else has a stable screen to draw on.
 Acceptance criteria:
 - [x] `game/index.html` opens from a static server (no build step, no external libraries) and shows a full-window canvas on a black background. (ES modules do not load from file://; accepted, see rework item 5.)
@@ -104,6 +104,28 @@ Notes / dependencies: none. First story to build.
   - `?glyphs=1` re-verified under `gl2` - all 95 glyphs render correctly through the shader/atlas path (same visual result as the Canvas2D path from rework #1), confirming the atlas orientation/`atlasUv` math is correct.
   - `setCellRGB` smoke-tested directly (wrote a red 'A' on green bg via raw bytes, read back `CellBuffer.glyphIdx`/`fg`/`bg` to confirm correct storage).
   - Did not touch `game/js/world/` (merged US-003 code).
+
+**PO OK (2026-09-22) – US-001 ready for testing.** Reviewed by reading the code: `RenderTarget.js`, `RenderTargetGL.js`, `CellBuffer.js`, `glyphMetrics.js`, `main.js`, `input.js`, `palette.js`, `index.html`.
+- **Performance criterion:** passes on the structural grounds D-005 item 6 allows.
+  - `present()` is exactly 2 `texSubImage2D` of 160x60 RGBA8 (76,800 bytes, under 80 KB) plus 1 `drawArrays(TRIANGLES, 0, 3)`.
+  - There are no allocations and no per-cell JS work in `present()`. The atlas is rebuilt only on resize and on context restore.
+  - Sandbox bench: `present()` avg 0.12-0.14 ms, flat from 0.2 M to 3.1 M device px.
+  - **Open, non-blocking:** the user's real-Chrome `?bench=1` numbers (1x and 2x DPR). Paste them here when available. If real Chrome shows `present()` above 2 ms, reopen.
+- **Rework #1 items:** all verified.
+  - F3/game keys call `preventDefault` with modifiers passed through.
+  - The palette shape matches US-002, and `design/palette.js` is loaded as a classic script before the module.
+  - Metrics-based cell box: max advance, max ascent + descent + 1 px, CSS size = device px / DPR, so crisp at any DPR.
+  - `?glyphs=1` exists, the file:// notice exists, and the stale comment is gone.
+- **Structure is sound:** WebGL2 is detected on a throwaway canvas; there is a Canvas2D fallback capped at `pxCellH <= 16`, plus `?force2d=1`; context loss is handled; the back-end is shown on the overlay and in the console.
+- **Known issue carried forward (not blocking US-001, now an acceptance criterion on US-004):** `CellBuffer._colorCache` never evicts.
+  - `setCell` with a new hex string adds an entry forever. The demo scene generates about 19,200 new hsl-derived hex strings per frame, so memory grows for as long as the demo runs.
+  - Harmless for UI text (a handful of colors), but it must be bounded before US-004 (and US-018's GC check).
+- **Notes for the tester:**
+  - Test on the default `gl2` path and with `?force2d=1`.
+  - Use `?glyphs=1` for the clipping check at 1x and at 2x (browser zoom 200% or a HiDPI screen).
+  - Use `?bench=1` for the numbers.
+  - Check that F3 does not open Find.
+  - Do not fail US-001 on memory growth in the demo scene: it is logged against US-004.
 
 ### US-002 Master palette, glyph ramps, materials  [Priority: P0] [Status: done]
 As a player, I want the tower to look like warm, detailed carved stone lit by fire and sun, so that the ASCII world feels beautiful and readable.
@@ -185,6 +207,7 @@ Acceptance criteria:
 - [ ] No fisheye distortion (perpendicular distance correction).
 - [ ] 60 fps on `test_room` with the F3 overlay (render <= 8 ms). The 8 ms budget is binding for the JS raycast + shading; the GPU present is extra (D-005).
 - [ ] (D-005) Cells are written through the allocation-free `RenderTarget.setCellRGB(x, y, glyphIdx, r, g, b, r2, g2, b2)` (glyphIdx = ASCII code - 32). No hex strings, no per-cell object or array allocation in the hot loop; `setCell` with hex is only for UI and debug text.
+- [ ] (carried over from the US-001 review) The `CellBuffer` hex color cache is bounded (e.g. at most 1024 entries, cleared or LRU when full), so `setCell` with many unique hex strings cannot grow memory without limit. The default page no longer runs the US-001 demo scene; it stays reachable with `?demo=1`.
 - [ ] (MAP_FORMAT v2) Solid cells are drawn as columns up to their `floorH` (wall top), with a lit top face in `floorMat`, and rays continue above them. In `test_room` the sky is visible over the 1.0 m low wall. In the tower, broken wall tops (6.5-8.5 m) show a ragged silhouette against the sky from the ground floor.
 - [ ] (MAP_FORMAT v2) Non-solid cells with a numeric `ceilH` draw their upper face from `ceilH` to `topH`, using `upperMat` if set, else `wallMat`. The `test_room` lintel cell shows a 0.8 m lintel above a 2.2 m opening. Step and ledge fronts use the higher sector's `wallMat`.
 Design needed: no (consumes US-002).
@@ -313,6 +336,21 @@ Acceptance criteria – Programmer:
 - [ ] Brazier flame animates; the brazier is also the torch point light source position.
 Design needed: yes – all props listed above.
 Notes / dependencies: US-002 (palette keys), US-004, US-006.
+Designer note (2026-09-22): **Preview ready for PO review.**
+- **Where:** `design/preview/props.html`. It shows every animation at near 2x / mid 1x / far (hand-drawn half LOD) plus frame strips, with light preset, intensity, direction, elevation, fog distance, a normals toggle and a lit-backdrop toggle. It runs its own data checks.
+- **Models** (`design/models/`):
+  - `brazier.js`: brazier 7x9 with 6 burn frames at 10 fps, emissive flame, a 5x4 flame unit, and `beaconFire` 12x4 built from 3 flame-unit tiles, with a grow-in rule (D-003).
+  - `lantern.js`: unlit with glint / lit / empty hook.
+  - `lever.js`: idle glint / pull (5 frames, 0.4 s) / down.
+  - `boulder.js`: 8 roll frames, driven by distance rolled.
+  - `rubble.js`: rubble x3, pallet, and `beaconBowl` 12x4 with a fire mount.
+- **Grate:** palette material `grate` (`| = #`, tileable). Gap texels are `hole: true`.
+- **Format:** `design/README.md` section 4.
+- **Open points for the PO:**
+  1. See-through grate gaps need masked walls in the raycaster; the fallback draws the gaps dark.
+  2. Per-frame `durations` (glints) and the optional per-cell normals are small renderer features.
+  3. The tower's bowl cells are now a stone plinth under the bowl sprite.
+- Status stays `design`.
 
 ### US-012 Interaction system + lantern pickup  [Priority: P0] [Status: todo]
 As a player, I want to press E to take the lantern and carry its light with me, so that I can see in the dark stairwell.

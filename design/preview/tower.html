@@ -46,6 +46,7 @@
 </div>
 
 <h2>Checks (computed from the data)</h2>
+<div id="loader" style="font-family:Consolas,monospace;font-size:12px"></div>
 <div id="checks"></div>
 
 <h2>Plan</h2>
@@ -66,6 +67,28 @@
 
 <script src="../palette.js"></script>
 <script src="../levels/tower.js"></script>
+<script type="module">
+  // Validate through the real US-003 loader (game/js/world/Level.js). Modules need http; from file:// this is skipped.
+  const box = document.getElementById('loader');
+  const lv = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.tower;
+  try {
+    const { loadLevel } = await import('../../game/js/world/Level.js');
+    const errs = [], orig = console.error;
+    console.error = (...a) => { errs.push(a.join(' ')); orig.apply(console, a); };
+    let level; try { level = loadLevel(lv); } finally { console.error = orig; }
+    if (level) {
+      const probes = [[17.0, 9.5], [15.5, 3.5], [20.5, 7.5], [18.5, 10.5], [9.5, 7.5], [5.5, 6.5]].map(([x, y]) =>
+        `(${x},${y}) floor ${level.floorAt(x, y)} ceil ${level.ceilAt(x, y)}`).join(' | ');
+      box.innerHTML = `<span class="pass">PASS</span> loadLevel (game/js/world/Level.js): ${level.width}x${level.height}, start ` +
+        `(${level.start.x}, ${level.start.y}) facing ${level.start.facingDeg} deg. <span class="note">Probes: ${probes}</span>`;
+    } else {
+      box.innerHTML = `<span class="fail">FAIL</span> loadLevel returned null: ` + errs.map((e) => e.replace(/</g, '&lt;')).join('<br>');
+    }
+  } catch (e) {
+    box.innerHTML = `<span class="note">loadLevel check skipped: ${String(e.message || e).replace(/</g, '&lt;')} ` +
+      `(open this page through the http server to run the real US-003 loader).</span>`;
+  }
+</script>
 <script>
 (function () {
   'use strict';
@@ -146,7 +169,7 @@
     check('US-003: grid is rectangular ' + W + 'x' + H, rect);
     check('US-003: every char is in the legend', !missing.length, missing.join(', '));
     check('US-003: player start defined on a walkable ground cell', passable(sx, sy, false) && def(sx, sy).zone === 'ground',
-          'start ' + LV.start.x + ',' + LV.start.y + ' yaw ' + LV.start.yaw + ' pitch ' + LV.start.pitch + ' (' + LV.start.pose + ')');
+          'start ' + LV.start.x + ',' + LV.start.y + ' facingDeg ' + LV.start.facingDeg + ' pitch ' + LV.start.pitchDeg + ' (' + LV.start.pose + ')');
     var palErr = [];
     Object.keys(LV.legend).forEach(function (k) {
       var d = LV.legend[k];
@@ -295,7 +318,7 @@
   }
   var markerMap = {};
   function addMarker(x, y, g, col, label) { var k = key(Math.floor(x), Math.floor(y)); (markerMap[k] = markerMap[k] || []).push({ g: g, c: col, label: label }); }
-  addMarker(LV.start.x, LV.start.y, 'S', C.gold, 'S  player start (lying on the pallet, yaw ' + LV.start.yaw + ', pitch +' + LV.start.pitch + ')');
+  addMarker(LV.start.x, LV.start.y, 'S', C.gold, 'S  player start (lying on the pallet, facingDeg ' + LV.start.facingDeg + ', pitch +' + LV.start.pitchDeg + ')');
   var PM = { pallet: ['=', C.straw], brazier: ['*', C.flameMid], lantern: ['o', C.brassLight], boulder: ['O', C.stoneLight], lever: ['/', C.brassLight],
              beaconBowl: ['U', C.ironLight], rubble: ['%', C.rubble], chains: ['-', C.iron] };
   LV.props.forEach(function (p) {

@@ -2,9 +2,9 @@
 
 Owner: Designer. **Data**: `design/levels/tower.js` (`ASSETS.levels.tower`, the single source; this page explains it). **Preview**: `design/preview/tower.html`. It shows the shaded top-down plan per level with heights, props, lights, reachability, boulder tilt and a sun-azimuth slider, plus the climb profile. It also runs automated checks on the data (listed in section 7).
 
-Format: the US-003 acceptance criteria (rows of chars + legend of sectors with `floorH`, `ceilH` number or `"sky"`, `wallMat`, `floorMat`, `ceilMat`, `solid`), plus the optional extensions in section 6. When `game/js/world/MAP_FORMAT.md` lands I will align field names. The content (heights, positions) will not change.
+Format: **`game/js/world/MAP_FORMAT.md` v1**. The level is `{ name, legend, rows, start }`. Every legend entry has `floorH`, `ceilH` (number or `'sky'`), `wallMat`, `floorMat`, `ceilMat` (always a material key; `'sky'` on open cells) and `solid`. The start is explicit: `{ x: 17.0, y: 9.5, facingDeg: 330 }`. It is not a legend start char, because the pallet centre lies on a cell edge. On top of that come the optional extensions in section 6. `loadLevel` ignores unknown fields, so they are safe. The programmer ports the object as `export default {...}` to `game/js/world/levels/tower.js` without content changes. The preview runs it through the real `loadLevel` when served over http.
 
-Conventions: 1 cell = 1 m. `rows[y][x]`, x grows **east**, y grows **south**, and cell (x,y) spans [x,x+1] x [y,y+1]. z = metres above the tower ground floor. Yaw is compass degrees (0 = north, 90 = east).
+Conventions: 1 cell = 1 m. `rows[y][x]`, x grows **east**, y grows **south**, and cell (x,y) spans [x,x+1) x [y,y+1). z = metres above the tower ground floor. `facingDeg` is compass: 0 = north, 90 = east. That is how `worldTestMain.js` actually draws it (`facingDeg - 90`). The comments "0 = east" in MAP_FORMAT section 5 and `test_room.js` contradict the code; see section 8.
 
 ## 1. The map (24 x 14)
 
@@ -54,7 +54,7 @@ Reading it:
 | `A`..`J` (no G) | 3.3 .. 5.7 | sky | | stone | floor | - | upper stair, 0.30 m rises |
 | `d` | 6.0 | sky | | stone | floor | - | doorway through the west wall (10th upper rise) |
 | `=` | 6.0 | sky | | stone | floor | - | summit walkway, a ring around the bowl |
-| `O` | 6.6 | sky | | iron | ash | - | beacon bowl 2x2: iron sides, ash inside (tag `beaconBowl`) |
+| `O` | 6.6 | sky | | stone | floor | - | stone plinth 2x2 under the beacon bowl sprite (tag `beaconBowl`) |
 | `b` | 6.0 | sky | | rubble | rubble | - | **breach**, 2 cells in the west parapet (tag `breach`) |
 | `K` | 4.0 | 6.4 | | stone | rubble | stone | **sun crack** through the east wall, `topH 8.0` (tag `sunCrack`) |
 | `X` | 6.0 | sky | | rock | rock | - | outcrop past the breach, **end trigger** |
@@ -64,7 +64,7 @@ Reading it:
 | `w` `v` | 5.4 / 4.2 | sky | | rock | rock | - | rock spur / slope |
 | `;` `,` | 2.4 / 1.0 | sky | | rock | grass | - | hillside grass |
 
-New palette materials added for this story: `grass` and `rock` (see `palette.js`). `grate` is delivered with US-011.
+`ceilMat -` in the table is stored as `'sky'` in the data: MAP_FORMAT requires a key on every entry. New palette materials added for this story: `grass` and `rock` (see `palette.js`). `grate` is delivered with US-011.
 
 ## 3. Levels, cell by cell
 
@@ -85,7 +85,7 @@ New palette materials added for this story: `grass` and `rock` (see `palette.js`
 
 **Level 2: upper stair and summit (3.3 to 6.0 m).** The route runs along the south wall westward, then up the west wall northward:
 (17,10) 3.3, (16,10) 3.6, (15,10) 3.9, (14,10) 4.2, (14,9) 4.5, (13,9) 4.8, (13,8) 5.1, (13,7) 5.4, (12,7) 5.7, then the **doorway** (11,7) at 6.0 (10 rises from the ledge) onto the **summit bastion**.
-- **Summit walkway** `=` at 6.0: a ring around the **beacon bowl** `O` (8..9, 6..7), 2 m across. Its iron sides stand 0.6 m and it is full of ash. The bowl sprite anchors at (9.0, 7.0, z 6.6), and the beacon light for US-022 is at z 7.4.
+- **Summit walkway** `=` at 6.0: a ring around the **beacon bowl** `O` (8..9, 6..7), 2 m across. It is a stone plinth 0.6 m high, and the US-011 bowl sprite (iron bowl on legs, full of ash) stands on it. The sprite anchors at (9.0, 7.0, z 6.6), and the beacon light for US-022 is at z 7.4.
 - **Parapet** `P` at 7.0 (waist high) surrounds the walkway. Toward the tower, the broken west wall (6.5 m) is only 0.5 m above the walkway, so from the summit you look down into the tower interior.
 - **Breach** `b` (6, 6..7): a 2 m gap in the west parapet, leading to the **outcrop** `X` (5, 6..7) at 6.0, which is the **end trigger**. The camera walks to (4.5, 7.0) and pitches -12 toward the valley. The two rock cells `Y` (5,5) and (5,8) are also trigger cells, so stepping diagonally off the breach cannot skip the ending.
 - **Hill** beyond: `j` 5.4, `k` 4.6, `l` 3.6, then hillside `;`. Past the map edge the US-016 far view takes over. The far tower should sit roughly W to WSW so it is framed by the breach.
@@ -109,8 +109,15 @@ New palette materials added for this story: `grass` and `rock` (see `palette.js`
   - Pushed east, it is blocked by the step, the tilt rolls it back west, and the US-013 anti-squeeze rule pushes the player aside.
 - `tilt` layer (numpad directions): base `1` (SW), apron (14,3) `2` (S), (15,4) `4` (W), (14,5) `4` (W), hollow `5` (sink toward (13.9, 4.7)). Suggested grade 0.05: apply `g * 0.05` along the tilt while the boulder is awake. Rolling friction should decelerate it less than that, so it never rests on a tilted cell.
 
-## 6. Format extensions (optional fields on top of US-003)
-All are optional. A loader that ignores them still gets a valid, playable map.
+## 6. Format extensions (optional fields on top of MAP_FORMAT v1)
+All are optional. `loadLevel` reads only the MAP_FORMAT fields and ignores everything else, so the tower loads as is. What `loadLevel` does **not** do with them, i.e. what a later consumer must implement:
+- **US-004 raycaster.** MAP_FORMAT section 6 says solid cells "block the ray" and have no floor of their own. To show the ruined silhouette (US-010 AC: wall tops 6.5 to 8.5 m), the raycaster must draw a solid cell's faces only up to its `floorH` (the wall top), with sky above. Otherwise every wall is infinitely tall, and the parapet (7.0) and low west wall (6.5) cannot be looked over from the summit. **This is the one extension that matters for M1 visuals.**
+- **US-014:** `dynamic.ceilOpen`, `topH`, `upperMat` on the grate.
+- **US-013:** `layers.tilt` and `tilt.grade`.
+- **US-012 / US-015 / US-017:** `lights`, `props`, `triggers`, `markers`, and `start.eyeH` / `start.pitchDeg` / `start.pose` (map format v2 names).
+- **Materials:** `grass` and `rock` are new palette materials (v1.1) and are not yet in MAP_FORMAT's M1 material list. `grate` (`upperMat`) arrives with US-011.
+
+The extensions:
 1. **Solid cells keep a `floorH`** = the top of the wall, so the renderer can draw broken wall tops and parapets. Collision treats solid cells as infinitely tall.
 2. **`topH`** on sectors with a real ceiling (grate, crack): the height of the stone mass above the ceiling, i.e. where the upper face ends.
 3. **`upperMat`**: the material of the face between ceilH and a fixed point (grate bars up to `dynamic.ceilOpen`, stone above).
@@ -139,4 +146,6 @@ The movement model is deliberately generous, so that it finds leaks:
 1. **The gap is 1.0 m, not 1.5 m.** On a 1 m grid, a 1.5 m gap is not possible, so the choice is 1 cell (1.0 m) or 2 cells (2.0 m). With the US-009 numbers, a walking jump onto +0.3 carries about 2.1 m. A 2 m gap would therefore need a perfect take-off, which is not the "forgiving on purpose" jump the GDD asks for. I chose **1 cell (1.0 m)**. It still needs a real jump: stepping off drops you 2.1 m onto the debris. If the PO wants a wider gap, it needs half-metre cells or a sub-cell ledge lip (engine change).
 2. **Summit as a bastion.** A ring walkway with a bowl in the centre cannot sit over the open tower interior: one floor per cell, and the interior must stay roofless for the sun shaft. So the summit is a beacon platform on the tower's west side. It has a walkway ring around the bowl, a waist-high parapet and the breach, and it overlooks the interior across the low broken west wall. The outer footprint becomes 12x12 for the tower plus 5 m of bastion.
 3. **End trigger** is 4 cells (outcrop plus the two diagonal rock cells), so the ending cannot be skipped.
-4. Format extensions in section 6: to be confirmed against `MAP_FORMAT.md` when it lands.
+4. **Aligned with MAP_FORMAT v1** (see the top of this page and section 6). Two things for the programmer:
+   - (a) the US-004 raycaster must honour a solid cell's `floorH` as the wall top;
+   - (b) the `facingDeg` convention: the code uses compass (0 = north), but the MAP_FORMAT section 5 and `test_room.js` comments say "0 = east". Fix the comments, or state the convention in MAP_FORMAT.
