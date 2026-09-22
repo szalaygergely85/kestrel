@@ -49,6 +49,14 @@ export class PlayerLook {
     };
     this._onPointerLockChange = () => {
       this.locked = document.pointerLockElement === canvas;
+      if (this.locked) {
+        // Discard whatever raw mouse movement piled up in Input while we
+        // were unlocked (before this click, or in the async gap between
+        // requestPointerLock() and this event actually firing) - otherwise
+        // update()'s first locked step applies it all in one jump. See
+        // PO REJECT #1 on US-005.
+        this.input.consumeMouseDelta();
+      }
     };
     this._onPointerLockError = () => {
       this.locked = false;
@@ -66,6 +74,10 @@ export class PlayerLook {
       this.yawDeg += d.dx * MOUSE_SENS_DEG_PER_PX;
       this.pitchDeg -= d.dy * MOUSE_SENS_DEG_PER_PX; // mouse up (dy<0) -> look up (pitch+)
     } else {
+      // Mouse movement made while unlocked is not look input (there's no
+      // pointer lock to give it meaning) - discard it here every step so it
+      // never accumulates into a snap when locking resumes.
+      this.input.consumeMouseDelta();
       if (this.input.isDown('ArrowLeft')) this.yawDeg -= ARROW_YAW_SPEED * dt;
       if (this.input.isDown('ArrowRight')) this.yawDeg += ARROW_YAW_SPEED * dt;
       if (this.input.isDown('ArrowUp')) this.pitchDeg += ARROW_PITCH_SPEED * dt;

@@ -21,8 +21,11 @@ export class Input {
     this._mouseDY = 0;
 
     // `movementX/Y` are raw deltas (unclamped by screen edges once pointer
-    // lock is active); PlayerLook (US-005) only reads these while locked,
-    // so accumulation while unlocked is harmless - just never consumed.
+    // lock is active). Input itself doesn't know about lock state, so it
+    // accumulates every mousemove unconditionally; PlayerLook (US-005) is
+    // responsible for draining/discarding this every step - including while
+    // unlocked, and again on the transition to locked - so stale movement
+    // never applies as a single jump on resume (PO REJECT #1).
     this._onMouseMove = (e) => {
       this._mouseDX += e.movementX || 0;
       this._mouseDY += e.movementY || 0;
@@ -75,8 +78,9 @@ export class Input {
 
   // Returns accumulated raw mouse movement (device pixels) since the last
   // call, then resets it to zero - same "read once per step, then clears"
-  // shape as `pressed`/`endFrame`. Meaningful only while pointer-locked
-  // (see engine/playerLook.js); harmless to call otherwise.
+  // shape as `pressed`/`endFrame`. PlayerLook calls this every step - while
+  // locked to get real look input, while unlocked purely to discard
+  // whatever accumulated (see engine/playerLook.js).
   consumeMouseDelta() {
     const d = { dx: this._mouseDX, dy: this._mouseDY };
     this._mouseDX = 0;
