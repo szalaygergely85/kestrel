@@ -7,16 +7,16 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 | Order | ID | Title | Priority | Status | Who picks up |
 |---|---|---|---|---|---|
-| 1 | US-001 | Char-grid canvas + game loop | P0 | dev (rework #2: WebGL2 back-end per D-005) | **Programmer NOW** |
+| 1 | US-001 | Char-grid canvas + game loop | P0 | po-review (rework #2 done: WebGL2 back-end per D-005) | **Programmer NOW** |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
-| 3 | US-003 | Sector map format + test room loader | P0 | po-review | Programmer |
-| 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer (needs US-002 for final look) |
+| 3 | US-003 | Sector map format + test room loader | P0 | dev (PO REJECT #1: format v2) | Programmer #2 NOW (small rework) |
+| 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer, after US-001 rework #2 + US-003 v2 (uses `setCellRGB`, D-005) |
 | 5 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer |
 | 6 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer |
 | 7 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
 | 8 | US-008 | Physics: player capsule, gravity, walk/run, collision | P0 | todo | Programmer |
 | 9 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
-| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | design | **PO: preview ready for review** (`design/preview/tower.html`), then Programmer |
+| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved 2026-09-22; designer does the small start-field alignment; programmer ports after US-003 v2 |
 | 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | design | **Designer NOW** (art), then Programmer |
 | 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
@@ -43,7 +43,7 @@ Acceptance criteria:
 - [x] Main loop: fixed 60 Hz `update(dt)` with accumulator (max 5 steps per frame to avoid spiral of death) and a separate `render(alpha)` via `requestAnimationFrame`.
 - [x] Demo screen: an animated color gradient + all glyphs of ` .:-=+*#%@` drawn in a strip, proving per-cell fg and bg color.
 - [x] F3 toggles an overlay showing fps and frame time (ms) in the top-left corner. (Fixed, rework item 2 - preventDefault verified.)
-- [ ] Full 160x60 grid redraw each frame keeps 60 fps in Chrome on a normal laptop (overlay shows >= 58 fps, frame <= 8 ms for the grid draw). **Manager decision D-005 (2026-09-22):** WebGL2 fullscreen cell-shader back-end behind the unchanged API, Canvas2D v2 with pxCellH <= 16 cap as fallback. Passes on structural grounds (one draw call, <= 80 KB upload/frame, zero per-frame allocations) plus user-run `?bench=1` numbers when available. Concrete steps 1-7 in `docs/decisions.md` D-005.
+- [x] Full 160x60 grid redraw each frame keeps 60 fps in Chrome on a normal laptop (overlay shows >= 58 fps, frame <= 8 ms for the grid draw). **Manager decision D-005 (2026-09-22):** WebGL2 fullscreen cell-shader back-end behind the unchanged API, Canvas2D v2 with pxCellH <= 16 cap as fallback. Passes on structural grounds (one draw call, <= 80 KB upload/frame, zero per-frame allocations) plus this session's `?bench=1` numbers. Done - see rework #2 notes below. **The sandbox used for this work ran the `gl2` back-end** (WebGL2 was available), measured `present()` avg 0.12-0.14 ms (p95 0.2 ms) regardless of canvas resolution (tested 640x300 up to 2240x1380 device px) - the `c2d-capped` fallback path was also exercised via `?force2d=1` and renders correctly but was not benchmarked (D-005 only requires the structural cap for it, not a bench pass).
 - [x] Code is split per CLAUDE.md layout: `game/js/engine/` (loop, input stub), `game/js/render/` (RenderTarget).
 - [x] (added on review) Palette access matches the US-002 `design/palette.js` v1 shape (see rework item 3 - verified, `getDefaultRamp()` returns the designer's 14-step ramp).
 Design needed: no.
@@ -84,6 +84,27 @@ Notes / dependencies: none. First story to build.
 - **Item 4 - glyph clipping / cell sizing.** `RenderTarget._measureGlyphs()` measures all 95 printable ASCII glyphs (32-126) via `measureText`/`actualBoundingBoxAscent`/`actualBoundingBoxDescent` at a large reference size, then re-measures at the derived final font size so the cell box (`pxCellW`/`pxCellH`/`glyphAscent`) comes from real metrics, not `CELL_ASPECT`. Added `game/js/render/glyphsScene.js` + `?glyphs=1` (all 95 glyphs on alternating light/dark cell backgrounds). Verified visually at 1280x800 - all glyphs including `@ W M & % _ , ; j g | $` render fully inside their cells with no clipping into neighboring cells.
 - **Item 5 - minor.** `game/index.html` now has an inline classic `<script>` that shows a full-screen message when `location.protocol === 'file:'`. Stale "dirty-cell diffing" comment removed from `game/js/ui/debugOverlay.js` (that technique was replaced during the perf work anyway).
 
+**Rework #2 done (2026-09-22) - manager decision D-005 implemented:**
+- `game/js/render/RenderTarget.js` is now a factory (a function used with `new`, since it returns whichever back-end instance it picked - `new RenderTarget(canvas, cols, rows, opts)` still works exactly as before). It feature-detects WebGL2 on a **throwaway** canvas first (never the real one - see the code comment for why: a canvas that successfully obtains a webgl2 context can never fall back to '2d' on that same element), then constructs either `RenderTargetGL` or `RenderTargetCanvas2D` on the real canvas. `?force2d=1` forces the Canvas2D fallback for testing.
+- `game/js/render/CellBuffer.js` (new): the shared typed-array cell store (item 1) - `glyphIdx: Uint8Array(cols*rows)`, `fg`/`bg: Uint8Array(cols*rows*4)`. `fg`'s alpha byte doubles as the glyph index (0-94), so it's already exactly the WebGL `uFg` texture's byte layout - no repacking at upload time. `setCell(x,y,glyph,fgHex,bgHex)` resolves hex strings through a color cache (unchanged public behaviour); `setCellRGB(x,y,glyphIdx,r,g,b,r2,g2,b2)` is the new allocation-free numeric fast path for hot callers (US-004's raycaster should use it).
+- `game/js/render/glyphMetrics.js` (new): the metrics-based cell-sizing logic from rework #1, factored out so both back-ends size cells identically (and so the Canvas2D fallback's `pxCellH <= 16` cap is just one extra argument to the same function).
+- `game/js/render/RenderTargetGL.js` (new) - the primary back-end:
+  - Shaders are JS template strings (no build step). Vertex shader draws a fullscreen triangle from `gl_VertexID` alone (no vertex buffer/VAO attributes). Fragment shader: `cell = floor(uv*grid)` (with a y-flip so row 0 is screen-top), `texelFetch` the fg/bg NEAREST textures, decode `glyphIdx = round(fg.a*255)`, sample the LINEAR atlas at `((glyphIdx+fract)/95, fract)`, `mix(bg,fg,a)`.
+  - Two RGBA8 160x60 NEAREST textures (`uFg`, `uBg`), updated via `texSubImage2D` directly from the `CellBuffer` arrays every `present()` - no CPU-side per-pixel work, no repacking, no new allocations. Upload size is exactly `2 * 160*60*4 = 76,800` bytes/frame (under the 80 KB budget).
+  - Glyph atlas: ASCII 32-126 rendered once into an offscreen Canvas2D per resize (reusing the metrics-based cell sizing), uploaded as a 95x1-cell RGBA8 LINEAR strip via `texImage2D` directly from the canvas element.
+  - `present()` is 2 `texSubImage2D` + 1 `drawArrays(TRIANGLES,0,3)` - one draw call, no allocations, no other per-frame GL state changes.
+  - `webglcontextlost`/`webglcontextrestored` handled: on loss, `present()` becomes a no-op (verified - does not throw); on restore, the program/VAO/textures/atlas are rebuilt from scratch. Verified in-browser using the `WEBGL_lose_context` extension (`loseContext()` -> `present()` still safe -> `restoreContext()` -> rendering resumes correctly, confirmed by screenshot).
+- `game/js/render/RenderTargetCanvas2D.js`: the rework #1 v2 pixel-buffer approach (glyph alpha-mask atlas + per-pixel JS blend + one `putImageData`), now reading from `CellBuffer` instead of string arrays, with `pxCellH` capped to 16 device px (backing resolution capped, CSS-upscaled to fill the window - accepted softness per D-005). The perf-history comment from the old `RenderTarget.js` moved here per D-005 item 7.
+- `game/js/main.js`: passes `{ force2d }` from `?force2d=1` into the factory, logs `[RenderTarget] back-end: <gl2|c2d-capped>` to the console on load, and shows `backend: <...>` on the F3/`?debug=1` overlay and in the `?bench=1` report (`window.__bench.backend`).
+- **Verification done this session** (this sandboxed browser-automation pane; WebGL2 was available here, so `gl2` is what actually ran):
+  - `?bench=1` at 640x300 px (dpr 1.25): `present()` avg **0.14 ms**, p95 0.2 ms, max 1 ms.
+  - `?bench=1` at 2240x1380 px (dpr 1.25, the largest this tool's viewport emulation gave me): `present()` avg **0.12 ms**, p95 0.2 ms, max 1 ms - confirms cost does not scale with device pixels/DPR (structurally fixed by the GPU-side design), unlike every Canvas2D architecture tried in rework #1.
+  - (`fullFrame` avg in both runs is ~32-38 ms, but that's `benchScene.js`'s own JS cost of calling `setCell` with hex strings for all 9600 cells with unique colors every frame - not `present()`/the render back-end. US-004 is expected to use `setCellRGB` instead, which avoids the hex-parsing/color-cache work entirely.)
+  - `?force2d=1` verified: console logs `backend: c2d-capped`, overlay shows it, renders correctly (screenshot-verified at the pane's native size; not benchmarked, per D-005 item 6 the bench pass is only required for the primary path).
+  - `?glyphs=1` re-verified under `gl2` - all 95 glyphs render correctly through the shader/atlas path (same visual result as the Canvas2D path from rework #1), confirming the atlas orientation/`atlasUv` math is correct.
+  - `setCellRGB` smoke-tested directly (wrote a red 'A' on green bg via raw bytes, read back `CellBuffer.glyphIdx`/`fg`/`bg` to confirm correct storage).
+  - Did not touch `game/js/world/` (merged US-003 code).
+
 ### US-002 Master palette, glyph ramps, materials  [Priority: P0] [Status: done]
 As a player, I want the tower to look like warm, detailed carved stone lit by fire and sun, so that the ASCII world feels beautiful and readable.
 Acceptance criteria (designer deliverables):
@@ -104,16 +125,47 @@ Designer note (2026-09-22): **Preview ready for PO review.** Open `design/previe
 - Open points resolved: (1) the US-015 hint text changed to ASCII `WASD move - Mouse look`; (2) emissive cells, hit height above the sector floor (tintBand) and texture fade are folded into US-004 / US-011 as acceptance criteria.
 - Small README fix for the designer (non-blocking): README section 1.1 says "US-001 has to open straight from disk". Per the US-001 review the game is served over http (ES modules); keep `palette.js` as a plain script (correct for both) and just correct that sentence.
 
-### US-003 Sector map format + test room loader  [Priority: P0] [Status: po-review]
+### US-003 Sector map format + test room loader  [Priority: P0] [Status: dev]
 As a player, I want the world to have real floors at different heights, so that stairs, ledges and a roofless tower are possible.
 Acceptance criteria:
-- [ ] A level is a JS data file (`game/js/world/levels/<name>.js`) with a 2D grid of cells; each cell references a sector with: `floorH`, `ceilH` (number or `"sky"`), `wallMat`, `floorMat`, `ceilMat`, `solid` flag.
-- [ ] Legend-based authoring: level rows are strings, one char per cell, plus a legend object mapping chars to sector definitions (so the designer can author layouts as text).
-- [ ] Loader validates: rectangular grid, every char in legend, player start defined; errors are printed to the console with row/column.
-- [ ] Query API: `sectorAt(x, y)`, `floorAt(x, y)`, `ceilAt(x, y)` in world meters (1 cell = 1 m).
-- [ ] A test level `test_room` (16x16) with: flat floor at 0, a 3-step staircase (0.3 m steps), a raised platform at 1.0 m, a pillar, and a sky-ceiling region.
+- [x] A level is a JS data file (`game/js/world/levels/<name>.js`) with a 2D grid of cells; each cell references a sector with: `floorH`, `ceilH` (number or `"sky"`), `wallMat`, `floorMat`, `ceilMat`, `solid` flag.
+- [x] Legend-based authoring: level rows are strings, one char per cell, plus a legend object mapping chars to sector definitions (so the designer can author layouts as text).
+- [x] Loader validates: rectangular grid, every char in legend, player start defined; errors are printed to the console with row/column.
+- [x] Query API: `sectorAt(x, y)`, `floorAt(x, y)`, `ceilAt(x, y)` in world meters (1 cell = 1 m).
+- [x] A test level `test_room` (16x16) with: flat floor at 0, a 3-step staircase (0.3 m steps), a raised platform at 1.0 m, a pillar, and a sky-ceiling region.
+- [ ] (added on review) Format v2 covers the approved tower (US-010) and has one heading convention. See rework list.
 Design needed: no.
 Notes / dependencies: US-001.
+
+**PO REJECT #1 (2026-09-22) – rework list (small, one session).**
+The 5 original criteria pass and the code is clean. The problem: the format as documented cannot express the approved tower layout (US-010), and its heading convention contradicts itself. US-004, US-008 and US-010 all build against `MAP_FORMAT.md` next, so it is much cheaper to fix now than after they consume it.
+1. **One heading convention.**
+   - `facingDeg` is compass degrees: 0 = north (-y), 90 = east (+x), clockwise. This is the same convention as the palette sun azimuth and the code in `worldTestMain.js`.
+   - Fix the "0 = east" statements in `MAP_FORMAT.md` section 5 and in the `test_room.js` legend comment. If the start should face east, set `facingDeg: 90`.
+   - Level start v2 = `{ x, y, facingDeg, pitchDeg?, eyeH?, pose? }`: pitch in degrees (+ = up), start eye height in meters (default = standing eye 1.6), and `pose` (`'standing' | 'lying'`, for US-015). Put the same optional fields on legend start entries.
+2. **Solid cells have a height** (normative, adopting `design/levels/tower_layout.md` section 6.1).
+   - For collision, a solid cell blocks movement at any height.
+   - For rendering, it is a column from below the level up to its `floorH` (the wall top). Its top face uses `floorMat`, and rays continue above it: you can see over a parapet and a broken wall top against the sky.
+   - Document this, and correct section 6 ("solid cells block the ray").
+3. **`topH` and `upperMat`** (normative, sections 6.2 and 6.3). A non-solid cell with a numeric `ceilH` has overhead mass from `ceilH` up to `topH`.
+   - The default for `topH` is `ceilH`, a zero-thickness slab, so `test_room` ceilings behave as today.
+   - `upperMat` is the material of the face below the fixed stone part (grate bars). The default is `wallMat`.
+   - Document the face-material rule: a step or ledge front uses the higher sector's `wallMat` (section 6.7).
+4. **Keep level-level data.**
+   - `Level` exposes the original definition (`level.def`), so `lights`, `props`, `triggers`, `markers`, `sun` and `layers` reach later stories.
+   - Unknown sector fields (`zone`, `tag`, `desc`, `dynamic`) pass through untouched. Document them as optional extensions (the list in `tower_layout.md` section 6).
+   - If `layers` is present, validate that every layer grid has the same size as `rows`, and report row/col otherwise.
+5. **Sector field validation** (cheap, prevents NaN bugs downstream).
+   - Per legend char: `floorH` is a finite number, `ceilH` is a finite number or `'sky'`, and `solid` is a boolean.
+   - `wallMat` and `floorMat` are non-empty strings. `ceilMat` is a string, or `'sky'` when `ceilH === 'sky'`.
+   - For a non-solid cell, `ceilH >= floorH` (equal is allowed: closed grate). Errors name the legend char.
+6. **`test_room` exercises the new fields**, so US-004 can test them:
+   - a solid low wall 1.0 m high that you can see over into the sky region;
+   - one `stone_moss` wall section (for the US-004 tintBand check);
+   - one doorway/lintel cell with `ceilH 2.2`, `topH 3.0`;
+   - a 1-cell (1 m) gap onto +0.3 m and a 2-cell (2 m) gap at equal height (for US-009).
+   - Update `world-test.html` if the new fields need display.
+7. Bump the `MAP_FORMAT.md` change log to v2.
 
 ### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: todo]
 As a player, I want to see the room in first-person 3D made of characters, so that I feel present in the space.
@@ -131,9 +183,12 @@ Acceptance criteria:
 - [ ] Pitch via y-shear, clamped to ±35 degrees; horizon line moves with pitch; no geometry tearing at the clamp.
 - [ ] Field of view 75 degrees horizontal, correct for the 160x60 grid and cell aspect (a square pillar looks square).
 - [ ] No fisheye distortion (perpendicular distance correction).
-- [ ] 60 fps on `test_room` with the F3 overlay (render <= 8 ms).
+- [ ] 60 fps on `test_room` with the F3 overlay (render <= 8 ms). The 8 ms budget is binding for the JS raycast + shading; the GPU present is extra (D-005).
+- [ ] (D-005) Cells are written through the allocation-free `RenderTarget.setCellRGB(x, y, glyphIdx, r, g, b, r2, g2, b2)` (glyphIdx = ASCII code - 32). No hex strings, no per-cell object or array allocation in the hot loop; `setCell` with hex is only for UI and debug text.
+- [ ] (MAP_FORMAT v2) Solid cells are drawn as columns up to their `floorH` (wall top), with a lit top face in `floorMat`, and rays continue above them. In `test_room` the sky is visible over the 1.0 m low wall. In the tower, broken wall tops (6.5-8.5 m) show a ragged silhouette against the sky from the ground floor.
+- [ ] (MAP_FORMAT v2) Non-solid cells with a numeric `ceilH` draw their upper face from `ceilH` to `topH`, using `upperMat` if set, else `wallMat`. The `test_room` lintel cell shows a 0.8 m lintel above a 2.2 m opening. Step and ledge fronts use the higher sector's `wallMat`.
 Design needed: no (consumes US-002).
-Notes / dependencies: US-001, US-003.
+Notes / dependencies: US-001 (rework #2, WebGL2 back-end + `setCellRGB`), US-003 (format v2).
 
 ### US-005 First-person camera controls  [Priority: P0] [Status: todo]
 As a player, I want to look around with the mouse and move with WASD, so that exploring feels natural.
@@ -191,24 +246,27 @@ Acceptance criteria:
 - [ ] Step-up: floors up to 0.45 m higher are climbed automatically; camera height smoothed over 0.1 s (no snapping) when stepping up or down.
 - [ ] Jump on Space: initial velocity 6.5 m/s (apex about 1.05 m); only when grounded, with 100 ms coyote time and 100 ms jump buffer.
 - [ ] Air control 35% of ground acceleration.
-- [ ] Walking jump clears a 1.5 m horizontal gap onto a floor 0.3 m higher (test case in `test_room`); running jump clears 2.5 m.
+- [ ] Walking jump reliably clears the `test_room` 1-cell (1.0 m) gap onto a floor 0.3 m higher (10 of 10 tries, taking off anywhere within the last 0.3 m before the edge). Running jump clears the 2-cell (2.0 m) gap at equal height. (The 1 m grid makes gaps 1 m or 2 m; the tower gap is 1 m, PO decision on US-010.)
+- [ ] Step-up only applies while grounded: never while airborne, and never during coyote time. Walking or running across a 1-cell gap without pressing Space always falls, including onto a +0.3 m landing. The capsule footprint must not "bridge" the gap by stepping up from mid-air. Test: 10 runs across the tower gap at run speed without Space, and all 10 fall onto the debris.
 - [ ] Landing dip: 0.08 m for falls > 0.5 m, 0.15 m for falls > 2 m, recovering in 0.2 s. Subtle head bob 0.03 m while walking.
 - [ ] No double jump; holding Space does not auto-repeat jumps.
 Design needed: no.
 Notes / dependencies: US-008.
 
-### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: design]
+### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: todo]
 As a player, I want to wake inside a ruined round tower with a stair winding up to a breach, so that I have a clear, intriguing space to explore.
 Acceptance criteria – Designer:
-- [ ] `design/levels/tower_layout.md`: top-down text map(s) of the tower using the US-003 legend format (outer footprint about 12x12 plus the outside outcrop and a few cells of hill beyond the breach), with a legend giving floorH/ceilH/materials per char.
-- [ ] Contains every element of GDD 7.1 at the stated heights: wake pallet (S), brazier ~3 m from it, lantern hook, sun-crack in the east wall, rubble (0.3-0.9 m), hollow at -0.3 m (NW), slope from stair base to hollow, boulder start on stair base, stair of 0.30 m steps clockwise, 1.5 m gap at ~2.7 m, mid ledge 2x2 at 3.0 m with lever and grate positions, upper stair to 6.0 m, summit walkway with parapet, beacon bowl, 2 m breach (W), outcrop + end trigger cells.
-- [ ] Irregular broken wall-top heights (6.5 to 8.5 m) so the silhouette against the sky reads as ruined.
-- [ ] Marks player start position and facing (lying, facing the sun shaft), and positions of all lights and props.
-- [ ] Wall materials assigned (stone variants, moss near the ground on the north side, scorched stone near the brazier).
-Acceptance criteria – Programmer (after PO approves the layout):
+- [x] `design/levels/tower_layout.md`: top-down text map(s) of the tower using the US-003 legend format (outer footprint about 12x12 plus the outside outcrop and a few cells of hill beyond the breach), with a legend giving floorH/ceilH/materials per char.
+- [x] Contains every element of GDD 7.1 at the stated heights: wake pallet (S), brazier ~3 m from it, lantern hook, sun-crack in the east wall, rubble (0.3-0.9 m), hollow at -0.3 m (NW), slope from stair base to hollow, boulder start on stair base, stair of 0.30 m steps clockwise, gap at ~2.7 m (**1.0 m, PO decision below**, was 1.5 m), mid ledge 2x2 at 3.0 m with lever and grate positions, upper stair to 6.0 m, summit walkway with parapet (**west bastion, PO decision below**), beacon bowl, 2 m breach (W), outcrop + end trigger cells.
+- [x] Irregular broken wall-top heights (6.5 to 8.5 m) so the silhouette against the sky reads as ruined.
+- [x] Marks player start position and facing (lying, facing the sun shaft), and positions of all lights and props.
+- [x] Wall materials assigned (stone variants, moss near the ground on the north side, scorched stone near the brazier).
+Acceptance criteria – Programmer (port). Blocked until US-003 rework #1 is PO OK and the designer alignment below is done:
 - [ ] `game/js/world/levels/tower.js` built from the layout; loads with no validation errors and becomes the default level (test_room still reachable with `?level=test_room`).
 - [ ] Every stair step is climbable, the gap is jumpable walking, falling from any stair lands safely on ground level, the summit is only reachable through the grate path.
 - [ ] The slice is completable without ever taking the lantern (wake to breach end; the lantern is a soft gate only, D-004 notes).
+- [ ] Content is ported unchanged from `design/levels/tower.js`, including the extension fields (props, lights, triggers, markers, layers.tilt), accessible via `level.def`. `design/levels/tower.js` stays the single source: any later layout change is made there first and re-ported.
+- [ ] Walking or running across the 1 m gap without Space always falls (depends on US-009; re-verify in the tower).
 Design needed: yes – level layout map + legend.
 Notes / dependencies: US-003 format. The designer may start now using the US-003 legend format described above.
 Designer note (2026-09-22): **Preview ready for PO review.**
@@ -218,8 +276,25 @@ Designer note (2026-09-22): **Preview ready for PO review.**
   1. The gap is 1 cell (1.0 m), because the 1 m grid cannot express 1.5 m; 2 cells would exceed a safe walking jump.
   2. The summit is a beacon bastion on the tower's west side, because a ring walkway cannot sit over the roofless interior with one floor per cell.
   3. The end trigger is 4 cells, so a diagonal step off the breach cannot skip it.
-  4. The format extensions will be aligned with `MAP_FORMAT.md` when it is merged.
+  4. The data is aligned with the merged MAP_FORMAT v1 (explicit start `{x, y, facingDeg}`; every legend entry has the 6 fields). The preview validates it through the real `loadLevel` over http. The optional extensions are ignored by the loader. US-004 must draw a solid cell only up to its `floorH` (wall top) for the ruined silhouette. The `facingDeg` comments in MAP_FORMAT section 5 and `test_room.js` say 0 = east, but the code uses compass (0 = north).
 - Status stays `design`.
+
+**PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer port.
+- All 5 designer criteria are met, and the preview's 18/18 automated checks pass (reported by the coordinator).
+- I read the data and confirmed the manager constraints:
+  - lantern-free completion;
+  - the boulder is trapped in base, apron and hollow by heights alone, plus the tilt layer;
+  - the grate is the only link to the summit;
+  - the 4-cell end trigger cannot be skipped diagonally.
+- Decisions on the open points:
+  1. **The gap is 1.0 m (1 cell): accepted.** It matches "forgiving on purpose". It still needs a jump, because a walk-off drops 2.1 m onto the debris. Risk found on review: with the capsule footprint and 0.45 m step-up, a player could run across a 1 m gap and step up mid-air onto the +0.3 landing without jumping. That would stop the jump beat from teaching anything. I fixed this by adding "step-up only while grounded, never during coyote time" to US-009, plus a no-Space test.
+  2. **Summit as a west bastion: accepted.** A ring over the interior would roof over the sun shaft. The bastion keeps the look-down into the tower and frames the far tower through the breach. GDD 7.1 is updated.
+  3. **4-cell end trigger: accepted.**
+  4. **Format:** the extensions in `tower_layout.md` section 6 become normative in MAP_FORMAT v2 (US-003 rework #1). The facing convention is compass (0 = N, 90 = E, clockwise), as the designer says.
+- Small alignment for the designer (mechanical, before the programmer ports):
+  - rename `start.eye` to `start.eyeH` and drop `start.eyeStand` (standing eye height is the physics config's 1.6), so that `start` = `{ x, y, facingDeg, pitchDeg, eyeH, pose }` per MAP_FORMAT v2;
+  - make sure `rock` and `grass` pass `P.util.validate()`;
+  - `grate` arrives with US-011 (that criterion is now explicit there).
 
 ### US-011 Billboard props + prop art  [Priority: P0] [Status: design]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.
@@ -227,7 +302,7 @@ Acceptance criteria – Designer (`design/models/*.js` + `design/preview/props.h
 - [ ] Brazier with fire: 7x9 cells, fire animation 6 frames at 10 fps (`^ * ' .` flame, yellow core to orange to red tips), emissive flag on flame cells.
 - [ ] Lantern: unlit (on hook) and lit variants, 3x4 cells; a 2-frame "glint" for the unlit one (brass highlight).
 - [ ] Lever: up and down poses + 3 in-between frames (5 frames total), 3x5 cells.
-- [ ] Grate (portcullis) as a wall material/pattern (iron bars `|#|`), tileable so its height can animate.
+- [ ] Grate (portcullis) as a wall material with the palette key `grate` in `palette.materials` (iron bars `|#|`), tileable so its height can animate. It is referenced by the tower's `upperMat: 'grate'` (US-010).
 - [ ] Boulder: 5x4 cells, 8 rotation frames (texture shifts so rolling reads), mossy stone.
 - [ ] Rubble blocks (3 variants), straw pallet, beacon bowl with ash (large, 12x4 cells).
 - [ ] Every prop: anchor at feet, palette keys only (from US-002), readable at 1/2 scale (for distance).

@@ -6,12 +6,14 @@ import { drawDemoScene } from './render/demoScene.js';
 import { drawGlyphsScreen } from './render/glyphsScene.js';
 import { fillWorstCase } from './render/benchScene.js';
 
+const params = new URLSearchParams(window.location.search);
+
 const canvas = document.getElementById('screen');
-const rt = new RenderTarget(canvas, 160, 60);
+const rt = new RenderTarget(canvas, 160, 60, { force2d: params.get('force2d') === '1' });
 const input = new Input(window);
 const overlay = new DebugOverlay(document.body);
 
-const params = new URLSearchParams(window.location.search);
+console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end actually ran (gl2 / c2d-capped)
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
@@ -46,7 +48,7 @@ function runGame(mode) {
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
-    overlay.update(loop.fps, loop.frameMs, `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}`);
+    overlay.update(loop.fps, loop.frameMs, `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`);
   }
 
   const loop = new Loop(update, render);
@@ -87,6 +89,7 @@ function runBenchmark(rt, overlay) {
 
   const result = {
     frames: FRAMES,
+    backend: rt.backend,
     canvasPxW: rt.canvas.width,
     canvasPxH: rt.canvas.height,
     devicePixelRatio: rt.dpr,
@@ -103,7 +106,7 @@ function runBenchmark(rt, overlay) {
   overlay.el.style.display = 'block';
   overlay.el.style.font = '14px "Courier New", monospace';
   overlay.el.textContent =
-    `BENCH (${FRAMES} worst-case frames)\n` +
+    `BENCH (${FRAMES} worst-case frames)  backend: ${result.backend}\n` +
     `canvas: ${result.canvasPxW}x${result.canvasPxH} px  (dpr ${result.devicePixelRatio}, cell ${result.pxCellW}x${result.pxCellH}px)\n` +
     `present(): avg ${result.present.avgMs} ms  p95 ${result.present.p95Ms} ms  max ${result.present.maxMs} ms\n` +
     `full frame: avg ${result.fullFrame.avgMs} ms  p95 ${result.fullFrame.p95Ms} ms  max ${result.fullFrame.maxMs} ms\n` +
