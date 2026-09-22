@@ -273,6 +273,15 @@ Notes / dependencies: US-001 (rework #2, WebGL2 back-end + `setCellRGB`), US-003
 - **Minimal debug camera** (`engine/debugCamera.js`, per the coordinator: US-005 isn't built yet): WASD moves relative to yaw with simple "don't walk into a solid cell" collision (queries `level.sectorAt` directly, not real physics), arrow keys look (yaw/pitch, clamped to ±35°), eye height follows the current sector's floor. Replace wholesale when US-005/US-008 land.
 - **Known gap, not required by this story's acceptance criteria but worth flagging:** the lintel/doorway visual (`D` cell) wasn't independently screenshot-verified (ambient-only lighting - no point lights until US-006/007 - makes stone-on-stone contrast very hard to see by eye); its geometry uses the same "ceiling height difference at a boundary" code path as the general case, which *was* visually verified (low wall -> sky, floor steps). Recommend the tester re-check it once US-006 adds the torch light for better contrast.
 
+**Architect answers (2026-09-22) to the two ASK ARCHITECT items.** Not blocking the current tester pass; they define follow-up story **US-004b** (below) which must be `done` before US-006 and US-016 start. Measurements: headless Node 24 (same V8 as Chrome) running `castScene` on `test_room` at 160x60, 300 frames per pose, 4 poses; details in `docs/architecture.md` section 12.
+1. **Hot-loop allocations: do not rely on V8, make them scratch now.** `ddaStep()` is a closure created per column (160/frame, each with a context object) that returns a fresh `{side, perpDist}` per step; `castFloorCeiling`/`castPlane` return objects that are destructured. Escape analysis removes these only when the callee is inlined, and inlining depends on function size and warmth: `castColumn` is already large and will grow with lighting, so the guarantee will silently disappear exactly when US-018 measures. The fix is small while the code is ~400 lines: a module-level reused `ray` state object (`mapX, mapY, sideDistX/Y, deltaDistX/Y, stepX/Y, side, perpDist`) with `ddaStep(ray)` writing into it; `castPlane` returns `r1` (a number) and takes `r0` via the same scratch; `castFloorCeiling` writes `skyClosedTop`/`ceilingFilledTo` into a per-column scratch struct instead of returning `{}`. Rule recorded in `docs/architecture.md` section 9 (no per-step object returns, no closures in the column loop). `openSpans` becomes the `OpenSpans` typed struct (`Int16Array top/bottom`, `Float32Array depth`, reused) per the PO decision; the consumer API is in architecture.md section 8.
+2. **Frame budget: the sandbox is not inflating; the cost is real and it is mostly waste.** Headless: avg 7.1-7.5 ms, p50 6.3-6.8 ms, p95 10.6-11.9 ms - matching the sandbox. Two findings:
+   - **Overdraw 1.5-1.9x.** The caster writes 14,300-17,900 cells per 9,600-cell frame. (a) The solid-wall branch paints rows down to `openBottom` (= rows-1) over the floor rows the nearer segments already drew; capping at `Math.floor(rowAtHeight(ctx, nearSector.floorH, entryDist))` (mirroring the step-front branch's `r1`) removed ~2,300 writes/frame in my patched copy. (b) `castSkySegment` paints sky mid-column from `ceilTop` down to the near floor row, and every farther floor segment then repaints the lower rows. Sky must be painted once, at the end, into `[openTop, floorFilledTo-1]` (track a floor high-water mark like `ceilingFilledTo`), which is also exactly the compositor's `fillSky`. Target and acceptance: **exactly 9,600 cell writes per frame** on every pose (headless counter), pixel-identical output.
+   - **The reference shader is ~0.42 us per call** (9,600 `shade()` calls = 3.9-4.3 ms, `shadeSky` 1.9 ms per 9,600): `materials[key]` lookup, two `Math.pow`, `smoothstep`, string `charAt` texel and ramp lookups, `Math.pow` fog. A fast path (materials resolved to records at `loadLevel`, `Uint8Array` texel grids, 256-entry LUTs for ramp/gamma/fog/fade, byte output) should land at ~0.1 us per cell, ~1 ms per frame, within the `?shadetest=1` tolerance that exists for exactly this purpose (README 1.7 note 5).
+   - **Lighting (US-006/007) must not add per-cell shadow rays.** Per light: a 2D visibility grid over the structure recomputed only when the light moves (the lantern moves, but only within 5 m = 11x11 cells); sun: a per-cell sunlit mask computed once per level (sun fixed in M1) plus the hit-height test. Then lighting is ~N x 20 flops per cell, no grid walks.
+   - **Verdict:** with overdraw at 1.0x and the fast shader, sectors ambient-only is ~2 ms and with 4 lights + sun ~3-3.5 ms. Total projected: sim 1 + sectors 3.5 + terrain 3 + sprites 1 + UI 0.5 = ~9 ms worst pose, ~7 ms typical - inside 8 ms only if every sub-budget holds. **Not an ESCALATE yet**; escalate to the manager if, after US-004b, `tools/bench-cast.mjs` shows sectors > 3.5 ms ambient-only, or US-006/007 add more than 1.5 ms. Scope levers if that happens, in order: 140x52 grid, terrain far LOD step growth, fewer point lights at the summit.
+   - **US-004b "Sector caster: overdraw to 1.0x, allocation-free ray loop, fast shader, headless bench" (P0, before US-006/US-016; PO to write).** Acceptance sketch: (1) `tools/bench-cast.mjs` (Node, no deps) reports avg/p50/p95/max ms, cells written per frame and, with `--gc`, GC events for N frames at 4 fixed poses on `test_room`; (2) cells written per frame == cols*rows on all poses; (3) zero allocations per frame in `castScene` after warm-up (no scavenge in 600 frames under `--trace-gc`); (4) `OpenSpans` typed struct replaces the object array; (5) fast shading path with `?shadetest=1` extended to all materials x 8 distances x 4 heights, all within tolerance; (6) headless p50 <= 2.5 ms ambient-only on `test_room`, image checksum (`CellBuffer.glyphIdx`) identical to today's output before step 5 and within tolerance after it. Can be done under `game/js/render/` if it lands before US-024, or in `engine/render/sectorCaster.js` after; either way it is a pure refactor of one file plus the bench script.
+
 ### US-005 First-person camera controls  [Priority: P0] [Status: po-review]
 As a player, I want to look around with the mouse and move with WASD, so that exploring feels natural.
 Acceptance criteria:
@@ -291,6 +300,8 @@ Design needed: no.
 - **Pointer lock could not be end-to-end verified in this sandboxed browser-automation pane**: `canvas.requestPointerLock()` here always rejects with `WrongDocumentError: The root document of this element is not valid for pointer lock` - a known restriction on iframe'd/embedded preview contexts, not a code issue (confirmed by calling it directly in the console, same error, independent of any of my code). Found and fixed a related real bug while investigating: the promise rejection (and, in some paths, a synchronous throw for the same condition) was going uncaught, spamming the console - `_onClick` now wraps the call in try/catch and attaches `.catch()` to the returned promise either way. **Recommend the tester re-verify actual pointer-lock acquisition and the Esc-releases-it path in a real top-level browser tab**, since that's exactly the case this sandbox can't exercise; everything downstream of "locked became true/false" (mouse-look math, overlay show/hide) is verified and was exercised by forcing `look.locked` directly.
 - The "Click to resume" overlay is driven entirely by `!look.locked` (shown whenever not locked, including "never clicked yet" and "just pressed Esc") and re-drawn fresh every unlocked frame (after the scene, before `present()`), so it always reflects the current scene underneath rather than a stale one.
 Notes / dependencies: US-004.
+
+- **User check (2026-09-22, real Chrome tab):** pointer lock + Esc release confirmed working by the user. Covers the item the sandbox could not verify.
 
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]
 As a player, I want a torch to throw flickering warm light across the stone, so that the room feels alive.
@@ -710,6 +721,52 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: after US-004 and US-008 reach `po-review`, before US-006 starts (D-006 rule 6). New files created before then should already go to the new paths. The designer's previews must keep working; they load `design/*.js` directly and do not depend on the engine.
 
+**Tech notes (architect, 2026-09-22).** Reusable parts (layers, API typedefs, conventions, allocation rules, check-deps rules) are in `docs/architecture.md` sections 2, 3, 5, 6; this note is the move plan.
+
+*Principle: move, do not refactor.* US-024 changes paths, import lines, one rename (`castScene` -> `castSectors`, kept internally as an alias until US-004b/US-016 adopt `FrameBuffers`), and adds `index.js`, `assets.js`, `check-deps.mjs`, `README.md`. No behaviour changes; the `CellBuffer.glyphIdx` checksum at a fixed camera is the regression test.
+
+*File moves (old -> new):*
+| Old | New |
+|---|---|
+| `game/js/render/RenderTarget.js`, `RenderTargetGL.js`, `RenderTargetCanvas2D.js`, `CellBuffer.js`, `glyphMetrics.js`, `DepthBuffer.js` | `engine/render/` same names |
+| `game/js/render/raycaster.js` | `engine/render/sectorCaster.js` (export `castSectors`; `castScene` alias, not exported from index) |
+| `game/js/render/shadeTest.js` | `engine/render/shadeTest.js` (takes the palette as a parameter already) |
+| `game/js/render/palette.js` (placeholder) | **deleted**: the registry requires a real palette; `getDefaultRamp` callers use `assets.palette.ramps.default` |
+| `game/js/render/demoScene.js`, `glyphsScene.js`, `benchScene.js` | `game/js/dev/` (page harnesses; import only `engine/index.js`) |
+| `game/js/engine/loop.js`, `input.js` | `engine/core/loop.js`, `engine/core/input.js` |
+| `game/js/engine/debugCamera.js` | `game/js/dev/debugCamera.js` (dev harness, replaced by US-005/US-008; not engine API) |
+| `game/js/ui/debugOverlay.js` | `engine/ui/debugOverlay.js` |
+| `game/js/world/Level.js`, `MAP_FORMAT.md` | `engine/world/Level.js`, `engine/world/MAP_FORMAT.md` |
+| `game/js/world/levels/test_room.js` | `design/levels/test_room.js` as a classic script (`ASSETS.levels.test_room`, plus `module.exports` under Node like `palette.js`) |
+| `game/js/world/worldTestMain.js` | `game/js/dev/worldTestMain.js` |
+| `game/js/physics/config.js`, `capsule.js` | `engine/physics/config.js` (export `PHYSICS_DEFAULTS`; `PHYSICS` alias kept for tests), `engine/physics/capsule.js` |
+| `game/js/physics/physics.test.js` | `engine/physics/physics.test.js` (imports stay relative inside engine; `test_room` via `createRequire` of `design/levels/test_room.js`) |
+| `game/js/physics/physicsTestMain.js` | `game/js/dev/physicsTestMain.js` |
+| `game/js/entities/Player.js` | `engine/entities/Player.js` (first-person capsule controller; US-025 splits it into `Entity` data + `integrate`) |
+| `game/js/main.js` | stays; imports only `engine/index.js` and reads `window.ASSETS` once |
+| new | `engine/index.js`, `engine/core/assets.js`, `engine/core/events.js` (tiny emitter), `engine/core/behaviours.js`, `engine/render/OpenSpans.js`, `engine/README.md`, `tools/check-deps.mjs` |
+| stubs (throw `not implemented (US-xxx)`) | `engine/world/World.js`, `engine/world/Terrain.js`, `engine/world/serialize.js`, `engine/render/terrainCaster.js`, `engine/render/sprites.js`, `engine/render/textDraw.js` (this one is real: 20 lines over `setCell`), `engine/physics/sphere.js`, `engine/physics/integrate.js`, `engine/entities/Entity.js`, `engine/entities/Camera.js` |
+
+*HTML pages:* `game/index.html` adds classic `<script>` tags for every `design/` file the registry needs (`palette.js`, `levels/test_room.js`, later `levels/tower.js`, `levels/overworld_far.js`, `levels/world_m1.js`, `models/*.js`) before the module. `world-test.html` -> `js/dev/worldTestMain.js`, `physics-test.html` -> `js/dev/physicsTestMain.js`, both also load `design/palette.js` + `design/levels/test_room.js` classic scripts. `?level=name` reads `assets.level(name)`.
+
+*API signatures introduced by this story (normative, architecture.md 5-6):*
+- `createEngine({ canvas, assets, cols=160, rows=60, force2d=false, physics? , inputTarget? })` -> `{ renderTarget, depthBuffer, openSpans, world: null, input, loop, camera, events, assets, physics, loadWorld(def), run({update, render}) }`. `loop` is created but not started; `run` starts it.
+- `new AssetRegistry({ palette, models?, levels?, terrain?, worlds?, uiStyle? })`, `AssetRegistry.fromGlobals(window.ASSETS)` (splits `ASSETS.levels` into `levels` (has `rows`) and `terrain` (has `util.heightAt`)), `assets.palette`, `assets.level(key)`, `assets.model(key)`, `assets.terrain(key)`, `assets.world(key)`, `assets.uiStyle`; unknown key throws `AssetRegistry: unknown level "x" (known: test_room, tower)`.
+- `castSectors(fb, level, cam, origin)` with `fb = { rt, depth, spans, palette, lights: null, timeSec }`; `beginFrame(fb)`; `fillSky(fb, cam)`; `renderWorld` is a stub until US-025. `main.js` for `test_room` calls `beginFrame`, `castSectors(fb, level, cam, ORIGIN0)`, `fillSky(fb, cam)`, `rt.present()`. That sequence replaces `skyFallback: true` and produces the identical image (sky is still painted into whatever is open).
+- `drawText(rt, x, y, text, fg, bg?)`.
+- `registerBehaviour(name, fn)` (+ aliases `registerInteraction`, `registerTrigger`), `getBehaviour(name)`.
+
+*Sequencing so it does not collide with US-005 (programmer #1: `game/js/engine/input.js`, `debugCamera.js`, `main.js`) and US-008/US-009 (programmer #2: `game/js/physics/*`, `game/js/entities/Player.js`):*
+- **Phase A (can start now, one programmer, ~half a day, no in-flight file touched):** create `engine/index.js`, `core/assets.js`, `core/events.js`, `core/behaviours.js`, `render/OpenSpans.js`, `render/textDraw.js`, all stubs, `engine/README.md`, `tools/check-deps.mjs`. Move the files nobody is editing: `render/*` (except the dev scenes), `ui/debugOverlay.js`, `core/loop.js`, `world/Level.js` + `MAP_FORMAT.md`, `test_room.js` -> `design/levels/`. Leave **forwarding shims** at every old path that in-flight code imports (`game/js/world/Level.js`: `export * from '../../../engine/world/Level.js';`, same for `levels/test_room.js` exporting the global as default, `render/RenderTarget.js`, `render/DepthBuffer.js`, `render/raycaster.js`, `engine/loop.js`, `ui/debugOverlay.js`). Shims are legal (game -> engine) and keep `physics.test.js`, `physicsTestMain.js`, `worldTestMain.js` and the two programmers' working copies running untouched. `main.js` is **not** edited in Phase A (US-005 owns it); it keeps working through the shims. `check-deps` already passes on `engine/`.
+- **Phase B (after US-005 reaches `po-review`):** move `input.js` -> `engine/core/input.js`, `debugCamera.js` -> `game/js/dev/`, rewrite `main.js` to `AssetRegistry.fromGlobals` + `createEngine` + `beginFrame/castSectors/fillSky`, remove `render/palette.js`. Delete the render/loop/ui shims.
+- **Phase C (after US-009 reaches `po-review`):** move `physics/*`, `entities/Player.js`, `physics.test.js`; fix their relative imports; delete the world shims. `node engine/physics/physics.test.js` passes unchanged.
+- **Phase D (closing):** `check-deps` OK with the shim directories gone (`game/js/{engine,render,world,physics,entities,ui}/` no longer exist), screenshot/checksum compare, `?bench=1` within noise, all switches, `CLAUDE.md` layout line updated with the manager. Story goes to `po-review` only after D. If US-005 or US-009 slip, Phases A+B can still ship and C is the only part that waits; do not start Phase C on a file the other programmer has uncommitted edits in.
+- Programmers on US-005/US-009 meanwhile: **new** files go to the new paths (`engine/core/input.js` additions are fine to write there directly if US-005 creates a new module; otherwise finish in place and let Phase B move it). Do not import from `engine/` deep paths.
+
+*check-deps rules:* architecture.md section 3 (six rules; engine-only imports, no `ASSETS`/`document`/`location` in engine, game/tools import exactly `engine/index.js`, design has no `import`, JSDoc imports ignored, exit 1 with `file:line`). Add the fixture test `tools/check-deps.test.mjs` with a temp tree containing one violation of each rule.
+
+*Not in this story:* World, Terrain, serialize (US-025); the fast shader/overdraw fix (US-004b) - but if US-004b lands first, Phase A moves the improved file; `OpenSpans` adoption inside the caster (US-004b) - Phase A only creates the class.
+
 ### US-025 World model: terrain + placed structures in one world frame (D-007)  [Priority: P0] [Status: todo]
 As a player, I want the tower to stand on a real hill in a real world, so that what I see from the breach is the same world I will later walk into.
 Acceptance criteria:
@@ -736,6 +793,40 @@ Acceptance criteria:
 - [ ] `node tools/check-deps.mjs` is OK. Only `game/js/main.js` knows the tower or its coordinates, and it reads them from data.
 Design needed: minor. Delivered 2026-09-22: `design/levels/world_m1.js` (tower at (1480, 1018), z offset 0, player spawn, initial world state for restart) and US-016b (done).
 Notes / dependencies: US-024; US-016b (for exact-0 seam; M1 can start with the 1.8 m residual, as it is cosmetic in the far view). Unblocks US-006 onward in world coordinates, US-016 programmer, US-017 restart, and M2 US-026.
+
+**Tech notes (architect, 2026-09-22).** Shapes and rules: `docs/architecture.md` sections 7 (World model), 9 (allocation), 10 (serialization, Entity, Events). This note is what to build, in order, with signatures.
+
+*Build order (each step has a headless test):*
+1. `engine/world/Terrain.js`: `new Terrain(recipe, { assets })`. `heightAt(x, y)` = `recipe.util.heightAt` (analytic, near) or `recipe.util.gridHeight(farGrid, x, y)` (far); `sample(x, y, camDist)` picks by `camDist < 300`. `typeAt(x, y)`. `normalAt(x, y, out)` central differences at 2 m into a reused `out`. Far bake: `bakeFarAsync(msBudget = 2)` advances row by row from the loop's `update` until `farReady`; `bakeFarSync()` for tests; checksum (`sum of Float32 bits`, e.g. FNV over the `Uint32Array` view) equal between the two. `chunk(cx, cy)` returns the baked 64x64 chunk from a 3x3 cache keyed `"cx,cy"`; `setCenter(x, y)` regenerates only the new row/column, amortised via `bakeChunkAsync`. Before bake, `Terrain` must give the recipe real ring heights: pass `ringHAt(x, y)` per placed structure (nearest outer-ring `floorH`) into `recipe.structures[i]` (the recipe already looks for `st.ringHAt`).
+2. `engine/world/World.js` per architecture.md 7: `World.load(def, assets)`: `terrain = new Terrain(assets.terrain(def.terrain))`, `placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps)` for each, entities from `def.entities` (`spawn: { structure, from: 'start' }` -> `level.start + origin`, `pose`, `eyeH`), `state = structuredClone(def.state)`. Queries in world meters; `structureAt` = bbox test (the array is tiny); `outsideSector(x, y)` fills and returns **one reused scratch sector** `{ floorH, ceilH: 'sky', solid: false, wallMat: 'rock', floorMat: <type material>, ceilMat: 'sky', topH: 'sky', upperMat: 'rock', terrain: true }` (never allocate per query; callers must not hold onto it, document that). `animateSector(tag, t01)`: writes `ceilH` (and `topH`) into the tagged legend entries of that structure between `floorH` and `dynamic.ceilOpen`, records `dynamics[tag] = { t }`. Note: legend entries are shared per char; a dynamic sector must have its own legend char (the tower's grate does).
+3. `engine/entities/Entity.js`: `Entity.create(id, type, transform, components)`, `Entity.eye(e, eyeH)`; no classes in state. `engine/physics/integrate.js`: lift the body of today's `Player.update` into `integrate(entity, dt, controls, world, cfg)` reading/writing `entity.transform` + `entity.components.body` (`vx, vy, vz, grounded, radius, height`); keep `Player.js` as a thin adapter over an entity so US-005/US-009 code keeps working, then delete it when nothing imports it. The 4 US-008 wall-slide tests must pass through `integrate` with `World` as the `WorldQuery` (test stub: a `World` with a flat terrain recipe and no structures = "walk off the grid edge" from US-008's D-008 criterion).
+4. `engine/world/serialize.js` per architecture.md 10 (`version: 1`). Round-trip test in Node (`engine/world/serialize.test.js`) and `?serializetest=1` in the page. Positions exact, `dynamics` and `entities` included, `terrain.overrides` deep-copied.
+5. `renderWorld(fb, world, cam)` in `engine/render/compositor.js`: `beginFrame`, `castSectors` per structure (sorted by distance to `cam`), `castTerrain` (stub until US-016: no-op), `fillSky`. `main.js` switches from the manual sequence to `renderWorld`. The tower in the world at (1480, 1018, 0) must produce, with `castTerrain` stubbed, the same image as the bare level at origin 0 plus sky in the open spans (`?origin` test from US-004 generalised).
+6. Debug overlay: world x, y, z, structure id, sector char, `farReady`, chunk key. `game/js/main.js` reads `assets.world('world_m1')`; `?level=test_room` builds an ad-hoc `WorldDef` `{ terrain: null, structures: [{ level: 'test_room', origin: 0 }] }` - `World` must accept `terrain: null` (then `outsideSector` returns the solid wall, exactly today's `Level` behaviour).
+
+*Signatures:*
+```js
+World.load(def: WorldDef, assets: AssetRegistry): World
+world.placeStructure(levelDef, origin: {x,y,z}, id: string, yawSteps = 0): PlacedStructure   // throws 'yawSteps != 0: not in M1'
+world.structureAt(x, y): PlacedStructure | null
+world.sectorAt(x, y): Sector | null          // null outside every footprint
+world.outsideSector(x, y): Sector            // terrain floor (scratch) or solid wall when terrain is null
+world.floorAt(x, y): number | null           // structure floor or terrain height
+world.heightAt(x, y): number                 // terrain only
+world.animateSector(tag: string, t01: number): void
+world.fireInteraction(id, ctx) / world.fireTrigger(id, ctx)
+serialize(world): WorldState        deserialize(state, assets): World
+new Terrain(recipe, opts?)  .heightAt .typeAt .normalAt(x,y,out) .sample(x,y,camDist) .bakeFarAsync(ms) .bakeFarSync() .farReady .checksum() .chunk(cx,cy) .setCenter(x,y)
+integrate(entity, dt, controls, world, cfg): void
+```
+
+*Coordinates:* camera, player, lights, sprites, interactables and triggers are converted to world meters **once, at placement** (`local + origin`); `castSectors` is the only consumer that converts back (it takes `origin`). Never store both frames on the same object.
+
+*Allocation:* no per-query allocation in any `World` method (scratch sector, bbox arrays preallocated); `Terrain.sample` no allocation; chunk generation allocates only its own typed arrays, off the frame budget or amortised.
+
+*Determinism:* same seed + same overrides -> identical `checksum()`; a test compares `bakeFarSync` vs a fresh `bakeFarAsync` run to completion.
+
+*Not in this story:* near-LOD drawing and slope physics (US-026), `castTerrain` (US-016), `fromJSON` (US-027). `Terrain` must still be built so `World.floorAt` outside the tower answers with terrain height (it is only used by the far view and the debug overlay in M1).
 
 ---
 
