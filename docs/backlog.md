@@ -11,7 +11,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | dev | Programmer #1 NOW |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | po-review | PO |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev (PO REJECT #1: wall-slide float stick + 4-side slide tests) | Programmer #2 NOW (small rework) |
 | 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
 | 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
 | 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | design | **Designer NOW** (in progress) |
@@ -284,18 +284,42 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: po-review]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: dev]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
-- [ ] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
-- [ ] Walk 3.5 m/s, run (Shift) 6.0 m/s, full speed in 0.10 s, stop in 0.08 s (GDD section 5).
-- [ ] Collision vs solid cells and vs sector walls higher than the step threshold; sliding along walls when moving diagonally into them; never tunnelling through a 1-cell wall at run speed; never stuck on corners.
-- [ ] Gravity 20 m/s^2; walking off a ledge makes the player fall and land on the lower floor.
-- [ ] Head collision: cannot enter a sector whose `ceilH - floorH` is less than 1.70 m.
-- [ ] All values in one tuning config object (`game/js/physics/config.js` for now; moves to `engine/physics/config.js` in US-024).
+- [x] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
+- [x] Walk 3.5 m/s, run (Shift) 6.0 m/s, full speed in 0.10 s, stop in 0.08 s (GDD section 5).
+- [ ] Collision vs solid cells and vs sector walls higher than the step threshold; sliding along walls when moving diagonally into them; never tunnelling through a 1-cell wall at run speed; never stuck on corners. (Sliding: see rework item 1.)
+- [x] Gravity 20 m/s^2; walking off a ledge makes the player fall and land on the lower floor.
+- [x] Head collision: cannot enter a sector whose `ceilH - floorH` is less than 1.70 m.
+- [x] All values in one tuning config object (`game/js/physics/config.js` for now; moves to `engine/physics/config.js` in US-024).
 - [ ] (D-008) **Out-of-grid world query:** every "is this passable / what is the floor here" answer comes from the passed-in `level`/`world` object (`sectorAt`, `floorAt`). There is no hard-coded "outside the grid = wall" branch in the physics code. Out-of-grid cells are answered by a query on the world object (e.g. `world.outsideSector(x, y)`), which returns a solid sector for M1's bare level, so later the terrain (US-025) can stand in without any physics change. Test: a stub world whose `outsideSector` returns a flat walkable floor lets the capsule walk off the grid edge.
 Design needed: no.
 Notes / dependencies: US-005.
+
+**PO REJECT #1 (2026-09-22) – one blocking item, small.** I reviewed `capsule.js`, `config.js`, `Player.js`, `physics.test.js` and the `Level.js` addition.
+- What passes: all tuning is in one config; accel and decel are derived exactly from it; free fall starts from the ledge with no snap-down; landing is correct; the closed grate is blocked by headroom; a step is 0.1 m at run speed against a 0.3 m radius, so no tunnelling.
+- D-008 is done well: `sectorOrOutside()` gives `world.outsideSector()` with no hard-coded wall, and it is tested with an override.
+- Step-up is grounded-only by construction, which already covers the US-009 no-bridging rule.
+
+1. **Wall sliding can stick on two of the four wall orientations (floating point). Blocking.**
+   - `resolveAxis` pushes the circle out to exactly `col + 1 + radius` or `row + 1 + radius` when the wall is on its west or north side.
+   - On the next step, the overlap test measures `cx - (col + 1)`, which in floating point is often slightly less than 0.3. Example: `2.3 - 2 = 0.2999999999999998` in JS.
+   - That counts as an overlap with `dx === 0` or `dy === 0` on the fixed axis, so the function returns `prevCoord`. The along-wall movement is cancelled and `blockedX`/`blockedY` zeroes the velocity: the player sticks to west and north walls while trying to slide along them.
+   - East and south walls (`col - radius`, `row - radius`) round the safe way, which is why test 7 (a wall to the east) passes. Test 7's assertion `y > 2.0` after 1.5 s of running is also too weak to catch partial sticking.
+   - **Fix:**
+     - Resolve to the wall plus radius plus a small skin (e.g. `1e-6`), and/or treat `distSq >= r*r - 1e-9` as no overlap.
+     - Never cancel the moving axis because of a cell that only touches on the other axis. When `dx === 0`, that cell is the other axis's business, so skip it rather than returning `prevCoord`.
+   - **Tests to add to `physics.test.js`:**
+     - (a) Slide along a wall on each of the **four** sides (N, E, S, W), at walk and run, with diagonal input (45 degrees into the wall) for 2 s. Tangential travel must be >= 95% of `speed * cos(45) * t`, and the distance to the wall must stay within [radius, radius + 0.01].
+     - (b) Walking straight along a wall at 0.300001 m distance for 5 m never gets blocked.
+     - (c) An **inner corner** (two walls meeting): pushing diagonally into it stops cleanly with no jitter over 60 steps (position change < 1e-6 per step), and backing out works immediately.
+     - (d) An **outer corner** (the end of a 1-cell pillar): sliding along one face continues around the pillar end without catching.
+     - (e) A 1000-step random-walk fuzz in `test_room` (fixed seed): the capsule never overlaps an impassable cell by more than 1e-6 and is never stuck (after 30 consecutive blocked steps with input, a reversed input must move it).
+   - If (a) to (e) pass on the current code without a fix, report that and I will re-review. The requirement is the tests, not a particular fix.
+2. (Non-blocking, moved to US-009.) Entering a cell whose `ceilH` is below the capsule's head (`footZ + height > ceilH`, e.g. jumping or stepping down under the `test_room` lintel from higher ground) is not checked; only the cell's own headroom is. It cannot happen in M1 without jumping, so it is added as a US-009 criterion.
+
+For the tester (after rework): `node game/js/physics/physics.test.js` passes all tests. In `game/physics-test.html`, hug every wall of `test_room` in both directions, run into inner corners and around pillar `O` and the `m` stub, walk off the 1.0 m platform, step up the 0.3/0.6/0.9 stair, and fail to walk into the closed-headroom and low-wall cells.
 
 ### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: todo]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
@@ -304,6 +328,7 @@ Acceptance criteria:
 - [ ] Jump on Space: initial velocity 6.5 m/s (apex about 1.05 m); only when grounded, with 100 ms coyote time and 100 ms jump buffer.
 - [ ] Air control 35% of ground acceleration.
 - [ ] Walking jump reliably clears the `test_room` 1-cell (1.0 m) gap onto a floor 0.3 m higher (10 of 10 tries, taking off anywhere within the last 0.3 m before the edge). Running jump clears the 2-cell (2.0 m) gap at equal height. (The 1 m grid makes gaps 1 m or 2 m; the tower gap is 1 m, PO decision on US-010.)
+- [ ] (from the US-008 review) Head clearance on entry: a cell is passable only if `max(footZ, target floorH) + 1.70 <= target ceilH` (numeric ceilings). Jumping into the `test_room` lintel `D` from the side bonks (upward velocity killed, no clipping); walking under it from floor level works.
 - [ ] (from the US-003 review) Raise the `test_room` pit `v` floor from -1.0 m to -0.6 m: it can't be walked out of (0.6 m > 0.45 m step-up) but is easy to jump out of.
 - [ ] Step-up only applies while grounded: never while airborne, and never during coyote time. Walking or running across a 1-cell gap without pressing Space always falls, including onto a +0.3 m landing. The capsule footprint must not "bridge" the gap by stepping up from mid-air. Test: 10 runs across the tower gap at run speed without Space, and all 10 fall onto the debris.
 - [ ] Landing dip: 0.08 m for falls > 0.5 m, 0.15 m for falls > 2 m, recovering in 0.2 s. Subtle head bob 0.03 m while walking.
