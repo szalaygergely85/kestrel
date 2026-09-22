@@ -17,7 +17,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 8 | US-008 | Physics: player capsule, gravity, walk/run, collision | P0 | todo | Programmer |
 | 9 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
 | 10 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved 2026-09-22; designer does the small start-field alignment; programmer ports after US-003 v2 |
-| 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | design | **PO: preview ready for review** (`design/preview/props.html`), then Programmer |
+| 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | todo | Art PO-approved 2026-09-22; Programmer after US-004 + US-006 |
 | 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 14 | US-014 | Lever opens the grate | P0 | todo | Programmer |
@@ -29,6 +29,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 20 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
 | 21 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
 | 22 | US-021 | Readable wall scrawl | P2 | design | Designer |
+| 23 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
 
 M1 exit criteria = all P0 stories `done` (roadmap). US-022 (P1) and P2 stories are not exit criteria.
 
@@ -319,23 +320,38 @@ Designer note (2026-09-22): **Preview ready for PO review.**
   - make sure `rock` and `grass` pass `P.util.validate()`;
   - `grate` arrives with US-011 (that criterion is now explicit there).
 
-### US-011 Billboard props + prop art  [Priority: P0] [Status: design]
+### US-011 Billboard props + prop art  [Priority: P0] [Status: todo]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.
 Acceptance criteria – Designer (`design/models/*.js` + `design/preview/props.html`):
-- [ ] Brazier with fire: 7x9 cells, fire animation 6 frames at 10 fps (`^ * ' .` flame, yellow core to orange to red tips), emissive flag on flame cells.
-- [ ] Lantern: unlit (on hook) and lit variants, 3x4 cells; a 2-frame "glint" for the unlit one (brass highlight).
-- [ ] Lever: up and down poses + 3 in-between frames (5 frames total), 3x5 cells.
-- [ ] Grate (portcullis) as a wall material with the palette key `grate` in `palette.materials` (iron bars `|#|`), tileable so its height can animate. It is referenced by the tower's `upperMat: 'grate'` (US-010).
-- [ ] Boulder: 5x4 cells, 8 rotation frames (texture shifts so rolling reads), mossy stone.
-- [ ] Rubble blocks (3 variants), straw pallet, beacon bowl with ash (large, 12x4 cells).
-- [ ] Every prop: anchor at feet, palette keys only (from US-002), readable at 1/2 scale (for distance).
-- [ ] Preview page shows each prop at near/mid/far scale on a dark background, with light-direction/intensity slider.
+- [x] Brazier with fire: 7x9 cells, fire animation 6 frames at 10 fps (`^ * ' .` flame, yellow core to orange to red tips), emissive flag on flame cells.
+- [x] Lantern: unlit (on hook) and lit variants, 3x4 cells; a 2-frame "glint" for the unlit one (brass highlight).
+- [x] Lever: up and down poses + 3 in-between frames (5 frames total), 3x5 cells.
+- [x] Grate (portcullis) as a wall material with the palette key `grate` in `palette.materials` (iron bars `|#|`), tileable so its height can animate. It is referenced by the tower's `upperMat: 'grate'` (US-010).
+- [x] Boulder: 5x4 cells, 8 rotation frames (texture shifts so rolling reads), mossy stone.
+- [x] Rubble blocks (3 variants), straw pallet, beacon bowl with ash (large, 12x4 cells).
+- [x] Every prop: anchor at feet, palette keys only (from US-002), readable at 1/2 scale (for distance).
+- [x] Preview page shows each prop at near/mid/far scale on a dark background, with light-direction/intensity slider.
 Acceptance criteria – Programmer:
 - [ ] Billboard renderer: sprites positioned in world, scaled by distance, depth-sorted and occluded correctly by walls (per-column depth buffer).
 - [ ] Sprites are lit by the same light model, except emissive cells (flames), which are drawn at full color and ignore both lighting and fog (uses the US-004 emissive flag).
 - [ ] Brazier flame animates; the brazier is also the torch point light source position.
-Design needed: yes – all props listed above.
+- [ ] (added on design review) Implements the sprite format in `design/README.md` section 4.
+  - A space glyph is transparent.
+  - Scale = `world.h` projected / `size.h`, nearest sampling, never upscaled beyond 3x; switch to `lods.half` when scale < 0.75.
+  - Timing: `fps` or per-frame `durations` (ms) for the lantern glint, and `fps: 0` = frame driven by gameplay (boulder: distance rolled, lever: pull progress).
+  - Lit cells use `util.shadeSprite` (engine re-implementation allowed, same results as the preview). The optional `n` rows (per-cell normals) may be ignored with `nf = 1` in M1.
+- [ ] Props and lights are placed from `level.def.props` / `level.def.lights` (tower data), not hard-coded. `beaconBowl.mounts.fire` gives the US-022 fire anchor.
+- [ ] Grate material: gap texels (`hole: true`) are drawn **dark** in M1: the solid fallback shown in the preview, with no see-through. See-through grates are US-023 (P2).
+Design needed: yes – all props listed above (delivered).
 Notes / dependencies: US-002 (palette keys), US-004, US-006.
+
+**PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer.
+- All 8 designer criteria are met, confirmed from the model files: brazier 7x9 with 6 frames at 10 fps and emissive flames, lantern 3x4, lever 3x5, boulder 5x4, rubble x3, pallet 9x2, bowl 12x4, the `grate` material, and a hand-drawn half LOD for every prop. The preview has intensity, direction, elevation and distance sliders, and 9/9 checks pass (reported by the coordinator).
+- The beacon fire reuses brazier flame units plus a grow-in rule, as D-003 asked. No new design story is needed for US-022.
+- Decisions on the open points:
+  1. **See-through grate (masked walls): not in M1 P0.** The lever beat only needs the player to see the grate rise, and the dark-gap fallback reads clearly as bars. Masked walls mean continuing rays through a partially transparent wall (Doom "mid-textures"), which is extra renderer work and risk to the frame budget. Moved to new story US-023 (P2).
+  2. **Per-frame durations: required** (the lantern glint needs them). **Per-cell normals: optional** in M1 (`nf = 1` allowed).
+  3. **Tower bowl cells as a 0.6 m stone plinth, and start v2 fields: accepted.** They fit US-003 v2 and the US-010 port.
 Designer note (2026-09-22): **Preview ready for PO review.**
 - **Where:** `design/preview/props.html`. It shows every animation at near 2x / mid 1x / far (hand-drawn half LOD) plus frame strips, with light preset, intensity, direction, elevation, fog distance, a normals toggle and a lit-backdrop toggle. It runs its own data checks.
 - **Models** (`design/models/`):
@@ -464,7 +480,7 @@ Notes / dependencies: US-004, US-010.
 As a player, I want to relight my tower's beacon before I step out, so that the slice ends on a hopeful act and shows the core loop.
 Acceptance criteria:
 - [ ] Targeting the beacon bowl (US-012 rules, 1.8 m / ~20 degrees) while carrying the lantern shows `[E] Light the beacon`. Without the lantern: no prompt (the bowl is not interactable).
-- [ ] Pressing E ignites the bowl: flames grow from 0 to full over 1.0 s, using the US-011 brazier flame frames (6 frames, 10 fps) scaled/tiled to the 12x4 bowl; flame cells are emissive.
+- [ ] Pressing E ignites the bowl: flames grow from 0 to full over 1.0 s using the delivered `beaconFire` model (3 brazier flame units, 10 fps) and its `grow` rule (`design/README.md` section 4). The fire is anchored at `beaconBowl.mounts.fire`, and flame cells are emissive.
 - [ ] A new point light starts at the bowl centre (about 0.8 m above the ash): warm orange (brazier `#ff9a3c` family), intensity ramps 0 to 1.0 over 1.0 s, radius 12 m target, same flicker model as the brazier (8-12 Hz, ±15%).
 - [ ] Performance: at the summit view (looking out the breach with the beacon lit) the US-018 budget holds (>= 58 fps). If not, reduce the beacon radius (minimum 8 m) until it does; the feature is never cut for performance. The final radius is recorded in the tuning config.
 - [ ] The lantern is not consumed: the player keeps it and its light after lighting the beacon.
@@ -474,3 +490,13 @@ Acceptance criteria:
 - [ ] Restart (R) resets the beacon to unlit.
 Design needed: no new story – designer confirms the brazier flame frames scale to the 12x4 bowl (D-003).
 Notes / dependencies: US-011, US-012, US-016, US-017, US-018. Picked up only after every P0 story is `done`. Not an M1 exit criterion.
+
+### US-023 See-through grate (masked walls)  [Priority: P2] [Status: todo]
+As a player, I want to see the upper stair through the bars of the grate, so that the portcullis looks like real ironwork and hints at the way up.
+Acceptance criteria:
+- [ ] Wall texels flagged `hole: true` in a material (the `grate` material) are transparent. The ray continues behind the masked face, and the geometry and sky behind it are drawn through the gaps.
+- [ ] Works while the grate animates (US-014): the masked face shrinks as `ceilH` rises, with no tearing at the moving edge.
+- [ ] Sprites behind the grate are occluded only by the bar texels, not by the gaps.
+- [ ] Cost: at most 0.5 ms extra per frame when the grate fills the view; US-018 still holds.
+Design needed: no (the `grate` material with `hole` texels was delivered with US-011).
+Notes / dependencies: US-004, US-011, US-014. Picked up only after every P0 story is `done`. Not an M1 exit criterion. Until then the M1 fallback draws the gaps dark (US-011).

@@ -90,14 +90,14 @@ Round tower approximated on the grid. Outer footprint about 12x12 cells, wall 1 
 
 **Level 1 – Spiral stair and mid ledge (0.0 m to 3.0 m)**
 - Stone steps hug the inner wall, 1 cell wide, each step 0.30 m rise, climbing clockwise.
-- **The gap:** at about 2.7 m high, 1.5 m of stairs have collapsed. The landing on the far side is the mid ledge at 3.0 m. A walking jump clears it; the gap is forgiving on purpose. Falling means landing on rubble at ground level, no damage, walk back up.
+- **The gap:** at about 2.7 m high, 1.0 m (one cell) of stairs has collapsed. The landing on the far side is the mid ledge at 3.0 m. A walking jump clears it; the gap is forgiving on purpose. It still requires Space: step-up never works mid-air, and walking off drops 2.1 m onto debris. Falling means landing on rubble at ground level, no damage, walk back up.
 - The stair above the sun line is in shade: the lantern makes the gap edges clearly readable; without it they are dim but still visible (soft gate, never a hard lock).
 - **Mid ledge:** a 2x2 m stone platform in a wall niche with an iron **lever** (up position). Next to it, the upper stair is blocked by an iron **grate** (portcullis). Chains visibly run from lever to grate.
 - **Lever:** E pulls it down (0.4 s), the grate rises (1.5 s) with a rattle, opening the upper stair. One-way; cannot be reset.
 
 **Level 2 – Upper stair and summit (3.0 m to 6.0 m)**
 - Upper stair continues 10 steps to the summit walkway, 6.0 m.
-- **Summit:** a ring walkway with a waist-high parapet. Centre: the cold **beacon bowl** (a large iron basin, 2 m across) full of grey ash. Optional (D-003, US-022): with the lantern, `[E] Light the beacon` starts a large fire; the lantern is kept, the far tower stays dark, and the end text changes to `One beacon burns. The others are dark.`
+- **Summit:** a beacon bastion built onto the tower's west side on a rock spur, reached through a doorway in the broken west wall. It overlooks the tower interior across the low (6.5 m) wall top, so the interior stays roofless for the sun shaft. It has a ring walkway around the bowl and a waist-high parapet. Centre: the cold **beacon bowl** (a large iron basin, 2 m across) full of grey ash. Optional (D-003, US-022): with the lantern, `[E] Light the beacon` starts a large fire; the lantern is kept, the far tower stays dark, and the end text changes to `One beacon burns. The others are dark.`
 - **The breach:** a 2 m wide hole in the west parapet, opening onto a stone outcrop and a path going down the hill. Through it the **overworld** is visible: rolling hills, a winding river of blue `~`, forests of green `&%`, blue fog; far away (about 800 m) a second tower on a hill, dark.
 - Stepping onto the outcrop past the breach triggers the end.
 
