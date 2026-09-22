@@ -60,6 +60,10 @@
        module below) so window.ASSETS.palette is always ready before
        js/render/palette.js's getPalette() is first called. -->
   <script src="../design/palette.js"></script>
+  <!-- ASSETS.uiStyle (US-005 pause overlay text/plate, US-015/017 hints/
+       title/end text later) + the title/subtitle models - same
+       classic-script/load-order reasoning as palette.js above. -->
+  <script src="../design/models/title.js"></script>
 
   <script type="module" src="js/main.js"></script>
 </body>

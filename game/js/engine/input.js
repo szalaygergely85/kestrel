@@ -1,7 +1,5 @@
-// Minimal input stub for US-001: enough for the F3 debug toggle and future
-// stories to build on (US-005 will extend this with mouse/pointer lock).
-// Exposes isDown/pressed style access even though only edge-triggered
-// "pressed" is needed right now (F3 toggle).
+// Input: keyboard (US-001) + mouse delta (US-005, for pointer-lock look).
+// Exposes isDown/pressed (edge-triggered) and consumeMouseDelta().
 
 // Every key this game owns. preventDefault() is called for these (and only
 // these) on keydown so the page never scrolls (arrows/space), triggers the
@@ -19,6 +17,17 @@ export class Input {
   constructor(target = window) {
     this._down = new Set();
     this._pressedThisFrame = new Set();
+    this._mouseDX = 0;
+    this._mouseDY = 0;
+
+    // `movementX/Y` are raw deltas (unclamped by screen edges once pointer
+    // lock is active); PlayerLook (US-005) only reads these while locked,
+    // so accumulation while unlocked is harmless - just never consumed.
+    this._onMouseMove = (e) => {
+      this._mouseDX += e.movementX || 0;
+      this._mouseDY += e.movementY || 0;
+    };
+    target.addEventListener('mousemove', this._onMouseMove);
 
     this._onKeyDown = (e) => {
       // Never swallow a browser/OS shortcut (Ctrl+F, Cmd+R, Alt+Tab, ...);
@@ -38,6 +47,8 @@ export class Input {
       // Release everything when the window loses focus so keys never get
       // "stuck" down.
       this._down.clear();
+      this._mouseDX = 0;
+      this._mouseDY = 0;
     };
 
     target.addEventListener('keydown', this._onKeyDown);
@@ -60,5 +71,16 @@ export class Input {
   // `pressed`) to clear the edge-triggered set.
   endFrame() {
     this._pressedThisFrame.clear();
+  }
+
+  // Returns accumulated raw mouse movement (device pixels) since the last
+  // call, then resets it to zero - same "read once per step, then clears"
+  // shape as `pressed`/`endFrame`. Meaningful only while pointer-locked
+  // (see engine/playerLook.js); harmless to call otherwise.
+  consumeMouseDelta() {
+    const d = { dx: this._mouseDX, dy: this._mouseDY };
+    this._mouseDX = 0;
+    this._mouseDY = 0;
+    return d;
   }
 }

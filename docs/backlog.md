@@ -15,7 +15,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
 | 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
 | 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
-| 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer (can run alongside; new files go to `engine/`) |
+| 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | po-review | Programmer (can run alongside; new files go to `engine/`) |
 | 10 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 |
 | 11 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
 | 12 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
@@ -273,16 +273,23 @@ Notes / dependencies: US-001 (rework #2, WebGL2 back-end + `setCellRGB`), US-003
 - **Minimal debug camera** (`engine/debugCamera.js`, per the coordinator: US-005 isn't built yet): WASD moves relative to yaw with simple "don't walk into a solid cell" collision (queries `level.sectorAt` directly, not real physics), arrow keys look (yaw/pitch, clamped to ±35°), eye height follows the current sector's floor. Replace wholesale when US-005/US-008 land.
 - **Known gap, not required by this story's acceptance criteria but worth flagging:** the lintel/doorway visual (`D` cell) wasn't independently screenshot-verified (ambient-only lighting - no point lights until US-006/007 - makes stone-on-stone contrast very hard to see by eye); its geometry uses the same "ceiling height difference at a boundary" code path as the general case, which *was* visually verified (low wall -> sky, floor steps). Recommend the tester re-check it once US-006 adds the torch light for better contrast.
 
-### US-005 First-person camera controls  [Priority: P0] [Status: todo]
+### US-005 First-person camera controls  [Priority: P0] [Status: po-review]
 As a player, I want to look around with the mouse and move with WASD, so that exploring feels natural.
 Acceptance criteria:
-- [ ] Click on the canvas requests pointer lock; Esc releases it and shows a small "Click to resume" overlay.
-- [ ] Mouse yaw/pitch at 0.15 deg per pixel; pitch clamped ±35 degrees.
-- [ ] Arrow keys: yaw 120 deg/s, pitch 60 deg/s (fallback when pointer lock is unavailable).
-- [ ] WASD moves relative to yaw; diagonal movement is normalized (not faster).
-- [ ] Input module exposes `isDown(key)`, `pressed(key)` (edge-triggered once per sim step) and mouse delta; keys are released when the window loses focus.
-- [ ] In this story movement may be a simple noclip on the floor (physics comes in US-008).
+- [x] Click on the canvas requests pointer lock; Esc releases it and shows a small "Click to resume" overlay.
+- [x] Mouse yaw/pitch at 0.15 deg per pixel; pitch clamped ±35 degrees.
+- [x] Arrow keys: yaw 120 deg/s, pitch 60 deg/s (fallback when pointer lock is unavailable).
+- [x] WASD moves relative to yaw; diagonal movement is normalized (not faster).
+- [x] Input module exposes `isDown(key)`, `pressed(key)` (edge-triggered once per sim step) and mouse delta; keys are released when the window loses focus.
+- [x] In this story movement may be a simple noclip on the floor (physics comes in US-008).
 Design needed: no.
+
+**Programmer notes (2026-09-22):**
+- Files: `game/js/engine/playerLook.js` (new - pointer lock request/state, mouse-look at 0.15 deg/px, arrow-key yaw/pitch fallback at 120/60 deg/s, pitch clamp ±35), `game/js/ui/pauseOverlay.js` (new - draws `ASSETS.uiStyle.pause` "Click to resume" with its plate, over the already-rendered scene, via `setCellRGB` only), `game/js/engine/input.js` (added `consumeMouseDelta()` - accumulates raw `movementX/Y` on `mousemove`, read-and-reset like `pressed`/`endFrame`; keys+mouse both cleared on window blur), `game/index.html` (added `design/models/title.js` as a classic script - it sets `ASSETS.uiStyle`, needed for the pause overlay text/plate; same load-order reasoning as `palette.js`), `game/js/main.js` (replaced `DebugCamera` with the real `Player` (`game/js/entities/Player.js`) + `PlayerLook`; deleted the now-superseded `game/js/engine/debugCamera.js`). Did not touch `game/js/physics/**` or `game/js/entities/**` - consumed `Player.update(dt, controls, level)`/`getEyeTransform()` exactly per the integration hook documented at the bottom of `Player.js`, and did not move any files (kept everything under `game/js/`, per this round's explicit "don't move files, US-024 comes after" instruction - even though an older note on this row says "new files go to `engine/`").
+- **Movement**: `controls.forward`/`controls.strafe` are computed directly from WASD `isDown()` (`-1..1` per axis) and handed to `Player.update()`, which does the diagonal normalization and acceleration itself (verified: forward+strafe at yaw 90 converges to exactly 3.5 m/s, not 3.5*sqrt(2)). This is Player's existing "simple noclip on the floor" behavior (US-008/US-009 physics are being built elsewhere and not integrated here, per the coordinator).
+- **Verification**: shadetest/bench/glyphs/demo/force2d/origin all re-checked working after the change. Arrow-key fallback rates (60 deg over 0.5 s at 120 deg/s; 30 deg over 0.5 s at 60 deg/s) and the pitch clamp (pushed past 35, landed exactly at 35) verified by direct `PlayerLook.update(dt)` calls with synthetic key events. Mouse-look math (yaw +15 deg / pitch +7.5 deg for a 100/-50 px synthetic `movementX/Y`, i.e. exactly *0.15) verified the same way with `look.locked` forced true.
+- **Pointer lock could not be end-to-end verified in this sandboxed browser-automation pane**: `canvas.requestPointerLock()` here always rejects with `WrongDocumentError: The root document of this element is not valid for pointer lock` - a known restriction on iframe'd/embedded preview contexts, not a code issue (confirmed by calling it directly in the console, same error, independent of any of my code). Found and fixed a related real bug while investigating: the promise rejection (and, in some paths, a synchronous throw for the same condition) was going uncaught, spamming the console - `_onClick` now wraps the call in try/catch and attaches `.catch()` to the returned promise either way. **Recommend the tester re-verify actual pointer-lock acquisition and the Esc-releases-it path in a real top-level browser tab**, since that's exactly the case this sandbox can't exercise; everything downstream of "locked became true/false" (mouse-look math, overlay show/hide) is verified and was exercised by forcing `look.locked` directly.
+- The "Click to resume" overlay is driven entirely by `!look.locked` (shown whenever not locked, including "never clicked yet" and "just pressed Esc") and re-drawn fresh every unlocked frame (after the scene, before `present()`), so it always reflects the current scene underneath rather than a stale one.
 Notes / dependencies: US-004.
 
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]

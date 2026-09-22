@@ -10,7 +10,9 @@ import { DepthBuffer } from './render/DepthBuffer.js';
 import { runShadeTest } from './render/shadeTest.js';
 import { loadLevel } from './world/Level.js';
 import testRoomDef from './world/levels/test_room.js';
-import { DebugCamera } from './engine/debugCamera.js';
+import { Player } from './entities/Player.js';
+import { PlayerLook } from './engine/playerLook.js';
+import { drawPauseOverlay } from './ui/pauseOverlay.js';
 
 const params = new URLSearchParams(window.location.search);
 
@@ -42,7 +44,8 @@ function runGame(mode) {
 
   let simTime = 0;
   let level = null;
-  let camera = null;
+  let player = null;
+  let look = null;
   let depthBuffer = null;
   let origin = { x: 0, y: 0, z: 0 };
 
@@ -52,16 +55,24 @@ function runGame(mode) {
       console.error('[main] test_room failed to load (see errors above) - falling back to the demo scene.');
       mode = 'demo';
     } else {
-      camera = new DebugCamera(level, input);
+      // US-005 owns turning (mouse/pointer-lock, arrow-key fallback);
+      // Player (US-008/US-009, game/js/entities/Player.js) owns moving -
+      // see the "Integration hook" note at the bottom of that file. No
+      // physics integration here yet (US-008/US-009 are in flight
+      // elsewhere): movement is Player's current simple noclip-on-the-floor
+      // behaviour, which is exactly this story's "movement may be a simple
+      // noclip on the floor" allowance.
+      player = new Player(level);
+      look = new PlayerLook(canvas, input, player.yawDeg, player.pitchDeg);
       depthBuffer = new DepthBuffer(rt.cols, rt.rows);
 
       // D-008 item 3 test switch: `?origin=1480,1018` renders test_room as
-      // if it were a structure placed at that world offset. `DebugCamera`
-      // keeps moving/colliding in the level's own LOCAL coordinates
-      // (unaffected); only the camera position handed to castScene (below)
-      // is translated to world coordinates (+origin) - castScene converts
-      // it back internally, so the rendered image should be pixel-identical
-      // to origin (0,0,0) - see docs/backlog.md US-004.
+      // if it were a structure placed at that world offset. Player/PlayerLook
+      // keep moving/colliding in the level's own LOCAL coordinates
+      // (unaffected); only the eye position handed to castScene (below) is
+      // translated to world coordinates (+origin) - castScene converts it
+      // back internally, so the rendered image should be pixel-identical to
+      // origin (0,0,0) - see docs/backlog.md US-004.
       const originParam = params.get('origin');
       if (originParam) {
         const [ox, oy] = originParam.split(',').map(Number);
@@ -73,7 +84,17 @@ function runGame(mode) {
   function update(dt) {
     simTime += dt;
     if (input.pressed('F3')) overlay.toggle();
-    if (camera) camera.update(dt);
+    if (look) look.update(dt);
+    if (player) {
+      const controls = {
+        forward: (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0),
+        strafe: (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0),
+        run: input.isDown('ShiftLeft') || input.isDown('ShiftRight'),
+        yawDeg: look.yawDeg,
+        pitchDeg: look.pitchDeg,
+      };
+      player.update(dt, controls, level);
+    }
     input.endFrame();
   }
 
@@ -88,20 +109,23 @@ function runGame(mode) {
       // `skyFallback` restores this story's original stand-alone look; a
       // placed structure with a real terrain pass behind it would pass a
       // non-zero `origin` and leave `skyFallback` off (D-008).
+      const eye = player.getEyeTransform(); // {x, y, z, yawDeg, pitchDeg} in LEVEL-local meters
       castScene(rt, level, {
-        x: camera.x + origin.x, y: camera.y + origin.y, z: camera.z + origin.z,
-        yawDeg: camera.yawDeg, pitchDeg: camera.pitchDeg,
+        x: eye.x + origin.x, y: eye.y + origin.y, z: eye.z + origin.z,
+        yawDeg: eye.yawDeg, pitchDeg: eye.pitchDeg,
       }, window.ASSETS.palette, { origin, depthBuffer, skyFallback: true });
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t);
     }
+    if (mode === 'raycast' && !look.locked) drawPauseOverlay(rt, window.ASSETS);
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
     const extra = mode === 'raycast'
       ? `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}\n` +
-        `pos (${camera.x.toFixed(2)}, ${camera.y.toFixed(2)}) yaw ${camera.yawDeg.toFixed(0)} pitch ${camera.pitchDeg.toFixed(0)}`
+        `pos (${player.x.toFixed(2)}, ${player.y.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
+        `${look.locked ? '' : ' [unlocked]'}`
       : `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`;
     overlay.update(loop.fps, loop.frameMs, extra);
   }
@@ -109,7 +133,8 @@ function runGame(mode) {
   const loop = new Loop(update, render);
   window.__debug.loop = loop;
   window.__debug.level = level;
-  window.__debug.camera = camera;
+  window.__debug.player = player;
+  window.__debug.look = look;
   window.__debug.depthBuffer = depthBuffer;
   loop.start();
 }
