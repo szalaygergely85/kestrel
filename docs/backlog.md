@@ -14,7 +14,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev (PO REJECT #1: wall-slide float stick + 4-side slide tests) | Programmer #2 NOW (small rework) |
 | 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
 | 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
-| 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | design | **Designer NOW** (in progress) |
+| 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
 | 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer (can run alongside; new files go to `engine/`) |
 | 10 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 |
 | 11 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
@@ -25,7 +25,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 16 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 17 | US-014 | Lever opens the grate | P0 | todo | Programmer |
 | 18 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012 |
-| 19 | US-016 | Far overworld view = engine terrain caster, far LOD | P0 | todo | Design PO-approved 2026-09-22 (browser check pending); Programmer after US-025 + US-007 |
+| 19 | US-016 | Far overworld view = engine terrain caster, far LOD | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); Programmer after US-025 + US-007 |
 | 20 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 21 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (final M1 check) |
 | 22 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
@@ -379,6 +379,14 @@ Designer note (2026-09-22): **Preview ready for PO review.**
   - rename `start.eye` to `start.eyeH` and drop `start.eyeStand` (standing eye height is the physics config's 1.6), so that `start` = `{ x, y, facingDeg, pitchDeg, eyeH, pose }` per MAP_FORMAT v2;
   - make sure `rock` and `grass` pass `P.util.validate()`;
   - `grate` arrives with US-011 (that criterion is now explicit there).
+- **Data update accepted (2026-09-22, with US-016b):**
+  - Legend `,` is raised from 1.0 to 2.4 m (uniform outer ring for the terrain handover; unreachable cells).
+  - `def.interactables` added:
+    - `lantern` (`lantern.take`)
+    - `lever` (`lever.pull`, targets the grate by tag)
+    - `beacon` (`beacon.light`, `requires: 'lantern'`, optional, `once`)
+  - Props are linked by id. `def.triggers` has `end` (`quest.end`, cells plus `walkTo`/`pitchTo`) and `hintJump` (`hint.show`: circle r 2 m around the gap edge, fires only with the feet >= 2.0 m, once).
+  - This satisfies the designer half of the D-006/D-008 data criterion above. Preview checks: 18/18.
 
 ### US-011 Billboard props + prop art  [Priority: P0] [Status: todo]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.
@@ -494,7 +502,7 @@ Acceptance criteria – Programmer:
 - [ ] Title card fades in 1 s, holds 3 s, fades out 1 s, drawn over the 3D view.
 - [ ] Hints bottom-left, fade in 0.3 s, each shown once, disappears when performed or after 8 s: `WASD move - Mouse look` (after title; all UI text is ASCII 32-126 only), `Shift run` (after 10 s of walking), `[Space] Jump` (when within 2 m of the gap edge), `Click to capture mouse` (if pointer not locked).
 - [ ] Interact prompts from US-012 are not hints; they always show when targeting.
-- [ ] (D-006 / D-008) The wake sequence, title card and hint logic live in `game/js/quest/`. They use the engine's generic overlay primitives (`engine/ui/`: fade, hint, prompt, text), skinned by `uiStyle`. The start pose comes from `def.start` (`pose: 'lying'`, `eyeH`, `pitchDeg`). Hint trigger zones (e.g. the gap-edge `[Space] Jump` zone) are declared in level data, not as coordinates in code.
+- [ ] (D-006 / D-008) The wake sequence, title card and hint logic live in `game/js/quest/`. They use the engine's generic overlay primitives (`engine/ui/`: fade, hint, prompt, text), skinned by `uiStyle`. The start pose comes from `def.start` (`pose: 'lying'`, `eyeH`, `pitchDeg`). Hint trigger zones (e.g. the gap-edge `[Space] Jump` zone) are declared in level data, not as coordinates in code. Use the tower's `hintJump` trigger (r 2 m, `zMin` 2.0 m, once). A hint whose action the player has already performed (e.g. they jumped before entering the zone) is never shown.
 Design needed: yes – title logo.
 Notes / dependencies: US-010, US-012.
 Designer note (2026-09-22): **Preview ready for PO review.**
@@ -516,7 +524,7 @@ Acceptance criteria – Designer:
 - **Look:** glyph/color rules per terrain type and per near/mid/far band, using palette keys only. Fog runs 50 to 1500 m from `fogFarNear` to `fogFar` = `skyHorizon`, so there is no seam with the sky.
 - **Far tower:** 800 m at azimuth 255, 15 degrees left of centre, framed by the breach, and breaking the skyline. It is darker than every terrain color, unlit, not emissive, with fog capped at 0.40 so it stays a readable dark notch. It uses a 3x4 minimum sprite with the notch of its cold bowl. This serves the M1 hook well.
 - **Budget:** about 42k samples, within budget.
-- **Pending:** a browser check of `design/preview/overworld.html` (renders, no console errors, 10/10 checks). If the preview is broken, the designer fixes the preview only.
+- **Verified in the browser (coordinator, 2026-09-22):** `design/preview/overworld.html` renders with no console errors, 17/17 checks after US-016b.
 
 Acceptance criteria – Programmer (rewritten per D-007/D-008: engine terrain caster, far LOD):
 - [ ] `engine/render/terrainCaster.js` (exported via `engine/index.js` as `castTerrain`) renders the world terrain from the injected terrain recipe (`AssetRegistry`, US-024) at **far LOD**: 8 m grid, 300-1500 m. For M1 it may also cover 0-300 m at 8 m spacing (near LOD is US-026). The far grid is baked once at load: height, type and lighting `b` per cell.
@@ -528,15 +536,23 @@ Acceptance criteria – Programmer (rewritten per D-007/D-008: engine terrain ca
 Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b.
 Notes / dependencies: US-004 (DepthBuffer + open span), US-007 (sun), US-010, US-024 (engine layout, AssetRegistry), US-025 (World: terrain sampler, tower placement at recipe coords).
 
-### US-016b Terrain recipe follow-up for the world model  [Priority: P0] [Status: design]
+### US-016b Terrain recipe follow-up for the world model  [Priority: P0] [Status: done]
 As a player, I want the land outside the tower to be one continuous world, so that it meets the tower seamlessly and can later be walked on.
 Acceptance criteria – Designer (small, D-008):
-- [ ] `heightAt(x, y)` and `typeAt(x, y)` are documented and implemented as continuous analytic functions usable at any sample spacing (2 m near, 8 m far), with the baked 8 m grid equal to sampling them.
-- [ ] Near-LOD look spec for 2 m cells within 300 m, with glyph bands and colors extending the current near band, and a preview swatch.
-- [ ] Flat 2.4 m crown radius covering the tower footprint and outcrop, plus the handover rule: within 6 m of a structure's outer ring, terrain height blends linearly to the ring height. The mismatch where the player can stand is exactly 0; the preview check shows max |delta| = 0.00 m along the ring.
-- [ ] One-paragraph sketch of per-chunk overrides (height stamp, type paint) as JSON for the future editor.
+- [x] `heightAt(x, y)` and `typeAt(x, y)` are documented and implemented as continuous analytic functions usable at any sample spacing (2 m near, 8 m far), with the baked 8 m grid equal to sampling them.
+- [x] Near-LOD look spec for 2 m cells within 300 m, with glyph bands and colors extending the current near band, and a preview swatch.
+- [x] Flat 2.4 m crown radius covering the tower footprint and outcrop, plus the handover rule: within 6 m of a structure's outer ring, terrain height blends linearly to the ring height. The mismatch where the player can stand is exactly 0; the preview check shows max |delta| = 0.00 m along the ring.
+- [x] One-paragraph sketch of per-chunk overrides (height stamp, type paint) as JSON for the future editor.
 Design needed: yes (recipe + doc + preview update).
-Notes / dependencies: feeds US-025 (World terrain sampler) and US-026 (near LOD). Cosmetic for the M1 far view. The designer is already working on it.
+Notes / dependencies: feeds US-025 (World terrain sampler) and US-026 (near LOD). Cosmetic for the M1 far view.
+
+**PO APPROVED (2026-09-22) – US-016b done** (design/data-only story; exercised by the US-016 / US-025 / US-026 tests). The coordinator verified both previews in the browser: `overworld.html` 17/17 checks, including an 8,100-point finiteness check; `tower.html` 18/18; no console errors.
+- (a) `heightAt(x, y)` / `typeAt(x, y)` are continuous and analytic at any spacing. The river-bed carve is smoothed, and slope for `typeAt` is measured over a fixed 2 m, so the type does not depend on sample spacing. There is `util.bakeChunk` for 2 m chunks and `util.gridHeight(G, x, y)` for baked grids.
+- (b) Near-LOD bands: close < 40, near < 150, mid < 300 m, with a stable per-cell dither handover at 280-320 m to the far grid. Variation is world-keyed, so it does not shimmer as the camera moves. The detail (slope faces, trunks, flowers, reeds, foam) is good material for US-026.
+- (c) A flat 2.4 m crown covers the whole footprint (bastion and outcrop included), with a 6 m linear blend to the ring height. The mismatch where the player crosses is exactly 0.
+  - **Change to approved US-010 data, accepted:** legend `,` is raised from 1.0 to 2.4 m so the outer ring is uniform. Those cells are unreachable in M1 and are seen only through the sun crack and from the summit, so it changes nothing about play.
+  - New rule for future structures, adopted: the outer ring is flat or has at most 0.3 m variation between neighbours.
+- (d) Per-128 m-chunk JSON overrides (height stamps, type paints), with the tower crown as the first entry and a JSON round-trip check. This is the seed for US-027 and the editor.
 Designer note (2026-09-22): **Preview ready for PO review.**
 - **Where:** `design/preview/overworld.html`. A 160x60 heightmap-projection mock from the breach eye, with yaw, pitch, step-back, fog and glint controls. The near part samples the real `tower.js` sectors. The page also shows the top-down map with the view cone and towers, terrain swatches by distance, the far-tower silhouette and automated checks.
 - **Data:** `design/levels/overworld_far.js` (seeded recipe plus reference `generate()`, 256x256 x 8 m). Doc: `design/levels/overworld_far.md`.
@@ -665,7 +681,11 @@ As a player, I want the tower to stand on a real hill in a real world, so that w
 Acceptance criteria:
 - [ ] **`engine/world/Terrain.js`:** a sampler over the injected terrain recipe (`AssetRegistry.terrain`, from `design/levels/overworld_far.js` plus US-016b).
   - `heightAt(x, y)` is bilinear on the baked grid for the far LOD and analytic for near queries; `typeAt(x, y)`.
-  - The far 8 m grid (256x256) is baked once at load, in <= 150 ms.
+  - The far 8 m grid (256x256) is baked once at load (revised after the US-016b review; a synchronous bake costs about 5 height lookups per cell and may exceed 150 ms in plain JS):
+    - Either run it in a Worker, or amortise it over frames at <= 2 ms of main-thread time per frame. Start during the wake sequence: 1 s black plus 1.5 s blink is a natural loading window.
+    - No frame may exceed 25 ms while baking, and the bake must be complete within 5 s of page load (long before the player can reach the summit).
+    - The result must be bit-identical to a synchronous bake (test: compare checksums of height and type).
+    - Until it completes, the terrain pass draws only sky/haze in the open span; no garbage and no errors.
   - Near chunks: 64x64 cells of 2 m (128 m), generated deterministically on demand. A **3x3 chunk cache** around the player is kept resident; moving one chunk regenerates only the new row/column (<= 5 ms per chunk, off the frame budget, or amortised over frames).
   - The same seed always gives bit-identical heights.
 - [ ] **`engine/world/World.js`:**
@@ -680,7 +700,7 @@ Acceptance criteria:
 - [ ] **`engine/world/serialize.js`:** `serialize(world)` returns a JSON-safe object, and `deserialize(json)` restores the world. Round-trip test (console or `?serializetest=1`): serialize, go through `JSON.stringify` and `JSON.parse`, deserialize, then serialize again, and the result is deep-equal to the first. Positions are exact. Covers terrain seed + overrides, structures + origins, and entity state including grate `ceilH` and the boulder position. US-017 restart uses it.
 - [ ] **Performance:** world queries are O(1) (grid lookup, structure bounding-box test first), with no allocation per query. US-018 budget unchanged.
 - [ ] `node tools/check-deps.mjs` is OK. Only `game/js/main.js` knows the tower or its coordinates, and it reads them from data.
-Design needed: minor. The designer supplies `design/levels/world_m1.js` (world definition) and US-016b (continuous `heightAt`/`typeAt`, handover blend).
+Design needed: minor. Delivered 2026-09-22: `design/levels/world_m1.js` (tower at (1480, 1018), z offset 0, player spawn, initial world state for restart) and US-016b (done).
 Notes / dependencies: US-024; US-016b (for exact-0 seam; M1 can start with the 1.8 m residual, as it is cosmetic in the far view). Unblocks US-006 onward in world coordinates, US-016 programmer, US-017 restart, and M2 US-026.
 
 ---
