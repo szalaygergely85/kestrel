@@ -11,7 +11,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; both ASK ARCHITECT items answered 2026-09-22 -> follow-up US-004b) | - |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | arch-review | Rework #3 done 2026-09-22 (convex-corner freeze -> minimum-translation push-out + contact normal; no per-step allocations). Back to architect. See US-008 section |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | po-review | ARCH OK 2026-09-22 on rework #3 (efd8737): minimum-translation push-out + contact normal, no per-step allocations, 187/187. To PO for re-review (note on the replaced corner invariant in the US-008 section) |
 | 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | todo | Programmer NOW (free track); must be `done` before US-006 and US-016. Tech notes = architect sketch under US-004 + architecture.md 12 |
 | 7 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006. Phase A must not move `raycaster.js` while US-004b is in dev (see US-004b notes) |
 | 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
@@ -408,7 +408,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: arch-review]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: po-review]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [x] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
@@ -553,6 +553,13 @@ Tests to run after rework: `node game/js/physics/physics.test.js` (all existing 
 - Status set to `arch-review` (per the workflow: US-008 is an engine story, so rework goes back to the architect before the PO, same as after rework #2).
 
 Tests: `node game/js/physics/physics.test.js` -> **187 passed, 0 failed, ALL PASS**.
+
+**ARCH OK (architect, 2026-09-22, review of rework #3 / commit efd8737).** Status -> `po-review`.
+- Algorithm is the specified iterative minimum-translation push-out, implemented exactly: deepest-first selection (`>` on depth, scalars only), face -> axis push + `blockedX/Y`, corner -> unit-normal push + `nx/ny`, centre-inside fallback reverts the step, 4-iteration cap. `SKIN` and D-008 (`sectorOrOutside` as the single resolution point; `col + 0.5` is the cell centre, `Level.sectorAt` floors) unchanged. Player velocity response matches the spec (face zeroing, then corner clip only when `vn < 0`).
+- Allocation rule (architecture.md section 9): `COLLIDE_OPTS` module-level, `this._move` scratch reused, no closure, no result object; nothing allocates in `Player.update` or the scan loop. Verified by reading, not just the notes.
+- Tests: re-ran, 187/187. The new tests can fail on a freeze (pillar: must clear within 90/55 steps and never >5 consecutive `|v| < 0.1` steps; doorway: must pass within 200/120 steps with straight input). Projection invariants (i)/(ii) are implemented as specified over 16 directions x walk/run. Probe numbers (70/66/63/61 walk, 43/40/38/36 run; doorway 89/92/132 and 53/56/76) match my scratch run.
+- Non-blocking, carried forward (not for this story): `nx/ny` report the *last* corner contact even if a later iteration resolved a face - the clip is conservative so it is harmless; the centre-inside depenetration remains a US-025 item; `getEyeTransform()` allocation goes to US-024's `Camera.fromEntity`.
+- **Note for the PO:** the per-axis invariant from REJECT #2 item 4 ("resolved coordinate lies between pre-step and target on each axis") is *replaced*, not dropped. It is geometrically incompatible with a corner slide (a slide legitimately moves the other axis: your worked example now resolves to (4.874, 4.728), y moving although dy = 0). The replacement, checked on every step of the same 16-direction test: (i) `(res - pre) . d >= -1e-9` (never backwards along the step), (ii) `|res - target| <= |d| + 1e-9` (push-out never exceeds the step length - your bug pushed 0.184 m on a 0.05 m step and would fail this). Everything else in REJECT #1/#2 stands and passes unchanged.
 
 ### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: todo]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
