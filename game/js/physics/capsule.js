@@ -44,6 +44,11 @@ export function isSectorPassable(sector, footZ, grounded, opts) {
   if (sector.ceilH !== 'sky') {
     const headroom = sector.ceilH - sector.floorH;
     if (headroom < opts.height) return false; // too low to ever fit (e.g. a closed grate)
+    // NOTE (PO note on the US-008 review, moved to US-009 - not implemented
+    // here): entering a cell whose ceiling is below the MOVER'S CURRENT head
+    // height (footZ + height), even when the cell's own headroom is fine,
+    // isn't checked yet - e.g. jumping into a low doorway/lintel from the
+    // side should bonk instead of sailing through. Left for US-009.
   }
 
   const floorDiff = sector.floorH - footZ; // positive = floor is higher than our feet
@@ -73,9 +78,9 @@ export function moveCapsule(world, x, y, dx, dy, radius, footZ, grounded, opts) 
   const passable = (col, row) => isSectorPassable(sectorOrOutside(world, col, row), footZ, grounded, opts);
 
   const targetX = x + dx;
-  const newX = resolveAxis(targetX, y, x, 'x', radius, passable);
+  const newX = resolveAxis(targetX, y, 'x', radius, passable);
   const targetY = y + dy;
-  const newY = resolveAxis(newX, targetY, y, 'y', radius, passable);
+  const newY = resolveAxis(newX, targetY, 'y', radius, passable);
 
   return {
     x: newX,
@@ -99,17 +104,41 @@ export function sectorOrOutside(world, x, y) {
   return world.outsideSector ? world.outsideSector(x, y) : null;
 }
 
+// PO REJECT #1 (US-008) bugfix: a tiny "skin" tolerance on the overlap test
+// (below) so a capsule resting EXACTLY on a cell boundary (radius away,
+// e.g. after a previous push-out) is never re-flagged as overlapping due to
+// float rounding (e.g. `2.3 - 2` is 0.2999999999999998 in IEEE 754, not
+// exactly 0.3, so `dx*dx` can land fractionally under `radius*radius` even
+// though the true geometric distance is exactly `radius`). Without this,
+// resting-at-the-wall could spuriously "overlap" again on the very next
+// step - see the ambiguous-axis fix below for what that spurious overlap
+// then did.
+const SKIN = 1e-6;
+
 // Resolve a circle centered at (cx, cy), radius `radius`, against every
 // impassable grid cell it overlaps, correcting only the `movingAxis`
 // coordinate (the other one is fixed by the caller - this is what gives
-// axis-separated sliding). `prevCoord` is the pre-move value of the moving
-// axis, used as a safe fallback in the (practically unreachable at these
-// per-step speeds) case where the circle's center already lies exactly
-// within the cell's span on the fixed axis.
-function resolveAxis(cx, cy, prevCoord, movingAxis, radius, passable) {
+// axis-separated sliding).
+//
+// PO REJECT #1 (US-008) bugfix: when a blocking cell's overlap comes
+// entirely from the FIXED (non-moving) axis - i.e. the circle's own
+// `movingAxis` coordinate already lies inside that cell's span on that axis
+// (so `dx`/`dy` *for the moving axis* is exactly 0) - that cell is not
+// actually in the way of the movement being resolved right now; it is
+// simply a cell alongside the path (e.g. the very wall a capsule is
+// sliding along). The old code treated this ambiguous case as "blocked,
+// snap back to the pre-move coordinate", which is what let a capsule stick
+// to a wall while trying to slide along it (only west/north walls, because
+// of how the push-out formula's sign happens to line up with which side of
+// a cell the fixed-axis coordinate sits on). The fix: SKIP such a cell
+// instead - let the axis pass that actually owns that coordinate (the
+// other call to resolveAxis) decide it. A cell only pushes back on the
+// axis it is genuinely blocking.
+function resolveAxis(cx, cy, movingAxis, radius, passable) {
   let resolved = movingAxis === 'x' ? cx : cy;
   const colMin = Math.floor(cx - radius), colMax = Math.floor(cx + radius);
   const rowMin = Math.floor(cy - radius), rowMax = Math.floor(cy + radius);
+  const skinRadius = radius - SKIN;
 
   for (let row = rowMin; row <= rowMax; row++) {
     for (let col = colMin; col <= colMax; col++) {
@@ -120,13 +149,15 @@ function resolveAxis(cx, cy, prevCoord, movingAxis, radius, passable) {
       const dx = cx - clampedX;
       const dy = cy - clampedY;
       const distSq = dx * dx + dy * dy;
-      if (distSq >= radius * radius) continue; // no overlap with this cell
+      if (distSq >= skinRadius * skinRadius) continue; // not really overlapping (within the skin) - see SKIN above
 
       if (movingAxis === 'x') {
-        resolved = dx !== 0 ? (dx > 0 ? col + 1 + radius : col - radius) : prevCoord;
+        if (dx === 0) continue; // this cell only touches on Y (see the function comment) - not our concern here
+        resolved = dx > 0 ? col + 1 + radius : col - radius;
         cx = resolved;
       } else {
-        resolved = dy !== 0 ? (dy > 0 ? row + 1 + radius : row - radius) : prevCoord;
+        if (dy === 0) continue; // this cell only touches on X - not our concern here
+        resolved = dy > 0 ? row + 1 + radius : row - radius;
         cy = resolved;
       }
     }
