@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Quest - Tower layout (US-010)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 8px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:48px; display:inline-block; }
+  button.v { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.v.on { border-color:#ffd24a; color:#ffd24a; }
+  table { border-collapse:collapse; font-size:12px; font-family:Consolas, monospace; }
+  td, th { border:1px solid #22252e; padding:2px 6px; text-align:left; vertical-align:top; }
+  th { color:#ffc23c; font-weight:normal; background:#0d0f16; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .key { font-family:Consolas, monospace; font-size:12px; line-height:1.6; }
+  .key span { display:inline-block; min-width:20px; text-align:center; }
+</style>
+</head>
+<body>
+<h1>ASCII Quest : The Hollow Watchtower (US-010 layout)</h1>
+<div class="note">Loads <code>../palette.js</code> and <code>../levels/tower.js</code>. North is up. 1 map cell = 1 m, drawn as 5x3 characters and shaded with the
+  US-002 reference shader (ambient + torch + sun with a ray-marched shadow test). The label line shows <b>legend char + floor height</b>.
+  Relief shading makes higher floors a little brighter so the plan reads as a height map.</div>
+
+<div class="controls">
+  <span>Level:</span><span id="views"></span>
+  <label><input type="checkbox" id="labels" checked> heights</label>
+  <label><input type="checkbox" id="markers" checked> props / lights</label>
+  <label><input type="checkbox" id="relief" checked> relief</label>
+  <label><input type="checkbox" id="route" checked> route</label>
+  <label><input type="checkbox" id="tilt"> boulder tilt</label>
+  <label>reach <select id="reach"><option value="off">off</option><option value="closed">grate closed</option><option value="open">grate open</option></select></label>
+  <label>sun azimuth <input type="range" id="az" min="0" max="360" step="0.5" value="112.5"><span class="val" id="azV"></span></label>
+  <label>elevation <input type="range" id="el" min="10" max="85" step="1" value="60"><span class="val" id="elV"></span></label>
+  <label><input type="checkbox" id="torch" checked> torch</label>
+  <label><input type="checkbox" id="flicker" checked> flicker</label>
+</div>
+
+<h2>Checks (computed from the data)</h2>
+<div id="checks"></div>
+
+<h2>Plan</h2>
+<div class="row">
+  <canvas id="plan"></canvas>
+  <div class="key" id="markerKey"></div>
+</div>
+
+<h2>Climb profile (route, heights to scale: 1 row = 0.3 m)</h2>
+<div class="note">Left to right along the intended route: stair base, lower stair, gap jump, mid ledge, grate, upper stair, doorway, summit walkway, breach, end trigger.</div>
+<canvas id="profile"></canvas>
+
+<h2>Legend (US-003 sector definitions)</h2>
+<div id="legend"></div>
+
+<h2>Props, lights, triggers</h2>
+<div id="props"></div>
+
+<script src="../palette.js"></script>
+<script src="../levels/tower.js"></script>
+<script>
+(function () {
+  'use strict';
+  var P = window.ASSETS && window.ASSETS.palette, LV = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.tower;
+  if (!P || !LV) { document.body.innerHTML = '<p class="fail">palette.js or levels/tower.js did not load.</p>'; return; }
+  var U = P.util, css = U.css, C = P.colors, D2R = Math.PI / 180;
+  var W = LV.size.w, H = LV.size.h;
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+  var RULES = { stepUp: 0.45, jumpRise: 1.0, headroom: 1.7 };   // US-008/009 numbers, 0.05 m margin on the jump
+
+  // ---------------- grid helper ----------------
+  function makeGrid(canvas, cols, rows, px) {
+    var ctx = canvas.getContext('2d'); ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25), dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return { cols: cols, rows: rows, cw: cw, ch: ch,
+      cell: function (x, y, g, fg, bg) {
+        ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch);
+        if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); }
+      },
+      clear: function (bg) { ctx.fillStyle = bg || '#000'; ctx.fillRect(0, 0, cols * cw, rows * ch); },
+      text: function (x, y, s, fg, bg) { for (var i = 0; i < s.length; i++) this.cell(x + i, y, s.charAt(i), fg, bg || '#000'); }
+    };
+  }
+
+  // ---------------- level access ----------------
+  function def(x, y) { if (x < 0 || y < 0 || x >= W || y >= H) return null; return LV.legend[LV.rows[y].charAt(x)] || null; }
+  function ceilOf(d, open) { if (d.tag === 'grate') return open ? d.dynamic.ceilOpen : d.ceilH; return d.ceilH; }
+  function passable(x, y, open) {
+    var d = def(x, y); if (!d || d.solid) return false;
+    var c = ceilOf(d, open); return c === 'sky' || (c - d.floorH) >= RULES.headroom;
+  }
+  function key(x, y) { return x + ',' + y; }
+  var DIR8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]], DIR4 = [[1,0],[-1,0],[0,1],[0,-1]];
+
+  // Player movement model (deliberately permissive so it finds leaks):
+  // any 8-neighbour with rise <= 1.0 (walk <= 0.45, jump above that; diagonals need one open side),
+  // falls of any height, and a straight 1-cell gap jump onto rise <= 0.45 when the middle cell is lower.
+  function moves(x, y, open) {
+    var out = [], a = def(x, y), fa = a.floorH, i, dx, dy, bx, by;
+    for (i = 0; i < 8; i++) {
+      dx = DIR8[i][0]; dy = DIR8[i][1]; bx = x + dx; by = y + dy;
+      if (!passable(bx, by, open)) continue;
+      if (dx && dy && !(passable(x + dx, y, open) || passable(x, y + dy, open))) continue;
+      if (def(bx, by).floorH - fa <= RULES.jumpRise) out.push([bx, by]);
+    }
+    for (i = 0; i < 4; i++) {
+      dx = DIR4[i][0]; dy = DIR4[i][1];
+      var mx = x + dx, my = y + dy; bx = x + 2 * dx; by = y + 2 * dy;
+      if (!passable(mx, my, open) || !passable(bx, by, open)) continue;
+      var fm = def(mx, my).floorH, fb = def(bx, by).floorH;
+      if (fm < Math.min(fa, fb) - 0.3 && fb - fa <= RULES.stepUp) out.push([bx, by]);
+    }
+    return out;
+  }
+  function isTerminal(x, y) { var d = def(x, y); return d && d.tag === 'trigger:end'; }
+  function reach(sx, sy, open) {
+    var seen = {}, q = [[sx, sy]]; seen[key(sx, sy)] = true;
+    while (q.length) {
+      var c = q.shift(); if (isTerminal(c[0], c[1])) continue;
+      moves(c[0], c[1], open).forEach(function (n) { var k = key(n[0], n[1]); if (!seen[k]) { seen[k] = true; q.push(n); } });
+    }
+    return seen;
+  }
+
+  // ---------------- checks ----------------
+  var checks = [];
+  function check(name, ok, detail) { checks.push({ name: name, ok: !!ok, detail: detail || '' }); }
+  var sx = Math.floor(LV.start.x), sy = Math.floor(LV.start.y);
+
+  (function () {
+    // US-003 loader rules
+    var rect = LV.rows.length === H && LV.rows.every(function (r) { return r.length === W; });
+    var missing = [];
+    LV.rows.forEach(function (r, y) { for (var x = 0; x < r.length; x++) if (!LV.legend[r.charAt(x)]) missing.push('"' + r.charAt(x) + '" at row ' + y + ' col ' + x); });
+    check('US-003: grid is rectangular ' + W + 'x' + H, rect);
+    check('US-003: every char is in the legend', !missing.length, missing.join(', '));
+    check('US-003: player start defined on a walkable ground cell', passable(sx, sy, false) && def(sx, sy).zone === 'ground',
+          'start ' + LV.start.x + ',' + LV.start.y + ' yaw ' + LV.start.yaw + ' pitch ' + LV.start.pitch + ' (' + LV.start.pose + ')');
+    var palErr = [];
+    Object.keys(LV.legend).forEach(function (k) {
+      var d = LV.legend[k];
+      ['wallMat', 'floorMat', 'ceilMat', 'upperMat'].forEach(function (f) {
+        if (d[f] && !P.materials[d[f]] && d[f] !== 'grate') palErr.push(k + '.' + f + '=' + d[f]);
+      });
+    });
+    check('Materials exist in palette.js (grate comes with US-011)', !palErr.length, palErr.join(', '));
+
+    var closed = reach(sx, sy, false), open = reach(sx, sy, true);
+    var leak = Object.keys(closed).filter(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'upper' || d.zone === 'summit' || d.zone === 'outside'; });
+    check('Grate closed: upper stair, summit and outcrop are unreachable (summit only via the grate path)', !leak.length, leak.join(' '));
+    var trig = LV.triggers[0].cells.some(function (c) { return open[key(c[0], c[1])]; });
+    check('Grate open: the end trigger is reachable from the start', trig);
+    var outs = Object.keys(open).filter(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'outside' && d.tag !== 'trigger:end'; });
+    check('Grate open: the only way outside is through the breach onto the trigger', !outs.length, outs.join(' '));
+    var bowl = Object.keys(LV.legend).filter(function (k) { return LV.legend[k].tag === 'beaconBowl'; });
+    check('Beacon bowl is on the summit and reachable', Object.keys(open).some(function (k) { var p = k.split(','); return def(+p[0], +p[1]).tag === 'beaconBowl'; }), bowl.join(''));
+
+    // route
+    var bad = [], jumps = 0;
+    for (var i = 1; i < LV.route.length; i++) {
+      var a = LV.route[i - 1], b = LV.route[i], da = def(a[0], a[1]), db = def(b[0], b[1]);
+      var dist = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]), rise = db.floorH - da.floorH;
+      if (!passable(b[0], b[1], true)) bad.push('blocked ' + b);
+      else if (dist === 1) { if (rise > RULES.stepUp + 1e-6) bad.push('rise ' + rise.toFixed(2) + ' at ' + b); }
+      else if (dist === 2 && (a[0] === b[0] || a[1] === b[1])) {
+        var m = def((a[0] + b[0]) / 2, (a[1] + b[1]) / 2); jumps++;
+        if (!(m.floorH < Math.min(da.floorH, db.floorH) - 0.3 && rise <= RULES.stepUp)) bad.push('bad jump to ' + b);
+      } else bad.push('not adjacent ' + a + ' -> ' + b);
+    }
+    check('Route: every step is walkable (rise <= 0.45) plus exactly one walking gap jump (+0.3)', !bad.length && jumps === 1, bad.join('; ') + ' jumps=' + jumps);
+    var steps = LV.route.map(function (c) { return def(c[0], c[1]); }).filter(function (d) { return d.zone === 'stair' || d.zone === 'upper' || d.zone === 'ledge'; });
+    var rises = []; for (i = 1; i < LV.route.length; i++) {
+      var r = def(LV.route[i][0], LV.route[i][1]).floorH - def(LV.route[i - 1][0], LV.route[i - 1][1]).floorH;
+      if (r > 0.001) rises.push(+r.toFixed(2));
+    }
+    check('Stair rises are 0.30 m (lower 0 -> 2.7, upper 3.0 -> 6.0; the gap lands 0.3 higher)', rises.every(function (r) { return r === 0.3; }), rises.length + ' rises');
+
+    // no traps
+    var traps = Object.keys(open).filter(function (k) {
+      var p = k.split(','); if (isTerminal(+p[0], +p[1])) return false; return !reach(+p[0], +p[1], true)[key(sx, sy)];
+    });
+    check('No traps: from every reachable cell the player can walk/jump/fall back to the start (falls from any stair land on walkable ground)', !traps.length, traps.join(' '));
+    // every stair/upper cell has a lower walkable neighbour (fall target)
+    check('Completable without the lantern (movement model uses geometry only; the lantern is never required)', trig);
+
+    // boulder: step threshold 0 -> may only move to cells with floor <= its current floor
+    var b0 = [Math.floor(LV.props.filter(function (p) { return p.id === 'boulder'; })[0].x), Math.floor(LV.props.filter(function (p) { return p.id === 'boulder'; })[0].y)];
+    var bseen = {}, bq = [b0]; bseen[key(b0[0], b0[1])] = true;
+    while (bq.length) {
+      var c = bq.shift(), dc = def(c[0], c[1]);
+      DIR8.forEach(function (dd) {
+        var nx = c[0] + dd[0], ny = c[1] + dd[1]; if (!passable(nx, ny, false)) return;
+        if (dd[0] && dd[1] && !(passable(c[0] + dd[0], c[1], false) && passable(c[0], c[1] + dd[1], false))) return;
+        var dn = def(nx, ny); if (dn.floorH > dc.floorH + 1e-6 || dn.tag === 'brazier' || dn.tag === 'rubble') return;
+        var k = key(nx, ny); if (!bseen[k]) { bseen[k] = true; bq.push([nx, ny]); }
+      });
+    }
+    var bcells = Object.keys(bseen);
+    var TV = { '8': [0, -1], '2': [0, 1], '4': [-1, 0], '6': [1, 0], '7': [-1, -1], '9': [1, -1], '1': [-1, 1], '3': [1, 1] };
+    var tiltBad = [];
+    bcells.forEach(function (k) {
+      var p = k.split(','), x = +p[0], y = +p[1], guard = 0;
+      while (guard++ < 50) {
+        var d = def(x, y); if (d.tag === 'hollow') return;
+        var t = LV.layers.tilt[y].charAt(x), v = TV[t];
+        if (!v) { tiltBad.push(k + ' (no tilt at ' + x + ',' + y + ')'); return; }
+        x += v[0]; y += v[1];
+        if (!bseen[key(x, y)]) { tiltBad.push(k + ' (tilt leaves boulder area)'); return; }
+      }
+      tiltBad.push(k + ' (tilt loop)');
+    });
+    check('Boulder: from its start it can only reach ' + bcells.length + ' cells (base, slope apron, hollow). Stair and wake area are unreachable for it',
+          bcells.every(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.tag === 'stairBase' || d.tag === 'slope' || d.tag === 'hollow'; }), bcells.join(' '));
+    check('Boulder: every non-hollow cell it can reach tilts downhill into the hollow (never rests on the stair base)', !tiltBad.length, tiltBad.join('; '));
+    var hollowExit = bcells.some(function (k) {
+      var p = k.split(','), d = def(+p[0], +p[1]); if (d.tag !== 'hollow') return false;
+      return DIR8.some(function (dd) { var n = def(+p[0] + dd[0], +p[1] + dd[1]); return n && !n.solid && n.tag !== 'hollow' && n.floorH <= d.floorH; });
+    });
+    check('Boulder: once in the hollow (-0.3) every exit is uphill, so it cannot be pushed back out', !hollowExit);
+
+    // walls and crack
+    var tops = []; Object.keys(LV.legend).forEach(function (k) { var d = LV.legend[k]; if (d.solid && d.zone === 'wall' && d.floorH > 6) tops.push(d.floorH); });
+    check('Broken wall tops between 6.5 and 8.5 m (' + tops.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort().join(', ') + ')',
+          tops.every(function (t) { return t >= 6.5 && t <= 8.5; }));
+    var crackOk = true;
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) if (def(x, y).tag === 'sunCrack') {
+      DIR8.forEach(function (dd) { var k = key(x + dd[0], y + dd[1]); if (open[k] && def(x, y).floorH - def(x + dd[0], y + dd[1]).floorH < 1.2) crackOk = false; });
+      if (open[key(x, y)]) crackOk = false;
+    }
+    check('Sun crack in the east wall is out of reach (>= 1.2 m above any reachable neighbour)', crackOk);
+    var br = 0; for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (def(x, y).tag === 'breach') br++;
+    check('Breach is 2 m wide (' + br + ' cells) in the west parapet', br === 2);
+  })();
+
+  var ck = document.getElementById('checks');
+  var nFail = checks.filter(function (c) { return !c.ok; }).length;
+  ck.innerHTML = '<div class="' + (nFail ? 'fail' : 'pass') + '">' + (checks.length - nFail) + ' / ' + checks.length + ' checks pass</div>' +
+    checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.name +
+      (c.detail && !c.ok ? ' <span class="fail">' + c.detail + '</span>' : (c.detail ? ' <span class="note">(' + c.detail + ')</span>' : '')) + '</div>'; }).join('');
+
+  // ---------------- lighting for the plan ----------------
+  var S = { view: 'all', labels: true, markers: true, relief: true, route: true, tilt: false, reach: 'off', az: 112.5, el: 60, torch: true, flicker: true };
+  function sunlit(px, py, pz) {
+    var sx2 = Math.sin(S.az * D2R), sy2 = -Math.cos(S.az * D2R), tz = Math.tan(S.el * D2R);
+    for (var t = 0.05; t < 60; t += 0.1) {
+      var x = px + sx2 * t, y = py + sy2 * t, z = pz + tz * t;
+      var d = def(Math.floor(x), Math.floor(y));
+      if (!d || z > 9.5) return true;
+      if (z < d.floorH) return false;
+      if (d.ceilH !== 'sky' && z > d.ceilH && z < (d.topH || d.ceilH)) return false;
+    }
+    return true;
+  }
+  function torchVisible(px, py, pz, lx, ly, lz) {
+    var dx = px - lx, dy = py - ly, dz = pz - lz, len = Math.sqrt(dx * dx + dy * dy + dz * dz), n = Math.ceil(len / 0.1);
+    for (var i = 1; i < n; i++) {
+      var t = i / n, x = lx + dx * t, y = ly + dy * t, z = lz + dz * t;
+      var cx = Math.floor(x), cy = Math.floor(y);
+      if (cx === Math.floor(px) && cy === Math.floor(py)) continue;
+      var d = def(cx, cy); if (!d) return false;
+      if (z < d.floorH - 0.01) return false;
+    }
+    return true;
+  }
+  function levelOf(d) {
+    if (d.zone === 'ground') return 'L0';
+    if (d.zone === 'stair' || d.zone === 'ledge') return 'L1';
+    if (d.zone === 'upper' || d.zone === 'summit') return 'L2';
+    return d.zone;
+  }
+  function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+  function vnoise(t) { var i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return (hash(i) * (1 - u) + hash(i + 1) * u) * 2 - 1; }
+
+  var BW = 5, BH = 3, plan = makeGrid(document.getElementById('plan'), W * BW, H * BH, 13);
+  var L = [0, 0, 0], out = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  var sunCache = null;
+  function computeSun() {
+    sunCache = [];
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      var d = def(x, y), row = [];
+      for (var j = 0; j < BH; j++) for (var i = 0; i < BW; i++) row.push(sunlit(x + (i + 0.5) / BW, y + (j + 0.5) / BH, d.floorH + 0.01));
+      sunCache.push(row);
+    }
+  }
+  var markerMap = {};
+  function addMarker(x, y, g, col, label) { var k = key(Math.floor(x), Math.floor(y)); (markerMap[k] = markerMap[k] || []).push({ g: g, c: col, label: label }); }
+  addMarker(LV.start.x, LV.start.y, 'S', C.gold, 'S  player start (lying on the pallet, yaw ' + LV.start.yaw + ', pitch +' + LV.start.pitch + ')');
+  var PM = { pallet: ['=', C.straw], brazier: ['*', C.flameMid], lantern: ['o', C.brassLight], boulder: ['O', C.stoneLight], lever: ['/', C.brassLight],
+             beaconBowl: ['U', C.ironLight], rubble: ['%', C.rubble], chains: ['-', C.iron] };
+  LV.props.forEach(function (p) {
+    if (p.model.indexOf('decal') === 0) { addMarker((p.wall.x0 + p.wall.x1) / 2, p.wall.y - 0.5, '"', C.uiText, '"  wall scrawl KEEP THE LIGHT (US-021)'); return; }
+    if (p.model === 'chains') return;
+    var m = PM[p.model] || ['?', C.white];
+    addMarker(p.x, p.y, m[0], m[1], m[0] + '  ' + p.id + ' (' + p.model + (p.variant !== undefined ? ' ' + p.variant : '') + ') at ' + p.x + ', ' + p.y + ', z ' + p.z);
+  });
+  LV.lights.forEach(function (l) { if (l.id === 'beacon') addMarker(l.x + 0.6, l.y, '+', C.torch, '+  beacon light (US-022, off at start), z ' + l.z); });
+  addMarker(LV.markers.gapEdge.x, LV.markers.gapEdge.y - 0.5, '!', C.gold, '!  gap edge (jump hint within 2 m)');
+  LV.triggers.forEach(function (t) { t.cells.forEach(function (c) { addMarker(c[0], c[1], 'X', C.gold, 'X  end trigger'); }); });
+  var gridTag = { grate: ['#', C.ironLight, '#  grate (portcullis), rises 3.0 -> 5.4 m'], sunCrack: ['|', C.sun, '|  sun crack 4.0-6.4 m in the east wall'],
+                  breach: ['<', C.gold, '<  breach (2 m) in the west parapet'] };
+  for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) { var tg = gridTag[def(xx, yy).tag]; if (tg) addMarker(xx, yy, tg[0], tg[1], tg[2]); }
+  var keyHtml = {}; Object.keys(markerMap).forEach(function (k) { markerMap[k].forEach(function (m) { keyHtml[m.label] = '<span style="color:' + m.c + '">' + m.g + '</span>' + m.label.slice(1); }); });
+  document.getElementById('markerKey').innerHTML = '<b>Markers</b><br>' + Object.keys(keyHtml).map(function (k) { return keyHtml[k]; }).join('<br>') +
+    '<br><br><b>Route</b>: numbered cells in the label line (toggle "route")<br><b>Tilt</b>: arrows = boulder downhill<br><b>Reach</b>: green tint = the player can get there';
+  var routeIdx = {}; LV.route.forEach(function (c, i) { routeIdx[key(c[0], c[1])] = i + 1; });
+  var TA = { '8': '^', '2': 'v', '4': '<', '6': '>', '7': '\\', '9': '/', '1': '/', '3': '\\', '5': 'o' };
+  var reachCache = {};
+
+  function drawPlan(t) {
+    if (!sunCache) computeSun();
+    var T = P.timeOfDay.morning, tl = P.lights.torch, bz = LV.lights[0];
+    var fl = S.flicker ? 1 + tl.flicker.amount * vnoise(t * 10) : 1;
+    var rset = S.reach === 'off' ? null : (reachCache[S.reach] = reachCache[S.reach] || reach(sx, sy, S.reach === 'open'));
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      var d = def(x, y), lv = levelOf(d), dim = (S.view !== 'all' && lv !== S.view && lv !== 'wall') ? 0.25 : 1;
+      var mat = d.solid ? d.wallMat : (d.tag === 'grate' ? 'iron' : d.floorMat);
+      var rel = S.relief ? 0.55 + 0.45 * U.clamp01((d.floorH + 0.3) / 8.8) : 1;
+      var sunRow = sunCache[y * W + x];
+      var tv = 0;
+      if (S.torch) {
+        var cxm = x + 0.5, cym = y + 0.5, dz = bz.z - d.floorH, dd = Math.sqrt((cxm - bz.x) * (cxm - bz.x) + (cym - bz.y) * (cym - bz.y) + dz * dz);
+        if (dz > 0 && torchVisible(cxm, cym, d.floorH, bz.x, bz.y, bz.z)) tv = tl.intensity * fl * U.falloff(dd, tl.radius) * (dz / dd);
+      }
+      for (var j = 0; j < BH; j++) for (var i = 0; i < BW; i++) {
+        L[0] = L[1] = L[2] = 0;
+        U.addLight(L, T.ambient, T.ambientI * dim * rel);
+        if (sunRow[j * BW + i]) U.addLight(L, T.sun, T.sunI * Math.sin(S.el * D2R) * dim * rel);
+        if (tv > 0) U.addLight(L, tl.color, tv * dim);
+        U.shade(mat, L, x + (i + 0.5) / BW, y + (j + 0.5) / BH, 3, out, { z: 0.3 });
+        var bg = out.bg;
+        if (rset && rset[key(x, y)]) bg = [bg[0] * 0.6 + 20, bg[1] * 0.6 + 70, bg[2] * 0.6 + 30];
+        plan.cell(x * BW + i, y * BH + j, out.glyph, css(out.fg), css(bg));
+      }
+      var bx = x * BW, by = y * BH;
+      if (S.labels) {
+        var ch = LV.rows[y].charAt(x), hstr = d.floorH.toFixed(1), lab = (ch + (d.floorH < 0 ? '' : ' ') + hstr).slice(0, BW);
+        var col = d.solid ? C.uiDim : lv === 'L1' ? C.lantern : lv === 'L2' ? C.gold : lv === 'L0' ? C.uiText : C.uiHint;
+        if (dim < 1) col = C.uiDim;
+        var ri = routeIdx[key(x, y)];
+        if (S.route && ri) { lab = ('#' + ri + '    ').slice(0, BW); col = C.heroGreen; }
+        plan.text(bx, by + BH - 1, (lab + '     ').slice(0, BW), col, 'rgba(0,0,0,0.78)');
+      }
+      if (S.tilt) { var tc = LV.layers.tilt[y].charAt(x); if (TA[tc]) plan.cell(bx, by, TA[tc], C.magic, '#000'); }
+      if (S.markers && markerMap[key(x, y)]) markerMap[key(x, y)].forEach(function (m, n) { plan.cell(bx + 2 + n, by + 1, m.g, m.c, '#000'); });
+    }
+  }
+
+  // ---------------- climb profile ----------------
+  function drawProfile() {
+    var cols = [], i;
+    for (i = 0; i < LV.route.length; i++) {
+      if (i > 0) {
+        var a = LV.route[i - 1], b = LV.route[i];
+        if (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 2) cols.push({ c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], jump: true });
+      }
+      cols.push({ c: LV.route[i] });
+    }
+    var CW = 3, ROWS = 26, g = makeGrid(document.getElementById('profile'), cols.length * CW + 2, ROWS + 2, 12);
+    g.clear('#07080c');
+    var T = P.timeOfDay.morning;
+    cols.forEach(function (col, k) {
+      var d = def(col.c[0], col.c[1]), h = d.floorH, top = ROWS - 1 - Math.round((h + 0.3) / 0.3);
+      for (var r = 0; r < ROWS; r++) for (var q = 0; q < CW; q++) {
+        var x = 1 + k * CW + q;
+        if (r > top) {
+          L[0] = L[1] = L[2] = 0; U.addLight(L, T.ambient, T.ambientI); U.addLight(L, 'torch', 0.3 + 0.5 * (1 - r / ROWS));
+          U.shade(d.tag === 'gap' ? 'rubble' : d.wallMat === 'iron' ? 'iron' : d.wallMat, L, x * 0.3, (ROWS - r) * 0.15, 3, out, { z: (ROWS - r) * 0.3 });
+          g.cell(x, r, out.glyph, css(out.fg), css(out.bg));
+        } else if (r === top) {
+          g.cell(x, r, d.tag === 'grate' ? '#' : '_', d.tag === 'grate' ? C.ironLight : C.stoneLight, '#07080c');
+        }
+      }
+      if (col.jump) { var jt = ROWS - 1 - Math.round((def(cols[k - 1].c[0], cols[k - 1].c[1]).floorH + 0.3) / 0.3) - 2; g.text(1 + k * CW - 1, jt, '.~~~.', C.gold, '#07080c'); }
+      var lab = col.jump ? 'j' : d.tag === 'stairBase' ? 'B' : d.tag === 'grate' ? 'G' : d.zone === 'ledge' ? 'L' : d.tag === 'breach' ? 'b' :
+                d.tag === 'trigger:end' ? 'X' : LV.rows[col.c[1]].charAt(col.c[0]) === 'd' ? 'd' : '';
+      g.text(1 + k * CW, ROWS, (h.toFixed(1)).slice(0, 3), C.uiHint, '#07080c');
+      if (lab) g.text(1 + k * CW + 1, ROWS + 1, lab, C.gold, '#07080c');
+    });
+  }
+
+  // ---------------- tables ----------------
+  function buildTables() {
+    var rows = Object.keys(LV.legend).map(function (k) {
+      var d = LV.legend[k], m = P.materials[d.solid ? d.wallMat : d.floorMat], sw = m ? C[m.base] : '#000';
+      var ext = [];
+      if (d.topH) ext.push('topH ' + d.topH); if (d.upperMat) ext.push('upperMat ' + d.upperMat); if (d.dynamic) ext.push('ceilOpen ' + d.dynamic.ceilOpen);
+      if (d.tag) ext.push('tag ' + d.tag);
+      return '<tr><td style="color:#ffd27a">' + k.replace('<', '&lt;') + '</td><td>' + d.floorH.toFixed(2) + '</td><td>' + d.ceilH + '</td><td>' + (d.solid ? 'solid' : '') +
+        '</td><td>' + d.wallMat + '</td><td><span style="color:' + sw + '">#</span> ' + d.floorMat + '</td><td>' + (d.ceilMat || '') + '</td><td>' + d.zone +
+        '</td><td>' + ext.join(', ') + '</td><td>' + d.desc + '</td></tr>';
+    });
+    document.getElementById('legend').innerHTML = '<table><tr><th>char</th><th>floorH</th><th>ceilH</th><th>solid</th><th>wallMat</th><th>floorMat</th><th>ceilMat</th><th>zone</th><th>extensions</th><th>description</th></tr>' + rows.join('') + '</table>';
+    var pr = LV.props.map(function (p) {
+      var pos = p.wall ? ('wall y ' + p.wall.y + ', x ' + p.wall.x0 + '-' + p.wall.x1 + ', z ' + p.wall.z0 + '-' + p.wall.z1) : p.from ? ('from ' + JSON.stringify(p.from) + ' to ' + JSON.stringify(p.to)) : (p.x + ', ' + p.y + ', z ' + p.z);
+      return '<tr><td>prop</td><td>' + p.id + '</td><td>' + p.model + (p.variant !== undefined ? ' / ' + p.variant : '') + (p.pose ? ' / ' + p.pose : '') + '</td><td>' + pos +
+        '</td><td>' + (p.facing !== undefined ? p.facing : '') + '</td><td>' + (p.interact ? p.interact.prompt : '') + '</td><td>' + (p.note || '') + '</td></tr>';
+    });
+    LV.lights.forEach(function (l) { pr.push('<tr><td>light</td><td>' + l.id + '</td><td>' + l.preset + '</td><td>' + l.x + ', ' + l.y + ', z ' + l.z + '</td><td></td><td></td><td>' + (l.on ? 'on' : 'off at start') + ' ' + (l.note || '') + '</td></tr>'); });
+    pr.push('<tr><td>light</td><td>sun</td><td>sun</td><td>elev ' + LV.sun.elevation + ', az ' + LV.sun.azimuth + ' (ESE)</td><td></td><td></td><td>directional</td></tr>');
+    pr.push('<tr><td>light</td><td>lantern</td><td>lantern</td><td>carried after pickup</td><td></td><td></td><td>US-012</td></tr>');
+    LV.triggers.forEach(function (t) { pr.push('<tr><td>trigger</td><td>' + t.id + '</td><td>' + t.type + '</td><td>cells ' + JSON.stringify(t.cells) + '</td><td></td><td></td><td>camera walks to ' + t.walkTo.x + ', ' + t.walkTo.y + ', pitch ' + t.pitchTo + '</td></tr>'); });
+    Object.keys(LV.markers).forEach(function (k) { var m = LV.markers[k]; pr.push('<tr><td>marker</td><td>' + k + '</td><td></td><td>' + (m.x !== undefined ? m.x + ', ' + m.y + ', z ' + m.z : JSON.stringify(m).replace(/"/g, '')) + '</td><td></td><td></td><td>' + (m.note || '') + '</td></tr>'); });
+    document.getElementById('props').innerHTML = '<table><tr><th>kind</th><th>id</th><th>model / preset</th><th>position (m)</th><th>facing</th><th>prompt</th><th>notes</th></tr>' + pr.join('') + '</table>';
+  }
+
+  // ---------------- controls + loop ----------------
+  var vbox = document.getElementById('views');
+  [['all', 'all'], ['L0', 'L0 ground'], ['L1', 'L1 stair + ledge'], ['L2', 'L2 upper + summit']].forEach(function (v) {
+    var b = document.createElement('button'); b.className = 'v' + (v[0] === 'all' ? ' on' : ''); b.textContent = v[1];
+    b.onclick = function () { S.view = v[0]; [].forEach.call(vbox.children, function (c) { c.classList.remove('on'); }); b.classList.add('on'); drawPlan(performance.now() / 1000); };
+    vbox.appendChild(b); vbox.appendChild(document.createTextNode(' '));
+  });
+  function $(id) { return document.getElementById(id); }
+  ['labels', 'markers', 'relief', 'route', 'tilt', 'torch', 'flicker'].forEach(function (id) { $(id).onchange = function () { S[id] = this.checked; drawPlan(performance.now() / 1000); }; });
+  $('reach').onchange = function () { S.reach = this.value; drawPlan(performance.now() / 1000); };
+  function sync() { $('azV').textContent = S.az.toFixed(1) + ' deg'; $('elV').textContent = S.el + ' deg'; }
+  $('az').oninput = function () { S.az = +this.value; sunCache = null; sync(); drawPlan(performance.now() / 1000); };
+  $('el').oninput = function () { S.el = +this.value; sunCache = null; sync(); drawPlan(performance.now() / 1000); };
+  sync(); buildTables(); drawProfile(); drawPlan(0);
+  var last = 0;
+  requestAnimationFrame(function loop(now) {
+    requestAnimationFrame(loop);
+    if (!S.flicker || !S.torch || now - last < 80) return;
+    last = now; drawPlan(now / 1000);
+  });
+})();
+</script>
+</body>
+</html>

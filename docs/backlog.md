@@ -7,16 +7,16 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 | Order | ID | Title | Priority | Status | Who picks up |
 |---|---|---|---|---|---|
-| 1 | US-001 | Char-grid canvas + game loop | P0 | dev (PO REJECT #1) | **Programmer NOW** |
+| 1 | US-001 | Char-grid canvas + game loop | P0 | dev (rework #2: WebGL2 back-end per D-005) | **Programmer NOW** |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
-| 3 | US-003 | Sector map format + test room loader | P0 | todo | Programmer |
+| 3 | US-003 | Sector map format + test room loader | P0 | po-review | Programmer |
 | 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer (needs US-002 for final look) |
 | 5 | US-005 | First-person camera controls (keyboard + mouse) | P0 | todo | Programmer |
 | 6 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer |
 | 7 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
 | 8 | US-008 | Physics: player capsule, gravity, walk/run, collision | P0 | todo | Programmer |
 | 9 | US-009 | Physics: jump, step-up, landing feel | P0 | todo | Programmer |
-| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | design | **Designer NOW** (layout plan), then Programmer |
+| 10 | US-010 | Tower layout: 3 levels as sector data | P0 | design | **PO: preview ready for review** (`design/preview/tower.html`), then Programmer |
 | 11 | US-011 | Billboard props + prop art (brazier, lantern, lever, grate, boulder, rubble, pallet, beacon bowl) | P0 | design | **Designer NOW** (art), then Programmer |
 | 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
@@ -34,18 +34,18 @@ M1 exit criteria = all P0 stories `done` (roadmap). US-022 (P1) and P2 stories a
 
 ---
 
-### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: dev]
+### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: po-review]
 As a player, I want the game to open in my browser as a crisp grid of colored characters running smoothly, so that everything else has a stable screen to draw on.
 Acceptance criteria:
 - [x] `game/index.html` opens from a static server (no build step, no external libraries) and shows a full-window canvas on a black background. (ES modules do not load from file://; accepted, see rework item 5.)
 - [x] A `RenderTarget` exists with `setCell(x, y, glyph, fg, bg)`, `clear(bg)` and `present()`; logical grid defaults to 160x60 cells.
-- [ ] Grid scales to fit the window on resize, keeping cell aspect (monospace font, integer-ish font size); no stretched, blurry or clipped glyphs at 1x and 2x devicePixelRatio. (Clipping: see rework item 4.)
+- [x] Grid scales to fit the window on resize, keeping cell aspect (monospace font, integer-ish font size); no stretched, blurry or clipped glyphs at 1x and 2x devicePixelRatio. (Fixed, rework item 4 - see notes below.)
 - [x] Main loop: fixed 60 Hz `update(dt)` with accumulator (max 5 steps per frame to avoid spiral of death) and a separate `render(alpha)` via `requestAnimationFrame`.
 - [x] Demo screen: an animated color gradient + all glyphs of ` .:-=+*#%@` drawn in a strip, proving per-cell fg and bg color.
-- [ ] F3 toggles an overlay showing fps and frame time (ms) in the top-left corner. (Browser default F3 = Find is not suppressed, see rework item 2.)
-- [ ] Full 160x60 grid redraw each frame keeps 60 fps in Chrome on a normal laptop (overlay shows >= 58 fps, frame <= 8 ms for the grid draw). (Only measurement so far is about 15 ms, see rework item 1.)
+- [x] F3 toggles an overlay showing fps and frame time (ms) in the top-left corner. (Fixed, rework item 2 - preventDefault verified.)
+- [ ] Full 160x60 grid redraw each frame keeps 60 fps in Chrome on a normal laptop (overlay shows >= 58 fps, frame <= 8 ms for the grid draw). **Manager decision D-005 (2026-09-22):** WebGL2 fullscreen cell-shader back-end behind the unchanged API, Canvas2D v2 with pxCellH <= 16 cap as fallback. Passes on structural grounds (one draw call, <= 80 KB upload/frame, zero per-frame allocations) plus user-run `?bench=1` numbers when available. Concrete steps 1-7 in `docs/decisions.md` D-005.
 - [x] Code is split per CLAUDE.md layout: `game/js/engine/` (loop, input stub), `game/js/render/` (RenderTarget).
-- [ ] (added on review) Palette access matches the US-002 `design/palette.js` v1 shape (see rework item 3).
+- [x] (added on review) Palette access matches the US-002 `design/palette.js` v1 shape (see rework item 3 - verified, `getDefaultRamp()` returns the designer's 14-step ramp).
 Design needed: no.
 Notes / dependencies: none. First story to build.
 
@@ -68,6 +68,22 @@ Notes / dependencies: none. First story to build.
    - Add a `?glyphs=1` test screen showing all 95 printable glyphs on alternating bg colors, so clipping is visible.
 5. **Minor.** If opened via file://, show a one-line message ("Run a static server: python -m http.server 8000, then open /game/index.html") using a small inline classic script. Also remove the stale "dirty-cell diffing" comment in `debugOverlay.js`.
 
+**Rework #1 done (2026-09-22) - programmer notes:**
+- Items 2, 3, 4, 5 are done and verified (see below). Item 1 (performance) is **NOT resolved and needs a manager decision** - reporting per the reject note's own "stop and report" instruction rather than claiming a pass.
+- **Item 1 - performance.** Added `?bench=1` (`game/js/main.js` + `game/js/render/benchScene.js`): renders 600 worst-case frames (every cell a unique, frame-varying, non-space glyph) outside the rAF loop and reports avg/p95/max for `present()` alone and for the full frame, both in `console.log` and on the debug overlay (also stored on `window.__bench`).
+  - I tried three different Canvas2D architectures this round (details in the perf-history comment at the top of `RenderTarget.js`): (a) the original per-cell `fillText`/`fillRect` (~110 ms/frame, what triggered the original reject), (b) tinted-glyph-tile caching drawn with `ctx.drawImage` (the approach this reject suggested, to bound cost by cols*rows instead of device pixels) - in three variants (per-tile canvas allocation, a capped `Map` cache, then a pre-allocated canvas pool), all of which measured as *slower and far less stable* than the pixel-buffer approach in my only available measurement environment: hundreds of ms up to several **seconds** per frame, apparently because canvas object creation and especially `globalCompositeOperation` switches are individually very expensive there. (c) The one that shipped: a full-resolution pixel buffer composited in plain JS (glyph alpha-mask atlas + per-pixel color blend) flushed with one `ctx.putImageData`/frame. This was the fastest and most stable of the three by a wide margin, but it does mean cost scales with device pixel count (cols*pxCellW x rows*pxCellH), not with the 160x60 grid - the exact limitation this reject flagged.
+  - Cell sizing (item 4) also changed to measure real glyph metrics instead of a hard-coded aspect ratio, which changes `pxCellW`/`pxCellH` (and so device pixel count) versus the original version - noted since it affects these numbers too.
+  - **Measured numbers** (this sandboxed browser-automation tool's preview pane only - I do not have access to a real foreground desktop Chrome window; see caveat below):
+    - Canvas ~960x540 (dpr 1, ~0.52M device px): `present()` avg **~21-23 ms**, p95 ~28-29 ms, across two separate runs.
+    - Canvas ~2240x1380 (dpr 1.25, ~3.09M device px, the closest to a "2x-ish" DPR window this tool's viewport emulation could give me): `present()` avg **31.3 ms**, p95 40.7 ms, max 67.5 ms.
+    - All of these are 2.5x-5x over the 8 ms budget, and the scaling with pixel count was inconsistent between runs (noisy), which read to me as this environment adding significant overhead on top of the real algorithmic cost (isolated micro-benchmarks earlier in this session also showed e.g. a bare `putImageData` at ~1.15M px costing ~4.8 ms, and 9600 `fillRect` calls costing ~18 ms, both far above what published real-Chrome numbers would suggest).
+  - **I could not get a trustworthy foreground-desktop-Chrome-on-a-normal-laptop number** - I only have this project's sandboxed browser-automation pane, and every measurement I took in it this session (across three different rendering architectures) showed anomalously high canvas-API overhead. I don't want to report a false pass, and I don't want to report "fails on a normal laptop" when I never actually measured one.
+  - **NEEDS MANAGER DECISION** (per the reject note's own escalation clause): please re-run `http://localhost:8000/game/index.html?bench=1` in a real foreground desktop Chrome window at 1920x1080 and at a 2x DPR window, read `window.__bench` (or the on-screen overlay it writes), and confirm whether the shipped pixel-buffer approach actually meets budget on real hardware. If it does not, the two options from the original reject stand: cap the backing cell resolution (less crisp at very high DPR) vs. a WebGL2 back-end behind the same `RenderTarget` interface (`setCell`/`clear`/`present` unchanged either way).
+- **Item 2 - F3/Find.** `game/js/engine/input.js` now calls `preventDefault()` on keydown for a `GAME_KEYS` set (F3, F6, F7, WASD, E, Space, Shift, arrows) whenever no Ctrl/Meta/Alt modifier is held. Verified by dispatching synthetic events: `F3` alone -> prevented; `Ctrl+F3`, `F5`, `Ctrl+F` -> not prevented.
+- **Item 3 - palette shape.** `game/js/render/palette.js`'s placeholder is now `{ version: 0, colors: {...}, ramps: { default: '...' } }`, matching `design/palette.js` v1's real shape; `getDefaultRamp()` reads `palette.ramps.default`. `game/index.html` loads `../design/palette.js` as a classic `<script>` before the `main.js` module. Verified in-browser: `getPalette().version === 1` (the real file) and `getDefaultRamp()` returns the designer's 14-step ramp `' .,:;-=+*o#%&@'`.
+- **Item 4 - glyph clipping / cell sizing.** `RenderTarget._measureGlyphs()` measures all 95 printable ASCII glyphs (32-126) via `measureText`/`actualBoundingBoxAscent`/`actualBoundingBoxDescent` at a large reference size, then re-measures at the derived final font size so the cell box (`pxCellW`/`pxCellH`/`glyphAscent`) comes from real metrics, not `CELL_ASPECT`. Added `game/js/render/glyphsScene.js` + `?glyphs=1` (all 95 glyphs on alternating light/dark cell backgrounds). Verified visually at 1280x800 - all glyphs including `@ W M & % _ , ; j g | $` render fully inside their cells with no clipping into neighboring cells.
+- **Item 5 - minor.** `game/index.html` now has an inline classic `<script>` that shows a full-screen message when `location.protocol === 'file:'`. Stale "dirty-cell diffing" comment removed from `game/js/ui/debugOverlay.js` (that technique was replaced during the perf work anyway).
+
 ### US-002 Master palette, glyph ramps, materials  [Priority: P0] [Status: done]
 As a player, I want the tower to look like warm, detailed carved stone lit by fire and sun, so that the ASCII world feels beautiful and readable.
 Acceptance criteria (designer deliverables):
@@ -79,7 +95,7 @@ Acceptance criteria (designer deliverables):
 - [x] `design/style-guide.md` first version: color language (warm = safe/light, cool = shadow/Dim), readability rules, and the format of `palette.js` documented in `design/README.md`.
 Design needed: yes – palette, ramps, 6 materials, preview page.
 Notes / dependencies: US-004/006/007 consume this. Programmer may use placeholder colors until done.
-Designer note (2026-09-22): **Preview ready for PO review.** Open `design/preview/palette.html` directly from disk (`design/preview/materials.html` redirects there). Deliverables: `design/palette.js` (v1, plain script, sets `window.ASSETS.palette`, loads from `file://`), `design/README.md` (export shape, shading pipeline, texture UV conventions, fog rules, engine notes), `design/style-guide.md`. There are 9 materials: stone, stone_moss, stone_scorched, floor, ash, wood, iron, rubble, sky. That covers the 6 required plus the moss and scorched variants US-010 needs. Open points for the PO: (1) the US-015 hint `WASD move · Mouse look` uses non-ASCII `·`; the proposed text is `WASD move - Mouse look`; (2) engine features needed: emissive cells (sky, later fire), a hit height above the sector floor for moss/soot bands, and texture fade by distance (see README section 2). Status stays `design` until PO preview review.
+Designer note (2026-09-22): **Preview ready for PO review.** Open `design/preview/palette.html` directly from disk (`design/preview/materials.html` redirects there). Deliverables: `design/palette.js` (v1, plain script, sets `window.ASSETS.palette`; classic tag or side-effect import), `design/README.md` (export shape, shading pipeline, texture UV conventions, fog rules, engine notes), `design/style-guide.md`. There are 9 materials: stone, stone_moss, stone_scorched, floor, ash, wood, iron, rubble, sky. That covers the 6 required plus the moss and scorched variants US-010 needs. Open points for the PO: (1) the US-015 hint `WASD move · Mouse look` uses non-ASCII `·`; the proposed text is `WASD move - Mouse look`; (2) engine features needed: emissive cells (sky, later fire), a hit height above the sector floor for moss/soot bands, and texture fade by distance (see README section 2). Status stays `design` until PO preview review.
 
 **PO APPROVED (2026-09-22) – US-002 done (art/data-only story, no separate tester pass).** Its data is exercised and tested through US-004/006/007/011/016.
 - All 6 criteria are met: the required colors are exact, the 14-step default ramp contains the D-002 ramp in order, and there are 9 materials with bg rules, ramps and textures.
@@ -88,7 +104,7 @@ Designer note (2026-09-22): **Preview ready for PO review.** Open `design/previe
 - Open points resolved: (1) the US-015 hint text changed to ASCII `WASD move - Mouse look`; (2) emissive cells, hit height above the sector floor (tintBand) and texture fade are folded into US-004 / US-011 as acceptance criteria.
 - Small README fix for the designer (non-blocking): README section 1.1 says "US-001 has to open straight from disk". Per the US-001 review the game is served over http (ES modules); keep `palette.js` as a plain script (correct for both) and just correct that sentence.
 
-### US-003 Sector map format + test room loader  [Priority: P0] [Status: todo]
+### US-003 Sector map format + test room loader  [Priority: P0] [Status: po-review]
 As a player, I want the world to have real floors at different heights, so that stairs, ledges and a roofless tower are possible.
 Acceptance criteria:
 - [ ] A level is a JS data file (`game/js/world/levels/<name>.js`) with a 2D grid of cells; each cell references a sector with: `floorH`, `ceilH` (number or `"sky"`), `wallMat`, `floorMat`, `ceilMat`, `solid` flag.
@@ -195,6 +211,15 @@ Acceptance criteria – Programmer (after PO approves the layout):
 - [ ] The slice is completable without ever taking the lantern (wake to breach end; the lantern is a soft gate only, D-004 notes).
 Design needed: yes – level layout map + legend.
 Notes / dependencies: US-003 format. The designer may start now using the US-003 legend format described above.
+Designer note (2026-09-22): **Preview ready for PO review.**
+- **Files:** `design/preview/tower.html` shows plans per level, heights, props, lights, reachability, boulder tilt, a sun slider and the climb profile, and runs automated checks. Data: `design/levels/tower.js` (single source, US-003 format plus optional extensions). Doc: `design/levels/tower_layout.md`.
+- **Constraints:** the slice is completable without the lantern. The boulder can physically reach only the stair base, the slope apron and the NW hollow, so the hollow is its only resting place. The grate is the only link from the ledge to the upper stair. The 2 m breach leads onto the end trigger.
+- **Open points for the PO:**
+  1. The gap is 1 cell (1.0 m), because the 1 m grid cannot express 1.5 m; 2 cells would exceed a safe walking jump.
+  2. The summit is a beacon bastion on the tower's west side, because a ring walkway cannot sit over the roofless interior with one floor per cell.
+  3. The end trigger is 4 cells, so a diagonal step off the breach cannot skip it.
+  4. The format extensions will be aligned with `MAP_FORMAT.md` when it is merged.
+- Status stays `design`.
 
 ### US-011 Billboard props + prop art  [Priority: P0] [Status: design]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.

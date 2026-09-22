@@ -112,3 +112,36 @@ Roadmap said sound is "out / nice-to-have if trivial". PO filed US-020 (brazier,
 - Lantern as a *soft* gate for the gap (stairs readable without it): **agreed**, and I want it enforced in testing: the slice must be completable without ever taking the lantern.
 - Boulder rolls down a slope into the NW hollow at -0.3 m: **agreed**. Flag: with radius 0.6 m the boulder is a *hard* gate at the stair base (jump apex 1.05 m). Acceptable because a walk-into push clears it, but US-013 must guarantee it can never come to rest somewhere that blocks the stair or the wake area again (the hollow must be the only stable resting place, and restart resets it).
 - Minor disagreement: US-012 "lantern cannot be dropped" plus US-022 must not read as "lantern consumed" - the player keeps it (fixed in D-003).
+
+---
+
+## D-005 RenderTarget back-end: WebGL2 fullscreen cell-shader, Canvas2D with capped backing resolution as fallback
+
+**Date:** 2026-09-22
+**Status:** Accepted (refines D-002 "single canvas" - the canvas stays, the context changes)
+
+### Context
+US-001 is blocked on the 8 ms / 58 fps budget for a full 160x60 redraw. Canvas2D v1 (fillText per cell) was ~110 ms; v2 (JS per-pixel compositing + one putImageData) measured 21-31 ms in the only environment agents can measure in; drawImage tile caches (v3) were pathological there. v2's cost is proportional to device pixels (~4.6 M at 1440x900 @2x), not to cells, so it is structurally expensive on real hardware too. Agents cannot measure reliably, so a design that is fast *by construction* is worth more than one that is tuned by measurement.
+
+### Options
+- **(A) Cap backing resolution, CSS-upscale.** Bounds v2's cost (e.g. 160x60 cells at 8x16 px = 1.2 M px, ~5-8 ms) but stays on the JS-per-pixel path, is blurry at 2x DPR, and will compete for the same main-thread budget as the raycaster and lighting.
+- **(B) WebGL2 back-end behind the unchanged RenderTarget API.** Per frame: upload ~77 KB of cell data (160x60 x glyph index + fg + bg) as two tiny textures and draw one fullscreen quad; the fragment shader resolves cell -> atlas texel -> mix(bg, fg, alpha). GPU cost is trivial at any resolution, CPU cost is one texSubImage2D + one drawArrays. Crisp at any DPR. Risk: WebGL2 unavailable (rare in 2026 Chrome/Firefox/Safari) or software-rendered.
+- **(C) Keep Canvas2D v2 and accept.** Fails the budget before a single wall is drawn. Rejected.
+
+### Decision
+**(B) WebGL2 fullscreen cell-shader is the primary back-end; (A) is the fallback.** The `RenderTarget` public API (`setCell`, `clear`, `present`, `cols`, `rows`, resize behaviour) does not change; the raycaster and UI never know which back-end is active.
+
+Direction to the programmer (US-001 rework #2):
+1. Store cells in typed arrays, not string arrays: `glyphIdx: Uint8Array(cols*rows)` (ASCII code - 32, 0 = space), `fg: Uint8Array(cols*rows*4)`, `bg: Uint8Array(cols*rows*4)`. `setCell` keeps accepting hex strings but resolves them through the existing color cache into bytes. Add `setCellRGB(x, y, glyphIdx, r,g,b, r2,g2,b2)` as an allocation-free fast path for the raycaster (US-004 should use it).
+2. Textures: `uCells` RGBA8 160x60 = (glyphIdx, 0,0,0) or pack glyph into the alpha of the fg texture: `uFg` RGBA8 (r,g,b, glyphIdx), `uBg` RGBA8 (r,g,b, 255). Two `texSubImage2D` calls per frame, NEAREST filtering.
+3. Glyph atlas: on resize, render printable ASCII 32..126 once into an offscreen Canvas2D at the current device-pixel cell size (metrics-based sizing from rework #1 is kept), upload as an R8/alpha texture strip (95 x 1 cells), LINEAR filtering. Rebuild only on resize/DPR change.
+4. Fragment shader: `cell = floor(vUv * gridSize)`, fetch fg/bg/glyph, `atlasUv = ((glyphIdx + fract(vUv.x*cols)) / 95, fract(vUv.y*rows))`, `color = mix(bg, fg, a)`. One `drawArrays(TRIANGLES, 0, 3)` fullscreen triangle. No per-frame allocations, no state changes beyond the two uploads.
+5. Fallback: if `canvas.getContext('webgl2')` returns null or context creation fails, instantiate the Canvas2D v2 path with the backing cell size capped at **pxCellH <= 16 device px** (CSS upscales the canvas; accept softness). Log which back-end is active on the F3 overlay (`gl2` / `c2d-capped`). Handle `webglcontextlost`/`restored` by rebuilding textures.
+6. Bench acceptance: `?bench=1` stays. Because agents cannot measure real hardware, US-001 passes on **structural** grounds (one draw call, <= 80 KB upload/frame, zero per-frame allocations, verified by reading the code) plus the user's real-Chrome `?bench=1` numbers when available; the PO records them in US-001. The 8 ms budget remains binding for US-004/US-018 measurements.
+7. Keep the Canvas2D v2 file as `RenderTargetCanvas2D.js`; new file `RenderTargetGL.js`; `RenderTarget.js` becomes the factory that picks one. Do not delete the perf history comment - move it to the Canvas2D file.
+
+### Consequences
+- The rendering budget is now spent where it belongs: raycasting + lighting in JS (US-004..007), presentation on the GPU.
+- Any future "post effects" (fade to black in US-017, glyph dimming, vignette) can be done in the shader for free, but are not required to be.
+- Fallback users on non-WebGL2 browsers get a softer image; that is accepted for M1.
+- Shader code lives in JS template strings (no build step, no external libraries).

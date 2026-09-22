@@ -112,7 +112,7 @@ Material = {
   }
 }
 ```
-M1 materials: `stone`, `stone_moss`, `stone_scorched`, `floor`, `ash`, `wood`, `iron`, `rubble`, `sky`.
+M1 materials: `stone`, `stone_moss`, `stone_scorched`, `floor`, `ash`, `wood`, `iron`, `rubble`, `grass`, `rock` (v1.1), `sky`.
 
 **Texture coordinates** (`util.texel(tex, u, v)`):
 - Walls: `u` = distance along the wall in meters (continuous across adjacent cells, i.e. world x or y of the hit), `v` = world height `z` in meters. **v grows upward**. The row used is `rows[h-1 - (floor(v*scale[1]) mod h)]`.
@@ -156,5 +156,24 @@ Output: `out.glyph`, `out.fg[3]`, `out.bg[3]` (0..255 floats) and `out.b`. Pass 
 
 ---
 
+## 3. Levels (`design/levels/*.js`)
+
+Plain scripts that set `ASSETS.levels.<name>`. Each has a companion `design/levels/<name>_layout.md` and a preview. The format is the US-003 legend format:
+- `rows[y]` strings, one char per 1 m cell; x = east, y = south.
+- `legend[char]` = sector `{ floorH, ceilH: number | 'sky', wallMat, floorMat, ceilMat, solid }`.
+- Optional extensions (full list in `tower_layout.md` section 6):
+  - solid cells keep `floorH` = wall top
+  - `topH`, `upperMat`
+  - `dynamic` (moving ceiling)
+  - `zone` and `tag`
+  - `layers.tilt`
+  - level-level `start`, `sun`, `lights`, `props`, `triggers`, `markers`, `route`
+
+Lights reference `palette.lights` presets and props reference US-011 model names. The programmer ports the data file into `game/js/world/levels/` (the US-003 location). The final field names follow `game/js/world/MAP_FORMAT.md` once it is merged.
+
+---
+
 ## Change log
 - **v1 (2026-09-22, US-002)**: initial palette, ramps, lights, fog, time of day, 9 materials, reference shader, preview.
+- **v1.0.1 (2026-09-22)**: section 1.1 corrected. The game is served over http (ES modules); palette.js stays a plain script.
+- **v1.1 (2026-09-22, US-010)**: palette materials `grass` and `rock` added (outside the tower). New section 3, level data format: `design/levels/tower.js`, `tower_layout.md`, `preview/tower.html`.

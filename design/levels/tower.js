@@ -1,9 +1,11 @@
 /*
  * ASCII Quest - US-010 "The Hollow Watchtower" layout (design data, v1)
  * Owner: Designer. Human-readable companion: design/levels/tower_layout.md
- * Format: US-003 legend format + documented optional extensions (design/README.md section 3).
+ * Format: game/js/world/MAP_FORMAT.md v1 (level = { name, legend, rows, start }), plus optional
+ * extensions that loadLevel ignores (see tower_layout.md section 6).
  * Plain script: sets window.ASSETS.levels.tower. The programmer ports it to
- * game/js/world/levels/tower.js (ES module) unchanged in content.
+ * game/js/world/levels/tower.js as `export default <this object>` - no content changes needed.
+ * The preview (design/preview/tower.html) runs it through the real loadLevel when served over http.
  *
  * COORDINATES: 1 cell = 1 m. rows[y][x]; x grows EAST (columns), y grows SOUTH (rows).
  * Cell (x,y) spans [x, x+1] x [y, y+1] m. z = height in m (0 = tower ground floor).
@@ -14,8 +16,14 @@
   var ASSETS = root.ASSETS = root.ASSETS || {};
   ASSETS.levels = ASSETS.levels || {};
 
-  // helper for the legend (keeps entries short)
-  function S(o) { if (o.ceilH === undefined) o.ceilH = 'sky'; if (o.solid === undefined) o.solid = false; return o; }
+  // helper for the legend (keeps entries short). Guarantees the 6 MAP_FORMAT fields on every entry:
+  // floorH, ceilH (number | 'sky'), wallMat, floorMat, ceilMat (always a material key; 'sky' on open cells), solid.
+  function S(o) {
+    if (o.ceilH === undefined) o.ceilH = 'sky';
+    if (o.ceilMat == null) o.ceilMat = 'sky';
+    if (o.solid === undefined) o.solid = false;
+    return o;
+  }
   function wall(top, mat, desc) { return S({ solid: true, floorH: top, wallMat: mat, floorMat: 'rubble', ceilMat: null, zone: 'wall', desc: desc }); }
   function step(h, mat, zone, desc) { return S({ floorH: h, wallMat: mat, floorMat: 'floor', ceilMat: null, zone: zone, desc: desc }); }
 
@@ -34,10 +42,10 @@
       ',;vvwwwwvv;,,unuRzmn%,,,', // 2
       ';vwwwwwwwwv,un_s1234%#,,', // 3
       ';vwwwwPPPPP!$oo_ccc56%#,', // 4
-      ';vwwwwP====!!o_...:.7##,', // 5
+      ';vwwwYP====!!o_...:.7##,', // 5
       ';lkjxXb=OO=!z....:*:8KK,', // 6
       ';lkjxXb=OO=dJI....:.9##,', // 7
-      ';vwwwwP====$!HR....rg##,', // 8
+      ';vwwwYP====$!HR....rg##,', // 8
       ';vwwwwPPPPP!$FE....LL%#,', // 9
       ';;vvwwwwwvv,$&DCBAGLL%,,', // 10
       ',;;vvvvv;;,,,&$&%%&%#,,,', // 11
@@ -114,6 +122,8 @@
       // ---- outside ----
       'X': S({ floorH: 6.0, wallMat: 'rock', floorMat: 'rock', ceilMat: null, zone: 'outside', tag: 'trigger:end',
                desc: 'outcrop just past the breach: END TRIGGER' }),
+      'Y': S({ floorH: 5.4, wallMat: 'rock', floorMat: 'rock', ceilMat: null, zone: 'outside', tag: 'trigger:end',
+               desc: 'rock beside the outcrop, also END TRIGGER (a diagonal step off the breach must not skip the ending)' }),
       'x': S({ floorH: 6.0, wallMat: 'rock', floorMat: 'rock', ceilMat: null, zone: 'outside', desc: 'outcrop (end camera walks here)' }),
       'j': S({ floorH: 5.4, wallMat: 'rock', floorMat: 'grass', ceilMat: null, zone: 'outside', desc: 'hill path down, 5.4 m' }),
       'k': S({ floorH: 4.6, wallMat: 'rock', floorMat: 'grass', ceilMat: null, zone: 'outside', desc: 'hill path, 4.6 m' }),
@@ -148,8 +158,11 @@
     },
     tilt: { grade: 0.05, hollowCenter: { x: 13.9, y: 4.7 } },
 
-    // player start: lying on the straw pallet against the south stair wall, looking up at the sun shaft
-    start: { x: 17.0, y: 9.5, z: 0.0, eye: 0.3, eyeStand: 1.6, yaw: 330, pitch: 30, pose: 'lying' },
+    // player start (MAP_FORMAT 2.3, explicit form): lying on the straw pallet against the south stair wall,
+    // looking up at the sun shaft. facingDeg is compass (0 = north, 90 = east), as the camera code uses it.
+    // Explicit rather than a legend start char because the pallet centre lies on a cell edge (x = 17.0).
+    // Extra fields (eye, eyeStand, pitchDeg, pose) are US-015 wake-sequence data; loadLevel ignores them.
+    start: { x: 17.0, y: 9.5, facingDeg: 330, eye: 0.3, eyeStand: 1.6, pitchDeg: 30, pose: 'lying' },
 
     sun: { preset: 'sun', elevation: 60, azimuth: 112.5 },
     ambient: { preset: 'ambient' },
@@ -181,7 +194,8 @@
     ],
 
     triggers: [
-      { id: 'end', type: 'end', cells: [[5, 6], [5, 7]], walkTo: { x: 4.5, y: 7.0 }, pitchTo: -12 }
+      { id: 'end', type: 'end', cells: [[5, 5], [5, 6], [5, 7], [5, 8]], walkTo: { x: 4.5, y: 7.0 }, pitchTo: -12,
+        note: 'trigger = every cell of the "trigger:end" tag; X = straight out of the breach, Y = diagonal steps off it' }
     ],
 
     markers: {
@@ -195,10 +209,12 @@
     // the intended route, cell by cell ([x,y]); used by the preview's checks and the stair profile
     route: [
       [15, 3], [16, 3], [17, 3], [18, 3], [19, 3], [19, 4], [20, 4], [20, 5], [20, 6], [20, 7],
-      [20, 8], [20, 9], [19, 9], [19, 10], [18, 10],
+      [20, 9], [19, 9], [19, 10], [18, 10],
       [17, 10], [16, 10], [15, 10], [14, 10], [14, 9], [13, 9], [13, 8], [13, 7], [12, 7],
-      [11, 7], [10, 7], [9, 8], [8, 8], [7, 8], [7, 7], [6, 7], [5, 7]
+      [11, 7], [10, 7], [10, 8], [9, 8], [8, 8], [7, 8], [7, 7], [6, 7], [5, 7]
     ],
-    routeNotes: { '20,8': 'jump the gap (from 2.7 over the cell to 3.0)', '18,10': 'grate (needs lever)', '11,7': 'doorway 6.0', '6,7': 'breach', '5,7': 'end trigger' }
+    // a route step of 2 cells in a straight line = the gap jump over the cell between
+    routeNotes: { '20,9': 'landed: jumped the gap (2.7 over the debris cell to 3.0)', '18,10': 'grate (needs lever)',
+                  '11,7': 'doorway 6.0', '6,7': 'breach', '5,7': 'end trigger' }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
