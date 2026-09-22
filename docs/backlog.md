@@ -1072,3 +1072,5 @@ Acceptance criteria (sketch):
 - [ ] Schema version field plus a clear error for unknown or old versions.
 Design needed: no (the designer keeps authoring in `design/`; export is a tool).
 Notes / dependencies: US-024, US-025. Editor prerequisite (M5).
+
+> **Session paused 2026-09-22 (main session).** US-004b is still `dev` and **work in progress**, committed as WIP. The programmer was stopped mid-story, right before running the fast-shader default mode, the `--gc` allocation check, and the 600-frame official bench. The WIP includes `raycaster.js`, `shadeTest.js`, the new `OpenSpans.js` and `fastShade.js`, and `tools/`. `main.js` hasn't been touched yet (it's the OpenSpans consumer). The AC checklist isn't verified, and the game may not run until the story is finished. Next: resume US-004b, run the bench and checks, then go to arch-review. US-009's architect tech notes weren't started. The owner's verdict on the detail-pass preview (`design/preview/detail_pass.html`) is pending.

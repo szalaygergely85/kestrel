@@ -6,11 +6,14 @@
 // geometry and "seeing over a low wall" / "seeing through a lintel" just
 // falls out of the algorithm rather than being special-cased.
 //
-// Shading is delegated straight to the designer's reference implementation
-// (`design/palette.js` -> `window.ASSETS.palette.util.shade` / `shadeSky`)
-// so the engine's output is BY CONSTRUCTION identical to it (see `?shadetest=1`
-// in main.js) - not just "close within tolerance". Cells are written with
-// `RenderTarget.setCellRGB` only (no hex strings, no per-cell allocation).
+// US-004b (overdraw/allocation/shader refactor - see docs/backlog.md and
+// docs/architecture.md sections 8, 9, 12): shading is now delegated to
+// `fastShade.js` by default (a from-scratch fast re-implementation, see
+// that module's doc comment), not to the designer's reference shader
+// directly. The reference `design/palette.js` -> `util.shade`/`shadeSky`
+// remains available via `opts.shader = 'reference'` (used by
+// `tools/bench-cast.mjs` and `?shadetest=1`'s oracle) and is otherwise
+// untouched, so it stays the correctness baseline.
 //
 // Coordinate conventions (must match game/js/world/Level.js exactly):
 //   1 cell = 1 world meter. col/x grows east, row/y grows south.
@@ -25,6 +28,9 @@
 // Doom/Build-style pitch simulation, cheap (no per-pixel trig) and exact
 // enough at the clamped +-35 deg this game uses.
 
+import { OpenSpans } from './OpenSpans.js';
+import { fastShade, fastShadeSky, primeFastShadeFrame } from './fastShade.js';
+
 const HFOV_DEG = 75;
 const MAX_RAY_STEPS = 96; // DDA safety cap per column (levels are well under this in practice)
 const MAX_DIST = 120; // meters; beyond this, whatever's left open is treated as void/sky
@@ -34,17 +40,31 @@ const VOID_SECTOR = { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floo
 // Reused across every shade() call in a frame - the reference shader writes
 // into `out.fg`/`out.bg` in place and allocates nothing when they're already
 // arrays (see design/README.md 1.7), so one shared object for the whole
-// frame is exactly what "zero per-frame allocations" wants.
-const shadeOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyph: ' ', b: 0 };
-// Reused `opt` for every shade() call this frame (see shadeSurface below) -
-// avoids allocating a fresh {z, fog} object per screen cell.
-const shadeOpt = { z: 0, fog: INTERIOR_FOG };
+// frame is exactly what "zero per-frame allocations" wants. Used only when
+// `opts.shader === 'reference'` (bench/shadetest oracle path).
+const refOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyph: ' ' };
+const refOpt = { z: 0, fog: INTERIOR_FOG };
+
+// Fast-path output scratch (architecture.md 9: no strings in hot paths -
+// `glyphIdx` is written directly, never a 1-char string). Default path.
+const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
+
+// Reused DDA ray state (architecture.md 9 rule 3: no per-step object
+// returns, no per-column closures). Reset once per column in castColumn.
+const ray = {
+  mapX: 0, mapY: 0,
+  deltaDistX: 0, deltaDistY: 0,
+  stepX: 0, stepY: 0,
+  sideDistX: 0, sideDistY: 0,
+  side: 0, perpDist: 0,
+};
 
 // US-004 scope: L = ambient only (US-006/007 add point lights + sun). `hue`
 // is normalised so max channel = 1; intensity is the actual energy
 // (design/README.md 1.5). Computed once per frame from the live palette
-// (so a future time-of-day change is picked up automatically).
-let ambientL = [0, 0, 0];
+// (so a future time-of-day change is picked up automatically). Reused
+// across frames - no per-frame allocation.
+const ambientL = [0, 0, 0];
 function primeAmbientLight(P) {
   const amb = P.lights.ambient;
   const hue = P.hue[amb.color];
@@ -58,25 +78,44 @@ function clampByte(v) {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
-/**
- * Writes `shadeOut` (already populated by shade()/shadeSky()) to cell (x,y)
- * via the allocation-free path, and the ray's distance (meters) into the
- * shared DepthBuffer alongside it, when one is attached (D-008 item 1).
- */
-function writeShadeOut(rt, x, y, ctx, dist) {
-  const code = shadeOut.glyph.charCodeAt(0);
-  const glyphIdx = code < 32 || code > 126 ? 0 : code - 32;
-  rt.setCellRGB(
-    x, y, glyphIdx,
-    clampByte(shadeOut.fg[0]), clampByte(shadeOut.fg[1]), clampByte(shadeOut.fg[2]),
-    clampByte(shadeOut.bg[0]), clampByte(shadeOut.bg[1]), clampByte(shadeOut.bg[2])
-  );
+// Shades (mat, u, v, dist, z) through whichever shader this frame is using
+// (`ctx.useReferenceShader`) and writes the result to cell (x,y), plus the
+// ray's distance (meters) into the shared DepthBuffer when one is attached
+// (D-008 item 1). This is the ONLY place either shader's output reaches the
+// render target, so both paths go through the same allocation-free write.
+function shadeAndWrite(rt, x, y, ctx, matKey, u, v, dist, z, tag) {
+  let glyphIdx, fg, bg;
+  if (ctx.useReferenceShader) {
+    refOpt.z = z;
+    ctx.U.shade(matKey, ambientL, u, v, dist, refOut, refOpt);
+    const code = refOut.glyph.charCodeAt(0);
+    glyphIdx = code < 32 || code > 126 ? 0 : code - 32;
+    fg = refOut.fg; bg = refOut.bg;
+  } else {
+    fastShade(ctx.P, matKey, u, v, dist, z, fastOut);
+    glyphIdx = fastOut.glyphIdx;
+    fg = fastOut.fg; bg = fastOut.bg;
+  }
+  rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
+    clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
   if (ctx.depthBuffer) ctx.depthBuffer.set(x, y, dist);
 }
 
-function shadeSurface(U, matKey, u, v, dist, z) {
-  shadeOpt.z = z;
-  U.shade(matKey, ambientL, u, v, dist, shadeOut, shadeOpt);
+function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
+  let glyphIdx, fg, bg;
+  if (ctx.useReferenceShader) {
+    ctx.P.util.shadeSky(azimuthDeg, elevDeg, refOut, ctx.P.defaultTime);
+    const code = refOut.glyph.charCodeAt(0);
+    glyphIdx = code < 32 || code > 126 ? 0 : code - 32;
+    fg = refOut.fg; bg = refOut.bg;
+  } else {
+    fastShadeSky(ctx.P, azimuthDeg, elevDeg, ctx.P.defaultTime, fastOut);
+    glyphIdx = fastOut.glyphIdx;
+    fg = fastOut.fg; bg = fastOut.bg;
+  }
+  rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
+    clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
+  if (ctx.depthBuffer) ctx.depthBuffer.set(x, y, Infinity); // sky has no finite depth
 }
 
 function compassAzimuthDeg(dirX, dirY) {
@@ -84,6 +123,11 @@ function compassAzimuthDeg(dirX, dirY) {
   if (az < 0) az += 360;
   return az;
 }
+
+// Module-level, reused, resized only when `cols` changes (architecture.md 9
+// rule 4: typed arrays sized by cols/rows are allocated once, never per
+// frame). Replaces the per-frame `openSpans` object array (US-004b AC4).
+let openSpans = null;
 
 /**
  * @param {{cols:number, rows:number, pxCellW?:number, pxCellH?:number, setCellRGB:Function}} rt
@@ -107,9 +151,12 @@ function compassAzimuthDeg(dirX, dirY) {
  *   terrain pass to fill in. Pass true (e.g. test_room, which has no
  *   terrain pass yet) to fill it with sky instead, matching this story's
  *   original stand-alone behaviour.
- * @returns {{openSpans: Array<{x:number, topRow:number, bottomRow:number, depth:number}>}}
- *   Unresolved per-column spans (empty when `skyFallback` is true, or when
- *   every column's geometry fully closed its own span).
+ * @param {'fast'|'reference'} [opts.shader] - which shading path to use.
+ *   Defaults to 'fast' (US-004b). 'reference' calls the designer's
+ *   `palette.util.shade`/`shadeSky` directly, unchanged - used by
+ *   `tools/bench-cast.mjs` and `?shadetest=1`'s oracle to compare against.
+ * @returns {import('./OpenSpans.js').OpenSpans} Unresolved per-column spans
+ *   (every column closed when `skyFallback` is true).
  */
 export function castScene(rt, level, camera, palette, opts = {}) {
   const P = palette;
@@ -117,6 +164,10 @@ export function castScene(rt, level, camera, palette, opts = {}) {
   const cols = rt.cols;
   const rows = rt.rows;
   primeAmbientLight(P);
+  primeFastShadeFrame(ambientL);
+
+  if (!openSpans || openSpans.cols !== cols) openSpans = new OpenSpans(cols);
+  openSpans.reset(rows);
 
   const origin = opts.origin || { x: 0, y: 0, z: 0 };
 
@@ -141,7 +192,6 @@ export function castScene(rt, level, camera, palette, opts = {}) {
   const pitchRad = camera.pitchDeg * Math.PI / 180;
   const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
 
-  const openSpans = [];
   const ctx = {
     P, U, rows,
     // Camera position/eye height translated into the LEVEL's own local
@@ -152,7 +202,11 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     horizonRow, planeDistY,
     depthBuffer: opts.depthBuffer || null,
     skyFallback: !!opts.skyFallback,
+    useReferenceShader: opts.shader === 'reference',
     openSpans,
+    // castPlane() return value ("no object returns" - architecture.md 9
+    // rule 3): it writes the clipped [r0,r1] row range here instead.
+    _planeR0: 0, _planeR1: -1,
   };
 
   for (let x = 0; x < cols; x++) {
@@ -164,7 +218,7 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     castColumn(rt, level, ctx, x, rayDirX, rayDirY);
   }
 
-  return { openSpans };
+  return openSpans;
 }
 
 // row <-> world height (at a FIXED distance `dist`) - the y-shear projection.
@@ -190,61 +244,75 @@ function elevAtRow(ctx, row) {
   return Math.atan2(ctx.horizonRow - row, ctx.planeDistY) * 180 / Math.PI;
 }
 
+// Resets the reused `ray` scratch object for a new column's DDA walk
+// (architecture.md 9 rule 3: no per-column closures/objects).
+function startRay(ctx, rayDirX, rayDirY) {
+  ray.mapX = Math.floor(ctx.posX);
+  ray.mapY = Math.floor(ctx.posY);
+  ray.deltaDistX = rayDirX === 0 ? 1e30 : Math.abs(1 / rayDirX);
+  ray.deltaDistY = rayDirY === 0 ? 1e30 : Math.abs(1 / rayDirY);
+  if (rayDirX < 0) { ray.stepX = -1; ray.sideDistX = (ctx.posX - ray.mapX) * ray.deltaDistX; }
+  else { ray.stepX = 1; ray.sideDistX = (ray.mapX + 1 - ctx.posX) * ray.deltaDistX; }
+  if (rayDirY < 0) { ray.stepY = -1; ray.sideDistY = (ctx.posY - ray.mapY) * ray.deltaDistY; }
+  else { ray.stepY = 1; ray.sideDistY = (ray.mapY + 1 - ctx.posY) * ray.deltaDistY; }
+}
+
+// Advances `ray` by one DDA step, writing `ray.side`/`ray.perpDist` in
+// place. side: 0 = crossed an X boundary (a north/south-facing wall - it
+// runs along Y, so its texture U coordinate is the hit Y); 1 = crossed a Y
+// boundary (an east/west-facing wall, U = hit X).
+function ddaStep(ctx, rayDirX, rayDirY) {
+  if (ray.sideDistX < ray.sideDistY) { ray.sideDistX += ray.deltaDistX; ray.mapX += ray.stepX; ray.side = 0; }
+  else { ray.sideDistY += ray.deltaDistY; ray.mapY += ray.stepY; ray.side = 1; }
+  ray.perpDist = ray.side === 0
+    ? (ray.mapX - ctx.posX + (1 - ray.stepX) / 2) / rayDirX
+    : (ray.mapY - ctx.posY + (1 - ray.stepY) / 2) / rayDirY;
+}
+
 function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
-  const { rows, posX, posY } = ctx;
+  const { posX, posY } = ctx;
   const azimuthDeg = compassAzimuthDeg(rayDirX, rayDirY);
 
-  // --- DDA state -----------------------------------------------------
-  let mapX = Math.floor(posX);
-  let mapY = Math.floor(posY);
-  const deltaDistX = rayDirX === 0 ? 1e30 : Math.abs(1 / rayDirX);
-  const deltaDistY = rayDirY === 0 ? 1e30 : Math.abs(1 / rayDirY);
-  let stepX, sideDistX, stepY, sideDistY;
-  if (rayDirX < 0) { stepX = -1; sideDistX = (posX - mapX) * deltaDistX; }
-  else { stepX = 1; sideDistX = (mapX + 1 - posX) * deltaDistX; }
-  if (rayDirY < 0) { stepY = -1; sideDistY = (posY - mapY) * deltaDistY; }
-  else { stepY = 1; sideDistY = (mapY + 1 - posY) * deltaDistY; }
-
-  // side: 0 = crossed an X boundary (a north/south-facing wall - it runs
-  // along Y, so its texture U coordinate is the hit Y); 1 = crossed a Y
-  // boundary (an east/west-facing wall, U = hit X).
-  function ddaStep() {
-    let side;
-    if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
-    else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
-    const perpDist = side === 0
-      ? (mapX - posX + (1 - stepX) / 2) / rayDirX
-      : (mapY - posY + (1 - stepY) / 2) / rayDirY;
-    return { side, perpDist };
-  }
+  startRay(ctx, rayDirX, rayDirY);
 
   let openTop = 0;
-  let openBottom = rows - 1;
+  let openBottom = ctx.rows - 1;
   let skyClosedTop = false; // once sky has claimed the top of the span, stop drawing ceiling geometry
-  let ceilingFilledTo = openTop - 1; // highest row index a ceiling/sky segment has already drawn
-  let prevDist = 0;
+  let skyPending = false; // sky was requested but not yet painted - deferred to column end (US-004b)
+  let ceilingFilledTo = openTop - 1; // highest row index a ceiling segment has already drawn
+  let floorFilledTo = ctx.rows; // lowest-numbered (closest-to-horizon) row any floor-ish plane has reached; ctx.rows = "nothing yet"
+  // Separate near-distances for the floor vs. ceiling plane (see
+  // castFloorCeiling's doc comment) - equal except right after a solid
+  // cell, where the floor's near end jumps to its exit (the cap already
+  // covered [entry,exit]) but the ceiling's stays at its entry (nothing
+  // else covers that range for the ceiling).
+  let prevFloorDist = 0;
+  let prevCeilDist = 0;
   let nearSector = level.sectorAt(posX, posY) || VOID_SECTOR;
 
   for (let i = 0; i < MAX_RAY_STEPS && openTop <= openBottom; i++) {
-    const { side, perpDist } = ddaStep();
+    ddaStep(ctx, rayDirX, rayDirY);
+    const perpDist = ray.perpDist;
     if (perpDist > MAX_DIST) break;
 
     const hitX = posX + perpDist * rayDirX;
     const hitY = posY + perpDist * rayDirY;
-    const u = side === 0 ? hitY : hitX;
+    const u = ray.side === 0 ? hitY : hitX;
 
     // 1) The NEAR cell's own floor + ceiling planes, for the segment we
-    // just finished walking through ([prevDist, perpDist]).
-    ({ skyClosedTop, ceilingFilledTo } = castFloorCeiling(rt, x, ctx, nearSector, prevDist, perpDist,
-      openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo));
+    // just finished walking through.
+    castFloorCeiling(rt, x, ctx, nearSector, prevFloorDist, prevCeilDist, perpDist,
+      openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo);
+    skyClosedTop = ctx._fcSkyClosedTop; ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo;
+    if (ctx._fcSkyRequested) skyPending = true;
 
-    const farSector = level.sectorAt(mapX + 0.5, mapY + 0.5);
+    const farSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5);
 
     if (!farSector) {
       // Left the level grid: this is a job for the terrain pass (D-008 item
       // 2), not this one - leave the remaining span unresolved unless the
       // caller asked for the old stand-alone sky fallback.
-      resolveRemainder(rt, x, ctx, openTop, openBottom, azimuthDeg, perpDist);
+      resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, perpDist, floorFilledTo, skyPending, ceilingFilledTo);
       return;
     }
 
@@ -252,20 +320,40 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       const entryDist = perpDist;
       const rowAtTop = rowAtHeight(ctx, farSector.floorH, entryDist);
       const wallRowStart = Math.max(openTop, Math.ceil(rowAtTop));
-      for (let row = wallRowStart; row <= openBottom; row++) {
+      // US-004b overdraw fix (architecture.md 12 item 1a): the wall face
+      // must stop at the near sector's OWN floor row (mirroring the
+      // step-front branch's r1 below) - rows past that were already drawn
+      // by this segment's `castFloorCeiling` floor plane, above.
+      // Also capped by the running `floorFilledTo` high-water mark (not
+      // just this segment's own `nearSector.floorH`): a PREVIOUS solid
+      // cell's cap can leave the true "floor already drawn" boundary
+      // higher up than what `nearSector.floorH` alone would predict (US-004b,
+      // found empirically) - `floorFilledTo` is the accumulated truth.
+      const wallRowEnd = Math.min(openBottom, Math.floor(rowAtHeight(ctx, nearSector.floorH, entryDist)), floorFilledTo - 1);
+      for (let row = wallRowStart; row <= wallRowEnd; row++) {
         const h = heightAtRow(ctx, row, entryDist);
-        shadeSurface(ctx.U, farSector.wallMat, u, h, entryDist, h - nearSector.floorH);
-        writeShadeOut(rt, x, row, ctx, entryDist);
+        shadeAndWrite(rt, x, row, ctx, farSector.wallMat, u, h, entryDist, h - nearSector.floorH, 'wallface');
       }
 
-      const exit = ddaStep();
-      const exitDist = Math.min(exit.perpDist, MAX_DIST);
+      ddaStep(ctx, rayDirX, rayDirY);
+      const exitDist = Math.min(ray.perpDist, MAX_DIST);
+      // US-004b: clamp to the column's CURRENT `openBottom`, not just
+      // `wallRowStart-1` - a farther solid cell's own `wallRowStart` (this
+      // one) is computed from ITS height/distance alone and can exceed
+      // what a NEARER wall already closed off (`openBottom`), which would
+      // let this cap redraw rows the nearer wall's face already correctly
+      // owns (found empirically: two solid cells along the same ray, the
+      // second one's cap reaching back into the first one's wall-face
+      // rows).
+      const capRowEnd = Math.min(openBottom, wallRowStart - 1);
       castPlane(rt, x, ctx, farSector.floorMat, farSector.floorH, entryDist, exitDist,
-        openTop, wallRowStart - 1, farSector.floorH);
+        openTop, capRowEnd, farSector.floorH);
+      if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
 
       openBottom = Math.min(openBottom, wallRowStart - 1);
-      prevDist = exitDist;
-      nearSector = level.sectorAt(mapX + 0.5, mapY + 0.5) || VOID_SECTOR;
+      prevFloorDist = exitDist; // the cap just drawn covers the floor's own [entry,exit]
+      prevCeilDist = entryDist; // nothing covers the ceiling's [entry,exit] - let it continue from entry
+      nearSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5) || VOID_SECTOR;
       if (openTop > openBottom) break;
       continue;
     }
@@ -277,10 +365,19 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       const hi = Math.max(farSector.floorH, nearSector.floorH);
       const r0 = Math.max(openTop, Math.ceil(rowAtHeight(ctx, hi, perpDist)));
       const r1 = Math.min(openBottom, Math.floor(rowAtHeight(ctx, lo, perpDist)));
-      for (let row = r0; row <= r1; row++) {
+      // US-004b: when the near sector is the higher side, this band's
+      // BOTTOM edge (`r1`) can dip into rows some earlier floor-ish plane
+      // already claimed - `floorFilledTo` is the running high-water mark
+      // (see castColumn; any floor plane so far, not just this iteration's
+      // - a solid cell's cap several iterations back can leave this
+      // boundary too, found empirically). `drawR1` (not `r1` itself) is
+      // pulled back so the draw loop skips those rows; `openBottom` below
+      // still narrows to the TRUE boundary (`r0-1`, unaffected by this -
+      // the riser's TOP edge is untouched by this clip).
+      const drawR1 = (higher === nearSector) ? Math.min(r1, floorFilledTo - 1) : r1;
+      for (let row = r0; row <= drawR1; row++) {
         const h = heightAtRow(ctx, row, perpDist);
-        shadeSurface(ctx.U, higher.wallMat, u, h, perpDist, h - nearSector.floorH);
-        writeShadeOut(rt, x, row, ctx, perpDist);
+        shadeAndWrite(rt, x, row, ctx, higher.wallMat, u, h, perpDist, h - nearSector.floorH, 'stepfront');
       }
       openBottom = Math.min(openBottom, r0 - 1);
     }
@@ -292,78 +389,149 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       const hiC = Math.max(lowerCell.topH, Math.max(farSector.ceilH, nearSector.ceilH));
       const r0 = Math.max(openTop, Math.ceil(rowAtHeight(ctx, hiC, perpDist)));
       const r1 = Math.min(openBottom, Math.floor(rowAtHeight(ctx, loC, perpDist)));
-      for (let row = r0; row <= r1; row++) {
+      // US-004b: symmetric to the stepfront clip above (mirrored: this
+      // band's TOP edge can dip into rows some earlier ceiling-ish plane
+      // already claimed, tracked by the running `ceilingFilledTo` high-
+      // water mark) - `drawR0` (not `r0` itself) is pushed past it for the
+      // draw loop only; `openTop` below still narrows to the TRUE boundary
+      // (`r1+1`, unaffected by this - the lintel's BOTTOM edge is untouched).
+      const drawR0 = (lowerCell === nearSector) ? Math.max(r0, ceilingFilledTo + 1) : r0;
+      for (let row = drawR0; row <= r1; row++) {
         const h = heightAtRow(ctx, row, perpDist);
-        shadeSurface(ctx.U, lowerCell.upperMat || lowerCell.wallMat, u, h, perpDist, h - nearSector.floorH);
-        writeShadeOut(rt, x, row, ctx, perpDist);
+        shadeAndWrite(rt, x, row, ctx, lowerCell.upperMat || lowerCell.wallMat, u, h, perpDist, h - nearSector.floorH, 'lintel');
       }
       openTop = Math.max(openTop, r1 + 1);
     }
 
-    prevDist = perpDist;
+    prevFloorDist = perpDist;
+    prevCeilDist = perpDist;
     nearSector = farSector;
   }
 
   // Ran out of step budget / max distance without closing the span or
   // leaving the grid (an unusually large open room) - same "hand off
   // whatever's left" treatment as leaving the grid (D-008 item 2).
-  resolveRemainder(rt, x, ctx, openTop, openBottom, azimuthDeg, prevDist);
+  resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, prevFloorDist, floorFilledTo, skyPending, ceilingFilledTo);
 }
 
-// Either fills the remaining open span with sky (stand-alone fallback,
-// opts.skyFallback) or records it for a later pass (terrain, D-008 item 2).
-function resolveRemainder(rt, x, ctx, openTop, openBottom, azimuthDeg, depth) {
-  if (openTop > openBottom) return;
+// Finishes a column: pays off any deferred sky fill (US-004b overdraw fix,
+// architecture.md 12 item 1b - sky is painted ONCE here, into whatever
+// remains between the top of the span and the floor high-water mark, never
+// mid-loop), then hands off however the caller wants: `skyFallback` fills
+// what's left with sky (stand-alone rendering, e.g. test_room), otherwise
+// it's recorded in `ctx.openSpans` for a later terrain pass (D-008 item 2).
+function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth, floorFilledTo, skyPending, ceilingFilledTo) {
+  // Rows a non-sky ceiling segment already drew are consumed even though
+  // `openTop` itself is never narrowed by that draw (only `ceilingFilledTo`
+  // is, so a farther ceiling segment can pick up where a nearer one left
+  // off - see castFloorCeiling). Without this, a column whose ray runs out
+  // of geometry right after such a ceiling (grid edge / max steps, with sky
+  // never actually requested) falls straight into the generic fallback
+  // below using the STALE `openTop`, which would repaint the very rows the
+  // ceiling just correctly drew - a real overdraw source, not just the
+  // sky-vs-floor one architecture.md 12 item 1b describes.
+  openTop = Math.max(openTop, ceilingFilledTo + 1);
+
+  if (skyPending && openTop <= openBottom) {
+    const r1 = Math.min(openBottom, floorFilledTo - 1);
+    if (openTop <= r1) {
+      fillSky(rt, x, ctx, openTop, r1, azimuthDeg);
+      openTop = r1 + 1;
+    }
+  }
+
+  if (openTop > openBottom) {
+    ctx.openSpans.close(x);
+    return;
+  }
   if (ctx.skyFallback) {
     fillSky(rt, x, ctx, openTop, openBottom, azimuthDeg);
+    ctx.openSpans.close(x);
   } else {
-    ctx.openSpans.push({ x, topRow: openTop, bottomRow: openBottom, depth });
+    ctx.openSpans.top[x] = openTop;
+    ctx.openSpans.bottom[x] = openBottom;
+    ctx.openSpans.depth[x] = depth;
   }
 }
 
 // Casts a sector's own floor plane and (unless sky already closed the top,
-// or this segment is itself the sky) ceiling plane, across [dNear,dFar],
-// clipped to the open row span AND to `ceilingFilledTo` (see castColumn):
-// rows a NEARER ceiling/sky segment already drew are never redrawn by a
-// FARTHER one - without this, a ceiling-height change (e.g. into a sky
-// region) whose projected extent gets clamped at the screen edge could have
-// two different segments both "reach" row 0 and the farther one would wrongly
-// overwrite the nearer, correctly-occluding one (a real visual bug, verified
-// via a call-count audit, not just wasted work).
-// Returns the updated { skyClosedTop, ceilingFilledTo }.
-function castFloorCeiling(rt, x, ctx, sector, dNear, dFar, openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo) {
-  if (dFar <= dNear || openTop > openBottom) return { skyClosedTop, ceilingFilledTo };
+// or this segment is itself the sky) ceiling plane, clipped to the open row
+// span AND to `ceilingFilledTo` (see castColumn): rows a NEARER ceiling
+// segment already drew are never redrawn by a FARTHER one - without this, a
+// ceiling-height change whose projected extent gets clamped at the screen
+// edge could have two different segments both "reach" row 0 and the
+// farther one would wrongly overwrite the nearer, correctly-occluding one
+// (a real visual bug, verified via a call-count audit, not just wasted
+// work).
+//
+// The floor and ceiling planes take SEPARATE near distances (`dNearFloor`,
+// `dNearCeil`, both paired with the same `dFar`): after a solid cell, the
+// floor's near end is the solid cell's EXIT distance (its own top face -
+// the "cap" - already covered [entry,exit] in castColumn's solid branch),
+// but the ceiling's near end stays at the solid cell's ENTRY distance,
+// because nothing else ever draws "the ceiling while the ray was inside
+// the solid cell's footprint" - the solid cell doesn't occlude the ceiling
+// above it (US-004b: without this, that [entry,exit] distance range's
+// projected rows are a genuine, if narrow, gap - never written by anything
+// - found empirically while verifying AC2's exact write count; the
+// original code's overdraw-heavy sky fallback silently painted over it,
+// which is exactly the kind of waste this story removes, so the gap has to
+// be closed properly instead).
+//
+// Sky is never painted here (US-004b): when this segment's ceiling is sky,
+// it only raises `skyRequested` (and freezes ceiling processing via
+// `skyClosedTop`) - the actual paint happens once, at the very end of the
+// column, in `resolveColumn`, using the FINAL floor high-water mark, so a
+// farther floor segment can never need to overwrite an already-sky-painted
+// row (the overdraw source this story removes).
+//
+// No object is returned (architecture.md 9 rule 3): the updated
+// {skyClosedTop, ceilingFilledTo, floorFilledTo, skyRequested} are written
+// onto `ctx._fc*` scratch fields (reused every call, like `ctx._planeR0/1`)
+// and read back by the caller.
+function castFloorCeiling(rt, x, ctx, sector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo) {
+  ctx._fcSkyRequested = false;
 
-  castPlane(rt, x, ctx, sector.floorMat, sector.floorH, dNear, dFar, openTop, openBottom, sector.floorH);
-
-  if (skyClosedTop) return { skyClosedTop, ceilingFilledTo };
-  const ceilTop = Math.max(openTop, ceilingFilledTo + 1);
-  if (ceilTop > openBottom) return { skyClosedTop, ceilingFilledTo };
-
-  if (sector.ceilH === 'sky') {
-    castSkySegment(rt, x, ctx, dNear, dFar, ceilTop, openBottom, azimuthDeg, sector.floorH);
-    return { skyClosedTop: true, ceilingFilledTo };
+  if (openTop <= openBottom && dFar > dNearFloor) {
+    castPlane(rt, x, ctx, sector.floorMat, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH);
+    if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
   }
-  const ceilRange = castPlane(rt, x, ctx, sector.ceilMat, sector.ceilH, dNear, dFar, ceilTop, openBottom, sector.floorH);
-  if (ceilRange.r1 >= ceilRange.r0) ceilingFilledTo = Math.max(ceilingFilledTo, ceilRange.r1);
-  return { skyClosedTop, ceilingFilledTo };
+
+  if (!skyClosedTop && openTop <= openBottom) {
+    const ceilTop = Math.max(openTop, ceilingFilledTo + 1);
+    if (ceilTop <= openBottom) {
+      if (sector.ceilH === 'sky') {
+        skyClosedTop = true;
+        ctx._fcSkyRequested = true;
+      } else if (dFar > dNearCeil) {
+        castPlane(rt, x, ctx, sector.ceilMat, sector.ceilH, dNearCeil, dFar, ceilTop, openBottom, sector.floorH);
+        if (ctx._planeR1 >= ctx._planeR0) ceilingFilledTo = Math.max(ceilingFilledTo, ctx._planeR1);
+      }
+    }
+  }
+
+  ctx._fcSkyClosedTop = skyClosedTop;
+  ctx._fcCeilingFilledTo = ceilingFilledTo;
+  ctx._fcFloorFilledTo = floorFilledTo;
 }
 
 // Draws a single horizontal plane (floor, ceiling, or a solid column's top
 // face) at world height `h`, across ray segment [dNear,dFar], one row at a
 // time - each row's exact distance/world position is recovered from the row
 // itself (via distAtRowForHeight), so texture sampling stays accurate.
-// Returns { r0, r1 } - the actual (clipped) row range drawn, r1 < r0 if none.
+// Writes the actual (clipped) row range drawn into `ctx._planeR0/_planeR1`
+// (r1 < r0 if none) instead of returning an object (architecture.md 9 rule 3).
+//
+// Adjacent segments share a distance boundary (this segment's dFar is the
+// next segment's dNear) - the SAME world height at the SAME distance
+// therefore projects to the SAME row on both sides. To avoid drawing that
+// boundary row twice (a real bug this was verified against: ~40% of cells
+// were being shaded 2-4x, costing several ms/frame), the near end of a
+// segment (shared with the PREVIOUS segment's far end) is inclusive and the
+// far end (shared with the NEXT segment's near end) is exclusive,
+// regardless of whether row increases or decreases with distance (floors
+// and ceilings go opposite ways).
 function castPlane(rt, x, ctx, matKey, h, dNear, dFar, openTop, openBottom, floorHForZ) {
-  // Adjacent segments share a distance boundary (this segment's dFar is the
-  // next segment's dNear) - the SAME world height at the SAME distance
-  // therefore projects to the SAME row on both sides. To avoid drawing that
-  // boundary row twice (a real bug this was verified against: ~40% of
-  // cells were being shaded 2-4x, costing several ms/frame), the near end
-  // of a segment (shared with the PREVIOUS segment's far end) is inclusive
-  // and the far end (shared with the NEXT segment's near end) is exclusive,
-  // regardless of whether row increases or decreases with distance (floors
-  // and ceilings go opposite ways).
   const rowAtNear = rowAtHeight(ctx, h, Math.max(dNear, 1e-3));
   const rowAtFar = rowAtHeight(ctx, h, Math.max(dFar, 1e-3));
   let r0, r1;
@@ -383,26 +551,15 @@ function castPlane(rt, x, ctx, matKey, h, dNear, dFar, openTop, openBottom, floo
     // (ctx.rayDirX/Y are set once per column in castScene's loop).
     const wx = ctx.posX + ctx.rayDirX * dist;
     const wy = ctx.posY + ctx.rayDirY * dist;
-    shadeSurface(ctx.U, matKey, wx, wy, dist, h - floorHForZ);
-    writeShadeOut(rt, x, row, ctx, dist);
+    shadeAndWrite(rt, x, row, ctx, matKey, wx, wy, dist, h - floorHForZ, 'plane');
   }
-  return { r0, r1 };
-}
-
-function castSkySegment(rt, x, ctx, dNear, dFar, openTop, openBottom, azimuthDeg, floorH) {
-  const floorRowAtNear = rowAtHeight(ctx, floorH, Math.max(dNear, 1e-3));
-  const r1 = Math.min(openBottom, Math.floor(floorRowAtNear) - 1);
-  for (let row = openTop; row <= r1; row++) {
-    const elevDeg = elevAtRow(ctx, row);
-    ctx.P.util.shadeSky(azimuthDeg, elevDeg, shadeOut, ctx.P.defaultTime);
-    writeShadeOut(rt, x, row, ctx, Infinity); // sky has no finite depth
-  }
+  ctx._planeR0 = r0;
+  ctx._planeR1 = r1;
 }
 
 function fillSky(rt, x, ctx, openTop, openBottom, azimuthDeg) {
   for (let row = openTop; row <= openBottom; row++) {
     const elevDeg = elevAtRow(ctx, row);
-    ctx.P.util.shadeSky(azimuthDeg, elevDeg, shadeOut, ctx.P.defaultTime);
-    writeShadeOut(rt, x, row, ctx, Infinity); // sky has no finite depth
+    shadeSkyAndWrite(rt, x, row, ctx, azimuthDeg, elevDeg, 'fillsky');
   }
 }
