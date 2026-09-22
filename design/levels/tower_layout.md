@@ -62,7 +62,7 @@ Reading it:
 | `x` | 6.0 | sky | | rock | rock | - | outcrop where the end camera walks |
 | `j` `k` `l` | 5.4 / 4.6 / 3.6 | sky | | rock | grass | - | hill path down |
 | `w` `v` | 5.4 / 4.2 | sky | | rock | rock | - | rock spur / slope |
-| `;` `,` | 2.4 / 1.0 | sky | | rock | grass | - | hillside grass |
+| `;` `,` | 2.4 / 2.4 | sky | | rock | grass | - | hilltop grass. The whole outer ring is 2.4 m = the terrain crown, so the US-016b handover to world terrain has 0 mismatch |
 
 `ceilMat -` in the table is stored as `'sky'` in the data: MAP_FORMAT requires a key on every entry. New palette materials added for this story: `grass` and `rock` (see `palette.js`). `grate` is delivered with US-011.
 
@@ -125,7 +125,16 @@ The extensions:
 5. **`zone`** (`ground`, `stair`, `ledge`, `upper`, `summit`, `wall`, `outside`) and **`tag`** (`stairBase`, `slope`, `hollow`, `rubble`, `brazier`, `gap`, `grate`, `beaconBowl`, `breach`, `sunCrack`, `trigger:end`). Used for checks, debug overlay sector ids and triggers.
 6. **`layers.tilt`**: a second char grid, same size, for the boulder.
 7. Face material rule: a step or ledge front uses the **higher** sector's `wallMat`. An upper face under a real ceiling uses that sector's `wallMat` / `upperMat`.
-8. Level-level data: `start`, `sun`, `ambient`, `lights[]` (palette presets), `props[]` (US-011 model names, anchor at the feet), `triggers[]`, `markers`, `route` (the intended path, used by checks).
+8. Level-level data:
+   - `start`, `sun`, `ambient`
+   - `lights[]` (palette presets)
+   - `props[]` (US-011 model names, anchor at the feet, `interactable` = link by id)
+   - `interactables[]`: `{id, prop, x, y, z (aim point), radius, prompt, interact: 'behaviour.name', once, target?: {tag}, requires?, optional?}`. The entries are lantern `lantern.take`, lever `lever.pull` (target tag `grate`) and beacon `beacon.light` (requires the lantern, P1).
+   - `triggers[]`: the end trigger (`cells`, `trigger: 'quest.end'`), plus **hint zones** `{type: 'hint', hint, shape: 'circle', x, y, r, zMin, once, trigger: 'hint.show'}`. The jump hint is within 2 m of the gap edge, with the feet at 2.0 m or higher. The other hints are time or state driven (`ASSETS.uiStyle.hints[].when`).
+   - `markers`
+   - `route` (the intended path, used by checks)
+
+   The level is placed in the world by `design/levels/world_m1.js` (origin (1480, 1018, 0)).
 
 ## 7. Automated checks (preview, recomputed from the data on every load)
 - US-003 loader rules: the grid is rectangular, every char is in the legend, and the start is on walkable ground.

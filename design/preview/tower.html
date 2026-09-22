@@ -329,7 +329,11 @@
   });
   LV.lights.forEach(function (l) { if (l.id === 'beacon') addMarker(l.x + 0.6, l.y, '+', C.torch, '+  beacon light (US-022, off at start), z ' + l.z); });
   addMarker(LV.markers.gapEdge.x, LV.markers.gapEdge.y - 0.5, '!', C.gold, '!  gap edge (jump hint within 2 m)');
-  LV.triggers.forEach(function (t) { t.cells.forEach(function (c) { addMarker(c[0], c[1], 'X', C.gold, 'X  end trigger'); }); });
+  LV.triggers.forEach(function (t) {
+    if (t.cells) t.cells.forEach(function (c) { addMarker(c[0], c[1], 'X', C.gold, 'X  end trigger (' + t.trigger + ')'); });
+    else if (t.type === 'hint') addMarker(t.x - 1, t.y, '?', C.magic, '?  hint zone "' + t.hint + '" (r ' + t.r + ' m, feet >= ' + t.zMin + ' m)');
+  });
+  (LV.interactables || []).forEach(function (it) { addMarker(it.x + 0.4, it.y + 0.4, 'E', C.gold, 'E  interactable ' + it.id + ': ' + it.prompt + ' -> ' + it.interact); });
   var gridTag = { grate: ['#', C.ironLight, '#  grate (portcullis), rises 3.0 -> 5.4 m'], sunCrack: ['|', C.sun, '|  sun crack 4.0-6.4 m in the east wall'],
                   breach: ['<', C.gold, '<  breach (2 m) in the west parapet'] };
   for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) { var tg = gridTag[def(xx, yy).tag]; if (tg) addMarker(xx, yy, tg[0], tg[1], tg[2]); }
@@ -427,12 +431,16 @@
     var pr = LV.props.map(function (p) {
       var pos = p.wall ? ('wall y ' + p.wall.y + ', x ' + p.wall.x0 + '-' + p.wall.x1 + ', z ' + p.wall.z0 + '-' + p.wall.z1) : p.from ? ('from ' + JSON.stringify(p.from) + ' to ' + JSON.stringify(p.to)) : (p.x + ', ' + p.y + ', z ' + p.z);
       return '<tr><td>prop</td><td>' + p.id + '</td><td>' + p.model + (p.variant !== undefined ? ' / ' + p.variant : '') + (p.pose ? ' / ' + p.pose : '') + '</td><td>' + pos +
-        '</td><td>' + (p.facing !== undefined ? p.facing : '') + '</td><td>' + (p.interact ? p.interact.prompt : '') + '</td><td>' + (p.note || '') + '</td></tr>';
+        '</td><td>' + (p.facing !== undefined ? p.facing : '') + '</td><td>' + (p.interactable ? 'interactable: ' + p.interactable : '') + '</td><td>' + (p.note || '') + '</td></tr>';
     });
     LV.lights.forEach(function (l) { pr.push('<tr><td>light</td><td>' + l.id + '</td><td>' + l.preset + '</td><td>' + l.x + ', ' + l.y + ', z ' + l.z + '</td><td></td><td></td><td>' + (l.on ? 'on' : 'off at start') + ' ' + (l.note || '') + '</td></tr>'); });
     pr.push('<tr><td>light</td><td>sun</td><td>sun</td><td>elev ' + LV.sun.elevation + ', az ' + LV.sun.azimuth + ' (ESE)</td><td></td><td></td><td>directional</td></tr>');
     pr.push('<tr><td>light</td><td>lantern</td><td>lantern</td><td>carried after pickup</td><td></td><td></td><td>US-012</td></tr>');
-    LV.triggers.forEach(function (t) { pr.push('<tr><td>trigger</td><td>' + t.id + '</td><td>' + t.type + '</td><td>cells ' + JSON.stringify(t.cells) + '</td><td></td><td></td><td>camera walks to ' + t.walkTo.x + ', ' + t.walkTo.y + ', pitch ' + t.pitchTo + '</td></tr>'); });
+    (LV.interactables || []).forEach(function (it) { pr.push('<tr><td>interactable</td><td>' + it.id + '</td><td>' + it.interact + (it.target ? ' (target tag ' + it.target.tag + ')' : '') +
+      '</td><td>' + it.x + ', ' + it.y + ', z ' + it.z + ' (r ' + it.radius + ' m)</td><td></td><td>' + it.prompt + '</td><td>' + (it.requires ? 'requires ' + it.requires + '. ' : '') + (it.note || '') + '</td></tr>'); });
+    LV.triggers.forEach(function (t) { pr.push('<tr><td>trigger</td><td>' + t.id + '</td><td>' + t.type + ' -> ' + t.trigger + '</td><td>' +
+      (t.cells ? 'cells ' + JSON.stringify(t.cells) : t.shape + ' at ' + t.x + ', ' + t.y + ' r ' + t.r + ', feet >= ' + t.zMin) + '</td><td></td><td></td><td>' +
+      (t.walkTo ? 'camera walks to ' + t.walkTo.x + ', ' + t.walkTo.y + ', pitch ' + t.pitchTo : '') + ' ' + (t.note || '') + '</td></tr>'); });
     Object.keys(LV.markers).forEach(function (k) { var m = LV.markers[k]; pr.push('<tr><td>marker</td><td>' + k + '</td><td></td><td>' + (m.x !== undefined ? m.x + ', ' + m.y + ', z ' + m.z : JSON.stringify(m).replace(/"/g, '')) + '</td><td></td><td></td><td>' + (m.note || '') + '</td></tr>'); });
     document.getElementById('props').innerHTML = '<table><tr><th>kind</th><th>id</th><th>model / preset</th><th>position (m)</th><th>facing</th><th>prompt</th><th>notes</th></tr>' + pr.join('') + '</table>';
   }

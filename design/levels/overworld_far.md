@@ -1,3 +1,38 @@
+# World terrain recipe : US-016 far view (v1) + US-016b near LOD and handover (v2)
+
+## US-016b (v2) summary: D-007 world terrain
+**(a) One analytic surface.** `util.heightAt(x, y)` and `util.typeAt(x, y)` are pure functions of any finite world position.
+- **No grid, no sample spacing:** the 2 m near chunks (`util.bakeChunk(cx, cy)`, 64x64 cells), the 8 m far grid (`util.generate()`) and physics all read the same surface.
+- **heightAt is continuous everywhere:** C0, smooth except the deliberate linear handover. The v1 river bed step was replaced by a smoothstep carve (14 m to 8 m from the centre line).
+- **typeAt** uses a fixed 2 m central difference for slope, so it never depends on the caller's spacing.
+- **Finite everywhere:** both are defined outside the 2 km far grid too (the recipe continues) and never return NaN. Wrong call shapes throw a TypeError, for example v1's `heightAt(G, x, y)`; baked grids are read with `util.gridHeight(G, x, y)`.
+- The preview checks all of this: continuity, grid = function, 2 m and 8 m agreement, and a NaN sweep over -1000..3050 m.
+
+**(b) Near LOD (2 m cells within 300 m).** Spec in `nearLOD`:
+- **Bands:** close < 40 m, near < 150 m, mid < 300 m. The mid set is the same one the far grid uses there, and the 280-320 m handover is a stable per-world-cell dither.
+- **Stable glyphs:** variation is hashed on the 2 m world cell, never the screen cell, so nothing shimmers.
+- **Surface row vs face rows:** the top row a sample paints gets the band glyph; the slope or canopy face below uses `type.face` at 0.8x brightness.
+- **Forest trunks:** the lowest 3 m of the canopy face shows `|` trunks in `woodDark` for 1 cell in 3.
+- **Micro shading:** brightness jitter of +-0.08, shading only.
+- **Features:** wildflowers `* ,` in gold / strawLight / white (never red), pebbles, tall grass, reeds near water, foam at the banks.
+- **Step LOD:** `max(0.5 m, 0.012 * distance)`.
+
+**(c) Crown and handover.** A flat **2.4 m crown**: override stamp `towerCrown`, disc r 20 m around (1492, 1025) with a 60 m smoothstep skirt, painted bare grass to r 26 m. It covers the whole 24x14 tower footprint including the bastion and outcrop.
+- **Handover rule** (`structures[]`): within **6 m** outside a structure footprint, terrain blends **linearly** to the nearest outer-ring cell height: `h = ring + (terrain - ring) * d/6`.
+- **The tower's outer ring is now uniformly 2.4 m.** Legend `,` was raised from 1.0 to 2.4 m in `tower.js`; M1 cannot reach those cells. The mismatch where the player crosses the edge is therefore **exactly 0** (it was 1.8 m).
+- **Authoring rule for future structures:** keep the outer ring flat, or varying by at most 0.3 m between neighbours.
+
+**(d) Per-chunk overrides, for the editor.** Authored changes live in `overrides`, a plain JSON object keyed by chunk `"cx,cy"` (128 m chunks, the chunk containing the item's centre). Each chunk holds two ordered lists:
+- **`stamps`:** `{id, shape: 'disc'|'rect', x, y, r | w,h, falloff, mode: 'flatten'|'set'|'add', h}` edit the height. Weight 1 inside the shape, smoothstep to 0 over `falloff`.
+- **`paints`:** `{id, shape, x, y, r | w,h, type, mode: 'set'|'erase'}` force or clear a terrain type. The later entry wins.
+
+They are applied in this order: recipe, stamps, structure handover (the handover always wins at a footprint, so placed buildings never float), then for types: river, path, paints, slope and noise rules. At load the engine flattens every chunk's items into one spatial index, because a stamp's falloff may reach into neighbouring chunks.
+- **The editor** only ever adds, moves or deletes these small objects and re-bakes the affected chunks. Since generation is deterministic, regeneration is the only "streaming".
+- **Saving** serialises `overrides` as-is, with no binary heightmaps: the seed plus overrides is the whole world.
+- The tower crown is the first real override, and the preview checks that overrides round-trip through JSON.
+
+---
+
 # US-016 Far overworld : the Emberlands from the breach (v1)
 
 Owner: Designer. **Data + reference generator**: `design/levels/overworld_far.js` (`ASSETS.levels.overworld_far`). **Mock-up**: `design/preview/overworld.html`. That page is a 160x60 column heightmap projection from the breach, a top-down map, the terrain swatches and the far-tower silhouette, and it runs automated checks.

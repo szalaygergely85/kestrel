@@ -546,6 +546,16 @@ Designer note (2026-09-22): **Preview ready for PO review.**
   - The far tower is 800 m WSW on a hill crown. It is dark, unlit and not emissive, with fog capped at 0.40, and it breaks the skyline. It is drawn no smaller than a 3x4 silhouette.
 - Status stays `design`.
 
+Designer note, US-016b (2026-09-22): **Preview ready for PO review.** `design/preview/overworld.html` (v2) has viewpoints for the breach, the path, the meadow and "looking back at the tower", a near-LOD toggle, a handover profile and 17 checks. Data: `design/levels/overworld_far.js` v2. Doc: `overworld_far.md`, "US-016b summary".
+- **(a)** `util.heightAt(x, y)` / `util.typeAt(x, y)` are analytic, continuous and NaN-free everywhere. The 8 m far grid and 2 m chunks (`bakeChunk`) are exactly those functions sampled. Checks cover continuity, grid = function, 2 m vs 8 m agreement, and a NaN sweep. The earlier NaN came from the old page calling v1's `heightAt(G, x, y)`; that call shape now throws a clear TypeError.
+- **(b)** `nearLOD`: close / near / mid bands, stable world-cell hashing, surface vs face rows, forest trunks, features (wildflowers, pebbles, reeds, foam), and a dithered 280-320 m handover. There is a preview swatch per band.
+- **(c)** A flat 2.4 m crown stamp (r 20 m) covers the footprint, bastion and outcrop. `structures[]` sets a linear 6 m handover to the ring height. The tower's outer ring is now flat 2.4 m: legend `,` went from 1.0 to 2.4, an M1-unreachable cosmetic change. The ring mismatch is exactly 0, and a check prints it.
+- **(d)** Per-chunk `overrides` (stamps/paints) are JSON and keyed by 128 m chunk, with the tower crown as the first entry. The paragraph is in the doc.
+- **Also delivered:**
+  - `design/levels/world_m1.js` for US-025: terrain + tower at (1480, 1018, 0) + player spawn + initial state.
+  - US-010 data additions in `tower.js`: `interactables[]` (lantern.take, lever.pull with target tag grate, beacon.light requiring the lantern) and the `hintJump` hint-zone trigger, plus `trigger: 'quest.end'`.
+- Status stays `design`.
+
 ### US-017 End trigger, fade and restart  [Priority: P0] [Status: todo]
 As a player, I want a satisfying ending when I step out onto the hill, so that the slice feels complete.
 Acceptance criteria:

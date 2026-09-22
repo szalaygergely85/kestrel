@@ -131,7 +131,8 @@
       'w': S({ floorH: 5.4, wallMat: 'rock', floorMat: 'rock', ceilMat: null, zone: 'outside', desc: 'rock spur under the summit, 5.4 m' }),
       'v': S({ floorH: 4.2, wallMat: 'rock', floorMat: 'rock', ceilMat: null, zone: 'outside', desc: 'rock slope, 4.2 m' }),
       ';': S({ floorH: 2.4, wallMat: 'rock', floorMat: 'grass', ceilMat: null, zone: 'outside', desc: 'hillside grass, 2.4 m' }),
-      ',': S({ floorH: 1.0, wallMat: 'rock', floorMat: 'grass', ceilMat: null, zone: 'outside', desc: 'hillside grass around the tower, 1.0 m' })
+      ',': S({ floorH: 2.4, wallMat: 'rock', floorMat: 'grass', ceilMat: null, zone: 'outside',
+               desc: 'hilltop grass around the tower, 2.4 m (US-016b: the whole outer ring = 2.4 = terrain crown, so the handover mismatch is 0)' })
     },
 
     // Boulder tilt layer (extension). One char per cell, numpad directions:
@@ -177,13 +178,13 @@
       { id: 'pallet', model: 'pallet', x: 17.0, y: 9.5, z: 0.0, facing: 0, note: 'straw pallet, long axis E-W; walk-over (no collision)' },
       { id: 'brazier', model: 'brazier', x: 18.5, y: 6.5, z: 0.5, facing: 180, collide: 'sector', note: 'on the stone ring (*); torch light source' },
       { id: 'lantern', model: 'lantern', variant: 'unlit', x: 19.9, y: 6.5, z: 1.3, facing: 270, hook: true,
-        interact: { prompt: '[E] Take lantern', radius: 1.8 }, note: 'on a hook on the west face of step 8, 1.4 m from the brazier' },
+        interactable: 'lantern', note: 'on a hook on the west face of step 8, 1.4 m from the brazier' },
       { id: 'boulder', model: 'boulder', x: 15.55, y: 3.5, z: 0.0, radius: 0.6, dynamic: true,
         note: 'on the stair base, 5 cm onto step 1: blocks the only stair entrance' },
       { id: 'lever', model: 'lever', pose: 'up', x: 19.25, y: 9.3, z: 3.0, facing: 90,
-        interact: { prompt: '[E] Pull lever', radius: 1.8 }, note: 'post at the NW corner of the ledge; pulled facing west, grate 30 deg left of view centre' },
+        interactable: 'lever', note: 'post at the NW corner of the ledge; pulled facing west, grate 30 deg left of view centre' },
       { id: 'chains', model: 'chains', from: { x: 19.25, y: 9.3, z: 3.2 }, to: { x: 19.0, y: 10.5, z: 5.4 }, note: 'decal/sprite: chain from lever to grate head' },
-      { id: 'beaconBowl', model: 'beaconBowl', x: 9.0, y: 7.0, z: 6.6, facing: 90, note: 'bowl sprite (iron bowl on legs, ash mound) stands on the O plinth; US-022 fire mounts on its ash row' },
+      { id: 'beaconBowl', model: 'beaconBowl', x: 9.0, y: 7.0, z: 6.6, facing: 90, interactable: 'beacon', note: 'bowl sprite (iron bowl on legs, ash mound) stands on the O plinth; US-022 fire mounts on its ash row' },
       { id: 'rubble1', model: 'rubble', variant: 0, x: 19.5, y: 8.5, z: 0.3 },
       { id: 'rubble2', model: 'rubble', variant: 1, x: 14.5, y: 8.5, z: 0.6 },
       { id: 'rubble3', model: 'rubble', variant: 2, x: 12.5, y: 6.5, z: 0.9 },
@@ -193,9 +194,25 @@
         note: 'US-021: on the north face of upper steps C/B, right above the pallet' }
     ],
 
+    // Interactables (D-006/D-008, US-012/014/022). Behaviours are referenced by NAME and registered from game/js/quest/.
+    // x, y, z = the aim point the US-012 targeting test uses (within radius m and ~20 deg of view centre).
+    // `prop` links the sprite whose look changes; `target` names what the behaviour acts on, by tag, never by coordinates.
+    interactables: [
+      { id: 'lantern', prop: 'lantern', x: 19.9, y: 6.5, z: 1.1, radius: 1.8, prompt: '[E] Take lantern', interact: 'lantern.take',
+        once: true, note: 'US-012: hook sprite -> hookEmpty, attaches palette lights.lantern to the player' },
+      { id: 'lever', prop: 'lever', x: 19.25, y: 9.3, z: 3.7, radius: 1.8, prompt: '[E] Pull lever', interact: 'lever.pull',
+        once: true, target: { tag: 'grate' }, note: 'US-014: lever pull animation, then the grate sector dynamic ceiling opens' },
+      { id: 'beacon', prop: 'beaconBowl', x: 9.0, y: 7.0, z: 7.2, radius: 1.8, prompt: '[E] Light the beacon', interact: 'beacon.light',
+        once: true, requires: 'lantern', optional: true, light: 'beacon',
+        note: 'US-022 (P1): no prompt without the lantern; mounts beaconFire on the bowl and switches lights[beacon] on' }
+    ],
+
     triggers: [
-      { id: 'end', type: 'end', cells: [[5, 5], [5, 6], [5, 7], [5, 8]], walkTo: { x: 4.5, y: 7.0 }, pitchTo: -12,
-        note: 'trigger = every cell of the "trigger:end" tag; X = straight out of the breach, Y = diagonal steps off it' }
+      { id: 'end', type: 'end', cells: [[5, 5], [5, 6], [5, 7], [5, 8]], walkTo: { x: 4.5, y: 7.0 }, pitchTo: -12, trigger: 'quest.end',
+        note: 'trigger = every cell of the "trigger:end" tag; X = straight out of the breach, Y = diagonal steps off it' },
+      // Hint zones (US-015). Only the jump hint is spatial; the others are time/state driven (see ASSETS.uiStyle.hints[].when).
+      { id: 'hintJump', type: 'hint', hint: 'jump', shape: 'circle', x: 20.5, y: 8.0, r: 2.0, zMin: 2.0, once: true, trigger: 'hint.show',
+        note: 'within 2 m of the gap edge (markers.gapEdge) with the feet at >= 2.0 m (on steps 8/9 or the ledge, not on the ground below)' }
     ],
 
     markers: {
