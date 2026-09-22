@@ -10,7 +10,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 1 | US-001 | Char-grid canvas + game loop | P0 | done (tester PASS 2026-09-22; real-Chrome bench numbers still pending from user, non-blocking) | Programmer moves on |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
-| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | testing (PO OK 2026-09-22; 2 ASK ARCHITECT items: hot-loop allocations, frame budget) | **Tester NOW**; Architect review before US-006/US-016 |
+| 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; 2 ASK ARCHITECT items still open: hot-loop allocations, frame budget) | Architect review before US-006/US-016 |
 | 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev (PO REJECT #1: wall-slide float stick + 4-side slide tests) | Programmer #2 NOW (small rework) |
 | 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
 | 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
@@ -219,7 +219,7 @@ For the tester:
 
 **Tester result (2026-09-22): PASS.** All 7 rework items and all original criteria re-verified; all 360 `test_room` cells cross-checked against the legend (hover-equivalent), all 9 single-fault negative cases correctly named their row/col or legend char and returned `null`, out-of-bounds queries return `null`, `design/preview/tower.html` shows zero console errors and 18/18 internal checks pass. No bugs found. Full report: `docs/test-reports/US-003.md`. Note: the shared browser pane was at its tab cap this session, so `game/world-test.html` was verified via the identical `Level.js`/`sectorAt()` calls in Node rather than live DOM hovering - see the report's environment note.
 
-### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: testing]
+### US-004 Sector raycaster: walls, floors, ceilings, sky, y-shear  [Priority: P0] [Status: done]
 As a player, I want to see the room in first-person 3D made of characters, so that I feel present in the space.
 Acceptance criteria:
 - [x] One ray per screen column (160); walls drawn with correct perspective, including partial walls (step fronts, ledge fronts, pillars) where floor/ceiling heights change between sectors.
