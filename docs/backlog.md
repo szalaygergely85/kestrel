@@ -22,7 +22,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 14 | US-014 | Lever opens the grate | P0 | todo | Programmer |
 | 15 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved 2026-09-22 (preview render check pending in a browser); Programmer after US-010 + US-012 |
-| 16 | US-016 | Far overworld view through the breach | P0 | design | Designer (overworld heightmap/colors) then Programmer |
+| 16 | US-016 | Far overworld view through the breach | P0 | design | **PO: preview ready for review** (`design/preview/overworld.html`), then Programmer |
 | 17 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 18 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (can be done alongside US-004) |
 | 19 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done; Designer reuses brazier flame frames |
@@ -473,6 +473,14 @@ Acceptance criteria – Programmer:
 - [ ] Horizon of the far view lines up with the sector view horizon at all pitches (no seam or jump).
 Design needed: yes – far terrain data/recipe, colors, tower silhouette.
 Notes / dependencies: US-004, US-007, US-010.
+Designer note (2026-09-22): **Preview ready for PO review.**
+- **Where:** `design/preview/overworld.html`. A 160x60 heightmap-projection mock from the breach eye, with yaw, pitch, step-back, fog and glint controls. The near part samples the real `tower.js` sectors. The page also shows the top-down map with the view cone and towers, terrain swatches by distance, the far-tower silhouette and automated checks.
+- **Data:** `design/levels/overworld_far.js` (seeded recipe plus reference `generate()`, 256x256 x 8 m). Doc: `design/levels/overworld_far.md`.
+- **Content:**
+  - A river valley about 450 m W, rolling hills and forests, and a path to a ford.
+  - Fog uses palette `fog.far` (50 to 1500 m) into `skyHorizon`.
+  - The far tower is 800 m WSW on a hill crown. It is dark, unlit and not emissive, with fog capped at 0.40, and it breaks the skyline. It is drawn no smaller than a 3x4 silhouette.
+- Status stays `design`.
 
 ### US-017 End trigger, fade and restart  [Priority: P0] [Status: todo]
 As a player, I want a satisfying ending when I step out onto the hill, so that the slice feels complete.

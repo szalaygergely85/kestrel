@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Quest - Far overworld through the breach (US-016)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:130px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:54px; display:inline-block; }
+  #checks div, .mono { font-family:Consolas, monospace; font-size:12px; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+</style>
+</head>
+<body>
+<h1>ASCII Quest : the Emberlands from the summit breach (US-016)</h1>
+<div class="note">Loads <code>../palette.js</code>, <code>../levels/tower.js</code> and <code>../levels/overworld_far.js</code>. The 160x60 mock is a column heightmap projection (D-002 far pass) from the breach eye (level 7.5, 7.0, z 7.6), looking west.
+  Within the tower level's bounds it samples the real level sectors (parapets, breach, outcrop; walls up to their broken tops). Beyond that it samples the generated 256x256 x 8 m heightmap.
+  The sky comes from <code>util.shadeSky</code>, the fog from <code>fog.far</code>. The far tower is a dark billboard with its fog capped at 0.40.</div>
+
+<div class="controls">
+  <label>look (yaw from W) <input type="range" id="yaw" min="-90" max="90" step="1" value="0"><span class="val" id="yawV"></span></label>
+  <label>pitch <input type="range" id="pitch" min="-35" max="35" step="1" value="-4"><span class="val" id="pitchV"></span></label>
+  <label>step back <input type="range" id="back" min="0" max="2.5" step="0.1" value="1.0"><span class="val" id="backV"></span></label>
+  <label><input type="checkbox" id="fog" checked> fog</label>
+  <label><input type="checkbox" id="glint" checked> water glint</label>
+  <label><input type="checkbox" id="mark"> mark far tower</label>
+  <span class="note">mock far pass: <span class="val" id="ms"></span></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<h2>View through the breach (160x60)</h2>
+<canvas id="view"></canvas>
+
+<h2>Map (256 x 256 cells, 8 m each; north up)</h2>
+<div class="row">
+  <canvas id="map"></canvas>
+  <div class="mono" id="mapKey"></div>
+</div>
+
+<h2>Terrain types: near / mid / far glyph sets, lit and fogged</h2>
+<canvas id="types"></canvas>
+
+<h2>Far tower silhouette (min 3x4 and detail 5x8)</h2>
+<canvas id="tower"></canvas>
+
+<script src="../palette.js"></script>
+<script src="../levels/tower.js"></script>
+<script src="../levels/overworld_far.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS || {}, P = A.palette, LV = A.levels && A.levels.tower, OW = A.levels && A.levels.overworld_far;
+  if (!P || !LV || !OW) { document.body.innerHTML = '<p class="fail">palette.js, tower.js or overworld_far.js did not load.</p>'; return; }
+  var U = P.util, rgb = P.rgb, D2R = Math.PI / 180, FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+  function css(c) { return 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')'; }
+  function makeGrid(canvas, cols, rows, px) {
+    var ctx = canvas.getContext('2d'); ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25), dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return { cols: cols, rows: rows,
+      cell: function (x, y, g, fg, bg) { ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch); if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); } },
+      text: function (x, y, s, fg, bg) { for (var i = 0; i < s.length; i++) this.cell(x + i, y, s.charAt(i), fg, bg || '#000'); } };
+  }
+
+  // ---------------- generate + bake lighting ----------------
+  var t0 = performance.now(), G = OW.util.generate(), genMs = performance.now() - t0;
+  var W = G.w, H = G.h, C = G.cell, TT = OW.terrain, TYPES = G.TYPES, Tm = P.timeOfDay.morning;
+  var sAz = LV.sun.azimuth * D2R, sEl = LV.sun.elevation * D2R;
+  var SUN = [Math.sin(sAz) * Math.cos(sEl), -Math.cos(sAz) * Math.cos(sEl), Math.sin(sEl)];
+  var BR = new Float32Array(W * H);
+  for (var j = 0; j < H; j++) for (var i = 0; i < W; i++) {
+    var hx = (G.height[Math.min(W - 1, i + 1) + j * W] - G.height[Math.max(0, i - 1) + j * W]) / (2 * C);
+    var hy = (G.height[i + Math.min(H - 1, j + 1) * W] - G.height[i + Math.max(0, j - 1) * W]) / (2 * C);
+    var nl = Math.sqrt(hx * hx + hy * hy + 1), nd = (-hx * SUN[0] - hy * SUN[1] + SUN[2]) / nl;
+    BR[i + j * W] = Tm.ambientI + Tm.sunI * Math.max(0, nd);
+  }
+  function hashC(i, j) { return OW.util.hash(i, j, OW.seed + 99); }
+
+  // ---------------- terrain cell look ----------------
+  var FN = rgb[P.fog.far.color], FF = rgb[P.fog.far.colorFar];
+  function fogColor(f) { return [FN[0] + (FF[0] - FN[0]) * f, FN[1] + (FF[1] - FN[1]) * f, FN[2] + (FF[2] - FN[2]) * f]; }
+  var outT = { g: ' ', fg: [0, 0, 0], bg: [0, 0, 0] };
+  function terrainLook(typeId, b, i, j, dist, t, fogOn, o) {
+    var name = TYPES[typeId], T = TT[name], hv = hashC(i, j);
+    var ci = b < 0.45 ? 0 : b < 0.8 ? 1 : 2; if (hv > 0.8 && ci < 2) ci++; else if (hv < 0.15 && ci > 0) ci--;
+    var base = rgb[T.colors[ci]], sh = P.shading, bb = Math.min(1, b * T.albedo + 0.1);
+    var gain = sh.fgMin + (1 - sh.fgMin) * Math.pow(bb, sh.fgGamma);
+    var set = dist < OW.bands.near ? T.glyphs.near : dist < OW.bands.mid ? T.glyphs.mid : T.glyphs.far;
+    var gi = Math.floor(hv * set.length) % set.length, fg = [base[0] * gain, base[1] * gain, base[2] * gain];
+    if (name === 'water' && T.glint && S.glint) {
+      var ph = (hv * 7 + t * T.glint.hz) % 1;
+      gi = ph < 0.5 ? 0 : 1 % set.length;
+      if (ph > 0.8) { var rl = rgb.riverLight; fg = [fg[0] + (rl[0] - fg[0]) * T.glint.amount, fg[1] + (rl[1] - fg[1]) * T.glint.amount, fg[2] + (rl[2] - fg[2]) * T.glint.amount]; }
+    }
+    var bg = [fg[0] * 0.3, fg[1] * 0.3, fg[2] * 0.3], g = set.charAt(gi);
+    if (fogOn) {
+      var f = U.fogFactor(dist, 'far'), fc = fogColor(f), fb = Math.min(1, f * 1.1);
+      for (var c = 0; c < 3; c++) { fg[c] += (fc[c] - fg[c]) * f; bg[c] += (fc[c] - bg[c]) * fb; }
+      if (f > 0.85) g = ' ';
+    }
+    o.g = g; o.fg = fg; o.bg = bg; return o;
+  }
+
+  // ---------------- level sampling (near part) ----------------
+  function levelDef(lx, ly) {
+    var cx = Math.floor(lx), cy = Math.floor(ly);
+    if (cx < 0 || cy < 0 || cx >= LV.size.w || cy >= LV.size.h) return null;
+    return LV.legend[LV.rows[cy].charAt(cx)];
+  }
+  var so = { fg: [0, 0, 0], bg: [0, 0, 0] }, Lsun = [0, 0, 0];
+  U.addLight(Lsun, Tm.ambient, Tm.ambientI); U.addLight(Lsun, Tm.sun, Tm.sunI * 0.75);   // near level geometry: flat sun term
+
+  // ---------------- view state ----------------
+  var S = { yaw: 0, pitch: -4, back: 1.0, fog: true, glint: true, mark: false };
+  function $(id) { return document.getElementById(id); }
+  ['yaw', 'pitch', 'back'].forEach(function (id) { $(id).oninput = function () { S[id] = +this.value; sync(); }; });
+  ['fog', 'glint', 'mark'].forEach(function (id) { $(id).onchange = function () { S[id] = this.checked; }; });
+  function sync() { $('yawV').textContent = (270 + S.yaw) + ' deg'; $('pitchV').textContent = S.pitch + ' deg'; $('backV').textContent = S.back.toFixed(1) + ' m'; }
+  sync();
+
+  var VW = 160, VH = 60, ASPECT = 0.5, FX = (VW / 2) / Math.tan(37.5 * D2R), FR = FX * ASPECT;
+  var view = makeGrid($('view'), VW, VH, 9);
+  var CG = new Array(VW * VH), CF = new Array(VW * VH), CB = new Array(VW * VH), DEPTH = new Float32Array(VW * VH);
+
+  function render(t) {
+    var tStart = performance.now();
+    var eyeL = { x: 6.5 + S.back, y: 7.0, z: 7.6 }, eye = { x: eyeL.x + OW.origin.x, y: eyeL.y + OW.origin.y };
+    var yaw = 270 + S.yaw, horizon = VH / 2 + Math.tan(S.pitch * D2R) * FR, c, r;
+    for (c = 0; c < VW; c++) {
+      var delta = Math.atan((c + 0.5 - VW / 2) / FX), a = yaw * D2R + delta, dx = Math.sin(a), dy = -Math.cos(a), cosd = Math.cos(delta);
+      var ybuf = VH, tt = 0.3, prevTop = null;
+      while (tt < OW.render.maxDist && ybuf > 0) {
+        var perp = tt * cosd, lx = eyeL.x + dx * tt, ly = eyeL.y + dy * tt, d = levelDef(lx, ly), h, look;
+        if (d) {
+          h = d.floorH;
+          var mat = d.solid ? d.wallMat : d.floorMat;
+          U.shade(mat, Lsun, lx + ly, h, tt, so, { fog: null, z: h });
+          look = { g: so.glyph, fg: so.fg.slice(), bg: so.bg.slice(), side: d.solid ? d.wallMat : d.wallMat };
+        } else {
+          var fx = eye.x + dx * tt, fy = eye.y + dy * tt, hh = OW.util.heightAt(G, fx, fy), gi = Math.floor(fx / C), gj = Math.floor(fy / C);
+          if (hh === null) { h = -70; look = { g: ' ', fg: fogColor(1), bg: fogColor(1) }; }
+          else {
+            var ty = G.type[gi + gj * W]; h = hh + (ty === 1 ? OW.recipe.forest.canopy : 0);
+            look = terrainLook(ty, BR[gi + gj * W], gi, gj, tt, t, S.fog, { g: ' ', fg: null, bg: null });
+          }
+        }
+        var row = Math.floor(horizon - (h - eyeL.z) / perp * FR);
+        if (row < ybuf) {
+          for (r = Math.max(0, row); r < ybuf; r++) { var k = c + r * VW; CG[k] = look.g; CF[k] = look.fg; CB[k] = look.bg; DEPTH[k] = tt; }
+          ybuf = Math.max(0, row);
+        }
+        tt += tt < 8 ? 0.05 : OW.render.step0 + OW.render.stepGrow * tt;
+      }
+      for (r = 0; r < ybuf; r++) {             // sky
+        var el = Math.atan((horizon - r - 0.5) / FR) / D2R, k2 = c + r * VW;
+        U.shadeSky(((a / D2R) % 360 + 360) % 360, Math.max(0, el), so, 'morning');
+        CG[k2] = el < 0 ? ' ' : so.glyph; CF[k2] = so.fg.slice(); CB[k2] = el < 0 ? fogColor(1) : so.bg.slice(); DEPTH[k2] = 1e9;
+      }
+    }
+    // far tower billboard
+    var FT = OW.farTower, tdx = FT.x - eye.x, tdy = FT.y - eye.y, tdist = Math.hypot(tdx, tdy);
+    var taz = Math.atan2(tdx, -tdy), rel = taz - yaw * D2R; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    if (Math.abs(rel) < 45 * D2R) {
+      var tp = tdist * Math.cos(rel), col = VW / 2 + Math.tan(rel) * FX;
+      var rb = horizon - (FT.baseZ - eyeL.z) / tp * FR, rt = horizon - (FT.baseZ + FT.height - eyeL.z) / tp * FR, wc = FT.width / tp * FX;
+      var spr = (rb - rt) >= FT.sprite.detail.glyphs.length * 1.5 ? FT.sprite.detail : FT.sprite.min;
+      var sh = spr.glyphs.length, sw = spr.glyphs[0].length;
+      var hr = Math.max(sh, Math.round(rb - rt)), wr = Math.max(sw, Math.round(wc));
+      var f = Math.min(FT.fogMax, S.fog ? U.fogFactor(tdist, 'far') : 0), fc = fogColor(U.fogFactor(tdist, 'far'));
+      var x0 = Math.round(col - wr / 2), y0 = Math.round(rb) - hr + 1;
+      for (r = 0; r < hr; r++) for (c = 0; c < wr; c++) {
+        var sr = Math.floor(r * sh / hr), sc = Math.floor(c * sw / wr), g = spr.glyphs[sr].charAt(sc);
+        if (g === ' ') continue;
+        var X = x0 + c, Y = y0 + r; if (X < 0 || Y < 0 || X >= VW || Y >= VH) continue;
+        var kk = X + Y * VW; if (DEPTH[kk] < tdist) continue;
+        var base = rgb[FT.sprite.keys[spr.fg[sr].charAt(sc)].c];
+        CG[kk] = g; CF[kk] = [base[0] + (fc[0] - base[0]) * f, base[1] + (fc[1] - base[1]) * f, base[2] + (fc[2] - base[2]) * f];
+        if (S.mark) CB[kk] = [120, 30, 30];
+      }
+    }
+    var ms = performance.now() - tStart;
+    for (var q = 0; q < VW * VH; q++) view.cell(q % VW, Math.floor(q / VW), CG[q] || ' ', css(CF[q] || [0, 0, 0]), css(CB[q] || [0, 0, 0]));
+    $('ms').textContent = ms.toFixed(1) + ' ms (JS mock, unoptimised; bake ' + genMs.toFixed(0) + ' ms once)';
+  }
+
+  // ---------------- checks ----------------
+  var checks = [];
+  function check(n, ok, d) { checks.push({ n: n, ok: !!ok, d: d || '' }); }
+  (function () {
+    var B = OW.breach, FT = OW.farTower, dist = Math.hypot(FT.x - B.x, FT.y - B.y);
+    check('Heightmap ' + W + 'x' + H + ' cells, ' + C + ' m per cell (' + W * C + ' m square), deterministic seed ' + OW.seed, W === 256 && H === 256 && C === 8);
+    check('Far tower ~800 m from the breach (' + dist.toFixed(0) + ' m, azimuth ' + FT.azimuthFromBreach + ' = WSW, inside the view through the breach)', Math.abs(dist - 800) < 20);
+    var ground = OW.util.heightAt(G, FT.x, FT.y);
+    var crown = true; [[60, 0], [-60, 0], [0, 60], [0, -60]].forEach(function (o) { if (OW.util.heightAt(G, FT.x + o[0], FT.y + o[1]) > ground) crown = false; });
+    check('Far tower stands on a hill crown (ground ' + ground.toFixed(1) + ' m, higher than 60 m around it; baseZ ' + FT.baseZ + ')', crown && Math.abs(ground - FT.baseZ) < 4);
+    var topAng = Math.atan((FT.baseZ + FT.height - B.z) / dist) / D2R, blocked = false;
+    for (var tt = 20; tt < dist - 30; tt += 4) {
+      var k = tt / dist, x = B.x + (FT.x - B.x) * k, y = B.y + (FT.y - B.y) * k, z = B.z + (FT.baseZ + FT.height * 0.7 - B.z) * k, hh = OW.util.heightAt(G, x, y);
+      if (hh !== null && hh > z) blocked = true;
+    }
+    check('Far tower silhouette is visible: upper 30% in clear line of sight, top ' + topAng.toFixed(2) + ' deg above the horizon (breaks the skyline)', !blocked && topAng > 0.5);
+    var lums = ['grass', 'forest', 'water', 'rock', 'path'].map(function (n) { return Math.min.apply(null, TT[n].colors.map(function (k) { var c = rgb[k]; return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; })); });
+    var tc = rgb[FT.color], tl = 0.2126 * tc[0] + 0.7152 * tc[1] + 0.0722 * tc[2];
+    check('Far tower is dark and cold: not lit, not emissive, fog capped at ' + FT.fogMax + ', darker than every terrain color', !FT.lit && !FT.emissive && FT.fogMax <= 0.45 && lums.every(function (l) { return tl < l; }));
+    var counts = [0, 0, 0, 0, 0], inView = [0, 0, 0, 0, 0];
+    for (var q = 0; q < W * H; q++) {
+      counts[G.type[q]]++;
+      var cx = ((q % W) + 0.5) * C - B.x, cy = (Math.floor(q / W) + 0.5) * C - B.y, dd = Math.hypot(cx, cy);
+      var az = Math.atan2(cx, -cy) / D2R; az = (az + 360) % 360;
+      if (dd > 50 && dd < 1500 && Math.abs(az - 270) < 37.5) inView[G.type[q]]++;
+    }
+    var land = inView[0] + inView[1] + inView[3] + inView[4], fshare = inView[1] / Math.max(1, land);
+    check('All terrain types present: ' + TYPES.map(function (n, i) { return n + ' ' + counts[i]; }).join(', '), counts.every(function (n) { return n > 0; }));
+    check('River, forest and hills inside the breach view (W +-37.5 deg, 50-1500 m): water cells ' + inView[2] + ', forest share ' + (fshare * 100).toFixed(0) + '%',
+          inView[2] > 20 && fshare > 0.08 && fshare < 0.5);
+    var seam = [], ok = true;
+    for (var ly = 0; ly < LV.size.h; ly++) {
+      var lh = LV.legend[LV.rows[ly].charAt(0)].floorH, fh = OW.util.heightAt(G, OW.origin.x - 4, OW.origin.y + ly + 0.5);
+      if (Math.abs(lh - fh) > 1.8) ok = false; seam.push((fh - lh).toFixed(1));
+    }
+    check('Seam: heightmap just west of the level edge is within 1.8 m of the level\'s outside cells (diffs ' + seam.join(' ') + ')', ok);
+    check('Fog uses palette fog.far (' + P.fog.far.start + ' to ' + P.fog.far.full + ' m), horizon fog color = skyHorizon', P.fog.far.start === 50 && P.fog.far.full === 1500 && P.colors.fogFar === P.colors.skyHorizon);
+    var glyphOk = ['grass', 'forest', 'water', 'rock'].every(function (n) { var all = TT[n].glyphs.near + TT[n].glyphs.mid + TT[n].glyphs.far, want = { grass: '"\',;.', forest: '&%@:', water: '~-', rock: '#%' }[n];
+      return all.split('').every(function (ch) { return want.indexOf(ch) >= 0; }); });
+    check('Glyph rules: grass " \' , ; (+ . far), forest & % @ (+ : far), river ~ -, rock # %', glyphOk);
+  })();
+  var nf = checks.filter(function (c) { return !c.ok; }).length;
+  $('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
+    checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.n + '</div>'; }).join('');
+
+  // ---------------- map ----------------
+  (function drawMap() {
+    var cv = $('map'), S2 = 2; cv.width = W * S2; cv.height = H * S2; var ctx = cv.getContext('2d'), img = ctx.createImageData(W, H);
+    var MC = [rgb.grass, rgb.forest, rgb.river, rgb.rock, rgb.straw];
+    for (var q = 0; q < W * H; q++) {
+      var b = Math.min(1.2, BR[q]), hN = Math.max(0, Math.min(1, (G.height[q] + 90) / 100)), m = 0.35 + 0.45 * b + 0.3 * hN, c = MC[G.type[q]];
+      img.data[q * 4] = Math.min(255, c[0] * m); img.data[q * 4 + 1] = Math.min(255, c[1] * m); img.data[q * 4 + 2] = Math.min(255, c[2] * m); img.data[q * 4 + 3] = 255;
+    }
+    var tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; tmp.getContext('2d').putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(tmp, 0, 0, W * S2, H * S2);
+    var sc = S2 / C, B = OW.breach, FT = OW.farTower;
+    ctx.strokeStyle = 'rgba(255,210,74,0.8)'; ctx.beginPath();
+    ctx.moveTo(B.x * sc, B.y * sc);
+    [-37.5, 37.5].forEach(function (d) { var a = (270 + d) * D2R; ctx.lineTo((B.x + Math.sin(a) * 1500) * sc, (B.y - Math.cos(a) * 1500) * sc); ctx.moveTo(B.x * sc, B.y * sc); });
+    ctx.stroke();
+    ctx.fillStyle = '#ffd24a'; ctx.fillRect(OW.tower.x * sc - 3, OW.tower.y * sc - 3, 6, 6);
+    ctx.fillStyle = '#000'; ctx.strokeStyle = '#ff3b3b'; ctx.fillRect(FT.x * sc - 3, FT.y * sc - 3, 6, 6); ctx.strokeRect(FT.x * sc - 4, FT.y * sc - 4, 8, 8);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath();
+    [500, 1000, 1500].forEach(function (rr) { ctx.moveTo(B.x * sc + rr * sc, B.y * sc); ctx.arc(B.x * sc, B.y * sc, rr * sc, 0, Math.PI * 2); }); ctx.stroke();
+    $('mapKey').innerHTML = 'gold square: our tower (breach eye)<br>black/red square: the dark far tower (800 m, WSW)<br>gold lines: 75 deg view through the breach<br>' +
+      'rings: 500 / 1000 / 1500 m (fog full at 1500)<br><br>colors: grass, <span style="color:' + P.colors.forest + '">forest</span>, <span style="color:' + P.colors.river + '">river</span>, ' +
+      '<span style="color:' + P.colors.rock + '">rock</span>, <span style="color:' + P.colors.straw + '">path</span><br>brightness = sun N.L + height';
+  })();
+
+  // ---------------- type swatches ----------------
+  function drawTypes(t) {
+    var names = ['grass', 'forest', 'water', 'rock', 'path'], dists = [60, 300, 900, 1400], SWW = 14, g = drawTypes.g || (drawTypes.g = makeGrid($('types'), 12 + dists.length * (SWW + 1), names.length * 4 + 1, 11));
+    names.forEach(function (n, ti) {
+      g.text(0, ti * 4 + 1, (n + '          ').slice(0, 11), P.colors.uiHint, '#07080c');
+      dists.forEach(function (d, di) {
+        for (var y = 0; y < 3; y++) for (var x = 0; x < SWW; x++) {
+          var b = 0.35 + 0.8 * (x / SWW);
+          terrainLook(ti, b, x * 7 + di * 31, y * 13 + ti * 5, d, t, true, outT);
+          g.cell(12 + di * (SWW + 1) + x, ti * 4 + y, outT.g, css(outT.fg), css(outT.bg));
+        }
+        if (ti === names.length - 1) g.text(12 + di * (SWW + 1), names.length * 4, (d + ' m        ').slice(0, SWW), P.colors.uiHint, '#07080c');
+      });
+    });
+  }
+  (function drawTower() {
+    var g = makeGrid($('tower'), 30, 10, 16), FT = OW.farTower, fc = fogColor(U.fogFactor(800, 'far')), f = FT.fogMax;
+    for (var y = 0; y < 10; y++) for (var x = 0; x < 30; x++) { U.shadeSky(250, 2 + (9 - y) * 0.8, so, 'morning'); g.cell(x, y, ' ', '#000', css(fogColor(0.9))); }
+    [[FT.sprite.min, 4, 5], [FT.sprite.detail, 16, 1]].forEach(function (v) {
+      var s = v[0];
+      for (var r = 0; r < s.glyphs.length; r++) for (var c = 0; c < s.glyphs[r].length; c++) {
+        var gl = s.glyphs[r].charAt(c); if (gl === ' ') continue;
+        var b = rgb[FT.sprite.keys[s.fg[r].charAt(c)].c];
+        g.cell(v[1] + c, v[2] + r, gl, css([b[0] + (fc[0] - b[0]) * f, b[1] + (fc[1] - b[1]) * f, b[2] + (fc[2] - b[2]) * f]), css(fogColor(0.9)));
+      }
+    });
+  })();
+
+  var last = 0;
+  requestAnimationFrame(function loop(now) {
+    requestAnimationFrame(loop);
+    if (now - last < 100) return; last = now;
+    render(now / 1000); drawTypes(now / 1000);
+  });
+})();
+</script>
+</body>
+</html>
