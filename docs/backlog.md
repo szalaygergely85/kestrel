@@ -11,7 +11,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | dev | Programmer #1 NOW |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | dev | Programmer NOW |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | po-review | PO |
 | 6 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006 |
 | 7 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
 | 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | design | **Designer NOW** (in progress) |
@@ -284,7 +284,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: dev]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: po-review]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [ ] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.

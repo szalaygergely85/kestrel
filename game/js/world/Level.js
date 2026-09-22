@@ -51,6 +51,14 @@
 const START_FIELDS = ['facingDeg', 'pitchDeg', 'eyeH', 'pose'];
 const START_DEFAULTS = { facingDeg: 0, pitchDeg: 0, eyeH: 1.6, pose: 'standing' };
 
+// Default answer for Level#outsideSector (D-008) - a solid wall, so a
+// fully-enclosed level (test_room, the tower) blocks movement past its own
+// border without physics ever special-casing "no sector = wall" itself.
+const OUTSIDE_SECTOR = Object.freeze({
+  floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky',
+  solid: true, topH: 'sky', upperMat: 'stone',
+});
+
 /**
  * Load and validate a raw level definition into a queryable Level.
  * @param {Object} def - { name, legend, rows, start?, layers?, ... }. Any
@@ -286,6 +294,33 @@ export class Level {
   ceilAt(x, y) {
     const s = this.sectorAt(x, y);
     return s ? s.ceilH : null;
+  }
+
+  /**
+   * (D-008) The sector to use for MOVEMENT/PHYSICS queries when (x, y)
+   * falls outside the grid - i.e. what `sectorAt` returning `null` means
+   * for something that has to decide "can I stand/walk here". Physics
+   * code (game/js/physics/capsule.js, game/js/entities/Player.js) must
+   * call this instead of hard-coding "outside the grid = wall", so a
+   * future open-world `World` (D-007) can substitute a real terrain
+   * sector here instead of a Level.
+   *
+   * `sectorAt`/`floorAt`/`ceilAt` themselves keep returning `null` outside
+   * the grid unchanged - that null is meaningful to other consumers (e.g.
+   * the raycaster, D-008: "when a ray leaves the level grid ... leave the
+   * remaining open span for the next pass"), so it is not folded away here.
+   *
+   * This Level's default: a solid, sky-topped wall, everywhere outside the
+   * grid - correct for `test_room` and the tower, both fully enclosed by
+   * their own border walls, where nothing outside the authored grid is
+   * ever meant to be walked on.
+   * @param {number} x world meters (unused by the default; kept so a
+   *   future override can vary the answer by position, e.g. terrain height)
+   * @param {number} y world meters
+   * @returns {Sector}
+   */
+  outsideSector(x, y) { // eslint-disable-line no-unused-vars
+    return OUTSIDE_SECTOR;
   }
 
   /**
