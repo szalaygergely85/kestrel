@@ -27,6 +27,15 @@
 // default (see world/Level.js); a future open-world `World` (D-007) can
 // substitute a real terrain sector instead, and this file needs no change.
 
+// PO REJECT #1 (US-008) bugfix, still in force under the rework #3
+// algorithm below: a tiny "skin" tolerance on the overlap test so a capsule
+// resting EXACTLY on a cell boundary (radius away, e.g. after a previous
+// push-out) is never re-flagged as overlapping due to float rounding (e.g.
+// `2.3 - 2` is 0.2999999999999998 in IEEE 754, not exactly 0.3, so `dx*dx`
+// can land fractionally under `radius*radius` even though the true
+// geometric distance is exactly `radius`).
+const SKIN = 1e-6;
+
 /**
  * Is this sector enterable by a capsule whose feet are at `footZ`? `sector`
  * must already be resolved (never a raw `null` from `sectorAt` - see the
@@ -59,8 +68,27 @@ export function isSectorPassable(sector, footZ, grounded, opts) {
 
 /**
  * Move a circle (capsule footprint, radius `radius`) by (dx, dy) against the
- * world's solid/impassable cells, sliding along walls (axis-separated
- * sweep + push-out, resolved X then Y).
+ * world's solid/impassable cells: an ITERATIVE MINIMUM-TRANSLATION PUSH-OUT
+ * (US-008 ARCH CHANGES, rework #3), resolving the single deepest contact
+ * each pass (face or corner) until nothing overlaps or 4 iterations are
+ * spent. Replaces the old axis-separated sweep (rework #2), which pushed a
+ * corner contact out along a single axis and could freeze the capsule dead
+ * on a convex corner (AC3 "never stuck on corners" - see docs/backlog.md
+ * US-008 ARCH CHANGES for the failure mode and worked probes).
+ *
+ * Why "deepest first": at a shared corner of two solid cells, the FACE of
+ * one of them is always at least as deep as the corner point (a face
+ * penetration is a straight-line distance to an edge, which is <= the
+ * distance to that edge's endpoint). Resolving the face first removes the
+ * corner overlap in the same pass; scanning cells in plain grid order
+ * instead can hit the corner first and produce a spurious diagonal nudge
+ * along what is really just a flat wall.
+ *
+ * No per-step allocations (architecture.md section 9): no closure over
+ * `world`/`footZ`/`grounded`/`opts` (the passability test is inlined in the
+ * scan loop), no object literals, and the result is written into the
+ * caller-owned `out` scratch object rather than returned fresh each call.
+ *
  * @param {{sectorAt:Function, outsideSector?:Function}} world - a `Level`
  *   today; any object with the same `sectorAt`/`outsideSector` shape works
  *   (D-008 - physics never assumes it's specifically a `Level`).
@@ -72,22 +100,99 @@ export function isSectorPassable(sector, footZ, grounded, opts) {
  * @param {number} footZ
  * @param {boolean} grounded
  * @param {{height:number, stepUpMax:number}} opts
- * @returns {{x:number, y:number, blockedX:boolean, blockedY:boolean}}
+ * @param {{x:number, y:number, blockedX:boolean, blockedY:boolean, nx:number, ny:number}} out
+ *   caller-owned scratch, overwritten and returned (rule 9.3: no per-step
+ *   object returns). `blockedX`/`blockedY` = a FACE contact resolved on
+ *   that axis this call; `nx`/`ny` = unit normal of the last CORNER contact
+ *   resolved this call (0,0 if none - do not stack across calls, the caller
+ *   reads them fresh every step).
+ * @returns {typeof out}
  */
-export function moveCapsule(world, x, y, dx, dy, radius, footZ, grounded, opts) {
-  const passable = (col, row) => isSectorPassable(sectorOrOutside(world, col, row), footZ, grounded, opts);
+export function moveCapsule(world, x, y, dx, dy, radius, footZ, grounded, opts, out) {
+  let cx = x + dx;
+  let cy = y + dy;
+  let blockedX = false;
+  let blockedY = false;
+  let nx = 0;
+  let ny = 0;
 
-  const targetX = x + dx;
-  const newX = resolveAxis(targetX, y, 'x', radius, passable);
-  const targetY = y + dy;
-  const newY = resolveAxis(newX, targetY, 'y', radius, passable);
+  const skinRadius = radius - SKIN;
+  const skinRadiusSq = skinRadius * skinRadius;
 
-  return {
-    x: newX,
-    y: newY,
-    blockedX: dx !== 0 && newX !== targetX,
-    blockedY: dy !== 0 && newY !== targetY,
-  };
+  for (let iter = 0; iter < 4; iter++) {
+    const colMin = Math.floor(cx - radius), colMax = Math.floor(cx + radius);
+    const rowMin = Math.floor(cy - radius), rowMax = Math.floor(cy + radius);
+
+    // Track the single deepest overlapping cell this pass - no array, just
+    // scalars overwritten in place (rule 9.3).
+    let found = false;
+    let bestDepth = -Infinity;
+    let bestQx = 0, bestQy = 0, bestDx = 0, bestDy = 0, bestDist = 0;
+
+    for (let row = rowMin; row <= rowMax; row++) {
+      for (let col = colMin; col <= colMax; col++) {
+        // Passability test inlined here (no `passable` closure - rule 9.3).
+        if (isSectorPassable(sectorOrOutside(world, col + 0.5, row + 0.5), footZ, grounded, opts)) continue;
+
+        const qx = Math.min(Math.max(cx, col), col + 1);
+        const qy = Math.min(Math.max(cy, row), row + 1);
+        const ddx = cx - qx;
+        const ddy = cy - qy;
+        const distSq = ddx * ddx + ddy * ddy;
+        if (distSq >= skinRadiusSq) continue; // not really overlapping (within the skin) - see SKIN below
+
+        const dist = Math.sqrt(distSq);
+        const depth = radius - dist; // penetration depth; bigger = deeper contact
+        if (depth > bestDepth) {
+          found = true;
+          bestDepth = depth;
+          bestQx = qx; bestQy = qy;
+          bestDx = ddx; bestDy = ddy; bestDist = dist;
+        }
+      }
+    }
+
+    if (!found) break; // nothing overlaps any more - done
+
+    if (bestDx === 0 && bestDy === 0) {
+      // Centre already inside the cell's footprint on both axes: defensive
+      // only (unreachable at the 0.1 m/step this game moves - see the
+      // non-blocking note in the US-008 ARCH CHANGES). Revert the whole
+      // move rather than divide by a zero-length d.
+      cx = x; cy = y;
+      blockedX = true; blockedY = true;
+      nx = 0; ny = 0;
+      break;
+    } else if (bestDy === 0) {
+      // Face contact blocking X (the circle's y already sits inside the
+      // cell's row span - this cell only obstructs the x axis).
+      cx = bestDx > 0 ? bestQx + radius : bestQx - radius;
+      blockedX = true;
+    } else if (bestDx === 0) {
+      // Face contact blocking Y.
+      cy = bestDy > 0 ? bestQy + radius : bestQy - radius;
+      blockedY = true;
+    } else {
+      // Corner contact: the nearest point is the cell's corner, a single
+      // point, not a face. Push out exactly `radius` along the corner ->
+      // centre direction (circle-vs-point), which lets both axes move and
+      // is what makes a tangential slide around a convex corner possible.
+      const invDist = 1 / bestDist;
+      const unx = bestDx * invDist;
+      const uny = bestDy * invDist;
+      cx = bestQx + unx * radius;
+      cy = bestQy + uny * radius;
+      nx = unx; ny = uny;
+    }
+  }
+
+  out.x = cx;
+  out.y = cy;
+  out.blockedX = blockedX;
+  out.blockedY = blockedY;
+  out.nx = nx;
+  out.ny = ny;
+  return out;
 }
 
 /**
@@ -104,98 +209,15 @@ export function sectorOrOutside(world, x, y) {
   return world.outsideSector ? world.outsideSector(x, y) : null;
 }
 
-// PO REJECT #1 (US-008) bugfix: a tiny "skin" tolerance on the overlap test
-// (below) so a capsule resting EXACTLY on a cell boundary (radius away,
-// e.g. after a previous push-out) is never re-flagged as overlapping due to
-// float rounding (e.g. `2.3 - 2` is 0.2999999999999998 in IEEE 754, not
-// exactly 0.3, so `dx*dx` can land fractionally under `radius*radius` even
-// though the true geometric distance is exactly `radius`). Without this,
-// resting-at-the-wall could spuriously "overlap" again on the very next
-// step - see the ambiguous-axis fix below for what that spurious overlap
-// then did.
-const SKIN = 1e-6;
-
-// Resolve a circle centered at (cx, cy), radius `radius`, against every
-// impassable grid cell it overlaps, correcting only the `movingAxis`
-// coordinate (the other one is fixed by the caller - this is what gives
-// axis-separated sliding).
-//
-// PO REJECT #1 (US-008) bugfix: when a blocking cell's overlap comes
-// entirely from the FIXED (non-moving) axis - i.e. the circle's own
-// `movingAxis` coordinate already lies inside that cell's span on that axis
-// (so `dx`/`dy` *for the moving axis* is exactly 0) - that cell is not
-// actually in the way of the movement being resolved right now; it is
-// simply a cell alongside the path (e.g. the very wall a capsule is
-// sliding along). The old code treated this ambiguous case as "blocked,
-// snap back to the pre-move coordinate", which is what let a capsule stick
-// to a wall while trying to slide along it (only west/north walls, because
-// of how the push-out formula's sign happens to line up with which side of
-// a cell the fixed-axis coordinate sits on). The fix: SKIP such a cell
-// instead - let the axis pass that actually owns that coordinate (the
-// other call to resolveAxis) decide it. A cell only pushes back on the
-// axis it is genuinely blocking.
-// PO REJECT #2 (US-008) bugfix: a CORNER contact (the moving circle's
-// nearest point on a cell is the cell's corner, not one of its edges - i.e.
-// `dx !== 0 AND dy !== 0` below) was pushing the moving-axis coordinate all
-// the way out to `col - radius` / `col + 1 + radius`, exactly as a face
-// contact does. For a face contact that's correct (the whole face is the
-// obstruction, at a fixed perpendicular distance of exactly `radius`), but
-// a corner is a single POINT: the circle only needs to clear it by
-// `radius` in straight-line distance, not by `radius` measured along the
-// axis. Pushing the full face offset overshoots past that point and can
-// put the capsule BEHIND where it started the step. Worked example
-// (backlog): a pillar at cell (5,5), capsule at x=4.834, y=4.75 (clear of
-// the corner), moving dx=+0.05. The target x=4.884 overlaps the (5,5)
-// corner at distance 0.276 (< radius 0.30), so the old code resolved x to
-// `5 - 0.3` = 4.70 - 0.134 m *backwards* of the pre-step 4.834. `blockedX`
-// then zeroed vx and the capsule caught on the corner instead of grazing
-// past it (AC3: "never stuck on corners").
-// (A first attempt clamped the corner result into [pre-step, target] on
-// this axis instead of fixing the math - that stopped the overshoot, but
-// for a corner close enough that the circle GENUINELY penetrates it this
-// step, clamping merely refused to move at all, freezing the capsule
-// against a corner it was actually overlapping. That's worse: permanently
-// stuck, not just briefly caught - caught by test 7's mini-level smoke
-// test and the (a) wall-slide rewrite below.)
-// Fix: resolve the corner EXACTLY as a circle-vs-point contact. With the
-// other axis's distance to the corner already known (`dy` here, still the
-// fixed/not-yet-moved coordinate for this pass), the moving axis only needs
-// to be pushed out by `sqrt(radius^2 - dy^2)` (the remaining reach of the
-// radius at that fixed offset) instead of the full `radius` - the exact
-// point on the circle's edge that is `radius` from the corner. That is
-// always <= the face offset, so it can never move the capsule further from
-// the corner than the pre-step position needed to be, which is what keeps
-// it from overshooting backward - without the clamp's freezing failure
-// mode, because it's an exact geometric answer, not a refusal to move.
-function resolveAxis(cx, cy, movingAxis, radius, passable) {
-  let resolved = movingAxis === 'x' ? cx : cy;
-  const colMin = Math.floor(cx - radius), colMax = Math.floor(cx + radius);
-  const rowMin = Math.floor(cy - radius), rowMax = Math.floor(cy + radius);
-  const skinRadius = radius - SKIN;
-
-  for (let row = rowMin; row <= rowMax; row++) {
-    for (let col = colMin; col <= colMax; col++) {
-      if (passable(col, row)) continue;
-
-      const clampedX = Math.min(Math.max(cx, col), col + 1);
-      const clampedY = Math.min(Math.max(cy, row), row + 1);
-      const dx = cx - clampedX;
-      const dy = cy - clampedY;
-      const distSq = dx * dx + dy * dy;
-      if (distSq >= skinRadius * skinRadius) continue; // not really overlapping (within the skin) - see SKIN above
-
-      if (movingAxis === 'x') {
-        if (dx === 0) continue; // this cell only touches on Y (see the function comment) - not our concern here
-        const reach = dy === 0 ? radius : Math.sqrt(Math.max(radius * radius - dy * dy, 0));
-        resolved = dx > 0 ? col + 1 + reach : col - reach;
-        cx = resolved;
-      } else {
-        if (dy === 0) continue; // this cell only touches on X - not our concern here
-        const reach = dx === 0 ? radius : Math.sqrt(Math.max(radius * radius - dx * dx, 0));
-        resolved = dy > 0 ? row + 1 + reach : row - reach;
-        cy = resolved;
-      }
-    }
-  }
-  return resolved;
-}
+// History (rework #1/#2, superseded): this module used to resolve the two
+// axes separately via a `resolveAxis(cx, cy, movingAxis, radius, passable)`
+// helper (push the moving axis out to `col +/- radius` for a face contact,
+// or - after the rework #2 fix - to the exact circle-vs-point distance for
+// a corner contact). That fixed the west/north wall-stick bug (rework #1)
+// and the backward corner overshoot (rework #2), but per-axis resolution
+// cannot express a tangential slide around a genuinely convex corner: both
+// passes independently pull the touching axis back to the contact point,
+// zeroing both velocity components and freezing the capsule (US-008 ARCH
+// CHANGES, rework #3 - see docs/backlog.md for the probes). The iterative
+// minimum-translation push-out in `moveCapsule` above replaces it outright;
+// there is no longer a separate per-axis pass or a `passable` closure.

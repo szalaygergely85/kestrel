@@ -17,6 +17,12 @@
 import { PHYSICS } from '../physics/config.js';
 import { moveCapsule, sectorOrOutside } from '../physics/capsule.js';
 
+// Module-level scratch, built once from PHYSICS (architecture.md section 9:
+// no per-step allocations). `moveCapsule`'s `opts` never changes at runtime
+// (it's derived from the one tuning config, US-008 AC), so there is no
+// reason to build a fresh `{height, stepUpMax}` object every physics step.
+const COLLIDE_OPTS = { height: PHYSICS.height, stepUpMax: PHYSICS.stepUpMax };
+
 export class Player {
   /**
    * @param {import('../world/Level.js').Level} level
@@ -30,6 +36,11 @@ export class Player {
     this.vy = 0;
     this.vz = 0;
     this.grounded = true;
+
+    // Caller-owned scratch for moveCapsule's `out` parameter (US-008 ARCH
+    // CHANGES rework #3 / architecture.md section 9: no per-step object
+    // returns). Reused every physics step, never reallocated.
+    this._move = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0 };
 
     // Camera-facing state. US-005 (mouse/keyboard look) owns turning the
     // player; until it exists, `update()`'s `controls.yawDeg`/`pitchDeg`
@@ -99,18 +110,35 @@ export class Player {
     this.vy = approach(this.vy, targetVelY, rate * dt);
 
     // 3. Resolve horizontal movement against the grid (solid cells + the
-    //    grounded-only step-up threshold), sliding along walls.
+    //    grounded-only step-up threshold), sliding along walls and around
+    //    convex corners (US-008 ARCH CHANGES rework #3: iterative
+    //    minimum-translation push-out + contact normal, replacing the old
+    //    axis-separated sweep that could freeze on a corner).
     const footZAtStepStart = this.z;
     const groundedAtStepStart = this.grounded;
-    const collideOpts = { height: P.height, stepUpMax: P.stepUpMax };
     const moved = moveCapsule(
       level, this.x, this.y, this.vx * dt, this.vy * dt,
-      P.radius, footZAtStepStart, groundedAtStepStart, collideOpts
+      P.radius, footZAtStepStart, groundedAtStepStart, COLLIDE_OPTS, this._move
     );
     this.x = moved.x;
     this.y = moved.y;
+
+    // Velocity response: zero a blocked (face-contact) axis outright, as
+    // before; then, if the last contact this step was a corner, clip the
+    // remaining velocity against its normal (Quake-style clip) rather than
+    // zeroing both axes - that's what lets a diagonal push keep its
+    // tangential component and slide around the corner instead of
+    // freezing. Face normals are axis-aligned, so straight wall behaviour
+    // (blockedX/blockedY alone) is unchanged.
     if (moved.blockedX) this.vx = 0;
     if (moved.blockedY) this.vy = 0;
+    if (moved.nx || moved.ny) {
+      const vn = this.vx * moved.nx + this.vy * moved.ny;
+      if (vn < 0) {
+        this.vx -= vn * moved.nx;
+        this.vy -= vn * moved.ny;
+      }
+    }
 
     // 4. Vertical: follow the floor while grounded (small rises/drops,
     //    within stepUpMax, are walked smoothly - stairs); otherwise

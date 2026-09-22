@@ -20,6 +20,12 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
+// Shared scratch for direct moveCapsule() calls in this file (US-008 ARCH
+// CHANGES rework #3: moveCapsule takes a caller-owned `out` parameter
+// instead of returning a fresh object). Tests read it immediately after
+// each call, before the next one overwrites it.
+const moveOut = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0 };
+
 function ok(name, cond, detail) {
   if (cond) {
     pass++;
@@ -302,7 +308,7 @@ function stepN(player, level, controls, n) {
 {
   const level = miniLevel();
   const opts = { height: PHYSICS.height, stepUpMax: PHYSICS.stepUpMax };
-  const res = moveCapsule(level, 2.0, 2.0, 0.05, 0.05, PHYSICS.radius, 0, true, opts);
+  const res = moveCapsule(level, 2.0, 2.0, 0.05, 0.05, PHYSICS.radius, 0, true, opts, moveOut);
   ok('moveCapsule stays finite from a boundary start', Number.isFinite(res.x) && Number.isFinite(res.y), JSON.stringify(res));
 }
 
@@ -570,7 +576,7 @@ function circleOverlapsImpassable(level, x, y, r, footZ, grounded, opts) {
     let x = side.x0, y = side.y0;
     let everBlocked = false;
     for (let i = 0; i < steps; i++) {
-      const res = moveCapsule(level, x, y, side.dx, side.dy, PHYSICS.radius, 0, true, opts);
+      const res = moveCapsule(level, x, y, side.dx, side.dy, PHYSICS.radius, 0, true, opts, moveOut);
       if (res.blockedX || res.blockedY) everBlocked = true;
       x = res.x; y = res.y;
     }
@@ -673,25 +679,43 @@ function circleOverlapsImpassable(level, x, y, r, footZ, grounded, opts) {
 }
 
 // -----------------------------------------------------------------------
-// (d, blocking defect) Corner push-out invariant: resolveAxis must never
-// move the capsule BEHIND its pre-step position when the pre-step position
-// did not already overlap an impassable cell. Checked directly via
-// moveCapsule (so the pre-collision target on this axis is known exactly),
-// approaching the pillar corner from 16 directions (every 22.5 degrees) at
-// walk and run for 1 s each, asserted on EVERY step - plus the exact
-// worked example from the backlog review.
+// (d, blocking defect) Corner push-out invariant, REPLACED for US-008 ARCH
+// CHANGES rework #3. The old per-axis invariant ("resolved coordinate never
+// behind the pre-step coordinate, checked per axis") is geometrically
+// incompatible with a genuine corner SLIDE: a slide moves the other axis
+// too (the architect's own re-check of the PO's worked example: pillar
+// (5,5), x=4.834, y=4.75, dx=+0.05 now correctly resolves to about
+// (4.874, 4.728) - y moves even though dy=0 was the input). Replaced with
+// the two projection invariants from the ARCH CHANGES block, checked
+// whenever the pre-step position did NOT already overlap an impassable
+// cell, against the full (dx,dy) step vector `d` (not per axis, since the
+// new algorithm resolves both axes together):
+//   (i)  (res - pre) . d >= -1e-9      (never backwards along the step)
+//   (ii) |res - target| <= |d| + 1e-9  (the push-out never exceeds the
+//        step length - the old bug pushed 0.184 m on a 0.05 m step)
+// Approached from the pillar corner from 16 directions (every 22.5
+// degrees) at walk and run for 1 s each, asserted on EVERY step - plus the
+// exact worked example from the backlog review.
 // -----------------------------------------------------------------------
 {
   // The exact worked example from the PO review: pillar at (5,5), capsule
-  // at x=4.834, y=4.75 (clear of the corner), moving +0.05 in x. The old
-  // code resolved x to 4.70 - 0.134 m behind the pre-step 4.834.
+  // at x=4.834, y=4.75 (clear of the corner), moving +0.05 in x. Rework #2
+  // resolved x to 4.70 - 0.134 m behind the pre-step 4.834. Rework #3's
+  // circle-vs-point + tangential slide resolves to about (4.874, 4.728).
   const level = pillarLevel();
   const opts = { height: PHYSICS.height, stepUpMax: PHYSICS.stepUpMax };
-  const example = moveCapsule(level, 4.834, 4.75, 0.05, 0, PHYSICS.radius, 0, true, opts);
+  const example = moveCapsule(level, 4.834, 4.75, 0.05, 0, PHYSICS.radius, 0, true, opts, moveOut);
+  const exResVecX = example.x - 4.834, exResVecY = example.y - 4.75;
+  const exDot = exResVecX * 0.05 + exResVecY * 0;
   ok(
-    'corner push-out worked example (pillar 5,5; x=4.834,y=4.75; dx=+0.05): resolved x never behind the pre-step x',
-    example.x >= 4.834 - 1e-9,
-    `x=${example.x}`
+    'corner push-out worked example (pillar 5,5; x=4.834,y=4.75; dx=+0.05): (res-pre).d >= 0 (never backwards along the step)',
+    exDot >= -1e-9,
+    `x=${example.x} y=${example.y} dot=${exDot}`
+  );
+  ok(
+    'corner push-out worked example: resolves close to the architect-verified slide (4.874, 4.728)',
+    approxEqual(example.x, 4.874, 0.01) && approxEqual(example.y, 4.728, 0.01),
+    `x=${example.x} y=${example.y}`
   );
 
   const pillarCenterX = 5.5, pillarCenterY = 5.5;
@@ -707,24 +731,28 @@ function circleOverlapsImpassable(level, x, y, r, footZ, grounded, opts) {
       let y = pillarCenterY + Math.sin(angle) * 1.5;
       const dxStep = -Math.cos(angle) * speed * dt;
       const dyStep = -Math.sin(angle) * speed * dt;
+      const dLen = Math.hypot(dxStep, dyStep);
 
       let violation = null;
       const steps = Math.round(1 / dt); // 1 s
       for (let i = 0; i < steps; i++) {
         const preOverlapped = circleOverlapsSolid(level, x, y, PHYSICS.radius);
         const targetX = x + dxStep, targetY = y + dyStep;
-        const res = moveCapsule(level, x, y, dxStep, dyStep, PHYSICS.radius, 0, true, opts);
+        const res = moveCapsule(level, x, y, dxStep, dyStep, PHYSICS.radius, 0, true, opts, moveOut);
         if (!preOverlapped) {
-          const loX = Math.min(x, targetX), hiX = Math.max(x, targetX);
-          const loY = Math.min(y, targetY), hiY = Math.max(y, targetY);
-          if (res.x < loX - 1e-9 || res.x > hiX + 1e-9) violation = `x=${res.x} outside [${loX},${hiX}]`;
-          if (!violation && (res.y < loY - 1e-9 || res.y > hiY + 1e-9)) violation = `y=${res.y} outside [${loY},${hiY}]`;
+          const resVecX = res.x - x, resVecY = res.y - y;
+          const dot = resVecX * dxStep + resVecY * dyStep;
+          if (dot < -1e-9) violation = `(res-pre).d=${dot} < 0 (moved backwards along the step)`;
+          if (!violation) {
+            const resTargetDist = Math.hypot(res.x - targetX, res.y - targetY);
+            if (resTargetDist > dLen + 1e-9) violation = `|res-target|=${resTargetDist} > |d|=${dLen}`;
+          }
         }
         x = res.x; y = res.y;
         if (violation) break;
       }
       ok(
-        `(d) corner push-out never moves behind the pre-step position (dir=${(dir * 22.5).toFixed(1)} deg, ${run ? 'run' : 'walk'})`,
+        `(d) corner push-out projection invariants hold (dir=${(dir * 22.5).toFixed(1)} deg, ${run ? 'run' : 'walk'})`,
         !violation,
         violation || ''
       );
@@ -802,6 +830,123 @@ function circleOverlapsImpassable(level, x, y, r, footZ, grounded, opts) {
       }
     }
     ok(`(e) seed ${seed}: 1000-step random walk never overlaps an impassable cell`, !everOverlapped);
+  }
+}
+
+// =======================================================================
+// US-008 ARCH CHANGES (rework #3) progress tests: the convex-corner freeze
+// the architect found (AC3 "never stuck on corners" - a per-axis push
+// cannot express a tangential slide) now resolves via the iterative
+// minimum-translation push-out + contact-normal velocity clip. These tests
+// exercise the two probes the architect specified: a pillar corner
+// approached at small diagonal offsets, and a 1-cell doorway approached
+// off-centre.
+// =======================================================================
+
+// -----------------------------------------------------------------------
+// Pillar corner: approach the pillar's NW corner (grid cell (5,5) in
+// pillarLevel(), corner point (5,5)) running/walking SE (yaw 135) from
+// 1.5 m out, aimed 0.02 / 0.05 / 0.10 / 0.20 m off the exact diagonal - the
+// architect's own probe (verified against a scratch implementation of this
+// exact algorithm): cleared in 63-70 steps walking, 36-43 running (free
+// path ~51 / ~30). Budgets below are a generous superset of those numbers
+// (about 1.5x the free path, per the architect's test spec) so the check
+// is meaningful (an old, frozen capsule never clears at all - see (e)'s
+// "never more than a few consecutive near-zero-speed steps" companion
+// check) without being brittle to small tuning changes.
+// -----------------------------------------------------------------------
+{
+  const level = pillarLevel();
+  const corner = { x: 5, y: 5 };
+  const yaw = 135; // SE - straight at the pillar's NW corner
+  const yawRad = yaw * Math.PI / 180;
+  const dirX = Math.sin(yawRad), dirY = -Math.cos(yawRad); // travel direction
+  const perpX = -dirY, perpY = dirX; // perpendicular, for the off-diagonal offset
+
+  for (const run of [false, true]) {
+    const maxSteps = run ? 55 : 90; // budget: architect's 36-43 / 63-70 plus margin
+    for (const offset of [0.02, 0.05, 0.10, 0.20]) {
+      const player = new Player(level);
+      player.x = corner.x - dirX * 1.5 + perpX * offset;
+      player.y = corner.y - dirY * 1.5 + perpY * offset;
+      player.z = 0; player.grounded = true; player.vx = 0; player.vy = 0;
+      const controls = { forward: 1, strafe: 0, run, yawDeg: yaw };
+
+      let clearedAt = -1;
+      let maxConsecSlow = 0, consecSlow = 0;
+      for (let i = 0; i < maxSteps; i++) {
+        player.update(PHYSICS.fixedDt, controls, level);
+        const speed = Math.hypot(player.vx, player.vy);
+        if (speed < 0.1) { consecSlow++; if (consecSlow > maxConsecSlow) maxConsecSlow = consecSlow; }
+        else consecSlow = 0;
+        if (player.x >= 6.5 || player.y >= 6.5) { clearedAt = i + 1; break; }
+      }
+      ok(
+        `pillar corner, ${run ? 'run' : 'walk'}, offset ${offset} m off diagonal: clears (x>=6.5 or y>=6.5) within ${maxSteps} steps`,
+        clearedAt !== -1,
+        `clearedAt=${clearedAt}`
+      );
+      ok(
+        `pillar corner, ${run ? 'run' : 'walk'}, offset ${offset} m off diagonal: never more than 5 consecutive near-stopped steps (|v|<0.1)`,
+        maxConsecSlow <= 5,
+        `maxConsecSlow=${maxConsecSlow}`
+      );
+      ok(
+        `pillar corner, ${run ? 'run' : 'walk'}, offset ${offset} m off diagonal: never penetrates the pillar`,
+        !circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius)
+      );
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Doorway funnel: a 1-cell-wide gap (x in [5,6)) in an otherwise solid wall
+// row (y in [5,6)). The capsule (radius 0.30) only clears the 1 m gap
+// without touching a jamb if its centre stays within [5.3, 5.7] - so an
+// approach offset by 0.25 / 0.35 / 0.45 m from the centre (5.5) genuinely
+// grazes a jamb corner and can only get through if the corner contact's
+// normal deflects (funnels) it back toward the centre, not by the straight
+// south input alone (forward=1, strafe=0 - there is no sideways input at
+// all). Checked both sides of centre, at walk and run.
+// -----------------------------------------------------------------------
+function doorwayLevel() {
+  const legend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'stone', solid: false },
+  };
+  const rows = [];
+  for (let y = 0; y < 12; y++) rows.push(y === 5 ? '#####.#####' : '.'.repeat(11));
+  return loadLevel({ name: 'doorway', legend, rows, start: { x: 5.5, y: 2, facingDeg: 180 } });
+}
+
+{
+  const level = doorwayLevel();
+  for (const run of [false, true]) {
+    const maxSteps = run ? 120 : 200; // budget: about 2x the ~50/~86-step free time, per the architect's spec
+    for (const offset of [0.25, 0.35, 0.45]) {
+      for (const sign of [1, -1]) {
+        const player = new Player(level);
+        player.x = 5.5 + sign * offset; player.y = 2;
+        player.z = 0; player.grounded = true; player.vx = 0; player.vy = 0;
+        const controls = { forward: 1, strafe: 0, run, yawDeg: 180 }; // straight south, no sideways input
+
+        let clearedAt = -1;
+        for (let i = 0; i < maxSteps; i++) {
+          player.update(PHYSICS.fixedDt, controls, level);
+          if (circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius)) break; // fail loudly below
+          if (player.y >= 7) { clearedAt = i + 1; break; }
+        }
+        ok(
+          `doorway funnel, ${run ? 'run' : 'walk'}, offset ${sign * offset} m off centre: passes through within ${maxSteps} steps`,
+          clearedAt !== -1,
+          `clearedAt=${clearedAt}`
+        );
+        ok(
+          `doorway funnel, ${run ? 'run' : 'walk'}, offset ${sign * offset} m off centre: never penetrates a jamb`,
+          !circleOverlapsSolid(level, player.x, player.y, PHYSICS.radius)
+        );
+      }
+    }
   }
 }
 
