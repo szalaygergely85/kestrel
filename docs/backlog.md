@@ -7,7 +7,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 | Order | ID | Title | Priority | Status | Who picks up |
 |---|---|---|---|---|---|
-| 1 | US-001 | Char-grid canvas + game loop | P0 | testing (PO OK 2026-09-22; real-Chrome bench numbers pending from user) | **Tester NOW** |
+| 1 | US-001 | Char-grid canvas + game loop | P0 | done (tester PASS 2026-09-22; real-Chrome bench numbers still pending from user, non-blocking) | Programmer moves on |
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | testing (PO OK 2026-09-22, format v2) | **Tester NOW** |
 | 4 | US-004 | Sector raycaster: walls, floors, ceilings, sky, y-shear | P0 | todo | Programmer, after US-001 rework #2 + US-003 v2 (uses `setCellRGB`, D-005) |
@@ -35,7 +35,7 @@ M1 exit criteria = all P0 stories `done` (roadmap). US-022 (P1) and P2 stories a
 
 ---
 
-### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: testing]
+### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: done]
 As a player, I want the game to open in my browser as a crisp grid of colored characters running smoothly, so that everything else has a stable screen to draw on.
 Acceptance criteria:
 - [x] `game/index.html` opens from a static server (no build step, no external libraries) and shows a full-window canvas on a black background. (ES modules do not load from file://; accepted, see rework item 5.)
@@ -127,6 +127,8 @@ Notes / dependencies: none. First story to build.
   - Use `?bench=1` for the numbers.
   - Check that F3 does not open Find.
   - Do not fail US-001 on memory growth in the demo scene: it is logged against US-004.
+
+**Tester PASS (2026-09-22)** - see `docs/test-reports/US-001.md`. All acceptance criteria verified: gl2 backend by default, `?force2d=1` correctly forces `c2d-capped` (capped pxCellH<=16), `?glyphs=1` shows clean glyphs at multiple sizes/DPR with no clipping, resize keeps aspect and re-derives backing resolution correctly, `?bench=1` present() is flat at ~0.1ms avg/0.2ms p95 regardless of resolution (matches PO's sandbox numbers), no console errors on any path. F3 overlay toggle and preventDefault logic verified correct by dispatching a realistic KeyboardEvent (the sandbox's own synthetic key-press tool doesn't populate `code` for function keys, a tooling limitation, not a game bug - see report). No blocking bugs. Real-desktop-Chrome `?bench=1` numbers remain an open, non-blocking item for the user to supply.
 
 ### US-002 Master palette, glyph ramps, materials  [Priority: P0] [Status: done]
 As a player, I want the tower to look like warm, detailed carved stone lit by fire and sun, so that the ASCII world feels beautiful and readable.
