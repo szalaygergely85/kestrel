@@ -11,7 +11,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 2 | US-002 | Master palette, glyph ramps, stone/wood/iron/sky materials | P0 | done | PO approved 2026-09-22; designer moves on to US-010 then US-011 |
 | 3 | US-003 | Sector map format + test room loader | P0 | done | Tested 2026-09-22 (PASS, `docs/test-reports/US-003.md`) |
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; both ASK ARCHITECT items answered 2026-09-22 -> follow-up US-004b) | - |
-| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | testing | PO OK 2026-09-22 on rework #3 (efd8737), after ARCH OK: all ACs + REJECT #1/#2 items met, projection invariants (i)/(ii) accepted in place of the per-axis one, 187/187. To tester (checklist in the US-008 section) |
+| 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-008.md |
 | 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | todo | Programmer NOW (free track); must be `done` before US-006 and US-016. Tech notes = architect sketch under US-004 + architecture.md 12 |
 | 7 | US-024 | **Engine/game split (D-006)** | P0 | todo | Programmer, when US-004 + US-008 reach `po-review`; before US-006. Phase A must not move `raycaster.js` while US-004b is in dev (see US-004b notes) |
 | 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
@@ -408,7 +408,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-006.
 
-### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: testing]
+### US-008 Physics: player capsule, gravity, walk/run, collision  [Priority: P0] [Status: done]
 As a player, I want to walk and run with weight and bump into walls without getting stuck, so that movement feels solid.
 Acceptance criteria:
 - [x] Fixed 60 Hz physics. Player is a vertical capsule, radius 0.30 m, height 1.70 m, eye 1.60 m.
@@ -583,6 +583,8 @@ Tests: `node game/js/physics/physics.test.js` -> **187 passed, 0 failed, ALL PAS
    - Fail to enter the closed-headroom and low-wall cells.
    - Run at a 1-cell wall at full run speed for 10 tries: never tunnels.
 3. Report any case where the player is stuck for more than about 0.1 s with non-zero input that is not a head-on hit.
+
+**Tester PASS (2026-09-22).** `node game/js/physics/physics.test.js` 187/187; `node game/js/engine/playerLook.test.js` 10/10. Wall hug, inner corner, pillar-corner off-diagonal slide, doorway funnel (±0.25/0.35 m), platform fall/land, 0.3/0.6/0.9 m stair climb, low-wall block and 10x run-speed tunnelling checks all pass, verified against the live `Player`/`Level`/`test_room` integration in `game/physics-test.html` (browser rAF is throttled/unreliable in the test sandbox, so most checks used deterministic scripted stepping through the same unmodified modules rather than timed key-holds - see report for detail). `game/index.html` loads and renders with no console errors. Physics step cost ≈0.67 µs (≈1500x under the 1 ms budget). No bugs found. Full report: `docs/test-reports/US-008.md`. Status -> `done`.
 
 ### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: todo]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
