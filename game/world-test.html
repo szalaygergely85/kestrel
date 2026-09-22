@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ASCII Quest - world map test (US-003)</title>
+  <title>ASCII Quest - world map test (US-003 v2)</title>
   <style>
     html, body {
       margin: 0;
@@ -48,19 +48,25 @@
 </head>
 <body>
   <div id="wrap">
-    <h1>US-003 sector map test loader</h1>
+    <h1>US-003 v2 sector map test loader</h1>
     <p class="sub">
       Top-down view on a plain canvas, independent of the game renderer. Add
       <code>?level=test_room</code> to pick a level (default <code>test_room</code>).
-      Hover a cell to inspect its sector.
+      Hover a cell to inspect its sector (including the v2 fields: topH,
+      upperMat, zone/tag/desc/dynamic when present).
     </p>
     <div id="status">Loading...</div>
     <canvas id="map" width="1" height="1"></canvas>
     <div id="cell-info"></div>
     <div id="legend">
-      Legend: dark gray = solid, blue tint + <code>^</code> = sky ceiling, shade of
-      blue-gray brightens with floor height (number shown when &gt; 0 m), gold dot =
-      player start (tick = facing).
+      Legend: solid cells are shaded stone/moss/scorched tones and always show
+      their wall-TOP height (v2: a solid cell's <code>floorH</code> is how
+      tall it is, not a floor - rays and the eye can look over a low one).
+      Blue tint + <code>^</code> = sky ceiling. Blue-gray brightens with floor
+      height on walkable cells (number shown when &gt; 0 m); dark red + pink
+      number = a void/pit cell (negative floorH, a real gap to fall into).
+      Gold <code>D</code> in the corner = a lintel/doorway cell (topH differs
+      from ceilH). Gold dot = player start (tick = facing, compass degrees).
     </div>
   </div>
   <script type="module" src="js/world/worldTestMain.js"></script>

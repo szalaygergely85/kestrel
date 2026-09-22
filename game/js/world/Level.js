@@ -1,34 +1,62 @@
 // game/js/world/Level.js
 //
-// Sector map format + loader (US-003). See game/js/world/MAP_FORMAT.md for the
-// full authoring spec. Summary:
+// Sector map format + loader (US-003 v2). See game/js/world/MAP_FORMAT.md for
+// the full authoring spec. Summary:
 //
-//   A level is a plain data object { name, legend, rows, start? }.
+//   A level is a plain data object { name, legend, rows, start?, layers?, ...anything }.
 //   `rows` is a rectangular array of equal-length strings: one character per
 //   cell, one row per line, top-down. `legend` maps each character to a
-//   *sector definition*: { floorH, ceilH, wallMat, floorMat, ceilMat, solid }.
+//   *sector definition*: { floorH, ceilH, wallMat, floorMat, ceilMat, solid,
+//   topH?, upperMat? }, plus any number of unknown/extension fields (zone,
+//   tag, desc, dynamic, ...) that pass through untouched.
+//
 //   1 cell = 1 world meter; cell (col, row) occupies world space
-//   [col, col+1) x [row, row+1), so x = column (east), y = row (south).
+//   [col, col+1) x [row, row+1). col grows EAST (+x), row grows SOUTH (+y).
+//   `facingDeg` is COMPASS degrees: 0 = north (-y), 90 = east (+x), clockwise
+//   - the same convention as the palette sun azimuth.
 //
 // loadLevel(def) validates the raw data and returns a Level instance with
 // the query API (sectorAt/floorAt/ceilAt) used by the raycaster (US-004),
 // physics (US-008) and everything downstream. On a validation error it
-// prints details (row/column where applicable) to the console and returns
-// null - callers must check for that.
+// prints details (row/column, or legend character) to the console and
+// returns null - callers must check for that.
 
 /**
  * @typedef {Object} Sector
- * @property {number} floorH - floor height in meters.
- * @property {number|'sky'} ceilH - ceiling height in meters, or 'sky' for an open/roofless cell.
- * @property {string} wallMat - material key (design/palette.js `materials`).
- * @property {string} floorMat - material key.
- * @property {string} ceilMat - material key (ignored when ceilH === 'sky').
- * @property {boolean} solid - true if this cell blocks movement (a wall/pillar).
+ * @property {number} floorH - floor height in meters. On a `solid` cell this
+ *   is the height of the WALL TOP (see "Solid cells" below), not a floor you
+ *   can stand on.
+ * @property {number|'sky'} ceilH - ceiling height in meters, or 'sky' for an
+ *   open/roofless cell (ignored on solid cells - they render as a column up
+ *   to floorH regardless).
+ * @property {string} wallMat - material key (design/palette.js `materials`),
+ *   used for wall faces and (as the default) the upper face above ceilH.
+ * @property {string} floorMat - material key. Also the material of a solid
+ *   cell's TOP FACE (the flat cap you see looking down on a broken wall).
+ * @property {string} ceilMat - material key, or 'sky' exactly when
+ *   ceilH === 'sky'.
+ * @property {boolean} solid - true if this cell blocks movement, AT ANY
+ *   HEIGHT (a full-height collider), regardless of floorH. For rendering it
+ *   is a column with a floorMat-textured top face at floorH; rays continue
+ *   past it above that height (so you can see over a low wall or a broken
+ *   parapet against the sky).
+ * @property {number|'sky'} [topH] - height where the overhead mass above
+ *   ceilH ends (a lintel/doorway's stone, a grate's frame). Only meaningful
+ *   when ceilH is a number. Defaults to ceilH (a zero-thickness slab) when
+ *   omitted, so a level that never sets it behaves exactly as MAP_FORMAT v1.
+ * @property {string} [upperMat] - material of the face between ceilH and
+ *   topH (grate bars, stone lintel). Defaults to wallMat when omitted.
  */
+
+const START_FIELDS = ['facingDeg', 'pitchDeg', 'eyeH', 'pose'];
+const START_DEFAULTS = { facingDeg: 0, pitchDeg: 0, eyeH: 1.6, pose: 'standing' };
 
 /**
  * Load and validate a raw level definition into a queryable Level.
- * @param {{name: string, legend: Object<string, Sector & {start?: boolean, facingDeg?: number}>, rows: string[], start?: {x:number,y:number,facingDeg?:number}}} def
+ * @param {Object} def - { name, legend, rows, start?, layers?, ... }. Any
+ *   field besides name/legend/rows/start is passed through unread as
+ *   `level.def` for later stories (props, lights, triggers, markers, sun,
+ *   route, layers, ...).
  * @returns {Level|null} null if validation failed (errors are logged to console.error).
  */
 export function loadLevel(def) {
@@ -68,51 +96,108 @@ export function loadLevel(def) {
     }
   }
 
-  // 2. Every char is in the legend. Also collect declared start markers.
-  const startMarkers = []; // { x, y, facingDeg }
+  // 2. Per-legend-char field validation + defaulting (topH/upperMat), so
+  //    every consumer sees a fully-resolved Sector regardless of what the
+  //    author actually wrote. Built once, reused by every cell using that
+  //    character.
+  const resolvedLegend = {};
+  if (legend) {
+    for (const ch of Object.keys(legend)) {
+      const raw = legend[ch];
+      const errTag = `${tag} legend '${ch}'`;
+      if (!raw || typeof raw !== 'object') {
+        errors.push(`${errTag}: not an object.`);
+        continue;
+      }
+
+      const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+      if (!isFiniteNum(raw.floorH)) {
+        errors.push(`${errTag}: floorH must be a finite number, got ${JSON.stringify(raw.floorH)}.`);
+      }
+      const ceilIsSky = raw.ceilH === 'sky';
+      if (!ceilIsSky && !isFiniteNum(raw.ceilH)) {
+        errors.push(`${errTag}: ceilH must be a finite number or 'sky', got ${JSON.stringify(raw.ceilH)}.`);
+      }
+      if (typeof raw.solid !== 'boolean') {
+        errors.push(`${errTag}: solid must be a boolean, got ${JSON.stringify(raw.solid)}.`);
+      }
+      if (typeof raw.wallMat !== 'string' || raw.wallMat === '') {
+        errors.push(`${errTag}: wallMat must be a non-empty string.`);
+      }
+      if (typeof raw.floorMat !== 'string' || raw.floorMat === '') {
+        errors.push(`${errTag}: floorMat must be a non-empty string.`);
+      }
+      if (typeof raw.ceilMat !== 'string' || raw.ceilMat === '') {
+        errors.push(`${errTag}: ceilMat must be a non-empty string.`);
+      } else if (ceilIsSky && raw.ceilMat !== 'sky') {
+        errors.push(`${errTag}: ceilH is 'sky' so ceilMat must be exactly 'sky', got '${raw.ceilMat}'.`);
+      } else if (!ceilIsSky && raw.ceilMat === 'sky') {
+        errors.push(`${errTag}: ceilMat is 'sky' but ceilH is not - ceilMat 'sky' is only valid when ceilH is 'sky'.`);
+      }
+      if (!raw.solid && isFiniteNum(raw.floorH) && !ceilIsSky && isFiniteNum(raw.ceilH) && raw.ceilH < raw.floorH) {
+        errors.push(`${errTag}: ceilH (${raw.ceilH}) must be >= floorH (${raw.floorH}) on a non-solid cell (equal is allowed, e.g. a closed grate).`);
+      }
+
+      // Defaults: topH -> ceilH (zero-thickness slab), upperMat -> wallMat.
+      resolvedLegend[ch] = {
+        ...raw,
+        topH: raw.topH !== undefined ? raw.topH : raw.ceilH,
+        upperMat: raw.upperMat !== undefined ? raw.upperMat : raw.wallMat,
+      };
+    }
+  }
+
+  // 3. Every char used in the grid is in the legend. Also collect declared
+  //    start markers (legend entries flagged start: true).
+  const startMarkers = []; // { x, y, facingDeg, pitchDeg, eyeH, pose }
   if (legend) {
     for (let row = 0; row < height; row++) {
       const line = rows[row];
       if (typeof line !== 'string') continue;
       for (let col = 0; col < line.length; col++) {
         const ch = line[col];
-        const sector = legend[ch];
+        const sector = resolvedLegend[ch];
         if (!sector) {
-          errors.push(`${tag} unknown legend character '${ch}' at row ${row}, col ${col}.`);
+          if (legend[ch] === undefined) {
+            errors.push(`${tag} unknown legend character '${ch}' at row ${row}, col ${col}.`);
+          }
+          // else: char exists but its legend entry was already rejected above
+          // (invalid fields) - already reported, don't double-report per cell.
           continue;
         }
         if (sector.start) {
-          startMarkers.push({
-            x: col + 0.5,
-            y: row + 0.5,
-            facingDeg: typeof sector.facingDeg === 'number' ? sector.facingDeg : 0,
-          });
+          const marker = { x: col + 0.5, y: row + 0.5 };
+          for (const f of START_FIELDS) {
+            marker[f] = typeof sector[f] === 'number' || typeof sector[f] === 'string' ? sector[f] : START_DEFAULTS[f];
+          }
+          startMarkers.push(marker);
         }
       }
     }
   }
 
-  // 3. Player start defined: either an explicit def.start, or exactly one
-  //    legend-flagged start marker in the grid.
+  // 4. Player start defined (v2 shape: { x, y, facingDeg, pitchDeg?, eyeH?, pose? }):
+  //    either an explicit def.start, or exactly one legend-flagged start marker.
   let start = null;
   if (def.start && typeof def.start.x === 'number' && typeof def.start.y === 'number') {
-    start = {
-      x: def.start.x,
-      y: def.start.y,
-      facingDeg: typeof def.start.facingDeg === 'number' ? def.start.facingDeg : 0,
-    };
+    start = { x: def.start.x, y: def.start.y };
+    for (const f of START_FIELDS) {
+      const v = def.start[f];
+      start[f] = (typeof v === 'number' || typeof v === 'string') ? v : START_DEFAULTS[f];
+    }
     if (startMarkers.length) {
       errors.push(
         `${tag} both an explicit "start" and ${startMarkers.length} legend start marker(s) ` +
         `are present; remove one. Legend marker(s) at: ` +
-        startMarkers.map((m) => `(${Math.floor(m.y)},${Math.floor(m.x)})`).join(', ')
+        startMarkers.map((m) => `(row ${Math.floor(m.y)}, col ${Math.floor(m.x)})`).join(', ')
       );
     }
   } else if (startMarkers.length === 1) {
     start = startMarkers[0];
   } else if (startMarkers.length === 0) {
     errors.push(
-      `${tag} no player start defined - set an explicit "start: {x, y}" on the level, ` +
+      `${tag} no player start defined - set an explicit "start: {x, y, ...}" on the level, ` +
       `or flag one legend entry with "start: true".`
     );
   } else {
@@ -122,23 +207,48 @@ export function loadLevel(def) {
     );
   }
 
+  // 5. Optional extra grids (def.layers = { layerName: [rowStrings...] }),
+  //    e.g. the boulder tilt layer (US-013). Must match the main grid size.
+  if (def.layers && typeof def.layers === 'object') {
+    for (const layerName of Object.keys(def.layers)) {
+      const layerRows = def.layers[layerName];
+      if (!Array.isArray(layerRows)) {
+        errors.push(`${tag} layer "${layerName}": expected an array of row strings.`);
+        continue;
+      }
+      if (layerRows.length !== height) {
+        errors.push(`${tag} layer "${layerName}" has ${layerRows.length} rows, expected ${height} (same as the main grid).`);
+      }
+      for (let row = 0; row < layerRows.length; row++) {
+        const line = layerRows[row];
+        if (typeof line !== 'string') {
+          errors.push(`${tag} layer "${layerName}" row ${row} is not a string.`);
+        } else if (line.length !== width) {
+          errors.push(`${tag} layer "${layerName}" row ${row} has length ${line.length}, expected ${width}, col mismatch starts at ${Math.min(line.length, width)}.`);
+        }
+      }
+    }
+  }
+
   if (errors.length) {
     errors.forEach((e) => console.error(e));
     return null;
   }
 
-  return new Level({ name, legend, rows, width, height, start });
+  return new Level({ name, legend: resolvedLegend, rows, width, height, start, def });
 }
 
 export class Level {
-  constructor({ name, legend, rows, width, height, start }) {
+  constructor({ name, legend, rows, width, height, start, def }) {
     this.name = name;
-    this.legend = legend;
+    this.legend = legend; // resolved: every entry has topH/upperMat filled in
     this.rows = rows;
-    this.width = width;   // cells, x axis (columns)
-    this.height = height; // cells, y axis (rows)
+    this.width = width;   // cells, x axis (columns, east)
+    this.height = height; // cells, y axis (rows, south)
     this.cellSize = 1;    // meters per cell (fixed at 1 per US-003)
-    this.start = start;   // { x, y, facingDeg } in world meters
+    this.start = start;   // { x, y, facingDeg, pitchDeg, eyeH, pose } in world meters/degrees
+    this.def = def;       // the original raw level definition, untouched - props/lights/
+                           // triggers/markers/sun/ambient/route/layers/... for later stories.
   }
 
   /** True if (col, row) is inside the grid. */
@@ -148,10 +258,10 @@ export class Level {
 
   /**
    * Sector definition at a world position (meters). Returns null outside
-   * the grid. The returned object is the shared legend entry - treat it as
-   * read-only.
-   * @param {number} x world meters (column axis)
-   * @param {number} y world meters (row axis)
+   * the grid. The returned object is the shared, resolved legend entry
+   * (topH/upperMat defaulted) - treat it as read-only.
+   * @param {number} x world meters (column axis, east)
+   * @param {number} y world meters (row axis, south)
    * @returns {Sector|null}
    */
   sectorAt(x, y) {
@@ -162,7 +272,11 @@ export class Level {
     return this.legend[ch] || null;
   }
 
-  /** Floor height in meters at a world position, or null outside the grid. */
+  /**
+   * Floor height in meters at a world position, or null outside the grid.
+   * On a solid cell this is the wall-top height (see Sector.solid docs),
+   * not a walkable floor.
+   */
   floorAt(x, y) {
     const s = this.sectorAt(x, y);
     return s ? s.floorH : null;
@@ -172,5 +286,20 @@ export class Level {
   ceilAt(x, y) {
     const s = this.sectorAt(x, y);
     return s ? s.ceilH : null;
+  }
+
+  /**
+   * Character at (x, y) in an optional extra grid (`level.def.layers[name]`),
+   * e.g. `layerAt('tilt', x, y)` for the boulder layer. Returns null outside
+   * the grid or if the layer/def doesn't exist. Convenience only - the raw
+   * rows are always available at `level.def.layers[name]`.
+   */
+  layerAt(layerName, x, y) {
+    const col = Math.floor(x);
+    const row = Math.floor(y);
+    if (!this.inBounds(col, row)) return null;
+    const layer = this.def && this.def.layers && this.def.layers[layerName];
+    if (!layer || !layer[row]) return null;
+    return layer[row][col] || null;
   }
 }

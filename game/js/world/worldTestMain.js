@@ -1,10 +1,12 @@
 // game/js/world/worldTestMain.js
 //
-// Standalone top-down test harness for the US-003 sector map format.
+// Standalone top-down test harness for the US-003 sector map format (v2).
 // Not part of the game's own entry point (game/js/main.js) - loaded only by
 // game/world-test.html. Draws the loaded level on a plain 2D canvas (no
 // dependency on game/js/render/*), color-coding floor height and flagging
-// solid cells, sky-ceiling cells and the player start.
+// solid cells (now shaded/labelled by their v2 wall-top height and material),
+// sky-ceiling cells, void/gap cells (negative floorH), doorway/lintel cells
+// (topH != ceilH) and the player start (with v2 facing/pitch/eye/pose).
 
 import { loadLevel } from './Level.js';
 import testRoom from './levels/test_room.js';
@@ -45,9 +47,11 @@ function run(def) {
     return;
   }
 
+  const s = level.start;
   statusEl.textContent =
     `OK: "${level.name}" loaded - ${level.width}x${level.height} cells, ` +
-    `start (${level.start.x.toFixed(2)}, ${level.start.y.toFixed(2)}) facing ${level.start.facingDeg}deg`;
+    `start (${s.x.toFixed(2)}, ${s.y.toFixed(2)}) facing ${s.facingDeg}deg (compass, 0=N/90=E), ` +
+    `pitch ${s.pitchDeg}deg, eye ${s.eyeH}m, pose ${s.pose}`;
   statusEl.className = 'ok';
 
   draw(level);
@@ -81,8 +85,9 @@ function draw(level) {
   ctx.strokeStyle = '#3a2a00';
   ctx.lineWidth = 2;
   ctx.stroke();
-  // Facing tick.
-  const rad = (level.start.facingDeg - 90) * Math.PI / 180; // 0deg = east
+  // Facing tick. facingDeg is compass (0=N,90=E,clockwise); screen/math angle
+  // 0 = east, increasing clockwise (since canvas y grows down), so subtract 90.
+  const rad = (level.start.facingDeg - 90) * Math.PI / 180;
   ctx.beginPath();
   ctx.moveTo(level.start.x * CELL_PX, level.start.y * CELL_PX);
   ctx.lineTo(
@@ -104,26 +109,59 @@ function drawCell(col, row, sector) {
   ctx.strokeStyle = 'rgba(0,0,0,0.35)';
   ctx.strokeRect(x + 0.5, y + 0.5, CELL_PX - 1, CELL_PX - 1);
 
-  if (sector.ceilH === 'sky') {
+  // Solid cells and non-solid cells both always print floorH now: on a solid
+  // cell it's the wall-TOP height (v2), so it varies (low wall vs pillar vs
+  // tower wall) and is worth showing even at "typical" heights.
+  if (sector.solid) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = `${CELL_PX * 0.32}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(sector.floorH.toFixed(1), x + CELL_PX / 2, y + CELL_PX / 2);
+  } else if (sector.ceilH === 'sky') {
     ctx.fillStyle = 'rgba(140, 200, 255, 0.55)';
     ctx.font = `${CELL_PX * 0.5}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('^', x + CELL_PX / 2, y + CELL_PX / 2);
   } else if (sector.floorH !== 0) {
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.font = `${CELL_PX * 0.32}px monospace`;
+    ctx.fillStyle = sector.floorH < 0 ? 'rgba(255,190,190,0.85)' : 'rgba(0,0,0,0.65)';
+    ctx.font = `${CELL_PX * 0.3}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(sector.floorH.toFixed(1), x + CELL_PX / 2, y + CELL_PX / 2);
   }
+
+  // topH != ceilH (a real lintel/doorway, not the zero-thickness default):
+  // small corner marker, since the top-down color can't show it.
+  if (!sector.solid && sector.ceilH !== 'sky' && sector.topH !== sector.ceilH) {
+    ctx.fillStyle = 'rgba(255, 224, 138, 0.9)';
+    ctx.font = `${CELL_PX * 0.28}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('D', x + 2, y + 1);
+  }
+}
+
+function clamp01(t) {
+  return Math.max(0, Math.min(1, t));
 }
 
 function cellColor(sector) {
-  if (sector.solid) return '#3a3a3a';
+  if (sector.solid) {
+    // Wall column: tint by wallMat, shade by height (floorH = wall top, v2).
+    const base =
+      sector.wallMat === 'stone_moss' ? [70, 105, 75] :
+      sector.wallMat === 'stone_scorched' ? [95, 65, 55] :
+      sector.wallMat === 'iron' ? [90, 95, 105] :
+      [95, 95, 105]; // stone / default
+    const shade = 1 - clamp01(sector.floorH / 9) * 0.45; // taller = a bit darker
+    return `rgb(${Math.round(base[0] * shade)},${Math.round(base[1] * shade)},${Math.round(base[2] * shade)})`;
+  }
   if (sector.ceilH === 'sky') return '#274a63';
+  if (sector.floorH < 0) return '#3a1c1c'; // void / pit (a real gap you can fall into)
   // Brighter floor = higher. Base stone-floor blue-gray, scaled by floorH.
-  const t = Math.min(1, sector.floorH / 1.2);
+  const t = clamp01(sector.floorH / 1.2);
   const r = Math.round(60 + t * 140);
   const g = Math.round(70 + t * 130);
   const b = Math.round(80 + t * 90);
@@ -142,9 +180,14 @@ function wireHover(level) {
       cellInfoEl.textContent = `(${x.toFixed(2)}, ${y.toFixed(2)}) - out of bounds`;
       return;
     }
+    const extra = ['zone', 'tag', 'desc', 'dynamic']
+      .filter((k) => sector[k] !== undefined)
+      .map((k) => `${k}=${typeof sector[k] === 'object' ? JSON.stringify(sector[k]) : sector[k]}`)
+      .join(' ');
     cellInfoEl.textContent =
       `(${x.toFixed(2)}, ${y.toFixed(2)}) cell(${Math.floor(x)},${Math.floor(y)}) -> ` +
-      `floorH=${sector.floorH} ceilH=${sector.ceilH} wallMat=${sector.wallMat} ` +
-      `floorMat=${sector.floorMat} ceilMat=${sector.ceilMat} solid=${sector.solid}`;
+      `floorH=${sector.floorH} ceilH=${sector.ceilH} topH=${sector.topH} wallMat=${sector.wallMat} ` +
+      `floorMat=${sector.floorMat} ceilMat=${sector.ceilMat} upperMat=${sector.upperMat} solid=${sector.solid}` +
+      (extra ? ` | ${extra}` : '');
   });
 }
