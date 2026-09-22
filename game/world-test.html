@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ASCII Quest - world map test (US-003)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #10131a;
+      color: #d8dce8;
+      font: 14px "Courier New", monospace;
+    }
+    #wrap {
+      padding: 16px;
+    }
+    h1 {
+      font-size: 16px;
+      margin: 0 0 4px;
+    }
+    p.sub {
+      margin: 0 0 12px;
+      color: #8a90a8;
+    }
+    #status {
+      white-space: pre-wrap;
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      background: #1c2130;
+    }
+    #status.ok { color: #9fe6a0; }
+    #status.error { color: #ff8f8f; background: #2a1418; }
+    #map {
+      border: 1px solid #444a5e;
+      image-rendering: pixelated;
+    }
+    #cell-info {
+      margin-top: 8px;
+      color: #c9cede;
+      min-height: 1.2em;
+    }
+    #legend {
+      margin-top: 16px;
+      color: #8a90a8;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>US-003 sector map test loader</h1>
+    <p class="sub">
+      Top-down view on a plain canvas, independent of the game renderer. Add
+      <code>?level=test_room</code> to pick a level (default <code>test_room</code>).
+      Hover a cell to inspect its sector.
+    </p>
+    <div id="status">Loading...</div>
+    <canvas id="map" width="1" height="1"></canvas>
+    <div id="cell-info"></div>
+    <div id="legend">
+      Legend: dark gray = solid, blue tint + <code>^</code> = sky ceiling, shade of
+      blue-gray brightens with floor height (number shown when &gt; 0 m), gold dot =
+      player start (tick = facing).
+    </div>
+  </div>
+  <script type="module" src="js/world/worldTestMain.js"></script>
+</body>
+</html>
