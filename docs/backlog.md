@@ -21,7 +21,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 12 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 13 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 14 | US-014 | Lever opens the grate | P0 | todo | Programmer |
-| 15 | US-015 | Wake sequence + title card + control hints | P0 | design | **PO: preview ready for review** (`design/preview/title.html`), then Programmer |
+| 15 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved 2026-09-22 (preview render check pending in a browser); Programmer after US-010 + US-012 |
 | 16 | US-016 | Far overworld view through the breach | P0 | design | Designer (overworld heightmap/colors) then Programmer |
 | 17 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 18 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (can be done alongside US-004) |
@@ -389,7 +389,7 @@ Designer note (2026-09-22): **Preview ready for PO review.**
 As a player, I want to press E to take the lantern and carry its light with me, so that I can see in the dark stairwell.
 Acceptance criteria:
 - [ ] Interactables have: position, radius, prompt text, `onInteract`. Targeted when within 1.8 m and within about 20 degrees of view centre; nearest-to-centre wins.
-- [ ] Crosshair `+` is dim by default and brightens when a target is active; prompt `[E] Take lantern` appears under it.
+- [ ] Crosshair `+` is dim by default and brightens when a target is active; prompt `[E] Take lantern` appears under it. Style follows `ASSETS.uiStyle.crosshair` / `uiStyle.prompt` (US-015 art): `uiDim` to `gold`, prompt 2 rows below with a gold `[E]` and a soft dark plate.
 - [ ] Pressing E on the lantern removes the hook sprite (hook remains, empty) and attaches a point light: `#ffd27a`, 0.8 intensity, 5 m radius, held 0.3 m right / 0.3 m down / 0.4 m forward of the eye, sway with walk, ±5% flicker.
 - [ ] The lantern light makes the upper stairwell (ambient-only areas) visibly readable: gap edges at least 3 glyph-ramp steps brighter than without it.
 - [ ] Once taken, the lantern stays with the player for the rest of the run: there is no drop action and nothing consumes it (lighting the beacon in US-022 shares its flame, the player keeps it). One pickup only.
@@ -422,11 +422,27 @@ Acceptance criteria:
 Design needed: no (uses US-011 lever + grate).
 Notes / dependencies: US-010, US-011, US-012.
 
-### US-015 Wake sequence + title card + control hints  [Priority: P0] [Status: design]
+### US-015 Wake sequence + title card + control hints  [Priority: P0] [Status: todo]
 As a player, I want to open my eyes on the tower floor, see the title, and get just enough hints, so that I understand the start without reading a manual.
 Acceptance criteria – Designer:
-- [ ] `design/models/title.js`: `ASCII QUEST` logo, max 70x9 cells, colored (warm gold into ember orange), plus subtitle style for `The Awakening`. Preview in `design/preview/title.html`.
+- [x] `design/models/title.js`: `ASCII QUEST` logo, max 70x9 cells, colored (warm gold into ember orange), plus subtitle style for `The Awakening`. Preview in `design/preview/title.html`. (Data approved; the preview has not yet been opened in a browser, see the PO note.)
+
+**PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer. Reviewed by reading `design/models/title.js`:
+- **Logo:** 68x8, within 70x9. It reads "ASCII QUEST" at 6-row block height, with 1-cell letter gaps and a 3-cell word gap.
+- **Colors:** gold-white to gold to flame to ember rows, an ember drop shadow only on empty cells, and the brass `<[ * ]>` flourish. The shine sweep (2.2 s) makes the 3 s hold feel alive without moving the layout.
+- **Subtitle:** `The Awakening`, letter-spaced, with brass brackets.
+- **`ASSETS.uiStyle` matches the stories:**
+  - US-015: the hint texts and triggers, fade 0.3 s in / 0.5 s out, 8 s timeout, and the 1.5 s eyelid curve with one half-close.
+  - US-012: crosshair dim to gold, and a prompt with a gold `[E]`.
+  - US-017: the end-text lines, 30 cps, the `- to be continued -` delay of 1.5 s, and the beacon-lit variant (D-003).
+  - US-005: `Click to resume`.
+  - All text is ASCII 32-126.
+- **Fade rule:** fades step down the glyph ramp (letters count as ramp index 9) instead of using alpha. This fits the style guide, and US-017 reuses it.
+- **Not yet verified:** nobody has opened `design/preview/title.html` in a browser; only the JS syntax and loading were checked in Node. When a browser pane is free, the coordinator or tester opens it and confirms that it renders with no console errors and that its 6 checks pass. If the preview is broken, the designer fixes the preview only. The art data stays approved unless the rendered logo differs from what the data describes.
+
 Acceptance criteria – Programmer:
+- [ ] (added on design review) All UI is drawn from `ASSETS.models.title` / `subtitle` / `ASSETS.uiStyle`: layout (logo top row 18, centred), colors, hint plate (scene bg x 0.35, no box), `> ` prefix, gold key words, and the ramp-step fade rule. Texts are not hard-coded in engine code; they come from `uiStyle`. UI cells are emissive (unlit, no fog).
+- [ ] (added on design review) Title shine band per `title.shine` during the hold. The eyelid follows `uiStyle.blink.curve`, with the ember edge row.
 - [ ] Start: screen black 1.0 s, then eye-blink reveal (rows open from the centre line outward over 1.5 s, with one half-close blink).
 - [ ] Camera starts lying (eye height 0.3 m, pitched up toward the sun shaft), rises to 1.60 m over 1.2 s; player input is ignored until the rise ends.
 - [ ] Title card fades in 1 s, holds 3 s, fades out 1 s, drawn over the 3D view.
@@ -458,7 +474,7 @@ Notes / dependencies: US-004, US-007, US-010.
 As a player, I want a satisfying ending when I step out onto the hill, so that the slice feels complete.
 Acceptance criteria:
 - [ ] Entering the outcrop trigger cells locks input; the camera walks forward 1 m over 1.5 s and pitches slightly down toward the valley.
-- [ ] Screen fades to black over 2 s (glyphs dim down the ramp, not just an overlay alpha).
+- [ ] Screen fades to black over 2 s (glyphs dim down the ramp, not just an overlay alpha). Use the `ASSETS.uiStyle.fade` rule (US-015 art) for both the 3D view and the text. End-text layout, colors and blinking cursor come from `uiStyle.endText`.
 - [ ] Text, centred, typed on at 30 chars/s. First line depends on the beacon state (D-003): unlit (default, and always if US-022 is not built) = `The beacons are dark.`; lit = `One beacon burns. The others are dark.`. Then `The world waits.`, then after 1.5 s `- to be continued -`, then `[R] Wake again`.
 - [ ] R restarts the slice from the wake sequence with all state reset (lantern on hook, boulder on stair, lever up, grate down, beacon unlit, hints reset).
 Design needed: no.
