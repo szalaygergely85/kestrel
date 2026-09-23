@@ -161,3 +161,17 @@ D2, blank share. Bench before: start 5.6 %, stair 6.9 %; target <= 5 % on all 5 
 Density per level is unchanged (same glyph weights), so the look stays the same with fewer dots. What can still count: the fog stipple beyond ~26 m, v1-only materials (iron, grate, ash), knot speckles at seams.
 
 **Measured (main session fills this in after the re-export and bench).** start _ %, stair _ %, sky pitch +20 _ %, diagonal _ %, low wall sky _ %.
+
+**2026-09-23, US-028 owner feedback "far walls and floor still look flat" (8-20 m).** This replaces the old rule "far walls are calm, not noisy". Far surfaces are now as lively as near ones, only smaller. The near look is unchanged: near sets, tones, jitter, joints, edges and shading stay as approved.
+
+| value | before | after |
+|---|---|---|
+| mid + far sets `stone*`, `brick*`, `floor*`, `rubble*`, `grass*` | 2-3 alternates, reduced vocabulary | near vocabulary, 3-4 alternates per level, far = mid (same densities; no `.` at L3, floor L3/L4) |
+| `wood.face.far` / `ceiling_timber.face.far` | `woodFar` | `grainV` / `grainU` (`woodFar` is unused now) |
+| `fog.stipple` | [0.45, 0.85] | [0.60, 0.92] (stipple from ~31 m, so none inside the 20 m test room) |
+| `fog.sparse` (new) | hard-coded 0.8 | 0.90 |
+| `lodGates` (new): max tier per feature | bevel 1, band 1, overlay 1, speckle 0 (hard-coded) | bevel 2, band 2, overlay 2, speckle 0 |
+
+These were already checked and are not damped with distance: per-block tones, per-texel jitter, `faceShade`, seam AO, and joints (the fallback to every 2nd, then every 4th line is unchanged). Fog only lerps fg/bg toward the haze colours by f.
+
+**Engine must match** (`engine/render/detailShade.js`, oracle and fast path, plus `MaterialTable`): read `DP.lodGates` instead of `tier < 2` / `tier === 0`, and `DP.fog.sparse` instead of `0.8`. The set and fog values are data only. The detail octave (tpc >= 1 gives 0.5-1 texel per cell) still gives a new hash about every 1-2 cells at distance. If the far surfaces still look blocky after the re-export, the next step is to shift the far octaves by one (1-2 texels per cell). That is a code change and needs the architect to check for shimmer.

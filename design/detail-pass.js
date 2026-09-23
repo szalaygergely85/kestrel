@@ -23,7 +23,8 @@
  *   - readability LIFT: the glyph level never collapses to '.' under ambient light only
  *   - EDGE pass over the finished cells: silhouettes, convex/concave corners, floor/ceiling seams, step nosings
  *   - FOG v2: cool haze that shifts glyph DENSITY (stipple) and COLOR (lighter glyphs, darker bg), not just darkness
- *   - LOD tiers by distance (near / mid / far glyph sets) with hashed dither, so far walls are calm, not noisy
+ *   - LOD tiers by distance (near / mid / far glyph sets) with hashed dither. Since US-028 "far still flat" the
+ *     far tiers keep the near variety (3-4 alternates, full tones / jitter / bevel / overlay); only speckle is near-only
  *
  * The functions in `util` are the REFERENCE implementation (clarity over speed), same rule as palette.js:
  * the engine may re-implement them (G-buffer, typed arrays, LUTs) as long as the output matches.
@@ -68,8 +69,20 @@
     color: 'fogV2',            // bg goes toward this (dark cool)
     glyph: 'fogV2Glyph',       // fg goes toward this (LIGHTER than bg: aerial haze, glyphs stay visible)
     start: 10, full: 45, curve: 1.0,   // US-028 LOD feedback: was 6 / 36
-    stipple: [0.45, 0.85],     // (was 0.40) from f = 0.45 (~26 m) a growing share of cells (hash) switch to the fog set ...
-    set: 'fog'                 // ... ':' / '.' haze; at f > 0.8 the sparser level (with spaces)
+    // US-028 "far still flat": fog shifts colour / haze first; glyph variety survives to f 0.6 (~31 m).
+    stipple: [0.60, 0.92],     // (was 0.45 / 0.85) from f = 0.6 a growing share of cells (hash) switch to the fog set ...
+    sparse: 0.90,              // ... ':' / '.' haze; above f = sparse (~42 m) the sparser level (with spaces). Was hard-coded 0.8
+    set: 'fog'
+  };
+
+  // Max LOD tier (0 near, 1 mid, 2 far) at which each face feature is still applied. Data, not code, so
+  // the owner's "far as lively as near" can be tuned without engine changes. Before US-028 "far still flat"
+  // these were hard-coded as bevel 1, band 1, overlay 1, speckle 0.
+  var lodGates = {
+    bevel: 2,      // block top / bottom shade bands
+    band: 2,       // beam glyph set inside a band (tone / shade apply at every tier regardless)
+    overlay: 2,    // moss / soot / dust
+    speckle: 0     // chips / knots / tufts: the finest speckle, near only
   };
 
   // ---------------------------------------------------------------------------
@@ -100,31 +113,33 @@
   // ---------------------------------------------------------------------------
   var sets = {
     stoneFace:  [".'", ".,`", ",:;", ":;,", ";+:", "+x=", "x%#", "%#&"],
-    // US-028 LOD feedback: mid sets 2-3 alternates per level, far sets 2 (no single-glyph level), same densities.
-    stoneMid:   [".'", ".,`", ",:", ":;,", ";+", "+x=", "x%", "%#&"],
-    stoneFar:   [".'", ".,", ",:", ":;", ";+", "+%", "%#", "#&"],
+    // US-028 "far still flat": mid AND far sets = the near vocabulary with 3-4 alternates per level (same
+    // densities, no reduced sets). Far = mid. Only the speckle layer (chips / knots / tufts) stays near-only.
+    // Blank-share rule kept: no '.' at level 3 (floor sets: level 3 and 4).
+    stoneMid:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
+    stoneFar:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
     chip:       [".", "'", "'`", "`'", "\"'", "%'", "%&", "&%"],
     moss:       [".", ",", ",'", "\",", "\";", "\"%", "%&", "&@"],
     // US-028 D2 (blank share): with lift 0.12 + gamma 0.70 an 8-level set never lands below level 3 when
     // b >= cutoff, so level 3 (and floor level 4) must not contain '.': soot, floor* and woodFar L2 lost their dots.
     soot:       [".", ".", ",'", ",:", ":;", ";%", "%#", "#&"],
     brickFace:  [".", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
-    brickMid:   [".'", ".,", ",:;", ":=", "=:+", "=+", "#=+", "#%"],
-    brickFar:   [".'", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
+    brickMid:   [".'`", ".,'", ",:;'", ":=;,", "=:+;", "=+:x", "#=+%", "#%=&"],
+    brickFar:   [".'`", ".,'", ",:;'", ":=;,", "=:+;", "=+:x", "#=+%", "#%=&"],
     floorFace:  [".", ".'", ",`'", ",`:'", ",:;", ":;=", ";=+", "=+*"],
-    floorMid:   [".`", ".'", ",'`", ",:'", ":;,", ";=:", "=+", "+*="],
-    floorFar:   [".`", ".'", ",'", ",:", ":;", ";=", "=+", "+*"],
+    floorMid:   [".`'", ".',`", ",`'", ",`:'", ",:;'", ":;=,", ";=+:", "=+*;"],
+    floorFar:   [".`'", ".',`", ",`'", ",`:'", ",:;'", ":;=,", ";=+:", "=+*;"],
     dust:       [".", "'", "'`", "'\"", "\"'", "\"^", "^*", "*"],
     gap:        [".", ".", ",", ",", ",.", ";", ";", ":"],
     rubbleFace: [".", ".,", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
-    rubbleMid:  [".,", ",:", ":;,", ";o:", "oO;", "O%", "%#O", "#&"],
-    rubbleFar:  [".,", ",:", ":;", ";o", "oO", "O%", "%#", "#&"],
+    rubbleMid:  [".,'", ".,:", ",:o;", ":;o,", "oO;:", "O%o;", "%#O&", "#&@%"],
+    rubbleFar:  [".,'", ".,:", ",:o;", ":;o,", "oO;:", "O%o;", "%#O&", "#&@%"],
     grassFace:  [".", ",'", "',\"", "\";,", "\"v;", "v\";", "vw\"", "wv\""],
-    grassMid:   [".,", ",'", ",'\"", "'\";", "\";", "\"v;", "v\"", "vw\""],
-    grassFar:   [".,", ",'", "',", ";\"", "\";", "v\"", "vw", "wv"],
+    grassMid:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
+    grassFar:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
-    woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],
+    woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
       h:  ["-", "-", "-~", "~=", "=", "="],
@@ -227,7 +242,7 @@
       albedo: 0.78, bgK: 0.22, detail: 20, jitter: 0.10,
       tones: [['wood', 3], ['woodDark', 2], ['woodLight', 1]],
       grid: { u: 0.25, v: 2.0, stagger: 0.5, shade: 0.75, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
-      face: { set: 'grainU', mid: 'grainU', far: 'woodFar' },
+      face: { set: 'grainU', mid: 'grainU', far: 'grainU' },
       band: { axis: 'v', period: 1.0, width: 0.22, set: 'beam', tone: 'woodDark', shade: 0.85, bgK: 0.14, edgeShade: 0.75 },
       speckle: { set: 'knot', chance: 0.012, shade: 0.7 },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -238,7 +253,7 @@
       albedo: 0.70, bgK: 0.22, detail: 22, jitter: 0.10,
       tones: [['wood', 3], ['woodLight', 2], ['woodDark', 1]],
       grid: { u: 1.2, v: 0.2, stagger: 0.33, shade: 0.45, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
-      face: { set: 'grainV', mid: 'grainV', far: 'woodFar' },
+      face: { set: 'grainV', mid: 'grainV', far: 'grainV' },
       speckle: { set: 'knot', chance: 0.02, shade: 0.7 },
       lod: { mid: 12, far: 25, dither: 3 }
     },
@@ -434,7 +449,7 @@
     var shadeK = 1, tint = null, tintAmt = 0, bgK = m.bgK, lineG = null, onJoint = false, inBand = false;
 
     // --- bevel (block top / bottom rows) ---
-    if (g && m.face.bevel && tier < 2 && F.sets) {
+    if (g && m.face.bevel && tier <= lodGates.bevel && F.sets) {
       var bv = m.face.bevel, yv = fv * g.v;
       if (g.v - yv < bv.top) shadeK *= bv.topShade;
       else if (yv < bv.bottom) shadeK *= bv.bottomShade;
@@ -447,7 +462,7 @@
       var pos = bcoord - Math.floor(bcoord / band.period) * band.period;
       if (pos < band.width) {
         inBand = true;
-        if (tier < 2 || !F.sets) set = band.set;
+        if (tier <= lodGates.band || !F.sets) set = band.set;
         shadeK = band.shade;
         if (band.tone && F.tones) { var bt = rgb[band.tone]; cr = bt[0]; cg = bt[1]; cb = bt[2]; }
         if (band.bgK) bgK = band.bgK;
@@ -482,7 +497,7 @@
     }
     // --- overlay (moss / soot / dust) ---
     var ov = m.overlay;
-    if (ov && F.overlay && tier < 2) {
+    if (ov && F.overlay && tier <= lodGates.overlay) {
       var bf = ov.band ? bandFactor(ov.band, s.z) : 1;
       if (hC < (onJoint ? ov.joint : ov.face) * bf) {
         if (!onJoint) set = ov.set;
@@ -492,7 +507,7 @@
       }
     }
     // --- speckle (chips, knots, tufts) ---
-    if (m.speckle && F.sets && tier === 0 && !onJoint && !inBand && hC > 1 - m.speckle.chance) {
+    if (m.speckle && F.sets && tier <= lodGates.speckle && !onJoint && !inBand && hC > 1 - m.speckle.chance) {
       set = m.speckle.set;
       shadeK *= m.speckle.shade;
     }
@@ -519,7 +534,7 @@
     // US-028 LOD feedback: alternates in every tier (was near only), so mid / far walls are not one glyph per level.
     else glyph = setGlyph(sets[set], gb, hA, F.detail, s);
     if (F.fog && f > fog.stipple[0] && hB < smoothstep(fog.stipple[0], fog.stipple[1], f)) {
-      glyph = pick(sets[fog.set][f > 0.8 ? 0 : 1], hA);
+      glyph = pick(sets[fog.set][f > fog.sparse ? 0 : 1], hA);
     }
 
     // --- color ---
@@ -652,7 +667,7 @@
   ASSETS.detailPass = {
     version: '2-proposed',
     status: 'PROPOSAL - not loaded by the game; see design/detail-pass.md',
-    shading: shading, faceShade: faceShade, ao: ao, fog: fog, edges: edges,
+    shading: shading, faceShade: faceShade, ao: ao, fog: fog, edges: edges, lodGates: lodGates,
     sets: sets, materials: materials, remap: remap, levelOverrides: levelOverrides,
     util: {
       shade: shade, edgePass: edgePass, resolve: resolve, validate: validate,
