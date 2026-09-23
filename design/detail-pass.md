@@ -175,3 +175,25 @@ Density per level is unchanged (same glyph weights), so the look stays the same 
 These were already checked and are not damped with distance: per-block tones, per-texel jitter, `faceShade`, seam AO, and joints (the fallback to every 2nd, then every 4th line is unchanged). Fog only lerps fg/bg toward the haze colours by f.
 
 **Engine must match** (`engine/render/detailShade.js`, oracle and fast path, plus `MaterialTable`): read `DP.lodGates` instead of `tier < 2` / `tier === 0`, and `DP.fog.sparse` instead of `0.8`. The set and fog values are data only. The detail octave (tpc >= 1 gives 0.5-1 texel per cell) still gives a new hash about every 1-2 cells at distance. If the far surfaces still look blocky after the re-export, the next step is to shift the far octaves by one (1-2 texels per cell). That is a code change and needs the architect to check for shimmer.
+
+**2026-09-23, US-028a "Stable detail when moving" (anti-swim).** Architect shimmer note in `docs/backlog.md` (US-028), fixes F1 + F2.
+
+F1, reference shader (`util.shade`), same change as engine `shadeDetailFast` in the same commit:
+- `hA` (alternate glyph, jitter, overlay tint) and `hC` (overlay / speckle chance) are keyed on the block `(bix, course)` when the material has a `grid` (this includes `grid.lines: false`, i.e. grass 0.7 x 0.7 m). Seeds are unchanged (`seed`, `seed + 13`).
+- Without a grid they use the texel one octave coarser: `floor(u * ds * 0.5)`, `floor(v * ds * 0.5)` (ds = the per-cell octave density, unchanged).
+- `hB` (tier dither, fog stipple) is unchanged: base `detail` texel.
+
+F2, data:
+
+| value | before | after |
+|---|---|---|
+| `grid.maxCover` stone (+ moss, scorched), brick, floor, ceiling_timber, wood | 0.5 | 0.25 (lines >= 4 cells apart; x2 / x4 fallback unchanged) |
+| `rubble.grid.maxCover` (gap kind) | 0.6 | 0.6, unchanged (gap sets, not 1-cell lines, not in the note) |
+
+**Designer sign-off: APPROVED, with notes.** Checked against the approved look (stones with joints, lively far surfaces) from the data and the shader path; the numbers must be confirmed in the preview after the main session re-exports.
+- Stones with joints: kept. Near walls keep every bed / head joint (cover < 0.1 m / 0.2 m). Farther out the joints thin to every 2nd, then every 4th course earlier than before, and drop at half the old footprint (0.4 m instead of 0.8 m per cell for bed joints). By estimate they still show (every 4th course) at 20 m in the test room.
+- One alternate glyph per block, as expected. Each stone now reads as one surface with its own texture and tone. Inside a block the glyph still changes with light, AO, bevel and face shade. Near blocks under flat ambient light are calmer than before. This is accepted: it is what stops the swimming.
+- Moss, soot and chips are now per block. Moss / soot cover whole stones inside their height band (joints first, `joint 0.9` vs `face 0.35 / 0.55`), which reads as mossy / sooty stones. Chips (`chance 0.05` stone, 0.03 floor) now mark a whole block as a cracked stone instead of single chips. Grass tufts vary per 0.7 m patch. All acceptable. If the PO finds the chipped blocks too loud in the preview, the data lever is `speckle.chance` 0.05 -> 0.03 (no code change).
+- Lively far surfaces: kept. At 8-20 m a block covers 1-3 cells, so the per-block alternates and tones still change almost every cell.
+
+Follow-ups: the main session re-exports `exports/detail_pass_start.json`; the programmer's bench measures the US-028a flicker metric.

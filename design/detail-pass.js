@@ -163,7 +163,8 @@
   //   Coordinates are the v1 ones (README 1.6): walls u = along-wall m, v = height m (up);
   //   floors / ceilings u = world x, v = world y.
   //   tones:   [[colorKey, weight], ...] one is picked PER BLOCK (grid cell) by hash; jitter = +- value noise per detail texel
-  //   detail:  detail texels per metre (alternate glyph choice + jitter), world-anchored so it never shimmers
+  //   detail:  detail texels per metre, world-anchored. US-028a: with a grid, the alternate glyph, jitter, overlay
+  //            and speckle hashes are per BLOCK (bix, course); without one, per texel one octave coarser
   //   grid:    analytic joints. Blocks u x v m, every odd course shifted by stagger*u.
   //            Joints = lines at v = k*grid.v (bed) and u' = k*grid.u (head). A joint is drawn in a cell only if the
   //            line passes through the cell's texture footprint, and only while the footprint is < maxCover * period;
@@ -179,7 +180,7 @@
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
     tones: [['stoneMid', 4], ['stoneCool', 3], ['stoneWarm', 2], ['stoneDeep', 1]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.5, tie: true },
+    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
             bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },
@@ -215,7 +216,7 @@
       desc: 'Brick courses 0.3 x 0.1 m (future houses, chimneys). Light mortar, classic |___|___| at mid range.',
       albedo: 0.80, bgK: 0.26, detail: 20, jitter: 0.10,
       tones: [['brick', 4], ['brickDark', 2], ['brickLight', 2]],
-      grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.5, tie: true },
+      grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
       face: { set: 'brickFace', mid: 'brickMid', far: 'brickFar' },
       lod: { mid: 10, far: 22, dither: 3 }
     },
@@ -225,7 +226,7 @@
             'Sparser, lower-sitting glyphs than walls ( . , \' ` ). Receding grout lines turn into / and \\.',
       albedo: 0.75, bgK: 0.26, detail: 14, jitter: 0.08,
       tones: [['flagstone', 4], ['flagWarm', 2], ['flagCool', 2], ['flagDark', 2]],
-      grid: { u: 0.75, v: 0.5, stagger: 0.5, shade: 0.50, tint: 'mortar', amount: 0.5, bgK: 0.14, cross: '+', maxCover: 0.5 },
+      grid: { u: 0.75, v: 0.5, stagger: 0.5, shade: 0.50, tint: 'mortar', amount: 0.5, bgK: 0.14, cross: '+', maxCover: 0.25 },
       face: { set: 'floorFace', mid: 'floorMid', far: 'floorFar' },
       overlay: { set: 'dust', tints: ['ash', 'ashLight'], amount: 0.45, shade: 1.05, joint: 0.30, face: 0.07 },
       speckle: { set: 'chip', chance: 0.03, shade: 0.70 },
@@ -241,7 +242,7 @@
       // US-028 D2: albedo 0.74 -> 0.78 so boards in the full seam-AO zone (k 0.60, jitter -10 %) stay >= cutoff.
       albedo: 0.78, bgK: 0.22, detail: 20, jitter: 0.10,
       tones: [['wood', 3], ['woodDark', 2], ['woodLight', 1]],
-      grid: { u: 0.25, v: 2.0, stagger: 0.5, shade: 0.75, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
+      grid: { u: 0.25, v: 2.0, stagger: 0.5, shade: 0.75, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.25 },
       face: { set: 'grainU', mid: 'grainU', far: 'grainU' },
       band: { axis: 'v', period: 1.0, width: 0.22, set: 'beam', tone: 'woodDark', shade: 0.85, bgK: 0.14, edgeShade: 0.75 },
       speckle: { set: 'knot', chance: 0.012, shade: 0.7 },
@@ -252,7 +253,7 @@
       desc: 'Planks on a vertical face (pallet, lever post, doors): 0.2 m planks, butt joints every 1.2 m, grain along the plank, knots.',
       albedo: 0.70, bgK: 0.22, detail: 22, jitter: 0.10,
       tones: [['wood', 3], ['woodLight', 2], ['woodDark', 1]],
-      grid: { u: 1.2, v: 0.2, stagger: 0.33, shade: 0.45, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
+      grid: { u: 1.2, v: 0.2, stagger: 0.33, shade: 0.45, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.25 },
       face: { set: 'grainV', mid: 'grainV', far: 'grainV' },
       speckle: { set: 'knot', chance: 0.02, shade: 0.7 },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -425,13 +426,19 @@
     // halved / doubled in octaves (-3 .. +2) so near texels stay crisp and far ones stay calm, still
     // world-anchored (floor(u * ds)). hA / hC use the octave texel; hB (LOD tier dither + fog stipple)
     // keeps the BASE texel, so the tier boundary does not move with the octave.
+    // US-028a F1 (anti-swim): hA / hC are keyed on the BLOCK (bix, course) when the material has a grid
+    // (also grid.lines === false, e.g. grass), else on the texel one octave coarser (floor(u * ds * 0.5)),
+    // so alternates / jitter / overlay / speckle no longer reroll on sub-cell camera motion. hB unchanged.
     var base = m.detail || 16;
     var tpcU = Math.abs(s.dudx) + Math.abs(s.dudy), tpcV = Math.abs(s.dvdx) + Math.abs(s.dvdy);
     var tpc = (tpcU > tpcV ? tpcU : tpcV) * base;
     var oct = tpc >= 4 ? -3 : tpc >= 2 ? -2 : tpc >= 1 ? -1 : tpc >= 0.5 ? 0 : tpc >= 0.25 ? 1 : 2;
-    var ds = base * OCT_POW2[oct + 3], tx = Math.floor(u * ds), ty = Math.floor(v * ds);
+    var ds = base * OCT_POW2[oct + 3];
+    var ax, ay;
+    if (g) { ax = bix; ay = course; }
+    else { ax = Math.floor(u * ds * 0.5); ay = Math.floor(v * ds * 0.5); }
     var btx = Math.floor(u * base), bty = Math.floor(v * base);
-    var hA = hash(tx, ty, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(tx, ty, m.seed + 13);
+    var hA = hash(ax, ay, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(ax, ay, m.seed + 13);
     var hBlock = hash(bix, course, m.seed + 3);
 
     // --- tone (per block) ---
