@@ -21,12 +21,14 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | done | Tester PASS 2026-09-23 (see `docs/test-reports/US-028a.md`). Must be `done` before US-029 |
 | 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | done | ARCH OK (review #2, 0e6b5a0); PO OK 2026-09-23; Tester PASS 2026-09-23 (`docs/test-reports/US-025.md`), 1 minor non-blocking bug (BUG-1, checklist item 6 grep wording) |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | dev | Architect review 1 (2026-09-23): ARCH CHANGES 1-3 (gpucompare passthrough tautology, context-loss handling, per-frame allocations) + minor 4; `allV2` ruling: all-or-nothing stays, v2 for every material is a content invariant (designer adding the 4). Owner-hardware run after rework |
-| 14 | US-030 | **GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites (D-009 stage 2)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
-| 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030 `done` (or after the gate fails -> CPU per plan A) |
+| 14 | US-030a | **GPU raycasting: GLSL DDA + configurable grid (D-009 stage 2a)** (engine story) | P0 | todo | Architect tech notes done; Programmer next, after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
+| 14b | US-030b | **N-ray coverage anti-shimmer + flicker metric + owner walk-test (D-009 stage 2b)** (engine story) | P0 | todo | Programmer after US-030a `done` |
+| 14c | US-030c | **GPU sprite pass + JS `drawSprites` reference (D-009 stage 2c)** (engine story) | P0 | todo | Programmer, parallel track to US-030b (shares only `DEPTH` texture + composite pass) |
+| 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030a+030b `done` (or after the gate fails -> CPU per plan A) |
 | 16 | US-007 | Lighting: sun directional light with shaft shadow – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-006 |
-| 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); architect tech notes first; Programmer after US-030 + US-007 + US-025 `done` |
+| 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); architect tech notes first; Programmer after US-030a+030b + US-007 + US-025 `done` |
 | 18 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025; may run on the parallel track). Designer adds `interactables` + hint zones |
-| 19 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-030 (GPU sprite pass) + US-006. Designer re-checks props at 320x120 |
+| 19 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-030c (GPU sprite pass) + US-006. Designer re-checks props at 320x120 |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 21 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 22 | US-014 | Lever opens the grate | P0 | todo | Programmer |
@@ -838,25 +840,72 @@ Files added: `engine/render/gpu/{GpuCellPipeline,ShadeTextures,GpuTimer,gpuCompa
 
 **Readiness notes for US-030 (no action this story):** (i) `GA`/`GD`/`DEPTH` become GLSL render targets in stage 2 - RGBA32F/R32F are not colour-renderable in core WebGL2; US-030 either requires `EXT_color_buffer_float` (else CPU fallback) or packs floats into RGBA32UI via `floatBitsToUint`. Architect decides in the US-030 tech notes. (ii) Stage 1 upload at 320x120 would be 1.7 MB/frame - fine, because stage 2 removes it; do not ship 320x120 on stage 1. (iii) The `rt.gpuActive` shim and `mask` semantics move into `renderWorld` when US-025 is `done`.
 
-### US-030 GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites  [Priority: P0] [Status: todo]
+### US-030a GPU raycasting: GLSL DDA + configurable grid  [Priority: P0] [Status: todo]
 
-> **Owner feedback (2026-09-23, after US-028a):** walking still looks "a bit strange" (residual swimming). Owner agreed to wait for the GPU path and a finer grid. US-030 acceptance therefore includes an **owner walk-test in real Chrome at the new default grid (320x120)**: the owner confirms that shimmer/swimming is no longer bothersome. If not, raise it with the PO before `done`.
-As a player, I want walls and floors to stay still and crisp while I move, on a bigger and more detailed grid, so that the world looks solid instead of "lines jumping".
-(D-009 stage 2. Only runs if US-029 passed the gate.)
+As a player, I want walls and floors to stay crisp on a bigger grid, so that the world looks solid instead of "lines jumping".
+(D-009 stage 2a. Only runs if US-029 passed the gate.)
 Acceptance criteria:
-- [ ] **Architect tech notes written before dev** (engine story): sector grid / structures / spans as integer data textures, the DDA loop and its step cap, the sub-ray pattern and coverage vote, the depth texture, the sprite-list texture format.
+- [ ] **Architect tech notes written before dev** (engine story): sector grid / structures / spans as integer data textures, the DDA loop and its step cap, the depth texture. Done — see below and `docs/architecture.md` 14.2.
 - [ ] Sector DDA in GLSL: one fragment per cell casts against the sector grid, including multiple placed structures with per-structure origins (US-025/D-008) and open spans; writes the G-buffer (kind, planeId, material, uv, depth) that the US-029 shading/edge pass consumes. The CPU caster no longer runs on the `gl2` path.
-- [ ] **N-ray coverage anti-shimmer**: each cell casts N sub-rays (default 2x2, configurable 1..4x4) and picks material/tone by coverage-weighted vote.
-- [ ] **Flicker metric** (measured by a headless/bench or `?gpucompare`-style tool, defined in the architect notes): sliding the camera in 0.02 m steps over the bench pose set, the share of non-edge cells whose glyph changes per step is **<= 5 % per 0.02 m step**, and at least **20 %** lower than the 1-ray JS path on the same poses (start-pose numbers per the architect's US-028a measurement; re-measure over the full pose set).
 - [ ] Parity: with N = 1 the GPU cast matches the JS caster under `?gpucompare=1` with the US-029 thresholds (glyph >= 99 % excl. edge cells, fg/bg +-4, depth 1 %).
-- [ ] **GPU sprite pass**: sprites are drawn from a sprite-list texture (<= 64 sprites), depth-tested per cell against the depth texture, no readback in the frame loop. Implements the `design/README.md` section 4 sprite format (transparent space, scale rule, `lods.half` below 0.75, emissive cells ignore light and fog). JS `sprites.js` stays as the reference and fallback. Verified with at least one test sprite in `test_room`.
 - [ ] **Configurable grid**: `createEngine({cols, rows})` and URL `?grid=WxH`, allowed range **160x60 to 320x120**, cell aspect preserved, out-of-range values clamped. **After this story the default on the `gl2` GPU path is 320x120** (240x90 stays selectable as a step-back).
-- [ ] Budgets at 320x120 with N = 2x2 on the owner's laptop: **GPU <= 4 ms**, **JS <= 2 ms** per frame (`?bench=1`).
-- [ ] **Fallback**: no WebGL2 / software renderer / `?gpu=0` -> JS path, **grid forced to 160x60**, anti-shimmer off, fully playable; `?grid=` is ignored on the fallback (logged once).
+- [ ] **Fallback**: no WebGL2 / software renderer / `?gpu=0` -> JS path, **grid forced to 160x60**, fully playable; `?grid=` is ignored on the fallback (logged once).
 - [ ] The JS caster stays the oracle: `bench-cast` still passes headless in Node. `check-deps` OK; public API unchanged.
+- [ ] `footprintEntry` fix (US-025 carry-over): writes `ctx._entryX/_entryY`, returns a bool. Nothing else changes in the CPU caster; `bench-cast` baselines must not move.
+- [ ] **Owner walk-test at 320x120 with n = 1** as a *baseline* only (not the acceptance bar — the shimmer/swimming acceptance is US-030b).
+Design needed: no (designer re-checks existing previews at 320x120 as a follow-up, tracked under US-030b).
+Notes / dependencies: US-029 gate PASSED, US-025 `done`. US-006 depends on this story `done` (and on US-030b for the flicker bar).
+
+### US-030b N-ray coverage anti-shimmer + flicker metric + owner walk-test  [Priority: P0] [Status: todo]
+
+> **Owner feedback (2026-09-23, after US-028a):** walking still looks "a bit strange" (residual swimming). Owner agreed to wait for the GPU path and a finer grid. Acceptance therefore includes an **owner walk-test in real Chrome at the default grid (320x120)**: the owner confirms that shimmer/swimming is no longer bothersome. If not, raise it with the PO before `done`.
+As a player, I want the picture to stop "swimming" while I move, so that the world feels solid.
+(D-009 stage 2b. After US-030a `done`.)
+Acceptance criteria:
+- [ ] **N-ray coverage anti-shimmer**: each cell casts N sub-rays (default 2x2, configurable 1..4x4) and picks material/tone by coverage-weighted vote.
+- [ ] Parity re-run: with N = 1 the GPU cast still matches the JS caster under `?gpucompare=1` (US-029 thresholds), after the vote code lands.
+- [ ] **Flicker metric** (measured by a headless/bench or `?gpucompare`-style tool, defined in the architect notes): sliding the camera in 0.02 m steps over the bench pose set, the share of non-edge cells whose glyph changes per step is **<= 5 % per 0.02 m step**, and at least **20 %** lower than the 1-ray JS path on the same poses (start-pose numbers per the architect's US-028a measurement; re-measure over the full pose set).
+- [ ] Budgets at 320x120 with N = 2x2 on the owner's laptop: **GPU <= 4 ms**, **JS <= 2 ms** per frame (`?bench=1`).
 - [ ] Architect confirms the N-ray count at 320x120 within GPU <= 4 ms.
-Design needed: no (designer re-checks existing previews at 320x120 as a follow-up).
-Notes / dependencies: US-029 gate PASSED, US-025 `done`. The shimmer note (X, Y) comes from the architect's US-028 measurement.
+- [ ] **Owner walk-test acceptance**: real Chrome, 320x120, N = 2x2 — owner confirms shimmer/swimming is no longer bothersome.
+Design needed: no.
+Notes / dependencies: US-030a `done`. The shimmer note (X, Y) comes from the architect's US-028 measurement. US-016's terrain anti-shimmer also depends on this story.
+
+### US-030c GPU sprite pass + JS `drawSprites` reference  [Priority: P0] [Status: todo]
+
+As a player, I want props/sprites drawn correctly and cheaply on the GPU path, so that the scene stays performant and consistent with walls.
+(D-009 stage 2c. Parallel track to US-030b; only shares the `DEPTH` texture and the final composite pass with 030a/030b.)
+Acceptance criteria:
+- [ ] **Architect tech notes**: sprite-list texture format (done, see architecture.md 14.2).
+- [ ] **GPU sprite pass**: sprites are drawn from a sprite-list texture (<= 64 sprites), depth-tested per cell against the depth texture, no readback in the frame loop. Implements the `design/README.md` section 4 sprite format (transparent space, scale rule, `lods.half` below 0.75, emissive cells ignore light and fog). JS `sprites.js` stays as the reference and fallback. Verified with at least one test sprite in `test_room`.
+- [ ] `?gpucompare=1` includes sprite cells and meets the US-029 thresholds.
+Design needed: no.
+Notes / dependencies: US-030a `done` (shares `DEPTH` texture + composite pass). US-011 depends on this story `done`.
+
+**Tech notes (architect, 2026-09-23).** Normative layout, formats, decision table, budgets and the fallback matrix are in `docs/architecture.md` 14.2 (amends 7.2, 14.1); this is the build plan. Build on the US-029 design as reviewed (mask composition, present hook, `GpuTimer` ring, context-loss handling, bind-time tables), not on the code being fixed in parallel.
+
+**PO decision (2026-09-23): split accepted, as proposed.** US-030a is next after US-029 (status `todo`); US-030b follows it; US-030c runs parallel to US-030b on a second track (US-011 depends on it). Dividing one large GPU story into three independently checkable, sequentially reviewable pieces reduces review-loop cost and lets US-011's dependency (sprites) land without waiting on the flicker/owner walk-test work. No reason to keep it as one story.
+
+**Follow-up (designer/PO): HUD/title readability at 320x120** — HUD text and title-card text (US-015) are half-size at the new default grid; re-check legibility before M1 exit.
+
+**Build plan (030a).**
+1. `RenderTarget` factory probe + `cpuGrid`, `createEngine({cols, rows, cpuGrid, gpu, rays})`, `engine.setGrid`, `?grid=WxH` in `main.js`; `GBuffer/DepthBuffer/OpenSpans` sized from `rt`. Verify the CPU path at 160x60 and the gl2 presenter at 320x120 (atlas, DPR, resize) before any GLSL.
+2. `packed.js`: `relief` array, `FLAGS` RG8UI, `packLevel(level, matTable)` at place time (`World.placeStructure` receives the table via `engine`), asserts (`cellSize == 1`, no zero mat ids). `WorldTextures.js` (pure): atlas layout, `uStruct` rows, dirty-row upload plan, Node tests.
+3. `glsl/cast.frag.js`: the 14.2 item 1 table, `n = 1` first (sub-sample offsets as uniforms, `cols*n x rows*n` viewport from day one). `glsl/resolve.frag.js` as a copy for n = 1. `glsl/deriv.frag.js` = `computeDerivatives`. All G-buffer targets uint (`floatBitsToUint`); shade/edge read via `uintBitsToFloat`. Sky port (`fastShadeSky`) in the shade pass; `fillSky` skipped on the GPU path.
+4. `compositor.js`: `renderWorld` picks the path once per frame (`fb.gpu = pipeline && pipeline.ready`): GPU -> cull/sort structures (steps 1-2 kept), `pipeline.frame(fb, world, cam, order, count)`; CPU -> today's sequence. The `rt.gpuActive` no-op shim in `shadeSurfaces`/`edgePass` is removed. `MASK` upload replaces the old G-buffer upload; the upload code stays behind `setSource('upload')` for `?gpucompare=shade`.
+5. `sectorCaster.js`: `footprintEntry` writes `ctx._entryX/_entryY`, returns a bool (US-025 carry-over). Nothing else changes in the CPU caster; `bench-cast` baselines must not move.
+6. `gpuCompare.js`: `?gpucompare=1` = full-path compare at 160x60, n = 1, with geometry readback (14.2 item 8); `compareGeometry(...)` pure and Node-tested. Debug views `?gpudebug=kind|plane|depth|struct` (struct = `planeId >> 28`) via the existing debug program.
+7. `?bench=1` at 320x120: `jsMs`, hook ms, `gpuMsP50/P95`; the owner pastes the numbers.
+
+**Build plan (030b).** `n` from `?rays=`/`createEngine`; `resolve.frag` vote (14.2 item 3); `shadeDetailFast` -> `shadeCore` + `shadeTail` in JS first (bench-cast checksums unchanged = proof of a pure refactor), then the same split in `shade.frag`; `flicker.js` + `?flicker=1` (JS 1-ray, GPU n = 1, GPU n = 2 at 320x120); re-run `?gpucompare=1`; measure n = 2 and n = 3 p95 and put the table in the notes; then the owner walk-test.
+
+**Build plan (030c).** `SpriteAtlas.js` pure packer over the registry's models (all frames + `lods.half`), Node test against `design/README.md` section 4 (transparent space, emissive flag); `projectSprite` shared helper; `sprites.js` `drawSprites` (static frame, depth test on `fb.depth`, `fogF`, emissive) as the reference; `glsl/sprite.frag.js`; edge pass re-targeted to `edgeFg/edgeBg`; one test sprite spawned in `test_room` by `main.js` under `?sprite=1`; `?gpucompare=1` includes sprite cells.
+
+**N-ray count (AC 11, confirmed in advance, to be verified by measurement in 030b): n = 2 (2x2) at 320x120.** 153,600 sub-rays x <= 96 DDA steps x <= 2 in-bbox structures = 30 M loop iterations worst case, ~1 ms on an integrated GPU; the four extra passes and the x4 `shadeCore` add < 1 ms; total expected < 2 ms against the 4 ms budget. n = 3 (345,600 sub-rays) is likely inside the budget and may be enabled if the owner's laptop shows p95 <= 4 ms; n = 4 stays test-only. If n = 2 misses the 20 % flicker improvement, the lever is the `shadeTail` (coverage-dimmed joint lines, `cov` bits), not more rays.
+
+**Tests.** Node: `WorldTextures.test.js` (layout, dirty plan, asserts), `packed.test.js` (relief bits, mat ids), `gpuCompare.test.js` (`compareGeometry`), `flicker.test.js` (synthetic two-frame cases: moving line, edge exclusion), `SpriteAtlas.test.js`, `glsl.test.js` (source checks: `MAX_RAY_STEPS`, `MAX_DIST`, `floatBitsToUint`, no `gl_FragCoord` outside the address line, no `round(`), `compositor.test.js` (CPU path unchanged; GPU path calls `pipeline.frame` once), `engine.test` (`createEngine` grid clamping, `cpuGrid` on `force2d`), `bench-cast --gc` (checksums unchanged after the `footprintEntry` and `shadeCore/Tail` refactors), `check-deps`. Browser (tester, then owner): `?gpucompare=1` and `=shade` tables, `?flicker=1` table, `?bench=1` at 320x120 and 240x90, `?grid=` clamping (`100x30`, `400x150`, `200x75`), `?gpu=0` / `?force2d=1` -> 160x60 playable, `WEBGL_lose_context` lose/restore, `?gpudebug=struct` with two placed structures, the owner walk-test.
+
+**Risks.** (1) Decision-table drift from `castColumn`: the CPU has three empirically found clips (`floorFilledTo`, `ceilingFilledTo`, `capRowEnd`); the GPU table in 14.2 argues they are no-ops for a per-cell ray, and only `?gpucompare` geometry parity can prove it. Mitigation: debug views + the compare tool land before the vote or sprites. (2) Float32 boundary rows (grazing angles, `t` near `MAX_DIST`): expected mismatches < 0.5 % and inside the edge-cell exclusion; more means a constant differs. (3) The discrete glyph output limits what averaging can do for 1-cell joint lines; the 20 % AC may need `shadeTail` work (see the n note) - measure before tuning. (4) CPU behaviours the GPU must copy even if odd (no upper wall from a sky cell; `yawSteps` ignored): file follow-ups, do not fix in GLSL. (5) 320x120 on the CPU is never allowed (4x cost), so every fallback must land on `cpuGrid`; a mid-game context loss is the one accepted degraded case. (6) HUD text at 320x120 is half-size - designer/PO follow-up before M1 exit. (7) `EXT_disjoint_timer_query_webgl2` is missing on some Chrome builds; the budget AC then falls back to frame time, as in US-029.
 
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]
 As a player, I want a torch to throw flickering warm light across the stone, so that the room feels alive.
@@ -873,7 +922,7 @@ Acceptance criteria:
 - [ ] Uses the US-002 light rules: light color is a hue (`P.hue[key]`) and intensity carries the energy (`addLight`); falloff is `P.util.falloff` `(1-(d/r)^2)^2`. Light values are read from `P.lights` (torch/lantern), not hard-coded.
 - [ ] JS reference lighting produces the same result: `?gpucompare=1` with lights on meets the US-029 thresholds. On the CPU fallback the JS reference runs with a reduced light count (max 4, nearest first) and the game stays playable.
 Design needed: no (uses US-002 colors).
-Notes / dependencies: US-030 `done` (or, if the US-029 gate failed, built on the CPU per plan A with the old 4-lights-at-60-fps bar), US-025.
+Notes / dependencies: US-030a + US-030b `done` (or, if the US-029 gate failed, built on the CPU per plan A with the old 4-lights-at-60-fps bar), US-025.
 
 ### US-007 Lighting: sun directional light with shaft shadow  [Priority: P0] [Status: todo]
 As a player, I want a bright sun shaft to fall through the broken roof onto the floor, so that I am drawn to look up and see the sky.
