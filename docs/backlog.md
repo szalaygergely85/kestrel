@@ -1989,3 +1989,11 @@ Design needed: no.
 Notes / dependencies: US-035, US-036, US-027 (shared JSON conventions).
 
 > **US-004b resumed and finished (2026-09-23, programmer).** Status is now `arch-review` (see the story section above for the full AC checklist and programmer notes). All of `tools/bench-cast.mjs` (default + `--shader=reference` + `--gc`), `?shadetest=1` (361/361, worst deviation 0.25) and `node game/js/physics/physics.test.js` (187/187, untouched) pass; the game loads with no console errors on `?debug=1 ?bench=1 ?glyphs=1 ?shadetest=1 ?force2d=1 ?demo=1 ?origin=1480,1018` (checked in a real Chrome tab via this session's own preview server). `main.js` needed no change (it never reads `castScene`'s return value). One item is flagged **ASK ARCHITECT** in the story's AC list: 2 additional overdraw/gap bugs (beyond the 2 architecture.md 12 named) had to be fixed to hit exactly 9,600 writes/pose, so the pre-fast-shader image is not byte-identical to the recorded baseline - every differing cell was verified to be either an already-ambiguous multi-write cell in the original, or the same 2-row gap bug, never a clean regression. Next: architect review of `game/js/render/raycaster.js`, `OpenSpans.js`, `fastShade.js`, `shadeTest.js`, `tools/bench-cast.mjs` (`ARCH OK` -> po-review, or `ARCH CHANGES` -> back to programmer), with a decision on the ASK ARCHITECT item above. US-009's architect tech notes still haven't been started. The owner's verdict on the detail-pass preview (`design/preview/detail_pass.html`) is still pending.
+
+---
+
+## Known issues / owner reports (tester checks these in every related test run)
+
+| ID | Reported | Description | Status | Check in |
+|---|---|---|---|---|
+| BUG-OWN-001 | 2026-09-23, owner | **See-through objects:** the owner can see through some objects/walls in `game/index.html` (tower world). Not blocking yet. It may come from the in-progress US-030a GPU DDA (port 8000 serves the live working tree) or be pre-existing (compositor/sector DDA, thin walls, solid-cell faces between adjacent solids, sprites). Tester: reproduce on the committed code in the worktree (CPU `?force2d=1` vs GPU), record poses (`?debug=1` shows world position/yaw/pitch) and screenshots, and name the cause (which pass: DDA, compositor, sprites, edge). | open | US-030a test, US-030c test, and every later render story test |
