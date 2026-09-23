@@ -18,6 +18,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
 | 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | arch-review | Shadetest v2 table fixed (1954/1954), v2 bench baseline re-recorded, ALL CHECKS PASS. Must be `done` before US-029 |
+| 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | todo | Owner complaint. Programmer after US-028 `done`; must be `done` before US-029 (GPU ports the final hash keys) |
 | 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | todo | Programmer; designer supplies `world_m1.js` + US-016b |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-028 `done` (US-025 may run on the parallel track) |
 | 14 | US-030 | **GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites (D-009 stage 2)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
@@ -718,6 +719,19 @@ Rulings:
 - **Recommended AC (bench, start pose, same 3×30 steps):** (i) non-joint, non-edge glyph changes ≤ 1.0 % of same-surface cells per step; (ii) total ≤ 7 % averaged over the three motions; (iii) A-B-A ≤ 0.3 %; (iv) shade p50 +≤ 0.05 ms. For US-030: X = 5 % per 0.02 m step (non-edge), Y = 20 % lower than the 1-ray JS path after this fix (start-pose numbers; re-measure over the full pose set).
 - **Where:** a follow-up story (US-028a, P0, before US-029 so the GPU ports the final hash keys), not US-028. It needs a reference change, a look sign-off and a new bench metric, and US-028 would take another loop. PO's call.
 
+### US-028a Stable detail when moving (anti-swim)  [Priority: P0] [Status: todo]
+As a player, I want the wall/floor/ceiling detail to hold still while I move, so that the world doesn't shimmer or swim under me.
+(Owner complaint, 2026-09-23. Engine + content story. Must land, and be `done`, before US-029 so the GPU pipeline ports the final hash keys.)
+Acceptance criteria:
+- [ ] F1: `hA`/`hC` are keyed on `(bix, course)` when a grid exists, else on the texel one octave coarser (`floor(u*ds*0.5)`); `hB` unchanged. Same fix ported into `design/detail-pass.js` `util.shade` in the same commit (reference and fast path must match).
+- [ ] F2 (designer, data-only): `grid.maxCover` 0.5 → 0.25 on affected materials; re-export `detail_pass_start.json`.
+- [ ] **Bench flicker metric** (new, added to `tools/bench-cast.mjs` or a sibling tool): start pose, 30 steps each of 0.02 m forward, 0.02 m strafe, 0.1° yaw; a "same-surface" cell = same kind/material/planeId across the pair. Reports, per motion and averaged: % of same-surface cells whose glyph changes, split into non-joint/non-edge vs. total.
+- [ ] **AC:** non-joint, non-edge glyph changes ≤ 1.0 % of same-surface cells per step; total ≤ 7 % averaged over the three motions; A-B-A (3 steps forward/back/forward) ≤ 0.3 %; shade p50 cost increase ≤ 0.05 ms.
+- [ ] Designer sign-off: reviews the `maxCover 0.25` look in the existing detail-pass preview (one alternate glyph per block is expected) and records approval/changes in `design/detail-pass.md`.
+- [ ] `?shadetest=1` still ALL PASS on both tables; `node --expose-gc tools/bench-cast.mjs --gc` ALL CHECKS PASS, 0 GC; `node tools/check-deps.mjs` OK.
+Design needed: yes - designer re-tunes `maxCover` to 0.25 and signs off on the resulting look.
+Notes / dependencies: US-028 `done` (arch-review → done first). Blocks US-029 (GPU must port the same hash keys). No temporal hysteresis buffer (breaks the pose-only frame determinism the bench relies on).
+
 ### US-029 GPU pipeline: shading + edge pass on the GPU, parity page  [Priority: P0] [Status: todo]
 As a player, I want the renderer to run its heavy per-cell work on my graphics card, so that the world can get bigger, sharper and steadier without the game slowing down.
 (D-009 stage 1 = architecture section 14 option C. **This story is the D-009 gate.**)
@@ -743,7 +757,7 @@ Acceptance criteria:
 - [ ] **Architect tech notes written before dev** (engine story): sector grid / structures / spans as integer data textures, the DDA loop and its step cap, the sub-ray pattern and coverage vote, the depth texture, the sprite-list texture format.
 - [ ] Sector DDA in GLSL: one fragment per cell casts against the sector grid, including multiple placed structures with per-structure origins (US-025/D-008) and open spans; writes the G-buffer (kind, planeId, material, uv, depth) that the US-029 shading/edge pass consumes. The CPU caster no longer runs on the `gl2` path.
 - [ ] **N-ray coverage anti-shimmer**: each cell casts N sub-rays (default 2x2, configurable 1..4x4) and picks material/tone by coverage-weighted vote.
-- [ ] **Flicker metric** (measured by a headless/bench or `?gpucompare`-style tool, defined in the architect notes): sliding the camera in 0.02 m steps over the bench pose set, the share of non-edge cells whose glyph changes per step is **<= X % per 0.02 m step (value from the shimmer note in US-028)**, and at least Y % lower than the 1-ray JS path on the same poses (Y also from that note). The PO fills in X/Y before dev starts.
+- [ ] **Flicker metric** (measured by a headless/bench or `?gpucompare`-style tool, defined in the architect notes): sliding the camera in 0.02 m steps over the bench pose set, the share of non-edge cells whose glyph changes per step is **<= 5 % per 0.02 m step**, and at least **20 %** lower than the 1-ray JS path on the same poses (start-pose numbers per the architect's US-028a measurement; re-measure over the full pose set).
 - [ ] Parity: with N = 1 the GPU cast matches the JS caster under `?gpucompare=1` with the US-029 thresholds (glyph >= 99 % excl. edge cells, fg/bg +-4, depth 1 %).
 - [ ] **GPU sprite pass**: sprites are drawn from a sprite-list texture (<= 64 sprites), depth-tested per cell against the depth texture, no readback in the frame loop. Implements the `design/README.md` section 4 sprite format (transparent space, scale rule, `lods.half` below 0.75, emissive cells ignore light and fog). JS `sprites.js` stays as the reference and fallback. Verified with at least one test sprite in `test_room`.
 - [ ] **Configurable grid**: `createEngine({cols, rows})` and URL `?grid=WxH`, allowed range **160x60 to 320x120**, cell aspect preserved, out-of-range values clamped. **After this story the default on the `gl2` GPU path is 240x90.**
