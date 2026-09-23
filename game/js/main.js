@@ -107,6 +107,10 @@ function runGame(mode) {
     input.endFrame();
   }
 
+  // Reused every frame (architecture.md section 9: no per-frame objects).
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const fb = { rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0 };
+
   function render(alpha) {
     const renderStart = performance.now();
 
@@ -119,11 +123,9 @@ function runGame(mode) {
       // stand-alone look exactly (architecture.md section 5 compatibility
       // note: this replaces `skyFallback: true`).
       const eye = player.getEyeTransform(); // {x, y, z, yawDeg, pitchDeg} in LEVEL-local meters
-      const cam = {
-        x: eye.x + origin.x, y: eye.y + origin.y, z: eye.z + origin.z,
-        yawDeg: eye.yawDeg, pitchDeg: eye.pitchDeg,
-      };
-      const fb = { rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: simTime };
+      cam.x = eye.x + origin.x; cam.y = eye.y + origin.y; cam.z = eye.z + origin.z;
+      cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
+      fb.timeSec = simTime;
       beginFrame(fb);
       castSectors(fb, level, cam, origin);
       fillSky(fb, cam);
@@ -131,7 +133,7 @@ function runGame(mode) {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
     }
-    if (mode === 'raycast' && !look.locked) drawPauseOverlay(rt, window.ASSETS);
+    if (mode === 'raycast' && !look.locked) drawPauseOverlay(rt, assets);
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;

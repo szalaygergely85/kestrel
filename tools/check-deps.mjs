@@ -127,7 +127,7 @@ function checkEngineFile(file, src) {
 // shader-parity/probe options (opts.shader, opts.skyFallback) that are
 // deliberately NOT part of the public FrameBuffers API (castSectors always
 // runs with skyFallback:false) - it needs engine/render/sectorCaster.js and
-// engine/world/Level.js directly, same rationale as the game/ shims above.
+// engine/world/Level.js directly (a tool-only exception to rule 3).
 const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-cast.mjs',
 ].map((p) => p.split('/').join(path.sep)));

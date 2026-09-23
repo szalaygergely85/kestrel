@@ -9,6 +9,7 @@ import { Input } from './input.js';
 import { Loop } from './loop.js';
 import { Events } from './events.js';
 import { Camera } from '../entities/Camera.js';
+import { PHYSICS_DEFAULTS } from '../physics/config.js';
 
 /**
  * @param {import('./assets.js').AssetRegistry} opts.assets
@@ -17,7 +18,7 @@ import { Camera } from '../entities/Camera.js';
 export function createEngine(opts) {
   const {
     canvas, assets, cols = 160, rows = 60, force2d = false,
-    physics = {}, inputTarget = typeof window !== 'undefined' ? window : undefined,
+    physics: physicsOverrides = {}, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
   const renderTarget = RenderTarget(canvas, cols, rows, { force2d });
@@ -26,6 +27,7 @@ export function createEngine(opts) {
   const input = new Input(inputTarget);
   const events = new Events();
   const camera = new Camera();
+  const physics = { ...PHYSICS_DEFAULTS, ...physicsOverrides };
 
   // Loop is created here but not started (per the API note) - `run()`
   // rewires its callbacks and starts it. A no-op placeholder pair avoids a
@@ -42,7 +44,7 @@ export function createEngine(opts) {
     camera,
     events,
     assets,
-    physics, // full defaults + overrides land with engine/physics/config.js (US-024 Phase C)
+    physics, // PHYSICS_DEFAULTS merged with opts.physics
     loadWorld(def) {
       throw new Error('engine.loadWorld: not implemented (US-025, World.load)');
     },
