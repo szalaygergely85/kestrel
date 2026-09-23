@@ -1,6 +1,6 @@
 # ASCII Quest – Product Backlog
 
-Owner: Product Owner. Last updated: 2026-09-22.
+Owner: Product Owner. Last updated: 2026-09-23 (D-009).
 Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout details: see `docs/game-design.md` section 5 and 7.
 
 ## Build order – Milestone 1 "The Awakening"
@@ -14,27 +14,31 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-008.md |
 | 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-004b.md. Must be `done` before US-006 and US-016 |
 | 7 | US-024 | **Engine/game split (D-006)** | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-024.md |
-| 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
-| 9 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
-| 10 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
-| 10a | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | arch-review | Shadetest v2 table fixed (1954/1954), v2 bench baseline re-recorded, ALL CHECKS PASS. Must be `done` before US-006 |
-| 11 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025, US-004b and US-028 `done` (feeds light `L` into the v2 shader) |
-| 12 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
-| 13 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
-| 14 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
-| 15 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-006 (`engine/render/sprites.js`) |
-| 16 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
-| 17 | US-013 | Rolling boulder | P0 | todo | Programmer |
-| 18 | US-014 | Lever opens the grate | P0 | todo | Programmer |
-| 19 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012 |
-| 20 | US-016 | Far overworld view = engine terrain caster, far LOD | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); Programmer after US-025 + US-007 + US-004b `done` |
-| 21 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
-| 22 | US-018 | Performance budget + debug overlay check | P0 | todo | Programmer (final M1 check) |
-| 23 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
-| 24 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
-| 25 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
-| 26 | US-021 | Readable wall scrawl | P2 | design | Designer |
-| 27 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
+| 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
+| 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
+| 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
+| 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | arch-review | Shadetest v2 table fixed (1954/1954), v2 bench baseline re-recorded, ALL CHECKS PASS. Must be `done` before US-029 |
+| 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | todo | Programmer; designer supplies `world_m1.js` + US-016b |
+| 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-028 `done` (US-025 may run on the parallel track) |
+| 14 | US-030 | **GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites (D-009 stage 2)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
+| 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030 `done` (or after the gate fails -> CPU per plan A) |
+| 16 | US-007 | Lighting: sun directional light with shaft shadow – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-006 |
+| 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); architect tech notes first; Programmer after US-030 + US-007 + US-025 `done` |
+| 18 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025; may run on the parallel track). Designer adds `interactables` + hint zones |
+| 19 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-030 (GPU sprite pass) + US-006. Designer re-checks props at 240x90 |
+| 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
+| 21 | US-013 | Rolling boulder | P0 | todo | Programmer |
+| 22 | US-014 | Lever opens the grate | P0 | todo | Programmer |
+| 23 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012. Designer re-checks UI/text at 240x90 |
+| 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
+| 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
+| 26 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
+| 27 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
+| 28 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
+| 29 | US-021 | Readable wall scrawl | P2 | design | Designer |
+| 30 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
+
+**D-009 (2026-09-23):** the renderer moves to a staged full-GPU per-cell pipeline. US-029 is a hard gate: if it fails `?gpucompare=1` or does not run on the owner's hardware, and one rework does not fix it, M1 falls back to plan A (US-004c, CPU optimisations, to be written then), US-030 is dropped from M1 and US-006/007/016 are built on the CPU. The JS path stays the oracle and the fallback in every case.
 
 M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.mjs` reports no engine imports from `game/` or `design/`. US-022 (P1) and P2 stories are not exit criteria.
 
@@ -705,29 +709,69 @@ Rulings:
 
 **Programmer notes (2026-09-23, shadetest v2 fix + re-record).** Root cause of the 961/1954 v2 table failures: the oracle helper `shadeV2` (`engine/render/detailShade.js`, `?shadetest=1`'s comparison target) was a pre-D1 snapshot - it never got the per-cell detail octave (`tpc`/`oct`/`ds`, `hB` on base texel coords) or the joint/band-edge fallback-period retry (x2/x4) that the designer ported into `DP.util.shade` (741f0b7) and that `shadeDetailFast` (the real frame path) already had. Ported both pieces into `shadeV2` verbatim from `design/detail-pass.js` (new `fallbackPeriodOracle` helper); no `design/` changes. `?shadetest=1`: v2 now **1954/1954 pass** (US-004b table still 361/361). Re-ran `tools/bench-cast.mjs --update-baseline` and recorded the new `EMBEDDED_BASELINE_V2` (glyphIdx/fg/bg per pose) - `shadeDetailFast` itself is untouched, so this just catches the baseline up to the designer's blank-tune/octave-port commits since it was last recorded. `node --expose-gc tools/bench-cast.mjs --gc`: **ALL CHECKS PASS**, 0 GC/scavenge. Extra p50 (v2 total - v1 fast) per pose: start 0.91 ms OK, stair 1.17-1.22 ms (pre-existing, inside the architect's accepted 1.0-1.3 ms window), sky/low-wall 0.50-0.54 ms OK, diagonal 0.76-0.77 ms OK, low-wall-sky2 0.52-0.59 ms OK. `node tools/check-deps.mjs` -> OK (62 files). `game/index.html` loaded on a fresh port (8123, stopped after), zero console errors; port 8000 untouched. Not committed. Status -> `arch-review`.
 
+### US-029 GPU pipeline: shading + edge pass on the GPU, parity page  [Priority: P0] [Status: todo]
+As a player, I want the renderer to run its heavy per-cell work on my graphics card, so that the world can get bigger, sharper and steadier without the game slowing down.
+(D-009 stage 1 = architecture section 14 option C. **This story is the D-009 gate.**)
+Acceptance criteria:
+- [ ] **Architect tech notes written before dev** (engine story): texture layout of the G-buffer upload and the material/data textures, pass order, the GLSL port plan of `shadeDetailFast` + the edge pass, how `bindShading` feeds both paths.
+- [ ] Render-to-texture pipeline on WebGL2 (`gl2` back-end): the CPU sector caster stays authoritative and writes the US-028 G-buffer; the G-buffer is uploaded once per frame (`texSubImage2D`, zero per-frame JS allocation); a fragment pass (one fragment per cell) computes glyph, fg and bg from it (US-028 v2 shading, texel-class glyphs, fog v2) plus the edge pass, writing the two `cols x rows` RGBA8 cell textures that `present()` (D-005) already samples. `present()` is unchanged.
+- [ ] Material table, glyph ramps and LOD/fog data (US-028 `lodGates`, `fog.sparse`) reach the GPU as data textures/uniforms built from the same flattened records as the JS path; nothing tower- or game-specific in GLSL (D-006).
+- [ ] Determinism: hashes are `uint` bit-exact with the JS hashes and use the seed; no `gl_FragCoord`-anchored noise; the only time input is the `timeSec` uniform.
+- [ ] **Parity page `?gpucompare=1`**: renders the same frame on both paths over the `bench-cast.mjs` pose set, reads the GPU cell textures back with `readPixels` (test only, never in the frame loop), and reports per pose and in total: **glyph match >= 99 %** excluding edge cells (cells whose 4-neighbour kind differs, same rule as `compare-detail-export.mjs`), **fg and bg within +-4 per channel**, depth within 1 %. Shows PASS/FAIL on screen and in the console.
+- [ ] Debug views (URL flag or key) render `gbuf.kind`, `planeId` and edge rule as colours, for GLSL debugging.
+- [ ] **GPU budget: <= 4 ms per frame** at 160x60 on the owner's laptop, measured via `?bench=1` (`EXT_disjoint_timer_query_webgl2` where available, else frame time); the JS frame time does not rise versus the US-028 baseline (the upload cost, ~0.4 ms, is reported).
+- [ ] **Runs on the owner's real hardware** (Chrome, owner's laptop): the game and `?gpucompare=1` run with zero console errors, and the owner (via the main session) confirms the result. A tester run on another machine alone does not satisfy this.
+- [ ] **The JS path stays the oracle and the fallback**: `?gpu=0`, no WebGL2, context failure, or a software renderer (`UNMASKED_RENDERER` contains SwiftShader / llvmpipe / Basic Render) -> JS shading + existing presenter, fully playable. `shadetest`, `bench-cast` and the designer oracles still run headless in Node and pass unchanged. The F3 overlay (or console until US-018) shows `gpu` / `cpu`.
+- [ ] Public API unchanged: `renderWorld(fb, world, cam)` picks the GPU pipeline when `rt.backend === 'gl2'` and `opts.gpu !== false`. `node tools/check-deps.mjs` OK.
+- [ ] **Gate rule:** if the parity thresholds or the owner-hardware run fail, the programmer gets **one** rework. If it still fails, the story closes as "gate failed", M1 switches to **plan A** (PO writes US-004c: CPU optimisations), US-030 leaves M1, and US-006/US-007/US-016 are built on the CPU. The main session records the outcome in `docs/decisions.md` under D-009.
+Design needed: no.
+Notes / dependencies: US-028 `done`. Grid stays 160x60 in this story. Tester runs `?gpucompare=1` and records the numbers in `docs/test-reports/US-029.md`.
+
+### US-030 GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites  [Priority: P0] [Status: todo]
+As a player, I want walls and floors to stay still and crisp while I move, on a bigger and more detailed grid, so that the world looks solid instead of "lines jumping".
+(D-009 stage 2. Only runs if US-029 passed the gate.)
+Acceptance criteria:
+- [ ] **Architect tech notes written before dev** (engine story): sector grid / structures / spans as integer data textures, the DDA loop and its step cap, the sub-ray pattern and coverage vote, the depth texture, the sprite-list texture format.
+- [ ] Sector DDA in GLSL: one fragment per cell casts against the sector grid, including multiple placed structures with per-structure origins (US-025/D-008) and open spans; writes the G-buffer (kind, planeId, material, uv, depth) that the US-029 shading/edge pass consumes. The CPU caster no longer runs on the `gl2` path.
+- [ ] **N-ray coverage anti-shimmer**: each cell casts N sub-rays (default 2x2, configurable 1..4x4) and picks material/tone by coverage-weighted vote.
+- [ ] **Flicker metric** (measured by a headless/bench or `?gpucompare`-style tool, defined in the architect notes): sliding the camera in 0.02 m steps over the bench pose set, the share of non-edge cells whose glyph changes per step is **<= X % per 0.02 m step (value from the shimmer note in US-028)**, and at least Y % lower than the 1-ray JS path on the same poses (Y also from that note). The PO fills in X/Y before dev starts.
+- [ ] Parity: with N = 1 the GPU cast matches the JS caster under `?gpucompare=1` with the US-029 thresholds (glyph >= 99 % excl. edge cells, fg/bg +-4, depth 1 %).
+- [ ] **GPU sprite pass**: sprites are drawn from a sprite-list texture (<= 64 sprites), depth-tested per cell against the depth texture, no readback in the frame loop. Implements the `design/README.md` section 4 sprite format (transparent space, scale rule, `lods.half` below 0.75, emissive cells ignore light and fog). JS `sprites.js` stays as the reference and fallback. Verified with at least one test sprite in `test_room`.
+- [ ] **Configurable grid**: `createEngine({cols, rows})` and URL `?grid=WxH`, allowed range **160x60 to 320x120**, cell aspect preserved, out-of-range values clamped. **After this story the default on the `gl2` GPU path is 240x90.**
+- [ ] Budgets at 240x90 with N = 2x2 on the owner's laptop: **GPU <= 4 ms**, **JS <= 2 ms** per frame (`?bench=1`).
+- [ ] **Fallback**: no WebGL2 / software renderer / `?gpu=0` -> JS path, **grid forced to 160x60**, anti-shimmer off, fully playable; `?grid=` is ignored on the fallback (logged once).
+- [ ] The JS caster stays the oracle: `bench-cast` still passes headless in Node. `check-deps` OK; public API unchanged.
+Design needed: no (designer re-checks existing previews at 240x90 as a follow-up).
+Notes / dependencies: US-029 gate PASSED, US-025 `done`. The shimmer note (X, Y) comes from the architect's US-028 measurement.
+
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]
 As a player, I want a torch to throw flickering warm light across the stone, so that the room feels alive.
+(Rewritten for D-009: written once in GLSL against the US-030 pipeline; a correct but unbudgeted JS reference is kept.)
 Acceptance criteria:
-- [ ] Light model per visible surface cell: `ambient + sum(point lights)`, color-multiplied with material color, then mapped to glyph ramp brightness.
+- [ ] **Architect tech notes written before dev** (engine story): light-list uniform/texture layout, visibility grids (architecture 12.3) as textures, how light `L` enters the v2 shader on both paths.
+- [ ] Light model per visible surface cell, computed in the GPU shading pass: `ambient + sum(point lights)`, color-multiplied with material color, then mapped to glyph ramp brightness (feeds `L` into the US-028 v2 shading).
 - [ ] Point light: position (x, y, z), color, intensity, radius; falloff smooth to exactly 0 at radius (no hard ring edge).
-- [ ] Surfaces facing away from a point light get less light (simple N dot L on walls, floors and ceilings).
-- [ ] Point lights are blocked by walls (a light behind a solid wall does not light the other side) – at least a 2D grid line-of-sight test from light to hit point.
-- [ ] Flicker: intensity noise 8 to 12 Hz, ±15%, position jitter ±0.05 m; the flicker must be smooth (value noise), not per-frame random.
+- [ ] Surfaces facing away from a point light get less light (N dot L on walls, floors and ceilings).
+- [ ] Point lights are blocked by walls (a light behind a solid wall does not light the other side), via a visibility grid texture or an in-shader 2D grid line-of-sight test.
+- [ ] Flicker: intensity noise 8 to 12 Hz, ±15%, position jitter ±0.05 m; smooth value noise driven only by the `timeSec` uniform, not per-frame random.
 - [ ] `test_room` has one torch light; walking around it shows warm orange falloff up to 6 m, ambient cool blue elsewhere (values from GDD 7.3).
-- [ ] Supports at least 4 point lights at 60 fps.
+- [ ] Supports at least **8** point lights within the GPU budget (<= 4 ms total at 240x90) and JS <= 2 ms.
 - [ ] Uses the US-002 light rules: light color is a hue (`P.hue[key]`) and intensity carries the energy (`addLight`); falloff is `P.util.falloff` `(1-(d/r)^2)^2`. Light values are read from `P.lights` (torch/lantern), not hard-coded.
+- [ ] JS reference lighting produces the same result: `?gpucompare=1` with lights on meets the US-029 thresholds. On the CPU fallback the JS reference runs with a reduced light count (max 4, nearest first) and the game stays playable.
 Design needed: no (uses US-002 colors).
-Notes / dependencies: US-004.
+Notes / dependencies: US-030 `done` (or, if the US-029 gate failed, built on the CPU per plan A with the old 4-lights-at-60-fps bar), US-025.
 
 ### US-007 Lighting: sun directional light with shaft shadow  [Priority: P0] [Status: todo]
 As a player, I want a bright sun shaft to fall through the broken roof onto the floor, so that I am drawn to look up and see the sky.
+(Rewritten for D-009: GLSL on the GPU path, JS reference kept.)
 Acceptance criteria:
-- [ ] Directional sun: direction configurable per level (M1: elevation 60 degrees, from ESE), color `#fff2d0`, intensity 1.0.
-- [ ] Shadow test per lit cell: a surface point is sunlit only if a ray toward the sun exits through a `"sky"` ceiling or an open wall gap without hitting solid geometry (walls, ceilings, higher floors).
+- [ ] **Architect tech notes written before dev** (engine story): the shadow test in GLSL (sun ray DDA against the sector texture or a baked sun-visibility texture), and the JS reference.
+- [ ] Directional sun: direction configurable per level (M1: elevation 60 degrees, from ESE), color `#fff2d0`, intensity 1.0; passed as a uniform.
+- [ ] Shadow test per lit cell: a surface point is sunlit only if a ray toward the sun exits through a `"sky"` ceiling or an open wall gap without hitting solid geometry (walls, ceilings, higher floors), across all placed structures.
 - [ ] In `test_room`, the sky-ceiling region casts a visible bright patch on the floor that is offset from the opening according to sun direction, and walls cast visible shadows inside it.
 - [ ] Sunlit and shadowed floor differ by at least 4 steps on the glyph ramp.
 - [ ] Sun direction can be changed with debug keys (F6/F7 rotate azimuth) to verify shadows move correctly.
-- [ ] Still 60 fps with sun + 4 point lights.
+- [ ] Sun + 8 point lights stay within GPU <= 4 ms and JS <= 2 ms at 240x90; `?gpucompare=1` meets the US-029 thresholds with the sun on. The CPU fallback renders the sun via the JS reference and stays playable.
 Design needed: no.
 Notes / dependencies: US-006.
 
@@ -1105,7 +1149,9 @@ Acceptance criteria – Designer (`design/models/*.js` + `design/preview/props.h
 - [x] Every prop: anchor at feet, palette keys only (from US-002), readable at 1/2 scale (for distance).
 - [x] Preview page shows each prop at near/mid/far scale on a dark background, with light-direction/intensity slider.
 Acceptance criteria – Programmer:
-- [ ] Billboard renderer: sprites positioned in world, scaled by distance, depth-sorted and occluded correctly by walls (per-column depth buffer).
+- [ ] (D-009) On the `gl2` path, props are drawn by the **US-030 GPU sprite pass** (sprite-list texture, per-cell depth test, no readback). `engine/render/sprites.js` (`drawSprites`) stays as the reference and the CPU fallback and gives the same result under `?gpucompare=1` (US-029 thresholds).
+- [ ] Billboard renderer: sprites positioned in world, scaled by distance, depth-sorted and occluded correctly by walls (per-cell depth on the GPU, depth buffer on the JS path).
+- [ ] All props stay readable at both 160x60 and 240x90 (designer re-checks `props.html` at 240x90).
 - [ ] Sprites are lit by the same light model, except emissive cells (flames), which are drawn at full color and ignore both lighting and fog (uses the US-004 emissive flag).
 - [ ] Brazier flame animates; the brazier is also the torch point light source position.
 - [ ] (added on design review) Implements the sprite format in `design/README.md` section 4.
@@ -1117,7 +1163,7 @@ Acceptance criteria – Programmer:
 - [ ] (D-006 / D-008) Sprite rendering lives in `engine/render/sprites.js` (`drawSprites`). Models come from the injected `AssetRegistry`, never from `window.ASSETS`. Prop behaviour (animation state such as lever progress, lantern lit/empty) is set by name-registered behaviours from `game/js/quest/`, never by tower-specific engine code.
 - [ ] Grate material: gap texels (`hole: true`) are drawn **dark** in M1: the solid fallback shown in the preview, with no see-through. See-through grates are US-023 (P2).
 Design needed: yes – all props listed above (delivered).
-Notes / dependencies: US-002 (palette keys), US-004, US-006.
+Notes / dependencies: US-002 (palette keys), US-004, US-006, US-030 (GPU sprite pass). Architect tech notes needed for the GPU sprite-list data of real props (animation frames, LOD) if US-030 does not already cover them.
 
 **PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer.
 - All 8 designer criteria are met, confirmed from the model files: brazier 7x9 with 6 frames at 10 fps and emissive flames, lantern 3x4, lever 3x5, boulder 5x4, rubble x3, pallet 9x2, bowl 12x4, the `grate` material, and a hand-drawn half LOD for every prop. The preview has intensity, direction, elevation and distance sliders, and 9/9 checks pass (reported by the coordinator).
@@ -1231,15 +1277,17 @@ Acceptance criteria – Designer:
 - **Budget:** about 42k samples, within budget.
 - **Verified in the browser (coordinator, 2026-09-22):** `design/preview/overworld.html` renders with no console errors, 17/17 checks after US-016b.
 
-Acceptance criteria – Programmer (rewritten per D-007/D-008: engine terrain caster, far LOD):
-- [ ] `engine/render/terrainCaster.js` (exported via `engine/index.js` as `castTerrain`) renders the world terrain from the injected terrain recipe (`AssetRegistry`, US-024) at **far LOD**: 8 m grid, 300-1500 m. For M1 it may also cover 0-300 m at 8 m spacing (near LOD is US-026). The far grid is baked once at load: height, type and lighting `b` per cell.
-- [ ] Per column, it draws only inside the **open span** left by the sector caster (US-004 item: `[topRow, bottomRow, depth]`), and writes depth into the shared `DepthBuffer`. (From the US-004 review) The open spans become reused typed arrays (e.g. `Int16Array` top/bottom plus `Float32Array` depth, sized to `cols`) instead of per-frame objects, with zero per-frame allocation between the two passes. A small `engine/render/compositor.js` sequences the passes: sectors, then terrain, then sky fill for the rest of the span, then sprites (US-011), then UI. It never draws terrain over structure cells.
-- [ ] Projection uses the same `horizonRow` / `focalRows` / y-shear as the sector caster. The horizon lines up at every pitch in the ±35 degree clamp (no seam or jump), and the terrain at the tower's outer ring meets the ring cells with no visible step once US-016b's blend lands.
-- [ ] Look and fog exactly per `overworld_far.md` sections 3 and 4: type glyph bands by distance, sun N.L lighting from the level's sun, fog to `fogFar` with glyphs thinning to haze, and the river glint at 1.5 Hz.
-- [ ] Far tower drawn per section 5 as a billboard at (713.8, 1232.1), depth-tested against the terrain, never smaller than the 3x4 minimum sprite, dark and unlit (fog cap 0.40), and unchanged by US-022.
-- [ ] Cost: the terrain pass is <= 4 ms per frame on its own (target 2-3 ms per D-007) when looking out of the breach, and the total JS render stays within 8 ms (US-018).
-Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b.
-Notes / dependencies: US-004 (DepthBuffer + open span), US-007 (sun), US-010, US-024 (engine layout, AssetRegistry), US-025 (World: terrain sampler, tower placement at recipe coords).
+Acceptance criteria – Programmer (rewritten per D-009: terrain GPU-first; D-007/D-008 world model unchanged):
+- [ ] **Architect tech notes written before dev** (engine story): heightfield/type chunks as R16 (or equivalent) textures, the per-cell march in GLSL (step schedule, cap), how it composes with the US-030 sector DDA and depth texture, and the JS reference.
+- [ ] Terrain is rendered on the `gl2` path by a **per-cell heightfield march in GLSL** from the injected terrain recipe (`AssetRegistry`, US-024) at **far LOD**: 8 m grid, 300-1500 m; for M1 it may also cover 0-300 m at 8 m spacing (near LOD is US-026). The far grid is baked once at load (height, type, lighting `b` per cell) and uploaded as textures; no per-frame terrain upload.
+- [ ] Terrain fills only cells the sector DDA left open (sky/open span) and writes the shared depth texture; it never draws over structure cells. Pass order: sectors, terrain, sky fill, sprites (US-030 pass), UI.
+- [ ] Projection uses the same `horizonRow` / `focalRows` / y-shear as the sector pass. The horizon lines up at every pitch in the ±35 degree clamp (no seam or jump), and the terrain at the tower's outer ring meets the ring cells with no visible step (US-016b blend).
+- [ ] Look and fog exactly per `overworld_far.md` sections 3 and 4: type glyph bands by distance, sun N.L lighting from the level's sun (US-007 uniform), fog to `fogFar` with glyphs thinning to haze, and the river glint at 1.5 Hz (`timeSec` uniform). The N-ray coverage anti-shimmer (US-030) also applies to terrain cells.
+- [ ] Far tower drawn per section 5 as a billboard at (713.8, 1232.1) via the GPU sprite pass, depth-tested against the terrain, never smaller than the 3x4 minimum sprite, dark and unlit (fog cap 0.40), and unchanged by US-022.
+- [ ] **JS reference** `engine/render/terrainCaster.js` (`castTerrain`, exported via `engine/index.js`) implements the same rules, correct but **not budgeted**; it is the oracle (`?gpucompare=1` over breach poses meets the US-029 thresholds) and the CPU fallback (160x60; may use a coarser step to stay playable). No per-frame allocation in either path.
+- [ ] Cost looking out of the breach at 240x90: **GPU total <= 4 ms** (terrain included) and **JS <= 2 ms** (US-018).
+Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b. Designer re-checks `overworld.html` at 240x90.
+Notes / dependencies: US-030 (GPU DDA, depth texture, sprite pass), US-007 (sun), US-010, US-024, US-025 (World: terrain sampler, tower placement at recipe coords). If the US-029 gate failed: built on the CPU per plan A with the old criteria (terrain pass <= 4 ms JS, total JS <= 8 ms).
 
 ### US-016b Terrain recipe follow-up for the world model  [Priority: P0] [Status: done]
 As a player, I want the land outside the tower to be one continuous world, so that it meets the tower seamlessly and can later be walked on.
@@ -1291,11 +1339,14 @@ Notes / dependencies: US-010, US-015, US-016.
 ### US-018 Performance budget + debug overlay  [Priority: P0] [Status: todo]
 As a player, I want the game to stay perfectly smooth, so that movement always feels responsive.
 Acceptance criteria:
-- [ ] F3 overlay shows: fps, total frame ms, and per-pass ms (walls/floors, lighting, sprites, far view, UI), player position, sector id, grounded flag.
-- [ ] Measured in the tower at the 3 worst views (ground floor looking at brazier + sun shaft, mid ledge looking down, summit looking out the breach): >= 58 fps average in Chrome on a normal laptop at 160x60.
-- [ ] No per-frame allocations in the hot render loop that cause visible GC stutter (no frame > 25 ms during a 60 s walk-through).
+- [ ] F3 overlay shows: fps, total frame ms, JS ms and GPU ms (timer query, or "n/a" if unavailable), per-pass ms (walls/floors, lighting, sprites, far view, UI), pipeline `gpu` / `cpu`, current grid (e.g. `240x90`), player position, sector id, grounded flag.
+- [ ] Measured in the tower at the 3 worst views (ground floor looking at brazier + sun shaft, mid ledge looking down, summit looking out the breach) in Chrome on the owner's laptop via `?bench=1`:
+  - GPU path at the default 240x90: >= 58 fps average, **JS <= 2 ms** (target) and never above the binding **8 ms JS budget**, **GPU <= 4 ms**.
+  - CPU fallback (`?gpu=0`, grid forced to 160x60): >= 58 fps average, JS <= 8 ms.
+- [ ] **Grid setting**: `?grid=WxH` and `createEngine({cols, rows})` accept 160x60 to 320x120 (clamped), default 240x90 on `gl2` and forced 160x60 on the fallback; the 320x120 run is measured and reported (no pass bar). An in-game option is not required in M1.
+- [ ] No per-frame allocations in the hot render loop that cause visible GC stutter (no frame > 25 ms during a 60 s walk-through), on both paths.
 Design needed: no.
-Notes / dependencies: final check before M1 exit; overlay part can be built with US-004.
+Notes / dependencies: final check before M1 exit; overlay part can be built with US-004. D-009 budgets. If the US-029 gate failed: only the CPU line applies at 160x60.
 
 ### US-019 Dust motes in the sun shaft  [Priority: P2] [Status: todo]
 As a player, I want to see tiny specks of dust drifting in the sunlight, so that the light feels volumetric.
