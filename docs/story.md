@@ -82,3 +82,37 @@ Press M to read the chart.
 3. **The log is old.** The keeper counted the same signal years ago. That hints the SOS is older than Wick's escape. It is kept vague on purpose, but it constrains the eventual reveal.
 4. **Exile village name.** It is still unnamed. Candidate: **Outwall**.
 5. **GDD section 3 is stale.** It still lists partial amnesia, the "Crown mages" and a handwritten map. The PO needs to update it to amendment 2: no amnesia, a machine-only Ferrum, magic real outside, and the map as a Crown sky-chart with Wick's pencil course.
+
+## 7. M4 reveal candidates (for manager)
+
+Per D-013 item 3. Each keeps "the SOS has been sending for years" and "nobody is there".
+
+**A. The shut-out people.** The caller was built by the people who lived here before the Wall. When the Crown's founders sealed the gates, they left them outside to die, and the machine still repeats their last call. The Crown has always heard it, and the Wall exists so no one inside has to answer.
+- Setups: relay glyphs older than Crown script (M2); the log line "They hear it. They choose not to." (M1, done); exiles' songs about "the ones before" (M3).
+
+**B. The keeper's lamp.** The relay-keeper was an exile who found the dead caller and re-woke it years ago, hoping someone in Ferrum would come. He walked the line to keep it fed and never came back. The machine calls on alone, and now Wick is the one feeding it.
+- Setups: the same hand in every log (M1-M3); a keeper's empty camp at one relay (M2); exiles remember "the lamp man" who went to the far tower (M3).
+
+**C. The land is calling.** The crystals are one living web, and the SOS is the wild itself asking for help. Ferrum's lamps that never gutter burn stolen aether, and the drain is what turns beasts wrong. Nobody is at the source because the source is everywhere.
+- Setups: "lamps that never gutter" (M1, done); relays dimmer and Hush beasts thicker near the Wall (M2); a Crown crystal crate at the sentinel (M3).
+
+## 8. Talking animals: sample dialogue (US-042)
+
+First talking animal, M2, on the tower path. Speaker labels: `BEAR`, `YOU`. The bear never says "Wick" (D-013). Lines <= 56 chars for the 3x56 box.
+
+*Stage: a bear sits by the path, eating berries. The player walks up, sees `[E] Talk` and presses E.*
+
+```
+BEAR: You're the one who fell out of the sky.
+YOU:  ...Bears don't talk.
+BEAR: Boys don't fly. And yet, all that smoke.
+YOU:  It's a trick. A speaking-tube. Brass.
+BEAR: Check my ears for brass, then. Carefully.
+YOU:  No. No, thank you.
+BEAR: Your city calls us a tale. We call it the loud hill.
+BEAR: You're following the blinking light.
+YOU:  You've seen it?
+BEAR: It blinked when my grandmother was a cub.
+BEAR: It asked for help then, too. Nobody came.
+BEAR: Go on, sky-cub. Leave the berries.
+```
