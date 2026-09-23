@@ -18,7 +18,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
 | 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | done | PO decision 2026-09-23: functional checks all PASS; perf gate deferred to US-029's GPU budget and US-018 (busy-machine noise, not a regression - see story section). Must be `done` before US-029 (it is) |
-| 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | testing (PO OK 2026-09-23) | PO OK, AC amended (distinct glyphs >= 10, long diagonal >= 9); tester next. Must be `done` before US-029 |
+| 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | done | Tester PASS 2026-09-23 (see `docs/test-reports/US-028a.md`). Must be `done` before US-029 |
 | 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | dev | ARCH CHANGES #1 (2026-09-23): 5 items, mainly `castScene` span ownership + outside-footprint entry (tech note item 6 not done); see the story |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-028 `done` (US-025 may run on the parallel track) |
 | 14 | US-030 | **GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites (D-009 stage 2)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
@@ -727,7 +727,10 @@ Rulings:
 - **Recommended AC (bench, start pose, same 3×30 steps):** (i) non-joint, non-edge glyph changes ≤ 1.0 % of same-surface cells per step; (ii) total ≤ 7 % averaged over the three motions; (iii) A-B-A ≤ 0.3 %; (iv) shade p50 +≤ 0.05 ms. For US-030: X = 5 % per 0.02 m step (non-edge), Y = 20 % lower than the 1-ray JS path after this fix (start-pose numbers; re-measure over the full pose set).
 - **Where:** a follow-up story (US-028a, P0, before US-029 so the GPU ports the final hash keys), not US-028. It needs a reference change, a look sign-off and a new bench metric, and US-028 would take another loop. PO's call.
 
-### US-028a Stable detail when moving (anti-swim)  [Priority: P0] [Status: testing]
+### US-028a Stable detail when moving (anti-swim)  [Priority: P0] [Status: done]
+
+**Tester PASS (2026-09-23, worktree commit 1153413).** All ACs met: bench ALL CHECKS PASS/0 GC (extra p50 best-of-3 0.84-0.91 ms), flicker metric fwd 0.33/strafe 0.80/yaw 0.85 % (total avg 5.79 %, A-B-A 0.00 %), distinct-glyph gate OK (9 on long diagonal per ruling), compare-detail-export 99.47/99.49/100, check-deps OK, all engine unit tests pass, `?shadetest=1` fresh tab 361/361 + 1954/1954, game runs at 60 fps with zero console errors under synthetic walk/strafe/turn/multi-key input near walls. Full report: `docs/test-reports/US-028a.md`. Remaining: owner's own real-Chrome smoothness feel-check (per US-029 gate note) is still outstanding.
+
 As a player, I want the wall/floor/ceiling detail to hold still while I move, so that the world doesn't shimmer or swim under me.
 (Owner complaint, 2026-09-23. Engine + content story. Must land, and be `done`, before US-029 so the GPU pipeline ports the final hash keys.)
 Acceptance criteria:
