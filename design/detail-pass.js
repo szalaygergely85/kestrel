@@ -67,8 +67,8 @@
   var fog = {
     color: 'fogV2',            // bg goes toward this (dark cool)
     glyph: 'fogV2Glyph',       // fg goes toward this (LIGHTER than bg: aerial haze, glyphs stay visible)
-    start: 6, full: 36, curve: 1.0,
-    stipple: [0.40, 0.85],     // from f = 0.40 a growing share of cells (hash) switch to the fog set ...
+    start: 10, full: 45, curve: 1.0,   // US-028 LOD feedback: was 6 / 36
+    stipple: [0.45, 0.85],     // (was 0.40) from f = 0.45 (~26 m) a growing share of cells (hash) switch to the fog set ...
     set: 'fog'                 // ... ':' / '.' haze; at f > 0.8 the sparser level (with spaces)
   };
 
@@ -100,26 +100,29 @@
   // ---------------------------------------------------------------------------
   var sets = {
     stoneFace:  [".'", ".,`", ",:;", ":;,", ";+:", "+x=", "x%#", "%#&"],
-    stoneMid:   [".", ".,", ",:", ":;", ";+", "+x", "x%", "%#"],
-    stoneFar:   [".", ",", ":", ";", "+", "%", "#", "&"],
+    // US-028 LOD feedback: mid sets 2-3 alternates per level, far sets 2 (no single-glyph level), same densities.
+    stoneMid:   [".'", ".,`", ",:", ":;,", ";+", "+x=", "x%", "%#&"],
+    stoneFar:   [".'", ".,", ",:", ":;", ";+", "+%", "%#", "#&"],
     chip:       [".", "'", "'`", "`'", "\"'", "%'", "%&", "&%"],
     moss:       [".", ",", ",'", "\",", "\";", "\"%", "%&", "&@"],
     soot:       [".", ".", ".,", ",:", ":;", ";%", "%#", "#&"],
     brickFace:  [".", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
-    brickFar:   [".", ",", ":", "=", "=", "+", "#", "%"],
+    brickMid:   [".'", ".,", ",:;", ":=", "=:+", "=+", "#=+", "#%"],
+    brickFar:   [".'", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
     floorFace:  [".", ".'", ",`'.", ",.:", ",:;", ":;=", ";=+", "=+*"],
-    floorMid:   [".", ".", ".,", ",:", ":;", ";=", "=+", "+*"],
-    floorFar:   [".", ".", ",", ":", ";", "=", "+", "*"],
+    floorMid:   [".`", ".'", ".,'", ",:.", ":;,", ";=:", "=+", "+*="],
+    floorFar:   [".`", ".'", ".,", ",:", ":;", ";=", "=+", "+*"],
     dust:       [".", "'", "'`", "'\"", "\"'", "\"^", "^*", "*"],
     gap:        [".", ".", ",", ",", ",.", ";", ";", ":"],
     rubbleFace: [".", ".,", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
-    rubbleFar:  [".", ",", ":", ";", "o", "O", "%", "#"],
+    rubbleMid:  [".,", ",:", ":;,", ";o:", "oO;", "O%", "%#O", "#&"],
+    rubbleFar:  [".,", ",:", ":;", ";o", "oO", "O%", "%#", "#&"],
     grassFace:  [".", ",'", "',\"", "\";,", "\"v;", "v\";", "vw\"", "wv\""],
-    grassMid:   [".", ",", ",'", "'\"", "\";", "\"v", "v\"", "vw"],
-    grassFar:   [".", ",", "'", ";", "\"", "v", "v", "w"],
+    grassMid:   [".,", ",'", ",'\"", "'\";", "\";", "\"v;", "v\"", "vw\""],
+    grassFar:   [".,", ",'", "',", ";\"", "\";", "v\"", "vw", "wv"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
-    woodFar:    [".", "-", "-", "=", "=", "=", "#"],
+    woodFar:    [".,", "-.", "-_", "=-", "=_", "=#", "#="],
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
       h:  ["-", "-", "-~", "~=", "=", "="],
@@ -158,11 +161,11 @@
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
     tones: [['stoneMid', 4], ['stoneCool', 3], ['stoneWarm', 2], ['stoneDeep', 1]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.45, tie: true },
+    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.5, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
             bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },
-    lod: { mid: 6, far: 13, dither: 1.5 }
+    lod: { mid: 12, far: 25, dither: 3 }
   };
   function ext(base, extra) {
     var o = {}, k;
@@ -174,7 +177,7 @@
   var materials = {
     stone: ext(STONE, {
       v1: 'stone',
-      desc: 'Tower wall: coursed ashlar 0.8 x 0.4 m, half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~9 m, ' +
+      desc: 'Tower wall: coursed ashlar 0.8 x 0.4 m, half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
             'every block its own tone (4 greys: mid, cool, warm, deep), rough face : ; , + x, rare chips.'
     }),
     stone_moss: ext(STONE, {
@@ -195,8 +198,8 @@
       albedo: 0.80, bgK: 0.26, detail: 20, jitter: 0.10,
       tones: [['brick', 4], ['brickDark', 2], ['brickLight', 2]],
       grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.5, tie: true },
-      face: { set: 'brickFace', mid: 'brickFar', far: 'brickFar' },
-      lod: { mid: 4, far: 9, dither: 1.0 }
+      face: { set: 'brickFace', mid: 'brickMid', far: 'brickFar' },
+      lod: { mid: 10, far: 22, dither: 3 }
     },
     floor: {
       v1: 'floor', seed: 31,
@@ -208,7 +211,7 @@
       face: { set: 'floorFace', mid: 'floorMid', far: 'floorFar' },
       overlay: { set: 'dust', tints: ['ash', 'ashLight'], amount: 0.45, shade: 1.05, joint: 0.30, face: 0.07 },
       speckle: { set: 'chip', chance: 0.03, shade: 0.70 },
-      lod: { mid: 5, far: 11, dither: 1.5 }
+      lod: { mid: 12, far: 25, dither: 3 }
     },
     ceiling_timber: {
       v1: 'stone', seed: 41,
@@ -223,7 +226,7 @@
       face: { set: 'grainU', mid: 'grainU', far: 'woodFar' },
       band: { axis: 'v', period: 1.0, width: 0.22, set: 'beam', tone: 'woodDark', shade: 0.85, bgK: 0.14, edgeShade: 0.75 },
       speckle: { set: 'knot', chance: 0.012, shade: 0.7 },
-      lod: { mid: 5, far: 11, dither: 1.5 }
+      lod: { mid: 12, far: 25, dither: 3 }
     },
     wood: {
       v1: 'wood', seed: 51,
@@ -233,7 +236,7 @@
       grid: { u: 1.2, v: 0.2, stagger: 0.33, shade: 0.45, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
       face: { set: 'grainV', mid: 'grainV', far: 'woodFar' },
       speckle: { set: 'knot', chance: 0.02, shade: 0.7 },
-      lod: { mid: 5, far: 11, dither: 1.5 }
+      lod: { mid: 12, far: 25, dither: 3 }
     },
     rubble: {
       v1: 'rubble', seed: 61,
@@ -241,8 +244,8 @@
       albedo: 0.80, bgK: 0.26, detail: 18, jitter: 0.14,
       tones: [['rubble', 3], ['stoneDeep', 2], ['stoneCool', 2], ['stoneLight', 1]],
       grid: { u: 0.3, v: 0.22, stagger: 0.5, kind: 'gap', set: 'gap', shade: 0.40, bgK: 0.10, maxCover: 0.6 },
-      face: { set: 'rubbleFace', mid: 'rubbleFar', far: 'rubbleFar' },
-      lod: { mid: 5, far: 11, dither: 1.5 }
+      face: { set: 'rubbleFace', mid: 'rubbleMid', far: 'rubbleFar' },
+      lod: { mid: 12, far: 25, dither: 3 }
     },
     grass: {
       v1: 'grass', seed: 71,
@@ -252,7 +255,7 @@
       grid: { u: 0.7, v: 0.7, stagger: 0.5, lines: false },
       face: { set: 'grassFace', mid: 'grassMid', far: 'grassFar' },
       speckle: { set: 'tuft', chance: 0.05, shade: 1.15 },
-      lod: { mid: 6, far: 14, dither: 2.0 }
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -484,7 +487,8 @@
     var glyph;
     if (gb <= 0) glyph = ' ';
     else if (lineG) glyph = lineG;
-    else glyph = setGlyph(sets[set], gb, hA, tier === 0 && F.detail, s);
+    // US-028 LOD feedback: alternates in every tier (was near only), so mid / far walls are not one glyph per level.
+    else glyph = setGlyph(sets[set], gb, hA, F.detail, s);
     if (F.fog && f > fog.stipple[0] && hB < smoothstep(fog.stipple[0], fog.stipple[1], f)) {
       glyph = pick(sets[fog.set][f > 0.8 ? 0 : 1], hA);
     }

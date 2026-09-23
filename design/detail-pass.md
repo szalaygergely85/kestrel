@@ -28,8 +28,8 @@ The content levers alone (a lower `rampGamma`, a higher `fgMin`) were deliberate
 - **Face factors**: E 1.00, S 0.90, W 0.80, N 0.72, floor 0.94, ceiling 0.62. **Seam AO**: x0.6 at a concave seam, gone by 0.3 m.
 - **Readability lift**: `gb = 0.12 + 0.88*min(b,1)` for glyph levels, `fgMin 0.55`, `tint 0.60`. Lit vs shadow stays 4+ levels apart (US-007 rule).
 - **Edge pass**: cap `=`, lip `_`, side `|`, convex `|` (bright), concave `|` (dark), floor seam `_`, ceiling seam `-`, step nosing `=`. One cell wide, lighter or darker than the cell's own color, never black.
-- **Fog v2**: from 6 m to 36 m. fg goes toward a lighter haze `fogV2Glyph`, bg toward a dark `fogV2`. From f 0.4, a growing hashed share of cells becomes `. :` stipple. Distance reads as haze, not as black.
-- **LOD tiers**: near / mid / far sets (e.g. stone mid from 6 m, far from 13 m) with a hashed dither band. Far walls are calm shapes with block tones.
+- **Fog v2**: from 10 m to 45 m (was 6 / 36, see section 7). fg goes toward a lighter haze `fogV2Glyph`, bg toward a dark `fogV2`. From f 0.4, a growing hashed share of cells becomes `. :` stipple. Distance reads as haze, not as black.
+- **LOD tiers**: near / mid / far sets (stone mid from 12 m, far from 25 m, see section 7) with a hashed dither band. Far walls are calm shapes with block tones.
 - **Materials v2**: `stone`, `stone_moss`, `stone_scorched`, `brick` (new), `floor`, `ceiling_timber` (new), `wood`, `rubble`, `grass`. v1 `iron`, `grate`, `ash`, `rock` and `sky` keep the v1 shader for now (`DP.remap`).
 - **Level change (proposed, not applied)**: test_room `ceilMat: 'stone'` becomes `ceiling_timber` (`DP.levelOverrides`).
 
@@ -121,3 +121,21 @@ AC metric: start pose, ambient only, share of non-sky cells that show only `.` o
 - About half of the face cells move up one grain level, from `-` / `!` to `-~` / `|!`.
 
 **Measured (to fill in after the re-export).** Preview: `stats.dotOrBlankPct` in `exports/detail_pass_start.json`. Engine: the programmer's tool. Target <= 5 %. If a residual remains, it is joint cells at wall seams (AO) and the fog stipple beyond 18 m. The next lever would be `grid.shade` 0.85.
+
+## 7. Change log
+**2026-09-23, US-028 owner feedback "LOD distance"** (architect note in `docs/backlog.md`, content items 4-7). Near look unchanged: near sets, `detail`, tones, joints below 6 m, edges and shading are as approved.
+
+| value | before | after |
+|---|---|---|
+| `lod` (stone, stone_moss, stone_scorched, floor, ceiling_timber, wood, rubble, grass) | mid 5-6 / far 11-14 / dither 1.5-2 | mid 12 / far 25 / dither 3 |
+| `brick.lod` | 4 / 9 / 1.0 | 10 / 22 / 3 |
+| `stone.grid.maxCover` (all stone variants) | 0.45 | 0.5 |
+| `fog.start` / `fog.full` | 6 / 36 m | 10 / 45 m (f = 0.43 at the 25 m far tier; stipple from ~26 m) |
+| `fog.stipple` | [0.40, 0.85] | [0.45, 0.85] |
+| mid sets `stoneMid`, `floorMid`, `grassMid` | 1-2 glyphs per level | 2-3 alternates per level |
+| far sets `stoneFar`, `brickFar`, `floorFar`, `rubbleFar`, `grassFar`, `woodFar` | 1 glyph per level | 2 alternates per level |
+| new sets `brickMid`, `rubbleMid` | brick / rubble used their far set for mid | own mid sets, 2-3 alternates |
+
+**Reference shader change** (`util.shade`): the hashed alternate is now picked in **every** tier (`alt = F.detail`, was `tier === 0 && F.detail`). Without it the new alternates would never show. The engine must do the same; the alternate still uses the world-anchored `hA` of the detail texel, and with the architect's per-cell detail octave (engine item 1) it will not shimmer at distance. Oriented sets (`grainU`, `grainV`, `beam`) are unchanged: they are near sets too, and their per-direction glyphs are single by design.
+
+Follow-ups: re-export `exports/detail_pass_start.json` in the preview, the programmer re-records the v2 bench baseline, then the acceptance check (walls <= 12 m keep >= 10 distinct glyphs, joints > 0 % to 20 m).
