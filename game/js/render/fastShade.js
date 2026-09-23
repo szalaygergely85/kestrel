@@ -238,7 +238,13 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
       s = 1 + (eShade - 1) * tfFade * bf;
       tintAmt = tex.amountArr[idx] * tfFade * bf;
       tr = tex.tintRGB[idx * 3]; tg = tex.tintRGB[idx * 3 + 1]; tb = tex.tintRGB[idx * 3 + 2];
-    } else if (eShade) {
+    } else {
+      // US-004b ARCH CHANGES item 5: the reference applies `s = 1 + (shade
+      // - 1) * tf` for ANY texel that exists, including one with
+      // `shade: 0.00` (the sky texture already has one) - `if (eShade)`
+      // would silently skip that (falsy 0), diverging from the reference.
+      // A texel that doesn't exist is a `validate()`-time error, not a
+      // runtime case, so there is no longer a distinct "no entry" branch.
       s = 1 + (eShade - 1) * tfFade;
     }
     if (tex.glyphOverride[idx] && tfFade > 0.5) glyphOverride = tex.glyphOverride[idx];

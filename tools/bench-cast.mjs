@@ -3,30 +3,50 @@
 // caster (`castScene`, game/js/render/raycaster.js). Node, no dependencies,
 // no build step.
 //
-//   node tools/bench-cast.mjs [--frames N] [--gc]
+//   node tools/bench-cast.mjs [--frames N] [--gc] [--shader=fast|reference]
+//                             [--update-baseline]
 //
 // Runs `castScene` on `design levels: test_room` at a fixed 160x60 grid, at
 // 4 fixed camera poses (documented in POSES below), for `--frames` measured
 // frames (default 600) after a 120-frame warm-up that is NOT counted (JIT
-// warm-up, matches architecture.md 12's headless methodology).
+// warm-up, matches architecture.md 12's headless methodology). `--shader`
+// picks which path is used for the TIMED loop (default `fast`); the
+// correctness checks below always exercise BOTH paths regardless of this
+// flag, since they need to compare fast against reference anyway.
 //
-// Per pose it prints: avg/p50/p95/max ms, cells written per frame, and an
-// FNV-1a checksum of the cell buffer contents (glyphIdx, fg, bg separately)
-// so the caller can compare against a recorded baseline (see docs/backlog.md
-// US-004b "Baseline first").
+// Per pose it prints: avg/p50/p95/max ms, cells written, sky-cell count,
+// and checksums - then runs the correctness checks (see CHECKS below) and
+// exits non-zero if any of them fail, so the tester and the architect can
+// rerun this and trust the exit code.
+//
+// CHECKS (per pose, `skyFallback:true` unless noted), architect review
+// 2026-09-23 item 3:
+//   (a) the reference-shader checksums (glyphIdx/fg/bg) match the recorded
+//       EMBEDDED_BASELINE below. `--update-baseline` skips the comparison
+//       and prints freshly computed values formatted to paste back in here
+//       (the documented manual step - this script does not self-edit).
+//   (b) fast vs reference, per cell: glyphIdx identical, fg/bg within +-4
+//       per channel (the same tolerance `?shadetest=1` uses).
+//   (c) a `skyFallback:false` pass: every column is either fully closed
+//       (written exactly once, every row) or reported open in `OpenSpans`
+//       (every row in `[top,bottom]` unwritten) - i.e. writes + open-span
+//       rows == cols*rows, no double write, no written cell inside an open
+//       span.
 //
 // `--gc`: also observes GC activity during the measured frames via
 // `perf_hooks.PerformanceObserver({entryTypes:['gc']})` (no `--trace-gc` CLI
-// flag needed - that observer works in any Node >= 8). It reports the count
-// of minor/scavenge GCs seen during the measured window for each pose; per
-// AC3 this must be 0 after warm-up. For a stricter check, run with
-// `node --expose-gc tools/bench-cast.mjs --gc`: the script then calls
-// `gc()` once right after warm-up to start the measured window on a clean
-// heap.
-//
-// Exit code: non-zero if any pose fails the write-count-== cols*rows check
-// or (when a baseline is embedded below) the checksum check, so the tester
-// and the architect can rerun this and trust the exit code.
+// flag needed - that observer works in any Node >= 8), AND (architect
+// review item 4) the `process.memoryUsage().heapUsed` delta across the
+// measured frames, divided by frame count. The GC-event count alone cannot
+// tell 0 allocations apart from a small per-column leak that never fills a
+// whole young-generation semispace (160 cols x ~40 B = ~6 KB/frame, well
+// under one scavenge) - the heap-delta number can. For a trustworthy delta,
+// run with `--expose-gc` too: the script forces a `gc()` right after
+// warm-up (clean starting heap) and again right before the final reading
+// (nets out any not-yet-collected garbage from the measured frames
+// themselves, so the delta reflects real retained growth, not GC timing
+// luck). Fails if the per-frame delta exceeds 2 KB. Without `--expose-gc`
+// the number is printed but not enforced (too noisy to trust).
 
 import { performance, PerformanceObserver, constants as perfConstants } from 'node:perf_hooks';
 import { loadLevel } from '../game/js/world/Level.js';
@@ -46,6 +66,8 @@ const PX_CELL_H = 16;
 
 const WARMUP_FRAMES = 120;
 const DEFAULT_FRAMES = 600;
+const HEAP_DELTA_LIMIT_BYTES_PER_FRAME = 2048;
+const COLOR_TOLERANCE = 4;
 
 // Fixed poses, in test_room LOCAL meters (test_room is 20x18; 'S' start is
 // at col 2, row 2 -> x=2.5, y=2.5, facing east/yawDeg 90). eyeH 1.60 m
@@ -54,11 +76,28 @@ const EYE_H = 1.60;
 const POSES = [
   { name: 'start pose (S, facing east, level)', x: 2.5, y: 2.5, z: EYE_H, yawDeg: 90, pitchDeg: 0 },
   { name: 'facing stair + 1.0m platform', x: 2.5, y: 13.5, z: EYE_H, yawDeg: 90, pitchDeg: 0 },
-  { name: 'sky over the low wall, pitch +35', x: 2.5, y: 7.5, z: EYE_H, yawDeg: 0, pitchDeg: 35 },
+  // Architect review 2026-09-23 item 2: the old pose 3, (2.5, 7.5, yaw 0,
+  // pitch +35), sees 0 sky cells - the '^' skylight (level cols 8-12) is
+  // outside the 75 deg FOV from x=2.5, so the whole frame was ceiling. This
+  // pose sees the low wall, the sky over it through the skylight AND the
+  // far ceiling beyond it (6,240 sky / 3,360 geometry cells).
+  { name: 'sky over the low wall, pitch +20', x: 9.5, y: 7.5, z: EYE_H, yawDeg: 0, pitchDeg: 20 },
   { name: 'long diagonal, pitch -35', x: 1.5, y: 1.5, z: EYE_H, yawDeg: 45, pitchDeg: -35 },
 ];
 
-// --- allocation-free fake RenderTarget --------------------------------
+// Reference-shader checksums, recorded 2026-09-23 AFTER architect review
+// items 1-2 (skylight far-ceiling fix, pose 3 change) - `--shader=reference`
+// on `test_room`. Regenerate with `--update-baseline` after any deliberate
+// change to the caster's geometry/overdraw logic and paste the new values
+// in here (this script does not self-edit).
+const EMBEDDED_BASELINE = {
+  'start pose (S, facing east, level)': { glyphIdx: '785dfb0b', fg: '4e678009', bg: '7a4758c3' },
+  'facing stair + 1.0m platform': { glyphIdx: 'bae66e57', fg: '4498f0d1', bg: 'b1925193' },
+  'sky over the low wall, pitch +20': { glyphIdx: 'c1054ea8', fg: '407f77e7', bg: '3ff190bd' },
+  'long diagonal, pitch -35': { glyphIdx: '91811e1f', fg: '92a90df4', bg: '2ad61bfb' },
+};
+
+// --- allocation-free fake RenderTarget + DepthBuffer ---------------------
 class BenchRT {
   constructor(cols, rows) {
     this.cols = cols;
@@ -87,6 +126,22 @@ class BenchRT {
   }
 }
 
+class BenchDepthBuffer {
+  constructor(cols, rows) {
+    this.cols = cols;
+    this.depth = new Float32Array(cols * rows);
+    this.reset();
+  }
+  reset() { this.depth.fill(Infinity); }
+  set(x, y, dist) { this.depth[y * this.cols + x] = dist; }
+}
+
+function countSkyCells(depthBuffer) {
+  let n = 0;
+  for (let i = 0; i < depthBuffer.depth.length; i++) if (depthBuffer.depth[i] === Infinity) n++;
+  return n;
+}
+
 // --- FNV-1a over a Uint8Array -------------------------------------------
 function fnv1a(bytes) {
   let h = 0x811c9dc5;
@@ -105,13 +160,68 @@ function stats(arr) {
 }
 const ms = (n) => n.toFixed(3);
 
+// --- correctness checks (architect review 2026-09-23 item 3) -------------
+
+// (b) fast vs reference, per cell: glyph identical, fg/bg within tolerance.
+function compareFastVsReference(level, camera, depthBuffer) {
+  const rtRef = new BenchRT(COLS, ROWS);
+  depthBuffer.reset();
+  castScene(rtRef, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
+  const rtFast = new BenchRT(COLS, ROWS);
+  depthBuffer.reset();
+  castScene(rtFast, level, camera, palette, { skyFallback: true, shader: 'fast', depthBuffer });
+
+  let glyphMismatches = 0, colorMismatches = 0, worstDiff = 0;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (rtFast.glyphIdx[i] !== rtRef.glyphIdx[i]) glyphMismatches++;
+    const c = i * 3;
+    for (let k = 0; k < 3; k++) {
+      const d1 = Math.abs(rtFast.fg[c + k] - rtRef.fg[c + k]);
+      const d2 = Math.abs(rtFast.bg[c + k] - rtRef.bg[c + k]);
+      worstDiff = Math.max(worstDiff, d1, d2);
+      if (d1 > COLOR_TOLERANCE || d2 > COLOR_TOLERANCE) colorMismatches++;
+    }
+  }
+  return { rtRef, glyphMismatches, colorMismatches, worstDiff, ok: glyphMismatches === 0 && colorMismatches === 0 };
+}
+
+// (c) skyFallback:false invariant: writes + open-span rows == cols*rows, no
+// double write, no written cell inside an open span.
+function checkSkyFallbackFalseInvariant(level, camera) {
+  const rt = new BenchRT(COLS, ROWS);
+  const spans = castScene(rt, level, camera, palette, { skyFallback: false, shader: 'reference' });
+
+  let doubleWrites = 0, openRows = 0, overlapViolations = 0;
+  for (let x = 0; x < COLS; x++) {
+    const open = spans.isOpen(x);
+    const top = spans.top[x], bottom = spans.bottom[x];
+    for (let y = 0; y < ROWS; y++) {
+      const wc = rt.writeCount[y * COLS + x];
+      if (wc > 1) doubleWrites++;
+      const inOpenSpan = open && y >= top && y <= bottom;
+      if (inOpenSpan) {
+        openRows++;
+        if (wc !== 0) overlapViolations++; // written cell inside an open span
+      } else if (wc !== 1) {
+        overlapViolations++; // a "closed" cell must be written exactly once
+      }
+    }
+  }
+  const total = rt.totalWrites + openRows;
+  return {
+    writes: rt.totalWrites, openRows, doubleWrites, overlapViolations,
+    total, ok: doubleWrites === 0 && overlapViolations === 0 && total === COLS * ROWS,
+  };
+}
+
 function main() {
   const args = process.argv.slice(2);
   const frameIdx = args.indexOf('--frames');
   const frames = frameIdx >= 0 ? parseInt(args[frameIdx + 1], 10) : DEFAULT_FRAMES;
   const withGc = args.includes('--gc');
+  const updateBaseline = args.includes('--update-baseline');
   const shaderArg = args.find((a) => a.startsWith('--shader='));
-  const shader = shaderArg ? shaderArg.split('=')[1] : 'fast'; // 'fast' (default, US-004b) or 'reference'
+  const shader = shaderArg ? shaderArg.split('=')[1] : 'fast'; // which shader the TIMED loop uses
 
   const level = loadLevel(testRoomDef);
   if (!level) {
@@ -120,10 +230,11 @@ function main() {
   }
 
   const rt = new BenchRT(COLS, ROWS);
+  const depthBuffer = new BenchDepthBuffer(COLS, ROWS);
   const cellCount = COLS * ROWS;
 
   let ok = true;
-  const results = [];
+  const newBaseline = {};
 
   for (const pose of POSES) {
     const camera = { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg };
@@ -136,8 +247,9 @@ function main() {
 
     let gcEvents = [];
     let observer = null;
+    let heapUsedStart = null;
     if (withGc) {
-      if (typeof global.gc === 'function') global.gc(); // needs --expose-gc; harmless no-op check otherwise
+      if (typeof global.gc === 'function') { global.gc(); heapUsedStart = process.memoryUsage().heapUsed; }
       observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) gcEvents.push(entry);
       });
@@ -160,14 +272,18 @@ function main() {
       }
     }
 
+    let heapDeltaPerFrame = null;
+    if (withGc && heapUsedStart !== null) {
+      global.gc();
+      const heapUsedEnd = process.memoryUsage().heapUsed;
+      heapDeltaPerFrame = (heapUsedEnd - heapUsedStart) / frames;
+    }
+
     if (observer) observer.disconnect();
 
     const s = stats(frameTimes);
-    const checksum = {
-      glyphIdx: fnv1a(rt.glyphIdx),
-      fg: fnv1a(rt.fg),
-      bg: fnv1a(rt.bg),
-    };
+    const checksum = { glyphIdx: fnv1a(rt.glyphIdx), fg: fnv1a(rt.fg), bg: fnv1a(rt.bg) };
+    newBaseline[pose.name] = checksum;
 
     const writeCountOk = writesThisRun === cellCount && !anyDoubleWrite;
     if (!writeCountOk) ok = false;
@@ -176,21 +292,73 @@ function main() {
       ? gcEvents.filter((e) => e.kind === perfConstants.NODE_PERFORMANCE_GC_MINOR).length
       : null;
 
-    results.push({ pose: pose.name, stats: s, writes: writesThisRun, writeCountOk, checksum, minorGc, gcEventsTotal: withGc ? gcEvents.length : null });
+    // Sky-cell count (architect review item 2): a stub depth buffer, a
+    // dedicated reference-shader frame so it doesn't disturb the timed loop
+    // or the fast/reference comparison run below (they reset it themselves).
+    depthBuffer.reset();
+    rt.resetFrame();
+    castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
+    const skyCells = countSkyCells(depthBuffer);
 
     console.log(`\n[bench-cast] pose: ${pose.name}`);
     console.log(`  avg ${ms(s.avg)} ms  p50 ${ms(s.p50)} ms  p95 ${ms(s.p95)} ms  max ${ms(s.max)} ms`);
     console.log(`  cells written (last measured frame): ${writesThisRun} / ${cellCount} expected` +
       (writeCountOk ? '  OK' : '  FAIL (mismatch or a cell written twice)'));
-    console.log(`  checksum  glyphIdx=${checksum.glyphIdx}  fg=${checksum.fg}  bg=${checksum.bg}`);
+    console.log(`  sky cells: ${skyCells} / ${cellCount}  (geometry: ${cellCount - skyCells})`);
+    console.log(`  checksum (this run's shader='${shader}')  glyphIdx=${checksum.glyphIdx}  fg=${checksum.fg}  bg=${checksum.bg}`);
     if (withGc) {
       console.log(`  GC during measured window: ${gcEvents.length} total, ${minorGc} minor/scavenge` +
         (minorGc === 0 ? '  OK (zero scavenge)' : '  WARNING (scavenge observed - check for per-frame allocations)'));
       if (minorGc > 0) ok = false;
+      if (heapDeltaPerFrame !== null) {
+        const heapOk = heapDeltaPerFrame <= HEAP_DELTA_LIMIT_BYTES_PER_FRAME;
+        console.log(`  heapUsed delta: ${heapDeltaPerFrame.toFixed(1)} B/frame` +
+          (heapOk ? `  OK (<= ${HEAP_DELTA_LIMIT_BYTES_PER_FRAME} B)` : `  FAIL (> ${HEAP_DELTA_LIMIT_BYTES_PER_FRAME} B)`));
+        if (!heapOk) ok = false;
+      } else {
+        console.log('  heapUsed delta: not measured (run with --expose-gc for a trustworthy number)');
+      }
+    }
+
+    // --- correctness checks (item 3) ---
+    if (!updateBaseline) {
+      const baseline = EMBEDDED_BASELINE[pose.name];
+      const refChecksum = shader === 'reference' ? checksum : (() => {
+        depthBuffer.reset(); rt.resetFrame();
+        castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
+        return { glyphIdx: fnv1a(rt.glyphIdx), fg: fnv1a(rt.fg), bg: fnv1a(rt.bg) };
+      })();
+      const baselineOk = !!baseline && refChecksum.glyphIdx === baseline.glyphIdx &&
+        refChecksum.fg === baseline.fg && refChecksum.bg === baseline.bg;
+      console.log(`  [check] reference checksum vs embedded baseline: ` +
+        (baselineOk ? 'OK' : `FAIL (got glyphIdx=${refChecksum.glyphIdx} fg=${refChecksum.fg} bg=${refChecksum.bg})`));
+      if (!baselineOk) ok = false;
+
+      const cmp = compareFastVsReference(level, camera, depthBuffer);
+      console.log(`  [check] fast vs reference per-cell: glyph mismatches=${cmp.glyphMismatches}, ` +
+        `color-tolerance violations=${cmp.colorMismatches}, worst channel diff=${cmp.worstDiff}` +
+        (cmp.ok ? '  OK' : '  FAIL'));
+      if (!cmp.ok) ok = false;
+
+      const inv = checkSkyFallbackFalseInvariant(level, camera);
+      console.log(`  [check] skyFallback:false invariant: writes=${inv.writes} openRows=${inv.openRows} ` +
+        `(sum ${inv.total}/${cellCount}), doubleWrites=${inv.doubleWrites}, overlapViolations=${inv.overlapViolations}` +
+        (inv.ok ? '  OK' : '  FAIL'));
+      if (!inv.ok) ok = false;
     }
   }
 
-  console.log(`\n[bench-cast] ${frames} frames/pose, ${WARMUP_FRAMES} warm-up frames/pose, grid ${COLS}x${ROWS}.`);
+  if (updateBaseline) {
+    console.log('\n[bench-cast] --update-baseline: paste this into EMBEDDED_BASELINE in tools/bench-cast.mjs:\n');
+    console.log('const EMBEDDED_BASELINE = {');
+    for (const pose of POSES) {
+      const c = newBaseline[pose.name];
+      console.log(`  ${JSON.stringify(pose.name)}: { glyphIdx: ${JSON.stringify(c.glyphIdx)}, fg: ${JSON.stringify(c.fg)}, bg: ${JSON.stringify(c.bg)} },`);
+    }
+    console.log('};');
+  }
+
+  console.log(`\n[bench-cast] ${frames} frames/pose, ${WARMUP_FRAMES} warm-up frames/pose, grid ${COLS}x${ROWS}, timed shader='${shader}'.`);
   console.log(ok ? '[bench-cast] ALL CHECKS PASS' : '[bench-cast] FAILURES ABOVE');
   process.exit(ok ? 0 : 1);
 }

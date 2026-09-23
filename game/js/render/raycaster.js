@@ -299,14 +299,18 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
     const hitY = posY + perpDist * rayDirY;
     const u = ray.side === 0 ? hitY : hitX;
 
+    // Looked up BEFORE castFloorCeiling (US-004b ARCH CHANGES item 1): the
+    // sky-band decision below needs to know what's on the far side of this
+    // segment (a numeric ceiling to bound the sky by, a solid cell, more
+    // sky, or the grid edge).
+    const farSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5);
+
     // 1) The NEAR cell's own floor + ceiling planes, for the segment we
     // just finished walking through.
-    castFloorCeiling(rt, x, ctx, nearSector, prevFloorDist, prevCeilDist, perpDist,
+    castFloorCeiling(rt, x, ctx, nearSector, farSector, prevFloorDist, prevCeilDist, perpDist,
       openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo);
     skyClosedTop = ctx._fcSkyClosedTop; ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo;
     if (ctx._fcSkyRequested) skyPending = true;
-
-    const farSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5);
 
     if (!farSector) {
       // Left the level grid: this is a job for the terrain pass (D-008 item
@@ -432,7 +436,11 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
   // sky-vs-floor one architecture.md 12 item 1b describes.
   openTop = Math.max(openTop, ceilingFilledTo + 1);
 
-  if (skyPending && openTop <= openBottom) {
+  // US-004b ARCH CHANGES item 1(d): only paint the deferred sky when
+  // `skyFallback` is on. With it off (a future terrain pass owns these
+  // rows), leave them open instead - painting them here would wrongly
+  // claim rows a terrain pass needs as "sky-resolved".
+  if (skyPending && ctx.skyFallback && openTop <= openBottom) {
     const r1 = Math.min(openBottom, floorFilledTo - 1);
     if (openTop <= r1) {
       fillSky(rt, x, ctx, openTop, r1, azimuthDeg);
@@ -489,7 +497,7 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
 // {skyClosedTop, ceilingFilledTo, floorFilledTo, skyRequested} are written
 // onto `ctx._fc*` scratch fields (reused every call, like `ctx._planeR0/1`)
 // and read back by the caller.
-function castFloorCeiling(rt, x, ctx, sector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo) {
+function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo) {
   ctx._fcSkyRequested = false;
 
   if (openTop <= openBottom && dFar > dNearFloor) {
@@ -501,8 +509,36 @@ function castFloorCeiling(rt, x, ctx, sector, dNearFloor, dNearCeil, dFar, openT
     const ceilTop = Math.max(openTop, ceilingFilledTo + 1);
     if (ceilTop <= openBottom) {
       if (sector.ceilH === 'sky') {
-        skyClosedTop = true;
-        ctx._fcSkyRequested = true;
+        // US-004b ARCH CHANGES item 1 (skylight far-ceiling bug): the sky
+        // band must be bounded by whatever's on the far side of THIS
+        // segment, not left open until something eventually stops it.
+        if (sector === VOID_SECTOR) {
+          // (d) the ray left the grid (or started outside any sector) -
+          // request nothing at all. These rows stay open: `resolveColumn`
+          // fills them with sky when `skyFallback` is on (same look as
+          // before), or reports them as an open span for a future terrain
+          // pass - which a "sky-closed" claim here would have hidden.
+        } else if (farSector && !farSector.solid && farSector.ceilH !== 'sky') {
+          // (a) the far side has a numeric ceiling: paint the sky band now,
+          // bounded by exactly where that far ceiling's own plane will
+          // start (mirrors castPlane's near/far-exclusive convention - see
+          // its doc comment), and keep going: `skyClosedTop` stays false,
+          // so farther (non-sky) ceilings still continue from
+          // `ceilingFilledTo + 1` as usual. This is the fix for "cannot see
+          // the building's ceiling beyond the skylight".
+          const skyR1 = Math.min(openBottom, Math.ceil(rowAtHeight(ctx, farSector.ceilH, dFar)) - 1);
+          if (ceilTop <= skyR1) {
+            fillSky(rt, x, ctx, ceilTop, skyR1, azimuthDeg);
+            ceilingFilledTo = Math.max(ceilingFilledTo, skyR1);
+          }
+        } else {
+          // (b) the far side is solid (its wall face / `openBottom` will
+          // bound the sky), or (c) it's more sky, or it's the grid edge -
+          // the far bound isn't known yet: defer, as before (painted once,
+          // at column end, using the final `floorFilledTo`).
+          skyClosedTop = true;
+          ctx._fcSkyRequested = true;
+        }
       } else if (dFar > dNearCeil) {
         castPlane(rt, x, ctx, sector.ceilMat, sector.ceilH, dNearCeil, dFar, ceilTop, openBottom, sector.floorH);
         if (ctx._planeR1 >= ctx._planeR0) ceilingFilledTo = Math.max(ceilingFilledTo, ctx._planeR1);
