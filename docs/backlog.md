@@ -79,7 +79,7 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 ## Engine capability before M3: 3D glyph models = voxel models with rigid-part animation (D-016; sketched, see bottom of file)
 | ID | Title | Priority | Status |
 |---|---|---|---|
-| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | testing (PO OK 2026-09-23) | done 
+| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | done (tester PASS 2026-09-23, docs/test-reports/US-039.md) | 
 | US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | P0 (before M3) | todo (sketch) – after US-039, US-016, US-006/007 |
 | US-041 | Voxel lighting (rotated normals) + rigid-part animation + entity binding + bear preview | P0 (before M3) | todo (sketch) – after US-040 |
 
