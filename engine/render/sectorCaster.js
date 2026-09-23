@@ -634,6 +634,36 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       prevFloorDist = exitDist; // the cap just drawn covers the floor's own [entry,exit]
       const solidSector = farSector;
       nearSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5) || VOID_SECTOR;
+
+      // BUG-CPU-001 fix: the inner ddaStep above jumps straight past the
+      // solidSector -> nearSector boundary at exitDist without ever running
+      // the transition checks the non-solid branch below runs - so a step
+      // face between (e.g.) a 7.0 m wall top and a taller 7.5/8.0 m
+      // neighbour (solid or not) at that exact boundary was never drawn.
+      // Mirror that branch here: next solid with a higher floorH gives a
+      // WALL face, next non-solid with a higher floorH gives a STEP, rows
+      // [rowAtHeight(next.floorH), rowAtHeight(solid.floorH)], clipped by
+      // openTop/openBottom/floorFilledTo like the existing branches.
+      if (nearSector.floorH > solidSector.floorH) {
+        const exitHitX = posX + exitDist * rayDirX;
+        const exitHitY = posY + exitDist * rayDirY;
+        if (ctx.gbuf) primeWallGSample(ctx, level, exitHitX, exitHitY);
+        const uExit = ray.side === 0 ? exitHitY : exitHitX;
+        // Mirrors the non-solid branch's `higher === farSector` case (no
+        // floorFilledTo clamp): here the FAR side (nearSector) is always the
+        // higher one by construction, so nothing already drawn can dip into
+        // this band from the near side.
+        const r0x = Math.max(openTop, Math.ceil(rowAtHeight(ctx, nearSector.floorH, exitDist)));
+        const r1x = Math.min(openBottom, Math.floor(rowAtHeight(ctx, solidSector.floorH, exitDist)));
+        const faceKind = nearSector.solid ? GK_WALL : GK_STEP;
+        for (let row = r0x; row <= r1x; row++) {
+          const h = heightAtRow(ctx, row, exitDist);
+          const z = h - solidSector.floorH;
+          if (ctx.gbuf) emitSample(rt, x, row, ctx, faceKind, nearSector.wallMatId, ctx._wFace, ctx._wPlaneId, uExit, h, exitDist, z, wallAoD(ctx, solidSector, h, z));
+          else shadeAndWrite(rt, x, row, ctx, nearSector.wallMat, uExit, h, exitDist, z, nearSector.solid ? 'wallface' : 'stepfront');
+        }
+        openBottom = Math.min(openBottom, r0x - 1);
+      }
       // US-004b ARCH CHANGES (re-review #3): the solid cell has its own
       // ceiling plane (`solidSector.ceilH`, e.g. 'sky' over a low wall)
       // that this segment never ran through castFloorCeiling - without
