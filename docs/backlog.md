@@ -36,7 +36,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030a+030b `done` (or after the gate fails -> CPU per plan A) |
 | 16 | US-007 | Lighting: sun directional light with shaft shadow – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-006 |
 | 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); architect tech notes first; Programmer after US-030a+030b + US-007 + US-025 `done` |
-| 18 | US-010 | Tower layout: 3 levels as sector data | P0 | arch-review | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025; may run on the parallel track). Designer adds `interactables` + hint zones |
+| 18 | US-010 | Tower layout: 3 levels as sector data | P0 | po-review | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025; may run on the parallel track). Designer adds `interactables` + hint zones |
 | 19 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-030c (GPU sprite pass) + US-006. Designer re-checks props at 320x120 |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 21 | US-013 | Rolling boulder | P0 | todo | Programmer |
@@ -1346,7 +1346,7 @@ Browser (tester): `game/index.html` jump/stairs/gap/pit/lintel by hand; `game/ph
 
 **Tester PASS (2026-09-23, docs/test-reports/US-009.md).** 187+111+18=316/316 suites green. All 9 ACs verified: gap AC4 (22/22 take-offs), no-bridge AC7 (10/10 falls), pit AC6 (walk-out blocked, jump-out both sides), lintel/ceiling AC5 (no clip, correct clamp at `maxZ=1.3`), landing dip/head bob AC8, no double jump AC9. Verification method: since this sandbox's browser key-timing/rAF is unreliable for exact-frame assertions, checks were driven deterministically by importing the real `Player.js`/`EyeFeel.js`/`config.js` modules in the live page and stepping them at a fixed 1/60 s `dt` against the real `test_room` level object (labelled synthetic in the report) - same technique the programmer used. A real dispatched Space keypress through the harness's own listener also confirmed a live jump/land/recover cycle on the HUD. One environment-only bug found and logged (BUG-1, non-blocking): this sandbox kept serving the pre-US-009 `Player.js` on the `:8000` origin even after restarting the server and hard-refreshing (matches the programmer's documented caching caveat); switching to a fresh port (8123) fixed it immediately - not a product bug. Status -> `done`.
 
-### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: arch-review]
+### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: po-review]
 As a player, I want to wake inside a ruined round tower with a stair winding up to a breach, so that I have a clear, intriguing space to explore.
 Acceptance criteria – Designer:
 - [x] `design/levels/tower_layout.md`: top-down text map(s) of the tower using the US-003 legend format (outer footprint about 12x12 plus the outside outcrop and a few cells of hill beyond the breach), with a legend giving floorH/ceilH/materials per char.
@@ -1425,6 +1425,12 @@ Test plan (`game/js/quest/tower.test.js`, all Node, deterministic):
 - **Out-of-story fix, please review:** the designer's commit 7f2ce80 added the `farTower` billboard entity to `world_m1.js` in the architecture 14.4 item 7 shape (inline `x, y, z`, no `transform`/`spawn`), which made `World.load(world_m1)` throw (`needs "transform" or "spawn"`) in `world.test.js`, `serialize.test.js` and the default page. `World.load` now accepts inline `x, y[, z, yawDeg, pitchDeg]` as a transform shorthand (one `else if`). If US-016/US-030c wants a different shape, that hunk is the one to change.
 - Not done / for the designer (optional): `design/levels/tower.js` and `world_m1.js` still lack the `module.exports` line architecture.md section 11 asks for; the Node suites read them off `globalThis.ASSETS` instead (same as `world.test.js`), so nothing blocks.
 - Verified: `node tools/check-deps.mjs` OK (89 files); all 18 Node suites green (incl. the two new ones); `node --expose-gc tools/bench-cast.mjs --gc` every correctness check OK, 0 GC, checksums unchanged (only the pre-existing US-028a v2 timing finding remains); `game/index.html?debug=1&strict=1` on a fresh port (8877, stopped after): wakes at world (1497.00, 1027.50, 0.00) yaw 330 pitch 30, `structure: tower sector: '.'`, zero console errors/warnings; `?level=test_room` unchanged, clean.
+
+**ARCH OK (architect, 2026-09-23)** - reviewed the US-010 hunks of 49050b3. Status -> `po-review`.
+- D-006 boundary holds: names live only in level data and `game/js/quest/`; the engine validator compares data against the registry and knows no names. No coordinate literals under `game/js/quest/`. check-deps OK; `tower.test.js` 49/49, `behaviours.test.js` 9/9 (the notes say 11; cosmetic).
+- `validateBehaviours`: unique, sorted, tolerant of missing def/world; warn-once per load, `?strict=1` throws on the same list. Correct.
+- Inline `x, y[, z]` entity shorthand in `World.load`: accepted. It is the shape architecture 14.4 item 7 prescribes, it normalises to a `transform` (so serialize round-trips as `transform`), and it was needed to keep `World.load(world_m1)` working; recorded here rather than moved to US-016.
+- Coverage of route (scripted jump), gap (no-Space falls at walk and run, Space lands at 3.0, landing >= 2 cells deep), grate (closed BFS never reaches summit, open does, drive-into blocked) and lantern-free matches the test plan.
 
 ### US-011 Billboard props + prop art  [Priority: P0] [Status: todo]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.
