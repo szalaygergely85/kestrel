@@ -773,6 +773,7 @@ Notes / dependencies: US-028 `done` (arch-review → done first). Blocks US-029 
 **PO: please update these ACs before `testing`:** (1) joint cells are excluded from the '.'/blank metric (non-sky, non-joint cells, <= 5 %); (2) perf exception: stair pose extra p50 may be 1.0-1.3 ms, all others <= 1.0 ms, total <= 3.5 ms; (3) compare exclusions: sky-vs-geometry own-kind mismatch and `edge-neighbour-kind-mismatch` (US-004b reference overdraw) are excluded from the 95/95/95 same-surface set; (4) LOD distances/gates (`lodGates`, `fog.sparse`, octave ladder, x2/x4 joint fallback) are owner data per owner feedback, not fixed engine constants. Shimmer is US-028a, not a US-028 AC.
 
 ### US-029 GPU pipeline: shading + edge pass on the GPU, parity page  [Priority: P0] [Status: arch-review]
+> **Owner hardware gate run (2026-09-23, owner's Chrome, ANGLE Intel 0x7D45 D3D11, window >= 1600x900, fresh port 8802):** `?gpucompare=1` **ALL PASS** on all 5 poses: glyph 100.00% (non-edge), fg/bg outside +-4 = 0, fgMax 1, bgMax 0, depth 100%. `?debug=1` overlay while playing: **fps 60.0, frame 1.56 ms, grid draw 2.10 ms, shade: gpu, upload 0.40 ms, gpu 0.25 ms** (budget <= 4 ms). World tower, farReady 100%. Gate criterion 'runs on the owner's hardware' is MET.
 As a player, I want the renderer to run its heavy per-cell work on my graphics card, so that the world can get bigger, sharper and steadier without the game slowing down.
 (D-009 stage 1 = architecture section 14 option C. **This story is the D-009 gate.**)
 Acceptance criteria:
