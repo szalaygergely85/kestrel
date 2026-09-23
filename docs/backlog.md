@@ -3,6 +3,15 @@
 Owner: Product Owner. Last updated: 2026-09-23 (D-009).
 Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout details: see `docs/game-design.md` section 5 and 7.
 
+> **Session handoff (end of 2026-09-23).** Commit d46493d.
+> - **Done this session:** US-004b, US-005, US-008, US-009, US-024, US-025, US-028, US-028a, US-029 (the D-009 GPU gate was PASSED on the owner's hardware: gpucompare ALL PASS, gpu 0.25 ms, 60 fps).
+> - **In `arch-review` now (implemented, committed, not yet reviewed):** **US-030a** (GPU DDA + `?grid=WxH`, 320x120 default; glyph bug fixed = ambient light was not primed on the GPU path), **US-030c** (GPU sprites, `?spritecompare=1`), **US-010** (tower integration, `game/js/quest/`, 49 tower tests). Next: architect reviews for all three, then PO and tester (test in the worktree `../game_project_test`, moved to the right commit).
+> - **Open in US-030a:** gpucompare's new world_m1 spawn pose shows a real colour gap (138 fg / 111 bg cells > +-4, kind 99.92%), and the stair pose has a 12-cell near-miss. The architect decides fix vs. tolerance.
+> - **Owner feedback to settle:** 320x120 cells are 4-6 px, so glyphs are hard to read on normal screens. The owner hasn't decided between auto-grid-by-window, a fixed 240x90, or keeping 320x120; ask at the US-030b walk-test. Still open: BUG-OWN-001 (see-through objects, in the known-issues list).
+> - **New canon D-011** (fantasy + steampunk machines; Ferrum, the balloon *Kestrel*, SOS, crash into the tower). `docs/story.md` is rewritten ("ASCII Quest: Signal"). Next: the PO updates the GDD pillars/sections 7-8, the backlog notes and the US-015 map-card ACs; the designer does the wreckage/brass lamp/relay/moss/glow materials; the manager reviews the writer's 4 proposals.
+> - **Roadmap additions:** D-010 editors (M1.5 US-031..034, M5 US-035..037, sketches). Owner idea: a 2D/2.5D strategy camera as a future engine capability; ask the manager to note it.
+> - **Model rules:** today's "fable everywhere" was for this session only. Back to the CLAUDE.md token rules.
+
 ## Build order – Milestone 1 "The Awakening"
 
 | Order | ID | Title | Priority | Status | Who picks up |
