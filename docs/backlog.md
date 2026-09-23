@@ -43,11 +43,26 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.mjs` reports no engine imports from `game/` or `design/`. US-022 (P1) and P2 stories are not exit criteria.
 
+## Milestone 1.5 "Editor Preview" (sketched, see bottom of file; D-010)
+| ID | Title | Priority | Status |
+|---|---|---|---|
+| US-031 | Editor shell + fly-cam + idle re-render skip | P0 (M1.5) | todo (sketch) |
+| US-032 | Pick/select/move/delete | P0 (M1.5) | todo (sketch) |
+| US-033 | Place props/lights/triggers + property panel + undo | P0 (M1.5) | todo (sketch) |
+| US-034 | World JSON save/load + play-test | P0 (M1.5) | todo (sketch) |
+
 ## Milestone 2 "First Steps" (sketched, see bottom of file)
 | ID | Title | Priority | Status |
 |---|---|---|---|
 | US-026 | Walk out onto the terrain: near LOD, slope physics, chunk regeneration | P0 (M2) | todo (sketch) |
 | US-027 | JSON content packs and world files | P1 (M2) | todo (sketch) |
+
+## Milestone 5 "Engine Editor v0" (sketched, see bottom of file; D-010)
+| ID | Title | Priority | Status |
+|---|---|---|---|
+| US-035 | Model frame editor | P0 (M5) | todo (sketch) |
+| US-036 | Animations + events + preview | P0 (M5) | todo (sketch) |
+| US-037 | ModelDef JSON save/load | P0 (M5) | todo (sketch) |
 
 ---
 
@@ -1747,5 +1762,85 @@ Acceptance criteria (sketch):
 - [ ] Schema version field plus a clear error for unknown or old versions.
 Design needed: no (the designer keeps authoring in `design/`; export is a tool).
 Notes / dependencies: US-024, US-025. Editor prerequisite (M5).
+
+---
+
+## Milestone 1.5 "Editor Preview" – sketches (D-010, not yet refined; not M1 scope)
+
+### US-031 Editor shell + fly-cam + idle re-render skip  [Priority: P0 (M1.5)] [Status: todo (sketch)]
+As a level designer, I want a standalone editor page with a free-flying camera over the tower world, so that I can inspect placed content without the game's player controller.
+Acceptance criteria (sketch):
+- [ ] `tools/editor/index.html` boots `engine/index.js` against the M1 tower world (no `game/` import, per the engine boundary rule).
+- [ ] Fly-cam: WASD + mouse-look, no gravity/collision, adjustable speed.
+- [ ] `renderVersion` idle skip: no re-render (and near-zero CPU/GPU) while camera and world are unchanged.
+- [ ] `CameraPose` is explicit, serializable data (position/yaw/pitch/fov), not implicit view state.
+- [ ] Runs at 60 fps on the owner's hardware with the tower loaded.
+Design needed: no.
+Notes / dependencies: US-024 (engine split), architecture.md 10/10.1 extension points, US-025 (world model).
+
+### US-032 Pick/select/move/delete  [Priority: P0 (M1.5)] [Status: todo (sketch)]
+As a level designer, I want to click an object to select it, then move or delete it, so that I can adjust placed content interactively.
+Acceptance criteria (sketch):
+- [ ] Picking via 1-cell `readPixels` of the planeId target under the cursor (per architecture.md 10).
+- [ ] Selected object gets a visible highlight (outline or tint) in the 3D view.
+- [ ] Gizmo or keyboard-nudge move on the 3 axes, snapped to a configurable grid.
+- [ ] Delete key removes the selected object from the world (in-memory; no save yet).
+- [ ] Works for at least structures and props placed by US-025/US-011 data.
+Design needed: no.
+Notes / dependencies: US-031, US-025, entity handles (architecture.md 10).
+
+### US-033 Place props/lights/triggers + property panel + undo  [Priority: P0 (M1.5)] [Status: todo (sketch)]
+As a level designer, I want to place new props, lights and triggers and edit their properties, with undo, so that I can author content without hand-editing data.
+Acceptance criteria (sketch):
+- [ ] Palette/menu to spawn a prop, a point light, or a trigger volume at a picked point or cursor ray.
+- [ ] Property panel shows/edits the selected object's fields (position, color/intensity for lights, radius for triggers, prop type).
+- [ ] Undo/redo stack covering place, move, delete, property edit (at least 20 steps).
+- [ ] Placing/editing never leaves the world in an invalid state (e.g., NaN position) - basic validation on input.
+Design needed: no (uses existing prop/light/trigger data shapes).
+Notes / dependencies: US-032, US-011 (prop art), US-006 (lights, if landed) or a placeholder light shape otherwise.
+
+### US-034 World JSON save/load + play-test  [Priority: P0 (M1.5)] [Status: todo (sketch)]
+As a level designer, I want to save my edits to a world JSON file and load it back, and jump into a play-test from the editor, so that I can iterate on real content.
+Acceptance criteria (sketch):
+- [ ] "Save" serializes the world (structures, props, lights, triggers) via the engine's `serialize` to a world JSON file.
+- [ ] "Load" reads a world JSON back via `deserialize` and reconstructs an identical scene (round-trip check).
+- [ ] "Play-test" button switches from fly-cam to the M1 player controller in place, using the current (possibly unsaved) in-memory world.
+- [ ] Schema version field, with a clear error on unknown/old versions (consistent with US-027).
+Design needed: no.
+Notes / dependencies: US-033, US-027 (world file format shared with content packs), architecture.md `serialize/deserialize`.
+
+## Milestone 5 "Engine Editor v0" – sketches (D-010, not yet refined; not M1 scope)
+
+### US-035 Model frame editor  [Priority: P0 (M5)] [Status: todo (sketch)]
+As a designer, I want a per-direction glyph/fg frame editor for ASCII models, so that I can draw a character's look without hand-writing frame data.
+Acceptance criteria (sketch):
+- [ ] `tools/model-editor/` grid editor: paint glyph + fg color per cell, per facing direction (at least 4-directional).
+- [ ] Palette picker pulls from the master palette (US-002), no free-form colors outside it.
+- [ ] Live preview of the current frame at in-game scale (per US-011 sizing).
+- [ ] Copy/mirror a frame across directions to speed up symmetric poses.
+- [ ] Frame data matches the existing ModelDef frame shape (no new format invented here).
+Design needed: yes (the palette and an example model to edit against, e.g. the hero).
+Notes / dependencies: US-011, US-002. Depends on the M1.5 editor shell's picking/render plumbing where reusable.
+
+### US-036 Animations + events + preview  [Priority: P0 (M5)] [Status: todo (sketch)]
+As a designer, I want to sequence frames into named animations with fps/loop and per-frame events, and preview them live, so that I can author walk/attack/hit cycles.
+Acceptance criteria (sketch):
+- [ ] Named animation tracks (e.g. "walk", "attack") each with an ordered frame list, fps, loop flag.
+- [ ] Per-frame `events` (named tags, e.g. "hit", "footstep") editable and shown on the timeline.
+- [ ] Onion-skin overlay of adjacent frames while editing.
+- [ ] Live preview plays the animation using the real engine animation player (US-011), not a mock.
+- [ ] Scrub/step controls (play, pause, step frame, loop toggle).
+Design needed: no (consumes US-035 frames).
+Notes / dependencies: US-035, US-011 (animation player).
+
+### US-037 ModelDef JSON save/load  [Priority: P0 (M5)] [Status: todo (sketch)]
+As a designer, I want to save a model's frames and animations to a ModelDef JSON file and load it back, so that models are authored as portable data.
+Acceptance criteria (sketch):
+- [ ] "Save" writes a ModelDef JSON to `design/models/` matching the engine's existing ModelDef schema.
+- [ ] "Load" reads a ModelDef JSON back and reconstructs identical frames/animations (round-trip check).
+- [ ] Schema version field, consistent error handling with US-027/US-034.
+- [ ] Saved ModelDef loads correctly through `AssetRegistry` into a running game scene as a sanity check.
+Design needed: no.
+Notes / dependencies: US-035, US-036, US-027 (shared JSON conventions).
 
 > **US-004b resumed and finished (2026-09-23, programmer).** Status is now `arch-review` (see the story section above for the full AC checklist and programmer notes). All of `tools/bench-cast.mjs` (default + `--shader=reference` + `--gc`), `?shadetest=1` (361/361, worst deviation 0.25) and `node game/js/physics/physics.test.js` (187/187, untouched) pass; the game loads with no console errors on `?debug=1 ?bench=1 ?glyphs=1 ?shadetest=1 ?force2d=1 ?demo=1 ?origin=1480,1018` (checked in a real Chrome tab via this session's own preview server). `main.js` needed no change (it never reads `castScene`'s return value). One item is flagged **ASK ARCHITECT** in the story's AC list: 2 additional overdraw/gap bugs (beyond the 2 architecture.md 12 named) had to be fixed to hit exactly 9,600 writes/pose, so the pre-fast-shader image is not byte-identical to the recorded baseline - every differing cell was verified to be either an already-ambiguous multi-write cell in the original, or the same 2-row gap bug, never a clean regression. Next: architect review of `game/js/render/raycaster.js`, `OpenSpans.js`, `fastShade.js`, `shadeTest.js`, `tools/bench-cast.mjs` (`ARCH OK` -> po-review, or `ARCH CHANGES` -> back to programmer), with a decision on the ASK ARCHITECT item above. US-009's architect tech notes still haven't been started. The owner's verdict on the detail-pass preview (`design/preview/detail_pass.html`) is still pending.
