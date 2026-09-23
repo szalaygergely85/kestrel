@@ -139,3 +139,25 @@ AC metric: start pose, ambient only, share of non-sky cells that show only `.` o
 **Reference shader change** (`util.shade`): the hashed alternate is now picked in **every** tier (`alt = F.detail`, was `tier === 0 && F.detail`). Without it the new alternates would never show. The engine must do the same; the alternate still uses the world-anchored `hA` of the detail texel, and with the architect's per-cell detail octave (engine item 1) it will not shimmer at distance. Oriented sets (`grainU`, `grainV`, `beam`) are unchanged: they are near sets too, and their per-direction glyphs are single by design.
 
 Follow-ups: re-export `exports/detail_pass_start.json` in the preview, the programmer re-records the v2 bench baseline, then the acceptance check (walls <= 12 m keep >= 10 distinct glyphs, joints > 0 % to 20 m).
+
+**2026-09-23, US-028 architect re-review 2, D1 + D2.**
+
+D1, reference = engine spec. `util.shade` now does exactly what engine `shadeDetailFast` does:
+- **Detail octave per cell.** tpc = max(|dudx|+|dudy|, |dvdx|+|dvdy|) x `detail`. oct = -3/-2/-1/0/+1/+2 for tpc >= 4 / 2 / 1 / 0.5 / 0.25 / below. ds = `detail` x 2^oct. `hA` and `hC` use floor(u x ds, v x ds). `hB` (tier dither, fog stipple) keeps the base `detail` texel.
+- **Joint fallback octaves.** A bed or head joint that fails `cover < maxCover x period` is retried at 2x the period (every 2nd line), then 4x (every 4th), then dropped. `crossLine` runs on the chosen period.
+- **Band edges.** The gate widens from 0.5 to 1 to 2 x `width`. The edges stay at the band period.
+
+D2, blank share. Bench before: start 5.6 %, stair 6.9 %; target <= 5 % on all 5 poses. With lift 0.12 and gamma 0.70, any cell with b >= cutoff lands on level 3 or higher of an 8-level set (gb >= 0.146, so gb^0.7 x 8 >= 2.08). So the dots came from `.` alternates at level 3/4 (floor: 1 cell in 3 at ambient), plus seam-AO blanks on the ceiling.
+
+| value | before | after |
+|---|---|---|
+| `floorFace` L3 / L4 | `` ,`'. `` / `,.:` | `` ,`' `` / `` ,`:' `` |
+| `floorMid` L3 / L4 | `.,'` / `,:.` | `` ,'` `` / `,:'` |
+| `floorFar` L3 | `.,` | `,'` |
+| `soot` L3 | `.,` | `,'` |
+| `woodFar` L2 (7 levels, reachable) | `-.` | `-,` |
+| `ceiling_timber.albedo` | 0.74 | 0.78 (boards at AO k 0.6, jitter 0.9: b 0.031 >= cutoff) |
+
+Density per level is unchanged (same glyph weights), so the look stays the same with fewer dots. What can still count: the fog stipple beyond ~26 m, v1-only materials (iron, grate, ash), knot speckles at seams.
+
+**Measured (main session fills this in after the re-export and bench).** start _ %, stair _ %, sky pitch +20 _ %, diagonal _ %, low wall sky _ %.

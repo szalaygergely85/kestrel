@@ -105,13 +105,15 @@
     stoneFar:   [".'", ".,", ",:", ":;", ";+", "+%", "%#", "#&"],
     chip:       [".", "'", "'`", "`'", "\"'", "%'", "%&", "&%"],
     moss:       [".", ",", ",'", "\",", "\";", "\"%", "%&", "&@"],
-    soot:       [".", ".", ".,", ",:", ":;", ";%", "%#", "#&"],
+    // US-028 D2 (blank share): with lift 0.12 + gamma 0.70 an 8-level set never lands below level 3 when
+    // b >= cutoff, so level 3 (and floor level 4) must not contain '.': soot, floor* and woodFar L2 lost their dots.
+    soot:       [".", ".", ",'", ",:", ":;", ";%", "%#", "#&"],
     brickFace:  [".", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
     brickMid:   [".'", ".,", ",:;", ":=", "=:+", "=+", "#=+", "#%"],
     brickFar:   [".'", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
-    floorFace:  [".", ".'", ",`'.", ",.:", ",:;", ":;=", ";=+", "=+*"],
-    floorMid:   [".`", ".'", ".,'", ",:.", ":;,", ";=:", "=+", "+*="],
-    floorFar:   [".`", ".'", ".,", ",:", ":;", ";=", "=+", "+*"],
+    floorFace:  [".", ".'", ",`'", ",`:'", ",:;", ":;=", ";=+", "=+*"],
+    floorMid:   [".`", ".'", ",'`", ",:'", ":;,", ";=:", "=+", "+*="],
+    floorFar:   [".`", ".'", ",'", ",:", ":;", ";=", "=+", "+*"],
     dust:       [".", "'", "'`", "'\"", "\"'", "\"^", "^*", "*"],
     gap:        [".", ".", ",", ",", ",.", ";", ";", ":"],
     rubbleFace: [".", ".,", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
@@ -122,7 +124,7 @@
     grassFar:   [".,", ",'", "',", ";\"", "\";", "v\"", "vw", "wv"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
-    woodFar:    [".,", "-.", "-_", "=-", "=_", "=#", "#="],
+    woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
       h:  ["-", "-", "-~", "~=", "=", "="],
@@ -149,7 +151,8 @@
   //   detail:  detail texels per metre (alternate glyph choice + jitter), world-anchored so it never shimmers
   //   grid:    analytic joints. Blocks u x v m, every odd course shifted by stagger*u.
   //            Joints = lines at v = k*grid.v (bed) and u' = k*grid.u (head). A joint is drawn in a cell only if the
-  //            line passes through the cell's texture footprint, and only while the footprint is < maxCover * period.
+  //            line passes through the cell's texture footprint, and only while the footprint is < maxCover * period;
+  //            if not, retried as every 2nd line (2x period), then every 4th (4x), then dropped (US-028 D1).
   //            kind 'line' (default) = oriented line glyph; kind 'gap' = glyph set `set` (rubble gaps).
   //            tie: true = head joints disappear together with bed joints (walls). lines: false = tones only.
   //   face:    set (near), mid (lod.mid..lod.far), far (> lod.far). bevel = shade bands at the top/bottom of a block.
@@ -220,7 +223,8 @@
       // US-028 tuning: albedo 0.70 -> 0.74, grid.shade 0.45 -> 0.75, band.edgeShade 0.5 -> 0.75. At ambient only
       // (Lm 0.12, ceiling face 0.62) the old joint / beam-edge b was 0.023-0.026 < cutoff 0.03 = a blank cell on every
       // board joint and beam edge. Joints keep their darkness through the woodDark tint (0.6) and bgK 0.12, not through b.
-      albedo: 0.74, bgK: 0.22, detail: 20, jitter: 0.10,
+      // US-028 D2: albedo 0.74 -> 0.78 so boards in the full seam-AO zone (k 0.60, jitter -10 %) stay >= cutoff.
+      albedo: 0.78, bgK: 0.22, detail: 20, jitter: 0.10,
       tones: [['wood', 3], ['woodDark', 2], ['woodLight', 1]],
       grid: { u: 0.25, v: 2.0, stagger: 0.5, shade: 0.75, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
       face: { set: 'grainU', mid: 'grainU', far: 'woodFar' },
@@ -363,6 +367,16 @@
     return alt ? pick(str, h) : str.charAt(0);
   }
 
+  var OCT_POW2 = [0.125, 0.25, 0.5, 1, 2, 4];   // 2^oct for oct = -3 .. +2 (index oct + 3)
+  // Coverage fallback octaves (US-028 D1): a line whose footprint test fails at its own period is retried
+  // at 2x the period (every 2nd line), then 4x (every 4th), before it is dropped. Returns the period or -1.
+  function fallbackPeriod(cov, maxCover, period) {
+    if (cov < maxCover * period) return period;
+    if (cov < maxCover * period * 2) return period * 2;
+    if (cov < maxCover * period * 4) return period * 4;
+    return -1;
+  }
+
   var ALL_ON = { lift: true, tones: true, joints: true, faces: true, ao: true, sets: true, detail: true, overlay: true, fog: true, edges: true };
 
   /*
@@ -391,8 +405,18 @@
       fv = v / g.v - course;
     }
     // --- hashes (world-anchored) ---
-    var ds = m.detail || 16, tx = Math.floor(u * ds), ty = Math.floor(v * ds);
-    var hA = hash(tx, ty, m.seed), hB = hash(tx, ty, m.seed + 7), hC = hash(tx, ty, m.seed + 13);
+    // US-028 (arch re-review 2, D1): per-cell detail OCTAVE, exactly as engine shadeDetailFast.
+    // tpc = texels per screen cell (bigger of the u / v footprints) at the base density; the density is
+    // halved / doubled in octaves (-3 .. +2) so near texels stay crisp and far ones stay calm, still
+    // world-anchored (floor(u * ds)). hA / hC use the octave texel; hB (LOD tier dither + fog stipple)
+    // keeps the BASE texel, so the tier boundary does not move with the octave.
+    var base = m.detail || 16;
+    var tpcU = Math.abs(s.dudx) + Math.abs(s.dudy), tpcV = Math.abs(s.dvdx) + Math.abs(s.dvdy);
+    var tpc = (tpcU > tpcV ? tpcU : tpcV) * base;
+    var oct = tpc >= 4 ? -3 : tpc >= 2 ? -2 : tpc >= 1 ? -1 : tpc >= 0.5 ? 0 : tpc >= 0.25 ? 1 : 2;
+    var ds = base * OCT_POW2[oct + 3], tx = Math.floor(u * ds), ty = Math.floor(v * ds);
+    var btx = Math.floor(u * base), bty = Math.floor(v * base);
+    var hA = hash(tx, ty, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(tx, ty, m.seed + 13);
     var hBlock = hash(bix, course, m.seed + 3);
 
     // --- tone (per block) ---
@@ -428,7 +452,9 @@
         if (band.tone && F.tones) { var bt = rgb[band.tone]; cr = bt[0]; cg = bt[1]; cb = bt[2]; }
         if (band.bgK) bgK = band.bgK;
       }
-      if (F.joints && cover(bcx, bcy) < 0.5 * band.width) {
+      // D1: the band-edge coverage gate widens 2x, then 4x (0.5 -> 1 -> 2 x width); the edges stay at the
+      // band's own period (a band has only its two borders), same as the engine.
+      if (F.joints && fallbackPeriod(cover(bcx, bcy), 0.5, band.width) > 0) {
         var e0 = crossLine(bcoord, bcx, bcy, band.period, 0), e1 = crossLine(bcoord, bcx, bcy, band.period, band.width);
         var ef = e0 >= 0 ? e0 : e1;
         if (ef >= 0) { lineG = lineGlyph(bcx, bcy, ef); shadeK = band.edgeShade || 0.5; onJoint = true; }
@@ -436,10 +462,13 @@
     }
     // --- joints ---
     if (g && F.joints && g.lines !== false && !inBand && !onJoint) {
-      var okH = cover(s.dvdx, s.dvdy) < g.maxCover * g.v;
-      var okV = cover(s.dudx, s.dudy) < g.maxCover * g.u && (!g.tie || okH);
-      var fh = okH ? crossLine(v, s.dvdx, s.dvdy, g.v, 0) : -1;
-      var fu = okV ? crossLine(uo, s.dudx, s.dudy, g.u, 0) : -1;
+      // D1: joint fallback octaves - every line, else every 2nd, else every 4th (period x2 / x4).
+      var periodH = fallbackPeriod(cover(s.dvdx, s.dvdy), g.maxCover, g.v);
+      var periodV = fallbackPeriod(cover(s.dudx, s.dudy), g.maxCover, g.u);
+      var okH = periodH > 0;
+      var okV = periodV > 0 && (!g.tie || okH);
+      var fh = okH ? crossLine(v, s.dvdx, s.dvdy, periodH, 0) : -1;
+      var fu = okV ? crossLine(uo, s.dudx, s.dudy, periodV, 0) : -1;
       if (fh >= 0 || fu >= 0) {
         onJoint = true;
         if (g.kind === 'gap') { set = g.set; lineG = null; }
