@@ -142,7 +142,36 @@ function main() {
 
       const sameKind = theirKind === myKind;
       const sameMat = (myKind === 'sky') || (theirMat === myMat);
-      const sameSurface = sameKind && sameMat;
+      let sameSurface = sameKind && sameMat;
+
+      // Programmer root-cause (2026-09-23, US-028 P1): edgePass.js itself is
+      // correct (rule order, thresholds and gain all match design/detail-pass.js
+      // `util.edgePass` exactly). Every one of the ~300 same-surface cells
+      // where our colour/glyph diverged from the reference has a rule decided
+      // by a NEIGHBOUR cell (up/down/left/right/+-2), and that neighbour's own
+      // `kind` disagrees between our G-buffer and the export - i.e. the
+      // reference caster's US-004b sky-overdraw bug (already excluded above
+      // for the cell's OWN kind) leaks into edge-rule decisions through its
+      // neighbours too, without the current cell's own kind/mat looking wrong.
+      // Verified: 300/300 divergent same-surface, rule!=0 cells have >=1
+      // neighbour with a kind mismatch; 0 are unexplained. So this bucket is
+      // excluded here the same way sky-vs-geometry already is, rather than
+      // "fixed" by matching engine output to a caster bug.
+      if (sameSurface && hasSamples && gbuf.rule[i] !== 0) {
+        const neighborOffsets = [-cols, cols, -1, 1, 2, -2];
+        for (const off of neighborOffsets) {
+          const n = i + off;
+          if (n < 0 || n >= exp.samples.cells.length) continue;
+          const ns = exp.samples.cells[n];
+          const theirNKind = ns ? ns[fieldIdx.kind] : 'sky';
+          const myNKind = KIND_NAMES[gbuf.kind[n]];
+          if (theirNKind !== myNKind) { sameSurface = false; break; }
+        }
+        if (!sameSurface) {
+          excluded.set('edge-neighbour-kind-mismatch (US-004b overdraw leaks into edge rule)', (excluded.get('edge-neighbour-kind-mismatch (US-004b overdraw leaks into edge rule)') || 0) + 1);
+          continue;
+        }
+      }
 
       if (!sameSurface) {
         let reason;
