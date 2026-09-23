@@ -23,11 +23,17 @@ export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 
 // ---- render passes --------------------------------------------------------
-export { beginFrame, castSectors, fillSky } from './render/sectorCaster.js';
+export { beginFrame, castSectors, fillSky, ambientL } from './render/sectorCaster.js';
 export { castTerrain } from './render/terrainCaster.js';
 export { drawSprites } from './render/sprites.js';
 export { drawText } from './render/textDraw.js';
-export { runShadeTest } from './render/shadeTest.js';
+export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';
+
+// ---- US-028 detail pass v2 (G-buffer shading, edge pass) -------------------
+export { GBuffer } from './render/GBuffer.js';
+export { bindShading, bindLevel } from './render/MaterialTable.js';
+export { computeDerivatives, shadeSurfaces, shadeV2 } from './render/detailShade.js';
+export { edgePass } from './render/edgePass.js';
 
 // renderWorld (US-025 compositor): stub until World is real.
 export function renderWorld(fb, world, cam) {

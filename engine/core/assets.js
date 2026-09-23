@@ -24,6 +24,12 @@ export class AssetRegistry {
         throw new Error(`AssetRegistry: palette failed validation:\n${errs.join('\n')}`);
       }
     }
+    if (bundle.detailPass && typeof bundle.detailPass.util?.validate === 'function') {
+      const errs = bundle.detailPass.util.validate();
+      if (errs && errs.length) {
+        throw new Error(`AssetRegistry: detailPass failed validation:\n${errs.join('\n')}`);
+      }
+    }
 
     this._palette = bundle.palette;
     this._models = bundle.models || {};
@@ -31,10 +37,19 @@ export class AssetRegistry {
     this._terrain = bundle.terrain || {};
     this._worlds = bundle.worlds || {};
     this._uiStyle = bundle.uiStyle || null;
+    // US-028: the designer's v2 detail-pass proposal (design/detail-pass.js
+    // `ASSETS.detailPass`), read through the registry like every other
+    // content pack - optional (older bundles / tests without it get the v1
+    // look everywhere, same as `?detail=0`).
+    this._detailPass = bundle.detailPass || null;
   }
 
   get palette() {
     return this._palette;
+  }
+
+  get detailPass() {
+    return this._detailPass;
   }
 
   get uiStyle() {
@@ -108,6 +123,7 @@ export class AssetRegistry {
       terrain,
       worlds: globals.worlds,
       uiStyle: globals.uiStyle,
+      detailPass: globals.detailPass || null,
     });
   }
 

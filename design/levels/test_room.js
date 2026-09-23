@@ -36,18 +36,18 @@
 
   var legend = {
     '#': { floorH: 3.0, ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: true },
-    '.': { floorH: 0,   ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
+    '.': { floorH: 0,   ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
     '^': { floorH: 0,   ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: false },
     'O': { floorH: 3.0, ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: true },
     'w': { floorH: 1.0, ceilH: 'sky', wallMat: 'stone',      floorMat: 'floor', ceilMat: 'sky', solid: true },
     'm': { floorH: 3.0, ceilH: 'sky', wallMat: 'stone_moss', floorMat: 'floor', ceilMat: 'sky', solid: true },
-    'D': { floorH: 0,   ceilH: 2.2,   wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false, topH: 3.0 },
-    'S': { floorH: 0,   ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false, start: true, facingDeg: 90 },
-    '1': { floorH: 0.3, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
-    '2': { floorH: 0.6, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
-    '3': { floorH: 0.9, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
-    'P': { floorH: 1.0, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
-    'v': { floorH: -0.6, ceilH: 3,    wallMat: 'rubble',     floorMat: 'rubble', ceilMat: 'stone', solid: false },
+    'D': { floorH: 0,   ceilH: 2.2,   wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false, topH: 3.0 },
+    'S': { floorH: 0,   ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false, start: true, facingDeg: 90 },
+    '1': { floorH: 0.3, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    '2': { floorH: 0.6, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    '3': { floorH: 0.9, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    'P': { floorH: 1.0, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    'v': { floorH: -0.6, ceilH: 3,    wallMat: 'rubble',     floorMat: 'rubble', ceilMat: 'ceiling_timber', solid: false },
   };
 
   // 20 cols x 18 rows. Row 0 is the north edge (y=0); column 0 is the west edge (x=0).

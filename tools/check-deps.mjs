@@ -128,8 +128,13 @@ function checkEngineFile(file, src) {
 // deliberately NOT part of the public FrameBuffers API (castSectors always
 // runs with skyFallback:false) - it needs engine/render/sectorCaster.js and
 // engine/world/Level.js directly (a tool-only exception to rule 3).
+// tools/compare-detail-export.mjs (US-028) is the same kind of tool-only
+// exception: it needs the G-buffer/detail-shade/edge-pass internals
+// directly to reproduce the exact render pipeline the designer's export
+// JSON was captured from (a correctness oracle, not a game/main.js consumer).
 const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-cast.mjs',
+  'tools/compare-detail-export.mjs',
 ].map((p) => p.split('/').join(path.sep)));
 
 function checkConsumerFile(file, src) {

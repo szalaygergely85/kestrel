@@ -51,11 +51,17 @@
 
 import { performance, PerformanceObserver, constants as perfConstants } from 'node:perf_hooks';
 import { loadLevel } from '../engine/world/Level.js';
-import { castScene } from '../engine/render/sectorCaster.js';
+import { castScene, beginFrame, castSectors, ambientL } from '../engine/render/sectorCaster.js';
+import { GBuffer } from '../engine/render/GBuffer.js';
+import { bindShading, bindLevel } from '../engine/render/MaterialTable.js';
+import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.js';
+import { edgePass } from '../engine/render/edgePass.js';
 import testRoomDef from '../design/levels/test_room.js';
 import paletteModule from '../design/palette.js';
+import detailPassModule from '../design/detail-pass.js';
 
 const palette = paletteModule.default || paletteModule;
+const detailPass = detailPassModule.default || detailPassModule;
 
 const COLS = 160;
 const ROWS = 60;
@@ -157,6 +163,52 @@ class BenchDepthBuffer {
   set(x, y, dist) { this.depth[y * this.cols + x] = dist; }
 }
 
+// US-028: real-CellBuffer-shaped fake render target (fg/bg Uint8Array(n*4),
+// glyphIdx packed into fg[..+3] - see engine/render/CellBuffer.js), so
+// `edgePass` (which patches `rt.cells` directly, never through
+// `setCellRGB`) works unmodified against this bench harness. `cells` is
+// `this` - the two backends' real `.cells` is a separate `CellBuffer`
+// instance, but shape (glyphIdx/fg Uint8Array) is all `edgePass` needs.
+class BenchRTv2 {
+  constructor(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    this.pxCellW = PX_CELL_W;
+    this.pxCellH = PX_CELL_H;
+    this.glyphIdx = new Uint8Array(cols * rows);
+    this.fg = new Uint8Array(cols * rows * 4);
+    this.bg = new Uint8Array(cols * rows * 4);
+    this.writeCount = new Uint16Array(cols * rows);
+    this.totalWrites = 0;
+    this.cells = this;
+  }
+  setCellRGB(x, y, glyphIdx, r, g, b, r2, g2, b2) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
+    const i = y * this.cols + x;
+    this.glyphIdx[i] = glyphIdx;
+    const fi = i * 4;
+    this.fg[fi] = r; this.fg[fi + 1] = g; this.fg[fi + 2] = b; this.fg[fi + 3] = glyphIdx;
+    this.bg[fi] = r2; this.bg[fi + 1] = g2; this.bg[fi + 2] = b2; this.bg[fi + 3] = 255;
+    this.writeCount[i]++;
+    this.totalWrites++;
+  }
+  resetFrame() {
+    this.writeCount.fill(0);
+    this.totalWrites = 0;
+  }
+}
+
+function fnv1a4(bytes) { // fg/bg are *4 (rgba) here - fold alpha out first so checksums stay comparable to BenchRT's *3 layout
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i += 4) {
+    for (let k = 0; k < 3; k++) { h ^= bytes[i + k]; h = Math.imul(h, 0x01000193); }
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+const V2_GLYPH_DOT = '.'.charCodeAt(0) - 32;
+const RULE_NAMES = ['cap', 'lip', 'side', 'convex', 'concave', 'seamFloor', 'seamCeil', 'nosing'];
+
 function countSkyCells(depthBuffer) {
   let n = 0;
   for (let i = 0; i < depthBuffer.depth.length; i++) if (depthBuffer.depth[i] === Infinity) n++;
@@ -187,10 +239,10 @@ const ms = (n) => n.toFixed(3);
 function compareFastVsReference(level, camera, depthBuffer) {
   const rtRef = new BenchRT(COLS, ROWS);
   depthBuffer.reset();
-  castScene(rtRef, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
+  castScene(rtRef, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer, detailPass });
   const rtFast = new BenchRT(COLS, ROWS);
   depthBuffer.reset();
-  castScene(rtFast, level, camera, palette, { skyFallback: true, shader: 'fast', depthBuffer });
+  castScene(rtFast, level, camera, palette, { skyFallback: true, shader: 'fast', depthBuffer, detailPass });
 
   let glyphMismatches = 0, colorMismatches = 0, worstDiff = 0;
   for (let i = 0; i < COLS * ROWS; i++) {
@@ -210,7 +262,7 @@ function compareFastVsReference(level, camera, depthBuffer) {
 // double write, no written cell inside an open span.
 function checkSkyFallbackFalseInvariant(level, camera) {
   const rt = new BenchRT(COLS, ROWS);
-  const spans = castScene(rt, level, camera, palette, { skyFallback: false, shader: 'reference' });
+  const spans = castScene(rt, level, camera, palette, { skyFallback: false, shader: 'reference', detailPass });
 
   let doubleWrites = 0, openRows = 0, overlapViolations = 0;
   for (let x = 0; x < COLS; x++) {
@@ -235,6 +287,114 @@ function checkSkyFallbackFalseInvariant(level, camera) {
   };
 }
 
+// US-028 AC "Bench baseline": v2 checksums (glyphIdx/fg/bg, RGB only - the
+// bench RT's alpha channel just carries the packed glyphIdx, not a fourth
+// color plane, so it's excluded the same way BenchRT's *3 layout naturally
+// is). Recorded via `--update-baseline` (prints both v1 and v2 tables).
+const EMBEDDED_BASELINE_V2 = {
+  'start pose (S, facing east, level)': { glyphIdx: 'fe0d276e', fg: '1e2f723c', bg: '2f8f9047' },
+  'facing stair + 1.0m platform': { glyphIdx: '348c829e', fg: '15bff601', bg: '0d977652' },
+  'sky over the low wall, pitch +20': { glyphIdx: 'c51610c5', fg: '3e09724a', bg: 'e2fe6f76' },
+  'long diagonal, pitch -35': { glyphIdx: 'c209e74e', fg: '9f62c77e', bg: 'adf3fd55' },
+  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: 'aa5d8727', fg: 'ea8214b6', bg: 'e519906e' },
+};
+
+// US-028 bench: pass timers (cast/deriv/shade/edge), the 9,600-writes
+// invariant, glyph-diversity + edge-rule metrics (owner complaint ACs), and
+// the v2 checksum. `v1Stats` is this pose's already-measured v1 `castScene`
+// timing (avg/p50/p95/max, ms) - used for the "<=1.0ms p50 extra" budget.
+function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, v1Stats, updateBaseline) {
+  let ok = true;
+  const cellCount = COLS * ROWS;
+
+  function frame() {
+    rt2.resetFrame();
+    depth2.reset();
+    const castT0 = performance.now();
+    depth2.reset(); gbuf.beginFrame();
+    castScene(rt2, level, camera, palette, { origin: undefined, skyFallback: true, gbuf, matTable, depthBuffer: depth2, detailPass });
+    const castT1 = performance.now();
+    computeDerivatives(gbuf, depth2.depth);
+    const derivT1 = performance.now();
+    shadeSurfaces(fb2, gbuf, matTable, detailPass, ambientL);
+    const shadeT1 = performance.now();
+    edgePass(gbuf, depth2.depth, rt2, detailPass.edges);
+    const edgeT1 = performance.now();
+    return { cast: castT1 - castT0, deriv: derivT1 - castT1, shade: shadeT1 - derivT1, edge: edgeT1 - shadeT1 };
+  }
+
+  // Warm-up (not measured).
+  for (let i = 0; i < WARMUP_FRAMES; i++) frame();
+
+  const castT = new Array(frames), derivT = new Array(frames), shadeT = new Array(frames), edgeT = new Array(frames), totalT = new Array(frames);
+  for (let i = 0; i < frames; i++) {
+    const t = frame();
+    castT[i] = t.cast; derivT[i] = t.deriv; shadeT[i] = t.shade; edgeT[i] = t.edge;
+    totalT[i] = t.cast + t.deriv + t.shade + t.edge;
+  }
+
+  const sCast = stats(castT), sDeriv = stats(derivT), sShade = stats(shadeT), sEdge = stats(edgeT), sTotal = stats(totalT);
+
+  // 9,600-writes invariant: gbuf wrote every non-sky cell, rt2 wrote every
+  // sky cell during THIS LAST frame's castScene (before shadeSurfaces ran
+  // again) - re-cast once, isolated, to check it cleanly.
+  rt2.resetFrame();
+  depth2.reset();
+  depth2.reset(); gbuf.beginFrame();
+  castScene(rt2, level, camera, palette, { skyFallback: true, gbuf, matTable, depthBuffer: depth2, detailPass });
+  const writeInvariantOk = gbuf.writeCount + rt2.totalWrites === cellCount;
+  console.log(`  [v2 check] writes: gbuf=${gbuf.writeCount} + sky=${rt2.totalWrites} = ${gbuf.writeCount + rt2.totalWrites} / ${cellCount}` +
+    (writeInvariantOk ? '  OK' : '  FAIL'));
+  if (!writeInvariantOk) ok = false;
+  computeDerivatives(gbuf, depth2.depth);
+  shadeSurfaces(fb2, gbuf, matTable, detailPass, ambientL);
+  edgePass(gbuf, depth2.depth, rt2, detailPass.edges);
+
+  // Owner-complaint metric (AC): distinct glyphs + "only '.'/blank" share,
+  // over non-sky (kind != 0) cells.
+  const seen = new Set();
+  let blankOrDot = 0, surfaceCells = 0;
+  for (let i = 0; i < cellCount; i++) {
+    if (gbuf.kind[i] === 0) continue;
+    surfaceCells++;
+    const g = rt2.glyphIdx[i];
+    seen.add(g);
+    if (g === 0 || g === V2_GLYPH_DOT) blankOrDot++;
+  }
+  const blankPct = surfaceCells ? (100 * blankOrDot / surfaceCells) : 0;
+  const glyphOk = seen.size >= 10 && blankPct <= 5;
+  console.log(`  [v2 check] distinct glyphs: ${seen.size} (>=10 required), only '.'/blank: ${blankPct.toFixed(1)}% of ${surfaceCells} surface cells (<=5% required)` +
+    (glyphOk ? '  OK' : '  FAIL'));
+  if (!glyphOk) ok = false;
+
+  // Edge-rule counts.
+  const ruleCounts = new Array(9).fill(0);
+  for (let i = 0; i < cellCount; i++) ruleCounts[gbuf.rule[i]]++;
+  console.log(`  [v2] edge rule counts: ` + RULE_NAMES.map((n, k) => `${n}=${ruleCounts[k + 1]}`).join(' '));
+
+  // Timing report + budget.
+  const extraP50 = sTotal.p50 - v1Stats.p50;
+  console.log(`  [v2 timing] cast p50 ${ms(sCast.p50)}  deriv p50 ${ms(sDeriv.p50)}  shade p50 ${ms(sShade.p50)}  edge p50 ${ms(sEdge.p50)}  total p50 ${ms(sTotal.p50)} ms`);
+  console.log(`  [v2 timing] v1 fast total p50 ${ms(v1Stats.p50)} ms, v2 total p50 ${ms(sTotal.p50)} ms, extra ${ms(extraP50)} ms` +
+    (extraP50 <= 1.0 ? '  OK (<=1.0ms)' : '  OVER BUDGET (>1.0ms) - see US-028 notes'));
+  const totalUnderTrigger = sTotal.p50 < 3.5;
+  console.log(`  [v2 timing] total sectors p50 ${ms(sTotal.p50)} ms vs US-004b escalation trigger 3.5 ms` + (totalUnderTrigger ? '  OK' : '  FAIL'));
+  if (!totalUnderTrigger) ok = false;
+
+  // Checksum (new baseline; RGB-only, alpha excluded - see fnv1a4).
+  const checksum = { glyphIdx: fnv1a(rt2.glyphIdx), fg: fnv1a4(rt2.fg), bg: fnv1a4(rt2.bg) };
+  v2Baseline[pose.name] = checksum;
+  console.log(`  [v2] checksum  glyphIdx=${checksum.glyphIdx}  fg=${checksum.fg}  bg=${checksum.bg}`);
+  if (!updateBaseline) {
+    const baseline = EMBEDDED_BASELINE_V2[pose.name];
+    const baselineOk = !!baseline && checksum.glyphIdx === baseline.glyphIdx && checksum.fg === baseline.fg && checksum.bg === baseline.bg;
+    console.log(`  [v2 check] checksum vs embedded v2 baseline: ` + (baselineOk ? 'OK' : baseline ? 'FAIL' : 'no baseline recorded yet (run --update-baseline)'));
+    if (baseline && !baselineOk) ok = false;
+  }
+
+  return ok;
+}
+
 function main() {
   const args = process.argv.slice(2);
   const frameIdx = args.indexOf('--frames');
@@ -254,6 +414,16 @@ function main() {
   const depthBuffer = new BenchDepthBuffer(COLS, ROWS);
   const cellCount = COLS * ROWS;
 
+  // --- US-028 v2 pipeline setup (allocated once, reused every pose/frame,
+  // exactly like createEngine/main.js does) ---------------------------------
+  const rt2 = new BenchRTv2(COLS, ROWS);
+  const depth2 = new BenchDepthBuffer(COLS, ROWS);
+  const matTable = bindShading(palette, detailPass, PX_CELL_H / PX_CELL_W);
+  bindLevel(matTable, level);
+  const gbuf = new GBuffer(COLS, ROWS);
+  const fb2 = { rt: rt2, depth: depth2, palette, gbuf, matTable };
+  const v2Baseline = {};
+
   let ok = true;
   const newBaseline = {};
 
@@ -263,7 +433,7 @@ function main() {
     // Warm-up (not measured).
     for (let i = 0; i < WARMUP_FRAMES; i++) {
       rt.resetFrame();
-      castScene(rt, level, camera, palette, { skyFallback: true, shader });
+      castScene(rt, level, camera, palette, { skyFallback: true, shader, detailPass });
     }
 
     let gcEvents = [];
@@ -284,7 +454,7 @@ function main() {
     for (let i = 0; i < frames; i++) {
       rt.resetFrame();
       const t0 = performance.now();
-      castScene(rt, level, camera, palette, { skyFallback: true, shader });
+      castScene(rt, level, camera, palette, { skyFallback: true, shader, detailPass });
       const t1 = performance.now();
       frameTimes[i] = t1 - t0;
       writesThisRun = rt.totalWrites;
@@ -318,7 +488,7 @@ function main() {
     // or the fast/reference comparison run below (they reset it themselves).
     depthBuffer.reset();
     rt.resetFrame();
-    castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
+    castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer, detailPass });
     const skyCells = countSkyCells(depthBuffer);
 
     // Per-cell probes (US-004b re-review #3 regression guards): specific
@@ -368,7 +538,7 @@ function main() {
       const baseline = EMBEDDED_BASELINE[pose.name];
       const refChecksum = shader === 'reference' ? checksum : (() => {
         depthBuffer.reset(); rt.resetFrame();
-        castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
+        castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer, detailPass });
         return { glyphIdx: fnv1a(rt.glyphIdx), fg: fnv1a(rt.fg), bg: fnv1a(rt.bg) };
       })();
       const baselineOk = !!baseline && refChecksum.glyphIdx === baseline.glyphIdx &&
@@ -389,6 +559,9 @@ function main() {
         (inv.ok ? '  OK' : '  FAIL'));
       if (!inv.ok) ok = false;
     }
+
+    // --- US-028 v2 pipeline: bench + correctness -----------------------
+    ok = runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, s, updateBaseline) && ok;
   }
 
   if (updateBaseline) {
@@ -396,6 +569,14 @@ function main() {
     console.log('const EMBEDDED_BASELINE = {');
     for (const pose of POSES) {
       const c = newBaseline[pose.name];
+      console.log(`  ${JSON.stringify(pose.name)}: { glyphIdx: ${JSON.stringify(c.glyphIdx)}, fg: ${JSON.stringify(c.fg)}, bg: ${JSON.stringify(c.bg)} },`);
+    }
+    console.log('};');
+
+    console.log('\n[bench-cast] --update-baseline: paste this into EMBEDDED_BASELINE_V2 in tools/bench-cast.mjs:\n');
+    console.log('const EMBEDDED_BASELINE_V2 = {');
+    for (const pose of POSES) {
+      const c = v2Baseline[pose.name];
       console.log(`  ${JSON.stringify(pose.name)}: { glyphIdx: ${JSON.stringify(c.glyphIdx)}, fg: ${JSON.stringify(c.fg)}, bg: ${JSON.stringify(c.bg)} },`);
     }
     console.log('};');

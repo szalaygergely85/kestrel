@@ -8,7 +8,8 @@
 
 import {
   AssetRegistry, createEngine, loadLevel, Player,
-  beginFrame, castSectors, fillSky, runShadeTest,
+  beginFrame, castSectors, fillSky, runShadeTest, runDetailShadeTest,
+  GBuffer, bindShading, bindLevel, computeDerivatives, shadeSurfaces, edgePass, ambientL,
   PlayerLook, DebugOverlay,
 } from '../../engine/index.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -27,6 +28,20 @@ const engine = createEngine({
 const { renderTarget: rt, depthBuffer, openSpans, input } = engine;
 const overlay = new DebugOverlay(document.body);
 
+// US-028: `?detail=0` renders the v1 look (A/B switch, no upkeep needed
+// after this story - see docs/backlog.md US-028 AC "A/B switch"). Default
+// is the v2 detail pass. `matTable`/`gbuf` are allocated once (module
+// scope, this file only ever runs once per page load) and reused every
+// frame, per architecture.md 8.1/9's "no per-frame allocation" rule.
+const useDetail = params.get('detail') !== '0';
+// `matTable` always resolves against the REAL detail-pass module (so a
+// v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
+// fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
+// to take the v2 branch (see the `detailPass` arg passed to it below).
+const matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
+const detailPass = useDetail ? assets.detailPass : null;
+const gbuf = new GBuffer(rt.cols, rt.rows);
+
 console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end actually ran (gl2 / c2d-capped)
 
 // Internal hook for manual/automated smoke-testing in a console - not part
@@ -37,6 +52,7 @@ if (params.get('bench') === '1') {
   runBenchmark(rt, overlay);
 } else if (params.get('shadetest') === '1') {
   runShadeTest(assets.palette);
+  if (assets.detailPass) runDetailShadeTest(assets.palette, assets.detailPass);
 } else if (params.get('glyphs') === '1') {
   runGame('glyphs');
 } else if (params.get('demo') === '1') {
@@ -71,6 +87,7 @@ function runGame(mode) {
       // physics integration here yet (US-025 splits this into Entity +
       // integrate()): movement is Player's current simple noclip-on-the-floor
       // behaviour.
+      bindLevel(matTable, level); // US-028: pre-warm material ids for this level's legend
       player = new Player(level);
       look = new PlayerLook(canvas, input, player.yawDeg, player.pitchDeg);
 
@@ -109,7 +126,10 @@ function runGame(mode) {
 
   // Reused every frame (architecture.md section 9: no per-frame objects).
   const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
-  const fb = { rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0 };
+  const fb = {
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0,
+    gbuf, matTable, // US-028
+  };
 
   function render(alpha) {
     const renderStart = performance.now();
@@ -128,6 +148,13 @@ function runGame(mode) {
       fb.timeSec = simTime;
       beginFrame(fb);
       castSectors(fb, level, cam, origin);
+      // US-028 pass order (docs/architecture.md 8.1): derivatives -> shade
+      // -> edges, all over the whole G-buffer, THEN sky fills whatever's
+      // still open (a v2 cell's fog factor/edge rule must never be
+      // computed against an unshaded sky cell).
+      computeDerivatives(gbuf, depthBuffer.depth);
+      shadeSurfaces(fb, gbuf, matTable, detailPass, ambientL);
+      if (detailPass) edgePass(gbuf, depthBuffer.depth, rt, detailPass.edges);
       fillSky(fb, cam);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
