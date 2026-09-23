@@ -19,7 +19,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 10 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 11 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 and US-004b `done` |
 | 12 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
-| 13 | US-009 | Physics: jump, step-up, landing feel | P0 | testing | ARCH OK + PO OK 2026-09-23, awaiting tester |
+| 13 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
 | 14 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
 | 15 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-006 (`engine/render/sprites.js`) |
 | 16 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
@@ -673,7 +673,7 @@ Tests: `node game/js/physics/physics.test.js` -> **187 passed, 0 failed, ALL PAS
 
 **Tester PASS (2026-09-22).** `node game/js/physics/physics.test.js` 187/187; `node game/js/engine/playerLook.test.js` 10/10. Wall hug, inner corner, pillar-corner off-diagonal slide, doorway funnel (±0.25/0.35 m), platform fall/land, 0.3/0.6/0.9 m stair climb, low-wall block and 10x run-speed tunnelling checks all pass, verified against the live `Player`/`Level`/`test_room` integration in `game/physics-test.html` (browser rAF is throttled/unreliable in the test sandbox, so most checks used deterministic scripted stepping through the same unmodified modules rather than timed key-holds - see report for detail). `game/index.html` loads and renders with no console errors. Physics step cost ≈0.67 µs (≈1500x under the 1 ms budget). No bugs found. Full report: `docs/test-reports/US-008.md`. Status -> `done`.
 
-### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: testing]
+### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: done]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
 Acceptance criteria:
 - [ ] Step-up: floors up to 0.45 m higher are climbed automatically; camera height smoothed over 0.1 s (no snapping) when stepping up or down.
@@ -802,6 +802,8 @@ Browser (tester): `game/index.html` jump/stairs/gap/pit/lintel by hand; `game/ph
    - Jump at lintel `D` and on `P`/`1`/`2`/`3`: no clipping, no freeze, lands normally.
    - Landing dip is visible after a jump or a drop off `P`; head bob is subtle when walking and absent when standing or in the air.
    - HUD shows coyote/buffer/eyeOffset/fallDistance.
+
+**Tester PASS (2026-09-23, docs/test-reports/US-009.md).** 187+111+18=316/316 suites green. All 9 ACs verified: gap AC4 (22/22 take-offs), no-bridge AC7 (10/10 falls), pit AC6 (walk-out blocked, jump-out both sides), lintel/ceiling AC5 (no clip, correct clamp at `maxZ=1.3`), landing dip/head bob AC8, no double jump AC9. Verification method: since this sandbox's browser key-timing/rAF is unreliable for exact-frame assertions, checks were driven deterministically by importing the real `Player.js`/`EyeFeel.js`/`config.js` modules in the live page and stepping them at a fixed 1/60 s `dt` against the real `test_room` level object (labelled synthetic in the report) - same technique the programmer used. A real dispatched Space keypress through the harness's own listener also confirmed a live jump/land/recover cycle on the HUD. One environment-only bug found and logged (BUG-1, non-blocking): this sandbox kept serving the pre-US-009 `Player.js` on the `:8000` origin even after restarting the server and hard-refreshing (matches the programmer's documented caching caveat); switching to a fresh port (8123) fixed it immediately - not a product bug. Status -> `done`.
 
 ### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: todo]
 As a player, I want to wake inside a ruined round tower with a stair winding up to a breach, so that I have a clear, intriguing space to explore.
