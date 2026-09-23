@@ -13,6 +13,54 @@ const FLAG_CEIL_SKY = 2;
 const FLAG_TOP_SKY = 4;
 const FLAG_DYNAMIC = 8;
 
+// US-030a (docs/architecture.md 7.2 amendment / 14.2 item 2): the ao "relief"
+// bit masks the CPU caster keeps on `level._relief028` (engine/render/
+// sectorCaster.js's `ensureRelief`/`planeAoDFast`) are duplicated here as a
+// packed-layout field so the GPU DDA can read them straight out of the
+// `FLAGS` atlas (`g = floorRise | ceilDrop << 4`) with no `sectorAt` calls.
+// This is a SEPARATE array from the CPU caster's own cache - the CPU path is
+// unchanged (AC: "nothing else changes in the CPU caster") - so the two are
+// computed independently, from the same rule, and may briefly disagree only
+// in the same way `ensureRelief` itself would (never queried mid-recompute).
+const RELIEF_W = 1, RELIEF_E = 2, RELIEF_N = 4, RELIEF_S = 8;
+function computeRelief(level, w, h) {
+  const floorRise = new Uint8Array(w * h);
+  const ceilDrop = new Uint8Array(w * h);
+  for (let cy = 0; cy < h; cy++) {
+    for (let cx = 0; cx < w; cx++) {
+      const own = level.sectorAt(cx + 0.5, cy + 0.5);
+      const i = cy * w + cx;
+      if (!own) continue;
+      const ownFloorH = own.floorH, ownCeilH = own.ceilH;
+      let fb = 0, cb = 0;
+      const west = level.sectorAt(cx - 1 + 0.5, cy + 0.5);
+      const east = level.sectorAt(cx + 1 + 0.5, cy + 0.5);
+      const north = level.sectorAt(cx + 0.5, cy - 1 + 0.5);
+      const south = level.sectorAt(cx + 0.5, cy + 1 + 0.5);
+      if (!west || west.floorH > ownFloorH + 0.01) fb |= RELIEF_W;
+      if (!east || east.floorH > ownFloorH + 0.01) fb |= RELIEF_E;
+      if (!north || north.floorH > ownFloorH + 0.01) fb |= RELIEF_N;
+      if (!south || south.floorH > ownFloorH + 0.01) fb |= RELIEF_S;
+      if (ownCeilH !== 'sky') {
+        const rises = (q) => !q || q.solid || (q.ceilH !== 'sky' && q.ceilH < ownCeilH - 0.01);
+        if (rises(west)) cb |= RELIEF_W;
+        if (rises(east)) cb |= RELIEF_E;
+        if (rises(north)) cb |= RELIEF_N;
+        if (rises(south)) cb |= RELIEF_S;
+      }
+      floorRise[i] = fb;
+      ceilDrop[i] = cb;
+    }
+  }
+  return { floorRise, ceilDrop };
+}
+function packRelief(relief, w, h) {
+  const out = new Uint8Array(w * h);
+  const { floorRise, ceilDrop } = relief;
+  for (let i = 0; i < w * h; i++) out[i] = (floorRise[i] & 0xf) | ((ceilDrop[i] & 0xf) << 4);
+  return out;
+}
+
 /**
  * @param {import('./Level.js').Level} level
  * @param {import('../render/MaterialTable.js').MaterialTable|null} matTable - optional; material ids are left 0 (unresolved) when omitted.
@@ -65,11 +113,53 @@ export function packLevel(level, matTable) {
     }
   }
 
+  // US-030a: `relief` is the packed floorRise/ceilDrop nibbles (7.2
+  // amendment) the GPU DDA reads for ambient-occlusion depth (`aoD`) on
+  // plane samples - the `FLAGS` texture's `g` channel is `packRelief`'s
+  // output, uploaded by `WorldTextures.js`, never reshaped here.
+  const relief = packRelief(computeRelief(level, w, h), w, h);
+
   // `dirtyY0`/`dirtyY1` (item 4, architect review #1): the row range touched
   // since the last time an uploader (US-030) consumed this packed layout.
   // `packLevel` itself is a full (re)build, so there is nothing dirty yet;
   // `updateAnimatedSector` below is what advances them.
-  return { w, h, geom, mats, flags, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1 };
+  return { w, h, geom, mats, flags, relief, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1 };
+}
+
+/**
+ * US-030a integration fix: `World.placeStructure` calls `packLevel(level,
+ * null)` (matTable doesn't exist yet at world-load time), so `packed.mats`
+ * is all-zero until something re-packs it against the REAL, now-bound
+ * table. `bindLevel(matTable, level)` (MaterialTable.js) already bakes ids
+ * onto the level's own legend sectors for the CPU caster's benefit; this is
+ * its packed-array counterpart for `WorldTextures.js` - same values, same
+ * `ceilSky -> 0` rule as `packLevel`'s own mats section, called once right
+ * after `bindLevel` (see game/js/main.js). Does not touch geom/flags/relief
+ * or `tagIds`; bumps `version` and marks every row dirty so an atlas built
+ * BEFORE this call (there shouldn't be one, in practice) would still pick
+ * it up.
+ * @param {import('../../docs/architecture.md').PackedLevel} packed
+ * @param {import('./Level.js').Level} level
+ * @param {import('../render/MaterialTable.js').MaterialTable} matTable
+ */
+export function repackMaterials(packed, level, matTable) {
+  const w = packed.w, h = packed.h, mats = packed.mats;
+  for (let cy = 0; cy < h; cy++) {
+    const row = level.rows[cy];
+    for (let cx = 0; cx < w; cx++) {
+      const i = cy * w + cx;
+      const s = level.legend[row[cx]];
+      if (!s) continue;
+      const ceilSky = s.ceilH === 'sky';
+      const gi = i * 4;
+      mats[gi] = matTable.idFor(s.wallMat);
+      mats[gi + 1] = matTable.idFor(s.floorMat);
+      mats[gi + 2] = ceilSky ? 0 : matTable.idFor(s.ceilMat);
+      mats[gi + 3] = matTable.idFor(s.upperMat || s.wallMat);
+    }
+  }
+  packed.version++;
+  packed.dirtyY0 = 0; packed.dirtyY1 = h - 1;
 }
 
 /**
@@ -116,8 +206,15 @@ export function updateAnimatedSector(packed, level, ch) {
     if (touched) { if (cy < y0) y0 = cy; if (cy > y1) y1 = cy; }
   }
   if (y1 >= y0) {
-    packed.dirtyY0 = packed.dirtyY0 < 0 ? y0 : Math.min(packed.dirtyY0, y0);
-    packed.dirtyY1 = Math.max(packed.dirtyY1, y1);
+    // US-030a: a changed ceilH can flip the ceilDrop relief bit of the
+    // neighbouring cells on every side (`computeRelief`'s `rises()` reads
+    // the changed sector), not just the touched cells themselves - so the
+    // relief array is recomputed in full (cheap: this only runs on a
+    // dynamic-sector animation step, not per frame) and the dirty row range
+    // grows by one on each side to cover those neighbours too.
+    packed.relief = packRelief(computeRelief(level, w, h), w, h);
+    packed.dirtyY0 = packed.dirtyY0 < 0 ? Math.max(0, y0 - 1) : Math.min(packed.dirtyY0, Math.max(0, y0 - 1));
+    packed.dirtyY1 = Math.max(packed.dirtyY1, Math.min(h - 1, y1 + 1));
     packed.version++;
   }
 }

@@ -8,7 +8,7 @@ import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
 import { EventRing } from '../entities/eventRing.js';
-import { getBehaviour } from '../core/behaviours.js';
+import { getBehaviour, validateBehaviours } from '../core/behaviours.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -51,6 +51,14 @@ export class World {
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;
+    // US-030a (docs/architecture.md 14.2 item 2): "world.structVersion, not
+    // per frame" - a narrower signal than `renderVersion` (which also bumps
+    // on `animateSector`/`spawn`/etc, i.e. every sim step of a grate
+    // opening). `WorldTextures.js` needs to tell "the placed-structure LIST
+    // changed shape" (full atlas rebuild) apart from "a placed structure's
+    // own cells changed" (dirty-row `texSubImage2D` only, via
+    // `packed.version`) - only `placeStructure` bumps this.
+    this.structVersion = 0;
     this.nextId = 0;
     this.state = {};
     this.events = null;
@@ -122,6 +130,10 @@ export class World {
       let transform;
       if (ed.transform) {
         transform = { ...ed.transform };
+      } else if (typeof ed.x === 'number' && typeof ed.y === 'number') {
+        // Inline world position (architecture.md 14.4 item 7 shape, e.g. the
+        // `farTower` billboard in world_m1.js): a transform shorthand.
+        transform = { x: ed.x, y: ed.y, z: typeof ed.z === 'number' ? ed.z : 0, yawDeg: ed.yawDeg || 0, pitchDeg: ed.pitchDeg || 0 };
       } else if (ed.spawn) {
         const st = w.structures.find((s) => s.id === ed.spawn.structure);
         if (!st) throw new Error(`World.load: entity "${ed.id}" spawn.structure "${ed.spawn.structure}" not placed`);
@@ -139,6 +151,11 @@ export class World {
     }
 
     if (typeof def.nextId === 'number') w.nextId = def.nextId;
+
+    // (US-010 tech note 2) Data/registration agreement check, warned once
+    // per load. The game (`?strict=1`) and the tests throw on the same list.
+    const missing = validateBehaviours(w);
+    if (missing.length) console.warn(`[World] ${missing.length} behaviour(s) referenced by level data but not registered: ${missing.join(', ')}`);
 
     if (w.events) w.events.emit('world:loaded', { world: w });
     return w;
@@ -176,6 +193,7 @@ export class World {
     }
 
     this.renderVersion++;
+    this.structVersion++; // US-030a: the placed-structure LIST changed shape - see the constructor comment.
     if (this.events) this.events.emit('world:structurePlaced', { id: structId, origin: placed.origin });
     return placed;
   }

@@ -12,17 +12,49 @@ import { Camera } from '../entities/Camera.js';
 import { PHYSICS_DEFAULTS } from '../physics/config.js';
 import { World } from '../world/World.js';
 
+export const GRID_MIN_COLS = 160;
+export const GRID_MAX_COLS = 320;
+export const GRID_DEFAULT_COLS = 320; // US-030a 14.2 item 5: the default on the gl2 GPU path
+export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 320x120
+
+/**
+ * US-030a (docs/architecture.md 14.2 item 5): clamps to [160, 320] columns
+ * and derives `rows` to keep the 8:3 aspect (`round(cols*3/8)`) - the pair
+ * passed in never reaches either render back-end un-clamped. `clamped` is
+ * true whenever the result differs from the input (out-of-range cols, or a
+ * `rows` that didn't already match the derived aspect) - the caller logs it
+ * exactly once (main.js, for a user-supplied `?grid=`).
+ */
+export function clampGrid(cols, rows) {
+  let c = Math.round(cols);
+  const before = c;
+  if (c < GRID_MIN_COLS) c = GRID_MIN_COLS;
+  if (c > GRID_MAX_COLS) c = GRID_MAX_COLS;
+  const r = Math.round(c * GRID_ASPECT);
+  const clamped = c !== before || (rows != null && Math.round(rows) !== r);
+  return { cols: c, rows: r, clamped };
+}
+
 /**
  * @param {import('./assets.js').AssetRegistry} opts.assets
+ * @param {number} [opts.cols] - desired grid width; clamped (see `clampGrid`) - default `GRID_DEFAULT_COLS` (320, the gl2 default).
+ * @param {number} [opts.rows] - ignored except for the clamp's mismatch check; `rows` is always derived from `cols`.
+ * @param {{cols:number, rows:number}} [opts.cpuGrid] - grid forced when the real back-end isn't a real gl2 GPU (default 160x60).
+ * @param {boolean} [opts.gpu] - `false` forces the CPU fallback grid even when WebGL2 would otherwise be used (`?gpu=0`).
+ * @param {number} [opts.rays] - sub-ray count for the GPU DDA's coverage pass. US-030a ships `rays=1` only
+ *   (N-ray coverage voting is US-030b); stored on the engine for `main.js`/the pipeline to read, default 1
+ *   (a deliberate deviation from architecture.md 14.2 item 5's eventual default of 2 - flagged for architect review).
  * @returns {import('./engine.js').Engine}
  */
 export function createEngine(opts) {
   const {
-    canvas, assets, cols = 160, rows = 60, force2d = false,
+    canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false,
+    cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 1,
     physics: physicsOverrides = {}, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
-  const renderTarget = RenderTarget(canvas, cols, rows, { force2d });
+  const grid = clampGrid(cols, rows);
+  const renderTarget = RenderTarget(canvas, grid.cols, grid.rows, { force2d, cpuGrid, gpu });
   const depthBuffer = new DepthBuffer(renderTarget.cols, renderTarget.rows);
   const openSpans = new OpenSpans(renderTarget.cols);
   const input = new Input(inputTarget);
@@ -45,6 +77,8 @@ export function createEngine(opts) {
     camera,
     events,
     assets,
+    rays,
+    gridRequest: { cols: grid.cols, rows: grid.rows, clamped: grid.clamped, cpuGrid, gpu, force2d },
     physics, // PHYSICS_DEFAULTS merged with opts.physics
     loadWorld(def) {
       engine.world = World.load(def, assets, { events });
@@ -55,6 +89,25 @@ export function createEngine(opts) {
       loop.render = render;
       loop.start();
       return loop;
+    },
+    /**
+     * US-030a (14.2 item 5): re-sizes the CPU-side engine state (renderTarget,
+     * depthBuffer, openSpans) to a new grid - used once at startup when the
+     * GPU pipeline fails to compile/link (fall back to `cpuGrid`) and, later,
+     * by an in-game grid option. Emits `grid:changed` with the new
+     * `renderTarget` so the caller (main.js, which owns `GBuffer`/
+     * `GpuCellPipeline` - neither is engine-owned) can rebuild those too;
+     * this method does not touch them itself.
+     */
+    setGrid(newCols, newRows) {
+      const g = clampGrid(newCols, newRows);
+      const rt = RenderTarget(canvas, g.cols, g.rows, { force2d, cpuGrid, gpu });
+      engine.renderTarget = rt;
+      engine.depthBuffer = new DepthBuffer(rt.cols, rt.rows);
+      engine.openSpans = new OpenSpans(rt.cols);
+      engine.gridRequest = { cols: g.cols, rows: g.rows, clamped: g.clamped, cpuGrid, gpu, force2d };
+      events.emit('grid:changed', { cols: rt.cols, rows: rt.rows, renderTarget: rt });
+      return rt;
     },
   };
 

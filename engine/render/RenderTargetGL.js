@@ -231,6 +231,44 @@ export class RenderTargetGL {
     this._cellPass = fn || null;
   }
 
+  // US-030c: a second slot, run right after the cell pass (sprite composite
+  // - engine/render/gpu/spritesPass.js). Same contract as `setCellPass`.
+  setSpritePass(fn) {
+    this._spritePass = fn || null;
+  }
+
+  // Test-only (`?gpucompare=*`, never the frame loop - readPixels stalls the
+  // GPU): reads back EXACTLY the two cell textures the last `present()` draw
+  // sampled - whatever is bound on texture units 0 (`uFg`) and 1 (`uBg`)
+  // right now - rather than `this.fgTex`/`this.bgTex` by name. So a pipeline
+  // hook that writes correct cells into some texture present() does NOT
+  // sample (or leaves the wrong one bound) fails a parity check instead of
+  // passing it. Call it right after `present()`, before any other GL work.
+  // `sampledOwnTextures` is false when units 0/1 hold something other than
+  // this target's own fg/bg textures (a present() wiring bug, not a shading
+  // one). Buffers are reused across calls when `outFg`/`outBg` are omitted.
+  readbackPresent(outFg, outBg) {
+    const gl = this.gl;
+    const n = this.cols * this.rows * 4;
+    outFg = outFg || (this._rbFg = this._rbFg || new Uint8Array(n));
+    outBg = outBg || (this._rbBg = this._rbBg || new Uint8Array(n));
+    gl.activeTexture(gl.TEXTURE0);
+    const fgBound = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    gl.activeTexture(gl.TEXTURE1);
+    const bgBound = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    if (!fgBound || !bgBound) throw new Error('readbackPresent: no cell texture bound on unit 0/1 - call it right after present()');
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fgBound, 0);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    gl.readPixels(0, 0, this.cols, this.rows, gl.RGBA, gl.UNSIGNED_BYTE, outFg);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, bgBound, 0);
+    gl.readPixels(0, 0, this.cols, this.rows, gl.RGBA, gl.UNSIGNED_BYTE, outBg);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo);
+    return { fg: outFg, bg: outBg, sampledOwnTextures: fgBound === this.fgTex && bgBound === this.bgTex };
+  }
+
   present() {
     if (this._contextLost) return;
     const gl = this.gl;
@@ -244,6 +282,7 @@ export class RenderTargetGL {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA, gl.UNSIGNED_BYTE, this.cells.bg);
 
     if (this._cellPass) this._cellPass();
+    if (this._spritePass) this._spritePass(); // US-030c
 
     // A texture is never read AND written in the same pass (14.1 section
     // 4) - the hook may have left its own program/framebuffer/units bound,

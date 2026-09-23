@@ -113,6 +113,84 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
 }
 
 /**
+ * US-030a (14.2 item 8, `?gpucompare=1`): pure geometry-parity comparison
+ * between the CPU caster's `GBuffer`/`DepthBuffer` output and a
+ * `readbackGeometry()` result. Reports:
+ *  - `kindMatchPct` over every cell excluding 4-neighbour-kind edge cells
+ *    (>= 99.5% is the AC bar);
+ *  - among cells where BOTH sides agree kind != 0 and are non-edge: `mat`/
+ *    `planeId` equality counts, depth relative-error and u/v absolute-error
+ *    (vs `1e-3 * depth`) violation counts (0 required for PASS).
+ * `giBuf`/`gaBuf`/`depthBuf` are `readbackGeometry()`'s Uint32Array results
+ * (4 uint32 per cell each, RGBA_INTEGER-shaped; only the real channels are
+ * read - see that method's doc comment). Float fields are bit-cast back
+ * with a shared Uint32Array/Float32Array view (test-only; no per-frame cost
+ * concern here).
+ */
+const _f32ViewBuf = new ArrayBuffer(4);
+const _f32View = new Float32Array(_f32ViewBuf);
+const _u32View = new Uint32Array(_f32ViewBuf);
+function u32ToF32(u) { _u32View[0] = u >>> 0; return _f32View[0]; }
+
+export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, rows) {
+  const n = cols * rows;
+  const kind = gbuf.kind, mat = gbuf.mat, planeId = gbuf.planeId, u = gbuf.u, v = gbuf.v;
+  let kindChecked = 0, kindMismatch = 0;
+  let matched = 0, matEqual = 0, planeEqual = 0, depthViol = 0, uvViol = 0;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      const gpuKind = giBuf[i * 4 + 1] & 0xff;
+      const edge = isEdgeCell(kind, cols, rows, x, y, i) || isEdgeCellU32(giBuf, cols, rows, x, y, i);
+      if (edge) continue;
+      kindChecked++;
+      if (kind[i] !== gpuKind) { kindMismatch++; continue; }
+      if (kind[i] === 0) continue; // both agree "sky" - nothing else to compare
+
+      matched++;
+      const gpuMat = (giBuf[i * 4 + 1] >>> 16) & 0xffff;
+      const gpuPlaneId = giBuf[i * 4] | 0; // ToInt32 - matches JS's Int32Array planeId
+      if (mat[i] === gpuMat) matEqual++;
+      if (planeId[i] === gpuPlaneId) planeEqual++;
+
+      const gpuU = u32ToF32(gaBuf[i * 4]);
+      const gpuV = u32ToF32(gaBuf[i * 4 + 1]);
+      const gpuDepth = u32ToF32(depthBuf[i * 4]);
+      const cpuDepth = depthArr[i];
+      const depthOk = !Number.isFinite(cpuDepth) && !Number.isFinite(gpuDepth) ||
+        (Number.isFinite(cpuDepth) && Number.isFinite(gpuDepth) && Math.abs(gpuDepth - cpuDepth) <= 0.01 * Math.max(1, Math.abs(cpuDepth)));
+      if (!depthOk) depthViol++;
+      const tol = 1e-3 * Math.max(1, Math.abs(cpuDepth));
+      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > tol || Math.abs(gpuV - v[i]) > tol)) uvViol++;
+    }
+  }
+
+  const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
+  return {
+    kindChecked, kindMismatch, kindMatchPct,
+    matched, matEqual, planeEqual, depthViol, uvViol,
+    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0,
+  };
+}
+
+// GPU-side edge-cell exclusion (mirrors isEdgeCell, reading the packed uint
+// GI buffer instead of a plain kind array) - a cell whose CPU-side and
+// GPU-side kind agree can still sit on a GPU-only "edge" (a boundary the CPU
+// classifies differently one cell over); excluding both sides' edges keeps
+// the comparison to cells where a mismatch is unambiguous.
+function isEdgeCellU32(giBuf, cols, rows, x, y, i) {
+  const k = giBuf[i * 4 + 1] & 0xff;
+  const up = y > 0 ? i - cols : -1, dn = y < rows - 1 ? i + cols : -1;
+  const lf = x > 0 ? i - 1 : -1, rt = x < cols - 1 ? i + 1 : -1;
+  if (up >= 0 && (giBuf[up * 4 + 1] & 0xff) !== k) return true;
+  if (dn >= 0 && (giBuf[dn * 4 + 1] & 0xff) !== k) return true;
+  if (lf >= 0 && (giBuf[lf * 4 + 1] & 0xff) !== k) return true;
+  if (rt >= 0 && (giBuf[rt * 4 + 1] & 0xff) !== k) return true;
+  return false;
+}
+
+/**
  * Browser-only: casts one pose on both paths, reads GPU cells back and
  * reports the comparison. `pipeline` is a ready `GpuCellPipeline`.
  * `castFrame(cam)` = beginFrame + castSectors + computeDerivatives, shared
@@ -149,7 +227,11 @@ export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
 
     pipeline.frame(fb, fb.light);
     fb.rt.present();
-    const { fg: gpuFg, bg: gpuBg } = pipeline.readback();
+    // Read back exactly what present() sampled (the textures bound on its
+    // units 0/1 after the draw - `RenderTargetGL.readbackPresent`), not a
+    // texture picked by name; `pipeline.readback()` is the same thing on a
+    // real target, and the fallback for test doubles without it.
+    const { fg: gpuFg, bg: gpuBg } = fb.rt.readbackPresent ? fb.rt.readbackPresent() : pipeline.readback();
 
     const depthMatchPct = 100; // by construction: same castFrame() feeds both paths
     const cmp = compareCells(jsFg, jsBg, gpuFg, gpuBg, fb.gbuf.kind, cols, rows, fb.gbuf.rule, fb.gbuf.mat);
@@ -166,11 +248,27 @@ export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
 // branch for a real world cell) and overwrites the JS fg/bg layer of every
 // `kind != 0` cell with the poison signature `compareCells` checks for
 // (glyph byte 255, rgb 0) - test-only, never called from the frame loop.
-function poisonNonSky(cells, kind, n) {
+export function poisonNonSky(cells, kind, n) {
   cells.mask.fill(0);
   const fg = cells.fg, bg = cells.bg;
   for (let i = 0; i < n; i++) {
     if (kind[i] === 0) continue; // sky legitimately passes through on both paths
+    const fi = i * 4;
+    fg[fi] = POISON_BYTE; fg[fi + 1] = POISON_BYTE; fg[fi + 2] = POISON_BYTE; fg[fi + 3] = POISON_GLYPH;
+    bg[fi] = POISON_BYTE; bg[fi + 1] = POISON_BYTE; bg[fi + 2] = POISON_BYTE; bg[fi + 3] = 255;
+  }
+}
+
+// Same poison, every cell, no `kind` needed - for the DDA parity page
+// (`?gpucompare=1`), which runs the GPU frame BEFORE the CPU oracle so the
+// GPU result can't borrow any CPU-pass side effect (the `ambientL` bug: the
+// GPU path only looked right after a CPU cast had primed the light). On the
+// DDA path sky is GPU-shaded too (`uGpuSky`), so poisoning it is harmless;
+// `compareCells` counts survivors over `kind != 0` cells only, as before.
+export function poisonAllCells(cells, n) {
+  cells.mask.fill(0);
+  const fg = cells.fg, bg = cells.bg;
+  for (let i = 0; i < n; i++) {
     const fi = i * 4;
     fg[fi] = POISON_BYTE; fg[fi + 1] = POISON_BYTE; fg[fi + 2] = POISON_BYTE; fg[fi + 3] = POISON_GLYPH;
     bg[fi] = POISON_BYTE; bg[fi + 1] = POISON_BYTE; bg[fi + 2] = POISON_BYTE; bg[fi + 3] = 255;

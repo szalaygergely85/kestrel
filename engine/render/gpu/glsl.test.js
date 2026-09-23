@@ -7,6 +7,8 @@ import { SHADE_FRAG_SRC } from './glsl/shade.frag.js';
 import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
 import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
+import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
+import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -38,22 +40,40 @@ function checkOnlyAddressLine(name, src) {
 checkOnlyAddressLine('shade.frag.js', SHADE_FRAG_SRC);
 checkOnlyAddressLine('edge.frag.js', EDGE_FRAG_SRC);
 checkOnlyAddressLine('debug.frag.js', DEBUG_FRAG_SRC);
+checkOnlyAddressLine('dda.frag.js', DDA_FRAG_SRC);
+checkOnlyAddressLine('deriv.frag.js', DERIV_FRAG_SRC);
 ok('cell.vert.js: no gl_FragCoord (vertex stage)', !CELL_VERT_SRC.includes('gl_FragCoord'));
 
 function stripComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 }
-for (const [name, src] of [['shade.frag.js', SHADE_FRAG_SRC], ['edge.frag.js', EDGE_FRAG_SRC], ['debug.frag.js', DEBUG_FRAG_SRC], ['cell.vert.js', CELL_VERT_SRC]]) {
+for (const [name, src] of [
+  ['shade.frag.js', SHADE_FRAG_SRC], ['edge.frag.js', EDGE_FRAG_SRC], ['debug.frag.js', DEBUG_FRAG_SRC],
+  ['cell.vert.js', CELL_VERT_SRC], ['dda.frag.js', DDA_FRAG_SRC], ['deriv.frag.js', DERIV_FRAG_SRC],
+]) {
   ok(`${name}: no round(`, !stripComments(src).includes('round('));
 }
 
 // Ban list sanity (14.1 section 5 / 8.1 rule 5 carryover): no UBOs, no
 // EXT_color_buffer_float dependency string, no signed-shift / negative-%
 // smell markers we can detect lexically.
-for (const [name, src] of [['shade.frag.js', SHADE_FRAG_SRC], ['edge.frag.js', EDGE_FRAG_SRC]]) {
+for (const [name, src] of [
+  ['shade.frag.js', SHADE_FRAG_SRC], ['edge.frag.js', EDGE_FRAG_SRC],
+  ['dda.frag.js', DDA_FRAG_SRC], ['deriv.frag.js', DERIV_FRAG_SRC],
+]) {
   ok(`${name}: no EXT_color_buffer_float`, !src.includes('EXT_color_buffer_float'));
   ok(`${name}: no 'layout(std140'`, !src.includes('layout(std140'));
 }
+
+// US-030a (14.2 item 1/3, backlog tech notes item 10): the DDA/deriv passes
+// must use the shared JS constants (not hand-copied numbers) and the
+// all-uint `floatBitsToUint` output convention.
+ok('dda.frag.js contains MAX_RAY_STEPS', DDA_FRAG_SRC.includes('MAX_RAY_STEPS'));
+ok('dda.frag.js contains MAX_DIST', DDA_FRAG_SRC.includes('MAX_DIST'));
+ok('dda.frag.js contains floatBitsToUint', DDA_FRAG_SRC.includes('floatBitsToUint'));
+ok('deriv.frag.js contains floatBitsToUint', DERIV_FRAG_SRC.includes('floatBitsToUint'));
+ok('shade.frag.js reads uGA/uDepth back with uintBitsToFloat', SHADE_FRAG_SRC.includes('uintBitsToFloat'));
+ok('edge.frag.js reads uDepth back with uintBitsToFloat', EDGE_FRAG_SRC.includes('uintBitsToFloat'));
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

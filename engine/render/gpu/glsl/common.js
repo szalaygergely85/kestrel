@@ -11,6 +11,11 @@
 
 export const GLSL_VERSION = '#version 300 es\n';
 
+// US-030a (14.2 item 3): baked sky gradient LUT sample count - shared
+// between GpuCellPipeline.js's `_bakeSkyLUT` (JS) and shade.frag.js's sky
+// branch (GLSL), single source of truth (14.1 section 1 pattern).
+export const SKY_LUT_N = 32;
+
 export const PRECISION = `
 precision highp float;
 precision highp int;

@@ -13,7 +13,7 @@ layout(location = 0) out vec4 outFg;
 layout(location = 1) out vec4 outBg;
 
 uniform usampler2D uGI;
-uniform sampler2D uDepth;
+uniform usampler2D uDepth; // US-030a: R32UI, floatBitsToUint (14.2 item 3)
 uniform sampler2D uShadeFg;
 uniform sampler2D uShadeBg;
 uniform ivec2 uGrid; // cols, rows
@@ -39,7 +39,7 @@ uint kindAt(ivec2 c) {
   return giKind(texelFetch(uGI, c, 0).y);
 }
 int planeAt(ivec2 c) { return int(texelFetch(uGI, c, 0).x); }
-float depthAt(ivec2 c) { return texelFetch(uDepth, c, 0).r; }
+float depthAt(ivec2 c) { return uintBitsToFloat(texelFetch(uDepth, c, 0).r); }
 
 bool farther(ivec2 ic, ivec2 nc, bool validN) {
   if (!validN) return false;

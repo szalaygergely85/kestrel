@@ -10,7 +10,7 @@
 // those stories.
 
 // ---- bootstrap --------------------------------------------------------
-export { createEngine } from './core/engine.js';
+export { createEngine, clampGrid, GRID_MIN_COLS, GRID_MAX_COLS, GRID_DEFAULT_COLS } from './core/engine.js';
 
 // ---- content ------------------------------------------------------------
 export { AssetRegistry } from './core/assets.js';
@@ -25,7 +25,11 @@ export { serialize, deserialize } from './world/serialize.js';
 // ---- render passes --------------------------------------------------------
 export { beginFrame, castSectors, fillSky, ambientL } from './render/sectorCaster.js';
 export { castTerrain } from './render/terrainCaster.js';
-export { drawSprites } from './render/sprites.js';
+export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
+// ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
+export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
+export { GpuSpritePass } from './render/gpu/spritesPass.js';
+export { runSpriteCompare } from './render/gpu/spritesCompare.js';
 export { drawText } from './render/textDraw.js';
 export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';
 
@@ -37,12 +41,12 @@ export { edgePass } from './render/edgePass.js';
 
 // ---- world compositor (US-025) ---------------------------------------------
 export { renderWorld } from './render/compositor.js';
-export { packLevel } from './world/packed.js';
+export { packLevel, repackMaterials } from './world/packed.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
 export { GpuCellPipeline } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';
-export { runGpuCompare, compareCells } from './render/gpu/gpuCompare.js';
+export { runGpuCompare, compareCells, compareGeometry, poisonNonSky, poisonAllCells } from './render/gpu/gpuCompare.js';
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
@@ -62,7 +66,7 @@ export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 export { DebugOverlay } from './ui/debugOverlay.js';
 
 // ---- behaviours ---------------------------------------------------------------
-export { registerBehaviour, registerInteraction, registerTrigger, getBehaviour } from './core/behaviours.js';
+export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTrigger, getBehaviour, validateBehaviours } from './core/behaviours.js';
 
 // ---- not (yet) in the normative API, but exported for main.js's use ---------
 // (check-deps rule 3 forces every game/tools import through this one file;

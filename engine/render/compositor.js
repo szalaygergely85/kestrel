@@ -4,7 +4,7 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
-import { beginFrame, castSectors, fillSky, ambientL } from './sectorCaster.js';
+import { beginFrame, castSectors, fillSky, ambientL, primeAmbientLight } from './sectorCaster.js';
 import { castTerrain } from './terrainCaster.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
@@ -27,6 +27,27 @@ function bboxDist(cam, bbox) {
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
  */
 export function renderWorld(fb, world, cam) {
+  // US-030a AC "the CPU caster no longer runs on the gl2 path": when a
+  // ready GPU pipeline owns this frame's cast (`fb.gpuDda`, set by
+  // main.js), skip the entire CPU cast/derivative/shade/edge/sky sequence
+  // below - `GpuCellPipeline.js`'s present hook does all of it itself
+  // (`_passCast`/`_passDeriv`/`_passShade`/`_passEdgeOrDebug`), fed by
+  // `world`/`cam` via `pipeline.frame(fb, light, cam, world)` (main.js).
+  // The legacy CPU sequence stays exactly as-is for the JS oracle/fallback
+  // (`fb.gpuDda` unset - `?gpu=0`, `?force2d=1`, no WebGL2, or the
+  // `?gpucompare=shade` test's own separate `fbCompare`).
+  //
+  // Bug fix (US-030a, "colour blocks, no glyphs" on the GPU path): the
+  // per-frame ambient light `ambientL` (sectorCaster.js) used to be primed
+  // only inside `castScene`, i.e. only by the CPU caster this early-out
+  // skips - so on the GPU path it stayed [0,0,0], `uLight` was zero and the
+  // shade pass resolved every cell to glyph 0. Prime it here, once per
+  // frame, from the live palette - same call, same source of truth.
+  if (fb.gpuDda) {
+    if (fb.palette) primeAmbientLight(fb.palette);
+    return;
+  }
+
   beginFrame(fb);
 
   const structs = world.structures;

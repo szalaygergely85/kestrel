@@ -51,9 +51,13 @@ import { packPlaneId, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from './G
 // (`shadeAndWrite`, unchanged) never touches these.
 const GK_WALL = 1, GK_STEP = 2, GK_UPPER = 3, GK_FLOOR = 4, GK_TOP = 5, GK_CEIL = 6;
 
-const HFOV_DEG = 75;
-const MAX_RAY_STEPS = 96; // DDA safety cap per column (levels are well under this in practice)
-const MAX_DIST = 120; // meters; beyond this, whatever's left open is treated as void/sky
+export const HFOV_DEG = 75;
+// US-030a: exported so `engine/render/gpu/glsl/dda.frag.js` injects the SAME
+// numeric constants into the GLSL source (14.1 section 1 pattern: JS is the
+// single source of truth for shared layout constants) instead of hand-
+// copying them - the CPU caster's own use is unaffected.
+export const MAX_RAY_STEPS = 96; // DDA safety cap per column (levels are well under this in practice)
+export const MAX_DIST = 120; // meters; beyond this, whatever's left open is treated as void/sky
 const INTERIOR_FOG = 'interior';
 const VOID_SECTOR = {
   floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'stone',
@@ -161,9 +165,13 @@ const ray = {
 // is normalised so max channel = 1; intensity is the actual energy
 // (design/README.md 1.5). Computed once per frame from the live palette
 // (so a future time-of-day change is picked up automatically). Reused
-// across frames - no per-frame allocation.
+// across frames - no per-frame allocation. Exported (US-030a bug fix) so
+// `compositor.js` can prime it on the GPU-DDA path too, where `castScene`
+// (the only other caller) never runs - `ambientL` is what `main.js` hands
+// the GPU shade pass as `uLight`, and a stale [0,0,0] there shades every
+// cell to brightness 0 = glyph 0 (space): solid colour blocks, no glyphs.
 export const ambientL = [0, 0, 0];
-function primeAmbientLight(P) {
+export function primeAmbientLight(P) {
   const amb = P.lights.ambient;
   const hue = P.hue[amb.color];
   ambientL[0] = hue[0] * amb.intensity;
@@ -352,6 +360,8 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     // Wall-segment scratch (US-028 tech notes item 3): face/planeId/aoD
     // inputs computed ONCE per DDA hit (not per row) - see `primeWallGSample`.
     _wFace: 0, _wPlaneId: 0, _wFr: 0, _wNbrA: null, _wNbrB: null,
+    // US-030a footprintEntry fix: entry point scratch (see footprintEntry).
+    _entryX: 0, _entryY: 0,
   };
   if (ctx.gbuf) {
     ctx.gbuf.cam.tanHalfHFov = tanHalfHFov;
@@ -424,13 +434,17 @@ function startRay(ctx, rayDirX, rayDirY, startX, startY) {
 // (Item 2, architect review #1) When the camera sits outside a structure's
 // own footprint (`[0,level.width) x [0,level.height)`), the DDA must still
 // be able to cast it: slab-clip the ray against that box and hand back the
-// entry point (nudged a hair inward) for `startRay` to walk from. Returns
-// `{valid:false}` when the ray never crosses the box (behind the camera, or
-// parallel and offset) - that column has nothing to draw for this level.
+// entry point (nudged a hair inward) for `startRay` to walk from. US-030a
+// carry-over fix: no object return any more (architecture.md 9 rule 3 - this
+// was allocating one `{valid,x,y}` literal PER COLUMN PER CAST, i.e. every
+// structure x every frame). Writes `ctx._entryX`/`ctx._entryY` in place
+// (reused scratch fields, like `ctx._planeR0/1`/`ctx._fc*`) and returns a
+// plain bool: false when the ray never crosses the box (behind the camera,
+// or parallel and offset) - that column has nothing to draw for this level.
 function footprintEntry(ctx, level, rayDirX, rayDirY) {
   const { posX, posY } = ctx;
   const w = level.width, h = level.height;
-  if (posX >= 0 && posX < w && posY >= 0 && posY < h) return { valid: true, x: posX, y: posY };
+  if (posX >= 0 && posX < w && posY >= 0 && posY < h) { ctx._entryX = posX; ctx._entryY = posY; return true; }
 
   let tMin = -Infinity, tMax = Infinity;
   if (rayDirX !== 0) {
@@ -438,19 +452,21 @@ function footprintEntry(ctx, level, rayDirX, rayDirY) {
     tMin = Math.max(tMin, Math.min(t1, t2));
     tMax = Math.min(tMax, Math.max(t1, t2));
   } else if (posX < 0 || posX > w) {
-    return { valid: false };
+    return false;
   }
   if (rayDirY !== 0) {
     const t1 = (0 - posY) / rayDirY, t2 = (h - posY) / rayDirY;
     tMin = Math.max(tMin, Math.min(t1, t2));
     tMax = Math.min(tMax, Math.max(t1, t2));
   } else if (posY < 0 || posY > h) {
-    return { valid: false };
+    return false;
   }
-  if (tMax < tMin || tMax < 0) return { valid: false };
+  if (tMax < tMin || tMax < 0) return false;
 
   const t = Math.max(tMin, 0) + 1e-4; // nudge past the boundary, into the first cell
-  return { valid: true, x: posX + rayDirX * t, y: posY + rayDirY * t };
+  ctx._entryX = posX + rayDirX * t;
+  ctx._entryY = posY + rayDirY * t;
+  return true;
 }
 
 // Advances `ray` by one DDA step, writing `ray.side`/`ray.perpDist` in
@@ -523,14 +539,13 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
   // the footprint and start the DDA at the entry cell instead of giving up
   // immediately (the old behaviour: first `sectorAt` outside the grid ->
   // `farSector` null -> instant return, drawing nothing).
-  const entry = footprintEntry(ctx, level, rayDirX, rayDirY);
-  if (!entry.valid) {
+  if (!footprintEntry(ctx, level, rayDirX, rayDirY)) {
     // Never crosses this level's footprint at all - leave the span exactly
     // as it came in, for whatever casts next (another structure/terrain).
     resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, Infinity, ctx.rows, false, openTop - 1);
     return;
   }
-  startRay(ctx, rayDirX, rayDirY, entry.x, entry.y);
+  startRay(ctx, rayDirX, rayDirY, ctx._entryX, ctx._entryY);
   let skyPending = false; // sky was requested but not yet painted - deferred to column end (US-004b)
   let ceilingFilledTo = openTop - 1; // highest row index a ceiling segment has already drawn
   let floorFilledTo = ctx.rows; // lowest-numbered (closest-to-horizon) row any floor-ish plane has reached; ctx.rows = "nothing yet"

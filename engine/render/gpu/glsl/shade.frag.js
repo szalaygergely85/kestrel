@@ -1,11 +1,11 @@
-// US-029 tech notes item 5: `shadeDetailFast` (engine/render/detailShade.js)
+// US-029 tech notes item 5: 'shadeDetailFast' (engine/render/detailShade.js)
 // ported line for line to GLSL. Pass 1 of the present hook (architecture.md
 // 14.1 section 4): reads fgTex/bgTex (JS layer) + G-buffer + data textures,
-// writes MRT shadeFg/shadeBg. `kind==0 || mask` -> passthrough (JS cell wins,
+// writes MRT shadeFg/shadeBg. 'kind==0 || mask' -> passthrough (JS cell wins,
 // shadeBg.a = 0); else shaded cell (shadeBg.a = 1.0).
 import {
   GLSL_VERSION, PRECISION, GBUF_UNPACK, HASH_FAST, SAMPLE_POW_LUT, BYTE_OUT,
-  SMOOTHSTEP_FAST, QFLOOR, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS,
+  SMOOTHSTEP_FAST, QFLOOR, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS, SKY_LUT_N,
 } from './common.js';
 import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 
@@ -14,11 +14,20 @@ layout(location = 0) out vec4 shadeFg;
 layout(location = 1) out vec4 shadeBg;
 
 uniform usampler2D uGI;   // RG32UI
-uniform sampler2D uGA;    // RGBA32F: u, v, z, aoD
-uniform sampler2D uGD;    // RGBA32F: dudx, dvdx, dudy, dvdy
-uniform sampler2D uDepth; // R32F
+// US-030a (14.2 item 3): all-uint from now on, 'floatBitsToUint' packed -
+// removes the float-color-attachment extension dependency the cast/deriv passes
+// would otherwise have (rendering INTO these as color attachments).
+uniform usampler2D uGA;    // RGBA32UI: floatBitsToUint(u, v, z, aoD)
+uniform usampler2D uGD;    // RGBA32UI: floatBitsToUint(dudx, dvdx, dudy, dvdy)
+uniform usampler2D uDepth; // R32UI: floatBitsToUint(dist)
 uniform sampler2D uFgTex; // RGBA8 JS layer in (rt.cells.fg)
 uniform sampler2D uBgTex; // RGBA8 JS layer in (rt.cells.bg)
+// US-030a GPU sky (14.2 item 3, documented simplification - see
+// GpuCellPipeline.js's '_bakeSkyLUT'): flat gradient LUT, no clouds.
+uniform sampler2D uSky; // RGBA32F, SKY_LUT_N x 1 - baked bg gradient (0..255 range), by elevation
+uniform float uSkyElevTop;
+uniform int uGpuSky; // 1 = DDA path (shade kind==0 here); 0 = legacy passthrough (JS fillSky already ran)
+uniform float uHorizonRow, uPlaneDistY;
 
 uniform sampler2D uMatF;  // RGBA32F, width ${MAT_F_WIDTH}
 uniform isampler2D uMatI; // RGBA32I, width ${MAT_I_WIDTH}
@@ -82,7 +91,24 @@ void main() {
   vec4 jsFg = texelFetch(uFgTex, cell, 0);
   vec4 jsBg = texelFetch(uBgTex, cell, 0);
 
-  if (kindU == 0u || maskU != 0u) {
+  if (kindU == 0u) {
+    // US-030a: on the DDA path ('uGpuSky'), 'fillSky' never runs (14.2 item
+    // 3) - a masked-over-sky cell (HUD over open sky) still passes through
+    // to the JS layer; an un-masked one gets the baked flat-gradient sky.
+    if (uGpuSky != 0 && maskU == 0u) {
+      float elevDeg = degrees(atan(uHorizonRow - float(cell.y), uPlaneDistY));
+      float t = clamp(elevDeg / uSkyElevTop, 0.0, 1.0);
+      int idx = int(t * ${SKY_LUT_N - 1}.0 + 0.5);
+      vec3 col255 = texelFetch(uSky, ivec2(idx, 0), 0).rgb;
+      shadeFg = vec4(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
+      shadeBg = vec4(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
+    } else {
+      shadeFg = jsFg;
+      shadeBg = vec4(jsBg.rgb, 0.0);
+    }
+    return;
+  }
+  if (maskU != 0u) {
     shadeFg = jsFg;
     shadeBg = vec4(jsBg.rgb, 0.0);
     return;
@@ -90,11 +116,13 @@ void main() {
 
   int matId = int(giMat(gi.y));
   int face = int(giFace(gi.y));
-  vec4 ga = texelFetch(uGA, cell, 0);
-  vec4 gd = texelFetch(uGD, cell, 0);
+  uvec4 gaU = texelFetch(uGA, cell, 0);
+  uvec4 gdU = texelFetch(uGD, cell, 0);
+  vec4 ga = vec4(uintBitsToFloat(gaU.x), uintBitsToFloat(gaU.y), uintBitsToFloat(gaU.z), uintBitsToFloat(gaU.w));
+  vec4 gd = vec4(uintBitsToFloat(gdU.x), uintBitsToFloat(gdU.y), uintBitsToFloat(gdU.z), uintBitsToFloat(gdU.w));
   float u = ga.x, v = ga.y, z = ga.z, aoD = ga.w;
   float dudx = gd.x, dvdx = gd.y, dudy = gd.z, dvdy = gd.w;
-  float dist = texelFetch(uDepth, cell, 0).r;
+  float dist = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
 
   vec4 mf0 = texelFetch(uMatF, ivec2(0, matId), 0);
   vec4 mf1 = texelFetch(uMatF, ivec2(1, matId), 0);

@@ -1,7 +1,13 @@
 // engine/render/gpu/gpuCompare.test.js (US-029 tech notes item 10).
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
-import { compareCells } from './gpuCompare.js';
+import { compareCells, compareGeometry } from './gpuCompare.js';
+
+// f32<->u32 bit-cast helper for building synthetic readbackGeometry() data.
+const _bitBuf = new ArrayBuffer(4);
+const _bitF32 = new Float32Array(_bitBuf);
+const _bitU32 = new Uint32Array(_bitBuf);
+function f32Bits(x) { _bitF32[0] = x; return _bitU32[0]; }
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -101,6 +107,98 @@ function makeCells(fill) {
   const r = compareCells(js.fg, js.bg, gpu.fg, gpu.bg, kind, COLS, ROWS);
   ok('poisoned survivor detected', r.poisonedSurvivors === 1);
   ok('poisoned survivor fails PASS', r.pass === false);
+}
+
+// --- compareGeometry (US-030a, 14.2 item 8) --------------------------------
+// A uniform 4x4 grid, no edges anywhere (every cell same kind) - isolates
+// each check from the edge-cell exclusion.
+function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal) {
+  const kind = new Uint8Array(N).fill(kindVal);
+  const mat = new Uint16Array(N).fill(matVal);
+  const planeId = new Int32Array(N).fill(planeIdVal);
+  const u = new Float32Array(N).fill(uVal);
+  const v = new Float32Array(N).fill(vVal);
+  const depth = new Float32Array(N).fill(depthVal);
+  const giBuf = new Uint32Array(4 * N), gaBuf = new Uint32Array(4 * N), depthBuf = new Uint32Array(4 * N);
+  for (let i = 0; i < N; i++) {
+    giBuf[i * 4] = planeIdVal >>> 0;
+    giBuf[i * 4 + 1] = (kindVal & 0xff) | ((matVal & 0xffff) << 16);
+    gaBuf[i * 4] = f32Bits(uVal); gaBuf[i * 4 + 1] = f32Bits(vVal);
+    depthBuf[i * 4] = f32Bits(depthVal);
+  }
+  return { gbuf: { kind, mat, planeId, u, v }, depth, giBuf, gaBuf, depthBuf };
+}
+
+// 1. identical geometry: 100% kind match, no violations, PASS.
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
+  ok('compareGeometry identical: kindMatchPct 100', r.kindMatchPct === 100);
+  ok('compareGeometry identical: matEqual == matched', r.matEqual === r.matched);
+  ok('compareGeometry identical: planeEqual == matched', r.planeEqual === r.matched);
+  ok('compareGeometry identical: no depth/uv violations', r.depthViol === 0 && r.uvViol === 0);
+  ok('compareGeometry identical: pass', r.pass === true);
+}
+
+// 2. every cell's GPU kind differs from CPU (all non-edge, uniform) -> 0% match, FAIL.
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  for (let i = 0; i < N; i++) f.giBuf[i * 4 + 1] = (2 & 0xff) | ((5 & 0xffff) << 16); // GPU says kind 2 everywhere
+  const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
+  ok('compareGeometry all-kind-mismatch: kindMatchPct 0', r.kindMatchPct === 0);
+  ok('compareGeometry all-kind-mismatch: fails', r.pass === false);
+}
+
+// 3. mat/planeId differ (kind still matches) -> counted, still a geometry FAIL
+//    only if depth/uv also violate; mat/planeId mismatches alone don't fail
+//    PASS by themselves (kindMatchPct/depthViol/uvViol gate it) but are reported.
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  for (let i = 0; i < N; i++) f.giBuf[i * 4] = 99999 >>> 0; // planeId differs, kind/mat/uv/depth agree
+  const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
+  ok('compareGeometry planeId mismatch: planeEqual 0', r.planeEqual === 0);
+  ok('compareGeometry planeId mismatch: kindMatchPct unaffected (100)', r.kindMatchPct === 100);
+}
+
+// 4. depth tolerance boundary: 1% relative error passes, just over fails.
+{
+  const f1 = makeGeomFixture(1, 5, 1, 0, 0, 100);
+  for (let i = 0; i < N; i++) f1.depthBuf[i * 4] = f32Bits(100.9); // 0.9% - within 1%
+  const r1 = compareGeometry(f1.gbuf, f1.depth, f1.giBuf, f1.gaBuf, f1.depthBuf, COLS, ROWS);
+  ok('compareGeometry depth +0.9%: no violation', r1.depthViol === 0);
+
+  const f2 = makeGeomFixture(1, 5, 1, 0, 0, 100);
+  for (let i = 0; i < N; i++) f2.depthBuf[i * 4] = f32Bits(102); // 2% - over
+  const r2 = compareGeometry(f2.gbuf, f2.depth, f2.giBuf, f2.gaBuf, f2.depthBuf, COLS, ROWS);
+  ok('compareGeometry depth +2%: violation on every matched cell', r2.depthViol === r2.matched && r2.matched > 0);
+  ok('compareGeometry depth +2%: fails', r2.pass === false);
+}
+
+// 5. u/v tolerance: within 1e-3*depth passes, well beyond fails.
+{
+  const f1 = makeGeomFixture(1, 5, 1, 10, 10, 50);
+  for (let i = 0; i < N; i++) f1.gaBuf[i * 4] = f32Bits(10 + 0.9 * 1e-3 * 50); // just inside tol
+  const r1 = compareGeometry(f1.gbuf, f1.depth, f1.giBuf, f1.gaBuf, f1.depthBuf, COLS, ROWS);
+  ok('compareGeometry u within tol: no uv violation', r1.uvViol === 0);
+
+  const f2 = makeGeomFixture(1, 5, 1, 10, 10, 50);
+  for (let i = 0; i < N; i++) f2.gaBuf[i * 4] = f32Bits(10 + 5); // well beyond tol
+  const r2 = compareGeometry(f2.gbuf, f2.depth, f2.giBuf, f2.gaBuf, f2.depthBuf, COLS, ROWS);
+  ok('compareGeometry u beyond tol: violation on every matched cell', r2.uvViol === r2.matched && r2.matched > 0);
+  ok('compareGeometry u beyond tol: fails', r2.pass === false);
+}
+
+// 6. edge-cell exclusion: a single differing-kind cell in the middle marks
+//    its 4 neighbours (CPU-side) as edges too, on both the CPU and GPU kind
+//    arrays - none of those 5 cells is "checked"; the rest of the uniform
+//    grid still passes.
+{
+  const f = makeGeomFixture(1, 5, 1, 0, 0, 10);
+  const midX = 1, midY = 1, midI = midY * COLS + midX; // interior cell, has all 4 neighbours in a 4x4 grid
+  f.gbuf.kind[midI] = 4; // CPU says a different kind here (still same GPU value -> a CPU-side edge)
+  const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
+  ok('compareGeometry edge exclusion: checked < N (edges excluded)', r.kindChecked < N);
+  ok('compareGeometry edge exclusion: remaining cells still 100% match', r.kindMatchPct === 100);
 }
 
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);

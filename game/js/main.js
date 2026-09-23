@@ -7,28 +7,55 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import {
-  AssetRegistry, createEngine,
+  AssetRegistry, createEngine, clampGrid, GRID_DEFAULT_COLS,
   runShadeTest, runDetailShadeTest,
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
   integrate, Camera, renderWorld,
-  GpuCellPipeline, runGpuCompare,
+  GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
-  shadeSurfaces, edgePass, ambientL,
+  shadeSurfaces, edgePass, ambientL, World, repackMaterials,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
 import { fillWorstCase } from './dev/benchScene.js';
+// ---- US-010: quest behaviours (registered by name before any World loads) ----
+import { validateBehaviours } from '../../engine/index.js';
+import './quest/index.js';
+// ---- end US-010 ----
 
 const params = new URLSearchParams(window.location.search);
+
+// US-030a (docs/architecture.md 14.2 item 5): `?grid=WxH` clamped to
+// 160x60..320x120 (8:3 aspect kept, see `clampGrid`), logged once here on
+// the user-facing param (the RenderTarget-internal cpu-fallback log is
+// separate). `?gpucompare=1` (this story's DDA parity page, 14.2 item 8)
+// always forces 160x60 regardless of `?grid=` - `?gpucompare=shade` (the
+// unchanged US-029 shading-only page) keeps whatever grid was requested.
+const isDdaCompare = params.get('gpucompare') === '1';
+const gridParam = params.get('grid');
+let reqCols = GRID_DEFAULT_COLS, reqRows;
+if (gridParam) {
+  const m = /^(\d+)x(\d+)$/i.exec(gridParam.trim());
+  if (m) { reqCols = Number(m[1]); reqRows = Number(m[2]); }
+  else console.warn(`[grid] ?grid=${gridParam} not "WxH" - using the default ${GRID_DEFAULT_COLS}`);
+}
+if (isDdaCompare) { reqCols = 160; reqRows = 60; }
+const gridResult = clampGrid(reqCols, reqRows);
+if (gridParam && gridResult.clamped) {
+  console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..320x120, 8:3 aspect)`);
+}
+const rayParam = Number(params.get('rays'));
+const rays = Number.isFinite(rayParam) && rayParam >= 1 && rayParam <= 4 ? Math.round(rayParam) : 1;
 
 const canvas = document.getElementById('screen');
 const assets = AssetRegistry.fromGlobals(window.ASSETS);
 const engine = createEngine({
-  canvas, assets, cols: 160, rows: 60,
+  canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   force2d: params.get('force2d') === '1',
+  gpu: params.get('gpu') !== '0',
 });
 const { renderTarget: rt, depthBuffer, openSpans, input } = engine;
 const overlay = new DebugOverlay(document.body);
@@ -65,7 +92,7 @@ let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
   const candidate = new GpuCellPipeline(rt);
   if (candidate.ready) {
-    candidate.bind(matTable);
+    candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;
   }
 }
@@ -85,7 +112,7 @@ console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.renderer
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine };
+window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer };
 
 if (params.get('bench') === '1') {
   runBenchmark(rt, overlay);
@@ -93,7 +120,9 @@ if (params.get('bench') === '1') {
   runShadeTest(assets.palette);
   if (assets.detailPass) runDetailShadeTest(assets.palette, assets.detailPass);
 } else if (params.get('gpucompare') === '1') {
-  runGpuCompareMode();
+  runGpuCompareDdaMode();
+} else if (params.get('gpucompare') === 'shade') {
+  runGpuCompareShadeMode();
 } else if (params.get('glyphs') === '1') {
   runGame('glyphs');
 } else if (params.get('demo') === '1') {
@@ -131,7 +160,16 @@ function runGame(mode) {
       : assets.world('world_m1');
 
     const world = engine.loadWorld(worldDef);
-    for (const s of world.structures) bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
+    // ---- US-010: `?strict=1` turns World.load's behaviour warning into a hard error ----
+    if (params.get('strict') === '1') {
+      const missing = validateBehaviours(world);
+      if (missing.length) throw new Error(`[strict] behaviours referenced by level data but not registered: ${missing.join(', ')}`);
+    }
+    // ---- end US-010 ----
+    for (const s of world.structures) {
+      bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
+      repackMaterials(s.packed, s.level, matTable); // US-030a: packed.mats was built with matTable=null at placeStructure time
+    }
 
     playerHandle = world.get('player');
     const startT = playerHandle.data.transform;
@@ -169,6 +207,10 @@ function runGame(mode) {
   const fb = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0,
     gbuf, matTable, detailPass, // US-028
+    // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
+    // (compositor.js) reads this and skips its whole CPU sequence; kept in
+    // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
+    gpuDda: false,
   };
 
   function render(alpha) {
@@ -183,22 +225,29 @@ function runGame(mode) {
       const eye = Camera.fromEntity(playerHandle.data);
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
+      // US-030a AC "the CPU caster no longer runs on the gl2 path": with a
+      // ready GPU pipeline, `renderWorld` is a one-line no-op (compositor.js)
+      // and the GLSL DDA (this frame's cam/world, below) does the entire
+      // cast+shade+edge sequence instead.
+      fb.gpuDda = !!gpuPipeline;
       renderWorld(fb, engine.world, cam);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
     }
     if (mode === 'world' && !look.locked) drawPauseOverlay(rt, assets);
-    // US-029: `renderWorld` already ran (a no-op) `shadeSurfaces`/`edgePass`
-    // when `rt.gpuActive` (set by the pipeline's constructor) - this just
-    // hands it this frame's light + fb refs; the real GPU work happens
-    // inside `rt.present()`'s hook, right below.
-    if (gpuPipeline) gpuPipeline.frame(fb, ambientL);
+    // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
+    // hook, right below - `cam`/`engine.world` are only meaningful in
+    // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
+    // back to the legacy `_repackAndUpload` path, harmlessly, in 'demo'/
+    // 'glyphs' mode - gbuf is simply empty there).
+    if (gpuPipeline) gpuPipeline.frame(fb, ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
+    // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
     let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
-      `\nshade: ${rt.gpuActive ? 'gpu' : 'cpu'}` +
+      `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
       (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '');
     if (mode === 'world') {
       const t = playerHandle.data.transform;
@@ -224,12 +273,15 @@ function runGame(mode) {
   window.__debug.depthBuffer = depthBuffer;
 }
 
-// `?gpucompare=1` (US-029 AC "Parity page", tech notes item 7): casts the
-// same `bench-cast.mjs` pose set (tools/bench-poses.js) against `test_room`
-// on both paths and reports glyph/fg/bg parity. Shows PASS/FAIL on screen
-// (the overlay) and in the console. Requires a working GPU pipeline - prints
-// a clear message and does nothing else if one isn't active.
-function runGpuCompareMode() {
+// `?gpucompare=shade` (US-029 AC "Parity page", tech notes item 7; US-030a
+// 14.2 item 7 keeps this test-only mode: `pipeline.setSource('upload')`
+// feeds the CPU-cast G-buffer into the same uint textures the DDA cast pass
+// now writes, isolating the shading/edge passes from the DDA itself). Casts
+// the same `bench-cast.mjs` pose set (tools/bench-poses.js) against
+// `test_room` on both paths and reports glyph/fg/bg parity. Shows PASS/FAIL
+// on screen (the overlay) and in the console. Requires a working GPU
+// pipeline - prints a clear message and does nothing else if one isn't active.
+function runGpuCompareShadeMode() {
   if (!gpuPipeline) {
     const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
       ', allV2=' + matTable.allV2 + ') - nothing to compare.';
@@ -238,6 +290,8 @@ function runGpuCompareMode() {
     overlay.el.textContent = msg;
     return;
   }
+
+  gpuPipeline.setSource('upload'); // 14.2 item 7: force the legacy CPU-fed G-buffer path for this test
 
   const level = loadLevel(assets.level('test_room'));
   bindLevel(matTable, level);
@@ -257,7 +311,7 @@ function runGpuCompareMode() {
 
   const { rows, ok } = runGpuCompare(gpuPipeline, fbCompare, castFrame, GPU_COMPARE_POSES, null);
 
-  let text = `?gpucompare=1  GpuCellPipeline: ${gpuPipeline.rendererString}\n`;
+  let text = `?gpucompare=shade  GpuCellPipeline: ${gpuPipeline.rendererString}\n`;
   for (const r of rows) {
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
       `  glyph match (non-edge): ${r.glyphMatchPct.toFixed(2)}%  edge cells excluded: ${r.edgeCells}\n` +
@@ -274,6 +328,125 @@ function runGpuCompareMode() {
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
   window.__gpuCompare = { rows, ok };
+}
+
+// `?gpucompare=1` (US-030a AC "Parity: with N = 1 the GPU cast matches the
+// JS caster"; docs/architecture.md 14.2 item 8): the DDA parity page. Runs
+// at 160x60/n=1 (forced at bootstrap - see the `?grid=`/`isDdaCompare`
+// block near the top of this file), casting `test_room` as a real `World`
+// (so `renderWorld`'s `fb.gpuDda` branch is exercised exactly as gameplay
+// uses it) through both paths from the same camera poses: `renderWorld`
+// with `fb.gpuDda = false` for the CPU oracle (fills `fb.gbuf`/`fb.depth`
+// and, via `shadeSurfaces`/`edgePass`, `rt.cells`), then poisons `rt.cells`
+// (same non-tautology guard `runGpuCompare` uses) and re-runs with
+// `fb.gpuDda = true` for the real GLSL DDA + GPU shade/edge. `compareCells`
+// reports shading parity; `compareGeometry` (new, pure) reports geometry
+// parity from a `readbackGeometry()` of `GI`/`GA`/`DEPTH`.
+function runGpuCompareDdaMode() {
+  if (!gpuPipeline) {
+    const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
+      ', allV2=' + matTable.allV2 + ') - nothing to compare.';
+    console.error(msg);
+    overlay.visible = true; overlay.el.style.display = 'block';
+    overlay.el.textContent = msg;
+    return;
+  }
+  if (rt.cols !== 160 || rt.rows !== 60) {
+    console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
+  }
+
+  gpuPipeline.setSource('dda');
+
+  // Two worlds: `test_room` with the shared US-029 pose set, plus `world_m1`
+  // at the player's spawn pose (tower start, world (1497, 1027.5), yaw 330,
+  // pitch 30) - the pose that exposed the "colour blocks, no glyphs" bug
+  // (`ambientL` never primed on the GPU path) which the test_room poses
+  // alone let through. `castTerrain` is still a no-op stub, so world_m1's
+  // terrain adds no CPU-only cells here (see the US-030a notes, deviation 5).
+  function loadCompareWorld(def) {
+    const w = World.load(def, assets, {});
+    for (const s of w.structures) {
+      bindLevel(matTable, s.level);
+      repackMaterials(s.packed, s.level, matTable); // US-030a: see the runGame('world') call site
+    }
+    return w;
+  }
+  const testRoom = loadCompareWorld(
+    { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
+  );
+  const worldM1 = loadCompareWorld(assets.world('world_m1'));
+  const m1Player = worldM1.get('player').data;
+  const m1Eye = Camera.fromEntity(m1Player, engine.physics.eyeHeight);
+  const runs = [
+    ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
+    { world: worldM1, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
+      cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
+  ];
+
+  const fbCompare = {
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    timeSec: 0, gpuDda: false,
+  };
+
+  const cols = rt.cols, rows = rt.rows, n = cols * rows;
+
+  const rowsOut = [];
+  let overallOk = true;
+  let sampledOwnTextures = true;
+  for (const { world, name, cam } of runs) {
+    // GPU FIRST, from a poisoned, mask-free JS layer (`poisonAllCells`): the
+    // GPU frame must produce every cell on its own, with no CPU pass having
+    // run since the last pose - the `ambientL` bug only ever looked right
+    // because the CPU oracle had just primed the light. `renderWorld` on
+    // the DDA path is what primes it now (compositor.js), exactly as in
+    // gameplay; then read back precisely what `present()` sampled.
+    poisonAllCells(rt.cells, n);
+    fbCompare.gpuDda = true;
+    renderWorld(fbCompare, world, cam); // DDA path: primes ambientL, otherwise a no-op - real work is frame + present
+    gpuPipeline.frame(fbCompare, ambientL, cam, world);
+    rt.present();
+    const rb = rt.readbackPresent();
+    sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
+    const gpuFg = rb.fg, gpuBg = rb.bg;
+    const { GI, GA, Depth } = gpuPipeline.readbackGeometry();
+
+    // CPU oracle second. `shadeSurfaces`/`edgePass` (inside `renderWorld`)
+    // no-op whenever `rt.gpuActive` (set once by the pipeline's constructor)
+    // - toggle it off around this pass, like `runGpuCompare` does, or
+    // `rt.cells` never gets written. Writes fb.gbuf/fb.depth/rt.cells, all
+    // consumed by the compares below before the next pose poisons them.
+    const wasActive = rt.gpuActive;
+    rt.gpuActive = false;
+    fbCompare.gpuDda = false;
+    renderWorld(fbCompare, world, cam); // full CPU cast + shade + edge + sky
+    rt.gpuActive = wasActive;
+
+    const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows);
+    const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows);
+    const ok = cmpCells.pass && cmpGeom.pass;
+    overallOk = overallOk && ok;
+    rowsOut.push({ pose: name, cmpCells, cmpGeom, ok });
+  }
+  overallOk = overallOk && sampledOwnTextures;
+
+  let text = `?gpucompare=1  GpuCellPipeline: ${gpuPipeline.rendererString}  grid: ${cols}x${rows}  rays: 1` +
+    `  readback: present() units 0/1${sampledOwnTextures ? '' : '  (NOT rt.fgTex/bgTex - present() wiring bug)'}\n`;
+  for (const r of rowsOut) {
+    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
+      `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
+      `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}\n` +
+      `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n`;
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% poisonedSurvivors=${r.cmpCells.poisonedSurvivors}`);
+  }
+  text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
+  console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
+
+  overlay.visible = true;
+  overlay.el.style.display = 'block';
+  overlay.el.style.font = '13px "Courier New", monospace';
+  overlay.el.style.whiteSpace = 'pre';
+  overlay.el.textContent = text;
+  window.__gpuCompare = { rows: rowsOut, ok: overallOk };
 }
 
 // `?bench=1`: renders N worst-case frames (see dev/benchScene.js - every

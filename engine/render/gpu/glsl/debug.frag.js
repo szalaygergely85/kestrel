@@ -1,4 +1,4 @@
-// US-029 tech notes item 6/9: `?gpudebug=kind|plane|rule` - renders the
+// US-029 tech notes item 6/9: '?gpudebug=kind|plane|rule' - renders the
 // chosen G-buffer field as colours into fgTex/bgTex IN PLACE OF pass 2 (the
 // edge pass), for GLSL debugging (no shader stepping otherwise). Never used
 // in the timed/budgeted frame path.
@@ -7,7 +7,7 @@ import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
 export const DEBUG_MODE_KIND = 0;
 export const DEBUG_MODE_PLANE = 1;
 // Architect review 1 item 6 deviation: this is a "was this cell shaded"
-// indicator, not the real edge-rule code (no `ruleTex` MRT this story) -
+// indicator, not the real edge-rule code (no 'ruleTex' MRT this story) -
 // named SHADED, not RULE, so nobody reads it as the rule.
 export const DEBUG_MODE_SHADED = 2;
 
@@ -44,7 +44,16 @@ void main() {
     vec4 sfg = texelFetch(uShadeFg, cell, 0);
     col = kind == 0u ? vec3(0.0) : vec3(sfg.a, sfg.a, sfg.a);
   }
-  outFg = vec4(col, 0.0);
+  // Bug fix (US-030a, was moved in from US-029 task_7379f8bf): 'outFg.a'
+  // encodes the glyph index / 255 (RenderTargetGL's atlas lookup, see
+  // 'glyphIdx = floor(fg.a * 255.0 + 0.5)'), and glyph 0 is space - fully
+  // transparent, zero atlas coverage. Writing 0.0 here meant every mode
+  // rendered nothing but the black 'outBg', regardless of 'col'. Use '@'
+  // (code 64, idx 32) for solid atlas coverage on any non-empty (kind != 0)
+  // cell; kind 0 (sky/void) stays glyph-less (space), which is correct, not
+  // the bug - it's genuinely empty in every mode.
+  float glyphA = kind == 0u ? 0.0 : (64.0 - 32.0) / 255.0;
+  outFg = vec4(col, glyphA);
   outBg = vec4(0.0, 0.0, 0.0, 1.0);
 }
 `;

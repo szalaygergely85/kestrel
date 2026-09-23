@@ -52,16 +52,22 @@ export function createTexture2D(gl, internalFormat, w, h) {
   return tex;
 }
 
-function formatFor(gl, internalFormat) {
+// US-030a: exported so callers that need to `texImage2D`/`texSubImage2D`
+// outside `createTexture2D` itself (WorldTextures atlas full-rebuild vs.
+// per-frame dirty-row `texSubImage2D`) don't duplicate the format/type table.
+export function formatFor(gl, internalFormat) {
   switch (internalFormat) {
     case gl.RG32UI: return { format: gl.RG_INTEGER, type: gl.UNSIGNED_INT };
     case gl.RGBA32UI: return { format: gl.RGBA_INTEGER, type: gl.UNSIGNED_INT };
     case gl.RGBA32I: return { format: gl.RGBA_INTEGER, type: gl.INT };
     case gl.R32F: return { format: gl.RED, type: gl.FLOAT };
+    case gl.R32UI: return { format: gl.RED_INTEGER, type: gl.UNSIGNED_INT }; // US-030a: DEPTH (14.2 item 3)
     case gl.RGBA32F: return { format: gl.RGBA, type: gl.FLOAT };
     case gl.R8UI: return { format: gl.RED_INTEGER, type: gl.UNSIGNED_BYTE };
+    case gl.RG8UI: return { format: gl.RG_INTEGER, type: gl.UNSIGNED_BYTE }; // US-030a: WorldTextures FLAGS atlas
+    case gl.RGBA16UI: return { format: gl.RGBA_INTEGER, type: gl.UNSIGNED_SHORT }; // US-030a: WorldTextures MATS atlas
     case gl.RGBA8: return { format: gl.RGBA, type: gl.UNSIGNED_BYTE };
-    default: throw new Error('createTexture2D: unhandled internalFormat');
+    default: throw new Error('createTexture2D: unhandled internalFormat ' + internalFormat);
   }
 }
 

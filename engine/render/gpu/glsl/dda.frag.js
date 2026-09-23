@@ -1,0 +1,270 @@
+// US-030a (docs/architecture.md 14.2 item 1): GLSL port of
+// 'engine/render/sectorCaster.js''s 'castColumn', one fragment = one ray, no
+// column state (14.2 principle 1). Renders the "cast" pass: MRT into 'GI'
+// (RG32UI), 'GA' (RGBA32UI, 'floatBitsToUint') and 'DEPTH' (R32UI,
+// 'floatBitsToUint') - all-uint targets, so this never needs
+// 'EXT_color_buffer_float'. With 'rays = 1' (the only mode this story ships -
+// see the module doc in 'GpuCellPipeline.js') this pass writes the FINAL
+// per-cell G-buffer directly; a 'resolve' pass (N > 1 sub-sample voting) is
+// US-030b.
+//
+// Scope notes (flagged for architect review, not silent):
+//  - The CPU's "camera outside a structure's own footprint" VOID_SECTOR
+//    first-segment quirk (sectorCaster.js's 'nearSector = ... || VOID_SECTOR'
+//    before the loop) is NOT reproduced: this shader starts 'C' at the real
+//    entry cell's own sector. Simpler, and arguably more correct, but a
+//    documented deviation - not exercised by '?gpucompare=1''s poses or any
+//    in-scope level (the camera always spawns inside a placed structure).
+//  - Only 'rays = 1' (sub-sample offset (0,0), the exact cell centre) is
+//    implemented; multi-ray coverage voting is US-030b.
+//  - Structure order for the 't0 >= bestT' early-out is upload order (world
+//    placement order), not a per-frame camera-distance sort - correctness
+//    (nearest-candidate-wins) does not depend on order, only the early-out's
+//    effectiveness does.
+import { GLSL_VERSION, PRECISION } from './common.js';
+import { MAX_RAY_STEPS, MAX_DIST } from '../../sectorCaster.js';
+import { MAX_STRUCTS } from '../WorldTextures.js';
+
+// Kind/face codes (engine/render/GBuffer.js) - numeric literals, matching
+// shade.frag.js/edge.frag.js's own convention (no shared GLSL enum module).
+const KIND_WALL = 1, KIND_STEP = 2, KIND_UPPER = 3, KIND_FLOOR = 4, KIND_TOP = 5, KIND_CEIL = 6;
+const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
+
+export const DDA_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
+layout(location = 0) out uvec2 outGI;
+layout(location = 1) out uvec4 outGA;
+layout(location = 2) out uint outDepth;
+
+uniform ivec2 uGrid; // cols, rows
+uniform sampler2D uWorldGeom;   // RGBA32F: floorH, ceilH, topH, ceilOpenH (unused: ceilOpenH is JS-side per 14.2 item 2)
+uniform usampler2D uWorldMats;  // RGBA16UI: wallMatId, floorMatId, ceilMatId, upperMatId
+uniform usampler2D uWorldFlags; // RG8UI: r = solid|ceilSky<<1|topSky<<2|dynamic<<3, g = floorRise|ceilDrop<<4
+// US-030a: with the 'resolve' sub-pass collapsed into this one (rays = 1,
+// see the module doc), this pass also folds in the UI mask bit the 14.1
+// upload path used to merge per frame ('GI.y''s bit 12) - a per-frame
+// R8UI upload of 'rt.cells.mask', read here directly (cheap: one texel).
+uniform usampler2D uMask;
+
+uniform vec4 uStructA[${MAX_STRUCTS}]; // origin.xyz, w
+uniform vec4 uStructB[${MAX_STRUCTS}]; // h, yOff, structSeq, 0
+uniform int uStructCount;
+
+// Camera basis (precomputed JS-side every frame, exactly like
+// castScene's own per-frame setup - no trig in the shader).
+uniform float uPosX, uPosY, uEyeH;
+uniform float uDirX, uDirY, uPlaneX, uPlaneY;
+uniform float uHorizonRow, uPlaneDistY;
+
+const int MAX_RAY_STEPS = ${MAX_RAY_STEPS};
+const float MAX_DIST = ${MAX_DIST.toFixed(1)};
+const int KIND_WALL = ${KIND_WALL}, KIND_STEP = ${KIND_STEP}, KIND_UPPER = ${KIND_UPPER};
+const int KIND_FLOOR = ${KIND_FLOOR}, KIND_TOP = ${KIND_TOP}, KIND_CEIL = ${KIND_CEIL};
+const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
+const float SKY_H = 1.0e30;
+
+int packPlaneId(int structSeq, int tag, int coord) {
+  return ((structSeq & 7) << 28) | ((tag & 15) << 24) | (coord & 0xFFFFFF);
+}
+
+// One placed structure's cell, fetched from the WorldTextures atlas (see
+// engine/world/packed.js/engine/render/gpu/WorldTextures.js for the layout).
+struct Cell {
+  float floorH, ceilH;
+  bool solid, ceilSky;
+  uint wallMat, floorMat, ceilMat, upperMat;
+  uint floorRise, ceilDrop; // relief nibbles (aoD source, planeAoDFast port)
+};
+
+Cell fetchCell(int yOff, int w, int cx, int cy) {
+  ivec2 t = ivec2(cx, yOff + cy);
+  vec4 g = texelFetch(uWorldGeom, t, 0);
+  uvec4 m = texelFetch(uWorldMats, t, 0);
+  uvec2 f = texelFetch(uWorldFlags, t, 0).xy;
+  Cell c;
+  c.floorH = g.x; c.ceilH = g.y;
+  c.solid = (f.x & 1u) != 0u;
+  c.ceilSky = (f.x & 2u) != 0u;
+  c.wallMat = m.x; c.floorMat = m.y; c.ceilMat = m.z; c.upperMat = m.w;
+  c.floorRise = f.y & 15u; c.ceilDrop = (f.y >> 4u) & 15u;
+  return c;
+}
+
+// planeAoDFast port (engine/render/sectorCaster.js): own-cell relief bits
+// only, fractional position within the cell ('wx','wy' already known to lie
+// inside cell (cx,cy) by construction - the plane-crossing point).
+float planeAoD(uint bits, float wx, float wy, float cx, float cy) {
+  float fx = wx - cx, fy = wy - cy;
+  float a = 1.0e30;
+  if ((bits & 1u) != 0u) a = min(a, fx);       // W
+  if ((bits & 2u) != 0u) a = min(a, 1.0 - fx); // E
+  if ((bits & 4u) != 0u) a = min(a, fy);       // N
+  if ((bits & 8u) != 0u) a = min(a, 1.0 - fy); // S
+  return a;
+}
+
+// wallAoD port: needs the two sectors flanking the wall segment along its
+// run ('nbrA'/'nbrB' - see primeWallGSample/wallAoD's doc comments). Reads
+// just their floorH (2 extra texelFetches on uWorldGeom; out-of-bounds ->
+// "no neighbour", same as the CPU's '!nbrA'/'!nbrB' null case).
+float wallAoD(int yOff, int w, int h, float ceilH, bool ceilSky, float hgt, float z, int side, int cx, int cy, float fr) {
+  float d = max(0.0, z);
+  float zc = ceilSky ? 1.0e30 : (ceilH - hgt);
+  if (zc < d) d = max(0.0, zc);
+  int aX, aY, bX, bY;
+  if (side == 0) { aX = cx; aY = cy - 1; bX = cx; bY = cy + 1; }
+  else { aX = cx - 1; aY = cy; bX = cx + 1; bY = cy; }
+  bool aValid = aX >= 0 && aX < w && aY >= 0 && aY < h;
+  bool bValid = bX >= 0 && bX < w && bY >= 0 && bY < h;
+  float aFloor = aValid ? texelFetch(uWorldGeom, ivec2(aX, yOff + aY), 0).x : 0.0;
+  float bFloor = bValid ? texelFetch(uWorldGeom, ivec2(bX, yOff + bY), 0).x : 0.0;
+  if (!aValid || aFloor > hgt) d = min(d, fr);
+  if (!bValid || bFloor > hgt) d = min(d, 1.0 - fr);
+  return d;
+}
+
+// Slab entry (footprintEntry port): local ray against [0,w)x[0,h). Returns
+// false when the ray never crosses the box; 't0' is nudged a hair inward.
+bool slabEntry(float lx, float ly, float dx, float dy, float w, float h, out float t0) {
+  if (lx >= 0.0 && lx < w && ly >= 0.0 && ly < h) { t0 = 0.0; return true; }
+  float tMin = -1.0e30, tMax = 1.0e30;
+  if (dx != 0.0) {
+    float t1 = (0.0 - lx) / dx, t2 = (w - lx) / dx;
+    tMin = max(tMin, min(t1, t2)); tMax = min(tMax, max(t1, t2));
+  } else if (lx < 0.0 || lx > w) { return false; }
+  if (dy != 0.0) {
+    float t1 = (0.0 - ly) / dy, t2 = (h - ly) / dy;
+    tMin = max(tMin, min(t1, t2)); tMax = min(tMax, max(t1, t2));
+  } else if (ly < 0.0 || ly > h) { return false; }
+  if (tMax < tMin || tMax < 0.0) return false;
+  t0 = max(tMin, 0.0) + 1.0e-4;
+  return true;
+}
+
+void main() {
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  float cameraX = (2.0 * (float(cell.x) + 0.5)) / float(uGrid.x) - 1.0;
+  float rayDirX = uDirX + uPlaneX * cameraX;
+  float rayDirY = uDirY + uPlaneY * cameraX;
+  float slope = (uHorizonRow - float(cell.y)) / uPlaneDistY;
+
+  float bestT = 1.0e30;
+  int bestKind = 0, bestFace = 0; uint bestMat = 0u; int bestPlaneId = 0;
+  float bestU = 0.0, bestV = 0.0, bestZ = 0.0, bestAo = 0.0;
+
+  for (int s = 0; s < uStructCount; s++) {
+    vec4 A = uStructA[s], B = uStructB[s];
+    float sw = A.w, sh = B.x;
+    int w = int(sw + 0.5), h = int(sh + 0.5);
+    int yOff = int(B.y + 0.5);
+    int structSeq = int(B.z + 0.5);
+    float lx = uPosX - A.x, ly = uPosY - A.y, leyeH = uEyeH - A.z;
+
+    float t0;
+    if (!slabEntry(lx, ly, rayDirX, rayDirY, sw, sh, t0)) continue;
+    if (t0 >= bestT) continue;
+
+    float ex = lx + rayDirX * t0, ey = ly + rayDirY * t0;
+    int mapX = int(floor(ex)), mapY = int(floor(ey));
+    mapX = clamp(mapX, 0, w - 1); mapY = clamp(mapY, 0, h - 1);
+
+    float deltaDistX = rayDirX == 0.0 ? 1.0e30 : abs(1.0 / rayDirX);
+    float deltaDistY = rayDirY == 0.0 ? 1.0e30 : abs(1.0 / rayDirY);
+    int stepX = rayDirX < 0.0 ? -1 : 1;
+    int stepY = rayDirY < 0.0 ? -1 : 1;
+    float sideDistX = rayDirX < 0.0 ? (ex - float(mapX)) * deltaDistX : (float(mapX) + 1.0 - ex) * deltaDistX;
+    float sideDistY = rayDirY < 0.0 ? (ey - float(mapY)) * deltaDistY : (float(mapY) + 1.0 - ey) * deltaDistY;
+
+    Cell C = fetchCell(yOff, w, mapX, mapY);
+    float t0seg = t0;
+    int cMapX = mapX, cMapY = mapY;
+
+    for (int step = 0; step < MAX_RAY_STEPS; step++) {
+      if (t0seg >= bestT) break;
+      int side;
+      float t1;
+      if (sideDistX < sideDistY) { t1 = sideDistX; sideDistX += deltaDistX; mapX += stepX; side = 0; }
+      else { t1 = sideDistY; sideDistY += deltaDistY; mapY += stepY; side = 1; }
+      if (t1 > MAX_DIST) break;
+
+      // --- floor plane (own cell C) ------------------------------------
+      if (slope < 0.0) {
+        float hAtT1 = leyeH + slope * t1;
+        if (hAtT1 < C.floorH) {
+          float tp = (C.floorH - leyeH) / slope;
+          if (tp >= t0seg && tp < bestT) {
+            float wx = lx + rayDirX * tp, wy = ly + rayDirY * tp;
+            bestT = tp;
+            bestKind = C.solid ? KIND_TOP : KIND_FLOOR;
+            bestMat = C.floorMat; bestFace = FACE_U;
+            bestPlaneId = packPlaneId(structSeq, bestKind, int(floor(C.floorH * 1000.0 + 0.5)) + 0x800000);
+            bestU = wx; bestV = wy;
+            bestZ = C.floorH - C.floorH; // 0 by construction (own plane)
+            bestAo = planeAoD(C.floorRise, wx, wy, float(cMapX), float(cMapY));
+          }
+        }
+      }
+      // --- ceiling plane (own cell C) -----------------------------------
+      if (slope > 0.0 && !C.ceilSky) {
+        float hAtT1 = leyeH + slope * t1;
+        if (hAtT1 > C.ceilH) {
+          float tp = (C.ceilH - leyeH) / slope;
+          if (tp >= t0seg && tp < bestT) {
+            float wx = lx + rayDirX * tp, wy = ly + rayDirY * tp;
+            bestT = tp;
+            bestKind = KIND_CEIL;
+            bestMat = C.ceilMat; bestFace = FACE_D;
+            bestPlaneId = packPlaneId(structSeq, bestKind, int(floor(C.ceilH * 1000.0 + 0.5)) + 0x800000);
+            bestU = wx; bestV = wy;
+            bestZ = C.ceilH - C.floorH;
+            bestAo = planeAoD(C.ceilDrop, wx, wy, float(cMapX), float(cMapY));
+          }
+        }
+      }
+
+      bool inBounds = mapX >= 0 && mapX < w && mapY >= 0 && mapY < h;
+      if (!inBounds) break; // left the footprint - leave this structure
+
+      Cell N = fetchCell(yOff, w, mapX, mapY);
+      float hb = leyeH + slope * t1;
+      float hitX = lx + rayDirX * t1, hitY = ly + rayDirY * t1;
+      float u = side == 0 ? hitY : hitX;
+      int face, coord;
+      if (side == 0) { face = stepX > 0 ? FACE_W : FACE_E; coord = stepX > 0 ? cMapX : cMapX + 1; }
+      else { face = stepY > 0 ? FACE_N : FACE_S; coord = stepY > 0 ? cMapY : cMapY + 1; }
+      int wallPlaneId = packPlaneId(structSeq, face, coord);
+      float fr = side == 0 ? (hitY - float(cMapY)) : (hitX - float(cMapX));
+      float z = hb - C.floorH;
+
+      if (N.solid && hb < N.floorH && t1 < bestT) {
+        bestT = t1; bestKind = KIND_WALL; bestMat = N.wallMat; bestFace = face; bestPlaneId = wallPlaneId;
+        bestU = u; bestV = hb; bestZ = z;
+        bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
+      } else if (!N.solid && N.floorH > C.floorH && hb < N.floorH && t1 < bestT) {
+        bestT = t1; bestKind = KIND_STEP; bestMat = N.wallMat; bestFace = face; bestPlaneId = wallPlaneId;
+        bestU = u; bestV = hb; bestZ = z;
+        bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
+      } else if (!C.ceilSky && !N.ceilSky && N.ceilH < C.ceilH && hb > N.ceilH && t1 < bestT) {
+        bestT = t1; bestKind = KIND_UPPER; bestMat = N.upperMat; bestFace = face; bestPlaneId = wallPlaneId;
+        bestU = u; bestV = hb; bestZ = z;
+        bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
+      } else if (C.ceilSky && !N.solid && !N.ceilSky && hb > N.ceilH) {
+        break; // sky: this structure has nothing more open on this ray
+      }
+
+      C = N; cMapX = mapX; cMapY = mapY; t0seg = t1;
+    }
+  }
+
+  uint mask = texelFetch(uMask, cell, 0).x & 15u;
+
+  if (bestKind == 0) {
+    outGI = uvec2(0u, mask << 12u);
+    outGA = uvec4(0u);
+    outDepth = floatBitsToUint(1.0 / 0.0); // 0x7f800000u, the "Inf" sentinel (14.2 item 3)
+  } else {
+    outGI = uvec2(uint(bestPlaneId), uint(bestKind) | (uint(bestFace) << 8) | (mask << 12u) | (bestMat << 16));
+    outGA = uvec4(floatBitsToUint(bestU), floatBitsToUint(bestV), floatBitsToUint(bestZ), floatBitsToUint(bestAo));
+    outDepth = floatBitsToUint(bestT);
+  }
+}
+`;
