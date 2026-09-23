@@ -9,8 +9,12 @@
 // a cell is passable for a capsule whose feet are at `footZ` if:
 //   - it is not `solid` (solid blocks at ANY height - MAP_FORMAT v2
 //     section 2.4), and
-//   - it has headroom for the capsule (`ceilH - floorH >= height`, or
-//     ceilH === 'sky'), and
+//   - it has head clearance for the capsule's CURRENT head height (US-009
+//     AC5, architecture.md 7.1 item 3): `max(footZ, floorH) + height <=
+//     ceilH + SKIN`, numeric ceilings only (`'sky'` skips the check). Using
+//     the mover's own head height (not just the cell's own headroom) is
+//     what makes a lintel a wall when approached from above/mid-jump and a
+//     doorway when approached at floor level, and
 //   - the floor height difference from `footZ` is within `stepUpMax`
 //     EITHER WAY while grounded (small stairs are walked smoothly), or
 //     the floor is at or below `footZ` (any drop is always fine - you fall,
@@ -51,13 +55,15 @@ export function isSectorPassable(sector, footZ, grounded, opts) {
   if (sector.solid) return false; // v2: solid blocks at any height
 
   if (sector.ceilH !== 'sky') {
-    const headroom = sector.ceilH - sector.floorH;
-    if (headroom < opts.height) return false; // too low to ever fit (e.g. a closed grate)
-    // NOTE (PO note on the US-008 review, moved to US-009 - not implemented
-    // here): entering a cell whose ceiling is below the MOVER'S CURRENT head
-    // height (footZ + height), even when the cell's own headroom is fine,
-    // isn't checked yet - e.g. jumping into a low doorway/lintel from the
-    // side should bonk instead of sailing through. Left for US-009.
+    // US-009 AC5: gated on the mover's CURRENT head height, not just the
+    // cell's own headroom - subsumes the old `ceilH - floorH < height`
+    // check (that's this same test with footZ === floorH). The `+ SKIN` is
+    // load-bearing: after a ceiling clamp (`z = ceilH - height`), `z +
+    // height` can differ from `ceilH` by a float ulp and this cell (the
+    // mover's own) would otherwise turn impassable every step - frozen
+    // under a low ceiling (see architecture.md 7.1 item 3).
+    const headTop = Math.max(footZ, sector.floorH) + opts.height;
+    if (headTop > sector.ceilH + SKIN) return false;
   }
 
   const floorDiff = sector.floorH - footZ; // positive = floor is higher than our feet

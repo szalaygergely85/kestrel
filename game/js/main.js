@@ -49,6 +49,11 @@ function runGame(mode) {
   let depthBuffer = null;
   let origin = { x: 0, y: 0, z: 0 };
 
+  // Reused every physics step (architecture.md section 9 rule 9.3: no
+  // per-step allocations) - US-009 hoisted this out of update()'s body,
+  // where it used to be rebuilt as a fresh object literal every call.
+  const controls = { forward: 0, strafe: 0, run: false, jump: false, yawDeg: 0, pitchDeg: 0 };
+
   if (mode === 'raycast') {
     level = loadLevel(testRoomDef);
     if (!level) {
@@ -86,13 +91,16 @@ function runGame(mode) {
     if (input.pressed('F3')) overlay.toggle();
     if (look) look.update(dt);
     if (player) {
-      const controls = {
-        forward: (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0),
-        strafe: (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0),
-        run: input.isDown('ShiftLeft') || input.isDown('ShiftRight'),
-        yawDeg: look.yawDeg,
-        pitchDeg: look.pitchDeg,
-      };
+      controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
+      controls.strafe = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
+      controls.run = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+      // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
+      // that starts and ends within one frame - between two fixed-step
+      // updates - is never lost (Player does its own edge detection on top
+      // of this, architecture.md section 5 `Controls` typedef).
+      controls.jump = input.isDown('Space') || input.pressed('Space');
+      controls.yawDeg = look.yawDeg;
+      controls.pitchDeg = look.pitchDeg;
       player.update(dt, controls, level);
     }
     input.endFrame();

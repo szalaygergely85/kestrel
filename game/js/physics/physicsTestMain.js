@@ -1,19 +1,22 @@
 // game/js/physics/physicsTestMain.js
 //
-// Standalone top-down, playable test harness for US-008 physics (player
-// capsule, gravity, walk/run, collision) on test_room. Loaded only by
-// game/physics-test.html - not part of the game's own entry point
-// (game/js/main.js) and has no dependency on game/js/render/, engine/ or
-// ui/ (its own tiny fixed-step loop and keyboard listener are self
-// contained, so this file is safe to drop in without touching anything
-// programmer #1 owns).
+// Standalone top-down, playable test harness for US-008/US-009 physics
+// (player capsule, gravity, walk/run, collision, jump/coyote/buffer,
+// landing feel) on test_room. Loaded only by game/physics-test.html - not
+// part of the game's own entry point (game/js/main.js) and has no
+// dependency on game/js/render/, engine/ or ui/ (its own tiny fixed-step
+// loop and keyboard listener are self contained, so this file is safe to
+// drop in without touching anything the other programmer owns).
 //
-// Controls: WASD move (relative to facing), Shift run, Left/Right arrows
-// turn (120 deg/s, same rate as the US-005 fallback spec) since there is no
-// mouse-look yet, R resets to the level start. This is a debug harness, not
-// the real camera controls (US-005) - main.js will drive Player from real
-// mouse/keyboard input once that story lands (see the integration note at
-// the bottom of game/js/entities/Player.js).
+// Controls: WASD move (relative to facing), Shift run, Space jump,
+// Left/Right arrows turn (120 deg/s, same rate as the US-005 fallback spec)
+// since there is no mouse-look yet, R resets to the level start. This is a
+// debug harness, not the real camera controls (US-005) - main.js drives
+// Player from real mouse/keyboard input (see the integration note at the
+// bottom of game/js/entities/Player.js). `controls.jump` mirrors main.js's
+// convention (isDown OR the just-this-frame edge) even though this harness
+// has no separate "pressed" concept - a plain key Set already only reports
+// "down", which is exactly the HELD level `Player.update` expects.
 
 import { loadLevel } from '../world/Level.js';
 import { Player } from '../entities/Player.js';
@@ -34,7 +37,7 @@ if (!level) {
   statusEl.className = 'error';
   throw new Error('level failed to load');
 }
-statusEl.textContent = `"${level.name}" loaded - ${level.width}x${level.height} cells. WASD move, Shift run, arrows turn, R reset.`;
+statusEl.textContent = `"${level.name}" loaded - ${level.width}x${level.height} cells. WASD move, Shift run, Space jump, arrows turn, R reset.`;
 statusEl.className = 'ok';
 
 canvas.width = level.width * CELL_PX;
@@ -44,7 +47,7 @@ let player = new Player(level);
 let yawDeg = player.yawDeg;
 
 // --- tiny self-contained keyboard state (not engine/input.js - see header) ---
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'ArrowLeft', 'ArrowRight', 'KeyR']);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'Space', 'ArrowLeft', 'ArrowRight', 'KeyR']);
 const down = new Set();
 window.addEventListener('keydown', (e) => {
   if (GAME_KEYS.has(e.code)) e.preventDefault();
@@ -68,6 +71,7 @@ let fps = 0, fpsAcc = 0, fpsFrames = 0;
 // Fall-tracking for the HUD (useful when eyeballing US-009 landing-dip work later).
 let maxFallDropThisAir = 0;
 let lastZWhileAirborne = null;
+let lastFallDistance = 0; // US-009 HUD: the most recent landing's fallDistance (peakZ - landZ)
 
 function tick(now) {
   requestAnimationFrame(tick);
@@ -97,6 +101,7 @@ function update(dt) {
   const forward = (down.has('KeyW') ? 1 : 0) - (down.has('KeyS') ? 1 : 0);
   const strafe = (down.has('KeyD') ? 1 : 0) - (down.has('KeyA') ? 1 : 0);
   const run = down.has('ShiftLeft') || down.has('ShiftRight');
+  const jump = down.has('Space');
 
   if (!player.grounded) {
     if (lastZWhileAirborne === null) lastZWhileAirborne = player.z;
@@ -105,7 +110,8 @@ function update(dt) {
     lastZWhileAirborne = null;
   }
 
-  player.update(dt, { forward, strafe, run, yawDeg }, level);
+  player.update(dt, { forward, strafe, run, jump, yawDeg }, level);
+  if (player.landed) lastFallDistance = player.fallDistance; // US-009 HUD ("last fallDistance")
 }
 
 // --- rendering (top-down grid, adapted from worldTestMain.js's palette) ---
@@ -140,6 +146,8 @@ function render() {
     `pos (${player.x.toFixed(2)}, ${player.y.toFixed(2)})  z=${player.z.toFixed(2)}  ` +
     `vel (${player.vx.toFixed(2)}, ${player.vy.toFixed(2)}, ${player.vz.toFixed(2)})  ` +
     `grounded=${player.grounded}  yaw=${player.yawDeg.toFixed(0)}deg  fps=${fps.toFixed(0)}\n` +
+    `coyote=${player.coyote.toFixed(3)}s  buffer=${player.buffer.toFixed(3)}s  ` +
+    `eyeOffset=${player.feel.offset.toFixed(3)}m  last fallDistance=${lastFallDistance.toFixed(2)}m\n` +
     `last fall drop: ${maxFallDropThisAir.toFixed(2)} m  (eyeH ${PHYSICS.eyeHeight} m, radius ${PHYSICS.radius} m, ` +
     `walk ${PHYSICS.walkSpeed} m/s, run ${PHYSICS.runSpeed} m/s, gravity ${PHYSICS.gravity} m/s^2)`;
 }

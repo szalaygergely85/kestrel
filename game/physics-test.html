@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ASCII Quest - physics test (US-008)</title>
+  <title>ASCII Quest - physics test (US-008/US-009)</title>
   <style>
     html, body {
       margin: 0;
@@ -38,15 +38,17 @@
 </head>
 <body>
   <div id="wrap">
-    <h1>US-008 physics test (test_room, top-down)</h1>
+    <h1>US-008/US-009 physics test (test_room, top-down)</h1>
     <p class="sub">
-      Playable top-down harness for the player capsule/gravity/collision code
-      (game/js/physics/, game/js/entities/Player.js) - independent of the
+      Playable top-down harness for the player capsule/gravity/collision/jump
+      code (game/js/physics/, game/js/entities/Player.js) - independent of the
       game's real renderer/camera. Gold circle = grounded, blue = airborne;
       tick = facing. <strong>WASD</strong> move, <strong>Shift</strong> run,
-      <strong>Left/Right arrows</strong> turn, <strong>R</strong> reset to
-      the level start. Click the canvas first so key presses aren't eaten by
-      the page.
+      <strong>Space</strong> jump, <strong>Left/Right arrows</strong> turn,
+      <strong>R</strong> reset to the level start. Click the canvas first so
+      key presses aren't eaten by the page. HUD shows coyote/buffer
+      countdowns, the current eye offset (step/dip/bob) and the last landing's
+      fall distance.
     </p>
     <div id="status">Loading...</div>
     <canvas id="map" width="1" height="1" tabindex="0"></canvas>

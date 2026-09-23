@@ -18,7 +18,11 @@
 //   2  staircase step 2, floor 0.6 m
 //   3  staircase step 3, floor 0.9 m
 //   P  raised platform, floor 1.0 m
-//   v  void/pit (open gap), floor -1.0 m, non-solid - fall in if you miss the jump
+//   v  void/pit (open gap), floor -0.6 m, non-solid - fall in if you miss the
+//      jump. Raised from -1.0 m (US-009 AC6, from the US-003 review): -0.6 m
+//      is more than stepUpMax (0.45 m) below the surrounding 0.0 m floor, so
+//      it still can't be walked out of, but the 6.5 m/s jump clears it
+//      easily (apex 1.056 m), so it's not a test-room trap.
 //
 // Gap tests (US-009): row 15 is a 1-cell (1 m) gap from 0.0 m onto +0.3 m;
 // row 16 is a 2-cell (2 m) gap at equal height (0.0 m to 0.0 m).
@@ -36,7 +40,7 @@ const legend = {
   '2': { floorH: 0.6, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
   '3': { floorH: 0.9, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
   'P': { floorH: 1.0, ceilH: 3,     wallMat: 'stone',      floorMat: 'floor', ceilMat: 'stone', solid: false },
-  'v': { floorH: -1.0, ceilH: 3,    wallMat: 'rubble',     floorMat: 'rubble', ceilMat: 'stone', solid: false },
+  'v': { floorH: -0.6, ceilH: 3,    wallMat: 'rubble',     floorMat: 'rubble', ceilMat: 'stone', solid: false },
 };
 
 // 20 cols x 18 rows. Row 0 is the north edge (y=0); column 0 is the west edge (x=0).

@@ -36,14 +36,16 @@ export const PHYSICS = {
   stepUpMax: 0.45,          // m
   stepSmoothTime: 0.10,     // s - visual-only smoothing of the eye height across a step (US-009)
 
-  // Landing feel (US-009 AC5).
+  // Landing feel (US-009 AC8).
   landDipSmallFall: 0.5,  // m - falls beyond this trigger the small dip
   landDipSmallAmount: 0.08, // m
   landDipBigFall: 2.0,    // m - falls beyond this trigger the big dip
   landDipBigAmount: 0.15, // m
-  landDipRecoverTime: 0.2, // s
+  landDipDownTime: 0.05,   // s - time to reach the bottom of the dip
+  landDipRecoverTime: 0.2, // s - time to recover from the bottom back to 0
 
-  // Head bob while walking (US-009 AC5).
+  // Head bob while walking (US-009 AC8). PO ruling (2026-09-23): 0.8, not
+  // the GDD's "2" (which reads as camera shake at these speeds - ASK PO 4).
   headBobAmplitude: 0.03, // m
-  headBobCyclesPerMeter: 2, // "2 cycles per meter-ish" per the GDD
+  headBobCyclesPerMeter: 0.8,
 };
