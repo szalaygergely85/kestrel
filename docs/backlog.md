@@ -35,11 +35,11 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | done | Tester PASS 2026-09-23, see `docs/test-reports/US-029.md`. **PO OK 2026-09-23: D-009 gate PASSED (owner run ALL PASS, gpu 0.25 ms, 60 fps), plan A not needed; debug views carved out to US-030a.** Programmer (2026-09-23), item 5 fix: added shared `qfloor(x)=floor(x+1/256)` (`engine/render/detailShade.js`, `engine/render/gpu/glsl/common.js`+`shade.frag.js`), used for course/`fv`/`bix`/band `pos`/`crossLine`'s `k` in both `shadeV2` and `shadeDetailFast` (JS) and the GLSL twin - fixes the f32-vs-f64 start-pose parity FAIL. `node --expose-gc tools/bench-cast.mjs --gc`: ALL CHECKS PASS (v2 baseline re-recorded, v1 unchanged). `compare-detail-export.mjs`: 98.47/98.50/99.19% (>=95 OK, design/ untouched). `?gpucompare=1` @1600x900: **5/5 PASS, poisonedSurvivors 0 every pose** (the actual gate). Side effect (not a regression per architect's fix scope): `?shadetest=1`'s v2 table (engine `shadeV2` vs the read-only `design/detail-pass.js` reference, both float64) now 1774/2242, down from 1954/1954 - `qfloor`'s epsilon nudge also flips a handful of float64 boundary cases (e.g. `uo/g.u` landing at 0.9999999999999999) that the untouched design reference still floors the old way; v1 table still 361/361. Flagging for architect/PO since this wasn't in the explicit pass list. Not committed. |
 | 14 | US-030a | **GPU raycasting: GLSL DDA + configurable grid (D-009 stage 2a)** (engine story) | P0 | arch-review | Programmer fix (2026-09-23): all 5 ARCH CHANGES items done, incl. BUG-OWN-001 (owner pose now PASS 100%, verified live). Item 5 re-check surfaced a real, worse shading-level gap on 3 poses (start/stair/spawn) - flagged, not fixed, per the architect's own ruling. Grid default now 240x90 (owner decision, D-009 amendment 2). Next: architect re-review (opus, diff only) |
 | 14b | US-030b | **N-ray coverage anti-shimmer + flicker metric + owner walk-test (D-009 stage 2b)** (engine story) | P0 | todo | Programmer after US-030a `done` |
-| 14c | US-030c | **GPU sprite pass + JS `drawSprites` reference (D-009 stage 2c)** (engine story) | P0 | po-review | ARCH OK (re-review 4416417) -> PO |
+| 14c | US-030c | **GPU sprite pass + JS `drawSprites` reference (D-009 stage 2c)** (engine story) | P0 | testing | ARCH OK (4416417), PO OK -> tester (rerun spawn pose without sprites) |
 | 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030a+030b `done` (or after the gate fails -> CPU per plan A) |
 | 16 | US-007 | Lighting: sun directional light with shaft shadow – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-006 |
 | 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); architect tech notes first; Programmer after US-030a+030b + US-007 + US-025 `done` |
-| 18 | US-010 | Tower layout: 3 levels as sector data | P0 | po-review | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025; may run on the parallel track). Designer adds `interactables` + hint zones |
+| 18 | US-010 | Tower layout: 3 levels as sector data | P0 | testing | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025; may run on the parallel track). Designer adds `interactables` + hint zones |
 | 19 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-030c (GPU sprite pass) + US-006. Designer re-checks props at 320x120 |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 21 | US-013 | Rolling boulder | P0 | todo | Programmer |
@@ -970,14 +970,14 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: US-030a `done`. The shimmer note (X, Y) comes from the architect's US-028 measurement. US-016's terrain anti-shimmer also depends on this story.
 
-### US-030c GPU sprite pass + JS `drawSprites` reference  [Priority: P0] [Status: po-review]
+### US-030c GPU sprite pass + JS `drawSprites` reference  [Priority: P0] [Status: testing]
 
 As a player, I want props/sprites drawn correctly and cheaply on the GPU path, so that the scene stays performant and consistent with walls.
 (D-009 stage 2c. Parallel track to US-030b; only shares the `DEPTH` texture and the final composite pass with 030a/030b.)
 Acceptance criteria:
-- [ ] **Architect tech notes**: sprite-list texture format (done, see architecture.md 14.2).
-- [ ] **GPU sprite pass**: sprites are drawn from a sprite-list texture (<= 64 sprites), depth-tested per cell against the depth texture, no readback in the frame loop. Implements the `design/README.md` section 4 sprite format (transparent space, scale rule, `lods.half` below 0.75, emissive cells ignore light and fog). JS `sprites.js` stays as the reference and fallback. Verified with at least one test sprite in `test_room`.
-- [ ] `?gpucompare=1` includes sprite cells and meets the US-029 thresholds.
+- [x] **Architect tech notes**: sprite-list texture format (done, see architecture.md 14.2).
+- [x] **GPU sprite pass**: sprites are drawn from a sprite-list texture (<= 64 sprites), depth-tested per cell against the depth texture, no readback in the frame loop. Implements the `design/README.md` section 4 sprite format (transparent space, scale rule, `lods.half` below 0.75, emissive cells ignore light and fog). JS `sprites.js` stays as the reference and fallback. Verified with at least one test sprite in `test_room`.
+- [x] `?gpucompare=1` includes sprite cells and meets the US-029 thresholds. (Sprite cells 0 mismatches; the 2 frame FAILs are attributed to US-030a, tester confirms the spawn pose.)
 Design needed: no.
 Notes / dependencies: US-030a `done` (shares `DEPTH` texture + composite pass). US-011 depends on this story `done`.
 
@@ -1014,6 +1014,14 @@ Notes / dependencies: US-030a `done` (shares `DEPTH` texture + composite pass). 
 - **Verify:** `node tools/check-deps.mjs` OK (88 files); `node --expose-gc engine/render/gpu/sprites.test.js` 49/49; `node engine/world/world.test.js` 20/20 (incl. the 4 new checks). Fresh port 8933 (stopped after): `?level=test_room&sprite=1&debug=1` shows the brazier/lanterns over GPU-shaded surfaces, `sprites: 3` on the overlay, 0 console errors. `game/sprites.html?spritecompare=1&source=upload` 5/5 PASS (sprite cells and frame both 100%). `game/sprites.html?spritecompare=1` (default `dda` source): sprite cells still 0 mismatches on all 5 poses, but the frame itself FAILs (1-4% glyph match) - this is the pre-existing DDA black-surface issue tracked as **BUG-OWN-001** (known issues table), not caused by this change (disposing the sprite pass still leaves the same surfaces black, per the original programmer notes above). `?gpucompare=1`: 4/6 PASS; the 2 FAILs (`facing stair + 1.0m platform` 99.99% glyph, `world_m1 player spawn` 99.92% glyph) are small-count geometry/shading mismatches unrelated to sprites (no sprite-cell breakdown reported here since `compareCells` doesn't split it out) and match the BUG-OWN-001 pattern (`planeEq` far below `matched` on those two poses); flagging for the architect rather than fixing, since US-030a/BUG-OWN-001 is a separate, actively-worked track.
 
 **ARCH OK (architect re-review of 4416417, 2026-09-23) -> `po-review`.** Items 1 and 2 are done as asked: `main.js` wiring, gpucompare places and projects the sprites once per pose on both paths, `forEachEntity`, `removeEntity` bumps `renderVersion`, and the Node test is in (world 20/20, check-deps OK, re-run by me). gpucompare FAILs: `facing stair + 1.0m platform` is the known US-030a `shade.frag` near-miss (see the US-030a parity AC). `world_m1 player spawn` (99.92 %) fits the same pattern, but it is not proven. Tester: run that pose once without the compare sprites; if it still fails the same way, it is not a sprite issue. Follow-ups are unchanged; 14.2 item 4 will be amended.
+
+**PO OK (2026-09-23) -> `testing`.** AC1 met (14.2). AC2 met: sprite-list texture, <= 64 sprites, per-cell depth test, no frame-loop readback, section 4 format (transparent space, scale, `lods.half`, emissive), JS reference + fallback, test sprites in `test_room` via `?sprite=1`. AC3 met for sprite cells (0 mismatches); the frame FAILs belong to US-030a, subject to tester item 3. Tester checklist:
+1. `node --expose-gc engine/render/gpu/sprites.test.js` 49/49, `node engine/world/world.test.js` 20/20, `node tools/check-deps.mjs` OK.
+2. `?level=test_room&sprite=1&debug=1`: brazier (emissive flame full colour), unlit lantern, far lantern at half LOD drawn over GPU surfaces and correctly hidden behind walls; overlay `sprites: 3`; 0 console errors.
+3. `?gpucompare=1`: record the per-pose results; rerun `world_m1 player spawn` (and the stair pose) **without** the compare sprites. Same FAIL without sprites = US-030a, not this story. If the FAIL changes or goes away, FAIL this story.
+4. `game/sprites.html?spritecompare=1&source=upload` 5/5 PASS; `?gpu=0` fallback draws the same three props; `WEBGL_lose_context` lose/restore redraws the sprites.
+5. Removing a sprite entity makes it disappear on the next frame (stale-cache fix).
+6. `done` also requires US-030a `done` (dependency); until then mark PASS as "PASS, waiting on US-030a".
 
 Follow-ups (not blocking, record in US-011 / US-016 notes): re-target the edge pass to pipeline-owned `edgeFg/edgeBg` and delete `_copyEdge` (14.2 item 3); `project()` takes one `light` for all sprites - US-006 needs per-sprite `lightAt(...)` into T3 (layout already allows it); the atlas packs only the `S` view - US-011 direction keys extend `packLod` per view (`anims` -> `views[dir].anims`); the far-tower billboard (US-016) must pass the far fog key to `fogFactor` (T1 `fogF` is JS-side, so no shader change).
 
@@ -1381,7 +1389,7 @@ Browser (tester): `game/index.html` jump/stairs/gap/pit/lintel by hand; `game/ph
 
 **Tester PASS (2026-09-23, docs/test-reports/US-009.md).** 187+111+18=316/316 suites green. All 9 ACs verified: gap AC4 (22/22 take-offs), no-bridge AC7 (10/10 falls), pit AC6 (walk-out blocked, jump-out both sides), lintel/ceiling AC5 (no clip, correct clamp at `maxZ=1.3`), landing dip/head bob AC8, no double jump AC9. Verification method: since this sandbox's browser key-timing/rAF is unreliable for exact-frame assertions, checks were driven deterministically by importing the real `Player.js`/`EyeFeel.js`/`config.js` modules in the live page and stepping them at a fixed 1/60 s `dt` against the real `test_room` level object (labelled synthetic in the report) - same technique the programmer used. A real dispatched Space keypress through the harness's own listener also confirmed a live jump/land/recover cycle on the HUD. One environment-only bug found and logged (BUG-1, non-blocking): this sandbox kept serving the pre-US-009 `Player.js` on the `:8000` origin even after restarting the server and hard-refreshing (matches the programmer's documented caching caveat); switching to a fresh port (8123) fixed it immediately - not a product bug. Status -> `done`.
 
-### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: po-review]
+### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: testing]
 As a player, I want to wake inside a ruined round tower with a stair winding up to a breach, so that I have a clear, intriguing space to explore.
 Acceptance criteria – Designer:
 - [x] `design/levels/tower_layout.md`: top-down text map(s) of the tower using the US-003 legend format (outer footprint about 12x12 plus the outside outcrop and a few cells of hill beyond the breach), with a legend giving floorH/ceilH/materials per char.
@@ -1390,12 +1398,12 @@ Acceptance criteria – Designer:
 - [x] Marks player start position and facing (lying, facing the sun shaft), and positions of all lights and props.
 - [x] Wall materials assigned (stone variants, moss near the ground on the north side, scorched stone near the brazier).
 Acceptance criteria – Programmer (integration). Unblocked: US-003 v2 is done and the designer alignment is done. Updated for D-006: no copy of the file.
-- [ ] The tower is loaded from `design/levels/tower.js` itself (content pack): `game/js/main.js` passes it into the `AssetRegistry` (US-024), and `loadLevel` validates it with no errors. There is no hand-copied `game/js/world/levels/tower.js`, so nothing can drift. It becomes the default level, placed in the world at recipe coordinates (1480, 1018) per US-025. `test_room` stays reachable with `?level=test_room`.
-- [ ] Every stair step is climbable, the gap is jumpable walking, falling from any stair lands safely on ground level, the summit is only reachable through the grate path.
-- [ ] The slice is completable without ever taking the lantern (wake to breach end; the lantern is a soft gate only, D-004 notes).
-- [ ] All extension fields (props, lights, triggers, markers, layers.tilt) are reachable via `level.def`. `design/levels/tower.js` is the single source.
-- [ ] (D-006 / D-008) Props, lights, interactables, triggers and hint zones are all declared in the tower level data (`def.props`, `def.lights`, `def.interactables`, `def.triggers`, and hint zones as `def.triggers` of type `hint` or `def.markers`, per the designer's format). The designer adds the missing `interactables` entries (lantern, lever, beacon bowl) and the hint zones (gap edge `[Space] Jump`) to `design/levels/tower.js`. Behaviours are referenced by name (e.g. `interact: 'lantern.take'`, `trigger: 'quest.end'`) and registered from `game/js/quest/`. No tower-specific coordinates in engine or quest code.
-- [ ] Walking or running across the 1 m gap without Space always falls (depends on US-009; re-verify in the tower).
+- [x] The tower is loaded from `design/levels/tower.js` itself (content pack): `game/js/main.js` passes it into the `AssetRegistry` (US-024), and `loadLevel` validates it with no errors. There is no hand-copied `game/js/world/levels/tower.js`, so nothing can drift. It becomes the default level, placed in the world at recipe coordinates (1480, 1018) per US-025. `test_room` stays reachable with `?level=test_room`.
+- [x] Every stair step is climbable, the gap is jumpable walking, falling from any stair lands safely on ground level, the summit is only reachable through the grate path.
+- [x] The slice is completable without ever taking the lantern (wake to breach end; the lantern is a soft gate only, D-004 notes).
+- [x] All extension fields (props, lights, triggers, markers, layers.tilt) are reachable via `level.def`. `design/levels/tower.js` is the single source.
+- [x] (D-006 / D-008) Props, lights, interactables, triggers and hint zones are all declared in the tower level data (`def.props`, `def.lights`, `def.interactables`, `def.triggers`, and hint zones as `def.triggers` of type `hint` or `def.markers`, per the designer's format). The designer adds the missing `interactables` entries (lantern, lever, beacon bowl) and the hint zones (gap edge `[Space] Jump`) to `design/levels/tower.js`. Behaviours are referenced by name (e.g. `interact: 'lantern.take'`, `trigger: 'quest.end'`) and registered from `game/js/quest/`. No tower-specific coordinates in engine or quest code.
+- [x] Walking or running across the 1 m gap without Space always falls (depends on US-009; re-verify in the tower).
 Design needed: yes – level layout map + legend.
 Notes / dependencies: US-003 format. The designer may start now using the US-003 legend format described above.
 Designer note (2026-09-22): **Preview ready for PO review.**
@@ -1466,6 +1474,16 @@ Test plan (`game/js/quest/tower.test.js`, all Node, deterministic):
 - `validateBehaviours`: unique, sorted, tolerant of missing def/world; warn-once per load, `?strict=1` throws on the same list. Correct.
 - Inline `x, y[, z]` entity shorthand in `World.load`: accepted. It is the shape architecture 14.4 item 7 prescribes, it normalises to a `transform` (so serialize round-trips as `transform`), and it was needed to keep `World.load(world_m1)` working; recorded here rather than moved to US-016.
 - Coverage of route (scripted jump), gap (no-Space falls at walk and run, Space lands at 3.0, landing >= 2 cells deep), grate (closed BFS never reaches summit, open does, drive-into blocked) and lantern-free matches the test plan.
+
+**PO OK (2026-09-23) - US-010 ready for testing.** All 6 programmer ACs are met: single source through the AssetRegistry, placed at (1480, 1018), `?level=test_room` kept; route, gap and grate proven by tower.test 49/49; lantern-free is structural; data is reachable through `level.def`; behaviours are registered by name; `validateBehaviours` is clean; the page loads with no console errors.
+Tester checklist:
+1. Default page (`?debug=1&strict=1`): wake at (1497.0, 1027.5), yaw 330, zero console warnings or errors.
+2. Walk the stair by hand: every step climbs, the gap without Space falls to the debris (walk and run), with Space it lands on the ledge.
+3. Grate closed blocks the ledge-to-upper-stair route; no other way reaches the summit.
+4. Fall off several stair cells: you land safely and never get stuck.
+5. `?level=test_room` unchanged; F3 shows the sector id.
+6. Re-run the Node suites (tower, behaviours, world, serialize) and check-deps.
+Follow-ups (non-blocking, D-011 amendment 2): the story line "wake inside" becomes a crash-in. **Writer**: crash-in beat and hint text for Wick. **Designer**: crash debris/impact marks near the pallet, a possible change to the start pose, and `module.exports` lines in `tower.js`/`world_m1.js`. Stub behaviours are replaced in US-012/014/015/017/022.
 
 ### US-011 Billboard props + prop art  [Priority: P0] [Status: todo]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.
