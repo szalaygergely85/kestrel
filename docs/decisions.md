@@ -406,3 +406,103 @@ M1 content is mostly approved as geometry and art (tower layout, lantern, boulde
 - No engine or story-order changes. M1 finishes on schedule, and the designer and writer work in parallel with the programmers.
 - The PO must update GDD section 2 pillar 1 (the core-loop wording), sections 7 and 8 text, and backlog notes for the listed stories plus the US-015 acceptance criteria.
 - The approved lantern, title and scrawl art needs a re-check by the PO after the reskin. Geometry approvals stand.
+
+---
+
+## D-012 Steam release in M6: Electron wrapper + steamworks.js, browser demo (itch.io) first
+
+**Date:** 2026-09-23
+**Owner request:** "steam sounds cool" (queued idea f, backlog handoff).
+**Status:** Accepted (planned for M6; only the "needed earlier" items below touch earlier milestones)
+
+### Context
+The game is pure HTML/JS/WebGL2 with no build step (guardrail). Steam needs a native executable, Steamworks integration (achievements, cloud saves, overlay) and store assets. The renderer depends on WebGL2 behaving exactly as tested (D-009 parity gate on Chrome).
+
+### Options
+1. **Electron.** Bundles Chromium: the same WebGL2/ANGLE stack we test in Chrome, on Windows, macOS, Linux and Steam Deck. `steamworks.js` is built for Electron/Node. Cost: ~100-150 MB download, higher RAM. Mature, many shipped Steam games.
+2. **Tauri.** ~5-10 MB, uses the system webview: WebView2 (Chromium) on Windows, but WKWebView on macOS and WebKitGTK on Linux/Steam Deck, whose WebGL2 is weaker and untested by our parity gate. Steamworks needs Rust-side bindings; a second language in the shipping path.
+3. **Browser only (itch.io / web).** Zero wrapper cost, no Steam.
+
+### Decision
+**Option 1, Electron, for the Steam build; the browser build stays the primary development target and ships first as a demo.**
+- **Wrapper:** `desktop/` folder (Electron `main.js` + `preload.js`), outside `engine/` and `game/`. It loads the unchanged `game/` via a custom `app://` protocol (ES modules do not load from `file://`). The engine never knows it is in Electron. `electron-builder` is a packaging tool only; the game itself still has no build step. Tauri is rejected for now because of the WebKit WebGL2 risk on Linux/Deck; re-evaluate only if download size becomes a store problem.
+- **Steamworks:** `steamworks.js` in the Electron main process, exposed through `preload.js` as a tiny `platform` object (`unlockAchievement(id)`, `saveWrite/saveRead`, `isSteam`). The game talks to a `game/js/platform/` adapter with a **web** implementation (localStorage/IndexedDB, no achievements) and a **steam** implementation. Scope in M6: achievements, Steam Cloud saves (Auto-Cloud on the save folder), overlay. Out: workshop, leaderboards, multiplayer, DRM.
+- **Release order:** (1) browser demo on **itch.io** (the M1+M2 slice, free) as the feedback funnel, (2) Steam "Coming Soon" page for wishlists once M3 is playable, (3) Steam launch at the end of M6. $100 Steam Direct fee, budgeted by the owner.
+- **Store assets (designer, M6, rendered from the real engine, not faked):** ASCII key art; capsules (header 920x430, small 462x174, main 1232x706, vertical 748x896, library 600x900 + hero 3840x1240 + logo); 5+ screenshots; a 30-60 s trailer captured in-engine. Writer: short/long store description.
+- **Needed earlier (so M6 is packaging, not rework):**
+  - **Settings menu** (queued idea c; grid 160/240/320 per D-009 amendment 2, plus mouse sensitivity, invert Y, volume, fullscreen, key rebinding later): M2, P1. Settings persist through the platform adapter.
+  - **Saves:** the M2 save point writes `serialize()` output through the platform adapter only (never direct `localStorage` in game code); versioned save format (`saveVersion`) from the first save story.
+  - **Fullscreen + pointer lock:** a toggle and correct resize handling (grid re-fit, no stretch) in the settings story; Electron maps it to window fullscreen.
+  - **No network or CDN dependencies** at runtime; all assets relative paths (already true).
+  - **Gamepad** (M6 already; required for Steam Deck "Playable").
+  - **Pause on focus loss / overlay open** (M2 with the settings menu).
+
+### Consequences
+- One new folder (`desktop/`) in M6, one adapter folder (`game/js/platform/`) from the first save/settings story; check-deps: `engine/` must not import either.
+- The browser build and the Steam build run the same `game/` code; the tester tests both in M6.
+- PO: add the settings-menu story to M2 and the platform-adapter criterion to the save-point story.
+
+---
+
+## D-013 Writer's proposals from `docs/story.md` section 6
+
+**Date:** 2026-09-23
+**Status:** Accepted (canon amendments to D-011 amendment 2; GDD section 3 updated by the PO, not by the manager)
+
+### Decision (per proposal)
+1. **Hero name "Wick": ACCEPTED.** It is his real name (no borrowed-name thread, per amendment 2). Where it shows: the relay-keeper's log does not know him; **his own pencil notes on the map are signed "W."** in M1 (US-015 map card); the full name is first **spoken by the exiles in M3** dialogue and appears in save-slot labels. **Not** on the title card (the title is *Kestrel*). The hero is never seen.
+2. **SOS pattern 3 short, 3 long, 3 short: ACCEPTED as canon.** Timing for the P2 pulse animation (designer): short = 0.25 s on, long = 0.75 s on, 0.25 s gap inside a letter, 0.75 s between letters, 2.5 s pause before repeat. Used identically in the log text, the signal tower emissive and any later sound (D-004).
+3. **"The log is old" (the signal predates Wick's escape): ACCEPTED as a constraint, reveal DEFERRED.** The log stays vague in M1. The writer drafts 2-3 candidate explanations for the M4 reveal in `docs/story.md`; the manager picks one before M4 content starts. No M1-M3 text may contradict "the SOS has been sending for years".
+4. **Exile village name "Outwall": DEFERRED to M3** as the working name. The writer may offer alternatives when the M3 village stories are written; nothing in M1/M2 names it.
+5. **GDD section 3 is stale: ACCEPTED.** The manager does not edit `game-design.md` (the PO is editing it now).
+
+### PO note (apply to GDD section 3 in your current edit)
+- Remove partial amnesia and the "Crown mages" line; Ferrum is **machines only** (brass, steam, gears; magic is myth/forbidden), **magic is real outside**, Wick does not believe it at first.
+- Hero: **Wick**, a young Low Ward skyworks hand from Ferrum, remembers everything, new to everything outside; name shown per item 1.
+- The map is a **Crown sky-chart** (stolen with the *Kestrel*) with **Wick's pencil course** and notes signed "W.", not a handwritten map he doesn't remember.
+- SOS = 3 short, 3 long, 3 short (timing above); it has been sending for years (reveal deferred).
+- Exile village: unnamed in canon, working name "Outwall" (M3).
+- Also fix the matching lines in the D-011 US-015 map-card ACs if they still say "hand-inked map / notes you don't remember".
+
+### Consequences
+- Designer: pulse timing for the P2 signal animation; "W." signature on the map card art.
+- Writer: M4 reveal candidates (item 3) before M4.
+
+---
+
+## D-014 2D / 2.5D strategy camera: future engine capability, renderer kept camera-agnostic at no extra cost now
+
+**Date:** 2026-09-23
+**Owner idea:** a 2D/2.5D strategy (top-down / isometric) camera as a future capability of the engine (queued idea e).
+**Status:** Accepted (roadmap note; no story before M5)
+
+### Options
+1. **Build it now.** Adds an orthographic/isometric projection path to the GPU DDA, terrain and sprite passes during M1. Delays M1; no game feature needs it.
+2. **Ignore it.** Risk: first-person assumptions leak into world, picking and sprite code and make it expensive later.
+3. **Keep the renderer camera-agnostic by rule, build the camera later.** Nearly free: the engine already has an explicit `CameraPose` (architecture.md section 10).
+
+### Decision
+**Option 3.** The strategy camera is an **engine-product feature, post-M1, earliest M5** ("Engine Editor v0" / engine as a standalone package; the M1.5/M5 editor's top-down map view is its natural first user). Not a game feature for M1-M4.
+Architect guardrail from now on (review checklist item, no refactor of existing code):
+- The camera is data: `CameraPose` + a `projection` descriptor (`{ kind: 'perspective', fov }` today; `'ortho'`/`'iso'` reserved). Passes get rays/projection from one place, not from inlined first-person math.
+- `World`, physics, entities, picking and serialization never assume a first-person player camera (picking goes through the planeId target, which works for any projection).
+- Do not implement ortho/iso or pay any runtime cost for it now; if a guardrail would cost more than ~0.5 day in a story, the architect notes it and skips it.
+
+### Consequences
+- No M1 scope change. When the feature is picked up, it is an engine story with architect tech notes (ortho DDA over the sector grid and heightmap is simpler than perspective; the grid cell aspect is the main design question).
+
+---
+
+## D-015 Rust/WASM and third-party physics: only for measured hot spots; engine stays JS + GLSL
+
+**Date:** 2026-09-23
+**Status:** Accepted (policy; queued ideas d and g)
+
+### Decision
+- **Engine language stays JS + GLSL shaders.** Rust/WASM is allowed **only for a hot spot measured by the bench** (`tools/bench-cast.mjs` / `?bench=1`) that still misses budget after a JS optimisation pass. Candidates: terrain far-grid bake / chunk regeneration (US-016, US-026) and pathfinding (M2+ enemies). Architect evaluates in M2 if measurements say so.
+- **No build step preserved:** a WASM module ships as a prebuilt `.wasm` committed to the repo, loaded with `WebAssembly.instantiateStreaming`; the Rust source and its build script live under `tools/wasm/` (dev-only). The JS implementation stays as the oracle and fallback, with a parity test, like D-009.
+- **Rapier (physics):** the architect evaluates `@dimforge/rapier3d-compat` (ES module with embedded WASM, vendored locally, no bundler) **when US-013 (boulder) comes up**, against extending the in-house sphere code. Adopt only if it stays on our fixed timestep, is deterministic enough for saves, and all floor/collision queries still come from `World` (D-007). Otherwise the in-house physics stays.
+- **Three.js:** evaluated only if a story needs arbitrary meshes (see the queued 3D glyph-model estimate); not adopted by default.
+
+### Consequences
+- No change to M1. Any WASM or Rapier adoption is an engine story with architect tech notes and a vendored, version-pinned dependency.

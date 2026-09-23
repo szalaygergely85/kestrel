@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes).
+Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy).
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -39,19 +39,24 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 - **Depends on:** US-025 (serialize, handles, renderVersion), US-030 (GPU grid, planeId picking, sprite pass), US-011, US-006/007, US-014/015.
 - Stories (PO to write): US-031..US-034.
 
-**Story (D-011):** fantasy canon with steampunk machine accents. The hero is shot down in a stolen balloon, has amnesia and holds a map to the SOS. M1 is a text and art reskin only (lamp, wreckage, relay, signal tower). The only scope change is the US-015 map card (static overlay, `M` re-opens it).
+**Story (D-011 amendment 2, D-013):** fantasy canon with steampunk machine accents. Wick, a young man from machine-only Ferrum (no amnesia), is shot down in the stolen balloon *Kestrel* and holds a Crown sky-chart with his pencil course to the SOS (3 short, 3 long, 3 short). M1 is a text and art reskin only (lamp, wreckage, relay, signal tower). The only scope change is the US-015 map card (static overlay, `M` re-opens it).
 
 ## Milestone 2 – "Out of the Wreck" — status: planned
-Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point.
+Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point. **Release prep (D-012):** settings menu (grid, sensitivity, invert Y, volume, fullscreen + pointer lock, pause on focus loss), saves via a `game/js/platform/` adapter with a versioned save format. **itch.io browser demo** (M1+M2 slice) at the end of M2. Architect may evaluate Rust/WASM for measured hot spots only (terrain bake, pathfinding; D-015).
 
 ## Milestone 3 – "The Relay Line" — status: planned
-Open region along the map route with 3 dead relays to wake (each a placed structure), an exile village with 3–5 NPCs and dialogue, the artificer's gauntlet + Spark (first magic), second enemy (clockwork sentinel), ranged tool (bow or crossbow), terrain overrides authored as data.
+Open region along the map route with 3 dead relays to wake (each a placed structure), an exile village with 3–5 NPCs and dialogue, the artificer's gauntlet + Spark (first magic), second enemy (clockwork sentinel), ranged tool (bow or crossbow), terrain overrides authored as data. Exile village working name "Outwall" (D-013, final name decided here). Steam "Coming Soon" page for wishlists once M3 is playable (D-012).
 
 ## Milestone 4 – "The Signal Source" — status: planned
 First dungeon = the signal's source (an ancient ruin with pressure doors and gear puzzles): keys, light puzzles (mirrors, shadow, aether), a boss, reward = first gauntlet crystal. The city of Ferrum stays out until after M6.
 
 ## Milestone 5 – "Engine Editor v0" — status: planned
 `tools/` editor built on `engine/index.js`, extending the M1.5 editor: terrain paint/stamp, structure placement, live preview, JSON save/load. **ASCII model + animation editor** (D-010, `tools/model-editor/`): per-direction glyph/fg frames, named animations (fps/durations, loop, frame `events`), onion skin, live preview via the real animation player, save ModelDef JSON to `design/models/`. Out: rigs/tweening, image import, auto-LOD, visual scripting, asset store. Depends on US-027 + US-011. Stories US-035..US-037. Engine published as a standalone package.
+- **Future engine capability (D-014, earliest here, post-M1):** 2D/2.5D strategy camera (ortho/iso projection over sectors + heightmap; first user = the editor's top-down map). Until then the architect keeps the renderer camera-agnostic by review rule (`CameraPose` + `projection` descriptor), no implementation cost.
 
 ## Milestone 6 – "Polish & Release" — status: planned
-Performance pass, accessibility (font size, colorblind palettes), gamepad, static release.
+Performance pass, accessibility (font size, colorblind palettes), gamepad (Steam Deck), static web release, **Steam release (D-012)**: Electron wrapper in `desktop/` (Tauri rejected: WebKit WebGL2 risk on Linux/Deck), `steamworks.js` (achievements, Steam Cloud saves, overlay) behind the platform adapter, store assets rendered in-engine (ASCII key art, capsules, screenshots, trailer), store text by the writer, $100 Steam Direct fee. Order: itch.io demo (M2) -> Steam Coming Soon (M3) -> launch (end of M6).
+
+## Tech policy notes
+- **Rust/WASM (D-015):** only for bench-measured hot spots after a JS pass (terrain bake, pathfinding); prebuilt `.wasm` committed, source in `tools/wasm/`, JS kept as oracle/fallback. Engine stays JS + GLSL.
+- **Rapier (D-015):** architect evaluates `@dimforge/rapier3d-compat` (vendored, no bundler) when US-013 comes up; adopt only if fixed-timestep, deterministic enough for saves, and queries still go through `World`. Three.js only if arbitrary meshes are needed.
