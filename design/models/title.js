@@ -3,6 +3,8 @@
  * Format: design/README.md section 4 (sprite models) + section 5 (UI styles).
  * Sets ASSETS.models.title, ASSETS.models.subtitle, ASSETS.uiStyle. All UI text is ASCII 32-126.
  * UI art is drawn at full palette color (emissive: not lit, not fogged); fades use the glyph-ramp rule below.
+ * All layout numbers are in the fixed 160x60 UI grid (uiStyle.uiGrid); the UI is a scaled text layer over the
+ * scene grid (uiStyle.uiScale), so text keeps its pixel size at 240x90 and 320x120 (D-009 amendment).
  */
 (function (root) {
   'use strict';
@@ -64,7 +66,7 @@
     // "alive" during the 3 s hold: a diagonal shine band sweeps left -> right once per 2.2 s
     shine: { period: 2.2, width: 3, slope: 2, color: 'white', amount: 0.55,
              rule: 'cell lit if 0 <= (x - slope*y - pos) < width, pos sweeps -16 .. w+16; fg = lerp(fg, white, amount); only on "#" cells' },
-    layout: { grid: { w: 160, h: 60 }, top: 18, centerX: 80 }
+    layout: { grid: { w: 160, h: 60 }, top: 18, centerX: 80 }   // UI-grid cells (uiStyle.uiGrid), not scene cells
   };
 
   // ---- subtitle "The Awakening", letter-spaced, brass brackets ----
@@ -82,6 +84,21 @@
 
   // ---- UI text styling (US-005 / US-012 / US-015 / US-017) ----
   A.uiStyle = {
+    // ---- UI grid + scale (D-009 amendment: scene grid 160x60 / 240x90 / 320x120) ----
+    // Every layout number in uiStyle and in title.layout / subtitle.layout is in the fixed 160x60 UI GRID,
+    // never in scene cells. The UI is a separate text layer over the scene; its cell = screen / 160x60, so one
+    // UI glyph covers cellScale x cellScale scene cells (2.0 at 320x120, 1.5 at 240x90, 1.0 at 160x60) and text
+    // stays 12x18 px at 1920x1080 on every grid. A scene-cell UI at 320x120 would be 6x9 px: not readable.
+    uiGrid: { cols: 160, rows: 60 },
+    uiScale: {
+      mode: 'layer',                                   // 'layer' = separate text layer at uiGrid (recommended); 'cells' = 1 scene cell per glyph (CPU 160x60 only)
+      rule: 'cellScale = sceneCols / uiGrid.cols; the layer is drawn after the scene, transparent bg, glyph + fg only',
+      plate: 'a plate on UI cells [ux, ux+w) x [uy, uy+h) darkens SCENE cells floor(ux*s) .. ceil((ux+w)*s)-1 (same for rows), s = cellScale; the plate stays in the scene pass so it gets fogged/lit with the picture',
+      blink: 'the eyelid mask (blink) is a SCENE effect: it stays in scene rows, never on the UI layer',
+      crosshair: 'centre of the UI grid (80, 30); the prompt is measured in UI rows below it',
+      minGlyphPx: { w: 8, h: 12 },                     // below this the text is not readable; layer mode never goes below 12x18 at 1920x1080
+      fallback: 'if the presenter cannot draw a second layer, use mode "cells" and multiply every layout number by s (rounded), keeping glyphs 1 cell: only acceptable at 160x60'
+    },
     // Fade rule for every UI element (title card, hints, end text): glyphs dim DOWN the ramp, not by alpha.
     // At fade level a (0..1): glyph g with density index i in ramps.default becomes ramps.default[round(a*i)]
     // (letters/digits count as index 9), fg = fg * (0.25 + 0.75*a); a = 0 -> nothing drawn.

@@ -17,6 +17,7 @@
   .val { font-family:Consolas, monospace; color:#ffd27a; min-width:50px; display:inline-block; }
   button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
   button.on { border-color:#ffd24a; color:#ffd24a; }
+  .grp { display:flex; gap:4px; align-items:center; padding-right:10px; border-right:1px solid #22252e; }
   .anim { display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap; margin:6px 0 12px; }
   .cell { font-size:11px; color:#8a8778; font-family:Consolas, monospace; }
   .meta { font-family:Consolas, monospace; font-size:12px; color:#9c9888; }
@@ -27,9 +28,12 @@
 <h1>ASCII Quest : props (US-011)</h1>
 <div class="note">Loads <code>../palette.js</code> and <code>../models/*.js</code>. Every animation is shown at <b>near</b> (2x, nearest sampling, as the engine enlarges up close),
   <b>mid</b> (1x) and <b>far</b> (the hand-drawn half LOD), plus the full frame strip. Lit cells use <code>util.shadeSprite</code>; <b>emissive</b> cells (flames, embers, glints)
-  ignore light and fog. The background is dark by default; tick "lit stone backdrop" to test readability against a torch-lit wall.</div>
+  ignore light and fog. The background is dark by default; tick "lit stone backdrop" to test readability against a torch-lit wall.<br>
+  <b>Scene grid (D-009):</b> a sprite at a given distance covers <code>rows/60</code> times more cells on a finer grid, so the engine samples the same art at 1.5x (240x90) or 2x (320x120)
+  and each cell is drawn 1.5x / 2x smaller. The near / mid / far cards follow that: at 320x120 "mid" is the art at 2x nearest sampling in 6 px cells. Same size on screen, blockier glyph texture.</div>
 
 <div class="controls">
+  <span class="grp">Scene grid: <button data-grid="160">160x60</button><button data-grid="240">240x90</button><button data-grid="320">320x120</button></span>
   <span>Light:</span><span id="presets"></span>
   <label>intensity <input type="range" id="int" min="0" max="1.5" step="0.01" value="1"><span class="val" id="intV"></span></label>
   <label>direction <input type="range" id="dir" min="-180" max="180" step="1" value="-50"><span class="val" id="dirV"></span></label>
@@ -222,7 +226,7 @@
   function drawSprite(g, model, frame, ox, oy, s, ld, heatFn) {
     var fs = frame.S, keys = model.keys || M.brazier.keys, fogF = U.fogFactor(S.dist, 'interior');
     var h = fs.glyphs.length, w = fs.glyphs[0].length;
-    for (var y = 0; y < h * s; y++) for (var x = 0; x < w * s; x++) {
+    for (var y = 0; y < Math.round(h * s); y++) for (var x = 0; x < Math.round(w * s); x++) {   // s may be fractional (1.5 at 240x90): nearest sampling
       var r = Math.floor(y / s), c = Math.floor(x / s), gl = fs.glyphs[r].charAt(c), k = fs.fg[r].charAt(c);
       if (heatFn) { var hk = heatFn(r, c, k, h); if (hk === null) continue; k = hk; }
       if (gl === ' ' || k === ' ') continue;
@@ -235,34 +239,42 @@
     }
   }
 
-  // ---------------- build prop cards ----------------
-  var cards = [], host = $('props');
+  // ---------------- build prop cards (rebuilt per scene grid) ----------------
+  var cards = [], host = $('props'), GRID = 160, GS = 1, PX = 12;   // GS = rows/60 sprite sample scale, PX = cell font px (12 at 160x60 mock)
   function lodOf(m) { return m.lods && m.lods.half; }
-  ENTRIES.forEach(function (e) {
-    var m = e.m, h2 = document.createElement('h2');
-    h2.textContent = e.id + '  (' + m.size.w + 'x' + m.size.h + ', anchor ' + m.anchor.x + ',' + m.anchor.y + ', world ' + m.world.w + ' x ' + m.world.h + ' m)';
-    host.appendChild(h2);
-    var meta = document.createElement('div'); meta.className = 'meta';
-    var em = Object.keys(m.keys).filter(function (k) { return m.keys[k].e; }).map(function (k) { return k + '=' + m.keys[k].c; });
-    meta.textContent = (m.desc || '') + '  | keys: ' + Object.keys(m.keys).map(function (k) { return k + '=' + m.keys[k].c + (m.keys[k].e ? '*' : ''); }).join(' ') +
-      (em.length ? '  (* emissive)' : '');
-    host.appendChild(meta);
-    Object.keys(m.animations).forEach(function (an) {
-      var a = m.animations[an], row = document.createElement('div'); row.className = 'anim';
-      var lab = document.createElement('div'); lab.className = 'cell';
-      lab.innerHTML = '<b style="color:#ffd27a">' + an + '</b><br>' + a.frames.length + ' frames<br>' + (a.durations ? 'durations ' + a.durations.join('/') + ' ms' : a.fps ? a.fps + ' fps' : 'gameplay-driven') + '<br>' + (a.loop ? 'loop' : 'once (replays)');
-      row.appendChild(lab);
-      var mk = function (label, cols, rows) { var d = document.createElement('div'), t = document.createElement('div'), cv = document.createElement('canvas');
-        t.className = 'cell'; t.textContent = label; d.appendChild(cv); d.appendChild(t); row.appendChild(d); return makeGrid(cv, cols, rows, 12); };
-      var lod = lodOf(m), P2 = 1;
-      var card = { e: e, an: an, a: a,
-        near: mk('near 2x', m.size.w * 2 + P2 * 2, m.size.h * 2 + P2 * 2),
-        mid: mk('mid 1x', m.size.w + P2 * 2, m.size.h + P2 * 2),
-        far: lod ? mk('far: half LOD ' + lod.size.w + 'x' + lod.size.h, lod.size.w + P2 * 2, lod.size.h + P2 * 2) : null,
-        strip: mk('all frames', a.frames.length * (m.size.w + 1) + 1, m.size.h + 2) };
-      host.appendChild(row); cards.push(card);
+  function buildCards() {
+    cards = []; host.innerHTML = '';
+    ENTRIES.forEach(function (e) {
+      var m = e.m, h2 = document.createElement('h2');
+      h2.textContent = e.id + '  (' + m.size.w + 'x' + m.size.h + ', anchor ' + m.anchor.x + ',' + m.anchor.y + ', world ' + m.world.w + ' x ' + m.world.h + ' m)';
+      host.appendChild(h2);
+      var meta = document.createElement('div'); meta.className = 'meta';
+      var em = Object.keys(m.keys).filter(function (k) { return m.keys[k].e; }).map(function (k) { return k + '=' + m.keys[k].c; });
+      meta.textContent = (m.desc || '') + '  | keys: ' + Object.keys(m.keys).map(function (k) { return k + '=' + m.keys[k].c + (m.keys[k].e ? '*' : ''); }).join(' ') +
+        (em.length ? '  (* emissive)' : '');
+      host.appendChild(meta);
+      Object.keys(m.animations).forEach(function (an) {
+        var a = m.animations[an], row = document.createElement('div'); row.className = 'anim';
+        var lab = document.createElement('div'); lab.className = 'cell';
+        lab.innerHTML = '<b style="color:#ffd27a">' + an + '</b><br>' + a.frames.length + ' frames<br>' + (a.durations ? 'durations ' + a.durations.join('/') + ' ms' : a.fps ? a.fps + ' fps' : 'gameplay-driven') + '<br>' + (a.loop ? 'loop' : 'once (replays)');
+        row.appendChild(lab);
+        var mk = function (label, cols, rows, px) { var d = document.createElement('div'), t = document.createElement('div'), cv = document.createElement('canvas');
+          t.className = 'cell'; t.textContent = label; d.appendChild(cv); d.appendChild(t); row.appendChild(d); return makeGrid(cv, cols, rows, px || PX); };
+        var lod = lodOf(m), P2 = 1, sN = 2 * GS, sM = GS;
+        var card = { e: e, an: an, a: a, sN: sN, sM: sM,
+          near: mk('near ' + sN + 'x (' + GRID + ' grid)', Math.round(m.size.w * sN) + P2 * 2, Math.round(m.size.h * sN) + P2 * 2),
+          mid: mk('mid ' + sM + 'x', Math.round(m.size.w * sM) + P2 * 2, Math.round(m.size.h * sM) + P2 * 2),
+          far: lod ? mk('far: half LOD ' + lod.size.w + 'x' + lod.size.h + ' at ' + sM + 'x', Math.round(lod.size.w * sM) + P2 * 2, Math.round(lod.size.h * sM) + P2 * 2) : null,
+          strip: mk('all frames (art cells)', a.frames.length * (m.size.w + 1) + 1, m.size.h + 2, 12) };
+        host.appendChild(row); cards.push(card);
+      });
     });
+  }
+  [].forEach.call(document.querySelectorAll('[data-grid]'), function (b) {
+    b.onclick = function () { GRID = +b.dataset.grid; GS = GRID / 160; PX = Math.round(12 / GS); buildCards();
+      [].forEach.call(document.querySelectorAll('[data-grid]'), function (x) { x.classList.toggle('on', +x.dataset.grid === GRID); }); };
   });
+  buildCards(); document.querySelector('[data-grid="160"]').classList.add('on');
 
   // ---------------- beacon composite ----------------
   var bowl = M.beaconBowl, fire = M.beaconFire, beacon = { g: 0, lit: false, t0: 0, dir: 0 };
@@ -347,11 +359,11 @@
     var ld = lightNow();
     cards.forEach(function (cd) {
       var m = cd.e.m, a = cd.a, fi = cd.a.fps === 0 ? Math.floor(S.t * 6) % a.frames.length : frameAt(a, S.t), fr = a.frames[fi];
-      backdrop(cd.near, ld); drawSprite(cd.near, m, fr, 1, 1, 2, ld);
-      backdrop(cd.mid, ld); drawSprite(cd.mid, m, fr, 1, 1, 1, ld);
+      backdrop(cd.near, ld); drawSprite(cd.near, m, fr, 1, 1, cd.sN, ld);
+      backdrop(cd.mid, ld); drawSprite(cd.mid, m, fr, 1, 1, cd.sM, ld);
       if (cd.far) {
         var la = m.lods.half.animations[cd.an], lfi = la.fps === 0 ? Math.floor(S.t * 6) % la.frames.length : frameAt(la, S.t);
-        backdrop(cd.far, ld); drawSprite(cd.far, m, la.frames[lfi], 1, 1, 1, ld);
+        backdrop(cd.far, ld); drawSprite(cd.far, m, la.frames[lfi], 1, 1, cd.sM, ld);
       }
       backdrop(cd.strip, ld);
       a.frames.forEach(function (f, i) { drawSprite(cd.strip, m, f, 1 + i * (m.size.w + 1), 1, 1, ld); });

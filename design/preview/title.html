@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ASCII Quest - Title card and UI text (US-015)</title>
+<title>ASCII Quest - Title card and UI text (US-015, grid check D-009)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -14,17 +14,22 @@
               padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:13px; }
   button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
   button.on { border-color:#ffd24a; color:#ffd24a; }
+  .grp { display:flex; gap:4px; align-items:center; padding-right:10px; border-right:1px solid #22252e; }
   #checks div, .mono { font-family:Consolas, monospace; font-size:12px; }
   .val { font-family:Consolas, monospace; color:#ffd27a; }
 </style>
 </head>
 <body>
-<h1>ASCII Quest : title card, subtitle, hints, prompts, end text (US-015)</h1>
-<div class="note">Loads <code>../palette.js</code> and <code>../models/title.js</code>. The big canvas is a <b>160x60</b> mock of the game screen at true proportions.
-  It plays the start sequence: black 1.0 s, eye-blink reveal 1.5 s (with the half-close), title fade in 1 s / hold 3 s / fade out 1 s, then the first hint.
-  The 3D view is a static stand-in (tower wall, sun patch, torch glow). UI fades use the glyph-ramp rule (<code>uiStyle.fade</code>), not alpha.</div>
+<h1>ASCII Quest : title card, subtitle, hints, prompts, end text (US-015) at 160x60 / 240x90 / 320x120</h1>
+<div class="note">Loads <code>../palette.js</code> and <code>../models/title.js</code>. The big canvas is a mock of the game screen at true 16:9 proportions; its pixel width is fixed,
+  so switching the <b>scene grid</b> shrinks the scene cells exactly as it will in the game (cell px shown in the bar; at a real 1920 px window multiply by the factor shown).
+  <b>UI mode</b>: <i>scaled layer</i> = the recommended design (<code>uiStyle.uiGrid</code> 160x60 text layer over the scene, glyph = <code>cellScale</code> scene cells);
+  <i>1x scene cells</i> = what happens if UI text is drawn one glyph per scene cell (positions scaled, glyphs not). Start sequence: black 1.0 s, eye-blink 1.5 s, title 1 / 3 / 1 s, first hint.
+  The 3D view is a static stand-in. UI fades use the glyph-ramp rule (<code>uiStyle.fade</code>), not alpha.</div>
 
 <div class="controls">
+  <span class="grp">Scene grid: <button data-grid="160">160x60</button><button data-grid="240">240x90</button><button data-grid="320">320x120</button></span>
+  <span class="grp">UI mode: <button data-ui="layer">scaled layer</button><button data-ui="cells">1x scene cells</button></span>
   <button id="replay">Replay start sequence</button>
   <button id="hold">Jump to title hold</button>
   <button id="hints">Show all hints</button>
@@ -33,12 +38,13 @@
   <button id="end">End screen</button>
   <button id="endLit">End screen (beacon lit)</button>
   <span class="note">t = <span class="val" id="tV"></span></span>
+  <span class="note" id="gridV"></span>
 </div>
 
 <h2>Checks</h2>
 <div id="checks"></div>
 
-<h2>Game screen mock (160x60)</h2>
+<h2>Game screen mock <span class="note" id="mockLabel"></span></h2>
 <canvas id="screen"></canvas>
 
 <h2>Logo at a larger font, with the hold-phase shine</h2>
@@ -55,9 +61,31 @@
   var A = window.ASSETS || {}, P = A.palette, M = A.models, ST = A.uiStyle;
   if (!P || !M || !M.title || !ST) { document.body.innerHTML = '<p class="fail">palette.js or models/title.js did not load.</p>'; return; }
   var U = P.util, rgb = P.rgb, FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
-  var GW = 160, GH = 60;
+  var UG = ST.uiGrid || { cols: 160, rows: 60 };
 
-  function makeGrid(canvas, cols, rows, px) {
+  // ---------------- grid state ----------------
+  var GRIDS = { 160: [160, 60], 240: [240, 90], 320: [320, 120] };
+  var GW = 160, GH = 60, UIMODE = 'layer', UW = UG.cols, UH = UG.rows;
+  var CANVAS_W = Math.max(960, Math.min(1600, window.innerWidth - 60));   // fixed px width: cells shrink as the grid grows
+  var CANVAS_H = Math.round(CANVAS_W * 9 / 16);
+
+  // a grid drawn with fractional cell sizes into a fixed-size canvas (so 320 cells really are half the width of 160)
+  function makeLayer(canvas, cols, rows, wPx, hPx) {
+    var ctx = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(wPx * dpr); canvas.height = Math.round(hPx * dpr);
+    canvas.style.width = wPx + 'px'; canvas.style.height = hPx + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var L = { ctx: ctx, cols: cols, rows: rows, cw: wPx / cols, ch: hPx / rows };
+    L.setGrid = function (c, r) { L.cols = c; L.rows = r; L.cw = wPx / c; L.ch = hPx / r; L.font(); };
+    L.font = function () { ctx.font = Math.round(L.ch * 0.82) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; };
+    L.cell = function (x, y, g, fg, bg) {
+      if (bg) { ctx.fillStyle = bg; ctx.fillRect(x * L.cw, y * L.ch, L.cw + 0.5, L.ch + 0.5); }
+      if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, (x + 0.5) * L.cw, (y + 0.5) * L.ch + 0.5); }
+    };
+    L.font();
+    return L;
+  }
+  function makeGrid(canvas, cols, rows, px) {   // fixed-cell grid (logo / fade strips)
     var ctx = canvas.getContext('2d'); ctx.font = px + 'px ' + FONT;
     var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25), dpr = window.devicePixelRatio || 1;
     canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
@@ -86,31 +114,41 @@
     ST.endText.lines.map(function (l) { return l.text; }), ST.endText.lines.filter(function (l) { return l.alt; }).map(function (l) { return l.alt; }), [ST.pause.text]).concat(S1.glyphs);
   check('All UI text is ASCII 32-126', texts.every(ascii), texts.filter(function (t) { return !ascii(t); }).join(' | '));
   check('Hint text exactly "WASD move - Mouse look"', ST.hints[0].text === 'WASD move - Mouse look');
+  // D-009 grid checks: layout lives in the fixed UI grid and fits it; text keeps >= minGlyphPx at 1920x1080 on every grid
+  var lay = T.layout, fitsUI = UG.cols === 160 && UG.rows === 60 && lay.centerX - T.anchor.x >= 0 && lay.centerX - T.anchor.x + T.size.w <= UG.cols &&
+    lay.top + T.size.h + SUB.layout.belowTitle + 1 <= UG.rows && ST.endText.top + ST.endText.lines.length * 2 <= UG.rows && ST.pause.row < UG.rows;
+  check('UI grid is fixed 160x60 (uiStyle.uiGrid); title, subtitle, end text and pause row fit it', fitsUI);
+  var longest = Math.max.apply(null, ST.hints.map(function (h) { return ST.hint.prefix.length + h.text.length + ST.hint.x + ST.hint.plate.pad; }).concat(ST.prompt.examples.map(function (s) { return s.length + 2; })));
+  check('Longest hint / prompt fits the UI grid width (' + longest + ' <= ' + UG.cols + ')', longest <= UG.cols);
+  var mp = ST.uiScale && ST.uiScale.minGlyphPx, pxOk = ST.uiScale && ST.uiScale.mode === 'layer' && mp && 1920 / UG.cols >= mp.w && 1080 / UG.rows >= mp.h;
+  check('uiScale.mode = "layer": UI glyph is ' + (1920 / UG.cols) + 'x' + (1080 / UG.rows) + ' px at 1920x1080 on every scene grid (min ' + (mp ? mp.w + 'x' + mp.h : '?') + '); scene-cell text at 320x120 would be 6x9 px', pxOk);
   var nf = checks.filter(function (c) { return !c.ok; }).length;
   document.getElementById('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
     checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.n + (c.d ? ' <span class="fail">' + c.d + '</span>' : '') + '</div>'; }).join('');
 
-  // ---------------- static stand-in scene ----------------
+  // ---------------- static stand-in scene (built for the current GW x GH, shapes in 160x60 units) ----------------
   var sg = [], sfg = [], sbg = [], out = { fg: [0, 0, 0], bg: [0, 0, 0] }, L = [0, 0, 0];
   function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-  (function buildScene() {
-    var Tm = P.timeOfDay.morning;
+  function buildScene() {
+    sg = []; sfg = []; sbg = [];
+    var Tm = P.timeOfDay.morning, kx = 160 / GW, ky = 60 / GH;
     for (var y = 0; y < GH; y++) for (var x = 0; x < GW; x++) {
-      var top = 9 + Math.round(4 * Math.sin(x * 0.09) + 3 * hash(x) + (x > 96 && x < 112 ? 6 : 0));
-      if (y < top) U.shadeSky(70 + x * 0.6, 12 + (top - y) * 2.2, out, 'morning');
+      var xs = x * kx, ys = y * ky;                                  // 160x60-space coordinates
+      var top = 9 + 4 * Math.sin(xs * 0.09) + 3 * hash(Math.floor(xs)) + (xs > 96 && xs < 112 ? 6 : 0);
+      if (ys < top) U.shadeSky(70 + xs * 0.6, 12 + (top - ys) * 2.2, out, 'morning');
       else {
         L[0] = L[1] = L[2] = 0; U.addLight(L, Tm.ambient, Tm.ambientI);
-        var dx = (x - 128) / 26, dy = (y - 44) / 13, d = Math.sqrt(dx * dx + dy * dy);
+        var dx = (xs - 128) / 26, dy = (ys - 44) / 13, d = Math.sqrt(dx * dx + dy * dy);
         U.addLight(L, 'torch', 1.0 * U.falloff(d * 3, 6));
-        if (y < 44) U.shade(x > 118 ? 'stone_scorched' : x < 40 ? 'stone_moss' : 'stone', L, x * 0.1, (44 - y) * 0.2, 6, out, { z: (44 - y) * 0.2 });
+        if (ys < 44) U.shade(xs > 118 ? 'stone_scorched' : xs < 40 ? 'stone_moss' : 'stone', L, xs * 0.1, (44 - ys) * 0.2, 6, out, { z: (44 - ys) * 0.2 });
         else {
-          var ex = (x - 64) / 30, ey = (y - 52) / 6; if (ex * ex + ey * ey < 1) U.addLight(L, Tm.sun, 0.87);
-          U.shade('floor', L, x * 0.1, (y - 44) * 0.35, 6, out, { z: 0 });
+          var ex = (xs - 64) / 30, ey = (ys - 52) / 6; if (ex * ex + ey * ey < 1) U.addLight(L, Tm.sun, 0.87);
+          U.shade('floor', L, xs * 0.1, (ys - 44) * 0.35, 6, out, { z: 0 });
         }
       }
       sg.push(out.glyph); sfg.push(out.fg.slice()); sbg.push(out.bg.slice());
     }
-  })();
+  }
 
   // ---------------- fade rule ----------------
   var RAMP = P.ramps[ST.fade.ramp];
@@ -121,8 +159,8 @@
   }
   function gainOf(a) { return a <= 0 ? 0 : ST.fade.minGain + (1 - ST.fade.minGain) * a; }
 
-  // ---------------- frame buffer ----------------
-  var FG = [], BG = [], GL = [], PLATE = [];
+  // ---------------- frame buffers: scene (GW x GH) and UI layer (UW x UH) ----------------
+  var FG = [], BG = [], GL = [], PLATE = [], UGL = [], UFG = [];
   function reset(sceneA) {
     for (var i = 0; i < GW * GH; i++) {
       var a = sceneA, g = gainOf(a);
@@ -131,9 +169,16 @@
       BG[i] = [sbg[i][0] * a, sbg[i][1] * a, sbg[i][2] * a];
       PLATE[i] = false;
     }
+    for (i = 0; i < UW * UH; i++) { UGL[i] = ' '; UFG[i] = null; }
   }
+  // UI-grid -> scene mapping (uiStyle.uiScale.rule / plate). In 'cells' mode positions scale, glyphs stay 1 cell.
+  function sx() { return GW / UW; }
+  function sy() { return GH / UH; }
+  // plate on UI cells [x0,x0+w) x [y0,y0+h) (+pad): darkens the SCENE cells underneath
   function plate(x0, y0, w, h, pad, mul) {
-    for (var y = y0 - pad; y < y0 + h + pad; y++) for (var x = x0 - pad; x < x0 + w + pad; x++) {
+    var s1 = sx(), s2 = sy();
+    var cx0 = Math.floor((x0 - pad) * s1), cx1 = Math.ceil((x0 + w + pad) * s1), cy0 = Math.floor((y0 - pad) * s2), cy1 = Math.ceil((y0 + h + pad) * s2);
+    for (var y = cy0; y < cy1; y++) for (var x = cx0; x < cx1; x++) {
       if (x < 0 || y < 0 || x >= GW || y >= GH) continue; var i = x + y * GW; if (PLATE[i]) continue; PLATE[i] = true;
       BG[i] = [BG[i][0] * mul, BG[i][1] * mul, BG[i][2] * mul];
       FG[i] = [FG[i][0] * mul, FG[i][1] * mul, FG[i][2] * mul];
@@ -141,11 +186,11 @@
     }
   }
   function put(x, y, g, colorKey, a, mix) {
-    if (x < 0 || y < 0 || x >= GW || y >= GH || g === ' ' || a <= 0) return;
-    var i = x + y * GW, c = rgb[colorKey], k = gainOf(a);
+    if (x < 0 || y < 0 || x >= UW || y >= UH || g === ' ' || a <= 0) return;
+    var i = x + y * UW, c = rgb[colorKey], k = gainOf(a);
     var col = [c[0] * k, c[1] * k, c[2] * k];
     if (mix) col = [col[0] + (255 - col[0]) * mix, col[1] + (255 - col[1]) * mix, col[2] + (255 - col[2]) * mix];
-    GL[i] = fadeGlyph(g, a); FG[i] = col;
+    UGL[i] = fadeGlyph(g, a); UFG[i] = col;
   }
   function text(x, y, s, baseKey, keyWords, a) {
     var spans = []; (keyWords || []).forEach(function (w) { var p = s.indexOf(w); if (p >= 0) spans.push([p, p + w.length]); });
@@ -154,33 +199,36 @@
       put(x + i, y, s.charAt(i), isKey ? ST.hint.key : baseKey, a);
     }
   }
+  // layout numbers are in the 160x60 UI grid; in 'cells' mode they are stretched onto the scene grid
+  function LX(v) { return UIMODE === 'layer' ? v : Math.round(v * GW / UG.cols); }
+  function LY(v) { return UIMODE === 'layer' ? v : Math.round(v * GH / UG.rows); }
 
   // ---------------- UI elements ----------------
   function drawTitle(a, t, shine) {
-    var S = T.animations.show.frames[0].S, x0 = T.layout.centerX - T.anchor.x, y0 = T.layout.top;
+    var S = T.animations.show.frames[0].S, x0 = LX(T.layout.centerX) - T.anchor.x, y0 = LY(T.layout.top);
     var sh = T.shine, pos = -16 + ((t % sh.period) / sh.period) * (T.size.w + 32);
     for (var y = 0; y < T.size.h; y++) for (var x = 0; x < T.size.w; x++) {
       var g = S.glyphs[y].charAt(x); if (g === ' ') continue;
       var m = 0; if (shine && g === '#') { var q = x - sh.slope * y - pos; if (q >= 0 && q < sh.width) m = sh.amount; }
       put(x0 + x, y0 + y, g, T.keys[S.fg[y].charAt(x)].c, a, m);
     }
-    var SS = SUB.animations.show.frames[0].S, sx = T.layout.centerX - SUB.anchor.x, sy = y0 + T.size.h + SUB.layout.belowTitle;
-    for (x = 0; x < SUB.size.w; x++) { var sg2 = SS.glyphs[0].charAt(x); if (sg2 !== ' ') put(sx + x, sy, sg2, SUB.keys[SS.fg[0].charAt(x)].c, a); }
+    var SS = SUB.animations.show.frames[0].S, sx0 = LX(T.layout.centerX) - SUB.anchor.x, sy0 = y0 + T.size.h + SUB.layout.belowTitle;
+    for (x = 0; x < SUB.size.w; x++) { var sg2 = SS.glyphs[0].charAt(x); if (sg2 !== ' ') put(sx0 + x, sy0, sg2, SUB.keys[SS.fg[0].charAt(x)].c, a); }
   }
   function drawHints(list, alphas) {
     var H = ST.hint;
     list.forEach(function (h, n) {
-      var s = H.prefix + h.text, y = GH - 1 - H.yFromBottom - n * (1 + H.lineGap);
-      plate(H.x, y, s.length, 1, H.plate.pad, H.plate.bgMul);
+      var s = H.prefix + h.text, y = UH - 1 - LY(H.yFromBottom) - n * (1 + H.lineGap);
+      plate(LX(H.x), y, s.length, 1, H.plate.pad, H.plate.bgMul);
     });
     list.forEach(function (h, n) {
-      var y = GH - 1 - H.yFromBottom - n * (1 + H.lineGap), a = alphas[n];
-      text(H.x, y, H.prefix, H.prefixColor, [], a);
-      text(H.x + H.prefix.length, y, h.text, H.text, h.keys, a);
+      var y = UH - 1 - LY(H.yFromBottom) - n * (1 + H.lineGap), a = alphas[n];
+      text(LX(H.x), y, H.prefix, H.prefixColor, [], a);
+      text(LX(H.x) + H.prefix.length, y, h.text, H.text, h.keys, a);
     });
   }
   function drawCrosshair(active, promptText) {
-    var cx = GW / 2, cy = GH / 2;
+    var cx = Math.floor(UW / 2), cy = Math.floor(UH / 2);
     put(cx, cy, ST.crosshair.glyph, active ? ST.crosshair.active : ST.crosshair.idle, 1);
     if (promptText) {
       var y = cy + ST.prompt.rowsBelowCrosshair, x = Math.round(cx - promptText.length / 2);
@@ -189,14 +237,14 @@
     }
   }
   function drawEnd(t, lit) {
-    var E = ST.endText, row = E.top, typed = Math.max(0, t - 2.2) * E.cps, lines = E.lines, n = 0;
+    var E = ST.endText, row = LY(E.top), typed = Math.max(0, t - 2.2) * E.cps, lines = E.lines;
     for (var i = 0; i < lines.length; i++) {
       var s = (i === 0 && lit) ? lines[i].alt : lines[i].text;
       if (lines[i].delay) typed -= lines[i].delay * E.cps;
       var show = Math.max(0, Math.min(s.length, Math.floor(typed)));
-      var x = Math.round(GW / 2 - s.length / 2);
+      var x = Math.round(UW / 2 - s.length / 2);
       text(x, row, s.slice(0, show), lines[i].color, lines[i].keys || [], 1);
-      if (show < s.length) {                       // still typing this line (or waiting on its delay)
+      if (show < s.length) {
         if (typed >= 0 && Math.floor(t * E.cursor.blinkHz * 2) % 2 === 0) put(x + show, row, E.cursor.glyph, E.dim, 1);
         break;
       }
@@ -220,7 +268,26 @@
   document.getElementById('end').onclick = function () { setMode('end', { lit: false }); };
   document.getElementById('endLit').onclick = function () { setMode('end', { lit: true }); };
 
-  var screen = makeGrid(document.getElementById('screen'), GW, GH, 9);
+  // ---------------- grid / ui-mode toggles ----------------
+  var screen = makeLayer(document.getElementById('screen'), GW, GH, CANVAS_W, CANVAS_H);
+  var uiLayer = { cw: CANVAS_W / UW, ch: CANVAS_H / UH };
+  function applyGrid() {
+    var g = GRIDS[GW]; GW = g[0]; GH = g[1];
+    if (UIMODE === 'layer') { UW = UG.cols; UH = UG.rows; } else { UW = GW; UH = GH; }
+    uiLayer.cw = CANVAS_W / UW; uiLayer.ch = CANVAS_H / UH;
+    screen.setGrid(GW, GH); buildScene();
+    var pxW = (1920 / GW).toFixed(1), pxH = (1080 / GH).toFixed(1), mockW = (CANVAS_W / GW).toFixed(1), mockH = (CANVAS_H / GH).toFixed(1);
+    var s = (GW / UW).toFixed(2);
+    document.getElementById('gridV').textContent = 'scene cell ' + pxW + 'x' + pxH + ' px at 1920x1080 (mock ' + mockW + 'x' + mockH + ' px, x' + (1920 / CANVAS_W).toFixed(2) + ' to real); UI glyph = ' +
+      (UIMODE === 'layer' ? (1920 / UW).toFixed(1) + 'x' + (1080 / UH).toFixed(1) + ' px = ' + s + ' scene cells' : pxW + 'x' + pxH + ' px (1 scene cell)');
+    document.getElementById('mockLabel').textContent = '(' + GW + 'x' + GH + ', UI ' + (UIMODE === 'layer' ? UG.cols + 'x' + UG.rows + ' layer' : '1x scene cells') + ')';
+    [].forEach.call(document.querySelectorAll('[data-grid]'), function (b) { b.classList.toggle('on', +b.dataset.grid === GW); });
+    [].forEach.call(document.querySelectorAll('[data-ui]'), function (b) { b.classList.toggle('on', b.dataset.ui === UIMODE); });
+  }
+  [].forEach.call(document.querySelectorAll('[data-grid]'), function (b) { b.onclick = function () { GW = +b.dataset.grid; applyGrid(); }; });
+  [].forEach.call(document.querySelectorAll('[data-ui]'), function (b) { b.onclick = function () { UIMODE = b.dataset.ui; applyGrid(); }; });
+  GW = 320; applyGrid();                                  // D-009 default: open on 320x120 with the scaled UI layer
+
   function render() {
     var t = performance.now() / 1000 - t0;
     document.getElementById('tV').textContent = t.toFixed(1) + ' s (' + mode + ')';
@@ -239,25 +306,32 @@
         drawHints([ST.hints[0]], [ha]);
       }
       drawCrosshair(false);
-      // blink mask
-      var o = blinkOpen(t - 1.0), half = GH / 2;
+      // blink mask: a SCENE effect (uiStyle.uiScale.blink), rows of the scene grid
+      var o = blinkOpen(t - 1.0), half = GH / 2, edgeRows = ST.blink.edgeRows * (GH / 60);
       for (var y = 0; y < GH; y++) {
-        var dist = Math.abs(y + 0.5 - half) / half, edge = dist <= o && dist > o - 1.5 / half;
+        var dist = Math.abs(y + 0.5 - half) / half, edge = dist <= o && dist > o - (edgeRows + 0.5) / half;
         for (var x = 0; x < GW; x++) {
           var i = x + y * GW;
           if (t < 1.0 || dist > o) { GL[i] = ' '; BG[i] = [0, 0, 0]; }
           else if (edge && o < 1) { GL[i] = ST.blink.edgeGlyph; var ec = rgb[ST.blink.edgeColor]; FG[i] = [ec[0] * 0.5, ec[1] * 0.5, ec[2] * 0.5]; BG[i] = [BG[i][0] * 0.4, BG[i][1] * 0.4, BG[i][2] * 0.4]; }
         }
       }
+      if (t < 1.0 || o < 1) for (var j = 0; j < UW * UH; j++) { var uy = Math.floor(j / UW), ud = Math.abs(uy + 0.5 - UH / 2) / (UH / 2); if (t < 1.0 || ud > o) UGL[j] = ' '; }
     } else if (mode === 'hints') {
       reset(1); drawHints(ST.hints, ST.hints.map(function () { return 1; })); drawCrosshair(false);
     } else if (mode === 'prompt') {
       reset(1); drawCrosshair(true, ST.prompt.examples[Math.floor(t / 2) % ST.prompt.examples.length]);
     } else if (mode === 'pause') {
-      reset(1); var pt = ST.pause.text, px = Math.round(GW / 2 - pt.length / 2);
-      plate(px, ST.pause.row, pt.length, 1, ST.pause.plate.pad, ST.pause.plate.bgMul); text(px, ST.pause.row, pt, ST.pause.color, [], 1);
+      reset(1); var pt = ST.pause.text, px = Math.round(UW / 2 - pt.length / 2), prow = LY(ST.pause.row);
+      plate(px, prow, pt.length, 1, ST.pause.plate.pad, ST.pause.plate.bgMul); text(px, prow, pt, ST.pause.color, [], 1);
     }
-    for (var j = 0; j < GW * GH; j++) screen.cell(j % GW, Math.floor(j / GW), GL[j], css(FG[j]), css(BG[j]));
+    // scene pass
+    var ctx = screen.ctx; ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    screen.setGrid(GW, GH);
+    for (var k = 0; k < GW * GH; k++) screen.cell(k % GW, Math.floor(k / GW), GL[k], css(FG[k]), css(BG[k]));
+    // UI layer pass: transparent bg, glyph + fg only, at the UI cell size
+    screen.cols = UW; screen.rows = UH; screen.cw = uiLayer.cw; screen.ch = uiLayer.ch; screen.font();
+    for (k = 0; k < UW * UH; k++) if (UGL[k] !== ' ') screen.cell(k % UW, Math.floor(k / UW), UGL[k], css(UFG[k]), null);
   }
 
   // ---------------- logo + fade strips ----------------
@@ -271,8 +345,8 @@
       if (g === '#' && q >= 0 && q < sh.width) c = [c[0] + (255 - c[0]) * sh.amount, c[1] + (255 - c[1]) * sh.amount, c[2] + (255 - c[2]) * sh.amount];
       logo.cell(x + 2, y + 1, g, css(c), '#000');
     }
-    var SS = SUB.animations.show.frames[0].S, sx = 2 + T.anchor.x - SUB.anchor.x;
-    for (x = 0; x < SUB.size.w; x++) { var s2 = SS.glyphs[0].charAt(x); if (s2 !== ' ') logo.cell(sx + x, T.size.h + 2, s2, css(rgb[SUB.keys[SS.fg[0].charAt(x)].c]), '#000'); }
+    var SS = SUB.animations.show.frames[0].S, sx0 = 2 + T.anchor.x - SUB.anchor.x;
+    for (x = 0; x < SUB.size.w; x++) { var s2 = SS.glyphs[0].charAt(x); if (s2 !== ' ') logo.cell(sx0 + x, T.size.h + 2, s2, css(rgb[SUB.keys[SS.fg[0].charAt(x)].c]), '#000'); }
   }
   (function drawFades() {
     var AS = [0.15, 0.3, 0.5, 0.7, 0.85, 1.0], S = T.animations.show.frames[0].S, cropW = 30;

@@ -65,6 +65,8 @@ Density order matters more than the character's shape. Each ramp in `palette.ram
 8. **Half-scale test**: every prop must still read at half size. If it does not, simplify the silhouette, not the colors.
 9. **Outlines**: sprites get a dark outline (`ironDark`, `stoneDark`, `mortar`, or bg-only cells) only where the silhouette would merge with a background of the same value. Never use a full black outline around everything, since it reads as a cartoon sticker against lit stone.
 10. **UI text** uses `uiText` on the scene, never pure white (white is reserved for glints and flashes). Hints use `uiHint`, the dim crosshair uses `uiDim`, and targeted items get `gold`.
+11. **UI text never shrinks with the scene grid** (D-009: 160x60 / 240x90 / 320x120). All UI (title card, hints, prompts, end text, pause, future HUD) is laid out in the fixed **160x60 UI grid** and drawn as a separate text layer, so a glyph is 12x18 px at 1920x1080 on every grid; the minimum readable glyph is 8x12 px (`uiStyle.uiScale.minGlyphPx`). Never author UI positions in scene cells. Plates and the eyelid blink are scene effects and follow the scene grid.
+12. **Props on finer grids**: art is sampled at `rows/60` times the 160x60 scale (2x at 320x120), so near props show 2x2 glyph blocks. Keep silhouettes and emissive accents readable at that blockiness (check `preview/props.html` at 320); the upscale cap is `3 * rows / 60`. If a prop needs to be crisp near the player at 320, draw a `lods.double` tier instead of thinning the base art.
 
 ## 6. Distance and fog
 - Interior: fog `#262f45`, starts 12 m, full 60 m. Glyphs thin to space and colors go cool and dark. Distance feels like depth, not haze.
