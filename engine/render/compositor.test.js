@@ -7,9 +7,10 @@ import { AssetRegistry } from '../core/assets.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
-import { GBuffer } from './GBuffer.js';
+import { GBuffer, KIND_WALL } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
+import { beginFrame, castSectors } from './sectorCaster.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import testRoomDef from '../../design/levels/test_room.js';
@@ -133,6 +134,126 @@ function worldDefFor(origin) {
     for (let i = 0; i < 100; i++) { cam.yawDeg = i % 360; renderWorld(fb, world, cam); }
     ok('100 frames of renderWorld run without throwing (run with --expose-gc for the heap-growth check)', true);
   }
+}
+
+// --- Architect review #1, item 3: two-structure pixel-level occlusion test ---
+// A tiny near room (5x5) with a single-cell gap in its east wall, and a far
+// room (5x5, fully enclosed) placed 5 m beyond the gap. Camera inside the
+// near room, facing east through the gap: rays that pass straight through
+// see the far room's west wall (planeId struct bits = 1); rays that curve
+// enough to miss the gap hit the near room's own solid east wall (struct
+// bits = 0) and must be untouched by the far structure's cast (item 1).
+{
+  const roomLegend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    'S': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false, start: true, facingDeg: 90 },
+  };
+  const nearDef = {
+    name: 'occ_near', legend: roomLegend,
+    rows: [
+      '#####',
+      '#...#',
+      '#.S.#',
+      '#....', // east wall open at col 4, this row only - the gap
+      '#####',
+    ],
+  };
+  const farDef = {
+    name: 'occ_far', legend: roomLegend,
+    rows: [
+      '#####',
+      '#...#',
+      '#.S.#',
+      '#...#',
+      '#####',
+    ],
+  };
+
+  const world = new World();
+  const near = world.placeStructure(nearDef, { x: 0, y: 0, z: 0 }, 'near');
+  const far = world.placeStructure(farDef, { x: 10, y: 0, z: 0 }, 'far');
+
+  const cam = { x: 2.5, y: 3.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // inside `near`, facing east through the gap
+
+  // Cast `near` alone first, to learn which columns it leaves open (the gap)
+  // vs. closes (its own solid east wall) - the oracle for what "must be
+  // untouched by the far cast" and "must show the far structure" mean below.
+  const fbNearOnly = makeFb();
+  bindLevel(fbNearOnly.matTable, near.level);
+  beginFrame(fbNearOnly);
+  castSectors(fbNearOnly, near.level, cam, near.origin);
+
+  const fbBoth = makeFb();
+  bindLevel(fbBoth.matTable, near.level);
+  bindLevel(fbBoth.matTable, far.level);
+  beginFrame(fbBoth);
+  castSectors(fbBoth, near.level, cam, near.origin);
+  castSectors(fbBoth, far.level, cam, far.origin);
+
+  let closedColumnsUntouched = true;
+  let sawFarStruct = false;
+  let farOnlyInOpenColumns = true;
+  for (let x = 0; x < COLS; x++) {
+    const closedByNear = !fbNearOnly.spans.isOpen(x);
+    for (let y = 0; y < ROWS; y++) {
+      const i = y * COLS + x;
+      const structOfFar = (fbBoth.gbuf.planeId[i] >>> 28) & 0x7;
+      if (closedByNear) {
+        if (fbBoth.rt.glyphIdx[i] !== fbNearOnly.rt.glyphIdx[i]) closedColumnsUntouched = false;
+        for (let k = 0; k < 4; k++) {
+          if (fbBoth.rt.fg[i * 4 + k] !== fbNearOnly.rt.fg[i * 4 + k]) closedColumnsUntouched = false;
+          if (fbBoth.rt.bg[i * 4 + k] !== fbNearOnly.rt.bg[i * 4 + k]) closedColumnsUntouched = false;
+        }
+        if (fbBoth.gbuf.kind[i] !== fbNearOnly.gbuf.kind[i]) closedColumnsUntouched = false;
+        if (fbBoth.depth.depth[i] !== fbNearOnly.depth.depth[i]) closedColumnsUntouched = false;
+        if (fbBoth.gbuf.kind[i] !== 0 && structOfFar === 1) farOnlyInOpenColumns = false;
+      } else if (fbBoth.gbuf.kind[i] !== 0 && structOfFar === 1) {
+        sawFarStruct = true;
+      }
+    }
+  }
+  ok('two-structure occlusion: columns closed by the near structure are byte-identical to the near-only render (item 1)', closedColumnsUntouched);
+  ok('two-structure occlusion: the far structure is never drawn into a column the near structure closed', farOnlyInOpenColumns);
+  ok('two-structure occlusion: at least one open (gap) column shows the far structure through the opening (item 2)', sawFarStruct);
+}
+
+// --- Architect review #1, item 2 (compositor-level case): camera outside a
+// single structure's own footprint must still cast it (ray entry into the
+// footprint), not draw nothing. -----------------------------------------
+{
+  const wallLegend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    'S': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false, start: true, facingDeg: 90 },
+  };
+  const roomDef = {
+    name: 'occ_outside', legend: wallLegend,
+    rows: [
+      '#####',
+      '#...#',
+      '#.S.#',
+      '#...#',
+      '#####',
+    ],
+  };
+  const world = new World();
+  const room = world.placeStructure(roomDef, { x: 0, y: 0, z: 0 }, 'room');
+  const cam = { x: -10, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // 10 m west of the footprint, facing east at it
+
+  const fb = makeFb();
+  bindLevel(fb.matTable, room.level);
+  beginFrame(fb);
+  castSectors(fb, room.level, cam, room.origin);
+
+  let sawWall = false;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (fb.gbuf.kind[i] === KIND_WALL && Number.isFinite(fb.depth.depth[i]) && fb.depth.depth[i] > 8 && fb.depth.depth[i] < 14) {
+      sawWall = true;
+      break;
+    }
+  }
+  ok('camera outside footprint: the structure\'s west wall is still cast (~10 m away), not left undrawn', sawWall);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

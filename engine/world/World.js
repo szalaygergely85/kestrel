@@ -4,7 +4,7 @@
 // for the build order this follows.
 import { loadLevel } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { packLevel } from './packed.js';
+import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
 import { EventRing } from '../entities/eventRing.js';
@@ -61,6 +61,23 @@ export class World {
     this._eventRing = new EventRing(256);
     this._outsideScratch = { floorH: 0, ceilH: 'sky', wallMat: 'rock', floorMat: 'grass', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'rock' };
     this.eventsDropped = 0;
+
+    // Item 5a (architect review #1): bound once here, not re-created (a
+    // fresh closure) on every `flushEvents()`/sim-step call.
+    this._dispatchEvent = (id, event, arg) => {
+      const forId = this._listeners.get(id);
+      if (!forId) return;
+      const set = forId.get(event);
+      if (!set || set.size === 0) return;
+      const handle = this._handles.get(id); // may be null if removed since the event was queued
+      if (!handle) return;
+      // Iterating the Set directly (not `Array.from(set)`) is safe re-entrancy:
+      // `off()` removing an entry mid-iteration, or `on()` adding one, are
+      // both defined behaviour for a live JS Set (a removed-then-added same
+      // key is simply visited once), and the ring's own drain already
+      // snapshots which (id,event,arg) triples fire this call.
+      for (const fn of set) fn(handle, event, arg);
+    };
   }
 
   /**
@@ -239,7 +256,11 @@ export class World {
         if (sector.tag === tag && sector.dynamic) {
           const d = sector.dynamic;
           sector.ceilH = sector.floorH + (d.ceilOpen - sector.floorH) * ease(d.ease, t);
-          s.packed = packLevel(s.level, null);
+          // Item 4 (architect review #1): update the changed cells in place
+          // (bumps `packed.version`/`dirtyY0..1`) instead of reallocating a
+          // fresh PackedLevel every call - this runs on every animation sim
+          // step (the grate's open/close), not just once per interaction.
+          updateAnimatedSector(s.packed, s.level, ch);
           s.dynamics[tag] = { t };
           this.renderVersion++;
           if (this.events) this.events.emit('world:sectorAnimated', { structureId: s.id, tag, t01: t });
@@ -270,6 +291,10 @@ export class World {
   }
 
   remove(id) {
+    // Item 5b (architect review #1): an unknown id must be a no-op, not
+    // create-then-immediately-remove a handle (which used to emit a spurious
+    // `entity:removed`).
+    if (!this._entities.has(id)) return;
     const h = this._handleFor(id);
     h.remove();
   }
@@ -320,15 +345,7 @@ export class World {
 
   /** Drains the event ring, dispatching to per-entity listeners (`handle.on`). Called by the loop after each sim step. */
   flushEvents() {
-    this._eventRing.drain((id, event, arg) => {
-      const forId = this._listeners.get(id);
-      if (!forId) return;
-      const set = forId.get(event);
-      if (!set || set.size === 0) return;
-      const handle = this._handles.get(id); // may be null if removed since the event was queued
-      if (!handle) return;
-      for (const fn of Array.from(set)) fn(handle, event, arg);
-    });
+    this._eventRing.drain(this._dispatchEvent);
     this.eventsDropped = this._eventRing.dropped;
   }
 

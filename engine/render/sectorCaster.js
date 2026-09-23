@@ -249,6 +249,15 @@ function compassAzimuthDeg(dirX, dirY) {
 // Module-level, reused, resized only when `cols` changes (architecture.md 9
 // rule 4: typed arrays sized by cols/rows are allocated once, never per
 // frame). Replaces the per-frame `openSpans` object array (US-004b AC4).
+// Fallback singleton for callers that do NOT pass `opts.openSpans` (bench-cast,
+// ?shadetest=1, compare-detail-export): `castScene` resets and owns it itself,
+// exactly as before. When `opts.openSpans` IS passed (US-025 architect review
+// #1, item 1/2: `castSectors`/the compositor casting multiple structures into
+// one frame), that instance is caller-owned - `castScene` never resets it
+// (only `beginFrame` does, once per frame) and never copies over it; it reads
+// each column's CURRENT [top,bottom] as this call's starting span (so a
+// nearer structure's closed/narrowed columns are respected) and skips columns
+// already fully closed.
 let openSpans = null;
 
 /**
@@ -288,8 +297,12 @@ export function castScene(rt, level, camera, palette, opts = {}) {
   primeAmbientLight(P);
   primeFastShadeFrame(ambientL);
 
-  if (!openSpans || openSpans.cols !== cols) openSpans = new OpenSpans(cols);
-  openSpans.reset(rows);
+  let spans = opts.openSpans;
+  if (!spans) {
+    if (!openSpans || openSpans.cols !== cols) openSpans = new OpenSpans(cols);
+    openSpans.reset(rows);
+    spans = openSpans;
+  }
 
   const origin = opts.origin || { x: 0, y: 0, z: 0 };
 
@@ -325,7 +338,7 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     depthBuffer: opts.depthBuffer || null,
     skyFallback: !!opts.skyFallback,
     useReferenceShader: opts.shader === 'reference',
-    openSpans,
+    openSpans: spans,
     // castPlane() return value ("no object returns" - architecture.md 9
     // rule 3): it writes the clipped [r0,r1] row range here instead.
     _planeR0: 0, _planeR1: -1,
@@ -353,6 +366,9 @@ export function castScene(rt, level, camera, palette, opts = {}) {
   }
 
   for (let x = 0; x < cols; x++) {
+    // A nearer structure/pass already closed this column this frame - never
+    // re-open it (item 1: caller-owned spans, no reset here).
+    if (!ctx.openSpans.isOpen(x)) continue;
     const cameraX = (2 * (x + 0.5)) / cols - 1;
     const rayDirX = dirX + planeX * cameraX;
     const rayDirY = dirY + planeY * cameraX;
@@ -361,7 +377,7 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     castColumn(rt, level, ctx, x, rayDirX, rayDirY);
   }
 
-  return openSpans;
+  return ctx.openSpans;
 }
 
 // row <-> world height (at a FIXED distance `dist`) - the y-shear projection.
@@ -389,15 +405,52 @@ function elevAtRow(ctx, row) {
 
 // Resets the reused `ray` scratch object for a new column's DDA walk
 // (architecture.md 9 rule 3: no per-column closures/objects).
-function startRay(ctx, rayDirX, rayDirY) {
-  ray.mapX = Math.floor(ctx.posX);
-  ray.mapY = Math.floor(ctx.posY);
+// `startX`/`startY` seed `mapX`/`mapY`/`sideDist*` (where the DDA WALKS
+// from); `ctx.posX`/`posY` (the true camera position) stay the distance
+// reference throughout (`ddaStep`'s `perpDist` formula reads them directly),
+// so starting the walk from a point other than the camera - the level-bbox
+// entry point, item 2 below - still yields correct camera-relative distances.
+function startRay(ctx, rayDirX, rayDirY, startX, startY) {
+  ray.mapX = Math.floor(startX);
+  ray.mapY = Math.floor(startY);
   ray.deltaDistX = rayDirX === 0 ? 1e30 : Math.abs(1 / rayDirX);
   ray.deltaDistY = rayDirY === 0 ? 1e30 : Math.abs(1 / rayDirY);
-  if (rayDirX < 0) { ray.stepX = -1; ray.sideDistX = (ctx.posX - ray.mapX) * ray.deltaDistX; }
-  else { ray.stepX = 1; ray.sideDistX = (ray.mapX + 1 - ctx.posX) * ray.deltaDistX; }
-  if (rayDirY < 0) { ray.stepY = -1; ray.sideDistY = (ctx.posY - ray.mapY) * ray.deltaDistY; }
-  else { ray.stepY = 1; ray.sideDistY = (ray.mapY + 1 - ctx.posY) * ray.deltaDistY; }
+  if (rayDirX < 0) { ray.stepX = -1; ray.sideDistX = (startX - ray.mapX) * ray.deltaDistX; }
+  else { ray.stepX = 1; ray.sideDistX = (ray.mapX + 1 - startX) * ray.deltaDistX; }
+  if (rayDirY < 0) { ray.stepY = -1; ray.sideDistY = (startY - ray.mapY) * ray.deltaDistY; }
+  else { ray.stepY = 1; ray.sideDistY = (ray.mapY + 1 - startY) * ray.deltaDistY; }
+}
+
+// (Item 2, architect review #1) When the camera sits outside a structure's
+// own footprint (`[0,level.width) x [0,level.height)`), the DDA must still
+// be able to cast it: slab-clip the ray against that box and hand back the
+// entry point (nudged a hair inward) for `startRay` to walk from. Returns
+// `{valid:false}` when the ray never crosses the box (behind the camera, or
+// parallel and offset) - that column has nothing to draw for this level.
+function footprintEntry(ctx, level, rayDirX, rayDirY) {
+  const { posX, posY } = ctx;
+  const w = level.width, h = level.height;
+  if (posX >= 0 && posX < w && posY >= 0 && posY < h) return { valid: true, x: posX, y: posY };
+
+  let tMin = -Infinity, tMax = Infinity;
+  if (rayDirX !== 0) {
+    const t1 = (0 - posX) / rayDirX, t2 = (w - posX) / rayDirX;
+    tMin = Math.max(tMin, Math.min(t1, t2));
+    tMax = Math.min(tMax, Math.max(t1, t2));
+  } else if (posX < 0 || posX > w) {
+    return { valid: false };
+  }
+  if (rayDirY !== 0) {
+    const t1 = (0 - posY) / rayDirY, t2 = (h - posY) / rayDirY;
+    tMin = Math.max(tMin, Math.min(t1, t2));
+    tMax = Math.min(tMax, Math.max(t1, t2));
+  } else if (posY < 0 || posY > h) {
+    return { valid: false };
+  }
+  if (tMax < tMin || tMax < 0) return { valid: false };
+
+  const t = Math.max(tMin, 0) + 1e-4; // nudge past the boundary, into the first cell
+  return { valid: true, x: posX + rayDirX * t, y: posY + rayDirY * t };
 }
 
 // Advances `ray` by one DDA step, writing `ray.side`/`ray.perpDist` in
@@ -459,10 +512,25 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
   const { posX, posY } = ctx;
   const azimuthDeg = compassAzimuthDeg(rayDirX, rayDirY);
 
-  startRay(ctx, rayDirX, rayDirY);
+  // Item 1 (architect review #1): the incoming span is caller-owned and may
+  // already be narrowed by a nearer structure cast earlier this frame - start
+  // (and clip) this column's walk to exactly that, never the full [0,rows-1].
+  let openTop = ctx.openSpans.top[x];
+  let openBottom = ctx.openSpans.bottom[x];
 
-  let openTop = 0;
-  let openBottom = ctx.rows - 1;
+  // Item 2: the camera may be outside THIS level's own footprint (a
+  // structure whose bbox doesn't contain the camera) - slab-clip the ray to
+  // the footprint and start the DDA at the entry cell instead of giving up
+  // immediately (the old behaviour: first `sectorAt` outside the grid ->
+  // `farSector` null -> instant return, drawing nothing).
+  const entry = footprintEntry(ctx, level, rayDirX, rayDirY);
+  if (!entry.valid) {
+    // Never crosses this level's footprint at all - leave the span exactly
+    // as it came in, for whatever casts next (another structure/terrain).
+    resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, Infinity, ctx.rows, false, openTop - 1);
+    return;
+  }
+  startRay(ctx, rayDirX, rayDirY, entry.x, entry.y);
   let skyPending = false; // sky was requested but not yet painted - deferred to column end (US-004b)
   let ceilingFilledTo = openTop - 1; // highest row index a ceiling segment has already drawn
   let floorFilledTo = ctx.rows; // lowest-numbered (closest-to-horizon) row any floor-ish plane has reached; ctx.rows = "nothing yet"
@@ -718,7 +786,13 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
 // scratch fields (reused every call, like `ctx._planeR0/1`) and read back
 // by the caller.
 function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending) {
-  if (openTop <= openBottom && dFar > dNearFloor) {
+  // (Item 2) `sector === VOID_SECTOR` means the ray hasn't reached (or has
+  // left) this level's footprint - there is no floor to draw for the void
+  // itself. The `sector.ceilH === 'sky'` branch below already special-cases
+  // VOID_SECTOR for the ceiling/sky-band side (case (d)); this guard is its
+  // floor-side counterpart, only reachable now that a column can legitimately
+  // start with `sector` == VOID_SECTOR (camera outside the footprint).
+  if (sector !== VOID_SECTOR && openTop <= openBottom && dFar > dNearFloor) {
     castPlane(rt, x, ctx, sector.floorMat, sector.floorMatId, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH,
       sector.solid ? GK_TOP : GK_FLOOR);
     if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
@@ -863,24 +937,19 @@ export function beginFrame(fb) {
  * unchanged `castScene`: copies its per-frame result into the caller-owned
  * `fb.spans` so multiple passes can share one OpenSpans instance.
  *
- * Known limitation (fine for this story - a single test_room, no World yet,
- * US-025): only one `castSectors` call per frame is composited correctly,
- * since `castScene` itself always starts a column fully open. `renderWorld`
- * (US-025) sorts structures far-to-near and will need this adapter to accept
- * (not reset) an already-partially-closed span before that matters.
+ * (Architect review #1, items 1/2, 2026-09-23): `fb.spans` (when present) is
+ * now passed straight through as `opts.openSpans` - the CALLER's instance,
+ * never reset or copied here. `castScene` reads and narrows it in place, so
+ * `renderWorld` casting several structures near-to-far into the same `fb`
+ * composites correctly: a nearer structure's closed columns stay closed for
+ * every structure cast after it (no more "last structure wins").
  */
 export function castSectors(fb, level, cam, origin) {
-  const spans = castScene(fb.rt, level, cam, fb.palette, {
+  castScene(fb.rt, level, cam, fb.palette, {
     depthBuffer: fb.depth, origin, skyFallback: false,
     gbuf: fb.gbuf || null, matTable: fb.matTable || null,
+    openSpans: fb.spans || undefined,
   });
-  if (fb.spans && fb.spans !== spans) {
-    for (let x = 0; x < spans.cols; x++) {
-      fb.spans.top[x] = spans.top[x];
-      fb.spans.bottom[x] = spans.bottom[x];
-      fb.spans.depth[x] = spans.depth[x];
-    }
-  }
   // US-028 tech notes item 3: incremented per castSectors call so planeIds
   // from different structures cast in the same frame never collide.
   if (fb.gbuf) fb.gbuf.structSeq++;

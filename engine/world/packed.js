@@ -65,5 +65,59 @@ export function packLevel(level, matTable) {
     }
   }
 
-  return { w, h, geom, mats, flags, tagIds, version: 1 };
+  // `dirtyY0`/`dirtyY1` (item 4, architect review #1): the row range touched
+  // since the last time an uploader (US-030) consumed this packed layout.
+  // `packLevel` itself is a full (re)build, so there is nothing dirty yet;
+  // `updateAnimatedSector` below is what advances them.
+  return { w, h, geom, mats, flags, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1 };
+}
+
+/**
+ * (Item 4, architect review #1) In-place update for a single dynamic legend
+ * character after `World.animateSector` has already written the new
+ * `sector.ceilH`/`topH` onto the Level's legend entry: rewrites only the
+ * cells using `ch` (never reallocates the typed arrays - a full `packLevel`
+ * rebuild for a 1-2 s grate animation was 3 fresh typed arrays PER SIM STEP),
+ * bumps `packed.version` so an uploader can detect the change, and tracks the
+ * touched row range in `packed.dirtyY0`/`dirtyY1` (inclusive; -1/-1 means
+ * "nothing dirty"). `packLevel` remains the only place that builds a fresh
+ * `PackedLevel` from scratch.
+ * @param {import('../../docs/architecture.md').PackedLevel} packed
+ * @param {import('./Level.js').Level} level
+ * @param {string} ch - the legend character whose sector just changed.
+ */
+export function updateAnimatedSector(packed, level, ch) {
+  const s = level.legend[ch];
+  if (!s) return;
+  const w = packed.w, h = packed.h;
+
+  const ceilSky = s.ceilH === 'sky';
+  const topSky = s.topH === 'sky' || (s.topH === undefined && ceilSky);
+  const ceilHVal = ceilSky ? SKY_H : s.ceilH;
+  const topHVal = topSky ? SKY_H : (s.topH !== undefined ? s.topH : ceilHVal);
+
+  const geom = packed.geom;
+  let y0 = Infinity, y1 = -1;
+  for (let cy = 0; cy < h; cy++) {
+    const row = level.rows[cy];
+    let touched = false;
+    for (let cx = 0; cx < w; cx++) {
+      if (row[cx] !== ch) continue;
+      touched = true;
+      const i = cy * w + cx;
+      const gi = i * 4;
+      geom[gi + 1] = ceilHVal;
+      geom[gi + 2] = topHVal;
+      let f = packed.flags[i];
+      f = ceilSky ? (f | FLAG_CEIL_SKY) : (f & ~FLAG_CEIL_SKY);
+      f = topSky ? (f | FLAG_TOP_SKY) : (f & ~FLAG_TOP_SKY);
+      packed.flags[i] = f;
+    }
+    if (touched) { if (cy < y0) y0 = cy; if (cy > y1) y1 = cy; }
+  }
+  if (y1 >= y0) {
+    packed.dirtyY0 = packed.dirtyY0 < 0 ? y0 : Math.min(packed.dirtyY0, y0);
+    packed.dirtyY1 = Math.max(packed.dirtyY1, y1);
+    packed.version++;
+  }
 }

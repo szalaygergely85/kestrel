@@ -6,6 +6,23 @@ import { World } from './World.js';
 
 const VERSION = 1;
 
+// Item 5c (architect review #1): `integrate.js`'s `ensureScratch` stashes
+// per-body scratch (`_move`, `_collideOpts`) directly on `components.body`
+// (architecture.md 9: no per-step allocation) - harmless in memory, but it
+// must not travel into a saved file. Strips any key starting with `_`, at
+// every level of a (already-cloned) components tree, rather than naming
+// `body._move`/`_collideOpts` specifically, so a future scratch field is
+// covered by the same convention automatically.
+function stripScratch(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const out = {};
+  for (const k of Object.keys(value)) {
+    if (k.charCodeAt(0) === 95 /* '_' */) continue;
+    out[k] = stripScratch(value[k]);
+  }
+  return out;
+}
+
 /** @returns {Object} JSON-safe WorldState (docs/architecture.md section 10) */
 export function serialize(world) {
   return {
@@ -27,7 +44,7 @@ export function serialize(world) {
       id: e.id,
       type: e.type,
       transform: { x: e.transform.x, y: e.transform.y, z: e.transform.z, yawDeg: e.transform.yawDeg, pitchDeg: e.transform.pitchDeg },
-      components: structuredClone(e.components),
+      components: stripScratch(structuredClone(e.components)),
     })),
     state: structuredClone(world.state),
     nextId: world.nextId,
