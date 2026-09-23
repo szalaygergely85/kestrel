@@ -506,3 +506,8 @@ Architect guardrail from now on (review checklist item, no refactor of existing 
 
 ### Consequences
 - No change to M1. Any WASM or Rapier adoption is an engine story with architect tech notes and a vendored, version-pinned dependency.
+
+## D-016 3D glyph models: voxel models with rigid-part animation (Option A)
+**Date:** 2026-09-23
+**Status:** Accepted (owner decision)
+**Decision:** Creatures/NPCs (e.g. a talking bear) that must be walked around use **voxel models** (a small 3D grid of material cells), animated by **rigid parts** (head, limbs, and so on). They are rendered per cell into the G-buffer (kind 8), so they reuse `shadeCore/shadeTail`, the edge pass and lighting, and look like the rest of the glyph world. Budget <= 0.5 ms p95 at 240x90. 3 stories: (1) format + JS oracle (Node-only; can start after US-030b is ARCH OK), (2) GPU pass + gpucompare, (3) lighting/animation integration (after US-016 and US-006/007). Target: before M3. **Option C** (8-direction billboards via the US-030c sprite pass) is the cheap interim for M1-M2. Option B (meshes) is rejected for now. Spec: `docs/architecture.md` section 15. The M5 model editor (US-035..037) edits voxel models.
