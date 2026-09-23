@@ -1,6 +1,6 @@
-# ASCII Quest – Product Backlog
+# Kestrel – Product Backlog
 
-Owner: Product Owner. Last updated: 2026-09-23 (D-009).
+Owner: Product Owner. Last updated: 2026-09-23 (D-009 amendment 2, D-011 amendments 1+2, D-012, D-013: M1 content reskin notes, US-038..US-041 added).
 Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout details: see `docs/game-design.md` section 5 and 7.
 
 > **Session handoff (end of 2026-09-23).** Commit d46493d.
@@ -13,6 +13,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 > - **Queued owner ideas (2026-09-23, later the same day):** (a) **3D glyph models:** real 3D creatures/NPCs (voxel or low-poly meshes rasterised into the G-buffer, then the same detail/edge/light shading, so they look like glyphs). Architect writes a short estimate (fable), target before M3; glyph billboards (US-011/030c) cover M1-M2. (b) **Talking animals + dialogue system** (walk up, E, speech box). Fits D-011 amendment 2: talking animals as an early sign that magic is real. Writer + PO. (c) **Settings menu** story (grid 160/240/320; D-009 amendment 2). (d) The architect evaluates **Rapier** (physics, for the US-013 boulder) and **Three.js** (only if arbitrary meshes are needed) when those stories come up. (e) 2D/2.5D strategy camera as a future engine capability (manager).
 > - **Queued owner idea (f): Steam release** (owner: "steam sounds cool"). Manager adds it to M6 as a decision: desktop wrapper (Electron preferred, bundled Chromium = same WebGL2 as tested; Tauri as a small-size alternative), Steamworks via `steamworks.js` (achievements, cloud saves), $100 app fee, store assets (designer: ASCII key art), browser demo/itch.io before launch. Also (g) the architect evaluates Rust/WASM only for measured hot spots (terrain bake, pathfinding) in M2; the engine stays JS + GPU shaders.
 > - **State at the end of the day:** US-010 ARCH OK and US-030c ARCH OK (both → PO review). US-030a is being fixed: BUG-OWN-001 (DDA sky-rule `break`), fallback gap, allocations, inf encoding, gpucompare tolerance, **default grid 240x90**. Story: D-011 amendment 2 (no amnesia; hero **Wick**, machine-only Ferrum, magic is real outside); PO to update the GDD. Repo pushed to github.com/szalaygergely85/kestrel (README added).
+> - **PO update (2026-09-23, later):** GDD rewritten for D-011 amendment 2 + D-013 (title *Kestrel*, hero Wick, machine-only Ferrum, magic as discovery, pillar 6). The M1 content stories have "D-011 reskin" blocks: **US-011 and US-015 are back to `design`** (new art), and US-016 has a design addendum. Queued ideas (a)(b)(c)(f) are now stories: **US-038** Settings (M2 P1 per D-012), **US-039/040/041** voxel models (D-016, before M3), **US-042** talking animals + dialogue, **US-043** Steam (M6). Mute moved from `M` to `N` (US-020), because `M` is now the chart.
 > - **Model rules:** today's "fable everywhere" was for this session only. Back to the CLAUDE.md token rules.
 
 ## Build order – Milestone 1 "The Awakening"
@@ -38,22 +39,24 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 14c | US-030c | **GPU sprite pass + JS `drawSprites` reference (D-009 stage 2c)** (engine story) | P0 | done | **Tester re-test 3 (2026-09-23, worktree @ e0f0e94, port 8925): PASS -> `done`** (US-030a now `done`). `?gpucompare=1` 7/7 with the fixed reference camera; own ACs re-confirmed (`sprites: 3`, GPU path, 0 console errors). See `docs/test-reports/US-030c.md` re-test 3. **Tester PASS, waiting on US-030a (2026-09-23), see `docs/test-reports/US-030c.md`.** All own ACs met: `sprite=1` test_room (3 sprites, correct emissive/LOD/occlusion), `?spritecompare=1&source=upload` 5/5, `?gpu=0` fallback, context-loss/restore, stale-entity fix (`removeEntity` now hides its sprite immediately) all verified. Spawn/stair `?gpucompare=1` FAILs are US-030a's (BUG-CPU-001, BUG-GPU-002) and provably sprite-independent (`compareGeometry` never reads the sprite pool). Per its own checklist item 6, stays `testing` (not `done`) until US-030a is `done`. **Tester re-test (2026-09-23, worktree @ a827b2c, port 8922): still PASS, still waiting on US-030a** - own ACs unaffected (`sprite=1` 3 sprites, 49/49, 20/20, check-deps OK); US-030a's re-test FAILed (BUG-GPU-002 reopened, worse than before), so this story stays `testing`, not `done`. |
 | 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030a+030b `done` (or after the gate fails -> CPU per plan A) |
 | 16 | US-007 | Lighting: sun directional light with shaft shadow – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-006 |
-| 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); architect tech notes first; Programmer after US-030a+030b + US-007 + US-025 `done` |
+| 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); **D-011 design addendum pending** (signal tower teal light, Ferrum horizon lights, envelope below the breach; designer, before dev); architect tech notes first; Programmer after US-030a+030b + US-007 + US-025 `done` |
 | 18 | US-010 | Tower layout: 3 levels as sector data | P0 | done | Tester PASS (2026-09-23): tower.test 49/49, behaviours 9/9, world/serialize/terrain/packed/check-deps/physics/jump/eyeFeel/playerLook all green; default page wakes correctly, zero console errors, `?level=test_room` unchanged. See `docs/test-reports/US-010.md` |
-| 19 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-030c (GPU sprite pass) + US-006. Designer re-checks props at 320x120 |
+| 19 | US-011 | Billboard props + prop art (D-011 reskin: *Kestrel* burner, brass lamp, wreckage, relay bowl, lever housing) | P0 | design | Designer: D-011 reskin art (see story). Old art approval stands for geometry/format. Programmer after the reskin PO OK + US-030c + US-006. Designer checks props at 160x60 and 240x90 (320x120 extra) |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 21 | US-013 | Rolling boulder | P0 | todo | Programmer |
 | 22 | US-014 | Lever opens the grate | P0 | todo | Programmer |
-| 23 | US-015 | Wake sequence + title card + control hints | P0 | todo | Art PO-approved, preview verified 6/6; Programmer after US-010 + US-012. Designer re-checks UI/text at 320x120 |
+| 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | Designer: new `KESTREL` logo + map card art (D-011/D-013). Programmer after the art PO OK + US-010 + US-012. Designer checks UI/text at 160x60 and 240x90 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
-| 26 | US-022 | Light the summit beacon with the lantern (optional beat, D-003) | P1 | todo | Programmer, after all P0 done |
+| 26 | US-022 | Wake the relay with the lamp (optional beat, D-003; D-011 reskin) | P1 | todo | Relay bowl + glow art comes with the US-011 reskin; Programmer, after all P0 done |
 | 27 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
 | 28 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
-| 29 | US-021 | Readable wall scrawl | P2 | design | Designer |
+| 29 | US-021 | Relay-keeper's log (was: readable wall scrawl; D-011) | P2 | design | Designer (decal); text from `docs/story.md` section 4 |
 | 30 | US-023 | See-through grate (masked walls) | P2 | todo | Programmer, after all P0 done |
 
 **D-009 (2026-09-23):** the renderer moves to a staged full-GPU per-cell pipeline. US-029 is a hard gate: if it fails `?gpucompare=1` or does not run on the owner's hardware, and one rework does not fix it, M1 falls back to plan A (US-004c, CPU optimisations, to be written then), US-030 is dropped from M1 and US-006/007/016 are built on the CPU. The JS path stays the oracle and the fallback in every case.
+
+**D-011 (2026-09-23, amendments 1+2, D-013):** new story canon (game title *Kestrel*; hero Wick from machine-only Ferrum, no amnesia; magic real outside). Geometry, beats, numbers and engine order are unchanged; US-011/012/013/014/016/017/021/022 are text/art reskins, and US-015 is the only scope change (map card + `M`). Each story has a "D-011 reskin" block. Approved old art stays valid for format and geometry; the PO re-checks the reskinned art. The Settings menu (US-038) is **M2 P1** per D-012: M1 ships the 240x90 default plus `?grid=WxH`. If the US-030b owner walk-test finds 240x90 unreadable on common screens, the PO pulls a grid-only slice of US-038 into M1 as P0.
 
 M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.mjs` reports no engine imports from `game/` or `design/`. US-022 (P1) and P2 stories are not exit criteria.
 
@@ -70,6 +73,20 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 |---|---|---|---|
 | US-026 | Walk out onto the terrain: near LOD, slope physics, chunk regeneration | P0 (M2) | todo (sketch) |
 | US-027 | JSON content packs and world files | P1 (M2) | todo (sketch) |
+| US-038 | Settings menu (grid 160/240/320, fullscreen, mouse, mute; remembered per browser) | P1 (M2) | todo |
+| US-042 | Talking animals + dialogue system (first animal M2, exile dialogue M3) | P1 (M2/M3) | todo (sketch) |
+
+## Engine capability before M3: 3D glyph models = voxel models with rigid-part animation (D-016; sketched, see bottom of file)
+| ID | Title | Priority | Status |
+|---|---|---|---|
+| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | todo (sketch) – may start once US-030b is ARCH OK |
+| US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | P0 (before M3) | todo (sketch) – after US-039, US-016, US-006/007 |
+| US-041 | Voxel lighting (rotated normals) + rigid-part animation + entity binding + bear preview | P0 (before M3) | todo (sketch) – after US-040 |
+
+## Milestone 6 "Polish & Release" (sketched, see bottom of file; D-012)
+| ID | Title | Priority | Status |
+|---|---|---|---|
+| US-043 | Steam release: Electron wrapper + Steamworks + store assets | P0 (M6) | todo (sketch) |
 
 ## Milestone 5 "Engine Editor v0" (sketched, see bottom of file; D-010)
 | ID | Title | Priority | Status |
@@ -77,6 +94,8 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 | US-035 | Model frame editor | P0 (M5) | todo (sketch) |
 | US-036 | Animations + events + preview | P0 (M5) | todo (sketch) |
 | US-037 | ModelDef JSON save/load | P0 (M5) | todo (sketch) |
+
+Per D-016 the M5 model editor edits **voxel models** (`ModelDef.voxel`: z-layer row strings, part boxes, rigid-part keyframes), as well as the existing 2D sprite frames.
 
 ---
 
@@ -1523,7 +1542,7 @@ Follow-ups (non-blocking, D-011 amendment 2): the story line "wake inside" becom
 
 **Tester PASS (2026-09-23) - status -> `done`.** Tested in the clean worktree `../game_project_test` at the same commit. Node suites: `tower.test.js` 49/49, `behaviours.test.js` 9/9 (comment says 11 - cosmetic, already flagged by the architect), `packed.test.js` 5/5, `serialize.test.js` 9/9, `terrain.test.js` 19/19, `world.test.js` 20/20, `check-deps.mjs` OK (88 files), `physics.test.js` 187/187, `jump.test.js` 111/111, `eyeFeel.test.js` 18/18, `playerLook.test.js` 10/10. Browser (fresh port 8915, stopped after): default page `?debug=1&strict=1` wakes at (1497.00, 1027.50, 0.00) yaw 330 pitch 30, `structure: tower sector: '.'`, grid 240x90, zero console errors/warnings; real WASD input moves the player off the wake pose onto the stair sector without clipping; `?level=test_room` unchanged (sector `S`, no terrain, no errors). Full route/gap/grate traversal is proven by the deterministic physics/BFS tests per the story's own test plan, not by manual teleport (a direct `entity.transform` write does not stick - an outside-world safety snap reverts it - so exhaustive hand-walking of the whole route was not attempted). FPS 16.6-30 (low reading only on the first frame after a nav/level-switch, settles at ~30, no stutter). No bugs found. Full report: `docs/test-reports/US-010.md`.
 
-### US-011 Billboard props + prop art  [Priority: P0] [Status: todo]
+### US-011 Billboard props + prop art  [Priority: P0] [Status: design]
 As a player, I want the brazier, lantern, lever, boulder and other objects to look detailed and solid, so that I can recognise what matters.
 Acceptance criteria – Designer (`design/models/*.js` + `design/preview/props.html`):
 - [x] Brazier with fire: 7x9 cells, fire animation 6 frames at 10 fps (`^ * ' .` flame, yellow core to orange to red tips), emissive flag on flame cells.
@@ -1537,7 +1556,7 @@ Acceptance criteria – Designer (`design/models/*.js` + `design/preview/props.h
 Acceptance criteria – Programmer:
 - [ ] (D-009) On the `gl2` path, props are drawn by the **US-030 GPU sprite pass** (sprite-list texture, per-cell depth test, no readback). `engine/render/sprites.js` (`drawSprites`) stays as the reference and the CPU fallback and gives the same result under `?gpucompare=1` (US-029 thresholds).
 - [ ] Billboard renderer: sprites positioned in world, scaled by distance, depth-sorted and occluded correctly by walls (per-cell depth on the GPU, depth buffer on the JS path).
-- [ ] All props stay readable at both 160x60 and 320x120 (designer re-checks `props.html` at 320x120; 240x90 stays an allowed step-back).
+- [ ] All props stay readable at 160x60 and at the 240x90 default (D-009 amendment 2; 320x120 is a checked extra).
 - [ ] Sprites are lit by the same light model, except emissive cells (flames), which are drawn at full color and ignore both lighting and fog (uses the US-004 emissive flag).
 - [ ] Brazier flame animates; the brazier is also the torch point light source position.
 - [ ] (added on design review) Implements the sprite format in `design/README.md` section 4.
@@ -1545,11 +1564,24 @@ Acceptance criteria – Programmer:
   - Scale = `world.h` projected / `size.h`, nearest sampling, never upscaled beyond 3x; switch to `lods.half` when scale < 0.75.
   - Timing: `fps` or per-frame `durations` (ms) for the lantern glint, and `fps: 0` = frame driven by gameplay (boulder: distance rolled, lever: pull progress).
   - Lit cells use `util.shadeSprite` (engine re-implementation allowed, same results as the preview). The optional `n` rows (per-cell normals) may be ignored with `nf = 1` in M1.
-- [ ] Props and lights are placed from `level.def.props` / `level.def.lights` (tower data), not hard-coded. `beaconBowl.mounts.fire` gives the US-022 fire anchor.
+- [ ] Props and lights are placed from `level.def.props` / `level.def.lights` (tower data), not hard-coded. The relay bowl's `mounts.glow` (was `beaconBowl.mounts.fire`, D-011) gives the US-022 glow anchor.
 - [ ] (D-006 / D-008) Sprite rendering lives in `engine/render/sprites.js` (`drawSprites`). Models come from the injected `AssetRegistry`, never from `window.ASSETS`. Prop behaviour (animation state such as lever progress, lantern lit/empty) is set by name-registered behaviours from `game/js/quest/`, never by tower-specific engine code.
 - [ ] Grate material: gap texels (`hole: true`) are drawn **dark** in M1: the solid fallback shown in the preview, with no see-through. See-through grates are US-023 (P2).
 Design needed: yes – all props listed above (delivered).
 Notes / dependencies: US-002 (palette keys), US-004, US-006, US-030 (GPU sprite pass). Architect tech notes needed for the GPU sprite-list data of real props (animation frames, LOD) if US-030 does not already cover them.
+
+**D-011 reskin (PO, 2026-09-23) – status back to `design`.** Formats, sizes, anchors, frame counts, LOD rules and the programmer ACs above stay; only the art and names change. Keep the old model keys working as aliases (or update `tower.js` in the same change) so US-010 data does not break. Visual rule (D-011): 80-90% fantasy, machine accents only on machines; brass warm yellow-orange with bright top steps, copper red-orange with verdigris `%`/`:`, rivets `o`/`.` on `=`, gauges `(@)`, canvas pale ochre `~ )`, aether teal emissive reserved for magic. No rivet noise on small props at 160x60.
+Acceptance criteria – Designer (reskin):
+- [ ] **Brazier -> the *Kestrel*'s burner:** a toppled copper burner (pipes `|=+`, a `(@)` gauge), max 7x9 cells, 6-frame smolder at 10 fps (lower, redder flame than the brazier, embers `. '`), emissive flame/ember cells. Same light position and preset as the brazier (orange `#ff9a3c`, 6 m).
+- [ ] **Lantern -> the *Kestrel*'s brass lamp:** 3x4 cells, unlit on its gondola bracket (with the 2-frame brass glint), lit, and empty-bracket variants. Carried light unchanged (US-012).
+- [ ] **Lever:** the iron lever sits in a brass gear housing (one `*` or `@` hub gear that turns 1 step per pull frame). 3x5 cells, same 5 frames. The grate stays the iron `grate` material, unchanged.
+- [ ] **Boulder:** unchanged, add moss (greens `" ; ,`) on the top rows only.
+- [ ] **Straw pallet -> canvas heap** (the wake spot): torn envelope canvas, pale ochre `~ )`, same 9x2 footprint.
+- [ ] **Wreckage props (new, level data in `tower.js` `props`):** broken brass gondola (max 12x6, with the lamp bracket at the old lantern position, 1.3 m), hanging torn canvas in the stairwell (max 6x8), ropes (2 variants, 1x6), bent strut (4x3). All non-colliding, or placed only on existing rubble cells: none may block the wake -> burner -> stair path or the boulder's roll line. Half LOD for each.
+- [ ] **Beacon bowl -> the dead relay:** a 2 m aether-crystal bowl in a brass-and-mirror mount, 12x4 cells: dead state (dull grey-teal crystal, not emissive) and woken state (teal emissive crystal cells with `* + .` sparkle, 4 frames at 6 fps). `mounts.fire` is renamed `mounts.glow` (US-022 anchor). The old `beaconFire` model is no longer needed.
+- [ ] **Moss/ivy** on the tower materials: a stone variant with moss on wall tops and cracks (palette keys only), readable at 160x60.
+- [ ] `design/preview/props.html` shows all reskinned and new props at near/mid/far at **160x60 and 240x90** (320x120 as an extra check), with the existing light sliders. All checks pass.
+PO re-check needed after delivery (lamp, burner and relay replace approved art).
 
 **PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer.
 - All 8 designer criteria are met, confirmed from the model files: brazier 7x9 with 6 frames at 10 fps and emissive flames, lantern 3x4, lever 3x5, boulder 5x4, rubble x3, pallet 9x2, bowl 12x4, the `grate` material, and a hand-drawn half LOD for every prop. The preview has intensity, direction, elevation and distance sliders, and 9/9 checks pass (reported by the coordinator).
@@ -1575,7 +1607,9 @@ Designer note (2026-09-22): **Preview ready for PO review.**
 - Status stays `design`.
 
 ### US-012 Interaction system + lantern pickup  [Priority: P0] [Status: todo]
-As a player, I want to press E to take the lantern and carry its light with me, so that I can see in the dark stairwell.
+As a player, I want to press E to take the *Kestrel*'s brass lamp and carry its light with me, so that I can see in the dark stairwell.
+
+**D-011 reskin (PO, 2026-09-23):** the lantern is now the *Kestrel*'s brass lamp, salvaged from the gondola wreck (US-011 art). The prompt is `[E] Take lamp` (was `[E] Take lantern`), and the prompt text comes from the `def.interactables` data. "Hook" in the ACs below means the lamp bracket on the gondola, at the same position (1.3 m). Behaviour name `lantern.take` and light preset `P.lights.lantern` may stay as internal names. Light numbers, the one-pickup rule and the soft-gate rule are unchanged. The later ACs that say "lantern" and "beacon" mean the lamp and the relay (US-022).
 Acceptance criteria:
 - [ ] Interactables have: position, radius, prompt text, `onInteract`. Targeted when within 1.8 m and within about 20 degrees of view centre; nearest-to-centre wins.
 - [ ] Crosshair `+` is dim by default and brightens when a target is active; prompt `[E] Take lantern` appears under it. Style follows `ASSETS.uiStyle.crosshair` / `uiStyle.prompt` (US-015 art): `uiDim` to `gold`, prompt 2 rows below with a gold `[E]` and a soft dark plate.
@@ -1589,6 +1623,8 @@ Notes / dependencies: US-006, US-010, US-011.
 
 ### US-013 Rolling boulder  [Priority: P0] [Status: todo]
 As a player, I want to push the heavy boulder off the stairs and watch it roll away, so that the world feels physical.
+
+**D-011 (PO, 2026-09-23):** no change in behaviour. The only art change is moss on its top rows (US-011 reskin). Per D-015 the architect evaluates Rapier against the in-house sphere code when this story is picked up.
 Acceptance criteria:
 - [ ] Boulder = sphere, radius 0.6 m, uses the sector physics (gravity, floor heights, wall collision).
 - [ ] Walking into it at >= 0.5 m/s pushes it (player slows to 50% while pushing); it follows floor slope, has rolling friction and settles; restitution 0.3 against walls.
@@ -1603,6 +1639,8 @@ Notes / dependencies: US-009, US-010, US-011.
 
 ### US-014 Lever opens the grate  [Priority: P0] [Status: todo]
 As a player, I want to pull the lever and see the grate rise, so that I understand cause and effect and can reach the summit.
+
+**D-011 reskin (PO, 2026-09-23):** the lever sits in a brass gear housing (US-011 art); its hub gear advances with the 5 pull frames, so the machine visibly drives the chains. The grate stays iron. Prompt, timings, collision and data rules are unchanged. Optional (not an AC): a gear-ratchet click with the US-020 sound.
 Acceptance criteria:
 - [ ] Prompt `[E] Pull lever` on the mid ledge; pulling plays the 5-frame lever animation over 0.4 s.
 - [ ] The grate sector's ceiling rises from floor height to open height (>= 2.2 m above the floor) over 1.5 s with ease-in-out; collision updates live (blocked while below 1.70 m clearance).
@@ -1613,10 +1651,24 @@ Acceptance criteria:
 Design needed: no (uses US-011 lever + grate).
 Notes / dependencies: US-010, US-011, US-012.
 
-### US-015 Wake sequence + title card + control hints  [Priority: P0] [Status: todo]
-As a player, I want to open my eyes on the tower floor, see the title, and get just enough hints, so that I understand the start without reading a manual.
+### US-015 Wake sequence + title card + map card + control hints  [Priority: P0] [Status: design]
+As a player, I want to come to by the wreck, see the title, read my chart, and get just enough hints, so that I understand where I am and where to go without reading a manual.
 Acceptance criteria – Designer:
-- [x] `design/models/title.js`: `ASCII QUEST` logo, max 70x9 cells, colored (warm gold into ember orange), plus subtitle style for `The Awakening`. Preview in `design/preview/title.html`. (Preview verified in the browser: 6/6 checks.)
+- [x] ~~`design/models/title.js`: `ASCII QUEST` logo, max 70x9 cells, colored (warm gold into ember orange), plus subtitle style for `The Awakening`. Preview in `design/preview/title.html`. (Preview verified in the browser: 6/6 checks.)~~ Superseded by the D-011 title below; the layout, colors, shine and fade rule stay approved.
+
+**D-011 reskin + scope change (PO, 2026-09-23; D-011 amendments 1+2, D-013) – status back to `design`.** The start sequence, timings and hint rules below are unchanged. New: the title is *Kestrel*, and a **map card** (the Crown sky-chart with Wick's pencil course) is shown once after the title and re-opened with `M`. It is a UI overlay only: no inventory, no position marker, no tracking. Texts come from `docs/story.md` section 5 (writer). The notes are signed "W." (D-013); the hero's name appears nowhere else in M1.
+Acceptance criteria – Designer (D-011):
+- [ ] `design/models/title.js`: **`KESTREL`** logo, max 70x9 cells, same palette ramp (gold-white > gold > flame > ember), shine and drop shadow; optionally a small brass balloon/gondola flourish in place of `<[ * ]>`. Subtitle **`SOMEONE IS CALLING`** in the existing subtitle style. Readable at 160x60 and 240x90.
+- [ ] `design/models/mapCard.js` (`ASSETS.models.mapCard` + style in `ASSETS.uiStyle.mapCard`): the chart from `docs/story.md` section 5, **max 44x12 cells** so it fits 160x60 with a margin. Parchment plate (dark ochre bg, not a box outline), Crown print in faded dark-blue ink, pencil lines and notes in grey-white, **"W." signature** under the pencil notes, `FERRUM [#]` amber, `x` (you are here) ember red, relays `o` grey, `* SIGNAL` aether teal. All text ASCII 32-126. Notes must not contradict "the SOS has been sending for years" (D-013).
+- [ ] `ASSETS.uiStyle.hints` gains the story hints from `docs/story.md` section 5 (`The burner still glows. Take what light you can.`, `Climb. You cannot see the signal from down here.`, `Press M to read the chart.`) with gold key words. The tower data gets two hint zones: `hintBurner` (r 3 m around the burner) and `hintClimb` (the stair base, r 1.5 m).
+- [ ] `design/preview/title.html` plays the new sequence (black, blink, title, map card, first hint), has a button for the `M` card, and its checks pass at 160x60 and 240x90.
+Acceptance criteria – Programmer (D-011 additions; apply together with the ACs below):
+- [ ] **Map card, first show:** 0.5 s after the title card fades out, the map card fades in (0.3 s, ramp-step fade rule) centred over the 3D view, with the scene behind it dimmed to bg x 0.35. While it is shown, movement and look input are ignored; the world keeps animating (the burner flickers). After a minimum of 1.0 s on screen, any key or mouse click dismisses it (0.3 s fade out). The dismissing key is consumed, so it does not also move, jump or interact. The `WASD move - Mouse look` hint starts after the dismissal, not after the title.
+- [ ] **`M` key:** from the first dismissal until the end trigger, `M` opens the same card (same fade and dim), and `M`, Esc or any other key closes it. It cannot open during the wake/title, while the end sequence runs, or on the end screen. Opening it does not release pointer lock and does not pause physics. It is a toggle with no timeout.
+- [ ] **Hints (added):** `Press M to read the chart.` shows once, 20 s after the first dismissal, and is removed when `M` is pressed (never shown if `M` was already pressed). `The burner still glows. Take what light you can.` shows once on entering `hintBurner` while the lamp is not taken. `Climb. You cannot see the signal from down here.` shows once on entering `hintClimb`. Standard hint rules apply (bottom-left, fade 0.3 s, 8 s timeout, at most one hint on screen, queued in order).
+- [ ] The map card and title are drawn from `ASSETS.models.mapCard` / `title` / `uiStyle` (no texts in engine code). The card is a generic `engine/ui/` "panel" overlay primitive (model + style + dim), opened from `game/js/quest/`, so US-021 (log) and later US-040 (dialogue) can reuse it. The `M` binding lives in `game/`, not in the engine.
+- [ ] Restart (US-017) resets "card shown once" and the hints, so the card shows again after the wake.
+- [ ] The title/subtitle ACs below now mean `KESTREL` / `SOMEONE IS CALLING`.
 
 **PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer. Reviewed by reading `design/models/title.js`:
 - **Logo:** 68x8, within 70x9. It reads "ASCII QUEST" at 6-row block height, with 1-cell letter gaps and a 3-cell word gap.
@@ -1640,8 +1692,8 @@ Acceptance criteria – Programmer:
 - [ ] Hints bottom-left, fade in 0.3 s, each shown once, disappears when performed or after 8 s: `WASD move - Mouse look` (after title; all UI text is ASCII 32-126 only), `Shift run` (after 10 s of walking), `[Space] Jump` (when within 2 m of the gap edge), `Click to capture mouse` (if pointer not locked).
 - [ ] Interact prompts from US-012 are not hints; they always show when targeting.
 - [ ] (D-006 / D-008) The wake sequence, title card and hint logic live in `game/js/quest/`. They use the engine's generic overlay primitives (`engine/ui/`: fade, hint, prompt, text), skinned by `uiStyle`. The start pose comes from `def.start` (`pose: 'lying'`, `eyeH`, `pitchDeg`). Hint trigger zones (e.g. the gap-edge `[Space] Jump` zone) are declared in level data, not as coordinates in code. Use the tower's `hintJump` trigger (r 2 m, `zMin` 2.0 m, once). A hint whose action the player has already performed (e.g. they jumped before entering the zone) is never shown.
-Design needed: yes – title logo.
-Notes / dependencies: US-010, US-012.
+Design needed: yes – `KESTREL` title logo, map card, story hint styles and hint zones (D-011).
+Notes / dependencies: US-010, US-012. Writer owns the card and hint text (`docs/story.md` section 5).
 Designer note (2026-09-22): **Preview ready for PO review.**
 - **Where:** `design/preview/title.html`. A 160x60 mock plays the full start sequence: black 1.0 s, blink with the half-close, title fade in 1 s / hold 3 s with shine / fade out 1 s, then the first hint. Buttons show all hints, the prompt with the active crosshair, the pause overlay, and both end-screen variants. It runs its own checks.
 - **Data:** `design/models/title.js`, containing `ASSETS.models.title` (68x8 logo, gold-white > gold > flame > ember, top to bottom), `ASSETS.models.subtitle`, and `ASSETS.uiStyle` (fade rule, hint/prompt/crosshair/end/pause styling, eyelid curve). Format: `design/README.md` section 5.
@@ -1649,7 +1701,18 @@ Designer note (2026-09-22): **Preview ready for PO review.**
 - Status stays `design`.
 
 ### US-016 Far overworld view through the breach  [Priority: P0] [Status: todo]
-As a player, I want to see a vast, colorful landscape and a distant dark tower from the summit, so that I feel the world is huge and I want to go out there.
+As a player, I want to see a vast, colorful landscape with the signal shining on a distant tower, and my city's lights behind me, so that I feel the world is huge and I want to go out there.
+
+**D-011 reskin (PO, 2026-09-23):** terrain, recipe, position (800 m, azimuth 255) and the engine ACs are unchanged. What changes:
+- The far tower becomes the **signal tower**. Its body stays dark and unlit (fog cap 0.40), and it gets a small **static aether-teal emissive light** at the top (1-2 cells at 240x90, never smaller than 1 cell). It is emissive, so it ignores lighting, but it takes far fog capped so it stays clearly visible. The SOS pulse (D-013 timing) is a later P2 story, not M1.
+- **Ferrum's lights** are added on the opposite horizon (bearing about 75 degrees, behind the player at the breach and visible from the summit walkway over the interior wall top; the designer sets the exact bearing). They are a horizon billboard beyond the terrain far limit: a low band of warm amber emissive pinpoints (`. ' *`) with a wall-and-tiers silhouette hint, about 24-40 cells wide and 2-4 rows at 240x90. They draw only over sky/far cells, never over structure or near terrain. They are not point lights.
+- The torn *Kestrel* envelope is snagged on the rocks below the breach (a US-011 wreckage prop placed in `world_m1.js`), visible when looking down from the breach.
+- "Unchanged by US-022" now reads: waking the relay does not change the signal tower or Ferrum in M1.
+Acceptance criteria – Designer (D-011 addendum, before dev):
+- [ ] `far_tower.js` -> the signal tower model (keep the `min` 3x4 + `detail` frames) with the teal light cells flagged emissive, plus a `ferrum_lights.js` horizon model and its bearing/elevation in `world_m1.js`. `overworld.html` shows both at 160x60 and 240x90, and its checks pass.
+- [ ] Palette: an `aether` teal ramp (also used by US-022) and an amber `cityLight` key.
+Acceptance criteria – Programmer (D-011 addition):
+- [ ] The signal-tower light cells and Ferrum's lights render emissive through the GPU sprite pass and the JS reference, and match under `?gpucompare=1` (breach poses plus one summit pose looking east). The US-018 budget still holds.
 Acceptance criteria – Designer:
 - [x] `design/levels/overworld_far.md` (+ data file if useful): a low-res heightmap (e.g. 128x128 or 256x256 cells, 8 m per cell) or a procedural recipe (seed + noise params) for rolling hills, a river, forests; color/glyph rules per terrain type (grass `" ' , ;` greens, forest `& % @` dark greens, river `~ -` blues, rock `# %` greys) and fog colors by distance (near 50 m to far 1500 m).
 - [x] Position and silhouette of the distant second tower (~800 m, on a hill, dark, no light).
@@ -1671,8 +1734,8 @@ Acceptance criteria – Programmer (rewritten per D-009: terrain GPU-first; D-00
 - [ ] Look and fog exactly per `overworld_far.md` sections 3 and 4: type glyph bands by distance, sun N.L lighting from the level's sun (US-007 uniform), fog to `fogFar` with glyphs thinning to haze, and the river glint at 1.5 Hz (`timeSec` uniform). The N-ray coverage anti-shimmer (US-030) also applies to terrain cells.
 - [ ] Far tower drawn per section 5 as a billboard at (713.8, 1232.1) via the GPU sprite pass, depth-tested against the terrain, never smaller than the 3x4 minimum sprite, dark and unlit (fog cap 0.40), and unchanged by US-022.
 - [ ] **JS reference** `engine/render/terrainCaster.js` (`castTerrain`, exported via `engine/index.js`) implements the same rules, correct but **not budgeted**; it is the oracle (`?gpucompare=1` over breach poses meets the US-029 thresholds) and the CPU fallback (160x60; may use a coarser step to stay playable). No per-frame allocation in either path.
-- [ ] Cost looking out of the breach at 320x120: **GPU total <= 4 ms** (terrain included) and **JS <= 2 ms** (US-018).
-Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b. Designer re-checks `overworld.html` at 320x120 (240x90 stays an allowed step-back).
+- [ ] Cost looking out of the breach at the 240x90 default and at 320x120: **GPU total <= 4 ms** (terrain included) and **JS <= 2 ms** (US-018).
+Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b; D-011 addendum (signal light, Ferrum lights). Designer checks `overworld.html` at 160x60 and 240x90 (320x120 extra).
 Notes / dependencies: US-030 (GPU DDA, depth texture, sprite pass), US-007 (sun), US-010, US-024, US-025 (World: terrain sampler, tower placement at recipe coords). If the US-029 gate failed: built on the CPU per plan A with the old criteria (terrain pass <= 4 ms JS, total JS <= 8 ms).
 
 **Tech notes (architect, 2026-09-23)** - normative detail in `docs/architecture.md` 14.4 (march, textures, shading, oracle, far tower, parity). Blocked on US-030 `done` (needs pass A/B, `SDEPTH`, `uStruct*`, the sprite pass and the shared `ray()` GLSL).
@@ -1731,21 +1794,22 @@ As a player, I want a satisfying ending when I step out onto the hill, so that t
 Acceptance criteria:
 - [ ] Entering the outcrop trigger cells locks input; the camera walks forward 1 m over 1.5 s and pitches slightly down toward the valley.
 - [ ] Screen fades to black over 2 s (glyphs dim down the ramp, not just an overlay alpha). Use the `ASSETS.uiStyle.fade` rule (US-015 art) for both the 3D view and the text. End-text layout, colors and blinking cursor come from `uiStyle.endText`.
-- [ ] Text, centred, typed on at 30 chars/s. First line depends on the beacon state (D-003): unlit (default, and always if US-022 is not built) = `The beacons are dark.`; lit = `One beacon burns. The others are dark.`. Then `The world waits.`, then after 1.5 s `- to be continued -`, then `[R] Wake again`.
-- [ ] R restarts the slice from the wake sequence with all state reset (lantern on hook, boulder on stair, lever up, grate down, beacon unlit, hints reset).
+- [ ] Text, centred, typed on at 30 chars/s. First line depends on the relay state (D-003, D-011): not woken (default, and always if US-022 is not built) = `The signal is still calling.`; woken = `One relay wakes. The signal is still calling.`. Then `Someone is out there.`, then after 1.5 s `- to be continued -`, then `[R] Wake again`. (PO placeholder text per D-011; the writer's final lines in `docs/story.md` replace it, and the strings live in `uiStyle.endText`, never in code.)
+- [ ] R restarts the slice from the wake sequence with all state reset (lamp on the gondola bracket, boulder on stair, lever up, grate down, relay dead, map card "shown once" and hints reset).
 - [ ] (D-006 / D-008) The end trigger is the `def.triggers` entry `end` (cells tagged `trigger:end`, `walkTo`, `pitchTo`) with behaviour `quest.end`, registered from `game/js/quest/`. Restart = reload the world from the level data + `deserialize` of the initial state (US-025), not a hand-written reset list, so nothing can be forgotten.
 Design needed: no.
 Notes / dependencies: US-010, US-015, US-016.
+**D-011 reskin (PO, 2026-09-23):** only the end-card text changes (above). The `uiStyle.endText` strings move to the new lines, and the designer updates the `title.html` end-screen buttons. The mood shifts from "melancholy" to "I broke out, now what's out here?". Writer: final lines, each <= 40 chars, ASCII 32-126.
 
 ### US-018 Performance budget + debug overlay  [Priority: P0] [Status: todo]
 As a player, I want the game to stay perfectly smooth, so that movement always feels responsive.
 Acceptance criteria:
 - [ ] F3 overlay shows: fps, total frame ms, JS ms and GPU ms (timer query, or "n/a" if unavailable), per-pass ms (walls/floors, lighting, sprites, far view, UI), pipeline `gpu` / `cpu`, current grid (e.g. `320x120`), player position, sector id, grounded flag.
 - [ ] Measured in the tower at the 3 worst views (ground floor looking at brazier + sun shaft, mid ledge looking down, summit looking out the breach) in Chrome on the owner's laptop via `?bench=1`:
-  - GPU path at the default 320x120: >= 58 fps average, **JS <= 2 ms** (target) and never above the binding **8 ms JS budget**, **GPU <= 4 ms**.
+  - GPU path at the default 240x90 (D-009 amendment 2) and at 320x120: >= 58 fps average, **JS <= 2 ms** (target) and never above the binding **8 ms JS budget**, **GPU <= 4 ms**.
   - CPU fallback (`?gpu=0`, grid forced to 160x60): >= 58 fps average, JS <= 8 ms.
 - [ ] **CPU fallback stays playable (US-028 deferred perf gate):** measured on a quiet machine (no other CPU-heavy apps/agents running), the 160x60 CPU fallback path holds <= 8 ms JS frame time across the 3 worst views above, including the "facing stair" pose.
-- [ ] **Grid setting**: `?grid=WxH` and `createEngine({cols, rows})` accept 160x60 to 320x120 (clamped), default 320x120 on `gl2` (240x90 selectable as a step-back) and forced 160x60 on the fallback; the 240x90 run is measured and reported (no pass bar). An in-game option is not required in M1.
+- [ ] **Grid setting**: `?grid=WxH` and `createEngine({cols, rows})` accept 160x60 to 320x120 (clamped), **default 240x90 on `gl2`** (D-009 amendment 2) and forced 160x60 on the fallback; both 240x90 and 320x120 must meet the bar above. The in-game option is US-038 (M2), not required in M1.
 - [ ] No per-frame allocations in the hot render loop that cause visible GC stutter (no frame > 25 ms during a 60 s walk-through), on both paths.
 Design needed: no.
 Notes / dependencies: final check before M1 exit; overlay part can be built with US-004. D-009 budgets. If the US-029 gate failed: only the CPU line applies at 160x60.
@@ -1764,20 +1828,34 @@ Acceptance criteria:
 - [ ] WebAudio procedural synthesis only (noise-based crackle, wind, clicks/thuds); no audio asset files, no `game/assets/audio/` folder in M1 (D-004).
 - [ ] Audio context starts after the first user input (no autoplay errors in the console).
 - [ ] Sounds per GDD 7.5: brazier crackle attenuates with distance; footsteps on stone with slight pitch variation; boulder roll + thud; lever clunk; grate rattle; wind grows near the breach.
-- [ ] M key toggles mute.
+- [ ] `N` key toggles mute. (Was `M`; `M` now opens the map card, US-015/D-011. In M2 mute also moves into Settings, US-038.)
+- [ ] (D-011) The brazier crackle is the *Kestrel* burner's crackle-and-hiss; the lever adds a gear ratchet.
 Design needed: no.
 Notes / dependencies: picked up only when every P0 is `done` and US-022 is done or explicitly deferred. Scope cap: one story; if it grows, cut sounds rather than extend. Not an M1 exit criterion; testers do not fail M1 on audio.
 
-### US-021 Readable wall scrawl  [Priority: P2] [Status: design]
-As a player, I want to find scratched words on the wall near where I woke, so that I get a hint of my purpose.
-Acceptance criteria:
-- [ ] Decal material spelling `KEEP THE LIGHT` readable from 2 m, fading into stone texture at > 5 m.
-Design needed: yes – decal glyph pattern (low priority for designer).
-Notes / dependencies: US-004, US-010.
+### US-021 Relay-keeper's log (was: readable wall scrawl)  [Priority: P2] [Status: design]
+As a player, I want to find an old relay-keeper's log scratched into the stone near where I came to, so that I learn someone out here heard the signal long before me.
 
-### US-022 Light the summit beacon with the lantern  [Priority: P1] [Status: todo]
-As a player, I want to relight my tower's beacon before I step out, so that the slice ends on a hopeful act and shows the core loop.
+**D-011 reskin (PO, 2026-09-23):** `KEEP THE LIGHT` is replaced by the relay-keeper's log (`docs/story.md` section 4, 5 lines, each <= 60 chars). 60-char lines cannot be read as a wall decal at the M1 grids, so the log is a **visible decal plus a read panel**.
 Acceptance criteria:
+- [ ] Decal material: rows of scratched tally marks and letters on one wall panel near the wake spot (about 1.5 m wide), clearly "writing" from 2 m, fading into the stone texture at > 5 m. It does not need to be legible as text.
+- [ ] An interactable on the decal (US-012 rules) shows `[E] Read`. Pressing E opens the log text in the US-015 panel overlay (same dim and fade, style `uiStyle.logPanel`: scratched-stone plate, pale grey text); any key closes it. Readable at 160x60 and 240x90.
+- [ ] The text comes from level/UI data, not code. It matches `docs/story.md` section 4 exactly and does not name Wick (D-013). It keeps "the SOS has been sending for years" vague (D-013 item 3).
+- [ ] Reading is optional: nothing else depends on it. Restart resets nothing here (the log can be read any number of times).
+Design needed: yes – decal glyph pattern + log panel style (low priority for designer).
+Notes / dependencies: US-004, US-010, US-012 (interaction), US-015 (panel overlay).
+
+### US-022 Wake the relay with the lamp (was: light the summit beacon)  [Priority: P1] [Status: todo]
+As a player, I want to wake the dead relay with the *Kestrel*'s lamp before I step out, so that the slice ends on a moment of wonder and shows the core loop.
+
+**D-011 reskin (PO, 2026-09-23) – "light the beacon" becomes "wake the relay".** Same interaction, conditions, one-way rule, performance rule and restart rule. The following replace the matching ACs below:
+- Prompt `[E] Wake the relay` (was `[E] Light the beacon`), shown only while carrying the lamp.
+- Effect: no fire. The relay's crystal cells switch from the dead to the woken state (US-011 reskin art) and grow in over 1.0 s from `mounts.glow`, with emissive teal cells and a `* + .` sparkle (4 frames at 6 fps).
+- Light: an **aether teal** point light (palette `aether`, designer sets the exact colour) at the bowl centre, about 0.8 m above it, ramps 0 to 1.0 over 1.0 s, radius 12 m target (minimum 8 m, same budget rule). A slow shimmer of ±5% replaces the fire flicker. It must read clearly as not-fire next to the orange burner and the amber lamp.
+- The lamp is not consumed. The signal tower and Ferrum's lights (US-016) do not change in M1.
+- End text uses the woken variant (US-017).
+- This is the first hint of magic (GDD pillar 6): no text explains it.
+Acceptance criteria (original; read "beacon" as the relay, "fire/flames" as the glow, per the block above):
 - [ ] Targeting the beacon bowl (US-012 rules, 1.8 m / ~20 degrees) while carrying the lantern shows `[E] Light the beacon`. Without the lantern: no prompt (the bowl is not interactable).
 - [ ] Pressing E ignites the bowl: flames grow from 0 to full over 1.0 s using the delivered `beaconFire` model (3 brazier flame units, 10 fps) and its `grow` rule (`design/README.md` section 4). The fire is anchored at `beaconBowl.mounts.fire`, and flame cells are emissive.
 - [ ] A new point light starts at the bowl centre (about 0.8 m above the ash): warm orange (brazier `#ff9a3c` family), intensity ramps 0 to 1.0 over 1.0 s, radius 12 m target, same flicker model as the brazier (8-12 Hz, ±15%).
@@ -1787,7 +1865,7 @@ Acceptance criteria:
 - [ ] Optional: the breach end trigger (US-017) works whether or not the beacon is lit; end text uses the lit variant `One beacon burns. The others are dark.` only when lit.
 - [ ] The distant second tower (US-016) stays dark after lighting; nothing in the far view changes.
 - [ ] Restart (R) resets the beacon to unlit.
-Design needed: no new story – designer confirms the brazier flame frames scale to the 12x4 bowl (D-003).
+Design needed: no new story. The relay dead/woken art and the `aether` palette come with the US-011 reskin and the US-016 addendum (D-011); the old `beaconFire` model is dropped.
 Notes / dependencies: US-011, US-012, US-016, US-017, US-018. Picked up only after every P0 story is `done`. Not an M1 exit criterion.
 
 ### US-023 See-through grate (masked walls)  [Priority: P2] [Status: todo]
@@ -2050,6 +2128,34 @@ Acceptance criteria (sketch):
 Design needed: no (the designer keeps authoring in `design/`; export is a tool).
 Notes / dependencies: US-024, US-025. Editor prerequisite (M5).
 
+### US-038 Settings menu  [Priority: P1 (M2)] [Status: todo]
+As a player, I want a settings menu where I can pick the character grid size (and later other options), remembered in my browser, so that the game is readable and comfortable on my screen.
+Placement: M2 P1 per D-012 (settings, fullscreen and focus-loss pause land together in M2). M1 ships the fixed 240x90 default (D-009 amendment 2) plus `?grid=WxH`. **Pull-in rule:** if the US-030b owner walk-test finds 240x90 unreadable on common screens, a grid-only slice of this story (the grid row, persistence, live apply) becomes an M1 P0 story.
+Acceptance criteria:
+- [ ] **Open/close:** the pause overlay (Esc) shows `[S] Settings` under `Click to resume`. `S` or a click opens the Settings panel, and Esc returns to the pause overlay. While Settings is open the simulation is paused.
+- [ ] **Navigation:** W/S or Up/Down selects a row, A/D or Left/Right changes its value, and the mouse can click a value. The selected row is highlighted in gold (`uiStyle.settings`). Every change is applied at once; there is no "Apply" button.
+- [ ] **Grid:** `160x60 / 240x90 / 320x120`, default **240x90** on `gl2`. A change takes effect **without a page reload**. Player pose, world state and open UI are kept, the grid re-fits the window with the cell aspect preserved (no stretch), and any hitch is <= 100 ms. On the CPU fallback the row shows `160x60 (CPU mode)` and the other values are disabled.
+- [ ] **Fullscreen:** off/on via the Fullscreen API. Leaving fullscreen with the browser's own Esc updates the row. Resize is handled the same as a grid change (re-fit, no stretch).
+- [ ] **Mouse sensitivity:** 0.05-0.40 deg/px in steps of 0.025, default 0.15 (GDD 4). **Invert Y:** off/on, default off. **Mute:** off/on, the same state as the `N` key (US-020); the row is hidden if US-020 is not built.
+- [ ] **Remembered per browser:** saved through the `game/js/platform/` adapter (D-012; web implementation = `localStorage` key `kestrel.settings`, JSON `{ settingsVersion: 1, grid: '240x90', ... }`), never through direct `localStorage` calls in game code. It is loaded at boot before `createEngine`, so the first frame already uses the saved grid. Missing, corrupt or unknown values fall back to the defaults field by field, and nothing throws.
+- [ ] `?grid=WxH` still overrides the grid for that session and is **not** saved.
+- [ ] **Pause on focus loss (D-012):** on window blur or `visibilitychange` to hidden, the game opens the pause overlay and the simulation stops.
+- [ ] **Data-driven:** options are one data list (`{ id, label, type: 'choice'|'toggle'|'range', values|min/max/step, default }`) rendered by a generic `engine/ui/` list/panel primitive (the US-015 panel) skinned by `uiStyle.settings`. Adding a later option (volume, head bob, key rebinding, auto-grid-by-window) is one list entry plus its handler. The engine has no game-specific option names.
+- [ ] The panel fits within 40x12 cells, all text is ASCII 32-126, and it is readable at 160x60, 240x90 and 320x120.
+Design needed: yes (small) – `uiStyle.settings` (panel plate, row and selected-row styles, disabled-value style) plus a mock in `design/preview/title.html`.
+Notes / dependencies: US-018 (grid range + `createEngine({cols, rows})`), US-015 (panel overlay primitive), US-020 (mute, optional). **Engine story** for the live grid change (`engine.setGrid(cols, rows)`: G-buffer/texture re-allocation, no reload); the architect writes tech notes. Later options: volume, key rebinding, gamepad (M6), auto-grid-by-window.
+
+### US-042 Talking animals + dialogue system  [Priority: P1 (M2/M3)] [Status: todo (sketch)]
+As a player, I want to walk up to an animal, press E and have it speak to me, so that I discover, with the same surprise as Wick, that magic is real out here.
+Acceptance criteria (sketch):
+- [ ] **Dialogue system (M2):** an NPC or animal is an interactable (US-012 rules) with `[E] Talk`. Talking opens a speech box: the US-015 panel docked to the bottom third, with a speaker label (e.g. `FOX`) and the text typed on at 30 chars/s. E, Space or a click completes the line, then advances to the next. Movement is locked and the view eases toward the speaker's `mounts.talk` over 0.3 s. Esc leaves the conversation.
+- [ ] Dialogue is data (`design/dialogue/*.js`, later JSON per US-027): nodes with lines, optional choices (<= 3, from M3 on), `setFlag` / `requires` flags and `once` nodes. The flags are part of `serialize()` (save-safe). No dialogue text in code.
+- [ ] **First talking animal (M2):** one animal near the tower path, drawn as an 8-direction billboard (D-016 Option C interim), with an idle animation. Its lines (writer) show Wick's disbelief and the first proof that magic is real, without explaining it. It never says "Wick" (the name is first spoken by the M3 exiles, D-013).
+- [ ] **M3:** the exile NPCs use the same system, and the first line that names Wick is theirs. Animals and NPCs switch to voxel models once US-041 is `done`.
+- [ ] Readable at 160x60 and 240x90. The box holds at most 3 lines of 56 characters, ASCII 32-126.
+Design needed: yes – speech-box style (`uiStyle.dialogue`), the first animal's 8-direction billboard (M2), later voxel models (M3). Writer: lines and the speaker names.
+Notes / dependencies: US-012, US-015 (panel), US-025 (serialize), US-041 (voxel, M3). The dialogue runner is a generic engine/ui + entities feature (architect notes). Quest logic stays in `game/js/quest/`.
+
 ---
 
 ## Milestone 1.5 "Editor Preview" – sketches (D-010, not yet refined; not M1 scope)
@@ -2129,6 +2235,63 @@ Acceptance criteria (sketch):
 - [ ] Saved ModelDef loads correctly through `AssetRegistry` into a running game scene as a sanity check.
 Design needed: no.
 Notes / dependencies: US-035, US-036, US-027 (shared JSON conventions).
+
+**D-016 note for US-035..037:** the model editor also edits **voxel models** (`ModelDef.voxel`, US-039). It needs a z-layer painter over row strings, a part-box tool (drag boxes, set pivots) and a rigid-part keyframe panel (`rot`/`pos` per part per frame, `events`). The live preview runs the real US-041 renderer. Saved voxel ModelDefs round-trip through the US-039 validator.
+
+---
+
+## Engine capability before M3: 3D glyph models (D-016, voxel + rigid parts; spec `docs/architecture.md` section 15) – sketches
+
+Goal: creatures and NPCs (e.g. a talking bear) that the player can walk around, rendered per cell into the G-buffer as `KIND_MODEL (8)`, so they get the world's materials, the edge pass and lighting, and read as glyphs. Budget: model pass <= 0.5 ms p95 at 240x90, whole GPU pipeline still <= 4 ms. Interim for M1-M2: 8-direction billboards (Option C) through the US-030c sprite pass. Option B (meshes) is rejected for now. All three are engine stories (architect tech notes and review).
+
+### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: todo (sketch)]
+As a content designer, I want a voxel model format and a reference renderer, so that 3D creatures can be authored as data and checked in Node before any GPU work.
+Acceptance criteria (sketch):
+- [ ] `engine/entities/VoxelModel.js` (or as the architect places it): `ModelDef.voxel` per architecture.md 15 option A (`cellM`, `size`, `anchor`, `mats`, `parts` boxes + pivots, `layers` as z-layer row strings, `animations` with per-part `rot`/`pos` keyframes, `fps`, `loop`, `events`). It has a validator with clear errors (unknown material key, row length mismatch, a part box outside the grid, > 8 parts, reserved event names) and a packer to an atlas byte layout (the `VOX` R8UI + `MODELMAT` data, CPU-side only).
+- [ ] `marchVoxelRay` (Amanatides-Woo, part-local space, `MAX_VOX_STEPS = 48`, <= 8 parts) and `castModels(fb, list, cam)` write kind 8 cells (mat, planeId per the section 15 rule, `aoD = Infinity`, u/v part-local, z from the feet) on the CPU path.
+- [ ] Node tests only (no `engine/render/gpu/*` changes): hit/miss and nearest-hit cases, the part transform round-trip, and deterministic output. `castModels` for one near bear at 160x60 is <= 0.3 ms in `bench-cast`, with zero per-frame allocations.
+- [ ] A 16x8x12 test bear in a Node fixture (not in `design/`).
+Design needed: no (test fixture only; the designer's bear comes in US-041).
+Notes / dependencies: **may start once US-030b is ARCH OK** (it does not touch the GPU code), in parallel with US-016. Architect tech notes first.
+
+### US-040 GPU voxel pass A3 + gpucompare  [Priority: P0 (before M3)] [Status: todo (sketch)]
+As a player, I want 3D creatures drawn on the GPU as part of the glyph world, so that they look like everything else and cost almost nothing.
+Acceptance criteria (sketch):
+- [ ] GLSL pass **A3 `models`** between A2 terrain and B resolve, at sub-sample resolution, with a ping-pong G-buffer set. It is the literal twin of `marchVoxelRay`, with <= 16 instances uploaded per frame after JS frustum culling (<= 2 KB) and the `VOX`/`MODELMAT` atlas uploaded once per model version.
+- [ ] `KIND_MODEL` passes through light, resolve and edge. Silhouettes and voxel steps are outlined by the edge pass, and the coverage vote anti-aliases them.
+- [ ] `?gpucompare=1` has the new pose `bearClose` (plus one partially occluded pose) and meets the section 14.2 item 8 thresholds for kind 8 cells. `?flicker=1` shows no worse flicker share on the model than on walls.
+- [ ] `?bench=1` at 240x90 with a bear filling about 30 % of the screen: model pass <= 0.5 ms p95, GPU total <= 4 ms p95, JS <= 2 ms.
+- [ ] Axis-aligned faces only (face 1..6) if the `light` pass is not yet in. Rotated parts come with US-041.
+Design needed: no.
+Notes / dependencies: US-039, US-016 (pass A2 slot), US-006/007 (light pass). Engine story.
+
+### US-041 Voxel lighting + rigid-part animation + entity binding  [Priority: P0 (before M3)] [Status: todo (sketch)]
+As a player, I want a bear that breathes, turns its head and walks, lit by my lamp and the sun, so that creatures feel alive and physical.
+Acceptance criteria (sketch):
+- [ ] Rotated parts write `face 7` plus the octahedral-packed normal (in the `GA.w` slot), and the `light` pass decodes it (the only change to the light pass). `faceK = 1` for kind 8, so there is no pop between rotated and unrotated shading. Light parity is `|dL| <= 1e-3` in gpucompare.
+- [ ] Rigid-part animation: keyframes are linearly interpolated in JS on the fixed step (deterministic). `idle` and `walk` clips, `events` (e.g. `step`) fire like sprite events (US-011), and the animation update is <= 0.02 ms per entity.
+- [ ] Entity binding: a `type: 'voxelModel'` entity with `{ model, transform, anim }`, facing from the entity yaw, and `mounts` reused (e.g. `talk` for the US-042 prompt anchor). State is serializable, and the renderer holds no entity state.
+- [ ] **Designer:** a bear voxel model (about 16x8x12 at 0.125 m, `idle` + `walk`) and `design/preview/voxel.html` (orbit, light sliders, clip picker), readable at 160x60 and 240x90.
+- [ ] One bear placed in a test world walks a loop, with the lamp and the sun lighting it correctly on both paths. The US-018 budgets hold.
+Design needed: yes – the bear voxel model + preview page.
+Notes / dependencies: US-040, US-006/007, US-016. Target: `done` before M3 content starts (US-042 M3 NPCs).
+
+---
+
+## Milestone 6 "Polish & Release" – sketches (D-012)
+
+### US-043 Steam release: Electron wrapper + Steamworks + store assets  [Priority: P0 (M6)] [Status: todo (sketch)]
+As a player on Steam, I want to buy and play *Kestrel* as a desktop game with achievements and cloud saves, so that it feels like a real release, not a web page.
+Acceptance criteria (sketch, per D-012):
+- [ ] `desktop/` (Electron `main.js` + `preload.js`, outside `engine/` and `game/`) loads the unchanged `game/` through a custom `app://` protocol. The game has no build step; `electron-builder` is packaging only. check-deps: `engine/` imports neither `desktop/` nor `game/js/platform/`.
+- [ ] `steamworks.js` runs in the main process and is exposed as a small `platform` object (`isSteam`, `unlockAchievement(id)`, `saveWrite/saveRead`). `game/js/platform/` has the web implementation (localStorage/IndexedDB, no achievements) and the steam implementation. Saves and settings (US-038) go only through the adapter.
+- [ ] Steam scope: achievements (the list is written by the PO in M6), Steam Cloud (Auto-Cloud on the save folder) and the overlay. Out of scope: workshop, leaderboards, multiplayer, DRM.
+- [ ] Windows, Linux/Steam Deck (gamepad "Playable" needs the M6 gamepad story) and macOS builds run the GPU path with the same `?gpucompare=1` results as Chrome. The tester tests both the browser and Steam builds.
+- [ ] No runtime network or CDN dependencies.
+- [ ] **Store assets (designer, rendered from the real engine):** ASCII key art; capsules (header 920x430, small 462x174, main 1232x706, vertical 748x896, library 600x900, hero 3840x1240, logo); 5+ screenshots; a 30-60 s in-engine trailer. Writer: short and long store descriptions.
+- [ ] Release order: the itch.io browser demo (M1+M2 slice) first, the Steam "Coming Soon" page once M3 is playable, launch at the end of M6. The $100 Steam Direct fee is budgeted by the owner.
+Design needed: yes – key art, capsules, screenshots, trailer.
+Notes / dependencies: D-012; US-038 (settings via the adapter), the M2 save-point story (versioned saves through the adapter), M6 gamepad. Probably splits into 3-4 stories when refined (wrapper, Steamworks, store assets, release checklist).
 
 > **US-004b resumed and finished (2026-09-23, programmer).** Status is now `arch-review` (see the story section above for the full AC checklist and programmer notes). All of `tools/bench-cast.mjs` (default + `--shader=reference` + `--gc`), `?shadetest=1` (361/361, worst deviation 0.25) and `node game/js/physics/physics.test.js` (187/187, untouched) pass; the game loads with no console errors on `?debug=1 ?bench=1 ?glyphs=1 ?shadetest=1 ?force2d=1 ?demo=1 ?origin=1480,1018` (checked in a real Chrome tab via this session's own preview server). `main.js` needed no change (it never reads `castScene`'s return value). One item is flagged **ASK ARCHITECT** in the story's AC list: 2 additional overdraw/gap bugs (beyond the 2 architecture.md 12 named) had to be fixed to hit exactly 9,600 writes/pose, so the pre-fast-shader image is not byte-identical to the recorded baseline - every differing cell was verified to be either an already-ambiguous multi-write cell in the original, or the same 2-row gap bug, never a clean regression. Next: architect review of `game/js/render/raycaster.js`, `OpenSpans.js`, `fastShade.js`, `shadeTest.js`, `tools/bench-cast.mjs` (`ARCH OK` -> po-review, or `ARCH CHANGES` -> back to programmer), with a decision on the ASK ARCHITECT item above. US-009's architect tech notes still haven't been started. The owner's verdict on the detail-pass preview (`design/preview/detail_pass.html`) is still pending.
 
