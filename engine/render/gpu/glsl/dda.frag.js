@@ -255,12 +255,51 @@ void main() {
       // world_m1 spawn lip but broke legitimate walls whose visible base
       // sits at/below the near cell's floor (e.g. '?gpucompare=1''s "facing
       // stair" pose: 100% -> depthViol/uvViol 5). Not applied.
-      if (N.solid && hb < N.floorH && t1 < bestT) {
+      // BUG-GPU-002 (2nd fix): the remaining hole (grid 107,23 on the stair
+      // pose, cpuKind WALL) is 'hb' landing bit-EXACT on 'N.floorH' (both
+      // 3.0) at the outer-wall boundary - a strict '<' excludes that exact
+      // row, no other branch claims it (N.ceilSky, no floor/ceiling plane
+      // fires for this slope sign), the ray walks straight off the grid
+      // edge with nothing hit. castColumn never has this gap: it discretizes
+      // to integer screen ROWS via floor/ceil, so the boundary row is always
+      // claimed by exactly one of the wall-cap/step bands, never dropped.
+      // '<=' (this line only - the exact-match case is single-point, so
+      // widening it doesn't reclassify any currently-correct hit) closes it.
+      if (N.solid && hb <= N.floorH && t1 < bestT) {
         bestT = t1; bestKind = KIND_WALL; bestMat = N.wallMat; bestFace = face; bestPlaneId = wallPlaneId;
         bestU = u; bestV = hb; bestZ = z;
         bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
       } else if (!N.solid && N.floorH > C.floorH && hb < N.floorH && t1 < bestT) {
         bestT = t1; bestKind = KIND_STEP; bestMat = N.wallMat; bestFace = face; bestPlaneId = wallPlaneId;
+        bestU = u; bestV = hb; bestZ = z;
+        bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
+      // BUG-GPU-002 fix: castColumn's non-solid transition (sectorCaster.js
+      // ~line 686) draws a step-front band whenever floorH DIFFERS, in
+      // EITHER direction - 'higher' is whichever cell has the bigger
+      // floorH, and when the NEAR cell is higher (descending: stepping off
+      // a raised platform, e.g. the stair pose's 1.0m platform edge) it
+      // still emits a face, textured with the near cell's own wallMat. The
+      // branch above only covered the ascending case (far higher); the
+      // descending case had no branch at all, so the ray fell through with
+      // no hit at this boundary and, on the stair pose's platform edge,
+      // never found any other plane before leaving the footprint - a
+      // kind-0 hole where the CPU draws a KIND_STEP riser. Mirrors the
+      // ascending branch exactly, swapping which cell owns floorH/wallMat
+      // (C is always the 'near' cell here, matching castColumn's
+      // 'nearSector' - same z/wallAoD reference as every other branch).
+      // The ascending branch's single-sided 'hb < N.floorH' bound is safe
+      // because a look-down ray that dips below the bound is already
+      // claimed by C's OWN floor-plane check above (smaller bestT, so
+      // 't1 < bestT' fails here) - but that only guards the DOWN side.
+      // This descending case needs the explicit upper bound too
+      // ('hb < C.floorH'): without it, any level/upward-looking ray
+      // (hb >= leyeH > C.floorH, e.g. standing on the platform looking
+      // across the room) satisfies 'hb > N.floorH' trivially and this
+      // branch wrongly claimed the open view above the platform edge as a
+      // riser face - the first attempt's regression (kind match dropped to
+      // 0-95% on nearly every pose in '?gpucompare=1').
+      } else if (!N.solid && N.floorH < C.floorH && hb > N.floorH && hb < C.floorH && t1 < bestT) {
+        bestT = t1; bestKind = KIND_STEP; bestMat = C.wallMat; bestFace = face; bestPlaneId = wallPlaneId;
         bestU = u; bestV = hb; bestZ = z;
         bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
       } else if (!C.ceilSky && !N.ceilSky && N.ceilH < C.ceilH && hb > N.ceilH && t1 < bestT) {
