@@ -671,3 +671,79 @@ Facts (from the code): the GL back-end is a single fullscreen triangle that samp
 
 ### Recommendation
 **B, staged, decided now**, with C as its first stage: (1) US-029 GPU pipeline + G-buffer upload + shade/edge port + `?gpucompare=1` (= C; validates data textures and parity tooling with the CPU caster still authoritative); (2) US-006 lighting written in GLSL with a JS reference; (3) US-030 sector DDA in GLSL with N-ray coverage (shimmer fix), sprites pass; (4) US-016 terrain GPU-first. Steps 1-3 before US-006/US-016 in M1 (M1 grows by ~3 engine stories; writing lighting and terrain twice would cost more). Option A is the fallback plan only if step 1 fails its parity gate on the owner's real hardware. Grid default stays 160x60 until step 3 lands; then 240x90 becomes a setting, not a rewrite.
+
+### 14.1 GPU cell pipeline, stage 1 (US-029): layout, formats, boundaries (architect, 2026-09-23)
+
+Normative for `engine/render/gpu/`. The build plan (order, tests, do-nots) is in the US-029 tech notes in `docs/backlog.md`. Stage 2 (US-030) replaces items 2-3 (the upload) with GLSL casters writing the same textures; everything else here stays.
+
+**1. Files and boundaries** (all under `engine/render/gpu/`, imported only inside `engine/`, exported through `engine/index.js`; `check-deps` rules 1-2 apply: no `location.search`, no `window.ASSETS`).
+
+| File | Owns | Node-testable |
+|---|---|---|
+| `GpuCellPipeline.js` | FBOs, G-buffer textures + staging arrays, data textures, programs, `frame(fb, light)`, the present hook, `stats`, `ready`, `dispose()` | no (needs gl) |
+| `ShadeTextures.js` | `packMaterialTable(table, DP) -> { matF, matI, setI, setF, gain, uniforms, dims }` and `unpack*` helpers (pure typed-array packing, asserts) | yes |
+| `glsl/common.js`, `glsl/shade.frag.js`, `glsl/edge.frag.js`, `glsl/debug.frag.js`, `glsl/cell.vert.js` | GLSL sources as template strings; constants injected from JS (`MAX_TONES`, `MAX_LEVELS`, slot indices) so JS and GLSL share one layout table | source-string checks only |
+| `GpuTimer.js` | `EXT_disjoint_timer_query_webgl2` ring, p50/p95 | no |
+| `gpuCompare.js` | `runGpuCompare(...)` (readback, test only) + pure `compareCells(...)` | `compareCells` yes |
+| `glUtil.js` | `compileShader`, `linkProgram`, `createTexture2D(gl, internalFormat, w, h)`, `isSoftwareRenderer(gl)` - moved out of `RenderTargetGL.js`, which imports them | no |
+
+`RenderTargetGL` additions: `gl`, `fgTex`, `bgTex` become documented read-only fields; `setCellPass(fn|null)`; `present()` = upload cells -> hook -> re-bind own state -> draw (shader and draw unchanged). `CellBuffer` addition: `mask: Uint8Array(N)` (1 = written by JS since the last clear/hook). `bindShading` addition: `allV2: boolean`. Game/tool code never touches `gl`; the game only constructs the pipeline and reads `stats`/`ready`.
+
+**2. Per-frame G-buffer textures** (`cols x rows`, NEAREST, CLAMP; sampled with `texelFetch` only; texture row y == grid row y; no flips anywhere in the cell passes)
+
+| Texture | Internal format / sampler | Texel | Source |
+|---|---|---|---|
+| `GI` | RG32UI / `usampler2D` | `x = uint(planeId)`, `y = kind OR face<<8 OR mask<<12 OR mat<<16` (bitwise or) | staging `Uint32Array(2N)` |
+| `GA` | RGBA32F / `sampler2D` | u, v, z, aoD | staging `Float32Array(4N)` |
+| `GD` | RGBA32F | dudx, dvdx, dudy, dvdy | staging `Float32Array(4N)` |
+| `DEPTH` | R32F | dist (`Infinity` allowed) | `fb.depth.depth` directly |
+| `fgTex`/`bgTex` (rt) | RGBA8 | JS layer in, final cells out | `rt.cells.fg/bg` (existing) |
+| `shadeFg`/`shadeBg` | RGBA8 (pipeline-owned) | pass-1 output; `shadeBg.a` 0 = passthrough, 1 = shaded | pass 1 |
+| `ruleTex` | R8UI (debug only) | edge rule 0-8 | pass 2 |
+
+44 bytes/cell -> 422 KB at 160x60, ~950 KB at 240x90 (stage 1 only). `planeId` is compared for equality only, so the uint bit-cast is exact.
+
+**3. Bind-time data textures** (rebuilt on every `bindShading`; row = id; row 0 unused for materials)
+
+`MAT_F` RGBA32F, width 32, row = material id:
+
+| slot | x | y | z | w |
+|---|---|---|---|---|
+| 0 | albedo | bgK | detail | jitter |
+| 1 | emissive | toneTotal | lod.mid | lod.far |
+| 2 | lod.dither | grid.u | grid.v | grid.stagger |
+| 3 | grid.shade | grid.amount | grid.bgK | grid.maxCover |
+| 4 | grid.tint r | g | b | 0 |
+| 5 | bevel.top | bevel.topShade | bevel.bottom | bevel.bottomShade |
+| 6 | band.period | band.width | band.shade | band.bgK |
+| 7 | band.tone r | g | b | band.edgeShade |
+| 8 | overlay.amount | overlay.shade | overlay.bandFull | overlay.bandZero |
+| 9 | overlay.joint | overlay.face | speckle.chance | speckle.shade |
+| 10-13 | tone[t] r | g | b | toneW[t] (t = 0..3) |
+| 14-21 | overlay.tint[k] r | g | b | 0 (k = 0..7) |
+
+`MAT_I` RGBA32I (`isampler2D`), width 4: slot 0 = (seed, flags, toneCount, overlayK); slot 1 = (face.near, face.mid, face.far, grid.gapSetId); slot 2 = (grid.crossCode, band.setId, overlay.setId, speckle.setId); slot 3 = (bevelGate, bandGate, overlayGate, speckleGate). `flags` bits, in order from bit 0: HAS_GRID, GRID_TINT, GRID_BGK, GRID_CROSS, GRID_TIE, GRID_LINES, GRID_GAP, HAS_BEVEL, HAS_BAND, BAND_IS_U, BAND_TONE, BAND_BGK, HAS_OVERLAY, OV_BAND, HAS_SPECKLE, HAS_LOD. Absent features read as 0 in `MAT_F` and are never consulted without their flag.
+
+`SET_I` RGBA32I, width 64, row = set id: texel 0 = (oriented, orientAxis, levels, nDark); texel 1 = (maxAlt, nFam, 0, 0); texel `2 + e` = glyph entry e: (altCount, codes 0-3 packed 8 bits each little-endian in y, codes 4-7 in z, 0). Entry order: flat set -> `levels` entries; oriented set -> `nDark` dark entries, then `nFam` entries each for fam h, v, d1, d2 (fam class c, level li = entry `nDark + c*nFam + li`). `SET_F` R32F, width 32: `thresholds[k]`. `GAIN` R32F 256x1 = `table.gainLUT`. Pack-time asserts (throw): tones <= 4, tints <= 8, `maxAlt` <= 8, levels <= 32, entries <= 62.
+
+Scalars are plain uniforms (no UBO): `shading.*`, `cellAspect`, `TAN22/TAN68`, `fog.*` (+ `ivec2` sparse/haze codes and alt counts), `ao.r/k`, `faceK[7]`, `edges.fogMax`, `ruleGlyph[8]`, `ruleGain[8]`, `uLight` (vec3, per frame), `uTimeSec` (per frame, currently unused).
+
+**4. Pass order inside the present hook** (viewport `cols x rows`, fullscreen triangle from `gl_VertexID`, address `ivec2(gl_FragCoord.xy)`):
+1. repack + 4 `texSubImage2D` (`GI`, `GA`, `GD`, `DEPTH`), then `mask.fill(0)`;
+2. pass 1 `shade` -> MRT `shadeFg`, `shadeBg` (reads `fgTex`, `bgTex`, `GI`, `GA`, `GD`, `DEPTH`, 5 data textures = 11 units);
+3. pass 2 `edge` (or `debug`) -> MRT `rt.fgTex`, `rt.bgTex` (reads `shadeFg`, `shadeBg`, `GI`, `DEPTH`);
+4. restore: `bindFramebuffer(null)`, canvas viewport; `present()` re-binds its program and units 0-2 itself.
+A texture is never bound for reading in the pass that renders into it.
+
+**5. Numeric rules for GLSL ports of JS passes** (apply to every later GLSL pass too):
+- Hashes: `uint` arithmetic only (wrap == `Math.imul`), `uint(int)` for signed inputs, final `float(h >> 8) * (1.0/16777216.0)`. Never `float(uint32)` directly, never `round()`, never `%` or `>>` on negative signed ints.
+- Bytes: `floor(v + 0.5) / 255.0` in the shader; read bytes back as `floor(t * 255.0 + 0.5)`.
+- LUT sampling: `int(clamp(x, 0.0, 1.0) * float(size - 1) + 0.5)`, same as `samplePowLUT`.
+- Threshold/tier/texel compares run in float32 on the GPU and float64 in JS; flips at exact boundaries are expected at a rate < 0.01 % of cells and are inside the parity tolerance. If a parity run shows more, a constant is being computed differently, not "float noise".
+- Ban list from 8.1 rule 5 carries over; dynamic loops must have a constant upper bound.
+
+**6. Budgets (stage 1, 160x60, owner laptop)**: JS in the hook <= 0.5 ms (repack 0.10, uploads 0.35, draws 0.05); GPU <= 4 ms per D-009 (expected < 1 ms); `?bench=1` reports `jsMs`, `uploadMs`, `gpuMsP50/P95` or `gpu n/a`. Timer: ring of 4 queries, a result is discarded after `GPU_DISJOINT_EXT`.
+
+**7. Fallback matrix** (decided once per frame before shading, via `pipeline.ready`): no WebGL2 / `?force2d=1` -> Canvas2D + JS passes; `gl2` but `?gpu=0`, software renderer, `DP == null` (`?detail=0`), `!table.allV2`, compile/link failure or context lost -> gl2 presenter + JS passes. Overlay shows `shade: gpu|cpu`. The JS passes remain exported and are the oracle (`shadetest`, `bench-cast`, `compare-detail-export` untouched).
+
+**8. Parity tooling contract** (`?gpucompare=1`): both paths consume the same cast (`castFrame` once per pose), JS result copied out of `rt.cells`, GPU result via `readPixels` on a readback FBO after `gl.finish()`; `compareCells` reports glyph match excluding 4-neighbour-kind edge cells, fg/bg deltas over all `kind != 0` cells, `mat == 0` count, per-rule mismatches. Readback is test-only; no engine path may call `readPixels` in the frame loop (editor picking in M5 is async, 1 cell, and a separate decision).
