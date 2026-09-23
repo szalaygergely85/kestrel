@@ -32,6 +32,10 @@
   'use strict';
   var ASSETS = root.ASSETS = root.ASSETS || {};
   var P = ASSETS.palette;
+  // Node (CommonJS, or ESM via default import / createRequire): pull palette.js in if nobody loaded it yet.
+  if (!P && typeof module === 'object' && module && module.exports && typeof require === 'function') {
+    P = ASSETS.palette = require('./palette.js');
+  }
   if (!P) throw new Error('design/detail-pass.js: load design/palette.js first');
   var rgb = P.rgb;
 
@@ -620,4 +624,5 @@
       fogFactor: fogFactor, pickTone: pickTone, ALL_ON: ALL_ON
     }
   };
+  if (typeof module === 'object' && module && module.exports) module.exports = ASSETS.detailPass;
 })(typeof window !== 'undefined' ? window : globalThis);
