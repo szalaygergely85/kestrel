@@ -277,7 +277,6 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
 
   let openTop = 0;
   let openBottom = ctx.rows - 1;
-  let skyClosedTop = false; // once sky has claimed the top of the span, stop drawing ceiling geometry
   let skyPending = false; // sky was requested but not yet painted - deferred to column end (US-004b)
   let ceilingFilledTo = openTop - 1; // highest row index a ceiling segment has already drawn
   let floorFilledTo = ctx.rows; // lowest-numbered (closest-to-horizon) row any floor-ish plane has reached; ctx.rows = "nothing yet"
@@ -308,9 +307,9 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
     // 1) The NEAR cell's own floor + ceiling planes, for the segment we
     // just finished walking through.
     castFloorCeiling(rt, x, ctx, nearSector, farSector, prevFloorDist, prevCeilDist, perpDist,
-      openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo);
-    skyClosedTop = ctx._fcSkyClosedTop; ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo;
-    if (ctx._fcSkyRequested) skyPending = true;
+      openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending);
+    ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo;
+    skyPending = ctx._fcSkyPending;
 
     if (!farSector) {
       // Left the level grid: this is a job for the terrain pass (D-008 item
@@ -386,7 +385,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       openBottom = Math.min(openBottom, r0 - 1);
     }
 
-    if (!skyClosedTop && farSector.ceilH !== 'sky' && nearSector.ceilH !== 'sky' &&
+    if (farSector.ceilH !== 'sky' && nearSector.ceilH !== 'sky' &&
         farSector.ceilH !== nearSector.ceilH) {
       const lowerCell = farSector.ceilH < nearSector.ceilH ? farSector : nearSector;
       const loC = Math.min(farSector.ceilH, nearSector.ceilH);
@@ -486,26 +485,31 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
 // which is exactly the kind of waste this story removes, so the gap has to
 // be closed properly instead).
 //
-// Sky is never painted here (US-004b): when this segment's ceiling is sky,
-// it only raises `skyRequested` (and freezes ceiling processing via
-// `skyClosedTop`) - the actual paint happens once, at the very end of the
-// column, in `resolveColumn`, using the FINAL floor high-water mark, so a
-// farther floor segment can never need to overwrite an already-sky-painted
-// row (the overdraw source this story removes).
+// Sky is never painted as a DEFERRED fallback here (US-004b) unless the far
+// side's bound is still unknown: when this segment's ceiling is sky, it
+// decides per-segment (using `farSector`, see below) whether to paint the
+// sky band immediately (bounded by the next numeric ceiling) or only raise
+// `skyRequested` (deferred paint at column end, in `resolveColumn`, using
+// the FINAL floor high-water mark). There used to be a `skyClosedTop` latch
+// that, once set by a deferred segment, suppressed ceiling processing for
+// the REST of the column - that broke a multi-cell-wide skylight: the
+// first `^` segment (whose far side is another `^`) deferred and latched
+// closed, so the LAST `^` segment (whose far side is finally a real
+// ceiling) never got a chance to bound and paint the sky (architect
+// re-review 2026-09-24). Removed: every segment with a sky ceiling now
+// re-evaluates its OWN `farSector` independently, every time.
 //
 // No object is returned (architecture.md 9 rule 3): the updated
-// {skyClosedTop, ceilingFilledTo, floorFilledTo, skyRequested} are written
-// onto `ctx._fc*` scratch fields (reused every call, like `ctx._planeR0/1`)
-// and read back by the caller.
-function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, skyClosedTop, ceilingFilledTo, floorFilledTo) {
-  ctx._fcSkyRequested = false;
-
+// {ceilingFilledTo, floorFilledTo, skyRequested} are written onto `ctx._fc*`
+// scratch fields (reused every call, like `ctx._planeR0/1`) and read back
+// by the caller.
+function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending) {
   if (openTop <= openBottom && dFar > dNearFloor) {
     castPlane(rt, x, ctx, sector.floorMat, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH);
     if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
   }
 
-  if (!skyClosedTop && openTop <= openBottom) {
+  if (openTop <= openBottom) {
     const ceilTop = Math.max(openTop, ceilingFilledTo + 1);
     if (ceilTop <= openBottom) {
       if (sector.ceilH === 'sky') {
@@ -514,41 +518,59 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
         // segment, not left open until something eventually stops it.
         if (sector === VOID_SECTOR) {
           // (d) the ray left the grid (or started outside any sector) -
-          // request nothing at all. These rows stay open: `resolveColumn`
-          // fills them with sky when `skyFallback` is on (same look as
-          // before), or reports them as an open span for a future terrain
-          // pass - which a "sky-closed" claim here would have hidden.
+          // request nothing at all, and don't touch `skyPending` either.
+          // These rows stay open: `resolveColumn` fills them with sky when
+          // `skyFallback` is on (same look as before), or reports them as
+          // an open span for a future terrain pass - which a "sky-closed"
+          // claim here would have hidden.
         } else if (farSector && !farSector.solid && farSector.ceilH !== 'sky') {
           // (a) the far side has a numeric ceiling: paint the sky band now,
           // bounded by exactly where that far ceiling's own plane will
           // start (mirrors castPlane's near/far-exclusive convention - see
-          // its doc comment), and keep going: `skyClosedTop` stays false,
-          // so farther (non-sky) ceilings still continue from
-          // `ceilingFilledTo + 1` as usual. This is the fix for "cannot see
-          // the building's ceiling beyond the skylight".
+          // its doc comment). Farther (non-sky) ceilings then continue from
+          // the advanced `ceilingFilledTo` as usual. This is the fix for
+          // "cannot see the building's ceiling beyond the skylight". This
+          // fully resolves any previously pending sky too - a farther
+          // segment's real ceiling must not stay gated on it (found while
+          // fixing the multi-cell-skylight bug: a solid cell whose own
+          // `ceilH` happens to be 'sky' can defer, then the very next
+          // segment can be a real ceiling with no open-sky segment in
+          // between to re-resolve it otherwise).
           const skyR1 = Math.min(openBottom, Math.ceil(rowAtHeight(ctx, farSector.ceilH, dFar)) - 1);
           if (ceilTop <= skyR1) {
             fillSky(rt, x, ctx, ceilTop, skyR1, azimuthDeg);
             ceilingFilledTo = Math.max(ceilingFilledTo, skyR1);
           }
+          skyPending = false;
         } else {
           // (b) the far side is solid (its wall face / `openBottom` will
           // bound the sky), or (c) it's more sky, or it's the grid edge -
           // the far bound isn't known yet: defer, as before (painted once,
-          // at column end, using the final `floorFilledTo`).
-          skyClosedTop = true;
-          ctx._fcSkyRequested = true;
+          // at column end, using the final `floorFilledTo`). No latch on
+          // FUTURE sky segments (removed, see the module doc): the NEXT
+          // segment re-decides independently from scratch. `skyPending`
+          // itself, though, does carry forward - see the ceiling-plane
+          // branch below.
+          skyPending = true;
         }
-      } else if (dFar > dNearCeil) {
+      } else if (!skyPending && dFar > dNearCeil) {
+        // `skyPending`: a still-unresolved deferred sky band from an
+        // EARLIER segment. Drawing a real ceiling here would use the wrong
+        // `ceilTop` (`ceilingFilledTo` doesn't know about the pending band
+        // yet) and steal rows the deferred paint in `resolveColumn` still
+        // owns. Skip until it's resolved (branch (a) above, on a LATER
+        // segment whose OWN `sector.ceilH` is still 'sky', clears it) -
+        // `ceilingFilledTo` stays put meanwhile, so this same draw is
+        // retried, correctly, once it is.
         castPlane(rt, x, ctx, sector.ceilMat, sector.ceilH, dNearCeil, dFar, ceilTop, openBottom, sector.floorH);
         if (ctx._planeR1 >= ctx._planeR0) ceilingFilledTo = Math.max(ceilingFilledTo, ctx._planeR1);
       }
     }
   }
 
-  ctx._fcSkyClosedTop = skyClosedTop;
   ctx._fcCeilingFilledTo = ceilingFilledTo;
   ctx._fcFloorFilledTo = floorFilledTo;
+  ctx._fcSkyPending = skyPending;
 }
 
 // Draws a single horizontal plane (floor, ceiling, or a solid column's top

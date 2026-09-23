@@ -91,9 +91,9 @@ const POSES = [
 // change to the caster's geometry/overdraw logic and paste the new values
 // in here (this script does not self-edit).
 const EMBEDDED_BASELINE = {
-  'start pose (S, facing east, level)': { glyphIdx: '785dfb0b', fg: '4e678009', bg: '7a4758c3' },
+  'start pose (S, facing east, level)': { glyphIdx: 'b716ad13', fg: '428bc64f', bg: '560c8971' },
   'facing stair + 1.0m platform': { glyphIdx: 'bae66e57', fg: '4498f0d1', bg: 'b1925193' },
-  'sky over the low wall, pitch +20': { glyphIdx: 'c1054ea8', fg: '407f77e7', bg: '3ff190bd' },
+  'sky over the low wall, pitch +20': { glyphIdx: '3530ccb8', fg: 'aa5dcf64', bg: '8da632bf' },
   'long diagonal, pitch -35': { glyphIdx: '91811e1f', fg: '92a90df4', bg: '2ad61bfb' },
 };
 
