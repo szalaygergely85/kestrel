@@ -345,6 +345,65 @@ Rules: the sky sentinel is `SKY_H` plus the flag bit (never `Infinity`/`NaN` in 
 
 Invariants: one structure at origin O with the camera translated by O produces the same cells, depth and gbuf as the bare level at origin 0 (G-buffer `u,v` are level-local, planeIds carry `structSeq`); no allocation; own overhead <= 0.05 ms. US-030 replaces step 3 (and later 4) with the GPU DDA over 7.2 and keeps steps 1, 2 and 5.
 
+### 7.4 Gameplay systems: interaction, sector animation, rollers, triggers, fade, restart (US-012/013/014/017; architect, 2026-09-23)
+
+Engine = generic mechanisms over level data. Game = named behaviours in `game/js/quest/`. Authoritative state lives only in entity data, `world.state` and `structure.dynamics` (all serialized). Every table below (`world.interactables`, `world.triggers`, tag maps, `inside` bits) is runtime, rebuilt by `World.load`/`deserialize`, never serialized. No allocation in any per-step function (rule 9).
+
+**Fixed-step order** (the `update` in `game/js/main.js`, 60 Hz; each story adds only its own line):
+1. `stepSectorAnims(world, dt)` (US-014), so collision sees this step's ceiling
+2. `integrate(player, ...)` (existing; 7.1 step 3 multiplies the wish speed by `body.speedScale ?? 1`, US-013)
+3. `stepRollers(world, dt, cfg)` then `resolveBodyContacts(world, player, cfg)` (US-013)
+4. `updateTriggers(world, engine, player)` (US-017)
+5. `updateInteraction(world, engine, eyePose, usePressed)` (US-012)
+6. `stepAnimations(world, dtMs)`, then `world.flushEvents()`
+
+**Used flags (generic).** An interactable or trigger with `once: true` writes `world.state['used.' + structId + '.' + id] = true` when its behaviour returns anything except `false` (the stubs return `false`, so they never consume). A used entry gives no prompt and never fires. `requires: '<state key>'` disables an interactable while that key is falsy (US-022 data becomes `requires: 'tower.lantern.taken'`). Behaviours may also set their own quest keys (`tower.lantern.taken`).
+
+**Interaction** (`engine/world/interaction.js`):
+```js
+/** @typedef {{key:string, structId:string, id:string, name:string, x:number, y:number, z:number, radius:number, prompt:string,
+ *   once:boolean, requires:string|null, propId:string|null, def:Object}} InteractableRec
+ *   world coords (level x,y,z + origin); name = def.interact; propId = `${structId}.${def.prop}` (the US-011 prop entity id) */
+world.interactables: InteractableRec[]                 // built in World.load from every structure's def.interactables
+/** @typedef {{targetKey:string|null, prompt:string, dist:number, angleDeg:number}} InteractionState   world.interaction, one reused object */
+findInteractTarget(world, eye: CameraPose, cfg: {reach?: 1.8, coneDeg?: 20}, out: InteractionState): InteractionState
+  // candidate: not used, requires met, |p - eye| <= min(rec.radius, reach), angle(viewDir, p - eye) <= coneDeg, hasLineOfSight.
+  // Winner: smallest angle, then smaller dist, then array order. viewDir = (sin yaw * cos pitch, -cos yaw * cos pitch, sin pitch).
+updateInteraction(world, engine, eye: CameraPose, usePressed: boolean): void
+  // fills world.interaction; on usePressed && target: fireInteraction(rec.name, {engine, def: rec.def, entity: world.get(rec.propId),
+  // actor: world.get('player')}), used flag, emit 'interaction:fired' {key, name}, then the prop handle's 'interact' listeners (10.1).
+hasLineOfSight(world, ax, ay, az, bx, by, bz): boolean
+  // 0.1 m samples (<= 20 at 1.8 m): blocked if sectorAt is null/solid, z < floorH, or numeric ceilH < z. Pure; reused later by AI.
+```
+UI: `engine/ui/crosshair.js` `drawCrosshair(rt, style, state: InteractionState)`. `style` = `uiStyle.crosshair` + `uiStyle.prompt`, passed in by the game (the engine never reads `ASSETS`).
+
+**Attached lights (US-012 defines them, US-006 consumes them).** Entity component `light: { preset, on, attach: 'eye' | null, offset: {right, down, fwd} (m), sway: {amp} (m) }`, JSON only. `attachedLightPos(entity, eyeFeel, out: Float64Array(3))` (`engine/entities/attach.js`, pure) = eye position + offset rotated by the yaw only (the lamp does not swing with pitch) + sway (`amp * sin(bobPhase)` right, `0.5 * amp * |sin(bobPhase)|` down). US-006 adds `LightSet.syncEntityLights(world, palette)` per frame: an entity with `light` gets a slot (add on first sight, then `move`/`setOn`; remove when the component or the entity goes). Flicker comes from the preset, as for static lights.
+
+**Sector animation** (`World`, US-014):
+```js
+world.animateSectorTo(tag, target01, {delay = 0}?): boolean   // false = no dynamic sector with that tag. Writes structure.dynamics[tag] = {t, target, delay}
+stepSectorAnims(world, dtSec): void    // per dynamics entry with t != target: consume delay first, then move t toward target by dtSec / dynamic.openTime
+                                       // (clamped, lands exactly on target), animateSector(tag, t). On arrival: emit 'world:sectorAnimDone' {structureId, tag, t01}
+```
+`dynamics` gains `target` and `delay` (missing = `target: t`, `delay: 0`, so old states load). `animateSector` must use a `tag -> {structure, ch}` Map built in `placeStructure` (no `Object.keys(legend)` per step). `updateAnimatedSector` must write relief **into** the existing `packed.relief` (no new array per step). **GPU path, no new code:** `updateAnimatedSector` bumps `packed.version` and widens `dirtyY0/dirtyY1` (+1 row each side for relief). On the next frame `planFrameUpdate` (`WorldTextures.js`) `texSubImage2D`s exactly those rows of `GEOM`/`MATS`/`FLAGS` (relief = `FLAGS.g`), then resets them to -1. `structVersion` does not change, so the atlas is not rebuilt. The CPU caster and collision read the legend entry directly.
+
+**Rollers** (`engine/physics/sphere.js`, `engine/physics/roller.js`, US-013; in-house, see US-013 for the Rapier evaluation):
+```js
+moveSphere(world, x, y, dx, dy, radius, z, opts, out: MoveResult): MoveResult   // = moveCapsule(footZ = z, height = 2r, stepUpMax = 0, grounded = true): drops pass, any rise blocks
+stepRollers(world, dtSec, cfg): void          // entities with components.roller + body
+resolveBodyContacts(world, actor, cfg): void  // actor capsule vs every roller
+rollFrame(rollDist, radius, nFrames): number  // floor(rollDist / (2*PI*radius) * nFrames) mod nFrames
+Level.tiltAt(x, y, out: {x, y}): out          // level-local; from def.layers.tilt + def.tilt (MAP_FORMAT extension): numpad dir * grade, '5' = toward tilt.hollowCenter (the sink centre), '.' = 0
+```
+Components: `body: {radius, vx, vy, vz, grounded}` + `roller: {restitution: 0.3, rollFriction: 0.8 (m/s^2), sleepSpeed: 0.05, rollDist: 0, sleeping: false, sleepT: 0}`. Roller step: `a = g * tilt - rollFriction * unit(v)` (friction clamps v at 0 and never reverses it); `v += a*dt`; `moveSphere`; a face hit does `v_axis = -e * v_axis`, a corner hit does `v -= (1+e)(v.n) n`; vertical as 7.1 step 5 with `stepUpMax 0` (drops fall and land with `vz = 0`). Sleep: `|v| < sleepSpeed` and tilt 0 for 0.25 s -> `v = 0`, `sleeping = true`; a contact impulse wakes it. It writes `transform.x/y/z`, `rollDist += |dxy|`, `yawDeg` = motion heading (the sprite direction key), and `sprite.frame = rollFrame(...)` with `sprite.playing = false`.
+Contacts: horizontal circle vs circle, only when the z ranges overlap; `n = unit(actor - roller)`. Push: if `vp.(-n) >= cfg.pushMinSpeed (0.5)`, the roller gets `v_n = max(v_n, vp.(-n))` along `-n` and wakes, and the actor gets `body.speedScale = cfg.pushSpeedScale (0.5)` for the next step (otherwise 1). Separation: move the roller out by the overlap along `-n` with `moveSphere`; move any remaining overlap out of the actor along `+n` with `moveCapsule`; if more than 1e-3 m still overlaps, restore the actor to its step-start x, y (non-overlapping by induction) and zero its velocity component toward the roller. Invariant (tested): no overlap > 1e-3 m at the end of any step. Budget <= 0.02 ms per step for one roller.
+
+**Triggers** (`engine/world/triggers.js`, US-017): `TriggerRec {key, structId, id, name, once, shape: 'cells'|'circle', mask: Uint8Array(w*h)|null, x, y, r, zMin, def, inside}`. For cell triggers, the cells are every cell whose legend `tag === 'trigger:' + id`. If there are none, `def.cells` (`[cx, cy]` list) is used; if both exist and differ, the loader warns once. `updateTriggers(world, engine, actor)`: actor feet -> structure-local cell (or circle + `z >= zMin`); an enter edge (`inside` 0 -> 1) calls `fireTrigger(name, {engine, def, entity: actor})`, sets the used flag and emits `'trigger:fired'` {key, name}. `inside` is runtime only: after a load, standing inside counts as an enter, and the used flags block repeats.
+
+**Fade** (`engine/ui/fade.js`, the `uiStyle.fade` rule as engine code; the ramp arrives as data): `createFadeLut(ramp: string, letterIndex, minGain): FadeLut` (`{idx: Uint8Array(128), ramp: Uint8Array, minGain}`). `fadeGlyph(code, a, lut): number`: `i` = ramp index of `code` (letters, digits and anything else not in the ramp = `letterIndex`), result `ramp[round(a*i)]`, space at `a = 0`. Colours: `fg *= minGain + (1-minGain)*a`, `bg *= a`. `fb.sceneFade` (1 = off) applies to **non-mask cells only**, so UI text stays independent: on the CPU path `applySceneFade(rt, a, lut)` runs at the end of `renderWorld`; on the GPU path `uSceneFade` + a `FADELUT` R8UI texture go into the final composite pass (sprite pass F). UI text fades by calling `fadeGlyph` before `drawText` (US-015 uses the same helper).
+
+**Restart / world swap.** `engine.setWorld(world)` (new): sets `engine.world` and `world.events = engine.events`, then emits `'world:loaded'`. `main.js` keeps `initialState = serialize(world)` taken right after load; R calls `engine.setWorld(deserialize(initialState, assets))`. The GPU pipeline already rebuilds the atlas when the world object changes (`GpuCellPipeline._worldAtlasWorld`). `'world:loaded'` subscribers rebuild their runtime state (LightSet, handle listeners, game UI). Rule: game state that must reset lives in `world.state` (`hints.shown`, `ui.mapCard.shown`, `quest.endT`); module-level game variables are reset only in the `'world:loaded'` handler, never by a hand-written reset list.
+
 ## 8. Frame pipeline and budgets
 
 ```
