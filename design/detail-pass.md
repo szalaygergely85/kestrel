@@ -65,3 +65,23 @@ Performance note: per cell this is about 3 integer hashes, 2-4 floors, 2 crossin
 2. test_room / tower: `ceilMat` becomes `ceiling_timber` where a room has a ceiling.
 3. `?shadetest` gets a v2 table: exact glyph match, and fg/bg within +-4 against `DP.util.shade` / `edgePass`.
 4. Then v1 `texture.rows` and the brightness-only ramps are retired for v2 materials (kept for sky, iron, grate).
+
+## 5. Proposed-panel export (US-028 parity AC)
+`design/preview/detail_pass.html` has an **export proposed JSON** button (downloads a file) and `window.exportProposed()` (returns the object). Both re-render at the current pose first. The export is the proposed panel **before** the "show edge map" debug overlay, so that toggle does not change it. Rendering and palette values are unchanged.
+
+```js
+{
+  format: 'ascii-quest/detail-pass-export', version: 1,
+  level: 'test_room', panel: 'proposed',
+  pose:   { x, y, z, yaw, pitch },          // world cells; yaw/pitch in degrees (yaw 0 = -y, 90 = +x)
+  lights: { lantern: bool, torch: bool, sun: bool, sunAzimuth: deg },
+  features: { lift, sets, detail, joints, tones, faces, ao, overlay, fog, edges }, // bools; all true = the approved look
+  grid:   { cols: 160, rows: 60, cellPx, cellW, cellH, cellAspect },            // cellAspect = cellH / cellW (feeds DP.shading.cellAspect)
+  glyphs: [ 'row0 (cols chars)', ... ],     // rows strings, row 0 = top
+  fg:     [ [ [r,g,b], ... cols ], ... rows ],  // integers 0-255, rounded
+  bg:     [ [ [r,g,b], ... cols ], ... rows ]
+}
+```
+- Cells with no sample (drawn black) export as glyph `' '`, fg `[0,0,0]`, bg `[0,0,0]`.
+- Sky cells are included (v1 sky shader, same in both panels).
+- Comparison per the AC: glyph equal in >= 95% of cells; fg and bg each within +-8 per channel in >= 95% of cells. Use the same `cols x rows` and cellAspect in the game, because the caster's projection and the v2 shader both depend on them.

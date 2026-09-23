@@ -63,6 +63,7 @@
   <span>|</span>
   <label>layout <select id="layout"><option value="side">side by side</option><option value="flip">A/B flip (key F)</option></select></label>
   <button class="preset" id="flipBtn" style="display:none">showing: today</button>
+  <button class="preset" id="exportBtn" title="download the proposed panel at the current pose as JSON (US-028 parity AC)">export proposed JSON</button>
   <label>cell px <select id="px"><option>7</option><option selected>8</option><option>10</option><option>12</option></select></label>
 </div>
 
@@ -546,6 +547,7 @@
     var A = new Array(COLS * ROWS), B = new Array(COLS * ROWS);
     shadeFrame(c, LS, F, 'test_room', A, B);
     var rules = F.edges ? D.edgePass(COLS, ROWS, c.G, B) : null;
+    lastProposed = { cells: B.slice(), F: F };   // captured before the edge-map debug overlay
     if ($('edgeMap').checked && rules) {
       for (var i = 0; i < rules.length; i++) if (rules[i]) {
         var ec = EDGE_COL[rules[i]];
@@ -565,6 +567,41 @@
       $('statsB').innerHTML = stats(c.G, B);
     }
   }
+
+  // ---------- US-028 parity export (format: design/detail-pass.md section 5) ----------
+  var lastProposed = null;
+  function rgbInt(c) { return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2])]; }
+  window.exportProposed = function () {
+    renderMain();
+    var B = lastProposed.cells, glyphs = [], fg = [], bg = [], x, y;
+    for (y = 0; y < ROWS; y++) {
+      var row = '', fr = [], br = [];
+      for (x = 0; x < COLS; x++) {
+        var o = B[y * COLS + x];
+        if (!o) { row += ' '; fr.push([0, 0, 0]); br.push([0, 0, 0]); continue; }
+        row += o.glyph; fr.push(rgbInt(o.fg)); br.push(rgbInt(o.bg));
+      }
+      glyphs.push(row); fg.push(fr); bg.push(br);
+    }
+    return {
+      format: 'ascii-quest/detail-pass-export', version: 1,
+      level: 'test_room', panel: 'proposed',
+      pose: { x: cam.x, y: cam.y, z: cam.z, yaw: cam.yaw, pitch: cam.pitch },
+      lights: { lantern: $('lLantern').checked, torch: $('lTorch').checked, sun: $('lSun').checked, sunAzimuth: +$('sunAz').value },
+      features: lastProposed.F,
+      grid: { cols: COLS, rows: ROWS, cellPx: +$('px').value, cellW: gA.cw, cellH: gA.ch, cellAspect: gA.ch / gA.cw },
+      glyphs: glyphs, fg: fg, bg: bg
+    };
+  };
+  $('exportBtn').onclick = function () {
+    var d = window.exportProposed(), p = d.pose;
+    var blob = new Blob([JSON.stringify(d)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'detail_pass_proposed_' + [p.x, p.y, p.yaw, p.pitch].join('_') + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  };
 
   // ---------- section 2: diagnosis numbers ----------
   function renderDiag() {
