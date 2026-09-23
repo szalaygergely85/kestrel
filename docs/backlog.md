@@ -18,7 +18,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
 | 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | done | PO decision 2026-09-23: functional checks all PASS; perf gate deferred to US-029's GPU budget and US-018 (busy-machine noise, not a regression - see story section). Must be `done` before US-029 (it is) |
-| 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | todo | Owner complaint. Programmer after US-028 `done`; must be `done` before US-029 (GPU ports the final hash keys) |
+| 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | dev (ARCH CHANGES: 1 item) | Architect 2026-09-23: flicker ACs met; per-pose distinct-glyph threshold for `long diagonal` (>= 9) in bench, then `po-review`. Must be `done` before US-029 |
 | 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | arch-review | Programmer done; designer supplied `world_m1.js` + US-016b; awaiting architect review |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-028 `done` (US-025 may run on the parallel track) |
 | 14 | US-030 | **GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites (D-009 stage 2)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
@@ -727,7 +727,7 @@ Rulings:
 - **Recommended AC (bench, start pose, same 3×30 steps):** (i) non-joint, non-edge glyph changes ≤ 1.0 % of same-surface cells per step; (ii) total ≤ 7 % averaged over the three motions; (iii) A-B-A ≤ 0.3 %; (iv) shade p50 +≤ 0.05 ms. For US-030: X = 5 % per 0.02 m step (non-edge), Y = 20 % lower than the 1-ray JS path after this fix (start-pose numbers; re-measure over the full pose set).
 - **Where:** a follow-up story (US-028a, P0, before US-029 so the GPU ports the final hash keys), not US-028. It needs a reference change, a look sign-off and a new bench metric, and US-028 would take another loop. PO's call.
 
-### US-028a Stable detail when moving (anti-swim)  [Priority: P0] [Status: arch-review]
+### US-028a Stable detail when moving (anti-swim)  [Priority: P0] [Status: dev]
 As a player, I want the wall/floor/ceiling detail to hold still while I move, so that the world doesn't shimmer or swim under me.
 (Owner complaint, 2026-09-23. Engine + content story. Must land, and be `done`, before US-029 so the GPU pipeline ports the final hash keys.)
 Acceptance criteria:
@@ -741,6 +741,12 @@ Design needed: yes - designer re-tunes `maxCover` to 0.25 and signs off on the r
 Notes / dependencies: US-028 `done` (arch-review → done first). Blocks US-029 (GPU must port the same hash keys). No temporal hysteresis buffer (breaks the pose-only frame determinism the bench relies on).
 
 **Programmer done (2026-09-23):** files changed: `engine/render/detailShade.js` (F1 in `shadeDetailFast` + oracle `shadeV2`, zero extra allocations), `tools/bench-cast.mjs` (flicker metric, `--repeat N` best-of-N timing, re-recorded `EMBEDDED_BASELINE_V2` - `EMBEDDED_BASELINE` (v1) is unchanged, confirmed unaffected since the legacy v1 path remaps any v2-only material key to its v1 fallback before shading and never reaches `shadeV2`). `MaterialTable.js` needed no change (no hash logic there). How to check: `node tools/check-deps.mjs`, `node --expose-gc tools/bench-cast.mjs --gc [--repeat 5]`, `node tools/compare-detail-export.mjs` (PASS 99.47/99.49/100), `?shadetest=1` on a **fresh** server/tab. Known limitation: the `long diagonal` distinct-glyph count (9 vs ≥10) above, and the shade-cost-delta AC not independently confirmed under machine load. Did not re-record the v1/v2 bench baselines beyond this fix's own scope, and did not touch `design/`.
+
+**Architect review (2026-09-23, 55dccb0 + 54242a7 + 00539aa): ARCH CHANGES (1 item).** F1 is correct in both `shadeDetailFast` and oracle `shadeV2`, same hash count, no allocation; fast-vs-reference 0 mismatches. My bench run: non-joint/non-edge 0.33/0.80/0.85 %, total avg 5.79 %, A-B-A 0.00 %, 0 GC; check-deps OK (65 files).
+- Ruling 1: 10 -> 9 distinct glyphs on `long diagonal, pitch -35` is the intended effect of F1 (one alternate per block), not a content gap. AC adjustment, not new variants.
+- Ruling 2: the structural argument is accepted for the shade delta (same 2 `hash` calls, different integer args; the no-grid branch adds only 2 `floor`). No ms re-check needed.
+1. `tools/bench-cast.mjs`: add a per-pose `minDistinct` (default 10; `long diagonal, pitch -35` = 9, with a comment citing US-028a) so that `--gc` prints ALL CHECKS PASS. No other change. The main session checks that the bench is green, then `po-review` (no re-review needed).
+**PO notes:** amend the bench AC (distinct glyphs >= 10, >= 9 on long diagonal); shade-cost AC is met by the structural argument; strafe total 8.43 % is inside the averaged AC (US-030 coverage is the lever).
 
 
 **Architect final re-review (2026-09-23, 682ec96..6e68874): ARCH OK -> `po-review`.** My bench (3 runs): ALL CHECKS PASS, 0 GC, heap 99-206 B/frame, fast-vs-reference 0 glyph mismatches, v1/v2 baselines OK, blank <= 0.9 % on all 5 poses (D2 met). Extra p50 0.43-1.08 ms in clean runs; one run under machine load hit 1.5 ms on start (v1 rose too), totals always <= 2.8 ms vs 3.5 ms trigger. Compare PASS 99.47/99.47/100. `lodGates`/`fog.sparse` baked from data at bind time; oracle `shadeV2` synced (shadetest 1954/1954). Residual 24 `wall/none/stone` cells: accepted, below threshold.

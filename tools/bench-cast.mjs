@@ -96,7 +96,8 @@ const POSES = [
   // pose sees the low wall, the sky over it through the skylight AND the
   // far ceiling beyond it (6,240 sky / 3,360 geometry cells).
   { name: 'sky over the low wall, pitch +20', x: 9.5, y: 7.5, z: EYE_H, yawDeg: 0, pitchDeg: 20 },
-  { name: 'long diagonal, pitch -35', x: 1.5, y: 1.5, z: EYE_H, yawDeg: 45, pitchDeg: -35 },
+  // minDistinct 9: US-028a (block-keyed hashes) cuts alternates on purpose; architect ruling 2026-09-23.
+  { name: 'long diagonal, pitch -35', x: 1.5, y: 1.5, z: EYE_H, yawDeg: 45, pitchDeg: -35, minDistinct: 9 },
   // US-004b re-review #3 item 2 (new pose): sees the near `w` cell's own
   // 'sky' ceiling above it - the far side's ceiling must NOT be stretched
   // back over the `w` cell's own span.
@@ -395,8 +396,9 @@ function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTabl
     if (g === 0 || g === V2_GLYPH_DOT) blankOrDot++;
   }
   const blankPct = nonJointCells ? (100 * blankOrDot / nonJointCells) : 0;
-  const glyphOk = seen.size >= 10 && blankPct <= 5;
-  console.log(`  [v2 check] distinct glyphs: ${seen.size} (>=10 required), only '.'/blank: ${blankPct.toFixed(1)}% of ${nonJointCells} non-sky non-joint cells (<=5% required)` +
+  const minDistinct = pose.minDistinct ?? 10;
+  const glyphOk = seen.size >= minDistinct && blankPct <= 5;
+  console.log(`  [v2 check] distinct glyphs: ${seen.size} (>=${minDistinct} required), only '.'/blank: ${blankPct.toFixed(1)}% of ${nonJointCells} non-sky non-joint cells (<=5% required)` +
     (glyphOk ? '  OK' : '  FAIL'));
   if (!glyphOk) ok = false;
 
