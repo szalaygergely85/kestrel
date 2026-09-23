@@ -132,9 +132,14 @@ function checkEngineFile(file, src) {
 // exception: it needs the G-buffer/detail-shade/edge-pass internals
 // directly to reproduce the exact render pipeline the designer's export
 // JSON was captured from (a correctness oracle, not a game/main.js consumer).
+// tools/bench-voxel.mjs (US-039): engine/voxel/** gets no engine/index.js
+// exports until US-041 (architect tech notes item 1 - "tests import the
+// files directly"), so this bench needs the same kind of tool-only
+// exception in the meantime.
 const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-cast.mjs',
   'tools/compare-detail-export.mjs',
+  'tools/bench-voxel.mjs',
 ].map((p) => p.split('/').join(path.sep)));
 
 function checkConsumerFile(file, src) {
