@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-22 (after D-006/D-007/D-008: reusable engine, open world).
+Owner: Manager. Updated: 2026-09-23 (D-009: GPU cell pipeline, staged; configurable grid).
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -15,11 +15,14 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 - Palette, ramps, materials (US-002) - done. Sector map format v2 (US-003) - done.
 - Sector caster for structures with shared DepthBuffer (US-004), capsule physics (US-008/009).
 - **Engine/game split per D-006 (US-024)** and **World model per D-007 (US-025)**: tower placed in one world frame, terrain sampler, serializable world/entity state.
-- Lighting: ambient + sun shaft with shadow + torch flicker + carried lantern.
+- **GPU cell pipeline per D-009 (staged):** US-029 pipeline + shade/edge port + `?gpucompare=1` parity (gate: fail -> plan A, CPU) -> US-030 GLSL DDA + N-ray anti-shimmer + GPU sprites. JS path = oracle + fallback (160x60 forced).
+- Lighting: ambient + sun shaft with shadow + torch flicker + carried lantern (US-006/007 in GLSL, after US-030).
 - The tower structure: wake spot, brazier, lantern, boulder, broken stair with jump gap, mid ledge with lever + grate, summit breach. Props/lights/interactables/triggers declared as level data.
-- Far overworld view = terrain caster at far LOD composited with the sector caster (US-016).
+- Far overworld view = terrain caster at far LOD, GPU-first (US-016, after US-030).
 - Wake sequence, title, hints, end trigger + fade + restart.
-- 60 fps at 160x60 cells, <= 8 ms JS render (US-018).
+- 60 fps, <= 8 ms JS + <= 4 ms GPU at the default grid (240x90 on GPU after US-030; 160x60 on fallback), grid configurable 160x60..320x120 (US-018).
+
+**Engine build order (D-009):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-016 -> US-011 -> ... -> US-018.
 - **P1 (after all P0):** light the summit beacon (US-022, D-003).
 
 **P2 stretch (not exit criteria):** dust motes (US-019), procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).

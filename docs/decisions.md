@@ -255,3 +255,34 @@ New P0 stories for the PO (in build order, all M1):
 ### Consequences
 - Roadmap M1 gains US-024/US-025 and reframes US-016; M2 becomes "step out onto the terrain". Budget risk: two extra P0 stories in M1, accepted because they are prerequisites, not features.
 - *ID note (PO, 2026-09-22):* story IDs were renumbered to avoid a clash with the existing US-023 (see-through grate, P2). Engine/game split = **US-024**, World model = **US-025**, M2 near-LOD terrain = **US-026**, M2 JSON content packs = **US-027**. References in D-006 to D-008 and in the roadmap have been updated.
+
+---
+
+## D-009 Renderer compute location: full GPU per-cell pipeline (staged), JS path as oracle and fallback
+
+**Date:** 2026-09-23
+**Status:** Accepted (extends D-005: the GPU now computes cells, not only presents them; D-007 hybrid world model unchanged)
+
+### Context
+Owner feedback: the image looks flat / low-detail, shimmers ("lines jumping") when moving, and a bigger grid is wanted. Constraints: stays a browser game, stays an ASCII character grid. Architect input in `docs/architecture.md` section 14: under the CPU path, sectors + lighting + terrain already reach the 8 ms JS wall at 160x60, and the only real shimmer fix (N rays per cell with coverage vote) is unaffordable in JS.
+
+### Options
+- **(A) CPU + optimisations.** 0-1 stories. Grid stuck at 160x60, shimmer only masked (hysteresis), every later feature is a budget fight.
+- **(B) Full GPU per-cell (DDA, shade, edge, lighting, terrain, sprites in GLSL), staged.** ~3 extra M1 engine stories; frees ~5-6 ms JS; 240x90 trivial; real shimmer fix. Risks: GLSL debugging, float32 edge mismatches, two implementations of the rules, ~2-3 % users without WebGL2.
+- **(C) Hybrid (CPU casters, GPU shade/edge).** 3 stories, only ~0.9 ms freed, grid ~180x68, no shimmer fix; same two-implementation cost for a fraction of the gain.
+
+### Decision
+**(B), staged, with C as stage 1 and a hard parity gate.**
+
+1. **Order (M1):** US-029 (GPU pipeline + data textures + G-buffer upload + shade/edge port + `?gpucompare=1`) -> US-030 (GLSL sector DDA multi-structure + spans, N-ray coverage anti-shimmer, GPU sprite pass) -> US-006 lighting in GLSL (JS reference kept, unbudgeted) -> US-007 -> US-016 terrain GPU-first. Lighting goes after US-030 so it is written once against the final pipeline.
+2. **Gate / kill switch:** US-029 must pass `?gpucompare=1` (glyph match >= 99 % excluding kind-boundary cells, fg/bg +-4, depth 1 %) **and** run on the owner's real hardware. If it fails and cannot be fixed within one rework, fall back to **A** (US-004c) and US-006/US-016 proceed on the CPU; no further GPU work in M1.
+3. **Budgets:** the **8 ms JS/frame budget stays binding** (target after US-030: <= 2 ms JS). New **GPU budget: <= 4 ms** at the default grid on the owner's laptop, measured via `?bench=1` (EXT_disjoint_timer_query where available, else frame time). US-018 checks both.
+4. **Grid size becomes a setting** (`createEngine({cols, rows})` + URL `?grid=WxH` + an in-game option later), allowed range 160x60 to 320x120, cell aspect preserved. **Default 160x60 until US-030 is `done`, then 240x90 on the `gl2` GPU path.** Design art (models, UI, text) must stay readable at both; the designer checks the previews at 240x90.
+5. **Fallback policy:** no WebGL2, context-creation failure, or a software renderer (`UNMASKED_RENDERER` contains SwiftShader/llvmpipe/Basic Render) -> JS path + existing Canvas2D-capped/GL presenter, **grid forced to 160x60**, coverage anti-shimmer off, lighting via the JS reference at reduced light count. Fallback must be playable end-to-end (M1 exit), not visually equal. `?gpu=0` forces it for testing; F3 overlay shows `gpu` / `cpu`.
+6. **The JS path is the oracle**: every GLSL pass ships with a parity test against it; `shadetest`, `bench-cast` and designer oracles stay headless in Node. No headless-browser CI in M1 (would be a separate decision).
+
+### Consequences
+- M1 grows by ~3 engine stories (US-029, US-030; US-006/US-016 are rewritten, not added). Accepted: writing lighting and terrain for the CPU first and porting later would cost more.
+- US-006 and US-016 are blocked on US-030 `done` (or on the gate failing -> plan A).
+- US-011 sprites draw through the US-030 GPU pass (JS `sprites.js` stays as reference/fallback).
+- Public API unchanged (`renderWorld` picks the pipeline); engine remains data-driven for the M5 editor.
