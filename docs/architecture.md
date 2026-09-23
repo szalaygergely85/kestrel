@@ -148,6 +148,10 @@ export function deserialize(state: WorldState, assets: AssetRegistry): World
  * @property {RenderTarget} rt   @property {DepthBuffer} depth   @property {OpenSpans} spans
  * @property {Palette} palette   @property {LightSet} lights  (US-006/007: ambient, sun, point lights, in world coords)
  * @property {number} timeSec
+ * @property {GBuffer} gbuf          per-cell surface samples written by the casters, read by the grid passes (8.1, US-028)
+ * @property {LightBuffer} light     accumulated light per cell or uniform (8.1)
+ * @property {boolean} detail        false = v1 shading for every material (`?detail=0`)
+ * @property {number} structSeq      reset by beginFrame, incremented per castSectors call (planeId bits 28-30)
  */
 export function beginFrame(fb: FrameBuffers): void            // depth.clear(), spans.reset(); rt is NOT cleared (full coverage is guaranteed by the compositor)
 export function castSectors(fb: FrameBuffers, level: Level, cam: CameraPose, origin: Vec3): void
@@ -216,6 +220,7 @@ Compatibility notes for the move (US-024): today's `castScene(rt, level, camera,
  * @property {Object<string, TerrainRecipe>} [terrain] ASSETS.levels.* that have util.heightAt (overworld_far)
  * @property {Object<string, WorldDef>} [worlds]     ASSETS.worlds.*
  * @property {UiStyle} [uiStyle]                     ASSETS.uiStyle
+ * @property {DetailPassDef} [detailPass]            ASSETS.detailPass (US-028); absent = v1 look everywhere
  */
 class AssetRegistry {
   constructor(bundle: AssetBundle)      // validates shapes (cheap: presence + types), palette.util.validate() must return []
@@ -348,6 +353,65 @@ class OpenSpans {                           // engine/render/OpenSpans.js
   reset(rows)  isOpen(x)  narrowTop(x,row)  narrowBottom(x,row)  openCount()
 }
 ```
+
+### 8.1 Deferred surface shading: G-buffer, detail shader, edge pass (US-028)
+
+Casters do not shade. They write one **surface sample** per cell into `fb.gbuf`; three grid passes then produce the pixels. Reason: glyph choice needs neighbour cells (texture derivatives, edges) and lighting (US-006) needs the surface normal, so shading must run after all geometry of the frame is known. Pass order in `renderWorld`:
+
+```
+beginFrame(fb)                    depth <- Infinity, spans reset, gbuf.kind <- 0, structSeq <- 0, gbuf.writeCount <- 0
+castSectors(fb, level, cam, o)    per structure: writes gbuf sample + depth, narrows spans. NEVER writes rt.
+castTerrain(fb, ...)              US-016: may write rt directly (kind stays 0) or samples; decided in US-016 notes
+computeDerivatives(fb)            dudx/dvdx/dudy/dvdy from same-planeId neighbours (fallback: analytic)
+lightSurfaces(fb)                 US-006: fills fb.light.rgb per cell (N.L, visibility); US-028: uniform ambient
+shadeSurfaces(fb)                 per cell: v2 detail shader or v1 fastShade -> rt.setCellRGB, gbuf.fogF
+edgePass(fb)                      decides rules from gbuf+depth, then patches rt.cells glyph/fg bytes in place
+fillSky(fb, cam)                  open spans -> sky, depth Infinity (unchanged)
+drawSprites / UI                  unchanged
+```
+
+```js
+/** Struct-of-arrays, N = cols*rows, allocated in createEngine/resize only.  engine/render/GBuffer.js */
+class GBuffer {
+  kind:    Uint8Array    // 0 none/sky, 1 wall, 2 step, 3 upper, 4 floor, 5 top, 6 ceil
+  mat:     Uint16Array   // MaterialTable id (0 = unresolved)
+  face:    Uint8Array    // 1 N, 2 E, 3 S, 4 W, 5 U, 6 D  (direction the face looks toward)
+  planeId: Int32Array    // (structSeq<<28)|(tag<<24)|(coord&0xffffff); walls tag=face, coord=int boundary;
+                         // planes tag=kind, coord=round(h*1000)+0x800000. Equal <=> same infinite plane
+  u, v:    Float32Array  // v1 texture coords (walls: along-wall m, height m; planes: level-local x, y)
+  dudx, dvdx, dudy, dvdy: Float32Array   // per screen column / row (computeDerivatives)
+  z:       Float32Array  // m above the near sector's floor
+  aoD:     Float32Array  // m to the nearest concave seam, Infinity if none
+  fogF:    Float32Array  // fog factor written by shadeSurfaces, read by edgePass
+  rule:    Uint8Array    // edge rule 0..8 written by edgePass (debug/bench)
+  writeCount: number     // samples written this frame (bench invariant: + sky writes == N)
+  writeSample(i, kind, mat, face, planeId, u, v, z, aoD): void    // the ONLY write site in a caster
+  readSample(i, out): SampleObj                                   // test/oracle helper; reuses `out`
+}
+/** @typedef {{ uniform: boolean, rgb: Float32Array }} LightBuffer  uniform: rgb has 3 entries; else 3*N (US-006) */
+
+// engine/render/MaterialTable.js  -- built once per palette/detailPass/cellAspect binding, never per frame
+bindShading(palette: Palette, detailPass: DetailPassDef|null, cellAspect: number): MaterialTable
+   // one Uint16 id per key in palette.materials and detailPass.materials; record = { v1: FastShadeRec, v2: DetailMaterialRec|null }
+   // resolution: detailPass.materials[key] -> v2 (+ its .v1 for the v1 path), else detailPass.remap[key] -> v2, else v1 only
+   // detailPass.levelOverrides is ignored by the engine (level data is edited instead)
+MaterialTable.bindLevel(level): void   // once per level instance: sector.{wall,floor,ceil,upper}MatId + relief bit masks (floorRise, ceilDrop)
+
+// engine/index.js additions
+export function computeDerivatives(fb: FrameBuffers): void
+export function shadeSurfaces(fb: FrameBuffers): void
+export function edgePass(fb: FrameBuffers): void
+```
+
+Rules:
+1. **Depth is `dist`**: the G-buffer never duplicates `fb.depth`.
+2. **Sky and unwritten cells are `kind 0`** and are "farther" for the edge pass; `fillSky` never touches the G-buffer.
+3. **Hashes are world-anchored**: inputs are texture-space integers (`floor(u*detail)`, block indices, seed). Never a screen index or the frame count. Level-local `u,v` mean a structure keeps its texture wherever the world places it.
+4. **Light is an input, not a computation, of `shadeSurfaces`**: `fb.light` (uniform in US-028, per cell from US-006). Light-source loops belong in `lightSurfaces`.
+5. **Per-cell bans in the shading and edge passes** (in addition to 9): `Math.pow` (use level thresholds `(k/n)^(1/gamma)` and the gain LUT), `atan2` (slope compares), `sectorAt`, `Map.get`, string glyphs. The edge pass patches `rt.cells` bytes directly so the write counter stays at exactly N.
+6. **Budgets (p50, 160x60)**: `deriv` <= 0.15 ms, `edge` <= 0.20 ms, v2 shading at most +0.55 ms over v1 `fastShade`; the whole detail pass <= +1.0 ms over US-004b; sectors total < 3.5 ms (12).
+7. **Oracles**: `detailPass.util.shade` / `util.edgePass` are the reference, read through `gbuf.readSample`; fast paths must match glyph exactly and fg/bg within +-4 (`?shadetest=1`, `bench-cast.mjs`). The designer's `exportProposed()` JSON is checked by `tools/compare-detail-export.mjs` (>= 95 % glyph, >= 95 % fg/bg within +-8).
+8. **Editor extension point**: `gbuf.rule`, `gbuf.kind`, `gbuf.planeId` are stable debug views (edge map, plane map overlays) and may be exposed read-only to the tool UI.
 
 ## 9. Allocation rules (hot paths = anything called per column, per cell, per DDA step, per sim step)
 
