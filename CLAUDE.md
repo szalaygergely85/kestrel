@@ -32,6 +32,6 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 - Git: work on `master`; the main session commits. Local server: `python -m http.server 8000` from the repo root (launch config `ascii-quest-http`).
 
 ## Token budget rules (main session)
-- **architect**: use fable only for first reviews of core engine code (render/physics/world) and big tech notes. Re-reviews, questions and small stories use `model: opus`. Continue the same architect agent via SendMessage for a re-review instead of spawning a new one.
+- **architect**: use fable only for first reviews of core engine code (render/physics/world) and big tech notes. Re-reviews, questions and small stories use `model: opus`. For a re-review, spawn a fresh opus architect with only the diff + the prior verdict (resuming a long-context agent re-sends its whole transcript and cost ~200k for a 4-tool re-review). Resume only agents with short histories.
 - Every architect/PO prompt names the diff/commits and the exact doc sections to read, says "run probes only if something looks wrong", and asks for a short reply (verdict + required changes).
 - **product-owner**: sonnet for routine re-reviews / ASK PO answers, opus for new stories and first reviews.
