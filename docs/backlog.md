@@ -17,7 +17,8 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
 | 9 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
 | 10 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
-| 11 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 and US-004b `done` |
+| 10a | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | todo | Design approved (PO + owner, 2026-09-23). Architect tech notes first. Programmer after US-004b `done` and US-024 Phases A/B merged; can run in parallel with US-025. Must be `done` before US-006 |
+| 11 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025, US-004b and US-028 `done` (feeds light `L` into the v2 shader) |
 | 12 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
 | 13 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
 | 14 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
@@ -468,6 +469,39 @@ For the tester (after rework): real Chrome tab. Move the mouse a lot outside or 
   - Then run the real-Chrome checklist in the REJECT #1 section above. The key check: move the mouse a lot before the first click and again after Esc, then click. The view must not jump.
 
 **Tester PASS (2026-09-22)** – see `docs/test-reports/US-005.md`. `playerLook.test.js` 10/10. All ACs verified, including a live in-page re-run of the resume-jump repro (not just the isolated test) and the arrow-key rates/pitch clamp via deterministic `look.update(dt)` calls driven by real DOM keydown/keyup events (wall-clock hold-and-measure was unreliable in this sandboxed pane — rAF appears throttled when the automation isn't actively interacting with the tab; noted as a sandbox limitation, not a suspected bug). `physics.test.js` has 1 failing test ("slides along a wall instead of sticking") but that's US-008's in-flight wall-stick fix (`capsule.js` uncommitted at test time) — unrelated to this story, not blocking. Status → `done`. Manual pointer-lock/Esc/no-jump/held-arrow-key checks still recommended for the user in a real Chrome tab (listed in the test report).
+
+### US-028 Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2  [Priority: P0] [Status: todo]
+
+**Design approval (2026-09-23): PO + owner.** The owner reviewed `design/preview/detail_pass.html` and approved it: "proposed details are very nice". The owner's original complaint was that everything looks like the same character. Spec: `design/detail-pass.md` (diagnosis, section 3 engine requests 1-9, section 4 migration). Exact behaviour: `design/detail-pass.js` (`ASSETS.detailPass`, reference `util.shade` and `util.edgePass`).
+
+**Engine story. The architect writes tech notes before dev** (G-buffer layout, typed arrays, where `aoD` and derivatives come from, how `detail-pass.js` reaches the engine through the AssetRegistry, fast-path LUTs). Architect code review (`ARCH OK`) is required before PO review.
+
+As a player, I want stone, floor, timber and moss to look clearly different, with visible block joints, corners and edges, and with distance reading as haze, so that the world looks detailed and not like one repeated character.
+
+Acceptance criteria:
+- [ ] **G-buffer, then shade (req. 1).** The sector caster writes one sample per cell into typed arrays allocated once and reused. Fields: kind, mat (v2 key), normal, planeId, u, v, dudx, dvdx, dudy, dvdy, z, aoD, dist. Shading and the edge pass then run over the grid. No per-cell or per-frame allocation, and the US-004b heap-delta check in `tools/bench-cast.mjs` still passes.
+- [ ] **Normal + planeId (req. 2)** for walls (N/E/S/W from side and step sign) and for floors, tops and ceilings (U/D + height). **Derivatives (req. 3)** and **aoD (req. 5)** as in the spec.
+- [ ] **Shader v2 (req. 4-6, 8, 9)** re-implements `DP.util.shade` for the v2 materials (`stone`, `stone_moss`, `stone_scorched`, `brick`, `floor`, `ceiling_timber`, `wood`, `rubble`, `grass`). It covers texel-class glyph sets with world-anchored hash alternates, the analytic joint grid with oriented glyphs and joint LOD, per-block tones plus jitter, face factors plus seam AO, the lift (`gb`, fgMin 0.55, tint 0.60), fog v2 with stipple, and the near/mid/far LOD tiers. v1 materials without a v2 entry (`iron`, `grate`, `ash`, `rock`) and sky keep the v1 path unchanged (`DP.remap`).
+- [ ] **Edge pass (req. 7)** implements `DP.util.edgePass`. It uses the `DP.edges` thresholds (depthRatio 1.18, depthAbs 0.35 m, fogMax 0.85) and decides all rules on the input before applying any. Edge colors are never pure black (every channel > 0).
+- [ ] **Owner complaint metric, start pose, ambient only:** at least **10 distinct glyphs** on screen, and at most **5%** of non-sky cells show only `.` or blank. The bench prints both numbers per pose.
+- [ ] **Edge rules visible:** across the bench poses, each of `cap`, `side`, `convex` or `concave`, `seamFloor`, `seamCeil` and `nosing` fires at least once. The bench prints a count per rule.
+- [ ] **No shimmer:** hashes are world-anchored. A unit test shows that the same (mat, u, v, normal, dist band) gives the same glyph at different screen positions. Rendering the same pose twice gives the same checksum.
+- [ ] **Matches the preview:** the designer's "proposed" panel in `detail_pass.html` and the game, at the test_room start pose (160x60, ambient only, all features on), have the **same glyph in at least 95% of cells**. On matching cells, fg and bg are within **+-8 per channel in at least 95% of cells**. Remaining differences must be explained (for example the US-004b overdraw fixes the preview's US-004 port lacks) and listed in the programmer notes.
+- [ ] **Performance:** on `tools/bench-cast.mjs` (160x60, all poses), v2 shading plus the edge pass adds **at most 1.0 ms p50** over the US-004b fast ambient shader on every pose. Timing is reported separately for cast, shade and edge. Total sectors p50 stays under the US-004b escalation trigger of 3.5 ms. The fast v2 path matches the v2 reference path (exact glyph, fg/bg within +-4) on all poses.
+- [ ] **`?shadetest=1` updated to the v2 reference:** a v2 table checks exact glyph match and fg/bg within +-4 against `DP.util.shade` and `DP.util.edgePass`. The v1 table still passes for the v1-path materials and sky.
+- [ ] **Readability rule kept (US-007):** with a synthetic sunlit `L` against ambient, sunlit and shadow floor are still at least 4 glyph levels apart. A shadetest row covers this.
+- [ ] **Level change:** in `test_room`, ceiling cells with `ceilMat: 'stone'` become `ceiling_timber`. Edit the level data directly (not via `DP.levelOverrides` at runtime). Sky ceilings are unchanged. The tower gets the same change in US-010.
+- [ ] **A/B switch:** `?detail=0` renders the v1 look, so the owner can compare. v2 is the default; the switch needs no upkeep after this story.
+- [ ] **Bench baseline:** the new checksums replace the US-004b baseline in `bench-cast.mjs`, with a one-line note on why they changed.
+- [ ] **Engine boundary:** the engine reads the DP data only through the AssetRegistry and never imports from `design/`. `node tools/check-deps.mjs` passes.
+
+Design needed: small. The designer adds an export to `detail_pass.html` (e.g. `?pose=start&dump=1`) that writes the proposed panel as JSON (glyph, fg, bg per cell) at the test_room start pose, for the "matches the preview" check. No new art.
+
+Notes / dependencies:
+- Needs US-004b `done` (same caster and shader, in dev now). Implement it in the moved engine files, so it starts **after US-024 Phases A/B are merged** and never blocks them. It is independent of US-025 (render track vs world track), so both can run in parallel.
+- **Placed right before US-006, not folded into it. Why:** the v2 shader takes the accumulated light `L` "exactly as v1" as input, so the detail pass and lighting are separate layers. This story can be tested ambient-only, and those are exactly the owner's complaint conditions. US-006 then only adds light sources into `L`, and it gets the per-cell normal for N dot L from this story's G-buffer. Folding them together would give one story that is too big for one session and mixes two unrelated sets of ACs. No manager decision needed: it adds one P0 story to M1 and changes no architecture decision (the G-buffer stays within the sector caster, covered by the architect's tech notes).
+- US-006 AC "mapped to glyph ramp brightness" is read as "fed as `L` into the v2 shader" for v2 materials.
+- Out of scope: retiring v1 `texture.rows` and ramps for v2 materials (migration step 4, later cleanup), terrain caster (US-016 applies v2 there), and dirty-cell present.
 
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]
 As a player, I want a torch to throw flickering warm light across the stone, so that the room feels alive.
