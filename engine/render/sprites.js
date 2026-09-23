@@ -97,10 +97,9 @@ export class SpritePool {
     if (!world) return;
     if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
       this._ents.length = 0;
-      // Engine-internal read of World's entity map (flagged for the
-      // architect: a public `world.entities()` iterator would be cleaner;
-      // World.js is US-030a's file this round, so left untouched).
-      for (const e of world._entities.values()) if (e.components && e.components.sprite) this._ents.push(e);
+      // Public, allocation-free iterator (ARCH CHANGES, US-030c) instead of
+      // reading World's private `_entities` map directly.
+      world.forEachEntity((e) => { if (e.components && e.components.sprite) this._ents.push(e); });
       this._entVersion = world.renderVersion;
       this._entWorld = world;
     }

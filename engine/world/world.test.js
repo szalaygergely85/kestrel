@@ -69,6 +69,26 @@ ok('player entity spawned from spawn:{structure,from:"start"}', player && player
 const expectedX = tower.level.start.x + tower.origin.x;
 ok('player world position == level.start + origin', Math.abs(player.data.transform.x - expectedX) < 1e-9);
 
+// --- removeEntity bumps renderVersion + forEachEntity reflects it (ARCH CHANGES, US-030c) --
+{
+  const vBefore = world.renderVersion;
+  const h = world.spawn('propTest', { x: 0, y: 0, z: 0 }, { sprite: { model: 'x' } }, 'sprite_test_entity');
+  ok('spawn bumped renderVersion', world.renderVersion > vBefore);
+
+  let countAfterSpawn = 0;
+  world.forEachEntity((e, id) => { if (id === 'sprite_test_entity') countAfterSpawn++; });
+  ok('forEachEntity sees the spawned entity', countAfterSpawn === 1);
+
+  const vBeforeRemove = world.renderVersion;
+  world.removeEntity('sprite_test_entity');
+  ok('removeEntity bumps renderVersion', world.renderVersion > vBeforeRemove);
+
+  let countAfterRemove = 0;
+  world.forEachEntity((e, id) => { if (id === 'sprite_test_entity') countAfterRemove++; });
+  ok('forEachEntity count is 0 after removeEntity', countAfterRemove === 0);
+  h;
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

@@ -14,13 +14,16 @@ import {
   integrate, Camera, renderWorld,
   GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
-  shadeSurfaces, edgePass, ambientL, World, repackMaterials,
+  shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
 import { fillWorstCase } from './dev/benchScene.js';
+// ---- US-030c (ARCH CHANGES): sprite system wiring, kept to this one import ----
+import { createSpriteSystem, spawnTestSprites, placeCompareSprites } from './dev/spriteDev.js';
+// ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
 import { validateBehaviours } from '../../engine/index.js';
 import './quest/index.js';
@@ -110,9 +113,13 @@ const inactiveReason = gpuPipeline
   : ' - JS shading' + (matTable.missingV2 && matTable.missingV2.length ? ` (missingV2: ${matTable.missingV2.join(', ')})` : '');
 console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive' + inactiveReason}`);
 
+// ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
+const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
+// ---- end US-030c ----
+
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer };
+window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
 
 if (params.get('bench') === '1') {
   runBenchmark(rt, overlay);
@@ -178,6 +185,8 @@ function runGame(mode) {
       vx: 0, vy: 0, vz: 0, grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: startT.z,
     });
     look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
+    // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
+    if (params.get('sprite') === '1') spawnTestSprites(world, startT);
   }
 
   function update(dt) {
@@ -231,6 +240,7 @@ function runGame(mode) {
       // cast+shade+edge sequence instead.
       fb.gpuDda = !!gpuPipeline;
       renderWorld(fb, engine.world, cam);
+      sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
@@ -248,7 +258,8 @@ function runGame(mode) {
     // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
     let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
       `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
-      (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '');
+      (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '') +
+      (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
     if (mode === 'world') {
       const t = playerHandle.data.transform;
       const world = engine.world;
@@ -400,11 +411,19 @@ function runGpuCompareDdaMode() {
     // because the CPU oracle had just primed the light. `renderWorld` on
     // the DDA path is what primes it now (compositor.js), exactly as in
     // gameplay; then read back precisely what `present()` sampled.
+    // US-030c (ARCH CHANGES item 1): place + project the compare sprites for
+    // this pose once, before either path renders - the GPU sprite pass reads
+    // the pool's projected texels inside rt.present() below, and the JS
+    // `drawSprites` oracle reads the same pool after the CPU render.
+    sprites.pool.reset();
+    placeCompareSprites(cam, sprites.pool);
+    sprites.pool.project(cam, rt, ambientL);
+
     poisonAllCells(rt.cells, n);
     fbCompare.gpuDda = true;
     renderWorld(fbCompare, world, cam); // DDA path: primes ambientL, otherwise a no-op - real work is frame + present
     gpuPipeline.frame(fbCompare, ambientL, cam, world);
-    rt.present();
+    rt.present(); // cell pass + GPU sprite pass (sprites.pass, registered on rt)
     const rb = rt.readbackPresent();
     sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
     const gpuFg = rb.fg, gpuBg = rb.bg;
@@ -419,6 +438,7 @@ function runGpuCompareDdaMode() {
     rt.gpuActive = false;
     fbCompare.gpuDda = false;
     renderWorld(fbCompare, world, cam); // full CPU cast + shade + edge + sky
+    drawSprites(fbCompare, sprites.pool); // US-030c (ARCH CHANGES item 1): JS sprite oracle onto rt.cells
     rt.gpuActive = wasActive;
 
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows);

@@ -330,6 +330,16 @@ export class World {
     this._entities.delete(id);
     this._handles.delete(id);
     this._listeners.delete(id);
+    this.renderVersion++;
+  }
+
+  /**
+   * Allocation-free iteration over live entities (ARCH CHANGES, US-030c):
+   * `fn(entity, id)` for every entity currently in the world. Public
+   * replacement for reading `world._entities` directly (e.g. `SpritePool.collect`).
+   */
+  forEachEntity(fn) {
+    for (const [id, e] of this._entities) fn(e, id);
   }
 
   _handleFor(id) {
