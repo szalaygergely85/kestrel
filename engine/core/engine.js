@@ -14,7 +14,11 @@ import { World } from '../world/World.js';
 
 export const GRID_MIN_COLS = 160;
 export const GRID_MAX_COLS = 320;
-export const GRID_DEFAULT_COLS = 320; // US-030a 14.2 item 5: the default on the gl2 GPU path
+// D-009 amendment 2 (owner decision, 2026-09-23): 320x120 cells are 4-6 px
+// on a normal laptop screen - too small to read. Default is now 240x90;
+// `?grid=` still overrides, range stays 160x60..320x120. Auto-grid-by-window
+// (architect review 1's recommendation) is a future story, not built here.
+export const GRID_DEFAULT_COLS = 240; // US-030a 14.2 item 5: the default on the gl2 GPU path
 export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 320x120
 
 /**

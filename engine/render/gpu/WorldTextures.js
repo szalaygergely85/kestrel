@@ -101,12 +101,20 @@ export function buildWorldTextures(world) {
  * `atlas.versions[i]`, and returns the touched atlas row ranges (already
  * merged/sorted) for the caller's `texSubImage2D` calls; clears each
  * touched packed layout's own `dirtyY0/Y1` back to -1 (consumed).
- * @returns {{rebuildNeeded:boolean, dirtyRanges: Array<{y0:number, y1:number}>}}
+ * Architect review 1 item 3 (14.2 item 9): takes a preallocated `out`
+ * ({count, ranges: Int32Array(2*MAX_STRUCTS)}, see `makeFrameUpdatePlan`)
+ * instead of returning a fresh `{rebuildNeeded, dirtyRanges: []}` object
+ * every frame. `out.ranges[2*k]/[2*k+1]` are the k-th range's `y0`/`y1`;
+ * only `out.ranges[0 .. 2*out.count)` is meaningful. Test-only callers may
+ * still allocate a fresh `out` per call.
+ * @param {{rebuildNeeded:boolean, count:number, ranges:Int32Array}} out
+ * @returns {{rebuildNeeded:boolean, count:number, ranges:Int32Array}} the same `out`
  */
-export function planFrameUpdate(world, atlas) {
-  if (world.structVersion !== atlas.structVersion) return { rebuildNeeded: true, dirtyRanges: [] };
+export function planFrameUpdate(world, atlas, out) {
+  out.count = 0;
+  if (world.structVersion !== atlas.structVersion) { out.rebuildNeeded = true; return out; }
+  out.rebuildNeeded = false;
 
-  const dirtyRanges = [];
   const structures = world.structures;
   for (let i = 0; i < structures.length && i < MAX_STRUCTS; i++) {
     const s = structures[i];
@@ -127,10 +135,16 @@ export function planFrameUpdate(world, atlas) {
           atlas.FLAGS[di * 2] = p.flags[si]; atlas.FLAGS[di * 2 + 1] = p.relief[si];
         }
       }
-      dirtyRanges.push({ y0, y1 });
+      out.ranges[out.count * 2] = y0; out.ranges[out.count * 2 + 1] = y1;
+      out.count++;
       p.dirtyY0 = -1; p.dirtyY1 = -1;
     }
     atlas.versions[i] = p.version;
   }
-  return { rebuildNeeded: false, dirtyRanges };
+  return out;
+}
+
+/** Preallocated `out` object for `planFrameUpdate` (one per `GpuCellPipeline`). */
+export function makeFrameUpdatePlan() {
+  return { rebuildNeeded: false, count: 0, ranges: new Int32Array(2 * MAX_STRUCTS) };
 }

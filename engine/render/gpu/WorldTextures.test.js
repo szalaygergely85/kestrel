@@ -2,7 +2,7 @@
 // framework. Run: node engine/render/gpu/WorldTextures.test.js
 import { AssetRegistry } from '../../core/assets.js';
 import { World } from '../../world/World.js';
-import { buildWorldTextures, planFrameUpdate, MAX_STRUCTS } from './WorldTextures.js';
+import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import paletteMod from '../../../design/palette.js';
 import towerDef from '../../../design/levels/tower.js';
 import testRoomDef from '../../../design/levels/test_room.js';
@@ -68,20 +68,25 @@ for (let i = 0; i < world.structures.length; i++) {
 ok('uStruct rows match origin/w/h/yOff/structSeq per placed structure', uStructOk);
 
 // --- planFrameUpdate: no change -> no rebuild, no dirty rows -----------------
-const plan0 = planFrameUpdate(world, atlas);
+// Architect review 1 item 3: planFrameUpdate now writes into a caller-owned
+// `out` (count + preallocated Int32Array ranges) instead of returning a
+// fresh object/array every frame - tests allocate one `out` per call, which
+// is fine (test-only paths may allocate).
+const plan0 = planFrameUpdate(world, atlas, makeFrameUpdatePlan());
 ok('no world/packed change: rebuildNeeded is false', plan0.rebuildNeeded === false);
-ok('no world/packed change: no dirty ranges', plan0.dirtyRanges.length === 0);
+ok('no world/packed change: no dirty ranges', plan0.count === 0);
 
 // --- planFrameUpdate: animateSector bump -> dirty range covers touched rows --
 const tower = world.structures.find((s) => s.id === 'tower');
 if (tower && tower.level.legend['G']) {
   world.animateSector('grate', 0.5);
-  const plan1 = planFrameUpdate(world, atlas);
+  const plan1 = planFrameUpdate(world, atlas, makeFrameUpdatePlan());
   ok('animateSector bump: rebuildNeeded stays false (same structures)', plan1.rebuildNeeded === false);
-  ok('animateSector bump: at least one dirty range reported', plan1.dirtyRanges.length >= 1);
+  ok('animateSector bump: at least one dirty range reported', plan1.count >= 1);
   // Re-verify the atlas now matches the just-updated packed layout in the dirty range.
   let dirtyMatches = true;
-  for (const { y0, y1 } of plan1.dirtyRanges) {
+  for (let k = 0; k < plan1.count; k++) {
+    const y0 = plan1.ranges[k * 2], y1 = plan1.ranges[k * 2 + 1];
     for (let gy = y0; gy <= y1 && dirtyMatches; gy++) {
       // Find which structure this global row belongs to.
       let si = -1;
@@ -106,7 +111,7 @@ if (tower && tower.level.legend['G']) {
 
 // --- rebuildNeeded fires when a new structure is placed ----------------------
 world.placeStructure(assets.level('test_room'), { x: -50, y: -50, z: 0 }, 'wt_probe');
-const plan2 = planFrameUpdate(world, atlas);
+const plan2 = planFrameUpdate(world, atlas, makeFrameUpdatePlan());
 ok('placing a structure bumps renderVersion -> rebuildNeeded', plan2.rebuildNeeded === true);
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -48,8 +48,16 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  * @param {Uint8Array} kind gbuf.kind
  * @param {Uint8Array} [rule] gbuf.rule, optional (per-rule mismatch breakdown)
  * @param {Uint16Array} [mat] gbuf.mat, optional (mat==0 count)
+ * @param {number} [maxOutsideFrac] Architect review 1 item 5 tolerance ruling
+ *   for `?gpucompare=1` (US-030a DDA parity): default 0 keeps the strict
+ *   `?gpucompare=shade` (US-029) rule (fgOutside/bgOutside must be exactly
+ *   0). A positive fraction instead allows up to that share of `nonSky`
+ *   cells to be outside +-4 per channel, AND requires `fgMax`/`bgMax` <= 64
+ *   (a shading-band flip, never a wrong colour) - ruled acceptable for the
+ *   world_m1 spawn colour gap and the stair near-miss once BUG-OWN-001 (the
+ *   DDA sky `break`) is fixed; a real bug still fails this bar.
  */
-export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat) {
+export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0) {
   const n = cols * rows;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
@@ -103,12 +111,20 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   }
 
   const glyphMatchPct = nonEdgeChecked ? 100 * (nonEdgeChecked - glyphMismatchNonEdge) / nonEdgeChecked : 100;
+  const outsideCount = fgOutside + bgOutside;
+  const outsideFrac = nonSky ? outsideCount / nonSky : 0;
+  // Architect review 1 item 5: maxOutsideFrac === 0 (default) keeps the old
+  // exact-zero rule; a positive fraction also requires fgMax/bgMax <= 64 so
+  // the allowance can never mask an actually-wrong colour, only a band flip.
+  const outsideOk = maxOutsideFrac > 0
+    ? outsideFrac <= maxOutsideFrac && fgMax <= 64 && bgMax <= 64
+    : fgOutside === 0 && bgOutside === 0;
   return {
     nonSky, edgeCells, nonEdgeChecked, glyphMismatchNonEdge, glyphMatchPct,
-    fgOutside, bgOutside, fgMax, bgMax,
+    fgOutside, bgOutside, fgMax, bgMax, outsideFrac,
     fgMeanAbs: fgSamples ? fgSumAbs / fgSamples : 0, bgMeanAbs: fgSamples ? bgSumAbs / fgSamples : 0,
     matZeroCount, ruleMismatch, ruleTotal, poisonedSurvivors,
-    pass: glyphMatchPct >= 99 && fgOutside === 0 && bgOutside === 0 && poisonedSurvivors === 0,
+    pass: glyphMatchPct >= 99 && outsideOk && poisonedSurvivors === 0,
   };
 }
 

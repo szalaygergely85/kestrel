@@ -34,7 +34,7 @@ import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
 import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { GpuTimer } from './GpuTimer.js';
-import { buildWorldTextures, planFrameUpdate, MAX_STRUCTS } from './WorldTextures.js';
+import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { HFOV_DEG } from '../sectorCaster.js';
 import { SKY_LUT_N } from './glsl/common.js';
 
@@ -559,14 +559,17 @@ export class GpuCellPipeline {
       this._uploadWorldAtlasFull();
       return;
     }
-    const plan = planFrameUpdate(world, this._worldAtlas);
+    // Architect review 1 item 3: `_frameUpdatePlan` is allocated once and
+    // reused every frame (planFrameUpdate writes into it in place).
+    const plan = planFrameUpdate(world, this._worldAtlas, this._frameUpdatePlan || (this._frameUpdatePlan = makeFrameUpdatePlan()));
     if (plan.rebuildNeeded) {
       this._worldAtlas = buildWorldTextures(world);
       this._uploadWorldAtlasFull();
       return;
     }
     const a = this._worldAtlas;
-    for (const { y0, y1 } of plan.dirtyRanges) {
+    for (let k = 0; k < plan.count; k++) {
+      const y0 = plan.ranges[k * 2], y1 = plan.ranges[k * 2 + 1];
       const rows = y1 - y0 + 1;
       gl.bindTexture(gl.TEXTURE_2D, this.texWorldGeom);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, a.width, rows, gl.RGBA, gl.FLOAT, a.GEOM, y0 * a.width * 4);
@@ -575,7 +578,7 @@ export class GpuCellPipeline {
       gl.bindTexture(gl.TEXTURE_2D, this.texWorldFlags);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, y0, a.width, rows, gl.RG_INTEGER, gl.UNSIGNED_BYTE, a.FLAGS, y0 * a.width * 2);
     }
-    if (plan.dirtyRanges.length) this._uploadUStruct();
+    if (plan.count) this._uploadUStruct();
   }
 
   _uploadWorldAtlasFull() {
@@ -619,9 +622,18 @@ export class GpuCellPipeline {
     const planeDistY = (this.rows / 2) * screenAspect / tanHalfHFov;
     const pitchRad = cam.pitchDeg * Math.PI / 180;
     const horizonRow = this.rows / 2 + Math.tan(pitchRad) * planeDistY;
-    this._camBasis = {
-      posX: cam.x, posY: cam.y, eyeH: cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, tanHalfHFov,
-    };
+    // Architect review 1 item 3: written in place into a once-allocated
+    // object (`_ensureCamBasis`) instead of a fresh literal every frame.
+    const cb = this._ensureCamBasis();
+    cb.posX = cam.x; cb.posY = cam.y; cb.eyeH = cam.z;
+    cb.dirX = dirX; cb.dirY = dirY; cb.planeX = planeX; cb.planeY = planeY;
+    cb.horizonRow = horizonRow; cb.planeDistY = planeDistY; cb.tanHalfHFov = tanHalfHFov;
+  }
+
+  _ensureCamBasis() {
+    return this._camBasis || (this._camBasis = {
+      posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0, tanHalfHFov: 0,
+    });
   }
 
   _passCast() {

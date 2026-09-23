@@ -60,7 +60,13 @@ const engine = createEngine({
   force2d: params.get('force2d') === '1',
   gpu: params.get('gpu') !== '0',
 });
-const { renderTarget: rt, depthBuffer, openSpans, input } = engine;
+// `rt`/`depthBuffer`/`openSpans`/`gbuf` are `let`, not `const`: the fallback
+// gate below (architect review 1 item 2) may call `engine.setGrid` once at
+// startup, which replaces all three on `engine` - re-read here so every
+// later reference (fb, sprites, window.__debug, render()) sees the
+// post-fallback grid, not the original 240x90/`?grid=` request.
+let { renderTarget: rt, depthBuffer, openSpans } = engine;
+const { input } = engine;
 const overlay = new DebugOverlay(document.body);
 
 // US-028: `?detail=0` renders the v1 look (A/B switch, no upkeep needed
@@ -75,7 +81,7 @@ const useDetail = params.get('detail') !== '0';
 // to take the v2 branch (see the `detailPass` arg passed to it below).
 const matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const detailPass = useDetail ? assets.detailPass : null;
-const gbuf = new GBuffer(rt.cols, rt.rows);
+let gbuf = new GBuffer(rt.cols, rt.rows);
 
 console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end actually ran (gl2 / c2d-capped)
 
@@ -97,6 +103,30 @@ if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;
+  }
+}
+// Architect review 1 item 2 (14.2 items 5/7 fallback matrix gap):
+// `rt.backend === 'gl2'` only means RenderTarget.js's own probe found a
+// real, non-software WebGL2 context - it says nothing about whether the
+// cell pipeline actually compiled/linked (`candidate.ready` above, or
+// `detailPass`/`matTable.allV2` not holding). When the gate above didn't
+// produce a `gpuPipeline`, the CPU caster is about to run every frame
+// (`fb.gpuDda` stays false, see `runGame`'s render()) - left at the
+// default/`?grid=` grid it would cast at up to 320x120, 4x the CPU budget.
+// Force the same `cpuGrid` RenderTarget.js already uses for `?gpu=0` and
+// the software-renderer case (default 160x60), via `engine.setGrid`, and
+// rebuild the CPU-side state that depends on grid size (`gbuf`; `rt`/
+// `depthBuffer`/`openSpans` come straight off `engine`, which `setGrid`
+// already replaced - this is the `grid:changed` event's payload, applied
+// synchronously here since nothing GPU-side has consumed the old sizes yet).
+if (rt.backend === 'gl2' && !gpuPipeline) {
+  const { cols: cpuCols, rows: cpuRows } = engine.gridRequest.cpuGrid;
+  if (rt.cols !== cpuCols || rt.rows !== cpuRows) {
+    console.warn(`[grid] GpuCellPipeline unavailable on a gl2 backend - forcing the CPU fallback grid ${cpuCols}x${cpuRows} (was ${rt.cols}x${rt.rows})`);
+    rt = engine.setGrid(cpuCols, cpuRows);
+    depthBuffer = engine.depthBuffer;
+    openSpans = engine.openSpans;
+    gbuf = new GBuffer(rt.cols, rt.rows);
   }
 }
 const gpuDebugParam = params.get('gpudebug');
@@ -238,7 +268,12 @@ function runGame(mode) {
       // ready GPU pipeline, `renderWorld` is a one-line no-op (compositor.js)
       // and the GLSL DDA (this frame's cam/world, below) does the entire
       // cast+shade+edge sequence instead.
-      fb.gpuDda = !!gpuPipeline;
+      // Architect review 1 item 2: `rt.gpuActive` too, not just `!!gpuPipeline`
+      // - after a failed WebGL2 context restore `gpuActive` goes false but
+      // `gpuPipeline` itself is still the same (now-dead) object, so without
+      // this check `renderWorld` would keep skipping the CPU cast -> black
+      // world instead of falling back to it.
+      fb.gpuDda = !!gpuPipeline && rt.gpuActive;
       renderWorld(fb, engine.world, cam);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
     } else {
@@ -392,6 +427,13 @@ function runGpuCompareDdaMode() {
     ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
     { world: worldM1, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
+    // Architect review 1 item 1: BUG-OWN-001's owner repro pose (tower,
+    // sector 'L' looking over the closed grate 'G', ceilH 3.0 < eye) as a
+    // 7th row. World position (debug overlay, feet/floor z) is (1500.69,
+    // 1027.36, 3.00); cam.z here is EYE height (feet + eyeHeight 1.60 =
+    // 4.60), matching every other row's `cam` convention above.
+    { world: worldM1, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
+      cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
   ];
 
   const fbCompare = {
@@ -441,7 +483,12 @@ function runGpuCompareDdaMode() {
     drawSprites(fbCompare, sprites.pool); // US-030c (ARCH CHANGES item 1): JS sprite oracle onto rt.cells
     rt.gpuActive = wasActive;
 
-    const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows);
+    // Architect review 1 item 5: `?gpucompare=1` (unlike the strict
+    // `?gpucompare=shade` page) allows up to 0.5% of non-sky cells outside
+    // +-4/channel, capped at a max delta of 64 (a shading-band flip, not a
+    // wrong colour) - the world_m1 spawn/stair near-misses' documented
+    // tolerance, re-checked after the BUG-OWN-001 fix above.
+    const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows);
     const ok = cmpCells.pass && cmpGeom.pass;
     overallOk = overallOk && ok;
@@ -455,7 +502,8 @@ function runGpuCompareDdaMode() {
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
       `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
       `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}\n` +
-      `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n`;
+      `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
+      `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n`;
     console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% poisonedSurvivors=${r.cmpCells.poisonedSurvivors}`);
   }
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;

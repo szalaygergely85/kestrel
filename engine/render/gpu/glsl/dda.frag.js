@@ -247,9 +247,16 @@ void main() {
         bestT = t1; bestKind = KIND_UPPER; bestMat = N.upperMat; bestFace = face; bestPlaneId = wallPlaneId;
         bestU = u; bestV = hb; bestZ = z;
         bestAo = wallAoD(yOff, w, h, C.ceilH, C.ceilSky, hb, z, side, cMapX, cMapY, fr);
-      } else if (C.ceilSky && !N.solid && !N.ceilSky && hb > N.ceilH) {
-        break; // sky: this structure has nothing more open on this ray
       }
+      // BUG-OWN-001 fix (architect review 1, item 1): the fourth branch used
+      // to 'break' here on C.ceilSky && !N.solid && !N.ceilSky && hb > N.ceilH
+      // (a sky-roofed cell looking over a lower ceiling, e.g. ledge 'L' over
+      // closed grate 'G'). 'castColumn' (CPU) never terminates a column on
+      // sky - it only sets 'skyPending' and keeps walking, painting sky at
+      // column end into whatever rows nothing else claimed. Dropped: the ray
+      // simply continues with C = N below, matching the CPU 100% at the
+      // owner's repro pose (world_m1, sector 'L', ceilH 3.0 < eye) with no
+      // regression on the other 8 probed poses.
 
       C = N; cMapX = mapX; cMapY = mapY; t0seg = t1;
     }
@@ -260,7 +267,10 @@ void main() {
   if (bestKind == 0) {
     outGI = uvec2(0u, mask << 12u);
     outGA = uvec4(0u);
-    outDepth = floatBitsToUint(1.0 / 0.0); // 0x7f800000u, the "Inf" sentinel (14.2 item 3)
+    // Architect review 1 item 4: a constant division by zero is unspecified
+    // in GLSL ES 3.00 (it happened to fold to Inf on ANGLE) - write the
+    // sentinel literally instead of relying on that fold.
+    outDepth = 0x7f800000u; // the "Inf" sentinel (14.2 item 3)
   } else {
     outGI = uvec2(uint(bestPlaneId), uint(bestKind) | (uint(bestFace) << 8) | (mask << 12u) | (bestMat << 16));
     outGA = uvec4(floatBitsToUint(bestU), floatBitsToUint(bestV), floatBitsToUint(bestZ), floatBitsToUint(bestAo));
