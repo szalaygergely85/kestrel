@@ -19,7 +19,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
 | 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | done | PO decision 2026-09-23: functional checks all PASS; perf gate deferred to US-029's GPU budget and US-018 (busy-machine noise, not a regression - see story section). Must be `done` before US-029 (it is) |
 | 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | done | Tester PASS 2026-09-23 (see `docs/test-reports/US-028a.md`). Must be `done` before US-029 |
-| 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | testing | ARCH OK (review #2, 0e6b5a0); PO OK 2026-09-23; tester next |
+| 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | done | ARCH OK (review #2, 0e6b5a0); PO OK 2026-09-23; Tester PASS 2026-09-23 (`docs/test-reports/US-025.md`), 1 minor non-blocking bug (BUG-1, checklist item 6 grep wording) |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | dev | Architect review 1 (2026-09-23): ARCH CHANGES 1-3 (gpucompare passthrough tautology, context-loss handling, per-frame allocations) + minor 4; `allV2` ruling: all-or-nothing stays, v2 for every material is a content invariant (designer adding the 4). Owner-hardware run after rework |
 | 14 | US-030 | **GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites (D-009 stage 2)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-029 PASSES the gate and US-025 `done`. Skipped if the gate fails (plan A, US-004c) |
 | 15 | US-006 | Lighting: ambient + point lights with flicker – GLSL, JS reference (engine story) | P0 | todo | Architect tech notes first; Programmer after US-030 `done` (or after the gate fails -> CPU per plan A) |
@@ -1609,7 +1609,7 @@ Notes / dependencies: after US-004 and US-008 reach `po-review`, before US-006 s
 
 **Tester PASS (2026-09-23), see docs/test-reports/US-024.md.** Ran in the clean worktree `game_project_test` @ fc03cfe (isolated from an unrelated programmer's uncommitted US-028 work in the main repo). `node tools/check-deps.mjs` -> OK (57 files); `node tools/check-deps.test.mjs` -> 8/8 pass; `physics.test.js` 187/187, `jump.test.js` 111/111, `eyeFeel.test.js` 18/18, `playerLook.test.js` 10/10; `node --expose-gc tools/bench-cast.mjs --gc` -> ALL CHECKS PASS, 0 GC, all 5 poses matched embedded reference checksums. `game/index.html` loaded clean (zero console errors) in all 6 URL modes (default, `?debug=1`, `?demo=1`, `?glyphs=1`, `?bench=1`, `?shadetest=1` - shadetest logged 361/361 pass; also spot-checked `?force2d=1` clean) plus `world-test.html` and `physics-test.html`, both rendering real `test_room` output. Confirmed `game/js/{engine,render,world,physics,entities}/` do not exist (only `dev/`, `main.js`, `ui/` remain under `game/js/`). No bugs found. Status -> `done`.
 
-### US-025 World model: terrain + placed structures in one world frame (D-007)  [Priority: P0] [Status: testing]
+### US-025 World model: terrain + placed structures in one world frame (D-007)  [Priority: P0] [Status: done]
 As a player, I want the tower to stand on a real hill in a real world, so that what I see from the breach is the same world I will later walk into.
 Acceptance criteria:
 - [x] **`engine/world/Terrain.js`:** a sampler over the injected terrain recipe (`AssetRegistry.terrain`, from `design/levels/overworld_far.js` plus US-016b).
@@ -1720,6 +1720,8 @@ Not required now (noted for US-030): `packLevel(level, null)` leaves material id
 4. Console serialize round-trip (serialize, stringify, parse, deserialize, serialize) is deep-equal and includes the grate state and `nextId`; saved state has no `_` keys.
 5. `?level=test_room` looks unchanged, and `?shadetest=1` gives 1954/1954.
 6. `grep -r "tower\|1480" engine/` finds nothing.
+
+**Tester PASS (2026-09-23) - status `done`.** Full report `docs/test-reports/US-025.md`. All Node tests/tooling green (check-deps OK, all `.test.js` ALL PASS, bench-cast checksums OK). Checklist 1-5 pass in the browser (`world_m1` bake/spawn/walk/jump/serialize, `?level=test_room`, `?shadetest=1` 361/361 + v2 1954/1954), zero console errors. Checklist item 6 (BUG-1, minor, non-blocking): the literal grep still matches comments, `MAP_FORMAT.md`, and 5 test files that intentionally import `design/levels/tower.js` per the story's own reviewed test plan - no production engine file hard-codes the tower/coordinates. Bake wall-clock timing (item 1) could not be measured reliably through the browser-automation harness (it throttles backgrounded-tab `requestAnimationFrame`/timers independent of the game, observed fps down to ~2.5) - isolated per-frame JS execution time stayed under the 25 ms budget (max 24.5 ms) in every sample, so this is judged a harness artifact, not a regression.
 
 ---
 
