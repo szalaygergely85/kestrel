@@ -218,6 +218,23 @@ Frame = { S: { glyphs: [h strings of w], fg: [h strings of w key chars], n?: [h 
   - show a flame cell only if `rowFromBottom < ceil(g*4)`
   - lower its heat by `round((1-g)*2)` and hide it below heat 1
 
+### 4.1 World billboard entities (`far_tower.js`, US-016; architecture.md 14.4 item 7)
+
+A world file (`design/levels/world_m1.js`) may place a sprite model directly as an entity of `type: 'billboard'`. It is drawn by the ordinary sprite pass (depth-tested against sectors **and** terrain), never by terrain code:
+```
+{ id, type: 'billboard', x, y, z,          // world metres; the model anchor sits at (x, y, z)
+  model: modelName,                          // ASSETS.models[modelName], section 4 format
+  sizeM: { w, h },                           // metres on screen (= model.world)
+  unlit?: true,                              // light = 1, no N.L, `n` rows ignored
+  fogModel?: 'interior' | 'far', fogMax?: 0..1,   // fogF = min(fogMax, fogFactor(dist, fogModel)); fog color per that preset
+  minCells?: { w, h },                       // clamp AFTER LOD: never drawn smaller than this
+  detailRows?: n }                           // projected rows >= n -> base frames; else `lods.min` frames
+```
+- The model may carry the same fields as defaults (`far_tower.js` does); the entity wins if both are set.
+- **Frame choice:** the base `size` / `animations` are the *detail* frames; `lods.min` holds the minimum frames (same shape as `lods.half`). `frames.min` / `frames.detail` are convenience aliases with `size`, `anchor`, `glyphs`, `fg`.
+- `noUpscaleCap: true` on the model means the `3 * rows / 60` cap of section 4 does not apply (the world size is the truth; the far tower is 14 x 42 m and can never reach that cap anyway).
+- **`farTower`** (`design/models/far_tower.js`): detail 5x8 (window slit `k` = `black`), min 3x4 (`n n` / `|#|` / `|#|` / `/#\`), color `farTower` only, `unlit`, `fogModel 'far'`, `fogMax 0.40`, `minCells 3x4`, `detailRows 12`. Placed in `world_m1.js` at (713.8, 1232.1, -8). `overworld_far.farTower` keeps only `model: 'farTower'` + numbers; the inline `sprite` block is gone. Preview: `preview/overworld.html` (loads `../models/far_tower.js`).
+
 ---
 
 ## 5. Title and UI styling (`design/models/title.js`, US-015)
@@ -282,4 +299,5 @@ Frame = { S: { glyphs: [h strings of w], fg: [h strings of w key chars], n?: [h 
   - `palette.js`: added named colors `stoneCool`, `stoneWarm`, `stoneDeep`, `flagWarm`, `flagCool`, `flagDark`, `brick`, `brickLight`, `brickDark`, `mossLight`, `fogV2` and `fogV2Glyph`. No other palette value changed.
   - New files: `detail-pass.js` (v2 proposal data + reference shader and edge pass), `detail-pass.md`, `preview/detail_pass.html`, plus the new section 6.
 - **v1.7 (2026-09-23, D-009 grid amendment / US-030 follow-up)**: `uiStyle.uiGrid` + `uiStyle.uiScale` (fixed 160x60 UI text layer over the scene grid; all UI layout numbers are UI-grid cells). Sprite upscale cap becomes `3 * rows / 60` (section 4). `preview/title.html` and `preview/props.html` gained a 160 / 240 / 320 scene-grid toggle (title also: scaled layer vs 1x scene cells). Props checked at 320x120: readable, tiled-glyph look near; optional `lods.double` follow-up noted. No palette, material or model art changed.
+- **v1.8 (2026-09-23, US-016 tech notes)**: new `design/models/far_tower.js` (`ASSETS.models.farTower`, detail 5x8 + `lods.min` 3x4, billboard defaults); `world_m1.js` gains the `farTower` `billboard` entity; `overworld_far.js` `farTower.sprite` **removed**, replaced by `model: 'farTower'` + `minCells` + `detailRows` (recipe version stays 2, no height/type change); `preview/overworld.html` loads the model. New section 4.1. Art unchanged from the PO-approved silhouette.
 - **v1.4 (2026-09-22, US-016)**: `design/levels/overworld_far.js` (seeded far-terrain recipe, reference `util.generate()` / `heightAt()`, terrain look rules, far tower), `overworld_far.md`, `preview/overworld.html`.

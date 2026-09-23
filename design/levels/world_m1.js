@@ -29,7 +29,15 @@
     // come from the placed level's own data, offset by its origin; they are not duplicated here.
     entities: [
       { id: 'player', type: 'player', spawn: { structure: 'tower', from: 'start' },
-        note: 'pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)' }
+        note: 'pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)' },
+
+      // US-016: the dark second tower, 800 m WSW of the breach, drawn via the sprite pass (architecture.md 14.4 item 7).
+      // Static, unlit, no light, no interaction, never touched by US-022. z = overworld_far.farTower.baseZ (the hill2 crown
+      // sits at about -10..-8 m there; a 2 m offset is < 0.2 rows at 800 m). The sprite anchor is its bottom-centre cell.
+      { id: 'farTower', type: 'billboard', x: 713.8, y: 1232.1, z: -8, model: 'farTower',
+        unlit: true, fogModel: 'far', fogMax: 0.40,
+        sizeM: { w: 14, h: 42 }, minCells: { w: 3, h: 4 }, detailRows: 12,
+        note: 'matches overworld_far.farTower (azimuth 255 from the breach, 15 deg left of centre, top ~1.9 deg above the horizon)' }
     ],
 
     // Initial world state, the thing US-017 restart deserializes back to (US-025 serialize round-trip).

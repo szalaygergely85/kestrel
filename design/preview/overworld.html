@@ -21,7 +21,7 @@
 </head>
 <body>
 <h1>ASCII Quest : world terrain from the Hollow Watchtower (US-016 far view, US-016b near LOD + handover)</h1>
-<div class="note">Loads <code>../palette.js</code>, <code>../levels/tower.js</code> and <code>../levels/overworld_far.js</code>. The 160x60 mock is a column heightmap projection sharing one horizon.
+<div class="note">Loads <code>../palette.js</code>, <code>../levels/tower.js</code>, <code>../levels/overworld_far.js</code> and <code>../models/far_tower.js</code>. The 160x60 mock is a column heightmap projection sharing one horizon.
   Inside the tower's footprint it samples the real level sectors. Outside it samples terrain: the baked <b>8 m far grid</b> (US-016), or with "near LOD" on,
   <b>2 m cells within 300 m</b> (US-016b: close/near/mid bands, features, slope faces, forest trunks, dithered 280-320 m handover), then the far grid beyond.
   Both come from the same analytic <code>util.heightAt</code> / <code>util.typeAt</code>.</div>
@@ -63,17 +63,22 @@
 <h2>Terrain types by distance band (near LOD close / near / mid, far grid far)</h2>
 <canvas id="types"></canvas>
 
-<h2>Far tower silhouette (min 3x4 and detail 5x8)</h2>
+<h2>Far tower silhouette (<code>models/far_tower.js</code>: min 3x4 = <code>lods.min</code>, detail 5x8 = base; billboard entity <code>farTower</code> in <code>world_m1.js</code>)</h2>
 <canvas id="tower"></canvas>
 
 <script src="../palette.js"></script>
 <script src="../levels/tower.js"></script>
 <script src="../levels/overworld_far.js"></script>
+<script src="../models/far_tower.js"></script>
 <script>
 (function () {
   'use strict';
   var A = window.ASSETS || {}, P = A.palette, LV = A.levels && A.levels.tower, OW = A.levels && A.levels.overworld_far;
-  if (!P || !LV || !OW) { document.body.innerHTML = '<p class="fail">palette.js, tower.js or overworld_far.js did not load.</p>'; return; }
+  var FTM = A.models && A.models[OW && OW.farTower && OW.farTower.model];
+  if (!P || !LV || !OW || !FTM) { document.body.innerHTML = '<p class="fail">palette.js, tower.js, overworld_far.js or models/far_tower.js did not load.</p>'; return; }
+  // the far tower billboard as the engine sees it: model frames (detail = base, min = lods.min) + entity rules (US-016, arch 14.4 item 7)
+  var FT_SPR = { min: FTM.frames.min, detail: FTM.frames.detail, keys: FTM.keys,
+                 minCells: FTM.minCells, detailRows: FTM.detailRows, fogMax: FTM.fogMax };
   var U = P.util, rgb = P.rgb, D2R = Math.PI / 180, FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
   var HA = OW.util.heightAt, TA = OW.util.typeAt, NL = OW.nearLOD;
   function css(c) { return 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')'; }
@@ -265,16 +270,18 @@
     if (Math.abs(rel) < 45 * D2R) {
       var tp = tdist * Math.cos(rel), col = VW / 2 + Math.tan(rel) * FX;
       var rb = horizon - (FT.baseZ - eye.z) / tp * FR, rt = horizon - (FT.baseZ + FT.height - eye.z) / tp * FR, wc = FT.width / tp * FX;
-      var spr = (rb - rt) >= FT.sprite.detail.glyphs.length * 1.5 ? FT.sprite.detail : FT.sprite.min;
-      var sh = spr.glyphs.length, sw = spr.glyphs[0].length, hr = Math.max(sh, Math.round(rb - rt)), wr = Math.max(sw, Math.round(wc));
-      var ff = U.fogFactor(tdist, 'far'), f = Math.min(FT.fogMax, S.fog ? ff : 0), fc = fogColor(ff);
+      // frame by projected rows (>= detailRows -> detail), then the minCells clamp (never smaller than 3x4)
+      var spr = (rb - rt) >= FT_SPR.detailRows ? FT_SPR.detail : FT_SPR.min;
+      var sh = spr.glyphs.length, sw = spr.glyphs[0].length;
+      var hr = Math.max(FT_SPR.minCells.h, Math.round(rb - rt)), wr = Math.max(FT_SPR.minCells.w, Math.round(wc));
+      var ff = U.fogFactor(tdist, 'far'), f = Math.min(FT_SPR.fogMax, S.fog ? ff : 0), fc = fogColor(ff);
       var x0 = Math.round(col - wr / 2), y0 = Math.round(rb) - hr + 1;
       for (r = 0; r < hr; r++) for (c = 0; c < wr; c++) {
         var sr = Math.floor(r * sh / hr), sc = Math.floor(c * sw / wr), g = spr.glyphs[sr].charAt(sc);
         if (g === ' ') continue;
         var X = x0 + c, Y = y0 + r; if (X < 0 || Y < 0 || X >= VW || Y >= VH) continue;
         var kk = X + Y * VW; if (DEPTH[kk] < tdist) continue;
-        var base = rgb[FT.sprite.keys[spr.fg[sr].charAt(sc)].c];
+        var base = rgb[FT_SPR.keys[spr.fg[sr].charAt(sc)].c];
         CG[kk] = g; CF[kk] = [base[0] + (fc[0] - base[0]) * f, base[1] + (fc[1] - base[1]) * f, base[2] + (fc[2] - base[2]) * f];
         if (S.mark) CB[kk] = [120, 30, 30];
       }
@@ -453,13 +460,13 @@
     });
   }
   (function drawTower() {
-    var g = makeGrid($('tower'), 30, 10, 16), FT = OW.farTower, fc = fogColor(U.fogFactor(800, 'far')), f = FT.fogMax;
+    var g = makeGrid($('tower'), 30, 10, 16), fc = fogColor(U.fogFactor(800, 'far')), f = FT_SPR.fogMax;
     for (var y = 0; y < 10; y++) for (var x = 0; x < 30; x++) g.cell(x, y, ' ', '#000', css(fogColor(0.9)));
-    [[FT.sprite.min, 4, 5], [FT.sprite.detail, 16, 1]].forEach(function (v) {
+    [[FT_SPR.min, 4, 5], [FT_SPR.detail, 16, 1]].forEach(function (v) {
       var s = v[0];
       for (var r = 0; r < s.glyphs.length; r++) for (var c = 0; c < s.glyphs[r].length; c++) {
         var gl = s.glyphs[r].charAt(c); if (gl === ' ') continue;
-        var b = rgb[FT.sprite.keys[s.fg[r].charAt(c)].c];
+        var b = rgb[FT_SPR.keys[s.fg[r].charAt(c)].c];
         g.cell(v[1] + c, v[2] + r, gl, css([b[0] + (fc[0] - b[0]) * f, b[1] + (fc[1] - b[1]) * f, b[2] + (fc[2] - b[2]) * f]), css(fogColor(0.9)));
       }
     });
