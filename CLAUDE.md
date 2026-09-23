@@ -11,6 +11,7 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 | `designer` | opus | ASCII models, animations, palettes, lighting ramps, level/terrain data → `design/` + HTML previews |
 | `programmer` | sonnet | Implements stories exactly as specified (up to 2 in parallel on separate tracks) |
 | `tester` | sonnet | Tests after PO OK → `docs/test-reports/` |
+| `writer` | opus | Story, lore, names, scrawl and hint text → `docs/story.md` (text only, canon in game-design.md section 3) |
 
 ## Workflow (the main session orchestrates; subagents cannot call each other)
 1. **product-owner** writes/picks a story in `docs/backlog.md` (status `todo`).
