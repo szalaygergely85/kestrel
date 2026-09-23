@@ -197,3 +197,19 @@ F2, data:
 - Lively far surfaces: kept. At 8-20 m a block covers 1-3 cells, so the per-block alternates and tones still change almost every cell.
 
 Follow-ups: the main session re-exports `exports/detail_pass_start.json`; the programmer's bench measures the US-028a flicker metric.
+
+**2026-09-23, US-029 content gap: v2 records for `iron`, `grate`, `ash`, `rock`.** Programmer finding in `docs/backlog.md` (US-029 notes): these 4 v1-only materials kept `bindShading`'s `allV2` false, so the GPU pipeline never activated. Every non-sky `P.materials` key now has a v2 record and a `remap` entry. No existing material, set or constant changed.
+
+| material | used in tower.js | grid | face sets (near / mid / far) | tones | extras |
+|---|---|---|---|---|---|
+| `iron` | `ceilMat` of the grate sector `G` (brazier / bowl props) | plates 0.5 x 0.5, stagger 0, seam shade 0.75, tint `ironDark`, cross `+`, maxCover 0.25, tie | `ironFace` / `ironMid` / `ironFar` (`: - = + x X # M`) | iron 4, ironDark 3, ironLight 1, rust 1 | bevel = bright rivet rim on top (1.25); rust overlay (joint 0.30, face 0.10) |
+| `grate` | `upperMat` of `G` | bars u 0.25, crossbars v 0.5, stagger 0, **shade 1.8** (bars brighter than gaps), tint `ironLight` 0.3, cross `#`, maxCover 0.25, tie false | `grateGap` (dark gaps) / `grateMid` / `grateFar` (mix in `\| #` so it reads as bars after the lines thin out) | iron 4, ironDark 2, rust 1 | albedo 0.45, bgK 0.08 (dark gaps); rust overlay on bars only |
+| `ash` | `floorMat` of `:` and `*` | `lines: false`, 0.6 m drifts (tones only) | `ashFace` / `ashMid` / `ashFar` (`. , ' \` : ; " ^ *`, no `.` at levels 3-4) | ash 4, ashLight 2, ashDark 2 | none |
+| `rock` | walls / floors of `X Y x w v` and walls of the hill path cells | `lines: false`, no mortar: 1.1 x 0.7 m facets, stagger 0.37 | `rockFace` / `rockMid` / `rockFar` (`: ; % # & @`) | rock 4, stoneCool 2, stoneDeep 2, stoneLight 1 | moss overlay on 12 % of facets |
+
+All: `lod` mid 12 / far 25 / dither 3; the global `lodGates` (bevel 2, band 2, overlay 2, speckle 0) apply unchanged. No speckle on any of the four (per-block speckle since US-028a would fill a whole plate / drift). Tones stay <= 4 (`ShadeTextures.MAX_TONES`).
+
+Notes for the PO / engine:
+- `grate` gap texels were `hole: true` in v1. v2 has no hole flag: the gaps are the dark face set. US-023 (see-through grate) will need a v2 `hole` field (e.g. `grid.faceHole: true`) - flag when that story starts.
+- v1 `iron` / `grate` had `spec` (specular toward the light hue). v2 has no specular term; the bright bevel rim / bars stand in for it.
+- The tower now shades these cells through v2 instead of v1, so tower checksums / baselines (bench, preview exports) will change for poses that see ash, rock, the grate or its ceiling. `test_room` does not use them.

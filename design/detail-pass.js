@@ -139,6 +139,21 @@
     grassFar:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
+    // US-029 content gap: tower materials iron / grate / ash / rock (were v1-only). Same rules: 3-4
+    // alternates per level, no '.' at level 3 (ash is a floor: none at level 4 either).
+    ironFace:   [".'", ".:'", ":-;", "-:=~", "=-+:", "+=x-", "xX#+", "#XM%"],
+    ironMid:    [".'`", ".:'", ":-;'", "-:=~", "=-+:", "+=x-", "xX#+", "#XM%"],
+    ironFar:    [".'`", ".:'", ":-;'", "-:=~", "=-+:", "+=x-", "xX#+", "#XM%"],
+    rust:       [".", ",", ",;", ";%,", "%;,", "%&;", "&%", "&%#"],
+    grateGap:   [".'", ".,'", ",'`", ",:'", ":,;", ";:,", ";:'", ":;"],             // dark space between bars
+    grateMid:   [".'`", ".,'", ",|:", "|,:'", ":|;", "|;#:", "|#;", "#|="],         // bars thinning out: some faces read as bars
+    grateFar:   [".'`", ".,|", ",|:", "|:,", "|:#", "|#:", "#|=", "#|"],
+    ashFace:    [".'", ".,'", ",'`", "',`:", ":;,'", ";:\",", "\"^;:", "^*\"%"],
+    ashMid:     [".'`", ".,'`", ",'`", "',`:", ":;,'", ";:\",", "\"^;:", "^*\"%"],
+    ashFar:     [".'`", ".,'`", ",'`", "',`:", ":;,'", ";:\",", "\"^;:", "^*\"%"],
+    rockFace:   [".'", ".,:", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
+    rockMid:    [".'`", ".,:'", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
+    rockFar:    [".'`", ".,:'", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
@@ -276,13 +291,64 @@
       face: { set: 'grassFace', mid: 'grassMid', far: 'grassFar' },
       speckle: { set: 'tuft', chance: 0.05, shade: 1.15 },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // --- US-029 content gap: the last 4 tower materials (so bindShading's allV2 is true) -------------
+    // No speckle on these: since US-028a speckle is per BLOCK, a rivet / cinder speckle would fill a whole plate.
+    iron: {
+      v1: 'iron', seed: 81,
+      desc: 'Riveted iron plate (brazier, bowl, grate-sector ceiling): 0.5 x 0.5 m plates, no bond, dark seams ( - | ) ' +
+            'with + at plate corners, a bright rivet rim along each plate top, dark cool greys with the odd rusty plate.',
+      // Seam shade 0.75 (not 0.5): iron is also a ceiling (face D 0.62), see the ceiling_timber cutoff note.
+      albedo: 0.70, bgK: 0.15, detail: 16, jitter: 0.06,
+      tones: [['iron', 4], ['ironDark', 3], ['ironLight', 1], ['rust', 1]],
+      grid: { u: 0.5, v: 0.5, stagger: 0, shade: 0.75, tint: 'ironDark', amount: 0.65, bgK: 0.10, cross: '+', maxCover: 0.25, tie: true },
+      face: { set: 'ironFace', mid: 'ironMid', far: 'ironFar',
+              bevel: { top: 0.05, topShade: 1.25, bottom: 0.04, bottomShade: 0.85 } },
+      overlay: { set: 'rust', tints: ['rust'], amount: 0.55, shade: 0.90, joint: 0.30, face: 0.10 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    grate: {
+      v1: 'grate', seed: 91,
+      desc: 'Portcullis (US-011 / US-014): the JOINTS are the iron: vertical bars | every 0.25 m, crossbars - every 0.5 m, ' +
+            '# where they cross. Faces = the dark space between bars (low albedo, near-black bg). No stagger, v anchored to ' +
+            'the grate bottom, so it tiles while the ceiling rises. Mid / far faces mix in | # so the grate still reads as ' +
+            'bars once the 1-cell lines thin out. Rusty bar segments via the overlay (joints only).',
+      // Bars are brightened by grid.shade > 1 (b = L * albedo * shade): gaps 0.45, bars 0.45 * 1.8 = 0.81.
+      albedo: 0.45, bgK: 0.08, detail: 16, jitter: 0.06,
+      tones: [['iron', 4], ['ironDark', 2], ['rust', 1]],
+      grid: { u: 0.25, v: 0.5, stagger: 0, shade: 1.8, tint: 'ironLight', amount: 0.30, bgK: 0.16, cross: '#', maxCover: 0.25, tie: false },
+      face: { set: 'grateGap', mid: 'grateMid', far: 'grateFar' },
+      overlay: { set: 'rust', tints: ['rust'], amount: 0.45, shade: 0.85, joint: 0.25, face: 0.0 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    ash: {
+      v1: 'ash', seed: 101,
+      desc: 'Cold ash floor (around the brazier, beacon bowl): soft grey dust, no lines. 0.6 m drifts in 3 greys ' +
+            '(tones only), low sparse glyphs . , \' ` : ; with the odd " ^ * heap where the light is strong.',
+      albedo: 0.70, bgK: 0.18, detail: 14, jitter: 0.12,
+      tones: [['ash', 4], ['ashLight', 2], ['ashDark', 2]],
+      grid: { u: 0.6, v: 0.6, stagger: 0.5, lines: false },
+      face: { set: 'ashFace', mid: 'ashMid', far: 'ashFar' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    rock: {
+      v1: 'rock', seed: 111,
+      desc: 'Natural hill rock (outcrop, spur, path walls): no mortar grid. Irregular facets 1.1 x 0.7 m (tones only, ' +
+            'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
+      albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
+      tones: [['rock', 4], ['stoneCool', 2], ['stoneDeep', 2], ['stoneLight', 1]],
+      grid: { u: 1.1, v: 0.7, stagger: 0.37, lines: false },
+      face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
+      overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
-  // v1 material key -> v2 key. v1 materials not listed (iron, grate, ash, rock, sky) keep the v1 shader for now.
+  // v1 material key -> v2 key. Since US-029 every non-sky v1 material has a v2 record (sky keeps its own shader).
   var remap = {
     stone: 'stone', stone_moss: 'stone_moss', stone_scorched: 'stone_scorched',
-    floor: 'floor', wood: 'wood', rubble: 'rubble', grass: 'grass'
+    floor: 'floor', wood: 'wood', rubble: 'rubble', grass: 'grass',
+    iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
