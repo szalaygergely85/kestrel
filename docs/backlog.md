@@ -43,7 +43,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 18 | US-010 | Tower layout: 3 levels as sector data | P0 | done | Tester PASS (2026-09-23): tower.test 49/49, behaviours 9/9, world/serialize/terrain/packed/check-deps/physics/jump/eyeFeel/playerLook all green; default page wakes correctly, zero console errors, `?level=test_room` unchanged. See `docs/test-reports/US-010.md` |
 | 19 | US-011 | Billboard props + prop art (D-011 reskin: *Kestrel* burner, brass lamp, wreckage, relay bowl, lever housing) | P0 | design | Designer: D-011 reskin art (see story). Old art approval stands for geometry/format. Programmer after the reskin PO OK + US-030c + US-006. Designer checks props at 160x60 and 240x90 (320x120 extra) |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
-| 21 | US-013 | Rolling boulder | P0 | arch-review | Programmer fixed ARCH CHANGES #1, 2 items -> re-review |
+| 21 | US-013 | Rolling boulder | P0 | po-review | ARCH OK (re-review) -> PO |
 | 22 | US-014 | Lever opens the grate | P0 | done | PASS (Node-level, 2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | Designer: new `KESTREL` logo + map card art (D-011/D-013). Programmer after the art PO OK + US-010 + US-012. Designer checks UI/text at 160x60 and 240x90 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
@@ -1675,7 +1675,7 @@ Notes / dependencies: US-006, US-010, US-011.
 6. **Tests (Node, `engine/world/interaction.test.js`, inline fixture):** cone 19 deg vs 21 deg; reach 1.79 m vs 1.81 m; of two targets, the one nearest the centre wins; LOS blocked through a solid cell; `once` gives no target after use; a stub returning `false` does not consume; `requires`; a serialize round-trip keeps the used flag and the `light` component; `findInteractTarget` does not allocate (10k calls under `--expose-gc`, no scavenge). `engine/entities/attach.test.js`: offset at yaw 0/90/180, sway bounded by `amp`. `game/js/quest/tower.test.js` gains: `lantern.take` on the real tower data attaches the light, sets the state key, and a second E finds no target.
 7. **Files:** `engine/world/interaction.js` (+test), `engine/world/World.js` (load tables only), `engine/ui/crosshair.js`, `engine/entities/attach.js` (+test), `engine/index.js`, `game/js/quest/lantern.js`, `game/js/quest/index.js`, `game/js/main.js`, `design/levels/tower.js` (prompt). Never `engine/render/gpu/*`.
 
-### US-013 Rolling boulder  [Priority: P0] [Status: arch-review]
+### US-013 Rolling boulder  [Priority: P0] [Status: po-review]
 As a player, I want to push the heavy boulder off the stairs and watch it roll away, so that the world feels physical.
 
 **D-011 (PO, 2026-09-23):** no change in behaviour. The only art change is moss on its top rows (US-011 reskin). Per D-015 the architect evaluates Rapier against the in-house sphere code when this story is picked up.
@@ -1720,6 +1720,8 @@ Noted, no change needed: face (`blockedX/Y`) and corner (`nx/ny`) restitution ca
 2. `engine/physics/roller.js`: sleep gate now also requires `body.grounded` (`if (body.grounded && speedNow < roller.sleepSpeed && ...)`), so a mid-fall roller is never flagged sleeping.
 3. **Tests:** `node engine/physics/roller.test.js` 31/31 PASS (28 prior + 1 new forced-fallback case, 2 assertions folded into it... actually 3 new assertions). `node game/js/quest/boulder.test.js` 29/29 PASS. `node engine/physics/physics.test.js` 187/187, `node engine/physics/jump.test.js` 111/111, `node game/js/quest/tower.test.js` 63/63 - all unchanged/green (the `tower.test.js` "5 behaviours not registered" line is a pre-existing informational log, not a failure).
 4. Files touched (all within the allowed list): `engine/physics/integrate.js`, `engine/physics/roller.js`, `engine/physics/roller.test.js`. Not committed.
+
+**Architect re-review (2026-09-23): ARCH OK -> `po-review`.** Diff of HEAD (integrate.js, roller.js, roller.test.js) only. #1: `integrate` records `prevX/prevY` first, before any movement; the fallback restores to it; the forced test covers both branches (the synthetic wedge is acceptable). #2: sleep gate now requires `body.grounded`. No new allocations. Spawn is still blocked on US-011 (ruling b).
 
 ### US-014 Lever opens the grate  [Priority: P0] [Status: done]
 
