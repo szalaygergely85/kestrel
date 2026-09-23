@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // US-004b acceptance: headless perf + correctness bench for the sector
-// caster (`castScene`, game/js/render/raycaster.js). Node, no dependencies,
+// caster (`castScene`, engine/render/sectorCaster.js - moved from
+// game/js/render/raycaster.js by US-024, unchanged). Node, no dependencies,
 // no build step.
 //
 //   node tools/bench-cast.mjs [--frames N] [--gc] [--shader=fast|reference]
@@ -49,9 +50,9 @@
 // the number is printed but not enforced (too noisy to trust).
 
 import { performance, PerformanceObserver, constants as perfConstants } from 'node:perf_hooks';
-import { loadLevel } from '../game/js/world/Level.js';
-import { castScene } from '../game/js/render/raycaster.js';
-import testRoomDef from '../game/js/world/levels/test_room.js';
+import { loadLevel } from '../engine/world/Level.js';
+import { castScene } from '../engine/render/sectorCaster.js';
+import testRoomDef from '../design/levels/test_room.js';
 import paletteModule from '../design/palette.js';
 
 const palette = paletteModule.default || paletteModule;

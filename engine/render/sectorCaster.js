@@ -15,7 +15,20 @@
 // `tools/bench-cast.mjs` and `?shadetest=1`'s oracle) and is otherwise
 // untouched, so it stays the correctness baseline.
 //
-// Coordinate conventions (must match game/js/world/Level.js exactly):
+// US-024 (engine/game split, D-006): moved from game/js/render/raycaster.js
+// to engine/render/sectorCaster.js unchanged (principle: move, do not
+// refactor - the CellBuffer.glyphIdx checksum in tools/bench-cast.mjs is the
+// regression test). `castScene` is kept as the internal implementation and
+// public back-compat alias (bench-cast, ?shadetest=1); `castSectors(fb,
+// level, cam, origin)` below is the new FrameBuffers-shaped entry point
+// (architecture.md section 5): it always casts with `skyFallback: false` (it
+// NEVER paints sky - that is `fillSky`'s job now, also below) and copies the
+// per-frame span into the caller-owned `fb.spans` (OpenSpans instance shared
+// across passes/frames, vs. this module's own single-level module-scoped
+// singleton). `beginFrame`/`fillSky` are new, small, additive exports; they
+// do not touch castScene's internals.
+//
+// Coordinate conventions (must match engine/world/Level.js exactly):
 //   1 cell = 1 world meter. col/x grows east, row/y grows south.
 //   facingDeg is COMPASS degrees: 0 = north (-y), 90 = east (+x), clockwise.
 //   Screen rows grow downward (row 0 = top), matching RenderTarget's grid.
@@ -456,7 +469,7 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
   if (skyPending && ctx.skyFallback && openTop <= openBottom) {
     const r1 = Math.min(openBottom, floorFilledTo - 1);
     if (openTop <= r1) {
-      fillSky(rt, x, ctx, openTop, r1, azimuthDeg);
+      fillSkySpan(rt, x, ctx, openTop, r1, azimuthDeg);
       openTop = r1 + 1;
     }
   }
@@ -466,7 +479,7 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
     return;
   }
   if (ctx.skyFallback) {
-    fillSky(rt, x, ctx, openTop, openBottom, azimuthDeg);
+    fillSkySpan(rt, x, ctx, openTop, openBottom, azimuthDeg);
     ctx.openSpans.close(x);
   } else {
     ctx.openSpans.top[x] = openTop;
@@ -552,7 +565,7 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
           // between to re-resolve it otherwise).
           const skyR1 = Math.min(openBottom, Math.ceil(rowAtHeight(ctx, farSector.ceilH, dFar)) - 1);
           if (ceilTop <= skyR1) {
-            fillSky(rt, x, ctx, ceilTop, skyR1, azimuthDeg);
+            fillSkySpan(rt, x, ctx, ceilTop, skyR1, azimuthDeg);
             ceilingFilledTo = Math.max(ceilingFilledTo, skyR1);
           }
           skyPending = false;
@@ -629,9 +642,100 @@ function castPlane(rt, x, ctx, matKey, h, dNear, dFar, openTop, openBottom, floo
   ctx._planeR1 = r1;
 }
 
-function fillSky(rt, x, ctx, openTop, openBottom, azimuthDeg) {
+function fillSkySpan(rt, x, ctx, openTop, openBottom, azimuthDeg) {
   for (let row = openTop; row <= openBottom; row++) {
     const elevDeg = elevAtRow(ctx, row);
     shadeSkyAndWrite(rt, x, row, ctx, azimuthDeg, elevDeg, 'fillsky');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// US-024 new API surface (architecture.md section 5). `FrameBuffers` =
+// { rt, depth, spans, palette, lights, timeSec }.
+
+/** @param {{rt, depth, spans}} fb */
+export function beginFrame(fb) {
+  fb.depth.clear();
+  if (fb.spans) fb.spans.reset(fb.rt.rows);
+}
+
+/**
+ * New entry point: casts `level` (as a structure placed at `origin`, world
+ * meters) into `fb`, always with sky-painting off (that is `fillSky`'s job,
+ * called once per frame after every structure/terrain pass has narrowed
+ * `fb.spans` - see architecture.md section 8). Thin adapter over the
+ * unchanged `castScene`: copies its per-frame result into the caller-owned
+ * `fb.spans` so multiple passes can share one OpenSpans instance.
+ *
+ * Known limitation (fine for this story - a single test_room, no World yet,
+ * US-025): only one `castSectors` call per frame is composited correctly,
+ * since `castScene` itself always starts a column fully open. `renderWorld`
+ * (US-025) sorts structures far-to-near and will need this adapter to accept
+ * (not reset) an already-partially-closed span before that matters.
+ */
+export function castSectors(fb, level, cam, origin) {
+  const spans = castScene(fb.rt, level, cam, fb.palette, {
+    depthBuffer: fb.depth, origin, skyFallback: false,
+  });
+  if (fb.spans && fb.spans !== spans) {
+    for (let x = 0; x < spans.cols; x++) {
+      fb.spans.top[x] = spans.top[x];
+      fb.spans.bottom[x] = spans.bottom[x];
+      fb.spans.depth[x] = spans.depth[x];
+    }
+  }
+}
+
+/**
+ * Paints whatever is still open in `fb.spans` with sky, exactly like
+ * `castScene`'s old `skyFallback: true` did at column-end (same
+ * `fastShadeSky`/reference-shader write, same per-column azimuth from the
+ * camera) - see the compatibility note in docs/architecture.md section 5.
+ * Closes every column it touches. Writes `Infinity` into `fb.depth`.
+ */
+export function fillSky(fb, cam) {
+  const rt = fb.rt;
+  const cols = rt.cols, rows = rt.rows;
+  const P = fb.palette;
+  const spans = fb.spans;
+
+  // Idempotent per frame (castSectors already primed these if it ran first
+  // this frame) - safe/cheap to redo so a sky-only frame still shades right.
+  primeAmbientLight(P);
+  primeFastShadeFrame(ambientL);
+
+  const hFovRad = HFOV_DEG * Math.PI / 180;
+  const tanHalfHFov = Math.tan(hFovRad / 2);
+  const yawRad = cam.yawDeg * Math.PI / 180;
+  const dirX = Math.sin(yawRad);
+  const dirY = -Math.cos(yawRad);
+  const planeX = -dirY * tanHalfHFov;
+  const planeY = dirX * tanHalfHFov;
+  const screenAspect = (cols * (rt.pxCellW || 1)) / (rows * (rt.pxCellH || 1));
+  const planeDistY = (rows / 2) * screenAspect / tanHalfHFov;
+  const pitchRad = cam.pitchDeg * Math.PI / 180;
+  const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
+
+  const ctx = {
+    P, U: P.util, rows, horizonRow, planeDistY,
+    depthBuffer: fb.depth, useReferenceShader: false,
+  };
+
+  for (let x = 0; x < cols; x++) {
+    const open = spans ? spans.isOpen(x) : true;
+    if (!open) continue;
+    const top = spans ? spans.top[x] : 0;
+    const bottom = spans ? spans.bottom[x] : rows - 1;
+
+    const cameraX = (2 * (x + 0.5)) / cols - 1;
+    const rayDirX = dirX + planeX * cameraX;
+    const rayDirY = dirY + planeY * cameraX;
+    const azimuthDeg = compassAzimuthDeg(rayDirX, rayDirY);
+
+    for (let row = top; row <= bottom; row++) {
+      const elevDeg = elevAtRow(ctx, row);
+      shadeSkyAndWrite(rt, x, row, ctx, azimuthDeg, elevDeg, 'fillsky');
+    }
+    if (spans) spans.close(x);
   }
 }

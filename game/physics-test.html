@@ -54,6 +54,10 @@
     <canvas id="map" width="1" height="1" tabindex="0"></canvas>
     <div id="hud"></div>
   </div>
+  <!-- US-024: test_room moved to design/ - loaded as a classic script so
+       js/world/Level.js and js/world/levels/test_room.js's shims (still
+       needed here until Phase C) find it on window.ASSETS. -->
+  <script src="../design/levels/test_room.js"></script>
   <script type="module" src="js/physics/physicsTestMain.js"></script>
 </body>
 </html>

@@ -3,9 +3,9 @@
 // This is throwaway scaffolding for this story only - later stories replace
 // it with the real raycast render.
 
-import { getPalette, getDefaultRamp } from './palette.js';
-
-const RAMP = getDefaultRamp();
+// US-024: `render/palette.js`'s placeholder is gone (the AssetRegistry
+// requires a real palette, architecture.md section 6) - the ramp now comes
+// from whatever palette main.js's AssetRegistry loaded, passed in below.
 
 // RenderTarget expects "#rrggbb" hex (see its perf note - hex parses far
 // cheaper per cell than letting the browser resolve an hsl()/rgb() string),
@@ -22,11 +22,12 @@ function hslToHex(h, s, l) {
 
 /**
  * Draws the animated gradient + glyph-ramp strip into a RenderTarget.
- * @param {import('./RenderTarget.js').RenderTarget} rt
+ * @param {import('../../../engine/render/RenderTarget.js').RenderTarget} rt
  * @param {number} t - elapsed seconds, used to animate the gradient
+ * @param {string} [ramp] - brightness ramp string; defaults to the D-002 base ramp
  */
-export function drawDemoScene(rt, t) {
-  getPalette(); // touches the placeholder/design palette interface (US-002 hook)
+export function drawDemoScene(rt, t, ramp) {
+  const RAMP = ramp || ' .:-=+*#%@';
   rt.clear('#000000');
 
   const { cols, rows } = rt;

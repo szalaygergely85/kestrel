@@ -64,6 +64,10 @@
        title/end text later) + the title/subtitle models - same
        classic-script/load-order reasoning as palette.js above. -->
   <script src="../design/models/title.js"></script>
+  <!-- US-024: test_room moved from game/js/world/levels/test_room.js into
+       the content pack (design/), loaded the same way as palette.js above -
+       AssetRegistry.fromGlobals (js/main.js) reads window.ASSETS.levels.* -->
+  <script src="../design/levels/test_room.js"></script>
 
   <script type="module" src="js/main.js"></script>
 </body>
