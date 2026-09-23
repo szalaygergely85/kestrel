@@ -298,11 +298,11 @@ function checkSkyFallbackFalseInvariant(level, camera) {
 // designer's `ceiling_timber` retune (albedo/grid.shade/band.edgeShade,
 // commit ebd2734) - NOT from any change to the caster geometry.
 const EMBEDDED_BASELINE_V2 = {
-  'start pose (S, facing east, level)': { glyphIdx: '85ea94f7', fg: '02667852', bg: 'c332e6c1' },
-  'facing stair + 1.0m platform': { glyphIdx: '78271230', fg: 'b348489c', bg: '689e9a2b' },
-  'sky over the low wall, pitch +20': { glyphIdx: 'a321dfe4', fg: '2d68c135', bg: 'df39ad9f' },
-  'long diagonal, pitch -35': { glyphIdx: '8e7f648f', fg: '3d268371', bg: 'e378c510' },
-  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: '1b578f68', fg: 'a6f19c00', bg: '2fea6ab3' },
+  'start pose (S, facing east, level)': { glyphIdx: 'aef366d7', fg: '9e9a7e7e', bg: 'f400c79f' },
+  'facing stair + 1.0m platform': { glyphIdx: 'e5a8b464', fg: '1aa5e744', bg: '0c36ecff' },
+  'sky over the low wall, pitch +20': { glyphIdx: '5d764354', fg: 'e9adac5f', bg: 'ba7c3ff5' },
+  'long diagonal, pitch -35': { glyphIdx: 'fd82d510', fg: '3d268371', bg: 'e378c510' },
+  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: '9e912742', fg: 'e126c426', bg: '0c8d846a' },
 };
 
 // US-028 bench: pass timers (cast/deriv/shade/edge), the 9,600-writes

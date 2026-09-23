@@ -69,6 +69,17 @@ function bandFactorFast(band, z) {
   return 1 - (z - band.full) / (band.zero - band.full);
 }
 function pickChar(str, h) { return str.charAt(Math.min(str.length - 1, Math.floor(h * str.length))); }
+// Joint/band-edge coverage fallback (design/detail-pass.js `fallbackPeriod`,
+// US-028 D1 "joint fallback octaves"): a line whose footprint fails the
+// `maxCover * period` test is retested at 2x, then 4x the period before
+// being dropped, so distant/oblique surfaces keep some joints instead of
+// losing them all. Returns the period to test at, or -1 if none fit.
+function fallbackPeriodOracle(cov, maxCover, period) {
+  if (cov < maxCover * period) return period;
+  if (cov < maxCover * period * 2) return period * 2;
+  if (cov < maxCover * period * 4) return period * 4;
+  return -1;
+}
 
 function setGlyphFast(S, gb, h, alt, s, cellAspect, cutoff, gamma) {
   let lv, str;
@@ -113,8 +124,18 @@ export function shadeV2(DP, rgb, m, s, L, out) {
     bix = Math.floor(uo / g.u);
     fv = v / g.v - course;
   }
-  const ds = m.detail || 16, tx = Math.floor(u * ds), ty = Math.floor(v * ds);
-  const hA = hash(tx, ty, m.seed), hB = hash(tx, ty, m.seed + 7), hC = hash(tx, ty, m.seed + 13);
+  // US-028 D1 ("LOD distance" octave, ported from design/detail-pass.js
+  // `shade` 2026-09-23): per-cell detail octave, so hA/hC track a texel
+  // density that adapts to on-screen footprint (`tpc`), while hB (LOD tier
+  // dither + fog stipple) keeps the BASE (non-octave) texel so the tier
+  // boundary doesn't move with the octave.
+  const base = m.detail || 16;
+  const tpcU = Math.abs(s.dudx) + Math.abs(s.dudy), tpcV = Math.abs(s.dvdx) + Math.abs(s.dvdy);
+  const tpc = (tpcU > tpcV ? tpcU : tpcV) * base;
+  const oct = tpc >= 4 ? -3 : tpc >= 2 ? -2 : tpc >= 1 ? -1 : tpc >= 0.5 ? 0 : tpc >= 0.25 ? 1 : 2;
+  const ds = base * POW2[oct + 3], tx = Math.floor(u * ds), ty = Math.floor(v * ds);
+  const btx = Math.floor(u * base), bty = Math.floor(v * base);
+  const hA = hash(tx, ty, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(tx, ty, m.seed + 13);
   const hBlock = hash(bix, course, m.seed + 3);
 
   const toneKey = pickTone(m, hBlock);
@@ -146,17 +167,20 @@ export function shadeV2(DP, rgb, m, s, L, out) {
       if (band.tone) { const bt = rgb[band.tone]; cr = bt[0]; cg = bt[1]; cb = bt[2]; }
       if (band.bgK) bgK = band.bgK;
     }
-    if (coverFast(bcx, bcy) < 0.5 * band.width) {
+    if (fallbackPeriodOracle(coverFast(bcx, bcy), 0.5, band.width) > 0) {
       const e0 = crossLine(bcoord, bcx, bcy, band.period, 0), e1 = crossLine(bcoord, bcx, bcy, band.period, band.width);
       const ef = e0 >= 0 ? e0 : e1;
       if (ef >= 0) { lineG = lineGlyph(bcx, bcy, ef); shadeK = band.edgeShade || 0.5; onJoint = true; }
     }
   }
   if (g && g.lines !== false && !inBand && !onJoint) {
-    const okH = coverFast(s.dvdx, s.dvdy) < g.maxCover * g.v;
-    const okV = coverFast(s.dudx, s.dudy) < g.maxCover * g.u && (!g.tie || okH);
-    const fh = okH ? crossLine(v, s.dvdx, s.dvdy, g.v, 0) : -1;
-    const fu = okV ? crossLine(uo, s.dudx, s.dudy, g.u, 0) : -1;
+    // D1: joint fallback octaves - every line, else every 2nd, else every 4th.
+    const periodH = fallbackPeriodOracle(coverFast(s.dvdx, s.dvdy), g.maxCover, g.v);
+    const periodV = fallbackPeriodOracle(coverFast(s.dudx, s.dudy), g.maxCover, g.u);
+    const okH = periodH > 0;
+    const okV = periodV > 0 && (!g.tie || okH);
+    const fh = okH ? crossLine(v, s.dvdx, s.dvdy, periodH, 0) : -1;
+    const fu = okV ? crossLine(uo, s.dudx, s.dudy, periodV, 0) : -1;
     if (fh >= 0 || fu >= 0) {
       onJoint = true;
       if (g.kind === 'gap') { set = g.set; lineG = null; }
