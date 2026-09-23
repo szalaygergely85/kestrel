@@ -289,12 +289,15 @@ function checkSkyFallbackFalseInvariant(level, camera) {
 // joint spacing shift fg/bg across every pose; glyphIdx also moves here
 // (unlike the reference table) because the fast path's per-set threshold
 // tables pick alternates off the same hA/hC.
+// Re-recorded 2026-09-23 (US-029 ARCH CHANGES item 5, qfloor fix): v2
+// checksums shift because course/bix/pos/crossLine k now use qfloor instead
+// of a plain floor, changing block hash/tone/tint on course boundaries.
 const EMBEDDED_BASELINE_V2 = {
-  'start pose (S, facing east, level)': { glyphIdx: '49a65dfe', fg: 'b2b30d73', bg: '5d97624c' },
-  'facing stair + 1.0m platform': { glyphIdx: 'a592f221', fg: '5a09038f', bg: 'e92ab1e2' },
-  'sky over the low wall, pitch +20': { glyphIdx: 'a5d4abee', fg: '280c581c', bg: '935a2cda' },
-  'long diagonal, pitch -35': { glyphIdx: '3a1ff668', fg: 'f9bc2119', bg: '4f2b3acb' },
-  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: '056c82fc', fg: '0974d14a', bg: '0c85db6c' },
+  'start pose (S, facing east, level)': { glyphIdx: '4f3f7818', fg: '742cdae6', bg: 'b7f99c49' },
+  'facing stair + 1.0m platform': { glyphIdx: '939e4786', fg: 'f9765532', bg: '4dede0e6' },
+  'sky over the low wall, pitch +20': { glyphIdx: '2884c74b', fg: 'afa6d221', bg: '9d42264f' },
+  'long diagonal, pitch -35': { glyphIdx: '59307d34', fg: '900edfb4', bg: '6e1c6463' },
+  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: '40e6c001', fg: '9950241d', bg: 'd7b7f8e6' },
 };
 
 // US-028 bench: pass timers (cast/deriv/shade/edge), the 9,600-writes

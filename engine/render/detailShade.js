@@ -59,6 +59,15 @@ function orientClassFast(cx, cy, cellAspect) {
   return dx * dy > 0 ? 'd2' : 'd1';
 }
 
+// US-029 ARCH CHANGES item 5 (2026-09-23): f64 `Math.floor(v/g.v)` (JS) can
+// disagree with f32 GLSL `floor(v/g.v)` right on a course boundary (e.g.
+// v=2.8 on brick-wall tops: JS gives course 6, f32 GLSL gives 7), diverging
+// the block hash/tone/tint between the two paths. `qfloor` nudges by a tiny
+// epsilon before flooring so JS and GLSL land on the same side; used for
+// course/`fv`, `bix`, band `pos` and `crossLine`'s `k` here and in the GLSL
+// twin (`engine/render/gpu/glsl/common.js`'s `qfloor`, same epsilon).
+function qfloor(x) { return Math.floor(x + (1 / 256)); }
+
 function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 function smoothstepFast(a, b, x) { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
 function coverFast(cx, cy) { return Math.abs(cx) + Math.abs(cy); }
@@ -119,9 +128,9 @@ export function shadeV2(DP, rgb, m, s, L, out) {
 
   let course = 0, bix = 0, fv = 0.5, uo = u;
   if (g) {
-    course = Math.floor(v / g.v);
+    course = qfloor(v / g.v);
     uo = u - ((course & 1) ? g.stagger * g.u : 0);
-    bix = Math.floor(uo / g.u);
+    bix = qfloor(uo / g.u);
     fv = v / g.v - course;
   }
   // US-028 D1 ("LOD distance" octave, ported from design/detail-pass.js
@@ -173,7 +182,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   if (band) {
     const bcoord = band.axis === 'u' ? u : v;
     const bcx = band.axis === 'u' ? s.dudx : s.dvdx, bcy = band.axis === 'u' ? s.dudy : s.dvdy;
-    const pos = bcoord - Math.floor(bcoord / band.period) * band.period;
+    const pos = bcoord - qfloor(bcoord / band.period) * band.period;
     if (pos < band.width) {
       inBand = true;
       if (tier <= lodGates.band) set = band.set;
@@ -334,7 +343,7 @@ function bandFactorNum(full, zero, z) {
 function crossLineFast(c, cx, cy, period, offset) {
   let hw = 0.5 * (Math.abs(cx) + Math.abs(cy));
   if (!(hw > 1e-7)) hw = 1e-7;
-  const k = Math.floor((c + hw - offset) / period);
+  const k = qfloor((c + hw - offset) / period);
   const line = offset + k * period;
   if (line < c - hw) return -1;
   const fr = Math.abs(cy) > 1e-9 ? 0.5 + (line - c) / cy : 0.5;
@@ -394,9 +403,9 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const g = rec.grid;
   let course = 0, bix = 0, fv = 0.5, uo = u;
   if (g) {
-    course = Math.floor(v / g.v);
+    course = qfloor(v / g.v);
     uo = u - ((course & 1) ? g.stagger * g.u : 0);
-    bix = Math.floor(uo / g.u);
+    bix = qfloor(uo / g.u);
     fv = v / g.v - course;
   }
   // Owner feedback (architect 2026-09-23, "LOD distance"): a detail OCTAVE
@@ -459,7 +468,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   if (band) {
     const bcoord = band.isU ? u : v;
     const bcx = band.isU ? dudx : dvdx, bcy = band.isU ? dudy : dvdy;
-    const pos = bcoord - Math.floor(bcoord / band.period) * band.period;
+    const pos = bcoord - qfloor(bcoord / band.period) * band.period;
     if (pos < band.width) {
       inBand = true;
       if (tier <= rec.bandGate) setId = band.setId;

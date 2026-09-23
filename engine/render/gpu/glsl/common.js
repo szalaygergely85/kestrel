@@ -69,6 +69,17 @@ float smoothstepFast(float a, float b, float x) {
 float coverFast(float cx, float cy) { return abs(cx) + abs(cy); }
 `;
 
+// US-029 ARCH CHANGES item 5 (2026-09-23): f32 GLSL `floor(v/g.v)` disagrees
+// with f64 JS `Math.floor` at a course boundary (e.g. v=2.8 on brick-wall
+// tops: JS gives course 6, f32 GLSL gives 7), diverging the block hash/tone/
+// tint. `qfloor` nudges by a tiny epsilon before flooring so both languages
+// land on the same side of the boundary; used for course/fv, bix, band
+// `pos` and `crossLine`'s `k` (JS: engine/render/detailShade.js, GLSL: here
+// + shade.frag.js). Declared before ORIENT_AND_LINES, which calls it.
+export const QFLOOR = `
+float qfloor(float x) { return floor(x + (1.0 / 256.0)); }
+`;
+
 // orientClassFast / crossLineFast / lineGlyphCodeFast - engine copies
 // (detailShade.js), same TAN22/TAN68 constants.
 export const ORIENT_AND_LINES = `
@@ -89,7 +100,7 @@ int orientClassCode(float cx, float cy, float cellAspect) {
 float crossLineFast(float c, float cx, float cy, float period, float offset) {
   float hw = 0.5 * (abs(cx) + abs(cy));
   if (!(hw > 1e-7)) hw = 1e-7;
-  float k = floor((c + hw - offset) / period);
+  float k = qfloor((c + hw - offset) / period);
   float line = offset + k * period;
   if (line < c - hw) return -1.0;
   float fr = (abs(cy) > 1e-9) ? (0.5 + (line - c) / cy) : 0.5;

@@ -5,7 +5,7 @@
 // shadeBg.a = 0); else shaded cell (shadeBg.a = 1.0).
 import {
   GLSL_VERSION, PRECISION, GBUF_UNPACK, HASH_FAST, SAMPLE_POW_LUT, BYTE_OUT,
-  SMOOTHSTEP_FAST, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS,
+  SMOOTHSTEP_FAST, QFLOOR, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS,
 } from './common.js';
 import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 
@@ -40,6 +40,7 @@ ${HASH_FAST}
 ${SAMPLE_POW_LUT}
 ${BYTE_OUT}
 ${SMOOTHSTEP_FAST}
+${QFLOOR}
 ${ORIENT_AND_LINES}
 ${LEVEL_FROM_THRESHOLDS}
 
@@ -125,10 +126,10 @@ void main() {
   float course = 0.0, uo = u, fv = 0.5;
   int bix = 0, courseI = 0;
   if (hasGrid) {
-    courseI = int(floor(v / gv));
+    courseI = int(qfloor(v / gv));
     course = float(courseI);
     uo = u - ((mod(course, 2.0) != 0.0) ? gstagger * gu : 0.0);
-    bix = int(floor(uo / gu));
+    bix = int(qfloor(uo / gu));
     fv = v / gv - course;
   }
 
@@ -193,7 +194,7 @@ void main() {
     int bandSetId = mi2.y;
     float bcoord = bandIsU ? u : v;
     float bcx = bandIsU ? dudx : dvdx, bcy = bandIsU ? dudy : dvdy;
-    float pos = bcoord - floor(bcoord / period) * period;
+    float pos = bcoord - qfloor(bcoord / period) * period;
     if (pos < width) {
       inBand = true;
       if (tier <= bandGate) setId = bandSetId;
