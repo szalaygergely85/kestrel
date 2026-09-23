@@ -13,7 +13,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 4 | US-004 | Sector caster: walls, floors, ceilings, sky, y-shear (+ DepthBuffer, open span, origin offset per D-008) | P0 | done (Tester PASS 2026-09-22, docs/test-reports/US-004.md; both ASK ARCHITECT items answered 2026-09-22 -> follow-up US-004b) | - |
 | 5 | US-008 | Physics: player capsule, gravity, walk/run, collision (+ out-of-grid world query per D-008) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-008.md |
 | 6 | US-004b | **Sector caster: overdraw 1.0x, allocation-free ray loop, fast shader, headless bench** (engine story) | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-004b.md. Must be `done` before US-006 and US-016 |
-| 7 | US-024 | **Engine/game split (D-006)** | P0 | po-review | ARCH OK (architect, 2026-09-23, re-review of c4b0dcf): all 4 ARCH CHANGES fixed. pauseOverlay stays in game/js/ui/ |
+| 7 | US-024 | **Engine/game split (D-006)** | P0 | testing | PO OK (2026-09-23): all ACs verified (layout, API, no globals, check-deps, no regressions, docs). pauseOverlay stays in game/js/ui/ |
 | 8 | US-025 | **World model: terrain + placed structures (D-007)** | P0 | todo | Programmer after US-024; designer supplies `world_m1.js` + US-016b |
 | 9 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
 | 10 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
@@ -1355,6 +1355,8 @@ Notes / dependencies: after US-004 and US-008 reach `po-review`, before US-006 s
 *Ruling: `game/js/ui/pauseOverlay.js` stays in game.* Its text and look come from game content (`uiStyle.pause`), and the engine has no generic overlay/plate primitive yet. Game-owned screens (pause, title, HUD hints) go in `game/js/ui/`, which the architect adds to architecture.md section 2. When `engine/ui/overlay.js` exists, the generic "darken a plate + draw text" part moves there and pauseOverlay becomes a thin caller.
 
 **Arch re-review (architect, 2026-09-23, commit c4b0dcf): ARCH OK.** 1: `drawPauseOverlay(rt, assets)`, no second `window.ASSETS` read. 2: `physics = { ...PHYSICS_DEFAULTS, ...opts.physics }`, stale comment gone. 3: `cam`/`fb` built once in `runGame`, mutated per frame. 4: check-deps comment fixed. Checks re-run by main session (check-deps 61 files, bench same checksums, 5 test files, page clean). -> `po-review`.
+
+**PO OK (2026-09-23) -> `testing`.** All ACs checked against the main session's evidence: layout matches D-006, `engine/index.js` public API complete, no globals in engine (ARCH CHANGES 1-2 fixed), `check-deps` OK, no regressions (identical bench checksums, 187+111+18+10 tests pass, zero console errors in all URL modes), README/CLAUDE.md updated. Tester: re-run check-deps + check-deps.test, all 4 test suites, bench-cast (compare 5 checksums), load `game/index.html` (6 modes) + both -test.html pages for console errors, confirm `game/js/{engine,render,world,physics,entities}/` no longer exist.
 
 ### US-025 World model: terrain + placed structures in one world frame (D-007)  [Priority: P0] [Status: todo]
 As a player, I want the tower to stand on a real hill in a real world, so that what I see from the breach is the same world I will later walk into.
