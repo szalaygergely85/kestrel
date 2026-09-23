@@ -3,6 +3,14 @@
 Owner: Product Owner. Last updated: 2026-09-23 (D-009 amendment 2, D-011 amendments 1+2, D-012, D-013: M1 content reskin notes, US-038..US-041 added).
 Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout details: see `docs/game-design.md` section 5 and 7.
 
+> **Session handoff 2 (end of 2026-09-23, commit after b6f4e00).**
+> - **M1: 19 of 28 P0 done.** Newly done in this stretch: US-010, US-013 (boulder), US-014 (lever/grate), US-029, US-030a, US-030c. Also done: US-039 (voxel format, pre-M3).
+> - **In review:** **US-012** (interaction + brass lamp) `arch-review`, next an architect review (Node + browser: lever E-press animates the grate live; lamp E attaches the light). **US-030b** (2x2 coverage) waits on the **owner A/B walk-test** (`?rays=1` vs the default), because the flicker metric is still unreliable (a step-1 warm-up outlier in the harness; GPU n=1 bit-matches JS yet scores higher). Fix the harness first, or decide by the owner's eye.
+> - **Design:** US-011 (props) and US-015 (title/map card) are back with the designer, with the PO's change requests (lever gear housing, canvas heap, ropes/strut, relay glow anchor + awake anim; map card "W." signature, hint zones and timings). The KESTREL logo is approved.
+> - **Next stories:** US-006/007 lighting (notes ready; after US-030b settles), US-016 overworld (notes ready), US-017 end/restart (notes ready; after US-012), US-018 final perf. Pre-M3: US-040/041 voxel GPU and anim.
+> - **Decisions today:** D-011 amendment 2 (Wick, no amnesia), D-012 Steam (Electron), D-013 writer proposals, D-014 strategy camera later, D-015 WASM/Rapier policy (Rapier rejected for US-013), D-016 voxel models. Grid default 240x90 + settings menu (US-038).
+> - **Process:** subagents must not delegate; test in `../game_project_test`; fresh ports only; the owner's port 8000 keeps dying because agents kill python, so re-check it.
+
 > **Session handoff (end of 2026-09-23).** Commit d46493d.
 > - **Done this session:** US-004b, US-005, US-008, US-009, US-024, US-025, US-028, US-028a, US-029 (the D-009 GPU gate was PASSED on the owner's hardware: gpucompare ALL PASS, gpu 0.25 ms, 60 fps).
 > - **In `arch-review` now (implemented, committed, not yet reviewed):** **US-030a** (GPU DDA + `?grid=WxH`, 320x120 default; glyph bug fixed = ambient light was not primed on the GPU path), **US-030c** (GPU sprites, `?spritecompare=1`), **US-010** (tower integration, `game/js/quest/`, 49 tower tests). Next: architect reviews for all three, then PO and tester (test in the worktree `../game_project_test`, moved to the right commit).
