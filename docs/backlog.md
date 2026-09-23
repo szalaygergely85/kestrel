@@ -44,7 +44,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 19 | US-011 | Billboard props + prop art (D-011 reskin: *Kestrel* burner, brass lamp, wreckage, relay bowl, lever housing) | P0 | design | Designer: D-011 reskin art (see story). Old art approval stands for geometry/format. Programmer after the reskin PO OK + US-030c + US-006. Designer checks props at 160x60 and 240x90 (320x120 extra) |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
 | 21 | US-013 | Rolling boulder | P0 | dev | Programmer (ARCH CHANGES #1, 2 items) |
-| 22 | US-014 | Lever opens the grate | P0 | testing | PO OK (2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
+| 22 | US-014 | Lever opens the grate | P0 | done | PASS (Node-level, 2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | Designer: new `KESTREL` logo + map card art (D-011/D-013). Programmer after the art PO OK + US-010 + US-012. Designer checks UI/text at 160x60 and 240x90 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
@@ -1699,7 +1699,9 @@ Notes / dependencies: US-009, US-010, US-011.
 2. **Sleep only while grounded**: add `body.grounded &&` to the sleep gate, so a roller cannot be flagged `sleeping` mid-fall (a sleeping roller skips the tilt/friction block after landing and would sit on a slope until pushed).
 Noted, no change needed: face (`blockedX/Y`) and corner (`nx/ny`) restitution cannot double-apply (capsule sets `nx/ny` only for corner contacts, and after a face flip `vn >= 0`). Tilt is applied while airborne (unphysical, harmless for a 0.3 m drop). Zero per-step allocation confirmed (module-level scratch). Re-review: opus, diff only.
 
-### US-014 Lever opens the grate  [Priority: P0] [Status: testing]
+### US-014 Lever opens the grate  [Priority: P0] [Status: done]
+
+**Tester (2026-09-23): PASS (Node-level).** All checklist items green; report `docs/test-reports/US-014.md`.
 
 **PO OK (2026-09-23) -> `testing`.** Engine mechanism and behaviour body are correctly scoped and verified (Node tests, no allocation, serialize round-trip, GPU dirty-row update). Visible grate/prompt behavior is legitimately blocked on US-011 (lever prop, `EntityHandle.play`) and US-012 (`E` interaction, prompt hiding); re-check the two visual/prompt ACs then. Tester checklist (Node-level, no browser needed yet): `node engine/world/sectorAnim.test.js` (85/85), `node game/js/quest/tower.test.js` (63/63, incl. lever.pull via `world.fireInteraction`), `node tools/check-deps.mjs`, confirm `stepSectorAnims` is called once per world-mode frame in `game/js/main.js` before `integrate`, confirm save-mid-open/load/finish determinism test passes, confirm `world_m1.js` no longer has the redundant `'tower.grate.open'` state key.
 
