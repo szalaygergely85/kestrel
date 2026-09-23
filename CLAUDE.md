@@ -6,7 +6,7 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 | Agent | Model | Role |
 |---|---|---|
 | `manager` | opus | Big decisions, roadmap, conflict resolution → `docs/decisions.md`, `docs/roadmap.md` |
-| `architect` | fable | Engine tech notes before dev, technical code review before PO, answers "ASK ARCHITECT" → `docs/architecture.md` |
+| `architect` | fable (opus for re-reviews, Q&A, small tech notes; set per call) | Engine tech notes before dev, technical code review before PO, answers "ASK ARCHITECT" → `docs/architecture.md` |
 | `product-owner` | opus (sonnet for routine re-reviews / ASK PO answers, set per call) | Vision/GDD, backlog, user stories, acceptance, "PO OK" |
 | `designer` | opus | ASCII models, animations, palettes, lighting ramps, level/terrain data → `design/` + HTML previews |
 | `programmer` | sonnet | Implements stories exactly as specified (up to 2 in parallel on separate tracks) |
@@ -30,3 +30,8 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 - `tools/` – dev tools (check-deps.mjs), future editor
 - Until US-024 lands, engine code still lives under `game/js/{engine,render,physics,world,entities,ui}/`.
 - Git: work on `master`; the main session commits. Local server: `python -m http.server 8000` from the repo root (launch config `ascii-quest-http`).
+
+## Token budget rules (main session)
+- **architect**: use fable only for first reviews of core engine code (render/physics/world) and big tech notes. Re-reviews, questions and small stories use `model: opus`. Continue the same architect agent via SendMessage for a re-review instead of spawning a new one.
+- Every architect/PO prompt names the diff/commits and the exact doc sections to read, says "run probes only if something looks wrong", and asks for a short reply (verdict + required changes).
+- **product-owner**: sonnet for routine re-reviews / ASK PO answers, opus for new stories and first reviews.
