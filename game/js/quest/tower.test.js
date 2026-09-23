@@ -132,13 +132,53 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ok('World.load warns once naming the missing behaviour', warns.length === 1 && /lever\.pull/.test(warns[0]), warns.join(' | '));
   registerQuestBehaviours();
   ok('re-registration restores an empty list', validateBehaviours(worldFull).length === 0);
-  // The stubs are callable, return false and log "not implemented" once.
+  // The remaining stubs (US-012/US-014 replaced their own bodies; US-022/
+  // US-015/US-017 have not landed yet) are callable, return false and log
+  // "not implemented" once.
   const logged = [];
   console.warn = (m) => logged.push(String(m));
-  const r1 = worldFull.fireInteraction('lantern.take', { def: {} });
-  const r2 = worldFull.fireInteraction('lantern.take', { def: {} });
+  const r1 = worldFull.fireInteraction('beacon.light', { def: {} });
+  const r2 = worldFull.fireInteraction('beacon.light', { def: {} });
   console.warn = origWarn;
   ok('stub returns false and logs "not implemented" once', r1 === false && r2 === false && logged.length === 1 && /not implemented/.test(logged[0]), logged.join(' | '));
+}
+
+// ---------------------------------------------------------------------------
+// 3b. US-012: `lantern.take` behaviour body on the real tower data. As with
+//    the lever (section 8 below), `entity`/`actor` are stub handle-shaped
+//    objects here - real prop entities come from US-011 (tech note 5).
+// ---------------------------------------------------------------------------
+{
+  const lanternDef = towerDef.interactables.find((i) => i.id === 'lantern');
+  ok('lantern interactable prompt is "[E] Take lamp" (D-011 reskin)', lanternDef.prompt === '[E] Take lamp', lanternDef.prompt);
+  ok('lantern interactable data: once, interact lantern.take', lanternDef.once === true && lanternDef.interact === 'lantern.take');
+
+  let propSprite = { model: 'lantern', variant: 'unlit' };
+  const fakeProp = {
+    getComponent: (name) => (name === 'sprite' ? propSprite : undefined),
+    setComponent: (name, value) => { if (name === 'sprite') propSprite = value; },
+  };
+  let actorLight = null;
+  const fakeActor = { setComponent: (name, value) => { if (name === 'light') actorLight = value; } };
+
+  const lanternWorld = World.load({
+    name: 'tower_lantern_test', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: {},
+  }, assets, {});
+
+  const r = lanternWorld.fireInteraction('lantern.take', { def: lanternDef, entity: fakeProp, actor: fakeActor });
+  ok('lantern.take returns true (consumes the once-flag path)', r === true);
+  ok('lantern.take attaches an eye light preset "lantern" to the actor', actorLight && actorLight.preset === 'lantern' && actorLight.on === true && actorLight.attach === 'eye');
+  ok('lantern.take swaps the prop sprite to the empty-bracket variant, keeping model', propSprite.variant === 'empty' && propSprite.model === 'lantern');
+  ok('lantern.take sets tower.lantern.taken', lanternWorld.state['tower.lantern.taken'] === true);
+
+  // A second E on the same interactable: `updateInteraction` (not exercised
+  // here directly - `interaction.test.js` covers the generic `once` gate)
+  // finds no target once `world.interactables`' matching `usedKey` is set;
+  // this checks the World-built table carries that key at all.
+  const rec = lanternWorld.interactables.find((it) => it.id === 'lantern' && it.structId === 'tower');
+  ok('World.load built an interactables entry for the lantern with a usedKey (once: true)', !!rec && rec.usedKey === 'used.tower.lantern');
 }
 
 // ---------------------------------------------------------------------------

@@ -198,8 +198,8 @@
     // x, y, z = the aim point the US-012 targeting test uses (within radius m and ~20 deg of view centre).
     // `prop` links the sprite whose look changes; `target` names what the behaviour acts on, by tag, never by coordinates.
     interactables: [
-      { id: 'lantern', prop: 'lantern', x: 19.9, y: 6.5, z: 1.1, radius: 1.8, prompt: '[E] Take lantern', interact: 'lantern.take',
-        once: true, note: 'US-012: hook sprite -> hookEmpty, attaches palette lights.lantern to the player' },
+      { id: 'lantern', prop: 'lantern', x: 19.9, y: 6.5, z: 1.1, radius: 1.8, prompt: '[E] Take lamp', interact: 'lantern.take',
+        once: true, note: 'US-012 (D-011 reskin: the brass lamp): hook sprite -> hookEmpty, attaches palette lights.lantern to the player' },
       { id: 'lever', prop: 'lever', x: 19.25, y: 9.3, z: 3.7, radius: 1.8, prompt: '[E] Pull lever', interact: 'lever.pull',
         once: true, target: { tag: 'grate' }, note: 'US-014: lever pull animation, then the grate sector dynamic ceiling opens' },
       { id: 'beacon', prop: 'beaconBowl', x: 9.0, y: 7.0, z: 7.2, radius: 1.8, prompt: '[E] Light the beacon', interact: 'beacon.light',

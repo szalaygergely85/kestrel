@@ -62,6 +62,12 @@ export class World {
     this.nextId = 0;
     this.state = {};
     this.events = null;
+    // (US-012) Built by `load()` from every placed structure's
+    // `def.interactables`; a bare `new World()` (no `load`) gets an empty
+    // list rather than `undefined`, so `findInteractTarget` never needs a
+    // null check on the hot path.
+    this.interactables = [];
+    this.interaction = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
 
     this._entities = new Map();   // id -> plain entity data
     this._handles = new Map();    // id -> EntityHandle (cached, same object until remove)
@@ -113,6 +119,35 @@ export class World {
         }
       }
     }
+
+    // (US-012, 7.4) `world.interactables`: every placed structure's
+    // `def.interactables`, in world coords (level x,y,z + origin).
+    // `usedKey` is precomputed here (not in the hot `findInteractTarget`
+    // loop, rule 9) so a `once` entry's used flag never needs a per-call
+    // string concatenation.
+    w.interactables = [];
+    for (const s of w.structures) {
+      const def = s.level.def;
+      for (const it of (def && def.interactables) || []) {
+        w.interactables.push({
+          key: `${s.id}.${it.id}`,
+          structId: s.id,
+          id: it.id,
+          name: it.interact,
+          x: it.x + s.origin.x,
+          y: it.y + s.origin.y,
+          z: it.z + s.origin.z,
+          radius: it.radius,
+          prompt: it.prompt,
+          once: !!it.once,
+          requires: it.requires || null,
+          propId: it.prop ? `${s.id}.${it.prop}` : null,
+          def: it,
+          usedKey: it.once ? `used.${s.id}.${it.id}` : null,
+        });
+      }
+    }
+    w.interaction = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 }; // reused (rule 9)
 
     // (US-016b) Wire each placed structure's real ring height into the
     // terrain recipe's own `structures[i]` entry (matched by id), BEFORE any

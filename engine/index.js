@@ -66,6 +66,11 @@ export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 
 // ---- ui -----------------------------------------------------------------------
 export { DebugOverlay } from './ui/debugOverlay.js';
+export { drawCrosshair } from './ui/crosshair.js';
+
+// ---- interaction (US-012) ------------------------------------------------------
+export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
+export { attachedLightPos } from './entities/attach.js';
 
 // ---- behaviours ---------------------------------------------------------------
 export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTrigger, getBehaviour, validateBehaviours } from './core/behaviours.js';

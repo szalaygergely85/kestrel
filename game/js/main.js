@@ -15,6 +15,7 @@ import {
   GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells, flickerStep,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
+  updateInteraction, drawCrosshair,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -67,6 +68,15 @@ if (isDdaCompare) rays = 1;
 
 const canvas = document.getElementById('screen');
 const assets = AssetRegistry.fromGlobals(window.ASSETS);
+// US-012: crosshair/prompt colors, resolved once from the palette's `ui`
+// semantic keys (design/palette.js section 8) - `ASSETS.uiStyle` doesn't
+// exist yet (that's US-015's art), so this is the game's own small style
+// object; `drawCrosshair` itself only ever reads `style`, never `ASSETS`.
+const P = assets.palette;
+const crosshairStyle = {
+  crosshair: { dim: P.colors[P.ui.crosshair], active: P.colors[P.ui.crosshairActive] },
+  prompt: { color: P.colors[P.ui.prompt], keyColor: P.colors[P.ui.promptKey] },
+};
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   force2d: params.get('force2d') === '1',
@@ -278,6 +288,10 @@ function runGame(mode) {
       // player's this-step velocity is what a push is measured against.
       stepRollers(engine.world, dt, engine.physics);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
+      // US-012 (7.4 fixed-step order item 5): after physics settles this
+      // step's position, before the event flush - `E` is edge-triggered the
+      // same way Space is (US-009's convention).
+      updateInteraction(engine.world, engine, Camera.fromEntity(playerHandle.data), input.pressed('KeyE'));
       if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
       engine.world.flushEvents();
     }
@@ -319,6 +333,9 @@ function runGame(mode) {
       fb.gpuDda = !!gpuPipeline && rt.gpuActive;
       renderWorld(fb, engine.world, cam);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
+      // the world/sprite passes, never depth-tested (architecture.md 8).
+      drawCrosshair(rt, crosshairStyle, engine.world.interaction);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
