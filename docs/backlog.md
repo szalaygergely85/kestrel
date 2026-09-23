@@ -19,7 +19,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 10 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 11 | US-006 | Lighting: ambient + point lights with flicker | P0 | todo | Programmer, after US-025 and US-004b `done` |
 | 12 | US-007 | Lighting: sun directional light with shaft shadow | P0 | todo | Programmer |
-| 13 | US-009 | Physics: jump, step-up, landing feel | P0 | arch-review | Programmer done 2026-09-23, awaiting ARCH OK |
+| 13 | US-009 | Physics: jump, step-up, landing feel | P0 | po-review | ARCH OK 2026-09-23, awaiting PO |
 | 14 | US-010 | Tower layout: 3 levels as sector data | P0 | todo | Design PO-approved; integration = load `design/levels/tower.js` via AssetRegistry, place in world (after US-025). Designer adds `interactables` + hint zones |
 | 15 | US-011 | Billboard props + prop art | P0 | todo | Art PO-approved; Programmer after US-006 (`engine/render/sprites.js`) |
 | 16 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
@@ -338,37 +338,22 @@ Notes / dependencies:
 
 Overdraw 1.5-1.9x, matching architecture.md 12's prior measurement. All 4 poses fail the write-count check, as expected.
 
-*After (2026-09-23, `node tools/bench-cast.mjs --frames 600 --shader=reference` - overdraw/allocation/OpenSpans work only, reference shader still in use):*
+*Superseded by the 2026-09-24 rework note below (pose 3 changed, numbers re-recorded after the architect's fixes) - kept for history:*
+
+*After (2026-09-23, `node tools/bench-cast.mjs --frames 600 --shader=reference` - overdraw/allocation/OpenSpans work only, reference shader still in use, OLD pose 3):*
 
 | Pose | avg ms | p50 ms | p95 ms | max ms | cells written | checksum (glyphIdx) |
 |---|---|---|---|---|---|---|
 | start | 1.78 | 1.47 | 3.48 | 4.91 | 9,600 / 9,600 | a74436e1 |
 | stair+platform | 1.93 | 1.62 | 3.48 | 6.47 | 9,600 / 9,600 | bae66e57 |
-| sky over low wall | 1.65 | 1.40 | 2.77 | 4.94 | 9,600 / 9,600 | 14bdf597 |
+| sky over low wall (OLD pose, 0 sky cells) | 1.65 | 1.40 | 2.77 | 4.94 | 9,600 / 9,600 | 14bdf597 |
 | diagonal | 1.51 | 1.24 | 2.87 | 4.16 | 9,600 / 9,600 | 91811e1f |
 
-Exactly 9,600 cells/frame on every pose, no cell written twice (`bench-cast.mjs` exits 0). Checksums differ from the baseline row above - see the "Overdraw sources beyond the sketch" note below for why, and the ASK ARCHITECT item.
+Exactly 9,600 cells/frame on every pose, no cell written twice (`bench-cast.mjs` exits 0). Checksums differ from the US-004 baseline - see the "Overdraw sources beyond the sketch" note below for why; the architect's ruling on this is now in "Image identity" above (waived, baseline was buggy).
 
-*After, fast shader (default), 600 frames:*
-
-| Pose | avg ms | p50 ms | p95 ms | max ms | cells written | checksum (glyphIdx) |
-|---|---|---|---|---|---|---|
-| start | 1.34 | 1.15 | 2.38 | 3.67 | 9,600 / 9,600 | a74436e1 |
-| stair+platform | 1.52 | 1.26 | 3.12 | 4.36 | 9,600 / 9,600 | bae66e57 |
-| sky over low wall | 1.31 | 1.08 | 2.79 | 4.11 | 9,600 / 9,600 | 14bdf597 |
-| diagonal | 1.05 | 0.88 | 1.93 | 3.41 | 9,600 / 9,600 | 91811e1f |
-
-`glyphIdx` checksums are byte-identical to the reference-shader row above on all 4 poses (fg/bg differ, within the `?shadetest=1` ±4 tolerance by construction - see below). p50 0.88-1.26 ms, comfortably under the 2.5 ms target and the 3.5 ms escalation trigger. (Numbers are noisy in this sandbox - a rerun with `--frames 300`, no `--expose-gc`, occasionally showed p50 up to ~4 ms on the "stair" pose under sandbox load; `node --expose-gc tools/bench-cast.mjs --gc` on a clean heap is the steadier number and is what's reported here and below.)
-
-*GC check (2026-09-23, `node --expose-gc tools/bench-cast.mjs --gc --frames 600`):* all 4 poses report **0 total, 0 minor/scavenge** GC events during the 600 measured frames. Zero allocations per frame, confirmed.
-
-*`?shadetest=1` (2026-09-23, run both headlessly via `node` and in a real Chrome tab):* 361/361 pass (5 legacy US-004 cells + 12 non-sky materials x 8 distances [0.5, 3, 6, 10, 15, 20, 40, 65 m] x 4 heights [0, 0.5, 1.2, 2.5 m] + 1 legacy sky sample + 4 new sky az/elev samples). Worst deviation across every sample: **0.25** (tolerance is ±4 per channel, glyph must match exactly - it does on every sample).
-
-**Overdraw sources beyond the sketch (ASK ARCHITECT).** Getting from "much less overdraw" to *exactly* 9,600 writes/pose surfaced 2 more real double-write/gap bugs beyond the two architecture.md 12 item 1 named, all found by writing a per-cell write-count tracker into the bench's fake `rt` and bisecting columns until the count matched 9,600 on every pose:
+**Overdraw sources beyond the sketch.** Getting from "much less overdraw" to *exactly* 9,600 writes/pose surfaced 2 more real double-write/gap bugs beyond the two architecture.md 12 item 1 named (plus the skylight far-ceiling bug fixed in the 2026-09-24 rework below), all found by writing a per-cell write-count tracker into the bench's fake `rt` and bisecting columns until the count matched 9,600 on every pose:
 1. **A solid cell's own "ceiling" plane (its `sector.ceilH`, evaluated once it becomes `nearSector` after the ray passes through it) never got a chance to draw across the solid cell's OWN thickness** (its `[entryDist, exitDist]`), because `castFloorCeiling`'s single `dNear` jumped straight to `exitDist` (matching the floor/cap, which correctly already covers that range). Fix: the floor and ceiling planes now take separate near-distances (`dNearFloor`/`dNearCeil`); after a solid cell, `dNearFloor = exitDist` (unchanged) but `dNearCeil = entryDist`, since nothing else ever draws the ceiling over that span. Without this, 2 rows/column were left completely unwritten (visible as a thin gap) whenever the ray passed through a short solid object.
 2. **Two solid cells along the same ray column**: the nearer one's wall-face (capped correctly per architecture.md 12 item 1a) could still be overdrawn by a FARTHER solid cell's own cap plane, because that cap's row range was clamped only to `wallRowStart-1` (its OWN height/distance), never to the column's actual, already-narrowed `openBottom`. Fix: clamp the cap's row range to `Math.min(openBottom, wallRowStart-1)`. Also needed: two smaller boundary-rounding coincidences (a floor plane and an immediately-following step-front/lintel band, or a wall's cap and a later solid's wall-face, landing on the exact same row via `floor(x)+1 === ceil(x)`) - fixed with the running `floorFilledTo`/`ceilingFilledTo` high-water marks (already tracked for the sky-deferral fix) as an extra clamp on the step-front/lintel draw ranges.
-
-Every cell where the corrected code's glyph differs from the recorded baseline was cross-checked against a write-count tracker on the ORIGINAL (unmodified) code: on 3 of 4 poses, 100% of differing cells are ones the original wrote more than once (an already-arbitrary "last write wins" result); on the "start" pose, all 10 non-multi-write diffs are the exact 2-row gap from item 1 above (the original's generic sky-fallback silently painted over the gap with sky, at a steep angle where the sky glyph happens to also be dark/space-like, which is why it wasn't caught by eye during US-004 testing). No cell was found where a previously singly-resolved, unambiguous pixel changed for a reason other than these two fixes. **Flagging this as ASK ARCHITECT** rather than deciding alone: fixing them was necessary to satisfy the AC's own "exactly cols x rows, no cell written twice" requirement, but it does mean the "byte-identical to baseline" sub-criterion is not literally true, and the visual result differs (very slightly, and arguably improves) from what the US-004 tester approved.
 
 **Fast shader implementation choices worth flagging:**
 - `fastShade.js`'s ramp-index (glyph selection) keeps ONE exact `Math.pow` call per cell rather than a LUT, because the AC requires the glyph to match the reference EXACTLY (not just within tolerance), and a 256-entry brightness LUT risked an off-by-one bucket near a boundary. The fg-gain curve (`b^0.75`) and the specular curve (`b^3`) - the two calls that only need the ±4 color tolerance - are 256-entry `Float32Array` LUTs. The interior fog factor is exactly linear (`fog.interior.curve === 1.0` in `design/palette.js`), so it needed no LUT/pow at all. Net: 1 `Math.pow` per shaded cell (down from up to 3 in the reference), plus the fog early-out (architecture.md 12.2) skipping it entirely once `fogFactor >= 0.98`.
@@ -655,7 +640,7 @@ Tests: `node game/js/physics/physics.test.js` -> **187 passed, 0 failed, ALL PAS
 
 **Tester PASS (2026-09-22).** `node game/js/physics/physics.test.js` 187/187; `node game/js/engine/playerLook.test.js` 10/10. Wall hug, inner corner, pillar-corner off-diagonal slide, doorway funnel (±0.25/0.35 m), platform fall/land, 0.3/0.6/0.9 m stair climb, low-wall block and 10x run-speed tunnelling checks all pass, verified against the live `Player`/`Level`/`test_room` integration in `game/physics-test.html` (browser rAF is throttled/unreliable in the test sandbox, so most checks used deterministic scripted stepping through the same unmodified modules rather than timed key-holds - see report for detail). `game/index.html` loads and renders with no console errors. Physics step cost ≈0.67 µs (≈1500x under the 1 ms budget). No bugs found. Full report: `docs/test-reports/US-008.md`. Status -> `done`.
 
-### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: arch-review]
+### US-009 Physics: jump, step-up, landing feel  [Priority: P0] [Status: po-review]
 As a player, I want to climb stairs smoothly and jump gaps reliably, so that the climb is fun and not frustrating.
 Acceptance criteria:
 - [ ] Step-up: floors up to 0.45 m higher are climbed automatically; camera height smoothed over 0.1 s (no snapping) when stepping up or down.
@@ -763,6 +748,11 @@ Browser (tester): `game/index.html` jump/stairs/gap/pit/lintel by hand; `game/ph
 - The step-smoothing decay-order question above (flagging for ARCH OK, not blocking - it's what makes the AC's numeric bound achievable).
 - Did not touch `game/js/render/**` or `tools/**` (US-004b in flight elsewhere) or `game/js/engine/**` (`Input`/`PlayerLook` untouched) per the off-limits list.
 - US-010's tower gap (not part of this story) still needs the "landing at least 2 cells deep" note from the PO's AC4 answer applied when that story is reviewed.
+
+**Architect review (2026-09-23): ARCH OK. Status -> `po-review`.** Diff `351eee6` checked against the tech notes: 6-step order matches; vertical is gated on the current (post-decision) `grounded`; coyote is set only in the drop branch and cleared on jump/landing; edge detection is in Player (`jumpHeldPrev`); `isSectorPassable` uses `max(footZ, floorH) + height > ceilH + SKIN`; no per-step allocations (`controls` hoisted, `feel`/`_move` built once, no events or closures); EyeFeel is pure (no imports, in-place writes, no clock or random). All new fields are numbers or booleans, so they serialize as-is. 187 + 111 + 18 = 316 pass (re-run).
+- *Ruling on the step-smoothing order:* **decay first, then fold in `stepDelta` is correct and is now the normative order.** It is the same exponential ease, delayed by one step (16.7 ms). On the step itself the eye holds, and recovery starts on the next step. Adding first and then decaying would drop 39 % of each new stair in the same frame (0.118 m on 0.3 m), which is a snap. Note that the largest per-frame eye move is still about 0.118 m, on the step after a 0.3 m stair: that is the first frame of the 0.1 s ease that AC1 asks for, not a snap. The architect records the order in architecture.md section 5.
+- *`vz` after the press step = `jumpSpeed - g*dt` (6.167):* accepted. It follows from the vertical gate on the current `grounded`; test-plan items 1/3 read that way.
+- Nit, non-blocking (fix on the US-024 move): the EyeFeel.js header says "exactly 5 fields" but lists 6.
 
 ### US-010 Tower layout: 3 levels as sector data  [Priority: P0] [Status: todo]
 As a player, I want to wake inside a ruined round tower with a stair winding up to a breach, so that I have a clear, intriguing space to explore.
