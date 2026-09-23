@@ -201,5 +201,38 @@ function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal) {
   ok('compareGeometry edge exclusion: remaining cells still 100% match', r.kindMatchPct === 100);
 }
 
+// 7. architect review 2 item 1: outsideFrac is a per-CELL fraction, not a
+//    per-channel one - a single cell with all 3 fg channels + all 3 bg
+//    channels outside tolerance must count as ONE cell outside, not 6.
+{
+  const kind = new Uint8Array(N).fill(1);
+  const js = makeCells((fg, bg) => {}); // all zero
+  const gpu = makeCells((fg, bg) => {
+    // cell 0: every fg/bg channel far outside tolerance (6 channel-level hits, 1 cell).
+    fg[0] = 200; fg[1] = 200; fg[2] = 200;
+    bg[0] = 200; bg[1] = 200; bg[2] = 200;
+  });
+  const r = compareCells(js.fg, js.bg, gpu.fg, gpu.bg, kind, COLS, ROWS);
+  ok('outsideFrac counts cells not channels', r.cellsOutside === 1);
+  ok('outsideFrac is cellsOutside / nonSky', Math.abs(r.outsideFrac - 1 / N) < 1e-9);
+}
+
+// 8. architect review 2 item 2: compareGeometry counts kind-0 GPU holes
+//    (CPU says non-sky, GPU says sky/kind-0) EVEN ON EDGE CELLS, and a hole
+//    fails `pass` regardless of the other metrics.
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  const holeI = 0; // corner cell -> also an edge cell once its kind differs, must still be counted
+  f.giBuf[holeI * 4 + 1] = 0; // GPU: kind 0 (sky) where CPU says kind 1
+  const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
+  ok('holes counted even though the cell is also an edge', r.holes === 1);
+  ok('a hole fails pass', r.pass === false);
+}
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
+  ok('no holes on identical geometry', r.holes === 0);
+}
+
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

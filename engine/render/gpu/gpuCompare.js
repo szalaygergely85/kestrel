@@ -61,6 +61,12 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   const n = cols * rows;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
+  // Architect review 2 item 1: `outsideFrac` used to be `outsideCount / nonSky`
+  // where `outsideCount` counts CHANNELS (up to 6 per cell: 3 fg + 3 bg) -
+  // inflating the fraction ~2-3x vs. a per-cell metric. `cellsOutside` counts
+  // a cell once if ANY channel is outside tolerance (the already-computed
+  // `cellOutside` flag below); `outsideFrac` is now `cellsOutside / nonSky`.
+  let cellsOutside = 0;
   let matZeroCount = 0, poisonedSurvivors = 0;
   const ruleMismatch = new Array(9).fill(0);
   const ruleTotal = new Array(9).fill(0);
@@ -101,6 +107,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
         if (dBg > TOLERANCE) { bgOutside++; cellOutside = true; }
         fgSamples++;
       }
+      if (cellOutside) cellsOutside++;
 
       if (rule) {
         const r = rule[i];
@@ -111,8 +118,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   }
 
   const glyphMatchPct = nonEdgeChecked ? 100 * (nonEdgeChecked - glyphMismatchNonEdge) / nonEdgeChecked : 100;
-  const outsideCount = fgOutside + bgOutside;
-  const outsideFrac = nonSky ? outsideCount / nonSky : 0;
+  const outsideFrac = nonSky ? cellsOutside / nonSky : 0;
   // Architect review 1 item 5: maxOutsideFrac === 0 (default) keeps the old
   // exact-zero rule; a positive fraction also requires fgMax/bgMax <= 64 so
   // the allowance can never mask an actually-wrong colour, only a band flip.
@@ -121,7 +127,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
     : fgOutside === 0 && bgOutside === 0;
   return {
     nonSky, edgeCells, nonEdgeChecked, glyphMismatchNonEdge, glyphMatchPct,
-    fgOutside, bgOutside, fgMax, bgMax, outsideFrac,
+    fgOutside, bgOutside, fgMax, bgMax, cellsOutside, outsideFrac,
     fgMeanAbs: fgSamples ? fgSumAbs / fgSamples : 0, bgMeanAbs: fgSamples ? bgSumAbs / fgSamples : 0,
     matZeroCount, ruleMismatch, ruleTotal, poisonedSurvivors,
     pass: glyphMatchPct >= 99 && outsideOk && poisonedSurvivors === 0,
@@ -153,11 +159,17 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   const kind = gbuf.kind, mat = gbuf.mat, planeId = gbuf.planeId, u = gbuf.u, v = gbuf.v;
   let kindChecked = 0, kindMismatch = 0;
   let matched = 0, matEqual = 0, planeEqual = 0, depthViol = 0, uvViol = 0;
+  // Architect review 2 item 2: kind-0 holes at exact boundaries (a hit
+  // height a float step outside [floorH, ceilH] that no rule claims) break
+  // neighbouring derivatives even on cells the edge exclusion above would
+  // otherwise skip - counted on EVERY cell (edge or not), must be 0 to PASS.
+  let holes = 0;
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       const gpuKind = giBuf[i * 4 + 1] & 0xff;
+      if (gpuKind === 0 && kind[i] !== 0) holes++;
       const edge = isEdgeCell(kind, cols, rows, x, y, i) || isEdgeCellU32(giBuf, cols, rows, x, y, i);
       if (edge) continue;
       kindChecked++;
@@ -185,8 +197,8 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
   return {
     kindChecked, kindMismatch, kindMatchPct,
-    matched, matEqual, planeEqual, depthViol, uvViol,
-    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0,
+    matched, matEqual, planeEqual, depthViol, uvViol, holes,
+    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0,
   };
 }
 

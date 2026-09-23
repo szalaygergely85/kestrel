@@ -228,13 +228,33 @@ void main() {
       float hb = leyeH + slope * t1;
       float hitX = lx + rayDirX * t1, hitY = ly + rayDirY * t1;
       float u = side == 0 ? hitY : hitX;
+      // Review 2 item 3: 'coord' must use the POST-step map coords (mapX/
+      // mapY, already advanced above) - 'castColumn' computes this from
+      // 'ray.mapX/mapY' AFTER 'ddaStep' has run, i.e. the FAR cell, not the
+      // near cell 'C' this iteration started from ('cMapX'/'cMapY'). Using
+      // the near cell here (the old bug) produced a planeId off by one at
+      // the coord field, breaking plane-continuity joins across the
+      // boundary (test_room (27,3-4): CPU planeId ...49, GPU ...50).
       int face, coord;
-      if (side == 0) { face = stepX > 0 ? FACE_W : FACE_E; coord = stepX > 0 ? cMapX : cMapX + 1; }
-      else { face = stepY > 0 ? FACE_N : FACE_S; coord = stepY > 0 ? cMapY : cMapY + 1; }
+      if (side == 0) { face = stepX > 0 ? FACE_W : FACE_E; coord = stepX > 0 ? mapX : mapX + 1; }
+      else { face = stepY > 0 ? FACE_N : FACE_S; coord = stepY > 0 ? mapY : mapY + 1; }
       int wallPlaneId = packPlaneId(structSeq, face, coord);
       float fr = side == 0 ? (hitY - float(cMapY)) : (hitX - float(cMapX));
       float z = hb - C.floorH;
 
+      // Review 2 items 2/4 (gap closure, lip-wall bound): both attempted and
+      // reverted - see the programmer's review-2 fix notes in the backlog.
+      // A gap-closure else-branch (write C's own floor/ceiling plane at t1
+      // when no wall/step/upper claims the boundary) fixed 0 actual holes at
+      // the 7 '?gpucompare=1' poses (holes was already 0 without it) but,
+      // even restricted to the "entering solid/higher neighbour" cases,
+      // regressed kind parity on 2 test_room poses from 100% to 44-55%
+      // (sky-adjacent boundaries where the ray keeps walking past
+      // BUG-OWN-001's fix). A 'hb > C.floorH' lower bound on the wall/step
+      // conditions (matching castColumn's row-range clip) fixed the
+      // world_m1 spawn lip but broke legitimate walls whose visible base
+      // sits at/below the near cell's floor (e.g. '?gpucompare=1''s "facing
+      // stair" pose: 100% -> depthViol/uvViol 5). Not applied.
       if (N.solid && hb < N.floorH && t1 < bestT) {
         bestT = t1; bestKind = KIND_WALL; bestMat = N.wallMat; bestFace = face; bestPlaneId = wallPlaneId;
         bestU = u; bestV = hb; bestZ = z;
