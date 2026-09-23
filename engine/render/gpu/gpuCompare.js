@@ -9,8 +9,25 @@
 // counted separately); fg/bg max and mean abs delta plus the count outside
 // +-4 per channel over ALL `kind != 0` cells; `mat == 0` count; per-rule
 // mismatch counts (rule 0..8, only meaningful where `rule` is passed).
+//
+// Architect review 1 item 1 (blocking): `?gpucompare=1` used to be a
+// tautology. `shadeSurfaces` sets `mask[i] = 1` on every world cell, so pass
+// 1's passthrough branch (`kind == 0 || mask`) let the JS-shaded cell
+// through unchanged; the "GPU" readback was really the JS result compared
+// with itself, and would PASS even with a completely broken shader. The fix
+// lives in `runGpuCompare`: right before `pipeline.frame`/`present()`, it
+// clears `cells.mask` and overwrites the JS layer of every `kind != 0` cell
+// with a poison value the shader can never legitimately produce (glyph byte
+// 255 - outside the 0..94 ASCII-32 glyph range - with fg/bg rgb forced to
+// 0). Sky (`kind == 0`) is left untouched (it's legitimately a passthrough
+// cell on both paths). If the readback still shows the poison signature
+// anywhere, some cell took the passthrough branch instead of being shaded -
+// `compareCells` counts those as `poisonedSurvivors`, which PASS requires
+// to be exactly 0.
 
 const TOLERANCE = 4;
+const POISON_BYTE = 0; // poisoned fg/bg rgb channels
+const POISON_GLYPH = 255; // outside the legal 0..94 glyph range
 
 function isEdgeCell(kind, cols, rows, x, y, i) {
   const k = kind[i];
@@ -36,7 +53,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   const n = cols * rows;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
-  let matZeroCount = 0;
+  let matZeroCount = 0, poisonedSurvivors = 0;
   const ruleMismatch = new Array(9).fill(0);
   const ruleTotal = new Array(9).fill(0);
 
@@ -50,6 +67,15 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
       if (edge) edgeCells++;
 
       const fi = i * 4;
+
+      // Architect review 1 item 1: a surviving poison signature in the GPU
+      // readback means this cell took the passthrough branch instead of
+      // being shaded - the exact tautology the poisoning is meant to catch.
+      if (gpuFg[fi + 3] === POISON_GLYPH && gpuFg[fi] === POISON_BYTE && gpuFg[fi + 1] === POISON_BYTE &&
+        gpuFg[fi + 2] === POISON_BYTE && gpuBg[fi] === POISON_BYTE && gpuBg[fi + 1] === POISON_BYTE && gpuBg[fi + 2] === POISON_BYTE) {
+        poisonedSurvivors++;
+      }
+
       const glyphMismatch = jsFg[fi + 3] !== gpuFg[fi + 3];
       if (!edge) {
         nonEdgeChecked++;
@@ -81,8 +107,8 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
     nonSky, edgeCells, nonEdgeChecked, glyphMismatchNonEdge, glyphMatchPct,
     fgOutside, bgOutside, fgMax, bgMax,
     fgMeanAbs: fgSamples ? fgSumAbs / fgSamples : 0, bgMeanAbs: fgSamples ? bgSumAbs / fgSamples : 0,
-    matZeroCount, ruleMismatch, ruleTotal,
-    pass: glyphMatchPct >= 99 && fgOutside === 0 && bgOutside === 0,
+    matZeroCount, ruleMismatch, ruleTotal, poisonedSurvivors,
+    pass: glyphMatchPct >= 99 && fgOutside === 0 && bgOutside === 0 && poisonedSurvivors === 0,
   };
 }
 
@@ -94,6 +120,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
  */
 export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
   const cols = fb.gbuf.cols, rows = fb.gbuf.rows;
+  const n = cols * rows;
   const jsFg = new Uint8Array(cols * rows * 4);
   const jsBg = new Uint8Array(cols * rows * 4);
   let overallOk = true;
@@ -113,6 +140,13 @@ export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
     jsBg.set(fb.rt.cells.bg);
     fb.rt.gpuActive = wasActive;
 
+    // Architect review 1 item 1: force the real GPU path instead of a
+    // passthrough of the JS result just copied out above - clear the mask
+    // and poison every non-sky cell of the JS layer (`fb.rt.cells`) that
+    // `present()` is about to read, so a mismatch or a `poisonedSurvivors`
+    // count > 0 is the only way this can still pass.
+    poisonNonSky(fb.rt.cells, fb.gbuf.kind, n);
+
     pipeline.frame(fb, fb.light);
     fb.rt.present();
     const { fg: gpuFg, bg: gpuBg } = pipeline.readback();
@@ -126,4 +160,19 @@ export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
 
   if (report) report(rows_, overallOk);
   return { rows: rows_, ok: overallOk };
+}
+
+// Clears `cells.mask` (so pass 1 can never take the "JS wins" passthrough
+// branch for a real world cell) and overwrites the JS fg/bg layer of every
+// `kind != 0` cell with the poison signature `compareCells` checks for
+// (glyph byte 255, rgb 0) - test-only, never called from the frame loop.
+function poisonNonSky(cells, kind, n) {
+  cells.mask.fill(0);
+  const fg = cells.fg, bg = cells.bg;
+  for (let i = 0; i < n; i++) {
+    if (kind[i] === 0) continue; // sky legitimately passes through on both paths
+    const fi = i * 4;
+    fg[fi] = POISON_BYTE; fg[fi + 1] = POISON_BYTE; fg[fi + 2] = POISON_BYTE; fg[fi + 3] = POISON_GLYPH;
+    bg[fi] = POISON_BYTE; bg[fi + 1] = POISON_BYTE; bg[fi + 2] = POISON_BYTE; bg[fi + 3] = 255;
+  }
 }

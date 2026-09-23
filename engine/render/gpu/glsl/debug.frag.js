@@ -6,7 +6,10 @@ import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
 
 export const DEBUG_MODE_KIND = 0;
 export const DEBUG_MODE_PLANE = 1;
-export const DEBUG_MODE_RULE = 2;
+// Architect review 1 item 6 deviation: this is a "was this cell shaded"
+// indicator, not the real edge-rule code (no `ruleTex` MRT this story) -
+// named SHADED, not RULE, so nobody reads it as the rule.
+export const DEBUG_MODE_SHADED = 2;
 
 export const DEBUG_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out vec4 outFg;
@@ -14,7 +17,7 @@ layout(location = 1) out vec4 outBg;
 
 uniform usampler2D uGI;
 uniform sampler2D uShadeFg;
-uniform int uMode; // 0 kind, 1 planeId, 2 rule (recomputed cheaply: 0/non-0 only, full rule needs edge.frag)
+uniform int uMode; // 0 kind, 1 planeId, 2 shaded (was-this-cell-shaded indicator; full rule needs edge.frag)
 
 ${GBUF_UNPACK}
 

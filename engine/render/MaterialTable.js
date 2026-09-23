@@ -254,10 +254,13 @@ export function bindShading(P, DP, cellAspect) {
   // can cover every material this level uses. `?detail=0` sets `DP` to null
   // upstream (main.js), so `allV2` is false there too - the two switches
   // agree by construction, no separate check needed at the call site.
+  // Architect review 1 minor item 4c: `missingV2` names the offending keys
+  // so the content gap is visible in the bootstrap log without digging.
   let allV2 = !!DP;
-  if (DP) for (let id = 1; id < records.length; id++) { if (records[id] && !records[id].v2) { allV2 = false; break; } }
+  const missingV2 = [];
+  if (DP) for (let id = 1; id < records.length; id++) { if (records[id] && !records[id].v2) { allV2 = false; missingV2.push(records[id].key); } }
 
-  return { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2 };
+  return { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2, missingV2 };
 }
 
 /**

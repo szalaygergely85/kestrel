@@ -71,9 +71,17 @@ if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.
 }
 const gpuDebugParam = params.get('gpudebug');
 if (gpuPipeline && gpuDebugParam) {
-  gpuPipeline.debugMode = { kind: 0, plane: 1, rule: 2 }[gpuDebugParam] ?? -1;
+  // Architect review 1 item 6 deviation: mode 2 is a "was this cell shaded"
+  // indicator, not the real edge-rule code (no `ruleTex` MRT this story) -
+  // named `shaded` here so nobody reads it as the rule.
+  gpuPipeline.setDebugMode({ kind: 0, plane: 1, shaded: 2 }[gpuDebugParam] ?? -1);
 }
-console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive - JS shading'}`);
+// Architect review 1 minor item 4c: name the offending material keys when
+// the gate didn't hold, so the content gap is visible without digging.
+const inactiveReason = gpuPipeline
+  ? ''
+  : ' - JS shading' + (matTable.missingV2 && matTable.missingV2.length ? ` (missingV2: ${matTable.missingV2.join(', ')})` : '');
+console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive' + inactiveReason}`);
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.

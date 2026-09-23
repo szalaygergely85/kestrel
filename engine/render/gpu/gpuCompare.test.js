@@ -12,9 +12,13 @@ function ok(name, cond, detail) {
 
 const COLS = 4, ROWS = 4, N = COLS * ROWS;
 
+// Default glyph byte 50 (an arbitrary, valid-looking "don't care" value) -
+// NOT 255, which is `poisonNonSky`'s poison marker (test 6 below): a
+// baseline of 255 here would make every untouched cell in every other test
+// look like a poisoned survivor once that check exists.
 function makeCells(fill) {
   const fg = new Uint8Array(N * 4), bg = new Uint8Array(N * 4);
-  for (let i = 0; i < N; i++) { fg[i * 4 + 3] = 255; bg[i * 4 + 3] = 255; }
+  for (let i = 0; i < N; i++) { fg[i * 4 + 3] = 50; bg[i * 4 + 3] = 50; }
   fill(fg, bg);
   return { fg, bg };
 }
@@ -76,6 +80,27 @@ function makeCells(fill) {
   const gpu = makeCells((fg) => { fg[0] = 200; }); // huge diff, but sky
   const r = compareCells(js.fg, js.bg, gpu.fg, gpu.bg, kind, COLS, ROWS);
   ok('sky cells excluded entirely', r.nonSky === 0 && r.fgOutside === 0 && r.pass === true);
+}
+
+// --- 6. poisonedSurvivors: a passthrough-poison signature surviving into
+//        the "GPU" readback is counted and fails PASS - this is the
+//        tautology architect review 1 item 1 catches (`?gpucompare=1` used
+//        to pass by comparing the JS result with itself, because pass 1's
+//        passthrough branch let a poisoned/untouched cell straight through
+//        unshaded) ------------------------------------------------------
+{
+  const kind = new Uint8Array(N).fill(1);
+  const js = makeCells((fg, bg) => { for (let i = 0; i < N; i++) { fg[i * 4] = 10; bg[i * 4] = 20; } });
+  // Only cell 3 differs from js: it still shows the poison signature
+  // (glyph byte 255, fg/bg rgb 0) instead of a real shaded value.
+  const gpu = makeCells((fg, bg) => {
+    for (let i = 0; i < N; i++) { fg[i * 4] = 10; bg[i * 4] = 20; }
+    fg[3 * 4] = 0; fg[3 * 4 + 1] = 0; fg[3 * 4 + 2] = 0; fg[3 * 4 + 3] = 255;
+    bg[3 * 4] = 0; bg[3 * 4 + 1] = 0; bg[3 * 4 + 2] = 0; bg[3 * 4 + 3] = 255;
+  });
+  const r = compareCells(js.fg, js.bg, gpu.fg, gpu.bg, kind, COLS, ROWS);
+  ok('poisoned survivor detected', r.poisonedSurvivors === 1);
+  ok('poisoned survivor fails PASS', r.pass === false);
 }
 
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);

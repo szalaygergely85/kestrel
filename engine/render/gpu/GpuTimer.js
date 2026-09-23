@@ -3,8 +3,18 @@
 // Polls `QUERY_RESULT_AVAILABLE`, drops results after `GPU_DISJOINT_EXT`,
 // keeps a 120-entry ring -> `stats.gpuMsP50/P95`. No extension -> NaN, the
 // overlay/bench prints "gpu n/a (frame time N ms)".
+//
+// Architect review 1 item 3 (blocking, per-frame allocations): the old
+// `stats()` did `Array.from(...).sort(...)` (a fresh array + comparator
+// closure) every call, and the caller did `Object.assign(this.stats, ...)`
+// (another fresh object) every frame. `writeStats(out)` below writes
+// straight into the caller's preallocated object instead, and only
+// re-sorts the ring (into a preallocated scratch buffer, in place, no
+// comparator closure - numeric sort on a typed array) every `STATS_EVERY`
+// calls; between recomputes it returns the last cached percentiles.
 const RING_SIZE = 4;
 const HISTORY = 120;
+const STATS_EVERY = 30;
 
 export class GpuTimer {
   constructor(gl) {
@@ -18,6 +28,11 @@ export class GpuTimer {
     this._historyLen = 0;
     this._historyPos = 0;
     this._activeQuery = null;
+    this._scratch = new Float32Array(HISTORY); // recompute scratch, allocated once
+    this._statsCalls = 0;
+    this._cachedGpuMs = NaN;
+    this._cachedP50 = NaN;
+    this._cachedP95 = NaN;
   }
 
   // Call once, right before the sequence you want timed (upload -> pass1 ->
@@ -60,12 +75,34 @@ export class GpuTimer {
     if (this._historyLen < HISTORY) this._historyLen++;
   }
 
-  stats() {
-    if (!this.available || this._historyLen === 0) return { gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN };
-    const arr = Array.from(this._history.subarray(0, this._historyLen)).sort((a, b) => a - b);
-    const p50 = arr[Math.floor(arr.length * 0.5)];
-    const p95 = arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.95))];
-    return { gpuMs: arr[arr.length - 1], gpuMsP50: p50, gpuMsP95: p95 };
+  /**
+   * Writes `gpuMs`/`gpuMsP50`/`gpuMsP95` onto `out` in place (no return
+   * allocation). The sort that derives the percentiles only actually runs
+   * every `STATS_EVERY` calls (or once, the first time data exists) -
+   * between recomputes this just re-reads the last cached values, so a
+   * per-frame call here allocates nothing and does no sort most frames.
+   */
+  writeStats(out) {
+    if (!this.available || this._historyLen === 0) {
+      out.gpuMs = NaN; out.gpuMsP50 = NaN; out.gpuMsP95 = NaN;
+      return;
+    }
+    this._statsCalls++;
+    if (Number.isNaN(this._cachedP50) || this._statsCalls % STATS_EVERY === 0) this._recompute();
+    out.gpuMs = this._cachedGpuMs;
+    out.gpuMsP50 = this._cachedP50;
+    out.gpuMsP95 = this._cachedP95;
+  }
+
+  _recompute() {
+    const n = this._historyLen;
+    const scratch = this._scratch;
+    for (let i = 0; i < n; i++) scratch[i] = this._history[i];
+    const view = scratch.subarray(0, n);
+    view.sort(); // numeric in-place sort on a typed array - no comparator closure, no new array
+    this._cachedP50 = view[Math.floor(n * 0.5)];
+    this._cachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+    this._cachedGpuMs = view[n - 1];
   }
 
   dispose() {

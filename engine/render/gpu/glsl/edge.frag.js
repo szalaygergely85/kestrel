@@ -87,7 +87,14 @@ void main() {
 
   float gain = uEdgeGain[rule - 1];
   float glyph = uEdgeGlyph[rule - 1];
-  vec3 fgByte = floor(min(vec3(255.0), sfg.rgb * 255.0 * gain) + 0.5);
+  // Architect review 1 minor item 4b: re-quantise to the pass-1 BYTE value
+  // first (floor(t*255+0.5), matching how JS reads bytes back), THEN apply
+  // gain and quantise again - gain multiplies an already-quantised byte, not
+  // the raw float, removing the 127.49999-style half-step cases 14.1
+  // section 5 warns about (today inside tolerance, but US-030 should not
+  // inherit the gap).
+  vec3 fgByte0 = floor(sfg.rgb * 255.0 + 0.5);
+  vec3 fgByte = floor(min(vec3(255.0), fgByte0 * gain) + 0.5);
   fgByte = max(fgByte, vec3(1.0));
   outFg = vec4(fgByte / 255.0, glyph / 255.0);
   outBg = vec4(sbg.rgb, 1.0);
