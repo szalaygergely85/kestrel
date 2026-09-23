@@ -1,18 +1,16 @@
-// game/js/main.js - bootstrap (US-024 Phase B, D-006). Imports only
+// game/js/main.js - bootstrap (US-024 Phase B+C, D-006). Imports only
 // engine/index.js and reads `window.ASSETS` exactly once (via
 // `AssetRegistry.fromGlobals`), then builds the engine with `createEngine`.
 //
-// Player/physics (game/js/entities/Player.js, game/js/physics/*) are NOT
-// moved into engine/ yet - US-024 Phase C (next programmer) owns that; this
-// file still imports them directly (a plain game -> game import, not
-// touching engine/ deep paths, so check-deps rule 3 is unaffected).
+// Player/physics moved into engine/ in US-024 Phase C
+// (engine/entities/Player.js, engine/physics/*), so this now comes from
+// engine/index.js like everything else (check-deps rule 3).
 
 import {
-  AssetRegistry, createEngine, loadLevel,
+  AssetRegistry, createEngine, loadLevel, Player,
   beginFrame, castSectors, fillSky, runShadeTest,
   PlayerLook, DebugOverlay,
 } from '../../engine/index.js';
-import { Player } from './entities/Player.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';

@@ -25,10 +25,10 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 ## Layout
 - `docs/` – game-design.md, backlog.md, roadmap.md, decisions.md, architecture.md, test-reports/
 - `design/` – content pack: palette.js, models/*.js, levels/*.js, preview/*.html, style-guide.md, README.md
-- `engine/` – reusable engine library (after US-024): core, render, world, physics, entities, ui; `engine/index.js` is the only public entry; never imports from `game/` or `design/`
-- `game/` – the product: index.html, js/main.js (bootstrap, builds the AssetRegistry), js/quest/ (game-specific behaviours)
+- `engine/` – reusable engine library: core, render, world, physics, entities, ui; `engine/index.js` is the only public entry; never imports from `game/` or `design/`
+- `game/` – the product: index.html, world-test.html, physics-test.html, js/main.js (bootstrap, builds the AssetRegistry), js/dev/ (page harnesses), js/quest/ (game-specific behaviours)
 - `tools/` – dev tools (check-deps.mjs), future editor
-- Until US-024 lands, engine code still lives under `game/js/{engine,render,physics,world,entities,ui}/`.
+- Dependency check: `node tools/check-deps.mjs` (fixture test: `node tools/check-deps.test.mjs`). Physics/entities tests: `node engine/physics/physics.test.js`, `node engine/physics/jump.test.js`, `node engine/entities/eyeFeel.test.js`, `node engine/core/playerLook.test.js`. Bench: `node --expose-gc tools/bench-cast.mjs --gc`.
 - Git: work on `master`; the main session commits. Local server: `python -m http.server 8000` from the repo root (launch config `ascii-quest-http`).
 
 ## Token budget rules (main session)

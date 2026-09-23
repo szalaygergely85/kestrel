@@ -1,4 +1,4 @@
-// game/js/entities/Player.js
+// engine/entities/Player.js (moved from game/js/entities/Player.js, US-024 Phase C).
 //
 // Player entity: a vertical capsule with fixed-step gravity, walk/run, grid
 // collision (game/js/physics/capsule.js), jump/coyote/buffer, step-up eye

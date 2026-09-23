@@ -41,7 +41,7 @@
     <h1>US-008/US-009 physics test (test_room, top-down)</h1>
     <p class="sub">
       Playable top-down harness for the player capsule/gravity/collision/jump
-      code (game/js/physics/, game/js/entities/Player.js) - independent of the
+      code (engine/physics/, engine/entities/Player.js) - independent of the
       game's real renderer/camera. Gold circle = grounded, blue = airborne;
       tick = facing. <strong>WASD</strong> move, <strong>Shift</strong> run,
       <strong>Space</strong> jump, <strong>Left/Right arrows</strong> turn,
@@ -54,10 +54,10 @@
     <canvas id="map" width="1" height="1" tabindex="0"></canvas>
     <div id="hud"></div>
   </div>
-  <!-- US-024: test_room moved to design/ - loaded as a classic script so
-       js/world/Level.js and js/world/levels/test_room.js's shims (still
-       needed here until Phase C) find it on window.ASSETS. -->
+  <!-- US-024: test_room moved to design/ - loaded as a classic script so it
+       sits on window.ASSETS before js/dev/physicsTestMain.js (US-024 Phase C)
+       reads it. -->
   <script src="../design/levels/test_room.js"></script>
-  <script type="module" src="js/physics/physicsTestMain.js"></script>
+  <script type="module" src="js/dev/physicsTestMain.js"></script>
 </body>
 </html>

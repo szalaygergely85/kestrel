@@ -123,16 +123,6 @@ function checkEngineFile(file, src) {
   }
 }
 
-// US-024 Phase A forwarding shims (docs/backlog.md US-024, "Shims are legal
-// (game -> engine)"): kept only so the physics/entities code that Phase C
-// (next programmer) still owns - not yet moved into engine/ - keeps working
-// unchanged. Exempt from rule 3's "engine/index.js only" requirement; delete
-// from this list (and the repo) when Phase C removes their last reader.
-const RULE3_SHIM_ALLOWLIST = new Set([
-  'game/js/world/Level.js',
-  'game/js/world/levels/test_room.js',
-].map((p) => p.split('/').join(path.sep)));
-
 // tools/bench-cast.mjs is testing tooling for the sector caster's internal
 // shader-parity/probe options (opts.shader, opts.skyFallback) that are
 // deliberately NOT part of the public FrameBuffers API (castSectors always
@@ -145,7 +135,7 @@ const RULE3_TOOL_ALLOWLIST = new Set([
 function checkConsumerFile(file, src) {
   filesScanned++;
   const relPath = path.relative(ROOT, file);
-  if (RULE3_SHIM_ALLOWLIST.has(relPath) || RULE3_TOOL_ALLOWLIST.has(relPath)) return;
+  if (RULE3_TOOL_ALLOWLIST.has(relPath)) return;
   const stripped = stripComments(src);
   for (const { spec, line } of findImports(stripped)) {
     if (isBareSpecifier(spec)) continue; // not this checker's concern for game/tools

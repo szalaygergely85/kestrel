@@ -1,15 +1,22 @@
-// game/js/world/worldTestMain.js
+// game/js/dev/worldTestMain.js (moved from game/js/world/worldTestMain.js,
+// US-024 Phase C).
 //
 // Standalone top-down test harness for the US-003 sector map format (v2).
 // Not part of the game's own entry point (game/js/main.js) - loaded only by
 // game/world-test.html. Draws the loaded level on a plain 2D canvas (no
-// dependency on game/js/render/*), color-coding floor height and flagging
+// dependency on engine/render/*), color-coding floor height and flagging
 // solid cells (now shaded/labelled by their v2 wall-top height and material),
 // sky-ceiling cells, void/gap cells (negative floorH), doorway/lintel cells
 // (topH != ceilH) and the player start (with v2 facing/pitch/eye/pose).
+//
+// Imports only engine/index.js (check-deps rule 3). test_room comes off
+// `window.ASSETS` - world-test.html loads design/levels/test_room.js as a
+// classic script before this module, same as game/index.html does for
+// main.js.
 
-import { loadLevel } from './Level.js';
-import testRoom from './levels/test_room.js';
+import { loadLevel } from '../../../engine/index.js';
+
+const testRoom = window.ASSETS.levels.test_room;
 
 const CELL_PX = 28;
 

@@ -14,7 +14,7 @@ import { loadLevel } from '../world/Level.js';
 import { Player } from '../entities/Player.js';
 import { PHYSICS } from './config.js';
 import { isSectorPassable, moveCapsule, sectorOrOutside } from './capsule.js';
-import testRoomDef from '../world/levels/test_room.js';
+import testRoomDef from '../../design/levels/test_room.js';
 
 let pass = 0;
 let fail = 0;

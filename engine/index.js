@@ -2,15 +2,12 @@
 // section 2/5). Re-exports only, no logic. `game/` and `tools/` must import
 // exactly this file, never a deep `engine/**` path (check-deps rule 3).
 //
-// US-024 Phase A/B status: the render/world/core surface below is real
-// (moved unchanged, or newly written per architecture.md section 6/8).
-// World/Terrain/serialize/Entity/Camera.fromEntity/EntityHandle/
-// stepAnimations are stubs (US-025/US-011, see each module's header) - the
-// SHAPE is normative now, the behaviour lands with those stories.
-// Physics (`PHYSICS_DEFAULTS`, `moveCapsule`, `isSectorPassable`,
-// `createEyeFeel`/`updateEyeFeel`) and `Player`/`integrate`'s real body are
-// NOT exported yet: they still live in `game/js/physics/` and
-// `game/js/entities/` and move here in US-024 Phase C.
+// US-024 Phase C status: physics/entities moved in too (`config.js`,
+// `capsule.js`, `Player.js`, `EyeFeel.js` - see each module's header). Only
+// `integrate`/`moveSphere`/`Entity`/`Camera.fromEntity`/`EntityHandle`/
+// `stepAnimations`/`World`/`Terrain`/`serialize` remain stubs (US-025/
+// US-011/US-013) - the SHAPE is normative now, the behaviour lands with
+// those stories.
 
 // ---- bootstrap --------------------------------------------------------
 export { createEngine } from './core/engine.js';
@@ -37,7 +34,9 @@ export function renderWorld(fb, world, cam) {
   throw new Error('renderWorld: not implemented (US-025)');
 }
 
-// ---- physics (stubs; capsule/config move here in US-024 Phase C) ----------
+// ---- physics ----------------------------------------------------------------
+export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
+export { moveCapsule, isSectorPassable, sectorOrOutside } from './physics/capsule.js';
 export { moveSphere } from './physics/sphere.js';
 export { integrate } from './physics/integrate.js';
 
@@ -46,6 +45,8 @@ export { Entity } from './entities/Entity.js';
 export { Camera } from './entities/Camera.js';
 export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations } from './entities/animation.js';
+export { Player } from './entities/Player.js';
+export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 
 // ---- ui -----------------------------------------------------------------------
 export { DebugOverlay } from './ui/debugOverlay.js';

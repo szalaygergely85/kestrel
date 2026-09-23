@@ -15,7 +15,7 @@ import { loadLevel } from '../world/Level.js';
 import { Player } from './Player.js';
 import { createEyeFeel, updateEyeFeel } from './EyeFeel.js';
 import { PHYSICS } from '../physics/config.js';
-import testRoomDef from '../world/levels/test_room.js';
+import testRoomDef from '../../design/levels/test_room.js';
 
 let pass = 0;
 let fail = 0;

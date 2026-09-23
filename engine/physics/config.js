@@ -1,4 +1,5 @@
-// game/js/physics/config.js
+// engine/physics/config.js (moved from game/js/physics/config.js, US-024
+// Phase C).
 //
 // Single tuning object for player physics (US-008 acceptance criterion:
 // "All values in one tuning config object"). Values are the GDD section 5
@@ -6,7 +7,7 @@
 // acceptance criteria. Nothing in physics/ or entities/Player.js hard-codes
 // a tuning number outside this file.
 
-export const PHYSICS = {
+export const PHYSICS_DEFAULTS = {
   // Fixed simulation step (GDD section 5).
   fixedDt: 1 / 60,
 
@@ -49,3 +50,6 @@ export const PHYSICS = {
   headBobAmplitude: 0.03, // m
   headBobCyclesPerMeter: 0.8,
 };
+
+// Back-compat alias (US-024 Phase C): tests and Player.js still say `PHYSICS`.
+export const PHYSICS = PHYSICS_DEFAULTS;

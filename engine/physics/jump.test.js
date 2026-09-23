@@ -29,7 +29,7 @@ import { loadLevel } from '../world/Level.js';
 import { Player } from '../entities/Player.js';
 import { PHYSICS } from './config.js';
 import { isSectorPassable } from './capsule.js';
-import testRoomDef from '../world/levels/test_room.js';
+import testRoomDef from '../../design/levels/test_room.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

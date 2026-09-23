@@ -1,4 +1,4 @@
-// game/js/entities/EyeFeel.js
+// engine/entities/EyeFeel.js (moved from game/js/entities/EyeFeel.js, US-024 Phase C).
 //
 // US-009 first-person "eye feel": step smoothing, landing dip, head bob.
 // Pure functions over a plain state object - VISUAL ONLY, never touches

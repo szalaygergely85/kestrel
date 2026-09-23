@@ -1,27 +1,29 @@
-// game/js/physics/physicsTestMain.js
+// game/js/dev/physicsTestMain.js (moved from game/js/physics/physicsTestMain.js,
+// US-024 Phase C).
 //
 // Standalone top-down, playable test harness for US-008/US-009 physics
 // (player capsule, gravity, walk/run, collision, jump/coyote/buffer,
 // landing feel) on test_room. Loaded only by game/physics-test.html - not
-// part of the game's own entry point (game/js/main.js) and has no
-// dependency on game/js/render/, engine/ or ui/ (its own tiny fixed-step
-// loop and keyboard listener are self contained, so this file is safe to
-// drop in without touching anything the other programmer owns).
+// part of the game's own entry point (game/js/main.js). Imports only
+// engine/index.js (check-deps rule 3); its own tiny fixed-step loop and
+// keyboard listener are self contained.
 //
 // Controls: WASD move (relative to facing), Shift run, Space jump,
 // Left/Right arrows turn (120 deg/s, same rate as the US-005 fallback spec)
 // since there is no mouse-look yet, R resets to the level start. This is a
 // debug harness, not the real camera controls (US-005) - main.js drives
 // Player from real mouse/keyboard input (see the integration note at the
-// bottom of game/js/entities/Player.js). `controls.jump` mirrors main.js's
+// bottom of engine/entities/Player.js). `controls.jump` mirrors main.js's
 // convention (isDown OR the just-this-frame edge) even though this harness
 // has no separate "pressed" concept - a plain key Set already only reports
 // "down", which is exactly the HELD level `Player.update` expects.
+//
+// test_room comes off `window.ASSETS` - physics-test.html loads
+// design/levels/test_room.js as a classic script before this module.
 
-import { loadLevel } from '../world/Level.js';
-import { Player } from '../entities/Player.js';
-import { PHYSICS } from './config.js';
-import testRoom from '../world/levels/test_room.js';
+import { loadLevel, Player, PHYSICS } from '../../../engine/index.js';
+
+const testRoom = window.ASSETS.levels.test_room;
 
 const CELL_PX = 26;
 const TURN_RATE_DEG = 120; // deg/s, matches US-005's arrow-key fallback rate

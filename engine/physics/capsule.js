@@ -1,4 +1,4 @@
-// game/js/physics/capsule.js
+// engine/physics/capsule.js (moved from game/js/physics/capsule.js, US-024 Phase C).
 //
 // Generic circle-vs-sector-grid collision for a vertical capsule (the
 // player, US-008; reusable as-is for the boulder, US-013, which D-002 notes
