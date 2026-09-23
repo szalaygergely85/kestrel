@@ -261,6 +261,7 @@ New P0 stories for the PO (in build order, all M1):
 ## D-009 Renderer compute location: full GPU per-cell pipeline (staged), JS path as oracle and fallback
 
 **Date:** 2026-09-23
+**Owner approval:** confirmed by the owner on 2026-09-23 ("lets go with the recommended option b gpu").
 **Status:** Accepted (extends D-005: the GPU now computes cells, not only presents them; D-007 hybrid world model unchanged)
 
 ### Context
