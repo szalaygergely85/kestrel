@@ -399,10 +399,13 @@
   }
   // Footprint crossing test. Does a line c = offset + k*period pass through this cell?
   // Returns -1 if not, else fr (0 top .. 1 bottom) of the crossing inside the cell.
+  // US-029 item 5 parity: same epsilon-nudged floor as engine/render/detailShade.js `qfloor`
+  // (f64 JS vs f32 GLSL agree on course/block boundaries). Used for course, bix, band pos, crossLine k.
+  function qfloor(x) { return Math.floor(x + (1 / 256)); }
   function crossLine(c, cx, cy, period, offset) {
     var hw = 0.5 * (Math.abs(cx) + Math.abs(cy));
     if (!(hw > 1e-7)) hw = 1e-7;
-    var k = Math.floor((c + hw - offset) / period);
+    var k = qfloor((c + hw - offset) / period);
     var line = offset + k * period;
     if (line < c - hw) return -1;
     var fr = Math.abs(cy) > 1e-9 ? 0.5 + (line - c) / cy : 0.5;
@@ -481,9 +484,9 @@
     // --- block coordinates ---
     var course = 0, bix = 0, fv = 0.5, uo = u;
     if (g) {
-      course = Math.floor(v / g.v);
+      course = qfloor(v / g.v);
       uo = u - ((course & 1) ? g.stagger * g.u : 0);
-      bix = Math.floor(uo / g.u);
+      bix = qfloor(uo / g.u);
       fv = v / g.v - course;
     }
     // --- hashes (world-anchored) ---
@@ -532,7 +535,7 @@
     if (band) {
       var bcoord = band.axis === 'u' ? u : v;
       var bcx = band.axis === 'u' ? s.dudx : s.dvdx, bcy = band.axis === 'u' ? s.dudy : s.dvdy;
-      var pos = bcoord - Math.floor(bcoord / band.period) * band.period;
+      var pos = bcoord - qfloor(bcoord / band.period) * band.period;
       if (pos < band.width) {
         inBand = true;
         if (tier <= lodGates.band || !F.sets) set = band.set;
