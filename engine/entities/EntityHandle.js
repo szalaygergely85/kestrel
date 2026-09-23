@@ -1,14 +1,15 @@
-// Stub surface only (US-024, owner request 2026-09-23 - see
-// docs/architecture.md section 10.1 and the US-024 backlog note). The real
-// implementation is split across US-025 (handles, events, World.spawn/get),
-// US-011 (animation/sprites) and M3 (moveTo steering) - every method here
-// throws until its owning story lands; only the shape (fields, method names)
-// is normative yet.
+// engine/entities/EntityHandle.js (US-025, docs/architecture.md 10.1). A
+// thin, cached view over a `World`'s entity data - the entity data is the
+// only authoritative state (D-006); this handle holds none of its own
+// besides `id`/`world`/`alive`, so `deserialize` (a new World) makes every
+// old handle report `alive === false` for free.
 //
-// @typedef {Object} EntityHandle
-// @property {string} id
-// @property {import('../world/World.js').World} world
-// @property {boolean} alive
+// `play`/`stop`/`onAnimEnd` (US-011) and `stepAnimations` (US-011) still
+// throw - this story only lands the World/handle/event plumbing they will
+// sit on top of, per the tech notes' "keep throwing" list.
+
+let warnedDeadOnce = new WeakSet();
+
 export class EntityHandle {
   constructor(world, id) {
     this.world = world;
@@ -16,12 +17,19 @@ export class EntityHandle {
     this.alive = true;
   }
 
-  /** @returns {Object} the live entity data (not a copy) */
+  /** @returns {Object|null} the live entity data (not a copy) */
   get data() {
-    throw new Error('EntityHandle.data: not implemented (US-025)');
+    return this.world.entity(this.id) || null;
   }
 
-  play(anim, opts) {
+  _deadNoop(method) {
+    if (!warnedDeadOnce.has(this)) {
+      warnedDeadOnce.add(this);
+      console.warn(`EntityHandle.${method}: called on a dead handle (id "${this.id}") - no-op.`);
+    }
+  }
+
+  play(anim, opts) { // eslint-disable-line no-unused-vars
     throw new Error('EntityHandle.play: not implemented (US-011)');
   }
 
@@ -29,31 +37,68 @@ export class EntityHandle {
     throw new Error('EntityHandle.stop: not implemented (US-011)');
   }
 
-  onAnimEnd(fn) {
+  onAnimEnd(fn) { // eslint-disable-line no-unused-vars
     throw new Error('EntityHandle.onAnimEnd: not implemented (US-011)');
   }
 
-  moveTo(x, y, opts) {
-    throw new Error('EntityHandle.moveTo: not implemented (M3)');
+  /** Writes `components.move` (steered by the M3 move system through `integrate`); warns once, not yet consumed. */
+  moveTo(x, y, opts = {}) {
+    if (!this.alive) return this._deadNoop('moveTo');
+    const d = this.data;
+    if (!d) return this._deadNoop('moveTo');
+    d.components.move = {
+      tx: x, ty: y,
+      speed: typeof opts.speed === 'number' ? opts.speed : 1,
+      arriveR: typeof opts.arriveR === 'number' ? opts.arriveR : 0.2,
+      active: true,
+    };
+    if (!EntityHandle._warnedMoveTo) {
+      EntityHandle._warnedMoveTo = true;
+      console.warn('EntityHandle.moveTo: components.move written, but no steering system consumes it yet (M3).');
+    }
+    this.world.renderVersion++;
+    return this;
   }
 
+  /** Compass yaw toward (x, y): 0 = N = -y, clockwise (MAP_FORMAT convention). */
   lookAt(x, y) {
-    throw new Error('EntityHandle.lookAt: not implemented (US-025)');
+    if (!this.alive) { this._deadNoop('lookAt'); return this; }
+    const d = this.data;
+    if (!d) { this._deadNoop('lookAt'); return this; }
+    const ex = d.transform.x, ey = d.transform.y;
+    let deg = Math.atan2(x - ex, -(y - ey)) * 180 / Math.PI;
+    deg = ((deg % 360) + 360) % 360;
+    d.transform.yawDeg = deg;
+    this.world.renderVersion++;
+    return this;
   }
 
+  /** `components[name] = value` (JSON-safe only; `null` deletes it). */
   setComponent(name, value) {
-    throw new Error('EntityHandle.setComponent: not implemented (US-025)');
+    if (!this.alive) { this._deadNoop('setComponent'); return this; }
+    const d = this.data;
+    if (!d) { this._deadNoop('setComponent'); return this; }
+    if (value === null) delete d.components[name];
+    else d.components[name] = value;
+    this.world.renderVersion++;
+    return this;
   }
 
   getComponent(name) {
-    throw new Error('EntityHandle.getComponent: not implemented (US-025)');
+    const d = this.data;
+    return d ? d.components[name] : undefined;
   }
 
+  /** Per-entity listener: `fn(handle, name, arg)`. Returns an `off()`. */
   on(event, fn) {
-    throw new Error('EntityHandle.on: not implemented (US-025)');
+    if (!this.alive) { this._deadNoop('on'); return () => {}; }
+    this.world._addListener(this.id, event, fn);
+    return () => this.world._removeListener(this.id, event, fn);
   }
 
+  /** Deletes the entity, emits `removed` (this handle) then `entity:removed` (engine.events), drops listeners/cache. */
   remove() {
-    throw new Error('EntityHandle.remove: not implemented (US-025)');
+    if (!this.alive) { this._deadNoop('remove'); return; }
+    this.world._removeEntityAndHandle(this.id, this);
   }
 }

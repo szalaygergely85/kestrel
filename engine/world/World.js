@@ -1,19 +1,365 @@
-// Stub (US-024 Phase A). Real implementation: US-025 (D-007), per
-// docs/architecture.md section 7.
+// engine/world/World.js (US-025, D-007). Real implementation per
+// docs/architecture.md section 7 (World/WorldQuery), 7.2 (structTable) and
+// 10/10.1 (entities/handles). See the tech notes in docs/backlog.md US-025
+// for the build order this follows.
+import { loadLevel } from './Level.js';
+import { Terrain } from './Terrain.js';
+import { packLevel } from './packed.js';
+import { Entity } from '../entities/Entity.js';
+import { EntityHandle } from '../entities/EntityHandle.js';
+import { EventRing } from '../entities/eventRing.js';
+import { getBehaviour } from '../core/behaviours.js';
+
+// Default answer for `World#outsideSector` when the world has no terrain at
+// all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
+// solid wall, matching `Level`'s own `outsideSector` default (D-008), so a
+// terrain-less world behaves exactly like today's bare `Level`.
+const SOLID_OUTSIDE = Object.freeze({
+  floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky',
+  solid: true, topH: 'sky', upperMat: 'stone',
+});
+
+function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
+function ease(kind, t) {
+  if (kind === 'inOut') return t * t * (3 - 2 * t); // smoothstep
+  return t; // linear (default)
+}
+
+// (US-016b) `ringHAt(x, y)`: nearest outer-ring `floorH` of a placed
+// structure, wired into `recipe.structures[i]` before the terrain bakes, so
+// `structureBlend` in the recipe blends against the REAL level data instead
+// of the flat `ringH` fallback constant.
+function makeRingHAt(level, origin) {
+  const w = level.width, h = level.height;
+  return function ringHAt(x, y) {
+    const lx = x - origin.x, ly = y - origin.y;
+    let cx = Math.min(Math.max(lx, 0.5), w - 0.5);
+    let cy = Math.min(Math.max(ly, 0.5), h - 0.5);
+    const dl = cx, dr = w - cx, dt = cy, db = h - cy;
+    const m = Math.min(dl, dr, dt, db);
+    if (m === dl) cx = 0.5; else if (m === dr) cx = w - 0.5;
+    if (m === dt) cy = 0.5; else if (m === db) cy = h - 0.5;
+    const s = level.sectorAt(cx, cy);
+    return s ? s.floorH + origin.z : origin.z;
+  };
+}
+
 export class World {
-  static load(def, assets) {
-    throw new Error('World.load: not implemented (US-025)');
+  constructor() {
+    this.terrain = null;
+    this.terrainKey = null;
+    this.structures = [];
+    this.structTable = new Float32Array(8 * 8);
+    this.renderVersion = 0;
+    this.nextId = 0;
+    this.state = {};
+    this.events = null;
+
+    this._entities = new Map();   // id -> plain entity data
+    this._handles = new Map();    // id -> EntityHandle (cached, same object until remove)
+    this._listeners = new Map();  // id -> Map<event, Set<fn>>
+    this._eventRing = new EventRing(256);
+    this._outsideScratch = { floorH: 0, ceilH: 'sky', wallMat: 'rock', floorMat: 'grass', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'rock' };
+    this.eventsDropped = 0;
   }
 
-  spawn(type, transform, components, id) {
-    throw new Error('World.spawn: not implemented (US-025)');
+  /**
+   * @param {Object} def - WorldDef (design/levels/world_m1.js shape) or an ephemeral equivalent (`?level=test_room`).
+   * @param {import('../core/assets.js').AssetRegistry} assets
+   * @param {{events?: import('../core/events.js').Events}} [opts]
+   * @returns {World}
+   */
+  static load(def, assets, opts = {}) {
+    const w = new World();
+    w.events = opts.events || null;
+    w.def = def;
+    w.state = structuredClone(def.state || {});
+
+    if (def.terrain) {
+      w.terrainKey = def.terrain;
+      w.terrain = new Terrain(assets.terrain(def.terrain));
+    }
+
+    for (const s of def.structures || []) {
+      w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
+      if (s.dynamics) {
+        for (const tag of Object.keys(s.dynamics)) {
+          const d = s.dynamics[tag];
+          if (typeof d.t === 'number') w.animateSector(tag, d.t);
+        }
+      }
+    }
+
+    // (US-016b) Wire each placed structure's real ring height into the
+    // terrain recipe's own `structures[i]` entry (matched by id), BEFORE any
+    // bake/sample happens - `structureBlend` inside the recipe then reads
+    // real level data instead of its flat `ringH` fallback.
+    if (w.terrain && w.terrain.recipe.structures) {
+      for (const rs of w.terrain.recipe.structures) {
+        const placed = w.structures.find((p) => p.id === rs.id);
+        if (placed) rs.ringHAt = makeRingHAt(placed.level, placed.origin);
+      }
+    }
+
+    for (const ed of def.entities || []) {
+      let transform;
+      if (ed.transform) {
+        transform = { ...ed.transform };
+      } else if (ed.spawn) {
+        const st = w.structures.find((s) => s.id === ed.spawn.structure);
+        if (!st) throw new Error(`World.load: entity "${ed.id}" spawn.structure "${ed.spawn.structure}" not placed`);
+        const local = ed.spawn.from === 'start' ? st.level.start : null;
+        if (!local) throw new Error(`World.load: entity "${ed.id}" spawn.from "${ed.spawn.from}" not supported`);
+        transform = {
+          x: local.x + st.origin.x, y: local.y + st.origin.y,
+          z: (st.level.floorAt(local.x, local.y) ?? 0) + st.origin.z,
+          yawDeg: local.facingDeg || 0, pitchDeg: local.pitchDeg || 0,
+        };
+      } else {
+        throw new Error(`World.load: entity "${ed.id}" needs "transform" or "spawn"`);
+      }
+      w.spawn(ed.type, transform, structuredClone(ed.components || {}), ed.id);
+    }
+
+    if (typeof def.nextId === 'number') w.nextId = def.nextId;
+
+    if (w.events) w.events.emit('world:loaded', { world: w });
+    return w;
   }
 
+  // ---- structures -----------------------------------------------------------
+
+  /**
+   * @param {Object} levelDef
+   * @param {{x:number,y:number,z:number}} origin
+   * @param {string} [id]
+   * @param {number} [yawSteps]
+   */
+  placeStructure(levelDef, origin, id, yawSteps = 0) {
+    if (yawSteps) throw new Error('World.placeStructure: yawSteps != 0: not in M1');
+    const level = loadLevel(levelDef);
+    if (!level) throw new Error(`World.placeStructure: level "${levelDef && levelDef.name}" failed to load (see console)`);
+    const structSeq = this.structures.length;
+    const structId = id || `struct_${structSeq}`;
+    const bbox = { x0: origin.x, y0: origin.y, x1: origin.x + level.width, y1: origin.y + level.height };
+    const packed = packLevel(level, null);
+    const placed = { id: structId, level, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {} };
+    this.structures.push(placed);
+
+    if (structSeq < 8) {
+      const o = structSeq * 8;
+      this.structTable[o] = origin.x;
+      this.structTable[o + 1] = origin.y;
+      this.structTable[o + 2] = origin.z || 0;
+      this.structTable[o + 3] = level.width;
+      this.structTable[o + 4] = level.height;
+      this.structTable[o + 5] = yawSteps;
+      this.structTable[o + 6] = level.cellSize;
+      this.structTable[o + 7] = structSeq;
+    }
+
+    this.renderVersion++;
+    if (this.events) this.events.emit('world:structurePlaced', { id: structId, origin: placed.origin });
+    return placed;
+  }
+
+  /** Bbox test first (structures.length is tiny), then the level's own footprint. */
+  structureAt(x, y) {
+    for (let i = 0; i < this.structures.length; i++) {
+      const s = this.structures[i];
+      const b = s.bbox;
+      if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
+    }
+    return null;
+  }
+
+  sectorAt(x, y) {
+    const s = this.structureAt(x, y);
+    if (!s) return null;
+    return s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+  }
+
+  floorAt(x, y) {
+    const s = this.structureAt(x, y);
+    if (s) {
+      const sec = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+      return sec ? sec.floorH + s.origin.z : null;
+    }
+    return this.terrain ? this.terrain.heightAt(x, y) : null;
+  }
+
+  ceilAt(x, y) {
+    const s = this.structureAt(x, y);
+    if (s) {
+      const sec = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+      if (!sec) return null;
+      return sec.ceilH === 'sky' ? 'sky' : sec.ceilH + s.origin.z;
+    }
+    return 'sky';
+  }
+
+  /** Terrain only (ignores structures) - for the terrain caster (US-016). */
+  heightAt(x, y) {
+    return this.terrain ? this.terrain.heightAt(x, y) : null;
+  }
+
+  /**
+   * (D-008) What `sectorAt` returning null means for movement: inside no
+   * structure footprint, the terrain floor (walkable), or - with no terrain
+   * at all - a solid wall (Level's own default, unchanged behaviour for
+   * `?level=test_room`). Written into a REUSED scratch object - callers
+   * must not keep it across calls.
+   */
+  outsideSector(x, y) {
+    if (!this.terrain) return SOLID_OUTSIDE;
+    const sc = this._outsideScratch;
+    sc.floorH = this.terrain.heightAt(x, y);
+    sc.ceilH = 'sky';
+    sc.solid = false;
+    sc.wallMat = 'rock';
+    sc.floorMat = this.terrain.floorMatFor(this.terrain.typeAt(x, y));
+    sc.ceilMat = 'sky';
+    sc.topH = 'sky';
+    sc.upperMat = 'rock';
+    return sc;
+  }
+
+  /**
+   * Animates the tagged dynamic legend entry (every structure is searched;
+   * a level-authored `dynamic: {ceilOpen, openTime, ease}` + `tag` pair, e.g.
+   * the tower's grate) to `t01` (0 = closed/authored ceilH, 1 = `ceilOpen`),
+   * rebuilds that structure's packed layout (not hot-path - an interaction,
+   * not a per-frame call) and bumps `renderVersion`.
+   */
+  animateSector(tag, t01) {
+    const t = clamp01(t01);
+    for (const s of this.structures) {
+      for (const ch of Object.keys(s.level.legend)) {
+        const sector = s.level.legend[ch];
+        if (sector.tag === tag && sector.dynamic) {
+          const d = sector.dynamic;
+          sector.ceilH = sector.floorH + (d.ceilOpen - sector.floorH) * ease(d.ease, t);
+          s.packed = packLevel(s.level, null);
+          s.dynamics[tag] = { t };
+          this.renderVersion++;
+          if (this.events) this.events.emit('world:sectorAnimated', { structureId: s.id, tag, t01: t });
+          return;
+        }
+      }
+    }
+  }
+
+  // ---- entities/handles (10.1) ----------------------------------------------
+
+  spawn(type, transform, components = {}, id) {
+    const entId = id || `${type}_${this.nextId++}`;
+    if (this._entities.has(entId)) throw new Error(`World.spawn: id "${entId}" already exists`);
+    if (components.sprite) {
+      components.sprite = { t: 0, frame: 0, loop: true, speed: 1, playing: true, ...components.sprite };
+    }
+    const entity = Entity.create(type, transform, components, entId);
+    this._entities.set(entId, entity);
+    this.renderVersion++;
+    if (this.events) this.events.emit('entity:added', { id: entId, type });
+    return this._handleFor(entId);
+  }
+
+  /** @returns {EntityHandle|null} the same handle object for a given id, until removed */
   get(id) {
-    throw new Error('World.get: not implemented (US-025)');
+    return this._entities.has(id) ? this._handleFor(id) : null;
   }
 
   remove(id) {
-    throw new Error('World.remove: not implemented (US-025)');
+    const h = this._handleFor(id);
+    h.remove();
+  }
+
+  entity(id) {
+    return this._entities.get(id);
+  }
+
+  addEntity(e) {
+    this._entities.set(e.id, e);
+    this.renderVersion++;
+  }
+
+  removeEntity(id) {
+    this._entities.delete(id);
+    this._handles.delete(id);
+    this._listeners.delete(id);
+  }
+
+  _handleFor(id) {
+    let h = this._handles.get(id);
+    if (!h) {
+      h = new EntityHandle(this, id);
+      this._handles.set(id, h);
+    }
+    return h;
+  }
+
+  _addListener(id, event, fn) {
+    let forId = this._listeners.get(id);
+    if (!forId) { forId = new Map(); this._listeners.set(id, forId); }
+    let set = forId.get(event);
+    if (!set) { set = new Set(); forId.set(event, set); }
+    set.add(fn);
+  }
+
+  _removeListener(id, event, fn) {
+    const forId = this._listeners.get(id);
+    if (!forId) return;
+    const set = forId.get(event);
+    if (set) set.delete(fn);
+  }
+
+  /** Queues an event for the next `flushEvents()` (safe re-entrancy - 10.1). */
+  _emit(id, event, arg) {
+    if (!this._eventRing.push(id, event, arg)) this.eventsDropped = this._eventRing.dropped;
+  }
+
+  /** Drains the event ring, dispatching to per-entity listeners (`handle.on`). Called by the loop after each sim step. */
+  flushEvents() {
+    this._eventRing.drain((id, event, arg) => {
+      const forId = this._listeners.get(id);
+      if (!forId) return;
+      const set = forId.get(event);
+      if (!set || set.size === 0) return;
+      const handle = this._handles.get(id); // may be null if removed since the event was queued
+      if (!handle) return;
+      for (const fn of Array.from(set)) fn(handle, event, arg);
+    });
+    this.eventsDropped = this._eventRing.dropped;
+  }
+
+  /**
+   * `remove()`'s real implementation: `removed` fires SYNCHRONOUSLY (not
+   * through the ring) so listeners registered before the removal always see
+   * it, THEN listeners/cache are dropped and `entity:removed` fires on the
+   * engine's events (10.1 order).
+   */
+  _removeEntityAndHandle(id, handle) {
+    const forId = this._listeners.get(id);
+    if (forId) {
+      const set = forId.get('removed');
+      if (set) for (const fn of Array.from(set)) fn(handle, 'removed', undefined);
+    }
+    this._entities.delete(id);
+    this._listeners.delete(id);
+    this._handles.delete(id);
+    handle.alive = false;
+    this.renderVersion++;
+    if (this.events) this.events.emit('entity:removed', { id });
+  }
+
+  /** Look up (by name, via `def.interactables`/`def.triggers`) and call a registered behaviour (D-006/D-008). */
+  fireInteraction(id, ctx) {
+    const fn = getBehaviour(id);
+    return fn ? fn({ world: this, ...ctx }) : undefined;
+  }
+
+  fireTrigger(id, ctx) {
+    const fn = getBehaviour(id);
+    return fn ? fn({ world: this, ...ctx }) : undefined;
   }
 }

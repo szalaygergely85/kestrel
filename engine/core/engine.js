@@ -10,6 +10,7 @@ import { Loop } from './loop.js';
 import { Events } from './events.js';
 import { Camera } from '../entities/Camera.js';
 import { PHYSICS_DEFAULTS } from '../physics/config.js';
+import { World } from '../world/World.js';
 
 /**
  * @param {import('./assets.js').AssetRegistry} opts.assets
@@ -46,7 +47,8 @@ export function createEngine(opts) {
     assets,
     physics, // PHYSICS_DEFAULTS merged with opts.physics
     loadWorld(def) {
-      throw new Error('engine.loadWorld: not implemented (US-025, World.load)');
+      engine.world = World.load(def, assets, { events });
+      return engine.world;
     },
     run({ update, render }) {
       loop.update = update;

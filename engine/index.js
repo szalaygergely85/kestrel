@@ -35,10 +35,9 @@ export { bindShading, bindLevel } from './render/MaterialTable.js';
 export { computeDerivatives, shadeSurfaces, shadeV2 } from './render/detailShade.js';
 export { edgePass } from './render/edgePass.js';
 
-// renderWorld (US-025 compositor): stub until World is real.
-export function renderWorld(fb, world, cam) {
-  throw new Error('renderWorld: not implemented (US-025)');
-}
+// ---- world compositor (US-025) ---------------------------------------------
+export { renderWorld } from './render/compositor.js';
+export { packLevel } from './world/packed.js';
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';

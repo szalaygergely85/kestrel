@@ -7,10 +7,11 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import {
-  AssetRegistry, createEngine, loadLevel, Player,
-  beginFrame, castSectors, fillSky, runShadeTest, runDetailShadeTest,
-  GBuffer, bindShading, bindLevel, computeDerivatives, shadeSurfaces, edgePass, ambientL,
+  AssetRegistry, createEngine,
+  runShadeTest, runDetailShadeTest,
+  GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
+  integrate, Camera, renderWorld,
 } from '../../engine/index.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { drawDemoScene } from './dev/demoScene.js';
@@ -58,68 +59,67 @@ if (params.get('bench') === '1') {
 } else if (params.get('demo') === '1') {
   runGame('demo');
 } else {
-  runGame('raycast'); // default: US-004 sector raycaster on test_room
+  runGame('world'); // default: US-025 World (world_m1, or ?level=<name> for a bare single-level world)
 }
 
 function runGame(mode) {
   if (params.get('debug') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`
 
   let simTime = 0;
-  let level = null;
-  let player = null;
   let look = null;
-  let origin = { x: 0, y: 0, z: 0 };
+  let playerHandle = null;
 
   // Reused every physics step (architecture.md section 9 rule 9.3: no
   // per-step allocations) - US-009 hoisted this out of update()'s body,
   // where it used to be rebuilt as a fresh object literal every call.
   const controls = { forward: 0, strafe: 0, run: false, jump: false, yawDeg: 0, pitchDeg: 0 };
 
-  if (mode === 'raycast') {
-    level = loadLevel(assets.level('test_room'));
-    if (!level) {
-      console.error('[main] test_room failed to load (see errors above) - falling back to the demo scene.');
-      mode = 'demo';
-    } else {
-      // US-005 owns turning (mouse/pointer-lock, arrow-key fallback);
-      // Player (US-008/US-009, game/js/entities/Player.js) owns moving -
-      // see the "Integration hook" note at the bottom of that file. No
-      // physics integration here yet (US-025 splits this into Entity +
-      // integrate()): movement is Player's current simple noclip-on-the-floor
-      // behaviour.
-      bindLevel(matTable, level); // US-028: pre-warm material ids for this level's legend
-      player = new Player(level);
-      look = new PlayerLook(canvas, input, player.yawDeg, player.pitchDeg);
-
-      // D-008 item 3 test switch: `?origin=1480,1018` renders test_room as
-      // if it were a structure placed at that world offset. Player/PlayerLook
-      // keep moving/colliding in the level's own LOCAL coordinates
-      // (unaffected); only the eye position handed to castSectors (below) is
-      // translated to world coordinates (+origin).
-      const originParam = params.get('origin');
-      if (originParam) {
-        const [ox, oy] = originParam.split(',').map(Number);
-        if (Number.isFinite(ox) && Number.isFinite(oy)) origin = { x: ox, y: oy, z: 0 };
+  if (mode === 'world') {
+    // US-025: the real world (world_m1: terrain + the tower placed at its
+    // recipe coordinates), or - `?level=<name>` - a bare single-level world
+    // with no terrain (same shape `World.load` always expects, just with
+    // `terrain: null`), so `test_room` stays reachable exactly as before.
+    const levelParam = params.get('level');
+    const worldDef = levelParam
+      ? {
+        name: `adhoc_${levelParam}`,
+        terrain: null,
+        structures: [{ id: levelParam, level: levelParam, origin: { x: 0, y: 0, z: 0 }, yawSteps: 0 }],
+        entities: [{ id: 'player', type: 'player', spawn: { structure: levelParam, from: 'start' } }],
+        state: {},
       }
-    }
+      : assets.world('world_m1');
+
+    const world = engine.loadWorld(worldDef);
+    for (const s of world.structures) bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
+
+    playerHandle = world.get('player');
+    const startT = playerHandle.data.transform;
+    Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
+      radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
+      vx: 0, vy: 0, vz: 0, grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: startT.z,
+    });
+    look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
   }
 
   function update(dt) {
     simTime += dt;
     if (input.pressed('F3')) overlay.toggle();
     if (look) look.update(dt);
-    if (player) {
+    if (mode === 'world' && playerHandle) {
       controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
       controls.strafe = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
       controls.run = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
       // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
       // that starts and ends within one frame - between two fixed-step
-      // updates - is never lost (Player does its own edge detection on top
-      // of this, architecture.md section 5 `Controls` typedef).
+      // updates - is never lost (integrate() does its own edge detection on
+      // top of this, architecture.md section 5 `Controls` typedef).
       controls.jump = input.isDown('Space') || input.pressed('Space');
       controls.yawDeg = look.yawDeg;
       controls.pitchDeg = look.pitchDeg;
-      player.update(dt, controls, level);
+      integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
+      engine.world.flushEvents();
     }
     input.endFrame();
   }
@@ -128,7 +128,7 @@ function runGame(mode) {
   const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   const fb = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0,
-    gbuf, matTable, // US-028
+    gbuf, matTable, detailPass, // US-028
   };
 
   function render(alpha) {
@@ -136,46 +136,43 @@ function runGame(mode) {
 
     if (mode === 'glyphs') {
       drawGlyphsScreen(rt);
-    } else if (mode === 'raycast') {
-      // test_room is the whole world for now (origin = {0,0,0} unless
-      // ?origin=... - see above) and there is no terrain pass yet, so
-      // beginFrame + castSectors + fillSky reproduces this story's original
-      // stand-alone look exactly (architecture.md section 5 compatibility
-      // note: this replaces `skyFallback: true`).
-      const eye = player.getEyeTransform(); // {x, y, z, yawDeg, pitchDeg} in LEVEL-local meters
-      cam.x = eye.x + origin.x; cam.y = eye.y + origin.y; cam.z = eye.z + origin.z;
-      cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
+    } else if (mode === 'world') {
+      // Player and camera live in WORLD coordinates (US-025 AC) - no origin
+      // translation needed at the call site any more, `renderWorld` casts
+      // each placed structure at its own origin internally (7.3).
+      const eye = Camera.fromEntity(playerHandle.data);
+      cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
-      beginFrame(fb);
-      castSectors(fb, level, cam, origin);
-      // US-028 pass order (docs/architecture.md 8.1): derivatives -> shade
-      // -> edges, all over the whole G-buffer, THEN sky fills whatever's
-      // still open (a v2 cell's fog factor/edge rule must never be
-      // computed against an unshaded sky cell).
-      computeDerivatives(gbuf, depthBuffer.depth);
-      shadeSurfaces(fb, gbuf, matTable, detailPass, ambientL);
-      if (detailPass) edgePass(gbuf, depthBuffer.depth, rt, detailPass.edges);
-      fillSky(fb, cam);
+      renderWorld(fb, engine.world, cam);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
     }
-    if (mode === 'raycast' && !look.locked) drawPauseOverlay(rt, assets);
+    if (mode === 'world' && !look.locked) drawPauseOverlay(rt, assets);
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
-    const extra = mode === 'raycast'
-      ? `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}\n` +
-        `pos (${player.x.toFixed(2)}, ${player.y.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
-        `${look.locked ? '' : ' [unlocked]'}`
-      : `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`;
+    let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`;
+    if (mode === 'world') {
+      const t = playerHandle.data.transform;
+      const world = engine.world;
+      const struct = world.structureAt(t.x, t.y);
+      const sector = world.sectorAt(t.x, t.y);
+      const sectorCh = struct ? struct.level.rows[Math.floor(t.y - struct.origin.y)][Math.floor(t.x - struct.origin.x)] : '(terrain)';
+      const terrain = world.terrain;
+      const terrainInfo = terrain
+        ? `farReady ${terrain.farReady} (${(terrain.bakeProgress * 100).toFixed(0)}%) chunk (${Math.floor(t.x / terrain.chunkSize)},${Math.floor(t.y / terrain.chunkSize)})`
+        : 'no terrain';
+      extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
+        `${look.locked ? '' : ' [unlocked]'}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
+    }
     overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
   }
 
   const loop = engine.run({ update, render });
   window.__debug.loop = loop;
-  window.__debug.level = level;
-  window.__debug.player = player;
+  window.__debug.world = engine.world;
+  window.__debug.playerHandle = playerHandle;
   window.__debug.look = look;
   window.__debug.depthBuffer = depthBuffer;
 }

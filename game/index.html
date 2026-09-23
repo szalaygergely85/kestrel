@@ -72,6 +72,13 @@
        the content pack (design/), loaded the same way as palette.js above -
        AssetRegistry.fromGlobals (js/main.js) reads window.ASSETS.levels.* -->
   <script src="../design/levels/test_room.js"></script>
+  <!-- US-025: the tower level, its terrain recipe, and the world definition
+       that places one inside the other (D-007) - same classic-script
+       loading as above. AssetRegistry.fromGlobals splits levels vs. terrain
+       recipes by shape (has util.heightAt) and reads window.ASSETS.worlds.*. -->
+  <script src="../design/levels/tower.js"></script>
+  <script src="../design/levels/overworld_far.js"></script>
+  <script src="../design/levels/world_m1.js"></script>
 
   <script type="module" src="js/main.js"></script>
 </body>

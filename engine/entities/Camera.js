@@ -30,9 +30,19 @@ export class Camera {
     return this;
   }
 
-  // Real once Entity/components.body exist (US-025): eye position/orientation
-  // from an entity's transform + eye-feel offset.
+  /**
+   * Eye position/orientation from an entity's transform + eye-feel offset
+   * (US-009/025). `eyeH` overrides the entity's own `components.body.eyeH`
+   * when given (a caller that wants a fixed eye height regardless of body
+   * state); omit it to use the entity's own eye height.
+   * @param {Object} entity - plain `Entity` data (`{transform, components}`)
+   * @param {number} [eyeH]
+   */
   static fromEntity(entity, eyeH) {
-    throw new Error('Camera.fromEntity: not implemented (US-025)');
+    const body = entity.components && entity.components.body;
+    const baseEyeH = typeof eyeH === 'number' ? eyeH : (body && typeof body.eyeH === 'number' ? body.eyeH : 0);
+    const offset = body && body.feel && typeof body.feel.offset === 'number' ? body.feel.offset : 0;
+    const t = entity.transform;
+    return new Camera(t.x, t.y, t.z + baseEyeH + offset, t.yawDeg, t.pitchDeg);
   }
 }
