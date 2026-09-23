@@ -43,7 +43,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 18 | US-010 | Tower layout: 3 levels as sector data | P0 | done | Tester PASS (2026-09-23): tower.test 49/49, behaviours 9/9, world/serialize/terrain/packed/check-deps/physics/jump/eyeFeel/playerLook all green; default page wakes correctly, zero console errors, `?level=test_room` unchanged. See `docs/test-reports/US-010.md` |
 | 19 | US-011 | Billboard props + prop art (D-011 reskin: *Kestrel* burner, brass lamp, wreckage, relay bowl, lever housing) | P0 | design | Designer: D-011 reskin art (see story). Old art approval stands for geometry/format. Programmer after the reskin PO OK + US-030c + US-006. Designer checks props at 160x60 and 240x90 (320x120 extra) |
 | 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | todo | Programmer |
-| 21 | US-013 | Rolling boulder | P0 | po-review | ARCH OK (re-review) -> PO |
+| 21 | US-013 | Rolling boulder | P0 | done | PASS (Node-level, 2026-09-23, docs/test-reports/US-013.md); visible boulder re-checked in US-011 |
 | 22 | US-014 | Lever opens the grate | P0 | done | PASS (Node-level, 2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | Designer: new `KESTREL` logo + map card art (D-011/D-013). Programmer after the art PO OK + US-010 + US-012. Designer checks UI/text at 160x60 and 240x90 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
