@@ -36,3 +36,4 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 - Every architect/PO prompt names the diff/commits and the exact doc sections to read, says "run probes only if something looks wrong", and asks for a short reply (verdict + required changes).
 - **product-owner**: sonnet for routine re-reviews / ASK PO answers, opus for new stories and first reviews.
 - Agents testing in a browser start their own server on a fresh port and stop **only that process**. Never kill all python processes: the owner's `ascii-quest-http` server on port 8000 must stay up.
+- Agents never run `git stash`, `git checkout -- <file>` or `git reset` in the main repo: several agents share the working tree. For baseline comparisons, use the clean worktree `../game_project_test` (the main session moves it to the right commit) or `git show <commit>:<path>`.
