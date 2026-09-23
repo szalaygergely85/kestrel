@@ -23,6 +23,13 @@ export class CellBuffer {
     this.glyphIdx = new Uint8Array(n);
     this.fg = new Uint8Array(n * 4);
     this.bg = new Uint8Array(n * 4);
+    // US-029: 1 = this cell was written by JS this frame (sky, pause overlay,
+    // F3 text, ...). On the GPU path this is how the shade pass tells "JS
+    // cell wins" (passthrough) from "shade this cell" - see GpuCellPipeline.js
+    // and architecture.md 14.1 section 1/4. Always present (cheap, and every
+    // caller - both back-ends, the bench harness shape - benefits from one
+    // shape), even though only the GPU path reads it.
+    this.mask = new Uint8Array(n);
     // Default: fg = white (glyphIdx 0 = space, so invisible until setCell is
     // called), bg = opaque black.
     for (let i = 0; i < this.fg.length; i += 4) {
@@ -77,6 +84,7 @@ export class CellBuffer {
     const fi = i * 4;
     this.fg[fi] = fr; this.fg[fi + 1] = fgg; this.fg[fi + 2] = fb; this.fg[fi + 3] = glyphIdx;
     this.bg[fi] = br; this.bg[fi + 1] = bgg; this.bg[fi + 2] = bb; this.bg[fi + 3] = 255;
+    this.mask[i] = 1;
   }
 
   // Allocation-free numeric fast path: glyphIdx is 0-94 (ASCII code - 32,
@@ -88,6 +96,7 @@ export class CellBuffer {
     const fi = i * 4;
     this.fg[fi] = r; this.fg[fi + 1] = g; this.fg[fi + 2] = b; this.fg[fi + 3] = glyphIdx;
     this.bg[fi] = r2; this.bg[fi + 1] = g2; this.bg[fi + 2] = b2; this.bg[fi + 3] = 255;
+    this.mask[i] = 1;
   }
 
   clear(bgHex = '#000000') {
@@ -99,5 +108,6 @@ export class CellBuffer {
     for (let i = 0; i < this.bg.length; i += 4) {
       this.bg[i] = br; this.bg[i + 1] = bgg; this.bg[i + 2] = bb; this.bg[i + 3] = 255;
     }
+    this.mask.fill(1); // clear() is a full-screen JS write - every cell is JS-owned until something casts over it
   }
 }

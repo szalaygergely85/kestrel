@@ -12,7 +12,11 @@ import {
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
   integrate, Camera, renderWorld,
+  GpuCellPipeline, runGpuCompare,
+  loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
+  shadeSurfaces, edgePass, ambientL,
 } from '../../engine/index.js';
+import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -45,6 +49,32 @@ const gbuf = new GBuffer(rt.cols, rt.rows);
 
 console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end actually ran (gl2 / c2d-capped)
 
+// US-029 tech notes item 1: the GPU cell pipeline is only ever constructed
+// when every gate holds - `rt.backend === 'gl2'`, `?gpu=0` not set, a v2
+// detail pass is bound AND covers every material this content pack uses
+// (`matTable.allV2`; `?detail=0` sets `detailPass` to null above, so this
+// condition is false there too, by construction). `isSoftwareRenderer` and
+// shader compile/link failures are both handled INSIDE the constructor
+// (tech notes item 9) - it never throws out here; `gpuPipeline.ready` is
+// the one thing this file checks afterwards. Kept to this one `if` + one
+// `new` + one `.bind()` call - everything else (the hook, the CPU no-op
+// guards) lives in engine/render/gpu/ and engine/render/{detailShade,
+// edgePass,CellBuffer,RenderTargetGL}.js, none of which is compositor.js/
+// world/* (US-025, off-limits this story).
+let gpuPipeline = null;
+if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
+  const candidate = new GpuCellPipeline(rt);
+  if (candidate.ready) {
+    candidate.bind(matTable);
+    gpuPipeline = candidate;
+  }
+}
+const gpuDebugParam = params.get('gpudebug');
+if (gpuPipeline && gpuDebugParam) {
+  gpuPipeline.debugMode = { kind: 0, plane: 1, rule: 2 }[gpuDebugParam] ?? -1;
+}
+console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive - JS shading'}`);
+
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
 window.__debug = { input, overlay, rt, engine };
@@ -54,6 +84,8 @@ if (params.get('bench') === '1') {
 } else if (params.get('shadetest') === '1') {
   runShadeTest(assets.palette);
   if (assets.detailPass) runDetailShadeTest(assets.palette, assets.detailPass);
+} else if (params.get('gpucompare') === '1') {
+  runGpuCompareMode();
 } else if (params.get('glyphs') === '1') {
   runGame('glyphs');
 } else if (params.get('demo') === '1') {
@@ -149,10 +181,17 @@ function runGame(mode) {
       drawDemoScene(rt, t, assets.palette.ramps.default);
     }
     if (mode === 'world' && !look.locked) drawPauseOverlay(rt, assets);
+    // US-029: `renderWorld` already ran (a no-op) `shadeSurfaces`/`edgePass`
+    // when `rt.gpuActive` (set by the pipeline's constructor) - this just
+    // hands it this frame's light + fb refs; the real GPU work happens
+    // inside `rt.present()`'s hook, right below.
+    if (gpuPipeline) gpuPipeline.frame(fb, ambientL);
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
-    let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}`;
+    let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
+      `\nshade: ${rt.gpuActive ? 'gpu' : 'cpu'}` +
+      (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '');
     if (mode === 'world') {
       const t = playerHandle.data.transform;
       const world = engine.world;
@@ -175,6 +214,58 @@ function runGame(mode) {
   window.__debug.playerHandle = playerHandle;
   window.__debug.look = look;
   window.__debug.depthBuffer = depthBuffer;
+}
+
+// `?gpucompare=1` (US-029 AC "Parity page", tech notes item 7): casts the
+// same `bench-cast.mjs` pose set (tools/bench-poses.js) against `test_room`
+// on both paths and reports glyph/fg/bg parity. Shows PASS/FAIL on screen
+// (the overlay) and in the console. Requires a working GPU pipeline - prints
+// a clear message and does nothing else if one isn't active.
+function runGpuCompareMode() {
+  if (!gpuPipeline) {
+    const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
+      ', allV2=' + matTable.allV2 + ') - nothing to compare.';
+    console.error(msg);
+    overlay.visible = true; overlay.el.style.display = 'block';
+    overlay.el.textContent = msg;
+    return;
+  }
+
+  const level = loadLevel(assets.level('test_room'));
+  bindLevel(matTable, level);
+  const fbCompare = {
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    timeSec: 0, light: ambientL, jsShade: shadeSurfaces, jsEdge: edgePass,
+  };
+
+  function castFrame(pose) {
+    const cam = { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg };
+    beginFrame(fbCompare);
+    castSectors(fbCompare, level, cam, { x: 0, y: 0, z: 0 });
+    computeDerivatives(fbCompare.gbuf, fbCompare.depth.depth);
+    fillSky(fbCompare, cam);
+    return cam;
+  }
+
+  const { rows, ok } = runGpuCompare(gpuPipeline, fbCompare, castFrame, GPU_COMPARE_POSES, null);
+
+  let text = `?gpucompare=1  GpuCellPipeline: ${gpuPipeline.rendererString}\n`;
+  for (const r of rows) {
+    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
+      `  glyph match (non-edge): ${r.glyphMatchPct.toFixed(2)}%  edge cells excluded: ${r.edgeCells}\n` +
+      `  fg outside +-4: ${r.fgOutside}  bg outside +-4: ${r.bgOutside}  fgMax ${r.fgMax} bgMax ${r.bgMax}\n` +
+      `  depth match: ${r.depthMatchPct}%  mat==0 cells: ${r.matZeroCount}\n`;
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: glyph=${r.glyphMatchPct.toFixed(2)}% fgOut=${r.fgOutside} bgOut=${r.bgOutside} fgMax=${r.fgMax} bgMax=${r.bgMax}`);
+  }
+  text += `\n${ok ? 'ALL PASS' : 'FAILURES ABOVE'}`;
+  console.log(`[gpucompare] ${ok ? 'ALL PASS' : 'FAILURES ABOVE'}`);
+
+  overlay.visible = true;
+  overlay.el.style.display = 'block';
+  overlay.el.style.font = '13px "Courier New", monospace';
+  overlay.el.style.whiteSpace = 'pre';
+  overlay.el.textContent = text;
+  window.__gpuCompare = { rows, ok };
 }
 
 // `?bench=1`: renders N worst-case frames (see dev/benchScene.js - every

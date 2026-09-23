@@ -664,6 +664,13 @@ function v1FogFactor(dist, fog) {
  */
 export function shadeSurfaces(fb, gbuf, table, DP, light) {
   const rt = fb.rt;
+  // US-029: when a GPU cell pipeline owns shading this frame (`rt.gpuActive`,
+  // set by GpuCellPipeline - see architecture.md 14.1 section 1/4), this CPU
+  // pass is a no-op: the GPU shade pass reads the (unwritten, mask == 0)
+  // G-buffer cells directly. Checked on `rt` (not a new parameter) so this
+  // file's existing callers - compositor.js (US-025) in particular - need no
+  // change at all.
+  if (rt.gpuActive) return;
   const cols = gbuf.cols, rows = gbuf.rows;
   const depth = fb.depth.depth;
   const kind = gbuf.kind;

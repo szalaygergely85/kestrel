@@ -249,7 +249,15 @@ export function bindShading(P, DP, cellAspect) {
     };
   }
 
-  return { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P };
+  // US-029 tech notes item 1: `allV2` = every resolved material id has a v2
+  // record - i.e. the GPU shade shader (which only implements the v2 path)
+  // can cover every material this level uses. `?detail=0` sets `DP` to null
+  // upstream (main.js), so `allV2` is false there too - the two switches
+  // agree by construction, no separate check needed at the call site.
+  let allV2 = !!DP;
+  if (DP) for (let id = 1; id < records.length; id++) { if (records[id] && !records[id].v2) { allV2 = false; break; } }
+
+  return { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2 };
 }
 
 /**

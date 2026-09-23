@@ -59,6 +59,7 @@ import { edgePass } from '../engine/render/edgePass.js';
 import testRoomDef from '../design/levels/test_room.js';
 import paletteModule from '../design/palette.js';
 import detailPassModule from '../design/detail-pass.js';
+import { POSES as SHARED_POSES, EYE_H as SHARED_EYE_H } from './bench-poses.js';
 
 const palette = paletteModule.default || paletteModule;
 const detailPass = detailPassModule.default || detailPassModule;
@@ -79,33 +80,11 @@ const COLOR_TOLERANCE = 4;
 // Fixed poses, in test_room LOCAL meters (test_room is 20x18; 'S' start is
 // at col 2, row 2 -> x=2.5, y=2.5, facing east/yawDeg 90). eyeH 1.60 m
 // matches physics/config.js `eyeHeight`.
-const EYE_H = 1.60;
-const POSES = [
-  { name: 'start pose (S, facing east, level)', x: 2.5, y: 2.5, z: EYE_H, yawDeg: 90, pitchDeg: 0,
-    // US-004b re-review #3: the two multi-cell-wide low-wall (`w`) segments
-    // at level columns 120/132 must show the FAR ceiling (depth 9.5-16.5 m),
-    // not sky - regression guard for "sky above a low solid cell is never
-    // evaluated as a segment".
-    probes: [
-      { desc: 'columns 120/132 rows 22-25: far ceiling, not sky', cols: [120, 132], rows: [22, 25], kind: 'finite', min: 9.5, max: 16.5 },
-    ] },
-  { name: 'facing stair + 1.0m platform', x: 2.5, y: 13.5, z: EYE_H, yawDeg: 90, pitchDeg: 0 },
-  // Architect review 2026-09-23 item 2: the old pose 3, (2.5, 7.5, yaw 0,
-  // pitch +35), sees 0 sky cells - the '^' skylight (level cols 8-12) is
-  // outside the 75 deg FOV from x=2.5, so the whole frame was ceiling. This
-  // pose sees the low wall, the sky over it through the skylight AND the
-  // far ceiling beyond it (6,240 sky / 3,360 geometry cells).
-  { name: 'sky over the low wall, pitch +20', x: 9.5, y: 7.5, z: EYE_H, yawDeg: 0, pitchDeg: 20 },
-  // minDistinct 9: US-028a (block-keyed hashes) cuts alternates on purpose; architect ruling 2026-09-23.
-  { name: 'long diagonal, pitch -35', x: 1.5, y: 1.5, z: EYE_H, yawDeg: 45, pitchDeg: -35, minDistinct: 9 },
-  // US-004b re-review #3 item 2 (new pose): sees the near `w` cell's own
-  // 'sky' ceiling above it - the far side's ceiling must NOT be stretched
-  // back over the `w` cell's own span.
-  { name: 'low wall sky, (10, 7.5) yaw 45 pitch +25', x: 10, y: 7.5, z: EYE_H, yawDeg: 45, pitchDeg: 25,
-    probes: [
-      { desc: 'column 116 rows 0-3: sky over the w cell, not the far ceiling', cols: [116], rows: [0, 3], kind: 'infinite' },
-    ] },
-];
+// US-029: moved to tools/bench-poses.js (shared with `?gpucompare=1` in
+// game/js/main.js) - same values, see that file's header comments for the
+// per-pose notes (US-004b re-review #3, architect review item 2, US-028a).
+const EYE_H = SHARED_EYE_H;
+const POSES = SHARED_POSES;
 
 // Reference-shader checksums, recorded 2026-09-23 AFTER architect review
 // items 1-2 (skylight far-ceiling fix, pose 3 change) - `--shader=reference`

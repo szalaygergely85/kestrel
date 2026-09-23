@@ -38,6 +38,10 @@ function farther(kind, planeId, depth, i, n) {
  * @param {object} edges - `DP.edges` (thresholds + `rules` glyph/gain table)
  */
 export function edgePass(gbuf, depth, rt, edges) {
+  // US-029: no-op when the GPU cell pipeline is active (see the matching
+  // guard in detailShade.js's shadeSurfaces - `edge.frag.js` runs this same
+  // decision block on the GPU as pass 2 of the present hook instead).
+  if (rt.gpuActive) return;
   const cols = gbuf.cols, rows = gbuf.rows;
   const kind = gbuf.kind, planeId = gbuf.planeId, fogF = gbuf.fogF, rule = gbuf.rule;
   const fogMax = edges.fogMax;

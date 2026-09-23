@@ -15,6 +15,7 @@
 
 import { CellBuffer } from './CellBuffer.js';
 import { computeCellBox, FONT_STACK } from './glyphMetrics.js';
+import { compileShader, linkProgram } from './gpu/glUtil.js';
 
 const GLYPH_COUNT = 95; // printable ASCII 32-126
 
@@ -63,35 +64,6 @@ void main() {
   fragColor = vec4(mix(bg.rgb, fg.rgb, a), 1.0);
 }
 `;
-
-function compileShader(gl, type, src) {
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-    const info = gl.getShaderInfoLog(sh);
-    gl.deleteShader(sh);
-    throw new Error('Shader compile failed: ' + info);
-  }
-  return sh;
-}
-
-function linkProgram(gl, vsSrc, fsSrc) {
-  const vs = compileShader(gl, gl.VERTEX_SHADER, vsSrc);
-  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSrc);
-  const program = gl.createProgram();
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const info = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    throw new Error('Program link failed: ' + info);
-  }
-  return program;
-}
 
 function createDataTexture(gl, unit, cols, rows) {
   const tex = gl.createTexture();
@@ -248,6 +220,17 @@ export class RenderTargetGL {
     this.cells.clear(bg);
   }
 
+  // US-029 tech notes item 4: lets a `GpuCellPipeline` run its shade/edge
+  // passes between the cell uploads and the draw, without this file knowing
+  // anything about the GPU pipeline (D-006: no tower/game-specific code
+  // here, and no upward dependency on engine/render/gpu/). `fn` runs with
+  // its own framebuffer/program/viewport state; `present()` re-binds its
+  // own program, texture units 0-2 and `bindFramebuffer(null)` + the canvas
+  // viewport right after, so it never relies on state surviving the hook.
+  setCellPass(fn) {
+    this._cellPass = fn || null;
+  }
+
   present() {
     if (this._contextLost) return;
     const gl = this.gl;
@@ -259,6 +242,22 @@ export class RenderTargetGL {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.bgTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA, gl.UNSIGNED_BYTE, this.cells.bg);
+
+    if (this._cellPass) this._cellPass();
+
+    // A texture is never read AND written in the same pass (14.1 section
+    // 4) - the hook may have left its own program/framebuffer/units bound,
+    // so restore everything present()'s own draw needs before drawing.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.useProgram(this.program);
+    gl.bindVertexArray(this.vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.fgTex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.bgTex);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

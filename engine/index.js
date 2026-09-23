@@ -39,6 +39,11 @@ export { edgePass } from './render/edgePass.js';
 export { renderWorld } from './render/compositor.js';
 export { packLevel } from './world/packed.js';
 
+// ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
+export { GpuCellPipeline } from './render/gpu/GpuCellPipeline.js';
+export { isSoftwareRenderer } from './render/gpu/glUtil.js';
+export { runGpuCompare, compareCells } from './render/gpu/gpuCompare.js';
+
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
 export { moveCapsule, isSectorPassable, sectorOrOutside } from './physics/capsule.js';
