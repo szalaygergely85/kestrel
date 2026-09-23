@@ -178,10 +178,17 @@ export class RenderTargetGL {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, ac);
   }
 
-  resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const availW = window.innerWidth;
-    const availH = window.innerHeight;
+  // `refAvailW`/`refAvailH`/`refDpr` (all optional) override the
+  // window-derived box with a fixed one - used ONLY by `?gpucompare=1`/
+  // `?gpucompare=shade` (main.js) so the GPU and CPU/JS oracle both cast
+  // against an identical, window-size-independent pxCellW/pxCellH (and
+  // therefore identical `screenAspect`, see sectorCaster.js/GpuCellPipeline.
+  // js/sprites.js). Normal gameplay never passes these - `resize()` with no
+  // args is byte-for-byte the old window-derived behaviour.
+  resize(refAvailW, refAvailH, refDpr) {
+    const dpr = refDpr != null ? refDpr : (window.devicePixelRatio || 1);
+    const availW = refAvailW != null ? refAvailW : window.innerWidth;
+    const availH = refAvailH != null ? refAvailH : window.innerHeight;
     if (availW <= 0 || availH <= 0) return; // see RenderTargetCanvas2D.js for why
 
     this.dpr = dpr;

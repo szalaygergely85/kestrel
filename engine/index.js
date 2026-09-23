@@ -23,7 +23,7 @@ export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 
 // ---- render passes --------------------------------------------------------
-export { beginFrame, castSectors, fillSky, ambientL } from './render/sectorCaster.js';
+export { beginFrame, castSectors, fillSky, ambientL, HFOV_DEG } from './render/sectorCaster.js';
 export { castTerrain } from './render/terrainCaster.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------

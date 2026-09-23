@@ -14,7 +14,7 @@ import {
   integrate, Camera, renderWorld,
   GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
-  shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites,
+  shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -38,6 +38,10 @@ const params = new URLSearchParams(window.location.search);
 // always forces 160x60 regardless of `?grid=` - `?gpucompare=shade` (the
 // unchanged US-029 shading-only page) keeps whatever grid was requested.
 const isDdaCompare = params.get('gpucompare') === '1';
+// BUG-GPU-002 tooling fix: both compare pages (`=1` and `=shade`) need the
+// window-independent fixed camera box, not just the DDA/geometry one - see
+// the `rt.resize(GPU_COMPARE_REF_*)` comment below.
+const isGpuCompareMode = isDdaCompare || params.get('gpucompare') === 'shade';
 const gridParam = params.get('grid');
 let reqCols = GRID_DEFAULT_COLS, reqRows;
 if (gridParam) {
@@ -68,6 +72,28 @@ const engine = createEngine({
 let { renderTarget: rt, depthBuffer, openSpans } = engine;
 const { input } = engine;
 const overlay = new DebugOverlay(document.body);
+
+// BUG-GPU-002 tooling fix: `?gpucompare=1`'s results depended on the real
+// browser window/canvas size, because `rt.pxCellW`/`rt.pxCellH` (real,
+// measured glyph-metrics device pixels - glyphMetrics.js's `computeCellBox`)
+// are normally derived from `window.innerWidth`/`innerHeight`
+// (RenderTargetGL.js/RenderTargetCanvas2D.js `resize()`), and every
+// `screenAspect` used to build the camera plane (sectorCaster.js,
+// GpuCellPipeline.js, sprites.js: `(cols*pxCellW)/(rows*pxCellH)`) reads
+// those two fields straight off `rt` - so a wider/narrower window changed
+// the ray geometry both paths cast against, before any GPU-vs-CPU
+// comparison even started. HFOV_DEG (sectorCaster.js) was already a fixed
+// constant, not window-derived - only pxCellW/pxCellH needed fixing.
+// Forcing them to a fixed reference box (1280x720 @ dpr 1, computed the
+// EXACT same way `resize()` always has - see RenderTargetGL.resize's new
+// optional args) BEFORE `bindShading` (which also reads `rt.pxCellH/
+// pxCellW` for `cellAspect`, used by both the JS and GPU shading paths)
+// makes every downstream consumer - GPU pipeline and CPU/JS oracle alike,
+// they both read the same `rt` - use identical, window-independent numbers.
+// Gameplay (`runGame`, no `?gpucompare=` param) never calls `rt.resize()`
+// with arguments, so its window-derived path is untouched.
+const GPU_COMPARE_REF_W = 1280, GPU_COMPARE_REF_H = 720, GPU_COMPARE_REF_DPR = 1;
+if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR);
 
 // US-028: `?detail=0` renders the v1 look (A/B switch, no upkeep needed
 // after this story - see docs/backlog.md US-028 AC "A/B switch"). Default
@@ -357,7 +383,13 @@ function runGpuCompareShadeMode() {
 
   const { rows, ok } = runGpuCompare(gpuPipeline, fbCompare, castFrame, GPU_COMPARE_POSES, null);
 
-  let text = `?gpucompare=shade  GpuCellPipeline: ${gpuPipeline.rendererString}\n`;
+  // BUG-GPU-002 tooling fix: same fixed reference box as `?gpucompare=1`
+  // (see the `rt.resize(GPU_COMPARE_REF_*)` call near the top of this file).
+  const refScreenAspectShade = (rt.cols * rt.pxCellW) / (rt.rows * rt.pxCellH);
+  console.log(`[gpucompare] ref: ${GPU_COMPARE_REF_W}x${GPU_COMPARE_REF_H} @dpr ${GPU_COMPARE_REF_DPR}  cell: ${rt.pxCellW}x${rt.pxCellH}px  aspect=${refScreenAspectShade.toFixed(4)}  fov=${HFOV_DEG} deg`);
+  let text = `?gpucompare=shade  GpuCellPipeline: ${gpuPipeline.rendererString}\n` +
+    `ref: ${GPU_COMPARE_REF_W}x${GPU_COMPARE_REF_H} @dpr ${GPU_COMPARE_REF_DPR}  cell: ${rt.pxCellW}x${rt.pxCellH}px` +
+    `  aspect=${refScreenAspectShade.toFixed(4)}  fov=${HFOV_DEG} deg (fixed, window-independent)\n`;
   for (const r of rows) {
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
       `  glyph match (non-edge): ${r.glyphMatchPct.toFixed(2)}%  edge cells excluded: ${r.edgeCells}\n` +
@@ -496,8 +528,16 @@ function runGpuCompareDdaMode() {
   }
   overallOk = overallOk && sampledOwnTextures;
 
+  // BUG-GPU-002 tooling fix: report the fixed, window-independent camera
+  // setup both paths actually cast against (see the `rt.resize(GPU_COMPARE_
+  // REF_*)` call near the top of this file) - `screenAspect` is the same
+  // formula sectorCaster.js/GpuCellPipeline.js/sprites.js use internally.
+  const refScreenAspect = (cols * rt.pxCellW) / (rows * rt.pxCellH);
+  console.log(`[gpucompare] ref: ${GPU_COMPARE_REF_W}x${GPU_COMPARE_REF_H} @dpr ${GPU_COMPARE_REF_DPR}  cell: ${rt.pxCellW}x${rt.pxCellH}px  aspect=${refScreenAspect.toFixed(4)}  fov=${HFOV_DEG} deg`);
   let text = `?gpucompare=1  GpuCellPipeline: ${gpuPipeline.rendererString}  grid: ${cols}x${rows}  rays: 1` +
-    `  readback: present() units 0/1${sampledOwnTextures ? '' : '  (NOT rt.fgTex/bgTex - present() wiring bug)'}\n`;
+    `  readback: present() units 0/1${sampledOwnTextures ? '' : '  (NOT rt.fgTex/bgTex - present() wiring bug)'}\n` +
+    `ref: ${GPU_COMPARE_REF_W}x${GPU_COMPARE_REF_H} @dpr ${GPU_COMPARE_REF_DPR}  cell: ${rt.pxCellW}x${rt.pxCellH}px` +
+    `  aspect=${refScreenAspect.toFixed(4)}  fov=${HFOV_DEG} deg (fixed, window-independent)\n`;
   for (const r of rowsOut) {
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
       `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
@@ -578,11 +618,17 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
-window.addEventListener('resize', () => rt.resize());
+// `?gpucompare=1` (isDdaCompare) forced `rt` to the fixed reference box
+// above - keep it fixed even if the real window resizes/re-shows mid-run
+// (see the comment above the `rt.resize(GPU_COMPARE_REF_*)` call).
+const doResize = () => (isGpuCompareMode
+  ? rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR)
+  : rt.resize());
+window.addEventListener('resize', doResize);
 // Some environments report a 0x0 viewport for a moment while a tab is
 // hidden/unattached (see RenderTarget.resize's guard); re-check once it
 // becomes visible so the grid never gets stuck at a degenerate size.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) rt.resize();
+  if (!document.hidden) doResize();
 });
-window.addEventListener('pageshow', () => rt.resize());
+window.addEventListener('pageshow', doResize);

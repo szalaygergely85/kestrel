@@ -60,10 +60,14 @@ export class RenderTargetCanvas2D {
     this.resize();
   }
 
-  resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const availW = window.innerWidth;
-    const availH = window.innerHeight;
+  // `refAvailW`/`refAvailH`/`refDpr` (all optional) override the
+  // window-derived box with a fixed one - used ONLY by `?gpucompare=1`/
+  // `?gpucompare=shade` (main.js), see RenderTargetGL.resize's header
+  // comment. Normal gameplay never passes these.
+  resize(refAvailW, refAvailH, refDpr) {
+    const dpr = refDpr != null ? refDpr : (window.devicePixelRatio || 1);
+    const availW = refAvailW != null ? refAvailW : window.innerWidth;
+    const availH = refAvailH != null ? refAvailH : window.innerHeight;
 
     // A hidden/unattached tab (e.g. mid-navigation, backgrounded) can report
     // a 0x0 viewport. Skip resizing rather than collapsing the grid to 1px
