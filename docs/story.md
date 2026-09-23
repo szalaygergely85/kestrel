@@ -1,8 +1,8 @@
-# ASCII Quest: Signal
+# Kestrel
 
-Owner: Writer. Canon source: `docs/game-design.md` section 3 (D-011). Updated: 2026-09-23. Replaces "Ember and Ash".
+Owner: Writer. Canon source: `docs/game-design.md` section 3 (D-011, incl. the "Kestrel" amendment). Updated: 2026-09-23. Replaces "ASCII Quest: Signal" and "Ember and Ash".
 
-> **Hook:** Someone beyond the Wall is calling for help, and you are the one who went.
+> **Hook:** Someone beyond the Wall is calling for help. You went, and you lost everything but a map and a name that may not be yours.
 
 ## 1. The story
 
@@ -12,7 +12,7 @@ Owner: Writer. Canon source: `docs/game-design.md` section 3 (D-011). Updated: 2
 
 **The theft.** You work the skyworks, patching Crown balloons you will never fly. You know every valve on the *Kestrel*, a small brass patrol craft. One night you cut her loose. The wall-ballistae wake late, then all at once. A bolt tears through the envelope, the burner roars, and the ground comes up to meet you through the broken roof of a tower.
 
-**Waking (M1, "The Awakening").** You wake to ash, embers and the burner ticking as it cools. You remember Ferrum and your trade: gauges, levers, the smell of hot brass. You do not remember the flight, and you do not remember why you went. Your hand is clutching a map inked in your own writing. It marks the signal, a route of old relay towers and notes you have no memory of writing. You take the *Kestrel's* lamp and climb. At the summit a dead relay sits in its crystal bowl. When you bring the lamp, it wakes. Ferrum glows behind you, and ahead the signal answers.
+**Waking (M1, "The Awakening").** You wake to ash, embers and the burner ticking as it cools. You remember Ferrum and your trade: gauges, levers, the smell of hot brass. You do not remember the flight, why you went, or your own name. Through the smoke a brass board glints on the buckled gondola, letters raised and warm from the fire: KESTREL. You say it aloud, and it is the only name you have, so it becomes yours. Your hand is clutching a map inked in your own writing. It marks the signal, a route of old relay towers and notes you have no memory of writing. At the bottom they are signed with a single initial, half-blurred by ash. It is not a K. Kestrel takes the gondola's lamp and climbs. At the summit a dead relay sits in its crystal bowl. When the lamp comes near, it wakes. Ferrum glows behind, and ahead the signal answers.
 
 **M2, "Out of the Wreck."** You go down into the Emberlands: moss over old roads, forests over old cities. You find a steel sword in a ruin. Beasts roam the hills, some of them wrong in a way the Crown would call the Hush. The land is alive, just not safe. Each relay you wake becomes a light you can come back to.
 
@@ -27,7 +27,7 @@ Owner: Writer. Canon source: `docs/game-design.md` section 3 (D-011). Updated: 2
 - **Ferrum.** A walled, tiered city of stone and timber. Lamplight and brass at the top, smoke and rope at the bottom. From outside you only ever see its lights on the horizon.
 - **The Wall.** A ring of stone lined with ballistae. It was built to keep people in, and what it says about the outside is a lie.
 - **The Hollow Watchtower.** A roofless round relay tower wrapped in moss and ivy, with the *Kestrel* smashed through its broken crown. Canvas hangs in the stairwell and the burner smolders on the floor.
-- **The *Kestrel*.** A Crown patrol balloon: a brass gondola, a copper burner and a lamp that still works. Now it is wreckage, and it was the only way out.
+- **The *Kestrel*.** A Crown patrol balloon: a brass gondola with its name board, a copper burner and a lamp that still works. Now it is wreckage, and it was the only way out. The hero wears its name.
 - **The Relay Line.** Old signal towers strung across the Emberlands, each with an aether-crystal bowl in a brass-and-mirror mount. Every one is dead until you wake it.
 - **The Signal Tower.** A far spire where a teal light pulses at the end of your map.
 
@@ -43,8 +43,8 @@ If you read this, keep climbing. The light is up top.
 
 ## 4. Title card (US-017 / US-015)
 
-**Title:** `ASCII QUEST`
-**Subtitle:** `SIGNAL`
+**Title:** `KESTREL`
+**Subtitle:** `A NAME IN BRASS`
 
 **Hints:**
 ```
@@ -72,3 +72,4 @@ Press M to read the map in your own hand.
 2. **The log is old.** The keeper counted the same signal years ago. That hints the SOS is older than the hero's escape. It is kept vague on purpose, but it constrains the eventual reveal.
 3. **Pre-written map notes.** The map was inked before the crash, maybe before the hero ever decided to leave. That seeds the question "why did I go, and who told me the way?"
 4. **Exile village name.** It is still unnamed. Candidate: **Outwall**.
+5. **The borrowed name (later reveal).** The hero calls themself Kestrel after the gondola's name board, but the map notes are signed with an initial that is not K. Seed only in M1. Later, an exile or a Crown record names the hero (candidate: the internal "Wick", so its initial is W). Open question for the manager: does the hero keep "Kestrel" by choice after the reveal?
