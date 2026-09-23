@@ -17,7 +17,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
 | 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
-| 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | po-review | ARCH OK (2026-09-23). PO: update ACs listed in the ARCH OK note. Must be `done` before US-029 |
+| 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | testing | ARCH OK + PO OK (2026-09-23); ACs updated (joint-excluded blank, stair 1.3 ms, compare exclusions, LOD). Tester next. Must be `done` before US-029 |
 | 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | todo | Owner complaint. Programmer after US-028 `done`; must be `done` before US-029 (GPU ports the final hash keys) |
 | 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | todo | Programmer; designer supplies `world_m1.js` + US-016b |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-028 `done` (US-025 may run on the parallel track) |
@@ -524,7 +524,10 @@ For the tester (after rework): real Chrome tab. Move the mouse a lot outside or 
 
 **Tester PASS (2026-09-22)** – see `docs/test-reports/US-005.md`. `playerLook.test.js` 10/10. All ACs verified, including a live in-page re-run of the resume-jump repro (not just the isolated test) and the arrow-key rates/pitch clamp via deterministic `look.update(dt)` calls driven by real DOM keydown/keyup events (wall-clock hold-and-measure was unreliable in this sandboxed pane — rAF appears throttled when the automation isn't actively interacting with the tab; noted as a sandbox limitation, not a suspected bug). `physics.test.js` has 1 failing test ("slides along a wall instead of sticking") but that's US-008's in-flight wall-stick fix (`capsule.js` uncommitted at test time) — unrelated to this story, not blocking. Status → `done`. Manual pointer-lock/Esc/no-jump/held-arrow-key checks still recommended for the user in a real Chrome tab (listed in the test report).
 
-### US-028 Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2  [Priority: P0] [Status: po-review]
+### US-028 Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2  [Priority: P0] [Status: testing]
+
+**PO OK (2026-09-23) -> `testing`.** After ARCH OK. 4 AC updates made (joint cells excluded from blank share; stair perf exception 1.0-1.3 ms; compare exclusions (a)/(b); LOD distances AC). All ACs met based on verified runs: bench 0 GC, blank <= 0.9 %, extra p50 0.43-1.08 ms, totals <= 2.8 ms; compare 99.47/99.47/100; shadetest 1954/1954; game has no console errors; the owner likes the look. The "far looks flat" and "swimming when moving" complaints belong to the content changes and US-028a, not to this story.
+**Tester checklist:** (1) `node --expose-gc tools/bench-cast.mjs --gc`: ALL CHECKS PASS, 0 GC, heap < 2 KB/frame, 9,600 writes; per pose >= 10 glyphs, blank <= 5 %, each edge rule fires >= 1x, extra <= 1.0 ms (stair <= 1.3), totals < 3.5 ms. (2) `node tools/compare-detail-export.mjs design/preview/exports/detail_pass_start.json` >= 95/95/95, only exclusion reasons (a)/(b). (3) `?shadetest=1`: v1 361/361, v2 1954/1954. (4) `node tools/check-deps.mjs` OK. (5) Game: v2 look, no console errors; `?detail=0` gives the v1 look; same pose twice = same checksum. (6) `design/detail-pass.js`: the `lod`/fog values match the LOD AC. Record the results in `docs/test-reports/US-028.md`.
 
 **Architect review 1 (2026-09-23): ARCH CHANGES.** Geometry side is right: kinds/faces/planeIds, per-segment `primeWallGSample`, `computeDerivatives`, the two-loop edge pass, `beginFrame`/`structSeq`, engine boundary (DP only via the registry), 9,600-write invariant, 0 GC. The shading side is the reference shader with two swaps, not the fast path the tech notes specify; that is the whole perf gap. Bench today: extra 1.26-2.70 ms p50, sectors total 3.62-4.07 ms on 3 of 6 poses (over the 3.5 ms trigger). **The budget stands** (<= 1.0 ms extra, ASK PO only for 1.0-1.3 after the items below).
 
@@ -575,9 +578,9 @@ Acceptance criteria:
 - [x] **`?shadetest=1` updated to the v2 reference:** a v2 table checks exact glyph match and fg/bg within +-4 against `DP.util.shade` and `DP.util.edgePass`. The v1 table still passes for the v1-path materials and sky.
 - [x] **Readability rule kept (US-007):** with a synthetic sunlit `L` against ambient, sunlit and shadow floor are still at least 4 glyph levels apart. A shadetest row covers this.
 - [x] **Level change:** in `test_room`, ceiling cells with `ceilMat: 'stone'` become `ceiling_timber`. Edit the level data directly (not via `DP.levelOverrides` at runtime). Sky ceilings are unchanged. The tower gets the same change in US-010.
-- [ ] **A/B switch:** `?detail=0` renders the v1 look, so the owner can compare. v2 is the default; the switch needs no upkeep after this story.
-- [ ] **Bench baseline:** the new checksums replace the US-004b baseline in `bench-cast.mjs`, with a one-line note on why they changed.
-- [ ] **Engine boundary:** the engine reads the DP data only through the AssetRegistry and never imports from `design/`. `node tools/check-deps.mjs` passes.
+- [x] **A/B switch:** `?detail=0` renders the v1 look, so the owner can compare. v2 is the default; the switch needs no upkeep after this story.
+- [x] **Bench baseline:** the new checksums replace the US-004b baseline in `bench-cast.mjs`, with a one-line note on why they changed.
+- [x] **Engine boundary:** the engine reads the DP data only through the AssetRegistry and never imports from `design/`. `node tools/check-deps.mjs` passes.
 
 Design needed: small. The designer adds an export to `detail_pass.html` (e.g. `?pose=start&dump=1`) that writes the proposed panel as JSON (glyph, fg, bg per cell) at the test_room start pose, for the "matches the preview" check. No new art.
 
