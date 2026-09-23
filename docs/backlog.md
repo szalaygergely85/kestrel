@@ -1246,6 +1246,8 @@ Notes / dependencies: after US-004 and US-008 reach `po-review`, before US-006 s
 
 *check-deps rules:* architecture.md section 3 (six rules; engine-only imports, no `ASSETS`/`document`/`location` in engine, game/tools import exactly `engine/index.js`, design has no `import`, JSDoc imports ignored, exit 1 with `file:line`). Add the fixture test `tools/check-deps.test.mjs` with a temp tree containing one violation of each rule.
 
+*Entity handles + animation player (architect, 2026-09-23, owner request):* the API is in architecture.md 10.1. This story adds only the surface: typedefs in `engine/entities/EntityHandle.js` and `engine/entities/animation.js`, and `EntityHandle` and `stepAnimations` exported from `index.js`. `World.spawn/get/remove`, all handle methods and `stepAnimations` are stubs that throw `not implemented (US-025|US-011)`. The implementation is split across US-025 (handles, events), US-011 (animation, sprites) and M3 (the `moveTo` steering).
+
 *Not in this story:* World, Terrain, serialize (US-025); the fast shader/overdraw fix (US-004b) - but if US-004b lands first, Phase A moves the improved file; `OpenSpans` adoption inside the caster (US-004b) - Phase A only creates the class.
 
 ### US-025 World model: terrain + placed structures in one world frame (D-007)  [Priority: P0] [Status: todo]
