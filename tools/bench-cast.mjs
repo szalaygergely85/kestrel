@@ -74,7 +74,14 @@ const COLOR_TOLERANCE = 4;
 // matches physics/config.js `eyeHeight`.
 const EYE_H = 1.60;
 const POSES = [
-  { name: 'start pose (S, facing east, level)', x: 2.5, y: 2.5, z: EYE_H, yawDeg: 90, pitchDeg: 0 },
+  { name: 'start pose (S, facing east, level)', x: 2.5, y: 2.5, z: EYE_H, yawDeg: 90, pitchDeg: 0,
+    // US-004b re-review #3: the two multi-cell-wide low-wall (`w`) segments
+    // at level columns 120/132 must show the FAR ceiling (depth 9.5-16.5 m),
+    // not sky - regression guard for "sky above a low solid cell is never
+    // evaluated as a segment".
+    probes: [
+      { desc: 'columns 120/132 rows 22-25: far ceiling, not sky', cols: [120, 132], rows: [22, 25], kind: 'finite', min: 9.5, max: 16.5 },
+    ] },
   { name: 'facing stair + 1.0m platform', x: 2.5, y: 13.5, z: EYE_H, yawDeg: 90, pitchDeg: 0 },
   // Architect review 2026-09-23 item 2: the old pose 3, (2.5, 7.5, yaw 0,
   // pitch +35), sees 0 sky cells - the '^' skylight (level cols 8-12) is
@@ -83,6 +90,13 @@ const POSES = [
   // far ceiling beyond it (6,240 sky / 3,360 geometry cells).
   { name: 'sky over the low wall, pitch +20', x: 9.5, y: 7.5, z: EYE_H, yawDeg: 0, pitchDeg: 20 },
   { name: 'long diagonal, pitch -35', x: 1.5, y: 1.5, z: EYE_H, yawDeg: 45, pitchDeg: -35 },
+  // US-004b re-review #3 item 2 (new pose): sees the near `w` cell's own
+  // 'sky' ceiling above it - the far side's ceiling must NOT be stretched
+  // back over the `w` cell's own span.
+  { name: 'low wall sky, (10, 7.5) yaw 45 pitch +25', x: 10, y: 7.5, z: EYE_H, yawDeg: 45, pitchDeg: 25,
+    probes: [
+      { desc: 'column 116 rows 0-3: sky over the w cell, not the far ceiling', cols: [116], rows: [0, 3], kind: 'infinite' },
+    ] },
 ];
 
 // Reference-shader checksums, recorded 2026-09-23 AFTER architect review
@@ -90,11 +104,17 @@ const POSES = [
 // on `test_room`. Regenerate with `--update-baseline` after any deliberate
 // change to the caster's geometry/overdraw logic and paste the new values
 // in here (this script does not self-edit).
+// Re-recorded 2026-09-24 (US-004b re-review #3 fix): only the start pose
+// and the new pose change, both in the columns/rows the two named bugs
+// touched (solid `w` cell's own ceiling/sky segment now runs through
+// castFloorCeiling instead of being skipped) - the other two poses are
+// byte-identical to the previous baseline.
 const EMBEDDED_BASELINE = {
-  'start pose (S, facing east, level)': { glyphIdx: 'b716ad13', fg: '428bc64f', bg: '560c8971' },
+  'start pose (S, facing east, level)': { glyphIdx: 'd5de32c7', fg: '642bd1ce', bg: '2f9999e9' },
   'facing stair + 1.0m platform': { glyphIdx: 'bae66e57', fg: '4498f0d1', bg: 'b1925193' },
   'sky over the low wall, pitch +20': { glyphIdx: '3530ccb8', fg: 'aa5dcf64', bg: '8da632bf' },
   'long diagonal, pitch -35': { glyphIdx: '91811e1f', fg: '92a90df4', bg: '2ad61bfb' },
+  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: '60dba32e', fg: '626d56a8', bg: 'cba2e97f' },
 };
 
 // --- allocation-free fake RenderTarget + DepthBuffer ---------------------
@@ -300,11 +320,33 @@ function main() {
     castScene(rt, level, camera, palette, { skyFallback: true, shader: 'reference', depthBuffer });
     const skyCells = countSkyCells(depthBuffer);
 
+    // Per-cell probes (US-004b re-review #3 regression guards): specific
+    // (col, row-range) cells that must be finite-depth geometry within a
+    // range, or infinite (sky/open), read from the reference-shader
+    // depthBuffer frame just cast above.
+    const probeResults = [];
+    if (pose.probes) {
+      for (const probe of pose.probes) {
+        for (const col of probe.cols) {
+          for (let row = probe.rows[0]; row <= probe.rows[1]; row++) {
+            const d = depthBuffer.depth[row * COLS + col];
+            const isFinite_ = Number.isFinite(d);
+            const passed = probe.kind === 'infinite' ? !isFinite_ : (isFinite_ && d >= probe.min && d <= probe.max);
+            probeResults.push({ desc: probe.desc, col, row, d, passed });
+            if (!passed) ok = false;
+          }
+        }
+      }
+    }
+
     console.log(`\n[bench-cast] pose: ${pose.name}`);
     console.log(`  avg ${ms(s.avg)} ms  p50 ${ms(s.p50)} ms  p95 ${ms(s.p95)} ms  max ${ms(s.max)} ms`);
     console.log(`  cells written (last measured frame): ${writesThisRun} / ${cellCount} expected` +
       (writeCountOk ? '  OK' : '  FAIL (mismatch or a cell written twice)'));
     console.log(`  sky cells: ${skyCells} / ${cellCount}  (geometry: ${cellCount - skyCells})`);
+    for (const p of probeResults) {
+      console.log(`  [probe] ${p.desc} @ (col ${p.col}, row ${p.row}): depth=${p.d}` + (p.passed ? '  OK' : '  FAIL'));
+    }
     console.log(`  checksum (this run's shader='${shader}')  glyphIdx=${checksum.glyphIdx}  fg=${checksum.fg}  bg=${checksum.bg}`);
     if (withGc) {
       console.log(`  GC during measured window: ${gcEvents.length} total, ${minorGc} minor/scavenge` +

@@ -355,8 +355,22 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
 
       openBottom = Math.min(openBottom, wallRowStart - 1);
       prevFloorDist = exitDist; // the cap just drawn covers the floor's own [entry,exit]
-      prevCeilDist = entryDist; // nothing covers the ceiling's [entry,exit] - let it continue from entry
+      const solidSector = farSector;
       nearSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5) || VOID_SECTOR;
+      // US-004b ARCH CHANGES (re-review #3): the solid cell has its own
+      // ceiling plane (`solidSector.ceilH`, e.g. 'sky' over a low wall)
+      // that this segment never ran through castFloorCeiling - without
+      // this call, sky above a low solid cell is never evaluated as a
+      // segment (bug 1), and the far side's ceiling would be stretched
+      // back from `entryDist` over the solid cell's own span, since
+      // `prevCeilDist` used to stay at `entryDist` (bug 2). The floor is
+      // not re-run here (dNearFloor === dFar === exitDist, so the plane
+      // guard `dFar > dNearFloor` is false - the cap above already drew
+      // [entryDist, exitDist]).
+      castFloorCeiling(rt, x, ctx, solidSector, nearSector, exitDist /* floor skipped: cap drew it */, entryDist, exitDist,
+        openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending);
+      ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo; skyPending = ctx._fcSkyPending;
+      prevCeilDist = exitDist; // the solid cell's own ceiling segment (if any) is now handled above
       if (openTop > openBottom) break;
       continue;
     }
