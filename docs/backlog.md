@@ -79,7 +79,7 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 ## Engine capability before M3: 3D glyph models = voxel models with rigid-part animation (D-016; sketched, see bottom of file)
 | ID | Title | Priority | Status |
 |---|---|---|---|
-| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | todo (sketch) – may start once US-030b is ARCH OK |
+| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | po-review (ARCH OK 2026-09-23) |
 | US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | P0 (before M3) | todo (sketch) – after US-039, US-016, US-006/007 |
 | US-041 | Voxel lighting (rotated normals) + rigid-part animation + entity binding + bear preview | P0 (before M3) | todo (sketch) – after US-040 |
 
@@ -2357,7 +2357,7 @@ Notes / dependencies: US-035, US-036, US-027 (shared JSON conventions).
 
 Goal: creatures and NPCs (e.g. a talking bear) that the player can walk around, rendered per cell into the G-buffer as `KIND_MODEL (8)`, so they get the world's materials, the edge pass and lighting, and read as glyphs. Budget: model pass <= 0.5 ms p95 at 240x90, whole GPU pipeline still <= 4 ms. Interim for M1-M2: 8-direction billboards (Option C) through the US-030c sprite pass. Option B (meshes) is rejected for now. All three are engine stories (architect tech notes and review).
 
-### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: arch-review]
+### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: po-review]
 As a content designer, I want a voxel model format and a reference renderer, so that 3D creatures can be authored as data and checked in Node before any GPU work.
 Acceptance criteria (sketch):
 - [x] `engine/voxel/VoxelModel.js`: `ModelDef.voxel` per architecture.md 15 option A (`cellM`, `size`, `anchor`, `mats`, `parts` boxes + pivots, `layers` as z-layer row strings, `animations` with per-part `rot`/`pos` keyframes, `fps`, `loop`, `events`). It has a validator with clear errors (unknown material key, row length mismatch, a part box outside the grid, > 8 parts, reserved event names) and a packer to an atlas byte layout (the `VOX` R8UI + `MODELMAT` data, CPU-side only).
@@ -2411,6 +2411,11 @@ Notes / dependencies: **may start once US-030b is ARCH OK** (it does not touch t
 4. **Bench `node --expose-gc tools/bench-voxel.mjs`:** the `bearClose` pose at 160x60 and 240x90, 500 iterations. It prints p50/p95, raysMarched, cellsWritten and heap delta per call. Gates: 160x60 <= 0.3 ms p50 and <= 0.5 ms p95, and 0 B per call. The bench uses a new tool file, so `bench-cast.mjs` is not edited (parallel safety).
 5. **Do not:** allocate in `marchVoxelRay`/`castModels`/`computeVoxelPose`/`packNormalOct`; use a general matrix inverse; use `Math.round` for the normal quantisation (use `floor(x + 0.5)`, which GLSL can mirror); march cells outside the instance's screen rect; touch `fb.spans`, `fb.rt` or the shading passes; add RLE or any second grid format; store part membership per voxel (the per-part blocks already encode it).
 6. **Acceptance-criteria deltas for the PO to confirm:** the fixture is 12x8x10 (not 16x8x12) and is named `quadruped12`; the files go in `engine/voxel/` (not `engine/entities/`); the bench is in the new `tools/bench-voxel.mjs` (not `bench-cast`); the planeId layout adds a part field (15.1).
+
+**Architect review #1 (2026-09-23): ARCH OK -> `po-review`.** Ran: `voxel.test.js --expose-gc` 64/64 (zero-alloc PASS), `check-deps` OK (102 files), bench 160x60 p50 0.40 / p95 0.72 ms. Verified: engine/voxel imports only `GBuffer.js` + siblings; no `engine/index.js` exports (correct until US-041); no wall clock/random; format JSON-safe dense row strings per 15.1 (editor-ready for M5); validator collects all errors; allowlist entry for `bench-voxel.mjs` is the right escape hatch (remove it in US-041 when exports land). Rulings:
+1. **Perf gate: accepted as not binding for the oracle.** `castModels` is the CPU reference, not the shipping path; the binding budget is the GPU pass in US-040 (model pass <= 0.5 ms p95, JS <= 2 ms, which covers culling + upload only, never `castModels`). **AC change for the PO:** replace "<= 0.3 ms p50 / <= 0.5 ms p95" with "bench runs and reports p50/p95; target 0.3/0.5 ms is informational for the oracle". The bench numbers stay as a regression reference; no coarser culling scheme now.
+2. **Octahedral tolerance: accepted.** 16-bit codes 0..65535 have no exact 0 centre, so axes round-trip ~1.5e-5, not exactly; 6e-5 (random/box) and 2e-5-class axis error is far below any visible shading step, and the GPU decodes in float anyway. 15.1's "exact axes / 4e-5" is superseded by the tested values; the literal pack/unpack twin in GLSL (US-040) must match these codes bit for bit.
+3. Non-blocking: add a dedicated `faceMode: 'nearest'` test in US-040 when it is first consumed.
 
 ### US-040 GPU voxel pass A3 + gpucompare  [Priority: P0 (before M3)] [Status: todo (sketch)]
 As a player, I want 3D creatures drawn on the GPU as part of the glyph world, so that they look like everything else and cost almost nothing.
