@@ -46,7 +46,8 @@
 <h2>Checks</h2>
 <div id="checks"></div>
 
-<h2>View (160x60)</h2>
+<h2>View (<span id="gridLabel">160x60</span>)</h2>
+<div class="note">Grid: <a href="?grid=160x60">160x60</a> | <a href="?grid=240x90">240x90</a> | <a href="?grid=320x120">320x120</a> (same canvas size; more cells = smaller glyphs)</div>
 <canvas id="view"></canvas>
 
 <h2>Map (256 x 256 far cells, 8 m each; north up)</h2>
@@ -203,8 +204,12 @@
   function sync() { var v = VPS[S.vp]; $('yawV').textContent = ((v ? v.yaw : 270) + S.yaw + 360) % 360 + ' deg'; $('pitchV').textContent = S.pitch + ' deg'; $('backV').textContent = S.back.toFixed(1) + ' m'; }
   sync();
 
-  var VW = 160, VH = 60, ASPECT = 0.5, FX = (VW / 2) / Math.tan(37.5 * D2R), FR = FX * ASPECT;
-  var view = makeGrid($('view'), VW, VH, 9);
+  // ?grid=WxH (160x60 .. 320x120), preview-only: same canvas size, glyph size scales down
+  var GQ = /(\d+)x(\d+)/.exec(new URLSearchParams(location.search).get('grid') || '160x60') || [0, 160, 60];
+  var VW = Math.max(160, Math.min(320, +GQ[1])), VH = Math.max(60, Math.min(120, +GQ[2]));
+  $('gridLabel').textContent = VW + 'x' + VH;
+  var ASPECT = 0.5, FX = (VW / 2) / Math.tan(37.5 * D2R), FR = FX * ASPECT;
+  var view = makeGrid($('view'), VW, VH, Math.max(4, 9 * 160 / VW));
   var CG = new Array(VW * VH), CF = new Array(VW * VH), CB = new Array(VW * VH), DEPTH = new Float32Array(VW * VH), lookO = { g: ' ', fg: null, bg: null };
 
   function render(t) {
