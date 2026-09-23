@@ -1621,6 +1621,15 @@ Acceptance criteria:
 Design needed: no (uses US-011 lantern sprite).
 Notes / dependencies: US-006, US-010, US-011.
 
+**Tech notes (architect, 2026-09-23).** Normative APIs: `docs/architecture.md` 7.4 (Interaction, Used flags, Attached lights, step order).
+1. **Engine (generic):** `findInteractTarget` / `updateInteraction` / `hasLineOfSight`, plus `world.interactables` built in `World.load` (level coords + origin) and a reused `world.interaction`. `drawCrosshair(rt, style, state)` takes its style as data. Generic `once`/`requires` rules. `attachedLightPos` for the carried light. Event `interaction:fired`. The engine has no lamp code.
+2. **Game:** `game/js/quest/lantern.js` holds the `lantern.take` body. It calls `ctx.actor.setComponent('light', {preset: 'lantern', on: true, attach: 'eye', offset: {right: 0.3, down: 0.3, fwd: 0.4}, sway: {amp: 0.02}})`, sets `ctx.entity`'s sprite to the US-011 empty-bracket variant, sets `world.state['tower.lantern.taken'] = true` and returns `true`. `main.js` calls `updateInteraction` (step 5, `E` edge) and `drawCrosshair` with `uiStyle.crosshair/prompt`.
+3. **Data:** `tower.js` interactable `lantern` prompt becomes `'[E] Take lamp'` (a one-line data edit). The z of 1.1 is the aim point. Nothing else changes.
+4. **GPU:** no world-texture change. The sprite swap reaches pass F through the existing sprite pool, and the light reaches it through US-006's `LightSet` uniforms.
+5. **Dependencies:** prop entities (`tower.lantern`, spawned from `def.props`) come from US-011. Until then the tests spawn a stub entity with that id. The light ACs (glow, the 3-step readability) are verified once US-006's `syncEntityLights` exists. Everything else can be tested now.
+6. **Tests (Node, `engine/world/interaction.test.js`, inline fixture):** cone 19 deg vs 21 deg; reach 1.79 m vs 1.81 m; of two targets, the one nearest the centre wins; LOS blocked through a solid cell; `once` gives no target after use; a stub returning `false` does not consume; `requires`; a serialize round-trip keeps the used flag and the `light` component; `findInteractTarget` does not allocate (10k calls under `--expose-gc`, no scavenge). `engine/entities/attach.test.js`: offset at yaw 0/90/180, sway bounded by `amp`. `game/js/quest/tower.test.js` gains: `lantern.take` on the real tower data attaches the light, sets the state key, and a second E finds no target.
+7. **Files:** `engine/world/interaction.js` (+test), `engine/world/World.js` (load tables only), `engine/ui/crosshair.js`, `engine/entities/attach.js` (+test), `engine/index.js`, `game/js/quest/lantern.js`, `game/js/quest/index.js`, `game/js/main.js`, `design/levels/tower.js` (prompt). Never `engine/render/gpu/*`.
+
 ### US-013 Rolling boulder  [Priority: P0] [Status: todo]
 As a player, I want to push the heavy boulder off the stairs and watch it roll away, so that the world feels physical.
 
@@ -1637,6 +1646,15 @@ Acceptance criteria:
 Design needed: no (uses US-011 boulder).
 Notes / dependencies: US-009, US-010, US-011.
 
+**Tech notes (architect, 2026-09-23).** Normative APIs: `docs/architecture.md` 7.4 (Rollers).
+1. **D-015 evaluation: in-house `moveSphere` + roller, not Rapier.** Rapier (`@dimforge/rapier3d-compat`, about 1.5-2 MB with its WASM embedded, async init) fails two of D-015's adoption conditions. (a) Collision would have to come from Rapier colliders built from the sector grid and the terrain, not from `World` queries, which D-015 and D-007 require. The grate's live ceiling would also have to be mirrored into those colliders. (b) Its snapshots are binary, not our JSON `WorldState`. We would store only pose and velocity and lose contact warm-start, so a save/load mid-roll would diverge. It also cannot express our rules natively (step threshold 0, the tilt field, the push slow-down, the player being the in-house capsule), so we would write custom glue anyway, for one sphere. The in-house version reuses `moveCapsule` (`moveSphere` = rise-blocked capsule), is deterministic by construction and costs <= 0.02 ms per step. **Re-evaluate Rapier** only for a future story with many dynamic bodies, stacking, or real rotational contact (M3+ physics puzzles). That would be its own engine story.
+2. **Engine:** `moveSphere` (out param; the section 5 signature is updated), `stepRollers`, `resolveBodyContacts`, `rollFrame`, `Level.tiltAt` (the generic `layers.tilt` format; document it in `engine/world/MAP_FORMAT.md`), and `body.speedScale` in `integrate` step 3 (default 1, so existing physics tests stay bit-identical). New `PhysicsConfig` keys: `pushMinSpeed 0.5`, `pushSpeedScale 0.5`, `rollerDefaults`.
+3. **Data:** the tower prop `boulder` (`dynamic: true, radius: 0.6`) spawns as entity `tower.boulder` with `body` + `roller` components. The mapping `dynamic -> body + roller` goes in the US-011 prop spawn. The tilt layer and the heights already exist. No quest behaviour is needed. Restart resets the boulder through serialize (US-017).
+4. **Events:** none required. Optional: `roller:rest` via the entity event ring, for US-020 sound.
+5. **GPU:** nothing. The boulder is a sprite; the frame comes from `rollFrame`.
+6. **Tests:** `engine/physics/roller.test.js` (inline fixture levels): restitution 0.3 on a face and on a corner; cannot climb a 0.01 m rise; drops are allowed; friction settles without reversing; sleep and wake; the push threshold at 0.49 vs 0.51 m/s; the actor's `speedScale` is 0.5 only while pushing; the no-overlap invariant over 600 steps of squeezing the actor against a wall; determinism (two runs bit-identical); a serialize mid-roll -> deserialize continues identically. `game/js/quest/boulder.test.js` (real tower data): 20 pushes at varied angles and speeds, all end in `o` cells within 4 s; the boulder is never at rest on `s`/`_`/stair/wake cells; it cannot be pushed out of the hollow; the stair base is clear afterwards. Also run `node tools/check-deps.mjs`.
+7. **Files:** `engine/physics/sphere.js`, `engine/physics/roller.js` (+test), `engine/physics/integrate.js` (one line), `engine/physics/config.js`, `engine/world/Level.js` (`tiltAt`), `engine/world/MAP_FORMAT.md`, `engine/index.js`, `game/js/main.js` (step line), `game/js/quest/boulder.test.js`. Fully disjoint from US-012/014/017, apart from one line in `main.js`.
+
 ### US-014 Lever opens the grate  [Priority: P0] [Status: todo]
 As a player, I want to pull the lever and see the grate rise, so that I understand cause and effect and can reach the summit.
 
@@ -1650,6 +1668,15 @@ Acceptance criteria:
 - [ ] (D-006 / D-008) The lever is a `def.interactables` entry (`interact: 'lever.pull'`). The grate animation is driven by the grate sector's `dynamic` data (`ceilOpen`, `openTime`, `ease`) through a generic engine "animate sector ceiling" call. `lever.pull` is registered from `game/js/quest/` and names its target by tag (`grate`), not by cell coordinates. Grate open/closed state is part of the serialized world state (US-025).
 Design needed: no (uses US-011 lever + grate).
 Notes / dependencies: US-010, US-011, US-012.
+
+**Tech notes (architect, 2026-09-23).** Normative APIs: `docs/architecture.md` 7.4 (Sector animation).
+1. **Engine:** `world.animateSectorTo(tag, 1, {delay})` + `stepSectorAnims(world, dt)` (step 1 of the order, so collision is live: the 7.1 head-clearance rule reads the legend `ceilH`, which blocks while clearance < 1.70 m). The ease and `openTime` come from the sector's `dynamic`. `dynamics[tag] = {t, target, delay}` is serialized, so a save mid-opening resumes. Two required clean-ups: a tag Map in `placeStructure`, and relief written in place in `updateAnimatedSector` (no per-step allocation).
+2. **GPU update (nothing new to write):** each step, `animateSector` -> `updateAnimatedSector` bumps `packed.version` and widens `dirtyY0/Y1` to the grate rows +-1. On the next frame `planFrameUpdate` uploads only those rows (`GEOM`, `FLAGS` incl. relief `g`) with `texSubImage2D`, then resets them to -1. `structVersion` is unchanged, so there is no atlas rebuild. Do not touch `engine/render/gpu/*`.
+3. **Game:** `game/js/quest/lever.js` holds `lever.pull`: `ctx.entity.play('pull')` (the 5-frame / 0.4 s US-011 clip, which also turns the hub gear), `world.animateSectorTo(ctx.def.target.tag, 1, {delay: 0.4})`, `world.state['tower.lever.pulled'] = true`, return `true`. The generic `once` then hides the prompt. There are no cell coordinates.
+4. **Data:** already present (`G` legend `dynamic`, interactable `target: {tag: 'grate'}`). Remove the redundant `'tower.grate.open'` from `world_m1.js` `state`: `dynamics` is the only truth.
+5. **Events:** `world:sectorAnimated` (existing) and `world:sectorAnimDone` (new; US-020 can hook the ratchet sound to it).
+6. **Tests (`engine/world/sectorAnim.test.js`):** with delay 0.4 s and open 1.5 s, `t` reaches exactly 1 at step 24 + 90 and follows the ease-in-out curve; `isSectorPassable` on the grate cell flips exactly when `ceilH - floorH >= 1.70`; after an in-place update, `packed.geom/flags/relief` equal a fresh `packLevel` of the mutated level; `planFrameUpdate` after one step lists exactly rows `[y0-1, y1+1]`, and after the frame `dirtyY0 == -1`; a save mid-open -> load -> finish is bit-identical to an uninterrupted run; `stepSectorAnims` does not allocate. `tower.test.js`: `lever.pull` on the real data opens the grate and gives no second target (the last part needs US-012).
+7. **Files:** `engine/world/World.js` (`animateSectorTo`, tag Map), `engine/world/packed.js` (in-place relief), `engine/world/serialize.js` (`target`/`delay`), `engine/world/sectorAnim.test.js`, `engine/index.js`, `game/js/quest/lever.js`, `game/js/quest/index.js`, `game/js/main.js` (step line), `design/levels/world_m1.js` (one state key). The engine part can start now; the prompt path needs US-012 merged.
 
 ### US-015 Wake sequence + title card + map card + control hints  [Priority: P0] [Status: design]
 As a player, I want to come to by the wreck, see the title, read my chart, and get just enough hints, so that I understand where I am and where to go without reading a manual.
@@ -2244,15 +2271,49 @@ Notes / dependencies: US-035, US-036, US-027 (shared JSON conventions).
 
 Goal: creatures and NPCs (e.g. a talking bear) that the player can walk around, rendered per cell into the G-buffer as `KIND_MODEL (8)`, so they get the world's materials, the edge pass and lighting, and read as glyphs. Budget: model pass <= 0.5 ms p95 at 240x90, whole GPU pipeline still <= 4 ms. Interim for M1-M2: 8-direction billboards (Option C) through the US-030c sprite pass. Option B (meshes) is rejected for now. All three are engine stories (architect tech notes and review).
 
-### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: todo (sketch)]
+### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: todo]
 As a content designer, I want a voxel model format and a reference renderer, so that 3D creatures can be authored as data and checked in Node before any GPU work.
 Acceptance criteria (sketch):
-- [ ] `engine/entities/VoxelModel.js` (or as the architect places it): `ModelDef.voxel` per architecture.md 15 option A (`cellM`, `size`, `anchor`, `mats`, `parts` boxes + pivots, `layers` as z-layer row strings, `animations` with per-part `rot`/`pos` keyframes, `fps`, `loop`, `events`). It has a validator with clear errors (unknown material key, row length mismatch, a part box outside the grid, > 8 parts, reserved event names) and a packer to an atlas byte layout (the `VOX` R8UI + `MODELMAT` data, CPU-side only).
-- [ ] `marchVoxelRay` (Amanatides-Woo, part-local space, `MAX_VOX_STEPS = 48`, <= 8 parts) and `castModels(fb, list, cam)` write kind 8 cells (mat, planeId per the section 15 rule, `aoD = Infinity`, u/v part-local, z from the feet) on the CPU path.
-- [ ] Node tests only (no `engine/render/gpu/*` changes): hit/miss and nearest-hit cases, the part transform round-trip, and deterministic output. `castModels` for one near bear at 160x60 is <= 0.3 ms in `bench-cast`, with zero per-frame allocations.
-- [ ] A 16x8x12 test bear in a Node fixture (not in `design/`).
+- [ ] `engine/voxel/VoxelModel.js`: `ModelDef.voxel` per architecture.md 15 option A (`cellM`, `size`, `anchor`, `mats`, `parts` boxes + pivots, `layers` as z-layer row strings, `animations` with per-part `rot`/`pos` keyframes, `fps`, `loop`, `events`). It has a validator with clear errors (unknown material key, row length mismatch, a part box outside the grid, > 8 parts, reserved event names) and a packer to an atlas byte layout (the `VOX` R8UI + `MODELMAT` data, CPU-side only).
+- [ ] `marchVoxelRay` (Amanatides-Woo, part-local space, `MAX_VOX_STEPS = 48`, <= 8 parts) and `castModels(fb, list, cam)` write kind 8 cells (mat, planeId with a part field per 15.1, `aoD = Infinity`, u/v part-local, z from the feet) on the CPU path.
+- [ ] Node tests only (no `engine/render/gpu/*` changes): hit/miss and nearest-hit cases, the part transform round-trip, and deterministic output. `castModels` for one near bear at 160x60 is <= 0.3 ms p50 in `tools/bench-voxel.mjs`, with zero per-frame allocations.
+- [ ] A 12x8x10 test bear (`quadruped12`) in a Node fixture (not in `design/`).
 Design needed: no (test fixture only; the designer's bear comes in US-041).
 Notes / dependencies: **may start once US-030b is ARCH OK** (it does not touch the GPU code), in parallel with US-016. Architect tech notes first.
+
+**Tech notes (architect, 2026-09-23).** The spec is `docs/architecture.md` **15.1** (format, transforms, validator rules, packer layout, march, planeId, octahedral normal, budgets). If this note and 15.1 disagree, 15.1 wins.
+1. **Files: all new, and nothing under `engine/render/*` or `engine/index.js` is edited**, so this story runs in parallel with US-030b:
+   - `engine/voxel/VoxelModel.js`: constants, the JSDoc typedefs, `validateVoxelModel`, `assertVoxelModel`.
+   - `engine/voxel/voxelPack.js`: `packVoxelModel` (the VOX blocks per part, the `matIds` MODELMAT row, compiled clips).
+   - `engine/voxel/voxelPose.js`: `cosSinDeg`, `computeVoxelPose` (the world-to-part-local affines and the axisAligned flag).
+   - `engine/voxel/voxelMarch.js`: `marchVoxelRay`, `castModels`.
+   - `engine/voxel/octNormal.js`: `packNormalOct`, `unpackNormalOct`.
+   - `engine/voxel/fixtures/quadruped12.js`: the test model (item 2).
+   - `engine/voxel/voxel.test.js`: the tests (item 3).
+   - `tools/bench-voxel.mjs`: the bench (item 4).
+   
+   `engine/voxel` imports only `../render/GBuffer.js` (for its constants). `node tools/check-deps.mjs` must stay clean.
+2. **Fixture `quadruped12`:** a bear-shaped placeholder, with no GDD word in `engine/`.
+   - Size and layout: `size [12, 8, 10]`, `cellM 0.125` (1.5 x 1.0 x 1.25 m), `anchor [6, 4, 0]`.
+   - `mats`: `{ '#': 'mat_a', 'o': 'mat_b', 'e': 'mat_c' }`. These are generic keys; the test's `matIdFor` maps them to 1, 2, 3.
+   - 6 parts: `body` (box x 2..10, y 2..7, z 3..8), `head` (x 3..9, y 0..3, z 5..10, parent body, eye voxels 'e'), and four legs `legFL`, `legFR`, `legBL`, `legBR` (2x2x3 boxes at z 0..3, parent body, pivots at the hip top).
+   - Clips: `idle` (fps 4, loop, 2 frames: head `rot [0,0,0]` -> `[0,0,8]`) and `walk` (fps 8, loop, 4 frames: legs `rot [+-20,0,0]`, body `pos [0,0,+-0.5]`, `events { step: [0, 2] }`).
+   - It stays plain JSON-safe data. The programmer paints it; it only has to be readable in a dump.
+3. **Tests (`node engine/voxel/voxel.test.js`, the `ok()` style of the other engine tests):**
+   - *Format:* the fixture validates with 0 errors and 0 warnings, and `JSON.parse(JSON.stringify(def))` deep-equals it. Each 15.1 rule has one mutated copy that yields exactly that error substring: unknown material key, unknown voxel char, row length mismatch, wrong layer count, size > 32, part box outside the grid, box extent > 48, > 8 parts, orphan voxel, bad parent (unknown or later), reserved event `animEnd`, event index out of range, both fps and durations, a frame naming an unknown part, NaN/undefined. A def with 3 faults reports 3 errors.
+   - *Pack:* two packs of the same def are byte-equal. The atlas length is the sum of the part box volumes. A voxel inside two boxes is stored only in the first part's block.
+   - *Pose:* for yaw 0/90/180/270 with the rest pose, `A` is exact (entries in {0, +-1/cellM}). For 1000 seeded (LCG) points, local -> world -> local round-trips within 1e-12 with rotated parts and the head -> body chain. Lerp: rot 0 -> 10 at `tMs = dur/2` gives exactly 5. A loop wraps to frame 0, a non-loop clip holds the last frame, and `step` interp ignores tMs.
+   - *March (hand cases on a 3x3x3 one-part model):* an axis ray hits at the analytic t with the right local face and layer. A ray passing beside the model misses. A ray whose d has 0 components produces no NaN. An edge-tie ray follows the verbatim axis rule. With the eye inside a solid voxel, that voxel is skipped. A diagonal through a hollow part box whose extent is exactly 48 terminates as a miss.
+   - *castModels:* the fixture 3 m north of the camera, at 160x60.
+     - Rest pose at yaw 180 (facing the camera): every written cell has kind 8, mat in {1, 2, 3}, face in 1..6, the 0xF planeId nibble and `aoD === Infinity`. The front-facing cells have face 1 (N). `fb.depth` equals t.
+     - At yaw 30: every written cell has face 7, the decoded normal is unit within 1e-4, and `dot(n, d) < 0`.
+     - A depth buffer pre-filled nearer than the model gives 0 writes. Two instances: the nearer one wins.
+   - *Determinism:* two runs on fresh buffers give byte-identical `gbuf` arrays and depth (compare via `Buffer.from(arr.buffer)`), plus a recorded FNV-1a golden for pose `bearClose` (yaw 200, walk frame 1, tMs 40, eye 2.2 m away at 1.6 m high). Changing the golden needs an architect OK in this story.
+   - *Octahedral:* the 6 axes encode and decode exactly. 26 box directions plus 1000 seeded ones round-trip within 4e-5 per component. The encoding is deterministic bit for bit.
+   - *Zero-alloc:* if `globalThis.gc` exists: 50 warm-up calls, `gc()`, then 1000 `castModels` + `computeVoxelPose` calls. The heapUsed delta must be < 64 KB (the bench-cast method). Without `--expose-gc` it prints SKIP rather than passing silently.
+4. **Bench `node --expose-gc tools/bench-voxel.mjs`:** the `bearClose` pose at 160x60 and 240x90, 500 iterations. It prints p50/p95, raysMarched, cellsWritten and heap delta per call. Gates: 160x60 <= 0.3 ms p50 and <= 0.5 ms p95, and 0 B per call. The bench uses a new tool file, so `bench-cast.mjs` is not edited (parallel safety).
+5. **Do not:** allocate in `marchVoxelRay`/`castModels`/`computeVoxelPose`/`packNormalOct`; use a general matrix inverse; use `Math.round` for the normal quantisation (use `floor(x + 0.5)`, which GLSL can mirror); march cells outside the instance's screen rect; touch `fb.spans`, `fb.rt` or the shading passes; add RLE or any second grid format; store part membership per voxel (the per-part blocks already encode it).
+6. **Acceptance-criteria deltas for the PO to confirm:** the fixture is 12x8x10 (not 16x8x12) and is named `quadruped12`; the files go in `engine/voxel/` (not `engine/entities/`); the bench is in the new `tools/bench-voxel.mjs` (not `bench-cast`); the planeId layout adds a part field (15.1).
 
 ### US-040 GPU voxel pass A3 + gpucompare  [Priority: P0 (before M3)] [Status: todo (sketch)]
 As a player, I want 3D creatures drawn on the GPU as part of the glyph world, so that they look like everything else and cost almost nothing.
