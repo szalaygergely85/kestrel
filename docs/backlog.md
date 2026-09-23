@@ -561,7 +561,7 @@ Acceptance criteria:
 - [ ] **Normal + planeId (req. 2)** for walls (N/E/S/W from side and step sign) and for floors, tops and ceilings (U/D + height). **Derivatives (req. 3)** and **aoD (req. 5)** as in the spec.
 - [ ] **Shader v2 (req. 4-6, 8, 9)** re-implements `DP.util.shade` for the v2 materials (`stone`, `stone_moss`, `stone_scorched`, `brick`, `floor`, `ceiling_timber`, `wood`, `rubble`, `grass`). It covers texel-class glyph sets with world-anchored hash alternates, the analytic joint grid with oriented glyphs and joint LOD, per-block tones plus jitter, face factors plus seam AO, the lift (`gb`, fgMin 0.55, tint 0.60), fog v2 with stipple, and the near/mid/far LOD tiers. v1 materials without a v2 entry (`iron`, `grate`, `ash`, `rock`) and sky keep the v1 path unchanged (`DP.remap`).
 - [ ] **Edge pass (req. 7)** implements `DP.util.edgePass`. It uses the `DP.edges` thresholds (depthRatio 1.18, depthAbs 0.35 m, fogMax 0.85) and decides all rules on the input before applying any. Edge colors are never pure black (every channel > 0).
-- [ ] **Owner complaint metric, start pose, ambient only:** at least **10 distinct glyphs** on screen, and at most **5%** of non-sky cells show only `.` or blank. The bench prints both numbers per pose.
+- [ ] **Owner complaint metric, start pose, ambient only:** at least **10 distinct glyphs** on screen, and at most **5%** of non-sky, non-joint (`!onJoint`) cells show only `.` or blank. The bench prints both numbers per pose.
 - [ ] **Edge rules visible:** across the bench poses, each of `cap`, `side`, `convex` or `concave`, `seamFloor`, `seamCeil` and `nosing` fires at least once. The bench prints a count per rule.
 - [ ] **No shimmer:** hashes are world-anchored. A unit test shows that the same (mat, u, v, normal, dist band) gives the same glyph at different screen positions. Rendering the same pose twice gives the same checksum.
 - [ ] **Matches the preview:** the designer's "proposed" panel in `detail_pass.html` and the game, at the test_room start pose (160x60, ambient only, all features on), have the **same glyph in at least 95% of cells**. On matching cells, fg and bg are within **+-8 per channel in at least 95% of cells**. Remaining differences must be explained (for example the US-004b overdraw fixes the preview's US-004 port lacks) and listed in the programmer notes.
@@ -635,6 +635,31 @@ Notes / dependencies:
 *14. Do not:* shade inside the caster; call `sectorAt` per row for aoD; use `Math.pow`, `atan2`, strings, `materials[key]` or `Map.get` per cell; hash screen coordinates; apply the edge pass through `setCellRGB`; read `window.ASSETS` or `levelOverrides` in the engine; put light-source loops into `shadeSurfaces`.
 
 *Engine-request review:* requests 1-9 are all sound and affordable as specified above. Request 3's "analytic" alternative is not used (neighbour differences are what the preview does and what parity needs). No escalation: no D-00x changes (the G-buffer stays inside the render layer; `FrameBuffers` grows by `gbuf`, `light`, `detail`).
+
+#### Owner feedback: LOD distance (architect, 2026-09-23)
+Owner: "LOD should be much further - 2 m far objects are already blurry." Measured headless (scratch probe on the bench harness, 160x60, start pose + (3.0, 2.5) yaw 270 = stone wall at 2.00 m, + two long-view poses; working-tree code). Depth is perpendicular distance (sectorCaster), so tiers are not triggered early by units. Per surface kind and distance:
+
+| dist | walls: tier, joints, distinct glyphs | floors: joints, glyphs | fog f / stipple |
+|---|---|---|---|
+| 2 m | near; 11-16 %; 8-10; detail texel = 2.9 cols x 1.6 rows | - | 0 / 0 |
+| 3-6 m | near -> mid from ~4.5 m (brick ~3.5 m); 28-41 %; 11 | 29-58 %; 10-11 | 0 / 0 |
+| 6-10 m | mid; 23-48 %; 10 -> 7 | 21-28 %; 6-7 (bed joints gone from ~5 m) | <=0.13 / 0 |
+| 10-12 m | mid/far; 0-24 % (bed joints end at 10.6 m); 4 | 11-18 %; 6-7 | 0.15 / 0 |
+| 12-20 m | far; 0 %; 1-2 | 8-12 %; 2-4 | 0.2-0.35 / 0 (stipple starts ~18 m) |
+
+Causes, in order: (1) at 2 m it is the texel grid, not LOD: `detail` 18/m makes every hashed alternate span ~3x2 cells, so near walls show blocky ",,,:::;;;" runs (see wall dump) - reads as blurry. (2) Content tier thresholds: mid at 4-6 m with 1-2-alternate sets, far at 9-14 m with single-glyph levels (at ambient only levels 1-3 are used, so far walls collapse to 1 glyph). (3) Joint thinning is geometrically correct but has no fallback: walls drop all joints at 10.6 m (`maxCover` 0.45 x 0.4 m course), floors lose bed joints at ~5 m (grazing footprint). (4) Fog is NOT a cause below 18 m. (5) The 160x60 grid is the hard limit only for single courses beyond ~12 m (0.4 m = 23.5/d rows). No derivative bug found (outliers are genuine oblique walls).
+
+Fix - engine (programmer, after the current perf rework lands; +<=0.2 ms shade p50 expected, verify on bench):
+1. **Detail octave per cell** in `shadeDetailFast`: `tpc = max(|du|+|dv| over x and y) * rec.detail`; `oct = clamp(-ceil(log2(tpc)), -3, +2)` (via `Math.clz32`-free small compare ladder, no `Math.log2` needed); `ds = rec.detail * 2^oct` for `tx,ty` (hA/hB/hC). Finer near (1 texel per cell at 2 m), coarser far (no shimmer), still world-anchored. The LOD dither hash keeps the BASE `detail` coords so tier dither does not change per octave.
+2. **Joint octaves**: when a grid line fails its `maxCover` test, retest at period x2 (every 2nd course / 2nd block, `bix`/`course` parity) and then x4; same for band edges. Walls keep joints to ~23 m, floors to ~10-12 m. Max 2 extra `crossLineFast` per failing cell.
+3. `lod.dither` stays content-driven; no engine thresholds.
+
+Fix - content (designer, `design/detail-pass.js`):
+4. `lod` for all materials: `mid: 12, far: 25, dither: 3` (brick `mid: 10, far: 22`); far = inside fog (f >= 0.63).
+5. `stone.grid.maxCover` 0.45 -> 0.5 (joints to 11.7 m before octaves).
+6. Mid sets get 2-3 alternates per level (like near), far sets 2 alternates (no single-glyph levels); keep near `detail` values (the octave makes them resolution-independent).
+7. Fog: `start 6 -> 10`, `full 36 -> 45`, `stipple [0.45, 0.85]` (stipple from ~26 m), so fog owns the far range.
+8. Re-export samples; programmer re-records the v2 bench baseline. Acceptance: at the start pose, walls <=12 m keep >=10 distinct glyphs and >0 % joints to 20 m.
 
 ### US-006 Lighting: ambient + point lights with flicker  [Priority: P0] [Status: todo]
 As a player, I want a torch to throw flickering warm light across the stone, so that the room feels alive.
