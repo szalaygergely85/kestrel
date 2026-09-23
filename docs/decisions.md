@@ -334,6 +334,7 @@ D-006 made everything the editor touches plain data; architecture.md 10 lists th
 
 **Date:** 2026-09-23
 **Owner request:** "something different actually a bit steampunk ... zelda ... but fps version ... live in a city, segregated, coming sos signal ... steals a aircraft or balloon, and he shoot down, maybe only amnesia, but the map to the sos signal source." **Correction (same day):** "maybe not steampunk, fantasy... but some steampunk machines". So the world is **fantasy first**, and machines are a flavour layer.
+**Owner amendment (2026-09-23): game title and hero name = "Kestrel".** The amnesiac hero reads the brass name board on the balloon's gondola ("KESTREL") and thinks it is their own name, so the player goes by Kestrel. The game title is **Kestrel** (it replaces the working title "ASCII Quest" / "ASCII Quest: Signal"). The mistaken name is a deliberate story thread for later reveals (who the hero really is). The engine name is still open (owner is considering it).
 **Status:** Accepted (replaces the D-001 story framing and the "Ember and Ash" canon; D-001 geometry, D-003 beat and all engine decisions stand; amends GDD 1 and 3, roadmap M2-M4 themes; `docs/story.md` superseded)
 
 ### Context
