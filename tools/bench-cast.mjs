@@ -291,12 +291,18 @@ function checkSkyFallbackFalseInvariant(level, camera) {
 // bench RT's alpha channel just carries the packed glyphIdx, not a fourth
 // color plane, so it's excluded the same way BenchRT's *3 layout naturally
 // is). Recorded via `--update-baseline` (prints both v1 and v2 tables).
+// Re-recorded (programmer, US-028 rework, 2026-09-23): changed because of
+// (a) the MaterialTable flattening (item 4 - fg/bg can differ by the +-4
+// tolerance the AC allows, from the LUT-based gain curve and per-set
+// threshold tables replacing the string-keyed reference path) and (b) the
+// designer's `ceiling_timber` retune (albedo/grid.shade/band.edgeShade,
+// commit ebd2734) - NOT from any change to the caster geometry.
 const EMBEDDED_BASELINE_V2 = {
-  'start pose (S, facing east, level)': { glyphIdx: 'fe0d276e', fg: '1e2f723c', bg: '2f8f9047' },
-  'facing stair + 1.0m platform': { glyphIdx: '348c829e', fg: '15bff601', bg: '0d977652' },
-  'sky over the low wall, pitch +20': { glyphIdx: 'c51610c5', fg: '3e09724a', bg: 'e2fe6f76' },
-  'long diagonal, pitch -35': { glyphIdx: 'c209e74e', fg: '9f62c77e', bg: 'adf3fd55' },
-  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: 'aa5d8727', fg: 'ea8214b6', bg: 'e519906e' },
+  'start pose (S, facing east, level)': { glyphIdx: '85ea94f7', fg: '02667852', bg: 'c332e6c1' },
+  'facing stair + 1.0m platform': { glyphIdx: '78271230', fg: 'b348489c', bg: '689e9a2b' },
+  'sky over the low wall, pitch +20': { glyphIdx: 'a321dfe4', fg: '2d68c135', bg: 'df39ad9f' },
+  'long diagonal, pitch -35': { glyphIdx: '8e7f648f', fg: '3d268371', bg: 'e378c510' },
+  'low wall sky, (10, 7.5) yaw 45 pitch +25': { glyphIdx: '1b578f68', fg: 'a6f19c00', bg: '2fea6ab3' },
 };
 
 // US-028 bench: pass timers (cast/deriv/shade/edge), the 9,600-writes
@@ -350,20 +356,24 @@ function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTabl
   shadeSurfaces(fb2, gbuf, matTable, detailPass, ambientL);
   edgePass(gbuf, depth2.depth, rt2, detailPass.edges);
 
-  // Owner-complaint metric (AC): distinct glyphs + "only '.'/blank" share,
-  // over non-sky (kind != 0) cells.
+  // Owner-complaint metric (AC, PO ruling 2026-09-23: excludes `onJoint`
+  // mortar/joint cells from the blank-share denominator and numerator - see
+  // docs/backlog.md US-028 section): distinct glyphs over every non-sky
+  // (kind != 0) cell, "only '.'/blank" share over non-sky, non-joint cells.
   const seen = new Set();
-  let blankOrDot = 0, surfaceCells = 0;
+  let blankOrDot = 0, surfaceCells = 0, nonJointCells = 0;
   for (let i = 0; i < cellCount; i++) {
     if (gbuf.kind[i] === 0) continue;
     surfaceCells++;
     const g = rt2.glyphIdx[i];
     seen.add(g);
+    if (gbuf.onJoint[i]) continue;
+    nonJointCells++;
     if (g === 0 || g === V2_GLYPH_DOT) blankOrDot++;
   }
-  const blankPct = surfaceCells ? (100 * blankOrDot / surfaceCells) : 0;
+  const blankPct = nonJointCells ? (100 * blankOrDot / nonJointCells) : 0;
   const glyphOk = seen.size >= 10 && blankPct <= 5;
-  console.log(`  [v2 check] distinct glyphs: ${seen.size} (>=10 required), only '.'/blank: ${blankPct.toFixed(1)}% of ${surfaceCells} surface cells (<=5% required)` +
+  console.log(`  [v2 check] distinct glyphs: ${seen.size} (>=10 required), only '.'/blank: ${blankPct.toFixed(1)}% of ${nonJointCells} non-sky non-joint cells (<=5% required)` +
     (glyphOk ? '  OK' : '  FAIL'));
   if (!glyphOk) ok = false;
 

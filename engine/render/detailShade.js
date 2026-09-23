@@ -1,27 +1,27 @@
-// US-028 derivative + shading passes (docs/backlog.md tech notes items 5-6).
-// Run once per frame, over the whole G-buffer, after every structure/terrain
+// US-028 derivative + shading passes (docs/backlog.md tech notes items 5-6;
+// rework: architect review 1, "MaterialTable flattening", 2026-09-23). Run
+// once per frame, over the whole G-buffer, after every structure/terrain
 // pass has written into it (`castSectors` no longer shades inline).
 //
-// `shadeSurfaces`' v2 path (`shadeV2` below) is a line-for-line port of the
-// designer's reference `design/detail-pass.js` `util.shade` (feature flags
-// removed - the engine always renders with every proposed feature on, so
-// every `if (F.x)` in the reference is unconditionally true here), with
-// exactly the two substitutions the tech notes call out (item 6): `level()`
-// (a `Math.pow` call) becomes a small threshold-array scan, and
-// `orientClass()` (an `atan2` call) becomes the same slope-compare the
-// reference derives it from. First cut (calling `DP.util.shade` directly,
-// reused sample/out, still allocation-free) measured 2-3 ms/frame extra at
-// 160x60 - these two swaps are what the reference oracle itself flags as
-// the intended fast-path optimization; everything else here is verbatim,
-// so parity with the reference/preview is unaffected (only float rounding
-// at threshold boundaries can differ, and only by 1 ulp - see item 4).
+// Two v2 shading paths live in this file, for two different purposes:
+//   - `shadeV2` (below): a line-for-line port of the designer's reference
+//     `design/detail-pass.js` `util.shade`, still keyed by strings and
+//     reading `DP.materials`/`DP.sets`/`DP.util.*` directly. NOT in the
+//     frame path any more (measured 1.1-2.8 ms/frame extra at 160x60,
+//     2-3x the budget) - kept only as `?shadetest=1`'s oracle helper
+//     (`shadeTest.js`'s `runDetailShadeTest` compares the two).
+//   - `shadeDetailFast` (this rework): the actual frame-path shader,
+//     reading only `MaterialTable.js`'s flattened `DetailMaterialRec` typed
+//     data - no string keys, no `materials[key]`/`Map.get`/`Math.pow` per
+//     cell, no `DP.util.*` calls (tech notes item 14). `hash`, `crossLine`,
+//     `lineGlyph`, `pickTone`, `fogFactor` are reimplemented here as small
+//     numeric functions (item 1: "copy into the engine"); `level()`/
+//     `orientClass()` keep the threshold-scan/slope-compare swap from the
+//     first pass (item 6).
 // `fastShade` (the existing US-004b path, unchanged) still handles every
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
-import { fastShade } from './fastShade.js';
-
-const KIND_STR = [null, 'wall', 'step', 'upper', 'floor', 'top', 'ceil'];
-const FACE_STR = [null, 'N', 'E', 'S', 'W', 'U', 'D'];
+import { fastShade, samplePowLUT } from './fastShade.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -198,7 +198,11 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   let glyph;
   if (gb <= 0) glyph = ' ';
   else if (lineG) glyph = lineG;
-  else glyph = setGlyphFast(DP.sets[set], gb, hA, tier === 0, s, cellAspect, cutoff, gamma);
+  // Reference change (2026-09-23, "LOD distance"): the hashed alternate is
+  // used in EVERY tier now (`F.detail`, unconditionally true under ALL_ON),
+  // not gated by `tier === 0` any more - far walls would otherwise collapse
+  // to one glyph per level.
+  else glyph = setGlyphFast(DP.sets[set], gb, hA, true, s, cellAspect, cutoff, gamma);
   if (f > fog.stipple[0] && hB < smoothstepFast(fog.stipple[0], fog.stipple[1], f)) {
     glyph = pickChar(DP.sets[fog.set][f > 0.8 ? 0 : 1], hA);
   }
@@ -235,6 +239,311 @@ export function shadeV2(DP, rgb, m, s, L, out) {
 function clampByte(v) {
   v = Math.round(v);
   return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+// ===========================================================================
+// FAST v2 shader (tech notes item 4/6/14) - reads only `MaterialTable.js`'s
+// flattened `DetailMaterialRec`/`SetRec` typed data. No string keys, no
+// `Math.pow` (the fg-gain curve reuses `fastShade.js`'s LUT), no `Map.get`,
+// no calls into `design/` content. This is the engine's own copy of `hash`/
+// `crossLine`/`lineGlyph`/`pickTone`/`fogFactor` (item 1).
+// ===========================================================================
+
+// 2^oct for oct in [-3, 2], indexed by oct+3 - avoids a `Math.pow` per cell
+// (owner feedback "LOD distance", item 1).
+const POW2 = [0.125, 0.25, 0.5, 1, 2, 4];
+
+function hashFast(x, y, s) {
+  let h = (Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(s | 0, 0x9e3779b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// Level 0..levels for `levels` density steps, from a per-SetRec threshold
+// table baked at bind time (MaterialTable.js `buildThresholds`) - no
+// `Math.pow`/cache lookup per cell (equivalent to the reference `level()`
+// except at 1-ulp threshold boundaries). Named distinctly from the oracle's
+// own `levelFast` above (different signature: a baked threshold array, not
+// a cutoff/gamma pair).
+function levelFromThresholds(levels, gb, thresholds, cutoff) {
+  if (!(gb >= cutoff)) return 0;
+  let i = 0;
+  for (let k = 1; k < levels; k++) { if (thresholds[k] <= gb) i = k; else break; }
+  return 1 + i;
+}
+// Slope-compare replacement for the reference `orientClass` (atan2),
+// returning a class CODE (0 h, 1 v, 2 d1 '/', 3 d2 '\') instead of a string
+// (reuses the oracle's own `TAN22`/`TAN68` constants above).
+function orientClassCode(cx, cy, cellAspect) {
+  const gy = cy / cellAspect;
+  const dx = -gy, dy = cx;
+  if (dx === 0 && dy === 0) return 0;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  if (ady <= TAN22 * adx) return 0;
+  if (ady >= TAN68 * adx) return 1;
+  return dx * dy > 0 ? 3 : 2;
+}
+// `bandFactor` (oracle, above) takes the raw `band` object; this fast-path
+// version takes the two already-unpacked scalars from `DetailMaterialRec`.
+function bandFactorNum(full, zero, z) {
+  if (z == null) return 1;
+  if (z <= full) return 1;
+  if (z >= zero) return 0;
+  return 1 - (z - full) / (zero - full);
+}
+// Footprint crossing test (engine copy of the reference `crossLine`).
+function crossLineFast(c, cx, cy, period, offset) {
+  let hw = 0.5 * (Math.abs(cx) + Math.abs(cy));
+  if (!(hw > 1e-7)) hw = 1e-7;
+  const k = Math.floor((c + hw - offset) / period);
+  const line = offset + k * period;
+  if (line < c - hw) return -1;
+  const fr = Math.abs(cy) > 1e-9 ? 0.5 + (line - c) / cy : 0.5;
+  return fr < 0 ? 0 : fr > 1 ? 1 : fr;
+}
+const LINE_CODE_DASH = 45 - 32, LINE_CODE_UNDERSCORE = 95 - 32, LINE_CODE_PIPE = 124 - 32, LINE_CODE_SLASH = 47 - 32, LINE_CODE_BACKSLASH = 92 - 32;
+function lineGlyphCodeFast(cx, cy, fr, cellAspect) {
+  const k = orientClassCode(cx, cy, cellAspect);
+  if (k === 0) return fr >= 0.5 ? LINE_CODE_UNDERSCORE : LINE_CODE_DASH;
+  return k === 1 ? LINE_CODE_PIPE : k === 2 ? LINE_CODE_SLASH : LINE_CODE_BACKSLASH;
+}
+// Picks a glyph code (already ASCII-32, ready for `out.glyphIdx`) from a
+// flattened `SetRec` (MaterialTable.js) at brightness `gb`. `useAlt` = near
+// tier (hashed alternate) vs calm (first alt); `classIdx` only consulted for
+// oriented sets, once the level falls in the "fam" (grain-direction) range.
+function pickGlyphCodeFast(S, gb, hA, useAlt, classIdx, cutoff) {
+  const lv = levelFromThresholds(S.levels, gb, S.thresholds, cutoff);
+  if (lv === 0) return -1; // caller substitutes space (glyphIdx 0)
+  if (!S.oriented) {
+    const li = lv - 1, cnt = S.altCount[li];
+    const idx = useAlt ? Math.min(cnt - 1, Math.floor(hA * cnt)) : 0;
+    return S.codes[li * S.maxAlt + idx];
+  }
+  if (lv <= S.nDark) {
+    const li = lv - 1, cnt = S.darkAltCount[li];
+    const idx = useAlt ? Math.min(cnt - 1, Math.floor(hA * cnt)) : 0;
+    return S.darkCodes[li * S.maxAlt + idx];
+  }
+  const li = lv - S.nDark - 1;
+  const f = S.fam[classIdx];
+  const cnt = f.altCount[li];
+  const idx = useAlt ? Math.min(cnt - 1, Math.floor(hA * cnt)) : 0;
+  return f.codes[li * S.maxAlt + idx];
+}
+function pickCharCodeFast(codes, altCount, maxAlt, h) {
+  const idx = Math.min(altCount - 1, Math.floor(h * altCount));
+  return codes[idx];
+}
+
+/**
+ * Frame-path v2 shader (tech notes item 4/6). Reads sample `i` straight out
+ * of `gbuf`/`depth` (no intermediate object - architecture.md 9 rule 3),
+ * `rec` is `table.records[gbuf.mat[i]].v2` (a `DetailMaterialRec`, non-null
+ * - callers only reach here when it is), `table` is the whole bound
+ * `MaterialTable` (for `faceK`, `gainLUT`, `fog`, `ao`, `shading`, `sets`).
+ * Writes `out.glyphIdx` (0-94), `out.fg`/`out.bg` ([r,g,b] 0-255),
+ * `out.f` (fog factor) and `out.onJoint` (bench blank-share metric) in
+ * place.
+ */
+export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
+  const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
+
+  const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i], aoD = gbuf.aoD[i];
+  const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
+  const face = gbuf.face[i];
+
+  const g = rec.grid;
+  let course = 0, bix = 0, fv = 0.5, uo = u;
+  if (g) {
+    course = Math.floor(v / g.v);
+    uo = u - ((course & 1) ? g.stagger * g.u : 0);
+    bix = Math.floor(uo / g.u);
+    fv = v / g.v - course;
+  }
+  // Owner feedback (architect 2026-09-23, "LOD distance"): a detail OCTAVE
+  // per cell, so near texels stay crisp (finer than `rec.detail`) instead
+  // of a fixed detail density making 2m walls look blocky, while far ones
+  // stay calm (coarser) - world-anchored either way (still floor(u*ds)).
+  // `tpc` = texels-per-screen-cell in the bigger of the two screen axes;
+  // `oct` halves/doubles the detail density (clamped +-3/+2 octaves) so it
+  // never needs `Math.pow`/`Math.log2` per cell (a 6-way compare ladder,
+  // item 1).
+  const tpcU = Math.abs(dudx) + Math.abs(dudy), tpcV = Math.abs(dvdx) + Math.abs(dvdy);
+  const tpc = (tpcU > tpcV ? tpcU : tpcV) * rec.detail;
+  let oct;
+  if (tpc >= 4) oct = -3;
+  else if (tpc >= 2) oct = -2;
+  else if (tpc >= 1) oct = -1;
+  else if (tpc >= 0.5) oct = 0;
+  else if (tpc >= 0.25) oct = 1;
+  else oct = 2;
+  const ds = rec.detail * POW2[oct + 3];
+  const tx = Math.floor(u * ds), ty = Math.floor(v * ds);
+  // Tier dither (hB, below) keeps the BASE (non-octave) texel coords, so
+  // the near/mid/far tier boundary does not shift with the detail octave.
+  const btx = Math.floor(u * rec.detail), bty = Math.floor(v * rec.detail);
+  const hA = hashFast(tx, ty, rec.seed), hB = hashFast(btx, bty, rec.seed + 7), hC = hashFast(tx, ty, rec.seed + 13);
+  const hBlock = hashFast(bix, course, rec.seed + 3);
+
+  // --- tone (per block), linear scan over <=4 weighted entries -----------
+  let x = hBlock * rec.toneTotal, toneIdx = rec.toneW.length - 1;
+  for (let t = 0; t < rec.toneW.length; t++) { x -= rec.toneW[t]; if (x < 0) { toneIdx = t; break; } }
+  let cr = rec.toneRGB[toneIdx * 3], cg = rec.toneRGB[toneIdx * 3 + 1], cb = rec.toneRGB[toneIdx * 3 + 2];
+
+  let tier = 0;
+  if (rec.lod) {
+    const dd = dist + (hB - 0.5) * rec.lod.dither;
+    tier = dd < rec.lod.mid ? 0 : dd < rec.lod.far ? 1 : 2;
+  }
+  let setId = tier === 0 ? rec.face.near : tier === 1 ? rec.face.mid : rec.face.far;
+  let shadeK = 1, hasTint = false, tr = 0, tg = 0, tb = 0, tintAmt = 0, bgK = rec.bgK, lineCode = -1, onJoint = false, inBand = false;
+
+  if (g && rec.bevel && tier < 2) {
+    const bv = rec.bevel, yv = fv * g.v;
+    if (g.v - yv < bv.top) shadeK *= bv.topShade;
+    else if (yv < bv.bottom) shadeK *= bv.bottomShade;
+  }
+  const band = rec.band;
+  if (band) {
+    const bcoord = band.isU ? u : v;
+    const bcx = band.isU ? dudx : dvdx, bcy = band.isU ? dudy : dvdy;
+    const pos = bcoord - Math.floor(bcoord / band.period) * band.period;
+    if (pos < band.width) {
+      inBand = true;
+      if (tier < 2) setId = band.setId;
+      shadeK = band.shade;
+      if (band.hasTone) { cr = band.toneRGB[0]; cg = band.toneRGB[1]; cb = band.toneRGB[2]; }
+      if (band.hasBgK) bgK = band.bgK;
+    }
+    // Owner feedback item 2 applies to band edges too: widen the coverage
+    // gate (2x, then 4x) instead of just dropping the edge line far away.
+    const bcov = coverFast(bcx, bcy);
+    let bandMult = 1;
+    if (!(bcov < 0.5 * band.width)) {
+      bandMult = 2;
+      if (!(bcov < bandMult * 0.5 * band.width)) {
+        bandMult = 4;
+        if (!(bcov < bandMult * 0.5 * band.width)) bandMult = -1;
+      }
+    }
+    if (bandMult > 0) {
+      const e0 = crossLineFast(bcoord, bcx, bcy, band.period, 0), e1 = crossLineFast(bcoord, bcx, bcy, band.period, band.width);
+      const ef = e0 >= 0 ? e0 : e1;
+      if (ef >= 0) { lineCode = lineGlyphCodeFast(bcx, bcy, ef, cellAspect); shadeK = band.edgeShade; onJoint = true; }
+    }
+  }
+  if (g && g.lines && !inBand && !onJoint) {
+    // Owner feedback (architect 2026-09-23, "LOD distance", item 2): a
+    // joint that fails its `maxCover` footprint test isn't just dropped -
+    // retest at 2x the period (every 2nd course/block - doubling the
+    // period IS "every 2nd line", `crossLineFast` needs no parity check),
+    // then 4x, before giving up. At most 2 extra (cheap) `coverFast`
+    // compares per axis; `crossLineFast` itself still runs at most once.
+    const coverV = coverFast(dvdx, dvdy);
+    let periodH = g.v;
+    if (!(coverV < g.maxCover * periodH)) {
+      periodH = g.v * 2;
+      if (!(coverV < g.maxCover * periodH)) {
+        periodH = g.v * 4;
+        if (!(coverV < g.maxCover * periodH)) periodH = -1;
+      }
+    }
+    const okH = periodH > 0;
+    const coverU = coverFast(dudx, dudy);
+    let periodV = g.u;
+    if (!(coverU < g.maxCover * periodV)) {
+      periodV = g.u * 2;
+      if (!(coverU < g.maxCover * periodV)) {
+        periodV = g.u * 4;
+        if (!(coverU < g.maxCover * periodV)) periodV = -1;
+      }
+    }
+    const okV = periodV > 0 && (!g.tie || okH);
+    const fh = okH ? crossLineFast(v, dvdx, dvdy, periodH, 0) : -1;
+    const fu = okV ? crossLineFast(uo, dudx, dudy, periodV, 0) : -1;
+    if (fh >= 0 || fu >= 0) {
+      onJoint = true;
+      if (g.isGap) { setId = g.gapSetId; lineCode = -1; }
+      else if (fh >= 0 && fu >= 0 && g.hasCross) lineCode = g.crossCode;
+      else if (fu >= 0) lineCode = lineGlyphCodeFast(dudx, dudy, fu, cellAspect);
+      else lineCode = lineGlyphCodeFast(dvdx, dvdy, fh, cellAspect);
+      shadeK = g.shade;
+      if (g.hasTint) { hasTint = true; tr = g.tintRGB[0]; tg = g.tintRGB[1]; tb = g.tintRGB[2]; tintAmt = g.amount; }
+      if (g.hasBgK) bgK = g.bgK;
+    }
+  }
+  const ov = rec.overlay;
+  if (ov && tier < 2) {
+    const bf = ov.hasBand ? bandFactorNum(ov.bandFull, ov.bandZero, z) : 1;
+    if (hC < (onJoint ? ov.joint : ov.face) * bf) {
+      if (!onJoint) setId = ov.setId;
+      const tIdx = Math.min(ov.k - 1, Math.floor(hA * ov.k));
+      hasTint = true; tr = ov.tintRGB[tIdx * 3]; tg = ov.tintRGB[tIdx * 3 + 1]; tb = ov.tintRGB[tIdx * 3 + 2];
+      tintAmt = ov.amount;
+      shadeK *= ov.shade;
+    }
+  }
+  if (rec.speckle && tier === 0 && !onJoint && !inBand && hC > 1 - rec.speckle.chance) {
+    setId = rec.speckle.setId;
+    shadeK *= rec.speckle.shade;
+  }
+
+  const Lm = Math.max(light[0], light[1], light[2]);
+  const fk = table.faceK[face] || 1;
+  let aok = 1;
+  if (aoD < table.ao.r) aok = table.ao.k + (1 - table.ao.k) * smoothstepFast(0, table.ao.r, aoD);
+  const jit = 1 + rec.jitter * (hA * 2 - 1);
+  const b = Lm * rec.albedo * shadeK * fk * aok * jit + rec.emissive;
+  const lift = shading.lift;
+  const gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
+
+  const fog = table.fog;
+  const f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
+
+  let glyphCode;
+  if (gb <= 0) glyphCode = 0;
+  else if (lineCode >= 0) glyphCode = lineCode;
+  else {
+    const S = table.sets[setId];
+    const classIdx = S.oriented ? orientClassCode(S.orientAxis === 0 ? dudx : dvdx, S.orientAxis === 0 ? dudy : dvdy, cellAspect) : 0;
+    // Owner feedback / reference change: hashed alternates in every tier,
+    // not just near (`tier === 0`) - see the oracle's matching change above.
+    const code = pickGlyphCodeFast(S, gb, hA, true, classIdx, cutoff);
+    glyphCode = code < 0 ? 0 : code;
+  }
+  if (f > fog.stipple0 && hB < smoothstepFast(fog.stipple0, fog.stipple1, f)) {
+    glyphCode = f > 0.8 ? pickCharCodeFast(fog.sparseCodes, fog.sparseAlt, 2, hA) : pickCharCodeFast(fog.hazeCodes, fog.hazeAlt, 2, hA);
+  }
+
+  if (hasTint && tintAmt > 0) {
+    cr += (tr - cr) * tintAmt; cg += (tg - cg) * tintAmt; cb += (tb - cb) * tintAmt;
+  }
+  let hr = 1, hg = 1, hb = 1;
+  if (Lm > 1e-6) { hr = light[0] / Lm; hg = light[1] / Lm; hb = light[2] / Lm; }
+  const k = shading.tint, fgMin = shading.fgMin;
+  const bc = b < 0 ? 0 : b;
+  let gain = fgMin + (1 - fgMin) * samplePowLUT(table.gainLUT, bc);
+  if (bc > 1) gain = Math.min(shading.fgMaxGain, gain + (bc - 1) * 0.5);
+  let r = cr * (1 + (hr - 1) * k) * gain, gg = cg * (1 + (hg - 1) * k) * gain, bl = cb * (1 + (hb - 1) * k) * gain;
+  if (bc > 1) {
+    const hot = Math.min(shading.overbrightMax, (bc - 1) * shading.overbright);
+    r += (255 * (0.5 + 0.5 * hr) - r) * hot; gg += (255 * (0.5 + 0.5 * hg) - gg) * hot; bl += (255 * (0.5 + 0.5 * hb) - bl) * hot;
+  }
+  if (r > 255) r = 255; if (gg > 255) gg = 255; if (bl > 255) bl = 255;
+  let xr = r * bgK, xg = gg * bgK, xb = bl * bgK;
+  if (f > 0) {
+    const fogFg = fog.fgRGB, fogBg = fog.bgRGB;
+    r += (fogFg[0] - r) * f; gg += (fogFg[1] - gg) * f; bl += (fogFg[2] - bl) * f;
+    xr += (fogBg[0] - xr) * f; xg += (fogBg[1] - xg) * f; xb += (fogBg[2] - xb) * f;
+  }
+
+  out.glyphIdx = glyphCode;
+  out.fg[0] = r; out.fg[1] = gg; out.fg[2] = bl;
+  out.bg[0] = xr; out.bg[1] = xg; out.bg[2] = xb;
+  out.f = f;
+  out.onJoint = onJoint;
+  return out;
 }
 
 /**
@@ -279,12 +588,18 @@ export function computeDerivatives(gbuf, depth) {
 }
 
 // Reused scratch (architecture.md 9: no per-cell allocation).
-const sample = {
-  kind: 'wall', mat: 'stone', normal: 'N', planeId: 0,
-  u: 0, v: 0, dudx: 0, dvdx: 0, dudy: 0, dvdy: 0, z: 0, aoD: Infinity, dist: 0,
-};
-const shadeOut = { glyph: ' ', fg: [0, 0, 0], bg: [0, 0, 0], b: 0, f: 0 };
+const fastV2Out = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0, f: 0, onJoint: false };
 const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
+
+// v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
+// no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
+// `interiorFogFactor`, curve = 1 i.e. linear).
+function v1FogFactor(dist, fog) {
+  const f = fog.interior;
+  if (dist <= f.start) return 0;
+  if (dist >= f.full) return 1;
+  return (dist - f.start) / (f.full - f.start);
+}
 
 /**
  * @param {object} fb - { rt, depth, palette }
@@ -302,7 +617,6 @@ export function shadeSurfaces(fb, gbuf, table, DP, light) {
   const depth = fb.depth.depth;
   const kind = gbuf.kind;
   const P = fb.palette;
-  const rgb = P.rgb;
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -311,33 +625,25 @@ export function shadeSurfaces(fb, gbuf, table, DP, light) {
       const id = gbuf.mat[i];
       const rec = id ? table.records[id] : null;
       const dist = depth[i];
-      let glyphIdx, fg, bg, f;
+      let glyphIdx, fg, bg, f, onJoint;
 
-      if (DP && rec && rec.v2Key) {
-        sample.kind = KIND_STR[kind[i]];
-        sample.mat = rec.v2Key;
-        sample.normal = FACE_STR[gbuf.face[i]];
-        sample.planeId = gbuf.planeId[i];
-        sample.u = gbuf.u[i]; sample.v = gbuf.v[i];
-        sample.dudx = gbuf.dudx[i]; sample.dvdx = gbuf.dvdx[i];
-        sample.dudy = gbuf.dudy[i]; sample.dvdy = gbuf.dvdy[i];
-        sample.z = gbuf.z[i]; sample.aoD = gbuf.aoD[i]; sample.dist = dist;
-        const m = DP.materials[rec.v2Key];
-        shadeV2(DP, rgb, m, sample, light, shadeOut);
-        const code = shadeOut.glyph.charCodeAt(0);
-        glyphIdx = code < 32 || code > 126 ? 0 : code - 32;
-        fg = shadeOut.fg; bg = shadeOut.bg; f = shadeOut.f;
+      if (DP && rec && rec.v2) {
+        shadeDetailFast(table, rec.v2, i, gbuf, dist, light, fastV2Out);
+        glyphIdx = fastV2Out.glyphIdx; fg = fastV2Out.fg; bg = fastV2Out.bg;
+        f = fastV2Out.f; onJoint = fastV2Out.onJoint;
       } else {
         const key = rec ? rec.v1Key : 'stone';
         fastShade(P, key, gbuf.u[i], gbuf.v[i], dist, gbuf.z[i], fastOut);
         glyphIdx = fastOut.glyphIdx; fg = fastOut.fg; bg = fastOut.bg;
-        f = P.util.fogFactor(dist, 'interior');
+        f = v1FogFactor(dist, P.fog);
+        onJoint = false;
       }
 
       rt.setCellRGB(x, y, glyphIdx,
         clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
         clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
       gbuf.fogF[i] = f;
+      gbuf.onJoint[i] = onJoint ? 1 : 0;
     }
   }
 }

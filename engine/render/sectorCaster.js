@@ -55,7 +55,85 @@ const HFOV_DEG = 75;
 const MAX_RAY_STEPS = 96; // DDA safety cap per column (levels are well under this in practice)
 const MAX_DIST = 120; // meters; beyond this, whatever's left open is treated as void/sky
 const INTERIOR_FOG = 'interior';
-const VOID_SECTOR = { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'stone' };
+const VOID_SECTOR = {
+  floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'stone',
+  // US-028 rework: baked once per frame by `bindVoidSectorIds` below (never
+  // via a per-sample `idFor` - tech notes item 1/2), so a ray that starts or
+  // strays outside the level grid still has valid G-buffer material ids.
+  wallMatId: 0, floorMatId: 0, ceilMatId: 0, upperMatId: 0,
+};
+// Cheap (4 Map.get's), done once per `castScene` call when a G-buffer path
+// is active - NOT per row/sample. `VOID_SECTOR` is a shared singleton, so
+// this only needs to track "was it bound to THIS session's table" once.
+let voidBoundTable = null;
+function bindVoidSectorIds(matTable) {
+  if (voidBoundTable === matTable) return;
+  VOID_SECTOR.wallMatId = matTable.idFor(VOID_SECTOR.wallMat);
+  VOID_SECTOR.floorMatId = matTable.idFor(VOID_SECTOR.floorMat);
+  VOID_SECTOR.upperMatId = matTable.idFor(VOID_SECTOR.upperMat);
+  voidBoundTable = matTable;
+}
+
+// US-028 rework (tech notes item 3): floor/top and ceiling "relief" bit
+// masks, one per level cell, W/E/N/S bits = "the neighbour in this
+// direction rises against this cell's OWN floorH/ceilH" (see `planeRises`,
+// which this replaces at the per-row level). Rebuilt at the top of every
+// `castScene` call that uses the G-buffer path (so a dynamic `ceilH` - e.g.
+// `World.animateSector` - is always current, no version bookkeeping needed);
+// the arrays themselves are allocated only once per level (cached on the
+// level object) - see docs/backlog.md US-028 tech notes item 3.
+const RELIEF_W = 1, RELIEF_E = 2, RELIEF_N = 4, RELIEF_S = 8;
+function ensureRelief(level) {
+  const w = level.width, h = level.height;
+  let r = level._relief028;
+  if (!r || r.w !== w || r.h !== h) {
+    r = { w, h, floorRise: new Uint8Array(w * h), ceilDrop: new Uint8Array(w * h) };
+    level._relief028 = r;
+  }
+  const { floorRise, ceilDrop } = r;
+  for (let cy = 0; cy < h; cy++) {
+    for (let cx = 0; cx < w; cx++) {
+      const own = level.sectorAt(cx + 0.5, cy + 0.5);
+      const i = cy * w + cx;
+      if (!own) { floorRise[i] = 0; ceilDrop[i] = 0; continue; }
+      const ownFloorH = own.floorH, ownCeilH = own.ceilH;
+      let fb = 0, cb = 0;
+      const west = level.sectorAt(cx - 1 + 0.5, cy + 0.5);
+      const east = level.sectorAt(cx + 1 + 0.5, cy + 0.5);
+      const north = level.sectorAt(cx + 0.5, cy - 1 + 0.5);
+      const south = level.sectorAt(cx + 0.5, cy + 1 + 0.5);
+      if (!west || west.floorH > ownFloorH + 0.01) fb |= RELIEF_W;
+      if (!east || east.floorH > ownFloorH + 0.01) fb |= RELIEF_E;
+      if (!north || north.floorH > ownFloorH + 0.01) fb |= RELIEF_N;
+      if (!south || south.floorH > ownFloorH + 0.01) fb |= RELIEF_S;
+      if (ownCeilH !== 'sky') {
+        const rises = (q) => !q || q.solid || (q.ceilH !== 'sky' && q.ceilH < ownCeilH - 0.01);
+        if (rises(west)) cb |= RELIEF_W;
+        if (rises(east)) cb |= RELIEF_E;
+        if (rises(north)) cb |= RELIEF_N;
+        if (rises(south)) cb |= RELIEF_S;
+      }
+      floorRise[i] = fb;
+      ceilDrop[i] = cb;
+    }
+  }
+}
+// Per-row aoD for a plane sample (tech notes item 3): 4 bit tests, no
+// `sectorAt` at all (replaces the old `planeAoD`/`planeRises` pair, which
+// called `level.sectorAt` up to 4x PER EMITTED SAMPLE).
+function planeAoDFast(ctx, gkind, wx, wy) {
+  const r = ctx.relief;
+  const cx = Math.floor(wx), cy = Math.floor(wy);
+  if (cx < 0 || cy < 0 || cx >= r.w || cy >= r.h) return Infinity;
+  const bits = gkind === GK_CEIL ? r.ceilDrop[cy * r.w + cx] : r.floorRise[cy * r.w + cx];
+  const fx = wx - cx, fy = wy - cy;
+  let a = Infinity;
+  if (bits & RELIEF_W) a = Math.min(a, fx);
+  if (bits & RELIEF_E) a = Math.min(a, 1 - fx);
+  if (bits & RELIEF_N) a = Math.min(a, fy);
+  if (bits & RELIEF_S) a = Math.min(a, 1 - fy);
+  return a;
+}
 
 // Reused across every shade() call in a frame - the reference shader writes
 // into `out.fg`/`out.bg` in place and allocates nothing when they're already
@@ -136,9 +214,11 @@ function shadeAndWrite(rt, x, y, ctx, matKey, u, v, dist, z, tag) {
 // (that moves to `shadeSurfaces`, run once over the whole grid after every
 // structure/terrain pass). Same call sites as `shadeAndWrite`, so the
 // US-004b overdraw fixes (never-double-write) carry over unchanged.
-function emitSample(rt, x, y, ctx, kind, matKey, face, planeId, u, v, dist, z, aoD) {
+// `matId` (US-028 rework, programmer item 2) is now a number the caller
+// already has (baked onto the sector object by `MaterialTable.bindLevel`,
+// or `VOID_SECTOR`'s own by `bindVoidSectorIds`) - no `idFor`/`Map.get` here.
+function emitSample(rt, x, y, ctx, kind, matId, face, planeId, u, v, dist, z, aoD) {
   const i = y * ctx.gbuf.cols + x;
-  const matId = ctx.matTable.idFor(matKey);
   ctx.gbuf.writeSample(i, kind, matId, face, planeId, u, v, z, aoD);
   if (ctx.depthBuffer) ctx.depthBuffer.set(x, y, dist);
 }
@@ -264,6 +344,12 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     ctx.gbuf.cam.tanHalfHFov = tanHalfHFov;
     ctx.gbuf.cam.cols = cols;
     ctx.gbuf.cam.planeDistY = planeDistY;
+    // US-028 rework: relief bit masks (item 3) rebuilt every call (cheap,
+    // O(w*h)), and VOID_SECTOR's ids bound once per table (item 2) - neither
+    // touches the per-row/per-sample hot path.
+    ensureRelief(level);
+    ctx.relief = level._relief028;
+    if (ctx.matTable) bindVoidSectorIds(ctx.matTable);
   }
 
   for (let x = 0; x < cols; x++) {
@@ -442,7 +528,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       for (let row = wallRowStart; row <= wallRowEnd; row++) {
         const h = heightAtRow(ctx, row, entryDist);
         const z = h - nearSector.floorH;
-        if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_WALL, farSector.wallMat, ctx._wFace, ctx._wPlaneId, u, h, entryDist, z, wallAoD(ctx, nearSector, h, z));
+        if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_WALL, farSector.wallMatId, ctx._wFace, ctx._wPlaneId, u, h, entryDist, z, wallAoD(ctx, nearSector, h, z));
         else shadeAndWrite(rt, x, row, ctx, farSector.wallMat, u, h, entryDist, z, 'wallface');
       }
 
@@ -457,7 +543,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       // second one's cap reaching back into the first one's wall-face
       // rows).
       const capRowEnd = Math.min(openBottom, wallRowStart - 1);
-      castPlane(rt, x, ctx, farSector.floorMat, farSector.floorH, entryDist, exitDist,
+      castPlane(rt, x, ctx, farSector.floorMat, farSector.floorMatId, farSector.floorH, entryDist, exitDist,
         openTop, capRowEnd, farSector.floorH, GK_TOP);
       if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
 
@@ -503,7 +589,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       for (let row = r0; row <= drawR1; row++) {
         const h = heightAtRow(ctx, row, perpDist);
         const z = h - nearSector.floorH;
-        if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_STEP, higher.wallMat, ctx._wFace, ctx._wPlaneId, u, h, perpDist, z, wallAoD(ctx, nearSector, h, z));
+        if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_STEP, higher.wallMatId, ctx._wFace, ctx._wPlaneId, u, h, perpDist, z, wallAoD(ctx, nearSector, h, z));
         else shadeAndWrite(rt, x, row, ctx, higher.wallMat, u, h, perpDist, z, 'stepfront');
       }
       openBottom = Math.min(openBottom, r0 - 1);
@@ -527,7 +613,8 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
         const h = heightAtRow(ctx, row, perpDist);
         const z = h - nearSector.floorH;
         const mat = lowerCell.upperMat || lowerCell.wallMat;
-        if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_UPPER, mat, ctx._wFace, ctx._wPlaneId, u, h, perpDist, z, wallAoD(ctx, nearSector, h, z));
+        const matId = lowerCell.upperMatId || lowerCell.wallMatId;
+        if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_UPPER, matId, ctx._wFace, ctx._wPlaneId, u, h, perpDist, z, wallAoD(ctx, nearSector, h, z));
         else shadeAndWrite(rt, x, row, ctx, mat, u, h, perpDist, z, 'lintel');
       }
       openTop = Math.max(openTop, r1 + 1);
@@ -632,7 +719,7 @@ function resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, depth
 // by the caller.
 function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, dFar, openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending) {
   if (openTop <= openBottom && dFar > dNearFloor) {
-    castPlane(rt, x, ctx, sector.floorMat, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH,
+    castPlane(rt, x, ctx, sector.floorMat, sector.floorMatId, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH,
       sector.solid ? GK_TOP : GK_FLOOR);
     if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
   }
@@ -690,7 +777,7 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
         // segment whose OWN `sector.ceilH` is still 'sky', clears it) -
         // `ceilingFilledTo` stays put meanwhile, so this same draw is
         // retried, correctly, once it is.
-        castPlane(rt, x, ctx, sector.ceilMat, sector.ceilH, dNearCeil, dFar, ceilTop, openBottom, sector.floorH, GK_CEIL);
+        castPlane(rt, x, ctx, sector.ceilMat, sector.ceilMatId, sector.ceilH, dNearCeil, dFar, ceilTop, openBottom, sector.floorH, GK_CEIL);
         if (ctx._planeR1 >= ctx._planeR0) ceilingFilledTo = Math.max(ceilingFilledTo, ctx._planeR1);
       }
     }
@@ -719,7 +806,7 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
 // and ceilings go opposite ways).
 // `gkind` (US-028): GK_FLOOR/GK_TOP/GK_CEIL - which kind of plane this is,
 // for the G-buffer path (face + planeId + aoD). Unused on the v1 path.
-function castPlane(rt, x, ctx, matKey, h, dNear, dFar, openTop, openBottom, floorHForZ, gkind) {
+function castPlane(rt, x, ctx, matKey, matId, h, dNear, dFar, openTop, openBottom, floorHForZ, gkind) {
   const rowAtNear = rowAtHeight(ctx, h, Math.max(dNear, 1e-3));
   const rowAtFar = rowAtHeight(ctx, h, Math.max(dFar, 1e-3));
   let r0, r1;
@@ -743,31 +830,11 @@ function castPlane(rt, x, ctx, matKey, h, dNear, dFar, openTop, openBottom, floo
     const wx = ctx.posX + ctx.rayDirX * dist;
     const wy = ctx.posY + ctx.rayDirY * dist;
     const z = h - floorHForZ;
-    if (gbuf) emitSample(rt, x, row, ctx, gkind, matKey, face, planeId, wx, wy, dist, z, planeAoD(ctx.level, gkind, h, wx, wy));
+    if (gbuf) emitSample(rt, x, row, ctx, gkind, matId, face, planeId, wx, wy, dist, z, planeAoDFast(ctx, gkind, wx, wy));
     else shadeAndWrite(rt, x, row, ctx, matKey, wx, wy, dist, z, 'plane');
   }
   ctx._planeR0 = r0;
   ctx._planeR1 = r1;
-}
-
-// US-028 (tech notes item 3, port of `planeS`'s aoD): distance to the
-// nearest neighbour cell that "rises" against this plane (a step up for a
-// floor/top, a lower ceiling or a solid column for a ceiling).
-function planeRises(level, gkind, h, nx, ny) {
-  const q = level.sectorAt(nx + 0.5, ny + 0.5);
-  if (!q) return true;
-  if (gkind === GK_CEIL) return q.solid || (q.ceilH !== 'sky' && q.ceilH < h - 0.01);
-  return q.floorH > h + 0.01;
-}
-function planeAoD(level, gkind, h, wx, wy) {
-  const cx = Math.floor(wx), cy = Math.floor(wy);
-  const fx = wx - cx, fy = wy - cy;
-  let a = Infinity;
-  if (planeRises(level, gkind, h, cx - 1, cy)) a = Math.min(a, fx);
-  if (planeRises(level, gkind, h, cx + 1, cy)) a = Math.min(a, 1 - fx);
-  if (planeRises(level, gkind, h, cx, cy - 1)) a = Math.min(a, fy);
-  if (planeRises(level, gkind, h, cx, cy + 1)) a = Math.min(a, 1 - fy);
-  return a;
 }
 
 function fillSkySpan(rt, x, ctx, openTop, openBottom, azimuthDeg) {

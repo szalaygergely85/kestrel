@@ -1,19 +1,27 @@
 #!/usr/bin/env node
-// US-028 parity tool (docs/backlog.md tech notes item 11, "Parity tool").
-// Renders `test_room` through the full v2 pipeline (castSectors's G-buffer
-// path -> computeDerivatives -> shadeSurfaces -> edgePass) at the pose/grid
-// recorded in the designer's exported JSON (`design/preview/detail_pass.html`
-// -> "export proposed JSON", format `ascii-quest/detail-pass-export` v1;
-// checked in at `design/preview/exports/detail_pass_start.json`), and
-// compares cell-by-cell: glyph equality, and fg/bg within +-8 per channel.
+// US-028 parity tool (docs/backlog.md tech notes item 11 / architect
+// ruling 2, rework 2026-09-23). Renders `test_room` through the full v2
+// pipeline (castSectors's G-buffer path -> computeDerivatives ->
+// shadeSurfaces -> edgePass) at the pose/grid recorded in the designer's
+// exported JSON (`design/preview/detail_pass.html` -> "export proposed
+// JSON", format `ascii-quest/detail-pass-export` v2, per-cell `samples`;
+// checked in at `design/preview/exports/detail_pass_start.json`).
 //
 //   node tools/compare-detail-export.mjs [path/to/export.json]
 //
-// Exits 0 when glyph/fg/bg each match in >= 95% of cells, 1 otherwise.
-// Mismatched cells are grouped by (kind, rule, material) with up to the
-// first 20 (col,row) pairs per group printed (ours vs theirs), so expected
-// differences (US-004b overdraw fixes the preview's port lacks; deferred
-// sky) can be told apart from real bugs.
+// Architect ruling 2 (2026-09-23): the preview's caster is a throwaway
+// pre-US-004b port and is NOT the correctness baseline for geometry - the
+// only fair comparison is SHADING on cells both sides agree are the same
+// surface (same `kind` AND same v2/v1 material key). This tool:
+//   1. classifies every cell as same-surface or excluded (with a reason:
+//      sky-vs-geometry, kind-mismatch, material-mismatch);
+//   2. the 95/95/95 glyph/fg/bg thresholds apply ONLY to the same-surface
+//      set;
+//   3. on a same-surface MISMATCH, also diffs the v2 shader's own INPUTS
+//      (u, v, dist, z, aoD, dudx, dvdx, dudy, dvdy - version 2 export field)
+//      against our own G-buffer sample for that cell, so a real geometry/
+//      derivative bug is distinguishable from a content/shading difference.
+// Exits 0 when glyph/fg/bg each match in >= 95% of the same-surface cells.
 
 import fs from 'node:fs';
 import { loadLevel } from '../engine/world/Level.js';
@@ -32,6 +40,7 @@ const detailPass = detailPassModule.default || detailPassModule;
 
 const KIND_NAMES = ['sky', 'wall', 'step', 'upper', 'floor', 'top', 'ceil'];
 const RULE_NAMES = ['none', 'cap', 'lip', 'side', 'convex', 'concave', 'seamFloor', 'seamCeil', 'nosing'];
+const SAMPLE_FIELDS = ['dist', 'u', 'v', 'z', 'aoD', 'dudx', 'dvdx', 'dudy', 'dvdy'];
 
 class RT {
   constructor(cols, rows) {
@@ -57,6 +66,16 @@ class DepthBuf {
   set(x, y, d) { this.depth[y * this.cols + x] = d; }
 }
 
+// Our own "mat the shader used" for cell `i` (mirrors detailShade.js's
+// `shadeSurfaces` branch: v2 when the id resolves to a `DetailMaterialRec`,
+// else the v1 fallback key) - this is what the export's `mat` field means.
+function ourMatKey(table, gbuf, i) {
+  const id = gbuf.mat[i];
+  if (!id) return null;
+  const rec = table.records[id];
+  return rec.v2 ? rec.v2Key : rec.v1Key;
+}
+
 function main() {
   const path = process.argv[2] || 'design/preview/exports/detail_pass_start.json';
   const exp = JSON.parse(fs.readFileSync(path, 'utf8'));
@@ -64,6 +83,7 @@ function main() {
     console.error(`[compare-detail-export] unexpected format "${exp.format}"`);
     process.exit(1);
   }
+  const hasSamples = exp.version >= 2 && exp.samples && exp.samples.fields;
   const { cols, rows, cellW, cellH } = exp.grid;
   const level = loadLevel(testRoomDef);
   if (!level) { console.error('[compare-detail-export] test_room failed to load'); process.exit(1); }
@@ -86,8 +106,14 @@ function main() {
   edgePass(gbuf, depth.depth, rt, detailPass.edges);
 
   const n = cols * rows;
-  let glyphMatch = 0, fgMatch = 0, bgMatch = 0;
-  const groups = new Map();
+  let sameSurfaceN = 0, glyphMatch = 0, fgMatch = 0, bgMatch = 0;
+  const excluded = new Map(); // reason -> count
+  const groups = new Map();   // (kind/rule/material) -> {count, examples[]}
+  let fieldIdx = null;
+  if (hasSamples) {
+    fieldIdx = {};
+    exp.samples.fields.forEach((f, k) => { fieldIdx[f] = k; });
+  }
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -100,6 +126,34 @@ function main() {
       const myFg = [rt.fg[fi], rt.fg[fi + 1], rt.fg[fi + 2]];
       const myBg = [rt.bg[fi], rt.bg[fi + 1], rt.bg[fi + 2]];
 
+      const myKind = KIND_NAMES[gbuf.kind[i]];
+      const myMat = ourMatKey(matTable, gbuf, i);
+
+      let theirKind = null, theirMat = null, theirSample = null;
+      if (hasSamples) {
+        theirSample = exp.samples.cells[i];
+        theirKind = theirSample ? theirSample[fieldIdx.kind] : 'sky';
+        theirMat = theirSample ? theirSample[fieldIdx.mat] : null;
+      } else {
+        // Version 1 export (no samples): fall back to the OLD "compare
+        // everything" behaviour - every cell is "same-surface".
+        theirKind = myKind; theirMat = myMat;
+      }
+
+      const sameKind = theirKind === myKind;
+      const sameMat = (myKind === 'sky') || (theirMat === myMat);
+      const sameSurface = sameKind && sameMat;
+
+      if (!sameSurface) {
+        let reason;
+        if (!sameKind && (myKind === 'sky' || theirKind === 'sky')) reason = 'sky-vs-geometry (US-004b overdraw fix)';
+        else if (!sameKind) reason = `kind-mismatch (${theirKind} vs ${myKind})`;
+        else reason = `material-mismatch (${theirMat} vs ${myMat})`;
+        excluded.set(reason, (excluded.get(reason) || 0) + 1);
+        continue;
+      }
+      sameSurfaceN++;
+
       const glyphOk = myGlyph === theirGlyph;
       const fgOk = [0, 1, 2].every((k) => Math.abs(myFg[k] - theirFg[k]) <= 8);
       const bgOk = [0, 1, 2].every((k) => Math.abs(myBg[k] - theirBg[k]) <= 8);
@@ -108,30 +162,65 @@ function main() {
       if (bgOk) bgMatch++;
 
       if (!glyphOk || !fgOk || !bgOk) {
-        const key = `${KIND_NAMES[gbuf.kind[i]]}/${RULE_NAMES[gbuf.rule[i]]}/${matTable.records[gbuf.mat[i]]?.key || '(none)'}`;
+        const key = `${myKind}/${RULE_NAMES[gbuf.rule[i]]}/${myMat}`;
         let g = groups.get(key);
-        if (!g) { g = { count: 0, examples: [] }; groups.set(key, g); }
+        if (!g) { g = { count: 0, examples: [], inputDiff: {} }; groups.set(key, g); }
         g.count++;
         if (g.examples.length < 20) {
           g.examples.push(`(${x},${y}) ours=${JSON.stringify(myGlyph)}/${myFg} theirs=${JSON.stringify(theirGlyph)}/${theirFg}`);
+        }
+        // Input diff (architect ruling 2 / version-2 export): compare the
+        // shader's OWN inputs, not just its output, so a geometry/derivative
+        // bug can be told apart from a content/shading one.
+        if (hasSamples && theirSample) {
+          const mine = {
+            dist: depth.depth[i], u: gbuf.u[i], v: gbuf.v[i], z: gbuf.z[i], aoD: gbuf.aoD[i],
+            dudx: gbuf.dudx[i], dvdx: gbuf.dvdx[i], dudy: gbuf.dudy[i], dvdy: gbuf.dvdy[i],
+          };
+          for (const f of SAMPLE_FIELDS) {
+            const theirs = theirSample[fieldIdx[f]];
+            const theirsNum = theirs == null ? (f === 'aoD' ? Infinity : 0) : theirs;
+            const mineNum = f === 'aoD' && mine[f] === Infinity ? Infinity : mine[f];
+            const d = Math.abs((Number.isFinite(mineNum) ? mineNum : 1e9) - (Number.isFinite(theirsNum) ? theirsNum : 1e9));
+            if (d > 1e-3) {
+              if (!g.inputDiff[f]) g.inputDiff[f] = { n: 0, maxDiff: 0, example: null };
+              g.inputDiff[f].n++;
+              if (d > g.inputDiff[f].maxDiff) { g.inputDiff[f].maxDiff = d; g.inputDiff[f].example = `(${x},${y}) ours=${mineNum} theirs=${theirsNum}`; }
+            }
+          }
         }
       }
     }
   }
 
-  const pct = (k) => (100 * k / n).toFixed(2);
-  console.log(`[compare-detail-export] ${path}`);
+  const pct = (k, den) => (den ? (100 * k / den).toFixed(2) : '0.00');
+  console.log(`[compare-detail-export] ${path}  (export version ${exp.version || 1}${hasSamples ? ', per-cell samples' : ', NO samples - same-surface check degrades to "compare everything"'})`);
   console.log(`  pose: ${JSON.stringify(exp.pose)}  grid: ${cols}x${rows}`);
-  console.log(`  glyph match: ${pct(glyphMatch)}%  fg within +-8: ${pct(fgMatch)}%  bg within +-8: ${pct(bgMatch)}%  (n=${n})`);
+  console.log(`  same-surface cells: ${sameSurfaceN} / ${n} (${pct(sameSurfaceN, n)}%)`);
+  console.log(`  excluded (not same kind+material), by reason:`);
+  for (const [reason, count] of [...excluded.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${reason}: ${count} cells`);
+  }
+  console.log(`  ON THE SAME-SURFACE SET: glyph match: ${pct(glyphMatch, sameSurfaceN)}%  fg within +-8: ${pct(fgMatch, sameSurfaceN)}%  bg within +-8: ${pct(bgMatch, sameSurfaceN)}%  (n=${sameSurfaceN})`);
   console.log('  mismatches grouped by (kind/rule/material):');
   const sorted = [...groups.entries()].sort((a, b) => b[1].count - a[1].count);
   for (const [key, g] of sorted) {
     console.log(`    ${key}: ${g.count} cells`);
     for (const ex of g.examples.slice(0, 5)) console.log(`      ${ex}`);
+    const diffFields = Object.keys(g.inputDiff);
+    if (diffFields.length) {
+      console.log(`      input diff (fields whose value differs from the export's own sample):`);
+      for (const f of diffFields) {
+        const d = g.inputDiff[f];
+        console.log(`        ${f}: ${d.n}/${g.count} cells differ, max |diff|=${d.maxDiff.toFixed(4)}  e.g. ${d.example}`);
+      }
+    } else if (hasSamples) {
+      console.log(`      input diff: none - same inputs, different output (a shading/content difference, not geometry).`);
+    }
   }
 
-  const ok = glyphMatch / n >= 0.95 && fgMatch / n >= 0.95 && bgMatch / n >= 0.95;
-  console.log(ok ? '[compare-detail-export] PASS (>=95/95/95)' : '[compare-detail-export] FAIL');
+  const ok = sameSurfaceN > 0 && glyphMatch / sameSurfaceN >= 0.95 && fgMatch / sameSurfaceN >= 0.95 && bgMatch / sameSurfaceN >= 0.95;
+  console.log(ok ? '[compare-detail-export] PASS (>=95/95/95 on the same-surface set)' : '[compare-detail-export] FAIL');
   process.exit(ok ? 0 : 1);
 }
 

@@ -35,7 +35,10 @@
 const GAIN_POW_LUT_SIZE = 256;
 const SPEC_POW_LUT_SIZE = 256;
 
-function buildPowLUT(size, gamma) {
+// Exported (US-028 rework): `MaterialTable.js`/`detailShade.js` reuse this
+// same LUT-builder for the v2 shader's fg-gain curve (tech notes item 4),
+// instead of a per-cell `Math.pow`.
+export function buildPowLUT(size, gamma) {
   const lut = new Float32Array(size);
   for (let i = 0; i < size; i++) lut[i] = Math.pow(i / (size - 1), gamma);
   return lut;
@@ -47,7 +50,7 @@ let gainLUT = null; // built from shading.fgGamma on first bind
 let specLUT = null; // built from exponent 3 (fixed in the reference shader)
 let boundShading = null;
 
-function samplePowLUT(lut, x) {
+export function samplePowLUT(lut, x) {
   if (x < 0) x = 0; else if (x > 1) x = 1;
   return lut[(x * (lut.length - 1) + 0.5) | 0];
 }

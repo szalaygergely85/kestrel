@@ -41,6 +41,11 @@ export class GBuffer {
     this.aoD = new Float32Array(n);
     this.fogF = new Float32Array(n);
     this.rule = new Uint8Array(n);
+    // US-028 rework (PO ruling, 2026-09-23): whether the v2 shader classified
+    // this cell as a mortar/joint texel (band or grid joint) - the bench's
+    // blank-share metric excludes these. Written by `shadeSurfaces`; 0 for
+    // every v1-only cell (never a joint) and every cell shaded this pass.
+    this.onJoint = new Uint8Array(n);
     // Camera projection constants a structure's cast needs to hand to
     // computeDerivatives (architecture.md/backlog item 5) - same for every
     // structure cast this frame, set once by castSectors/fillFrameCam.
@@ -51,7 +56,10 @@ export class GBuffer {
 
   beginFrame() {
     this.kind.fill(0);
-    this.rule.fill(0);
+    // `rule` is NOT filled here (US-028 rework, minor item): `edgePass.js`
+    // fills it itself, right before it writes into it, every frame - a
+    // second fill here was pure waste (confirmed: nothing reads `rule`
+    // between `beginFrame` and `edgePass` in the same frame).
     this.writeCount = 0;
     this.structSeq = 0;
   }
