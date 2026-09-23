@@ -1,75 +1,74 @@
-# The Story of ASCII Quest
+# ASCII Quest: Signal
 
-> **SUPERSEDED by D-011 (2026-09-23).** "Ember and Ash" below is no longer canon. The Writer will rewrite this file from `docs/game-design.md` section 3 (fantasy with steampunk machine accents: the walled city Ferrum, the stolen balloon *Kestrel*, the crash, amnesia, the map to the SOS).
+Owner: Writer. Canon source: `docs/game-design.md` section 3 (D-011). Updated: 2026-09-23. Replaces "Ember and Ash".
 
-Owner: Writer. Canon source: `docs/game-design.md` section 3. Updated: 2026-09-23.
+> **Hook:** Someone beyond the Wall is calling for help, and you are the one who went.
 
-## Ember and Ash
+## 1. The story
 
-*The beacons have gone out, and the one who kept them has forgotten why.*
+**Ferrum.** The city climbs a hill in rings of stone and timber. Up top the Crown keeps its mages and its artificers, along with the airships, the gear-gates and the lamps that never gutter. Down in the Low Wards people haul coal, mend rope and never touch either. Everyone knows the Wall Law: nobody leaves, because outside is the Hush, and the Hush is dead.
 
----
+**The signal.** Then one night a light blinks on the far horizon. Three short, three long, three short. The old relay stones under the Low Wards start to hum along with it. The Crown says it is marsh-fire, and later says there was no light at all. It comes back every night anyway. Out there, someone is alive and asking for help.
 
-## The story
+**The theft.** You work the skyworks, patching Crown balloons you will never fly. You know every valve on the *Kestrel*, a small brass patrol craft. One night you cut her loose. The wall-ballistae wake late, then all at once. A bolt tears through the envelope, the burner roars, and the ground comes up to meet you through the broken roof of a tower.
 
-Once, the Emberlands burned bright at the edges. A ring of stone towers stood on the hills, and each one held a beacon bowl full of fire. While they burned, the Dim stayed away. The Dim is a slow, cold darkness. It does not charge or roar. It seeps in, and wherever it settles, colour drains out of the world: red rust goes grey, green moss goes grey, and then the grey itself fades.
+**Waking (M1, "The Awakening").** You wake to ash, embers and the burner ticking as it cools. You remember Ferrum and your trade: gauges, levers, the smell of hot brass. You do not remember the flight, and you do not remember why you went. Your hand is clutching a map inked in your own writing. It marks the signal, a route of old relay towers and notes you have no memory of writing. You take the *Kestrel's* lamp and climb. At the summit a dead relay sits in its crystal bowl. When you bring the lamp, it wakes. Ferrum glows behind you, and ahead the signal answers.
 
-The westernmost tower stands at the very edge of the world. It is the Hollow Watchtower, and people once called it the Sunken Beacon. Its roof is long gone and its stairs have fallen in. Its bowl is cold.
+**M2, "Out of the Wreck."** You go down into the Emberlands: moss over old roads, forests over old cities. You find a steel sword in a ruin. Beasts roam the hills, some of them wrong in a way the Crown would call the Hush. The land is alive, just not safe. Each relay you wake becomes a light you can come back to.
 
-**The Awakening.** You wake at the bottom of the tower on cold stone. You don't know your name or how long you have slept. One thin shaft of sun falls through the broken roof, full of drifting dust, and it pulls your eye upward. Someone has scratched words into the walls, some firm and some shaking. There are old ashes in the corners, a lever furred with rust, and gaps where the stairs used to be. You climb because the light is above you. At the summit breach the wind hits you and the world opens out: hills rolling away into blue fog, and far off on another hilltop, a second tower. It is dark too.
+**M3, "The Relay Line."** The map's route runs from tower to tower. You meet exiles, people Ferrum cast out and swore had died. They hand you an artificer's gauntlet, and in your hand it answers with Spark, the first light verb. Then brass footsteps follow you through the trees: a stray Crown sentinel, far from any wall that would claim it. Every relay you wake flares a little brighter toward the signal, as if something at the far end has noticed.
 
-Nobody tells you what you are. The walls hint at it. You are the Keeper, the one who tended this fire. How the fire went out, and whether you let it, the tower doesn't say.
+**M4, "The Signal Source."** The route ends at an ancient ruin full of pressure doors and gear locks older than the Crown's artificers. You fight your way to its heart and take the first gauntlet crystal. The signal is still pulsing, steady and patient, but nobody is there.
 
-**First Steps.** You step out of the breach onto real ground. Grass bends and slopes pull at your feet. The sun crosses the sky and sets, and each night lasts a little longer than it should. Things move in the dusk that were never meant to be close to the towers. You find a blade and learn its weight. You find a chest that someone hid well, as if they expected you back. The tower becomes the place you return to, the one spot in the world that still feels like yours.
+**The mystery.** The machine is old, older than Ferrum's Wall. Yet the relay-keeper's log counts pulses from long ago. Your map knew the way before you did, and the handwriting in the margins is yours. So who called for help, and who is still calling?
 
-**The Dark Beacons.** Beyond the first valley, three more towers wait, each one cold. Relighting a beacon is more than lighting a fire. When the flame catches, colour floods back down the hillside in a widening ring. Rust turns red again, moss turns green, and the sky above the tower is blue once more. The Dim pulls back, sullen and slow. There is a village between the hills, and its people have learned to live small and near their lanterns. They remember a Keeper. They don't all remember one kindly.
+## 2. Places
 
-**The Depths.** Some light was carried down instead of up. Under the hills lies a place built to hold a flame where the Dim could not reach it, with mirrors angled to throw one ray through a dozen rooms and shadows that act like locks. Something waits at the bottom. It has kept the dark company for a very long time, and it knows your step.
+- **Ferrum.** A walled, tiered city of stone and timber. Lamplight and brass at the top, smoke and rope at the bottom. From outside you only ever see its lights on the horizon.
+- **The Wall.** A ring of stone lined with ballistae. It was built to keep people in, and what it says about the outside is a lie.
+- **The Hollow Watchtower.** A roofless round relay tower wrapped in moss and ivy, with the *Kestrel* smashed through its broken crown. Canvas hangs in the stairwell and the burner smolders on the floor.
+- **The *Kestrel*.** A Crown patrol balloon: a brass gondola, a copper burner and a lamp that still works. Now it is wreckage, and it was the only way out.
+- **The Relay Line.** Old signal towers strung across the Emberlands, each with an aether-crystal bowl in a brass-and-mirror mount. Every one is dead until you wake it.
+- **The Signal Tower.** A far spire where a teal light pulses at the end of your map.
 
-Every beacon you light shows you a little more of the ring, and a little more of yourself. Out past the last hill, at the far side of the world, a light flickers that no map marks. It isn't yours. Someone else is still awake.
-
----
-
-## Places
-
-- **The Hollow Watchtower (the Sunken Beacon).** The westernmost beacon, roofless, its walls scratched with words. Where you wake, and where you return.
-- **The Summit Breach.** A torn gap near the top of the wall, where the Emberlands open below you and you first see the lights are out.
-- **The Second Tower.** A dark shape on a far hill, seen from the breach. It is a promise and a question at once.
-- **The Emberlands.** Hills once ringed with fire, now fading into fog.
-- **The Lantern Village.** A handful of homes huddled between the hills, where every door has a light and nobody walks out after dark.
-- **The Depths.** Mirrors and shadow under the hills, where an old flame was hidden.
-
----
-
-## Wall scrawl (tower, US-021)
-
-Each line is 60 ASCII characters or fewer.
-
-1. `THE BOWL IS COLD. I DID NOT SEE IT GO OUT.`
-2. `KEEP THE FIRE. KEEP THE FIRE. KEEP THE`
-3. `THE DIM TOOK THE RED FIRST. THEN THE GREEN.`
-4. `CLIMB TOWARD THE SUN. IT STILL REMEMBERS YOU.`
-5. `IF YOU WAKE, LOOK EAST. THE OTHERS ARE DARK TOO.`
-
----
-
-## Title card (US-015)
+## 3. Relay-keeper's log (US-021, each line <= 60 chars)
 
 ```
-ASCII QUEST
-The Sunken Beacon
-
-Click to wake. WASD to walk, mouse to look.
-Space to leap the gaps. Shift to hurry.
-E to touch what the old keeper left behind.
+Day 1. Relay cold. Wall says no one is out here. Liar.
+The far tower blinks at night. 3 short, 3 long, 3 short.
+Mirror cracked. Bowl still holds light if you feed it.
+No reply from Ferrum. They hear it. They choose not to.
+If you read this, keep climbing. The light is up top.
 ```
 
----
+## 4. Title card (US-017 / US-015)
 
-## Proposals (ESCALATE TO MANAGER)
+**Title:** `ASCII QUEST`
+**Subtitle:** `SIGNAL`
 
-1. **Keeper's guilt:** hinted the Keeper let the fire die; keep it open until M4+.
-2. **Relighting restores colour** in a ring around the beacon (canon only says the Dim takes it).
-3. **Nights grow longer** while beacons are dark (ties into the M2 day/night cycle).
-4. **Working names:** "Lantern Village" (M3), "the Depths" (M4).
-5. **An unmarked light** past the last hill: someone else awake. Post-M4 hook only.
+**Hints:**
+```
+The burner still glows. Take what light you can.
+Climb. The map points up before it points out.
+Press M to read the map in your own hand.
+```
+
+**Map card (US-015, shown once after waking; `M` re-opens):**
+```
+        MAP  -  in your own hand
+  FERRUM [#]                          * SIGNAL
+   (wall)   \                        /
+             x HOLLOW TOWER --o---o---o
+               (start here)     relay line
+  "Follow the relays. Wake each one."
+  "Do not go back. Not yet."
+  "It is not the Crown calling."
+        - any key -
+```
+
+## 5. Proposals (ESCALATE TO MANAGER)
+
+1. **SOS pattern.** The pulse is 3 short, 3 long, 3 short, the old sailor's SOS. It is used in the log and in the story. It needs canon confirmation, and the P2 pulse animation should match it.
+2. **The log is old.** The keeper counted the same signal years ago. That hints the SOS is older than the hero's escape. It is kept vague on purpose, but it constrains the eventual reveal.
+3. **Pre-written map notes.** The map was inked before the crash, maybe before the hero ever decided to leave. That seeds the question "why did I go, and who told me the way?"
+4. **Exile village name.** It is still unnamed. Candidate: **Outwall**.
