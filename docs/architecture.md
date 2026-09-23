@@ -171,7 +171,7 @@ export function moveCapsule(world: WorldQuery, x, y, dx, dy, radius, footZ, grou
        // iterative minimum-translation push-out, deepest contact first (max 4 iterations); see US-008 ARCH CHANGES for the algorithm
        // and the two invariants ((res-pre).d >= 0, |res-target| <= |d|). Velocity response: zero blocked axes, then clip v against n.
        // WorldQuery.outsideSector is mandatory (Player dereferences the resolved sector).
-export function moveSphere (world: WorldQuery, x, y, dx, dy, radius, z, opts): {x,y,hitX,hitY}                 // US-013
+export function moveSphere (world: WorldQuery, x, y, dx, dy, radius, z, opts, out: MoveResult): MoveResult   // US-013, see 7.4 (out param, rule 9.3)
 /**
  * @typedef {Object} Controls   one per sim step; the caller owns and REUSES the object (rule 9.3)
  * @property {number}  [forward=0]  -1..1 (W=+1, S=-1)      @property {number} [strafe=0] -1..1 (D=+1, A=-1)
@@ -938,3 +938,124 @@ Goal: entities (e.g. a bear the player walks around and talks to) that are real 
 Timing: story (1) is Node-only and can start as soon as US-030b is `ARCH OK` (it does not touch `engine/render/gpu/*`); (2) and (3) after US-016 (14.4) and US-006/007 (14.3) land, because the pass slot (A3) and the `face 7` normal path depend on both. If the `light` pass is not in yet when (2) starts, kind 8 cells use `face` 1..6 only (no rotated parts) and the packed normal lands with (3).
 
 **Do not:** raymarch models per cell in JS on the GPU path (culling is per instance, marching per sub-ray in GLSL); store voxel data as one string per voxel or as nested arrays of numbers (row strings per layer only); give models per-cell planeIds (edge pass would outline every screen cell); bake lighting into voxel colours (materials + `light` pass only); let entity code touch `gl` or the packer (the entity exposes `{ model, transform, anim }`, the renderer reads it).
+
+### 15.1 Voxel model format, packer and JS oracle (US-039, architect, 2026-09-23)
+
+This refines section 15 option A. Where the two differ (the planeId layout, the face-7 rule, the fixture size), this subsection wins.
+
+**Folder:** `engine/voxel/` is a new engine module. It imports only the constants in `engine/render/GBuffer.js`, and never `game/`, `design/` or `render/gpu/`. It gets no `engine/index.js` exports until US-041 (tests import the files directly). GDD words stay out of `engine/`, so the test fixture is a generic "quadruped" that is shaped like a bear.
+
+**Constants** (in `engine/voxel/VoxelModel.js`; they move to `GBuffer.js` in US-040):
+`KIND_MODEL = 8`, `FACE_PACKED = 7`, `MAX_VOX_PARTS = 8`, `MAX_VOX_STEPS = 48`, `MAX_VOX_DIM = 32`, `MAX_VOX_INSTANCES = 16`, `RESERVED_EVENTS = ['animEnd','arrive','interact','removed']`.
+
+**Data: `ModelDef.voxel`.** It is JSON-safe and uses dense row strings, with no RLE. Models are about 1 KB, rows diff and paint well, and the packer produces the dense atlas.
+```js
+/** @typedef {Object} VoxelModelDef
+ * @property {1} version
+ * @property {number} cellM                       metres per voxel, 0.01..1 (content default 0.125)
+ * @property {[number,number,number]} size         [sx, sy, sz] ints 1..32, sx*sy*sz <= 4096
+ * @property {[number,number,number]} anchor       voxel units (float ok): feet centre = the entity transform origin
+ * @property {Object<string,string|null>} mats     1 char (0x21..0x7E) -> palette/detailPass material key, or null (= empty).
+ *                                                 '.' and ' ' are always empty. <= 255 non-null chars.
+ * @property {string[][]} layers                   layers[z][y] = row string of sx chars. z = 0 is the BOTTOM layer (feet),
+ *                                                 y = 0 is the model's FRONT row (faces north at yaw 0), x = 0 is west.
+ * @property {Object<string,VoxelPartDef>} parts   insertion order = part index 0..7; 1..8 parts
+ * @property {Object<string,VoxelClipDef>} [animations]
+ *
+ * @typedef {Object} VoxelPartDef
+ * @property {[number,number,number,number,number,number]} box   [x0,y0,z0,x1,y1,z1] ints, half-open, inside size
+ * @property {[number,number,number]} pivot                        voxel units (model rest frame)
+ * @property {string} [parent]                                     an EARLIER part (acyclic by construction)
+ *
+ * @typedef {Object} VoxelClipDef   (the same timing and events shape as sprite clips, 10.1)
+ * @property {number} [fps]             exactly one of fps (0 < fps <= 60) | durations (ms > 0, one per frame)
+ * @property {number[]} [durations]
+ * @property {boolean} loop
+ * @property {'linear'|'step'} [interp] default 'linear'
+ * @property {Object<string,number|number[]>} [events]   tag -> frame index(es), 10.1 semantics
+ * @property {Array<Object<string,{rot?:[number,number,number], pos?:[number,number,number]}>>} frames
+ *           1..64 keyframes; per part: rot = degrees about the part's local x, y, z; pos = voxel units. Missing = 0.
+ */
+```
+A voxel belongs to the **first** part (in index order) whose box contains it. The rest pose has every rot and pos at 0.
+
+**Transforms (the literal twin for GLSL).** These are standard matrices on (x, y, z) components. With x east, y south and z up, a positive rotation about z turns east toward south. Seen from above that is clockwise, the same sense as compass yaw. `R(rot) = Rz(rz) * Ry(ry) * Rx(rx)`. `cosSinDeg(d)` returns exact {0, +-1} when `d % 90 === 0`, else `Math.cos/sin(d*PI/180)`. JS does this computation, and GLSL receives the resulting matrices, never angles.
+- Model to world: `W = T(inst.x, inst.y, inst.z) * Rz(yawDeg) * S(cellM) * T(-anchor)`.
+- Part local to model: `M_k = M_parent * T(pivot + pos) * R(rot) * T(-pivot)` (for a root part, parent = identity).
+- For each part and frame, the pose stores the **world-to-part-local affine** `L_k = (W * M_k)^-1` as 12 float64 values (`A` 3x3 row-major, then `b` 3). It is built from rigid inverses (transpose plus scale `1/cellM`), never from a general 4x4 inverse. The ray `o + t*d` maps to `A*o + b + t*(A*d)`, so **t is unchanged**: it stays the perpendicular camera distance that `fb.depth` stores.
+- Normals: `n_world = cellM * A^T * n_local`.
+- `axisAligned_k` means `yawDeg % 90 === 0` and every rot component along the part's parent chain is `=== 0` at this pose. Axis-aligned parts write world face 1..6 (from the rounded `n_world`) with `aoD = Infinity`. All other parts write `face 7` and the packed normal.
+
+**Pose sampling.** This is deterministic and is shared with the US-041 `stepAnimations`. Instance state is `{clip, frame, tMs}`: the 10.1 `sprite` fields `anim/frame/t`, with anim resolved to a clip index at bind time.
+- `alpha = interp==='step' ? 0 : clamp(tMs / durMs[frame], 0, 1)`.
+- `next = frame+1 < n ? frame+1 : (loop ? 0 : frame)`.
+- Per part and component: `v = K[frame] + (K[next] - K[frame]) * alpha`. This is an Euler lerp, which is fine for the small angles of idle and walk.
+- `clip = -1` is the rest pose.
+
+**Packed model.** It is built at bind time (so it may allocate) and is never serialized.
+```js
+/** @typedef {Object} PackedVoxelModel
+ * @property {number} sx, sy, sz, cellM, partCount, version    version++ on every repack (GPU re-upload key, US-040)
+ * @property {Float64Array} anchor                 3
+ * @property {Float64Array} parts                  partCount * PART_STRIDE(16): x0,y0,z0,x1,y1,z1, px,py,pz, parent(-1), atlasOff, bx,by,bz, pad, pad
+ * @property {Uint8Array} vox                      the 'VOX' atlas bytes: per part a dense box block (bx*by*bz), index
+ *                                                 atlasOff + (x-x0) + bx*((y-y0) + by*(z-z0)); 0 = empty (or owned by an
+ *                                                 earlier part), else local material index 1..255
+ * @property {Uint16Array} matIds                  the 'MODELMAT' row: local index -> MaterialTable id (0 unused)
+ * @property {Array<{name:string, n:number, loop:boolean, step:boolean, durMs:Float32Array, keys:Float64Array, tagCodes:Int16Array}>} clips
+ *           keys = n * partCount * 6 (rx,ry,rz,px,py,pz)
+ * @property {Object<string,number>} clipIndex     name -> clip index (bind-time lookup only)
+ */
+packVoxelModel(def: VoxelModelDef, matIdFor: (key: string) => number): PackedVoxelModel   // throws if validation fails; matIdFor = MaterialTable.idFor
+```
+
+**Validator:** `validateVoxelModel(def, opts?: {materialKeys?: Iterable<string>}) -> {errors: string[], warnings: string[]}` collects **all** problems. Each one is prefixed with its path, e.g. `voxel.layers[3][2]: row length 11, expected 12`. `assertVoxelModel(def, opts)` throws one Error that lists every line. Rules:
+1. JSON-safe: only plain objects, arrays, strings, finite numbers, booleans and null (no undefined, NaN, Infinity, functions or typed arrays).
+2. `version === 1`. `cellM` is finite and in [0.01, 1]. `size` is 3 ints in 1..32 whose product is <= 4096. `anchor` is 3 finite numbers in [0, size].
+3. `mats`: keys are single chars 0x21..0x7E. `'.'`, if present, must be null. Values are strings or null, with at most 255 non-null. With `opts.materialKeys`, every value must be a known key (`unknown material key 'fur_x'`).
+4. `layers`: exactly sz arrays, each of exactly sy strings of exactly sx chars. Every char is `'.'`, `' '` or a `mats` key (`unknown voxel char 'q' at [z][y][x]`).
+5. `parts`: 1..8 of them (`> 8 parts`). Names match `/^[A-Za-z][A-Za-z0-9_]{0,15}$/`. Boxes are ints with `0 <= x0 < x1 <= sx`, and the same for y and z (`part box outside the grid`). The **box extent is `bx+by+bz <= 48`**, so `MAX_VOX_STEPS` can never truncate a march. The pivot is finite. `parent` names an earlier part. Every non-empty voxel lies in some part box (`orphan voxel at [z][y][x]`). A part that owns no voxels is a warning, not an error.
+6. `animations`: names follow the part-name pattern. Exactly one of `fps` / `durations` is set (durations length = frames length, each > 0). There are 1..64 frames, and frame keys are part names. `rot`/`pos` are 3 finite numbers with `|rot| <= 180`. `loop` is a boolean and `interp` is linear or step. Event tags match the name pattern and are not in `RESERVED_EVENTS`; their indices are ints in [0, n).
+
+**March (`engine/voxel/voxelMarch.js`).**
+```js
+marchVoxelRay(pm, k, pose, ox, oy, oz, dx, dy, dz, tMax, out: Float64Array /*>= 8*/): 0|1
+  // part k, WORLD ray; out = [t, lx, ly, lz, localFace 1..6, layer, 0, 0]; hit only if t < tMax
+castModels(fb, list: VoxelInstance[], cam: Camera, opts?: {faceMode?: 'packed'|'nearest', stats?: {instancesCulled, raysMarched, cellsWritten}}): void
+computeVoxelPose(pm, inst, out: Float64Array /* MAX_VOX_PARTS*16 */): void   // per part: L_k (12) + axisAligned flag + pad
+// engine/voxel/octNormal.js
+packNormalOct(nx, ny, nz): number /*uint32*/;  unpackNormalOct(bits, out: Float64Array /*3*/): void
+/** @typedef {{ model: PackedVoxelModel, x:number, y:number, z:number, yawDeg:number, clip:number, frame:number, tMs:number }} VoxelInstance
+ *  Renderer-side, filled from entity data (US-041); castModels only reads it. */
+```
+- **The projection is the sector caster's** (the castScene block in `sectorCaster.js`): `tanHalfHFov`; `planeDistY = (rows/2) * screenAspect / tanHalfHFov` with `screenAspect = cols*pxCellW / (rows*pxCellH)` from `fb.rt`; `horizonRow = rows/2 + tan(pitch)*planeDistY`. The cell ray is not normalised: `cameraX = 2*(x+0.5)/cols - 1`, `d = (dirX + planeX*cameraX, dirY + planeY*cameraX, (horizonRow - (row+0.5)) / planeDistY)`, `o = eye`. So `t` is the perpendicular distance and compares directly with `fb.depth`.
+- Per call, for the first 16 instances (`stats.instancesCulled += rest`):
+  1. Run `computeVoxelPose`.
+  2. Build the world AABB from the 8 posed corners of every part box.
+  3. Build the screen rect of the AABB's 8 projected corners (floor/ceil, +1, clamped). If any corner is at depth <= 0.05 m, use the full screen.
+  4. Loop only over the rect's cells.
+- Per cell:
+  1. Slab-test against the world AABB, and skip the cell if `tEnter >= fb.depth[i]`.
+  2. For each part, map the ray with `L_k` and slab-test it against the part box `[x0,x1)`.
+  3. Run Amanatides-Woo from `max(tEnter, 0)`. The start voxel is `floor(p)`, clamped into the box. `tDelta = 1/|d|` (Infinity for 0 components). Take at most `MAX_VOX_STEPS` steps, fetching `vox[atlasOff + ...]` at each.
+  4. The first non-zero voxel with `t > 1e-6` is the hit. A solid voxel that contains the eye is skipped, never drawn from inside.
+  5. The entry face is on the axis last stepped (or the slab-entry axis for the first voxel). For example, stepping +x enters through the local W face (4).
+  6. **Axis choice, verbatim in GLSL:** `if (tmx < tmy) { axis = tmx < tmz ? X : Z } else { axis = tmy < tmz ? Y : Z }`.
+- The nearest hit wins: write only when `t < fb.depth[i]` (strict). Parts go in index order and instances in list order, so ties go to the earlier one. Write `fb.depth` first, then `gbuf.writeSample(i, KIND_MODEL, matIds[m], face, planeId, u, v, z, aoD)`.
+- `u, v` are metres, part-local. A face on the x axis gives `(ly, lz)*cellM`, the y axis gives `(lx, lz)*cellM` and the z axis gives `(lx, ly)*cellM`. `z = oz + t*dz - inst.z` (world metres above the feet).
+- **planeId** = `(0xF<<28) | (slot<<24) | (part<<21) | (localFace<<18) | (layer & 0x3FFFF)`. Here slot is the instance index 0..15 and layer is the integer local boundary coordinate of the hit face. The top nibble 0xF never collides with sectors, because structSeq is 3 bits (7.2). Coplanar faces of one part share an id, as walls do.
+- **Packed normal (face 7):** octahedral and deterministic.
+  1. `n /= |x|+|y|+|z|`.
+  2. If `z < 0`: `(x, y) = ((1-|y|)*sgn(x), (1-|x|)*sgn(y))` with `sgn(0) = +1`.
+  3. `q = min(65535, floor((c*0.5+0.5)*65535 + 0.5))`, then `bits = (qx | (qy << 16)) >>> 0`.
+  4. On the GPU the bits go into `GA.w` as a uint. On the CPU they go into the bits of `gbuf.aoD[i]` through a `Uint32Array` alias of `gbuf.aoD.buffer`, made once per GBuffer identity (not per frame). The CPU shading passes must ignore `aoD` for kind 8; that is wired in US-041.
+- `opts.faceMode = 'nearest'` is for US-040 before the light pass exists: face 7 becomes the nearest world axis face 1..6, with `aoD = Infinity`.
+
+**Budgets:**
+- `castModels` for one near quadruped (about 30 % of the screen) at 160x60: <= 0.3 ms p50 and <= 0.5 ms p95 (`tools/bench-voxel.mjs`).
+- `computeVoxelPose`: <= 0.01 ms per instance.
+- Allocation: 0 bytes per call after warm-up. Rule 9 applies: no `new`, literals, closures, `for..of`, destructuring or string work in the hot functions of `voxelMarch.js`/`octNormal.js`. Scratch space is module-level typed arrays.
+
+**Not in US-039:**
+- GLSL (US-040).
+- US-041 items: the `renderWorld` wiring, `fillSky` vs model cells in open spans, shading/light for kind 8, AssetRegistry loading of `ModelDef.voxel`, and `stepAnimations` for voxel clips.
