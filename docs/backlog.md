@@ -785,6 +785,8 @@ Notes / dependencies: US-028 `done`. Grid stays 160x60 in this story. Tester run
 11. **Do not**: change `present()`'s shader or draw; read back in the frame loop; use `EXT_color_buffer_float`, UBOs, `round()`, signed shifts, `%` on negatives, `gl_FragCoord` in any hash; add a second copy of the material flattening (only `bindShading` output is packed); add anything level- or tower-specific to GLSL; allocate in `frame()` or the hook.
 
 ### US-030 GPU raycasting (GLSL DDA) + N-ray coverage anti-shimmer + GPU sprites  [Priority: P0] [Status: todo]
+
+> **Owner feedback (2026-09-23, after US-028a):** walking still looks "a bit strange" (residual swimming). Owner agreed to wait for the GPU path and a finer grid. US-030 acceptance therefore includes an **owner walk-test in real Chrome at the new default grid (240x90)**: the owner confirms that shimmer/swimming is no longer bothersome. If not, raise it with the PO before `done`.
 As a player, I want walls and floors to stay still and crisp while I move, on a bigger and more detailed grid, so that the world looks solid instead of "lines jumping".
 (D-009 stage 2. Only runs if US-029 passed the gate.)
 Acceptance criteria:
