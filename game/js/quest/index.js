@@ -10,6 +10,7 @@
 // game/js/quest/. Positions come from `world.structures[i].origin` +
 // `structure.level.def.*` at call time, never from constants.
 import { registerBehaviour } from '../../../engine/index.js';
+import { leverPull } from './lever.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -32,10 +33,15 @@ function stub(name, story) {
   };
 }
 
+/** name -> real implementation, for the stories that have landed (US-014: `lever.pull`). Everything else stays a stub. */
+const REAL_BEHAVIOURS = {
+  'lever.pull': leverPull,
+};
+
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */
 export function registerQuestBehaviours() {
   for (const name of Object.keys(QUEST_BEHAVIOURS)) {
-    registerBehaviour(name, stub(name, QUEST_BEHAVIOURS[name]));
+    registerBehaviour(name, REAL_BEHAVIOURS[name] || stub(name, QUEST_BEHAVIOURS[name]));
   }
 }
 

@@ -44,7 +44,9 @@
     state: {
       'tower.lantern.taken': false,
       'tower.lever.pulled': false,
-      'tower.grate.open': 0,                  // 0..1 progress of the dynamic ceiling
+      // US-014 tech note 4: no 'tower.grate.open' key here - `structure.
+      // dynamics['grate']` (serialized on the structure itself) is the only
+      // truth for the grate's open/closed state.
       'tower.beacon.lit': false,
       'hints.shown': []
     }

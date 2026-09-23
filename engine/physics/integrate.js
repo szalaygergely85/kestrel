@@ -45,6 +45,9 @@ function ensureScratch(body, cfg) {
   if (typeof body.buffer !== 'number') body.buffer = 0;
   if (typeof body.jumpHeldPrev !== 'boolean') body.jumpHeldPrev = false;
   if (typeof body.peakZ !== 'number') body.peakZ = 0;
+  if (typeof body.speedScale !== 'number') body.speedScale = 1; // US-013: <1 while pushing a roller
+  if (typeof body.prevX !== 'number') body.prevX = 0;
+  if (typeof body.prevY !== 'number') body.prevY = 0;
 }
 
 /**
@@ -63,6 +66,12 @@ export function integrate(entity, dt, controls, world, cfg) {
   ensureScratch(body, cfg);
   const t = entity.transform;
   const P = cfg;
+
+  // US-013 ARCH CHANGES #1: record the step-start position BEFORE any of
+  // this step's movement, so `resolveBodyContacts`' restore-on-failure
+  // fallback has a true pre-integrate position to restore to (not a no-op).
+  body.prevX = t.x;
+  body.prevY = t.y;
 
   // ---- 1. Facing, timers, per-step flags --------------------------------
   if (controls) {
@@ -103,7 +112,7 @@ export function integrate(entity, dt, controls, world, cfg) {
   const wishLen = Math.hypot(wishX, wishY);
   if (wishLen > 1e-6) { wishX /= wishLen; wishY /= wishLen; }
 
-  const targetSpeed = (run ? P.runSpeed : P.walkSpeed) * Math.min(1, wishLen);
+  const targetSpeed = (run ? P.runSpeed : P.walkSpeed) * Math.min(1, wishLen) * body.speedScale; // US-013
   const targetVelX = wishX * targetSpeed;
   const targetVelY = wishY * targetSpeed;
 

@@ -383,39 +383,38 @@ function pickCharCodeFast(codes, altCount, maxAlt, h) {
   return codes[idx];
 }
 
+// Reused scratch for the shadeCore/shadeTail split (US-030b build plan:
+// "shadeDetailFast -> shadeCore + shadeTail in JS first, bench-cast
+// checksums unchanged = proof of a pure refactor, then the same split in
+// shade.frag"). Only one caller (shadeDetailFast, below) ever runs at a
+// time, no re-entrancy, so a single module-scope scratch is safe (no
+// per-cell allocation, architecture.md 9).
+const coreScratch = { b: 0, gb: 0, cr: 0, cg: 0, cb: 0, bgK: 0, hA: 0, hB: 0, onJoint: false, lineCode: -1, setId: 0 };
+
 /**
- * Frame-path v2 shader (tech notes item 4/6). Reads sample `i` straight out
- * of `gbuf`/`depth` (no intermediate object - architecture.md 9 rule 3),
- * `rec` is `table.records[gbuf.mat[i]].v2` (a `DetailMaterialRec`, non-null
- * - callers only reach here when it is), `table` is the whole bound
- * `MaterialTable` (for `faceK`, `gainLUT`, `fog`, `ao`, `shading`, `sets`).
- * Writes `out.glyphIdx` (0-94), `out.fg`/`out.bg` ([r,g,b] 0-255),
- * `out.f` (fog factor) and `out.onJoint` (bench blank-share metric) in
- * place.
+ * shadeCore (docs/architecture.md 14.2 item 3): everything that depends on
+ * THIS sample's own u/v/z/aoD - up to (but excluding) the fog factor, the
+ * discrete glyph pick and the gain/hue/overbright/byte-quantise tail
+ * (`shadeTail`, below). The CPU path only ever calls this with one sample
+ * (n=1, no coverage vote - that is GPU-only, US-030b), so the split is a
+ * pure reorganisation: `shadeDetailFast` calling `shadeCore` then
+ * `shadeTail` with a 1-sample "average" (the value itself) must produce
+ * byte-identical output to the pre-030b combined function - proven by
+ * bench-cast.mjs's embedded checksums, unchanged by this refactor.
+ * Writes into the reused `out` (`coreScratch` for `shadeDetailFast`'s own
+ * call; GLSL's twin is `shade.frag.js`'s `shadeCore`).
  */
-export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
+export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, light, out) {
   const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
 
-  const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i], aoD = gbuf.aoD[i];
-  const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
-  const face = gbuf.face[i];
-
-  const g = rec.grid;
   let course = 0, bix = 0, fv = 0.5, uo = u;
+  const g = rec.grid;
   if (g) {
     course = qfloor(v / g.v);
     uo = u - ((course & 1) ? g.stagger * g.u : 0);
     bix = qfloor(uo / g.u);
     fv = v / g.v - course;
   }
-  // Owner feedback (architect 2026-09-23, "LOD distance"): a detail OCTAVE
-  // per cell, so near texels stay crisp (finer than `rec.detail`) instead
-  // of a fixed detail density making 2m walls look blocky, while far ones
-  // stay calm (coarser) - world-anchored either way (still floor(u*ds)).
-  // `tpc` = texels-per-screen-cell in the bigger of the two screen axes;
-  // `oct` halves/doubles the detail density (clamped +-3/+2 octaves) so it
-  // never needs `Math.pow`/`Math.log2` per cell (a 6-way compare ladder,
-  // item 1).
   const tpcU = Math.abs(dudx) + Math.abs(dudy), tpcV = Math.abs(dvdx) + Math.abs(dvdy);
   const tpc = (tpcU > tpcV ? tpcU : tpcV) * rec.detail;
   let oct;
@@ -426,14 +425,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   else if (tpc >= 0.25) oct = 1;
   else oct = 2;
   const ds = rec.detail * POW2[oct + 3];
-  const tx = Math.floor(u * ds), ty = Math.floor(v * ds);
-  // Tier dither (hB, below) keeps the BASE (non-octave) texel coords, so
-  // the near/mid/far tier boundary does not shift with the detail octave.
   const btx = Math.floor(u * rec.detail), bty = Math.floor(v * rec.detail);
-  // F1 (owner feedback "shimmer when moving", US-028a): key hA/hC on the
-  // block/cell id (bix, course) when a grid exists (one alternate glyph
-  // per block, not per fine texel), else on the texel one octave coarser -
-  // both no longer reroll on sub-cell motion. hB stays on the base texel.
   let hA, hC;
   if (g) {
     hA = hashFast(bix, course, rec.seed);
@@ -446,7 +438,6 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const hB = hashFast(btx, bty, rec.seed + 7);
   const hBlock = hashFast(bix, course, rec.seed + 3);
 
-  // --- tone (per block), linear scan over <=4 weighted entries -----------
   let x = hBlock * rec.toneTotal, toneIdx = rec.toneW.length - 1;
   for (let t = 0; t < rec.toneW.length; t++) { x -= rec.toneW[t]; if (x < 0) { toneIdx = t; break; } }
   let cr = rec.toneRGB[toneIdx * 3], cg = rec.toneRGB[toneIdx * 3 + 1], cb = rec.toneRGB[toneIdx * 3 + 2];
@@ -476,8 +467,6 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
       if (band.hasTone) { cr = band.toneRGB[0]; cg = band.toneRGB[1]; cb = band.toneRGB[2]; }
       if (band.hasBgK) bgK = band.bgK;
     }
-    // Owner feedback item 2 applies to band edges too: widen the coverage
-    // gate (2x, then 4x) instead of just dropping the edge line far away.
     const bcov = coverFast(bcx, bcy);
     let bandMult = 1;
     if (!(bcov < 0.5 * band.width)) {
@@ -494,12 +483,6 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
     }
   }
   if (g && g.lines && !inBand && !onJoint) {
-    // Owner feedback (architect 2026-09-23, "LOD distance", item 2): a
-    // joint that fails its `maxCover` footprint test isn't just dropped -
-    // retest at 2x the period (every 2nd course/block - doubling the
-    // period IS "every 2nd line", `crossLineFast` needs no parity check),
-    // then 4x, before giving up. At most 2 extra (cheap) `coverFast`
-    // compares per axis; `crossLineFast` itself still runs at most once.
     const coverV = coverFast(dvdx, dvdy);
     let periodH = g.v;
     if (!(coverV < g.maxCover * periodH)) {
@@ -558,40 +541,57 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const lift = shading.lift;
   const gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
 
+  if (hasTint && tintAmt > 0) {
+    cr += (tr - cr) * tintAmt; cg += (tg - cg) * tintAmt; cb += (tb - cb) * tintAmt;
+  }
+
+  out.b = b; out.gb = gb; out.cr = cr; out.cg = cg; out.cb = cb; out.bgK = bgK;
+  out.hA = hA; out.hB = hB; out.onJoint = onJoint; out.lineCode = lineCode; out.setId = setId;
+  return out;
+}
+
+/**
+ * shadeTail (docs/architecture.md 14.2 item 3): the discrete glyph pick
+ * (level, alternate, joint/line) and the gain/hue/overbright/fog/byte-
+ * quantise tail, run once per cell on the (possibly averaged - GPU only;
+ * the CPU path always passes a 1-sample "average") continuous outputs of
+ * `shadeCore`. `core` carries the structural picks (`setId`/`lineCode`,
+ * unaveraged even on the GPU - see shade.frag.js's own doc comment) plus
+ * the averaged `b`/`gb`/`cr`/`cg`/`cb`/`bgK`/`hA`/`hB`. `face` is only
+ * needed for `orientClassCode`'s du/dv axis pick.
+ */
+function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out) {
   const fog = table.fog;
   const f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
 
   let glyphCode;
-  if (gb <= 0) glyphCode = 0;
-  else if (lineCode >= 0) glyphCode = lineCode;
+  if (core.gb <= 0) glyphCode = 0;
+  else if (core.lineCode >= 0) glyphCode = core.lineCode;
   else {
-    const S = table.sets[setId];
+    const S = table.sets[core.setId];
     const classIdx = S.oriented ? orientClassCode(S.orientAxis === 0 ? dudx : dvdx, S.orientAxis === 0 ? dudy : dvdy, cellAspect) : 0;
-    // Owner feedback / reference change: hashed alternates in every tier,
-    // not just near (`tier === 0`) - see the oracle's matching change above.
-    const code = pickGlyphCodeFast(S, gb, hA, true, classIdx, cutoff);
+    const code = pickGlyphCodeFast(S, core.gb, core.hA, true, classIdx, cutoff);
     glyphCode = code < 0 ? 0 : code;
   }
-  if (f > fog.stipple0 && hB < smoothstepFast(fog.stipple0, fog.stipple1, f)) {
-    glyphCode = f > fog.sparse ? pickCharCodeFast(fog.sparseCodes, fog.sparseAlt, 2, hA) : pickCharCodeFast(fog.hazeCodes, fog.hazeAlt, 2, hA);
+  if (f > fog.stipple0 && core.hB < smoothstepFast(fog.stipple0, fog.stipple1, f)) {
+    glyphCode = f > fog.sparse ? pickCharCodeFast(fog.sparseCodes, fog.sparseAlt, 2, core.hA) : pickCharCodeFast(fog.hazeCodes, fog.hazeAlt, 2, core.hA);
   }
 
-  if (hasTint && tintAmt > 0) {
-    cr += (tr - cr) * tintAmt; cg += (tg - cg) * tintAmt; cb += (tb - cb) * tintAmt;
-  }
+  const Lm = Math.max(light[0], light[1], light[2]);
   let hr = 1, hg = 1, hb = 1;
   if (Lm > 1e-6) { hr = light[0] / Lm; hg = light[1] / Lm; hb = light[2] / Lm; }
+  const shading = table.shading;
   const k = shading.tint, fgMin = shading.fgMin;
-  const bc = b < 0 ? 0 : b;
+  const bc = core.b < 0 ? 0 : core.b;
   let gain = fgMin + (1 - fgMin) * samplePowLUT(table.gainLUT, bc);
   if (bc > 1) gain = Math.min(shading.fgMaxGain, gain + (bc - 1) * 0.5);
-  let r = cr * (1 + (hr - 1) * k) * gain, gg = cg * (1 + (hg - 1) * k) * gain, bl = cb * (1 + (hb - 1) * k) * gain;
+  let r = core.cr * (1 + (hr - 1) * k) * gain, gg = core.cg * (1 + (hg - 1) * k) * gain, bl = core.cb * (1 + (hb - 1) * k) * gain;
   if (bc > 1) {
     const hot = Math.min(shading.overbrightMax, (bc - 1) * shading.overbright);
     r += (255 * (0.5 + 0.5 * hr) - r) * hot; gg += (255 * (0.5 + 0.5 * hg) - gg) * hot; bl += (255 * (0.5 + 0.5 * hb) - bl) * hot;
   }
   if (r > 255) r = 255; if (gg > 255) gg = 255; if (bl > 255) bl = 255;
-  let xr = r * bgK, xg = gg * bgK, xb = bl * bgK;
+  let xr = r * core.bgK, xg = gg * core.bgK, xb = bl * core.bgK;
   if (f > 0) {
     const fogFg = fog.fgRGB, fogBg = fog.bgRGB;
     r += (fogFg[0] - r) * f; gg += (fogFg[1] - gg) * f; bl += (fogFg[2] - bl) * f;
@@ -602,8 +602,38 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   out.fg[0] = r; out.fg[1] = gg; out.fg[2] = bl;
   out.bg[0] = xr; out.bg[1] = xg; out.bg[2] = xb;
   out.f = f;
-  out.onJoint = onJoint;
+  out.onJoint = core.onJoint;
   return out;
+}
+
+/**
+ * Frame-path v2 shader (tech notes item 4/6). Reads sample `i` straight out
+ * of `gbuf`/`depth` (no intermediate object - architecture.md 9 rule 3),
+ * `rec` is `table.records[gbuf.mat[i]].v2` (a `DetailMaterialRec`, non-null
+ * - callers only reach here when it is), `table` is the whole bound
+ * `MaterialTable` (for `faceK`, `gainLUT`, `fog`, `ao`, `shading`, `sets`).
+ * Writes `out.glyphIdx` (0-94), `out.fg`/`out.bg` ([r,g,b] 0-255),
+ * `out.f` (fog factor) and `out.onJoint` (bench blank-share metric) in
+ * place.
+ *
+ * US-030b (docs/architecture.md 14.2 item 3): a thin wrapper over
+ * `shadeCore` + `shadeTail` now (the "one call" version below this comment
+ * is the ORIGINAL single-pass body, kept ONLY as the arithmetic reference
+ * this split must reproduce bit for bit - it is dead code, never called;
+ * delete once the split has a release of soak time). The GPU's `shade.frag`
+ * implements the same two-function split, but averages `shadeCore`'s
+ * continuous outputs over an N-ray coverage group before `shadeTail` runs -
+ * the CPU path here always has exactly one sample, so the "average" is the
+ * value itself and this split is a pure reorganisation (proven by
+ * bench-cast.mjs's embedded checksums, unchanged by this refactor).
+ */
+export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
+  const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
+  const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i], aoD = gbuf.aoD[i];
+  const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
+  const face = gbuf.face[i];
+  const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, light, coreScratch);
+  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out);
 }
 
 /**

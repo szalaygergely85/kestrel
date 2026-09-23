@@ -49,6 +49,19 @@ export const PHYSICS_DEFAULTS = {
   // the GDD's "2" (which reads as camera shake at these speeds - ASK PO 4).
   headBobAmplitude: 0.03, // m
   headBobCyclesPerMeter: 0.8,
+
+  // Rollers (US-013, architecture.md 7.4 "Rollers"). The actor push rule:
+  // pushing into a roller at >= pushMinSpeed gives the roller that speed
+  // along -n and slows the actor to pushSpeedScale for the next step
+  // (integrate.js step 3 multiplies the wish speed by body.speedScale).
+  pushMinSpeed: 0.5,     // m/s
+  pushSpeedScale: 0.5,   // fraction of normal wish speed while pushing
+  rollerDefaults: {
+    restitution: 0.3,    // wall/corner bounce
+    rollFriction: 0.8,   // m/s^2, decelerates speed toward 0, never reverses
+    sleepSpeed: 0.05,    // m/s below which (with zero tilt) a roller can sleep
+    sleepTime: 0.25,     // s of being slow + untilted before it actually sleeps
+  },
 };
 
 // Back-compat alias (US-024 Phase C): tests and Player.js still say `PHYSICS`.

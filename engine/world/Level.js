@@ -51,6 +51,18 @@
 const START_FIELDS = ['facingDeg', 'pitchDeg', 'eyeH', 'pose'];
 const START_DEFAULTS = { facingDeg: 0, pitchDeg: 0, eyeH: 1.6, pose: 'standing' };
 
+// US-013 `layers.tilt` numpad directions (MAP_FORMAT/tower_layout.md
+// section 6): world x east, y south, so N = -y, S = +y, W = -x, E = +x.
+// Diagonals are unit vectors (not raw +-1,+-1) so the grade applies at the
+// same magnitude in every direction. '5' (sink toward `tilt.hollowCenter`)
+// and '.'/unknown (no tilt) are handled in `tiltAt` itself, not here.
+const SQRT1_2 = Math.SQRT1_2;
+const TILT_NUMPAD = {
+  '8': [0, -1], '2': [0, 1], '4': [-1, 0], '6': [1, 0],
+  '7': [-SQRT1_2, -SQRT1_2], '9': [SQRT1_2, -SQRT1_2],
+  '1': [-SQRT1_2, SQRT1_2], '3': [SQRT1_2, SQRT1_2],
+};
+
 // Default answer for Level#outsideSector (D-008) - a solid wall, so a
 // fully-enclosed level (test_room, the tower) blocks movement past its own
 // border without physics ever special-casing "no sector = wall" itself.
@@ -336,5 +348,57 @@ export class Level {
     const layer = this.def && this.def.layers && this.def.layers[layerName];
     if (!layer || !layer[row]) return null;
     return layer[row][col] || null;
+  }
+
+  /**
+   * US-013 boulder gravity-on-a-slope direction: level-local coords, the
+   * `layers.tilt` numpad-direction char at (x, y) times `def.tilt.grade`
+   * (`{grade, hollowCenter?}`). `'.'`, an unknown char, out-of-bounds or a
+   * missing `def.tilt`/grade all give (0, 0).
+   *
+   * `'5'` is a sink toward `def.tilt.hollowCenter`: unlike the 8 fixed
+   * directions (a uniform ramp - full `grade` everywhere, "so it never
+   * rests" per tower_layout.md 5), a sink's magnitude tapers LINEARLY to
+   * zero at the centre (`grade * min(distance, 1)`, direction toward the
+   * centre) - a basin, not a ramp. A uniform pull that never weakens would
+   * only exceed rolling friction forever (grade * gravity > rollFriction by
+   * design, so a ramp cell is never restable) and the boulder would orbit
+   * the centre indefinitely instead of settling, contradicting the AC that
+   * it "comes to rest ... and stays" - the sink is the one direction where
+   * the physical picture is a bowl, not a slope, and the taper is what
+   * makes a real stop possible. Exactly at the centre: (0, 0).
+   *
+   * Writes into the caller-owned `out` (architecture.md section 9: no
+   * per-step allocation) and returns it.
+   * @param {number} x level-local meters
+   * @param {number} y level-local meters
+   * @param {{x:number, y:number}} out
+   * @returns {typeof out}
+   */
+  tiltAt(x, y, out) {
+    out.x = 0;
+    out.y = 0;
+    const cfg = this.def && this.def.tilt;
+    const grade = cfg && cfg.grade;
+    if (!grade) return out;
+    const ch = this.layerAt('tilt', x, y);
+    if (!ch || ch === '.') return out;
+    if (ch === '5') {
+      const c = cfg.hollowCenter;
+      if (!c) return out;
+      const dx = c.x - x, dy = c.y - y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 1e-9) {
+        const mag = grade * Math.min(dist, 1); // tapers to 0 at the centre - see the header note above
+        out.x = (dx / dist) * mag;
+        out.y = (dy / dist) * mag;
+      }
+      return out;
+    }
+    const dir = TILT_NUMPAD[ch];
+    if (!dir) return out;
+    out.x = dir[0] * grade;
+    out.y = dir[1] * grade;
+    return out;
   }
 }

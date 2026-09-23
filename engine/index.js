@@ -17,7 +17,7 @@ export { AssetRegistry } from './core/assets.js';
 export { loadLevel } from './world/Level.js';
 
 // ---- world ----------------------------------------------------------------
-export { World } from './world/World.js';
+export { World, stepSectorAnims } from './world/World.js';
 export { Terrain } from './world/Terrain.js';
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
@@ -47,11 +47,13 @@ export { packLevel, repackMaterials } from './world/packed.js';
 export { GpuCellPipeline } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';
 export { runGpuCompare, compareCells, compareGeometry, poisonNonSky, poisonAllCells } from './render/gpu/gpuCompare.js';
+export { flickerStep } from './render/gpu/flicker.js';
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
 export { moveCapsule, isSectorPassable, sectorOrOutside } from './physics/capsule.js';
 export { moveSphere } from './physics/sphere.js';
+export { stepRollers, resolveBodyContacts, rollFrame } from './physics/roller.js';
 export { integrate } from './physics/integrate.js';
 
 // ---- entities ---------------------------------------------------------------

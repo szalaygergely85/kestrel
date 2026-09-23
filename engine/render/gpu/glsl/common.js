@@ -23,13 +23,21 @@ precision highp usampler2D;
 precision highp isampler2D;
 `;
 
-// GBuffer field layout (architecture.md 14.1 section 2): GI.y bit packing.
+// GBuffer field layout (architecture.md 14.1 section 2, amended 14.2 item 3):
+// GI.y bit packing. US-030b adds `cov` (3-bit resolve-vote coverage,
+// bits 13-15) between `mask` (now 1 bit, bit 12 only - it was never more
+// than a boolean in practice, every reader only ever tested `!= 0u`) and
+// `mat` (unchanged, bits 16-31). The SUB-sample G-buffer (`SGI`, written by
+// the cast pass before the resolve vote) reuses this exact layout with
+// mask/cov always 0 (meaningless before resolve) - `giKind`/`giFace`/`giMat`
+// are shared between both textures unchanged.
 export const GBUF_UNPACK = `
 // GI.x = planeId (uint bit-cast, compared for equality only).
-// GI.y = kind | face<<8 | mask<<12 | mat<<16
+// GI.y = kind | face<<8 | mask<<12 | cov<<13 | mat<<16
 uint giKind(uint y) { return y & 0xffu; }
 uint giFace(uint y) { return (y >> 8u) & 0xfu; }
-uint giMask(uint y) { return (y >> 12u) & 0xfu; }
+uint giMask(uint y) { return (y >> 12u) & 0x1u; }
+uint giCov(uint y)  { return (y >> 13u) & 0x7u; }
 uint giMat(uint y)  { return (y >> 16u) & 0xffffu; }
 `;
 

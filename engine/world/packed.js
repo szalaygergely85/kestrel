@@ -23,9 +23,13 @@ const FLAG_DYNAMIC = 8;
 // computed independently, from the same rule, and may briefly disagree only
 // in the same way `ensureRelief` itself would (never queried mid-recompute).
 const RELIEF_W = 1, RELIEF_E = 2, RELIEF_N = 4, RELIEF_S = 8;
-function computeRelief(level, w, h) {
-  const floorRise = new Uint8Array(w * h);
-  const ceilDrop = new Uint8Array(w * h);
+/**
+ * Writes into the caller-owned `floorRise`/`ceilDrop` (US-014: reused scratch
+ * on `packed`, so `updateAnimatedSector` allocates nothing per animation
+ * step - rule 9). `packLevel`'s own (once-per-placement) call passes fresh
+ * arrays.
+ */
+function computeRelief(level, w, h, floorRise, ceilDrop) {
   for (let cy = 0; cy < h; cy++) {
     for (let cx = 0; cx < w; cx++) {
       const own = level.sectorAt(cx + 0.5, cy + 0.5);
@@ -52,11 +56,9 @@ function computeRelief(level, w, h) {
       ceilDrop[i] = cb;
     }
   }
-  return { floorRise, ceilDrop };
 }
-function packRelief(relief, w, h) {
-  const out = new Uint8Array(w * h);
-  const { floorRise, ceilDrop } = relief;
+/** Packs `floorRise`/`ceilDrop` into caller-owned `out` (no allocation - US-014). */
+function packRelief(floorRise, ceilDrop, w, h, out) {
   for (let i = 0; i < w * h; i++) out[i] = (floorRise[i] & 0xf) | ((ceilDrop[i] & 0xf) << 4);
   return out;
 }
@@ -117,13 +119,18 @@ export function packLevel(level, matTable) {
   // amendment) the GPU DDA reads for ambient-occlusion depth (`aoD`) on
   // plane samples - the `FLAGS` texture's `g` channel is `packRelief`'s
   // output, uploaded by `WorldTextures.js`, never reshaped here.
-  const relief = packRelief(computeRelief(level, w, h), w, h);
+  // US-014: `_reliefFloorRise`/`_reliefCeilDrop` are scratch arrays owned by
+  // this PackedLevel, reused (never reallocated) by `updateAnimatedSector`.
+  const _reliefFloorRise = new Uint8Array(n);
+  const _reliefCeilDrop = new Uint8Array(n);
+  computeRelief(level, w, h, _reliefFloorRise, _reliefCeilDrop);
+  const relief = packRelief(_reliefFloorRise, _reliefCeilDrop, w, h, new Uint8Array(n));
 
   // `dirtyY0`/`dirtyY1` (item 4, architect review #1): the row range touched
   // since the last time an uploader (US-030) consumed this packed layout.
   // `packLevel` itself is a full (re)build, so there is nothing dirty yet;
   // `updateAnimatedSector` below is what advances them.
-  return { w, h, geom, mats, flags, relief, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1 };
+  return { w, h, geom, mats, flags, relief, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1, _reliefFloorRise, _reliefCeilDrop };
 }
 
 /**
@@ -212,7 +219,13 @@ export function updateAnimatedSector(packed, level, ch) {
     // relief array is recomputed in full (cheap: this only runs on a
     // dynamic-sector animation step, not per frame) and the dirty row range
     // grows by one on each side to cover those neighbours too.
-    packed.relief = packRelief(computeRelief(level, w, h), w, h);
+    // US-014: written IN PLACE into `packed.relief`/the packed scratch
+    // arrays (no fresh typed array per animation step - this runs every sim
+    // step while a grate opens/closes, rule 9).
+    if (!packed._reliefFloorRise) packed._reliefFloorRise = new Uint8Array(w * h);
+    if (!packed._reliefCeilDrop) packed._reliefCeilDrop = new Uint8Array(w * h);
+    computeRelief(level, w, h, packed._reliefFloorRise, packed._reliefCeilDrop);
+    packRelief(packed._reliefFloorRise, packed._reliefCeilDrop, w, h, packed.relief);
     packed.dirtyY0 = packed.dirtyY0 < 0 ? Math.max(0, y0 - 1) : Math.min(packed.dirtyY0, Math.max(0, y0 - 1));
     packed.dirtyY1 = Math.max(packed.dirtyY1, Math.min(h - 1, y1 + 1));
     packed.version++;

@@ -42,6 +42,7 @@ export default {
   // which it size-validates); it keeps the whole object as level.def so
   // later stories can. See section 4.
   layers: { tilt: [ /* rows, same size as `rows` */ ] },
+  tilt: { grade: 0.05, hollowCenter: { x, y } },  // US-013: `layers.tilt` config; see `level.tiltAt` below
   props: [ /* ... */ ], lights: [ /* ... */ ], triggers: [ /* ... */ ],
   markers: { /* ... */ }, sun: { /* ... */ }, ambient: { /* ... */ },
   route: [ /* ... */ ],
@@ -250,6 +251,7 @@ All positions are world meters; `1 cell = 1 m` per section 1.
 | `level.ceilAt(x, y)` | `sector.ceilH` (number or `'sky'`), or `null` if outside the grid. |
 | `level.inBounds(col, row)` | `true` if the integer cell `(col, row)` is inside the grid. |
 | `level.layerAt(name, x, y)` | (v2) the character in `def.layers[name]` at that position, or `null` outside the grid or if the layer doesn't exist. Convenience only. |
+| `level.tiltAt(x, y, out)` | (US-013) writes the boulder gravity-on-a-slope direction into caller-owned `out: {x, y}` and returns it: the `layers.tilt` numpad-direction char (`8`/`2`/`4`/`6`/`7`/`9`/`1`/`3`, diagonals as unit vectors) times `def.tilt.grade`, or - for `'5'` - a unit vector toward `def.tilt.hollowCenter` times `grade`. `'.'`, an unrecognised char, out of bounds, or a missing `def.tilt`/`grade` all give `(0, 0)`. See `design/levels/tower_layout.md` section 6. |
 | `level.def` | (v2) **the original raw level definition object**, untouched - `props`, `lights`, `triggers`, `markers`, `sun`, `ambient`, `route`, `layers`, and anything else the level file defines, for stories that need them (US-010/012/013/014/015/017 etc.). |
 
 Other fields on `Level`: `name`, `width`, `height` (cell counts), `cellSize`

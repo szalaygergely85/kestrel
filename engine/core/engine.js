@@ -45,15 +45,15 @@ export function clampGrid(cols, rows) {
  * @param {number} [opts.rows] - ignored except for the clamp's mismatch check; `rows` is always derived from `cols`.
  * @param {{cols:number, rows:number}} [opts.cpuGrid] - grid forced when the real back-end isn't a real gl2 GPU (default 160x60).
  * @param {boolean} [opts.gpu] - `false` forces the CPU fallback grid even when WebGL2 would otherwise be used (`?gpu=0`).
- * @param {number} [opts.rays] - sub-ray count for the GPU DDA's coverage pass. US-030a ships `rays=1` only
- *   (N-ray coverage voting is US-030b); stored on the engine for `main.js`/the pipeline to read, default 1
- *   (a deliberate deviation from architecture.md 14.2 item 5's eventual default of 2 - flagged for architect review).
+ * @param {number} [opts.rays] - sub-ray count (per axis) for the GPU DDA's N-ray coverage vote
+ *   (docs/architecture.md 14.2 item 3/US-030b); stored on the engine for `main.js`/the pipeline to read.
+ *   Default 2 (2x2), the architecture's confirmed default at 320x120 (14.2 item 5) - `?rays=1..4` overrides.
  * @returns {import('./engine.js').Engine}
  */
 export function createEngine(opts) {
   const {
     canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false,
-    cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 1,
+    cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
     physics: physicsOverrides = {}, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 

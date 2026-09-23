@@ -106,11 +106,10 @@ export class World {
     }
 
     for (const s of def.structures || []) {
-      w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
+      const placed = w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
       if (s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
-          const d = s.dynamics[tag];
-          if (typeof d.t === 'number') w.animateSector(tag, d.t);
+          w._restoreDynamics(placed, tag, s.dynamics[tag]);
         }
       }
     }
@@ -177,7 +176,16 @@ export class World {
     const structId = id || `struct_${structSeq}`;
     const bbox = { x0: origin.x, y0: origin.y, x1: origin.x + level.width, y1: origin.y + level.height };
     const packed = packLevel(level, null);
-    const placed = { id: structId, level, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {} };
+    // US-014 tech note 1: a tag -> legend-char Map built once here, instead
+    // of `animateSector` scanning `Object.keys(level.legend)` on every call
+    // (an interaction/save-load call, but also every `stepSectorAnims` tick
+    // while a sector is mid-animation).
+    const tagMap = new Map();
+    for (const ch of Object.keys(level.legend)) {
+      const sec = level.legend[ch];
+      if (sec.dynamic && sec.tag) tagMap.set(sec.tag, ch);
+    }
+    const placed = { id: structId, level, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap };
     this.structures.push(placed);
 
     if (structSeq < 8) {
@@ -259,33 +267,79 @@ export class World {
     return sc;
   }
 
+  /** `{s, ch, sector}` for the structure whose legend has a `dynamic` sector tagged `tag`, or null. Uses the tag Map (US-014). */
+  _findDynamic(tag) {
+    for (const s of this.structures) {
+      const ch = s.tagMap && s.tagMap.get(tag);
+      if (ch !== undefined) return { s, ch, sector: s.level.legend[ch] };
+    }
+    return null;
+  }
+
   /**
    * Animates the tagged dynamic legend entry (every structure is searched;
    * a level-authored `dynamic: {ceilOpen, openTime, ease}` + `tag` pair, e.g.
    * the tower's grate) to `t01` (0 = closed/authored ceilH, 1 = `ceilOpen`),
    * rebuilds that structure's packed layout (not hot-path - an interaction,
-   * not a per-frame call) and bumps `renderVersion`.
+   * not a per-frame call) and bumps `renderVersion`. Direct jump: used by
+   * `World.load`/`deserialize` to restore a saved `t`, and by anything that
+   * wants the sector at an exact position with no tween. Preserves an
+   * existing `target`/`delay` on `structure.dynamics[tag]` (set by
+   * `animateSectorTo`) if present, else defaults both to `t` (open/closed,
+   * at rest - the shape old saves without those fields also load as).
+   * @returns {boolean} false = no dynamic sector tagged `tag` anywhere.
    */
   animateSector(tag, t01) {
     const t = clamp01(t01);
-    for (const s of this.structures) {
-      for (const ch of Object.keys(s.level.legend)) {
-        const sector = s.level.legend[ch];
-        if (sector.tag === tag && sector.dynamic) {
-          const d = sector.dynamic;
-          sector.ceilH = sector.floorH + (d.ceilOpen - sector.floorH) * ease(d.ease, t);
-          // Item 4 (architect review #1): update the changed cells in place
-          // (bumps `packed.version`/`dirtyY0..1`) instead of reallocating a
-          // fresh PackedLevel every call - this runs on every animation sim
-          // step (the grate's open/close), not just once per interaction.
-          updateAnimatedSector(s.packed, s.level, ch);
-          s.dynamics[tag] = { t };
-          this.renderVersion++;
-          if (this.events) this.events.emit('world:sectorAnimated', { structureId: s.id, tag, t01: t });
-          return;
-        }
-      }
-    }
+    const hit = this._findDynamic(tag);
+    if (!hit) return false;
+    const { s, ch, sector } = hit;
+    const d = sector.dynamic;
+    sector.ceilH = sector.floorH + (d.ceilOpen - sector.floorH) * ease(d.ease, t);
+    // Item 4 (architect review #1): update the changed cells in place
+    // (bumps `packed.version`/`dirtyY0..1`) instead of reallocating a
+    // fresh PackedLevel every call - this runs on every animation sim
+    // step (the grate's open/close), not just once per interaction.
+    updateAnimatedSector(s.packed, s.level, ch);
+    const prev = s.dynamics[tag];
+    s.dynamics[tag] = { t, target: prev ? prev.target : t, delay: prev ? prev.delay : 0 };
+    this.renderVersion++;
+    if (this.events) this.events.emit('world:sectorAnimated', { structureId: s.id, tag, t01: t });
+    return true;
+  }
+
+  /**
+   * Starts (or retargets) a tween of the tagged dynamic sector toward
+   * `target01`, after an optional `delay` (seconds). Does not move `t` or
+   * touch the packed layout itself - `stepSectorAnims` does that, one sim
+   * step at a time, so collision only ever sees committed steps (7.4 fixed
+   * step order item 1). Current `t` (0 if the sector has never animated) is
+   * kept as the tween's start.
+   * @returns {boolean} false = no dynamic sector tagged `tag` anywhere.
+   */
+  animateSectorTo(tag, target01, { delay = 0 } = {}) {
+    const hit = this._findDynamic(tag);
+    if (!hit) return false;
+    const { s } = hit;
+    const cur = s.dynamics[tag];
+    s.dynamics[tag] = { t: cur ? cur.t : 0, target: clamp01(target01), delay };
+    return true;
+  }
+
+  /**
+   * Re-applies a serialized `structure.dynamics[tag]` entry (US-014 tech
+   * note 4/6): jumps the sector to `d.t` (rebuilds ceilH/packed via the
+   * existing `animateSector`), then restores `target`/`delay` verbatim so a
+   * save mid-open resumes exactly (missing `target`/`delay` on an older save
+   * default to `d.t`/`0`, i.e. "at rest here" - old states still load).
+   */
+  _restoreDynamics(placed, tag, d) {
+    if (typeof d.t !== 'number') return;
+    const t = clamp01(d.t);
+    this.animateSector(tag, t);
+    const target = typeof d.target === 'number' ? clamp01(d.target) : t;
+    const delay = typeof d.delay === 'number' ? d.delay : 0;
+    placed.dynamics[tag] = { t, target, delay };
   }
 
   // ---- entities/handles (10.1) ----------------------------------------------
@@ -406,5 +460,63 @@ export class World {
   fireTrigger(id, ctx) {
     const fn = getBehaviour(id);
     return fn ? fn({ world: this, ...ctx }) : undefined;
+  }
+}
+
+/**
+ * Fixed-step order item 1 (7.4, US-014): advances every `structure.dynamics`
+ * entry whose `t !== target` toward `target`, at most one tween step each
+ * per call - delay is consumed first (no movement while `delay > 0`), then
+ * `t` moves by `dtSec / dynamic.openTime` along the ease curve, clamped so
+ * it lands exactly on `target`. Rebuilds the sector's ceilH/packed in place
+ * (`updateAnimatedSector`, no per-step allocation) and emits
+ * `'world:sectorAnimated'` every moving step, `'world:sectorAnimDone'` once
+ * on arrival. `for...in` over the plain `dynamics` object and `for...of`
+ * over the (tiny, <= 8) structures array: no array allocation (rule 9).
+ * @param {World} world
+ * @param {number} dtSec
+ */
+export function stepSectorAnims(world, dtSec) {
+  for (const s of world.structures) {
+    if (!s.tagMap || s.tagMap.size === 0) continue;
+    for (const tag in s.dynamics) {
+      const d = s.dynamics[tag];
+      if (d.t === d.target) continue;
+      // Consume delay first (7.4): if the WHOLE step fits inside the
+      // remaining delay, spend it all there and move nothing. Otherwise
+      // spend only the leftover delay, then use the REST of dtSec to move
+      // `t` this same step - not "wait one more whole step" - so a delay
+      // that is an exact multiple of dtSec (e.g. 0.4 s = 24 steps @ 60 Hz)
+      // still hands the following movement its full dt, instead of losing
+      // one step to a delay residual left over from float subtraction
+      // (0.4 - 24*(1/60) is not exactly 0 in IEEE 754).
+      let dt = dtSec;
+      if (d.delay > 0) {
+        if (d.delay >= dt) { d.delay -= dt; continue; }
+        dt -= d.delay;
+        d.delay = 0;
+      }
+      const ch = s.tagMap.get(tag);
+      if (ch === undefined) continue;
+      const sector = s.level.legend[ch];
+      const dyn = sector.dynamic;
+      const openTime = (dyn && dyn.openTime) || 1;
+      const dir = d.target > d.t ? 1 : -1;
+      let t = d.t + dir * (dt / openTime);
+      // Epsilon-guarded clamp (mirrors capsule.js's SKIN): float summation
+      // of ~90 unequal increments (a leftover first step, then full dt
+      // steps) can land a few ulps short of `target` instead of exactly on
+      // it - without this, the LAST step (which should land exactly on
+      // target, per the fixed step count in 7.4/US-014's own numbers) needs
+      // one extra call to clamp.
+      if ((dir > 0 && t >= d.target - 1e-9) || (dir < 0 && t <= d.target + 1e-9)) t = d.target;
+
+      sector.ceilH = sector.floorH + (dyn.ceilOpen - sector.floorH) * ease(dyn.ease, t);
+      updateAnimatedSector(s.packed, s.level, ch);
+      d.t = t;
+      world.renderVersion++;
+      if (world.events) world.events.emit('world:sectorAnimated', { structureId: s.id, tag, t01: t });
+      if (t === d.target && world.events) world.events.emit('world:sectorAnimDone', { structureId: s.id, tag, t01: t });
+    }
   }
 }

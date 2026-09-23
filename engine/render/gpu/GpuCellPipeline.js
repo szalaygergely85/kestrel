@@ -32,6 +32,7 @@ import { SHADE_FRAG_SRC } from './glsl/shade.frag.js';
 import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
 import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
 import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
+import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { GpuTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
@@ -39,11 +40,17 @@ import { HFOV_DEG } from '../sectorCaster.js';
 import { SKY_LUT_N } from './glsl/common.js';
 
 export class GpuCellPipeline {
-  constructor(rt) {
+  constructor(rt, opts = {}) {
     this.rt = rt;
     this.gl = rt.gl;
     this.cols = rt.cols;
     this.rows = rt.rows;
+    // US-030b (14.2 item 3): rays-per-axis for the N-ray coverage cast, fixed
+    // for this pipeline instance's lifetime (a rays change needs a fresh
+    // pipeline, like a grid change does - see engine.js's `rays` option/
+    // `?rays=`). Clamped defensively; main.js already clamps its own
+    // `?rays=` parse to 1..4.
+    this.rays = Math.max(1, Math.min(4, Math.round(opts.rays || 1)));
     this.ready = false;
     this.stats = { uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN };
     this.debugMode = -1; // -1 = off (edge pass runs normally)
@@ -96,15 +103,29 @@ export class GpuCellPipeline {
     // GI/GA/DEPTH) and deriv (GD, from GI/GA/DEPTH). Both all-uint targets
     // (`floatBitsToUint`), so neither needs `EXT_color_buffer_float`.
     this.progCast = linkProgram(gl, CELL_VERT_SRC, DDA_FRAG_SRC);
+    // US-030b (14.2 item 3, pass B): votes the sub-sample G-buffer down to
+    // the per-cell one below.
+    this.progResolve = linkProgram(gl, CELL_VERT_SRC, RESOLVE_FRAG_SRC);
     this.progDeriv = linkProgram(gl, CELL_VERT_SRC, DERIV_FRAG_SRC);
 
-    // --- G-buffer textures (US-030a: all-uint now - 14.2 item 3) ---
+    // --- G-buffer textures (US-030a: all-uint now - 14.2 item 3) - these are
+    // the RESOLVED, per-cell (cols x rows) textures; deriv/shade/edge/debug/
+    // sprites/gpuCompare all keep reading these exactly as before. ---
     this.texGI = createTexture2D(gl, gl.RG32UI, this.cols, this.rows);
     this.texGA = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
     this.texGD = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
     this.texDepth = createTexture2D(gl, gl.R32UI, this.cols, this.rows);
-    // US-030a: per-frame UI mask upload (moved out of `_repackAndUpload`'s
-    // GI.y packing - the cast pass reads it directly, see dda.frag.js).
+    // US-030b (14.2 item 3, pass A): the SUB-sample G-buffer, sized
+    // cols*rays x rows*rays - the cast pass's own output, consumed only by
+    // the resolve pass (geometry) and the shade pass (continuous-output
+    // averaging over the resolved winner's group).
+    this.subCols = this.cols * this.rays;
+    this.subRows = this.rows * this.rays;
+    this.texSGI = createTexture2D(gl, gl.RG32UI, this.subCols, this.subRows);
+    this.texSGA = createTexture2D(gl, gl.RGBA32UI, this.subCols, this.subRows);
+    this.texSDepth = createTexture2D(gl, gl.R32UI, this.subCols, this.subRows);
+    // US-030a: per-frame UI mask upload - now read by the RESOLVE pass
+    // (14.2 item 3: mask is a per-cell, not per-sub-sample, property).
     this.texMask = createTexture2D(gl, gl.R8UI, this.cols, this.rows);
 
     // --- pipeline-owned pass-1 output ---
@@ -131,6 +152,18 @@ export class GpuCellPipeline {
     this._worldAtlas = null;
 
     // --- FBOs ---
+    // US-030b: the sub-sample cast pass (A) writes SGI/SGA/SDepth here; the
+    // resolve pass (B) reads those back and writes the RESOLVED GI/GA/Depth
+    // into the (unchanged) `fboCast` FBO below - deriv/shade/edge never know
+    // the difference.
+    this.fboCastSub = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCastSub);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texSGI, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.texSGA, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.texSDepth, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboCastSub incomplete');
+
     this.fboCast = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texGI, 0);
@@ -178,11 +211,23 @@ export class GpuCellPipeline {
     this._DepthF = new Float32Array(depthBuf); this._Depth = new Uint32Array(depthBuf);
     this._MASK = new Uint8Array(n);
     this._source = 'dda'; // US-030a default; 'upload' is test-only (see setSource)
+    // US-030b: mirror buffers for the legacy 'upload' test source (14.2 item
+    // 7's `?gpucompare=shade`) - it feeds the CPU-cast G-buffer straight into
+    // the resolved GI/GA/Depth, bypassing cast/resolve; the shade pass now
+    // ALWAYS averages over the sub-grid, so that path also mirrors its own
+    // single sample into SGI/SGA/SDepth's (0,0,cols,rows) sub-rect and
+    // `_passShade` binds `uN = 1` for it (see `setSource`/`_passShade`).
+    this._SGI = new Uint32Array(2 * n);
+    const sgaBuf = new ArrayBuffer(16 * n);
+    this._SGAf = new Float32Array(sgaBuf); this._SGA = new Uint32Array(sgaBuf);
+    const sdepthBuf = new ArrayBuffer(4 * n);
+    this._SDepthF = new Float32Array(sdepthBuf); this._SDepth = new Uint32Array(sdepthBuf);
 
     this._locsShade = this._uniformLocs(this.progShade, SHADE_UNIFORMS);
     this._locsEdge = this._uniformLocs(this.progEdge, EDGE_UNIFORMS);
     this._locsDebug = this._uniformLocs(this.progDebug, DEBUG_UNIFORMS);
     this._locsCast = this._uniformLocs(this.progCast, CAST_UNIFORMS);
+    this._locsResolve = this._uniformLocs(this.progResolve, RESOLVE_UNIFORMS);
     this._locsDeriv = this._uniformLocs(this.progDeriv, DERIV_UNIFORMS);
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
@@ -195,6 +240,8 @@ export class GpuCellPipeline {
     // texture between passes.
     this._shadeBinds = this._buildBindTable(this._locsShade, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uGD', this.texGD], ['uDepth', this.texDepth],
+      // US-030b: the sub-sample G-buffer, for shadeCore's per-sub-sample average.
+      ['uSGI', this.texSGI], ['uSGA', this.texSGA],
       ['uFgTex', this.rt.fgTex], ['uBgTex', this.rt.bgTex],
       ['uMatF', this.texMatF], ['uMatI', this.texMatI], ['uSetI', this.texSetI],
       ['uSetF', this.texSetF], ['uGain', this.texGain], ['uSky', this.texSky],
@@ -205,10 +252,15 @@ export class GpuCellPipeline {
     this._debugBinds = this._buildBindTable(this._locsDebug, [
       ['uGI', this.texGI], ['uShadeFg', this.texShadeFg],
     ]);
-    // US-030a: cast (DDA) and deriv passes' own bind tables.
+    // US-030a/US-030b: cast (DDA, sub-sample), resolve (vote) and deriv
+    // passes' own bind tables. Cast no longer reads the mask (moved to
+    // resolve - 14.2 item 3).
     this._castBinds = this._buildBindTable(this._locsCast, [
       ['uWorldGeom', this.texWorldGeom], ['uWorldMats', this.texWorldMats],
-      ['uWorldFlags', this.texWorldFlags], ['uMask', this.texMask],
+      ['uWorldFlags', this.texWorldFlags],
+    ]);
+    this._resolveBinds = this._buildBindTable(this._locsResolve, [
+      ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth], ['uMask', this.texMask],
     ]);
     this._derivBinds = this._buildBindTable(this._locsDeriv, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth],
@@ -217,6 +269,7 @@ export class GpuCellPipeline {
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
     this._setSamplerUniforms(this.progDebug, this._debugBinds);
     this._setSamplerUniforms(this.progCast, this._castBinds);
+    this._setSamplerUniforms(this.progResolve, this._resolveBinds);
     this._setSamplerUniforms(this.progDeriv, this._derivBinds);
 
     this.timer = new GpuTimer(gl);
@@ -320,12 +373,13 @@ export class GpuCellPipeline {
     this.rt.setCellPass(null);
     // Best-effort cleanup; safe to call even if _initGL threw partway through.
     for (const tex of [this.texGI, this.texGA, this.texGD, this.texDepth, this.texShadeFg, this.texShadeBg,
+      this.texSGI, this.texSGA, this.texSDepth,
       this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
       this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboDeriv]) if (fbo) gl.deleteFramebuffer(fbo);
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progDeriv]) if (p) gl.deleteProgram(p);
+    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboDeriv]) if (fbo) gl.deleteFramebuffer(fbo);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     if (this.timer) this.timer.dispose();
     // US-030a: the world atlas textures are gone too - force a full
@@ -520,6 +574,7 @@ export class GpuCellPipeline {
     const t1 = performance.now();
     if (useDda) {
       this._passCast();
+      this._passResolve();
       this._passDeriv();
     }
     this._passShade();
@@ -638,16 +693,35 @@ export class GpuCellPipeline {
 
   _passCast() {
     const gl = this.gl, loc = this._locsCast, cb = this._camBasis;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
-    gl.viewport(0, 0, this.cols, this.rows);
+    // US-030b (14.2 item 3, pass A): renders at SUB-sample resolution
+    // (cols*rays x rows*rays) into fboCastSub (SGI/SGA/SDepth) - `uGrid`
+    // stays the BASE grid (cameraX/slope normalise by cols/rows, not the
+    // sub-grid; see dda.frag.js's per-fragment decode).
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCastSub);
+    gl.viewport(0, 0, this.subCols, this.subRows);
     gl.useProgram(this.progCast);
     gl.bindVertexArray(this.vao);
     this._bindTextures(this._castBinds);
     gl.uniform2i(loc.uGrid, this.cols, this.rows);
+    gl.uniform1i(loc.uN, this.rays);
     gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
     gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
     gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
     gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // US-030b (14.2 item 3, pass B): votes the sub-sample G-buffer down to the
+  // per-cell GI/GA/Depth (fboCast, unchanged target - deriv/shade/edge never
+  // know the sub-grid existed).
+  _passResolve() {
+    const gl = this.gl, loc = this._locsResolve;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
+    gl.viewport(0, 0, this.cols, this.rows);
+    gl.useProgram(this.progResolve);
+    gl.bindVertexArray(this.vao);
+    this._bindTextures(this._resolveBinds);
+    gl.uniform1i(loc.uN, this.rays);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -698,6 +772,20 @@ export class GpuCellPipeline {
     gl.bindTexture(gl.TEXTURE_2D, this.texDepth);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RED_INTEGER, gl.UNSIGNED_INT, Depth);
 
+    // US-030b: mirror the same (already resolved) values into the sub-grid
+    // textures' (0,0,cols,rows) sub-rect, so `_passShade`'s per-sub-sample
+    // average - run with `uN = 1` for this test-only source, see
+    // `_passShade` - has exactly one matching sample per cell (itself),
+    // reproducing the pre-030b combined shader bit for bit. The extra mask/
+    // cov bits GI carries are irrelevant here: shade.frag.js's sub-sample
+    // key match only reads kind/planeId/mat (giKind/giMat).
+    gl.bindTexture(gl.TEXTURE_2D, this.texSGI);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RG_INTEGER, gl.UNSIGNED_INT, GI);
+    gl.bindTexture(gl.TEXTURE_2D, this.texSGA);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, GA);
+    gl.bindTexture(gl.TEXTURE_2D, this.texSDepth);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RED_INTEGER, gl.UNSIGNED_INT, Depth);
+
     mask.fill(0);
   }
 
@@ -725,6 +813,11 @@ export class GpuCellPipeline {
 
     gl.uniform3f(loc.uLight, light[0], light[1], light[2]);
     gl.uniform1f(loc.uTimeSec, this._fb.timeSec || 0);
+    // US-030b: the legacy 'upload' test source (14.2 item 7) only mirrors a
+    // single sample per cell into the sub-grid textures (see
+    // `_repackAndUpload`) - shadeCore's average must run at n=1 for it,
+    // regardless of the pipeline's configured `this.rays`.
+    gl.uniform1i(loc.uN, this._source === 'upload' ? 1 : this.rays);
 
     // US-030a: `uGpuSky` toggles the kind==0 branch (14.2 item 3) - GLSL sky
     // (DDA path: JS `fillSky` never runs, see the module doc) vs. the 14.1
@@ -762,7 +855,7 @@ export class GpuCellPipeline {
 }
 
 const SHADE_UNIFORMS = [
-  'uGI', 'uGA', 'uGD', 'uDepth', 'uFgTex', 'uBgTex', 'uMatF', 'uMatI', 'uSetI', 'uSetF', 'uGain',
+  'uGI', 'uGA', 'uGD', 'uDepth', 'uSGI', 'uSGA', 'uN', 'uFgTex', 'uBgTex', 'uMatF', 'uMatI', 'uSetI', 'uSetF', 'uGain',
   'uLight', 'uTimeSec', 'uCellAspect', 'uCutoff', 'uLift', 'uFgMin', 'uFgMaxGain', 'uTintK',
   'uOverbright', 'uOverbrightMax', 'uAoR', 'uAoK', 'uFaceK', 'uFogFg', 'uFogBg', 'uFogStart', 'uFogFull',
   'uFogStipple0', 'uFogStipple1', 'uFogSparse', 'uFogSparseCodes', 'uFogHazeCodes', 'uFogSparseAlt', 'uFogHazeAlt',
@@ -771,9 +864,10 @@ const SHADE_UNIFORMS = [
 ];
 const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uFogStart', 'uFogFull'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
-// US-030a: cast (DDA) / deriv pass uniforms.
+// US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
 const CAST_UNIFORMS = [
-  'uWorldGeom', 'uWorldMats', 'uWorldFlags', 'uMask', 'uStructA', 'uStructB', 'uStructCount',
-  'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
+  'uWorldGeom', 'uWorldMats', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount',
+  'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
 ];
+const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];

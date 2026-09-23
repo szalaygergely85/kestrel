@@ -11,8 +11,8 @@ import {
   runShadeTest, runDetailShadeTest,
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
-  integrate, Camera, renderWorld,
-  GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells,
+  integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims,
+  GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells, flickerStep,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
 } from '../../engine/index.js';
@@ -55,7 +55,15 @@ if (gridParam && gridResult.clamped) {
   console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..320x120, 8:3 aspect)`);
 }
 const rayParam = Number(params.get('rays'));
-const rays = Number.isFinite(rayParam) && rayParam >= 1 && rayParam <= 4 ? Math.round(rayParam) : 1;
+// US-030b (14.2 item 5): default 2 (2x2 coverage vote) on the gl2 GPU path -
+// `?rays=1..4` overrides for A/B (the flicker-metric page compares 1 vs the
+// default). `?gpucompare=1` always forces n=1 regardless of `?rays=` (14.2
+// item 8's parity contract): the DDA/geometry compare's "N=1 matches the JS
+// caster exactly" AC would otherwise need the vote/average path to be a
+// no-op, which it already is at n=1 - forcing it here just keeps the page's
+// intent explicit and immune to a stray `?rays=` in the URL.
+let rays = Number.isFinite(rayParam) && rayParam >= 1 && rayParam <= 4 ? Math.round(rayParam) : 2;
+if (isDdaCompare) rays = 1;
 
 const canvas = document.getElementById('screen');
 const assets = AssetRegistry.fromGlobals(window.ASSETS);
@@ -125,7 +133,7 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // world/* (US-025, off-limits this story).
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt);
+  const candidate = new GpuCellPipeline(rt, { rays });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;
@@ -186,6 +194,8 @@ if (params.get('bench') === '1') {
   runGpuCompareDdaMode();
 } else if (params.get('gpucompare') === 'shade') {
   runGpuCompareShadeMode();
+} else if (params.get('flicker') === '1') {
+  runFlickerMode();
 } else if (params.get('glyphs') === '1') {
   runGame('glyphs');
 } else if (params.get('demo') === '1') {
@@ -260,7 +270,14 @@ function runGame(mode) {
       controls.jump = input.isDown('Space') || input.pressed('Space');
       controls.yawDeg = look.yawDeg;
       controls.pitchDeg = look.pitchDeg;
+      // US-014 (7.4 fixed-step order item 1): before `integrate`, so
+      // collision this step already sees the grate's current ceiling.
+      stepSectorAnims(engine.world, dt);
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      // US-013 (7.4 fixed-step order item 3): after `integrate`, so the
+      // player's this-step velocity is what a push is measured against.
+      stepRollers(engine.world, dt, engine.physics);
+      resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
       engine.world.flushEvents();
     }
@@ -528,6 +545,51 @@ function runGpuCompareDdaMode() {
   }
   overallOk = overallOk && sampledOwnTextures;
 
+  // Architect review 1 item 5: an INFORMATIONAL n=2 row, only when
+  // explicitly requested (`?gpucompare=1&rays=2`) - the mandatory loop above
+  // always forces n=1 (14.2 item 8's parity contract is unchanged). Exercises
+  // the coverage vote/resolve path through this same harness: kind match is
+  // still gated (`compareGeometry.pass` already requires >= 99.5%, the same
+  // bar the vote is expected to clear since it only differs at edge cells,
+  // which the tool excludes); glyph/fg numbers are printed but never affect
+  // `overallOk`.
+  let infoRows = null;
+  if (rayParam === 2) {
+    const pipeline2 = new GpuCellPipeline(rt, { rays: 2 });
+    if (pipeline2.ready) {
+      pipeline2.bind(matTable, assets.palette);
+      pipeline2.setSource('dda');
+      infoRows = [];
+      for (const { world, name, cam } of runs) {
+        sprites.pool.reset();
+        placeCompareSprites(cam, sprites.pool);
+        sprites.pool.project(cam, rt, ambientL);
+
+        poisonAllCells(rt.cells, n);
+        fbCompare.gpuDda = true;
+        renderWorld(fbCompare, world, cam);
+        pipeline2.frame(fbCompare, ambientL, cam, world);
+        rt.present();
+        const rb2 = rt.readbackPresent();
+        const { GI: GI2, GA: GA2, Depth: Depth2 } = pipeline2.readbackGeometry();
+
+        const wasActive2 = rt.gpuActive;
+        rt.gpuActive = false;
+        fbCompare.gpuDda = false;
+        renderWorld(fbCompare, world, cam);
+        drawSprites(fbCompare, sprites.pool);
+        rt.gpuActive = wasActive2;
+
+        const cmpCells2 = compareCells(rt.cells.fg, rt.cells.bg, rb2.fg, rb2.bg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
+        const cmpGeom2 = compareGeometry(gbuf, depthBuffer.depth, GI2, GA2, Depth2, cols, rows);
+        infoRows.push({ pose: name, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
+        console.log(`[gpucompare] INFO n=2 ${name}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
+      }
+    } else {
+      console.warn('[gpucompare] ?rays=2 informational row requested but the second GpuCellPipeline failed to compile - skipped.');
+    }
+  }
+
   // BUG-GPU-002 tooling fix: report the fixed, window-independent camera
   // setup both paths actually cast against (see the `rt.resize(GPU_COMPARE_
   // REF_*)` call near the top of this file) - `screenAspect` is the same
@@ -549,12 +611,156 @@ function runGpuCompareDdaMode() {
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 
+  if (infoRows) {
+    text += `\n\n--- INFO ONLY: n=2 coverage-vote resolve (?rays=2, does not affect ALL PASS/FAILURES above) ---\n`;
+    for (const r of infoRows) {
+      text += `${r.kindOk ? 'OK' : 'FAIL'}  ${r.pose}\n` +
+        `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}% (must stay >=99.5%)  holes ${r.cmpGeom.holes}\n` +
+        `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}% (reported, not gated)\n`;
+    }
+  }
+
   overlay.visible = true;
   overlay.el.style.display = 'block';
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut, ok: overallOk };
+  window.__gpuCompare = { rows: rowsOut, ok: overallOk, infoRows };
+}
+
+// `?flicker=1` (docs/architecture.md 14.2 item 8, US-030b build plan):
+// the GPU-side twin of tools/bench-cast.mjs's US-028a CPU flicker metric -
+// SAME start pose (test_room, 2.5, 2.5, eyeHeight, yaw 90, pitch 0) and
+// motions (30 steps each of 0.02 m forward, 0.02 m strafe, 0.1 deg yaw), so
+// its "JS (1-ray)" row is directly comparable to `bench-cast.mjs`'s own
+// printed numbers (not recomputed here - the CPU shading path is identical,
+// see the module doc below) without a second implementation to keep in
+// sync. Reports one row per path: JS (CPU, `renderWorld` with
+// `fb.gpuDda = false`) and GPU at whatever `rays` this page loaded with
+// (`?rays=1` vs the default 2 is the A/B switch the AC asks for - load the
+// page twice to compare, per the walk-test instructions in the backlog).
+function runFlickerMode() {
+  if (!gpuPipeline) {
+    const msg = '[flicker] no active GpuCellPipeline (backend=' + rt.backend + ') - nothing to measure.';
+    console.error(msg);
+    overlay.visible = true; overlay.el.style.display = 'block';
+    overlay.el.textContent = msg;
+    return;
+  }
+
+  const level = loadLevel(assets.level('test_room'));
+  bindLevel(matTable, level);
+  const world = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  for (const s of world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+
+  const fbCompare = {
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    timeSec: 0, gpuDda: false,
+  };
+  const n = rt.cols * rt.rows;
+
+  const STEPS = 30, STEP_M = 0.02, STEP_DEG = 0.1;
+  const base = { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 0 };
+  const yawRad = base.yawDeg * Math.PI / 180;
+  const fwdX = Math.sin(yawRad), fwdY = -Math.cos(yawRad);
+  const rightX = Math.cos(yawRad), rightY = Math.sin(yawRad);
+
+  // --- JS (CPU, 1-ray) path: gbuf.kind/mat/planeId + rt.cells.fg (the
+  // shaded fg layer's alpha channel already carries the byte glyph code,
+  // see CellBuffer.js) - no extra readback needed, this IS the final buffer.
+  function castJsFrame(cam) {
+    fbCompare.gpuDda = false;
+    const wasActive = rt.gpuActive;
+    rt.gpuActive = false; // force the CPU shade/edge passes to actually run
+    renderWorld(fbCompare, world, cam);
+    rt.gpuActive = wasActive;
+    const GI = new Uint32Array(4 * n);
+    for (let i = 0; i < n; i++) {
+      GI[i * 4] = gbuf.planeId[i] >>> 0;
+      GI[i * 4 + 1] = (gbuf.kind[i] & 0xff) | ((gbuf.mat[i] & 0xffff) << 16);
+    }
+    return { GI, fg: rt.cells.fg.slice() };
+  }
+
+  // --- GPU (DDA, n = gpuPipeline.rays) path: real present()+readback. ---
+  function castGpuFrame(cam) {
+    fbCompare.gpuDda = true;
+    renderWorld(fbCompare, world, cam); // primes ambientL; the DDA itself runs in present()
+    gpuPipeline.frame(fbCompare, ambientL, cam, world);
+    rt.present();
+    const fg = gpuPipeline.readback().fg.slice();
+    const { GI } = gpuPipeline.readbackGeometry();
+    return { GI: GI.slice(), fg };
+  }
+
+  // Architect review 1 item 1 + PO ruling: `totalPct` (all non-sky-in-both
+  // cells, no neighbour exclusion - see flicker.js) is the AC number now;
+  // `pct` (US-028a's original interior-only metric) is kept as `interiorPct`,
+  // informational, required only to not regress vs GPU n=1.
+  function motionSeries(castFrame, dx, dy, dyaw, collect) {
+    let cam = { ...base };
+    let prev = castFrame(cam);
+    let sumInterior = 0, sumTotal = 0;
+    const out = {};
+    for (let s = 0; s < STEPS; s++) {
+      cam = { x: cam.x + dx, y: cam.y + dy, z: cam.z, yawDeg: cam.yawDeg + dyaw, pitchDeg: cam.pitchDeg };
+      const cur = castFrame(cam);
+      flickerStep(prev.GI, prev.fg, cur.GI, cur.fg, rt.cols, rt.rows, out);
+      sumInterior += out.pct;
+      sumTotal += out.totalPct;
+      // Architect review 1 item 2: per-step forward diagnostic, gated behind
+      // `?flickersteps=1` (not part of the normal AC printout) - probes the
+      // suspected float32/float64 boundary spike at x = 3.0 (start x 2.5 +
+      // step 25 * 0.02m).
+      if (collect) collect.push({ step: s + 1, x: cam.x, pct: out.pct, totalPct: out.totalPct });
+      prev = cur;
+    }
+    return { interior: sumInterior / STEPS, total: sumTotal / STEPS };
+  }
+
+  function runRow(castFrame, collectFwd) {
+    const fwd = motionSeries(castFrame, fwdX * STEP_M, fwdY * STEP_M, 0, collectFwd);
+    const strafe = motionSeries(castFrame, rightX * STEP_M, rightY * STEP_M, 0);
+    const yaw = motionSeries(castFrame, 0, 0, STEP_DEG);
+    const avg = (fn) => (fwd[fn] + strafe[fn] + yaw[fn]) / 3;
+    return {
+      fwd: fwd.total, strafe: strafe.total, yaw: yaw.total, avg: avg('total'),
+      fwdInterior: fwd.interior, strafeInterior: strafe.interior, yawInterior: yaw.interior, avgInterior: avg('interior'),
+    };
+  }
+
+  const wantSteps = params.get('flickersteps') === '1';
+  const jsFwdSteps = wantSteps ? [] : null;
+  const gpuFwdSteps = wantSteps ? [] : null;
+  const jsRow = runRow(castJsFrame, jsFwdSteps);
+  const gpuRow = runRow(castGpuFrame, gpuFwdSteps);
+  const improvementPct = jsRow.avg > 0 ? 100 * (1 - gpuRow.avg / jsRow.avg) : 0;
+  const interiorOkVsN1 = gpuRow.avgInterior <= jsRow.avgInterior || gpuPipeline.rays === 1;
+
+  const rowText = (name, r) => `${name}: fwd ${r.fwd.toFixed(2)}%  strafe ${r.strafe.toFixed(2)}%  yaw ${r.yaw.toFixed(2)}%  averaged ${r.avg.toFixed(2)}%` +
+    `  (interior-only, informational: fwd ${r.fwdInterior.toFixed(2)}%  strafe ${r.strafeInterior.toFixed(2)}%  yaw ${r.yawInterior.toFixed(2)}%  averaged ${r.avgInterior.toFixed(2)}%)`;
+  const text = `?flicker=1  grid: ${rt.cols}x${rt.rows}  30 steps x {0.02m fwd, 0.02m strafe, 0.1deg yaw}  (main numbers = totalPct, item 1)\n` +
+    `${rowText('JS   (1-ray)      ', jsRow)}\n` +
+    `${rowText(`GPU  (n=${gpuPipeline.rays}, 2x2 default)`, gpuRow)}\n` +
+    `GPU vs JS (totalPct): ${improvementPct.toFixed(1)}% lower (target >= 20%)\n` +
+    `AC (totalPct >= 20% lower than JS): ` + (improvementPct >= 20 ? 'PASS' : 'FAIL') + `\n` +
+    `AC (interiorPct informational, not worse than GPU n=1): ` + (interiorOkVsN1 ? 'PASS' : 'FAIL (see console)');
+
+  console.log('[flicker] ' + text.replace(/\n/g, '\n[flicker] '));
+  if (wantSteps) {
+    console.log(`[flicker] per-step forward (JS vs GPU n=${gpuPipeline.rays}) - x = 2.5 + step*0.02, boundary expected at step 25 (x=3.0):`);
+    for (let s = 0; s < STEPS; s++) {
+      const j = jsFwdSteps[s], g = gpuFwdSteps[s];
+      console.log(`  step ${String(j.step).padStart(2)}  x=${j.x.toFixed(9)}  JS pct=${j.pct.toFixed(2)}% total=${j.totalPct.toFixed(2)}%   GPU pct=${g.pct.toFixed(2)}% total=${g.totalPct.toFixed(2)}%`);
+    }
+    window.__flickerSteps = { js: jsFwdSteps, gpu: gpuFwdSteps };
+  }
+  overlay.visible = true;
+  overlay.el.style.display = 'block';
+  overlay.el.style.font = '13px "Courier New", monospace';
+  overlay.el.style.whiteSpace = 'pre';
+  overlay.el.textContent = text;
+  window.__flicker = { jsRow, gpuRow, improvementPct };
 }
 
 // `?bench=1`: renders N worst-case frames (see dev/benchScene.js - every

@@ -1,12 +1,20 @@
-// US-030a (docs/architecture.md 14.2 item 1): GLSL port of
-// 'engine/render/sectorCaster.js''s 'castColumn', one fragment = one ray, no
-// column state (14.2 principle 1). Renders the "cast" pass: MRT into 'GI'
-// (RG32UI), 'GA' (RGBA32UI, 'floatBitsToUint') and 'DEPTH' (R32UI,
-// 'floatBitsToUint') - all-uint targets, so this never needs
-// 'EXT_color_buffer_float'. With 'rays = 1' (the only mode this story ships -
-// see the module doc in 'GpuCellPipeline.js') this pass writes the FINAL
-// per-cell G-buffer directly; a 'resolve' pass (N > 1 sub-sample voting) is
-// US-030b.
+// US-030a/US-030b (docs/architecture.md 14.2 items 1/3): GLSL port of
+// 'engine/render/sectorCaster.js''s 'castColumn', one fragment = one
+// (sub-)ray, no column state (14.2 principle 1). Renders the "cast" pass at
+// SUB-sample resolution ('cols*n x rows*n', n = 'uN', the configured
+// rays-per-axis): MRT into 'SGI' (RG32UI), 'SGA' (RGBA32UI,
+// 'floatBitsToUint') and 'SDEPTH' (R32UI, 'floatBitsToUint') - all-uint
+// targets, so this never needs 'EXT_color_buffer_float'. The 'resolve' pass
+// (resolve.frag.js) votes the n*n sub-samples down to the final per-cell
+// 'GI'/'GA'/'DEPTH'; with n = 1 the sub-grid IS the cell grid and resolve is
+// a copy (14.2 item 3). Per-fragment sub-sample offsets are the fixed grid
+// '((i+0.5)/n - 0.5, (j+0.5)/n - 0.5)' in cell units (never jittered, 14.2
+// item 3/"do not" list) - n=1 collapses to offset (0,0), the exact CPU ray,
+// so US-030a's parity behaviour is preserved bit for bit.
+//
+// The mask bit (UI overlay) is NOT written here any more - it is a per-CELL,
+// not per-sub-sample, property, so `resolve.frag.js` applies it once to the
+// final `GI.y` (a per-frame `uMask` upload the resolve pass reads instead).
 //
 // Scope notes (flagged for architect review, not silent):
 //  - The CPU's "camera outside a structure's own footprint" VOID_SECTOR
@@ -15,8 +23,6 @@
 //    entry cell's own sector. Simpler, and arguably more correct, but a
 //    documented deviation - not exercised by '?gpucompare=1''s poses or any
 //    in-scope level (the camera always spawns inside a placed structure).
-//  - Only 'rays = 1' (sub-sample offset (0,0), the exact cell centre) is
-//    implemented; multi-ray coverage voting is US-030b.
 //  - Structure order for the 't0 >= bestT' early-out is upload order (world
 //    placement order), not a per-frame camera-distance sort - correctness
 //    (nearest-candidate-wins) does not depend on order, only the early-out's
@@ -35,15 +41,11 @@ layout(location = 0) out uvec2 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
-uniform ivec2 uGrid; // cols, rows
+uniform ivec2 uGrid; // BASE cols, rows (not the sub-grid viewport)
+uniform int uN; // rays per axis (1..4) - US-030b sub-sample count
 uniform sampler2D uWorldGeom;   // RGBA32F: floorH, ceilH, topH, ceilOpenH (unused: ceilOpenH is JS-side per 14.2 item 2)
 uniform usampler2D uWorldMats;  // RGBA16UI: wallMatId, floorMatId, ceilMatId, upperMatId
 uniform usampler2D uWorldFlags; // RG8UI: r = solid|ceilSky<<1|topSky<<2|dynamic<<3, g = floorRise|ceilDrop<<4
-// US-030a: with the 'resolve' sub-pass collapsed into this one (rays = 1,
-// see the module doc), this pass also folds in the UI mask bit the 14.1
-// upload path used to merge per frame ('GI.y''s bit 12) - a per-frame
-// R8UI upload of 'rt.cells.mask', read here directly (cheap: one texel).
-uniform usampler2D uMask;
 
 uniform vec4 uStructA[${MAX_STRUCTS}]; // origin.xyz, w
 uniform vec4 uStructB[${MAX_STRUCTS}]; // h, yOff, structSeq, 0
@@ -141,11 +143,21 @@ bool slabEntry(float lx, float ly, float dx, float dy, float w, float h, out flo
 }
 
 void main() {
-  ivec2 cell = ivec2(gl_FragCoord.xy);
-  float cameraX = (2.0 * (float(cell.x) + 0.5)) / float(uGrid.x) - 1.0;
+  // US-030b (14.2 item 3): decode the sub-sample fragment address into its
+  // owning cell (cx, cy) and its offset index within the n x n sub-grid
+  // (i, j), then the fixed (never jittered) sub-sample offset in cell units.
+  // n = 1 -> i = j = 0 -> ox = oy = 0, the exact cell centre (US-030a's ray
+  // bit for bit).
+  ivec2 sub = ivec2(gl_FragCoord.xy);
+  int cx = sub.x / uN, i = sub.x - cx * uN;
+  int cy = sub.y / uN, j = sub.y - cy * uN;
+  float ox = (float(i) + 0.5) / float(uN) - 0.5;
+  float oy = (float(j) + 0.5) / float(uN) - 0.5;
+
+  float cameraX = (2.0 * (float(cx) + 0.5 + ox)) / float(uGrid.x) - 1.0;
   float rayDirX = uDirX + uPlaneX * cameraX;
   float rayDirY = uDirY + uPlaneY * cameraX;
-  float slope = (uHorizonRow - float(cell.y)) / uPlaneDistY;
+  float slope = (uHorizonRow - (float(cy) + oy)) / uPlaneDistY;
 
   float bestT = 1.0e30;
   int bestKind = 0, bestFace = 0; uint bestMat = 0u; int bestPlaneId = 0;
@@ -321,17 +333,17 @@ void main() {
     }
   }
 
-  uint mask = texelFetch(uMask, cell, 0).x & 15u;
-
+  // US-030b: mask/cov are per-CELL (resolve.frag.js applies them once to the
+  // final GI.y) - this sub-sample texel always writes them as 0.
   if (bestKind == 0) {
-    outGI = uvec2(0u, mask << 12u);
+    outGI = uvec2(0u, 0u);
     outGA = uvec4(0u);
     // Architect review 1 item 4: a constant division by zero is unspecified
     // in GLSL ES 3.00 (it happened to fold to Inf on ANGLE) - write the
     // sentinel literally instead of relying on that fold.
     outDepth = 0x7f800000u; // the "Inf" sentinel (14.2 item 3)
   } else {
-    outGI = uvec2(uint(bestPlaneId), uint(bestKind) | (uint(bestFace) << 8) | (mask << 12u) | (bestMat << 16));
+    outGI = uvec2(uint(bestPlaneId), uint(bestKind) | (uint(bestFace) << 8) | (bestMat << 16));
     outGA = uvec4(floatBitsToUint(bestU), floatBitsToUint(bestV), floatBitsToUint(bestZ), floatBitsToUint(bestAo));
     outDepth = floatBitsToUint(bestT);
   }

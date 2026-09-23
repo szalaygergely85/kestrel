@@ -77,12 +77,15 @@ export function deserialize(state, assets, opts = {}) {
   // Re-apply dynamics AFTER load (World.load's own structures[].dynamics
   // handling already does this from `def.structures[i].dynamics`, but that
   // field isn't part of `def` above - restated explicitly here so
-  // deserialize doesn't depend on that undocumented side channel).
+  // deserialize doesn't depend on that undocumented side channel). Restores
+  // `target`/`delay` too (US-014 tech note 6), not just `t`, so a save mid-
+  // open resumes and finishes exactly like an uninterrupted run.
   for (const s of state.structures) {
     if (!s.dynamics) continue;
+    const placed = world.structures.find((p) => p.id === s.id);
+    if (!placed) continue;
     for (const tag of Object.keys(s.dynamics)) {
-      const d = s.dynamics[tag];
-      if (typeof d.t === 'number') world.animateSector(tag, d.t);
+      world._restoreDynamics(placed, tag, s.dynamics[tag]);
     }
   }
 

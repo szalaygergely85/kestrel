@@ -9,7 +9,7 @@
 // in, per the "no literal coordinate under game/js/quest/" rule.
 import {
   World, AssetRegistry, loadLevel, integrate, isSectorPassable, PHYSICS_DEFAULTS,
-  validateBehaviours, unregisterBehaviour,
+  validateBehaviours, unregisterBehaviour, stepSectorAnims, packLevel, serialize, deserialize,
 } from '../../../engine/index.js';
 import { registerQuestBehaviours, QUEST_BEHAVIOURS } from './index.js';
 import paletteMod from '../../../design/palette.js';
@@ -28,6 +28,23 @@ function ok(name, cond, detail) {
   else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
 }
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
+// US-014 helpers (generic over any `Level`, unlike section 7's `cellsWhere`/`cellSector` which close over the shared `L`).
+function cellsForZoneWhere(level, pred) {
+  const out = [];
+  for (let cy = 0; cy < level.height; cy++) {
+    for (let cx = 0; cx < level.width; cx++) {
+      const s = level.sectorAt(cx + 0.5, cy + 0.5);
+      if (s && pred(s)) out.push([cx, cy]);
+    }
+  }
+  return out;
+}
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+const packLevelFresh = (level) => packLevel(level, null);
 
 const P = PHYSICS_DEFAULTS;
 const DT = P.fixedDt;
@@ -339,6 +356,86 @@ const cellsWhere = (pred) => {
   const c = reachable([startCell]);
   ok('grate closed: the ledge IS reachable from the pallet (the gap jump works) but the summit is not',
     ledge.every(([x, y]) => c.has(`${x},${y}`)) && summit.every(([x, y]) => !c.has(`${x},${y}`)));
+}
+
+// ---------------------------------------------------------------------------
+// 8. US-014: `lever.pull` behaviour body on the real tower data. The
+//    interaction system itself (US-012, `findInteractTarget`/
+//    `updateInteraction`) doesn't exist yet, so this calls
+//    `world.fireInteraction('lever.pull', ctx)` directly, the same way
+//    `updateInteraction` will once US-012 lands - the "no second target"
+//    (used-flag/prompt-hiding) part of the story is generic `once` handling
+//    that lives in `updateInteraction`, so it isn't tested here.
+// ---------------------------------------------------------------------------
+{
+  const leverWorld = World.load({
+    name: 'tower_lever_test', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: { 'tower.lever.pulled': false },
+  }, assets, {});
+  const leverStruct = leverWorld.structures[0];
+  const leverDef = towerDef.interactables.find((i) => i.id === 'lever');
+  ok('lever interactable data: once, target.tag = grate', leverDef.once === true && leverDef.target && leverDef.target.tag === 'grate');
+
+  const grateCell = cellsForZoneWhere(leverStruct.level, (s) => s.tag === 'grate')[0];
+  const grateSector = () => leverStruct.level.sectorAt(grateCell[0] + 0.5, grateCell[1] + 0.5);
+  const clearance = () => grateSector().ceilH - grateSector().floorH;
+  ok('grate starts closed (no clearance)', clearance() < 1.70);
+
+  let played = null;
+  const fakeEntity = { play(anim) { played = anim; } };
+  const r = leverWorld.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
+  ok('lever.pull returns true (consumes the once-flag path)', r === true);
+  ok('lever.pull plays the "pull" clip on the prop entity', played === 'pull');
+  ok('lever.pull sets tower.lever.pulled', leverWorld.state['tower.lever.pulled'] === true);
+  ok('lever.pull does not move the grate immediately (0.4 s delay)', clearance() < 1.70);
+
+  const dt = PHYSICS_DEFAULTS.fixedDt;
+  for (let i = 0; i < 10; i++) stepSectorAnims(leverWorld, dt); // well inside the 0.4 s delay (24 steps @ 60 Hz)
+  ok('mid-delay, the grate has not started moving yet', clearance() < 1.70);
+  for (let i = 0; i < 200; i++) stepSectorAnims(leverWorld, dt); // generous margin past delay(0.4s)+openTime(1.5s) = 114 steps
+  ok('grate fully open: clearance >= 1.70 m (passable)', clearance() >= 1.70);
+  ok('grate fully open: isSectorPassable is true at the grate cell', isSectorPassable(grateSector(), grateSector().floorH, true, OPTS));
+  ok('dynamics.grate landed exactly on target 1', leverStruct.dynamics.grate.t === 1 && leverStruct.dynamics.grate.target === 1);
+
+  // A second call while already-open re-targets (no-op geometrically) - not
+  // part of the AC (that's the `once` flag, US-012), just checked so this
+  // behaviour body never throws on a repeat call.
+  played = null;
+  const r2 = leverWorld.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
+  ok('a second lever.pull call does not throw and still returns true', r2 === true && played === 'pull');
+}
+
+// ---------------------------------------------------------------------------
+// 9. Determinism: `serialize`/`deserialize` mid-open resumes and finishes
+//    bit-identical to an uninterrupted run (US-014 tech note 6).
+// ---------------------------------------------------------------------------
+{
+  const dt = PHYSICS_DEFAULTS.fixedDt;
+  const runA = World.load({
+    name: 'tower_lever_determinism', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: {},
+  }, assets, {});
+  runA.animateSectorTo('grate', 1, { delay: 0.4 });
+  for (let i = 0; i < 40; i++) stepSectorAnims(runA, dt); // stop mid-open (16 steps into the 90-step tween)
+
+  const saved = JSON.parse(JSON.stringify(serialize(runA)));
+  const runB = deserialize(saved, assets, {});
+  const gA = runA.structures[0], gB = runB.structures[0];
+  ok('save mid-open: dynamics.grate.t/target/delay round-trip exactly',
+    gB.dynamics.grate.t === gA.dynamics.grate.t && gB.dynamics.grate.target === gA.dynamics.grate.target && gB.dynamics.grate.delay === gA.dynamics.grate.delay,
+    JSON.stringify(gB.dynamics.grate) + ' vs ' + JSON.stringify(gA.dynamics.grate));
+
+  for (let i = 0; i < 150; i++) { stepSectorAnims(runA, dt); stepSectorAnims(runB, dt); } // generous margin: finish both the same way
+  const cellG = cellsForZoneWhere(gA.level, (s) => s.tag === 'grate')[0];
+  const secA = gA.level.sectorAt(cellG[0] + 0.5, cellG[1] + 0.5);
+  const secB = gB.level.sectorAt(cellG[0] + 0.5, cellG[1] + 0.5);
+  ok('resumed run finishes bit-identical to the uninterrupted run (ceilH)', secA.ceilH === secB.ceilH, `${secA.ceilH} vs ${secB.ceilH}`);
+  ok('resumed run: packed geom/flags/relief equal a fresh packLevel of the mutated level', (() => {
+    const fresh = packLevelFresh(gB.level);
+    return arraysEqual(gB.packed.geom, fresh.geom) && arraysEqual(gB.packed.flags, fresh.flags) && arraysEqual(gB.packed.relief, fresh.relief);
+  })());
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
