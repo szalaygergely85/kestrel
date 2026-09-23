@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-23 (D-009: GPU cell pipeline, staged; configurable grid).
+Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5).
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -32,8 +32,15 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 
 **Exit criteria:** PO OK + tester PASS on every P0 story; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
 
+## Milestone 1.5 – "Editor Preview" (D-010) — status: planned (starts when M1 exit criteria are met)
+Level viewer + object placer in `tools/editor/`, a second client of `engine/index.js`.
+- **In:** load world, fly-cam, idle re-render skip; pick/select/move/yaw/delete; place props (existing models), lights (presets), triggers/hint zones; property panel (JSON components, behaviour-name dropdown); undo/redo; save/load world JSON (File System Access API + download fallback); Play-test in the game via `?world=` (world-file loading half of US-027).
+- **Out:** terrain paint, structure/sector editing, model editing, multi-viewport, prefabs, CPU fallback, visual scripting, asset store.
+- **Depends on:** US-025 (serialize, handles, renderVersion), US-030 (GPU grid, planeId picking, sprite pass), US-011, US-006/007, US-014/015.
+- Stories (PO to write): US-031..US-034.
+
 ## Milestone 2 – "First Steps" — status: planned
-Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs / world files (US-027), day/night sun cycle, first melee enemy, sword + lock-on, a hidden chest, save point at the tower.
+Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy, sword + lock-on, a hidden chest, save point at the tower.
 
 ## Milestone 3 – "The Dark Beacons" — status: planned
 Open region with 3 beacons to relight (each a placed structure), a village with 3–5 NPCs and dialogue, second enemy type, ranged tool, terrain overrides authored as data.
@@ -42,7 +49,7 @@ Open region with 3 beacons to relight (each a placed structure), a village with 
 First dungeon (a large placed structure): keys, light puzzles (mirrors, shadow), a boss, item reward.
 
 ## Milestone 5 – "Engine Editor v0" — status: planned
-`tools/` editor built on `engine/index.js`: terrain paint/stamp, structure placement, prop/light/trigger editing, live preview, JSON save/load. Engine published as a standalone package.
+`tools/` editor built on `engine/index.js`, extending the M1.5 editor: terrain paint/stamp, structure placement, live preview, JSON save/load. **ASCII model + animation editor** (D-010, `tools/model-editor/`): per-direction glyph/fg frames, named animations (fps/durations, loop, frame `events`), onion skin, live preview via the real animation player, save ModelDef JSON to `design/models/`. Out: rigs/tweening, image import, auto-LOD, visual scripting, asset store. Depends on US-027 + US-011. Stories US-035..US-037. Engine published as a standalone package.
 
 ## Milestone 6 – "Polish & Release" — status: planned
 Performance pass, accessibility (font size, colorblind palettes), gamepad, static release.

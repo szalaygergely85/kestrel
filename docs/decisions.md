@@ -288,3 +288,44 @@ Owner feedback: the image looks flat / low-detail, shimmers ("lines jumping") wh
 - US-006 and US-016 are blocked on US-030 `done` (or on the gate failing -> plan A).
 - US-011 sprites draw through the US-030 GPU pass (JS `sprites.js` stays as reference/fallback).
 - Public API unchanged (`renderWorld` picks the pipeline); engine remains data-driven for the M5 editor.
+
+---
+
+## D-010 Editors: "M1.5 Editor Preview" (level viewer + object placer) after M1; ASCII model + animation editor in M5
+
+**Date:** 2026-09-23
+**Owner request:** "yes, i want all": (1) a model + animation editor ("create a person graphic, make the animation, use it as an object in JS"), (2) an early small editor right after M1.
+**Status:** Accepted (extends D-006 rule 4 and architecture.md section 10 / 10.1; amends roadmap M1.5, M5)
+
+### Context
+D-006 made everything the editor touches plain data; architecture.md 10 lists the extension points (explicit `CameraPose`, `renderVersion` idle skip, picking via 1-cell `readPixels` of the planeId target, `serialize/deserialize`, entity handles). M1 is not finished; M2 already carries near-LOD terrain, slope physics, JSON content packs, first enemy, sword and save point.
+
+### Options (where item 2 goes)
+1. **Fold into M2.** No extra milestone, but M2 is already the heaviest milestone (new terrain LOD + combat); editor bugs and M2 feature bugs would block each other, and M2 content could not be authored with the tool.
+2. **New M1.5 "Editor Preview" between M1 and M2.** Small (4 stories), uses only what M1 delivers, one world (the tower) to test against. Proves the D-006 extension points on real data before M2 builds more on them; if serialize/handles/picking are wrong we learn it with 1 structure, not 4. M2 content (chest, enemy spawn, save point) is then placed with the tool, not hand-typed.
+3. **Defer to M5.** Zero risk now, but the extension points stay untested for 3 milestones and all M2-M4 content is hand-authored.
+
+### Decision
+**Option 2: M1.5 "Editor Preview"**, started only when M1 exit criteria are met (never pulled into M1). The model editor stays in **M5** as part of "Engine Editor v0" (it needs the JSON content-pack format from US-027, M2, and the sprite/animation player from US-011).
+
+**M1.5 scope (in):** `tools/editor/index.html`, a second client of `engine/index.js` (check-deps: tools -> engine only; reads `design/` data through the same AssetRegistry bootstrap as the game).
+- Load the world, free fly-cam (noclip, no physics), F3 stats.
+- Idle re-render skip (`renderVersion` + pose + anim time) pulled forward from M5; it is the editor's frame budget.
+- Pick (GPU planeId `readPixels`; entity id channel for sprites), select, move (ground-plane drag + arrow nudge, 0.25 m snap, `floorAt` drop), yaw, delete.
+- Place from a list: existing models as props, light presets, box triggers/hint zones. Property panel = generic editor over the entity's JSON components; behaviour names as a dropdown of registered names (never code entry). Light/trigger radii drawn as overlays.
+- Undo/redo (snapshot of `serialize()` per operation, 50 steps; the world is small).
+- Save world JSON (File System Access API `showSaveFilePicker`, download fallback; no server-side write, `python -m http.server` stays read-only) and load it back; **Play** opens `game/index.html?world=<file>` (or a sessionStorage handoff), so the world-file-loading half of US-027 moves into M1.5; content-pack export stays in M2.
+- All mutations go through `world.spawn/get/remove` + `setComponent` (handles), so every edit bumps `renderVersion` and round-trips.
+
+**M1.5 out:** terrain paint/stamp, structure/sector geometry editing, structure placement, model editing, multiple viewports, transform gizmos beyond drag+nudge, prefab system, the CPU fallback (editor requires the gl2 path; shows a clear message otherwise), visual scripting, asset store, multi-user.
+
+**M5 model + animation editor scope (in):** `tools/model-editor/`: per-frame, per-direction (`S/E/N/W`) cell grid of glyph + fg palette key (+ emissive flag), size/anchor/world size; named animations with `fps` or `durations`, `loop`, frame `events` tags (`{ hit: 1, step: [1,3] }`, reserved names `animEnd/arrive/interact/removed` rejected); onion skin, copy/mirror frame; live preview through a real engine instance (`spawn` + `play` + `stepAnimations` + `drawSprites`, direction rotation, 160x60 and 320x120 readability check); load existing models; save ModelDef JSON to `design/models/*.json` (US-027 format, validated by `AssetRegistry.fromJSON`); a "place in world" hand-off to the level editor. **Out:** skeletal rigs/tweening, image-to-ASCII import, auto-generated LODs (hand-authored `lods.half` only), sound events, visual scripting, asset store.
+
+**Dependencies (hard gates):**
+- M1.5 needs M1 `done`, specifically: US-025 (serialize/deserialize, spawn/get/remove, handle cache, `renderVersion`), US-030 (GPU grid + planeId target for picking + GPU sprite pass), US-011 (sprites/models drawn from entity data), US-006/007 (lights as entities with presets), US-014/015 triggers as data.
+- M5 model editor needs US-027 (JSON content packs, `AssetRegistry.fromJSON`) and US-011 (`events`, clips, `stepAnimations`).
+
+### Consequences
+- M2 starts ~4 stories later; accepted, M2 content authoring gets faster and the engine API is validated early.
+- Any engine change the editor needs is an engine story (architect tech notes + review), not an editor hack; the goal of M1.5 is "no engine changes except the idle skip and world-file loading".
+- The editor is a dev tool: tester runs it on the owner's browser (Chrome/Edge); Firefox gets the download fallback.
