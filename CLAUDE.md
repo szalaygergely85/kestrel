@@ -5,9 +5,9 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 ## Team (agents in `.claude/agents/`)
 | Agent | Model | Role |
 |---|---|---|
-| `manager` | fable | Big decisions, roadmap, conflict resolution → `docs/decisions.md`, `docs/roadmap.md` |
+| `manager` | opus | Big decisions, roadmap, conflict resolution → `docs/decisions.md`, `docs/roadmap.md` |
 | `architect` | fable | Engine tech notes before dev, technical code review before PO, answers "ASK ARCHITECT" → `docs/architecture.md` |
-| `product-owner` | opus | Vision/GDD, backlog, user stories, acceptance, "PO OK" |
+| `product-owner` | opus (sonnet for routine re-reviews / ASK PO answers, set per call) | Vision/GDD, backlog, user stories, acceptance, "PO OK" |
 | `designer` | opus | ASCII models, animations, palettes, lighting ramps, level/terrain data → `design/` + HTML previews |
 | `programmer` | sonnet | Implements stories exactly as specified (up to 2 in parallel on separate tracks) |
 | `tester` | sonnet | Tests after PO OK → `docs/test-reports/` |

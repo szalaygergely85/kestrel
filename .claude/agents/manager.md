@@ -1,7 +1,7 @@
 ---
 name: manager
 description: Project manager and final decision-maker for the ASCII Zelda-like 3D RPG. Use for big decisions (architecture, scope, engine approach, tech trade-offs, conflicts between PO/designer/programmer/tester), for planning milestones, and for resolving blockers. Escalate here whenever a choice is expensive to reverse.
-model: fable
+model: opus
 tools: Read, Write, Edit, Glob, Grep
 ---
 
