@@ -79,7 +79,7 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 ## Engine capability before M3: 3D glyph models = voxel models with rigid-part animation (D-016; sketched, see bottom of file)
 | ID | Title | Priority | Status |
 |---|---|---|---|
-| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | testing (PO OK 2026-09-23) |
+| US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | testing (PO OK 2026-09-23) | done 
 | US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | P0 (before M3) | todo (sketch) – after US-039, US-016, US-006/007 |
 | US-041 | Voxel lighting (rotated normals) + rigid-part animation + entity binding + bear preview | P0 (before M3) | todo (sketch) – after US-040 |
 
@@ -2357,7 +2357,7 @@ Notes / dependencies: US-035, US-036, US-027 (shared JSON conventions).
 
 Goal: creatures and NPCs (e.g. a talking bear) that the player can walk around, rendered per cell into the G-buffer as `KIND_MODEL (8)`, so they get the world's materials, the edge pass and lighting, and read as glyphs. Budget: model pass <= 0.5 ms p95 at 240x90, whole GPU pipeline still <= 4 ms. Interim for M1-M2: 8-direction billboards (Option C) through the US-030c sprite pass. Option B (meshes) is rejected for now. All three are engine stories (architect tech notes and review).
 
-### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: testing]
+### US-039 Voxel model format + JS oracle  [Priority: P0 (before M3)] [Status: done]
 As a content designer, I want a voxel model format and a reference renderer, so that 3D creatures can be authored as data and checked in Node before any GPU work.
 Acceptance criteria (sketch):
 - [x] `engine/voxel/VoxelModel.js`: `ModelDef.voxel` per architecture.md 15 option A (`cellM`, `size`, `anchor`, `mats`, `parts` boxes + pivots, `layers` as z-layer row strings, `animations` with per-part `rot`/`pos` keyframes, `fps`, `loop`, `events`). It has a validator with clear errors (unknown material key, row length mismatch, a part box outside the grid, > 8 parts, reserved event names) and a packer to an atlas byte layout (the `VOX` R8UI + `MODELMAT` data, CPU-side only).
