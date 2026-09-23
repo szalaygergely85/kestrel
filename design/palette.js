@@ -1,5 +1,5 @@
 /*
- * ASCII Quest - master palette, glyph ramps, materials  (US-002, format v1)
+ * Kestrel (was "ASCII Quest") - master palette, glyph ramps, materials  (US-002, format v1; D-011 reskin v1.9)
  * Owner: Designer. Format documented in design/README.md.
  *
  * LOADING
@@ -125,7 +125,50 @@
     brickDark:      '#6c3226',
     mossLight:      '#93ad4c',
     fogV2:          '#1f2638', // v2 interior fog: bg target (dark cool)
-    fogV2Glyph:     '#5a6a90'  // v2 interior fog: fg target (lighter haze, glyphs stay visible)
+    fogV2Glyph:     '#5a6a90', // v2 interior fog: fg target (lighter haze, glyphs stay visible)
+    // --- D-011 "Kestrel" reskin (v1.9). Fantasy first: magic = aether teal; brass / copper ONLY on machines. ---
+    // aether (magic, crystals, the relay, the signal). Emissive use only; never on plain scenery.
+    aetherCore:     '#e6fff9', // white-hot crystal core, brightest sparkle
+    aetherLight:    '#8ffcec', // bright sparkle '+', crystal tips
+    aether:         '#2fe0c6', // THE teal glow (relay light hue, signal)
+    aetherMid:      '#1ea596', // reflected glow (mirror), mid sparkle
+    aetherDim:      '#12665e', // dormant glint, dead relays on the chart
+    aetherDead:     '#56686a', // lit (non-emissive) dead crystal: grey with a teal memory
+    // machine metals (the Kestrel, the lamp, the relay mount, later doors / sentinels)
+    brassHot:       '#fff0b4', // bright top step / rivet highlight / logo top row
+    brassShadow:    '#4a3716', // plate seams, deep brass shadow
+    copperLight:    '#ec9660',
+    copper:         '#b85f2e',
+    copperDark:     '#6c3318',
+    verdigrisLight: '#80caa8', // copper / brass patina ( % : )
+    verdigris:      '#3f8e76',
+    verdigrisDark:  '#255446',
+    mirror:         '#c4d0d8', // relay mirror, lit
+    mirrorDark:     '#56626c', // relay mirror, dead / cracked
+    // balloon canvas + rigging
+    canvasLight:    '#f0ddaa', // pale ochre envelope ( ~ ) )
+    canvas:         '#ccb27a',
+    canvasDark:     '#8a7248',
+    canvasScorch:   '#4a3826', // burnt tear edges
+    ropeLight:      '#c8a870',
+    rope:           '#9a7a48',
+    ropeDark:       '#5e4a2c',
+    // embers (the Kestrel burner) and steam
+    emberHot:       '#ffa040', // glowing coal highlight (emissive)
+    emberDim:       '#b43a14', // cooling coal (emissive)
+    cinder:         '#3a2622', // cold cinder (lit, non-emissive)
+    steam:          '#e6ecef', // steam near the source ( . ' ~ ), fades to fog
+    steamDim:       '#98a2ac',
+    // ivy (tower stone: tops and cracks)
+    ivyLight:       '#80b04a',
+    ivy:            '#4e8a36',
+    ivyDark:        '#2a5424',
+    // Ferrum on the horizon (warm amber pinpoints) + the Crown sky-chart (UI)
+    ferrum:         '#ffb85a',
+    ferrumDim:      '#a86e2c',
+    chartInk:       '#cc5c4a', // Crown print (faded red)
+    pencil:         '#cfc8b2', // Wick's pencil
+    chartEdge:      '#8a7a58'  // torn chart border
   };
 
   // ---------------------------------------------------------------------------
@@ -148,7 +191,12 @@
     fire:      " .',^*%#",
     grass:     " .,'\";:",
     foliage:   ' .:*%&@',
-    water:     ' .-~=+'
+    water:     ' .-~=+',
+    // D-011 reskin (v1.9)
+    brass:     ' .:-=+o*#%',     // machine brass: plates = ; rivets o; bright top steps
+    copper:    ' .:-=+x#%&',     // copper: pipes, burner can; verdigris via texture '%'
+    canvas:    " .'-~)(=%",      // balloon envelope: folds ) ( and seams ~
+    aether:    " .'+*"            // aether sparkle (effects only; emissive)
   };
 
   // ---------------------------------------------------------------------------
@@ -179,7 +227,12 @@
                flicker: { hzMin: 8, hzMax: 12, amount: 0.05, jitter: 0.0 },
                hold: { right: 0.3, down: 0.3, forward: 0.4 } },
     beacon:  { color: 'torch', intensity: 1.0, type: 'point', radius: 12, falloff: 'smooth',
-               flicker: { hzMin: 8, hzMax: 12, amount: 0.15, jitter: 0.05 } }   // US-022
+               flicker: { hzMin: 8, hzMax: 12, amount: 0.15, jitter: 0.05 } },  // US-022 (legacy fire beacon)
+    // D-011: the woken relay (US-022 "wake the relay"). Cool teal, slow breathing, not a fire flicker.
+    // The Kestrel burner keeps the `torch` preset (D-011: "same light preset").
+    relay:   { color: 'aether', intensity: 0.9, type: 'point', radius: 10, falloff: 'smooth',
+               flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 },
+               grow: { duration: 1.0, note: 'intensity ramps 0 -> 1 with the relay "wake" animation (light on at wake frame 2)' } }
   };
 
   // ---------------------------------------------------------------------------
@@ -471,19 +524,140 @@
     }
   };
 
+  // --- D-011 "Kestrel" reskin materials (v1.9). Appended AFTER sky so the ids of the 11 M1 materials do not move. ---
+  // Ivy: the stone texture with vines trailing down through the joints (overlay mask: '.' = keep the stone texel).
+  function overlayRows(rows, mask) {
+    return rows.map(function (r, y) {
+      var m = mask[y] || '', o = '', x;
+      for (x = 0; x < r.length; x++) { var c = m.charAt(x); o += (c && c !== '.') ? c : r.charAt(x); }
+      return o;
+    });
+  }
+  var STONE_ROWS = materials.stone.texture.rows;
+  materials.stone_ivy = {
+    desc: 'Tower stone overgrown with ivy: vines trail down the joints over the FULL height (no tintBand), leaf clumps ; on the faces. ' +
+          'D-011 "moss and ivy on stone tops and cracks". Walls where the Kestrel broke the crown and the summit bastion.',
+    base: 'stoneMid', albedo: 0.80, ramp: 'stone',
+    bg: { mode: 'darken', k: 0.20 },
+    textureFade: [6, 16],
+    texture: { w: 16, h: 8, scale: [16, 16], key: withKeys(STONE_KEY, {
+      i: { shade: 0.92, tint: 'ivy', amount: 0.85 },                 // vine
+      I: { shade: 0.70, tint: 'ivyDark', amount: 0.90 },             // vine in shadow
+      L: { shade: 1.05, tint: 'ivyLight', amount: 0.80, glyph: ';' } // leaf clump
+    }), rows: overlayRows(STONE_ROWS, [
+      '..Ii......Li....',
+      '..iI.......L....',
+      '..Li......Ii....',
+      '...i.......I....',
+      '..iL......iI....',
+      '..I........i....',
+      '...i.....L.I....',
+      '..iI......Ii....'
+    ]) }
+  };
+  materials.moss_top = {
+    desc: 'Wall tops, ledges and the summit walkway edge: cap stones with moss cushions in the grout and on the slabs ( " , ; ). ' +
+          'Sampled with world x,y (a floor / solid-top material).',
+    base: 'flagstone', albedo: 0.76, ramp: 'floor',
+    bg: { mode: 'darken', k: 0.18 },
+    textureFade: [5, 14],
+    texture: { w: 8, h: 8, scale: [8, 8], key: {
+      g: { shade: 0.50 },                                              // grout
+      a: { shade: 1.00 }, b: { shade: 1.08 }, c: { shade: 0.90 },
+      m: { shade: 0.95, tint: 'moss', amount: 0.80 },
+      M: { shade: 0.75, tint: 'mossDark', amount: 0.90 },
+      l: { shade: 1.10, tint: 'mossLight', amount: 0.70, glyph: '"' }  // cushion top
+    }, rows: [
+      'gggggggg',
+      'gammbacm',
+      'gMmlmabm',
+      'gammMacb',
+      'gggmgggg',
+      'abgmMaga',
+      'mlgammga',
+      'bmgaMlgm'
+    ] }
+  };
+  materials.brass = {
+    desc: 'MACHINE ONLY. Brass plate: the Kestrel gondola hull, the relay mount, later pressure doors and sentinels. ' +
+          '0.5 m plates, dark seams, a bright top step on every plate, rivets o, the odd verdigris spot. Strong spec.',
+    base: 'brass', albedo: 0.72, ramp: 'brass', spec: 0.55,
+    bg: { mode: 'darken', k: 0.16 },
+    textureFade: [5, 14],
+    texture: { w: 8, h: 8, scale: [16, 16], key: {
+      s: { shade: 0.50, tint: 'brassShadow', amount: 0.60 },         // plate seam
+      h: { shade: 1.22, tint: 'brassHot', amount: 0.45 },            // bright top step
+      a: { shade: 1.00 }, d: { shade: 0.86 },
+      r: { shade: 1.30, tint: 'brassHot', amount: 0.50, glyph: 'o' }, // rivet
+      v: { shade: 0.85, tint: 'verdigris', amount: 0.45 }            // patina spot
+    }, rows: [
+      'ssssssss',
+      'shhhhhhh',
+      'sraaaara',
+      'saadaaaa',
+      'saaaavda',
+      'sadaaaaa',
+      'saaaadaa',
+      'sraaaara'
+    ] }
+  };
+  materials.copper = {
+    desc: 'MACHINE ONLY. Copper: the Kestrel burner can, pipes and boiler bands. Red-orange with verdigris ( % ) blooming along ' +
+          'the seams. Horizontal bands 0.5 m.',
+    base: 'copper', albedo: 0.66, ramp: 'copper', spec: 0.45,
+    bg: { mode: 'darken', k: 0.16 },
+    textureFade: [5, 14],
+    texture: { w: 8, h: 8, scale: [16, 16], key: {
+      s: { shade: 0.50, tint: 'copperDark', amount: 0.60 },          // band seam
+      h: { shade: 1.20, tint: 'copperLight', amount: 0.50 },         // top highlight
+      a: { shade: 1.00 }, d: { shade: 0.86 },
+      v: { shade: 0.90, tint: 'verdigris', amount: 0.75, glyph: '%' },
+      w: { shade: 1.00, tint: 'verdigrisLight', amount: 0.60, glyph: ':' }
+    }, rows: [
+      'hhhhhhhh',
+      'aaavaaaa',
+      'aavvwaad',
+      'aaavaaaa',
+      'ssssssss',
+      'daaaaaav',
+      'aaahaavv',
+      'aaaaaaaw'
+    ] }
+  };
+  materials.canvas = {
+    desc: 'The Kestrel envelope: pale ochre balloon canvas in 0.6 m gores, folds ) (, seams ~, burnt tear edges. ' +
+          'For sheets drawn as geometry (the canvas hanging in the stairwell); the smaller pieces are sprites (models/wreckage.js).',
+    base: 'canvas', albedo: 0.80, ramp: 'canvas',
+    bg: { mode: 'darken', k: 0.20 },
+    textureFade: [5, 14],
+    texture: { w: 8, h: 4, scale: [12, 8], key: {
+      a: { shade: 1.00 },
+      l: { shade: 1.12, tint: 'canvasLight', amount: 0.50, glyph: ')' }, // lit fold
+      k: { shade: 0.78, tint: 'canvasDark', amount: 0.50, glyph: '(' },  // shadow fold
+      s: { shade: 0.60, tint: 'canvasDark', amount: 0.70 },              // gore seam
+      t: { shade: 0.50, tint: 'canvasScorch', amount: 0.70 }             // scorch
+    }, rows: [
+      'saalkaal',
+      'salkkaal',
+      'saalkaat',
+      'saalkaal'
+    ] }
+  };
+
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
   // ---------------------------------------------------------------------------
   var semantic = {
-    hero: 'heroGreen', danger: 'danger', magic: 'magic', interact: 'brassLight',
-    warmSafe: 'torch', coolShadow: 'ambient', theDim: 'dim'
+    hero: 'heroGreen', danger: 'danger', magic: 'aether', interact: 'brassLight',   // D-011: magic = aether teal (was 'magic' cyan)
+    warmSafe: 'torch', coolShadow: 'ambient', theDim: 'dim',
+    machine: 'brass', machineAlt: 'copper', signal: 'aether', ferrum: 'ferrum'
   };
   var ui = {
     text: 'uiText', hint: 'uiHint', dim: 'uiDim',
     crosshair: 'uiDim', crosshairActive: 'gold',
     prompt: 'uiText', promptKey: 'gold',
-    title: ['flameCore', 'gold', 'flameMid', 'flameOuter', 'ember'], // top -> bottom rows of the logo
-    subtitle: 'uiHint', endText: 'uiText'
+    title: ['brassHot', 'brassLight', 'brass', 'copperLight', 'copper'], // top -> bottom rows of the KESTREL logo (D-011)
+    subtitle: 'uiText', endText: 'uiText'
   };
 
   // ---------------------------------------------------------------------------

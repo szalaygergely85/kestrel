@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - The wreck, the relay, the new materials (D-011 reskin)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:120px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .grp { display:flex; gap:4px; align-items:center; padding-right:10px; border-right:1px solid #22252e; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin:6px 0 10px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : the wreck of the <i>Kestrel</i>, the relay, and the new materials (D-011 reskin v1.9)</h1>
+<div class="note">Loads <code>../palette.js</code>, <code>../detail-pass.js</code>, <code>../models/lantern.js</code>, <code>../models/relay.js</code>, <code>../models/wreckage.js</code>.
+  <b>Look target (D-011):</b> 80-90 % stone, wood, moss and ivy; brass and copper only on the machine (gondola, burner, lamp, relay mount); teal aether only on the relay.
+  The crash room is a static stand-in drawn in 160x60 units and re-sampled for the scene grid (fixed canvas width, so finer grids = smaller cells, like the game).
+  Surfaces use the <b>v2</b> reference shader (<code>DP.util.shade</code>, the GPU path) or <b>v1</b> (<code>P.util.shade</code>); sprites use <code>util.shadeSprite</code>.
+  The light slider moves a directional light (colour from the preset) around the view: 0 = from the camera, +90 = from the right.</div>
+
+<div class="controls">
+  <span class="grp">Scene grid: <button data-grid="160">160x60</button><button data-grid="240">240x90</button><button data-grid="320">320x120</button></span>
+  <span class="grp">Shader: <button data-sh="v2">v2 (GPU path)</button><button data-sh="v1">v1</button></span>
+  <span>Light:</span><span id="presets"></span>
+  <label>intensity <input type="range" id="int" min="0" max="1.5" step="0.01" value="0.6"><span class="val" id="intV"></span></label>
+  <label>direction <input type="range" id="dir" min="-180" max="180" step="1" value="-40"><span class="val" id="dirV"></span></label>
+  <label>elevation <input type="range" id="elev" min="-10" max="85" step="1" value="45"><span class="val" id="elevV"></span></label>
+  <label><input type="checkbox" id="burnerOn" checked> burner torch light</label>
+  <button id="pause">pause</button>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<h2>1. The crash room (ground floor): gondola, burner, lamp, rigging, canvas drape, ivy and mossy wall tops</h2>
+<div class="note">Left third <code>stone_ivy</code>, middle <code>stone_moss</code>, right <code>stone</code>; the wall-top band is <code>moss_top</code>; a breach in the crown on the left where the <i>Kestrel</i> came through.
+  The burner is the torch light (flicker 8-12 Hz). The lamp glints ("take me"). The rigging sways slowly; nothing else moves.</div>
+<canvas id="scene"></canvas>
+
+<h2>2. The summit: wake the relay</h2>
+<div class="note"><button id="wake">Wake the relay</button> <button id="dead">Reset to dead</button>
+  Dead: grey crystals, cracked dull mirror, one dim teal flicker every ~3 s. Wake: 1.0 s, the teal <code>relay</code> light grows from wake frame 2 (radius 10 m, slow breathing, not a fire flicker). Awake: shimmer loop.</div>
+<canvas id="summit"></canvas>
+
+<h2>3. New materials: v1 (top) and v2 (bottom), three faces each (side wall / front wall / floor)</h2>
+<div class="note">Reference <code>stone</code> first. The v2 records are what the GPU path needs (<code>bindShading</code> <code>allV2</code>): every non-sky palette material must have one.</div>
+<div id="mats"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/lantern.js"></script>
+<script src="../models/relay.js"></script>
+<script src="../models/wreckage.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS || {}, P = A.palette, DP = A.detailPass, M = A.models;
+  if (!P || !DP || !M || !M.gondola || !M.relay) { document.body.innerHTML = '<p class="fail">palette.js, detail-pass.js or the models did not load.</p>'; return; }
+  var U = P.util, rgb = P.rgb, D2R = Math.PI / 180;
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+  function $(id) { return document.getElementById(id); }
+  function css(c) { return 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')'; }
+
+  // ---------------- checks ----------------
+  var checks = [];
+  function check(n, ok, d) { checks.push({ n: n, ok: !!ok, d: d || '' }); }
+  var pv = U.validate(), dv = DP.util.validate();
+  check('palette.js validate() = [] (textures, colour keys, ramps ASCII)', !pv.length, pv.slice(0, 6).join('; '));
+  check('detail-pass.js validate() = [] (sets, tones, tints, v1 links)', !dv.length, dv.slice(0, 6).join('; '));
+  var missing = Object.keys(P.materials).filter(function (k) { return P.materials[k].kind !== 'sky' && !DP.materials[k] && !DP.remap[k]; });
+  check('allV2: every non-sky palette material has a v2 record (GPU path)', !missing.length, missing.join(', '));
+  var limits = [];
+  Object.keys(DP.materials).forEach(function (k) {
+    var m = DP.materials[k];
+    if (m.tones.length > 4) limits.push(k + ' tones ' + m.tones.length);
+    if (m.overlay && m.overlay.tints.length > 8) limits.push(k + ' tints');
+  });
+  Object.keys(DP.sets).forEach(function (k) {
+    var S = DP.sets[k], lv = S.orient ? [S.dark].concat(Object.keys(S.fam).map(function (f) { return S.fam[f]; })) : [S];
+    lv.forEach(function (arr) { if (arr.length > 32) limits.push(k + ' levels'); arr.forEach(function (s) { if (s.length > 8) limits.push(k + ' alts ' + s); }); });
+  });
+  check('GPU pack limits: tones <= 4, overlay tints <= 8, set levels <= 32, alternates <= 8 (ShadeTextures.js)', !limits.length, limits.join('; '));
+  var NEW = ['stone_ivy', 'moss_top', 'brass', 'copper', 'canvas'];
+  var noDot3 = NEW.every(function (k) { var s = DP.sets[DP.materials[k].face.set]; return s[2].indexOf('.') < 0; }) &&
+    ['ivy', 'mossTop', 'verdigris'].every(function (k) { return DP.sets[k][2].indexOf('.') < 0; }) && DP.sets.mossTop[3].indexOf('.') < 0;
+  check('New sets: no "." at level 3 (walls) / levels 3-4 (moss_top floor): no blank-looking cells under ambient', noDot3);
+  var mdl = ['gondola', 'envelopeDrape', 'envelopeHeap', 'burner', 'rigging', 'relay', 'lantern'], merr = [];
+  mdl.forEach(function (id) {
+    var m = M[id];
+    [[m, m.size, ''], [m.lods.half, m.lods.half.size, '.half']].forEach(function (t) {
+      Object.keys(t[0].animations).forEach(function (an) {
+        t[0].animations[an].frames.forEach(function (f, fi) {
+          var S = f.S; if (S.glyphs.length !== t[1].h) merr.push(id + t[2] + '.' + an + fi + ' rows');
+          S.glyphs.forEach(function (r, y) {
+            if (r.length !== t[1].w || S.fg[y].length !== t[1].w) merr.push(id + t[2] + '.' + an + fi + ' r' + y + ' width ' + r.length + '/' + S.fg[y].length);
+            for (var x = 0; x < r.length; x++) { var k = S.fg[y].charAt(x), g = r.charAt(x);
+              if ((g === ' ') !== (k === ' ')) merr.push(id + t[2] + ' ' + an + fi + ' r' + y + 'c' + x + ' space');
+              else if (k !== ' ' && (!m.keys[k] || !P.colors[m.keys[k].c])) merr.push(id + ' key ' + k);
+              if (g.charCodeAt(0) < 32 || g.charCodeAt(0) > 126) merr.push(id + ' non-ASCII'); }
+          });
+        });
+      });
+    });
+  });
+  check('Wreck + relay + lamp sprite data consistent (sizes, glyph/key alignment, palette keys, ASCII, half LODs)', !merr.length, merr.slice(0, 8).join('; '));
+  var nf = checks.filter(function (c) { return !c.ok; }).length;
+  $('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
+    checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.n +
+      (c.d ? ' <span class="' + (c.ok ? 'note' : 'fail') + '">(' + c.d.replace(/</g, '&lt;') + ')</span>' : '') + '</div>'; }).join('');
+
+  // ---------------- state ----------------
+  var S = { grid: 160, sh: 'v2', preset: 'sun', intensity: 0.6, dir: -40, elev: 45, burner: true, paused: false, t: 0 };
+  var PRESETS = { sun: 'sun', torch: 'torch', lantern: 'lantern', relay: 'relay (teal)' };
+  Object.keys(PRESETS).forEach(function (k) {
+    var b = document.createElement('button'); b.textContent = PRESETS[k]; b.dataset.k = k;
+    b.onclick = function () { S.preset = k; sync(); }; $('presets').appendChild(b); $('presets').appendChild(document.createTextNode(' '));
+  });
+  $('int').oninput = function () { S.intensity = +this.value; sync(); };
+  $('dir').oninput = function () { S.dir = +this.value; sync(); };
+  $('elev').oninput = function () { S.elev = +this.value; sync(); };
+  $('burnerOn').onchange = function () { S.burner = this.checked; };
+  $('pause').onclick = function () { S.paused = !S.paused; this.classList.toggle('on', S.paused); };
+  function sync() {
+    $('intV').textContent = S.intensity.toFixed(2); $('dirV').textContent = S.dir + ' deg'; $('elevV').textContent = S.elev + ' deg';
+    [].forEach.call($('presets').children, function (b) { b.classList.toggle('on', b.dataset.k === S.preset); });
+    [].forEach.call(document.querySelectorAll('[data-grid]'), function (b) { b.classList.toggle('on', +b.dataset.grid === S.grid); });
+    [].forEach.call(document.querySelectorAll('[data-sh]'), function (b) { b.classList.toggle('on', b.dataset.sh === S.sh); });
+  }
+  [].forEach.call(document.querySelectorAll('[data-grid]'), function (b) { b.onclick = function () { S.grid = +b.dataset.grid; build(); sync(); }; });
+  [].forEach.call(document.querySelectorAll('[data-sh]'), function (b) { b.onclick = function () { S.sh = b.dataset.sh; sync(); }; });
+
+  // light direction in VIEW space (x right, y up, z toward the camera)
+  function ldir() { return [Math.sin(S.dir * D2R) * Math.cos(S.elev * D2R), Math.sin(S.elev * D2R), Math.cos(S.dir * D2R) * Math.cos(S.elev * D2R)]; }
+  function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+  function vnoise(t) { var i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return (hash(i) * (1 - u) + hash(i + 1) * u) * 2 - 1; }
+  function frameAt(anim, t) {
+    var n = anim.frames.length;
+    if (anim.durations) {
+      var tot = anim.durations.reduce(function (a, b) { return a + b; }, 0), ms = (t * 1000) % tot, acc = 0;
+      for (var i = 0; i < n; i++) { acc += anim.durations[i]; if (ms < acc) return i; }
+      return n - 1;
+    }
+    var fps = anim.fps || 6;
+    return anim.loop === false ? Math.min(n - 1, Math.floor(t * fps)) : Math.floor(t * fps) % n;
+  }
+
+  // ---------------- grids ----------------
+  function makeLayer(canvas, cols, rows, wPx) {
+    var ctx = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1, cw = wPx / cols, ch = cw * 1.8, hPx = ch * rows;
+    canvas.width = Math.round(wPx * dpr); canvas.height = Math.round(hPx * dpr);
+    canvas.style.width = wPx + 'px'; canvas.style.height = hPx + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = Math.max(5, Math.round(ch * 0.82)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var G = { cols: cols, rows: rows, gl: [], fg: [], bg: [] };
+    G.set = function (x, y, g, fg, bg) { if (x < 0 || y < 0 || x >= cols || y >= rows) return; var i = x + y * cols; G.gl[i] = g; G.fg[i] = fg; if (bg) G.bg[i] = bg; };
+    G.flush = function () {
+      for (var i = 0; i < cols * rows; i++) {
+        var x = i % cols, y = (i / cols) | 0;
+        ctx.fillStyle = css(G.bg[i] || [0, 0, 0]); ctx.fillRect(x * cw, y * ch, cw + 0.5, ch + 0.5);
+        if (G.gl[i] && G.gl[i] !== ' ') { ctx.fillStyle = css(G.fg[i]); ctx.fillText(G.gl[i], (x + 0.5) * cw, (y + 0.5) * ch + 0.5); }
+      }
+    };
+    return G;
+  }
+
+  // ---------------- surface shading (v1 or v2) ----------------
+  var out = { fg: [0, 0, 0], bg: [0, 0, 0] }, smp = { kind: 'wall', mat: 'stone', normal: 'S', planeId: 1, u: 0, v: 0, dudx: 0, dvdx: 0, dudy: 0, dvdy: 0, z: 0, aoD: Infinity, dist: 6 };
+  function shadeSurf(mat, L, kind, normal, u, v, z, dist, dudx, dvdy) {
+    if (S.sh === 'v1' || !DP.materials[DP.remap[mat] || mat]) {
+      U.shade(mat, L, u, v, dist, out, { z: z, fog: 'interior' });
+    } else {
+      smp.kind = kind; smp.mat = DP.remap[mat] || mat; smp.normal = normal; smp.u = u; smp.v = v; smp.z = z; smp.dist = dist;
+      smp.dudx = dudx; smp.dvdx = 0; smp.dudy = 0; smp.dvdy = dvdy; smp.aoD = Infinity;
+      DP.util.shade(smp, L, out);
+    }
+    return out;
+  }
+  function addDir(L, nView, k) {   // directional light (preset colour) with N.L in view space
+    var ld = ldir(), nl = Math.max(0, nView[0] * ld[0] + nView[1] * ld[1] + nView[2] * ld[2]);
+    if (S.intensity > 0) U.addLight(L, P.lights[S.preset].color, S.intensity * nl * (k == null ? 1 : k));
+  }
+
+  // ---------------- sprites ----------------
+  var NV = { f: [0, 0, 1], l: [-0.7, 0, 0.7], r: [0.7, 0, 0.7], u: [0, 0.7, 0.7], d: [0, -0.7, 0.7] }, so = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  // draw frame fr of model m with its anchor at scene cell (ax, ay), nearest-sampled at scale s; lightAt(x,y) -> L (no dir)
+  function sprite(G, m, fr, ax, ay, s, Lbase) {
+    var fs = fr.S, h = fs.glyphs.length, w = fs.glyphs[0].length, anc = m.anchor, ld = ldir();
+    var ox = Math.round(ax - anc.x * s), oy = Math.round(ay - anc.y * s);
+    for (var y = 0; y < Math.round(h * s); y++) for (var x = 0; x < Math.round(w * s); x++) {
+      var r = Math.floor(y / s), c = Math.floor(x / s), g = fs.glyphs[r].charAt(c), k = fs.fg[r].charAt(c);
+      if (g === ' ' || k === ' ') continue;
+      var key = m.keys[k], nv = (fs.n && NV[fs.n[r].charAt(c)]) || NV.f, L = Lbase.slice();
+      var nl = Math.max(0, nv[0] * ld[0] + nv[1] * ld[1] + nv[2] * ld[2]);
+      if (S.intensity > 0) U.addLight(L, P.lights[S.preset].color, S.intensity * nl);
+      U.shadeSprite(key.c, L, 1, !!key.e, 0, so);
+      if (!so.visible) continue;
+      G.set(ox + x, oy + y, g, so.fg.slice());
+    }
+  }
+
+  // ---------------- 1. crash room ----------------
+  var scene, summit, GS = 1, CW = Math.max(900, Math.min(1500, window.innerWidth - 60));
+  var BURN = { x: 120, y: 48 };                                // burner anchor (160x60 space)
+  function roomTop(xs) { return 5 + 2 * Math.sin(xs * 0.2) + (xs > 34 && xs < 62 ? 5 + 2 * Math.sin(xs * 0.9) : 0); }
+  function torchAt(L, dx, dy, dz) {
+    if (!S.burner) return;
+    var d = Math.sqrt(dx * dx + dy * dy + dz * dz), fl = 1 + P.lights.torch.flicker.amount * vnoise(S.t * 10);
+    U.addLight(L, 'torch', P.lights.torch.intensity * fl * U.falloff(d, P.lights.torch.radius));
+  }
+  function drawRoom() {
+    var G = scene, T = P.timeOfDay.morning, cols = G.cols, rows = G.rows, kx = 160 / cols, ky = 60 / rows;
+    for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+      var xs = (x + 0.5) * kx, ys = (y + 0.5) * ky, top = roomTop(xs), L = [0, 0, 0], o;
+      U.addLight(L, T.ambient, T.ambientI);
+      if (ys < top) { U.shadeSky(80 + xs * 0.5, 8 + (top - ys) * 3, out, 'morning'); G.set(x, y, out.glyph, out.fg.slice(), out.bg.slice()); continue; }
+      var bx = (xs - BURN.x) * 0.0625;
+      if (ys < top + 2.2) {                                    // wall-top cap, seen from below at a slant: moss_top (floor-sampled)
+        addDir(L, [0, 1, 0], 0.8);
+        o = shadeSurf('moss_top', L, 'top', 'U', xs * 0.0625, ys * 0.4, 0, 9, 0.0625 * kx, 0.4 * ky);
+      } else if (ys < 40) {                                    // tower wall, facing the camera
+        var z = (40 - ys) * 0.2, mat = xs < 56 ? 'stone_ivy' : xs < 108 ? 'stone_moss' : 'stone';
+        addDir(L, [0, 0, 1]); torchAt(L, bx, 1.4, z - 1.1);
+        o = shadeSurf(mat, L, 'wall', 'S', xs * 0.0625, z, z, 7, 0.0625 * kx, -0.2 * ky);
+      } else {                                                 // floor, receding
+        var depth = (60 - ys) * 0.3, fx = (xs - 80) * 0.0625, ash = Math.abs(xs - BURN.x) < 16 && ys > 42;
+        addDir(L, [0, 1, 0]); torchAt(L, bx, 1.2 + (BURN.y - ys) * 0.3, -1.1);
+        o = shadeSurf(ash ? 'ash' : 'floor', L, 'floor', 'U', fx + 80 * 0.0625, depth, 0, 2 + depth, 0.0625 * kx, 0.3 * ky);
+      }
+      G.set(x, y, o.glyph, o.fg.slice(), o.bg.slice());
+    }
+    // sprites (anchor in 160x60 space -> scene cells), light at the sprite = ambient + torch by distance
+    function Lat(xs, hz) { var L = [0, 0, 0]; U.addLight(L, T.ambient, T.ambientI); torchAt(L, (xs - BURN.x) * 0.0625, 1.0, hz - 1.1); return L; }
+    function put(m, anim, xs, ys, hz) {
+      var a = m.animations[anim], fr = a.frames[frameAt(a, S.t)];
+      sprite(G, m, fr, xs / kx, ys / ky, GS, Lat(xs, hz));
+    }
+    put(M.envelopeDrape, 'sway', 30, 31, 3.0);
+    put(M.gondola, 'idle', 72, 53, 0.4);
+    put(M.rigging, 'idle', 94, 54, 0.1);
+    put(M.lantern, 'unlit', 57, 45, 1.3);
+    put(M.burner, 'burn', BURN.x, BURN.y, 0.5);
+    G.flush();
+  }
+
+  // ---------------- 2. summit + relay ----------------
+  var relay = { state: 'dead', t0: 0 };
+  $('wake').onclick = function () { relay.state = 'wake'; relay.t0 = S.t; };
+  $('dead').onclick = function () { relay.state = 'dead'; relay.t0 = S.t; };
+  function relayAnim() {
+    var m = M.relay, tt = S.t - relay.t0;
+    if (relay.state === 'wake') {
+      var wa = m.animations.wake, dur = wa.frames.length / wa.fps;
+      if (tt >= dur) { relay.state = 'awake'; relay.t0 = relay.t0 + dur; return relayAnim(); }
+      var fi = frameAt(wa, tt), lf = m.wakeLightFrame / wa.fps, g = U.clamp01((tt - lf) / P.lights.relay.grow.duration);
+      return { anim: 'wake', fi: fi, glow: g };
+    }
+    if (relay.state === 'awake') {
+      var wake = M.relay.animations.wake, since = tt + (wake.frames.length / wake.fps - m.wakeLightFrame / wake.fps);
+      return { anim: 'awake', fi: frameAt(m.animations.awake, tt), glow: U.clamp01(since / P.lights.relay.grow.duration) };
+    }
+    return { anim: 'dead', fi: frameAt(m.animations.dead, tt), glow: 0 };
+  }
+  function drawSummit() {
+    var G = summit, T = P.timeOfDay.morning, cols = G.cols, rows = G.rows, kx = 64 / cols, ky = 24 / rows, ra = relayAnim();
+    var rl = P.lights.relay, br = 1 + rl.flicker.amount * vnoise(S.t * 0.7);
+    function relayL(L, dx, dy, dz) { if (ra.glow > 0) U.addLight(L, rl.color, rl.intensity * br * ra.glow * U.falloff(Math.sqrt(dx * dx + dy * dy + dz * dz), rl.radius)); }
+    for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+      var xs = (x + 0.5) * kx, ys = (y + 0.5) * ky, L = [0, 0, 0], o;
+      U.addLight(L, T.ambient, T.ambientI);
+      var top = 3 + 1.5 * Math.sin(xs * 0.3) + (xs > 44 ? 3 : 0);
+      if (ys < top) { U.shadeSky(200 + xs, 10 + (top - ys) * 3, out, 'morning'); G.set(x, y, out.glyph, out.fg.slice(), out.bg.slice()); continue; }
+      var dx = (xs - 32) * 0.1;
+      if (ys < top + 1.5) { addDir(L, [0, 1, 0], 0.8); relayL(L, dx, 2.5, 0.8); o = shadeSurf('moss_top', L, 'top', 'U', xs * 0.1, ys * 0.5, 0, 6, 0.1 * kx, 0.5 * ky); }
+      else if (ys < 19) {
+        var z = (19 - ys) * 0.25;
+        addDir(L, [0, 0, 1]); relayL(L, dx, 2.2, z - 1.7);
+        o = shadeSurf(xs < 20 || xs > 46 ? 'stone_ivy' : 'stone', L, 'wall', 'S', xs * 0.1, z, z, 5, 0.1 * kx, -0.25 * ky);
+      } else { var depth = (24 - ys) * 0.4; addDir(L, [0, 1, 0]); relayL(L, dx, 0.6 + (19 - ys) * 0.2, -1.0);
+        o = shadeSurf('floor', L, 'floor', 'U', xs * 0.1, depth, 0, 2 + depth, 0.1 * kx, 0.4 * ky); }
+      G.set(x, y, o.glyph, o.fg.slice(), o.bg.slice());
+    }
+    var Ls = [0, 0, 0]; U.addLight(Ls, T.ambient, T.ambientI); relayL(Ls, 0, 0.5, 0);
+    sprite(G, M.relay, M.relay.animations[ra.anim].frames[ra.fi], 32 / kx, 21 / ky, GS * 1.4, Ls);
+    G.flush();
+  }
+
+  // ---------------- 3. material panels ----------------
+  var MATS = ['stone', 'stone_ivy', 'moss_top', 'brass', 'copper', 'canvas'], panels = [];
+  var FACES = [{ id: 'side', kind: 'wall', normal: 'E', nv: [0.7, 0, 0.7] }, { id: 'front', kind: 'wall', normal: 'S', nv: [0, 0, 1] }, { id: 'floor', kind: 'floor', normal: 'U', nv: [0, 1, 0] }];
+  function buildMats() {
+    var host = $('mats'); host.innerHTML = ''; panels = [];
+    MATS.forEach(function (mk) {
+      var h = document.createElement('div'); h.className = 'cap';
+      h.innerHTML = '<b style="color:#ffd27a">' + mk + '</b>  ' + (P.materials[mk].desc || '').replace(/</g, '&lt;');
+      host.appendChild(h);
+      ['v1', 'v2'].forEach(function (sh) {
+        var row = document.createElement('div'); row.className = 'row';
+        FACES.forEach(function (f) {
+          var d = document.createElement('div'), cv = document.createElement('canvas'), cap = document.createElement('div');
+          cap.className = 'cap'; cap.textContent = sh + ' ' + f.id + (sh === 'v2' ? ' (' + f.normal + ')' : '');
+          d.appendChild(cv); d.appendChild(cap); row.appendChild(d);
+          var cols = Math.round(26 * GS), rows = Math.round(10 * GS);
+          panels.push({ G: makeLayer(cv, cols, rows, 26 * 7), mat: mk, sh: sh, f: f });
+        });
+        host.appendChild(row);
+      });
+    });
+  }
+  function drawMats() {
+    var T = P.timeOfDay.morning, keep = S.sh;
+    panels.forEach(function (p) {
+      S.sh = p.sh;
+      var G = p.G, du = 2.6 / G.cols, dv = 1.5 / G.rows;
+      for (var y = 0; y < G.rows; y++) for (var x = 0; x < G.cols; x++) {
+        var L = [0, 0, 0]; U.addLight(L, T.ambient, T.ambientI); addDir(L, p.f.nv);
+        var u = 1.0 + (x + 0.5) * du, v = p.f.kind === 'wall' ? 1.5 - (y + 0.5) * dv : 2.0 + (y + 0.5) * dv, z = p.f.kind === 'wall' ? v : 0;
+        var o = shadeSurf(p.mat, L, p.f.kind, p.f.normal, u, v, z, 3, du, p.f.kind === 'wall' ? -dv : dv);
+        G.set(x, y, o.glyph, o.fg.slice(), o.bg.slice());
+      }
+      G.flush();
+    });
+    S.sh = keep;
+  }
+
+  function build() {
+    GS = S.grid / 160;
+    scene = makeLayer($('scene'), S.grid, Math.round(S.grid * 60 / 160), CW);
+    summit = makeLayer($('summit'), Math.round(64 * GS), Math.round(24 * GS), Math.round(CW * 0.55));
+    buildMats();
+  }
+  build(); sync();
+
+  var last = performance.now(), acc = 1;
+  requestAnimationFrame(function loop(now) {
+    requestAnimationFrame(loop);
+    var dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (!S.paused) S.t += dt;
+    acc += dt; if (acc < 0.066) return; acc = 0;
+    drawRoom(); drawSummit(); drawMats();
+  });
+})();
+</script>
+</body>
+</html>

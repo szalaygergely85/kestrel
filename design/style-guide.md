@@ -1,4 +1,4 @@
-# ASCII Quest - Style Guide (v1, US-002)
+# Kestrel - Style Guide (v1, US-002; D-011 reskin v1.9)
 
 Owner: Designer. Data formats: `design/README.md`. Colors, ramps and materials: `design/palette.js`. Preview: `design/preview/palette.html`.
 
@@ -18,10 +18,15 @@ From GDD pillar 4, the same order decides every art call:
 | **Interactable** | `brassLight` / `brass` glint, `gold` prompt key | lantern, lever handle, anything with `[E]` |
 | **Hero / friendly** | `heroGreen` | player-side effects, later the hero's gear |
 | **Danger / harm** | `danger` | enemies, hazards, damage flashes (M2+) |
-| **Magic / spirit** | `magic` | spirit effects, later magic items |
+| **Magic = aether** (D-011) | `aether` family: `aetherCore` `aetherLight` `aether` `aetherMid` `aetherDim` (+ `aetherDead`, lit) | the relay crystals, the signal, later gauntlet spells. Emissive, sparkle `* + . '` |
+| **Machine** (D-011) | `brass*`, `copper*`, `verdigris*` | only on machines: the *Kestrel* gondola and burner, the brass lamp, the relay mount, later lever housings, pressure doors, sentinels |
+| **Ferrum** (D-011) | `ferrum` `ferrumDim` | the city's warm amber pinpoints on the horizon, FERRUM on the chart |
 
 Rules:
-- `danger`, `magic` and `heroGreen` are **reserved**. Do not use them for scenery. In M1 none of them appear in the world at all. The world is only warm, cool and material colors, so that when they arrive later they mean something.
+- `danger`, the aether family and `heroGreen` are **reserved**. Do not use them for scenery. In M1 the only aether in the world is the **relay** (and the far signal light). The rest of the world is warm, cool and material colors, so the teal means "magic" the moment it appears. The old `magic` cyan is legacy: `semantic.magic` now points at `aether`.
+- **80-90 % fantasy, 10-20 % machine** (D-011). Stone, wood, moss and ivy carry every scene. Brass and copper appear only on things that were *built* by artificers. Never put a brass trim on plain architecture.
+- Machines stay readable at 160x60: silhouette first, rivets `o` only on big plates, one gauge `(@)` or gear hub per prop at most.
+- Canvas (`canvas*`) and rope (`rope*`) are the soft, pale parts of the wreck. Pale ochre with `~ ) (` folds keeps it apart from both stone and brass.
 - Shadow is **cool, not black**: ambient `#2a3550` at 0.12 always leaves a dim bluish glyph on stone.
 - Warm light is **the path**: the player walks toward warm. The brazier, then the sun patch, then the stair are lit in sequence. Do not light dead ends warmly.
 - Brass is the only saturated yellow on non-fire objects. A small brass glint (a `o` that becomes a white `*` every 2 to 3 s) means "take me".
@@ -49,6 +54,11 @@ Density order matters more than the character's shape. Each ramp in `palette.ram
 | sky | `. ' - ~ = + *` | wisps; the gradient bg does most of the work |
 | fire | `. ' , ^ * % #` | `^` tips, `*` body, core via color (`flameCore`) |
 | grass / foliage / water (far) | `" ' , ;` / `: * % & @` / `- ~ = +` | US-016 |
+| ivy / mossy tops (v1.9) | `" ; , % &` | vines follow mortar joints, cushions on wall tops |
+| brass (v1.9) | `. : - = + o * # %` | plates `=`, rivets `o`, bright top step |
+| copper (v1.9) | `. : - = + x # % &` | verdigris `%` `:` in the seams |
+| canvas (v1.9) | `. ' - ~ ) ( = %` | folds `)` light / `(` dark, seams `~` |
+| aether (v1.9) | `. ' + *` | sparkle only, always emissive |
 
 - **ASCII only (32 to 126).** No `·`, `≈`, `≡`, box drawing or Unicode. `validate()` checks ramps.
 - Glyph overrides in textures (rivets, knots) never appear in darkness (minimum ramp index 2).
@@ -101,4 +111,6 @@ Once the engine supports v2, these rules apply:
 - Ambient-only surfaces sit at level 3 of 8 or above. No surface in view shows only `.`.
 
 ## 8. Mood target for M1 (the Awakening)
+**D-011 update:** the same room, now the site of the crash. The brazier pool of light is the *Kestrel's* copper burner. The brass gondola with its KESTREL board sits on the floor, torn canvas hangs in the stairwell, and ivy spills in where the crown broke. At the summit a dead relay sits grey until the lamp wakes it: then the scene's first cold teal light appears. Reference picture: `preview/wreckage.html`.
+
 Morning. Dark cool-blue stone, one warm orange pool of light around the brazier with soot-darkened walls above it, a pale warm sun ellipse on the floor with dust motes, a strip of blue sky above broken wall tops, moss low on the north wall. The preview vignette (`preview/palette.html`, section 1) is the reference picture.

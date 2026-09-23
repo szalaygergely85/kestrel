@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ASCII Quest - Props (US-011)</title>
+<title>Kestrel - Props (US-011, D-011 reskin)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -25,8 +25,11 @@
 </style>
 </head>
 <body>
-<h1>ASCII Quest : props (US-011)</h1>
-<div class="note">Loads <code>../palette.js</code> and <code>../models/*.js</code>. Every animation is shown at <b>near</b> (2x, nearest sampling, as the engine enlarges up close),
+<h1>Kestrel : props (US-011, D-011 reskin v1.9)</h1>
+<div class="note"><b>D-011:</b> new <b>relay</b> (dead / wake / awake, teal aether glow; light preset <code>relay</code>), the <b>brass lamp</b> (the <code>lantern</code> model, reskinned in place),
+  and the <i>Kestrel</i> wreck: <b>burner</b> (copper, replaces the brazier), <b>gondola</b> (KESTREL name board), <b>envelopeDrape</b>, <b>envelopeHeap</b>, <b>rigging</b>.
+  The composed crash scene is in <a href="wreckage.html" style="color:#ffd27a">wreckage.html</a>. The legacy brazier / beacon bowl / fire stay listed for reference.<br>
+  Loads <code>../palette.js</code> and <code>../models/*.js</code>. Every animation is shown at <b>near</b> (2x, nearest sampling, as the engine enlarges up close),
   <b>mid</b> (1x) and <b>far</b> (the hand-drawn half LOD), plus the full frame strip. Lit cells use <code>util.shadeSprite</code>; <b>emissive</b> cells (flames, embers, glints)
   ignore light and fog. The background is dark by default; tick "lit stone backdrop" to test readability against a torch-lit wall.<br>
   <b>Scene grid (D-009):</b> a sprite at a given distance covers <code>rows/60</code> times more cells on a finer grid, so the engine samples the same art at 1.5x (240x90) or 2x (320x120)
@@ -66,6 +69,8 @@
 <script src="../models/lever.js"></script>
 <script src="../models/boulder.js"></script>
 <script src="../models/rubble.js"></script>
+<script src="../models/relay.js"></script>
+<script src="../models/wreckage.js"></script>
 <script>
 (function () {
   'use strict';
@@ -86,7 +91,9 @@
 
   // ---------------- entries ----------------
   var ENTRIES = [
-    { id: 'brazier', m: M.brazier }, { id: 'beaconFire', m: M.beaconFire }, { id: 'lantern', m: M.lantern }, { id: 'lever', m: M.lever },
+    { id: 'relay', m: M.relay }, { id: 'lantern (brass lamp)', m: M.lantern }, { id: 'burner', m: M.burner }, { id: 'gondola', m: M.gondola },
+    { id: 'envelopeDrape', m: M.envelopeDrape }, { id: 'envelopeHeap', m: M.envelopeHeap }, { id: 'rigging', m: M.rigging },
+    { id: 'brazier (legacy)', m: M.brazier }, { id: 'beaconFire (legacy)', m: M.beaconFire }, { id: 'lever', m: M.lever },
     { id: 'boulder', m: M.boulder }, { id: 'rubble0', m: M.rubble.variants[0] }, { id: 'rubble1', m: M.rubble.variants[1] },
     { id: 'rubble2', m: M.rubble.variants[2] }, { id: 'pallet', m: M.pallet }, { id: 'beaconBowl', m: M.beaconBowl }
   ];
@@ -146,7 +153,20 @@
     check('Beacon fire: 12x4, 6 frames, built only from brazier flame-unit cells (all emissive); bottom row fully burning in every frame',
       bf.size.w === 12 && bf.size.h === 4 && bf.animations.burn.frames.length === 6 && fullCover && bf.keys === b.flameUnit.keys);
     var l = M.lantern;
-    check('Lantern 3x4: unlit on hook (2-frame glint), lit, empty hook', l.size.w === 3 && l.size.h === 4 && l.animations.unlit.frames.length === 2 && !!l.animations.lit && !!l.animations.hookEmpty);
+    check('Brass lamp (model key "lantern") 3x4: unlit on hook (2-frame glint), lit, empty hook; same names / frame counts as US-011',
+      l.size.w === 3 && l.size.h === 4 && l.animations.unlit.frames.length === 2 && l.animations.lit.frames.length === 2 && !!l.animations.hookEmpty);
+    var rl = M.relay, awakeAllE = rl.animations.awake.frames.every(function (f) {
+      return [[1, 5], [1, 6], [1, 7], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]].every(function (p) { var k = f.S.fg[p[0]].charAt(p[1]); return rl.keys[k] && rl.keys[k].e; }); });
+    var deadNoE = rl.animations.dead.frames[0].S.fg.join('').split('').every(function (k) { return k === ' ' || !rl.keys[k].e; });
+    check('Relay 13x7: dead (no emissive in the rest frame) / wake once 8 frames at 8 fps / awake loop, every awake crystal cell emissive; light preset "relay" exists',
+      rl.size.w === 13 && rl.size.h === 7 && deadNoE && awakeAllE && rl.animations.wake.frames.length === 8 && !rl.animations.wake.loop &&
+      !!P.lights[rl.light.preset] && ['dead', 'wake', 'awake'].every(function (a) { return rl.lods.half.animations[a].frames.length === rl.animations[a].frames.length; }));
+    var aetherUsers = ENTRIES.filter(function (e) { return Object.keys(e.m.keys).some(function (k) { return /^aether/.test(e.m.keys[k].c); }); }).map(function (e) { return e.id; });
+    check('D-011 colour rule: aether teal only on the relay (magic is reserved)', aetherUsers.length === 1 && aetherUsers[0] === 'relay', aetherUsers.join(', '));
+    var gd = M.gondola, nbRow = gd.animations.idle.frames[0].S.glyphs[gd.nameBoard.row];
+    check('Gondola 18x6 carries the KESTREL name board; burner 9x7 with torch light, 6-frame burn, all flame / ember cells emissive',
+      nbRow.indexOf('KESTREL') === gd.nameBoard.x0 && M.burner.light.preset === 'torch' && M.burner.animations.burn.frames.length === 6 &&
+      ['1', '2', '3', '4', 'E', 'y'].every(function (k) { return M.burner.keys[k].e; }));
     check('Lever 3x5: pull = 5 frames (up, 3 in-betweens, down) over 0.4 s', M.lever.size.w === 3 && M.lever.size.h === 5 && M.lever.animations.pull.frames.length === 5 &&
       Math.abs(M.lever.animations.pull.frames.length / M.lever.animations.pull.fps - 0.4) < 1e-6);
     check('Boulder 5x4, 8 rotation frames, mossy stone', M.boulder.size.w === 5 && M.boulder.size.h === 4 && M.boulder.animations.roll.frames.length === 8 &&
@@ -162,7 +182,7 @@
 
   // ---------------- light state ----------------
   var S = { preset: 'torch', intensity: 1, dir: -50, elev: 35, dist: 3, backdrop: false, normals: true, speed: 1, paused: false, t: 0 };
-  var PRESETS = { ambient: 'ambient only', torch: 'torch', sun: 'sun', lantern: 'lantern' };
+  var PRESETS = { ambient: 'ambient only', torch: 'torch', sun: 'sun', lantern: 'lantern', relay: 'relay (teal)' };
   var pbox = document.getElementById('presets');
   Object.keys(PRESETS).forEach(function (k) {
     var b = document.createElement('button'); b.textContent = PRESETS[k]; b.dataset.k = k;

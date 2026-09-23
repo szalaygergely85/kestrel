@@ -154,6 +154,14 @@
     rockFace:   [".'", ".,:", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
     rockMid:    [".'`", ".,:'", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
     rockFar:    [".'`", ".,:'", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
+    // D-011 "Kestrel" reskin (v1.9): ivy, mossy tops, machine brass / copper, balloon canvas. Same rules: 3-4
+    // alternates, no '.' at level 3 (walls) / levels 3-4 (floors), ASCII only. Mid / far = the near set (US-028).
+    ivy:        [".", ",", ",'", "\";", ";\",", "%;\"", "&%;", "@&%"],
+    mossTop:    [".", ".'", ",'`", "\",'", ",;\"", ";\"%", "\"%&", "%&@"],
+    brassFace:  [".'", ".:'", ":-;", "-=:~", "=-+:", "+=o-", "o+=#", "#o=*"],
+    copperFace: [".'", ".:'", ":-;", "-=:~", "=-+x", "+=x-", "x#+=", "#x%="],
+    verdigris:  [".", ",", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
+    canvasFace: [".'", ".~'", "~-'", "~)-", ")~(", ")(~", "()~=", "(=)%"],
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
@@ -341,14 +349,72 @@
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // --- D-011 "Kestrel" reskin (v1.9): every new v1 material gets its v2 record (GPU path needs allV2) ------
+    stone_ivy: ext(STONE, {
+      v1: 'stone_ivy', seed: 14,
+      desc: 'Tower stone overgrown with ivy over the FULL height (no band): vines follow the mortar first (joint 0.70), ' +
+            'leaf clumps " ; % & on 28 % of the faces. Four greens so it never reads as one flat stain.',
+      overlay: { set: 'ivy', tints: ['ivy', 'ivyDark', 'ivyLight', 'mossDark'], amount: 0.85, shade: 0.95,
+                 joint: 0.70, face: 0.28 }
+    }),
+    moss_top: {
+      v1: 'moss_top', seed: 151,
+      desc: 'Cap stones on wall tops / ledges (floor-sampled, face U): slabs 0.75 x 0.5 m, grout full of moss, cushions ' +
+            '" , ; on 45 % of the slabs, the odd tuft. Reads green from above, stone from the side.',
+      albedo: 0.76, bgK: 0.26, detail: 14, jitter: 0.10,
+      tones: [['flagstone', 3], ['stoneDeep', 2], ['flagCool', 2]],
+      grid: { u: 0.75, v: 0.5, stagger: 0.5, shade: 0.55, tint: 'mossDark', amount: 0.70, bgK: 0.14, cross: '+', maxCover: 0.25 },
+      face: { set: 'floorFace', mid: 'floorMid', far: 'floorFar' },
+      overlay: { set: 'mossTop', tints: ['moss', 'mossDark', 'mossLight', 'ivy'], amount: 0.85, shade: 0.95, joint: 0.85, face: 0.45 },
+      speckle: { set: 'tuft', chance: 0.04, shade: 1.10 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    brass: {
+      v1: 'brass', seed: 121,
+      desc: 'MACHINE ONLY. Brass plate 0.5 x 0.5 m (gondola hull, relay mount): dark seams ( - | ) with + corners, a bright ' +
+            'top step on every plate (bevel 1.35), warm tones, rare verdigris at the seams. No rivet speckle (per-block ' +
+            'speckle would fill a plate); rivets come from the v1 texture / sprites.',
+      albedo: 0.74, bgK: 0.16, detail: 16, jitter: 0.06,
+      tones: [['brass', 4], ['brassDark', 2], ['brassLight', 2]],
+      grid: { u: 0.5, v: 0.5, stagger: 0, shade: 0.72, tint: 'brassShadow', amount: 0.60, bgK: 0.10, cross: '+', maxCover: 0.25, tie: true },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace',
+              bevel: { top: 0.06, topShade: 1.35, bottom: 0.04, bottomShade: 0.85 } },
+      overlay: { set: 'verdigris', tints: ['verdigris', 'verdigrisDark'], amount: 0.50, shade: 0.90, joint: 0.15, face: 0.04 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    copper: {
+      v1: 'copper', seed: 131,
+      desc: 'MACHINE ONLY. Copper bands 0.6 x 0.3 m, half bond (burner can, pipes, boiler): red-orange tones, ' +
+            'verdigris % : blooming in the joints (0.55) and on some faces (0.18).',
+      albedo: 0.68, bgK: 0.16, detail: 16, jitter: 0.06,
+      tones: [['copper', 4], ['copperDark', 2], ['copperLight', 1]],
+      grid: { u: 0.6, v: 0.3, stagger: 0.5, shade: 0.72, tint: 'copperDark', amount: 0.60, bgK: 0.10, cross: '+', maxCover: 0.25, tie: true },
+      face: { set: 'copperFace', mid: 'copperFace', far: 'copperFace',
+              bevel: { top: 0.05, topShade: 1.25, bottom: 0.04, bottomShade: 0.85 } },
+      overlay: { set: 'verdigris', tints: ['verdigris', 'verdigrisLight', 'verdigrisDark'], amount: 0.75, shade: 0.95, joint: 0.55, face: 0.18 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    canvas: {
+      v1: 'canvas', seed: 141,
+      desc: 'Balloon envelope: vertical gores 0.6 m (seam lines |), horizontal seams every 1.2 m, pale ochre in 3 tones, ' +
+            'fold glyphs ~ ) (, burnt blotches near tears (soot overlay, 8 % of faces).',
+      albedo: 0.82, bgK: 0.22, detail: 14, jitter: 0.10,
+      tones: [['canvas', 4], ['canvasLight', 2], ['canvasDark', 2]],
+      grid: { u: 0.6, v: 1.2, stagger: 0, shade: 0.70, tint: 'canvasDark', amount: 0.55, bgK: 0.14, maxCover: 0.25, tie: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      overlay: { set: 'soot', tints: ['canvasScorch', 'scorch'], amount: 0.70, shade: 0.60, joint: 0.10, face: 0.08 },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
   // v1 material key -> v2 key. Since US-029 every non-sky v1 material has a v2 record (sky keeps its own shader).
+  // v1.9 (D-011): + stone_ivy, moss_top, brass, copper, canvas (same key in both files).
   var remap = {
     stone: 'stone', stone_moss: 'stone_moss', stone_scorched: 'stone_scorched',
     floor: 'floor', wood: 'wood', rubble: 'rubble', grass: 'grass',
-    iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock'
+    iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock',
+    stone_ivy: 'stone_ivy', moss_top: 'moss_top', brass: 'brass', copper: 'copper', canvas: 'canvas'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

@@ -72,6 +72,10 @@ Rule: everything outside `colors` refers to colors **by key**, never by hex. Spr
 | `rubble` | ` .,:;oO%#&@` | fallen blocks |
 | `sky` | ` .'-~=+*` | cloud density |
 | `fire`, `grass`, `foliage`, `water` | | US-011 flames, US-016 far terrain |
+| `brass` | ` .:-=+o*#%` | machine brass (v1.9) |
+| `copper` | ` .:-=+x#%&` | copper (v1.9) |
+| `canvas` | ` .'-~)(=%` | balloon canvas (v1.9) |
+| `aether` | ` .'+*` | aether sparkle, effects only (v1.9, no material uses it yet) |
 
 **Brightness to glyph** (`util.rampIndex(len, b, gamma)`):
 ```
@@ -88,7 +92,8 @@ Any lit surface (b >= 0.03) gets at least the first visible glyph. This covers t
 - `falloff(d, r) = (1 - (d/r)^2)^2`, exactly 0 at `r`, no ring edge (US-006).
 - Sun: `elevation` 60, `azimuth` 112.5 (compass degrees, 0 = north, clockwise, the direction the light comes FROM, so ESE). Note that a vertical wall facing the sun gets at most N.L = cos(60) = 0.5 and a floor gets sin(60) = 0.87. Floors are the bright surfaces in the shaft, as the GDD intends.
 - Flicker: `{hzMin, hzMax, amount, jitter}`. Use smooth value noise, not per-frame random. The preview uses two octaves at 8 and 12 Hz: `1 + amount * (0.6*n(t*8) + 0.4*n(t*12))`.
-- `lights.beacon` holds the US-022 values (radius 12, which may be tuned down to 8).
+- `lights.beacon` holds the US-022 values (radius 12, which may be tuned down to 8). Legacy since D-011.
+- `lights.relay` (v1.9, D-011 "wake the relay"): `aether` teal, intensity 0.9, radius 10, smooth falloff, **slow** flicker 0.4-0.9 Hz amount 0.10 (breathing, not fire), `grow.duration` 1.0 s: the intensity ramps 0 -> 1 starting at `models.relay.wakeLightFrame`. The *Kestrel* burner keeps `torch`.
 
 ### 1.6 Materials
 ```
@@ -113,6 +118,15 @@ Material = {
 }
 ```
 M1 materials: `stone`, `stone_moss`, `stone_scorched`, `floor`, `ash`, `wood`, `iron`, `rubble`, `grass`, `rock` (v1.1), `sky`.
+D-011 reskin materials (v1.9, appended after `sky` so the ids of the M1 materials do not move):
+| key | use | ramp | notes |
+|---|---|---|---|
+| `stone_ivy` | tower walls where the *Kestrel* broke through (west `!` wall, summit) | `stone` | ivy vines down the joints over the **full height** (no `tintBand`), leaf clumps `;` |
+| `moss_top` | wall tops, parapet tops, ledges (floor-sampled) | `floor` | moss in the grout + cushions `"` |
+| `brass` | **machines only**: gondola hull, relay mount, later doors / sentinels | `brass` | 0.5 m plates, bright top step, rivets `o`, spec 0.55 |
+| `copper` | **machines only**: burner can, pipes | `copper` | verdigris `%` `:` along the seams, spec 0.45 |
+| `canvas` | balloon envelope sheets drawn as geometry | `canvas` | gores, folds `)` `(`, scorch |
+All five have v2 records in `detail-pass.js` (same keys; `remap` lists them), so `bindShading` keeps `allV2 = true` on the GPU path.
 
 **Texture coordinates** (`util.texel(tex, u, v)`):
 - Walls: `u` = distance along the wall in meters (continuous across adjacent cells, i.e. world x or y of the hit), `v` = world height `z` in meters. **v grows upward**. The row used is `rows[h-1 - (floor(v*scale[1]) mod h)]`.
@@ -176,11 +190,13 @@ Lights reference `palette.lights` presets and props reference US-011 model names
 ## 4. Sprite models (`design/models/*.js`, US-011)
 
 Plain scripts that set `ASSETS.models.<name>`. Files and models:
-- `brazier.js`: `brazier`, plus `beaconFire`
-- `lantern.js`: `lantern`
+- `brazier.js`: `brazier`, plus `beaconFire` (legacy since D-011: replaced in the level by `burner` / `relay`)
+- `lantern.js`: `lantern` = **the brass lamp** since v1.9 (reskinned in place, same key / size / animations)
 - `lever.js`: `lever`
 - `boulder.js`: `boulder`
-- `rubble.js`: `rubble` (variants), `pallet`, `beaconBowl`
+- `rubble.js`: `rubble` (variants), `pallet`, `beaconBowl` (`pallet` / `beaconBowl` legacy since D-011)
+- `relay.js` (v1.9): `relay`
+- `wreckage.js` (v1.9): `gondola`, `envelopeDrape`, `envelopeHeap`, `burner`, `rigging`, plus `ASSETS.levelPatch.tower` (section 4.2)
 
 The grate is **not** a sprite. It is the palette material `grate` (wall pattern).
 
@@ -235,15 +251,41 @@ A world file (`design/levels/world_m1.js`) may place a sprite model directly as 
 - `noUpscaleCap: true` on the model means the `3 * rows / 60` cap of section 4 does not apply (the world size is the truth; the far tower is 14 x 42 m and can never reach that cap anyway).
 - **`farTower`** (`design/models/far_tower.js`): detail 5x8 (window slit `k` = `black`), min 3x4 (`n n` / `|#|` / `|#|` / `/#\`), color `farTower` only, `unlit`, `fogModel 'far'`, `fogMax 0.40`, `minCells 3x4`, `detailRows 12`. Placed in `world_m1.js` at (713.8, 1232.1, -8). `overworld_far.farTower` keeps only `model: 'farTower'` + numbers; the inline `sprite` block is gone. Preview: `preview/overworld.html` (loads `../models/far_tower.js`).
 
+### 4.2 D-011 reskin models (v1.9): the *Kestrel* wreck, the brass lamp, the relay
+
+Same sprite format as section 4. New optional model fields: `displayName` (text name when it differs from the key), `replaces` (the legacy model this one stands in for), `nameBoard` (cells of the painted name), `hangs` (placement note for hanging sprites), `wakeLightFrame`.
+
+| model | size (half) | world m | animations | notes |
+|---|---|---|---|---|
+| `lantern` (brass lamp) | 3x4 (3x2) | 0.25 x 0.45 | `unlit` (glint, durations), `lit` 8 fps, `hookEmpty` | reskin in place: brass cap `/=\`, round cage `{ }`, fuel font `\_/`; prompt `[E] Take lamp` |
+| `relay` | 13x7 (7x4) | 2.4 x 1.75 | `dead` (durations 3200/160: one dim teal flicker), `wake` (8 frames, 8 fps, **once**), `awake` (4 fps loop) | crystals `^ / \ |` emissive teal when awake; cracked mirror `:` `/`; brass tripod + gear hub `(@)`. `light: { preset: 'relay', offset z 1.1, on: 'awake' }`; `wakeLightFrame: 2`. Half LOD has the **same frame counts** |
+| `burner` | 9x7 (5x4) | 1.15 x 1.1 | `burn` 10 fps, 6 frames | copper can, coil `)))`, brass gauge `(@)`, ember mouth, low flame (heat keys `1..4` like the brazier). `light: torch`, `replaces: 'brazier'` |
+| `gondola` | 18x6 (9x3) | 2.6 x 1.3 | `idle` (durations 1800/900: the snapped stays sway) | brass hull + rail, `[KESTREL]` board (row 2, cols 5-11), verdigris, ash round the keel |
+| `envelopeDrape` | 10x8 (5x4) | 1.4 x 1.9 | `sway` (4 frames, durations 900/700/900/700) | torn canvas hanging from a beam, a see-through burnt tear; the anchor is the hem: place `z = beam height - world.h` |
+| `envelopeHeap` | 14x4 (7x2) | 5.0 x 1.6 | `idle` | the collapsed envelope on the hillside, seen from the summit breach |
+| `rigging` | 7x2 (4x1) | 0.9 x 0.25 | `idle` | rope coil `(@)` and a snapped stay |
+
+- The wreck files build the fg (and `n`) rows from the glyph rows with a glyph -> key map (`paint`, `autoN` in `wreckage.js`), so the rows always line up.
+- **Colour rule (checked in `preview/props.html`):** aether keys appear only on `relay`; brass / copper only on the machine parts (gondola, burner, lamp, relay mount). The envelope uses canvas + rope with a `brassDark` eyelet.
+- **`ASSETS.levelPatch.tower`** (in `wreckage.js`): the **proposed** `tower.js` edits. They are not applied, because `tower.js` is in US-010 review and the game loads it. The patch covers: prop swaps (`brazier` -> `burner`, `pallet` -> `gondola`, `beaconBowl` -> `relay`), new props (rigging, canvas drape in the stairwell, heap outside the west wall), the `beacon` light -> `relay` preset, prompts (`[E] Take lamp`, `[E] Wake the relay`) and material swaps (`!` walls -> `stone_ivy`, wall / parapet tops -> `moss_top`). Positions marked "check" need a look in `preview/tower.html`.
+- Preview: `preview/props.html` (every model, every animation, near / mid / far at 160 / 240 / 320) and `preview/wreckage.html` (composed crash room, summit relay wake with the teal light, v1 vs v2 panels of the new materials, light-direction slider, grid toggle).
+
 ---
 
 ## 5. Title and UI styling (`design/models/title.js`, US-015)
 
-`title.js` sets three things:
+`title.js` sets four things (v1.9, D-011: the game is **Kestrel**):
 
-**`ASSETS.models.title`** (68x8 logo) and **`ASSETS.models.subtitle`** (1 row). These use the sprite format from section 4, with `ui: true`. Every key is emissive: drawn at full palette color over the 3D view.
+**`ASSETS.models.title`** (KESTREL logo, 49x8) and **`ASSETS.models.subtitle`** (`SOMEONE IS CALLING`, 1 row). These use the sprite format from section 4, with `ui: true`. Every key is emissive: drawn at full palette color over the 3D view.
+- **Look:** the airship's brass name board. The rows run `brassHot`, `brassLight`, `brass`, `brass`, `copperLight`, `copper`, with a `brassShadow` drop shadow. Row 7 is a brass flourish carrying the SOS, `. . . - - - . . .`, in aether teal. It is the only magic colour on the card.
+- **Pulse:** `title.animations.show` has **10 frames with `durations`**: frame n (0..8) lights mark n in `aetherCore` while the others stay `aetherDim`, then frame 9 (all dim) rests for 1200 ms. Timings are short 180 ms and long 480 ms. The same pattern is in `title.signal` (`marks[]` with x and kind). Loop it during the hold, and use frame 9 while fading.
 - **Layout:** the logo anchor goes at `layout.centerX = 80`, row `layout.top = 18` of the **160x60 UI grid** (`uiStyle.uiGrid`, not the scene grid). The subtitle sits `belowTitle = 1` row under the logo.
 - **Hold-phase shine:** `title.shine` sweeps a diagonal band across the `#` cells once per 2.2 s, lerping them toward white by 0.55.
+
+**`ASSETS.models.mapCard`** (US-015 scope change, D-011): the Crown sky-chart with Wick's pencil course. The 9 lines of `docs/story.md` section 5 are reproduced **verbatim** (also in `mapCard.text`) inside a torn chart border. The card is 52x13 and its anchor is top-centre.
+- **Colours:** Crown print is `chartInk` red, the pencil is `pencil` warm grey, labels are `uiHint`, FERRUM is `ferrum` amber, and the SIGNAL word is `aether`. The `*` star pulses SOS (`aetherCore` / `aetherDim`, 18 on/off frames with `durations`). Dead relays `o` are `aetherDim`, the "you are here" `x` is `gold`, and the border is `chartEdge`.
+- **Layout:** `layout.top` is 23 and `layout.centerX` is 80, in UI-grid cells.
+- **Behaviour:** it lives in `uiStyle.mapCard`. It is shown once after the title card, any key or click dismisses it, and `M` re-opens it. It fades in over 0.4 s and out over 0.25 s. Its plate has pad 1 and bgMul 0.18. Whether input is blocked while it is open is a PO call.
 
 **`ASSETS.uiStyle`**: styling data for everything that draws text:
 - **`uiGrid` + `uiScale`** (D-009 amendment, 2026-09-23): the UI lives in a **fixed 160x60 UI grid**, drawn as a **separate text layer** over the scene grid (`mode: 'layer'`). `cellScale = sceneCols / 160` (1.0 / 1.5 / 2.0 for 160x60 / 240x90 / 320x120), so a UI glyph is always 12x18 px at 1920x1080. **Every layout number in `uiStyle`, `title.layout` and `subtitle.layout` is a UI-grid cell.** Rules:
@@ -261,9 +303,10 @@ A world file (`design/levels/world_m1.js`) may place a sprite model directly as 
   - a soft **plate**: scene bg (and fg) multiplied by 0.35, 1 cell around the text, with the texture calmed to ramp index <= 2
   - fade in 0.3 s, fade out 0.5 s, timeout 8 s
   - texts exactly as in US-015
+- **`storyHints[]`** (v1.9): the writer's three narrative hints from story.md 5 (`burner`, `climb`, `chart` = "Press M to read the chart.", `M` in gold). They use the same hint style, and their `when` fields are suggestions for the PO.
 - **`crosshair`**: `+`, `uiDim` idle, `gold` when targeting.
-- **`prompt`**: 2 rows below the crosshair, centred, `[E]` in gold, same plate.
-- **`endText`** (US-017): centred from row 24, 30 cps with a blinking `_` cursor. The beacon-lit alt line is included.
+- **`prompt`**: 2 rows below the crosshair, centred, `[E]` in gold, same plate. Examples: `[E] Take lamp`, `[E] Pull lever`, `[E] Wake the relay`.
+- **`endText`** (US-017): centred from row 24, 30 cps with a blinking `_` cursor. The beacon-lit alt line is included. It is marked **`placeholder: true`** since D-011, because new end-card text is still missing from story.md.
 - **`pause`**: `Click to resume`.
 - **`blink`**: the eyelid curve `[t, open]` including the half-close. The lid edge row is `-` in `emberDark` at 50%.
 
@@ -301,3 +344,30 @@ A world file (`design/levels/world_m1.js`) may place a sprite model directly as 
 - **v1.7 (2026-09-23, D-009 grid amendment / US-030 follow-up)**: `uiStyle.uiGrid` + `uiStyle.uiScale` (fixed 160x60 UI text layer over the scene grid; all UI layout numbers are UI-grid cells). Sprite upscale cap becomes `3 * rows / 60` (section 4). `preview/title.html` and `preview/props.html` gained a 160 / 240 / 320 scene-grid toggle (title also: scaled layer vs 1x scene cells). Props checked at 320x120: readable, tiled-glyph look near; optional `lods.double` follow-up noted. No palette, material or model art changed.
 - **v1.8 (2026-09-23, US-016 tech notes)**: new `design/models/far_tower.js` (`ASSETS.models.farTower`, detail 5x8 + `lods.min` 3x4, billboard defaults); `world_m1.js` gains the `farTower` `billboard` entity; `overworld_far.js` `farTower.sprite` **removed**, replaced by `model: 'farTower'` + `minCells` + `detailRows` (recipe version stays 2, no height/type change); `preview/overworld.html` loads the model. New section 4.1. Art unchanged from the PO-approved silhouette.
 - **v1.4 (2026-09-22, US-016)**: `design/levels/overworld_far.js` (seeded far-terrain recipe, reference `util.generate()` / `heightAt()`, terrain look rules, far tower), `overworld_far.md`, `preview/overworld.html`.
+- **v1.9 (2026-09-23, D-011 "Kestrel" reskin)**:
+  - `palette.js`:
+    - new colors: the aether family (`aetherCore` .. `aetherDead`), `brassHot` / `brassShadow`, copper + verdigris, `mirror*`, canvas, rope, `emberHot` / `emberDim` / `cinder`, `steam*`, `ivy*`, `ferrum*` and the chart UI colours
+    - new ramps `brass`, `copper`, `canvas` and `aether`
+    - new light preset `lights.relay`
+    - new materials `stone_ivy`, `moss_top`, `brass`, `copper` and `canvas`, appended after `sky`
+    - `semantic.magic` is now `'aether'`, plus the new `machine`, `machineAlt`, `signal` and `ferrum`; `ui.title` holds the brass rows
+    - no existing material, ramp, shading value, light or fog value changed, so the v1 shadetest baseline of the 11 M1 materials is unaffected (the new materials add rows)
+  - `detail-pass.js`: v2 records for all five new materials, plus sets `ivy`, `mossTop`, `brassFace`, `copperFace`, `verdigris` and `canvasFace`, and the `remap` entries. `allV2` holds.
+  - `models/title.js`:
+    - the KESTREL logo with an SOS pulse (`durations`, `signal`) and the subtitle SOMEONE IS CALLING
+    - new `models.mapCard` and `uiStyle.mapCard`
+    - `uiStyle.storyHints`, new prompt examples, `endText.placeholder`
+  - `models/lantern.js`: the brass lamp art (same key, size, animations and frame counts).
+  - New `models/relay.js` and `models/wreckage.js` (section 4.2, including the proposed `levelPatch.tower`).
+  - Previews:
+    - `preview/title.html`: logo pulse, map card in the start sequence, a map card button, story hints, new checks
+    - `preview/props.html`: the new models, a relay light preset, new checks
+    - new `preview/wreckage.html`
+    - all three have the 160 / 240 / 320 toggle
+  - `style-guide.md`: D-011 colour language.
+  - **Engine / PO notes:**
+    1. The title and map card now animate with per-frame `durations`. It is the same rule as the sprite `durations`, but the title is a UI model, so the text-layer code has to honour it.
+    2. Ivy that hangs from the wall *top* needs an inverted band (`tintBand` / `overlay.band` measured from the wall top). Until then `stone_ivy` is unbanded, which is acceptable.
+    3. `relay.wakeLightFrame` plus `lights.relay.grow` need the light intensity ramp that US-022 already planned for the beacon.
+    4. The level swaps in `levelPatch.tower` wait for the reskin stories.
+    5. The US-017 end text needs new writer copy.
