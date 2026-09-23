@@ -100,7 +100,7 @@ function setGlyphFast(S, gb, h, alt, s, cellAspect, cutoff, gamma) {
 export function shadeV2(DP, rgb, m, s, L, out) {
   const hash = DP.util.hash, crossLine = DP.util.crossLine, lineGlyph = DP.util.lineGlyph;
   const pickTone = DP.util.pickTone, fogFactor = DP.util.fogFactor;
-  const shading = DP.shading, faceShade = DP.faceShade, ao = DP.ao, fog = DP.fog;
+  const shading = DP.shading, faceShade = DP.faceShade, ao = DP.ao, fog = DP.fog, lodGates = DP.lodGates;
   const cellAspect = shading.cellAspect, cutoff = shading.cutoff, gamma = shading.gamma;
 
   const dist = s.dist || 0, u = s.u, v = s.v;
@@ -129,7 +129,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   let set = tier === 0 ? m.face.set : tier === 1 ? (m.face.mid || m.face.set) : (m.face.far || m.face.set);
   let shadeK = 1, tint = null, tintAmt = 0, bgK = m.bgK, lineG = null, onJoint = false, inBand = false;
 
-  if (g && m.face.bevel && tier < 2) {
+  if (g && m.face.bevel && tier <= lodGates.bevel) {
     const bv = m.face.bevel, yv = fv * g.v;
     if (g.v - yv < bv.top) shadeK *= bv.topShade;
     else if (yv < bv.bottom) shadeK *= bv.bottomShade;
@@ -141,7 +141,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
     const pos = bcoord - Math.floor(bcoord / band.period) * band.period;
     if (pos < band.width) {
       inBand = true;
-      if (tier < 2) set = band.set;
+      if (tier <= lodGates.band) set = band.set;
       shadeK = band.shade;
       if (band.tone) { const bt = rgb[band.tone]; cr = bt[0]; cg = bt[1]; cb = bt[2]; }
       if (band.bgK) bgK = band.bgK;
@@ -169,7 +169,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
     }
   }
   const ov = m.overlay;
-  if (ov && tier < 2) {
+  if (ov && tier <= lodGates.overlay) {
     const bf = ov.band ? bandFactorFast(ov.band, s.z) : 1;
     if (hC < (onJoint ? ov.joint : ov.face) * bf) {
       if (!onJoint) set = ov.set;
@@ -178,7 +178,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
       shadeK *= ov.shade;
     }
   }
-  if (m.speckle && tier === 0 && !onJoint && !inBand && hC > 1 - m.speckle.chance) {
+  if (m.speckle && tier <= lodGates.speckle && !onJoint && !inBand && hC > 1 - m.speckle.chance) {
     set = m.speckle.set;
     shadeK *= m.speckle.shade;
   }
@@ -204,7 +204,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   // to one glyph per level.
   else glyph = setGlyphFast(DP.sets[set], gb, hA, true, s, cellAspect, cutoff, gamma);
   if (f > fog.stipple[0] && hB < smoothstepFast(fog.stipple[0], fog.stipple[1], f)) {
-    glyph = pickChar(DP.sets[fog.set][f > 0.8 ? 0 : 1], hA);
+    glyph = pickChar(DP.sets[fog.set][f > fog.sparse ? 0 : 1], hA);
   }
 
   if (tint && tintAmt > 0) {
@@ -399,7 +399,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   let setId = tier === 0 ? rec.face.near : tier === 1 ? rec.face.mid : rec.face.far;
   let shadeK = 1, hasTint = false, tr = 0, tg = 0, tb = 0, tintAmt = 0, bgK = rec.bgK, lineCode = -1, onJoint = false, inBand = false;
 
-  if (g && rec.bevel && tier < 2) {
+  if (g && rec.bevel && tier <= rec.bevelGate) {
     const bv = rec.bevel, yv = fv * g.v;
     if (g.v - yv < bv.top) shadeK *= bv.topShade;
     else if (yv < bv.bottom) shadeK *= bv.bottomShade;
@@ -411,7 +411,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
     const pos = bcoord - Math.floor(bcoord / band.period) * band.period;
     if (pos < band.width) {
       inBand = true;
-      if (tier < 2) setId = band.setId;
+      if (tier <= rec.bandGate) setId = band.setId;
       shadeK = band.shade;
       if (band.hasTone) { cr = band.toneRGB[0]; cg = band.toneRGB[1]; cb = band.toneRGB[2]; }
       if (band.hasBgK) bgK = band.bgK;
@@ -474,7 +474,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
     }
   }
   const ov = rec.overlay;
-  if (ov && tier < 2) {
+  if (ov && tier <= rec.overlayGate) {
     const bf = ov.hasBand ? bandFactorNum(ov.bandFull, ov.bandZero, z) : 1;
     if (hC < (onJoint ? ov.joint : ov.face) * bf) {
       if (!onJoint) setId = ov.setId;
@@ -484,7 +484,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
       shadeK *= ov.shade;
     }
   }
-  if (rec.speckle && tier === 0 && !onJoint && !inBand && hC > 1 - rec.speckle.chance) {
+  if (rec.speckle && tier <= rec.speckleGate && !onJoint && !inBand && hC > 1 - rec.speckle.chance) {
     setId = rec.speckle.setId;
     shadeK *= rec.speckle.shade;
   }
@@ -513,7 +513,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
     glyphCode = code < 0 ? 0 : code;
   }
   if (f > fog.stipple0 && hB < smoothstepFast(fog.stipple0, fog.stipple1, f)) {
-    glyphCode = f > 0.8 ? pickCharCodeFast(fog.sparseCodes, fog.sparseAlt, 2, hA) : pickCharCodeFast(fog.hazeCodes, fog.hazeAlt, 2, hA);
+    glyphCode = f > fog.sparse ? pickCharCodeFast(fog.sparseCodes, fog.sparseAlt, 2, hA) : pickCharCodeFast(fog.hazeCodes, fog.hazeAlt, 2, hA);
   }
 
   if (hasTint && tintAmt > 0) {

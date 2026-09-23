@@ -85,7 +85,7 @@ const LINE_CODES = { '_': '_'.charCodeAt(0) - 32, '-': '-'.charCodeAt(0) - 32, '
 
 function resolveColor(P, key) { return P.rgb[key]; }
 
-function buildDetailMaterialRec(m, setIdByName, P) {
+function buildDetailMaterialRec(m, setIdByName, P, lodGates) {
   const rgb = P.rgb;
   const tones = m.tones;
   const toneRGB = new Float32Array(tones.length * 3);
@@ -122,6 +122,7 @@ function buildDetailMaterialRec(m, setIdByName, P) {
   const bevel = m.face.bevel
     ? { top: m.face.bevel.top, topShade: m.face.bevel.topShade, bottom: m.face.bevel.bottom, bottomShade: m.face.bevel.bottomShade }
     : null;
+  const gates = lodGates; // { bevel, band, overlay, speckle } max tier (inclusive), owner data
 
   let band = null;
   if (m.band) {
@@ -161,6 +162,9 @@ function buildDetailMaterialRec(m, setIdByName, P) {
     albedo: m.albedo, bgK: m.bgK, seed: m.seed | 0, detail: m.detail || 16, jitter: m.jitter || 0, emissive: m.emissive || 0,
     toneRGB, toneW, toneTotal,
     grid, face: { near, mid, far }, bevel, band, overlay, speckle, lod,
+    // Owner data (design/detail-pass.js `lodGates`), baked in at bind time
+    // (US-028 D3): max LOD tier (inclusive) each feature still applies at.
+    bevelGate: gates.bevel, bandGate: gates.band, overlayGate: gates.overlay, speckleGate: gates.speckle,
   };
 }
 
@@ -218,7 +222,7 @@ export function bindShading(P, DP, cellAspect) {
     })();
 
     for (const rec of records) {
-      if (rec && rec.v2Key) rec.v2 = buildDetailMaterialRec(DP.materials[rec.v2Key], setIdByName, P);
+      if (rec && rec.v2Key) rec.v2 = buildDetailMaterialRec(DP.materials[rec.v2Key], setIdByName, P, DP.lodGates);
     }
 
     for (let c = 1; c <= 6; c++) faceK[c] = DP.faceShade[FACE_STR[c]] != null ? DP.faceShade[FACE_STR[c]] : 1;
@@ -232,6 +236,7 @@ export function bindShading(P, DP, cellAspect) {
       bgRGB: resolveColor(P, DP.fog.color), fgRGB: resolveColor(P, DP.fog.glyph),
       start: DP.fog.start, full: DP.fog.full,
       stipple0: DP.fog.stipple[0], stipple1: DP.fog.stipple[1],
+      sparse: DP.fog.sparse == null ? 0.8 : DP.fog.sparse,
       sparseCodes: fogSparse.codes, sparseAlt: fogSparse.altCount[0],
       hazeCodes: fogHaze.codes, hazeAlt: fogHaze.altCount[0],
     };
