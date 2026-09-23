@@ -214,11 +214,14 @@
       v1: 'stone', seed: 41,
       desc: 'Timber ceiling (the underside of the floor above): boards 0.25 m wide running north-south with grain lines, ' +
             'heavy beams 0.22 m every 1.0 m running east-west ( = # ). Warm brown and dark, so it never reads as floor.',
-      albedo: 0.70, bgK: 0.22, detail: 20, jitter: 0.10,
+      // US-028 tuning: albedo 0.70 -> 0.74, grid.shade 0.45 -> 0.75, band.edgeShade 0.5 -> 0.75. At ambient only
+      // (Lm 0.12, ceiling face 0.62) the old joint / beam-edge b was 0.023-0.026 < cutoff 0.03 = a blank cell on every
+      // board joint and beam edge. Joints keep their darkness through the woodDark tint (0.6) and bgK 0.12, not through b.
+      albedo: 0.74, bgK: 0.22, detail: 20, jitter: 0.10,
       tones: [['wood', 3], ['woodDark', 2], ['woodLight', 1]],
-      grid: { u: 0.25, v: 2.0, stagger: 0.5, shade: 0.45, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
+      grid: { u: 0.25, v: 2.0, stagger: 0.5, shade: 0.75, tint: 'woodDark', amount: 0.6, bgK: 0.12, maxCover: 0.5 },
       face: { set: 'grainU', mid: 'grainU', far: 'woodFar' },
-      band: { axis: 'v', period: 1.0, width: 0.22, set: 'beam', tone: 'woodDark', shade: 0.85, bgK: 0.14, edgeShade: 0.5 },
+      band: { axis: 'v', period: 1.0, width: 0.22, set: 'beam', tone: 'woodDark', shade: 0.85, bgK: 0.14, edgeShade: 0.75 },
       speckle: { set: 'knot', chance: 0.012, shade: 0.7 },
       lod: { mid: 5, far: 11, dither: 1.5 }
     },

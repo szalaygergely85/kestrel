@@ -71,7 +71,12 @@ Performance note: per cell this is about 3 integer hashes, 2-4 floors, 2 crossin
 
 ```js
 {
-  format: 'ascii-quest/detail-pass-export', version: 1,
+  format: 'ascii-quest/detail-pass-export', version: 2,
+  stats:  { surfaceCells, dotOrBlank, dotOrBlankPct, distinctGlyphs },  // non-sky cells; the AC's '.'/blank metric
+  samples: {                                  // v2: shader INPUTS per cell, row-major, cols*rows entries
+    fields: ['kind','mat','matV1','normal','planeId','u','v','dist','z','aoD','dudx','dvdx','dudy','dvdy'],
+    cells:  [ [ 'ceil','ceiling_timber','stone','D','c3', 4.1, 2.3, ... ], ..., null ]
+  },
   level: 'test_room', panel: 'proposed',
   pose:   { x, y, z, yaw, pitch },          // world cells; yaw/pitch in degrees (yaw 0 = -y, 90 = +x)
   lights: { lantern: bool, torch: bool, sun: bool, sunAzimuth: deg },
@@ -82,6 +87,37 @@ Performance note: per cell this is about 3 integer hashes, 2-4 floors, 2 crossin
   bg:     [ [ [r,g,b], ... cols ], ... rows ]
 }
 ```
-- Cells with no sample (drawn black) export as glyph `' '`, fg `[0,0,0]`, bg `[0,0,0]`.
+- Cells with no sample (drawn black) export as glyph `' '`, fg `[0,0,0]`, bg `[0,0,0]`, and `samples.cells[i] = null`.
+- **Samples (version 2).** `samples.cells[y * cols + x]` is an array in `fields` order, the exact G-buffer cell the shader read (field meanings: "Sample" in section 2):
+  - `kind`: `wall|step|upper|floor|top|ceil|sky`. `mat`: the v2 key the shader used (`DP.util.resolve(kind, matV1, 'test_room')`), or the v1 key if the cell stays on the v1 shader. `matV1`: the level's v1 key. `normal`: `N|E|S|W|U|D`. `planeId`: preview string (walls normal + boundary coordinate, planes kind initial + height). Compare it for equality inside one frame only, not against engine ids.
+  - `u, v, dist, z, aoD, dudx, dvdx, dudy, dvdy`: numbers rounded to 1e-5. `null` means Infinity or not set (for example `aoD` with no seam in reach).
+  - Sky cells: `['sky', null, null, null, 'sky', null x 9]`.
+  - Same-surface matching (architect ruling 2): compare a cell only if `kind` and `mat` match the engine's; report the rest as excluded, with the reason.
+- `stats` uses the same count as the preview's stats line: non-sky cells whose glyph is `' '` or `'.'`, after the edge pass.
+- Version 1 files (no `samples`, no `stats`) are still valid; the other fields did not change.
 - Sky cells are included (v1 sky shader, same in both panels).
 - Comparison per the AC: glyph equal in >= 95% of cells; fg and bg each within +-8 per channel in >= 95% of cells. Use the same `cols x rows` and cellAspect in the game, because the caster's projection and the v2 shader both depend on them.
+
+## 6. `ceiling_timber` tuning (US-028 architect ruling 3)
+AC metric: start pose, ambient only, share of non-sky cells that show only `.` or blank must be <= 5 %. Before the tuning it was 12.8 % in the preview and 11.6 % in the engine (engine output is byte-identical to the reference, so the cause is in the content).
+
+**Cause.** At ambient only, Lm = 0.12 and the ceiling face factor is 0.62, so b = 0.12 x albedo x shadeK x ao x jitter. With albedo 0.70: face b = 0.052, board joint (`grid.shade` 0.45) b = 0.023, beam edge (`band.edgeShade` 0.5) b = 0.026. Both are below `cutoff` 0.03, so every board joint and beam edge became a blank. The grain and beam sets never reach their `.` level while b >= cutoff, because the lift keeps gb >= 0.12.
+
+| value | before | after |
+|---|---|---|
+| `albedo` | 0.70 | 0.74 |
+| `grid.shade` (board joints) | 0.45 | 0.75 |
+| `band.edgeShade` (beam edges) | 0.50 | 0.75 |
+
+**Result, worked out by hand.** Cells stay above the cutoff when shadeK x ao x jitter >= 0.545 (it was 0.576).
+- Joints and beam edges clear it at the lowest jitter (0.9) whenever aoD >= 0.15 m. Only joint cells within 0.15 m of a wall seam can still go blank.
+- Faces (shadeK 1.0) and beams (0.85, for aoD >= 0.1 m) clear it everywhere.
+
+**Look.** The approved look is kept.
+- Joints still read as dark lines. The darkness now comes from the `woodDark` tint (0.6) and joint `bgK` 0.12.
+- At ambient, the fg gain moves by less than 1 %, from 0.598 to 0.605.
+- Under the lantern the joints are less dark than before, by b ratio 0.75 against 0.45.
+- The ceiling face is still darker than the floor: 0.74 x 0.62 = 0.46 against the floor's 0.75 x 0.94 = 0.71.
+- About half of the face cells move up one grain level, from `-` / `!` to `-~` / `|!`.
+
+**Measured (to fill in after the re-export).** Preview: `stats.dotOrBlankPct` in `exports/detail_pass_start.json`. Engine: the programmer's tool. Target <= 5 %. If a residual remains, it is joint cells at wall seams (AO) and the fog stipple beyond 18 m. The next lever would be `grid.shade` 0.85.

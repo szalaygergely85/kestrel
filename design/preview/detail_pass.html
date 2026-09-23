@@ -547,7 +547,7 @@
     var A = new Array(COLS * ROWS), B = new Array(COLS * ROWS);
     shadeFrame(c, LS, F, 'test_room', A, B);
     var rules = F.edges ? D.edgePass(COLS, ROWS, c.G, B) : null;
-    lastProposed = { cells: B.slice(), F: F };   // captured before the edge-map debug overlay
+    lastProposed = { cells: B.slice(), F: F, G: c.G };   // captured before the edge-map debug overlay
     if ($('edgeMap').checked && rules) {
       for (var i = 0; i < rules.length; i++) if (rules[i]) {
         var ec = EDGE_COL[rules[i]];
@@ -571,20 +571,36 @@
   // ---------- US-028 parity export (format: design/detail-pass.md section 5) ----------
   var lastProposed = null;
   function rgbInt(c) { return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2])]; }
+  // Per-cell shader inputs (version 2). Numbers rounded to 1e-5; Infinity / missing -> null (JSON has no Infinity).
+  var SAMPLE_FIELDS = ['kind', 'mat', 'matV1', 'normal', 'planeId', 'u', 'v', 'dist', 'z', 'aoD', 'dudx', 'dvdx', 'dudy', 'dvdy'];
+  function num(x) { return (typeof x === 'number' && isFinite(x)) ? Math.round(x * 1e5) / 1e5 : null; }
+  function sampleRow(s) {
+    if (!s) return null;
+    if (s.kind === 'sky') return ['sky', null, null, null, 'sky', null, null, null, null, null, null, null, null, null];
+    var v2 = D.resolve(s.kind, s.mat, 'test_room');
+    return [s.kind, v2 || s.mat, s.mat, s.normal, s.planeId, num(s.u), num(s.v), num(s.dist), num(s.z), num(s.aoD),
+            num(s.dudx), num(s.dvdx), num(s.dudy), num(s.dvdy)];
+  }
   window.exportProposed = function () {
     renderMain();
-    var B = lastProposed.cells, glyphs = [], fg = [], bg = [], x, y;
+    var B = lastProposed.cells, G = lastProposed.G, glyphs = [], fg = [], bg = [], cells = [], x, y;
+    var surf = 0, dots = 0, seen = {};
     for (y = 0; y < ROWS; y++) {
       var row = '', fr = [], br = [];
       for (x = 0; x < COLS; x++) {
-        var o = B[y * COLS + x];
+        var i = y * COLS + x, o = B[i], s = G[i];
+        cells.push(sampleRow(s));
         if (!o) { row += ' '; fr.push([0, 0, 0]); br.push([0, 0, 0]); continue; }
         row += o.glyph; fr.push(rgbInt(o.fg)); br.push(rgbInt(o.bg));
+        if (s && s.kind !== 'sky') { surf++; seen[o.glyph] = 1; if (o.glyph === ' ' || o.glyph === '.') dots++; }
       }
       glyphs.push(row); fg.push(fr); bg.push(br);
     }
     return {
-      format: 'ascii-quest/detail-pass-export', version: 1,
+      format: 'ascii-quest/detail-pass-export', version: 2,
+      stats: { surfaceCells: surf, dotOrBlank: dots, dotOrBlankPct: surf ? Math.round(1000 * dots / surf) / 10 : 0,
+               distinctGlyphs: Object.keys(seen).length },
+      samples: { fields: SAMPLE_FIELDS, cells: cells },
       level: 'test_room', panel: 'proposed',
       pose: { x: cam.x, y: cam.y, z: cam.z, yaw: cam.yaw, pitch: cam.pitch },
       lights: { lantern: $('lLantern').checked, torch: $('lTorch').checked, sun: $('lSun').checked, sunAzimuth: +$('sunAz').value },
