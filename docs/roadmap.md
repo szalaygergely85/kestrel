@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5).
+Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes).
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -39,14 +39,16 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 - **Depends on:** US-025 (serialize, handles, renderVersion), US-030 (GPU grid, planeId picking, sprite pass), US-011, US-006/007, US-014/015.
 - Stories (PO to write): US-031..US-034.
 
-## Milestone 2 – "First Steps" — status: planned
-Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy, sword + lock-on, a hidden chest, save point at the tower.
+**Story (D-011):** fantasy canon with steampunk machine accents. The hero is shot down in a stolen balloon, has amnesia and holds a map to the SOS. M1 is a text and art reskin only (lamp, wreckage, relay, signal tower). The only scope change is the US-015 map card (static overlay, `M` re-opens it).
 
-## Milestone 3 – "The Dark Beacons" — status: planned
-Open region with 3 beacons to relight (each a placed structure), a village with 3–5 NPCs and dialogue, second enemy type, ranged tool, terrain overrides authored as data.
+## Milestone 2 – "Out of the Wreck" — status: planned
+Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point.
 
-## Milestone 4 – "The Depths" — status: planned
-First dungeon (a large placed structure): keys, light puzzles (mirrors, shadow), a boss, item reward.
+## Milestone 3 – "The Relay Line" — status: planned
+Open region along the map route with 3 dead relays to wake (each a placed structure), an exile village with 3–5 NPCs and dialogue, the artificer's gauntlet + Spark (first magic), second enemy (clockwork sentinel), ranged tool (bow or crossbow), terrain overrides authored as data.
+
+## Milestone 4 – "The Signal Source" — status: planned
+First dungeon = the signal's source (an ancient ruin with pressure doors and gear puzzles): keys, light puzzles (mirrors, shadow, aether), a boss, reward = first gauntlet crystal. The city of Ferrum stays out until after M6.
 
 ## Milestone 5 – "Engine Editor v0" — status: planned
 `tools/` editor built on `engine/index.js`, extending the M1.5 editor: terrain paint/stamp, structure placement, live preview, JSON save/load. **ASCII model + animation editor** (D-010, `tools/model-editor/`): per-direction glyph/fg frames, named animations (fps/durations, loop, frame `events`), onion skin, live preview via the real animation player, save ModelDef JSON to `design/models/`. Out: rigs/tweening, image import, auto-LOD, visual scripting, asset store. Depends on US-027 + US-011. Stories US-035..US-037. Engine published as a standalone package.

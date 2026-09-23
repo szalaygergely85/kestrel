@@ -1,5 +1,7 @@
 # The Story of ASCII Quest
 
+> **SUPERSEDED by D-011 (2026-09-23).** "Ember and Ash" below is no longer canon. The Writer will rewrite this file from `docs/game-design.md` section 3 (fantasy with steampunk machine accents: the walled city Ferrum, the stolen balloon *Kestrel*, the crash, amnesia, the map to the SOS).
+
 Owner: Writer. Canon source: `docs/game-design.md` section 3. Updated: 2026-09-23.
 
 ## Ember and Ash

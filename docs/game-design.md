@@ -9,7 +9,9 @@ Related: `docs/decisions.md` (D-001 location, D-002 renderer), `docs/roadmap.md`
 
 A first-person, Zelda-inspired open-world action RPG drawn entirely with colored ASCII characters. The world should look like a hand-inked, glowing tapestry of glyphs. Light is the star: warm torch glow washing across `#%&` stone, cool sun shafts full of drifting `.` dust, far hills fading into blue fog.
 
-**One-line pitch:** *The beacons that kept the Dim at bay have gone dark. You are the keeper who forgot. Wake up, climb, and relight the world.*
+**One-line pitch (D-011):** *You stole a balloon to escape the walled city and answer a signal nobody was allowed to hear. You were shot down. You remember nothing of the flight, but you hold a map. Climb, look, and follow the signal.*
+
+Fantasy first (swords, magic, ruins, nature). Steampunk appears only as rare brass machines.
 
 ## 2. Pillars
 
@@ -21,11 +23,17 @@ A first-person, Zelda-inspired open-world action RPG drawn entirely with colored
 
 ## 3. Setting and story canon
 
-- **World:** the Emberlands, a hilly realm once ringed by a chain of stone beacon towers. While the beacons burned, the Dim (a slow, cold darkness that swallows color) stayed away.
-- **The Hollow Watchtower** ("The Sunken Beacon"): the westernmost beacon, a roofless ruined round tower on a hilltop at the edge of the world. Its beacon bowl is cold.
-- **The hero:** the Keeper, the tower's forgotten guardian. Nameless on screen in M1 (internal name "Wick"). The hero wakes with no memory. The player never sees the hero's face; they are the hero.
-- **The hook (M1):** from the summit breach the player sees the Emberlands below, and a second beacon tower far away that is also dark. Nothing is explained. The question "why are the lights out?" carries the player into M2.
-- **Tone:** quiet, lonely, hopeful. No dialogue in M1. Story comes from environment (scrawl, cold ashes, the dead beacon).
+Canon per D-011 (fantasy with steampunk machine accents). It replaces the earlier "Dim / beacon keeper" canon.
+
+- **World:** the Emberlands. Hills, forests, moss-grown ruins and old aether magic. Machines (brass, copper, gears) are rare and artificer-made.
+- **Ferrum:** a walled, tiered medieval city of stone and timber, and it is segregated. The **Crown** (upper tiers: mages and artificer guilds) owns the magic and the machines. The **Low Wards** do the labour and are forbidden both. The **Wall Law** says nobody leaves, because outside is dead (the "Hush").
+- **The signal:** a repeating SOS, an aether light blinking far beyond the Wall. The Crown denies it.
+- **The hero:** a Low Ward skyworks hand, nameless on screen (internal name "Wick"), never seen; the player is the hero. They steal the Crown patrol balloon *Kestrel*, fly toward the signal, and are shot down by the wall-ballistae.
+- **Partial amnesia:** the hero remembers the city and their trade, but not the flight or why they went. They hold a hand-inked **map**: the signal source, a route of old relay towers, and notes in their own handwriting.
+- **The Hollow Watchtower:** an old signal relay, a roofless, moss-grown ruined round tower. The *Kestrel* crashed through it. The hero wakes among the wreckage by the smoldering burner. The dead relay at the summit is an aether-crystal bowl in a brass-and-mirror mount.
+- **The hook (M1):** from the summit breach you see the torn balloon below. Behind you are Ferrum's walled lights. Ahead, in the map's direction, the signal pulses on a far tower. Nothing is explained.
+- **Progression (M2+):** sword (ruin steel, reforged), Aether magic through an artificer's gauntlet (Spark, Gust, Ward; light verbs), heart vessels, map pieces. The core loop is waking dead relays along the map route.
+- **Tone:** curious, defiant, wondrous. Warm lamplight and the odd gleam of brass against cold, vast, overgrown ruins. No dialogue in M1. The story comes from the wreckage, the map and the relay-keeper's scrawl.
 
 ## 4. Core controls (keyboard + mouse, M1)
 

@@ -329,3 +329,77 @@ D-006 made everything the editor touches plain data; architecture.md 10 lists th
 - M2 starts ~4 stories later; accepted, M2 content authoring gets faster and the engine API is validated early.
 - Any engine change the editor needs is an engine story (architect tech notes + review), not an editor hack; the goal of M1.5 is "no engine changes except the idle skip and world-file loading".
 - The editor is a dev tool: tester runs it on the owner's browser (Chrome/Edge); Firefox gets the download fallback.
+
+## D-011 New story canon: fantasy with steampunk machines, "Signal" (walled city, stolen balloon, crash, amnesia, map to the SOS)
+
+**Date:** 2026-09-23
+**Owner request:** "something different actually a bit steampunk ... zelda ... but fps version ... live in a city, segregated, coming sos signal ... steals a aircraft or balloon, and he shoot down, maybe only amnesia, but the map to the sos signal source." **Correction (same day):** "maybe not steampunk, fantasy... but some steampunk machines". So the world is **fantasy first**, and machines are a flavour layer.
+**Status:** Accepted (replaces the D-001 story framing and the "Ember and Ash" canon; D-001 geometry, D-003 beat and all engine decisions stand; amends GDD 1 and 3, roadmap M2-M4 themes; `docs/story.md` superseded)
+
+### Context
+M1 content is mostly approved as geometry and art (tower layout, lantern, boulder, lever/grate, wake/title art). The engine does not care about the story. The risk is losing approved M1 work. The owner wants a new premise, not a new game: the pillars, the first-person view and the Zelda loop stay.
+
+### Options
+1. **Full rewrite, new M1 location (a crash in the city or a canyon).** Fits the premise literally, but throws away US-010 layout, lighting script and the approved wake art. It adds weeks of work and restarts design reviews.
+2. **Reframe: the crash lands in the existing ruined tower.** Same geometry and beats, new meaning. Most M1 work becomes a text or art reskin. The "climb to see the world" pillar maps directly onto "climb to find where the map points".
+3. **Keep Emberlands and add steampunk dressing only.** Cheapest, but it ignores the owner's city, SOS and crash story.
+4. (Style axis, after the correction) **Full steampunk world** vs **fantasy with machine accents**. Full steampunk means brass everywhere, loses the approved stone, wood and moss look, and clashes with swords and magic. Fantasy with accents keeps the approved materials and makes the machines special, and rare means readable. **We chose fantasy with accents.**
+
+### Decision
+**Option 2, fantasy with machine accents.**
+
+**Canon**
+- **The world: the Emberlands** (name kept). It is a fantasy realm of hills, forests, moss-grown ruins and old magic. The steampunk layer is only the machines: they are rare, brass and copper, and hand-built by artificers.
+- **The city: Ferrum**, a walled, tiered medieval city of stone and timber. It is segregated. The **Crown** (upper tiers, mages and artificer guilds) holds the magic and the machines: airships, gear-driven gates, pressure doors. The **Low Wards** (lower tiers) do the labour and are forbidden both. The **Wall Law** says nobody leaves, because outside is dead (the "Hush").
+- **The signal:** a repeating SOS pulse from far outside the Wall. It is an aether light blinking on the horizon, and a hum in the city's old relay stones. The Crown denies it. Someone out there is alive.
+- **The hero:** a Low Ward skyworks hand (internal name "Wick" kept; nameless on screen; never seen). They steal a small Crown patrol balloon, the *Kestrel*, and fly toward the signal. Ferrum's wall-ballistae shoot it down.
+- **Partial amnesia:** the hero remembers the city and their trade (they can read gauges and work levers), but not the flight, the crash, or why they chose to go. They wake holding a **hand-inked map** with the signal source marked, a route through old relay towers, and notes in their own handwriting they don't remember writing. Why they went is the mystery that carries the story.
+- **The Hollow Watchtower** becomes an **old signal relay**: a roofless, moss-grown ruined round stone tower. At the summit sits its dead relay, an aether-crystal bowl in a brass-and-mirror mount (magic plus machine). The *Kestrel* crashed through its broken roof.
+- **Hook (M1):** from the summit breach you see the torn balloon envelope snagged below. Behind you, Ferrum's walled lights sit on the horizon. Ahead, in the direction of the map, a faint pulsing light on a far tower: the signal. Nothing is explained.
+- **Pillars (gameplay):** first-person Zelda-like adventure. Sword first, magic second, gear and upgrades gate the map (Zelda-style tool gating).
+  - **Sword:** steel swords found in ruins, then reforged at forges.
+  - **Magic = Aether**, a fantasy magic of light, fed by aether crystals. It is channeled through an **artificer's gauntlet**, a machine accent. Every spell is a light verb, so pillar 1 "Light is life" stays literal: Spark (ignite, light), Gust (push, jump), Ward.
+  - **Upgrades:** gauntlet crystals (new spells), heart vessels (health), sword reforging, map pieces.
+  - **Core loop:** restart dead relays along the map route (this replaces "relight beacons"; the mechanics are the same).
+- **Tone:** **curious, defiant, wondrous.** Warm lamplight and the odd gleam of brass against cold, vast, overgrown ruins. It is still mostly wordless in M1: the story comes from the wreckage, the map and your own handwriting. It is less melancholy and more "I broke out, now what's out here?".
+
+**M1 impact** (scope, engine order and exit criteria are unchanged)
+- **Text or art only:**
+  - US-010: layout unchanged. The designer adds balloon wreckage props (gondola, torn canvas, ropes, burner) as level data.
+  - US-011: the brazier becomes the *Kestrel's* smoldering burner. Same light preset.
+  - US-012: the lantern becomes the **Kestrel's brass lamp**, salvaged from the gondola. New model and text.
+  - US-013: boulder. No change.
+  - US-014: the lever gains a brass gear housing. The grate stays iron. Reskin.
+  - US-016: the far_tower billboard becomes the **signal tower** (static aether-teal emissive light in M1; the pulse is P2), and Ferrum's lights are added on the opposite horizon.
+  - US-017: new end-card text.
+  - US-021: the scrawl becomes an old relay-keeper's log.
+  - US-022: "light the beacon" becomes **"wake the relay"** (bring the lamp to the crystal bowl). Same interaction, text and art.
+- **Scope change (only one):** **US-015** gains a **map card**. It is a static ASCII map shown once after the wake-up (any key dismisses it), and `M` re-opens it. It is a UI overlay only: no inventory, no marker tracking.
+
+**M2-M4**
+- **M2 "Out of the Wreck":** terrain, sword, first enemy (wild beast or Hush-touched creature), hidden chest, the relay as save point.
+- **M3 "The Relay Line":** 3 dead relays on the map route, an exile village (people cast out of Ferrum) with NPCs, the gauntlet with Spark, a ranged tool (bow or crossbow). Second enemy: a stray Crown clockwork sentinel.
+- **M4 "The Signal Source":** the dungeon is the source, an ancient ruin with pressure doors and gear puzzles, then a boss, and the reward is the first gauntlet crystal. The truth behind the SOS stays open.
+- **Ferrum itself** stays **out** until after M6. It is seen only as horizon lights and in flashback text.
+
+**Visual direction (designer): 80-90% fantasy, 10-20% machines**
+- **Base world, unchanged:** the approved stone, wood and iron ramps and the sky. Add **moss and ivy** (greens, `" ; ,` on stone tops and cracks) and **magic glow**.
+- **Aether glow:** cyan-teal emissive with `* + .` sparkle. It is reserved for magic, crystals and the signal.
+- **Machine accents** (only on machines: the balloon, the lamp, the lever housing, the relay mount, later doors and sentinels):
+  - brass: warm yellow-orange with bright top steps.
+  - copper: red-orange, with verdigris teal as `%` or `:`.
+  - rivets: `o` or `.` on `=` plates.
+  - gears: `*` or `@` hubs.
+  - pipes: `|` `=` with `+` joints.
+  - gauges: `(@)`.
+  - balloon canvas: pale ochre `~ )`.
+  - steam: `. ' ~` near-white fading to fog.
+- **Light rules:**
+  - Keep the warm lamp vs cool sky contrast.
+  - Ferrum's lights are warm amber pinpoints.
+  - Machines must stay readable at 160x60: silhouette first, and no rivet noise on small props.
+
+### Consequences
+- No engine or story-order changes. M1 finishes on schedule, and the designer and writer work in parallel with the programmers.
+- The PO must update GDD section 2 pillar 1 (the core-loop wording), sections 7 and 8 text, and backlog notes for the listed stories plus the US-015 acceptance criteria.
+- The approved lantern, title and scrawl art needs a re-check by the PO after the reskin. Geometry approvals stand.
