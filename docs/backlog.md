@@ -17,7 +17,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 8 | US-016b | Terrain recipe follow-up (analytic heightAt/typeAt, near look, crown + 6 m blend, overrides sketch) | P0 | done | PO approved 2026-09-22 (previews 17/17 + 18/18) |
 | 9 | US-005 | First-person camera controls (keyboard + mouse) | P0 | done | Tester PASS 2026-09-22, see docs/test-reports/US-005.md |
 | 10 | US-009 | Physics: jump, step-up, landing feel | P0 | done | Tester PASS 2026-09-23, see docs/test-reports/US-009.md |
-| 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | arch-review | Shadetest v2 table fixed (1954/1954), v2 bench baseline re-recorded, ALL CHECKS PASS. Must be `done` before US-029 |
+| 11 | US-028 | **Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2** (engine story) | P0 | po-review | ARCH OK (2026-09-23). PO: update ACs listed in the ARCH OK note. Must be `done` before US-029 |
 | 11a | US-028a | **Stable detail when moving (anti-swim)** (engine + content story) | P0 | todo | Owner complaint. Programmer after US-028 `done`; must be `done` before US-029 (GPU ports the final hash keys) |
 | 12 | US-025 | **World model: terrain + placed structures (D-007)** (engine story) | P0 | todo | Programmer; designer supplies `world_m1.js` + US-016b |
 | 13 | US-029 | **GPU pipeline: shading + edge pass on the GPU, parity page (D-009 stage 1, GATE)** (engine story) | P0 | todo | Architect tech notes first; Programmer after US-028 `done` (US-025 may run on the parallel track) |
@@ -524,7 +524,7 @@ For the tester (after rework): real Chrome tab. Move the mouse a lot outside or 
 
 **Tester PASS (2026-09-22)** – see `docs/test-reports/US-005.md`. `playerLook.test.js` 10/10. All ACs verified, including a live in-page re-run of the resume-jump repro (not just the isolated test) and the arrow-key rates/pitch clamp via deterministic `look.update(dt)` calls driven by real DOM keydown/keyup events (wall-clock hold-and-measure was unreliable in this sandboxed pane — rAF appears throttled when the automation isn't actively interacting with the tab; noted as a sandbox limitation, not a suspected bug). `physics.test.js` has 1 failing test ("slides along a wall instead of sticking") but that's US-008's in-flight wall-stick fix (`capsule.js` uncommitted at test time) — unrelated to this story, not blocking. Status → `done`. Manual pointer-lock/Esc/no-jump/held-arrow-key checks still recommended for the user in a real Chrome tab (listed in the test report).
 
-### US-028 Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2  [Priority: P0] [Status: arch-review]
+### US-028 Detail pass v2: G-buffer shading, texel-class glyphs, edge pass, fog v2  [Priority: P0] [Status: po-review]
 
 **Architect review 1 (2026-09-23): ARCH CHANGES.** Geometry side is right: kinds/faces/planeIds, per-segment `primeWallGSample`, `computeDerivatives`, the two-loop edge pass, `beginFrame`/`structSeq`, engine boundary (DP only via the registry), 9,600-write invariant, 0 GC. The shading side is the reference shader with two swaps, not the fast path the tech notes specify; that is the whole perf gap. Bench today: extra 1.26-2.70 ms p50, sectors total 3.62-4.07 ms on 3 of 6 poses (over the 3.5 ms trigger). **The budget stands** (<= 1.0 ms extra, ASK PO only for 1.0-1.3 after the items below).
 
@@ -731,6 +731,10 @@ Acceptance criteria:
 - [ ] `?shadetest=1` still ALL PASS on both tables; `node --expose-gc tools/bench-cast.mjs --gc` ALL CHECKS PASS, 0 GC; `node tools/check-deps.mjs` OK.
 Design needed: yes - designer re-tunes `maxCover` to 0.25 and signs off on the resulting look.
 Notes / dependencies: US-028 `done` (arch-review → done first). Blocks US-029 (GPU must port the same hash keys). No temporal hysteresis buffer (breaks the pose-only frame determinism the bench relies on).
+
+
+**Architect final re-review (2026-09-23, 682ec96..6e68874): ARCH OK -> `po-review`.** My bench (3 runs): ALL CHECKS PASS, 0 GC, heap 99-206 B/frame, fast-vs-reference 0 glyph mismatches, v1/v2 baselines OK, blank <= 0.9 % on all 5 poses (D2 met). Extra p50 0.43-1.08 ms in clean runs; one run under machine load hit 1.5 ms on start (v1 rose too), totals always <= 2.8 ms vs 3.5 ms trigger. Compare PASS 99.47/99.47/100. `lodGates`/`fog.sparse` baked from data at bind time; oracle `shadeV2` synced (shadetest 1954/1954). Residual 24 `wall/none/stone` cells: accepted, below threshold.
+**PO: please update these ACs before `testing`:** (1) joint cells are excluded from the '.'/blank metric (non-sky, non-joint cells, <= 5 %); (2) perf exception: stair pose extra p50 may be 1.0-1.3 ms, all others <= 1.0 ms, total <= 3.5 ms; (3) compare exclusions: sky-vs-geometry own-kind mismatch and `edge-neighbour-kind-mismatch` (US-004b reference overdraw) are excluded from the 95/95/95 same-surface set; (4) LOD distances/gates (`lodGates`, `fog.sparse`, octave ladder, x2/x4 joint fallback) are owner data per owner feedback, not fixed engine constants. Shimmer is US-028a, not a US-028 AC.
 
 ### US-029 GPU pipeline: shading + edge pass on the GPU, parity page  [Priority: P0] [Status: todo]
 As a player, I want the renderer to run its heavy per-cell work on my graphics card, so that the world can get bigger, sharper and steadier without the game slowing down.
