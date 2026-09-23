@@ -135,7 +135,21 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   const oct = tpc >= 4 ? -3 : tpc >= 2 ? -2 : tpc >= 1 ? -1 : tpc >= 0.5 ? 0 : tpc >= 0.25 ? 1 : 2;
   const ds = base * POW2[oct + 3], tx = Math.floor(u * ds), ty = Math.floor(v * ds);
   const btx = Math.floor(u * base), bty = Math.floor(v * base);
-  const hA = hash(tx, ty, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(tx, ty, m.seed + 13);
+  // F1 (owner feedback "shimmer when moving", US-028a): hA/hC key on the
+  // block/cell id (bix, course) when a grid exists - one alternate glyph
+  // per block instead of one per fine texel - else on the texel one octave
+  // coarser (`floor(u*ds*0.5)`), so both stop rerolling on sub-cell motion.
+  // hB (LOD tier dither + fog stipple) stays on the base texel, unchanged.
+  let hA, hC;
+  if (g) {
+    hA = hash(bix, course, m.seed);
+    hC = hash(bix, course, m.seed + 13);
+  } else {
+    const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
+    hA = hash(cx, cy, m.seed);
+    hC = hash(cx, cy, m.seed + 13);
+  }
+  const hB = hash(btx, bty, m.seed + 7);
   const hBlock = hash(bix, course, m.seed + 3);
 
   const toneKey = pickTone(m, hBlock);
@@ -407,7 +421,20 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   // Tier dither (hB, below) keeps the BASE (non-octave) texel coords, so
   // the near/mid/far tier boundary does not shift with the detail octave.
   const btx = Math.floor(u * rec.detail), bty = Math.floor(v * rec.detail);
-  const hA = hashFast(tx, ty, rec.seed), hB = hashFast(btx, bty, rec.seed + 7), hC = hashFast(tx, ty, rec.seed + 13);
+  // F1 (owner feedback "shimmer when moving", US-028a): key hA/hC on the
+  // block/cell id (bix, course) when a grid exists (one alternate glyph
+  // per block, not per fine texel), else on the texel one octave coarser -
+  // both no longer reroll on sub-cell motion. hB stays on the base texel.
+  let hA, hC;
+  if (g) {
+    hA = hashFast(bix, course, rec.seed);
+    hC = hashFast(bix, course, rec.seed + 13);
+  } else {
+    const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
+    hA = hashFast(cx, cy, rec.seed);
+    hC = hashFast(cx, cy, rec.seed + 13);
+  }
+  const hB = hashFast(btx, bty, rec.seed + 7);
   const hBlock = hashFast(bix, course, rec.seed + 3);
 
   // --- tone (per block), linear scan over <=4 weighted entries -----------
