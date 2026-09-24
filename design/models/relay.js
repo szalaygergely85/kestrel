@@ -57,7 +57,8 @@
     MIR.forEach(function (p) { fg[p[0]] = setCh(fg[p[0]], p[1], stage.mir); });
     return { S: { glyphs: g, fg: fg, n: normals(g) } };
   }
-  function spark(ch) { return ch === '*' ? 'W' : ch === '+' ? 'X' : 'A'; }
+  // sparkles use their own keys (same colours as W / X / A) so they can stay glyph-only (`fill: false`)
+  function spark(ch) { return ch === '*' ? 'P' : ch === '+' ? 'Q' : 'R'; }
   function normals(g) {
     return g.map(function (row, r) {
       var o = '', first = -1, last = -1, c;
@@ -117,12 +118,16 @@
           'with a gear hub. Dead = grey crystals, dull mirror; awake = teal emissive crystals, the mirror glows, sparkles.',
     size: { w: 13, h: 7 }, anchor: { x: 6, y: 6 }, world: { w: 2.4, h: 1.75 },
     directions: ['S'], billboard: true,
+    // BUG-OWN-003 (engine pending): solid bowl/mirror/crystals; the gaps between the tripod legs (row 6) and the
+    // empty sparkle row are real holes (space keys), intended. ART-OWN-001 follow-up: a larger (~20x11) redraw.
+    fill: { k: 0.45 }, outline: { k: 0.4 },
     keys: {
       B: { c: 'brassLight' }, b: { c: 'brass' }, D: { c: 'brassDark' }, H: { c: 'brassHot' }, v: { c: 'verdigris' },
       M: { c: 'mirrorDark' }, m: { c: 'mirror' },
       x: { c: 'aetherDead' },
       q: { c: 'aetherDim', e: true }, A: { c: 'aether', e: true }, X: { c: 'aetherLight', e: true },
-      W: { c: 'aetherCore', e: true }, n: { c: 'aetherMid', e: true }
+      W: { c: 'aetherCore', e: true }, n: { c: 'aetherMid', e: true },
+      P: { c: 'aetherCore', e: true, fill: false }, Q: { c: 'aetherLight', e: true, fill: false }, R: { c: 'aether', e: true, fill: false }
     },
     variants: ['dead', 'awake'],
     animations: {

@@ -39,8 +39,12 @@
   <label>direction <input type="range" id="dir" min="-180" max="180" step="1" value="-40"><span class="val" id="dirV"></span></label>
   <label>elevation <input type="range" id="elev" min="-10" max="85" step="1" value="45"><span class="val" id="elevV"></span></label>
   <label><input type="checkbox" id="burnerOn" checked> burner torch light</label>
+  <label title="BUG-OWN-003 / architecture.md 7.7, engine support pending"><input type="checkbox" id="fillOn" checked> sprite fill</label>
   <button id="pause">pause</button>
 </div>
+<div class="note"><b>ART-OWN-001:</b> the wreck props were redrawn at a higher art resolution (gondola 34x9, burner 13x11, canvas heap 20x4, rigging 14x4, strut 12x4,
+  ropes 3x16). This composed room keeps its old on-screen sizes, so it samples the new art down the way the engine does (half LOD below 0.75).
+  The true in-game size at 160x60 / 240x90 is in <a href="props.html#ingame" style="color:#ffd27a">props.html, "in-game size"</a>.</div>
 
 <h2>Checks</h2>
 <div id="checks"></div>
@@ -108,7 +112,8 @@
           S.glyphs.forEach(function (r, y) {
             if (r.length !== t[1].w || S.fg[y].length !== t[1].w) merr.push(id + t[2] + '.' + an + fi + ' r' + y + ' width ' + r.length + '/' + S.fg[y].length);
             for (var x = 0; x < r.length; x++) { var k = S.fg[y].charAt(x), g = r.charAt(x);
-              if ((g === ' ') !== (k === ' ')) merr.push(id + t[2] + ' ' + an + fi + ' r' + y + 'c' + x + ' space');
+              if ((g !== ' ' && k === ' ') || (g === ' ' && k !== ' ' && (!m.fill || (m.keys[k] && m.keys[k].fill === false))))
+                merr.push(id + t[2] + ' ' + an + fi + ' r' + y + 'c' + x + ' space (opaque space needs model fill, architecture.md 7.7)');
               else if (k !== ' ' && (!m.keys[k] || !P.colors[m.keys[k].c])) merr.push(id + ' key ' + k);
               if (g.charCodeAt(0) < 32 || g.charCodeAt(0) > 126) merr.push(id + ' non-ASCII'); }
           });
@@ -133,6 +138,7 @@
   $('dir').oninput = function () { S.dir = +this.value; sync(); };
   $('elev').oninput = function () { S.elev = +this.value; sync(); };
   $('burnerOn').onchange = function () { S.burner = this.checked; };
+  S.fill = true; $('fillOn').onchange = function () { S.fill = this.checked; };
   $('pause').onclick = function () { S.paused = !S.paused; this.classList.toggle('on', S.paused); };
   function sync() {
     $('intV').textContent = S.intensity.toFixed(2); $('dirV').textContent = S.dir + ' deg'; $('elevV').textContent = S.elev + ' deg';
@@ -200,14 +206,19 @@
     var fs = fr.S, h = fs.glyphs.length, w = fs.glyphs[0].length, anc = m.anchor, ld = ldir();
     var ox = Math.round(ax - anc.x * s), oy = Math.round(ay - anc.y * s);
     for (var y = 0; y < Math.round(h * s); y++) for (var x = 0; x < Math.round(w * s); x++) {
-      var r = Math.floor(y / s), c = Math.floor(x / s), g = fs.glyphs[r].charAt(c), k = fs.fg[r].charAt(c);
-      if (g === ' ' || k === ' ') continue;
-      var key = m.keys[k], nv = (fs.n && NV[fs.n[r].charAt(c)]) || NV.f, L = Lbase.slice();
+      var r = Math.floor(y / s), c = Math.floor(x / s);
+      if (r >= h || c >= w) continue;
+      var g = fs.glyphs[r].charAt(c), k = fs.fg[r].charAt(c);
+      if (k === ' ') continue;
+      var key = m.keys[k], filled = S.fill && !!m.fill && key.fill !== false;
+      if (g === ' ' && !filled) continue;                      // opaque space: a hole under today's cutout rule
+      var nv = (fs.n && NV[fs.n[r].charAt(c)]) || NV.f, L = Lbase.slice();
       var nl = Math.max(0, nv[0] * ld[0] + nv[1] * ld[1] + nv[2] * ld[2]);
       if (S.intensity > 0) U.addLight(L, P.lights[S.preset].color, S.intensity * nl);
       U.shadeSprite(key.c, L, 1, !!key.e, 0, so);
-      if (!so.visible) continue;
-      G.set(ox + x, oy + y, g, so.fg.slice());
+      if (!so.visible && !key.e) continue;
+      var fk = filled ? (m.fill.k == null ? 0.45 : m.fill.k) : 0;
+      G.set(ox + x, oy + y, g, so.fg.slice(), filled ? [so.fg[0] * fk, so.fg[1] * fk, so.fg[2] * fk] : null);
     }
   }
 
@@ -243,19 +254,22 @@
     }
     // sprites (anchor in 160x60 space -> scene cells), light at the sprite = ambient + torch by distance
     function Lat(xs, hz) { var L = [0, 0, 0]; U.addLight(L, T.ambient, T.ambientI); torchAt(L, (xs - BURN.x) * 0.0625, 1.0, hz - 1.1); return L; }
-    function put(m, anim, xs, ys, hz) {
-      var a = m.animations[anim], fr = a.frames[frameAt(a, S.t)];
-      sprite(G, m, fr, xs / kx, ys / ky, GS, Lat(xs, hz));
+    // rows = on-screen rows at 160x60 (the composition's old sizes); art scale + LOD pick like engine sprites.js
+    function put(m, anim, xs, ys, hz, rows) {
+      var sc = rows / m.size.h, lod = m;
+      if (sc < 0.75 && m.lods && m.lods.half) { lod = m.lods.half; sc = rows / lod.size.h; }
+      var a = lod.animations[anim], fr = a.frames[frameAt(a, S.t)];
+      sprite(G, { keys: m.keys, anchor: lod.anchor, fill: m.fill }, fr, xs / kx, ys / ky, GS * sc, Lat(xs, hz));
     }
-    put(M.envelopeDrape, 'sway', 30, 31, 3.0);
-    put(M.rope.variants[0], 'sway', 41, 33, 3.3);
-    put(M.rope.variants[1], 'sway', 22, 30, 3.6);
-    put(M.strut, 'idle', 55, 55, 0.6);
-    put(M.gondola, 'idle', 72, 53, 0.4);
-    put(M.rigging, 'idle', 86, 55, 0.1);
-    put(M.canvasHeap, 'idle', 97, 57, 0.1);                   // the wake spot, beside the gondola (levelPatch.tower)
-    put(M.lantern, 'unlit', 57, 45, 1.3);
-    put(M.burner, 'burn', BURN.x, BURN.y, 0.5);
+    put(M.envelopeDrape, 'sway', 30, 31, 3.0, 8);
+    put(M.rope.variants[0], 'sway', 41, 33, 3.3, 6);
+    put(M.rope.variants[1], 'sway', 22, 30, 3.6, 6);
+    put(M.strut, 'idle', 55, 55, 0.6, 3);
+    put(M.gondola, 'idle', 72, 53, 0.4, 6);
+    put(M.rigging, 'idle', 86, 55, 0.1, 2.5);
+    put(M.canvasHeap, 'idle', 97, 57, 0.1, 2.5);              // the wake spot, beside the gondola (levelPatch.tower)
+    put(M.lantern, 'unlit', 57, 45, 1.3, 4);
+    put(M.burner, 'burn', BURN.x, BURN.y, 0.5, 7);
     G.flush();
   }
 

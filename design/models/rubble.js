@@ -9,25 +9,48 @@
   A.models = A.models || {};
   function still(g, c, n) { return { idle: { fps: 1, loop: true, frames: [{ S: { glyphs: g, fg: c, n: n } }] } }; }
 
-  var RK = { s: { c: 'rubble' }, S: { c: 'stoneLight' }, d: { c: 'stoneDark' }, m: { c: 'moss' }, t: { c: 'stoneMid' } };
+  // ART-OWN-001: the old rubble used the wall/floor texture glyphs (# % & @) in the floor's own colours, so it vanished
+  // into the rubble floor it lies on. Now each variant is a CUT BLOCK drawn as a box (top edge _ , top face /___/ ,
+  // front face |___| , shadow side | / ): light stoneLight top, mid front, dark stoneDark side = one clear light
+  // direction, plus a few pebbles / a moss patch. No texture glyphs. `fill` + `outline` (engine pending, BUG-OWN-003).
+  //   C stoneLight edges   T stoneLight top face   M stoneMid front   D stoneDark side   s rubble pebble   m moss
+  var RK = { C: { c: 'stoneLight' }, T: { c: 'stoneLight' }, M: { c: 'stoneMid' }, D: { c: 'stoneDark' },
+             s: { c: 'rubble' }, m: { c: 'moss' }, O: { c: 'stoneMid' } };
+  var FILL = { k: 0.45 }, OUTLINE = { k: 0.4 };
+  function nrm(g) {   // top rows u, then l / f / r by silhouette
+    return g.map(function (row, r) {
+      var o = '', first = -1, last = -1, c;
+      for (c = 0; c < row.length; c++) if (row.charAt(c) !== ' ') { if (first < 0) first = c; last = c; }
+      for (c = 0; c < row.length; c++) o += row.charAt(c) === ' ' ? '.' : r < 2 ? 'u' : c === first ? 'l' : c === last ? 'r' : 'f';
+      return o;
+    });
+  }
+  // opaque-space placeholder '`' -> glyph ' ' (front-face plate, key M)
+  function blk(g, k) { var gg = g.map(function (r) { return r.replace(/`/g, ' '); }); return still(gg, k, nrm(g)); }
 
   // Rubble: every variant is a full model; the level picks one with props[].variant (0..2).
   A.models.rubble = {
     name: 'rubble',
-    desc: 'Fallen blocks and gravel lying on the rubble heap cells (r/R/z/g, 0.3-0.9 m).',
+    desc: 'Fallen cut blocks and a few pebbles lying on the rubble heap cells (r/R/z/g, 0.3-0.9 m).',
     variants: [
-      { name: 'rubble0', size: { w: 5, h: 2 }, anchor: { x: 2, y: 1 }, world: { w: 0.9, h: 0.35 },
-        directions: ['S'], billboard: true, keys: RK,
-        animations: still([' ,%#.', 'o%##%'], [' tSds', 'msdsd'], [' uuuu', 'lfffr']),
-        lods: { half: { size: { w: 3, h: 1 }, anchor: { x: 1, y: 0 }, animations: still(['o%#'], ['sdS']) } } },
-      { name: 'rubble1', size: { w: 6, h: 3 }, anchor: { x: 3, y: 2 }, world: { w: 1.1, h: 0.6 },
-        directions: ['S'], billboard: true, keys: RK,
-        animations: still([' ____ ', '[#%##]', 'o%&#%o'], [' SSSS ', 'dsStSd', 'sdsmds'], [' uuuu ', 'lffffr', 'lffffr']),
-        lods: { half: { size: { w: 3, h: 2 }, anchor: { x: 1, y: 1 }, animations: still(['[#]', 'o%o'], ['dSd', 'sds']) } } },
-      { name: 'rubble2', size: { w: 4, h: 2 }, anchor: { x: 2, y: 1 }, world: { w: 0.6, h: 0.3 },
-        directions: ['S'], billboard: true, keys: RK,
-        animations: still([' o. ', 'o%&o'], [' sS ', 'sdmd'], [' uu ', 'lffr']),
-        lods: { half: { size: { w: 2, h: 1 }, anchor: { x: 1, y: 0 }, animations: still(['o%'], ['sd']) } } }
+      // rubble0 10x3: one low block + pebbles
+      { name: 'rubble0', size: { w: 10, h: 3 }, anchor: { x: 4, y: 2 }, world: { w: 0.9, h: 0.35 },
+        directions: ['S'], billboard: true, keys: RK, fill: FILL, outline: OUTLINE,
+        animations: blk(['  ______  ', ' /_____/| ', '|_____|/o.'],
+                        ['  CCCCCC  ', ' CTTTTTCD ', 'CMMMMMCDOs']),
+        lods: { half: { size: { w: 5, h: 2 }, anchor: { x: 2, y: 1 }, animations: blk([' /_/|', '|__|/'], [' CTCD', 'CMMCD']) } } },
+      // rubble1 12x5: a big block with a moss patch on its face + a pebble
+      { name: 'rubble1', size: { w: 12, h: 5 }, anchor: { x: 5, y: 4 }, world: { w: 1.1, h: 0.6 },
+        directions: ['S'], billboard: true, keys: RK, fill: FILL, outline: OUTLINE,
+        animations: blk(['  ________  ', ' /_______/| ', '|%```````|| ', '|````````||o', '|________|/O'],
+                        ['  CCCCCCCC  ', ' CTTTTTTTCD ', 'CmMMMMMMMCD ', 'CMMMMMMMMCDs', 'CMMMMMMMMCDO']),
+        lods: { half: { size: { w: 6, h: 2 }, anchor: { x: 3, y: 1 }, animations: blk([' /__/|', '|__|/o'], [' CTTCD', 'CMMCDs']) } } },
+      // rubble2 8x3: a small broken chunk + pebbles
+      { name: 'rubble2', size: { w: 8, h: 3 }, anchor: { x: 3, y: 2 }, world: { w: 0.6, h: 0.3 },
+        directions: ['S'], billboard: true, keys: RK, fill: FILL, outline: OUTLINE,
+        animations: blk(['  .--.  ', ' /__/|o ', '|__|/oO.'],
+                        ['  CCCC  ', ' CTTCDs ', 'CMMCDmOs']),
+        lods: { half: { size: { w: 4, h: 2 }, anchor: { x: 2, y: 1 }, animations: blk([' /_/', '|_|o'], [' CTC', 'CMCs']) } } }
     ]
   };
 

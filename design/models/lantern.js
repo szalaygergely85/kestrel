@@ -6,8 +6,8 @@
  * US-012 wiring and the sprite parity tests keep working; only the art and text changed.
  * Format: design/README.md section 4. Sets ASSETS.models.lantern.
  *
- * Look: a Ferrum ship's lamp. Brass cap with a band  /=\ , a round brass cage { } around the glass (the old
- * lantern had square [ ] iron-style bars), a brass fuel font \_/ at the foot. Machine accent = brass only.
+ * Look: a Ferrum ship's lamp. Brass cap with a band  /=\ , a round brass cage ( ) around a pale glass bulb O
+ * (ART-OWN-001: was { } round a dark glass o), a brass fuel font \_/ at the foot. Machine accent = brass only.
  */
 (function (root) {
   'use strict';
@@ -18,17 +18,21 @@
   var EMPTY   = { S: { glyphs: ['=j=', " ' ", '   ', '   '], fg: ['DjD', ' g ', '   ', '   '], n: ['fff', '.f.', '...', '...'] } };
   var EMPTY_H = { S: { glyphs: ['=j=', '   '], fg: ['DjD', '   '] } };
 
+  // ART-OWN-001: size stays 3x4 / 3x2 (engine/render/gpu/sprites.test.js pins the lamp's rects). Readability comes from
+  // value: bright brassLight cage ( ) and cap, a PALE GLASS bulb O (mirror) instead of the old dark ironDark glass
+  // that vanished on the wall, dark brassDark fuel font at the bottom; `fill` + `outline` (engine pending, BUG-OWN-003).
   A.models.lantern = {
     name: 'lantern',
     displayName: 'brass lamp',
-    desc: 'The Kestrel\'s brass lamp, hanging on its hook at 1.3 m. Brass cap, round brass cage, fuel font. ' +
-          'The unlit one glints so it reads as "take me".',
+    desc: 'The Kestrel\'s brass lamp, hanging on its hook at 1.3 m. Bright brass cap and round cage, pale glass bulb, ' +
+          'dark fuel font. The unlit one glints so it reads as "take me".',
     size: { w: 3, h: 4 }, anchor: { x: 1, y: 3 }, world: { w: 0.25, h: 0.45 },
     directions: ['S'], billboard: true,
+    fill: { k: 0.45 }, outline: { k: 0.4 },
     keys: {
       j: { c: 'iron' },                      // hook
       b: { c: 'brass' }, B: { c: 'brassLight' }, D: { c: 'brassDark' }, H: { c: 'brassHot' },
-      g: { c: 'ironDark' },                  // dark glass / cold wick
+      g: { c: 'mirror' },                    // cold glass bulb: pale, reads against stone (was ironDark)
       W: { c: 'white', e: true },            // glint (emissive so it pops even in shade)
       L: { c: 'lantern', e: true },          // lit glass glow through the cage
       c: { c: 'flameCore', e: true }, m: { c: 'flameMid', e: true }
@@ -38,14 +42,14 @@
     variants: ['unlit', 'lit', 'empty', 'hookEmpty'],
     animations: {
       // unlit, on the hook: long rest, short glint on the cap (per-frame durations in ms)
-      unlit: { loop: true, durations: [2200, 260], frames: [
-        { S: { glyphs: ['=j=', '/=\\', '{o}', '\\_/'], fg: ['DjD', 'bHb', 'bgb', 'DbD'], n: N } },
-        { S: { glyphs: ['=j=', '/*\\', '{o}', '\\_/'], fg: ['DjD', 'bWb', 'bgB', 'DbD'], n: N } }
+      unlit: { loop: true, durations: [1800, 260], frames: [
+        { S: { glyphs: ['=j=', '/=\\', '(O)', '\\_/'], fg: ['DjD', 'BHB', 'BgB', 'DbD'], n: N } },
+        { S: { glyphs: ['=j=', '/*\\', '(O)', '\\_/'], fg: ['DjD', 'BWB', 'BgH', 'DbD'], n: N } }
       ] },
       // lit (US-012 carried light / optional first-person view model), flame flicker
       lit: { fps: 8, loop: true, frames: [
-        { S: { glyphs: [' j ', '/=\\', '{*}', '\\_/'], fg: [' j ', 'BHB', 'LcL', 'DBD'], n: N } },
-        { S: { glyphs: [' j ', '/=\\', '{+}', '\\_/'], fg: [' j ', 'BHB', 'LmL', 'DBD'], n: N } }
+        { S: { glyphs: [' j ', '/=\\', '(*)', '\\_/'], fg: [' j ', 'BHB', 'LcL', 'DBD'], n: N } },
+        { S: { glyphs: [' j ', '/=\\', '(+)', '\\_/'], fg: [' j ', 'BHB', 'LmL', 'DBD'], n: N } }
       ] },
       // after pickup (variant 'empty'): the bracket stays - iron hook plus a brass bracket plate, a soot mark where
       // the lamp hung, nothing below it. Same 3x4 size and anchor, so the swap never moves the sprite.
@@ -54,13 +58,13 @@
     },
     lods: {
       half: { size: { w: 3, h: 2 }, anchor: { x: 1, y: 1 }, animations: {
-        unlit: { loop: true, durations: [2200, 260], frames: [
-          { S: { glyphs: ['/=\\', '{o}'], fg: ['bHb', 'bgb'] } },
-          { S: { glyphs: ['/*\\', '{o}'], fg: ['bWb', 'bgb'] } }
+        unlit: { loop: true, durations: [1800, 260], frames: [
+          { S: { glyphs: ['/=\\', '(O)'], fg: ['BHB', 'BgB'] } },
+          { S: { glyphs: ['/*\\', '(O)'], fg: ['BWB', 'BgB'] } }
         ] },
         lit: { fps: 8, loop: true, frames: [
-          { S: { glyphs: ['/=\\', '{*}'], fg: ['BHB', 'LcL'] } },
-          { S: { glyphs: ['/=\\', '{+}'], fg: ['BHB', 'LmL'] } }
+          { S: { glyphs: ['/=\\', '(*)'], fg: ['BHB', 'LcL'] } },
+          { S: { glyphs: ['/=\\', '(+)'], fg: ['BHB', 'LmL'] } }
         ] },
         empty: { fps: 1, loop: true, frames: [EMPTY_H] },
         hookEmpty: { fps: 1, loop: true, frames: [EMPTY_H] }

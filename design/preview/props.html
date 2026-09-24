@@ -33,7 +33,11 @@
   <b>mid</b> (1x) and <b>far</b> (the hand-drawn half LOD), plus the full frame strip. Lit cells use <code>util.shadeSprite</code>; <b>emissive</b> cells (flames, embers, glints)
   ignore light and fog. The background is dark by default; tick "lit stone backdrop" to test readability against a torch-lit wall.<br>
   <b>Scene grid (D-009):</b> a sprite at a given distance covers <code>rows/60</code> times more cells on a finer grid, so the engine samples the same art at 1.5x (240x90) or 2x (320x120)
-  and each cell is drawn 1.5x / 2x smaller. The near / mid / far cards follow that: at 320x120 "mid" is the art at 2x nearest sampling in 6 px cells. Same size on screen, blockier glyph texture.</div>
+  and each cell is drawn 1.5x / 2x smaller. The near / mid / far cards follow that: at 320x120 "mid" is the art at 2x nearest sampling in 6 px cells. Same size on screen, blockier glyph texture.<br>
+  <b>ART-OWN-001 (readability rework):</b> the section <a href="#ingame" style="color:#ffd27a">"in-game size"</a> below draws every prop the way the engine does
+  (on-screen rows = <code>world.h * planeDistY / distance</code>, nearest sampling, half LOD below 0.75) at <b>160x60 and 240x90</b> side by side, in front of a lit
+  stone wall and floor, at the distance the player really sees it from. Toggle <b>fill / outline</b> to compare the pending BUG-OWN-003 engine rules
+  (architecture.md 7.7: solid plate behind each cell, 1-cell dark rim) with today's cutout rule.</div>
 
 <div class="controls">
   <span class="grp">Scene grid: <button data-grid="160">160x60</button><button data-grid="240">240x90</button><button data-grid="320">320x120</button></span>
@@ -44,12 +48,26 @@
   <label>distance (fog) <input type="range" id="dist" min="0" max="60" step="0.5" value="3"><span class="val" id="distV"></span></label>
   <label><input type="checkbox" id="backdrop"> lit stone backdrop (off = dark)</label>
   <label><input type="checkbox" id="normals" checked> normals</label>
+  <label title="BUG-OWN-003 / architecture.md 7.7, engine support pending"><input type="checkbox" id="fillOn" checked> fill</label>
+  <label title="1-cell dark rim, architecture.md 7.7 item 4, engine support pending"><input type="checkbox" id="outlineOn" checked> outline</label>
   <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option></select></label>
   <button id="pause">pause</button>
 </div>
 
 <h2>Checks</h2>
 <div id="checks"></div>
+
+<h2 id="ingame">ART-OWN-001: in-game size at 160x60 and 240x90 (stone wall + floor behind)</h2>
+<div class="note">Each pair shows the SAME piece of a 1920x1080 screen: left the 160x60 grid (12x18 px cells), right 240x90 (8x12 px cells), drawn at the zoom below.
+  Camera eye 1.6 m, 75 deg horizontal FOV, 16:9 (the engine's <code>camBasis</code>); the prop stands at its typical view distance in front of the wall
+  (lever and lamp: on the wall). Distance x scales every distance (x2 = the far read, x0.5 = right next to it). The label gives the projected rows, the LOD tier and the
+  art scale (target: about 1-2.5 at the typical distance at 160x60, so glyphs are not blown up into blocks). Light = the sticky controls above (default torch).</div>
+<div class="controls" style="position:static">
+  <label>distance x <input type="range" id="dmul" min="0.4" max="3" step="0.05" value="1"><span class="val" id="dmulV"></span></label>
+  <label>zoom <select id="zoom"><option value="0.5" selected>0.5 (fits the page)</option><option value="0.75">0.75</option><option value="1">1.0 (real 1080p size)</option></select></label>
+  <label>wall <select id="wallMat"><option value="">per prop</option><option>stone</option><option>stone_moss</option><option>stone_scorched</option><option>rubble</option></select></label>
+</div>
+<div id="ingameHost"></div>
 
 <h2>Beacon (US-022 reuse): bowl + fire from the brazier flame unit</h2>
 <div class="note">The 12x4 fire is 3 copies of the brazier's 5x4 flame unit at columns 0 / 4 / 7, frame phases 0 / 3 / 1, middle one mirrored, max-heat compositing.
@@ -103,7 +121,7 @@
   // ---------------- checks ----------------
   var checks = [];
   function check(name, ok, detail) { checks.push({ name: name, ok: !!ok, detail: detail || '' }); }
-  function frameErrors(id, model, lodName, size, keys) {
+  function frameErrors(id, model, lodName, size, keys, fill) {
     var errs = [], anims = model.animations;
     Object.keys(anims).forEach(function (an) {
       anims[an].frames.forEach(function (fr, fi) {
@@ -116,8 +134,10 @@
           for (var c = 0; c < row.length; c++) {
             var g = row.charAt(c), k = fgRow.charAt(c), cc = row.charCodeAt(c);
             if (cc < 32 || cc > 126) errs.push(where + ' r' + r + 'c' + c + ': non-ASCII');
-            if ((g === ' ') !== (k === ' ')) errs.push(where + ' r' + r + 'c' + c + ': glyph/fg space mismatch');
+            if (g !== ' ' && k === ' ') errs.push(where + ' r' + r + 'c' + c + ': glyph without a colour key');
             if (k !== ' ' && !keys[k]) errs.push(where + ' r' + r + 'c' + c + ': key "' + k + '" not in keys');
+            // opaque space (architecture.md 7.7): glyph ' ' + real key, only in a `fill` model and not on a fill:false key
+            if (g === ' ' && k !== ' ' && keys[k] && (!fill || keys[k].fill === false)) errs.push(where + ' r' + r + 'c' + c + ': opaque space needs model fill (and a filled key)');
           }
         });
         if (S.n) S.n.forEach(function (row, r) { if (row.length !== size.w) errs.push(where + ' n row ' + r + ' width'); });
@@ -132,10 +152,10 @@
     ENTRIES.forEach(function (e) {
       var m = e.m;
       Object.keys(m.keys).forEach(function (k) { if (!P.colors[m.keys[k].c]) all.push(e.id + ': key ' + k + ' -> unknown color ' + m.keys[k].c); });
-      all = all.concat(frameErrors(e.id, m, '', m.size, m.keys));
+      all = all.concat(frameErrors(e.id, m, '', m.size, m.keys, !!m.fill));
       if (!m.lods || !m.lods.half) all.push(e.id + ': no half LOD');
       else {
-        all = all.concat(frameErrors(e.id, m.lods.half, 'half', m.lods.half.size, m.keys));
+        all = all.concat(frameErrors(e.id, m.lods.half, 'half', m.lods.half.size, m.keys, !!m.fill));
         Object.keys(m.animations).forEach(function (an) { if (!m.lods.half.animations[an]) all.push(e.id + '.half: missing animation ' + an); });
       }
       if (m.anchor.y !== m.size.h - 1) all.push(e.id + ': anchor is not on the bottom row (feet)');
@@ -162,19 +182,32 @@
       !!le && !!l.lods.half.animations.empty && l.variants.indexOf('empty') >= 0 && bracketStays &&
       le.frames[0].S.glyphs.slice(2).join('').trim() === '');
     var lv = M.lever, gs = lv.animations.pull.frames.map(function (f) { return f.S.glyphs[lv.gear.row].charAt(lv.gear.col); }),
-        ghs = lv.lods.half.animations.pull.frames.map(function (f) { return f.S.glyphs[1].charAt(1); }), stepOk = true;
+        gh = lv.gear.half, ghs = lv.lods.half.animations.pull.frames.map(function (f) { return f.S.glyphs[gh.row].charAt(gh.col); }), stepOk = true;
     for (var gi = 1; gi < gs.length; gi++) if (gs[gi] === gs[gi - 1] || ghs[gi] === ghs[gi - 1]) stepOk = false;
-    check('Lever brass gear housing { }: hub gear * starts the pull and turns one step per pull frame (full + half LOD); housing keys are brass',
+    check('Lever brass plate housing: hub gear * starts the pull and turns one step per pull frame (full + half LOD); plate rim + interior keys are brass',
       gs[0] === '*' && stepOk && gs.join('') === lv.gear.steps.join('') && ghs.join('') === gs.join('') &&
-      lv.animations.pull.frames.every(function (f) { var r = f.S.glyphs[2], k = f.S.fg[2]; return r.charAt(0) === '{' && /^brass/.test(lv.keys[k.charAt(0)].c); }),
+      lv.animations.pull.frames.every(function (f) { var k = f.S.fg[lv.gear.row]; return /^brass/.test(lv.keys[k.charAt(2)].c) && /^brass/.test(lv.keys[k.charAt(3)].c); }),
       'full ' + gs.join(' ') + ' / half ' + ghs.join(' '));
     var ch = M.canvasHeap, chG = ch.animations.idle.frames[0].S.glyphs.join('');
-    check('Canvas heap (wake spot): 9x2 like the pallet, same anchor / world, pale ochre canvas keys, folds ~ ) , half LOD',
-      ch.size.w === 9 && ch.size.h === 2 && ch.anchor.x === M.pallet.anchor.x && ch.world.w === M.pallet.world.w && /~/.test(chG) && /\)/.test(chG) &&
-      Object.keys(ch.keys).some(function (k) { return ch.keys[k].c === 'canvasLight'; }) && !!ch.lods.half);
-    check('Ropes x2 (1x6, sway, half LOD 1x3) and bent strut 4x3 (half LOD 2x2)',
-      M.rope.variants.length === 2 && M.rope.variants.every(function (r) { return r.size.w === 1 && r.size.h === 6 && r.lods.half.size.h === 3; }) &&
-      M.strut.size.w === 4 && M.strut.size.h === 3 && M.strut.lods.half.size.w === 2);
+    check('Canvas heap (wake spot, ART-OWN-001 20x4): anchor bottom-centre, same world size as the pallet, pale ochre canvas keys, folds ( ) and a wavy ~ contour, half LOD',
+      ch.size.w === 20 && ch.size.h === 4 && ch.anchor.x === ch.size.w / 2 && ch.world.w === M.pallet.world.w && ch.world.h === M.pallet.world.h &&
+      /~/.test(chG) && /\)/.test(chG) && Object.keys(ch.keys).some(function (k) { return ch.keys[k].c === 'canvasLight'; }) && !!ch.lods.half);
+    check('Ropes x2 (3x16, rope in the centre column, sway, half LOD 3x8, glyph-only keys) and bent strut 12x4 (half LOD 6x2)',
+      M.rope.variants.length === 2 && M.rope.variants.every(function (r) { return r.size.w === 3 && r.size.h === 16 && r.lods.half.size.h === 8 && r.anchor.x === 1 &&
+        Object.keys(r.keys).every(function (k) { return r.keys[k].fill === false; }); }) &&
+      M.strut.size.w === 12 && M.strut.size.h === 4 && M.strut.lods.half.size.w === 6);
+    // ART-OWN-001: fill / outline declared (engine pending) + art scale at the typical view distance (160x60, 16:9, 75 deg)
+    var pdy = 30 * (16 / 9) / Math.tan(37.5 * D2R), TYP = [['lever', M.lever, 3], ['lantern', M.lantern, 2.5], ['burner', M.burner, 3.5], ['canvasHeap', M.canvasHeap, 2.5],
+      ['gondola', M.gondola, 4], ['rigging', M.rigging, 2.5], ['strut', M.strut, 3], ['rope0', M.rope.variants[0], 4], ['boulder', M.boulder, 5],
+      ['rubble0', M.rubble.variants[0], 3], ['rubble1', M.rubble.variants[1], 3], ['rubble2', M.rubble.variants[2], 3]];
+    var big = TYP.filter(function (t) { return t[1].world.h * pdy / t[2] / t[1].size.h > 3.05; }).map(function (t) { return t[0] + ' ' + (t[1].world.h * pdy / t[2] / t[1].size.h).toFixed(1) + 'x'; });
+    check('ART-OWN-001: art scale <= 3x at the typical view distance at 160x60 (not blown up into glyph blocks); the lamp is the known exception (3x4 pinned by sprites.test.js)',
+      big.length === 1 && /^lantern/.test(big[0]), 'over 3x: ' + (big.join(', ') || 'none') + ' | ' + TYP.map(function (t) { return t[0] + ' ' + (t[1].world.h * pdy / t[2] / t[1].size.h).toFixed(1); }).join(', '));
+    var solid = ['lever', 'lantern', 'burner', 'canvasHeap', 'gondola', 'rigging', 'strut', 'boulder', 'envelopeHeap', 'envelopeDrape', 'relay'].filter(function (k) { return !M[k].fill; })
+      .concat(M.rubble.variants.filter(function (v) { return !v.fill || !v.outline; }).map(function (v) { return v.name; }));
+    check('BUG-OWN-003 data: `fill` on every solid prop (+ `outline` on the lever, lamp and ground props); ropes / flame tips / sparkles are fill:false keys', !solid.length &&
+      ['lever', 'lantern', 'burner', 'canvasHeap', 'rigging', 'strut', 'boulder'].every(function (k) { return !!M[k].outline; }) &&
+      M.burner.keys['1'].fill === false && M.relay.keys.P.fill === false, solid.join(', '));
     var rl = M.relay, awakeAllE = rl.animations.awake.frames.every(function (f) {
       return [[1, 5], [1, 6], [1, 7], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]].every(function (p) { var k = f.S.fg[p[0]].charAt(p[1]); return rl.keys[k] && rl.keys[k].e; }); });
     var deadNoE = rl.animations.dead.frames[0].S.fg.join('').split('').every(function (k) { return k === ' ' || !rl.keys[k].e; });
@@ -189,12 +222,15 @@
     var aetherUsers = ENTRIES.filter(function (e) { return Object.keys(e.m.keys).some(function (k) { return /^aether/.test(e.m.keys[k].c); }); }).map(function (e) { return e.id; });
     check('D-011 colour rule: aether teal only on the relay (magic is reserved)', aetherUsers.length === 1 && aetherUsers[0] === 'relay', aetherUsers.join(', '));
     var gd = M.gondola, nbRow = gd.animations.idle.frames[0].S.glyphs[gd.nameBoard.row];
-    check('Gondola 18x6 carries the KESTREL name board; burner 9x7 with torch light, 6-frame burn, all flame / ember cells emissive',
-      nbRow.indexOf('KESTREL') === gd.nameBoard.x0 && M.burner.light.preset === 'torch' && M.burner.animations.burn.frames.length === 6 &&
+    var nbHalf = gd.lods.half.animations.idle.frames[0].S.glyphs[gd.nameBoard.half.row];
+    check('Gondola 34x9 carries the KESTREL name board (full + half LOD); burner 13x11 with torch light, 6-frame burn, all flame / ember cells emissive',
+      nbRow.indexOf('KESTREL') === gd.nameBoard.x0 && nbHalf.indexOf('KESTREL') === gd.nameBoard.half.x0 && M.burner.light.preset === 'torch' && M.burner.animations.burn.frames.length === 6 &&
       ['1', '2', '3', '4', 'E', 'y'].every(function (k) { return M.burner.keys[k].e; }));
-    check('Lever 3x5: pull = 5 frames (up, 3 in-betweens, down) over 0.4 s', M.lever.size.w === 3 && M.lever.size.h === 5 && M.lever.animations.pull.frames.length === 5 &&
+    check('Lever 11x12 (ART-OWN-001, was 3x5): pull = 5 frames (up, 3 in-betweens, down) over 0.4 s', M.lever.size.w === 11 && M.lever.size.h === 12 && M.lever.animations.pull.frames.length === 5 &&
       Math.abs(M.lever.animations.pull.frames.length / M.lever.animations.pull.fps - 0.4) < 1e-6);
-    check('Boulder 5x4, 8 rotation frames, mossy stone', M.boulder.size.w === 5 && M.boulder.size.h === 4 && M.boulder.animations.roll.frames.length === 8 &&
+    var bsil = M.boulder.animations.roll.frames.every(function (f) { return f.S.glyphs[0] === M.boulder.animations.roll.frames[0].S.glyphs[0] && f.S.glyphs[7] === M.boulder.animations.roll.frames[0].S.glyphs[7]; });
+    check('Boulder 12x8 (ART-OWN-001, was 5x4), 8 rotation frames, mossy stone, contour rows identical in every frame (only the surface marks roll)',
+      M.boulder.size.w === 12 && M.boulder.size.h === 8 && M.boulder.animations.roll.frames.length === 8 && bsil &&
       JSON.stringify(M.boulder.animations.roll.frames).indexOf('m') > 0);
     check('Rubble x3, pallet, beacon bowl 12x4', M.rubble.variants.length === 3 && !!M.pallet && M.beaconBowl.size.w === 12 && M.beaconBowl.size.h === 4);
     var g = P.materials.grate, gerr = U.validate().filter(function (e) { return e.indexOf('grate') === 0; });
@@ -206,7 +242,8 @@
       (c.detail ? ' <span class="' + (c.ok ? 'note' : 'fail') + '">(' + c.detail.replace(/</g, '&lt;') + ')</span>' : '') + '</div>'; }).join('');
 
   // ---------------- light state ----------------
-  var S = { preset: 'torch', intensity: 1, dir: -50, elev: 35, dist: 3, backdrop: false, normals: true, speed: 1, paused: false, t: 0 };
+  var S = { preset: 'torch', intensity: 1, dir: -50, elev: 35, dist: 3, backdrop: false, normals: true, speed: 1, paused: false, t: 0,
+            fill: true, outline: true, dmul: 1, zoom: 0.5, wall: '' };
   var PRESETS = { ambient: 'ambient only', torch: 'torch', sun: 'sun', lantern: 'lantern', relay: 'relay (teal)' };
   var pbox = document.getElementById('presets');
   Object.keys(PRESETS).forEach(function (k) {
@@ -221,6 +258,12 @@
   $('dist').oninput = function () { S.dist = +this.value; sync(); };
   $('backdrop').onchange = function () { S.backdrop = this.checked; };
   $('normals').onchange = function () { S.normals = this.checked; };
+  $('fillOn').onchange = function () { S.fill = this.checked; };
+  $('outlineOn').onchange = function () { S.outline = this.checked; };
+  $('dmul').oninput = function () { S.dmul = +this.value; $('dmulV').textContent = 'x' + S.dmul.toFixed(2); buildIngame(); };
+  $('zoom').onchange = function () { S.zoom = +this.value; buildIngame(); };
+  $('wallMat').onchange = function () { S.wall = this.value; buildIngame(); };
+  $('dmulV').textContent = 'x1.00';
   $('speed').onchange = function () { S.speed = +this.value; };
   $('pause').onclick = function () { S.paused = !S.paused; this.classList.toggle('on', S.paused); };
   function sync() {
@@ -274,13 +317,14 @@
     for (var y = 0; y < Math.round(h * s); y++) for (var x = 0; x < Math.round(w * s); x++) {   // s may be fractional (1.5 at 240x90): nearest sampling
       var r = Math.floor(y / s), c = Math.floor(x / s), gl = fs.glyphs[r].charAt(c), k = fs.fg[r].charAt(c);
       if (heatFn) { var hk = heatFn(r, c, k, h); if (hk === null) continue; k = hk; }
-      if (gl === ' ' || k === ' ') continue;
-      var key = keys[k], nf = 1;
+      if (k === ' ') continue;
+      var key = keys[k], nf = 1, filled = S.fill && !!model.fill && key.fill !== false;
+      if (gl === ' ' && !filled) continue;                      // opaque space = hole under today's cutout rule
       if (S.normals && fs.n) { var nv = NV[fs.n[r].charAt(c)] || NV.f; nf = Math.max(0, nv[0] * ld[0] + nv[1] * ld[1] + nv[2] * ld[2]); }
       U.shadeSprite(key.c, L, nf, !!key.e, fogF, out);
-      if (!out.visible) continue;
-      var gx = ox + x, gy = oy + y;
-      g.cell(gx, gy, gl, css(out.fg), (g.bgc && g.bgc[gx + gy * g.cols]) || '#000');
+      if (!out.visible && !key.e) continue;
+      var gx = ox + x, gy = oy + y, fk = filled ? (model.fill.k == null ? 0.45 : model.fill.k) : 0;
+      g.cell(gx, gy, gl, css(out.fg), filled ? css([out.fg[0] * fk, out.fg[1] * fk, out.fg[2] * fk]) : ((g.bgc && g.bgc[gx + gy * g.cols]) || '#000'));
     }
   }
 
@@ -393,6 +437,137 @@
     });
   }
 
+  // ---------------- ART-OWN-001: in-game size (engine projection, 160x60 + 240x90) ----------------
+  // d = typical view distance (m), z = prop feet above the player's floor, pitch = camera pitch (deg, + = looking up),
+  // gap = wall distance behind the prop (m), floorZ = floor height of the backdrop (m, relative to the player's floor)
+  var VIEWS = [
+    { id: 'lever (on the ledge, in front of the SE wall)', m: M.lever, anim: 'idle', d: 3.0, z: 0, gap: 0.15, wall: 'stone', floor: 'floor' },
+    { id: 'lantern = brass lamp (on its bracket, 1.3 m)', m: M.lantern, anim: 'unlit', d: 2.5, z: 1.3, gap: 0.05, wall: 'stone_scorched', floor: 'floor' },
+    { id: 'burner (on the 0.5 m stone ring)', m: M.burner, anim: 'burn', d: 3.5, z: 0.5, gap: 1.2, wall: 'stone_scorched', floor: 'floor' },
+    { id: 'canvasHeap (the wake spot)', m: M.canvasHeap, anim: 'idle', d: 2.5, z: 0, gap: 1.5, wall: 'stone', floor: 'floor' },
+    { id: 'gondola', m: M.gondola, anim: 'idle', d: 4.0, z: 0, gap: 1.0, wall: 'stone_moss', floor: 'floor' },
+    { id: 'rigging (rope coil)', m: M.rigging, anim: 'idle', d: 2.5, z: 0, gap: 1.5, wall: 'stone', floor: 'floor' },
+    { id: 'strut (on the 0.6 m rubble)', m: M.strut, anim: 'idle', d: 3.0, z: 0.6, gap: 1.0, wall: 'stone', floor: 'rubble' },
+    { id: 'rubble0 (0.3 m heap)', m: M.rubble.variants[0], anim: 'idle', d: 3.0, z: 0.3, gap: 1.0, wall: 'stone', floor: 'rubble' },
+    { id: 'rubble1 (0.6 m heap)', m: M.rubble.variants[1], anim: 'idle', d: 3.0, z: 0.6, gap: 1.0, wall: 'stone', floor: 'rubble' },
+    { id: 'rubble2 (0.9 m heap)', m: M.rubble.variants[2], anim: 'idle', d: 3.0, z: 0.9, gap: 1.0, wall: 'stone', floor: 'rubble' },
+    { id: 'boulder (stair base)', m: M.boulder, anim: 'roll', d: 5.0, z: 0, gap: 0.8, wall: 'stone_moss', floor: 'floor' },
+    { id: 'rope0 (overhead, looking up 30 deg)', m: M.rope.variants[0], anim: 'sway', d: 4.0, z: 3.3, pitch: 30, gap: 0.6, wall: 'stone', floor: 'floor' },
+    { id: 'rope1 (overhead, looking up 30 deg)', m: M.rope.variants[1], anim: 'sway', d: 4.0, z: 3.6, pitch: 30, gap: 0.6, wall: 'stone', floor: 'floor' },
+    { id: 'envelopeDrape (overhead, looking up 30 deg)', m: M.envelopeDrape, anim: 'sway', d: 4.0, z: 3.5, pitch: 30, gap: 0.6, wall: 'stone', floor: 'floor' },
+    { id: 'relay (summit plinth)', m: M.relay, anim: 'dead', d: 4.0, z: 0, gap: 2.0, wall: 'stone', floor: 'floor' },
+    { id: 'envelopeHeap (from the summit breach, 15 m, looking down 20 deg)', m: M.envelopeHeap, anim: 'idle', d: 15, z: -6, floorZ: -6, pitch: -20, wall: null, floor: 'grass', fogFar: true }
+  ];
+  var TANH = Math.tan(37.5 * D2R), ASPECT = 16 / 9, EYE = 1.6, igCards = [];
+  function staticLight() {   // same light as the cards, without the torch flicker (the backdrop is cached)
+    var T = P.timeOfDay.morning, Lx = [0, 0, 0]; U.addLight(Lx, T.ambient, T.ambientI);
+    if (S.preset !== 'ambient') U.addLight(Lx, P.lights[S.preset].color, S.intensity);
+    return Lx;
+  }
+  function igGrid(grid) { var rows = grid * 60 / 160; return { cols: grid, rows: rows, pdy: (rows / 2) * ASPECT / TANH }; }
+  // engine sprites.js project(): LOD pick, scale, rect (colCenter = screen centre)
+  function igProject(v, G) {
+    var m = v.m, d = v.d * S.dmul, horizon = G.rows / 2 + Math.tan((v.pitch || 0) * D2R) * G.pdy;
+    var rowsOn = m.world.h * G.pdy / d, lod = m, tier = 'full', scale = rowsOn / m.size.h;
+    if (scale < 0.75 && m.lods && m.lods.half) { lod = m.lods.half; tier = 'half'; scale = rowsOn / lod.size.h; }
+    var feet = horizon - ((v.z - EYE) / d) * G.pdy, cc = G.cols / 2;
+    var x0 = Math.floor(cc - (lod.anchor.x + 0.5) * scale + 0.5), y0 = Math.floor(feet - (lod.anchor.y + 1) * scale + 0.5);
+    return { d: d, horizon: horizon, rowsOn: rowsOn, lod: lod, tier: tier, scale: scale, inv: Math.fround(1 / scale),
+             x0: x0, y0: y0, w: Math.ceil(lod.size.w * scale), h: Math.ceil(lod.size.h * scale) };
+  }
+  function buildIngame() {
+    var host = $('ingameHost'); host.innerHTML = ''; igCards = [];
+    VIEWS.forEach(function (v) {
+      var h3 = document.createElement('div'); h3.className = 'meta'; h3.style.margin = '14px 0 4px';
+      h3.innerHTML = '<b style="color:#ffc23c">' + v.id + '</b>  ' + v.m.size.w + 'x' + v.m.size.h + ' (half ' + v.m.lods.half.size.w + 'x' + v.m.lods.half.size.h + '), world ' +
+        v.m.world.w + ' x ' + v.m.world.h + ' m, typical distance ' + v.d + ' m' + (v.m.fill ? ', fill' : '') + (v.m.outline ? ' + outline' : '') + '  ';
+      Object.keys(v.m.animations).forEach(function (an) {
+        var b = document.createElement('button'); b.textContent = an; b.className = an === v.anim ? 'on' : '';
+        b.onclick = function () { v.anim = an; v.t0 = S.t; [].forEach.call(h3.querySelectorAll('button'), function (x) { x.classList.toggle('on', x === b); }); };
+        h3.appendChild(b); h3.appendChild(document.createTextNode(' '));
+      });
+      host.appendChild(h3);
+      var row = document.createElement('div'); row.className = 'anim'; host.appendChild(row);
+      [160, 240].forEach(function (grid) {
+        var G = igGrid(grid), pr = igProject(v, G);
+        var CW = Math.round(70 * grid / 160), CH = Math.round(40 * grid / 160);
+        var cw = 1920 / G.cols * S.zoom, chh = 1080 / G.rows * S.zoom;
+        var cx0 = Math.round(G.cols / 2 - CW / 2);
+        var cy0 = Math.round(pr.y0 + pr.h / 2 - CH / 2); cy0 = Math.max(0, Math.min(G.rows - CH, cy0));
+        var d = document.createElement('div'), cv = document.createElement('canvas'), cap = document.createElement('div');
+        cap.className = 'cell';
+        cap.textContent = grid + 'x' + G.rows + ': ' + pr.d.toFixed(1) + ' m -> ' + pr.rowsOn.toFixed(1) + ' rows, ' + pr.tier + ' LOD, art scale ' + pr.scale.toFixed(2) + 'x' +
+          (pr.scale > 3 ? '  (blocky)' : '');
+        d.appendChild(cv); d.appendChild(cap); row.appendChild(d);
+        var dpr = window.devicePixelRatio || 1;
+        cv.width = Math.round(CW * cw * dpr); cv.height = Math.round(CH * chh * dpr);
+        cv.style.width = CW * cw + 'px'; cv.style.height = CH * chh + 'px';
+        var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        igCards.push({ v: v, G: G, pr: pr, CW: CW, CH: CH, cw: cw, ch: chh, cx0: cx0, cy0: cy0, ctx: ctx, cv: cv, cache: null, sig: '' });
+      });
+    });
+  }
+  // backdrop: wall plane at d + gap (stone), floor below it, sky if there is no wall (engine-like geometry, v1 shading)
+  function igBackdrop(cd, Lb) {
+    var v = cd.v, G = cd.G, pr = cd.pr, D = pr.d + v.gap, fz = v.floorZ || 0, wall = v.wall ? (S.wall || v.wall) : null;
+    var n = cd.CW * cd.CH, bgs = new Array(n), o = { fg: [0, 0, 0], bg: [0, 0, 0] };
+    var off = document.createElement('canvas'); off.width = cd.cv.width; off.height = cd.cv.height;
+    var c2 = off.getContext('2d'), dpr = window.devicePixelRatio || 1; c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c2.font = Math.max(4, Math.round(cd.ch * 0.92)) + 'px ' + FONT; c2.textAlign = 'center'; c2.textBaseline = 'middle';
+    for (var j = 0; j < cd.CH; j++) for (var i = 0; i < cd.CW; i++) {
+      var x = cd.cx0 + i, y = cd.cy0 + j, t = (pr.horizon - (y + 0.5)) / G.pdy, lx = ((x + 0.5) / (G.cols / 2) - 1) * TANH;
+      var zw = EYE + t * D;
+      if (wall && zw >= fz) U.shade(wall, Lb, lx * D + 7, zw - fz, D, o, { z: zw - fz });
+      else if (t < 0) { var f = (EYE - fz) / -t; U.shade(v.floor, Lb, lx * f + 7, f, f, o, { fog: v.fogFar ? 'far' : 'interior' }); }
+      else U.shadeSky(200 + lx * 40, Math.atan(t) / D2R, o, 'morning');
+      bgs[i + j * cd.CW] = [o.bg[0], o.bg[1], o.bg[2]];
+      c2.fillStyle = css(o.bg); c2.fillRect(i * cd.cw, j * cd.ch, cd.cw + 0.5, cd.ch + 0.5);
+      if (o.glyph && o.glyph !== ' ') { c2.fillStyle = css(o.fg); c2.fillText(o.glyph, (i + 0.5) * cd.cw, (j + 0.5) * cd.ch + 0.5); }
+    }
+    cd.cache = off; cd.bgs = bgs;
+  }
+  function drawIngame() {
+    var Lb = staticLight(), sig = [S.preset, S.intensity, S.zoom, S.wall, S.dmul].join('|');
+    igCards.forEach(function (cd) {
+      if (cd.sig !== sig || !cd.cache) { igBackdrop(cd, Lb); cd.sig = sig; }
+      var ctx = cd.ctx, v = cd.v, pr = cd.pr, m = v.m, lod = pr.lod;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(cd.cache, 0, 0); ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+      ctx.font = Math.max(4, Math.round(cd.ch * 0.92)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      var a = lod.animations[v.anim] || lod.animations[Object.keys(lod.animations)[0]], tt = S.t - (v.t0 || 0);
+      var fr = a.frames[a.fps === 0 ? Math.floor(S.t * 6) % a.frames.length : frameAt(a, tt)].S;
+      var fogF = U.fogFactor(pr.d, v.fogFar ? 'far' : 'interior'), cover = new Uint8Array(cd.CW * cd.CH), fk = m.fill ? (m.fill.k == null ? 0.45 : m.fill.k) : 0;
+      for (var j = 0; j < cd.CH; j++) {
+        var y = cd.cy0 + j; if (y < pr.y0 || y >= pr.y0 + pr.h) continue;
+        var sy = Math.floor(Math.fround((y - pr.y0) * pr.inv)); if (sy >= lod.size.h) continue;
+        for (var i = 0; i < cd.CW; i++) {
+          var x = cd.cx0 + i; if (x < pr.x0 || x >= pr.x0 + pr.w) continue;
+          var sx = Math.floor(Math.fround((x - pr.x0) * pr.inv)); if (sx >= lod.size.w) continue;
+          var g = fr.glyphs[sy].charAt(sx), k = fr.fg[sy].charAt(sx);
+          if (k === ' ' || k === '') continue;
+          var key = m.keys[k], filled = S.fill && !!m.fill && key.fill !== false;
+          if (g === ' ' && !filled) continue;
+          U.shadeSprite(key.c, Lb, 1, !!key.e, fogF, out);
+          if (!out.visible && !key.e) continue;
+          ctx.fillStyle = filled ? css([out.fg[0] * fk, out.fg[1] * fk, out.fg[2] * fk]) : css(cd.bgs[i + j * cd.CW]);
+          ctx.fillRect(i * cd.cw, j * cd.ch, cd.cw + 0.5, cd.ch + 0.5);
+          if (g !== ' ') { ctx.fillStyle = css(out.fg); ctx.fillText(g, (i + 0.5) * cd.cw, (j + 0.5) * cd.ch + 0.5); }
+          cover[i + j * cd.CW] = 1;
+        }
+      }
+      // outline (architecture.md 7.7 item 4): uncovered cells 4-adjacent to the silhouette, fg and bg x k
+      if (S.outline && m.outline) {
+        var ok = m.outline.k == null ? 0.4 : m.outline.k, kk = ok + (1 - ok) * fogF;
+        ctx.fillStyle = 'rgba(0,0,0,' + (1 - kk).toFixed(3) + ')';
+        for (var jj = 0; jj < cd.CH; jj++) for (var ii = 0; ii < cd.CW; ii++) {
+          var q = ii + jj * cd.CW; if (cover[q]) continue;
+          if ((ii > 0 && cover[q - 1]) || (ii < cd.CW - 1 && cover[q + 1]) || (jj > 0 && cover[q - cd.CW]) || (jj < cd.CH - 1 && cover[q + cd.CW]))
+            ctx.fillRect(ii * cd.cw, jj * cd.ch, cd.cw + 0.5, cd.ch + 0.5);
+        }
+      }
+    });
+  }
+  buildIngame();
+
   // ---------------- loop ----------------
   var last = performance.now();
   function frame(now) {
@@ -414,6 +589,7 @@
       a.frames.forEach(function (f, i) { drawSprite(cd.strip, m, f, 1 + i * (m.size.w + 1), 1, 1, ld); });
     });
     drawBeacon(ld); drawGrate();
+    frame.ig = (frame.ig || 0) + 1; if (frame.ig % 2 === 0) drawIngame();   // ~10 fps for the big in-game section
   }
   requestAnimationFrame(frame);
 })();
