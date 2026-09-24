@@ -9,7 +9,6 @@ import { request as requestHint } from './hints.js';
 
 let art = null;   // PanelArt, built once (palette/model are load-time constants)
 let panel = null; // runtime Panel, rebuilt every 'world:loaded' (7.6 item 6)
-let firstShowActive = false; // true from the first `panel.open()` until its dismissal
 
 /** Call from the 'world:loaded' handler (first load AND every restart). */
 export function initMapCard(assets, sceneCols, sceneRows) {
@@ -21,7 +20,6 @@ export function initMapCard(assets, sceneCols, sceneRows) {
     sceneMul: cfg.sceneDim.bgMul, plateMul: cfg.plate.bgMul, platePad: cfg.plate.pad,
   });
   panel.layout(sceneCols, sceneRows, model.layout.top, model.layout.centerX, assets.uiStyle.uiGrid);
-  firstShowActive = false;
   return panel;
 }
 
@@ -51,17 +49,18 @@ export function stepMapCard(world, assets, dt, input, wakeT, titleDoneAtSec) {
   if (!world.state['ui.mapCard.shown']) {
     if (wakeT >= titleDoneAtSec + cfg.showOnce.delaySec) {
       world.state['ui.mapCard.shown'] = true;
-      firstShowActive = true;
       panel.open();
     }
     return;
   }
 
-  if (firstShowActive) {
+  // First show = shown && !dismissed, derived from world.state only (arch review: no module flag, so a
+  // state restored mid-first-show reopens the card instead of locking `M` forever).
+  if (!world.state['ui.mapCard.dismissed']) {
+    if (panel.state === 'closed') panel.open();
     if (panel.state === 'open' && panel.openSec >= cfg.minShowSec && input.anyPressed()) {
       input.consumePressed();
       panel.close();
-      firstShowActive = false;
       world.state['ui.mapCard.dismissed'] = true;
       world.state['hints.chartT'] = 0; // arms the "Press M to read the chart" 20 s timer (hints.js stepHints)
       requestHint(world, uiStyle, 'move');

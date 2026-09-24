@@ -81,9 +81,14 @@ function makeWorld(state) { return { state }; }
   const input = fakeInput();
   input._press('KeyM');
   stepMapCard(world, assets, 1 / 60, input, 100, 0);
-  ok('M does nothing before the first dismissal', isMapOpen() === false);
+  // Arch review: first show is derived from state (shown && !dismissed), so a state restored mid-first-show
+  // resumes the card; M must not toggle it or count as the first `M` open.
+  ok('M does nothing before the first dismissal (restored first show resumes, not an M open)',
+    getMapPanel().state === 'opening' && world.state['ui.mapCard.opened'] !== true);
 
   world.state['ui.mapCard.dismissed'] = true;
+  initMapCard(assets, 160, 60); // fresh closed panel, as after a load with the card already dismissed
+  input._clearFrame();
   input._press('KeyM');
   stepMapCard(world, assets, 1 / 60, input, 100, 0);
   ok('M opens after the first dismissal', isMapOpen() === true && world.state['ui.mapCard.opened'] === true);

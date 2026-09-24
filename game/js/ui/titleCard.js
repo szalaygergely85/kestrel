@@ -13,6 +13,7 @@ const HASH_CODE = '#'.charCodeAt(0);
 
 let titleArt = null, subtitleArt = null;
 let layout = null;
+const subPanel = { state: 'open', a: 0, x0: 0, y0: 0, art: null };
 let shineCfg = null; // model.shine, resolved once (period/width/slope/amount + rgb)
 
 /** Load-time build + layout (palette/model/uiGrid are constants for the run). */
@@ -95,6 +96,6 @@ function drawTitleGlyphs(rt, timeMs, a, x0, y0, art, lut, withShine) {
 export function drawTitleCard(rt, timeMs, titleA, titleState, lut) {
   if (titleState === 'none' || titleState === 'done' || titleA <= 0 || !layout) return;
   drawTitleGlyphs(rt, timeMs, titleA, layout.titleX0, layout.titleY0, titleArt, lut, titleState === 'hold');
-  const subPanel = { state: 'open', a: titleA, x0: layout.subX0, y0: layout.subY0, art: subtitleArt };
+  subPanel.a = titleA; subPanel.x0 = layout.subX0; subPanel.y0 = layout.subY0; subPanel.art = subtitleArt; // reused, no per-frame object
   drawPanel(rt, subPanel, timeMs, lut);
 }

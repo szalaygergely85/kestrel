@@ -58,13 +58,13 @@ export function request(world, uiStyle, id) {
   ensureArrays(world);
   const shown = world.state['hints.shown'], done = world.state['hints.done'];
   if (shown.includes(id) || done.includes(id)) return;
+  if (queue.includes(id) || (current && current.id === id)) return; // before defFor: no per-step closure while queued
   const def = defFor(uiStyle, id);
   if (!def) return;
   if (def.on && def.on.skipIfState && world.state[def.on.skipIfState]) {
     done.push(id);
     return;
   }
-  if (queue.includes(id) || (current && current.id === id)) return;
   queue.push(id);
 }
 

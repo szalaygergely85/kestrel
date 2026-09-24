@@ -294,6 +294,7 @@ function runGame(mode) {
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
   const wakeCfg = { blackSec: 1.0, riseSec: 1.2, blinkCurve: [[0, 0], [1.5, 1]], titleIn: 1, titleHold: 3, titleOut: 1, startEyeH: 0.3, bodyEyeH: 1.6 };
   let questUiActive = false;
+  const hintSignals = { walking: false, pointerUnlocked: false, moveOrLook: false, run: false, jump: false, pointerLocked: false, mPressed: false };
   let prevLookYaw = null, prevLookPitch = null; // US-015: "move or look input" done-predicate for the WASD/mouse hint
 
   let initialState = null; // US-017: serialize(world) right after World.load - `R` restarts to `deserialize(initialState)`
@@ -514,15 +515,14 @@ function runGame(mode) {
         const moving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         const moveOrLook = controls.forward !== 0 || controls.strafe !== 0
           || (prevLookYaw !== null && (look.yawDeg !== prevLookYaw || look.pitchDeg !== prevLookPitch));
-        stepHints(engine.world, assets.uiStyle, dt, {
-          walking: moving,
-          pointerUnlocked: !look.locked,
-          moveOrLook,
-          run: controls.run && moving,
-          jump: input.pressed('Space'),
-          pointerLocked: look.locked,
-          mPressed: mPressedEdge,
-        });
+        hintSignals.walking = moving;
+        hintSignals.pointerUnlocked = !look.locked;
+        hintSignals.moveOrLook = moveOrLook;
+        hintSignals.run = controls.run && moving;
+        hintSignals.jump = input.pressed('Space');
+        hintSignals.pointerLocked = look.locked;
+        hintSignals.mPressed = mPressedEdge;
+        stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
         prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
       }
       if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
@@ -852,7 +852,7 @@ function runGpuCompareDdaMode() {
     // match the CPU `applySceneDim` oracle.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg },
-      dim: { all: 0.35, n: 1, rects: (() => { const r = new Float32Array(20); r.set([40, 15, 120, 45, 0.18]); return r; })() } },
+      dim: { all: 0.35, n: 1, rects: (() => { const r = new Float32Array(20); r.set([10, 4, 70, 26, 0.18]); return r; })() } },
     // US-011 (7.5 item 6): the REAL prop pool (`pool.collect(world)`, not
     // `placeCompareSprites`) at poses that exercise the new tower props -
     // lit burner + brass lamp + gondola + canvas heap + rubble near the wake
