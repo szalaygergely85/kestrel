@@ -3,11 +3,12 @@
 // `design/` import, matching every other engine test in this repo.
 import assert from 'node:assert';
 import { Terrain } from '../world/Terrain.js';
-import { marchTerrainRay, castTerrain, FOG_FULL, MAX_TERRAIN_STEPS } from './terrainCaster.js';
+import { marchTerrainRay, castTerrain, FOG_FULL, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K } from './terrainCaster.js';
 import { GBuffer, KIND_TERRAIN, PLANEID_TERRAIN } from './GBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
 import { CellBuffer } from './CellBuffer.js';
+import { HFOV_DEG } from './sectorCaster.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -161,6 +162,66 @@ function makeFB(cols, rows, gbuf = true) {
     try { castTerrain(fb4, terrain, cam, worldStub); } catch (e) { ok = false; }
   }
   check('castTerrain: 100 frames run without throwing', ok);
+}
+
+// ---- ARCH CHANGES item 6: regression test for the architect's oracle fix
+// (2026-09-24) - the two bugs were (a) marching only rows inside the open
+// span instead of every cell with `depth == +Infinity` (a structure/sector
+// hit is a finite depth and must be left alone), and (b) sampling at
+// `row + 0.5` instead of `row` (the DDA/GLSL convention, `oy = 0` at n = 1).
+{
+  const terrain = new Terrain(makeFlatRecipe());
+  terrain.bakeFarSync();
+  const cols = 8, rows = 6;
+  const fb = makeFB(cols, rows);
+  fb.spans.reset(rows); // whole column open, top=0, bottom=rows-1
+  // pitch -60 (steeply down) so every row in this small frame hits the flat
+  // ground - isolates "was this cell marched" from "did the ray happen to
+  // point above the horizon", which is a separate (already-tested) case.
+  const cam = { x: 100, y: 100, z: 20, yawDeg: 90, pitchDeg: -60 };
+
+  // (a) Pretend the sector pass already resolved one cell (col 3, row 2) -
+  // a finite depth, as a real structure hit would leave it. It must be left
+  // untouched: no KIND_TERRAIN write, depth unchanged.
+  const claimedCol = 3, claimedRow = 2, claimedDepth = 55;
+  fb.depth.set(claimedCol, claimedRow, claimedDepth);
+  const worldStub = { structures: [] };
+  castTerrain(fb, terrain, cam, worldStub);
+  const claimedIdx = claimedRow * cols + claimedCol;
+  check('item 6a: a cell with finite depth (a structure claim) is not marched', fb.gbuf.kind[claimedIdx] !== KIND_TERRAIN);
+  check('item 6a: its depth is left untouched', fb.depth.depth[claimedIdx] === claimedDepth);
+
+  // Every OTHER cell in that column started at +Infinity (DepthBuffer.clear
+  // ran in `new DepthBuffer` above) and the flat ground is always in range
+  // (any slope hits it), so every one of them must have been marched and hit.
+  let allOthersHit = true;
+  for (let row = 0; row < rows; row++) {
+    if (row === claimedRow) continue;
+    if (fb.gbuf.kind[row * cols + claimedCol] !== KIND_TERRAIN) allOthersHit = false;
+  }
+  check('item 6a: every cell still at depth==+Infinity in that column was marched', allOthersHit);
+
+  // (b) The written depth for a marched cell equals `marchTerrainRay` called
+  // directly with the SAME ray (dirX/dirY from yaw+column) and
+  // `slope = (horizonRow - row) / planeDistY` (the DDA's own convention,
+  // not `(horizonRow - (row + 0.5)) / planeDistY`).
+  const checkRow = 4;
+  const tanHalfHFov = Math.tan(HFOV_DEG * Math.PI / 360);
+  const yawRad = cam.yawDeg * Math.PI / 180;
+  const dirX = Math.sin(yawRad), dirY = -Math.cos(yawRad);
+  const planeX = -dirY * tanHalfHFov, planeY = dirX * tanHalfHFov;
+  const screenAspect = (cols * (fb.rt.pxCellW || 1)) / (rows * (fb.rt.pxCellH || 1));
+  const planeDistY = (rows / 2) * screenAspect / tanHalfHFov;
+  const horizonRow = rows / 2 + Math.tan(cam.pitchDeg * Math.PI / 180) * planeDistY;
+  const cameraX = (2 * (claimedCol + 0.5)) / cols - 1;
+  const rayDirX = dirX + planeX * cameraX, rayDirY = dirY + planeY * cameraX;
+  const slope = (horizonRow - checkRow) / planeDistY;
+  const expected = { t: 0, x: 0, y: 0, h: 0 };
+  const gotHit = marchTerrainRay(terrain, cam.x, cam.y, cam.z, rayDirX, rayDirY, slope, FOG_FULL,
+    new Float64Array(0), 0, { stepMin: STEP_MIN, stepK: STEP_K, maxSteps: MAX_TERRAIN_STEPS }, expected);
+  const writtenDepth = fb.depth.depth[checkRow * cols + claimedCol];
+  check('item 6b: marchTerrainRay(slope=(horizonRow-row)/planeDistY) hits', gotHit);
+  check('item 6b: castTerrain\'s written depth == marchTerrainRay\'s own t', Math.abs(writtenDepth - expected.t) < 1e-6);
 }
 
 console.log(`terrainCaster.test.js: ${pass} passed, ${fail} failed`);

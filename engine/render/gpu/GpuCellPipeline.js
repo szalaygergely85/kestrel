@@ -59,11 +59,20 @@ export class GpuCellPipeline {
     // `?rays=`). Clamped defensively; main.js already clamps its own
     // `?rays=` parse to 1..4.
     this.rays = Math.max(1, Math.min(4, Math.round(opts.rays || 1)));
+    // ARCH CHANGES item 3 (14.4 item 8): `?terrain=0` dev A/B switch -
+    // default true (terrain on), main.js passes `false` to force pass A2 off
+    // regardless of `world.terrain.farReady` (see `_terrainActiveThisFrame`).
+    this.terrainEnabled = opts.terrainEnabled !== false;
     this.ready = false;
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
-      // US-016 step 6: terrain pass A2 own cost (NaN when the pass didn't run this frame's timer window, or the timer extension is unavailable).
-      terrainGpuMs: NaN, terrainGpuMsP50: NaN, terrainGpuMsP95: NaN,
+      // ARCH CHANGES item 4: renamed from `terrainGpuMs*` - this is a CPU
+      // `performance.now()` bracket around the pass A2 draw call (submit
+      // time), NOT a GPU-side cost (see the constructor comment above on
+      // why a real GPU query can't be nested here). The real terrain GPU
+      // cost is measured as the whole-frame `gpuMs` A/B delta with vs
+      // without `?terrain=0` - see main.js and this story's Programmer notes.
+      terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
     };
     this.debugMode = -1; // -1 = off (edge pass runs normally)
     this._fb = null;
@@ -390,9 +399,11 @@ export class GpuCellPipeline {
     // this file's existing `uploadMs`/`drawMs` (also CPU submit time, not a
     // GPU query) - good enough to check the pass against its budget even
     // though it can't separate GPU-side overlap from CPU dispatch cost.
-    this._terrainGpuMsHistory = new Float32Array(16);
-    this._terrainGpuMsHistoryLen = 0;
-    this._terrainGpuMsHistoryPos = 0;
+    // ARCH CHANGES item 5: reused every frame by `sunFromWorld`'s `out` param.
+    this._sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
+    this._terrainSubmitMsHistory = new Float32Array(16);
+    this._terrainSubmitMsHistoryLen = 0;
+    this._terrainSubmitMsHistoryPos = 0;
 
     // Readback FBO (test-only, gpuCompare.js) - 2 x cols*rows*4 bytes, allocated once.
     this._readbackFg = new Uint8Array(4 * n);
@@ -722,7 +733,7 @@ export class GpuCellPipeline {
     // US-016 (14.4 item 8): pass A2 runs only when the bound world has
     // terrain AND its far bake is ready - otherwise resolve reads set 1
     // untouched, same as before this story.
-    this._terrainActiveThisFrame = useDda && !!(this._world && this._world.terrain && this._world.terrain.farReady);
+    this._terrainActiveThisFrame = useDda && this.terrainEnabled && !!(this._world && this._world.terrain && this._world.terrain.farReady);
     if (useDda) {
       this._passCast();
       if (this._terrainActiveThisFrame) {
@@ -755,24 +766,24 @@ export class GpuCellPipeline {
 
   _terrainTsEnd() {
     const ms = performance.now() - this._terrainT0;
-    this._terrainGpuMsHistory[this._terrainGpuMsHistoryPos] = ms;
-    this._terrainGpuMsHistoryPos = (this._terrainGpuMsHistoryPos + 1) % this._terrainGpuMsHistory.length;
-    if (this._terrainGpuMsHistoryLen < this._terrainGpuMsHistory.length) this._terrainGpuMsHistoryLen++;
+    this._terrainSubmitMsHistory[this._terrainSubmitMsHistoryPos] = ms;
+    this._terrainSubmitMsHistoryPos = (this._terrainSubmitMsHistoryPos + 1) % this._terrainSubmitMsHistory.length;
+    if (this._terrainSubmitMsHistoryLen < this._terrainSubmitMsHistory.length) this._terrainSubmitMsHistoryLen++;
   }
 
   _pollTerrainTs() {
-    if (this._terrainGpuMsHistoryLen === 0) { this.stats.terrainGpuMs = NaN; this.stats.terrainGpuMsP50 = NaN; this.stats.terrainGpuMsP95 = NaN; return; }
+    if (this._terrainSubmitMsHistoryLen === 0) { this.stats.terrainSubmitMs = NaN; this.stats.terrainSubmitMsP50 = NaN; this.stats.terrainSubmitMsP95 = NaN; return; }
     // Small history (16 entries, at most once/frame) - an in-place sort of
     // a tiny reused scratch is cheap enough to do every call (no per-frame
     // allocation: `_terrainTsScratch` is created once, lazily, below).
-    if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainGpuMsHistory.length);
-    const n = this._terrainGpuMsHistoryLen, scratch = this._terrainTsScratch;
-    for (let i = 0; i < n; i++) scratch[i] = this._terrainGpuMsHistory[i];
+    if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainSubmitMsHistory.length);
+    const n = this._terrainSubmitMsHistoryLen, scratch = this._terrainTsScratch;
+    for (let i = 0; i < n; i++) scratch[i] = this._terrainSubmitMsHistory[i];
     const view = scratch.subarray(0, n);
     view.sort();
-    this.stats.terrainGpuMs = view[n - 1];
-    this.stats.terrainGpuMsP50 = view[Math.floor(n * 0.5)];
-    this.stats.terrainGpuMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+    this.stats.terrainSubmitMs = view[n - 1];
+    this.stats.terrainSubmitMsP50 = view[Math.floor(n * 0.5)];
+    this.stats.terrainSubmitMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
   }
 
   // US-030a: per-frame UI mask upload (14.2 item 3) - the cast pass reads
@@ -870,7 +881,13 @@ export class GpuCellPipeline {
   // `farHBilinear` call, for the hit-point normal).
   _uploadTerrainUniforms(terrain, palette) {
     const gl = this.gl;
-    const farMap = [0, 0, terrain.mapCell, terrain.mapW];
+    // ARCH CHANGES item 5: read the real origin from `terrain._farGridDraw`
+    // (`Terrain.js`, the same grid `castTerrain`'s `gridHeight` samples)
+    // instead of hard-coding `x0/y0 = 0` - both are 0 for every current
+    // recipe (`overworld_far`), but this keeps one source of truth instead
+    // of a silently-stale assumption if a future recipe origin moves.
+    const grid = terrain._farGridDraw;
+    const farMap = [grid.x0, grid.y0, terrain.mapCell, terrain.mapW];
     gl.useProgram(this.progTerrain);
     gl.uniform4fv(this._locsTerrain.uFarMap, farMap);
     gl.uniform1f(this._locsTerrain.uTerrainMaxH, terrain.farMaxH);
@@ -1004,7 +1021,10 @@ export class GpuCellPipeline {
     // too (build order step 1). Cheap (a few trig calls); recomputed every
     // frame rather than cached because nothing here tracks a "did timeOfDay
     // change" version the way `_ensureTerrainTextures` tracks `farVersion`.
-    const sun = sunFromWorld(this._world, this._palette);
+    // ARCH CHANGES item 5: pass this instance's own scratch object so
+    // `sunFromWorld` writes into it instead of allocating a fresh literal
+    // every frame (architecture.md section 9).
+    const sun = sunFromWorld(this._world, this._palette, this._sunScratch);
     gl.uniform3f(loc.uSunDir, sun.dirX, sun.dirY, sun.dirZ);
     gl.uniform1f(loc.uAmbientI, sun.ambientI);
     gl.uniform1f(loc.uSunI, sun.sunI);

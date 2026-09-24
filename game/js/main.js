@@ -163,6 +163,11 @@ const lightsEnabled = params.get('lights') !== '0';
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
 const sunEnabled = params.get('sun') !== '0';
+// ARCH CHANGES item 3 (14.4 item 8): `?terrain=0` dev A/B switch - skips
+// terrain on BOTH paths (GPU: `GpuCellPipeline`'s `_terrainActiveThisFrame`
+// gate; JS/CPU: `compositor.js`'s `castTerrain` call). Same shape as
+// `?lights=0`/`?sun=0` above. Needed for item 4's GPU-ms A/B measurement.
+const terrainEnabled = params.get('terrain') !== '0';
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -187,7 +192,7 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // world/* (US-025, off-limits this story).
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt, { rays });
+  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;
@@ -571,6 +576,9 @@ function runGame(mode) {
     // render(), below.
     fadeLut,
     sceneFade: 1,
+    // ARCH CHANGES item 3: `?terrain=0` dev A/B switch, CPU/JS-oracle side
+    // (compositor.js reads this; the GPU side is `gpuPipeline.terrainEnabled`).
+    terrainEnabled,
   };
 
   function render(alpha) {
@@ -687,8 +695,11 @@ function runGame(mode) {
     let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
       `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
       (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
-        // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95"): terrain pass A2's own GPU ms, separate from the frame total above.
-        `  terrain ${Number.isNaN(gpuPipeline.stats.terrainGpuMsP50) ? 'n/a' : gpuPipeline.stats.terrainGpuMsP50.toFixed(2) + 'ms'}` : '') +
+        // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
+        // time, not a GPU cost - the real terrain GPU cost is the whole-frame
+        // `gpuMs` A/B delta with vs without `?terrain=0` (measured + recorded
+        // in this story's Programmer notes, docs/backlog.md).
+        `  terrain cpu ${Number.isNaN(gpuPipeline.stats.terrainSubmitMsP50) ? 'n/a' : gpuPipeline.stats.terrainSubmitMsP50.toFixed(2) + 'ms'}` : '') +
       (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
     if (mode === 'world') {
       const t = playerHandle.data.transform;
@@ -921,6 +932,18 @@ function runGpuCompareDdaMode() {
       cam: { x: 1489.0, y: 1025.0, z: 8.2, yawDeg: 87.6, pitchDeg: 0 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach looking back east (yaw 87.6)',
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 87.6, pitchDeg: 0 }, real: true },
+    // Architect ARCH CHANGES item 1 (14.4 item 9 poses, the story's own main
+    // view - the breach had no parity pose until now). Same breach eye as
+    // above (1486.5, 1025.0, eye 6.0+1.60 = 7.6 m); yaw 270/255 look OUT
+    // through the breach (opposite the "looking back east" pose above).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach',
+      cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: breachDown',
+      cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: -30 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: parapetSky',
+      cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 255, pitchDeg: 20 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: signal tower',
+      cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 255, pitchDeg: 2 }, real: true },
   ];
 
   const fbCompare = {

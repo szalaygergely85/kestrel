@@ -188,6 +188,30 @@ function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal) {
   ok('compareGeometry u beyond tol: fails', r2.pass === false);
 }
 
+// 5b. ARCH CHANGES item 2 (14.4 item 9): kind-7 (terrain) cells use a 1%-of-
+//     depth u/v tolerance instead of the sector 1e-3 rule - the 5-step
+//     bisection only resolves t to ~0.1% of t, so 1e-3 is at the resolution
+//     limit for terrain. KIND_TERRAIN = 7 (engine/render/GBuffer.js).
+{
+  const f1 = makeGeomFixture(7, 5, 1, 10, 10, 50);
+  for (let i = 0; i < N; i++) f1.gaBuf[i * 4] = f32Bits(10 + 0.9 * 0.01 * 50); // 0.9% of depth - within the 1% terrain tol
+  const r1 = compareGeometry(f1.gbuf, f1.depth, f1.giBuf, f1.gaBuf, f1.depthBuf, COLS, ROWS);
+  ok('compareGeometry kind-7 u within 1% terrain tol: no uv violation', r1.uvViol === 0);
+
+  const f2 = makeGeomFixture(7, 5, 1, 10, 10, 50);
+  for (let i = 0; i < N; i++) f2.gaBuf[i * 4] = f32Bits(10 + 5); // well beyond even the 1% terrain tol
+  const r2 = compareGeometry(f2.gbuf, f2.depth, f2.giBuf, f2.gaBuf, f2.depthBuf, COLS, ROWS);
+  ok('compareGeometry kind-7 u beyond 1% terrain tol: violation on every matched cell', r2.uvViol === r2.matched && r2.matched > 0);
+
+  // The same 5.5% delta that a kind-7 cell tolerates would FAIL under the
+  // sector kinds' 1e-3 rule (proves the two tolerances actually differ, not
+  // just that both happen to pass/fail this magnitude of error).
+  const f3 = makeGeomFixture(1, 5, 1, 10, 10, 50);
+  f3.gaBuf.set(f1.gaBuf); // reuse the "0.9% of depth" delta, now on a sector kind
+  const r3 = compareGeometry(f3.gbuf, f3.depth, f3.giBuf, f3.gaBuf, f3.depthBuf, COLS, ROWS);
+  ok('compareGeometry sector kind at the terrain-tolerant delta: violation (1e-3 rule still applies)', r3.uvViol === r3.matched && r3.matched > 0);
+}
+
 // 6. edge-cell exclusion: a single differing-kind cell in the middle marks
 //    its 4 neighbours (CPU-side) as edges too, on both the CPU and GPU kind
 //    arrays - none of those 5 cells is "checked"; the rest of the uniform

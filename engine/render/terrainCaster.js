@@ -163,7 +163,13 @@ function terrainNormal(terrain, x, y, out) {
  * (step 2+) computes the identical sun direction the JS oracle uses - no
  * second copy of the azimuth/elevation -> dir math.
  */
-export function sunFromWorld(world, palette) {
+// Module-level scratch: `castTerrain`'s own per-frame call (below) passes no
+// `out`, so it needs a default target that isn't a fresh object literal -
+// architecture.md section 9 (no per-frame allocation). `GpuCellPipeline.js`
+// passes its own instance-scratch object instead (ARCH CHANGES item 5).
+const _sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
+
+export function sunFromWorld(world, palette, out = _sunScratch) {
   const T = palette.timeOfDay[palette.defaultTime];
   let az = 112.5, elev = T.sunElev;
   const s0 = world.structures[0];
@@ -171,7 +177,9 @@ export function sunFromWorld(world, palette) {
     az = s0.level.def.sun.azimuth; elev = s0.level.def.sun.elevation;
   }
   const azRad = az * Math.PI / 180, elRad = elev * Math.PI / 180, cosEl = Math.cos(elRad);
-  return { dirX: Math.sin(azRad) * cosEl, dirY: -Math.cos(azRad) * cosEl, dirZ: Math.sin(elRad), ambientI: T.ambientI, sunI: T.sunI };
+  out.dirX = Math.sin(azRad) * cosEl; out.dirY = -Math.cos(azRad) * cosEl; out.dirZ = Math.sin(elRad);
+  out.ambientI = T.ambientI; out.sunI = T.sunI;
+  return out;
 }
 
 /**

@@ -94,7 +94,12 @@ export function renderWorld(fb, world, cam) {
   // no-op until `world.terrain.farReady`); `shadeTerrainCells` below paints
   // those kind-7 cells (a separate look-up from `shadeSurfaces`'s
   // MaterialTable), and only what's left open after both goes to `fillSky`.
-  castTerrain(fb, world.terrain, cam, world);
+  // ARCH CHANGES item 3: `fb.terrainEnabled === false` (`?terrain=0`, set by
+  // main.js) skips terrain on this (CPU/JS oracle) path too, the same way
+  // `GpuCellPipeline`'s `terrainEnabled` gates pass A2 - `castTerrain`
+  // already no-ops on a null/not-ready terrain, so passing `null` here reuses
+  // that same early-out with no new branch inside terrainCaster.js.
+  castTerrain(fb, fb.terrainEnabled === false ? null : world.terrain, cam, world);
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);

@@ -1,3 +1,5 @@
+import { KIND_TERRAIN } from '../GBuffer.js';
+
 // US-029 tech notes item 7 / AC "Parity page": `compareCells` is the pure,
 // Node-testable comparison core; `runGpuCompare` drives it against a real
 // `GpuCellPipeline` + `readPixels` (browser only, test-only - never in the
@@ -198,8 +200,12 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       const depthOk = !Number.isFinite(cpuDepth) && !Number.isFinite(gpuDepth) ||
         (Number.isFinite(cpuDepth) && Number.isFinite(gpuDepth) && Math.abs(gpuDepth - cpuDepth) <= 0.01 * Math.max(1, Math.abs(cpuDepth)));
       if (!depthOk) depthViol++;
-      const tol = 1e-3 * Math.max(1, Math.abs(cpuDepth));
-      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > tol || Math.abs(gpuV - v[i]) > tol)) uvViol++;
+      // ARCH CHANGES item 2 (14.4 item 9): kind-7 (terrain) cells resolve t
+      // via a 5-step bisection to ~0.1% of t, so the sector 1e-3 tolerance
+      // is at the resolution limit for terrain u/v - use the item 9 rule
+      // (1% of depth) for kind 7, keep 1e-3 for sector kinds.
+      const uvTol = (kind[i] === KIND_TERRAIN ? 0.01 : 1e-3) * Math.max(1, Math.abs(cpuDepth));
+      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) uvViol++;
     }
   }
 
