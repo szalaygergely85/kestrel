@@ -55,6 +55,17 @@ uniform int uFadeRampLen;   // lut.ramp.length (uFadeRamp texture width)
 uniform usampler2D uFadeLut;  // R8UI, 128x1: lut.idx, indexed by full ASCII code
 uniform usampler2D uFadeRamp; // R8UI, uFadeRampLen x 1: lut.ramp (ascii codes)
 
+// US-015 (docs/architecture.md 7.6 item 3): GPU scene dim, mirrors
+// engine/ui/sceneDim.js applySceneDim exactly - a per-cell multiplier
+// (glyph UNCHANGED, unlike fade above), k = min(uDimAll, mul of every rect
+// containing this cell). Applied AFTER the fade block, same non-mask cells
+// only (mask already returned above). Identity (uDimAll==1.0 && uDimCount
+// ==0) is skipped - matches applySceneDim's own no-op guard.
+uniform float uDimAll;
+uniform int uDimCount;      // 0..4 live rects
+uniform vec4 uDimRect[4];   // x0, y0, x1, y1 (scene cells, half-open)
+uniform float uDimMul[4];
+
 const int MAX_SPRITES = ${MAX_SPRITES};
 
 ${GBUF_UNPACK}
@@ -127,6 +138,22 @@ void main() {
     float fgGain = uFadeMinGain + (1.0 - uFadeMinGain) * a;
     outFg.rgb *= fgGain;
     outBg.rgb *= a;
+  }
+
+  // US-015: scene dim (see the uDim* uniforms above).
+  if (uDimAll < 1.0 || uDimCount > 0) {
+    float k = uDimAll;
+    for (int i = 0; i < 4; i++) {
+      if (i >= uDimCount) break;
+      vec4 r = uDimRect[i];
+      if (float(cell.x) >= r.x && float(cell.x) < r.z && float(cell.y) >= r.y && float(cell.y) < r.w) {
+        k = min(k, uDimMul[i]);
+      }
+    }
+    if (k < 1.0) {
+      outFg.rgb *= k;
+      outBg.rgb *= k;
+    }
   }
 }
 `;

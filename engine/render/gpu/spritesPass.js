@@ -25,7 +25,8 @@ import { GpuTimer } from './GpuTimer.js';
 import { MAX_SPRITES, SPR_TEXELS, SPR_STRIDE } from '../sprites.js';
 
 const UNIFORMS = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uCount', 'uFogColor',
-  'uSceneFade', 'uFadeMinGain', 'uFadeRampLen', 'uFadeLut', 'uFadeRamp']; // US-017
+  'uSceneFade', 'uFadeMinGain', 'uFadeRampLen', 'uFadeLut', 'uFadeRamp', // US-017
+  'uDimAll', 'uDimCount', 'uDimRect', 'uDimMul']; // US-015 (docs/architecture.md 7.6 item 3)
 
 export class GpuSpritePass {
   /**
@@ -57,6 +58,14 @@ export class GpuSpritePass {
     this.fadeMinGain = 0;
     this.fadeRampLen = 1;
     this._fadeLutRef = null;
+    // US-015: per-frame scene dim, mirrors `fb.sceneDim` (engine/ui/
+    // sceneDim.js `SceneDim`) exactly like `sceneFade`/`fadeLut` above -
+    // `setSceneDim` copies the caller's `{all, n, rects}` every frame (no
+    // texture, just 4 rects worth of uniforms - see `run()`).
+    this.dimAll = 1;
+    this.dimCount = 0;
+    this.dimRect = new Float32Array(16); // 4 rects x (x0,y0,x1,y1)
+    this.dimMul = new Float32Array(4);
     this._onCtxLost = () => { if (this.ready) { this.ready = false; console.warn('[GpuSpritePass] WebGL context lost, sprites fall back to drawSprites'); } };
     this._onCtxRestored = () => this._restore();
     rt.canvas.addEventListener('webglcontextlost', this._onCtxLost);
@@ -178,6 +187,25 @@ export class GpuSpritePass {
     this._fadeLutRef = lut;
   }
 
+  /**
+   * US-015: copies this frame's `SceneDim` (`{all, n, rects:Float32Array(20)}`,
+   * `x0,y0,x1,y1,mul` per rect) into the plain per-uniform fields `run()`
+   * uploads - no texture needed (at most 4 rects). A no-op call (`dim`
+   * falsy) leaves the previous frame's values, same "caller sets it every
+   * frame" contract as `sceneFade`.
+   * @param {{all:number, n:number, rects:Float32Array}|null} dim
+   */
+  setSceneDim(dim) {
+    if (!dim) return;
+    this.dimAll = dim.all;
+    this.dimCount = dim.n;
+    for (let i = 0; i < dim.n * 5; i++) {
+      const rectI = Math.floor(i / 5), field = i % 5;
+      if (field === 4) this.dimMul[rectI] = dim.rects[i];
+      else this.dimRect[rectI * 4 + field] = dim.rects[i];
+    }
+  }
+
   /** True when this pass draws the sprites this frame (else the caller runs `drawSprites`). */
   get active() {
     return this.ready && this.rt.gpuActive && this.pipeline.ready;
@@ -217,6 +245,11 @@ export class GpuSpritePass {
     gl.uniform1f(this.loc.uSceneFade, this.sceneFade);
     gl.uniform1f(this.loc.uFadeMinGain, this.fadeMinGain);
     gl.uniform1i(this.loc.uFadeRampLen, this.fadeRampLen);
+    // US-015: scene dim, matches CPU `applySceneDim` exactly.
+    gl.uniform1f(this.loc.uDimAll, this.dimAll);
+    gl.uniform1i(this.loc.uDimCount, this.dimCount);
+    gl.uniform4fv(this.loc.uDimRect, this.dimRect);
+    gl.uniform1fv(this.loc.uDimMul, this.dimMul);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.timer.end();
     const t2 = performance.now();

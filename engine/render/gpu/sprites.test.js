@@ -277,6 +277,32 @@ for (const depthUint of [true, false]) {
   ok(`sprites.frag (depthUint=${depthUint}): uSceneFade uniform`, src.includes('uniform float uSceneFade;'));
   ok(`sprites.frag (depthUint=${depthUint}): uFadeLut/uFadeRamp R8UI textures`, src.includes('uniform usampler2D uFadeLut;') && src.includes('uniform usampler2D uFadeRamp;'));
   ok(`sprites.frag (depthUint=${depthUint}): fade skipped when uSceneFade >= 1.0 (identity)`, /if\s*\(\s*uSceneFade\s*<\s*1\.0\s*\)/.test(src));
+  // US-015 (docs/architecture.md 7.6 item 3/9): GPU scene dim uniforms present, applied after the fade block, identity-skipped.
+  ok(`sprites.frag (depthUint=${depthUint}): uDimAll/uDimCount/uDimRect/uDimMul uniforms`,
+    src.includes('uniform float uDimAll;') && src.includes('uniform int uDimCount;') &&
+    src.includes('uniform vec4 uDimRect[4];') && src.includes('uniform float uDimMul[4];'));
+  ok(`sprites.frag (depthUint=${depthUint}): dim block runs after the fade block`, src.indexOf('uDimAll < 1.0') > src.indexOf('uSceneFade < 1.0'));
+  ok(`sprites.frag (depthUint=${depthUint}): dim identity guard (uDimAll<1.0 || uDimCount>0)`, /if\s*\(\s*uDimAll\s*<\s*1\.0\s*\|\|\s*uDimCount\s*>\s*0\s*\)/.test(src));
+}
+
+// ---------------------------------------------------------------------------
+// US-015 (7.6 item 9): GpuSpritePass.setSceneDim copies a SceneDim into the
+// per-uniform fields run() uploads (no gl needed for this part - pure data copy).
+{
+  const { GpuSpritePass } = await import('./spritesPass.js');
+  const fakeThis = { dimAll: 1, dimCount: 0, dimRect: new Float32Array(16), dimMul: new Float32Array(4) };
+  const dim = { all: 0.35, n: 2, rects: new Float32Array(20) };
+  dim.rects.set([2, 2, 10, 10, 0.35, 5, 50, 8, 53, 0.18]); // rect0: x0,y0,x1,y1,mul ; rect1: same
+  GpuSpritePass.prototype.setSceneDim.call(fakeThis, dim);
+  ok('setSceneDim copies dimAll/dimCount', fakeThis.dimAll === 0.35 && fakeThis.dimCount === 2);
+  ok('setSceneDim copies rect0 xyxy', fakeThis.dimRect[0] === 2 && fakeThis.dimRect[1] === 2 && fakeThis.dimRect[2] === 10 && fakeThis.dimRect[3] === 10);
+  ok('setSceneDim copies rect1 xyxy at offset 4', fakeThis.dimRect[4] === 5 && fakeThis.dimRect[5] === 50 && fakeThis.dimRect[6] === 8 && fakeThis.dimRect[7] === 53);
+  const approx = (a, b) => Math.abs(a - b) < 1e-5; // Float32Array storage - not exact vs a JS double literal
+  ok('setSceneDim copies mul per rect', approx(fakeThis.dimMul[0], 0.35) && approx(fakeThis.dimMul[1], 0.18));
+  ok('setSceneDim(null) is a no-op (keeps the previous frame\'s values)', (() => {
+    GpuSpritePass.prototype.setSceneDim.call(fakeThis, null);
+    return approx(fakeThis.dimAll, 0.35) && fakeThis.dimCount === 2;
+  })());
 }
 
 // ---------------------------------------------------------------------------

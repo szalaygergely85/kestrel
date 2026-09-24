@@ -632,16 +632,20 @@ function runGame(mode) {
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen());
       // US-015 (docs/architecture.md 7.6 item 3): map-card / hint scene dim.
-      // CPU path only, known limitation (see the story's Programmer notes) -
-      // the GPU sprite pass does not yet mirror this into `uDim*` uniforms,
-      // so `?gpu=0` shows the dim and the default gl2 path does not.
+      // Reset every frame (so a leftover dim never bleeds into the ending
+      // screen or a non-quest world), pushed only while active. CPU path
+      // (`applySceneDim`) and GPU path (`sprites.pass.setSceneDim`, read by
+      // `sprites.frag.js`'s `uDim*` uniforms inside `rt.present()` below)
+      // both read the same `sceneDim` object, same precedent as `fadeLut`/
+      // `fb.sceneFade` just above.
+      resetSceneDim(sceneDim);
       if (questUiActive && !ending) {
-        resetSceneDim(sceneDim);
         const mapPanel = getMapPanel();
         if (mapPanel) mapPanel.pushDim(sceneDim);
         pushHintDim(rt, assets.uiStyle, sceneDim);
-        if (!fb.gpuDda) applySceneDim(rt, sceneDim);
       }
+      if (!fb.gpuDda) applySceneDim(rt, sceneDim);
+      if (sprites.pass) sprites.pass.setSceneDim(sceneDim);
       // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
       // the world/sprite passes, never depth-tested (architecture.md 8).
       // Hidden while ending or while wake/map-card input is locked (US-015:
@@ -841,6 +845,14 @@ function runGpuCompareDdaMode() {
     // `applySceneFade` oracle (now run after sprites too, item 2).
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
+    // US-015 (docs/architecture.md 7.6 item 3/9): "card open" pose - whole
+    // scene dim 0.35 (`SceneDim.all`) plus one plate rect at 0.18, the exact
+    // shape `mapCard.js`'s `panel.pushDim` produces while the card is up.
+    // Proves the GPU composite pass's `uDim*` uniforms (sprites.frag.js)
+    // match the CPU `applySceneDim` oracle.
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
+      cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg },
+      dim: { all: 0.35, n: 1, rects: (() => { const r = new Float32Array(20); r.set([40, 15, 120, 45, 0.18]); return r; })() } },
     // US-011 (7.5 item 6): the REAL prop pool (`pool.collect(world)`, not
     // `placeCompareSprites`) at poses that exercise the new tower props -
     // lit burner + brass lamp + gondola + canvas heap + rubble near the wake
@@ -882,14 +894,26 @@ function runGpuCompareDdaMode() {
     // per pose below (1 = off for every row except the fade pose).
     fadeLut, sceneFade: 1,
   };
+  const compareSceneDim = createSceneDim(); // US-015: identity for every pose except `dim`
 
   const cols = rt.cols, rows = rt.rows, n = cols * rows;
 
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name, cam, fade, real, before } of runs) {
+  for (const { world, lights, name, cam, fade, dim, real, before } of runs) {
     if (before) before();
+    // US-015: per-pose scene dim - identity for every row except the "card
+    // open" pose. Mirrors `sceneFade` just below: both the CPU oracle
+    // (`applySceneDim`, after the CPU fade) and the GPU pass
+    // (`sprites.pass.setSceneDim`, before `rt.present()`) read the same object.
+    resetSceneDim(compareSceneDim);
+    if (dim) {
+      compareSceneDim.all = dim.all;
+      compareSceneDim.n = dim.n;
+      compareSceneDim.rects.set(dim.rects.subarray(0, dim.n * 5));
+    }
+    fbCompare.sceneDim = compareSceneDim;
     // Architect review 1 item 2: fixed `timeSec = 0` (14.3 item 9's parity
     // contract - determinism, same as the rest of this compare page) so
     // flicker/jitter are identical on both paths for this pose. Update
@@ -905,6 +929,7 @@ function runGpuCompareDdaMode() {
     if (sprites.pass) {
       sprites.pass.sceneFade = fbCompare.sceneFade;
       sprites.pass.setFadeLut(fadeLut);
+      sprites.pass.setSceneDim(compareSceneDim);
     }
     // GPU FIRST, from a poisoned, mask-free JS layer (`poisonAllCells`): the
     // GPU frame must produce every cell on its own, with no CPU pass having
@@ -954,6 +979,9 @@ function runGpuCompareDdaMode() {
       clearMaskForSceneFade(fbCompare.rt);
       applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);
     }
+    // US-015: CPU dim oracle, same call site (after fade) main.js's real
+    // render() uses.
+    applySceneDim(fbCompare.rt, compareSceneDim);
     rt.gpuActive = wasActive;
 
     // Architect review 1 item 5: `?gpucompare=1` (unlike the strict
@@ -973,6 +1001,8 @@ function runGpuCompareDdaMode() {
   // doesn't inherit sceneFade=0.5 left over from the last mandatory row.
   fbCompare.sceneFade = 1;
   if (sprites.pass) sprites.pass.sceneFade = 1;
+  resetSceneDim(compareSceneDim); // US-015: same reset, for the same reason (the dim pose above)
+  if (sprites.pass) sprites.pass.setSceneDim(compareSceneDim);
 
   // Architect review 1 item 5: an INFORMATIONAL n=2 row, only when
   // explicitly requested (`?gpucompare=1&rays=2`) - the mandatory loop above
