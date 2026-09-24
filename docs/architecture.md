@@ -993,7 +993,7 @@ Normative for terrain rendering from US-016 on; 14.1/14.2 stay valid. D-007 sema
 - `FARTYPE` R8UI 256x256 = `terrain.farType`, nearest.
 - `TLOOK` RGBA32F width 8, row = type id: texels 0-2 dark/mid/light rgb (palette, linear 0..1, un-gained), texel 3 = (albedo, glintFlag, 0, 0), texels 4-6 = glyph codes of the near/mid/far sets packed 8 bits each little-endian in `x` (<= 3 codes) + count in `y` (small integers, exact in float32).
 - Uploaded once when `farReady` flips and again only when `terrain.farVersion` changes (`texImage2D`; ~320 KB total). Never per frame.
-- Uniforms: `uTerrainMaxH` (max of `farHDraw`), `uFarMap` = `vec4(x0, y0, cell, size)`, `uSunDir` (unit vector toward the sun; US-007 owns it, until then the compositor derives it from the level's `sun`), `uTerrainLight` = (ambientI, sunI), `uFogFar` = (start 50, full 1500, curve 0.7, hazeCut 0.85), `uFogFarNear` / `uFogFarColor` rgb, `uRiverLight` rgb, `uTimeSec`, `uStruct*` (14.2) for the bbox skip.
+- Uniforms: `uTerrainMaxH` (max of `farHDraw`), `uFarMap` = `vec4(x0, y0, cell, size)`, `uSunDir` (unit vector toward the sun; US-007 owns it, until then the compositor derives it from the level's `sun`), `uTerrainLight` = (ambientI, sunI), `uFogFar` = (start 50, full 1500, curve 0.7, hazeCut 0.85), `uFogFarNear` / `uFogFarColor` rgb, `uTimeSec`, `uStruct*` (14.2) for the bbox skip.
 
 **4. March (normative for GLSL and `castTerrain`; both implement it literally):**
 ```

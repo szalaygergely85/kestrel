@@ -69,7 +69,8 @@ export function shadeTerrainFar(t, type, b, u, v, timeSec, ctx, out) {
 
   const TL = ctx.tlook, W = ctx.tlookWidth, base = type * W * 4;
   const colOff = base + i * 4;
-  let fr = TL[colOff], fg = TL[colOff + 1], fb = TL[colOff + 2];
+  // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
+  let fr = TL[colOff] * 255, fg = TL[colOff + 1] * 255, fb = TL[colOff + 2] * 255;
   const gain = gainOf(b, ctx.shading);
   fr *= gain; fg *= gain; fb *= gain;
   let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
@@ -87,7 +88,7 @@ export function shadeTerrainFar(t, type, b, u, v, timeSec, ctx, out) {
       const alt = pickCodeFromPacked(packedX, packedCount, (Math.floor(hB * packedCount) + 1) % Math.max(1, packedCount));
       code = alt;
       const lightOff = base + 2 * 4; // TLOOK[type][2] (the "light" colour) doubles as the glint tint
-      const lr = TL[lightOff] * gain, lg = TL[lightOff + 1] * gain, lb = TL[lightOff + 2] * gain;
+      const lr = TL[lightOff] * 255 * gain, lg = TL[lightOff + 1] * 255 * gain, lb = TL[lightOff + 2] * 255 * gain;
       fr += (lr - fr) * 0.35; fg += (lg - fg) * 0.35; fb += (lb - fb) * 0.35;
     }
   }
