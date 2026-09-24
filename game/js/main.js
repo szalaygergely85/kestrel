@@ -667,7 +667,9 @@ function runGame(mode) {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
     }
-    if (mode === 'world' && !look.locked) drawPauseOverlay(rt, assets);
+    // US-015 tester BUG-1: the map card owns the screen while open (its own
+    // click/key dismiss), so the pause text must not overprint it (160x60).
+    if (mode === 'world' && !look.locked && !isMapOpen()) drawPauseOverlay(rt, assets);
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
