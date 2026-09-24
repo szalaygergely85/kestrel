@@ -29,6 +29,17 @@ The owner plays one real run with mouse + keyboard on the default grid (240x90):
 
 During the same run the owner also says whether 240x90 is readable (gap 7; if not, a US-038 grid slice goes into sprint 2). The tester confirms there's no gap in the parapet/breach to fall out of (gap 10; file a bug if there is one).
 
+## Review (Fable, 2026-09-24)
+**Verdict: good with changes.** The five stories are the right ones for the goal and the order follows the pass-slot dependency (A2 before A3) and the D-019 risk. Changes:
+
+1. **Start US-040 when US-016 enters ARCH review, not when it is `done`.** Three sequential engine stories with reviews is the whole sprint; the gate result must not arrive on the last day. Second programmer track allowed (CLAUDE.md), shader/pass files coordinated by the architect.
+2. **Gate checkpoint made explicit.** The D-019 gate is decided at US-040's second ARCH review at the latest. If US-040 has not reached its *first* ARCH review by the time US-016 is `done`, the manager re-checks the sprint (fallback (b) is itself ~1 engine story: 7.7 `fill` + a fixed-yaw billboard flag, and the interim billboard art from ART-OWN-001 already exists, so the fallback is realistic only if triggered by mid-sprint).
+3. **US-041a de-scope option, not a split:** if late, the lever pull ships as two static ModelDefs (up/down swap, no rigid-part animation) and the rigid-part work moves to sprint 2. Rotated normals, `voxel` binding, mounts (light anchor + E-prompt) stay: without them the props are not lit or interactable.
+4. **BUG-OWN-005 gains one AC (PO wording):** a one-time hint on the lever pull that points at the grate (e.g. `Something rattles above.`), because the grate opens 1.5 s later and may be out of view (gap 4; sound is sprint 2). Cheapest in-sprint cause-and-effect fix, same file as the summit hint. The tester's parapet/breach gap check (gap 10) is attached to this story's test pass.
+5. **Exit walk-test tightened.** Add two pass lines: the owner finds the lamp and knows the goal is the top *before* the map card opens (gap 6); the owner notices the grate opened after the pull without help (gap 4). "Recognise the props" = the owner names lever, burner, lamp, boulder, relay unprompted. **If the walk-test fails:** the PO files BUG-OWN rows; content-only fixes (hints, text, art) are done in this sprint and the run is repeated; engine fixes go first into sprint 2 and the sprint closes as "goal not met". The US-056 walk-check and the exit walk-test may be merged into one owner session if US-056 is the last story to land.
+
+Nothing is missing that would make the goal unreachable; sound (sprint 2) is the biggest remaining feel gap, correctly out.
+
 ## Sprint 2 candidates
 Minimal sound slice (P1 per D-020: lever, gear, grate, boulder, footsteps; PO carves it out of US-020), US-022 relay wake (P1), BUG-OWN-003 slim (only if the US-056 walk-check needs it), US-018 (if not done), US-038 grid slice (if the owner finds 240x90 unreadable), paperwork closes for US-029/US-024.
 
