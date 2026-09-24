@@ -26,7 +26,9 @@ export class PlayerLook {
     this.input = input;
     this.yawDeg = initialYawDeg;
     this.pitchDeg = clampPitch(initialPitchDeg);
-    this.locked = false;
+    // Already-locked canvas (e.g. a PlayerLook rebuilt on a world restart,
+    // US-017): no 'pointerlockchange' will fire, so read the state directly.
+    this.locked = typeof document !== 'undefined' && document.pointerLockElement === canvas;
     this.supported = !!(canvas.requestPointerLock && document.exitPointerLock);
 
     this._onClick = () => {

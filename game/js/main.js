@@ -349,6 +349,7 @@ function runGame(mode) {
         radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
         vx: 0, vy: 0, vz: 0, grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: startT.z,
       });
+      if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
       // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
@@ -395,8 +396,19 @@ function runGame(mode) {
         // top of this, architecture.md section 5 `Controls` typedef).
         controls.jump = input.isDown('Space') || input.pressed('Space');
       }
-      controls.yawDeg = look.yawDeg;
-      controls.pitchDeg = look.pitchDeg;
+      if (ending) {
+        // Arch review 1: `integrate` copies controls.yaw/pitch onto the
+        // transform every step, so once `stepEnd`'s walk phase is over the
+        // stale `look.pitchDeg` would snap the camera back up. While ending
+        // the transform is authoritative (stepEnd wrote it); keep `look` in
+        // step with it so nothing jumps.
+        const pt = playerHandle.data.transform;
+        controls.yawDeg = pt.yawDeg; controls.pitchDeg = pt.pitchDeg;
+        look.yawDeg = pt.yawDeg; look.pitchDeg = pt.pitchDeg;
+      } else {
+        controls.yawDeg = look.yawDeg;
+        controls.pitchDeg = look.pitchDeg;
+      }
       // US-014 (7.4 fixed-step order item 1): before `integrate`, so
       // collision this step already sees the grate's current ceiling.
       stepSectorAnims(engine.world, dt);
@@ -477,6 +489,10 @@ function runGame(mode) {
       const eye = Camera.fromEntity(playerHandle.data);
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
+      // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
+      // handler on every restart - rebind it here, or `fb.lights` would keep
+      // pointing at the previous world's LightSet (beacon state etc.).
+      fb.lights = lightSet;
       // US-006: carried-light sync (US-012's lantern, `components.light`)
       // then flicker/vis-grid update, once per rendered frame, BEFORE either
       // the CPU (`renderWorld`) or GPU (`gpuPipeline.frame`) path reads

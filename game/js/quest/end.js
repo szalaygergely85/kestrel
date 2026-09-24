@@ -95,7 +95,10 @@ export function stepEnd(world, actor, dt, uiStyle, moveCapsule) {
   const { walkSec } = readEndTimings(uiStyle);
   const body = actor.components.body;
   const ew = body && body._endWalk;
-  if (!ew || t > walkSec) return; // walk/pitch phase only - the fade/text phases are timing only (main.js reads endT itself)
+  // Walk/pitch phase only (the fade/text phases are timing only - main.js
+  // reads endT itself). Exit on the PREVIOUS endT so the step that crosses
+  // walkSec still runs once with frac = 1 (90 x 1/60 is not exactly 1.5).
+  if (!ew || endT > walkSec) return;
 
   const frac = t / walkSec > 1 ? 1 : t / walkSec;
   const wantX = ew.x0 + ew.dirX * frac; // total displacement capped to 1 m (the unit direction * frac<=1)
