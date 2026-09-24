@@ -56,7 +56,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | PO CHANGE REQUEST (2026-09-23): logo approved; map card needs "W." signature, `hintBurner`/`hintClimb` zones, `storyHints.when` per ACs. Programmer after the art PO OK + US-010 + US-012 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
-| 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | po-review | Programmer; UI/game-only, no architect notes needed |
+| 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | testing | Programmer; UI/game-only, no architect notes needed |
 | 26 | US-022 | Wake the relay with the lamp (optional beat, D-003; D-011 reskin) | P1 | todo | Relay bowl + glow art comes with the US-011 reskin; Programmer, after all P0 done |
 | 27 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
 | 28 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
@@ -2103,7 +2103,13 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: final check before M1 exit; overlay part can be built with US-004. D-009 budgets.
 
-### US-045 WebGL2-required screen + software-renderer warning  [Priority: P0] [Status: po-review]
+### US-045 WebGL2-required screen + software-renderer warning  [Priority: P0] [Status: testing]
+
+PO OK (2026-09-24): AC1-3 verified in `webgl2Gate.js` + `main.js` (gate blocks before `createEngine`'s rAF branches, `?gpu=0`/`force2d=1` bypass, software path unchanged). PO OK - US-045 ready for testing.
+Tester notes:
+- Use `?webgl2gate=none` and `?webgl2gate=software` (real hardware won't show these); confirm no console error on the blocked screen and exactly one `console.warn` on the software path.
+- Check AC4 by hand at 240x90 and 320x120 with F3 overlay and pause menu open (DOM overlay is viewport-anchored, not grid-anchored, per programmer notes - not yet eyeballed).
+- Confirm `?webgl2gate=none&gpu=0` still runs the game normally (gate skip precedence).
 As a player whose browser can't run WebGL2 (or is falling back to a software renderer), I want a clear message instead of a broken or silently slow game, so that I know what to do.
 (D-017: no playable CPU fallback; this replaces the old auto-fallback-to-CPU behaviour.)
 Acceptance criteria:
