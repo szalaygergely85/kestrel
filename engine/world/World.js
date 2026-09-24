@@ -9,6 +9,7 @@ import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
 import { EventRing } from '../entities/eventRing.js';
 import { getBehaviour, validateBehaviours } from '../core/behaviours.js';
+import { buildTriggers } from './triggers.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -68,6 +69,9 @@ export class World {
     // null check on the hot path.
     this.interactables = [];
     this.interaction = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+    // (US-017) Built by `load()` from every placed structure's
+    // `def.triggers` - see `buildTriggers` (engine/world/triggers.js).
+    this.triggers = [];
 
     this._entities = new Map();   // id -> plain entity data
     this._handles = new Map();    // id -> EntityHandle (cached, same object until remove)
@@ -148,6 +152,13 @@ export class World {
       }
     }
     w.interaction = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 }; // reused (rule 9)
+
+    // (US-017) `world.triggers`: every placed structure's `def.triggers`
+    // (buildTriggers, engine/world/triggers.js). Rebuilt fresh on every
+    // load/deserialize, same as `interactables` above - `inside` always
+    // starts at 0, so standing inside a trigger right after a load counts
+    // as a fresh enter on the next `updateTriggers` call (7.4).
+    w.triggers = buildTriggers(w);
 
     // (US-016b) Wire each placed structure's real ring height into the
     // terrain recipe's own `structures[i]` entry (matched by id), BEFORE any

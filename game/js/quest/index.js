@@ -12,6 +12,7 @@
 import { registerBehaviour } from '../../../engine/index.js';
 import { leverPull } from './lever.js';
 import { lanternTake } from './lantern.js';
+import { questEnd } from './end.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -38,6 +39,7 @@ function stub(name, story) {
 const REAL_BEHAVIOURS = {
   'lever.pull': leverPull,
   'lantern.take': lanternTake,
+  'quest.end': questEnd,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

@@ -18,9 +18,12 @@ import {
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
   isSoftwareRenderer,
+  updateTriggers, moveCapsule, serialize, deserialize, createFadeLut,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
+import { computeEndCardState, drawEndCard } from './ui/endCard.js';
+import { stepEnd, endFadeAmount } from './quest/end.js';
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -96,6 +99,14 @@ const crosshairStyle = {
   crosshair: { dim: P.colors[P.ui.crosshair], active: P.colors[P.ui.crosshairActive] },
   prompt: { color: P.colors[P.ui.prompt], keyColor: P.colors[P.ui.promptKey] },
 };
+// US-017: same "ASSETS.uiStyle doesn't exist yet" fallback as crosshairStyle
+// above (US-012 precedent) - `uiStyle.fade`'s ramp/letterIndex/minGain and
+// `uiStyle.endText`'s color. `ramps.default`'s last index is its brightest
+// step (design/palette.js section 2), used for any UI letter/digit not
+// itself in the ramp (engine/ui/fade.js's `letterIndex`).
+const defaultRamp = P.ramps.default;
+const fadeLut = createFadeLut(defaultRamp, defaultRamp.length - 1, 0.12);
+const endTextStyle = { color: P.colors[P.ui.endText] };
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   force2d: params.get('force2d') === '1',
@@ -266,6 +277,8 @@ function runGame(mode) {
   // allocating - it runs once per rendered frame, not per fixed step.
   const interactEye = new Camera();
 
+  let initialState = null; // US-017: serialize(world) right after World.load - `R` restarts to `deserialize(initialState)`
+
   if (mode === 'world') {
     // US-025: the real world (world_m1: terrain + the tower placed at its
     // recipe coordinates), or - `?level=<name>` - a bare single-level world
@@ -282,54 +295,72 @@ function runGame(mode) {
       }
       : assets.world('world_m1');
 
-    const world = engine.loadWorld(worldDef);
-    // ---- US-010: `?strict=1` turns World.load's behaviour warning into a hard error ----
-    if (params.get('strict') === '1') {
-      const missing = validateBehaviours(world);
-      if (missing.length) throw new Error(`[strict] behaviours referenced by level data but not registered: ${missing.join(', ')}`);
-    }
-    // ---- end US-010 ----
-    for (const s of world.structures) {
-      bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
-      repackMaterials(s.packed, s.level, matTable); // US-030a: packed.mats was built with matTable=null at placeStructure time
-    }
-    // US-006: `level.def.lights` per placed structure -> world-space LightSet
-    // (torch/lantern/beacon presets, docs/architecture.md 14.3). `?lights=0`
-    // keeps the old uniform-ambient path (fb.lights stays null).
-    if (lightsEnabled) {
-      lightSet = buildLightSet(world, assets.palette);
-      // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
-      // force it off - `setSun` is the only writer of `on`.
-      if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
-    }
-    // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
-    // 7 synthetic extra lights (torch preset) spread 2-4 m around the
-    // level's first light, so the tester can measure the "8 point lights"
-    // AC (`?bench=1&lights=8`) at 320x120. Game-side only, not the engine.
-    if (lightSet && lightSet.count >= 1 && params.get('lights') === '8') {
-      const preset = assets.palette.lights.torch;
-      const hue = assets.palette.hue[preset.color];
-      const bx = lightSet.defX[0], by = lightSet.defY[0], bz = lightSet.defZ[0];
-      for (let i = 0; i < 7; i++) {
-        const ang = (i / 7) * Math.PI * 2;
-        const dist = 2 + (i % 3); // deterministic spread, 2-4 m
-        lightSet.add({
-          x: bx + Math.cos(ang) * dist, y: by + Math.sin(ang) * dist, z: bz,
-          hue, intensity: preset.intensity, radius: preset.radius,
-          flicker: preset.flicker || null, on: true, key: `synthetic.${i}`,
-        });
+    // US-017 (7.4 "Restart / world swap"): every runtime rebuild this block
+    // used to do ONCE, inline, now happens on `'world:loaded'` - emitted by
+    // `World.load` on the first `engine.loadWorld` call below AND by
+    // `engine.setWorld` on every later restart (`R`, see `update()`) - so a
+    // restart rebuilds `playerHandle`/`look`/`lightSet` exactly the same
+    // way the first load did, with no separate hand-written reset path
+    // (architecture.md 7.4's "module-level game variables are reset only in
+    // the 'world:loaded' handler" rule).
+    engine.events.on('world:loaded', (evt) => {
+      const world = evt.world;
+      // ---- US-010: `?strict=1` turns World.load's behaviour warning into a hard error ----
+      if (params.get('strict') === '1') {
+        const missing = validateBehaviours(world);
+        if (missing.length) throw new Error(`[strict] behaviours referenced by level data but not registered: ${missing.join(', ')}`);
       }
-    }
+      // ---- end US-010 ----
+      for (const s of world.structures) {
+        bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
+        repackMaterials(s.packed, s.level, matTable); // US-030a: packed.mats was built with matTable=null at placeStructure time
+      }
+      // US-006: `level.def.lights` per placed structure -> world-space LightSet
+      // (torch/lantern/beacon presets, docs/architecture.md 14.3). `?lights=0`
+      // keeps the old uniform-ambient path (fb.lights stays null).
+      if (lightsEnabled) {
+        lightSet = buildLightSet(world, assets.palette);
+        // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
+        // force it off - `setSun` is the only writer of `on`.
+        if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
+      }
+      // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
+      // 7 synthetic extra lights (torch preset) spread 2-4 m around the
+      // level's first light, so the tester can measure the "8 point lights"
+      // AC (`?bench=1&lights=8`) at 320x120. Game-side only, not the engine.
+      if (lightSet && lightSet.count >= 1 && params.get('lights') === '8') {
+        const preset = assets.palette.lights.torch;
+        const hue = assets.palette.hue[preset.color];
+        const bx = lightSet.defX[0], by = lightSet.defY[0], bz = lightSet.defZ[0];
+        for (let i = 0; i < 7; i++) {
+          const ang = (i / 7) * Math.PI * 2;
+          const dist = 2 + (i % 3); // deterministic spread, 2-4 m
+          lightSet.add({
+            x: bx + Math.cos(ang) * dist, y: by + Math.sin(ang) * dist, z: bz,
+            hue, intensity: preset.intensity, radius: preset.radius,
+            flicker: preset.flicker || null, on: true, key: `synthetic.${i}`,
+          });
+        }
+      }
 
-    playerHandle = world.get('player');
-    const startT = playerHandle.data.transform;
-    Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
-      radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
-      vx: 0, vy: 0, vz: 0, grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: startT.z,
+      playerHandle = world.get('player');
+      const startT = playerHandle.data.transform;
+      Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
+        radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
+        vx: 0, vy: 0, vz: 0, grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: startT.z,
+      });
+      look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
+      // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
+      if (params.get('sprite') === '1') spawnTestSprites(world, startT);
     });
-    look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
-    // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
-    if (params.get('sprite') === '1') spawnTestSprites(world, startT);
+
+    engine.loadWorld(worldDef);
+    // US-017: taken right after World.load (the listener above has already
+    // run synchronously by the time `loadWorld` returns - `Events.emit` is
+    // synchronous) - so this already includes the body-physics defaults and
+    // spawned test sprites, exactly like a restart's `deserialize` would
+    // reproduce.
+    initialState = serialize(engine.world);
   }
 
   function update(dt) {
@@ -342,16 +373,28 @@ function runGame(mode) {
       if (input.pressed('F6')) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth - 5, on: sunEnabled });
       if (input.pressed('F7')) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth + 5, on: sunEnabled });
     }
-    if (look) look.update(dt);
+    // US-017 (7.4 item 2): "entering the end trigger locks input" - no
+    // pointer-look, no WASD/jump, no `E`. `quest.endT` (world.state, set by
+    // `quest.end`, game/js/quest/end.js) is the one flag both `update()` and
+    // `render()` read for this - never a separate module-level bool (7.4's
+    // "state that must reset lives in world.state" rule; a restart resets
+    // it back to -1 for free, via `deserialize(initialState)`).
+    const ending = mode === 'world' && playerHandle
+      && typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
+    if (look && !ending) look.update(dt);
     if (mode === 'world' && playerHandle) {
-      controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
-      controls.strafe = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
-      controls.run = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-      // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
-      // that starts and ends within one frame - between two fixed-step
-      // updates - is never lost (integrate() does its own edge detection on
-      // top of this, architecture.md section 5 `Controls` typedef).
-      controls.jump = input.isDown('Space') || input.pressed('Space');
+      if (ending) {
+        controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
+      } else {
+        controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
+        controls.strafe = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
+        controls.run = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+        // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
+        // that starts and ends within one frame - between two fixed-step
+        // updates - is never lost (integrate() does its own edge detection on
+        // top of this, architecture.md section 5 `Controls` typedef).
+        controls.jump = input.isDown('Space') || input.pressed('Space');
+      }
       controls.yawDeg = look.yawDeg;
       controls.pitchDeg = look.pitchDeg;
       // US-014 (7.4 fixed-step order item 1): before `integrate`, so
@@ -362,12 +405,36 @@ function runGame(mode) {
       // player's this-step velocity is what a push is measured against.
       stepRollers(engine.world, dt, engine.physics);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
+      // US-017 (7.4 fixed-step order item 4): after physics settles, before
+      // interaction - an enter edge on the end trigger sets `quest.endT`.
+      updateTriggers(engine.world, engine, playerHandle.data);
       // US-012 (7.4 fixed-step order item 5): after physics settles this
       // step's position, before the event flush - `E` is edge-triggered the
-      // same way Space is (US-009's convention).
-      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), input.pressed('KeyE'));
+      // same way Space is (US-009's convention). Forced false while ending
+      // (input locked - no other interactable may fire mid-ending).
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), !ending && input.pressed('KeyE'));
+      // US-017: the scripted walk/pitch (only through WALK_SEC - a no-op
+      // otherwise, including every non-ending step). Runs AFTER `integrate`
+      // so it overrides this step's `controls`-driven (frozen) transform.
+      stepEnd(engine.world, playerHandle.data, dt, assets.uiStyle, moveCapsule);
       if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
       engine.world.flushEvents();
+
+      // US-017 AC "R restarts the slice ... with all state reset": only
+      // once `[R] Wake again` is showing (computeEndCardState's
+      // `canRestart`) - never a bare `endT >= 0` check, so `R` can't cut the
+      // walk/fade/typing short. `deserialize(initialState)` + `setWorld`
+      // rebuilds a brand-new World (lamp/boulder/lever/grate/relay/map-card/
+      // hints all come back from `initialState`, US-025's own round trip -
+      // nothing is a hand-written reset list, per 7.4).
+      if (ending && input.pressed('KeyR')) {
+        const st = computeEndCardState(engine.world, assets.uiStyle);
+        if (st.canRestart) {
+          engine.setWorld(deserialize(initialState, assets));
+          input.endFrame();
+          return;
+        }
+      }
     }
     input.endFrame();
   }
@@ -391,6 +458,11 @@ function runGame(mode) {
     // pipeline unavailable). `?gpucompare=1`'s separate `fbCompare` objects
     // never set this, so GPU parity keeps the full light list.
     cpuLightCap: true,
+    // US-017: CPU-path-only scene fade (compositor.js) - `fadeLut` is fixed
+    // (built once, above); `sceneFade` (1 = off) is written per frame in
+    // render(), below.
+    fadeLut,
+    sceneFade: 1,
   };
 
   function render(alpha) {
@@ -424,11 +496,22 @@ function runGame(mode) {
       // this check `renderWorld` would keep skipping the CPU cast -> black
       // world instead of falling back to it.
       fb.gpuDda = !!gpuPipeline && rt.gpuActive;
+      // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
+      // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
+      fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
       renderWorld(fb, engine.world, cam);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
       // the world/sprite passes, never depth-tested (architecture.md 8).
-      drawCrosshair(rt, crosshairStyle, engine.world.interaction);
+      // Hidden while ending (US-017: input is locked, so there is never a
+      // usable target/prompt to show).
+      if (!ending) drawCrosshair(rt, crosshairStyle, engine.world.interaction);
+      // US-017: the end card, drawn last (over the faded scene) - `setCell`
+      // marks these cells `mask = 1` (engine/render/CellBuffer.js), so a
+      // second `applySceneFade` call (e.g. a future frame) never touches them.
+      const endCardState = computeEndCardState(engine.world, assets.uiStyle);
+      drawEndCard(rt, endTextStyle, endCardState);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);

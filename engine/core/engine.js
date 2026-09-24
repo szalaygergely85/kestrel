@@ -88,6 +88,21 @@ export function createEngine(opts) {
       engine.world = World.load(def, assets, { events });
       return engine.world;
     },
+    /**
+     * (US-017, 7.4 "Restart / world swap") Swaps in an already-built world
+     * (typically `deserialize(initialState, assets)`) - unlike `loadWorld`,
+     * this does not call `World.load` again (the world is already loaded);
+     * it just makes it live and tells every `'world:loaded'` subscriber
+     * (LightSet, handle listeners, game UI) to rebuild their runtime state
+     * from it, exactly as they do for a fresh `loadWorld`.
+     * @param {import('../world/World.js').World} world
+     */
+    setWorld(world) {
+      engine.world = world;
+      world.events = events;
+      events.emit('world:loaded', { world });
+      return world;
+    },
     run({ update, render }) {
       loop.update = update;
       loop.render = render;

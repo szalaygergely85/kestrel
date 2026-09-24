@@ -48,7 +48,13 @@
       // dynamics['grate']` (serialized on the structure itself) is the only
       // truth for the grate's open/closed state.
       'tower.beacon.lit': false,
-      'hints.shown': []
+      'hints.shown': [],
+      // US-017: -1 = not ending; `quest.end` (game/js/quest/end.js) sets it
+      // to 0 on the end trigger's enter edge, then it counts up in seconds.
+      // Restart = deserialize(initialState) (US-025 serialize round trip),
+      // which resets this back to -1 for free.
+      'quest.endT': -1,
+      'ui.mapCard.shown': false
     }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
