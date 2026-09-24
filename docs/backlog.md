@@ -3,6 +3,11 @@
 Owner: Product Owner. Last updated: 2026-09-24 (D-009 amendment 2, D-011 amendments 1+2, D-012, D-013: M1 content reskin notes, US-038..US-041 added; architect refactor survey -> US-046..US-050 added).
 Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout details: see `docs/game-design.md` section 5 and 7.
 
+> **Session handoff 4 (late 2026-09-24).** Working in sprints now (CLAUDE.md "Sprints"); token rules for the weekly limit in CLAUDE.md.
+> - **Sprint 1** (docs/sprints/sprint-1.md): US-016 done, BUG-OWN-005 done, US-040 in ARCH review (gate numbers: gpucompare 24/24, voxel p95 0.1 ms), next US-041a -> US-056 (11 voxel models ready, design/models/voxel_props.js + voxel_tower.js; batch-2 materials still to merge; game/index.html needs a script tag for voxel_tower.js), US-018 stretch.
+> - **Decisions today:** D-017..D-021 (D-021 = owner's spells: Fireball, Freeze, Telekinesis, Teleport).
+> - **Owner to-dos:** (1) real-GPU check at the breach: `game/index.html?debug=1&grid=320x120`, gpu ms with and without `&terrain=0` (US-016 p95); (2) approve or change Maren (Wick's sister) as the vanished one (docs/story.md section 9) - ask later; (3) look at design/preview/voxel-props.html; (4) sprint-1 exit walk-test once US-056 is in.
+
 > **Session handoff 3 (end of 2026-09-24).**
 > - **Done today:** US-012, US-030b, US-006, US-007, US-017, US-011, US-015, US-045, BUG-LIGHT-001. Decision: D-017.
 > - **M1 left:** BUG-OWN-002 (props shrink when you walk closer, owner report; P0, row 25e), US-016, US-018, plus the P1/P2 stories. BUG-CAST-001 and BUG-LIGHT-002 done (gpucompare 14/14 ALL PASS incl. light gating). Owner real-GPU 8 lights @320x120: gpu 1.46 ms (see US-018).
