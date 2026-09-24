@@ -2285,6 +2285,7 @@ Tester notes:
 5. `?gpucompare=1`: the sceneFade=0.5 pose is present and passes (ALL PASS). No console errors in any of the runs.
 
 ### US-018 Performance budget + debug overlay  [Priority: P0] [Status: todo]
+> **Owner real-hardware measurement (2026-09-24, owner's Chrome, `?grid=320x120&lights=8&debug=1`, tower spawn, commit ~451c821):** 60.0 fps, frame 0.85 ms, grid draw 0.50 ms, path gpu, rays 2, upload 0.10 ms, **gpu 1.46 ms** (budget 4 ms), sprites 2 at gpu 0.10 ms. The 8-light GPU budget (US-006/US-007) is met with a wide margin; the headless 5.4 ms reading was software GL. Still to measure in US-018: the overworld view (US-016) and the worst-case poses.
 As a player, I want the game to stay perfectly smooth, so that movement always feels responsive.
 Acceptance criteria:
 - [ ] F3 overlay shows: fps, total frame ms, JS ms and GPU ms (timer query, or "n/a" if unavailable), per-pass ms (walls/floors, lighting, sprites, far view, UI), pipeline `gpu` / `cpu`, current grid (e.g. `320x120`), player position, sector id, grounded flag.
