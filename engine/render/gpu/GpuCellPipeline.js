@@ -39,6 +39,11 @@ import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 // US-016 (14.4 GPU build order steps 2/3): pass A2 program + the shared sun helper.
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 import { sunFromWorld } from '../terrainCaster.js';
+// US-040 (15.2 items 3/4, build order step 3): pass A3 `voxel` - VOX/VOXINST
+// texture layout + the GLSL march itself.
+import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
+import { VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE, writeInstanceRows } from './VoxelTextures.js';
+import { MAX_VOX_INSTANCES } from '../../voxel/VoxelModel.js';
 import { GpuTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { HFOV_DEG } from '../sectorCaster.js';
@@ -73,11 +78,17 @@ export class GpuCellPipeline {
       // cost is measured as the whole-frame `gpuMs` A/B delta with vs
       // without `?terrain=0` - see main.js and this story's Programmer notes.
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
+      // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
+      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0,
     };
     this.debugMode = -1; // -1 = off (edge pass runs normally)
     this._fb = null;
     this._light = null;
     this._table = null; // last bound MaterialTable - rebind target on context restore
+    // US-040 (15.2 item 2): the VoxelPool this pipeline draws, set by
+    // bindVoxels() - null until the caller has one (US-040 has no entity
+    // binding yet, so a dev harness/main.js owns pushInstance()).
+    this._voxelPool = null;
 
     // Registered once, up front, regardless of whether init below succeeds -
     // a lost context is possible even on a pipeline that never became ready
@@ -132,6 +143,9 @@ export class GpuCellPipeline {
     this.progLight = linkProgram(gl, CELL_VERT_SRC, LIGHT_FRAG_SRC);
     // US-016 (14.4 item 2, GPU build order step 2): pass A2, between cast and resolve.
     this.progTerrain = linkProgram(gl, CELL_VERT_SRC, TERRAIN_FRAG_SRC);
+    // US-040 (15.2 item 4, GPU build order step 3): pass A3, ping-ponging
+    // between the SAME two sub-sample sets A1/A2 already own (no third set).
+    this.progVoxel = linkProgram(gl, CELL_VERT_SRC, VOXEL_FRAG_SRC);
 
     // --- G-buffer textures (US-030a: all-uint now - 14.2 item 3) - these are
     // the RESOLVED, per-cell (cols x rows) textures; deriv/shade/edge/debug/
@@ -205,6 +219,19 @@ export class GpuCellPipeline {
     this._terrainVersion = -1;
     this._terrainWorld = null;
     this._terrainPacked = null;
+
+    // --- US-040 (15.2 items 2/3) voxel textures - VOX (the shared atlas,
+    // 1x1 placeholder until bindVoxels() uploads a real one on atlas.version
+    // change) and VOXINST (fixed size: MAX_VOX_INSTANCES*9 rows, width 8 -
+    // never resized, only texSubImage2D'd per frame with the live count). ---
+    this.texVOX = createTexture2D(gl, gl.R16UI, 1, 1);
+    this.texVOXINST = createTexture2D(gl, gl.RGBA32F, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE * MAX_VOX_INSTANCES);
+    this._voxAtlasVersion = -1;
+    this._voxInstF = new Float32Array(VOXINST_WIDTH * 4 * VOXINST_ROWS_PER_INSTANCE * MAX_VOX_INSTANCES);
+    this._voxRectF = new Float32Array(4 * MAX_VOX_INSTANCES);
+    this._voxelSubmitMsHistory = new Float32Array(16);
+    this._voxelSubmitMsHistoryLen = 0;
+    this._voxelSubmitMsHistoryPos = 0;
 
     // --- FBOs ---
     // US-030b: the sub-sample cast pass (A) writes SGI/SGA/SDepth here; the
@@ -301,6 +328,7 @@ export class GpuCellPipeline {
     this._locsDeriv = this._uniformLocs(this.progDeriv, DERIV_UNIFORMS);
     this._locsLight = this._uniformLocs(this.progLight, LIGHT_UNIFORMS);
     this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
+    this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
     // plain per-frame loop over these bind-time arrays of [loc, tex, unit]
@@ -353,6 +381,19 @@ export class GpuCellPipeline {
       ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth],
       ['uFarH', this.texFarH], ['uFarType', this.texFarType],
     ]);
+    // US-040 (15.2 item 4): pass A3 ping-pongs between set 1 (fboCastSub's
+    // textures) and set 2 (fboTerrainSub's) - two bind tables sharing the
+    // same sampler->unit mapping (both built from `_locsVoxel`), one per
+    // "which set is the input this frame" (GpuCellPipeline picks by
+    // `_subSetCur`, see `_passVoxel`/`_hook`).
+    this._voxelBindsSet1In = this._buildBindTable(this._locsVoxel, [
+      ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth],
+      ['uVOX', this.texVOX], ['uVOXINST', this.texVOXINST],
+    ]);
+    this._voxelBindsSet2In = this._buildBindTable(this._locsVoxel, [
+      ['uSGI', this.texSGI2], ['uSGA', this.texSGA2], ['uSDepth', this.texSDepth2],
+      ['uVOX', this.texVOX], ['uVOXINST', this.texVOXINST],
+    ]);
     this._derivBinds = this._buildBindTable(this._locsDeriv, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth],
     ]);
@@ -376,6 +417,9 @@ export class GpuCellPipeline {
     this._setSamplerUniforms(this.progDeriv, this._derivBinds);
     this._setSamplerUniforms(this.progLight, this._lightBinds);
     this._setSamplerUniforms(this.progTerrain, this._terrainBinds);
+    // US-040: both voxel bind tables share the same sampler->unit mapping
+    // (same reasoning as the terrain resolve tables above).
+    this._setSamplerUniforms(this.progVoxel, this._voxelBindsSet1In);
 
     // US-006: staging array for the per-frame `uVisBox` upload (allocated
     // once - architecture.md 9); `uLightPos`/`uLightCol` upload straight
@@ -507,11 +551,12 @@ export class GpuCellPipeline {
       this.texSGI, this.texSGA, this.texSDepth, this.texSGI2, this.texSGA2, this.texSDepth2,
       this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
       this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
-      this.texLight, this.texLVis, this.texFarH, this.texFarType, this.texTlook]) {
+      this.texLight, this.texLVis, this.texFarH, this.texFarType, this.texTlook,
+      this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
     for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboTerrainSub, this.fboDeriv, this.fboLight]) if (fbo) gl.deleteFramebuffer(fbo);
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     if (this.timer) this.timer.dispose();
     // US-030a: the world atlas textures are gone too - force a full
@@ -521,6 +566,19 @@ export class GpuCellPipeline {
     this._terrainVersion = -1;
     this._terrainWorld = null;
     this._terrainPacked = null;
+    // US-040: force a full VOX re-upload on the next bindVoxels() call.
+    this._voxAtlasVersion = -1;
+  }
+
+  /**
+   * US-040 (15.2 items 1/2): binds the VoxelPool this pipeline draws voxel
+   * model instances from - `pool` must already have been `pool.bind(registry,
+   * table)`-ed. Called once (or whenever the registry/table changes, e.g.
+   * `bind()`'s own caller); the VOX atlas is re-uploaded lazily, only when
+   * `pool.atlas.version` changes (never per frame - 15.2 "do not" list).
+   */
+  bindVoxels(pool) {
+    this._voxelPool = pool;
   }
 
   /**
@@ -734,12 +792,31 @@ export class GpuCellPipeline {
     // terrain AND its far bake is ready - otherwise resolve reads set 1
     // untouched, same as before this story.
     this._terrainActiveThisFrame = useDda && this.terrainEnabled && !!(this._world && this._world.terrain && this._world.terrain.farReady);
+    // US-040 (15.2 item 2): project this frame's queued voxel instances
+    // (pose -> AABB -> screen rect -> cull) - the SAME instanceRect step
+    // castModels uses, so the two paths can never disagree. `pool.beginFrame
+    // ()`/`pushInstance()` are the caller's responsibility (US-040 has no
+    // entity binding yet); this only consumes what is already queued.
+    this._voxelActiveThisFrame = false;
+    if (useDda && this._voxelPool) {
+      this._ensureVoxelAtlas(this._voxelPool);
+      this._voxelPool.project(this._cam, this.rt);
+      this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
+    }
     if (useDda) {
       this._passCast();
+      this._subSetCur = 1; // cast always writes set 1 (fboCastSub's textures)
       if (this._terrainActiveThisFrame) {
         this._terrainTsBegin();
         this._passTerrain();
         this._terrainTsEnd();
+        this._subSetCur = 2;
+      }
+      if (this._voxelActiveThisFrame) {
+        this._voxelTsBegin();
+        this._passVoxel();
+        this._voxelTsEnd();
+        this._subSetCur = this._subSetCur === 1 ? 2 : 1;
       }
       this._passResolve();
       this._passDeriv();
@@ -756,6 +833,7 @@ export class GpuCellPipeline {
     this.stats.drawMs = t2 - t1;
     this.timer.writeStats(this.stats); // writes gpuMs/gpuMsP50/gpuMsP95 in place - no allocation (architect review 1 item 3)
     this._pollTerrainTs();
+    this._pollVoxelTs();
   }
 
   // US-016 step 6: CPU `performance.now()` bracket around just the terrain
@@ -784,6 +862,30 @@ export class GpuCellPipeline {
     this.stats.terrainSubmitMs = view[n - 1];
     this.stats.terrainSubmitMsP50 = view[Math.floor(n * 0.5)];
     this.stats.terrainSubmitMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+  }
+
+  // US-040 (15.2 item 6): same CPU submit-time bracket as _terrainTsBegin/
+  // End (see the constructor comment on why a real GPU query can't nest
+  // inside `this.timer`'s span) - around just the voxel pass draw call.
+  _voxelTsBegin() { this._voxelT0 = performance.now(); }
+
+  _voxelTsEnd() {
+    const ms = performance.now() - this._voxelT0;
+    this._voxelSubmitMsHistory[this._voxelSubmitMsHistoryPos] = ms;
+    this._voxelSubmitMsHistoryPos = (this._voxelSubmitMsHistoryPos + 1) % this._voxelSubmitMsHistory.length;
+    if (this._voxelSubmitMsHistoryLen < this._voxelSubmitMsHistory.length) this._voxelSubmitMsHistoryLen++;
+  }
+
+  _pollVoxelTs() {
+    if (this._voxelSubmitMsHistoryLen === 0) { this.stats.voxelMs = NaN; this.stats.voxelMsP50 = NaN; this.stats.voxelMsP95 = NaN; return; }
+    if (!this._voxelTsScratch) this._voxelTsScratch = new Float32Array(this._voxelSubmitMsHistory.length);
+    const n = this._voxelSubmitMsHistoryLen, scratch = this._voxelTsScratch;
+    for (let i = 0; i < n; i++) scratch[i] = this._voxelSubmitMsHistory[i];
+    const view = scratch.subarray(0, n);
+    view.sort();
+    this.stats.voxelMs = view[n - 1];
+    this.stats.voxelMsP50 = view[Math.floor(n * 0.5)];
+    this.stats.voxelMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
   }
 
   // US-030a: per-frame UI mask upload (14.2 item 3) - the cast pass reads
@@ -910,6 +1012,66 @@ export class GpuCellPipeline {
     }
   }
 
+  // US-040 (15.2 item 2): re-uploads the VOX atlas only when `pool.atlas.
+  // version` changed (bind()/re-bind, never per frame - 15.2 "do not"
+  // list's "upload VOX per frame"). Full texImage2D (the atlas can grow
+  // taller as models are added) rather than texSubImage2D.
+  _ensureVoxelAtlas(pool) {
+    if (!pool.atlas || pool.atlas.version === this._voxAtlasVersion) return;
+    const gl = this.gl, atlas = pool.atlas;
+    gl.bindTexture(gl.TEXTURE_2D, this.texVOX);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, atlas.w, atlas.h, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, atlas.vox);
+    this._voxAtlasVersion = atlas.version;
+  }
+
+  // US-040 (15.2 item 3): packs this frame's projected instances' VOXINST
+  // rows + uVoxRect (screen rect in cells, half-open) into the once-
+  // allocated scratch arrays, then one texSubImage2D of `count*
+  // VOXINST_ROWS_PER_INSTANCE` rows (<= 18 KB per 15.2 item 3's budget).
+  _uploadVoxelInstances(pool) {
+    const gl = this.gl;
+    const count = pool.list.length;
+    const rectF = this._voxRectF;
+    for (let i = 0; i < count; i++) {
+      writeInstanceRows(pool, i, this._voxInstF);
+      const inst = pool.list[i];
+      const o = i * 4;
+      rectF[o] = inst.rect.minCol; rectF[o + 1] = inst.rect.minRow;
+      rectF[o + 2] = inst.rect.maxCol + 1; rectF[o + 3] = inst.rect.maxRow + 1; // half-open
+    }
+    if (count > 0) {
+      gl.bindTexture(gl.TEXTURE_2D, this.texVOXINST);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, VOXINST_WIDTH, count * VOXINST_ROWS_PER_INSTANCE, gl.RGBA, gl.FLOAT, this._voxInstF);
+    }
+    this.stats.voxelInstances = count;
+  }
+
+  // US-040 (15.2 item 4): pass A3 - reads whichever sub-sample set was
+  // written last (`_subSetCur`, set by `_hook`) and writes the OTHER one;
+  // `_hook` flips `_subSetCur` again right after calling this.
+  _passVoxel() {
+    const gl = this.gl, loc = this._locsVoxel, cb = this._camBasis;
+    const pool = this._voxelPool;
+    this._uploadVoxelInstances(pool);
+    const readSet1 = this._subSetCur === 1;
+    const outFbo = readSet1 ? this.fboTerrainSub : this.fboCastSub;
+    const binds = readSet1 ? this._voxelBindsSet1In : this._voxelBindsSet2In;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outFbo);
+    gl.viewport(0, 0, this.subCols, this.subRows);
+    gl.useProgram(this.progVoxel);
+    gl.bindVertexArray(this.vao);
+    this._bindTextures(binds);
+    gl.uniform2i(loc.uGrid, this.cols, this.rows);
+    gl.uniform1i(loc.uN, this.rays);
+    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
+    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
+    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
+    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
+    gl.uniform1i(loc.uVoxCount, pool.list.length);
+    gl.uniform4fv(loc.uVoxRect, this._voxRectF);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
   // US-007: the light pass now also needs `uStructA/B/Count` (its own sun
   // DDA's `findStruct`, light.frag.js) - uploaded to BOTH programs here
   // (each has its own uniform locations; the packed `structA`/`structB`
@@ -1033,16 +1195,17 @@ export class GpuCellPipeline {
 
   // US-030b (14.2 item 3, pass B): votes the sub-sample G-buffer down to the
   // per-cell GI/GA/Depth (fboCast, unchanged target - deriv/shade/edge never
-  // know the sub-grid existed). US-016 (14.4 item 2): reads set 2 (the
-  // terrain pass's output) when terrain ran this frame, set 1 otherwise -
-  // a bind-time choice between two prebuilt tables, no uniform.
+  // know the sub-grid existed). US-016/US-040 (14.4 item 2, 15.2 item 4):
+  // reads whichever set A1/A2/A3 wrote last (`_subSetCur`, tracked by
+  // `_hook` as each optional pass flips it) - a bind-time choice between two
+  // prebuilt tables, no uniform.
   _passResolve() {
     const gl = this.gl, loc = this._locsResolve;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
     gl.viewport(0, 0, this.cols, this.rows);
     gl.useProgram(this.progResolve);
     gl.bindVertexArray(this.vao);
-    this._bindTextures(this._terrainActiveThisFrame ? this._resolveBindsSet2 : this._resolveBindsSet1);
+    this._bindTextures(this._subSetCur === 2 ? this._resolveBindsSet2 : this._resolveBindsSet1);
     gl.uniform1i(loc.uN, this.rays);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -1295,4 +1458,10 @@ const TERRAIN_UNIFORMS = [
   'uStructA', 'uStructB', 'uStructCount',
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uTerrainMaxH', 'uSunDir', 'uAmbientI', 'uSunI',
+];
+// US-040 (15.2 items 3/4, GPU build order step 3): pass A3 voxel march.
+const VOXEL_UNIFORMS = [
+  'uSGI', 'uSGA', 'uSDepth', 'uVOX', 'uVOXINST', 'uVoxCount', 'uVoxRect',
+  'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
+  'uHorizonRow', 'uPlaneDistY',
 ];

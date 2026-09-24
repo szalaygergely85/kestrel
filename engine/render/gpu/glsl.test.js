@@ -10,6 +10,7 @@ import { CELL_VERT_SRC } from './glsl/cell.vert.js';
 import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
+import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -94,6 +95,22 @@ ok('shade.frag.js contains KIND_TERRAIN (kind==7 branch)', SHADE_FRAG_SRC.includ
 // WOULD appear if someone hand-copied overworld_far.js instead of wiring
 // uBandNear/uBandMid/uTerrainFog* uniforms.
 ok('terrain.frag.js: bands/fog come from uniforms, not literals 150.0/600.0', !TERRAIN_FRAG_SRC.includes('150.0') && !TERRAIN_FRAG_SRC.includes('600.0'));
+
+// US-040 (15.2 item 8): voxel.frag.js - the JS-injected constants, the
+// verbatim axis-choice rule, the +Inf aoD bit pattern, and the numeric ban
+// list (no Infinity/round() in GLSL - 14.1 item 5).
+checkOnlyAddressLine('voxel.frag.js', VOXEL_FRAG_SRC);
+ok('voxel.frag.js: no round(', !stripComments(VOXEL_FRAG_SRC).includes('round('));
+ok('voxel.frag.js: no EXT_color_buffer_float', !VOXEL_FRAG_SRC.includes('EXT_color_buffer_float'));
+ok('voxel.frag.js: no layout(std140', !VOXEL_FRAG_SRC.includes('layout(std140'));
+ok('voxel.frag.js: no Infinity', !VOXEL_FRAG_SRC.includes('Infinity'));
+ok('voxel.frag.js contains MAX_VOX_STEPS', VOXEL_FRAG_SRC.includes('MAX_VOX_STEPS'));
+ok('voxel.frag.js contains MAX_VOX_INSTANCES', VOXEL_FRAG_SRC.includes('MAX_VOX_INSTANCES'));
+ok('voxel.frag.js contains MAX_VOX_PARTS', VOXEL_FRAG_SRC.includes('MAX_VOX_PARTS'));
+ok('voxel.frag.js contains the verbatim axis rule', /if \(tMaxX < tMaxY\) axis = tMaxX < tMaxZ \? 0 : 2; else axis = tMaxY < tMaxZ \? 1 : 2;/.test(VOXEL_FRAG_SRC));
+ok('voxel.frag.js contains the +Inf aoD bit pattern 0x7f800000u', VOXEL_FRAG_SRC.includes('0x7f800000u'));
+ok('voxel.frag.js contains floatBitsToUint', VOXEL_FRAG_SRC.includes('floatBitsToUint'));
+ok('voxel.frag.js contains KIND_MODEL', VOXEL_FRAG_SRC.includes('KIND_MODEL'));
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

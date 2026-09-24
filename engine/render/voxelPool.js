@@ -8,6 +8,7 @@
 import { MAX_VOX_INSTANCES, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { computeProjection, instanceRect } from '../voxel/instanceRect.js';
+import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 
 const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0 };
 
@@ -31,10 +32,21 @@ export class VoxelPool {
     // GPU instance rows / planeId's slot field key off.
     this.list = [];
     this.stats = { count: 0, instancesCulled: 0 };
+    // Camera eye position from this frame's project() call - VoxelTextures.js's
+    // writeInstanceRows reads these to compute the part-local eye (oL = A*eye+b,
+    // 15.2 item 3) in float64 JS.
+    this.eyeX = 0; this.eyeY = 0; this.eyeZ = 0;
+    // Built by bind() (15.2 item 2): the shared VOX atlas and a modelKey ->
+    // index map into `atlas.modelBase` (writeInstanceRows' lookup).
+    this.atlas = null;
+    this._modelIndexByKey = {};
+    this._atlasVersion = 0;
   }
 
   /** Packs every `ModelDef.voxel` in the registry (bind time, may allocate -
-   * not a hot path). `table` is a bound MaterialTable (`table.idFor`). */
+   * not a hot path). `table` is a bound MaterialTable (`table.idFor`). Also
+   * (re)builds the shared VOX atlas (architecture.md 15.2 item 2) - GPU
+   * re-upload key is `this.atlas.version`, bumped on every bind(). */
   bind(registry, table) {
     this.models.clear();
     const keys = registry.keys('model');
@@ -45,6 +57,12 @@ export class VoxelPool {
         this.models.set(key, packVoxelModel(def.voxel, (matKey) => table.idFor(matKey)));
       }
     }
+    const modelKeys = Array.from(this.models.keys());
+    const packedList = modelKeys.map((k) => this.models.get(k));
+    this._atlasVersion++;
+    this.atlas = buildVoxelAtlas(packedList, this._atlasVersion);
+    this._modelIndexByKey = {};
+    for (let i = 0; i < modelKeys.length; i++) this._modelIndexByKey[modelKeys[i]] = i;
   }
 
   /** Clears this frame's instance queue. Call once before this frame's
@@ -83,6 +101,7 @@ export class VoxelPool {
    * `raw`/`list` are warm (reused per-slot objects/typed arrays). */
   project(cam, rt) {
     computeProjection(cam, rt, _proj);
+    this.eyeX = _proj.eyeX; this.eyeY = _proj.eyeY; this.eyeZ = _proj.eyeZ;
     let count = 0;
     let culled = 0;
     for (let i = 0; i < this._rawCount; i++) {

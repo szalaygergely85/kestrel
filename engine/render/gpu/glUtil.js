@@ -64,6 +64,7 @@ export function formatFor(gl, internalFormat) {
     case gl.R32UI: return { format: gl.RED_INTEGER, type: gl.UNSIGNED_INT }; // US-030a: DEPTH (14.2 item 3)
     case gl.RGBA32F: return { format: gl.RGBA, type: gl.FLOAT };
     case gl.R8UI: return { format: gl.RED_INTEGER, type: gl.UNSIGNED_BYTE };
+    case gl.R16UI: return { format: gl.RED_INTEGER, type: gl.UNSIGNED_SHORT }; // US-040: VOX atlas (15.2 item 2)
     case gl.RG8UI: return { format: gl.RG_INTEGER, type: gl.UNSIGNED_BYTE }; // US-030a: WorldTextures FLAGS atlas
     case gl.RGBA16UI: return { format: gl.RGBA_INTEGER, type: gl.UNSIGNED_SHORT }; // US-030a: WorldTextures MATS atlas
     case gl.RGBA8: return { format: gl.RGBA, type: gl.UNSIGNED_BYTE };
