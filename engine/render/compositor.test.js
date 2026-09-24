@@ -10,6 +10,7 @@ import { OpenSpans } from './OpenSpans.js';
 import { GBuffer, KIND_WALL } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
+import { makeLightBuffer } from './lighting.js';
 import { beginFrame, castSectors } from './sectorCaster.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
@@ -44,6 +45,7 @@ function makeFb() {
     matTable,
     detailPass: null,
     lights: null,
+    light: makeLightBuffer(COLS, ROWS),
     timeSec: 0,
     loop: { stats: {} },
   };

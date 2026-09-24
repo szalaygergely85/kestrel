@@ -34,10 +34,14 @@ import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
 import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
+import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 import { GpuTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { HFOV_DEG } from '../sectorCaster.js';
 import { SKY_LUT_N } from './glsl/common.js';
+import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
+
+const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
 
 export class GpuCellPipeline {
   constructor(rt, opts = {}) {
@@ -107,6 +111,8 @@ export class GpuCellPipeline {
     // the per-cell one below.
     this.progResolve = linkProgram(gl, CELL_VERT_SRC, RESOLVE_FRAG_SRC);
     this.progDeriv = linkProgram(gl, CELL_VERT_SRC, DERIV_FRAG_SRC);
+    // US-006 (14.3 item 3): the light pass - cast/resolve/deriv -> light -> shade -> edge.
+    this.progLight = linkProgram(gl, CELL_VERT_SRC, LIGHT_FRAG_SRC);
 
     // --- G-buffer textures (US-030a: all-uint now - 14.2 item 3) - these are
     // the RESOLVED, per-cell (cols x rows) textures; deriv/shade/edge/debug/
@@ -127,6 +133,12 @@ export class GpuCellPipeline {
     // US-030a: per-frame UI mask upload - now read by the RESOLVE pass
     // (14.2 item 3: mask is a per-cell, not per-sub-sample, property).
     this.texMask = createTexture2D(gl, gl.R8UI, this.cols, this.rows);
+    // US-006 (14.3 items 3/5): per-cell light (RGBA32UI, floatBitsToUint)
+    // and the LVIS occlusion atlas (R8UI, MAX_VIS_DIM x (MAX_LIGHTS*MAX_VIS_DIM) -
+    // see engine/render/lighting.js's module doc for the boxed-per-light
+    // convention this atlas shares with the JS reference).
+    this.texLight = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
+    this.texLVis = createTexture2D(gl, gl.R8UI, MAX_VIS_DIM, MAX_LIGHTS * MAX_VIS_DIM);
 
     // --- pipeline-owned pass-1 output ---
     this.texShadeFg = createTexture2D(gl, gl.RGBA8, this.cols, this.rows);
@@ -177,6 +189,12 @@ export class GpuCellPipeline {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texGD, 0);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboDeriv incomplete');
+
+    this.fboLight = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboLight);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texLight, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboLight incomplete');
 
     this.fboShade = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboShade);
@@ -229,6 +247,7 @@ export class GpuCellPipeline {
     this._locsCast = this._uniformLocs(this.progCast, CAST_UNIFORMS);
     this._locsResolve = this._uniformLocs(this.progResolve, RESOLVE_UNIFORMS);
     this._locsDeriv = this._uniformLocs(this.progDeriv, DERIV_UNIFORMS);
+    this._locsLight = this._uniformLocs(this.progLight, LIGHT_UNIFORMS);
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
     // plain per-frame loop over these bind-time arrays of [loc, tex, unit]
@@ -245,6 +264,8 @@ export class GpuCellPipeline {
       ['uFgTex', this.rt.fgTex], ['uBgTex', this.rt.bgTex],
       ['uMatF', this.texMatF], ['uMatI', this.texMatI], ['uSetI', this.texSetI],
       ['uSetF', this.texSetF], ['uGain', this.texGain], ['uSky', this.texSky],
+      // US-006: per-cell light, written by the light pass right before this one.
+      ['uLightTex', this.texLight],
     ]);
     this._edgeBinds = this._buildBindTable(this._locsEdge, [
       ['uGI', this.texGI], ['uShadeFg', this.texShadeFg], ['uDepth', this.texDepth], ['uShadeBg', this.texShadeBg],
@@ -265,12 +286,22 @@ export class GpuCellPipeline {
     this._derivBinds = this._buildBindTable(this._locsDeriv, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth],
     ]);
+    // US-006: light pass reads the resolved GI/Depth (kind/face, distance) + the LVIS atlas.
+    this._lightBinds = this._buildBindTable(this._locsLight, [
+      ['uGI', this.texGI], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
+    ]);
     this._setSamplerUniforms(this.progShade, this._shadeBinds);
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
     this._setSamplerUniforms(this.progDebug, this._debugBinds);
     this._setSamplerUniforms(this.progCast, this._castBinds);
     this._setSamplerUniforms(this.progResolve, this._resolveBinds);
     this._setSamplerUniforms(this.progDeriv, this._derivBinds);
+    this._setSamplerUniforms(this.progLight, this._lightBinds);
+
+    // US-006: staging array for the per-frame `uVisBox` upload (allocated
+    // once - architecture.md 9); `uLightPos`/`uLightCol` upload straight
+    // from the LightSet's own arrays (already in the right layout).
+    this._visBoxF = new Float32Array(4 * MAX_LIGHTS);
 
     this.timer = new GpuTimer(gl);
 
@@ -375,11 +406,12 @@ export class GpuCellPipeline {
     for (const tex of [this.texGI, this.texGA, this.texGD, this.texDepth, this.texShadeFg, this.texShadeBg,
       this.texSGI, this.texSGA, this.texSDepth,
       this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
-      this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags]) {
+      this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
+      this.texLight, this.texLVis]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboDeriv]) if (fbo) gl.deleteFramebuffer(fbo);
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv]) if (p) gl.deleteProgram(p);
+    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboDeriv, this.fboLight]) if (fbo) gl.deleteFramebuffer(fbo);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     if (this.timer) this.timer.dispose();
     // US-030a: the world atlas textures are gone too - force a full
@@ -577,6 +609,10 @@ export class GpuCellPipeline {
       this._passResolve();
       this._passDeriv();
     }
+    // US-006 (14.3 item 3): light pass runs unconditionally (also over the
+    // legacy 'upload' source's mirrored GI/Depth - see `_repackAndUpload`),
+    // right before shade, exactly like `deriv` already does.
+    this._passLight();
     this._passShade();
     this._passEdgeOrDebug();
     this.timer.end();
@@ -738,6 +774,77 @@ export class GpuCellPipeline {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /**
+   * US-006 (14.3 item 3): the light pass. `this._light` (set by `frame()`)
+   * is either a `LightSet` (real point lights + ambient) or a plain
+   * `[r,g,b]` ambient-only array (back-compat - every dev-tool call site
+   * that still passes `ambientL` directly, e.g. `?gpucompare=*`/`?flicker=1`,
+   * keeps working unchanged: 0 point lights, same numeric result as before
+   * this story). Camera basis reuses `this._camBasis` (computed by
+   * `_computeCamBasis` on the DDA path; on the legacy 'upload' source it is
+   * whatever the last DDA frame left it at, or the zeroed default - harmless,
+   * since that source only ever carries ambient-only light in practice).
+   */
+  _passLight() {
+    const gl = this.gl, loc = this._locsLight;
+    this._uploadLightUniforms();
+    const cb = this._camBasis || this._ensureCamBasis();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboLight);
+    gl.viewport(0, 0, this.cols, this.rows);
+    gl.useProgram(this.progLight);
+    gl.bindVertexArray(this.vao);
+    this._bindTextures(this._lightBinds);
+    gl.uniform2i(loc.uGrid, this.cols, this.rows);
+    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
+    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
+    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
+    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  _uploadLightUniforms() {
+    const gl = this.gl, loc = this._locsLight;
+    gl.useProgram(this.progLight);
+    const light = this._light;
+    const isSet = light && typeof light === 'object' && light.pos && light.col && typeof light.count === 'number';
+    if (!isSet) {
+      // Back-compat ambient-only array (or null/undefined).
+      const a = light || EMPTY3;
+      gl.uniform3f(loc.uAmbient, a[0] || 0, a[1] || 0, a[2] || 0);
+      gl.uniform1i(loc.uLightCount, 0);
+      return;
+    }
+    gl.uniform3f(loc.uAmbient, light.ambient[0], light.ambient[1], light.ambient[2]);
+    const n = Math.min(MAX_LIGHTS, light.count);
+    gl.uniform1i(loc.uLightCount, n);
+    if (n <= 0) return;
+    gl.uniform4fv(loc.uLightPos, light.pos);
+    gl.uniform4fv(loc.uLightCol, light.col);
+    for (let i = 0; i < MAX_LIGHTS; i++) {
+      const o = i * 4;
+      this._visBoxF[o] = light.visOx[i]; this._visBoxF[o + 1] = light.visOy[i];
+      this._visBoxF[o + 2] = light.visW[i]; this._visBoxF[o + 3] = light.visH[i];
+    }
+    gl.uniform4fv(loc.uVisBox, this._visBoxF);
+    // 14.3 item 5: dirty LVIS slots only, one contiguous MAX_VIS_DIM x
+    // MAX_VIS_DIM texSubImage2D per slot (light.vis's per-slot block is
+    // already exactly that, row-major - see engine/render/lighting.js).
+    gl.bindTexture(gl.TEXTURE_2D, this.texLVis);
+    // MAX_VIS_DIM (33) is not a multiple of the default UNPACK_ALIGNMENT
+    // (4), so the driver expects each source row padded to 36 bytes unless
+    // told otherwise - without this, texSubImage2D rejects the tightly
+    // packed `MAX_VIS_DIM*MAX_VIS_DIM`-byte slice with "ArrayBufferView not
+    // big enough for request". Reset to the engine-wide default (4) right
+    // after - no other texture upload in this file relies on alignment 1.
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    for (let i = 0; i < n; i++) {
+      if (!light.visDirty[i]) continue;
+      const rows = light.vis.subarray(i * MAX_VIS_CELLS, (i + 1) * MAX_VIS_CELLS);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, i * MAX_VIS_DIM, MAX_VIS_DIM, MAX_VIS_DIM, gl.RED_INTEGER, gl.UNSIGNED_BYTE, rows);
+    }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  }
+
   // Legacy 14.1/US-029 path: test-only now (`?gpucompare=shade`, `setSource('upload')`)
   // - feeds the CPU `castSectors`-produced `fb.gbuf` into the SAME uint
   // G-buffer textures the DDA cast pass now writes, so `progShade`/`progEdge`
@@ -803,7 +910,7 @@ export class GpuCellPipeline {
   }
 
   _passShade() {
-    const gl = this.gl, loc = this._locsShade, light = this._light;
+    const gl = this.gl, loc = this._locsShade;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboShade);
     gl.viewport(0, 0, this.cols, this.rows);
     gl.useProgram(this.progShade);
@@ -811,7 +918,8 @@ export class GpuCellPipeline {
 
     this._bindTextures(this._shadeBinds);
 
-    gl.uniform3f(loc.uLight, light[0], light[1], light[2]);
+    // US-006: light is now `uLightTex` (bound in `_shadeBinds`, filled by
+    // `_passLight` right before this call) - no `uLight` uniform any more.
     gl.uniform1f(loc.uTimeSec, this._fb.timeSec || 0);
     // US-030b: the legacy 'upload' test source (14.2 item 7) only mirrors a
     // single sample per cell into the sub-grid textures (see
@@ -856,7 +964,7 @@ export class GpuCellPipeline {
 
 const SHADE_UNIFORMS = [
   'uGI', 'uGA', 'uGD', 'uDepth', 'uSGI', 'uSGA', 'uN', 'uFgTex', 'uBgTex', 'uMatF', 'uMatI', 'uSetI', 'uSetF', 'uGain',
-  'uLight', 'uTimeSec', 'uCellAspect', 'uCutoff', 'uLift', 'uFgMin', 'uFgMaxGain', 'uTintK',
+  'uLightTex', 'uTimeSec', 'uCellAspect', 'uCutoff', 'uLift', 'uFgMin', 'uFgMaxGain', 'uTintK',
   'uOverbright', 'uOverbrightMax', 'uAoR', 'uAoK', 'uFaceK', 'uFogFg', 'uFogBg', 'uFogStart', 'uFogFull',
   'uFogStipple0', 'uFogStipple1', 'uFogSparse', 'uFogSparseCodes', 'uFogHazeCodes', 'uFogSparseAlt', 'uFogHazeAlt',
   // US-030a: GPU sky (14.2 item 3).
@@ -871,3 +979,8 @@ const CAST_UNIFORMS = [
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];
+// US-006: light pass uniforms (14.3 item 3).
+const LIGHT_UNIFORMS = [
+  'uGI', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
+  'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
+];

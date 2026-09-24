@@ -8,6 +8,7 @@ import { beginFrame, castSectors, fillSky, ambientL, primeAmbientLight } from '.
 import { castTerrain } from './terrainCaster.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
+import { lightSurfaces } from './lighting.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // Preallocated (architecture.md section 9: no per-frame allocation in renderWorld).
@@ -93,7 +94,23 @@ export function renderWorld(fb, world, cam) {
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);
-    shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, ambientL);
+    // US-006: `fb.lights` (a LightSet, built by main.js from the world's
+    // `level.def.lights`) drives per-cell ambient+point-light shading;
+    // `?lights=0` (fb.lights left null) keeps the US-028 uniform-ambient
+    // regression path, unchanged. `fb.lights.update()` itself is the
+    // caller's job (main.js), once per rendered frame - it must also run on
+    // the GPU-DDA path above, which returns before reaching this code, so
+    // it cannot live only here.
+    if (fb.light) {
+      if (fb.lights) {
+        fb.light.uniform = false;
+        lightSurfaces(fb, fb.lights, cam, world);
+      } else {
+        fb.light.uniform = true;
+        fb.light.rgb[0] = ambientL[0]; fb.light.rgb[1] = ambientL[1]; fb.light.rgb[2] = ambientL[2];
+      }
+    }
+    shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges);
   }
 

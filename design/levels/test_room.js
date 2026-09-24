@@ -72,10 +72,18 @@
     '####################',
   ];
 
+  // US-006 AC: "test_room has one torch light" - on the raised platform (P,
+  // rows 13-14 cols 14-15), 1.2 m up, so walking around it (0..6 m) shows
+  // warm falloff against the cool ambient elsewhere.
+  var lights = [
+    { id: 'torch', preset: 'torch', x: 14.5, y: 13.5, z: 1.2, on: true },
+  ];
+
   var level = {
     name: 'test_room',
     legend: legend,
     rows: rows,
+    lights: lights,
   };
 
   ASSETS.levels.test_room = level;

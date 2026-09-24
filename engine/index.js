@@ -43,6 +43,13 @@ export { edgePass } from './render/edgePass.js';
 export { renderWorld } from './render/compositor.js';
 export { packLevel, repackMaterials } from './world/packed.js';
 
+// ---- US-006 lighting (ambient + point lights + flicker) -------------------
+export {
+  LightSet, buildLightSet, syncEntityLights, lightAt, lightSurfaces,
+  computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
+  makeLightBuffer, MAX_LIGHTS,
+} from './render/lighting.js';
+
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
 export { GpuCellPipeline } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';

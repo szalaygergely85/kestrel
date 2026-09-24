@@ -680,6 +680,9 @@ export function computeDerivatives(gbuf, depth) {
 // Reused scratch (architecture.md 9: no per-cell allocation).
 const fastV2Out = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0, f: 0, onJoint: false };
 const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
+// US-006: this cell's selected [r,g,b] light (uniform or per-cell - see
+// `shadeSurfaces`), handed to `shadeDetailFast` unchanged.
+const cellLight = [0, 0, 0];
 
 // v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
 // no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
@@ -697,11 +700,17 @@ function v1FogFactor(dist, fog) {
  * @param {ReturnType<import('./MaterialTable.js').bindShading>} table
  * @param {object|null} DP - `registry.detailPass` (ASSETS.detailPass), or
  *   null to force the v1-only path (`?detail=0`).
- * @param {number[]} light - accumulated [r,g,b], exactly as v1 (US-028
- *   scope: ambient only, `uniform:true` - US-006 replaces this with a
- *   per-cell `LightBuffer`).
+ * @param {{uniform:boolean, rgb:Float32Array}|number[]|null} lightBuf -
+ *   either the US-006 `LightBuffer` (8.1: `uniform:true` -> `rgb[0..2]` is
+ *   one [r,g,b] for every cell - US-028/`?lights=0` regression path;
+ *   `uniform:false` -> `rgb[3i..3i+2]` is cell `i`'s own light, already
+ *   filled this frame by `engine/render/lighting.js`'s `lightSurfaces`), OR
+ *   (back-compat) a bare flat `[r,g,b]` array - `tools/bench-cast.mjs` and
+ *   any pre-US-006 caller pass `ambientL` directly. Selected into the reused
+ *   `cellLight` scratch per cell (no allocation) - `shadeDetailFast`/
+ *   `fastShade` keep taking a flat `[r,g,b]` array, unchanged.
  */
-export function shadeSurfaces(fb, gbuf, table, DP, light) {
+export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
   const rt = fb.rt;
   // US-029: when a GPU cell pipeline owns shading this frame (`rt.gpuActive`,
   // set by GpuCellPipeline - see architecture.md 14.1 section 1/4), this CPU
@@ -714,6 +723,22 @@ export function shadeSurfaces(fb, gbuf, table, DP, light) {
   const depth = fb.depth.depth;
   const kind = gbuf.kind;
   const P = fb.palette;
+  // A `{uniform, rgb}` LightBuffer has a boolean `.uniform`; anything else
+  // (a bare array, or nothing at all) is the legacy ambient-only shape.
+  const isLightBuffer = !!lightBuf && typeof lightBuf.uniform === 'boolean';
+  const uniform = !isLightBuffer || lightBuf.uniform;
+  const lbRgb = isLightBuffer ? lightBuf.rgb : lightBuf;
+  if (uniform) {
+    if (lbRgb) { cellLight[0] = lbRgb[0]; cellLight[1] = lbRgb[1]; cellLight[2] = lbRgb[2]; }
+    else {
+      // Safety net: no light buffer at all (a caller that predates US-006) -
+      // fall back to the palette's own ambient, same values `primeAmbientLight`
+      // (sectorCaster.js) computes, so a stale `cellLight` from a previous
+      // call is never shown.
+      const amb = P.lights.ambient, hue = P.hue[amb.color];
+      cellLight[0] = hue[0] * amb.intensity; cellLight[1] = hue[1] * amb.intensity; cellLight[2] = hue[2] * amb.intensity;
+    }
+  }
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -723,6 +748,9 @@ export function shadeSurfaces(fb, gbuf, table, DP, light) {
       const rec = id ? table.records[id] : null;
       const dist = depth[i];
       let glyphIdx, fg, bg, f, onJoint;
+
+      if (!uniform) { const o = i * 3; cellLight[0] = lbRgb[o]; cellLight[1] = lbRgb[o + 1]; cellLight[2] = lbRgb[o + 2]; }
+      const light = cellLight;
 
       if (DP && rec && rec.v2) {
         shadeDetailFast(table, rec.v2, i, gbuf, dist, light, fastV2Out);

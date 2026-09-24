@@ -66,7 +66,11 @@ uniform sampler2D uMatF;  // RGBA32F, width ${MAT_F_WIDTH}
 uniform isampler2D uMatI; // RGBA32I, width ${MAT_I_WIDTH}
 uniform isampler2D uSetI; // RGBA32I, width ${SET_I_WIDTH}
 
-uniform vec3 uLight;
+// US-006: replaces the old uniform vec3 uLight - per-cell light, written by
+// the new light pass (light.frag.js) right before this one. Sampled once in
+// main() (constant over a cell's sub-samples, 14.3 item 3) and threaded
+// into shadeCore as Lm (only max(r,g,b) is needed there).
+uniform usampler2D uLightTex;
 uniform float uTimeSec; // declared, unused (US-028 shading has no time term)
 uniform float uCellAspect;
 uniform float uCutoff, uLift, uFgMin, uFgMaxGain, uTintK, uOverbright, uOverbrightMax;
@@ -128,7 +132,7 @@ struct Core {
 };
 
 Core shadeCore(float u, float v, float z, float aoD,
-    float dudx, float dvdx, float dudy, float dvdy, float dist, int face, int matId) {
+    float dudx, float dvdx, float dudy, float dvdy, float dist, int face, int matId, float Lm) {
   vec4 mf0 = texelFetch(uMatF, ivec2(0, matId), 0);
   vec4 mf1 = texelFetch(uMatF, ivec2(1, matId), 0);
   vec4 mf2 = texelFetch(uMatF, ivec2(2, matId), 0);
@@ -315,7 +319,6 @@ Core shadeCore(float u, float v, float z, float aoD,
     }
   }
 
-  float Lm = max(uLight.r, max(uLight.g, uLight.b));
   float fk = (face >= 1 && face <= 6) ? uFaceK[face] : 1.0;
   float aok = 1.0;
   if (aoD < uAoR) aok = uAoK + (1.0 - uAoK) * smoothstepFast(0.0, uAoR, aoD);
@@ -369,6 +372,10 @@ void main() {
   vec4 gd = vec4(uintBitsToFloat(gdU.x), uintBitsToFloat(gdU.y), uintBitsToFloat(gdU.z), uintBitsToFloat(gdU.w));
   float dudx = gd.x, dvdx = gd.y, dudy = gd.z, dvdy = gd.w;
   float dist = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
+  // US-006: sampled once per fragment (constant over every sub-sample of
+  // this cell - see the module doc comment).
+  vec3 Lc = uintBitsToFloat(texelFetch(uLightTex, cell, 0).xyz);
+  float Lm = max(Lc.r, max(Lc.g, Lc.b));
 
   // US-030b (14.2 item 3, pass D): average shadeCore's continuous outputs
   // over the resolved winner's own sub-sample group (matched by the same
@@ -401,7 +408,7 @@ void main() {
       float uA = uintBitsToFloat(sgaU.x), vA = uintBitsToFloat(sgaU.y);
       float zA = uintBitsToFloat(sgaU.z), aoDA = uintBitsToFloat(sgaU.w);
 
-      Core c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, matId);
+      Core c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, matId, Lm);
       bSum += c.b; gbSum += c.gb; crSum += c.cr; cgSum += c.cg; cbSum += c.cb; bgKSum += c.bgK;
       count++;
       if (c.onJoint) jointN++;
@@ -463,8 +470,7 @@ void main() {
     glyphCode = idx == 0 ? codes.x : codes.y;
   }
 
-  float Lm = max(uLight.r, max(uLight.g, uLight.b));
-  vec3 hcol = Lm > 1e-6 ? uLight / Lm : vec3(1.0);
+  vec3 hcol = Lm > 1e-6 ? Lc / Lm : vec3(1.0);
   float bc = max(bAvg, 0.0);
   float gain = uFgMin + (1.0 - uFgMin) * samplePowLUT(bc);
   if (bc > 1.0) gain = min(uFgMaxGain, gain + (bc - 1.0) * 0.5);

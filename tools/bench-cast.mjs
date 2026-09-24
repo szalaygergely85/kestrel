@@ -56,6 +56,8 @@ import { GBuffer } from '../engine/render/GBuffer.js';
 import { bindShading, bindLevel } from '../engine/render/MaterialTable.js';
 import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.js';
 import { edgePass } from '../engine/render/edgePass.js';
+import { World } from '../engine/world/World.js';
+import { buildLightSet, lightSurfaces, makeLightBuffer } from '../engine/render/lighting.js';
 import testRoomDef from '../design/levels/test_room.js';
 import paletteModule from '../design/palette.js';
 import detailPassModule from '../design/detail-pass.js';
@@ -304,7 +306,7 @@ const EMBEDDED_BASELINE_V2 = {
 // invariant, glyph-diversity + edge-rule metrics (owner complaint ACs), and
 // the v2 checksum. `v1Stats` is this pose's already-measured v1 `castScene`
 // timing (avg/p50/p95/max, ms) - used for the "<=1.0ms p50 extra" budget.
-function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, v1Stats, updateBaseline, repeats) {
+function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, v1Stats, updateBaseline, repeats, lightWorld) {
   let ok = true;
   const cellCount = COLS * ROWS;
 
@@ -317,11 +319,17 @@ function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTabl
     const castT1 = performance.now();
     computeDerivatives(gbuf, depth2.depth);
     const derivT1 = performance.now();
+    // US-006 (14.3 item 6): JS `lightSurfaces` reference, timed standalone -
+    // does not feed the shadeSurfaces call below (ambient-only, unchanged).
+    const lightT0 = performance.now();
+    fb2.lights.update(0, lightWorld); // fixed timeSec: reproducible bench frames
+    lightSurfaces(fb2, fb2.lights, camera, lightWorld);
+    const lightT1 = performance.now();
     shadeSurfaces(fb2, gbuf, matTable, detailPass, ambientL);
     const shadeT1 = performance.now();
     edgePass(gbuf, depth2.depth, rt2, detailPass.edges);
     const edgeT1 = performance.now();
-    return { cast: castT1 - castT0, deriv: derivT1 - castT1, shade: shadeT1 - derivT1, edge: edgeT1 - shadeT1 };
+    return { cast: castT1 - castT0, deriv: derivT1 - castT1, light: lightT1 - lightT0, shade: shadeT1 - lightT1, edge: edgeT1 - shadeT1 };
   }
 
   // US-028a (timing gates flaky on a busy machine): measure `repeats`
@@ -330,18 +338,21 @@ function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTabl
   // stray machine-load spike is visible instead of silently failing the
   // gate. Only the LAST repeat's per-pass stats/frame state feed the
   // (deterministic, pose-only) correctness checks after this loop.
-  let sCast, sDeriv, sShade, sEdge, sTotal;
+  let sCast, sDeriv, sLight, sShade, sEdge, sTotal;
   const totalP50s = new Array(repeats);
   for (let rep = 0; rep < repeats; rep++) {
     for (let i = 0; i < WARMUP_FRAMES; i++) frame(); // warm-up (not measured)
 
-    const castT = new Array(frames), derivT = new Array(frames), shadeT = new Array(frames), edgeT = new Array(frames), totalT = new Array(frames);
+    const castT = new Array(frames), derivT = new Array(frames), lightT = new Array(frames), shadeT = new Array(frames), edgeT = new Array(frames), totalT = new Array(frames);
     for (let i = 0; i < frames; i++) {
       const t = frame();
-      castT[i] = t.cast; derivT[i] = t.deriv; shadeT[i] = t.shade; edgeT[i] = t.edge;
+      castT[i] = t.cast; derivT[i] = t.deriv; lightT[i] = t.light; shadeT[i] = t.shade; edgeT[i] = t.edge;
+      // `light` is informational only (see the module doc above) - not part
+      // of the budget-gated total (the v2 shading pipeline doesn't consume
+      // it here, ambient-only shadeSurfaces stays the checksummed path).
       totalT[i] = t.cast + t.deriv + t.shade + t.edge;
     }
-    sCast = stats(castT); sDeriv = stats(derivT); sShade = stats(shadeT); sEdge = stats(edgeT); sTotal = stats(totalT);
+    sCast = stats(castT); sDeriv = stats(derivT); sLight = stats(lightT); sShade = stats(shadeT); sEdge = stats(edgeT); sTotal = stats(totalT);
     totalP50s[rep] = sTotal.p50;
   }
   const bestTotalP50 = Math.min(...totalP50s);
@@ -392,6 +403,8 @@ function runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTabl
   // Timing report + budget (best-of-N repeats - see totalP50s above).
   const extraP50 = bestTotalP50 - v1Stats.p50;
   console.log(`  [v2 timing] cast p50 ${ms(sCast.p50)}  deriv p50 ${ms(sDeriv.p50)}  shade p50 ${ms(sShade.p50)}  edge p50 ${ms(sEdge.p50)}  total p50 (last repeat) ${ms(sTotal.p50)} ms`);
+  // US-006 (14.3 item 6): informational only (see `frame()`'s comment) - JS budget is <=2ms (14.3 item 7).
+  console.log(`  [v2 timing] light p50 ${ms(sLight.p50)} ms (informational - JS budget <=2ms)` + (sLight.p50 <= 2.0 ? '  OK' : '  OVER BUDGET (>2ms)'));
   console.log(`  [v2 timing] v1 fast total best p50 ${ms(v1Stats.p50)} ms, v2 total best p50 ${ms(bestTotalP50)} ms, extra ${ms(extraP50)} ms` +
     (extraP50 <= 1.0 ? '  OK (<=1.0ms)' : '  OVER BUDGET (>1.0ms) - see US-028 notes'));
   const totalUnderTrigger = bestTotalP50 < 3.5;
@@ -539,6 +552,15 @@ function main() {
     console.error('[bench-cast] test_room failed to load - aborting.');
     process.exit(1);
   }
+  // US-006 (14.3 item 6, "bench-cast.mjs adds a light line"): the JS
+  // `lightSurfaces` reference, timed standalone against the same test_room
+  // torch - informational only, does NOT feed the checksummed shadeSurfaces
+  // call below (that stays ambient-only, `EMBEDDED_BASELINE_V2` unchanged).
+  const lightWorld = World.load(
+    { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
+    { level: () => testRoomDef }, {},
+  );
+  const lightSet = buildLightSet(lightWorld, palette);
 
   const rt = new BenchRT(COLS, ROWS);
   const depthBuffer = new BenchDepthBuffer(COLS, ROWS);
@@ -551,7 +573,7 @@ function main() {
   const matTable = bindShading(palette, detailPass, PX_CELL_H / PX_CELL_W);
   bindLevel(matTable, level);
   const gbuf = new GBuffer(COLS, ROWS);
-  const fb2 = { rt: rt2, depth: depth2, palette, gbuf, matTable };
+  const fb2 = { rt: rt2, depth: depth2, palette, gbuf, matTable, lights: lightSet, light: makeLightBuffer(COLS, ROWS) };
   const v2Baseline = {};
 
   let ok = true;
@@ -698,7 +720,7 @@ function main() {
     }
 
     // --- US-028 v2 pipeline: bench + correctness -----------------------
-    ok = runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, { p50: v1BestP50 }, updateBaseline, repeats) && ok;
+    ok = runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, { p50: v1BestP50 }, updateBaseline, repeats, lightWorld) && ok;
   }
 
   // --- US-028a: flicker metric (start pose only, reuses the v2 pipeline

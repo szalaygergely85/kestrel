@@ -128,6 +128,34 @@ int lineGlyphCodeFast(float cx, float cy, float fr, float cellAspect) {
 }
 `;
 
+// US-006 (docs/architecture.md 14.3 items 1/3): shared by `dda.frag.js`
+// (camera basis already has its own copy, pre-030a) and the new `light`
+// pass (light.frag.js) - "the caster's own ray formula", one function so
+// both never drift apart. `cellRayP` rebuilds the world-space surface point
+// P for screen cell (cx,cy) at `dist` (the resolved per-cell depth) - no
+// world xyz is ever stored in the G-buffer (14.3 item 1). `falloffFast` is
+// the engine's point-light falloff (design/palette.js `util.falloff`,
+// US-002 rule): smooth to exactly 0 at the radius, no `pow`.
+export const CELL_RAY = `
+vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
+    float dirX, float dirY, float planeX, float planeY,
+    float horizonRow, float planeDistY, float dist) {
+  float cameraX = (2.0 * (cell.x + 0.5)) / float(grid.x) - 1.0;
+  float rayDirX = dirX + planeX * cameraX;
+  float rayDirY = dirY + planeY * cameraX;
+  float slope = -(cell.y - horizonRow) / planeDistY;
+  return vec3(posX + rayDirX * dist, posY + rayDirY * dist, eyeH + slope * dist);
+}
+`;
+
+export const FALLOFF_FAST = `
+float falloffFast(float d, float r) {
+  if (d >= r) return 0.0;
+  float x = d / r; x = 1.0 - x * x;
+  return x * x;
+}
+`;
+
 import { MAX_LEVELS } from '../ShadeTextures.js';
 
 export const LEVEL_FROM_THRESHOLDS = `

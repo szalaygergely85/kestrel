@@ -16,6 +16,7 @@ import {
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
   updateInteraction, drawCrosshair,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -119,6 +120,8 @@ if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPAR
 // scope, this file only ever runs once per page load) and reused every
 // frame, per architecture.md 8.1/9's "no per-frame allocation" rule.
 const useDetail = params.get('detail') !== '0';
+// US-006 AC "?lights=0 keeps the US-028 uniform ambient (regression path)".
+const lightsEnabled = params.get('lights') !== '0';
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -220,6 +223,7 @@ function runGame(mode) {
   let simTime = 0;
   let look = null;
   let playerHandle = null;
+  let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
 
   // Reused every physics step (architecture.md section 9 rule 9.3: no
   // per-step allocations) - US-009 hoisted this out of update()'s body,
@@ -258,6 +262,10 @@ function runGame(mode) {
       bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
       repackMaterials(s.packed, s.level, matTable); // US-030a: packed.mats was built with matTable=null at placeStructure time
     }
+    // US-006: `level.def.lights` per placed structure -> world-space LightSet
+    // (torch/lantern/beacon presets, docs/architecture.md 14.3). `?lights=0`
+    // keeps the old uniform-ambient path (fb.lights stays null).
+    if (lightsEnabled) lightSet = buildLightSet(world, assets.palette);
 
     playerHandle = world.get('player');
     const startT = playerHandle.data.transform;
@@ -305,8 +313,12 @@ function runGame(mode) {
 
   // Reused every frame (architecture.md section 9: no per-frame objects).
   const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+  // US-006: reused per-frame scratch for `syncEntityLights`'s
+  // `attachedLightPos` output (architecture.md 9 - no per-frame allocation).
+  const lightSyncPos = new Float64Array(3);
   const fb = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0,
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: lightSet,
+    light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, // US-028
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
@@ -326,6 +338,15 @@ function runGame(mode) {
       const eye = Camera.fromEntity(playerHandle.data);
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
+      // US-006: carried-light sync (US-012's lantern, `components.light`)
+      // then flicker/vis-grid update, once per rendered frame, BEFORE either
+      // the CPU (`renderWorld`) or GPU (`gpuPipeline.frame`) path reads
+      // `fb.lights` - the GPU path never calls into compositor.js's own
+      // (CPU-only) lighting hook, so this must run here, not there.
+      if (fb.lights) {
+        syncEntityLights(fb.lights, engine.world, assets.palette, attachedLightPos, lightSyncPos);
+        fb.lights.update(fb.timeSec, engine.world);
+      }
       // US-030a AC "the CPU caster no longer runs on the gl2 path": with a
       // ready GPU pipeline, `renderWorld` is a one-line no-op (compositor.js)
       // and the GLSL DDA (this frame's cam/world, below) does the entire
@@ -351,7 +372,11 @@ function runGame(mode) {
     // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
     // back to the legacy `_repackAndUpload` path, harmlessly, in 'demo'/
     // 'glyphs' mode - gbuf is simply empty there).
-    if (gpuPipeline) gpuPipeline.frame(fb, ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
+    // US-006: `fb.lights` (a real LightSet) on the main game loop; every
+    // other call site in this file still passes `ambientL` (ambient-only,
+    // 0 point lights - GpuCellPipeline.js's `_uploadLightUniforms` treats a
+    // plain array as back-compat ambient-only input).
+    if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     rt.present();
 
     const lastRenderMs = performance.now() - renderStart;
