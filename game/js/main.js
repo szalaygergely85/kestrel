@@ -199,6 +199,9 @@ const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
 
 if (params.get('bench') === '1') {
+  // US-001 canvas benchmark: raw CellBuffer present only. It never feeds the
+  // GPU cell pipeline a frame (no fb/cam/world), so its hook must be off.
+  if (gpuPipeline) gpuPipeline.setEnabled(false);
   runBenchmark(rt, overlay);
 } else if (params.get('shadetest') === '1') {
   runShadeTest(assets.palette);
