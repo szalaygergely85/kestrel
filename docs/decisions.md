@@ -511,3 +511,28 @@ Architect guardrail from now on (review checklist item, no refactor of existing 
 **Date:** 2026-09-23
 **Status:** Accepted (owner decision)
 **Decision:** Creatures/NPCs (e.g. a talking bear) that must be walked around use **voxel models** (a small 3D grid of material cells), animated by **rigid parts** (head, limbs, and so on). They are rendered per cell into the G-buffer (kind 8), so they reuse `shadeCore/shadeTail`, the edge pass and lighting, and look like the rest of the glyph world. Budget <= 0.5 ms p95 at 240x90. 3 stories: (1) format + JS oracle (Node-only; can start after US-030b is ARCH OK), (2) GPU pass + gpucompare, (3) lighting/animation integration (after US-016 and US-006/007). Target: before M3. **Option C** (8-direction billboards via the US-030c sprite pass) is the cheap interim for M1-M2. Option B (meshes) is rejected for now. Spec: `docs/architecture.md` section 15. The M5 model editor (US-035..037) edits voxel models.
+
+## D-017 JS render path: correctness reference only, no playable CPU fallback (amends D-009 item 5 and D-005)
+**Date:** 2026-09-24
+**Status:** Accepted (answers the owner's question "do we need CPU support at all?")
+
+### Context
+D-009 gave the JS path two jobs: (a) oracle for `?gpucompare=1` and all Node tests, and (b) a playable fallback (`?gpu=0`, no WebGL2, software renderer) at 160x60. Role (a) caught real GPU bugs in US-006/US-007. Role (b) keeps adding perf work (US-006 4-nearest-light cap and budget, US-016 coarse step, US-018 `?gpu=0` fps/8 ms gates) for a tiny audience: the shipping target is Steam via Electron (D-012, bundled Chromium = WebGL2 guaranteed); the browser demo/itch.io audience without WebGL2 is ~2-3 % and would get a poor 160x60 experience anyway.
+
+### Options
+- **(A) Keep D-009 as is.** Every GPU feature is built twice with perf ACs on both. Highest cost, near-zero players served.
+- **(B) JS = correctness reference only; no-WebGL2 -> clear "WebGL2 required" screen.** Keeps the bug-catching oracle, removes all CPU perf work.
+- **(C) Drop the JS path entirely.** Cheapest now, but loses the oracle and headless Node tests that just found real bugs. Rejected.
+
+### Decision
+**(B).**
+1. The JS path is the **reference implementation**: it must match the GPU under `?gpucompare=1` (US-029 thresholds) and back every Node test/bench. It carries **no perf ACs and no frame budget**; clarity beats speed. New GPU passes still ship with a JS reference + parity test (D-009 item 6 unchanged).
+2. **No playable CPU fallback as a product requirement.** No WebGL2 or context-creation failure -> a clear full-screen "WebGL2 required" message (with a short how-to: update browser / enable hardware acceleration), no crash. Software renderer (SwiftShader/llvmpipe/Basic Render) -> run the GPU path with a one-line "performance may be poor" warning.
+3. `?gpu=0` stays as a **dev/debug switch** (view the reference output in-browser); "renders correctly" is enough, speed is irrelevant. Its 160x60 grid force may be dropped if the reference is too slow at the chosen grid; any grid is allowed.
+4. The Canvas2D presenter (`?force2d=1`) is frozen: kept while it costs nothing, no new ACs, may be removed later by an engine story.
+5. The 8 ms JS budget (D-009 item 3) still applies to the **GPU path's** JS work (sim, uploads, light set).
+
+### Consequences
+- Removes the CPU-fallback perf ACs from US-006, US-016, US-018, US-038 (list in the manager reply to the PO); M1 exit no longer requires a playable fallback.
+- US-029 needs a small follow-up: the "WebGL2 required" screen replaces the auto-fallback (content/UI, not an engine rewrite).
+- Existing CPU perf code (e.g. `selectCpuLights`) may stay; no one is required to maintain its speed.
