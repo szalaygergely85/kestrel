@@ -54,7 +54,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 21 | US-013 | Rolling boulder | P0 | done | PASS (Node-level, 2026-09-23, docs/test-reports/US-013.md); visible boulder re-checked in US-011 |
 | 22 | US-014 | Lever opens the grate | P0 | done | PASS (Node-level, 2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | PO CHANGE REQUEST (2026-09-23): logo approved; map card needs "W." signature, `hintBurner`/`hintClimb` zones, `storyHints.when` per ACs. Programmer after the art PO OK + US-010 + US-012 |
-| 24 | US-017 | End trigger, fade and restart | P0 | testing | PO OK (2026-09-24); the uiStyle.endText/fade re-check moved to US-015. ARCH OK (re-review 2026-09-24, cdb481a). Programmer fix pass (2026-09-24): GPU scene fade landed in sprite pass F; CPU fade moved after sprites; `?gpucompare=1` sceneFade=0.5 pose ALL PASS; found + fixed a real `applySceneFade` glyph-desync bug along the way. |
+| 24 | US-017 | End trigger, fade and restart | P0 | dev | PO OK (2026-09-24); the uiStyle.endText/fade re-check moved to US-015. ARCH OK (re-review 2026-09-24, cdb481a). Programmer fix pass (2026-09-24): GPU scene fade landed in sprite pass F; CPU fade moved after sprites; `?gpucompare=1` sceneFade=0.5 pose ALL PASS; found + fixed a real `applySceneFade` glyph-desync bug along the way. **Tester FAIL (2026-09-24, docs/test-reports/US-017.md):** BUG-1 major - `?gpu=0` never visibly fades the 3D view/sky (`cb.mask` set by every `setCellRGB`/`clear()` call makes `applySceneFade`'s `if (mask[i]) continue` skip the whole scene on the CPU path); default GPU path fade (incl. sprites) and `?gpucompare=1` are fine. BUG-2 minor - `window.__debug.world/playerHandle/look` go stale after a restart (dev-tooling only, gameplay unaffected). Trigger firing, walk/pitch lock, end-card text/timing, restart state reset (incl. a second full run) all verified live and pass. |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
 | 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | done | Programmer; UI/game-only, no architect notes needed; tester PASS 2026-09-24, docs/test-reports/US-045.md |
 | 26 | US-022 | Wake the relay with the lamp (optional beat, D-003; D-011 reskin) | P1 | todo | Relay bowl + glow art comes with the US-011 reskin; Programmer, after all P0 done |
@@ -2078,7 +2078,7 @@ Designer note, US-016b (2026-09-22): **Preview ready for PO review.** `design/pr
   - US-010 data additions in `tower.js`: `interactables[]` (lantern.take, lever.pull with target tag grate, beacon.light requiring the lantern) and the `hintJump` hint-zone trigger, plus `trigger: 'quest.end'`.
 - Status stays `design`.
 
-### US-017 End trigger, fade and restart  [Priority: P0] [Status: testing]
+### US-017 End trigger, fade and restart  [Priority: P0] [Status: dev]
 As a player, I want a satisfying ending when I step out onto the hill, so that the slice feels complete.
 Acceptance criteria:
 - [ ] Entering the outcrop trigger cells locks input; the camera walks forward 1 m over 1.5 s and pitches slightly down toward the valley.
