@@ -5,6 +5,7 @@
 // else computes `GD` any more) - output is `GD` (RGBA32UI, `floatBitsToUint`,
 // per 14.2's "all uint formats from now on").
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
+import { KIND_TERRAIN } from '../../GBuffer.js';
 
 export const DERIV_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out uvec4 outGD;
@@ -35,7 +36,10 @@ void main() {
   ivec2 cell = ivec2(gl_FragCoord.xy);
   uvec2 gi0 = texelFetch(uGI, cell, 0).xy;
   uint kind0 = giKind(gi0.y);
-  if (kind0 == 0u) { outGD = uvec4(0u); return; }
+  // US-016 (14.4 architect ruling, 2026-09-24): terrain cells need no
+  // derivatives (shadeTerrainFar has no texture-detail/mip term) - skip like
+  // an empty cell, matching the accepted deviation note in terrainCaster.js.
+  if (kind0 == 0u || kind0 == ${KIND_TERRAIN}u) { outGD = uvec4(0u); return; }
   int pid0 = int(gi0.x);
   uvec4 ga0 = texelFetch(uGA, cell, 0);
   float u0 = uintBitsToFloat(ga0.x), v0 = uintBitsToFloat(ga0.y);

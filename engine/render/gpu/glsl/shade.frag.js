@@ -37,6 +37,14 @@ import {
   SMOOTHSTEP_FAST, QFLOOR, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS, SKY_LUT_N,
 } from './common.js';
 import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
+// US-016 (14.4 item 5, GPU build order step 3): terrain (kind==7) branch -
+// literal GLSL twin of terrainShade.js's shadeTerrainFar. `b` (lighting)
+// arrives already computed, via the resolved GA.w (aoD) field - the pass A2
+// march computes it (terrain.frag.js's own doc comment explains why: this
+// program is already near the 16-texture-unit budget, so the FARH texture
+// stays in the march pass only).
+import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
+import { KIND_TERRAIN } from '../../GBuffer.js';
 
 export const MAX_SUB = 16; // 4x4, matches resolve.frag.js's cap
 
@@ -71,7 +79,7 @@ uniform isampler2D uSetI; // RGBA32I, width ${SET_I_WIDTH}
 // main() (constant over a cell's sub-samples, 14.3 item 3) and threaded
 // into shadeCore as Lm (only max(r,g,b) is needed there).
 uniform usampler2D uLightTex;
-uniform float uTimeSec; // declared, unused (US-028 shading has no time term)
+uniform float uTimeSec; // US-016: the terrain water-glint timer (item 5); unused by the material path
 uniform float uCellAspect;
 uniform float uCutoff, uLift, uFgMin, uFgMaxGain, uTintK, uOverbright, uOverbrightMax;
 uniform float uAoR, uAoK;
@@ -81,6 +89,10 @@ uniform float uFogStart, uFogFull, uFogStipple0, uFogStipple1, uFogSparse;
 uniform ivec2 uFogSparseCodes, uFogHazeCodes; // .x=alt0 code .y=alt1 code (alt count is fixed 2, see fog.sparseAlt/hazeAlt)
 uniform int uFogSparseAlt, uFogHazeAlt;
 
+// US-016 (14.4 item 5): terrain (kind==7) - the recipe-bands/far-fog
+// uniforms (uBandNear/uBandMid/uTerrainFog*) are declared by
+// TERRAIN_SHADE_GLSL below, included once into this same translation unit.
+
 ${GBUF_UNPACK}
 ${HASH_FAST}
 ${SAMPLE_POW_LUT}
@@ -89,6 +101,7 @@ ${SMOOTHSTEP_FAST}
 ${QFLOOR}
 ${ORIENT_AND_LINES}
 ${LEVEL_FROM_THRESHOLDS}
+${TERRAIN_SHADE_GLSL}
 
 const int MAX_SUB = ${MAX_SUB};
 const float POW2[6] = float[6](0.125, 0.25, 0.5, 1.0, 2.0, 4.0);
@@ -362,6 +375,28 @@ void main() {
   if (maskU != 0u) {
     shadeFg = jsFg;
     shadeBg = vec4(jsBg.rgb, 0.0);
+    return;
+  }
+
+  // US-016 (14.4 items 4/5): terrain cells are a completely different
+  // look-up (TLOOK, not a MaterialTable/G-D derivatives) - deterministic
+  // per cell, no sub-sample averaging (the JS oracle's shadeTerrainCells is
+  // likewise a single per-cell call, not per-sub-sample).
+  if (kindU == ${KIND_TERRAIN}u) {
+    int typeId = int(giMat(gi.y));
+    uvec4 gaT = texelFetch(uGA, cell, 0);
+    float uT = uintBitsToFloat(gaT.x), vT = uintBitsToFloat(gaT.y);
+    // item 4: aoD = b - computed at hit time by the pass A2 march (same
+    // farHNormal + sun dot the JS oracle's terrainNormal/sunFromWorld do),
+    // not recomputed here (keeps this program's texture-unit count down).
+    float bT = uintBitsToFloat(gaT.w);
+    float distT = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
+    float bcT = max(bT, 0.0);
+    float gainT = uFgMin + (1.0 - uFgMin) * samplePowLUT(bcT);
+    if (bcT > 1.0) gainT = min(uFgMaxGain, gainT + (bcT - 1.0) * 0.5);
+    TerrainOut to = shadeTerrainFar(distT, typeId, bT, uT, vT, uTimeSec, gainT);
+    shadeFg = vec4(toByte01(to.fr), toByte01(to.fg), toByte01(to.fb), toByte01(float(to.glyph)));
+    shadeBg = vec4(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);
     return;
   }
 

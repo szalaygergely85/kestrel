@@ -36,6 +36,9 @@ import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
+// US-016 (14.4 GPU build order steps 2/3): pass A2 program + the shared sun helper.
+import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
+import { sunFromWorld } from '../terrainCaster.js';
 import { GpuTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { HFOV_DEG } from '../sectorCaster.js';
@@ -114,6 +117,8 @@ export class GpuCellPipeline {
     this.progDeriv = linkProgram(gl, CELL_VERT_SRC, DERIV_FRAG_SRC);
     // US-006 (14.3 item 3): the light pass - cast/resolve/deriv -> light -> shade -> edge.
     this.progLight = linkProgram(gl, CELL_VERT_SRC, LIGHT_FRAG_SRC);
+    // US-016 (14.4 item 2, GPU build order step 2): pass A2, between cast and resolve.
+    this.progTerrain = linkProgram(gl, CELL_VERT_SRC, TERRAIN_FRAG_SRC);
 
     // --- G-buffer textures (US-030a: all-uint now - 14.2 item 3) - these are
     // the RESOLVED, per-cell (cols x rows) textures; deriv/shade/edge/debug/
@@ -131,6 +136,13 @@ export class GpuCellPipeline {
     this.texSGI = createTexture2D(gl, gl.RG32UI, this.subCols, this.subRows);
     this.texSGA = createTexture2D(gl, gl.RGBA32UI, this.subCols, this.subRows);
     this.texSDepth = createTexture2D(gl, gl.R32UI, this.subCols, this.subRows);
+    // US-016 (14.4 item 2): "set 2" - the terrain pass's own sub-sample
+    // G-buffer (a copy of set 1 unless a sub-ray's terrain march hit is
+    // nearer). Resolve reads set 2 when terrain is active this frame, set 1
+    // otherwise (bind-time choice, no uniform - item 2).
+    this.texSGI2 = createTexture2D(gl, gl.RG32UI, this.subCols, this.subRows);
+    this.texSGA2 = createTexture2D(gl, gl.RGBA32UI, this.subCols, this.subRows);
+    this.texSDepth2 = createTexture2D(gl, gl.R32UI, this.subCols, this.subRows);
     // US-030a: per-frame UI mask upload - now read by the RESOLVE pass
     // (14.2 item 3: mask is a per-cell, not per-sub-sample, property).
     this.texMask = createTexture2D(gl, gl.R8UI, this.cols, this.rows);
@@ -193,6 +205,15 @@ export class GpuCellPipeline {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.texSDepth, 0);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboCastSub incomplete');
+
+    // US-016 (14.4 item 2): pass A2 `terrain` writes "set 2" here.
+    this.fboTerrainSub = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboTerrainSub);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texSGI2, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.texSGA2, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.texSDepth2, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboTerrainSub incomplete');
 
     this.fboCast = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
@@ -266,6 +287,7 @@ export class GpuCellPipeline {
     this._locsResolve = this._uniformLocs(this.progResolve, RESOLVE_UNIFORMS);
     this._locsDeriv = this._uniformLocs(this.progDeriv, DERIV_UNIFORMS);
     this._locsLight = this._uniformLocs(this.progLight, LIGHT_UNIFORMS);
+    this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
     // plain per-frame loop over these bind-time arrays of [loc, tex, unit]
@@ -284,6 +306,10 @@ export class GpuCellPipeline {
       ['uSetF', this.texSetF], ['uGain', this.texGain], ['uSky', this.texSky],
       // US-006: per-cell light, written by the light pass right before this one.
       ['uLightTex', this.texLight],
+      // US-016 (14.4 item 5): terrain colour/glyph look-up (b/normal arrive
+      // pre-computed via GA.w - see terrain.frag.js's doc comment on why
+      // uFarH stays out of this program's texture-unit budget).
+      ['uTlook', this.texTlook],
     ]);
     this._edgeBinds = this._buildBindTable(this._locsEdge, [
       ['uGI', this.texGI], ['uShadeFg', this.texShadeFg], ['uDepth', this.texDepth], ['uShadeBg', this.texShadeBg],
@@ -298,8 +324,21 @@ export class GpuCellPipeline {
       ['uWorldGeom', this.texWorldGeom], ['uWorldMats', this.texWorldMats],
       ['uWorldFlags', this.texWorldFlags],
     ]);
-    this._resolveBinds = this._buildBindTable(this._locsResolve, [
+    // US-016 (14.4 item 2): resolve reads set 2 (the terrain pass's output)
+    // when terrain is active this frame, set 1 (the cast pass's raw output)
+    // otherwise - a bind-time choice between two prebuilt tables (no
+    // uniform, no per-frame allocation), picked in `_passResolve`.
+    this._resolveBindsSet1 = this._buildBindTable(this._locsResolve, [
       ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth], ['uMask', this.texMask],
+    ]);
+    this._resolveBindsSet2 = this._buildBindTable(this._locsResolve, [
+      ['uSGI', this.texSGI2], ['uSGA', this.texSGA2], ['uSDepth', this.texSDepth2], ['uMask', this.texMask],
+    ]);
+    // US-016 (14.4 item 2): pass A2 reads set 1 (cast pass output) plus the
+    // far-terrain textures (step 1).
+    this._terrainBinds = this._buildBindTable(this._locsTerrain, [
+      ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth],
+      ['uFarH', this.texFarH], ['uFarType', this.texFarType],
     ]);
     this._derivBinds = this._buildBindTable(this._locsDeriv, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth],
@@ -316,9 +355,14 @@ export class GpuCellPipeline {
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
     this._setSamplerUniforms(this.progDebug, this._debugBinds);
     this._setSamplerUniforms(this.progCast, this._castBinds);
-    this._setSamplerUniforms(this.progResolve, this._resolveBinds);
+    // US-016: both resolve source tables share the same sampler->unit
+    // mapping (built from the same `_locsResolve`), so setting it once
+    // against either table covers both - `_bindTextures` only ever changes
+    // which texture a unit points at, never the unit itself.
+    this._setSamplerUniforms(this.progResolve, this._resolveBindsSet1);
     this._setSamplerUniforms(this.progDeriv, this._derivBinds);
     this._setSamplerUniforms(this.progLight, this._lightBinds);
+    this._setSamplerUniforms(this.progTerrain, this._terrainBinds);
 
     // US-006: staging array for the per-frame `uVisBox` upload (allocated
     // once - architecture.md 9); `uLightPos`/`uLightCol` upload straight
@@ -426,14 +470,14 @@ export class GpuCellPipeline {
     this.rt.setCellPass(null);
     // Best-effort cleanup; safe to call even if _initGL threw partway through.
     for (const tex of [this.texGI, this.texGA, this.texGD, this.texDepth, this.texShadeFg, this.texShadeBg,
-      this.texSGI, this.texSGA, this.texSDepth,
+      this.texSGI, this.texSGA, this.texSDepth, this.texSGI2, this.texSGA2, this.texSDepth2,
       this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
       this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
       this.texLight, this.texLVis, this.texFarH, this.texFarType, this.texTlook]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboDeriv, this.fboLight]) if (fbo) gl.deleteFramebuffer(fbo);
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight]) if (p) gl.deleteProgram(p);
+    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboTerrainSub, this.fboDeriv, this.fboLight]) if (fbo) gl.deleteFramebuffer(fbo);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     if (this.timer) this.timer.dispose();
     // US-030a: the world atlas textures are gone too - force a full
@@ -652,8 +696,13 @@ export class GpuCellPipeline {
       this._repackAndUpload();
     }
     const t1 = performance.now();
+    // US-016 (14.4 item 8): pass A2 runs only when the bound world has
+    // terrain AND its far bake is ready - otherwise resolve reads set 1
+    // untouched, same as before this story.
+    this._terrainActiveThisFrame = useDda && !!(this._world && this._world.terrain && this._world.terrain.farReady);
     if (useDda) {
       this._passCast();
+      if (this._terrainActiveThisFrame) this._passTerrain();
       this._passResolve();
       this._passDeriv();
     }
@@ -754,6 +803,38 @@ export class GpuCellPipeline {
     this._terrainPacked = packed;
     this._terrainVersion = terrain.farVersion;
     this._terrainWorld = world;
+    this._uploadTerrainUniforms(terrain, this._palette);
+  }
+
+  // US-016 (14.4 items 3-5, GPU build order steps 2/3): the terrain
+  // constants that only change when the far bake (re)runs, not per frame -
+  // `uFarMap`/`uTerrainMaxH` for the pass A2 march (progTerrain), and the
+  // recipe bands + far-fog colours for the shade pass's kind==7 branch
+  // (progShade); both also need `uFarMap` (the shade pass's own
+  // `farHBilinear` call, for the hit-point normal).
+  _uploadTerrainUniforms(terrain, palette) {
+    const gl = this.gl;
+    const farMap = [0, 0, terrain.mapCell, terrain.mapW];
+    gl.useProgram(this.progTerrain);
+    gl.uniform4fv(this._locsTerrain.uFarMap, farMap);
+    gl.uniform1f(this._locsTerrain.uTerrainMaxH, terrain.farMaxH);
+
+    const recipe = terrain.recipe;
+    const fogRec = palette && palette.fog && palette.fog.far;
+    const locS = this._locsShade;
+    gl.useProgram(this.progShade);
+    if (recipe && recipe.bands) {
+      gl.uniform1f(locS.uBandNear, recipe.bands.near);
+      gl.uniform1f(locS.uBandMid, recipe.bands.mid);
+    }
+    if (fogRec && palette.rgb) {
+      const nearRGB = palette.rgb[fogRec.color], farRGB = palette.rgb[fogRec.colorFar];
+      gl.uniform1f(locS.uTerrainFogStart, fogRec.start);
+      gl.uniform1f(locS.uTerrainFogFull, fogRec.full);
+      gl.uniform1f(locS.uTerrainFogCurve, fogRec.curve || 1);
+      if (nearRGB) gl.uniform3f(locS.uTerrainFogNearRGB, nearRGB[0], nearRGB[1], nearRGB[2]);
+      if (farRGB) gl.uniform3f(locS.uTerrainFogFarRGB, farRGB[0], farRGB[1], farRGB[2]);
+    }
   }
 
   // US-007: the light pass now also needs `uStructA/B/Count` (its own sun
@@ -790,6 +871,11 @@ export class GpuCellPipeline {
     gl.uniform4fv(this._locsLight.uStructB, structB);
     gl.uniform1i(this._locsLight.uStructCount, a.structCount);
     gl.uniform1f(this._locsLight.uWorldMaxH, worldMaxH);
+    // US-016 (14.4 item 4): the terrain march's own skip-interval structure list.
+    gl.useProgram(this.progTerrain);
+    gl.uniform4fv(this._locsTerrain.uStructA, structA);
+    gl.uniform4fv(this._locsTerrain.uStructB, structB);
+    gl.uniform1i(this._locsTerrain.uStructCount, a.structCount);
   }
 
   // Camera basis (engine/render/sectorCaster.js's castScene, same formulas -
@@ -839,16 +925,48 @@ export class GpuCellPipeline {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  // US-016 (14.4 items 2/4, GPU build order step 2): pass A2 - the same
+  // sub-sample resolution/camera basis as `_passCast`, reading set 1
+  // (fboCastSub's own output) and writing set 2 (fboTerrainSub).
+  _passTerrain() {
+    const gl = this.gl, loc = this._locsTerrain, cb = this._camBasis;
+    const terrain = this._world.terrain;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboTerrainSub);
+    gl.viewport(0, 0, this.subCols, this.subRows);
+    gl.useProgram(this.progTerrain);
+    gl.bindVertexArray(this.vao);
+    this._bindTextures(this._terrainBinds);
+    gl.uniform2i(loc.uGrid, this.cols, this.rows);
+    gl.uniform1i(loc.uN, this.rays);
+    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
+    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
+    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
+    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
+    gl.uniform1f(loc.uTerrainMaxH, terrain.farMaxH);
+    // US-016 (14.4 item 4): the interim sun (D-007 wording) - `sunFromWorld`
+    // (terrainCaster.js) is the single source of truth the JS oracle uses
+    // too (build order step 1). Cheap (a few trig calls); recomputed every
+    // frame rather than cached because nothing here tracks a "did timeOfDay
+    // change" version the way `_ensureTerrainTextures` tracks `farVersion`.
+    const sun = sunFromWorld(this._world, this._palette);
+    gl.uniform3f(loc.uSunDir, sun.dirX, sun.dirY, sun.dirZ);
+    gl.uniform1f(loc.uAmbientI, sun.ambientI);
+    gl.uniform1f(loc.uSunI, sun.sunI);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
   // US-030b (14.2 item 3, pass B): votes the sub-sample G-buffer down to the
   // per-cell GI/GA/Depth (fboCast, unchanged target - deriv/shade/edge never
-  // know the sub-grid existed).
+  // know the sub-grid existed). US-016 (14.4 item 2): reads set 2 (the
+  // terrain pass's output) when terrain ran this frame, set 1 otherwise -
+  // a bind-time choice between two prebuilt tables, no uniform.
   _passResolve() {
     const gl = this.gl, loc = this._locsResolve;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
     gl.viewport(0, 0, this.cols, this.rows);
     gl.useProgram(this.progResolve);
     gl.bindVertexArray(this.vao);
-    this._bindTextures(this._resolveBinds);
+    this._bindTextures(this._terrainActiveThisFrame ? this._resolveBindsSet2 : this._resolveBindsSet1);
     gl.uniform1i(loc.uN, this.rays);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -1076,6 +1194,9 @@ const SHADE_UNIFORMS = [
   'uFogStipple0', 'uFogStipple1', 'uFogSparse', 'uFogSparseCodes', 'uFogHazeCodes', 'uFogSparseAlt', 'uFogHazeAlt',
   // US-030a: GPU sky (14.2 item 3).
   'uSky', 'uSkyElevTop', 'uGpuSky', 'uHorizonRow', 'uPlaneDistY',
+  // US-016 (14.4 item 5): terrain (kind==7) branch - `b` arrives via GA.w.
+  'uTlook', 'uBandNear', 'uBandMid',
+  'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uTerrainFogNearRGB', 'uTerrainFogFarRGB',
 ];
 const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uFogStart', 'uFogFull'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
@@ -1091,4 +1212,11 @@ const LIGHT_UNIFORMS = [
   'uGI', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
   'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
+];
+// US-016 (14.4 items 2-4, GPU build order step 2): pass A2 terrain march.
+const TERRAIN_UNIFORMS = [
+  'uSGI', 'uSGA', 'uSDepth', 'uFarH', 'uFarType', 'uFarMap',
+  'uStructA', 'uStructB', 'uStructCount',
+  'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
+  'uHorizonRow', 'uPlaneDistY', 'uTerrainMaxH', 'uSunDir', 'uAmbientI', 'uSunI',
 ];

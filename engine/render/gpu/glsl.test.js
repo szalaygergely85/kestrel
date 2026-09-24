@@ -9,6 +9,7 @@ import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
 import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
+import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -74,6 +75,25 @@ ok('dda.frag.js contains floatBitsToUint', DDA_FRAG_SRC.includes('floatBitsToUin
 ok('deriv.frag.js contains floatBitsToUint', DERIV_FRAG_SRC.includes('floatBitsToUint'));
 ok('shade.frag.js reads uGA/uDepth back with uintBitsToFloat', SHADE_FRAG_SRC.includes('uintBitsToFloat'));
 ok('edge.frag.js reads uDepth back with uintBitsToFloat', EDGE_FRAG_SRC.includes('uintBitsToFloat'));
+
+// US-016 (14.4 GPU build order step 2/3, backlog test plan): terrain.frag.js
+// must use the JS-injected constants (not hand-copied numbers) and no
+// literal band/fog numbers; shade.frag.js's kind==7 branch reads it back.
+checkOnlyAddressLine('terrain.frag.js', TERRAIN_FRAG_SRC);
+ok('terrain.frag.js: no round(', !stripComments(TERRAIN_FRAG_SRC).includes('round('));
+ok('terrain.frag.js: no EXT_color_buffer_float', !TERRAIN_FRAG_SRC.includes('EXT_color_buffer_float'));
+ok('terrain.frag.js: no layout(std140', !TERRAIN_FRAG_SRC.includes('layout(std140'));
+ok('terrain.frag.js contains MAX_TERRAIN_STEPS', TERRAIN_FRAG_SRC.includes('MAX_TERRAIN_STEPS'));
+ok('terrain.frag.js contains STEP_MIN', TERRAIN_FRAG_SRC.includes('STEP_MIN'));
+ok('terrain.frag.js contains STEP_K', TERRAIN_FRAG_SRC.includes('STEP_K'));
+ok('terrain.frag.js contains KIND_TERRAIN', TERRAIN_FRAG_SRC.includes('KIND_TERRAIN'));
+ok('terrain.frag.js contains floatBitsToUint', TERRAIN_FRAG_SRC.includes('floatBitsToUint'));
+ok('shade.frag.js contains KIND_TERRAIN (kind==7 branch)', SHADE_FRAG_SRC.includes('KIND_TERRAIN') || /== *7u/.test(SHADE_FRAG_SRC));
+// item 10 "do not" list: recipe constants (bands/fog/glyph sets) never as
+// GLSL literals - a spot check for the two band-edge magic numbers that
+// WOULD appear if someone hand-copied overworld_far.js instead of wiring
+// uBandNear/uBandMid/uTerrainFog* uniforms.
+ok('terrain.frag.js: bands/fog come from uniforms, not literals 150.0/600.0', !TERRAIN_FRAG_SRC.includes('150.0') && !TERRAIN_FRAG_SRC.includes('600.0'));
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }
