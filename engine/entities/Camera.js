@@ -39,10 +39,28 @@ export class Camera {
    * @param {number} [eyeH]
    */
   static fromEntity(entity, eyeH) {
+    return Camera.fromEntityInto(entity, eyeH, new Camera());
+  }
+
+  /**
+   * Same as `fromEntity`, but writes into a caller-owned `out` instead of
+   * allocating (rule 9) - for per-fixed-step callers such as
+   * `updateInteraction` (US-012 arch review, 2026-09-24). `out` must already
+   * be a `Camera` (or at least have its fields); its `pitchDeg` is clamped
+   * same as the constructor.
+   * @param {Object} entity @param {number} [eyeH] @param {Camera} out
+   * @returns {Camera} out
+   */
+  static fromEntityInto(entity, eyeH, out) {
     const body = entity.components && entity.components.body;
     const baseEyeH = typeof eyeH === 'number' ? eyeH : (body && typeof body.eyeH === 'number' ? body.eyeH : 0);
     const offset = body && body.feel && typeof body.feel.offset === 'number' ? body.feel.offset : 0;
     const t = entity.transform;
-    return new Camera(t.x, t.y, t.z + baseEyeH + offset, t.yawDeg, t.pitchDeg);
+    out.x = t.x;
+    out.y = t.y;
+    out.z = t.z + baseEyeH + offset;
+    out.yawDeg = t.yawDeg;
+    out.pitchDeg = Camera.clampPitch(t.pitchDeg);
+    return out;
   }
 }

@@ -27,19 +27,42 @@ function ok(name, cond, detail) {
 // ---------------------------------------------------------------------------
 // Inline fixture: a "world" with just the surface interaction.js reads.
 // ---------------------------------------------------------------------------
+// Default fixture: one structure covering the whole plane at origin.z = 0,
+// so `structureAt` always matches (sections 1-9 predate the structure/
+// terrain split and don't care about footprint edges). `_setStructures`/
+// `_setTerrain` let sections 10-11 override this for the origin.z and
+// outside-the-footprint cases the architect's fix targets.
 function makeWorld() {
   const solid = new Set(); // 'x,y' integer cell keys
   const entities = new Map();
   const behaviours = new Map();
+  let structures = [{
+    origin: { x: 0, y: 0, z: 0 },
+    bbox: { x0: -1e6, x1: 1e6, y0: -1e6, y1: 1e6 },
+    level: {
+      sectorAt(lx, ly) {
+        return solid.has(`${Math.floor(lx)},${Math.floor(ly)}`)
+          ? { solid: true, floorH: 0, ceilH: 3 }
+          : { solid: false, floorH: 0, ceilH: 3 };
+      },
+    },
+  }];
+  let terrain = null; // { heightAt(x, y) } or null -> outsideSector is solid (D-008 default)
   const w = {
     state: {},
     interactables: [],
     interaction: { targetKey: null, prompt: '', dist: 0, angleDeg: 0 },
     events: null,
-    sectorAt(x, y) {
-      return solid.has(`${Math.floor(x)},${Math.floor(y)}`)
-        ? { solid: true, floorH: 0, ceilH: 3 }
-        : { solid: false, floorH: 0, ceilH: 3 };
+    structureAt(x, y) {
+      for (const s of structures) {
+        const b = s.bbox;
+        if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
+      }
+      return null;
+    },
+    outsideSector(x, y) {
+      if (!terrain) return { solid: true, floorH: 0, ceilH: 0 };
+      return { solid: false, floorH: terrain.heightAt(x, y), ceilH: 'sky' };
     },
     get(id) { return entities.get(id) || null; },
     fireInteraction(name, ctx) {
@@ -51,6 +74,8 @@ function makeWorld() {
     _blockCell(x, y) { solid.add(`${x},${y}`); },
     _setEntity(id, e) { entities.set(id, e); },
     _setBehaviour(name, fn) { behaviours.set(name, fn); },
+    _setStructures(list) { structures = list; },
+    _setTerrain(t) { terrain = t; },
   };
   return w;
 }
@@ -226,6 +251,41 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   ok('serialize round trip keeps the used flag', loaded.state['used.room.lamp'] === true);
   const light = loaded.get('player').getComponent('light');
   ok('serialize round trip keeps the light component', light && light.preset === 'lantern' && light.on === true && light.attach === 'eye');
+}
+
+// ---------------------------------------------------------------------------
+// 10. Coordinate spaces (arch review, 2026-09-24): a structure placed at
+//    origin.z = 5 must have its level-local floorH/ceilH offset by origin.z
+//    before comparing against world z.
+// ---------------------------------------------------------------------------
+{
+  const w = makeWorld();
+  w._setStructures([{
+    origin: { x: 0, y: 0, z: 5 },
+    bbox: { x0: -10, x1: 10, y0: -10, y1: 10 },
+    level: { sectorAt() { return { solid: false, floorH: 0, ceilH: 3 }; } },
+  }]);
+  ok('structure at origin.z=5: visible above the offset floor (world z 6 > floor 0+5)',
+    hasLineOfSight(w, 0, 0, 6, 0, -1, 6));
+  ok('structure at origin.z=5: blocked below the offset floor (world z 4.5 < floor 0+5)',
+    !hasLineOfSight(w, 0, 0, 4.5, 0, -1, 4.5));
+}
+
+// ---------------------------------------------------------------------------
+// 11. A ray from open terrain (outside every structure footprint) into a
+//    footprint must use `world.outsideSector`, not be treated as blocked.
+// ---------------------------------------------------------------------------
+{
+  const w = makeWorld();
+  w._setTerrain({ heightAt() { return 0; } });
+  w._setStructures([{
+    origin: { x: 5, y: 0, z: 0 },
+    bbox: { x0: 5, x1: 15, y0: -5, y1: 5 },
+    level: { sectorAt() { return { solid: false, floorH: 0, ceilH: 3 }; } },
+  }]);
+  // eye at x=0 (open terrain, outside the footprint), target at x=8 (inside it).
+  ok('LOS from open terrain into a footprint is not blocked',
+    hasLineOfSight(w, 0, 0, 1, 8, 0, 1));
 }
 
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);

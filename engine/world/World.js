@@ -138,7 +138,7 @@ export class World {
           y: it.y + s.origin.y,
           z: it.z + s.origin.z,
           radius: it.radius,
-          prompt: it.prompt,
+          prompt: it.prompt || '',
           once: !!it.once,
           requires: it.requires || null,
           propId: it.prop ? `${s.id}.${it.prop}` : null,

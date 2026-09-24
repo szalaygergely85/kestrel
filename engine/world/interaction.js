@@ -22,9 +22,13 @@ const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 
 /**
- * 0.1 m samples (<= 20, capped): blocked if `sectorAt` is null/solid,
- * `z < floorH`, or a numeric `ceilH < z`. Pure, no allocation - reused later
- * by AI.
+ * 0.1 m samples (<= 20, capped), WORLD heights (2026-09-24 review fix):
+ * inside a structure footprint use that structure's level sector with
+ * floorH/ceilH offset by the structure's origin.z (a null sector, or a
+ * solid one, blocks); outside any footprint use `world.outsideSector`
+ * (terrain floor + sky, or solid with no terrain). Blocked if solid,
+ * `z < floor`, or a numeric ceiling `< z`. Pure, no allocation (reused
+ * later by AI) - `outsideSector` writes into a scratch object.
  */
 export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
   const dx = bx - ax, dy = by - ay, dz = bz - az;
@@ -36,10 +40,25 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
-    const sector = world.sectorAt(x, y);
-    if (!sector || sector.solid) return false;
-    if (z < sector.floorH) return false;
-    if (typeof sector.ceilH === 'number' && z > sector.ceilH) return false;
+
+    const s = world.structureAt(x, y);
+    let floorH, ceilH, solid;
+    if (s) {
+      const sector = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+      if (!sector) return false;
+      solid = sector.solid;
+      floorH = sector.floorH + s.origin.z;
+      ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + s.origin.z : sector.ceilH;
+    } else {
+      const sector = world.outsideSector(x, y);
+      solid = sector.solid;
+      floorH = sector.floorH;
+      ceilH = sector.ceilH;
+    }
+
+    if (solid) return false;
+    if (z < floorH) return false;
+    if (typeof ceilH === 'number' && z > ceilH) return false;
   }
   return true;
 }

@@ -225,6 +225,11 @@ function runGame(mode) {
   // per-step allocations) - US-009 hoisted this out of update()'s body,
   // where it used to be rebuilt as a fresh object literal every call.
   const controls = { forward: 0, strafe: 0, run: false, jump: false, yawDeg: 0, pitchDeg: 0 };
+  // Reused every fixed step for `updateInteraction` (US-012 arch review,
+  // 2026-09-24 item 2): `Camera.fromEntity` allocated a `new Camera` 60x/s.
+  // The render path's own `Camera.fromEntity` call (below) may keep
+  // allocating - it runs once per rendered frame, not per fixed step.
+  const interactEye = new Camera();
 
   if (mode === 'world') {
     // US-025: the real world (world_m1: terrain + the tower placed at its
@@ -291,7 +296,7 @@ function runGame(mode) {
       // US-012 (7.4 fixed-step order item 5): after physics settles this
       // step's position, before the event flush - `E` is edge-triggered the
       // same way Space is (US-009's convention).
-      updateInteraction(engine.world, engine, Camera.fromEntity(playerHandle.data), input.pressed('KeyE'));
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), input.pressed('KeyE'));
       if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
       engine.world.flushEvents();
     }

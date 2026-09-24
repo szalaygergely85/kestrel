@@ -12,6 +12,11 @@ import { drawText } from '../render/textDraw.js';
 const CROSSHAIR_GLYPH = '+';
 const PROMPT_ROW_GAP = 2; // "2 rows below" (US-012 AC)
 
+// Non-blocking cleanup (arch review, 2026-09-24): cache the key/rest split
+// by `state.prompt` string identity, so a held target (same prompt string
+// every frame) does not `text.slice` twice per frame.
+let cachedPrompt = null, cachedKeyText = '', cachedRestText = '';
+
 /**
  * @param {import('../render/RenderTarget.js').RenderTarget} rt
  * @param {{crosshair:{dim:string,active:string}, prompt:{color:string,keyColor:string,plateBg?:string}}} style
@@ -37,11 +42,16 @@ export function drawCrosshair(rt, style, state) {
   }
   // Highlight a leading "[E]" (or any leading "[...]" key hint) in keyColor,
   // the rest in the plain prompt color.
-  const keyEnd = text.startsWith('[') ? text.indexOf(']') + 1 : 0;
-  if (keyEnd > 0) {
-    drawText(rt, px, py, text.slice(0, keyEnd), style.prompt.keyColor, style.prompt.plateBg);
-    drawText(rt, px + keyEnd, py, text.slice(keyEnd), style.prompt.color, style.prompt.plateBg);
+  if (text !== cachedPrompt) {
+    const keyEnd = text.startsWith('[') ? text.indexOf(']') + 1 : 0;
+    cachedPrompt = text;
+    cachedKeyText = keyEnd > 0 ? text.slice(0, keyEnd) : '';
+    cachedRestText = keyEnd > 0 ? text.slice(keyEnd) : text;
+  }
+  if (cachedKeyText) {
+    drawText(rt, px, py, cachedKeyText, style.prompt.keyColor, style.prompt.plateBg);
+    drawText(rt, px + cachedKeyText.length, py, cachedRestText, style.prompt.color, style.prompt.plateBg);
   } else {
-    drawText(rt, px, py, text, style.prompt.color, style.prompt.plateBg);
+    drawText(rt, px, py, cachedRestText, style.prompt.color, style.prompt.plateBg);
   }
 }
