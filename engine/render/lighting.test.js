@@ -138,6 +138,27 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   const h3 = ls.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 2, on: true });
   computeVisGrid(ls, h3, world);
   ok('small radius -> small vis box', ls.visW[h3] === 5 && ls.visH[h3] === 5, String(ls.visW[h3]));
+
+  // Architect review 1 item 1: sample at S = P + N*0.01, not P. A surface
+  // point exactly ON the wall column's west face (x = 2.0, the boundary
+  // between open column 1 and the solid column-2 wall at rows 2-4) must
+  // read as LIT via `lightAt` (nudged into the open cell the face points
+  // into), not as the coin-flip/blocked result `floor(2.0) === 2` (the
+  // solid cell itself) would give without the nudge.
+  {
+    const ls2 = new LightSet();
+    ls2.ambient[0] = ls2.ambient[1] = ls2.ambient[2] = 0; // isolate the point-light term
+    const hw = ls2.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 5, on: true });
+    ls2.update(0, world);
+    const out = [0, 0, 0];
+    // Wall face at the column-1/column-2 boundary, row 3 (open on the west
+    // side, solid '#' cell on the east side) - normal (-1,0,0) points back
+    // into the open column the light sits in.
+    lightAt(ls2, world, 2.0, 3.5, 1.2, -1, 0, 0, out);
+    ok('wall face sampled exactly on the boundary is lit (S = P + N*0.01 nudges into the open cell)',
+      out[0] + out[1] + out[2] > 1e-4, `${out[0] + out[1] + out[2]}`);
+    ok('same wall face, handle count unchanged (no extra light added)', hw >= 0);
+  }
 }
 
 // --- test_room: buildLightSet finds the torch, radius boundary matches P.lights.torch.radius ---

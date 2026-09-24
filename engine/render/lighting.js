@@ -73,7 +73,13 @@ export class LightSet {
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
     this.col = new Float32Array(4 * MAX_LIGHTS);   // hue*intensity*flicker, visSlot -> uLightCol
     this.vis = new Uint8Array(MAX_LIGHTS * MAX_VIS_CELLS); // LVIS atlas staging
-    this.visDirty = new Int8Array(MAX_LIGHTS);     // 1 = slot re-upload needed this frame
+    // Architect review 1 item 4: a monotonic per-slot version, bumped only
+    // when `computeVisGrid` actually recomputes the slot. Each pipeline
+    // compares this against its OWN last-uploaded version (reset to -1 when
+    // its `texLVis` is (re)created), not a one-frame `visDirty` flag - a
+    // pipeline that missed the recompute frame (context restore, a second
+    // compare pipeline, one not ready yet) still uploads on its next frame.
+    this.visVersion = new Int32Array(MAX_LIGHTS);
     this.visOx = new Int32Array(MAX_LIGHTS);
     this.visOy = new Int32Array(MAX_LIGHTS);
     this.visW = new Int32Array(MAX_LIGHTS);
@@ -81,6 +87,15 @@ export class LightSet {
     this._visKeyX = new Int32Array(MAX_LIGHTS).fill(0x7fffffff);
     this._visKeyY = new Int32Array(MAX_LIGHTS).fill(0x7fffffff);
     this._visStructVersion = new Int32Array(MAX_LIGHTS).fill(-1);
+    // Architect review 1 item 5: the containing structure's OWN
+    // `packed.version` (sector animations, e.g. the US-012 grate, change
+    // `floorH/ceilH` without bumping `world.structVersion`) is part of the
+    // recompute key too. -2 = "no containing structure" (distinct from a
+    // real `packed.version`, which starts at 1).
+    this._visPackedVersion = new Int32Array(MAX_LIGHTS).fill(-2);
+    // Kept for callers/tools that still want a per-frame "did this slot just
+    // change" flag (informational only - uploaders must key off `visVersion`).
+    this.visDirty = new Int8Array(MAX_LIGHTS);
 
     this.on = new Uint8Array(MAX_LIGHTS);
     this.defX = new Float32Array(MAX_LIGHTS);
@@ -95,6 +110,11 @@ export class LightSet {
     this.flickerJitter = new Float32Array(MAX_LIGHTS);
     this.seed = new Int32Array(MAX_LIGHTS);
     this.key = new Array(MAX_LIGHTS).fill(null); // handle -> `${structId}.${lightId}` (debug/lookup only)
+    // Architect review 1 item 6: entity id -> handle, owned by the LightSet
+    // itself (not `entity._lightHandle`) - a serialized entity would
+    // otherwise carry a stale slot index into a freshly built `LightSet`
+    // after a world reload. Allocated once; per-frame `get`/`set` only.
+    this.entityHandle = new Map();
   }
 
   /**
@@ -121,7 +141,7 @@ export class LightSet {
     this.flickerJitter[h] = fl.jitter || 0;
     this.seed[h] = (def.seed | 0) || seedFor(def.key || String(h));
     this.key[h] = def.key || null;
-    this._visKeyX[h] = 0x7fffffff; this._visKeyY[h] = 0x7fffffff; this._visStructVersion[h] = -1;
+    this._visKeyX[h] = 0x7fffffff; this._visKeyY[h] = 0x7fffffff; this._visStructVersion[h] = -1; this._visPackedVersion[h] = -2;
     // Seed pos/col immediately (radius/z at least) so a read before the
     // first `update()` call is well-formed (zero flicker).
     this.pos[h * 4] = def.x; this.pos[h * 4 + 1] = def.y; this.pos[h * 4 + 2] = def.z; this.pos[h * 4 + 3] = def.radius;
@@ -161,7 +181,8 @@ export class LightSet {
       this.flickerAmount[handle] = this.flickerAmount[last]; this.flickerJitter[handle] = this.flickerJitter[last];
       this.seed[handle] = this.seed[last];
       this.key[handle] = this.key[last];
-      this._visKeyX[handle] = 0x7fffffff; this._visKeyY[handle] = 0x7fffffff; this._visStructVersion[handle] = -1;
+      this.visVersion[handle] = this.visVersion[last];
+      this._visKeyX[handle] = 0x7fffffff; this._visKeyY[handle] = 0x7fffffff; this._visStructVersion[handle] = -1; this._visPackedVersion[handle] = -2;
     }
     this.count = last;
   }
@@ -210,10 +231,19 @@ export class LightSet {
       if (!this.on[i]) continue;
       const cellX = Math.floor(this.defX[i]), cellY = Math.floor(this.defY[i]);
       const sv = world ? world.structVersion : 0;
-      if (cellX !== this._visKeyX[i] || cellY !== this._visKeyY[i] || sv !== this._visStructVersion[i]) {
+      // Architect review 1 item 5: the containing structure's own
+      // `packed.version` - a sector animation (the US-012 grate) changes
+      // `floorH/ceilH` in place without bumping `world.structVersion`, so a
+      // light sitting next to it must still see the recompute.
+      const struct = world ? world.structureAt(this.defX[i], this.defY[i]) : null;
+      const pv = struct ? struct.packed.version : -2;
+      if (cellX !== this._visKeyX[i] || cellY !== this._visKeyY[i] || sv !== this._visStructVersion[i] || pv !== this._visPackedVersion[i]) {
         computeVisGrid(this, i, world);
-        this._visKeyX[i] = cellX; this._visKeyY[i] = cellY; this._visStructVersion[i] = sv;
+        this._visKeyX[i] = cellX; this._visKeyY[i] = cellY; this._visStructVersion[i] = sv; this._visPackedVersion[i] = pv;
         this.visDirty[i] = 1;
+        // Architect review 1 item 4: monotonic version, not a one-frame
+        // flag - pipelines diff against their OWN last-uploaded version.
+        this.visVersion[i] = (this.visVersion[i] + 1) | 0;
       }
     }
   }
@@ -258,7 +288,9 @@ export function buildLightSet(world, palette) {
  * (US-012 `lanternTake` sets it; US-006 AC "carried over from US-012
  * AC3/AC4"). `attachedLightPos` (engine/entities/attach.js) computes the
  * world position; this just owns the handle bookkeeping (one carried light
- * per entity - `entity._lightHandle`, not serialized, rebuilt on world load).
+ * per entity, keyed by `e.id` in `lights.entityHandle` - architect review 1
+ * item 6: NOT `entity._lightHandle`, which would leave a stale slot index on
+ * a serialized entity after a freshly built `LightSet` reload).
  * `palette` resolves `light.preset` -> `{hue, intensity, radius, flicker}`
  * (same `P.lights[preset]`/`P.hue[color]` rule as `buildLightSet`).
  */
@@ -266,23 +298,25 @@ export function syncEntityLights(lights, world, palette, attachedLightPos, out) 
   world.forEachEntity((e) => {
     const light = e.components && e.components.light;
     if (!light) {
-      if (e._lightHandle != null) lights.setOn(e._lightHandle, false);
+      const h = lights.entityHandle.get(e.id);
+      if (h != null) lights.setOn(h, false);
       return;
     }
     const eyeFeel = e.components.body && e.components.body.feel;
     attachedLightPos(e, eyeFeel, out);
-    if (e._lightHandle == null) {
+    const h = lights.entityHandle.get(e.id);
+    if (h == null) {
       const preset = palette.lights[light.preset];
       if (!preset) { console.warn(`[lighting] unknown carried light preset "${light.preset}" (entity ${e.id})`); return; }
       const hue = palette.hue[preset.color];
-      e._lightHandle = lights.add({
+      lights.entityHandle.set(e.id, lights.add({
         x: out[0], y: out[1], z: out[2],
         hue, intensity: preset.intensity, radius: preset.radius,
         flicker: preset.flicker || null, on: light.on !== false, key: `entity.${e.id}`,
-      });
+      }));
     } else {
-      lights.move(e._lightHandle, out[0], out[1], out[2]);
-      lights.setOn(e._lightHandle, light.on !== false);
+      lights.move(h, out[0], out[1], out[2]);
+      lights.setOn(h, light.on !== false);
     }
   });
 }
@@ -315,7 +349,12 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out) {
     if (fo <= 0) continue;
     const ndotl = d > 1e-6 ? (nx * dx + ny * dy + nz * dz) / d : 0;
     if (ndotl <= 0) continue;
-    const vis = sampleVis(lights, i, x, y);
+    // Architect review 1 item 1: sample the vis grid at `S = P + N*0.01`,
+    // not `P` itself - a wall hit lies exactly on the cell boundary, so
+    // `floor(P.x/y)` is a float coin flip between the solid cell and the
+    // open one. Nudging along the surface normal always lands in the open
+    // cell the surface actually faces (matches `light.frag.js`'s `sampleVis`).
+    const vis = sampleVis(lights, i, x + nx * 0.01, y + ny * 0.01);
     if (vis <= 0) continue;
     const amt = fo * ndotl * vis;
     out[0] += lights.col[o4] * amt;
@@ -430,7 +469,14 @@ export function packLightUniforms(lights, outF32) {
  */
 export function lightSurfaces(fb, lights, cam, world) {
   const lb = fb.light;
-  if (!lb || lb.uniform) return; // `?lights=0` regression path - caller already filled rgb[0..2] with ambient
+  // Architect review 1 item 3: `lightSurfaces` sets `uniform = false` ITSELF
+  // (used to be the caller's job - compositor.js set it right before this
+  // call, but `bench-cast.mjs` calls this function directly and never did,
+  // so `lb.uniform` was still `true` from `makeLightBuffer`'s default and
+  // this returned on line 1 every frame, measuring nothing). No `lights` ->
+  // the `?lights=0` regression path - caller already filled rgb[0..2] with ambient.
+  if (!lb || !lights) return;
+  lb.uniform = false;
   const gbuf = fb.gbuf, depth = fb.depth.depth;
   const cols = gbuf.cols, rows = gbuf.rows;
   const rt = fb.rt;

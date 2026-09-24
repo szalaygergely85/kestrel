@@ -103,7 +103,8 @@ export function renderWorld(fb, world, cam) {
     // it cannot live only here.
     if (fb.light) {
       if (fb.lights) {
-        fb.light.uniform = false;
+        // Architect review 1 item 3: `lightSurfaces` now sets `uniform =
+        // false` itself - see engine/render/lighting.js.
         lightSurfaces(fb, fb.lights, cam, world);
       } else {
         fb.light.uniform = true;

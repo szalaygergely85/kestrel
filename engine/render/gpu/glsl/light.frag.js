@@ -79,7 +79,11 @@ void main() {
     if (fo <= 0.0) continue;
     float ndotl = d > 1e-6 ? dot(N, d3) / d : 0.0;
     if (ndotl <= 0.0) continue;
-    float vis = sampleVis(i, P.x, P.y);
+    // Architect review 1 item 1: sample at S = P + N*0.01, matching
+    // lightAt() in lighting.js (a wall hit lies exactly on the cell
+    // boundary; sampling P itself is a float coin flip between the solid
+    // cell and the open one).
+    float vis = sampleVis(i, P.x + N.x * 0.01, P.y + N.y * 0.01);
     if (vis <= 0.0) continue;
     L += uLightCol[i].rgb * (fo * ndotl * vis);
   }

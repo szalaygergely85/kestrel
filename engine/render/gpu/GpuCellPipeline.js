@@ -139,6 +139,11 @@ export class GpuCellPipeline {
     // convention this atlas shares with the JS reference).
     this.texLight = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
     this.texLVis = createTexture2D(gl, gl.R8UI, MAX_VIS_DIM, MAX_LIGHTS * MAX_VIS_DIM);
+    // Architect review 1 item 4: per-slot "what version does THIS texture
+    // hold" - reset to -1 (never matches a real `LightSet.visVersion`, which
+    // starts at 0) whenever `texLVis` is (re)created, i.e. right here, so a
+    // context restore re-uploads every static light's grid on its next frame.
+    this._lvisUploaded = new Int32Array(MAX_LIGHTS).fill(-1);
 
     // --- pipeline-owned pass-1 output ---
     this.texShadeFg = createTexture2D(gl, gl.RGBA8, this.cols, this.rows);
@@ -837,10 +842,15 @@ export class GpuCellPipeline {
     // big enough for request". Reset to the engine-wide default (4) right
     // after - no other texture upload in this file relies on alignment 1.
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    // Architect review 1 item 4: upload keyed by `light.visVersion[i]` vs
+    // this pipeline's OWN last-uploaded version - not a one-frame
+    // `visDirty` flag, which is cleared by the NEXT `LightSet.update()`
+    // regardless of whether this (or any) pipeline actually consumed it.
     for (let i = 0; i < n; i++) {
-      if (!light.visDirty[i]) continue;
+      if (light.visVersion[i] === this._lvisUploaded[i]) continue;
       const rows = light.vis.subarray(i * MAX_VIS_CELLS, (i + 1) * MAX_VIS_CELLS);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, i * MAX_VIS_DIM, MAX_VIS_DIM, MAX_VIS_DIM, gl.RED_INTEGER, gl.UNSIGNED_BYTE, rows);
+      this._lvisUploaded[i] = light.visVersion[i];
     }
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   }

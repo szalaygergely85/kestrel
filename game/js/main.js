@@ -266,6 +266,24 @@ function runGame(mode) {
     // (torch/lantern/beacon presets, docs/architecture.md 14.3). `?lights=0`
     // keeps the old uniform-ambient path (fb.lights stays null).
     if (lightsEnabled) lightSet = buildLightSet(world, assets.palette);
+    // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
+    // 7 synthetic extra lights (torch preset) spread 2-4 m around the
+    // level's first light, so the tester can measure the "8 point lights"
+    // AC (`?bench=1&lights=8`) at 320x120. Game-side only, not the engine.
+    if (lightSet && lightSet.count >= 1 && params.get('lights') === '8') {
+      const preset = assets.palette.lights.torch;
+      const hue = assets.palette.hue[preset.color];
+      const bx = lightSet.defX[0], by = lightSet.defY[0], bz = lightSet.defZ[0];
+      for (let i = 0; i < 7; i++) {
+        const ang = (i / 7) * Math.PI * 2;
+        const dist = 2 + (i % 3); // deterministic spread, 2-4 m
+        lightSet.add({
+          x: bx + Math.cos(ang) * dist, y: by + Math.sin(ang) * dist, z: bz,
+          hue, intensity: preset.intensity, radius: preset.radius,
+          flicker: preset.flicker || null, on: true, key: `synthetic.${i}`,
+        });
+      }
+    }
 
     playerHandle = world.get('player');
     const startT = playerHandle.data.transform;
@@ -519,22 +537,30 @@ function runGpuCompareDdaMode() {
   const worldM1 = loadCompareWorld(assets.world('world_m1'));
   const m1Player = worldM1.get('player').data;
   const m1Eye = Camera.fromEntity(m1Player, engine.physics.eyeHeight);
+  // Architect review 1 item 2: build a real `LightSet` per compare world (the
+  // torch in `test_room`, whatever `level.def.lights` world_m1's structures
+  // carry) so `?gpucompare=1` proves CPU/GPU parity with point lights ON, not
+  // just ambient-only. `?lights=0` still keeps `lightsEnabled` false, so this
+  // page's own "lights-off still passes" run is exercised by the same flag
+  // gameplay uses - no separate on/off toggle needed here.
+  const testRoomLights = lightsEnabled ? buildLightSet(testRoom, assets.palette) : null;
+  const worldM1Lights = lightsEnabled ? buildLightSet(worldM1, assets.palette) : null;
   const runs = [
-    ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
-    { world: worldM1, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
+    ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, lights: testRoomLights, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
+    { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
     // Architect review 1 item 1: BUG-OWN-001's owner repro pose (tower,
     // sector 'L' looking over the closed grate 'G', ceilH 3.0 < eye) as a
     // 7th row. World position (debug overlay, feet/floor z) is (1500.69,
     // 1027.36, 3.00); cam.z here is EYE height (feet + eyeHeight 1.60 =
     // 4.60), matching every other row's `cam` convention above.
-    { world: worldM1, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
   ];
 
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
-    timeSec: 0, gpuDda: false,
+    lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: false,
   };
 
   const cols = rt.cols, rows = rt.rows, n = cols * rows;
@@ -542,7 +568,14 @@ function runGpuCompareDdaMode() {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, name, cam } of runs) {
+  for (const { world, lights, name, cam } of runs) {
+    // Architect review 1 item 2: fixed `timeSec = 0` (14.3 item 9's parity
+    // contract - determinism, same as the rest of this compare page) so
+    // flicker/jitter are identical on both paths for this pose. Update
+    // BEFORE either path renders - `renderWorld`'s `fb.gpuDda = true` branch
+    // only primes ambient, it never calls `lightSurfaces`/`LightSet.update`.
+    fbCompare.lights = lights;
+    if (lights) lights.update(0, world);
     // GPU FIRST, from a poisoned, mask-free JS layer (`poisonAllCells`): the
     // GPU frame must produce every cell on its own, with no CPU pass having
     // run since the last pose - the `ambientL` bug only ever looked right
@@ -560,7 +593,9 @@ function runGpuCompareDdaMode() {
     poisonAllCells(rt.cells, n);
     fbCompare.gpuDda = true;
     renderWorld(fbCompare, world, cam); // DDA path: primes ambientL, otherwise a no-op - real work is frame + present
-    gpuPipeline.frame(fbCompare, ambientL, cam, world);
+    // Architect review 1 item 2: the torch (or any placed light) must reach
+    // the GPU path exactly as gameplay feeds it (main.js `render()`, above).
+    gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
     rt.present(); // cell pass + GPU sprite pass (sprites.pass, registered on rt)
     const rb = rt.readbackPresent();
     sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
@@ -607,7 +642,9 @@ function runGpuCompareDdaMode() {
       pipeline2.bind(matTable, assets.palette);
       pipeline2.setSource('dda');
       infoRows = [];
-      for (const { world, name, cam } of runs) {
+      for (const { world, lights, name, cam } of runs) {
+        fbCompare.lights = lights;
+        if (lights) lights.update(0, world);
         sprites.pool.reset();
         placeCompareSprites(cam, sprites.pool);
         sprites.pool.project(cam, rt, ambientL);
@@ -615,7 +652,7 @@ function runGpuCompareDdaMode() {
         poisonAllCells(rt.cells, n);
         fbCompare.gpuDda = true;
         renderWorld(fbCompare, world, cam);
-        pipeline2.frame(fbCompare, ambientL, cam, world);
+        pipeline2.frame(fbCompare, lights || ambientL, cam, world);
         rt.present();
         const rb2 = rt.readbackPresent();
         const { GI: GI2, GA: GA2, Depth: Depth2 } = pipeline2.readbackGeometry();
