@@ -1,6 +1,6 @@
 # Kestrel – Product Backlog
 
-Owner: Product Owner. Last updated: 2026-09-23 (D-009 amendment 2, D-011 amendments 1+2, D-012, D-013: M1 content reskin notes, US-038..US-041 added).
+Owner: Product Owner. Last updated: 2026-09-24 (D-009 amendment 2, D-011 amendments 1+2, D-012, D-013: M1 content reskin notes, US-038..US-041 added; architect refactor survey -> US-046..US-050 added).
 Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout details: see `docs/game-design.md` section 5 and 7.
 
 > **Session handoff 2 (end of 2026-09-23, commit after b6f4e00).**
@@ -69,9 +69,18 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.mjs` reports no engine imports from `game/` or `design/`. US-022 (P1) and P2 stories are not exit criteria.
 
+## Engine refactor backlog (architect survey 2026-09-24, D-006/D-010 reuse; not milestone-gated)
+| ID | Title | Priority | Status |
+|---|---|---|---|
+| US-049 | D-017 pruning of fallback-only render code | P1 | todo |
+| US-050 | Shared JS helpers and test kit | P1 | todo |
+
 ## Milestone 1.5 "Editor Preview" (sketched, see bottom of file; D-010)
 | ID | Title | Priority | Status |
 |---|---|---|---|
+| US-046 | Engine-owned frame renderer (`createWorldRenderer`) | P1 (M1.5) | todo |
+| US-047 | Two-tier public API: `engine/index.js` + `engine/dev.js` | P1 (M1.5) | todo |
+| US-048 | Split `game/js/main.js` into bootstrap + dev modes | P1 (M1.5) | todo |
 | US-031 | Editor shell + fly-cam + idle re-render skip | P0 (M1.5) | todo (sketch) |
 | US-032 | Pick/select/move/delete | P0 (M1.5) | todo (sketch) |
 | US-033 | Place props/lights/triggers + property panel + undo | P0 (M1.5) | todo (sketch) |
@@ -2465,6 +2474,60 @@ Design needed: yes – speech-box style (`uiStyle.dialogue`), the first animal's
 Notes / dependencies: US-012, US-015 (panel), US-025 (serialize), US-041 (voxel, M3). The dialogue runner is a generic engine/ui + entities feature (architect notes). Quest logic stays in `game/js/quest/`.
 
 ---
+
+## Engine refactor backlog – architect survey 2026-09-24 (D-006/D-010 reuse; not milestone-gated)
+
+### US-046 Engine-owned frame renderer (`createWorldRenderer`)  [Priority: P1 (M1.5)] [Status: todo]
+As a programmer building the M1.5 editor, I want the per-frame render orchestration extracted into an engine-owned `WorldRenderer`, so that both the game and the editor share identical frame assembly/render/present logic without duplicating subtle ordering rules.
+Acceptance criteria:
+- [ ] New `engine/render/WorldRenderer.js` exposes `renderer.frame(world, camPose, timeSec)` (fb assembly: GBuffer/MaterialTable/light buffer/`gpuDda`; `syncEntityLights` + `lights.update`; `renderWorld` vs `gpuPipeline.frame` choice incl. the `rt.gpuActive` context-loss rule; sprites; `present`) plus `renderer.stats`; overlay/crosshair stay caller-side.
+- [ ] `engine/index.js` exports `createWorldRenderer` per an updated architecture.md section 5.
+- [ ] `game/js/main.js` `runGame` is rewritten to call the new renderer.
+- [ ] `?gpucompare=1` ALL PASS and all Node suites green, no behaviour change.
+- [ ] `node tools/check-deps.mjs` OK.
+Design needed: no.
+Notes / dependencies: architect tech notes first (render ordering, context-loss rule). Must land before US-031 (M1.5 editor shell). See docs/architecture.md "Refactor candidates" item 1.
+
+### US-047 Two-tier public API: `engine/index.js` + `engine/dev.js`  [Priority: P1 (M1.5)] [Status: todo]
+As a second client of the engine (the M1.5 editor, future games), I want a clear split between the stable public API and dev/internal tooling, so that I can tell what is safe to depend on.
+Acceptance criteria:
+- [ ] New `engine/dev.js` re-exports pass internals and parity tooling currently in `engine/index.js` (`beginFrame/castSectors/fillSky/computeDerivatives/shadeSurfaces/edgePass`, `runShadeTest`, `runGpuCompare/compareCells/poison*`, `Input`/`PlayerLook` "may change").
+- [ ] `engine/index.js` keeps only the stable API; section 5 of architecture.md is updated to match.
+- [ ] `tools/check-deps.mjs` (+ fixture test) enforces that `game/`/`tools/` code importing dev-only symbols imports them from `engine/dev.js`, not `engine/index.js`.
+- [ ] `?gpucompare=1` ALL PASS and all Node suites green, no behaviour change.
+Design needed: no.
+Notes / dependencies: architect tech notes first. Do together with US-046 (it removes most pass internals from main.js's import list). Must land before US-031.
+
+### US-048 Split `game/js/main.js` into bootstrap + dev modes  [Priority: P1 (M1.5)] [Status: todo]
+As a programmer maintaining `game/js/main.js`, I want the game bootstrap separated from dev/test harnesses (bench, shadetest, gpucompare, flicker, glyphs, demo), so that the bootstrap is small and each harness is independently maintainable.
+Acceptance criteria:
+- [ ] `game/js/dev/modes/*.js` implement a `{ name, run(ctx) }` table for each URL-flag mode currently inlined in `main.js`.
+- [ ] `game/js/main.js` shrinks to roughly the bootstrap only (~250 lines), dispatching to the mode table.
+- [ ] The pose list shared by `tools/bench-poses.js` and game code moves to a shared data file, or `tools/check-deps.mjs` explicitly allows the existing game->tools import (architect decides which).
+- [ ] Every URL-flag mode (`?bench=1`, `?shadetest=1`, `?gpucompare=1|shade`, `?flicker=1`, glyphs, demo) still works, smoke-tested one by one.
+- [ ] `?gpucompare=1` ALL PASS and all Node suites green, no behaviour change.
+Design needed: no.
+Notes / dependencies: do after US-046/US-047 (they shrink `runGame`/its import list first). M1.5, before or alongside US-031.
+
+### US-049 D-017 pruning of fallback-only render code  [Priority: P1] [Status: todo]
+As the architect/programmer maintaining the render backends, I want the fallback-only CPU code paths pruned now that the GPU path is the sole oracle-backed renderer (D-017), so that the API surface stays small for the M1.5 editor and there is only one shading reference to keep in parity.
+Acceptance criteria:
+- [ ] `cpuLightCap`/`selectCpuLights` (`lighting.js`) and the legacy inline-shade path (`?detail=0`, `fastShade.js`) are removed or reduced to `buildPowLUT` only, per the architect's call.
+- [ ] `cpuGrid` forcing is removed where it is fallback-only.
+- [ ] `?gpucompare=1` ALL PASS and all Node suites green, no behaviour change (the GPU/oracle output is bit-identical to before the prune).
+- [ ] `tools/bench-cast.mjs` and affected tests updated so their numbers still mean what their docs say.
+Design needed: no.
+Notes / dependencies: the D-017 AC cleanup itself is already done (commit b462778); this story is the code prune. Pick up any time after the remaining M1 P0 stories are `done` — not gated on M1.5. Canvas2D/`force2d` removal is a separate later step, not in this story. Architect tech notes first (bit-identical oracle requirement).
+
+### US-050 Shared JS helpers and test kit  [Priority: P1] [Status: todo]
+As a programmer working across the engine and its tests, I want the duplicated math helpers and test-assertion boilerplate consolidated into shared internal modules, so that there is one place to fix a bug in `clamp`/`approach` and one assert kit for all tests.
+Acceptance criteria:
+- [ ] `engine/core/math.js` (internal, not exported from `engine/index.js`) holds `clamp`/`clamp01`/`clampByte`/`approach`; Player/integrate/detailShade/fastShade/sectorCaster/World switch to importing from it.
+- [ ] `engine/test/assert.js` holds `ok`/`approxEqual`/`assert`; the ~22 test files that re-declare them import from it instead.
+- [ ] `node tools/check-deps.mjs` OK (`math.js` stays internal, not re-exported publicly).
+- [ ] `?gpucompare=1` ALL PASS and all Node suites green, no behaviour change.
+Design needed: no.
+Notes / dependencies: do after US-049 so deleted files are not touched twice. Good filler story, no milestone gate. Very low risk per the survey; run architect tech notes only if the architect flags a concern.
 
 ## Milestone 1.5 "Editor Preview" – sketches (D-010, not yet refined; not M1 scope)
 
