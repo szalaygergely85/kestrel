@@ -112,6 +112,16 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 | US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | P0 (before M3) | todo (sketch) – after US-039, US-016, US-006/007 |
 | US-041 | Voxel lighting (rotated normals) + rigid-part animation + entity binding + bear preview | P0 (before M3) | todo (sketch) – after US-040 |
 
+## Physics + effects epic (owner requirement 2026-09-24: object physics before release; handoff 3 items 7+8; sketched, see bottom of file)
+**Gate before US-051 starts:** physics-engine choice (extend the in-house `engine/physics` sphere/capsule code vs Rapier/WASM under D-015) needs an architect estimate + a manager decision (new D-entry).
+| Order | ID | Title | Priority | Milestone | Status |
+|---|---|---|---|---|---|
+| P1 | US-051 | Dynamic rigid props: drop, fall, tumble, settle (box/cylinder bodies) (engine story) | P0 | M2 | todo (sketch) - after the physics-engine decision |
+| P2 | US-052 | Pick up, carry, put down, throw (e.g. a branch) (engine + game story) | P0 | M2 | todo (sketch) - after US-051, uses US-012 interaction |
+| P3 | US-053 | Particle system: smoke, dust, sparks, splash drops (engine story) | P1 | M2 | todo (sketch) - folds in US-019 dust motes |
+| P4 | US-054 | Cuttable tree -> trunk log + branches as physics pieces (engine + content story) | P0 | M3 | todo (sketch) - after US-051/052, the M2 sword, US-041 voxel |
+| P5 | US-055 | Water surface + splash + floating props (engine story) | P1 | M3 | todo (sketch) - after US-051, US-053, US-026 |
+
 ## Milestone 6 "Polish & Release" (sketched, see bottom of file; D-012)
 | ID | Title | Priority | Status |
 |---|---|---|---|
@@ -2926,6 +2936,64 @@ Acceptance criteria (sketch):
 - [ ] One bear placed in a test world walks a loop, with the lamp and the sun lighting it correctly on both paths. The US-018 budgets hold.
 Design needed: yes – the bear voxel model + preview page.
 Notes / dependencies: US-040, US-006/007, US-016. Target: `done` before M3 content starts (US-042 M3 NPCs).
+
+---
+
+## Physics + effects epic – sketches (owner requirement 2026-09-24; M2-M3, before M6)
+
+All five are **engine stories: architect tech notes first**. **Gate before US-051:** the physics-engine choice (extend the in-house `engine/physics` code vs Rapier `@dimforge/rapier3d-compat` / WASM per D-015; Rapier was rejected for the single US-013 boulder, but many stacked, tumbling bodies change the trade-off) needs an architect estimate (cost, determinism for saves, fixed timestep, `World` queries per D-007) and a manager decision recorded in `docs/decisions.md`. All queries still go through `World`; the JS fixed-step sim stays the oracle.
+
+### US-051 Dynamic rigid props: drop, fall, tumble, settle  [Priority: P0 (M2)] [Status: todo (sketch)]
+As a player, I want loose objects (crates, logs, stones, branches) to fall, tumble and come to rest believably, so that the world feels physical and not painted on.
+Acceptance criteria (sketch):
+- [ ] A generic dynamic-body component (box, cylinder/capsule, sphere; mass, friction, restitution) on the fixed timestep; the US-013 boulder runs on it (or stays on the roller with a documented reason) with its tests unchanged.
+- [ ] A test room with 10 mixed bodies dropped from 3 m: all settle (sleep) within 3 s, none sink into floors/walls/steps or each other by more than 2 cm, none jitter at rest (sleeping bodies cost ~0 per step).
+- [ ] Bodies collide with the player capsule both ways (the hero pushes a crate; a falling log stops on the hero without tunnelling), and against sector walls, floors, steps and terrain via `World` queries.
+- [ ] 30 active bodies stay inside the US-018 JS budget (bench number in the story); determinism: the same inputs give the same resting poses in Node (save-safe).
+- [ ] Bodies render with correct rotation (voxel models per D-016 once US-041 is done; a billboard fallback before that).
+Design needed: yes – crate, small log, stone voxel/billboard models.
+Notes / dependencies: physics-engine decision (see gate above), US-008/009/013. Landing thud hook for US-020 sound.
+
+### US-052 Pick up, carry, put down, throw  [Priority: P0 (M2)] [Status: todo (sketch)]
+As a player, I want to pick up a branch or a crate, carry it, set it down or throw it, so that I can bring things where they are needed and solve simple puzzles.
+Acceptance criteria (sketch):
+- [ ] `E` on a liftable body (mass <= 25 kg, flagged `liftable`) within 1.8 m picks it up (US-012 interaction prompt "Lift"); it is held in front of the hero at chest height and does not clip into walls (pushed back / dropped if blocked).
+- [ ] Carrying: walk speed x0.7, no run, no sword swing; jump allowed only for items <= 5 kg.
+- [ ] `E` again puts it down gently on the floor in front (a valid spot or no-op); `Mouse0` throws it along the view direction at 8 m/s for items <= 5 kg (scaled down linearly to 3 m/s at 25 kg) and it becomes a normal US-051 body.
+- [ ] A carried item can be placed on a pressure plate (US-014-style trigger) and the trigger fires; the carried branch counts as a key item for a "bring the branch" test beat.
+- [ ] Carry state is dropped cleanly on damage, restart (`R`) and level change; no allocations per step.
+Design needed: yes – hold pose for the lifted item (offset per model), "Lift/Drop/Throw" hint text (writer).
+Notes / dependencies: US-051, US-012, M2 sword (mutual exclusion with the swing).
+
+### US-053 Particle system: smoke, dust, sparks, splash drops  [Priority: P1 (M2)] [Status: todo (sketch)]
+As a player, I want smoke rising from fires, dust puffs when things land and sparks from metal hits, so that the world feels alive and impacts feel satisfying.
+Acceptance criteria (sketch):
+- [ ] An engine emitter component (rate, lifetime, velocity + spread, gravity/buoyancy, wind, drag, glyph ramp over life e.g. `@ O o . `, colour ramp, emissive flag), pooled, drawn through the GPU sprite pass with depth test; JS reference for gpucompare.
+- [ ] Presets as data in `design/`: chimney/burner smoke (rises ~0.6 m/s, drifts with wind, fades over 4 s), landing dust (on US-051 impacts above 2 m/s), sparks (emissive, gravity, 0.4 s), splash drops (used by US-055).
+- [ ] 500 live particles stay inside the US-018 budgets; lit by ambient + point lights (not emissive ones).
+- [ ] US-019 dust motes in the sun shaft are re-built as a preset of this system (or US-019 is closed in favour of it).
+Design needed: yes – glyph + colour ramps per preset, preview page.
+Notes / dependencies: US-030c sprite pass, US-006/007 lighting. Burner smoke on the M1 *Kestrel* burner is the first placement.
+
+### US-054 Cuttable tree -> log + branches as physics pieces  [Priority: P0 (M3)] [Status: todo (sketch)]
+As a player, I want to cut down a tree with my sword and use the pieces, so that I can build a bridge, block a path or carry a branch where it is needed.
+Acceptance criteria (sketch):
+- [ ] A `cuttable` tree entity takes 3 sword hits (hit flash + chip particles from US-053); on the 3rd hit it tips over away from the hero (falls ~1.5 s, hinge at the stump) and lands with a dust puff.
+- [ ] On landing it splits into data-defined pieces (1 trunk log ~40 kg, 2-3 branches ~3 kg, a stump that stays); each piece is a US-051 body; branches are `liftable` (US-052), the log can be pushed.
+- [ ] A falling tree can span a 3 m gap as a walkable bridge (the player capsule walks along the log) in a test room.
+- [ ] Cut trees stay cut through restart/save state per the level's state rules; max 8 loose pieces per sector (oldest sleeping twigs despawn).
+Design needed: yes – tree voxel model split into parts (trunk, branches, stump), fall animation or physics hinge params, chip/leaf particle ramps.
+Notes / dependencies: US-051, US-052, US-053, the M2 sword story, US-041 (voxel rigid parts). M3 because the sword and voxel models land before it.
+
+### US-055 Water surface + splash + floating props  [Priority: P1 (M3)] [Status: todo (sketch)]
+As a player, I want rivers and pools with a moving surface that splashes when I or objects enter it, and logs that float, so that water feels real and can be part of puzzles.
+Acceptance criteria (sketch):
+- [ ] Water as world data (sector or terrain region with a surface height); rendered on the GPU path with animated wave glyphs (`~ - =` ramp), depth tint, sky/light reflection, see-through to the floor in shallow water; JS reference in gpucompare.
+- [ ] The player wades below 0.6 m depth (speed x0.6) and swims above it (no sword, slow, surface-locked); no drowning in this story.
+- [ ] Bodies (US-051) and the player spawn splash particles (US-053) and a ring glyph ripple on entry scaled by speed; bodies with density < water float and drift with a data-defined current (a thrown branch floats downstream).
+- [ ] Budgets (US-018) hold with one water region on screen.
+Design needed: yes – water palette + glyph ramps, ripple/splash ramps, a test pool/river level.
+Notes / dependencies: US-051, US-053, US-026 (terrain regions). Water puzzles in M4 build on this.
 
 ---
 
