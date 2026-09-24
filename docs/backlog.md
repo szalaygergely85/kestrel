@@ -56,6 +56,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | PO CHANGE REQUEST (2026-09-23): logo approved; map card needs "W." signature, `hintBurner`/`hintClimb` zones, `storyHints.when` per ACs. Programmer after the art PO OK + US-010 + US-012 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
+| 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | todo | Programmer; UI/game-only, no architect notes needed |
 | 26 | US-022 | Wake the relay with the lamp (optional beat, D-003; D-011 reskin) | P1 | todo | Relay bowl + glow art comes with the US-011 reskin; Programmer, after all P0 done |
 | 27 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
 | 28 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
@@ -824,7 +825,7 @@ Acceptance criteria:
 - [ ] Debug views (URL flag or key) render `gbuf.kind`, `planeId` and edge rule as colours, for GLSL debugging.
 - [ ] **GPU budget: <= 4 ms per frame** at 160x60 on the owner's laptop, measured via `?bench=1` (`EXT_disjoint_timer_query_webgl2` where available, else frame time); the JS frame time does not rise versus the US-028 baseline (the upload cost, ~0.4 ms, is reported).
 - [ ] **Runs on the owner's real hardware** (Chrome, owner's laptop): the game and `?gpucompare=1` run with zero console errors, and the owner (via the main session) confirms the result. A tester run on another machine alone does not satisfy this.
-- [ ] **The JS path stays the oracle and the fallback**: `?gpu=0`, no WebGL2, context failure, or a software renderer (`UNMASKED_RENDERER` contains SwiftShader / llvmpipe / Basic Render) -> JS shading + existing presenter, fully playable. `shadetest`, `bench-cast` and the designer oracles still run headless in Node and pass unchanged. The F3 overlay (or console until US-018) shows `gpu` / `cpu`.
+- [ ] (D-017) **The JS path is the correctness reference only, not a playable fallback**: no WebGL2 or context-creation failure -> a clear full-screen "WebGL2 required" message (short how-to: update browser / enable hardware acceleration), no crash. A software renderer (`UNMASKED_RENDERER` contains SwiftShader / llvmpipe / Basic Render) -> run the GPU path with a one-line "performance may be poor" warning. `?gpu=0` stays a dev/debug switch showing the JS reference in-browser (any grid, speed irrelevant). `shadetest`, `bench-cast` and the designer oracles still run headless in Node and pass unchanged. The F3 overlay (or console until US-018) shows `gpu` / `cpu`.
 - [ ] Public API unchanged: `renderWorld(fb, world, cam)` picks the GPU pipeline when `rt.backend === 'gl2'` and `opts.gpu !== false`. `node tools/check-deps.mjs` OK.
 - [ ] **Gate rule:** if the parity thresholds or the owner-hardware run fail, the programmer gets **one** rework. If it still fails, the story closes as "gate failed", M1 switches to **plan A** (PO writes US-004c: CPU optimisations), US-030 leaves M1, and US-006/US-007/US-016 are built on the CPU. The main session records the outcome in `docs/decisions.md` under D-009.
 Design needed: no.
@@ -1156,7 +1157,7 @@ Acceptance criteria:
 - [x] `test_room` has one torch light; walking around it shows warm orange falloff up to 6 m, ambient cool blue elsewhere (values from GDD 7.3).
 - [ ] Supports at least **8** point lights within the GPU budget (<= 4 ms total at 320x120) and JS <= 2 ms. (JS side measured, see Programmer notes; GPU budget not yet measured on real hardware - no owner browser session this pass.)
 - [x] Uses the US-002 light rules: light color is a hue (`P.hue[key]`) and intensity carries the energy (`addLight`); falloff is `P.util.falloff` `(1-(d/r)^2)^2`. Light values are read from `P.lights` (torch/lantern), not hard-coded.
-- [x] JS reference lighting produces the same result: `?gpucompare=1` with lights on meets the US-029 thresholds (ARCH OK, `88a1b33`). On the CPU fallback the JS reference runs with a reduced light count (max 4, nearest first, `selectCpuLights`) and the game stays playable - see "Programmer fix pass 2".
+- [x] JS reference lighting produces the same result: `?gpucompare=1` with lights on meets the US-029 thresholds (ARCH OK, `88a1b33`). **(D-017) Obsolete:** the "CPU fallback with a reduced light count (max 4, nearest first) stays playable" clause no longer applies (no playable CPU fallback is required); `selectCpuLights`/the 4-light cap and the <= 1.5 ms CPU target may stay as unmaintained dev-switch code but carry no AC.
 - [x] (Carried over from US-012 AC3/AC4.) After E on the brass lamp, `syncEntityLights` renders the player's `components.light` via `attachedLightPos` (0.3 right / 0.3 down / 0.4 forward, sway with walk, ±5% flicker from `P.lights.lantern`); in the upper stairwell the gap edges are at least 3 glyph-ramp steps brighter than without the lamp. (Wired end-to-end; not walked in a live browser session this pass - PO/tester should verify visually.)
 Design needed: no (uses US-002 colors).
 Notes / dependencies: US-030a + US-030b `done` (or, if the US-029 gate failed, built on the CPU per plan A with the old 4-lights-at-60-fps bar), US-025.
@@ -1229,7 +1230,7 @@ Acceptance criteria:
 - [ ] In `test_room`, the sky-ceiling region casts a visible bright patch on the floor that is offset from the opening according to sun direction, and walls cast visible shadows inside it.
 - [ ] Sunlit and shadowed floor differ by at least 4 steps on the glyph ramp.
 - [ ] Sun direction can be changed with debug keys (F6/F7 rotate azimuth) to verify shadows move correctly.
-- [ ] Sun + 8 point lights stay within GPU <= 4 ms and JS <= 2 ms at 320x120; `?gpucompare=1` meets the US-029 thresholds with the sun on. The CPU fallback renders the sun via the JS reference and stays playable.
+- [ ] Sun + 8 point lights stay within GPU <= 4 ms and JS <= 2 ms at 320x120; `?gpucompare=1` meets the US-029 thresholds with the sun on. **(D-017) Obsolete:** "the CPU fallback renders the sun via the JS reference and stays playable" is no longer required (no playable CPU fallback).
 Design needed: no.
 Notes / dependencies: US-006.
 
@@ -1719,7 +1720,7 @@ Acceptance criteria – Designer (`design/models/*.js` + `design/preview/props.h
 - [x] Every prop: anchor at feet, palette keys only (from US-002), readable at 1/2 scale (for distance).
 - [x] Preview page shows each prop at near/mid/far scale on a dark background, with light-direction/intensity slider.
 Acceptance criteria – Programmer:
-- [ ] (D-009) On the `gl2` path, props are drawn by the **US-030 GPU sprite pass** (sprite-list texture, per-cell depth test, no readback). `engine/render/sprites.js` (`drawSprites`) stays as the reference and the CPU fallback and gives the same result under `?gpucompare=1` (US-029 thresholds).
+- [ ] (D-009) On the `gl2` path, props are drawn by the **US-030 GPU sprite pass** (sprite-list texture, per-cell depth test, no readback). `engine/render/sprites.js` (`drawSprites`) stays as the reference (D-017: not a playable fallback) and gives the same result under `?gpucompare=1` (US-029 thresholds).
 - [ ] Billboard renderer: sprites positioned in world, scaled by distance, depth-sorted and occluded correctly by walls (per-cell depth on the GPU, depth buffer on the JS path).
 - [ ] All props stay readable at 160x60 and at the 240x90 default (D-009 amendment 2; 320x120 is a checked extra).
 - [ ] Sprites are lit by the same light model, except emissive cells (flames), which are drawn at full color and ignore both lighting and fog (uses the US-004 emissive flag).
@@ -2011,10 +2012,10 @@ Acceptance criteria – Programmer (rewritten per D-009: terrain GPU-first; D-00
 - [ ] Projection uses the same `horizonRow` / `focalRows` / y-shear as the sector pass. The horizon lines up at every pitch in the ±35 degree clamp (no seam or jump), and the terrain at the tower's outer ring meets the ring cells with no visible step (US-016b blend).
 - [ ] Look and fog exactly per `overworld_far.md` sections 3 and 4: type glyph bands by distance, sun N.L lighting from the level's sun (US-007 uniform), fog to `fogFar` with glyphs thinning to haze, and the river glint at 1.5 Hz (`timeSec` uniform). The N-ray coverage anti-shimmer (US-030) also applies to terrain cells.
 - [ ] Far tower drawn per section 5 as a billboard at (713.8, 1232.1) via the GPU sprite pass, depth-tested against the terrain, never smaller than the 3x4 minimum sprite, dark and unlit (fog cap 0.40), and unchanged by US-022.
-- [ ] **JS reference** `engine/render/terrainCaster.js` (`castTerrain`, exported via `engine/index.js`) implements the same rules, correct but **not budgeted**; it is the oracle (`?gpucompare=1` over breach poses meets the US-029 thresholds) and the CPU fallback (160x60; may use a coarser step to stay playable). No per-frame allocation in either path.
+- [ ] **JS reference** `engine/render/terrainCaster.js` (`castTerrain`, exported via `engine/index.js`) implements the same rules, correct but **not budgeted**; it is the oracle (`?gpucompare=1` over breach poses meets the US-029 thresholds). **(D-017)** No per-frame allocation. (Dropped: the `?gpu=0` "JS <= 8 ms" bench and "may use a coarser step to stay playable" - the JS path carries no perf AC.)
 - [ ] Cost looking out of the breach at the 240x90 default and at 320x120: **GPU total <= 4 ms** (terrain included) and **JS <= 2 ms** (US-018).
 Design needed: yes – far terrain data/recipe, colors, tower silhouette (delivered); follow-up US-016b; D-011 addendum (signal light, Ferrum lights). Designer checks `overworld.html` at 160x60 and 240x90 (320x120 extra).
-Notes / dependencies: US-030 (GPU DDA, depth texture, sprite pass), US-007 (sun), US-010, US-024, US-025 (World: terrain sampler, tower placement at recipe coords). If the US-029 gate failed: built on the CPU per plan A with the old criteria (terrain pass <= 4 ms JS, total JS <= 8 ms).
+Notes / dependencies: US-030 (GPU DDA, depth texture, sprite pass), US-007 (sun), US-010, US-024, US-025 (World: terrain sampler, tower placement at recipe coords).
 
 **Tech notes (architect, 2026-09-23)** - normative detail in `docs/architecture.md` 14.4 (march, textures, shading, oracle, far tower, parity). Blocked on US-030 `done` (needs pass A/B, `SDEPTH`, `uStruct*`, the sprite pass and the shared `ray()` GLSL).
 
@@ -2095,12 +2096,23 @@ Acceptance criteria:
 - [ ] F3 overlay shows: fps, total frame ms, JS ms and GPU ms (timer query, or "n/a" if unavailable), per-pass ms (walls/floors, lighting, sprites, far view, UI), pipeline `gpu` / `cpu`, current grid (e.g. `320x120`), player position, sector id, grounded flag.
 - [ ] Measured in the tower at the 3 worst views (ground floor looking at brazier + sun shaft, mid ledge looking down, summit looking out the breach) in Chrome on the owner's laptop via `?bench=1`:
   - GPU path at the default 240x90 (D-009 amendment 2) and at 320x120: >= 58 fps average, **JS <= 2 ms** (target) and never above the binding **8 ms JS budget**, **GPU <= 4 ms**.
-  - CPU fallback (`?gpu=0`, grid forced to 160x60): >= 58 fps average, JS <= 8 ms.
-- [ ] **CPU fallback stays playable (US-028 deferred perf gate):** measured on a quiet machine (no other CPU-heavy apps/agents running), the 160x60 CPU fallback path holds <= 8 ms JS frame time across the 3 worst views above, including the "facing stair" pose.
+  - (D-017) **Obsolete:** the `?gpu=0` ">= 58 fps average, JS <= 8 ms" bench line is dropped (`?gpu=0` is a dev switch only, no perf AC).
+- [ ] (D-017) **Obsolete:** "CPU fallback stays playable (US-028 deferred perf gate)" is dropped (no playable CPU fallback is required).
 - [ ] **Grid setting**: `?grid=WxH` and `createEngine({cols, rows})` accept 160x60 to 320x120 (clamped), **default 240x90 on `gl2`** (D-009 amendment 2) and forced 160x60 on the fallback; both 240x90 and 320x120 must meet the bar above. The in-game option is US-038 (M2), not required in M1.
 - [ ] No per-frame allocations in the hot render loop that cause visible GC stutter (no frame > 25 ms during a 60 s walk-through), on both paths.
 Design needed: no.
-Notes / dependencies: final check before M1 exit; overlay part can be built with US-004. D-009 budgets. If the US-029 gate failed: only the CPU line applies at 160x60.
+Notes / dependencies: final check before M1 exit; overlay part can be built with US-004. D-009 budgets.
+
+### US-045 WebGL2-required screen + software-renderer warning  [Priority: P0] [Status: todo]
+As a player whose browser can't run WebGL2 (or is falling back to a software renderer), I want a clear message instead of a broken or silently slow game, so that I know what to do.
+(D-017: no playable CPU fallback; this replaces the old auto-fallback-to-CPU behaviour.)
+Acceptance criteria:
+- [ ] No WebGL2 support, or `gl2` context creation fails: a full-screen message replaces the game canvas ("WebGL2 required to play" + a short how-to: update your browser / enable hardware acceleration in browser settings) styled with `uiStyle`; no crash, no console error, no game loop running underneath.
+- [ ] A software renderer is detected (`UNMASKED_RENDERER_WEBGL` contains SwiftShader, llvmpipe or Basic Render Driver): the game still starts on the GPU path, with a one-line dismissible warning ("Performance may be poor on this device") shown for a few seconds (or until dismissed) and logged once to the console; no other behaviour change.
+- [ ] `?gpu=0` still shows the JS reference in-browser as a dev/debug switch (unaffected by this story).
+- [ ] Works the same at 240x90 and 320x120; no layout overlap with the F3 overlay or pause menu.
+Design needed: no (uses `uiStyle` text/panel styling already established).
+Notes / dependencies: D-017. No architect tech notes needed (UI/game-only, no engine render/world/physics/core/entities changes).
 
 ### US-019 Dust motes in the sun shaft  [Priority: P2] [Status: todo]
 As a player, I want to see tiny specks of dust drifting in the sunlight, so that the light feels volumetric.
@@ -2422,7 +2434,7 @@ Placement: M2 P1 per D-012 (settings, fullscreen and focus-loss pause land toget
 Acceptance criteria:
 - [ ] **Open/close:** the pause overlay (Esc) shows `[S] Settings` under `Click to resume`. `S` or a click opens the Settings panel, and Esc returns to the pause overlay. While Settings is open the simulation is paused.
 - [ ] **Navigation:** W/S or Up/Down selects a row, A/D or Left/Right changes its value, and the mouse can click a value. The selected row is highlighted in gold (`uiStyle.settings`). Every change is applied at once; there is no "Apply" button.
-- [ ] **Grid:** `160x60 / 240x90 / 320x120`, default **240x90** on `gl2`. A change takes effect **without a page reload**. Player pose, world state and open UI are kept, the grid re-fits the window with the cell aspect preserved (no stretch), and any hitch is <= 100 ms. On the CPU fallback the row shows `160x60 (CPU mode)` and the other values are disabled.
+- [ ] **Grid:** `160x60 / 240x90 / 320x120`, default **240x90** on `gl2`. A change takes effect **without a page reload**. Player pose, world state and open UI are kept, the grid re-fits the window with the cell aspect preserved (no stretch), and any hitch is <= 100 ms. (D-017: the `160x60 (CPU mode)` row is dropped - there is no playable CPU mode.)
 - [ ] **Fullscreen:** off/on via the Fullscreen API. Leaving fullscreen with the browser's own Esc updates the row. Resize is handled the same as a grid change (re-fit, no stretch).
 - [ ] **Mouse sensitivity:** 0.05-0.40 deg/px in steps of 0.025, default 0.15 (GDD 4). **Invert Y:** off/on, default off. **Mute:** off/on, the same state as the `N` key (US-020); the row is hidden if US-020 is not built.
 - [ ] **Remembered per browser:** saved through the `game/js/platform/` adapter (D-012; web implementation = `localStorage` key `kestrel.settings`, JSON `{ settingsVersion: 1, grid: '240x90', ... }`), never through direct `localStorage` calls in game code. It is loaded at boot before `createEngine`, so the first frame already uses the saved grid. Missing, corrupt or unknown values fall back to the defaults field by field, and nothing throws.
