@@ -342,6 +342,12 @@ function runGame(mode) {
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
     gpuDda: false,
+    // PO REJECT item 1: this is the ONE real gameplay frame buffer, so
+    // `lightSurfaces` (lighting.js) caps to the 4 nearest `on` lights
+    // whenever this object's CPU path actually runs (`?gpu=0`, or the GPU
+    // pipeline unavailable). `?gpucompare=1`'s separate `fbCompare` objects
+    // never set this, so GPU parity keeps the full light list.
+    cpuLightCap: true,
   };
 
   function render(alpha) {

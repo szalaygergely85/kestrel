@@ -3,7 +3,7 @@
 // Run: node engine/render/lighting.test.js
 import {
   LightSet, buildLightSet, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
-  MAX_LIGHTS, MAX_VIS_DIM,
+  selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM,
 } from './lighting.js';
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
@@ -189,6 +189,65 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   const fb = { light: { uniform: true, rgb: new Float32Array([1, 2, 3]) } };
   lightSurfaces(fb, null, null, null);
   ok('lightSurfaces no-ops on the uniform path', fb.light.rgb[0] === 1 && fb.light.rgb[1] === 2 && fb.light.rgb[2] === 3);
+}
+
+// --- architect re-review 1 follow-up item 1: an off light leaves col rgb at 0 after update() ---
+{
+  const ls = new LightSet();
+  ls.add({ x: 0, y: 0, z: 0, hue: [1, 1, 1], intensity: 5, radius: 6, on: false });
+  ls.update(0, null);
+  ok('off light col rgb stays 0 after update()', ls.col[0] === 0 && ls.col[1] === 0 && ls.col[2] === 0,
+    `${ls.col[0]},${ls.col[1]},${ls.col[2]}`);
+}
+
+// --- architect re-review 1 follow-up item 2: two fresh LightSets get different visVersion[0] ---
+{
+  const legend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false, start: true, facingDeg: 90 },
+  };
+  globalThis.ASSETS.levels.__visVersionTest = { name: '__visVersionTest', legend, rows: ['###', '#.#', '###'] };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'vv', level: '__visVersionTest', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  const lsA = new LightSet();
+  lsA.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 5, on: true });
+  lsA.update(0, world);
+  const lsB = new LightSet();
+  lsB.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 5, on: true });
+  lsB.update(0, world);
+  ok('two fresh LightSets get different visVersion[0] (module-wide sequence, not per-slot)',
+    lsA.visVersion[0] !== lsB.visVersion[0], `${lsA.visVersion[0]} vs ${lsB.visVersion[0]}`);
+}
+
+// --- PO REJECT item 1: selectCpuLights picks the 4 nearest `on` lights, stable order ---
+{
+  const ls = new LightSet();
+  // 6 lights at increasing distance along +x from the camera at origin; one OFF light
+  // closer than some ON ones must be skipped.
+  ls.add({ x: 10, y: 0, z: 0, hue: [1, 0, 0], intensity: 1, radius: 20, on: true, key: 'd10' });
+  ls.add({ x: 1, y: 0, z: 0, hue: [1, 0, 0], intensity: 1, radius: 20, on: false, key: 'd1-off' });
+  ls.add({ x: 5, y: 0, z: 0, hue: [1, 0, 0], intensity: 1, radius: 20, on: true, key: 'd5' });
+  ls.add({ x: 2, y: 0, z: 0, hue: [1, 0, 0], intensity: 1, radius: 20, on: true, key: 'd2' });
+  ls.add({ x: 8, y: 0, z: 0, hue: [1, 0, 0], intensity: 1, radius: 20, on: true, key: 'd8' });
+  ls.add({ x: 3, y: 0, z: 0, hue: [1, 0, 0], intensity: 1, radius: 20, on: true, key: 'd3' });
+  ls.update(0, null);
+  const count = selectCpuLights(ls, 0, 0, 0);
+  ok('selectCpuLights returns exactly CPU_LIGHT_CAP (4) of 5 on lights', count === CPU_LIGHT_CAP, String(count));
+  const chosenKeys = Array.from(ls.cpuIdx.subarray(0, count)).map((i) => ls.key[i]);
+  ok('selectCpuLights picks the 4 nearest ON lights, nearest first (skips the off d1)',
+    chosenKeys.join(',') === 'd2,d3,d5,d8', chosenKeys.join(','));
+  // Re-run: same input -> same output (stable/deterministic).
+  const count2 = selectCpuLights(ls, 0, 0, 0);
+  const chosenKeys2 = Array.from(ls.cpuIdx.subarray(0, count2)).map((i) => ls.key[i]);
+  ok('selectCpuLights is stable across repeated calls with the same input', chosenKeys.join(',') === chosenKeys2.join(','));
+}
+
+// --- PO REJECT item 1: lightSurfaces only caps when fb.cpuLightCap is set (no cap => no behaviour change) ---
+{
+  const ls = new LightSet();
+  for (let i = 0; i < 6; i++) ls.add({ x: i * 2, y: 0, z: 0, hue: [1, 1, 1], intensity: 1, radius: 20, on: true, key: `k${i}` });
+  ls.update(0, null);
+  ok('lightSurfaces cap is opt-in per frame buffer (cpuLightCap unset by default)', ls.cpuCount === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

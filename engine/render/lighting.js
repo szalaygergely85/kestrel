@@ -23,6 +23,11 @@
 import { HFOV_DEG } from './sectorCaster.js';
 
 export const MAX_LIGHTS = 16;
+// PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
+// nearest `on` lights per frame (tech notes item 7, "reduced light count
+// (max 4, nearest first)"). GPU/GLSL and `?gpucompare=1` are unaffected -
+// they always use the full list.
+export const CPU_LIGHT_CAP = 4;
 // Odd, so the light's own cell sits at the centre. Radius is clamped to
 // floor((MAX_VIS_DIM-1)/2) meters for visibility purposes (a light's true
 // falloff radius can be larger - only occlusion sampling is boxed).
@@ -120,6 +125,14 @@ export class LightSet {
     // otherwise carry a stale slot index into a freshly built `LightSet`
     // after a world reload. Allocated once; per-frame `get`/`set` only.
     this.entityHandle = new Map();
+
+    // PO REJECT item 1 (CPU fallback light cap): preallocated 4-nearest
+    // scratch, filled by `selectCpuLights` - CPU (`?gpu=0`) path only, never
+    // touched by the GPU/GLSL path or `?gpucompare=1` (both keep the full
+    // list, up to `MAX_LIGHTS`, for parity). No per-frame allocation.
+    this.cpuIdx = new Int32Array(CPU_LIGHT_CAP);
+    this.cpuCount = 0;
+    this._cpuDist = new Float32Array(CPU_LIGHT_CAP);
   }
 
   /**
@@ -340,11 +353,18 @@ const evalScratch = new Float64Array(3);
  * `L = ambient + sum_i col_i * falloff(d,r) * max(0,N.L) * vis_i(P)`. `world`
  * is only used by `sampleVis` indirectly (the vis grid is already baked by
  * `update()` - this function never recomputes it, never allocates).
+ *
+ * `idxList`/`idxCount` (optional, PO REJECT item 1): when given, evaluates
+ * only those light indices (the CPU fallback's 4-nearest list from
+ * `selectCpuLights`) instead of `[0, lights.count)`. Omitted by every other
+ * caller (GPU-parity `?gpucompare=1` path, the N.L/vis unit tests), so
+ * behaviour there is unchanged.
  */
-export function lightAt(lights, world, x, y, z, nx, ny, nz, out) {
+export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount) {
   out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
-  const n = lights.count;
-  for (let i = 0; i < n; i++) {
+  const n = idxList ? idxCount : lights.count;
+  for (let k = 0; k < n; k++) {
+    const i = idxList ? idxList[k] : k;
     if (!lights.on[i]) continue;
     const o4 = i * 4;
     const lx = lights.pos[o4], ly = lights.pos[o4 + 1], lz = lights.pos[o4 + 2], r = lights.pos[o4 + 3];
@@ -466,6 +486,39 @@ export function packLightUniforms(lights, outF32) {
 }
 
 /**
+ * PO REJECT item 1: picks the `CPU_LIGHT_CAP` (4) nearest `on` lights to
+ * `(cx,cy,cz)` into `lights.cpuIdx[0..count)`, nearest first (a small
+ * insertion sort into preallocated `cpuIdx`/`_cpuDist` - no allocation,
+ * stable for equal distances since a later light only displaces an earlier
+ * one on a STRICTLY smaller distance). Returns the count (<= CPU_LIGHT_CAP).
+ * CPU fallback (`?gpu=0`) only - the GPU/GLSL path and `?gpucompare=1` keep
+ * the full light list for parity (tech notes item 7/8).
+ */
+export function selectCpuLights(lights, cx, cy, cz) {
+  const idx = lights.cpuIdx, dist = lights._cpuDist;
+  let count = 0;
+  const n = lights.count;
+  for (let i = 0; i < n; i++) {
+    if (!lights.on[i]) continue;
+    const o4 = i * 4;
+    const dx = lights.pos[o4] - cx, dy = lights.pos[o4 + 1] - cy, dz = lights.pos[o4 + 2] - cz;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (count < CPU_LIGHT_CAP) {
+      let j = count - 1;
+      while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
+      dist[j + 1] = d2; idx[j + 1] = i;
+      count++;
+    } else if (d2 < dist[count - 1]) {
+      let j = count - 2;
+      while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
+      dist[j + 1] = d2; idx[j + 1] = i;
+    }
+  }
+  lights.cpuCount = count;
+  return count;
+}
+
+/**
  * JS reference lighting pass (14.3 item 1): fills `fb.light.rgb` for every
  * `kind != 0` cell from `fb.gbuf`/`fb.depth`, using the SAME per-point
  * ray/normal reconstruction the GLSL `light` pass uses (no world xyz stored
@@ -484,6 +537,17 @@ export function lightSurfaces(fb, lights, cam, world) {
   // the `?lights=0` regression path - caller already filled rgb[0..2] with ambient.
   if (!lb || !lights) return;
   lb.uniform = false;
+  // PO REJECT item 1: `fb.cpuLightCap` is set only on the real gameplay
+  // frame buffer's CPU-fallback path (game/js/main.js) - never on
+  // `?gpucompare=1`'s `fbCompare` objects, so GPU parity keeps the full
+  // light list. Selection is once per frame (this function runs once per
+  // rendered frame), no per-cell/per-frame allocation.
+  const capped = !!fb.cpuLightCap;
+  let idxList = null, idxCount = 0;
+  if (capped) {
+    idxCount = selectCpuLights(lights, cam.x, cam.y, cam.z);
+    idxList = lights.cpuIdx;
+  }
   const gbuf = fb.gbuf, depth = fb.depth.depth;
   const cols = gbuf.cols, rows = gbuf.rows;
   const rt = fb.rt;
@@ -511,7 +575,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       const rdx = dirX + planeX * cameraX, rdy = dirY + planeY * cameraX;
       const px = cam.x + rdx * d, py = cam.y + rdy * d, pz = cam.z + slope * d;
       const f = face[i];
-      lightAt(lights, world, px, py, pz, NX[f] || 0, NY[f] || 0, NZ[f] || 0, evalScratch);
+      lightAt(lights, world, px, py, pz, NX[f] || 0, NY[f] || 0, NZ[f] || 0, evalScratch, idxList, idxCount);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
     }
