@@ -114,6 +114,8 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 
 ## Physics + effects epic (owner requirement 2026-09-24: object physics before release; handoff 3 items 7+8; sketched, see bottom of file)
 **Gate before US-051 starts:** physics-engine choice (extend the in-house `engine/physics` sphere/capsule code vs Rapier/WASM under D-015) needs an architect estimate + a manager decision (new D-entry).
+**Architect estimate (2026-09-24):** see `docs/architecture.md` "Physics epic estimate (2026-09-24)" - recommends (A) in-house compound-sphere rigid bodies, ~11 story units; Rapier spike only if US-051a misses its settle test. Awaiting manager decision.
+
 | Order | ID | Title | Priority | Milestone | Status |
 |---|---|---|---|---|---|
 | P1 | US-051 | Dynamic rigid props: drop, fall, tumble, settle (box/cylinder bodies) (engine story) | P0 | M2 | todo (sketch) - after the physics-engine decision |
