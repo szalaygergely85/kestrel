@@ -67,6 +67,29 @@ export function fadeGlyph(code, a, lut) {
  * @param {number} a - 1 = off/identity, 0 = fully faded (black, all space).
  * @param {FadeLut} lut
  */
+/**
+ * Call right before `applySceneFade` on the CPU path (both real gameplay,
+ * `?gpu=0`, and the `?gpucompare=1` JS oracle). `cb.mask` doubles as two
+ * different signals depending on the path (CellBuffer.js): on the GPU path
+ * it means "true UI overlay cell" (crosshair/end-card/debug text - the only
+ * things that ever call `setCell`/`setCellRGB` there, since the 3D scene is
+ * drawn straight into GL textures and never touches `CellBuffer`), which is
+ * exactly what GPU sprite pass F's "fade every non-mask cell" skips
+ * (sprites.frag.js). On the CPU path the raycaster/terrain/sky/sprites ALSO
+ * draw through `setCellRGB` (that's what running the CPU cast means), so by
+ * the time a caller reaches its `applySceneFade` call (always after the 3D
+ * scene, always before any UI is drawn) every cell is masked and the fade
+ * would be a full no-op (US-017 tester fix pass 2, BUG-1). No real UI has
+ * been drawn yet at that point in any caller, so every current cell IS
+ * legitimately fade-eligible - clearing the mask here makes the CPU fade
+ * skip exactly the same cells the GPU pass does (none, until the caller
+ * draws UI afterward).
+ * @param {import('../render/RenderTarget.js').RenderTarget} rt
+ */
+export function clearMaskForSceneFade(rt) {
+  rt.cells.mask.fill(0);
+}
+
 export function applySceneFade(rt, a, lut) {
   if (a >= 1) return; // identity - nothing to do (also keeps this a true no-op when the story isn't wired up)
   if (a < 0) a = 0;

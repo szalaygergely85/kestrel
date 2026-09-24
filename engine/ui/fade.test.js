@@ -4,7 +4,7 @@
 // Per the architect's tech notes (docs/backlog.md US-017 item 5): a = 1 is
 // the identity, a = 0 gives space and black, letters use index 9, the fg
 // gain curve, applySceneFade leaves mask cells alone, no allocation.
-import { createFadeLut, fadeGlyph, applySceneFade } from './fade.js';
+import { createFadeLut, fadeGlyph, applySceneFade, clearMaskForSceneFade } from './fade.js';
 import { CellBuffer } from '../render/CellBuffer.js';
 
 let pass = 0, fail = 0;
@@ -132,6 +132,31 @@ const lut = createFadeLut(RAMP, LETTER_INDEX, MIN_GAIN);
   // per cell), not a strict zero-allocation proof (see tools/bench-cast.mjs
   // --gc for the real allocation oracle used elsewhere in this codebase).
   ok('8a: 200 applySceneFade calls over 160x60 do not blow up the heap', after - before < 20 * 1024 * 1024, `${after - before} bytes`);
+}
+
+// ---------------------------------------------------------------------------
+// 9. clearMaskForSceneFade (tester fix pass 2, BUG-1): on the CPU path the
+// whole 3D scene is drawn via setCellRGB, which sets mask=1 on every cell -
+// reproduce that (mask stays at its post-construction/post-draw 1s, like a
+// real `?gpu=0` frame after renderWorld+sprites.render) and confirm the
+// fade is a no-op WITHOUT the helper, then actually fades once it's called.
+// ---------------------------------------------------------------------------
+{
+  const cb = new CellBuffer(2, 1);
+  cb.setCellRGB(0, 0, 'H'.charCodeAt(0) - 32, 200, 100, 50, 40, 20, 10); // mask[0] = 1, same as the 3D-scene CPU cast
+  const rt = { cells: cb };
+
+  const before = { glyph: cb.glyphIdx[0], fg0: cb.fg[0], bg0: cb.bg[0] };
+  applySceneFade(rt, 0, lut); // BUG-1 repro: without clearing the mask this must be a no-op
+  ok('9a: BUG-1 repro - fade is a no-op while the scene cell is still masked',
+    cb.glyphIdx[0] === before.glyph && cb.fg[0] === before.fg0 && cb.bg[0] === before.bg0);
+
+  clearMaskForSceneFade(rt);
+  ok('9b: clearMaskForSceneFade zeroes the mask', cb.mask[0] === 0);
+  applySceneFade(rt, 0, lut); // fully faded now that the mask no longer hides the cell
+  // fg floors at minGain (0.1), not 0 - see the gain curve in test 5; bg has no floor.
+  ok('9c: fix - the scene cell fades to space/black once the mask is cleared first',
+    cb.glyphIdx[0] === 0 && cb.fg[0] === (200 * MIN_GAIN) | 0 && cb.bg[0] === 0, `glyphIdx=${cb.glyphIdx[0]} fg0=${cb.fg[0]} bg0=${cb.bg[0]}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

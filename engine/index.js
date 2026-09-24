@@ -81,7 +81,7 @@ export { attachedLightPos } from './entities/attach.js';
 
 // ---- triggers + fade + restart (US-017) ------------------------------------
 export { buildTriggers, updateTriggers } from './world/triggers.js';
-export { createFadeLut, fadeGlyph, applySceneFade } from './ui/fade.js';
+export { createFadeLut, fadeGlyph, applySceneFade, clearMaskForSceneFade } from './ui/fade.js';
 
 // ---- behaviours ---------------------------------------------------------------
 export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTrigger, getBehaviour, validateBehaviours } from './core/behaviours.js';

@@ -18,7 +18,7 @@ import {
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
   isSoftwareRenderer,
-  updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade,
+  updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -353,6 +353,17 @@ function runGame(mode) {
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
       // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
+      // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
+      // used to be set once, right after the FIRST `engine.run(...)` call
+      // (below), and never refreshed - so after a restart (`R`, this same
+      // handler firing again with a new `world`/`playerHandle`/`look`) they
+      // kept pointing at the pre-restart objects while the live closure
+      // variables the game actually uses had already moved on. This handler
+      // is the single place both the first load and every restart go
+      // through, so refresh the debug refs here instead.
+      window.__debug.world = world;
+      window.__debug.playerHandle = playerHandle;
+      window.__debug.look = look;
     });
 
     engine.loadWorld(worldDef);
@@ -523,7 +534,16 @@ function runGame(mode) {
       // itself on the GPU-DDA path (`renderWorld`'s early-out already left
       // `fb.rt.cells` untouched there; the GPU sprite pass does its own
       // fade instead - see engine/render/gpu/glsl/sprites.frag.js).
-      if (!fb.gpuDda && fb.fadeLut && typeof fb.sceneFade === 'number') applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
+      // US-017 tester fix pass 2 (BUG-1): `renderWorld`/`sprites.render`
+      // above drew the whole 3D scene through `CellBuffer.setCellRGB`,
+      // which sets `cb.mask = 1` on every cell it touches - `clearMaskForSceneFade`
+      // clears that before fading (no UI has been drawn yet this frame), or
+      // `applySceneFade`'s `if (mask[i]) continue` would skip the entire 3D
+      // view (the scene never visibly faded on `?gpu=0`).
+      if (!fb.gpuDda && fb.fadeLut && typeof fb.sceneFade === 'number') {
+        clearMaskForSceneFade(fb.rt);
+        applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
+      }
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
       // the world/sprite passes, never depth-tested (architecture.md 8).
@@ -786,19 +806,11 @@ function runGpuCompareDdaMode() {
     renderWorld(fbCompare, world, cam); // full CPU cast + shade + edge + sky
     drawSprites(fbCompare, sprites.pool); // US-030c (ARCH CHANGES item 1): JS sprite oracle onto rt.cells
     // US-017 ARCH CHANGES #1 item 2/3: CPU fade runs AFTER sprites here too,
-    // matching the real frame's call site (main.js render()). `shadeSurfaces`/
-    // `drawSprites` write through `rt.setCellRGB` (CellBuffer.js), which sets
-    // `mask = 1` as a side effect on every cell it touches (the "JS wins"
-    // signal pass 1 reads for a REAL frame's UI overlay) - harmless in
-    // gameplay (the GPU-DDA path never runs this CPU cast at all, so mask
-    // stays whatever real UI drew), but here it would make `applySceneFade`
-    // skip almost the entire oracle image. This compare pose draws no UI
-    // overlay, so every cell is legitimately fade-eligible - clear the flag
-    // before fading, matching what the GPU side saw (`giMask` came from the
-    // clean, `poisonAllCells`-cleared mask at GPU-render time, before any
-    // CPU write ever happened).
+    // matching the real frame's call site (main.js render()), which now
+    // (tester fix pass 2, BUG-1) uses the same `clearMaskForSceneFade` step
+    // this oracle already needed - see engine/ui/fade.js for why.
     if (fbCompare.fadeLut && typeof fbCompare.sceneFade === 'number') {
-      fbCompare.rt.cells.mask.fill(0);
+      clearMaskForSceneFade(fbCompare.rt);
       applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);
     }
     rt.gpuActive = wasActive;
