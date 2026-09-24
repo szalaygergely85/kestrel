@@ -609,3 +609,7 @@ Sprint 0 review (`docs/sprints/sprint-0.md`): the slice isn't finishable for a f
 - The M1 build order gets rows 17a (US-040) and 25l (US-056). The M1 exit gains the owner end-to-end playthrough as the explicit acceptance test.
 - If US-040 hits the D-019 fallback gate, sprint 1 swaps US-041a/US-056 for the fallback (b) billboard fill/outline + fixed yaw work. The goal stays the same.
 - The GDD gets a progression section (no XP) that later milestones must respect (M2 sword, M3 Spark/bow).
+
+## D-021 Spells: the owner's list replaces Spark/Gust/Ward (owner decision, 2026-09-24)
+**Decision (owner):** the player's magic is four spells: **Fireball** (explosion, big damage), **Freeze**, **Telekinesis** and **Teleport**. They replace the old canon Spark / Gust / Ward (gauntlet crystals). Magic is gained at **beacons and wells** and by **finishing quests**, unlocking a small skill tree; **no XP** (power comes from gear with item levels; see docs/owner-ideas/2026-09-24-story-and-progression.md).
+**Consequences:** writer updates canon in docs/story.md + docs/game-design.md section 3 (the spells may keep the aether/light look in art and naming style, but the four effects above are fixed). PO updates the GDD combat/magic sections and any stories that mention Spark/Gust/Ward. Telekinesis builds on the physics epic (D-018, US-051/052: pick up/carry/throw); Teleport needs a short architect note (collision-safe target, camera). Not in M1.

@@ -21,3 +21,6 @@ Raw owner idea, to be shaped by the writer (story), the PO (GDD/backlog) and the
 
 ## Related open items
 - Talking animals + dialogue (US-042), physics epic (US-051..055: carry a branch, cut a tree, water, smoke), voxel creatures (US-041b), Steam (US-043).
+
+## Owner decision (2026-09-24): spells
+Fireball (explosion, big damage), Freeze, Telekinesis, Teleport. Replaces Spark/Gust/Ward. Recorded as D-021.
