@@ -3,8 +3,8 @@
 //      node --expose-gc engine/render/gpu/sprites.test.js   (also checks project()+drawSprites for heap growth)
 // Covers: the pure atlas packer against design/README.md section 4
 // (transparent space, emissive flag, colour round-trip, half LOD, normals),
-// projection (centre column, scale vs distance, half LOD below 0.75, 3x
-// cap, rect placement), the JS reference `drawSprites` (depth test,
+// projection (centre column, scale vs distance, half LOD below 0.75, no
+// upscale cap (BUG-OWN-002), size shrinks with distance, rect placement), the JS reference `drawSprites` (depth test,
 // emissive ignores light+fog, non-emissive fogged, bg kept, nearest wins)
 // and the sprite shader source rules (14.1 section 5 lexical checks).
 import { AssetRegistry } from '../../core/assets.js';
@@ -134,10 +134,37 @@ const camE = { x: 2.5, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // facing east
   const far = proj(40, 2.5, 1.6, camE);
   ok('far sprite uses the half LOD (atlas rect 3x2)', far && far[10] === 3 && far[11] === 2, far && `${far[10]}x${far[11]}`);
   const near = proj(2.9, 2.5, 1.6, camE);
-  ok('very near sprite is capped at 3x', near && Math.abs(1 / near[4] - 3) < 1e-6, near && 1 / near[4]);
+  ok('very near sprite is NOT capped (BUG-OWN-002: scale keeps growing)', near && 1 / near[4] > 3, near && 1 / near[4]);
   ok('invScale is stored as f32 (fround)', near && near[4] === Math.fround(near[4]));
   ok('sprite behind the camera is culled', proj(0, 2.5, 1.6, camE) === null);
   ok('sprite far to the side (off-screen) is culled', proj(3.5, 40, 1.6, camE) === null);
+}
+{
+  // BUG-OWN-002: projected size strictly decreases with distance for every
+  // prop and grid, and the full->half LOD switch never makes it grow.
+  const bugGrids = [[160, 60, 12, 18], [320, 120, 6, 9]];
+  for (const [c, r, pw, ph] of bugGrids) {
+    const g = { cols: c, rows: r, pxCellW: pw, pxCellH: ph };
+    for (const [key, an] of [['lever', 'idle'], ['brazier', 'burn'], ['lantern', 'unlit']]) {
+      const cam = { x: 0, y: 0, z: 1.6, yawDeg: 90, pitchDeg: 0 };
+      let prevH = Infinity, strict = true, mono = true, detail = '';
+      for (const d of [1, 2, 4, 8]) {
+        pool.reset(); pool.push(key, an, 0, d, 0, 1.6); pool.project(cam, g, light);
+        const h = pool.count ? pool.spr[3] : -1;
+        if (!(h < prevH)) { strict = false; detail += ` ${d}m:${h}>=${prevH}`; }
+        prevH = h;
+      }
+      prevH = Infinity;
+      for (let d = 1; d <= 60; d += 0.25) {
+        pool.reset(); pool.push(key, an, 0, d, 0, 1.6); pool.project(cam, g, light);
+        const h = pool.spr[3]; // rows only: half-tier art is not always half WIDTH (lantern 3x4 -> 3x2)
+        if (h > prevH) { mono = false; detail += ` ${d}m:${h}>${prevH}`; }
+        prevH = h;
+      }
+      ok(`${key} @${c}x${r}: rect rows strictly shrink over 1/2/4/8 m`, strict, detail);
+      ok(`${key} @${c}x${r}: rect rows never grow with distance (incl. LOD switch)`, mono, detail);
+    }
+  }
 }
 {
   // Lateral offset moves the sprite left (camera-left = -y when facing east)

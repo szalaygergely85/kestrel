@@ -31,7 +31,6 @@ export const SPR_TEXELS = 4;
 export const SPR_STRIDE = SPR_TEXELS * 4; // floats per sprite
 const MIN_DEPTH = 0.1;
 const LOD_HALF_BELOW = 0.75;
-const MAX_SCALE = 3;
 
 // Camera basis (same formulas as sectorCaster.js's castScene / fillSky -
 // one source of truth for the projection; recomputed once per project()).
@@ -144,10 +143,16 @@ export class SpritePool {
       const relX = px - cam.x, relY = py - cam.y;
       const depth = relX * cb.dirX + relY * cb.dirY;
       if (!(depth > MIN_DEPTH)) continue;
+      // BUG-OWN-002: on-screen rows = world.h * planeDistY / depth for EVERY
+      // tier (the prop tracks the world). No upscale cap: a capped billboard
+      // is anchored at its feet, so it froze in size and sank toward the
+      // floor as you walked closer (and was culled below the screen). The
+      // half tier's scale comes from its own size.h (lever 3x5 -> 3x3 is not
+      // an exact half; `scale *= 2` made it jump bigger when moving away).
+      const rowsOnScreen = m.world.h * cb.planeDistY / depth;
       let lod = m.full;
-      let scale = (m.world.h * cb.planeDistY / depth) / lod.size.h;
-      if (scale < LOD_HALF_BELOW && m.half) { lod = m.half; scale *= 2; }
-      if (scale > MAX_SCALE) scale = MAX_SCALE;
+      let scale = rowsOnScreen / lod.size.h;
+      if (scale < LOD_HALF_BELOW && m.half) { lod = m.half; scale = rowsOnScreen / lod.size.h; }
       const anim = lod.anims.get(this._anim[i]);
       if (!anim || anim.count === 0) { this._warnOnce(`SpritePool: model has no animation "${this._anim[i]}"`); continue; }
       const fr = frames[anim.base + (((this._frame[i] % anim.count) + anim.count) % anim.count)];
