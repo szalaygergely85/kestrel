@@ -11,6 +11,9 @@ const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE',
   'Space', 'ShiftLeft', 'ShiftRight',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  // US-015 (docs/architecture.md 7.6 item 5): KeyM opens/closes the map
+  // card; KeyN is reserved for mute (US-020) - nothing binds it yet.
+  'KeyM', 'KeyN',
 ]);
 
 export class Input {
@@ -19,6 +22,11 @@ export class Input {
     this._pressedThisFrame = new Set();
     this._mouseDX = 0;
     this._mouseDY = 0;
+    // US-015 (7.6 item 5): codes "consumed" by `consumePressed()` this
+    // frame - ignored by `isDown`/future `pressed` edges until their own
+    // keyup, even through OS auto-repeat keydown events (which would
+    // otherwise re-arm `_pressedThisFrame` every repeat interval).
+    this._consumed = new Set();
 
     // `movementX/Y` are raw deltas (unclamped by screen edges once pointer
     // lock is active). Input itself doesn't know about lock state, so it
@@ -38,6 +46,7 @@ export class Input {
       if (GAME_KEYS.has(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
       }
+      if (this._consumed.has(e.code)) return; // still "ignored" until its own keyup
       if (!this._down.has(e.code)) {
         this._pressedThisFrame.add(e.code);
       }
@@ -45,17 +54,32 @@ export class Input {
     };
     this._onKeyUp = (e) => {
       this._down.delete(e.code);
+      this._consumed.delete(e.code);
+    };
+    this._onMouseDown = (e) => {
+      if (e.button !== 0) return; // US-015: only the left button is a game input ('Mouse0')
+      if (this._consumed.has('Mouse0')) return;
+      if (!this._down.has('Mouse0')) this._pressedThisFrame.add('Mouse0');
+      this._down.add('Mouse0');
+    };
+    this._onMouseUp = (e) => {
+      if (e.button !== 0) return;
+      this._down.delete('Mouse0');
+      this._consumed.delete('Mouse0');
     };
     this._onBlur = () => {
       // Release everything when the window loses focus so keys never get
       // "stuck" down.
       this._down.clear();
+      this._consumed.clear();
       this._mouseDX = 0;
       this._mouseDY = 0;
     };
 
     target.addEventListener('keydown', this._onKeyDown);
     target.addEventListener('keyup', this._onKeyUp);
+    target.addEventListener('mousedown', this._onMouseDown);
+    target.addEventListener('mouseup', this._onMouseUp);
     window.addEventListener('blur', this._onBlur);
   }
 
@@ -73,6 +97,25 @@ export class Input {
   // Call once per rendered frame (after update/consumers have read
   // `pressed`) to clear the edge-triggered set.
   endFrame() {
+    this._pressedThisFrame.clear();
+  }
+
+  // US-015 (7.6 item 5): true if ANY key or 'Mouse0' went down this frame -
+  // used by mapCard.js's "any key or mouse click dismisses" rule.
+  anyPressed() {
+    return this._pressedThisFrame.size > 0;
+  }
+
+  // US-015: consumes every code pressed THIS frame - removed from `pressed`
+  // (this call's `endFrame()` never re-adds it) and ignored by `isDown`
+  // until its own keyup, so "the dismissing key is consumed" (it cannot
+  // also move/jump/interact the same frame, nor keep firing while held via
+  // OS auto-repeat).
+  consumePressed() {
+    for (const code of this._pressedThisFrame) {
+      this._consumed.add(code);
+      this._down.delete(code);
+    }
     this._pressedThisFrame.clear();
   }
 

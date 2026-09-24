@@ -520,6 +520,30 @@ const cellsWhere = (pred) => {
   })());
 }
 
+// ---------------------------------------------------------------------------
+// 10. US-015 hint zones (docs/architecture.md 7.6 item 9): both zones
+//    present in the real `design/levels/tower.js` triggers[] (copied by
+//    hand from `title.js` levelPatch.towerHints), the wake spawn is outside
+//    hintBurner, the lamp is inside it, and the two circles never overlap.
+// ---------------------------------------------------------------------------
+{
+  const trBurner = towerDef.triggers.find((t) => t.id === 'hintBurner');
+  const trClimb = towerDef.triggers.find((t) => t.id === 'hintClimb');
+  ok('hintBurner trigger present, circle, hint.show', !!trBurner && trBurner.shape === 'circle' && trBurner.trigger === 'hint.show');
+  ok('hintClimb trigger present, circle, hint.show', !!trClimb && trClimb.shape === 'circle' && trClimb.trigger === 'hint.show');
+
+  const spawn = towerDef.start;
+  const dSpawnBurner = Math.hypot(spawn.x - trBurner.x, spawn.y - trBurner.y);
+  ok('spawn is outside hintBurner', dSpawnBurner > trBurner.r, `d=${dSpawnBurner} r=${trBurner.r}`);
+
+  const lantern = towerDef.props.find((p) => p.id === 'lantern');
+  const dLampBurner = Math.hypot(lantern.x - trBurner.x, lantern.y - trBurner.y);
+  ok('the lamp is inside hintBurner', dLampBurner <= trBurner.r, `d=${dLampBurner} r=${trBurner.r}`);
+
+  const dCentres = Math.hypot(trBurner.x - trClimb.x, trBurner.y - trClimb.y);
+  ok('hintBurner and hintClimb never overlap', dCentres > trBurner.r + trClimb.r, `d=${dCentres} sumR=${trBurner.r + trClimb.r}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

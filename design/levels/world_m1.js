@@ -69,13 +69,31 @@
       // dynamics['grate']` (serialized on the structure itself) is the only
       // truth for the grate's open/closed state.
       'tower.beacon.lit': false,
+      // US-015 (docs/architecture.md 7.6 item 6): `hints.shown` = every hint
+      // id ever displayed, `hints.done` = every hint id whose action was
+      // performed (shown or not - a hint whose action already happened is
+      // never shown later). `hints.walkT` counts up only while grounded +
+      // moving (armed for the 'run' hint at 10 s); `hints.chartT` is -1
+      // (unarmed) until the map card's first dismissal arms it to 0, then it
+      // counts up to the 20 s 'chart' hint (then -1 again, "fired, spent").
       'hints.shown': [],
+      'hints.done': [],
+      'hints.walkT': 0,
+      'hints.chartT': -1,
       // US-017: -1 = not ending; `quest.end` (game/js/quest/end.js) sets it
       // to 0 on the end trigger's enter edge, then it counts up in seconds.
       // Restart = deserialize(initialState) (US-025 serialize round trip),
       // which resets this back to -1 for free.
       'quest.endT': -1,
+      // US-015: counts up every fixed step from world load (never reset
+      // except by restart) - the wake sequence's own clock (game/js/quest/
+      // wake.js `wakeFrame`); the map card's first-show delay and every
+      // hint timer read off it too, so nothing needs a second clock.
+      'quest.wakeT': 0,
       'ui.mapCard.shown': false,
+      // US-015: true on the map card's first dismissal (arms the 'move'
+      // hint + the 20 s 'chart' hint timer, and lets `M` reopen the card).
+      'ui.mapCard.dismissed': false,
       // US-015: true once M has opened the card; the "Press M to read the chart." hint is skipped/removed on it
       // (title.js uiStyle.storyHints chart.on.skipIfState). Restart resets it with the rest of the state.
       'ui.mapCard.opened': false

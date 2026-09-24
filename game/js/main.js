@@ -19,11 +19,16 @@ import {
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
+  createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
+import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
 import { stepEnd, endFadeAmount } from './quest/end.js';
+import { wakeFrame, drawEyelid } from './quest/wake.js';
+import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
+import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -106,7 +111,11 @@ const crosshairStyle = {
 // itself in the ramp (engine/ui/fade.js's `letterIndex`).
 const defaultRamp = P.ramps.default;
 const fadeLut = createFadeLut(defaultRamp, defaultRamp.length - 1, 0.12);
-const endTextStyle = { color: P.colors[P.ui.endText] };
+// US-015 (docs/architecture.md 7.6): the map card / hints scene dim, and the
+// resolved palette hex map hints.js needs for its own RichLines (it has no
+// `ASSETS` of its own - see hints.js `setPaletteColors`).
+const sceneDim = createSceneDim();
+if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   force2d: params.get('force2d') === '1',
@@ -277,6 +286,16 @@ function runGame(mode) {
   // allocating - it runs once per rendered frame, not per fixed step.
   const interactEye = new Camera();
 
+  // US-015 (docs/architecture.md 7.6 item 8): the wake sequence's own
+  // per-step output, reused every step (rule 9). `questUiActive` gates the
+  // whole wake/title/map-card/hints system to worlds that actually declare
+  // `quest.wakeT` in their initial state (world_m1 - `?level=<name>` adhoc
+  // worlds have `state: {}` and skip it, unaffected).
+  const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
+  const wakeCfg = { blackSec: 1.0, riseSec: 1.2, blinkCurve: [[0, 0], [1.5, 1]], titleIn: 1, titleHold: 3, titleOut: 1, startEyeH: 0.3, bodyEyeH: 1.6 };
+  let questUiActive = false;
+  let prevLookYaw = null, prevLookPitch = null; // US-015: "move or look input" done-predicate for the WASD/mouse hint
+
   let initialState = null; // US-017: serialize(world) right after World.load - `R` restarts to `deserialize(initialState)`
 
   if (mode === 'world') {
@@ -353,6 +372,30 @@ function runGame(mode) {
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
       // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
+
+      // ---- US-015: wake sequence + title card + map card + hints (7.6 item 6: runtime rebuilt here, every load AND every restart) ----
+      questUiActive = typeof world.state['quest.wakeT'] === 'number';
+      if (questUiActive && assets.uiStyle) {
+        const spawnDef = (worldDef.entities || []).find((e) => e.id === 'player' && e.spawn);
+        const spawnStruct = spawnDef && world.structures.find((s) => s.id === spawnDef.spawn.structure);
+        const startPose = spawnStruct && spawnStruct.level.start;
+        wakeCfg.startEyeH = (startPose && typeof startPose.eyeH === 'number') ? startPose.eyeH : engine.physics.eyeHeight;
+        wakeCfg.bodyEyeH = engine.physics.eyeHeight;
+        const blink = assets.uiStyle.blink;
+        if (blink) wakeCfg.blinkCurve = blink.curve;
+        const tc = assets.uiStyle.titleCard;
+        if (tc) { wakeCfg.titleIn = tc.fadeIn; wakeCfg.titleHold = tc.hold; wakeCfg.titleOut = tc.fadeOut; }
+        // Pose = 'lying': body eyeH starts low - see wake.js `wakeFrame`'s
+        // rise (main.js's own step() writes `body.eyeH` every fixed step
+        // while `wakeOut.inputLocked`, overriding the standing default the
+        // Object.assign above just set).
+        if (startPose && startPose.pose === 'lying') {
+          playerHandle.data.components.body.eyeH = wakeCfg.startEyeH;
+        }
+        initTitleCard(assets, rt.cols, rt.rows);
+        initMapCard(assets, rt.cols, rt.rows);
+        resetHints();
+      }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
       // used to be set once, right after the FIRST `engine.run(...)` call
       // (below), and never refreshed - so after a restart (`R`, this same
@@ -393,9 +436,28 @@ function runGame(mode) {
     // it back to -1 for free, via `deserialize(initialState)`).
     const ending = mode === 'world' && playerHandle
       && typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
-    if (look && !ending) look.update(dt);
+
+    // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
+    let uiLocked = false;
+    let mPressedEdge = false;
+    if (mode === 'world' && playerHandle && questUiActive && !ending) {
+      engine.world.state['quest.wakeT'] += dt;
+      wakeFrame(engine.world.state['quest.wakeT'], wakeCfg, wakeOut);
+      if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
+      mPressedEdge = input.pressed('KeyM');
+      stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
+      uiLocked = wakeOut.inputLocked || isMapOpen();
+    }
+
+    if (look && !ending) {
+      // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
+      // mouse delta every step (so nothing pent up snaps the camera once
+      // input unlocks) but its result is simply discarded, not applied.
+      if (uiLocked) input.consumeMouseDelta();
+      else look.update(dt);
+    }
     if (mode === 'world' && playerHandle) {
-      if (ending) {
+      if (ending || uiLocked) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
         controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
@@ -440,11 +502,29 @@ function runGame(mode) {
       // step's position, before the event flush - `E` is edge-triggered the
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
-      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), !ending && input.pressed('KeyE'));
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), !ending && !uiLocked && input.pressed('KeyE'));
       // US-017: the scripted walk/pitch (only through WALK_SEC - a no-op
       // otherwise, including every non-ending step). Runs AFTER `integrate`
       // so it overrides this step's `controls`-driven (frozen) transform.
       stepEnd(engine.world, playerHandle.data, dt, assets.uiStyle, moveCapsule);
+      // US-015: hint FIFO (`hint.show` zone triggers already fired above via
+      // `updateTriggers`; this advances timers/fades and the done predicates).
+      if (questUiActive && !ending) {
+        const body = playerHandle.data.components.body;
+        const moving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
+        const moveOrLook = controls.forward !== 0 || controls.strafe !== 0
+          || (prevLookYaw !== null && (look.yawDeg !== prevLookYaw || look.pitchDeg !== prevLookPitch));
+        stepHints(engine.world, assets.uiStyle, dt, {
+          walking: moving,
+          pointerUnlocked: !look.locked,
+          moveOrLook,
+          run: controls.run && moving,
+          jump: input.pressed('Space'),
+          pointerLocked: look.locked,
+          mPressed: mPressedEdge,
+        });
+        prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
+      }
       if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
       engine.world.flushEvents();
 
@@ -550,16 +630,35 @@ function runGame(mode) {
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
+      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen());
+      // US-015 (docs/architecture.md 7.6 item 3): map-card / hint scene dim.
+      // CPU path only, known limitation (see the story's Programmer notes) -
+      // the GPU sprite pass does not yet mirror this into `uDim*` uniforms,
+      // so `?gpu=0` shows the dim and the default gl2 path does not.
+      if (questUiActive && !ending) {
+        resetSceneDim(sceneDim);
+        const mapPanel = getMapPanel();
+        if (mapPanel) mapPanel.pushDim(sceneDim);
+        pushHintDim(rt, assets.uiStyle, sceneDim);
+        if (!fb.gpuDda) applySceneDim(rt, sceneDim);
+      }
       // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
       // the world/sprite passes, never depth-tested (architecture.md 8).
-      // Hidden while ending (US-017: input is locked, so there is never a
-      // usable target/prompt to show).
-      if (!ending) drawCrosshair(rt, crosshairStyle, engine.world.interaction);
+      // Hidden while ending or while wake/map-card input is locked (US-015:
+      // there is never a usable target/prompt to show then).
+      if (!ending && !uiLockedNow) drawCrosshair(rt, crosshairStyle, engine.world.interaction);
+      if (questUiActive && !ending) {
+        drawHints(rt, assets.uiStyle, fadeLut);
+        drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen);
+        drawTitleCard(rt, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
+        const mapPanel = getMapPanel();
+        if (mapPanel) drawUiPanel(rt, mapPanel, fb.timeSec * 1000, fadeLut);
+      }
       // US-017: the end card, drawn last (over the faded scene) - `setCell`
       // marks these cells `mask = 1` (engine/render/CellBuffer.js), so a
       // second `applySceneFade` call (e.g. a future frame) never touches them.
       const endCardState = computeEndCardState(engine.world, assets.uiStyle);
-      drawEndCard(rt, endTextStyle, endCardState);
+      drawEndCard(rt, assets.uiStyle, P.colors, endCardState);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);

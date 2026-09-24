@@ -75,6 +75,11 @@ export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 export { DebugOverlay } from './ui/debugOverlay.js';
 export { drawCrosshair } from './ui/crosshair.js';
 
+// ---- US-015 UI panels, rich text, scene dim (docs/architecture.md 7.6) ------
+export { compileRichLine, drawRichLine, hexToRgb } from './ui/richText.js';
+export { buildPanelArt, createPanel, drawPanel, Panel } from './ui/panel.js';
+export { createSceneDim, resetSceneDim, pushDimRect, applySceneDim } from './ui/sceneDim.js';
+
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
 export { attachedLightPos } from './entities/attach.js';

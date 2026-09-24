@@ -13,6 +13,7 @@ import { registerBehaviour } from '../../../engine/index.js';
 import { leverPull } from './lever.js';
 import { lanternTake } from './lantern.js';
 import { questEnd } from './end.js';
+import { request as requestHint } from './hints.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -35,11 +36,27 @@ function stub(name, story) {
   };
 }
 
+/**
+ * US-015 `hint.show` (tower.js `hintBurner`/`hintClimb`/`hintJump` triggers'
+ * `trigger` name): forwards to `hints.request` with `ctx.engine.assets.uiStyle`
+ * (behaviours don't otherwise see `ASSETS` - `engine.assets` is the one
+ * place a named behaviour can legally reach it, same precedent as `lever.js`/
+ * `lantern.js` reaching `ctx.world`/`ctx.def`). Always returns `true`: the
+ * once-trigger flag is consumed even when `request` itself skips the hint
+ * (`skipIfState` - a permanent skip for that hint id, per hints.js).
+ */
+function hintShow(ctx) {
+  const uiStyle = ctx.engine && ctx.engine.assets && ctx.engine.assets.uiStyle;
+  if (uiStyle && ctx.def && ctx.def.hint) requestHint(ctx.world, uiStyle, ctx.def.hint);
+  return true;
+}
+
 /** name -> real implementation, for the stories that have landed (US-014: `lever.pull`). Everything else stays a stub. */
 const REAL_BEHAVIOURS = {
   'lever.pull': leverPull,
   'lantern.take': lanternTake,
   'quest.end': questEnd,
+  'hint.show': hintShow,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

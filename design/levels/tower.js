@@ -233,7 +233,18 @@
         note: 'trigger = every cell of the "trigger:end" tag; X = straight out of the breach, Y = diagonal steps off it' },
       // Hint zones (US-015). Only the jump hint is spatial; the others are time/state driven (see ASSETS.uiStyle.hints[].when).
       { id: 'hintJump', type: 'hint', hint: 'jump', shape: 'circle', x: 20.5, y: 8.0, r: 2.0, zMin: 2.0, once: true, trigger: 'hint.show',
-        note: 'within 2 m of the gap edge (markers.gapEdge) with the feet at >= 2.0 m (on steps 8/9 or the ledge, not on the ground below)' }
+        note: 'within 2 m of the gap edge (markers.gapEdge) with the feet at >= 2.0 m (on steps 8/9 or the ledge, not on the ground below)' },
+      // US-015 (design/models/title.js ASSETS.levelPatch.towerHints, PO APPROVED 2026-09-24): copied here by hand,
+      // verbatim, per the designer note "the US-015 programmer appends triggers.append to design/levels/tower.js
+      // triggers[] by hand, after the existing hintJump". Spawn (17.0, 9.5) is 3.35 m from hintBurner's centre (outside
+      // it); the lamp (19.9, 6.5) is inside. The two circles are 4.53 m apart centre-to-centre (> 3.0 + 1.5), so they
+      // never overlap.
+      { id: 'hintBurner', type: 'hint', hint: 'burner', shape: 'circle', x: 18.5, y: 6.5, r: 3.0, once: true, trigger: 'hint.show',
+        note: 'r 3 m round the Kestrel burner (props.brazier / lights.brazier at 18.5, 6.5). Skipped if tower.lantern.taken ' +
+              '(uiStyle.storyHints burner.on.skipIfState)' },
+      { id: 'hintClimb', type: 'hint', hint: 'climb', shape: 'circle', x: 15.3, y: 3.3, r: 1.5, once: true, trigger: 'hint.show',
+        note: 'r 1.5 m on the stair base cell s (15, 3) (tag stairBase), centre 0.2 m NW of the cell centre so the circle ' +
+              'stays clear of hintBurner. Can fire while the boulder still sits on the base; no zMin, all ground level' }
     ],
 
     markers: {
