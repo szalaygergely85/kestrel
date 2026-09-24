@@ -38,6 +38,7 @@
   <label><input type="checkbox" id="relief" checked> relief</label>
   <label><input type="checkbox" id="route" checked> route</label>
   <label><input type="checkbox" id="tilt"> boulder tilt</label>
+  <label><input type="checkbox" id="patch" checked> D-011 patch props + corridor</label>
   <label>reach <select id="reach"><option value="off">off</option><option value="closed">grate closed</option><option value="open">grate open</option></select></label>
   <label>sun azimuth <input type="range" id="az" min="0" max="360" step="0.5" value="112.5"><span class="val" id="azV"></span></label>
   <label>elevation <input type="range" id="el" min="10" max="85" step="1" value="60"><span class="val" id="elV"></span></label>
@@ -67,6 +68,7 @@
 
 <script src="../palette.js"></script>
 <script src="../levels/tower.js"></script>
+<script src="../models/wreckage.js"></script>
 <script type="module">
   // Validate through the real US-003 loader (game/js/world/Level.js). Modules need http; from file:// this is skipped.
   const box = document.getElementById('loader');
@@ -160,6 +162,7 @@
   var checks = [];
   function check(name, ok, detail) { checks.push({ name: name, ok: !!ok, detail: detail || '' }); }
   var sx = Math.floor(LV.start.x), sy = Math.floor(LV.start.y);
+  var LP = window.ASSETS.levelPatch && window.ASSETS.levelPatch.tower, patchCorr = null, patchProps = [];
 
   (function () {
     // US-003 loader rules
@@ -252,6 +255,64 @@
     });
     check('Boulder: once in the hollow (-0.3) every exit is uphill, so it cannot be pushed back out', !hollowExit);
 
+    // D-011 levelPatch props (models/wreckage.js): none on the wake -> burner -> stair corridor or the boulder roll line
+    if (LP) {
+      function gnb(x, y) {                                     // ground-floor walk graph (burner ring excluded)
+        var o = [], a = def(x, y);
+        DIR8.forEach(function (dd) {
+          var nx = x + dd[0], ny = y + dd[1], d = def(nx, ny);
+          if (!d || !passable(nx, ny, false) || d.zone !== 'ground' || d.tag === 'brazier') return;
+          if (dd[0] && dd[1] && !(passable(x + dd[0], y, false) || passable(x, y + dd[1], false))) return;
+          if (Math.abs(d.floorH - a.floorH) <= RULES.jumpRise) o.push([nx, ny]);
+        });
+        return o;
+      }
+      function bfs(srcs) {
+        var dist = {}, q = srcs.slice(); srcs.forEach(function (c) { dist[key(c[0], c[1])] = 0; });
+        while (q.length) { var c = q.shift(), dc = dist[key(c[0], c[1])];
+          gnb(c[0], c[1]).forEach(function (n) { var k = key(n[0], n[1]); if (dist[k] === undefined) { dist[k] = dc + 1; q.push(n); } }); }
+        return dist;
+      }
+      function corridor(dA, dB) {
+        var best = Infinity, out = {};
+        Object.keys(dA).forEach(function (k) { if (dB[k] !== undefined) best = Math.min(best, dA[k] + dB[k]); });
+        Object.keys(dA).forEach(function (k) { if (dB[k] !== undefined && dA[k] + dB[k] === best) out[k] = true; });
+        return out;
+      }
+      var ring = [], bset = [];
+      for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) if (def(xx, yy).tag === 'brazier') ring.push([xx, yy]);
+      ring.forEach(function (r) { DIR8.forEach(function (dd) { var d = def(r[0] + dd[0], r[1] + dd[1]);
+        if (d && passable(r[0] + dd[0], r[1] + dd[1], false) && d.zone === 'ground' && d.tag !== 'brazier') bset.push([r[0] + dd[0], r[1] + dd[1]]); }); });
+      var base = null; for (yy = 0; yy < H; yy++) for (xx = 0; xx < W; xx++) if (def(xx, yy).tag === 'stairBase') base = [xx, yy];
+      var dS = bfs([[sx, sy]]), dBurn = bfs(bset), leg1 = corridor(dS, dBurn);
+      var arr = bset.filter(function (c) { return leg1[key(c[0], c[1])]; });
+      var leg2 = corridor(bfs(arr), bfs([base]));
+      patchCorr = {}; Object.keys(leg1).concat(Object.keys(leg2)).forEach(function (k) { patchCorr[k] = true; });
+      var roll = {}; bcells.forEach(function (k) { roll[k] = true; });
+      var routeSet = {}; LV.route.forEach(function (c) { routeSet[key(c[0], c[1])] = true; });
+      var list = (LP.props.add || []).map(function (p) { return p; }).concat((LP.props.replace || []).map(function (r) {
+        var o = LV.props.filter(function (p) { return p.id === r.id; })[0] || {}, m = {};
+        Object.keys(o).forEach(function (k) { m[k] = o[k]; }); Object.keys(r.set).forEach(function (k) { m[k] = r.set[k]; });
+        m.wakeSpot = r.wakeSpot; m.id = r.id + ' -> ' + r.set.model; return m;
+      }));
+      var pbad = [], pinfo = [];
+      list.forEach(function (p) {
+        if (typeof p.x !== 'number') return;
+        var cx = Math.floor(p.x), cy = Math.floor(p.y), k = key(cx, cy), d = def(cx, cy);
+        var zb = typeof p.z === 'number' ? p.z : d.floorH, over = zb - d.floorH >= 2.0;
+        patchProps.push({ x: p.x, y: p.y, id: p.id, model: p.model, over: over });
+        if (p.wakeSpot) { pinfo.push(p.id + ' ' + k + ' wake spot'); return; }
+        if (over) { pinfo.push(p.id + ' ' + k + ' overhead ' + (zb - d.floorH).toFixed(1) + ' m'); return; }
+        if (patchCorr[k]) pbad.push(p.id + ' on the wake/burner/stair corridor ' + k);
+        else if (roll[k]) pbad.push(p.id + ' on the boulder roll line ' + k);
+        else if (routeSet[k] && !/^(brazier|beaconBowl)/.test(p.id)) pbad.push(p.id + ' on the route ' + k);
+        else pinfo.push(p.id + ' ' + k + ' clear');
+      });
+      check('D-011 levelPatch props (wreckage.js): none on the wake -> burner -> stair corridor (' + Object.keys(patchCorr).length +
+            ' cells, all shortest paths), the boulder roll line or the route; hanging props >= 2 m overhead',
+            !pbad.length, pbad.length ? pbad.join('; ') : pinfo.join('; ') + ' | corridor ' + Object.keys(patchCorr).join(' '));
+    }
+
     // walls and crack
     var tops = []; Object.keys(LV.legend).forEach(function (k) { var d = LV.legend[k]; if (d.solid && d.zone === 'wall' && d.floorH > 6) tops.push(d.floorH); });
     check('Broken wall tops between 6.5 and 8.5 m (' + tops.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort().join(', ') + ')',
@@ -273,7 +334,7 @@
       (c.detail && !c.ok ? ' <span class="fail">' + c.detail + '</span>' : (c.detail ? ' <span class="note">(' + c.detail + ')</span>' : '')) + '</div>'; }).join('');
 
   // ---------------- lighting for the plan ----------------
-  var S = { view: 'all', labels: true, markers: true, relief: true, route: true, tilt: false, reach: 'off', az: 112.5, el: 60, torch: true, flicker: true };
+  var S = { view: 'all', labels: true, markers: true, relief: true, route: true, tilt: false, patch: true, reach: 'off', az: 112.5, el: 60, torch: true, flicker: true };
   function sunlit(px, py, pz) {
     var sx2 = Math.sin(S.az * D2R), sy2 = -Math.cos(S.az * D2R), tz = Math.tan(S.el * D2R);
     for (var t = 0.05; t < 60; t += 0.1) {
@@ -327,6 +388,13 @@
     var m = PM[p.model] || ['?', C.white];
     addMarker(p.x, p.y, m[0], m[1], m[0] + '  ' + p.id + ' (' + p.model + (p.variant !== undefined ? ' ' + p.variant : '') + ') at ' + p.x + ', ' + p.y + ', z ' + p.z);
   });
+  var PPM = { gondola: ['G', C.brassLight], rigging: ['@', C.rope], strut: ['/', C.brass], rope: ['|', C.ropeLight], envelopeDrape: [')', C.canvasLight],
+              envelopeHeap: ['~', C.canvas], canvasHeap: ['~', C.canvasLight], burner: ['*', C.copper], relay: ['^', C.aether] };
+  var patchMarkers = {};
+  patchProps.forEach(function (p) {
+    var m = PPM[p.model] || ['?', C.white], k = key(Math.floor(p.x), Math.floor(p.y)), lab = m[0] + '  [patch] ' + p.id + ' (' + p.model + ') at ' + p.x + ', ' + p.y + (p.over ? ', overhead' : '');
+    (patchMarkers[k] = patchMarkers[k] || []).push({ g: m[0], c: m[1], label: lab });
+  });
   LV.lights.forEach(function (l) { if (l.id === 'beacon') addMarker(l.x + 0.6, l.y, '+', C.torch, '+  beacon light (US-022, off at start), z ' + l.z); });
   addMarker(LV.markers.gapEdge.x, LV.markers.gapEdge.y - 0.5, '!', C.gold, '!  gap edge (jump hint within 2 m)');
   LV.triggers.forEach(function (t) {
@@ -337,7 +405,8 @@
   var gridTag = { grate: ['#', C.ironLight, '#  grate (portcullis), rises 3.0 -> 5.4 m'], sunCrack: ['|', C.sun, '|  sun crack 4.0-6.4 m in the east wall'],
                   breach: ['<', C.gold, '<  breach (2 m) in the west parapet'] };
   for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) { var tg = gridTag[def(xx, yy).tag]; if (tg) addMarker(xx, yy, tg[0], tg[1], tg[2]); }
-  var keyHtml = {}; Object.keys(markerMap).forEach(function (k) { markerMap[k].forEach(function (m) { keyHtml[m.label] = '<span style="color:' + m.c + '">' + m.g + '</span>' + m.label.slice(1); }); });
+  var keyHtml = {}; [markerMap, patchMarkers].forEach(function (mm) { Object.keys(mm).forEach(function (k) { mm[k].forEach(function (m) { keyHtml[m.label] = '<span style="color:' + m.c + '">' + m.g + '</span>' + m.label.slice(1); }); }); });
+  if (patchCorr) keyHtml.corr = '<span style="color:#e0a040">#</span>  [patch] amber cells = wake -> burner -> stair corridor (props must stay off it)';
   document.getElementById('markerKey').innerHTML = '<b>Markers</b><br>' + Object.keys(keyHtml).map(function (k) { return keyHtml[k]; }).join('<br>') +
     '<br><br><b>Route</b>: numbered cells in the label line (toggle "route")<br><b>Tilt</b>: arrows = boulder downhill<br><b>Reach</b>: green tint = the player can get there';
   var routeIdx = {}; LV.route.forEach(function (c, i) { routeIdx[key(c[0], c[1])] = i + 1; });
@@ -367,6 +436,7 @@
         U.shade(mat, L, x + (i + 0.5) / BW, y + (j + 0.5) / BH, 3, out, { z: 0.3 });
         var bg = out.bg;
         if (rset && rset[key(x, y)]) bg = [bg[0] * 0.6 + 20, bg[1] * 0.6 + 70, bg[2] * 0.6 + 30];
+        else if (S.patch && patchCorr && patchCorr[key(x, y)]) bg = [bg[0] * 0.6 + 70, bg[1] * 0.6 + 45, bg[2] * 0.6 + 10];
         plan.cell(x * BW + i, y * BH + j, out.glyph, css(out.fg), css(bg));
       }
       var bx = x * BW, by = y * BH;
@@ -380,6 +450,7 @@
       }
       if (S.tilt) { var tc = LV.layers.tilt[y].charAt(x); if (TA[tc]) plan.cell(bx, by, TA[tc], C.magic, '#000'); }
       if (S.markers && markerMap[key(x, y)]) markerMap[key(x, y)].forEach(function (m, n) { plan.cell(bx + 2 + n, by + 1, m.g, m.c, '#000'); });
+      if (S.patch && patchMarkers[key(x, y)]) patchMarkers[key(x, y)].forEach(function (m, n) { plan.cell(bx + n, by, m.g, m.c, '#1a1030'); });
     }
   }
 
@@ -453,7 +524,7 @@
     vbox.appendChild(b); vbox.appendChild(document.createTextNode(' '));
   });
   function $(id) { return document.getElementById(id); }
-  ['labels', 'markers', 'relief', 'route', 'tilt', 'torch', 'flicker'].forEach(function (id) { $(id).onchange = function () { S[id] = this.checked; drawPlan(performance.now() / 1000); }; });
+  ['labels', 'markers', 'relief', 'route', 'tilt', 'patch', 'torch', 'flicker'].forEach(function (id) { $(id).onchange = function () { S[id] = this.checked; drawPlan(performance.now() / 1000); }; });
   $('reach').onchange = function () { S.reach = this.value; drawPlan(performance.now() / 1000); };
   function sync() { $('azV').textContent = S.az.toFixed(1) + ' deg'; $('elV').textContent = S.el + ' deg'; }
   $('az').oninput = function () { S.az = +this.value; sunCache = null; sync(); drawPlan(performance.now() / 1000); };

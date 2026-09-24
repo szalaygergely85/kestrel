@@ -34,6 +34,9 @@
     directions: ['S'], billboard: true,
     keys: { s: { c: 'stoneMid' }, S: { c: 'stoneLight' }, d: { c: 'stoneDark' }, m: { c: 'moss' }, M: { c: 'mossDark' } },
     roll: { framesPerTurn: 8, metersPerFrame: 0.471, forward: 'left' },
+    placement: { note: 'US-013 visibility: the sprite anchor (bottom row) is the floor contact point. If the roller tracks the ' +
+                 'sphere centre, draw the sprite at z = centre z - radius (0.6); world 1.2 x 1.2 m = the 0.6 m sphere. Spawned from the ' +
+                 'tower prop `boulder` (dynamic: true) as entity tower.boulder; frame = rollFrame(rollDist).' },
     animations: { roll: { fps: 0, loop: true, frames: frames, note: 'fps 0 = driven by distance rolled, not time' } },
     lods: { half: { size: { w: 3, h: 2 }, anchor: { x: 1, y: 1 }, animations: { roll: { fps: 0, loop: true, frames: half } } } }
   };

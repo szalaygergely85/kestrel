@@ -196,7 +196,7 @@ Plain scripts that set `ASSETS.models.<name>`. Files and models:
 - `boulder.js`: `boulder`
 - `rubble.js`: `rubble` (variants), `pallet`, `beaconBowl` (`pallet` / `beaconBowl` legacy since D-011)
 - `relay.js` (v1.9): `relay`
-- `wreckage.js` (v1.9): `gondola`, `envelopeDrape`, `envelopeHeap`, `burner`, `rigging`, plus `ASSETS.levelPatch.tower` (section 4.2)
+- `wreckage.js` (v1.9): `gondola`, `envelopeDrape`, `envelopeHeap`, `burner`, `rigging`, `canvasHeap`, `rope` (variants), `strut`, plus `ASSETS.levelPatch.tower` (section 4.2)
 
 The grate is **not** a sprite. It is the palette material `grate` (wall pattern).
 
@@ -229,7 +229,8 @@ Frame = { S: { glyphs: [h strings of w], fg: [h strings of w key chars], n?: [h 
   - Never upscale beyond `3 * rows / 60` (3x at 160x60, 4.5x at 240x90, 6x at 320x120). The cap is in **art cells per scene cell**; it scales with the grid so a prop keeps its on-screen size (D-009 grids). A fixed 3x would halve every near prop at 320x120.
   - The preview shows near (2x), mid (1x) and far (half LOD); its 160 / 240 / 320 toggle re-samples at `rows/60` times those scales in matching cell sizes.
   - **320x120 readability (designer check, 2026-09-23):** all five props (lantern, brazier, lever, boulder, rubble) and the pallet / bowl read at 2x nearest sampling in 6x9 px cells: silhouettes, emissive glints and the fire hold. Cost: interior glyphs repeat as 2x2 blocks (`/` becomes a slash texture), so near props look "tiled". Acceptable for M1; a hand-drawn `lods.double` tier (2w x 2h, used when `scale >= 1.5`) is the follow-up if the owner wants crisp near props at 320.
-- **Mounts**: `beaconBowl.mounts.fire = {x,y}` is the bowl cell where the `beaconFire` anchor goes, so the fire's bottom row covers the ash row.
+- **Mounts**: `beaconBowl.mounts.fire = {x,y}` is the bowl cell where the `beaconFire` anchor goes, so the fire's bottom row covers the ash row. Since D-011 the live one is **`relay.mounts.glow`** (and `relay.lods.half.mounts.glow`): the cell of the centre crystal, in that tier's cells; the US-022 glow / light anchor. World height above the prop anchor = `(anchor.y - y + 0.5) * world.h / size.h`.
+- **Variants**: a string variant (`props[].variant`, or `sprite.variant` set by a behaviour) is the **animation name** to play (`lantern`: `unlit`, `lit`, `empty`; `relay`: `dead`, `awake`). A numeric variant indexes `model.variants[]` of full sub-models (`rubble`, `rope`).
 - **Grow-in** (`beaconFire.grow`), at growth g in 0..1 over 1 s:
   - show a flame cell only if `rowFromBottom < ceil(g*4)`
   - lower its heat by `round((1-g)*2)` and hide it below heat 1
@@ -257,8 +258,12 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
 
 | model | size (half) | world m | animations | notes |
 |---|---|---|---|---|
-| `lantern` (brass lamp) | 3x4 (3x2) | 0.25 x 0.45 | `unlit` (glint, durations), `lit` 8 fps, `hookEmpty` | reskin in place: brass cap `/=\`, round cage `{ }`, fuel font `\_/`; prompt `[E] Take lamp` |
-| `relay` | 13x7 (7x4) | 2.4 x 1.75 | `dead` (durations 3200/160: one dim teal flicker), `wake` (8 frames, 8 fps, **once**), `awake` (4 fps loop) | crystals `^ / \ |` emissive teal when awake; cracked mirror `:` `/`; brass tripod + gear hub `(@)`. `light: { preset: 'relay', offset z 1.1, on: 'awake' }`; `wakeLightFrame: 2`. Half LOD has the **same frame counts** |
+| `lantern` (brass lamp) | 3x4 (3x2) | 0.25 x 0.45 | `unlit` (glint, durations), `lit` 8 fps, `empty` (+ alias `hookEmpty`) | reskin in place: brass bracket `=j=`, cap `/=\`, round cage `{ }`, fuel font `\_/`; prompt `[E] Take lamp`. `empty` = the bracket stays, lamp gone (US-012 `lantern.take` sets `variant = 'empty'`) |
+| `relay` | 13x7 (7x4) | 2.4 x 1.75 | `dead` (durations 3200/160: one dim teal flicker), `wake` (8 frames, 8 fps, **once**), `awake` (4 frames, **6 fps** loop) | crystals `^ / \ |` emissive teal when awake; cracked mirror `:` `/`; brass tripod + gear hub `(@)`. `light: { preset: 'relay', offset z 1.1, on: 'awake' }`; `wakeLightFrame: 2`; `mounts.glow` {6,2} / half {3,0}. Half LOD has the **same frame counts** |
+| `lever` | 3x5 (3x3) | 0.35 x 1.0 | `idle` (knob glint), `pull` 5 frames 12.5 fps, `down` | D-011: brass gear housing `{ }` round the pivot; hub gear steps `* + x * +` one per pull frame (`gear.steps`, row 2 col 1; half LOD row 1). Iron handle, wood post, stone foot |
+| `canvasHeap` | 9x2 (5x1) | 2.0 x 0.3 | `idle` | the wake spot (replaces `pallet`, same anchor / world): torn envelope canvas `~ ) (`, brass eyelet, scorched edge |
+| `rope` (variants 0, 1) | 1x6 (1x3) | 0.12 x 1.8 | `sway` (2 frames, durations) | hanging snapped stays: knotted `@` / eyelet `o`; anchor = frayed bottom end, place `z = attach height - 1.8` |
+| `strut` | 4x3 (2x2) | 1.0 x 0.5 | `idle` | bent brass gondola strut with a verdigris kink; placed on the R rubble cell |
 | `burner` | 9x7 (5x4) | 1.15 x 1.1 | `burn` 10 fps, 6 frames | copper can, coil `)))`, brass gauge `(@)`, ember mouth, low flame (heat keys `1..4` like the brazier). `light: torch`, `replaces: 'brazier'` |
 | `gondola` | 18x6 (9x3) | 2.6 x 1.3 | `idle` (durations 1800/900: the snapped stays sway) | brass hull + rail, `[KESTREL]` board (row 2, cols 5-11), verdigris, ash round the keel |
 | `envelopeDrape` | 10x8 (5x4) | 1.4 x 1.9 | `sway` (4 frames, durations 900/700/900/700) | torn canvas hanging from a beam, a see-through burnt tear; the anchor is the hem: place `z = beam height - world.h` |
@@ -267,7 +272,7 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
 
 - The wreck files build the fg (and `n`) rows from the glyph rows with a glyph -> key map (`paint`, `autoN` in `wreckage.js`), so the rows always line up.
 - **Colour rule (checked in `preview/props.html`):** aether keys appear only on `relay`; brass / copper only on the machine parts (gondola, burner, lamp, relay mount). The envelope uses canvas + rope with a `brassDark` eyelet.
-- **`ASSETS.levelPatch.tower`** (in `wreckage.js`): the **proposed** `tower.js` edits. They are not applied, because `tower.js` is in US-010 review and the game loads it. The patch covers: prop swaps (`brazier` -> `burner`, `pallet` -> `gondola`, `beaconBowl` -> `relay`), new props (rigging, canvas drape in the stairwell, heap outside the west wall), the `beacon` light -> `relay` preset, prompts (`[E] Take lamp`, `[E] Wake the relay`) and material swaps (`!` walls -> `stone_ivy`, wall / parapet tops -> `moss_top`). Positions marked "check" need a look in `preview/tower.html`.
+- **`ASSETS.levelPatch.tower`** (in `wreckage.js`): the **proposed** `tower.js` edits, applied by the US-011 programmer pass (the game loads `tower.js`). The patch covers: prop swaps (`brazier` -> `burner`, `pallet` -> `canvasHeap` at the same wake spot, `beaconBowl` -> `relay`), new props (gondola **beside** the wake spot at (15.4, 8.7), rigging, strut on the R rubble, ropes A/B, canvas drape in the stairwell, heap outside the west wall), a `pathCheck` block (no new prop on the wake -> burner -> stair corridor or the boulder roll line; recomputed live in `preview/tower.html`, which now loads `wreckage.js` and draws the patch props + corridor), the `beacon` light -> `relay` preset, prompts (`[E] Take lamp`, `[E] Wake the relay`) and material swaps (`!` walls -> `stone_ivy`, wall / parapet tops -> `moss_top`). Positions marked "check" need a look in `preview/tower.html`.
 - Preview: `preview/props.html` (every model, every animation, near / mid / far at 160 / 240 / 320) and `preview/wreckage.html` (composed crash room, summit relay wake with the teal light, v1 vs v2 panels of the new materials, light-direction slider, grid toggle).
 
 ---
@@ -371,3 +376,4 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
     3. `relay.wakeLightFrame` plus `lights.relay.grow` need the light intensity ramp that US-022 already planned for the beacon.
     4. The level swaps in `levelPatch.tower` wait for the reskin stories.
     5. The US-017 end text needs new writer copy.
+- **v1.9.1 (2026-09-24, US-011 PO change request rework)**: `lever.js` brass gear housing + stepping hub gear (`lever.gear`, same keys of frames / sizes); `lantern.js` bracket `=j=` in unlit/empty, new `empty` animation (alias `hookEmpty` kept); `relay.js` `mounts.glow` (full + half), `awake` 6 fps; `wreckage.js` new `canvasHeap`, `rope` (2 variants), `strut`, reworked `levelPatch.tower` (+ `pathCheck`). Previews: `props.html` (new entries + checks), `wreckage.html` (heap, ropes, strut in the crash room), `tower.html` (patch props, corridor, path check). New section 4 rule: string variant = animation name. No schema change.

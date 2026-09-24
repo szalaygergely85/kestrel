@@ -93,6 +93,8 @@
   var ENTRIES = [
     { id: 'relay', m: M.relay }, { id: 'lantern (brass lamp)', m: M.lantern }, { id: 'burner', m: M.burner }, { id: 'gondola', m: M.gondola },
     { id: 'envelopeDrape', m: M.envelopeDrape }, { id: 'envelopeHeap', m: M.envelopeHeap }, { id: 'rigging', m: M.rigging },
+    { id: 'canvasHeap (wake spot, was pallet)', m: M.canvasHeap }, { id: 'rope0 (knotted stay)', m: M.rope.variants[0] },
+    { id: 'rope1 (eyelet stay)', m: M.rope.variants[1] }, { id: 'strut (bent)', m: M.strut },
     { id: 'brazier (legacy)', m: M.brazier }, { id: 'beaconFire (legacy)', m: M.beaconFire }, { id: 'lever', m: M.lever },
     { id: 'boulder', m: M.boulder }, { id: 'rubble0', m: M.rubble.variants[0] }, { id: 'rubble1', m: M.rubble.variants[1] },
     { id: 'rubble2', m: M.rubble.variants[2] }, { id: 'pallet', m: M.pallet }, { id: 'beaconBowl', m: M.beaconBowl }
@@ -153,14 +155,37 @@
     check('Beacon fire: 12x4, 6 frames, built only from brazier flame-unit cells (all emissive); bottom row fully burning in every frame',
       bf.size.w === 12 && bf.size.h === 4 && bf.animations.burn.frames.length === 6 && fullCover && bf.keys === b.flameUnit.keys);
     var l = M.lantern;
-    check('Brass lamp (model key "lantern") 3x4: unlit on hook (2-frame glint), lit, empty hook; same names / frame counts as US-011',
+    check('Brass lamp (model key "lantern") 3x4: unlit on its bracket (2-frame glint), lit, empty bracket; same names / frame counts as US-011',
       l.size.w === 3 && l.size.h === 4 && l.animations.unlit.frames.length === 2 && l.animations.lit.frames.length === 2 && !!l.animations.hookEmpty);
+    var le = l.animations.empty, bracketStays = le && [l.animations.unlit.frames[0], le.frames[0]].every(function (f) { return f.S.glyphs[0] === '=j='; });
+    check('US-012 carry-over: variant "empty" (set by lantern.take) exists in full + half LOD, same 3x4 / anchor, bracket =j= kept, lamp cells gone',
+      !!le && !!l.lods.half.animations.empty && l.variants.indexOf('empty') >= 0 && bracketStays &&
+      le.frames[0].S.glyphs.slice(2).join('').trim() === '');
+    var lv = M.lever, gs = lv.animations.pull.frames.map(function (f) { return f.S.glyphs[lv.gear.row].charAt(lv.gear.col); }),
+        ghs = lv.lods.half.animations.pull.frames.map(function (f) { return f.S.glyphs[1].charAt(1); }), stepOk = true;
+    for (var gi = 1; gi < gs.length; gi++) if (gs[gi] === gs[gi - 1] || ghs[gi] === ghs[gi - 1]) stepOk = false;
+    check('Lever brass gear housing { }: hub gear * starts the pull and turns one step per pull frame (full + half LOD); housing keys are brass',
+      gs[0] === '*' && stepOk && gs.join('') === lv.gear.steps.join('') && ghs.join('') === gs.join('') &&
+      lv.animations.pull.frames.every(function (f) { var r = f.S.glyphs[2], k = f.S.fg[2]; return r.charAt(0) === '{' && /^brass/.test(lv.keys[k.charAt(0)].c); }),
+      'full ' + gs.join(' ') + ' / half ' + ghs.join(' '));
+    var ch = M.canvasHeap, chG = ch.animations.idle.frames[0].S.glyphs.join('');
+    check('Canvas heap (wake spot): 9x2 like the pallet, same anchor / world, pale ochre canvas keys, folds ~ ) , half LOD',
+      ch.size.w === 9 && ch.size.h === 2 && ch.anchor.x === M.pallet.anchor.x && ch.world.w === M.pallet.world.w && /~/.test(chG) && /\)/.test(chG) &&
+      Object.keys(ch.keys).some(function (k) { return ch.keys[k].c === 'canvasLight'; }) && !!ch.lods.half);
+    check('Ropes x2 (1x6, sway, half LOD 1x3) and bent strut 4x3 (half LOD 2x2)',
+      M.rope.variants.length === 2 && M.rope.variants.every(function (r) { return r.size.w === 1 && r.size.h === 6 && r.lods.half.size.h === 3; }) &&
+      M.strut.size.w === 4 && M.strut.size.h === 3 && M.strut.lods.half.size.w === 2);
     var rl = M.relay, awakeAllE = rl.animations.awake.frames.every(function (f) {
       return [[1, 5], [1, 6], [1, 7], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]].every(function (p) { var k = f.S.fg[p[0]].charAt(p[1]); return rl.keys[k] && rl.keys[k].e; }); });
     var deadNoE = rl.animations.dead.frames[0].S.fg.join('').split('').every(function (k) { return k === ' ' || !rl.keys[k].e; });
     check('Relay 13x7: dead (no emissive in the rest frame) / wake once 8 frames at 8 fps / awake loop, every awake crystal cell emissive; light preset "relay" exists',
       rl.size.w === 13 && rl.size.h === 7 && deadNoE && awakeAllE && rl.animations.wake.frames.length === 8 && !rl.animations.wake.loop &&
       !!P.lights[rl.light.preset] && ['dead', 'wake', 'awake'].every(function (a) { return rl.lods.half.animations[a].frames.length === rl.animations[a].frames.length; }));
+    var mg = rl.mounts && rl.mounts.glow, mgh = rl.lods.half.mounts && rl.lods.half.mounts.glow;
+    var cryKey = function (m, mt) { return m.animations.awake.frames.every(function (f) { var k = f.S.fg[mt.y].charAt(mt.x); return rl.keys[k] && rl.keys[k].e && /^aether/.test(rl.keys[k].c); }); };
+    check('Relay mounts.glow (US-022 anchor) on the centre crystal in full and half LOD (emissive aether cell when awake); awake at 6 fps (full + half)',
+      !!mg && !!mgh && mg.x === rl.anchor.x && mgh.x === rl.lods.half.anchor.x && cryKey(rl, mg) && cryKey(rl.lods.half, mgh) &&
+      rl.animations.awake.fps === 6 && rl.lods.half.animations.awake.fps === 6, mg ? 'full ' + mg.x + ',' + mg.y + ' half ' + mgh.x + ',' + mgh.y : 'missing');
     var aetherUsers = ENTRIES.filter(function (e) { return Object.keys(e.m.keys).some(function (k) { return /^aether/.test(e.m.keys[k].c); }); }).map(function (e) { return e.id; });
     check('D-011 colour rule: aether teal only on the relay (magic is reserved)', aetherUsers.length === 1 && aetherUsers[0] === 'relay', aetherUsers.join(', '));
     var gd = M.gondola, nbRow = gd.animations.idle.frames[0].S.glyphs[gd.nameBoard.row];

@@ -8,7 +8,8 @@
  *   dead   loop, durations: long rest, then ONE crystal cell flickers dim teal ("something is in there")
  *   wake   once, 8 frames at 8 fps (1.0 s): the glow climbs from the core to the tips, the mirror catches it,
  *          sparkles rise, a flare on frame 5, settle. `wakeLightFrame` = when the engine switches lights.relay on.
- *   awake  loop, 4 frames at 4 fps: calm shimmer, sparkles drift above the crystals.
+ *   awake  loop, 4 frames at 6 fps (AC): calm shimmer, `* + . '` sparkles drift above the crystals.
+ * mounts.glow (full and half LOD) = the centre crystal: the US-022 glow anchor (renamed from beaconBowl.mounts.fire).
  * The legacy `beaconBowl` + `beaconFire` (models/rubble.js, models/brazier.js) stay for old data; the level swap is
  * listed in models/wreckage.js `levelPatch.tower`.
  */
@@ -127,13 +128,16 @@
     animations: {
       dead:  { loop: true, durations: [3200, 160], frames: frames(stDead, build) },
       wake:  { fps: 8, loop: false, frames: frames(stWake, build) },
-      awake: { fps: 4, loop: true, frames: frames(stAwake, build) }
+      awake: { fps: 6, loop: true, frames: frames(stAwake, build) }
     },
+    // US-022 glow anchor (was beaconBowl.mounts.fire, D-011): the body cell of the tall centre crystal (CRY[5]).
+    // In cells of this tier; world height = (anchor.y - y + 0.5) * world.h / size.h = 1.125 m (matches light.offset.z 1.1).
+    mounts: { glow: { x: 6, y: 2, note: 'centre crystal body; US-022 glow / light anchor' } },
     lods: {
-      half: { size: { w: 7, h: 4 }, anchor: { x: 3, y: 3 }, animations: {
+      half: { size: { w: 7, h: 4 }, anchor: { x: 3, y: 3 }, mounts: { glow: { x: 3, y: 0 } }, animations: {
         dead:  { loop: true, durations: [3200, 160], frames: frames(stDead, hbuild) },
         wake:  { fps: 8, loop: false, frames: frames(stWake, hbuild) },
-        awake: { fps: 4, loop: true, frames: frames(stAwake, hbuild) }
+        awake: { fps: 6, loop: true, frames: frames(stAwake, hbuild) }
       } }
     },
     light: { preset: 'relay', offset: { x: 0, y: 0, z: 1.1 }, on: 'awake',

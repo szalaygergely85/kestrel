@@ -232,34 +232,121 @@
   };
 
   // =====================================================================================================
-  // PROPOSED tower.js patch (D-011 reskin list). NOT applied: design/levels/tower.js is in US-010 review and the
-  // game loads it. Positions are world metres in tower.js space; "check" = verify in preview/tower.html.
+  // CANVAS HEAP 9x2 (reskin of the straw pallet = the wake spot): torn envelope canvas, pale ochre ~ ), same
+  // footprint / anchor / world size as the pallet, so the start pose and the wake camera do not change.
+  // =====================================================================================================
+  var CH_ROWS = fix(['.~)~~(~).', "'(~)o(~),"], 9);
+  var CH_MAP = { '.': 'c', '~': 'c', ')': 'C', '(': 'k', "'": 's', ',': 'a', o: 'b', other: 'c' };
+  var CH_HALF = fix(['(~)~)'], 5);
+  A.models.canvasHeap = {
+    name: 'canvasHeap',
+    desc: 'The wake spot: a torn panel of the Kestrel\'s envelope, crumpled into a low bed on the flagstones. Pale ochre ' +
+          'folds ) (, seams ~, a brass eyelet o, a scorched torn edge \' and ash , at the ends. Walk-over (no collision).',
+    size: { w: 9, h: 2 }, anchor: { x: 4, y: 1 }, world: { w: 2.0, h: 0.3 },
+    directions: ['S'], billboard: true,
+    keys: { C: { c: 'canvasLight' }, c: { c: 'canvas' }, k: { c: 'canvasDark' }, s: { c: 'canvasScorch' },
+            b: { c: 'brassDark' }, a: { c: 'ash' } },
+    replaces: 'pallet',
+    animations: { idle: { fps: 1, loop: true, frames: [frame(CH_ROWS, CH_MAP, null, autoN(CH_ROWS, [0], [], []))] } },
+    lods: { half: { size: { w: 5, h: 1 }, anchor: { x: 2, y: 0 }, animations: { idle: { fps: 1, loop: true, frames: [frame(CH_HALF, CH_MAP)] } } } }
+  };
+
+  // =====================================================================================================
+  // ROPES 1x6 (2 variants, rubble-style `variants[]`, picked by props[].variant 0..1): snapped stays hanging from
+  // the beam / step edge. Slow 2-frame sway of the lower half (long hold, short swing), like the gondola stays.
+  //   0 = knotted stay (@ knot, : twist, ' frayed end)      1 = eyelet stay (o brass eyelet, , frayed tuft)
+  // The anchor is the frayed END (bottom row): place z = attach height - world.h.
+  // =====================================================================================================
+  var ROPE_MAP = { '@': 'R', '|': 'r', ')': 'r', '(': 'r', ':': 'L', "'": 'R', ',': 'R', o: 'b', other: 'r' };
+  var ROPE_KEYS = { r: { c: 'rope' }, R: { c: 'ropeDark' }, L: { c: 'ropeLight' }, b: { c: 'brassDark' } };
+  var ROPE_N = ['f', 'f', 'f', 'f', 'f', 'f'];
+  function ropeModel(nm, a, b, ha, hb, dur) {
+    return { name: nm, size: { w: 1, h: 6 }, anchor: { x: 0, y: 5 }, world: { w: 0.12, h: 1.8 },
+      directions: ['S'], billboard: true, keys: ROPE_KEYS,
+      hangs: { note: 'anchor = the frayed end (bottom row). Place z = attach height - world.h (1.8 m)' },
+      animations: { sway: { loop: true, durations: dur, frames: [frame(a, ROPE_MAP, null, ROPE_N), frame(b, ROPE_MAP, null, ROPE_N)] } },
+      lods: { half: { size: { w: 1, h: 3 }, anchor: { x: 0, y: 2 }, animations: {
+        sway: { loop: true, durations: dur, frames: [frame(ha, ROPE_MAP), frame(hb, ROPE_MAP)] } } } } };
+  }
+  A.models.rope = {
+    name: 'rope',
+    desc: 'Snapped rigging of the Kestrel hanging in the stairwell: a knotted stay and an eyelet stay. Rope colours only ' +
+          '(brassDark eyelet), 1 cell wide, sways slowly.',
+    variants: [
+      ropeModel('rope0', ['@', '|', ':', '|', '|', "'"], ['@', '|', ':', ')', ')', "'"], ['@', '|', "'"], ['@', ')', "'"], [2000, 800]),
+      ropeModel('rope1', ['o', '|', '|', ':', '|', ','], ['o', '|', '|', ':', '(', ','], ['o', '|', ','], ['o', '(', ','], [1500, 700])
+    ]
+  };
+
+  // =====================================================================================================
+  // BENT STRUT 4x3: a gondola frame member, bent at a verdigris kink, lying on the rubble. Brass (machine part).
+  //   row 0 "  =o"  upper end, rivet end cap      row 1 " /% "  bend + verdigris kink      row 2 "o=, "  lower end, grit
+  // =====================================================================================================
+  var ST_ROWS = fix(['  =o', ' /% ', 'o=, '], 4);
+  var ST_MAP = { o: 'B', '=': 'b', '/': 'D', '%': 'v', ',': 'a', other: 'b' };
+  var ST_HALF = fix([' o', '=/'], 2);
+  A.models.strut = {
+    name: 'strut',
+    desc: 'A bent brass strut from the Kestrel\'s gondola frame, lying on the rubble heap: riveted ends, a verdigris kink.',
+    size: { w: 4, h: 3 }, anchor: { x: 1, y: 2 }, world: { w: 1.0, h: 0.5 },
+    directions: ['S'], billboard: true,
+    keys: { B: { c: 'brassLight' }, b: { c: 'brass' }, D: { c: 'brassDark' }, v: { c: 'verdigris' }, a: { c: 'ash' } },
+    animations: { idle: { fps: 1, loop: true, frames: [frame(ST_ROWS, ST_MAP, null, autoN(ST_ROWS, [0], [], []))] } },
+    lods: { half: { size: { w: 2, h: 2 }, anchor: { x: 1, y: 1 }, animations: { idle: { fps: 1, loop: true, frames: [frame(ST_HALF, ST_MAP)] } } } },
+    collide: 'none (placed on the existing rubble cell R (14,8), 0.6 m)'
+  };
+
+  // =====================================================================================================
+  // PROPOSED tower.js patch (D-011 reskin list). NOT applied: the game loads design/levels/tower.js; the swaps land
+  // with the US-011 programmer pass. Positions are world metres in tower.js space; checked live in preview/tower.html.
   // =====================================================================================================
   A.levelPatch = A.levelPatch || {};
   A.levelPatch.tower = {
-    status: 'PROPOSED (designer, v1.9). Apply with the US-010 / US-011 / US-012 / US-022 reskin stories.',
-    loadModels: ['models/wreckage.js', 'models/relay.js', 'models/lantern.js (reskinned in place)'],
+    status: 'PROPOSED (designer, v1.9 rework 2026-09-24). Apply with the US-011 programmer pass (prop spawn).',
+    loadModels: ['models/wreckage.js', 'models/relay.js', 'models/lantern.js (reskinned in place)', 'models/lever.js (gear housing, same key)'],
     props: {
       replace: [
         { id: 'brazier', set: { model: 'burner' }, note: 'same position (18.5, 6.5, 0.5), same torch light, same `burn` anim' },
-        { id: 'pallet', set: { model: 'gondola', x: 17.0, y: 9.5, z: 0.0, facing: 0 },
-          note: 'Wick comes to beside the gondola (story.md M1). Walk-over like the pallet (no collision in M1)' },
-        { id: 'beaconBowl', set: { model: 'relay', variant: 'dead' }, note: 'same position (9.0, 7.0, 6.6) on the O plinth' }
+        { id: 'pallet', set: { model: 'canvasHeap' }, wakeSpot: true,
+          note: 'same position (17.0, 9.5, 0.0) and facing: the wake spot. Walk-over like the pallet (no collision)' },
+        { id: 'beaconBowl', set: { model: 'relay', variant: 'dead' }, note: 'same position (9.0, 7.0, 6.6) on the O plinth; US-022 glow = relay.mounts.glow' }
       ],
       add: [
-        { id: 'rigging', model: 'rigging', x: 16.0, y: 9.2, z: 0.0, facing: 0, note: 'next to the gondola' },
+        { id: 'gondola', model: 'gondola', x: 15.4, y: 8.7, z: 0.0, facing: 90,
+          note: 'beside the wake spot, NOT on it: 1.7 m west-north-west of the heap centre, keel on the flagstones by the R rubble. ' +
+                'Seen front-left from the start pose. Non-colliding. The lamp stays on its own bracket at the old lantern position ' +
+                '(19.9, 6.5, 1.3: US-012 data and tests unchanged)' },
+        { id: 'rigging', model: 'rigging', x: 15.3, y: 9.5, z: 0.0, facing: 0, note: 'rope coil at the gondola stern, west of the heap' },
+        { id: 'strut', model: 'strut', x: 14.4, y: 8.2, z: 0.6, facing: 90, note: 'on the existing rubble cell R (14,8), 0.6 m, beside the gondola' },
+        { id: 'ropeA', model: 'rope', variant: 0, x: 14.1, y: 8.4, z: 3.3, facing: 90,
+          note: 'hangs off the upper-step edge H (5.1 m): z = 5.1 - 1.8. Bottom 3.3 m above the floor: overhead' },
+        { id: 'ropeB', model: 'rope', variant: 1, x: 15.2, y: 7.3, z: 3.6, facing: 90,
+          note: 'hangs beside the canvas drape from the same beam (5.4 m): z = 5.4 - 1.8. Overhead' },
         { id: 'canvasDrape', model: 'envelopeDrape', x: 14.5, y: 7.4, z: 3.5, facing: 90,
-          note: '"canvas hangs in the stairwell": off the upper stair edge (I, 5.4 m) into the room; check' },
+          note: '"canvas hangs in the stairwell": off the upper stair edge (I, 5.4 m) into the room. Overhead (hem at 3.5 m)' },
         { id: 'envelopeHeap', model: 'envelopeHeap', x: 3.0, y: 6.5, z: 'ground', facing: 90,
-          note: 'outside the broken west wall, below the summit breach: the hook view. z = terrain height there; check' }
+          note: 'outside the broken west wall, below the summit breach: the hook view. z = terrain height there; not on the route' }
       ],
-      remove: ['beaconFire mount (the relay has its own glow; no fire on the summit)']
+      remove: ['beaconFire mount (the relay has its own glow, relay.mounts.glow; no fire on the summit)']
+    },
+    // CR item 5: no new prop sits on the wake -> burner -> stair path or on the boulder's roll line.
+    pathCheck: {
+      result: 'PASS (designer, 2026-09-24; recomputed live in preview/tower.html, check "D-011 levelPatch props")',
+      method: 'Ground-floor BFS (8-neighbour, corner rule, rise <= 1.0, the burner ring * excluded). Corridor = every cell on ANY ' +
+              'shortest path: leg 1 wake (17,9) -> a cell next to the burner ring; leg 2 from the leg-1 arrival cells -> stair base (15,3). ' +
+              'Roll line = every cell the boulder can reach from its start (stair base, slope apron, hollow). A prop is checked on its ' +
+              'anchor cell; a prop whose bottom is >= 2.0 m above that floor counts as overhead (clear). The wake-spot heap is exempt.',
+      corridor: { leg1: ['17,9', '16,8', '17,8', '18,8', '17,7', '18,7', '19,7'],
+                  leg2: ['17,7', '18,7', '16,6', '17,6', '16,5', '15,5', '15,4', '14,4', '15,3'] },
+      rollLine: 'stairBase / slope / hollow cells (13..15, 3..5)',
+      props: { gondola: '15,8 clear', rigging: '15,9 clear', strut: '14,8 rubble, clear', ropeA: '14,8 overhead 3.3 m', ropeB: '15,7 overhead 3.6 m',
+               canvasDrape: '14,7 overhead 3.5 m', envelopeHeap: '3,6 outside, off the route', canvasHeap: 'wake spot (exempt)' }
     },
     lights: [
       { id: 'beacon', set: { preset: 'relay', z: 7.7 }, note: 'off until the relay wakes (US-022), then grows over 1.0 s' }
     ],
     interactables: [
-      { id: 'lantern', set: { prompt: '[E] Take lamp' } },
+      { id: 'lantern', set: { prompt: '[E] Take lamp' }, note: 'lantern.take sets sprite.variant = "empty" -> lantern.animations.empty (bracket stays)' },
       { id: 'beacon', set: { prompt: '[E] Wake the relay', interact: 'relay.wake' }, note: 'behaviour name change is a programmer call' }
     ],
     materials: [

@@ -1,7 +1,8 @@
 /*
  * Kestrel - US-012 "brass lamp" (D-011 reskin of the US-011 lantern, 3x4): the Kestrel's gondola lamp, salvaged.
- * Unlit on its hook (2-frame brass glint), lit, and the empty hook.
- * The model KEY stays `lantern` (and size 3x4, animations unlit / lit / hookEmpty, 2 frames each) so level data,
+ * Unlit on its bracket (2-frame brass glint), lit, and the empty bracket (`empty`, alias `hookEmpty`).
+ * Rework (US-011 CR): the brass bracket plate `=j=` is drawn in the unlit and empty states, so it visibly stays.
+ * The model KEY stays `lantern` (and size 3x4, animations unlit / lit / empty (+ hookEmpty alias)) so level data,
  * US-012 wiring and the sprite parity tests keep working; only the art and text changed.
  * Format: design/README.md section 4. Sets ASSETS.models.lantern.
  *
@@ -12,7 +13,10 @@
   'use strict';
   var A = root.ASSETS = root.ASSETS || {};
   A.models = A.models || {};
-  var N = ['.f.', 'lur', 'lfr', 'lfr'];
+  var N = ['fff', 'lur', 'lfr', 'lfr'];
+  // empty bracket (after pickup): row 0 = brass bracket plate with the iron hook, row 1 = soot mark; rows 2-3 empty
+  var EMPTY   = { S: { glyphs: ['=j=', " ' ", '   ', '   '], fg: ['DjD', ' g ', '   ', '   '], n: ['fff', '.f.', '...', '...'] } };
+  var EMPTY_H = { S: { glyphs: ['=j=', '   '], fg: ['DjD', '   '] } };
 
   A.models.lantern = {
     name: 'lantern',
@@ -29,22 +33,24 @@
       L: { c: 'lantern', e: true },          // lit glass glow through the cage
       c: { c: 'flameCore', e: true }, m: { c: 'flameMid', e: true }
     },
-    variants: ['unlit', 'lit', 'hookEmpty'],
+    // variant name = animation name. `empty` is the canonical post-pickup state (US-012 `lantern.take` sets
+    // sprite.variant = 'empty'); `hookEmpty` is kept as an alias with the same frames for older data.
+    variants: ['unlit', 'lit', 'empty', 'hookEmpty'],
     animations: {
       // unlit, on the hook: long rest, short glint on the cap (per-frame durations in ms)
       unlit: { loop: true, durations: [2200, 260], frames: [
-        { S: { glyphs: [' j ', '/=\\', '{o}', '\\_/'], fg: [' j ', 'bHb', 'bgb', 'DbD'], n: N } },
-        { S: { glyphs: [' j ', '/*\\', '{o}', '\\_/'], fg: [' j ', 'bWb', 'bgB', 'DbD'], n: N } }
+        { S: { glyphs: ['=j=', '/=\\', '{o}', '\\_/'], fg: ['DjD', 'bHb', 'bgb', 'DbD'], n: N } },
+        { S: { glyphs: ['=j=', '/*\\', '{o}', '\\_/'], fg: ['DjD', 'bWb', 'bgB', 'DbD'], n: N } }
       ] },
       // lit (US-012 carried light / optional first-person view model), flame flicker
       lit: { fps: 8, loop: true, frames: [
         { S: { glyphs: [' j ', '/=\\', '{*}', '\\_/'], fg: [' j ', 'BHB', 'LcL', 'DBD'], n: N } },
         { S: { glyphs: [' j ', '/=\\', '{+}', '\\_/'], fg: [' j ', 'BHB', 'LmL', 'DBD'], n: N } }
       ] },
-      // after pickup: the hook stays, empty
-      hookEmpty: { fps: 1, loop: true, frames: [
-        { S: { glyphs: [' j ', '   ', '   ', '   '], fg: [' j ', '   ', '   ', '   '], n: N } }
-      ] }
+      // after pickup (variant 'empty'): the bracket stays - iron hook plus a brass bracket plate, a soot mark where
+      // the lamp hung, nothing below it. Same 3x4 size and anchor, so the swap never moves the sprite.
+      empty: { fps: 1, loop: true, frames: [EMPTY] },
+      hookEmpty: { fps: 1, loop: true, frames: [EMPTY] }
     },
     lods: {
       half: { size: { w: 3, h: 2 }, anchor: { x: 1, y: 1 }, animations: {
@@ -56,7 +62,8 @@
           { S: { glyphs: ['/=\\', '{*}'], fg: ['BHB', 'LcL'] } },
           { S: { glyphs: ['/=\\', '{+}'], fg: ['BHB', 'LmL'] } }
         ] },
-        hookEmpty: { fps: 1, loop: true, frames: [{ S: { glyphs: [' j ', '   '], fg: [' j ', '   '] } }] }
+        empty: { fps: 1, loop: true, frames: [EMPTY_H] },
+        hookEmpty: { fps: 1, loop: true, frames: [EMPTY_H] }
       } }
     },
     interact: { prompt: '[E] Take lamp', radius: 1.8,
