@@ -116,3 +116,50 @@ BEAR: It blinked when my grandmother was a cub.
 BEAR: It asked for help then, too. Nobody came.
 BEAR: Go on, sky-cub. Leave the berries.
 ```
+
+## 9. PROPOSAL (2026-09-24): the vanished one
+
+Not canon. From `docs/owner-ideas/2026-09-24-story-and-progression.md`. Items marked ESCALATE TO MANAGER need a canon call.
+
+**1. Who vanished**
+- **A. Maren, his older sister (recommended).** She trimmed the skyworks lamps before him and taught him the trade. It keeps the bond warm without romance, and it makes his job an inheritance.
+- **B. Hob, his father, a lamp-master.** Weightier and more mournful. It pulls the story toward grief and makes Wick a boy chasing a grown man's choices.
+- **C. Isa, a girl from the next ward.** Adds longing, but it's a romance thread to carry through M6, and it leans toward cliche.
+
+Why Maren: she was the one who said the relay stones under the Low Wards *sing*. Magic is a tale Ferrum fines you for, and she was fined for it.
+
+**2. How she vanished (seven years ago)**
+Maren was fined twice for "stone-talk". One winter night she didn't come down from the skyworks. The Crown posted her name on the Low Wards board: FELL. LOST TO THE HUSH. They returned her lamp to the family, and it was the reason Wick never believed them. It had been trimmed, shuttered and set down neatly. Nobody trims a wick before they fall. She put that light out herself. (Fits canon: the exiles are "people Ferrum cast out and swore had died".)
+
+**3. The SOS and the jump (hope, not proof)**
+- There is no signature in the signal. The logic is simple: nobody lives beyond the Wall, so a call for help from out there means *someone is alive*. If one person can be, then so can Maren. Wick has no proof, only hope.
+- **The ambiguous detail:** the SOS makes the relay stones under the Low Wards hum, and those are the stones Maren was fined for saying *sing*. That doesn't prove anything, but Wick can't stop thinking about it.
+- The call is old (canon), and nobody in Ferrum will say for how long. That leaves room to hope it started around the winter she disappeared.
+- **Why alone, and why now:** telling anyone means telling the Crown, and the Low Wards only shrug that the dead don't signal. After a month of charting, Crown masons come down to mortar over the humming stones. That night, before the last thread to her is sealed, he cuts the *Kestrel* loose.
+
+**4. Crash intro (~38 s, ends on the current wake)**
+1. (4 s) Black screen. A far teal `*` pulses 3 short, 3 long, 3 short, and the stones below hum `~ ~ ~` in time with it.
+2. (6 s) A skyworks roof at night under Ferrum's amber lamps. A knife saws through a mooring rope `|` until it snaps, and the *Kestrel* lifts in `~ )` canvas.
+3. (5 s) Burner flare. The Wall slides past below, and its lamps snap on one by one, left to right.
+4. (5 s) A ballista swivels. A bolt streaks up as a `---->` line.
+5. (6 s) The envelope tears into flying `~` glyphs. The burner roars white, the horizon tilts and the teal star swings across the view.
+6. (6 s) Falling. The chart flutters and a hand closes on it. A moss-stone ring rushes up out of the dark.
+7. (6 s) Impact, a white flash and scattered glyphs. Then black, a few drifting embers and the burner ticking as it cools, which hands off to the wake.
+
+**5. Magic, relays and wells**
+- Maren heard the stones sing inside a city with no magic. Outside the Wall, she was right. The things Wick was told could not exist are the things she was punished for saying.
+- **Relays** (the owner's "beacons") and **aether wells** (new: springs where crystals grow) are where the land's light gathers, and where Wick draws power. Maren passed some of them first.
+- **ESCALATE TO MANAGER:** the owner's spell tree (fireball, freeze, lightning, one big spell, gained at relays, wells and quests) differs from canon (Spark, Gust and Ward, from gauntlet crystals, never bought). Proposal: keep them as light verbs. Spark becomes fire, a cold light becomes freeze, a struck light becomes lightning, and the big spell stays unnamed until late.
+- **Hooks (no ending):**
+  - The exiles' gauntlet (M3) was made for a smaller hand. They go quiet when he asks whose it was.
+  - At a well, a lamp-trimmer's knot is tied to the winch, the one the skyworks hands use. Anyone from the skyworks could have tied it, though.
+  - A stray Crown sentinel's record drum reads: `M. - CAST OUT - RECORDED DEAD`.
+- It stays compatible with the section 7 candidates. She may have found the caller (A or C) or fed it (B). In M4, "nobody is there" still holds, because she had been there and was gone.
+
+**6. M1 lines to adjust later (not changed here)**
+- Section 1 "The signal" says "one night a light blinks". Canon says the SOS has been sending for years, so this should read that it was always there and one night it *ended differently*.
+- Map card: `Your pencil: "Then who is blinking?"` could become `Your pencil: "Someone is alive. So she could be. W."`, which also adds the canon "W." that the card still lacks.
+- Hint `The burner still glows. Take what light you can.` could echo her: `Trim the wick. Take what light you can.`
+- End card `Someone is out there.` could become `She is out there.` (the relay-woken variant only), or stay as it is to keep M1 unspoiled.
+- Relay-keeper's log: no change. It must not know Maren or Wick.
+- Maren's name never appears on screen in M1. The hope stays implied ("she", nothing more).
