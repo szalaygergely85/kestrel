@@ -5,7 +5,9 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 
 > **Session handoff 3 (end of 2026-09-24).**
 > - **Done today:** US-012, US-030b, US-006, US-007, US-017, US-011, US-015, US-045, BUG-LIGHT-001. Decision: D-017.
-> - **M1 left:** US-016, BUG-CAST-001 (architect notes ready, `todo`), US-018, plus the P1/P2 stories.
+> - **M1 left:** US-016, BUG-CAST-001 (fixed, `arch-review`: gpucompare 14/14; OWN-001 `dLViol 3` still open), US-018, plus the P1/P2 stories.
+> - **Open owner question:** rewrite the engine in another language? Main-session answer: no (GPU does the heavy work; ~2-4 weeks, M1 stops). Before US-031, the manager compares building our own editors with porting to an existing engine (e.g. Godot).
+> - **Queued owner ideas for the editors (2026-09-24), for the PO and manager before M1.5 (US-031..):** (1) multiple views: top, side, 3D and multi-viewport frames, with material painting; (2) no-code visual scripting to add objects and wire behaviour; (3) text scripts per object "like Python" (options: an embedded language such as Lua/fengari or a JS sandbox; Pyodide is heavy, about 10 MB); (4) a trigger editor (engine triggers already exist, US-017); (5) UI elements as separate, editable items (engine/ui panels already exist, US-015); (6) a scene/element tree (hierarchy panel); (7) gameplay physics on objects: drop, fall, pick up and carry (bring a branch), cut a tree into pieces; (8) effects: water, smoke (particles). Items 7 and 8 are engine features (physics/particles), not only editor work.
 > - **Owner to-dos:** a real-GPU 8-light check at `?grid=320x120&lights=8&debug=1`, and one playthrough with a real mouse.
 
 > **Session handoff 2 (end of 2026-09-23, commit after b6f4e00).**
