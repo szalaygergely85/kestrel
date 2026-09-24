@@ -377,6 +377,59 @@ Things beyond the terrain far limit (1500 m) that must still be seen: Ferrum's l
 
 ---
 
+## 7. Voxel props (`design/models/voxel_props.js`, D-019, v1.12)
+
+Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/architecture.md 15.1) plus `voxel.mounts` (15.3 item 4). They follow the 15.3 item 6 content contract. Flames, glows, sparks and smoke stay billboards, as separate props.
+
+- **Sets:**
+  - `ASSETS.voxelModels.<key> = { name, desc, voxel, placement, readability }`. The keys are `lever` and `lantern`, the same keys as the billboard models.
+  - `ASSETS.voxelMaterials = { v1, v2, remap, edges: { modelRim }, fallback }`: the proposed prop materials.
+  - `ASSETS.voxelModels.attach()`: see "Binding" below.
+- **Axes:**
+  - x = east, with x0 = west.
+  - y = south, with y0 = the **front** row (it faces north at yaw 0).
+  - z = up, with z0 = the bottom layer.
+  - `layers[z][y]` is a row string of `sx` chars.
+  - `anchor` is the entity origin, in voxel units (floats are allowed). Yaw = the level `facing`.
+- **Materials:** one `mats` char per material. There are no per-voxel colours. "Bright rim, dark body" means separate materials:
+
+  | char | key | base | use |
+  |---|---|---|---|
+  | `R` | `brass_light` | brassLight | rims, top edges, cage posts |
+  | `H` | `brass_hot` | brassHot, emissive 0.10 | rivets, lever knob, gear teeth, finial |
+  | `b` | `brass_dark` | brassDark | plate / lamp bodies |
+  | `i` | `iron_light` | ironLight | handle rod, bail, arm top edge |
+  | `d` | `iron_dark` | ironDark | foot, post, back-plate contour, burner, hook |
+
+  Each key has a v1 record (the `palette.materials` format) and a v2 record (the `detail-pass.js` format). The v2 records use a 2.5 cm tone grid with `lines: false`.
+- **Parts and clips:**
+  - `lever` (0.05 m, 15x8x22 = 0.75 x 0.40 x 1.10 m):
+    - parts `plate` (root, static) + `handle` (pivot at the hub).
+    - clips `idle` = 1-frame loop; `pull` = 0.4 s non-loop, rot y 0 -> -12 -> 50 -> 115 -> 148 -> 135, event `clunk` at key 4, held at the end; `down` = the held pose.
+    - The handle swings in the plate plane toward the grate side.
+  - `lantern` (1/32 m, 8x13x19):
+    - parts `mount` (wall plate, root), `arm` (child: arm, brace, hook), `lamp` (a second root).
+    - clips `unlit`, `lit` (the same body), `empty` / `hookEmpty` (the lamp part moves 64 voxels down, under the floor; the bracket stays).
+- **Mounts:**
+  - `lever`: `glint` (knob top, handle), `prompt`.
+  - `lantern`: `flame` (burner top), `light`, `prompt`, `hook` (= the lamp pivot).
+- **Placement:** no level edit.
+  - The lever uses tower.js (19.25, 9.3, 3.0, facing 90). The anchor is the foot centre.
+  - The lantern uses (19.9, 6.5, 1.3, facing 270). Its anchor puts the back of the wall plate on the step-8 face (x 20.0) and the lamp bottom at z 1.3. The lamp centre ends at x 19.72.
+- **Binding:** 15.3 item 1 says `model.voxel` present -> `components.voxel`. `attach()` copies `voxel` onto `ASSETS.models.lever` / `.lantern`. It does this only when all 5 keys exist in **both** `palette.materials` and `detailPass.materials`. The game loads the file only once a `<script>` tag for it is added after `lever.js` / `lantern.js`.
+- **Open merge step (designer, next pass):**
+  - Append `voxelMaterials.v1` to `palette.js` materials, after `canvas`, so no id moves.
+  - Append `.v2` to `detail-pass.js` materials and `.remap` to its remap.
+  - Set `detail-pass.js` `edges.modelRim = 0.55`.
+  - Until this is done, `fallback` maps each key to `brass` / `iron` for oracle runs. That fallback is not the intended look.
+- **Preview:** `preview/voxel-props.html`. It needs http, because it imports `engine/voxel/*`. It shows:
+  - 6 yaws x 3 pitches plus an orbit view, all clips, the lit flame, and the knob glint.
+  - The in-game 160x60 / 240x90 crops, using the engine projection and the stone backdrop.
+  - Top-view layer slices and a JSON dump.
+  - Checks: the validator with the palette + proposed keys, pack, part names, the lever contract, sizes, mounts, material and colour keys, value contrast, placement against tower.js, and rows per voxel.
+
+---
+
 ## Change log
 - **v1 (2026-09-22, US-002)**: initial palette, ramps, lights, fog, time of day, 9 materials, reference shader, preview.
 - **v1.0.1 (2026-09-22)**: section 1.1 corrected. The game is served over http (ES modules); palette.js stays a plain script.
@@ -428,5 +481,6 @@ Things beyond the terrain far limit (1500 m) that must still be seen: Ferrum's l
   - New `models/ferrum_lights.js` (section 4.3).
   - Previews: `title.html` (signature, hint-zone plan, one-hint timeline with the 20 s chart hint, end card from `uiStyle.endText`, 7 new checks); `overworld.html` (signal light + Ferrum drawn, 4 new viewpoints, envelope heap, 9 new checks).
   - **Engine / PO notes:** (1) per-key `fogMax` on emissive sprite cells (GPU sprite pass + `drawSprites`); (2) `world.horizon[]` pass-through in `World.load` and a horizon-billboard draw on sky cells (section 4.3); (3) sprite LOD `lods.min` + `minCells` for `farTower` (already in the US-016 tech notes); (4) `endCard.js` should draw per-line colours and the `[R]` key colour from `uiStyle.endText`, which it does not do today.
+- **v1.12 (2026-09-24, D-019 voxel props)**: new section 7. The new file `models/voxel_props.js` adds `ASSETS.voxelModels.lever` (plate + handle, idle/pull/down) and `.lantern` (mount + arm + lamp, unlit/lit/empty/hookEmpty). It also adds the proposed materials `ASSETS.voxelMaterials` (`brass_light`, `brass_hot`, `brass_dark`, `iron_light`, `iron_dark`, v1 + v2 records, `modelRim` 0.55) and the guarded `attach()`. New preview `preview/voxel-props.html`, which uses the engine oracle. No level, palette or billboard changes.
 - **v1.11 (2026-09-24, ART-OWN-001 + BUG-OWN-003 data; stopped by D-019: solid props become voxel models)**: new optional model fields `fill`, `outline`, per-key `fill: false`, and the **opaque space** cell (section 4; engine support pending, architecture.md 7.7). Billboard art redrawn at the real view scale: `lever` 11x12 (world 0.7 x 1.1), `burner` 13x11, `gondola` 34x9, `canvasHeap` 20x4, `rigging` 14x4, `strut` 12x4, `rope` 3x16, `boulder` 12x8, `rubble` 10x3 / 12x5 / 8x3 (all with new half LODs, same model names, animation names and frame counts; anchors = bottom centre / contact point; world sizes unchanged except the lever). `lantern` keeps 3x4 (test-pinned), new pale glass key. `relay`: `fill`/`outline` + glyph-only sparkle keys `P Q R`. `envelopeHeap` / `envelopeDrape`: `fill`. Previews: `props.html` "in-game size" section (160x60 + 240x90, engine projection, wall + floor, fill/outline toggles, scale check), `wreckage.html` (engine LOD pick, fill toggle).
 - **v1.9.1 (2026-09-24, US-011 PO change request rework)**: `lever.js` brass gear housing + stepping hub gear (`lever.gear`, same keys of frames / sizes); `lantern.js` bracket `=j=` in unlit/empty, new `empty` animation (alias `hookEmpty` kept); `relay.js` `mounts.glow` (full + half), `awake` 6 fps; `wreckage.js` new `canvasHeap`, `rope` (2 variants), `strut`, reworked `levelPatch.tower` (+ `pathCheck`). Previews: `props.html` (new entries + checks), `wreckage.html` (heap, ropes, strut in the crash room), `tower.html` (patch props, corridor, path check). New section 4 rule: string variant = animation name. No schema change.
