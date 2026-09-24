@@ -423,12 +423,17 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
     if (fo <= 0) continue;
     const ndotl = d > 1e-6 ? (nx * dx + ny * dy + nz * dz) / d : 0;
     if (ndotl <= 0) continue;
-    // Architect review 1 item 1: sample the vis grid at `S = P + N*0.01`,
-    // not `P` itself - a wall hit lies exactly on the cell boundary, so
-    // `floor(P.x/y)` is a float coin flip between the solid cell and the
-    // open one. Nudging along the surface normal always lands in the open
-    // cell the surface actually faces (matches `light.frag.js`'s `sampleVis`).
-    const vis = sampleVis(lights, i, x + nx * 0.01, y + ny * 0.01);
+    // BUG-LIGHT-001 fix (architect review 1 of US-011, docs/backlog.md row
+    // 25b): sample the vis grid at `S = P + (L-P)/|L-P| * 0.02` - toward the
+    // LIGHT, not along the surface normal. The old `P + N*0.01` (architect
+    // review 1 item 1 of US-006) fixed the wall case (a wall hit lies
+    // exactly on the cell boundary) but does nothing for a FLOOR (`N =
+    // 0,0,1`): nudging along N only moves z, so `floor(P.x/y)` is still an
+    // exact float coin flip at a depth-discontinuity silhouette edge (the
+    // "boulder mid-roll" repro - a far step top directly above a near wall
+    // face on screen), which is what let this bug through the old US-006
+    // fix. `dx,dy,d` above are already `(light - P)`/its length; reuse them.
+    const vis = sampleVis(lights, i, x + (dx / d) * 0.02, y + (dy / d) * 0.02);
     if (vis <= 0) continue;
     const amt = fo * ndotl * vis;
     out[0] += lights.col[o4] * amt;
@@ -443,7 +448,11 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
     const sd = sun.dir;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
-      if (sunVisible(world, x + nx * 0.01, y + ny * 0.01, z + nz * 0.01, sd)) {
+      // BUG-LIGHT-001 fix: same "toward the light" nudge as the point-light
+      // vis sample above (the sun's "light direction" is `sd`, already unit)
+      // instead of along `N` - a floor face (`N = 0,0,1`) needs an x/y
+      // nudge to escape a cell-boundary coin flip, which `N` alone can't give.
+      if (sunVisible(world, x + sd[0] * 0.02, y + sd[1] * 0.02, z + sd[2] * 0.02, sd)) {
         sunlit = 1;
         out[0] += sun.col[0] * ndotsun;
         out[1] += sun.col[1] * ndotsun;

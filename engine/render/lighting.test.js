@@ -159,6 +159,27 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
       out[0] + out[1] + out[2] > 1e-4, `${out[0] + out[1] + out[2]}`);
     ok('same wall face, handle count unchanged (no extra light added)', hw >= 0);
   }
+
+  // BUG-LIGHT-001 (docs/backlog.md row 25b, architect review 1 of US-011):
+  // a FLOOR sample (N = 0,0,1) exactly on the same column-1/column-2 x
+  // boundary. Nudging along N alone (the old fix) only moves z - it cannot
+  // move the sample off the x=2.0 boundary, so `floor(S.x) === 2` (the
+  // solid column) is an exact coin flip that reads BLOCKED even though the
+  // floor point is in the open column, clear LOS to the light. The fix
+  // (nudge toward the light, which has a real x/y component) must move the
+  // sample into the open column and read LIT.
+  {
+    const ls3 = new LightSet();
+    ls3.ambient[0] = ls3.ambient[1] = ls3.ambient[2] = 0; // isolate the point-light term
+    ls3.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 5, on: true });
+    ls3.update(0, world);
+    const out = [0, 0, 0];
+    // Floor point at the same column boundary/row as the wall-face case
+    // above, but facing straight up - N alone gives zero x/y displacement.
+    lightAt(ls3, world, 2.0, 3.5, 0.01, 0, 0, 1, out);
+    ok('BUG-LIGHT-001: floor sample exactly on the boundary is lit (nudge toward the light moves x/y, not just N)',
+      out[0] + out[1] + out[2] > 1e-4, `${out[0] + out[1] + out[2]}`);
+  }
 }
 
 // --- test_room: buildLightSet finds the torch, radius boundary matches P.lights.torch.radius ---

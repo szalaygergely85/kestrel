@@ -595,6 +595,27 @@ export class GpuCellPipeline {
     return { GI: this._readbackGI, GA: this._readbackGA, Depth: this._readbackDepth };
   }
 
+  /**
+   * BUG-LIGHT-001 (docs/backlog.md row 25b, architecture.md 14.3 item 7
+   * debt): test-only readback of `LIGHT` (RGBA32UI: xyz = floatBitsToUint(L),
+   * w = sunlit | litCount << 8), same exemption/shape as `readbackGeometry`
+   * - lets `?gpucompare=1` split a light-PASS mismatch (this readback vs
+   * `lightAt()`/`fb.light`) from a shade-pass-only mismatch.
+   */
+  readbackLight() {
+    const gl = this.gl;
+    const n = this.cols * this.rows;
+    this._readbackLight = this._readbackLight || new Uint32Array(4 * n);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texLight, 0);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    gl.readPixels(0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this._readbackLight);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo);
+    return this._readbackLight;
+  }
+
   // Called by RenderTargetGL.present(), between its own texSubImage2D
   // uploads (JS fg/bg layer) and its draw call. Order (14.1 section 4):
   // repack+upload (this._repackAndUpload) -> pass1 shade -> pass2 edge/debug

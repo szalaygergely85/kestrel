@@ -12,7 +12,7 @@ import {
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
-  GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells, flickerStep,
+  GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
   updateInteraction, drawCrosshair,
@@ -830,6 +830,15 @@ function runGpuCompareDdaMode() {
   // gameplay uses - no separate on/off toggle needed here.
   const testRoomLights = lightsEnabled ? buildLightSet(testRoom, assets.palette) : null;
   const worldM1Lights = lightsEnabled ? buildLightSet(worldM1, assets.palette) : null;
+  // BUG-LIGHT-001 repro (docs/backlog.md row 25b): "persists with ?sun=0" -
+  // this page used to build its own LightSet without ever consulting
+  // `sunEnabled` (only the real gameplay `lightSet` at the top of this file
+  // did), so `?gpucompare=1&sun=0` silently ran with the sun still on. Same
+  // `setSun` call the gameplay path uses (`setSun` is the only writer of `on`).
+  if (!sunEnabled) {
+    if (testRoomLights) testRoomLights.setSun({ elevation: testRoomLights.sun.elevation, azimuth: testRoomLights.sun.azimuth, on: false });
+    if (worldM1Lights) worldM1Lights.setSun({ elevation: worldM1Lights.sun.elevation, azimuth: worldM1Lights.sun.azimuth, on: false });
+  }
   const runs = [
     ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, lights: testRoomLights, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
@@ -962,6 +971,10 @@ function runGpuCompareDdaMode() {
     sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
     const gpuFg = rb.fg, gpuBg = rb.bg;
     const { GI, GA, Depth } = gpuPipeline.readbackGeometry();
+    // BUG-LIGHT-001 (docs/backlog.md row 25b): LIGHT-pass readback, taken
+    // right after the GPU frame that wrote it, before the CPU pass below
+    // overwrites fbCompare.light with the JS oracle it's compared against.
+    const lightBuf = gpuPipeline.readbackLight();
 
     // CPU oracle second. `shadeSurfaces`/`edgePass` (inside `renderWorld`)
     // no-op whenever `rt.gpuActive` (set once by the pipeline's constructor)
@@ -993,9 +1006,15 @@ function runGpuCompareDdaMode() {
     // tolerance, re-checked after the BUG-OWN-001 fix above.
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows);
+    // BUG-LIGHT-001: light-pass-only comparison (`fbCompare.light` was just
+    // (re)written by the CPU `renderWorld` call above, via `lightSurfaces`).
+    // Reported only - splits a light-pass vs shade-pass mismatch for
+    // debugging; does not gate `ok`/`overallOk` (cmpCells/cmpGeom already do,
+    // per the story's "other rows unchanged" acceptance bar).
+    const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows);
     const ok = cmpCells.pass && cmpGeom.pass;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: name, cmpCells, cmpGeom, ok });
+    rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok });
   }
   overallOk = overallOk && sampledOwnTextures;
   // US-017: the informational n=2 loop below never fades (it has no
@@ -1069,8 +1088,10 @@ function runGpuCompareDdaMode() {
       `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
       `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}  holes ${r.cmpGeom.holes} (must be 0)\n` +
       `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
-      `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n`;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} poisonedSurvivors=${r.cmpCells.poisonedSurvivors}`);
+      `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
+      // BUG-LIGHT-001: light-pass-only readback (reported only, see above).
+      `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)\n`;
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol})`);
   }
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);

@@ -215,11 +215,14 @@ void main() {
     if (fo <= 0.0) continue;
     float ndotl = d > 1e-6 ? dot(N, d3) / d : 0.0;
     if (ndotl <= 0.0) continue;
-    // Architect review 1 item 1: sample at S = P + N*0.01, matching
-    // lightAt() in lighting.js (a wall hit lies exactly on the cell
-    // boundary; sampling P itself is a float coin flip between the solid
-    // cell and the open one).
-    float vis = sampleVis(i, P.x + N.x * 0.01, P.y + N.y * 0.01);
+    // BUG-LIGHT-001 fix (JS twin: lighting.js's lightAt): sample at
+    // S = P + (L-P)/|L-P| * 0.02, toward the LIGHT, not along N. N alone
+    // (the old fix, matching a wall hit's cell boundary) does nothing for a
+    // floor (N = 0,0,1) - it only nudges z, so floor(P.x/y) stays an exact
+    // float coin flip at a depth-discontinuity silhouette edge. d3/d is
+    // already the unit vector toward the light.
+    vec3 toLight = d3 / d;
+    float vis = sampleVis(i, P.x + toLight.x * 0.02, P.y + toLight.y * 0.02);
     if (vis <= 0.0) continue;
     L += uLightCol[i].rgb * (fo * ndotl * vis);
     litCount++;
@@ -230,7 +233,9 @@ void main() {
   if (uSunOn != 0) {
     float ndotsun = dot(N, uSunDir);
     if (ndotsun > 0.0) {
-      vec3 S = P + N * 0.01;
+      // BUG-LIGHT-001 fix: nudge toward the sun direction (JS twin above),
+      // not along N - same floor-coin-flip reasoning.
+      vec3 S = P + uSunDir * 0.02;
       if (sunVisible(S, uSunDir)) {
         sunlit = 1;
         L += uSunCol * ndotsun;

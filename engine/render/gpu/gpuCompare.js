@@ -202,6 +202,51 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   };
 }
 
+/**
+ * BUG-LIGHT-001 (docs/backlog.md row 25b): per-cell LIGHT-pass readback vs
+ * `lightAt()` (the JS oracle, already run into `fb.light` by `lightSurfaces`
+ * during the CPU render pass), splitting a light-pass mismatch from a
+ * shade-pass-only one. Implements architecture.md 14.3 item 7's oracle rule:
+ * `|dL| <= 1e-3` per channel on cells whose `sunlit` flag agrees (float32 vs
+ * float64 noise on ~10 flops/light), sunlit-flag mismatch <= 0.5% of
+ * `kind != 0` cells (edge flips at boundary steps - the vis-grid coin-flip
+ * this bug is about). Excludes the same 4-neighbour-kind edge cells as
+ * `compareCells`/`compareGeometry` (a real kind boundary, not a lighting bug).
+ * `lightBuf` = `GpuCellPipeline.readbackLight()`'s Uint32Array (4 per cell:
+ * x,y,z = floatBitsToUint(L), w = sunlit | litCount << 8).
+ */
+export function compareLight(fbLight, lightBuf, kind, cols, rows) {
+  const n = cols * rows;
+  let nonSky = 0, checked = 0, sunlitChecked = 0, sunlitMismatch = 0;
+  let dLMax = 0, dLViol = 0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if (kind[i] === 0) continue;
+      nonSky++;
+      if (isEdgeCell(kind, cols, rows, x, y, i)) continue;
+      checked++;
+      const gpuSunlit = lightBuf[i * 4 + 3] & 1;
+      const cpuSunlit = fbLight.sunlit ? fbLight.sunlit[i] : 0;
+      if (gpuSunlit !== cpuSunlit) { sunlitMismatch++; continue; }
+      sunlitChecked++;
+      const o = i * 3;
+      for (let k = 0; k < 3; k++) {
+        const gpuL = u32ToF32(lightBuf[i * 4 + k]);
+        const cpuL = fbLight.rgb[o + k];
+        const dL = Math.abs(gpuL - cpuL);
+        if (dL > dLMax) dLMax = dL;
+        if (dL > 1e-3) dLViol++;
+      }
+    }
+  }
+  const sunlitMismatchFrac = nonSky ? sunlitMismatch / nonSky : 0;
+  return {
+    nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac, dLMax, dLViol,
+    pass: sunlitMismatchFrac <= 0.005 && dLViol === 0,
+  };
+}
+
 // GPU-side edge-cell exclusion (mirrors isEdgeCell, reading the packed uint
 // GI buffer instead of a plain kind array) - a cell whose CPU-side and
 // GPU-side kind agree can still sit on a GPU-only "edge" (a boundary the CPU
