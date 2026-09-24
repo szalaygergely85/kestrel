@@ -86,7 +86,9 @@ export function stepAnimations(world, dtMs) {
       sprite.t -= clip.durMs[sprite.frame];
       sprite.frame++;
       if (sprite.frame >= clip.count) {
-        if (clip.loop) {
+        // `sprite.loop` (set by `play()`/the spawn) is the serialized state; a
+        // hand-built sprite without it falls back to the clip's own flag.
+        if (sprite.loop !== undefined ? sprite.loop : clip.loop) {
           sprite.frame = 0;
         } else {
           sprite.frame = clip.count - 1;

@@ -765,8 +765,12 @@ function runGpuCompareDdaMode() {
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: lever mid-pull',
       cam: { x: 1498.0, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 }, real: true,
       before: () => { const h = worldM1.get('tower.lever'); if (h) { h.play('pull', { restart: true }); h.stop(); h.data.components.sprite.frame = 2; } } },
+    // Local (13.5, 4.5) is the open `o` hollow cell west of the stair base, looking at the
+    // boulder (15.55, 3.5) at bearing 64 (architect review 1: the old (13.0, 5.0)/yaw 100 pose
+    // had the boulder ~50 deg off-axis, outside the 37.5 deg half-FOV). Known FAIL: BUG-LIGHT-001
+    // (surface light-pass parity at the stair's depth discontinuities, not sprites).
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: boulder mid-roll',
-      cam: { x: 1493.0, y: 1023.0, z: engine.physics.eyeHeight, yawDeg: 100, pitchDeg: 0 }, real: true,
+      cam: { x: 1493.5, y: 1022.5, z: engine.physics.eyeHeight, yawDeg: 64, pitchDeg: -20 }, real: true,
       before: () => { const h = worldM1.get('tower.boulder'); if (h) h.data.components.sprite.frame = 4; } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },

@@ -423,6 +423,8 @@ Reuses 10.1 (handles, clips, `stepAnimations`), 14.2 item 4 / US-030c (`SpritePo
 
 Do not: read `window.ASSETS` or tower ids in engine; allocate in `collect`/`project`/`stepAnimations`; blend frames; hard-code prop positions in `main.js`; add a runtime `levelPatch` applier.
 
+**Review 1 outcome (2026-09-24, 74969d7): ARCH OK.** Rules that came out of it: (a) `components.sprite.loop` is the serialized truth - `stepAnimations` honours it and falls back to the clip's `loop` only when the field is undefined (hand-built sprites in tests); `World.spawn` does not default it, the prop spawn copies it from the anim def, `play()` from `opts.loop ?? anim.loop`. (b) A `?gpucompare=1` pose must actually frame what it names (check the bearing against the 37.5 deg half-FOV and that the camera cell is open) - the first boulder pose did neither. (c) **Known parity gap BUG-LIGHT-001** (14.3): the GPU light pass lights `cellRayP(cell, depth)` while `lightAt()` lights the caster's exact hit point; at depth discontinuities (a far step top over a near wall face) the two points can fall on different sides of a vis-grid/sun shadow edge - a lit/unlit flip on a few surface cells. Not a sprite issue; fix direction in the bug (light the same point on both paths; nudge the vis sample toward the light, not only along `N`).
+
 ### 7.6 UI panels, rich text, scene dim, hints, wake sequence (US-015; architect, 2026-09-24)
 
 Reuses 7.4 (triggers, fade LUT, restart rules), US-012 `drawCrosshair`. D-017: the GPU path ships; CPU twins are oracles.

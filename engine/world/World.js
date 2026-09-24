@@ -212,7 +212,7 @@ export class World {
           } else {
             z = s.origin.z + (p.z || 0);
           }
-          const comps = { sprite: { model: modelKey, anim } };
+          const comps = { sprite: { model: modelKey, anim, loop: !!(anim && model.animations[anim].loop) } };
           // `dynamic: true` (the boulder): body + roller, exactly as
           // boulder.test.js built them by hand before this story (US-013
           // tech note); `transform.z` is the feet position, same as `x`/`y`.
@@ -466,7 +466,8 @@ export class World {
     const entId = id || `${type}_${this.nextId++}`;
     if (this._entities.has(entId)) throw new Error(`World.spawn: id "${entId}" already exists`);
     if (components.sprite) {
-      components.sprite = { t: 0, frame: 0, loop: true, speed: 1, playing: true, ...components.sprite };
+      // (US-011 arch review) no `loop` default: `stepAnimations` falls back to the clip's own flag.
+      components.sprite = { t: 0, frame: 0, speed: 1, playing: true, ...components.sprite };
     }
     const entity = Entity.create(type, transform, components, entId);
     this._entities.set(entId, entity);
