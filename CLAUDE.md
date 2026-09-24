@@ -24,6 +24,12 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 7. **tester** tests and writes a report: PASS → `done`, FAIL → back to programmer with bugs.
 8. "ASK ARCHITECT: ..." → route to **architect**. "ESCALATE TO MANAGER" / "NEEDS MANAGER DECISION" → ask **manager**, record in `docs/decisions.md`, then continue.
 
+## Sprints (owner, 2026-09-24)
+- Work in sprints of **5-6 stories** with a one-line sprint goal (aim: "what makes the game playable / look right").
+- **Planning:** manager + PO pick the stories and the goal → `docs/sprints/sprint-N.md` (goal, stories, owner).
+- **During:** the normal workflow above.
+- **Review:** PO writes a short summary in the sprint file (done / not done / bugs found) plus a **"missing to be playable"** gap list, and asks for an **owner walk-test**. Manager reads it, plans the next sprint, and records decisions in `docs/decisions.md`.
+
 ## Layout
 - `docs/` – game-design.md, backlog.md, roadmap.md, decisions.md, architecture.md, test-reports/
 - `design/` – content pack: palette.js, models/*.js, levels/*.js, preview/*.html, style-guide.md, README.md
