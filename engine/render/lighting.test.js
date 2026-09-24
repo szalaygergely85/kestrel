@@ -4,6 +4,7 @@
 import {
   LightSet, buildLightSet, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
+  sampleVis, VIS_FLOOR_EPS,
 } from './lighting.js';
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
@@ -179,6 +180,33 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
     lightAt(ls3, world, 2.0, 3.5, 0.01, 0, 0, 1, out);
     ok('BUG-LIGHT-001: floor sample exactly on the boundary is lit (nudge toward the light moves x/y, not just N)',
       out[0] + out[1] + out[2] > 1e-4, `${out[0] + out[1] + out[2]}`);
+  }
+
+  // BUG-LIGHT-002 (docs/backlog.md row 25d): `sampleVis`'s floor is biased
+  // by VIS_FLOOR_EPS so a sample landing within float32 noise of an exact
+  // vis-grid boundary always resolves to the same cell regardless of which
+  // precision (JS float64 vs GLSL float32) produced the coordinate - the
+  // OWN-001 repro had `x - ox` land at exactly 6.000000 (display precision)
+  // and the real GPU/CPU bit patterns disagreed on which side that was.
+  {
+    const ls4 = new LightSet();
+    const h4 = ls4.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 5, on: true });
+    computeVisGrid(ls4, h4, world);
+    // World x=5, y=1 (LOS cell, same convention as `sampleVisAt` above)
+    // sits exactly on the vis grid's integer cell boundary. A value a hair
+    // above or below (float32-vs-float64 noise, far smaller than
+    // VIS_FLOOR_EPS) must still floor into the same cell as the exact
+    // boundary value - not coin-flip into the neighbour.
+    ok('sampleVis: value just above an exact boundary reads the same cell as the boundary itself',
+      sampleVis(ls4, h4, 5, 1) === sampleVis(ls4, h4, 5 + 1e-7, 1));
+    ok('sampleVis: value just below an exact boundary reads the same cell as the boundary itself (EPS wins, not a coin flip)',
+      sampleVis(ls4, h4, 5, 1) === sampleVis(ls4, h4, 5 - 1e-7, 1));
+    // Sanity: VIS_FLOOR_EPS is tiny relative to a 1 m cell, so it never
+    // blurs a real one-cell-away difference into the wrong bucket - (3,3)
+    // is behind the wall column (blocked, 0), (5,1) is LOS (255).
+    ok('sampleVis: VIS_FLOOR_EPS does not blur a real one-cell difference',
+      sampleVis(ls4, h4, 3, 3) !== sampleVis(ls4, h4, 5, 1));
+    ok('VIS_FLOOR_EPS is tiny relative to a 1 m cell', VIS_FLOOR_EPS > 0 && VIS_FLOOR_EPS < 0.01);
   }
 }
 

@@ -464,10 +464,28 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   return out;
 }
 
-function sampleVis(lights, i, x, y) {
+// BUG-LIGHT-002 (docs/backlog.md row 25d): `sampleVis`'s `x - ox`/`y - oy`
+// occasionally lands within float32 noise of an exact integer (the light's
+// 0.02 "toward the light" nudge can land the sample almost exactly back on
+// a cell boundary it was meant to escape) - `cellRayP`'s GLSL float32 chain
+// and `lightSurfaces`'s JS float64 chain then round that near-integer value
+// to opposite sides, `floor()` picks a different vis cell, and a fully
+// occluded/unoccluded flip on ONE light (not a gradual falloff difference)
+// shows up as a `dLViol` far above the float32-noise tolerance (confirmed
+// via a `?gpucompare=1&lightdebug=1` per-light readback on the OWN-001 pose:
+// `P.x` == 1498.00000 on both paths, `floor(P.x - ox)` == 6 on both by the
+// display precision shown, yet the real (bit-exact) GPU value crosses to 5).
+// Fix: bias the floor by a fixed epsilon, comfortably above the ~1.8e-4
+// worst-case float32 absolute precision at world coordinates in the
+// low thousands (24-bit mantissa) and far below a 1 m cell, so both paths
+// commit to the same side of the boundary regardless of which precision
+// computed `x`/`y`. Same constant in `light.frag.js`'s `sampleVis`.
+export const VIS_FLOOR_EPS = 1e-3;
+
+export function sampleVis(lights, i, x, y) {
   const w = lights.visW[i], h = lights.visH[i];
   if (w <= 0 || h <= 0) return 1;
-  const lx = Math.floor(x - lights.visOx[i]), ly = Math.floor(y - lights.visOy[i]);
+  const lx = Math.floor(x - lights.visOx[i] + VIS_FLOOR_EPS), ly = Math.floor(y - lights.visOy[i] + VIS_FLOOR_EPS);
   if (lx < 0 || ly < 0 || lx >= w || ly >= h) return 1; // outside the box -> unoccluded (14.3 item 5)
   return lights.vis[i * MAX_VIS_CELLS + ly * MAX_VIS_DIM + lx] / 255;
 }

@@ -65,6 +65,13 @@ const int MAX_VIS_DIM = ${MAX_VIS_DIM};
 const int MAX_STRUCTS = ${MAX_STRUCTS};
 const int MAX_SUN_STEPS = ${MAX_SUN_STEPS};
 const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
+// BUG-LIGHT-002 (docs/backlog.md row 25d): same epsilon as lighting.js's
+// VIS_FLOOR_EPS - biases sampleVis's floor so a sample point that lands
+// within float32 noise of an exact vis-grid boundary (the "toward the
+// light" 0.02 nudge can land almost exactly back on one) always resolves to
+// the same cell as the JS float64 oracle, instead of a coin-flip that can
+// fully include/exclude a light (a dLViol far above per-channel noise).
+const float VIS_FLOOR_EPS = 1e-3;
 
 ${GBUF_UNPACK}
 ${CELL_RAY}
@@ -185,7 +192,7 @@ float sampleVis(int i, float px, float py) {
   vec4 box = uVisBox[i];
   float w = box.z, h = box.w;
   if (w <= 0.0 || h <= 0.0) return 1.0;
-  float lx = floor(px - box.x), ly = floor(py - box.y);
+  float lx = floor(px - box.x + VIS_FLOOR_EPS), ly = floor(py - box.y + VIS_FLOOR_EPS);
   if (lx < 0.0 || ly < 0.0 || lx >= w || ly >= h) return 1.0;
   return float(texelFetch(uLVis, ivec2(int(lx), i * MAX_VIS_DIM + int(ly)), 0).r) / 255.0;
 }
