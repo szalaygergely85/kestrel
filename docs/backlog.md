@@ -3082,6 +3082,20 @@ Notes / dependencies: US-040, US-006/007, US-016. Target: `done` before M3 conte
 7. **Designer contract (15.3 item 6):** colour per material only (`mats` values need v2 records in `detail-pass.js`, else the GPU path is disabled); bright-rim/dark-body = distinct materials on rim vs body voxels; outline = edge pass + `edges.modelRim`; lever `>= 0.7 x 1.1 m`; flames/glows are billboard props.
 8. **AC deltas for the PO:** "`type: 'voxelModel'`" is implemented as the `voxel` component on `type 'prop'` entities; "facing from the entity yaw" = free yaw, axis-aligned fast path automatic; `mounts` in 041a are validated + helper only (no billboard attach).
 
+### US-056 M1 voxel prop swap in `world_m1` + owner walk-check  [Priority: P0] [Status: todo]
+As a player, I want the tower's solid props to be real 3D objects that keep their shape and place instead of flat cards that turn to face me, so that I can recognise and use them like real things in the world (closes OWN-REQ-001 / ART-OWN-001).
+Acceptance criteria:
+- [ ] Every solid prop in `design/levels/tower.js` that has a designer voxel `ModelDef` renders as a voxel model with fixed world yaw and true 3D size (no camera-facing billboard): **lever and lamp/bracket first** (the only voxel models that exist today, `design/models/voxel_props.js`); burner body, canvas heap, rubble, wreckage/gondola pieces, relay bowl and the boulder switch to voxel as soon as the designer delivers their `ModelDef`s under ART-OWN-001 — any prop without a voxel model yet stays on the billboard path (no regression) and is listed as remaining designer work in this story's notes.
+- [ ] Flames, glows and sparks (burner fire, lamp flame/halo, relay glow, horizon billboards) stay billboards — not converted, per US-041a scope.
+- [ ] The lever pull animation and the lamp pickup (empty bracket left behind) still work exactly as before on the voxel models: pulling plays the `pull` clip and holds the down pose after restart; taking the lamp leaves the bracket in place and the lamp reappears correctly if returned/on restart.
+- [ ] Interaction targeting (E-prompt, pick range/aim) still finds and resolves against the voxel props at the same reliability as the old billboards (lever from the walkway, lamp from its bracket) — no dead zones introduced by the swap.
+- [ ] `R` restart resets every swapped prop to its initial pose/state (lever up, lamp on its bracket) exactly like the pre-swap billboards did.
+- [ ] `?gpucompare=1` ALL PASS at 160x60, including the prop poses (lever idle, lever mid-pull, lamp on bracket, lamp taken/empty bracket) — no new mismatches from the swap.
+- [ ] PO checks the result in game at both 160x60 and 240x90 before the owner session.
+- [ ] Owner walk-check (real playthrough): unprompted, the owner finds the lamp and the lever, and names the props they see (lever, burner, lamp, boulder, relay, ...) without being told what they are.
+Design needed: yes — voxel `ModelDef`s for the remaining solid props (burner, canvas heap, rubble, wreckage/gondola, relay bowl, boulder) under ART-OWN-001; only the lever and lantern exist in `design/models/voxel_props.js` today, so this story ships with whatever art is ready and lists the rest as open designer follow-up (does not block PO OK if the lever/lamp swap alone satisfies the walk-check; the manager/PO revisit scope if more props are needed to pass).
+Notes / dependencies: US-040 (`done`), US-041a (`done`). Row 25l. Decided by D-019/D-020. Sprint 1 #4, `docs/sprints/sprint-1.md`; Fable review (2026-09-24) requires: the owner finds the lamp and knows the goal is the top *before* the map card opens, and the owner notices the grate opened after the lever pull, without help — both checked in this story's walk-check session per the sprint-1 exit criteria. Closes OWN-REQ-001 + ART-OWN-001; the walk-check decides whether BUG-OWN-003 (slim) is still needed.
+
 ---
 
 ## Physics + effects epic – sketches (owner requirement 2026-09-24; M2-M3, before M6)

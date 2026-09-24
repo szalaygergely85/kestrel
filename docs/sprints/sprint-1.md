@@ -25,7 +25,11 @@ The owner plays one real run with mouse + keyboard on the default grid (240x90):
 - the owner can find the lever and recognise the props without help;
 - the owner reads the ending as "end of chapter one";
 - `R` restarts cleanly;
-- no stutter the owner notices.
+- no stutter the owner notices;
+- the owner finds the lamp and knows the goal is the top *before* the map card opens;
+- the owner notices the grate opened after the lever pull, without help.
+
+"Recognises the props" = the owner names lever, burner, lamp, boulder, relay unprompted. Fail path: content-only fixes (hints, text, art) are done in this sprint and the run is repeated; engine fixes go first into sprint 2 and the sprint closes as "goal not met".
 
 During the same run the owner also says whether 240x90 is readable (gap 7; if not, a US-038 grid slice goes into sprint 2). The tester confirms there's no gap in the parapet/breach to fall out of (gap 10; file a bug if there is one).
 
