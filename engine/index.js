@@ -36,7 +36,15 @@ export { drawText } from './render/textDraw.js';
 export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';
 
 // ---- US-028 detail pass v2 (G-buffer shading, edge pass) -------------------
-export { GBuffer, KIND_TERRAIN, PLANEID_TERRAIN, packPlaneId } from './render/GBuffer.js';
+export { GBuffer, KIND_TERRAIN, KIND_MODEL, FACE_PACKED, PLANEID_TERRAIN, packPlaneId } from './render/GBuffer.js';
+
+// ---- US-039/US-040 voxel models (architecture.md 15.1/15.2) ---------------
+// Exported now (15.2 item 1 supersedes 15.1's "no exports until US-041"):
+// the gpucompare harness needs them.
+export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES } from './voxel/VoxelModel.js';
+export { packVoxelModel } from './voxel/voxelPack.js';
+export { castModels } from './voxel/voxelMarch.js';
+export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 export { computeDerivatives, shadeSurfaces, shadeV2 } from './render/detailShade.js';
 export { edgePass } from './render/edgePass.js';

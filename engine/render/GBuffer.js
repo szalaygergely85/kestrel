@@ -15,6 +15,10 @@ export const KIND_FLOOR = 4;
 export const KIND_TOP = 5;
 export const KIND_CEIL = 6;
 export const KIND_TERRAIN = 7;
+// US-040 (architecture.md 15.1/15.2): kind 8 = voxel model instance cell.
+// Moved here from engine/voxel/VoxelModel.js (which now re-exports both)
+// per 15.2 item 1 ("KIND_MODEL and FACE_PACKED move to GBuffer.js").
+export const KIND_MODEL = 8;
 
 export const FACE_N = 1;
 export const FACE_E = 2;
@@ -22,6 +26,10 @@ export const FACE_S = 3;
 export const FACE_W = 4;
 export const FACE_U = 5;
 export const FACE_D = 6;
+// Non-axis-aligned voxel part hit: the octahedral-packed normal lives in
+// gbuf.aoD's bit pattern (see engine/voxel/voxelMarch.js) instead of aoD
+// holding an ambient-occlusion distance.
+export const FACE_PACKED = 7;
 
 export class GBuffer {
   constructor(cols, rows) {

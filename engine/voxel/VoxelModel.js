@@ -6,9 +6,11 @@
 // engine/). No GDD words live here (the test fixture is a generic
 // "quadruped", see fixtures/quadruped12.js).
 
-// ---- constants (move to GBuffer.js in US-040, per 15.1) --------------------
-export const KIND_MODEL = 8;
-export const FACE_PACKED = 7;
+// ---- constants ---------------------------------------------------------
+// KIND_MODEL/FACE_PACKED now live in ../render/GBuffer.js (US-040, 15.2
+// item 1); re-exported here so existing `./VoxelModel.js` imports keep
+// working without a repo-wide rename.
+export { KIND_MODEL, FACE_PACKED } from '../render/GBuffer.js';
 export const MAX_VOX_PARTS = 8;
 export const MAX_VOX_STEPS = 48;
 export const MAX_VOX_DIM = 32;

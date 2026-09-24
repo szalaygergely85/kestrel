@@ -6,14 +6,11 @@
 
 import { KIND_MODEL, FACE_PACKED, MAX_VOX_STEPS, MAX_VOX_INSTANCES, MAX_VOX_PARTS, PART_STRIDE } from './VoxelModel.js';
 import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from '../render/GBuffer.js';
-import { computeVoxelPose, FORWARD } from './voxelPose.js';
+import { computeVoxelPose } from './voxelPose.js';
 import { packNormalOct } from './octNormal.js';
+import { HFOV_DEG, computeProjection, instanceRect } from './instanceRect.js';
 
-// The sector caster's projection (docs/architecture.md 15.1: "The
-// projection is the sector caster's"), duplicated in full here rather than
-// imported - engine/voxel/** imports only ../render/GBuffer.js (US-039 tech
-// notes item 1), never render/sectorCaster.js.
-const HFOV_DEG = 75;
+export { HFOV_DEG };
 
 /** Last hit's local material index (1..255), a side-channel scratch set by
  * `marchVoxelRay` right before it returns 1 (same pattern as `FORWARD` in
@@ -171,6 +168,8 @@ const _nWorld = new Float64Array(3);
 // quick test can never produce a hit, since marchVoxelRay's own slab test
 // is exact against the same box, just in a different space).
 const _partAABB = new Float64Array(MAX_VOX_PARTS * 6);
+const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0 };
+const _rect = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false };
 
 /**
  * Casts up to MAX_VOX_INSTANCES voxel model instances into `fb` (a
@@ -189,19 +188,10 @@ export function castModels(fb, list, cam, opts) {
   const stats = opts && opts.stats;
   if (stats) { stats.instancesCulled = 0; stats.raysMarched = 0; stats.cellsWritten = 0; }
 
-  const hFovRad = (HFOV_DEG * Math.PI) / 180;
-  const tanHalfHFov = Math.tan(hFovRad / 2);
-  const yawRad = (cam.yawDeg * Math.PI) / 180;
-  const dirX = Math.sin(yawRad), dirY = -Math.cos(yawRad);
-  const planeX = -dirY * tanHalfHFov, planeY = dirX * tanHalfHFov;
-  const screenAspect = (cols * (rt.pxCellW || 1)) / (rows * (rt.pxCellH || 1));
-  const planeDistY = (rows / 2) * screenAspect / tanHalfHFov;
-  const pitchRad = (cam.pitchDeg * Math.PI) / 180;
-  const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
-  // Inverse-projection (Cramer's rule) for a world point rel = t*dir + u*plane:
-  // [dirX planeX; dirY planeY] * [t;u] = rel, determinant D = dirX*planeY - dirY*planeX.
-  const planeDet = dirX * planeY - dirY * planeX;
-  const eyeX = cam.x, eyeY = cam.y, eyeZ = cam.z;
+  computeProjection(cam, rt, _proj);
+  const dirX = _proj.dirX, dirY = _proj.dirY, planeX = _proj.planeX, planeY = _proj.planeY;
+  const eyeX = _proj.eyeX, eyeY = _proj.eyeY, eyeZ = _proj.eyeZ;
+  const horizonRow = _proj.horizonRow, planeDistY = _proj.planeDistY;
 
   const total = list.length;
   const n = Math.min(total, MAX_VOX_INSTANCES);
@@ -210,66 +200,14 @@ export function castModels(fb, list, cam, opts) {
   for (let ii = 0; ii < n; ii++) {
     const inst = list[ii];
     const pm = inst.model;
-    computeVoxelPose(pm, inst, _pose);
-
-    // World AABB from the 8 posed corners of every part box (FORWARD, the
-    // forward per-part world transform computeVoxelPose just filled).
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    for (let p = 0; p < pm.partCount; p++) {
-      const pb = p * PART_STRIDE;
-      const x0 = pm.parts[pb], y0 = pm.parts[pb + 1], z0 = pm.parts[pb + 2];
-      const x1 = pm.parts[pb + 3], y1 = pm.parts[pb + 4], z1 = pm.parts[pb + 5];
-      const fb12 = p * 12;
-      const A0 = FORWARD[fb12], A1 = FORWARD[fb12 + 1], A2 = FORWARD[fb12 + 2];
-      const A3 = FORWARD[fb12 + 3], A4 = FORWARD[fb12 + 4], A5 = FORWARD[fb12 + 5];
-      const A6 = FORWARD[fb12 + 6], A7 = FORWARD[fb12 + 7], A8 = FORWARD[fb12 + 8];
-      const Bx = FORWARD[fb12 + 9], By = FORWARD[fb12 + 10], Bz = FORWARD[fb12 + 11];
-      let pMinX = Infinity, pMinY = Infinity, pMinZ = Infinity;
-      let pMaxX = -Infinity, pMaxY = -Infinity, pMaxZ = -Infinity;
-      for (let c = 0; c < 8; c++) {
-        const cx = (c & 1) ? x1 : x0, cy = (c & 2) ? y1 : y0, cz = (c & 4) ? z1 : z0;
-        const wx = A0 * cx + A1 * cy + A2 * cz + Bx;
-        const wy = A3 * cx + A4 * cy + A5 * cz + By;
-        const wz = A6 * cx + A7 * cy + A8 * cz + Bz;
-        if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
-        if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
-        if (wz < minZ) minZ = wz; if (wz > maxZ) maxZ = wz;
-        if (wx < pMinX) pMinX = wx; if (wx > pMaxX) pMaxX = wx;
-        if (wy < pMinY) pMinY = wy; if (wy > pMaxY) pMaxY = wy;
-        if (wz < pMinZ) pMinZ = wz; if (wz > pMaxZ) pMaxZ = wz;
-      }
-      const pab = p * 6;
-      _partAABB[pab] = pMinX; _partAABB[pab + 1] = pMinY; _partAABB[pab + 2] = pMinZ;
-      _partAABB[pab + 3] = pMaxX; _partAABB[pab + 4] = pMaxY; _partAABB[pab + 5] = pMaxZ;
-    }
-
-    // Screen rect from the 8 projected AABB corners (floor/ceil, +1,
-    // clamped); any corner at depth <= 0.05 m -> the full screen.
-    let minCol = 0, maxCol = cols - 1, minRow = 0, maxRow = rows - 1;
-    let useFull = false;
-    if (planeDet !== 0) {
-      let rMinCol = cols, rMaxCol = -1, rMinRow = rows, rMaxRow = -1;
-      for (let c = 0; c < 8 && !useFull; c++) {
-        const wx = (c & 1) ? maxX : minX, wy = (c & 2) ? maxY : minY, wz = (c & 4) ? maxZ : minZ;
-        const relx = wx - eyeX, rely = wy - eyeY;
-        const t = (relx * planeY - rely * planeX) / planeDet;
-        if (t <= 0.05) { useFull = true; break; }
-        const u = (dirX * rely - dirY * relx) / planeDet;
-        const cameraX = u / t;
-        const colF = ((cameraX + 1) * cols) / 2 - 0.5;
-        const rowF = horizonRow - ((wz - eyeZ) / t) * planeDistY;
-        const c0 = Math.floor(colF) - 1, c1 = Math.ceil(colF) + 1;
-        const r0 = Math.floor(rowF) - 1, r1 = Math.ceil(rowF) + 1;
-        if (c0 < rMinCol) rMinCol = c0; if (c1 > rMaxCol) rMaxCol = c1;
-        if (r0 < rMinRow) rMinRow = r0; if (r1 > rMaxRow) rMaxRow = r1;
-      }
-      if (!useFull) {
-        minCol = Math.max(0, rMinCol); maxCol = Math.min(cols - 1, rMaxCol);
-        minRow = Math.max(0, rMinRow); maxRow = Math.min(rows - 1, rMaxRow);
-      }
-    }
-    if (minCol > maxCol || minRow > maxRow) continue;
+    // Shared with VoxelPool.project (15.2 item 2): pose -> world AABB
+    // (also fills _partAABB, this function's per-part quick-reject data) ->
+    // screen rect, so the two paths can never cull differently.
+    instanceRect(_proj, pm, inst, _pose, _partAABB, _rect);
+    if (_rect.empty) continue;
+    const minX = _rect.minX, minY = _rect.minY, minZ = _rect.minZ;
+    const maxX = _rect.maxX, maxY = _rect.maxY, maxZ = _rect.maxZ;
+    const minCol = _rect.minCol, maxCol = _rect.maxCol, minRow = _rect.minRow, maxRow = _rect.maxRow;
 
     for (let row = minRow; row <= maxRow; row++) {
       const rdz = (horizonRow - (row + 0.5)) / planeDistY; // col-independent - hoisted out of the col loop
