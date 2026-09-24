@@ -13,6 +13,16 @@
 // for the grate itself - 7.4 "used flags" note). Returning `true` lets the
 // generic `once` handling (updateInteraction, US-012) hide the prompt for
 // good; the stub it replaces returned `false`, so it never consumed.
+//
+// BUG-OWN-005 (PO row 25j): the grate opens 1.5 s later and can be out of
+// view (no sound until sprint 2), so the pull requests the one-time 'grate'
+// story hint directly - same `hintShow` precedent as game/js/quest/index.js
+// (`ctx.engine.assets.uiStyle` is the one place a named behaviour can
+// legally reach `ASSETS`), no zone needed: the interaction itself is the
+// trigger. `ctx.engine` may be `{}`/absent in tests (tower.test.js item 8,
+// restart.test.js), so this is a no-op there, same as it always was.
+import { request as requestHint } from './hints.js';
+
 export function leverPull(ctx) {
   const { world, def, entity } = ctx;
   if (entity) entity.play('pull');
@@ -21,5 +31,9 @@ export function leverPull(ctx) {
   if (tag) world.animateSectorTo(tag, 1, { delay: 0.4 });
 
   world.state['tower.lever.pulled'] = true;
+
+  const uiStyle = ctx.engine && ctx.engine.assets && ctx.engine.assets.uiStyle;
+  if (uiStyle) requestHint(world, uiStyle, 'grate');
+
   return true;
 }

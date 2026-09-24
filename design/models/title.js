@@ -273,7 +273,17 @@
         on: { type: 'zone', zone: 'hintClimb' }, doneOn: 'timeout only' },
       { id: 'chart', text: 'Press M to read the chart.', keys: ['M'],
         when: 'once, 20 s after the first map-card dismissal; never if M was already pressed; removed when M is pressed',
-        on: { type: 'timer', after: 'mapCard.firstDismiss', sec: 20, skipIfState: 'ui.mapCard.opened' }, doneOn: 'M pressed' }
+        on: { type: 'timer', after: 'mapCard.firstDismiss', sec: 20, skipIfState: 'ui.mapCard.opened' }, doneOn: 'M pressed' },
+      // BUG-OWN-005 (PO row 25j / Fable sprint-1 review item 4): two more one-time story hints so the M1 ending
+      // reads as a deliberate exit, not a respawn - (a) the grate opens 1.5 s after the lever pull and can be out
+      // of view, so a hint calls it out at the moment of the pull (game/js/quest/lever.js calls hints.request
+      // directly - the interaction itself is the trigger, no zone needed); (b) first stepping onto the summit
+      // tells the player the way out ends the chapter, before they reach the breach (tower.js hintExit zone).
+      { id: 'grate', text: 'Something rattles above.', keys: [],
+        when: 'once, right when the lever is pulled', on: { type: 'event', event: 'lever.pull' }, doneOn: 'timeout only' },
+      { id: 'exit', text: 'Out there. Step through the breach.', keys: [],
+        when: 'once, on first entering the summit (z >= 6.0), before the breach',
+        on: { type: 'zone', zone: 'hintExit' }, doneOn: 'timeout only' }
     ],
 
     crosshair: { glyph: '+', idle: 'uiDim', active: 'gold', note: 'screen centre; no plate' },
@@ -291,18 +301,20 @@
       cursor: { glyph: '_', color: 'uiText', periodSec: 1.0, duty: 0.5, line: 'restart',
                 note: 'drawn right after the restart line text, visible for the first half of each 1 s period (= endCard.js floor(endT*2)%2)' },
       placeholder: false,
-      source: 'D-011 PO text from the US-017 ACs (the lines endCard.js ships). docs/story.md has no end-card section yet; ' +
-              'if the writer adds one, only these strings change',
-      // row = UI-grid row (160x60, uiStyle.uiGrid): mid-1, mid, mid+2, mid+4 (the layout endCard.js uses)
+      source: 'D-011 PO text from the US-017 ACs (the lines endCard.js ships), rewritten by the BUG-OWN-005 PO ' +
+              'decision (docs/backlog.md row 25j, 2026-09-24): "continue"/"restart" no longer read like a respawn ' +
+              '("wake again"). docs/story.md has no end-card section yet; if the writer adds one, only these strings change',
+      // row = UI-grid row (160x60, uiStyle.uiGrid). BUG-OWN-005 adds one row ("thanks") between continue and restart.
       lines: [
         { id: 'signal', row: 29, typed: true, color: 'uiText',
           text: 'The signal is still calling.',
           alt: 'One relay wakes. The signal is still calling.', altWhen: 'tower.beacon.lit',
           note: 'first line depends on the relay state (D-003, D-011); default and without US-022 = text' },
         { id: 'someone', row: 30, typed: true, color: 'uiText', text: 'Someone is out there.' },
-        { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- to be continued -', afterGap: true },
-        { id: 'restart', row: 34, typed: false, color: 'uiText', text: '[R] Wake again', keys: ['[R]'], afterGap: true,
-          cursor: true, enablesRestart: true }
+        { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- End of Chapter One: The Tower -', afterGap: true },
+        { id: 'thanks', row: 33, typed: false, color: 'uiDim', text: 'Thank you for playing.', afterGap: true },
+        { id: 'restart', row: 35, typed: false, color: 'uiText', text: '[R] Play again from the wreck', keys: ['[R]'],
+          afterGap: true, cursor: true, enablesRestart: true }
       ]
     },
     pause: { text: 'Click to resume', color: 'uiText', align: 'center', row: 30, plate: { pad: 2, bgMul: 0.3 } },
@@ -329,7 +341,12 @@
       { id: 'hintClimb', type: 'hint', hint: 'climb', shape: 'circle', x: 15.3, y: 3.3, r: 1.5, once: true, trigger: 'hint.show',
         note: 'r 1.5 m on the stair base cell s (15, 3), tag stairBase; centre 0.2 m NW of the cell centre so the circle stays clear of ' +
               'hintBurner (4.53 m apart > 3.0 + 1.5), i.e. the two story hints can never fire from one step. Covers the base, step 1 and the top of the slope apron. ' +
-              'It can fire while the boulder still sits on the base (the hint then reads as "get past this"); no zMin, all ground level' }
+              'It can fire while the boulder still sits on the base (the hint then reads as "get past this"); no zMin, all ground level' },
+      // BUG-OWN-005 (PO row 25j, 2026-09-24): centred on markers.breach (6.5, 7.0, z 6.0), r 6.0 covers both the
+      // doorway 'd' (11, 7) - 5.02 m away - and the whole summit walkway ring, so it fires the moment the player's
+      // feet reach summit height (zMin) anywhere on the approach, well before the breach itself.
+      { id: 'hintExit', type: 'hint', hint: 'exit', shape: 'circle', x: 6.5, y: 7.0, r: 6.0, zMin: 5.9, once: true, trigger: 'hint.show',
+        note: 'fires on first entering the summit (z >= 5.9, just under the 6.0 summit floorH), before the breach' }
     ] },
     checks: 'design/preview/title.html "Hint zones" (loads levels/tower.js read-only): ids unique vs tower.js triggers, centres on the ' +
             'burner / stairBase cells, spawn outside hintBurner, lamp inside, the two circles do not overlap'

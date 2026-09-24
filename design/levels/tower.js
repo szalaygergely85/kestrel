@@ -244,7 +244,12 @@
               '(uiStyle.storyHints burner.on.skipIfState)' },
       { id: 'hintClimb', type: 'hint', hint: 'climb', shape: 'circle', x: 15.3, y: 3.3, r: 1.5, once: true, trigger: 'hint.show',
         note: 'r 1.5 m on the stair base cell s (15, 3) (tag stairBase), centre 0.2 m NW of the cell centre so the circle ' +
-              'stays clear of hintBurner. Can fire while the boulder still sits on the base; no zMin, all ground level' }
+              'stays clear of hintBurner. Can fire while the boulder still sits on the base; no zMin, all ground level' },
+      // BUG-OWN-005 (PO row 25j, 2026-09-24 - design/models/title.js ASSETS.levelPatch.towerHints, copied here by
+      // hand, same convention as hintBurner/hintClimb above): centred on markers.breach below, r 6.0 covers the
+      // doorway (11, 7) and the whole summit ring, zMin keeps it from firing anywhere below summit height.
+      { id: 'hintExit', type: 'hint', hint: 'exit', shape: 'circle', x: 6.5, y: 7.0, r: 6.0, zMin: 5.9, once: true, trigger: 'hint.show',
+        note: 'fires on first entering the summit (z >= 5.9), telling the player the way out ends the chapter, before the breach' }
     ],
 
     markers: {

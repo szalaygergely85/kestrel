@@ -7,15 +7,10 @@
 import { compileRichLine, drawRichLine, hexToRgb } from '../../../engine/index.js';
 import { readEndTimings } from '../quest/end.js';
 
-// Fallback shape only (defensive - `uiStyle.endText` always exists once
-// US-015's design lands; keeps this module from throwing during bootstrap
-// races/tests that construct a bare `uiStyle`).
-const FALLBACK_LINES = [
-  { id: 'signal', row: 29, typed: true, color: 'uiText', text: 'The signal is still calling.' },
-  { id: 'someone', row: 30, typed: true, color: 'uiText', text: 'Someone is out there.' },
-  { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- to be continued -', afterGap: true },
-  { id: 'restart', row: 34, typed: false, color: 'uiText', text: '[R] Wake again', keys: ['[R]'], afterGap: true, cursor: true, enablesRestart: true },
-];
+// `uiStyle.endText` always exists (design/models/title.js loads before
+// game/js/main.js builds the AssetRegistry) - BUG-OWN-005 (PO note): the
+// FALLBACK_LINES copy this module used to carry is gone, `lineDefs` reads
+// `uiStyle.endText.lines` directly.
 
 /**
  * @param {import('../../../engine/index.js').World} world
@@ -35,8 +30,8 @@ export function computeEndCardState(world, uiStyle) {
   out.visible = true;
 
   const endText = uiStyle && uiStyle.endText;
-  const lineDefs = (endText && endText.lines) || FALLBACK_LINES;
-  const cursorCfg = endText && endText.cursor;
+  const lineDefs = endText.lines;
+  const cursorCfg = endText.cursor;
 
   let remaining = textT;
   let allTypedDone = true;

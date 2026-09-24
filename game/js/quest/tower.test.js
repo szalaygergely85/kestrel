@@ -10,8 +10,12 @@
 import {
   World, AssetRegistry, loadLevel, integrate, isSectorPassable, PHYSICS_DEFAULTS,
   validateBehaviours, unregisterBehaviour, stepSectorAnims, packLevel, serialize, deserialize, stepAnimations,
+  updateTriggers,
 } from '../../../engine/index.js';
 import { registerQuestBehaviours, QUEST_BEHAVIOURS } from './index.js';
+import { resetHints, currentHintId, stepHints, setPaletteColors } from './hints.js'; // BUG-OWN-005
+
+const noHintSignals = { walking: false, pointerUnlocked: false, moveOrLook: false, run: false, jump: false, pointerLocked: false, mPressed: false };
 import paletteMod from '../../../design/palette.js';
 import towerMod from '../../../design/levels/tower.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any
@@ -546,6 +550,112 @@ const cellsWhere = (pred) => {
   const dCentres = Math.hypot(trBurner.x - trClimb.x, trBurner.y - trClimb.y);
   ok('hintBurner and hintClimb never overlap', dCentres > trBurner.r + trClimb.r, `d=${dCentres} sumR=${trBurner.r + trClimb.r}`);
 }
+
+// ---------------------------------------------------------------------------
+// 11. BUG-OWN-005 (docs/backlog.md row 25j): the lever-pull hint ('grate')
+//    and the summit hint ('exit') both fire, once, through the real quest
+//    behaviours (hint.show / lever.pull), on the real tower data.
+// ---------------------------------------------------------------------------
+function hintUiStyleFixture() {
+  const s = {
+    hint: { anchor: 'bottom-left', x: 2, yFromBottom: 2, maxOnScreen: 1, prefix: '> ', prefixColor: 'uiDim',
+      text: 'uiHint', key: 'gold', plate: { pad: 1, bgMul: 0.35 }, fadeIn: 0.3, fadeOut: 0.5, timeout: 8.0 },
+    hints: [],
+    storyHints: [
+      { id: 'grate', text: 'Something rattles above.', keys: [], on: { type: 'event', event: 'lever.pull' } },
+      { id: 'exit', text: 'Out there. Step through the breach.', keys: [], on: { type: 'zone', zone: 'hintExit' } },
+    ],
+  };
+  setPaletteColors(s, { uiDim: '#6a6a78', uiHint: '#a9a390', gold: '#ffd24a' });
+  return s;
+}
+
+{
+  // ---- 11a: hintExit trigger data - geometry (doorway + breach marker inside, summit-only zMin) ----
+  const trExit = towerDef.triggers.find((t) => t.id === 'hintExit');
+  ok('hintExit trigger present, circle, hint.show, hint id "exit"',
+    !!trExit && trExit.shape === 'circle' && trExit.trigger === 'hint.show' && trExit.hint === 'exit');
+  ok('hintExit has a summit-only zMin (>= the 6.0 summit floorH, minus float slop)', trExit.zMin >= 5.8 && trExit.zMin <= 6.0);
+
+  const doorway = { x: 11.5, y: 7.5 }; // route's first summit cell (11, 7), centred
+  const dDoorway = Math.hypot(doorway.x - trExit.x, doorway.y - trExit.y);
+  ok('hintExit covers the summit doorway', dDoorway <= trExit.r, `d=${dDoorway} r=${trExit.r}`);
+  ok('hintExit is centred on markers.breach', trExit.x === towerDef.markers.breach.x && trExit.y === towerDef.markers.breach.y);
+
+  const endTrigger = towerDef.triggers.find((t) => t.id === 'end');
+  const dEnd = Math.hypot(endTrigger.walkTo.x - trExit.x, endTrigger.walkTo.y - trExit.y);
+  ok('hintExit reaches the end-trigger walk target too (fires before the ending, never after)', dEnd <= trExit.r, `d=${dEnd} r=${trExit.r}`);
+}
+
+{
+  // ---- 11b: hintExit actually fires (once) through updateTriggers + hint.show on a real World ----
+  const uiStyle = hintUiStyleFixture();
+  const exitWorld = World.load({
+    name: 'tower_hintExit_test', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [{ id: 'player', type: 'player', spawn: { structure: 'tower', from: 'start' } }], state: {},
+  }, assets, {});
+  const trExit = towerDef.triggers.find((t) => t.id === 'hintExit');
+  const player = exitWorld.get('player');
+  const fakeEngine = { assets: { uiStyle } };
+
+  resetHints();
+  // Below zMin (ground floor): must not fire even inside the circle's x/y.
+  player.data.transform.x = placement.origin.x + trExit.x;
+  player.data.transform.y = placement.origin.y + trExit.y;
+  player.data.transform.z = placement.origin.z; // ground level, well under zMin
+  updateTriggers(exitWorld, fakeEngine, player.data);
+  ok('below summit height: hintExit does not fire', !(exitWorld.state['hints.shown'] || []).includes('exit'));
+
+  // Walk up to summit height, inside the circle: fires once (request() only
+  // queues it - stepHints is what pops the queue into `hints.shown`/current,
+  // same as the real per-frame main.js order).
+  player.data.transform.z = placement.origin.z + 6.0;
+  updateTriggers(exitWorld, fakeEngine, player.data);
+  stepHints(exitWorld, uiStyle, 0.001, noHintSignals);
+  ok('at summit height inside the circle: hintExit fires ("exit" shown or currently up)',
+    (exitWorld.state['hints.shown'] || []).includes('exit') || currentHintId() === 'exit');
+
+  // Leaving and re-entering does not re-fire (once + used flag).
+  player.data.transform.z = placement.origin.z; // step back down
+  updateTriggers(exitWorld, fakeEngine, player.data);
+  player.data.transform.z = placement.origin.z + 6.0; // and back up
+  const beforeShown = [...exitWorld.state['hints.shown']];
+  updateTriggers(exitWorld, fakeEngine, player.data);
+  stepHints(exitWorld, uiStyle, 0.001, noHintSignals);
+  ok('re-entering hintExit does not fire it a second time', JSON.stringify(exitWorld.state['hints.shown']) === JSON.stringify(beforeShown));
+}
+
+{
+  // ---- 11c: pulling the real lever requests the 'grate' hint (once, no zone - the interaction is the trigger) ----
+  const uiStyle = hintUiStyleFixture();
+  const leverWorld = World.load({
+    name: 'tower_lever_hint_test', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: {},
+  }, assets, {});
+  const leverDef = towerDef.interactables.find((i) => i.id === 'lever');
+  const fakeEntity = { play() {} };
+  const fakeEngine = { assets: { uiStyle } };
+
+  resetHints();
+  ok('sanity: "grate" not queued/shown before the pull', currentHintId() !== 'grate');
+  leverWorld.fireInteraction('lever.pull', { engine: fakeEngine, def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
+  stepHints(leverWorld, uiStyle, 0.001, noHintSignals);
+  ok('"grate" is requested right on the pull (hints.shown or currently showing)',
+    (leverWorld.state['hints.shown'] || []).includes('grate') || currentHintId() === 'grate');
+
+  // No engine.assets on the ctx (e.g. the older headless callers, restart.test.js item 2) must stay a no-op, not throw.
+  resetHints();
+  const leverWorld2 = World.load({
+    name: 'tower_lever_hint_test2', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: {},
+  }, assets, {});
+  const r = leverWorld2.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld2.get('player') });
+  ok('lever.pull without engine.assets does not throw and still returns true', r === true);
+}
+resetHints(); // leave the module-level singleton clean for any test runner that loads more than one file in-process
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

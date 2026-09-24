@@ -18,12 +18,13 @@ const uiStyle = {
     lines: [
       { id: 'signal', row: 29, typed: true, color: 'uiText', text: 'Signal.', alt: 'Relay wakes. Signal.', altWhen: 'tower.beacon.lit' },
       { id: 'someone', row: 30, typed: true, color: 'uiText', text: 'Someone.' },
-      { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- to be continued -', afterGap: true },
-      { id: 'restart', row: 34, typed: false, color: 'uiText', text: '[R] Wake again', keys: ['[R]'], afterGap: true, cursor: true, enablesRestart: true },
+      { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- End of Chapter One: The Tower -', afterGap: true },
+      { id: 'thanks', row: 33, typed: false, color: 'uiDim', text: 'Thank you for playing.', afterGap: true },
+      { id: 'restart', row: 35, typed: false, color: 'uiText', text: '[R] Play again from the wreck', keys: ['[R]'], afterGap: true, cursor: true, enablesRestart: true },
     ],
   },
 };
-const paletteColors = { uiText: '#e8e2d0', uiHint: '#a9a390', gold: '#ffd24a' };
+const paletteColors = { uiText: '#e8e2d0', uiHint: '#a9a390', uiDim: '#6a6a78', gold: '#ffd24a' };
 
 function world(state) { return { state }; }
 
@@ -63,9 +64,14 @@ function world(state) { return { state }; }
   const st = computeEndCardState(world({ 'quest.endT': endT }), uiStyle);
   const restart = st.lines.find((l) => l.id === 'restart');
   const cont = st.lines.find((l) => l.id === 'continue');
-  ok('continue + restart lines present after the gap', !!cont && !!restart);
+  const thanks = st.lines.find((l) => l.id === 'thanks');
+  ok('continue + thanks + restart lines present after the gap', !!cont && !!thanks && !!restart);
   ok('restart line uses its own colour', restart.color === 'uiText');
   ok('canRestart true once the restart line (enablesRestart) is up', st.canRestart === true);
+  // BUG-OWN-005 (PO row 25j): the end card no longer reads like a respawn.
+  ok('continue line says "end of chapter", not "to be continued"', cont.text === '- End of Chapter One: The Tower -');
+  ok('thanks line is the new dim "thank you" line', thanks.text === 'Thank you for playing.' && thanks.color === 'uiDim');
+  ok('restart line says "play again from the wreck", not "wake again"', restart.text === '[R] Play again from the wreck');
 }
 
 // ---- cursor blink: 1s period, 50% duty ----
