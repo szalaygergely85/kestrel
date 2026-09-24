@@ -536,3 +536,27 @@ D-009 gave the JS path two jobs: (a) oracle for `?gpucompare=1` and all Node tes
 - Removes the CPU-fallback perf ACs from US-006, US-016, US-018, US-038 (list in the manager reply to the PO); M1 exit no longer requires a playable fallback.
 - US-029 needs a small follow-up: the "WebGL2 required" screen replaces the auto-fallback (content/UI, not an engine rewrite).
 - Existing CPU perf code (e.g. `selectCpuLights`) may stay; no one is required to maintain its speed.
+
+## D-018 Object physics epic (US-051..055): own compound-sphere rigid bodies in `engine/physics/rigid.js`; Rapier only as a gated fallback
+**Date:** 2026-09-24
+**Status:** Accepted (owner requirement: object physics before release)
+
+### Context
+The owner requires object physics before release: props that fall/tumble/settle (US-051), pick up/carry/throw (US-052), particles (US-053), cuttable trees that break into physics pieces (US-054), water + splash + floating props (US-055). D-015 said to evaluate Rapier against the in-house code. Architect estimate: `docs/architecture.md` "Physics epic estimate (2026-09-24)".
+
+### Options
+- **(A) Extend `engine/physics`** with compound-sphere rigid bodies. ~11 units. World contacts go straight through `World` (D-007), so sectors, grates and terrain work as they do now. Deterministic JSON save state, 0 alloc per step. Risk: stacking quality.
+- **(B) Rapier (WASM).** ~13-14 units. Most exact shapes, but the static world has to be mirrored (sectors, terrain heightfields, live grates), the snapshot is binary, a JSON pose restore diverges, the player needs glue code, and it adds a ~2 MB dependency for a handful of bodies.
+- **(C) cannon-es.** ~13 units. Same mirroring problem as B, unmaintained since 2022, allocates every step (GC hitches, breaks rule 9).
+
+### Decision
+**(A).** Compound-sphere/capsule rigid bodies (quaternion pose, diagonal inertia, sequential impulses with fixed 8 iterations, Baumgarte correction, sleep islands) in `engine/physics/rigid.js`. All world queries go through `World`. The US-013 roller stays as it is.
+1. **Scope guard:** the AC is "settle in 3 s, <= 2 cm drift, no jitter", stacks of at most 3. This is not a physics sandbox.
+2. **Split:** US-051a (bodies + world contacts + sleep) and US-051b (body-body contacts, stacking <= 3, two-way player contacts). Both are engine stories with architect tech notes and review.
+3. **Exit gate:** if US-051a misses the 10-body drop test after **one** fix round, the architect escalates a **Rapier spike** as its own engine story (vendored, version-pinned, per D-015). A's contact API is kept stable so B could slot in behind it. No second fix round on A without a manager decision.
+4. **Order:** US-053 (particles) can start in parallel because it does not depend on this choice. Then US-051a -> US-051b -> US-052 (M2). US-054 and US-055 come in M3, after the M2 sword and the voxel work (US-041). All five are done before the M6 release.
+
+### Consequences
+- Answers the D-015 Rapier question for object physics. The engine stays pure JS and no WASM dependency is added.
+- The M2 and M3 scope grows by the epic (see roadmap). A sleeping log is a walkable oriented capsule for `moveCapsule`, which covers log bridges without new player code.
+- Rigid body state (pose/vel/angVel/sleep) becomes part of the versioned save format (M2 release prep).

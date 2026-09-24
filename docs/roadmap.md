@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy).
+Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy). 2026-09-24: D-017 JS reference only; D-018 object physics epic US-051..055 in M2/M3.
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -44,9 +44,11 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 
 ## Milestone 2 – "Out of the Wreck" — status: planned
 Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point. **Release prep (D-012):** settings menu (grid, sensitivity, invert Y, volume, fullscreen + pointer lock, pause on focus loss), saves via a `game/js/platform/` adapter with a versioned save format. **itch.io browser demo** (M1+M2 slice) at the end of M2. Architect may evaluate Rust/WASM for measured hot spots only (terrain bake, pathfinding; D-015).
+- **Object physics epic, part 1 (D-018, owner-required before release):** in-house compound-sphere rigid bodies in `engine/physics/rigid.js`. US-051a (bodies + world contacts + sleep), then US-051b (body-body contacts, stacks <= 3, player contacts), then US-052 (pick up / carry / throw). US-053 particles (smoke, dust, sparks, splash; folds in US-019) can run in parallel. Gate: if US-051a misses the 10-body settle test after one fix round, a Rapier spike becomes its own story.
 
 ## Milestone 3 – "The Relay Line" — status: planned
 Open region along the map route with 3 dead relays to wake (each a placed structure), an exile village with 3–5 NPCs and dialogue, the artificer's gauntlet + Spark (first magic), second enemy (clockwork sentinel), ranged tool (bow or crossbow), terrain overrides authored as data. Exile village working name "Outwall" (D-013, final name decided here). Steam "Coming Soon" page for wishlists once M3 is playable (D-012).
+- **Object physics epic, part 2 (D-018):** US-054 cuttable tree that breaks into a log and branches as physics pieces (after US-051/052, the M2 sword and US-041 voxel), and US-055 water surface + splash + floating props (after US-051, US-053, US-026). The whole epic US-051..055 must be done before the M6 release.
 
 ## Milestone 4 – "The Signal Source" — status: planned
 First dungeon = the signal's source (an ancient ruin with pressure doors and gear puzzles): keys, light puzzles (mirrors, shadow, aether), a boss, reward = first gauntlet crystal. The city of Ferrum stays out until after M6.
@@ -60,4 +62,4 @@ Performance pass, accessibility (font size, colorblind palettes), gamepad (Steam
 
 ## Tech policy notes
 - **Rust/WASM (D-015):** only for bench-measured hot spots after a JS pass (terrain bake, pathfinding); prebuilt `.wasm` committed, source in `tools/wasm/`, JS kept as oracle/fallback. Engine stays JS + GLSL.
-- **Rapier (D-015):** architect evaluates `@dimforge/rapier3d-compat` (vendored, no bundler) when US-013 comes up; adopt only if fixed-timestep, deterministic enough for saves, and queries still go through `World`. Three.js only if arbitrary meshes are needed.
+- **Rapier (D-015):** architect evaluates `@dimforge/rapier3d-compat` (vendored, no bundler) when US-013 comes up; adopt only if fixed-timestep, deterministic enough for saves, and queries still go through `World`. **Decided for object physics in D-018:** in-house rigid bodies. Rapier only becomes a spike story if US-051a fails its settle gate. Three.js only if arbitrary meshes are needed.
