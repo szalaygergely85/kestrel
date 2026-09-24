@@ -40,6 +40,14 @@
 // itself shifts with pitch (tan(pitch)*planeDistY) - the standard
 // Doom/Build-style pitch simulation, cheap (no per-pixel trig) and exact
 // enough at the clamped +-35 deg this game uses.
+//
+// BUG-CAST-001 rule (architect tech notes, 2026-09-24): every opaque band a
+// segment emits must narrow `openBottom`/`openTop` to its own edge before
+// moving on. `floorFilledTo`/`ceilingFilledTo` only clip later draws - they
+// never stand in for closing the span - so a segment that draws an opaque
+// band (wall face, TOP cap, step riser, ...) and forgets to fold that band's
+// edge into `openBottom`/`openTop` will let a farther, still-open segment
+// overwrite it (G-buffer/DepthBuffer are last-write-wins).
 
 import { OpenSpans } from './OpenSpans.js';
 import { fastShade, fastShadeSky, primeFastShadeFrame } from './fastShade.js';
@@ -628,9 +636,19 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       const capRowEnd = Math.min(openBottom, wallRowStart - 1);
       castPlane(rt, x, ctx, farSector.floorMat, farSector.floorMatId, farSector.floorH, entryDist, exitDist,
         openTop, capRowEnd, farSector.floorH, GK_TOP);
-      if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
+      const capDrawn = ctx._planeR1 >= ctx._planeR0;
+      if (capDrawn) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
 
-      openBottom = Math.min(openBottom, wallRowStart - 1);
+      // BUG-CAST-001 fix (architect tech notes, 2026-09-24): every opaque
+      // band a segment emits must narrow openBottom to its own edge. The
+      // cap rows [openTop, capRowEnd] this castPlane just drew are opaque
+      // (same as the wall face below them), so close the column up to the
+      // cap's own top edge (_planeR0), not just wallRowStart-1 - otherwise
+      // the cap rows stay "open" and a farther floor/step behind can
+      // overwrite them (last-write-wins) at grazing angles over a thin
+      // wall-top band. dda.frag is the first-hit GPU reference and is
+      // unchanged; only the CPU caster was wrong.
+      openBottom = Math.min(openBottom, capDrawn ? ctx._planeR0 - 1 : wallRowStart - 1);
       prevFloorDist = exitDist; // the cap just drawn covers the floor's own [entry,exit]
       const solidSector = farSector;
       nearSector = level.sectorAt(ray.mapX + 0.5, ray.mapY + 0.5) || VOID_SECTOR;

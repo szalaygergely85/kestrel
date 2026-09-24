@@ -159,6 +159,11 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   const kind = gbuf.kind, mat = gbuf.mat, planeId = gbuf.planeId, u = gbuf.u, v = gbuf.v;
   let kindChecked = 0, kindMismatch = 0;
   let matched = 0, matEqual = 0, planeEqual = 0, depthViol = 0, uvViol = 0;
+  // BUG-CAST-001 tech notes item 4(b): report (not gate) a kind-mismatch
+  // count restricted to kind-edge cells - this class of bug (a far surface
+  // overwriting a nearer opaque cap at a grazing silhouette edge) only shows
+  // up on edge cells, which the `edge` exclusion above is otherwise blind to.
+  let edgeCells = 0, edgeKindMismatch = 0;
   // Architect review 2 item 2: kind-0 holes at exact boundaries (a hit
   // height a float step outside [floorH, ceilH] that no rule claims) break
   // neighbouring derivatives even on cells the edge exclusion above would
@@ -171,7 +176,11 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       const gpuKind = giBuf[i * 4 + 1] & 0xff;
       if (gpuKind === 0 && kind[i] !== 0) holes++;
       const edge = isEdgeCell(kind, cols, rows, x, y, i) || isEdgeCellU32(giBuf, cols, rows, x, y, i);
-      if (edge) continue;
+      if (edge) {
+        edgeCells++;
+        if (kind[i] !== gpuKind) edgeKindMismatch++;
+        continue;
+      }
       kindChecked++;
       if (kind[i] !== gpuKind) { kindMismatch++; continue; }
       if (kind[i] === 0) continue; // both agree "sky" - nothing else to compare
@@ -198,6 +207,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   return {
     kindChecked, kindMismatch, kindMatchPct,
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
+    edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0,
   };
 }
