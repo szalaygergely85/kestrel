@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy). 2026-09-24: D-017 JS reference only; D-018 object physics epic US-051..055 in M2/M3; D-019 voxel props in M1 (US-040 + US-041a pulled forward, US-041b creatures stay pre-M3).
+Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy). 2026-09-24: D-017 JS reference only; D-018 object physics epic US-051..055 in M2/M3; D-019 voxel props in M1 (US-040 + US-041a pulled forward, US-041b creatures stay pre-M3). D-020: sprint 1 planned (`docs/sprints/sprint-1.md`), no walk-on in M1, minimal sound slice P1, owner story/progression idea to M2+.
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -24,16 +24,18 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 - **D-019 (2026-09-24, owner OWN-REQ-001): tower props are voxel models, fixed in the world.** US-040 (GPU voxel pass A3) and US-041a (voxel lighting + entity binding + prop-only rigid parts) are M1 P0; the designer builds the solid props once as voxel ModelDefs (ART-OWN-001). Flames/glows/sparks stay billboards (BUG-OWN-003 slimmed to `fill` for those). Gate: US-040 fails gpucompare or 0.5 ms p95 after one fix round -> fall back to billboards + fill/outline + fixed yaw, voxel props move to M2.
 - **D-017 (2026-09-24):** JS render path = correctness reference only (gpucompare + Node tests, no perf ACs); no playable CPU fallback - no WebGL2 shows a "WebGL2 required" screen.
 
-**Engine build order (D-009, D-019):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-011 -> US-016 (finishing) -> US-040 -> US-041a -> voxel props in `world_m1` + owner walk-check -> BUG-OWN-003 (slim, if still needed) -> US-018. Voxel prop art (ART-OWN-001) runs in parallel with US-040.
-- **P1 (after all P0):** light the summit beacon (US-022, D-003).
+**Engine build order (D-009, D-019):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-011 -> US-016 (finishing) -> US-040 -> US-041a -> US-056 voxel props in `world_m1` + owner walk-check -> BUG-OWN-003 (slim, if still needed) -> US-018. Voxel prop art (ART-OWN-001) runs in parallel with US-040.
+- **Ending (D-020):** no walk-on past the breach in M1. The end trigger stays, made deliberate by the vista, a summit hint and an "End of Chapter One" card (BUG-OWN-005, P0).
+- **Sprint 1 (D-020):** US-016 finish -> US-040 -> US-041a -> US-056, BUG-OWN-005 in parallel, US-018 stretch. Exit = owner end-to-end walk-test.
+- **P1 (after all P0):** light the summit beacon (US-022, D-003); minimal procedural sound slice (lever, gear, grate, boulder, footsteps; carved out of US-020, D-020, not an exit criterion).
 
-**P2 stretch (not exit criteria):** dust motes (US-019), procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).
+**P2 stretch (not exit criteria):** dust motes (US-019), rest of procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).
 
 **Out**
 - Walking on terrain, combat, enemies, inventory, dialogue, NPCs, saving UI, audio asset files, editor UI.
 - Voxel creatures and walk/idle clips (US-041b, before M3), the 7.7 billboard `outline` option, directional billboard views.
 
-**Exit criteria:** PO OK + tester PASS on every P0 story; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
+**Exit criteria:** PO OK + tester PASS on every P0 story; the owner's end-to-end walk-test (sprint 1 exit) passes; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
 
 ## Milestone 1.5 – "Editor Preview" (D-010) — status: planned (starts when M1 exit criteria are met)
 Level viewer + object placer in `tools/editor/`, a second client of `engine/index.js`.
@@ -45,7 +47,8 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 **Story (D-011 amendment 2, D-013):** fantasy canon with steampunk machine accents. Wick, a young man from machine-only Ferrum (no amnesia), is shot down in the stolen balloon *Kestrel* and holds a Crown sky-chart with his pencil course to the SOS (3 short, 3 long, 3 short). M1 is a text and art reskin only (lamp, wreckage, relay, signal tower). The only scope change is the US-015 map card (static overlay, `M` re-opens it).
 
 ## Milestone 2 – "Out of the Wreck" — status: planned
-Step out of the breach onto real terrain: terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point. **Release prep (D-012):** settings menu (grid, sensitivity, invert Y, volume, fullscreen + pointer lock, pause on focus loss), saves via a `game/js/platform/` adapter with a versioned save format. **itch.io browser demo** (M1+M2 slice) at the end of M2. Architect may evaluate Rust/WASM for measured hot spots only (terrain bake, pathfinding; D-015).
+**Owner story + progression idea (D-020, `docs/owner-ideas/2026-09-24-story-and-progression.md`), M2+:** crash intro animation (PO places it: M2 at the earliest, or M1.5 if it's a cheap title-card beat), vanished loved one + SOS hook (writer). Progression without XP: gear has levels (weapons, armour, shields; first in M2 with the sword); magic comes from beacons/wells/quests via a small skill tree (fireball, freeze, lightning, one big spell; starts with M3 Spark); bow in M3. Trading, crafting, animals/monsters/plants and the biomes (forest, desert, snow, mountains, wind) get assigned to M3+ once the GDD section exists.
+Step out of the breach onto real terrain (US-026 replaces the M1 end trigger with the walk-out, D-020): terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point. **Release prep (D-012):** settings menu (grid, sensitivity, invert Y, volume, fullscreen + pointer lock, pause on focus loss), saves via a `game/js/platform/` adapter with a versioned save format. **itch.io browser demo** (M1+M2 slice) at the end of M2. Architect may evaluate Rust/WASM for measured hot spots only (terrain bake, pathfinding; D-015).
 - **Object physics epic, part 1 (D-018, owner-required before release):** in-house compound-sphere rigid bodies in `engine/physics/rigid.js`. US-051a (bodies + world contacts + sleep), then US-051b (body-body contacts, stacks <= 3, player contacts), then US-052 (pick up / carry / throw). US-053 particles (smoke, dust, sparks, splash; folds in US-019) can run in parallel. Gate: if US-051a misses the 10-body settle test after one fix round, a Rapier spike becomes its own story.
 
 ## Milestone 3 – "The Relay Line" — status: planned

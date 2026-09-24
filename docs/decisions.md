@@ -586,3 +586,26 @@ Owner walk-test (backlog rows 25f/25g/25h): the tower props (lever, burner, lamp
 - M1 grows by US-040 + US-041a + voxel prop art; the M1 date slips accordingly. M1.5 and later milestones shift by the same amount; D-016's pre-M3 target for creatures is unchanged (US-041b).
 - The billboard sprite pass stays in the engine for effects and horizon billboards (US-030c work is not wasted).
 - US-042 animals, US-054 tree pieces and the M5 model editor build on the same voxel path already proven in M1.
+
+## D-020 Sprint 1 scope; no walk-on past the breach in M1; minimal sound slice to P1 (sprint 2); owner story idea to M2+
+**Date:** 2026-09-24
+**Status:** Accepted
+
+### Context
+Sprint 0 review (`docs/sprints/sprint-0.md`): the slice isn't finishable for a first-time player yet. The breach shows empty sky (US-016 A2 missing), the ending reads like a respawn (BUG-OWN-005), and props are unreadable and turn to face the player (D-019 work). The PO proposed a sprint 1 list, asked for a walk-on ruling, proposed a minimal sound slice at P1 and flagged US-022. The owner also filed a story + progression idea (`docs/owner-ideas/2026-09-24-story-and-progression.md`).
+
+### Options
+- **Walk-on:** (a) let the player walk out onto the terrain in M1; (b) keep the end trigger at the breach and do the walk-out in M2 with US-026. With (a) the player walks onto far-LOD terrain that has no near LOD and no slope physics, so the first thing they see outside is a broken world. (b) costs nothing and matches the M1 goal.
+- **Sprint 1 size:** 6 stories incl. sound + US-022, or 5 + 1 stretch. US-016 A2, US-040 and US-041a are three GPU/engine stories in sequence with architect reviews, which already fills a sprint.
+- **Sound:** keep P2 (D-004), or move a minimal slice to P1. Gap 4 (lever -> grate cause and effect) is real, and a grate rattle is the cheapest fix, but it isn't a blocker for "can finish and knows it's the end".
+
+### Decision
+1. **No walk-on in M1** (option b). The end trigger stays at the breach. The ending is made deliberate by the US-016 vista, the summit hint and the "End of Chapter One" card (BUG-OWN-005 PO ACs). In M2, US-026 replaces the end trigger with the walk-out.
+2. **Sprint 1** = US-016 finish, US-040, US-041a, **US-056** (new: M1 voxel prop swap + owner walk-check), BUG-OWN-005; US-018 as stretch. Goal: *a first-time player can finish the tower and knows it's the end.* Exit = owner end-to-end walk-test (`docs/sprints/sprint-1.md`).
+3. **Minimal sound slice goes to P1 for M1** (partly amends D-004): lever clunk, gear ratchet, grate rattle, boulder thud, footsteps, procedural WebAudio only. The PO carves it out of US-020 as its own story. It's still **not an M1 exit criterion**. It's first in line for sprint 2, together with US-022 (P1, D-003) and BUG-OWN-003 slim if the US-056 walk-check needs it.
+4. **Owner story/progression idea** (crash intro animation, vanished loved one, SOS; no XP, gear levels, magic from beacons/wells/quests with a small skill tree, bow, trading, crafting, biomes) goes to the GDD (writer + PO) and to roadmap M2+. M1 content stays the tower slice. The crash intro animation is **not** added to M1; the PO places it (M2 at the earliest, or M1.5 if it stays a cheap title-card beat).
+
+### Consequences
+- The M1 build order gets rows 17a (US-040) and 25l (US-056). The M1 exit gains the owner end-to-end playthrough as the explicit acceptance test.
+- If US-040 hits the D-019 fallback gate, sprint 1 swaps US-041a/US-056 for the fallback (b) billboard fill/outline + fixed yaw work. The goal stays the same.
+- The GDD gets a progression section (no XP) that later milestones must respect (M2 sword, M3 Spark/bow).
