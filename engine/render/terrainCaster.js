@@ -205,8 +205,8 @@ export function castTerrain(fb, terrain, cam, world, opts = {}) {
   const marchOpts = { stepMin: STEP_MIN, stepK: STEP_K, maxSteps: MAX_TERRAIN_STEPS };
   const cols = rt.cols;
 
+  const rows = rt.rows, depthArr = fb.depth.depth;
   for (let x = 0; x < cols; x++) {
-    if (!spans.isOpen(x)) continue;
     const cameraX = (2 * (x + 0.5)) / cols - 1;
     const rayDirX = cb.dirX + cb.planeX * cameraX;
     const rayDirY = cb.dirY + cb.planeY * cameraX;
@@ -222,17 +222,25 @@ export function castTerrain(fb, terrain, cam, world, opts = {}) {
     // distance, so terrain past e.g. a breach opening never got marched).
     const tMax = FOG_FULL;
 
-    const top = spans.top[x], bottom = spans.bottom[x];
-    let minHitRow = bottom + 1; // "no hits yet"
-    for (let row = top; row <= bottom; row++) {
-      const slope = (cb.horizonRow - (row + 0.5)) / cb.planeDistY;
+    // Architect fix (US-016 ASK, 2026-09-24): march EVERY cell the sector
+    // pass left without a finite depth (kind 0, incl. rows it already
+    // painted as sky and closed off the span), exactly like pass A2's
+    // `kindA != 0 -> return` - the open span alone misses sky-filled rows
+    // below the horizon behind a low far ceiling (summit-east pose). And the
+    // DDA's own row convention: sample at `row` (cy + oy, oy = 0 at n = 1),
+    // not `row + 0.5` (that half-row offset was a 1-5 % depth error).
+    const open = spans.isOpen(x), top = spans.top[x], bottom = spans.bottom[x];
+    let minHitRow = bottom + 1; // "no hits yet" inside the open span
+    for (let row = 0; row < rows; row++) {
+      if (depthArr[row * cols + x] !== Infinity) continue; // a structure claimed this cell
+      const slope = (cb.horizonRow - row) / cb.planeDistY;
       if (!marchTerrainRay(terrain, cam.x, cam.y, cam.z, rayDirX, rayDirY, slope, tMax, skipT, nSkips, marchOpts, hitOut)) continue;
       const type = farTypeNearest(terrain, hitOut.x, hitOut.y);
       if (fb.gbuf) fb.gbuf.writeSample(row * cols + x, KIND_TERRAIN, type, 0, PLANEID_TERRAIN, hitOut.x, hitOut.y, hitOut.h, 0);
       fb.depth.set(x, row, hitOut.t);
-      if (row < minHitRow) minHitRow = row;
+      if (open && row >= top && row < minHitRow) minHitRow = row;
     }
-    if (minHitRow <= bottom) spans.narrowBottom(x, minHitRow - 1);
+    if (open && minHitRow <= bottom) spans.narrowBottom(x, minHitRow - 1);
   }
 }
 
