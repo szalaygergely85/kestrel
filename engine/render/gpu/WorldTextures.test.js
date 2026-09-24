@@ -109,6 +109,32 @@ if (tower && tower.level.legend['G']) {
   ok('(skipped: no animated "grate" tag on this content pack - not a failure)', true);
 }
 
+// --- US-007 ARCH CHANGES item 3: planFrameUpdate refreshes uStruct[i*8+7]
+// (packUStruct's maxH slot) for every structure whose packed.version
+// advanced, independent of the dirty-row texSubImage2D path (today's real
+// trigger is updateAnimatedSector - e.g. a grate's ceilH/topH change moving
+// the structure's sun-DDA escape height - but the refresh itself only
+// depends on `version` having moved on, not on how it moved; a direct
+// version bump exercises the same planFrameUpdate code path deterministically).
+{
+  const tower2 = world.structures.find((s) => s.id === 'tower');
+  ok('(setup) tower structure present for the maxH-refresh check', !!tower2);
+  if (tower2) {
+    const before = atlas.uStruct[tower2.structSeq * 8 + 7];
+    ok('before mutation: uStruct maxH slot matches packed.maxH', before === tower2.packed.maxH, `${before} vs ${tower2.packed.maxH}`);
+    tower2.packed.maxH = before + 37; // simulate updateAnimatedSector moving the escape height
+    tower2.packed.version++; // simulate the version bump updateAnimatedSector performs
+    ok('uStruct maxH slot is STALE right after the packed mutation (not yet refreshed)',
+      atlas.uStruct[tower2.structSeq * 8 + 7] === before);
+    planFrameUpdate(world, atlas, makeFrameUpdatePlan());
+    ok('planFrameUpdate refreshes uStruct[i*8+7] to the new packed.maxH',
+      atlas.uStruct[tower2.structSeq * 8 + 7] === before + 37, `${atlas.uStruct[tower2.structSeq * 8 + 7]} vs ${before + 37}`);
+    tower2.packed.maxH = before; // restore
+    tower2.packed.version++; // and re-bump so the restore is also picked up (leave versions/atlas consistent for the next block)
+    planFrameUpdate(world, atlas, makeFrameUpdatePlan());
+  }
+}
+
 // --- rebuildNeeded fires when a new structure is placed ----------------------
 world.placeStructure(assets.level('test_room'), { x: -50, y: -50, z: 0 }, 'wt_probe');
 const plan2 = planFrameUpdate(world, atlas, makeFrameUpdatePlan());

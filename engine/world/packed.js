@@ -139,9 +139,12 @@ export function packLevel(level, matTable) {
 // - the escape height the sun DDA uses to stop walking a tall-but-finite
 // structure early. A cell's own blocking mass tops out at `floorH` when
 // solid (US-003: a solid cell is a column up to its `floorH`, the wall top)
-// or at `topH` when open and not sky-ceilinged (the slab + upper band); an
-// open, sky-ceilinged cell contributes no bound (its column is open to any
-// height). `-Infinity` (no finite cell at all - an all-sky structure, not
+// or at `topH` when open and not sky-ceilinged (the slab + upper band). An
+// open, sky-ceilinged cell still blocks up to its `floorH` (a raised open
+// floor under open sky, e.g. a roofless upper platform, is a step the sun
+// ray must clear too - only the cell's own ceiling/slab is unbounded, not
+// its floor), so it contributes `floorH`, not "no bound" (architect review
+// #1 item 3). `-Infinity` (no finite cell at all - an all-sky structure, not
 // expected in practice but not invalid) is clamped to 0.
 function computeMaxH(geom, flags, n) {
   let maxH = -Infinity;
@@ -150,7 +153,7 @@ function computeMaxH(geom, flags, n) {
     const gi = i * 4;
     let top;
     if (f & FLAG_SOLID) top = geom[gi];
-    else if (f & FLAG_CEIL_SKY) continue;
+    else if (f & FLAG_CEIL_SKY) top = geom[gi]; // floorH still blocks
     else top = geom[gi + 2];
     if (top > maxH) maxH = top;
   }

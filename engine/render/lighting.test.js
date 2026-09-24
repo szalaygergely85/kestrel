@@ -345,6 +345,116 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
     sunVisible(world, 3.5, 3.5, 0.3, dir) === true);
 }
 
+// --- US-007 ARCH CHANGES item 1: JS maxH escape actually fires, reading
+// `struct.packed.maxH` (the placed-structure object itself has no own
+// `.maxH` - that was the dead-code bug: `h0 > struct.maxH` was always
+// `false` against `undefined`). A tall solid ring, its wall well within
+// MAX_SUN_STEPS of the sample, with the sample height above the ring's
+// `maxH` - lit either via the fixed escape or, redundantly, once the walk
+// reaches the wall and the crossing test itself sees h0 above floorH; the
+// direct property assertions below are the regression guard that actually
+// pins down which field is read. ---
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+    '#': { floorH: 8, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+  };
+  const size = 20;
+  const rows = [];
+  for (let y = 0; y < size; y++) {
+    let row = '';
+    for (let x = 0; x < size; x++) row += (x === 0 || x === size - 1 || y === 0 || y === size - 1) ? '#' : '.';
+    rows.push(row);
+  }
+  globalThis.ASSETS.levels.__sunTallRing = { name: '__sunTallRing', legend, rows, start: { x: size / 2, y: size / 2, facingDeg: 90 } };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'ring', level: '__sunTallRing', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  const struct = world.structureAt(size / 2, size / 2);
+  ok('regression guard: the placed structure has no own .maxH (the dead-code field)', struct.maxH === undefined);
+  ok('regression guard: .packed.maxH is the ring wall\'s floorH (8), the field the fix reads', struct.packed.maxH === 8);
+
+  const ls = new LightSet();
+  ls.setSun({ elevation: 45, azimuth: 180, on: true }); // ring wall reachable well within MAX_SUN_STEPS
+  const dir = ls.sun.dir;
+  ok('sample above the tall solid ring\'s maxH is lit (struct.packed.maxH escape)', sunVisible(world, size / 2, size / 2, 9, dir) === true);
+}
+
+// --- US-007 ARCH CHANGES item 2: a structure placed at origin.z != 0 shades/escapes
+// using LOCAL heights - both a shadowed and a lit sample exercise the origin.z
+// subtraction (choose numbers so both branches are hit). ---
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+    's': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, start: true, facingDeg: 90 },
+  };
+  const solidLegend = {
+    '#': { floorH: 8, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+  };
+  globalThis.ASSETS.levels.__sunOriginZPad = { name: '__sunOriginZPad', legend, rows: ['s...', '....', '....', '....'] };
+  globalThis.ASSETS.levels.__sunOriginZBlock = { name: '__sunOriginZBlock', legend: solidLegend, rows: ['#'], start: { x: 0.5, y: 0.5, facingDeg: 90 } };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  // "blocker" is 8 m tall (floorH=8), placed 4 m up (origin.z=4) - world
+  // blocking threshold is origin.z + floorH = 12.
+  const world = World.load({
+    terrain: null,
+    structures: [
+      { id: 'pad', level: '__sunOriginZPad', origin: { x: 0, y: 0, z: 0 } },
+      { id: 'blocker', level: '__sunOriginZBlock', origin: { x: 1, y: 4, z: 4 } },
+    ],
+    entities: [],
+  }, assets, {});
+  const ls = new LightSet();
+  ls.setSun({ elevation: 45, azimuth: 180, on: true }); // sun in the south -> dir toward +y
+  const dir = ls.sun.dir;
+  // World z=0.3 < 12 -> still shadowed (a wrong "always subtract nothing"
+  // implementation would ALSO shadow this, since 0.3 < floorH(8) too - not
+  // the distinguishing case, but confirms the low branch still works).
+  ok('origin.z=4 blocker: a low sample (z=0.3, world threshold 12) is still shadowed', sunVisible(world, 1.5, 3.5, 0.3, dir) === false);
+  // World z=12.5 > 12 -> now lit. Without the origin.z fix (comparing the
+  // raw world height against the LOCAL floorH=8 directly, ignoring the +4 m
+  // the structure is raised), 12.5 would incorrectly compare against 8 and
+  // still read "not blocked" too by luck of the numbers - but the local
+  // comparison the fix performs is `h0 - origin.z (8.5) < floorH (8)` ->
+  // false -> not blocked, exercising the actual subtraction, not floorH alone.
+  ok('origin.z=4 blocker: a sample just above the RAISED threshold (z=12.5) is lit', sunVisible(world, 1.5, 3.5, 12.5, dir) === true);
+}
+
+// --- US-007 ARCH CHANGES item 4: a structure across a gap of open terrain still
+// shadows - the ray must leave structure A's footprint, cross an empty
+// (no-structure) column, and still be blocked by structure B ahead. ---
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+    's': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, start: true, facingDeg: 90 },
+  };
+  const solidLegend = {
+    '#': { floorH: 8, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+  };
+  globalThis.ASSETS.levels.__sunGapPad = { name: '__sunGapPad', legend, rows: ['s...', '....'] }; // y 0..2
+  globalThis.ASSETS.levels.__sunGapBlock = { name: '__sunGapBlock', legend: solidLegend, rows: ['#'], start: { x: 0.5, y: 0.5, facingDeg: 90 } };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({
+    terrain: null,
+    structures: [
+      { id: 'padA', level: '__sunGapPad', origin: { x: 0, y: 0, z: 0 } }, // footprint y 0..2
+      // A 2-cell empty gap (y 2..4, no structure there at all), then an 8 m
+      // solid blocker starting at y=4.
+      { id: 'blockerB', level: '__sunGapBlock', origin: { x: 1, y: 4, z: 0 } },
+    ],
+    entities: [],
+  }, assets, {});
+  ok('(setup) the gap column has no owning structure', world.structureAt(1.5, 2.5) === null || world.structureAt(1.5, 2.5) === undefined);
+  const ls = new LightSet();
+  ls.setSun({ elevation: 45, azimuth: 180, on: true }); // sun in the south -> dir toward +y
+  const dir = ls.sun.dir;
+  // Sample at (1.5, 1.5) in padA, 2.5 cells north of blockerB's wall face.
+  // At elevation 45 (tanElev=1), h at the wall == h0 + 2.5.
+  ok('structure B across the gap still shadows a low sample in structure A (h at wall 2.8 < floorH 8)',
+    sunVisible(world, 1.5, 1.5, 0.3, dir) === false);
+  ok('a sample high enough to clear the far structure\'s wall by the time it arrives is lit (h at wall 8.5 >= floorH 8)',
+    sunVisible(world, 1.5, 1.5, 6, dir) === true);
+}
+
 // --- US-007: step cap (MAX_SUN_STEPS) - a long never-blocking corridor terminates and is lit ---
 {
   const legend = {

@@ -576,12 +576,27 @@ export function sunVisible(world, x, y, z, dir) {
   const horiz = Math.hypot(dx, dy);
   let h0 = z + SUN_Z_EPS;
 
+  // 14.3 item 4 amendment (ii/iv): cell heights and `maxH` are level-local,
+  // so every comparison below subtracts the owning structure's `origin.z`
+  // first. `worldMaxH` = max over every placed structure of `origin.z +
+  // packed.maxH` (world space) - outside every footprint the walk never
+  // blocks and costs no fetch, but keeps going (a structure across a gap
+  // still shadows) until `h0` clears this bound.
+  let worldMaxH = 0;
+  for (let i = 0; i < world.structures.length; i++) {
+    const s = world.structures[i];
+    const m = s.origin.z + s.packed.maxH;
+    if (m > worldMaxH) worldMaxH = m;
+  }
+
   if (horiz < 1e-9) {
     // Straight-up sun (elevation 90): never crosses a cell boundary - one
     // slab test on the starting cell against an unbounded band above.
-    const sec = world.sectorAt(x, y);
+    const struct = world.structureAt(x, y);
+    if (!struct) return true;
+    const sec = struct.level.sectorAt(x - struct.origin.x, y - struct.origin.y);
     if (!sec) return true;
-    return !sunCellBlocked(sec, h0, Infinity);
+    return !sunCellBlocked(sec, h0 - struct.origin.z, Infinity);
   }
 
   const ndx = dx / horiz, ndy = dy / horiz;
@@ -596,16 +611,28 @@ export function sunVisible(world, x, y, z, dir) {
 
   let tPrev = 0;
   for (let step = 0; step < MAX_SUN_STEPS; step++) {
-    const sec = world.sectorAt(mapX + 0.5, mapY + 0.5);
-    if (!sec) return true; // left every footprint
+    // Structure owning the cell the ray is about to cross (pre-step); may
+    // be null between/around footprints - never blocks, no fetch, the walk
+    // continues (item iv), it does not exit early.
+    const cx = mapX, cy = mapY;
+    const owner = world.structureAt(cx + 0.5, cy + 0.5);
     let t1;
     if (sideDistX < sideDistY) { t1 = sideDistX; sideDistX += deltaDistX; mapX += stepX; }
     else { t1 = sideDistY; sideDistY += deltaDistY; mapY += stepY; }
     const h1 = h0 + tanElev * (t1 - tPrev);
-    if (sunCellBlocked(sec, h0, h1)) return false;
+    if (owner) {
+      const sec = owner.level.sectorAt(cx + 0.5 - owner.origin.x, cy + 0.5 - owner.origin.y);
+      if (sec) {
+        const oz = owner.origin.z;
+        if (sunCellBlocked(sec, h0 - oz, h1 - oz)) return false;
+      }
+    }
     h0 = h1; tPrev = t1;
-    const struct = world.structureAt(mapX + 0.5, mapY + 0.5);
-    if (struct && h0 > struct.maxH) return true;
+    // Structure just entered (post-step): its own local maxH bounds it -
+    // once h0 clears it, THIS structure can no longer block (item iv).
+    const entered = world.structureAt(mapX + 0.5, mapY + 0.5);
+    if (entered && h0 - entered.origin.z > entered.packed.maxH) return true;
+    if (h0 > worldMaxH) return true;
   }
   return true; // step cap - bias to lit
 }

@@ -55,6 +55,11 @@ uniform usampler2D uWorldFlags; // RG8UI: r = solid|ceilSky<<1|topSky<<2|dynamic
 uniform vec4 uStructA[${MAX_STRUCTS}]; // origin.xyz, w (width)
 uniform vec4 uStructB[${MAX_STRUCTS}]; // h, yOff, structSeq, maxH (WorldTextures.js packUStruct)
 uniform int uStructCount;
+// US-007 ARCH CHANGES item 4: max over every placed structure of
+// origin.z + maxH (world space) - JS twin: lighting.js's sunVisible
+// worldMaxH. Lets the walk keep going fetch-free between/around
+// footprints instead of returning lit the instant it leaves one.
+uniform float uWorldMaxH;
 
 const int MAX_VIS_DIM = ${MAX_VIS_DIM};
 const int MAX_STRUCTS = ${MAX_STRUCTS};
@@ -111,7 +116,10 @@ bool sunVisible(vec3 S, vec3 dir) {
     if (!findStruct(S.x, S.y, idx0)) return true;
     vec4 A0 = uStructA[idx0], B0 = uStructB[idx0];
     SunCell c0 = fetchSunCell(int(B0.y + 0.5), int(floor(S.x - A0.x)), int(floor(S.y - A0.y)));
-    return !sunCellBlocked(c0, h0, 1.0e30);
+    // ARCH CHANGES item 2: cell heights are level-local - subtract the
+    // owning structure's origin.z (A0.z) before testing, matching
+    // lighting.js's sunVisible straight-up case.
+    return !sunCellBlocked(c0, h0 - A0.z, 1.0e30);
   }
 
   float ndx = dir.x / horiz, ndy = dir.y / horiz;
@@ -126,19 +134,39 @@ bool sunVisible(vec3 S, vec3 dir) {
 
   float tPrev = 0.0;
   for (int step = 0; step < MAX_SUN_STEPS; step++) {
+    // ARCH CHANGES item 4: structure owning the cell about to be crossed
+    // (pre-step); may be none between/around footprints - never blocks,
+    // the walk keeps going (does not return true early), same shape as
+    // lighting.js's sunVisible.
+    int cx = mapX, cy = mapY;
     int idx;
-    if (!findStruct(float(mapX) + 0.5, float(mapY) + 0.5, idx)) return true;
-    vec4 A = uStructA[idx], B = uStructB[idx];
-    int lcx = mapX - int(A.x + 0.5), lcy = mapY - int(A.y + 0.5);
-    SunCell c = fetchSunCell(int(B.y + 0.5), lcx, lcy);
+    bool haveOwner = findStruct(float(cx) + 0.5, float(cy) + 0.5, idx);
 
     float t1;
     if (sideDistX < sideDistY) { t1 = sideDistX; sideDistX += deltaDistX; mapX += stepX; }
     else { t1 = sideDistY; sideDistY += deltaDistY; mapY += stepY; }
     float h1 = h0 + tanElev * (t1 - tPrev);
-    if (sunCellBlocked(c, h0, h1)) return false;
+
+    if (haveOwner) {
+      vec4 A = uStructA[idx], B = uStructB[idx];
+      int lcx = cx - int(A.x + 0.5), lcy = cy - int(A.y + 0.5);
+      SunCell c = fetchSunCell(int(B.y + 0.5), lcx, lcy);
+      // ARCH CHANGES item 2: level-local heights - subtract origin.z.
+      float oz = A.z;
+      if (sunCellBlocked(c, h0 - oz, h1 - oz)) return false;
+    }
     h0 = h1; tPrev = t1;
-    if (h0 > B.w) return true; // B.w = uStructMaxH of the CURRENT structure
+
+    // Structure just entered (post-step): its own local maxH bounds it -
+    // once h0 clears it, THIS structure can no longer block.
+    int idx2;
+    if (findStruct(float(mapX) + 0.5, float(mapY) + 0.5, idx2)) {
+      vec4 A2 = uStructA[idx2], B2 = uStructB[idx2];
+      if (h0 - A2.z > B2.w) return true; // B2.w = uStructMaxH of the entered structure
+    }
+    // ARCH CHANGES item 4: global escape once h0 clears the tallest
+    // structure anywhere - a structure across a gap still shadows.
+    if (h0 > uWorldMaxH) return true;
   }
   return true; // step cap - bias to lit
 }

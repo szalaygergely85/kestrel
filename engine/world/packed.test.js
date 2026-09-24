@@ -83,6 +83,21 @@ ok('packed geom.ceilH reflects animateSector(0.5) exactly', approxEq(packed2.geo
 ok('packed flags bit3 (dynamic) is set on the grate cell', (packed2.flags[gCell.cy * towerLevel.width + gCell.cx] & 8) !== 0);
 g.ceilH = before;
 
+// --- US-007 ARCH CHANGES item 3: computeMaxH includes a raised open,
+// sky-ceilinged floor (previously skipped by `else if (f & FLAG_CEIL_SKY)
+// continue`, so a roofless upper platform never bounded the sun DDA escape).
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+    'P': { floorH: 5, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false }, // raised open sky-ceilinged platform
+  };
+  const raisedDef = { name: '__maxHRaisedSky', legend, rows: ['..', '.P'], start: { x: 0.5, y: 0.5, facingDeg: 90 } };
+  const raisedLevel = loadLevel(raisedDef);
+  const raisedPacked = packLevel(raisedLevel, fakeMatTable());
+  ok('computeMaxH: a raised open sky-ceilinged floor (floorH=5) sets maxH=5, not 0',
+    approxEq(raisedPacked.maxH, 5), `maxH=${raisedPacked.maxH}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

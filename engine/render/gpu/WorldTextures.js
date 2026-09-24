@@ -126,6 +126,13 @@ export function planFrameUpdate(world, atlas, out) {
     const s = structures[i];
     const p = s.packed;
     if (p.version === atlas.versions[i]) continue;
+    // US-007 (14.3 item 3, architect review #1): `updateAnimatedSector` can
+    // change a dynamic sector's ceilH/topH enough to move the structure's
+    // sun-DDA escape height (`packed.maxH`) without necessarily touching
+    // every dirty row's own geometry re-upload below - refresh the
+    // `uStructB[i].w` slot (`packUStruct`'s layout) every time `version`
+    // moved on, not only through the dirty-row texSubImage2D path.
+    atlas.uStruct[i * 8 + 7] = p.maxH;
     if (p.dirtyY0 >= 0 && p.dirtyY1 >= p.dirtyY0) {
       const yOff = atlas.yOffsets[i];
       const y0 = yOff + p.dirtyY0, y1 = yOff + p.dirtyY1;

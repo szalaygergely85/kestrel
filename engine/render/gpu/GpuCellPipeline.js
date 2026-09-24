@@ -700,6 +700,16 @@ export class GpuCellPipeline {
     const gl = this.gl, a = this._worldAtlas;
     const structA = this._uStructA || (this._uStructA = new Float32Array(MAX_STRUCTS * 4));
     const structB = this._uStructB || (this._uStructB = new Float32Array(MAX_STRUCTS * 4));
+    // US-007 (14.3 item 4 amendment iv, JS twin: lighting.js's sunVisible):
+    // max over every placed structure of origin.z + maxH (world space) -
+    // the sun DDA's global escape height once the ray has left every
+    // footprint but must still clear the tallest structure anywhere.
+    let worldMaxH = 0;
+    for (let i = 0; i < a.structCount; i++) {
+      const o8 = i * 8;
+      const m = a.uStruct[o8 + 2] + a.uStruct[o8 + 7];
+      if (m > worldMaxH) worldMaxH = m;
+    }
     for (let i = 0; i < MAX_STRUCTS; i++) {
       const o8 = i * 8, o4 = i * 4;
       structA[o4] = a.uStruct[o8]; structA[o4 + 1] = a.uStruct[o8 + 1];
@@ -707,12 +717,15 @@ export class GpuCellPipeline {
       structB[o4] = a.uStruct[o8 + 4]; structB[o4 + 1] = a.uStruct[o8 + 5];
       structB[o4 + 2] = a.uStruct[o8 + 6]; structB[o4 + 3] = a.uStruct[o8 + 7];
     }
-    for (const [prog, loc] of [[this.progCast, this._locsCast], [this.progLight, this._locsLight]]) {
-      gl.useProgram(prog);
-      gl.uniform4fv(loc.uStructA, structA);
-      gl.uniform4fv(loc.uStructB, structB);
-      gl.uniform1i(loc.uStructCount, a.structCount);
-    }
+    gl.useProgram(this.progCast);
+    gl.uniform4fv(this._locsCast.uStructA, structA);
+    gl.uniform4fv(this._locsCast.uStructB, structB);
+    gl.uniform1i(this._locsCast.uStructCount, a.structCount);
+    gl.useProgram(this.progLight);
+    gl.uniform4fv(this._locsLight.uStructA, structA);
+    gl.uniform4fv(this._locsLight.uStructB, structB);
+    gl.uniform1i(this._locsLight.uStructCount, a.structCount);
+    gl.uniform1f(this._locsLight.uWorldMaxH, worldMaxH);
   }
 
   // Camera basis (engine/render/sectorCaster.js's castScene, same formulas -
@@ -1013,5 +1026,5 @@ const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlane
 const LIGHT_UNIFORMS = [
   'uGI', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
-  'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount',
+  'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
 ];
