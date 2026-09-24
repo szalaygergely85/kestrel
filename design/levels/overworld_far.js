@@ -116,6 +116,8 @@
       x: 713.8, y: 1232.1, azimuthFromBreach: 255, distance: 800,
       baseZ: -8, height: 42, width: 14,
       color: 'farTower', lit: false, emissive: false, fogMax: 0.40,
+      signalLight: 'D-011 addendum: the signal tower. lit/emissive = false describe the BODY; the crown-notch light cells ' +
+                   '(models/far_tower.js keys L/G) are emissive aether teal, key fogMax 0.20, static in M1',
       note: 'Dark notch against the pale horizon; fog capped at 0.40; never smaller than 3x4 cells. US-022 does not change it. ' +
             'The silhouette lives in design/models/far_tower.js (ASSETS.models.farTower: detail 5x8 + lods.min 3x4); the engine draws it ' +
             'as the `farTower` billboard entity of design/levels/world_m1.js through the sprite pass (architecture.md 14.4 item 7), not in terrain code.',

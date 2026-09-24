@@ -20,7 +20,7 @@ From GDD pillar 4, the same order decides every art call:
 | **Danger / harm** | `danger` | enemies, hazards, damage flashes (M2+) |
 | **Magic = aether** (D-011) | `aether` family: `aetherCore` `aetherLight` `aether` `aetherMid` `aetherDim` (+ `aetherDead`, lit) | the relay crystals, the signal, later gauntlet spells. Emissive, sparkle `* + . '` |
 | **Machine** (D-011) | `brass*`, `copper*`, `verdigris*` | only on machines: the *Kestrel* gondola and burner, the brass lamp, the relay mount, later lever housings, pressure doors, sentinels |
-| **Ferrum** (D-011) | `ferrum` `ferrumDim` | the city's warm amber pinpoints on the horizon, FERRUM on the chart |
+| **Ferrum** (D-011) | `cityLightHot` `cityLight` `cityLightDim` (`colorRamps.cityLight`) + `ferrumSil`; `ferrum` `ferrumDim` on the chart | the city's warm amber pinpoints on the eastern horizon (hotter toward the Crown on top), a faint silhouette under them; FERRUM on the chart |
 
 Rules:
 - `danger`, the aether family and `heroGreen` are **reserved**. Do not use them for scenery. In M1 the only aether in the world is the **relay** (and the far signal light). The rest of the world is warm, cool and material colors, so the teal means "magic" the moment it appears. The old `magic` cyan is legacy: `semantic.magic` now points at `aether`.
@@ -30,7 +30,8 @@ Rules:
 - Shadow is **cool, not black**: ambient `#2a3550` at 0.12 always leaves a dim bluish glyph on stone.
 - Warm light is **the path**: the player walks toward warm. The brazier, then the sun patch, then the stair are lit in sequence. Do not light dead ends warmly.
 - Brass is the only saturated yellow on non-fire objects. A small brass glint (a `o` that becomes a white `*` every 2 to 3 s) means "take me".
-- The distant second tower is `farTower`, the darkest value in the far view, with no warm pixel. It must read as "dead".
+- The distant second tower is **the signal tower** (D-011): its body is `farTower`, the darkest value in the far view, with no warm pixel, and exactly one small steady `aether` teal light in the notch of its broken crown (1 cell at 160x60, 1-2 at 240x90). Dark body + one teal point = "someone is calling from there". Never add warm light to it; never make the light bigger than the notch.
+- **Two lights on two horizons** (D-011): teal ahead (the signal, WSW, magic), amber behind (Ferrum, E, machines). They never share a hue, so the player can tell "where I'm going" from "where I came from" at a glance. Horizon lights are emissive but keep a little fog (key `fogMax` 0.20-0.25) so they sit in the air instead of floating on top of it.
 
 ## 3. Light and shading
 - Values come from GDD 7.3 via `palette.lights`: ambient 0.12, sun 1.0 (elev 60, ESE), torch 1.0 / 6 m, lantern 0.8 / 5 m.
@@ -59,6 +60,7 @@ Density order matters more than the character's shape. Each ramp in `palette.ram
 | copper (v1.9) | `. : - = + x # % &` | verdigris `%` `:` in the seams |
 | canvas (v1.9) | `. ' - ~ ) ( = %` | folds `)` light / `(` dark, seams `~` |
 | aether (v1.9) | `. ' + *` | sparkle only, always emissive |
+| city lights (v1.10) | `. ' *` over `_ = n [ ] ^ \|` | Ferrum on the horizon: pinpoints emissive, the silhouette glyphs unlit and fogged |
 
 - **ASCII only (32 to 126).** No `·`, `≈`, `≡`, box drawing or Unicode. `validate()` checks ramps.
 - Glyph overrides in textures (rivets, knots) never appear in darkness (minimum ramp index 2).
@@ -82,6 +84,7 @@ Density order matters more than the character's shape. Each ramp in `palette.ram
 - Interior: fog `#262f45`, starts 12 m, full 60 m. Glyphs thin to space and colors go cool and dark. Distance feels like depth, not haze.
 - Far overworld: 50 m to 1500 m. Fog lightens from `fogFarNear` to `fogFar` (= sky horizon), so hills fade into the sky with no seam. Classic aerial perspective: far means lighter, bluer and less detailed.
 - Color carries depth: near and lit is warm and saturated, far or shadowed is cool and desaturated.
+- Beyond the fog limit (1500 m) only **horizon billboards** exist (Ferrum): a fixed fog amount (0.55) turns their silhouette into a pale blue-grey hint, and only their emissive pinpoints keep their colour. They draw on sky cells only.
 
 ## 7. Sprites and animation (for US-011 and later)
 - Palette **keys only** in fg/bg rows, one char per cell, lined up 1:1 with glyph rows (format in README when US-011 lands).

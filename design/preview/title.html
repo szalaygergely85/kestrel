@@ -23,9 +23,11 @@
 <h1>Kestrel : title card, map card, hints, prompts, end text (US-015 / D-011) at 160x60 / 240x90 / 320x120</h1>
 <div class="note"><b>D-011 reskin:</b> logo <b>KESTREL</b> (the airship's brass name board) with the SOS signal (3 short, 3 long, 3 short) pulsing teal in the flourish,
   subtitle <b>SOMEONE IS CALLING</b>, and the US-015 <b>map card</b> (the Crown sky-chart with Wick's pencil, text verbatim from <code>docs/story.md</code> 5).
-  The start sequence now runs: black, blink, title, <b>map card</b> (auto-dismissed after 5 s here, "any key" in game), then the story hint "Press M to read the chart." and the move hint.
-  <i>End text is still the old placeholder</i> (no new US-017 text in story.md yet).<br>
-  Loads <code>../palette.js</code> and <code>../models/title.js</code>. The big canvas is a mock of the game screen at true 16:9 proportions; its pixel width is fixed,
+  The start sequence runs per the US-015 ACs: black, blink, title, 0.5 s gap, <b>map card</b> (auto-dismissed after 5 s here, "any key" after 1.0 s in game),
+  then the move hint, and 20 s after the dismissal the story hint "Press M to read the chart." (one hint on screen at a time).
+  The card is signed <b>"- W."</b> (D-013). <b>End screen</b> buttons play the US-017 timeline from <code>uiStyle.endText</code> / <code>uiStyle.fade.sec</code>
+  (walk 1.5 s, fade 2 s, typed lines at 30 cps, 1.5 s gap, <code>[R] Wake again_</code>). <b>Hint zones</b> (bottom) draws <code>levelPatch.towerHints</code> on the tower plan.<br>
+  Loads <code>../palette.js</code>, <code>../models/title.js</code> and (read-only, for the zone checks) <code>../levels/tower.js</code>. The big canvas is a mock of the game screen at true 16:9 proportions; its pixel width is fixed,
   so switching the <b>scene grid</b> shrinks the scene cells exactly as it will in the game (cell px shown in the bar; at a real 1920 px window multiply by the factor shown).
   <b>UI mode</b>: <i>scaled layer</i> = the recommended design (<code>uiStyle.uiGrid</code> 160x60 text layer over the scene, glyph = <code>cellScale</code> scene cells);
   <i>1x scene cells</i> = what happens if UI text is drawn one glyph per scene cell (positions scaled, glyphs not). Start sequence: black 1.0 s, eye-blink 1.5 s, title 1 / 3 / 1 s, first hint.
@@ -36,6 +38,7 @@
   <span class="grp">UI mode: <button data-ui="layer">scaled layer</button><button data-ui="cells">1x scene cells</button></span>
   <button id="replay">Replay start sequence</button>
   <button id="hold">Jump to title hold</button>
+  <button id="chartJ">Jump to chart hint (+20 s)</button>
   <button id="map">Map card (M)</button>
   <button id="hints">Show all hints</button>
   <button id="shints">Story hints</button>
@@ -62,8 +65,14 @@
 <h2>Fade steps (glyphs dim down the ramp): a = 0.15, 0.3, 0.5, 0.7, 0.85, 1.0</h2>
 <canvas id="fades"></canvas>
 
+<h2>Hint zones on the tower plan (<code>levelPatch.towerHints</code> + tower.js <code>hintJump</code>; 1 cell = 1 m, north up)</h2>
+<div class="note">Ground-floor plan from <code>levels/tower.js</code> (read-only). <span style="color:#ffc23c">B</span> = hintBurner (r 3 m), <span style="color:#4fd66a">C</span> = hintClimb (r 1.5 m),
+  <span style="color:#3ce8ff">J</span> = hintJump (r 2 m, zMin 2.0), <span style="color:#ff5a1f">@</span> burner, <span style="color:#ffd24a">L</span> lamp bracket, <span style="color:#e8e2d0">W</span> wake spot, <span style="color:#8a7f6e">#</span> solid.</div>
+<canvas id="zones"></canvas>
+
 <script src="../palette.js"></script>
 <script src="../models/title.js"></script>
+<script src="../levels/tower.js"></script>
 <script>
 (function () {
   'use strict';
@@ -135,12 +144,54 @@
   check('Hint text exactly "WASD move - Mouse look"', ST.hints[0].text === 'WASD move - Mouse look');
   // D-009 grid checks: layout lives in the fixed UI grid and fits it; text keeps >= minGlyphPx at 1920x1080 on every grid
   var lay = T.layout, fitsUI = UG.cols === 160 && UG.rows === 60 && lay.centerX - T.anchor.x >= 0 && lay.centerX - T.anchor.x + T.size.w <= UG.cols &&
-    lay.top + T.size.h + SUB.layout.belowTitle + 1 <= UG.rows && ST.endText.top + ST.endText.lines.length * 2 <= UG.rows && ST.pause.row < UG.rows;
+    lay.top + T.size.h + SUB.layout.belowTitle + 1 <= UG.rows && ST.endText.lines.every(function (l) { return l.row >= 0 && l.row < UG.rows && (l.alt || l.text).length + 1 <= UG.cols; }) && ST.pause.row < UG.rows;
   check('UI grid is fixed 160x60 (uiStyle.uiGrid); title, subtitle, end text and pause row fit it', fitsUI);
   var longest = Math.max.apply(null, ST.hints.map(function (h) { return ST.hint.prefix.length + h.text.length + ST.hint.x + ST.hint.plate.pad; }).concat(ST.prompt.examples.map(function (s) { return s.length + 2; })));
   check('Longest hint / prompt fits the UI grid width (' + longest + ' <= ' + UG.cols + ')', longest <= UG.cols);
   var mp = ST.uiScale && ST.uiScale.minGlyphPx, pxOk = ST.uiScale && ST.uiScale.mode === 'layer' && mp && 1920 / UG.cols >= mp.w && 1080 / UG.rows >= mp.h;
   check('uiScale.mode = "layer": UI glyph is ' + (1920 / UG.cols) + 'x' + (1080 / UG.rows) + ' px at 1920x1080 on every scene grid (min ' + (mp ? mp.w + 'x' + mp.h : '?') + '); scene-cell text at 320x120 would be 6x9 px', pxOk);
+
+  // ---- US-015 PO CR (2026-09-23) + the US-017 re-check AC ----
+  var sg0 = MC.signature, sigRow = mcRows.filter(function (r) { return r.indexOf(sg0.text) >= 0; })[0] || '', noteRow = mcRows.filter(function (r) { return r.indexOf('"Follow the old towers."') >= 0; })[0] || '';
+  var sigIdx = mcRows.indexOf(sigRow), noteIdx = mcRows.indexOf(noteRow), sigEnd = sigRow.indexOf(sg0.text) + sg0.text.length, noteEnd = noteRow.indexOf('towers."') + 'towers."'.length;
+  var sigKeys = MC.animations.show.frames[0].S.fg[sigIdx] || '', sigKeyOk = sigKeys.substr(sigRow.indexOf(sg0.text), sg0.text.length).replace(/ /g, '').split('').every(function (k) { return MC.keys[k].c === 'pencil'; });
+  check('Map card signed "- W." (D-013): pencil colour, the row right under the second "Your pencil:" note, right-aligned to it (ends col ' + sigEnd + ' = ' + noteEnd + '); in mapCard.text too; card ' + MC.size.w + 'x' + MC.size.h + ' <= 56x16',
+    sg0.text === '- W.' && sigIdx === noteIdx + 1 && sigEnd === noteEnd && sigKeyOk && MC.text.indexOf(MC.text[sg0.line]) >= 0 && MC.text[sg0.line].trim() === '- W.' && MC.size.w <= 56 && MC.size.h <= 16);
+  var hintNames = mcRows.join(' ').match(/Wick/g);
+  check('Hero name appears nowhere on the card or in any UI text (only the "W." initial, D-013)', !hintNames && texts.join(' ').indexOf('Wick') < 0);
+  var SH = {}; ST.storyHints.forEach(function (h) { SH[h.id] = h; });
+  check('storyHints.when per the programmer ACs: burner = zone hintBurner, skipped once the lamp is taken; climb = zone hintClimb; chart = 20 s after the first dismissal, skipped if M was pressed, done on M',
+    SH.burner && SH.burner.on.type === 'zone' && SH.burner.on.zone === 'hintBurner' && SH.burner.on.skipIfState === 'tower.lantern.taken' &&
+    SH.climb && SH.climb.on.type === 'zone' && SH.climb.on.zone === 'hintClimb' && !SH.climb.on.skipIfState &&
+    SH.chart && SH.chart.on.type === 'timer' && SH.chart.on.after === 'mapCard.firstDismiss' && SH.chart.on.sec === 20 && SH.chart.on.skipIfState === 'ui.mapCard.opened' && SH.chart.doneOn === 'M pressed' &&
+    SH.chart.keys[0] === 'M');
+  var MCS = ST.mapCard;
+  check('Map card behaviour data: 0.5 s after the title, min 1.0 s, dismiss key consumed, scene dim 0.35, M toggle with no timeout; move hint starts on the first dismissal; one hint on screen (FIFO)',
+    MCS.showOnce.delaySec === 0.5 && MCS.minShowSec === 1.0 && MCS.dismiss.consumeKey === true && MCS.sceneDim.bgMul === 0.35 && MCS.reopenKey === 'M' && MCS.reopen.toggle && MCS.reopen.timeout === null &&
+    ST.hints[0].on.event === 'mapCard.firstDismiss' && ST.hint.maxOnScreen === 1 && ST.hint.queue === 'fifo');
+  // hint zones vs the tower data (read-only)
+  var LV = A.levels && A.levels.tower, HZ = A.levelPatch && A.levelPatch.towerHints, zonesOk = false, zoneMsg = 'levels/tower.js or levelPatch.towerHints missing';
+  if (LV && HZ) {
+    var Z = {}; HZ.triggers.append.forEach(function (z) { Z[z.id] = z; });
+    var ids = (LV.triggers || []).map(function (t) { return t.id; }), clash = HZ.triggers.append.some(function (z) { return ids.indexOf(z.id) >= 0; });
+    var cellAt = function (x, y) { var r = LV.rows[Math.floor(y)]; return r ? LV.legend[r.charAt(Math.floor(x))] : null; };
+    var burner = (LV.props || []).filter(function (p) { return p.id === 'brazier'; })[0], lamp = (LV.props || []).filter(function (p) { return p.id === 'lantern'; })[0], st0 = LV.start;
+    var zb = Z.hintBurner, zc = Z.hintClimb, d = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
+    var baseCell = cellAt(zc.x, zc.y), gapBC = d(zb, zc) - zb.r - zc.r;
+    var shapeOk = [zb, zc].every(function (z) { return z.type === 'hint' && z.shape === 'circle' && z.once === true && z.trigger === 'hint.show'; });
+    zonesOk = !clash && shapeOk && zb.r === 3.0 && zc.r === 1.5 && burner && d(zb, burner) < 1e-9 && baseCell && baseCell.tag === 'stairBase' &&
+      d(zb, st0) > zb.r && lamp && d(zb, lamp) < zb.r && gapBC > 0;
+    zoneMsg = 'hintBurner r ' + zb.r + ' on the burner (' + zb.x + ', ' + zb.y + '), spawn ' + d(zb, st0).toFixed(2) + ' m away (outside), lamp ' + (lamp ? d(zb, lamp).toFixed(2) : '?') +
+      ' m (inside); hintClimb r ' + zc.r + ' on the ' + (baseCell && baseCell.tag) + ' cell; circles ' + gapBC.toFixed(2) + ' m apart (no overlap); ids new: ' + !clash;
+  }
+  check('Hint zones (levelPatch.towerHints, tower-local, once-triggers like hintJump): ' + zoneMsg, zonesOk);
+  var E = ST.endText, EL = {}; E.lines.forEach(function (l) { EL[l.id] = l; });
+  var US017 = ['The signal is still calling.', 'One relay wakes. The signal is still calling.', 'Someone is out there.', '- to be continued -', '[R] Wake again'];
+  check('End card (US-017 re-check): strings incl. the woken variant = the US-017 AC lines, each <= 60 chars; colours are palette keys',
+    EL.signal.text === US017[0] && EL.signal.alt === US017[1] && EL.signal.altWhen === 'tower.beacon.lit' && EL.someone.text === US017[2] && EL.continue.text === US017[3] && EL.restart.text === US017[4] &&
+    E.lines.every(function (l) { return (l.alt || l.text).length <= 60 && !!P.colors[l.color]; }) && !!P.colors[E.cursor.color] && E.placeholder === false);
+  check('End card timings as data: walkSec ' + E.walkSec + ', fade.sec ' + ST.fade.sec + ', gapSec ' + E.gapSec + ', cps ' + E.cps + ' (US-017 ACs 1.5 / 2 / 1.5 / 30); cursor "' + E.cursor.glyph + '" period ' + E.cursor.periodSec + ' s; rows ' + E.lines.map(function (l) { return l.row; }).join('/'),
+    E.walkSec === 1.5 && ST.fade.sec === 2.0 && E.gapSec === 1.5 && E.cps === 30 && E.cursor.glyph === '_' && EL.restart.cursor && EL.restart.enablesRestart);
   var nf = checks.filter(function (c) { return !c.ok; }).length;
   document.getElementById('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
     checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.n + (c.d ? ' <span class="fail">' + c.d + '</span>' : '') + '</div>'; }).join('');
@@ -202,6 +253,14 @@
       BG[i] = [BG[i][0] * mul, BG[i][1] * mul, BG[i][2] * mul];
       FG[i] = [FG[i][0] * mul, FG[i][1] * mul, FG[i][2] * mul];
       if (GL[i] !== ' ') GL[i] = RAMP.charAt(Math.min(2, Math.max(0, RAMP.indexOf(GL[i]))));   // calm texture under text
+    }
+  }
+  // whole-scene dim behind the map card (uiStyle.mapCard.sceneDim), faded with the card; plated cells keep their plate value
+  function dimScene(mul, a) {
+    var k = 1 - (1 - mul) * Math.max(0, Math.min(1, a));
+    for (var i = 0; i < GW * GH; i++) {
+      if (PLATE[i]) continue;
+      BG[i] = [BG[i][0] * k, BG[i][1] * k, BG[i][2] * k]; FG[i] = [FG[i][0] * k, FG[i][1] * k, FG[i][2] * k];
     }
   }
   function put(x, y, g, colorKey, a, mix) {
@@ -273,20 +332,26 @@
       text(x, y, promptText, ST.prompt.text, ['[E]'], 1);
     }
   }
+  // US-017 end card from uiStyle.endText (same timeline as game/js/ui/endCard.js): t = endT
   function drawEnd(t, lit) {
-    var E = ST.endText, row = LY(E.top), typed = Math.max(0, t - 2.2) * E.cps, lines = E.lines;
-    for (var i = 0; i < lines.length; i++) {
-      var s = (i === 0 && lit) ? lines[i].alt : lines[i].text;
-      if (lines[i].delay) typed -= lines[i].delay * E.cps;
-      var show = Math.max(0, Math.min(s.length, Math.floor(typed)));
+    var E = ST.endText, textT = t - E.walkSec - ST.fade.sec;
+    if (textT < 0) return;
+    var typedT = textT, allTyped = true, sinceTyped = 0;
+    E.lines.forEach(function (l) {
+      if (!l.typed) return;
+      var s = lit && l.alt && l.altWhen ? l.alt : l.text, dur = s.length / E.cps, show = Math.max(0, Math.min(s.length, Math.floor(typedT * E.cps)));
       var x = Math.round(UW / 2 - s.length / 2);
-      text(x, row, s.slice(0, show), lines[i].color, lines[i].keys || [], 1);
-      if (show < s.length) {
-        if (typed >= 0 && Math.floor(t * E.cursor.blinkHz * 2) % 2 === 0) put(x + show, row, E.cursor.glyph, E.dim, 1);
-        break;
-      }
-      typed -= s.length; row += 1 + E.lineGap;
-    }
+      if (typedT > 0) text(x, LY(l.row), s.slice(0, show), l.color, l.keys || [], 1);
+      if (typedT < dur) allTyped = false;
+      sinceTyped = typedT - dur; typedT -= dur;
+    });
+    if (!allTyped || sinceTyped < E.gapSec) return;
+    E.lines.forEach(function (l) {
+      if (l.typed || !l.afterGap) return;
+      var s = l.text, x = Math.round(UW / 2 - s.length / 2);
+      text(x, LY(l.row), s, l.color, l.keys || [], 1);
+      if (l.cursor && (t % E.cursor.periodSec) < E.cursor.periodSec * E.cursor.duty) put(x + s.length, LY(l.row), E.cursor.glyph, E.cursor.color, 1);
+    });
   }
 
   // ---------------- timeline ----------------
@@ -299,6 +364,8 @@
   function setMode(m, e) { mode = m; extra = e || {}; t0 = performance.now() / 1000; }
   document.getElementById('replay').onclick = function () { setMode('intro'); };
   document.getElementById('hold').onclick = function () { setMode('intro'); t0 -= 4.0; };
+  document.getElementById('chartJ').onclick = function () {   // 1 s before the chart hint: title 2.5 + 5 s, gap 0.5, card 5 s, then +20 s
+    var tc = ST.titleCard; setMode('intro'); t0 -= 2.5 + tc.fadeIn + tc.hold + tc.fadeOut + ST.mapCard.showOnce.delaySec + 5.0 + 20 - 1.0; };
   document.getElementById('hints').onclick = function () { setMode('hints'); };
   document.getElementById('map').onclick = function () { setMode('map'); };
   document.getElementById('shints').onclick = function () { setMode('shints'); };
@@ -331,7 +398,8 @@
     var t = performance.now() / 1000 - t0;
     document.getElementById('tV').textContent = t.toFixed(1) + ' s (' + mode + ')';
     if (mode === 'end') {
-      reset(Math.max(0, 1 - t / 2.0));        // US-017: glyphs dim down the ramp over 2 s
+      var EW = ST.endText.walkSec, EF = ST.fade.sec;   // US-017: walk, then glyphs dim down the ramp over fade.sec
+      reset(t < EW ? 1 : Math.max(0, 1 - (t - EW) / EF));
       drawEnd(t, extra.lit);
     } else if (mode === 'intro') {
       reset(1);
@@ -339,18 +407,19 @@
       if (th >= 0 && th < tc.fadeIn) ta = th / tc.fadeIn; else if (th >= tc.fadeIn && th < tc.fadeIn + tc.hold) ta = 1;
       else if (th >= tc.fadeIn + tc.hold && th < tc.fadeIn + tc.hold + tc.fadeOut) ta = 1 - (th - tc.fadeIn - tc.hold) / tc.fadeOut;
       if (ta > 0) drawTitle(ta, t, ta >= 1);
-      // map card (US-015, D-011): shown once after the title; here auto-dismissed after 5 s ("any key" in game)
-      var mc = ST.mapCard, ms = tStart + tc.fadeIn + tc.hold + tc.fadeOut, mt = t - ms, MSHOW = 5.0;
+      // map card (US-015, D-011): 0.5 s after the title fades out; here auto-dismissed after 5 s ("any key" after minShowSec in game)
+      var mc = ST.mapCard, ms = tStart + tc.fadeIn + tc.hold + tc.fadeOut + mc.showOnce.delaySec, mt = t - ms, MSHOW = 5.0;
       if (mt >= 0 && mt < MSHOW + mc.fadeOut) {
         var ma = mt < mc.fadeIn ? mt / mc.fadeIn : mt < MSHOW ? 1 : 1 - (mt - MSHOW) / mc.fadeOut;
         drawMap(ma, t);
+        dimScene(mc.sceneDim.bgMul, ma);
       }
-      var hs = ms + MSHOW + mc.fadeOut, ht = t - hs;
-      if (ht >= 0 && ht < ST.hint.timeout + ST.hint.fadeOut) {
-        var ha = ht < ST.hint.fadeIn ? ht / ST.hint.fadeIn : ht < ST.hint.timeout ? 1 : 1 - (ht - ST.hint.timeout) / ST.hint.fadeOut;
-        var chart = ST.storyHints.filter(function (h) { return h.id === 'chart'; })[0];
-        drawHints([ST.hints[0], chart], [ha, ha]);
-      }
+      // hints: "move" on the first dismissal, "chart" 20 s after it (storyHints chart.on); one on screen at a time
+      var dis = ms + MSHOW, chart = ST.storyHints.filter(function (h) { return h.id === 'chart'; })[0];
+      function hintAlpha(ht) { return ht < 0 || ht >= ST.hint.timeout + ST.hint.fadeOut ? 0 : ht < ST.hint.fadeIn ? ht / ST.hint.fadeIn : ht < ST.hint.timeout ? 1 : 1 - (ht - ST.hint.timeout) / ST.hint.fadeOut; }
+      var hm = hintAlpha(t - dis), hc = hintAlpha(t - dis - chart.on.sec);
+      if (hm > 0) drawHints([ST.hints[0]], [hm]); else if (hc > 0) drawHints([chart], [hc]);
+      document.getElementById('tV').textContent += t > dis ? ' | since dismissal ' + (t - dis).toFixed(1) + ' s' : '';
       drawCrosshair(false);
       // blink mask: a SCENE effect (uiStyle.uiScale.blink), rows of the scene grid
       var o = blinkOpen(t - 1.0), half = GH / 2, edgeRows = ST.blink.edgeRows * (GH / 60);
@@ -368,7 +437,7 @@
     } else if (mode === 'shints') {
       reset(1); drawHints(ST.storyHints, ST.storyHints.map(function () { return 1; })); drawCrosshair(false);
     } else if (mode === 'map') {
-      reset(1); drawMap(Math.min(1, t / ST.mapCard.fadeIn), t);
+      reset(1); var mapA = Math.min(1, t / ST.mapCard.fadeIn); drawMap(mapA, t); dimScene(ST.mapCard.sceneDim.bgMul, mapA);
     } else if (mode === 'prompt') {
       reset(1); drawCrosshair(true, ST.prompt.examples[Math.floor(t / 2) % ST.prompt.examples.length]);
     } else if (mode === 'pause') {
@@ -419,6 +488,27 @@
         g.cell(ox + x, y + 1, fadeGlyph(gl, a), css([c[0] * m, c[1] * m, c[2] * m]), '#000');
       }
     });
+  })();
+
+  // ---------------- hint zones on the tower plan (4 x 2 glyphs per metre) ----------------
+  (function drawZones() {
+    var LV = A.levels && A.levels.tower, HZ = A.levelPatch && A.levelPatch.towerHints; if (!LV || !HZ) return;
+    var SX = 4, SY = 2, g = makeGrid(document.getElementById('zones'), LV.size.w * SX, LV.size.h * SY, 11);
+    var zs = HZ.triggers.append.concat((LV.triggers || []).filter(function (t) { return t.shape === 'circle'; }));
+    var ZC = { hintBurner: ['B', 'flameMid'], hintClimb: ['C', 'heroGreen'], hintJump: ['J', 'magic'] };
+    var marks = [];
+    (LV.props || []).forEach(function (p) { if (p.id === 'brazier') marks.push([p.x, p.y, '@', 'ember']); if (p.id === 'lantern') marks.push([p.x, p.y, 'L', 'gold']); });
+    marks.push([LV.start.x, LV.start.y, 'W', 'uiText']);
+    for (var y = 0; y < LV.size.h * SY; y++) for (var x = 0; x < LV.size.w * SX; x++) {
+      var mx = (x + 0.5) / SX, my = (y + 0.5) / SY, ch = LV.rows[Math.floor(my)].charAt(Math.floor(mx)), d = LV.legend[ch];
+      var gl = d.solid ? '#' : '.', fg = d.solid ? rgb.stoneMid : d.zone === 'outside' ? rgb.grassDark : rgb.stoneDark, bg = d.solid ? [30, 28, 26] : [10, 11, 15];
+      zs.forEach(function (z) {
+        var r = Math.hypot(mx - z.x, my - z.y), c = ZC[z.id] ? rgb[ZC[z.id][1]] : rgb.uiDim;
+        if (r <= z.r) { bg = [bg[0] * 0.5 + c[0] * 0.18, bg[1] * 0.5 + c[1] * 0.18, bg[2] * 0.5 + c[2] * 0.18]; if (Math.abs(r - z.r) < 0.3) { gl = ZC[z.id] ? ZC[z.id][0] : 'o'; fg = c; } }
+      });
+      g.cell(x, y, gl, css(fg), css(bg));
+    }
+    marks.forEach(function (m) { g.cell(Math.floor(m[0] * SX), Math.floor(m[1] * SY), m[2], css(rgb[m[3]]), '#000'); });
   })();
 
   var last = 0;

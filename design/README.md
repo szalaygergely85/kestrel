@@ -41,6 +41,7 @@ There are no named exports on purpose. Design data files stay plain scripts so t
   rgb:       { [key]: [r,g,b] },              // derived at load, 0..255
   hue:       { [key]: [r,g,b] },              // derived, normalised so max channel = 1 (use for LIGHT colors)
   ramps:     { [key]: ' .:...' },             // glyph strings, index 0 = space (darkest), last = brightest
+  colorRamps:{ [key]: [colorKey, ...] },      // v1.10: colour families dim -> bright (aether, cityLight), section 1.4b
   shading:   { cutoff, rampGamma, fgMin, fgGamma, fgMaxGain, tint, overbright, overbrightMax, glyphOverrideMinIndex },
   lights:    { ambient, sun, torch, lantern, beacon },   // GDD 7.3 values, colors by key
   fog:       { glyphLevel, interior:{color,start,full,curve}, far:{color,colorFar,start,full,curve} },
@@ -76,6 +77,15 @@ Rule: everything outside `colors` refers to colors **by key**, never by hex. Spr
 | `copper` | ` .:-=+x#%&` | copper (v1.9) |
 | `canvas` | ` .'-~)(=%` | balloon canvas (v1.9) |
 | `aether` | ` .'+*` | aether sparkle, effects only (v1.9, no material uses it yet) |
+| `cityLight` | ` .'*` | Ferrum's horizon pinpoints (v1.10, emissive) |
+
+### 1.4b Colour ramps (`colorRamps`, v1.10)
+Arrays of colour keys, dim -> bright, paired with the glyph ramp of the same name. Pick `k = round(g * (n - 1))` for a glow level `g` in 0..1 (`g = 0` is the dimmest key, not "off"; off = do not draw). `validate()` checks every key.
+| key | colours | use |
+|---|---|---|
+| `aether` | `aetherDim` `aetherMid` `aether` `aetherLight` `aetherCore` | the teal glow family: US-016 signal-tower light (fixed index 2 = `aether`), US-022 relay wake (`g` follows `lights.relay.grow`), the P2 SOS pulse, later spells |
+| `cityLight` | `cityLightDim` `cityLight` `cityLightHot` | Ferrum's amber pinpoints (US-016): Wall / Low Wards -> upper tier -> the Crown |
+New colours (v1.10): `cityLightHot #ffb836`, `cityLight #ff9a3a`, `cityLightDim #c46a2a` (saturated amber, darker than `skyHorizon`, so they read by hue and value on the pale morning horizon), `ferrumSil #2c2a36` (Ferrum's silhouette). `ferrum` / `ferrumDim` stay the chart (UI) colours.
 
 **Brightness to glyph** (`util.rampIndex(len, b, gamma)`):
 ```
@@ -197,6 +207,7 @@ Plain scripts that set `ASSETS.models.<name>`. Files and models:
 - `rubble.js`: `rubble` (variants), `pallet`, `beaconBowl` (`pallet` / `beaconBowl` legacy since D-011)
 - `relay.js` (v1.9): `relay`
 - `wreckage.js` (v1.9): `gondola`, `envelopeDrape`, `envelopeHeap`, `burner`, `rigging`, `canvasHeap`, `rope` (variants), `strut`, plus `ASSETS.levelPatch.tower` (section 4.2)
+- `far_tower.js` (v1.8, signal light v1.10): `farTower` (section 4.1); `ferrum_lights.js` (v1.10): `ferrumLights` (section 4.3)
 
 The grate is **not** a sprite. It is the palette material `grate` (wall pattern).
 
@@ -250,7 +261,9 @@ A world file (`design/levels/world_m1.js`) may place a sprite model directly as 
 - The model may carry the same fields as defaults (`far_tower.js` does); the entity wins if both are set.
 - **Frame choice:** the base `size` / `animations` are the *detail* frames; `lods.min` holds the minimum frames (same shape as `lods.half`). `frames.min` / `frames.detail` are convenience aliases with `size`, `anchor`, `glyphs`, `fg`.
 - `noUpscaleCap: true` on the model means the `3 * rows / 60` cap of section 4 does not apply (the world size is the truth; the far tower is 14 x 42 m and can never reach that cap anyway).
-- **`farTower`** (`design/models/far_tower.js`): detail 5x8 (window slit `k` = `black`), min 3x4 (`n n` / `|#|` / `|#|` / `/#\`), color `farTower` only, `unlit`, `fogModel 'far'`, `fogMax 0.40`, `minCells 3x4`, `detailRows 12`. Placed in `world_m1.js` at (713.8, 1232.1, -8). `overworld_far.farTower` keeps only `model: 'farTower'` + numbers; the inline `sprite` block is gone. Preview: `preview/overworld.html` (loads `../models/far_tower.js`).
+- **`farTower`** (`design/models/far_tower.js`) = **the signal tower** since v1.10 (D-011 addendum): detail 5x8 (window slit `k` = `black`), min 3x4 (`n*n` / `|#|` / `|#|` / `/#\`), body colour `farTower`, `unlit`, `fogModel 'far'`, `fogMax 0.40`, `minCells 3x4`, `detailRows 12`. Placed in `world_m1.js` at (713.8, 1232.1, -8). `overworld_far.farTower` keeps only `model: 'farTower'` + numbers; the inline `sprite` block is gone. Preview: `preview/overworld.html` (loads `../models/far_tower.js`).
+  - **Signal light:** key `L` (`aether`, `e: true`, `fogMax 0.20`) is the `*` in the crown notch: 1 cell in `min` (row 0, col 1), which is 1 cell at 160x60, 2 at 240x90 and 4 at 320x120 after the minCells clamp and nearest sampling. The detail frame adds key `G` (`aetherMid`, emissive) one row above it. `signalLight` lists the cells, keys and `colorRamps.aether` indices. Static in M1 (the SOS pulse is P2); US-022 does not change it.
+  - **Per-key `fogMax` (new, all sprite models):** an emissive key may carry `fogMax`. Such cells are still unlit (full palette colour), but they take fog `min(key.fogMax, fogF)` toward the sprite's fog colour instead of ignoring fog. Emissive keys without `fogMax` keep the old rule (no fog). Non-emissive keys ignore it (they use the entity/model `fogMax`).
 
 ### 4.2 D-011 reskin models (v1.9): the *Kestrel* wreck, the brass lamp, the relay
 
@@ -275,11 +288,30 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
 - **`ASSETS.levelPatch.tower`** (in `wreckage.js`): the **proposed** `tower.js` edits, applied by the US-011 programmer pass (the game loads `tower.js`). The patch covers: prop swaps (`brazier` -> `burner`, `pallet` -> `canvasHeap` at the same wake spot, `beaconBowl` -> `relay`), new props (gondola **beside** the wake spot at (15.4, 8.7), rigging, strut on the R rubble, ropes A/B, canvas drape in the stairwell, heap outside the west wall), a `pathCheck` block (no new prop on the wake -> burner -> stair corridor or the boulder roll line; recomputed live in `preview/tower.html`, which now loads `wreckage.js` and draws the patch props + corridor), the `beacon` light -> `relay` preset, prompts (`[E] Take lamp`, `[E] Wake the relay`) and material swaps (`!` walls -> `stone_ivy`, wall / parapet tops -> `moss_top`). Positions marked "check" need a look in `preview/tower.html`.
 - Preview: `preview/props.html` (every model, every animation, near / mid / far at 160 / 240 / 320) and `preview/wreckage.html` (composed crash room, summit relay wake with the teal light, v1 vs v2 panels of the new materials, light-direction slider, grid toggle).
 
+### 4.3 Horizon billboards (`world.horizon[]`, v1.10, US-016 D-011 addendum)
+
+Things beyond the terrain far limit (1500 m) that must still be seen: Ferrum's lights. They are placed **by angle**, not by metres, so they are not entities. `world_m1.js` has a top-level `horizon` list (`World.load` ignores it today; the renderer reads it):
+```
+{ id, type: 'horizon', model: modelName,     // section 4 sprite model (full + lods.half), anchor = bottom-centre
+  bearingDeg,                                  // compass deg of the band centre (0 N, 90 E)
+  elevDeg,                                     // bottom edge of the band above the horizon, deg (eye-independent: at infinity)
+  angular: { wDeg, hDeg },                     // angular size of the whole model
+  unlit: true,
+  fog: 0..1, fogColor: colorKey,               // FIXED fog amount (it is past fog.far.full, distance fog would erase it)
+  drawOver: 'sky',                             // only on cells nothing else drew (sky / depth = +inf): never over structure or terrain
+  distanceM? }                                 // informational
+```
+- **Cells:** for screen cell (col, row) with the sprite-pass camera basis: `az = yaw + atan((col + 0.5 - cols/2) / (cols/2 / tan(HFOV/2)))`, `el = atan((horizonRow - row - 0.5) / planeDistY)`. Inside `|az - bearingDeg| < wDeg/2` and `elevDeg <= el < elevDeg + hDeg`, sample the tier by angle fraction (nearest).
+- **Tier:** `scale = hDeg * rowsPerDeg / size.h`; below 0.75 use `lods.half` (README 4 rule).
+- **Colour:** non-emissive keys = palette colour lerped to `fogColor` by `fog`; emissive keys by `min(fog, key.fogMax)`. Pass order: after terrain and sky fill, with the sprites.
+- **`ferrumLights`** (`models/ferrum_lights.js`): full 36x4 (13.2 x 2.2 deg = 36 x 4 cells at 240x90, 48 x 5 at 320x120), half 18x2 (160x60: 24 x 2.7). Rows top -> bottom: the Crown (spires `^`, mast `|`, hottest `*`), upper tier halls `[ ]`, Low Wards roofs `n`, the Wall (`_ =` crenels). Silhouette key `s` = `ferrumSil` (unlit); lights `d` / `l` / `h` = `cityLightDim` / `cityLight` / `cityLightHot`, emissive, `fogMax` 0.25 / 0.25 / 0.20, only on `. ' *`. Entity: `bearingDeg 87.6`, `elevDeg 1.0`, `fog 0.55` to `fogFar`.
+- **Visibility (checked in `preview/overworld.html`):** the tower's east wall (8.0-8.5 m) is above the 7.6 m summit eye, so Ferrum shows only over its lowest part, the sun-crack wall top (8.0 m, cells K). From the breach looking back: the Crown, upper tier and Low Wards rows; from the walkway east edge: the Crown and upper tier; from the relay plinth (eye 8.2 m): the whole band. The band base floats 1.0 deg up, which no M1 viewpoint can see; M2 (outside) needs a hill row or `elevDeg 0`.
+
 ---
 
 ## 5. Title and UI styling (`design/models/title.js`, US-015)
 
-`title.js` sets four things (v1.9, D-011: the game is **Kestrel**):
+`title.js` sets five things (v1.9, D-011: the game is **Kestrel**; v1.10 adds `levelPatch.towerHints`):
 
 **`ASSETS.models.title`** (KESTREL logo, 49x8) and **`ASSETS.models.subtitle`** (`SOMEONE IS CALLING`, 1 row). These use the sprite format from section 4, with `ui: true`. Every key is emissive: drawn at full palette color over the 3D view.
 - **Look:** the airship's brass name board. The rows run `brassHot`, `brassLight`, `brass`, `brass`, `copperLight`, `copper`, with a `brassShadow` drop shadow. Row 7 is a brass flourish carrying the SOS, `. . . - - - . . .`, in aether teal. It is the only magic colour on the card.
@@ -287,10 +319,10 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
 - **Layout:** the logo anchor goes at `layout.centerX = 80`, row `layout.top = 18` of the **160x60 UI grid** (`uiStyle.uiGrid`, not the scene grid). The subtitle sits `belowTitle = 1` row under the logo.
 - **Hold-phase shine:** `title.shine` sweeps a diagonal band across the `#` cells once per 2.2 s, lerping them toward white by 0.55.
 
-**`ASSETS.models.mapCard`** (US-015 scope change, D-011): the Crown sky-chart with Wick's pencil course. The 9 lines of `docs/story.md` section 5 are reproduced **verbatim** (also in `mapCard.text`) inside a torn chart border. The card is 52x13 and its anchor is top-centre.
+**`ASSETS.models.mapCard`** (US-015 scope change, D-011): the Crown sky-chart with Wick's pencil course. The 9 lines of `docs/story.md` section 5 are reproduced **verbatim** inside a torn chart border, plus (v1.10) the **`- W.` signature line** (D-013) in pencil, right-aligned under the two `Your pencil:` notes. `mapCard.text` holds all 10 lines; `mapCard.signature` = `{ line, text: '- W.', align: 'right', key: 'p' }`. The card is 52x14 and its anchor is top-centre.
 - **Colours:** Crown print is `chartInk` red, the pencil is `pencil` warm grey, labels are `uiHint`, FERRUM is `ferrum` amber, and the SIGNAL word is `aether`. The `*` star pulses SOS (`aetherCore` / `aetherDim`, 18 on/off frames with `durations`). Dead relays `o` are `aetherDim`, the "you are here" `x` is `gold`, and the border is `chartEdge`.
 - **Layout:** `layout.top` is 23 and `layout.centerX` is 80, in UI-grid cells.
-- **Behaviour:** it lives in `uiStyle.mapCard`. It is shown once after the title card, any key or click dismisses it, and `M` re-opens it. It fades in over 0.4 s and out over 0.25 s. Its plate has pad 1 and bgMul 0.18. Whether input is blocked while it is open is a PO call.
+- **Behaviour** (`uiStyle.mapCard`, v1.10 = the US-015 programmer ACs as data): `showOnce` 0.5 s after the title fade-out (`stateKey 'ui.mapCard.shown'`); fade in 0.4 s / out 0.25 s (PO-accepted); `minShowSec` 1.0; first dismiss = any key or click, the key is consumed (`dismiss.consumeKey`); `reopenKey 'M'` from the first dismissal until the end trigger, a toggle with no timeout, closed by M / Esc / any key (`reopen`, `stateKey 'ui.mapCard.opened'`, in `world_m1` state); `sceneDim.bgMul 0.35` for the whole scene, `plate.bgMul 0.18` under the card; movement and look ignored while open, the world keeps animating, pointer lock kept.
 
 **`ASSETS.uiStyle`**: styling data for everything that draws text:
 - **`uiGrid` + `uiScale`** (D-009 amendment, 2026-09-23): the UI lives in a **fixed 160x60 UI grid**, drawn as a **separate text layer** over the scene grid (`mode: 'layer'`). `cellScale = sceneCols / 160` (1.0 / 1.5 / 2.0 for 160x60 / 240x90 / 320x120), so a UI glyph is always 12x18 px at 1920x1080. **Every layout number in `uiStyle`, `title.layout` and `subtitle.layout` is a UI-grid cell.** Rules:
@@ -300,18 +332,20 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
   - the crosshair is UI cell (80, 30); the prompt is `rowsBelowCrosshair` UI rows under it;
   - `mode: 'cells'` (one glyph per scene cell, layout numbers multiplied by `s`) is only a fallback for the CPU 160x60 path, where `s = 1` anyway.
   - **Engine needs (for the architect):** (1) a second cell layer at 160x60 with transparent bg composited after the scene pass (a second instance of the cell presenter, or a Canvas2D/DOM `<pre>` overlay sized to the viewport); (2) the plate written into the scene bg/fg multiply before present (a per-cell multiplier mask or the compositor's UI hook); (3) a `uiGrid -> scene` cell mapping helper used by both the plate and the blink mask; (4) sprite upscale cap `3 * rows / 60` (section 4).
-- **`fade`**: the rule every UI fade uses, including US-017's fade to black. Glyphs dim **down** the default ramp: `ramp[round(a * index)]`, where letters count as index 9. fg is multiplied by `0.25 + 0.75a`, and nothing is drawn at a = 0. No alpha blending.
+- **`fade`**: the rule every UI fade uses, including US-017's fade to black. Glyphs dim **down** the default ramp: `ramp[round(a * index)]`, where letters count as index 9. fg is multiplied by `0.25 + 0.75a`, and nothing is drawn at a = 0. No alpha blending. `fade.sec` (v1.10) = the US-017 end fade duration, 2.0 s.
 - **`titleCard`**: fade in 1.0 s, hold 3.0 s, fade out 1.0 s.
 - **`hint` + `hints[]`**:
-  - bottom-left at x 2, 2 rows above the bottom, stacking upward
+  - bottom-left at x 2, 2 rows above the bottom; **one hint on screen** (`maxOnScreen 1`), later ones wait in a FIFO `queue` (v1.10; was "stacking upward")
   - prefix `> ` in `uiDim`, text in `uiHint`, key words in `gold`
   - a soft **plate**: scene bg (and fg) multiplied by 0.35, 1 cell around the text, with the texture calmed to ramp index <= 2
   - fade in 0.3 s, fade out 0.5 s, timeout 8 s
   - texts exactly as in US-015
-- **`storyHints[]`** (v1.9): the writer's three narrative hints from story.md 5 (`burner`, `climb`, `chart` = "Press M to read the chart.", `M` in gold). They use the same hint style, and their `when` fields are suggestions for the PO.
+  - v1.10: every hint has `when` (the AC wording) plus `on` (the same rule as data) and `doneOn`. `on` types: `event` (`mapCard.firstDismiss`), `walkTime` (`sec`), `zone` (a `triggers[]` id, fired by `hint.show`), `timer` (`after` event + `sec`), `pointerUnlocked`. `skipIfState`: never shown (or removed) while that `world.state` key is true. `move` now starts on the first map-card dismissal.
+- **`storyHints[]`** (story.md 5, same hint style), `on` per the US-015 ACs: `burner` = zone `hintBurner`, `skipIfState 'tower.lantern.taken'`; `climb` = zone `hintClimb`; `chart` ("Press M to read the chart.", `M` in gold) = `timer` 20 s after `mapCard.firstDismiss`, `skipIfState 'ui.mapCard.opened'`, `doneOn 'M pressed'`.
+- **`ASSETS.levelPatch.towerHints`** (v1.10, in `title.js` because `wreckage.js` / `tower.js` are in the US-011 pass): `triggers.append` = `hintBurner` (circle r 3.0 m at (18.5, 6.5), the burner) and `hintClimb` (circle r 1.5 m at (15.3, 3.3), on the stairBase cell), both `type 'hint'`, `once`, `trigger 'hint.show'`, tower-local like `hintJump`. The US-015 programmer appends them to `tower.js` `triggers[]` by hand (no runtime applier). The spawn is outside `hintBurner`, the lamp inside, and the two circles do not overlap (checked in `preview/title.html`, which draws them on the tower plan).
 - **`crosshair`**: `+`, `uiDim` idle, `gold` when targeting.
 - **`prompt`**: 2 rows below the crosshair, centred, `[E]` in gold, same plate. Examples: `[E] Take lamp`, `[E] Pull lever`, `[E] Wake the relay`.
-- **`endText`** (US-017): centred from row 24, 30 cps with a blinking `_` cursor. The beacon-lit alt line is included. It is marked **`placeholder: true`** since D-011, because new end-card text is still missing from story.md.
+- **`endText`** (US-017; v1.10 = everything `endCard.js` / `end.js` hard-code): `walkSec 1.5`, `gapSec 1.5`, `cps 30` (the scene fade is `uiStyle.fade.sec` 2.0, the name `readEndTimings` already reads). `lines[]` = `{ id, row (UI grid), typed, color, text, alt?, altWhen?, keys?, afterGap?, cursor?, enablesRestart? }`: `signal` row 29 `The signal is still calling.` / alt `One relay wakes. The signal is still calling.` when `tower.beacon.lit`; `someone` row 30 `Someone is out there.`; after `gapSec` `continue` row 32 `- to be continued -` (`uiHint`) and `restart` row 34 `[R] Wake again` (`[R]` gold) with the cursor `_` (`periodSec 1.0`, `duty 0.5`, drawn after the text) and R enabled. `placeholder: false`; `source` notes these are the D-011 PO lines from the US-017 ACs, because `docs/story.md` has no end-card section yet.
 - **`pause`**: `Click to resume`.
 - **`blink`**: the eyelid curve `[t, open]` including the half-close. The lid edge row is `-` in `emberDark` at 50%.
 
@@ -376,4 +410,12 @@ Same sprite format as section 4. New optional model fields: `displayName` (text 
     3. `relay.wakeLightFrame` plus `lights.relay.grow` need the light intensity ramp that US-022 already planned for the beacon.
     4. The level swaps in `levelPatch.tower` wait for the reskin stories.
     5. The US-017 end text needs new writer copy.
+- **v1.10 (2026-09-24, US-015 PO CR + US-017 re-check; US-016 D-011 addendum)**:
+  - `models/title.js`: map card `- W.` signature line (card 52x13 -> 52x14, `mapCard.signature`, `mapCard.text` 10 lines); `uiStyle.mapCard` = the programmer ACs as data (`showOnce`, `minShowSec`, `dismiss`, `reopen`, `sceneDim`); `uiStyle.hint.maxOnScreen 1` + `queue 'fifo'` (replaces `stackUp`); `hints[]` / `storyHints[]` gain `on` + `doneOn` (`when` = AC wording); `uiStyle.endText` restructured (`walkSec`, `gapSec`, `cps`, `cursor.periodSec/duty/color`, `lines[].id/row/typed/afterGap/altWhen`; `top` / `lineGap` / `delay` / `blinkHz` removed; `placeholder: false`); `uiStyle.fade.sec 2.0`; new `ASSETS.levelPatch.towerHints` (`hintBurner`, `hintClimb`). The KESTREL logo is unchanged.
+  - `levels/world_m1.js`: state key `ui.mapCard.opened`; new top-level `horizon[]` with `ferrumLights` (section 4.3); `farTower` notes (signal tower).
+  - `palette.js`: `colorRamps` (`aether`, `cityLight`) + validation, glyph ramp `cityLight`, colours `cityLightHot` / `cityLight` / `cityLightDim` / `ferrumSil`. No existing value changed.
+  - `models/far_tower.js`: the signal tower: emissive light key `L` in the crown notch (min + detail), glint `G` (detail), `signalLight`, per-key `fogMax`. Frame sizes unchanged. `overworld_far.js`: `farTower.signalLight` note only.
+  - New `models/ferrum_lights.js` (section 4.3).
+  - Previews: `title.html` (signature, hint-zone plan, one-hint timeline with the 20 s chart hint, end card from `uiStyle.endText`, 7 new checks); `overworld.html` (signal light + Ferrum drawn, 4 new viewpoints, envelope heap, 9 new checks).
+  - **Engine / PO notes:** (1) per-key `fogMax` on emissive sprite cells (GPU sprite pass + `drawSprites`); (2) `world.horizon[]` pass-through in `World.load` and a horizon-billboard draw on sky cells (section 4.3); (3) sprite LOD `lods.min` + `minCells` for `farTower` (already in the US-016 tech notes); (4) `endCard.js` should draw per-line colours and the `[R]` key colour from `uiStyle.endText`, which it does not do today.
 - **v1.9.1 (2026-09-24, US-011 PO change request rework)**: `lever.js` brass gear housing + stepping hub gear (`lever.gear`, same keys of frames / sizes); `lantern.js` bracket `=j=` in unlit/empty, new `empty` animation (alias `hookEmpty` kept); `relay.js` `mounts.glow` (full + half), `awake` 6 fps; `wreckage.js` new `canvasHeap`, `rope` (2 variants), `strut`, reworked `levelPatch.tower` (+ `pathCheck`). Previews: `props.html` (new entries + checks), `wreckage.html` (heap, ropes, strut in the crash room), `tower.html` (patch props, corridor, path check). New section 4 rule: string variant = animation name. No schema change.

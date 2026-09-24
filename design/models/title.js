@@ -2,7 +2,8 @@
  * Kestrel - US-015 / US-017 title logo, subtitle, map card (Crown sky-chart) and UI text styling
  * (hints, story hints, prompts, crosshair, end text, pause). D-011 reskin (v1.9): was "ASCII QUEST / The Awakening".
  * Format: design/README.md section 4 (sprite models) + section 5 (UI styles).
- * Sets ASSETS.models.title, ASSETS.models.subtitle, ASSETS.models.mapCard, ASSETS.uiStyle. All UI text is ASCII 32-126.
+ * Sets ASSETS.models.title, ASSETS.models.subtitle, ASSETS.models.mapCard, ASSETS.uiStyle and ASSETS.levelPatch.towerHints
+ * (the US-015 hint zones for tower.js). All UI text is ASCII 32-126.
  * UI art is drawn at full palette color (emissive: not lit, not fogged); fades use the glyph-ramp rule below.
  * All layout numbers are in the fixed 160x60 UI grid (uiStyle.uiGrid); the UI is a scaled text layer over the
  * scene grid (uiStyle.uiScale), so text keeps its pixel size at 240x90 and 320x120 (D-009 amendment).
@@ -106,6 +107,10 @@
   };
 
   // ---- US-015 map card: the Crown sky-chart with Wick's pencil (story.md 5, text VERBATIM) ----
+  // Line 8 is the "W." signature (D-013, PO CR 2026-09-23): pencil, right-aligned under the two `Your pencil:` notes
+  // (ends in the same column as the longer note). It is the only place the hero's initial appears in M1.
+  var SIG = '- W.', NOTE2 = '  Your pencil: "Follow the old towers."';
+  var SIG_LINE = new Array(NOTE2.length - SIG.length + 1).join(' ') + SIG;
   var MAP = [
     '      CROWN SKY-CHART  -  your pencil',
     '  FERRUM [#]                          * SIGNAL',
@@ -114,7 +119,8 @@
     '               (you are here)   old relays',
     '  Crown print: "BEYOND THE WALL: NOTHING"',
     '  Your pencil: "Then who is blinking?"',
-    '  Your pencil: "Follow the old towers."',
+    NOTE2,
+    SIG_LINE,
     '        - any key -'
   ];
   // Colour spans per line: [substring, key, {char: key} overrides inside the span]. Everything else = line default.
@@ -129,6 +135,7 @@
     { def: 'c', spans: [['Crown print:', 'h']] },
     { def: 'p', spans: [['Your pencil:', 'h']] },
     { def: 'p', spans: [['Your pencil:', 'h']] },
+    { def: 'p', spans: [] },                                            // "- W." signature, all pencil
     { def: 'd', spans: [] }
   ];
   var IW = 0; MAP.forEach(function (l) { if (l.length > IW) IW = l.length; });
@@ -186,7 +193,9 @@
       S: { c: 'aetherCore', e: true }, Z: { c: 'aetherDim', e: true }, s: { c: 'aether', e: true },
       x: { c: 'gold', e: true }, r: { c: 'aetherDim', e: true }, d: { c: 'uiDim', e: true }
     },
-    text: MAP,                                            // the verbatim story.md lines (for tests / localisation)
+    text: MAP,                                            // the verbatim story.md lines + the "- W." signature line (for tests / localisation)
+    signature: { line: MAP.indexOf(SIG_LINE), text: SIG, align: 'right', under: 'the two "Your pencil:" notes', key: 'p',
+                 note: 'D-013: the notes are signed "W."; the hero name appears nowhere else in M1' },
     animations: { show: { loop: true, durations: mDur, frames: mFrames } },
     layout: { top: Math.floor((60 - MH) / 2), centerX: 80 }   // UI-grid cells
   };
@@ -211,53 +220,89 @@
     // Fade rule for every UI element (title card, hints, map card, end text): glyphs dim DOWN the ramp, not by alpha.
     // At fade level a (0..1): glyph g with density index i in ramps.default becomes ramps.default[round(a*i)]
     // (letters/digits count as index 9), fg = fg * (0.25 + 0.75*a); a = 0 -> nothing drawn.
-    fade: { ramp: 'default', letterIndex: 9, minGain: 0.25 },
+    // `sec` = the US-017 end fade duration (3D view + sprites, 1 -> 0); game/js/quest/end.js readEndTimings reads uiStyle.fade.sec.
+    fade: { ramp: 'default', letterIndex: 9, minGain: 0.25, sec: 2.0 },
     titleCard: { fadeIn: 1.0, hold: 3.0, fadeOut: 1.0, pulse: 'title.animations.show loops during the hold; fades use frame 9 (all marks dim)' },
 
-    // ---- US-015 map card (D-011 scope change): static overlay, shown once after the title card, M re-opens ----
+    // ---- US-015 map card (D-011 scope change): generic engine/ui "panel" overlay (model + style + dim), opened from game/ ----
+    // Numbers per the US-015 programmer ACs; fadeIn/fadeOut are the PO-accepted card values (CR 2026-09-23).
     mapCard: {
       model: 'mapCard',
-      showOnce: 'after the title card fades out (before the first hint)',
-      dismiss: 'any key or click', reopenKey: 'M', closeKeys: 'any key (M included)',
-      fadeIn: 0.4, fadeOut: 0.25,
-      plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the card (+1) multiplied by 0.18: a dark sheet, the 3D view still ghosts through' },
-      input: 'PO call: suggested = movement / look ignored while the card is open; the world keeps running (burner, relay)',
-      afterFirstClose: 'show story hint "chart" (Press M to read the chart.)',
+      showOnce: { after: 'titleCard fade-out', delaySec: 0.5, stateKey: 'ui.mapCard.shown',
+                  note: 'first show only; restart (US-017 deserialize) resets the state key, so it shows again after the wake' },
+      fadeIn: 0.4, fadeOut: 0.25,                       // ramp-step fade rule (uiStyle.fade)
+      minShowSec: 1.0,                                  // first show: no dismiss before 1.0 s on screen
+      dismiss: { first: 'any key or mouse click after minShowSec', consumeKey: true,
+                 note: 'the dismissing key/click is consumed: it does not also move, jump or interact' },
+      reopenKey: 'M',                                   // the binding lives in game/, not in the engine
+      reopen: { from: 'first dismissal', until: 'end trigger (quest.endT >= 0)', never: ['wake', 'titleCard', 'end sequence', 'end screen'],
+                toggle: true, timeout: null, closeKeys: 'M, Esc or any other key', stateKey: 'ui.mapCard.opened',
+                note: 'no minShowSec on re-open; stateKey is set true the first time M opens the card (the chart hint reads it)' },
+      sceneDim: { bgMul: 0.35, note: 'the whole scene behind the card: bg (and fg) x 0.35 while the card is up (fades with the card)' },
+      plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the card (+1) multiplied by 0.18 instead of the 0.35 dim: a dark sheet, the 3D view still ghosts through' },
+      input: 'movement and look input ignored while open; the world keeps animating (burner flicker); pointer lock kept; physics not paused',
+      afterFirstClose: ['hint "move" starts (hints[0])', 'story hint "chart" 20 s timer starts (storyHints chart.on)'],
       rows: 'mapCard.size.h UI rows, centred: layout.top / layout.centerX'
     },
 
+    // Standard hint rules (US-015): bottom-left, ONE hint on screen at a time, later hints wait in a FIFO queue.
     hint: {
-      anchor: 'bottom-left', x: 2, yFromBottom: 2, stackUp: true, lineGap: 1,
+      anchor: 'bottom-left', x: 2, yFromBottom: 2, maxOnScreen: 1, queue: 'fifo', lineGap: 1,
       prefix: '> ', prefixColor: 'uiDim', text: 'uiHint', key: 'gold',
       plate: { pad: 1, bgMul: 0.35, note: 'cells under and 1 around the text: scene bg multiplied by 0.35 (a soft dark plate, no box drawing)' },
-      fadeIn: 0.3, fadeOut: 0.5, timeout: 8.0
+      fadeIn: 0.3, fadeOut: 0.5, timeout: 8.0,
+      doneRule: 'a hint disappears when its action is performed (doneOn) or after timeout; a hint whose action was already performed is never shown',
+      stateKey: 'hints.shown (world_m1 state array of hint ids, so restart resets them)'
     },
     hints: [
-      { id: 'move', text: 'WASD move - Mouse look', keys: ['WASD', 'Mouse'], when: 'after the title card' },
-      { id: 'run', text: 'Shift run', keys: ['Shift'], when: 'after 10 s of walking' },
-      { id: 'jump', text: '[Space] Jump', keys: ['[Space]'], when: 'within 2 m of the gap edge (level marker gapEdge)' },
-      { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], when: 'pointer not locked' }
+      { id: 'move', text: 'WASD move - Mouse look', keys: ['WASD', 'Mouse'], when: 'after the first map-card dismissal (not after the title)',
+        on: { type: 'event', event: 'mapCard.firstDismiss' }, doneOn: 'move or look input' },
+      { id: 'run', text: 'Shift run', keys: ['Shift'], when: 'after 10 s of walking', on: { type: 'walkTime', sec: 10 }, doneOn: 'run input' },
+      { id: 'jump', text: '[Space] Jump', keys: ['[Space]'], when: 'on entering hintJump (tower.js triggers, r 2 m round markers.gapEdge, zMin 2.0)',
+        on: { type: 'zone', zone: 'hintJump' }, doneOn: 'jump input' },
+      { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], when: 'pointer not locked', on: { type: 'pointerUnlocked' }, doneOn: 'pointer locked' }
     ],
-    // story.md 5 narrative hints (writer). Same hint style; `when` is a suggestion for the PO.
+    // story.md 5 narrative hints (writer), same hint style. `when` = the US-015 programmer AC wording; `on` = the same rule as data.
+    // Zones: levelPatch.towerHints below (append to tower.js triggers[]). `skipIfState`: never shown if that world.state key is true.
     storyHints: [
-      { id: 'burner', text: 'The burner still glows. Take what light you can.', keys: [], when: 'after the map card closes the first time' },
-      { id: 'climb', text: 'Climb. You cannot see the signal from down here.', keys: [], when: 'lamp taken, first step onto the stair' },
-      { id: 'chart', text: 'Press M to read the chart.', keys: ['M'], when: 'right after the first map card closes' }
+      { id: 'burner', text: 'The burner still glows. Take what light you can.', keys: [],
+        when: 'once, on entering hintBurner while the lamp is not taken',
+        on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.lantern.taken' }, doneOn: 'lantern.take (lamp taken)' },
+      { id: 'climb', text: 'Climb. You cannot see the signal from down here.', keys: [],
+        when: 'once, on entering hintClimb',
+        on: { type: 'zone', zone: 'hintClimb' }, doneOn: 'timeout only' },
+      { id: 'chart', text: 'Press M to read the chart.', keys: ['M'],
+        when: 'once, 20 s after the first map-card dismissal; never if M was already pressed; removed when M is pressed',
+        on: { type: 'timer', after: 'mapCard.firstDismiss', sec: 20, skipIfState: 'ui.mapCard.opened' }, doneOn: 'M pressed' }
     ],
 
     crosshair: { glyph: '+', idle: 'uiDim', active: 'gold', note: 'screen centre; no plate' },
     prompt: { rowsBelowCrosshair: 2, align: 'center', key: 'gold', text: 'uiText', plate: { pad: 1, bgMul: 0.35 },
               examples: ['[E] Take lamp', '[E] Pull lever', '[E] Wake the relay'] },
 
-    // US-017: D-011 asks for NEW end-card text; story.md has none yet (writer). Old lines kept as placeholders.
+    // US-017 end card (re-check AC moved into US-015). Everything game/js/ui/endCard.js + game/js/quest/end.js hard-code today:
+    // strings (incl. the woken variant), colours, cursor, layout rows and the walk / gap / cps timings (fade: uiStyle.fade.sec).
+    // Timeline (endT = world.state['quest.endT'] s): walk 0..walkSec, scene fade walkSec..walkSec+fade.sec, then the `typed`
+    // lines type on at cps one after the other; gapSec after the last typed char, `continue` and `restart` appear together,
+    // the cursor blinks after `[R] Wake again`, and R restarts only from then on.
     endText: {
-      align: 'center', top: 24, lineGap: 1, cps: 30, text: 'uiText', dim: 'uiHint', key: 'gold', cursor: { glyph: '_', blinkHz: 2 },
-      placeholder: true,
+      align: 'center', walkSec: 1.5, gapSec: 1.5, cps: 30,
+      text: 'uiText', dim: 'uiHint', key: 'gold',
+      cursor: { glyph: '_', color: 'uiText', periodSec: 1.0, duty: 0.5, line: 'restart',
+                note: 'drawn right after the restart line text, visible for the first half of each 1 s period (= endCard.js floor(endT*2)%2)' },
+      placeholder: false,
+      source: 'D-011 PO text from the US-017 ACs (the lines endCard.js ships). docs/story.md has no end-card section yet; ' +
+              'if the writer adds one, only these strings change',
+      // row = UI-grid row (160x60, uiStyle.uiGrid): mid-1, mid, mid+2, mid+4 (the layout endCard.js uses)
       lines: [
-        { text: 'The beacons are dark.', alt: 'One beacon burns. The others are dark.', color: 'uiText' },
-        { text: 'The world waits.', color: 'uiText' },
-        { text: '- to be continued -', color: 'uiHint', delay: 1.5 },
-        { text: '[R] Wake again', color: 'uiText', keys: ['[R]'] }
+        { id: 'signal', row: 29, typed: true, color: 'uiText',
+          text: 'The signal is still calling.',
+          alt: 'One relay wakes. The signal is still calling.', altWhen: 'tower.beacon.lit',
+          note: 'first line depends on the relay state (D-003, D-011); default and without US-022 = text' },
+        { id: 'someone', row: 30, typed: true, color: 'uiText', text: 'Someone is out there.' },
+        { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- to be continued -', afterGap: true },
+        { id: 'restart', row: 34, typed: false, color: 'uiText', text: '[R] Wake again', keys: ['[R]'], afterGap: true,
+          cursor: true, enablesRestart: true }
       ]
     },
     pause: { text: 'Click to resume', color: 'uiText', align: 'center', row: 30, plate: { pad: 2, bgMul: 0.3 } },
@@ -266,5 +311,27 @@
     blink: { edgeGlyph: '-', edgeColor: 'emberDark', edgeRows: 1,
              curve: [[0, 0], [0.6, 0.6], [0.9, 0.25], [1.5, 1.0]],
              note: 'curve = [time s, open fraction]; rows with |row - centre| > open*centre are black; the row just inside the lid gets edgeGlyph in edgeColor at 50%' }
+  };
+
+  // ---- US-015 hint zones: the story-hint part of the tower levelPatch (PO CR 2026-09-23 item 2) ----
+  // Kept here, not in models/wreckage.js levelPatch.tower, because wreckage.js and levels/tower.js are in the US-011
+  // pass right now. Same rule as levelPatch.tower: NO runtime applier (architecture.md 7.5); the US-015 programmer
+  // appends `triggers.append` to design/levels/tower.js `triggers[]` by hand, after the existing `hintJump`.
+  // Coordinates are tower-local metres (engine/world/triggers.js adds the structure origin), same shape as hintJump.
+  A.levelPatch = A.levelPatch || {};
+  A.levelPatch.towerHints = {
+    story: 'US-015', target: 'levels.tower.triggers', op: 'append',
+    triggers: { append: [
+      { id: 'hintBurner', type: 'hint', hint: 'burner', shape: 'circle', x: 18.5, y: 6.5, r: 3.0, once: true, trigger: 'hint.show',
+        note: 'r 3 m round the Kestrel burner (props.brazier / lights.brazier at 18.5, 6.5). The wake spot (17.0, 9.5) is 3.35 m ' +
+              'away, so it fires on the first steps toward the warm light, not while lying down; the lamp bracket (19.9, 6.5) is inside. ' +
+              'The hint is skipped if tower.lantern.taken (uiStyle.storyHints burner.on.skipIfState)' },
+      { id: 'hintClimb', type: 'hint', hint: 'climb', shape: 'circle', x: 15.3, y: 3.3, r: 1.5, once: true, trigger: 'hint.show',
+        note: 'r 1.5 m on the stair base cell s (15, 3), tag stairBase; centre 0.2 m NW of the cell centre so the circle stays clear of ' +
+              'hintBurner (4.53 m apart > 3.0 + 1.5), i.e. the two story hints can never fire from one step. Covers the base, step 1 and the top of the slope apron. ' +
+              'It can fire while the boulder still sits on the base (the hint then reads as "get past this"); no zMin, all ground level' }
+    ] },
+    checks: 'design/preview/title.html "Hint zones" (loads levels/tower.js read-only): ids unique vs tower.js triggers, centres on the ' +
+            'burner / stairBase cells, spawn outside hintBurner, lamp inside, the two circles do not overlap'
   };
 })(typeof window !== 'undefined' ? window : globalThis);

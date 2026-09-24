@@ -166,6 +166,12 @@
     // Ferrum on the horizon (warm amber pinpoints) + the Crown sky-chart (UI)
     ferrum:         '#ffb85a',
     ferrumDim:      '#a86e2c',
+    // US-016 D-011 addendum: Ferrum's lights as seen on the far horizon (emissive pinpoints) + its wall/tiers silhouette.
+    // Saturated amber, darker than skyHorizon so the pinpoints read by hue AND value against the pale morning horizon.
+    cityLightHot:   '#ffb836', // the Crown's lamps "that never gutter" ( * ), top tier
+    cityLight:      '#ff9a3a', // THE amber city light ( ' . ), upper tiers
+    cityLightDim:   '#c46a2a', // Low Wards / wall lamps ( . ), bottom rows
+    ferrumSil:      '#2c2a36', // wall-and-tiers silhouette hint (unlit, fog capped 0.55 -> pale blue-grey on the horizon)
     chartInk:       '#cc5c4a', // Crown print (faded red)
     pencil:         '#cfc8b2', // Wick's pencil
     chartEdge:      '#8a7a58'  // torn chart border
@@ -196,7 +202,21 @@
     brass:     ' .:-=+o*#%',     // machine brass: plates = ; rivets o; bright top steps
     copper:    ' .:-=+x#%&',     // copper: pipes, burner can; verdigris via texture '%'
     canvas:    " .'-~)(=%",      // balloon envelope: folds ) ( and seams ~
-    aether:    " .'+*"            // aether sparkle (effects only; emissive)
+    aether:    " .'+*",           // aether sparkle (effects only; emissive)
+    // US-016 D-011 addendum
+    cityLight: " .'*"             // Ferrum's horizon pinpoints (emissive, pairs with colorRamps.cityLight)
+  };
+
+  // ---------------------------------------------------------------------------
+  // 2b. COLOR RAMPS  (arrays of color keys, dim -> bright; pair with a glyph ramp of the same name)
+  //   pick: k = round(g * (n - 1)) for a glow level g in 0..1 (g = 0 -> first key, never "off": off = don't draw).
+  //   aether: the teal glow family, dormant -> white-hot core. US-016 signal-tower light (fixed k), US-022 relay wake
+  //           (g ramps 0 -> 1 with lights.relay.grow), the P2 SOS pulse (g follows the pulse), later gauntlet spells.
+  //   cityLight: Ferrum's amber pinpoints on the horizon (US-016), Low Wards -> the Crown.
+  // ---------------------------------------------------------------------------
+  var colorRamps = {
+    aether:    ['aetherDim', 'aetherMid', 'aether', 'aetherLight', 'aetherCore'],
+    cityLight: ['cityLightDim', 'cityLight', 'cityLightHot']
   };
 
   // ---------------------------------------------------------------------------
@@ -890,6 +910,7 @@
       }
     }
     for (mk in lights) col(lights[mk].color, 'lights.' + mk);
+    for (mk in colorRamps) for (i = 0; i < colorRamps[mk].length; i++) col(colorRamps[mk][i], 'colorRamps.' + mk);
     for (mk in timeOfDay) {
       col(timeOfDay[mk].ambient, 'timeOfDay.' + mk); col(timeOfDay[mk].sun, 'timeOfDay.' + mk);
       col(timeOfDay[mk].cloud, 'timeOfDay.' + mk); col(timeOfDay[mk].fog, 'timeOfDay.' + mk);
@@ -911,6 +932,7 @@
     rgb: rgb,          // derived: key -> [r,g,b] 0..255
     hue: hue,          // derived: key -> [r,g,b] normalised to max channel = 1 (use for lights)
     ramps: ramps,
+    colorRamps: colorRamps,
     shading: shading,
     lights: lights,
     fog: fog,

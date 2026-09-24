@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ASCII Quest - World terrain: far view + near LOD (US-016 / US-016b)</title>
+<title>Kestrel - World terrain: far view, signal tower, Ferrum's lights + near LOD (US-016 / US-016b)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -20,8 +20,11 @@
 </style>
 </head>
 <body>
-<h1>ASCII Quest : world terrain from the Hollow Watchtower (US-016 far view, US-016b near LOD + handover)</h1>
-<div class="note">Loads <code>../palette.js</code>, <code>../levels/tower.js</code>, <code>../levels/overworld_far.js</code> and <code>../models/far_tower.js</code>. The 160x60 mock is a column heightmap projection sharing one horizon.
+<h1>Kestrel : world terrain from the Hollow Watchtower (US-016 far view + D-011 addendum, US-016b near LOD + handover)</h1>
+<div class="note"><b>D-011 addendum:</b> the far tower is now the <b>signal tower</b> (steady aether-teal emissive light in its crown notch), <b>Ferrum's lights</b> sit on the eastern horizon behind the breach
+  (horizon billboard, sky cells only; pick the "(Ferrum)" viewpoints), and the torn envelope lies below the breach (viewpoint "looking down"; drawn when <code>models/wreckage.js</code> loads).
+  Use <code>?grid=240x90</code> for the default game grid.<br>
+  Loads <code>../palette.js</code>, <code>../levels/tower.js</code>, <code>../levels/overworld_far.js</code>, <code>../levels/world_m1.js</code>, <code>../models/far_tower.js</code>, <code>../models/ferrum_lights.js</code> and <code>../models/wreckage.js</code>. The mock is a column heightmap projection sharing one horizon.
   Inside the tower's footprint it samples the real level sectors. Outside it samples terrain: the baked <b>8 m far grid</b> (US-016), or with "near LOD" on,
   <b>2 m cells within 300 m</b> (US-016b: close/near/mid bands, features, slope faces, forest trunks, dithered 280-320 m handover), then the far grid beyond.
   Both come from the same analytic <code>util.heightAt</code> / <code>util.typeAt</code>.</div>
@@ -32,6 +35,10 @@
     <option value="path">on the path, 60 m out (M2)</option>
     <option value="meadow">meadow by the river (M2)</option>
     <option value="back">looking back at the tower (handover)</option>
+    <option value="ferrumB">breach, looking back E (Ferrum)</option>
+    <option value="ferrumW">summit walkway east edge (Ferrum)</option>
+    <option value="ferrumP">relay plinth, eye 8.2 m (Ferrum)</option>
+    <option value="heap">breach, looking down (envelope)</option>
   </select></label>
   <label><input type="checkbox" id="near" checked> near LOD (2 m &lt; 300 m)</label>
   <label>look <input type="range" id="yaw" min="-90" max="90" step="1" value="0"><span class="val" id="yawV"></span></label>
@@ -39,7 +46,7 @@
   <label>step back <input type="range" id="back" min="0" max="2.5" step="0.1" value="1.0"><span class="val" id="backV"></span></label>
   <label><input type="checkbox" id="fog" checked> fog</label>
   <label><input type="checkbox" id="glint" checked> water glint</label>
-  <label><input type="checkbox" id="mark"> mark far tower</label>
+  <label><input type="checkbox" id="mark"> mark signal tower + Ferrum</label>
   <span class="note">mock: <span class="val" id="ms"></span></span>
 </div>
 
@@ -64,19 +71,29 @@
 <h2>Terrain types by distance band (near LOD close / near / mid, far grid far)</h2>
 <canvas id="types"></canvas>
 
-<h2>Far tower silhouette (<code>models/far_tower.js</code>: min 3x4 = <code>lods.min</code>, detail 5x8 = base; billboard entity <code>farTower</code> in <code>world_m1.js</code>)</h2>
+<h2>Signal tower (<code>models/far_tower.js</code>: min 3x4 = <code>lods.min</code>, detail 5x8 = base; billboard entity <code>farTower</code> in <code>world_m1.js</code>)</h2>
+<div class="note">D-011 addendum: dark unlit body (fog cap 0.40) with one steady <b>aether-teal emissive light</b> in the crown notch (key fogMax 0.20). Left: min 3x4, right: detail 5x8, both at the 800 m fog, and the min frame as sampled at 160x60 / 240x90 / 320x120.</div>
 <canvas id="tower"></canvas>
+
+<h2>Ferrum's lights (<code>models/ferrum_lights.js</code>, horizon billboard <code>ferrumLights</code> in <code>world_m1.js</code> <code>horizon[]</code>)</h2>
+<div class="note">Warm amber emissive pinpoints <code>. ' *</code> over a faint wall-and-tiers silhouette, on the eastern horizon behind the breach. Full 36x4 (240x90 / 320x120) and half 18x2 (160x60), on the horizon sky with the fixed fog 0.55 (lights capped at their key fogMax).
+  Use the viewpoints <i>breach, looking back E</i>, <i>walkway east edge</i> and <i>relay plinth</i> above to see it over the east wall.</div>
+<canvas id="ferrum"></canvas>
 
 <script src="../palette.js"></script>
 <script src="../levels/tower.js"></script>
 <script src="../levels/overworld_far.js"></script>
+<script src="../levels/world_m1.js"></script>
 <script src="../models/far_tower.js"></script>
+<script src="../models/ferrum_lights.js"></script>
+<script src="../models/wreckage.js"></script>
 <script>
 (function () {
   'use strict';
   var A = window.ASSETS || {}, P = A.palette, LV = A.levels && A.levels.tower, OW = A.levels && A.levels.overworld_far;
   var FTM = A.models && A.models[OW && OW.farTower && OW.farTower.model];
-  if (!P || !LV || !OW || !FTM) { document.body.innerHTML = '<p class="fail">palette.js, tower.js, overworld_far.js or models/far_tower.js did not load.</p>'; return; }
+  var WM = A.worlds && A.worlds.world_m1, FLE = WM && (WM.horizon || []).filter(function (h) { return h.id === 'ferrumLights'; })[0], FLM = FLE && A.models[FLE.model];
+  if (!P || !LV || !OW || !FTM || !FLM) { document.body.innerHTML = '<p class="fail">palette.js, tower.js, overworld_far.js, world_m1.js, models/far_tower.js or models/ferrum_lights.js did not load.</p>'; return; }
   // the far tower billboard as the engine sees it: model frames (detail = base, min = lods.min) + entity rules (US-016, arch 14.4 item 7)
   var FT_SPR = { min: FTM.frames.min, detail: FTM.frames.detail, keys: FTM.keys,
                  minCells: FTM.minCells, detailRows: FTM.detailRows, fogMax: FTM.fogMax };
@@ -186,6 +203,8 @@
     if (cx < 0 || cy < 0 || cx >= LV.size.w || cy >= LV.size.h) return null;
     return LV.legend[LV.rows[cy].charAt(cx)];
   }
+  // silhouette top of a cell seen from outside: roofed cells with a wall above the opening (sun crack K, grate G) use topH
+  function cellTop(d) { return d.ceilH !== 'sky' && d.topH != null ? d.topH : d.floorH; }
   var so = { fg: [0, 0, 0], bg: [0, 0, 0] }, Lsun = [0, 0, 0];
   U.addLight(Lsun, Tm.ambient, Tm.ambientI); U.addLight(Lsun, Tm.sun, Tm.sunI * 0.75);
 
@@ -195,8 +214,14 @@
     breach: null,
     path:   { x: 1428, y: 1031, yaw: 262, pitch: -6 },
     meadow: { x: 1150, y: 1052, yaw: 240, pitch: -3 },
-    back:   { x: 1446, y: 1036, yaw: 75, pitch: 6 }
+    back:   { x: 1446, y: 1036, yaw: 75, pitch: 6 },
+    // D-011 addendum viewpoints (tower-local eyes; eye = floor + 1.6 m)
+    ferrumB: { local: { x: 6.5, y: 7.0, z: 7.6 }, yaw: 88, pitch: 3 },    // the breach, turned round
+    ferrumW: { local: { x: 10.7, y: 7.0, z: 7.6 }, yaw: 88, pitch: 3 },   // east edge of the summit walkway, by the doorway
+    ferrumP: { local: { x: 9.0, y: 7.0, z: 8.2 }, yaw: 88, pitch: 3 },    // standing on the relay plinth O (6.6 m)
+    heap:    { local: { x: 6.5, y: 7.0, z: 7.6 }, yaw: 262, pitch: -24 }  // look down at the snagged envelope
   };
+  function isLocal(v) { return v && v.local; }
   function $(id) { return document.getElementById(id); }
   ['yaw', 'pitch', 'back'].forEach(function (id) { $(id).oninput = function () { S[id] = +this.value; sync(); }; });
   ['fog', 'glint', 'mark', 'near'].forEach(function (id) { $(id).onchange = function () { S[id] = this.checked; }; });
@@ -212,9 +237,57 @@
   var view = makeGrid($('view'), VW, VH, Math.max(4, 9 * 160 / VW));
   var CG = new Array(VW * VH), CF = new Array(VW * VH), CB = new Array(VW * VH), DEPTH = new Float32Array(VW * VH), lookO = { g: ' ', fg: null, bg: null };
 
+  // ---- horizon billboard (README 4.3): cell -> (azimuth, elevation) -> model cell by angle fraction; sky cells only ----
+  var hzOut = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  function horizonTier(H, M, rowsPerDeg) {
+    var scale = H.angular.hDeg * rowsPerDeg / M.size.h;
+    return scale < 0.75 && M.lods && M.lods.half ? M.lods.half : M;
+  }
+  function drawHorizon(H, M, yaw, horizon) {
+    if (!H || !M) return;
+    var tier = horizonTier(H, M, FR * D2R), S0 = tier.animations.idle.frames[0].S, lw = tier.size.w, lh = tier.size.h;
+    var fogC = rgb[H.fogColor], w = H.angular.wDeg, hh = H.angular.hDeg;
+    for (var c = 0; c < VW; c++) {
+      var az = yaw + Math.atan((c + 0.5 - VW / 2) / FX) / D2R, dAz = ((az - H.bearingDeg) % 360 + 540) % 360 - 180;
+      if (Math.abs(dAz) >= w / 2) continue;
+      var sx = Math.min(lw - 1, Math.floor((dAz + w / 2) / w * lw));
+      for (var r = 0; r < VH; r++) {
+        var el = Math.atan((horizon - r - 0.5) / FR) / D2R - H.elevDeg;
+        if (el < 0 || el >= hh) continue;
+        var sy = lh - 1 - Math.min(lh - 1, Math.floor(el / hh * lh)), g = S0.glyphs[sy].charAt(sx);
+        if (g === ' ') continue;
+        var k = c + r * VW; if (DEPTH[k] < 1e9) continue;            // drawOver 'sky' only: never over structure or terrain
+        var kd = M.keys[S0.fg[sy].charAt(sx)], base = rgb[kd.c];
+        var f = S.fog ? (kd.e && kd.fogMax != null ? Math.min(H.fog, kd.fogMax) : H.fog) : 0;
+        CG[k] = g; CF[k] = [base[0] + (fogC[0] - base[0]) * f, base[1] + (fogC[1] - base[1]) * f, base[2] + (fogC[2] - base[2]) * f];
+        if (S.mark) CB[k] = [120, 30, 30];
+      }
+    }
+  }
+  // ---- a structure prop billboard (the envelope heap), lit by the morning sun, depth-tested ----
+  function drawProp(M, p, eye, eyeL, yaw, horizon) {
+    var d0 = levelDef(p.x, p.y), z = typeof p.z === 'number' ? p.z : (d0 ? d0.floorH : 2.4);
+    var dx = p.x - eyeL.x, dy = p.y - eyeL.y, a = yaw * D2R, fx = Math.sin(a), fy = -Math.cos(a);
+    var depth = dx * fx + dy * fy, lat = dx * -fy + dy * fx; if (depth < 0.3) return;
+    var col = VW / 2 + lat / depth * FX, feet = horizon - (z - eye.z) / depth * FR;
+    var hRows = M.world.h / depth * FR, scale = hRows / M.size.h, tier = scale < 0.75 && M.lods && M.lods.half ? M.lods.half : M;
+    if (tier !== M) scale *= 2;
+    var S0 = tier.animations.idle.frames[0].S, x0 = Math.floor(col - (tier.anchor.x + 0.5) * scale + 0.5), y0 = Math.floor(feet - (tier.anchor.y + 1) * scale + 0.5);
+    for (var r = 0; r < Math.ceil(tier.size.h * scale); r++) for (var c = 0; c < Math.ceil(tier.size.w * scale); c++) {
+      var sy = Math.floor(r / scale), sx = Math.floor(c / scale); if (sy >= tier.size.h || sx >= tier.size.w) continue;
+      var g = S0.glyphs[sy].charAt(sx); if (g === ' ') continue;
+      var X = x0 + c, Y = y0 + r; if (X < 0 || Y < 0 || X >= VW || Y >= VH) continue;
+      var k = X + Y * VW; if (DEPTH[k] < depth) continue;
+      var kd = M.keys[S0.fg[sy].charAt(sx)];
+      U.shadeSprite(kd.c, Lsun, 1, !!kd.e, 0, hzOut);
+      CG[k] = g; CF[k] = hzOut.fg.slice(); DEPTH[k] = depth;
+    }
+  }
+
   function render(t) {
     var tStart = performance.now(), v = VPS[S.vp], eye, eyeL, yaw;
     if (!v) { eyeL = { x: 6.5 + S.back, y: 7.0, z: 7.6 }; eye = { x: eyeL.x + OW.origin.x, y: eyeL.y + OW.origin.y, z: 7.6 }; yaw = 270 + S.yaw; }
+    else if (isLocal(v)) { eyeL = { x: v.local.x, y: v.local.y, z: v.local.z }; eye = { x: eyeL.x + OW.origin.x, y: eyeL.y + OW.origin.y, z: eyeL.z }; yaw = v.yaw + S.yaw; }
     else { eye = { x: v.x, y: v.y, z: HA(v.x, v.y) + 1.6 }; eyeL = { x: v.x - OW.origin.x, y: v.y - OW.origin.y, z: eye.z }; yaw = v.yaw + S.yaw; }
     var horizon = VH / 2 + Math.tan(S.pitch * D2R) * FR, c, r;
     for (c = 0; c < VW; c++) {
@@ -224,7 +297,7 @@
         var perp = tt * cosd, lx = eyeL.x + dx * tt, ly = eyeL.y + dy * tt, d = levelDef(lx, ly), h, ground, mode, info = null, step;
         var fx = eye.x + dx * tt, fy = eye.y + dy * tt;
         if (d) {                                       // structure owns its footprint
-          h = ground = d.floorH; mode = 'level';
+          h = ground = cellTop(d); mode = 'level';
           U.shade(d.solid ? d.wallMat : d.floorMat, Lsun, lx + ly, h, tt, so, { fog: null, z: h });
           step = tt < 8 ? 0.05 : 0.1;
         } else {
@@ -286,11 +359,19 @@
         if (g === ' ') continue;
         var X = x0 + c, Y = y0 + r; if (X < 0 || Y < 0 || X >= VW || Y >= VH) continue;
         var kk = X + Y * VW; if (DEPTH[kk] < tdist) continue;
-        var base = rgb[FT_SPR.keys[spr.fg[sr].charAt(sc)].c];
-        CG[kk] = g; CF[kk] = [base[0] + (fc[0] - base[0]) * f, base[1] + (fc[1] - base[1]) * f, base[2] + (fc[2] - base[2]) * f];
+        var kd = FT_SPR.keys[spr.fg[sr].charAt(sc)], base = rgb[kd.c];
+        // body: fog capped at the model fogMax; emissive light cells (D-011 signal light): their own key fogMax
+        var fk = kd.e ? Math.min(kd.fogMax != null ? kd.fogMax : 0, S.fog ? ff : 0) : f;
+        CG[kk] = g; CF[kk] = [base[0] + (fc[0] - base[0]) * fk, base[1] + (fc[1] - base[1]) * fk, base[2] + (fc[2] - base[2]) * fk];
+        DEPTH[kk] = tdist;
         if (S.mark) CB[kk] = [120, 30, 30];
       }
     }
+    // the snagged envelope (tower.js prop envelopeHeap, models/wreckage.js), when that model file is present
+    var EHP = (LV.props || []).filter(function (p) { return p.id === 'envelopeHeap'; })[0], EHM = A.models.envelopeHeap;
+    if (EHP && EHM) drawProp(EHM, EHP, eye, eyeL, yaw, horizon);
+    // Ferrum's lights: horizon billboard, only on sky cells (DEPTH 1e9)
+    drawHorizon(FLE, FLM, yaw, horizon);
     var ms = performance.now() - tStart;
     for (var q = 0; q < VW * VH; q++) view.cell(q % VW, Math.floor(q / VW), CG[q] || ' ', css(CF[q] || [0, 0, 0]), css(CB[q] || [0, 0, 0]));
     $('ms').textContent = ms.toFixed(1) + ' ms per frame (unoptimised JS mock, near cache ' + CELL.size + ' cells); far grid bake ' + genMs.toFixed(0) + ' ms once';
@@ -395,6 +476,91 @@
       var tg = TT[n].glyphs, all = tg.close + tg.near + tg.mid + tg.far + TT[n].face, want = { grass: '"\',;.`:', forest: '&%@:', water: '~-=', rock: '#%&' }[n];
       return all.split('').every(function (chh) { return want.indexOf(chh) >= 0; }); });
     check('Glyph rules per type (grass " \' , ; ` . :, forest & % @ :, river ~ - =, rock # % &) + near-LOD features', glyphOk && NL.features.length >= 4);
+
+    // ---------- US-016 D-011 addendum ----------
+    // engine projection (sprites.js camBasis): HFOV 75, 16:9 screen -> cols/deg and rows/deg per grid
+    function gridK(cols, rows) { var th = Math.tan(37.5 * D2R); return { cpd: (cols / 2) / th * D2R, rpd: (rows / 2) * (16 / 9) / th * D2R, pdy: (rows / 2) * (16 / 9) / th }; }
+    function frameOk(fr, keys) {
+      return fr.glyphs.length === fr.fg.length && fr.glyphs.every(function (r, y) {
+        if (r.length !== fr.glyphs[0].length || fr.fg[y].length !== r.length) return false;
+        for (var x = 0; x < r.length; x++) { var kc = fr.fg[y].charAt(x); if ((r.charAt(x) === ' ') !== (kc === ' ')) return false; if (kc !== ' ' && (!keys[kc] || !P.colors[keys[kc].c])) return false; } return true; });
+    }
+    var FK = FTM.keys, mn = FTM.frames.min, dt = FTM.frames.detail, cntL = function (fr, k) { return fr.fg.join('').split(k).length - 1; };
+    var bodyDark = ['t', 'k'].every(function (k) { return !FK[k].e; });
+    check('Signal tower model: min 3x4 + detail 5x8 kept; light cells L (' + cntL(mn, 'L') + ' in min, ' + (cntL(dt, 'L') + cntL(dt, 'G')) + ' in detail) emissive ' + FK.L.c +
+          ' (colorRamps.aether[' + P.colorRamps.aether.indexOf(FK.L.c) + ']), key fogMax ' + FK.L.fogMax + '; body keys unlit, not emissive',
+      mn.glyphs.length === 4 && mn.glyphs[0].length === 3 && dt.glyphs.length === 8 && dt.glyphs[0].length === 5 && frameOk(mn, FK) && frameOk(dt, FK) &&
+      cntL(mn, 'L') === 1 && FK.L.e === true && FK.G.e === true && FK.L.fogMax <= 0.25 && bodyDark && P.colorRamps.aether.indexOf(FK.L.c) === FTM.signalLight.rampIndex.L);
+    // light cells on screen at 800 m: min frame, scale = max(minCells, projected) / 4 rows, nearest sampling
+    var lcTxt = [], lcOk = true;
+    [[160, 60], [240, 90], [320, 120]].forEach(function (gv) {
+      var K2 = gridK(gv[0], gv[1]), rowsP = FT.height * K2.pdy / 800, rowsD = Math.max(FTM.minCells.h, rowsP), sc = rowsD / mn.glyphs.length, n = 0;
+      for (var j = 0; j < Math.ceil(4 * sc); j++) for (var i2 = 0; i2 < Math.ceil(3 * sc); i2++) { var syy = Math.floor(j / sc), sxx = Math.floor(i2 / sc); if (syy < 4 && sxx < 3 && mn.fg[syy].charAt(sxx) === 'L') n++; }
+      lcTxt.push(gv[0] + 'x' + gv[1] + ': ' + n); if (n < 1 || (gv[0] === 240 && n > 2)) lcOk = false;
+    });
+    check('Signal light never smaller than 1 cell, 1-2 cells at 240x90 (light cells at 800 m: ' + lcTxt.join(', ') + ')', lcOk);
+    var tl2 = rgb[FK.L.c], fcL = fogColor(U.fogFactor(800, 'far')), fl = Math.min(FK.L.fogMax, U.fogFactor(800, 'far'));
+    var lit = [0, 1, 2].map(function (c3) { return tl2[c3] + (fcL[c3] - tl2[c3]) * fl; }), hz = rgb.skyHorizon;
+    check('Signal light stays clearly teal at 800 m: fogged ' + P.util.rgbToHex(lit) + ' on the ' + P.colors.skyHorizon + ' horizon (green-red ' + (lit[1] - lit[0]).toFixed(0) + ' vs ' + (hz[1] - hz[0]) + ')',
+      lit[1] - lit[0] > 100 && lit[1] > lit[2]);
+    // Ferrum model + placement
+    var FF0 = FLM.animations.idle.frames[0].S, FH0 = FLM.lods.half.animations.idle.frames[0].S, LG = FLM.lightGlyphs.replace(/ /g, '');
+    var lightsOnly = [FF0, FH0].every(function (fr) { return fr.glyphs.every(function (r, y) { for (var x = 0; x < r.length; x++) { var kd = FLM.keys[fr.fg[y].charAt(x)]; if (kd && kd.e && LG.indexOf(r.charAt(x)) < 0) return false; if (kd && !kd.e && LG.indexOf(r.charAt(x)) >= 0 && r.charAt(x) !== ':') return false; } return true; }); });
+    var nLights = FF0.fg.join('').replace(/[^dlh]/g, '').length, amber = ['cityLightDim', 'cityLight', 'cityLightHot'].every(function (k) { var c3 = rgb[k]; return c3[0] > c3[1] && c3[1] > c3[2]; });
+    check('Ferrum model: full ' + FLM.size.w + 'x' + FLM.size.h + ' + half ' + FLM.lods.half.size.w + 'x' + FLM.lods.half.size.h + ', rows aligned; ' + nLights + ' amber emissive pinpoints (only ". \' *"), silhouette unlit; palette colorRamps.cityLight amber',
+      frameOk(FF0, FLM.keys) && frameOk(FH0, FLM.keys) && FF0.glyphs.length === FLM.size.h && FF0.glyphs[0].length === FLM.size.w && lightsOnly && !FLM.keys.s.e &&
+      ['d', 'l', 'h'].every(function (k) { return FLM.keys[k].e && P.colorRamps.cityLight.indexOf(FLM.keys[k].c) >= 0; }) && amber && nLights >= 12);
+    var szTxt = [], szOk = true;
+    [[160, 60], [240, 90], [320, 120]].forEach(function (gv) {
+      var K2 = gridK(gv[0], gv[1]), wc = FLE.angular.wDeg * K2.cpd, hr = FLE.angular.hDeg * K2.rpd, tier = horizonTier(FLE, FLM, K2.rpd);
+      szTxt.push(gv[0] + 'x' + gv[1] + ' ' + wc.toFixed(0) + 'x' + hr.toFixed(1) + ' (' + (tier === FLM ? 'full' : 'half') + ')');
+      if (gv[0] === 240 && !(wc >= 24 && wc <= 40 && hr >= 2 && hr <= 4.05 && tier === FLM)) szOk = false;
+      if (gv[0] === 160 && tier === FLM) szOk = false;
+    });
+    check('Ferrum band size (engine projection): ' + szTxt.join(', ') + '; 240x90 within 24-40 x 2-4, 160x60 uses the half tier', szOk);
+    var behind = Math.abs(((FLE.bearingDeg - (OW.breach.yaw + 180)) % 360 + 540) % 360 - 180), sep = Math.abs(((FLE.bearingDeg - FT.azimuthFromBreach) % 360 + 540) % 360 - 180);
+    check('Ferrum bearing ' + FLE.bearingDeg + ' deg: behind the player at the breach (' + behind.toFixed(1) + ' deg off straight back), ' + sep.toFixed(0) + ' deg from the signal tower; horizon list, not an entity, fixed fog ' + FLE.fog + ', sky cells only',
+      behind <= 15 && sep >= 150 && FLE.drawOver === 'sky' && FLE.type === 'horizon' && !(WM.entities || []).some(function (e) { return e.id === 'ferrumLights'; }));
+    // visibility over the tower's east wall: highest wall-top elevation along each bearing vs the band rows
+    function wallElev(e3, bearing) {
+      var a = bearing * D2R, dx = Math.sin(a), dy = -Math.cos(a), m = -90;
+      for (var t2 = 0.3; t2 < 40; t2 += 0.05) {
+        var d3 = levelDef(e3.x + dx * t2, e3.y + dy * t2); if (!d3) break;
+        m = Math.max(m, Math.atan((cellTop(d3) - e3.z) / t2) / D2R);
+      }
+      return m;
+    }
+    var visTxt = [], rowsVis = {};
+    ['ferrumB', 'ferrumW', 'ferrumP'].forEach(function (id) {
+      var e3 = VPS[id].local, seen = [false, false, false, false], bmin = 999, bmax = -999;
+      for (var b = FLE.bearingDeg - FLE.angular.wDeg / 2; b <= FLE.bearingDeg + FLE.angular.wDeg / 2; b += 0.25) {
+        var we = wallElev(e3, b), sxc = Math.min(FLM.size.w - 1, Math.floor((b - FLE.bearingDeg + FLE.angular.wDeg / 2) / FLE.angular.wDeg * FLM.size.w)), any = false;
+        for (var ry = 0; ry < FLM.size.h; ry++) {
+          var ec = FLE.elevDeg + (FLM.size.h - ry - 0.5) * FLE.angular.hDeg / FLM.size.h;
+          if (ec > we) { seen[ry] = true; if (FF0.fg[ry].charAt(sxc).match(/[dlh]/)) any = true; }
+        }
+        if (any) { bmin = Math.min(bmin, b); bmax = Math.max(bmax, b); }
+      }
+      rowsVis[id] = seen;
+      var TN = ['Crown', 'upper tier', 'Low Wards', 'Wall'];
+      visTxt.push(id.replace('ferrum', '') + ': ' + seen.map(function (s2, i3) { return s2 ? TN[i3] : null; }).filter(Boolean).join(' + ') +
+                  (bmin < 999 ? ' (lights at ' + bmin.toFixed(1) + '-' + bmax.toFixed(1) + ' deg)' : ' (none)'));
+    });
+    check('Ferrum visibility over the east wall (B = breach looking back, W = walkway east edge, P = relay plinth): ' + visTxt.join('; '),
+      rowsVis.ferrumB[0] && rowsVis.ferrumB[1] && rowsVis.ferrumW[0] && rowsVis.ferrumP[0]);
+    // envelope below the breach
+    var EHP = (LV.props || []).filter(function (p) { return p.id === 'envelopeHeap'; })[0], hv3 = null;
+    if (EHP) {
+      var dh = levelDef(EHP.x, EHP.y), zh = typeof EHP.z === 'number' ? EHP.z : dh.floorH, e4 = { x: 6.5, y: 7.0, z: 7.6 }, clear = true;
+      var tx = EHP.x, ty = EHP.y, tz = zh + 0.8, L3 = Math.hypot(tx - e4.x, ty - e4.y);
+      for (var s3 = 0.3; s3 < L3 - 0.5; s3 += 0.05) { var kf2 = s3 / L3, dd3 = levelDef(e4.x + (tx - e4.x) * kf2, e4.y + (ty - e4.y) * kf2); if (dd3 && cellTop(dd3) > e4.z + (tz - e4.z) * kf2) clear = false; }
+      hv3 = { clear: clear, pitch: Math.atan((e4.z - tz) / L3) / D2R, dist: L3 };
+    }
+    check('Envelope snagged below the breach: tower.js prop envelopeHeap (US-011 levelPatch, structure-local, not duplicated in world_m1)' +
+          (hv3 ? ', ' + hv3.dist.toFixed(1) + ' m out, ' + hv3.pitch.toFixed(0) + ' deg below level (pitch clamp 35), sightline from the breach eye ' + (hv3.clear ? 'clear' : 'BLOCKED') : ' MISSING'),
+      hv3 && hv3.clear && hv3.pitch < 35 + 23 && !(WM.entities || []).some(function (e) { return e.model === 'envelopeHeap'; }));
+    check('Palette: colorRamps.aether (' + P.colorRamps.aether.join(' > ') + ') and cityLight keys; util.validate() = [] (' + P.util.validate().length + ' errors)',
+      P.colorRamps.aether.length === 5 && P.colorRamps.aether[2] === 'aether' && !!P.colors.cityLight && P.util.validate().length === 0);
   })();
   var nf = checks.filter(function (c) { return !c.ok; }).length;
   $('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
@@ -420,7 +586,7 @@
     ctx.fillStyle = '#ffd24a'; ctx.fillRect(OW.tower.x * sc - 3, OW.tower.y * sc - 3, 6, 6);
     ctx.fillStyle = '#000'; ctx.strokeStyle = '#ff3b3b'; ctx.fillRect(FT.x * sc - 3, FT.y * sc - 3, 6, 6); ctx.strokeRect(FT.x * sc - 4, FT.y * sc - 4, 8, 8);
     ctx.fillStyle = '#e8e2d0'; Object.keys(VPS).forEach(function (k) { var v = VPS[k]; if (v) ctx.fillRect(v.x * sc - 2, v.y * sc - 2, 4, 4); });
-    $('mapKey').innerHTML = 'gold square: our tower (breach eye)<br>black/red square: the dark far tower (800 m, WSW)<br>gold lines: 75 deg view through the breach<br>' +
+    $('mapKey').innerHTML = 'gold square: our tower (breach eye)<br>black/red square: the signal tower (800 m, WSW; Ferrum is off-map, ~9 km E at bearing ' + FLE.bearingDeg + ')<br>gold lines: 75 deg view through the breach<br>' +
       'cyan ring: near LOD range 300 m (2 m cells)<br>grey grid: 128 m chunks (the tower crown stamp lives in chunk 11,8)<br>white dots: preview viewpoints<br><br>' +
       'colors: grass, <span style="color:' + P.colors.forest + '">forest</span>, <span style="color:' + P.colors.river + '">river</span>, ' +
       '<span style="color:' + P.colors.rock + '">rock</span>, <span style="color:' + P.colors.straw + '">path</span>';
@@ -465,16 +631,37 @@
     });
   }
   (function drawTower() {
-    var g = makeGrid($('tower'), 30, 10, 16), fc = fogColor(U.fogFactor(800, 'far')), f = FT_SPR.fogMax;
-    for (var y = 0; y < 10; y++) for (var x = 0; x < 30; x++) g.cell(x, y, ' ', '#000', css(fogColor(0.9)));
-    [[FT_SPR.min, 4, 5], [FT_SPR.detail, 16, 1]].forEach(function (v) {
-      var s = v[0];
+    var g = makeGrid($('tower'), 44, 10, 16), ff = U.fogFactor(800, 'far'), fc = fogColor(ff), bgc = css(rgb.skyHorizon);
+    for (var y = 0; y < 10; y++) for (var x = 0; x < 44; x++) g.cell(x, y, ' ', '#000', bgc);
+    function col(kd) { var b = rgb[kd.c], f = kd.e ? Math.min(kd.fogMax != null ? kd.fogMax : 0, ff) : FT_SPR.fogMax; return css([b[0] + (fc[0] - b[0]) * f, b[1] + (fc[1] - b[1]) * f, b[2] + (fc[2] - b[2]) * f]); }
+    function put(s, ox, oy, sc) {
+      for (var r = 0; r < Math.ceil(s.glyphs.length * sc); r++) for (var c = 0; c < Math.ceil(s.glyphs[0].length * sc); c++) {
+        var sy = Math.floor(r / sc), sx = Math.floor(c / sc); if (sy >= s.glyphs.length || sx >= s.glyphs[0].length) continue;
+        var gl = s.glyphs[sy].charAt(sx); if (gl === ' ') continue;
+        g.cell(ox + c, oy + r, gl, col(FT_SPR.keys[s.fg[sy].charAt(sx)]), bgc);
+      }
+    }
+    put(FT_SPR.min, 2, 5, 1); put(FT_SPR.detail, 9, 1, 1);
+    // the min frame as the engine samples it at 800 m on each grid (scale = max(4, projected rows) / 4)
+    [[160, 60, 18], [240, 90, 25], [320, 120, 34]].forEach(function (gv) {
+      var th = Math.tan(37.5 * D2R), rowsP = OW.farTower.height * ((gv[1] / 2) * (16 / 9) / th) / 800, sc = Math.max(FT_SPR.minCells.h, rowsP) / 4;
+      put(FT_SPR.min, gv[2], 9 - Math.ceil(4 * sc), sc);
+      g.text(gv[2] - 1, 9, String(gv[0]), P.colors.uiDim, bgc);
+    });
+  })();
+  (function drawFerrum() {
+    var full = FLM.animations.idle.frames[0].S, half = FLM.lods.half.animations.idle.frames[0].S, fogC = rgb[FLE.fogColor];
+    var W2 = FLM.size.w + 4, g = makeGrid($('ferrum'), W2 * 2 + 2, 7, 16), bgc = css(rgb.skyHorizon), dim = css(fogColor(0.9));
+    for (var y = 0; y < 7; y++) for (var x = 0; x < W2 * 2 + 2; x++) g.cell(x, y, ' ', '#000', y >= 5 ? dim : bgc);
+    function put(s, ox, oy) {
       for (var r = 0; r < s.glyphs.length; r++) for (var c = 0; c < s.glyphs[r].length; c++) {
         var gl = s.glyphs[r].charAt(c); if (gl === ' ') continue;
-        var b = rgb[FT_SPR.keys[s.fg[r].charAt(c)].c];
-        g.cell(v[1] + c, v[2] + r, gl, css([b[0] + (fc[0] - b[0]) * f, b[1] + (fc[1] - b[1]) * f, b[2] + (fc[2] - b[2]) * f]), css(fogColor(0.9)));
+        var kd = FLM.keys[s.fg[r].charAt(c)], b = rgb[kd.c], f = kd.e && kd.fogMax != null ? Math.min(FLE.fog, kd.fogMax) : FLE.fog;
+        g.cell(ox + c, oy + r, gl, css([b[0] + (fogC[0] - b[0]) * f, b[1] + (fogC[1] - b[1]) * f, b[2] + (fogC[2] - b[2]) * f]), bgc);
       }
-    });
+    }
+    put(full, 2, 1); put(half, W2 + 2 + 9, 3);
+    g.text(2, 6, 'full 36x4 (240x90 / 320x120)', P.colors.uiDim, dim); g.text(W2 + 11, 6, 'half 18x2 (160x60)', P.colors.uiDim, dim);
   })();
 
   var last = 0;
