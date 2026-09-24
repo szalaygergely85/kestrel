@@ -676,9 +676,9 @@ export class GpuCellPipeline {
       gl.bindTexture(gl.TEXTURE_2D, this.texWorldMats);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, a.width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, a.MATS, y0 * a.width * 4);
       gl.bindTexture(gl.TEXTURE_2D, this.texWorldFlags);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, y0, a.width, rows, gl.RG_INTEGER, gl.UNSIGNED_BYTE, a.FLAGS, y0 * a.width * 2);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, a.width, rows, gl.RG_INTEGER, gl.UNSIGNED_BYTE, a.FLAGS, y0 * a.width * 2);
     }
-    if (plan.count) this._uploadUStruct();
+    if (plan.count || plan.uStructDirty) this._uploadUStruct();
   }
 
   _uploadWorldAtlasFull() {

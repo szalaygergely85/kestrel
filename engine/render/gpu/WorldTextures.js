@@ -118,6 +118,7 @@ export function buildWorldTextures(world) {
  */
 export function planFrameUpdate(world, atlas, out) {
   out.count = 0;
+  out.uStructDirty = false;
   if (world.structVersion !== atlas.structVersion) { out.rebuildNeeded = true; return out; }
   out.rebuildNeeded = false;
 
@@ -133,6 +134,7 @@ export function planFrameUpdate(world, atlas, out) {
     // `uStructB[i].w` slot (`packUStruct`'s layout) every time `version`
     // moved on, not only through the dirty-row texSubImage2D path.
     atlas.uStruct[i * 8 + 7] = p.maxH;
+    out.uStructDirty = true; // re-upload uStruct even with no dirty rows
     if (p.dirtyY0 >= 0 && p.dirtyY1 >= p.dirtyY0) {
       const yOff = atlas.yOffsets[i];
       const y0 = yOff + p.dirtyY0, y1 = yOff + p.dirtyY1;
@@ -159,5 +161,5 @@ export function planFrameUpdate(world, atlas, out) {
 
 /** Preallocated `out` object for `planFrameUpdate` (one per `GpuCellPipeline`). */
 export function makeFrameUpdatePlan() {
-  return { rebuildNeeded: false, count: 0, ranges: new Int32Array(2 * MAX_STRUCTS) };
+  return { rebuildNeeded: false, count: 0, uStructDirty: false, ranges: new Int32Array(2 * MAX_STRUCTS) };
 }
