@@ -29,6 +29,11 @@ export const MAX_LIGHTS = 16;
 export const MAX_VIS_DIM = 33;
 export const MAX_VIS_CELLS = MAX_VIS_DIM * MAX_VIS_DIM;
 const MAX_VIS_RADIUS = (MAX_VIS_DIM - 1) >> 1;
+// Module-wide LVIS version sequence (architect re-review 1): versions must be
+// unique across ALL LightSets, not per slot - a pipeline's `_lvisUploaded[i]`
+// cache would otherwise match a NEW LightSet's slot i (level reload, the
+// two compare worlds) and skip its upload. Starts at 1; 0 = never computed.
+let visVersionSeq = 0;
 
 // Falloff (US-002 rule, design/palette.js `util.falloff`): smooth to exactly
 // 0 at `r`, no hard ring edge. Engine copy (no `Math.pow`) so `lightAt` never
@@ -228,7 +233,9 @@ export class LightSet {
       this.col[o4 + 3] = i;
 
       this.visDirty[i] = 0;
-      if (!this.on[i]) continue;
+      // Off lights contribute zero on EVERY path: light.frag has no `on` test,
+      // it reads `col` (architect re-review 1: tower's beacon, on:false).
+      if (!this.on[i]) { this.col[o4] = 0; this.col[o4 + 1] = 0; this.col[o4 + 2] = 0; continue; }
       const cellX = Math.floor(this.defX[i]), cellY = Math.floor(this.defY[i]);
       const sv = world ? world.structVersion : 0;
       // Architect review 1 item 5: the containing structure's own
@@ -243,7 +250,7 @@ export class LightSet {
         this.visDirty[i] = 1;
         // Architect review 1 item 4: monotonic version, not a one-frame
         // flag - pipelines diff against their OWN last-uploaded version.
-        this.visVersion[i] = (this.visVersion[i] + 1) | 0;
+        this.visVersion[i] = visVersionSeq = (visVersionSeq + 1) | 0;
       }
     }
   }
