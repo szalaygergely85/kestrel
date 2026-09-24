@@ -43,7 +43,7 @@ ${depthDecl}
 uniform sampler2D uEdgeFg;
 uniform sampler2D uEdgeBg;
 uniform sampler2D uSpr;     // RGBA32F, 4 x MAX_SPRITES: T0 rect, T1 (invScale, depth, fogF, visible), T2 atlas rect, T3 colour mul
-uniform usampler2D uAtlas;  // RGBA8UI: r glyph code, g palette index, b emissive|normal<<1, a opaque
+uniform usampler2D uAtlas;  // RGBA8UI: r glyph code, g palette index, b emissive|normal<<1, a = 0 transparent else 1+round(fogMax*254)
 uniform sampler2D uPal;     // RGBA32F, n x 1: palette rgb 0..255
 uniform int uCount;
 uniform vec3 uFogColor;     // palette fog.interior colour, 0..255
@@ -111,7 +111,12 @@ void main() {
     vec3 base = texelFetch(uPal, ivec2(int(tx.g), 0), 0).rgb;
     vec3 rgb;
     if ((tx.b & 1u) != 0u) {
-      rgb = base; // emissive: full palette colour, ignores light and fog
+      rgb = base; // emissive: full palette colour, ignores light (never N.L)
+      // US-016 D-011 addendum (architecture.md 14.4 item 12): per-key
+      // emissive fog cap from the atlas alpha (tx.a = 1 + round(fogMax*254);
+      // 1 = no cap = unfogged) - ported from sprites.js's drawSprites().
+      float fe = min(fogF, (float(tx.a) - 1.0) / 254.0);
+      if (fe > 0.0) rgb += (uFogColor - rgb) * fe;
     } else {
       rgb = base * mul;
       if (fogF > 0.0) rgb += (uFogColor - rgb) * fogF;

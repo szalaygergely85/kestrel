@@ -66,6 +66,10 @@ export class SpritePool {
     this._anim = new Array(MAX_SPRITES).fill('');
     this._frame = new Int32Array(MAX_SPRITES);
     this._pos = new Float64Array(MAX_SPRITES * 3);
+    // US-016 (architecture.md 14.4 item 7): optional per-raw-sprite
+    // billboard fields (`components.billboard` - unlit/fogModel/fogMax/
+    // minCells/detailRows), null for an ordinary lit prop/entity sprite.
+    this._billboard = new Array(MAX_SPRITES).fill(null);
     // entity cache (rebuilt only when world.renderVersion changes)
     this._ents = [];
     this._entVersion = -1;
@@ -77,14 +81,20 @@ export class SpritePool {
 
   reset() { this.rawCount = 0; this.count = 0; this.dropped = 0; }
 
-  /** Adds one raw sprite (model key, animation name, frame index, world anchor/feet point). */
-  push(modelKey, anim, frame, x, y, z) {
+  /**
+   * Adds one raw sprite (model key, animation name, frame index, world
+   * anchor/feet point). `billboard`: optional `{unlit, fogModel, fogMax,
+   * minCells:{w,h}, detailRows}` (architecture.md 14.4 item 7) - null for an
+   * ordinary lit sprite.
+   */
+  push(modelKey, anim, frame, x, y, z, billboard = null) {
     const m = this.atlas.models.get(modelKey);
     if (!m) { this._warnOnce(`SpritePool: unknown billboard model "${modelKey}"`); return; }
     if (this.rawCount >= MAX_SPRITES) { this.dropped++; return; }
     const i = this.rawCount++;
     this._model[i] = m; this._anim[i] = anim; this._frame[i] = frame | 0;
     this._pos[i * 3] = x; this._pos[i * 3 + 1] = y; this._pos[i * 3 + 2] = z;
+    this._billboard[i] = billboard;
   }
 
   /**
@@ -106,7 +116,7 @@ export class SpritePool {
     const ents = this._ents;
     for (let i = 0; i < ents.length; i++) {
       const e = ents[i], s = e.components.sprite, t = e.transform;
-      this.push(s.model, s.anim, s.frame || 0, t.x, t.y, t.z);
+      this.push(s.model, s.anim, s.frame || 0, t.x, t.y, t.z, e.components.billboard || null);
     }
   }
 
@@ -153,6 +163,14 @@ export class SpritePool {
       let lod = m.full;
       let scale = rowsOnScreen / lod.size.h;
       if (scale < LOD_HALF_BELOW && m.half) { lod = m.half; scale = rowsOnScreen / lod.size.h; }
+      // US-016 (architecture.md 14.4 item 7): a billboard entity with a
+      // `min` LOD (far_tower.js, ferrum_lights.js) picks it by PROJECTED
+      // ROWS instead - `rowsOnScreen < detailRows` -> `lods.min`, independent
+      // of the `half` pick above (a model may have both/either/neither).
+      const bb = this._billboard[i];
+      if (bb && bb.detailRows > 0 && m.min && rowsOnScreen < bb.detailRows) {
+        lod = m.min; scale = rowsOnScreen / lod.size.h;
+      }
       const anim = lod.anims.get(this._anim[i]);
       if (!anim || anim.count === 0) { this._warnOnce(`SpritePool: model has no animation "${this._anim[i]}"`); continue; }
       const fr = frames[anim.base + (((this._frame[i] % anim.count) + anim.count) % anim.count)];
@@ -160,13 +178,31 @@ export class SpritePool {
       const lateral = relX * cb.rightX + relY * cb.rightY;
       const colCenter = (lateral / (depth * cb.tanHalfHFov) + 1) * cb.cols / 2;
       const feetRow = cb.horizonRow - ((pz - cam.z) / depth) * cb.planeDistY;
-      const x0 = Math.floor(colCenter - (lod.anchor.x + 0.5) * scale + 0.5);
-      const y0 = Math.floor(feetRow - (lod.anchor.y + 1) * scale + 0.5);
-      const w = Math.ceil(lod.size.w * scale), h = Math.ceil(lod.size.h * scale);
+      let x0 = Math.floor(colCenter - (lod.anchor.x + 0.5) * scale + 0.5);
+      let y0 = Math.floor(feetRow - (lod.anchor.y + 1) * scale + 0.5);
+      let w = Math.ceil(lod.size.w * scale), h = Math.ceil(lod.size.h * scale);
+      // US-016 (architecture.md 14.4 item 7): `minCells` clamp, AFTER the LOD
+      // pick above - never smaller than this many cells on screen. Grows
+      // outward from the centre column and upward from the feet row (the
+      // anchor stays visually correct: a billboard's feet/bottom never
+      // moves).
+      if (bb && bb.minCells) {
+        if (w < bb.minCells.w) { x0 -= Math.floor((bb.minCells.w - w) / 2); w = bb.minCells.w; }
+        if (h < bb.minCells.h) { y0 -= (bb.minCells.h - h); h = bb.minCells.h; }
+      }
       if (x0 >= cb.cols || y0 >= cb.rows || x0 + w <= 0 || y0 + h <= 0) continue;
 
       let mulR = uMulR, mulG = uMulG, mulB = uMulB, b = uB;
-      if (perSprite) {
+      // US-016 (architecture.md 14.4 item 7): `unlit` - light = 1, no N.L
+      // (skips `lightAt` even on the per-sprite `LightSet` path). Still
+      // shaded through the ordinary gain curve at b = 1 (not a flat
+      // multiplier of 1), so it matches how every other "fully lit" surface
+      // in this engine looks.
+      if (bb && bb.unlit) {
+        b = 1;
+        const gain = S.fgMin + (1 - S.fgMin) * Math.pow(1, S.fgGamma);
+        mulR = gain; mulG = gain; mulB = gain;
+      } else if (perSprite) {
         lightAt(light, world, px, py, pz + 0.5 * m.world.h, 0, 0, 1, sprLightScratch);
         const Lm = Math.max(sprLightScratch[0], sprLightScratch[1], sprLightScratch[2]);
         b = Lm;
@@ -178,7 +214,17 @@ export class SpritePool {
         mulR = (1 + (hr - 1) * k) * gain; mulG = (1 + (hg - 1) * k) * gain; mulB = (1 + (hb - 1) * k) * gain;
       }
 
-      const f = P.util.fogFactor(depth);
+      // US-016 (architecture.md 14.4 item 7): `fogModel`/`fogMax` - a
+      // billboard entity fogs by the named model ('interior' default, 'far'
+      // = `overworld_far`'s far-view fog curve) instead of always the
+      // interior curve, capped at `fogMax` (1 = no cap). Simplification
+      // flagged for follow-up: the blend still targets the single existing
+      // `P.fog.interior` colour (`fogC` below/`uFogColor`), not a distinct
+      // far-fog gradient colour - the fog FRACTION is correct and capped,
+      // only its exact hue is approximated; a per-sprite fog colour needs a
+      // new SPR texel (out of scope for this pass, see the story notes).
+      const f0 = P.util.fogFactor(depth, bb && bb.fogModel === 'far' ? 'far' : undefined);
+      const f = bb && typeof bb.fogMax === 'number' ? Math.min(f0, bb.fogMax) : f0;
       const visible = b * (1 - f) >= S.cutoff ? 1 : 0;
       const o = n * SPR_STRIDE;
       spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = h;
@@ -267,7 +313,13 @@ export function drawSprites(fb, pool) {
         const pi = A[t + 1] * 4;
         let r, g, bl;
         if (emissive) {
-          r = pal[pi]; g = pal[pi + 1]; bl = pal[pi + 2]; // full palette colour, ignores light and fog
+          r = pal[pi]; g = pal[pi + 1]; bl = pal[pi + 2]; // full palette colour, ignores light (never N.L)
+          // US-016 D-011 addendum (architecture.md 14.4 item 12): per-key
+          // emissive fog cap, decoded from the atlas alpha (`a = 1 +
+          // round(fogMax*254)`; `a = 1` = no fogMax = 0 cap = unfogged,
+          // today's behaviour). `fe = min(sprite fogF, key cap)`.
+          const fe = Math.min(fogF, (A[t + 3] - 1) / 254);
+          if (fe > 0) { r += (fogC[0] - r) * fe; g += (fogC[1] - g) * fe; bl += (fogC[2] - bl) * fe; }
         } else {
           r = pal[pi] * mulR; g = pal[pi + 1] * mulG; bl = pal[pi + 2] * mulB;
           if (fogF > 0) { r += (fogC[0] - r) * fogF; g += (fogC[1] - g) * fogF; bl += (fogC[2] - bl) * fogF; }

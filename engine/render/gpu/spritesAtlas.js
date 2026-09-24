@@ -73,7 +73,12 @@ export function buildSpriteAtlas(assets, palette) {
         cells[o] = code - 32;
         cells[o + 1] = colourIndex(def.c, `${modelKey} key "${k}"`);
         cells[o + 2] = (def.e ? 1 : 0) | (nCode << 1);
-        cells[o + 3] = 1;
+        // US-016 D-011 addendum (architecture.md 14.4 item 12): per-key
+        // emissive fog cap, in the texel alpha - `a = 0` stays transparent,
+        // else `a = 1 + round(fogMax*254)` (no `fogMax` -> `a = 1`, today's
+        // shape, unchanged). Only meaningful on emissive keys (`sprites.js`/
+        // `sprites.frag.js` only decode it when `emissive` is true).
+        cells[o + 3] = typeof def.fogMax === 'number' ? 1 + Math.round(Math.max(0, Math.min(1, def.fogMax)) * 254) : 1;
       }
     }
     const frameIdx = frames.length;
@@ -102,7 +107,17 @@ export function buildSpriteAtlas(assets, palette) {
     if (!m || !m.billboard || m.ui) continue; // title/subtitle (ui) are drawn by textDraw, not billboards
     const full = packLod(key, m.keys, m);
     const half = m.lods && m.lods.half ? packLod(key, m.keys, m.lods.half) : null;
-    models.set(key, { full, half, world: { w: m.world.w, h: m.world.h } });
+    // US-016 (architecture.md 14.4 item 7): `lods.min` - the far_tower.js /
+    // ferrum_lights.js style hard-floor tier, picked by PROJECTED ROWS
+    // (>= model.detailRows -> full, else min), never by the scale threshold
+    // `half` uses. Independent of `half` (a model may have one, the other,
+    // both or neither).
+    const min = m.lods && m.lods.min ? packLod(key, m.keys, m.lods.min) : null;
+    // US-016 (architecture.md 14.4 item 13): a `horizon: true` model
+    // (ferrum_lights.js) has no `world.w/h` - it is placed and sized by
+    // ANGLE (bearingDeg/elevDeg/angular), never by a metres-based scale, so
+    // `sprites.js`'s ordinary `project()` never reads `world` for it.
+    models.set(key, { full, half, min, world: m.world ? { w: m.world.w, h: m.world.h } : null, horizon: !!m.horizon });
   }
 
   // Shelf packing: frames in pack order, left to right, new shelf when the

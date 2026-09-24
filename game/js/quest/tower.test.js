@@ -23,11 +23,14 @@ import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
+// US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
+import farTowerMod from '../../../design/models/far_tower.js';
+import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import worldMod from '../../../design/levels/world_m1.js';
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;

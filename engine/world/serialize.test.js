@@ -14,10 +14,14 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+// US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
+import farTowerMod from '../../design/models/far_tower.js';
+import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; towerDef; terrainDef; worldMod;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+farTowerMod; ferrumLightsMod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;

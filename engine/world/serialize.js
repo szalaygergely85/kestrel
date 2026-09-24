@@ -33,6 +33,9 @@ export function serialize(world) {
       seed: world.terrain.recipe.seed,
       overrides: structuredClone(world.terrain.recipe.overrides || {}),
     } : null,
+    // US-016 (architecture.md 14.4 item 13): content, not state, but still
+    // round-tripped (never mutated at runtime, so this is a pure copy).
+    horizon: structuredClone(world.horizon || []),
     structures: world.structures.map((s) => ({
       id: s.id,
       level: s.level.name,
@@ -66,6 +69,7 @@ export function deserialize(state, assets, opts = {}) {
   const def = {
     name: state.world,
     terrain: state.terrain ? state.terrain.recipe : null,
+    horizon: state.horizon || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => ({ id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps })),
     entities: state.entities.map((e) => ({ id: e.id, type: e.type, transform: e.transform, components: e.components })),

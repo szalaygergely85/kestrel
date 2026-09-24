@@ -5,7 +5,7 @@
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
 import { beginFrame, castSectors, fillSky, ambientL, primeAmbientLight } from './sectorCaster.js';
-import { castTerrain } from './terrainCaster.js';
+import { castTerrain, shadeTerrainCells } from './terrainCaster.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
 import { lightSurfaces } from './lighting.js';
@@ -90,7 +90,11 @@ export function renderWorld(fb, world, cam) {
     castSectors(fb, s.level, cam, s.origin);
   }
 
-  castTerrain(fb, world.terrain, cam); // US-016: still a no-op stub until then
+  // US-016: writes fb.gbuf/fb.depth for every open span it can resolve (a
+  // no-op until `world.terrain.farReady`); `shadeTerrainCells` below paints
+  // those kind-7 cells (a separate look-up from `shadeSurfaces`'s
+  // MaterialTable), and only what's left open after both goes to `fillSky`.
+  castTerrain(fb, world.terrain, cam, world);
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);
@@ -112,6 +116,7 @@ export function renderWorld(fb, world, cam) {
       }
     }
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
+    shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0);
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges);
   }
 

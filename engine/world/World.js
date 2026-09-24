@@ -45,10 +45,48 @@ function makeRingHAt(level, origin) {
   };
 }
 
+// US-016 D-011 addendum (architecture.md 14.4 item 13): `world.horizon[]`
+// validation - unique `id`, a model the registry actually has, numeric
+// `bearingDeg`/`elevDeg`/`angular.wDeg`/`angular.hDeg`, `fog` in [0,1], a
+// `fogColor` palette key. Throws WITH the offending id (matches every other
+// World.load validation in this file - never a silent drop).
+function validateHorizon(list, assets) {
+  if (!list) return [];
+  const seen = new Set();
+  for (const h of list) {
+    const id = h && h.id;
+    const tag = id ? `"${id}"` : '(no id)';
+    if (!id || typeof id !== 'string') throw new Error(`World.load: horizon entry ${tag}: "id" is required`);
+    if (seen.has(id)) throw new Error(`World.load: horizon "${id}": duplicate id`);
+    seen.add(id);
+    if (typeof h.model !== 'string' || !assets.has('model', h.model)) {
+      throw new Error(`World.load: horizon "${id}": unknown model "${h.model}"`);
+    }
+    if (typeof h.bearingDeg !== 'number' || !isFinite(h.bearingDeg)) throw new Error(`World.load: horizon "${id}": "bearingDeg" must be a finite number`);
+    if (typeof h.elevDeg !== 'number' || !isFinite(h.elevDeg)) throw new Error(`World.load: horizon "${id}": "elevDeg" must be a finite number`);
+    if (!h.angular || typeof h.angular.wDeg !== 'number' || typeof h.angular.hDeg !== 'number') {
+      throw new Error(`World.load: horizon "${id}": "angular.wDeg"/"angular.hDeg" are required`);
+    }
+    const fog = typeof h.fog === 'number' ? h.fog : 0;
+    if (fog < 0 || fog > 1) throw new Error(`World.load: horizon "${id}": "fog" must be in [0, 1]`);
+    if (h.fogColor && typeof h.fogColor !== 'string') throw new Error(`World.load: horizon "${id}": "fogColor" must be a palette key string`);
+  }
+  // Content, not state: kept as the caller's own objects (never mutated at
+  // runtime) - `structuredClone` only at the `World.load`/`serialize`
+  // boundary keeps a saved file independent of the source asset.
+  return structuredClone(list);
+}
+
 export class World {
   constructor() {
     this.terrain = null;
     this.terrainKey = null;
+    // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
+    // billboards - plain data, content not state (never mutated at
+    // runtime), not entities (they have no world position - placed by
+    // angle). `World.load` copies `def.horizon` here; `serialize` writes it
+    // straight back.
+    this.horizon = [];
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;
@@ -123,6 +161,12 @@ export class World {
       w.terrainKey = def.terrain;
       w.terrain = new Terrain(assets.terrain(def.terrain));
     }
+
+    // US-016 D-011 addendum (architecture.md 14.4 item 13): `world.horizon[]`
+    // - validated up front (throws WITH the offending id, never silently
+    // dropped) so a bad level def fails fast at load, same as everything
+    // else in this function.
+    w.horizon = validateHorizon(def.horizon, assets);
 
     for (const s of def.structures || []) {
       const placed = w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
@@ -245,12 +289,33 @@ export class World {
 
     for (const ed of def.entities || []) {
       let transform;
+      let components = ed.components ? structuredClone(ed.components) : undefined;
       if (ed.transform) {
         transform = { ...ed.transform };
       } else if (typeof ed.x === 'number' && typeof ed.y === 'number') {
         // Inline world position (architecture.md 14.4 item 7 shape, e.g. the
         // `farTower` billboard in world_m1.js): a transform shorthand.
         transform = { x: ed.x, y: ed.y, z: typeof ed.z === 'number' ? ed.z : 0, yawDeg: ed.yawDeg || 0, pitchDeg: ed.pitchDeg || 0 };
+        // US-016 (architecture.md 14.4 item 7): a `type: 'billboard'` entity
+        // carries its sprite/billboard fields at the TOP level (model, unlit,
+        // fogModel, fogMax, sizeM, minCells, detailRows), not under
+        // `components` (design/README.md 4.1 - the level-data shape). Fold
+        // them into `components.sprite`/`components.billboard` here, once,
+        // so `SpritePool` (which only ever reads `components`) and
+        // `serialize`/`deserialize` (which only ever round-trip
+        // `components`) need no special case for this entity type.
+        if (ed.type === 'billboard' && !components && typeof ed.model === 'string') {
+          components = {
+            sprite: { model: ed.model, anim: 'idle', frame: 0 },
+            billboard: {
+              unlit: !!ed.unlit,
+              fogModel: ed.fogModel || 'interior',
+              fogMax: typeof ed.fogMax === 'number' ? ed.fogMax : 1,
+              minCells: ed.minCells || null,
+              detailRows: typeof ed.detailRows === 'number' ? ed.detailRows : 0,
+            },
+          };
+        }
       } else if (ed.spawn) {
         const st = w.structures.find((s) => s.id === ed.spawn.structure);
         if (!st) throw new Error(`World.load: entity "${ed.id}" spawn.structure "${ed.spawn.structure}" not placed`);
@@ -264,7 +329,7 @@ export class World {
       } else {
         throw new Error(`World.load: entity "${ed.id}" needs "transform" or "spawn"`);
       }
-      w.spawn(ed.type, transform, structuredClone(ed.components || {}), ed.id);
+      w.spawn(ed.type, transform, components || {}, ed.id);
     }
 
     if (typeof def.nextId === 'number') w.nextId = def.nextId;

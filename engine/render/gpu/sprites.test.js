@@ -28,10 +28,14 @@ import relayMod from '../../../design/models/relay.js';
 import towerLevelMod from '../../../design/levels/tower.js';
 import overworldFarMod from '../../../design/levels/overworld_far.js';
 import worldM1Mod from '../../../design/levels/world_m1.js';
+// US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
+import farTowerMod from '../../../design/models/far_tower.js';
+import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; lanternMod; brazierMod;
 leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; towerLevelMod; overworldFarMod; worldM1Mod;
+farTowerMod; ferrumLightsMod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 const P = assets.palette;
 

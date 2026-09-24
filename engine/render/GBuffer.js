@@ -5,7 +5,7 @@
 // `fb.depth` (DepthBuffer) already holds it.
 //
 // Kind codes: 0 none/sky, 1 wall, 2 step, 3 upper (lintel), 4 floor,
-//             5 top (solid cap), 6 ceil.
+//             5 top (solid cap), 6 ceil, 7 terrain (US-016, architecture.md 14.4).
 // Face codes: 1 N, 2 E, 3 S, 4 W, 5 U, 6 D.
 export const KIND_NONE = 0;
 export const KIND_WALL = 1;
@@ -14,6 +14,7 @@ export const KIND_UPPER = 3;
 export const KIND_FLOOR = 4;
 export const KIND_TOP = 5;
 export const KIND_CEIL = 6;
+export const KIND_TERRAIN = 7;
 
 export const FACE_N = 1;
 export const FACE_E = 2;
@@ -98,3 +99,10 @@ export class GBuffer {
 export function packPlaneId(structSeq, tag, coord) {
   return ((structSeq & 0x7) << 28) | ((tag & 0xf) << 24) | (coord & 0xffffff);
 }
+
+// US-016 (architecture.md 14.4 item 4): terrain is "one constant plane" -
+// the edge pass then outlines only terrain/structure and terrain/sky
+// boundaries, never the 8 m grid. `packPlaneId`'s top 3 bits are always a
+// `structSeq` in 0..7 (bit 31 never set), so -1 (every bit set) can never
+// collide with a real structure planeId.
+export const PLANEID_TERRAIN = -1;

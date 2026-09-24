@@ -24,7 +24,9 @@ export { serialize, deserialize } from './world/serialize.js';
 
 // ---- render passes --------------------------------------------------------
 export { beginFrame, castSectors, fillSky, ambientL, HFOV_DEG } from './render/sectorCaster.js';
-export { castTerrain } from './render/terrainCaster.js';
+export { castTerrain, shadeTerrainCells, marchTerrainRay, FOG_FULL, T_START, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K } from './render/terrainCaster.js';
+export { shadeTerrainFar, makeTerrainShadeCtx } from './render/terrainShade.js';
+export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
@@ -34,7 +36,7 @@ export { drawText } from './render/textDraw.js';
 export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';
 
 // ---- US-028 detail pass v2 (G-buffer shading, edge pass) -------------------
-export { GBuffer } from './render/GBuffer.js';
+export { GBuffer, KIND_TERRAIN, PLANEID_TERRAIN, packPlaneId } from './render/GBuffer.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 export { computeDerivatives, shadeSurfaces, shadeV2 } from './render/detailShade.js';
 export { edgePass } from './render/edgePass.js';

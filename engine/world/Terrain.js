@@ -39,12 +39,27 @@ export class Terrain {
     // Far bake (arch 7.2): R32F/R8UI-shaped typed arrays, GPU-upload-ready.
     this.farH = new Float32Array(this.mapW * this.mapH);
     this.farType = new Uint8Array(this.mapW * this.mapH);
+    // US-016 (architecture.md 14.4 item 3): `farHDraw = farH + canopy` on
+    // forest texels only - the RENDER height (terrain caster/GLSL march);
+    // `farH` itself stays physics-only (ground level, no canopy). Built at
+    // bake end alongside `farMaxH` (max over the whole grid, the march's
+    // "climbing above every hill" escape bound, item 4).
+    this.farHDraw = new Float32Array(this.mapW * this.mapH);
+    this.farMaxH = 0;
     this.farReady = false;
     this.farVersion = 0;
     this._bakeRow = 0;
     // Reused "grid" view object handed to `recipe.util.gridHeight` (no
     // per-call allocation) - farH is the whole 2048x2048 m map at (0,0).
     this._farGrid = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farH };
+    // Same shape, but over the RENDER heights (with canopy) - the terrain
+    // caster/march samples this one, never `_farGrid` (US-016).
+    this._farGridDraw = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farHDraw };
+    // Forest type id + canopy height (m), read once from the recipe (never
+    // hard-coded - architecture.md 14.4 item 10 "recipe constants arrive
+    // through TLOOK/uniforms from the registry", same principle in JS).
+    this._forestTypeId = TYPE_NAMES.indexOf('forest');
+    this._canopyM = (recipe.recipe && recipe.recipe.forest && recipe.recipe.forest.canopy) || 0;
 
     // Near chunks (arch 7.2): 64x64 cells of 2 m (128 m), 3x3 resident ring
     // in a fixed 9-slot array - `slot = (cy mod 3)*3 + (cx mod 3)`, never a
@@ -115,8 +130,7 @@ export class Terrain {
     this.farH.set(G.height);
     this.farType.set(G.type);
     this._bakeRow = this.mapH;
-    this.farReady = true;
-    this.farVersion++;
+    this._finishBake();
   }
 
   /**
@@ -139,10 +153,21 @@ export class Terrain {
       this._bakeRow++;
       if (now() - t0 >= msBudget) break;
     }
-    if (this._bakeRow >= this.mapH) {
-      this.farReady = true;
-      this.farVersion++;
+    if (this._bakeRow >= this.mapH) this._finishBake();
+  }
+
+  /** US-016: builds `farHDraw`/`farMaxH` from the just-finished `farH`/`farType` bake, then flips `farReady`. */
+  _finishBake() {
+    const canopy = this._canopyM, forestId = this._forestTypeId;
+    let maxH = -Infinity;
+    for (let i = 0; i < this.farH.length; i++) {
+      const h = this.farH[i] + (this.farType[i] === forestId ? canopy : 0);
+      this.farHDraw[i] = h;
+      if (h > maxH) maxH = h;
     }
+    this.farMaxH = maxH;
+    this.farReady = true;
+    this.farVersion++;
   }
 
   /** Bake progress in [0, 1]. */
