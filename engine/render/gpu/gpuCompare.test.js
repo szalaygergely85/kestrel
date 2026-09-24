@@ -203,7 +203,7 @@ function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal) {
   const r2 = compareGeometry(f2.gbuf, f2.depth, f2.giBuf, f2.gaBuf, f2.depthBuf, COLS, ROWS);
   ok('compareGeometry kind-7 u beyond 1% terrain tol: violation on every matched cell', r2.uvViol === r2.matched && r2.matched > 0);
 
-  // The same 5.5% delta that a kind-7 cell tolerates would FAIL under the
+  // The same 0.9% delta that a kind-7 cell tolerates would FAIL under the
   // sector kinds' 1e-3 rule (proves the two tolerances actually differ, not
   // just that both happen to pass/fail this magnitude of error).
   const f3 = makeGeomFixture(1, 5, 1, 10, 10, 50);
