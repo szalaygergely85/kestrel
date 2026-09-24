@@ -114,8 +114,8 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 | ID | Title | Priority | Status |
 |---|---|---|---|
 | US-039 | Voxel model format + JS oracle (`castModels`), Node-only | P0 (before M3) | done (tester PASS 2026-09-23, docs/test-reports/US-039.md) | 
-| US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | P0 (before M3) | todo (sketch) – after US-039, US-016, US-006/007 |
-| US-041 | Voxel lighting (rotated normals) + rigid-part animation + entity binding + bear preview | P0 (before M3) | todo (sketch) – after US-040 |
+| US-040 | GPU voxel pass A3 (`KIND_MODEL`) + gpucompare | **P0 M1 (D-019)** | todo (tech notes ready: architecture.md 15.2) – after US-016 |
+| US-041 | US-041a **P0 M1 (D-019)**: voxel lighting (rotated normals) + `voxel` entity binding (fixed yaw) + prop rigid parts (lever pull) + mounts. US-041b (before M3): creature clips, bear, `voxel.html` | P0 | todo (tech notes ready: architecture.md 15.3) – after US-040 |
 
 ## Physics + effects epic (owner requirement 2026-09-24: object physics before release; handoff 3 items 7+8; sketched, see bottom of file)
 **Gate before US-051 starts:** physics-engine choice (extend the in-house `engine/physics` sphere/capsule code vs Rapier/WASM under D-015) needs an architect estimate + a manager decision (new D-entry).
@@ -2984,7 +2984,17 @@ Acceptance criteria (sketch):
 - [ ] `?bench=1` at 240x90 with a bear filling about 30 % of the screen: model pass <= 0.5 ms p95, GPU total <= 4 ms p95, JS <= 2 ms.
 - [ ] Axis-aligned faces only (face 1..6) if the `light` pass is not yet in. Rotated parts come with US-041.
 Design needed: no.
-Notes / dependencies: US-039, US-016 (pass A2 slot), US-006/007 (light pass). Engine story.
+Notes / dependencies: US-039, US-016 (pass A2 slot), US-006/007 (light pass). Engine story. **D-019: M1 P0; compare poses = tower props (lever, burner), not the bear; exit gate = gpucompare + 0.5 ms p95 after one fix round, else fallback (B).**
+
+**Architect tech notes: `docs/architecture.md` 15.2** (normative; 2026-09-24). Summary:
+1. **Pass A3 `voxel`** (`glsl/voxel.frag.js`) at sub-sample resolution, literal twin of `marchVoxelRay` (verbatim axis rule, `MAX_VOX_STEPS` 48, strict `<` ties). Reads the last-written sub-sample set (set 2 after terrain, else set 1) and writes the other one; resolve reads the last written (`_subSetCur` flip). **No third set** (deviation from section 15). Skipped entirely when no instance is visible.
+2. **Textures:** `VOX` R16UI, texel = MaterialTable id (0 empty), 256 wide, built once per bind by `buildVoxelAtlas` (`engine/render/gpu/VoxelTextures.js`, pure); **no `MODELMAT`**. `VOXINST` RGBA32F 8 x 144: per instance a header row (AABB, partCount, feetZ, cellM) + 8 part rows (`A` 3x3 and the **part-local eye `oL = A*eye + b` computed in float64 JS**, box, atlasOff, flags); `<= 18 KB` per frame; `uVoxRect[16]` in cells so untouched fragments fetch nothing.
+3. **`VoxelPool`** (`engine/render/voxelPool.js`): `bind(registry, table)` packs every `ModelDef.voxel` with `table.idFor`; `project(cam, rt)` = pose + AABB + screen rect + culling (shared `instanceRect` helper, refactored out of `castModels`, so the oracle and the GPU always see the same instances/slots); `pushInstance(...)` is the harness feed (no entity reads in US-040: binding is US-041a).
+4. **Kind 8 downstream:** resolve/deriv unchanged; shade with `fk = 1` for every face and `aoD = Inf`; **edge**: `isVert/isUp` take `(kind, face)` so kind 8 gets CAP/LIP/SIDE + planeId rules (silhouette + voxel steps), plus the optional data-driven dark rim `detailPass.edges.modelRim` (default 1 = off; one uniform, one line in both edge implementations). Sprite pass unchanged: its `DEPTH` test now cuts flame billboards against voxel rims. CPU oracle order: `castSectors -> castTerrain -> castModels -> ... -> fillSky`; `fillSky` must not paint finite-depth cells (test).
+5. **Gate/budget:** `stats.voxelMs` (CPU submit bracket, like `terrainMs`); A3 `<= 0.5 ms p95` at 240x90 n=2 with lever + burner at ~2 m; pipeline `<= 4 ms p95`; JS `project <= 0.1 ms`; zero alloc.
+6. **gpucompare poses** (160x60, n=1, `world_m1`, fixtures `quadruped12` + new `post12` until the designer's `lever`/`burner` voxel defs exist): lever wall 2 m, burner near, half occluded by the stair, yaw 45, over terrain; 14.2 item 8 thresholds on kind-8 cells; `?flicker=1` model share `<=` walls.
+7. **Build order:** (1) constants -> `GBuffer.js`, exports, `VoxelPool` + `instanceRect`, Node tests; (2) atlas + instance rows + tests; (3) `voxel.frag` + pass + flip + timer, kind/depth parity first; (4) shade/edge kind-8 rules + `modelRim` (JS + GLSL); (5) poses, flicker, bench line, docs.
+8. **AC deltas for the PO:** compare poses are the props, not `bearClose` (D-019); "`<= 2 KB` uploaded" becomes "`<= 18 KB` (`VOXINST` rows)"; "`VOX`/`MODELMAT` atlas" becomes "`VOX` R16UI atlas of material ids"; the 15.1 "no exports until US-041" rule is lifted for what the harness needs.
 
 ### US-041 Voxel lighting + rigid-part animation + entity binding  [Priority: P0 (before M3)] [Status: todo (sketch)]
 As a player, I want a bear that breathes, turns its head and walks, lit by my lamp and the sun, so that creatures feel alive and physical.
@@ -2996,6 +3006,17 @@ Acceptance criteria (sketch):
 - [ ] One bear placed in a test world walks a loop, with the lamp and the sun lighting it correctly on both paths. The US-018 budgets hold.
 Design needed: yes – the bear voxel model + preview page.
 Notes / dependencies: US-040, US-006/007, US-016. Target: `done` before M3 content starts (US-042 M3 NPCs).
+**D-019 split (PO to formalise):** **US-041a (M1 P0)** = rotated normals + light decode, `voxel` entity binding with fixed world yaw, rigid parts only as far as props need them (lever pull), `mounts` validated + helper; **US-041b (before M3)** = `idle`/`walk` creature clips, the bear model, `design/preview/voxel.html`, the walking-loop AC. The AC lines above map: line 1 -> 041a; line 2 -> 041a for the mechanism (no `idle`/`walk` content), 041b for the clips; line 3 -> 041a; lines 4-5 -> 041b.
+
+**Architect tech notes: `docs/architecture.md` 15.3** (normative for US-041a; 2026-09-24). Summary:
+1. **Binding is a component, not a type:** `components.voxel = { model, anim, t, frame, loop, speed, playing }` (same shape as `sprite`); `EntityHandle.play/stop` and `stepAnimations` act on `sprite ?? voxel` (`animComponent(e)`). Entity `type` stays `'prop'`; spawn picks `voxel` when `registry.model(key).voxel` exists, so swapping a prop's art needs no level edit and no save-format change. `VoxelPool.collect(world)` (cached by `renderVersion`), nearest 16 win, no state in the pool beyond what the component rebuilds; restart = `deserialize` + re-collect.
+2. **Yaw:** `transform.yawDeg = facing`, free degrees, **never snapped by the engine**; `axisAligned` per pose decides face 1..6 vs face 7. Content rule: wall props at multiples of 90; clutter any yaw; boulder yaw = heading, no roll (D-019 item 5).
+3. **Rotated normals:** face 7 + octahedral bits in `GA.w` (raw uint on GPU, `Uint32Array` alias on CPU); `light.frag`/`lightSurfaces` decode with the literal `unpackNormalOct` twin - the only light change; shade `aoD = Inf`, `fk = 1`; edge treats face 7 as vert. No model shadows/self-shadow in M1 (recorded).
+4. **Lever pull = data:** model parts `plate` (root) + `handle` (child, hinge pivot); clips `idle` (1-frame loop) and `pull` (`durations [90,90,90,240]`, non-loop, `handle.rot.x` 0 -> -85, linear). `computeVoxelPose` already interpolates, `stepAnimations` already advances; a finished clip holds its last frame in the component, so the pulled lever survives save/load. `lever.pull` stays `play('pull')`. No clips needed for burner/relay/lamp/heaps in M1.
+5. **Mounts:** `voxel.mounts[name] = { at, part? }` validated + `voxelMountWorld(...)`; consumers are US-042/US-022. In M1 flames/glows stay separate billboard prop entities in level data; lights stay `def.lights`.
+6. **Tests/poses:** `world.test.js` (voxel spawn, round trip, both-components throws), `animation.test.js` (voxel component clip, hold, `animEnd` once), quest test (`voxel.anim === 'pull'`), `lighting.test.js` (face-7 decode), `voxel.test.js` (`voxelMountWorld`, nearest 16, zero alloc); `?gpucompare=1` real-prop poses: lever idle, lever mid-pull (`voxel.frame = 2, t = 45`, face 7 + `|dL| <= 1e-3`), crash room (flame billboard vs burner rim), boulder mid-roll; `?flicker=1`, `?bench=1` per 15.2 item 6; then the owner walk-check.
+7. **Designer contract (15.3 item 6):** colour per material only (`mats` values need v2 records in `detail-pass.js`, else the GPU path is disabled); bright-rim/dark-body = distinct materials on rim vs body voxels; outline = edge pass + `edges.modelRim`; lever `>= 0.7 x 1.1 m`; flames/glows are billboard props.
+8. **AC deltas for the PO:** "`type: 'voxelModel'`" is implemented as the `voxel` component on `type 'prop'` entities; "facing from the entity yaw" = free yaw, axis-aligned fast path automatic; `mounts` in 041a are validated + helper only (no billboard attach).
 
 ---
 
