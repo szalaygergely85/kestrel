@@ -122,6 +122,9 @@ if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPAR
 const useDetail = params.get('detail') !== '0';
 // US-006 AC "?lights=0 keeps the US-028 uniform ambient (regression path)".
 const lightsEnabled = params.get('lights') !== '0';
+// US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
+// as `?lights=0`.
+const sunEnabled = params.get('sun') !== '0';
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -268,7 +271,12 @@ function runGame(mode) {
     // US-006: `level.def.lights` per placed structure -> world-space LightSet
     // (torch/lantern/beacon presets, docs/architecture.md 14.3). `?lights=0`
     // keeps the old uniform-ambient path (fb.lights stays null).
-    if (lightsEnabled) lightSet = buildLightSet(world, assets.palette);
+    if (lightsEnabled) {
+      lightSet = buildLightSet(world, assets.palette);
+      // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
+      // force it off - `setSun` is the only writer of `on`.
+      if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
+    }
     // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
     // 7 synthetic extra lights (torch preset) spread 2-4 m around the
     // level's first light, so the tester can measure the "8 point lights"
@@ -302,6 +310,13 @@ function runGame(mode) {
   function update(dt) {
     simTime += dt;
     if (input.pressed('F3')) overlay.toggle();
+    // US-007 AC "Sun direction can be changed with debug keys (F6/F7 rotate
+    // azimuth) to verify shadows move correctly" - +-5 deg, `setSun` is the
+    // only mutator (docs/architecture.md 14.3 item 3).
+    if (lightSet) {
+      if (input.pressed('F6')) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth - 5, on: sunEnabled });
+      if (input.pressed('F7')) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth + 5, on: sunEnabled });
+    }
     if (look) look.update(dt);
     if (mode === 'world' && playerHandle) {
       controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);

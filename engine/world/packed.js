@@ -115,6 +115,8 @@ export function packLevel(level, matTable) {
     }
   }
 
+  const maxH = computeMaxH(geom, flags, n);
+
   // US-030a: `relief` is the packed floorRise/ceilDrop nibbles (7.2
   // amendment) the GPU DDA reads for ambient-occlusion depth (`aoD`) on
   // plane samples - the `FLAGS` texture's `g` channel is `packRelief`'s
@@ -130,7 +132,29 @@ export function packLevel(level, matTable) {
   // since the last time an uploader (US-030) consumed this packed layout.
   // `packLevel` itself is a full (re)build, so there is nothing dirty yet;
   // `updateAnimatedSector` below is what advances them.
-  return { w, h, geom, mats, flags, relief, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1, _reliefFloorRise, _reliefCeilDrop };
+  return { w, h, geom, mats, flags, relief, tagIds, version: 1, dirtyY0: -1, dirtyY1: -1, _reliefFloorRise, _reliefCeilDrop, maxH };
+}
+
+// US-007 (docs/architecture.md 14.3 item 4): "lit when ... h0 > maxH(structure)"
+// - the escape height the sun DDA uses to stop walking a tall-but-finite
+// structure early. A cell's own blocking mass tops out at `floorH` when
+// solid (US-003: a solid cell is a column up to its `floorH`, the wall top)
+// or at `topH` when open and not sky-ceilinged (the slab + upper band); an
+// open, sky-ceilinged cell contributes no bound (its column is open to any
+// height). `-Infinity` (no finite cell at all - an all-sky structure, not
+// expected in practice but not invalid) is clamped to 0.
+function computeMaxH(geom, flags, n) {
+  let maxH = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const f = flags[i];
+    const gi = i * 4;
+    let top;
+    if (f & FLAG_SOLID) top = geom[gi];
+    else if (f & FLAG_CEIL_SKY) continue;
+    else top = geom[gi + 2];
+    if (top > maxH) maxH = top;
+  }
+  return maxH === -Infinity ? 0 : maxH;
 }
 
 /**
@@ -229,5 +253,9 @@ export function updateAnimatedSector(packed, level, ch) {
     packed.dirtyY0 = packed.dirtyY0 < 0 ? Math.max(0, y0 - 1) : Math.min(packed.dirtyY0, Math.max(0, y0 - 1));
     packed.dirtyY1 = Math.max(packed.dirtyY1, Math.min(h - 1, y1 + 1));
     packed.version++;
+    // US-007: a dynamic sector's ceilH/topH can change the structure's sun
+    // DDA escape height (e.g. the US-012 grate opening/closing) - cheap
+    // full rescan (not a hot path: only runs on an animation step).
+    packed.maxH = computeMaxH(packed.geom, packed.flags, w * h);
   }
 }

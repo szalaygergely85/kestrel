@@ -3,7 +3,7 @@
 // Run: node engine/render/lighting.test.js
 import {
   LightSet, buildLightSet, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
-  selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM,
+  selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
 } from './lighting.js';
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
@@ -248,6 +248,176 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   for (let i = 0; i < 6; i++) ls.add({ x: i * 2, y: 0, z: 0, hue: [1, 1, 1], intensity: 1, radius: 20, on: true, key: `k${i}` });
   ls.update(0, null);
   ok('lightSurfaces cap is opt-in per frame buffer (cpuLightCap unset by default)', ls.cpuCount === 0);
+}
+
+// --- US-007: sunVisible on a synthetic 8x8 level (docs/backlog.md US-007 tech notes item 5) ---
+// Sun straight toward the +y (south) horizontal direction, elevation 45deg
+// (tanElev = 1) for clean arithmetic: dir = (0, 1, 1) normalized by
+// LightSet.setSun's own formula (azimuth 0 = north = -y is where the sun
+// comes FROM, so the light travels TOWARD +y - see setSun's dir formula).
+{
+  const legend = {
+    '#': { floorH: 8, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+    's': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, start: true, facingDeg: 90 },
+    // A "crack": open gap [floorH, ceilH) = [1,3), closed band [ceilH, topH] = [3,5], open again above topH.
+    'K': { floorH: 1.0, ceilH: 3.0, topH: 5.0, wallMat: 'stone', floorMat: 'floor', ceilMat: 'stone', solid: false },
+    // A thin overhead slab, floor open at 0, roof at 2.
+    'L': { floorH: 0, ceilH: 2.0, topH: 2.0, wallMat: 'stone', floorMat: 'floor', ceilMat: 'stone', solid: false },
+  };
+  const rows = [
+    's.......',
+    '........',
+    '........',
+    '........',
+    '........',
+    '#K#L....',
+    '........',
+    '........',
+  ];
+  globalThis.ASSETS.levels.__sun8x8 = { name: '__sun8x8', legend, rows };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'sun', level: '__sun8x8', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+
+  const ls = new LightSet();
+  ls.setSun({ elevation: 45, azimuth: 180, on: true }); // azimuth 180 = sun in the south -> dir toward +y, ~= (0, 1, 1)/sqrt2
+  const dir = ls.sun.dir;
+  ok('sun dir points toward +y (south) horizontally', approx(dir[0], 0, 1e-9) && dir[1] > 0);
+  ok('sun dir has a positive z component', dir[2] > 0);
+
+  // Point directly under open sky: always lit.
+  ok('point under open sky is lit', sunVisible(world, 4.5, 4.5, 0.3, dir) === true);
+
+  // Behind the wall column x=0 (floorH 8): low sample shadowed, sample
+  // above the wall (still inside the 8x8 grid, so it keeps walking north
+  // to south and out through open cells) lit.
+  ok('low point just north of the tall wall is shadowed', sunVisible(world, 0.5, 4.5, 0.3, dir) === false);
+  ok('point above the tall wall (z > 8) is lit', sunVisible(world, 0.5, 4.5, 8.5, dir) === true);
+
+  // Under the thin slab (column x=3, 'L', roof at 2 m): a floor sample just
+  // north of it (row y=4) is shadowed (rises into [2,2] by the time it
+  // crosses); a sample above the roof height is lit.
+  ok('point under the thin slab is shadowed', sunVisible(world, 3.5, 4.5, 0.6, dir) === false);
+  ok('point above the slab roof height is lit', sunVisible(world, 3.5, 4.5, 2.5, dir) === true);
+
+  // Crack column x=1 ('K', open [1,3), closed [3,5], open above 5): a
+  // sample close to the wall (y=4.5, 0.5 m of travel before the wall cell)
+  // crosses the crack cell low (still under the closed band) -> lit; a
+  // sample farther away (y=0.5, 4.5 m of travel first) has risen into the
+  // closed band by the time it reaches the same wall cell -> shadowed.
+  ok('crack: a floor point close to the wall passes under the closed band (lit)', sunVisible(world, 1.5, 4.5, 0.6, dir) === true);
+  ok('crack: a floor point far from the wall has risen into the closed band by the wall (shadowed)', sunVisible(world, 1.5, 1.6, 0.6, dir) === false);
+
+  // world == null -> lit (defensive default).
+  ok('sunVisible(null, ...) defaults to lit', sunVisible(null, 0, 0, 0, dir) === true);
+}
+
+// --- US-007: two placed structures - the second shadows a point in the first ---
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+    's': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, start: true, facingDeg: 90 },
+  };
+  const solidLegend = {
+    '#': { floorH: 8, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+  };
+  globalThis.ASSETS.levels.__sunOpenPad = { name: '__sunOpenPad', legend, rows: ['s...', '....', '....', '....'] };
+  globalThis.ASSETS.levels.__sunBlock = { name: '__sunBlock', legend: solidLegend, rows: ['#'], start: { x: 0.5, y: 0.5, facingDeg: 90 } };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({
+    terrain: null,
+    structures: [
+      { id: 'pad', level: '__sunOpenPad', origin: { x: 0, y: 0, z: 0 } },
+      // A 1x1 solid block placed immediately south of the pad, spanning x 1..2.
+      { id: 'blocker', level: '__sunBlock', origin: { x: 1, y: 4, z: 0 } },
+    ],
+    entities: [],
+  }, assets, {});
+
+  const ls = new LightSet();
+  ls.setSun({ elevation: 45, azimuth: 180, on: true }); // sun in the south -> dir toward +y
+  const dir = ls.sun.dir;
+  // Sample sits in structure "pad" (x 1.5, directly north of "blocker"'s footprint).
+  ok('a second placed structure shadows a point in the first', sunVisible(world, 1.5, 3.5, 0.3, dir) === false);
+  // Same row, but x = 3.5 - outside "blocker"'s x-footprint (1..2) - the ray
+  // leaves every footprint south of the pad and is lit.
+  ok('outside the second structure\'s footprint, the first structure\'s point is unaffected (lit)',
+    sunVisible(world, 3.5, 3.5, 0.3, dir) === true);
+}
+
+// --- US-007: step cap (MAX_SUN_STEPS) - a long never-blocking corridor terminates and is lit ---
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+  };
+  const rows = [];
+  for (let y = 0; y < 4; y++) rows.push('.'.repeat(MAX_SUN_STEPS + 20));
+  globalThis.ASSETS.levels.__sunLongCorridor = { name: '__sunLongCorridor', legend, rows, start: { x: 0.5, y: 1.5, facingDeg: 90 } };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'corridor', level: '__sunLongCorridor', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  const ls = new LightSet();
+  // A very shallow elevation, so `h0 > maxH` never trips before the step cap
+  // (maxH here is 0 - every cell is open sky, `computeMaxH` finds no finite
+  // blocking cell - so ONLY the footprint-exit or step-cap conditions can end the walk).
+  ls.setSun({ elevation: 1, azimuth: 90, on: true }); // dir mostly +x, tiny +z
+  const dir = ls.sun.dir;
+  ok('a long, never-blocking corridor terminates (step cap, bias to lit)', sunVisible(world, 0.5, 1.5, 0.1, dir) === true);
+}
+
+// --- US-007: lightAt adds the sun term, gated by N.sunDir and sunVisible ---
+{
+  const legend = {
+    '.': { floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false },
+  };
+  globalThis.ASSETS.levels.__sunFlatPad = { name: '__sunFlatPad', legend, rows: ['....', '....', '....', '....'], start: { x: 0.5, y: 0.5, facingDeg: 90 } };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'pad', level: '__sunFlatPad', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  const ls = new LightSet();
+  ls.ambient[0] = ls.ambient[1] = ls.ambient[2] = 0;
+  ls.setSun({ elevation: 60, azimuth: 112.5, on: true });
+  ls.sun.col[0] = 1; ls.sun.col[1] = 1; ls.sun.col[2] = 1;
+  ls.update(0, world);
+  const out = [0, 0, 0];
+  // Floor (normal +z) under open sky, mid-pad: sunlit.
+  lightAt(ls, world, 2, 2, 0.01, 0, 0, 1, out);
+  ok('lightAt adds the sun term on a sunlit floor', out[0] > 0, String(out[0]));
+  // A ceiling-facing-down sample (N.sunDir <= 0 for a sun with positive z): unlit by the sun.
+  const out2 = [0, 0, 0];
+  lightAt(ls, world, 2, 2, 0.01, 0, 0, -1, out2);
+  ok('lightAt skips the sun term when N.sunDir <= 0', out2[0] === 0 && out2[1] === 0 && out2[2] === 0);
+  // `sun.on = false` (e.g. `?sun=0`) -> no sun term even facing the sun.
+  const lsOff = new LightSet();
+  lsOff.ambient[0] = lsOff.ambient[1] = lsOff.ambient[2] = 0;
+  lsOff.setSun({ elevation: 60, azimuth: 112.5, on: false });
+  lsOff.sun.col[0] = 1; lsOff.sun.col[1] = 1; lsOff.sun.col[2] = 1;
+  lsOff.update(0, world);
+  const out3 = [0, 0, 0];
+  lightAt(lsOff, world, 2, 2, 0.01, 0, 0, 1, out3);
+  ok('sun.on = false disables the sun term entirely', out3[0] === 0 && out3[1] === 0 && out3[2] === 0);
+}
+
+// --- US-007: setSun's "elevation <= 0 -> sun.on = false" rule ---
+{
+  const ls = new LightSet();
+  ls.setSun({ elevation: 0, azimuth: 0, on: true });
+  ok('elevation == 0 forces sun.on = false', ls.sun.on === false);
+  ls.setSun({ elevation: -10, azimuth: 0, on: true });
+  ok('negative elevation forces sun.on = false', ls.sun.on === false);
+  ls.setSun({ elevation: 30, azimuth: 0, on: true });
+  ok('positive elevation honours the requested on', ls.sun.on === true);
+}
+
+// --- US-007: buildLightSet resolves the sun from the first structure's def.sun (fallback: palette default) ---
+{
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  const ls = buildLightSet(world, assets.palette);
+  const sunPreset = assets.palette.lights.sun;
+  ok('buildLightSet turns the sun on by default (fallback to the palette preset)', ls.sun.on === true);
+  ok('buildLightSet falls back to the palette preset\'s elevation', ls.sun.elevation === sunPreset.elevation, String(ls.sun.elevation));
+  ok('buildLightSet falls back to the palette preset\'s azimuth', ls.sun.azimuth === sunPreset.azimuth, String(ls.sun.azimuth));
+  const hue = assets.palette.hue[sunPreset.color];
+  ok('buildLightSet\'s sun.col == hue * intensity', approx(ls.sun.col[0], hue[0] * sunPreset.intensity) && approx(ls.sun.col[2], hue[2] * sunPreset.intensity));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

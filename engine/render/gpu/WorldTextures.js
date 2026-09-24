@@ -22,14 +22,20 @@ export const MAX_STRUCTS = 8;
 
 function assert(cond, msg) { if (!cond) throw new Error('WorldTextures: ' + msg); }
 
-/** Builds the uStruct uniform payload (14.2 item 2): 8 rows x 2 vec4 = 64 floats. */
+/**
+ * Builds the uStruct uniform payload (14.2 item 2): 8 rows x 2 vec4 = 64
+ * floats. US-007 (14.3 item 3): the structB row's former pad (`[7]`) now
+ * carries `packed.maxH` - `uStructMaxH` from the tech notes, packed here
+ * instead of a separate uniform array (one less thing to keep in sync with
+ * `uStructCount`/upload order; `light.frag.js` reads it as `uStructB[i].w`).
+ */
 function packUStruct(structures, yOffsets) {
   const u = new Float32Array(MAX_STRUCTS * 8);
   for (let i = 0; i < structures.length && i < MAX_STRUCTS; i++) {
     const s = structures[i];
     const o = i * 8;
     u[o] = s.origin.x; u[o + 1] = s.origin.y; u[o + 2] = s.origin.z; u[o + 3] = s.packed.w;
-    u[o + 4] = s.packed.h; u[o + 5] = yOffsets[i]; u[o + 6] = s.structSeq; u[o + 7] = 0;
+    u[o + 4] = s.packed.h; u[o + 5] = yOffsets[i]; u[o + 6] = s.structSeq; u[o + 7] = s.packed.maxH;
   }
   return u;
 }

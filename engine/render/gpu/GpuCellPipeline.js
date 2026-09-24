@@ -291,9 +291,13 @@ export class GpuCellPipeline {
     this._derivBinds = this._buildBindTable(this._locsDeriv, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth],
     ]);
-    // US-006: light pass reads the resolved GI/Depth (kind/face, distance) + the LVIS atlas.
+    // US-006/US-007: light pass reads the resolved GI/Depth (kind/face,
+    // distance) + the LVIS atlas, plus (US-007) the world atlas the sun DDA
+    // walks - same textures `_castBinds` binds for `dda.frag.js`, bound
+    // again here on light's own sampler units (a different program).
     this._lightBinds = this._buildBindTable(this._locsLight, [
       ['uGI', this.texGI], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
+      ['uWorldGeom', this.texWorldGeom], ['uWorldFlags', this.texWorldFlags],
     ]);
     this._setSamplerUniforms(this.progShade, this._shadeBinds);
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
@@ -688,8 +692,12 @@ export class GpuCellPipeline {
     this._uploadUStruct();
   }
 
+  // US-007: the light pass now also needs `uStructA/B/Count` (its own sun
+  // DDA's `findStruct`, light.frag.js) - uploaded to BOTH programs here
+  // (each has its own uniform locations; the packed `structA`/`structB`
+  // arrays are shared, built once per call).
   _uploadUStruct() {
-    const gl = this.gl, a = this._worldAtlas, loc = this._locsCast;
+    const gl = this.gl, a = this._worldAtlas;
     const structA = this._uStructA || (this._uStructA = new Float32Array(MAX_STRUCTS * 4));
     const structB = this._uStructB || (this._uStructB = new Float32Array(MAX_STRUCTS * 4));
     for (let i = 0; i < MAX_STRUCTS; i++) {
@@ -699,10 +707,12 @@ export class GpuCellPipeline {
       structB[o4] = a.uStruct[o8 + 4]; structB[o4 + 1] = a.uStruct[o8 + 5];
       structB[o4 + 2] = a.uStruct[o8 + 6]; structB[o4 + 3] = a.uStruct[o8 + 7];
     }
-    gl.useProgram(this.progCast);
-    gl.uniform4fv(loc.uStructA, structA);
-    gl.uniform4fv(loc.uStructB, structB);
-    gl.uniform1i(loc.uStructCount, a.structCount);
+    for (const [prog, loc] of [[this.progCast, this._locsCast], [this.progLight, this._locsLight]]) {
+      gl.useProgram(prog);
+      gl.uniform4fv(loc.uStructA, structA);
+      gl.uniform4fv(loc.uStructB, structB);
+      gl.uniform1i(loc.uStructCount, a.structCount);
+    }
   }
 
   // Camera basis (engine/render/sectorCaster.js's castScene, same formulas -
@@ -813,13 +823,23 @@ export class GpuCellPipeline {
     const light = this._light;
     const isSet = light && typeof light === 'object' && light.pos && light.col && typeof light.count === 'number';
     if (!isSet) {
-      // Back-compat ambient-only array (or null/undefined).
+      // Back-compat ambient-only array (or null/undefined) - no sun either.
       const a = light || EMPTY3;
       gl.uniform3f(loc.uAmbient, a[0] || 0, a[1] || 0, a[2] || 0);
       gl.uniform1i(loc.uLightCount, 0);
+      gl.uniform1i(loc.uSunOn, 0);
       return;
     }
     gl.uniform3f(loc.uAmbient, light.ambient[0], light.ambient[1], light.ambient[2]);
+    // US-007 (14.3 item 3): sun uniforms - `LightSet.sun` (`setSun`'s dir/
+    // col, buildLightSet's `sun.col`). `?sun=0` (game/js/main.js) drives
+    // `sun.on` false through `setSun`, same switch as `?lights=0` above.
+    const sun = light.sun;
+    gl.uniform1i(loc.uSunOn, sun && sun.on ? 1 : 0);
+    if (sun) {
+      gl.uniform3f(loc.uSunDir, sun.dir[0], sun.dir[1], sun.dir[2]);
+      gl.uniform3f(loc.uSunCol, sun.col[0], sun.col[1], sun.col[2]);
+    }
     const n = Math.min(MAX_LIGHTS, light.count);
     gl.uniform1i(loc.uLightCount, n);
     if (n <= 0) return;
@@ -989,8 +1009,9 @@ const CAST_UNIFORMS = [
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];
-// US-006: light pass uniforms (14.3 item 3).
+// US-006/US-007: light pass uniforms (14.3 items 3/4).
 const LIGHT_UNIFORMS = [
   'uGI', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
+  'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount',
 ];

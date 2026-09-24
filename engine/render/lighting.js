@@ -1,13 +1,12 @@
-// engine/render/lighting.js (US-006 tech notes, docs/architecture.md 14.3).
-// `LightSet` owns all light state (ambient + point lights + a sun stub -
-// US-007 turns the sun on; here it always stays `off`), `buildLightSet`
-// reads `level.def.lights` per placed structure (US-002 rules: hue from
-// `P.hue[color]`, energy from `intensity`, values from `P.lights[preset]` -
-// never hard-coded), `lightAt` is the single point evaluator shared by
-// `lightSurfaces` (CPU/JS reference, this file) and the GLSL `light` pass
-// (`gpu/glsl/light.frag.js`, same formula). Pure/allocation-free after
-// construction (architecture.md 9) - every per-frame method writes into
-// pre-allocated typed arrays.
+// engine/render/lighting.js (US-006/US-007 tech notes, docs/architecture.md
+// 14.3). `LightSet` owns all light state (ambient + point lights + the
+// sun), `buildLightSet` reads `level.def.lights`/`.sun`/`.ambient` per
+// placed structure (US-002 rules: hue from `P.hue[color]`, energy from
+// `intensity`, values from `P.lights[preset]` - never hard-coded), `lightAt`
+// is the single point evaluator shared by `lightSurfaces` (CPU/JS reference,
+// this file) and the GLSL `light` pass (`gpu/glsl/light.frag.js`, same
+// formula). Pure/allocation-free after construction (architecture.md 9) -
+// every per-frame method writes into pre-allocated typed arrays.
 //
 // Deviation (flagged for architect review, not silent): `computeVisGrid`
 // below keys each light's visibility box on its OWN unjittered cell +-
@@ -16,9 +15,17 @@
 // Node-testable without a `packed` atlas, and identical at the sample point
 // (`vis = 1` outside the box, matching the "outside every footprint" rule).
 // The GLSL `light` pass (light.frag.js) uses the exact same box convention
-// for parity. Sun (US-007) is intentionally NOT implemented here -
-// `LightSet.sun.on` stays `false`, `setSun`/`sunVisible` are present only
-// as API-shape stubs so US-007 does not need to change this file's shape.
+// for parity.
+//
+// US-007 deviation: `sunVisible`'s structure walk uses `world.sectorAt`/
+// `world.structureAt` (world coordinates throughout) instead of an explicit
+// per-structure slab-entry loop (14.3 item 4's "then the remaining placed
+// structures by slab entry, same loop shape as dda.frag") - `sectorAt`
+// already resolves "which placed structure (if any) covers this world
+// cell" across every structure, so re-deriving that with a manual slab loop
+// in JS would just be a slower version of the same answer. The GLSL twin
+// (`light.frag.js`) *does* need the explicit loop (no `sectorAt` there),
+// and documents its own version of this deviation.
 
 import { HFOV_DEG } from './sectorCaster.js';
 
@@ -76,7 +83,6 @@ function seedFor(key) {
 export class LightSet {
   constructor() {
     this.ambient = new Float32Array(3);
-    // US-007 stub - always off in US-006 scope.
     this.sun = { on: false, elevation: 0, azimuth: 0, dir: new Float32Array(3), col: new Float32Array(3) };
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
@@ -205,9 +211,16 @@ export class LightSet {
     this.count = last;
   }
 
-  /** The ONLY sun mutator (US-007). Stubbed: recomputes `dir`, but `sun.on` is never set true by US-006 code paths. */
+  /**
+   * The ONLY sun mutator (US-007, F6/F7 in `game/js/main.js`). Recomputes
+   * `dir` (unit vector TOWARD the sun; x east, y south, z up, `azimuth`
+   * compass degrees = where the light comes FROM - 14.3 item 3). "Elevation
+   * <= 0 -> sun.on = false" (tech notes item 4): a sun below the horizon
+   * never lights anything, regardless of the caller's requested `on`.
+   */
   setSun({ elevation, azimuth, on }) {
-    this.sun.elevation = elevation; this.sun.azimuth = azimuth; this.sun.on = !!on;
+    this.sun.elevation = elevation; this.sun.azimuth = azimuth;
+    this.sun.on = elevation > 0 ? !!on : false;
     const elRad = elevation * Math.PI / 180, azRad = azimuth * Math.PI / 180;
     this.sun.dir[0] = Math.sin(azRad) * Math.cos(elRad);
     this.sun.dir[1] = -Math.cos(azRad) * Math.cos(elRad);
@@ -274,6 +287,17 @@ export class LightSet {
  * the structure) per placed structure -> world-space `LightSet`. Ambient
  * from `P.lights.ambient`. Light values (hue/intensity/radius/flicker) come
  * from `P.lights[preset]`/`P.hue[color]` only - never hard-coded (US-006 AC).
+ *
+ * US-007: sun/ambient come from the FIRST placed structure's `def.sun`
+ * (`{preset?, elevation?, azimuth?}`, MAP_FORMAT - `design/levels/tower.js`'s
+ * `sun: { preset: 'sun', elevation: 60, azimuth: 112.5 }`), falling back to
+ * `P.lights[preset || 'sun']`'s own `elevation`/`azimuth`/`color`/
+ * `intensity` when a level omits any of them or has no `def.sun` at all -
+ * "sun/ambient from the first structure's def (fallback: palette defaults)"
+ * (14.3 item 1's `buildLightSet` signature comment). `setSun` is the only
+ * writer of `on`/`elevation`/`azimuth`/`dir`; `sun.col` (hue*intensity, no
+ * per-frame flicker) is set directly here, once, like a point light's
+ * `baseHue`/`baseIntensity`.
  */
 export function buildLightSet(world, palette) {
   const ls = new LightSet();
@@ -282,6 +306,19 @@ export function buildLightSet(world, palette) {
   ls.ambient[0] = ambHue[0] * amb.intensity;
   ls.ambient[1] = ambHue[1] * amb.intensity;
   ls.ambient[2] = ambHue[2] * amb.intensity;
+
+  const firstStruct = world.structures[0];
+  const sunDef = (firstStruct && firstStruct.level && firstStruct.level.def && firstStruct.level.def.sun) || null;
+  const sunPreset = palette.lights[(sunDef && sunDef.preset) || 'sun'];
+  if (sunPreset) {
+    const sunHue = palette.hue[sunPreset.color];
+    const elevation = (sunDef && sunDef.elevation != null) ? sunDef.elevation : sunPreset.elevation;
+    const azimuth = (sunDef && sunDef.azimuth != null) ? sunDef.azimuth : sunPreset.azimuth;
+    ls.setSun({ elevation, azimuth, on: true });
+    ls.sun.col[0] = sunHue[0] * sunPreset.intensity;
+    ls.sun.col[1] = sunHue[1] * sunPreset.intensity;
+    ls.sun.col[2] = sunHue[2] * sunPreset.intensity;
+  }
 
   for (const s of world.structures) {
     const def = s.level && s.level.def;
@@ -348,11 +385,20 @@ const NZ = [0, 0, 0, 0, 0, 1, -1];
 
 const evalScratch = new Float64Array(3);
 
+// US-007: `lightAt` writes its per-call sun/point-light debug info here
+// (never allocated per call - architecture.md 9), mirroring `LIGHT.w`'s
+// `sunlit | litCount << 8` (14.3 item 3). Single-threaded/synchronous JS
+// only (no re-entrant `lightAt` calls), same pattern as `evalScratch`.
+export const lightFlags = { sunlit: 0, litCount: 0 };
+
 /**
  * Shared per-point evaluator (surfaces here, sprites in a later story) -
- * `L = ambient + sum_i col_i * falloff(d,r) * max(0,N.L) * vis_i(P)`. `world`
- * is only used by `sampleVis` indirectly (the vis grid is already baked by
- * `update()` - this function never recomputes it, never allocates).
+ * `L = ambient + sum_i col_i * falloff(d,r) * max(0,N.L) * vis_i(P) +
+ * sunCol * max(0,N.sunDir) * sunlit(P)`. `world` is used by `sampleVis`
+ * indirectly (the vis grid is already baked by `update()` - this function
+ * never recomputes it) and directly by `sunVisible` for the sun shadow DDA.
+ * Writes `lightFlags.sunlit`/`.litCount` for this call (debug/parity only -
+ * `lightSurfaces` below copies them into `fb.light.sunlit`/`.litCount`).
  *
  * `idxList`/`idxCount` (optional, PO REJECT item 1): when given, evaluates
  * only those light indices (the CPU fallback's 4-nearest list from
@@ -362,6 +408,7 @@ const evalScratch = new Float64Array(3);
  */
 export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount) {
   out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
+  let litCount = 0;
   const n = idxList ? idxCount : lights.count;
   for (let k = 0; k < n; k++) {
     const i = idxList ? idxList[k] : k;
@@ -387,7 +434,24 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
     out[0] += lights.col[o4] * amt;
     out[1] += lights.col[o4 + 1] * amt;
     out[2] += lights.col[o4 + 2] * amt;
+    litCount++;
   }
+  lightFlags.litCount = litCount;
+  let sunlit = 0;
+  const sun = lights.sun;
+  if (sun && sun.on) {
+    const sd = sun.dir;
+    const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
+    if (ndotsun > 0) {
+      if (sunVisible(world, x + nx * 0.01, y + ny * 0.01, z + nz * 0.01, sd)) {
+        sunlit = 1;
+        out[0] += sun.col[0] * ndotsun;
+        out[1] += sun.col[1] * ndotsun;
+        out[2] += sun.col[2] * ndotsun;
+      }
+    }
+  }
+  lightFlags.sunlit = sunlit;
   return out;
 }
 
@@ -468,13 +532,82 @@ export function computeVisGrid(lights, slot, world) {
   }
 }
 
+// US-007 (14.3 item 4): "lit when ... MAX_SUN_STEPS = 48 is reached (bias
+// to lit)". A tiny z nudge above the surface (`sunVisible`'s `h0 = z +
+// 1e-3`) so a point exactly on its own floor/ceiling plane is never
+// self-shadowed by float rounding.
+export const MAX_SUN_STEPS = 48;
+const SUN_Z_EPS = 1e-3;
+
+// Crossing test (14.3 item 2/4, normative, same rule in GLSL): the rising
+// ray covers heights [h0, h1] while inside `sec`'s cell. Blocked iff
+// `h0 < floorH` (solid: the wall body, whose column runs up to `floorH` -
+// US-003; open: the step block) OR, when the cell has a real ceiling
+// (`!ceilSky`), the ray's height band overlaps the closed [ceilH, topH]
+// slab (`topH == ceilH` when undefined, so a zero-thickness slab still
+// blocks - "closed" per the tech note). Uniform for solid and open cells
+// alike - unlike the point-light `cellBlocks` above, which only applies the
+// slab test to non-solid cells (a solid cell's own `ceilH` never matters,
+// its column already stops at `floorH`).
+function sunCellBlocked(sec, h0, h1) {
+  if (h0 < sec.floorH) return true;
+  if (sec.ceilH === 'sky') return false;
+  const topH = sec.topH === undefined ? sec.ceilH : (sec.topH === 'sky' ? Infinity : sec.topH);
+  return h0 <= topH && h1 >= sec.ceilH;
+}
+
 /**
- * US-007 stub: full sun-shadow DDA is out of scope for US-006 (`sun.on`
- * always false here, so this is never called by this story's code paths).
- * Returns true (lit) so the API shape exists for US-007 to replace.
+ * JS reference of the GLSL sun DDA (14.3 item 4): is `(x,y,z)` (already the
+ * caller's `S = P + N*0.01`) lit by the sun, walking the grid toward `dir`
+ * (`lights.sun.dir`, unit, TOWARD the sun)? `world` may be null (no placed
+ * structures yet) - returns lit (`true`), matching "outside every footprint
+ * -> lit".
+ *
+ * Deviation from the literal 14.3 item 4 structure loop: see this file's
+ * module doc - `world.sectorAt`/`world.structureAt` already resolve "which
+ * placed structure (if any) owns this world cell" across every structure,
+ * so the walk stays entirely in WORLD coordinates and needs no explicit
+ * per-structure slab-entry step (that machinery is what the GLSL twin needs
+ * instead, since it has no such world-coordinate query).
  */
 export function sunVisible(world, x, y, z, dir) {
-  return true;
+  if (!world) return true;
+  const dx = dir[0], dy = dir[1], dz = dir[2];
+  const horiz = Math.hypot(dx, dy);
+  let h0 = z + SUN_Z_EPS;
+
+  if (horiz < 1e-9) {
+    // Straight-up sun (elevation 90): never crosses a cell boundary - one
+    // slab test on the starting cell against an unbounded band above.
+    const sec = world.sectorAt(x, y);
+    if (!sec) return true;
+    return !sunCellBlocked(sec, h0, Infinity);
+  }
+
+  const ndx = dx / horiz, ndy = dy / horiz;
+  const tanElev = dz / horiz;
+  let mapX = Math.floor(x), mapY = Math.floor(y);
+  const stepX = ndx > 0 ? 1 : ndx < 0 ? -1 : 0;
+  const stepY = ndy > 0 ? 1 : ndy < 0 ? -1 : 0;
+  const deltaDistX = ndx === 0 ? Infinity : Math.abs(1 / ndx);
+  const deltaDistY = ndy === 0 ? Infinity : Math.abs(1 / ndy);
+  let sideDistX = ndx === 0 ? Infinity : (ndx > 0 ? (mapX + 1 - x) : (x - mapX)) * deltaDistX;
+  let sideDistY = ndy === 0 ? Infinity : (ndy > 0 ? (mapY + 1 - y) : (y - mapY)) * deltaDistY;
+
+  let tPrev = 0;
+  for (let step = 0; step < MAX_SUN_STEPS; step++) {
+    const sec = world.sectorAt(mapX + 0.5, mapY + 0.5);
+    if (!sec) return true; // left every footprint
+    let t1;
+    if (sideDistX < sideDistY) { t1 = sideDistX; sideDistX += deltaDistX; mapX += stepX; }
+    else { t1 = sideDistY; sideDistY += deltaDistY; mapY += stepY; }
+    const h1 = h0 + tanElev * (t1 - tPrev);
+    if (sunCellBlocked(sec, h0, h1)) return false;
+    h0 = h1; tPrev = t1;
+    const struct = world.structureAt(mapX + 0.5, mapY + 0.5);
+    if (struct && h0 > struct.maxH) return true;
+  }
+  return true; // step cap - bias to lit
 }
 
 /** Pure packer (testability - the render path reads `lights.pos`/`lights.col` directly, no copy needed). */
@@ -578,10 +711,22 @@ export function lightSurfaces(fb, lights, cam, world) {
       lightAt(lights, world, px, py, pz, NX[f] || 0, NY[f] || 0, NZ[f] || 0, evalScratch, idxList, idxCount);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
+      // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
+      // parity only): copied out of the shared `lightFlags` scratch right
+      // after the call that set it - never read across a different cell's
+      // `lightAt` call.
+      if (lb.sunlit) lb.sunlit[i] = lightFlags.sunlit;
+      if (lb.litCount) lb.litCount[i] = lightFlags.litCount;
     }
   }
 }
 /** Allocates `fb.light`'s backing store (once, at FrameBuffers-construction/resize time - never inside `lightSurfaces`). */
 export function makeLightBuffer(cols, rows) {
-  return { uniform: true, rgb: new Float32Array(cols * rows * 3) };
+  return {
+    uniform: true, rgb: new Float32Array(cols * rows * 3),
+    // US-007: per-cell debug/parity mirrors of `LIGHT.w`'s two fields -
+    // `?gpucompare=1`'s sunlit-flag mismatch metric reads `sunlit` back
+    // against the GPU readout.
+    sunlit: new Uint8Array(cols * rows), litCount: new Uint8Array(cols * rows),
+  };
 }
