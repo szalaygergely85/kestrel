@@ -396,13 +396,15 @@
         var edge = 1 - 0.22 * hash(x, y, 0, 21) - 0.10 * Math.sin(x * 0.9 + y * 0.7);
         if (e > edge) { H[y].push(0); continue; }
         var h = 1;
-        h += 3.3 * Math.exp(-Math.pow(x - 8.5 - 1.6 * Math.sin(y * 0.55), 2) / 5) * (1 - 0.6 * ey * ey);
+        h += 4.4 * Math.exp(-Math.pow(x - 7 - 1.4 * Math.sin(y * 0.55), 2) / 5) * (1 - 0.6 * ey * ey);   // tall fold, peak 5 layers
         h += 2.0 * Math.exp(-Math.pow(x - 25 + (y - 7) * 0.5, 2) / 3.5);
         if (x > 10 && x < 28) h += 1.0 * Math.exp(-Math.pow(y - 2.5, 2) / 2);
         h += 0.6 * (hash(x >> 1, y >> 1, 1, 22) - 0.5);
         if (e > edge - 0.18) h = Math.min(h, 1.4);                                 // flat hem
         var bx = (x + 0.5 - 16) / 4.5, by = (y + 0.5 - 7) / 4, bb = bx * bx + by * by;
         if (bb < 1) h = Math.min(h, 1.6 + 0.8 * bb);                               // the hollow (<= 2 voxels)
+        var dc = Math.sqrt(Math.pow(x + 0.5 - 16, 2) + Math.pow(y + 0.5 - 7, 2));
+        if (dc < 6.8) h = Math.min(h, 3.4);                                        // <= 3 voxels (0.19 m) within 0.42 m of the start pose
         H[y].push(Math.max(1, Math.min(5, Math.round(h))));
       }
     }
