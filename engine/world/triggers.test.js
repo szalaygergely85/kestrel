@@ -9,9 +9,17 @@ import { updateTriggers } from './triggers.js';
 import { AssetRegistry } from '../core/assets.js';
 import paletteMod from '../../design/palette.js';
 import towerDef from '../../design/levels/tower.js';
+// US-011 (7.5 item 1): World.load throws on an unregistered props[].model.
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; towerDef;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;

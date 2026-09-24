@@ -20,9 +20,17 @@ import towerDef from '../../design/levels/tower.js';
 import testRoomDef from '../../design/levels/test_room.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 import worldMod from '../../design/levels/world_m1.js';
+// US-011 (7.5 item 1): World.load throws on an unregistered props[].model.
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; towerDef; testRoomDef; terrainDef; worldMod;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;
