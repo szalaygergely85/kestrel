@@ -22,6 +22,7 @@
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
 import { fastShade, samplePowLUT } from './fastShade.js';
+import { KIND_MODEL } from './GBuffer.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -404,7 +405,7 @@ const coreScratch = { b: 0, gb: 0, cr: 0, cg: 0, cb: 0, bgK: 0, hA: 0, hB: 0, on
  * Writes into the reused `out` (`coreScratch` for `shadeDetailFast`'s own
  * call; GLSL's twin is `shade.frag.js`'s `shadeCore`).
  */
-export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, light, out) {
+export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, out) {
   const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
 
   let course = 0, bix = 0, fv = 0.5, uo = u;
@@ -533,7 +534,13 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   }
 
   const Lm = Math.max(light[0], light[1], light[2]);
-  const fk = table.faceK[face] || 1;
+  // US-040 step 4 (architecture.md 15.2 item 5): kind 8 (KIND_MODEL) forces
+  // fk = 1 on every face - no shading pop between a model's axis-aligned
+  // faces (US-040) and its rotated face 7 (US-041a), which has no faceK
+  // entry of its own. `aoD` already arrives as +Inf for kind 8 (voxel.frag /
+  // castModels write it before shadeCore runs), so `aok` falls out at 1
+  // below with no extra branch.
+  const fk = kind === KIND_MODEL ? 1 : (table.faceK[face] || 1);
   let aok = 1;
   if (aoD < table.ao.r) aok = table.ao.k + (1 - table.ao.k) * smoothstepFast(0, table.ao.r, aoD);
   const jit = 1 + rec.jitter * (hA * 2 - 1);
@@ -632,7 +639,8 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i], aoD = gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const face = gbuf.face[i];
-  const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, light, coreScratch);
+  const kind = gbuf.kind[i];
+  const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
   return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out);
 }
 

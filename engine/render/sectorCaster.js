@@ -1065,6 +1065,14 @@ export function fillSky(fb, cam) {
     const azimuthDeg = compassAzimuthDeg(rayDirX, rayDirY);
 
     for (let row = top; row <= bottom; row++) {
+      // US-040 step 5 (architecture.md 15.2 item 5): `spans` closes a whole
+      // COLUMN at a time, but `castModels` can write a finite depth into a
+      // single cell inside a column that is still "open" (a voxel instance
+      // standing in an otherwise-open span, e.g. over terrain that hasn't
+      // resolved this column yet) - skip that cell here instead of painting
+      // sky over it. Sky itself always leaves depth at Infinity (never
+      // finite), so this never skips a cell fillSky itself already painted.
+      if (ctx.depthBuffer && ctx.depthBuffer.depth[row * cols + x] < Infinity) continue;
       const elevDeg = elevAtRow(ctx, row);
       shadeSkyAndWrite(rt, x, row, ctx, azimuthDeg, elevDeg, 'fillsky');
     }

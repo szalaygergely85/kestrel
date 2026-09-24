@@ -663,6 +663,43 @@
       'saalkaal'
     ] }
   };
+  // US-040 step 4 / OWN-REQ-001: voxel prop materials (design/models/voxel_props.js `ASSETS.voxelMaterials.v1`,
+  // merged verbatim per that file's header "MERGE STEP STILL OPEN"). Appended after canvas so no existing
+  // material id moves (ids are assigned by MaterialTable's Object.keys insertion order).
+  materials.brass_light = {
+    desc: 'VOXEL PROPS. Bright brass rim / top edges (lever plate frame, lamp base + hood rims). Catches the light first.',
+    base: 'brassLight', albedo: 0.95, ramp: 'brass', spec: 0.60,
+    bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [40, 40], key: {
+      a: { shade: 1.00 }, h: { shade: 1.14, tint: 'brassHot', amount: 0.50 }, d: { shade: 0.90 }
+    }, rows: ['haah', 'aada', 'ahaa', 'daah'] }
+  };
+  materials.brass_hot = {
+    desc: 'VOXEL PROPS. Rivets, the lever knob and gear teeth, the lamp finial: white-hot brass with a faint self-glow ' +
+          '(emissive 0.10) so the lever / lamp stay findable in shade (finding 3). Not a light source.',
+    base: 'brassHot', albedo: 1.00, ramp: 'brass', spec: 0.70, emissive: 0.10,
+    bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 12]
+  };
+  materials.brass_dark = {
+    desc: 'VOXEL PROPS. Dark brass body (lever plate, lamp base / rails / hood, bracket plate). Quiet, low value, so the ' +
+          'rim and the handle read against it and it never matches the stone.',
+    base: 'brassDark', albedo: 0.62, ramp: 'brass', spec: 0.30,
+    bg: { mode: 'darken', k: 0.14 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [40, 40], key: {
+      a: { shade: 1.00 }, s: { shade: 0.72, tint: 'brassShadow', amount: 0.60 }
+    }, rows: ['aaaa', 'asaa', 'aaaa', 'aaas'] }
+  };
+  materials.iron_light = {
+    desc: 'VOXEL PROPS. Light iron: the lever handle rod, the lamp bail, top edge of the bracket arm. Cool grey on dark brass.',
+    base: 'ironLight', albedo: 0.85, ramp: 'iron', spec: 0.50,
+    bg: { mode: 'darken', k: 0.15 }, textureFade: [4, 12]
+  };
+  materials.iron_dark = {
+    desc: 'VOXEL PROPS. Dark iron: lever foot + post + the back plate that frames the rim (the dark contour), the lamp ' +
+          'burner, the bracket arm / hook. Darkest value of the set.',
+    base: 'ironDark', albedo: 0.60, ramp: 'iron', spec: 0.25,
+    bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12]
+  };
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)

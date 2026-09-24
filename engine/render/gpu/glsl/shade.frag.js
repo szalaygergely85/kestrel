@@ -44,7 +44,7 @@ import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 // program is already near the 16-texture-unit budget, so the FARH texture
 // stays in the march pass only).
 import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
-import { KIND_TERRAIN } from '../../GBuffer.js';
+import { KIND_TERRAIN, KIND_MODEL } from '../../GBuffer.js';
 
 export const MAX_SUB = 16; // 4x4, matches resolve.frag.js's cap
 
@@ -145,7 +145,7 @@ struct Core {
 };
 
 Core shadeCore(float u, float v, float z, float aoD,
-    float dudx, float dvdx, float dudy, float dvdy, float dist, int face, int matId, float Lm) {
+    float dudx, float dvdx, float dudy, float dvdy, float dist, int face, uint kind, int matId, float Lm) {
   vec4 mf0 = texelFetch(uMatF, ivec2(0, matId), 0);
   vec4 mf1 = texelFetch(uMatF, ivec2(1, matId), 0);
   vec4 mf2 = texelFetch(uMatF, ivec2(2, matId), 0);
@@ -332,7 +332,9 @@ Core shadeCore(float u, float v, float z, float aoD,
     }
   }
 
-  float fk = (face >= 1 && face <= 6) ? uFaceK[face] : 1.0;
+  // US-040 step 4 (architecture.md 15.2 item 5): kind 8 (KIND_MODEL) forces
+  // fk = 1.0 on every face - literal twin of detailShade.js's shadeCore.
+  float fk = (kind == ${KIND_MODEL}u) ? 1.0 : ((face >= 1 && face <= 6) ? uFaceK[face] : 1.0);
   float aok = 1.0;
   if (aoD < uAoR) aok = uAoK + (1.0 - uAoK) * smoothstepFast(0.0, uAoR, aoD);
   float jit = 1.0 + jitter * (hA * 2.0 - 1.0);
@@ -443,7 +445,7 @@ void main() {
       float uA = uintBitsToFloat(sgaU.x), vA = uintBitsToFloat(sgaU.y);
       float zA = uintBitsToFloat(sgaU.z), aoDA = uintBitsToFloat(sgaU.w);
 
-      Core c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, matId, Lm);
+      Core c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, kindU, matId, Lm);
       bSum += c.b; gbSum += c.gb; crSum += c.cr; cgSum += c.cg; cbSum += c.cb; bgKSum += c.bgK;
       count++;
       if (c.onJoint) jointN++;

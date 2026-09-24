@@ -7,6 +7,7 @@
 // (quantisation happens at the same point as JS): `floor(min(255,
 // byte*gain)+0.5)`, min 1.
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
+import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
 
 export const EDGE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out vec4 outFg;
@@ -20,11 +21,17 @@ uniform ivec2 uGrid; // cols, rows
 uniform float uFogMax;
 uniform float uEdgeGlyph[8]; // rule glyph codes (already ASCII-32), index 0 = cap .. 7 = nosing
 uniform float uEdgeGain[8];
+uniform float uModelRim; // US-040 step 4 (15.2 item 5): kind-8 rule cells, fg AND bg x this. Default 1 = off.
 
 ${GBUF_UNPACK}
 
-bool isVert(uint kind) { return kind == 1u || kind == 2u || kind == 3u; }
-bool isUp(uint kind) { return kind == 4u || kind == 5u; }
+// US-040 step 4 (architecture.md 15.2 item 5): kind 8 (KIND_MODEL) joins the
+// rule table via its world face - literal twin of edgePass.js's isVert/isUp.
+bool isVert(uint kind, uint face) {
+  return kind == 1u || kind == 2u || kind == 3u ||
+    (kind == ${KIND_MODEL}u && (face == ${FACE_N}u || face == ${FACE_E}u || face == ${FACE_S}u || face == ${FACE_W}u || face == ${FACE_PACKED}u));
+}
+bool isUp(uint kind, uint face) { return kind == 4u || kind == 5u || (kind == ${KIND_MODEL}u && face == ${FACE_U}u); }
 
 // fogF is not stored in a G-buffer texture (stage 1 recomputes fog from
 // depth in this pass, tech notes item 5 - "no float aux target"); the fog
@@ -37,6 +44,10 @@ float fogF(float dist) {
 uint kindAt(ivec2 c) {
   if (c.x < 0 || c.x >= uGrid.x || c.y < 0 || c.y >= uGrid.y) return 0u;
   return giKind(texelFetch(uGI, c, 0).y);
+}
+uint faceAt(ivec2 c) {
+  if (c.x < 0 || c.x >= uGrid.x || c.y < 0 || c.y >= uGrid.y) return 0u;
+  return giFace(texelFetch(uGI, c, 0).y);
 }
 int planeAt(ivec2 c) { return int(texelFetch(uGI, c, 0).x); }
 float depthAt(ivec2 c) { return uintBitsToFloat(texelFetch(uDepth, c, 0).r); }
@@ -58,6 +69,7 @@ void main() {
 
   uvec2 gi = texelFetch(uGI, cell, 0).xy;
   uint kind = giKind(gi.y);
+  uint face = giFace(gi.y);
   float dist = depthAt(cell);
   float ff = fogF(dist);
 
@@ -68,8 +80,8 @@ void main() {
 
     if (farther(cell, up, okUp)) rule = 1;
     else if (farther(cell, dn, okDn)) rule = 2;
-    else if (isVert(kind) && (farther(cell, lf, okLf) || farther(cell, rt2, okRt))) rule = 3;
-    else if (isVert(kind) && okRt && isVert(kindAt(rt2)) && planeAt(rt2) != planeAt(cell)) {
+    else if (isVert(kind, face) && (farther(cell, lf, okLf) || farther(cell, rt2, okRt))) rule = 3;
+    else if (isVert(kind, face) && okRt && isVert(kindAt(rt2), faceAt(rt2)) && planeAt(rt2) != planeAt(cell)) {
       ivec2 l2 = lf, r2 = cell + ivec2(2, 0);
       bool okL2 = okLf, okR2 = r2.x < uGrid.x;
       float dl = (okL2 && kindAt(l2) != 0u) ? depthAt(l2) : dist;
@@ -78,9 +90,9 @@ void main() {
       if (di <= dl && dRt <= dr) rule = 4;
       else if (di >= dl && dRt >= dr) rule = 5;
     }
-    if (rule == 0 && isVert(kind) && kind != 2u && okDn && isUp(kindAt(dn)) && depthAt(dn) <= dist * 1.08) rule = 6;
-    if (rule == 0 && isVert(kind) && okUp && kindAt(up) == 6u && depthAt(up) <= dist * 1.08) rule = 7;
-    if (rule == 0 && kind == 2u && okUp && isUp(kindAt(up))) rule = 8;
+    if (rule == 0 && isVert(kind, face) && kind != 2u && okDn && isUp(kindAt(dn), faceAt(dn)) && depthAt(dn) <= dist * 1.08) rule = 6;
+    if (rule == 0 && isVert(kind, face) && okUp && kindAt(up) == 6u && depthAt(up) <= dist * 1.08) rule = 7;
+    if (rule == 0 && kind == 2u && okUp && isUp(kindAt(up), faceAt(up))) rule = 8;
   }
 
   if (rule == 0) { outFg = sfg; outBg = vec4(sbg.rgb, 1.0); return; }
@@ -93,10 +105,21 @@ void main() {
   // the raw float, removing the 127.49999-style half-step cases 14.1
   // section 5 warns about (today inside tolerance, but US-030 should not
   // inherit the gap).
+  // US-040 step 4 (architecture.md 15.2 item 5): the dark model rim - kind-8
+  // rule cells only, fg AND bg x uModelRim, applied after the rule's own
+  // gain (default uModelRim = 1 = off, byte-identical passthrough).
+  float rim = (kind == ${KIND_MODEL}u) ? uModelRim : 1.0;
   vec3 fgByte0 = floor(sfg.rgb * 255.0 + 0.5);
-  vec3 fgByte = floor(min(vec3(255.0), fgByte0 * gain) + 0.5);
+  vec3 fgByte = floor(min(vec3(255.0), fgByte0 * gain * rim) + 0.5);
   fgByte = max(fgByte, vec3(1.0));
   outFg = vec4(fgByte / 255.0, glyph / 255.0);
-  outBg = vec4(sbg.rgb, 1.0);
+  if (rim != 1.0) {
+    vec3 bgByte0 = floor(sbg.rgb * 255.0 + 0.5);
+    vec3 bgByte = floor(min(vec3(255.0), bgByte0 * rim) + 0.5);
+    bgByte = max(bgByte, vec3(1.0));
+    outBg = vec4(bgByte / 255.0, 1.0);
+  } else {
+    outBg = vec4(sbg.rgb, 1.0);
+  }
 }
 `;

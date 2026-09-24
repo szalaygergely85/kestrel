@@ -8,6 +8,8 @@
 // counter `shadeSurfaces` already incremented stays put - this pass only
 // ever touches cells `shadeSurfaces` wrote this same frame.
 //
+import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
+
 // Rule codes (gbuf.rule, 0 = none), in `DP.edges.rules` order:
 export const RULE_CAP = 1;
 export const RULE_LIP = 2;
@@ -19,8 +21,17 @@ export const RULE_SEAM_CEIL = 7;
 export const RULE_NOSING = 8;
 const RULE_NAMES = ['cap', 'lip', 'side', 'convex', 'concave', 'seamFloor', 'seamCeil', 'nosing'];
 
-function isVert(kind) { return kind === 1 || kind === 2 || kind === 3; }
-function isUp(kind) { return kind === 4 || kind === 5; }
+// US-040 step 4 (architecture.md 15.2 item 5): kind 8 (KIND_MODEL) joins the
+// rule table via its world face - `isVert`/`isUp` now take `(kind, face)`.
+// Face codes: GBuffer.js FACE_N/E/S/W/U/D = 1..6, FACE_PACKED (rotated, face
+// 7, US-041a) counts as vertical too; face D (6) is neither.
+function isVert(kind, face) {
+  return kind === 1 || kind === 2 || kind === 3 ||
+    (kind === KIND_MODEL && (face === FACE_N || face === FACE_E || face === FACE_S || face === FACE_W || face === FACE_PACKED));
+}
+function isUp(kind, face) {
+  return kind === 4 || kind === 5 || (kind === KIND_MODEL && face === FACE_U);
+}
 
 function farther(kind, planeId, depth, i, n) {
   if (n < 0) return false;
@@ -43,7 +54,7 @@ export function edgePass(gbuf, depth, rt, edges) {
   // decision block on the GPU as pass 2 of the present hook instead).
   if (rt.gpuActive) return;
   const cols = gbuf.cols, rows = gbuf.rows;
-  const kind = gbuf.kind, planeId = gbuf.planeId, fogF = gbuf.fogF, rule = gbuf.rule;
+  const kind = gbuf.kind, planeId = gbuf.planeId, fogF = gbuf.fogF, rule = gbuf.rule, face = gbuf.face;
   const fogMax = edges.fogMax;
   rule.fill(0);
 
@@ -59,8 +70,8 @@ export function edgePass(gbuf, depth, rt, edges) {
       let r = 0;
       if (farther(kind, planeId, depth, i, up)) r = RULE_CAP;
       else if (farther(kind, planeId, depth, i, dn)) r = RULE_LIP;
-      else if (isVert(kind[i]) && (farther(kind, planeId, depth, i, lf) || farther(kind, planeId, depth, i, rt2))) r = RULE_SIDE;
-      else if (isVert(kind[i]) && rt2 >= 0 && isVert(kind[rt2]) && planeId[rt2] !== planeId[i]) {
+      else if (isVert(kind[i], face[i]) && (farther(kind, planeId, depth, i, lf) || farther(kind, planeId, depth, i, rt2))) r = RULE_SIDE;
+      else if (isVert(kind[i], face[i]) && rt2 >= 0 && isVert(kind[rt2], face[rt2]) && planeId[rt2] !== planeId[i]) {
         const l2 = lf;
         const r2 = x < cols - 2 ? i + 2 : -1;
         const dl = l2 >= 0 && kind[l2] !== 0 ? depth[l2] : depth[i];
@@ -68,15 +79,20 @@ export function edgePass(gbuf, depth, rt, edges) {
         if (depth[i] <= dl && depth[rt2] <= dr) r = RULE_CONVEX;
         else if (depth[i] >= dl && depth[rt2] >= dr) r = RULE_CONCAVE;
       }
-      if (!r && isVert(kind[i]) && kind[i] !== 2 && dn >= 0 && isUp(kind[dn]) && depth[dn] <= depth[i] * 1.08) r = RULE_SEAM_FLOOR;
-      if (!r && isVert(kind[i]) && up >= 0 && kind[up] === 6 && depth[up] <= depth[i] * 1.08) r = RULE_SEAM_CEIL;
-      if (!r && kind[i] === 2 && up >= 0 && isUp(kind[up])) r = RULE_NOSING;
+      if (!r && isVert(kind[i], face[i]) && kind[i] !== 2 && dn >= 0 && isUp(kind[dn], face[dn]) && depth[dn] <= depth[i] * 1.08) r = RULE_SEAM_FLOOR;
+      if (!r && isVert(kind[i], face[i]) && up >= 0 && kind[up] === 6 && depth[up] <= depth[i] * 1.08) r = RULE_SEAM_CEIL;
+      if (!r && kind[i] === 2 && up >= 0 && isUp(kind[up], face[up])) r = RULE_NOSING;
       rule[i] = r;
     }
   }
 
   const cells = rt.cells;
-  const glyphIdxArr = cells.glyphIdx, fgArr = cells.fg;
+  const glyphIdxArr = cells.glyphIdx, fgArr = cells.fg, bgArr = cells.bg;
+  // US-040 step 4 (architecture.md 15.2 item 5): the dark model rim, data-
+  // driven, default 1 = off. Applies to fg AND bg, kind-8 rule cells only,
+  // after the rule's own glyph/gain (one extra multiply, no texture, no
+  // per-model data).
+  const modelRim = edges.modelRim != null ? edges.modelRim : 1;
   for (let i = 0; i < cols * rows; i++) {
     const r = rule[i];
     if (!r) continue;
@@ -84,10 +100,18 @@ export function edgePass(gbuf, depth, rt, edges) {
     const code = R.glyph.charCodeAt(0);
     glyphIdxArr[i] = code < 32 || code > 126 ? 0 : code - 32;
     const fi = i * 4;
+    const rim = kind[i] === KIND_MODEL ? modelRim : 1;
     for (let k = 0; k < 3; k++) {
-      let v = Math.round(Math.min(255, fgArr[fi + k] * R.gain));
+      let v = Math.round(Math.min(255, fgArr[fi + k] * R.gain * rim));
       if (v < 1) v = 1; // AC: edge colors are never pure black.
       fgArr[fi + k] = v;
+    }
+    if (rim !== 1) {
+      for (let k = 0; k < 3; k++) {
+        let v = Math.round(Math.min(255, bgArr[fi + k] * rim));
+        if (v < 1) v = 1;
+        bgArr[fi + k] = v;
+      }
     }
     fgArr[fi + 3] = glyphIdxArr[i]; // GL packing: fg alpha channel doubles as the glyph index.
   }

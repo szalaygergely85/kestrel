@@ -9,11 +9,17 @@ import { castTerrain, shadeTerrainCells } from './terrainCaster.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
 import { lightSurfaces } from './lighting.js';
+import { castModels } from '../voxel/voxelMarch.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // Preallocated (architecture.md section 9: no per-frame allocation in renderWorld).
 const order = new Int8Array(MAX_STRUCTS);
 const distScratch = new Float32Array(MAX_STRUCTS);
+// US-040 step 5 (architecture.md 15.2 item 5): `castModels` takes a
+// `{rt, depth:Float32Array, gbuf}` shim, not the real `fb` (whose `depth` is
+// a `DepthBuffer` object, `.depth` its typed array) - reused, never
+// reallocated (architecture.md section 9).
+const modelsFbShim = { rt: null, depth: null, gbuf: null };
 
 function bboxDist(cam, bbox) {
   const cx = Math.min(Math.max(cam.x, bbox.x0), bbox.x1);
@@ -100,6 +106,17 @@ export function renderWorld(fb, world, cam) {
   // already no-ops on a null/not-ready terrain, so passing `null` here reuses
   // that same early-out with no new branch inside terrainCaster.js.
   castTerrain(fb, fb.terrainEnabled === false ? null : world.terrain, cam, world);
+
+  // US-040 step 5 (architecture.md 15.2 item 5): `castModels` runs after
+  // terrain, before the shading passes - `fb.voxelPool` is optional (US-040
+  // has no entity binding; harness callers set it via `pool.project(cam,
+  // rt)`, US-041a's `collect(world)` fills it from entities instead). Only
+  // the JS oracle path reaches here (`fb.gpuDda` early-out above covers the
+  // GPU path); `faceMode: 'nearest'` per US-040 scope (face 7 is US-041a).
+  if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length) {
+    modelsFbShim.rt = fb.rt; modelsFbShim.depth = fb.depth.depth; modelsFbShim.gbuf = fb.gbuf;
+    castModels(modelsFbShim, fb.voxelPool.list, cam, { faceMode: 'nearest' });
+  }
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);

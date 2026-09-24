@@ -677,6 +677,7 @@ export class GpuCellPipeline {
     gl.uniform1f(locE.uFogMax, U.edges ? U.edges.fogMax : 1);
     gl.uniform1fv(locE.uEdgeGlyph, U.edges ? U.edges.ruleGlyph : new Array(8).fill(0));
     gl.uniform1fv(locE.uEdgeGain, U.edges ? U.edges.ruleGain : new Array(8).fill(1));
+    gl.uniform1f(locE.uModelRim, U.edges ? U.edges.modelRim : 1);
     gl.uniform1f(locE.uFogStart, U.fog.start);
     gl.uniform1f(locE.uFogFull, U.fog.full);
   }
@@ -1437,7 +1438,7 @@ const SHADE_UNIFORMS = [
   'uTlook', 'uBandNear', 'uBandMid',
   'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uTerrainFogNearRGB', 'uTerrainFogFarRGB',
 ];
-const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uFogStart', 'uFogFull'];
+const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
 // US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
 const CAST_UNIFORMS = [

@@ -91,6 +91,7 @@
   var edges = {
     depthRatio: 1.18, depthAbs: 0.35,  // neighbour is "farther" if n.dist > d*ratio + abs (and a different plane, or sky)
     fogMax: 0.85,                      // no edge glyphs in cells with fog factor above this
+    modelRim: 0.55,                    // US-040 step 4 / ART-OWN-001: kind-8 (voxel model) rule cells, fg+bg x this (dark contour)
     rules: {
       cap:       { glyph: '=', gain: 1.45, desc: 'top edge of a surface against something farther (wall top vs sky, platform lip from above)' },
       lip:       { glyph: '_', gain: 0.55, desc: 'bottom edge against something farther (lintel / roof-slab underside at an opening)' },
@@ -405,6 +406,58 @@
       face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
       overlay: { set: 'soot', tints: ['canvasScorch', 'scorch'], amount: 0.70, shade: 0.60, joint: 0.10, face: 0.08 },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // --- US-040 step 4 / OWN-REQ-001: voxel prop materials (design/models/voxel_props.js `ASSETS.voxelMaterials`,
+    // merged verbatim per that file's header "MERGE STEP STILL OPEN"). Grid 2.5 cm = half a lever voxel (a near
+    // voxel covering 2x2 cells is not one repeated glyph). lines: false - the edge pass draws the voxel steps
+    // (15.2 item 5), not a grid joint.
+    brass_light: {
+      v1: 'brass_light', seed: 201,
+      desc: 'VOXEL PROPS. Bright brass rim / top edges (lever plate frame, lamp base + hood rims). Catches the light first.',
+      albedo: 0.95, bgK: 0.18, detail: 40, jitter: 0.05,
+      tones: [['brassLight', 4], ['brassHot', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    brass_hot: {
+      v1: 'brass_hot', seed: 202,
+      desc: 'VOXEL PROPS. Rivets, the lever knob and gear teeth, the lamp finial: white-hot brass with a faint self-glow ' +
+            '(emissive 0.10) so the lever / lamp stay findable in shade (finding 3). Not a light source.',
+      albedo: 1.00, bgK: 0.20, detail: 40, jitter: 0.05, emissive: 0.10,
+      tones: [['brassHot', 3], ['brassLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    brass_dark: {
+      v1: 'brass_dark', seed: 203,
+      desc: 'VOXEL PROPS. Dark brass body (lever plate, lamp base / rails / hood, bracket plate). Quiet, low value, so the ' +
+            'rim and the handle read against it and it never matches the stone.',
+      albedo: 0.62, bgK: 0.14, detail: 40, jitter: 0.05,
+      tones: [['brassDark', 3], ['brassShadow', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    iron_light: {
+      v1: 'iron_light', seed: 204,
+      desc: 'VOXEL PROPS. Light iron: the lever handle rod, the lamp bail, top edge of the bracket arm. Cool grey on dark brass.',
+      albedo: 0.85, bgK: 0.15, detail: 40, jitter: 0.05,
+      tones: [['ironLight', 3], ['iron', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    iron_dark: {
+      v1: 'iron_dark', seed: 205,
+      desc: 'VOXEL PROPS. Dark iron: lever foot + post + the back plate that frames the rim (the dark contour), the lamp ' +
+            'burner, the bracket arm / hook. Darkest value of the set.',
+      albedo: 0.60, bgK: 0.12, detail: 40, jitter: 0.05,
+      tones: [['ironDark', 3], ['iron', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -414,7 +467,9 @@
     stone: 'stone', stone_moss: 'stone_moss', stone_scorched: 'stone_scorched',
     floor: 'floor', wood: 'wood', rubble: 'rubble', grass: 'grass',
     iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock',
-    stone_ivy: 'stone_ivy', moss_top: 'moss_top', brass: 'brass', copper: 'copper', canvas: 'canvas'
+    stone_ivy: 'stone_ivy', moss_top: 'moss_top', brass: 'brass', copper: 'copper', canvas: 'canvas',
+    // US-040 step 4: voxel prop materials (design/models/voxel_props.js), same key in both files.
+    brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

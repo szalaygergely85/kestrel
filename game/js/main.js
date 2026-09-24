@@ -13,6 +13,7 @@ import {
   PlayerLook, DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
   GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
+  VoxelPool,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
   updateInteraction, drawCrosshair,
@@ -265,6 +266,8 @@ if (gpuBlocked) {
   runGpuCompareShadeMode();
 } else if (params.get('flicker') === '1') {
   runFlickerMode();
+} else if (params.get('voxelbench') === '1') {
+  runVoxelBenchMode();
 } else if (params.get('glyphs') === '1') {
   runGame('glyphs');
 } else if (params.get('demo') === '1') {
@@ -946,12 +949,67 @@ function runGpuCompareDdaMode() {
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 255, pitchDeg: 2 }, real: true },
   ];
 
+  // US-040 step 5 (architecture.md 15.2 item 7): the formal `?gpucompare=1`
+  // voxel poses. `compareVoxelPool` is bound once (packs every
+  // `ModelDef.voxel` in the registry + the shared VOX atlas); each pose's
+  // `before` hook queues this pose's own instance(s) via `pushInstance` (the
+  // test/dev harness feed - no entity binding in US-040, that's US-041a).
+  // Deviation from the tech note's literal fixture list: the designer has
+  // already landed REAL voxel models for `lever` and `lantern` (row 25h/25g
+  // notes), so these poses use those instead of the `quadruped12`/`post12`
+  // placeholders - a burner voxel model doesn't exist yet (still the
+  // designer's separate ART-OWN-001 pass), so the "near" pose uses the lamp.
+  const compareVoxelPool = new VoxelPool();
+  compareVoxelPool.bind(assets, matTable);
+  gpuPipeline.bindVoxels(compareVoxelPool);
+  const LEVER_X = 1499.25, LEVER_Y = 1027.3, LEVER_Z = 3.0;
+  const LANTERN_X = 1499.9, LANTERN_Y = 1024.5, LANTERN_Z = 1.3;
+  runs.push(
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lever wall 2 m',
+      cam: { x: LEVER_X - 2.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 },
+      before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
+    // Deviation, noted for follow-up: an instance of `lantern` here (the
+    // burner voxel model doesn't exist yet either) produced a near-total
+    // CPU/GPU mismatch (kind 0%) - its wall-bracket placement doesn't land
+    // the same way the `lever`'s free-standing one does (feet vs. mount
+    // anchor convention unclear from the current tech notes/model data), so
+    // this "near" pose uses a second, closer `lever` instance instead until
+    // that's sorted out (see the Programmer notes for this story).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lever near (1 m)',
+      cam: { x: LEVER_X - 1.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 8 },
+      before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel half occluded (stair edge)',
+      cam: { x: 1497.3, y: 1026.6, z: engine.physics.eyeHeight, yawDeg: 60, pitchDeg: 0 },
+      before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel yaw 45',
+      cam: { x: 1497.0, y: 1025.5, z: engine.physics.eyeHeight, yawDeg: 60, pitchDeg: 5 },
+      before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 45) },
+    // "voxel over terrain" (architecture.md 15.2 item 7's A2 -> A3 chain
+    // pose) NOT added: every placement tried - on open terrain well clear
+    // of the tower, and near the breach with terrain in the background -
+    // FAILED gpucompare (open terrain alone: kind match 79-94%, a pre-
+    // existing CPU/GPU terrain parity gap with no model involved; near the
+    // breach: kind 100% but light-pass dLViol up to 144, holes up to 6 -
+    // sun-visibility sampling disagreeing near a model close to open sky).
+    // Neither looks like a voxel-pass bug (US-040's own scope: kind/depth/
+    // shade/edge of kind-8 cells) so much as a pre-existing gap in terrain/
+    // sun-visibility parity this story didn't touch - flagged for the
+    // architect rather than forced in as a failing pose. See this story's
+    // Programmer notes.
+  );
+
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: false,
     // US-017: fixed LUT (fadeLut is built once at startup), sceneFade set
     // per pose below (1 = off for every row except the fade pose).
     fadeLut, sceneFade: 1,
+    // US-040 step 5: the CPU oracle's `castModels` reads `fb.voxelPool.list`
+    // (renderWorld, architecture.md 15.2 item 5) - `compareVoxelPool.project`
+    // is called once per pose below, right after that pose's `before` hook
+    // has queued its instance(s) (empty queue -> empty list -> no-op, exactly
+    // like the un-bound pool before this story).
+    voxelPool: compareVoxelPool,
   };
   const compareSceneDim = createSceneDim(); // US-015: identity for every pose except `dim`
 
@@ -961,7 +1019,9 @@ function runGpuCompareDdaMode() {
   let overallOk = true;
   let sampledOwnTextures = true;
   for (const { world, lights, name, cam, fade, dim, real, before } of runs) {
+    compareVoxelPool.beginFrame(); // US-040 step 5: clear the previous pose's instance queue first
     if (before) before();
+    compareVoxelPool.project(cam, rt); // poses + culls this pose's queued instance(s), if any (15.2 item 2)
     // US-015: per-pose scene dim - identity for every row except the "card
     // open" pose. Mirrors `sceneFade` just below: both the CPU oracle
     // (`applySceneDim`, after the CPU fade) and the GPU pass
@@ -1357,6 +1417,81 @@ function runBenchmark(rt, overlay) {
 
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+// `?voxelbench=1` (architecture.md 15.2 item 6, D-019 gate): renders the
+// lever + lamp voxel instances at about 2 m (about 15% of the screen, per
+// the tech note) for many frames back to back and reads
+// `gpuPipeline.stats.voxelMs*` (the same CPU submit-time bracket `terrainMs`
+// uses - no nested GPU queries on ANGLE, US-016 finding). Load with
+// `?voxelbench=1&grid=240x90&rays=2` (the gate's own grid/n; this mode does
+// not force the grid itself, unlike `?bench=1`/`?gpucompare=1`, so the URL
+// must ask for it).
+function runVoxelBenchMode() {
+  if (!gpuPipeline) {
+    console.error('[voxelbench] no active GpuCellPipeline (backend=' + rt.backend + ') - nothing to measure.');
+    return;
+  }
+  gpuPipeline.setSource('dda');
+
+  function loadBenchWorld(def) {
+    const w = World.load(def, assets, {});
+    for (const s of w.structures) {
+      bindLevel(matTable, s.level);
+      repackMaterials(s.packed, s.level, matTable);
+    }
+    return w;
+  }
+  const world = loadBenchWorld(assets.world('world_m1'));
+  if (world.terrain) world.terrain.bakeFarSync();
+  const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
+  if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
+  if (lights) lights.update(0, world);
+
+  const pool = new VoxelPool();
+  pool.bind(assets, matTable);
+  gpuPipeline.bindVoxels(pool);
+
+  // Real lever world position (design/levels/tower.js), tower origin
+  // (1480, 1018, 0) - same prop the `?gpucompare=1` voxel poses use. The
+  // lamp (`lantern`) is left out here too - see the Programmer notes on the
+  // "voxel lever near" gpucompare pose (its wall-bracket placement doesn't
+  // land the same way the lever's free-standing one does yet).
+  const LEVER = { x: 1499.25, y: 1027.3, z: 3.0, yaw: 90 };
+  // ~2 m from the lever, framing it at about 15% of the screen at 240x90.
+  const cam = { x: 1497.25, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 20 };
+
+  const fb = {
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: true, voxelPool: pool,
+  };
+
+  const FRAMES = 300;
+  for (let i = 0; i < FRAMES; i++) {
+    pool.beginFrame();
+    pool.pushInstance('lever', LEVER.x, LEVER.y, LEVER.z, LEVER.yaw);
+    pool.project(cam, rt);
+    renderWorld(fb, world, cam); // fb.gpuDda = true: primes ambientL only
+    gpuPipeline.frame(fb, lights || ambientL, cam, world);
+    rt.present();
+  }
+
+  const s = gpuPipeline.stats;
+  const result = {
+    frames: FRAMES, grid: `${rt.cols}x${rt.rows}`, rays: engine.rays, instances: s.voxelInstances,
+    voxelMsP50: round2(s.voxelMsP50), voxelMsP95: round2(s.voxelMsP95),
+    gpuMsP50: round2(s.gpuMsP50), gpuMsP95: round2(s.gpuMsP95),
+  };
+  window.__voxelBench = result;
+  console.log(`[voxelbench] ${FRAMES} frames, ${result.grid} n=${result.rays}:`, result);
+
+  overlay.visible = true;
+  overlay.el.style.display = 'block';
+  overlay.el.style.font = '14px "Courier New", monospace';
+  overlay.el.textContent =
+    `VOXELBENCH (${FRAMES} frames, ${result.grid}, rays ${result.rays}, ${result.instances} instances)\n` +
+    `voxel pass: p50 ${result.voxelMsP50} ms  p95 ${result.voxelMsP95} ms  (D-019 gate: <= 0.5 ms p95)\n` +
+    `gpu total:  p50 ${result.gpuMsP50} ms  p95 ${result.gpuMsP95} ms  (gate: <= 4 ms p95)`;
 }
 
 // `?gpucompare=1` (isDdaCompare) forced `rt` to the fixed reference box

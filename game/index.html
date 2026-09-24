@@ -84,6 +84,11 @@
   <script src="../design/models/rubble.js"></script>
   <script src="../design/models/wreckage.js"></script>
   <script src="../design/models/relay.js"></script>
+  <!-- US-040 step 4/5 + US-041a: voxel prop models (lever, lantern) - loaded
+       after palette.js/detail-pass.js (materials merged, architecture.md
+       15.2) and after lever.js/lantern.js (attach() needs `ASSETS.models.
+       lever`/`lantern` to already exist), same classic-script loading. -->
+  <script src="../design/models/voxel_props.js"></script>
   <!-- US-016 D-011 addendum: the far signal tower + Ferrum's horizon lights
        (world_m1.js's `farTower` entity + `horizon[]` entry reference these). -->
   <script src="../design/models/far_tower.js"></script>

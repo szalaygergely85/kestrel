@@ -229,6 +229,8 @@ export function packMaterialTable(table) {
         .map((n) => edges.rules[n].glyph.charCodeAt(0) - 32),
       ruleGain: ['cap', 'lip', 'side', 'convex', 'concave', 'seamFloor', 'seamCeil', 'nosing']
         .map((n) => edges.rules[n].gain),
+      // US-040 step 4 (15.2 item 5): the dark model rim, default 1 = off.
+      modelRim: edges.modelRim != null ? edges.modelRim : 1,
     } : null,
     cellAspect: table.cellAspect,
   };
