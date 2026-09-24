@@ -17,9 +17,11 @@ import {
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
+  isSoftwareRenderer,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
+import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
 import { fillWorstCase } from './dev/benchScene.js';
@@ -69,6 +71,22 @@ if (isDdaCompare) rays = 1;
 
 const canvas = document.getElementById('screen');
 const assets = AssetRegistry.fromGlobals(window.ASSETS);
+
+// US-045 (D-017 item 2): no playable CPU fallback any more. `?gpu=0` and
+// `?force2d=1` are dev/debug switches (D-017 item 3/4) and stay unaffected -
+// they intentionally force the JS/Canvas2D reference path even on hardware
+// that *does* have real WebGL2, so the gate below only blocks the DEFAULT
+// (no dev switch) path. `webgl2gate=none|software` is a test-only override
+// (not a documented AC) so the owner/tester can exercise both screens
+// without swapping GPUs - see the story's Programmer notes.
+const gpuDevSwitch = params.get('gpu') === '0' || params.get('force2d') === '1';
+const gateTest = params.get('webgl2gate');
+let gpuProbe = gateTest === 'none' ? { supported: false, isSoftware: false, renderer: '' }
+  : gateTest === 'software' ? { supported: true, isSoftware: true, renderer: '(test override) SwiftShader' }
+  : probeGpuSupport(isSoftwareRenderer);
+const gpuBlocked = !gpuDevSwitch && !gpuProbe.supported;
+if (gpuBlocked) showWebgl2RequiredScreen(canvas, assets);
+else if (!gpuDevSwitch && gpuProbe.isSoftware) showSoftwareRendererWarning(assets, gpuProbe.renderer);
 // US-012: crosshair/prompt colors, resolved once from the palette's `ui`
 // semantic keys (design/palette.js section 8) - `ASSETS.uiStyle` doesn't
 // exist yet (that's US-015's art), so this is the game's own small style
@@ -201,7 +219,14 @@ const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 // of the game's own UI.
 window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
 
-if (params.get('bench') === '1') {
+if (gpuBlocked) {
+  // AC "no game loop running underneath": the WebGL2-required screen is
+  // already up (shown above) and the canvas is hidden. `createEngine`
+  // above still ran (it just falls onto RenderTargetCanvas2D like the old
+  // fallback did, harmlessly, on the hidden canvas) but none of the
+  // branches below - every one of which ends in a `runGame`/`runBenchmark`
+  // rAF loop - may start.
+} else if (params.get('bench') === '1') {
   // US-001 canvas benchmark: raw CellBuffer present only. It never feeds the
   // GPU cell pipeline a frame (no fb/cam/world), so its hook must be off.
   if (gpuPipeline) gpuPipeline.setEnabled(false);

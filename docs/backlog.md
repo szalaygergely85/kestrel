@@ -56,7 +56,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | PO CHANGE REQUEST (2026-09-23): logo approved; map card needs "W." signature, `hintBurner`/`hintClimb` zones, `storyHints.when` per ACs. Programmer after the art PO OK + US-010 + US-012 |
 | 24 | US-017 | End trigger, fade and restart | P0 | todo | Programmer |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
-| 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | todo | Programmer; UI/game-only, no architect notes needed |
+| 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | po-review | Programmer; UI/game-only, no architect notes needed |
 | 26 | US-022 | Wake the relay with the lamp (optional beat, D-003; D-011 reskin) | P1 | todo | Relay bowl + glow art comes with the US-011 reskin; Programmer, after all P0 done |
 | 27 | US-019 | Dust motes in the sun shaft | P2 | todo | Designer + Programmer |
 | 28 | US-020 | Sound: procedural WebAudio (D-004) | P2 | todo | Programmer, after all P0 done and US-022 done/deferred |
@@ -2103,7 +2103,7 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: final check before M1 exit; overlay part can be built with US-004. D-009 budgets.
 
-### US-045 WebGL2-required screen + software-renderer warning  [Priority: P0] [Status: todo]
+### US-045 WebGL2-required screen + software-renderer warning  [Priority: P0] [Status: po-review]
 As a player whose browser can't run WebGL2 (or is falling back to a software renderer), I want a clear message instead of a broken or silently slow game, so that I know what to do.
 (D-017: no playable CPU fallback; this replaces the old auto-fallback-to-CPU behaviour.)
 Acceptance criteria:
@@ -2113,6 +2113,8 @@ Acceptance criteria:
 - [ ] Works the same at 240x90 and 320x120; no layout overlap with the F3 overlay or pause menu.
 Design needed: no (uses `uiStyle` text/panel styling already established).
 Notes / dependencies: D-017. No architect tech notes needed (UI/game-only, no engine render/world/physics/core/entities changes).
+
+Programmer notes (2026-09-24): `game/js/ui/webgl2Gate.js` (new, game-only) probes a throwaway canvas at the very top of `game/js/main.js` (before `createEngine`), using the already-public `engine/index.js` export `isSoftwareRenderer` (no engine changes). `?gpu=0`/`?force2d=1` skip the gate entirely (dev switches, D-017 items 3/4). No real WebGL2 -> `showWebgl2RequiredScreen` hides `#screen` and shows a full-screen DOM message (palette colors, not a canvas draw - no `uiStyle` layout coords needed since it isn't scene text), and the bottom `runGame`/`runBenchmark`/etc. dispatch in main.js is skipped so no rAF loop starts (`createEngine` still runs harmlessly on the hidden canvas, same as the old fallback path, just never rendered/looped). Software renderer -> `showSoftwareRendererWarning`, a dismissible top-center DOM banner (auto-hides 6s), `console.warn` once; game proceeds unchanged. Added a test-only `?webgl2gate=none|software` override (not an AC) so both screens can be exercised without swapping GPUs - real owner hardware is GPU-backed so this is the only way to see the AC-1 screen locally. Verified: `node tools/check-deps.mjs`, `node tools/check-deps.test.mjs`, `physics.test.js`, `jump.test.js`, `eyeFeel.test.js`, `playerLook.test.js` all pass; browser-checked on a fresh port 8983 (stopped after) with `?webgl2gate=none` (full-screen message, no console errors), `?webgl2gate=software` (game runs, warning banner, one console.warn), and `?webgl2gate=none&gpu=0` (game still runs normally, gate skipped). Not checked: real hardware with no WebGL2 at all (owner has a GPU) and 240x90/320x120 grid layout overlap with F3/pause (the DOM overlay is viewport-anchored, not grid-anchored, so it shouldn't scale with grid, but a human eyeball pass is still worth it).
 
 ### US-019 Dust motes in the sun shaft  [Priority: P2] [Status: todo]
 As a player, I want to see tiny specks of dust drifting in the sunlight, so that the light feels volumetric.
