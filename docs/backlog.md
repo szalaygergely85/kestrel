@@ -50,7 +50,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 17 | US-016 | Far overworld view = terrain march, GPU-first (engine story) | P0 | todo | Design PO-approved 2026-09-22 (preview verified 17/17); **D-011 design addendum pending** (signal tower teal light, Ferrum horizon lights, envelope below the breach; designer, before dev); architect tech notes first; Programmer after US-030a+030b + US-007 + US-025 `done` |
 | 18 | US-010 | Tower layout: 3 levels as sector data | P0 | done | Tester PASS (2026-09-23): tower.test 49/49, behaviours 9/9, world/serialize/terrain/packed/check-deps/physics/jump/eyeFeel/playerLook all green; default page wakes correctly, zero console errors, `?level=test_room` unchanged. See `docs/test-reports/US-010.md` |
 | 19 | US-011 | Billboard props + prop art (D-011 reskin: *Kestrel* burner, brass lamp, wreckage, relay bowl, lever housing) | P0 | design | PO CHANGE REQUEST (2026-09-23): lever gear housing, canvas heap, hanging ropes + strut, relay `mounts.glow` + awake 6 fps, path check. Programmer after the reskin PO OK + US-030c + US-006 |
-| 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | po-review | ARCH OK re-review (2026-09-24): world-space LOS + `Camera.fromEntityInto` fixed |
+| 20 | US-012 | Interaction system + lantern pickup (carried light) | P0 | testing | PO OK (2026-09-24); light render ACs re-checked in US-006, empty-bracket sprite in US-011 |
 | 21 | US-013 | Rolling boulder | P0 | done | PASS (Node-level, 2026-09-23, docs/test-reports/US-013.md); visible boulder re-checked in US-011 |
 | 22 | US-014 | Lever opens the grate | P0 | done | PASS (Node-level, 2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | PO CHANGE REQUEST (2026-09-23): logo approved; map card needs "W." signature, `hintBurner`/`hintClimb` zones, `storyHints.when` per ACs. Programmer after the art PO OK + US-010 + US-012 |
@@ -1154,6 +1154,7 @@ Acceptance criteria:
 - [ ] Supports at least **8** point lights within the GPU budget (<= 4 ms total at 320x120) and JS <= 2 ms.
 - [ ] Uses the US-002 light rules: light color is a hue (`P.hue[key]`) and intensity carries the energy (`addLight`); falloff is `P.util.falloff` `(1-(d/r)^2)^2`. Light values are read from `P.lights` (torch/lantern), not hard-coded.
 - [ ] JS reference lighting produces the same result: `?gpucompare=1` with lights on meets the US-029 thresholds. On the CPU fallback the JS reference runs with a reduced light count (max 4, nearest first) and the game stays playable.
+- [ ] (Carried over from US-012 AC3/AC4.) After E on the brass lamp, `syncEntityLights` renders the player's `components.light` via `attachedLightPos` (0.3 right / 0.3 down / 0.4 forward, sway with walk, ±5% flicker from `P.lights.lantern`); in the upper stairwell the gap edges are at least 3 glyph-ramp steps brighter than without the lamp.
 Design needed: no (uses US-002 colors).
 Notes / dependencies: US-030a + US-030b `done` (or, if the US-029 gate failed, built on the CPU per plan A with the old 4-lights-at-60-fps bar), US-025.
 
@@ -1621,6 +1622,7 @@ Acceptance criteria – Programmer:
 - [ ] Props and lights are placed from `level.def.props` / `level.def.lights` (tower data), not hard-coded. The relay bowl's `mounts.glow` (was `beaconBowl.mounts.fire`, D-011) gives the US-022 glow anchor.
 - [ ] (D-006 / D-008) Sprite rendering lives in `engine/render/sprites.js` (`drawSprites`). Models come from the injected `AssetRegistry`, never from `window.ASSETS`. Prop behaviour (animation state such as lever progress, lantern lit/empty) is set by name-registered behaviours from `game/js/quest/`, never by tower-specific engine code.
 - [ ] Grate material: gap texels (`hole: true`) are drawn **dark** in M1: the solid fallback shown in the preview, with no see-through. See-through grates are US-023 (P2).
+- [ ] (Carried over from US-012 AC3.) Pressing E on the brass lamp visibly swaps the `tower.lantern` prop to its empty-bracket variant (the `lantern.take` behaviour sets `sprite.variant = 'empty'`); the bracket stays.
 Design needed: yes – all props listed above (delivered).
 Notes / dependencies: US-002 (palette keys), US-004, US-006, US-030 (GPU sprite pass). Architect tech notes needed for the GPU sprite-list data of real props (animation frames, LOD) if US-030 does not already cover them.
 
@@ -1668,7 +1670,10 @@ Designer note (2026-09-22): **Preview ready for PO review.**
   3. The tower's bowl cells are now a stone plinth under the bowl sprite.
 - Status stays `design`.
 
-### US-012 Interaction system + lantern pickup  [Priority: P0] [Status: po-review]
+### US-012 Interaction system + lantern pickup  [Priority: P0] [Status: testing]
+
+**PO OK (2026-09-24) -> `testing`.** Checked against b6f4e00 + 515ec8c and ARCH OK. AC1 (interactable shape, 1.8 m / 20 deg cone, nearest-to-centre, LOS), AC5 (one pickup, `once`, no drop), AC6 (engine generic, `def.interactables` data, `lantern.take` in `game/js/quest/`, light values from `P.lights.lantern` = `#ffd27a` / 0.8 / 5 m / flicker 0.05, hold 0.3/0.3/0.4) and AC7 (no gate on the lamp) are met. AC2 met with the interim style from `palette.ui` (final `uiStyle` is US-015). **Accepted deferrals (same precedent as US-013):** AC3 render side (light visible, sway, ±5% flicker) and AC4 (3-step readability) are re-checked in **US-006**; the empty-bracket sprite swap being visible is re-checked in **US-011** (prop spawn). Both are added to those stories' ACs.
+Tester notes: (1) Node: `node --expose-gc engine/world/interaction.test.js` (21/21), `node --expose-gc engine/entities/attach.test.js` (10/10), `node game/js/quest/tower.test.js` (70/70), `node tools/check-deps.mjs`, plus the physics/eyeFeel/playerLook regression set. (2) Browser, **hands-on WASD** (the programmer could not do this): walk to the lever and the lamp; the `+` is dim with no target, turns gold in range; the prompt `[E] Pull lever` / `[E] Take lamp` shows 2 rows below with a gold `[E]` and a dark plate, readable at 160x60 and 240x90. Step back past 1.8 m or turn ~25 deg away: the prompt disappears. (3) E on the lamp: `window.__debug` shows `components.light` on the player and `tower.lantern.taken = true`; a second approach shows no prompt. (4) E on the lever still opens the grate (US-014 visual check deferred to here). (5) No console errors with `?debug=1&strict=1`; no frame-time regression.
 As a player, I want to press E to take the *Kestrel*'s brass lamp and carry its light with me, so that I can see in the dark stairwell.
 
 **D-011 reskin (PO, 2026-09-23):** the lantern is now the *Kestrel*'s brass lamp, salvaged from the gondola wreck (US-011 art). The prompt is `[E] Take lamp` (was `[E] Take lantern`), and the prompt text comes from the `def.interactables` data. "Hook" in the ACs below means the lamp bracket on the gondola, at the same position (1.3 m). Behaviour name `lantern.take` and light preset `P.lights.lantern` may stay as internal names. Light numbers, the one-pickup rule and the soft-gate rule are unchanged. The later ACs that say "lantern" and "beacon" mean the lamp and the relay (US-022).
