@@ -171,11 +171,22 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   // neighbouring derivatives even on cells the edge exclusion above would
   // otherwise skip - counted on EVERY cell (edge or not), must be 0 to PASS.
   let holes = 0;
+  // Architect review 1 item 2 (US-040 D-019 fix round): kind-8 (KIND_MODEL)
+  // cell counts on each side, over every cell (incl. edge cells - a pose
+  // with a voxel instance in frame must show kind-8 cells on BOTH sides for
+  // the rest of this comparison to mean anything; a pose whose instance
+  // missed the frame entirely would otherwise silently report "100% match"
+  // over zero real model cells, which is exactly the false-positive the
+  // first "ALL PASS" of this story produced). Reported only here - the
+  // caller (a voxel-specific pose) gates on these being non-zero.
+  let k8Cpu = 0, k8Gpu = 0;
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       const gpuKind = giBuf[i * 4 + 1] & 0xff;
+      if (kind[i] === 8) k8Cpu++;
+      if (gpuKind === 8) k8Gpu++;
       if (gpuKind === 0 && kind[i] !== 0) holes++;
       const edge = isEdgeCell(kind, cols, rows, x, y, i) || isEdgeCellU32(giBuf, cols, rows, x, y, i);
       if (edge) {
@@ -214,6 +225,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     kindChecked, kindMismatch, kindMatchPct,
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
+    k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
     pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0,
   };
 }

@@ -7,11 +7,13 @@ import { AssetRegistry } from '../core/assets.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
-import { GBuffer, KIND_WALL } from './GBuffer.js';
+import { GBuffer, KIND_WALL, KIND_MODEL } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
 import { makeLightBuffer } from './lighting.js';
 import { beginFrame, castSectors } from './sectorCaster.js';
+import { VoxelPool } from './voxelPool.js';
+import quadruped12Fixture from '../voxel/fixtures/quadruped12.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import testRoomDef from '../../design/levels/test_room.js';
@@ -256,6 +258,49 @@ function worldDefFor(origin) {
     }
   }
   ok('camera outside footprint: the structure\'s west wall is still cast (~10 m away), not left undrawn', sawWall);
+}
+
+// --- US-040 arch review 1 item 4: castModels writes a finite depth for a
+// KIND_MODEL cell inside an otherwise-open sky span; fillSky (architecture.md
+// 15.2 item 4's `fillSky` guard, sectorCaster.js) must not paint sky over it
+// or reset its depth back to Infinity. World has no structures/terrain, so
+// every column starts fully open - a bound VoxelPool instance placed right
+// in front of the camera is the only thing that can close any cells. ------
+{
+  const registry = {
+    keys(kind) { return kind === 'model' ? ['bear'] : []; },
+    model(key) { return key === 'bear' ? { voxel: quadruped12Fixture } : null; },
+  };
+  let nextId = 1;
+  const idMap = new Map();
+  const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, nextId++); return idMap.get(key); } };
+  const pool = new VoxelPool();
+  pool.bind(registry, table);
+
+  const world = new World();
+  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 }; // facing +Y, straight at the instance below (voxel.test.js's own working rest-pose camera)
+  const fb = makeFb();
+  fb.voxelPool = pool;
+
+  pool.beginFrame();
+  pool.pushInstance('bear', 0, 0, 0, 180);
+  pool.project(cam, fb.rt);
+
+  renderWorld(fb, world, cam); // beginFrame -> (no structures/terrain) -> castModels -> shade/edge -> fillSky
+
+  let modelCells = 0, modelCellsFiniteDepth = 0, skyCells = 0, skyCellsInfiniteDepth = 0;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (fb.gbuf.kind[i] === KIND_MODEL) {
+      modelCells++;
+      if (Number.isFinite(fb.depth.depth[i])) modelCellsFiniteDepth++;
+    } else {
+      skyCells++;
+      if (!Number.isFinite(fb.depth.depth[i])) skyCellsInfiniteDepth++;
+    }
+  }
+  ok('a bound VoxelPool instance writes some KIND_MODEL cells', modelCells > 0);
+  ok('fillSky keeps every KIND_MODEL cell\'s depth finite (does not overwrite with sky)', modelCells > 0 && modelCellsFiniteDepth === modelCells);
+  ok('fillSky still paints every non-model cell with Infinity depth (sky), unaffected by the guard', skyCells > 0 && skyCellsInfiniteDepth === skyCells);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -964,26 +964,42 @@ function runGpuCompareDdaMode() {
   gpuPipeline.bindVoxels(compareVoxelPool);
   const LEVER_X = 1499.25, LEVER_Y = 1027.3, LEVER_Z = 3.0;
   const LANTERN_X = 1499.9, LANTERN_Y = 1024.5, LANTERN_Z = 1.3;
+  // Architect review 1 item 2 (the k8 cpu/gpu gate) caught a real bug in
+  // these 4 poses' own camera framing, not a GPU shading/geometry bug: the
+  // lever sits on an ELEVATED wall niche (level cell 'L', floorH 3.0 -
+  // design/levels/tower.js), but every camera position here stands on the
+  // ordinary floor around it (floorH 0.0, confirmed via `st.level.floorAt`),
+  // so eyeH ~1.6 m looking at pitch 0-8 deg never actually points at
+  // anything 3.0-4.1 m up only 1-2 m away - the lever's screen rect landed
+  // almost entirely above row 0 (off the top of the viewport) on every one
+  // of these poses. `k8Cpu`/`k8Gpu` were 0 on BOTH sides (not a mismatch),
+  // which is exactly why the pre-item-2 "ALL PASS" was vacuous. Pitch
+  // (and, for two poses, yaw - the old values didn't point at the lever
+  // at all) corrected by bisecting camera angle against a real cast of the
+  // real tower level until each pose's own `k8` count is solidly non-zero
+  // (see the story's Programmer notes for the numbers).
   runs.push(
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lever wall 2 m',
-      cam: { x: LEVER_X - 2.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 },
+      cam: { x: LEVER_X - 2.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 40 },
       before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
-    // Deviation, noted for follow-up: an instance of `lantern` here (the
-    // burner voxel model doesn't exist yet either) produced a near-total
-    // CPU/GPU mismatch (kind 0%) - its wall-bracket placement doesn't land
-    // the same way the `lever`'s free-standing one does (feet vs. mount
-    // anchor convention unclear from the current tech notes/model data), so
-    // this "near" pose uses a second, closer `lever` instance instead until
-    // that's sorted out (see the Programmer notes for this story).
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lever near (1 m)',
-      cam: { x: LEVER_X - 1.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 8 },
+      cam: { x: LEVER_X - 1.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 60 },
       before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel half occluded (stair edge)',
-      cam: { x: 1497.3, y: 1026.6, z: engine.physics.eyeHeight, yawDeg: 60, pitchDeg: 0 },
+      cam: { x: 1497.3, y: 1026.6, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 40 },
       before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel yaw 45',
-      cam: { x: 1497.0, y: 1025.5, z: engine.physics.eyeHeight, yawDeg: 60, pitchDeg: 5 },
+      cam: { x: 1497.0, y: 1025.5, z: engine.physics.eyeHeight, yawDeg: 100, pitchDeg: 40 },
       before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 45) },
+    // Architect review 1 item 3: a real `lantern` instance, cam ~1.5 m west
+    // of it, yaw 90 (facing +X, toward the lantern's wall-bracket placement
+    // at yaw 270). Exercises the `lantern`-specific atlas rows (a model
+    // whose `modelBase` in the shared VOX atlas is non-zero, since `lever`
+    // is packed first - the exact case the architect flagged) that the
+    // "near (1 m)" pose above never touched (it reuses a second `lever`).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lantern near',
+      cam: { x: LANTERN_X - 1.5, y: LANTERN_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 },
+      before: () => compareVoxelPool.pushInstance('lantern', LANTERN_X, LANTERN_Y, LANTERN_Z, 270) },
     // "voxel over terrain" (architecture.md 15.2 item 7's A2 -> A3 chain
     // pose) NOT added: every placement tried - on open terrain well clear
     // of the tower, and near the breach with terrain in the background -
@@ -1120,9 +1136,17 @@ function runGpuCompareDdaMode() {
     // `ok`/`overallOk` since BUG-LIGHT-002 (architecture.md 14.3 item 7):
     // every pose is dLViol 0 and sunlit flips <= 0.5 %.
     const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows);
-    const ok = cmpCells.pass && cmpGeom.pass && cmpLight.pass;
+    // Architect review 1 item 2 (US-040 D-019 fix round): a "voxel"-named
+    // pose must show kind-8 cells on BOTH the CPU and GPU side - a pose
+    // whose instance missed the frame (wrong placement, culled, never
+    // pushed) would otherwise report a vacuous 100% match over zero real
+    // model cells, exactly the false-positive the first "ALL PASS" of this
+    // story produced (the missing voxel_props.js script tag).
+    const isVoxelPose = name.includes('voxel');
+    const k8Ok = !isVoxelPose || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
+    const ok = cmpCells.pass && cmpGeom.pass && cmpLight.pass && k8Ok;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok });
+    rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok });
   }
   overallOk = overallOk && sampledOwnTextures;
   // US-017: the informational n=2 loop below never fades (it has no
@@ -1197,11 +1221,14 @@ function runGpuCompareDdaMode() {
       `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}  holes ${r.cmpGeom.holes} (must be 0)` +
       // BUG-CAST-001: kind-mismatch count restricted to kind-edge cells (reported only, not gated).
       `  edgeKindMismatch ${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells}\n` +
+      // US-040 architect review 1 item 2: k8 cpu/gpu cell counts, reported on
+      // every pose but only gated (k8Ok) on poses whose name includes "voxel".
+      `  k8 cpu ${r.cmpGeom.k8Cpu}  gpu ${r.cmpGeom.k8Gpu}${r.isVoxelPose ? (r.k8Ok ? ' (both > 0, OK)' : ' (must both be > 0 on a voxel pose - FAIL)') : ''}\n` +
       `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
       `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
       // BUG-LIGHT-001: light-pass-only readback (reported only, see above).
       `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)\n`;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol})`);
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol})`);
   }
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);

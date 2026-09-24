@@ -443,6 +443,31 @@ function aoAlias(gbuf) {
   ok('yaw 30: dot(n,d) < 0 (xy component)', allDotNeg);
 }
 
+// US-040 arch review 1 item 4 (15.2 item 8, "owed since US-039"): the SAME
+// yaw-30 pose as above, but with `faceMode: 'nearest'` (US-040's own scope -
+// it never writes face 7/packed normals, per 15.2 item 1's "faceMode:
+// 'nearest' only"). Every written cell must round to a world axis face
+// (1..6), never FACE_PACKED (7), even for a non-axis-aligned part.
+{
+  const fb = makeFb(160, 60);
+  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
+  const inst = { model: pm, x: 0, y: 0, z: 0, yawDeg: 30, clip: -1, frame: 0, tMs: 0 };
+  castModels(fb, [inst], cam, { faceMode: 'nearest' });
+  let written = 0, any7 = false, allFaceOk = true, allAoInf = true;
+  for (let i = 0; i < 160 * 60; i++) {
+    if (fb.gbuf.kind[i] !== KIND_MODEL) continue;
+    written++;
+    const f = fb.gbuf.face[i];
+    if (f === FACE_PACKED) any7 = true;
+    if (!(f >= 1 && f <= 6)) allFaceOk = false;
+    if (fb.gbuf.aoD[i] !== Infinity) allAoInf = false;
+  }
+  ok('faceMode nearest: writes cells', written > 0);
+  ok('faceMode nearest: never writes face 7 (FACE_PACKED), even off-axis', !any7);
+  ok('faceMode nearest: every written cell has a world axis face 1..6', allFaceOk);
+  ok('faceMode nearest: aoD stays Infinity (no packed normal written)', allAoInf);
+}
+
 {
   const fb = makeFb(160, 60);
   fb.depth.fill(0.01); // nearer than the model everywhere
