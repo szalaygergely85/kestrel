@@ -29,6 +29,14 @@ export function createSpriteSystem({ assets, rt, gpuPipeline }) {
     render(fb, world, cam) {
       pool.collect(world);
       pool.project(cam, fb.rt, ambientL);
+      // US-017: hand the GPU sprite pass this frame's scene fade (mirrors
+      // `fb.sceneFade`/`fb.fadeLut`, the CPU path's own inputs) - `active`
+      // is checked below for the composite itself, but the fade fields must
+      // be current whenever `present()` later calls `pass.run()`.
+      if (pass) {
+        pass.sceneFade = typeof fb.sceneFade === 'number' ? fb.sceneFade : 1;
+        if (fb.fadeLut) pass.setFadeLut(fb.fadeLut);
+      }
       if (!(pass && pass.active)) drawSprites(fb, pool);
     },
     overlayLine() {

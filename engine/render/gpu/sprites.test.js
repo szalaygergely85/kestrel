@@ -260,6 +260,10 @@ for (const depthUint of [true, false]) {
   ok(`sprites.frag (depthUint=${depthUint}): MAX_SPRITES const from sprites.js`, src.includes(`const int MAX_SPRITES = ${MAX_SPRITES};`));
   ok(`sprites.frag (depthUint=${depthUint}): depth sampler kind`, depthUint ? src.includes('uintBitsToFloat') : src.includes('uniform sampler2D uDepth'));
   ok(`sprites.frag (depthUint=${depthUint}): no EXT_color_buffer_float / std140`, !src.includes('EXT_color_buffer_float') && !src.includes('std140'));
+  // US-017 ARCH CHANGES #1 item 1/3: GPU scene fade uniforms/textures present.
+  ok(`sprites.frag (depthUint=${depthUint}): uSceneFade uniform`, src.includes('uniform float uSceneFade;'));
+  ok(`sprites.frag (depthUint=${depthUint}): uFadeLut/uFadeRamp R8UI textures`, src.includes('uniform usampler2D uFadeLut;') && src.includes('uniform usampler2D uFadeRamp;'));
+  ok(`sprites.frag (depthUint=${depthUint}): fade skipped when uSceneFade >= 1.0 (identity)`, /if\s*\(\s*uSceneFade\s*<\s*1\.0\s*\)/.test(src));
 }
 
 console.log(`\n[sprites.test.js] ${pass} passed, ${fail} failed`);

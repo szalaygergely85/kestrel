@@ -77,8 +77,17 @@ export function applySceneFade(rt, a, lut) {
   for (let i = 0; i < n; i++) {
     if (mask[i]) continue;
     const code = fadeGlyph(gi[i] + 32, a, lut);
-    gi[i] = code < 32 ? 0 : code - 32;
+    const newIdx = code < 32 ? 0 : code - 32;
+    gi[i] = newIdx;
     const fi = i * 4;
+    // US-017 ARCH CHANGES #1 (found via the ?gpucompare=1 sceneFade=0.5
+    // parity pose): CellBuffer duplicates the glyph index into fg[fi+3]
+    // (its RGBA8 upload layout, CellBuffer.js's own doc comment) - every
+    // OTHER writer (setCell/setCellRGB) keeps both copies in sync, this one
+    // must too, or every reader of `cb.fg` (GPU texture upload, the compare
+    // tools, `readbackPresent`) sees the un-faded glyph while `cb.glyphIdx`
+    // itself is correctly faded.
+    fg[fi + 3] = newIdx;
     fg[fi] = (fg[fi] * fgGain) | 0;
     fg[fi + 1] = (fg[fi + 1] * fgGain) | 0;
     fg[fi + 2] = (fg[fi + 2] * fgGain) | 0;

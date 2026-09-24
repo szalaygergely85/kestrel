@@ -72,6 +72,12 @@ const lut = createFadeLut(RAMP, LETTER_INDEX, MIN_GAIN);
   const fgGain = MIN_GAIN + (1 - MIN_GAIN) * 0.5; // 0.55
   ok('5a: fg red channel follows the gain curve', cb.fg[0] === Math.round(200 * fgGain) || cb.fg[0] === (200 * fgGain) | 0, `${cb.fg[0]}`);
   ok('5b: bg red channel is bg * a', cb.bg[0] === (40 * 0.5) | 0, `${cb.bg[0]}`);
+  // US-017 ARCH CHANGES #1 (found via ?gpucompare=1's sceneFade=0.5 pose):
+  // CellBuffer duplicates the glyph index into fg[fi+3] (its RGBA8 upload
+  // layout) - applySceneFade must keep BOTH copies in sync, or every reader
+  // of `cb.fg` (GPU texture upload, readbackPresent, the compare tools)
+  // sees the pre-fade glyph while `cb.glyphIdx` itself is correctly faded.
+  ok('5c: fg[fi+3] (the duplicated glyph byte) stays in sync with glyphIdx', cb.fg[3] === cb.glyphIdx[0], `fg[3]=${cb.fg[3]} glyphIdx[0]=${cb.glyphIdx[0]}`);
 }
 
 // ---------------------------------------------------------------------------

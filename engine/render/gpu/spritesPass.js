@@ -24,7 +24,8 @@ import { spritesFragSrc } from './glsl/sprites.frag.js';
 import { GpuTimer } from './GpuTimer.js';
 import { MAX_SPRITES, SPR_TEXELS, SPR_STRIDE } from '../sprites.js';
 
-const UNIFORMS = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uCount', 'uFogColor'];
+const UNIFORMS = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uCount', 'uFogColor',
+  'uSceneFade', 'uFadeMinGain', 'uFadeRampLen', 'uFadeLut', 'uFadeRamp']; // US-017
 
 export class GpuSpritePass {
   /**
@@ -47,6 +48,15 @@ export class GpuSpritePass {
     this.rows = rt.rows;
     this.ready = false;
     this.stats = { uploadMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN, sprites: 0 };
+    // US-017: per-frame scene fade. `sceneFade` (1 = off) is set by the
+    // caller (spriteDev.js's `render()`, or the `?gpucompare=1` harness)
+    // every frame, mirroring `fb.sceneFade`; `setFadeLut` uploads the LUT
+    // once per identity change (the FadeLut object is built once in
+    // main.js and never mutated).
+    this.sceneFade = 1;
+    this.fadeMinGain = 0;
+    this.fadeRampLen = 1;
+    this._fadeLutRef = null;
     this._onCtxLost = () => { if (this.ready) { this.ready = false; console.warn('[GpuSpritePass] WebGL context lost, sprites fall back to drawSprites'); } };
     this._onCtxRestored = () => this._restore();
     rt.canvas.addEventListener('webglcontextlost', this._onCtxLost);
@@ -64,6 +74,7 @@ export class GpuSpritePass {
 
   _initGL() {
     const gl = this.gl, cols = this.cols, rows = this.rows;
+    this._fadeLutRef = null; // US-017: force reupload after a (re)create/context-restore
     this.vao = gl.createVertexArray();
     this.program = linkProgram(gl, CELL_VERT_SRC, spritesFragSrc({ depthUint: this.depthUint }));
     this.loc = {};
@@ -84,6 +95,14 @@ export class GpuSpritePass {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+    // US-017: fade LUT textures - zero-initialised (createTexture2D's null
+    // data) dummies so binding is always valid before `setFadeLut` ever
+    // runs (test/compare call sites that never wire up a fade); harmless
+    // since the shader's fade branch is skipped whenever `uSceneFade >= 1`.
+    this.texFadeLut = createTexture2D(gl, gl.R8UI, 128, 1);
+    this.texFadeRamp = createTexture2D(gl, gl.R8UI, 1, 1);
+    this._fadeRampTexLen = 1;
+
     // One FBO on rt.fgTex/bgTex: READ side for the edge copies, DRAW side for the composite.
     this.fboFinal = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboFinal);
@@ -95,7 +114,7 @@ export class GpuSpritePass {
 
     // Static uniforms: sampler units (bind order below) + fog colour.
     gl.useProgram(this.program);
-    const units = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal'];
+    const units = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uFadeLut', 'uFadeRamp'];
     for (let i = 0; i < units.length; i++) gl.uniform1i(this.loc[units[i]], i);
     const fogC = this.palette.rgb[this.palette.fog.interior.color];
     gl.uniform3f(this.loc.uFogColor, fogC[0], fogC[1], fogC[2]);
@@ -123,11 +142,40 @@ export class GpuSpritePass {
     this.rt.setSpritePass(null);
     const gl = this.gl;
     if (!gl) return;
-    for (const t of [this.texEdgeFg, this.texEdgeBg, this.texSpr, this.texPal, this.texAtlas]) if (t) gl.deleteTexture(t);
+    for (const t of [this.texEdgeFg, this.texEdgeBg, this.texSpr, this.texPal, this.texAtlas, this.texFadeLut, this.texFadeRamp]) if (t) gl.deleteTexture(t);
     if (this.fboFinal) gl.deleteFramebuffer(this.fboFinal);
     if (this.program) gl.deleteProgram(this.program);
     if (this.vao) gl.deleteVertexArray(this.vao);
     if (this.timer) this.timer.dispose();
+  }
+
+  /**
+   * US-017: upload `lut` (`engine/ui/fade.js`'s `FadeLut`, `{idx, ramp,
+   * minGain}`) once per identity change - main.js builds it once at
+   * startup, so this is a no-op every frame after the first. `idx`
+   * (128 bytes) and `ramp` (rampLen bytes, rarely a multiple of 4) are
+   * R8UI: `UNPACK_ALIGNMENT = 1` for the upload, restored to the GL
+   * default (4) right after (reminder: non-4-aligned R8UI uploads read
+   * garbage past row 0 without this).
+   * @param {import('../../ui/fade.js').FadeLut} lut
+   */
+  setFadeLut(lut) {
+    if (!lut || this._fadeLutRef === lut) return;
+    const gl = this.gl;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.bindTexture(gl.TEXTURE_2D, this.texFadeLut);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 128, 1, gl.RED_INTEGER, gl.UNSIGNED_BYTE, lut.idx);
+    if (lut.ramp.length !== this._fadeRampTexLen) {
+      gl.deleteTexture(this.texFadeRamp);
+      this.texFadeRamp = createTexture2D(gl, gl.R8UI, lut.ramp.length, 1);
+      this._fadeRampTexLen = lut.ramp.length;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.texFadeRamp);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, lut.ramp.length, 1, gl.RED_INTEGER, gl.UNSIGNED_BYTE, lut.ramp);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    this.fadeMinGain = lut.minGain;
+    this.fadeRampLen = lut.ramp.length;
+    this._fadeLutRef = lut;
   }
 
   /** True when this pass draws the sprites this frame (else the caller runs `drawSprites`). */
@@ -162,7 +210,13 @@ export class GpuSpritePass {
     this._bind(4, this.texSpr);
     this._bind(5, this.texAtlas);
     this._bind(6, this.texPal);
+    this._bind(7, this.texFadeLut);
+    this._bind(8, this.texFadeRamp);
     gl.uniform1i(this.loc.uCount, count);
+    // US-017: per-frame scene fade, matches CPU `applySceneFade` exactly.
+    gl.uniform1f(this.loc.uSceneFade, this.sceneFade);
+    gl.uniform1f(this.loc.uFadeMinGain, this.fadeMinGain);
+    gl.uniform1i(this.loc.uFadeRampLen, this.fadeRampLen);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.timer.end();
     const t2 = performance.now();

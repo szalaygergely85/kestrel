@@ -9,7 +9,6 @@ import { castTerrain } from './terrainCaster.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
 import { lightSurfaces } from './lighting.js';
-import { applySceneFade } from '../ui/fade.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // Preallocated (architecture.md section 9: no per-frame allocation in renderWorld).
@@ -118,10 +117,10 @@ export function renderWorld(fb, world, cam) {
 
   fillSky(fb, cam);
 
-  // (US-017, 7.4 "Fade") CPU path only - the GPU-DDA branch returns before
-  // reaching here (US-017-gpu is the sub-task that adds `uSceneFade` to the
-  // GPU composite pass). `fb.sceneFade` (1 = off) + `fb.fadeLut` are both
-  // optional so every OTHER caller of `renderWorld` (unchanged shape) is a
-  // no-op here.
-  if (fb.fadeLut && typeof fb.sceneFade === 'number') applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
+  // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of
+  // here to the call site right after `sprites.render(...)` (main.js) -
+  // sprites are plain non-mask cells too and must fade, same as the GPU
+  // composite pass (sprite pass F, `sprites.frag.js`) fades them. Applying
+  // it here (before sprites are drawn) would leave sprites unfaded on the
+  // CPU/oracle path while the GPU path fades everything in one pass.
 }

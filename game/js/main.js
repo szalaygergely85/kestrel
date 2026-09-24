@@ -18,7 +18,7 @@ import {
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
   isSoftwareRenderer,
-  updateTriggers, moveCapsule, serialize, deserialize, createFadeLut,
+  updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -517,6 +517,13 @@ function runGame(mode) {
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
       renderWorld(fb, engine.world, cam);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
+      // compositor.js so sprites fade too (oracle parity with the GPU
+      // composite pass, which fades every non-mask cell in one pass). Skips
+      // itself on the GPU-DDA path (`renderWorld`'s early-out already left
+      // `fb.rt.cells` untouched there; the GPU sprite pass does its own
+      // fade instead - see engine/render/gpu/glsl/sprites.frag.js).
+      if (!fb.gpuDda && fb.fadeLut && typeof fb.sceneFade === 'number') applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
       // the world/sprite passes, never depth-tested (architecture.md 8).
@@ -704,11 +711,20 @@ function runGpuCompareDdaMode() {
     // 4.60), matching every other row's `cam` convention above.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
+    // US-017 ARCH CHANGES #1 item 3: one pose with `sceneFade = 0.5` (7.4
+    // "Fade"), reusing the world_m1 spawn cam - proves the GPU composite
+    // pass's `uSceneFade`/LUT (sprites.frag.js) matches the CPU
+    // `applySceneFade` oracle (now run after sprites too, item 2).
+    { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
+      cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
   ];
 
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: false,
+    // US-017: fixed LUT (fadeLut is built once at startup), sceneFade set
+    // per pose below (1 = off for every row except the fade pose).
+    fadeLut, sceneFade: 1,
   };
 
   const cols = rt.cols, rows = rt.rows, n = cols * rows;
@@ -716,7 +732,7 @@ function runGpuCompareDdaMode() {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name, cam } of runs) {
+  for (const { world, lights, name, cam, fade } of runs) {
     // Architect review 1 item 2: fixed `timeSec = 0` (14.3 item 9's parity
     // contract - determinism, same as the rest of this compare page) so
     // flicker/jitter are identical on both paths for this pose. Update
@@ -724,6 +740,15 @@ function runGpuCompareDdaMode() {
     // only primes ambient, it never calls `lightSurfaces`/`LightSet.update`.
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
+    // US-017 (item 3): per-pose scene fade - 1 (off) for every row except
+    // the dedicated fade pose. The GPU sprite pass reads its own
+    // `sceneFade`/LUT fields (spritesPass.js), not `fbCompare` directly, so
+    // mirror them here before `rt.present()` runs it.
+    fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;
+    if (sprites.pass) {
+      sprites.pass.sceneFade = fbCompare.sceneFade;
+      sprites.pass.setFadeLut(fadeLut);
+    }
     // GPU FIRST, from a poisoned, mask-free JS layer (`poisonAllCells`): the
     // GPU frame must produce every cell on its own, with no CPU pass having
     // run since the last pose - the `ambientL` bug only ever looked right
@@ -760,6 +785,22 @@ function runGpuCompareDdaMode() {
     fbCompare.gpuDda = false;
     renderWorld(fbCompare, world, cam); // full CPU cast + shade + edge + sky
     drawSprites(fbCompare, sprites.pool); // US-030c (ARCH CHANGES item 1): JS sprite oracle onto rt.cells
+    // US-017 ARCH CHANGES #1 item 2/3: CPU fade runs AFTER sprites here too,
+    // matching the real frame's call site (main.js render()). `shadeSurfaces`/
+    // `drawSprites` write through `rt.setCellRGB` (CellBuffer.js), which sets
+    // `mask = 1` as a side effect on every cell it touches (the "JS wins"
+    // signal pass 1 reads for a REAL frame's UI overlay) - harmless in
+    // gameplay (the GPU-DDA path never runs this CPU cast at all, so mask
+    // stays whatever real UI drew), but here it would make `applySceneFade`
+    // skip almost the entire oracle image. This compare pose draws no UI
+    // overlay, so every cell is legitimately fade-eligible - clear the flag
+    // before fading, matching what the GPU side saw (`giMask` came from the
+    // clean, `poisonAllCells`-cleared mask at GPU-render time, before any
+    // CPU write ever happened).
+    if (fbCompare.fadeLut && typeof fbCompare.sceneFade === 'number') {
+      fbCompare.rt.cells.mask.fill(0);
+      applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);
+    }
     rt.gpuActive = wasActive;
 
     // Architect review 1 item 5: `?gpucompare=1` (unlike the strict
@@ -774,6 +815,11 @@ function runGpuCompareDdaMode() {
     rowsOut.push({ pose: name, cmpCells, cmpGeom, ok });
   }
   overallOk = overallOk && sampledOwnTextures;
+  // US-017: the informational n=2 loop below never fades (it has no
+  // `applySceneFade` call of its own) - reset the shared fade state so it
+  // doesn't inherit sceneFade=0.5 left over from the last mandatory row.
+  fbCompare.sceneFade = 1;
+  if (sprites.pass) sprites.pass.sceneFade = 1;
 
   // Architect review 1 item 5: an INFORMATIONAL n=2 row, only when
   // explicitly requested (`?gpucompare=1&rays=2`) - the mandatory loop above
