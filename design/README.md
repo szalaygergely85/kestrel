@@ -428,6 +428,65 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   - Top-view layer slices and a JSON dump.
   - Checks: the validator with the palette + proposed keys, pack, part names, the lever contract, sizes, mounts, material and colour keys, value contrast, placement against tower.js, and rows per voxel.
 
+### 7.1 Batch 2: the remaining tower props (`design/models/voxel_tower.js`, US-056, v1.13)
+
+- **Sets:** `ASSETS.voxelModels.boulder`, `.rubble0`, `.rubble1`, `.rubble2`, `.canvasHeap`, `.gondola`, `.strut`, `.envelopeHeap`, `.relay` (same record shape as batch 1), `ASSETS.voxelModels.batch2` (the key list) and `ASSETS.voxelModels.attachTower()`. It **adds** 12 materials to `ASSETS.voxelMaterials` (`v1`, `v2`, `remap`, `fallback`); `ASSETS.voxelMaterials.batch2` lists them.
+- **Load order:** after `voxel_props.js` (that file assigns `ASSETS.voxelMaterials`) and after `boulder.js`, `rubble.js`, `wreckage.js`, `relay.js`.
+- **Generated rows:** the layer strings are built at load time by small deterministic builders (integer hash, no `Math.random`). The result is plain `layers[z][y]` strings, the same as batch 1. The preview's JSON dump shows exactly what the engine gets.
+- **New materials** (each with a v1 and a v2 record; the v2 tone grid is about half a voxel of the model that uses it, `lines: false`):
+
+  | char | key | base / v2 tones | use |
+  |---|---|---|---|
+  | `C` | `canvas_light` | canvasLight, canvas | crests of the canvas heaps |
+  | `k` | `canvas_dark` | canvasDark, canvasScorch | fold flanks, hem, scorched ends |
+  | `v` | `patina` | verdigris (+ light / dark) | gondola dent, strut kink, bowl spots |
+  | `r` | `rope` | rope, ropeLight, ropeDark | gondola stays, rope bands |
+  | `T` | `block_light` | pencil, ashLight | lids / top edges of the rubble blocks |
+  | `D` | `block_dark` | stoneDark, ashDark | broken sides of the blocks, pebbles |
+  | `L` | `granite_light` | ashLight, steamDim | boulder upper band |
+  | `g` | `granite_dark` | ashDark, ironDark | boulder lower half, crack |
+  | `m` | `moss_cap` | mossLight, moss | boulder cap, moss on rubble |
+  | `x` | `crystal_dead` | aetherDead, mirrorDark | dead relay crystals |
+  | `X` | `crystal_lit` | aether, aetherLight, aetherCore, **emissive 0.85** | awake relay crystals |
+  | `M` | `mirror_dark` | mirrorDark, mirror, spec 0.85 | relay mirror face |
+
+  Existing keys are reused as they are: `canvas` (`c`), `wood` (`w`), `brass` (`B`), plus batch 1 (`R H b i d`). No new colour was needed. No new material uses a wall or floor stone tone.
+- **Models:**
+
+  | key | cellM | grid | world (m) | parts | clips |
+  |---|---|---|---|---|---|
+  | `boulder` | 0.075 | 16x16x16 | 1.2 ball | `rock` (pivot = centre) | `roll` (8 rest frames), `rollTurn` (optional) |
+  | `rubble0` | 0.05 | 18x12x7 | 0.9 x 0.6 x 0.35 | `stones` | `idle` |
+  | `rubble1` | 0.05 | 21x14x12 | 1.05 x 0.7 x 0.6 | `stones` | `idle` |
+  | `rubble2` | 0.05 | 12x10x6 | 0.6 x 0.5 x 0.3 | `stones` | `idle` |
+  | `canvasHeap` | 0.0625 | 32x14x5 | 2.0 x 0.875 x 0.31 | `west`, `east` | `idle` |
+  | `gondola` | 0.085 | 26x11x13 | 2.21 x 0.94 x 1.1 | `bow`, `stern` | `idle` |
+  | `strut` | 0.05 | 18x4x10 | 0.9 x 0.2 x 0.5 | `bar` | `idle` |
+  | `envelopeHeap` | 0.2 | 25x11x13 | 5.0 x 2.2 x 1.6 (+1.0 skirt) | `west`, `east` | `idle` |
+  | `relay` | 0.12 | 18x14x14 | 2.16 x 1.68 x 1.68 | `crystalDead`, `crystalLit`, `mount` | `dead`, `wake`, `awake` (interp `step`) |
+
+  - The 4096-cell grid limit sets the coarse cellM of the big props. The relay has about 3.5 rows per voxel at 2.4 m. Split halves exist only to keep each part box extent at 48 or less; they are static.
+  - Clip names equal the billboard anim names, so the spawn's anim choice stays valid.
+  - `boulder.roll` has 8 identical frames, so any frame index 0..7 the roller writes is valid and the boulder never turns by itself (D-019 item 5). `rollTurn` is a real roll (rot x in 45 deg steps, 0.471 m per frame). It is only for use if the manager wants the roll back.
+  - `relay`: the crystal cluster exists twice. `crystalLit` is stored 6 voxels to -x and 2 up at rest. `dead` moves `crystalLit` 20 voxels (2.4 m) down, inside the walkway/plinth columns. `awake` hides `crystalDead` the same way and moves `crystalLit` onto its place. `wake` = 8 x 125 ms, with event `glowOn` at key 2 (= `relay.wakeLightFrame`). The glow, halo and sparkles stay a billboard (US-022, a separate prop at `mounts.glow`).
+- **Placement:** no level edit. Every model uses its tower.js prop (x, y, z, facing) as it is.
+  - `rubble*` is selected by `props[].variant` (the registry's `rubble#n` = `models.rubble.variants[n]`).
+  - `gondola`: the anchor is 21.5 of 26 along the keel. The stern ends at y ~9.0, so the rigging coil billboard (15.3, 9.5) lies behind the stern and not inside the hull. The hull spans x 15.06..15.74, clear of the rubble cell (14,8), the canvas heap and the corridor.
+  - `canvasHeap`: there is a hollow of at most 0.125 m around the start pose (17.0, 9.5), so the lying eye (0.3 m) is never inside a fold.
+  - `strut` lies in the 0.25 m gap between the two blocks of `rubble1` (prop `rubble2` at 14.5, 8.5). The preview checks that no voxels overlap.
+  - `envelopeHeap` (`z: 'ground'`): the anchor is at voxel z 5. A canvas skirt hangs up to 1.0 m below it on the downhill (west) side. If the terrain drops more, raise `anchor[2]`; this is not a level edit.
+- **Binding:** `attachTower()` works per model. It copies `voxel` onto the billboard model (rubble: onto `variants[n]`) only when every material key of **that** model is in both `palette.materials` and `detailPass.materials`.
+- **Open merge step (batch 2):** append the 12 `voxelMaterials.batch2` keys (v1, v2, remap) after the batch-1 keys, the same way as batch 1. Add a `<script>` tag for `voxel_tower.js` after `voxel_props.js` and the billboard model files.
+- **Engine notes (for the PO / programmer):**
+  - Hiding a part = moving it under the floor (lantern, relay). A per-keyframe part `hide` flag would be cleaner. That is optional.
+  - The instance AABB includes the hidden parts, so the screen rect gets taller. This costs only slab tests.
+  - The tower now has 13 voxel prop instances (14 with the burner), which is 16 or fewer. The VOX atlas is about 27k texels in total.
+- **Preview:** `preview/voxel-props.html` now shows all 11 models, with a `show` filter. Each model has its typical in-game view (distance, eye height, floor and backdrop). New checks:
+  - per-part voxel counts and extents, the atlas total, and clip names = the billboard anim names;
+  - the value ladder per model (rim / body >= 1.5, and rim > stoneLight or body < 0.8 x stoneMid), and no wall/floor stone tones;
+  - tower.js placement: no voxel inside a taller cell, the corridor, the rigging distance, the canvas hollow, and the strut/rubble overlap;
+  - the relay part swap, and rows at the typical view distance.
+
 ---
 
 ## Change log
@@ -481,6 +540,11 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   - New `models/ferrum_lights.js` (section 4.3).
   - Previews: `title.html` (signature, hint-zone plan, one-hint timeline with the 20 s chart hint, end card from `uiStyle.endText`, 7 new checks); `overworld.html` (signal light + Ferrum drawn, 4 new viewpoints, envelope heap, 9 new checks).
   - **Engine / PO notes:** (1) per-key `fogMax` on emissive sprite cells (GPU sprite pass + `drawSprites`); (2) `world.horizon[]` pass-through in `World.load` and a horizon-billboard draw on sky cells (section 4.3); (3) sprite LOD `lods.min` + `minCells` for `farTower` (already in the US-016 tech notes); (4) `endCard.js` should draw per-line colours and the `[R]` key colour from `uiStyle.endText`, which it does not do today.
+- **v1.13 (2026-09-24, US-056 voxel props batch 2)**: new section 7.1 and the new file `models/voxel_tower.js`.
+  - Models: `boulder`, `rubble0..2`, `canvasHeap`, `gondola`, `strut`, `envelopeHeap` and `relay` (dead / wake / awake via a crystal part swap).
+  - 12 new proposed materials appended to `ASSETS.voxelMaterials` (`batch2`), and `attachTower()`.
+  - `preview/voxel-props.html` generalised to all 11 models, with a show filter, per-model in-game views and new checks. The "distance" slider is now a multiplier.
+  - No level, palette, detail-pass or billboard changes.
 - **v1.12 (2026-09-24, D-019 voxel props)**: new section 7. The new file `models/voxel_props.js` adds `ASSETS.voxelModels.lever` (plate + handle, idle/pull/down) and `.lantern` (mount + arm + lamp, unlit/lit/empty/hookEmpty). It also adds the proposed materials `ASSETS.voxelMaterials` (`brass_light`, `brass_hot`, `brass_dark`, `iron_light`, `iron_dark`, v1 + v2 records, `modelRim` 0.55) and the guarded `attach()`. New preview `preview/voxel-props.html`, which uses the engine oracle. No level, palette or billboard changes.
 - **v1.11 (2026-09-24, ART-OWN-001 + BUG-OWN-003 data; stopped by D-019: solid props become voxel models)**: new optional model fields `fill`, `outline`, per-key `fill: false`, and the **opaque space** cell (section 4; engine support pending, architecture.md 7.7). Billboard art redrawn at the real view scale: `lever` 11x12 (world 0.7 x 1.1), `burner` 13x11, `gondola` 34x9, `canvasHeap` 20x4, `rigging` 14x4, `strut` 12x4, `rope` 3x16, `boulder` 12x8, `rubble` 10x3 / 12x5 / 8x3 (all with new half LODs, same model names, animation names and frame counts; anchors = bottom centre / contact point; world sizes unchanged except the lever). `lantern` keeps 3x4 (test-pinned), new pale glass key. `relay`: `fill`/`outline` + glyph-only sparkle keys `P Q R`. `envelopeHeap` / `envelopeDrape`: `fill`. Previews: `props.html` "in-game size" section (160x60 + 240x90, engine projection, wall + floor, fill/outline toggles, scale check), `wreckage.html` (engine LOD pick, fill toggle).
 - **v1.9.1 (2026-09-24, US-011 PO change request rework)**: `lever.js` brass gear housing + stepping hub gear (`lever.gear`, same keys of frames / sizes); `lantern.js` bracket `=j=` in unlit/empty, new `empty` animation (alias `hookEmpty` kept); `relay.js` `mounts.glow` (full + half), `awake` 6 fps; `wreckage.js` new `canvasHeap`, `rope` (2 variants), `strut`, reworked `levelPatch.tower` (+ `pathCheck`). Previews: `props.html` (new entries + checks), `wreckage.html` (heap, ropes, strut in the crash room), `tower.html` (patch props, corridor, path check). New section 4 rule: string variant = animation name. No schema change.

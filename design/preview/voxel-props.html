@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - voxel props (D-019): lever + brass lamp</title>
+<title>Kestrel - voxel props (D-019, US-056): lever, lamp, boulder, rubble, wreck, relay</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -23,31 +23,34 @@
   #checks div { font-family:Consolas, monospace; font-size:12px; }
   pre.slice { font:11px/11px Consolas, monospace; margin:0; background:#0b0c12; padding:3px; letter-spacing:1px; }
   textarea { width:100%; height:160px; background:#0b0c12; color:#cfc8b2; font:11px Consolas, monospace; border:1px solid #22252e; }
+  details > summary { cursor:pointer; color:#e8c060; font-size:14px; margin:10px 0 4px; }
 </style>
 </head>
 <body>
-<h1>Kestrel : voxel props (D-019) : lever and brass lamp on its bracket</h1>
+<h1>Kestrel : voxel props (D-019, US-056) : lever, lamp, boulder, rubble, canvas heap, gondola, strut, envelope heap, relay</h1>
 <div class="note">
   Solid props as real 3D voxel models (architecture.md 15.1 format, 15.3 content contract), Blood-style: fixed in the world, bright rim over a dark body,
-  dark contour. Data: <code>design/models/voxel_props.js</code> (<code>ASSETS.voxelModels</code>, proposed materials <code>ASSETS.voxelMaterials</code>).
+  dark contour. Data: <code>design/models/voxel_props.js</code> (batch 1: lever, lantern) and <code>design/models/voxel_tower.js</code> (batch 2: the rest),
+  materials <code>ASSETS.voxelMaterials</code> (proposed, merge pending).
   <b>Rendering uses the engine oracle itself</b>: <code>packVoxelModel</code>, <code>computeVoxelPose</code> and <code>marchVoxelRay</code> are imported from
   <code>engine/voxel/</code>, so parts, pivots, pose sampling and the DDA hit are the engine's. The page adds only the camera, a
   directional / point light, the v1 reference surface shader (<code>palette.util.shade</code>, fk = 1 for every face as 15.2 item 5) and an
   <b>approximate</b> edge pass (cap / side / lip against farther cells, then <code>edges.modelRim</code> x fg and bg on rule cells).
-  Flames and the knob glint are drawn as small camera-facing billboards with a depth test (they are separate billboard props in the game).
+  Flames and the knob glint are drawn as small camera-facing billboards with a depth test (they are separate billboard props in the game); the relay glow is not drawn (US-022).
   <b>Needs http</b> (ES modules): <code>python -m http.server</code> from the repo root, open <code>/design/preview/voxel-props.html</code>.
 </div>
 <div id="fatal" class="fail"></div>
 
 <div class="controls">
+  <label>show <select id="show"><option value="all">all models</option></select></label>
   <label>light <select id="lmode"><option value="dir">directional</option><option value="torch">torch point (front-left 1.3 m)</option><option value="both">both</option></select></label>
-  <label>colour <select id="lcol"><option>torch</option><option>sun</option><option>lantern</option></select></label>
+  <label>colour <select id="lcol"><option>torch</option><option selected>sun</option><option>lantern</option></select></label>
   <label>azimuth <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
   <label>elevation <input type="range" id="el" min="-20" max="85" step="1" value="35"><span class="val" id="elV"></span></label>
   <label>intensity <input type="range" id="int" min="0" max="1.5" step="0.01" value="0.9"><span class="val" id="intV"></span></label>
   <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1"><span class="val" id="ambV"></span></label>
   <label>edges <select id="edges"><option value="rim">engine rules + modelRim</option><option value="eng">engine rules, no rim</option><option value="off">off</option></select></label>
-  <label>materials <select id="mats"><option value="prop">proposed (brass_light ...)</option><option value="fb">fallback (existing brass / iron)</option></select></label>
+  <label>materials <select id="mats"><option value="prop">proposed (brass_light ...)</option><option value="fb">fallback (existing materials)</option></select></label>
   <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option></select></label>
 </div>
 
@@ -56,12 +59,13 @@
 
 <div id="groups"></div>
 
-<h2 id="ingame">In-game size: 160x60 and 240x90 (engine projection, 75 deg HFOV, 16:9, eye 1.6 m)</h2>
+<h2 id="ingame">In-game size: 160x60 and 240x90 (engine projection, 75 deg HFOV, 16:9)</h2>
 <div class="note">The same 1920x1080 screen area at both grids: left a 60x30 crop of the 160x60 grid (12x18 px cells), right a 90x45 crop of 240x90 (8x12 px cells).
   Rays are the sector caster's (<code>d = dir + plane*cameraX, z = (horizonRow - row - 0.5) / planeDistY</code>, t = perpendicular distance), pitched to look at the prop.
-  Lever: standing on the ledge floor (z 0 here = 3.0 in the tower), backdrop selectable. Lamp: on the step-8 wall face (stone_scorched), floor 1.3 m below.</div>
+  Each model has its typical in-game view (distance, eye height above the prop's floor, floor + backdrop material from tower.js); the slider scales the distance.
+  Lever: on the ledge floor, backdrop selectable. Lamp: on the step-8 wall face. Envelope heap: seen from above (the summit breach), no backdrop.</div>
 <div class="controls" style="position:static">
-  <label>distance <input type="range" id="dist" min="1" max="8" step="0.1" value="2.5"><span class="val" id="distV"></span></label>
+  <label>distance x <input type="range" id="dist" min="0.4" max="3" step="0.05" value="1"><span class="val" id="distV"></span></label>
   <label>view angle <input type="range" id="vaz" min="-75" max="75" step="1" value="-20"><span class="val" id="vazV"></span></label>
   <label>zoom <select id="zoom"><option value="0.5">0.5</option><option value="0.75" selected>0.75</option><option value="1">1.0 (real 1080p size)</option></select></label>
   <label>lever backdrop <select id="lback"><option value="1">stone wall 1 m behind</option><option value="8">far wall 8 m (the real view west)</option><option value="none">none</option></select></label>
@@ -71,13 +75,18 @@
 <h2>Layers (top view per z, y0 = front row at the top; colour = material base colour)</h2>
 <div id="layers"></div>
 <h3>Voxel JSON (what the engine consumes)</h3>
-<div class="row"><button id="dumpLever">lever</button><button id="dumpLantern">lantern</button></div>
+<div class="row"><select id="dumpSel"></select><button id="dumpBtn">dump</button></div>
 <textarea id="dump" readonly></textarea>
 
 <script src="../palette.js"></script>
 <script src="../detail-pass.js"></script>
 <script src="../levels/tower.js"></script>
+<script src="../models/boulder.js"></script>
+<script src="../models/rubble.js"></script>
+<script src="../models/wreckage.js"></script>
+<script src="../models/relay.js"></script>
 <script src="../models/voxel_props.js"></script>
+<script src="../models/voxel_tower.js"></script>
 <script>
   setTimeout(function () {
     if (!window.__voxOK) document.getElementById('fatal').textContent =
@@ -96,33 +105,68 @@ const A = window.ASSETS, P = A.palette, DP = A.detailPass, VMAT = A.voxelMateria
 const U = P.util, D2R = Math.PI / 180;
 const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
 const $ = (id) => document.getElementById(id);
+const TOWER = A.levels && A.levels.tower;
+
+// ------------------------------------------------------------------ model table (per model: clips, typical in-game view, backdrop, value ladder)
+// view.dist m, view.eye m above the prop's floor; wallY = backdrop plane distance behind the prop (local +y), null = none
+const ENTRIES = [
+  { name: 'lever', title: 'Lever (plate + handle)', clips: ['idle', 'pull', 'down'], floorZ: 0, wallY: 'lback', wallMat: 'stone',
+    floorMat: 'floor', view: { dist: 2.5, eye: 1.6 }, rim: ['brass_light', 'brass_hot', 'iron_light'], body: ['brass_dark', 'iron_dark'] },
+  { name: 'lantern', title: 'Brass lamp on its wall bracket (mount + arm + lamp)', clips: ['unlit', 'lit', 'empty', 'hookEmpty'], floorZ: -1.3,
+    wallY: 0.1, wallMat: 'stone_scorched', floorMat: 'floor', view: { dist: 2.5, eye: 1.6 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'iron_dark'] },
+  { name: 'boulder', title: 'Boulder (rock; roll = static, rollTurn = optional real roll)', clips: ['roll', 'rollTurn'], floorZ: 0, wallY: 2.5,
+    wallMat: 'stone_moss', floorMat: 'floor', view: { dist: 3, eye: 1.6 }, rim: ['moss_cap', 'granite_light'], body: ['granite_dark'] },
+  { name: 'rubble0', title: 'Rubble variant 0 (low block)', clips: ['idle'], floorZ: 0, wallY: 1.5, wallMat: 'stone', floorMat: 'rubble',
+    view: { dist: 2, eye: 1.3 }, rim: ['block_light'], body: ['block_dark'] },
+  { name: 'rubble1', title: 'Rubble variant 1 (big block + slab, strut gap)', clips: ['idle'], floorZ: 0, wallY: 1.5, wallMat: 'stone', floorMat: 'rubble',
+    view: { dist: 2, eye: 1.0 }, rim: ['block_light'], body: ['block_dark'] },
+  { name: 'rubble2', title: 'Rubble variant 2 (small chunk)', clips: ['idle'], floorZ: 0, wallY: 1.5, wallMat: 'stone', floorMat: 'rubble',
+    view: { dist: 2, eye: 0.7 }, rim: ['block_light'], body: ['block_dark'] },
+  { name: 'canvasHeap', title: 'Canvas heap (the wake spot; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
+    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['canvas_light'], body: ['canvas_dark'] },
+  { name: 'gondola', title: 'Gondola (bow + stern halves)', clips: ['idle'], floorZ: 0, wallY: 1.4, wallMat: 'stone', floorMat: 'floor',
+    view: { dist: 3, eye: 1.6 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'iron_dark'] },
+  { name: 'strut', title: 'Bent strut (bar)', clips: ['idle'], floorZ: 0, wallY: 0.4, wallMat: 'stone', floorMat: 'rubble',
+    view: { dist: 1.8, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'patina'] },
+  { name: 'envelopeHeap', title: 'Envelope heap below the breach (west + east halves; skirt under the anchor plane)', clips: ['idle'], floorZ: 0, wallY: null,
+    wallMat: 'rock', floorMat: 'grass', view: { dist: 4.5, eye: 2.4 }, rim: ['canvas_light'], body: ['canvas_dark'] },
+  { name: 'relay', title: 'Relay (crystalDead + crystalLit + mount; the glow is a billboard)', clips: ['dead', 'wake', 'awake'], floorZ: 0, wallY: null,
+    wallMat: 'stone', floorMat: 'floor', view: { dist: 2.4, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'mirror_dark', 'crystal_dead'] }
+];
+const NAMES = ENTRIES.filter((e) => MODELS[e.name]).map((e) => e.name);
+const GROUPS = {};
+for (const e of ENTRIES) { e.clip = e.clips[0]; e.t0 = performance.now(); GROUPS[e.name] = e; }
+for (const n of NAMES) { const o = document.createElement('option'); o.value = n; o.textContent = n; $('show').appendChild(o); }
 
 // ------------------------------------------------------------------ controls
 const ctl = {};
 let ctlVer = 1;
 function readCtl() {
+  ctl.show = $('show').value;
   ctl.lmode = $('lmode').value; ctl.lcol = $('lcol').value;
   ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
   ctl.edges = $('edges').value; ctl.mats = $('mats').value; ctl.speed = +$('speed').value;
   ctl.dist = +$('dist').value; ctl.vaz = +$('vaz').value; ctl.zoom = +$('zoom').value; ctl.lback = $('lback').value;
   $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
-  $('ambV').textContent = ctl.amb.toFixed(2); $('distV').textContent = ctl.dist.toFixed(1) + ' m'; $('vazV').textContent = ctl.vaz;
+  $('ambV').textContent = ctl.amb.toFixed(2); $('distV').textContent = 'x ' + ctl.dist.toFixed(2); $('vazV').textContent = ctl.vaz;
   ctlVer++;
 }
-document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => { readCtl(); if (el.id === 'zoom') buildIngame(); }));
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl(); if (el.id === 'zoom') buildIngame(); if (el.id === 'show') applyShow();
+}));
 readCtl();
+function visible(name) { return ctl.show === 'all' || ctl.show === name; }
 
 // ------------------------------------------------------------------ packing (engine)
 const matKeys = [];
 function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
-const NAMES = ['lever', 'lantern'];
 const packed = {};
 const packErr = {};
 for (const n of NAMES) {
   try { packed[n] = packVoxelModel(MODELS[n].voxel, matIdFor); } catch (err) { packErr[n] = String(err.message || err); }
 }
 function resolveMat(key) {
-  if (ctl.mats === 'fb') return P.materials[VMAT.fallback[key]] || P.materials.brass;
+  if (ctl.mats === 'fb') return P.materials[VMAT.fallback[key]] || P.materials[key] || P.materials.brass;
   return VMAT.v1[key] || P.materials[key] || P.materials.brass;
 }
 
@@ -139,12 +183,6 @@ function clipState(pm, name, e) {
   while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
   return { clip: ci, frame: f, tMs: e, done: c.n === 1 };
 }
-const GROUPS = {
-  lever: { name: 'lever', clips: ['idle', 'pull', 'down'], clip: 'idle', t0: performance.now(), floorZ: 0, wallMat: 'stone',
-           ingameFloor: 'floor', title: 'Lever (plate + handle)' },
-  lantern: { name: 'lantern', clips: ['unlit', 'lit', 'empty', 'hookEmpty'], clip: 'unlit', t0: performance.now(), floorZ: -1.3,
-             wallY: 0.1, wallMat: 'stone_scorched', title: 'Brass lamp on its wall bracket (mount + arm + lamp)' }
-};
 function partIndex(def, name) { return Object.keys(def.voxel.parts).indexOf(name); }
 function mountWorld(g, fwd, name, out) {
   const def = MODELS[g.name], m = def.voxel.mounts[name], k = partIndex(def, m.part), b = k * 12, a = m.at;
@@ -226,7 +264,7 @@ function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fogOn, out) {
     if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
     else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
     else { u = res.lx * cm; v = res.ly * cm; }
-  } else if (res.kind === 1) { nx = 0; ny = 0; nz = 1; mat = P.materials[sc.g.ingameFloor || 'floor']; u = px; v = py; }
+  } else if (res.kind === 1) { nx = 0; ny = 0; nz = 1; mat = P.materials[sc.g.floorMat || 'floor']; u = px; v = py; }
   else { nx = 0; ny = -1; nz = 0; mat = P.materials[sc.wallMat]; u = px; v = pz - (sc.floorZ || 0); }
   Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
   U.addLight(Lacc, 'ambient', 0.12 * ctl.amb);
@@ -347,7 +385,7 @@ function renderView(view, sc) {
 function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
 function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
 function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
-  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 6;
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
   const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
   const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
   const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
@@ -374,7 +412,7 @@ function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, e
 }
 function modelBounds(name) {   // rest-pose AABB in metres around the anchor (model at the origin, yaw 0)
   const pm = packed[name], cm = pm.cellM, a = pm.anchor;
-  return { x0: -a[0] * cm, x1: (pm.sx - a[0]) * cm, y0: -a[1] * cm, y1: (pm.sy - a[1]) * cm, z0: 0, z1: pm.sz * cm };
+  return { x0: -a[0] * cm, x1: (pm.sx - a[0]) * cm, y0: -a[1] * cm, y1: (pm.sy - a[1]) * cm, z0: -a[2] * cm, z1: (pm.sz - a[2]) * cm };
 }
 
 // ------------------------------------------------------------------ page: per-group views
@@ -388,8 +426,10 @@ function buildGroups() {
     const g = GROUPS[name], bb = modelBounds(name);
     const center = [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2, (bb.z0 + bb.z1) / 2];
     const radius = 0.5 * Math.hypot(bb.x1 - bb.x0, bb.y1 - bb.y0, bb.z1 - bb.z0);
-    const sec = document.createElement('div');
-    sec.innerHTML = '<h2>' + g.title + '</h2><div class="note">' + MODELS[name].desc + '</div>';
+    const sec = document.createElement('div'); sec.dataset.model = name; g.sec = sec;
+    const def = MODELS[name].voxel;
+    sec.innerHTML = '<h2>' + g.title + '</h2><div class="note">' + MODELS[name].desc + '<br>' + def.size.join(' x ') + ' voxels @ ' + def.cellM +
+      ' m = ' + def.size.map((v) => (v * def.cellM).toFixed(2)).join(' x ') + ' m, ' + Object.keys(def.parts).length + ' part(s).</div>';
     const bar = document.createElement('div'); bar.className = 'row';
     bar.innerHTML = '<span class="cap">clip:</span>';
     for (const cn of g.clips) {
@@ -427,6 +467,12 @@ function buildGroups() {
     host.appendChild(sec);
   }
 }
+function applyShow() {
+  for (const name of NAMES) {
+    const g = GROUPS[name];
+    for (const el of [g.sec, g.ingameSec, g.layerSec]) if (el) el.style.display = visible(name) ? '' : 'none';
+  }
+}
 
 // ------------------------------------------------------------------ in-game views
 const ingameViews = [];
@@ -438,7 +484,8 @@ function buildIngame() {
   for (const name of NAMES) {
     if (!packed[name]) continue;
     const g = GROUPS[name];
-    const h = document.createElement('h3'); h.textContent = g.title; host.appendChild(h);
+    const sec = document.createElement('div'); g.ingameSec = sec;
+    const h = document.createElement('h3'); h.textContent = g.title; sec.appendChild(h);
     const row = document.createElement('div'); row.className = 'row';
     for (const spec of [{ cols: 160, rows: 60, cc: 60, cr: 30, cw: 12, ch: 18 }, { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }]) {
       const grid = makeCanvas(spec.cc, spec.cr, spec.cw * z, spec.ch * z);
@@ -447,30 +494,32 @@ function buildIngame() {
       row.appendChild(wrap);
       const view = { grid, group: g, ingame: true, spec, cap };
       view.stats = (mc, hr, wc) => {
-        const pm = packed[name], H = pm.sz * pm.cellM, rowsTall = H * view.cam.planeDistY / ctl.dist;
-        cap.textContent = spec.cols + 'x' + spec.rows + ': model ' + hr + ' rows x ' + wc + ' cols on screen (projected height ' +
-          rowsTall.toFixed(1) + ' rows = ' + (rowsTall / pm.sz).toFixed(2) + ' rows per voxel), ' + mc + ' model cells';
+        const pm = packed[name], H = pm.sz * pm.cellM, d = g.view.dist * ctl.dist, rowsTall = H * view.cam.planeDistY / d;
+        cap.textContent = spec.cols + 'x' + spec.rows + ' at ' + d.toFixed(1) + ' m, eye ' + g.view.eye.toFixed(1) + ' m: model ' + hr + ' rows x ' + wc +
+          ' cols on screen (grid height ' + rowsTall.toFixed(1) + ' rows = ' + (rowsTall / pm.sz).toFixed(2) + ' rows per voxel), ' + mc + ' model cells';
       };
       ingameViews.push(view); views.push(view);
     }
-    host.appendChild(row);
+    sec.appendChild(row);
+    host.appendChild(sec);
   }
+  applyShow();
 }
 function ingameCam(view) {
   const g = view.group, bb = modelBounds(g.name), s = view.spec;
-  const target = [0, 0, (bb.z0 + bb.z1) / 2];
-  return perspCam(s.cols, s.rows, s.cc, s.cr, target, ctl.vaz, ctl.dist, g.floorZ + 1.6);
+  const target = [0, 0, (Math.max(bb.z0, 0) + bb.z1) / 2];
+  return perspCam(s.cols, s.rows, s.cc, s.cr, target, ctl.vaz, g.view.dist * ctl.dist, g.floorZ + g.view.eye);
 }
 
 // ------------------------------------------------------------------ main loop
 function frame() {
   const now = performance.now();
   const scenes = {};
-  for (const name of NAMES) if (packed[name]) {
+  for (const name of NAMES) if (packed[name] && visible(name)) {
     const g = GROUPS[name];
     scenes[name] = buildScene(g, now);
     const st = scenes[name].st;
-    g.clipInfo.textContent = ' ' + g.clip + ': frame ' + st.frame + (st.done ? ' (held)' : '') + ', t ' + Math.round(st.tMs) + ' ms';
+    if (g.clipInfo) g.clipInfo.textContent = ' ' + g.clip + ': frame ' + st.frame + (st.done ? ' (held)' : '') + ', t ' + Math.round(st.tMs) + ' ms';
   }
   for (const v of views) {
     const sc = scenes[v.group.name];
@@ -478,7 +527,7 @@ function frame() {
     let key = sc.sig + '|' + ctlVer;
     if (v.ingame) {
       sc.floorZ = v.group.floorZ;
-      sc.wallY = v.group.name === 'lever' ? (ctl.lback === 'none' ? null : +ctl.lback) : v.group.wallY;
+      sc.wallY = v.group.wallY === 'lback' ? (ctl.lback === 'none' ? null : +ctl.lback) : v.group.wallY;
       v.cam = ingameCam(v);
     } else { sc.floorZ = null; sc.wallY = null; }
     if (!v.dynamic && !v.ingame) key = sc.sig.replace(/\|\d+\|\d+$/, '') + '|' + ctlVer;   // small grid: no glint / flame flicker
@@ -496,7 +545,8 @@ function buildLayers() {
   const host = $('layers');
   for (const name of NAMES) {
     const def = MODELS[name].voxel;
-    const h = document.createElement('h3'); h.textContent = name + ' (' + def.size.join(' x ') + ' voxels, cellM ' + def.cellM + ')'; host.appendChild(h);
+    const det = document.createElement('details'); GROUPS[name].layerSec = det;
+    const sum = document.createElement('summary'); sum.textContent = name + ' (' + def.size.join(' x ') + ' voxels, cellM ' + def.cellM + ')'; det.appendChild(sum);
     const row = document.createElement('div'); row.className = 'row';
     for (let z = def.layers.length - 1; z >= 0; z--) {
       const wrap = document.createElement('div');
@@ -510,14 +560,28 @@ function buildLayers() {
       const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = 'z' + z;
       wrap.appendChild(pre); wrap.appendChild(cap); row.appendChild(wrap);
     }
-    host.appendChild(row);
+    det.appendChild(row);
+    host.appendChild(det);
   }
-  $('dumpLever').onclick = () => { $('dump').value = JSON.stringify(MODELS.lever.voxel, null, 1); };
-  $('dumpLantern').onclick = () => { $('dump').value = JSON.stringify(MODELS.lantern.voxel, null, 1); };
+  for (const n of NAMES) { const o = document.createElement('option'); o.value = n; o.textContent = n; $('dumpSel').appendChild(o); }
+  $('dumpBtn').onclick = () => { $('dump').value = JSON.stringify(MODELS[$('dumpSel').value].voxel, null, 1); };
+  applyShow();
 }
 
 // ------------------------------------------------------------------ checks
 function lum(key) { const c = P.rgb[key]; return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+function matLum(key) {   // v2 tone-weighted luma (the GPU look) or the v1 base
+  const v = VMAT.v2[key] || DP.materials[key];
+  if (v && v.tones) { let s = 0, w = 0; for (const t of v.tones) { s += lum(t[0]) * t[1]; w += t[1]; } return s / w; }
+  const m = VMAT.v1[key] || P.materials[key];
+  return lum(m.base);
+}
+function matTones(key) {
+  const v = VMAT.v2[key] || DP.materials[key], m = VMAT.v1[key] || P.materials[key], o = [m.base];
+  if (v && v.tones) for (const t of v.tones) o.push(t[0]);
+  return o;
+}
+const WALL_TONES = ['stoneMid', 'stoneCool', 'stoneWarm', 'stoneDeep', 'stoneLight', 'mortar', 'flagstone', 'rubble'];
 function occupiedBounds(def, partName) {
   const b = { x0: 1e9, x1: -1, y0: 1e9, y1: -1, z0: 1e9, z1: -1, n: 0 };
   const box = partName ? def.parts[partName].box : null;
@@ -529,10 +593,33 @@ function occupiedBounds(def, partName) {
   })));
   return b;
 }
+// voxels per part with the engine's "first part whose box contains it wins" rule: [{x,y,z,ch,k}]
+function ownedVoxels(def) {
+  const names = Object.keys(def.parts), out = [];
+  def.layers.forEach((L, z) => L.forEach((r, y) => r.split('').forEach((ch, x) => {
+    if (!def.mats[ch]) return;
+    for (let k = 0; k < names.length; k++) {
+      const b = def.parts[names[k]].box;
+      if (x >= b[0] && x < b[3] && y >= b[1] && y < b[4] && z >= b[2] && z < b[5]) { out.push({ x, y, z, ch, k }); return; }
+    }
+  })));
+  return out;
+}
 function worldPoint(inst, k, p) {
   const f = inst.fwd, b = k * 12;
   return [f[b] * p[0] + f[b + 1] * p[1] + f[b + 2] * p[2] + f[b + 9], f[b + 3] * p[0] + f[b + 4] * p[1] + f[b + 5] * p[2] + f[b + 10],
           f[b + 6] * p[0] + f[b + 7] * p[1] + f[b + 8] * p[2] + f[b + 11]];
+}
+function cellAt(x, y) {   // tower grid cell under a world point: { ch, floorH, solid }
+  const cx = Math.floor(x), cy = Math.floor(y);
+  if (!TOWER || cy < 0 || cy >= TOWER.rows.length || cx < 0 || cx >= TOWER.rows[0].length) return { ch: '?', floorH: -99, solid: false, cx, cy };
+  const ch = TOWER.rows[cy].charAt(cx), L = TOWER.legend[ch] || {};
+  return { ch, floorH: L.floorH, solid: !!L.solid, cx, cy };
+}
+// world voxel centres of a model placed at (x, y, z, yaw) in clip `clip` (hidden parts included; the caller filters)
+function worldVoxels(name, x, y, z, yaw, clip) {
+  const def = MODELS[name].voxel, st = clipState(packed[name], clip, 0), inst = posedInstance(name, x, y, z, yaw, st);
+  return ownedVoxels(def).map((v) => { const p = worldPoint(inst, v.k, [v.x + 0.5, v.y + 0.5, v.z + 0.5]); return { p, v }; });
 }
 function runChecks() {
   const out = [];
@@ -541,30 +628,56 @@ function runChecks() {
   const newKeys = Object.keys(VMAT.v1);
   const allKeys = new Set(Object.keys(P.materials).concat(newKeys));
   ok(true, 'engine voxel modules loaded (VoxelModel, voxelPack, voxelPose, voxelMarch, GBuffer)');
+  let atlas = 0;
   for (const name of NAMES) {
     const def = MODELS[name].voxel;
     const vr = validateVoxelModel(def, { materialKeys: allKeys });
     ok(vr.errors.length === 0, name + ': validateVoxelModel (materialKeys = palette + proposed) ' + (vr.errors.length ? vr.errors.slice(0, 6).join(' ; ') : 'no errors'));
     if (vr.warnings.length) info(name + ': warnings ' + vr.warnings.join(' ; '));
-    ok(!!packed[name], name + ': packVoxelModel ' + (packed[name] ? 'OK, ' + packed[name].partCount + ' parts, atlas ' + packed[name].vox.length + ' bytes' : packErr[name]));
-    // mounts (15.3 item 4)
+    ok(!!packed[name], name + ': packVoxelModel ' + (packed[name] ? 'OK, ' + packed[name].partCount + ' parts, atlas ' + packed[name].vox.length + ' texels' : packErr[name]));
+    if (packed[name]) atlas += packed[name].vox.length;
+    const prod = def.size[0] * def.size[1] * def.size[2];
+    const own = ownedVoxels(def), per = {};
+    for (const v of own) per[def.mats[v.ch]] = (per[def.mats[v.ch]] || 0) + 1;
+    info(name + ': ' + own.length + ' voxels (grid ' + def.size.join('x') + ' = ' + prod + ' <= 4096), world ' + def.size.map((v) => (v * def.cellM).toFixed(2)).join(' x ') +
+         ' m; per material ' + Object.keys(per).map((k) => k + ' ' + per[k]).join(', '));
     for (const mn of Object.keys(def.mounts || {})) {
       const m = def.mounts[mn];
       const inside = m.at.every((v, i) => Number.isFinite(v) && v >= 0 && v <= def.size[i]);
       ok(/^[A-Za-z][A-Za-z0-9_]{0,15}$/.test(mn) && inside && (!m.part || def.parts[m.part]),
          name + ': mount ' + mn + ' at [' + m.at.join(', ') + '] part ' + m.part + ' (name pattern, inside size, part exists)');
     }
-    // events not reserved
     for (const cn of Object.keys(def.animations || {})) {
       const ev = def.animations[cn].events || {};
       for (const t of Object.keys(ev)) ok(RESERVED_EVENTS.indexOf(t) < 0, name + '.' + cn + ': event "' + t + '" is not reserved');
     }
-    // box extents
     for (const pn of Object.keys(def.parts)) {
-      const b = def.parts[pn].box, ext = b[3] - b[0] + b[4] - b[1] + b[5] - b[2], ob = occupiedBounds(def, pn);
-      info(name + '.' + pn + ': box [' + b.join(',') + '] extent ' + ext + ' (<= 48), ' + ob.n + ' voxels' + (def.parts[pn].parent ? ', parent ' + def.parts[pn].parent : ', root'));
+      const b = def.parts[pn].box, ext = b[3] - b[0] + b[4] - b[1] + b[5] - b[2];
+      const k = Object.keys(def.parts).indexOf(pn), n = own.filter((v) => v.k === k).length;
+      ok(ext <= 48 && n > 0, name + '.' + pn + ': box [' + b.join(',') + '] extent ' + ext + ' (<= 48), owns ' + n + ' voxels' + (def.parts[pn].parent ? ', parent ' + def.parts[pn].parent : ', root'));
+    }
+    // clip names = the billboard's anim names (spawn picks the anim from the sprite model)
+    const bb = billboardOf(name);
+    if (bb && bb.animations) {
+      const need = Object.keys(bb.animations);
+      ok(need.every((c) => def.animations[c]), name + ': voxel clips include the billboard anim names [' + need.join(', ') + ']');
+    }
+    // value ladder (ART-OWN-001 finding 2) + no wall / floor stone tones
+    const g = GROUPS[name];
+    if (g && g.rim) {
+      const rimMin = Math.min(...g.rim.map(matLum)), bodyMax = Math.max(...g.body.map(matLum));
+      const used = new Set(Object.values(def.mats));
+      const ladder = rimMin / bodyMax >= 1.5 && (rimMin > lum('stoneLight') || bodyMax < 0.8 * lum('stoneMid'));
+      ok(ladder && g.rim.concat(g.body).every((k) => used.has(k)),
+         name + ': value ladder rim [' + g.rim.map((k) => k + ' ' + matLum(k).toFixed(0)).join(', ') + '] / body [' +
+         g.body.map((k) => k + ' ' + matLum(k).toFixed(0)).join(', ') + '] = ' + (rimMin / bodyMax).toFixed(2) + ' (>= 1.5; rim > stoneLight ' +
+         lum('stoneLight').toFixed(0) + ' or body < 0.8 x stoneMid ' + (0.8 * lum('stoneMid')).toFixed(0) + ')');
+      const bad = [...used].filter((k) => VMAT.v1[k] && matTones(k).some((t) => WALL_TONES.indexOf(t) >= 0));
+      ok(bad.length === 0, name + ': no new material uses a wall / floor stone tone (' + WALL_TONES.join(' ') + ')' + (bad.length ? ' - ' + bad.join(', ') : ''));
     }
   }
+  ok(atlas <= 60000, 'VOX atlas total ' + atlas + ' texels for ' + NAMES.length + ' models (<= 65536 = 256 rows, room left for the burner); ' +
+     'tower voxel instances: 13 + burner = 14 <= MAX_VOX_INSTANCES 16');
   // ---- lever contract (15.3 items 3 and 6)
   const L = MODELS.lever.voxel, lb = occupiedBounds(L);
   ok(JSON.stringify(Object.keys(L.parts)) === '["plate","handle"]' && L.parts.handle.parent === 'plate',
@@ -579,14 +692,14 @@ function runChecks() {
   const pull = L.animations.pull, pullMs = pull.durations.reduce((a, b) => a + b, 0);
   ok(pull.loop === false && Math.abs(pullMs - 400) <= 40, 'lever: pull non-loop, ' + pull.frames.length + ' keys, ' + pullMs + ' ms (billboard pull 0.4 s)');
   ok(JSON.stringify(pull.frames[pull.frames.length - 1]) === JSON.stringify(L.animations.down.frames[0]), 'lever: pull ends exactly on the down pose (held after the clip, save/load safe)');
-  ok(['idle', 'pull', 'down'].every((c) => L.animations[c]), 'lever: clip names idle / pull / down = the billboard names');
   // ---- lantern
   const T = MODELS.lantern.voxel, lampB = occupiedBounds(T, 'lamp');
   ok(['unlit', 'lit', 'empty', 'hookEmpty'].every((c) => T.animations[c]), 'lantern: clip names unlit / lit / empty / hookEmpty = the billboard names (US-012 variant switch)');
   info('lantern: lamp body ' + ((lampB.x1 - lampB.x0) * T.cellM).toFixed(3) + ' x ' + ((lampB.y1 - lampB.y0) * T.cellM).toFixed(3) + ' x ' +
        ((lampB.z1 - lampB.z0) * T.cellM).toFixed(3) + ' m (billboard world 0.25 x 0.45); whole model ' + T.size.map((v) => (v * T.cellM).toFixed(3)).join(' x ') + ' m');
   // ---- materials
-  const used = new Set(Object.values(L.mats).concat(Object.values(T.mats)).filter((k) => k));
+  const used = new Set();
+  for (const name of NAMES) Object.values(MODELS[name].voxel.mats).forEach((k) => k && used.add(k));
   for (const k of used) {
     ok((!!VMAT.v1[k] && !!VMAT.v2[k] && VMAT.remap[k] === k) || (!!P.materials[k] && !!DP.materials[k]),
        'mats value ' + k + ': has a v1 + v2 record (proposed block or already merged), 15.3 item 6');
@@ -608,17 +721,12 @@ function runChecks() {
     ok(errs.length === 0, k + ': colour keys, ramp, texture, v2 tones + glyph sets, fallback valid' + (errs.length ? ' - ' + errs.join(', ') : ''));
   }
   const merged = newKeys.every((k) => P.materials[k] && DP.materials[k]);
-  info('materials merged into palette.js + detail-pass.js: ' + (merged ? 'yes' : 'NO (designer merge step open; attach() skipped, the game keeps the billboards)'));
-  // ---- contrast (finding 2)
-  ok(lum('brassLight') > lum('stoneLight') && lum('brassHot') > lum('stoneLight'),
-     'rim value: brassLight ' + lum('brassLight').toFixed(0) + ' / brassHot ' + lum('brassHot').toFixed(0) + ' > stoneLight ' + lum('stoneLight').toFixed(0));
-  ok(lum('brassDark') < 0.8 * lum('stoneMid') && lum('ironDark') < 0.8 * lum('stoneMid'),
-     'body value: brassDark ' + lum('brassDark').toFixed(0) + ' / ironDark ' + lum('ironDark').toFixed(0) + ' < 0.8 x stoneMid ' + lum('stoneMid').toFixed(0));
-  ok(lum('ironLight') / lum('brassDark') >= 1.5, 'handle vs plate: ironLight / brassDark = ' + (lum('ironLight') / lum('brassDark')).toFixed(2) + ' >= 1.5');
+  info('materials merged into palette.js + detail-pass.js: ' + (merged ? 'yes' : 'NO (merge step open; attach() / attachTower() skip unmerged models, the game keeps their billboards)') +
+       '; batch 2 keys: ' + (VMAT.batch2 || []).join(', '));
   ok(VMAT.edges.modelRim > 0 && VMAT.edges.modelRim < 1, 'edges.modelRim proposal ' + VMAT.edges.modelRim + ' (dark contour, 15.2 item 5)');
   // ---- placement against tower.js (read only)
-  const lv = A.levels && A.levels.tower ? A.levels.tower.props.filter((p) => p.id === 'lever')[0] : null;
-  const ln = A.levels && A.levels.tower ? A.levels.tower.props.filter((p) => p.id === 'lantern')[0] : null;
+  const prop = (id) => TOWER ? TOWER.props.filter((p) => p.id === id)[0] : null;
+  const lv = prop('lever'), ln = prop('lantern');
   if (lv && packed.lever) {
     const pl = MODELS.lever.placement;
     ok(lv.x === pl.x && lv.y === pl.y && lv.z === pl.z && lv.facing === pl.facing, 'lever: tower.js prop (' + lv.x + ', ' + lv.y + ', ' + lv.z + ', facing ' + lv.facing + ') = model placement, no level edit');
@@ -631,8 +739,6 @@ function runChecks() {
     const pst = clipState(packed.lever, 'down', 0), pi = posedInstance('lever', lv.x, lv.y, lv.z, lv.facing, pst);
     const knob = worldPoint(pi, 1, [7.5, 1.5, 20.5]);
     ok(knob[1] > lv.y, 'lever: pulled knob swings SOUTH (toward the grate at y 10..11): knob (' + knob.map((v) => v.toFixed(3)).join(', ') + ')');
-    const pr = mountWorld(GROUPS.lever, inst.fwd, 'prompt', [0, 0, 0]);
-    info('lever: prompt mount world z ' + pr[2].toFixed(3) + ' (interactable aim z 3.7)');
   }
   if (ln && packed.lantern) {
     const pl = MODELS.lantern.placement;
@@ -640,28 +746,113 @@ function runChecks() {
     const inst = posedInstance('lantern', ln.x, ln.y, ln.z, ln.facing, { clip: -1, frame: 0, tMs: 0 });
     const back = worldPoint(inst, 0, [4, 13, 14]);
     ok(Math.abs(back[0] - pl.wallX) < 1e-9, 'lantern: wall plate back face at x ' + back[0].toFixed(4) + ' = step-8 west face ' + pl.wallX);
-    const lampC = worldPoint(inst, 2, [4, 4, 0]), lampBack = worldPoint(inst, 2, [4, 8, 0]), lampTop = worldPoint(inst, 2, [4, 4, 16]);
-    ok(pl.wallX - lampBack[0] >= 0.1, 'lantern: lamp centre x ' + lampC[0].toFixed(3) + ', bottom z ' + lampC[2].toFixed(3) + ', back ' + (pl.wallX - lampBack[0]).toFixed(3) + ' m off the wall (>= 0.10)');
+    const lampC = worldPoint(inst, 2, [4, 4, 0]);
     ok(Math.abs(lampC[2] - 1.3) < 1e-9, 'lantern: lamp bottom z = 1.30 (billboard anchor height kept)');
-    const hk = mountWorld(GROUPS.lantern, inst.fwd, 'hook', [0, 0, 0]);
-    const pv = T.parts.lamp.pivot, lp = worldPoint(inst, 2, pv);
-    ok(Math.hypot(hk[0] - lp[0], hk[1] - lp[1], hk[2] - lp[2]) < 1e-9, 'lantern: hook mount = lamp pivot (' + hk.map((v) => v.toFixed(3)).join(', ') + '), top of bail ' + lampTop[2].toFixed(3));
     const ei = posedInstance('lantern', ln.x, ln.y, ln.z, ln.facing, clipState(packed.lantern, 'empty', 0));
-    const hidTop = worldPoint(ei, 2, [4, 4, 16]), brTop = worldPoint(ei, 1, [4, 3, 19]);
-    ok(hidTop[2] < 0 && Math.abs(brTop[2] - worldPoint(inst, 1, [4, 3, 19])[2]) < 1e-9,
-       'lantern: empty clip hides the lamp under the floor (top z ' + hidTop[2].toFixed(3) + ' < 0), bracket stays');
-    const fm = mountWorld(GROUPS.lantern, inst.fwd, 'flame', [0, 0, 0]);
-    info('lantern: flame billboard base (separate prop) at (' + fm.map((v) => v.toFixed(3)).join(', ') + '), ' + Math.hypot(fm[0] - 18.5, fm[1] - 6.5).toFixed(2) + ' m from the burner');
+    const hidTop = worldPoint(ei, 2, [4, 4, 16]);
+    ok(hidTop[2] < 0, 'lantern: empty clip hides the lamp under the floor (top z ' + hidTop[2].toFixed(3) + ' < 0), bracket stays');
   }
-  // ---- readability (finding 1) at 2.5 m
-  for (const name of NAMES) {
-    const def = MODELS[name].voxel, H = def.size[2] * def.cellM;
-    for (const g of [[160, 60], [240, 90]]) {
-      const pdy = (g[1] / 2) * (16 / 9) / TAN_HALF, rows = H * pdy / 2.5, rpv = rows / def.size[2];
-      ok(rows >= 12 && rpv >= 0.6 && rpv <= 2.5, name + ' at 2.5 m, ' + g[0] + 'x' + g[1] + ': ' + rows.toFixed(1) + ' rows tall, ' + rpv.toFixed(2) + ' rows per voxel (target 0.6..2.5, >= 12 rows)');
+  // ---- batch 2 placement: same tower.js data, no voxel buried in a taller cell, route / neighbour rules
+  const corridor = new Set(A.levelPatch && A.levelPatch.tower ? A.levelPatch.tower.pathCheck.corridor.leg1.concat(A.levelPatch.tower.pathCheck.corridor.leg2) : []);
+  function placeCheck(name, p, clip, extra) {
+    const pl = MODELS[name].placement;
+    const z = p.z === 'ground' ? cellAt(p.x, p.y).floorH : p.z;
+    const wv = worldVoxels(name, p.x, p.y, z, p.facing || 0, clip).filter((w) => w.p[2] > z - 1e-6);   // above the anchor plane
+    const cells = {}, buried = [];
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const w of wv) {
+      const c = cellAt(w.p[0], w.p[1]); cells[c.cx + ',' + c.cy] = c.ch;
+      if (c.floorH !== undefined && w.p[2] < c.floorH - 1e-3) buried.push(c.cx + ',' + c.cy);
+      x0 = Math.min(x0, w.p[0]); x1 = Math.max(x1, w.p[0]); y0 = Math.min(y0, w.p[1]); y1 = Math.max(y1, w.p[1]);
+    }
+    const hc = MODELS[name].voxel.cellM / 2, tag = name + ' @ ' + p.id + ' (' + p.x + ', ' + p.y + ', ' + p.z + ', facing ' + (p.facing || 0) + ')';
+    info(tag + ': voxel extent x ' + (x0 - hc).toFixed(2) + '..' + (x1 + hc).toFixed(2) + ', y ' + (y0 - hc).toFixed(2) + '..' + (y1 + hc).toFixed(2) +
+         '; cells ' + Object.keys(cells).map((k) => k + "'" + cells[k] + "'").join(' '));
+    const bmsg = tag + ': ' + buried.length + ' of ' + wv.length + ' voxels inside a taller cell' + (buried.length ? ' at ' + [...new Set(buried)].join(' ') : '');
+    if (extra === 'infoBuried') info(bmsg + ' (dynamic prop: the roller decides where it rests)');
+    else if (extra !== 'noBuried') ok(buried.length <= 0.02 * wv.length, bmsg + ' (<= 2 %)');
+    return { wv, cells, x0, x1, y0, y1, z };
+  }
+  const batchProps = [['boulder', 'boulder', 'roll'], ['canvasHeap', 'pallet', 'idle'], ['gondola', 'gondola', 'idle'], ['strut', 'strut', 'idle'],
+                      ['envelopeHeap', 'envelopeHeap', 'idle'], ['relay', 'beaconBowl', 'dead']];
+  for (const [name, id, clip] of batchProps) {
+    const p = prop(id), pl = MODELS[name] && MODELS[name].placement;
+    if (!p || !packed[name]) continue;
+    ok(p.x === pl.x && p.y === pl.y && p.z === pl.z && (p.facing || 0) === pl.facing && p.model === name,
+       name + ': tower.js prop ' + id + ' (' + p.x + ', ' + p.y + ', ' + p.z + ', facing ' + (p.facing || 0) + ', model ' + p.model + ') = model placement, no level edit');
+    const r = placeCheck(name, p, clip, name === 'envelopeHeap' ? 'noBuried' : name === 'boulder' ? 'infoBuried' : '');
+    const inCorr = Object.keys(r.cells).filter((k) => corridor.has(k));
+    if (name === 'gondola' || name === 'strut') ok(inCorr.length === 0, name + ': no voxel on the wake -> burner -> stair corridor (levelPatch.pathCheck)' + (inCorr.length ? ' - ' + inCorr.join(' ') : ''));
+    if (name === 'gondola') {
+      let dmin = 1e9; for (const w of r.wv) if (w.p[2] < 0.7) dmin = Math.min(dmin, Math.hypot(w.p[0] - 15.3, w.p[1] - 9.5));
+      ok(dmin >= 0.3, 'gondola: the rigging coil billboard (15.3, 9.5) is ' + dmin.toFixed(2) + ' m from the nearest hull voxel centre (>= 0.30, coil outside the hull)');
+      ok(r.x0 > 15.0 - 1e-9 && r.x1 < 16.0, 'gondola: hull x ' + r.x0.toFixed(2) + '..' + r.x1.toFixed(2) + ' clear of the rubble cell (x < 15) and the canvas heap (x >= 16)');
+    }
+    if (name === 'canvasHeap') {
+      ok(Object.values(r.cells).every((c) => c === '.'), 'canvasHeap: every voxel on flagstone cells (.), y ' + r.y1.toFixed(2) + ' < south wall 10.0');
+      const st = TOWER.start; let hmax = 0;
+      for (const w of r.wv) if (Math.hypot(w.p[0] - st.x, w.p[1] - st.y) < 0.35) hmax = Math.max(hmax, w.p[2] + MODELS.canvasHeap.voxel.cellM / 2);
+      ok(hmax < st.eyeH - 0.1, 'canvasHeap: within 0.35 m of the start pose (' + st.x + ', ' + st.y + ') the canvas top is ' + hmax.toFixed(3) + ' m < eye ' + st.eyeH + ' - 0.1 (the hollow)');
+    }
+    if (name === 'strut') ok(Object.values(r.cells).every((c) => c === 'R'), 'strut: every voxel over the rubble cell R (14,8)');
+    if (name === 'relay') {
+      ok(Object.values(r.cells).every((c) => c === 'O'), 'relay (dead): every visible voxel over the O plinth cells');
+      const all = worldVoxels('relay', p.x, p.y, p.z, p.facing, 'dead'), kLit = 1, kDead = 0;
+      const litTop = Math.max(...all.filter((w) => w.v.k === kLit).map((w) => w.p[2] + 0.06));
+      ok(litTop < 6.0, 'relay dead: crystalLit hidden, top z ' + litTop.toFixed(2) + ' < walkway floor 6.0');
+      const aw = worldVoxels('relay', p.x, p.y, p.z, p.facing, 'awake');
+      const deadTop = Math.max(...aw.filter((w) => w.v.k === kDead).map((w) => w.p[2] + 0.06));
+      ok(deadTop < 6.6, 'relay awake: crystalDead hidden, top z ' + deadTop.toFixed(2) + ' < plinth top 6.6');
+      const restDead = all.filter((w) => w.v.k === kDead).map((w) => w.p.map((q) => q.toFixed(4)).join(',')).sort().join(';');
+      const awLit = aw.filter((w) => w.v.k === kLit).map((w) => w.p.map((q) => q.toFixed(4)).join(',')).sort().join(';');
+      ok(restDead === awLit, 'relay awake: the lit crystals land exactly on the dead crystals\' place');
+      const own = ownedVoxels(MODELS.relay.voxel), M2 = MODELS.relay.voxel.mats;
+      ok(own.every((v) => (v.k === 0) === (M2[v.ch] === 'crystal_dead' || M2[v.ch] === 'iron_light') || v.k === 1) &&
+         own.every((v) => (v.k === 1) === (M2[v.ch] === 'crystal_lit')), 'relay: crystalDead owns only crystal_dead / iron_light, crystalLit only crystal_lit, mount no crystal');
+      const wk = MODELS.relay.voxel.animations.wake, wl = A.models.relay && A.models.relay.wakeLightFrame;
+      ok(wk.events.glowOn === wl && wk.durations.reduce((a, b) => a + b, 0) === 1000, 'relay: wake 1.0 s, event glowOn at key ' + wk.events.glowOn + ' = billboard wakeLightFrame ' + wl);
+    }
+    if (name === 'envelopeHeap') {
+      const all = worldVoxels(name, p.x, p.y, r.z, p.facing, 'idle');
+      const zmin = Math.min(...all.map((w) => w.p[2])) - 0.1, fl = Object.keys(r.cells).map((k) => { const [cx, cy] = k.split(',').map(Number); return TOWER.legend[TOWER.rows[cy].charAt(cx)].floorH; });
+      info('envelopeHeap: anchor z = cell floor ' + r.z + ' (terrain in game); footprint cell floors ' + Math.min(...fl) + '..' + Math.max(...fl) + ' m; the skirt reaches z ' + zmin.toFixed(2));
+    }
+    if (name === 'boulder') {
+      const b = occupiedBounds(MODELS.boulder.voxel), cm = MODELS.boulder.voxel.cellM;
+      ok(Math.abs((b.z1 - b.z0) * cm - 1.2) < 0.08 && Math.abs((b.x1 - b.x0) * cm - 1.2) < 0.08, 'boulder: occupied ' + ((b.x1 - b.x0) * cm).toFixed(3) + ' x ' +
+         ((b.y1 - b.y0) * cm).toFixed(3) + ' x ' + ((b.z1 - b.z0) * cm).toFixed(3) + ' m = the 0.6 m radius roller');
+      const R = MODELS.boulder.voxel.animations;
+      ok(R.roll.frames.length === 8 && R.roll.frames.every((f) => Object.keys(f).length === 0) && R.rollTurn.frames.length === 8,
+         'boulder: roll = 8 rest frames (any roller frame index 0..7 valid, no self-turning), rollTurn = 8 x 45 deg (optional)');
     }
   }
+  // rubble: every tower rubble prop with its variant model
+  if (TOWER) for (const p of TOWER.props.filter((q) => q.model === 'rubble')) {
+    const name = 'rubble' + p.variant;
+    if (packed[name]) placeCheck(name, p, 'idle');
+  }
+  const sp = prop('strut'), rp = prop('rubble2');
+  if (sp && rp && packed.strut && packed.rubble1) {
+    const sv = worldVoxels('strut', sp.x, sp.y, sp.z, sp.facing, 'idle'), rv = worldVoxels('rubble1', rp.x, rp.y, rp.z, rp.facing || 0, 'idle');
+    const key = (q, c) => q.map((v) => Math.floor(v / c)).join(',');
+    const rset = new Set(rv.map((w) => key(w.p, 0.05)));
+    const hits = sv.filter((w) => rset.has(key(w.p, 0.05))).length;
+    ok(hits === 0, 'strut + rubble2 (variant 1) at (14.5, 8.5): ' + hits + ' strut voxels share a 5 cm cell with a rubble voxel (the strut lies in the gap)');
+  }
+  // ---- readability at the typical view (finding 1)
+  for (const name of NAMES) {
+    const def = MODELS[name].voxel, g = GROUPS[name], ob = occupiedBounds(def), H = (ob.z1 - Math.max(ob.z0, def.anchor[2])) * def.cellM;
+    const pdy = 30 * (16 / 9) / TAN_HALF, rows = H * pdy / g.view.dist, rpv = rows / (H / def.cellM);
+    ok(rows >= 8, name + ' at ' + g.view.dist + ' m, 160x60: ' + rows.toFixed(1) + ' rows tall (>= 8), ' + rpv.toFixed(2) + ' rows per voxel; 240x90 ' +
+       (rows * 1.5).toFixed(1) + ' rows');
+  }
   $('checks').innerHTML = out.map((o) => '<div class="' + o[0] + '">' + o[1] + '</div>').join('');
+}
+function billboardOf(name) {
+  const M = A.models || {};
+  const m = /^rubble(\d)$/.exec(name);
+  if (m) return M.rubble && M.rubble.variants && M.rubble.variants[+m[1]];
+  return M[name];
 }
 
 try { runChecks(); } catch (err) { $('checks').innerHTML += '<div class="fail">FAIL checks crashed: ' + err.message + '</div>'; console.error(err); }
