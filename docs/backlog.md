@@ -54,7 +54,7 @@ Statuses: `todo | design | dev | po-review | testing | done`. Numbers and layout
 | 21 | US-013 | Rolling boulder | P0 | done | PASS (Node-level, 2026-09-23, docs/test-reports/US-013.md); visible boulder re-checked in US-011 |
 | 22 | US-014 | Lever opens the grate | P0 | done | PASS (Node-level, 2026-09-23); visual/E-prompt check deferred to US-011/US-012 |
 | 23 | US-015 | Wake sequence + title card `KESTREL` + map card (`M`) + hints | P0 | design | PO CHANGE REQUEST (2026-09-23): logo approved; map card needs "W." signature, `hintBurner`/`hintClimb` zones, `storyHints.when` per ACs. Programmer after the art PO OK + US-010 + US-012 |
-| 24 | US-017 | End trigger, fade and restart | P0 | po-review | ARCH OK (re-review 2026-09-24, cdb481a). Programmer fix pass (2026-09-24): GPU scene fade landed in sprite pass F; CPU fade moved after sprites; `?gpucompare=1` sceneFade=0.5 pose ALL PASS; found + fixed a real `applySceneFade` glyph-desync bug along the way. |
+| 24 | US-017 | End trigger, fade and restart | P0 | testing | PO OK (2026-09-24); the uiStyle.endText/fade re-check moved to US-015. ARCH OK (re-review 2026-09-24, cdb481a). Programmer fix pass (2026-09-24): GPU scene fade landed in sprite pass F; CPU fade moved after sprites; `?gpucompare=1` sceneFade=0.5 pose ALL PASS; found + fixed a real `applySceneFade` glyph-desync bug along the way. |
 | 25 | US-018 | Performance budget (JS 8 ms + GPU 4 ms) + grid setting + debug overlay check | P0 | todo | Programmer (final M1 check) |
 | 25a | US-045 | WebGL2-required screen + software-renderer warning (D-017) | P0 | done | Programmer; UI/game-only, no architect notes needed; tester PASS 2026-09-24, docs/test-reports/US-045.md |
 | 26 | US-022 | Wake the relay with the lamp (optional beat, D-003; D-011 reskin) | P1 | todo | Relay bowl + glow art comes with the US-011 reskin; Programmer, after all P0 done |
@@ -1956,6 +1956,7 @@ Acceptance criteria – Programmer (D-011 additions; apply together with the ACs
 - [ ] **Hints (added):** `Press M to read the chart.` shows once, 20 s after the first dismissal, and is removed when `M` is pressed (never shown if `M` was already pressed). `The burner still glows. Take what light you can.` shows once on entering `hintBurner` while the lamp is not taken. `Climb. You cannot see the signal from down here.` shows once on entering `hintClimb`. Standard hint rules apply (bottom-left, fade 0.3 s, 8 s timeout, at most one hint on screen, queued in order).
 - [ ] The map card and title are drawn from `ASSETS.models.mapCard` / `title` / `uiStyle` (no texts in engine code). The card is a generic `engine/ui/` "panel" overlay primitive (model + style + dim), opened from `game/js/quest/`, so US-021 (log) and later US-040 (dialogue) can reuse it. The `M` binding lives in `game/`, not in the engine.
 - [ ] Restart (US-017) resets "card shown once" and the hints, so the card shows again after the wake.
+- [ ] (moved from US-017 PO OK, 2026-09-24) Re-check US-017: the end-card strings (incl. the woken variant), colours and cursor come from `ASSETS.uiStyle.endText`, and the walk/fade/gap/cps timings from `uiStyle.endText`/`uiStyle.fade`. The hard-coded placeholders in `game/js/ui/endCard.js` are removed, and the writer's final lines (`docs/story.md`) are used.
 - [ ] The title/subtitle ACs below now mean `KESTREL` / `SOMEONE IS CALLING`.
 
 **PO APPROVED – design part (2026-09-22).** Status is now `todo` for the programmer. Reviewed by reading `design/models/title.js`:
@@ -2077,7 +2078,7 @@ Designer note, US-016b (2026-09-22): **Preview ready for PO review.** `design/pr
   - US-010 data additions in `tower.js`: `interactables[]` (lantern.take, lever.pull with target tag grate, beacon.light requiring the lantern) and the `hintJump` hint-zone trigger, plus `trigger: 'quest.end'`.
 - Status stays `design`.
 
-### US-017 End trigger, fade and restart  [Priority: P0] [Status: po-review]
+### US-017 End trigger, fade and restart  [Priority: P0] [Status: testing]
 As a player, I want a satisfying ending when I step out onto the hill, so that the slice feels complete.
 Acceptance criteria:
 - [ ] Entering the outcrop trigger cells locks input; the camera walks forward 1 m over 1.5 s and pitches slightly down toward the valley.
@@ -2125,6 +2126,14 @@ Not blocking: the headless R-restart not being observable (rAF throttled) - `res
 5. **Suites:** all Node suites in CLAUDE.md + `check-deps` + `check-deps.test.mjs` + `triggers.test.js`/`fade.test.js`/`restart.test.js` + `sprites.test.js`/`gpuCompare.test.js`/`glsl.test.js` - ALL PASS. `ASSETS.uiStyle.endText`/`fade` fallback status unchanged from the last review (still not wired in; US-015 still `design`), not touched by this pass.
 
 **Architect re-review (2026-09-24, cdb481a): ARCH OK -> `po-review`.** All 4 items done correctly. GPU fade in pass F has the same math as `fadeGlyph`/`applySceneFade` (no `round(`, `a >= 1` is identity, mask cells return early, and a plain copy and a sprite cell take the same path). The LUT uploads once per identity change, with `UNPACK_ALIGNMENT` restored after. There are no per-frame allocations. `_initGL` resets the ref, so a context restore uploads the LUT again. The `fg[fi+3]` desync fix is correct and has test 5c. Clearing the mask in the compare oracle is justified. Re-ran: fade, sprites (55), glsl (33), gpuCompare (35), restart, check-deps (114): all pass. Advisory, not blocking: if the pipeline is ready but the sprite pass failed to init (`gpuDda` true, `pass.active` false), neither path fades. This is a rare degraded state and matches how sprites already behave there.
+
+**PO OK – US-017 ready for testing (PO, 2026-09-24).** Checked against every AC. Trigger + input lock + 1 m / 1.5 s walk + pitch (`def.triggers.end`, `quest.end` from `game/js/quest/`): met. 2 s ramp-step fade on CPU and GPU (pass F, sprites included; `?gpucompare=1` sceneFade=0.5 ALL PASS): met. End-card lines match the D-011 placeholders exactly (spot-read `game/js/ui/endCard.js`), 30 cps, 1.5 s gap, `[R] Wake again` with cursor: met. Restart = `setWorld(deserialize(initialState))`, no reset list, covered by `restart.test.js`: met. **Accepted deviation:** `uiStyle.endText`/`uiStyle.fade` do not exist yet (US-015 is `design`), so the timings use the AC fallback values and the placeholder strings sit in `game/` code (not engine code). The strings-from-`uiStyle` part of AC 2/3 moves to US-015 as a re-check AC (same precedent as `crosshairStyle`, US-012).
+Tester notes:
+1. Real Chrome, `game/index.html`: walk to the outcrop end trigger live (no forced `quest.endT`). Input locks; the camera walks ~1 m over 1.5 s, pitches down and stays pitched (no snap back up).
+2. The fade takes 2 s and steps down the glyph ramp (not an alpha overlay). It includes sprites (lamp, boulder, any visible sprite), both on the default GPU path and on `?gpu=0`.
+3. End card: centred, typed at ~30 chars/s; first line `The signal is still calling.` (default); `Someone is out there.`; after ~1.5 s `- to be continued -`; then `[R] Wake again` with the blinking cursor. R does nothing before `[R]` is shown.
+4. Before the end, take the lamp, pull the lever (grate up), push the boulder. Then press R: the wake sequence restarts, the lamp is back on the gondola bracket, the lever is up, the grate is down, the boulder is on the stair base, the lights are correct (no stale lamp light) and mouse look works. Do a second full run to the end and restart again.
+5. `?gpucompare=1`: the sceneFade=0.5 pose is present and passes (ALL PASS). No console errors in any of the runs.
 
 ### US-018 Performance budget + debug overlay  [Priority: P0] [Status: todo]
 As a player, I want the game to stay perfectly smooth, so that movement always feels responsive.
