@@ -560,3 +560,29 @@ The owner requires object physics before release: props that fall/tumble/settle 
 - Answers the D-015 Rapier question for object physics. The engine stays pure JS and no WASM dependency is added.
 - The M2 and M3 scope grows by the epic (see roadmap). A sleeping log is a walkable oriented capsule for `moveCapsule`, which covers log bridges without new player code.
 - Rigid body state (pose/vel/angVel/sleep) becomes part of the versioned save format (M2 release prep).
+
+## D-019 M1 tower props become voxel models: US-040 + a props slice of US-041 pulled into M1 (answers OWN-REQ-001)
+**Date:** 2026-09-24
+**Status:** Accepted
+
+### Context
+Owner walk-test (backlog rows 25f/25g/25h): the tower props (lever, burner, lamp, canvas, rubble, wreckage, relay, boulder) turn to face the player, are hard to recognise and look see-through. "Real 3D, fixed in the world" is the owner's main visual complaint. D-016 already chose voxel models (US-039 format + JS oracle `castModels` done; US-040 GPU pass and US-041 lighting/animation planned "before M3"; Option C 8-direction billboards named as the M1-M2 interim). Architect notes 7.7 (billboard `fill` + optional `outline`) are ready but not built; the designer is reworking billboard art.
+
+### Options
+- **(A) Pull US-040 + US-041 forward; M1 props become voxel models.** Fixes all three complaints at the root (fixed orientation, true silhouette from any angle, solid by construction, edge pass outlines it). Prop art is done once, in the format the M5 editor and M3 NPCs use. Cost: M1 slips by about 2 engine stories + voxel prop art; risk = a new GPU pass late in M1 (mitigated: the oracle and format are done and tested, gpucompare harness exists).
+- **(B) Ship M1 with billboards + fill/outline + interim fixed-yaw or 4-8 directional views; convert in M2.** Smaller M1 slip, but fixed-yaw cards go paper-thin edge-on, directional views multiply art 4-8x, and all of it is thrown away in M2 (art done twice or three times). The owner's main complaint is only half-fixed in the slice they judge.
+
+### Decision
+**(A), with a scope guard.**
+1. **US-040** (GPU voxel pass A3 + gpucompare) becomes **M1 P0**, compare poses = tower props (lever, burner), not the bear.
+2. **US-041 is split.** **US-041a (M1 P0):** voxel lighting incl. rotated normals, entity binding (`type: 'voxelModel'`, fixed world yaw), rigid-part animation only as far as the props need it (lever pull, burner/relay idle if any), prop `mounts` (light anchors, E-prompt). **US-041b (before M3, unchanged target):** creature clips (idle/walk), the bear model + `design/preview/voxel.html` orbit page.
+3. **What stays a billboard:** flames, glows, sparks, the carried-lamp halo, horizon billboards (US-016). BUG-OWN-003 shrinks to `fill` for those remaining sprites (only if the owner still sees see-through flames after the switch); the 7.7 `outline` option is dropped from M1.
+4. **Art is done once.** The designer stops billboard rework of solid props now and builds them as voxel ModelDefs (US-039 format, previewed via the `castModels` oracle until the GPU pass lands). ART-OWN-001 = voxel prop art with readability ACs (visible lever, wall contrast, 160x60 and 240x90). Billboard art for flames/glows is still in scope.
+5. **Boulder:** a voxel sphere with fixed yaw; roll rotation only if US-041a gives it for free (rotated normals); not an AC.
+6. **Order:** finish US-016 (pass A2 slot) -> US-040 -> US-041a -> swap props in `world_m1` + PO walk-check with the owner -> BUG-OWN-003 (slim, if still needed) -> US-018 final perf (budget now includes the model pass <= 0.5 ms p95). Voxel prop art runs in parallel with US-040.
+7. **Exit gate:** if US-040 fails `?gpucompare=1` or its 0.5 ms p95 budget after **one** fix round, M1 falls back to option (B) (billboards + 7.7 fill/outline, fixed-yaw props) and voxel props move to M2. No second fix round without a manager decision.
+
+### Consequences
+- M1 grows by US-040 + US-041a + voxel prop art; the M1 date slips accordingly. M1.5 and later milestones shift by the same amount; D-016's pre-M3 target for creatures is unchanged (US-041b).
+- The billboard sprite pass stays in the engine for effects and horizon billboards (US-030c work is not wasted).
+- US-042 animals, US-054 tree pieces and the M5 model editor build on the same voxel path already proven in M1.

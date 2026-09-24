@@ -1,6 +1,6 @@
 # ASCII Quest – Roadmap
 
-Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy). 2026-09-24: D-017 JS reference only; D-018 object physics epic US-051..055 in M2/M3.
+Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in M5. D-011: new story canon, M2-M4 themes. D-012 Steam in M6; D-013 writer proposals; D-014 strategy camera note; D-015 WASM/Rapier policy). 2026-09-24: D-017 JS reference only; D-018 object physics epic US-051..055 in M2/M3; D-019 voxel props in M1 (US-040 + US-041a pulled forward, US-041b creatures stay pre-M3).
 
 ## Product shape
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
@@ -21,15 +21,17 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 - Far overworld view = terrain caster at far LOD, GPU-first (US-016, after US-030).
 - Wake sequence, title, hints, end trigger + fade + restart.
 - 60 fps, <= 8 ms JS + <= 4 ms GPU at the default grid (240x90 on GPU after US-030), grid configurable 160x60..320x120 (US-018).
+- **D-019 (2026-09-24, owner OWN-REQ-001): tower props are voxel models, fixed in the world.** US-040 (GPU voxel pass A3) and US-041a (voxel lighting + entity binding + prop-only rigid parts) are M1 P0; the designer builds the solid props once as voxel ModelDefs (ART-OWN-001). Flames/glows/sparks stay billboards (BUG-OWN-003 slimmed to `fill` for those). Gate: US-040 fails gpucompare or 0.5 ms p95 after one fix round -> fall back to billboards + fill/outline + fixed yaw, voxel props move to M2.
 - **D-017 (2026-09-24):** JS render path = correctness reference only (gpucompare + Node tests, no perf ACs); no playable CPU fallback - no WebGL2 shows a "WebGL2 required" screen.
 
-**Engine build order (D-009):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-016 -> US-011 -> ... -> US-018.
+**Engine build order (D-009, D-019):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-011 -> US-016 (finishing) -> US-040 -> US-041a -> voxel props in `world_m1` + owner walk-check -> BUG-OWN-003 (slim, if still needed) -> US-018. Voxel prop art (ART-OWN-001) runs in parallel with US-040.
 - **P1 (after all P0):** light the summit beacon (US-022, D-003).
 
 **P2 stretch (not exit criteria):** dust motes (US-019), procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).
 
 **Out**
 - Walking on terrain, combat, enemies, inventory, dialogue, NPCs, saving UI, audio asset files, editor UI.
+- Voxel creatures and walk/idle clips (US-041b, before M3), the 7.7 billboard `outline` option, directional billboard views.
 
 **Exit criteria:** PO OK + tester PASS on every P0 story; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
 
