@@ -193,8 +193,11 @@ void main() {
 
               float hx = oL.x + t * dL.x, hy = oL.y + t * dL.y, hz = oL.z + t * dL.z;
               float lx = hx - x0, ly = hy - y0, lz = hz - z0;
-              if (hitFace == FACE_E || hitFace == FACE_W) { hitU = ly * cellM; hitV = lz * cellM; }
-              else if (hitFace == FACE_N || hitFace == FACE_S) { hitU = lx * cellM; hitV = lz * cellM; }
+              // u/v are selected by the LOCAL entry face (curFace), exactly as
+              // castModels does (localFace), not by the rounded world face:
+              // at yaw 90 the two differ on every lateral cell (arch review 1).
+              if (curFace == FACE_E || curFace == FACE_W) { hitU = ly * cellM; hitV = lz * cellM; }
+              else if (curFace == FACE_N || curFace == FACE_S) { hitU = lx * cellM; hitV = lz * cellM; }
               else { hitU = lx * cellM; hitV = ly * cellM; }
 
               hitZ = e.z + t * d.z - feetZ;
