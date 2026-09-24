@@ -29,6 +29,7 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 - **Planning:** manager + PO pick the stories and the goal → `docs/sprints/sprint-N.md` (goal, stories, owner).
 - **During:** the normal workflow above.
 - **Review:** PO writes a short summary in the sprint file (done / not done / bugs found) plus a **"missing to be playable"** gap list, and asks for an **owner walk-test**. Manager reads it, plans the next sprint, and records decisions in `docs/decisions.md`.
+- **Retro (after the review):** agents don't remember past runs, so the retro is built from evidence: review verdicts (ARCH CHANGES / PO REJECT / tester FAIL counts and reasons), owner-found bugs, and the main session's coordination notes. The manager writes 3-5 lessons ("what went badly, what to change") in the sprint file, and each lesson is written into the matching `.claude/agents/*.md` so the next sprint's agents follow it.
 
 ## Layout
 - `docs/` – game-design.md, backlog.md, roadmap.md, decisions.md, architecture.md, test-reports/
