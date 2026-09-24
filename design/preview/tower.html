@@ -74,7 +74,7 @@
   const box = document.getElementById('loader');
   const lv = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.tower;
   try {
-    const { loadLevel } = await import('../../game/js/world/Level.js');
+    const { loadLevel } = await import('../../engine/world/Level.js');
     const errs = [], orig = console.error;
     console.error = (...a) => { errs.push(a.join(' ')); orig.apply(console, a); };
     let level; try { level = loadLevel(lv); } finally { console.error = orig; }
