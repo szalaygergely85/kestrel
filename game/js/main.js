@@ -1008,11 +1008,11 @@ function runGpuCompareDdaMode() {
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows);
     // BUG-LIGHT-001: light-pass-only comparison (`fbCompare.light` was just
     // (re)written by the CPU `renderWorld` call above, via `lightSurfaces`).
-    // Reported only - splits a light-pass vs shade-pass mismatch for
-    // debugging; does not gate `ok`/`overallOk` (cmpCells/cmpGeom already do,
-    // per the story's "other rows unchanged" acceptance bar).
+    // Splits a light-pass vs shade-pass mismatch for debugging. Gates
+    // `ok`/`overallOk` since BUG-LIGHT-002 (architecture.md 14.3 item 7):
+    // every pose is dLViol 0 and sunlit flips <= 0.5 %.
     const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows);
-    const ok = cmpCells.pass && cmpGeom.pass;
+    const ok = cmpCells.pass && cmpGeom.pass && cmpLight.pass;
     overallOk = overallOk && ok;
     rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok });
   }
