@@ -157,9 +157,13 @@ function terrainNormal(terrain, x, y, out) {
 
 /**
  * `world.structures[0].level.def.sun` (D-007) until US-007 owns this
- * uniform (compositor.js's own doc comment for `castTerrain`).
+ * uniform (compositor.js's own doc comment for `castTerrain`). Exported
+ * (14.4 build-order step 1: "move sunFromWorld into one exported helper so
+ * both paths use the same sun") so the GPU pipeline's own uniform upload
+ * (step 2+) computes the identical sun direction the JS oracle uses - no
+ * second copy of the azimuth/elevation -> dir math.
  */
-function sunFromWorld(world, palette) {
+export function sunFromWorld(world, palette) {
   const T = palette.timeOfDay[palette.defaultTime];
   let az = 112.5, elev = T.sunElev;
   const s0 = world.structures[0];

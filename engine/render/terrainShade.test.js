@@ -88,5 +88,18 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('water: glint can select the alternate glyph over enough timeSec samples', sawAlt);
 }
 
+// BUG-OWN-004 (row 25i): TLOOK colours are linear 0..1 (not 0..255 bytes) -
+// `shadeTerrainFar` must scale by 255 itself. Before the fix, near/well-lit
+// terrain rendered near-black because 0.1..0.3-range floats were written
+// straight to a byte channel. Grass type 0's brightest tier (i=2, "light")
+// is [0.3, 0.6, 0.3]; at strong lighting (b=0.9, near band, no fog) the fg
+// byte must be a plausible mid/bright green, not near 0.
+{
+  const o = shadeTerrainFar(100, 0, 0.9, 0, 0, 0, ctx, out());
+  check('BUG-OWN-004: near terrain fg is not near-black (r)', o.fg[0] > 40);
+  check('BUG-OWN-004: near terrain fg is not near-black (g)', o.fg[1] > 80);
+  check('BUG-OWN-004: near terrain fg is not near-black (b)', o.fg[2] > 40);
+}
+
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

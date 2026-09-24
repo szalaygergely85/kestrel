@@ -27,6 +27,7 @@
 // bound table) and re-enable.
 import { compileShader, linkProgram, createTexture2D, isSoftwareRenderer, formatFor } from './glUtil.js';
 import { packMaterialTable } from './ShadeTextures.js';
+import { packTerrainTextures } from './TerrainTextures.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
 import { SHADE_FRAG_SRC } from './glsl/shade.frag.js';
 import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
@@ -167,6 +168,18 @@ export class GpuCellPipeline {
     this.texWorldMats = createTexture2D(gl, gl.RGBA16UI, 1, 1);
     this.texWorldFlags = createTexture2D(gl, gl.RG8UI, 1, 1);
     this._worldAtlas = null;
+
+    // --- US-016 (14.4 item 3/build-order step 1) far-terrain textures - 1x1
+    // placeholders until a world with `terrain.farReady` is bound, same
+    // pattern as the world atlas above. Not yet consumed by any program (no
+    // pass A2/kind-7 branch exists yet); `_ensureTerrainTextures` below only
+    // uploads them, so this addition is inert until step 2 lands.
+    this.texFarH = createTexture2D(gl, gl.R32F, 1, 1);
+    this.texFarType = createTexture2D(gl, gl.R8UI, 1, 1);
+    this.texTlook = createTexture2D(gl, gl.RGBA32F, 1, 1);
+    this._terrainVersion = -1;
+    this._terrainWorld = null;
+    this._terrainPacked = null;
 
     // --- FBOs ---
     // US-030b: the sub-sample cast pass (A) writes SGI/SGA/SDepth here; the
@@ -416,7 +429,7 @@ export class GpuCellPipeline {
       this.texSGI, this.texSGA, this.texSDepth,
       this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
       this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
-      this.texLight, this.texLVis]) {
+      this.texLight, this.texLVis, this.texFarH, this.texFarType, this.texTlook]) {
       if (tex) gl.deleteTexture(tex);
     }
     for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboDeriv, this.fboLight]) if (fbo) gl.deleteFramebuffer(fbo);
@@ -426,6 +439,10 @@ export class GpuCellPipeline {
     // US-030a: the world atlas textures are gone too - force a full
     // re-upload on the next frame after a context restore.
     this._worldAtlas = null;
+    // US-016: same for the far-terrain textures.
+    this._terrainVersion = -1;
+    this._terrainWorld = null;
+    this._terrainPacked = null;
   }
 
   /**
@@ -629,6 +646,7 @@ export class GpuCellPipeline {
     if (useDda) {
       this._uploadMask();
       this._ensureWorldTextures(this._world);
+      this._ensureTerrainTextures(this._world);
       this._computeCamBasis(this._cam);
     } else {
       this._repackAndUpload();
@@ -711,6 +729,31 @@ export class GpuCellPipeline {
     gl.bindTexture(gl.TEXTURE_2D, this.texWorldFlags);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8UI, a.width, a.height, 0, gl.RG_INTEGER, gl.UNSIGNED_BYTE, a.FLAGS);
     this._uploadUStruct();
+  }
+
+  // US-016 (14.4 item 3, build order step 1): uploads `FARH`/`FARTYPE`/
+  // `TLOOK` once when `terrain.farReady` first flips, and again only when
+  // `terrain.farVersion` changes - never per frame (item 3's "do not"
+  // list). A different `world` object (world switch / `?gpucompare=1`) is
+  // always a re-upload for the same reason `_ensureWorldTextures` treats it
+  // that way. No-op (and `_terrainPacked` left stale) while the world has no
+  // terrain or the bake hasn't finished - the caller checks `_terrainPacked`
+  // before using it (step 2+; nothing reads it yet).
+  _ensureTerrainTextures(world) {
+    const terrain = world && world.terrain;
+    if (!terrain || !terrain.farReady) return;
+    if (this._terrainVersion === terrain.farVersion && this._terrainWorld === world) return;
+    const packed = packTerrainTextures(terrain, this._palette);
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.texFarH);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, packed.width, packed.height, 0, gl.RED, gl.FLOAT, packed.farH);
+    gl.bindTexture(gl.TEXTURE_2D, this.texFarType);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, packed.width, packed.height, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, packed.farType);
+    gl.bindTexture(gl.TEXTURE_2D, this.texTlook);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, packed.tlookWidth, packed.tlookHeight, 0, gl.RGBA, gl.FLOAT, packed.tlook);
+    this._terrainPacked = packed;
+    this._terrainVersion = terrain.farVersion;
+    this._terrainWorld = world;
   }
 
   // US-007: the light pass now also needs `uStructA/B/Count` (its own sun
