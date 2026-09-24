@@ -78,6 +78,11 @@ let threw = false;
 try { deserialize({ ...s1, version: 999 }, assets, {}); } catch (err) { threw = true; }
 ok('deserialize with an unknown version throws a clear error', threw);
 
+// US-016 D-011 addendum (architecture.md 14.4 item 13/14): world.horizon[] round-trips content unchanged.
+ok('serialize writes world.horizon back unchanged', JSON.stringify(s1.horizon) === JSON.stringify(world.horizon));
+ok('deserialize gives w2 the same horizon content', JSON.stringify(w2.horizon) === JSON.stringify(world.horizon));
+ok('deserialized horizon is its own array (content not state, not shared with the source world)', w2.horizon !== world.horizon);
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

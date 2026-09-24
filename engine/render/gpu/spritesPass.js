@@ -24,7 +24,7 @@ import { spritesFragSrc } from './glsl/sprites.frag.js';
 import { GpuTimer } from './GpuTimer.js';
 import { MAX_SPRITES, SPR_TEXELS, SPR_STRIDE } from '../sprites.js';
 
-const UNIFORMS = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uCount', 'uFogColor',
+const UNIFORMS = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uCount',
   'uSceneFade', 'uFadeMinGain', 'uFadeRampLen', 'uFadeLut', 'uFadeRamp', // US-017
   'uDimAll', 'uDimCount', 'uDimRect', 'uDimMul']; // US-015 (docs/architecture.md 7.6 item 3)
 
@@ -125,8 +125,8 @@ export class GpuSpritePass {
     gl.useProgram(this.program);
     const units = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uFadeLut', 'uFadeRamp'];
     for (let i = 0; i < units.length; i++) gl.uniform1i(this.loc[units[i]], i);
-    const fogC = this.palette.rgb[this.palette.fog.interior.color];
-    gl.uniform3f(this.loc.uFogColor, fogC[0], fogC[1], fogC[2]);
+    // US-016 (14.4 item 14): fog colour is now per-sprite (SPR T4, resolved
+    // in `SpritePool.project()`), not a single static uniform.
 
     this.timer = new GpuTimer(gl);
   }

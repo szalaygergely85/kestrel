@@ -155,6 +155,36 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('deserialize keeps the saved sprite anim/frame (lever mid-pull, held)', s.anim === 'pull' && s.frame === 2 && s.playing === false, JSON.stringify(s));
 }
 
+// --- US-016 D-011 addendum (architecture.md 14.4 items 13/14): world.horizon[] load/validation ---
+{
+  ok('world_m1 loads its one horizon entry (ferrumLights)', world.horizon.length === 1 && world.horizon[0].id === 'ferrumLights');
+  ok('horizon entry carries bearing/elev/angular/fog/fogColor', world.horizon[0].bearingDeg === 87.6 && world.horizon[0].elevDeg === 1.0 &&
+    world.horizon[0].angular.wDeg === 13.2 && world.horizon[0].angular.hDeg === 2.2 && world.horizon[0].fog === 0.55 && world.horizon[0].fogColor === 'fogFar');
+  ok('def.horizon is not the SAME array as world.horizon (structuredClone, content not state)',
+    assets.world('world_m1').horizon !== world.horizon);
+
+  const base = { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] };
+  ok('no horizon key -> world.horizon = []', World.load(base, assets, {}).horizon.length === 0);
+
+  function throwsWith(def, needle) {
+    try { World.load({ ...base, horizon: [def] }, assets, {}); return 'did not throw'; }
+    catch (e) { return e.message.includes(needle) ? true : e.message; }
+  }
+  const good = { id: 'h', model: 'ferrumLights', bearingDeg: 10, elevDeg: 1, angular: { wDeg: 5, hDeg: 2 }, fog: 0.5, fogColor: 'fogFar' };
+  ok('missing id throws', throwsWith({ ...good, id: undefined }, '"id" is required') === true);
+  ok('duplicate id throws', (() => {
+    try { World.load({ ...base, horizon: [good, good] }, assets, {}); return 'did not throw'; }
+    catch (e) { return e.message.includes('duplicate id'); }
+  })());
+  ok('unknown model throws naming the id', throwsWith({ ...good, model: 'noSuchModel' }, 'horizon "h": unknown model') === true);
+  ok('non-numeric bearingDeg throws', throwsWith({ ...good, bearingDeg: 'x' }, '"bearingDeg" must be a finite number') === true);
+  ok('missing angular throws', throwsWith({ ...good, angular: undefined }, '"angular.wDeg"/"angular.hDeg" are required') === true);
+  ok('fog out of [0,1] throws', throwsWith({ ...good, fog: 1.5 }, '"fog" must be in [0, 1]') === true);
+  ok('omitting fog does not throw (validated as 0)', (() => {
+    try { World.load({ ...base, horizon: [{ ...good, fog: undefined }] }, assets, {}); return true; } catch (e) { return e.message; }
+  })() === true);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

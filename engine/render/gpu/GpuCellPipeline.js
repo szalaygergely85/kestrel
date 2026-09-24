@@ -60,7 +60,11 @@ export class GpuCellPipeline {
     // `?rays=` parse to 1..4.
     this.rays = Math.max(1, Math.min(4, Math.round(opts.rays || 1)));
     this.ready = false;
-    this.stats = { uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN };
+    this.stats = {
+      uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
+      // US-016 step 6: terrain pass A2 own cost (NaN when the pass didn't run this frame's timer window, or the timer extension is unavailable).
+      terrainGpuMs: NaN, terrainGpuMsP50: NaN, terrainGpuMsP95: NaN,
+    };
     this.debugMode = -1; // -1 = off (edge pass runs normally)
     this._fb = null;
     this._light = null;
@@ -370,6 +374,25 @@ export class GpuCellPipeline {
     this._visBoxF = new Float32Array(4 * MAX_LIGHTS);
 
     this.timer = new GpuTimer(gl);
+    // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95 of the 4 ms"): the
+    // terrain pass runs INSIDE `this.timer`'s own begin()/end() span (the
+    // whole `_hook()`), and `EXT_disjoint_timer_query_webgl2` allows only
+    // ONE active TIME_ELAPSED_EXT query per context at a time - a second,
+    // nested `beginQuery` would be a no-op (INVALID_OPERATION), so a second
+    // `GpuTimer` here can never report anything but n/a. Tried
+    // `TIMESTAMP_EXT` query-counters (not an "active" span, so they can
+    // coexist with an active TIME_ELAPSED_EXT query) bracketing
+    // `_passTerrain()` first, but ANGLE/D3D11 (the owner's real GPU) reports
+    // `queryCounterEXT` present yet always returns the SAME clock value for
+    // both queries (delta always exactly 0) - a known driver gap, not a
+    // logic bug here. Falls back to a CPU `performance.now()` submit-time
+    // bracket around just the terrain draw call, same honest-labelling as
+    // this file's existing `uploadMs`/`drawMs` (also CPU submit time, not a
+    // GPU query) - good enough to check the pass against its budget even
+    // though it can't separate GPU-side overlap from CPU dispatch cost.
+    this._terrainGpuMsHistory = new Float32Array(16);
+    this._terrainGpuMsHistoryLen = 0;
+    this._terrainGpuMsHistoryPos = 0;
 
     // Readback FBO (test-only, gpuCompare.js) - 2 x cols*rows*4 bytes, allocated once.
     this._readbackFg = new Uint8Array(4 * n);
@@ -702,7 +725,11 @@ export class GpuCellPipeline {
     this._terrainActiveThisFrame = useDda && !!(this._world && this._world.terrain && this._world.terrain.farReady);
     if (useDda) {
       this._passCast();
-      if (this._terrainActiveThisFrame) this._passTerrain();
+      if (this._terrainActiveThisFrame) {
+        this._terrainTsBegin();
+        this._passTerrain();
+        this._terrainTsEnd();
+      }
       this._passResolve();
       this._passDeriv();
     }
@@ -717,6 +744,35 @@ export class GpuCellPipeline {
     this.stats.uploadMs = t1 - t0;
     this.stats.drawMs = t2 - t1;
     this.timer.writeStats(this.stats); // writes gpuMs/gpuMsP50/gpuMsP95 in place - no allocation (architect review 1 item 3)
+    this._pollTerrainTs();
+  }
+
+  // US-016 step 6: CPU `performance.now()` bracket around just the terrain
+  // draw call (see the constructor comment for why a true GPU query can't
+  // be nested inside `this.timer`'s whole-frame span, and why the
+  // TIMESTAMP_EXT alternative measured 0 on the owner's real GPU).
+  _terrainTsBegin() { this._terrainT0 = performance.now(); }
+
+  _terrainTsEnd() {
+    const ms = performance.now() - this._terrainT0;
+    this._terrainGpuMsHistory[this._terrainGpuMsHistoryPos] = ms;
+    this._terrainGpuMsHistoryPos = (this._terrainGpuMsHistoryPos + 1) % this._terrainGpuMsHistory.length;
+    if (this._terrainGpuMsHistoryLen < this._terrainGpuMsHistory.length) this._terrainGpuMsHistoryLen++;
+  }
+
+  _pollTerrainTs() {
+    if (this._terrainGpuMsHistoryLen === 0) { this.stats.terrainGpuMs = NaN; this.stats.terrainGpuMsP50 = NaN; this.stats.terrainGpuMsP95 = NaN; return; }
+    // Small history (16 entries, at most once/frame) - an in-place sort of
+    // a tiny reused scratch is cheap enough to do every call (no per-frame
+    // allocation: `_terrainTsScratch` is created once, lazily, below).
+    if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainGpuMsHistory.length);
+    const n = this._terrainGpuMsHistoryLen, scratch = this._terrainTsScratch;
+    for (let i = 0; i < n; i++) scratch[i] = this._terrainGpuMsHistory[i];
+    const view = scratch.subarray(0, n);
+    view.sort();
+    this.stats.terrainGpuMs = view[n - 1];
+    this.stats.terrainGpuMsP50 = view[Math.floor(n * 0.5)];
+    this.stats.terrainGpuMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
   }
 
   // US-030a: per-frame UI mask upload (14.2 item 3) - the cast pass reads

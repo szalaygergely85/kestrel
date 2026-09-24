@@ -11,7 +11,7 @@ import { AssetRegistry } from '../../core/assets.js';
 import { CellBuffer } from '../CellBuffer.js';
 import { DepthBuffer } from '../DepthBuffer.js';
 import { buildSpriteAtlas, NORMAL_CODES } from './spritesAtlas.js';
-import { SpritePool, drawSprites, lastSpriteDepth, MAX_SPRITES, SPR_STRIDE } from '../sprites.js';
+import { SpritePool, drawSprites, lastSpriteDepth, MAX_SPRITES, SPR_STRIDE, HORIZON_DEPTH } from '../sprites.js';
 import { spritesFragSrc } from './glsl/sprites.frag.js';
 import { World } from '../../world/World.js';
 import { buildLightSet } from '../lighting.js';
@@ -390,6 +390,92 @@ for (const depthUint of [true, false]) {
 
   ok('per-sprite light near the burner torch is brighter than far from every light',
     nearMul > farMul, `near=${nearMul} far=${farMul}`);
+
+  // -------------------------------------------------------------------------
+  // US-016 D-011 addendum (architecture.md 14.4 items 13/14): world.horizon[]
+  // projection (`projectHorizon`, folded into `project()`) and per-sprite fog
+  // colour (SPR T4). `world2` is the real world_m1 (its one horizon entry,
+  // ferrumLights, bearing 87.6 / elevDeg 1.0 / angular 13.2x2.2 / fog 0.55 /
+  // fogColor 'fogFar').
+  // -------------------------------------------------------------------------
+  const h = world2.horizon[0];
+  const ambient = [0.6, 0.6, 0.6];
+  {
+    poolL.reset();
+    poolL.project({ x: 0, y: 0, z: 1.6, yawDeg: h.bearingDeg, pitchDeg: 0 }, cellsL, ambient, world2);
+    ok('a horizon entry facing straight at its own bearing is projected (on-screen)', poolL.count === 1, poolL.count);
+    const o = 0;
+    const x0 = poolL.spr[o], w = poolL.spr[o + 2], invScale = poolL.spr[o + 4];
+    const scale = 1 / invScale;
+    ok('centred on the middle column at yaw == bearingDeg (diff 0)',
+      Math.abs((x0 + w / 2) - COLS / 2) <= 1.5, `x0=${x0} w=${w}`);
+    ok('horizon depth is HORIZON_DEPTH (farther than any finite scene depth)', poolL.spr[o + 5] === HORIZON_DEPTH);
+    ok('unlit: colour multiplier is the flat b=1 gain (no per-sprite lightAt)',
+      poolL.spr[o + 12] === poolL.spr[o + 13] && poolL.spr[o + 13] === poolL.spr[o + 14]);
+    const fogRGB = assets2.palette.rgb[h.fogColor];
+    ok('fog colour (T4) is the entry\'s fixed fogColor palette key, not fog.interior',
+      poolL.spr[o + 16] === fogRGB[0] && poolL.spr[o + 17] === fogRGB[1] && poolL.spr[o + 18] === fogRGB[2]);
+    ok('fog fraction is the entry\'s own fixed `fog` (0.55), not a distance fogFactor', Math.abs(poolL.spr[o + 6] - h.fog) < 1e-5, poolL.spr[o + 6]);
+  }
+  {
+    // |bearing - yaw| >= 90 -> behind the camera, never wraps onto screen (item 13).
+    poolL.reset();
+    poolL.project({ x: 0, y: 0, z: 1.6, yawDeg: h.bearingDeg + 90, pitchDeg: 0 }, cellsL, ambient, world2);
+    ok('a horizon entry >= 90 deg off yaw is skipped (no sprite row written)', poolL.count === 0, poolL.count);
+  }
+  {
+    // Tier switch (same rule as an ordinary sprite: rowsOnScreen/full.size.h < 0.75 -> half), at two grid sizes.
+    const cellsSmall = new CellBuffer(160, 60); cellsSmall.pxCellW = 1; cellsSmall.pxCellH = 2;
+    const cellsBig = new CellBuffer(640, 240); cellsBig.pxCellW = 1; cellsBig.pxCellH = 2;
+    const camH = { x: 0, y: 0, z: 1.6, yawDeg: h.bearingDeg, pitchDeg: 0 };
+    poolL.reset(); poolL.project(camH, cellsSmall, ambient, world2);
+    const smallHalf = poolL.count === 1 && poolL.spr[10] === 18 && poolL.spr[11] === 2; // atlas rect == ferrumLights half (18x2)
+    poolL.reset(); poolL.project(camH, cellsBig, ambient, world2);
+    const bigFull = poolL.count === 1 && poolL.spr[10] === 36 && poolL.spr[11] === 4; // atlas rect == ferrumLights full (36x4)
+    ok('small grid (fewer projected rows) picks the half tier (18x2)', smallHalf, `${poolL.spr[10]}x${poolL.spr[11]}`);
+    ok('large grid (more projected rows) picks the full tier (36x4)', bigFull);
+  }
+  {
+    // Never over a finite-depth cell (item 13: "only cells with no finite depth (sky)").
+    const cellsH = new CellBuffer(160, 60); cellsH.pxCellW = 1; cellsH.pxCellH = 2;
+    poolL.reset();
+    poolL.project({ x: 0, y: 0, z: 1.6, yawDeg: h.bearingDeg, pitchDeg: 0 }, cellsH, ambient, world2);
+    const depthBuf = new DepthBuffer(160, 60);
+    depthBuf.depth.fill(500); // pretend every cell already has a nearer (terrain) hit
+    const gbuf = { kind: new Uint8Array(160 * 60) };
+    drawSprites({ rt: cellsH, depth: depthBuf, palette: assets2.palette, gbuf }, poolL);
+    const sd = lastSpriteDepth();
+    ok('a horizon sprite never wins the depth test over a finite (terrain/structure) depth',
+      sd.every((d) => d === Infinity));
+    depthBuf.depth.fill(Infinity); // sky: no finite depth anywhere
+    drawSprites({ rt: cellsH, depth: depthBuf, palette: assets2.palette, gbuf }, poolL);
+    const sd2 = lastSpriteDepth();
+    let any = 0; for (let i = 0; i < sd2.length; i++) if (sd2[i] !== Infinity) any++;
+    ok('the same horizon sprite DOES draw once every cell is sky (depth = +Inf)', any > 0, any);
+  }
+  {
+    // Per-sprite fog colour (T4) for an ordinary 'far'-fogModel billboard
+    // (the signal tower, `farTower`) is the shadeTerrainFar gradient
+    // (mix(fog.far.color, fog.far.colorFar, fogFactor(depth,'far'))), not
+    // the flat `fog.interior` colour every sprite used before this story.
+    // world2 also carries its usual horizon[] entry - `project()` appends it
+    // AFTER every entity, so index 0 is still this pushed farTower sprite.
+    poolL.reset();
+    poolL.push('farTower', 'idle', 0, 100, 0, 0, { unlit: true, fogModel: 'far', fogMax: 1 });
+    poolL.project({ x: 0, y: 0, z: 1.6, yawDeg: 90, pitchDeg: 0 }, cellsL, ambient, world2);
+    ok('farTower billboard projects (plus world2\'s own horizon entry)', poolL.count >= 1, poolL.count);
+    const depth = poolL.spr[5];
+    const f0 = assets2.palette.util.fogFactor(depth, 'far');
+    const near = assets2.palette.rgb[assets2.palette.fog.far.color], farC = assets2.palette.rgb[assets2.palette.fog.far.colorFar];
+    const expR = near[0] + (farC[0] - near[0]) * f0, expG = near[1] + (farC[1] - near[1]) * f0, expB = near[2] + (farC[2] - near[2]) * f0;
+    // float32 storage (SPR is a Float32Array) - tolerance covers the fround, not a real mismatch.
+    ok('far-fogModel billboard fog colour (T4) matches the shadeTerrainFar near/far gradient',
+      Math.abs(poolL.spr[16] - expR) < 1e-3 && Math.abs(poolL.spr[17] - expG) < 1e-3 && Math.abs(poolL.spr[18] - expB) < 1e-3,
+      `got (${poolL.spr[16]},${poolL.spr[17]},${poolL.spr[18]}) want (${expR},${expG},${expB})`);
+    ok('far-fogModel fog colour differs from the plain fog.interior colour (not the old flat approximation)',
+      !(poolL.spr[16] === assets2.palette.rgb[assets2.palette.fog.interior.color][0] &&
+        poolL.spr[17] === assets2.palette.rgb[assets2.palette.fog.interior.color][1]));
+  }
 }
 
 console.log(`\n[sprites.test.js] ${pass} passed, ${fail} failed`);

@@ -9,11 +9,18 @@
 //   pool.project(cam, rt, light)        raw list -> `pool.spr` (Float32Array, 4 RGBA32F texels per sprite)
 //   drawSprites(fb, pool)  (CPU path)   or the GPU sprite pass reads `pool.spr` + the atlas
 //
-// SPR texel layout per sprite s (row s of a 4 x MAX_SPRITES RGBA32F texture):
+// SPR texel layout per sprite s (row s of a 5 x MAX_SPRITES RGBA32F texture):
 //   T0 (x0, y0, w, h)          screen rect in cells (integers as floats; x0/y0 may be negative / off-screen)
 //   T1 (invScale, depth, fogF, visible)   invScale = fround(1/scale); depth = perpendicular camera distance
 //   T2 (atlasX, atlasY, srcW, srcH)       the frame's atlas rect (cells)
 //   T3 (mulR, mulG, mulB, 0)              lit colour multiplier = shadeSprite's (1 + (hue-1)*tint) * gain
+//   T4 (fogR, fogG, fogB, 0)              US-016 (architecture.md 14.4 item 14, D-017 review): the colour this
+//                                         sprite fogs TOWARD, resolved once per sprite in `project()` - interior
+//                                         fogModel: the single `fog.interior` colour (unchanged); 'far' fogModel:
+//                                         `mix(fog.far.color, fog.far.colorFar, fogFactor(depth,'far'))`, the same
+//                                         distance gradient `shadeTerrainFar` uses (not the flat approximation the
+//                                         14.4 item 7 note flagged); a horizon entry: its own fixed `fogColor` key.
+//                                         Replaces the single `uFogColor` uniform both paths used before.
 // Sampling rule (README 4): screen cell (i, j) of the rect -> sprite cell
 // (floor(i*invScale), floor(j*invScale)). Both paths do the SAME f32
 // multiply (JS: Math.fround of an exact f64 product; an integer times an f32
@@ -23,13 +30,24 @@
 //
 // Animation state is `components.sprite` (10.1): `model`, `anim`, `frame`;
 // `frame` is read as-is (static until US-011's `stepAnimations`).
+//
+// US-016 D-011 addendum (architecture.md 14.4 item 13): `world.horizon[]`
+// entries (Ferrum's lights) are appended to the SAME pool/texture as
+// ordinary entity sprites at the end of `project()` (`projectHorizon`),
+// placed by angle instead of world xyz, at the fixed `HORIZON_DEPTH` -
+// farther than any real depth (terrain caps at 1500 m, structures closer),
+// so the existing `sDepth < depth[i]` test alone keeps them off every
+// terrain/structure cell and only ever draws them where the depth buffer is
+// still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { HFOV_DEG } from './sectorCaster.js';
 import { lightAt } from './lighting.js';
 
 export const MAX_SPRITES = 64;
-export const SPR_TEXELS = 4;
+export const SPR_TEXELS = 5;
 export const SPR_STRIDE = SPR_TEXELS * 4; // floats per sprite
+export const HORIZON_DEPTH = 1e6; // architecture.md 14.4 item 13: farther than any finite depth (terrain <= 1500 m)
 const MIN_DEPTH = 0.1;
+const DEG2RAD = Math.PI / 180;
 const LOD_HALF_BELOW = 0.75;
 
 // Camera basis (same formulas as sectorCaster.js's castScene / fillSky -
@@ -45,8 +63,73 @@ function camBasis(cam, rt, out) {
   out.dirX = dirX; out.dirY = dirY;
   out.rightX = -dirY; out.rightY = dirX; // screen-right, compass-clockwise from dir (castScene's plane / tanHalfHFov)
   out.tanHalfHFov = tanHalfHFov; out.planeDistY = planeDistY; out.horizonRow = horizonRow;
-  out.cols = cols; out.rows = rows;
+  out.cols = cols; out.rows = rows; out.yawDeg = cam.yawDeg;
   return out;
+}
+
+const _horizonWarned = new Set(); // model-not-found is a content bug, not a per-frame condition - warn at most once per model key
+
+/**
+ * US-016 D-011 addendum (architecture.md 14.4 item 13): places one
+ * `world.horizon[]` entry into `spr` at texel offset `o`, mirroring the
+ * per-entity placement in `project()` above but driven by angle instead of
+ * world xyz. Returns the atlas frame base (write into `frameOf`), or -1 when
+ * the entry is off-screen / behind the camera / has no usable animation (do
+ * not write a sprite row this frame).
+ *   col  = cols/2 + focalCols * tan(bearing - yaw)          (skip if |bearing - yaw| >= 90)
+ *   row  = horizonRow - planeDistY * tan(elevDeg)            (bottom edge of the band)
+ *   rowsOnScreen = planeDistY * (tan(elev + hDeg) - tan(elev))
+ *   scale = rowsOnScreen / lod.size.h                        (same half-tier rule as an ordinary sprite: < 0.75 -> lods.half)
+ * @param {Object} h world.horizon[i] (bearingDeg, elevDeg, angular:{wDeg,hDeg}, model, fog, fogColor)
+ * @param {ReturnType<import('./gpu/spritesAtlas.js').buildSpriteAtlas>} atlas
+ * @param {{cols:number, rows:number, tanHalfHFov:number, planeDistY:number, horizonRow:number, yawDeg:number}} cb
+ * @param {Object} P palette (assets.palette)
+ * @param {number} unlitGain precomputed `shadeSprite` gain at b = 1 (identical for every horizon entry this frame)
+ * @param {Float32Array} spr the pool's SPR array (written in place)
+ * @param {number} o texel offset (`n * SPR_STRIDE`)
+ * @returns {number} atlas frame base, or -1 (nothing written)
+ */
+function projectHorizon(h, atlas, cb, P, unlitGain, spr, o) {
+  const m = atlas.models.get(h.model);
+  if (!m) {
+    if (!_horizonWarned.has(h.model)) { _horizonWarned.add(h.model); console.warn(`SpritePool: unknown horizon model "${h.model}"`); }
+    return -1;
+  }
+  let diff = (h.bearingDeg - cb.yawDeg) % 360;
+  if (diff > 180) diff -= 360; else if (diff < -180) diff += 360;
+  if (Math.abs(diff) >= 90) return -1; // behind the camera - never wraps onto screen at this HFOV
+  const focalCols = (cb.cols / 2) / cb.tanHalfHFov;
+  const col = cb.cols / 2 + focalCols * Math.tan(diff * DEG2RAD);
+  const elevRad = h.elevDeg * DEG2RAD;
+  const row = cb.horizonRow - cb.planeDistY * Math.tan(elevRad);
+  const rowsOnScreen = cb.planeDistY * (Math.tan((h.elevDeg + h.angular.hDeg) * DEG2RAD) - Math.tan(elevRad));
+  if (!(rowsOnScreen > 0)) return -1;
+
+  let lod = m.full;
+  let scale = rowsOnScreen / lod.size.h;
+  if (scale < LOD_HALF_BELOW && m.half) { lod = m.half; scale = rowsOnScreen / lod.size.h; }
+  const anim = lod.anims.get('idle');
+  if (!anim || anim.count === 0) {
+    if (!_horizonWarned.has(h.model + ':anim')) { _horizonWarned.add(h.model + ':anim'); console.warn(`SpritePool: horizon model "${h.model}" has no "idle" animation`); }
+    return -1;
+  }
+  const fr = atlas.frames[anim.base];
+
+  const w = Math.ceil(lod.size.w * scale), hgt = Math.ceil(lod.size.h * scale);
+  const x0 = Math.floor(col - (lod.anchor.x + 0.5) * scale + 0.5);
+  const y0 = Math.floor(row - (lod.anchor.y + 1) * scale + 0.5);
+  if (x0 >= cb.cols || y0 >= cb.rows || x0 + w <= 0 || y0 + hgt <= 0) return -1;
+
+  const fogF = typeof h.fog === 'number' ? h.fog : 0;
+  const visible = unlitGain * (1 - fogF) >= P.shading.cutoff ? 1 : 0;
+  const c = (h.fogColor && P.rgb[h.fogColor]) || P.rgb[P.fog.interior.color];
+
+  spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = hgt;
+  spr[o + 4] = 1 / scale; spr[o + 5] = HORIZON_DEPTH; spr[o + 6] = fogF; spr[o + 7] = visible;
+  spr[o + 8] = fr.x; spr[o + 9] = fr.y; spr[o + 10] = fr.w; spr[o + 11] = fr.h;
+  spr[o + 12] = unlitGain; spr[o + 13] = unlitGain; spr[o + 14] = unlitGain; spr[o + 15] = 0;
+  spr[o + 16] = c[0]; spr[o + 17] = c[1]; spr[o + 18] = c[2]; spr[o + 19] = 0;
+  return anim.base;
 }
 
 export class SpritePool {
@@ -217,23 +300,55 @@ export class SpritePool {
       // US-016 (architecture.md 14.4 item 7): `fogModel`/`fogMax` - a
       // billboard entity fogs by the named model ('interior' default, 'far'
       // = `overworld_far`'s far-view fog curve) instead of always the
-      // interior curve, capped at `fogMax` (1 = no cap). Simplification
-      // flagged for follow-up: the blend still targets the single existing
-      // `P.fog.interior` colour (`fogC` below/`uFogColor`), not a distinct
-      // far-fog gradient colour - the fog FRACTION is correct and capped,
-      // only its exact hue is approximated; a per-sprite fog colour needs a
-      // new SPR texel (out of scope for this pass, see the story notes).
-      const f0 = P.util.fogFactor(depth, bb && bb.fogModel === 'far' ? 'far' : undefined);
+      // interior curve, capped at `fogMax` (1 = no cap).
+      const isFar = !!(bb && bb.fogModel === 'far');
+      const f0 = P.util.fogFactor(depth, isFar ? 'far' : undefined);
       const f = bb && typeof bb.fogMax === 'number' ? Math.min(f0, bb.fogMax) : f0;
       const visible = b * (1 - f) >= S.cutoff ? 1 : 0;
+      // US-016 (architecture.md 14.4 item 14, D-017 review): per-sprite fog
+      // colour (T4), replacing the single `uFogColor`/`P.fog.interior`
+      // approximation - a 'far' billboard (the signal tower) fogs toward the
+      // SAME `mix(nearRGB, farRGB, f0)` gradient `shadeTerrainFar` paints the
+      // terrain behind it with, at the raw (pre-`fogMax`-cap) fraction `f0`
+      // (the gradient is a function of distance, not of how much the cap
+      // then lets through).
+      let fogR, fogG, fogB;
+      if (isFar) {
+        const near = P.rgb[P.fog.far.color], far = P.rgb[P.fog.far.colorFar];
+        fogR = near[0] + (far[0] - near[0]) * f0;
+        fogG = near[1] + (far[1] - near[1]) * f0;
+        fogB = near[2] + (far[2] - near[2]) * f0;
+      } else {
+        const c = P.rgb[P.fog.interior.color];
+        fogR = c[0]; fogG = c[1]; fogB = c[2];
+      }
       const o = n * SPR_STRIDE;
       spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = h;
       spr[o + 4] = 1 / scale; spr[o + 5] = depth; spr[o + 6] = f; spr[o + 7] = visible;
       spr[o + 8] = fr.x; spr[o + 9] = fr.y; spr[o + 10] = fr.w; spr[o + 11] = fr.h;
       spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = 0;
+      spr[o + 16] = fogR; spr[o + 17] = fogG; spr[o + 18] = fogB; spr[o + 19] = 0;
       this.frameOf[n] = anim.base;
       n++;
     }
+
+    // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
+    // billboards (`world.horizon[]`) appended after every entity sprite,
+    // same pool/texture, unlit, fixed per-entry fog, depth `HORIZON_DEPTH`
+    // (see `projectHorizon` below for the placement maths).
+    if (world && world.horizon && world.horizon.length) {
+      const unlitGain = S.fgMin + (1 - S.fgMin) * Math.pow(1, S.fgGamma);
+      const list = world.horizon;
+      for (let i = 0; i < list.length; i++) {
+        if (n >= MAX_SPRITES) { this.dropped++; continue; }
+        const frameBase = projectHorizon(list[i], this.atlas, cb, P, unlitGain, spr, n * SPR_STRIDE);
+        if (frameBase !== -1) {
+          this.frameOf[n] = frameBase;
+          n++;
+        }
+      }
+    }
+
     this.count = n;
     this._light = light;
   }
@@ -284,9 +399,7 @@ export function drawSprites(fb, pool) {
   if (!spriteDepth || spriteDepth.length !== n) spriteDepth = new Float32Array(n);
   spriteDepth.fill(Infinity);
   const depth = fb.depth.depth;
-  const P = pool.palette;
   const atlas = pool.atlas, A = atlas.data, aw = atlas.width, pal = atlas.pal;
-  const fogC = P.rgb[P.fog.interior.color];
   const spr = pool.spr;
   const bg = cells.bg;
 
@@ -296,6 +409,9 @@ export function drawSprites(fb, pool) {
     const invScale = spr[o + 4], sDepth = spr[o + 5], fogF = spr[o + 6], visible = spr[o + 7] !== 0;
     const ax = spr[o + 8], ay = spr[o + 9], srcW = spr[o + 10], srcH = spr[o + 11];
     const mulR = spr[o + 12], mulG = spr[o + 13], mulB = spr[o + 14];
+    // US-016 (architecture.md 14.4 item 14): per-sprite fog colour (T4), not
+    // the single `P.fog.interior` colour every sprite used to fog toward.
+    const fogR = spr[o + 16], fogG = spr[o + 17], fogB = spr[o + 18];
     const cx0 = Math.max(0, x0), cx1 = Math.min(cols, x0 + w);
     const cy0 = Math.max(0, y0), cy1 = Math.min(rows, y0 + h);
     for (let y = cy0; y < cy1; y++) {
@@ -319,10 +435,10 @@ export function drawSprites(fb, pool) {
           // round(fogMax*254)`; `a = 1` = no fogMax = 0 cap = unfogged,
           // today's behaviour). `fe = min(sprite fogF, key cap)`.
           const fe = Math.min(fogF, (A[t + 3] - 1) / 254);
-          if (fe > 0) { r += (fogC[0] - r) * fe; g += (fogC[1] - g) * fe; bl += (fogC[2] - bl) * fe; }
+          if (fe > 0) { r += (fogR - r) * fe; g += (fogG - g) * fe; bl += (fogB - bl) * fe; }
         } else {
           r = pal[pi] * mulR; g = pal[pi + 1] * mulG; bl = pal[pi + 2] * mulB;
-          if (fogF > 0) { r += (fogC[0] - r) * fogF; g += (fogC[1] - g) * fogF; bl += (fogC[2] - bl) * fogF; }
+          if (fogF > 0) { r += (fogR - r) * fogF; g += (fogG - g) * fogF; bl += (fogB - bl) * fogF; }
         }
         const bi = i * 4;
         cells.setCellRGB(x, y, A[t], toByte(r), toByte(g), toByte(bl), bg[bi], bg[bi + 1], bg[bi + 2]);

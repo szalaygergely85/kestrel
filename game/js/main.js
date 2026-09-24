@@ -686,7 +686,9 @@ function runGame(mode) {
     // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
     let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
       `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
-      (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '') +
+      (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
+        // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95"): terrain pass A2's own GPU ms, separate from the frame total above.
+        `  terrain ${Number.isNaN(gpuPipeline.stats.terrainGpuMsP50) ? 'n/a' : gpuPipeline.stats.terrainGpuMsP50.toFixed(2) + 'ms'}` : '') +
       (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
     if (mode === 'world') {
       const t = playerHandle.data.transform;
@@ -820,6 +822,15 @@ function runGpuCompareDdaMode() {
     { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
   );
   const worldM1 = loadCompareWorld(assets.world('world_m1'));
+  // US-016 step 4 (14.4 item 6/9, D-017 item 11): this compare page must
+  // exercise terrain (kind 7) cells, which `castTerrain`/`_passTerrain` both
+  // no-op until `terrain.farReady` - `bakeFarStep` is the amortised, per-
+  // frame bake real gameplay uses (main.js `render()`, 2 ms/frame budget),
+  // but this harness runs once, synchronously, outside the frame loop, so
+  // the deterministic, bit-identical `bakeFarSync` is the right call here
+  // (same one `terrainCaster.test.js`/`TerrainTextures.test.js` use as their
+  // oracle setup).
+  if (worldM1.terrain) worldM1.terrain.bakeFarSync();
   const m1Player = worldM1.get('player').data;
   const m1Eye = Camera.fromEntity(m1Player, engine.physics.eyeHeight);
   // Architect review 1 item 2: build a real `LightSet` per compare world (the
@@ -896,6 +907,20 @@ function runGpuCompareDdaMode() {
       before: () => { const h = worldM1.get('tower.boulder'); if (h) h.data.components.sprite.frame = 4; } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
+    // US-016 step 4 (architecture.md 14.4 item 14, D-017 review): the two
+    // new terrain/horizon poses the tech notes call for, on top of the
+    // step 2/3 GLSL terrain march - both must clear terrain kind-7 parity
+    // (`castTerrain`/`shadeTerrainFar` oracle, `compareCells`/`compareGeometry`
+    // above) AND, once step 5 lands, the Ferrum horizon billboard on their
+    // sky cells. World coords: tower origin (1480, 1018, 0) + local (per
+    // tower.js): breach (6.5, 7.0), floorH 6.0 -> eye 6.0+1.60 = 7.6 m;
+    // the relay plinth (9.0, 7.0), floorH 6.6 (0.6 m plinth on the 6.0 m
+    // summit walkway) -> eye 6.6+1.60 = 8.2 m (D-011 addendum designer
+    // notes, "relay plinth eye 8.2 m").
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: summit east (relay plinth, yaw 87.6)',
+      cam: { x: 1489.0, y: 1025.0, z: 8.2, yawDeg: 87.6, pitchDeg: 0 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach looking back east (yaw 87.6)',
+      cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 87.6, pitchDeg: 0 }, real: true },
   ];
 
   const fbCompare = {

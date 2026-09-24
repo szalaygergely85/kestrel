@@ -1,6 +1,6 @@
 // US-030c (docs/architecture.md 14.2 item 4, pass F "sprite"): composites
 // billboard sprites over the edge-pass output into rt.fgTex/bgTex. One
-// fragment per cell; loops over the sprite list texture (SPR, 4 RGBA32F
+// fragment per cell; loops over the sprite list texture (SPR, 5 RGBA32F
 // texels per sprite, layout in engine/render/sprites.js), depth-tests each
 // candidate against the cell's DEPTH texel, samples the RGBA8UI atlas
 // (engine/render/gpu/spritesAtlas.js) and keeps the nearest opaque texel.
@@ -42,11 +42,10 @@ uniform usampler2D uGI;
 ${depthDecl}
 uniform sampler2D uEdgeFg;
 uniform sampler2D uEdgeBg;
-uniform sampler2D uSpr;     // RGBA32F, 4 x MAX_SPRITES: T0 rect, T1 (invScale, depth, fogF, visible), T2 atlas rect, T3 colour mul
+uniform sampler2D uSpr;     // RGBA32F, 5 x MAX_SPRITES: T0 rect, T1 (invScale, depth, fogF, visible), T2 atlas rect, T3 colour mul, T4 fog colour (14.4 item 14)
 uniform usampler2D uAtlas;  // RGBA8UI: r glyph code, g palette index, b emissive|normal<<1, a = 0 transparent else 1+round(fogMax*254)
 uniform sampler2D uPal;     // RGBA32F, n x 1: palette rgb 0..255
 uniform int uCount;
-uniform vec3 uFogColor;     // palette fog.interior colour, 0..255
 
 // US-017: GPU scene fade (7.4 "Fade"), applied to every non-mask cell below.
 uniform float uSceneFade;   // 1 = off/identity
@@ -87,6 +86,7 @@ void main() {
   uvec4 tx = uvec4(0u);
   float fogF = 0.0;
   vec3 mul = vec3(1.0);
+  vec3 fogRGB = vec3(0.0); // US-016 (14.4 item 14): resolved per hit sprite from its own T4 (below)
 
   for (int s = 0; s < MAX_SPRITES; s++) {
     if (s >= uCount) break;
@@ -105,6 +105,7 @@ void main() {
     if (!emissive && p.w < 0.5) continue; // shadeSprite: not visible at this light/fog
     best = p.y; tx = t; fogF = p.z; found = true;
     mul = texelFetch(uSpr, ivec2(3, s), 0).rgb;
+    fogRGB = texelFetch(uSpr, ivec2(4, s), 0).rgb;
   }
 
   if (found) {
@@ -116,10 +117,10 @@ void main() {
       // emissive fog cap from the atlas alpha (tx.a = 1 + round(fogMax*254);
       // 1 = no cap = unfogged) - ported from sprites.js's drawSprites().
       float fe = min(fogF, (float(tx.a) - 1.0) / 254.0);
-      if (fe > 0.0) rgb += (uFogColor - rgb) * fe;
+      if (fe > 0.0) rgb += (fogRGB - rgb) * fe;
     } else {
       rgb = base * mul;
-      if (fogF > 0.0) rgb += (uFogColor - rgb) * fogF;
+      if (fogF > 0.0) rgb += (fogRGB - rgb) * fogF;
     }
     outFg = vec4(toByte01(rgb.r), toByte01(rgb.g), toByte01(rgb.b), toByte01(float(tx.r)));
     outBg = vec4(ebg.rgb, 1.0);
