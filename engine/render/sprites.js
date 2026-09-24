@@ -24,6 +24,7 @@
 // Animation state is `components.sprite` (10.1): `model`, `anim`, `frame`;
 // `frame` is read as-is (static until US-011's `stepAnimations`).
 import { HFOV_DEG } from './sectorCaster.js';
+import { lightAt } from './lighting.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 4;
@@ -112,22 +113,29 @@ export class SpritePool {
 
   /**
    * Projects the raw list into `spr` (see the layout in the module doc).
-   * `light` = [r, g, b] at the sprite (ambient until US-006).
+   * `light`: either a flat `[r, g, b]` (uniform - legacy/tests, `world` is
+   * ignored) or a `LightSet` (US-011, 7.5 item 4: per-sprite `lightAt` at
+   * `x, y, z + 0.5*world.h`, normal `(0,0,1)`, `nf = 1` - README 4 allows
+   * skipping the per-cell normal factor everywhere), in which case `world`
+   * is required (`lightAt`'s vis-grid/sun-shadow sampling).
    */
-  project(cam, rt, light) {
+  project(cam, rt, light, world) {
     const cb = camBasis(cam, rt, this._cb);
     const P = this.palette, S = P.shading, spr = this.spr, frames = this.atlas.frames;
-    // Per-sprite part of `P.util.shadeSprite` (design/palette.js) with nf = 1
-    // (no light direction until US-006; README 4 allows nf = 1 everywhere):
-    // b = Lm * (0.35 + 0.65 * 1) = Lm.
-    const Lm = Math.max(light[0], light[1], light[2]);
-    const b = Lm;
-    const hr = Lm > 1e-6 ? light[0] / Lm : 1, hg = Lm > 1e-6 ? light[1] / Lm : 1, hb = Lm > 1e-6 ? light[2] / Lm : 1;
-    const bc = b < 0 ? 0 : b;
-    let gain = S.fgMin + (1 - S.fgMin) * Math.pow(bc > 1 ? 1 : bc, S.fgGamma);
-    if (bc > 1) gain = Math.min(S.fgMaxGain, gain + (bc - 1) * 0.5);
-    const k = S.tint;
-    const mulR = (1 + (hr - 1) * k) * gain, mulG = (1 + (hg - 1) * k) * gain, mulB = (1 + (hb - 1) * k) * gain;
+    const perSprite = !!(light && typeof light.count === 'number' && light.pos);
+    // Uniform path (legacy `[r,g,b]` light): the per-sprite part of
+    // `P.util.shadeSprite` with nf = 1 computed once, same as before US-011.
+    let uMulR = 1, uMulG = 1, uMulB = 1, uB = 1;
+    if (!perSprite) {
+      const Lm = Math.max(light[0], light[1], light[2]);
+      uB = Lm;
+      const hr = Lm > 1e-6 ? light[0] / Lm : 1, hg = Lm > 1e-6 ? light[1] / Lm : 1, hb = Lm > 1e-6 ? light[2] / Lm : 1;
+      const bc = uB < 0 ? 0 : uB;
+      let gain = S.fgMin + (1 - S.fgMin) * Math.pow(bc > 1 ? 1 : bc, S.fgGamma);
+      if (bc > 1) gain = Math.min(S.fgMaxGain, gain + (bc - 1) * 0.5);
+      const k = S.tint;
+      uMulR = (1 + (hr - 1) * k) * gain; uMulG = (1 + (hg - 1) * k) * gain; uMulB = (1 + (hb - 1) * k) * gain;
+    }
 
     let n = 0;
     for (let i = 0; i < this.rawCount; i++) {
@@ -152,6 +160,19 @@ export class SpritePool {
       const w = Math.ceil(lod.size.w * scale), h = Math.ceil(lod.size.h * scale);
       if (x0 >= cb.cols || y0 >= cb.rows || x0 + w <= 0 || y0 + h <= 0) continue;
 
+      let mulR = uMulR, mulG = uMulG, mulB = uMulB, b = uB;
+      if (perSprite) {
+        lightAt(light, world, px, py, pz + 0.5 * m.world.h, 0, 0, 1, sprLightScratch);
+        const Lm = Math.max(sprLightScratch[0], sprLightScratch[1], sprLightScratch[2]);
+        b = Lm;
+        const hr = Lm > 1e-6 ? sprLightScratch[0] / Lm : 1, hg = Lm > 1e-6 ? sprLightScratch[1] / Lm : 1, hb = Lm > 1e-6 ? sprLightScratch[2] / Lm : 1;
+        const bc = b < 0 ? 0 : b;
+        let gain = S.fgMin + (1 - S.fgMin) * Math.pow(bc > 1 ? 1 : bc, S.fgGamma);
+        if (bc > 1) gain = Math.min(S.fgMaxGain, gain + (bc - 1) * 0.5);
+        const k = S.tint;
+        mulR = (1 + (hr - 1) * k) * gain; mulG = (1 + (hg - 1) * k) * gain; mulB = (1 + (hb - 1) * k) * gain;
+      }
+
       const f = P.util.fogFactor(depth);
       const visible = b * (1 - f) >= S.cutoff ? 1 : 0;
       const o = n * SPR_STRIDE;
@@ -173,8 +194,8 @@ export class SpritePool {
   }
 }
 
-// Reused scratch for the reference shader output (no per-cell allocation).
-const shadeOut = { fg: [0, 0, 0], bg: [0, 0, 0], visible: true, b: 0 };
+// Reused scratch (no per-cell/per-sprite allocation - architecture.md 9).
+const sprLightScratch = new Float64Array(3); // project()'s per-sprite lightAt() output
 let spriteDepth = null; // Float32Array(cols*rows): nearest sprite depth per cell this frame (lazily sized)
 
 function toByte(v) { v = Math.floor(v + 0.5); return v < 0 ? 0 : v > 255 ? 255 : v; }
@@ -194,6 +215,14 @@ export function lastSpriteDepth() { return spriteDepth; }
  * wins a tie, exactly like the GLSL loop), colour from the designer's
  * `P.util.shadeSprite` (the oracle - the GPU reproduces its per-sprite
  * factors from `spr` T3), glyph from the atlas, bg left as the wall behind.
+ * Colour comes straight from the per-sprite T3 multiplier (`spr[o+12..14]`,
+ * baked by `project()` - uniform or per-sprite `lightAt`, README 4/
+ * architecture.md 7.5 item 4) applied to the atlas palette colour
+ * (`pool.atlas.pal`, the SAME table the GPU's `uPal` texture holds), fog-
+ * blended the same way `sprites.frag.js` does: `rgb = base*mul; if fogF>0:
+ * rgb += (fogColor-rgb)*fogF`. Emissive cells skip both. This is "parity by
+ * construction" (7.5 item 6): both paths read the identical `spr`/atlas
+ * data, neither recomputes shading from a separate light input.
  * @param {{rt:Object, depth:{depth:Float32Array}, palette:Object}} fb
  * @param {SpritePool} pool - after `project()`
  */
@@ -204,9 +233,10 @@ export function drawSprites(fb, pool) {
   if (!spriteDepth || spriteDepth.length !== n) spriteDepth = new Float32Array(n);
   spriteDepth.fill(Infinity);
   const depth = fb.depth.depth;
-  const P = pool.palette, U = P.util;
-  const atlas = pool.atlas, A = atlas.data, aw = atlas.width, palKeys = atlas.palKeys;
-  const spr = pool.spr, light = pool._light || [1, 1, 1];
+  const P = pool.palette;
+  const atlas = pool.atlas, A = atlas.data, aw = atlas.width, pal = atlas.pal;
+  const fogC = P.rgb[P.fog.interior.color];
+  const spr = pool.spr;
   const bg = cells.bg;
 
   for (let s = 0; s < pool.count; s++) {
@@ -214,6 +244,7 @@ export function drawSprites(fb, pool) {
     const x0 = spr[o], y0 = spr[o + 1], w = spr[o + 2], h = spr[o + 3];
     const invScale = spr[o + 4], sDepth = spr[o + 5], fogF = spr[o + 6], visible = spr[o + 7] !== 0;
     const ax = spr[o + 8], ay = spr[o + 9], srcW = spr[o + 10], srcH = spr[o + 11];
+    const mulR = spr[o + 12], mulG = spr[o + 13], mulB = spr[o + 14];
     const cx0 = Math.max(0, x0), cx1 = Math.min(cols, x0 + w);
     const cy0 = Math.max(0, y0), cy1 = Math.min(rows, y0 + h);
     for (let y = cy0; y < cy1; y++) {
@@ -228,9 +259,16 @@ export function drawSprites(fb, pool) {
         if (A[t + 3] === 0) continue; // transparent
         const emissive = (A[t + 2] & 1) !== 0;
         if (!emissive && !visible) continue;
-        U.shadeSprite(palKeys[A[t + 1]], light, 1, emissive, fogF, shadeOut);
+        const pi = A[t + 1] * 4;
+        let r, g, bl;
+        if (emissive) {
+          r = pal[pi]; g = pal[pi + 1]; bl = pal[pi + 2]; // full palette colour, ignores light and fog
+        } else {
+          r = pal[pi] * mulR; g = pal[pi + 1] * mulG; bl = pal[pi + 2] * mulB;
+          if (fogF > 0) { r += (fogC[0] - r) * fogF; g += (fogC[1] - g) * fogF; bl += (fogC[2] - bl) * fogF; }
+        }
         const bi = i * 4;
-        cells.setCellRGB(x, y, A[t], toByte(shadeOut.fg[0]), toByte(shadeOut.fg[1]), toByte(shadeOut.fg[2]), bg[bi], bg[bi + 1], bg[bi + 2]);
+        cells.setCellRGB(x, y, A[t], toByte(r), toByte(g), toByte(bl), bg[bi], bg[bi + 1], bg[bi + 2]);
         spriteDepth[i] = sDepth;
       }
     }

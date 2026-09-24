@@ -2,14 +2,25 @@
 // Run: node engine/world/world.test.js
 import { AssetRegistry } from '../core/assets.js';
 import { World } from './World.js';
+import { serialize, deserialize } from './serialize.js';
 import paletteMod from '../../design/palette.js';
 import towerDef from '../../design/levels/tower.js';
 import testRoomDef from '../../design/levels/test_room.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 import worldMod from '../../design/levels/world_m1.js';
+// US-011 (7.5 item 1): World.load's prop spawn throws on any props[].model
+// that isn't registered - every tower prop model must load, same reasoning
+// as game/index.html's script tags.
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; towerDef; testRoomDef; terrainDef; worldMod;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;
@@ -87,6 +98,57 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   world.forEachEntity((e, id) => { if (id === 'sprite_test_entity') countAfterRemove++; });
   ok('forEachEntity count is 0 after removeEntity', countAfterRemove === 0);
   h;
+}
+
+// ---------------------------------------------------------------------------
+// US-011 (7.5 item 1/7): props from level data -> generic prop entities.
+// ---------------------------------------------------------------------------
+{
+  const towerPropDef = assets.level('tower').props.find((p) => p.id === 'gondola');
+  const gondola = world.get('tower.gondola');
+  ok('tower props spawn with id `tower.<id>`', !!gondola);
+  ok('prop world coords = level-local + structure origin',
+    Math.abs(gondola.data.transform.x - (towerPropDef.x + tower.origin.x)) < 1e-9 &&
+    Math.abs(gondola.data.transform.y - (towerPropDef.y + tower.origin.y)) < 1e-9);
+
+  ok('`decal:` props (scrawl) are skipped, no entity spawned', world.get('tower.scrawl') === null);
+  ok('chain props (`from`/`to`, no x/y) are skipped, no entity spawned', world.get('tower.chains') === null);
+
+  const rubble2 = world.get('tower.rubble2'); // tower.js: { id: 'rubble2', model: 'rubble', variant: 1, ... }
+  ok('numeric variant packs as `${model}#${n}` (atlas + spawn)', !!rubble2 && rubble2.getComponent('sprite').model === 'rubble#1');
+
+  const boulder = world.get('tower.boulder');
+  ok('`dynamic: true` prop (boulder) gets body + roller components',
+    !!boulder && !!boulder.getComponent('body') && !!boulder.getComponent('roller'));
+  ok('dynamic prop body.radius comes from the prop def', boulder.getComponent('body').radius === assets.level('tower').props.find((p) => p.id === 'boulder').radius);
+}
+
+// ---------------------------------------------------------------------------
+// US-011 (7.5 item 7): serialize -> deserialize gives the same entity set
+// (no duplicate props re-spawned on top of the saved ones) and keeps
+// anim/frame.
+// ---------------------------------------------------------------------------
+{
+  const lever = world.get('tower.lever');
+  lever.play('pull', { restart: true });
+  lever.data.components.sprite.frame = 2;
+  lever.stop();
+
+  const idsBefore = new Set();
+  world.forEachEntity((e, id) => idsBefore.add(id));
+
+  const state = serialize(world);
+  const world2 = deserialize(state, assets, {});
+
+  const idsAfter = new Set();
+  world2.forEachEntity((e, id) => idsAfter.add(id));
+  ok('deserialize gives the same entity id set as before serialize (no duplicate prop spawn)',
+    idsBefore.size === idsAfter.size && [...idsBefore].every((id) => idsAfter.has(id)),
+    `${idsBefore.size} vs ${idsAfter.size}`);
+
+  const lever2 = world2.get('tower.lever');
+  const s = lever2.getComponent('sprite');
+  ok('deserialize keeps the saved sprite anim/frame (lever mid-pull, held)', s.anim === 'pull' && s.frame === 2 && s.playing === false, JSON.stringify(s));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

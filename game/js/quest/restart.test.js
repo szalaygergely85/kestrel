@@ -17,12 +17,21 @@ import {
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
 import towerMod from '../../../design/levels/tower.js';
+// US-011 (7.5 item 1): World.load's prop spawn throws on any
+// props[].model that isn't registered - every tower prop model must
+// load, same reasoning as game/index.html's script tags.
+import lanternMod from '../../../design/models/lantern.js';
+import leverMod from '../../../design/models/lever.js';
+import boulderMod from '../../../design/models/boulder.js';
+import rubbleMod from '../../../design/models/rubble.js';
+import wreckageMod from '../../../design/models/wreckage.js';
+import relayMod from '../../../design/models/relay.js';
 import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import worldMod from '../../../design/levels/world_m1.js';
 import './index.js'; // registers every quest.* behaviour (lantern.take, lever.pull, quest.end, ...)
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;
@@ -76,12 +85,14 @@ ok('2c: grate stopped mid-open', typeof grateT === 'number' && grateT > 0 && gra
 // 3. Push the boulder (same approach as boulder.test.js: spawn the real
 // tower.js boulder prop as a roller entity and drive it with stepRollers).
 // ---------------------------------------------------------------------------
+// US-011 (7.5 item 1): `World.load` now auto-spawns `tower.boulder` itself
+// (body + roller, `dynamic: true`) - reuse it instead of spawning a second
+// entity under the same id (which now throws, `boulder.test.js`).
 const towerDef = assets.level('tower');
 const boulderProp = towerDef.props.find((p) => p.id === 'boulder');
-const bx = tower.origin.x + boulderProp.x, by = tower.origin.y + boulderProp.y, bz = tower.origin.z + boulderProp.z;
-world.spawn('prop', { x: bx, y: by, z: bz, yawDeg: 0, pitchDeg: 0 },
-  { body: { radius: boulderProp.radius, vx: 2, vy: 0.5, vz: 0, grounded: true }, roller: {} }, 'tower.boulder');
+const bx = tower.origin.x + boulderProp.x, by = tower.origin.y + boulderProp.y;
 const boulder = world.entity('tower.boulder');
+boulder.components.body.vx = 2; boulder.components.body.vy = 0.5;
 for (let i = 0; i < 60; i++) {
   stepRollers(world, PHYSICS_DEFAULTS.fixedDt, PHYSICS_DEFAULTS);
 }

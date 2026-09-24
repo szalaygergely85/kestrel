@@ -56,17 +56,18 @@
     legend: {
       // ---- tower walls: solid; floorH = broken wall top (for rendering the silhouette) ----
       '#': wall(8.5, 'stone', 'tower wall, top 8.5 m (east / sun side: tall, casts the shaft edge)'),
-      '%': wall(8.0, 'stone', 'tower wall, top 8.0 m'),
-      '&': wall(7.5, 'stone', 'tower wall, top 7.5 m'),
-      '$': wall(7.0, 'stone', 'tower wall, top 7.0 m'),
-      '!': wall(6.5, 'stone', 'tower wall, top 6.5 m (west: broken low beside the summit)'),
+      // D-011 levelPatch materials: solid wall tops seen from the summit get moss (floorMat only; wallMat stays stone).
+      '%': Object.assign(wall(8.0, 'stone', 'tower wall, top 8.0 m'), { floorMat: 'moss_top' }),
+      '&': Object.assign(wall(7.5, 'stone', 'tower wall, top 7.5 m'), { floorMat: 'moss_top' }),
+      '$': Object.assign(wall(7.0, 'stone', 'tower wall, top 7.0 m'), { floorMat: 'moss_top' }),
+      '!': wall(6.5, 'stone_ivy', 'tower wall, top 6.5 m (west: broken low beside the summit; ivy where the Kestrel came through, D-011 levelPatch)'),
       'm': wall(8.5, 'stone_moss', 'north tower wall, top 8.5 m, moss band near the floor'),
       'n': wall(8.0, 'stone_moss', 'north tower wall, top 8.0 m, moss'),
       'u': wall(7.5, 'stone_moss', 'north tower wall, top 7.5 m, moss'),
       'c': S({ solid: true, floorH: 1.4, wallMat: 'stone_moss', floorMat: 'floor', ceilMat: null, zone: 'wall',
                desc: 'stair cheek wall (solid, 1.4 m): the first steps can only be entered from the stair base' }),
-      'P': S({ solid: true, floorH: 7.0, wallMat: 'stone', floorMat: 'floor', ceilMat: null, zone: 'wall',
-               desc: 'summit parapet, waist high (1.0 m above the walkway), solid so it cannot be climbed' }),
+      'P': S({ solid: true, floorH: 7.0, wallMat: 'stone', floorMat: 'moss_top', ceilMat: null, zone: 'wall',
+               desc: 'summit parapet, waist high (1.0 m above the walkway), solid so it cannot be climbed. Top: moss_top (D-011 levelPatch)' }),
 
       // ---- level 0: ground floor ----
       '.': S({ floorH: 0.0, wallMat: 'stone', floorMat: 'floor', ceilMat: null, zone: 'ground', desc: 'flagstone floor' }),
@@ -169,29 +170,49 @@
     ambient: { preset: 'ambient' },
     lights: [
       { id: 'brazier', preset: 'torch', x: 18.5, y: 6.5, z: 1.2, on: true },
-      { id: 'beacon', preset: 'beacon', x: 9.0, y: 7.0, z: 7.4, on: false, note: 'US-022 only' }
+      { id: 'beacon', preset: 'relay', x: 9.0, y: 7.0, z: 7.7, on: false, note: 'D-011 levelPatch: relay preset (was "beacon"); off until US-022 wakes it, then grows over 1.0 s' }
       // the lantern light is created by US-012 when the lantern is taken (preset 'lantern', carried)
     ],
 
     // props: model = US-011 asset name; x,y,z = anchor (feet) position; facing = compass deg the front looks at
+    // D-011 levelPatch (design/models/wreckage.js ASSETS.levelPatch.tower), applied by hand (US-011, no runtime
+    // patch applier): brazier -> burner, pallet -> canvasHeap, beaconBowl -> relay (variant dead), lever pose ->
+    // variant, plus the Kestrel wreck props (gondola, rigging, strut, ropes, canvas drape, envelope heap).
     props: [
-      { id: 'pallet', model: 'pallet', x: 17.0, y: 9.5, z: 0.0, facing: 0, note: 'straw pallet, long axis E-W; walk-over (no collision)' },
-      { id: 'brazier', model: 'brazier', x: 18.5, y: 6.5, z: 0.5, facing: 180, collide: 'sector', note: 'on the stone ring (*); torch light source' },
+      { id: 'pallet', model: 'canvasHeap', x: 17.0, y: 9.5, z: 0.0, facing: 0,
+        note: 'the wake spot: torn envelope canvas (D-011 reskin of the straw pallet); walk-over (no collision)' },
+      { id: 'brazier', model: 'burner', x: 18.5, y: 6.5, z: 0.5, facing: 180, collide: 'sector',
+        note: 'the Kestrel\'s copper burner (D-011 reskin of the brazier), on the stone ring (*); torch light source' },
       { id: 'lantern', model: 'lantern', variant: 'unlit', x: 19.9, y: 6.5, z: 1.3, facing: 270, hook: true,
-        interactable: 'lantern', note: 'on a hook on the west face of step 8, 1.4 m from the brazier' },
+        interactable: 'lantern', note: 'the brass lamp on its own bracket (D-011), 1.4 m from the burner' },
       { id: 'boulder', model: 'boulder', x: 15.55, y: 3.5, z: 0.0, radius: 0.6, dynamic: true,
         note: 'on the stair base, 5 cm onto step 1: blocks the only stair entrance' },
-      { id: 'lever', model: 'lever', pose: 'up', x: 19.25, y: 9.3, z: 3.0, facing: 90,
+      { id: 'lever', model: 'lever', variant: 'idle', x: 19.25, y: 9.3, z: 3.0, facing: 90,
         interactable: 'lever', note: 'post at the NW corner of the ledge; pulled facing west, grate 30 deg left of view centre' },
       { id: 'chains', model: 'chains', from: { x: 19.25, y: 9.3, z: 3.2 }, to: { x: 19.0, y: 10.5, z: 5.4 }, note: 'decal/sprite: chain from lever to grate head' },
-      { id: 'beaconBowl', model: 'beaconBowl', x: 9.0, y: 7.0, z: 6.6, facing: 90, interactable: 'beacon', note: 'bowl sprite (iron bowl on legs, ash mound) stands on the O plinth; US-022 fire mounts on its ash row' },
+      { id: 'beaconBowl', model: 'relay', variant: 'dead', x: 9.0, y: 7.0, z: 6.6, facing: 90, interactable: 'beacon',
+        note: 'the dead relay (D-011 reskin of the beacon bowl) stands on the O plinth; US-022 glow anchor = relay.mounts.glow' },
       { id: 'rubble1', model: 'rubble', variant: 0, x: 19.5, y: 8.5, z: 0.3 },
       { id: 'rubble2', model: 'rubble', variant: 1, x: 14.5, y: 8.5, z: 0.6 },
       { id: 'rubble3', model: 'rubble', variant: 2, x: 12.5, y: 6.5, z: 0.9 },
       { id: 'rubble4', model: 'rubble', variant: 1, x: 16.5, y: 2.5, z: 0.6 },
       { id: 'rubble5', model: 'rubble', variant: 0, x: 20.5, y: 8.5, z: 0.6, note: 'debris in the gap' },
       { id: 'scrawl', model: 'decal:KEEP THE LIGHT', wall: { x0: 15.2, x1: 17.8, y: 10.0, z0: 0.45, z1: 0.95 }, facing: 0,
-        note: 'US-021: on the north face of upper steps C/B, right above the pallet' }
+        note: 'US-021: on the north face of upper steps C/B, right above the pallet' },
+      // ---- Kestrel wreck (D-011 levelPatch, added): non-colliding, none on the wake -> burner -> stair path
+      // or the boulder's roll line (levelPatch.tower.pathCheck, recomputed live in design/preview/tower.html) ----
+      { id: 'gondola', model: 'gondola', x: 15.4, y: 8.7, z: 0.0, facing: 90,
+        note: 'beside the wake spot (not on it): brass gondola keel on the flagstones by the R rubble' },
+      { id: 'rigging', model: 'rigging', x: 15.3, y: 9.5, z: 0.0, facing: 0, note: 'rope coil at the gondola stern, west of the heap' },
+      { id: 'strut', model: 'strut', x: 14.4, y: 8.2, z: 0.6, facing: 90, note: 'bent brass strut on the existing rubble cell R (14,8)' },
+      { id: 'ropeA', model: 'rope', variant: 0, x: 14.1, y: 8.4, z: 3.3, facing: 90,
+        note: 'hangs off the upper-step edge H (5.1 m): z = 5.1 - 1.8. Overhead (3.3 m)' },
+      { id: 'ropeB', model: 'rope', variant: 1, x: 15.2, y: 7.3, z: 3.6, facing: 90,
+        note: 'hangs beside the canvas drape off the same beam (5.4 m): z = 5.4 - 1.8. Overhead (3.6 m)' },
+      { id: 'canvasDrape', model: 'envelopeDrape', x: 14.5, y: 7.4, z: 3.5, facing: 90,
+        note: 'torn canvas hanging in the stairwell off the upper stair edge (I, 5.4 m); hem at 3.5 m, overhead' },
+      { id: 'envelopeHeap', model: 'envelopeHeap', x: 3.0, y: 6.5, z: 'ground', facing: 90,
+        note: 'outside the broken west wall, below the summit breach: the hook view, not on the route' }
     ],
 
     // Interactables (D-006/D-008, US-012/014/022). Behaviours are referenced by NAME and registered from game/js/quest/.

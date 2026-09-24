@@ -13,12 +13,25 @@ import { DepthBuffer } from '../DepthBuffer.js';
 import { buildSpriteAtlas, NORMAL_CODES } from './spritesAtlas.js';
 import { SpritePool, drawSprites, lastSpriteDepth, MAX_SPRITES, SPR_STRIDE } from '../sprites.js';
 import { spritesFragSrc } from './glsl/sprites.frag.js';
+import { World } from '../../world/World.js';
+import { buildLightSet } from '../lighting.js';
 import paletteMod from '../../../design/palette.js';
 import lanternMod from '../../../design/models/lantern.js';
 import brazierMod from '../../../design/models/brazier.js';
+// US-011 (7.5 item 7): the wreck/tower packs, for the atlas/light checks
+// near the end of this file. Same classic-script side-effect loading.
+import leverMod from '../../../design/models/lever.js';
+import boulderMod from '../../../design/models/boulder.js';
+import rubbleMod from '../../../design/models/rubble.js';
+import wreckageMod from '../../../design/models/wreckage.js';
+import relayMod from '../../../design/models/relay.js';
+import towerLevelMod from '../../../design/levels/tower.js';
+import overworldFarMod from '../../../design/levels/overworld_far.js';
+import worldM1Mod from '../../../design/levels/world_m1.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; lanternMod; brazierMod;
+leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; towerLevelMod; overworldFarMod; worldM1Mod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 const P = assets.palette;
 
@@ -264,6 +277,62 @@ for (const depthUint of [true, false]) {
   ok(`sprites.frag (depthUint=${depthUint}): uSceneFade uniform`, src.includes('uniform float uSceneFade;'));
   ok(`sprites.frag (depthUint=${depthUint}): uFadeLut/uFadeRamp R8UI textures`, src.includes('uniform usampler2D uFadeLut;') && src.includes('uniform usampler2D uFadeRamp;'));
   ok(`sprites.frag (depthUint=${depthUint}): fade skipped when uSceneFade >= 1.0 (identity)`, /if\s*\(\s*uSceneFade\s*<\s*1\.0\s*\)/.test(src));
+}
+
+// ---------------------------------------------------------------------------
+// US-011 (7.5 item 7): atlas contains rope#0/#1, every tower model packs
+// full+half, per-sprite light differs near vs far from the burner torch.
+// The extra model/level packs (classic scripts) add onto the SAME
+// `window.ASSETS` the top of this file already populated (lantern/brazier),
+// so a second `AssetRegistry` built from it sees everything.
+// ---------------------------------------------------------------------------
+{
+  const assets2 = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const atlas2 = buildSpriteAtlas(assets2, assets2.palette);
+  ok('atlas packs rope#0 and rope#1 (numeric variants, 7.5 item 2)', atlas2.models.has('rope#0') && atlas2.models.has('rope#1'));
+
+  const towerProps = assets2.level('tower').props;
+  let allPacked = true, missing = [];
+  for (const p of towerProps) {
+    if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
+    if (p.from || p.to) continue;
+    const key = typeof p.variant === 'number' ? `${p.model}#${p.variant}` : p.model;
+    const m = atlas2.models.get(key);
+    if (!m || !m.half) { allPacked = false; missing.push(key); }
+  }
+  ok('every tower prop model packs full + half LOD in the atlas', allPacked, missing.join(','));
+
+  // Per-sprite light: `project(cam, rt, LightSet, world)` (7.5 item 4) -
+  // a sprite right next to the burner torch (18.5, 6.5, 1.2, preset
+  // 'torch', on) should be brighter than the SAME model far from every
+  // light (structTable / ambient-only), same T3 slot (12..14).
+  const world2 = World.load(assets2.world('world_m1'), assets2, {});
+  const lights2 = buildLightSet(world2, assets2.palette);
+  lights2.sun.on = false; // isolate the torch's own falloff from daylight (both points stay indoors, same tower)
+  lights2.update(0, world2);
+  const towerStruct = world2.structures.find((s) => s.id === 'tower');
+  // `lightAt`'s sprite normal is straight up (0,0,1 - 7.5 item 4), so the
+  // dot product mostly comes from the VERTICAL offset to the light, not the
+  // horizontal one: sit the near sample a bit below the torch (z 1.2), not
+  // level with it.
+  const near = { x: towerStruct.origin.x + 18.6, y: towerStruct.origin.y + 6.5, z: towerStruct.origin.z + 0.6 };
+  // The dead relay (9.0, 7.0, 6.6): same tower, ~9.5 m from the torch (preset
+  // radius 6 m per D-011 reskin note) and off the `beacon`/relay light (off).
+  const far = { x: towerStruct.origin.x + 9.0, y: towerStruct.origin.y + 7.0, z: towerStruct.origin.z + 6.6 };
+
+  const cellsL = new CellBuffer(COLS, ROWS);
+  cellsL.pxCellW = 1; cellsL.pxCellH = 2;
+  const poolL = new SpritePool(atlas2, assets2.palette);
+  const camNear = { x: near.x - 2, y: near.y, z: near.z, yawDeg: 90, pitchDeg: 0 };
+  poolL.reset(); poolL.push('lantern', 'unlit', 0, near.x, near.y, near.z); poolL.project(camNear, cellsL, lights2, world2);
+  const nearMul = poolL.spr[12]; // T3.r
+
+  const camFar = { x: far.x - 2, y: far.y, z: far.z, yawDeg: 90, pitchDeg: 0 };
+  poolL.reset(); poolL.push('lantern', 'unlit', 0, far.x, far.y, far.z); poolL.project(camFar, cellsL, lights2, world2);
+  const farMul = poolL.spr[12];
+
+  ok('per-sprite light near the burner torch is brighter than far from every light',
+    nearMul > farMul, `near=${nearMul} far=${farMul}`);
 }
 
 console.log(`\n[sprites.test.js] ${pass} passed, ${fail} failed`);

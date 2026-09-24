@@ -72,6 +72,18 @@
        design/README.md section 4) - same classic-script loading. -->
   <script src="../design/models/lantern.js"></script>
   <script src="../design/models/brazier.js"></script>
+  <!-- US-011: every remaining tower prop model (7.5 item 1 - `World.load`'s
+       prop spawn throws if a `props[].model` isn't registered, so every
+       model design/levels/tower.js references must load here). `brazier.js`
+       above stays for its `beaconBowl`/`beaconFire` legacy keys (7.5 intro:
+       "old model keys stay as their own registry entries"); `wreckage.js`
+       and `relay.js` are the D-011 reskin models (burner, canvasHeap,
+       gondola, rigging, strut, rope, envelopeDrape, envelopeHeap, relay). -->
+  <script src="../design/models/lever.js"></script>
+  <script src="../design/models/boulder.js"></script>
+  <script src="../design/models/rubble.js"></script>
+  <script src="../design/models/wreckage.js"></script>
+  <script src="../design/models/relay.js"></script>
   <!-- US-024: test_room moved from game/js/world/levels/test_room.js into
        the content pack (design/), loaded the same way as palette.js above -
        AssetRegistry.fromGlobals (js/main.js) reads window.ASSETS.levels.* -->

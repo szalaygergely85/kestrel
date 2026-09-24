@@ -33,6 +33,23 @@ export class AssetRegistry {
 
     this._palette = bundle.palette;
     this._models = bundle.models || {};
+    // (US-011, 7.5 item 2) Numeric variants: a model whose `variants[]` are
+    // themselves full billboard sub-models (`rubble`, `rope`) get packed by
+    // the sprite atlas under `${key}#${n}` so `sprite.model = 'rubble#1'`
+    // resolves like any other model key. A `variants[]` of plain strings
+    // (`lantern`, `relay` - the anim-name kind, README 4) is left alone.
+    // Idempotent (checked before writing) since `bundle.models` is the same
+    // object across every `AssetRegistry` built from the same globals.
+    for (const key of Object.keys(this._models)) {
+      const def = this._models[key];
+      const variants = def && def.variants;
+      if (Array.isArray(variants) && variants.length && variants[0] && typeof variants[0] === 'object' && variants[0].billboard) {
+        variants.forEach((v, i) => {
+          const vk = `${key}#${i}`;
+          if (!(vk in this._models)) this._models[vk] = v;
+        });
+      }
+    }
     this._levels = bundle.levels || {};
     this._terrain = bundle.terrain || {};
     this._worlds = bundle.worlds || {};

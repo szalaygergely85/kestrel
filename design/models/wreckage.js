@@ -302,7 +302,9 @@
   // =====================================================================================================
   A.levelPatch = A.levelPatch || {};
   A.levelPatch.tower = {
-    status: 'PROPOSED (designer, v1.9 rework 2026-09-24). Apply with the US-011 programmer pass (prop spawn).',
+    status: 'APPLIED (US-011 programmer pass, 2026-09-24, design/levels/tower.js) - EXCEPT the `interactables` swap below ' +
+      '(architect tech notes 7.5 item 5: "not in US-011 scope except: the relay spawns dead, and the preset swap must load" - ' +
+      'the `beacon` interactable keeps its US-010 prompt/behaviour name (`beacon.light`, still a stub) until US-022).',
     loadModels: ['models/wreckage.js', 'models/relay.js', 'models/lantern.js (reskinned in place)', 'models/lever.js (gear housing, same key)'],
     props: {
       replace: [

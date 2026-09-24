@@ -30,7 +30,11 @@ export function lanternTake(ctx) {
     });
   }
 
+  // US-011 (7.5 item 2): the clip player, not a raw setComponent - `variant`
+  // is still written (readability / older callers), but `sprite.anim` is
+  // what the engine actually renders (`entity.play`).
   if (entity) {
+    entity.play('empty');
     const sprite = (entity.getComponent && entity.getComponent('sprite')) || {};
     entity.setComponent('sprite', { ...sprite, variant: 'empty' });
   }

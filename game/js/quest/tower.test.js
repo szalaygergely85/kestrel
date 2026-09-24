@@ -9,16 +9,25 @@
 // in, per the "no literal coordinate under game/js/quest/" rule.
 import {
   World, AssetRegistry, loadLevel, integrate, isSectorPassable, PHYSICS_DEFAULTS,
-  validateBehaviours, unregisterBehaviour, stepSectorAnims, packLevel, serialize, deserialize,
+  validateBehaviours, unregisterBehaviour, stepSectorAnims, packLevel, serialize, deserialize, stepAnimations,
 } from '../../../engine/index.js';
 import { registerQuestBehaviours, QUEST_BEHAVIOURS } from './index.js';
 import paletteMod from '../../../design/palette.js';
 import towerMod from '../../../design/levels/tower.js';
+// US-011 (7.5 item 1): World.load's prop spawn throws on any
+// props[].model that isn't registered - every tower prop model must
+// load, same reasoning as game/index.html's script tags.
+import lanternMod from '../../../design/models/lantern.js';
+import leverMod from '../../../design/models/lever.js';
+import boulderMod from '../../../design/models/boulder.js';
+import rubbleMod from '../../../design/models/rubble.js';
+import wreckageMod from '../../../design/models/wreckage.js';
+import relayMod from '../../../design/models/relay.js';
 import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import worldMod from '../../../design/levels/world_m1.js';
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;
@@ -124,12 +133,16 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);
   unregisterBehaviour('lever.pull');
   ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["lever.pull"]');
-  // World.load warns (once, one line) with the same list.
+  // World.load warns (once, one line) with the same list. `terrain: null`
+  // also makes the prop spawn warn once for `envelopeHeap`'s `z: 'ground'`
+  // (7.5 item 1: no terrain -> warn + 0) - filter to the behaviour line so
+  // that unrelated warning doesn't fail this assertion.
   const warns = [];
   const origWarn = console.warn; console.warn = (m) => warns.push(String(m));
   World.load({ name: 'w', terrain: null, structures: [{ id: 'tower', level: 'tower', origin: placement.origin }], entities: [], state: {} }, assets, {});
   console.warn = origWarn;
-  ok('World.load warns once naming the missing behaviour', warns.length === 1 && /lever\.pull/.test(warns[0]), warns.join(' | '));
+  const behaviourWarns = warns.filter((w) => w.includes('behaviour(s) referenced'));
+  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /lever\.pull/.test(behaviourWarns[0]), warns.join(' | '));
   registerQuestBehaviours();
   ok('re-registration restores an empty list', validateBehaviours(worldFull).length === 0);
   // The remaining stubs (US-012/US-014 replaced their own bodies; US-022/
@@ -153,11 +166,6 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ok('lantern interactable prompt is "[E] Take lamp" (D-011 reskin)', lanternDef.prompt === '[E] Take lamp', lanternDef.prompt);
   ok('lantern interactable data: once, interact lantern.take', lanternDef.once === true && lanternDef.interact === 'lantern.take');
 
-  let propSprite = { model: 'lantern', variant: 'unlit' };
-  const fakeProp = {
-    getComponent: (name) => (name === 'sprite' ? propSprite : undefined),
-    setComponent: (name, value) => { if (name === 'sprite') propSprite = value; },
-  };
   let actorLight = null;
   const fakeActor = { setComponent: (name, value) => { if (name === 'light') actorLight = value; } };
 
@@ -167,10 +175,19 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     entities: [], state: {},
   }, assets, {});
 
-  const r = lanternWorld.fireInteraction('lantern.take', { def: lanternDef, entity: fakeProp, actor: fakeActor });
+  // US-011 (7.5 item 1/tech note 5): `World.load` auto-spawns the real
+  // lantern prop entity now - use it instead of a hand-rolled fake.
+  const lanternProp = lanternWorld.get('tower.lantern');
+  ok('World.load auto-spawns the real lantern prop entity', !!lanternProp && lanternProp.getComponent('sprite').model === 'lantern' && lanternProp.getComponent('sprite').anim === 'unlit');
+
+  const r = lanternWorld.fireInteraction('lantern.take', { def: lanternDef, entity: lanternProp, actor: fakeActor });
   ok('lantern.take returns true (consumes the once-flag path)', r === true);
   ok('lantern.take attaches an eye light preset "lantern" to the actor', actorLight && actorLight.preset === 'lantern' && actorLight.on === true && actorLight.attach === 'eye');
-  ok('lantern.take swaps the prop sprite to the empty-bracket variant, keeping model', propSprite.variant === 'empty' && propSprite.model === 'lantern');
+  const propSprite = lanternProp.getComponent('sprite');
+  // US-011 (7.5 item 2): `lantern.take` -> `entity.play('empty')` - assert
+  // `sprite.anim`, the field the engine actually renders (not `variant`,
+  // which is still written alongside it for readability).
+  ok('lantern.take plays the empty-bracket animation, keeping model', propSprite.anim === 'empty' && propSprite.model === 'lantern');
   ok('lantern.take sets tower.lantern.taken', lanternWorld.state['tower.lantern.taken'] === true);
 
   // A second E on the same interactable: `updateInteraction` (not exercised
@@ -444,6 +461,31 @@ const cellsWhere = (pred) => {
   played = null;
   const r2 = leverWorld.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
   ok('a second lever.pull call does not throw and still returns true', r2 === true && played === 'pull');
+}
+
+// ---------------------------------------------------------------------------
+// 8b. US-011 (7.5 item 7): the animation player over the REAL lever prop -
+//    `lever.pull` -> `sprite.anim === 'pull'`, held on frame 4 (5 frames at
+//    12.5 fps = 0.4 s, `loop: false`) once `stepAnimations` has run 0.4 s.
+// ---------------------------------------------------------------------------
+{
+  const leverWorld2 = World.load({
+    name: 'tower_lever_anim_test', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: {},
+  }, assets, {});
+  const leverDef2 = towerDef.interactables.find((i) => i.id === 'lever');
+  const leverProp = leverWorld2.get('tower.lever');
+  ok('World.load auto-spawns the real lever prop, initial anim "idle" (variant, was legacy pose "up")',
+    !!leverProp && leverProp.getComponent('sprite').anim === 'idle', leverProp && JSON.stringify(leverProp.getComponent('sprite')));
+
+  leverWorld2.fireInteraction('lever.pull', { def: leverDef2, entity: leverProp, actor: leverWorld2.get('player') });
+  ok('lever.pull (real entity) sets sprite.anim to "pull"', leverProp.getComponent('sprite').anim === 'pull');
+
+  const dt2 = PHYSICS_DEFAULTS.fixedDt;
+  for (let i = 0; i < 24; i++) stepAnimations(leverWorld2, dt2 * 1000); // 24 steps @ 60 Hz = 0.4 s
+  const s2 = leverProp.getComponent('sprite');
+  ok('after 0.4 s the pull clip holds on frame 4, not playing', s2.anim === 'pull' && s2.frame === 4 && s2.playing === false, JSON.stringify(s2));
 }
 
 // ---------------------------------------------------------------------------

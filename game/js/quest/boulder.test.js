@@ -14,11 +14,20 @@ import {
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
 import towerMod from '../../../design/levels/tower.js';
+// US-011 (7.5 item 1): World.load's prop spawn throws on any
+// props[].model that isn't registered - every tower prop model must
+// load, same reasoning as game/index.html's script tags.
+import lanternMod from '../../../design/models/lantern.js';
+import leverMod from '../../../design/models/lever.js';
+import boulderMod from '../../../design/models/boulder.js';
+import rubbleMod from '../../../design/models/rubble.js';
+import wreckageMod from '../../../design/models/wreckage.js';
+import relayMod from '../../../design/models/relay.js';
 import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import worldMod from '../../../design/levels/world_m1.js';
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
 let pass = 0, fail = 0;
@@ -55,10 +64,12 @@ function tagAt(wx, wy) {
   return s ? { tag: s.tag, zone: s.zone } : null;
 }
 
-world.spawn('prop', { x: startX, y: startY, z: startZ, yawDeg: 0, pitchDeg: 0 },
-  { body: { radius: RADIUS, vx: 0, vy: 0, vz: 0, grounded: true }, roller: {} },
-  'tower.boulder');
+// US-011: `World.load` now spawns every level prop itself (7.5 item 1),
+// `tower.boulder` included (body + roller, `dynamic: true`) - no manual
+// spawn here any more (it would throw on the now-duplicate id).
 const boulder = world.entity('tower.boulder');
+ok('World.load auto-spawned tower.boulder with body+roller (US-011 prop spawn)',
+  !!boulder && boulder.components.body && boulder.components.roller && boulder.components.body.radius === RADIUS);
 
 const startTag = tagAt(startX, startY);
 ok('boulder start sits on the stairBase tag (tower.js position)', startTag && startTag.tag === 'stairBase', JSON.stringify(startTag));

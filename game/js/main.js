@@ -11,7 +11,7 @@ import {
   runShadeTest, runDetailShadeTest,
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
-  integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims,
+  integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
   GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, poisonAllCells, flickerStep,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
@@ -427,6 +427,11 @@ function runGame(mode) {
       // US-013 (7.4 fixed-step order item 3): after `integrate`, so the
       // player's this-step velocity is what a push is measured against.
       stepRollers(engine.world, dt, engine.physics);
+      // US-011 (7.5 item 3): the clip player, right after stepRollers (the
+      // boulder/lever's own gameplay-driven `fps:0` clips are untouched by
+      // this - it only advances timed clips like the burner flame / lantern
+      // glint / relay sparkle).
+      stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       // US-017 (7.4 fixed-step order item 4): after physics settles, before
       // interaction - an enter edge on the end trigger sets `quest.endT`.
@@ -737,6 +742,34 @@ function runGpuCompareDdaMode() {
     // `applySceneFade` oracle (now run after sprites too, item 2).
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
+    // US-011 (7.5 item 6): the REAL prop pool (`pool.collect(world)`, not
+    // `placeCompareSprites`) at poses that exercise the new tower props -
+    // lit burner + brass lamp + gondola + canvas heap + rubble near the wake
+    // spot, the lamp's empty-bracket variant, the lever mid-`pull`, the
+    // boulder mid-roll, and the relay at distance (half LOD). `worldM1` is
+    // the same live World every pose above already shares; `before` mutates
+    // sprite state directly (not through a behaviour, so it never touches
+    // `world.state`/once-flags) and runs right before that pose renders -
+    // placed last so it never affects the poses above.
+    // Local (17.5, 8.5) is open floor (tower.js row 8, col 17 = '.'); the
+    // original (13.5, 11.0)/(19.0, 11.5) guesses sat inside a `&` wall cell
+    // (row 11), which rendered 0 geometry samples (fixed after a `?gpucompare=1`
+    // FAIL: "kind 0.00%, matEq 0/0" - nothing was cast at all).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: crash room (burner + lamp + gondola + heap + rubble, near LOD)',
+      cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: 5 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: lamp empty (post pickup)',
+      cam: { x: 1497.5, y: 1027.0, z: engine.physics.eyeHeight, yawDeg: 15, pitchDeg: 10 }, real: true,
+      before: () => { const h = worldM1.get('tower.lantern'); if (h) h.play('empty'); } },
+    // Local (18.0, 9.3) is open floor (row 9, col 18 = '.'), facing east
+    // (yaw 90) toward the lever post at (19.25, 9.3).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: lever mid-pull',
+      cam: { x: 1498.0, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 }, real: true,
+      before: () => { const h = worldM1.get('tower.lever'); if (h) { h.play('pull', { restart: true }); h.stop(); h.data.components.sprite.frame = 2; } } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: boulder mid-roll',
+      cam: { x: 1493.0, y: 1023.0, z: engine.physics.eyeHeight, yawDeg: 100, pitchDeg: 0 }, real: true,
+      before: () => { const h = worldM1.get('tower.boulder'); if (h) h.data.components.sprite.frame = 4; } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
+      cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
   ];
 
   const fbCompare = {
@@ -752,7 +785,8 @@ function runGpuCompareDdaMode() {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name, cam, fade } of runs) {
+  for (const { world, lights, name, cam, fade, real, before } of runs) {
+    if (before) before();
     // Architect review 1 item 2: fixed `timeSec = 0` (14.3 item 9's parity
     // contract - determinism, same as the rest of this compare page) so
     // flicker/jitter are identical on both paths for this pose. Update
@@ -779,9 +813,13 @@ function runGpuCompareDdaMode() {
     // this pose once, before either path renders - the GPU sprite pass reads
     // the pool's projected texels inside rt.present() below, and the JS
     // `drawSprites` oracle reads the same pool after the CPU render.
-    sprites.pool.reset();
-    placeCompareSprites(cam, sprites.pool);
-    sprites.pool.project(cam, rt, ambientL);
+    // US-011 (7.5 item 6): `real` poses compare the actual prop pool of the
+    // current world (`pool.collect`), everything else keeps the original
+    // synthetic 3-prop set (`placeCompareSprites`) - both still go through
+    // the same `project()`, so both are still a real CPU/GPU parity check.
+    if (real) sprites.pool.collect(world);
+    else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
+    sprites.pool.project(cam, rt, lights || ambientL, world);
 
     poisonAllCells(rt.cells, n);
     fbCompare.gpuDda = true;
@@ -848,12 +886,13 @@ function runGpuCompareDdaMode() {
       pipeline2.bind(matTable, assets.palette);
       pipeline2.setSource('dda');
       infoRows = [];
-      for (const { world, lights, name, cam } of runs) {
+      for (const { world, lights, name, cam, real, before } of runs) {
+        if (before) before();
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
-        sprites.pool.reset();
-        placeCompareSprites(cam, sprites.pool);
-        sprites.pool.project(cam, rt, ambientL);
+        if (real) sprites.pool.collect(world);
+        else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
+        sprites.pool.project(cam, rt, lights || ambientL, world);
 
         poisonAllCells(rt.cells, n);
         fbCompare.gpuDda = true;

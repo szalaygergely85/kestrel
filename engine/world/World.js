@@ -62,6 +62,10 @@ export class World {
     this.structVersion = 0;
     this.nextId = 0;
     this.state = {};
+    // (US-011) `AssetRegistry` used to resolve `sprite.model`/`anim` for
+    // `EntityHandle.play`/`stepAnimations` and the prop spawn below. Set by
+    // `World.load`; stays null on a bare `new World()`.
+    this.assets = null;
     this.events = null;
     // (US-012) Built by `load()` from every placed structure's
     // `def.interactables`; a bare `new World()` (no `load`) gets an empty
@@ -108,6 +112,11 @@ export class World {
     const w = new World();
     w.events = opts.events || null;
     w.def = def;
+    // (US-011) Kept for `EntityHandle.play`/`stepAnimations`/the prop-spawn
+    // block below to resolve `sprite.model`/`anim` through - a bare `new
+    // World()` (no `load`) has `assets === null`, and every consumer treats
+    // that as "skip, warn, never throw" (7.5 item 3).
+    w.assets = assets;
     w.state = structuredClone(def.state || {});
 
     if (def.terrain) {
@@ -152,6 +161,69 @@ export class World {
       }
     }
     w.interaction = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 }; // reused (rule 9)
+
+    // (US-011, 7.5 item 1) Props from level data -> generic prop entities,
+    // right after `interactables`. A decal (`model` starting `decal:`,
+    // US-021) or a chain (`from`/`to`, e.g. tower.js's "chains") is
+    // level-authored, engine-agnostic visual data with no entity yet -
+    // skipped without a warning. A saved id already present in
+    // `def.entities` (the deserialize path) wins: the prop spawn is
+    // skipped here so the entities loop below restores its saved state
+    // instead of `spawn` throwing on a duplicate id; ids stay stable
+    // (`${structId}.${propId}`) either way.
+    {
+      const savedIds = new Set((def.entities || []).map((ed) => ed.id));
+      for (const s of w.structures) {
+        const sdef = s.level.def;
+        for (const p of (sdef && sdef.props) || []) {
+          if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
+          if (p.from || p.to) continue;
+          const entId = `${s.id}.${p.id}`;
+          if (savedIds.has(entId)) continue;
+          // Animation names (7.5 item 2): a string `variant` (or legacy
+          // `pose`) is the anim name; unknown -> the model's first anim,
+          // warned once. A numeric `variant` selects `model.variants[n]`,
+          // packed by the atlas as `${model}#${n}` (AssetRegistry).
+          const variantRaw = p.variant !== undefined ? p.variant : p.pose;
+          const modelKey = typeof variantRaw === 'number' ? `${p.model}#${variantRaw}` : p.model;
+          if (!assets.has('model', modelKey)) throw new Error(`World.load: prop "${entId}" references unknown model "${modelKey}"`);
+          const model = assets.model(modelKey);
+          const animNames = model.animations ? Object.keys(model.animations) : [];
+          let anim;
+          if (typeof variantRaw === 'string') {
+            if (model.animations && model.animations[variantRaw]) {
+              anim = variantRaw;
+            } else {
+              console.warn(`World.load: prop "${entId}" model "${modelKey}" has no animation "${variantRaw}" - using "${animNames[0]}"`);
+              anim = animNames[0];
+            }
+          } else {
+            anim = animNames[0];
+          }
+          const x = s.origin.x + p.x, y = s.origin.y + p.y;
+          let z;
+          if (p.z === 'ground') {
+            if (w.terrain) {
+              z = w.terrain.heightAt(x, y);
+            } else {
+              console.warn(`World.load: prop "${entId}" z: 'ground' but the world has no terrain - using 0`);
+              z = 0;
+            }
+          } else {
+            z = s.origin.z + (p.z || 0);
+          }
+          const comps = { sprite: { model: modelKey, anim } };
+          // `dynamic: true` (the boulder): body + roller, exactly as
+          // boulder.test.js built them by hand before this story (US-013
+          // tech note); `transform.z` is the feet position, same as `x`/`y`.
+          if (p.dynamic) {
+            comps.body = { radius: p.radius, vx: 0, vy: 0, vz: 0, grounded: true };
+            comps.roller = {};
+          }
+          w.spawn('prop', { x, y, z, yawDeg: p.facing || 0, pitchDeg: 0 }, comps, entId);
+        }
+      }
+    }
 
     // (US-017) `world.triggers`: every placed structure's `def.triggers`
     // (buildTriggers, engine/world/triggers.js). Rebuilt fresh on every

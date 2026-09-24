@@ -28,7 +28,10 @@ export function createSpriteSystem({ assets, rt, gpuPipeline }) {
     /** Per frame: collect + project; JS `drawSprites` unless the GPU pass composites them inside present(). */
     render(fb, world, cam) {
       pool.collect(world);
-      pool.project(cam, fb.rt, ambientL);
+      // US-011 (7.5 item 4): per-sprite light when a real LightSet is
+      // active (`fb.lights`, built by main.js's `buildLightSet`), else the
+      // old uniform ambient - same fallback `renderWorld`/`lightSurfaces` use.
+      pool.project(cam, fb.rt, fb.lights || ambientL, world);
       // US-017: hand the GPU sprite pass this frame's scene fade (mirrors
       // `fb.sceneFade`/`fb.fadeLut`, the CPU path's own inputs) - `active`
       // is checked below for the composite itself, but the fade fields must

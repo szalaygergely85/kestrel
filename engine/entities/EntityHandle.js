@@ -4,9 +4,9 @@
 // besides `id`/`world`/`alive`, so `deserialize` (a new World) makes every
 // old handle report `alive === false` for free.
 //
-// `play`/`stop`/`onAnimEnd` (US-011) and `stepAnimations` (US-011) still
-// throw - this story only lands the World/handle/event plumbing they will
-// sit on top of, per the tech notes' "keep throwing" list.
+// `play`/`stop`/`onAnimEnd` (US-011, docs/architecture.md 10.1) sit on top
+// of `animation.js`'s clip compiler/player.
+import { compileClip, warnUnknownAnimOnce } from './animation.js';
 
 let warnedDeadOnce = new WeakSet();
 
@@ -29,16 +29,50 @@ export class EntityHandle {
     }
   }
 
-  play(anim, opts) { // eslint-disable-line no-unused-vars
-    throw new Error('EntityHandle.play: not implemented (US-011)');
+  /**
+   * `components.sprite.{anim, frame:0, t:0, loop, speed, playing:true}`
+   * (10.1). Same anim already playing + `restart` false: no-op (safe to
+   * call every frame). Unknown anim (or no sprite/assets to resolve it):
+   * `console.error` once, no-op - never throws mid-step.
+   */
+  play(anim, opts = {}) {
+    if (!this.alive) { this._deadNoop('play'); return this; }
+    const d = this.data;
+    if (!d) { this._deadNoop('play'); return this; }
+    const sprite = d.components.sprite;
+    if (!sprite) { console.warn(`EntityHandle.play: entity "${this.id}" has no sprite component - ignored.`); return this; }
+    const assets = this.world.assets;
+    const model = assets && assets.has('model', sprite.model) ? assets.model(sprite.model) : null;
+    const animDef = model && model.animations && model.animations[anim];
+    if (!animDef) { warnUnknownAnimOnce(sprite.model, anim); return this; }
+    const restart = !!opts.restart;
+    if (!restart && sprite.anim === anim && sprite.playing) return this;
+    sprite.anim = anim;
+    sprite.frame = 0;
+    sprite.t = 0;
+    sprite.loop = opts.loop !== undefined ? opts.loop : !!animDef.loop;
+    sprite.speed = opts.speed !== undefined ? opts.speed : 1;
+    sprite.playing = true;
+    const clip = compileClip(animDef);
+    const tag0 = clip.tagCodes[0];
+    if (tag0) this.world._emit(this.id, tag0, undefined);
+    this.world.renderVersion++;
+    return this;
   }
 
+  /** `sprite.playing = false` (holds the current frame). */
   stop() {
-    throw new Error('EntityHandle.stop: not implemented (US-011)');
+    if (!this.alive) { this._deadNoop('stop'); return this; }
+    const d = this.data;
+    if (!d) { this._deadNoop('stop'); return this; }
+    if (d.components.sprite) d.components.sprite.playing = false;
+    this.world.renderVersion++;
+    return this;
   }
 
-  onAnimEnd(fn) { // eslint-disable-line no-unused-vars
-    throw new Error('EntityHandle.onAnimEnd: not implemented (US-011)');
+  /** Sugar for `on('animEnd', fn)`. */
+  onAnimEnd(fn) {
+    return this.on('animEnd', fn);
   }
 
   /** Writes `components.move` (steered by the M3 move system through `integrate`); warns once, not yet consumed. */
