@@ -373,7 +373,9 @@ updateInteraction(world, engine, eye: CameraPose, usePressed: boolean): void
   // fills world.interaction; on usePressed && target: fireInteraction(rec.name, {engine, def: rec.def, entity: world.get(rec.propId),
   // actor: world.get('player')}), used flag, emit 'interaction:fired' {key, name}, then the prop handle's 'interact' listeners (10.1).
 hasLineOfSight(world, ax, ay, az, bx, by, bz): boolean
-  // 0.1 m samples (<= 20 at 1.8 m): blocked if sectorAt is null/solid, z < floorH, or numeric ceilH < z. Pure; reused later by AI.
+  // 0.1 m samples (<= 20 at 1.8 m), WORLD heights: inside a structure footprint use its level sector with floorH/ceilH + origin.z
+  // (null sector or solid = blocked); outside any footprint use world.outsideSector(x, y) (terrain floor + sky, or solid with no terrain).
+  // Blocked if solid, z < floor, or numeric ceil < z. Pure, no allocation; reused later by AI. (Amended 2026-09-24, US-012 review.)
 ```
 UI: `engine/ui/crosshair.js` `drawCrosshair(rt, style, state: InteractionState)`. `style` = `uiStyle.crosshair` + `uiStyle.prompt`, passed in by the game (the engine never reads `ASSETS`).
 
