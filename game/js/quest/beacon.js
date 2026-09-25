@@ -34,6 +34,22 @@
 // sustained node graph to manage across a restart.
 import { playRelayHum } from '../audio/sfx.js';
 
+// BUG-PERF-001a fix (docs/backlog.md row 25w): `stepBeacon` used to
+// `.find()` `world.structures` AND `struct.level.def.lights` (two closures,
+// two O(n) scans) on EVERY fixed step from the moment the relay's wake
+// timer starts, and - since nothing ever stopped it - forever after too,
+// including the entire rest of the run once the relay is lit (the wake ->
+// awake clip-switch check right above it is the only part of this function
+// that legitimately needs to keep running every step past that point, and
+// it is already O(1) - two `getComponent` reads, no scan). Allocation rule
+// 9 (docs/architecture.md 7.6 item 9 / this file's own header) says a
+// per-step function must not allocate or scan - so the (structId, lightId)
+// -> growDur/targetIntensity lookup is now done ONCE (cached here by key,
+// invalidated only if the key OR the `World` instance changes - a restart
+// swaps in a brand-new `World`, so the cache still rebuilds itself exactly
+// once per run, never per step).
+let beaconCache = null; // { key: "<structId>.<lightId>", world, growDur, targetIntensity } - built once per key, never per step
+
 export function beaconLight(ctx) {
   const { world, def, entity } = ctx;
   if (entity) entity.play('wake');
@@ -126,11 +142,29 @@ export function stepBeacon(world, lights, dt, palette) {
   // (`relay`: aether teal, D-011) that gave the light its hue at load time,
   // never the legacy orange `palette.lights.beacon` fire preset the id
   // happens to share a name with.
-  const struct = world.structures.find((s) => s.id === structId);
-  const lightDef = struct && struct.level && struct.level.def && struct.level.def.lights
-    && struct.level.def.lights.find((l) => l.id === lightId);
-  const preset = palette && palette.lights && lightDef && palette.lights[lightDef.preset];
-  const growDur = (preset && preset.grow && typeof preset.grow.duration === 'number') ? preset.grow.duration : 1.0;
+  //
+  // BUG-PERF-001a: this used to `.find()` `world.structures` and
+  // `struct.level.def.lights` (two closures) right here, EVERY step -
+  // cached by `key` instead (built once, first time this key is seen).
+  // Invalidated by `world` identity too (not just `key`): a dev-only
+  // `?level=` swap could reuse the same structId/lightId strings against a
+  // DIFFERENT world's structures - restart (deserialize) keeps the same
+  // `World` instance's structures array reference is NOT guaranteed either,
+  // so `world` itself (not `world.structures`) is the safe invalidation key.
+  if (!beaconCache || beaconCache.key !== key || beaconCache.world !== world) {
+    const struct = world.structures.find((s) => s.id === structId);
+    const lightDef = struct && struct.level && struct.level.def && struct.level.def.lights
+      && struct.level.def.lights.find((l) => l.id === lightId);
+    const preset = palette && palette.lights && lightDef && palette.lights[lightDef.preset];
+    const growDur = (preset && preset.grow && typeof preset.grow.duration === 'number') ? preset.grow.duration : 1.0;
+    // `targetIntensity` is resolved ONCE too - `null` (not a number) means
+    // "no explicit preset intensity", the same fallback-to-current-value
+    // case the old per-step code had (dead in practice: every real preset
+    // sets `intensity`, design/palette.js's `relay` preset included).
+    const targetIntensity = (preset && typeof preset.intensity === 'number') ? preset.intensity : null;
+    beaconCache = { key, world, growDur, targetIntensity };
+  }
+  const { growDur, targetIntensity } = beaconCache;
   const frac = growDur > 0 ? Math.min(1, (t - startT) / growDur) : 1;
 
   // `add()` (`buildLightSet`, level load) already gave this handle its final
@@ -141,6 +175,6 @@ export function stepBeacon(world, lights, dt, palette) {
   // "radius 12 m target, minimum 8 m" is the FINAL, perf-tuned budget value,
   // not something that grows in).
   lights.setOn(handle, true);
-  const targetIntensity = (preset && typeof preset.intensity === 'number') ? preset.intensity : lights.baseIntensity[handle];
-  lights.baseIntensity[handle] = targetIntensity * frac;
+  const target = targetIntensity !== null ? targetIntensity : lights.baseIntensity[handle];
+  lights.baseIntensity[handle] = target * frac;
 }
