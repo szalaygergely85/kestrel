@@ -929,10 +929,16 @@ function runGpuCompareDdaMode() {
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: lamp empty (post pickup)',
       cam: { x: 1497.5, y: 1027.0, z: engine.physics.eyeHeight, yawDeg: 15, pitchDeg: 10 }, real: true,
       before: () => { const h = worldM1.get('tower.lantern'); if (h) h.play('empty'); } },
-    // Local (18.0, 9.3) is open floor (row 9, col 18 = '.'), facing east
-    // (yaw 90) toward the lever post at (19.25, 9.3).
+    // Programmer fix round 1 (2026-09-25): now that this pose actually feeds
+    // `compareVoxelPool.collect` (item 1 above), the old pitch 5 deg / 1.25 m
+    // framing pointed at the lever's ELEVATED niche (z 3.0-4.1) from eye
+    // height ~1.6 m and never actually hit it (k8 0/0 on both sides - the
+    // same vacuous-zero bug the architect's review 1 item 2 fixed for the
+    // synthetic `voxel lever *` poses). Reframed to the same 1 m / pitch 60
+    // geometry as "voxel lever near (1 m)" above (`LEVER_X - 1.0`, `LEVER_Y`,
+    // yaw 90 pitch 60), which that fix already proved sees the model.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: lever mid-pull',
-      cam: { x: 1498.0, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 }, real: true,
+      cam: { x: 1498.25, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 60 }, real: true,
       // US-041a: `animComponent` (sprite ?? voxel) instead of hard-coding
       // `.sprite` - design/models/voxel_props.js's own `attach()` (already
       // unconditional, runs at script-load time) puts `.voxel` on the live
@@ -942,7 +948,7 @@ function runGpuCompareDdaMode() {
       // registry.model(key).voxel exists") instead of `.sprite` as soon as
       // this story's World.js change lands - this pose must keep working
       // either way, exactly like play()/stop() already do.
-      before: () => { const h = worldM1.get('tower.lever'); if (h) { h.play('pull', { restart: true }); h.stop(); animComponent(h.data).frame = 2; } } },
+      before: () => { const h = worldM1.get('tower.lever'); if (h) { h.play('pull', { restart: true }); h.stop(); const c = animComponent(h.data); c.frame = 2; c.t = 45; } } },
     // Local (13.5, 4.5) is the open `o` hollow cell west of the stair base, looking at the
     // boulder (15.55, 3.5) at bearing 64 (architect review 1: the old (13.0, 5.0)/yaw 100 pose
     // had the boulder ~50 deg off-axis, outside the 37.5 deg half-FOV). Known FAIL: BUG-LIGHT-001
@@ -1089,8 +1095,21 @@ function runGpuCompareDdaMode() {
   let overallOk = true;
   let sampledOwnTextures = true;
   for (const { world, lights, name, cam, fade, dim, real, before } of runs) {
-    compareVoxelPool.beginFrame(); // US-040 step 5: clear the previous pose's instance queue first
-    if (before) before();
+    // Architect review 1 item 1 (fix round): `real` poses must feed the real
+    // entity's `components.voxel` through `collect(world, cam)` (it calls
+    // `beginFrame` itself), run AFTER `before()` so a pose that mutates the
+    // component (e.g. freezes a clip frame) is what gets queued - a bare
+    // `beginFrame()` + synthetic `pushInstance` twin left every real-prop
+    // pose's voxel entity un-queued (0 model cells on both sides, a vacuous
+    // pass). Synthetic poses are unchanged: `beginFrame()` then `before()`
+    // (which calls `pushInstance` itself).
+    if (real) {
+      if (before) before();
+      compareVoxelPool.collect(world, cam);
+    } else {
+      compareVoxelPool.beginFrame(); // US-040 step 5: clear the previous pose's instance queue first
+      if (before) before();
+    }
     compareVoxelPool.project(cam, rt); // poses + culls this pose's queued instance(s), if any (15.2 item 2)
     // US-015: per-pose scene dim - identity for every row except the "card
     // open" pose. Mirrors `sceneFade` just below: both the CPU oracle
@@ -1227,7 +1246,17 @@ function runGpuCompareDdaMode() {
       pipeline2.setSource('dda');
       infoRows = [];
       for (const { world, lights, name, cam, real, before } of runs) {
-        if (before) before();
+        // Architect review 1 item 1 (fix round): same real-pose voxel feed
+        // as the mandatory n=1 loop above - `collect(world, cam)` after
+        // `before()` for real poses, `beginFrame()` + `before()` for synthetic.
+        if (real) {
+          if (before) before();
+          compareVoxelPool.collect(world, cam);
+        } else {
+          compareVoxelPool.beginFrame();
+          if (before) before();
+        }
+        compareVoxelPool.project(cam, rt);
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
         if (real) sprites.pool.collect(world);

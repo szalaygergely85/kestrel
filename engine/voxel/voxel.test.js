@@ -161,34 +161,47 @@ expectError('mount: not an object', (() => { const d = clone(quadruped12); d.mou
     },
   };
   const mountPm = packVoxelModel(mountDef, () => 1);
-  const mountPose = new Float64Array(MAX_VOX_PARTS * 16);
   const out = new Float64Array(3);
+  const inst0 = { model: mountPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 };
+  const inst90 = { model: mountPm, x: 10, y: 20, z: 3, yawDeg: 90, clip: -1, frame: 0, tMs: 0 };
 
   // world = instPos + cellM * RzYaw * (at - anchor) for a rigid rest pose,
   // regardless of which part the mount names (both parts are untransformed
   // at rest) - the general formula the test below also uses at yaw 90.
-  computeVoxelPose(mountPm, { model: mountPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }, mountPose);
-  ok('voxelMountWorld: unknown mount name returns null', voxelMountWorld(mountPm, 'nope', out) === null);
-  voxelMountWorld(mountPm, 'origin', out);
+  // Architect review 1 item 2 (fix round): `voxelMountWorld(pm, inst, name,
+  // out)` computes its own pose (no caller-side `computeVoxelPose` call
+  // needed, and no dependency on which instance's pose is sitting in the
+  // shared scratch).
+  ok('voxelMountWorld: unknown mount name returns null', voxelMountWorld(mountPm, inst0, 'nope', out) === null);
+  voxelMountWorld(mountPm, inst0, 'origin', out);
   ok('voxelMountWorld: mount with no `part` (root), yaw 0, rest pose', approxEqual(out[0], -0.2) && approxEqual(out[1], -0.2) && approxEqual(out[2], 0), out.join(','));
-  voxelMountWorld(mountPm, 'tip', out);
+  voxelMountWorld(mountPm, inst0, 'tip', out);
   ok('voxelMountWorld: mount on a child part, yaw 0, rest pose', approxEqual(out[0], 0) && approxEqual(out[1], 0) && approxEqual(out[2], 0.4), out.join(','));
 
   // A non-trivial instance position + a yaw that is a multiple of 90 (exact
   // rotation, cosSinDeg's {0,+-1} branch - 15.1's own exactness rule) -
-  // `voxelMountWorld` must follow the SAME instance transform `computeVoxelPose`
-  // just computed, not just the rest-pose identity case above.
-  computeVoxelPose(mountPm, { model: mountPm, x: 10, y: 20, z: 3, yawDeg: 90, clip: -1, frame: 0, tMs: 0 }, mountPose);
-  voxelMountWorld(mountPm, 'tip', out);
+  // `voxelMountWorld` must follow `inst90`'s own transform.
+  voxelMountWorld(mountPm, inst90, 'tip', out);
   // Rz(90) rotates (0,0,4) to (0,0,4) (a pure-z vector is unaffected by a
   // yaw about z) - world = instPos + cellM*(0,0,4) = (10, 20, 3.4).
   ok('voxelMountWorld: follows the instance transform (position + yaw)', approxEqual(out[0], 10) && approxEqual(out[1], 20) && approxEqual(out[2], 3.4), out.join(','));
+
+  // Architect review 1 item 2 (blocking the old hidden-state contract): pose
+  // a DIFFERENT instance (a stand-in for `VoxelPool.project`'s "poses every
+  // instance in a row" or another consumer's own `computeVoxelPose` call)
+  // right before re-querying `inst0`'s mount - `voxelMountWorld` must still
+  // return `inst0`'s own answer, not whatever the interloper left in the
+  // shared `FORWARD` scratch.
+  const otherPose = new Float64Array(MAX_VOX_PARTS * 16);
+  computeVoxelPose(mountPm, { model: mountPm, x: 999, y: -999, z: 42, yawDeg: 45, clip: -1, frame: 0, tMs: 0 }, otherPose);
+  voxelMountWorld(mountPm, inst0, 'origin', out);
+  ok('voxelMountWorld: correct for inst0 even after a different instance was posed last', approxEqual(out[0], -0.2) && approxEqual(out[1], -0.2) && approxEqual(out[2], 0), out.join(','));
 
   // A model with no `mounts` at all - packVoxelModel still gives it an empty
   // `mounts` object (never undefined), so `voxelMountWorld` never throws.
   const noMountsPm = packVoxelModel(quadruped12, () => 1);
   ok('a model with no `mounts` in its def packs an empty mounts object', noMountsPm.mounts && Object.keys(noMountsPm.mounts).length === 0);
-  ok('voxelMountWorld on a model with no mounts returns null, does not throw', voxelMountWorld(noMountsPm, 'anything', out) === null);
+  ok('voxelMountWorld on a model with no mounts returns null, does not throw', voxelMountWorld(noMountsPm, { model: noMountsPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }, 'anything', out) === null);
 }
 
 // =============================================================================

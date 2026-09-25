@@ -165,6 +165,10 @@ export class VoxelPool {
       for (let i = 0; i < n; i++) this._queueEntity(ents[i]);
       return;
     }
+    // Architect review 1 item 3 (fix round): more than MAX_VOX_INSTANCES (16)
+    // voxel entities in the world - only the nearest 16 render this frame.
+    // Warn once (15.3 item 1's "warn once"), not every frame.
+    warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed MAX_VOX_INSTANCES (${MAX_VOX_INSTANCES}); only the nearest ${MAX_VOX_INSTANCES} render`);
     const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0, cz = cam ? cam.z : 0;
     const idx = this._nearIdx, dist = this._nearDist;
     let count = 0;

@@ -246,20 +246,29 @@ export function computeVoxelPose(pm, inst, out) {
   }
 }
 
+// Architect review 1 item 2 (fix round): `voxelMountWorld`'s own pose scratch
+// so it never depends on which instance the LAST `computeVoxelPose` call (by
+// anyone - `castModels`, `VoxelPool.project`, another `voxelMountWorld` call)
+// happened to pose. Module-level, fixed size (MAX_VOX_PARTS*PART_STRIDE), so
+// this stays zero-allocation after warm-up.
+const _mountPoseScratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+
 /**
- * US-041a (15.3 item 5): world position of `pm`'s mount `name` (validated at
- * load - VoxelModel.js's `validateVoxelModel` - so an unknown `part` can
- * never reach here), a light anchor / E-prompt point that follows its part's
- * CURRENT animated pose. Helper-only in M1 (no billboard attach - consumers
- * are US-042/US-022). Must be called right after `computeVoxelPose` for the
- * SAME instance (reads the shared `FORWARD` scratch that call just filled -
- * same "read it before doing anything else for this instance" convention
- * `castModels` itself follows, not per-instance state). Writes into `out`
- * (length >= 3); returns `out`, or null if `pm` has no mount named `name`.
+ * US-041a (15.3 item 5): world position of `pm`'s mount `name` for `inst`
+ * (validated at load - VoxelModel.js's `validateVoxelModel` - so an unknown
+ * `part` can never reach here), a light anchor / E-prompt point that follows
+ * its part's CURRENT animated pose (`inst.clip`/`frame`/`tMs`). Computes its
+ * own pose (`computeVoxelPose(pm, inst, _mountPoseScratch)`, a dedicated
+ * module scratch - never `castModels`'/`VoxelPool.project`'s pose buffer) so
+ * a consumer (US-042/US-022) may call this at any point in the frame,
+ * regardless of which instance was posed last; that call also refills the
+ * shared `FORWARD` scratch this function reads. Writes into `out` (length
+ * >= 3); returns `out`, or null if `pm` has no mount named `name`.
  */
-export function voxelMountWorld(pm, name, out) {
+export function voxelMountWorld(pm, inst, name, out) {
   const mount = pm.mounts && pm.mounts[name];
   if (!mount) return null;
+  computeVoxelPose(pm, inst, _mountPoseScratch);
   const at = mount.at;
   const fbase = mount.partIdx * 12;
   out[0] = FORWARD[fbase] * at[0] + FORWARD[fbase + 1] * at[1] + FORWARD[fbase + 2] * at[2] + FORWARD[fbase + 9];
