@@ -25,9 +25,10 @@ import {
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
-import { initAudio, toggleMute } from './audio/synth.js';
+import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
+import { loadSettings, saveSettings } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
 import { stepEnd, endFadeAmount } from './quest/end.js';
@@ -364,6 +365,7 @@ function runGame(mode) {
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
   initAudio();
+  setMuted(loadSettings().muted); // US-060: apply the remembered mute before any sound can play
 
   let simTime = 0;
   let look = null;
@@ -534,7 +536,7 @@ function runGame(mode) {
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
-    if (input.pressed('KeyN')) toggleMute();
+    if (input.pressed('KeyN')) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
     // cycles the 4 player grids; `engine.setGrid` no-ops off a gl2 backend.
