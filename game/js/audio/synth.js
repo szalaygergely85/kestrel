@@ -78,6 +78,12 @@ export function initAudio() {
 /** @returns {AudioContext|null} null until the first user gesture has armed it - every caller must treat that as "stay silent". */
 export function getCtx() { return ctx; }
 
+// US-020b: exposes the single shared master-gain node so a looping ambient
+// bed (game/js/audio/ambient.js) can connect straight into it and get
+// mute/MASTER_GAIN for free, same as every one-shot below - null until
+// getCtx() is non-null (same gating).
+export function getMaster() { return master; }
+
 export function isMuted() { return muted; }
 
 /** Ramps the master gain over ~30 ms (click-free) rather than a hard cut - still reads as "immediate" (AC). */

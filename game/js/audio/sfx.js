@@ -16,6 +16,9 @@
 //                          `body.landed`/the step's own x,y delta against
 //                          `body.prevX/prevY` (engine/physics/integrate.js).
 import { getCtx, isMuted, playNoiseBurst, playToneBurst } from './synth.js';
+// US-020b: burner crackle+hiss / breach wind - two looping ambient beds,
+// each driven by distance to a level-data position (game/js/audio/ambient.js).
+import { HISS_BED_PEAK, CRACKLE_BURST_PEAK, WIND_BED_PEAK, resetAmbientAudio, stepAmbientAudio } from './ambient.js';
 
 function canPlay() { return !!getCtx() && !isMuted(); }
 
@@ -51,6 +54,11 @@ export const GAIN_DESIGNS = {
   footstepLanding: [FOOTSTEP_LANDING_NOISE_PEAK, FOOTSTEP_LANDING_TONE_PEAK],
   footstepSwish: [FOOTSTEP_SWISH_NOISE_PEAK],
   relayHum: [RELAY_HUM_LOW_PEAK, RELAY_HUM_HIGH_PEAK],
+  // US-020b: both beds can sound at the same time as any one-shot above (and
+  // as each other) - neither belongs to a MUTUALLY_EXCLUSIVE_GROUPS pair, so
+  // the worst-case-sum test below always adds both in full.
+  burnerCrackle: [HISS_BED_PEAK, CRACKLE_BURST_PEAK],
+  breachWind: [WIND_BED_PEAK],
 };
 // Pairs of mutually-exclusive designs (never sound at the same instant as
 // each other) - the test picks the louder member of each pair, instead of
@@ -215,6 +223,7 @@ export function playRelayHum() {
 export function stepGameAudio(playerEntity) {
   if (playerEntity) stepFootstepAudio(playerEntity);
   stepBoulderAudio();
+  stepAmbientAudio(playerEntity); // US-020b: burner crackle+hiss / breach wind
 }
 
 // ---- combined reset (main.js's 'world:loaded' handler - runs on the first
@@ -224,4 +233,5 @@ export function resetGameAudio(world) {
   resetSectorAudio();
   resetFootstepAudio();
   resetBoulderAudio(world);
+  resetAmbientAudio(world); // US-020b: re-reads brazier/breach positions, tears down + will lazily rebuild the two loops
 }
