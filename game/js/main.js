@@ -141,9 +141,11 @@ const overlay = new DebugOverlay(document.body);
 // owns the player + overlay text - `runGame`'s own per-frame overlay.update()
 // and pass-timing flag both read this.
 let benchActive = false;
-// US-020a: arms the (one-shot) first-gesture listeners only - creates
-// nothing yet, so there is no autoplay warning and no sound before input.
-initAudio();
+// US-020a: `initAudio()` is called from `runGame()` itself (below), not
+// here at module scope - PC-B fix pass (optional item a): a keypress on a
+// pure dev/bench page that never calls `runGame` (e.g. `?shadetest=1`,
+// `?gpucompare=1`, `?flicker=1`, `?voxelbench=1`, `?bench=present`) has no
+// reason to arm a WebAudio context that will sit there silent and idle.
 
 // BUG-GPU-002 tooling fix: `?gpucompare=1`'s results depended on the real
 // browser window/canvas size, because `rt.pxCellW`/`rt.pxCellH` (real,
@@ -314,6 +316,9 @@ if (gpuBlocked) {
 
 function runGame(mode) {
   if (params.get('debug') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`
+  // US-020a: arms the (one-shot) first-gesture listeners only - creates
+  // nothing yet, so there is no autoplay warning and no sound before input.
+  initAudio();
 
   let simTime = 0;
   let look = null;

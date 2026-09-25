@@ -12,9 +12,16 @@ let master = null;
 let muted = false;
 let armed = false;
 
+// PC-B fix pass (PO headroom flag): several sounds' individual peak gains
+// already sum past 1.0 when they overlap (e.g. boulder thud's tone 0.8 +
+// noise 0.4, lever's 0.7 + 0.35) - a flat master ceiling well under full
+// scale is cheaper and safer than re-tuning every playToneBurst/playNoiseBurst
+// call site's peak, and still leaves plenty of headroom above the mix.
+const MASTER_GAIN = 0.5;
+
 function makeMaster() {
   master = ctx.createGain();
-  master.gain.value = muted ? 0 : 1;
+  master.gain.value = muted ? 0 : MASTER_GAIN;
   master.connect(ctx.destination);
 }
 
@@ -33,12 +40,30 @@ export function initAudio() {
     if (ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return; // no WebAudio support: every play* call below just no-ops (getCtx() stays null)
-    ctx = new AC();
+    // PC-B fix pass (owner "sounds feel delayed" report): `latencyHint:
+    // 'interactive'` is already the WebAudio spec default when omitted, so
+    // this isn't expected to change anything by itself - made explicit here
+    // so the shortest available output buffering is guaranteed rather than
+    // implicit, in case a given browser/OS combo ever picks a larger
+    // default. The actual play* calls (below) were already scheduling at
+    // `ctx.currentTime` with no added offset, and every trigger call site
+    // (lever.js, beacon.js, main.js's stepGameAudio) already fires
+    // synchronously with the causing action, not after an animation delay -
+    // no scheduling bug found there (see docs/backlog.md US-020a PC-B note).
+    ctx = new AC({ latencyHint: 'interactive' });
     makeMaster();
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   };
   window.addEventListener('keydown', unlock, true);
   window.addEventListener('pointerdown', unlock, true);
+  // PC-B fix pass (optional item b): a sound scheduled right before the tab
+  // is hidden would otherwise keep ringing in the background - suspend on
+  // hide, resume on visible again. No-op before `ctx` exists.
+  window.addEventListener('visibilitychange', () => {
+    if (!ctx) return;
+    if (document.hidden) ctx.suspend().catch(() => {});
+    else ctx.resume().catch(() => {});
+  });
 }
 
 /** @returns {AudioContext|null} null until the first user gesture has armed it - every caller must treat that as "stay silent". */
@@ -53,7 +78,7 @@ export function setMuted(m) {
   const t = ctx.currentTime;
   master.gain.cancelScheduledValues(t);
   master.gain.setValueAtTime(master.gain.value, t);
-  master.gain.linearRampToValueAtTime(muted ? 0 : 1, t + 0.03);
+  master.gain.linearRampToValueAtTime(muted ? 0 : MASTER_GAIN, t + 0.03);
 }
 
 export function toggleMute() { setMuted(!muted); }
