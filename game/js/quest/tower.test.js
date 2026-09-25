@@ -14,6 +14,7 @@ import {
 } from '../../../engine/index.js';
 import { registerQuestBehaviours, QUEST_BEHAVIOURS } from './index.js';
 import { stepBeacon } from './beacon.js';
+import { stepLantern } from './lantern.js';
 import { resetHints, currentHintId, stepHints, setPaletteColors } from './hints.js'; // BUG-OWN-005
 
 const noHintSignals = { walking: false, pointerUnlocked: false, moveOrLook: false, run: false, jump: false, pointerLocked: false, mPressed: false };
@@ -188,8 +189,17 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 
   // US-011 (7.5 item 1/tech note 5): `World.load` auto-spawns the real
   // lantern prop entity now - use it instead of a hand-rolled fake.
+  // OWN-REQ-006: default anim is now 'lit' (was 'unlit') - the lamp hangs lit by default.
   const lanternProp = lanternWorld.get('tower.lantern');
-  ok('World.load auto-spawns the real lantern prop entity', !!lanternProp && lanternProp.getComponent('sprite').model === 'lantern' && lanternProp.getComponent('sprite').anim === 'unlit');
+  ok('World.load auto-spawns the real lantern prop entity', !!lanternProp && lanternProp.getComponent('sprite').model === 'lantern' && lanternProp.getComponent('sprite').anim === 'lit');
+
+  // OWN-REQ-006: the flame prop and the hook light both start present/on.
+  const flameProp = lanternWorld.get('tower.lampFlame');
+  ok('World.load auto-spawns the lampFlame prop (OWN-REQ-006)', !!flameProp && flameProp.getComponent('sprite').model === 'lampFlame');
+  const hookLightDef = towerDef.lights.find((l) => l.id === 'lanternHook');
+  ok('the lanternHook light starts on in level data (OWN-REQ-006)', hookLightDef && hookLightDef.on === true && hookLightDef.preset === 'lanternHook');
+  ok('lantern interactable data: light "lanternHook", flameProp "lampFlame" (OWN-REQ-006)',
+    lanternDef.light === 'lanternHook' && lanternDef.flameProp === 'lampFlame');
 
   const r = lanternWorld.fireInteraction('lantern.take', { def: lanternDef, entity: lanternProp, actor: fakeActor });
   ok('lantern.take returns true (consumes the once-flag path)', r === true);
@@ -200,6 +210,24 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   // which is still written alongside it for readability).
   ok('lantern.take plays the empty-bracket animation, keeping model', propSprite.anim === 'empty' && propSprite.model === 'lantern');
   ok('lantern.take sets tower.lantern.taken', lanternWorld.state['tower.lantern.taken'] === true);
+
+  // OWN-REQ-006: the flame prop is removed immediately (same call, no gap frame) and the
+  // hook-light-off key is queued for `stepLantern` (the runtime LightSet is out of this ctx's reach).
+  ok('lantern.take removes the lampFlame prop entity', lanternWorld.get('tower.lampFlame') === null);
+  ok('lantern.take queues the hook light key for stepLantern', lanternWorld.state['tower.lantern.hookLightOff'] === 'tower.lanternHook');
+
+  const fakeLanternLights = {
+    key: ['tower.lanternHook'], count: 1, on: new Uint8Array([1]),
+    setOn(h, on) { this.on[h] = on ? 1 : 0; },
+  };
+  stepLantern(lanternWorld, fakeLanternLights);
+  ok('stepLantern switches the hook light off', fakeLanternLights.on[0] === 0);
+  ok('stepLantern clears its own state key once done', lanternWorld.state['tower.lantern.hookLightOff'] == null);
+
+  // A repeat call (e.g. a stray extra fixed step) is a cheap no-op, never throws, never re-toggles.
+  fakeLanternLights.on[0] = 1;
+  stepLantern(lanternWorld, fakeLanternLights);
+  ok('stepLantern is a no-op once its key is cleared', fakeLanternLights.on[0] === 1);
 
   // A second E on the same interactable: `updateInteraction` (not exercised
   // here directly - `interaction.test.js` covers the generic `once` gate)

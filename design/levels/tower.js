@@ -170,10 +170,13 @@
     ambient: { preset: 'ambient' },
     lights: [
       { id: 'brazier', preset: 'torch', x: 18.5, y: 6.5, z: 1.2, on: true },
-      { id: 'beacon', preset: 'relay', x: 9.0, y: 7.0, z: 7.7, on: false, note: 'D-011 levelPatch: relay preset (was "beacon"); off until US-022 wakes it, then grows over 1.0 s' }
+      { id: 'beacon', preset: 'relay', x: 9.0, y: 7.0, z: 7.7, on: false, note: 'D-011 levelPatch: relay preset (was "beacon"); off until US-022 wakes it, then grows over 1.0 s' },
+      // OWN-REQ-006 (PC-B programmer, 2026-09-25): the brass lamp's own hook light, ON by default (D1-D3,
+      // voxelModels.lantern.hookLit.light: world 19.719/6.5/1.519, rounded here to the level's 2-decimal convention).
+      // `lantern.take` (game/js/quest/lantern.js) switches this off at runtime via `stepLantern` (the interactable's
+      // `light: 'lanternHook'` field below names it) - `on: true` here is only the LOAD-time/restart default.
+      { id: 'lanternHook', preset: 'lanternHook', x: 19.72, y: 6.5, z: 1.52, on: true }
       // the carried lamp light is created by US-012 when the lamp is taken (preset 'lantern', carried).
-      // OWN-REQ-006 (PC-B programmer adds it together with lantern.take switching it off; data =
-      // voxelModels.lantern.hookLit): { id: 'lanternHook', preset: 'lanternHook', x: 19.72, y: 6.5, z: 1.52, on: true }
     ],
 
     // props: model = US-011 asset name; x,y,z = anchor (feet) position; facing = compass deg the front looks at
@@ -185,8 +188,15 @@
         note: 'the wake spot: torn envelope canvas (D-011 reskin of the straw pallet); walk-over (no collision)' },
       { id: 'brazier', model: 'burner', x: 18.5, y: 6.5, z: 0.5, facing: 180, collide: 'sector',
         note: 'the Kestrel\'s copper burner (D-011 reskin of the brazier), on the stone ring (*); torch light source' },
-      { id: 'lantern', model: 'lantern', variant: 'unlit', x: 19.9, y: 6.5, z: 1.3, facing: 270, hook: true,
-        interactable: 'lantern', note: 'the brass lamp on its own bracket (D-011), 1.4 m from the burner. OWN-REQ-006: -> variant lit (PC-B, with the hook light + lampFlame)' },
+      { id: 'lantern', model: 'lantern', variant: 'lit', x: 19.9, y: 6.5, z: 1.3, facing: 270, hook: true,
+        interactable: 'lantern', note: 'the brass lamp on its own bracket (D-011), 1.4 m from the burner. OWN-REQ-006: hangs LIT by ' +
+          'default (was unlit) - hook light `lights.lanternHook` above + the `lampFlame` prop below; `lantern.take` swaps both off' },
+      // OWN-REQ-006: the flame billboard inside the VOXEL lamp's cage (`lampFlame`, design/models/lantern.js) - the
+      // billboard fallback's own `lit` clip already draws its own flame glyphs, so this prop only matters while the
+      // voxel lantern (design/models/voxel_props.js) is active; harmless (just an extra, occluded flame) otherwise.
+      // World point = voxelModels.lantern.hookLit.flame.world (mounts posed at the placement above, yaw 270).
+      { id: 'lampFlame', model: 'lampFlame', variant: 'burn', x: 19.719, y: 6.5, z: 1.456, facing: 270,
+        note: 'OWN-REQ-006: the lamp\'s flame, removed by lantern.take (game/js/quest/lantern.js), respawned on restart with the level' },
       { id: 'boulder', model: 'boulder', x: 15.55, y: 3.5, z: 0.0, radius: 0.6, dynamic: true,
         note: 'on the stair base, 5 cm onto step 1: blocks the only stair entrance' },
       { id: 'lever', model: 'lever', variant: 'idle', x: 19.25, y: 9.3, z: 3.0, facing: 90,
@@ -222,7 +232,10 @@
     // `prop` links the sprite whose look changes; `target` names what the behaviour acts on, by tag, never by coordinates.
     interactables: [
       { id: 'lantern', prop: 'lantern', x: 19.9, y: 6.5, z: 1.1, radius: 1.8, prompt: '[E] Take lamp', interact: 'lantern.take',
-        once: true, note: 'US-012 (D-011 reskin: the brass lamp): hook sprite -> hookEmpty, attaches palette lights.lantern to the player' },
+        once: true, light: 'lanternHook', flameProp: 'lampFlame',
+        note: 'US-012 (D-011 reskin: the brass lamp): hook sprite -> empty, attaches palette lights.lantern to the player. ' +
+          'OWN-REQ-006: `light`/`flameProp` name the hook light (lights[]) and the flame prop (props[]) lantern.take switches ' +
+          'off/removes in the same call (same convention as the beacon interactable\'s own `light: \'beacon\'` field)' },
       { id: 'lever', prop: 'lever', x: 19.25, y: 9.3, z: 3.7, radius: 1.8, prompt: '[E] Pull lever', interact: 'lever.pull',
         once: true, target: { tag: 'grate' }, note: 'US-014: lever pull animation, then the grate sector dynamic ceiling opens' },
       { id: 'beacon', prop: 'beaconBowl', x: 9.0, y: 7.0, z: 7.2, radius: 1.8, prompt: '[E] Wake the relay', interact: 'beacon.light',
