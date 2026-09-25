@@ -1815,3 +1815,187 @@ gpucompare world poses (main.js `world_m1: ...` list, `timeSec = 0`): `terrainNe
 - **Manager:** none, inside D-026. (If the terrain pass misses 1.5 ms even at the fallback knobs: ESCALATE, n = 1 terrain pass vs a 160 m band cap.)
 
 **Do not:** stream or regenerate the band (US-026b); call analytic `heightAt/typeAt` from physics or the render loop once the band is ready; sample `NEARH` inside a structure bbox (skip intervals stay); put 130/170/0.5/0.012 in GLSL source or `engine/` code (recipe `nearLOD` -> registry -> uniforms); add wall sectors for the bound; hard-code the waystone position or the end yaw in `game/js/quest/*`; fire hints or callbacks from inside `integrate` (flags/triggers only); change `MAX_TERRAIN_STEPS` in one path only; key any hash on the screen cell.
+
+## 24. M1.5 editor, US-031 + US-032 (and the US-033/034 half they need): implementation notes (architect, 2026-09-25; D-010, D-023)
+
+Normative for `tools/editor/`. Section 20 is the outline; where they differ this section wins. Written so PC-B's sonnet programmers can build it without asking. Everything here uses **only what `engine/index.js` exports today** (checked against the file on 2026-09-25); 24.12 lists the engine changes that would make it nicer, each with the workaround the editor uses until PC-A lands them.
+
+### 24.1 Decisions (reasons inline)
+1. **The document is the content JSON, the World is a view.** The editor edits the plain def objects the registry hands out (`assets.level('tower')` / `assets.world('world_m1')` return the stored references, so an in-place edit is what `World.load` reads next) and rebuilds the `World` after every committed edit with `World.load(assets.world(worldId), assets, { events })`. Measured: world_m1 + tower = **~1 ms warm** (6.8 ms cold), `serialize` 0.5 ms. No incremental world patching, no second data model, and save = `stringifyContent` of the same object. Live drags write the entity transform directly (24.8) and commit one command on drop.
+2. **The editor never writes saves and never reads `WorldState`** (D-023 item 5). `serialize` is not used by the editor at all.
+3. **Undo = per-item before/after records**, not `serialize()` snapshots (D-010 said snapshots; records are smaller, testable in Node without a World, and say exactly what changed). 50 steps.
+4. **Coordinates:** level files hold **level-local** metres (`world - structure.origin`); `yawSteps` is always 0 in M1 (`placeStructure` throws otherwise), so local = world minus origin, no rotation. World files hold world metres. The panel shows world metres; the conversion lives in one helper (`toLocal/toWorld` in `doc.js`).
+5. **GPU path required**; the CPU path is allowed with `?gpu=0` (dev only; PC-B's headless browser passes need it). On the CPU path surface picking reads `fb.gbuf` instead of the GPU readback: same decode, different source.
+6. **Idle skip is the editor's frame budget:** a frame is rendered only when `dirty` is set (24.4). Idle JS <= 0.05 ms (one boolean test per rAF), idle GPU 0.
+
+### 24.2 Files
+```
+tools/editor/index.html      canvas (tabindex=0) + side panel DOM (toolbar, outliner, properties, status); classic <script> tags = game/index.html's design/ list (24.3)
+tools/editor/main.js         boot (24.3), engine.run wiring, key map, dirty flag, F3 overlay
+tools/editor/frame.js        the frame sequence (24.4) - the US-046 workaround; deleted when createWorldRenderer lands
+tools/editor/sprites.js      atlas + SpritePool + GpuSpritePass wiring (~25 lines, the tools-side twin of game/js/dev/spriteDev.js createSpriteSystem; the editor may NOT import game/)
+tools/editor/camera.js       CameraPose data + fly controls (24.5); pure updateCamera(pose, input, dt, opts)
+tools/editor/ray.js          cell <-> ray maths, planeId decode, ray/cylinder (24.6); pure, Node-tested
+tools/editor/pick.js         pickAt(col,row) over the readback + entity list (24.6); browser only
+tools/editor/doc.js          document model: files, envelopes, nextId minting, entity id <-> content item mapping, toLocal/toWorld (24.7)
+tools/editor/commands.js     edit records over doc (24.8, 24.9); pure, Node-tested
+tools/editor/undo.js         command stack (24.8); pure, Node-tested
+tools/editor/select.js       selection state + highlight/marker drawing into rt/ui (24.7)
+tools/editor/panel.js        DOM: outliner + property form generated from JSON (24.9)
+tools/editor/io.js           stringify/validate/save/load/play-test handoff (24.10, 24.11)
+tools/editor/*.test.mjs      Node tests (picked up by tools/run-tests.mjs)
+```
+Imports: `../../engine/index.js` only (check-deps rule 3 already covers `tools/**`). No `game/` import, no `design/` import (design stays classic scripts via tags). Add one check-deps rule (PC-B owns `tools/`): a file under `tools/editor/` must not import a path that resolves into `game/` (fixture in `check-deps.test.mjs`).
+
+### 24.3 Boot (main.js)
+```js
+const params = new URLSearchParams(location.search);
+const canvas = document.getElementById('screen'); canvas.tabIndex = 0;
+let bundle = null;
+try { bundle = await loadContentPack('../../content/manifest.json'); }           // after US-027b
+catch (e) { if (!(e instanceof ContentError) || !/HTTP 404/.test(e.message)) throw e; }  // before US-027b: no content/ yet
+const assets = bundle ? AssetRegistry.fromJSON(bundle, window.ASSETS) : AssetRegistry.fromGlobals(window.ASSETS);
+const doc = createDoc(assets, bundle, { worldId: params.get('world') || 'world_m1' });   // 24.7
+for (const name of validateBehaviours(World.load(assets.world(doc.worldId), assets, {}))) registerBehaviour(name, () => {}); // the editor runs no behaviours; this silences the "not registered" warning
+const engine = createEngine({ canvas, assets, cols: gridFromParam(params, 240), rays: 1, gpu: params.get('gpu') !== '0', inputTarget: canvas,
+  uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 } });
+```
+- **`inputTarget: canvas`** is mandatory: `Input` calls `preventDefault()` on `KeyW/A/S/D/E/M/N/Space/arrows/F3` for its target; on `window` that would eat typing in the panel's inputs. The canvas takes focus on `mousedown`; the key map in `main.js` ignores editor keys while `document.activeElement` is an `input/textarea/select`. Add `canvas.addEventListener('contextmenu', e => e.preventDefault())`.
+- **`rays: 1`**: the pick readback reads `texGI` (the resolved per-cell geometry); at n = 1 it is exactly the DDA output and the editor saves GPU time. (`?rays=2` allowed for a look check.)
+- **Script tags:** copy `game/index.html`'s `design/` list. After US-027b the level tags (`test_room.js`, `tower.js`, `world_m1.js`) are gone from both pages; `overworld_far.js` stays (code). If a level tag is still present while `content/` exists, `fromJSON` throws "dual source" - that is the intended signal to fix the tag list.
+- **US-027b not merged yet** (`content/` 404): the editor works on the `fromGlobals` defs. The doc layer wraps each def in the envelope itself (24.7), saving is **download-only** (never into `content/`; no dual source, D-023 item 4), and the status bar says `content: design/*.js (read-only source)`. Nothing else differs, so the flip needs no editor change.
+- Then: `frame.js` setup (24.4), `engine.loadWorld(assets.world(doc.worldId))`, camera from 24.5, `engine.run({ update, render })`.
+- **GPU gate:** if `rt.backend !== 'gl2'` or the pipeline is not `ready`, and `?gpu=0` is not set: show a DOM message "editor needs WebGL2 (use ?gpu=0 for the slow CPU path)" and do not start the loop.
+
+### 24.4 Frame (`frame.js`) - the US-046 workaround
+Setup mirrors `game/js/main.js` after the pipeline gate, minus quest UI: `matTable = bindShading(palette, detailPass, rt.pxCellH / rt.pxCellW)`, `gbuf = new GBuffer(cols, rows)`, `gpuPipeline = new GpuCellPipeline(rt, { rays: 1, terrainEnabled: true })` if `rt.backend === 'gl2' && detailPass && matTable.allV2 && candidate.ready`, then `bind(matTable, palette)`; `voxelPool = new VoxelPool(); voxelPool.bind(assets, matTable); gpuPipeline?.bindVoxels(voxelPool)`; `sprites = createEditorSprites({ assets, rt, gpuPipeline })`; `fb = { rt, depth: engine.depthBuffer, spans: engine.openSpans, palette, lights: null, light: makeLightBuffer(cols, rows), timeSec: 0, gbuf, matTable, detailPass, voxelPool, gpuDda: false, cpuLightCap: true, fadeLut: null, sceneFade: 1, terrainEnabled: true }`. On `world:loaded` (fired by `engine.loadWorld` and `engine.setWorld`): `for (s of world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }`, `lightSet = buildLightSet(world, palette)`, `dirty = true`. No live grid change in the editor (`?grid=` only), so no `grid:changed` handler.
+
+Per frame (`render(alpha)`), in this order:
+```
+if (!dirty) return;                       // idle skip: no ui.clear, no present - the canvas keeps the last image
+dirty = animate || (world.terrain && !world.terrain.farReady);   // keep going while the far bake or the anim clock runs
+ui.clear();
+if (world.terrain && !world.terrain.farReady) world.terrain.bakeFarStep(1);
+copy the camera pose into cam (reused object); fb.timeSec = animTime; fb.lights = lightSet;
+if (fb.lights) { syncEntityLights(fb.lights, world, palette, attachedLightPos, scratch3); fb.lights.update(fb.timeSec, world); }
+fb.gpuDda = !!gpuPipeline && rt.gpuActive;
+voxelPool.collect(world, cam); if (!fb.gpuDda) voxelPool.project(cam, rt);
+renderWorld(fb, world, cam);
+sprites.render(fb, world, cam);
+drawMarkers(rt, ...); drawSelection(rt, ...); drawText(ui, ...) status line   // 24.7 - JS-written rt cells survive the GPU pass (bg.a mask; the eyelid uses the same route)
+if (gpuPipeline) gpuPipeline.frame(fb, fb.lights || ambientL, cam, world);
+rt.present();
+copy pose into lastPresentedCam (the pick readback belongs to this pose)
+```
+`update(dt)` (fixed 60 Hz): camera step (sets `dirty` when the pose changed), key edits, `if (animate) { stepAnimations(world, dt*1000); stepSectorAnims(world, dt); animTime += dt; }`, `input.endFrame()`. **Animate** (toolbar toggle, default off) is the only thing that advances time; with it off, props hold their frame and torches do not flicker - that is what the idle-skip AC asks for. When US-046 lands, `frame.js` becomes `renderer.frame(world, cam, timeSec)` and the setup block goes away; keep it a self-contained module so the swap is one file.
+
+### 24.5 Fly-cam (`camera.js`)
+- `CameraPose = { x, y, z, yawDeg, pitchDeg }` (section 5 typedef; compass yaw 0 = N = -y, clockwise; z = eye). Saved as JSON in `localStorage['kestrel.editor.cam']` (debounced 500 ms) so a reload returns to the same view; the record also carries `fov: HFOV_DEG` for the AC's sake - the engine's FOV is a constant, the editor does not change it.
+- `updateCamera(pose, input, dt, { speed, lookDx, lookDy })` is pure over `pose`: forward `W/S` along `(sin yaw, -cos yaw)`, strafe `A/D` along `(-dirY, dirX)`, `R/F` = up/down (world z), `Shift` x4, `Ctrl` x0.25; `speed` default 6 m/s, mouse wheel x1.25 per notch (0.5 .. 200). Look: while **RMB** is held, `canvas.requestPointerLock()` on the right `mousedown`, `document.exitPointerLock()` on `mouseup`; deltas from `input.consumeMouseDelta()` at 0.15 deg/px. Fallback when pointer lock is refused: raw `movementX/Y` while RMB is down. Pitch clamp = `Camera.clampPitch` (+-35, the renderer's y-shear limit; do not bypass). Returns `true` if any field changed -> `dirty = true`.
+- No `PlayerLook` (it locks on left click, which the editor uses for picking), no `Player`, no physics, no gravity.
+- Start pose: tower placement `s` -> `x = origin.x + level.width/2`, `y = origin.y + level.height + 10`, `z = origin.z + 8`, `yawDeg = 0` (looking north at the tower), `pitchDeg = -15`; overridden by the saved pose.
+- `Home` = back to the start pose; `T` = teleport to the selected item (2 m south of it, looking at it).
+
+### 24.6 Picking (`ray.js` pure + `pick.js`)
+**Cursor -> cell.** `const r = canvas.getBoundingClientRect(); col = floor((ev.clientX - r.left) / r.width * rt.cols); row = floor((ev.clientY - r.top) / r.height * rt.rows)`; the canvas element covers exactly the glyph grid (RenderTarget fits it), so this is exact. The F3 line shows `cell (c,r)` and the hovered cell is outlined so the browser pass can verify it.
+
+**Cell -> ray** (the exact inverse of `sprites.js` `camBasis` + `project`, and of the casters' camera plane):
+```
+tanHalfHFov = tan(HFOV_DEG*pi/360); dirX = sin(yaw), dirY = -cos(yaw); rightX = -dirY, rightY = dirX
+screenAspect = (cols*rt.pxCellW)/(rows*rt.pxCellH); planeDistY = (rows/2)*screenAspect/tanHalfHFov
+horizonRow = rows/2 + tan(pitch)*planeDistY
+a  = (2*(col+0.5)/cols - 1)*tanHalfHFov            // lateral per metre of depth
+dz = (horizonRow - (row+0.5))/planeDistY           // rise per metre of depth
+point at perpendicular depth d:  x = cam.x + d*(dirX + rightX*a),  y = cam.y + d*(dirY + rightY*a),  z = cam.z + d*dz
+```
+"Depth" everywhere (DepthBuffer, GPU `Depth` texture, sprite depth test) is the **along-`dir` distance**, not the Euclidean one - use `d` directly. Node test: project a point with the sprite equations (`colCenter = (lateral/(depth*tanHalfHFov)+1)*cols/2`, `row = horizonRow - ((pz-cam.z)/depth)*planeDistY`), unproject with the formula above, expect the same point to 1e-9.
+
+**Surface under the cell (click only, never per frame).**
+- GPU path: `const { GI, Depth } = gpuPipeline.readbackGeometry()` right after the click (the last `present()`'s pose is `lastPresentedCam`; if the pose changed since, render one frame first). Index `i = row*cols + col`, same layout as `gbuf` (row 0 = top; `gpuCompare.js` compares the two 1:1). `planeId = GI[i*4] | 0`, `kind = GI[i*4+1] & 0xff`, `face = (GI[i*4+1] >>> 8) & 0xf`, `mat = GI[i*4+1] >>> 16`, `depth = f32(Depth[i*4])` (`new Float32Array(Depth.buffer, Depth.byteOffset + i*16, 1)[0]`, or a `DataView`). `readbackGeometry` is documented "test-only" because of the frame-loop stall rule; a click is not the frame loop. Cost at 240x90: 3 x 345 KB, 1-3 ms. This is the workaround for 24.12 item 1.
+- CPU path (`?gpu=0`): `fb.gbuf.kind[i] / planeId[i] / face[i]`, `fb.depth.depth[i]`.
+- Decode (`decodePlaneId(kind, planeId)` in `ray.js`): `kind === 0` -> sky (depth Infinity); `kind === KIND_TERRAIN (7)` -> terrain (`PLANEID_TERRAIN`); `kind === KIND_MODEL (8)` with `(planeId >>> 28) === 0xF` -> **voxel instance slot** `(planeId >>> 24) & 0xF` (the JS `castModels` and `voxel.frag.js` both pack it that way); else structure: `structSeq = (planeId >>> 28) & 7` -> `world.structures[structSeq]` (structSeq is the index into `world.structures`), `tag = (planeId >>> 24) & 0xF`. Do not decode the low 24 bits (their meaning differs per plane type); compute the hit point from `d` and take the level cell from it: `local = hit - origin`, `cell = floor(local)`; for wall kinds (1 wall, 2 step, 3 upper) use `d + 0.01` so the point lies inside the solid cell. Kind codes 1-6 are not exported yet (24.12 item 4): hard-code them in `ray.js` with the comment `// engine/render/GBuffer.js KIND_*`.
+- Voxel slot -> entity: `voxelPool.list[slot]` holds `x, y, z, modelKey`; match the entity with `components.voxel` whose `transform.x/y/z` are `===` (same numbers, same source); two coincident props -> first wins, `console.warn`.
+
+**Entities without an id channel (billboard sprites) and the no-GPU fallback:** `rayPickEntities(ray, entities, assets, maxDepth)` in `ray.js`: for every entity with `components.sprite` (radius `m.world.w/2`, height `m.world.h`, `m = assets.model(key)`; a numeric variant is the key `model#n`) or `components.voxel` (`v = assets.model(key).voxel`: radius `max(v.size[0], v.size[1]) * v.cellM / 2`, height `v.size[2] * v.cellM`; feet at `transform.z`), intersect the ray with the vertical cylinder around `(t.x, t.y)`: 2D quadratic in the horizontal ray components, then `t.z <= z(d) <= t.z + h`; keep the smallest `d` with `d < surfaceDepth - 0.05` (not behind the wall the surface pick found). Priority: voxel-slot hit (exact) > ray-cylinder entity hit > surface. Node test: hit, miss, occluded, nearest of two wins.
+
+**Markers (lights, triggers, interactables, player spawn)** are drawn by the editor (24.7) and picked by their marker cell: `pickMarkers(col, row)` returns the marker whose projected cell is within 1 cell and whose depth is < the surface depth at that cell.
+
+**Result:**
+```js
+/** @typedef {{ kind:'sky'|'terrain'|'surface'|'entity'|'marker', col:number, row:number, depth:number,
+ *   world:{x:number,y:number,z:number}|null, structureId:string|null, cell:{x:number,y:number}|null,
+ *   face:number, planeId:number, entityId:string|null, marker:{fileId:string,collection:string,id:string}|null }} PickResult */
+```
+Hover picking is **off** (a readback per mousemove would stall); the only per-frame cursor work is the hovered-cell outline.
+
+### 24.7 Document model, selection, markers (`doc.js`, `select.js`)
+- `doc.files: Map<fileKey, { kind:'level'|'world', id, def, meta:{ schema, nextId, url|null }, dirty:boolean, handle:FileSystemFileHandle|null }>`, `fileKey = 'level/tower'`. With a bundle, `meta` comes from `bundle.meta[kind][id]`; with `fromGlobals`, `schema = LATEST_SCHEMA[kind]`, `nextId = 1 + max n over ids matching /_(\d+)$/ in ID_COLLECTIONS[kind]`, else 1 (21.9). `def` **is** the registry's object (`assets.level(id)`), never a copy.
+- `mintId(file, type)` -> `` `${type}_${file.meta.nextId++}` `` (21.3; never reused; `nextId` is written back on save).
+- **Selection item** = `{ fileId, collection, id }` for content items (`level/tower`, `props`, `brazier`) or `{ fileId:'world/world_m1', collection:'entities', id }`. From a picked entity id: for each `world.structures[k]`, if `entityId.startsWith(s.id + '.')` -> file `level/${s.level.name}`, collection `props`, id = the rest (local ids never contain `.` or `/`, 21.3); otherwise a world entity (`player`, `farTower`). Reverse (item -> runtime): `${structureId}.${propId}` for props; lights/triggers/interactables have no entity (they live in `lightSet` / `world.triggers` / `world.interactables`) and are addressed by content id only.
+- `player` is selectable, movable only if it has a `transform`; a `spawn: { structure, from: 'start' }` entry is read-only in M1.5 (the panel says so). `farTower` (billboard, inline `x/y/z`) is movable.
+- **Highlight** (`select.js`, drawn into `rt` cells before `present()`, so it works on both paths): the selected entity's screen rect from the 24.6 projection (`world.w/h` for sprites, the voxel box for voxels), drawn as a bracket of `+ - |` in `palette.colors[palette.ui.crosshairActive]` on the corners and edges just **outside** the rect (the GPU sprite pass composites after the cell pass and would overwrite cells inside). **Markers** (toggle `M`, default on): `*` at each light (fg = the preset's colour, dim when `on: false`), `o` at each interactable centre plus its radius ring at floor height every 45 deg, trigger cells / circle outline as `.` at `zMin ?? floor`, `@` at the player spawn. Markers are editor overlays drawn without a depth test (they are meant to show through walls); cap 200 cells per frame. A selected marker uses the highlight colour.
+- **Outliner** (DOM list): every item of every file grouped by collection, with id and model/preset/type; click = select, double-click = teleport. It is the fallback when picking is off and the only way to select `triggers` with `cells`.
+
+### 24.8 Edits (`commands.js`, `undo.js`) - US-032
+Record shape (pure data; `applyEdit(doc, rec)` and `invert(rec)` are pure functions over `doc`):
+```js
+/** @typedef {{ label:string, fileId:string, collection:string, id:string, index:number|null, before:Object|null, after:Object|null }} EditRecord */
+// before==null -> insert `after` at index (append when null); after==null -> remove (index remembered); else replace the item's fields in place
+// invert(rec) swaps before/after (undo); before/after are structuredClone'd once when the record is made
+```
+- `undo.js`: `createStack(cap = 50)` with `push(rec)`, `undo() -> rec|null`, `redo() -> rec|null`, `canUndo/canRedo`, `clear()`; a `push` after `undo` drops the redo tail; the oldest record falls off at `cap`. Pure, Node-tested.
+- The one mutation path in `main.js`: `commit(rec) { applyEdit(doc, rec); stack.push(rec); file.dirty = true; rebuild(); }`; undo/redo call `applyEdit(doc, invert(rec))` / `applyEdit(doc, rec)` then the same `rebuild()`. `rebuild()` = `engine.setWorld(World.load(assets.world(doc.worldId), assets, { events: engine.events }))` (emits `world:loaded` -> 24.4 rebinds) + re-resolve the selection by id (old handles are dead) + `dirty = true`. Budget <= 5 ms per commit.
+- **Move (nudge):** arrows = world +-x/+-y, `PgUp/PgDn` = +-z, step = the snap (`[`/`]` cycle 0.05 / 0.25 / 0.5 / 1 m, default 0.25, shown in the status bar). `after` = the item with `x/y/z` set to `round((world +- step) / snap) * snap`, converted to local; `-0` normalised to `0`.
+- **Move (drag):** LMB down on the selected entity starts a drag on the horizontal plane `z = t.z`: per mousemove `d = (t.z - cam.z) / dz` (skip when `|dz| < 1e-4` or `d <= 0`), new `x/y` from the ray at `d`, snapped; written straight into `handle.data.transform` plus `world.renderVersion++` (the sprite/voxel pools cache the entity list by `renderVersion` and read transforms live) and `dirty = true`; **no rebuild per frame**. On mouseup: one `EditRecord` (before = the def item, after = the item with the final local x/y). `Esc` during a drag restores the start transform (no record).
+- **Drop to floor `G`:** `z = world.floorAt(x, y)` (structure floor incl. `origin.z`, else terrain height; `null` = leave it); props whose `z` is the string `'ground'` are left alone (the panel shows it).
+- **Yaw `Q/E`:** +-45 deg on `facing` (props) / `yawDeg` (world entities), normalised to `[0, 360)`.
+- **Delete `Delete`/`Backspace`:** record with `after: null`, `index` = the item's array index so undo reinserts at the same place (array order is runtime-visible, 21.6). Deleting a prop that interactables reference via `prop`/`flameProp` is **refused** with a status message naming the referrers (the loader would reject the file); the user deletes those first.
+- Lights, triggers, interactables use the same records (their collections in the level file); a moved light shows up after `rebuild()` because `buildLightSet` runs on `world:loaded`.
+
+### 24.9 Place + property panel (`panel.js`, `commands.js`) - US-033 scope, same notes
+- **Place:** `1` prop, `2` light, `3` trigger, `4` interactable, then click a surface (the pick's `world` point; a `cell` inside a structure -> that level file; outside a structure -> the world file's `entities` for props, refused for the level-only kinds). Defaults: prop `{ id: mintId('prop'), model: <picker>, x, y, z, facing: 0 }` (model picker = `assets.keys('model')`; voxel vs billboard is decided by `World.load` from the model, not by the editor); light `{ id: mintId('light'), preset: 'torch', x, y, z: z + 1.2, on: true }` (presets = `Object.keys(palette.lights)` minus `ambient`/`sun`; refuse the 17th light, `MAX_LIGHTS` = 16); trigger `{ id: mintId('trigger'), type: 'zone', shape: 'circle', x, y, r: 1.5, zMin: z - 0.5, once: false, trigger: '' }`; interactable `{ id: mintId('interactable'), x, y, z, radius: 1.5, prompt: '[E] Use', interact: '' }`. Every placement is one `EditRecord` (before = null).
+- **Property panel:** a form generated from the item's JSON: `number` -> `<input type=number step=snap>`, `string` -> text, `boolean` -> checkbox, arrays/objects (`cells`, `requires`, `target`, `walkTo`) -> a JSON `<textarea>` parsed on blur. Behaviour fields (`interact`, `trigger`) are a `<datalist>` of every name found in the loaded content (no public "list registered behaviours" yet, 24.12 item 5) plus free text. Each committed field = one `EditRecord` (before/after = the whole item). Validation before commit, shown inline, never committed when invalid: finite numbers only, id matches `^[A-Za-z][A-Za-z0-9_-]*$` and is unique in its collection, `model` passes `assets.has('model', key)`, `preset` in `palette.lights`, `r > 0`, `zMin < zMax` when both exist, and the file must still pass `validateDoc` (24.10). An `id` change rewrites `REF_FIELDS` referrers in the same file inside the same record.
+
+### 24.10 Save / load (`io.js`) - US-034 scope, same notes
+- **Serialise one file:** `toFileObject(file) = { kind, schema, id, nextId, ...def }` -> `stringifyContent(obj)` (21.6: byte-stable, key order from `KEY_ORDER`, arrays in place). Node test: `stringify(parse(stringify(x))) === stringify(x)` on the tower def after a scripted edit sequence, and undo-to-start gives bytes identical to the untouched def.
+- **Validate before save** with the engine loader, no new validator: `validateDoc(files) -> Promise<ContentError|null>` builds an in-memory pack (`manifest.json` = `{ kind:'manifest', schema:1, id:'editor', contentVersion:0, files:[...] }` plus one entry per file) and calls `loadContentPack('http://editor.invalid/manifest.json', { fetchText: (u) => mem.has(path(u)) ? Promise.resolve(mem.get(path(u))) : Promise.reject(new Error('HTTP 404')) })` with `path(u) = new URL(u).pathname.slice(1)`. Cross-file refs (`structures[].level`, `world.terrain`) are checked by a `World.load` into a throw-away world. The Save button is disabled with the error text while invalid.
+- **Save (Ctrl+S / button):** for every dirty file: if `window.showSaveFilePicker` exists and the file has no handle -> `showSaveFilePicker({ suggestedName: `${id}.${kind}.json`, types: [{ description: 'Kestrel content', accept: { 'application/json': ['.json'] } }] })`, keep the handle on the file for the session (IndexedDB persistence of handles is optional polish); write with `handle.createWritable()` -> `write(text)` -> `close()`. Fallback (no FSA API, or the picker was cancelled): `Blob` + `<a download>`. Before US-027b (24.3): download only. After a successful write `dirty = false`. `beforeunload` warns while any file is dirty.
+- **Load:** `showOpenFilePicker` (or `<input type=file>`), `JSON.parse`, `migrateContent(kind, obj, name)`, then `validateDoc` with this file substituted; on success replace the registry object **in place** (`for (k of Object.keys(target)) delete target[k]; Object.assign(target, defWithoutEnvelope)`) so every reference stays valid (workaround for 24.12 item 6), update `meta`, clear the undo stack, `rebuild()`.
+- The editor edits `world_m1` + `tower` (+ `test_room` via `?world=`); `overworld_far` (terrain) is code and is never a document.
+
+### 24.11 Play-test (`P` / button) and the game hook
+- The editor writes `localStorage['kestrel.playtest'] = JSON.stringify({ savedAt: Date.now(), world: doc.worldId, files: { 'level/tower': def, 'world/world_m1': def } })` (defs **without** envelope, every document of the loaded world, dirty or not) and opens `../../game/index.html?playtest=1&world=<worldId>` in a new tab. No server write, works before saving, survives the tab boundary (sessionStorage would not, reliably).
+- **Game hook (PC-B may add it; `game/js/main.js` bootstrap area only, <= 10 lines + one small module):** `main.js` has no `?world=` today; it reads `assets.world('world_m1')` or builds an ad-hoc world for `?level=`. Add `game/js/dev/playtest.js` exporting `applyPlaytestOverlay(target)`: when `params.get('playtest') === '1'` it reads the key (through `game/js/platform/` once US-060 has landed - add `readPlaytest()` there so US-060's "no direct localStorage" grep stays true; until then a direct read inside `dev/playtest.js`) and does `target.levels[id] = def` / `target.worlds[id] = def` per file. Call it on `window.ASSETS` right before `AssetRegistry.fromGlobals` (today) or on `bundle` right before `AssetRegistry.fromJSON` (after US-027b). Then `assets.world(params.get('world') || 'world_m1')` at the existing `assets.world('world_m1')` line. The game persists nothing; the key stays so a reload replays the same edit. `?gpucompare=1` and the bench never set `playtest`, so parity is untouched.
+
+### 24.12 Engine changes that would make this nicer (PC-A; the editor does not wait for any of them)
+1. `gpuPipeline.pickCell(col, row) -> { planeId, kind, face, mat, depth }` (1-pixel `readPixels` of GI + Depth). Workaround: `readbackGeometry()` on click (24.6).
+2. Entity id channel for sprites, and `entityId` on `voxelPool.list[]` entries. Workaround: ray/cylinder + voxel slot matching (24.6).
+3. `createWorldRenderer` (US-046) / `engine/dev.js` (US-047). Workaround: `frame.js` + `sprites.js` (24.4); nothing the editor imports is missing from `engine/index.js` today.
+4. Export `KIND_NONE..KIND_CEIL` from `engine/index.js` (only `KIND_TERRAIN`/`KIND_MODEL` are). Workaround: numeric constants in `ray.js`.
+5. `listBehaviours() -> string[]` in `engine/core/behaviours.js`. Workaround: names harvested from content (24.9).
+6. `AssetRegistry.replace(kind, key, def)`. Workaround: in-place object replace (24.10).
+7. `World.placeStructure` with `yawSteps`, `moveStructure/removeStructure`: out of M1.5 (D-010); structures are read-only in the editor.
+Route: the main session opens one PC-A row "US-031-engine: pickCell + id channel + KIND exports + listBehaviours + AssetRegistry.replace" when PC-A has capacity; the editor swaps its workarounds file by file.
+
+### 24.13 Build order (each step ends with a green Node test where one is listed; one browser pass per story on a 95xx port, stop only that server)
+**US-031 (viewer):**
+- S1 `index.html` + `main.js` boot (24.3) with the content fallback; the tower shows from the start pose on one rendered frame. Test `doc.test.mjs`: envelope/nextId from a `fromGlobals` def follows 21.9 (nextId 1 for the tower today), `fileKey` mapping, `toLocal/toWorld` round trip.
+- S2 `frame.js` + `sprites.js` (24.4): the tower renders like the game at the same pose (eyeball: sprites, voxels, lights, terrain, far tower).
+- S3 `camera.js` (24.5) + `camera.test.mjs`: WASD/RF vectors for yaw 0/90/180/270, Shift/Ctrl factors, pitch clamp, `changed` false when nothing is pressed.
+- S4 Idle skip + Animate toggle; F3 overlay (`DebugOverlay`) with fps, frame ms, a `presented N` counter, cell under cursor. Probe: mouse still and Animate off -> `presented` stops increasing; the far bake still finishes (terrain fills in) and then stops.
+- S5 Saved camera pose, `Home`, GPU gate message, `?gpu=0` renders.
+- S6 Browser pass: `http://localhost:95xx/tools/editor/index.html` - fly around and inside the tower at 60 fps (F3), idle = 0 presents, `?grid=320x120` works, console clean. `node tools/run-tests.mjs` + `node tools/check-deps.mjs` green. Status -> `po-review`.
+
+**US-032 (pick/select/move/delete):**
+- S1 `ray.js` (24.6) + `ray.test.mjs`: unproject/project round trip; `decodePlaneId` for structure/terrain/voxel/sky; ray-cylinder hit/miss/occluded/nearest.
+- S2 `pick.js` on the GPU readback and the CPU gbuf; the status bar prints the `PickResult` on click; hovered-cell outline. Probe: clicking a tower wall reports `structureId 'tower'`, a plausible `cell`, and a `depth` within 2 % of the distance read off the pose.
+- S3 `doc.js` mapping + `select.js` highlight/markers + outliner (24.7). Click a prop -> highlighted and selected in the outliner, and vice versa.
+- S4 `commands.js` + `undo.js` (24.8) + `commands.test.mjs` / `undo.test.mjs`: nudge/yaw/drop/delete/insert records over a fixture level def; undo returns a deep-equal def; delete reinserts at the same index; cap 50 drops the oldest; push after undo clears redo; delete with referrers is refused.
+- S5 Wire nudge/drag/yaw/drop/delete + `rebuild()`; drag = live transform, one record on drop; `Esc` cancels a drag.
+- S6 Browser pass: select the brazier, drag it 2 m, undo, redo, yaw the lever, drop a lantern to the floor, delete a rubble prop and undo it; nothing throws, `rebuild` <= 5 ms in F3, `?gpu=0` picking agrees with the GPU path on 3 clicks. Status -> `po-review`.
+
+**US-033/034 (if the weekend allows, same notes):** place + panel (24.9; tests: validation table, id rename rewrites referrers) -> save/load (24.10; tests: byte-stable round trip, `validateDoc` catches a broken ref) -> play-test hook (24.11; browser: edit, `P`, the game shows the edit).
+
+### 24.14 Budgets and do-nots
+- Idle: one boolean per rAF, no `ui.clear`, no `present`, no readback. Active frame: the game's budgets (JS <= 8 ms, GPU <= 4 ms at 240x90). Click pick <= 5 ms. `rebuild()` <= 5 ms. Per-frame allocations only in `panel.js` (DOM); `frame.js`, `camera.js`, `select.js` reuse their scratch objects (rule 9).
+- **Do not:** import `game/` or deep `engine/**` paths; call `readbackGeometry` outside a click; run `World.load` per frame or per mousemove; keep a second copy of any def (the registry object is the document); write into `content/` before US-027b is merged; write saves (`WorldState`) from the editor; sort arrays or reorder collections; mint ids any other way than `nextId++`; change `HFOV_DEG` or bypass `Camera.clampPitch`; use `PlayerLook` or `Player`; `preventDefault` keys while a panel input has focus; touch `design/` files.
