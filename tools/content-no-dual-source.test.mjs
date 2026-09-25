@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'content']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'content']);
 const EXTS = new Set(['.js', '.mjs', '.html']);
 
 // The three flipped defs (docs/architecture.md 21.9) - a direct assignment
