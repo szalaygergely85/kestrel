@@ -49,6 +49,13 @@ export class Terrain {
     this.farReady = false;
     this.farVersion = 0;
     this._bakeRow = 0;
+    // US-018 follow-up: column offset within `_bakeRow` - `bakeFarStep`
+    // checks the time budget every `BAKE_CHECK_COLS` columns, not just once
+    // per full row, so one expensive/wide row can't blow past msBudget (a
+    // row here is 256 cells x heightAt+typeAt each, observed ~4 ms on the
+    // owner's real GPU right after load/teleport with the old row-granular
+    // check).
+    this._bakeCol = 0;
     // Reused "grid" view object handed to `recipe.util.gridHeight` (no
     // per-call allocation) - farH is the whole 2048x2048 m map at (0,0).
     this._farGrid = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farH };
@@ -130,26 +137,41 @@ export class Terrain {
     this.farH.set(G.height);
     this.farType.set(G.type);
     this._bakeRow = this.mapH;
+    this._bakeCol = 0;
     this._finishBake();
   }
 
   /**
    * Advances the far bake by at most `msBudget` ms of wall-clock time,
-   * row-granular (resumable) - call every frame from the loop's update
-   * until `farReady`. A no-op once `farReady`.
+   * column-granular within each row (resumable) - call every frame from the
+   * render loop until `farReady`. A no-op once `farReady`. US-018 follow-up:
+   * the time check used to happen only once per full row, so a single wide
+   * or expensive row could overrun msBudget by itself (observed ~4 ms on a
+   * 2 ms budget on the owner's real GPU); it now checks every
+   * `BAKE_CHECK_COLS` cells so the overrun is bounded to a small column
+   * chunk, not a whole row.
    */
   bakeFarStep(msBudget = 2) {
     if (this.farReady) return;
     const t0 = now();
     const w = this.mapW, cell = this.mapCell;
-    while (this._bakeRow < this.mapH) {
+    const BAKE_CHECK_COLS = 4;
+    let col = this._bakeCol;
+    outer: while (this._bakeRow < this.mapH) {
       const y = (this._bakeRow + 0.5) * cell;
       const rowBase = this._bakeRow * w;
-      for (let i = 0; i < w; i++) {
-        const x = (i + 0.5) * cell;
-        this.farH[rowBase + i] = this.util.heightAt(x, y);
-        this.farType[rowBase + i] = this.util.typeAt(x, y);
+      while (col < w) {
+        const x = (col + 0.5) * cell;
+        this.farH[rowBase + col] = this.util.heightAt(x, y);
+        this.farType[rowBase + col] = this.util.typeAt(x, y);
+        col++;
+        if ((col & (BAKE_CHECK_COLS - 1)) === 0 && now() - t0 >= msBudget) {
+          this._bakeCol = col;
+          break outer;
+        }
       }
+      col = 0;
+      this._bakeCol = 0;
       this._bakeRow++;
       if (now() - t0 >= msBudget) break;
     }
@@ -172,7 +194,7 @@ export class Terrain {
 
   /** Bake progress in [0, 1]. */
   get bakeProgress() {
-    return this.mapH === 0 ? 1 : this._bakeRow / this.mapH;
+    return this.mapH === 0 ? 1 : (this._bakeRow + this._bakeCol / this.mapW) / this.mapH;
   }
 
   /** FNV-1a over `Uint32Array(farH.buffer)` then `farType` (bit-identical bake check). */

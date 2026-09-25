@@ -696,7 +696,11 @@ function runGame(mode) {
     // (never read by the sim), so it runs once per RENDERED frame - it used
     // to sit in update(), i.e. 2 ms per fixed step, 4-10 ms on a catch-up
     // frame with 2-5 steps (US-018 spike hunt).
-    if (mode === 'world' && engine.world.terrain) engine.world.terrain.bakeFarStep(2);
+    // US-018 follow-up: tightened from 2ms - Terrain.bakeFarStep is now
+    // column-granular (checks the time budget every few cells, not once per
+    // row), so a 1 ms target actually holds even on the first frame after
+    // load/teleport instead of overrunning on one expensive row.
+    if (mode === 'world' && engine.world.terrain) engine.world.terrain.bakeFarStep(1);
     lap(SEC.bake);
 
     if (mode === 'glyphs') {
