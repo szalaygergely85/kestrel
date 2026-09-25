@@ -522,9 +522,20 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
 - **Preview:** `preview/voxel-props.html` (show: waystone). It now also loads `levels/overworld_far.js`. Entries may carry `fog` (shade fog preset) and `extraViews` (fixed in-game views). Waystone checks: size / clip / attach, mark (emissive range, flush front plane, dark cut edge, ring size at 20 m), value ladder vs grass, worldPatch = placement, terrain type / slope at the spot, foot vs terrain, facing the breach (engine pose), distance + bearing vs the signal tower, the sightline from the breach, trigger reach, the 1 m end walk, the end camera at walkTo, bounds.
 - **Engine notes (for the architect / PO):** (1) voxel cells outdoors need the far fog (`fog.far`), not the interior fog, or the stone vanishes at 60 m; (2) the voxel pass must depth-test against terrain cells; (3) voxel instances: 14 in the tower + the waystone = 15 (<= 16).
 
+### 7.3 Animating without code: MagicaVoxel -> Blockbench -> `bb-import` (OWN-REQ-010, v1.18)
+
+The owner's workflow for a NEW rigged/animated voxel prop, no JS required:
+1. **MagicaVoxel** - model the shape, one named layer (or top-level group) per moving part (same convention `tools/vox-import.mjs` already reads, section OWN-REQ-005b). Export `.vox`.
+2. `node tools/vox-import.mjs model.vox --map map.json --cell <metres>` - builds the VoxelModelDef (`parts[].box`, tight per-part boxes, a first-pass geometric pivot). This is still the ONLY source of voxel shape/colour data - Blockbench never touches it.
+3. **Blockbench** - open a project whose bone names are typed to match the vox-import part names exactly (rig only: no cubes/textures needed, since this tool never reads Blockbench's own geometry). Position each bone's origin where the part should actually pivot, and key its rotation/position over time - as many clips as needed, loop or one-shot.
+4. `node tools/bb-import.mjs project.bbmodel --model model.json --out merged.json` - overwrites each named part's `pivot`/`parent` from the Blockbench rig and adds one clip per Blockbench animation to `animations`. A bone name with no matching part is a clear error (never a silent skip), because this tool has no voxel geometry to invent a part from.
+5. Paste `merged.json`'s `parts`/`animations` into the model's `design/models/*.js` entry (or, once OWN-REQ-009 lands, its `content/models/*.model.json`) and check it in `preview/voxel-props.html`.
+`tools/bb-import.test.mjs` pins the Blockbench-px/degrees -> our metres/degrees axis mapping (16 px/block, Y-up -> our cellM-scaled, Z-up) against a hand-computed pose; see `bb-import.mjs`'s own header comment for the full table and known format limitations (a bone's Blockbench rest rotation must be zero; simultaneous multi-axis keyframes are a documented open gap, `NEEDS PC-A: architect` in backlog row 25zb).
+
 ---
 
 ## Change log
+- **v1.18 (2026-09-25, OWN-REQ-010 Blockbench animation importer, PC-B, tooling only - no design/ data changed)**: new section 7.3, documenting `tools/bb-import.mjs` + `tools/bb-import.test.mjs` (not files owned by this doc's format list - listed here only as the owner-facing workflow note). No palette/model/level data touched.
 - **v1.17 (2026-09-25, US-027b content flip, PC-B)**: `tower`, `test_room` and `world_m1` moved from `design/levels/{tower,test_room,world_m1}.js` (deleted) to `content/levels/tower.level.json`, `content/levels/test_room.level.json` and `content/worlds/world_m1.world.json` - converted once, byte-for-byte, by `tools/export-content.mjs` (every id kept verbatim). Edit them as JSON from now on (see section 3 above); `overworld_far` is unaffected (a terrain recipe, still code). No content VALUES changed, only where they live.
 - **v1.16 (2026-09-25, US-026a waystone + US-038b settings style)**:
   - New `models/voxel_world.js` (section 7.2): `waystone` voxel model, 4 materials, `ASSETS.models.waystone`, `ASSETS.worldPatch.world_m1` (new format: world-file additions as data, hand-copied by the content story).
