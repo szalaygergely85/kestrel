@@ -11,6 +11,7 @@ import { Events } from './events.js';
 import { Camera } from '../entities/Camera.js';
 import { PHYSICS_DEFAULTS } from '../physics/config.js';
 import { World } from '../world/World.js';
+import { createUiLayer } from '../ui/uiLayer.js';
 
 export const GRID_MIN_COLS = 160;
 export const GRID_MAX_COLS = 320;
@@ -48,12 +49,15 @@ export function clampGrid(cols, rows) {
  * @param {number} [opts.rays] - sub-ray count (per axis) for the GPU DDA's N-ray coverage vote
  *   (docs/architecture.md 14.2 item 3/US-030b); stored on the engine for `main.js`/the pipeline to read.
  *   Default 2 (2x2), the architecture's confirmed default at 320x120 (14.2 item 5) - `?rays=1..4` overrides.
+ * @param {{cols:number, rows?:number}} [opts.uiGrid] - OWN-REQ-003 (architecture.md 17): the fixed UI glyph
+ *   layer's grid (`assets.uiStyle.uiGrid`, design/models/title.js) - default 160x60, clamped to [96, 320] cols.
  * @returns {import('./engine.js').Engine}
  */
 export function createEngine(opts) {
   const {
     canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false,
     cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
+    uiGrid = { cols: 160, rows: 60 },
     physics: physicsOverrides = {}, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
@@ -65,6 +69,12 @@ export function createEngine(opts) {
   const events = new Events();
   const camera = new Camera();
   const physics = { ...PHYSICS_DEFAULTS, ...physicsOverrides };
+  // OWN-REQ-003 (17.1): one UiLayer for the whole run - bound to whichever
+  // RenderTarget is live (this one, or a later `setGrid` replacement) so its
+  // sx/sy always reflect the CURRENT scene grid.
+  const ui = createUiLayer(uiGrid);
+  ui.bindScene(renderTarget.cols, renderTarget.rows);
+  if (renderTarget.setUiLayer) renderTarget.setUiLayer(ui);
 
   // Loop is created here but not started (per the API note) - `run()`
   // rewires its callbacks and starts it. A no-op placeholder pair avoids a
@@ -75,6 +85,7 @@ export function createEngine(opts) {
     renderTarget,
     depthBuffer,
     openSpans,
+    ui, // OWN-REQ-003: the fixed UI glyph layer (engine/ui/uiLayer.js)
     world: null,
     input,
     loop,
@@ -124,6 +135,10 @@ export function createEngine(opts) {
       engine.renderTarget = rt;
       engine.depthBuffer = new DepthBuffer(rt.cols, rt.rows);
       engine.openSpans = new OpenSpans(rt.cols);
+      // OWN-REQ-003 (17.1): re-bind the SAME UiLayer (not re-created) to the
+      // new grid's scale, and hand it to the new RenderTarget's present().
+      ui.bindScene(rt.cols, rt.rows);
+      if (rt.setUiLayer) rt.setUiLayer(ui);
       engine.gridRequest = { cols: g.cols, rows: g.rows, clamped: g.clamped, cpuGrid, gpu, force2d };
       events.emit('grid:changed', { cols: rt.cols, rows: rt.rows, renderTarget: rt });
       return rt;

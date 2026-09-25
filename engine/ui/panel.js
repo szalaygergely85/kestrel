@@ -128,9 +128,19 @@ export class Panel {
    * the map card), and a plate rect (`panel + platePad`) multiplied by
    * `lerp(1, plateMul, a)` (a dark sheet right under the panel so the 3D
    * view still ghosts through). Either multiplier defaults to 1 (no-op).
+   *
+   * OWN-REQ-003 (architecture.md 17.5): `x0`/`y0`/`art.w`/`art.h` are now UI-
+   * grid cells (the panel draws into the fixed-size UI layer, section 17.4),
+   * but `dim` always multiplies the SCENE's cells (`sceneDim.js` iterates
+   * `rt.cells`, the scene CellBuffer) - so the plate rect is converted UI
+   * cells -> scene cells via `ui.sx`/`ui.sy` (outset by `Math.floor`/`ceil`
+   * so the darkened rect never clips a scaled-up glyph at its edge). `ui` is
+   * optional (sx=sy=1, i.e. UI cells === scene cells) for callers that don't
+   * have a `UiLayer` (tests, or a caller drawing straight into the scene).
    * @param {import('./sceneDim.js').SceneDim} dim
+   * @param {import('./uiLayer.js').UiLayer} [ui]
    */
-  pushDim(dim) {
+  pushDim(dim, ui) {
     if (this.state === 'closed') return;
     const a = this.a;
     if (this.sceneMul !== 1) {
@@ -139,8 +149,12 @@ export class Panel {
     }
     if (this.plateMul !== 1) {
       const mul = 1 + (this.plateMul - 1) * a;
-      pushDimRect(dim, this.x0 - this.platePad, this.y0 - this.platePad,
-        this.x0 + this.art.w + this.platePad, this.y0 + this.art.h + this.platePad, mul);
+      const sx = ui ? ui.sx : 1, sy = ui ? ui.sy : 1;
+      const ux0 = this.x0 - this.platePad, uy0 = this.y0 - this.platePad;
+      const ux1 = this.x0 + this.art.w + this.platePad, uy1 = this.y0 + this.art.h + this.platePad;
+      pushDimRect(dim,
+        Math.floor(ux0 * sx), Math.floor(uy0 * sy),
+        Math.ceil(ux1 * sx), Math.ceil(uy1 * sy), mul);
     }
   }
 }

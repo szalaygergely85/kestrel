@@ -89,6 +89,8 @@ export { drawCrosshair } from './ui/crosshair.js';
 export { compileRichLine, drawRichLine, hexToRgb } from './ui/richText.js';
 export { buildPanelArt, createPanel, drawPanel, Panel } from './ui/panel.js';
 export { createSceneDim, resetSceneDim, pushDimRect, applySceneDim } from './ui/sceneDim.js';
+// ---- OWN-REQ-003 UI layer (docs/architecture.md 17) -------------------------
+export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';

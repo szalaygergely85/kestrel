@@ -110,6 +110,15 @@ export class RenderTargetCanvas2D {
     this.cells.clear(bg);
   }
 
+  // OWN-REQ-003 (architecture.md 17.3): `ui` (an `engine/ui/uiLayer.js`
+  // UiLayer) is merged into `this.cells` at the top of `present()` every
+  // frame - see below. No texture/atlas of its own on this path: the CPU
+  // back-end already rasterizes glyphs on demand at ITS OWN cell size
+  // (`_buildGlyphMask`), so a UI cell just becomes a normal scene cell.
+  setUiLayer(ui) {
+    this._uiLayer = ui;
+  }
+
   // Rasterizes one glyph into a device-pixel-sized alpha mask, once, and
   // caches it (by numeric glyphIdx) until the next resize.
   _buildGlyphMask(glyphIdx) {
@@ -139,7 +148,59 @@ export class RenderTargetCanvas2D {
     return mask;
   }
 
+  // OWN-REQ-003 (architecture.md 17.3): copies every UI-layer cell the game
+  // wrote this frame (`mask[i] === 1`) into the scene CellBuffer, just
+  // before the pixel-compositing loop below reads it - so the UI shows up
+  // exactly like any other scene cell (its glyph drawn at the SCENE's own
+  // cell pixel size, the CPU back-end's one shading rule). At the default
+  // 160x60 CPU grid (`RenderTarget.js`'s forced `cpuGrid`) this IS the
+  // uiGrid default too, so this is the 1:1 fast path - byte-identical to
+  // the pre-OWN-REQ-003 picture (the game used to draw straight into the
+  // scene at these same coordinates). No allocation: reuses `this.cells`'
+  // typed arrays.
+  _mergeUiLayer() {
+    const ui = this._uiLayer;
+    if (!ui) return;
+    const dst = this.cells;
+    if (ui.cols === this.cols && ui.rows === this.rows) {
+      const src = ui.cells;
+      const n = ui.cols * ui.rows;
+      for (let i = 0; i < n; i++) {
+        if (!src.mask[i]) continue;
+        dst.glyphIdx[i] = src.glyphIdx[i];
+        const fi = i * 4;
+        dst.fg[fi] = src.fg[fi]; dst.fg[fi + 1] = src.fg[fi + 1]; dst.fg[fi + 2] = src.fg[fi + 2]; dst.fg[fi + 3] = src.fg[fi + 3];
+        dst.bg[fi] = src.bg[fi]; dst.bg[fi + 1] = src.bg[fi + 1]; dst.bg[fi + 2] = src.bg[fi + 2]; dst.bg[fi + 3] = 255;
+        dst.mask[i] = 1;
+      }
+      return;
+    }
+    // Rare path (17.3's "otherwise" - a CPU grid that doesn't match the UI
+    // grid, e.g. a future non-default `cpuGrid`): nearest-neighbour block
+    // fill, still allocation-free.
+    const src = ui.cells;
+    const sx = this.cols / ui.cols, sy = this.rows / ui.rows;
+    for (let uy = 0; uy < ui.rows; uy++) {
+      const y0 = Math.round(uy * sy), y1 = Math.min(this.rows, Math.round((uy + 1) * sy));
+      for (let ux = 0; ux < ui.cols; ux++) {
+        const ui_i = uy * ui.cols + ux;
+        if (!src.mask[ui_i]) continue;
+        const x0 = Math.round(ux * sx), x1 = Math.min(this.cols, Math.round((ux + 1) * sx));
+        const fi = ui_i * 4;
+        const gIdx = src.glyphIdx[ui_i];
+        const fr = src.fg[fi], fg1 = src.fg[fi + 1], fb = src.fg[fi + 2];
+        const br = src.bg[fi], bgc = src.bg[fi + 1], bb = src.bg[fi + 2];
+        for (let cy = y0; cy < y1; cy++) {
+          for (let cx = x0; cx < x1; cx++) {
+            this.setCellRGB(cx, cy, gIdx, fr, fg1, fb, br, bgc, bb);
+          }
+        }
+      }
+    }
+  }
+
   present() {
+    this._mergeUiLayer();
     const { cols, rows, pxCellW, pxCellH } = this;
     const { glyphIdx: glyphIdxArr, fg: fgArr, bg: bgArr } = this.cells;
     const canvasW = this.canvas.width;

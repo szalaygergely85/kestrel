@@ -42,7 +42,16 @@ out vec4 fragColor;
 uniform sampler2D uFg;    // RGBA8 cols x rows, NEAREST: (r,g,b,glyphIdx)
 uniform sampler2D uBg;    // RGBA8 cols x rows, NEAREST: (r,g,b,255)
 uniform sampler2D uAtlas; // RGBA8 95 x 1 cells, LINEAR: coverage in .a
-uniform vec2 uGrid;       // (cols, rows)
+uniform vec2 uGrid;       // (cols, rows) - the SCENE grid on pass 0, the UI grid on pass 1
+// OWN-REQ-003 (architecture.md 17.2): present() draws TWICE with this same
+// program - pass 0 (uLayer=0) is the scene, unchanged; pass 1 (uLayer=1)
+// rebinds uFg/uBg/uAtlas/uGrid to the UI layer's own textures/atlas/grid and
+// discards every cell the UI layer didn't write this frame (bg.a < 0.5 -
+// UiLayer.clear() zeroes bg alpha, CellBuffer.setCell* always writes 255,
+// so bg.a doubles as the per-cell "was this written" mask). No blending -
+// only discard - so a UI glyph keeps its own bg exactly (a hard cell edge,
+// same rule as the scene's own cells - 17.2's "no alpha blending").
+uniform int uLayer;
 
 const float GLYPH_COUNT = ${GLYPH_COUNT.toFixed(1)};
 
@@ -56,6 +65,7 @@ void main() {
 
   vec4 fg = texelFetch(uFg, cell, 0);
   vec4 bg = texelFetch(uBg, cell, 0);
+  if (uLayer == 1 && bg.a < 0.5) discard;
   float glyphIdx = floor(fg.a * 255.0 + 0.5);
 
   vec2 atlasUv = vec2((glyphIdx + cellFrac.x) / GLYPH_COUNT, cellFrac.y);
@@ -111,6 +121,7 @@ export class RenderTargetGL {
       this._contextLost = false;
       this._initGL();
       this._rebuildAtlas();
+      if (this._uiLayer) { this._buildUiTextures(); this._rebuildUiAtlas(); } // OWN-REQ-003
     });
 
     this._initGL();
@@ -128,6 +139,8 @@ export class RenderTargetGL {
     gl.uniform1i(gl.getUniformLocation(this.program, 'uAtlas'), 2);
     this._uGrid = gl.getUniformLocation(this.program, 'uGrid');
     gl.uniform2f(this._uGrid, this.cols, this.rows);
+    this._uLayer = gl.getUniformLocation(this.program, 'uLayer'); // OWN-REQ-003
+    gl.uniform1i(this._uLayer, 0);
 
     // WebGL2 guarantees a default VAO, but bind an explicit (empty) one -
     // no vertex attributes are used (see the gl_VertexID trick above), it
@@ -178,6 +191,76 @@ export class RenderTargetGL {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, ac);
   }
 
+  // OWN-REQ-003 (architecture.md 17.2): binds `ui` (an `engine/ui/uiLayer.js`
+  // UiLayer) as a second, fixed-size cell grid `present()` draws over the
+  // scene every frame (see the fragment shader's `uLayer` branch above).
+  // Called once by `createEngine` and again by `engine.setGrid` (a new
+  // RenderTarget instance - the UiLayer object itself is never re-created).
+  setUiLayer(ui) {
+    this._uiLayer = ui;
+    if (this._contextLost) return;
+    this._buildUiTextures();
+    this._rebuildUiAtlas();
+  }
+
+  // (Re)builds the UI layer's own fg/bg data textures, sized to `ui.cols x
+  // ui.rows` (fixed for the run - see uiLayer.js) - a THIRD pair of texture
+  // units (3, 4) so the scene's own fg/bg stay bound at units 0/1 for
+  // `readbackPresent` (14.2 item 8's parity contract - `?gpucompare=1` reads
+  // back "whatever is bound on units 0/1", which must stay the SCENE).
+  _buildUiTextures() {
+    const gl = this.gl;
+    const ui = this._uiLayer;
+    if (this._uiFgTex) { gl.deleteTexture(this._uiFgTex); gl.deleteTexture(this._uiBgTex); }
+    this._uiFgTex = createDataTexture(gl, 3, ui.cols, ui.rows);
+    this._uiBgTex = createDataTexture(gl, 4, ui.cols, ui.rows);
+    if (!this._uiAtlasTex) {
+      this._uiAtlasTex = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, this._uiAtlasTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+  }
+
+  // Same idea as `_rebuildAtlas`, but rasterized at the UI layer's own
+  // (larger) cell size - `fontPx * sy` (architecture.md 17.2): `ui.sy` is the
+  // scene-to-UI scale factor (>= 1, since the UI grid is fixed at <= the
+  // scene grid), so UI glyphs stay legible however small the scene's own
+  // cells get at 240x90/320x120.
+  _rebuildUiAtlas() {
+    const ui = this._uiLayer;
+    if (!ui || this._contextLost) return;
+    const gl = this.gl;
+    const uiFontPx = this.fontSize * ui.sy;
+    const uiPxCellW = this.pxCellW * ui.sx;
+    const uiPxCellH = this.pxCellH * ui.sy;
+    const uiGlyphAscent = this.glyphAscent * ui.sy;
+
+    const ac = this._atlasCanvas;
+    const w = uiPxCellW * GLYPH_COUNT;
+    const h = uiPxCellH;
+    ac.width = w;
+    ac.height = h;
+    const actx = this._atlasCtx;
+    actx.clearRect(0, 0, w, h);
+    actx.font = `${uiFontPx}px ${FONT_STACK}`;
+    actx.textBaseline = 'alphabetic';
+    actx.textAlign = 'left';
+    actx.fillStyle = '#ffffff';
+    for (let code = 32; code <= 126; code++) {
+      const idx = code - 32;
+      if (code === 32) continue;
+      actx.fillText(String.fromCharCode(code), idx * uiPxCellW, uiGlyphAscent);
+    }
+
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this._uiAtlasTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, ac);
+  }
+
   // `refAvailW`/`refAvailH`/`refDpr` (all optional) override the
   // window-derived box with a fixed one - used ONLY by `?gpucompare=1`/
   // `?gpucompare=shade` (main.js) so the GPU and CPU/JS oracle both cast
@@ -213,6 +296,7 @@ export class RenderTargetGL {
     gl.useProgram(this.program);
     gl.uniform2f(this._uGrid, this.cols, this.rows);
     this._rebuildAtlas();
+    if (this._uiLayer) this._rebuildUiAtlas(); // OWN-REQ-003: UI cell size tracks the scene's (fontPx/pxCell change on resize/DPR)
   }
 
   setCell(x, y, glyph, fg, bg) {
@@ -306,5 +390,40 @@ export class RenderTargetGL {
     gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // OWN-REQ-003 (architecture.md 17.2): a second fullscreen-triangle draw
+    // with the SAME program, over the scene just drawn - `uLayer=1` cells
+    // with `bg.a < 0.5` (nothing written by the UI layer this frame) are
+    // discarded, so only the scene shows through there; every written UI
+    // cell replaces the scene pixel outright (no blending, per 17 "Do not").
+    // Units 0/1/2 are rebound to the scene's own fg/bg/atlas right after, so
+    // `readbackPresent` (called right after `present()` by `?gpucompare=1`)
+    // still reads exactly the scene textures it always has (17.6: the UI
+    // layer never enters that parity comparison).
+    if (this._uiLayer && this._uiFgTex) {
+      const ui = this._uiLayer;
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._uiFgTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ui.cols, ui.rows, gl.RGBA, gl.UNSIGNED_BYTE, ui.cells.fg);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this._uiBgTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ui.cols, ui.rows, gl.RGBA, gl.UNSIGNED_BYTE, ui.cells.bg);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this._uiAtlasTex);
+
+      gl.uniform1i(this._uLayer, 1);
+      gl.uniform2f(this._uGrid, ui.cols, ui.rows);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      // Restore scene state (units 0/1/2 + uniforms) for readbackPresent/the next frame.
+      gl.uniform1i(this._uLayer, 0);
+      gl.uniform2f(this._uGrid, this.cols, this.rows);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.fgTex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.bgTex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
+    }
   }
 }
