@@ -22,10 +22,14 @@
 // trigger. `ctx.engine` may be `{}`/absent in tests (tower.test.js item 8,
 // restart.test.js), so this is a no-op there, same as it always was.
 import { request as requestHint } from './hints.js';
+// US-020a: the D-011 gear housing's clunk, one-shot, at the moment of the
+// pull - procedural WebAudio only (game/js/audio/*), no engine change.
+import { playLeverClunk } from '../audio/sfx.js';
 
 export function leverPull(ctx) {
   const { world, def, entity } = ctx;
   if (entity) entity.play('pull');
+  playLeverClunk();
 
   const tag = def && def.target && def.target.tag;
   if (tag) world.animateSectorTo(tag, 1, { delay: 0.4 });
