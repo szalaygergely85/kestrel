@@ -4,8 +4,9 @@
 import {
   LightSet, buildLightSet, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
-  sampleVis, VIS_FLOOR_EPS, makeLightBuffer,
+  sampleVis, VIS_FLOOR_EPS, makeLightBuffer, syncEntityLights, clampLightToFree, ATTACH_WALL_MARGIN,
 } from './lighting.js';
+import { attachedLightPos } from '../entities/attach.js';
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
 import paletteMod from '../../design/palette.js';
@@ -617,6 +618,40 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('buildLightSet falls back to the palette preset\'s azimuth', ls.sun.azimuth === sunPreset.azimuth, String(ls.sun.azimuth));
   const hue = assets.palette.hue[sunPreset.color];
   ok('buildLightSet\'s sun.col == hue * intensity', approx(ls.sun.col[0], hue[0] * sunPreset.intensity) && approx(ls.sun.col[2], hue[2] * sunPreset.intensity));
+}
+
+// --- BUG-OWN-007: carried light behind a wall face is pulled back to the free side ---
+{
+  const legend = {
+    '#': { floorH: 3, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: true },
+    '.': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false },
+    'S': { floorH: 0, ceilH: 3, wallMat: 'stone', floorMat: 'floor', ceilMat: 'ceiling_timber', solid: false, start: true, facingDeg: 90 },
+  };
+  const rows = ['########', '#S.....#', '#......#', '#......#', '########'];
+  globalThis.ASSETS.levels.__bugOwn007 = { name: '__bugOwn007', legend, rows };
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'b7', level: '__bugOwn007', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+  const LAMP = { preset: 'lantern', on: true, offset: { right: 0.3, down: 0.3, fwd: 0.4 } };
+  // Eye 0.3 m (body radius) from the east wall face x=7, facing east: raw lamp x = 7.1 (inside '#').
+  world.spawn('player', { x: 6.7, y: 2.5, z: 0, yawDeg: 90 }, { body: { eyeH: 1.6 }, light: { ...LAMP } }, 'pl');
+  const ls = new LightSet();
+  const out = new Float64Array(3);
+  const raw = attachedLightPos(world.entity('pl'), null, new Float64Array(3));
+  ok('BUG-OWN-007 precondition: raw lamp is inside the wall cell', Math.floor(raw[0]) === 7, String(raw[0]));
+  syncEntityLights(ls, world, assets.palette, attachedLightPos, out);
+  ls.update(0, world);
+  const h = ls.entityHandle.get('pl');
+  ok('BUG-OWN-007 lamp clamped in front of the wall face', ls.defX[h] < 7 - ATTACH_WALL_MARGIN * 0.5 && ls.defX[h] > 6.7, String(ls.defX[h]));
+  ok('BUG-OWN-007 clamp stays on the eye->lamp segment (y/z interpolated)', ls.defY[h] > 2.5 && ls.defY[h] < 2.8 && ls.defZ[h] > 1.3 && ls.defZ[h] < 1.6, `${ls.defY[h]},${ls.defZ[h]}`);
+  ok('BUG-OWN-007 lamp own cell is reached (vis not all-occluded)', sampleVis(ls, h, ls.defX[h], ls.defY[h]) === 1);
+  ok('BUG-OWN-007 open cell 3 m west is lit by the lamp vis grid', sampleVis(ls, h, 3.5, 2.5) === 1);
+  // Open space: no clamp, position identical to attachedLightPos.
+  const o2 = new Float64Array([4.1, 2.8, 1.3]);
+  ok('BUG-OWN-007 no clamp in open space', clampLightToFree(world, 3.7, 2.5, 1.6, o2) === false && o2[0] === 4.1 && o2[1] === 2.8 && o2[2] === 1.3);
+  ok('BUG-OWN-007 null world -> untouched', clampLightToFree(null, 6.7, 2.5, 1.6, o2) === false);
+  // Diagonal into a corner (NE corner of the room at (7,1)): clamped into the free cell.
+  const o3 = new Float64Array([7.2, 0.8, 1.3]);
+  ok('BUG-OWN-007 corner: clamped', clampLightToFree(world, 6.7, 1.3, 1.6, o3) === true && Math.floor(o3[0]) === 6 && Math.floor(o3[1]) === 1, `${o3[0]},${o3[1]}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -361,8 +361,15 @@ export function syncEntityLights(lights, world, palette, attachedLightPos, out) 
       if (h != null) lights.setOn(h, false);
       return;
     }
-    const eyeFeel = e.components.body && e.components.body.feel;
+    const body = e.components.body;
+    const eyeFeel = body && body.feel;
     attachedLightPos(e, eyeFeel, out);
+    // BUG-OWN-007: the attach offset (up to ~0.5 m) is longer than the body
+    // radius, so next to a wall the lamp lands inside a solid cell and
+    // `computeVisGrid` returns all-occluded. Pull it back along eye->lamp.
+    const eyeH = body && typeof body.eyeH === 'number' ? body.eyeH : 0;
+    const feelOff = eyeFeel && typeof eyeFeel.offset === 'number' ? eyeFeel.offset : 0;
+    clampLightToFree(world, e.transform.x, e.transform.y, e.transform.z + eyeH + feelOff, out);
     const h = lights.entityHandle.get(e.id);
     if (h == null) {
       const preset = palette.lights[light.preset];
@@ -378,6 +385,48 @@ export function syncEntityLights(lights, world, palette, attachedLightPos, out) 
       lights.setOn(h, light.on !== false);
     }
   });
+}
+
+// BUG-OWN-007: distance (m) an attached light is kept in front of the first
+// blocking cell face on its eye->light segment. > 0 so the light's own
+// 1 m cell (the vis-grid origin) is the free cell, and a face it is held
+// against still has N.L > 0.
+export const ATTACH_WALL_MARGIN = 0.05;
+
+/**
+ * BUG-OWN-007: clamps the light position `out` (written in place) to the
+ * last free point on the segment eye (ex,ey,ez) -> out, minus
+ * `ATTACH_WALL_MARGIN`, using the same `cellBlocks` rule as `computeVisGrid`
+ * (2D cell DDA; z interpolated at each cell entry). Leaves `out` untouched
+ * when nothing blocks, when `world` is null, or when the eye itself is in a
+ * blocking cell. Input-side only, so CPU and GPU lighting see the same
+ * position (parity unchanged). Allocation-free.
+ * @returns {boolean} true if `out` was moved
+ */
+export function clampLightToFree(world, ex, ey, ez, out) {
+  if (!world) return false;
+  const dx = out[0] - ex, dy = out[1] - ey, dz = out[2] - ez;
+  let mapX = Math.floor(ex), mapY = Math.floor(ey);
+  const endX = Math.floor(out[0]), endY = Math.floor(out[1]);
+  if (mapX === endX && mapY === endY) return false;
+  if (cellBlocks(world, mapX, mapY, ez)) return false;
+  const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0, stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+  const tDX = dx === 0 ? Infinity : 1 / Math.abs(dx), tDY = dy === 0 ? Infinity : 1 / Math.abs(dy);
+  let tMaxX = dx === 0 ? Infinity : (dx > 0 ? mapX + 1 - ex : ex - mapX) * tDX;
+  let tMaxY = dy === 0 ? Infinity : (dy > 0 ? mapY + 1 - ey : ey - mapY) * tDY;
+  for (let guard = 0; guard < 64; guard++) {
+    let t;
+    if (tMaxX < tMaxY) { t = tMaxX; tMaxX += tDX; mapX += stepX; } else { t = tMaxY; tMaxY += tDY; mapY += stepY; }
+    if (t >= 1) return false;
+    if (cellBlocks(world, mapX, mapY, ez + dz * t)) {
+      const len = Math.hypot(dx, dy);
+      const tc = Math.max(0, t - ATTACH_WALL_MARGIN / len);
+      out[0] = ex + dx * tc; out[1] = ey + dy * tc; out[2] = ez + dz * tc;
+      return true;
+    }
+    if (mapX === endX && mapY === endY) return false;
+  }
+  return false;
 }
 
 // Normal-by-face lookup (GBuffer.js FACE_N..FACE_D = 1..6). Face 7
