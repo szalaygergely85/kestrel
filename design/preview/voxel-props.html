@@ -85,6 +85,7 @@
 <script src="../models/rubble.js"></script>
 <script src="../models/wreckage.js"></script>
 <script src="../models/relay.js"></script>
+<script src="../models/lantern.js"></script>
 <script src="../models/voxel_props.js"></script>
 <script src="../models/voxel_tower.js"></script>
 <script>
@@ -209,10 +210,12 @@ function buildScene(g, now) {
   if (ctl.lmode !== 'dir') sc.lights.push({ x: 0.75, y: -1.1, z: zc, col: 'torch', int: 1.0, r: 6 });
   if (g.name === 'lantern' && g.clip === 'lit') {
     const p = mountWorld(g, inst.fwd, 'light', [0, 0, 0]);
-    sc.lights.push({ x: p[0], y: p[1], z: p[2], col: 'lantern', int: 0.8, r: 5, fromInside: true });
+    const HL = P.lights.lanternHook || P.lights.lantern, LF = A.models.lampFlame;   // OWN-REQ-006 hook light + lampFlame
+    sc.lights.push({ x: p[0], y: p[1], z: p[2], col: HL.color, int: HL.intensity, r: HL.radius, fromInside: true });
     const f = mountWorld(g, inst.fwd, 'flame', [0, 0, 0]);
-    const fl = 0.13 + 0.015 * Math.sin(now * 0.021) + 0.01 * Math.sin(now * 0.047);
-    sc.flames.push({ x: f[0], y: f[1], z: f[2], w: 0.075, h: fl });
+    const fh0 = LF ? LF.world.h : 0.13, fw0 = LF ? LF.world.w : 0.075;
+    const fl = fh0 + 0.008 * Math.sin(now * 0.021) + 0.005 * Math.sin(now * 0.047);   // calm lamp sway
+    sc.flames.push({ x: f[0], y: f[1], z: f[2], w: fw0, h: fl });
   }
   let glint = 0;
   if (g.name === 'lever' && g.clip === 'idle') {
@@ -778,6 +781,38 @@ function runChecks() {
       const eg = worldVoxels('lantern', ln.x, ln.y, ln.z, ln.facing, 'empty').filter((w) => w.v.k === kGlint);
       ok(eg.every((w) => w.p[2] < 0), 'lantern: empty clip hides the glint with the lamp');
       ok((P.materials.brass_glint || VMAT.v1.brass_glint).emissive >= 0.8, 'brass_glint: emissive ' + (P.materials.brass_glint || VMAT.v1.brass_glint).emissive + ' (pops in shade)');
+      // ---- OWN-REQ-006: lit = default hanging state, no glint; flame + hook light data
+      const lg = worldVoxels('lantern', ln.x, ln.y, ln.z, ln.facing, 'lit').filter((w) => w.v.k === kGlint);
+      const rest = worldVoxels('lantern', ln.x, ln.y, ln.z, ln.facing, 'unlit').filter((w) => w.v.k === kGlint);
+      ok(lg.length === rest.length && lg.every((w, i) => w.p.every((c, j) => Math.abs(c - rest[i].p[j]) < 1e-9)),
+         'lantern: lit clip keeps the glint sealed in the base (no glint on the lit lamp, OWN-REQ-006)');
+    }
+    const HK = MODELS.lantern.hookLit, LF = A.models.lampFlame, HLp = P.lights.lanternHook, CLp = P.lights.lantern;
+    ok(!!HK && HK.clip === 'lit' && !!T.animations.lit && T.mounts[HK.flame.mount] && T.mounts[HK.light.mount] &&
+       T.mounts.flame.part === 'lamp' && T.mounts.light.part === 'lamp', 'lantern: hookLit uses the lit clip + lamp-part mounts flame / light (they leave with the lamp)');
+    const fm = T.mounts.flame.at;
+    ok(fm[0] > 2 && fm[0] < 6 && fm[1] > 2 && fm[1] < 6 && fm[2] >= 5 && fm[2] < 10, 'lantern: flame mount [' + fm + '] is inside the open cage (x/y 2..6, z 5..9, posts at x/y 1 + 6)');
+    if (LF) {
+      const cells = [LF].concat(LF.lods ? [LF.lods.half] : []).every((m) => m.animations.burn.frames.every((fr) =>
+        fr.S.glyphs.length === m.size.h && fr.S.glyphs.every((r, ri) => r.length === m.size.w && fr.S.fg[ri].length === m.size.w &&
+          r.split('').every((ch, ci) => (ch === ' ') === (fr.S.fg[ri][ci] === ' ') && (ch === ' ' || (LF.keys[fr.S.fg[ri][ci]] && LF.keys[fr.S.fg[ri][ci]].e))))));
+      ok(cells, 'lampFlame: rows = size (full 3x3, half 1x2), glyph/colour rows line up, every drawn cell is an emissive heat key');
+      ok(LF.world.w <= 4 * T.cellM && LF.world.h <= 5 * T.cellM && LF.mountOn.model === 'lantern' && LF.mountOn.mount === 'flame',
+         'lampFlame: ' + LF.world.w + ' x ' + LF.world.h + ' m fits the cage opening ' + (4 * T.cellM).toFixed(3) + ' x ' + (5 * T.cellM).toFixed(3) + ' m, mounted on lantern.flame');
+      const fps = LF.animations.burn.fps, nf = LF.animations.burn.frames.length;
+      ok(nf >= 3 && nf <= 4 && fps >= 8 && fps <= 10, 'lampFlame: ' + nf + ' frames at ' + fps + ' fps (calmer than the brazier 6 @ 10)');
+    } else ok(false, 'lampFlame: ASSETS.models.lampFlame missing (models/lantern.js)');
+    ok(!!HLp && HLp.color === CLp.color && HLp.intensity < CLp.intensity && HLp.radius < CLp.radius && HLp.radius >= 3 && HLp.radius <= 4 &&
+       HLp.flicker.amount <= 0.06, 'lights.lanternHook: ' + (HLp ? HLp.intensity + ' / ' + HLp.radius + ' m / +-' + HLp.flicker.amount : 'missing') +
+       ' = same amber, weaker + smaller than carried ' + CLp.intensity + ' / ' + CLp.radius + ' m, radius 3-4 m, lamp-steady');
+    if (HK) {
+      const li = posedInstance('lantern', ln.x, ln.y, ln.z, ln.facing, clipState(packed.lantern, 'lit', 0));
+      const pt = (m) => worldPoint(li, kLamp, T.mounts[m].at), near = (a, w) => Math.abs(a[0] - w.x) < 0.002 && Math.abs(a[1] - w.y) < 0.002 && Math.abs(a[2] - w.z) < 0.002;
+      const pF = pt('flame'), pL = pt('light');
+      ok(near(pF, HK.flame.world) && near(pL, HK.light.world) && HK.light.on === true && HK.light.preset === 'lanternHook',
+         'lantern: hookLit world points = posed mounts: flame (' + pF.map((v) => v.toFixed(3)).join(', ') + '), light (' + pL.map((v) => v.toFixed(3)).join(', ') + '), on');
+      const lights = TOWER ? TOWER.lights : [], hl = lights.filter((l) => l.id === HK.light.id)[0];
+      info('tower.js: prop lantern variant ' + ln.variant + ', lights.' + HK.light.id + ' ' + (hl ? 'present' : 'not yet added (PC-B programmer, row 25t)'));
     }
   }
   // ---- batch 2 placement: same tower.js data, no voxel buried in a taller cell, route / neighbour rules

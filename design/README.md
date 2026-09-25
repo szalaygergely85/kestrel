@@ -500,6 +500,12 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
 ---
 
 ## Change log
+- **v1.15 (2026-09-25, OWN-REQ-006 lamp lit on the hook)**:
+  - `models/voxel_props.js`: `lantern` `lit` is the default hanging state (no glint: the flame + hook light are the cue; `unlit` kept as a spare clip). New data block `voxelModels.lantern.hookLit` { clip, glint, flame { model, anim, mount, world }, light { id, preset, mount, on, world, levelEntry }, take }.
+  - `models/lantern.js`: new billboard `ASSETS.models.lampFlame` (3x3, world 0.09 x 0.13 m, anchor bottom centre, 4 frames 9 fps, half LOD 1x2, heat keys 1-4 all emissive, `mountOn { model: 'lantern', mount: 'flame', clip: 'lit' }`). For the VOXEL lamp only. The billboard `lantern.lit` now draws the `=j=` bracket plate (hanging default; same size, so the sprite rects do not move).
+  - `palette.js`: light preset `lights.lanternHook` (amber `lantern`, 0.55, r 3.5 m, flicker 6-9 Hz +-5%). Carried `lights.lantern` unchanged.
+  - `preview/voxel-props.html`: loads `models/lantern.js`; the lit lamp view uses `lanternHook` + the `lampFlame` size; new checks (lit clip keeps the glint sealed, flame mount inside the cage, lampFlame fits the cage, hookLit world points = posed mounts, hook light weaker + smaller than carried).
+  - **Programmer (PC-B), not done here:** `tower.js` prop variant `'lit'`, the `lanternHook` lights entry, spawn `lampFlame` at the mount, `lantern.take` switches the hook light off (see backlog row 25t). `game/js/quest/tower.test.js` line 188 expects `anim === 'unlit'` and must change with the variant.
 - **v1.14 (2026-09-25, ART-OWN-002 rework + US-056 lamp glint)**:
   - `models/voxel_tower.js`: `canvasHeap` (linen tarp over a crate, grid 32x14x**7**), `gondola` (rectangular wicker basket, new part `chock`, `idle` = a shared-pivot 8 deg tilt pose) and `envelopeHeap` (striped half-deflated balloon, crown ring, mouth hoop, tear, 3 ropes) rebuilt. Same keys, anchors, placement and clip names. 6 new proposed materials (`linen_light`, `linen`, `linen_dark`, `gore_red`, `gore_red_dark`, `canvas_burnt`; batch 2 is now 18 keys).
   - `models/voxel_props.js`: `lantern` gains the part `glint` (listed first, stored in a sealed base cavity), `unlit` becomes a 4-key step clip (1800 + 90 + 90 + 80 ms), `empty` / `hookEmpty` hide the glint too, mount `glint`; `lantern.voxel.mats` is its own table (`LANTERN_MATS`, + `W`); new material `brass_glint`; `attach()` checks each model's own mats.

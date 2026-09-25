@@ -171,7 +171,9 @@
     lights: [
       { id: 'brazier', preset: 'torch', x: 18.5, y: 6.5, z: 1.2, on: true },
       { id: 'beacon', preset: 'relay', x: 9.0, y: 7.0, z: 7.7, on: false, note: 'D-011 levelPatch: relay preset (was "beacon"); off until US-022 wakes it, then grows over 1.0 s' }
-      // the lantern light is created by US-012 when the lantern is taken (preset 'lantern', carried)
+      // the carried lamp light is created by US-012 when the lamp is taken (preset 'lantern', carried).
+      // OWN-REQ-006 (PC-B programmer adds it together with lantern.take switching it off; data =
+      // voxelModels.lantern.hookLit): { id: 'lanternHook', preset: 'lanternHook', x: 19.72, y: 6.5, z: 1.52, on: true }
     ],
 
     // props: model = US-011 asset name; x,y,z = anchor (feet) position; facing = compass deg the front looks at
@@ -184,7 +186,7 @@
       { id: 'brazier', model: 'burner', x: 18.5, y: 6.5, z: 0.5, facing: 180, collide: 'sector',
         note: 'the Kestrel\'s copper burner (D-011 reskin of the brazier), on the stone ring (*); torch light source' },
       { id: 'lantern', model: 'lantern', variant: 'unlit', x: 19.9, y: 6.5, z: 1.3, facing: 270, hook: true,
-        interactable: 'lantern', note: 'the brass lamp on its own bracket (D-011), 1.4 m from the burner' },
+        interactable: 'lantern', note: 'the brass lamp on its own bracket (D-011), 1.4 m from the burner. OWN-REQ-006: -> variant lit (PC-B, with the hook light + lampFlame)' },
       { id: 'boulder', model: 'boulder', x: 15.55, y: 3.5, z: 0.0, radius: 0.6, dynamic: true,
         note: 'on the stair base, 5 cm onto step 1: blocks the only stair entrance' },
       { id: 'lever', model: 'lever', variant: 'idle', x: 19.25, y: 9.3, z: 3.0, facing: 90,

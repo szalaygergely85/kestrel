@@ -1,6 +1,8 @@
 /*
  * Kestrel - US-012 "brass lamp" (D-011 reskin of the US-011 lantern, 3x4): the Kestrel's gondola lamp, salvaged.
- * Unlit on its bracket (2-frame brass glint), lit, and the empty bracket (`empty`, alias `hookEmpty`).
+ * OWN-REQ-006: the lamp hangs LIT on its bracket by default (`lit`, flame in the cage, no glint - the flame and its
+ * light are the "take me" cue now); `unlit` (2-frame brass glint) is kept as a spare state; the empty bracket
+ * (`empty`, alias `hookEmpty`). Also sets ASSETS.models.lampFlame = the small flame billboard for the VOXEL lamp.
  * Rework (US-011 CR): the brass bracket plate `=j=` is drawn in the unlit and empty states, so it visibly stays.
  * The model KEY stays `lantern` (and size 3x4, animations unlit / lit / empty (+ hookEmpty alias)) so level data,
  * US-012 wiring and the sprite parity tests keep working; only the art and text changed.
@@ -25,7 +27,7 @@
     name: 'lantern',
     displayName: 'brass lamp',
     desc: 'The Kestrel\'s brass lamp, hanging on its hook at 1.3 m. Bright brass cap and round cage, pale glass bulb, ' +
-          'dark fuel font. The unlit one glints so it reads as "take me".',
+          'dark fuel font. It hangs lit (OWN-REQ-006): the flame in the cage and its warm light say "take me".',
     size: { w: 3, h: 4 }, anchor: { x: 1, y: 3 }, world: { w: 0.25, h: 0.45 },
     directions: ['S'], billboard: true,
     fill: { k: 0.45 }, outline: { k: 0.4 },
@@ -46,10 +48,11 @@
         { S: { glyphs: ['=j=', '/=\\', '(O)', '\\_/'], fg: ['DjD', 'BHB', 'BgB', 'DbD'], n: N } },
         { S: { glyphs: ['=j=', '/*\\', '(O)', '\\_/'], fg: ['DjD', 'BWB', 'BgH', 'DbD'], n: N } }
       ] },
-      // lit (US-012 carried light / optional first-person view model), flame flicker
+      // lit = the DEFAULT hanging state (OWN-REQ-006): bracket plate =j= drawn like unlit/empty, flame flicker in the
+      // cage (this billboard fallback carries its own flame; do NOT also spawn lampFlame on it). No glint.
       lit: { fps: 8, loop: true, frames: [
-        { S: { glyphs: [' j ', '/=\\', '(*)', '\\_/'], fg: [' j ', 'BHB', 'LcL', 'DBD'], n: N } },
-        { S: { glyphs: [' j ', '/=\\', '(+)', '\\_/'], fg: [' j ', 'BHB', 'LmL', 'DBD'], n: N } }
+        { S: { glyphs: ['=j=', '/=\\', '(*)', '\\_/'], fg: ['DjD', 'BHB', 'LcL', 'DBD'], n: N } },
+        { S: { glyphs: ['=j=', '/=\\', '(+)', '\\_/'], fg: ['DjD', 'BHB', 'LmL', 'DBD'], n: N } }
       ] },
       // after pickup (variant 'empty'): the bracket stays - iron hook plus a brass bracket plate, a soot mark where
       // the lamp hung, nothing below it. Same 3x4 size and anchor, so the swap never moves the sprite.
@@ -72,5 +75,33 @@
     },
     interact: { prompt: '[E] Take lamp', radius: 1.8,
                 note: 'D-011: level data (tower.js interactables) still says "[E] Take lantern"; see models/wreckage.js levelPatch' }
+  };
+
+  // ---- OWN-REQ-006 D1: lampFlame = the flame inside the VOXEL lamp's open cage (ASSETS.voxelModels.lantern) ----
+  // Anchored (bottom centre) at the voxel lantern mount `flame` [4,4,5] (burner top). The cage opening is 4 voxels
+  // (0.125 m) wide and 5 voxels (0.156 m) tall under the hood, so the flame is 0.09 x 0.13 m: it sits inside, the near
+  // brass posts cut it (depth test). Heat keys = the brazier flame unit (1 tip .. 4 core), ALL cells emissive.
+  // Calmer than the brazier: the white-yellow core at the foot never moves, only the tips sway (4 frames, 9 fps).
+  // About 3x4 cells at 2 m on 160x60 (the half LOD 1x2 takes over from ~4 m / on small grids).
+  var FL_KEYS = { '1': { c: 'flameTip', e: true }, '2': { c: 'flameOuter', e: true },
+                  '3': { c: 'flameMid', e: true }, '4': { c: 'flameCore', e: true } };
+  function fl(g, h) { return { S: { glyphs: g, fg: h } }; }
+  A.models.lampFlame = {
+    name: 'lampFlame',
+    desc: 'OWN-REQ-006: small steady brass-lamp flame in the voxel lamp cage (emissive core, swaying glyph tips).',
+    size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, world: { w: 0.09, h: 0.13 },
+    directions: ['S'], billboard: true,
+    keys: FL_KEYS,
+    mountOn: { model: 'lantern', mount: 'flame', clip: 'lit',
+               note: 'spawn only while the VOXEL lamp shows `lit`; remove on lanternTake (clip -> empty)' },
+    animations: { burn: { fps: 9, loop: true, frames: [
+      fl([" ' ", ' ^ ', "'*'"], [' 1 ', ' 3 ', '242']),
+      fl([' . ', " ^'", "'*'"], [' 1 ', ' 31', '242']),
+      fl([" ' ", ' * ', "^*'"], [' 1 ', ' 3 ', '342']),
+      fl(['  .', "'^ ", "'*'"], ['  1', '13 ', '242'])
+    ] } },
+    lods: { half: { size: { w: 1, h: 2 }, anchor: { x: 0, y: 1 }, animations: { burn: { fps: 9, loop: true, frames: [
+      fl(["'", '*'], ['2', '4']), fl(['^', '*'], ['3', '4']), fl(['.', '*'], ['1', '4']), fl(['^', '*'], ['2', '4'])
+    ] } } } }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

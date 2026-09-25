@@ -253,7 +253,12 @@
     lantern: { color: 'lantern', intensity: 0.8, type: 'point', radius: 5, falloff: 'smooth',
                flicker: { hzMin: 8, hzMax: 12, amount: 0.05, jitter: 0.0 },
                hold: { right: 0.3, down: 0.3, forward: 0.4 } },
-    beacon:  { color: 'torch', intensity: 1.0, type: 'point', radius: 12, falloff: 'smooth',
+    // OWN-REQ-006: the brass lamp burning on its hook (tower.js lights id 'lanternHook', at the voxel lantern `light`
+    // mount). Same amber as the carried lamp but smaller + dimmer, so the corner glows without out-shining the burner
+    // (torch 1.0 / 6 m, 1.22 m away) and the pickup reads as "the light is mine now" (carried = 0.8 / 5 m).
+    lanternHook: { color: 'lantern', intensity: 0.55, type: 'point', radius: 3.5, falloff: 'smooth',
+                   flicker: { hzMin: 6, hzMax: 9, amount: 0.05, jitter: 0.02 } },
+    beacon: { color: 'torch', intensity: 1.0, type: 'point', radius: 12, falloff: 'smooth',
                flicker: { hzMin: 8, hzMax: 12, amount: 0.15, jitter: 0.05 } },  // US-022 (legacy fire beacon)
     // D-011: the woken relay (US-022 "wake the relay"). Cool teal, slow breathing, not a fire flicker.
     // The Kestrel burner keeps the `torch` preset (D-011: "same light preset").
