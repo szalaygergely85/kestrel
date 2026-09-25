@@ -166,8 +166,12 @@ function packFeatureCode(str, idx) {
  * Returns `null` when the recipe has no `nearLOD.features` (old/far-only
  * recipes - `shadeTerrain`'s `close` branch is then simply never reached
  * since `closeBand` is also omitted).
+ *
+ * US-026a S5: exported so `TerrainTextures.js`'s `packTerrainTextures` packs
+ * the SAME flat list (same order, so a feature's index here is the same
+ * `fi` the GLSL hash salt `20 + fi` uses - never a second, drifting copy).
  */
-function buildFeatures(recipe, palette) {
+export function buildFeatures(recipe, palette) {
   const nearLOD = recipe.nearLOD;
   if (!nearLOD || !nearLOD.features || !recipe.terrain) return null;
   const list = [];

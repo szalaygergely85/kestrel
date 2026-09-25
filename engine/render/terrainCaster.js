@@ -30,7 +30,10 @@ export const STEP_K = 0.03;
 // DITHER_SEED)`), distinct from every other terrain hash salt (glyph tier
 // hA, glyph pick hB=7, glint, jitter=10, features=20+) so the near/far pick
 // never correlates with any of them.
-const DITHER_SEED = 9;
+// US-026a S5: exported so `terrain.frag.js`'s GLSL march imports the SAME
+// value (never a hand-copied literal - the "do not" list bans 130/170/0.5/
+// 0.012 as engine-code literals; this salt is the same class of constant).
+export const DITHER_SEED = 9;
 
 const MAX_SKIPS = 8; // MAX_STRUCTS (compositor.js)
 const skipT = new Float64Array(MAX_SKIPS * 2);
@@ -103,10 +106,26 @@ function buildSkips(structures, ex, ey, dx, dy, skips) {
 // 130/170/0.5/0.012 as engine-code literals, so an incomplete recipe simply
 // never engages near sampling, falling back to the pre-US-026a far-only
 // behaviour rather than guessing the numbers).
-function activeNearLOD(terrain) {
+// US-026a S5: exported so `GpuCellPipeline.js`'s uniform upload gates
+// `uNearReady` off the SAME check the JS march uses (never a second,
+// drifting re-derivation of "is near sampling active").
+export function activeNearLOD(terrain) {
   const nl = terrain.recipe && terrain.recipe.nearLOD;
   if (!terrain.nearReady || !nl || !nl.handover || !nl.step) return null;
   return nl;
+}
+
+/**
+ * US-026a S5: the combined near+far height-draw bounds (`{minH, maxH}`),
+ * gated by the SAME `activeNearLOD` check as the march itself - the single
+ * source of truth for both `marchTerrainRay`'s early-outs (below) and the
+ * GLSL uniform upload (`GpuCellPipeline.js`'s `_uploadTerrainUniforms`,
+ * `uTerrainMaxH`), so the two never compute this differently.
+ */
+export function terrainHBounds(terrain) {
+  const nl = activeNearLOD(terrain);
+  if (nl) return { maxH: Math.max(terrain.farMaxH, terrain.near.maxH), minH: Math.min(terrain.farMinH, terrain.near.minH) };
+  return { maxH: terrain.farMaxH, minH: terrain.farMinH };
 }
 
 /**
@@ -172,8 +191,8 @@ export function marchTerrainRay(terrain, ex, ey, eyeH, dx, dy, slope, tMax, skip
   // 23.4 "new early-out" bounds: combine the far grid's extremes with the
   // near band's (when active) - a hill inside the band can be taller/deeper
   // than anything on the coarse far grid.
-  const maxHDraw = nl ? Math.max(terrain.farMaxH, terrain.near.maxH) : terrain.farMaxH;
-  const minHDraw = nl ? Math.min(terrain.farMinH, terrain.near.minH) : terrain.farMinH;
+  const hb = terrainHBounds(terrain);
+  const maxHDraw = hb.maxH, minHDraw = hb.minH;
 
   if (!(slope < 0) && eyeH >= maxHDraw) return false; // climbing above every hill, from the start
 

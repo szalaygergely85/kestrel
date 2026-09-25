@@ -35,14 +35,18 @@
 import {
   GLSL_VERSION, PRECISION, GBUF_UNPACK, HASH_FAST, SAMPLE_POW_LUT, BYTE_OUT,
   SMOOTHSTEP_FAST, QFLOOR, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS, SKY_LUT_N,
+  OCT_NORMAL,
 } from './common.js';
 import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
-// US-016 (14.4 item 5, GPU build order step 3): terrain (kind==7) branch -
-// literal GLSL twin of terrainShade.js's shadeTerrainFar. `b` (lighting)
-// arrives already computed, via the resolved GA.w (aoD) field - the pass A2
-// march computes it (terrain.frag.js's own doc comment explains why: this
-// program is already near the 16-texture-unit budget, so the FARH texture
-// stays in the march pass only).
+// US-016 (14.4 item 5, GPU build order step 3), reworked by US-026a S5 (23.4
+// "Lighting"): terrain (kind==7) branch - literal GLSL twin of
+// terrainShade.js's shadeTerrain (renamed from shadeTerrainFar). `GA.w`
+// (aoD) now carries the PACKED NORMAL the pass A2 march wrote (never `b` any
+// more - see terrain.frag.js's own doc comment); this program decodes it and
+// computes `b` itself (sun + this cell's own uLightTex point-light term),
+// which is why it needs its own uSunDir/uAmbientI/uSunI uniforms now (moved
+// out of the march pass - still no FARH/NEARH texture unit needed here,
+// since the normal is already resolved by the time it reaches this pass).
 import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
 import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 
@@ -90,8 +94,15 @@ uniform ivec2 uFogSparseCodes, uFogHazeCodes; // .x=alt0 code .y=alt1 code (alt 
 uniform int uFogSparseAlt, uFogHazeAlt;
 
 // US-016 (14.4 item 5): terrain (kind==7) - the recipe-bands/far-fog
-// uniforms (uBandNear/uBandMid/uTerrainFog*) are declared by
+// uniforms (uBandNear/uBandMid/uTerrainFog*), plus US-026a S5's near-detail
+// uniforms (uNearDetailOn/uHandover/uCloseBand), are declared by
 // TERRAIN_SHADE_GLSL below, included once into this same translation unit.
+// US-026a S5 (23.4 "Lighting"): the sun (moved out of the march pass - see
+// terrain.frag.js's own doc comment) - sunFromWorld uploads this every
+// frame in _passShade (GpuCellPipeline.js), same as the march pass did
+// before this story.
+uniform vec3 uSunDir;
+uniform float uAmbientI, uSunI;
 
 ${GBUF_UNPACK}
 ${HASH_FAST}
@@ -101,6 +112,7 @@ ${SMOOTHSTEP_FAST}
 ${QFLOOR}
 ${ORIENT_AND_LINES}
 ${LEVEL_FROM_THRESHOLDS}
+${OCT_NORMAL}
 ${TERRAIN_SHADE_GLSL}
 
 const int MAX_SUB = ${MAX_SUB};
@@ -380,24 +392,34 @@ void main() {
     return;
   }
 
-  // US-016 (14.4 items 4/5): terrain cells are a completely different
-  // look-up (TLOOK, not a MaterialTable/G-D derivatives) - deterministic
-  // per cell, no sub-sample averaging (the JS oracle's shadeTerrainCells is
-  // likewise a single per-cell call, not per-sub-sample).
+  // US-016 (14.4 items 4/5), reworked by US-026a S5 (23.4 "Lighting"/"Shade
+  // pass"): terrain cells are a completely different look-up (TLOOK, not a
+  // MaterialTable/G-D derivatives) - deterministic per cell, no sub-sample
+  // averaging (the JS oracle's shadeTerrainCells is likewise a single
+  // per-cell call, not per-sub-sample). aoD (GA.w) now carries the PACKED
+  // NORMAL the march pass wrote (not b any more) - decoded here, then
+  // combined with the sun + this cell's already-computed point-light term
+  // (uLightTex, written by the light pass right before this one - literal
+  // twin of terrainShade.js's shadeTerrainCells: b = ambientI + sunI*max(0,
+  // N.L), bT = b + max(Lc.r,Lc.g,Lc.b)), then the lamp tints fg after
+  // shadeTerrain's own byte-quantised output (+= Lc*0.5, clamped) - same
+  // double-quantisation order as the JS oracle (see that file's own comment).
   if (kindU == ${KIND_TERRAIN}u) {
     int typeId = int(giMat(gi.y));
     uvec4 gaT = texelFetch(uGA, cell, 0);
     float uT = uintBitsToFloat(gaT.x), vT = uintBitsToFloat(gaT.y);
-    // item 4: aoD = b - computed at hit time by the pass A2 march (same
-    // farHNormal + sun dot the JS oracle's terrainNormal/sunFromWorld do),
-    // not recomputed here (keeps this program's texture-unit count down).
-    float bT = uintBitsToFloat(gaT.w);
+    vec3 Nt = unpackNormalOct(gaT.w);
+    float ndotlT = Nt.x * uSunDir.x + Nt.y * uSunDir.y + Nt.z * uSunDir.z;
+    float bSunT = uAmbientI + uSunI * max(0.0, ndotlT);
+    uvec4 lightT = texelFetch(uLightTex, cell, 0);
+    vec3 LcT = uintBitsToFloat(lightT.xyz);
+    float bT = bSunT + max(LcT.r, max(LcT.g, LcT.b));
     float distT = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
-    float bcT = max(bT, 0.0);
-    float gainT = uFgMin + (1.0 - uFgMin) * samplePowLUT(bcT);
-    if (bcT > 1.0) gainT = min(uFgMaxGain, gainT + (bcT - 1.0) * 0.5);
-    TerrainOut to = shadeTerrainFar(distT, typeId, bT, uT, vT, uTimeSec, gainT);
-    shadeFg = vec4(toByte01(to.fr), toByte01(to.fg), toByte01(to.fb), toByte01(float(to.glyph)));
+    TerrainOut to = shadeTerrain(distT, typeId, bT, uT, vT, uTimeSec);
+    float frQ = floor(clamp(to.fr, 0.0, 255.0) + 0.5);
+    float fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
+    float fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);
+    shadeFg = vec4(toByte01(frQ + LcT.r * 0.5 * 255.0), toByte01(fgQ + LcT.g * 0.5 * 255.0), toByte01(fbQ + LcT.b * 0.5 * 255.0), toByte01(float(to.glyph)));
     shadeBg = vec4(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);
     return;
   }

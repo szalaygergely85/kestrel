@@ -28,7 +28,7 @@
 import { compileShader, linkProgram, createTexture2D, isSoftwareRenderer, formatFor } from './glUtil.js';
 import { allocGridTargets, freeGridTargets } from './gridTargets.js';
 import { packMaterialTable } from './ShadeTextures.js';
-import { packTerrainTextures } from './TerrainTextures.js';
+import { packTerrainTextures, packNearTextures } from './TerrainTextures.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
 import { SHADE_FRAG_SRC } from './glsl/shade.frag.js';
 import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
@@ -39,7 +39,12 @@ import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 // US-016 (14.4 GPU build order steps 2/3): pass A2 program + the shared sun helper.
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
-import { sunFromWorld } from '../terrainCaster.js';
+// US-026a S5 (23.4): the shared near-band gate/bounds helpers, plus the
+// dither salt (uniform, never a hand-copied literal) - the JS oracle
+// (terrainCaster.js) and this pipeline's uniform upload use the SAME
+// `terrainHBounds` so `uTerrainMaxH` never drifts from the JS march's own
+// combined bound.
+import { sunFromWorld, terrainHBounds, activeNearLOD } from '../terrainCaster.js';
 // US-040 (15.2 items 3/4, build order step 3): pass A3 `voxel` - VOX/VOXINST
 // texture layout + the GLSL march itself.
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
@@ -223,6 +228,14 @@ export class GpuCellPipeline {
     this._terrainVersion = -1;
     this._terrainWorld = null;
     this._terrainPacked = null;
+    // US-026a S5 (23.4): near-band textures - same 1x1-placeholder pattern,
+    // uploaded (packNearTextures) only when `terrain.near.version` changes,
+    // independently of the far-bake version above (23.7 S5 "note the layout
+    // in a comment": see TerrainTextures.js's own doc comment on NEARH/
+    // NEARTYPE/TLOOK's feature texels).
+    this.texNearH = createTexture2D(gl, gl.R32F, 1, 1);
+    this.texNearType = createTexture2D(gl, gl.R8UI, 1, 1);
+    this._terrainNearVersion = -1;
 
     // --- US-040 (15.2 items 2/3) voxel textures - VOX (the shared atlas,
     // 1x1 placeholder until bindVoxels() uploads a real one on atlas.version
@@ -398,6 +411,9 @@ export class GpuCellPipeline {
     this._terrainBinds = this._buildBindTable(this._locsTerrain, [
       ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth],
       ['uFarH', this.texFarH], ['uFarType', this.texFarType],
+      // US-026a S5 (23.4): near-band textures - inert (uNearReady == 0)
+      // until a world with `terrain.nearReady && activeNearLOD` is bound.
+      ['uNearH', this.texNearH], ['uNearType', this.texNearType],
     ]);
     // US-040 (15.2 item 4): pass A3 ping-pongs between set 1 (fboCastSub's
     // textures) and set 2 (fboTerrainSub's) - two bind tables sharing the
@@ -556,6 +572,7 @@ export class GpuCellPipeline {
     for (const tex of [this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
       this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
       this.texLVis, this.texFarH, this.texFarType, this.texTlook,
+      this.texNearH, this.texNearType,
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
@@ -569,6 +586,8 @@ export class GpuCellPipeline {
     this._terrainVersion = -1;
     this._terrainWorld = null;
     this._terrainPacked = null;
+    // US-026a S5: same for the near-terrain textures.
+    this._terrainNearVersion = -1;
     // US-040: force a full VOX re-upload on the next bindVoxels() call.
     this._voxAtlasVersion = -1;
   }
@@ -1100,27 +1119,49 @@ export class GpuCellPipeline {
   _ensureTerrainTextures(world) {
     const terrain = world && world.terrain;
     if (!terrain || !terrain.farReady) return;
-    if (this._terrainVersion === terrain.farVersion && this._terrainWorld === world) return;
-    const packed = packTerrainTextures(terrain, this._palette);
-    const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.texFarH);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, packed.width, packed.height, 0, gl.RED, gl.FLOAT, packed.farH);
-    gl.bindTexture(gl.TEXTURE_2D, this.texFarType);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, packed.width, packed.height, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, packed.farType);
-    gl.bindTexture(gl.TEXTURE_2D, this.texTlook);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, packed.tlookWidth, packed.tlookHeight, 0, gl.RGBA, gl.FLOAT, packed.tlook);
-    this._terrainPacked = packed;
-    this._terrainVersion = terrain.farVersion;
-    this._terrainWorld = world;
-    this._uploadTerrainUniforms(terrain, this._palette);
+    let changed = false;
+    if (this._terrainVersion !== terrain.farVersion || this._terrainWorld !== world) {
+      const packed = packTerrainTextures(terrain, this._palette);
+      const gl = this.gl;
+      gl.bindTexture(gl.TEXTURE_2D, this.texFarH);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, packed.width, packed.height, 0, gl.RED, gl.FLOAT, packed.farH);
+      gl.bindTexture(gl.TEXTURE_2D, this.texFarType);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, packed.width, packed.height, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, packed.farType);
+      gl.bindTexture(gl.TEXTURE_2D, this.texTlook);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, packed.tlookWidth, packed.tlookHeight, 0, gl.RGBA, gl.FLOAT, packed.tlook);
+      this._terrainPacked = packed;
+      this._terrainVersion = terrain.farVersion;
+      this._terrainWorld = world;
+      changed = true;
+    }
+    if (this._ensureNearTerrainTextures(terrain)) changed = true;
+    if (changed) this._uploadTerrainUniforms(terrain, this._palette);
   }
 
-  // US-016 (14.4 items 3-5, GPU build order steps 2/3): the terrain
-  // constants that only change when the far bake (re)runs, not per frame -
-  // `uFarMap`/`uTerrainMaxH` for the pass A2 march (progTerrain), and the
-  // recipe bands + far-fog colours for the shade pass's kind==7 branch
-  // (progShade); both also need `uFarMap` (the shade pass's own
-  // `farHBilinear` call, for the hit-point normal).
+  // US-026a S5 (23.4): uploads `NEARH`/`NEARTYPE` once when `terrain.near.
+  // version` changes - independent of the far-bake version above (the near
+  // band is baked synchronously in `World.load`, 23.1 decision 1, so this
+  // usually flips once, right after the far bake). No-op while the world
+  // has no near band baked yet (`terrain.nearReady` false). Returns true
+  // when it actually uploaded (so the caller knows to re-push uniforms too).
+  _ensureNearTerrainTextures(terrain) {
+    if (!terrain.nearReady) return false;
+    if (this._terrainNearVersion === terrain.near.version) return false;
+    const packed = packNearTextures(terrain);
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.texNearH);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, packed.width, packed.height, 0, gl.RED, gl.FLOAT, packed.nearH);
+    gl.bindTexture(gl.TEXTURE_2D, this.texNearType);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, packed.width, packed.height, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, packed.nearType);
+    this._terrainNearVersion = terrain.near.version;
+    return true;
+  }
+
+  // US-016 (14.4 items 3-5, GPU build order steps 2/3), extended by US-026a
+  // S5 (23.4): the terrain constants that only change when the far/near bake
+  // (re)runs, not per frame - `uFarMap`/`uTerrainMaxH`/near-band uniforms for
+  // the pass A2 march (progTerrain), and the recipe bands + far-fog colours
+  // + near-detail uniforms for the shade pass's kind==7 branch (progShade).
   _uploadTerrainUniforms(terrain, palette) {
     const gl = this.gl;
     // ARCH CHANGES item 5: read the real origin from `terrain._farGridDraw`
@@ -1130,9 +1171,22 @@ export class GpuCellPipeline {
     // of a silently-stale assumption if a future recipe origin moves.
     const grid = terrain._farGridDraw;
     const farMap = [grid.x0, grid.y0, terrain.mapCell, terrain.mapW];
+    const hb = terrainHBounds(terrain); // US-026a S5: combines near.maxH/minH when active - single source of truth (23.4).
+    const nl = activeNearLOD(terrain); // US-026a S5: the march pass's OWN (strict) gate - terrain.nearReady && handover && step.
     gl.useProgram(this.progTerrain);
     gl.uniform4fv(this._locsTerrain.uFarMap, farMap);
-    gl.uniform1f(this._locsTerrain.uTerrainMaxH, terrain.farMaxH);
+    gl.uniform1f(this._locsTerrain.uTerrainMaxH, hb.maxH);
+    gl.uniform1f(this._locsTerrain.uFarMinH, terrain.farMinH);
+    gl.uniform1i(this._locsTerrain.uNearReady, nl ? 1 : 0);
+    if (terrain.nearReady && terrain.near) {
+      const ng = terrain.near;
+      gl.uniform4f(this._locsTerrain.uNearMap, ng.x0, ng.y0, ng.cell, ng.w);
+      gl.uniform1f(this._locsTerrain.uNearMinH, ng.minH);
+    }
+    if (nl) {
+      gl.uniform2f(this._locsTerrain.uHandover, nl.handover[0], nl.handover[1]);
+      gl.uniform2f(this._locsTerrain.uNearStep, nl.step.min, nl.step.k);
+    }
 
     const recipe = terrain.recipe;
     const fogRec = palette && palette.fog && palette.fog.far;
@@ -1149,6 +1203,18 @@ export class GpuCellPipeline {
       gl.uniform1f(locS.uTerrainFogCurve, fogRec.curve || 1);
       if (nearRGB) gl.uniform3f(locS.uTerrainFogNearRGB, nearRGB[0], nearRGB[1], nearRGB[2]);
       if (farRGB) gl.uniform3f(locS.uTerrainFogFarRGB, farRGB[0], farRGB[1], farRGB[2]);
+    }
+    // US-026a S5 (23.4 near-detail): a DIFFERENT, more lenient gate than
+    // `uNearReady` above - literal twin of terrainShade.js's
+    // `makeTerrainShadeCtx` (`recipe.nearLOD.bands`/`.handover` alone, never
+    // gated on `terrain.nearReady`/`.step` - see that file's own doc
+    // comment on why the shading gate and the march gate differ).
+    const nearLOD = recipe && recipe.nearLOD;
+    const nearDetailOn = !!(nearLOD && nearLOD.bands && nearLOD.handover);
+    gl.uniform1i(locS.uNearDetailOn, nearDetailOn ? 1 : 0);
+    if (nearDetailOn) {
+      gl.uniform2f(locS.uHandover, nearLOD.handover[0], nearLOD.handover[1]);
+      gl.uniform1f(locS.uCloseBand, nearLOD.bands.close);
     }
   }
 
@@ -1302,10 +1368,13 @@ export class GpuCellPipeline {
 
   // US-016 (14.4 items 2/4, GPU build order step 2): pass A2 - the same
   // sub-sample resolution/camera basis as `_passCast`, reading set 1
-  // (fboCastSub's own output) and writing set 2 (fboTerrainSub).
+  // (fboCastSub's own output) and writing set 2 (fboTerrainSub). US-026a S5
+  // (23.4 "Lighting"): the sun no longer uploads here (this pass only
+  // writes the packed normal now) - `uTerrainMaxH`/near uniforms are
+  // version-gated statics, uploaded by `_uploadTerrainUniforms` instead of
+  // every frame.
   _passTerrain() {
     const gl = this.gl, loc = this._locsTerrain, cb = this._camBasis;
-    const terrain = this._world.terrain;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboTerrainSub);
     gl.viewport(0, 0, this.subCols, this.subRows);
     gl.useProgram(this.progTerrain);
@@ -1317,19 +1386,6 @@ export class GpuCellPipeline {
     gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
     gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
     gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
-    gl.uniform1f(loc.uTerrainMaxH, terrain.farMaxH);
-    // US-016 (14.4 item 4): the interim sun (D-007 wording) - `sunFromWorld`
-    // (terrainCaster.js) is the single source of truth the JS oracle uses
-    // too (build order step 1). Cheap (a few trig calls); recomputed every
-    // frame rather than cached because nothing here tracks a "did timeOfDay
-    // change" version the way `_ensureTerrainTextures` tracks `farVersion`.
-    // ARCH CHANGES item 5: pass this instance's own scratch object so
-    // `sunFromWorld` writes into it instead of allocating a fresh literal
-    // every frame (architecture.md section 9).
-    const sun = sunFromWorld(this._world, this._palette, this._sunScratch);
-    gl.uniform3f(loc.uSunDir, sun.dirX, sun.dirY, sun.dirZ);
-    gl.uniform1f(loc.uAmbientI, sun.ambientI);
-    gl.uniform1f(loc.uSunI, sun.sunI);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -1543,6 +1599,19 @@ export class GpuCellPipeline {
       gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
     }
 
+    // US-026a S5 (23.4 "Lighting"): the sun, moved here from the (now
+    // normal-only) march pass - `sunFromWorld` (terrainCaster.js) is the
+    // single source of truth the JS oracle uses too. Cheap (a few trig
+    // calls); recomputed every frame since nothing here tracks a "did
+    // timeOfDay change" version. Only meaningful while the bound world has
+    // terrain (kind==7 cells exist only then) - harmless zeros otherwise.
+    if (this._world && this._world.terrain) {
+      const sun = sunFromWorld(this._world, this._palette, this._sunScratch);
+      gl.uniform3f(loc.uSunDir, sun.dirX, sun.dirY, sun.dirZ);
+      gl.uniform1f(loc.uAmbientI, sun.ambientI);
+      gl.uniform1f(loc.uSunI, sun.sunI);
+    }
+
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -1573,9 +1642,13 @@ const SHADE_UNIFORMS = [
   'uFogStipple0', 'uFogStipple1', 'uFogSparse', 'uFogSparseCodes', 'uFogHazeCodes', 'uFogSparseAlt', 'uFogHazeAlt',
   // US-030a: GPU sky (14.2 item 3).
   'uSky', 'uSkyElevTop', 'uGpuSky', 'uHorizonRow', 'uPlaneDistY',
-  // US-016 (14.4 item 5): terrain (kind==7) branch - `b` arrives via GA.w.
+  // US-016 (14.4 item 5): terrain (kind==7) branch.
   'uTlook', 'uBandNear', 'uBandMid',
   'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uTerrainFogNearRGB', 'uTerrainFogFarRGB',
+  // US-026a S5 (23.4): the sun (moved out of the march pass - `aoD` now
+  // carries the packed normal, decoded and lit here) + near-detail (close
+  // band/jitter/2 m-vs-8 m hash-cell switch, gated by uNearDetailOn).
+  'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand',
 ];
 const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
@@ -1597,7 +1670,10 @@ const TERRAIN_UNIFORMS = [
   'uSGI', 'uSGA', 'uSDepth', 'uFarH', 'uFarType', 'uFarMap',
   'uStructA', 'uStructB', 'uStructCount',
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
-  'uHorizonRow', 'uPlaneDistY', 'uTerrainMaxH', 'uSunDir', 'uAmbientI', 'uSunI',
+  'uHorizonRow', 'uPlaneDistY', 'uTerrainMaxH',
+  // US-026a S5 (23.4): near-band march - uSunDir/uAmbientI/uSunI moved OUT
+  // of this program (the shade pass computes `b` now, see SHADE_UNIFORMS).
+  'uNearH', 'uNearType', 'uNearMap', 'uNearReady', 'uFarMinH', 'uNearMinH', 'uHandover', 'uNearStep',
 ];
 // US-040 (15.2 items 3/4, GPU build order step 3): pass A3 voxel march.
 const VOXEL_UNIFORMS = [
