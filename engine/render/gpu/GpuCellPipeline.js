@@ -507,6 +507,17 @@ export class GpuCellPipeline {
     // before this one, in its constructor) has already run `_initGL()` and
     // rebuilt `rt.fgTex`/`rt.bgTex` by the time this fires - listener order
     // follows registration order for the same event/target.
+    //
+    // Architect review 1 item 1: a `resizeGrid` call that arrived while this
+    // pipeline was `!ready` (e.g. mid context-loss) early-returns WITHOUT
+    // updating `cols/rows/subCols/subRows`, so those fields can be stale
+    // relative to `rt`'s new size by the time a restore fires. Re-read them
+    // from `rt` (the source of truth) before `_initGL()` so a restore always
+    // rebuilds at the CURRENT grid, never the stale one.
+    this.cols = this.rt.cols;
+    this.rows = this.rt.rows;
+    this.subCols = this.cols * this.rays;
+    this.subRows = this.rows * this.rays;
     try {
       this._initGL();
       this.ready = true;
@@ -534,15 +545,20 @@ export class GpuCellPipeline {
     if (!gl) return;
     this.rt.setCellPass(null);
     // Best-effort cleanup; safe to call even if _initGL threw partway through.
-    for (const tex of [this.texGI, this.texGA, this.texGD, this.texDepth, this.texShadeFg, this.texShadeBg,
-      this.texSGI, this.texSGA, this.texSDepth, this.texSGI2, this.texSGA2, this.texSDepth2,
-      this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
-      this.texMask, this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
-      this.texLight, this.texLVis, this.texFarH, this.texFarType, this.texTlook,
+    // Architect review 1 item 3: the grid-sized textures/FBOs (this._t, the
+    // exact set `allocGridTargets`/`freeGridTargets` own) go through
+    // `freeGridTargets` instead of a hand-listed `gl.deleteTexture`/
+    // `deleteFramebuffer` loop, so they route through `glUtil`'s `glCounts`
+    // dev counter (kept honest across a context loss/restore) and there is
+    // one single owner of that field list instead of two that can drift.
+    freeGridTargets(gl, this._t);
+    this._t = null;
+    for (const tex of [this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
+      this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
+      this.texLVis, this.texFarH, this.texFarType, this.texTlook,
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const fbo of [this.fboShade, this.fboFinal, this.fboCast, this.fboCastSub, this.fboTerrainSub, this.fboDeriv, this.fboLight]) if (fbo) gl.deleteFramebuffer(fbo);
     for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     if (this.timer) this.timer.dispose();
@@ -578,12 +594,28 @@ export class GpuCellPipeline {
     const gl = this.gl;
     const old = this._t;
 
+    // Architect review 1 item 2: alloc runs BEFORE anything old is freed
+    // (as before), but now `this.cols/rows/subCols/subRows` are only
+    // committed AFTER a successful alloc - on a realistic out-of-memory
+    // failure at the new size, `allocGridTargets` throws (already
+    // self-cleaning per its own fix), `old` is still intact and untouched,
+    // and this pipeline falls back cleanly instead of the exception
+    // escaping into `applyGrid` -> `loop.render` and killing the rAF loop.
+    let t;
+    try {
+      t = allocGridTargets(gl, cols, rows, this.rays, this.rt.fgTex, this.rt.bgTex);
+    } catch (e) {
+      console.error('[GpuCellPipeline] resizeGrid failed at', `${cols}x${rows}`, '- falling back to CPU shading at the old grid:', e);
+      this.ready = false;
+      this.rt.gpuActive = false;
+      this.setEnabled(false);
+      return;
+    }
+    freeGridTargets(gl, old);
     this.cols = cols;
     this.rows = rows;
     this.subCols = cols * this.rays;
     this.subRows = rows * this.rays;
-    const t = allocGridTargets(gl, cols, rows, this.rays, this.rt.fgTex, this.rt.bgTex);
-    freeGridTargets(gl, old);
     this._t = t;
     Object.assign(this, t);
 

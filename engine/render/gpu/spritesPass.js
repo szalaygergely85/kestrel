@@ -134,6 +134,14 @@ export class GpuSpritePass {
   _restore() {
     // RenderTargetGL and GpuCellPipeline restore first (listener order ==
     // registration order); rt.fgTex/bgTex are new objects by now.
+    //
+    // Architect review 1 item 1: a `resizeGrid` call that arrived while this
+    // pass was `!ready` early-returns without updating `cols/rows`, so they
+    // can be stale relative to `rt`'s new size by the time a restore fires.
+    // Re-read from `rt` before `_initGL()` so a restore always rebuilds at
+    // the CURRENT grid.
+    this.cols = this.rt.cols;
+    this.rows = this.rt.rows;
     try {
       this._initGL();
       this.ready = true;

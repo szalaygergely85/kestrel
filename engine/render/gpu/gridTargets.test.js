@@ -97,6 +97,44 @@ function fakeGl2(overrides) {
   ok('480x180 rays=4 (~85 MB) still fits the 256 MB budget', r.ok === true, JSON.stringify(r));
 }
 
+// ---- Architect review 1 item 1: computeGridLimits on a lost context must
+// return {ok:false}, never throw (gl.getParameter returns null on a lost
+// context per spec, so maxViewport[0] etc. would otherwise throw). ----
+{
+  const g = fakeGl2({});
+  g.isContextLost = () => true;
+  let threw = false, r = null;
+  try { r = computeGridLimits(g, 480, 180, 2, 4, 8); } catch (e) { threw = true; }
+  ok('computeGridLimits never throws on a lost context', !threw);
+  ok('computeGridLimits on a lost context returns ok:false with a reason', !!r && r.ok === false && /context lost/.test(r.reason), JSON.stringify(r));
+}
+
+// ---- Architect review 1 item 2: allocGridTargets throwing mid-way (an
+// incomplete FBO, the realistic out-of-memory failure) must not leak the
+// textures/FBOs already created on the partial set - they're freed before
+// the error propagates. ----
+{
+  const { gl: baseGl, counts } = makeMockGL();
+  const fgTex = {}, bgTex = {};
+  // Wrap checkFramebufferStatus so the 3rd FBO check (fboCast) fails -
+  // several textures and 2 FBOs (fboCastSub, fboTerrainSub) already exist
+  // on `t` by then.
+  let fboChecks = 0;
+  const gl = new Proxy(baseGl, {
+    get(target, prop) {
+      if (prop === 'checkFramebufferStatus') {
+        return () => { fboChecks++; return fboChecks === 3 ? -1 /* != FRAMEBUFFER_COMPLETE */ : target.FRAMEBUFFER_COMPLETE; };
+      }
+      return target[prop];
+    },
+  });
+  let threw = false;
+  try { allocGridTargets(gl, 240, 90, 2, fgTex, bgTex); } catch (e) { threw = true; }
+  ok('allocGridTargets rethrows on an incomplete FBO mid-way', threw);
+  const after = counts();
+  ok('allocGridTargets frees every partially-created texture/FBO on failure (no leak)', after.tex === 0 && after.fbo === 0, JSON.stringify(after));
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {
   console.log('\nFAILURES:');

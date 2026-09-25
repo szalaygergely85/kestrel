@@ -41,7 +41,22 @@ const GRID_FBO_FIELDS = Object.freeze([
 export function allocGridTargets(gl, cols, rows, rays, outFgTex, outBgTex) {
   const subCols = cols * rays, subRows = rows * rays;
   const t = {};
+  // Architect review 1 item 2: an incomplete FBO (a realistic out-of-memory
+  // failure at e.g. 480x180) throws partway through, after some textures/
+  // FBOs were already created on `t` - without this try/catch those leak
+  // (never freed, `t` itself goes out of scope at the throw site) and the
+  // exception escapes into the caller's caller (`resizeGrid` ->
+  // `applyGrid` -> `loop.render`, killing the rAF loop). Free whatever was
+  // built on `t` so far, then rethrow for the caller to handle.
+  try {
+    return _allocGridTargetsInner(gl, cols, rows, subCols, subRows, outFgTex, outBgTex, t);
+  } catch (e) {
+    freeGridTargets(gl, t);
+    throw e;
+  }
+}
 
+function _allocGridTargetsInner(gl, cols, rows, subCols, subRows, outFgTex, outBgTex, t) {
   t.texGI = createTexture2D(gl, gl.RG32UI, cols, rows);
   t.texGA = createTexture2D(gl, gl.RGBA32UI, cols, rows);
   t.texGD = createTexture2D(gl, gl.RGBA32UI, cols, rows);
@@ -126,6 +141,14 @@ export function freeGridTargets(gl, t) {
  * @returns {{ok: true} | {ok: false, reason: string}}
  */
 export function computeGridLimits(gl, cols, rows, rays, pxCellW, pxCellH) {
+  // Architect review 1 item 1: a lost context makes every `gl.getParameter`
+  // call return null (spec), so `maxViewport[0]` below would throw instead
+  // of returning the `{ok:false}` this function's own contract promises
+  // ("never throws" - `engine.setGrid` doesn't wrap this call). Checked
+  // first, before any getParameter call.
+  if (gl.isContextLost && gl.isContextLost()) {
+    return { ok: false, reason: 'context lost' };
+  }
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   if (cols * rays > maxTex || rows * rays > maxTex) {
     return { ok: false, reason: `sub-sample grid ${cols * rays}x${rows * rays} exceeds MAX_TEXTURE_SIZE ${maxTex}` };
