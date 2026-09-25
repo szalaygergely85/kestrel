@@ -588,7 +588,9 @@ function runGame(mode) {
       uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen();
     }
     // US-038b: settings panel (S from pause, or its own entry point)
-    updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !isMapOpen() });
+    // canOpen requires the pause overlay to actually be up (!look.locked) -
+    // S is also WASD "move backward", so this must never trigger in play.
+    updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() });
 
     if (look && !ending) {
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
