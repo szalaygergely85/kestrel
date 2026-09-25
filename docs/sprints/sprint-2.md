@@ -48,7 +48,25 @@ The owner plays one full run at 240x90, then switches to 320x120 via the grid se
 
 **M1 close:** with this walk-test passed and all P0 `done`, the remaining M1 exit criterion is a stranger run (finishes without instructions, without the lamp). The owner arranges it; the PO records it here. Fail path: content fixes in-sprint and re-run; engine fixes go first into sprint 3.
 
+## Review (PO, 2026-09-25)
+**Verdict: goal met.** The slice sounds right, the lamp and relay work, and it runs and reads right at every grid.
+- **Done (backlog rows checked):** BUG-OWN-007 (owner verified), US-020a (PO OK + owner ear-check, incl. fix pass), US-022 (PO OK + owner walk-check), OWN-REQ-006 (PO OK + owner walk-check), BUG-GPU-003 (arch fix, owner real-GPU gpucompare 27/27), BUG-GPU-004 (arch fix, same 27/27 run), US-018 (ARCH OK, owner real-GPU bench binding ACs met at 240x90 + 320x120, PO OK on evidence), OWN-REQ-003 stretch (ARCH OK + owner UI check at 160/240/320).
+- **Not done:** nothing planned is open. OWN-REQ-004 is a decision, not a story: D-023 (option B), work = US-027a/b in sprint 3.
+- **Bugs found:** BUG-GPU-004 (light parity at the lit hook lamp, fixed in-sprint); BUG-PERF-001 (row 25w, P2): JS spikes under the 8 ms bar (`sim.quest` 4.5 ms PC-B, `sim.physics` 3.1 ms + `r.ui` ~1.2 ms/frame PC-A); ground-floor JS avg 2.27 ms misses the 2 ms target.
+- **New owner requests:** OWN-REQ-007 (row 25v) player grids 240x90 / 320x120 / 400x150 / 480x180 ('ultra' if over 4 ms GPU), 160x60 dev-only; needs a manager note amending the US-018 grid AC.
+- **Missing to be playable** (as a game, beyond the 5-minute slice):
+  1. Leave the tower: US-026 walk-out (near LOD, slope physics); the end card is still the only exit.
+  2. Combat core: sword, one enemy type, hearts/damage UI. None of these exist yet, and they are the core of the GDD loop.
+  3. A small dungeon room with a puzzle outside the tower (the lever/grate is the only puzzle so far).
+  4. Object physics (US-051a/b, US-052), which the owner requires before release.
+  5. Settings panel (US-038a/b) incl. OWN-REQ-007 grids, remembered mute (US-060).
+  6. Content pipeline D-023 (US-027a/b), which gates the editor and the `.vox` import.
+  7. Finer terrain (OWN-REQ-002) and the rest of the sound (US-020b/c/d).
+- **Owner walk-test:** done for this sprint's stories (below). Next owner walk-test at the end of sprint 3 (walk-out).
+
 ## Owner tests (2026-09-25)
 - Owner walk/ear-check: US-022 relay wake, OWN-REQ-006 lit lamp, US-020a sound (incl. fix pass) - all fine -> done.
 - **M1 exit: stranger test PASSED** (owner, 2026-09-25: someone new played the tower slice without instructions and finished it).
 - Real-GPU: gpucompare 27/27 ALL PASS; bench 240x90 ALL PASS; 320x120 walk PASS, ground-floor view CHECK (render-side far-bake 4.1 ms in one frame) -> fix pending.
+- Update (owner final run 320x120, after 5b3ccad): `r.bake` 4.10 -> 1.10 ms, fix confirmed; all binding US-018 ACs met (ground floor JS max 7.60 ms < 8 ms; the 2 ms target is BUG-PERF-001).
+- **M1 exit check (PO, 2026-09-25):** every M1 P0 row is `done` with a PO OK / test record. Paperwork closed today: BUG-OWN-004, BUG-OWN-006 (not reproduced), BUG-GPU-004, BUG-GPU-003 (known-issues row), US-018 PO OK; story headings synced for US-006/024/029/030b/030c. US-040/041a/056 use the owner walk-test as the test record (D-019 amendment 1, sprint-1 review). Remaining before M1 is declared closed: merge `pc-a` + `pc-b` into `master`, then on master all Node suites + `node tools/check-deps.mjs` OK + `?gpucompare=1` all PASS (main session), then manager marks M1 done in roadmap.md.
