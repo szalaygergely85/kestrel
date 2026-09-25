@@ -32,11 +32,12 @@ PC-B's `po-review` pile (US-020b, US-020c, US-057, OWN-REQ-005a/b) gets a PC-A P
 
 ## PC-A order (one agent at a time; prep for PC-B comes first)
 - **P-A1 PO (opus, one pass):** ACs for US-027a, US-027b, US-038a (with D-025 bench ACs), US-026a (carve from the US-026 sketch, pick the terrain end marker, bounded area size); plus a sonnet-level routine review of PC-B's 5 `po-review` rows (may be a separate sonnet call).
+  - **Done 2026-09-25 (PO, opus):** story sections `### US-027a`, `### US-027b`, `### US-038a`, `### US-026a` in docs/backlog.md. US-026a "bounded" = 3x3 near-LOD chunks (128 m) baked at load, walk bound r 96 m around the tower (slide along, hint `boundsEdge`); breach end trigger removed, end card moves to a designer voxel **waystone** ~60 m WSW of the breach (toward the signal tower), no M1-ending flag. US-038a adds a `?debug=1` F4 grid-cycle dev key until US-038b. PC-B review: US-020b, US-020c, US-057, OWN-REQ-005a+b PO OK -> `testing`. PC-B queue block at the top of the backlog re-ordered to this sprint.
 - **P-A2 Architect (opus):** US-027a implementation notes (from architecture.md 19) + US-038a notes (re-alloc, max texture size at 480x180, UI layer re-bind) in one pass.
 - **P-A3 Programmer:** US-027a -> ARCH review -> merge to master and push (unblocks PC-B item 5).
 - **P-A4 Designer:** `uiStyle.settings` + mock in `design/preview/title.html` (P4); `uiStyle.logPanel` + decal (P3) in the same pass if cheap. Before PC-B reaches item 6.
 - **P-A5 Programmer:** US-038a -> ARCH review -> owner bench 400x150 / 480x180 -> master.
-- **P-A6 Architect (fable):** US-026a tech notes; designer places the terrain end marker in the flipped `world_m1` JSON after PC-B's item 5 lands.
+- **P-A6 Architect (fable):** US-026a tech notes; designer builds the waystone voxel model + places the terrain end marker in the flipped `world_m1` JSON after PC-B's item 5 lands.
 - **P-A7 Programmer:** US-026a -> ARCH review -> PO -> owner walk-test.
 - **Stretch:** BUG-PERF-001 (b)(c).
 
