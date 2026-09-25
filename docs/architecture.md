@@ -1357,3 +1357,31 @@ Game (`game/js/main.js`, `game/js/dev/perfBench.js`): what to print (position, s
 6. Owner runs `?bench=1` and `?bench=1&grid=320x120` on real hardware; numbers go into the US-018 story.
 
 **Do not:** nest timer queries; leave pass timing on when the overlay is hidden and no bench runs (8 queries/frame for nothing); add per-pass `performance.now()` inside the GPU pipeline beyond what exists; put pose data or the bench in `engine/`.
+
+## 17. OWN-REQ-003 UI layer: UI size independent of the scene grid (architect, 2026-09-25)
+
+**Choice: option (a), a second glyph layer at a fixed UI grid**, as the designer already specified (`uiStyle.uiGrid` 160x60 + `uiStyle.uiScale` in `design/models/title.js`). Rejected: (b) integer art scaling (1.5 at 240x90 is not an integer; blocky glyphs), (c) DOM text (breaks the ASCII look and GPU/CPU parity). Not expensive to reverse (engine-internal, no data format change): no manager decision needed. **Art: no redraw** - title, map card, hints, end text are already authored in 160x60 UI cells.
+
+**1. `engine/ui/uiLayer.js` (new, exported via `engine/index.js`).**
+```js
+/** @typedef {{cols:number, rows:number, cells:CellBuffer, sx:number, sy:number}} UiLayer  sx = scene.cols/cols, sy = scene.rows/rows */
+createUiLayer(uiGrid /* {cols, rows} */): UiLayer   // CellBuffer at uiGrid; cols clamped to [96, 320], rows = round(cols*GRID_ASPECT) (same 8:3 as the scene, so UI cells are square-scaled scene cells)
+ui.setCell(x, y, glyph, fg, bg) / ui.setCellRGB(...)  // same signatures as RenderTarget -> drawPanel/drawRichLine/drawText work unchanged (duck-typed `rt`)
+ui.clear()                                            // per frame: mask = 0 (transparent). A written cell = mask 1 = opaque glyph + bg
+ui.bindScene(sceneCols, sceneRows)                    // sets sx/sy; called by engine on create and on grid:changed
+```
+`engine.ui` is created in `createEngine` from `opts.uiGrid` (main.js passes `assets.uiStyle.uiGrid`; engine never reads ASSETS), default 160x60. `engine.setGrid` re-binds it and calls `rt.setUiLayer(engine.ui)` on the new target. US-038 can later offer a "UI size" setting = a different `uiGrid.cols`.
+
+**2. Present, GPU (`RenderTargetGL`).** `setUiLayer(ui)`; `present()` after the scene draw: upload `ui.cells.fg` and `bg` with `bg.a = mask ? 255 : 0` (packed in the same 9600-cell loop, or `setCell*` on the layer writes it and `clear` zeroes it) into two `uiCols x uiRows` RGBA8 textures, then a second fullscreen triangle with the same program, `uGrid = (uiCols, uiRows)`, a second **UI atlas** rasterized at `fontPx * sy` (rebuilt in `resize()`, like the scene atlas), and `uLayer = 1` -> `discard` when `bg.a == 0`. No blending (fades stay ramp-step per 7.4). Cost: 2x38 KB upload + one draw, < 0.05 ms GPU, < 0.05 ms JS.
+
+**3. Present, CPU (`RenderTargetCanvas2D`).** If `ui.cols == rt.cols` (always today: `cpuGrid` 160x60 == uiGrid) copy mask cells of the UI layer into the scene CellBuffer just before drawing (= today's picture, byte-identical). Otherwise draw the mask cells with the glyph cache at the UI cell size (<= ~1500 UI cells, rare path). This is the `uiScale.mode 'cells'` fallback in one place.
+
+**4. What moves to the layer (game side):** title card, hints text, `[E]` prompt, crosshair (UI centre 80,30 per `uiScale.crosshair`), map card panel, end card, pause overlay. **Stays in the scene grid:** eyelid/blink (`uiScale.blink`), scene fade/dim, F3 debug overlay (dev tool). Layout: UI code draws in UI cells directly; the 7.6 item 4 centre-scaling becomes identity (`panel.layout(ui.cols, ui.rows, ...)`).
+
+**5. Plates / dim.** Dim rects stay scene-cell rects (sceneDim unchanged). `panel.pushDim(dim, ui)` and `pushHintDim(ui, ...)` convert per `uiScale.plate`: `x0 = floor(ux0*sx)`, `x1 = ceil(ux1*sx)`, same for rows.
+
+**6. Parity / tests.** The UI layer is written by the same JS on both paths, so `?gpucompare=1` stays a scene comparison (now without UI mask cells in it; the "card open" pose checks the dim rect only). Node: `engine/ui/uiLayer.test.js` (clamp, sx/sy at 160/240/320, clear -> mask 0, setCellRGB -> mask 1, plate rect rounding at 240x90 incl. odd UI coords), `panel.test.js` pushDim with a ui, zero allocation in clear/draw. Browser (main session): screenshots at `?grid=160x60/240x90/320x120` show the title/map card at the same pixel size; `?gpu=0` identical to before.
+
+**Files:** new `engine/ui/uiLayer.js` (+test); `engine/render/RenderTargetGL.js`, `RenderTargetCanvas2D.js`, `engine/core/engine.js`, `engine/index.js`, `engine/ui/panel.js`, `engine/ui/crosshair.js` (draws into whatever target it is given); game: `main.js`, `game/js/ui/titleCard.js`, `endCard.js`, `pauseOverlay.js`, `game/js/quest/hints.js`, `mapCard.js`. Size: M (~1 programmer day), ARCH review (render).
+
+**Do not:** use alpha blending or CSS/DOM text for UI; scale UI art by duplicating glyphs; let the UI layer write into the scene mask texture; read `ASSETS` in `uiLayer.js`; allocate in `clear`/`present`.
