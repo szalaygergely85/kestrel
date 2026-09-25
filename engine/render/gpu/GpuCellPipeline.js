@@ -26,6 +26,7 @@
 // false); restored -> rebuild everything (`_initGL()` + `bind()` on the last
 // bound table) and re-enable.
 import { compileShader, linkProgram, createTexture2D, isSoftwareRenderer, formatFor } from './glUtil.js';
+import { allocGridTargets, freeGridTargets } from './gridTargets.js';
 import { packMaterialTable } from './ShadeTextures.js';
 import { packTerrainTextures } from './TerrainTextures.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
@@ -167,47 +168,30 @@ export class GpuCellPipeline {
     // between the SAME two sub-sample sets A1/A2 already own (no third set).
     this.progVoxel = linkProgram(gl, CELL_VERT_SRC, VOXEL_FRAG_SRC);
 
-    // --- G-buffer textures (US-030a: all-uint now - 14.2 item 3) - these are
-    // the RESOLVED, per-cell (cols x rows) textures; deriv/shade/edge/debug/
-    // sprites/gpuCompare all keep reading these exactly as before. ---
-    this.texGI = createTexture2D(gl, gl.RG32UI, this.cols, this.rows);
-    this.texGA = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
-    this.texGD = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
-    this.texDepth = createTexture2D(gl, gl.R32UI, this.cols, this.rows);
-    // US-030b (14.2 item 3, pass A): the SUB-sample G-buffer, sized
-    // cols*rays x rows*rays - the cast pass's own output, consumed only by
-    // the resolve pass (geometry) and the shade pass (continuous-output
-    // averaging over the resolved winner's group).
+    // --- G-buffer + shade-output textures and every FBO built ON them
+    // (US-030a: all-uint now - 14.2 item 3): US-038a (D-025, architecture.md
+    // 22.4) pulled all of this - the RESOLVED per-cell textures, the
+    // sub-sample sets, mask/light and the 7 FBOs - out into `gridTargets.js`
+    // (`allocGridTargets`), the one place that knows how to (re)allocate
+    // them; `resizeGrid` below reuses it for a live grid change without
+    // recompiling anything. The fields land on `this` exactly as before
+    // (Object.assign), so every other method in this class keeps reading
+    // `this.texGI`/`this.fboCast`/etc. unchanged. ---
     this.subCols = this.cols * this.rays;
     this.subRows = this.rows * this.rays;
-    this.texSGI = createTexture2D(gl, gl.RG32UI, this.subCols, this.subRows);
-    this.texSGA = createTexture2D(gl, gl.RGBA32UI, this.subCols, this.subRows);
-    this.texSDepth = createTexture2D(gl, gl.R32UI, this.subCols, this.subRows);
-    // US-016 (14.4 item 2): "set 2" - the terrain pass's own sub-sample
-    // G-buffer (a copy of set 1 unless a sub-ray's terrain march hit is
-    // nearer). Resolve reads set 2 when terrain is active this frame, set 1
-    // otherwise (bind-time choice, no uniform - item 2).
-    this.texSGI2 = createTexture2D(gl, gl.RG32UI, this.subCols, this.subRows);
-    this.texSGA2 = createTexture2D(gl, gl.RGBA32UI, this.subCols, this.subRows);
-    this.texSDepth2 = createTexture2D(gl, gl.R32UI, this.subCols, this.subRows);
-    // US-030a: per-frame UI mask upload - now read by the RESOLVE pass
-    // (14.2 item 3: mask is a per-cell, not per-sub-sample, property).
-    this.texMask = createTexture2D(gl, gl.R8UI, this.cols, this.rows);
-    // US-006 (14.3 items 3/5): per-cell light (RGBA32UI, floatBitsToUint)
-    // and the LVIS occlusion atlas (R8UI, MAX_VIS_DIM x (MAX_LIGHTS*MAX_VIS_DIM) -
-    // see engine/render/lighting.js's module doc for the boxed-per-light
-    // convention this atlas shares with the JS reference).
-    this.texLight = createTexture2D(gl, gl.RGBA32UI, this.cols, this.rows);
+    this._t = allocGridTargets(gl, this.cols, this.rows, this.rays, this.rt.fgTex, this.rt.bgTex);
+    Object.assign(this, this._t);
+    // US-006 (14.3 items 3/5): the LVIS occlusion atlas (R8UI, MAX_VIS_DIM x
+    // (MAX_LIGHTS*MAX_VIS_DIM)) - NOT grid-sized (fixed dims), so it stays
+    // outside gridTargets.js/resizeGrid - see engine/render/lighting.js's
+    // module doc for the boxed-per-light convention this atlas shares with
+    // the JS reference.
     this.texLVis = createTexture2D(gl, gl.R8UI, MAX_VIS_DIM, MAX_LIGHTS * MAX_VIS_DIM);
     // Architect review 1 item 4: per-slot "what version does THIS texture
     // hold" - reset to -1 (never matches a real `LightSet.visVersion`, which
     // starts at 0) whenever `texLVis` is (re)created, i.e. right here, so a
     // context restore re-uploads every static light's grid on its next frame.
     this._lvisUploaded = new Int32Array(MAX_LIGHTS).fill(-1);
-
-    // --- pipeline-owned pass-1 output ---
-    this.texShadeFg = createTexture2D(gl, gl.RGBA8, this.cols, this.rows);
-    this.texShadeBg = createTexture2D(gl, gl.RGBA8, this.cols, this.rows);
 
     // --- data textures (rebuilt on bind()) ---
     this.texMatF = createTexture2D(gl, gl.RGBA32F, 1, 1);
@@ -252,64 +236,6 @@ export class GpuCellPipeline {
     this._voxelSubmitMsHistory = new Float32Array(16);
     this._voxelSubmitMsHistoryLen = 0;
     this._voxelSubmitMsHistoryPos = 0;
-
-    // --- FBOs ---
-    // US-030b: the sub-sample cast pass (A) writes SGI/SGA/SDepth here; the
-    // resolve pass (B) reads those back and writes the RESOLVED GI/GA/Depth
-    // into the (unchanged) `fboCast` FBO below - deriv/shade/edge never know
-    // the difference.
-    this.fboCastSub = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCastSub);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texSGI, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.texSGA, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.texSDepth, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboCastSub incomplete');
-
-    // US-016 (14.4 item 2): pass A2 `terrain` writes "set 2" here.
-    this.fboTerrainSub = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboTerrainSub);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texSGI2, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.texSGA2, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.texSDepth2, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboTerrainSub incomplete');
-
-    this.fboCast = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCast);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texGI, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.texGA, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.texDepth, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboCast incomplete');
-
-    this.fboDeriv = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboDeriv);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texGD, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboDeriv incomplete');
-
-    this.fboLight = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboLight);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texLight, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboLight incomplete');
-
-    this.fboShade = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboShade);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texShadeFg, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.texShadeBg, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboShade incomplete');
-
-    this.fboFinal = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboFinal);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.rt.fgTex, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.rt.bgTex, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fboFinal incomplete');
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     // --- staging arrays (allocated once, architecture.md 9: no per-frame
     // allocation). US-030a: GA/GD/DEPTH are now uint textures
@@ -358,6 +284,78 @@ export class GpuCellPipeline {
     // right here (item 4a), not every frame; only `gl.bindTexture` runs per
     // frame, because the physical unit gets reassigned to a different
     // texture between passes.
+    this._buildAllBindTables();
+
+    // US-006: staging array for the per-frame `uVisBox` upload (allocated
+    // once - architecture.md 9); `uLightPos`/`uLightCol` upload straight
+    // from the LightSet's own arrays (already in the right layout).
+    this._visBoxF = new Float32Array(4 * MAX_LIGHTS);
+
+    this.timer = new GpuTimer(gl);
+    // US-018 (architecture.md 16): per-pass timer, used only while
+    // `setPassTiming(true)` - built alongside `this.timer` (both cheap to
+    // construct; the disjoint-timer query ring is the only GL cost and
+    // `GpuPassTimer` starts empty/idle until `begin()` is actually called).
+    this.passTimer = new GpuPassTimer(gl, PASS_NAMES.length);
+    // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95 of the 4 ms"): the
+    // terrain pass runs INSIDE `this.timer`'s own begin()/end() span (the
+    // whole `_hook()`), and `EXT_disjoint_timer_query_webgl2` allows only
+    // ONE active TIME_ELAPSED_EXT query per context at a time - a second,
+    // nested `beginQuery` would be a no-op (INVALID_OPERATION), so a second
+    // `GpuTimer` here can never report anything but n/a. Tried
+    // `TIMESTAMP_EXT` query-counters (not an "active" span, so they can
+    // coexist with an active TIME_ELAPSED_EXT query) bracketing
+    // `_passTerrain()` first, but ANGLE/D3D11 (the owner's real GPU) reports
+    // `queryCounterEXT` present yet always returns the SAME clock value for
+    // both queries (delta always exactly 0) - a known driver gap, not a
+    // logic bug here. Falls back to a CPU `performance.now()` submit-time
+    // bracket around just the terrain draw call, same honest-labelling as
+    // this file's existing `uploadMs`/`drawMs` (also CPU submit time, not a
+    // GPU query) - good enough to check the pass against its budget even
+    // though it can't separate GPU-side overlap from CPU dispatch cost.
+    // ARCH CHANGES item 5: reused every frame by `sunFromWorld`'s `out` param.
+    this._sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
+    this._terrainSubmitMsHistory = new Float32Array(16);
+    this._terrainSubmitMsHistoryLen = 0;
+    this._terrainSubmitMsHistoryPos = 0;
+
+    // Readback FBO (test-only, gpuCompare.js) - 2 x cols*rows*4 bytes, allocated once.
+    this._readbackFg = new Uint8Array(4 * n);
+    this._readbackBg = new Uint8Array(4 * n);
+  }
+
+  // A context restore rebuilds every GL object from scratch, so the data
+  // textures/static uniforms need re-uploading against the last bound table
+  // (tech notes item 9 / architect review 1 item 2). Called by the
+  // constructor and `_handleContextRestored` AFTER `this.ready` is set back
+  // to true (`bind()` no-ops while `!ready`) - a no-op on first construction
+  // since `_table` is still null there (main.js binds explicitly once it
+  // sees `candidate.ready`).
+  _rebindLastTable() {
+    if (this._table) this.bind(this._table, this._palette);
+  }
+
+  /**
+   * D-025 (US-038a, architecture.md 22.3/22.6): builds every [loc, tex,
+   * unit] bind table AND sets each program's static sampler->unit uniforms -
+   * factored out of `_initGL()` so `resizeGrid()` can call it again after a
+   * live grid change. Reading `this.texGI`/`this.rt.fgTex`/etc. HERE (rather
+   * than remapping old->new texture references in the existing tables) is
+   * the reason this works correctly for BOTH kinds of grid-sized texture:
+   * ones this pipeline owns (recreated by `allocGridTargets`, already
+   * `Object.assign`-ed onto `this` by the time this runs) and `rt.fgTex`/
+   * `rt.bgTex` (owned by `RenderTargetGL`, already recreated by its own
+   * `setGrid` - engine.js's `applyGrid` runs that FIRST). A previous version
+   * of `resizeGrid` patched the old tables via an old-texture -> new-texture
+   * map that only knew about this pipeline's OWN textures, so `uFgTex`/
+   * `uBgTex` (the two entries in `_shadeBinds` pointing at `rt`'s textures)
+   * kept sampling the just-deleted pre-resize `fgTex`/`bgTex` objects -
+   * `gl.drawArrays` raised `INVALID_OPERATION` for the whole shade pass
+   * (caught via `?gpucompare=1&roundtrip=1`, which is exactly why that flag
+   * exists - a plain, non-`roundtrip` `?gpucompare=1` never resizes, so it
+   * could never have caught this).
+   */
+  _buildAllBindTables() {
     this._shadeBinds = this._buildBindTable(this._locsShade, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uGD', this.texGD], ['uDepth', this.texDepth],
       // US-030b: the sub-sample G-buffer, for shadeCore's per-sub-sample average.
@@ -440,54 +438,6 @@ export class GpuCellPipeline {
     // US-040: both voxel bind tables share the same sampler->unit mapping
     // (same reasoning as the terrain resolve tables above).
     this._setSamplerUniforms(this.progVoxel, this._voxelBindsSet1In);
-
-    // US-006: staging array for the per-frame `uVisBox` upload (allocated
-    // once - architecture.md 9); `uLightPos`/`uLightCol` upload straight
-    // from the LightSet's own arrays (already in the right layout).
-    this._visBoxF = new Float32Array(4 * MAX_LIGHTS);
-
-    this.timer = new GpuTimer(gl);
-    // US-018 (architecture.md 16): per-pass timer, used only while
-    // `setPassTiming(true)` - built alongside `this.timer` (both cheap to
-    // construct; the disjoint-timer query ring is the only GL cost and
-    // `GpuPassTimer` starts empty/idle until `begin()` is actually called).
-    this.passTimer = new GpuPassTimer(gl, PASS_NAMES.length);
-    // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95 of the 4 ms"): the
-    // terrain pass runs INSIDE `this.timer`'s own begin()/end() span (the
-    // whole `_hook()`), and `EXT_disjoint_timer_query_webgl2` allows only
-    // ONE active TIME_ELAPSED_EXT query per context at a time - a second,
-    // nested `beginQuery` would be a no-op (INVALID_OPERATION), so a second
-    // `GpuTimer` here can never report anything but n/a. Tried
-    // `TIMESTAMP_EXT` query-counters (not an "active" span, so they can
-    // coexist with an active TIME_ELAPSED_EXT query) bracketing
-    // `_passTerrain()` first, but ANGLE/D3D11 (the owner's real GPU) reports
-    // `queryCounterEXT` present yet always returns the SAME clock value for
-    // both queries (delta always exactly 0) - a known driver gap, not a
-    // logic bug here. Falls back to a CPU `performance.now()` submit-time
-    // bracket around just the terrain draw call, same honest-labelling as
-    // this file's existing `uploadMs`/`drawMs` (also CPU submit time, not a
-    // GPU query) - good enough to check the pass against its budget even
-    // though it can't separate GPU-side overlap from CPU dispatch cost.
-    // ARCH CHANGES item 5: reused every frame by `sunFromWorld`'s `out` param.
-    this._sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
-    this._terrainSubmitMsHistory = new Float32Array(16);
-    this._terrainSubmitMsHistoryLen = 0;
-    this._terrainSubmitMsHistoryPos = 0;
-
-    // Readback FBO (test-only, gpuCompare.js) - 2 x cols*rows*4 bytes, allocated once.
-    this._readbackFg = new Uint8Array(4 * n);
-    this._readbackBg = new Uint8Array(4 * n);
-  }
-
-  // A context restore rebuilds every GL object from scratch, so the data
-  // textures/static uniforms need re-uploading against the last bound table
-  // (tech notes item 9 / architect review 1 item 2). Called by the
-  // constructor and `_handleContextRestored` AFTER `this.ready` is set back
-  // to true (`bind()` no-ops while `!ready`) - a no-op on first construction
-  // since `_table` is still null there (main.js binds explicitly once it
-  // sees `candidate.ready`).
-  _rebindLastTable() {
-    if (this._table) this.bind(this._table, this._palette);
   }
 
   // Builds a flat [loc, tex, unit] tuple list once (init/rebind time only -
@@ -605,6 +555,75 @@ export class GpuCellPipeline {
     this._terrainPacked = null;
     // US-040: force a full VOX re-upload on the next bindVoxels() call.
     this._voxAtlasVersion = -1;
+  }
+
+  /**
+   * D-025 (US-038a, architecture.md 22.1/22.3/22.4/22.6): live grid change -
+   * resize IN PLACE, never a new pipeline (no shader recompile, no program/
+   * VAO/data-texture churn). Frees every grid-sized texture/FBO
+   * (`gridTargets.js`), reallocates them at the new size (against `rt`'s
+   * ALREADY-resized fg/bg - the caller, `engine.js`'s `applyGrid`, runs
+   * `rt.setGrid` first), then patches every existing bind-table tuple that
+   * pointed at an old grid-sized texture to point at its replacement -
+   * `loc`/`unit` never change, only which texture a unit samples, so the
+   * tables themselves (and every non-grid-sized entry in them, e.g. uMatF/
+   * uWorldGeom/uVOX) are reused as-is. Called by main.js's `grid:changed`
+   * listener, right after `bind()` is NOT needed again (bind() only handles
+   * the MaterialTable-derived data textures/uniforms, untouched by a grid
+   * change - `cellAspect` is handled separately, see the table in
+   * architecture.md 22.3's "game (main.js)" row).
+   */
+  resizeGrid(cols, rows) {
+    if (!this.ready) return;
+    const gl = this.gl;
+    const old = this._t;
+
+    this.cols = cols;
+    this.rows = rows;
+    this.subCols = cols * this.rays;
+    this.subRows = rows * this.rays;
+    const t = allocGridTargets(gl, cols, rows, this.rays, this.rt.fgTex, this.rt.bgTex);
+    freeGridTargets(gl, old);
+    this._t = t;
+    Object.assign(this, t);
+
+    // Rebuilds every [loc, tex, unit] bind table AND `rt.fgTex`/`rt.bgTex`'s
+    // own entry in `_shadeBinds` - see `_buildAllBindTables`'s own comment
+    // for why this (re-reading current fields) is correct where an
+    // old-texture -> new-texture remap of only THIS pipeline's own textures
+    // was not (it missed `rt`'s fg/bg, which `RenderTargetGL.setGrid` had
+    // already replaced by the time this method runs).
+    this._buildAllBindTables();
+
+    // Static uGrid uniform on the edge program (bind()'s own
+    // _bindStaticUniforms sets this once - resizeGrid doesn't call bind()).
+    gl.useProgram(this.progEdge);
+    gl.uniform2i(this._locsEdge.uGrid, cols, rows);
+
+    // Staging arrays sized by cols*rows / subCols*subRows (architecture.md
+    // 9: allocated here, not per frame - same shapes as `_initGL`'s).
+    const n = cols * rows;
+    this._GI = new Uint32Array(2 * n);
+    const gaBuf = new ArrayBuffer(16 * n);
+    this._GAf = new Float32Array(gaBuf); this._GA = new Uint32Array(gaBuf);
+    const gdBuf = new ArrayBuffer(16 * n);
+    this._GDf = new Float32Array(gdBuf); this._GD = new Uint32Array(gdBuf);
+    const depthBuf = new ArrayBuffer(4 * n);
+    this._DepthF = new Float32Array(depthBuf); this._Depth = new Uint32Array(depthBuf);
+    this._MASK = new Uint8Array(n);
+    this._SGI = new Uint32Array(2 * n);
+    const sgaBuf = new ArrayBuffer(16 * n);
+    this._SGAf = new Float32Array(sgaBuf); this._SGA = new Uint32Array(sgaBuf);
+    const sdepthBuf = new ArrayBuffer(4 * n);
+    this._SDepthF = new Float32Array(sdepthBuf); this._SDepth = new Uint32Array(sdepthBuf);
+    this._readbackFg = new Uint8Array(4 * n);
+    this._readbackBg = new Uint8Array(4 * n);
+    // Lazy readbacks are cached with `||` (see readbackGeometry/readbackLight) -
+    // MUST be reset to null so the next call reallocates at the new size.
+    this._readbackGI = null;
+    this._readbackGA = null;
+    this._readbackDepth = null;
+    this._readbackLight = null;
   }
 
   /**

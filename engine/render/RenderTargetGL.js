@@ -15,7 +15,8 @@
 
 import { CellBuffer } from './CellBuffer.js';
 import { computeCellBox, FONT_STACK } from './glyphMetrics.js';
-import { compileShader, linkProgram } from './gpu/glUtil.js';
+import { compileShader, linkProgram, deleteTexture2D, glCounts } from './gpu/glUtil.js';
+import { computeGridLimits } from './gpu/gridTargets.js';
 
 const GLYPH_COUNT = 95; // printable ASCII 32-126
 
@@ -75,8 +76,13 @@ void main() {
 }
 `;
 
+// US-038a (architecture.md 22.4 "dev counter", D-025): counted the same way
+// as `glUtil.js`'s `createTexture2D` (this file predates that helper and
+// uses its own RGBA8-only/fixed-unit shape) so `?debug=1&gridsoak=1` can log
+// one number regardless of which creator made the texture.
 function createDataTexture(gl, unit, cols, rows) {
   const tex = gl.createTexture();
+  glCounts.textures++;
   gl.activeTexture(gl.TEXTURE0 + unit);
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -214,7 +220,12 @@ export class RenderTargetGL {
   _buildUiTextures() {
     const gl = this.gl;
     const ui = this._uiLayer;
-    if (this._uiFgTex) { gl.deleteTexture(this._uiFgTex); gl.deleteTexture(this._uiBgTex); }
+    // D-025 (US-038a, architecture.md 22.4 "dev counter"): the counted
+    // helper, not a raw `gl.deleteTexture` - `setGrid` calls this via
+    // `setUiLayer` on every live grid change (UI cell size tracks the
+    // scene's), so an uncounted delete here would show as a false "leak" in
+    // `glUtil.glCounts` even though the GL object really is freed.
+    if (this._uiFgTex) { deleteTexture2D(gl, this._uiFgTex); deleteTexture2D(gl, this._uiBgTex); }
     this._uiFgTex = createDataTexture(gl, 3, ui.cols, ui.rows);
     this._uiBgTex = createDataTexture(gl, 4, ui.cols, ui.rows);
     if (!this._uiAtlasTex) {
@@ -277,6 +288,13 @@ export class RenderTargetGL {
     const availH = refAvailH != null ? refAvailH : window.innerHeight;
     if (availW <= 0 || availH <= 0) return; // see RenderTargetCanvas2D.js for why
 
+    // D-025 (US-038a, architecture.md 22.6 "Ref box"): remembers whatever
+    // box this call used (the real window, or `?gpucompare=1`'s fixed
+    // 1280x720) so `setGrid` can re-fit against the SAME box after a live
+    // grid change, without the caller (main.js) passing it again. A plain
+    // window resize keeps calling `resize()` with no args, which keeps
+    // updating this to the live window size, exactly as before.
+    this._refBox = { availW, availH, dpr: refDpr };
     this.dpr = dpr;
     const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr);
     this.fontSize = box.fontPx;
@@ -300,6 +318,47 @@ export class RenderTargetGL {
     gl.uniform2f(this._uGrid, this.cols, this.rows);
     this._rebuildAtlas();
     if (this._uiLayer) this._rebuildUiAtlas(); // OWN-REQ-003: UI cell size tracks the scene's (fontPx/pxCell change on resize/DPR)
+  }
+
+  /**
+   * D-025 (US-038a, architecture.md 22.5): pre-flight check, run by
+   * `engine.setGrid` BEFORE anything is freed/recreated - never throws.
+   * Delegates the actual math to `gridTargets.js`'s `computeGridLimits` (kept
+   * there so it's Node-testable against a fake `getParameter`).
+   * @returns {{ok: true} | {ok: false, reason: string}}
+   */
+  canHoldGrid(cols, rows, rays) {
+    return computeGridLimits(this.gl, cols, rows, rays, this.pxCellW, this.pxCellH);
+  }
+
+  /**
+   * D-025 (US-038a, architecture.md 22.1/22.3/22.6): resizes THIS render
+   * target in place - same object, same `gl` context, same program/VAO/UI
+   * layer - never a new `RenderTargetGL`. Deletes and recreates only the
+   * grid-sized fg/bg textures + the CellBuffer, then re-fits the canvas
+   * against the last known ref box (`resize()`'s own bookkeeping) so a
+   * `?gpucompare=1` run keeps its fixed 1280x720 box across a live switch.
+   * Callers (`engine.js`'s `applyGrid`) still owe a matching
+   * `depthBuffer`/`openSpans`/UI re-bind - this method only touches what it
+   * owns directly, per the architecture's per-object resource table.
+   */
+  setGrid(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    this.cells = new CellBuffer(cols, rows);
+    if (!this._contextLost) {
+      const gl = this.gl;
+      deleteTexture2D(gl, this.fgTex);
+      deleteTexture2D(gl, this.bgTex);
+      this.fgTex = createDataTexture(gl, 0, cols, rows);
+      this.bgTex = createDataTexture(gl, 1, cols, rows);
+    }
+    // Re-fit against whatever box the last `resize()` call used (the real
+    // window, or a fixed `?gpucompare=1` box) - rebuilds the scene atlas at
+    // the new cell size and, if a UI layer is bound, its atlas too (both via
+    // the resize() call below, which already does this on every call).
+    const rb = this._refBox || {};
+    this.resize(rb.availW, rb.availH, rb.dpr);
   }
 
   setCell(x, y, glyph, fg, bg) {

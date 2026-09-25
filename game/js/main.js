@@ -51,10 +51,11 @@ import './quest/index.js';
 
 const params = new URLSearchParams(window.location.search);
 
-// US-030a (docs/architecture.md 14.2 item 5): `?grid=WxH` clamped to
-// 160x60..320x120 (8:3 aspect kept, see `clampGrid`), logged once here on
-// the user-facing param (the RenderTarget-internal cpu-fallback log is
-// separate). `?gpucompare=1` (this story's DDA parity page, 14.2 item 8)
+// US-030a (docs/architecture.md 14.2 item 5), range widened by D-025
+// (US-038a, architecture.md 22.2): `?grid=WxH` clamped to 160x60..480x180
+// (8:3 aspect kept, see `clampGrid`), logged once here on the user-facing
+// param (the RenderTarget-internal cpu-fallback log is separate).
+// `?gpucompare=1` (this story's DDA parity page, 14.2 item 8)
 // always forces 160x60 regardless of `?grid=` - `?gpucompare=shade` (the
 // unchanged US-029 shading-only page) keeps whatever grid was requested.
 const isDdaCompare = params.get('gpucompare') === '1';
@@ -72,7 +73,7 @@ if (gridParam) {
 if (isDdaCompare) { reqCols = 160; reqRows = 60; }
 const gridResult = clampGrid(reqCols, reqRows);
 if (gridParam && gridResult.clamped) {
-  console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..320x120, 8:3 aspect)`);
+  console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..480x180, 8:3 aspect - D-025)`);
 }
 const rayParam = Number(params.get('rays'));
 // US-030b (14.2 item 5): default 2 (2x2 coverage vote) on the gl2 GPU path -
@@ -132,17 +133,17 @@ const engine = createEngine({
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
-// `rt`/`depthBuffer`/`openSpans`/`gbuf` are `let`, not `const`: the fallback
-// gate below (architect review 1 item 2) may call `engine.setGrid` once at
-// startup, which replaces all three on `engine` - re-read here so every
-// later reference (fb, sprites, window.__debug, render()) sees the
-// post-fallback grid, not the original 240x90/`?grid=` request.
+// D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
+// never replaces the object), so `rt` itself could be `const` - kept `let`
+// only because `depthBuffer`/`openSpans`/`gbuf` are still replaced with new
+// (small, CPU-side) objects, by the fallback gate below (architect review 1
+// item 2) and by any later live grid change (the `grid:changed` handler).
 let { renderTarget: rt, depthBuffer, openSpans } = engine;
 const { input } = engine;
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
-// so capturing it once here (unlike `rt`) stays valid across the CPU-
-// fallback `engine.setGrid` call below.
+// so capturing it once here (unlike `depthBuffer`/`openSpans`) stays valid
+// across any later grid change.
 const ui = engine.ui;
 const overlay = new DebugOverlay(document.body);
 // US-018 (architecture.md 16): true while `?bench=1`'s view/walk sequence
@@ -206,9 +207,16 @@ const terrainEnabled = params.get('terrain') !== '0';
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
 // to take the v2 branch (see the `detailPass` arg passed to it below).
-const matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
+// D-025 (US-038a): `let`, not `const` - a live grid change rebuilds this
+// (cellAspect = pxCellH/pxCellW changes with the grid) in the `grid:changed`
+// handler below, same reasoning as `gbuf`/`rt`'s own re-read comment above.
+let matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const detailPass = useDetail ? assets.detailPass : null;
 let gbuf = new GBuffer(rt.cols, rt.rows);
+// D-025: assigned inside runGame() (the one real gameplay frame buffer) so
+// the `grid:changed` handler below can refresh its grid-sized fields; stays
+// null for the dev/bench pages that never call runGame.
+let fb = null;
 
 console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end actually ran (gl2 / c2d-capped)
 
@@ -250,7 +258,10 @@ if (rt.backend === 'gl2' && !gpuPipeline) {
   const { cols: cpuCols, rows: cpuRows } = engine.gridRequest.cpuGrid;
   if (rt.cols !== cpuCols || rt.rows !== cpuRows) {
     console.warn(`[grid] GpuCellPipeline unavailable on a gl2 backend - forcing the CPU fallback grid ${cpuCols}x${cpuRows} (was ${rt.cols}x${rt.rows})`);
-    rt = engine.setGrid(cpuCols, cpuRows);
+    // D-025 (US-038a): `setGrid` now resizes `rt` IN PLACE (same object) -
+    // `rt` (this `let`) already points at it, no reassignment needed; only
+    // the small CPU-side objects `applyGrid` replaced need re-reading.
+    engine.setGrid(cpuCols, cpuRows, { immediate: true });
     depthBuffer = engine.depthBuffer;
     openSpans = engine.openSpans;
     gbuf = new GBuffer(rt.cols, rt.rows);
@@ -287,6 +298,22 @@ const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
+
+// D-025 (US-038a, architecture.md 22.3/22.7): the ONE `grid:changed`
+// listener that rebuilds every game-owned, grid-sized object - the render
+// pipeline/sprite pass resize IN PLACE (no shader recompile); `gbuf`/
+// `matTable`/`fb`'s fields are small enough to just recreate (`cellAspect`
+// can change with the grid); an already-loaded world's structures are
+// re-bound against the fresh `matTable`, same as `'world:loaded'` does.
+engine.events.on('grid:changed', ({ cols, rows }) => {
+  if (gpuPipeline) gpuPipeline.resizeGrid(cols, rows);
+  if (sprites.pass) sprites.pass.resizeGrid(cols, rows);
+  gbuf = new GBuffer(cols, rows);
+  matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
+  if (gpuPipeline) gpuPipeline.bind(matTable, assets.palette);
+  if (engine.world) for (const s of engine.world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+  if (fb) { fb.depth = engine.depthBuffer; fb.spans = engine.openSpans; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
+});
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
@@ -509,6 +536,12 @@ function runGame(mode) {
     // state (later Settings, US-038, can read it the same way).
     if (input.pressed('KeyN')) toggleMute();
     if (input.pressed('F3')) overlay.toggle();
+    // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
+    // cycles the 4 player grids; `engine.setGrid` no-ops off a gl2 backend.
+    if (params.get('debug') === '1' && input.pressed('F4')) {
+      const G = [240, 320, 400, 480];
+      engine.setGrid(G[(G.indexOf(rt.cols) + 1) % 4]);
+    }
     // US-007 AC "Sun direction can be changed with debug keys (F6/F7 rotate
     // azimuth) to verify shadows move correctly" - +-5 deg, `setSun` is the
     // only mutator (docs/architecture.md 14.3 item 3).
@@ -659,7 +692,10 @@ function runGame(mode) {
   // US-006: reused per-frame scratch for `syncEntityLights`'s
   // `attachedLightPos` output (architecture.md 9 - no per-frame allocation).
   const lightSyncPos = new Float64Array(3);
-  const fb = {
+  // D-025 (US-038a): assigned (not `const`-declared) into the module-scope
+  // `fb` above, so the top-level `grid:changed` handler can refresh its
+  // grid-sized fields (`depth`/`spans`/`gbuf`/`matTable`/`light`) in place.
+  fb = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: lightSet,
     light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, // US-028
@@ -852,7 +888,9 @@ function runGame(mode) {
       // (`n/a` while `setPassTiming` is off or the extension is missing).
       const submitMs = gpuPipeline ? gpuPipeline.stats.uploadMs + gpuPipeline.stats.drawMs : NaN;
       extra += `\njs sim ${engine.loop.stats.simMs.toFixed(2)}ms  render ${engine.loop.stats.renderMs.toFixed(2)}ms` +
-        `  submit ${Number.isNaN(submitMs) ? 'n/a' : submitMs.toFixed(2) + 'ms'}`;
+        `  submit ${Number.isNaN(submitMs) ? 'n/a' : submitMs.toFixed(2) + 'ms'}` +
+        // D-025 (US-038a, architecture.md 22.6): last live grid-switch cost (F4).
+        `  grid ${rt.cols}x${rt.rows}${Number.isNaN(engine.stats.lastGridSwitchMs) ? '' : ` (switch ${engine.stats.lastGridSwitchMs.toFixed(1)}ms)`}`;
       if (gpuPipeline) {
         extra += '\npass ms: ' + PASS_NAMES.map((name, i) => {
           const v = gpuPipeline.stats.passMsP50[i];
@@ -1002,6 +1040,24 @@ function runGpuCompareDdaMode() {
   const testRoom = loadCompareWorld(
     { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
   );
+  // D-025 (US-038a, architecture.md 22.8): `?gpucompare=1&roundtrip=1` -
+  // before the usual poses run (at the 160x60 this page pins), do one live
+  // round trip up to 480x180 and back, rendering one real frame at the top
+  // end, proving a switch doesn't leave stale GL state behind. Expected:
+  // every pose below still ALL PASSes, with `_refBox` (the fixed 1280x720
+  // compare box) kept across both switches.
+  if (params.get('roundtrip') === '1') {
+    engine.setGrid(480, 180, { immediate: true });
+    const p0 = GPU_COMPARE_POSES[0];
+    gpuPipeline.frame({ rt }, ambientL, { x: p0.x, y: p0.y, z: p0.z, yawDeg: p0.yawDeg, pitchDeg: p0.pitchDeg }, testRoom);
+    rt.present();
+    engine.setGrid(160, 60, { immediate: true });
+    // The top-level `grid:changed` handler rebuilds `matTable` fresh on
+    // every switch (real gameplay's `engine.world` rebind) - this harness's
+    // `testRoom` was bound to the PRE-roundtrip `matTable` above, so it
+    // needs the same re-bind the handler would give a live `engine.world`.
+    for (const s of testRoom.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+  }
   const worldM1 = loadCompareWorld(assets.world('world_m1'));
   // US-016 step 4 (14.4 item 6/9, D-017 item 11): this compare page must
   // exercise terrain (kind 7) cells, which `castTerrain`/`_passTerrain` both

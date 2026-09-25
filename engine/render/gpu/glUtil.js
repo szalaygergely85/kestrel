@@ -40,8 +40,17 @@ export function linkProgram(gl, vsSrc, fsSrc) {
 // samples with `texelFetch`, never `texture()`, so filtering never applies,
 // but NEAREST avoids driver-dependent completeness warnings on non-filterable
 // integer/float formats.
+// US-038a (architecture.md 22.4 "dev counter", D-025): a live GL
+// texture/FBO count, incremented/decremented ONLY by these two helpers -
+// `RenderTargetGL` switches its own fg/bg texture create/delete to them too
+// (see its `createDataTexture`/`setGrid`) so the `?debug=1&gridsoak=1` dev
+// harness can log "did a live resize cycle leak anything" from one place,
+// browser-side, without a mock `gl` (that's `gridTargets.test.js`'s job).
+export const glCounts = { textures: 0, framebuffers: 0 };
+
 export function createTexture2D(gl, internalFormat, w, h) {
   const tex = gl.createTexture();
+  glCounts.textures++;
   gl.bindTexture(gl.TEXTURE_2D, tex);
   const { format, type } = formatFor(gl, internalFormat);
   gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
@@ -50,6 +59,26 @@ export function createTexture2D(gl, internalFormat, w, h) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return tex;
+}
+
+/** Paired with `createTexture2D` - every deletion of a texture IT created should go through here. */
+export function deleteTexture2D(gl, tex) {
+  if (!tex) return;
+  gl.deleteTexture(tex);
+  glCounts.textures--;
+}
+
+/** Paired with plain `gl.createFramebuffer()` call sites (gridTargets.js, RenderTargetGL.js, spritesPass.js). */
+export function createFramebuffer2D(gl) {
+  glCounts.framebuffers++;
+  return gl.createFramebuffer();
+}
+
+/** Paired with `createFramebuffer2D`. */
+export function deleteFramebuffer2D(gl, fbo) {
+  if (!fbo) return;
+  gl.deleteFramebuffer(fbo);
+  glCounts.framebuffers--;
 }
 
 // US-030a: exported so callers that need to `texImage2D`/`texSubImage2D`

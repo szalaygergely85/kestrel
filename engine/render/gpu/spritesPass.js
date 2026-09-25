@@ -18,7 +18,7 @@
 //
 // Not Node-testable (needs gl); the pure pieces are spritesAtlas.js,
 // sprites.js and glsl/sprites.frag.js (sprites.test.js).
-import { linkProgram, createTexture2D } from './glUtil.js';
+import { linkProgram, createTexture2D, deleteTexture2D, createFramebuffer2D, deleteFramebuffer2D } from './glUtil.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
 import { spritesFragSrc } from './glsl/sprites.frag.js';
 import { GpuTimer } from './GpuTimer.js';
@@ -143,6 +143,35 @@ export class GpuSpritePass {
       console.warn('[GpuSpritePass] restore failed:', e);
       this.ready = false;
     }
+  }
+
+  /**
+   * D-025 (US-038a, architecture.md 22.3): live grid change - resize in
+   * place, no shader recompile. `texEdgeFg/Bg` are this pass's own
+   * grid-sized copies (`_copyEdge`); `fboFinal` attaches `rt.fgTex/bgTex`
+   * directly, which `RenderTargetGL.setGrid` has ALREADY replaced by the
+   * time this runs (engine.js's `applyGrid` order: rt first) - so this FBO
+   * must be recreated too, even though the architecture's per-object table
+   * only calls out `texEdgeFg/Bg` + `cols/rows` by name (its attachments
+   * would otherwise point at deleted GL objects).
+   */
+  resizeGrid(cols, rows) {
+    if (!this.ready) return;
+    const gl = this.gl;
+    this.cols = cols;
+    this.rows = rows;
+    deleteTexture2D(gl, this.texEdgeFg);
+    deleteTexture2D(gl, this.texEdgeBg);
+    this.texEdgeFg = createTexture2D(gl, gl.RGBA8, cols, rows);
+    this.texEdgeBg = createTexture2D(gl, gl.RGBA8, cols, rows);
+    deleteFramebuffer2D(gl, this.fboFinal);
+    this.fboFinal = createFramebuffer2D(gl);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboFinal);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.rt.fgTex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.rt.bgTex, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('GpuSpritePass.resizeGrid: fboFinal incomplete');
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
   dispose() {

@@ -119,6 +119,22 @@ export class RenderTargetCanvas2D {
     this._uiLayer = ui;
   }
 
+  /**
+   * D-025 (US-038a, architecture.md 22.3): symmetry with `RenderTargetGL.
+   * setGrid` - `engine.setGrid` never actually reaches this back-end (its
+   * "no GPU grid" branch returns early for anything that isn't a real gl2
+   * context, per 22.6 item 2), so this is defensive/future-proofing rather
+   * than a path exercised by gameplay today. No textures to leak here (the
+   * CPU back-end has none) - just the cell buffer and the backing canvas,
+   * same as the constructor, minus the degenerate 1x1 placeholder.
+   */
+  setGrid(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    this.cells = new CellBuffer(cols, rows);
+    this.resize();
+  }
+
   // Rasterizes one glyph into a device-pixel-sized alpha mask, once, and
   // caches it (by numeric glyphIdx) until the next resize.
   _buildGlyphMask(glyphIdx) {
