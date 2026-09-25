@@ -815,7 +815,7 @@ function runGame(mode) {
   // right away (`benchActive` set by the `?bench=1` dispatch branch, top of
   // this file).
   if (mode === 'world' && benchActive) {
-    runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt });
+    runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look });
   }
 }
 

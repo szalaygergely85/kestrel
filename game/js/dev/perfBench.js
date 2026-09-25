@@ -51,9 +51,18 @@ function p95(arr, n) {
  * @param {object|null} ctx.gpuPipeline - `GpuCellPipeline` or null (CPU fallback: GPU numbers report "n/a")
  * @param {object} ctx.input - `Input`
  * @param {object} ctx.rt - the active `RenderTarget`
+ * @param {object} ctx.look - `PlayerLook` (US-005) - the mouse-look state main.js
+ *   copies onto `controls.yawDeg/pitchDeg` every fixed step (see `integrate()`'s
+ *   call site in main.js). Arch review 1 item 1: `teleport()` used to only set
+ *   the transform's yaw/pitch directly, but the very next physics step
+ *   overwrote it again from `look.yawDeg/pitchDeg` (mouse-driven) - so all 3
+ *   views ended up facing wherever the mouse happened to be, not the pose.
+ *   Re-applying the pose onto `look` too (every measured frame, not just
+ *   once - the mouse can keep moving mid-measurement) keeps the transform
+ *   pinned to the intended facing for the whole view.
  */
 export function runPerfBench(ctx) {
-  const { engine, playerHandle, overlay, gpuPipeline, input, rt } = ctx;
+  const { engine, playerHandle, overlay, gpuPipeline, input, rt, look } = ctx;
   const loop = engine.loop;
   if (gpuPipeline) gpuPipeline.setPassTiming(true);
   overlay.visible = true;
@@ -78,12 +87,20 @@ export function runPerfBench(ctx) {
     const eyeH = (body && typeof body.eyeH === 'number') ? body.eyeH : 1.6;
     t.x = pose.x; t.y = pose.y; t.z = pose.z - eyeH; t.yawDeg = pose.yawDeg; t.pitchDeg = pose.pitchDeg;
     if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; }
+    // Arch review 1 item 1: also pin `look` (main.js copies `look.yawDeg/
+    // pitchDeg` onto `controls`, then onto the transform, every fixed
+    // step - without this the next physics step snaps the view back to
+    // wherever the mouse is).
+    if (look) { look.yawDeg = pose.yawDeg; look.pitchDeg = pose.pitchDeg; }
   }
 
   function measureView(pose, onDone) {
-    teleport(pose);
     let frame = 0, n = 0;
     function tick() {
+      // Re-teleport every frame (position + look yaw/pitch + zero
+      // velocity), not just once at the start - the fixed-step loop and any
+      // stray mouse movement would otherwise drift the pose over 360 frames.
+      teleport(pose);
       frame++;
       if (frame <= WARMUP_FRAMES) { requestAnimationFrame(tick); return; }
       if (n < MEASURE_FRAMES) {
@@ -119,31 +136,48 @@ export function runPerfBench(ctx) {
     measureView(VIEWS[i], () => runViews(i + 1));
   }
 
+  // Arch review 1 item 2: the walk phase used to `setText` (string
+  // allocation) AND allocate a fresh `() => walkTick(startedAt, n)` closure
+  // every single rAF for 60 s. `walkStartedAt`/`walkN` are plain outer-scope
+  // state instead of closed-over call args, so `requestAnimationFrame`
+  // always gets the same `walkTick` function reference, and the overlay
+  // text is only rebuilt when `overlay.shouldRefresh()` allows it (<= 4 Hz,
+  // same throttle rule as the normal HUD - architecture.md 16).
+  let walkStartedAt = 0;
+  let walkN = 0;
+
   function runWalk() {
     overlay.setText('?bench=1  views done - walk now (WASD) to start the 60 s walk measurement');
-    function waitForMove() {
-      if (input.isDown('KeyW') || input.isDown('KeyA') || input.isDown('KeyS') || input.isDown('KeyD')) {
-        loop.resetStats();
-        walkTick(performance.now(), 0);
-        return;
-      }
-      requestAnimationFrame(waitForMove);
-    }
-    function walkTick(startedAt, n) {
-      const elapsed = performance.now() - startedAt;
-      if (n < MAX_SAMPLES) {
-        jsHist[n] = loop.stats.jsMs;
-        intervalHist[n] = loop.stats.intervalMs;
-        gpuHist[n] = gpuPipeline ? gpuPipeline.stats.gpuMsP50 : NaN;
-        n++;
-      }
-      overlay.setText(`?bench=1  walking... ${(elapsed / 1000).toFixed(0)}/${WALK_SECONDS}s`);
-      if (elapsed < WALK_SECONDS * 1000) { requestAnimationFrame(() => walkTick(startedAt, n)); return; }
-      results.push(buildResult('60s walk', jsHist, gpuHist, intervalHist, n,
-        { worstIntervalMs: loop.stats.worstIntervalMs, over25: loop.stats.over25 }));
-      finish();
+    requestAnimationFrame(waitForMove);
+  }
+
+  function waitForMove() {
+    if (input.isDown('KeyW') || input.isDown('KeyA') || input.isDown('KeyS') || input.isDown('KeyD')) {
+      loop.resetStats();
+      walkStartedAt = performance.now();
+      walkN = 0;
+      requestAnimationFrame(walkTick);
+      return;
     }
     requestAnimationFrame(waitForMove);
+  }
+
+  function walkTick() {
+    const now = performance.now();
+    const elapsed = now - walkStartedAt;
+    if (walkN < MAX_SAMPLES) {
+      jsHist[walkN] = loop.stats.jsMs;
+      intervalHist[walkN] = loop.stats.intervalMs;
+      gpuHist[walkN] = gpuPipeline ? gpuPipeline.stats.gpuMsP50 : NaN;
+      walkN++;
+    }
+    if (overlay.shouldRefresh(now)) {
+      overlay.setText(`?bench=1  walking... ${(elapsed / 1000).toFixed(0)}/${WALK_SECONDS}s`);
+    }
+    if (elapsed < WALK_SECONDS * 1000) { requestAnimationFrame(walkTick); return; }
+    results.push(buildResult('60s walk', jsHist, gpuHist, intervalHist, walkN,
+      { worstIntervalMs: loop.stats.worstIntervalMs, over25: loop.stats.over25 }));
+    finish();
   }
 
   function finish() {

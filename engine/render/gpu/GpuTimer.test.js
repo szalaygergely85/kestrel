@@ -79,8 +79,8 @@ const SLOTS = ['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge'];
     gl._resolve(q, nsPerSlot[slot]);
     t.end();
   }
-  // writeStats polls internally (via begin(), already called above) - call
-  // it again here (as `_hook()` would, once per frame) to read percentiles.
+  // writeStats polls internally (begin() no longer polls, arch review 1
+  // item 3) - call it once here, as `_hook()` would, once per frame.
   const p50 = new Float32Array(SLOTS.length);
   const p95 = new Float32Array(SLOTS.length);
   t.writeStats(p50, p95);
@@ -101,14 +101,12 @@ const SLOTS = ['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge'];
   const q = t._queries[0][0];
   gl._resolve(q, 5e6);
   gl._setDisjoint(true);
-  t.end(); // polling happens on the NEXT begin() (mirrors GpuTimer's own _pollAll-on-begin pattern)
-  t.begin(0); // this poll sees the (disjoint) result and drops it
+  t.end(); // begin() no longer polls (arch review 1 item 3) - writeStats does the one poll/frame
   const p50 = new Float32Array(SLOTS.length);
   const p95 = new Float32Array(SLOTS.length);
-  t.writeStats(p50, p95);
+  t.writeStats(p50, p95); // polls internally, sees the disjoint result, drops it
   ok('a disjoint result never reaches the history (p50 stays NaN)', Number.isNaN(p50[0]), `p50[0]=${p50[0]}`);
   gl._setDisjoint(false);
-  t.end();
 }
 
 // ---- availability: a query that hasn't resolved yet reports no data --------

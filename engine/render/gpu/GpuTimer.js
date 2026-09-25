@@ -145,10 +145,16 @@ export class GpuPassTimer {
     this._statsCalls = 0;
   }
 
-  /** Call right before a single pass's draw call; `end()` right after it. */
+  /**
+   * Call right before a single pass's draw call; `end()` right after it.
+   * Arch review 1 item 3: this used to `_pollAll()` on every call - with 7
+   * passes/frame that's ~7 full ring-scans/frame for one poll's worth of
+   * work. `writeStats()` already polls once before reading percentiles
+   * (same as `GpuTimer.writeStats`'s caller pattern), so `begin()` no
+   * longer polls at all; a slot's ring only frees up once per frame.
+   */
   begin(slot) {
     if (!this.available) return;
-    this._pollAll();
     const i = this._ringIdx[slot];
     if (this._pending[slot][i]) return; // that slot's ring is still full - skip timing this pass this frame
     this._activeQuery = this._queries[slot][i];
