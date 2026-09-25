@@ -19,6 +19,8 @@ import { getCtx, isMuted, playNoiseBurst, playToneBurst } from './synth.js';
 // US-020b: burner crackle+hiss / breach wind - two looping ambient beds,
 // each driven by distance to a level-data position (game/js/audio/ambient.js).
 import { HISS_BED_PEAK, CRACKLE_BURST_PEAK, WIND_BED_PEAK, resetAmbientAudio, stepAmbientAudio } from './ambient.js';
+// US-020c: floor-material -> footstep timbre (stone/wood/iron), game/js/audio/surfaces.js.
+import { surfaceTimbre } from './surfaces.js';
 
 function canPlay() { return !!getCtx() && !isMuted(); }
 
@@ -158,15 +160,59 @@ const STRIDE_M = 0.8;
 const FIRST_STEP_M = 0.35;
 let footAccum = 0;
 let footWasStill = true;
+// US-020c: the world reference used to look up the floor material under the
+// player - set once per load/restart by resetFootstepAudio(world) (same
+// 'world:loaded' entry point as boulderEntity/ambient positions below), read
+// only at the moment a footstep actually plays (not every fixed step).
+let footWorld = null;
 
-function playFootstep(landing) {
+// Per-timbre tone/noise shape ('stone' keeps the original US-020a numbers
+// byte-for-byte - AC "stone (the current step)"). Peaks (loudness) are NOT
+// varied per timbre - only pitch/duration/filtering - so sfx.gain.test.js's
+// worst-case-sum stays valid for every surface without a copy per timbre.
+const FOOTSTEP_TIMBRES = {
+  stone: {
+    toneType: 'sine', toneFreq: 110, toneFreqEnd: 70, toneDuration: 0.03, toneRelease: 0.06,
+    noiseFilterType: 'lowpass', noiseFilterFreq: 500, noiseFilterQ: 0.7, noiseDuration: 0.03, noiseRelease: 0.05,
+    swishFilterType: 'lowpass', swishFilterFreq: 650, swishFilterQ: 0.7, swishDuration: 0.02, swishRelease: 0.04,
+  },
+  // wood/deck: lower pitch + a bandpass "box" resonance instead of a plain
+  // lowpass, longer release - reads as a hollow knock next to stone's thud.
+  wood: {
+    toneType: 'triangle', toneFreq: 70, toneFreqEnd: 45, toneDuration: 0.05, toneRelease: 0.09,
+    noiseFilterType: 'bandpass', noiseFilterFreq: 280, noiseFilterQ: 1.1, noiseDuration: 0.04, noiseRelease: 0.07,
+    swishFilterType: 'bandpass', swishFilterFreq: 350, swishFilterQ: 1.1, swishDuration: 0.025, swishRelease: 0.05,
+  },
+  // iron/grate: short and high - a square-wave tick over a tight, high
+  // bandpass noise burst, both much shorter than stone/wood.
+  iron: {
+    toneType: 'square', toneFreq: 500, toneFreqEnd: 340, toneDuration: 0.015, toneRelease: 0.03,
+    noiseFilterType: 'bandpass', noiseFilterFreq: 2200, noiseFilterQ: 1.4, noiseDuration: 0.015, noiseRelease: 0.03,
+    swishFilterType: 'bandpass', swishFilterFreq: 1800, swishFilterQ: 1.4, swishDuration: 0.012, swishRelease: 0.025,
+  },
+};
+
+function playFootstep(landing, mat) {
+  const d = FOOTSTEP_TIMBRES[surfaceTimbre(mat)];
   const jitter = 0.92 + Math.random() * 0.16; // +/-8% pitch variation (AC: "not a metronome")
   if (landing) {
-    playNoiseBurst({ duration: 0.03, attack: 0.001, release: 0.05, peak: FOOTSTEP_LANDING_NOISE_PEAK, filterType: 'lowpass', filterFreq: 500 * jitter });
-    playToneBurst({ type: 'sine', freq: 110 * jitter, freqEnd: 70 * jitter, duration: 0.03, attack: 0.001, release: 0.06, peak: FOOTSTEP_LANDING_TONE_PEAK });
+    playNoiseBurst({ duration: d.noiseDuration, attack: 0.001, release: d.noiseRelease, peak: FOOTSTEP_LANDING_NOISE_PEAK, filterType: d.noiseFilterType, filterFreq: d.noiseFilterFreq * jitter, filterQ: d.noiseFilterQ });
+    playToneBurst({ type: d.toneType, freq: d.toneFreq * jitter, freqEnd: d.toneFreqEnd * jitter, duration: d.toneDuration, attack: 0.001, release: d.toneRelease, peak: FOOTSTEP_LANDING_TONE_PEAK });
   } else {
-    playNoiseBurst({ duration: 0.02, attack: 0.001, release: 0.04, peak: FOOTSTEP_SWISH_NOISE_PEAK, filterType: 'lowpass', filterFreq: 650 * jitter });
+    playNoiseBurst({ duration: d.swishDuration, attack: 0.001, release: d.swishRelease, peak: FOOTSTEP_SWISH_NOISE_PEAK, filterType: d.swishFilterType, filterFreq: d.swishFilterFreq * jitter, filterQ: d.swishFilterQ });
   }
+}
+
+// US-020c: the floor material under (x,y), via the confirmed public World
+// query (docs/backlog.md row 28c / architecture.md 18): `sectorAt` inside a
+// structure, else `outsideSector`'s reused scratch object (never allocated -
+// read once, synchronously, right here) for open terrain. No world loaded
+// yet (footWorld null, e.g. very first fixed step before 'world:loaded')
+// falls back to the plain 'floor' key, which surfaceTimbre() maps to 'stone'.
+function floorMatAt(x, y) {
+  if (!footWorld) return 'floor';
+  const sec = footWorld.sectorAt(x, y) || footWorld.outsideSector(x, y);
+  return sec.floorMat;
 }
 
 function stepFootstepAudio(entity) {
@@ -175,7 +221,7 @@ function stepFootstepAudio(entity) {
   if (body.landed) {
     footAccum = 0; // a landing footfall does not also double-count toward the next stride
     footWasStill = false; // the landing thump itself already read as "a step" - next one is a normal-cadence stride, not another short first-step
-    if (canPlay()) playFootstep(true);
+    if (canPlay()) playFootstep(true, floorMatAt(entity.transform.x, entity.transform.y));
     return;
   }
   if (!body.grounded) return; // airborne: silent
@@ -196,13 +242,14 @@ function stepFootstepAudio(entity) {
   if (footAccum >= threshold) {
     footAccum -= threshold;
     footWasStill = false;
-    if (canPlay()) playFootstep(false);
+    if (canPlay()) playFootstep(false, floorMatAt(entity.transform.x, entity.transform.y));
   }
 }
 
-function resetFootstepAudio() {
+function resetFootstepAudio(world) {
   footAccum = 0;
   footWasStill = true; // the very first step after a fresh load/restart also uses the short FIRST_STEP_M threshold
+  footWorld = world || null;
 }
 
 // ---- US-022 (sprint-2 "adds a relay hum to #2 if cheap"): one-shot swell,
@@ -231,7 +278,16 @@ export function stepGameAudio(playerEntity) {
 // variables are reset only in the 'world:loaded' handler" rule) -----------
 export function resetGameAudio(world) {
   resetSectorAudio();
-  resetFootstepAudio();
+  resetFootstepAudio(world);
   resetBoulderAudio(world);
   resetAmbientAudio(world); // US-020b: re-reads brazier/breach positions, tears down + will lazily rebuild the two loops
 }
+
+// ---- US-020c test-only hooks (no game code calls these - same __test_
+// pattern as ambient.js) - let a Node test drive the real floor-material
+// lookup and timbre selection with a fake `world` (no real WebAudio/
+// AudioContext needed), instead of only unit-testing surfaceTimbre() in
+// isolation. ------------------------------------------------------------
+export function __test_setFootWorld(world) { footWorld = world; }
+export function __test_floorMatAt(x, y) { return floorMatAt(x, y); }
+export function __test_footstepDesignFor(mat) { return FOOTSTEP_TIMBRES[surfaceTimbre(mat)]; }
