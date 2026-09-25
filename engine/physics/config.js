@@ -62,6 +62,17 @@ export const PHYSICS_DEFAULTS = {
     sleepSpeed: 0.05,    // m/s below which (with zero tilt) a roller can sleep
     sleepTime: 0.25,     // s of being slow + untilted before it actually sleeps
   },
+
+  // Terrain slope (US-026a, architecture.md 23.3): only applies while
+  // `sector.terrain` is true (open-world ground, never Level sectors).
+  // `nz` = surface normal's up component (cos of the slope angle from
+  // vertical) - `nz < slideStartCos` starts a slide, `nz > slideStopCos`
+  // stops it (hysteresis, 50 -> 45 deg).
+  maxSlopeDeg: 50,
+  slideStartCos: Math.cos(50 * Math.PI / 180),
+  slideStopCos: Math.cos(45 * Math.PI / 180),
+  slideAccel: 20,     // m/s^2 downhill accel while sliding - same as `gravity` (23.3)
+  slideMaxSpeed: 8,   // m/s cap on horizontal speed while sliding
 };
 
 // Back-compat alias (US-024 Phase C): tests and Player.js still say `PHYSICS`.

@@ -54,6 +54,14 @@ export function isSectorPassable(sector, footZ, grounded, opts) {
   if (!sector) return false; // defensive only - world.outsideSector() should never itself return null
   if (sector.solid) return false; // v2: solid blocks at any height
 
+  // US-026a (23.1 decision 3, 23.3): terrain cells are always horizontally
+  // passable - a continuous slope's floor-height delta at 1 m cell centres
+  // can exceed `stepUpMax` (e.g. a 25 deg hill = a 0.47 m "step") which
+  // would otherwise block walking uphill. Steepness is instead decided at
+  // the actor's OWN position by the slope rule in integrate.js step 5, not
+  // per-cell here. Tower/Level sectors (no `terrain` field) are unaffected.
+  if (sector.terrain) return true;
+
   if (sector.ceilH !== 'sky') {
     // US-009 AC5: gated on the mover's CURRENT head height, not just the
     // cell's own headroom - subsumes the old `ceilH - floorH < height`
