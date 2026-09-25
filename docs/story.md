@@ -117,7 +117,7 @@ BEAR: It asked for help then, too. Nobody came.
 BEAR: Go on, sky-cub. Leave the berries.
 ```
 
-## 9. PROPOSAL (2026-09-24): the vanished one
+## 9. APPROVED (owner, 2026-09-25): the vanished one (option A, Maren)
 
 Not canon. From `docs/owner-ideas/2026-09-24-story-and-progression.md`. Items marked ESCALATE TO MANAGER need a canon call.
 
