@@ -63,6 +63,10 @@ function p95(arr, n) {
  */
 export function runPerfBench(ctx) {
   const { engine, playerHandle, overlay, gpuPipeline, input, rt, look } = ctx;
+  // US-018 spike hunt: `FrameProfiler` on `engine.loop.profiler` (main.js,
+  // `?bench=1` only) - reset at the start of each measured window, its
+  // worst-frame section breakdown is printed per view/walk.
+  const prof = ctx.prof || null;
   const loop = engine.loop;
   if (gpuPipeline) gpuPipeline.setPassTiming(true);
   overlay.visible = true;
@@ -104,6 +108,7 @@ export function runPerfBench(ctx) {
       frame++;
       if (frame <= WARMUP_FRAMES) { requestAnimationFrame(tick); return; }
       if (n < MEASURE_FRAMES) {
+        if (n === 0 && prof) prof.reset();
         jsHist[n] = loop.stats.jsMs;
         intervalHist[n] = loop.stats.intervalMs;
         gpuHist[n] = gpuPipeline ? gpuPipeline.stats.gpuMsP50 : NaN;
@@ -127,6 +132,7 @@ export function runPerfBench(ctx) {
       passP50: gpuPipeline ? Array.from(gpuPipeline.stats.passMsP50) : null,
       worstIntervalMs: walkExtra ? walkExtra.worstIntervalMs : undefined,
       over25: walkExtra ? walkExtra.over25 : undefined,
+      worstFrame: prof ? prof.format() : undefined,
     };
   }
 
@@ -154,6 +160,7 @@ export function runPerfBench(ctx) {
   function waitForMove() {
     if (input.isDown('KeyW') || input.isDown('KeyA') || input.isDown('KeyS') || input.isDown('KeyD')) {
       loop.resetStats();
+      if (prof) prof.reset();
       walkStartedAt = performance.now();
       walkN = 0;
       requestAnimationFrame(walkTick);
@@ -197,6 +204,7 @@ export function runPerfBench(ctx) {
         lines.push('  pass p50 ms: ' + r.passP50.map((v, i) => `${PASS_LABELS[i]} ${Number.isNaN(v) ? 'n/a' : v.toFixed(2)}`).join('  '));
       }
       if (r.worstIntervalMs !== undefined) lines.push(`  worst interval ${r.worstIntervalMs.toFixed(1)} ms  over25 ${r.over25}`);
+      if (r.worstFrame) lines.push('  ' + r.worstFrame);
     }
     const text = lines.join('\n');
     window.__bench = results;

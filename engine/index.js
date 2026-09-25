@@ -111,3 +111,4 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 export { Input } from './core/input.js';
 export { PlayerLook } from './core/playerLook.js';
 export { Events } from './core/events.js';
+export { FrameProfiler } from './core/FrameProfiler.js'; // US-018 spike hunt (worst-frame section breakdown)

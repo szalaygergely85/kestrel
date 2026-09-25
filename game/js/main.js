@@ -10,7 +10,7 @@ import {
   AssetRegistry, createEngine, clampGrid, GRID_DEFAULT_COLS,
   runShadeTest, runDetailShadeTest,
   GBuffer, bindShading, bindLevel,
-  PlayerLook, DebugOverlay,
+  PlayerLook, DebugOverlay, FrameProfiler,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations, animComponent,
   GpuCellPipeline, PASS_NAMES, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
   VoxelPool,
@@ -141,6 +141,15 @@ const overlay = new DebugOverlay(document.body);
 // owns the player + overlay text - `runGame`'s own per-frame overlay.update()
 // and pass-timing flag both read this.
 let benchActive = false;
+// US-018 spike hunt: `?bench=1` only (null otherwise - every lap() below is
+// then a single null test). Section ids = index into PROF_SECTIONS.
+const PROF_SECTIONS = ['sim.input', 'sim.physics', 'sim.quest', 'r.bake', 'sim.events',
+  'r.lights', 'r.voxel', 'r.world', 'r.ui', 'r.gpuFrame', 'r.present', 'r.overlay'];
+const SEC = { input: 0, physics: 1, quest: 2, bake: 3, events: 4, lights: 5, voxel: 6, world: 7, ui: 8, gpuFrame: 9, present: 10, overlay: 11 };
+let prof = null;
+let lapT = 0;
+function lapStart() { if (prof) lapT = performance.now(); }
+function lap(i) { if (!prof) return; const t = performance.now(); prof.add(i, t - lapT); lapT = t; }
 // US-020a: arms the (one-shot) first-gesture listeners only - creates
 // nothing yet, so there is no autoplay warning and no sound before input.
 initAudio();
@@ -292,6 +301,7 @@ if (gpuBlocked) {
   // (`runGame('world')`), see the `benchActive` hook right after
   // `playerHandle` is assigned below.
   benchActive = true;
+  prof = new FrameProfiler(PROF_SECTIONS);
   runGame('world');
 } else if (params.get('shadetest') === '1') {
   runShadeTest(assets.palette);
@@ -329,6 +339,7 @@ function runGame(mode) {
   // The render path's own `Camera.fromEntity` call (below) may keep
   // allocating - it runs once per rendered frame, not per fixed step.
   const interactEye = new Camera();
+  const renderEye = new Camera(); // US-018 spike hunt: render()'s eye, reused every frame
 
   // US-015 (docs/architecture.md 7.6 item 8): the wake sequence's own
   // per-step output, reused every step (rule 9). `questUiActive` gates the
@@ -475,6 +486,7 @@ function runGame(mode) {
   }
 
   function update(dt) {
+    lapStart();
     simTime += dt;
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
@@ -544,6 +556,7 @@ function runGame(mode) {
       }
       // US-014 (7.4 fixed-step order item 1): before `integrate`, so
       // collision this step already sees the grate's current ceiling.
+      lap(SEC.input);
       stepSectorAnims(engine.world, dt);
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
       // US-013 (7.4 fixed-step order item 3): after `integrate`, so the
@@ -555,6 +568,7 @@ function runGame(mode) {
       // glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
+      lap(SEC.physics);
       // US-020a: footsteps (distance accumulator + `body.landed`) and the
       // boulder-thud speed watch - after physics settles this step's
       // position/flags, same slot as the other post-physics polls below.
@@ -601,8 +615,9 @@ function runGame(mode) {
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
         prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
       }
-      if (engine.world.terrain) engine.world.terrain.bakeFarStep(2); // US-025 AC: <= 2 ms/frame, amortised
+      lap(SEC.quest);
       engine.world.flushEvents();
+      lap(SEC.events);
 
       // US-017 AC "R restarts the slice ... with all state reset": only
       // once `[R] Wake again` is showing (computeEndCardState's
@@ -655,6 +670,13 @@ function runGame(mode) {
 
   function render(alpha) {
     const renderStart = performance.now();
+    lapStart();
+    // US-025 AC "<= 2 ms/frame, amortised": the far bake is render data
+    // (never read by the sim), so it runs once per RENDERED frame - it used
+    // to sit in update(), i.e. 2 ms per fixed step, 4-10 ms on a catch-up
+    // frame with 2-5 steps (US-018 spike hunt).
+    if (mode === 'world' && engine.world.terrain) engine.world.terrain.bakeFarStep(2);
+    lap(SEC.bake);
 
     if (mode === 'glyphs') {
       drawGlyphsScreen(rt);
@@ -662,7 +684,7 @@ function runGame(mode) {
       // Player and camera live in WORLD coordinates (US-025 AC) - no origin
       // translation needed at the call site any more, `renderWorld` casts
       // each placed structure at its own origin internally (7.3).
-      const eye = Camera.fromEntity(playerHandle.data);
+      const eye = Camera.fromEntityInto(playerHandle.data, undefined, renderEye); // reused (rule 9: no per-frame Camera)
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
@@ -678,6 +700,7 @@ function runGame(mode) {
         syncEntityLights(fb.lights, engine.world, assets.palette, attachedLightPos, lightSyncPos);
         fb.lights.update(fb.timeSec, engine.world);
       }
+      lap(SEC.lights);
       // US-030a AC "the CPU caster no longer runs on the gl2 path": with a
       // ready GPU pipeline, `renderWorld` is a one-line no-op (compositor.js)
       // and the GLSL DDA (this frame's cam/world, below) does the entire
@@ -695,6 +718,7 @@ function runGame(mode) {
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
       if (!fb.gpuDda) gameVoxelPool.project(cam, rt);
+      lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
@@ -716,6 +740,7 @@ function runGame(mode) {
         clearMaskForSceneFade(fb.rt);
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
+      lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen());
       // US-015 (docs/architecture.md 7.6 item 3): map-card / hint scene dim.
@@ -766,8 +791,11 @@ function runGame(mode) {
     // other call site in this file still passes `ambientL` (ambient-only,
     // 0 point lights - GpuCellPipeline.js's `_uploadLightUniforms` treats a
     // plain array as back-compat ambient-only input).
+    lap(SEC.ui);
     if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
+    lap(SEC.gpuFrame);
     rt.present();
+    lap(SEC.present);
     // US-018 (architecture.md 16): "do not leave pass timing on when the
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
     // enough to do unconditionally every frame.
@@ -816,9 +844,11 @@ function runGame(mode) {
       }
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }
+    lap(SEC.overlay);
   }
 
   const loop = engine.run({ update, render });
+  loop.profiler = prof; // US-018 spike hunt (`?bench=1` only, else null)
   window.__debug.loop = loop;
   window.__debug.world = engine.world;
   window.__debug.playerHandle = playerHandle;
@@ -830,7 +860,7 @@ function runGame(mode) {
   // right away (`benchActive` set by the `?bench=1` dispatch branch, top of
   // this file).
   if (mode === 'world' && benchActive) {
-    runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look });
+    runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look, prof });
   }
 }
 
@@ -1395,7 +1425,7 @@ function runGpuCompareDdaMode() {
       `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
       // BUG-LIGHT-001: light-pass-only readback (reported only, see above).
       `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)\n`;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol})`);
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip})`);
   }
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
