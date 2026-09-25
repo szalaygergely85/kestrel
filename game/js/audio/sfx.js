@@ -135,6 +135,20 @@ function resetFootstepAudio() {
   footAccum = 0;
 }
 
+// ---- US-022 (sprint-2 "adds a relay hum to #2 if cheap"): one-shot swell,
+// called directly from game/js/quest/beacon.js's `beaconLight` at the moment
+// the player wakes the relay - no new engine hook (reuses `playToneBurst`'s
+// existing attack/release envelope, just a slower attack than any of the
+// five US-020a sounds use), no sustained node graph to track/stop across a
+// restart (a long `attack`+`release` one-shot swell reads as a hum without
+// needing per-frame upkeep). A perfect fifth (220/330 Hz), not a single
+// tone, so it reads as "magic" next to the lever/boulder/footstep thuds.
+export function playRelayHum() {
+  if (!canPlay()) return;
+  playToneBurst({ type: 'sine', freq: 220, duration: 0.6, attack: 1.0, release: 1.4, peak: 0.16 });
+  playToneBurst({ type: 'sine', freq: 330, duration: 0.6, attack: 1.0, release: 1.4, peak: 0.08 });
+}
+
 // ---- combined per-fixed-step poll (main.js's update(), once per step) -----
 export function stepGameAudio(playerEntity) {
   if (playerEntity) stepFootstepAudio(playerEntity);
