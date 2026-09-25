@@ -79,6 +79,21 @@ const model = {
   ok('plate rect padded by platePad', dim.rects[0] === 4 && dim.rects[1] === 4 && dim.rects[2] === 5 + 3 + 1 && dim.rects[3] === 5 + 2 + 1);
 }
 
+// ---- pushDim: OWN-REQ-003 - UI-cell rect converted to scene cells via ui.sx/sy ----
+{
+  const art = buildPanelArt(model, palette, 'show');
+  const panel = createPanel(art, { plateMul: 0.2, platePad: 1 });
+  panel.x0 = 5; panel.y0 = 5; // UI cells
+  panel.state = 'open'; panel.a = 1;
+  const dim = createSceneDim();
+  resetSceneDim(dim);
+  panel.pushDim(dim, { sx: 2, sy: 2 }); // 320x120 scene over a 160x60 UI grid
+  ok('plate rect scaled to scene cells (x2)', dim.rects[0] === 8 && dim.rects[1] === 8 && dim.rects[2] === 18 && dim.rects[3] === 16, Array.from(dim.rects.subarray(0, 4)));
+  resetSceneDim(dim);
+  panel.pushDim(dim); // no `ui` -> identity (sx=sy=1), same as the plain scene-grid case above
+  ok('no `ui` arg -> identity scaling', dim.rects[0] === 4 && dim.rects[1] === 4 && dim.rects[2] === 9 && dim.rects[3] === 8);
+}
+
 // ---- drawPanel: frame-by-time, skips transparent, honors closed state ----
 function fakeRt(cols, rows) {
   const cells = new Map();

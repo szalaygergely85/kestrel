@@ -47,3 +47,8 @@ The owner plays one full run at 240x90, then switches to 320x120 via the grid se
 - main session: `?gpucompare=1` all PASS, `node tools/check-deps.mjs` OK.
 
 **M1 close:** with this walk-test passed and all P0 `done`, the remaining M1 exit criterion is a stranger run (finishes without instructions, without the lamp). The owner arranges it; the PO records it here. Fail path: content fixes in-sprint and re-run; engine fixes go first into sprint 3.
+
+## Owner tests (2026-09-25)
+- Owner walk/ear-check: US-022 relay wake, OWN-REQ-006 lit lamp, US-020a sound (incl. fix pass) - all fine -> done.
+- **M1 exit: stranger test PASSED** (owner, 2026-09-25: someone new played the tower slice without instructions and finished it).
+- Real-GPU: gpucompare 27/27 ALL PASS; bench 240x90 ALL PASS; 320x120 walk PASS, ground-floor view CHECK (render-side far-bake 4.1 ms in one frame) -> fix pending.

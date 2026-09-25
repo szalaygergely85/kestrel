@@ -163,36 +163,49 @@ export function setPaletteColors(uiStyle, colors) {
  * for this frame - see main.js render()). Split from the actual text draw
  * (`drawHints`, below) so the dim pass and the (masked, dim-immune) text
  * draw can happen on either side of `applySceneDim`.
- * @param {import('../../../engine/index.js').RenderTarget} rt
+ *
+ * OWN-REQ-003 (architecture.md 17.5): `x`/`y`/`totalLen` are UI-grid cells
+ * (the hint text itself now draws into the fixed UI layer, see `drawHints`
+ * below), but `dim` always multiplies the SCENE's cells - so the plate rect
+ * is converted UI cells -> scene cells via `ui.sx`/`ui.sy` (outset by
+ * `Math.floor`/`ceil`, same rule as `panel.js`'s `pushDim`).
+ * @param {import('../../../engine/index.js').UiLayer} ui
  * @param {Object} uiStyle
  * @param {import('../../../engine/index.js').SceneDim} dim
  */
-export function pushHintDim(rt, uiStyle, dim) {
+export function pushHintDim(ui, uiStyle, dim) {
   if (!current || !dim) return;
   const hintStyle = uiStyle.hint;
   if (!hintStyle.plate) return;
   const prefixLen = current.prefixLine.n;
-  const y = rt.rows - hintStyle.yFromBottom;
+  const y = ui.rows - hintStyle.yFromBottom;
   const x = hintStyle.x;
   const totalLen = prefixLen + current.textLine.n;
   const pad = hintStyle.plate.pad;
   const mul = 1 + (hintStyle.plate.bgMul - 1) * current.a;
-  pushDimRect(dim, x - pad, y - pad, x + totalLen + pad, y + pad + 1, mul);
+  const sx = ui.sx, sy = ui.sy;
+  pushDimRect(dim,
+    Math.floor((x - pad) * sx), Math.floor((y - pad) * sy),
+    Math.ceil((x + totalLen + pad) * sx), Math.ceil((y + pad + 1) * sy), mul);
 }
 
 /**
- * @param {import('../../../engine/index.js').RenderTarget} rt
+ * OWN-REQ-003: draws into the fixed UI layer (`ui`, duck-typed like a
+ * `RenderTarget` - `drawRichLine` only calls `setCellRGB`/reads nothing else)
+ * instead of the scene grid, so hint text reads at the same size at any
+ * `?grid=`.
+ * @param {import('../../../engine/index.js').UiLayer} ui
  * @param {Object} uiStyle
  * @param {import('../../../engine/index.js').FadeLut} lut
  */
-export function drawHints(rt, uiStyle, lut) {
+export function drawHints(ui, uiStyle, lut) {
   if (!current) return;
   const hintStyle = uiStyle.hint;
   const prefixLen = current.prefixLine.n;
-  const y = rt.rows - hintStyle.yFromBottom;
+  const y = ui.rows - hintStyle.yFromBottom;
   const x = hintStyle.x;
-  drawRichLine(rt, x, y, current.prefixLine, current.a, lut);
-  drawRichLine(rt, x + prefixLen, y, current.textLine, current.a, lut);
+  drawRichLine(ui, x, y, current.prefixLine, current.a, lut);
+  drawRichLine(ui, x + prefixLen, y, current.textLine, current.a, lut);
 }
 
 /** Test/debug: the id of the hint currently on screen, or null. */

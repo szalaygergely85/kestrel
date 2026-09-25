@@ -128,6 +128,9 @@ const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   force2d: params.get('force2d') === '1',
   gpu: params.get('gpu') !== '0',
+  // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
+  // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
+  uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 // `rt`/`depthBuffer`/`openSpans`/`gbuf` are `let`, not `const`: the fallback
 // gate below (architect review 1 item 2) may call `engine.setGrid` once at
@@ -136,16 +139,16 @@ const engine = createEngine({
 // post-fallback grid, not the original 240x90/`?grid=` request.
 let { renderTarget: rt, depthBuffer, openSpans } = engine;
 const { input } = engine;
+// OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
+// the whole run - `engine.setGrid` re-binds it in place (never replaces it),
+// so capturing it once here (unlike `rt`) stays valid across the CPU-
+// fallback `engine.setGrid` call below.
+const ui = engine.ui;
 const overlay = new DebugOverlay(document.body);
 // US-018 (architecture.md 16): true while `?bench=1`'s view/walk sequence
 // owns the player + overlay text - `runGame`'s own per-frame overlay.update()
 // and pass-timing flag both read this.
 let benchActive = false;
-// US-020a: `initAudio()` is called from `runGame()` itself (below), not
-// here at module scope - PC-B fix pass (optional item a): a keypress on a
-// pure dev/bench page that never calls `runGame` (e.g. `?shadetest=1`,
-// `?gpucompare=1`, `?flicker=1`, `?voxelbench=1`, `?bench=present`) has no
-// reason to arm a WebAudio context that will sit there silent and idle.
 // US-018 spike hunt: `?bench=1` only (null otherwise - every lap() below is
 // then a single null test). Section ids = index into PROF_SECTIONS.
 const PROF_SECTIONS = ['sim.input', 'sim.physics', 'sim.quest', 'r.bake', 'sim.events',
@@ -155,6 +158,11 @@ let prof = null;
 let lapT = 0;
 function lapStart() { if (prof) lapT = performance.now(); }
 function lap(i) { if (!prof) return; const t = performance.now(); prof.add(i, t - lapT); lapT = t; }
+// US-020a: `initAudio()` is called from `runGame()` itself (below), not
+// here at module scope - PC-B fix pass (optional item a): a keypress on a
+// pure dev/bench page that never calls `runGame` (e.g. `?shadetest=1`,
+// `?gpucompare=1`, `?flicker=1`, `?voxelbench=1`, `?bench=present`) has no
+// reason to arm a WebAudio context that will sit there silent and idle.
 
 // BUG-GPU-002 tooling fix: `?gpucompare=1`'s results depended on the real
 // browser window/canvas size, because `rt.pxCellW`/`rt.pxCellH` (real,
@@ -464,8 +472,11 @@ function runGame(mode) {
         if (startPose && startPose.pose === 'lying') {
           playerHandle.data.components.body.eyeH = wakeCfg.startEyeH;
         }
-        initTitleCard(assets, rt.cols, rt.rows);
-        initMapCard(assets, rt.cols, rt.rows);
+        // OWN-REQ-003 (17.4): layout in the UI layer's OWN grid (identity
+        // centre-scaling - panel.js/titleCard.js's sx/sy become 1), not the
+        // scene's - the panel/title now draw into `ui`, not `rt`.
+        initTitleCard(assets, ui.cols, ui.rows);
+        initMapCard(assets, ui.cols, ui.rows);
         resetHints();
       }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
@@ -675,12 +686,21 @@ function runGame(mode) {
 
   function render(alpha) {
     const renderStart = performance.now();
+    // OWN-REQ-003 (17.4): fresh/transparent every rendered frame, same
+    // precedent as the scene's own per-frame overwrite (fillSky paints every
+    // cell) - anything not redrawn below (e.g. a hint that just timed out)
+    // must vanish, not linger from last frame.
+    ui.clear();
     lapStart();
     // US-025 AC "<= 2 ms/frame, amortised": the far bake is render data
     // (never read by the sim), so it runs once per RENDERED frame - it used
     // to sit in update(), i.e. 2 ms per fixed step, 4-10 ms on a catch-up
     // frame with 2-5 steps (US-018 spike hunt).
-    if (mode === 'world' && engine.world.terrain) engine.world.terrain.bakeFarStep(2);
+    // US-018 follow-up: tightened from 2ms - Terrain.bakeFarStep is now
+    // column-granular (checks the time budget every few cells, not once per
+    // row), so a 1 ms target actually holds even on the first frame after
+    // load/teleport instead of overrunning on one expensive row.
+    if (mode === 'world' && engine.world.terrain) engine.world.terrain.bakeFarStep(1);
     lap(SEC.bake);
 
     if (mode === 'glyphs') {
@@ -758,8 +778,11 @@ function runGame(mode) {
       resetSceneDim(sceneDim);
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();
-        if (mapPanel) mapPanel.pushDim(sceneDim);
-        pushHintDim(rt, assets.uiStyle, sceneDim);
+        // OWN-REQ-003 (17.5): `pushDim`/`pushHintDim` convert their UI-cell
+        // plate rects to scene cells via `ui.sx`/`ui.sy` - the dim itself
+        // always multiplies the SCENE grid (sceneDim.js).
+        if (mapPanel) mapPanel.pushDim(sceneDim, ui);
+        pushHintDim(ui, assets.uiStyle, sceneDim);
       }
       if (!fb.gpuDda) applySceneDim(rt, sceneDim);
       if (sprites.pass) sprites.pass.setSceneDim(sceneDim);
@@ -767,26 +790,29 @@ function runGame(mode) {
       // the world/sprite passes, never depth-tested (architecture.md 8).
       // Hidden while ending or while wake/map-card input is locked (US-015:
       // there is never a usable target/prompt to show then).
-      if (!ending && !uiLockedNow) drawCrosshair(rt, crosshairStyle, engine.world.interaction);
+      // OWN-REQ-003 (17.4): drawn into the fixed UI layer (`ui`), not the
+      // scene (`rt`), so every one of these reads at the same physical size
+      // regardless of `?grid=`.
+      if (!ending && !uiLockedNow) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
-        drawHints(rt, assets.uiStyle, fadeLut);
-        drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen);
-        drawTitleCard(rt, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
+        drawHints(ui, assets.uiStyle, fadeLut);
+        drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen); // 17.4: stays in the scene grid (an eyelid over the 3D view, not UI text)
+        drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
         const mapPanel = getMapPanel();
-        if (mapPanel) drawUiPanel(rt, mapPanel, fb.timeSec * 1000, fadeLut);
+        if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
       }
       // US-017: the end card, drawn last (over the faded scene) - `setCell`
       // marks these cells `mask = 1` (engine/render/CellBuffer.js), so a
       // second `applySceneFade` call (e.g. a future frame) never touches them.
       const endCardState = computeEndCardState(engine.world, assets.uiStyle);
-      drawEndCard(rt, assets.uiStyle, P.colors, endCardState);
+      drawEndCard(ui, assets.uiStyle, P.colors, endCardState);
     } else {
       const t = simTime + alpha * (1 / 60); // interpolated time for smooth animation between fixed sim steps
       drawDemoScene(rt, t, assets.palette.ramps.default);
     }
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
-    if (mode === 'world' && !look.locked && !isMapOpen()) drawPauseOverlay(rt, assets);
+    if (mode === 'world' && !look.locked && !isMapOpen()) drawPauseOverlay(ui, rt, assets);
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
