@@ -526,9 +526,10 @@ function aoAlias(gbuf) {
     Buffer.from(fb1.gbuf.kind.buffer), Buffer.from(fb1.gbuf.mat.buffer),
     Buffer.from(fb1.gbuf.face.buffer), Buffer.from(fb1.gbuf.planeId.buffer),
   ]);
-  // Recorded 2026-09-23 by this test's own first run - changing it needs an
+  // Recorded 2026-09-23; re-recorded 2026-09-25 (architect, US-040 re-review:
+  // castModels ray moved to the engine row convention, horizonRow - row). Changing it needs an
   // architect OK per the backlog tech notes.
-  const RECORDED_GOLDEN = '96f79263';
+  const RECORDED_GOLDEN = '3bdbc98a';
   ok('bearClose FNV-1a golden matches the recorded value', golden === RECORDED_GOLDEN, `got ${golden}, recorded ${RECORDED_GOLDEN}`);
 }
 

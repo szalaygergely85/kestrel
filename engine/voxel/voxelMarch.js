@@ -210,7 +210,10 @@ export function castModels(fb, list, cam, opts) {
     const minCol = _rect.minCol, maxCol = _rect.maxCol, minRow = _rect.minRow, maxRow = _rect.maxRow;
 
     for (let row = minRow; row <= maxRow; row++) {
-      const rdz = (horizonRow - (row + 0.5)) / planeDistY; // col-independent - hoisted out of the col loop
+      // Engine row convention (sector/terrain casters, every GPU pass): the
+      // ray samples at `row`, not `row + 0.5` (US-040 re-review: the half-row
+      // offset was the whole gpucompare uvViol/depthViol on kind 8).
+      const rdz = (horizonRow - row) / planeDistY; // col-independent - hoisted out of the col loop
       const rowOff = row * cols;
       for (let col = minCol; col <= maxCol; col++) {
         const i = rowOff + col;
