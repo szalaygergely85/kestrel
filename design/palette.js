@@ -181,7 +181,12 @@
     ferrumSil:      '#2c2a36', // wall-and-tiers silhouette hint (unlit, fog capped 0.55 -> pale blue-grey on the horizon)
     chartInk:       '#cc5c4a', // Crown print (faded red)
     pencil:         '#cfc8b2', // Wick's pencil
-    chartEdge:      '#8a7a58'  // torn chart border
+    chartEdge:      '#8a7a58', // torn chart border
+    // v1.16 US-026a: the waystone (design/models/voxel_world.js): cool slate, darker than every tower stone, pale lichen top
+    wayStoneLight:  '#b4b8a8', // rain-bleached top rim
+    wayStone:       '#5a616d', // blue-grey slate body
+    wayStoneDark:   '#383d46', // damp foot, cut edges round the mark
+    lichen:         '#c9c58c'  // yellow-grey lichen patches
   };
 
   // ---------------------------------------------------------------------------
@@ -870,6 +875,41 @@
     texture: { w: 4, h: 4, scale: [16, 16], key: {
       a: { shade: 1.00 }, c: { shade: 0.70, tint: 'cinder', amount: 0.7, glyph: ',' }, e: { shade: 1.15, tint: 'emberDim', amount: 0.3, glyph: "'" }
     }, rows: ['acae', 'caaa', 'aeac', 'aaca'] }
+  };
+  // v1.16 US-026a waystone (design/models/voxel_world.js `voxelMaterials.v1`, designer merge): appended after
+  // canvas_burnt so no existing material id moves. 4 keys; the mark is the only emissive one (0.60).
+  materials.waystone_light = {
+    desc: 'VOXEL PROPS (world, US-026a waystone). The standing stone\'s weathered top and upper edges and a few lichen ' +
+          'patches: rain-bleached pale grey with yellow lichen. The bright rim over the dark slate body.',
+    base: 'wayStoneLight', albedo: 0.90, ramp: 'stone', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, l: { shade: 1.10, tint: 'lichen', amount: 0.6, glyph: "'" }, d: { shade: 0.85, tint: 'wayStone', amount: 0.4 }
+    }, rows: ['alad', 'daal', 'alda', 'ldaa'] }
+  };
+  materials.waystone = {
+    desc: 'VOXEL PROPS (world, US-026a waystone). The old stone\'s faces and flanks: cool blue-grey slate, darker than ' +
+          'any tower stone, so it stands out as a dark upright on the bright grass. Pale lichen specks, dark pits.',
+    base: 'wayStone', albedo: 0.72, ramp: 'stone', bg: { mode: 'darken', k: 0.14 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 0.78, tint: 'wayStoneDark', amount: 0.5, glyph: ':' }, l: { shade: 1.20, tint: 'lichen', amount: 0.5, glyph: "'" }
+    }, rows: ['aaca', 'caaa', 'alaa', 'aaac'] }
+  };
+  materials.waystone_dark = {
+    desc: 'VOXEL PROPS (world, US-026a waystone). The damp foot where the stone meets the turf, the buried base, the ' +
+          'packing stones\' sides and the dark cut edges round the carved mark (Blood-style contrast frame).',
+    base: 'wayStoneDark', albedo: 0.58, ramp: 'stone', bg: { mode: 'darken', k: 0.10 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, m: { shade: 0.90, tint: 'mossDark', amount: 0.6, glyph: ',' }
+    }, rows: ['amaa', 'aaam', 'maaa', 'aama'] }
+  };
+  materials.waystone_mark = {
+    desc: 'VOXEL PROPS (world, US-026a waystone). The carved relay sign on the front face (a ring with a centre point over ' +
+          'a stroke and a foot bar): faint aether teal in the cut, emissive 0.60 (below the awake relay crystals 0.85), ' +
+          'so it reads as a teal mark from the breach and glows on the shadow side. Static (1 frame).',
+    base: 'aether', albedo: 1.00, ramp: 'aether', spec: 0.20, emissive: 0.60, bg: { mode: 'darken', k: 0.22 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 1.15, tint: 'aetherLight', amount: 0.5 }, m: { shade: 0.85, tint: 'aetherMid', amount: 0.5 }
+    }, rows: ['acam', 'maac', 'acma', 'caam'] }
   };
 
   // ---------------------------------------------------------------------------

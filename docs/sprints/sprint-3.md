@@ -25,7 +25,9 @@ Owner: Manager (scope), Product Owner (stories/acceptance). M1 closed (D-024); t
 4. **US-020d** room tone + SOS chime + volume API - ready now (needed by US-038b's volume row).
 5. **US-027b** converter + flip - **needs US-027a on master** (PC-A P-A3).
 6. **US-038b** settings panel - **needs designer P4** (PC-A P-A4); grid/fullscreen rows need US-038a (P-A5), hidden until then.
+5b. **US-026a-content** (row 30g) - after US-027b + PC-A designer's waystone numbers.
 7. Filler if blocked: **US-059** capture-browser (ready), then **US-021** log (needs designer P3).
+Update 2026-09-25 (owner): item 4 US-020d **deferred to M6** (no more sound); US-038a `done` (400x150 normal, 480x180 ultra).
 Items 1-4 are ~1.5-2 PC-B days of runway; PC-A must land P-A3 inside that window.
 
 PC-B's `po-review` pile (US-020b, US-020c, US-057, OWN-REQ-005a/b) gets a PC-A PO (sonnet) pass first, so fix passes can be queued behind item 1.
@@ -38,7 +40,9 @@ PC-B's `po-review` pile (US-020b, US-020c, US-057, OWN-REQ-005a/b) gets a PC-A P
 - **P-A4 Designer:** `uiStyle.settings` + mock in `design/preview/title.html` (P4); `uiStyle.logPanel` + decal (P3) in the same pass if cheap. Before PC-B reaches item 6.
 - **P-A5 Programmer:** US-038a -> ARCH review -> owner bench 400x150 / 480x180 -> master.
 - **P-A6 Architect (fable):** US-026a tech notes; designer builds the waystone voxel model + places the terrain end marker in the flipped `world_m1` JSON after PC-B's item 5 lands.
-- **P-A7 Programmer:** US-026a -> ARCH review -> PO -> owner walk-test.
+  - **Done 2026-09-25 (architect):** architecture.md 23. **PO rulings:** steep slopes Node-tested only (no test slope in the band; steep face comes with US-026b); west hill 0.6-1.2 m drops accepted as authored. **Split:** US-026a-engine [PC-A] = 23.7 S1-S6 + S8; US-026a-content [PC-B] = S7 data (backlog row 30g), after US-027b.
+- **P-A6b Designer (now):** waystone voxel + emissive aether-teal mark (append-only palette/detail-pass) + preview; final spot/yaw/walkTo numbers into `### US-026a`.
+- **P-A7 Programmer:** US-026a-engine S1-S3 (can start now, in-memory world defs) -> S4-S5 -> (after PC-B's US-027b + US-026a-content are on master) S6 -> S8 browser pass -> ARCH review (fable) -> PO -> owner walk-test.
 - **Stretch:** BUG-PERF-001 (b)(c).
 
 ## Shared-file risk

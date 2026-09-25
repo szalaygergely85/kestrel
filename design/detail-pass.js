@@ -164,6 +164,7 @@
     verdigris:  [".", ",", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
     canvasFace: [".'", ".~'", "~-'", "~)-", ")~(", ")(~", "()~=", "(=)%"],
     glint:      ["'", "'+", "+'", "+*", "*+", "*", "*", "*"],   // v1.14: the voxel lamp's sparkle (emissive, always near the top)
+    rune:       ["'", ".'", ":'", ":;", "=:", "=+", "#=", "#"],  // v1.16: the waystone's carved teal mark (emissive: solid cut lines at the top levels)
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
@@ -654,6 +655,49 @@
       grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
       face: { set: 'soot', mid: 'soot', far: 'soot' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // v1.16 US-026a waystone (design/models/voxel_world.js `voxelMaterials.v2`, designer merge). Grid ~ half a 0.125 m
+    // voxel; lines: false. Appended after canvas_burnt so no existing material id moves. The mark uses the new set `rune`.
+    waystone_light: {
+      v1: 'waystone_light', seed: 229,
+      desc: 'VOXEL PROPS (world, US-026a waystone). The standing stone\'s weathered top and upper edges and a few lichen ' +
+            'patches: rain-bleached pale grey with yellow lichen. The bright rim over the dark slate body.',
+      albedo: 0.90, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['wayStoneLight', 3], ['lichen', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'rockFace', mid: 'rockFace', far: 'rockFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    waystone: {
+      v1: 'waystone', seed: 230,
+      desc: 'VOXEL PROPS (world, US-026a waystone). The old stone\'s faces and flanks: cool blue-grey slate, darker than ' +
+            'any tower stone, so it stands out as a dark upright on the bright grass. Pale lichen specks, dark pits.',
+      albedo: 0.72, bgK: 0.14, detail: 32, jitter: 0.06,
+      tones: [['wayStone', 3], ['wayStoneDark', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'rockFace', mid: 'rockFace', far: 'rockFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    waystone_dark: {
+      v1: 'waystone_dark', seed: 231,
+      desc: 'VOXEL PROPS (world, US-026a waystone). The damp foot where the stone meets the turf, the buried base, the ' +
+            'packing stones\' sides and the dark cut edges round the carved mark (Blood-style contrast frame).',
+      albedo: 0.58, bgK: 0.10, detail: 32, jitter: 0.06,
+      tones: [['wayStoneDark', 3], ['mossDark', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'rockFace', mid: 'rockFace', far: 'rockFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    waystone_mark: {
+      v1: 'waystone_mark', seed: 232,
+      desc: 'VOXEL PROPS (world, US-026a waystone). The carved relay sign on the front face (a ring with a centre point over ' +
+            'a stroke and a foot bar): faint aether teal in the cut, emissive 0.60 (below the awake relay crystals 0.85), ' +
+            'so it reads as a teal mark from the breach and glows on the shadow side. Static (1 frame).',
+      albedo: 1.00, bgK: 0.22, detail: 32, jitter: 0.06, emissive: 0.60,
+      tones: [['aether', 3], ['aetherMid', 2], ['aetherLight', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'rune', mid: 'rune', far: 'rune' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -672,7 +716,9 @@
     block_light: 'block_light', block_dark: 'block_dark', granite_light: 'granite_light', granite_dark: 'granite_dark',
     moss_cap: 'moss_cap', crystal_dead: 'crystal_dead', crystal_lit: 'crystal_lit', mirror_dark: 'mirror_dark',
     linen_light: 'linen_light', linen: 'linen', linen_dark: 'linen_dark', gore_red: 'gore_red', gore_red_dark: 'gore_red_dark',
-    canvas_burnt: 'canvas_burnt'
+    canvas_burnt: 'canvas_burnt',
+    // v1.16 US-026a waystone (design/models/voxel_world.js), same key in both files.
+    waystone_light: 'waystone_light', waystone: 'waystone', waystone_dark: 'waystone_dark', waystone_mark: 'waystone_mark'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

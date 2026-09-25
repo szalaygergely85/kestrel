@@ -27,7 +27,10 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : voxel props (D-019, US-056) : lever, lamp, boulder, rubble, canvas heap, gondola, strut, envelope heap, relay</h1>
+<h1>Kestrel : voxel props (D-019, US-056, US-026a) : lever, lamp, boulder, rubble, canvas heap, gondola, strut, envelope heap, relay, waystone</h1>
+<div class="note"><b>v1.16 waystone</b> (<code>design/models/voxel_world.js</code>, show: waystone): the US-026a end marker on the terrain below the tower. In-game views: 20 m walking up
+  (slider applies), from the breach (60.4 m, eye 7.07 m above the stone's ground) and the end camera (2.5 m); grass floor, far fog. The checks read the terrain recipe
+  (<code>levels/overworld_far.js</code>): spot type / slope, foot vs terrain, facing the breach, sightline from the breach, the end trigger, the 1 m end walk and the end camera toward the signal tower.</div>
 <div class="note">
   Solid props as real 3D voxel models (architecture.md 15.1 format, 15.3 content contract), Blood-style: fixed in the world, bright rim over a dark body,
   dark contour. Data: <code>design/models/voxel_props.js</code> (batch 1: lever, lantern) and <code>design/models/voxel_tower.js</code> (batch 2: the rest),
@@ -88,6 +91,8 @@
 <script src="../models/lantern.js"></script>
 <script src="../models/voxel_props.js"></script>
 <script src="../models/voxel_tower.js"></script>
+<script src="../models/voxel_world.js"></script>
+<script src="../levels/overworld_far.js"></script>
 <script>
   setTimeout(function () {
     if (!window.__voxOK) document.getElementById('fatal').textContent =
@@ -132,7 +137,13 @@ const ENTRIES = [
   { name: 'envelopeHeap', title: 'Envelope heap below the breach (west + east halves; skirt under the anchor plane)', clips: ['idle'], floorZ: 0, wallY: null,
     wallMat: 'rock', floorMat: 'grass', view: { dist: 4.5, eye: 2.4 }, rim: ['canvas_light'], body: ['canvas_dark'] },
   { name: 'relay', title: 'Relay (crystalDead + crystalLit + mount; the glow is a billboard)', clips: ['dead', 'wake', 'awake'], floorZ: 0, wallY: null,
-    wallMat: 'stone', floorMat: 'floor', view: { dist: 2.4, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'mirror_dark', 'crystal_dead'] }
+    wallMat: 'stone', floorMat: 'floor', view: { dist: 2.4, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'mirror_dark', 'crystal_dead'] },
+  // v1.16 US-026a: world prop on the terrain (grass floor, far fog). Typical view = 20 m walking up (the brief's "readable
+  // from ~20 m"); extra fixed views = from the breach (60.4 m, eye 7.07 m above the stone's ground) and the end camera.
+  { name: 'waystone', title: 'Waystone (US-026a end marker: slate menhir + emissive teal mark; one part, buried foot)', clips: ['idle'], floorZ: 0, wallY: null,
+    wallMat: 'rock', floorMat: 'grass', fog: 'far', view: { dist: 20, eye: 1.6 }, rim: ['waystone_light'], body: ['waystone', 'waystone_dark'],
+    extraViews: [{ label: 'from the breach (fixed 60.4 m, eye +7.07 m)', dist: 60.4, eye: 7.07, fixed: true },
+                 { label: 'end camera (fixed 2.5 m, eye 1.6 m)', dist: 2.5, eye: 1.6, fixed: true }] }
 ];
 const NAMES = ENTRIES.filter((e) => MODELS[e.name]).map((e) => e.name);
 const GROUPS = {};
@@ -281,7 +292,7 @@ function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fogOn, out) {
     const f = U.falloff(d, L.r), ndl = (nx * lx + ny * ly + nz * lz) / d;
     if (f > 0 && ndl > 0) U.addLight(Lacc, L.col, L.int * f * ndl * (L.col === 'torch' ? ctl.int : 1));
   }
-  U.shade(mat, Lacc, u, v, dist, out, { fog: fogOn ? 'interior' : null, z: v });
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fogOn ? (sc.g.fog || 'interior') : null, z: v });
 }
 
 // ------------------------------------------------------------------ view renderer
@@ -489,29 +500,34 @@ function buildIngame() {
     const g = GROUPS[name];
     const sec = document.createElement('div'); g.ingameSec = sec;
     const h = document.createElement('h3'); h.textContent = g.title; sec.appendChild(h);
-    const row = document.createElement('div'); row.className = 'row';
-    for (const spec of [{ cols: 160, rows: 60, cc: 60, cr: 30, cw: 12, ch: 18 }, { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }]) {
-      const grid = makeCanvas(spec.cc, spec.cr, spec.cw * z, spec.ch * z);
-      const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
-      const cap = document.createElement('div'); cap.className = 'cap'; wrap.appendChild(cap);
-      row.appendChild(wrap);
-      const view = { grid, group: g, ingame: true, spec, cap };
-      view.stats = (mc, hr, wc) => {
-        const pm = packed[name], H = pm.sz * pm.cellM, d = g.view.dist * ctl.dist, rowsTall = H * view.cam.planeDistY / d;
-        cap.textContent = spec.cols + 'x' + spec.rows + ' at ' + d.toFixed(1) + ' m, eye ' + g.view.eye.toFixed(1) + ' m: model ' + hr + ' rows x ' + wc +
-          ' cols on screen (grid height ' + rowsTall.toFixed(1) + ' rows = ' + (rowsTall / pm.sz).toFixed(2) + ' rows per voxel), ' + mc + ' model cells';
-      };
-      ingameViews.push(view); views.push(view);
+    // the typical view (distance slider applies) + optional fixed views (v1.16: the waystone's breach / end-camera views)
+    const vws = [Object.assign({ label: 'typical view (distance slider applies)' }, g.view)].concat(g.extraViews || []);
+    for (const vw of vws) {
+      if (vws.length > 1) { const lab = document.createElement('div'); lab.className = 'cap'; lab.textContent = vw.label; sec.appendChild(lab); }
+      const row = document.createElement('div'); row.className = 'row';
+      for (const spec of [{ cols: 160, rows: 60, cc: 60, cr: 30, cw: 12, ch: 18 }, { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }]) {
+        const grid = makeCanvas(spec.cc, spec.cr, spec.cw * z, spec.ch * z);
+        const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
+        const cap = document.createElement('div'); cap.className = 'cap'; wrap.appendChild(cap);
+        row.appendChild(wrap);
+        const view = { grid, group: g, ingame: true, spec, cap, vw };
+        view.stats = (mc, hr, wc) => {
+          const pm = packed[name], H = pm.sz * pm.cellM, d = vw.dist * (vw.fixed ? 1 : ctl.dist), rowsTall = H * view.cam.planeDistY / d;
+          cap.textContent = spec.cols + 'x' + spec.rows + ' at ' + d.toFixed(1) + ' m, eye ' + vw.eye.toFixed(1) + ' m: model ' + hr + ' rows x ' + wc +
+            ' cols on screen (grid height ' + rowsTall.toFixed(1) + ' rows = ' + (rowsTall / pm.sz).toFixed(2) + ' rows per voxel), ' + mc + ' model cells';
+        };
+        ingameViews.push(view); views.push(view);
+      }
+      sec.appendChild(row);
     }
-    sec.appendChild(row);
     host.appendChild(sec);
   }
   applyShow();
 }
 function ingameCam(view) {
-  const g = view.group, bb = modelBounds(g.name), s = view.spec;
+  const g = view.group, bb = modelBounds(g.name), s = view.spec, vw = view.vw || g.view;
   const target = [0, 0, (Math.max(bb.z0, 0) + bb.z1) / 2];
-  return perspCam(s.cols, s.rows, s.cc, s.cr, target, ctl.vaz, g.view.dist * ctl.dist, g.floorZ + g.view.eye);
+  return perspCam(s.cols, s.rows, s.cc, s.cr, target, ctl.vaz, vw.dist * (vw.fixed ? 1 : ctl.dist), g.floorZ + vw.eye);
 }
 
 // ------------------------------------------------------------------ main loop
@@ -908,6 +924,94 @@ function runChecks() {
     const pdy = 30 * (16 / 9) / TAN_HALF, rows = H * pdy / g.view.dist, rpv = rows / (H / def.cellM);
     ok(rows >= 8, name + ' at ' + g.view.dist + ' m, 160x60: ' + rows.toFixed(1) + ' rows tall (>= 8), ' + rpv.toFixed(2) + ' rows per voxel; 240x90 ' +
        (rows * 1.5).toFixed(1) + ' rows');
+  }
+  // ---- v1.16 US-026a waystone: model contract, mark, terrain spot, sightline from the breach, end trigger + camera
+  const WS = MODELS.waystone, OF = A.levels && A.levels.overworld_far, WP = A.worldPatch && A.worldPatch.world_m1;
+  if (WS && packed.waystone) {
+    const def = WS.voxel, pl = WS.placement, en = WS.end, cm = def.cellM, own = ownedVoxels(def);
+    const cmp = (b, a) => { let d = b - a; while (d > 180) d -= 360; while (d <= -180) d += 360; return d; };   // signed deg
+    const bearing = (fx, fy, tx, ty) => { let b = Math.atan2(tx - fx, -(ty - fy)) / D2R; return b < 0 ? b + 360 : b; };   // compass (end.js rule)
+    ok(def.size[0] <= 16 && def.size[1] <= 16 && def.size[2] <= 24 && def.animations.idle && def.animations.idle.frames.length === 1 && Object.keys(def.animations).length === 1,
+       'waystone: grid ' + def.size.join('x') + ' <= 16x16x24, one clip idle with 1 frame (23.2)');
+    ok(!!A.models.waystone && A.models.waystone.voxel === def && !A.models.waystone.billboard,
+       'waystone: ASSETS.models.waystone attached (the key components.voxel.model resolves; voxel only, no billboard)');
+    const mm = P.materials.waystone_mark || VMAT.v1.waystone_mark, mm2 = DP.materials.waystone_mark || VMAT.v2.waystone_mark;
+    const markV = own.filter((v) => def.mats[v.ch] === 'waystone_mark');
+    ok(markV.length > 0 && mm.emissive >= 0.4 && mm.emissive < 0.85 && mm2.emissive === mm.emissive && mm.base === 'aether' && DP.sets[mm2.face.set],
+       'waystone: mark = ' + markV.length + ' waystone_mark voxels, base aether, emissive ' + mm.emissive + ' (faint: >= 0.40, below the awake relay 0.85; v1 = v2), glyph set ' + mm2.face.set);
+    const fullSet = new Set(own.map((v) => v.x + ',' + v.y + ',' + v.z));
+    ok(markV.every((v) => !fullSet.has(v.x + ',' + (v.y - 1) + ',' + v.z)) && markV.every((v) => v.y === markV[0].y),
+       'waystone: every mark voxel is flush on the one front plane (y ' + markV[0].y + '), nothing in front of it: reads from every front angle');
+    const edgeOk = markV.every((v) => [[1, 0], [-1, 0], [0, 1], [0, -1]].every((d) => {
+      const k = (v.x + d[0]) + ',' + v.y + ',' + (v.z + d[1]); if (!fullSet.has(k)) return true;
+      const n = own.find((w) => w.x === v.x + d[0] && w.y === v.y && w.z === v.z + d[1]); return ['waystone_mark', 'waystone_dark'].indexOf(def.mats[n.ch]) >= 0;
+    }));
+    ok(edgeOk, 'waystone: the mark is framed by a dark cut edge (every face neighbour is mark or waystone_dark)');
+    const mz1 = Math.max(...markV.map((v) => v.z)), ring = markV.filter((v) => v.z > mz1 - 6);
+    const ringW = (Math.max(...ring.map((v) => v.x)) + 1 - Math.min(...ring.map((v) => v.x))) * cm, ringH = 6 * cm;
+    const PDY = (rows) => (rows / 2) * (16 / 9) / TAN_HALF, PDX = (cols) => (cols / 2) / TAN_HALF;
+    const rr = (d) => (ringH * PDY(90) / d).toFixed(1) + ' rows x ' + (ringW * PDX(240) / d).toFixed(1) + ' cols';
+    ok(ringH * PDY(90) / 20 >= 3 && ringW * PDX(240) / 20 >= 4, 'waystone: ring ' + ringW.toFixed(2) + ' x ' + ringH.toFixed(2) + ' m at 20 m, 240x90 = ' + rr(20) + ' (>= 3 x 4: reads as a ring)');
+    const aboveH = (def.size[2] - def.anchor[2]) * cm, markZ = (def.mounts.mark.at[2] - def.anchor[2]) * cm;
+    info('waystone: ' + aboveH.toFixed(3) + ' m tall above the ground (+' + (def.anchor[2] * cm).toFixed(2) + ' m buried foot); mark centre ' + markZ.toFixed(2) + ' m above the ground; ' +
+         'body luma ' + matLum('waystone').toFixed(0) + ' vs grass ' + lum('grass').toFixed(0) + ' (dark upright on the turf)');
+    ok(matLum('waystone') < 0.8 * lum('grass') && matLum('waystone_light') > lum('grass'), 'waystone: body darker than the grass (< 0.8 x), top rim brighter: the silhouette separates from the terrain');
+    // world patch = model placement / end data
+    const ent = WP && WP.entities.append.filter((e) => e.id === 'endMarker')[0], trg = WP && WP.triggers.append.filter((t) => t.id === 'end')[0];
+    ok(!!ent && ent.x === pl.x && ent.y === pl.y && ent.z === pl.z && ent.yawDeg === pl.yawDeg && ent.components.voxel.model === 'waystone' && def.animations[ent.components.voxel.anim],
+       'worldPatch.world_m1 endMarker (' + (ent ? ent.x + ', ' + ent.y + ', ' + ent.z + ', yaw ' + ent.yawDeg : 'missing') + ') = model placement, model waystone, anim idle');
+    ok(!!trg && trg.x === pl.x && trg.y === pl.y && trg.r === en.trigger.r && trg.walkTo.x === en.walkTo.x && trg.walkTo.y === en.walkTo.y && trg.lookAt === 'farTower' && trg.pitchTo === 0 && trg.once && trg.trigger === 'quest.end',
+       'worldPatch.world_m1 trigger end: circle r ' + (trg && trg.r) + ' at the stone, walkTo (' + (trg && trg.walkTo.x) + ', ' + (trg && trg.walkTo.y) + '), lookAt farTower, pitchTo 0, once');
+    info('waystone: 1 part; tower voxel instances 13 + burner = 14, + waystone = 15 <= MAX_VOX_INSTANCES 16 (nearest 16 win)');
+    if (OF && OF.util) {
+      const HU = OF.util, x = pl.x, y = pl.y, h = HU.heightAt(x, y), ty = HU.typeAt(x, y), e = 2;
+      const gx = (HU.heightAt(x + e, y) - HU.heightAt(x - e, y)) / (2 * e), gy = (HU.heightAt(x, y + e) - HU.heightAt(x, y - e)) / (2 * e);
+      const slope = Math.atan(Math.hypot(gx, gy)) / D2R;
+      ok(ty === 0 && slope < 10, 'waystone spot (' + x + ', ' + y + '): terrain ' + h.toFixed(2) + ' m, type ' + ty + ' (0 = grass), slope ' + slope.toFixed(1) + ' deg (< 10)');
+      const inst = posedInstance('waystone', x, y, h, pl.yawDeg, { clip: -1, frame: 0, tMs: 0 });
+      const foot = [[2, 1, 2], [12, 1, 2], [2, 9, 2], [12, 9, 2]].map((p) => worldPoint(inst, 0, p));
+      const dh = foot.map((p) => HU.heightAt(p[0], p[1]) - h), gap = -Math.min(...dh), sunk = Math.max(...dh);
+      ok(gap <= def.anchor[2] * cm && sunk <= 0.3, 'waystone: foot corners vs terrain ' + dh.map((v) => v.toFixed(2)).join(' / ') + ' m: downhill gap ' + gap.toFixed(2) + ' <= buried foot ' +
+         (def.anchor[2] * cm).toFixed(2) + ' m, uphill ' + sunk.toFixed(2) + ' <= 0.30 (never floats, never swallowed)');
+      const B = OF.breach, F = OF.farTower, Tc = OF.tower;
+      const fr0 = worldPoint(inst, 0, [7, 5, 2]), fr1 = worldPoint(inst, 0, [7, 0, 2]), faceB = bearing(fr0[0], fr0[1], fr1[0], fr1[1]);
+      const toBreach = bearing(x, y, B.x, B.y), dB = Math.hypot(B.x - x, B.y - y);
+      ok(Math.abs(cmp(faceB, toBreach)) <= 3, 'waystone: front (mark) faces bearing ' + faceB.toFixed(1) + ' (engine pose, yawDeg ' + pl.yawDeg + ') vs bearing to the breach ' + toBreach.toFixed(1) + ' (<= 3 deg)');
+      const bS = bearing(B.x, B.y, x, y), bF = bearing(B.x, B.y, F.x, F.y);
+      ok(dB >= 50 && dB <= 70 && Math.abs(cmp(bS, bF)) <= 5, 'waystone: ' + dB.toFixed(1) + ' m from the breach eye (50..70), bearing ' + bS.toFixed(1) + ' vs the signal tower ' + bF.toFixed(1) +
+         ' (<= 5 deg: from the breach it stands right under the teal light); 240x90 there: ring ' + rr(dB) + ', stone ' + (aboveH * PDY(90) / dB).toFixed(1) + ' rows');
+      // sightline breach eye -> mark centre over the terrain (samples inside the tower footprint skipped: the tower's own cells)
+      const mk = worldPoint(inst, 0, def.mounts.mark.at), S0 = OF.structures[0];
+      let clear = Infinity, where = '';
+      for (let t = 0.02; t < 0.98; t += 0.005) {
+        const px = B.x + (mk[0] - B.x) * t, py = B.y + (mk[1] - B.y) * t, pz = B.z + (mk[2] - B.z) * t;
+        if (px >= S0.x && px <= S0.x + S0.w && py >= S0.y && py <= S0.y + S0.h) continue;
+        const c = pz - HU.heightAt(px, py); if (c < clear) { clear = c; where = '(' + px.toFixed(0) + ', ' + py.toFixed(0) + ')'; }
+      }
+      ok(clear > 0.3, 'waystone: sightline breach eye (z ' + B.z + ') -> mark centre (z ' + mk[2].toFixed(2) + ') clears the terrain by >= ' + clear.toFixed(2) + ' m (min at ' + where + ')');
+      // end trigger, 1 m end walk, end camera
+      const W = en.walkTo, r = en.trigger.r, dW = Math.hypot(W.x - x, W.y - y);
+      const E0 = [x + r * (B.x - x) / dB, y + r * (B.y - y) / dB], dEW = Math.hypot(W.x - E0[0], W.y - E0[1]);
+      const P1 = [E0[0] + (W.x - E0[0]) / dEW, E0[1] + (W.y - E0[1]) / dEW], dPW = Math.hypot(W.x - P1[0], W.y - P1[1]);
+      ok(Math.abs(dW - 2.5) <= 0.15 && dPW <= 0.3, 'end: walkTo ' + dW.toFixed(2) + ' m from the stone (2.5 +- 0.15), bearing ' + bearing(x, y, W.x, W.y).toFixed(0) +
+         '; arriving from the breach (enter r ' + r + ' at bearing ' + toBreach.toFixed(0) + ') the 1 m end walk ends ' + dPW.toFixed(2) + ' m from walkTo (<= 0.30)');
+      const occ = [];
+      for (const v of own) if (v.z >= def.anchor[2]) for (const c of [[0, 0], [1, 0], [0, 1], [1, 1]]) occ.push(worldPoint(inst, 0, [v.x + c[0], v.y + c[1], v.z + 0.5]));
+      const maxR = Math.max(...occ.map((p) => Math.hypot(p[0] - x, p[1] - y)));
+      ok(maxR + 0.35 < r, 'end: trigger r ' + r + ' > stone reach ' + maxR.toFixed(2) + ' m + capsule 0.35: the end fires before the player touches the stone');
+      for (const [lab, P0] of [['walkTo', [W.x, W.y]], ['after the 1 m walk', P1]]) {
+        const yawTo = bearing(P0[0], P0[1], F.x, F.y), rel = occ.map((p) => cmp(bearing(P0[0], P0[1], p[0], p[1]), yawTo));
+        const a0 = Math.min(...rel), a1 = Math.max(...rel), faceSeen = Math.abs(cmp(bearing(x, y, P0[0], P0[1]), faceB));
+        ok(a1 < -3 && a1 > -37.5 && faceSeen < 60, 'end camera at ' + lab + ' (' + P0[0].toFixed(2) + ', ' + P0[1].toFixed(2) + '), yaw ' + yawTo.toFixed(1) + ' to farTower, pitch 0: stone spans ' +
+           a0.toFixed(1) + '..' + a1.toFixed(1) + ' deg (left of centre, inside the 75 deg HFOV, >= 3 deg clear of the tower light), mark face seen ' + faceSeen.toFixed(0) + ' deg off its normal (< 60)');
+      }
+      const bd = WP.bounds, inB = (px, py, m) => Math.hypot(px - bd.x, py - bd.y) + m < bd.r;
+      ok(inB(x, y, r + 0.4) && inB(W.x, W.y, 0.4), 'end: trigger circle + walkTo inside the walk bound (r ' + bd.r + ' round ' + bd.x + ', ' + bd.y + '): stone ' +
+         Math.hypot(x - bd.x, y - bd.y).toFixed(1) + ' m from the centre; tower centre ' + Math.hypot(x - Tc.x, y - Tc.y).toFixed(1) + ' m');
+      const pathD = HU.pathDist ? HU.pathDist(x, y) : NaN;
+      info('waystone: ' + (Number.isFinite(pathD) ? pathD.toFixed(1) + ' m from the old road centre line (recipe.path, half width ' + OF.recipe.path.halfWidth + ')' : 'path distance n/a') +
+           '; walkTo terrain ' + HU.heightAt(W.x, W.y).toFixed(2) + ' m (eye ' + (HU.heightAt(W.x, W.y) + 1.6).toFixed(2) + ')');
+    } else ok(false, 'waystone: levels/overworld_far.js not loaded - terrain / sightline / end-camera checks skipped');
   }
   $('checks').innerHTML = out.map((o) => '<div class="' + o[0] + '">' + o[1] + '</div>').join('');
 }

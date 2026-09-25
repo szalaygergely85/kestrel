@@ -357,6 +357,7 @@ Things beyond the terrain far limit (1500 m) that must still be seen: Ferrum's l
 - **`prompt`**: 2 rows below the crosshair, centred, `[E]` in gold, same plate. Examples: `[E] Take lamp`, `[E] Pull lever`, `[E] Wake the relay`.
 - **`endText`** (US-017; v1.10 = everything `endCard.js` / `end.js` hard-code): `walkSec 1.5`, `gapSec 1.5`, `cps 30` (the scene fade is `uiStyle.fade.sec` 2.0, the name `readEndTimings` already reads). `lines[]` = `{ id, row (UI grid), typed, color, text, alt?, altWhen?, keys?, afterGap?, cursor?, enablesRestart? }`: `signal` row 29 `The signal is still calling.` / alt `One relay wakes. The signal is still calling.` when `tower.beacon.lit`; `someone` row 30 `Someone is out there.`; after `gapSec` `continue` row 32 `- to be continued -` (`uiHint`) and `restart` row 34 `[R] Wake again` (`[R]` gold) with the cursor `_` (`periodSec 1.0`, `duty 0.5`, drawn after the text) and R enabled. `placeholder: false`; `source` notes these are the D-011 PO lines from the US-017 ACs, because `docs/story.md` has no end-card section yet.
 - **`pause`**: `Click to resume`.
+- **`settings`** (v1.16, US-038b): skin for the game-side settings panel on the 160x60 UI layer. `panel` 40x12 at UI (60, 24), `frame` ASCII box (`+ - |`, `brass` / `brassLight` corners), `title` `SETTINGS` in the top frame row, `plate` 0.18 + `sceneDim` 0.35, `fadeIn` 0.15 / `fadeOut` 0.10. `rowOrder` `grid, mute, back` (options.js ids), `rows` (first 2, gap 2, marker / label / value cols 2 / 4 / 17, note line 1 below), `labels`, `valueText` (grid `480x180` -> `480x180 ultra`, mute `off`/`on`), `notes` (drawn only on the selected row), `marker` `>` gold, `selected` = gold label / value / arrows, `value` `< text >` uiHint with uiDim arrows, `disabled` uiDim + ` n/a` (skipped by A/D), `separator` row 8, `keyHints` row 9 `W/S select  A/D change  Esc back`, `pauseEntry` `[S] Settings` on row 32 under the pause text, `stepRule`. The option data (values, defaults, handlers) lives in `game/js/settings/options.js`; `settings.mock.options` is only the preview's stand-in.
 - **`blink`**: the eyelid curve `[t, open]` including the half-close. The lid edge row is `-` in `emberDark` at 50%.
 
 ---
@@ -497,9 +498,35 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   - tower.js placement: no voxel inside a taller cell, the corridor, the rigging distance, the canvas hollow, and the strut/rubble overlap;
   - the relay part swap, and rows at the typical view distance.
 
+### 7.2 Batch 3: world props on the terrain (`design/models/voxel_world.js`, US-026a, v1.16)
+
+- **Sets:** `ASSETS.voxelModels.waystone` (same record shape, plus `end` = the end-trigger numbers), `ASSETS.models.waystone` (the same object; there is no billboard, so the file registers the model key itself, guarded by `attachWorld()` = all its mats merged), `ASSETS.voxelModels.batch3`, `ASSETS.voxelMaterials.batch3` (4 keys) and **`ASSETS.worldPatch.world_m1`** (new: the world-file additions for the content story, hand-copied, no runtime applier; same idea as `levelPatch`).
+- **Load order:** after `palette.js`, `detail-pass.js`, `voxel_props.js`. `game/index.html` needs `<script src="../design/models/voxel_world.js"></script>` after `voxel_tower.js`.
+- **`waystone`:** cellM 0.125, 14x10x24, one part `stone` (extent 48), clip `idle` (1 frame), anchor `[7, 5, 2]`: layers z0..1 are a **buried foot** below the ground plane (the entity uses `z: 'ground'`), so a slope never opens a gap under the downhill side. Mounts `mark` (ring centre on the front face, 1.75 m up), `top`, `front`. Front (local -y) = the mark face; at `yawDeg 75` it faces the breach.
+- **Materials** (merged, appended after `canvas_burnt`; no id moves):
+
+  | char | key | base / v2 tones | use |
+  |---|---|---|---|
+  | `S` | `waystone_light` | wayStoneLight, lichen | top rim, lichen patches, packing-stone tops |
+  | `s` | `waystone` | wayStone, wayStoneDark | slate body |
+  | `k` | `waystone_dark` | wayStoneDark, mossDark | damp foot, buried base, cut edge round the mark |
+  | `A` | `waystone_mark` | aether, aetherMid, aetherLight, **emissive 0.60**, glyph set `rune` (new) | the carved sign |
+  | `m` | `moss_cap` | (batch 2) | NNW flank, low shoulder |
+
+  New colours `wayStoneLight`, `wayStone`, `wayStoneDark`, `lichen`; new detail-pass glyph set `rune`.
+- **Placement / end:** `world_m1` entity `endMarker` (1428, 1040, `z: 'ground'`, yawDeg 75); trigger `end` circle r 2.5, `walkTo` (1430.0, 1038.5) on the arrival side (end.js walks at most 1 m), `lookAt: 'farTower'`, `pitchTo: 0`. All in `worldPatch.world_m1` and in the US-026a story.
+- **Preview:** `preview/voxel-props.html` (show: waystone). It now also loads `levels/overworld_far.js`. Entries may carry `fog` (shade fog preset) and `extraViews` (fixed in-game views). Waystone checks: size / clip / attach, mark (emissive range, flush front plane, dark cut edge, ring size at 20 m), value ladder vs grass, worldPatch = placement, terrain type / slope at the spot, foot vs terrain, facing the breach (engine pose), distance + bearing vs the signal tower, the sightline from the breach, trigger reach, the 1 m end walk, the end camera at walkTo, bounds.
+- **Engine notes (for the architect / PO):** (1) voxel cells outdoors need the far fog (`fog.far`), not the interior fog, or the stone vanishes at 60 m; (2) the voxel pass must depth-test against terrain cells; (3) voxel instances: 14 in the tower + the waystone = 15 (<= 16).
+
 ---
 
 ## Change log
+- **v1.16 (2026-09-25, US-026a waystone + US-038b settings style)**:
+  - New `models/voxel_world.js` (section 7.2): `waystone` voxel model, 4 materials, `ASSETS.models.waystone`, `ASSETS.worldPatch.world_m1` (new format: world-file additions as data, hand-copied by the content story).
+  - `palette.js`: colours `wayStoneLight`, `wayStone`, `wayStoneDark`, `lichen`; materials `waystone_light`, `waystone`, `waystone_dark`, `waystone_mark` appended after `canvas_burnt`. `detail-pass.js`: the same 4 v2 records + remap, glyph set `rune`. No existing value or id changed.
+  - `models/title.js`: `uiStyle.settings` (section 5).
+  - Previews: `voxel-props.html` (waystone entry, `fog` / `extraViews` entry fields, terrain + end checks, loads `levels/overworld_far.js`); `title.html` (settings panel mock with keys, `[S] Settings` in the pause overlay, 400x150 / 480x180 grid buttons, 5 settings checks).
+  - **Programmer:** `game/index.html` script tag for `voxel_world.js` after `voxel_tower.js` (PC-A, US-026a S6).
 - **v1.15 (2026-09-25, OWN-REQ-006 lamp lit on the hook)**:
   - `models/voxel_props.js`: `lantern` `lit` is the default hanging state (no glint: the flame + hook light are the cue; `unlit` kept as a spare clip). New data block `voxelModels.lantern.hookLit` { clip, glint, flame { model, anim, mount, world }, light { id, preset, mount, on, world, levelEntry }, take }.
   - `models/lantern.js`: new billboard `ASSETS.models.lampFlame` (3x3, world 0.09 x 0.13 m, anchor bottom centre, 4 frames 9 fps, half LOD 1x2, heat keys 1-4 all emissive, `mountOn { model: 'lantern', mount: 'flame', clip: 'lit' }`). For the VOXEL lamp only. The billboard `lantern.lit` now draws the `=j=` bracket plate (hanging default; same size, so the sprite rects do not move).

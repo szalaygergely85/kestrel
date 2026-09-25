@@ -31,10 +31,13 @@
   so switching the <b>scene grid</b> shrinks the scene cells exactly as it will in the game (cell px shown in the bar; at a real 1920 px window multiply by the factor shown).
   <b>UI mode</b>: <i>scaled layer</i> = the recommended design (<code>uiStyle.uiGrid</code> 160x60 text layer over the scene, glyph = <code>cellScale</code> scene cells);
   <i>1x scene cells</i> = what happens if UI text is drawn one glyph per scene cell (positions scaled, glyphs not). Start sequence: black 1.0 s, eye-blink 1.5 s, title 1 / 3 / 1 s, first hint.
-  The 3D view is a static stand-in. UI fades use the glyph-ramp rule (<code>uiStyle.fade</code>), not alpha.</div>
+  The 3D view is a static stand-in. UI fades use the glyph-ramp rule (<code>uiStyle.fade</code>), not alpha.<br>
+  <b>v1.16 US-038b settings panel</b> (<code>uiStyle.settings</code>): "Pause overlay" now shows <code>[S] Settings</code>; press S there (or the Settings button) and use
+  W/S, A/D (or arrows), Esc. Changing Grid re-grids this mock at once (no Apply), like the game; the panel stays the same size because it is on the 160x60 UI layer.
+  The "n/a" toggle simulates a device that cannot hold 480x180 (drawn dim, skipped by A/D).</div>
 
 <div class="controls">
-  <span class="grp">Scene grid: <button data-grid="160">160x60</button><button data-grid="240">240x90</button><button data-grid="320">320x120</button></span>
+  <span class="grp">Scene grid: <button data-grid="160">160x60</button><button data-grid="240">240x90</button><button data-grid="320">320x120</button><button data-grid="400">400x150</button><button data-grid="480">480x180</button></span>
   <span class="grp">UI mode: <button data-ui="layer">scaled layer</button><button data-ui="cells">1x scene cells</button></span>
   <button id="replay">Replay start sequence</button>
   <button id="hold">Jump to title hold</button>
@@ -44,6 +47,8 @@
   <button id="shints">Story hints</button>
   <button id="prompt">Prompt + active crosshair</button>
   <button id="pauseO">Pause overlay</button>
+  <button id="settingsO">Settings panel (keys: W/S A/D Esc)</button>
+  <button id="settingsNA">toggle: 480x180 n/a on this device</button>
   <button id="end">End screen</button>
   <button id="endLit">End screen (beacon lit)</button>
   <span class="note">t = <span class="val" id="tV"></span></span>
@@ -82,7 +87,7 @@
   var UG = ST.uiGrid || { cols: 160, rows: 60 };
 
   // ---------------- grid state ----------------
-  var GRIDS = { 160: [160, 60], 240: [240, 90], 320: [320, 120] };
+  var GRIDS = { 160: [160, 60], 240: [240, 90], 320: [320, 120], 400: [400, 150], 480: [480, 180] };   // 400 / 480: D-025 (US-038b mock)
   var GW = 160, GH = 60, UIMODE = 'layer', UW = UG.cols, UH = UG.rows;
   var CANVAS_W = Math.max(960, Math.min(1600, window.innerWidth - 60));   // fixed px width: cells shrink as the grid grows
   var CANVAS_H = Math.round(CANVAS_W * 9 / 16);
@@ -192,6 +197,42 @@
     E.lines.every(function (l) { return (l.alt || l.text).length <= 60 && !!P.colors[l.color]; }) && !!P.colors[E.cursor.color] && E.placeholder === false);
   check('End card timings as data: walkSec ' + E.walkSec + ', fade.sec ' + ST.fade.sec + ', gapSec ' + E.gapSec + ', cps ' + E.cps + ' (US-017 ACs 1.5 / 2 / 1.5 / 30); cursor "' + E.cursor.glyph + '" period ' + E.cursor.periodSec + ' s; rows ' + E.lines.map(function (l) { return l.row; }).join('/'),
     E.walkSec === 1.5 && ST.fade.sec === 2.0 && E.gapSec === 1.5 && E.cps === 30 && E.cursor.glyph === '_' && EL.restart.cursor && EL.restart.enablesRestart);
+  // ---- v1.16 US-038b settings panel (uiStyle.settings)
+  var SS = ST.settings;
+  if (SS) {
+    var sp = SS.panel, sOpts = {}; SS.mock.options.forEach(function (o) { sOpts[o.id] = o; });
+    check('Settings panel ' + sp.w + 'x' + sp.h + ' at UI (' + sp.x + ', ' + sp.y + ') fits the 40x12 AC and the 160x60 UI grid, centred',
+      sp.w <= 40 && sp.h <= 12 && sp.x >= 0 && sp.y >= 0 && sp.x + sp.w <= UG.cols && sp.y + sp.h <= UG.rows && sp.x * 2 + sp.w === UG.cols && sp.y * 2 + sp.h === UG.rows);
+    var sTexts = [SS.title.text, SS.keyHints.text, SS.pauseEntry.text, SS.marker.glyph, SS.frame.corner, SS.frame.h, SS.frame.v, SS.separator.glyph, SS.disabled.suffix]
+      .concat(Object.keys(SS.labels).map(function (k) { return SS.labels[k]; }));
+    Object.keys(SS.valueText).forEach(function (k) { Object.keys(SS.valueText[k]).forEach(function (v) { sTexts.push(SS.valueText[k][v]); }); });
+    Object.keys(SS.notes).forEach(function (k) { Object.keys(SS.notes[k]).forEach(function (v) { if (SS.notes[k][v]) sTexts.push(SS.notes[k][v]); }); });
+    check('Settings: all text ASCII 32-126', sTexts.every(ascii), sTexts.filter(function (t) { return !ascii(t); }).join(' | '));
+    var sCols = [SS.frame.color, SS.frame.cornerColor, SS.title.color, SS.marker.color, SS.label.color, SS.value.color, SS.value.arrowColor, SS.selected.label,
+                 SS.selected.value, SS.selected.arrows, SS.disabled.color, SS.note.color, SS.separator.color, SS.keyHints.color, SS.keyHints.key, SS.pauseEntry.color];
+    check('Settings: every colour is a palette key; selected row = gold (US-038 AC)', sCols.every(function (c) { return !!P.colors[c]; }) &&
+      SS.selected.label === 'gold' && SS.selected.value === 'gold' && SS.marker.color === 'gold', sCols.filter(function (c) { return !P.colors[c]; }).join(' '));
+    var R = SS.rows, order = SS.rowOrder.filter(function (id) { return sOpts[id]; });
+    var longest = 0; Object.keys(SS.valueText).forEach(function (k) { Object.keys(SS.valueText[k]).forEach(function (v) { longest = Math.max(longest, SS.valueText[k][v].length); }); });
+    var valueEnd = R.valueCol + 4 + longest + SS.disabled.suffix.length, labelEnd = R.labelCol + Math.max.apply(null, order.map(function (id) { return SS.labels[id].length; }));
+    var lastRow = R.first + (order.length - 1) * R.gap, noteEnd = R.first + (order.length - 1) * R.gap + R.noteOffset;
+    var noteLong = 0; Object.keys(SS.notes).forEach(function (k) { Object.keys(SS.notes[k]).forEach(function (v) { if (SS.notes[k][v]) noteLong = Math.max(noteLong, SS.notes[k][v].length); }); });
+    check('Settings layout: label cols ' + R.labelCol + '..' + labelEnd + ' < value col ' + R.valueCol + ', longest value "< ' + longest + ' chars' + SS.disabled.suffix + ' >" ends at col ' + valueEnd +
+      ' (<= ' + (sp.w - 2) + ' inner edge), notes end ' + (SS.note.col + noteLong) + '; rows ' + R.first + '..' + lastRow + ' (notes to ' + noteEnd + ') < separator ' + SS.separator.row +
+      ' < key hints ' + SS.keyHints.row + ' < bottom frame ' + (sp.h - 1),
+      labelEnd < R.valueCol - 1 && valueEnd <= sp.w - 2 && R.valueW >= valueEnd - R.valueCol && SS.note.col + noteLong <= sp.w - 2 && order.length === SS.rowOrder.length &&
+      noteEnd < SS.separator.row && SS.separator.row < SS.keyHints.row && SS.keyHints.row < sp.h - 1 && SS.keyHints.text.length <= sp.w - 4 &&
+      (' ' + SS.title.text + ' ').length + 2 <= sp.w);
+    var gv = sOpts.grid ? sOpts.grid.values : [];
+    check('Settings grid values = D-025 player list 240x90 (default) / 320x120 / 400x150 / 480x180, only 480x180 labelled ultra (US-038a owner bench: 400x150 p95 3.08 ms = normal)',
+      gv.join(',') === '240x90,320x120,400x150,480x180' && sOpts.grid.default === '240x90' && gv.every(function (v) { return !!SS.valueText.grid[v]; }) &&
+      /ultra/.test(SS.valueText.grid['480x180']) && !/ultra/.test(SS.valueText.grid['400x150']));
+    check('Settings rows: grid (choice), mute (toggle off/on, = the N key), back (action); pause entry "' + SS.pauseEntry.text + '" on row ' + SS.pauseEntry.row +
+      ', under "' + ST.pause.text + '" (row ' + ST.pause.row + ') inside its plate (pad ' + ST.pause.plate.pad + ')',
+      SS.rowOrder.join(',') === 'grid,mute,back' && sOpts.mute && sOpts.mute.type === 'toggle' && sOpts.mute.default === false && sOpts.back.type === 'action' &&
+      SS.valueText.mute['false'] === 'off' && SS.valueText.mute['true'] === 'on' &&
+      SS.pauseEntry.row > ST.pause.row && SS.pauseEntry.row <= ST.pause.row + ST.pause.plate.pad);
+  }
   var nf = checks.filter(function (c) { return !c.ok; }).length;
   document.getElementById('checks').innerHTML = '<div class="' + (nf ? 'fail' : 'pass') + '">' + (checks.length - nf) + ' / ' + checks.length + ' checks pass</div>' +
     checks.map(function (c) { return '<div><span class="' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? 'PASS' : 'FAIL') + '</span> ' + c.n + (c.d ? ' <span class="fail">' + c.d + '</span>' : '') + '</div>'; }).join('');
@@ -354,6 +395,63 @@
     });
   }
 
+  // ---------------- US-038b settings panel (uiStyle.settings; values from settings.mock = the options.js stand-in) ----------------
+  var SET = { sel: 0, vals: {}, na: false };
+  if (ST.settings) ST.settings.mock.options.forEach(function (o) { if (o.type !== 'action') SET.vals[o.id] = o.default; });
+  function sOpt(id) { return ST.settings.mock.options.filter(function (o) { return o.id === id; })[0]; }
+  function sRows() { return ST.settings.rowOrder.filter(function (id) { return !!sOpt(id); }); }
+  function sValText(id, v) { var t = ST.settings.valueText[id]; return t && t[String(v)] != null ? t[String(v)] : String(v); }
+  function sNote(id, v) { var n = ST.settings.notes[id]; if (!n) return null; return n[String(v)] !== undefined ? n[String(v)] : (n.default || null); }
+  function sDisabled(id, v) { return SET.na && id === 'grid' && v === '480x180'; }
+  function blank(x, y) { if (x >= 0 && y >= 0 && x < UW && y < UH) { UGL[x + y * UW] = ' '; UFG[x + y * UW] = null; } }
+  function drawSettings(a) {
+    var SS = ST.settings, p = SS.panel, F = SS.frame, x0 = LX(p.x), y0 = LY(p.y), x, y;
+    plate(x0, y0, p.w, p.h, SS.plate.pad, SS.plate.bgMul);
+    for (x = 1; x < p.w - 1; x++) { put(x0 + x, y0, F.h, F.color, a); put(x0 + x, y0 + p.h - 1, F.h, F.color, a); }
+    for (y = 1; y < p.h - 1; y++) { put(x0, y0 + y, F.v, F.color, a); put(x0 + p.w - 1, y0 + y, F.v, F.color, a); }
+    [[0, 0], [p.w - 1, 0], [0, p.h - 1], [p.w - 1, p.h - 1]].forEach(function (c) { put(x0 + c[0], y0 + c[1], F.corner, F.cornerColor, a); });
+    var tt = SS.title.text, tx = x0 + Math.floor((p.w - tt.length) / 2);
+    blank(tx - 1, y0); blank(tx + tt.length, y0); text(tx, y0 + SS.title.row, tt, SS.title.color, [], a);
+    var R = SS.rows;
+    sRows().forEach(function (id, i) {
+      var o = sOpt(id), ry = y0 + R.first + i * R.gap, sel = i === SET.sel;
+      if (sel) put(x0 + R.markerCol, ry, SS.marker.glyph, SS.marker.color, a);
+      text(x0 + R.labelCol, ry, SS.labels[id], sel ? SS.selected.label : SS.label.color, [], a);
+      if (o.type !== 'action') {
+        var v = SET.vals[id], dis = sDisabled(id, v), vt = sValText(id, v) + (dis ? SS.disabled.suffix : ''), vx = x0 + R.valueCol;
+        var vc = dis ? SS.disabled.color : sel ? SS.selected.value : SS.value.color, ac = dis ? SS.disabled.color : sel ? SS.selected.arrows : SS.value.arrowColor;
+        put(vx, ry, SS.value.arrows[0], ac, a); text(vx + 2, ry, vt, vc, [], a); put(vx + 3 + vt.length, ry, SS.value.arrows[1], ac, a);
+      }
+      var nt = sel ? sNote(id, SET.vals[id]) : null;
+      if (nt) text(x0 + SS.note.col, ry + R.noteOffset, nt, SS.note.color, [], a);
+    });
+    var SP = SS.separator;
+    for (x = SP.inset; x < p.w - SP.inset; x++) put(x0 + x, y0 + SP.row, SP.glyph, SP.color, a);
+    var KH = SS.keyHints, hx = x0 + Math.floor((p.w - KH.text.length) / 2);
+    text(hx, y0 + KH.row, KH.text, KH.color, KH.keys, a);
+  }
+  function sStep(dir) {
+    var id = sRows()[SET.sel], o = sOpt(id); if (!o || o.type === 'action') return;
+    var vs = o.values, i = vs.indexOf(SET.vals[id]), j = i + dir;
+    while (j >= 0 && j < vs.length && sDisabled(id, vs[j])) j += dir;       // skip disabled values, stop at the ends
+    if (j < 0 || j >= vs.length) return;
+    SET.vals[id] = vs[j];
+    if (id === 'grid') { GW = parseInt(vs[j], 10); applyGrid(); }            // the mock applies it at once, like the game (no Apply button)
+  }
+  document.addEventListener('keydown', function (ev) {
+    var k = ev.key;
+    if (mode === 'pause' && (k === 's' || k === 'S')) { setMode('settings'); ev.preventDefault(); return; }
+    if (mode !== 'settings') return;
+    var n = sRows().length;
+    if (k === 'w' || k === 'W' || k === 'ArrowUp') SET.sel = (SET.sel + n - 1) % n;
+    else if (k === 's' || k === 'S' || k === 'ArrowDown') SET.sel = (SET.sel + 1) % n;
+    else if (k === 'a' || k === 'A' || k === 'ArrowLeft') sStep(-1);
+    else if (k === 'd' || k === 'D' || k === 'ArrowRight') sStep(1);
+    else if (k === 'Escape' || ((k === 'Enter' || k === ' ') && sRows()[SET.sel] === 'back')) setMode('pause');
+    else return;
+    ev.preventDefault();
+  });
+
   // ---------------- timeline ----------------
   var mode = 'intro', t0 = performance.now() / 1000, extra = {};
   function blinkOpen(tt) {
@@ -371,6 +469,11 @@
   document.getElementById('shints').onclick = function () { setMode('shints'); };
   document.getElementById('prompt').onclick = function () { setMode('prompt'); };
   document.getElementById('pauseO').onclick = function () { setMode('pause'); };
+  document.getElementById('settingsO').onclick = function () {
+    var cur = GW + 'x' + GH, g = sOpt('grid'); if (g && g.values.indexOf(cur) >= 0) SET.vals.grid = cur;   // show the mock's current grid
+    setMode('settings'); this.blur();
+  };
+  document.getElementById('settingsNA').onclick = function () { SET.na = !SET.na; this.classList.toggle('on', SET.na); };
   document.getElementById('end').onclick = function () { setMode('end', { lit: false }); };
   document.getElementById('endLit').onclick = function () { setMode('end', { lit: true }); };
 
@@ -443,6 +546,13 @@
     } else if (mode === 'pause') {
       reset(1); var pt = ST.pause.text, px = Math.round(UW / 2 - pt.length / 2), prow = LY(ST.pause.row);
       plate(px, prow, pt.length, 1, ST.pause.plate.pad, ST.pause.plate.bgMul); text(px, prow, pt, ST.pause.color, [], 1);
+      if (ST.settings) {                                   // US-038b: "[S] Settings" under "Click to resume", inside the pause plate
+        var PE = ST.settings.pauseEntry, pex = Math.round(UW / 2 - PE.text.length / 2);
+        text(pex, LY(PE.row), PE.text, PE.color, PE.keys, 1);
+      }
+    } else if (mode === 'settings') {                      // US-038b panel: fade in, scene dimmed + plate, sim paused behind it
+      reset(1); var sa = Math.min(1, t / ST.settings.fadeIn);
+      drawSettings(sa); dimScene(ST.settings.sceneDim.bgMul, sa);
     }
     // scene pass
     var ctx = screen.ctx; ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);

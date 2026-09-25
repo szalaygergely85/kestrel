@@ -319,6 +319,64 @@
     },
     pause: { text: 'Click to resume', color: 'uiText', align: 'center', row: 30, plate: { pad: 2, bgMul: 0.3 } },
 
+    // ---- US-038b settings panel (row 30f, design v1.16). Drawn on the fixed 160x60 UI layer (OWN-REQ-003); every number
+    // is a UI-grid cell, so the panel is the same size on every scene grid (240x90 .. 480x180). Skin for the generic
+    // engine/ui list/panel primitive (US-038 AC "Data-driven"). The OPTION DATA (ids, values, defaults, handlers) is
+    // game/js/settings/options.js (PC-B); this block owns only the look: layout, colours, row order, labels and the
+    // value display text. A later option = one options.js entry + one `rowOrder` / `labels` entry here (the panel
+    // grows by rows.gap per row; keep panel.h <= 12, the US-038 AC: 40x12).
+    settings: {
+      story: 'US-038b',
+      panel: { x: 60, y: 24, w: 40, h: 12, note: 'top-left UI cell; centred: x = (160 - 40) / 2, y = (60 - 12) / 2' },
+      frame: { corner: '+', h: '-', v: '|', color: 'brass', cornerColor: 'brassLight',
+               note: 'ASCII box on the panel edge cells; the brass frame = the KESTREL name-board language (machine UI)' },
+      title: { text: 'SETTINGS', row: 0, align: 'center', color: 'brassLight', pad: 1,
+               note: 'written over the top frame row with 1 space either side: +------------- SETTINGS -------------+' },
+      plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the panel (+1) x 0.18, same as the map card: a dark sheet' },
+      sceneDim: { bgMul: 0.35, note: 'rest of the scene x 0.35 while open (the simulation is paused behind it)' },
+      fadeIn: 0.15, fadeOut: 0.10,                     // ramp-step fade rule (uiStyle.fade); quick, it is a menu
+      rowOrder: ['grid', 'mute', 'back'],              // options.js ids, top -> bottom; ids missing from options.js are skipped
+      stepRule: { keys: 'A/D (Left/Right) step one value and stop at the ends (no wrap), skipping disabled values',
+                  select: 'W/S (Up/Down) wrap top <-> bottom', enter: 'Enter / Space on Back = Esc (return to the pause overlay)' },
+      rows: { first: 2, gap: 2, markerCol: 2, labelCol: 4, valueCol: 17, valueW: 21, noteOffset: 1,
+              note: 'row i at panel.y + first + i * gap; cols relative to panel.x; the row below each row (noteOffset) holds ' +
+                    'that row\'s note, if any. Mouse: the whole row (cols 2..37) is its hit area (hover selects), a click on ' +
+                    '"<" / ">" steps the value down / up, a click elsewhere on the value steps it up (wraps)' },
+      labels: { grid: 'Grid', mute: 'Mute', back: 'Back' },
+      valueText: {
+        grid: { '240x90': '240x90', '320x120': '320x120', '400x150': '400x150', '480x180': '480x180 ultra' },
+        mute: { 'false': 'off', 'true': 'on' }
+      },
+      notes: {
+        grid: { '480x180': 'ultra: needs a fast GPU', default: null },
+        mute: { default: 'same as the N key' }
+      },
+      marker: { glyph: '>', color: 'gold', note: 'at markerCol on the selected row only' },
+      label: { color: 'uiText' },
+      value: { color: 'uiHint', arrows: ['<', '>'], arrowColor: 'uiDim', format: '< {text} >', align: 'left',
+               note: 'drawn at valueCol; action rows (back) have no value' },
+      selected: { label: 'gold', value: 'gold', arrows: 'gold', note: 'US-038 AC: the selected row is highlighted in gold' },
+      disabled: { color: 'uiDim', suffix: ' n/a', skip: true,
+                  note: 'a value the device cannot take (engine.setGrid refuses: canHoldGrid false) is drawn uiDim with " n/a" ' +
+                        'and A/D skips over it; a whole row with no usable value is drawn uiDim and cannot be selected' },
+      note: { color: 'uiDim', col: 6, show: 'selected', note: 'a row\'s note line is drawn only while that row is selected' },
+      separator: { row: 8, glyph: '-', color: 'brassShadow', inset: 2 },
+      keyHints: { row: 9, align: 'center', color: 'uiDim', key: 'gold',
+                  text: 'W/S select  A/D change  Esc back', keys: ['W/S', 'A/D', 'Esc'],
+                  note: 'arrow keys work too (the AC); the hint names only WASD to stay short' },
+      pauseEntry: { text: '[S] Settings', row: 32, align: 'center', color: 'uiHint', keys: ['[S]'],
+                    note: 'the pause overlay line under "Click to resume" (row 30), inside its plate (pad 2); S or a click on it opens ' +
+                          'the panel, Esc in the panel returns to the pause overlay; the pause text is hidden while the panel is open' },
+      mock: {
+        note: 'what design/preview/title.html uses to draw the panel; options.js is the source of truth in the game',
+        options: [
+          { id: 'grid', type: 'choice', values: ['240x90', '320x120', '400x150', '480x180'], default: '240x90' },
+          { id: 'mute', type: 'toggle', values: [false, true], default: false },
+          { id: 'back', type: 'action', action: 'close' }
+        ]
+      }
+    },
+
     // wake sequence eyelid look (US-015 programmer AC: rows open from the centre line outward)
     blink: { edgeGlyph: '-', edgeColor: 'emberDark', edgeRows: 1,
              curve: [[0, 0], [0.6, 0.6], [0.9, 0.25], [1.5, 1.0]],
