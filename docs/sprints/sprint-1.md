@@ -53,3 +53,17 @@ Minimal sound slice (P1 per D-020: lever, gear, grate, boulder, footsteps; PO ca
 
 ## Owner exit walk-test (2026-09-25)
 After US-056 (commit 995cc57), port 8000, default grid 240x90: owner played the tower and reported **"tested and all working"** (props recognisable and fixed in the world, lamp/boulder/lever/grate/summit/end card/restart all OK). Earlier the same day: lamp pickup + carried light OK, but the carried light goes dark next to walls (BUG-OWN-007, filed); unlit lamp on the hook is by design (glint restored in ART-OWN-002). Real-GPU: 60 fps at the summit at 240x90 and 320x120 (BUG-OWN-006 -> watch).
+
+## Review (PO, 2026-09-25)
+**Goal met** (owner exit walk-test passed).
+- **Done:** US-016, US-040, US-041a, US-056 (PO OK, owner walk-test replaces tester), BUG-OWN-005 (done). Closed with US-056: OWN-REQ-001, ART-OWN-001, ART-OWN-002; BUG-OWN-003 slim closed as not needed (nothing see-through).
+- **Not done:** US-018 (stretch, not started -> first sprint-2 candidate).
+- **Bugs found today:** BUG-GPU-003 (3 gpucompare wall-vs-ceiling fails, pre-existing), BUG-OWN-007 (carried lamp dark next to walls, P1 todo), BUG-OWN-006 (30 fps not reproduced -> watch).
+- **New owner requests:** OWN-REQ-004 content data files strategy (25q), OWN-REQ-005 `.vox` importer (25r).
+
+### Missing to be playable
+1. Sound (lever, gear, grate, boulder, footsteps) - biggest feel gap.
+2. No combat or enemy yet (sword + one enemy type is the next vertical-slice step).
+3. No hearts/items UI or damage/death loop.
+4. Ends at the breach: no walk-out onto real terrain (US-026, M2; terrain too coarse, OWN-REQ-002).
+5. Perf overlay/budget (US-018) and UI size tied to the grid (OWN-REQ-003); BUG-OWN-007 lamp near walls.
