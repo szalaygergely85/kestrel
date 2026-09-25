@@ -2,6 +2,7 @@
 // Run: node engine/world/world.test.js
 import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
+import { updateTriggers } from './triggers.js';
 import paletteMod from '../../design/palette.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any props[].model
@@ -234,6 +235,112 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('omitting fog does not throw (validated as 0)', (() => {
     try { World.load({ ...base, horizon: [{ ...good, fog: undefined }] }, assets, {}); return true; } catch (e) { return e.message; }
   })() === true);
+}
+
+// ---------------------------------------------------------------------------
+// US-026a (architecture.md 23.1/23.2/23.3, 23.7 S2): near band baked in
+// World.load, outsideSector terrain fields, world.bounds, world-level
+// triggers (3 shapes), z:'ground' world entities, bounds/triggers round trip.
+// ---------------------------------------------------------------------------
+{
+  // `world` (top of file) is the real world_m1 - already has terrain,
+  // bounds and the waystone endMarker/triggers from content.
+  ok('World.load bakes the near band before returning (nearReady)', world.terrain.nearReady === true);
+
+  // -- outsideSector terrain fields (23.3) --
+  const outsideX = world.terrain.recipe.tower.x, outsideY = world.terrain.recipe.tower.y - 60; // well clear of the tower footprint
+  const outSec = world.outsideSector(outsideX, outsideY);
+  ok('outsideSector sets terrain:true off the near band', outSec.terrain === true);
+  const nlen = Math.hypot(outSec.nx, outSec.ny, outSec.nz);
+  ok('outsideSector normal (nx,ny,nz) is a unit vector', Math.abs(nlen - 1) < 1e-6, `len=${nlen}`);
+  ok('outsideSector floorH == terrain.groundAt', outSec.floorH === world.terrain.groundAt(outsideX, outsideY));
+
+  // -- world.bounds loaded from content, exactly (23.2) --
+  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'circle');
+  const boundsDef = assets.world('world_m1').bounds;
+  ok('world.bounds matches content bounds', world.bounds.x === boundsDef.x && world.bounds.y === boundsDef.y && world.bounds.r === boundsDef.r);
+
+  // -- validateBounds throws on a bad shape/field (mirrors validateHorizon's convention) --
+  const baseNoTerrain = { terrain: 'overworld_far', structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 } }], entities: [] };
+  function boundsThrows(bounds) {
+    try { World.load({ ...baseNoTerrain, bounds }, assets, {}); return false; } catch (e) { return true; }
+  }
+  ok('bounds: unknown shape throws', boundsThrows({ shape: 'square', x: 0, y: 0, r: 5 }));
+  ok('bounds: non-finite x throws', boundsThrows({ shape: 'circle', x: NaN, y: 0, r: 5 }));
+  ok('bounds: r <= 0 throws', boundsThrows({ shape: 'circle', x: 0, y: 0, r: 0 }));
+  ok('no bounds key -> world.bounds = null (unbounded, every world before this story)', World.load(baseNoTerrain, assets, {}).bounds === null);
+
+  // -- world-level triggers: 3 shapes, structId: null (23.2/23.5) --
+  const worldTriggers = world.triggers.filter((t) => t.structId === null);
+  ok('world_m1 has the 3 content world-level triggers', worldTriggers.length === 3, worldTriggers.map((t) => t.id).join(','));
+  const endRec = worldTriggers.find((t) => t.id === 'end');
+  const hintStoneRec = worldTriggers.find((t) => t.id === 'hintStone');
+  const boundsEdgeRec = worldTriggers.find((t) => t.id === 'boundsEdge');
+  ok('"end" is a world-level circle trigger, absolute coords (no origin add)', endRec && endRec.shape === 'circle' && endRec.key === 'world.end' && endRec.x === 1428 && endRec.y === 1040);
+  ok('"hintStone" is a world-level terrain-shape trigger', !!hintStoneRec && hintStoneRec.shape === 'terrain');
+  ok('"boundsEdge" is a world-level bounds-shape trigger', !!boundsEdgeRec && boundsEdgeRec.shape === 'bounds');
+
+  // -- firing behaviour per shape (updateTriggers, fresh worlds so `inside`
+  // starts clean; firing is tracked by DEF OBJECT IDENTITY, not by the
+  // fired behaviour name - `hintStone` and `boundsEdge` both name
+  // "hint.show", same as several of the tower's own level triggers, so a
+  // name-only check could false-positive on an unrelated real trigger) --
+  {
+    const w2 = World.load(assets.world('world_m1'), assets, {});
+    const contentTriggers = assets.world('world_m1').triggers;
+    const endDef = contentTriggers.find((t) => t.id === 'end');
+    const hintStoneDef = contentTriggers.find((t) => t.id === 'hintStone');
+    const boundsEdgeDef = contentTriggers.find((t) => t.id === 'boundsEdge');
+    const fired = [];
+    w2.fireTrigger = (name, ctx) => { fired.push(ctx.def); return true; };
+    // Start INSIDE the tower (the only place no world-level trigger with an
+    // unconditional/"first terrain contact" shape can have already fired) -
+    // the waystone/edge points below are themselves "outside every
+    // structure", so `hintStone` ('terrain' shape) must be checked before
+    // the actor ever steps outside for the first time.
+    const actor = { transform: { x: 1490, y: 1020, z: 0 }, components: { body: { radius: 0.3 } } };
+
+    // 'terrain' shape: inside the tower footprint -> no fire (not terrain); step outside -> fires.
+    updateTriggers(w2, {}, actor);
+    ok('"terrain" shape does not fire while inside the tower footprint', !fired.includes(hintStoneDef));
+    actor.transform.x = 1470; actor.transform.y = 1020; // well outside every structure, first terrain contact
+    updateTriggers(w2, {}, actor);
+    ok('"terrain" shape fires on first terrain contact (outside every structure)', fired.includes(hintStoneDef));
+
+    // circle 'end': fires standing at the waystone.
+    fired.length = 0;
+    actor.transform.x = 1428; actor.transform.y = 1040;
+    updateTriggers(w2, {}, actor);
+    ok('circle "end" fires standing at the waystone', fired.includes(endDef));
+
+    // 'bounds' shape: well inside the circle -> no fire; at/past the edge -> fires.
+    fired.length = 0;
+    const b = w2.bounds;
+    actor.transform.x = b.x; actor.transform.y = b.y; // dead centre
+    updateTriggers(w2, {}, actor);
+    ok('"bounds" shape does not fire near the centre', !fired.includes(boundsEdgeDef));
+    actor.transform.x = b.x + b.r; // right on the edge
+    updateTriggers(w2, {}, actor);
+    ok('"bounds" shape fires at the walk-bound edge', fired.includes(boundsEdgeDef));
+  }
+
+  // -- z:'ground' world entity (endMarker/waystone) resolves through terrain.groundAt (23.2) --
+  const endMarker = world.get('endMarker');
+  ok('endMarker world entity spawned', !!endMarker);
+  ok('endMarker z resolves through terrain.groundAt (z:"ground")', endMarker.data.transform.z === world.terrain.groundAt(1428, 1040));
+
+  // -- serialize/deserialize round-trips bounds/triggers (content, not state) --
+  {
+    const state = serialize(world);
+    ok('serialize writes world.bounds', state.bounds && state.bounds.x === world.bounds.x && state.bounds.r === world.bounds.r);
+    ok('serialize writes world.triggers (the world-level trigger DEFS)', Array.isArray(state.triggers) && state.triggers.length === 3);
+
+    const world2 = deserialize(state, assets, {});
+    ok('deserialize restores world.bounds', world2.bounds && world2.bounds.x === world.bounds.x && world2.bounds.r === world.bounds.r);
+    const world2Triggers = world2.triggers.filter((t) => t.structId === null);
+    ok('deserialize rebuilds the same 3 world-level triggers', world2Triggers.length === 3, world2Triggers.map((t) => t.id).join(','));
+    ok('deserialize re-bakes the near band', world2.terrain.nearReady === true);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

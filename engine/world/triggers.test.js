@@ -14,12 +14,18 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+// US-026a: test 6 now loads the real world_m1 (terrain + its farTower/
+// ferrumLights entity/horizon models), not a bare `{tower}` structures list.
+import terrainDef from '../../design/levels/overworld_far.js';
+import farTowerMod from '../../design/models/far_tower.js';
+import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 // US-027b: tower moved to content/levels/tower.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod;
+paletteMod; terrainDef;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+farTowerMod; ferrumLightsMod;
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
@@ -180,23 +186,26 @@ function registerFakeBehaviours(world) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Real tower data: the `end` trigger's tag cells === def.cells exactly
-// (no mismatch warning on the actual content pack).
+// 6. Real tower data: no mismatch warning on the actual content pack.
+// US-026a-content (row 30g, architecture.md 23.2/23.7 S2) moved the chapter
+// end from the tower's own `end` trigger to a WORLD-level trigger at the
+// waystone - the tower level no longer has an `end` trigger at all (tag
+// `trigger:end` removed from its legend too); this test now loads the real
+// world_m1 (not a bare `{tower}` structures list) and asserts the world-
+// level trigger + the tower's own `end` trigger's absence instead.
 // ---------------------------------------------------------------------------
 {
   const warnings = [];
   const origWarn = console.warn;
   console.warn = (...a) => warnings.push(a.join(' '));
-  const world = World.load({
-    name: 'tower_real_test', terrain: null,
-    structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 } }],
-    entities: [],
-    state: {},
-  }, assets);
+  const world = World.load(assets.world('world_m1'), assets, {});
   console.warn = origWarn;
 
-  const end = world.triggers.find((t) => t.structId === 'tower' && t.id === 'end');
-  ok('6a: real tower has the end trigger', !!end);
+  ok('6a: the tower level itself no longer has its own "end" trigger',
+    !world.triggers.some((t) => t.structId === 'tower' && t.id === 'end'));
+  const end = world.triggers.find((t) => t.structId === null && t.id === 'end');
+  ok('6a-2: real world_m1 has a world-level "end" trigger at the waystone instead',
+    !!end && end.shape === 'circle' && end.name === 'quest.end', end && JSON.stringify(end));
   ok('6b: no mismatch warning on real content', !warnings.some((w) => w.includes('differ')), warnings.join('|'));
 }
 

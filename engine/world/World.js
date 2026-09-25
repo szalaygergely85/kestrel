@@ -45,6 +45,20 @@ function makeRingHAt(level, origin) {
   };
 }
 
+// US-026a (architecture.md 23.1 decision 4, 23.2): `world.bounds` - the walk
+// bound circle, optional (absent = unbounded, matching every world before
+// this story). Validated up front like `validateHorizon` below (throws,
+// never silently dropped) and returns a plain copy (content, not state -
+// never mutated at runtime).
+function validateBounds(b) {
+  if (b == null) return null;
+  if (b.shape !== 'circle') throw new Error(`World.load: bounds: unknown shape "${b.shape}"`);
+  if (typeof b.x !== 'number' || !isFinite(b.x)) throw new Error('World.load: bounds.x must be a finite number');
+  if (typeof b.y !== 'number' || !isFinite(b.y)) throw new Error('World.load: bounds.y must be a finite number');
+  if (typeof b.r !== 'number' || !isFinite(b.r) || b.r <= 0) throw new Error('World.load: bounds.r must be a finite number > 0');
+  return { shape: 'circle', x: b.x, y: b.y, r: b.r };
+}
+
 // US-016 D-011 addendum (architecture.md 14.4 item 13): `world.horizon[]`
 // validation - unique `id`, a model the registry actually has, numeric
 // `bearingDeg`/`elevDeg`/`angular.wDeg`/`angular.hDeg`, `fog` in [0,1], a
@@ -81,6 +95,10 @@ export class World {
   constructor() {
     this.terrain = null;
     this.terrainKey = null;
+    // US-026a (architecture.md 23.1 decision 4): the walk-bound circle, or
+    // `null` (unbounded - every world before this story). Content, not
+    // state; set once by `World.load` from `def.bounds`.
+    this.bounds = null;
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
     // runtime), not entities (they have no world position - placed by
@@ -132,7 +150,11 @@ export class World {
     this._handles = new Map();    // id -> EntityHandle (cached, same object until remove)
     this._listeners = new Map();  // id -> Map<event, Set<fn>>
     this._eventRing = new EventRing(256);
-    this._outsideScratch = { floorH: 0, ceilH: 'sky', wallMat: 'rock', floorMat: 'grass', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'rock' };
+    // US-026a (23.3): `terrain`/`nx`/`ny`/`nz` added (from `groundNormalAt`)
+    // - Level sectors have no `terrain` field, so nothing else changes.
+    this._outsideScratch = { floorH: 0, ceilH: 'sky', wallMat: 'rock', floorMat: 'grass', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'rock', terrain: false, nx: 0, ny: 0, nz: 1 };
+    // Reused (rule 9) output for `groundNormalAt` inside `outsideSector`.
+    this._outsideNormalScratch = { x: 0, y: 0, z: 1 };
     this.eventsDropped = 0;
 
     // Item 5a (architect review #1): bound once here, not re-created (a
@@ -177,6 +199,7 @@ export class World {
       w.terrainKey = def.terrain;
       w.terrain = new Terrain(assets.terrain(def.terrain));
     }
+    w.bounds = validateBounds(def.bounds);
 
     // US-016 D-011 addendum (architecture.md 14.4 item 13): `world.horizon[]`
     // - validated up front (throws WITH the offending id, never silently
@@ -191,6 +214,27 @@ export class World {
           w._restoreDynamics(placed, tag, s.dynamics[tag]);
         }
       }
+    }
+
+    // US-026a (architecture.md 23.1 decision 1, 23.7 S2): bake the near
+    // terrain band synchronously, BEFORE any prop/entity spawns below (a
+    // `z: 'ground'` prop/entity needs `terrain.groundAt` ready). Centered on
+    // the chunk containing the combined bbox center of every placed
+    // structure (no hard-coded world position here - 23's "do not" list -
+    // this reads straight off the structures `World.load` just placed).
+    // Skipped when the world has no terrain, or no structures to center on
+    // (`?level=`-only ephemeral worlds).
+    if (w.terrain && w.structures.length) {
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+      for (const s of w.structures) {
+        if (s.bbox.x0 < bx0) bx0 = s.bbox.x0;
+        if (s.bbox.y0 < by0) by0 = s.bbox.y0;
+        if (s.bbox.x1 > bx1) bx1 = s.bbox.x1;
+        if (s.bbox.y1 > by1) by1 = s.bbox.y1;
+      }
+      const cx = Math.floor((bx0 + bx1) / 2 / w.terrain.chunkSize);
+      const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
+      w.terrain.bakeNearBand(cx, cy);
     }
 
     // (US-012, 7.4) `world.interactables`: every placed structure's
@@ -274,7 +318,9 @@ export class World {
           let z;
           if (p.z === 'ground') {
             if (w.terrain) {
-              z = w.terrain.heightAt(x, y);
+              // US-026a (23.1 decision 2): physics/renderer read the near
+              // band once it's ready, not the analytic function directly.
+              z = w.terrain.groundAt(x, y);
             } else {
               console.warn(`World.load: prop "${entId}" z: 'ground' but the world has no terrain - using 0`);
               z = 0;
@@ -333,7 +379,20 @@ export class World {
       } else if (typeof ed.x === 'number' && typeof ed.y === 'number') {
         // Inline world position (architecture.md 14.4 item 7 shape, e.g. the
         // `farTower` billboard in world_m1.js): a transform shorthand.
-        transform = { x: ed.x, y: ed.y, z: typeof ed.z === 'number' ? ed.z : 0, yawDeg: ed.yawDeg || 0, pitchDeg: ed.pitchDeg || 0 };
+        // US-026a (23.2): `z: 'ground'` (e.g. the endMarker waystone)
+        // resolves through the terrain, same rule as a level prop above.
+        let edZ;
+        if (ed.z === 'ground') {
+          if (w.terrain) {
+            edZ = w.terrain.groundAt(ed.x, ed.y);
+          } else {
+            console.warn(`World.load: entity "${ed.id}" z: 'ground' but the world has no terrain - using 0`);
+            edZ = 0;
+          }
+        } else {
+          edZ = typeof ed.z === 'number' ? ed.z : 0;
+        }
+        transform = { x: ed.x, y: ed.y, z: edZ, yawDeg: ed.yawDeg || 0, pitchDeg: ed.pitchDeg || 0 };
         // US-016 (architecture.md 14.4 item 7): a `type: 'billboard'` entity
         // carries its sprite/billboard fields at the TOP level (model, unlit,
         // fogModel, fogMax, sizeM, minCells, detailRows), not under
@@ -449,7 +508,8 @@ export class World {
       const sec = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
       return sec ? sec.floorH + s.origin.z : null;
     }
-    return this.terrain ? this.terrain.heightAt(x, y) : null;
+    // US-026a (23.1 decision 2): the near band once it's ready, else analytic.
+    return this.terrain ? this.terrain.groundAt(x, y) : null;
   }
 
   ceilAt(x, y) {
@@ -477,14 +537,20 @@ export class World {
   outsideSector(x, y) {
     if (!this.terrain) return SOLID_OUTSIDE;
     const sc = this._outsideScratch;
-    sc.floorH = this.terrain.heightAt(x, y);
+    // US-026a (23.1 decision 2, 23.3): the near band once it's ready, else
+    // analytic - physics (`isSectorPassable`/slope rule) and the renderer
+    // read this same `groundAt`/`groundNormalAt`/`groundTypeAt` trio.
+    sc.floorH = this.terrain.groundAt(x, y);
     sc.ceilH = 'sky';
     sc.solid = false;
     sc.wallMat = 'rock';
-    sc.floorMat = this.terrain.floorMatFor(this.terrain.typeAt(x, y));
+    sc.floorMat = this.terrain.floorMatFor(this.terrain.groundTypeAt(x, y));
     sc.ceilMat = 'sky';
     sc.topH = 'sky';
     sc.upperMat = 'rock';
+    sc.terrain = true;
+    const n = this.terrain.groundNormalAt(x, y, this._outsideNormalScratch);
+    sc.nx = n.x; sc.ny = n.y; sc.nz = n.z;
     return sc;
   }
 

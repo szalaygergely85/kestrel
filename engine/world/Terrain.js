@@ -77,6 +77,16 @@ export class Terrain {
     this._centerCx = null;
     this._centerCy = null;
     this._chunkQueue = []; // [{cx, cy}] pending bakes, drained by bakeChunkStep
+
+    // US-026a (architecture.md 23.1 item 1): one contiguous 3x3-chunk near
+    // band, baked once (synchronously) at World.load, never streamed/
+    // regenerated in this story (that's US-026b's `chunk()`/`setCenter()`/
+    // `bakeChunkStep()` above, untouched by this feature).
+    this.near = null;
+    this.nearReady = false;
+    // Reused output object for `groundNormalAt` central-difference reads of
+    // `groundAt` (rule 9: no per-call allocation on the query path).
+    this._groundNormalScratch = { x: 0, y: 0, z: 1 };
   }
 
   /** Analytic height (meters) at any real (x, y) - near-LOD quality everywhere. */
@@ -127,6 +137,94 @@ export class Terrain {
     out.y = -dhdy / len;
     out.z = 1 / len;
     return out;
+  }
+
+  // ---- near band (US-026a, architecture.md 23) -----------------------------
+
+  /**
+   * Bakes the whole near band synchronously: a 192x192 grid of 2 m cells
+   * (3x3 of the 128 m chunks, centered on the chunk containing world chunk
+   * coordinates `(cx, cy)` - the same `Math.floor(x / chunkSize)` convention
+   * `setCenter` uses internally). Uses `recipe.util.bake` directly (the same
+   * pure function `bakeChunk` calls per-chunk), so the result is cell-for-
+   * cell identical to baking the 9 `bakeChunk(cx+dx, cy+dy)` chunks and
+   * stitching them - one array, no seams by construction. Synchronous (no
+   * time-slicing): measured ~80 ms (AC 300 ms), called once from
+   * `World.load` before any prop spawns. `hDraw` adds forest canopy, same
+   * rule as `farHDraw`; `minH`/`maxH` are the band's hDraw extremes (render
+   * escape bounds, mirrors `farMaxH`).
+   */
+  bakeNearBand(cx, cy) {
+    const n = this.chunkSize / this.nearCell; // 64 near-cells per 128 m chunk
+    const w = 3 * n, h = 3 * n;
+    const x0 = (cx - 1) * this.chunkSize;
+    const y0 = (cy - 1) * this.chunkSize;
+    const G = this.util.bake(x0, y0, this.nearCell, w, h);
+
+    const hDraw = new Float32Array(w * h);
+    const canopy = this._canopyM, forestId = this._forestTypeId;
+    let minH = Infinity, maxH = -Infinity;
+    for (let i = 0; i < G.height.length; i++) {
+      const hv = G.height[i] + (G.type[i] === forestId ? canopy : 0);
+      hDraw[i] = hv;
+      if (hv < minH) minH = hv;
+      if (hv > maxH) maxH = hv;
+    }
+
+    this.near = {
+      x0, y0, w, h, cell: this.nearCell,
+      height: G.height, type: G.type, hDraw, minH, maxH,
+      version: (this.near ? this.near.version : 0) + 1,
+    };
+    this.nearReady = true;
+  }
+
+  /** Nearest (not bilinear) `near.type` texel at (x, y), or null outside the band/before `nearReady`. */
+  _nearGridType(x, y) {
+    const g = this.near;
+    const i = Math.floor((x - g.x0) / g.cell);
+    const j = Math.floor((y - g.y0) / g.cell);
+    if (i < 0 || j < 0 || i >= g.w || j >= g.h) return null;
+    return g.type[i + j * g.w];
+  }
+
+  /**
+   * Physics/renderer ground height (23.1 decision 2): bilinear on the baked
+   * near band when `(x, y)` falls inside it, else the analytic `heightAt`
+   * (outside the band, or before `nearReady`). Exact by construction inside
+   * the band; within 0.01 m of `heightAt` at the band edge (23.7 AC).
+   */
+  groundAt(x, y) {
+    if (this.nearReady) {
+      const h = this.util.gridHeight(this.near, x, y);
+      if (h !== null) return h;
+    }
+    return this.heightAt(x, y);
+  }
+
+  /** `groundAt`'s surface normal via a 2 m central difference, written into the caller-owned `out` (no allocation - mirrors `normalAt`). */
+  groundNormalAt(x, y, out) {
+    const e = 2;
+    const hL = this.groundAt(x - e, y);
+    const hR = this.groundAt(x + e, y);
+    const hD = this.groundAt(x, y - e);
+    const hU = this.groundAt(x, y + e);
+    const dhdx = (hR - hL) / (2 * e);
+    const dhdy = (hU - hD) / (2 * e);
+    const len = Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);
+    out.x = -dhdx / len;
+    out.y = -dhdy / len;
+    out.z = 1 / len;
+    return out;
+  }
+
+  /** Physics/renderer ground type (23.1 decision 2): nearest `near.type` texel inside the band, else the analytic `typeAt`. */
+  groundTypeAt(x, y) {
+    if (this.nearReady) {
+      const t = this._nearGridType(x, y);
+      if (t !== null) return t;
+    }
+    return this.typeAt(x, y);
   }
 
   // ---- far bake -----------------------------------------------------------

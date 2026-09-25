@@ -101,6 +101,90 @@ h.normalAt(recipe.tower.x, recipe.tower.y, n);
 ok('normalAt returns a unit vector', Math.abs(Math.hypot(n.x, n.y, n.z) - 1) < 1e-6);
 ok('normalAt on the flat tower crown points mostly up', n.z > 0.9, `z=${n.z}`);
 
+// ---------------------------------------------------------------------------
+// US-026a (architecture.md 23.1 decision 1, 23.7 S1): bakeNearBand,
+// groundAt/groundNormalAt/groundTypeAt, nearReady.
+// ---------------------------------------------------------------------------
+
+// --- band == the 9 bakeChunk results, cell for cell -------------------------
+{
+  const i = new Terrain(recipe);
+  const cx = Math.floor(recipe.tower.x / i.chunkSize);
+  const cy = Math.floor(recipe.tower.y / i.chunkSize);
+  const t0 = performance.now();
+  i.bakeNearBand(cx, cy);
+  const bakeMs = performance.now() - t0;
+  ok('bakeNearBand finishes within the 300 ms AC', bakeMs <= 300, `${bakeMs.toFixed(1)} ms`);
+  ok('nearReady flips true', i.nearReady === true);
+
+  const n = i.chunkSize / i.nearCell; // 64
+  let mismatches = 0;
+  for (let dy = -1; dy <= 1 && mismatches === 0; dy++) {
+    for (let dx = -1; dx <= 1 && mismatches === 0; dx++) {
+      const G = recipe.util.bakeChunk(cx + dx, cy + dy);
+      const bx = (dx + 1) * n, by = (dy + 1) * n; // this chunk's offset inside the 192x192 band
+      for (let jj = 0; jj < n; jj++) {
+        for (let ii = 0; ii < n; ii++) {
+          const bandIdx = (bx + ii) + (by + jj) * i.near.w;
+          const chunkIdx = ii + jj * n;
+          if (i.near.height[bandIdx] !== G.height[chunkIdx] || i.near.type[bandIdx] !== G.type[chunkIdx]) mismatches++;
+        }
+      }
+    }
+  }
+  ok('band matches the 9 bakeChunk results cell for cell', mismatches === 0, `${mismatches} mismatched cells`);
+}
+
+// --- groundAt inside == gridHeight(near); outside == heightAt; near heightAt off the band edge --
+{
+  const i = new Terrain(recipe);
+  const cx = Math.floor(recipe.tower.x / i.chunkSize);
+  const cy = Math.floor(recipe.tower.y / i.chunkSize);
+  i.bakeNearBand(cx, cy);
+
+  const insideX = i.near.x0 + i.near.w * i.near.cell / 2, insideY = i.near.y0 + i.near.h * i.near.cell / 2;
+  ok('groundAt inside the band == gridHeight(near)', i.groundAt(insideX, insideY) === recipe.util.gridHeight(i.near, insideX, insideY));
+
+  const farOutX = i.near.x0 - 5000, farOutY = i.near.y0 - 5000;
+  ok('groundAt far outside the band == analytic heightAt', i.groundAt(farOutX, farOutY) === i.heightAt(farOutX, farOutY));
+
+  let worstDiff = 0;
+  for (let k = 0; k < 5000; k++) {
+    const x = i.near.x0 + Math.random() * i.near.w * i.near.cell;
+    const y = i.near.y0 + Math.random() * i.near.h * i.near.cell;
+    const diff = Math.abs(i.groundAt(x, y) - i.heightAt(x, y));
+    if (diff > worstDiff) worstDiff = diff;
+  }
+  ok('|groundAt - heightAt| <= 0.01 m on 5000 random band points', worstDiff <= 0.01, `worst ${worstDiff}`);
+}
+
+// --- groundTypeAt / groundNormalAt basic sanity -----------------------------
+{
+  const i = new Terrain(recipe);
+  const cx = Math.floor(recipe.tower.x / i.chunkSize);
+  const cy = Math.floor(recipe.tower.y / i.chunkSize);
+  i.bakeNearBand(cx, cy);
+
+  const insideX = i.near.x0 + i.near.w * i.near.cell / 2, insideY = i.near.y0 + i.near.h * i.near.cell / 2;
+  ok('groundTypeAt inside the band == nearest near.type texel', i.groundTypeAt(insideX, insideY) === i._nearGridType(insideX, insideY));
+  const farOutX = i.near.x0 - 5000, farOutY = i.near.y0 - 5000;
+  ok('groundTypeAt outside the band == analytic typeAt', i.groundTypeAt(farOutX, farOutY) === i.typeAt(farOutX, farOutY));
+
+  const gn = { x: 0, y: 0, z: 0 };
+  i.groundNormalAt(recipe.tower.x, recipe.tower.y, gn);
+  ok('groundNormalAt returns a unit vector', Math.abs(Math.hypot(gn.x, gn.y, gn.z) - 1) < 1e-6);
+  ok('groundNormalAt on the flat tower crown points mostly up', gn.z > 0.9, `z=${gn.z}`);
+}
+
+// --- before bakeNearBand: groundAt/groundTypeAt fall back to analytic, no throw --
+{
+  const i = new Terrain(recipe);
+  let threw = false;
+  let gVal, hVal;
+  try { gVal = i.groundAt(recipe.tower.x, recipe.tower.y); hVal = i.heightAt(recipe.tower.x, recipe.tower.y); } catch (e) { threw = true; }
+  ok('groundAt before bakeNearBand does not throw and matches heightAt', !threw && gVal === hVal);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f2) => console.error('FAIL:', f2)); process.exit(1); }
 console.log('ALL PASS');

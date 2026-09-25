@@ -16,7 +16,10 @@ export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
  */
 export const ID_COLLECTIONS = {
   level: ['props', 'lights', 'interactables', 'triggers'],
-  world: ['structures', 'entities', 'horizon'],
+  // US-026a (architecture.md 23.2/23.7 S2): world-level triggers (circle/
+  // terrain/bounds shapes, `structId: null`) are their own id collection,
+  // same convention as a level's `triggers`.
+  world: ['structures', 'entities', 'horizon', 'triggers'],
 };
 
 /**
@@ -44,7 +47,9 @@ export const REF_FIELDS = {
 export const KEY_ORDER = {
   manifest: [...ENVELOPE_KEYS, 'contentVersion', 'files'],
   level: [...ENVELOPE_KEYS, 'name', 'title', 'version', 'cellSize', 'size', 'rows', 'legend', 'layers', 'tilt', 'start', 'sun', 'ambient', 'lights', 'props', 'interactables', 'triggers', 'markers', 'route', 'routeNotes'],
-  world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'structures', 'entities', 'horizon', 'state'],
+  // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
+  // optional keys - schema stays 1, a world file without them still loads.
+  world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'structures', 'entities', 'horizon', 'state', 'bounds', 'triggers'],
 };
 
 /**

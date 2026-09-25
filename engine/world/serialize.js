@@ -43,6 +43,12 @@ export function serialize(world) {
     // US-016 (architecture.md 14.4 item 13): content, not state, but still
     // round-tripped (never mutated at runtime, so this is a pure copy).
     horizon: structuredClone(world.horizon || []),
+    // US-026a (23.2, 23.7 S2): same "content, not state" treatment -
+    // `world.bounds` is already a plain validated copy; `world.def.triggers`
+    // is the world-level trigger DEFS (buildTriggers reads them fresh on
+    // every load, same as a structure's `def.triggers`).
+    bounds: world.bounds ? { ...world.bounds } : null,
+    triggers: structuredClone((world.def && world.def.triggers) || []),
     structures: world.structures.map((s) => ({
       id: s.id,
       level: s.level.name,
@@ -142,6 +148,8 @@ export function deserialize(state, assets, opts = {}) {
     name: state.world,
     terrain: state.terrain ? state.terrain.recipe : null,
     horizon: state.horizon || [],
+    bounds: state.bounds || null,
+    triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => ({ id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps })),
     entities: [

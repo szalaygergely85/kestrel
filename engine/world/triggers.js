@@ -10,19 +10,67 @@
 // in `buildTriggers` (called from `World.load`), never in the hot loop.
 
 /**
- * @typedef {{key:string, structId:string, id:string, name:string, once:boolean,
- *   shape:'cells'|'circle', mask:Uint8Array|null, x:number, y:number, r:number,
+ * @typedef {{key:string, structId:string|null, id:string, name:string, once:boolean,
+ *   shape:'cells'|'circle'|'terrain'|'bounds', mask:Uint8Array|null, x:number, y:number, r:number,
  *   zMin:number, def:Object, inside:number, usedKey:string|null,
  *   levelW:number, levelH:number}} TriggerRec
  */
 
 const warnedMismatch = new Set();
 
+// US-026a (architecture.md 23.2/23.5): world-level trigger shapes, on top
+// of the per-structure 'circle'/'cells' above. `structId: null`, absolute
+// world coordinates (no structure origin to add).
+const WORLD_TRIGGER_SHAPES = new Set(['circle', 'terrain', 'bounds']);
+
+/**
+ * `world.def.triggers` -> `TriggerRec[]` (structId: null, key `world.<id>`).
+ * Validates ids (unique) and shapes (known) up front - throws WITH the
+ * offending id, same convention as `validateHorizon` (World.js). Called
+ * once from `buildTriggers` (not per step - rule 9).
+ * @param {import('./World.js').World} world
+ * @returns {TriggerRec[]}
+ */
+function buildWorldTriggers(world) {
+  const defs = (world.def && world.def.triggers) || [];
+  const seen = new Set();
+  const out = [];
+  for (const tr of defs) {
+    const id = tr && tr.id;
+    if (!id || typeof id !== 'string') throw new Error('buildTriggers: world trigger entry needs a string "id"');
+    if (seen.has(id)) throw new Error(`buildTriggers: world trigger "${id}": duplicate id`);
+    seen.add(id);
+    if (!WORLD_TRIGGER_SHAPES.has(tr.shape)) {
+      throw new Error(`buildTriggers: world trigger "${id}": unknown shape "${tr.shape}"`);
+    }
+    out.push({
+      key: `world.${id}`,
+      structId: null,
+      id,
+      name: tr.trigger,
+      once: !!tr.once,
+      shape: tr.shape,
+      mask: null,
+      x: typeof tr.x === 'number' ? tr.x : 0,
+      y: typeof tr.y === 'number' ? tr.y : 0,
+      r: typeof tr.r === 'number' ? tr.r : 0,
+      zMin: typeof tr.zMin === 'number' ? tr.zMin : -Infinity,
+      def: tr,
+      inside: 0,
+      usedKey: tr.once ? `used.world.${id}` : null,
+      levelW: 0,
+      levelH: 0,
+    });
+  }
+  return out;
+}
+
 /**
  * Every placed structure's `def.triggers` -> `TriggerRec[]`, world coords
  * (level x,y + origin for a circle trigger; a cell trigger's mask stays
- * level-local, tested against `actor - origin`). Called once from
- * `World.load` (not per step - rule 9).
+ * level-local, tested against `actor - origin`), plus `world.def.triggers`
+ * (world-level, `structId: null` - see `buildWorldTriggers` above). Called
+ * once from `World.load` (not per step - rule 9).
  * @param {import('./World.js').World} world
  * @returns {TriggerRec[]}
  */
@@ -105,6 +153,7 @@ export function buildTriggers(world) {
       });
     }
   }
+  out.push(...buildWorldTriggers(world));
   return out;
 }
 
@@ -112,12 +161,30 @@ export function buildTriggers(world) {
  * Is `actor` (feet at `ax, ay, az`) inside this trigger right now? Pure,
  * no allocation.
  * @param {TriggerRec} rec
+ * @param {import('./World.js').World} world
+ * @param {Object} actor - the entity data passed to `updateTriggers` (needs `.components.body.radius` for `'bounds'`).
  */
-function isInside(rec, ax, ay, az) {
+function isInside(rec, world, ax, ay, az, actor) {
   if (rec.shape === 'circle') {
     const dx = ax - rec.x, dy = ay - rec.y;
     return (dx * dx + dy * dy <= rec.r * rec.r) && az >= rec.zMin;
   }
+  // US-026a (23.5): 'terrain' - first contact with the terrain floor (inside
+  // no structure footprint, and the world actually has terrain).
+  if (rec.shape === 'terrain') {
+    return !!(world.terrain && world.structureAt(ax, ay) === null);
+  }
+  // US-026a (23.3/23.5): 'bounds' - the capsule has reached (or the bound
+  // shrank inside) the walk-bound circle, same edge `integrate` step 4b
+  // slides against (`r - radius - 0.05`, a hair before the hard clip so the
+  // hint fires on first touch, not after the slide already clipped it).
+  if (rec.shape === 'bounds') {
+    if (!world.bounds) return false;
+    const dx = ax - world.bounds.x, dy = ay - world.bounds.y;
+    const radius = (actor && actor.components && actor.components.body && actor.components.body.radius) || 0;
+    return Math.hypot(dx, dy) >= world.bounds.r - radius - 0.05;
+  }
+  // 'cells' (default, structure-local)
   const lx = Math.floor(ax - rec.x), ly = Math.floor(ay - rec.y);
   if (lx < 0 || lx >= rec.levelW || ly < 0 || ly >= rec.levelH) return false;
   return rec.mask[ly * rec.levelW + lx] === 1;
@@ -143,7 +210,7 @@ export function updateTriggers(world, engine, actor) {
   const t = actor.transform;
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
-    const cur = isInside(rec, t.x, t.y, t.z) ? 1 : 0;
+    const cur = isInside(rec, world, t.x, t.y, t.z, actor) ? 1 : 0;
     const entered = rec.inside === 0 && cur === 1;
     rec.inside = cur;
     if (!entered) continue;
