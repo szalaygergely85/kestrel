@@ -400,6 +400,7 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   | `b` | `brass_dark` | brassDark | plate / lamp bodies |
   | `i` | `iron_light` | ironLight | handle rod, bail, arm top edge |
   | `d` | `iron_dark` | ironDark | foot, post, back-plate contour, burner, hook |
+  | `W` | `brass_glint` | white + brassHot, **emissive 0.90**, glyph set `glint` | the lamp's glint part only (v1.14) |
 
   Each key has a v1 record (the `palette.materials` format) and a v2 record (the `detail-pass.js` format). The v2 records use a 2.5 cm tone grid with `lines: false`.
 - **Parts and clips:**
@@ -408,20 +409,18 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
     - clips `idle` = 1-frame loop; `pull` = 0.4 s non-loop, rot y 0 -> -12 -> 50 -> 115 -> 148 -> 135, event `clunk` at key 4, held at the end; `down` = the held pose.
     - The handle swings in the plate plane toward the grate side.
   - `lantern` (1/32 m, 8x13x19):
-    - parts `mount` (wall plate, root), `arm` (child: arm, brace, hook), `lamp` (a second root).
-    - clips `unlit`, `lit` (the same body), `empty` / `hookEmpty` (the lamp part moves 64 voxels down, under the floor; the bracket stays).
+    - parts `glint` (v1.14, root, listed first), `mount` (wall plate, root), `arm` (child: arm, brace, hook), `lamp` (a second root). Code must look parts up **by name**, not by index.
+    - `glint` = a 5-voxel plus sign in `brass_glint`, stored at rest in a sealed cavity of the lamp base (layer z1, box [2,2,1,6,6,2]; every neighbour is a base voxel, so it is never visible).
+    - clip `unlit` (v1.14) = `interp: 'step'`, loop, durations `[1800, 90, 90, 80]` (= the billboard's 1800 + 260 ms): key 0 = rest; keys 1-3 turn the glint part `rot [90, 0, 0]` (flat -> upright) and move it onto the front of the hood rim (rows z10..12, 0.35 voxel proud of the rim face), at rim columns 2, 3.5 and 5, so the sparkle runs left -> right across the rim.
+    - clips `lit` (the same body, no glint), `empty` / `hookEmpty` (the lamp AND the glint part move 64 voxels down, under the floor; the bracket stays).
 - **Mounts:**
   - `lever`: `glint` (knob top, handle), `prompt`.
-  - `lantern`: `flame` (burner top), `light`, `prompt`, `hook` (= the lamp pivot).
+  - `lantern`: `flame` (burner top), `light`, `prompt`, `hook` (= the lamp pivot), `glint` (v1.14, hood rim front on `lamp`; spare, for a billboard sparkle if ever wanted).
 - **Placement:** no level edit.
   - The lever uses tower.js (19.25, 9.3, 3.0, facing 90). The anchor is the foot centre.
   - The lantern uses (19.9, 6.5, 1.3, facing 270). Its anchor puts the back of the wall plate on the step-8 face (x 20.0) and the lamp bottom at z 1.3. The lamp centre ends at x 19.72.
-- **Binding:** 15.3 item 1 says `model.voxel` present -> `components.voxel`. `attach()` copies `voxel` onto `ASSETS.models.lever` / `.lantern`. It does this only when all 5 keys exist in **both** `palette.materials` and `detailPass.materials`. The game loads the file only once a `<script>` tag for it is added after `lever.js` / `lantern.js`.
-- **Open merge step (designer, next pass):**
-  - Append `voxelMaterials.v1` to `palette.js` materials, after `canvas`, so no id moves.
-  - Append `.v2` to `detail-pass.js` materials and `.remap` to its remap.
-  - Set `detail-pass.js` `edges.modelRim = 0.55`.
-  - Until this is done, `fallback` maps each key to `brass` / `iron` for oracle runs. That fallback is not the intended look.
+- **Binding:** 15.3 item 1 says `model.voxel` present -> `components.voxel`. `attach()` copies `voxel` onto `ASSETS.models.lever` / `.lantern`. Since v1.14 it checks **per model**: each model is attached only when every key of ITS `mats` exists in **both** `palette.materials` and `detailPass.materials`. The game loads the file only once a `<script>` tag for it is added after `lever.js` / `lantern.js`.
+- **Merge step:** done. The 5 batch-1 keys were merged in US-040 step 4; `brass_glint` was merged by the designer in v1.14 (`palette.js` materials after `iron_dark`, `detail-pass.js` materials + remap + the new glyph set `glint`), so no existing material id moved. `fallback` stays for oracle runs.
 - **Preview:** `preview/voxel-props.html`. It needs http, because it imports `engine/voxel/*`. It shows:
   - 6 yaws x 3 pitches plus an orbit view, all clips, the lit flame, and the knob glint.
   - The in-game 160x60 / 240x90 crops, using the engine projection and the stone backdrop.
@@ -430,7 +429,7 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
 
 ### 7.1 Batch 2: the remaining tower props (`design/models/voxel_tower.js`, US-056, v1.13)
 
-- **Sets:** `ASSETS.voxelModels.boulder`, `.rubble0`, `.rubble1`, `.rubble2`, `.canvasHeap`, `.gondola`, `.strut`, `.envelopeHeap`, `.relay` (same record shape as batch 1), `ASSETS.voxelModels.batch2` (the key list) and `ASSETS.voxelModels.attachTower()`. It **adds** 12 materials to `ASSETS.voxelMaterials` (`v1`, `v2`, `remap`, `fallback`); `ASSETS.voxelMaterials.batch2` lists them.
+- **Sets:** `ASSETS.voxelModels.boulder`, `.rubble0`, `.rubble1`, `.rubble2`, `.canvasHeap`, `.gondola`, `.strut`, `.envelopeHeap`, `.relay` (same record shape as batch 1), `ASSETS.voxelModels.batch2` (the key list) and `ASSETS.voxelModels.attachTower()`. It **adds** 18 materials to `ASSETS.voxelMaterials` (`v1`, `v2`, `remap`, `fallback`); `ASSETS.voxelMaterials.batch2` lists them (12 since v1.13, 6 more in v1.14).
 - **Load order:** after `voxel_props.js` (that file assigns `ASSETS.voxelMaterials`) and after `boulder.js`, `rubble.js`, `wreckage.js`, `relay.js`.
 - **Generated rows:** the layer strings are built at load time by small deterministic builders (integer hash, no `Math.random`). The result is plain `layers[z][y]` strings, the same as batch 1. The preview's JSON dump shows exactly what the engine gets.
 - **New materials** (each with a v1 and a v2 record; the v2 tone grid is about half a voxel of the model that uses it, `lines: false`):
@@ -449,8 +448,14 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   | `x` | `crystal_dead` | aetherDead, mirrorDark | dead relay crystals |
   | `X` | `crystal_lit` | aether, aetherLight, aetherCore, **emissive 0.85** | awake relay crystals |
   | `M` | `mirror_dark` | mirrorDark, mirror, spec 0.85 | relay mirror face |
+  | `P` | `linen_light` | linenLight, linen | tarp crests, crate lid edges, rolled fold (v1.14) |
+  | `p` | `linen` | linen, linenLight | tarp flats, crate lid, folded flap (v1.14) |
+  | `q` | `linen_dark` | linenDark, canvasDark | tarp fold valleys, drape flanks, everything under the top (v1.14) |
+  | `E` | `gore_red` | goreRed, goreRedLight, goreRedDark | the red envelope gores (v1.14) |
+  | `e` | `gore_red_dark` | goreRedDark, canvasScorch | red gores in the collapse creases (v1.14) |
+  | `z` | `canvas_burnt` | canvasScorch, cinder (set `soot`) | burnt tear rim, dark inside (tear, throat), scorch blotches (v1.14) |
 
-  Existing keys are reused as they are: `canvas` (`c`), `wood` (`w`), `brass` (`B`), plus batch 1 (`R H b i d`). No new colour was needed. No new material uses a wall or floor stone tone.
+  Existing keys are reused as they are: `canvas` (`c`), `wood` (`w`), `brass` (`B`), plus batch 1 (`R H b i d`). v1.14 adds the colours `goreRedLight`, `goreRed`, `goreRedDark`, `linenLight`, `linen`, `linenDark` to `palette.js`. No new material uses a wall or floor stone tone.
 - **Models:**
 
   | key | cellM | grid | world (m) | parts | clips |
@@ -459,10 +464,15 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   | `rubble0` | 0.05 | 18x12x7 | 0.9 x 0.6 x 0.35 | `stones` | `idle` |
   | `rubble1` | 0.05 | 21x14x12 | 1.05 x 0.7 x 0.6 | `stones` | `idle` |
   | `rubble2` | 0.05 | 12x10x6 | 0.6 x 0.5 x 0.3 | `stones` | `idle` |
-  | `canvasHeap` | 0.0625 | 32x14x5 | 2.0 x 0.875 x 0.31 | `west`, `east` | `idle` |
-  | `gondola` | 0.085 | 26x11x13 | 2.21 x 0.94 x 1.1 | `bow`, `stern` | `idle` |
+  | `canvasHeap` | 0.0625 | 32x14x7 (v1.14) | 2.0 x 0.875 x 0.44 | `west`, `east` | `idle` |
+  | `gondola` | 0.085 | 26x11x13 | 2.21 x 0.94 x 1.1 | `bow`, `stern` (shared pivot), `chock` (v1.14) | `idle` (v1.14: the 8 deg tilt pose, interp `step`) |
   | `strut` | 0.05 | 18x4x10 | 0.9 x 0.2 x 0.5 | `bar` | `idle` |
-  | `envelopeHeap` | 0.2 | 25x11x13 | 5.0 x 2.2 x 1.6 (+1.0 skirt) | `west`, `east` | `idle` |
+  | `envelopeHeap` | 0.2 | 25x11x13 | 5.0 x 2.2 x 1.44 (+1.0 skirt) | `west`, `east` | `idle` |
+
+  ART-OWN-002 rework (v1.14), same keys, grids (except the canvas heap height), anchors and placement:
+  - `canvasHeap` = a pale **linen tarp** over a small crate at the west end (box shape, radial drape folds), two tension folds, a straight ragged hem with a rope boltrope + brass eyelets, the SE corner turned back (double flap, rolled fold, eyelet up), an ochre repair patch, the flat hollow at the start pose. Linen vs the ochre/red envelope: different hue, value and size.
+  - `gondola` = a rectangular wicker basket: brass ribs, 4 corner posts with knobs, a bright padded rim 1 voxel proud all round with rivets, V rope loops under the rim, 3 sandbags, the name board, deck clutter. `bow` + `stern` share the pivot (13, 1, 1) = the front bottom edge, and `idle` poses both `rot [8, 0, 0]`, `pos [0, 0, -1]` (a rigid tilt; the outline stays intact). The raised back edge rests on `chock` (2 stones in layer z0, never posed). The rest pose (no clip) is the upright basket 1 voxel up on the chock.
+  - `envelopeHeap` = a half-deflated balloon on its side: crown end north with an iron crown ring + brass valve plate, a full belly, a taper to the throat, 3 collapse creases, 12 gores alternating ochre / red round the axis, a burnt tear on the upper east flank (hole + charred rim), a brass mouth hoop at x 19 with a dark throat, and 3 rope suspension lines from the hoop to the east edge (toward the tower and the gondola).
   | `relay` | 0.12 | 18x14x14 | 2.16 x 1.68 x 1.68 | `crystalDead`, `crystalLit`, `mount` | `dead`, `wake`, `awake` (interp `step`) |
 
   - The 4096-cell grid limit sets the coarse cellM of the big props. The relay has about 3.5 rows per voxel at 2.4 m. Split halves exist only to keep each part box extent at 48 or less; they are static.
@@ -471,12 +481,12 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   - `relay`: the crystal cluster exists twice. `crystalLit` is stored 6 voxels to -x and 2 up at rest. `dead` moves `crystalLit` 20 voxels (2.4 m) down, inside the walkway/plinth columns. `awake` hides `crystalDead` the same way and moves `crystalLit` onto its place. `wake` = 8 x 125 ms, with event `glowOn` at key 2 (= `relay.wakeLightFrame`). The glow, halo and sparkles stay a billboard (US-022, a separate prop at `mounts.glow`).
 - **Placement:** no level edit. Every model uses its tower.js prop (x, y, z, facing) as it is.
   - `rubble*` is selected by `props[].variant` (the registry's `rubble#n` = `models.rubble.variants[n]`).
-  - `gondola`: the anchor is 21.5 of 26 along the keel. The stern ends at y ~9.0, so the rigging coil billboard (15.3, 9.5) lies behind the stern and not inside the hull. The hull spans x 15.06..15.74, clear of the rubble cell (14,8), the canvas heap and the corridor.
-  - `canvasHeap`: there is a hollow of at most 0.125 m around the start pose (17.0, 9.5), so the lying eye (0.3 m) is never inside a fold.
+  - `gondola`: the anchor is 21.5 of 26 along the basket. The stern ends at y ~9.0, so the rigging coil billboard (15.3, 9.5) lies behind the stern and not inside the hull. Tilted (v1.14) the voxel centres span x ~15.06..15.94, clear of the rubble cell (14,8), the canvas heap and the corridor.
+  - `canvasHeap`: the tarp is 1 layer (0.0625 m) within 0.19 m of the start pose (17.0, 9.5) and at most 0.19 m within 0.42 m, so the lying eye (0.3 m) is never inside a fold. The crate end (0.44 m) is 0.5 m west of it.
   - `strut` lies in the 0.25 m gap between the two blocks of `rubble1` (prop `rubble2` at 14.5, 8.5). The preview checks that no voxels overlap.
   - `envelopeHeap` (`z: 'ground'`): the anchor is at voxel z 5. A canvas skirt hangs up to 1.0 m below it on the downhill (west) side. If the terrain drops more, raise `anchor[2]`; this is not a level edit.
 - **Binding:** `attachTower()` works per model. It copies `voxel` onto the billboard model (rubble: onto `variants[n]`) only when every material key of **that** model is in both `palette.materials` and `detailPass.materials`.
-- **Open merge step (batch 2):** append the 12 `voxelMaterials.batch2` keys (v1, v2, remap) after the batch-1 keys, the same way as batch 1. Add a `<script>` tag for `voxel_tower.js` after `voxel_props.js` and the billboard model files.
+- **Open merge step (batch 2):** append the 18 `voxelMaterials.batch2` keys (v1, v2, remap) after the batch-1 keys and `brass_glint`, the same way as batch 1, plus the 6 v1.14 colours are already in `palette.js`. Add a `<script>` tag for `voxel_tower.js` after `voxel_props.js` and the billboard model files.
 - **Engine notes (for the PO / programmer):**
   - Hiding a part = moving it under the floor (lantern, relay). A per-keyframe part `hide` flag would be cleaner. That is optional.
   - The instance AABB includes the hidden parts, so the screen rect gets taller. This costs only slab tests.
@@ -490,6 +500,12 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
 ---
 
 ## Change log
+- **v1.14 (2026-09-25, ART-OWN-002 rework + US-056 lamp glint)**:
+  - `models/voxel_tower.js`: `canvasHeap` (linen tarp over a crate, grid 32x14x**7**), `gondola` (rectangular wicker basket, new part `chock`, `idle` = a shared-pivot 8 deg tilt pose) and `envelopeHeap` (striped half-deflated balloon, crown ring, mouth hoop, tear, 3 ropes) rebuilt. Same keys, anchors, placement and clip names. 6 new proposed materials (`linen_light`, `linen`, `linen_dark`, `gore_red`, `gore_red_dark`, `canvas_burnt`; batch 2 is now 18 keys).
+  - `models/voxel_props.js`: `lantern` gains the part `glint` (listed first, stored in a sealed base cavity), `unlit` becomes a 4-key step clip (1800 + 90 + 90 + 80 ms), `empty` / `hookEmpty` hide the glint too, mount `glint`; `lantern.voxel.mats` is its own table (`LANTERN_MATS`, + `W`); new material `brass_glint`; `attach()` checks each model's own mats.
+  - `palette.js`: colours `goreRedLight`, `goreRed`, `goreRedDark`, `linenLight`, `linen`, `linenDark`; material `brass_glint` appended after `iron_dark` (no id moves). `detail-pass.js`: material `brass_glint` + remap, glyph set `glint`.
+  - `preview/voxel-props.html`: canvas heap ladder uses `linen_light` / `linen_dark`; lantern checks look parts up by name; new glint checks (sealed storage, 1800 + 260 ms step clip, sparkle in front of the rim, hidden when empty, emissive).
+  - **Engine / PO notes:** (1) the glint uses only part transforms (no engine change); a per-keyframe material or emissive swap would be a cleaner tool later. (2) The gondola now renders through the rotated (non-axis-aligned) voxel path.
 - **v1 (2026-09-22, US-002)**: initial palette, ramps, lights, fog, time of day, 9 materials, reference shader, preview.
 - **v1.0.1 (2026-09-22)**: section 1.1 corrected. The game is served over http (ES modules); palette.js stays a plain script.
 - **v1.1 (2026-09-22, US-010)**: palette materials `grass` and `rock` added (outside the tower). New section 3, level data format: `design/levels/tower.js`, `tower_layout.md`, `preview/tower.html`.

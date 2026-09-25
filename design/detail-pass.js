@@ -163,6 +163,7 @@
     copperFace: [".'", ".:'", ":-;", "-=:~", "=-+x", "+=x-", "x#+=", "#x%="],
     verdigris:  [".", ",", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
     canvasFace: [".'", ".~'", "~-'", "~)-", ")~(", ")(~", "()~=", "(=)%"],
+    glint:      ["'", "'+", "+'", "+*", "*+", "*", "*", "*"],   // v1.14: the voxel lamp's sparkle (emissive, always near the top)
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
@@ -458,6 +459,18 @@
       grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
       face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // US-056 lamp glint (design v1.14): the voxel lamp's sparkle part (voxel_props.js lantern clip unlit). White-hot,
+    // emissive 0.90, glyph set `glint` (* + at the top levels).
+    brass_glint: {
+      v1: 'brass_glint', seed: 206,
+      desc: 'VOXEL PROPS (US-056). The lamp\'s "take me" glint: a white-hot sparkle cross that flashes on the hood rim for ' +
+            '0.26 s every ~2 s (lantern clip unlit). Emissive 0.90 so it pops in shade; never on a static voxel.',
+      albedo: 1.00, bgK: 0.25, detail: 40, jitter: 0.05, emissive: 0.90,
+      tones: [['white', 3], ['brassHot', 2]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -469,7 +482,8 @@
     iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock',
     stone_ivy: 'stone_ivy', moss_top: 'moss_top', brass: 'brass', copper: 'copper', canvas: 'canvas',
     // US-040 step 4: voxel prop materials (design/models/voxel_props.js), same key in both files.
-    brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark'
+    brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark',
+    brass_glint: 'brass_glint'   // v1.14 US-056 lamp glint
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

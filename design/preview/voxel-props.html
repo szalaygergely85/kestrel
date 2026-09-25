@@ -122,9 +122,9 @@ const ENTRIES = [
     view: { dist: 2, eye: 1.0 }, rim: ['block_light'], body: ['block_dark'] },
   { name: 'rubble2', title: 'Rubble variant 2 (small chunk)', clips: ['idle'], floorZ: 0, wallY: 1.5, wallMat: 'stone', floorMat: 'rubble',
     view: { dist: 2, eye: 0.7 }, rim: ['block_light'], body: ['block_dark'] },
-  { name: 'canvasHeap', title: 'Canvas heap (the wake spot; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
-    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['canvas_light'], body: ['canvas_dark'] },
-  { name: 'gondola', title: 'Gondola (bow + stern halves)', clips: ['idle'], floorZ: 0, wallY: 1.4, wallMat: 'stone', floorMat: 'floor',
+  { name: 'canvasHeap', title: 'Canvas heap (the wake spot: linen tarp over a crate; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
+    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['linen_light'], body: ['linen_dark'] },
+  { name: 'gondola', title: 'Gondola (bow + stern halves share one tilt pose; chock static)', clips: ['idle'], floorZ: 0, wallY: 1.4, wallMat: 'stone', floorMat: 'floor',
     view: { dist: 3, eye: 1.6 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'iron_dark'] },
   { name: 'strut', title: 'Bent strut (bar)', clips: ['idle'], floorZ: 0, wallY: 0.4, wallMat: 'stone', floorMat: 'rubble',
     view: { dist: 1.8, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'patina'] },
@@ -743,14 +743,42 @@ function runChecks() {
   if (ln && packed.lantern) {
     const pl = MODELS.lantern.placement;
     ok(ln.x === pl.x && ln.y === pl.y && ln.z === pl.z && ln.facing === pl.facing, 'lantern: tower.js prop (' + ln.x + ', ' + ln.y + ', ' + ln.z + ', facing ' + ln.facing + ') = model placement, no level edit');
+    const kMount = partIndex(MODELS.lantern, 'mount'), kLamp = partIndex(MODELS.lantern, 'lamp'), kGlint = partIndex(MODELS.lantern, 'glint');
     const inst = posedInstance('lantern', ln.x, ln.y, ln.z, ln.facing, { clip: -1, frame: 0, tMs: 0 });
-    const back = worldPoint(inst, 0, [4, 13, 14]);
+    const back = worldPoint(inst, kMount, [4, 13, 14]);
     ok(Math.abs(back[0] - pl.wallX) < 1e-9, 'lantern: wall plate back face at x ' + back[0].toFixed(4) + ' = step-8 west face ' + pl.wallX);
-    const lampC = worldPoint(inst, 2, [4, 4, 0]);
+    const lampC = worldPoint(inst, kLamp, [4, 4, 0]);
     ok(Math.abs(lampC[2] - 1.3) < 1e-9, 'lantern: lamp bottom z = 1.30 (billboard anchor height kept)');
     const ei = posedInstance('lantern', ln.x, ln.y, ln.z, ln.facing, clipState(packed.lantern, 'empty', 0));
-    const hidTop = worldPoint(ei, 2, [4, 4, 16]);
+    const hidTop = worldPoint(ei, kLamp, [4, 4, 16]);
     ok(hidTop[2] < 0, 'lantern: empty clip hides the lamp under the floor (top z ' + hidTop[2].toFixed(3) + ' < 0), bracket stays');
+    // ---- US-056 glint (v1.14): stored sealed in the base, flashes on the hood rim front, hidden with the lamp
+    if (kGlint >= 0) {
+      const own = ownedVoxels(T), full = new Set(own.map((v) => v.x + ',' + v.y + ',' + v.z)), gv = own.filter((v) => v.k === kGlint);
+      const sealed = gv.every((v) => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].every((d) => {
+        const n = [v.x + d[0], v.y + d[1], v.z + d[2]];
+        return full.has(n.join(',')) || (n[0] >= 2 && n[0] < 6 && n[1] >= 2 && n[1] < 6 && n[2] === 1);   // lamp voxel or the cavity
+      }));
+      ok(gv.length > 0 && sealed && gv.every((v) => T.mats[v.ch] === 'brass_glint'),
+         'lantern: glint part = ' + gv.length + ' brass_glint voxels, stored in a sealed cavity of the lamp base (never visible at rest)');
+      const un = T.animations.unlit, total = un.durations.reduce((a, b) => a + b, 0);
+      ok(un.interp === 'step' && un.loop === true && un.durations[0] === 1800 && total === 2060,
+         'lantern: unlit = step clip, rest ' + un.durations[0] + ' ms + glint ' + (total - un.durations[0]) + ' ms (billboard 1800 + 260)');
+      let front = true, height = true;
+      for (let f = 1; f < un.frames.length; f++) {
+        let t0 = 0; for (let i = 0; i < f; i++) t0 += un.durations[i];
+        const gi = posedInstance('lantern', 0, 0, 0, 0, clipState(packed.lantern, 'unlit', t0 + 1));
+        for (const v of gv) {
+          const p = worldPoint(gi, kGlint, [v.x + 0.5, v.y + 0.5, v.z + 0.5]), q = worldPoint(gi, kLamp, [4, 0, 11]);
+          if (!(p[1] - 0.5 * T.cellM < q[1] - 1e-9)) front = false;           // yaw 0: front = -y; the voxel's front face
+          if (Math.abs(p[2] - q[2] - 0.5 * T.cellM) > 1.6 * T.cellM) height = false;
+        }
+      }
+      ok(front && height, 'lantern: unlit glint keys put the sparkle IN FRONT of the hood rim face, on the rim row (z10..12)');
+      const eg = worldVoxels('lantern', ln.x, ln.y, ln.z, ln.facing, 'empty').filter((w) => w.v.k === kGlint);
+      ok(eg.every((w) => w.p[2] < 0), 'lantern: empty clip hides the glint with the lamp');
+      ok((P.materials.brass_glint || VMAT.v1.brass_glint).emissive >= 0.8, 'brass_glint: emissive ' + (P.materials.brass_glint || VMAT.v1.brass_glint).emissive + ' (pops in shade)');
+    }
   }
   // ---- batch 2 placement: same tower.js data, no voxel buried in a taller cell, route / neighbour rules
   const corridor = new Set(A.levelPatch && A.levelPatch.tower ? A.levelPatch.tower.pathCheck.corridor.leg1.concat(A.levelPatch.tower.pathCheck.corridor.leg2) : []);

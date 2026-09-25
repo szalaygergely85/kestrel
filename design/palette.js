@@ -153,6 +153,13 @@
     ropeLight:      '#c8a870',
     rope:           '#9a7a48',
     ropeDark:       '#5e4a2c',
+    // v1.14 ART-OWN-002: the envelope's red gores (alternate with the ochre ones) and the pale linen tarp of the wake spot
+    goreRedLight:   '#d8765a',
+    goreRed:        '#b04a36', // faded red envelope gore
+    goreRedDark:    '#62281e',
+    linenLight:     '#f6f1e4', // the spare tarp: near-white, cooler and paler than canvasLight
+    linen:          '#d8d0bc',
+    linenDark:      '#6c685e',
     // embers (the Kestrel burner) and steam
     emberHot:       '#ffa040', // glowing coal highlight (emissive)
     emberDim:       '#b43a14', // cooling coal (emissive)
@@ -699,6 +706,16 @@
           'burner, the bracket arm / hook. Darkest value of the set.',
     base: 'ironDark', albedo: 0.60, ramp: 'iron', spec: 0.25,
     bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12]
+  };
+  // US-056 lamp glint (design v1.14, designer merge): voxel_props.js `voxelMaterials.v1.brass_glint`, appended last so no id moves.
+  materials.brass_glint = {
+    desc: 'VOXEL PROPS (US-056). The lamp\'s "take me" glint: a white-hot sparkle cross that flashes on the hood rim for ' +
+          '0.26 s every ~2 s (lantern clip unlit). Emissive 0.90 so it pops in shade; never on a static voxel.',
+    base: 'white', albedo: 1.00, ramp: 'brass', spec: 0.90, emissive: 0.90,
+    bg: { mode: 'darken', k: 0.25 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [40, 40], key: {
+      a: { shade: 1.00, glyph: '*' }, h: { shade: 1.00, tint: 'brassHot', amount: 0.40, glyph: '+' }
+    }, rows: ['ah', 'ha'] }
   };
 
   // ---------------------------------------------------------------------------

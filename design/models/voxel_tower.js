@@ -10,13 +10,18 @@
  * WHAT THIS FILE SETS
  *   ASSETS.voxelModels.boulder        mossy granite boulder, r 0.6 m                      16x16x16 @ 0.075 m
  *   ASSETS.voxelModels.rubble0..2     fallen cut blocks + pebbles (= models.rubble.variants[0..2], level `variant`)
- *   ASSETS.voxelModels.canvasHeap     the wake spot: crumpled envelope canvas, 2.0 x 0.9 x 0.31 m (hollow where Wick lay)
- *   ASSETS.voxelModels.gondola        the Kestrel's brass basket, 2.2 x 0.9 x 1.1 m (rail, posts, name board, stays)
+ *   ASSETS.voxelModels.canvasHeap     the wake spot: a pale linen tarp draped over a crate, 2.0 x 0.9 x 0.44 m, rope hem,
+ *                                     folded-back corner, hollow where Wick lay (ART-OWN-002 rework, v1.14)
+ *   ASSETS.voxelModels.gondola        the Kestrel's wicker-and-brass basket, 2.2 x 0.9 x 1.1 m, tilted 8 deg onto a stone
+ *                                     chock (rim, ribs, corner posts, rope loops, sandbags, name board; v1.14)
  *   ASSETS.voxelModels.strut          bent brass gondola strut on the rubble, 0.9 x 0.2 x 0.5 m
- *   ASSETS.voxelModels.envelopeHeap   the envelope snagged below the summit breach, 5.0 x 2.2 x 1.6 m (+1.0 m downhill skirt)
+ *   ASSETS.voxelModels.envelopeHeap   the envelope below the summit breach: a half-deflated red / ochre striped bag, 4 m +
+ *                                     crown ring + mouth hoop + 3 ropes toward the tower, 5.0 x 2.2 x 1.5 m (+1.0 m skirt; v1.14)
  *   ASSETS.voxelModels.relay          the summit relay: brass tripod + bowl + cracked mirror + crystals (dead / wake / awake);
  *                                     the GLOW stays a billboard (US-022, a separate prop at relay.mounts.glow)
- *   ASSETS.voxelMaterials.*           + 12 new prop materials (v1 + v2 + remap + fallback), listed in `.batch2`
+ *   ASSETS.voxelMaterials.*           + 18 new prop materials (v1 + v2 + remap + fallback), listed in `.batch2`
+ *                                     (12 of batch 2 + 6 of the ART-OWN-002 rework: linen_light, linen, linen_dark,
+ *                                     gore_red, gore_red_dark, canvas_burnt)
  *   ASSETS.voxelModels.attachTower()  puts `.voxel` onto the billboard models (per model, only when every one of ITS
  *                                     material keys is in palette.materials AND detailPass.materials). Called at load.
  *
@@ -92,7 +97,9 @@
     R: 'brass_light', H: 'brass_hot', b: 'brass_dark', B: 'brass', i: 'iron_light', d: 'iron_dark',    // batch 1 + palette
     C: 'canvas_light', c: 'canvas', k: 'canvas_dark', r: 'rope', w: 'wood', v: 'patina',                 // wreck
     T: 'block_light', D: 'block_dark', L: 'granite_light', g: 'granite_dark', m: 'moss_cap',              // stone props
-    x: 'crystal_dead', X: 'crystal_lit', M: 'mirror_dark'                                                 // relay
+    x: 'crystal_dead', X: 'crystal_lit', M: 'mirror_dark',                                                // relay
+    P: 'linen_light', p: 'linen', q: 'linen_dark',                                                        // wake-spot tarp
+    E: 'gore_red', e: 'gore_red_dark', z: 'canvas_burnt'                                                  // envelope
   };
   function matsOf(G) {
     var used = {}, o = {}, k;
@@ -192,6 +199,47 @@
             'brass_light frame. The crack itself is iron_dark voxels.',
       base: 'mirrorDark', albedo: 0.80, ramp: 'iron', spec: 0.85, bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
       texture: tex({ a: { shade: 1.00 }, s: { shade: 1.30, tint: 'mirror', amount: 0.6 } }, ['saaa', 'asaa', 'aasa', 'aaas'])
+    },
+    // ---- ART-OWN-002 rework (v1.14): the wake-spot tarp is LINEN (near-white, cool), NOT the ochre envelope canvas;
+    //      the envelope gets red gores alternating with the ochre ones + a burnt material for the tear.
+    linen_light: {
+      desc: 'VOXEL PROPS (wake spot). The spare linen tarp\'s lit crests: the crate lid edges, fold ridges, the rolled fold ' +
+            'of the turned-back corner. Near-white and cool, so it never reads as the ochre envelope.',
+      base: 'linenLight', albedo: 0.94, ramp: 'canvas', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+      texture: tex({ a: { shade: 1.00 }, f: { shade: 1.06, glyph: ')' }, s: { shade: 0.90, tint: 'linen', amount: 0.5 } },
+                   ['aafa', 'asaa', 'faaa', 'aasf'])
+    },
+    linen: {
+      desc: 'VOXEL PROPS (wake spot). The tarp\'s flat parts: the sheet on the floor, the crate lid, the folded flap. Pale ' +
+            'warm-white with a faint weave.',
+      base: 'linen', albedo: 0.86, ramp: 'canvas', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+      texture: tex({ a: { shade: 1.00 }, w: { shade: 0.92, tint: 'linenDark', amount: 0.25, glyph: '~' }, l: { shade: 1.06, tint: 'linenLight', amount: 0.5 } },
+                   ['awal', 'laaw', 'waal', 'alwa'])
+    },
+    linen_dark: {
+      desc: 'VOXEL PROPS (wake spot). The tarp in shadow: the fold valleys, the flanks of the drape down the crate sides. ' +
+            'Dark cool grey-brown (value body for the pale crests).',
+      base: 'linenDark', albedo: 0.66, ramp: 'canvas', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+      texture: tex({ a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' } }, ['afaa', 'aaaf', 'faaa', 'aafa'])
+    },
+    gore_red: {
+      desc: 'VOXEL PROPS (envelope). The faded red envelope gores that alternate with the ochre ones (12 around the bag), ' +
+            'the stripe pattern that says "balloon" from the breach. Lit folds lighter, seams darker.',
+      base: 'goreRed', albedo: 0.86, ramp: 'canvas', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+      texture: tex({ a: { shade: 1.00 }, l: { shade: 1.12, tint: 'goreRedLight', amount: 0.6, glyph: ')' },
+                     s: { shade: 0.72, tint: 'goreRedDark', amount: 0.5, glyph: '~' } }, ['alas', 'aasa', 'laaa', 'saal'])
+    },
+    gore_red_dark: {
+      desc: 'VOXEL PROPS (envelope). Red gores inside the collapse creases (the fold valleys across the bag).',
+      base: 'goreRedDark', albedo: 0.62, ramp: 'canvas', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+      texture: tex({ a: { shade: 1.00 }, t: { shade: 0.70, tint: 'canvasScorch', amount: 0.6, glyph: '(' } }, ['ataa', 'aaat', 'taaa', 'aata'])
+    },
+    canvas_burnt: {
+      desc: 'VOXEL PROPS (envelope). Burnt canvas: the ragged black rim of the tear on the east flank, the dark inside seen ' +
+            'through it and through the mouth hoop, a few scorch blotches. Not emissive (the fire is long out).',
+      base: 'canvasScorch', albedo: 0.50, ramp: 'ash', bg: { mode: 'darken', k: 0.10 }, textureFade: [4, 12],
+      texture: tex({ a: { shade: 1.00 }, c: { shade: 0.70, tint: 'cinder', amount: 0.7, glyph: ',' }, e: { shade: 1.15, tint: 'emberDim', amount: 0.3, glyph: "'" } },
+                   ['acae', 'caaa', 'aeac', 'aaca'])
     }
   };
   // v2: the tone grid is about half a voxel of the model that uses the material (tones change inside a near voxel face);
@@ -215,12 +263,21 @@
     moss_cap:      v2('moss_cap',      219, 0.88, [['mossLight', 3], ['moss', 2]], 'mossTop', 0.04),
     crystal_dead:  v2('crystal_dead',  220, 0.78, [['aetherDead', 3], ['mirrorDark', 1]], 'ironFace', 0.06),
     crystal_lit:   v2('crystal_lit',   221, 1.00, [['aether', 3], ['aetherLight', 2], ['aetherCore', 1]], 'ironFace', 0.06, { emissive: 0.85 }),
-    mirror_dark:   v2('mirror_dark',   222, 0.80, [['mirrorDark', 3], ['mirror', 1]], 'ironFace', 0.06)
+    mirror_dark:   v2('mirror_dark',   222, 0.80, [['mirrorDark', 3], ['mirror', 1]], 'ironFace', 0.06),
+    // ART-OWN-002 (v1.14): tarp grid ~ half a 6.25 cm voxel, envelope grid half a 20 cm voxel
+    linen_light:   v2('linen_light',   223, 0.94, [['linenLight', 4], ['linen', 1]], 'canvasFace', 0.035),
+    linen:         v2('linen',         224, 0.86, [['linen', 4], ['linenLight', 1]], 'canvasFace', 0.035),
+    linen_dark:    v2('linen_dark',    225, 0.66, [['linenDark', 3], ['canvasDark', 1]], 'canvasFace', 0.035),
+    gore_red:      v2('gore_red',      226, 0.86, [['goreRed', 3], ['goreRedLight', 1], ['goreRedDark', 1]], 'canvasFace', 0.1),
+    gore_red_dark: v2('gore_red_dark', 227, 0.62, [['goreRedDark', 3], ['canvasScorch', 1]], 'canvasFace', 0.1),
+    canvas_burnt:  v2('canvas_burnt',  228, 0.50, [['canvasScorch', 3], ['cinder', 2]], 'soot', 0.1)
   };
   // castModels / preview only, before the merge: nearest existing material per key (NOT the intended look)
   var FALLBACK = { canvas_light: 'canvas', canvas_dark: 'canvas', patina: 'copper', rope: 'wood', block_light: 'rubble',
                    block_dark: 'rubble', granite_light: 'rock', granite_dark: 'rock', moss_cap: 'moss_top',
-                   crystal_dead: 'iron', crystal_lit: 'iron', mirror_dark: 'iron' };
+                   crystal_dead: 'iron', crystal_lit: 'iron', mirror_dark: 'iron',
+                   linen_light: 'canvas', linen: 'canvas', linen_dark: 'canvas', gore_red: 'canvas', gore_red_dark: 'canvas',
+                   canvas_burnt: 'ash' };
   var VM = A.voxelMaterials = A.voxelMaterials ||
     { status: 'PROPOSED', v1: {}, v2: {}, remap: {}, edges: { modelRim: 0.55 }, fallback: {} };
   VM.v1 = VM.v1 || {}; VM.v2 = VM.v2 || {}; VM.remap = VM.remap || {}; VM.fallback = VM.fallback || {};
@@ -380,45 +437,85 @@
     'Voxel rubble 2: a small chunk with a sloped break (0.3 m high end), a little moss, pebbles.', ['rubble3']);
 
   // ===================================================================================================================
-  // 4. CANVAS HEAP (the wake spot)  32 x 14 x 5 @ 0.0625 m = 2.0 x 0.875 x 0.31 m, two static parts (west / east
-  //    halves: the box extent limit). A heightfield of crumpled envelope: a tall fold on the west (the billboard's high
-  //    fold), a second fold on the east, a crumple along the north edge, a flat tattered hem, scorched ends, a rope band
-  //    with a brass eyelet. Top voxel of a column = canvas_light on crests / canvas elsewhere; everything under the top
-  //    = canvas_dark (the fold flanks read as shadow). THE HOLLOW: around the anchor (= the start pose 17.0, 9.5, eye
-  //    0.3 m) the canvas is at most 0.125 m high, so the lying camera is never inside or behind a fold.
+  // 4. CANVAS HEAP (the wake spot)  32 x 14 x 7 @ 0.0625 m = 2.0 x 0.875 x 0.44 m, two static parts (west / east
+  //    halves: the box extent limit). ART-OWN-002 rework (v1.14): a spare LINEN TARP (near-white, cool - never the ochre
+  //    envelope colour) thrown over a small crate and pulled across the floor:
+  //      - west: the crate under it (0.31 x 0.375 m, lid 0.375 m) = a clear box shape, lit lid edges, one wrinkle on the
+  //        lid, the cloth falling down the crate sides in 9 radial folds and flaring out on the floor;
+  //      - two tension folds running from the crate corners out to the long hems, a crumple ring round the hollow;
+  //      - THE HOLLOW: flat (1 layer) within 0.19 m of the start pose, <= 3 layers (0.19 m) within 0.42 m;
+  //      - east: the south-east corner turned back over itself (bare floor under the fold line, a triangular double flap
+  //        with a rolled bright fold edge, its boltrope and the corner eyelet facing up);
+  //      - the whole outline is a straight, slightly ragged HEM with a rope boltrope and brass eyelets every 0.375 m on
+  //        the long edges; a small ochre repair patch (envelope cloth) on the east half.
+  //    Top voxel: linen_light on crests / lid edges / the rolled fold, linen on flats, linen_dark in fold valleys, rope on
+  //    the hem, brass_hot eyelets; everything under the top is linen_dark (the drape flanks read as shadow).
   // ===================================================================================================================
+  function segDist(ax, ay, bx, by, px, py) {
+    var dx = bx - ax, dy = by - ay, t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+    t = Math.max(0, Math.min(1, t));
+    return Math.sqrt(Math.pow(px - ax - t * dx, 2) + Math.pow(py - ay - t * dy, 2));
+  }
+  function inTri(a, b, c, px, py) {
+    function s(p, q) { return (q[0] - p[0]) * (py - p[1]) - (q[1] - p[1]) * (px - p[0]); }
+    var d1 = s(a, b), d2 = s(b, c), d3 = s(c, a);
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+  }
   function buildCanvasHeap() {
-    var SX = 32, SY = 14, G = new Grid(SX, SY, 5), H = [], x, y, z;
+    var SX = 32, SY = 14, SZ = 7, G = new Grid(SX, SY, SZ), H = [], F = [], x, y, z, h, px, py;
+    var CX0 = 3, CX1 = 8, CY0 = 4, CY1 = 10, LID = 6, CCX = 5.5, CCY = 7;       // crate (voxel edges) + lid layers
+    var P1 = [24, 13.5], P2 = [31.5, 7], PC = [25.07, 6.08];                       // fold line P1-P2, flap apex PC
+    var TENSION = [[8, 4, 14, 1.6], [8, 10, 14, 12.4], [19, 1.8, 23, 11.5]];
+    function tension(t) { if (segDist(t[0], t[1], t[2], t[3], px, py) < 0.75) h = Math.max(h, 2); }
     for (y = 0; y < SY; y++) {
-      H.push([]);
+      H.push([]); F.push([]);
       for (x = 0; x < SX; x++) {
-        var ex = (x + 0.5 - 16) / 16, ey = (y + 0.5 - 7) / 7, e = ex * ex + ey * ey;
-        var edge = 1 - 0.22 * hash(x, y, 0, 21) - 0.10 * Math.sin(x * 0.9 + y * 0.7);
-        if (e > edge) { H[y].push(0); continue; }
-        var h = 1;
-        h += 4.4 * Math.exp(-Math.pow(x - 7 - 1.4 * Math.sin(y * 0.55), 2) / 5) * (1 - 0.6 * ey * ey);   // tall fold, peak 5 layers
-        h += 2.0 * Math.exp(-Math.pow(x - 25 + (y - 7) * 0.5, 2) / 3.5);
-        if (x > 10 && x < 28) h += 1.0 * Math.exp(-Math.pow(y - 2.5, 2) / 2);
-        h += 0.6 * (hash(x >> 1, y >> 1, 1, 22) - 0.5);
-        if (e > edge - 0.18) h = Math.min(h, 1.4);                                 // flat hem
-        var bx = (x + 0.5 - 16) / 4.5, by = (y + 0.5 - 7) / 4, bb = bx * bx + by * by;
-        if (bb < 1) h = Math.min(h, 1.6 + 0.8 * bb);                               // the hollow (<= 2 voxels)
-        var dc = Math.sqrt(Math.pow(x + 0.5 - 16, 2) + Math.pow(y + 0.5 - 7, 2));
-        if (dc < 6.8) h = Math.min(h, 3.4);                                        // <= 3 voxels (0.19 m) within 0.42 m of the start pose
-        H[y].push(Math.max(1, Math.min(5, Math.round(h))));
+        px = x + 0.5; py = y + 0.5; h = 0;
+        var flap = false, inSheet = y >= 1 && y <= 12;
+        if ((y === 1 || y === 12 || x === 0 || x === SX - 1) && hash(x, y, 0, 24) < 0.18) inSheet = false;   // ragged hem
+        if ((px - 24) / 7.5 + (py - 7) / 6.5 > 1) inSheet = false;             // bare floor beyond the fold line
+        if (inSheet) {
+          var dx = Math.max(CX0 - px, 0, px - CX1), dy = Math.max(CY0 - py, 0, py - CY1), d = Math.sqrt(dx * dx + dy * dy);
+          if (d === 0) h = LID + (segDist(4, 5, 7, 9, px, py) < 0.6 ? 1 : 0);   // on the crate lid + one wrinkle
+          else {
+            var rip = Math.cos(9 * Math.atan2(py - CCY, px - CCX) + 0.6);       // 9 radial folds round the crate
+            if (d <= 1) h = 5 + (rip > 0.2 ? 1 : 0) - (rip < -0.5 ? 1 : 0);
+            else if (d <= 2) h = 3 + (rip > 0.3 ? 1 : 0);
+            else if (d <= 3) h = 2 + (rip > 0.5 ? 1 : 0);
+            else h = 1;
+          }
+          TENSION.forEach(tension);
+          if (inTri(P1, P2, PC, px, py)) {                                       // the turned-back double flap
+            flap = true;
+            h = Math.max(h, segDist(P1[0], P1[1], P2[0], P2[1], px, py) < 0.9 ? 3 : 2);
+          }
+          var dc = Math.sqrt(Math.pow(px - 16, 2) + Math.pow(py - 7, 2));
+          if (dc > 3.2 && dc < 4.6 && hash(x, y, 1, 25) < 0.7) h = Math.max(h, 2); // crumple ring round the hollow
+          if (dc < 6.8) h = Math.min(h, 3);                                        // <= 0.19 m within 0.42 m of the start pose
+          if (dc < 3.0) h = 1;                                                     // the pressed hollow
+        }
+        H[y].push(h); F[y].push(flap);
       }
     }
     function hAt(x, y) { return (x < 0 || y < 0 || x >= SX || y >= SY) ? 0 : H[y][x]; }
     for (y = 0; y < SY; y++) for (x = 0; x < SX; x++) {
       var n = H[y][x];
       if (!n) continue;
-      var crest = n >= 3 && n >= hAt(x - 1, y) && n >= hAt(x + 1, y) && n >= hAt(x, y - 1) && n >= hAt(x, y + 1);
-      var hem = hAt(x - 1, y) === 0 || hAt(x + 1, y) === 0 || hAt(x, y - 1) === 0 || hAt(x, y + 1) === 0;
-      var top = n >= 4 || crest ? 'C' : (hem ? 'k' : 'c');
-      if (Math.abs(x + 0.5 - 16) > 12.5 && hash(x, y, 3, 23) < 0.55) top = 'k';   // scorched ends
-      if (x === 22) top = 'r';                                                    // rope band
-      if (x === 22 && y === 7) top = 'H';                                         // brass eyelet
-      for (z = 0; z < n - 1; z++) G.set(x, y, z, 'k');
+      px = x + 0.5; py = y + 0.5;
+      var nb = [hAt(x - 1, y), hAt(x + 1, y), hAt(x, y - 1), hAt(x, y + 1)];
+      var hmax = Math.max.apply(null, nb), hmin = Math.min.apply(null, nb), top;
+      if (F[y][x]) {
+        var dHem = Math.min(segDist(P1[0], P1[1], PC[0], PC[1], px, py), segDist(P2[0], P2[1], PC[0], PC[1], px, py));
+        if (Math.sqrt(Math.pow(px - PC[0], 2) + Math.pow(py - PC[1], 2)) < 1.0) top = 'H';   // corner eyelet, face up
+        else if (dHem < 0.8) top = 'r';                                           // the flap's boltrope
+        else if (segDist(P1[0], P1[1], P2[0], P2[1], px, py) < 0.9) top = 'P';   // the rolled fold edge
+        else top = 'p';
+      } else if (hmin === 0) top = ((y <= 1 || y >= 12) && x % 6 === 3) ? 'H' : 'r';   // hem boltrope + eyelets
+      else if (n >= 3 && n >= hmax && n > hmin) top = 'P';                        // crests, lid edges
+      else if (n < hmax - 1) top = 'q';                                           // fold valleys
+      else top = 'p';
+      if (!F[y][x] && hmin > 0 && x >= 19 && x <= 21 && y >= 9 && y <= 10 && n === 1) top = 'c';   // repair patch
+      for (z = 0; z < n - 1; z++) G.set(x, y, z, 'q');
       G.set(x, y, n - 1, top);
     }
     return G;
@@ -426,88 +523,122 @@
   var gCH = buildCanvasHeap();
   A.voxelModels.canvasHeap = {
     name: 'canvasHeap',
-    desc: 'Voxel canvas heap (the wake spot): crumpled pale-ochre envelope, a tall fold west, a second fold east, a crumple ' +
-          'along the north edge, bright crests over dark fold flanks, tattered dark hem, scorched ends, a rope band with a ' +
-          'brass eyelet, and a shallow hollow in the middle where Wick lay. Walk-over (no collision).',
+    desc: 'Voxel canvas heap (the wake spot, ART-OWN-002 rework): a pale linen tarp thrown over a small crate at the west ' +
+          'end (box shape, lit lid edges, radial folds down its sides), pulled across the floor with two tension folds, ' +
+          'a straight ragged hem with a rope boltrope and brass eyelets, the south-east corner turned back over itself ' +
+          '(double flap, rolled fold, eyelet up), an ochre repair patch, and a flat hollow in the middle where Wick lay. ' +
+          'Walk-over (no collision).',
     voxel: {
-      version: 1, cellM: 0.0625, size: [32, 14, 5], anchor: [16, 7, 0], mats: matsOf(gCH), layers: gCH.layers(),
+      version: 1, cellM: 0.0625, size: [32, 14, 7], anchor: [16, 7, 0], mats: matsOf(gCH), layers: gCH.layers(),
       parts: {
-        west: { box: [0, 0, 0, 16, 14, 5], pivot: [8, 7, 0] },     // extent 35
-        east: { box: [16, 0, 0, 32, 14, 5], pivot: [24, 7, 0] }    // extent 35
+        west: { box: [0, 0, 0, 16, 14, 7], pivot: [8, 7, 0] },     // extent 37
+        east: { box: [16, 0, 0, 32, 14, 7], pivot: [24, 7, 0] }    // extent 37
       },
       animations: { idle: idle1() }
     },
     placement: { level: 'tower', prop: 'pallet', x: 17.0, y: 9.5, z: 0.0, facing: 0, levelEdit: false,
-                 note: 'world x 16.0..18.0, y 9.06..9.94 (south wall at y 10.0); the start eye (17.0, 9.5, 0.3) is 0.18 m above the hollow' },
-    readability: { note: 'At 2.2 m standing: 160x60 ~10 rows tall, ~26 cols wide; the crests and the dark hem outline it.' }
+                 note: 'world x 16.0..18.0, y 9.06..9.84 (south wall at y 10.0); the start eye (17.0, 9.5, 0.3) is 0.24 m above the hollow' },
+    readability: { note: 'At 2.2 m standing: 160x60 ~14 rows tall (the crate end), ~26 cols wide; the pale sheet + dark ' +
+                   'drape flanks + rope hem outline it. Linen vs the ochre / red envelope: different hue AND value.' }
   };
 
   // ===================================================================================================================
-  // 5. GONDOLA  26 x 11 x 13 @ 0.085 m = 2.21 x 0.94 x 1.1 m, two static parts (bow / stern halves: extent limit).
-  //    The Kestrel's basket, crashed upright: iron_dark keel (the ground contour), brass_dark hull (the dark body) with
-  //    rounded ends, a brass belt with brass_hot rivets, a wood name board with brass_hot "lettering" dots in a
-  //    brass_light frame on the FRONT side (faces east at facing 90 = toward the wake spot), a verdigris dent, a wood
-  //    deck inside, brass_light posts and rail (the bright rim), brass_hot knobs, and 5 snapped rope stays.
-  //    PLACEMENT: facing 90 puts the keel north-south (local +x = south). The anchor is NOT the hull centre: the stern
-  //    ends at y ~9.0 so the rigging coil billboard (15.3, 9.5) lies just behind the stern instead of inside the hull;
-  //    the hull spans y ~6.9..9.0 and x 15.02..15.78 (clear of the rubble cell 14,8, the canvas heap x >= 16 and the
-  //    wake -> burner corridor, all checked in the preview).
+  // 5. GONDOLA  26 x 11 x 13 @ 0.085 m = 2.21 x 0.94 x 1.1 m. ART-OWN-002 rework (v1.14): a clean, rectangular balloon
+  //    basket (the old rounded hull + leaning stays read as "bent"):
+  //      - basket x 2..23 / y 1..9: iron_dark bottom plate (the ground contour), brass_dark bottom + top bands, WICKER
+  //        (wood) walls with straight vertical brass RIBS (4 front, 6 back, 1 per end) and 4 brass_light corner POSTS that
+  //        rise 2 voxels above the rim to brass_hot knobs;
+  //      - the RIM: a brass_light padded rim one voxel proud all round (the bright top outline), brass_hot rivets over
+  //        every rib;
+  //      - ROPE LOOPS: small V festoons of rope under the rim lip (2 front over the name board, 5 back, 2 per end) and
+  //        3 SANDBAGS (canvas) hanging on ropes (2 front, 1 back);
+  //      - the name board on the FRONT (faces east at facing 90 = toward the wake spot): brass_light frame, wood, brass_hot
+  //        letter dots; a verdigris dent near the bow; inside on the wood deck a rope coil, an iron tank, a sack.
+  //    TILT: parts bow + stern (the two halves: box extent limit) share ONE pivot = the front bottom edge (y 1, z 1) and
+  //    the same pose rot x +8, pos z -1 (clip idle): a rigid tilt, the back (west) edge raised 0.1 m onto a stone CHOCK
+  //    (block_dark / block_light, its own unrotated part in layer z0). The outline stays one intact box; the lean shows
+  //    from the ends and as more of the inside seen from the wake spot.
+  //    PLACEMENT unchanged (anchor 21.5, 5.5, 0): posed hull x ~15.06..15.94, y ~7.0..8.96 (clear of the rubble cell 14,8,
+  //    the canvas heap x >= 16, the coil billboard 15.3, 9.5 and the wake -> burner corridor; checked in the preview).
   // ===================================================================================================================
-  function inHull(x, y, x0, x1, y0, y1, cut) {        // inclusive rounded rectangle, corners cut by `cut`
-    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
-    return Math.min(x - x0, x1 - x) + Math.min(y - y0, y1 - y) >= cut;
-  }
   function buildGondola() {
     var G = new Grid(26, 11, 13), x, y, z;
-    for (y = 0; y < 11; y++) for (x = 0; x < 26; x++) {
-      if (inHull(x, y, 5, 20, 4, 6, 0)) G.set(x, y, 0, 'd');                                         // keel
-      if (inHull(x, y, 3, 22, 3, 7, 1)) G.set(x, y, 1, 'b');                                         // bottom
-      if (inHull(x, y, 2, 23, 2, 8, 2)) G.set(x, y, 2, inHull(x, y, 3, 22, 3, 7, 2) ? 'w' : 'b');    // bilge ring + deck
-      var ring = inHull(x, y, 1, 24, 1, 9, 2) && !inHull(x, y, 2, 23, 2, 8, 2);
-      if (!ring) continue;
-      var longSide = y === 1 || y === 9;
-      for (z = 3; z < 8; z++) G.set(x, y, z, z <= 5 ? 'b' : 'B');                                    // hull walls
-      if (longSide && x % 3 === 0) G.set(x, y, 6, 'H');                                              // belt rivets
-      var post = longSide ? (x % 4 === 1) : (y === 3 || y === 5 || y === 7);
-      if (post) G.set(x, y, 8, 'R');                                                                 // rail posts
-      G.set(x, y, 9, 'R');                                                                           // rail
+    var X0 = 2, X1 = 23, Y0 = 1, Y1 = 9;                                                   // wall ring, inclusive
+    function ring(x, y) { return x >= X0 && x <= X1 && y >= Y0 && y <= Y1 && (x === X0 || x === X1 || y === Y0 || y === Y1); }
+    function column(x, y, z0, z1, c) { for (var k = z0; k <= z1; k++) G.set(x, y, k, c); }
+    function vee(x, y, alongY) {                                                           // a rope loop under the rim lip
+      if (alongY) { G.set(x, y, 9, 'r'); G.set(x, y + 1, 8, 'r'); G.set(x, y + 2, 9, 'r'); }
+      else { G.set(x, y, 9, 'r'); G.set(x + 1, y, 8, 'r'); G.set(x + 2, y, 9, 'r'); }
     }
-    // name board on the front side (y 1): wood with brass_hot letter dots, brass_light frame
-    for (x = 9; x <= 16; x++) {
-      var frame = x === 9 || x === 16;
-      G.set(x, 1, 5, frame ? 'R' : 'w');
-      G.set(x, 1, 6, frame ? 'R' : ([10, 12, 13, 15].indexOf(x) >= 0 ? 'H' : 'w'));
-    }
-    // verdigris dent (front, near the bow) and a spot at the stern (back side)
-    for (x = 3; x <= 6; x++) for (z = 3; z <= 4; z++) if (hash(x, 1, z, 41) < 0.75) G.set(x, 1, z, 'v');
-    G.set(19, 9, 4, 'v'); G.set(20, 9, 4, 'v'); G.set(20, 9, 3, 'v');
-    // rail knobs
-    [[2, 2], [2, 8], [23, 2], [23, 8], [13, 1], [13, 9]].forEach(function (p) { G.set(p[0], p[1], 9, 'H'); });
-    // snapped stays (rope), leaning in from the rail corners, one taller at mid front
-    [[[2, 2, 10], [3, 3, 11]], [[2, 8, 10], [3, 7, 11]], [[23, 2, 10], [22, 3, 11]],
-     [[23, 8, 10], [22, 7, 11], [21, 6, 12]], [[12, 1, 10], [12, 2, 11], [12, 3, 12]]].forEach(function (s) {
-      s.forEach(function (p) { G.set(p[0], p[1], p[2], 'r'); });
+    function sandbag(x, y, ropeX) { G.set(x, y, 5, 'k'); G.set(x + 1, y, 5, 'k'); G.set(x, y, 6, 'c'); G.set(x + 1, y, 6, 'c'); column(ropeX, y, 7, 9, 'r'); }
+    // z0: the chock (two broken stones under the raised back edge)
+    [[5, 8], [6, 8], [7, 8], [5, 9], [6, 9], [7, 9], [18, 8], [19, 8], [20, 8], [19, 9], [20, 9]].forEach(function (p) {
+      G.set(p[0], p[1], 0, p[1] === 9 && hash(p[0], 9, 0, 42) < 0.5 ? 'T' : 'D');
     });
+    // z1 bottom plate, z2 bottom band + deck, z3..8 wicker walls, z9 top band
+    for (y = Y0; y <= Y1; y++) for (x = X0; x <= X1; x++) {
+      G.set(x, y, 1, 'd');
+      if (!ring(x, y)) { G.set(x, y, 2, 'w'); continue; }
+      G.set(x, y, 2, 'b'); column(x, y, 3, 8, 'w'); G.set(x, y, 9, 'b');
+    }
+    // ribs (brass uprights, bottom band to top band)
+    [5, 8, 17, 20].forEach(function (x) { column(x, Y0, 2, 9, 'B'); });
+    [5, 8, 11, 14, 17, 20].forEach(function (x) { column(x, Y1, 2, 9, 'B'); });
+    column(X0, 5, 2, 9, 'B'); column(X1, 5, 2, 9, 'B');
+    // name board (front wall, x 9..16, z 5..7): frame, wood, letter dots
+    for (x = 9; x <= 16; x++) for (z = 5; z <= 7; z++) {
+      var fr = x === 9 || x === 16 || z === 5 || z === 7;
+      G.set(x, Y0, z, fr ? 'R' : ([10, 12, 13, 15].indexOf(x) >= 0 ? 'H' : 'w'));
+    }
+    // verdigris dent (front, near the bow) + a spot on the back
+    for (x = 6; x <= 7; x++) for (z = 3; z <= 4; z++) if (hash(x, Y0, z, 41) < 0.8) G.set(x, Y0, z, 'v');
+    G.set(19, Y1, 4, 'v'); G.set(19, Y1, 3, 'v');
+    // z10: the padded rim, wall top + one voxel proud all round (outer corners rounded), rivets over the ribs
+    for (y = Y0 - 1; y <= Y1 + 1; y++) for (x = X0 - 1; x <= X1 + 1; x++) {
+      var ox = x === X0 - 1 || x === X1 + 1, oy = y === Y0 - 1 || y === Y1 + 1;
+      if (ox && oy) continue;
+      if (ox || oy || ring(x, y)) G.set(x, y, 10, 'R');
+    }
+    [5, 8, 17, 20].forEach(function (x) { G.set(x, Y0 - 1, 10, 'H'); });
+    [5, 8, 11, 14, 17, 20].forEach(function (x) { G.set(x, Y1 + 1, 10, 'H'); });
+    G.set(X0 - 1, 5, 10, 'H'); G.set(X1 + 1, 5, 10, 'H');
+    // corner posts z2..11 + knobs z12
+    [[X0, Y0], [X1, Y0], [X0, Y1], [X1, Y1]].forEach(function (p) { column(p[0], p[1], 2, 11, 'R'); G.set(p[0], p[1], 12, 'H'); });
+    // rope loops under the rim lip + sandbags
+    [9, 14].forEach(function (x) { vee(x, Y0 - 1, false); });
+    [3, 6, 9, 15, 18].forEach(function (x) { vee(x, Y1 + 1, false); });
+    [2, 6].forEach(function (y) { vee(X0 - 1, y, true); vee(X1 + 1, y, true); });
+    sandbag(3, Y0 - 1, 4); sandbag(21, Y0 - 1, 21); sandbag(12, Y1 + 1, 12);
+    // inside on the deck: rope coil, iron tank with a hot cap, a sack
+    [[18, 5], [19, 5], [20, 5], [18, 6], [20, 6], [18, 7], [19, 7], [20, 7]].forEach(function (p) { G.set(p[0], p[1], 3, 'r'); });
+    G.box(11, 6, 3, 13, 8, 6, 'd'); G.set(11, 6, 6, 'H');
+    G.box(5, 5, 3, 7, 7, 4, 'k'); G.set(5, 5, 4, 'k');
     return G;
   }
   var gG = buildGondola();
+  function gondolaTilt() { return { rot: [8, 0, 0], pos: [0, 0, -1] }; }
   A.voxelModels.gondola = {
     name: 'gondola',
-    desc: 'Voxel gondola (the Kestrel\'s basket): dark riveted brass hull with rounded ends on an iron keel, brass belt, ' +
-          'bright brass rail on posts (you see the wood deck inside), brass_hot knobs, the name board (wood, brass letter ' +
-          'dots) facing the wake spot, a verdigris dent, snapped rope stays at the corners.',
+    desc: 'Voxel gondola (the Kestrel\'s basket, ART-OWN-002 rework): a rectangular wicker basket with straight brass ribs, ' +
+          'brass_light corner posts with hot knobs, a bright padded rim one voxel proud all round, rope loops under the ' +
+          'rim, 3 sandbags, the name board facing the wake spot, a verdigris dent, a rope coil / tank / sack inside; the ' +
+          'whole basket tilted 8 deg (rigid) with its back edge on a stone chock.',
     voxel: {
       version: 1, cellM: 0.085, size: [26, 11, 13], anchor: [21.5, 5.5, 0], mats: matsOf(gG), layers: gG.layers(),
       parts: {
-        bow:   { box: [0, 0, 0, 13, 11, 13], pivot: [6.5, 5.5, 0] },     // extent 37
-        stern: { box: [13, 0, 0, 26, 11, 13], pivot: [19.5, 5.5, 0] }    // extent 37
+        bow:   { box: [0, 0, 1, 13, 11, 13], pivot: [13, 1, 1] },       // extent 36; shared pivot = front bottom edge
+        stern: { box: [13, 0, 1, 26, 11, 13], pivot: [13, 1, 1] },      // extent 36
+        chock: { box: [0, 0, 0, 26, 11, 1], pivot: [13, 5.5, 0] }       // extent 38, never posed
       },
-      animations: { idle: idle1() },
+      animations: {
+        idle: { durations: [1000], loop: true, interp: 'step', frames: [{ bow: gondolaTilt(), stern: gondolaTilt() }] }
+      },
       mounts: { board: { at: [12.5, 1, 6], part: 'bow' } }
     },
     placement: { level: 'tower', prop: 'gondola', x: 15.4, y: 8.7, z: 0.0, facing: 90, levelEdit: false,
-                 note: 'anchor 21.5 of 26 along the keel: stern at world y ~9.0 (rigging coil at 15.3, 9.5 stays outside)' },
-    readability: { note: 'At 3 m: 160x60 ~26 rows tall. Rail + posts + rounded hull + stays = "a basket / boat" unprompted.' }
+                 note: 'anchor 21.5 of 26 along the basket: stern at world y ~9.0 (rigging coil at 15.3, 9.5 stays outside)' },
+    readability: { note: 'At 3 m: 160x60 ~26 rows tall. Bright rim + straight ribs + corner posts + rope loops + sandbags ' +
+                   '= "a balloon basket" unprompted.' }
   };
 
   // ===================================================================================================================
@@ -545,52 +676,86 @@
 
   // ===================================================================================================================
   // 7. ENVELOPE HEAP  25 x 11 x 13 @ 0.2 m = 5.0 x 2.2 x 2.6 m, two static parts (extent limit). Anchor z = 5 voxels:
-  //    the mound (up to 1.6 m) sits on the anchor plane; UNDER it, on the back side (local +y = WEST = downhill at
-  //    facing 90), a canvas skirt hangs up to 1.0 m below the anchor, so the heap still meets the hill path that drops
-  //    west (cells x 1..3). On flat ground the skirt is under the terrain (never seen). Seen from the summit breach,
-  //    ~4-8 m away and ~2 m above: big gores (ridges every ~0.8 m), two rope bands with brass eyelets, bright crests,
-  //    dark fold flanks, scorched blotches, dark hem.
+  //    the bag (up to 1.44 m) sits on the anchor plane; UNDER it, on the back side (local +y = WEST = downhill at
+  //    facing 90), the cloth hangs up to 1.0 m below the anchor, so the heap still meets the hill path that drops west
+  //    (cells x 1..3). On flat ground the skirt is under the terrain (never seen).
+  //    ART-OWN-002 rework (v1.14): the old mound read as a rock. Now a HALF-DEFLATED BALLOON lying on its side, axis
+  //    along local x (north -> south), seen from the breach ~4-8 m away and ~2 m above:
+  //      - the bag: a rounded CROWN end (north, x 0), a full belly (x 7..12, 2.1 m wide, 1.44 m high), tapering to the
+  //        THROAT (south, x 18); three collapse CREASES across the top (0.2 m deep dips at x 5, 10, 14.5);
+  //      - GORES: 12 stripes around the axis alternating ochre canvas and faded red (gore_red), converging to the crown
+  //        like the panels of a real envelope; lit crests canvas_light, crease valleys canvas_dark / gore_red_dark;
+  //      - the CROWN RING at the north end: an iron load ring round a brass valve plate with a hot centre bolt;
+  //      - the MOUTH at the south end: a brass hoop (hot bolts) round the open throat, dark inside (canvas_burnt);
+  //      - a BURNT TEAR on the upper east flank (the side you see from the breach): a ragged hole showing the dark
+  //        inside, a charred rim, a few scorch blotches elsewhere;
+  //      - 3 ROPES (the suspension lines) from the mouth hoop, sagging to the ground and running east (local y 0) toward
+  //        the tower, where the gondola is.
   // ===================================================================================================================
   function buildEnvelopeHeap() {
-    var SX = 25, SY = 11, G = new Grid(SX, SY, 13), x, y, z, H = [];
-    for (y = 0; y < SY; y++) {
-      H.push([]);
-      for (x = 0; x < SX; x++) {
-        var ex = (x + 0.5 - 12.5) / 12.5, ey = (y + 0.5 - 5.5) / 5.5, e = ex * ex + ey * ey;
-        var edge = 1 - 0.20 * hash(x, y, 0, 31) - 0.08 * Math.sin(x * 1.1 + y * 0.6);
-        if (e > edge) { H[y].push(0); continue; }
-        var h = 8.2 * Math.pow(Math.max(0, 1 - e / edge), 0.65) + 0.7 * Math.cos((x + 0.3 * y) * 1.55);
-        if (x === 7 || x === 17) h -= 0.9;                                          // rope bands pull it in
-        h += 0.5 * (hash(x, y, 2, 32) - 0.5);
-        H[y].push(Math.max(1, Math.min(8, Math.round(h))));
+    var SX = 25, SY = 11, SZ = 13, G = new Grid(SX, SY, SZ), x, y, z;
+    var ZB = 5, UC = 5.5, RMAX = 5.3, XH = 19, TEAR_S = 12.8, TEAR_PHI = 2.25, CREASES = [5.5, 10.5, 15.0];
+    function rad(s) {                              // bag half-width along the axis (s = x + 0.5)
+      if (s < 7) return RMAX * Math.sqrt(Math.max(0, 1 - Math.pow((7 - s) / 7, 2)));   // crown cap
+      if (s < 12.5) return RMAX;                                                      // belly
+      if (s < 18.5) return RMAX - (RMAX - 2.6) * (s - 12.5) / 6;                      // taper
+      return 2.6;                                                                     // throat
+    }
+    function fold(s) {
+      var f = 1;
+      CREASES.forEach(function (c) { f -= 0.22 * Math.exp(-Math.pow(s - c, 2) / 1.2); });
+      return f;
+    }
+    function groundZ(py) { return ZB - Math.max(0, Math.min(5, Math.floor(py) - 3)); }   // the modelled hill (west = down)
+    for (x = 0; x <= XH; x++) {
+      var s = x + 0.5, r = rad(s), rz = Math.min(7.2, 1.3 * r), fo = fold(s);
+      for (y = 0; y < SY; y++) {
+        var u = y + 0.5, du = (u - UC) / r;
+        if (Math.abs(du) > 1) continue;
+        for (z = groundZ(y); z < SZ; z++) {
+          var zz = z + 0.5 - ZB, wob = 1 + 0.08 * (hash(x, y, 5, 34) - 0.5);
+          var zt = zz > 0 ? zz / (rz * fo * wob) : 0, v = du * du + zt * zt;
+          if (v > 1) continue;
+          var phi = Math.atan2(zz, (u - UC) * rz / r);                             // 0 = west ground, pi = east ground
+          var red = Math.floor((phi + Math.PI) / (Math.PI / 6)) % 2 === 1;         // 12 gores round the axis
+          var c = red ? 'E' : 'c';
+          if (fo < 0.86) c = red ? 'e' : 'k';                                      // crease valleys
+          else if (fo > 0.97 && zz > 0.5 * rz) c = red ? 'E' : 'C';                // lit crests (ochre gores)
+          if (z === groundZ(y) && zz < 0) c = 'k';                                 // hem on the hillside
+          if (v > 0.6 && hash(x, y, z, 33) < 0.03) c = 'z';                        // scorch blotches
+          var ts = Math.abs(s - TEAR_S) / (2.0 + 0.6 * (hash(y, z, 0, 35) - 0.5)), tp = Math.abs(phi - TEAR_PHI) / 0.34;
+          if (ts < 1 && tp < 1) {                                                  // the burnt tear: hole + dark inside
+            if (v > 0.62) continue;
+            if (v > 0.38) c = 'z';
+          } else if (ts < 1.4 && tp < 1.4 && v > 0.62 && hash(x, y, z, 36) < 0.7) c = 'z';   // charred rim
+          if (x === 0) c = zz < 0 ? 'k' : (v > 0.45 ? 'd' : (v > 0.12 ? 'B' : 'H'));   // crown ring + valve plate + bolt
+          if (x === XH) {                                                          // mouth hoop, open inside
+            if (v <= 0.55 && zz >= 0) continue;
+            c = hash(x, y, z, 37) < 0.2 ? 'H' : 'B';
+          }
+          if (x === XH - 1 && v <= 0.55 && zz >= 0) c = 'z';                       // the dark throat seen through the hoop
+          G.set(x, y, z, c);
+        }
       }
     }
-    for (y = 0; y < SY; y++) for (x = 0; x < SX; x++) {
-      var n = H[y][x];
-      if (!n) continue;
-      var zb = 5 - Math.max(0, Math.min(5, y - 3));                                 // skirt: y <= 3 none .. y >= 8 to z 0
-      var ztop = 5 + n - 1;
-      var crest = Math.cos((x + 0.3 * y) * 1.55) > 0.3 && n >= 3;
-      var top = crest ? 'C' : 'c';
-      if (hash(x, y, 4, 33) < 0.07) top = 'k';                                       // scorched blotch
-      if (x === 7 || x === 17) top = (y === 5 ? 'H' : 'r');                         // rope bands + eyelets
-      for (z = zb; z < ztop; z++) {
-        var c;
-        if (z >= ztop - 2) c = 'k';                                                  // fold flanks under the top
-        else if (z < 5) c = (x % 4 === 0 || z === zb) ? 'k' : 'c';                   // skirt: gore seams + dark hem
-        else c = 'k';
-        G.set(x, y, z, c);
-      }
-      G.set(x, y, ztop, top);
-    }
+    // suspension lines from the hoop (x 20..24): [x0, y0, z0, x1, y1, z1, sideways sag]
+    [[20.0, 3.0, 5.6, 24.6, 0.4, 5.5, 0.6], [20.0, 3.4, 7.0, 22.2, 0.3, 5.5, -0.5], [20.0, 5.5, 8.2, 23.8, 1.6, 5.5, 0.4]]
+      .forEach(function (L) {
+        for (var t = 0; t <= 1.0001; t += 1 / 48) {
+          var px = L[0] + (L[3] - L[0]) * t, py = L[1] + (L[4] - L[1]) * t + L[6] * Math.sin(Math.PI * t);
+          var pz = Math.max(groundZ(py), L[2] + (L[5] - L[2]) * Math.min(1, t * 1.6));   // drops, then lies on the ground
+          G.set(Math.floor(px), Math.floor(py), Math.floor(pz), 'r');
+        }
+      });
     return G;
   }
   var gE = buildEnvelopeHeap();
   A.voxelModels.envelopeHeap = {
     name: 'envelopeHeap',
-    desc: 'Voxel envelope heap below the summit breach: the Kestrel\'s collapsed envelope as a 5 m mound of big canvas gores, ' +
-          'two rope bands with brass eyelets, bright crests, dark fold flanks and hem, scorched blotches, a skirt hanging ' +
-          'down the hillside on the downhill (west) side.',
+    desc: 'Voxel envelope heap below the summit breach (ART-OWN-002 rework): the Kestrel\'s half-deflated balloon lying on ' +
+          'its side - a 4 m bag with 12 ochre / red gores converging to an iron crown ring, three collapse creases, a burnt ' +
+          'tear on the east flank, a brass mouth hoop with a dark throat at the south end, 3 suspension ropes running ' +
+          'east toward the tower, and the cloth hanging down the hillside on the downhill (west) side.',
     voxel: {
       version: 1, cellM: 0.2, size: [25, 11, 13], anchor: [12.5, 5.5, 5], mats: matsOf(gE), layers: gE.layers(),
       parts: {
@@ -602,7 +767,8 @@
     placement: { level: 'tower', prop: 'envelopeHeap', x: 3.0, y: 6.5, z: 'ground', facing: 90, levelEdit: false,
                  note: 'world y 4.0..9.0, x 1.9..4.1; the skirt covers up to 1.0 m of downhill drop (owner walk-check: look ' +
                        'from the breach; if the terrain there drops more, raise anchor z by 1-2 voxels, not a level edit)' },
-    readability: { note: 'From the breach (~4.5 m, eye ~2.4 m above the heap base): 160x60 ~25 rows tall.' }
+    readability: { note: 'From the breach (~4.5 m, eye ~2.4 m above the heap base): 160x60 ~25 rows tall; each gore stripe ' +
+                   '~0.6 m = 5-8 cells, so the ochre / red stripes + crown ring + hoop read as "balloon" first.' }
   };
 
   // ===================================================================================================================

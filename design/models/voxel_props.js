@@ -16,10 +16,9 @@
  *                               key is ALREADY in palette.materials AND detailPass.materials (else a missing v2 record
  *                               would turn the GPU path off, 15.3 item 6). Called once at load; no-op otherwise.
  *
- * MERGE STEP STILL OPEN (not done in this pass, file scope): append ASSETS.voxelMaterials.v1 to palette.js `materials`
- * (after `canvas`, so no existing material id moves) and .v2 to detail-pass.js `materials` + .remap to `remap`, and set
- * detail-pass.js `edges.modelRim = 0.55`. Until then the models validate against these keys (the preview does) and the
- * `fallback` map gives existing keys for a castModels run.
+ * MERGE STEP: done for the 5 batch-1 keys (US-040 step 4). brass_glint (US-056 lamp glint, README v1.14) is merged by
+ * the designer in the same pass: palette.js `materials.brass_glint` after iron_dark, detail-pass.js `materials.brass_glint`
+ * + remap + the `glint` glyph set. attach() checks each model's OWN mats, so the lever never waits on a lamp material.
  *
  * AXES (15.1): x = east (x0 = west), y = SOUTH with y0 = the model's FRONT row (faces north at yaw 0), z = up (z0 = bottom).
  * Yaw = level `facing` (compass, clockwise, free degrees; wall props use multiples of 90).
@@ -71,6 +70,15 @@
             'burner, the bracket arm / hook. Darkest value of the set.',
       base: 'ironDark', albedo: 0.60, ramp: 'iron', spec: 0.25,
       bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12]
+    },
+    brass_glint: {
+      desc: 'VOXEL PROPS (US-056). The lamp\'s "take me" glint: a white-hot sparkle cross that flashes on the hood rim for ' +
+            '0.26 s every ~2 s (lantern clip unlit). Emissive 0.90 so it pops in shade; never on a static voxel.',
+      base: 'white', albedo: 1.00, ramp: 'brass', spec: 0.90, emissive: 0.90,
+      bg: { mode: 'darken', k: 0.25 }, textureFade: [4, 12],
+      texture: { w: 2, h: 2, scale: [40, 40], key: {
+        a: { shade: 1.00, glyph: '*' }, h: { shade: 1.00, tint: 'brassHot', amount: 0.40, glyph: '+' }
+      }, rows: ['ah', 'ha'] }
     }
   };
   // v2: grid 2.5 cm = half a lever voxel (tones + glyph alternates change inside a voxel face, so a near voxel that covers
@@ -87,18 +95,21 @@
     brass_hot:   v2('brass_hot',   202, 1.00, [['brassHot', 3], ['brassLight', 1]], 'brassFace', { emissive: 0.10 }),
     brass_dark:  v2('brass_dark',  203, 0.62, [['brassDark', 3], ['brassShadow', 1]], 'brassFace'),
     iron_light:  v2('iron_light',  204, 0.85, [['ironLight', 3], ['iron', 1]], 'ironFace'),
-    iron_dark:   v2('iron_dark',   205, 0.60, [['ironDark', 3], ['iron', 1]], 'ironFace')
+    iron_dark:   v2('iron_dark',   205, 0.60, [['ironDark', 3], ['iron', 1]], 'ironFace'),
+    brass_glint: v2('brass_glint', 206, 1.00, [['white', 3], ['brassHot', 2]], 'glint', { emissive: 0.90 })
   };
   A.voxelMaterials = {
-    status: 'PROPOSED - merge v1 into palette.materials, v2 into detailPass.materials (+ remap), edges.modelRim into detailPass.edges',
+    status: 'MERGED (batch 1 + brass_glint) - v1 in palette.materials, v2 in detailPass.materials (+ remap)',
     v1: V1, v2: V2,
-    remap: { brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark' },
+    remap: { brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark',
+             brass_glint: 'brass_glint' },
     edges: { modelRim: 0.55 },   // 15.2 item 5: kind-8 rule cells fg AND bg x 0.55 = the dark contour (finding 2)
     // castModels / preview only, before the merge: nearest existing material per key (NOT the intended look)
-    fallback: { brass_light: 'brass', brass_hot: 'brass', brass_dark: 'brass', iron_light: 'iron', iron_dark: 'iron' }
+    fallback: { brass_light: 'brass', brass_hot: 'brass', brass_dark: 'brass', iron_light: 'iron', iron_dark: 'iron', brass_glint: 'brass' }
   };
 
   var MATS = { R: 'brass_light', H: 'brass_hot', b: 'brass_dark', i: 'iron_light', d: 'iron_dark' };
+  var LANTERN_MATS = { R: 'brass_light', H: 'brass_hot', b: 'brass_dark', i: 'iron_light', d: 'iron_dark', W: 'brass_glint' };
 
   // ===================================================================================================================
   // 2. LEVER  15 x 8 x 22 voxels at 0.05 m = 0.75 m wide x 0.40 m deep x 1.10 m tall. Parts (15.3 item 3): plate (root,
@@ -209,10 +220,18 @@
   //    of the wall plate touches the wall face (x 20.0 at yaw 270). So NO level edit: lamp centre ends at x 19.72.
   //    empty / hookEmpty (after pickup, US-012 sets the variant) = the lamp part moved 2.0 m down, under the floor
   //    (hidden by the floor from every view; engine request, optional: a per-keyframe part `hide`).
+  //    GLINT (US-056 owner walk note, v1.14): the billboard's "take me" glint (1800 ms rest + 260 ms sparkle) as a 4th part
+  //    `glint` = a 5-voxel plus sign in brass_glint (white, emissive 0.90). At rest it is STORED INSIDE the lamp base
+  //    (layer z1, x2..5 / y2..5: a sealed cavity, every neighbour is base voxels, so it is never seen). Clip `unlit`
+  //    (interp step): key 0 = rest (1800 ms), keys 1-3 = the part turned 90 deg about x (flat -> upright) and moved onto
+  //    the FRONT of the hood rim (z10..12, 0.35 voxel proud of the rim face), sliding left -> right across the rim in 3
+  //    steps (90 / 90 / 80 ms) like light running along turning brass. lit = no glint; empty / hookEmpty hide it with the
+  //    lamp. The glint part is listed FIRST so it (not `lamp`) owns the cavity voxels (first part wins).
   // ===================================================================================================================
   var e = '........';
   var O6 = [e, '..bbbb..', '.bbbbbb.', '.bbbbbb.', '.bbbbbb.', '.bbbbbb.', '..bbbb..', e];
-  var O8 = ['.bbbbbb.', 'bbbbbbbb', 'bbbbbbbb', 'bbbbbbbb', 'bbbbbbbb', 'bbbbbbbb', 'bbbbbbbb', '.bbbbbb.'];
+  // z1: the base slab with the glint cavity (W = the stored plus sign, '.' = empty cavity cells; sealed by z0 / z2 / the ring)
+  var O8 = ['.bbbbbb.', 'bbbbbbbb', 'bb.W..bb', 'bbWWW.bb', 'bb.W..bb', 'bb....bb', 'bbbbbbbb', '.bbbbbb.'];
   var Z2 = ['.RHRRHR.', 'RRbbbbRR', 'RbbbbbbR', 'RbbddbbR', 'RbbddbbR', 'RbbbbbbR', 'RRbbbbRR', '.RRRRRR.'];
   var Z3 = ['.bbbbbb.', 'bb....bb', 'b......b', 'b..dd..b', 'b..dd..b', 'b......b', 'bb....bb', '.bbbbbb.'];
   var Z4 = ['.R....R.', 'RR....RR', e, '...dd...', '...dd...', e, 'RR....RR', '.R....R.'];
@@ -250,27 +269,34 @@
     /* z17 */ [e, e, FH, AD, AD, AD, AD, AD, AD, AD, AD, AD, PLH],
     /* z18 */ [e, e, FH, AI, AI, AI, AI, AI, AI, AI, AI, AI, PLT]
   ];
-  var HIDE = { lamp: { pos: [0, 0, -64] } };
+  var HIDE = { glint: { pos: [0, 0, -64] }, lamp: { pos: [0, 0, -64] } };
+  // glint key: plus centre (stored at voxel 3,3,1, pivot = its centre) -> front of the hood rim at column cx, y centre 0.15
+  // (the rim face is y 0; the sparkle's front face is at y -0.35), z centre 11.5 (the rim row z11).
+  function glintAt(cx) { return { glint: { rot: [90, 0, 0], pos: [cx + 0.5 - 3.5, 0.15 - 3.5, 11.5 - 1.5] } }; }
+  var GLINT_REST_MS = 1800, GLINT_KEYS_MS = [90, 90, 80];                 // = billboard lantern.unlit [1800, 260]
 
   A.voxelModels.lantern = {
     name: 'lantern',
     desc: 'Voxel brass lamp on its wall bracket (D-019): open brass cage (bright posts, dark rails), dark burner, bright ' +
           'rims, brass_hot finial and rivets, light-iron bail on a dark iron hook; bracket = dark brass wall plate with a ' +
-          'lit top, dark arm with a light top edge, brace, brass_hot tip. The flame is a separate billboard prop.',
+          'lit top, dark arm with a light top edge, brace, brass_hot tip. The flame is a separate billboard prop. Unlit on ' +
+          'the hook, a white sparkle runs across the front of the hood rim every ~2 s (the "take me" glint).',
     voxel: {
       version: 1,
       cellM: 0.03125,
       size: [8, 13, 19],
       anchor: [4, 9.8, 0],                   // see the section comment: (19.9, 6.5, 1.3) facing 270 unchanged
-      mats: MATS,
+      mats: LANTERN_MATS,
       layers: LANTERN_LAYERS,
       parts: {
+        glint: { box: [2, 2, 1, 6, 6, 2], pivot: [3.5, 3.5, 1.5] },                    // root, stored in the base cavity (extent 9)
         mount: { box: [1, 12, 10, 7, 13, 19], pivot: [4, 13, 14] },                    // wall plate (extent 16)
         arm:   { box: [3, 2, 14, 5, 12, 19], pivot: [4, 12, 17], parent: 'mount' },    // arm, brace, hook (extent 17)
         lamp:  { box: [0, 0, 0, 8, 8, 16], pivot: [4, 4, 15.5] }                       // root; pivot = hang point (extent 32)
       },
       animations: {
-        unlit:     { durations: [1000], loop: true, frames: [{}] },
+        unlit:     { durations: [GLINT_REST_MS].concat(GLINT_KEYS_MS), loop: true, interp: 'step',
+                     frames: [{}, glintAt(2), glintAt(3.5), glintAt(5)] },
         lit:       { durations: [1000], loop: true, frames: [{}] },   // same body; the flame billboard + light are level data
         empty:     { durations: [1000], loop: true, frames: [HIDE] },
         hookEmpty: { durations: [1000], loop: true, frames: [HIDE] }  // alias kept (billboard clip names)
@@ -279,7 +305,8 @@
         flame:  { at: [4, 4, 5], part: 'lamp' },      // flame billboard base = burner top (z 1.456)
         light:  { at: [4, 4, 7], part: 'lamp' },      // lights.lantern origin when lit
         prompt: { at: [4, 0, 8], part: 'lamp' },
-        hook:   { at: [4, 4, 15.5], part: 'arm' }     // where the bail hangs (= lamp pivot; hook voxels x3..4, y3..4)
+        hook:   { at: [4, 4, 15.5], part: 'arm' },    // where the bail hangs (= lamp pivot; hook voxels x3..4, y3..4)
+        glint:  { at: [4, 0, 11.5], part: 'lamp' }    // front of the hood rim (spare: a billboard sparkle, if ever wanted)
       }
     },
     // tower.js props.lantern stays: x 19.9, y 6.5, z 1.3, facing 270. World: wall plate back at x 20.0 (step 8 west face),
@@ -292,11 +319,12 @@
   // 4. ATTACH (15.3 item 1): only once the materials are merged, so a missing v2 record can never switch the GPU off.
   // ===================================================================================================================
   A.voxelModels.attach = function attach() {
-    var P = A.palette, DP = A.detailPass, M = A.models, k, key, done = [];
+    var P = A.palette, DP = A.detailPass, M = A.models, k, key, mats, ok, done = [];
     if (!P || !DP || !M) return done;
-    for (k in MATS) if (!P.materials[MATS[k]] || !DP.materials[MATS[k]]) return done;
     for (key in { lever: 1, lantern: 1 }) {
-      if (M[key] && !M[key].voxel) { M[key].voxel = A.voxelModels[key].voxel; done.push(key); }
+      mats = A.voxelModels[key].voxel.mats; ok = true;
+      for (k in mats) if (!P.materials[mats[k]] || !DP.materials[mats[k]]) ok = false;   // per model (v1.14)
+      if (ok && M[key] && !M[key].voxel) { M[key].voxel = A.voxelModels[key].voxel; done.push(key); }
     }
     return done;
   };
