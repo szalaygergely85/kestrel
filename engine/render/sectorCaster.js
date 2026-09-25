@@ -370,6 +370,8 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     _wFace: 0, _wPlaneId: 0, _wFr: 0, _wNbrA: null, _wNbrB: null,
     // US-030a footprintEntry fix: entry point scratch (see footprintEntry).
     _entryX: 0, _entryY: 0,
+    // castFloorCeiling outputs (BUG-GPU-003: + the ceiling plane's own rows).
+    _fcCeilingFilledTo: 0, _fcFloorFilledTo: 0, _fcSkyPending: false, _fcCeilR0: 0, _fcCeilR1: -1,
   };
   if (ctx.gbuf) {
     ctx.gbuf.cam.tanHalfHFov = tanHalfHFov;
@@ -565,6 +567,16 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
   let prevFloorDist = 0;
   let prevCeilDist = 0;
   let nearSector = level.sectorAt(posX, posY) || VOID_SECTOR;
+  // BUG-GPU-003: the contiguous run of rows the most recent ceiling PLANE
+  // draws (GK_CEIL, not sky) have claimed in this column, [ceilRunR0,
+  // ceilRunR1] (empty when r1 < r0). Ceiling rows are only tracked by
+  // `ceilingFilledTo`, which never narrows `openTop`, so a farther solid
+  // wall whose top is above that ceiling (e.g. tower 'K' sun crack, ceilH
+  // 6.4, next to an 8.5 m wall) used to overwrite ceiling rows that are
+  // NEARER than the wall face (last write wins) - the GPU's first-hit DDA
+  // (dda.frag) correctly keeps the ceiling there. The wall-face loop skips
+  // exactly these rows.
+  let ceilRunR0 = 0, ceilRunR1 = -1;
 
   for (let i = 0; i < MAX_RAY_STEPS && openTop <= openBottom; i++) {
     ddaStep(ctx, rayDirX, rayDirY);
@@ -587,6 +599,10 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending);
     ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo;
     skyPending = ctx._fcSkyPending;
+    if (ctx._fcCeilR1 >= ctx._fcCeilR0) {
+      if (ceilRunR1 >= ceilRunR0 && ctx._fcCeilR0 === ceilRunR1 + 1) ceilRunR1 = ctx._fcCeilR1;
+      else { ceilRunR0 = ctx._fcCeilR0; ceilRunR1 = ctx._fcCeilR1; }
+    }
 
     if (!farSector) {
       // Left the level grid: this is a job for the terrain pass (D-008 item
@@ -617,6 +633,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       // found empirically) - `floorFilledTo` is the accumulated truth.
       const wallRowEnd = Math.min(openBottom, Math.floor(rowAtHeight(ctx, nearSector.floorH, entryDist)), floorFilledTo - 1);
       for (let row = wallRowStart; row <= wallRowEnd; row++) {
+        if (row >= ceilRunR0 && row <= ceilRunR1) continue; // BUG-GPU-003: a nearer ceiling plane owns this row
         const h = heightAtRow(ctx, row, entryDist);
         const z = h - nearSector.floorH;
         if (ctx.gbuf) emitSample(rt, x, row, ctx, GK_WALL, farSector.wallMatId, ctx._wFace, ctx._wPlaneId, u, h, entryDist, z, wallAoD(ctx, nearSector, h, z));
@@ -695,6 +712,10 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       castFloorCeiling(rt, x, ctx, solidSector, nearSector, exitDist /* floor skipped: cap drew it */, entryDist, exitDist,
         openTop, openBottom, azimuthDeg, ceilingFilledTo, floorFilledTo, skyPending);
       ceilingFilledTo = ctx._fcCeilingFilledTo; floorFilledTo = ctx._fcFloorFilledTo; skyPending = ctx._fcSkyPending;
+      if (ctx._fcCeilR1 >= ctx._fcCeilR0) {
+        if (ceilRunR1 >= ceilRunR0 && ctx._fcCeilR0 === ceilRunR1 + 1) ceilRunR1 = ctx._fcCeilR1;
+        else { ceilRunR0 = ctx._fcCeilR0; ceilRunR1 = ctx._fcCeilR1; }
+      }
       prevCeilDist = exitDist; // the solid cell's own ceiling segment (if any) is now handled above
       if (openTop > openBottom) break;
       continue;
@@ -855,6 +876,7 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
   // VOID_SECTOR for the ceiling/sky-band side (case (d)); this guard is its
   // floor-side counterpart, only reachable now that a column can legitimately
   // start with `sector` == VOID_SECTOR (camera outside the footprint).
+  ctx._fcCeilR0 = 0; ctx._fcCeilR1 = -1; // BUG-GPU-003: this call's ceiling-plane rows (none yet)
   if (sector !== VOID_SECTOR && openTop <= openBottom && dFar > dNearFloor) {
     castPlane(rt, x, ctx, sector.floorMat, sector.floorMatId, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH,
       sector.solid ? GK_TOP : GK_FLOOR);
@@ -915,7 +937,10 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
         // `ceilingFilledTo` stays put meanwhile, so this same draw is
         // retried, correctly, once it is.
         castPlane(rt, x, ctx, sector.ceilMat, sector.ceilMatId, sector.ceilH, dNearCeil, dFar, ceilTop, openBottom, sector.floorH, GK_CEIL);
-        if (ctx._planeR1 >= ctx._planeR0) ceilingFilledTo = Math.max(ceilingFilledTo, ctx._planeR1);
+        if (ctx._planeR1 >= ctx._planeR0) {
+          ceilingFilledTo = Math.max(ceilingFilledTo, ctx._planeR1);
+          ctx._fcCeilR0 = ctx._planeR0; ctx._fcCeilR1 = ctx._planeR1;
+        }
       }
     }
   }
