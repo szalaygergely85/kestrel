@@ -41,7 +41,7 @@ export function clampGrid(cols, rows) {
 
 /**
  * @param {import('./assets.js').AssetRegistry} opts.assets
- * @param {number} [opts.cols] - desired grid width; clamped (see `clampGrid`) - default `GRID_DEFAULT_COLS` (320, the gl2 default).
+ * @param {number} [opts.cols] - desired grid width; clamped (see `clampGrid`) - default `GRID_DEFAULT_COLS` (240, the gl2 default; D-009 amendment 2).
  * @param {number} [opts.rows] - ignored except for the clamp's mismatch check; `rows` is always derived from `cols`.
  * @param {{cols:number, rows:number}} [opts.cpuGrid] - grid forced when the real back-end isn't a real gl2 GPU (default 160x60).
  * @param {boolean} [opts.gpu] - `false` forces the CPU fallback grid even when WebGL2 would otherwise be used (`?gpu=0`).

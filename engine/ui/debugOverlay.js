@@ -9,6 +9,7 @@
 export class DebugOverlay {
   constructor(root = document.body) {
     this.visible = false;
+    this._lastRefresh = -Infinity; // US-018: shouldRefresh() throttle state
 
     this.wrap = document.createElement('div');
     Object.assign(this.wrap.style, {
@@ -76,6 +77,24 @@ export class DebugOverlay {
   update(fps, frameMs, extra = '') {
     if (!this.visible) return;
     this.el.textContent = `fps: ${fps.toFixed(1)}\nframe: ${frameMs.toFixed(2)} ms${extra ? '\n' + extra : ''}`;
+  }
+
+  /**
+   * US-018 (architecture.md 16, "allocation rule for the overlay"): true at
+   * most once every 250 ms, and only while `visible` - callers build their
+   * (string-allocating) overlay text ONLY inside `if (shouldRefresh(now))`,
+   * so the hidden path costs nothing beyond this one comparison.
+   */
+  shouldRefresh(nowMs) {
+    if (!this.visible) return false;
+    if (nowMs - this._lastRefresh < 250) return false;
+    this._lastRefresh = nowMs;
+    return true;
+  }
+
+  /** Sets the overlay text directly (bench/report modes bypass `update()`'s fps/frame prefix). */
+  setText(str) {
+    this.el.textContent = str;
   }
 
   /** Copies the current overlay text + URL + timestamp. Returns a promise. */

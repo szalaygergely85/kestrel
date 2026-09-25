@@ -61,7 +61,7 @@ export {
 } from './render/lighting.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
-export { GpuCellPipeline } from './render/gpu/GpuCellPipeline.js';
+export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';
 export { runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells } from './render/gpu/gpuCompare.js';
 export { flickerStep } from './render/gpu/flicker.js';
