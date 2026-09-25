@@ -1314,3 +1314,46 @@ Architect estimate for US-051..055 (backlog "Physics + effects epic"); the manag
 | Risk | stacking quality (crate towers, jitter) - mitigated by sleep, stack limit 3, AC is "settle in 3 s, <= 2 cm" not "physics sandbox" | dual-world sync bugs, save divergence, 2 MB dependency for a handful of bodies | dead dependency, GC hitches, same sync bugs |
 
 **Recommendation: (A)**, compound-sphere rigid bodies (quaternion, diagonal inertia, sequential impulses with fixed 8 iterations, Baumgarte positional correction, sleep islands) in `engine/physics/rigid.js`, world contacts only via `World`. The US-013 roller stays as is (documented reason: tilt field + tested behaviour). **Exit criterion:** if after US-051a the 10-body drop test misses "settle in 3 s / <= 2 cm / no jitter" after one fix round, escalate a Rapier spike (B) as its own engine story; A's contact API is kept so B could slot in behind it. Order: US-053 can start in parallel (no dependency on the choice).
+
+## 16. US-018 perf budget + F3 overlay (architect, 2026-09-25)
+
+**Exists vs missing (per AC).**
+| AC item | Exists | Missing |
+|---|---|---|
+| Toggle | F3 (`main.js` `input.pressed('F3')`) and `?debug=1` both call `overlay.toggle()` | nothing |
+| fps, frame ms | `loop.fps`, `loop.frameMs` (smoothed JS time of the whole tick) | frame **interval** (rAF delta) and worst interval |
+| JS ms | only `grid draw` (render JS) and pipeline `uploadMs`/`drawMs` | split: `simMs`, `renderMs` (game build: cam, lights, sprites, UI cells), `submitMs` (= pipeline upload + draw) |
+| GPU ms | whole-frame `GpuTimer` (`stats.gpuMsP50/P95`), sprites pass own `GpuTimer`; `n/a` fallback exists | per-pass GPU ms |
+| Per-pass | terrain/voxel only as CPU submit brackets (`terrainSubmitMs`, `voxelMs`) | real per-pass GPU split (below) |
+| path/grid/pos/sector | printed | `grounded` flag (`playerHandle.data.body.grounded` or wherever `integrate.js` keeps it) |
+| Grid | `clampGrid` 160x60..320x120 (8:3), default 240 on gl2, `cpuGrid` 160x60 forced on fallback, `?grid=` parse + warn | Node test; stale JSDoc in `engine/core/engine.js` `createEngine` ("320, the gl2 default" -> 240) |
+| `?bench=1` | **taken** by the US-001 canvas present bench (`runBenchmark`, obsolete per D-017) | the 3-view + walk bench |
+| GC check | `bench-cast.mjs --gc` (Node, CPU path) | in-browser frame > 25 ms counter; overlay `extra` string is built **every frame even when hidden** (main.js ~746) - fix |
+
+**Per-pass GPU timing (key fact).** Only *nested* `TIME_ELAPSED_EXT` queries fail; **sequential, non-overlapping** spans are legal. So when pass timing is on, drop the whole-frame span and wrap each pass in its own query; `gpuMs = sum`. Pass slots (fixed order, `PASS_NAMES` exported frozen array):
+`cast` (A1 sector DDA) | `terrain` (A2, far/horizon) | `voxel` (A3) | `resolve` (resolve + deriv) | `light` | `shade` | `edge` (edge/debug) | `sprites` (existing sprites-pass timer, reported alongside).
+AC wording -> slots: walls/floors = cast + voxel + resolve; far view = terrain; lighting = light; shade/edge shown separately; sprites = sprites; UI = CPU only (its GPU cost is inside shade). Sky has no pass of its own (resolve).
+
+**Where code goes.** Engine (generic, exported via `engine/index.js` only):
+- `engine/core/loop.js`: `loop.stats` preallocated `{ simMs, renderMs, jsMs, intervalMs, worstIntervalMs, over25, frames }` + `loop.resetStats()`. `over25` counts rAF intervals > 25 ms (skip the first 2 frames after `start()`/`resetStats()` and while `document.hidden`).
+- `engine/render/gpu/GpuTimer.js`: `GpuPassTimer(gl, slotCount)` - per slot a ring of 4 queries, `begin(slot)`/`end()`, `writeStats(outP50: Float32Array, outP95: Float32Array)`, same disjoint/availability/`STATS_EVERY` rules as `GpuTimer`.
+- `GpuCellPipeline`: `setPassTiming(on)`; `stats.passMsP50/passMsP95` (`Float32Array(PASS_COUNT)`, NaN when off/unavailable). Off = today's single span, unchanged. Also fix the per-frame `subarray` in `_pollTerrainTs`/`_pollVoxelTs` (sort into a preallocated scratch only every `STATS_EVERY` frames).
+- `engine/ui/debugOverlay.js`: `shouldRefresh(nowMs)` (true at most every 250 ms, and only when `visible`), `setText(str)`.
+Game (`game/js/main.js`, `game/js/dev/perfBench.js`): what to print (position, sector, grounded, pass list), `pipeline.setPassTiming(overlay.visible || benchActive)`, the bench mode and its poses. No engine->game imports; poses stay in game/tools.
+
+**Allocation rule for the overlay.** Hidden: zero strings, zero work beyond `loop.stats` bookkeeping. Visible: text built only inside `if (overlay.shouldRefresh(now))` (~4 Hz); string allocation at 4 Hz is accepted. Cost <= 0.1 ms/frame amortised. No `toFixed` or template strings on the hidden path.
+
+**`?bench=1` (US-018).** Rename the US-001 bench to `?bench=present` (keep it, cheap). New `?bench=1` in `game/js/dev/perfBench.js`, world mode, pass timing on, grid from `?grid=` (owner runs it twice: default 240x90 and `&grid=320x120`):
+1. **3 fixed views** (teleport player, input ignored, sim keeps running): (a) ground floor facing brazier + sun shaft, (b) mid ledge looking down, (c) summit looking out the breach (reuse `world_m1: breach` from the gpucompare table; designer/PO supply (a)/(b) coordinates if no existing pose fits). Per view: 60 warm-up frames, 300 measured, in the normal rAF loop.
+2. **60 s walk:** after the views, overlay says "walk now"; recording starts at the first movement input and runs 60 s.
+3. Record into preallocated `Float32Array`s (no push). Report per view and for the walk: avg fps (from intervals), JS avg/p95/max, GPU total p50/p95 + per-pass p50, worst interval, `over25`. Pass/fail lines vs the AC (>= 58 fps, JS <= 2 ms target / <= 8 ms max, GPU <= 4 ms, `over25 == 0` on the walk). Output to overlay (copy button) + `window.__bench` + console.
+
+**Steps (one programmer, Node test per step, one browser pass at the end).**
+1. Loop stats + `loop.test.js` (fake rAF/clock: interval, worst, over25, hidden skip).
+2. `GpuPassTimer` + pipeline `setPassTiming` + subarray fix; Node test with a fake gl (query objects, availability, disjoint drop, sum = total).
+3. Overlay throttle + main.js lines (JS split, GPU per pass, grounded, `n/a`); extra built only when refreshing.
+4. `grid.test.js` (clamp 100 -> 160x60, 400 -> 320x120, default 240x90, rows derived) + JSDoc fix.
+5. `perfBench.js` + `?bench=present` rename.
+6. Owner runs `?bench=1` and `?bench=1&grid=320x120` on real hardware; numbers go into the US-018 story.
+
+**Do not:** nest timer queries; leave pass timing on when the overlay is hidden and no bench runs (8 queries/frame for nothing); add per-pass `performance.now()` inside the GPU pipeline beyond what exists; put pose data or the bench in `engine/`.

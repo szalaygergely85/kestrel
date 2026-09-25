@@ -106,7 +106,7 @@ Round tower approximated on the grid. Outer footprint about 12x12 cells, wall 1 
 **Level 0 – Ground floor (floor 0.0 m)**
 - **Wake spot:** a heap of torn balloon canvas against the south wall, beside the wrecked brass **gondola** of the *Kestrel* (same place and footprint as the old straw pallet). Player starts lying down, looking up at the hole the *Kestrel* tore through.
 - **The *Kestrel*'s burner:** the copper burner lies on the stone about 3 m from the wake spot, still smoldering (the torch point light; same position and light preset as the old brazier). Scorched floor, scattered embers.
-- **The lamp:** the *Kestrel*'s unlit brass gondola lamp, still on its bracket on the wreck, next to the burner at chest height (1.3 m; the old lantern position). It glints faintly in the burner light so it reads as "take me".
+- **The lamp:** the *Kestrel*'s brass gondola lamp, still burning on its bracket on the wreck, next to the burner at chest height (1.3 m; the old lantern position). Its small steady flame warms the corner so it reads as "take me" (OWN-REQ-006).
 - **Wreckage:** torn canvas hanging from the broken wall top into the stairwell, ropes, bent brass struts. Decoration only: it never blocks the path from the wake spot to the burner and the stair.
 - **Sun shaft:** morning sun (elevation about 60 degrees) enters through the open top and a large crack in the east wall, painting a bright ellipse of floor near the tower centre. Dust motes (nice-to-have) drift in it.
 - **Rubble:** fallen blocks scattered around the edge (static collision, 0.3 to 0.9 m tall). One low hollow (floor -0.3 m) near the north-west.
@@ -134,7 +134,7 @@ Round tower approximated on the grid. Outer footprint about 12x12 cells, wall 1 
 | 1 | Wake | Nothing (0 to 3 s), then any input | Black, eye-blink reveal, lying by the wreck looking up through the torn roof, rises to eye height; title card `KESTREL` | 0:00 to 0:08 |
 | 2 | The chart | Any key to dismiss | Map card: Crown print "nothing", your pencil line to the signal; `M` re-opens it | to 0:15 |
 | 3 | First steps | WASD toward the warm light | "WASD move / Mouse look" hint | to 0:30 |
-| 4 | Burner | Arrives at the smoldering burner | Warm flicker on walls, the glinting lamp on the wreck | to 0:45 |
+| 4 | Burner | Arrives at the smoldering burner | Warm flicker on walls, the lamp still burning on the wreck | to 0:45 |
 | 5 | Look up | Looks at the sun shaft | Y-shear pitch, open sky, broken walls, stair winding up | any time |
 | 6 | Lamp | E to take it | Interact prompt; the lamp light now travels with the player | to 1:00 |
 | 7 | Boulder | Walks into the boulder at the stair base | Physics: it rolls down the slope and settles in the hollow | to 1:30 |

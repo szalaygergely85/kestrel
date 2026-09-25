@@ -227,6 +227,11 @@
   //    the FRONT of the hood rim (z10..12, 0.35 voxel proud of the rim face), sliding left -> right across the rim in 3
   //    steps (90 / 90 / 80 ms) like light running along turning brass. lit = no glint; empty / hookEmpty hide it with the
   //    lamp. The glint part is listed FIRST so it (not `lamp`) owns the cavity voxels (first part wins).
+  //    LIT ON THE HOOK (OWN-REQ-006, README v1.15): `lit` is now the DEFAULT hanging state. Glint call: NO glint on the
+  //    lit lamp. The glint was the cue for a dark lamp; a burning lamp is the brightest warm thing in the corner, its
+  //    flame flickers and the hook light makes the brass rims shimmer on their own, so a white sparkle beside the flame
+  //    would only read as noise. `unlit` stays in the data (spare state, tests keep it). See `hookLit` below for the
+  //    flame billboard + hook light the level spawns with it.
   // ===================================================================================================================
   var e = '........';
   var O6 = [e, '..bbbb..', '.bbbbbb.', '.bbbbbb.', '.bbbbbb.', '.bbbbbb.', '..bbbb..', e];
@@ -279,8 +284,9 @@
     name: 'lantern',
     desc: 'Voxel brass lamp on its wall bracket (D-019): open brass cage (bright posts, dark rails), dark burner, bright ' +
           'rims, brass_hot finial and rivets, light-iron bail on a dark iron hook; bracket = dark brass wall plate with a ' +
-          'lit top, dark arm with a light top edge, brace, brass_hot tip. The flame is a separate billboard prop. Unlit on ' +
-          'the hook, a white sparkle runs across the front of the hood rim every ~2 s (the "take me" glint).',
+          'lit top, dark arm with a light top edge, brace, brass_hot tip. The flame is a separate billboard prop (lampFlame). ' +
+          'Hangs LIT by default (OWN-REQ-006): flame in the cage + a small warm hook light, no glint. Spare `unlit` clip: a ' +
+          'white sparkle runs across the front of the hood rim every ~2 s.',
     voxel: {
       version: 1,
       cellM: 0.03125,
@@ -297,13 +303,14 @@
       animations: {
         unlit:     { durations: [GLINT_REST_MS].concat(GLINT_KEYS_MS), loop: true, interp: 'step',
                      frames: [{}, glintAt(2), glintAt(3.5), glintAt(5)] },
-        lit:       { durations: [1000], loop: true, frames: [{}] },   // same body; the flame billboard + light are level data
+        lit:       { durations: [1000], loop: true, frames: [{}] },   // DEFAULT (OWN-REQ-006): body at rest, glint sealed in
+                                                                      // the base; flame billboard + hook light = hookLit
         empty:     { durations: [1000], loop: true, frames: [HIDE] },
         hookEmpty: { durations: [1000], loop: true, frames: [HIDE] }  // alias kept (billboard clip names)
       },
       mounts: {
         flame:  { at: [4, 4, 5], part: 'lamp' },      // flame billboard base = burner top (z 1.456)
-        light:  { at: [4, 4, 7], part: 'lamp' },      // lights.lantern origin when lit
+        light:  { at: [4, 4, 7], part: 'lamp' },      // hook light origin (lights.lanternHook) while it hangs lit
         prompt: { at: [4, 0, 8], part: 'lamp' },
         hook:   { at: [4, 4, 15.5], part: 'arm' },    // where the bail hangs (= lamp pivot; hook voxels x3..4, y3..4)
         glint:  { at: [4, 0, 11.5], part: 'lamp' }    // front of the hood rim (spare: a billboard sparkle, if ever wanted)
@@ -312,6 +319,17 @@
     // tower.js props.lantern stays: x 19.9, y 6.5, z 1.3, facing 270. World: wall plate back at x 20.0 (step 8 west face),
     // lamp centre x 19.72 (1.22 m from the burner centre 18.5), lamp bottom z 1.30, top of bail 1.80, bracket top 1.89.
     placement: { level: 'tower', prop: 'lantern', x: 19.9, y: 6.5, z: 1.3, facing: 270, wallX: 20.0, levelEdit: false },
+    // OWN-REQ-006: what hangs with the lit lamp (data for the PC-B programmer; the preview checks the numbers).
+    // World points = the mounts posed at the placement above (yaw 270: the lamp front faces west, lamp centre x 19.719).
+    hookLit: {
+      clip: 'lit',
+      glint: false,                                  // designer call, see the section comment
+      flame: { model: 'lampFlame', anim: 'burn', mount: 'flame', world: { x: 19.719, y: 6.5, z: 1.456 },
+               note: 'voxel lamp only (the billboard lantern.lit fallback draws its own flame)' },
+      light: { id: 'lanternHook', preset: 'lanternHook', mount: 'light', on: true, world: { x: 19.719, y: 6.5, z: 1.519 },
+               levelEntry: "{ id: 'lanternHook', preset: 'lanternHook', x: 19.72, y: 6.5, z: 1.52, on: true }" },
+      take: 'lantern.take, same call: lights[lanternHook] off + remove the lampFlame + variant empty + carried lights.lantern on'
+    },
     readability: { note: 'At 2.5 m: 160x60 ~16 rows tall incl. bracket (0.87 rows / voxel), 240x90 ~25 rows (1.3 rows / voxel).' }
   };
 
