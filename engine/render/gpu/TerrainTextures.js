@@ -10,7 +10,7 @@
 //        bilinear is what matches `util.gridHeight` exactly (item 3 "do not
 //        use hardware filtering on the height texture").
 // FARTYPE R8UI mapW x mapH = terrain.farType, nearest.
-// TLOOK  RGBA32F width 8, row = type id:
+// TLOOK  RGBA32F width 9, row = type id:
 //   texel 0 = dark colour rgb (linear 0..1, un-gained)
 //   texel 1 = mid colour rgb
 //   texel 2 = light colour rgb
@@ -18,8 +18,9 @@
 //   texel 4 = near-band glyph codes packed 8 bits each little-endian in x (<= 3 codes), count in y
 //   texel 5 = mid-band glyph codes, same packing
 //   texel 6 = far-band glyph codes, same packing
+//   texel 7 = close-band glyph codes (US-026a 23.4 near-detail), same packing - < 40 m, wins over 4-6
 
-export const TLOOK_WIDTH = 8;
+export const TLOOK_WIDTH = 9;
 
 function packGlyphCodes(str) {
   let x = 0;
@@ -63,6 +64,13 @@ export function packTerrainTextures(terrain, palette) {
     for (let b = 0; b < 3; b++) {
       const g = packGlyphCodes((t.glyphs && t.glyphs[bandNames[b]]) || ' ');
       const o = base + (4 + b) * 4;
+      tlook[o] = g.x; tlook[o + 1] = g.count; tlook[o + 2] = 0; tlook[o + 3] = 0;
+    }
+    // US-026a (23.4): texel 7 (fixed, per architecture.md 23.4 - the width
+    // bump 8 -> 9 is what makes this slot addressable) - the close (< 40 m) glyph set.
+    {
+      const g = packGlyphCodes((t.glyphs && t.glyphs.close) || ' ');
+      const o = base + 7 * 4;
       tlook[o] = g.x; tlook[o + 1] = g.count; tlook[o + 2] = 0; tlook[o + 3] = 0;
     }
   }

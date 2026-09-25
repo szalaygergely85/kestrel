@@ -13,7 +13,7 @@ import paletteMod from '../../design/palette.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 // US-041a (15.3 item 3): face-7 (FACE_PACKED) decode test fixtures.
-import { KIND_MODEL, FACE_PACKED } from './GBuffer.js';
+import { KIND_MODEL, KIND_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 
 globalThis.window = globalThis.window || globalThis;
@@ -281,6 +281,41 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbDown }, lsDown, cam, null);
   const darkSum = lbDown.rgb[0] + lbDown.rgb[1] + lbDown.rgb[2];
   ok('same face-7 normal is unlit under a light straight below it (N.L <= 0)', darkSum === 0, String(darkSum));
+}
+
+// --- US-026a (23.4): lightSurfaces lights a kind-7 (terrain) cell with a point light but skips the sun ---
+{
+  const cols = 1, rows = 1;
+  const face = new Uint8Array([FACE_PACKED]);
+  const aoD = new Float32Array(1);
+  new Uint32Array(aoD.buffer)[0] = packNormalOct(0, 0, 1); // straight up
+  const depthArr = new Float32Array([5]);
+  const rt = { pxCellW: 1, pxCellH: 1 };
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+
+  // Sun on, straight up (elevation 90 - N.sunDir = 1 > 0, would light a
+  // normal surface) + a RED point light also straight up (N.L > 0). White
+  // sun means it would add equally to R/G/B if it contributed; the point
+  // light is pure red, so it only ever adds to channel 0.
+  function makeLights() {
+    const ls = new LightSet();
+    ls.ambient[0] = ls.ambient[1] = ls.ambient[2] = 0;
+    ls.setSun({ elevation: 90, azimuth: 0, on: true });
+    ls.sun.col[0] = ls.sun.col[1] = ls.sun.col[2] = 1;
+    ls.add({ x: cam.x, y: cam.y, z: cam.z + 5, hue: [1, 0, 0], intensity: 1, radius: 20, on: true });
+    ls.update(0, null);
+    return ls;
+  }
+
+  const lbTerrain = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf: { kind: new Uint8Array([KIND_TERRAIN]), face, aoD, cols, rows }, depth: { depth: depthArr }, rt, light: lbTerrain }, makeLights(), cam, null);
+  ok('kind 7: the point light still contributes (R > 0)', lbTerrain.rgb[0] > 0, String(lbTerrain.rgb[0]));
+  ok('kind 7: the sun term is skipped (G and B, sun-only channels here, stay 0)', lbTerrain.rgb[1] === 0 && lbTerrain.rgb[2] === 0, `${lbTerrain.rgb[1]},${lbTerrain.rgb[2]}`);
+
+  // Same geometry/lights, kind 1 (a normal surface) - the sun DOES contribute.
+  const lbWall = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf: { kind: new Uint8Array([1]), face, aoD, cols, rows }, depth: { depth: depthArr }, rt, light: lbWall }, makeLights(), cam, null);
+  ok('kind 1 (not terrain): the sun DOES contribute (G and B > 0), proving the skip is kind-7-specific', lbWall.rgb[1] > 0 && lbWall.rgb[2] > 0, `${lbWall.rgb[1]},${lbWall.rgb[2]}`);
 }
 
 // --- architect re-review 1 follow-up item 1: an off light leaves col rgb at 0 after update() ---

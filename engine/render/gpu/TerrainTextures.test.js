@@ -19,7 +19,7 @@ function makeRecipe() {
   return {
     seed: 1, map: { w, h, cell },
     terrain: {
-      grass: { id: 0, colors: ['grassDark', 'grass', 'grassLight'], glyphs: { near: '",', mid: ',.', far: '.' }, albedo: 0.85 },
+      grass: { id: 0, colors: ['grassDark', 'grass', 'grassLight'], glyphs: { near: '",', mid: ',.', far: '.', close: '*' }, albedo: 0.85 },
       forest: { id: 1, colors: ['forestDark', 'grass', 'grassLight'], glyphs: { near: '&%@', mid: '%&', far: '%' }, albedo: 0.7, glint: undefined },
     },
     recipe: { forest: { canopy: 10 } },
@@ -65,6 +65,15 @@ const nearCount = packed.tlook[nearOff + 1];
 check('grass near-band glyph count == 2', nearCount === 2);
 const c0 = packed.tlook[nearOff] & 0xff;
 check('grass near-band glyph 0 is glyphIdx for "\\""', c0 === '"'.charCodeAt(0) - 32);
+
+// US-026a (23.4): texel 7 is the close-band glyph set.
+const closeOff = grassRow + 7 * 4;
+check('grass close-band glyph count == 1', packed.tlook[closeOff + 1] === 1);
+check('grass close-band glyph is glyphIdx for "*"', (packed.tlook[closeOff] & 0xff) === '*'.charCodeAt(0) - 32);
+// forest has no glyphs.close -> defaults to a single space (glyphIdx 0).
+const forestRow = 1 * TLOOK_WIDTH * 4;
+const forestCloseOff = forestRow + 7 * 4;
+check('forest (no glyphs.close): defaults to a single space glyph', packed.tlook[forestCloseOff + 1] === 1 && (packed.tlook[forestCloseOff] & 0xff) === 0);
 
 // unknown palette colour throws with the offending key/type named.
 {

@@ -46,6 +46,10 @@ export class Terrain {
     // "climbing above every hill" escape bound, item 4).
     this.farHDraw = new Float32Array(this.mapW * this.mapH);
     this.farMaxH = 0;
+    // US-026a (architecture.md 23.4 "new early-out"): the far grid's own
+    // minimum hDraw, min-combined with `near.minH` by the terrain caster to
+    // bound a steep downward ray ("below every surface -> no hit").
+    this.farMinH = 0;
     this.farReady = false;
     this.farVersion = 0;
     this._bakeRow = 0;
@@ -279,13 +283,15 @@ export class Terrain {
   /** US-016: builds `farHDraw`/`farMaxH` from the just-finished `farH`/`farType` bake, then flips `farReady`. */
   _finishBake() {
     const canopy = this._canopyM, forestId = this._forestTypeId;
-    let maxH = -Infinity;
+    let maxH = -Infinity, minH = Infinity;
     for (let i = 0; i < this.farH.length; i++) {
       const h = this.farH[i] + (this.farType[i] === forestId ? canopy : 0);
       this.farHDraw[i] = h;
       if (h > maxH) maxH = h;
+      if (h < minH) minH = h;
     }
     this.farMaxH = maxH;
+    this.farMinH = minH;
     this.farReady = true;
     this.farVersion++;
   }

@@ -3,8 +3,8 @@
 // `design/` import, matching every other engine test in this repo.
 import assert from 'node:assert';
 import { Terrain } from '../world/Terrain.js';
-import { marchTerrainRay, castTerrain, FOG_FULL, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K } from './terrainCaster.js';
-import { GBuffer, KIND_TERRAIN, PLANEID_TERRAIN } from './GBuffer.js';
+import { marchTerrainRay, castTerrain, FOG_FULL, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K, useNear } from './terrainCaster.js';
+import { GBuffer, KIND_TERRAIN, PLANEID_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
 import { CellBuffer } from './CellBuffer.js';
@@ -222,6 +222,120 @@ function makeFB(cols, rows, gbuf = true) {
   const writtenDepth = fb.depth.depth[checkRow * cols + claimedCol];
   check('item 6b: marchTerrainRay(slope=(horizonRow-row)/planeDistY) hits', gotHit);
   check('item 6b: castTerrain\'s written depth == marchTerrainRay\'s own t', Math.abs(writtenDepth - expected.t) < 1e-6);
+}
+
+// ---- US-026a (23.4/23.7 S4): near-band sampling, dither, no allocation ----
+//
+// A flat-far / flat-near recipe (two DIFFERENT constant heights, so a test
+// can tell which grid a hit resolved against) with `nearLOD.handover`/
+// `.step` - the fields `activeNearLOD` requires before near sampling engages
+// at all (23.4's "do not" list: no literal 130/170/0.5/0.012 fallback in
+// engine code, so a recipe missing either field just stays far-only, tested
+// separately by every fixture above that never sets `nearLOD`).
+const FAR_H = 5, NEAR_H = 6.2;
+function makeNearRecipe({ w = 64, h = 64, cell = 8 } = {}) {
+  return {
+    seed: 4, map: { w, h, cell },
+    chunk: { size: 128, nearCell: 2 },
+    terrain: { grass: { id: 0, colors: ['grassDark', 'grass', 'grassLight'], glyphs: { near: ',', mid: ',', far: '.', close: '*' }, albedo: 0.8 } },
+    bands: { near: 150, mid: 600 },
+    recipe: { forest: { canopy: 10 } },
+    nearLOD: { handover: [100, 140], step: { min: 0.5, k: 0.012 }, bands: { close: 40 } },
+    util: {
+      heightAt: () => FAR_H,
+      typeAt: () => 0,
+      generate: () => ({ height: new Float32Array(w * h).fill(FAR_H), type: new Uint8Array(w * h), w, h, cell }),
+      // Every 128 m chunk baked flat at NEAR_H, type 0 - a bilinear grid
+      // "generic enough" to also serve as the far grid's own `_farGrid`
+      // (x0=0,y0=0 there, so subtracting G.x0/G.y0 is a no-op for it).
+      bake: (x0, y0, cellSz, bw, bh) => ({ height: new Float32Array(bw * bh).fill(NEAR_H), type: new Uint8Array(bw * bh), w: bw, h: bh, cell: cellSz }),
+      gridHeight(G, x, y) {
+        const fx = (x - (G.x0 || 0)) / G.cell - 0.5, fy = (y - (G.y0 || 0)) / G.cell - 0.5;
+        const i = Math.floor(fx), j = Math.floor(fy);
+        if (i < 0 || j < 0 || i >= G.w - 1 || j >= G.h - 1) return null;
+        const u = fx - i, v = fy - j;
+        const a = G.height[i + j * G.w], b = G.height[i + 1 + j * G.w], c = G.height[i + (j + 1) * G.w], d = G.height[i + 1 + (j + 1) * G.w];
+        return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+      },
+    },
+  };
+}
+
+// A near hit is within 16 mm of the true near-band surface (23.7 S4 AC).
+{
+  const terrain = new Terrain(makeNearRecipe());
+  terrain.bakeFarSync();
+  terrain.bakeNearBand(0, 0); // bands x/y in [-128, 256) - covers (100,100) below
+  check('near band baked', terrain.nearReady === true);
+
+  const out = { t: 0, x: 0, y: 0, h: 0, near: false };
+  // eye well above NEAR_H, slope steep enough to hit at t ~ 46 m (< handover[0]
+  // = 100, so `useNear` is unconditionally true - no dither randomness here).
+  const hit = marchTerrainRay(terrain, 100, 100, 20, 1, 0, -0.3, FOG_FULL, new Float64Array(0), 0, {}, out);
+  check('near band: hit', hit === true);
+  check('near band: resolved against the near grid (t < handover[0])', out.near === true);
+  check('near band: hit height within 16 mm of NEAR_H', Math.abs(out.h - NEAR_H) <= 0.016, String(out.h));
+
+  // castTerrain end to end: writes FACE_PACKED (not the old fixed face 0)
+  // with a packed-normal aoD for a flat near hit == straight up (0,0,1).
+  const fb = makeFB(8, 6);
+  const cam = { x: 100, y: 100, z: 20, yawDeg: 90, pitchDeg: -70 };
+  fb.spans.reset(fb.rt.rows);
+  castTerrain(fb, terrain, cam, { structures: [] });
+  let sawPacked = false;
+  for (let i = 0; i < fb.gbuf.kind.length; i++) {
+    if (fb.gbuf.kind[i] === KIND_TERRAIN) { sawPacked = fb.gbuf.face[i] === FACE_PACKED; break; }
+  }
+  check('castTerrain: near-enabled terrain writes FACE_PACKED for a terrain hit', sawPacked);
+}
+
+// Dither (`useNear`) is monotone in t: for a FIXED world cell (fixed hash),
+// once it returns false for some t it never returns true again for a larger
+// t - the near-sampled fraction only ever falls as the ray gets farther.
+{
+  const nl = { handover: [100, 140] };
+  const px = 37.4, py = 91.2;
+  check('dither: always near below handover[0]', useNear(nl, 99, px, py) === true);
+  check('dither: always far at/above handover[1]', useNear(nl, 140, px, py) === false && useNear(nl, 500, px, py) === false);
+  let sawFalse = false, monotoneOk = true;
+  for (let t = 100; t <= 141; t += 0.25) {
+    const v = useNear(nl, t, px, py);
+    if (v) { if (sawFalse) monotoneOk = false; } else { sawFalse = true; }
+  }
+  check('dither: monotone (never re-enters "near" once it goes "far") as t rises', monotoneOk);
+  check('dither: sanity - this cell does cross over somewhere inside the band', sawFalse);
+
+  // Different world cells get independent (not globally synchronised) dice.
+  let sawTrueSomewhere = false, sawFalseSomewhere = false;
+  for (let cell = 0; cell < 64; cell++) {
+    if (useNear(nl, 120, cell * 2 + 1, 7)) sawTrueSomewhere = true; else sawFalseSomewhere = true;
+  }
+  check('dither: mid-band t mixes near/far across different world cells (not all-or-nothing)', sawTrueSomewhere && sawFalseSomewhere);
+}
+
+// No allocation over many frames of near-enabled castTerrain (--expose-gc).
+{
+  const terrain = new Terrain(makeNearRecipe());
+  terrain.bakeFarSync();
+  terrain.bakeNearBand(0, 0);
+  const fb = makeFB(32, 24);
+  const cam = { x: 100, y: 100, z: 20, yawDeg: 90, pitchDeg: -20 };
+  const worldStub = { structures: [] };
+  const runFrame = () => { fb.gbuf.beginFrame(); fb.depth.clear(); fb.spans.reset(fb.rt.rows); castTerrain(fb, terrain, cam, worldStub); };
+
+  if (typeof global.gc === 'function') {
+    for (let i = 0; i < 20; i++) runFrame(); // warm-up (JIT, hidden classes)
+    global.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 200; i++) runFrame();
+    global.gc();
+    const after = process.memoryUsage().heapUsed;
+    const grewBy = after - before;
+    check('near-sampling castTerrain: no significant heap growth over 200 frames (--expose-gc)', grewBy < 1024 * 1024, `grew by ${grewBy} bytes`);
+  } else {
+    for (let i = 0; i < 200; i++) runFrame();
+    check('near-sampling castTerrain: 200 frames run without throwing (run with --expose-gc for the heap check)', true);
+  }
 }
 
 console.log(`terrainCaster.test.js: ${pass} passed, ${fail} failed`);

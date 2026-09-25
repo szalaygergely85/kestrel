@@ -28,7 +28,7 @@
 // and documents its own version of this deviation.
 
 import { HFOV_DEG } from './sectorCaster.js';
-import { FACE_PACKED } from './GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 
 export const MAX_LIGHTS = 16;
@@ -476,8 +476,14 @@ export const lightFlags = { sunlit: 0, litCount: 0 };
  * `selectCpuLights`) instead of `[0, lights.count)`. Omitted by every other
  * caller (GPU-parity `?gpucompare=1` path, the N.L/vis unit tests), so
  * behaviour there is unchanged.
+ *
+ * `skipSun` (optional, US-026a 23.4): terrain (kind 7) is lit by the sun
+ * analytically in the terrain shade pass instead (D-007: no terrain shadow
+ * rays) - `lightSurfaces` passes `true` for a KIND_TERRAIN cell so this
+ * function contributes only the ambient + point-light terms there, never a
+ * second (here, shadow-ray-tested) sun contribution.
  */
-export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount) {
+export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount, skipSun) {
   out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
   let litCount = 0;
   const n = idxList ? idxCount : lights.count;
@@ -515,7 +521,7 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   lightFlags.litCount = litCount;
   let sunlit = 0;
   const sun = lights.sun;
-  if (sun && sun.on) {
+  if (!skipSun && sun && sun.on) {
     const sd = sun.dir;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
@@ -844,7 +850,10 @@ export function lightSurfaces(fb, lights, cam, world) {
       } else {
         nx = NX[f] || 0; ny = NY[f] || 0; nz = NZ[f] || 0;
       }
-      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount);
+      // US-026a (23.4): terrain (kind 7) skips the sun term here - it's
+      // added analytically by the terrain shade pass instead (D-007, no
+      // terrain shadow rays).
+      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
