@@ -89,6 +89,78 @@ if (global.gc) {
   console.log('SKIP zero-alloc check (run with --expose-gc)');
 }
 
+// ---- US-041a (15.3 item 1): collect(world, cam) - entities, nearest-16 -----
+{
+  // Minimal fake World: only what `collect` reads (`renderVersion`,
+  // `forEachEntity`) - a real `World` is exercised end to end in
+  // engine/world/world.test.js's own voxel-component section.
+  function fakeWorld(entities) {
+    return {
+      renderVersion: 1,
+      forEachEntity(fn) { for (const [id, e] of entities) fn(e, id); },
+    };
+  }
+
+  const poolC = new VoxelPool();
+  poolC.bind(registry, table);
+  const camC = { x: 0, y: 0, z: 0 };
+
+  // 20 entities on the +y axis at y = 0..19 - the "nearest 16" must be
+  // exactly y = 0..15 (indices 0-15), never the far ones.
+  const ents = new Map();
+  for (let i = 0; i < 20; i++) {
+    ents.set(`e${i}`, { components: { voxel: { model: 'bear', anim: undefined, frame: 0, t: 0, playing: true } }, transform: { x: 0, y: i, z: 0, yawDeg: 0 } });
+  }
+  poolC.collect(fakeWorld(ents), camC);
+  ok('collect: caps at MAX_VOX_INSTANCES (16) when more voxel entities exist', poolC._rawCount === 16, String(poolC._rawCount));
+  const ys = [];
+  for (let i = 0; i < poolC._rawCount; i++) ys.push(poolC.raw[i].y);
+  ys.sort((a, b) => a - b);
+  ok('collect: nearest 16 (to cam) win, farther ones dropped', JSON.stringify(ys) === JSON.stringify([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]), ys.join(','));
+
+  // <= MAX_VOX_INSTANCES entities: all of them are queued (no culling needed).
+  const fewEnts = new Map();
+  for (let i = 0; i < 5; i++) fewEnts.set(`f${i}`, { components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true } }, transform: { x: 0, y: 0, z: 0, yawDeg: 0 } });
+  const poolFew = new VoxelPool();
+  poolFew.bind(registry, table);
+  poolFew.collect(fakeWorld(fewEnts), camC);
+  ok('collect: <= 16 entities queues every one of them', poolFew._rawCount === 5);
+
+  // A non-voxel entity (or a model with no `.voxel`) is skipped, not thrown.
+  const mixedEnts = new Map([
+    ['sprite1', { components: { sprite: { model: 'bear' } }, transform: { x: 0, y: 0, z: 0 } }],
+    ['vox1', { components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true } }, transform: { x: 1, y: 1, z: 1, yawDeg: 45 } }],
+  ]);
+  const poolMixed = new VoxelPool();
+  poolMixed.bind(registry, table);
+  poolMixed.collect(fakeWorld(mixedEnts), camC);
+  ok('collect: only components.voxel entities are queued (sprite-only skipped)', poolMixed._rawCount === 1 && poolMixed.raw[0].x === 1);
+
+  // Entity list is cached by renderVersion (same pattern as SpritePool.collect).
+  const world2 = fakeWorld(fewEnts);
+  poolFew.collect(world2, camC);
+  const entsRef1 = poolFew._ents;
+  poolFew.collect(world2, camC);
+  ok('collect: entity ref list is reused while renderVersion is unchanged', poolFew._ents === entsRef1);
+
+  // ---- zero allocation once warm (<=16 branch and nearest-16 branch both) ----
+  // A STABLE world object (same renderVersion) across every call - the real
+  // per-frame case (a fresh `fakeWorld(...)` every call would allocate in
+  // the TEST HARNESS itself, not in VoxelPool, and measure the wrong thing).
+  if (global.gc) {
+    const worldStable = fakeWorld(ents);
+    poolC.collect(worldStable, camC); // warm up (grows raw[]/_ents[] - all fixed size after this; _nearIdx/_nearDist are always fixed size)
+    global.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 300; f++) poolC.collect(worldStable, camC);
+    global.gc();
+    const after = process.memoryUsage().heapUsed;
+    ok('zero-alloc: 300 frames of collect() (nearest-16 path) does not grow the heap materially', after - before < 200000, `${before} -> ${after}`);
+  } else {
+    console.log('SKIP zero-alloc collect() check (run with --expose-gc)');
+  }
+}
+
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');

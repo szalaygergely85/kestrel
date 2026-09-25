@@ -13,6 +13,9 @@ import worldMod from '../../design/levels/world_m1.js';
 // as game/index.html's script tags.
 import lanternMod from '../../design/models/lantern.js';
 import leverMod from '../../design/models/lever.js';
+// US-041a (15.3 item 1): the real designer voxel def for the lever, used by
+// this file's "voxel component binding" test below (globalThis.ASSETS.voxelModels.lever).
+import voxelPropsMod from '../../design/models/voxel_props.js';
 import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
@@ -23,7 +26,7 @@ import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; towerDef; testRoomDef; terrainDef; worldMod;
-lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; voxelPropsMod;
 farTowerMod; ferrumLightsMod;
 const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 
@@ -153,6 +156,56 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   const lever2 = world2.get('tower.lever');
   const s = lever2.getComponent('sprite');
   ok('deserialize keeps the saved sprite anim/frame (lever mid-pull, held)', s.anim === 'pull' && s.frame === 2 && s.playing === false, JSON.stringify(s));
+}
+
+// US-041a (15.3 item 1): `voxel` component binding. `ASSETS.voxelModels.lever`
+// (design/models/voxel_props.js) is a REAL designer voxel def, not merged
+// into `ASSETS.models.lever` yet (US-056's job - the materials merge/attach
+// step) - this test mirrors that merge by hand, on a throwaway copy of the
+// shared model object, restored at the end so it can't leak into a later
+// check in this same process.
+// ---------------------------------------------------------------------------
+{
+  const leverModel = assets.model('lever');
+  const savedVoxel = leverModel.voxel;
+  leverModel.voxel = globalThis.ASSETS.voxelModels.lever.voxel;
+
+  // both sprite and voxel on one entity -> World.spawn throws.
+  let threw = false;
+  try {
+    world.spawn('prop', { x: 0, y: 0, z: 0 },
+      { sprite: { model: 'lever', anim: 'idle' }, voxel: { model: 'lever', anim: 'idle' } }, 'voxtest_both');
+  } catch (e) { threw = true; }
+  ok('World.spawn throws when an entity has both sprite and voxel components', threw);
+
+  const h = world.spawn('prop', { x: 10, y: 10, z: 0, yawDeg: 90, pitchDeg: 0 }, { voxel: { model: 'lever', anim: 'idle' } }, 'voxtest1');
+  const vc = h.getComponent('voxel');
+  ok('components.voxel gets the same default shape as sprite (t/frame/speed/playing)',
+    vc.t === 0 && vc.frame === 0 && vc.speed === 1 && vc.playing === true, JSON.stringify(vc));
+
+  // "spawn picks voxel when registry.model(key).voxel exists" (architect
+  // delta, 15.3 item 1) - no level edit: reload world_m1 as-is and the SAME
+  // 'lever' prop now spawns as a voxel entity instead of a sprite one.
+  const worldVoxel = World.load(assets.world('world_m1'), assets, {});
+  const leverH = worldVoxel.get('tower.lever');
+  ok('prop spawn picks components.voxel when model.voxel exists (no level edit)',
+    !!leverH.getComponent('voxel') && !leverH.getComponent('sprite'));
+  ok('voxel anim resolves the level\'s string variant ("idle") exactly like a sprite would',
+    leverH.getComponent('voxel').anim === 'idle');
+
+  // serialize -> deserialize round trip (US-011 7.5 item 7's own rule,
+  // extended to voxel): same entity set, voxel component state intact, and
+  // serializing the round-tripped world again is byte-for-byte the same
+  // (deep-equals via JSON - every field here is already JSON-safe).
+  const state = serialize(worldVoxel);
+  const world2 = deserialize(state, assets, {});
+  const leverH2 = world2.get('tower.lever');
+  ok('deserialize keeps the voxel component (model/anim) intact',
+    leverH2 && leverH2.getComponent('voxel') && leverH2.getComponent('voxel').model === 'lever' && leverH2.getComponent('voxel').anim === 'idle');
+  ok('serialize(deserialize(state)) deep-equals state (round trip is stable)',
+    JSON.stringify(serialize(world2)) === JSON.stringify(state));
+
+  leverModel.voxel = savedVoxel;
 }
 
 // --- US-016 D-011 addendum (architecture.md 14.4 items 13/14): world.horizon[] load/validation ---

@@ -112,10 +112,12 @@ export function renderWorld(fb, world, cam) {
   // has no entity binding; harness callers set it via `pool.project(cam,
   // rt)`, US-041a's `collect(world)` fills it from entities instead). Only
   // the JS oracle path reaches here (`fb.gpuDda` early-out above covers the
-  // GPU path); `faceMode: 'nearest'` per US-040 scope (face 7 is US-041a).
+  // GPU path). US-041a (15.3 item 3): default `faceMode: 'packed'` now (US-040
+  // forced 'nearest' - "face 7 is US-041a" - the rotated-normal GPU/light
+  // pass work this story adds; `voxelMarch.js`'s own default is 'packed').
   if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length) {
     modelsFbShim.rt = fb.rt; modelsFbShim.depth = fb.depth.depth; modelsFbShim.gbuf = fb.gbuf;
-    castModels(modelsFbShim, fb.voxelPool.list, cam, { faceMode: 'nearest' });
+    castModels(modelsFbShim, fb.voxelPool.list, cam);
   }
 
   if (fb.gbuf) {

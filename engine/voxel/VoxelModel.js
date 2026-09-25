@@ -34,6 +34,14 @@ const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,15}$/;
  * @property {string[][]} layers                   layers[z][y] = row string of sx chars
  * @property {Object<string,VoxelPartDef>} parts    insertion order = part index 0..7
  * @property {Object<string,VoxelClipDef>} [animations]
+ * @property {Object<string,VoxelMountDef>} [mounts]  US-041a (15.3 item 5): light anchors / E-prompt points,
+ *                                                     helper-only in M1 (no billboard attach) - `voxelMountWorld`.
+ *
+ * @typedef {Object} VoxelMountDef
+ * @property {[number,number,number]} at   model-space voxel-grid units (the SAME rest-pose coordinate space as
+ *                                         `parts[part].box`/`pivot`) - `voxelMountWorld` carries it through that
+ *                                         part's current animated pose, same as a voxel on the part would move.
+ * @property {string} [part]               an existing part name; omitted = the model's root (first) part.
  *
  * @typedef {Object} VoxelPartDef
  * @property {[number,number,number,number,number,number]} box   [x0,y0,z0,x1,y1,z1] ints, half-open
@@ -362,6 +370,31 @@ export function validateVoxelModel(def, opts) {
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // ---- mounts (rule 7, US-041a 15.3 item 5) ----------------------------------
+  if (def.mounts !== undefined) {
+    if (def.mounts === null || typeof def.mounts !== 'object' || Array.isArray(def.mounts)) {
+      errors.push('voxel.mounts: expected an object');
+    } else {
+      for (const name of Object.keys(def.mounts)) {
+        const m = def.mounts[name];
+        const path = `voxel.mounts['${name}']`;
+        if (!NAME_RE.test(name)) errors.push(`${path}: invalid mount name`);
+        if (!m || typeof m !== 'object') { errors.push(`${path}: expected an object`); continue; }
+        if (Array.isArray(m.at) && m.at.length === 3) {
+          for (let k = 0; k < 3; k++) if (!isFiniteNumber(m.at[k])) errors.push(`${path}.at[${k}]: expected a finite number`);
+        } else {
+          errors.push(`${path}.at: expected [x,y,z]`);
+        }
+        // "unknown part = load error" (15.3 item 5) - checked against every
+        // part name (parts validate independently above; a broken `parts`
+        // block already has its own errors, this just never crashes on it).
+        if (m.part !== undefined && partNames.indexOf(m.part) < 0) {
+          errors.push(`${path}.part: unknown part '${m.part}'`);
         }
       }
     }

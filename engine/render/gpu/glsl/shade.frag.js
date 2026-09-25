@@ -44,7 +44,7 @@ import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 // program is already near the 16-texture-unit budget, so the FARH texture
 // stays in the march pass only).
 import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
-import { KIND_TERRAIN, KIND_MODEL } from '../../GBuffer.js';
+import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 
 export const MAX_SUB = 16; // 4x4, matches resolve.frag.js's cap
 
@@ -443,7 +443,11 @@ void main() {
 
       uvec4 sgaU = texelFetch(uSGA, sc, 0);
       float uA = uintBitsToFloat(sgaU.x), vA = uintBitsToFloat(sgaU.y);
-      float zA = uintBitsToFloat(sgaU.z), aoDA = uintBitsToFloat(sgaU.w);
+      float zA = uintBitsToFloat(sgaU.z);
+      // US-041a (15.3 item 3): face 7 (FACE_PACKED) has the octahedral-
+      // packed normal in this slot, not a real AO distance - force +Inf,
+      // literal twin of detailShade.js's shadeDetailFast fix.
+      float aoDA = (kindU == ${KIND_MODEL}u && face == ${FACE_PACKED}) ? 1.0e30 : uintBitsToFloat(sgaU.w);
 
       Core c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, kindU, matId, Lm);
       bSum += c.b; gbSum += c.gb; crSum += c.cr; cgSum += c.cg; cbSum += c.cb; bgKSum += c.bgK;

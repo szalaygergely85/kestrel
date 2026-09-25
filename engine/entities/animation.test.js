@@ -9,7 +9,7 @@
 // "assets stays null unless load sets it" rule (World.js constructor note).
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
-import { stepAnimations, compileClip } from './animation.js';
+import { stepAnimations, compileClip, compileVoxelClip, animComponent } from './animation.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -32,7 +32,19 @@ const model = {
     roll: { fps: 0, loop: true, frames: [{ S: { glyphs: ['x'], fg: ['x'] } }, { S: { glyphs: ['x'], fg: ['x'] } }] },
   },
 };
-const assets = new AssetRegistry({ palette, models: { blinker: model } });
+// US-041a (15.3 item 1): a synthetic voxel-model fixture - `components.voxel`
+// resolves animations through `model.voxel.animations` (a VoxelClipDef,
+// not a sprite frame list), same durations/loop/events shape as `blinker`
+// above so `compileVoxelClip` can be exercised the same way `compileClip` is.
+const voxelModel = {
+  name: 'lever_fixture', voxel: {
+    animations: {
+      idle: { loop: true, durations: [1000], frames: [{}] },
+      pull: { loop: false, durations: [100, 50], events: { clunk: 1 }, frames: [{}, {}] },
+    },
+  },
+};
+const assets = new AssetRegistry({ palette, models: { blinker: model, lever_fixture: voxelModel } });
 
 // ---- compileClip -----------------------------------------------------------
 {
@@ -138,6 +150,56 @@ const assets = new AssetRegistry({ palette, models: { blinker: model } });
   const DT = 1000 / 60;
   for (let i = 0; i < 10; i++) { stepAnimations(world, DT); world.flushEvents(); } // >150ms clears both frames
   ok('onAnimEnd fires after play() + stepAnimations run the clip to completion', ended === 'blink');
+}
+
+// ---- US-041a: components.voxel (15.3 item 1) --------------------------------
+{
+  const clip = compileVoxelClip(voxelModel.voxel.animations.pull);
+  ok('compileVoxelClip: durMs from `durations`', clip.durMs[0] === 100 && clip.durMs[1] === 50);
+  ok('compileVoxelClip: loop carried through', clip.loop === false);
+  ok('compileVoxelClip: tagCodes has "clunk" on frame 1', clip.tagCodes[0] === null && clip.tagCodes[1] === 'clunk');
+  ok('compileVoxelClip: count == frames.length', clip.count === 2);
+  ok('compileVoxelClip caches on the anim def (same object back)', compileVoxelClip(voxelModel.voxel.animations.pull) === clip);
+
+  const world = new World();
+  world.assets = assets;
+
+  // World.spawn throws on an entity with BOTH sprite and voxel (15.3 item 1).
+  let threw = false;
+  try {
+    world.spawn('prop', { x: 0, y: 0, z: 0 }, { sprite: { model: 'blinker', anim: 'idle' }, voxel: { model: 'lever_fixture', anim: 'idle' } }, 'both1');
+  } catch (e) { threw = true; }
+  ok('World.spawn throws when both sprite and voxel are given', threw);
+
+  const h = world.spawn('prop', { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 }, { voxel: { model: 'lever_fixture', anim: 'idle' } }, 'lever1');
+  ok('animComponent(e) returns the voxel component (no sprite present)', animComponent(h.data) === h.data.components.voxel);
+  ok('components.voxel gets the same default shape as sprite (t/frame/speed/playing)',
+    h.data.components.voxel.t === 0 && h.data.components.voxel.frame === 0 && h.data.components.voxel.speed === 1 && h.data.components.voxel.playing === true);
+
+  const events = [];
+  h.on('clunk', () => events.push('clunk'));
+  let ended = null;
+  h.onAnimEnd((handle, name, arg) => { ended = arg; });
+
+  h.play('pull'); // EntityHandle.play must resolve through model.voxel.animations, not model.animations
+  const v = h.getComponent('voxel');
+  ok('play("pull") on a voxel component: anim/frame/t/loop/playing set from the VoxelClipDef', v.anim === 'pull' && v.frame === 0 && v.t === 0 && v.loop === false && v.playing === true);
+
+  const DT = 1000 / 60;
+  function stepAndFlush(n) { for (let i = 0; i < n; i++) { stepAnimations(world, DT); world.flushEvents(); } }
+  // ~100 ms clears frame 0 -> frame 1, firing the "clunk" tag.
+  stepAndFlush(6);
+  const v1 = h.getComponent('voxel');
+  ok('stepAnimations advances a voxel component exactly like a sprite one (frame -> 1)', v1.frame === 1, JSON.stringify(v1));
+  ok('frame 1\'s "clunk" tag fired exactly once', events.filter((e) => e === 'clunk').length === 1, events.join(','));
+  // Another ~50 ms clears frame 1 -> non-loop holds on the last frame, fires animEnd once (US-014/15.3 item 4: "lever.pull still calls play('pull')").
+  stepAndFlush(4);
+  const v2 = h.getComponent('voxel');
+  ok('non-loop voxel clip holds on the last frame once finished', v2.frame === 1 && v2.playing === false, JSON.stringify(v2));
+  ok('voxel.anim stays "pull" after the clip finishes (survives save/load like a sprite\'s anim)', v2.anim === 'pull');
+  ok('animEnd fired exactly once for the voxel component', ended === 'pull');
+  stepAndFlush(20);
+  ok('no further animEnd once stopped', events.length === 1 && ended === 'pull');
 }
 
 console.log(`\n[animation.test.js] ${pass} passed, ${fail} failed`);

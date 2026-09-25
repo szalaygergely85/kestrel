@@ -232,10 +232,17 @@ export class World {
           const modelKey = typeof variantRaw === 'number' ? `${p.model}#${variantRaw}` : p.model;
           if (!assets.has('model', modelKey)) throw new Error(`World.load: prop "${entId}" references unknown model "${modelKey}"`);
           const model = assets.model(modelKey);
-          const animNames = model.animations ? Object.keys(model.animations) : [];
+          // US-041a (15.3 item 1, architect delta): "spawn picks `voxel` when
+          // `registry.model(key).voxel` exists" - swapping a prop's art from
+          // billboard to voxel needs no level edit and no save-format change,
+          // since this is the ONLY place that decides which component a prop
+          // gets, keyed purely on the model def the level already names.
+          const isVoxel = !!model.voxel;
+          const animsDict = (isVoxel ? model.voxel.animations : model.animations) || {};
+          const animNames = Object.keys(animsDict);
           let anim;
           if (typeof variantRaw === 'string') {
-            if (model.animations && model.animations[variantRaw]) {
+            if (animsDict[variantRaw]) {
               anim = variantRaw;
             } else {
               console.warn(`World.load: prop "${entId}" model "${modelKey}" has no animation "${variantRaw}" - using "${animNames[0]}"`);
@@ -256,7 +263,9 @@ export class World {
           } else {
             z = s.origin.z + (p.z || 0);
           }
-          const comps = { sprite: { model: modelKey, anim, loop: !!(anim && model.animations[anim].loop) } };
+          const comps = isVoxel
+            ? { voxel: { model: modelKey, anim, loop: !!(anim && animsDict[anim].loop) } }
+            : { sprite: { model: modelKey, anim, loop: !!(anim && animsDict[anim].loop) } };
           // `dynamic: true` (the boulder): body + roller, exactly as
           // boulder.test.js built them by hand before this story (US-013
           // tech note); `transform.z` is the feet position, same as `x`/`y`.
@@ -530,9 +539,18 @@ export class World {
   spawn(type, transform, components = {}, id) {
     const entId = id || `${type}_${this.nextId++}`;
     if (this._entities.has(entId)) throw new Error(`World.spawn: id "${entId}" already exists`);
+    // US-041a (15.3 item 1): `voxel` is a component, not a type - same shape
+    // as `sprite`, never both on one entity (an entity's animated look is
+    // either a billboard or a voxel model, not both at once).
+    if (components.sprite && components.voxel) {
+      throw new Error(`World.spawn: entity "${entId}" has both "sprite" and "voxel" components - pick one`);
+    }
     if (components.sprite) {
       // (US-011 arch review) no `loop` default: `stepAnimations` falls back to the clip's own flag.
       components.sprite = { t: 0, frame: 0, speed: 1, playing: true, ...components.sprite };
+    }
+    if (components.voxel) {
+      components.voxel = { t: 0, frame: 0, speed: 1, playing: true, ...components.voxel };
     }
     const entity = Entity.create(type, transform, components, entId);
     this._entities.set(entId, entity);

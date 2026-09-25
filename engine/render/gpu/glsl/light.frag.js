@@ -20,9 +20,10 @@
 // simplification `lighting.js`'s JS reference makes with `world.sectorAt`
 // (see that file's module doc) - kept in sync by construction, not by
 // re-deriving the same "which structure" answer two different ways.
-import { GLSL_VERSION, PRECISION, GBUF_UNPACK, CELL_RAY, FALLOFF_FAST } from './common.js';
+import { GLSL_VERSION, PRECISION, GBUF_UNPACK, CELL_RAY, FALLOFF_FAST, OCT_NORMAL } from './common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
+import { FACE_PACKED } from '../../GBuffer.js';
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -30,6 +31,7 @@ export const LIGHT_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out uvec4 outLight;
 
 uniform usampler2D uGI;    // RG32UI - resolved, per-cell (kind/face/mat)
+uniform usampler2D uGA;    // RGBA32UI: floatBitsToUint(u, v, z, aoD) - only .w (aoD) read here, face 7's packed normal
 uniform usampler2D uDepth; // R32UI: floatBitsToUint(dist)
 uniform usampler2D uLVis;  // R8UI: MAX_VIS_DIM x (MAX_LIGHTS*MAX_VIS_DIM) occlusion atlas
 
@@ -65,6 +67,7 @@ const int MAX_VIS_DIM = ${MAX_VIS_DIM};
 const int MAX_STRUCTS = ${MAX_STRUCTS};
 const int MAX_SUN_STEPS = ${MAX_SUN_STEPS};
 const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
+const int FACE_PACKED = ${FACE_PACKED};
 // BUG-LIGHT-002 (docs/backlog.md row 25d): same epsilon as lighting.js's
 // VIS_FLOOR_EPS - biases sampleVis's floor so a sample point that lands
 // within float32 noise of an exact vis-grid boundary (the "toward the
@@ -76,6 +79,7 @@ const float VIS_FLOOR_EPS = 1e-3;
 ${GBUF_UNPACK}
 ${CELL_RAY}
 ${FALLOFF_FAST}
+${OCT_NORMAL}
 
 // --- US-007 sun shadow DDA (14.3 item 4, JS twin: lighting.js's sunVisible/sunCellBlocked) ---
 
@@ -207,7 +211,12 @@ void main() {
   }
   float dist = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
   vec3 P = cellRayP(vec2(cell), uGrid, uPosX, uPosY, uEyeH, uDirX, uDirY, uPlaneX, uPlaneY, uHorizonRow, uPlaneDistY, dist);
-  vec3 N = faceNormal(giFace(gi.y));
+  uint faceU = giFace(gi.y);
+  // US-041a (15.3 item 3): the only light-pass change - face 7 (a rotated
+  // voxel-model part) has no fixed axis normal; decode it from GA.w's
+  // octahedral-packed bits instead (literal twin of voxelMarch.js's
+  // packNormalOct / lighting.js's CPU decode).
+  vec3 N = (faceU == uint(FACE_PACKED)) ? unpackNormalOct(texelFetch(uGA, cell, 0).w) : faceNormal(faceU);
 
   int litCount = 0;
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {

@@ -7,9 +7,9 @@
 // set - `GpuCellPipeline.js` picks the read/write bind tables and FBO by
 // `_subSetCur`, this shader only ever sees "the" `uSGI`/`uSGA`/`uSDepth`
 // input and writes its own MRT output).
-import { GLSL_VERSION, PRECISION } from './common.js';
+import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
 import { MAX_VOX_INSTANCES, MAX_VOX_PARTS, MAX_VOX_STEPS } from '../../../voxel/VoxelModel.js';
-import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from '../../GBuffer.js';
+import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 import { VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE } from '../VoxelTextures.js';
 
 export const VOXEL_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
@@ -38,6 +38,9 @@ const int MAX_VOX_STEPS = ${MAX_VOX_STEPS};
 const int VOXINST_ROWS_PER_INSTANCE = ${VOXINST_ROWS_PER_INSTANCE};
 const int KIND_MODEL = ${KIND_MODEL};
 const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
+const int FACE_PACKED = ${FACE_PACKED};
+
+${OCT_NORMAL}
 
 uint voxTexel(int idx) {
   return texelFetch(uVOX, ivec2(idx & 255, idx >> 8), 0).r;
@@ -82,6 +85,9 @@ void main() {
   uint hitMat = 0u, hitPlaneId = 0u;
   int hitFace = FACE_U;
   float hitU = 0.0, hitV = 0.0, hitZ = 0.0, hitT = 0.0;
+  // US-041a (15.3 item 3): the packed normal (bits) for a non-axis-aligned
+  // part's hit - only used when hitFace ends up FACE_PACKED.
+  uint hitNormalBits = 0u;
 
   for (int ii = 0; ii < MAX_VOX_INSTANCES; ii++) {
     if (ii >= uVoxCount) break;
@@ -113,6 +119,11 @@ void main() {
       int atlasBase = int(T3.w);
       float bxN = T4.x, byN = T4.y, bzN = T4.z;
       float x1 = x0 + bxN, y1 = y0 + byN, z1 = z0 + bzN;
+      // US-041a (15.3 item 3): VoxelTextures.js's flags = (axisAligned?1:0)
+      // | (k<<1) (T4.w) - the SAME per-part flag computeVoxelPose wrote
+      // (voxelPose.js's _axisAligned), so the GPU march can never disagree
+      // with the CPU oracle on which faces get FACE_PACKED.
+      bool partAxisAligned = (int(T4.w) & 1) != 0;
 
       vec3 dL = vec3(dot(Arow0, d), dot(Arow1, d), dot(Arow2, d));
 
@@ -186,10 +197,19 @@ void main() {
                 Arow0.x * nLocal.x + Arow1.x * nLocal.y + Arow2.x * nLocal.z,
                 Arow0.y * nLocal.x + Arow1.y * nLocal.y + Arow2.y * nLocal.z,
                 Arow0.z * nLocal.x + Arow1.z * nLocal.y + Arow2.z * nLocal.z);
-              float anx = abs(nWorld.x), any = abs(nWorld.y), anz = abs(nWorld.z);
-              if (anx >= any && anx >= anz) hitFace = nWorld.x >= 0.0 ? FACE_E : FACE_W;
-              else if (any >= anx && any >= anz) hitFace = nWorld.y >= 0.0 ? FACE_S : FACE_N;
-              else hitFace = nWorld.z >= 0.0 ? FACE_U : FACE_D;
+              // US-041a (15.3 items 2/3): literal twin of castModels' own
+              // (axisAligned || faceMode === 'nearest') ? roundedFace(...) :
+              // FACE_PACKED - this pass never gets faceMode: 'nearest'
+              // (that was US-040's own scope, before rotated normals existed).
+              if (partAxisAligned) {
+                float anx = abs(nWorld.x), any = abs(nWorld.y), anz = abs(nWorld.z);
+                if (anx >= any && anx >= anz) hitFace = nWorld.x >= 0.0 ? FACE_E : FACE_W;
+                else if (any >= anx && any >= anz) hitFace = nWorld.y >= 0.0 ? FACE_S : FACE_N;
+                else hitFace = nWorld.z >= 0.0 ? FACE_U : FACE_D;
+              } else {
+                hitFace = FACE_PACKED;
+                hitNormalBits = packNormalOct(nWorld);
+              }
 
               float hx = oL.x + t * dL.x, hy = oL.y + t * dL.y, hz = oL.z + t * dL.z;
               float lx = hx - x0, ly = hy - y0, lz = hz - z0;
@@ -222,7 +242,14 @@ void main() {
 
   if (hit) {
     outGI = uvec2(hitPlaneId, uint(KIND_MODEL) | (uint(hitFace) << 8u) | (hitMat << 16u));
-    outGA = uvec4(floatBitsToUint(hitU), floatBitsToUint(hitV), floatBitsToUint(hitZ), 0x7f800000u);
+    // US-041a (15.3 item 3): face 7 (FACE_PACKED) writes the octahedral-
+    // packed normal into GA.w instead of the +Inf bits (0x7f800000u) - the
+    // shade pass forces aoD = Inf for EVERY kind-8 cell itself (it is
+    // never a real ambient-occlusion distance here), so this slot is free
+    // for the normal exactly like the CPU oracle's Uint32Array alias of
+    // gbuf.aoD (voxelMarch.js).
+    uint gaw = (hitFace == FACE_PACKED) ? hitNormalBits : 0x7f800000u;
+    outGA = uvec4(floatBitsToUint(hitU), floatBitsToUint(hitV), floatBitsToUint(hitZ), gaw);
     outDepth = floatBitsToUint(hitT);
   }
 }

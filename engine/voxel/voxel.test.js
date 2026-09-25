@@ -11,7 +11,7 @@ import {
   KIND_MODEL, FACE_PACKED,
 } from './VoxelModel.js';
 import { packVoxelModel } from './voxelPack.js';
-import { cosSinDeg, computeVoxelPose } from './voxelPose.js';
+import { cosSinDeg, computeVoxelPose, voxelMountWorld } from './voxelPose.js';
 import { marchVoxelRay, castModels, LAST_MAT_LOCAL } from './voxelMarch.js';
 import { packNormalOct, unpackNormalOct } from './octNormal.js';
 import { GBuffer } from '../render/GBuffer.js';
@@ -116,6 +116,80 @@ ok('RESERVED_EVENTS has 4 entries', RESERVED_EVENTS.length === 4);
 ok('assertVoxelModel throws on an invalid def', (() => {
   try { assertVoxelModel(set(clone(quadruped12), ['version'], 2)); return false; } catch (e) { return e instanceof Error; }
 })());
+
+// =============================================================================
+// MOUNTS (US-041a, 15.3 item 5): validated at load, unknown part = load error
+// =============================================================================
+
+{
+  const d = clone(quadruped12);
+  d.mounts = { glint: { at: [6, 4, 8], part: 'head' } };
+  const r = validateVoxelModel(d, { materialKeys: MATERIAL_KEYS });
+  ok('a mount naming a real part validates with 0 errors', r.errors.length === 0, JSON.stringify(r.errors));
+}
+{
+  const d = clone(quadruped12);
+  d.mounts = { glint: { at: [6, 4, 8] } }; // no `part` - defaults to the root, not an error
+  const r = validateVoxelModel(d, { materialKeys: MATERIAL_KEYS });
+  ok('a mount with no `part` (defaults to root) validates with 0 errors', r.errors.length === 0, JSON.stringify(r.errors));
+}
+expectError('mount: unknown part', (() => { const d = clone(quadruped12); d.mounts = { glint: { at: [0, 0, 0], part: 'nope' } }; return d; })(), "unknown part 'nope'");
+expectError('mount: bad `at`', (() => { const d = clone(quadruped12); d.mounts = { glint: { at: [0, 0] } }; return d; })(), 'expected [x,y,z]');
+expectError('mount: not an object', (() => { const d = clone(quadruped12); d.mounts = { glint: 5 }; return d; })(), 'expected an object');
+
+// ---- voxelMountWorld: a 2-part rigid model, mounts on both the root and a child part ----
+{
+  // root: x 0..2 (all y,z); child (parented to root): x 2..4 (all y,z) - the
+  // two boxes exactly tile the 4x4x4 grid (no orphans). At rest (no clip),
+  // the whole model is rigid, so BOTH mounts move together with the instance.
+  const mountDef = {
+    version: 1, cellM: 0.1, size: [4, 4, 4], anchor: [2, 2, 0],
+    mats: { '#': 'm' },
+    layers: [
+      ['####', '####', '####', '####'],
+      ['####', '####', '####', '####'],
+      ['####', '####', '####', '####'],
+      ['####', '####', '####', '####'],
+    ],
+    parts: {
+      root: { box: [0, 0, 0, 2, 4, 4], pivot: [0, 2, 0] },
+      child: { box: [2, 0, 0, 4, 4, 4], pivot: [2, 2, 2], parent: 'root' },
+    },
+    mounts: {
+      origin: { at: [0, 0, 0] },       // no `part` -> defaults to root (index 0)
+      tip: { at: [2, 2, 4], part: 'child' },
+    },
+  };
+  const mountPm = packVoxelModel(mountDef, () => 1);
+  const mountPose = new Float64Array(MAX_VOX_PARTS * 16);
+  const out = new Float64Array(3);
+
+  // world = instPos + cellM * RzYaw * (at - anchor) for a rigid rest pose,
+  // regardless of which part the mount names (both parts are untransformed
+  // at rest) - the general formula the test below also uses at yaw 90.
+  computeVoxelPose(mountPm, { model: mountPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }, mountPose);
+  ok('voxelMountWorld: unknown mount name returns null', voxelMountWorld(mountPm, 'nope', out) === null);
+  voxelMountWorld(mountPm, 'origin', out);
+  ok('voxelMountWorld: mount with no `part` (root), yaw 0, rest pose', approxEqual(out[0], -0.2) && approxEqual(out[1], -0.2) && approxEqual(out[2], 0), out.join(','));
+  voxelMountWorld(mountPm, 'tip', out);
+  ok('voxelMountWorld: mount on a child part, yaw 0, rest pose', approxEqual(out[0], 0) && approxEqual(out[1], 0) && approxEqual(out[2], 0.4), out.join(','));
+
+  // A non-trivial instance position + a yaw that is a multiple of 90 (exact
+  // rotation, cosSinDeg's {0,+-1} branch - 15.1's own exactness rule) -
+  // `voxelMountWorld` must follow the SAME instance transform `computeVoxelPose`
+  // just computed, not just the rest-pose identity case above.
+  computeVoxelPose(mountPm, { model: mountPm, x: 10, y: 20, z: 3, yawDeg: 90, clip: -1, frame: 0, tMs: 0 }, mountPose);
+  voxelMountWorld(mountPm, 'tip', out);
+  // Rz(90) rotates (0,0,4) to (0,0,4) (a pure-z vector is unaffected by a
+  // yaw about z) - world = instPos + cellM*(0,0,4) = (10, 20, 3.4).
+  ok('voxelMountWorld: follows the instance transform (position + yaw)', approxEqual(out[0], 10) && approxEqual(out[1], 20) && approxEqual(out[2], 3.4), out.join(','));
+
+  // A model with no `mounts` at all - packVoxelModel still gives it an empty
+  // `mounts` object (never undefined), so `voxelMountWorld` never throws.
+  const noMountsPm = packVoxelModel(quadruped12, () => 1);
+  ok('a model with no `mounts` in its def packs an empty mounts object', noMountsPm.mounts && Object.keys(noMountsPm.mounts).length === 0);
+  ok('voxelMountWorld on a model with no mounts returns null, does not throw', voxelMountWorld(noMountsPm, 'anything', out) === null);
+}
 
 // =============================================================================
 // PACK

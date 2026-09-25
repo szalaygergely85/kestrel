@@ -41,6 +41,21 @@ export class VoxelPool {
     this.atlas = null;
     this._modelIndexByKey = {};
     this._atlasVersion = 0;
+
+    // US-041a (15.3 item 1): `collect(world)`'s entity cache, cached by
+    // `world.renderVersion` - same pattern as `SpritePool.collect`
+    // (engine/render/sprites.js). Rebuilt only when the entity LIST shape
+    // changes (spawn/remove/etc bump renderVersion); a restart hands
+    // `collect` a brand-new `World` (deserialize), so `world !== _entWorld`
+    // alone forces a fresh scan - no extra "on restart" special case needed.
+    this._ents = [];
+    this._entVersion = -1;
+    this._entWorld = null;
+    // Nearest-MAX_VOX_INSTANCES selection scratch (15.3 item 1: "the nearest
+    // 16 instances win") - fixed size (MAX_VOX_INSTANCES), never grows, so
+    // this never allocates regardless of how many voxel entities exist.
+    this._nearIdx = new Int32Array(MAX_VOX_INSTANCES);
+    this._nearDist = new Float64Array(MAX_VOX_INSTANCES);
   }
 
   /** Packs every `ModelDef.voxel` in the registry (bind time, may allocate -
@@ -82,8 +97,7 @@ export class VoxelPool {
     const pm = this.models.get(modelKey);
     if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return; }
     if (this._rawCount >= MAX_VOX_INSTANCES) { warnOnce(this, 'VoxelPool.pushInstance: MAX_VOX_INSTANCES exceeded, extra instances dropped'); return; }
-    let slot = this.raw[this._rawCount];
-    if (!slot) { slot = {}; this.raw[this._rawCount] = slot; }
+    const slot = this._rawSlot(this._rawCount);
     slot.model = pm;
     slot.modelKey = modelKey;
     slot.x = x; slot.y = y; slot.z = z;
@@ -92,6 +106,84 @@ export class VoxelPool {
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
     this._rawCount++;
+  }
+
+  /** Reused per-slot raw-instance object at `this.raw[idx]` (no per-frame allocation once warm). */
+  _rawSlot(idx) {
+    let slot = this.raw[idx];
+    if (!slot) { slot = {}; this.raw[idx] = slot; }
+    return slot;
+  }
+
+  /**
+   * Queues one entity's `components.voxel` (already known-good: caller
+   * picked it) as this frame's next raw instance. `voxel.anim` (a clip
+   * NAME, matching `sprite`'s shape) resolves through the packed model's
+   * `clipIndex` to the numeric index `computeVoxelPose`/`instanceRect`
+   * expect (-1 = rest pose, same as `pushInstance`'s default) - an unknown
+   * anim name falls back to the rest pose rather than throwing (a render
+   * tick must never crash over stale/test data, same rule as `clipFor`).
+   */
+  _queueEntity(e) {
+    const v = e.components.voxel, t = e.transform;
+    const pm = this.models.get(v.model);
+    if (!pm) { warnOnce(this, `VoxelPool.collect: unknown or non-voxel model '${v.model}'`); return; }
+    const slot = this._rawSlot(this._rawCount);
+    slot.model = pm;
+    slot.modelKey = v.model;
+    slot.x = t.x; slot.y = t.y; slot.z = t.z;
+    slot.yawDeg = t.yawDeg || 0;
+    const idx = v.anim && pm.clipIndex && Object.prototype.hasOwnProperty.call(pm.clipIndex, v.anim) ? pm.clipIndex[v.anim] : -1;
+    slot.clip = idx;
+    slot.frame = v.frame || 0;
+    slot.tMs = v.t || 0;
+    this._rawCount++;
+  }
+
+  /**
+   * US-041a (15.3 item 1): fills the raw list from every entity with a
+   * `components.voxel`, nearest `MAX_VOX_INSTANCES` (16) to `cam` win when
+   * there are more candidates than that (insertion-selection into fixed-size
+   * scratch - same no-allocation pattern as `lighting.js`'s
+   * `selectCpuLights`). The entity ref array itself is rebuilt only when
+   * `world.renderVersion` changes (mirrors `SpritePool.collect`); `cam` may
+   * be omitted (falls back to distance from the origin) for callers that
+   * only ever have <= 16 voxel entities and don't care about the ordering.
+   */
+  collect(world, cam) {
+    this.beginFrame();
+    if (!world) return;
+    if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
+      this._ents.length = 0;
+      world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
+      this._entVersion = world.renderVersion;
+      this._entWorld = world;
+    }
+    const ents = this._ents;
+    const n = ents.length;
+    if (n <= MAX_VOX_INSTANCES) {
+      for (let i = 0; i < n; i++) this._queueEntity(ents[i]);
+      return;
+    }
+    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0, cz = cam ? cam.z : 0;
+    const idx = this._nearIdx, dist = this._nearDist;
+    let count = 0;
+    for (let i = 0; i < n; i++) {
+      const t = ents[i].transform;
+      const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (count < MAX_VOX_INSTANCES) {
+        let j = count - 1;
+        while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
+        dist[j + 1] = d2; idx[j + 1] = i;
+        count++;
+      } else if (d2 < dist[count - 1]) {
+        let j = count - 2;
+        while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
+        dist[j + 1] = d2; idx[j + 1] = i;
+      }
+    }
+    for (let k = 0; k < count; k++) this._queueEntity(ents[idx[k]]);
   }
 
   /** Poses and culls this frame's queued instances via the shared

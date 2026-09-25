@@ -245,3 +245,25 @@ export function computeVoxelPose(pm, inst, out) {
     out[obase + 13] = 0; out[obase + 14] = 0; out[obase + 15] = 0;
   }
 }
+
+/**
+ * US-041a (15.3 item 5): world position of `pm`'s mount `name` (validated at
+ * load - VoxelModel.js's `validateVoxelModel` - so an unknown `part` can
+ * never reach here), a light anchor / E-prompt point that follows its part's
+ * CURRENT animated pose. Helper-only in M1 (no billboard attach - consumers
+ * are US-042/US-022). Must be called right after `computeVoxelPose` for the
+ * SAME instance (reads the shared `FORWARD` scratch that call just filled -
+ * same "read it before doing anything else for this instance" convention
+ * `castModels` itself follows, not per-instance state). Writes into `out`
+ * (length >= 3); returns `out`, or null if `pm` has no mount named `name`.
+ */
+export function voxelMountWorld(pm, name, out) {
+  const mount = pm.mounts && pm.mounts[name];
+  if (!mount) return null;
+  const at = mount.at;
+  const fbase = mount.partIdx * 12;
+  out[0] = FORWARD[fbase] * at[0] + FORWARD[fbase + 1] * at[1] + FORWARD[fbase + 2] * at[2] + FORWARD[fbase + 9];
+  out[1] = FORWARD[fbase + 3] * at[0] + FORWARD[fbase + 4] * at[1] + FORWARD[fbase + 5] * at[2] + FORWARD[fbase + 10];
+  out[2] = FORWARD[fbase + 6] * at[0] + FORWARD[fbase + 7] * at[1] + FORWARD[fbase + 8] * at[2] + FORWARD[fbase + 11];
+  return out;
+}

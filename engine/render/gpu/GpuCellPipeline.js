@@ -402,7 +402,7 @@ export class GpuCellPipeline {
     // walks - same textures `_castBinds` binds for `dda.frag.js`, bound
     // again here on light's own sampler units (a different program).
     this._lightBinds = this._buildBindTable(this._locsLight, [
-      ['uGI', this.texGI], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
+      ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
       ['uWorldGeom', this.texWorldGeom], ['uWorldFlags', this.texWorldFlags],
     ]);
     this._setSamplerUniforms(this.progShade, this._shadeBinds);
@@ -1449,7 +1449,7 @@ const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];
 // US-006/US-007: light pass uniforms (14.3 items 3/4).
 const LIGHT_UNIFORMS = [
-  'uGI', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
+  'uGI', 'uGA', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
   'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
 ];

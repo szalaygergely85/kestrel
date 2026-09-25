@@ -11,7 +11,7 @@ import {
   runShadeTest, runDetailShadeTest,
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
-  integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
+  integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations, animComponent,
   GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
   VoxelPool,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
@@ -240,6 +240,20 @@ console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.renderer
 // ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
 const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 // ---- end US-030c ----
+
+// ---- US-041a (15.3 item 1): the REAL gameplay voxel pool - `collect(world,
+// cam)` fills it from `components.voxel` entities each frame (renderer holds
+// no entity state itself, just this frame's projected instance list); the
+// GPU path's own `gpuPipeline.frame()` calls `.project()` on it internally
+// once bound (see GpuCellPipeline.js's `_passVoxel`), so only the CPU/JS
+// oracle path (fb.gpuDda === false) needs an explicit `.project()` call
+// here too (mirrors compositor.js reading `fb.voxelPool.list` pre-projected,
+// same as the `?gpucompare=1` harness above does by hand). No live prop has
+// a `.voxel` component yet (US-056 does the actual swap), so this is a
+// no-op today - wiring only, ready for that story.
+const gameVoxelPool = new VoxelPool();
+gameVoxelPool.bind(assets, matTable);
+if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
@@ -564,6 +578,7 @@ function runGame(mode) {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: lightSet,
     light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, // US-028
+    voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
@@ -619,6 +634,13 @@ function runGame(mode) {
       // this check `renderWorld` would keep skipping the CPU cast -> black
       // world instead of falling back to it.
       fb.gpuDda = !!gpuPipeline && rt.gpuActive;
+      // US-041a (15.3 item 1): `collect(world, cam)` every frame (cheap - the
+      // entity ref list is cached by `world.renderVersion`, only distance is
+      // recomputed); the GPU path projects internally, the CPU/JS oracle
+      // needs its own explicit `.project()` before `renderWorld` reads
+      // `fb.voxelPool.list` (compositor.js).
+      gameVoxelPool.collect(engine.world, cam);
+      if (!fb.gpuDda) gameVoxelPool.project(cam, rt);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
@@ -911,14 +933,23 @@ function runGpuCompareDdaMode() {
     // (yaw 90) toward the lever post at (19.25, 9.3).
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: lever mid-pull',
       cam: { x: 1498.0, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 }, real: true,
-      before: () => { const h = worldM1.get('tower.lever'); if (h) { h.play('pull', { restart: true }); h.stop(); h.data.components.sprite.frame = 2; } } },
+      // US-041a: `animComponent` (sprite ?? voxel) instead of hard-coding
+      // `.sprite` - design/models/voxel_props.js's own `attach()` (already
+      // unconditional, runs at script-load time) puts `.voxel` on the live
+      // `lever`/`lantern` models now that their materials are merged into
+      // palette.js/detail-pass.js, so `tower.lever` spawns with
+      // `components.voxel` (15.3 item 1's "spawn picks voxel when
+      // registry.model(key).voxel exists") instead of `.sprite` as soon as
+      // this story's World.js change lands - this pose must keep working
+      // either way, exactly like play()/stop() already do.
+      before: () => { const h = worldM1.get('tower.lever'); if (h) { h.play('pull', { restart: true }); h.stop(); animComponent(h.data).frame = 2; } } },
     // Local (13.5, 4.5) is the open `o` hollow cell west of the stair base, looking at the
     // boulder (15.55, 3.5) at bearing 64 (architect review 1: the old (13.0, 5.0)/yaw 100 pose
     // had the boulder ~50 deg off-axis, outside the 37.5 deg half-FOV). Known FAIL: BUG-LIGHT-001
     // (surface light-pass parity at the stair's depth discontinuities, not sprites).
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: boulder mid-roll',
       cam: { x: 1493.5, y: 1022.5, z: engine.physics.eyeHeight, yawDeg: 64, pitchDeg: -20 }, real: true,
-      before: () => { const h = worldM1.get('tower.boulder'); if (h) h.data.components.sprite.frame = 4; } },
+      before: () => { const h = worldM1.get('tower.boulder'); if (h) animComponent(h.data).frame = 4; } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
     // US-016 step 4 (architecture.md 14.4 item 14, D-017 review): the two
@@ -1000,6 +1031,29 @@ function runGpuCompareDdaMode() {
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lantern near',
       cam: { x: LANTERN_X - 1.5, y: LANTERN_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 },
       before: () => compareVoxelPool.pushInstance('lantern', LANTERN_X, LANTERN_Y, LANTERN_Z, 270) },
+    // US-041a (15.3 item 6): the two real-prop poses this story's own tech
+    // notes ask for, on top of US-040's 5 above. "lever idle" plays the
+    // designer's 1-frame `idle` clip explicitly (distinct from the "near
+    // (1 m)" pose above, which uses the rest pose via clip -1); "lever
+    // mid-pull" freezes the `pull` clip at frame 2 / t=45ms - a non-axis-
+    // aligned handle pose (free yaw inside the swing), the actual face-7 +
+    // rotated-normal-light parity case ("face 7 present, light |dL| <=
+    // 1e-3", 15.3 item 6). Same framing as "near (1 m)" (only the queued
+    // clip/frame/t differ).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lever idle',
+      cam: { x: LEVER_X - 1.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 60 },
+      before: () => {
+        const pm = compareVoxelPool.models.get('lever');
+        const idleIdx = pm && pm.clipIndex.idle !== undefined ? pm.clipIndex.idle : -1;
+        compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90, idleIdx, 0, 0);
+      } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel lever mid-pull',
+      cam: { x: LEVER_X - 1.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 60 },
+      before: () => {
+        const pm = compareVoxelPool.models.get('lever');
+        const pullIdx = pm && pm.clipIndex.pull !== undefined ? pm.clipIndex.pull : -1;
+        compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90, pullIdx, 2, 45);
+      } },
     // "voxel over terrain" (architecture.md 15.2 item 7's A2 -> A3 chain
     // pose) NOT added: every placement tried - on open terrain well clear
     // of the tower, and near the breach with terrain in the background -

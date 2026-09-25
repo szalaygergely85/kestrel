@@ -22,7 +22,7 @@
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
 import { fastShade, samplePowLUT } from './fastShade.js';
-import { KIND_MODEL } from './GBuffer.js';
+import { KIND_MODEL, FACE_PACKED } from './GBuffer.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -636,10 +636,16 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
  */
 export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
-  const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i], aoD = gbuf.aoD[i];
-  const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
+  const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i];
   const face = gbuf.face[i];
   const kind = gbuf.kind[i];
+  // US-041a (15.3 item 3): kind 8 (KIND_MODEL) face 7 (FACE_PACKED) has the
+  // octahedral-packed normal bits in `aoD`'s slot, not a real AO distance
+  // (`gbuf.aoD[i]` read as a float there is garbage) - force +Inf, same as
+  // every OTHER kind-8 face already gets (voxelMarch.js writes it literally
+  // for axis-aligned parts; this is the face-7 twin of that).
+  const aoD = (kind === KIND_MODEL && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
+  const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
   return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out);
 }

@@ -31,12 +31,18 @@ export function lanternTake(ctx) {
   }
 
   // US-011 (7.5 item 2): the clip player, not a raw setComponent - `variant`
-  // is still written (readability / older callers), but `sprite.anim` is
-  // what the engine actually renders (`entity.play`).
+  // is still written (readability / older callers), but `sprite.anim`/
+  // `voxel.anim` is what the engine actually renders (`entity.play`).
+  // US-041a (15.3 item 1): `sprite ?? voxel` - `design/models/voxel_props.js`'s
+  // `attach()` already puts `.voxel` on the live `lantern` model (its
+  // materials are merged), so this prop may spawn as either component;
+  // writing `variant` onto a hard-coded `.sprite` key would create a SECOND
+  // component on a voxel-bound entity (never both, World.spawn's own rule).
   if (entity) {
     entity.play('empty');
-    const sprite = (entity.getComponent && entity.getComponent('sprite')) || {};
-    entity.setComponent('sprite', { ...sprite, variant: 'empty' });
+    const compName = entity.getComponent && entity.getComponent('voxel') ? 'voxel' : 'sprite';
+    const comp = (entity.getComponent && entity.getComponent(compName)) || {};
+    entity.setComponent(compName, { ...comp, variant: 'empty' });
   }
 
   world.state['tower.lantern.taken'] = true;

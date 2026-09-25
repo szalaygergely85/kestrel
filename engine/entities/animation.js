@@ -49,12 +49,69 @@ export function compileClip(anim) {
  * `world.assets` (set by `World.load`). Null when unresolvable (unknown
  * model/anim, or a bare `World` with no assets) - callers warn, never throw
  * (a render/step tick must never crash the game over stale/test data).
+ * `isVoxel` (US-041a, 15.3 item 1): when true, resolves `animName` through
+ * `model.voxel.animations` (a VoxelClipDef - rot/pos keyframes, not sprite
+ * frames) instead of `model.animations`, via `compileVoxelClip` below.
  */
-export function clipFor(world, modelKey, animName) {
+export function clipFor(world, modelKey, animName, isVoxel) {
   if (!world.assets || !world.assets.has('model', modelKey)) return null;
   const model = world.assets.model(modelKey);
+  if (isVoxel) {
+    const anim = model.voxel && model.voxel.animations && model.voxel.animations[animName];
+    return anim ? compileVoxelClip(anim) : null;
+  }
   const anim = model.animations && model.animations[animName];
   return anim ? compileClip(anim) : null;
+}
+
+/**
+ * US-041a (15.3 item 1/4): compiles (and caches on the VoxelClipDef itself,
+ * never serialized - same pattern as `compileClip`) an AnimClip-shaped
+ * object from a `model.voxel.animations[name]` def, so `stepAnimations`
+ * below can drive `components.voxel` with the EXACT same frame/t stepping
+ * loop it already uses for `components.sprite` - `voxel.frame`/`voxel.t`
+ * feed `computeVoxelPose`'s `inst.frame`/`inst.tMs` directly (voxelPose.js's
+ * `samplePose` linearly interpolates frame -> frame+1 using `tMs /
+ * durMs[frame]`, which is exactly the invariant this stepper maintains: `t`
+ * is always < `durMs[frame]` after stepping). Independent of
+ * `voxelPack.js`'s own `pm.clips` (which `VoxelPool` feeds to
+ * `computeVoxelPose` for POSE sampling) - this is only for the animation
+ * PLAYER's frame/t bookkeeping and `animEnd`/tag events, same job
+ * `compileClip` does for sprites.
+ */
+export function compileVoxelClip(anim) {
+  if (anim._clip) return anim._clip;
+  const frames = anim.frames || [];
+  const count = frames.length;
+  const durMs = new Float32Array(count);
+  if (anim.durations) {
+    for (let i = 0; i < count; i++) durMs[i] = anim.durations[i % anim.durations.length];
+  } else {
+    const d = 1000 / (anim.fps || 10);
+    durMs.fill(d);
+  }
+  const tagCodes = new Array(count).fill(null);
+  if (anim.events) {
+    for (const tag of Object.keys(anim.events)) {
+      const v = anim.events[tag];
+      for (const idx of Array.isArray(v) ? v : [v]) tagCodes[idx] = tag;
+    }
+  }
+  const clip = { durMs, loop: !!anim.loop, tagCodes, fps0: false, count };
+  Object.defineProperty(anim, '_clip', { value: clip, enumerable: false, configurable: true });
+  return clip;
+}
+
+/**
+ * US-041a (15.3 item 1): `sprite ?? voxel` - the single animated component
+ * of an entity, whichever it has (an entity never has both - `World.spawn`
+ * throws on that). Used by `EntityHandle.play`/`stop` and `stepAnimations`
+ * so neither needs its own `sprite || voxel` check.
+ */
+export function animComponent(e) {
+  const c = e.components;
+  if (!c) return null;
+  return c.sprite || c.voxel || null;
 }
 
 const warnedUnknownAnim = new Set();
@@ -76,29 +133,35 @@ export function warnUnknownAnimOnce(modelKey, animName) {
  */
 export function stepAnimations(world, dtMs) {
   world.forEachEntity((e, id) => {
-    const sprite = e.components && e.components.sprite;
-    if (!sprite || !sprite.playing) return;
-    const clip = clipFor(world, sprite.model, sprite.anim);
+    const comps = e.components;
+    if (!comps) return;
+    // US-041a (15.3 item 1): `sprite ?? voxel` - an entity never has both
+    // (World.spawn throws on that), so this alone tells us which shape
+    // `anim.model`/`anim.anim` resolve through (clipFor's `isVoxel`).
+    const sprite = comps.sprite, voxel = comps.voxel;
+    const anim = sprite || voxel;
+    if (!anim || !anim.playing) return;
+    const clip = clipFor(world, anim.model, anim.anim, !sprite);
     if (!clip || clip.fps0 || clip.count === 0) return;
-    sprite.t += dtMs * (sprite.speed || 1);
+    anim.t += dtMs * (anim.speed || 1);
     let steps = 0;
-    while (sprite.t >= clip.durMs[sprite.frame] && steps++ < MAX_STEPS_PER_CALL) {
-      sprite.t -= clip.durMs[sprite.frame];
-      sprite.frame++;
-      if (sprite.frame >= clip.count) {
-        // `sprite.loop` (set by `play()`/the spawn) is the serialized state; a
-        // hand-built sprite without it falls back to the clip's own flag.
-        if (sprite.loop !== undefined ? sprite.loop : clip.loop) {
-          sprite.frame = 0;
+    while (anim.t >= clip.durMs[anim.frame] && steps++ < MAX_STEPS_PER_CALL) {
+      anim.t -= clip.durMs[anim.frame];
+      anim.frame++;
+      if (anim.frame >= clip.count) {
+        // `anim.loop` (set by `play()`/the spawn) is the serialized state; a
+        // hand-built component without it falls back to the clip's own flag.
+        if (anim.loop !== undefined ? anim.loop : clip.loop) {
+          anim.frame = 0;
         } else {
-          sprite.frame = clip.count - 1;
-          sprite.t = 0;
-          sprite.playing = false;
-          world._emit(id, 'animEnd', sprite.anim);
+          anim.frame = clip.count - 1;
+          anim.t = 0;
+          anim.playing = false;
+          world._emit(id, 'animEnd', anim.anim);
           break;
         }
       }
-      const tag = clip.tagCodes[sprite.frame];
+      const tag = clip.tagCodes[anim.frame];
       if (tag) world._emit(id, tag, undefined);
     }
   });

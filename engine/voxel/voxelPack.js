@@ -126,6 +126,17 @@ export function packVoxelModel(def, matIdFor) {
     clipIndex[name] = ci;
   }
 
+  // ---- mounts (US-041a, 15.3 item 5) -----------------------------------------
+  // `partIdx` resolved once here (not per `voxelMountWorld` call, rule 9) -
+  // `assertVoxelModel` above already guarantees every named `part` exists;
+  // an omitted `part` defaults to the model's root (part index 0).
+  const mounts = {};
+  const defMounts = def.mounts || {};
+  for (const name of Object.keys(defMounts)) {
+    const m = defMounts[name];
+    mounts[name] = { at: new Float64Array(m.at), partIdx: m.part !== undefined ? partNames.indexOf(m.part) : 0 };
+  }
+
   return {
     sx, sy, sz,
     cellM: def.cellM,
@@ -140,5 +151,6 @@ export function packVoxelModel(def, matIdFor) {
     matIds,
     clips,
     clipIndex,
+    mounts,
   };
 }

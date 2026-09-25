@@ -4,12 +4,15 @@
 import {
   LightSet, buildLightSet, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
-  sampleVis, VIS_FLOOR_EPS,
+  sampleVis, VIS_FLOOR_EPS, makeLightBuffer,
 } from './lighting.js';
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
 import paletteMod from '../../design/palette.js';
 import testRoomDef from '../../design/levels/test_room.js';
+// US-041a (15.3 item 3): face-7 (FACE_PACKED) decode test fixtures.
+import { KIND_MODEL, FACE_PACKED } from './GBuffer.js';
+import { packNormalOct } from '../voxel/octNormal.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; testRoomDef;
@@ -238,6 +241,43 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   const fb = { light: { uniform: true, rgb: new Float32Array([1, 2, 3]) } };
   lightSurfaces(fb, null, null, null);
   ok('lightSurfaces no-ops on the uniform path', fb.light.rgb[0] === 1 && fb.light.rgb[1] === 2 && fb.light.rgb[2] === 3);
+}
+
+// --- US-041a (15.3 item 3): lightSurfaces decodes a face-7 (FACE_PACKED) octahedral-packed normal from `aoD`'s bits ---
+{
+  const cols = 1, rows = 1;
+  const kind = new Uint8Array([KIND_MODEL]);
+  const face = new Uint8Array([FACE_PACKED]);
+  const aoD = new Float32Array(1);
+  new Uint32Array(aoD.buffer)[0] = packNormalOct(0, 0, 1); // straight up
+  const depthArr = new Float32Array([5]);
+  const gbuf = { kind, face, aoD, cols, rows };
+  const rt = { pxCellW: 1, pxCellH: 1 };
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+
+  // A light 500 m straight up (dwarfing the few metres between cam and the
+  // reconstructed surface point P) is lit only if the decoded normal's N.L
+  // is actually being evaluated - the old fixed-face lookup had no entry for
+  // face 7 (`NX[7]||0` etc, all 0), so this cell was always unlit before.
+  const lsUp = new LightSet();
+  lsUp.ambient[0] = lsUp.ambient[1] = lsUp.ambient[2] = 0;
+  lsUp.add({ x: cam.x, y: cam.y, z: cam.z + 500, hue: [1, 1, 1], intensity: 1, radius: 1000, on: true });
+  lsUp.update(0, null);
+  const lbUp = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbUp }, lsUp, cam, null);
+  const litSum = lbUp.rgb[0] + lbUp.rgb[1] + lbUp.rgb[2];
+  ok('face-7 packed normal (straight up) is lit under an overhead light', litSum > 0.01, String(litSum));
+
+  // Same normal, a light 500 m straight DOWN instead: N.L <= 0 -> unlit.
+  // Proves the decode is directional (not "kind 8 face 7 is always lit").
+  const lsDown = new LightSet();
+  lsDown.ambient[0] = lsDown.ambient[1] = lsDown.ambient[2] = 0;
+  lsDown.add({ x: cam.x, y: cam.y, z: cam.z - 500, hue: [1, 1, 1], intensity: 1, radius: 1000, on: true });
+  lsDown.update(0, null);
+  const lbDown = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbDown }, lsDown, cam, null);
+  const darkSum = lbDown.rgb[0] + lbDown.rgb[1] + lbDown.rgb[2];
+  ok('same face-7 normal is unlit under a light straight below it (N.L <= 0)', darkSum === 0, String(darkSum));
 }
 
 // --- architect re-review 1 follow-up item 1: an off light leaves col rgb at 0 after update() ---

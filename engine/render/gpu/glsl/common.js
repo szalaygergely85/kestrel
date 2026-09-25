@@ -148,6 +148,44 @@ vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
 }
 `;
 
+// US-041a (15.3 item 3): literal GLSL twin of engine/voxel/octNormal.js's
+// `packNormalOct`/`unpackNormalOct` - the octahedral normal packing used for
+// a rotated voxel-model part's face 7 (`GA.w`, `aoD` on the CPU). `pack` is
+// used by `voxel.frag.js` (the march), `unpack` by `light.frag.js` (the only
+// light-pass change, 15.3 item 3). Both take/return the SAME bit layout as
+// the JS reference (qx | qy<<16, each 16 bits) so the two paths can never
+// disagree on a normal's bits.
+export const OCT_NORMAL = `
+uint packNormalOct(vec3 n) {
+  float s = abs(n.x) + abs(n.y) + abs(n.z);
+  float x = n.x / s, y = n.y / s, z = n.z / s;
+  if (z < 0.0) {
+    float ax = abs(x), ay = abs(y);
+    float sx = x >= 0.0 ? 1.0 : -1.0, sy = y >= 0.0 ? 1.0 : -1.0;
+    float nxp = (1.0 - ay) * sx, nyp = (1.0 - ax) * sy;
+    x = nxp; y = nyp;
+  }
+  uint qx = uint(clamp(floor((x * 0.5 + 0.5) * 65535.0 + 0.5), 0.0, 65535.0));
+  uint qy = uint(clamp(floor((y * 0.5 + 0.5) * 65535.0 + 0.5), 0.0, 65535.0));
+  return qx | (qy << 16u);
+}
+
+vec3 unpackNormalOct(uint bits) {
+  uint qx = bits & 0xFFFFu;
+  uint qy = (bits >> 16u) & 0xFFFFu;
+  float x = (float(qx) / 65535.0) * 2.0 - 1.0;
+  float y = (float(qy) / 65535.0) * 2.0 - 1.0;
+  float z = 1.0 - abs(x) - abs(y);
+  if (z < 0.0) {
+    float ax = abs(x), ay = abs(y);
+    float sx = x >= 0.0 ? 1.0 : -1.0, sy = y >= 0.0 ? 1.0 : -1.0;
+    float ox = (1.0 - ay) * sx, oy = (1.0 - ax) * sy;
+    x = ox; y = oy;
+  }
+  return normalize(vec3(x, y, z));
+}
+`;
+
 export const FALLOFF_FAST = `
 float falloffFast(float d, float r) {
   if (d >= r) return 0.0;

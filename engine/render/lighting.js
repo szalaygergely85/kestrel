@@ -28,6 +28,8 @@
 // and documents its own version of this deviation.
 
 import { HFOV_DEG } from './sectorCaster.js';
+import { FACE_PACKED } from './GBuffer.js';
+import { unpackNormalOct } from '../voxel/octNormal.js';
 
 export const MAX_LIGHTS = 16;
 // PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
@@ -378,12 +380,32 @@ export function syncEntityLights(lights, world, palette, attachedLightPos, out) 
   });
 }
 
-// Normal-by-face lookup (GBuffer.js FACE_N..FACE_D = 1..6).
+// Normal-by-face lookup (GBuffer.js FACE_N..FACE_D = 1..6). Face 7
+// (FACE_PACKED, a rotated voxel-model part - US-041a 15.3 item 3) has no
+// entry here: its normal is octahedral-packed in the G-buffer's `aoD` slot
+// instead (`GA.w` on the GPU) and decoded separately, see `lightSurfaces`.
 const NX = [0, 0, 1, 0, -1, 0, 0];
 const NY = [0, -1, 0, 1, 0, 0, 0];
 const NZ = [0, 0, 0, 0, 0, 1, -1];
 
 const evalScratch = new Float64Array(3);
+const modelNormalScratch = new Float64Array(3);
+
+// US-041a (15.3 item 3): "on the CPU [the packed normal bits] go into the
+// bits of gbuf.aoD[i] through a Uint32Array alias of gbuf.aoD.buffer, made
+// once per GBuffer identity (not per frame)" - literal twin of
+// voxelMarch.js's own `getAoAlias` (that file writes the bits at cast time;
+// this one reads them back at light time), kept as a separate cache here
+// since the two modules must never assume they share a property key.
+const _aoAliasCache = new WeakMap();
+function aoU32(gbuf) {
+  let alias = _aoAliasCache.get(gbuf);
+  if (!alias || alias.buffer !== gbuf.aoD.buffer) {
+    alias = new Uint32Array(gbuf.aoD.buffer, gbuf.aoD.byteOffset, gbuf.aoD.length);
+    _aoAliasCache.set(gbuf, alias);
+  }
+  return alias;
+}
 
 // US-007: `lightAt` writes its per-call sun/point-light debug info here
 // (never allocated per call - architecture.md 9), mirroring `LIGHT.w`'s
@@ -762,7 +784,18 @@ export function lightSurfaces(fb, lights, cam, world) {
       const rdx = dirX + planeX * cameraX, rdy = dirY + planeY * cameraX;
       const px = cam.x + rdx * d, py = cam.y + rdy * d, pz = cam.z + slope * d;
       const f = face[i];
-      lightAt(lights, world, px, py, pz, NX[f] || 0, NY[f] || 0, NZ[f] || 0, evalScratch, idxList, idxCount);
+      let nx, ny, nz;
+      if (f === FACE_PACKED) {
+        // US-041a (15.3 item 3): the only light-pass change - decode the
+        // octahedral-packed normal from `aoD`'s bits (`unpackNormalOct`, the
+        // literal twin `packNormalOct` in voxelMarch.js wrote) instead of the
+        // fixed axis lookup above.
+        unpackNormalOct(aoU32(gbuf)[i], modelNormalScratch);
+        nx = modelNormalScratch[0]; ny = modelNormalScratch[1]; nz = modelNormalScratch[2];
+      } else {
+        nx = NX[f] || 0; ny = NY[f] || 0; nz = NZ[f] || 0;
+      }
+      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/

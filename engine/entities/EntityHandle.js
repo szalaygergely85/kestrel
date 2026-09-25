@@ -6,7 +6,7 @@
 //
 // `play`/`stop`/`onAnimEnd` (US-011, docs/architecture.md 10.1) sit on top
 // of `animation.js`'s clip compiler/player.
-import { compileClip, warnUnknownAnimOnce } from './animation.js';
+import { compileClip, compileVoxelClip, warnUnknownAnimOnce } from './animation.js';
 
 let warnedDeadOnce = new WeakSet();
 
@@ -30,42 +30,47 @@ export class EntityHandle {
   }
 
   /**
-   * `components.sprite.{anim, frame:0, t:0, loop, speed, playing:true}`
-   * (10.1). Same anim already playing + `restart` false: no-op (safe to
-   * call every frame). Unknown anim (or no sprite/assets to resolve it):
-   * `console.error` once, no-op - never throws mid-step.
+   * `components.sprite.{anim, frame:0, t:0, loop, speed, playing:true}` (or
+   * `components.voxel`, same shape - US-041a, 15.3 item 1: `sprite ?? voxel`,
+   * never both). Same anim already playing + `restart` false: no-op (safe to
+   * call every frame). Unknown anim (or no sprite/voxel/assets to resolve
+   * it): `console.error` once, no-op - never throws mid-step.
    */
   play(anim, opts = {}) {
     if (!this.alive) { this._deadNoop('play'); return this; }
     const d = this.data;
     if (!d) { this._deadNoop('play'); return this; }
-    const sprite = d.components.sprite;
-    if (!sprite) { console.warn(`EntityHandle.play: entity "${this.id}" has no sprite component - ignored.`); return this; }
+    const sprite = d.components.sprite, voxel = d.components.voxel;
+    const comp = sprite || voxel;
+    if (!comp) { console.warn(`EntityHandle.play: entity "${this.id}" has no sprite/voxel component - ignored.`); return this; }
     const assets = this.world.assets;
-    const model = assets && assets.has('model', sprite.model) ? assets.model(sprite.model) : null;
-    const animDef = model && model.animations && model.animations[anim];
-    if (!animDef) { warnUnknownAnimOnce(sprite.model, anim); return this; }
+    const model = assets && assets.has('model', comp.model) ? assets.model(comp.model) : null;
+    const animDef = sprite
+      ? (model && model.animations && model.animations[anim])
+      : (model && model.voxel && model.voxel.animations && model.voxel.animations[anim]);
+    if (!animDef) { warnUnknownAnimOnce(comp.model, anim); return this; }
     const restart = !!opts.restart;
-    if (!restart && sprite.anim === anim && sprite.playing) return this;
-    sprite.anim = anim;
-    sprite.frame = 0;
-    sprite.t = 0;
-    sprite.loop = opts.loop !== undefined ? opts.loop : !!animDef.loop;
-    sprite.speed = opts.speed !== undefined ? opts.speed : 1;
-    sprite.playing = true;
-    const clip = compileClip(animDef);
+    if (!restart && comp.anim === anim && comp.playing) return this;
+    comp.anim = anim;
+    comp.frame = 0;
+    comp.t = 0;
+    comp.loop = opts.loop !== undefined ? opts.loop : !!animDef.loop;
+    comp.speed = opts.speed !== undefined ? opts.speed : 1;
+    comp.playing = true;
+    const clip = sprite ? compileClip(animDef) : compileVoxelClip(animDef);
     const tag0 = clip.tagCodes[0];
     if (tag0) this.world._emit(this.id, tag0, undefined);
     this.world.renderVersion++;
     return this;
   }
 
-  /** `sprite.playing = false` (holds the current frame). */
+  /** `sprite.playing = false` (or `voxel.playing`) - holds the current frame. */
   stop() {
     if (!this.alive) { this._deadNoop('stop'); return this; }
     const d = this.data;
     if (!d) { this._deadNoop('stop'); return this; }
-    if (d.components.sprite) d.components.sprite.playing = false;
+    const comp = d.components.sprite || d.components.voxel;
+    if (comp) comp.playing = false;
     this.world.renderVersion++;
     return this;
   }
