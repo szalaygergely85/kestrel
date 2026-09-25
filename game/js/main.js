@@ -1529,14 +1529,15 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
-// `?voxelbench=1` (architecture.md 15.2 item 6, D-019 gate): renders the
-// lever + lamp voxel instances at about 2 m (about 15% of the screen, per
-// the tech note) for many frames back to back and reads
-// `gpuPipeline.stats.voxelMs*` (the same CPU submit-time bracket `terrainMs`
-// uses - no nested GPU queries on ANGLE, US-016 finding). Load with
-// `?voxelbench=1&grid=240x90&rays=2` (the gate's own grid/n; this mode does
-// not force the grid itself, unlike `?bench=1`/`?gpucompare=1`, so the URL
-// must ask for it).
+// `?voxelbench=1` (architecture.md 15.2 item 6, D-019 gate): renders every
+// real voxel prop the tower spawns (US-056: lever, lantern, boulder, rubble,
+// canvasHeap, gondola, strut, envelopeHeap, relay - `pool.collect(world,
+// cam)`, not a single hand-pushed instance) for many frames back to back and
+// reads `gpuPipeline.stats.voxelMs*` (the same CPU submit-time bracket
+// `terrainMs` uses - no nested GPU queries on ANGLE, US-016 finding). Load
+// with `?voxelbench=1&grid=240x90&rays=2` (the gate's own grid/n; this mode
+// does not force the grid itself, unlike `?bench=1`/`?gpucompare=1`, so the
+// URL must ask for it).
 function runVoxelBenchMode() {
   if (!gpuPipeline) {
     console.error('[voxelbench] no active GpuCellPipeline (backend=' + rt.backend + ') - nothing to measure.');
@@ -1562,14 +1563,20 @@ function runVoxelBenchMode() {
   pool.bind(assets, matTable);
   gpuPipeline.bindVoxels(pool);
 
-  // Real lever world position (design/levels/tower.js), tower origin
-  // (1480, 1018, 0) - same prop the `?gpucompare=1` voxel poses use. The
-  // lamp (`lantern`) is left out here too - see the Programmer notes on the
-  // "voxel lever near" gpucompare pose (its wall-bracket placement doesn't
-  // land the same way the lever's free-standing one does yet).
-  const LEVER = { x: 1499.25, y: 1027.3, z: 3.0, yaw: 90 };
-  // ~2 m from the lever, framing it at about 15% of the screen at 240x90.
-  const cam = { x: 1497.25, y: 1027.3, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 20 };
+  // US-056: `pool.collect(world, cam)` instead of a single hand-pushed
+  // `lever` instance - `World.load` above already spawned every tower prop
+  // with a merged voxel `ModelDef` as a real `components.voxel` entity
+  // (15.3 item 1's spawn rule), so this now measures "with all props"
+  // (lever, lantern, boulder, rubble x5, canvasHeap, gondola, strut - 10 of
+  // the 12 total are in the wreck-room cluster, well under the 16-instance
+  // cap; envelopeHeap and the summit relay sit apart). Cam (tower origin
+  // 1480, 1018, 0 + local 14.0, 2.0, yaw 150, pitch 5) stands south-west of
+  // the cluster looking across it - 11 of the 12 land on screen at once
+  // (`?voxelbench` "instances" line), a harder GPU-upload case than any
+  // single-prop framing while `collect` (cam-independent: gathers every
+  // voxel entity in the world, nearest 16 win only past the cap) still pays
+  // the pose cost for all of them regardless of the exact framing.
+  const cam = { x: 1494.0, y: 1020.0, z: engine.physics.eyeHeight, yawDeg: 150, pitchDeg: 5 };
 
   const fb = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
@@ -1578,8 +1585,7 @@ function runVoxelBenchMode() {
 
   const FRAMES = 300;
   for (let i = 0; i < FRAMES; i++) {
-    pool.beginFrame();
-    pool.pushInstance('lever', LEVER.x, LEVER.y, LEVER.z, LEVER.yaw);
+    pool.collect(world, cam);
     pool.project(cam, rt);
     renderWorld(fb, world, cam); // fb.gpuDda = true: primes ambientL only
     gpuPipeline.frame(fb, lights || ambientL, cam, world);

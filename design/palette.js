@@ -717,6 +717,155 @@
       a: { shade: 1.00, glyph: '*' }, h: { shade: 1.00, tint: 'brassHot', amount: 0.40, glyph: '+' }
     }, rows: ['ah', 'ha'] }
   };
+  // US-056 batch 2 (design/models/voxel_tower.js `voxelMaterials.v1`, merge step): the remaining solid tower props
+  // (boulder, rubble, canvas heap, gondola, strut, envelope heap, relay). Appended after brass_glint so no existing
+  // material id moves. 18 keys (12 of batch 2 + 6 of the ART-OWN-002 rework: linen_light/linen/linen_dark,
+  // gore_red/gore_red_dark, canvas_burnt).
+  materials.canvas_light = {
+    desc: 'VOXEL PROPS (wreck). Bright crests of crumpled envelope canvas: fold tops, the high ridge of a heap. Pale ochre, ' +
+          'the brightest thing on the floor after the sun patch.',
+    base: 'canvasLight', albedo: 0.92, ramp: 'canvas', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, f: { shade: 1.10, glyph: ')' }, s: { shade: 0.88, tint: 'canvas', amount: 0.5 }
+    }, rows: ['aafa', 'asaa', 'faaa', 'aasf'] }
+  };
+  materials.canvas_dark = {
+    desc: 'VOXEL PROPS (wreck). Canvas in the fold shadows, the flanks of the folds, the hem on the floor and the scorched ' +
+          'ends (canvasScorch tone). The heap\'s dark body and ground contour.',
+    base: 'canvasDark', albedo: 0.66, ramp: 'canvas', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, t: { shade: 0.62, tint: 'canvasScorch', amount: 0.75 }, f: { shade: 0.90, glyph: '(' }
+    }, rows: ['atfa', 'aaat', 'fata', 'taaa'] }
+  };
+  materials.patina = {
+    desc: 'VOXEL PROPS (machine). Verdigris on brass: the gondola dent, the strut kink, spots on the relay bowl. Teal-green, ' +
+          'so a bend or dent reads as damage and not as a hole.',
+    base: 'verdigris', albedo: 0.80, ramp: 'copper', spec: 0.20, bg: { mode: 'darken', k: 0.14 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, l: { shade: 1.15, tint: 'verdigrisLight', amount: 0.6, glyph: '%' },
+      d: { shade: 0.78, tint: 'verdigrisDark', amount: 0.6 }
+    }, rows: ['alad', 'daal', 'lada', 'adla'] }
+  };
+  materials.rope = {
+    desc: 'VOXEL PROPS (wreck). Rope: the snapped stays on the gondola rail, the rope bands over the canvas heaps. ' +
+          'Twist = alternating light ) / dark ( texels.',
+    base: 'rope', albedo: 0.85, ramp: 'canvas', bg: { mode: 'darken', k: 0.14 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [16, 16], key: {
+      l: { shade: 1.15, tint: 'ropeLight', amount: 0.6, glyph: ')' }, d: { shade: 0.75, tint: 'ropeDark', amount: 0.6, glyph: '(' }
+    }, rows: ['ld', 'dl'] }
+  };
+  materials.block_light = {
+    desc: 'VOXEL PROPS (rubble). Weathered top faces and top edges of fallen cut blocks: pale, lime-washed by the rain. ' +
+          'Much lighter than any wall stone, so a block on the rubble floor has a bright lid.',
+    base: 'pencil', albedo: 0.92, ramp: 'stone', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, h: { shade: 1.08, tint: 'ashLight', amount: 0.4 }, x: { shade: 0.80, glyph: ',' }
+    }, rows: ['aaha', 'haax', 'axah', 'aaaa'] }
+  };
+  materials.block_dark = {
+    desc: 'VOXEL PROPS (rubble). The broken sides of the fallen blocks and the pebbles\' shadow sides: dark, so the block ' +
+          'separates from the mid-value rubble floor and the wall behind it.',
+    base: 'stoneDark', albedo: 0.62, ramp: 'stone', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 0.70, tint: 'ashDark', amount: 0.5 }, x: { shade: 0.55, glyph: ',' }
+    }, rows: ['aaca', 'caaa', 'aaxa', 'acaa'] }
+  };
+  materials.granite_light = {
+    desc: 'VOXEL PROPS (boulder). The upper band of the boulder under its moss cap: cool pale granite with bright ' +
+          'specks. Neutral / cool, never the warm wall beige.',
+    base: 'ashLight', albedo: 0.90, ramp: 'rubble', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, s: { shade: 1.12, tint: 'steam', amount: 0.3 }, d: { shade: 0.85, tint: 'rock', amount: 0.5 }
+    }, rows: ['asad', 'daas', 'asda', 'sada'] }
+  };
+  materials.granite_dark = {
+    desc: 'VOXEL PROPS (boulder). The boulder\'s lower half and the crack: dark neutral granite with pale lichen specks. ' +
+          'The dark body under the bright rim.',
+    base: 'ashDark', albedo: 0.62, ramp: 'rubble', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, d: { shade: 0.72, tint: 'ironDark', amount: 0.6 }, l: { shade: 1.25, tint: 'ash', amount: 0.5, glyph: "'" }
+    }, rows: ['adaa', 'aaad', 'alaa', 'daal'] }
+  };
+  materials.moss_cap = {
+    desc: 'VOXEL PROPS (boulder, rubble). A thick moss cushion on the top of a stone prop, brighter and yellower than the ' +
+          'wall moss (moss_top is the wall-top material), so the boulder\'s cap reads first.',
+    base: 'mossLight', albedo: 0.88, ramp: 'foliage', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, d: { shade: 0.75, tint: 'mossDark', amount: 0.7, glyph: '"' }, l: { shade: 1.10, tint: 'moss', amount: 0.4 }
+    }, rows: ['adal', 'laad', 'adla', 'dala'] }
+  };
+  materials.crystal_dead = {
+    desc: 'VOXEL PROPS (relay). The dead aether crystals: grey with a teal memory, glassy (spec 0.5). Not emissive: the ' +
+          'relay is asleep until US-022.',
+    base: 'aetherDead', albedo: 0.78, ramp: 'iron', spec: 0.50, bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, g: { shade: 1.20, tint: 'aetherDim', amount: 0.5 }
+    }, rows: ['agaa', 'aaag', 'gaaa', 'aaga'] }
+  };
+  materials.crystal_lit = {
+    desc: 'VOXEL PROPS (relay). The awake crystals (relay clips wake / awake): aether teal with white-hot cores, emissive ' +
+          '0.85 so they glow in shade. The halo / sparkles stay a billboard (US-022).',
+    base: 'aether', albedo: 1.00, ramp: 'aether', spec: 0.40, emissive: 0.85, bg: { mode: 'darken', k: 0.22 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 1.20, tint: 'aetherCore', amount: 0.6 }, m: { shade: 0.85, tint: 'aetherMid', amount: 0.5 }
+    }, rows: ['acam', 'maac', 'acma', 'caam'] }
+  };
+  materials.mirror_dark = {
+    desc: 'VOXEL PROPS (relay). The cracked relay mirror: dull blue-grey glass with bright streaks (spec 0.85), inside a ' +
+          'brass_light frame. The crack itself is iron_dark voxels.',
+    base: 'mirrorDark', albedo: 0.80, ramp: 'iron', spec: 0.85, bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, s: { shade: 1.30, tint: 'mirror', amount: 0.6 }
+    }, rows: ['saaa', 'asaa', 'aasa', 'aaas'] }
+  };
+  materials.linen_light = {
+    desc: 'VOXEL PROPS (wake spot). The spare linen tarp\'s lit crests: the crate lid edges, fold ridges, the rolled fold ' +
+          'of the turned-back corner. Near-white and cool, so it never reads as the ochre envelope.',
+    base: 'linenLight', albedo: 0.94, ramp: 'canvas', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, f: { shade: 1.06, glyph: ')' }, s: { shade: 0.90, tint: 'linen', amount: 0.5 }
+    }, rows: ['aafa', 'asaa', 'faaa', 'aasf'] }
+  };
+  materials.linen = {
+    desc: 'VOXEL PROPS (wake spot). The tarp\'s flat parts: the sheet on the floor, the crate lid, the folded flap. Pale ' +
+          'warm-white with a faint weave.',
+    base: 'linen', albedo: 0.86, ramp: 'canvas', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, w: { shade: 0.92, tint: 'linenDark', amount: 0.25, glyph: '~' }, l: { shade: 1.06, tint: 'linenLight', amount: 0.5 }
+    }, rows: ['awal', 'laaw', 'waal', 'alwa'] }
+  };
+  materials.linen_dark = {
+    desc: 'VOXEL PROPS (wake spot). The tarp in shadow: the fold valleys, the flanks of the drape down the crate sides. ' +
+          'Dark cool grey-brown (value body for the pale crests).',
+    base: 'linenDark', albedo: 0.66, ramp: 'canvas', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' }
+    }, rows: ['afaa', 'aaaf', 'faaa', 'aafa'] }
+  };
+  materials.gore_red = {
+    desc: 'VOXEL PROPS (envelope). The faded red envelope gores that alternate with the ochre ones (12 around the bag), ' +
+          'the stripe pattern that says "balloon" from the breach. Lit folds lighter, seams darker.',
+    base: 'goreRed', albedo: 0.86, ramp: 'canvas', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, l: { shade: 1.12, tint: 'goreRedLight', amount: 0.6, glyph: ')' },
+      s: { shade: 0.72, tint: 'goreRedDark', amount: 0.5, glyph: '~' }
+    }, rows: ['alas', 'aasa', 'laaa', 'saal'] }
+  };
+  materials.gore_red_dark = {
+    desc: 'VOXEL PROPS (envelope). Red gores inside the collapse creases (the fold valleys across the bag).',
+    base: 'goreRedDark', albedo: 0.62, ramp: 'canvas', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, t: { shade: 0.70, tint: 'canvasScorch', amount: 0.6, glyph: '(' }
+    }, rows: ['ataa', 'aaat', 'taaa', 'aata'] }
+  };
+  materials.canvas_burnt = {
+    desc: 'VOXEL PROPS (envelope). Burnt canvas: the ragged black rim of the tear on the east flank, the dark inside seen ' +
+          'through it and through the mouth hoop, a few scorch blotches. Not emissive (the fire is long out).',
+    base: 'canvasScorch', albedo: 0.50, ramp: 'ash', bg: { mode: 'darken', k: 0.10 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 0.70, tint: 'cinder', amount: 0.7, glyph: ',' }, e: { shade: 1.15, tint: 'emberDim', amount: 0.3, glyph: "'" }
+    }, rows: ['acae', 'caaa', 'aeac', 'aaca'] }
+  };
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)

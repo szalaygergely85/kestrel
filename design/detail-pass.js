@@ -471,6 +471,189 @@
       grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
       face: { set: 'glint', mid: 'glint', far: 'glint' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // US-056 batch 2 (design/models/voxel_tower.js `voxelMaterials.v2`, merge step): the remaining solid tower props.
+    // Grid ~ half a voxel of the model that uses the material (tones/glyph alternates change inside a near voxel
+    // face); lines: false (the edge pass draws the voxel steps, 15.2 item 5). Appended after brass_glint so no
+    // existing material id moves.
+    canvas_light: {
+      v1: 'canvas_light', seed: 211,
+      desc: 'VOXEL PROPS (wreck). Bright crests of crumpled envelope canvas: fold tops, the high ridge of a heap. Pale ochre, ' +
+            'the brightest thing on the floor after the sun patch.',
+      albedo: 0.92, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['canvasLight', 4], ['canvas', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    canvas_dark: {
+      v1: 'canvas_dark', seed: 212,
+      desc: 'VOXEL PROPS (wreck). Canvas in the fold shadows, the flanks of the folds, the hem on the floor and the scorched ' +
+            'ends (canvasScorch tone). The heap\'s dark body and ground contour.',
+      albedo: 0.66, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['canvasDark', 2], ['canvasScorch', 2]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    patina: {
+      v1: 'patina', seed: 213,
+      desc: 'VOXEL PROPS (machine). Verdigris on brass: the gondola dent, the strut kink, spots on the relay bowl. Teal-green, ' +
+            'so a bend or dent reads as damage and not as a hole.',
+      albedo: 0.80, bgK: 0.14, detail: 32, jitter: 0.06,
+      tones: [['verdigris', 3], ['verdigrisLight', 1], ['verdigrisDark', 1]],
+      grid: { u: 0.03, v: 0.03, stagger: 0, lines: false },
+      face: { set: 'verdigris', mid: 'verdigris', far: 'verdigris' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    rope: {
+      v1: 'rope', seed: 214,
+      desc: 'VOXEL PROPS (wreck). Rope: the snapped stays on the gondola rail, the rope bands over the canvas heaps. ' +
+            'Twist = alternating light ) / dark ( texels.',
+      albedo: 0.85, bgK: 0.14, detail: 32, jitter: 0.06,
+      tones: [['rope', 3], ['ropeLight', 2], ['ropeDark', 1]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    block_light: {
+      v1: 'block_light', seed: 215,
+      desc: 'VOXEL PROPS (rubble). Weathered top faces and top edges of fallen cut blocks: pale, lime-washed by the rain. ' +
+            'Much lighter than any wall stone, so a block on the rubble floor has a bright lid.',
+      albedo: 0.92, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['pencil', 3], ['ashLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    block_dark: {
+      v1: 'block_dark', seed: 216,
+      desc: 'VOXEL PROPS (rubble). The broken sides of the fallen blocks and the pebbles\' shadow sides: dark, so the block ' +
+            'separates from the mid-value rubble floor and the wall behind it.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['stoneDark', 3], ['ashDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    granite_light: {
+      v1: 'granite_light', seed: 217,
+      desc: 'VOXEL PROPS (boulder). The upper band of the boulder under its moss cap: cool pale granite with bright ' +
+            'specks. Neutral / cool, never the warm wall beige.',
+      albedo: 0.90, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['ashLight', 3], ['steamDim', 2]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'rockFace', mid: 'rockFace', far: 'rockFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    granite_dark: {
+      v1: 'granite_dark', seed: 218,
+      desc: 'VOXEL PROPS (boulder). The boulder\'s lower half and the crack: dark neutral granite with pale lichen specks. ' +
+            'The dark body under the bright rim.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['ashDark', 3], ['ironDark', 1]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'rockFace', mid: 'rockFace', far: 'rockFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    moss_cap: {
+      v1: 'moss_cap', seed: 219,
+      desc: 'VOXEL PROPS (boulder, rubble). A thick moss cushion on the top of a stone prop, brighter and yellower than the ' +
+            'wall moss (moss_top is the wall-top material), so the boulder\'s cap reads first.',
+      albedo: 0.88, bgK: 0.16, detail: 32, jitter: 0.06,
+      tones: [['mossLight', 3], ['moss', 2]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'mossTop', mid: 'mossTop', far: 'mossTop' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    crystal_dead: {
+      v1: 'crystal_dead', seed: 220,
+      desc: 'VOXEL PROPS (relay). The dead aether crystals: grey with a teal memory, glassy (spec 0.5). Not emissive: the ' +
+            'relay is asleep until US-022.',
+      albedo: 0.78, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['aetherDead', 3], ['mirrorDark', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    crystal_lit: {
+      v1: 'crystal_lit', seed: 221,
+      desc: 'VOXEL PROPS (relay). The awake crystals (relay clips wake / awake): aether teal with white-hot cores, emissive ' +
+            '0.85 so they glow in shade. The halo / sparkles stay a billboard (US-022).',
+      albedo: 1.00, bgK: 0.22, detail: 32, jitter: 0.06, emissive: 0.85,
+      tones: [['aether', 3], ['aetherLight', 2], ['aetherCore', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    mirror_dark: {
+      v1: 'mirror_dark', seed: 222,
+      desc: 'VOXEL PROPS (relay). The cracked relay mirror: dull blue-grey glass with bright streaks (spec 0.85), inside a ' +
+            'brass_light frame. The crack itself is iron_dark voxels.',
+      albedo: 0.80, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['mirrorDark', 3], ['mirror', 1]],
+      grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    linen_light: {
+      v1: 'linen_light', seed: 223,
+      desc: 'VOXEL PROPS (wake spot). The spare linen tarp\'s lit crests: the crate lid edges, fold ridges, the rolled fold ' +
+            'of the turned-back corner. Near-white and cool, so it never reads as the ochre envelope.',
+      albedo: 0.94, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['linenLight', 4], ['linen', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    linen: {
+      v1: 'linen', seed: 224,
+      desc: 'VOXEL PROPS (wake spot). The tarp\'s flat parts: the sheet on the floor, the crate lid, the folded flap. Pale ' +
+            'warm-white with a faint weave.',
+      albedo: 0.86, bgK: 0.16, detail: 32, jitter: 0.06,
+      tones: [['linen', 4], ['linenLight', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    linen_dark: {
+      v1: 'linen_dark', seed: 225,
+      desc: 'VOXEL PROPS (wake spot). The tarp in shadow: the fold valleys, the flanks of the drape down the crate sides. ' +
+            'Dark cool grey-brown (value body for the pale crests).',
+      albedo: 0.66, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['linenDark', 3], ['canvasDark', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    gore_red: {
+      v1: 'gore_red', seed: 226,
+      desc: 'VOXEL PROPS (envelope). The faded red envelope gores that alternate with the ochre ones (12 around the bag), ' +
+            'the stripe pattern that says "balloon" from the breach. Lit folds lighter, seams darker.',
+      albedo: 0.86, bgK: 0.16, detail: 32, jitter: 0.06,
+      tones: [['goreRed', 3], ['goreRedLight', 1], ['goreRedDark', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    gore_red_dark: {
+      v1: 'gore_red_dark', seed: 227,
+      desc: 'VOXEL PROPS (envelope). Red gores inside the collapse creases (the fold valleys across the bag).',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['goreRedDark', 3], ['canvasScorch', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'canvasFace', mid: 'canvasFace', far: 'canvasFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    canvas_burnt: {
+      v1: 'canvas_burnt', seed: 228,
+      desc: 'VOXEL PROPS (envelope). Burnt canvas: the ragged black rim of the tear on the east flank, the dark inside seen ' +
+            'through it and through the mouth hoop, a few scorch blotches. Not emissive (the fire is long out).',
+      albedo: 0.50, bgK: 0.10, detail: 32, jitter: 0.06,
+      tones: [['canvasScorch', 3], ['cinder', 2]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'soot', mid: 'soot', far: 'soot' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -483,7 +666,13 @@
     stone_ivy: 'stone_ivy', moss_top: 'moss_top', brass: 'brass', copper: 'copper', canvas: 'canvas',
     // US-040 step 4: voxel prop materials (design/models/voxel_props.js), same key in both files.
     brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark',
-    brass_glint: 'brass_glint'   // v1.14 US-056 lamp glint
+    brass_glint: 'brass_glint',   // v1.14 US-056 lamp glint
+    // US-056 batch 2 (design/models/voxel_tower.js), same key in both files.
+    canvas_light: 'canvas_light', canvas_dark: 'canvas_dark', patina: 'patina', rope: 'rope',
+    block_light: 'block_light', block_dark: 'block_dark', granite_light: 'granite_light', granite_dark: 'granite_dark',
+    moss_cap: 'moss_cap', crystal_dead: 'crystal_dead', crystal_lit: 'crystal_lit', mirror_dark: 'mirror_dark',
+    linen_light: 'linen_light', linen: 'linen', linen_dark: 'linen_dark', gore_red: 'gore_red', gore_red_dark: 'gore_red_dark',
+    canvas_burnt: 'canvas_burnt'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
