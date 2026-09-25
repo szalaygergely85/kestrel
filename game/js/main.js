@@ -24,6 +24,10 @@ import {
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
+// ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
+import { initAudio, toggleMute } from './audio/synth.js';
+import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } from './audio/sfx.js';
+// ---- end US-020a ----
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
 import { stepEnd, endFadeAmount } from './quest/end.js';
@@ -130,6 +134,9 @@ const engine = createEngine({
 let { renderTarget: rt, depthBuffer, openSpans } = engine;
 const { input } = engine;
 const overlay = new DebugOverlay(document.body);
+// US-020a: arms the (one-shot) first-gesture listeners only - creates
+// nothing yet, so there is no autoplay warning and no sound before input.
+initAudio();
 
 // BUG-GPU-002 tooling fix: `?gpucompare=1`'s results depended on the real
 // browser window/canvas size, because `rt.pxCellW`/`rt.pxCellH` (real,
@@ -345,8 +352,19 @@ function runGame(mode) {
     // way the first load did, with no separate hand-written reset path
     // (architecture.md 7.4's "module-level game variables are reset only in
     // the 'world:loaded' handler" rule).
+    // US-020a: gear ratchet + grate rattle. Registered once here (runGame
+    // itself only runs once per page load - a restart swaps `engine.world`
+    // via `engine.setWorld`, it does not re-run this function or re-emit
+    // `engine.events`), same precedent as the 'world:loaded' listener below.
+    engine.events.on('world:sectorAnimated', onSectorAnimated);
+    engine.events.on('world:sectorAnimDone', onSectorAnimDone);
+
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
+      // US-020a: reset every module-level audio counter (sector-anim rate
+      // limit, footstep accumulator, boulder settle-watch) here - the one
+      // place both the first load and every restart go through (7.4 rule).
+      resetGameAudio(world);
       // ---- US-010: `?strict=1` turns World.load's behaviour warning into a hard error ----
       if (params.get('strict') === '1') {
         const missing = validateBehaviours(world);
@@ -443,6 +461,10 @@ function runGame(mode) {
 
   function update(dt) {
     simTime += dt;
+    // US-020a: `N` = mute toggle, always available (does not conflict with
+    // `M`'s map card, US-015) - a single flag in audio/synth.js's module
+    // state (later Settings, US-038, can read it the same way).
+    if (input.pressed('KeyN')) toggleMute();
     if (input.pressed('F3')) overlay.toggle();
     // US-007 AC "Sun direction can be changed with debug keys (F6/F7 rotate
     // azimuth) to verify shadows move correctly" - +-5 deg, `setSun` is the
@@ -518,6 +540,10 @@ function runGame(mode) {
       // glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
+      // US-020a: footsteps (distance accumulator + `body.landed`) and the
+      // boulder-thud speed watch - after physics settles this step's
+      // position/flags, same slot as the other post-physics polls below.
+      stepGameAudio(playerHandle.data);
       // US-017 (7.4 fixed-step order item 4): after physics settles, before
       // interaction - an enter edge on the end trigger sets `quest.endT`.
       updateTriggers(engine.world, engine, playerHandle.data);
