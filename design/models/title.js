@@ -283,7 +283,18 @@
         when: 'once, right when the lever is pulled', on: { type: 'event', event: 'lever.pull' }, doneOn: 'timeout only' },
       { id: 'exit', text: 'Out there. Step through the breach.', keys: [],
         when: 'once, on first entering the summit (z >= 6.0), before the breach',
-        on: { type: 'zone', zone: 'hintExit' }, doneOn: 'timeout only' }
+        on: { type: 'zone', zone: 'hintExit' }, doneOn: 'timeout only' },
+      // US-026a-content (PC-B, placeholder strings - writer may reword): the two new
+      // world-level triggers appended to content/worlds/world_m1.world.json (hintStone/
+      // boundsEdge). Not wired to fire yet (needs PC-A's world-level-trigger engine work,
+      // US-026a-engine S1-S6) - the text/ids exist so validate-content and the content
+      // data are complete now.
+      { id: 'stone', text: 'A stone stands below. Go to it.', keys: [],
+        when: 'once, on first reaching the near-terrain band, before the waystone (US-026a)',
+        on: { type: 'zone', zone: 'hintStone' }, doneOn: 'timeout only' },
+      { id: 'boundsEdge', text: 'The wind turns you back. Not yet.', keys: [],
+        when: 'once, on first reaching the walk bound edge (US-026a)',
+        on: { type: 'zone', zone: 'boundsEdge' }, doneOn: 'timeout only' }
     ],
 
     crosshair: { glyph: '+', idle: 'uiDim', active: 'gold', note: 'screen centre; no plate' },

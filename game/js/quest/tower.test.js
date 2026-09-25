@@ -32,9 +32,12 @@ import relayMod from '../../../design/models/relay.js';
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
+// US-026a-content: title.js sets globalThis.ASSETS.uiStyle (storyHints incl.
+// the new 'stone'/'boundsEdge' entries) - needed for the section 2b check below.
+import titleMod from '../../../design/models/title.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 
-paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; titleMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
@@ -118,12 +121,37 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   const ids = (d.interactables || []).map((i) => i.id).sort();
   ok('interactables ids = beacon, lantern, lever', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'lever']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
-  const end = (d.triggers || []).find((t) => t.id === 'end');
-  ok('trigger end: 4 cells, walkTo, pitchTo', end && end.cells.length === 4 && end.walkTo && typeof end.pitchTo === 'number' && end.trigger === 'quest.end');
+  // US-026a-content: the tower's own 'end' trigger is gone - the ending
+  // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
+  // checked in section 2b below); this only asserts it is really gone here.
+  ok('trigger end: no longer present on the tower level (moved world-level, US-026a)', !(d.triggers || []).find((t) => t.id === 'end'));
   const hint = (d.triggers || []).find((t) => t.id === 'hintJump');
   ok('trigger hintJump: type hint, zMin 2.0', hint && hint.type === 'hint' && hint.zMin === 2.0 && hint.trigger === 'hint.show');
   ok('markers.gapEdge present', d.markers && d.markers.gapEdge && typeof d.markers.gapEdge.x === 'number');
   ok('the tower reaches through structures[0]', worldFull.structures[0].level.def === d);
+}
+
+// ---------------------------------------------------------------------------
+// 2b. US-026a-content: world_m1's new world-level `bounds`/`triggers` data
+//    (content/worlds/world_m1.world.json, copied verbatim from design/models/
+//    voxel_world.js ASSETS.worldPatch.world_m1). This is a DATA check only -
+//    `World.load`/`buildTriggers` don't read `def.bounds`/`def.triggers` yet
+//    (that's PC-A's US-026a-engine S1-S6); a live "walk in and it fires" test
+//    is out of scope until that lands.
+// ---------------------------------------------------------------------------
+{
+  ok('worlds.world_m1.bounds is a circle with r > 0', worldM1.bounds && worldM1.bounds.shape === 'circle' && worldM1.bounds.r > 0);
+  const wEnd = (worldM1.triggers || []).find((t) => t.id === 'end');
+  ok('worlds.world_m1.triggers has the moved end trigger: circle, quest.end, walkTo, lookAt, pitchTo',
+    wEnd && wEnd.shape === 'circle' && wEnd.trigger === 'quest.end' && wEnd.walkTo && typeof wEnd.pitchTo === 'number' && typeof wEnd.lookAt === 'string');
+  const wHintStone = (worldM1.triggers || []).find((t) => t.id === 'hintStone');
+  const wBoundsEdge = (worldM1.triggers || []).find((t) => t.id === 'boundsEdge');
+  ok('worlds.world_m1.triggers has hintStone (shape terrain, hint.show)', wHintStone && wHintStone.shape === 'terrain' && wHintStone.trigger === 'hint.show' && wHintStone.hint === 'stone');
+  ok('worlds.world_m1.triggers has boundsEdge (shape bounds, hint.show)', wBoundsEdge && wBoundsEdge.shape === 'bounds' && wBoundsEdge.trigger === 'hint.show' && wBoundsEdge.hint === 'boundsEdge');
+  const endMarker = (worldM1.entities || []).find((e) => e.id === 'endMarker');
+  ok('worlds.world_m1.entities has the endMarker prop, model waystone', endMarker && endMarker.type === 'prop' && endMarker.components && endMarker.components.voxel && endMarker.components.voxel.model === 'waystone');
+  ok('the "stone"/"boundsEdge" hint ids referenced by world triggers exist in uiStyle.storyHints (design/models/title.js)',
+    assets.uiStyle && (assets.uiStyle.storyHints || []).some((h) => h.id === 'stone') && (assets.uiStyle.storyHints || []).some((h) => h.id === 'boundsEdge'));
 }
 
 // ---------------------------------------------------------------------------
@@ -132,11 +160,15 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 {
   ok('validateBehaviours(world) empty after quest/index.js registration', validateBehaviours(worldFull).length === 0, validateBehaviours(worldFull).join(','));
   const names = Object.keys(QUEST_BEHAVIOURS);
+  // US-026a-content: 'quest.end' moved off the tower's own triggers[] onto
+  // worlds.world_m1.triggers[] (the waystone) - include it here too, or this
+  // check would wrongly flag 'quest.end' as an unreferenced registration.
   const referenced = new Set([
     ...(towerDef.interactables || []).map((i) => i.interact),
     ...(towerDef.triggers || []).map((t) => t.trigger),
+    ...(worldM1.triggers || []).map((t) => t.trigger),
   ]);
-  ok('quest/index.js registers exactly the names the tower data references',
+  ok('quest/index.js registers exactly the names the tower + world_m1 data references',
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);
   unregisterBehaviour('lever.pull');
   ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["lever.pull"]');
@@ -508,13 +540,14 @@ const cellsWhere = (pred) => {
   const st = L.start;
   const startCell = [Math.floor(st.x), Math.floor(st.y)];
   const breach = cellsWhere((s) => s.tag === 'breach');
-  const endCells = cellsWhere((s) => s.tag === 'trigger:end');
+  // US-026a-content: the outcrop past the breach (legend X/Y) no longer
+  // carries a "trigger:end" tag (the ending moved world-level, to the
+  // waystone) - only the breach reachability check remains here.
   world.state['tower.lantern.taken'] = false;
   const a = reachable([startCell]);
   world.state['tower.lantern.taken'] = true;
   const b = reachable([startCell]);
   ok('no trap: the breach is reachable from the wake pallet (grate open)', breach.length > 0 && breach.every(([x, y]) => a.has(`${x},${y}`)));
-  ok('the end trigger cells are reachable from the wake pallet', endCells.length === 4 && endCells.every(([x, y]) => a.has(`${x},${y}`)));
   ok('lantern-free: reachability is identical with and without the lantern', a.size === b.size && [...a].every((k) => b.has(k)));
   world.animateSector('grate', 0);
   const c = reachable([startCell]);
@@ -682,9 +715,14 @@ function hintUiStyleFixture() {
   ok('hintExit covers the summit doorway', dDoorway <= trExit.r, `d=${dDoorway} r=${trExit.r}`);
   ok('hintExit is centred on markers.breach', trExit.x === towerDef.markers.breach.x && trExit.y === towerDef.markers.breach.y);
 
-  const endTrigger = towerDef.triggers.find((t) => t.id === 'end');
-  const dEnd = Math.hypot(endTrigger.walkTo.x - trExit.x, endTrigger.walkTo.y - trExit.y);
-  ok('hintExit reaches the end-trigger walk target too (fires before the ending, never after)', dEnd <= trExit.r, `d=${dEnd} r=${trExit.r}`);
+  // US-026a-content: the "hintExit reaches the end-trigger walk target too"
+  // check that used to live here no longer applies - `quest.end`'s trigger
+  // moved off the tower level entirely, onto worlds.world_m1.triggers (the
+  // waystone, outside the tower, in world coordinates - see section 2b
+  // above), so it can no longer be compared against a tower-local circle
+  // like this. Whether hintExit still fires before the (now much farther)
+  // ending is a live-play property that needs PC-A's world-level-trigger +
+  // terrain-band engine work (US-026a-engine S1-S6), not testable in Node yet.
 }
 
 {

@@ -25,10 +25,23 @@
 // reuses that exact mechanism: dynamic `import()` of the same file list, in
 // the same order, then reads `globalThis.ASSETS` once every file has run.
 //
-// This list must stay in sync with game/index.html's design/ <script> tags.
-// design/models/voxel_world.js (the waystone, US-026a) is NOT in that list
-// yet (not wired into index.html/world_m1.js as of this writing) - see the
-// note at the bottom of this file.
+// This list must stay in sync with game/index.html's design/ <script> tags,
+// with ONE deliberate exception: design/models/voxel_world.js (the waystone,
+// US-026a-content). content/worlds/world_m1.world.json now references
+// `model: 'waystone'` (the endMarker world entity), but wiring that file
+// into game/index.html's own <script> tags is explicitly PC-A's job
+// (docs/architecture.md 23.7 step S6, not done yet) - the real game page
+// does NOT know this model exists yet. It IS added here (Node-side tooling
+// only) so this validator (and content-node.mjs-based Node tests, via the
+// classic-script imports those test files already do) can resolve/check it
+// without waiting on S6. Confirmed by running this tool before/after adding
+// the line: neither `validateContent`'s world-entity model check (section 2
+// below, extended to also read `components.voxel.model`) nor `World.load`'s
+// prop spawn currently throw on an unregistered model for a WORLD-level
+// entity (only Level-level `props[].model` throws, engine/world/World.js
+// 7.5 item 1) - so this addition is a coverage improvement, not a fix for
+// an actual crash; it makes sure a future broken waystone ref/material
+// would be CAUGHT here instead of silently passing.
 //
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are no
 // longer classic scripts (design/levels/{tower,test_room,world_m1}.js were
@@ -54,6 +67,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/relay.js',
   '../design/models/voxel_props.js',
   '../design/models/voxel_tower.js',
+  '../design/models/voxel_world.js', // US-026a-content: waystone. Node/tooling only - see the header note above.
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',
   '../design/levels/overworld_far.js',
@@ -310,8 +324,17 @@ export function validateContent(ASSETS) {
     if (!world || typeof world !== 'object') continue;
     const base = `worlds.${worldKey}`;
     for (const e of world.entities || []) {
-      if (typeof e.model !== 'string') continue;
-      check(!!resolveModel(models, e.model, undefined), `${base}.entities[${e.id}].model`, `model "${e.model}" not found in ASSETS.models`);
+      // Billboard/legacy world entities carry a top-level `model` (e.g.
+      // farTower); a `type: 'prop'` entity with a voxel look carries it
+      // under `components.voxel.model` instead (US-041a component shape,
+      // e.g. US-026a-content's endMarker/waystone) - check whichever is present.
+      const voxelModel = e.components && e.components.voxel && e.components.voxel.model;
+      if (typeof e.model === 'string') {
+        check(!!resolveModel(models, e.model, undefined), `${base}.entities[${e.id}].model`, `model "${e.model}" not found in ASSETS.models`);
+      }
+      if (typeof voxelModel === 'string') {
+        check(!!resolveModel(models, voxelModel, undefined), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
+      }
     }
     for (const h of world.horizon || []) {
       if (typeof h.model !== 'string') continue;

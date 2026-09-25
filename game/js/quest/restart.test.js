@@ -101,10 +101,17 @@ ok('3a: boulder moved from its start position', boulder.transform.x !== bx || bo
 
 // ---------------------------------------------------------------------------
 // 4. Fire quest.end directly (same shape `updateTriggers` fires it with).
+// US-026a-content: the 'end' trigger moved off the tower level onto
+// worlds.world_m1.triggers (world coordinates, structId: null - the
+// waystone). `world.triggers` (built by the current `buildTriggers`, which
+// only reads structure-level `def.triggers`) does not include it yet - that
+// wiring is PC-A's US-026a-engine work (S2/S5). This still exercises the
+// real registered 'quest.end' behaviour with a ctx built straight from the
+// content data, same as `fireTrigger` always does.
 // ---------------------------------------------------------------------------
-const endRec = world.triggers.find((t) => t.id === 'end');
-ok('4a: world has the end trigger', !!endRec);
-world.fireTrigger(endRec.name, { engine: {}, def: endRec.def, entity: player.data, structId: endRec.structId });
+const worldEndDef = (worldDef.triggers || []).find((t) => t.id === 'end');
+ok('4a: worlds.world_m1 content has the end trigger (moved world-level, US-026a)', !!worldEndDef);
+world.fireTrigger('quest.end', { engine: {}, def: worldEndDef, entity: player.data, structId: null });
 ok('4b: quest.endT set', world.state['quest.endT'] === 0);
 
 // ---------------------------------------------------------------------------

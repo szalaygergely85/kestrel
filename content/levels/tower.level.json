@@ -73,8 +73,8 @@
     "O": {"ceilH": "sky", "ceilMat": "sky", "desc": "stone plinth 2x2 m, 0.6 m high: the beacon bowl sprite (US-011, 12x4) stands on it; collision for the bowl", "floorH": 6.6, "floorMat": "floor", "solid": false, "tag": "beaconBowl", "wallMat": "stone", "zone": "summit"},
     "b": {"ceilH": "sky", "ceilMat": "sky", "desc": "THE BREACH: 2 m hole in the west parapet", "floorH": 6, "floorMat": "rubble", "solid": false, "tag": "breach", "wallMat": "rubble", "zone": "summit"},
     "K": {"ceilH": 6.4, "ceilMat": "stone", "desc": "sun crack through the east wall (4.0-6.4 m). Out of reach: >= 1.3 m above any reachable floor", "floorH": 4, "floorMat": "rubble", "solid": false, "tag": "sunCrack", "topH": 8, "wallMat": "stone", "zone": "wall"},
-    "X": {"ceilH": "sky", "ceilMat": "sky", "desc": "outcrop just past the breach: END TRIGGER", "floorH": 6, "floorMat": "rock", "solid": false, "tag": "trigger:end", "wallMat": "rock", "zone": "outside"},
-    "Y": {"ceilH": "sky", "ceilMat": "sky", "desc": "rock beside the outcrop, also END TRIGGER (a diagonal step off the breach must not skip the ending)", "floorH": 5.4, "floorMat": "rock", "solid": false, "tag": "trigger:end", "wallMat": "rock", "zone": "outside"},
+    "X": {"ceilH": "sky", "ceilMat": "sky", "desc": "outcrop just past the breach (US-026a: end trigger moved world-level, to the waystone)", "floorH": 6, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
+    "Y": {"ceilH": "sky", "ceilMat": "sky", "desc": "rock beside the outcrop (US-026a: end trigger moved world-level, to the waystone)", "floorH": 5.4, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
     "x": {"ceilH": "sky", "ceilMat": "sky", "desc": "outcrop (end camera walks here)", "floorH": 6, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
     "j": {"ceilH": "sky", "ceilMat": "sky", "desc": "hill path down, 5.4 m", "floorH": 5.4, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"},
     "k": {"ceilH": "sky", "ceilMat": "sky", "desc": "hill path, 4.6 m", "floorH": 4.6, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"},
@@ -156,7 +156,6 @@
     {"id": "beacon", "interact": "beacon.light", "light": "beacon", "note": "US-022 (D-011 reskin, done): no prompt without the lantern (requires = the quest-state key lantern.js actually writes, docs/architecture.md 7.4 \"used flags\"); plays relay.wake on the bowl and switches lights[beacon] (preset relay) on partway through, via game/js/quest/beacon.js `stepBeacon`", "once": true, "optional": true, "prompt": "[E] Wake the relay", "prop": "beaconBowl", "radius": 1.8, "requires": "tower.lantern.taken", "x": 9, "y": 7, "z": 7.2}
   ],
   "triggers": [
-    {"id": "end", "cells": [[5, 5], [5, 6], [5, 7], [5, 8]], "note": "trigger = every cell of the \"trigger:end\" tag; X = straight out of the breach, Y = diagonal steps off it", "pitchTo": -12, "trigger": "quest.end", "type": "end", "walkTo": {"x": 4.5, "y": 7}},
     {"id": "hintJump", "hint": "jump", "note": "within 2 m of the gap edge (markers.gapEdge) with the feet at >= 2.0 m (on steps 8/9 or the ledge, not on the ground below)", "once": true, "r": 2, "shape": "circle", "trigger": "hint.show", "type": "hint", "x": 20.5, "y": 8, "zMin": 2},
     {"id": "hintBurner", "hint": "burner", "note": "r 3 m round the Kestrel burner (props.brazier / lights.brazier at 18.5, 6.5). Skipped if tower.lantern.taken (uiStyle.storyHints burner.on.skipIfState)", "once": true, "r": 3, "shape": "circle", "trigger": "hint.show", "type": "hint", "x": 18.5, "y": 6.5},
     {"id": "hintClimb", "hint": "climb", "note": "r 1.5 m on the stair base cell s (15, 3) (tag stairBase), centre 0.2 m NW of the cell centre so the circle stays clear of hintBurner. Can fire while the boulder still sits on the base; no zMin, all ground level", "once": true, "r": 1.5, "shape": "circle", "trigger": "hint.show", "type": "hint", "x": 15.3, "y": 3.3},
@@ -208,6 +207,6 @@
     "18,10": "grate (needs lever)",
     "11,7": "doorway 6.0",
     "6,7": "breach",
-    "5,7": "end trigger"
+    "5,7": "outcrop (US-026a: end trigger moved world-level, to the waystone)"
   }
 }
