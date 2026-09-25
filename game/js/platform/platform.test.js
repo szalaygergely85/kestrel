@@ -172,6 +172,41 @@ withStorage(makeFakeStorage(), () => {
   check('saveSettings merges: omitted volume keeps prior saved value', merged.volume === 0.5 && merged.muted === false);
 });
 
+// ---- 6b. US-038b fields: grid / fullscreen / mouseSensitivity / invertY ----
+
+withStorage(makeFakeStorage(), () => {
+  const saved = saveSettings({ grid: '400x150', fullscreen: true, mouseSensitivity: 0.225, invertY: true });
+  check('US-038b round-trip: saveSettings reports the new fields', saved.grid === '400x150' && saved.fullscreen === true
+    && saved.mouseSensitivity === 0.225 && saved.invertY === true);
+  const loaded = loadSettings();
+  check('US-038b round-trip: loadSettings matches saveSettings', deepEqual(loaded, saved));
+
+  // merge: a later save touching only `grid` keeps the other three fields
+  const merged = saveSettings({ grid: '480x180' });
+  check('US-038b merge: omitted fields keep their prior saved values', merged.fullscreen === true
+    && merged.mouseSensitivity === 0.225 && merged.invertY === true && merged.grid === '480x180');
+});
+
+withStorage(makeFakeStorage({
+  'kestrel.settings': JSON.stringify({
+    settingsVersion: 1, muted: true, volume: 0.8,
+    grid: '999x999', fullscreen: 'yes', mouseSensitivity: 99, invertY: 'nope',
+  }),
+}), () => {
+  const s = loadSettings();
+  check('US-038b: unknown grid string falls back to default grid', s.grid === DEFAULT_SETTINGS.grid);
+  check('US-038b: wrong-type fullscreen falls back to default', s.fullscreen === DEFAULT_SETTINGS.fullscreen);
+  check('US-038b: out-of-range mouseSensitivity falls back to default', s.mouseSensitivity === DEFAULT_SETTINGS.mouseSensitivity);
+  check('US-038b: wrong-type invertY falls back to default', s.invertY === DEFAULT_SETTINGS.invertY);
+  check('US-038b: a bad new field does not clobber a good pre-existing one (muted/volume kept)',
+    s.muted === true && s.volume === 0.8);
+});
+
+withStorage(makeFakeStorage({ 'kestrel.settings': JSON.stringify({ grid: '320x120' }) }), () => {
+  const s = loadSettings();
+  check('US-038b: a valid grid string in an otherwise-empty blob is accepted', s.grid === '320x120');
+});
+
 // ---- 7. no direct localStorage use anywhere else in game/ -----------------
 
 (function noDirectLocalStorageElsewhere() {
