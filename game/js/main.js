@@ -25,6 +25,7 @@ import {
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
+import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings.js'; // US-038b
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } from './audio/sfx.js';
@@ -71,6 +72,12 @@ if (gridParam) {
   const m = /^(\d+)x(\d+)$/i.exec(gridParam.trim());
   if (m) { reqCols = Number(m[1]); reqRows = Number(m[2]); }
   else console.warn(`[grid] ?grid=${gridParam} not "WxH" - using the default ${GRID_DEFAULT_COLS}`);
+}
+// US-038b: a saved grid choice applies at boot, unless ?grid= overrides it for this session.
+const savedSettings = loadSettings();
+if (!gridParam) {
+  const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
+  if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
 }
 if (isDdaCompare) { reqCols = 160; reqRows = 60; }
 const gridResult = clampGrid(reqCols, reqRows);
@@ -486,6 +493,8 @@ function runGame(mode) {
       });
       if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
+      look.sensDegPerPx = savedSettings.mouseSensitivity; // US-038b (no-op until PlayerLook reads instance fields, see NEEDS PC-A)
+      look.invertY = savedSettings.invertY;
       // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
 
@@ -576,8 +585,10 @@ function runGame(mode) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed('KeyM');
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
-      uiLocked = wakeOut.inputLocked || isMapOpen();
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen();
     }
+    // US-038b: settings panel (S from pause, or its own entry point)
+    updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !isMapOpen() });
 
     if (look && !ending) {
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
@@ -858,6 +869,8 @@ function runGame(mode) {
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
     if (mode === 'world' && !look.locked && !isMapOpen()) drawPauseOverlay(ui, rt, assets);
+    // US-038b: settings panel, drawn over the pause overlay when open
+    drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
