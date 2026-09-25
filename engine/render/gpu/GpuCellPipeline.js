@@ -44,13 +44,27 @@ import { sunFromWorld } from '../terrainCaster.js';
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE, writeInstanceRows } from './VoxelTextures.js';
 import { MAX_VOX_INSTANCES } from '../../voxel/VoxelModel.js';
-import { GpuTimer } from './GpuTimer.js';
+import { GpuTimer, GpuPassTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { HFOV_DEG } from '../sectorCaster.js';
 import { SKY_LUT_N } from './glsl/common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
 
 const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
+
+// US-018 (architecture.md 16): fixed pass slot order for per-pass GPU
+// timing - `sprites` is tracked by its own existing GpuTimer (sprites.js),
+// reported alongside these, not a slot here. "resolve" covers both the
+// resolve and deriv draw calls (one query spans both, per the tech notes).
+export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge']);
+const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6;
+const PASS_STATS_EVERY = 30; // matches GpuTimer's own STATS_EVERY - see _pollTerrainTs/_pollVoxelTs
+
+function sumFinite(arr) {
+  let s = 0;
+  for (let i = 0; i < arr.length; i++) if (!Number.isNaN(arr[i])) s += arr[i];
+  return s;
+}
 
 export class GpuCellPipeline {
   constructor(rt, opts = {}) {
@@ -80,7 +94,13 @@ export class GpuCellPipeline {
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0,
+      // US-018 (architecture.md 16): real per-pass GPU ms, filled only
+      // while `setPassTiming(true)` (F3 overlay open or `?bench=1`) - NaN
+      // otherwise. `passMsP50`/`passMsP95` line up with `PASS_NAMES`.
+      passMsP50: new Float32Array(PASS_NAMES.length).fill(NaN),
+      passMsP95: new Float32Array(PASS_NAMES.length).fill(NaN),
     };
+    this._passTimingOn = false;
     this.debugMode = -1; // -1 = off (edge pass runs normally)
     this._fb = null;
     this._light = null;
@@ -427,6 +447,11 @@ export class GpuCellPipeline {
     this._visBoxF = new Float32Array(4 * MAX_LIGHTS);
 
     this.timer = new GpuTimer(gl);
+    // US-018 (architecture.md 16): per-pass timer, used only while
+    // `setPassTiming(true)` - built alongside `this.timer` (both cheap to
+    // construct; the disjoint-timer query ring is the only GL cost and
+    // `GpuPassTimer` starts empty/idle until `begin()` is actually called).
+    this.passTimer = new GpuPassTimer(gl, PASS_NAMES.length);
     // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95 of the 4 ms"): the
     // terrain pass runs INSIDE `this.timer`'s own begin()/end() span (the
     // whole `_hook()`), and `EXT_disjoint_timer_query_webgl2` allows only
@@ -497,6 +522,18 @@ export class GpuCellPipeline {
     if (enabled && !this.ready) return;
     this.rt.gpuActive = enabled;
     this.rt.setCellPass(enabled ? () => this._hook() : null);
+  }
+
+  /**
+   * US-018 (architecture.md 16): on = every pass runs inside its own
+   * `passTimer` query instead of the single whole-frame `timer` span ("do
+   * not leave pass timing on when the overlay is hidden and no bench runs" -
+   * 8 queries/frame for nothing). Just a flag; the actual query dispatch
+   * happens in `_hook()`. Caller (main.js) passes `overlay.visible ||
+   * benchActive`.
+   */
+  setPassTiming(on) {
+    this._passTimingOn = !!on;
   }
 
   /** `?gpudebug=kind|plane|shaded`: sets the debug uMode uniform once (not a per-frame value - see tech notes item 9). */
@@ -777,7 +814,12 @@ export class GpuCellPipeline {
   // viewport itself right after this returns.
   _hook() {
     const t0 = performance.now();
-    this.timer.begin();
+    // US-018: pass timing is all-or-nothing per frame - either the single
+    // whole-frame `timer` span (default, unchanged) or `passTimer` wrapping
+    // each pass individually (never both: a nested TIME_ELAPSED_EXT query
+    // is illegal - see the constructor comment above `this.timer`).
+    const passTimingOn = this._passTimingOn && this.passTimer.available;
+    if (!passTimingOn) this.timer.begin();
     const useDda = this._source !== 'upload' && !!this._cam && !!this._world;
     this._useDdaThisFrame = useDda;
     if (useDda) {
@@ -805,34 +847,63 @@ export class GpuCellPipeline {
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
     if (useDda) {
+      if (passTimingOn) this.passTimer.begin(PASS_CAST);
       this._passCast();
+      if (passTimingOn) this.passTimer.end();
       this._subSetCur = 1; // cast always writes set 1 (fboCastSub's textures)
       if (this._terrainActiveThisFrame) {
         this._terrainTsBegin();
+        if (passTimingOn) this.passTimer.begin(PASS_TERRAIN);
         this._passTerrain();
+        if (passTimingOn) this.passTimer.end();
         this._terrainTsEnd();
         this._subSetCur = 2;
       }
       if (this._voxelActiveThisFrame) {
         this._voxelTsBegin();
+        if (passTimingOn) this.passTimer.begin(PASS_VOXEL);
         this._passVoxel();
+        if (passTimingOn) this.passTimer.end();
         this._voxelTsEnd();
         this._subSetCur = this._subSetCur === 1 ? 2 : 1;
       }
+      // One query spans both resolve + deriv (tech notes: "resolve (resolve
+      // + deriv)") - they are two draw calls of the same logical pass.
+      if (passTimingOn) this.passTimer.begin(PASS_RESOLVE);
       this._passResolve();
       this._passDeriv();
+      if (passTimingOn) this.passTimer.end();
     }
     // US-006 (14.3 item 3): light pass runs unconditionally (also over the
     // legacy 'upload' source's mirrored GI/Depth - see `_repackAndUpload`),
     // right before shade, exactly like `deriv` already does.
+    if (passTimingOn) this.passTimer.begin(PASS_LIGHT);
     this._passLight();
+    if (passTimingOn) this.passTimer.end();
+    if (passTimingOn) this.passTimer.begin(PASS_SHADE);
     this._passShade();
+    if (passTimingOn) this.passTimer.end();
+    if (passTimingOn) this.passTimer.begin(PASS_EDGE);
     this._passEdgeOrDebug();
-    this.timer.end();
+    if (passTimingOn) this.passTimer.end();
+    if (!passTimingOn) this.timer.end();
     const t2 = performance.now();
     this.stats.uploadMs = t1 - t0;
     this.stats.drawMs = t2 - t1;
-    this.timer.writeStats(this.stats); // writes gpuMs/gpuMsP50/gpuMsP95 in place - no allocation (architect review 1 item 3)
+    if (passTimingOn) {
+      // writes passMsP50/passMsP95 in place - no allocation (same rule as
+      // GpuTimer.writeStats below); gpuMs/gpuMsP50/gpuMsP95 become the sum
+      // of the per-pass values so the overlay/bench's existing "gpu Nms"
+      // line still means "whole frame" when pass timing is on.
+      this.passTimer.writeStats(this.stats.passMsP50, this.stats.passMsP95);
+      this.stats.gpuMsP50 = sumFinite(this.stats.passMsP50);
+      this.stats.gpuMsP95 = sumFinite(this.stats.passMsP95);
+      this.stats.gpuMs = this.stats.gpuMsP50;
+    } else {
+      this.stats.passMsP50.fill(NaN);
+      this.stats.passMsP95.fill(NaN);
+      this.timer.writeStats(this.stats); // writes gpuMs/gpuMsP50/gpuMsP95 in place - no allocation (architect review 1 item 3)
+    }
     this._pollTerrainTs();
     this._pollVoxelTs();
   }
@@ -851,18 +922,28 @@ export class GpuCellPipeline {
   }
 
   _pollTerrainTs() {
-    if (this._terrainSubmitMsHistoryLen === 0) { this.stats.terrainSubmitMs = NaN; this.stats.terrainSubmitMsP50 = NaN; this.stats.terrainSubmitMsP95 = NaN; return; }
-    // Small history (16 entries, at most once/frame) - an in-place sort of
-    // a tiny reused scratch is cheap enough to do every call (no per-frame
-    // allocation: `_terrainTsScratch` is created once, lazily, below).
-    if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainSubmitMsHistory.length);
-    const n = this._terrainSubmitMsHistoryLen, scratch = this._terrainTsScratch;
-    for (let i = 0; i < n; i++) scratch[i] = this._terrainSubmitMsHistory[i];
-    const view = scratch.subarray(0, n);
-    view.sort();
-    this.stats.terrainSubmitMs = view[n - 1];
-    this.stats.terrainSubmitMsP50 = view[Math.floor(n * 0.5)];
-    this.stats.terrainSubmitMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+    const s = this.stats;
+    if (this._terrainSubmitMsHistoryLen === 0) { s.terrainSubmitMs = NaN; s.terrainSubmitMsP50 = NaN; s.terrainSubmitMsP95 = NaN; return; }
+    // `terrainSubmitMs` itself is just the latest raw sample - cheap, no
+    // sort needed. Architect review (16, "fix the per-frame subarray"): the
+    // sort behind the p50/p95 percentiles only actually reruns every
+    // `PASS_STATS_EVERY` calls (same caching GpuTimer/GpuPassTimer use
+    // above), not every single frame - `_terrainTsScratch` is allocated
+    // once, lazily, and reused.
+    const lastPos = (this._terrainSubmitMsHistoryPos - 1 + this._terrainSubmitMsHistory.length) % this._terrainSubmitMsHistory.length;
+    s.terrainSubmitMs = this._terrainSubmitMsHistory[lastPos];
+    this._terrainTsCalls = (this._terrainTsCalls || 0) + 1;
+    if (this._terrainTsCachedP50 === undefined || Number.isNaN(this._terrainTsCachedP50) || this._terrainTsCalls % PASS_STATS_EVERY === 0) {
+      if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainSubmitMsHistory.length);
+      const n = this._terrainSubmitMsHistoryLen, scratch = this._terrainTsScratch;
+      for (let i = 0; i < n; i++) scratch[i] = this._terrainSubmitMsHistory[i];
+      const view = scratch.subarray(0, n);
+      view.sort();
+      this._terrainTsCachedP50 = view[Math.floor(n * 0.5)];
+      this._terrainTsCachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+    }
+    s.terrainSubmitMsP50 = this._terrainTsCachedP50;
+    s.terrainSubmitMsP95 = this._terrainTsCachedP95;
   }
 
   // US-040 (15.2 item 6): same CPU submit-time bracket as _terrainTsBegin/
@@ -878,15 +959,22 @@ export class GpuCellPipeline {
   }
 
   _pollVoxelTs() {
-    if (this._voxelSubmitMsHistoryLen === 0) { this.stats.voxelMs = NaN; this.stats.voxelMsP50 = NaN; this.stats.voxelMsP95 = NaN; return; }
-    if (!this._voxelTsScratch) this._voxelTsScratch = new Float32Array(this._voxelSubmitMsHistory.length);
-    const n = this._voxelSubmitMsHistoryLen, scratch = this._voxelTsScratch;
-    for (let i = 0; i < n; i++) scratch[i] = this._voxelSubmitMsHistory[i];
-    const view = scratch.subarray(0, n);
-    view.sort();
-    this.stats.voxelMs = view[n - 1];
-    this.stats.voxelMsP50 = view[Math.floor(n * 0.5)];
-    this.stats.voxelMsP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+    const s = this.stats;
+    if (this._voxelSubmitMsHistoryLen === 0) { s.voxelMs = NaN; s.voxelMsP50 = NaN; s.voxelMsP95 = NaN; return; }
+    const lastPos = (this._voxelSubmitMsHistoryPos - 1 + this._voxelSubmitMsHistory.length) % this._voxelSubmitMsHistory.length;
+    s.voxelMs = this._voxelSubmitMsHistory[lastPos];
+    this._voxelTsCalls = (this._voxelTsCalls || 0) + 1;
+    if (this._voxelTsCachedP50 === undefined || Number.isNaN(this._voxelTsCachedP50) || this._voxelTsCalls % PASS_STATS_EVERY === 0) {
+      if (!this._voxelTsScratch) this._voxelTsScratch = new Float32Array(this._voxelSubmitMsHistory.length);
+      const n = this._voxelSubmitMsHistoryLen, scratch = this._voxelTsScratch;
+      for (let i = 0; i < n; i++) scratch[i] = this._voxelSubmitMsHistory[i];
+      const view = scratch.subarray(0, n);
+      view.sort();
+      this._voxelTsCachedP50 = view[Math.floor(n * 0.5)];
+      this._voxelTsCachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
+    }
+    s.voxelMsP50 = this._voxelTsCachedP50;
+    s.voxelMsP95 = this._voxelTsCachedP95;
   }
 
   // US-030a: per-frame UI mask upload (14.2 item 3) - the cast pass reads

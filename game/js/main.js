@@ -12,7 +12,7 @@ import {
   GBuffer, bindShading, bindLevel,
   PlayerLook, DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations, animComponent,
-  GpuCellPipeline, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
+  GpuCellPipeline, PASS_NAMES, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
   VoxelPool,
   loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
   shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
@@ -40,6 +40,7 @@ import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning 
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
 import { fillWorstCase } from './dev/benchScene.js';
+import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16) `?bench=1`
 // ---- US-030c (ARCH CHANGES): sprite system wiring, kept to this one import ----
 import { createSpriteSystem, spawnTestSprites, placeCompareSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
@@ -136,6 +137,10 @@ const engine = createEngine({
 let { renderTarget: rt, depthBuffer, openSpans } = engine;
 const { input } = engine;
 const overlay = new DebugOverlay(document.body);
+// US-018 (architecture.md 16): true while `?bench=1`'s view/walk sequence
+// owns the player + overlay text - `runGame`'s own per-frame overlay.update()
+// and pass-timing flag both read this.
+let benchActive = false;
 // US-020a: arms the (one-shot) first-gesture listeners only - creates
 // nothing yet, so there is no autoplay warning and no sound before input.
 initAudio();
@@ -275,11 +280,19 @@ if (gpuBlocked) {
   // fallback did, harmlessly, on the hidden canvas) but none of the
   // branches below - every one of which ends in a `runGame`/`runBenchmark`
   // rAF loop - may start.
-} else if (params.get('bench') === '1') {
-  // US-001 canvas benchmark: raw CellBuffer present only. It never feeds the
-  // GPU cell pipeline a frame (no fb/cam/world), so its hook must be off.
+} else if (params.get('bench') === 'present') {
+  // US-001 canvas benchmark (renamed from `?bench=1` - architecture.md 16,
+  // US-018): raw CellBuffer present only. It never feeds the GPU cell
+  // pipeline a frame (no fb/cam/world), so its hook must be off.
   if (gpuPipeline) gpuPipeline.setEnabled(false);
   runBenchmark(rt, overlay);
+} else if (params.get('bench') === '1') {
+  // US-018 (architecture.md 16): 3 fixed world-mode views + a 60 s walk,
+  // with real per-pass GPU timing on. Runs inside the normal game loop
+  // (`runGame('world')`), see the `benchActive` hook right after
+  // `playerHandle` is assigned below.
+  benchActive = true;
+  runGame('world');
 } else if (params.get('shadetest') === '1') {
   runShadeTest(assets.palette);
   if (assets.detailPass) runDetailShadeTest(assets.palette, assets.detailPass);
@@ -755,32 +768,54 @@ function runGame(mode) {
     // plain array as back-compat ambient-only input).
     if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     rt.present();
+    // US-018 (architecture.md 16): "do not leave pass timing on when the
+    // overlay is hidden and no bench runs" - a plain boolean set, cheap
+    // enough to do unconditionally every frame.
+    if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive);
 
     const lastRenderMs = performance.now() - renderStart;
-    // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
-    let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
-      `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
-      (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
-        // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
-        // time, not a GPU cost - the real terrain GPU cost is the whole-frame
-        // `gpuMs` A/B delta with vs without `?terrain=0` (measured + recorded
-        // in this story's Programmer notes, docs/backlog.md).
-        `  terrain cpu ${Number.isNaN(gpuPipeline.stats.terrainSubmitMsP50) ? 'n/a' : gpuPipeline.stats.terrainSubmitMsP50.toFixed(2) + 'ms'}` : '') +
-      (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
-    if (mode === 'world') {
-      const t = playerHandle.data.transform;
-      const world = engine.world;
-      const struct = world.structureAt(t.x, t.y);
-      const sector = world.sectorAt(t.x, t.y);
-      const sectorCh = struct ? struct.level.rows[Math.floor(t.y - struct.origin.y)][Math.floor(t.x - struct.origin.x)] : '(terrain)';
-      const terrain = world.terrain;
-      const terrainInfo = terrain
-        ? `farReady ${terrain.farReady} (${(terrain.bakeProgress * 100).toFixed(0)}%) chunk (${Math.floor(t.x / terrain.chunkSize)},${Math.floor(t.y / terrain.chunkSize)})`
-        : 'no terrain';
-      extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
-        `${look.locked ? '' : ' [unlocked]'}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
+    // US-018: the overlay text is only ever built while it will actually be
+    // shown (`shouldRefresh` = visible + <= 4 Hz) - `?bench=1` builds/owns
+    // its own overlay text instead (dev/perfBench.js), so it skips this.
+    if (!benchActive && overlay.shouldRefresh(performance.now())) {
+      // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
+      let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rt.backend}` +
+        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
+        (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
+          // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
+          // time, not a GPU cost - the real terrain GPU cost is the whole-frame
+          // `gpuMs` A/B delta with vs without `?terrain=0` (measured + recorded
+          // in this story's Programmer notes, docs/backlog.md).
+          `  terrain cpu ${Number.isNaN(gpuPipeline.stats.terrainSubmitMsP50) ? 'n/a' : gpuPipeline.stats.terrainSubmitMsP50.toFixed(2) + 'ms'}` : '') +
+        (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
+      // US-018: JS split (sim/render/submit) from `loop.stats` + the
+      // pipeline's own upload+draw submit time, and per-pass GPU ms
+      // (`n/a` while `setPassTiming` is off or the extension is missing).
+      const submitMs = gpuPipeline ? gpuPipeline.stats.uploadMs + gpuPipeline.stats.drawMs : NaN;
+      extra += `\njs sim ${engine.loop.stats.simMs.toFixed(2)}ms  render ${engine.loop.stats.renderMs.toFixed(2)}ms` +
+        `  submit ${Number.isNaN(submitMs) ? 'n/a' : submitMs.toFixed(2) + 'ms'}`;
+      if (gpuPipeline) {
+        extra += '\npass ms: ' + PASS_NAMES.map((name, i) => {
+          const v = gpuPipeline.stats.passMsP50[i];
+          return `${name} ${Number.isNaN(v) ? 'n/a' : v.toFixed(2)}`;
+        }).join('  ');
+      }
+      if (mode === 'world') {
+        const t = playerHandle.data.transform;
+        const world = engine.world;
+        const struct = world.structureAt(t.x, t.y);
+        const sector = world.sectorAt(t.x, t.y);
+        const sectorCh = struct ? struct.level.rows[Math.floor(t.y - struct.origin.y)][Math.floor(t.x - struct.origin.x)] : '(terrain)';
+        const terrain = world.terrain;
+        const terrainInfo = terrain
+          ? `farReady ${terrain.farReady} (${(terrain.bakeProgress * 100).toFixed(0)}%) chunk (${Math.floor(t.x / terrain.chunkSize)},${Math.floor(t.y / terrain.chunkSize)})`
+          : 'no terrain';
+        const grounded = playerHandle.data.components.body && playerHandle.data.components.body.grounded;
+        extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
+          `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
+      }
+      overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }
-    overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
   }
 
   const loop = engine.run({ update, render });
@@ -789,6 +824,14 @@ function runGame(mode) {
   window.__debug.playerHandle = playerHandle;
   window.__debug.look = look;
   window.__debug.depthBuffer = depthBuffer;
+
+  // US-018 (architecture.md 16): `?bench=1` - the loop above is already
+  // running, so the bench's own rAF-driven view/walk sequence can start
+  // right away (`benchActive` set by the `?bench=1` dispatch branch, top of
+  // this file).
+  if (mode === 'world' && benchActive) {
+    runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt });
+  }
 }
 
 // `?gpucompare=shade` (US-029 AC "Parity page", tech notes item 7; US-030a
