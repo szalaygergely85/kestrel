@@ -37,7 +37,16 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 - `game/` – the product: index.html, world-test.html, physics-test.html, js/main.js (bootstrap, builds the AssetRegistry), js/dev/ (page harnesses), js/quest/ (game-specific behaviours)
 - `tools/` – dev tools (check-deps.mjs), future editor
 - Dependency check: `node tools/check-deps.mjs` (fixture test: `node tools/check-deps.test.mjs`). Physics/entities tests: `node engine/physics/physics.test.js`, `node engine/physics/jump.test.js`, `node engine/entities/eyeFeel.test.js`, `node engine/core/playerLook.test.js`. Bench: `node --expose-gc tools/bench-cast.mjs --gc`.
-- Git: work on `master`; the main session commits. Local server: `python -m http.server 8000` from the repo root (launch config `ascii-quest-http`).
+- Git: the main session commits (branches: see "Two PCs"). Local server: `python -m http.server 8000` from the repo root (launch config `ascii-quest-http`).
+
+## Two PCs (owner, 2026-09-25)
+Two main sessions on two computers share the GitHub repo `origin` (github.com/szalaygergely85/kestrel). Each PC has its own clone.
+- **PC-A** (engine/render: engine/render, world, physics, core, gpu shaders, US-018-type perf) works on branch `pc-a`; **PC-B** (content, sound, tools, level data: design/, game/js/quest/, tools/, audio) works on branch `pc-b`. Every story row in `docs/backlog.md` carries a `PC-A`/`PC-B` tag (PO sets it at sprint planning, with the main files it touches); a session only works on its own PC's stories. Untagged or cross-track work -> ask the owner first.
+- **Shared hot files:** `docs/backlog.md`, `game/js/main.js`, `design/palette.js`, `design/detail-pass.js`, `game/index.html`, `docs/decisions.md`. Keep edits small and local (append rows/lines, don't reflow tables or rewrite paragraphs), commit right after.
+- **Sync:** before starting a story and before pushing, `git fetch origin && git merge origin/master` into your branch; run all Node suites + `node tools/check-deps.mjs`; push your branch when a story (or a clean step) is done.
+- **Merge to master:** PC-A's main session merges `origin/pc-b` and `pc-a` into `master` (tests + check-deps + `?gpucompare=1` after the merge), pushes `master`. The architect (opus) reviews a merge only when both sides touched engine code or tests fail after the merge. Never force-push, never rewrite pushed history.
+- **Handoffs:** each PC writes its own handoff block at the top of `docs/backlog.md`, headed `PC-A handoff` / `PC-B handoff`.
+- **Ports:** PC-A agents use 9000-9499, PC-B agents 9500-9999; 8000 is the owner's server on each PC. The `../game_project_test` worktree is per PC.
 
 ## Token budget rules (main session)
 - **architect**: use fable only for first reviews of core engine code (render/physics/world) and big tech notes. Re-reviews, questions and small stories use `model: opus`. For a re-review, spawn a fresh opus architect with only the diff + the prior verdict (resuming a long-context agent re-sends its whole transcript and cost ~200k for a 4-tool re-review). Resume only agents with short histories.

@@ -17,6 +17,22 @@ Owner: Manager (scope), Product Owner (stories/acceptance).
 
 **Parallel decision track (not a story, no code):** OWN-REQ-004 content data-files strategy. Architect (opus) writes a short proposal in `docs/architecture.md` (JSON vs JS, per-level/per-chunk files, stable ids + schema version + migration, placement files, editor read/write, save vs content format, `.vox` import target for OWN-REQ-005) in a slot between #3 and #4 when no programmer is running. Manager decides (D-023) before sprint close. It gates M1.5 editor work and OWN-REQ-005.
 
+## Two-PC split
+The owner now runs two main sessions in parallel (one per PC). Split so the two tracks don't touch the same files; both still commit to `master` in the same repo (main session sequences the merge/pull).
+
+| Story | PC | Main files / folders | Order |
+|---|---|---|---|
+| BUG-OWN-007 | PC-A | `engine/render/lighting.js`, `engine/render/lighting.test.js` | already `testing`; only needs main-session verification, no new dev work |
+| BUG-GPU-003 | PC-A | sector caster: `engine/render/*Caster*.js` (CPU) + `engine/render/gpu/glsl/*.frag.js` (wall/ceiling pitch-40 path), `game/js/main.js` gpucompare poses | go first on PC-A (must land before US-018 per sprint goal) |
+| US-018 | PC-A | `engine/core/` (perf timers), `game/js/ui/` (F3 overlay), `game/js/main.js` (grid setting), `engine/render/gpu/*` | after BUG-GPU-003 |
+| OWN-REQ-003 | PC-A | `engine/ui/` (panel/richText/presenter), `game/js/ui/*` | stretch, after US-018; touches the same `game/js/ui/*` files US-018's overlay adds - PC-A does US-018 first so OWN-REQ-003 doesn't rebase around it |
+| OWN-REQ-004 | PC-A | `docs/architecture.md` only (proposal, no code) | fits in the PC-A queue whenever no programmer is running on that track; docs-only so it never conflicts with PC-B |
+| US-020a | PC-B | new `game/js/audio/*`, hooks into existing events (`landed`, `stepDelta`, `world:sectorAnimDone`, `roller:rest`) - no engine module unless ASK ARCHITECT says otherwise | first on PC-B |
+| US-022 | PC-B | `design/levels/tower.js` (mounts.glow/lights.beacon already exist), `game/js/quest/*`, rides on US-020a's sound hooks | after US-020a (adds the relay hum "if cheap") |
+| OWN-REQ-006 | PC-B | `design/levels/tower.js` lights list, `game/js/quest/lantern.js` (`lanternTake` switch-off), `design/models/title.js` copy | can run before or after US-020a/US-022; small, do it whenever US-022 is blocked/waiting |
+
+**Shared-file risk:** `game/js/main.js` is touched by both tracks (PC-A for the grid setting/overlay wiring, PC-B for quest hooks in `US-022`) - low collision risk since the edits land in different functions, but whichever PC finishes a story touching it should pull/rebase before the other starts theirs; PC-A's US-018 is expected to land first (it's earlier in the sprint order) so PC-B rebases onto it once merged. No other shared files between the two tracks (PC-A stays in `engine/render*`+`engine/ui`+`engine/core`, PC-B stays in `design/levels`, `design/models`, `game/js/audio`, `game/js/quest`). Neither track touches `design/palette.js`/`detail-pass.js` this sprint.
+
 **Paperwork (main session, no agent):** BUG-OWN-004 `testing` -> verify `?gpu=0` breach shows hills -> `done`; US-029/US-024 closes.
 
 **Not in this sprint:** object physics (US-051a/b, US-052: owner-required before release, D-018) and US-026 walk-out start **sprint 3** (M2 opener), once M1 is closed and OWN-REQ-004 is decided. OWN-REQ-002 finer terrain goes with US-026. US-041b/OWN-REQ-005 after D-023.
