@@ -2,7 +2,7 @@
 // item 3). No `gl`, no `design/` import - a self-contained stub recipe.
 import assert from 'node:assert';
 import { Terrain } from '../../world/Terrain.js';
-import { packTerrainTextures, TLOOK_WIDTH } from './TerrainTextures.js';
+import { packTerrainTextures, packNearTextures, TLOOK_WIDTH } from './TerrainTextures.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) { if (cond) pass++; else { fail++; console.error('FAIL:', name); } }
@@ -31,6 +31,11 @@ function makeRecipe() {
         const height = new Float32Array(n), type = new Uint8Array(n);
         for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { height[i + j * w] = i + j; type[i + j * w] = i % 2; }
         return { height, type, w, h, cell };
+      },
+      bake(x0, y0, cell2, bw, bh) {
+        const n = bw * bh;
+        const height = new Float32Array(n), type = new Uint8Array(n);
+        return { x0, y0, w: bw, h: bh, cell: cell2, height, type };
       },
       gridHeight() { return 0; },
     },
@@ -92,6 +97,80 @@ check('forest (no glyphs.close): defaults to a single space glyph', packed.tlook
   let threw = false;
   try { packTerrainTextures(fresh, palette); } catch (e) { threw = true; }
   check('not farReady: throws', threw);
+}
+
+// ---- US-026a S5: FEAT packing (TLOOK texels 8-11) --------------------------
+{
+  const paletteF = {
+    rgb: {
+      ...palette.rgb,
+      gold: [255, 200, 0], strawLight: [230, 210, 120],
+      rock: [90, 90, 90], stoneLight: [160, 160, 160],
+    },
+  };
+  function makeRecipeWithFeatures() {
+    const r = makeRecipe();
+    r.nearLOD = {
+      handover: [130, 170], step: { min: 0.5, k: 0.012 }, bands: { close: 40 },
+      features: [
+        { id: 'wildflower', on: 'grass', bands: ['close'], chance: 0.025, glyphs: '*,', colors: ['gold', 'strawLight'] },
+        { id: 'pebble', on: 'grass', bands: ['close'], chance: 0.012, glyphs: 'o.', colors: ['rock', 'stoneLight'] },
+        { id: 'tallGrass', on: 'grass', bands: ['close'], chance: 0.06, glyphs: '"', colors: ['grassLight'] },
+        { id: 'reed', on: 'grass', bands: ['close', 'near'], chance: 0.2, glyphs: '|!', colors: ['grass'] },
+      ],
+    };
+    return r;
+  }
+  const tF = new Terrain(makeRecipeWithFeatures());
+  tF.bakeFarSync();
+  const packedF = packTerrainTextures(tF, paletteF);
+  const gRow = 0 * TLOOK_WIDTH * 4; // grass row
+  const slot0 = gRow + 8 * 4, slot0Col = gRow + 9 * 4;
+  const slot1 = gRow + 10 * 4, slot1Col = gRow + 11 * 4;
+  check('grass feature slot 0: chance == 0.025 (wildflower)', Math.abs(packedF.tlook[slot0] - 0.025) < 1e-6);
+  check('grass feature slot 0: code0 is glyphIdx for "*"', packedF.tlook[slot0 + 1] === '*'.charCodeAt(0) - 32);
+  check('grass feature slot 0: code1 is glyphIdx for ","', packedF.tlook[slot0 + 2] === ','.charCodeAt(0) - 32);
+  check('grass feature slot 0: fi == 0 (first in the flat list)', packedF.tlook[slot0 + 3] === 0);
+  check('grass feature slot 0 colour == gold / 255', Math.abs(packedF.tlook[slot0Col] - 255 / 255) < 1e-6);
+  check('grass feature slot 1: chance == 0.012 (pebble)', Math.abs(packedF.tlook[slot1] - 0.012) < 1e-6);
+  check('grass feature slot 1: fi == 1 (second in the flat list)', packedF.tlook[slot1 + 3] === 1);
+  check('grass feature slot 1 colour == rock / 255', Math.abs(packedF.tlook[slot1Col] - 90 / 255) < 1e-6);
+  // US-026a S5: a type with MORE than 2 close-band features (grass has 4 in
+  // the real recipe: wildflower/pebble/tallGrass/reed) - slots 2/3 pack too
+  // (MAX_FEATURES_PER_TYPE == 4), `fi` keeps counting up the SAME flat list.
+  const slot2 = gRow + 12 * 4, slot3 = gRow + 14 * 4;
+  check('grass feature slot 2: chance == 0.06 (tallGrass)', Math.abs(packedF.tlook[slot2] - 0.06) < 1e-6);
+  check('grass feature slot 2: fi == 2 (third in the flat list)', packedF.tlook[slot2 + 3] === 2);
+  check('grass feature slot 3: chance == 0.2 (reed)', Math.abs(packedF.tlook[slot3] - 0.2) < 1e-6);
+  check('grass feature slot 3: fi == 3 (fourth in the flat list)', packedF.tlook[slot3 + 3] === 3);
+  // forest has no features targeting it -> both slots chance == 0 (never fires).
+  const fRow = 1 * TLOOK_WIDTH * 4;
+  check('forest feature slot 0: chance == 0 (no feature)', packedF.tlook[fRow + 8 * 4] === 0);
+  check('forest feature slot 1: chance == 0 (no feature)', packedF.tlook[fRow + 10 * 4] === 0);
+}
+
+// recipe with no nearLOD at all -> every feature slot is chance == 0 (already
+// covered by the plain `packed` fixture above, spot-checked here explicitly).
+{
+  const gRow = 0 * TLOOK_WIDTH * 4;
+  check('no nearLOD.features: grass feature slot 0 chance == 0', packed.tlook[gRow + 8 * 4] === 0);
+  check('no nearLOD.features: grass feature slot 1 chance == 0', packed.tlook[gRow + 10 * 4] === 0);
+}
+
+// ---- US-026a S5: packNearTextures -------------------------------------------
+{
+  const tN = new Terrain(makeRecipe());
+  let threw = false;
+  try { packNearTextures(tN); } catch (e) { threw = true; }
+  check('packNearTextures: not nearReady throws', threw);
+
+  tN.bakeFarSync();
+  tN.bakeNearBand(0, 0);
+  const packedN = packNearTextures(tN);
+  check('packNearTextures: width/height match near.w/h', packedN.width === tN.near.w && packedN.height === tN.near.h);
+  check('packNearTextures: x0/y0/cell match near band', packedN.x0 === tN.near.x0 && packedN.y0 === tN.near.y0 && packedN.cell === tN.near.cell);
+  check('packNearTextures: nearH is near.hDraw', packedN.nearH === tN.near.hDraw);
+  check('packNearTextures: nearType is near.type', packedN.nearType === tN.near.type);
 }
 
 console.log(`TerrainTextures.test.js: ${pass} passed, ${fail} failed`);

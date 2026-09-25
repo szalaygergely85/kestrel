@@ -23,7 +23,7 @@
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK, CELL_RAY, FALLOFF_FAST, OCT_NORMAL } from './common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
-import { FACE_PACKED } from '../../GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -68,6 +68,10 @@ const int MAX_STRUCTS = ${MAX_STRUCTS};
 const int MAX_SUN_STEPS = ${MAX_SUN_STEPS};
 const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
 const int FACE_PACKED = ${FACE_PACKED};
+// US-026a S5 (23.4 "Lighting"): kind 7 (terrain) is lit by the sun
+// ANALYTICALLY in the terrain shade pass instead (D-007: no terrain shadow
+// rays) - literal twin of lighting.js's kind[i] === KIND_TERRAIN skipSun.
+const int KIND_TERRAIN = ${KIND_TERRAIN};
 // BUG-LIGHT-002 (docs/backlog.md row 25d): same epsilon as lighting.js's
 // VIS_FLOOR_EPS - biases sampleVis's floor so a sample point that lands
 // within float32 noise of an exact vis-grid boundary (the "toward the
@@ -204,8 +208,9 @@ float sampleVis(int i, float px, float py) {
 void main() {
   ivec2 cell = ivec2(gl_FragCoord.xy);
   uvec2 gi = texelFetch(uGI, cell, 0).xy;
+  uint kindU = giKind(gi.y);
   vec3 L = uAmbient;
-  if (giKind(gi.y) == 0u) {
+  if (kindU == 0u) {
     outLight = uvec4(floatBitsToUint(L), 0u);
     return;
   }
@@ -244,9 +249,12 @@ void main() {
     litCount++;
   }
 
-  // US-007 (14.3 item 4): "Skip when uSunOn == 0 or N.sunDir <= 0".
+  // US-007 (14.3 item 4): "Skip when uSunOn == 0 or N.sunDir <= 0". US-026a
+  // S5: also skip for terrain (kind 7) - the terrain shade pass adds the sun
+  // term itself, analytically (D-007); a second, shadow-ray-tested sun
+  // contribution here would double the sun on every terrain cell.
   int sunlit = 0;
-  if (uSunOn != 0) {
+  if (uSunOn != 0 && kindU != uint(KIND_TERRAIN)) {
     float ndotsun = dot(N, uSunDir);
     if (ndotsun > 0.0) {
       // BUG-LIGHT-001 fix: nudge toward the sun direction (JS twin above),

@@ -11,6 +11,7 @@ import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
+import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -95,6 +96,33 @@ ok('shade.frag.js contains KIND_TERRAIN (kind==7 branch)', SHADE_FRAG_SRC.includ
 // WOULD appear if someone hand-copied overworld_far.js instead of wiring
 // uBandNear/uBandMid/uTerrainFog* uniforms.
 ok('terrain.frag.js: bands/fog come from uniforms, not literals 150.0/600.0', !TERRAIN_FRAG_SRC.includes('150.0') && !TERRAIN_FRAG_SRC.includes('600.0'));
+
+// US-026a S5 (23.4/23.7 S5): near-band textures/uniforms - literal port of
+// terrainCaster.js's near sampling (useNear/sampleH/terrainNormal), gated by
+// uNearReady, never a literal 130/170/0.5/0.012.
+for (const u of ['uNearH', 'uNearType', 'uNearMap', 'uNearReady', 'uFarMinH', 'uNearMinH', 'uHandover', 'uNearStep']) {
+  ok(`terrain.frag.js contains ${u}`, TERRAIN_FRAG_SRC.includes(u));
+}
+ok('terrain.frag.js contains DITHER_SEED', TERRAIN_FRAG_SRC.includes('DITHER_SEED'));
+ok('terrain.frag.js contains useNearSample', TERRAIN_FRAG_SRC.includes('useNearSample'));
+ok('terrain.frag.js contains packNormalOct (aoD now carries the normal, not b)', TERRAIN_FRAG_SRC.includes('packNormalOct'));
+ok('terrain.frag.js: no literal 130.0/170.0/0.5/0.012 (near recipe constants via uniforms only)',
+  !TERRAIN_FRAG_SRC.includes('130.0') && !TERRAIN_FRAG_SRC.includes('170.0') && !TERRAIN_FRAG_SRC.includes('0.012'));
+
+// US-026a S5: shadeTerrainFar renamed to shadeTerrain (matches the JS
+// oracle's own rename); near-detail (close band/jitter/features) uniforms.
+ok('shade.frag.js: no shadeTerrainFar( function definition/call (renamed to shadeTerrain)', !/shadeTerrainFar\(/.test(SHADE_FRAG_SRC));
+ok('shade.frag.js contains shadeTerrain(', SHADE_FRAG_SRC.includes('shadeTerrain('));
+for (const u of ['uNearDetailOn', 'uHandover', 'uCloseBand', 'uSunDir', 'uAmbientI', 'uSunI']) {
+  ok(`shade.frag.js contains ${u}`, SHADE_FRAG_SRC.includes(u));
+}
+ok('shade.frag.js contains unpackNormalOct (decodes the march pass packed normal)', SHADE_FRAG_SRC.includes('unpackNormalOct'));
+ok('shade.frag.js contains MAX_FEATURES_PER_TYPE', SHADE_FRAG_SRC.includes('MAX_FEATURES_PER_TYPE'));
+
+// US-026a S5 (23.4 "Lighting"): light.frag.js skips the sun term for terrain
+// (kind 7) - analytic/shadow-free, D-007.
+ok('light.frag.js contains KIND_TERRAIN', LIGHT_FRAG_SRC.includes('KIND_TERRAIN'));
+ok('light.frag.js skips the sun for terrain (kindU != uint(KIND_TERRAIN))', LIGHT_FRAG_SRC.includes('kindU != uint(KIND_TERRAIN)'));
 
 // US-040 (15.2 item 8): voxel.frag.js - the JS-injected constants, the
 // verbatim axis-choice rule, the +Inf aoD bit pattern, and the numeric ban
