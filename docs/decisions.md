@@ -582,6 +582,11 @@ Owner walk-test (backlog rows 25f/25g/25h): the tower props (lever, burner, lamp
 6. **Order:** finish US-016 (pass A2 slot) -> US-040 -> US-041a -> swap props in `world_m1` + PO walk-check with the owner -> BUG-OWN-003 (slim, if still needed) -> US-018 final perf (budget now includes the model pass <= 0.5 ms p95). Voxel prop art runs in parallel with US-040.
 7. **Exit gate:** if US-040 fails `?gpucompare=1` or its 0.5 ms p95 budget after **one** fix round, M1 falls back to option (B) (billboards + 7.7 fill/outline, fixed-yaw props) and voxel props move to M2. No second fix round without a manager decision.
 
+### Amendment 1 (2026-09-25): gate passed for US-040
+- **Gate PASSED after fix round 1.** The gate tests the voxel pass, so "all poses PASS" means kind-8 (model) cells: all 5 voxel poses are exact (uvViol/depthViol/dLViol 0, k8 CPU = GPU) on headless and the owner's Intel GPU, perf p95 0.1 ms vs 0.5 ms. The 3 FAILs are the pre-existing sector wall-vs-ceiling bug (same result with the model removed) -> BUG-GPU-003, not a US-040 defect. No fallback to (B).
+- US-040 -> `done` without a PO review (engine-only, nothing the owner can see until the prop swap). The PO checks it in the world_m1 prop-swap walk-check. US-041a is unblocked now.
+- **BUG-GPU-003** comes after US-041a and before the prop swap / US-018 final perf (one agent at a time; parity must be clean before perf sign-off). Until then the 3 poses stay known FAILs. Any change on kind-8 cells in them counts as a real FAIL.
+
 ### Consequences
 - M1 grows by US-040 + US-041a + voxel prop art; the M1 date slips accordingly. M1.5 and later milestones shift by the same amount; D-016's pre-M3 target for creatures is unchanged (US-041b).
 - The billboard sprite pass stays in the engine for effects and horizon billboards (US-030c work is not wasted).
