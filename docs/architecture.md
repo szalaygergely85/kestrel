@@ -1387,3 +1387,49 @@ ui.bindScene(sceneCols, sceneRows)                    // sets sx/sy; called by e
 **Files:** new `engine/ui/uiLayer.js` (+test); `engine/render/RenderTargetGL.js`, `RenderTargetCanvas2D.js`, `engine/core/engine.js`, `engine/index.js`, `engine/ui/panel.js`, `engine/ui/crosshair.js` (draws into whatever target it is given); game: `main.js`, `game/js/ui/titleCard.js`, `endCard.js`, `pauseOverlay.js`, `game/js/quest/hints.js`, `mapCard.js`. Size: M (~1 programmer day), ARCH review (render).
 
 **Do not:** use alpha blending or CSS/DOM text for UI; scale UI art by duplicating glyphs; let the UI layer write into the scene mask texture; read `ASSETS` in `uiLayer.js`; allocate in `clear`/`present`.
+
+## 18. Floor surface under a position (P1 for US-020c; architect, 2026-09-25)
+
+**Existing public API, no engine change.** `World` (exported from `engine/index.js`) already answers it. The game calls methods on the world object it already holds, so `game/js/audio/*` needs no engine import:
+```js
+// on a footstep event only (grounded), never per frame
+const sec = world.sectorAt(x, y) || world.outsideSector(x, y);  // structure sector, else terrain/void scratch
+const mat = sec.floorMat;   // material key string, e.g. 'floor', 'rubble', 'grass', 'moss_top'
+```
+Rules: read `floorMat` immediately (the `outsideSector` result is a reused scratch object; the `sectorAt` result is the shared legend entry, read-only). On a solid cell's top, `floorMat` is its top face, which is correct. Cost: bbox loop over structures + one grid lookup, zero allocation. Not covered: standing on voxel props (falls back to the sector under them; fine for M1). The material -> timbre map is game data (`game/js/audio/surfaces.js`, unknown key = stone). Tests use a fake `{ sectorAt, outsideSector }`. If surfaces later need to be content-driven, add an optional `surface` field to material defs (designer), not a new engine query.
+
+## 19. OWN-REQ-004 content data files: proposal for D-023 (architect, 2026-09-25)
+
+**Today.** `design/*.js` classic scripts fill `window.ASSETS`; `main.js` reads them once (`AssetRegistry.fromGlobals`); the engine gets plain objects. Saves (`serialize`, section 10) hold changed state only and reference content by key. Two facts shape the choice: (1) part of the content is **code**: `palette.util.validate`, `detailPass.util`, terrain recipe `util.{heightAt,typeAt,generate,bakeChunk}`, generator code in `voxel_tower.js`, `wreckage.js`, `relay.js`. Pure JSON cannot hold that. (2) An open world cannot be one script tag per chunk; it needs fetch-on-demand.
+
+**Options.**
+- **A. All JSON now.** Converter runs once, JS deleted, generators rewritten as data, terrain `util` moved into the engine by `name`+`version`. Clean, but ~5 days, and it stalls design work.
+- **B. Split by who authors it (recommended).** *Tool-authored data* becomes canonical JSON under `content/`: world files, structure levels (grid + legend), placements (entities, props, lights, triggers, hint zones), voxel models (existing text-layer format; the `.vox` importer writes it). *Code-authored content* stays JS (palette/detail-pass validators, terrain recipe functions, procedural model generators) until each has an engine-side named implementation or an editor (M5). Generators may emit JSON via the converter.
+- **C. Keep JS; the editor writes JS wrappers** (`ASSETS.levels.x = {<JSON>};`). ~0.5 day, but the editor must parse JS, there is no fetch/streaming, and it dead-ends at chunks. Rejected.
+
+**B in detail.**
+1. **Layout (per world / per structure level / per chunk / per model):** `content/manifest.json` (file list + `contentVersion`); `content/worlds/<world>.world.json` (terrain recipe ref + seed, structure placements `{id, level, origin, yawSteps}`, world-level entities); `content/levels/<level>.level.json` (grid, legend, level-local entities/props/lights/triggers in level coordinates); `content/chunks/<world>/<cx>_<cy>.json` (M2+, US-026: terrain overrides + outdoor placements for one `Terrain.chunkSize` chunk, loaded with the near ring); `content/models/<key>.model.json`. Palette/materials stay one small shared file. Placements live **with their owner** (level-local in the level, outdoor in the chunk): moving a structure moves its props, and two people rarely edit the same file.
+2. **Every file:** `{ "kind": "level", "schema": 1, "id": "tower", ... }`. Stable ids: strings, unique inside the file, global form `<fileId>/<localId>` (`tower/lamp_hook`). The editor mints `<type>_<n>` from a per-file `nextId` and never reuses one; references are by id, never by array index.
+3. **Migration:** `engine/content/migrate.js`: pure functions per `kind`, `vN -> vN+1`, run by the loader on load; the editor always writes the latest schema; `schema` newer than the engine knows = clear error. Tests: one fixture per old version.
+4. **Engine loader:** new `engine/content/loadPack.js`: `loadContentPack(manifestUrl, { fetchJson }) -> Promise<AssetBundle>` (fetch injected, so Node tests pass a file reader); `AssetRegistry.fromJSON(bundle, codeParts)` merges JSON parts with the still-JS parts (`fromGlobals` stays during migration). `World.load(def)` is unchanged (it already takes plain data); M2 adds `World.loadChunk(key, data)` / `unloadChunk(key)`. The engine never hard-codes `content/` paths: the game passes the manifest URL.
+5. **Save game vs content:** saves stay the section 10 `WorldState` (deltas + ids) plus `contentVersion` from the manifest. On load, a saved entity id no longer in content is dropped with a warning; a new content id is spawned from content. Saves go through `game/js/platform/` (US-060), content never does. The editor never writes saves; the game never writes content.
+6. **Git-merge friendly:** one canonical writer `engine/content/stringify.js`, used by editor and converter: fixed key order per kind, 2-space indent, one grid row / one placement / one voxel layer row per line, placements sorted by id, trailing newline. Same input -> same bytes (test). No binary blobs (voxel text layers diff well; revisit only if a model file passes ~500 KB).
+7. **Editor I/O (M1.5, US-031..034):** reads through the same `loadContentPack` over the static server; writes with the File System Access API (`showDirectoryPicker()` on the repo's `content/`, handle kept in IndexedDB), fallback = download of the single changed file. Play-test = `game/index.html?world=<id>` reading the saved file (US-027 world half).
+8. **Migration path from today:** `tools/export-content.mjs` (US-027) loads the classic scripts in a Node `vm` (same file list as `game/index.html`, like US-058) and writes canonical JSON. Flip per kind, in this order: `world_m1` + `tower`/`test_room` levels (the editor needs them) -> static voxel/billboard models -> the rest later. When a kind flips, its JS file is deleted in the same commit (no dual source of truth); `design/preview/*.html` load JSON through one small shared helper; US-058's validator reads the JSON.
+
+**Cost (B):** PC-A engine ~1.5 days (loadPack + fromJSON + migrate + stringify + tests, one ARCH review); PC-B ~1.5 days (converter, flip world/levels, preview helper, validator update); designer: levels become JSON (no loss, level data is already plain literals). A: ~5 days + designer disruption. C: ~0.5 day, then rewritten.
+
+**Reversible vs not:** layout, granularity and JSON-vs-JS are cheap to reverse (the converter works both ways). **Expensive to reverse, decide now:** the id scheme (`<fileId>/<localId>`, never reused) and "saves reference content by id + `contentVersion`", because saves in players' hands (itch demo, end of M2) depend on them.
+
+ESCALATE TO MANAGER (D-023): pick A, B or C. Recommendation **B**, with the id and save rules (items 2 and 5) normative.
+
+## 20. M1.5 editor tech notes: outline (P7; full notes after D-023; architect, 2026-09-25)
+
+1. **Layout:** `tools/editor/index.html` + `tools/editor/{main,camera,select,tools,panel,io,undo}.js`; imports `engine/index.js` (+ `engine/dev.js`, US-047) only, never `game/` (add a `tools/editor` fixture to check-deps).
+2. **Rendering:** `createWorldRenderer(canvas, assets, opts)` (US-046) = the game's compositor/GPU path with its own RenderTarget; the editor owns no render code.
+3. **Fly-cam without `game/`:** a free `CameraPose` driven by `Input` (WASD, Q/E down/up, RMB look); no Player, no physics step; the sim runs only in "Play" mode.
+4. **Idle skip:** render only when `world.renderVersion`, the camera pose or the animation clock changed (section 10); target ~0 ms when idle.
+5. **Pick/readback API (US-032):** `renderer.pickAt(col, row) -> { kind, structureId, cell:{x,y}, face, entityId|null, world:{x,y,z} }` from the G-buffer (`planeId`, depth, kind) on the CPU path and a 1-pixel `readPixels` of the id/depth target on the GPU path, on click only (never per frame). Sprites/voxels need an entity/instance id channel (new, PC-A engine story).
+6. **Edits:** only through public World calls (`placeStructure`/move/remove, `spawn`/`remove`, component set); each edit is a `{do, undo}` command on a ring (undo/redo); files are written back via `stringify` (section 19 item 6).
+7. **I/O:** section 19 item 7 (FSA API + download fallback), dirty tracking per content file.
+8. **Dependency chain:** D-023 (format) -> US-027 loader/stringify (PC-A) -> US-046 + US-047 (PC-A) -> pick id channel (PC-A) -> US-031/032 (PC-B).
