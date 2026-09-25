@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Fixture test for tools/check-deps.mjs (US-024): builds a temp tree with one
 // deliberate violation of each of the 6 rules (docs/architecture.md section
-// 3) plus one clean control file, runs the checker's logic against it (by
+// 3 and 24.2) plus clean control files, runs the checker's logic against it (by
 // spawning the real script via child_process against a temp ROOT), and
 // checks each expected finding appears. Run with:
 //
@@ -47,9 +47,12 @@ writeFile(tmp, 'game/js/bad3.js', `import { Level } from '../../engine/world/Lev
 writeFile(tmp, 'design/bad4.js', `export const a = 1;\n`);
 // Rule 5: JSDoc import(...) inside a comment must NOT be flagged (control, engine/).
 writeFile(tmp, 'engine/render/good_jsdoc.js', `/** @param {import('./RenderTarget.js').RenderTarget} rt */\nexport function f(rt) { return rt; }\n`);
+// Rule 6: tools/editor/** file importing something from game/.
+writeFile(tmp, 'tools/editor/bad6.js', `import { helper } from '../../game/js/helper.js';\nexport const q = helper;\n`);
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'game/js/good.js', `import { OK } from '../../engine/index.js';\nexport const w = OK;\n`);
+writeFile(tmp, 'tools/editor/good.js', `import { OK } from '../../engine/index.js';\nexport const p = OK;\n`);
 
 let output = '';
 let exitCode = 0;
@@ -67,6 +70,7 @@ ok('rule 2: forbidden global flagged', /bad2\.js.*window\.ASSETS/.test(output), 
 ok('rule 3: deep import flagged', /bad3\.js.*deep import/.test(output), output);
 ok('rule 4: design import\/export flagged', /bad4\.js.*design\/ must stay classic scripts/.test(output), output);
 ok('rule 5: JSDoc import(...) NOT flagged', !/good_jsdoc\.js/.test(output), output);
+ok('rule 6: editor importing game/ flagged', /bad6\.js.*must not depend on game\//.test(output), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });

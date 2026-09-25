@@ -19,7 +19,10 @@
 //   4. design/**/*.js: any import/export statement is a finding.
 //   5. JSDoc `import('...')` inside comments is ignored (comments are
 //      stripped before rule 1/2/3 scan).
-//   6. success message as above.
+//   6. tools/editor/**/*.js: an import that resolves inside game/ is a
+//      finding (architecture.md 24.2 - the editor is a second client of
+//      engine/index.js only, it must never depend on the game/ product).
+//   7. success message as above.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,6 +36,7 @@ const __dirname = path.dirname(__filename);
 // tools/check-deps.test.mjs point it at a temp fixture tree.
 const ROOT = process.cwd();
 const ENGINE_DIR = path.join(ROOT, 'engine');
+const GAME_DIR = path.join(ROOT, 'game');
 
 const findings = [];
 let filesScanned = 0;
@@ -142,9 +146,12 @@ const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-voxel.mjs',
 ].map((p) => p.split('/').join(path.sep)));
 
+const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');
+
 function checkConsumerFile(file, src) {
   filesScanned++;
   const relPath = path.relative(ROOT, file);
+  const isEditorFile = file.startsWith(EDITOR_DIR + path.sep) || file === EDITOR_DIR;
   if (RULE3_TOOL_ALLOWLIST.has(relPath)) return;
   const stripped = stripComments(src);
   for (const { spec, line } of findImports(stripped)) {
@@ -157,6 +164,11 @@ function checkConsumerFile(file, src) {
       if (normalized !== indexPath) {
         findings.push(`${rel(file)}:${line}: deep import "${spec}" - game/tools must import exactly engine/index.js`);
       }
+    }
+    // Rule 6: tools/editor/** is a second client of engine/index.js only -
+    // it must never depend on game/ (architecture.md 24.2).
+    if (isEditorFile && (resolved.startsWith(GAME_DIR + path.sep) || resolved === GAME_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" resolves into game/ - tools/editor/** must not depend on game/`);
     }
   }
 }
