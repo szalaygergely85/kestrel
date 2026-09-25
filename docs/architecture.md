@@ -1709,3 +1709,109 @@ engine.setGrid(cols, rows, { immediate = false } = {}) -> { cols, rows, clamped,
 - allocate in the per-frame wrapper
 - let the engine know the player grid list
 - lose the gpucompare ref box
+
+## 23. US-026a bounded walk-out: near terrain band, terrain physics, walk bound, waystone end (architect, 2026-09-25; D-020, D-026)
+
+Normative for US-026a. 7 (World), 7.1 (capsule rules), 14.4 (terrain pass A2) stay valid; this section extends them. US-026b (streaming, `content/chunks/`) builds on the same interfaces and must not need to change them.
+
+**Probe results (Node, real recipe, no `vm` sandbox):** `heightAt` 0.38 us, `typeAt` 1.25 us, one 64x64 chunk bake 9 ms -> the 3x3 band bakes in ~80 ms (AC 300 ms). Max slope inside r 96 m is **7.4 deg**; there is **no cell > 50 deg anywhere in the 3x3 band** (crown stamp + gentle home hill). `|bilinear 2 m - analytic|` <= 0.005 m over the whole band (<= 0.003 m inside r 96). Height at the proposed waystone spot (1428, 1040) is 0.53 m, type grass, 60 m from the breach eye, 70 m from the tower centre. The sector DDA already supports an eye outside a structure (`footprintEntry`/`slabEntry`), so the tower keeps drawing from the hillside.
+
+### 23.1 Decisions (reasons inline)
+1. **One contiguous near band**, not the 9-slot chunk ring: `Terrain.bakeNearBand(cx, cy)` fills `terrain.near = { x0, y0, w: 192, h: 192, cell: 2, height: Float32Array, type: Uint8Array, hDraw: Float32Array, minH, maxH, version }` (cells sampled at centres like `bakeChunk`; `hDraw = height + canopy` on forest cells, same rule as `farHDraw`). Baked **synchronously in `World.load`** (80 ms) before props are spawned; `terrain.nearReady = true`. `chunk()/setCenter()/bakeChunkStep()` stay as they are for US-026b; nothing in US-026a calls them. One array makes `util.gridHeight` seamless across the 9 chunks by construction (7.2's "195x195 atlas" is superseded by 192x192 centre-sampled).
+2. **Physics and renderer read the same array.** `Terrain.groundAt(x, y)` = `gridHeight(near, x, y)` when non-null, else `heightAt(x, y)` (analytic: outside the band or before `nearReady`). `Terrain.groundNormalAt(x, y, out)` = central difference of `groundAt` at +-2 m. `Terrain.groundTypeAt(x, y)` = nearest `near.type` texel, else `typeAt`. `World.outsideSector/floorAt` and `z: 'ground'` props switch from `heightAt/typeAt` to these. The AC's 0.05 m is exact by construction inside the band and 0.005 m outside it (Node test).
+3. **Terrain cells are always horizontally passable; steepness is decided at the actor's own position** (slope rule 23.3). Reason: `isSectorPassable` samples floor heights at 1 m cell centres; on a continuous slope that turns a 25 deg hill into a 0.47 m "step" and blocks walking uphill. Tower sectors unchanged.
+4. **Walk bound = data (`world.bounds`), enforced in `integrate`** as a projection with velocity clipping (no wall sectors, no spring). First contact fires a trigger of `shape: 'bounds'` (hint `boundsEdge`).
+5. **Waystone = world entity (`components.voxel`) + world-level circle trigger**; `buildTriggers` gains world-level triggers (`def.triggers[]`, `structId: null`, absolute coordinates). `quest.end` learns absolute `walkTo` and `lookAt: <entityId>` (yaw target); the tower's `end` trigger and its `trigger:end` tags are deleted from the level data.
+6. **Near terrain is the same pass A2**, extended with two textures, a near step schedule and a stable **dithered handover by distance t in [130, 170] m** (by t, not by band edge; not the design's 280-320: the band is only 128-256 m wide around the tower). Terrain writes `face = FACE_PACKED` with an octahedral-packed normal so the existing light pass lights it with the carried lamp; the sun stays analytic (no terrain shadow rays).
+7. **Tower west hill cells (`x/j/k/l`: 6.0 -> 5.4 -> 4.6 -> 3.6 -> 2.4) stay as authored**: the descent is a chain of 0.6-1.2 m drops (falls with the small landing dip, never a stop) and one-way (jump apex 1.05 m < 1.2 m). Re-authoring to <= 0.45 m steps needs a 9-cell switchback in the west face (content, PC-B/designer) and changes the silhouette; **PO decides** (recommendation: accept the drops for US-026a).
+
+### 23.2 Data (content; plain JSON, written back verbatim by `serialize`)
+World file (`content/worlds/world_m1.world.json`, designer/PC-B):
+```jsonc
+"bounds":   { "shape": "circle", "x": 1496.5, "y": 1024.5, "r": 96 },          // optional; absent = unbounded
+"entities": [ ..., { "id": "endMarker", "type": "prop", "x": 1428, "y": 1040, "z": "ground", "yawDeg": 75,
+                     "components": { "voxel": { "model": "waystone", "anim": "idle", "loop": true } } } ],
+"triggers": [                                                                  // NEW collection, world coordinates
+  { "id": "end",        "shape": "circle", "x": 1428, "y": 1040, "r": 2.5, "once": true, "trigger": "quest.end",
+    "walkTo": { "x": 1430.3, "y": 1039.4 }, "lookAt": "farTower", "pitchTo": 0 },
+  { "id": "hintStone",  "shape": "terrain", "once": true, "trigger": "hint.show", "hint": "stone" },
+  { "id": "boundsEdge", "shape": "bounds",  "once": true, "trigger": "hint.show", "hint": "boundsEdge" } ]
+```
+- `World.load`: `z: 'ground'` on a world entity resolves through `terrain.groundAt`; `w.bounds = def.bounds ?? null` (validated: circle, finite, `r > 0`); `def.triggers` validated (unique ids, known shapes) and appended by `buildTriggers`. `schema.js`: `ID_COLLECTIONS.world` += `'triggers'`, `KEY_ORDER.world` += `bounds, triggers` (schema stays 1: additive optional keys; a world file without them must still load).
+- Level file (`content/levels/tower.level.json`, PC-B): remove `triggers[id=end]`; legend `X`/`Y` lose `tag: 'trigger:end'` (plain rock 6.0 / 5.4). `hintExit` stays.
+- Hints (`uiStyle.storyHints`, design, PC-B): `stone` ("A stone stands below. Go to it.") and `boundsEdge` ("The wind turns you back. Not yet."), <= 40 ASCII chars; writer may reword.
+- Waystone model (designer, PC-A per sprint-3): `design/models/waystone.js`, voxel <= 16x16x24, one emissive aether-teal mark material (append-only palette/detail-pass); `anim: 'idle'`, 1 frame; anchor bottom centre like other voxel props.
+
+### 23.3 Physics (`engine/physics`, `engine/world/World.js`)
+`World.outsideSector` scratch gains `terrain: true, nx, ny, nz` (from `groundNormalAt`; Level sectors have no `terrain` field, so nothing else changes). `SOLID_OUTSIDE` stays for terrain-less worlds.
+
+`isSectorPassable`: after the `solid` and head-clearance checks, `if (sector.terrain) return true;` (decision 3). `moveCapsule` untouched.
+
+`integrate`, new step **4b (bounds)**, after step 4's velocity response and before step 5, only when `world.bounds`:
+```
+dx = x - bx; dy = y - by; d = hypot(dx, dy); lim = r - body.radius
+if (d > lim) { nx = dx/d; ny = dy/d; x = bx + nx*lim; y = by + ny*lim;
+               vn = vx*nx + vy*ny; if (vn > 0) { vx -= vn*nx; vy -= vn*ny; }  body.boundsHit = true }
+else body.boundsHit = false                                   // per-step flag, same class as `landed`
+```
+Tangential speed is preserved -> smooth slide, no bounce, no stop (test: walking into the bound at 45 deg keeps >= 0.7 of the speed and never crosses `lim + 1e-6`).
+
+Step 5, grounded branch, **slope rule** (only when `sector.terrain`; `cfg.maxSlopeDeg = 50`, `cfg.slideStartCos = cos 50`, `cfg.slideStopCos = cos 45` hysteresis, `cfg.slideAccel = gravity`, `cfg.slideMaxSpeed = 8`):
+- `body.sliding` (plain bool): set when `nz < slideStartCos`, cleared when `nz > slideStopCos`.
+- while sliding: downhill unit `dh = normalize(nx, ny)`; `vx += dh.x * slideAccel * sqrt(1 - nz*nz) * dt` (same y); in step 3 the wish velocity loses its uphill component (`wish -= max(0, -(wish . dh)) * (-dh)`) so W into the slope does nothing; clamp horizontal speed to `slideMaxSpeed`; `speedScale` untouched.
+- the vertical snap `|floorH - z| <= stepUpMax` stays: at 8 m/s and 60 deg the per-step rise is 0.23 m < 0.45, so a sliding body never leaves the ground; landing on terrain uses the unchanged airborne branch.
+- On this content the rule never triggers (max 7.4 deg). It is exercised by a Node test with a **synthetic `WorldQuery` stub** (`h = k*x`, k = tan 30/49/51/60 deg): 30/49 walk uphill at full speed; 51/60 -> no uphill progress, downhill speed grows and caps at 8 m/s, `|z - h(x,y)| <= 1e-6` every step, hysteresis flips exactly once crossing 50 -> 45.
+
+Ground-contact test (AC): 1000 seeded random spawns inside the band at `groundAt + 1.5`, each 600 steps of random wish input incl. jumps: `z >= groundAt(x, y) - 0.01` after every step, no NaN, position within `bounds.r`.
+
+Per-step cost: `outsideSector` becomes 1 bilinear + 1 nearest fetch (~60 ns) instead of `heightAt + typeAt` (1.6 us); worst case ~40 calls/step -> < 5 us. Sim budget unchanged (<= 1 ms).
+
+### 23.4 Render: pass A2 near terrain (`terrainCaster.js`, `gpu/glsl/terrain.frag.js`, `gpu/TerrainTextures.js`)
+Textures (`packTerrainTextures`; uploaded when `near.version` changes, never per frame): `NEARH` R32F 192x192 = `near.hDraw`, `NEARTYPE` R8UI 192x192. Uniforms: `uNearMap = vec4(x0, y0, 2, 192)`, `uNearReady`, `uNearMinH`, `uHandover = vec2(130, 170)`, `uNearStep = vec2(0.5, 0.012)` (values from `recipe.nearLOD` through the registry, never literals in GLSL). Terrain program texture units 5 -> 7 (limit 16).
+
+**Height sampling (normative, literal in GLSL and JS):**
+```
+useNear(t, px, py) = uNearReady && t < h1 && (t < h0 || hash01(cell2(px, py), 9) > (t - h0) / (h1 - h0))   // cell2 = floor(p / 2); uint hash per 14.1 rule 5
+H(px, py, t) = useNear ? bilinear(NEARH, p) : bilinear(FARH, p)      // NEARH "outside" (half-cell rim) -> FARH for that sample
+```
+The dither is keyed on the 2 m world cell: stable while walking, identical on both paths (float32 `t` within 1 % of `h0/h1` is excluded from parity, 23.6).
+
+**March schedule:** `dt = t0 < h1 ? max(nearStepMin, nearStepK * t0) : max(STEP_MIN, STEP_K * t0)`; `MAX_TERRAIN_STEPS` 128 -> **320** (one shared constant, both paths). New early-out (both paths): `slope < 0 && h(t1) < min(uNearMinH, farMinH)` -> the ray is below every surface -> no hit (bounds steep downward rays to a handful of steps; a hit inside a skip interval is the only way to get here). The `eyeH >= uTerrainMaxH` escape stays. Expected cost: horizon rays ~210 near + ~80 far steps worst case; bottom rows 3-10 steps. If the terrain pass exceeds **1.5 ms p95 at 320x120**, fallback knobs are `nearStep = (1.0, 0.015)` and `h1 = 150` (recipe values, no code change), then n = 1 for the terrain pass only (bind-time choice) as the last resort.
+
+**Hit sample:** `kind 7`, `mat = type` (`NEARTYPE` nearest when `useNear` at `tHit`, else `FARTYPE`), `planeId = PLANEID_TERRAIN`, `u, v = p(tHit)`, `z = H`, **`face = FACE_PACKED`, `aoD = packNormalOct(N)`**, `N` = central difference of `H(., tHit)` at `c = 2` (near) or `c = 8` (far). The sun term `b` is no longer stored (it moves to the shade pass). Bisection: 5 steps as today (near: 0.5/32 = 16 mm).
+
+**Lighting:**
+- Light pass (`light.frag.js`, `lightSurfaces`): kind 7 already gets `N` from the packed normal via the `FACE_PACKED` branch (no change); add `kind == 7 -> skip the sun term` (uSunOn contribution and `sunVisible` rays): terrain sun is analytic and shadow-free per D-007. Point-light visibility works outside structures because `sectorOrOutside` returns a non-solid terrain sector.
+- Shade pass, kind-7 branch (`shade.frag.js`, `shadeTerrainCells`): `N = unpackNormalOct(aoD)`; `b = ambientI + sunI * max(0, N . sunDir)`; `Lc = LIGHT[cell]` (already bound in the shade program; JS: `fb.light`); `bT = b + max(Lc.r, Lc.g, Lc.b)`; after `shadeTerrain` picks `fg/bg` from `bT`, tint toward the lamp: `fg += Lc * 0.5` per channel before fog (clamp 255). New shade uniforms `uSunDir, uAmbientI, uSunI` (no texture). Both paths compute `b` from the **unpacked** normal, so parity holds.
+- Near-detail (`shadeTerrainFar` -> `shadeTerrain`): a 4th glyph band **close < 40 m** from `glyphs.close` (TLOOK texel 7; `TLOOK_WIDTH` 8 -> 9); hash cell 2 m when `t < h1`, else 8 m; brightness jitter `+-0.08` on `bT` in the close band; two grass features in the close band by hash: wildflower (`chance 0.025`, glyphs `*,`, gold/strawLight) and pebble (`0.012`, `o.`, rock/stoneLight) from a small `FEAT` texel row per type (chance, 2 glyph codes, colour index). Surface-vs-face rows, trunks, reeds, foam = **US-026b** (OWN-REQ-002).
+- Fog unchanged.
+
+**JS oracle** (`castTerrain`, `marchTerrainRay`, `shadeTerrainCells`): literal twin of the above; `marchTerrainRay` reads `terrain.near` through its `terrain` argument (no new parameter); scratch stays module-level (no allocation).
+
+### 23.5 End sequence and hints (`engine/world/triggers.js`; game: `game/js/quest/end.js`, `main.js` wiring; routing in 23.8)
+- `buildTriggers`: world-level records `{ key: 'world.<id>', structId: null, ... }`; new shapes: `'terrain'` -> inside when `world.terrain && world.structureAt(x, y) === null` (first terrain contact); `'bounds'` -> inside when `world.bounds && hypot(x - bx, y - by) >= r - radius - 0.05` (`updateTriggers` reads `actor.components.body?.radius ?? 0`). Circle triggers with `structId: null` use absolute `x, y, zMin`.
+- `questEnd(ctx)`: `structId == null` -> `walkTo` absolute; `lookAt` (entity id) -> `yawTo = atan2(ex - x, -(ey - y))` in compass degrees, computed once at fire time, stored in `_endWalk`; `stepEnd` eases yaw (shortest arc) with the same smoothstep as pitch. Walk cap 1 m stays; `walkTo` is 2.5 m from the stone toward the far tower, so the actor ends in front of the stone facing the signal tower.
+- Fade / "End of Chapter One" card / `R` restart unchanged (`quest.endT`, `deserialize(initialState)`). `R` from terrain: `terrain.near` is content-derived, not state, and survives; `world.triggers` rebuilt (`inside = 0`); hints reset with the state.
+- `hintExit` stays. `hint.show` already handles `hint: 'stone'`/`'boundsEdge'` once `uiStyle.storyHints` has the entries.
+
+### 23.6 Parity, poses, budgets
+gpucompare world poses (main.js `world_m1: ...` list, `timeSec = 0`): `terrainNearTower` (1470, 1025, z 4.0, yaw 270, pitch -10), `bandEdge` (1470, 1025, z 4.0, yaw 270, pitch 0: horizon rays cross the 130-170 m handover), `waystoneLookBack` (1428, 1040, z 2.13, yaw 76, pitch +5: the tower from below, ring seam visible), `waystoneDown` (same, pitch -35: close band + features). Thresholds = 14.4 item 9 plus: kind-7 cells with `t` within 1 % of 130/170 excluded from `mat`/glyph checks; kind-7 count within 1 %; depth within 1 %; `bT` within 0.01 of a tier edge excluded as today.
+`?bench=1` poses: `breach` looking out (existing) and `waystoneLookBack`. Budgets (owner GPU, 240x90 and 320x120): GPU <= 4 ms p95, terrain pass <= 1.5 ms p95, JS <= 8 ms with sim <= 1 ms, load-time band bake <= 300 ms (measured 80). Sector pass from outside marches the whole 24x14 footprint per column: expect < 0.3 ms extra (F3).
+
+### 23.7 Build order (each step ends with a green Node test; one browser pass at the end)
+- **S1 Terrain band** (`Terrain.js`, `terrain.test.js`): `bakeNearBand`, `near`, `groundAt/groundNormalAt/groundTypeAt`, `nearReady`. Tests: band == the 9 `bakeChunk` results cell for cell; `groundAt` inside == `gridHeight(near)`, outside == `heightAt`; `|groundAt - heightAt| <= 0.01` on 5000 random band points; bake <= 300 ms.
+- **S2 World data** (`World.js`, `triggers.js`, `content/schema.js`, `world.test.js`, `triggers.test.js`): `outsideSector` terrain fields, `bounds`, world-level triggers (3 shapes), `z: 'ground'` for world entities, serialize round-trip of `bounds`/`triggers`, `bakeNearBand` in `World.load`.
+- **S3 Physics** (`capsule.js`, `integrate.js`, `config.js`, new `terrainWalk.test.js`): decision 3, bounds step 4b, slope rule on the synthetic stub, the 1000-spawn ground test; `physics/jump/roller.test.js` unchanged and green.
+- **S4 JS terrain** (`terrainCaster.js`, `terrainShade.js`, `TerrainTextures.js`, `lighting.js` + tests): near sampling, dither, schedule, packed normal, shade changes. `terrainCaster.test.js`: a near hit within 16 mm of the surface; dither monotone in t; no allocation (`--expose-gc` probe); `lightSurfaces` lights a kind-7 cell with a point light and skips the sun.
+- **S5 GLSL** (`terrain.frag.js`, `shade.frag.js`, `light.frag.js`, `GpuCellPipeline.js`, `glsl.test.js`): literal ports, new textures/uniforms, shared `MAX_TERRAIN_STEPS`; string checks for the new uniforms.
+- **S6 Game** (`end.js`, `main.js` end wiring <= 10 lines, `restart.test.js`/`tower.test.js`, gpucompare + bench poses): 23.5.
+- **S7 Content + art** (designer/PC-B, in parallel with S1-S5 against 23.2): waystone model + preview, world JSON `bounds/entities/triggers`, tower `end` removal, hint texts; `validate-content` green.
+- **S8 Browser pass** (programmer, one pass): wake -> breach -> hill -> waystone -> card -> `R`; `?gpucompare=1` all PASS incl. new poses; `?bench=1` numbers into the story. Then ARCH review (fable, S1-S5 diff).
+
+### 23.8 Routing flags for the main session
+- **Designer (PC-A per sprint-3):** waystone voxel model + emissive mark material; final marker spot (+-10 m, grass, slope < 10 deg); optional: ring `floorMat` vs terrain grass look (the 24x14 bbox draws as sector floor, the rest as terrain glyphs: a rectangle seam seen from the hillside; cheapest fix is matching colours, the real fix is US-026b's footprint shrink).
+- **PC-B files touched:** `content/worlds/world_m1.world.json`, `content/levels/tower.level.json` (after the US-027b flip; frozen during it), `design/` hint texts/palette, `game/js/quest/end.js` + its tests (sprint-3 assigns them to PC-A for this story; main session confirms with PC-B before S6). `tools/validate-content.mjs` must accept `bounds`/`triggers`.
+- **PO:** decision 7 (hill drops vs switchback re-author); the walk-test line "along steep slopes" cannot be met by this recipe (max 7.4 deg): drop it, or ask the designer for one steep stamp (e.g. a 55 deg rock face 40 m NW of the tower) as content; features scope (2 of 5 in US-026a).
+- **Manager:** none, inside D-026. (If the terrain pass misses 1.5 ms even at the fallback knobs: ESCALATE, n = 1 terrain pass vs a 160 m band cap.)
+
+**Do not:** stream or regenerate the band (US-026b); call analytic `heightAt/typeAt` from physics or the render loop once the band is ready; sample `NEARH` inside a structure bbox (skip intervals stay); put 130/170/0.5/0.012 in GLSL source or `engine/` code (recipe `nearLOD` -> registry -> uniforms); add wall sectors for the bound; hard-code the waystone position or the end yaw in `game/js/quest/*`; fire hints or callbacks from inside `integrate` (flags/triggers only); change `MAX_TERRAIN_STEPS` in one path only; key any hash on the screen cell.
