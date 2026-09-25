@@ -639,3 +639,28 @@ Option (a). Sprint 2 = BUG-OWN-007 -> US-020a (sound slice, carved from US-020) 
 - US-018 lands on an all-pass gpucompare (BUG-GPU-003 first).
 - M1.5 editor work and OWN-REQ-005 (`.vox` importer) wait for D-023.
 
+## D-023 Content data files: tool-authored data becomes canonical JSON in `content/`, code-like content stays JS (OWN-REQ-004)
+**Date:** 2026-09-25
+**Status:** Accepted (option B, amended)
+
+### Context
+The M1.5 editor must write levels/placements/models; today all content is hand-written JS in `design/` loaded by script tags, and the open world needs fetch-on-demand chunks. Proposal: architecture.md 19 (editor outline 20).
+
+### Options
+- A. All JSON now: ~5 d, generators/terrain code rewritten, stalls design.
+- B. Split by author: editor-written data -> JSON, code stays JS: ~1.5 d PC-A + ~1.5 d PC-B.
+- C. Editor writes JS wrappers: ~0.5 d, dead-ends at chunks/streaming. Rejected.
+
+### Decision
+Option B as in architecture.md 19. Normative now (expensive to reverse): stable ids `<fileId>/<localId>`, minted from a per-file `nextId`, never reused, references by id only; saves = `WorldState` deltas + ids + `contentVersion`, saves never hold content, the editor never writes saves. Amendments:
+1. **Timing:** built in **sprint 3** as story US-027 split in two, before any M1.5 editor code (US-031 starts sprint 4 at the earliest).
+2. **PC-A (US-027a, engine, ARCH review):** `engine/content/{loadPack,migrate,stringify}.js`, `AssetRegistry.fromJSON`, Node tests incl. byte-stable stringify. Lands on master first.
+3. **PC-B (US-027b, after 027a is on master):** `tools/export-content.mjs` converter, flip `world_m1` + `tower`/`test_room` levels, preview JSON helper, US-058 validator reads JSON. Voxel models flip in a later step; until then the `.vox` importer (005a/b) keeps writing JS snippets, a `--json` flag is added when models flip.
+4. **No dual source:** a kind's JS file is deleted in the same commit that flips it; during the flip commit nobody else edits those level files (main session coordinates the designer).
+5. Chunk files (`content/chunks/`) only with US-026 (M2), not in 027.
+
+### Consequences
+- Designer edits levels as JSON after the flip (same data, new syntax).
+- Editor save-to-disk uses the File System Access API: Chrome/Edge only, download fallback elsewhere.
+- Old dev saves (if any) may break once; the id rules protect real player saves from the itch demo on.
+
