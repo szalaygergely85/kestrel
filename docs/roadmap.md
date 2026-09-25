@@ -27,6 +27,7 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 **Engine build order (D-009, D-019):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-011 -> US-016 (finishing) -> US-040 -> US-041a -> US-056 voxel props in `world_m1` + owner walk-check -> BUG-OWN-003 (slim, if still needed) -> US-018. Voxel prop art (ART-OWN-001) runs in parallel with US-040.
 - **Ending (D-020):** no walk-on past the breach in M1. The end trigger stays, made deliberate by the vista, a summit hint and an "End of Chapter One" card (BUG-OWN-005, P0).
 - **Sprint 1 (D-020):** US-016 finish -> US-040 -> US-041a -> US-056, BUG-OWN-005 in parallel, US-018 stretch. Exit = owner end-to-end walk-test.
+- **Sprint 1: done** (goal met, owner walk-test 2026-09-25). **Sprint 2 (D-022, `docs/sprints/sprint-2.md`):** BUG-OWN-007 -> US-020a sound slice -> US-022 -> BUG-GPU-003 -> US-018 -> OWN-REQ-003 (stretch); OWN-REQ-004 decision (D-023) in parallel. Goal: M1 closes. Sprint 3 opens M2 with US-051a + US-026.
 - **P1 (after all P0):** light the summit beacon (US-022, D-003); minimal procedural sound slice (lever, gear, grate, boulder, footsteps; carved out of US-020, D-020, not an exit criterion).
 
 **P2 stretch (not exit criteria):** dust motes (US-019), rest of procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).

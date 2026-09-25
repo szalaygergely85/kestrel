@@ -618,3 +618,24 @@ Sprint 0 review (`docs/sprints/sprint-0.md`): the slice isn't finishable for a f
 ## D-021 Spells: the owner's list replaces Spark/Gust/Ward (owner decision, 2026-09-24)
 **Decision (owner):** the player's magic is four spells: **Fireball** (explosion, big damage), **Freeze**, **Telekinesis** and **Teleport**. They replace the old canon Spark / Gust / Ward (gauntlet crystals). Magic is gained at **beacons and wells** and by **finishing quests**, unlocking a small skill tree; **no XP** (power comes from gear with item levels; see docs/owner-ideas/2026-09-24-story-and-progression.md).
 **Consequences:** writer updates canon in docs/story.md + docs/game-design.md section 3 (the spells may keep the aether/light look in art and naming style, but the four effects above are fixed). PO updates the GDD combat/magic sections and any stories that mention Spark/Gust/Ward. Telekinesis builds on the physics epic (D-018, US-051/052: pick up/carry/throw); Teleport needs a short architect note (collision-safe target, camera). Not in M1.
+
+## D-022 Sprint 2 scope: close M1 (feel + perf + oracle), content-format decision in parallel, object physics starts sprint 3
+**Date:** 2026-09-25
+**Status:** Accepted
+
+### Context
+Sprint 1 closed, goal met (owner walk-test passed). Open for M1: US-018 (last P0), BUG-OWN-007 (lamp dark at walls), BUG-GPU-003 (3 gpucompare FAILs), P1 sound slice + US-022, OWN-REQ-003 (UI size). The owner wants OWN-REQ-004 (content data files) decided before editor work, and object physics before release. Weekly token limit: one agent at a time.
+
+### Options
+- (a) Close M1 first: bugs + sound + relay + US-018, UI size as stretch, OWN-REQ-004 as a no-code proposal.
+- (b) Start M2 now with US-051a object physics and US-026, leave M1 P1/P0 leftovers open.
+(b) spreads work over two milestones with an unfinished oracle (gpucompare 24/27) and no perf gate under new engine work. (a) ends with a finished, measured slice and a data-format decision that M2 content can build on.
+
+### Decision
+Option (a). Sprint 2 = BUG-OWN-007 -> US-020a (sound slice, carved from US-020) -> US-022 -> BUG-GPU-003 -> US-018 -> OWN-REQ-003 (stretch). Goal: *the tower slice feels finished and M1 closes.* OWN-REQ-004 runs as an architect proposal -> manager decision (D-023) inside the sprint, no code. Small engine bugs skip PO; the main session verifies. Object physics (US-051a/b, US-052) and US-026 open sprint 3 (M2). Plan: `docs/sprints/sprint-2.md`.
+
+### Consequences
+- M1 closes after the sprint-2 walk-test plus a stranger run.
+- US-018 lands on an all-pass gpucompare (BUG-GPU-003 first).
+- M1.5 editor work and OWN-REQ-005 (`.vox` importer) wait for D-023.
+
