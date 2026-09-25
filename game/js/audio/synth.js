@@ -12,12 +12,21 @@ let master = null;
 let muted = false;
 let armed = false;
 
-// PC-B fix pass (PO headroom flag): several sounds' individual peak gains
-// already sum past 1.0 when they overlap (e.g. boulder thud's tone 0.8 +
-// noise 0.4, lever's 0.7 + 0.35) - a flat master ceiling well under full
-// scale is cheaper and safer than re-tuning every playToneBurst/playNoiseBurst
-// call site's peak, and still leaves plenty of headroom above the mix.
-const MASTER_GAIN = 0.5;
+// PC-B fix pass (PO headroom flag, US-020a-fix): several sound designs'
+// individual peak gains already sum past 1.0 when they overlap (e.g.
+// boulder thud's tone 0.8 + noise 0.4, lever's 0.7 + 0.35), and the prior
+// pass's 0.5 flat ceiling was checked by inspection only, not by the true
+// worst case across every design. sfx.gain.test.js now sums the actual
+// GAIN_DESIGNS table (sfx.js) for the worst plausible simultaneous overlap
+// (lever + thud + a footstep + a ratchet tick/rattle + the relay hum, since
+// none of these triggers are mutually exclusive with each other - see that
+// table's comment) and that worst case is ~3.66 peak-units, so 0.5 would
+// clip hard (~1.83). 0.25 keeps it at ~0.92, under 1.0 with margin. This is
+// a flat-ceiling fix (the AC's "master gain ~0.5 (or peaks scaled)" other
+// option), not a per-sound retune, to avoid touching the designer/PO-
+// approved character of each sound; a future polish pass MAY prefer
+// retuning individual peaks back up if 0.25 reads as too quiet in practice.
+export const MASTER_GAIN = 0.25;
 
 function makeMaster() {
   master = ctx.createGain();
@@ -88,27 +97,57 @@ export function toggleMute() { setMuted(!muted); }
 // physics frame, so a fresh buffer/node graph per call is cheap and this
 // module stays allocation-free the rest of the time) -------------------
 
-/** A short mono white-noise buffer, `seconds` long. */
-function noiseBuffer(seconds) {
-  const n = Math.max(1, Math.round(ctx.sampleRate * seconds));
+// PC-B fix pass (US-020a-fix, now REQUIRED per architect's US-018 perf
+// flag): every noise-burst call used to allocate a brand-new AudioBuffer
+// (Float32Array of `ctx.sampleRate * seconds` samples, filled sample-by-
+// sample with Math.random()) on every single call - lever pulls, every
+// ratchet tick (every ~160 ms while a gate/grate animates), every footstep.
+// That allocation + fill loop was the architect's top suspect for the
+// 10.2 ms JS frame spike. Fixed by building ONE shared white-noise buffer,
+// long enough to cover the longest `duration + release` any call site
+// actually uses (checked below in DEV, see MAX_NOISE_SECONDS), and having
+// every call take a randomly-offset VIEW into it via
+// `AudioBufferSourceNode.start(when, offset)` instead of allocating its own
+// buffer. `start`'s `offset` argument is a native part of the Web Audio
+// spec (no manual sample copy needed) - the node still stops at the right
+// time via the existing explicit `.stop()` call below, so each call still
+// gets its own effective duration/character (via its own filter + gain
+// envelope, unchanged) without a new AudioBuffer/Float32Array per call.
+// Random noise re-read from different offsets each time keeps bursts from
+// sounding like a literal identical loop.
+const MAX_NOISE_SECONDS = 0.5; // covers every current call site's duration+release (worst: grate rattle 0.09+0.12=0.21s) with headroom for future tuning
+let sharedNoiseBuffer = null;
+let sharedNoiseBufferSampleRate = 0;
+
+/** Lazily builds (once per sample rate) the single reused white-noise buffer. */
+function getSharedNoiseBuffer() {
+  if (sharedNoiseBuffer && sharedNoiseBufferSampleRate === ctx.sampleRate) return sharedNoiseBuffer;
+  const n = Math.round(ctx.sampleRate * MAX_NOISE_SECONDS);
   const buf = ctx.createBuffer(1, n, ctx.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < n; i++) data[i] = Math.random() * 2 - 1;
-  return buf;
+  sharedNoiseBuffer = buf;
+  sharedNoiseBufferSampleRate = ctx.sampleRate;
+  return sharedNoiseBuffer;
 }
 
 /**
  * One-shot filtered noise burst through a linear-ramp gain envelope (no
  * hard cutoffs - the AC's "no clicks/pops"). No-ops (does nothing) before
- * the AudioContext is armed.
+ * the AudioContext is armed. Reuses the single shared noise buffer (see
+ * above) instead of allocating a fresh AudioBuffer per call.
  */
 export function playNoiseBurst({
   duration = 0.08, attack = 0.002, release = 0.06, peak = 0.5,
   filterType = 'lowpass', filterFreq = 1200, filterQ = 0.7,
 } = {}) {
   if (!ctx || !master) return;
+  const total = duration + release;
+  const buffer = getSharedNoiseBuffer();
+  const maxOffset = Math.max(0, buffer.duration - total);
+  const offset = maxOffset > 0 ? Math.random() * maxOffset : 0;
   const src = ctx.createBufferSource();
-  src.buffer = noiseBuffer(duration + release);
+  src.buffer = buffer;
   const filter = ctx.createBiquadFilter();
   filter.type = filterType;
   filter.frequency.value = filterFreq;
@@ -121,7 +160,7 @@ export function playNoiseBurst({
   src.connect(filter);
   filter.connect(gain);
   gain.connect(master);
-  src.start(t0);
+  src.start(t0, offset);
   src.stop(t0 + attack + duration + release + 0.02);
   src.onended = () => { src.disconnect(); filter.disconnect(); gain.disconnect(); };
 }
