@@ -11,9 +11,10 @@
 // node tools/capture-browser.test.mjs
 
 import {
-  parseArgs, validatePcbPort, buildQuery, resultGlobalFor,
+  parseArgs, validatePort, buildQuery, resultGlobalFor,
   normalizeLiveResult, parseImportText, detectImportMode,
   diffResults, formatDiff, formatSummary, todayStr, captureFilePath,
+  buildLaunchFlags, isSoftwareRendererLine,
 } from './capture-browser.mjs';
 
 let failures = 0;
@@ -46,16 +47,46 @@ function throws(name, fn) {
 }
 throws('parseArgs rejects unknown flag', () => parseArgs(['--bogus']));
 
-// --- validatePcbPort ---
+// --- validatePort: US-059 fix pass (row 30c) - both PC-A (9000-9499) and
+// PC-B (9500-9999) ranges accepted, 8000 (owner) always rejected. ---
 {
-  validatePcbPort(9500); // should not throw
-  validatePcbPort(9999);
-  check('validatePcbPort accepts range boundaries', true);
+  validatePort(9000); // PC-A range start - should not throw
+  validatePort(9499); // PC-A range end
+  validatePort(9500); // PC-B range start
+  validatePort(9999); // PC-B range end
+  check('validatePort accepts the full 9000-9999 range (both PCs)', true);
 }
-throws('validatePcbPort rejects 8000 (owner port)', () => validatePcbPort(8000));
-throws('validatePcbPort rejects PC-A range 9000', () => validatePcbPort(9000));
-throws('validatePcbPort rejects 10000', () => validatePcbPort(10000));
-throws('validatePcbPort rejects non-integer', () => validatePcbPort(9500.5));
+throws('validatePort rejects 8000 (owner port)', () => validatePort(8000));
+throws('validatePort rejects 8999 (just below the range)', () => validatePort(8999));
+throws('validatePort rejects 10000 (just above the range)', () => validatePort(10000));
+throws('validatePort rejects non-integer', () => validatePort(9500.5));
+
+// --- buildLaunchFlags: US-059 fix pass (row 30c) - real GPU by default,
+// SwiftShader only behind the opt-in --swiftshader flag. ---
+{
+  const winDefault = buildLaunchFlags({ swiftshader: false }, 'win32');
+  check('win32 default uses d3d11', winDefault.includes('--use-angle=d3d11'));
+  check('win32 default has no swiftshader flags', !winDefault.some((f) => /swiftshader/i.test(f)));
+}
+{
+  const otherDefault = buildLaunchFlags({ swiftshader: false }, 'linux');
+  check('non-win32 default has no backend flags (Chrome default)', otherDefault.length === 0);
+}
+{
+  const winSw = buildLaunchFlags({ swiftshader: true }, 'win32');
+  check('win32 --swiftshader uses swiftshader flags', winSw.includes('--use-angle=swiftshader') && winSw.includes('--enable-unsafe-swiftshader'));
+  check('win32 --swiftshader does not also request d3d11', !winSw.includes('--use-angle=d3d11'));
+}
+{
+  const linuxSw = buildLaunchFlags({ swiftshader: true }, 'linux');
+  check('non-win32 --swiftshader still uses swiftshader flags', linuxSw.includes('--use-angle=swiftshader'));
+}
+check('parseArgs --swiftshader flag', parseArgs(['--swiftshader']).swiftshader === true);
+check('parseArgs swiftshader defaults false', parseArgs([]).swiftshader === false);
+
+// --- isSoftwareRendererLine: the fail-fast console-message match ---
+check('isSoftwareRendererLine matches the real webgl2Gate.js text', isSoftwareRendererLine('[webgl2Gate] software renderer detected (SwiftShader) - performance may be poor'));
+check('isSoftwareRendererLine ignores unrelated console text', !isSoftwareRendererLine('[grid] GpuCellPipeline unavailable on a gl2 backend'));
 
 // --- buildQuery / resultGlobalFor ---
 check('buildQuery gpucompare default', buildQuery('gpucompare', {}) === 'gpucompare=1');

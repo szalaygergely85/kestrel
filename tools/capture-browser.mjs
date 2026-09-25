@@ -31,13 +31,25 @@
 // Only ever starts/stops the python server and browser THIS process
 // itself spawned (tracked pids only - see `cleanup()`); never touches
 // port 8000 or any other browser instance. Refuses any --port outside
-// the PC-B 9500-9999 range.
+// 9000-9999 (PC-A: 9000-9499, PC-B: 9500-9999; 8000 is always the owner's
+// server and is never accepted).
+//
+// Launches with the real GPU backend by default (Chrome's own default
+// backend, or `--use-angle=d3d11` on win32) - SwiftShader is opt-in only
+// via `--swiftshader` (US-059 fix pass, row 30c PO REJECT: the previous
+// version hard-coded SwiftShader unconditionally, so gpucompare/voxelbench
+// could never produce a real result on ANY machine). In gpucompare/
+// voxelbench mode, a software-renderer console warning from the page
+// itself (`[webgl2Gate] software renderer detected`) or a non-'gl2'
+// `window.__debug.rt.backend` fails the run immediately instead of
+// waiting out the full timeout.
 //
 // Node built-ins only (no npm deps).
 
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -46,8 +58,12 @@ const __dirname = path.dirname(__filename);
 export const ROOT = path.resolve(__dirname, '..');
 export const CAPTURES_DIR = path.join(ROOT, 'docs', 'test-reports', 'captures');
 
-const PC_B_PORT_MIN = 9500;
-const PC_B_PORT_MAX = 9999;
+// US-059 fix pass (row 30c, PO REJECT): PC-A range 9000-9499 accepted too,
+// so PC-A's main session can run this tool - 8000 (the owner's server) is
+// never accepted either way.
+const PORT_MIN = 9000;
+const PORT_MAX = 9999;
+const OWNER_PORT = 8000;
 
 // ---------------------------------------------------------------------
 // Args
@@ -57,7 +73,7 @@ export function parseArgs(argv) {
   const opts = {
     mode: null, grid: null, port: null, variant: null, rays: null,
     import: undefined, // string path, or true meaning "read stdin"
-    diff: null, timeoutMs: 120000,
+    diff: null, timeoutMs: 120000, swiftshader: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -67,6 +83,7 @@ export function parseArgs(argv) {
     else if (a === '--port') opts.port = Number(next());
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
+    else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--import') {
       // `--import` alone (no path following, or followed by another flag)
       // means "read stdin".
@@ -80,13 +97,31 @@ export function parseArgs(argv) {
   return opts;
 }
 
-export function validatePcbPort(port) {
-  if (!Number.isInteger(port) || port < PC_B_PORT_MIN || port > PC_B_PORT_MAX) {
+export function validatePort(port) {
+  if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX || port === OWNER_PORT) {
     throw new Error(
-      `--port ${port} is outside the PC-B range ${PC_B_PORT_MIN}-${PC_B_PORT_MAX} ` +
-      `(see CLAUDE.md "Two PCs": PC-A uses 9000-9499, PC-B uses 9500-9999, 8000 is the owner's server).`
+      `--port ${port} is outside the allowed ranges ${PORT_MIN}-9499 (PC-A) or 9500-${PORT_MAX} (PC-B) ` +
+      `(see CLAUDE.md "Two PCs"; ${OWNER_PORT} is always the owner's server and is never accepted here).`
     );
   }
+}
+
+// Kept as an alias for anything that still imports the old name.
+export const validatePcbPort = validatePort;
+
+// ---------------------------------------------------------------------
+// Browser launch flags: real GPU by default, SwiftShader only opt-in
+// (US-059 fix pass, row 30c PO REJECT - the previous version hard-coded
+// SwiftShader, so gpucompare/voxelbench could never produce a real result
+// on any machine).
+// ---------------------------------------------------------------------
+
+export function buildLaunchFlags(opts = {}, platform = process.platform) {
+  if (opts.swiftshader) {
+    return ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
+  }
+  if (platform === 'win32') return ['--use-angle=d3d11'];
+  return []; // Chrome's own default GPU backend
 }
 
 // ---------------------------------------------------------------------
@@ -481,9 +516,36 @@ async function evaluate(cdp, expression) {
   return result.result.value;
 }
 
-async function waitForGlobal(cdp, globalName, timeoutMs) {
+// US-059 fix pass (row 30c): gpucompare/voxelbench need a real GPU
+// (`GpuCellPipeline`) to produce anything - if the page itself detects a
+// software renderer, or the render-target backend never reaches 'gl2',
+// fail fast instead of burning the full timeout waiting for a global that
+// will never appear.
+export function isSoftwareRendererLine(text) {
+  return /\[webgl2Gate\] software renderer detected/.test(text);
+}
+
+async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (failFast) {
+      const line = getSoftwareRendererLine && getSoftwareRendererLine();
+      if (line) {
+        throw new Error(
+          `capture-browser: software renderer detected ("${line.trim()}") - ${globalName} needs a real ` +
+          `GPU/gl2 backend and will never appear. Pass --swiftshader only if you intend to test the ` +
+          `software path (not meaningful for GPU perf gates); otherwise run on a machine with a real GPU.`
+        );
+      }
+      const backend = await evaluate(cdp, `(window.__debug && window.__debug.rt && window.__debug.rt.backend) || null`);
+      if (backend && backend !== 'gl2') {
+        throw new Error(
+          `capture-browser: backend is '${backend}', not 'gl2' - ${globalName} needs a real GPU/gl2 ` +
+          `backend and will never appear. Pass --swiftshader only if you intend to test the software ` +
+          `path (not meaningful for GPU perf gates); otherwise run on a machine with a real GPU.`
+        );
+      }
+    }
     const has = await evaluate(cdp, `typeof window.${globalName} !== 'undefined'`);
     if (has) return evaluate(cdp, `window.${globalName}`);
     await sleep(300);
@@ -496,18 +558,22 @@ async function waitForGlobal(cdp, globalName, timeoutMs) {
 // ---------------------------------------------------------------------
 
 export async function runLiveCapture(opts) {
-  validatePcbPort(opts.port);
+  validatePort(opts.port);
   const binary = findBrowserBinary();
   if (!binary) throw new Error('no Chrome/Edge binary found - set CHROME_PATH/EDGE_PATH, or use --import instead');
 
-  const handles = { serverProc: null, browserProc: null };
-  const cdpPort = opts.port; // one server port; CDP uses port+1 to avoid clashing with the http server
-  const debugPort = opts.port === 65535 ? opts.port - 1 : opts.port + 1;
-  validatePcbPort(debugPort);
+  const handles = { serverProc: null, browserProc: null, userDataDir: null };
+  const debugPort = opts.port + 1 <= PORT_MAX ? opts.port + 1 : opts.port - 1;
+  validatePort(debugPort);
 
   const cleanup = () => {
     if (handles.browserProc && handles.browserProc.pid) killTree(handles.browserProc.pid);
     if (handles.serverProc && handles.serverProc.pid) killTree(handles.serverProc.pid);
+    // US-059 fix pass (row 30c): the profile dir was previously left in
+    // the repo root forever - live under os.tmpdir() and delete it here.
+    if (handles.userDataDir) {
+      try { rmSync(handles.userDataDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
   };
   const onSignal = () => { cleanup(); process.exit(1); };
   process.once('SIGINT', onSignal);
@@ -519,14 +585,12 @@ export async function runLiveCapture(opts) {
     });
     await waitForHttp(`http://127.0.0.1:${opts.port}/`, 10000);
 
-    const userDataDir = path.join(ROOT, '.tmp-capture-browser-profile-' + opts.port);
+    const userDataDir = path.join(os.tmpdir(), 'kestrel-capture-browser-profile-' + opts.port);
+    handles.userDataDir = userDataDir;
     handles.browserProc = spawn(binary, [
       `--remote-debugging-port=${debugPort}`,
       '--headless=new',
-      '--use-gl=angle',
-      '--use-angle=swiftshader',
-      '--enable-unsafe-swiftshader',
-      '--ignore-gpu-blocklist',
+      ...buildLaunchFlags(opts),
       '--no-sandbox',
       `--user-data-dir=${userDataDir}`,
       'about:blank',
@@ -534,6 +598,19 @@ export async function runLiveCapture(opts) {
 
     const cdp = await connectCdp(debugPort, 15000);
     await cdp.send('Page.enable');
+    await cdp.send('Runtime.enable');
+
+    // Fail-fast watch (fix 2): the game itself console.warns once when it
+    // detects a software renderer (game/js/ui/webgl2Gate.js). Catching that
+    // here means gpucompare/voxelbench abort in seconds instead of the full
+    // timeout when there's no real GPU to measure.
+    let softwareRendererLine = null;
+    cdp.onEvent((method, params) => {
+      if (method !== 'Runtime.consoleAPICalled') return;
+      const text = (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : '')).join(' ');
+      if (isSoftwareRendererLine(text)) softwareRendererLine = text;
+    });
+
     const query = buildQuery(opts.mode, opts);
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
@@ -546,7 +623,10 @@ export async function runLiveCapture(opts) {
     await navigated;
 
     const globalName = resultGlobalFor(opts.mode);
-    const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs);
+    const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
+    const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
+      failFast, getSoftwareRendererLine: () => softwareRendererLine,
+    });
 
     const ua = await evaluate(cdp, 'navigator.userAgent');
     const gpuRenderer = await evaluate(cdp,
