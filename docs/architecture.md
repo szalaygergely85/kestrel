@@ -1433,3 +1433,279 @@ ESCALATE TO MANAGER (D-023): pick A, B or C. Recommendation **B**, with the id a
 6. **Edits:** only through public World calls (`placeStructure`/move/remove, `spawn`/`remove`, component set); each edit is a `{do, undo}` command on a ring (undo/redo); files are written back via `stringify` (section 19 item 6).
 7. **I/O:** section 19 item 7 (FSA API + download fallback), dirty tracking per content file.
 8. **Dependency chain:** D-023 (format) -> US-027 loader/stringify (PC-A) -> US-046 + US-047 (PC-A) -> pick id channel (PC-A) -> US-031/032 (PC-B).
+
+## 21. US-027a content loader: files, API, ids, saves, converter contract (architect, 2026-09-25; D-023)
+
+Normative for US-027a (PC-A) and US-027b (PC-B). Section 19 is background; where they differ, this section wins.
+
+**1. Files (`engine/content/`, all public names re-exported by `engine/index.js`).**
+| File | Exports |
+|---|---|
+| `schema.js` | data tables only: `LATEST_SCHEMA = { manifest: 1, level: 1, world: 1 }`, `ID_COLLECTIONS`, `REF_FIELDS`, `KEY_ORDER`, `ORDERED_MAPS`, `ENVELOPE_KEYS = ['kind','schema','id','nextId']` |
+| `ContentError.js` | `class ContentError extends Error { file, field, errors[] }`, message `content: <file>: <field>: <reason>` |
+| `migrate.js` | `migrateContent(kind, obj, file, opts?)` |
+| `stringify.js` | `stringifyContent(obj)` |
+| `loadPack.js` | `loadContentPack(manifestUrl, opts?)`, `globalId(fileId, localId)` |
+
+Tests go in `engine/content/{migrate,stringify,loadPack}.test.js`. Fixtures go in `engine/content/fixtures/`: `pack/manifest.json`, `pack/levels/tiny.level.json`, `pack/worlds/tiny.world.json`, `golden.level.json`, and one broken file per error case. The engine hard-codes no `content/` path. Only the game and the tests name one.
+
+**2. File schema (schema 1).** Each file is one JSON object. The envelope is `kind, schema, id, nextId`.
+- **Manifest:** `{ "kind": "manifest", "schema": 1, "id": "kestrel", "contentVersion": 1, "files": ["worlds/world_m1.world.json", ...] }`. `files` are relative to the manifest URL. `contentVersion` is an integer. The content author (today the converter) bumps it on every content release.
+- **Level:** `{ "kind": "level", "schema": 1, "id": "tower", "nextId": 1, ... }`, followed by the JS LevelDef keys verbatim: `name, title, version, cellSize, size, rows, legend, layers, tilt, start, sun, ambient, lights, props, interactables, triggers, markers, route, routeNotes`, the `note` fields, and any unknown keys (kept). If `name` is present it must equal `id`. `version` is the level's own content counter. It is not `schema`.
+- **World:** same pattern with `kind: "world"` and the WorldDef keys: `name, version, title, terrain` (a key into code terrain, e.g. `"overworld_far"`), `time, structures, entities, horizon, state`.
+- **Values:** plain JSON only. No functions, `undefined`, `NaN` or `Infinity` (the stringifier throws `ContentError` on these). `-0` is written as `0`.
+
+**3. Ids (clarification of D-023).**
+- **File id:** `^[a-z][a-z0-9_]*$`, e.g. `tower`, `world_m1`.
+- **Local id:** `^[A-Za-z][A-Za-z0-9_-]*$`. No `/` and no `.`, because both are separators.
+- **Local ids must be unique within one id collection, not across the whole file.** Reason: the tower reuses `brazier` (light and prop), `lantern` (prop and interactable), `beacon` and `lever` on purpose, and US-027b must keep every id unchanged. An item's identity is therefore `(fileId, collection, localId)`. The string form `globalId(fileId, localId)`, e.g. `'tower/lamp_hook'`, is only used where the field already says which collection it points into (`prop:` names a `props[]` id, `light:` names a `lights[]` id).
+- **`ID_COLLECTIONS`:** `{ level: ['props','lights','interactables','triggers'], world: ['structures','entities','horizon'] }`. Every item in these collections needs an `id`.
+- **`REF_FIELDS`** (the loader resolves these inside the same file):
+  - level: `interactables[].prop -> props`, `interactables[].light -> lights`, `interactables[].flameProp -> props`
+  - world: `entities[].spawn.structure -> structures`
+
+  References across files (`structures[].level`, `world.terrain`) are checked later by `World.load` / `AssetRegistry`, which already throw with the missing name.
+- **Minting:** a new id is `<type>_<n>` with `n = nextId++`. `nextId` is a required integer >= 1. It must be greater than every n found in an id matching `_(\d+)$` in the file's collections. The loader checks this, so a minted id is never reused.
+- **Runtime entity ids stay exactly as they are today,** so quest code and saves keep working:
+  - level prop: `${placementId}.${propId}` (e.g. `tower.brazier`)
+  - world entity: its own id (e.g. `player`)
+  - runtime spawn: `${type}_${world.nextId++}`
+
+  Content ids are enough to recompute these.
+
+**4. Loader API.**
+```js
+/** @typedef {{ contentVersion:number, packId:string,
+ *   levels:Object<string,Object>, worlds:Object<string,Object>, models:Object<string,Object>,
+ *   meta:Object<string,Object<string,{url:string, schema:number, nextId:number}>> }} ContentBundle */
+loadContentPack(manifestUrl, { fetchText, migrations, latest } = {}) -> Promise<ContentBundle>
+```
+- **URLs:** `manifestHref = new URL(manifestUrl, globalThis.location?.href).href`. Each file resolves with `new URL(rel, manifestHref)`.
+  - Node tests pass `pathToFileURL(p).href` and `fetchText: (u) => readFile(new URL(u), 'utf8')`.
+  - The browser default uses `fetch(u)`. A non-ok response throws `ContentError(file, 'fetch', 'HTTP <status>')`. Otherwise it returns `r.text()`.
+  - The injected function returns **text**, so the loader does the `JSON.parse` itself and can name the file in a parse error. This is the AC's `fetchJson`; call it `fetchText`.
+- **Order:**
+  1. Fetch the manifest.
+  2. Fetch all files with `Promise.all`.
+  3. For each file, in manifest order: parse it, check the envelope, run `migrateContent`, then validate ids, refs and `nextId`.
+  4. Move `ENVELOPE_KEYS` into `meta[kind][id]` and set `bundle[kind + 's'][id] = def`.
+
+  The same `(kind, id)` in two files is an error.
+- **Errors:** collect them across all files and throw one `ContentError` with `.errors[]`. Each entry names the file and the field. One test per case:
+  - unreadable file or 404
+  - bad JSON (keep the parser's message)
+  - missing or unknown `kind` (`model` counts as unknown until models flip)
+  - `schema` not an integer
+  - `schema` newer than `LATEST_SCHEMA`, e.g. `schema 3 is newer than this engine (max 1)`
+  - bad or missing `id`
+  - `name` not equal to `id`
+  - an item without an id in an id collection
+  - a duplicate local id within one collection
+  - a `REF_FIELDS` reference that does not resolve
+  - `nextId` missing, or not greater than a minted n
+- The loaded defs have **the same plain shape as today's `ASSETS.levels.tower`**, minus the envelope. `World.load`, `packLevel` and every other consumer stay unchanged.
+
+**5. `migrate.js`.**
+- `MIGRATIONS = { level: [], world: [], manifest: [] }`. Entry `i` is a pure function `(obj) => obj` from schema `i+1` to schema `i+2`.
+- `migrateContent(kind, obj, file, { migrations = MIGRATIONS, latest = LATEST_SCHEMA } = {})`:
+  - newer than latest: error
+  - equal to latest: return the same object
+  - older: `structuredClone` once, run the chain, set `schema` to latest
+- The input is never mutated. The test deep-freezes it.
+- The synthetic test kind is passed through `opts`. The engine table holds no test kinds.
+
+**6. `stringify.js` (byte-stable; the converter and the editor both use it).**
+- **Key order:** `KEY_ORDER[kind]` first (`kind, schema, id, nextId`, then the item 2 order), then unknown keys alphabetically. Nested objects: `id` first, then alphabetical.
+- **`ORDERED_MAPS` keep their insertion order:** level `legend`, `markers`, `layers`, `routeNotes`; world `state`. Legend order can feed material and packing order.
+- **Arrays always keep their order. Placements are NOT sorted by id.** This deviates from the AC text. Reason: light-slot order, interactable tie-break, trigger order and prop spawn order are all visible at runtime today, and US-027b must leave the game identical. New items are appended at the end, which is still deterministic. A later schema migration may sort once the runtime no longer depends on order.
+- **Layout:**
+  - 2-space indent, LF line endings, trailing `\n`.
+  - The top-level object has one key per line.
+  - An object or array value directly under the top level has one entry per line, and each entry is written inline.
+  - An array of strings has one element per line at any depth (grid rows, voxel layer rows).
+  - Inline form: `{"id": "brazier", "preset": "torch", "x": 18.5}` and `[1, 2]`.
+  - Empty values are `{}` and `[]`. Scalars use `JSON.stringify`.
+- **Tests:**
+  - shuffled keys (outside the ordered maps) give the same bytes
+  - `stringify(parse(stringify(x))) === stringify(x)`
+  - `golden.level.json` matches byte for byte
+  - a function or NaN value throws
+
+**7. `AssetRegistry.fromJSON(bundle, codeParts)`.** This is sync and replaces the async stub.
+- `codeParts` has **the same shape as the `fromGlobals` input**. The game passes `window.ASSETS`, which still holds palette, detailPass, uiStyle, models and the terrain recipe `levels.overworld_far`.
+- Build the maps the way `fromGlobals` does (split by shape), then overlay `bundle.levels` and `bundle.worlds`.
+- A key that exists in both JS and JSON throws: no dual source (D-023 item 4).
+- New getter `contentVersion`: `bundle.contentVersion`, or `null` when built with `fromGlobals`.
+- Test: a fixture pack plus the same defs given as globals. The `levels`, `worlds` and `terrain` maps must deep-equal the `fromGlobals` result.
+- `fromGlobals` is unchanged.
+
+**8. Saves (`engine/world/serialize.js`, `World.js`).** All changes are additive. `WorldState.version` stays 1.
+- **`World.load`** sets:
+  - `w.contentVersion = assets.contentVersion ?? null`
+  - `w._contentIds`: a Set of the runtime ids that come from content (world `entities[].id` and `${placement}.${prop.id}`)
+
+  `remove(id)` on a content id also adds it to `w._removedContent`.
+- **`serialize`** writes three things **only when `contentVersion != null`**: top-level `contentVersion`, `removed: [...]` (sorted), and `fromContent: true` on every entity whose id is in `_contentIds`. Saves built with `fromGlobals` and the `R` restart state stay byte-identical.
+- **`deserialize(state, assets)`** applies the id rule only when `state.contentVersion != null && assets.has('world', state.world)`:
+  1. A saved entity with `fromContent` whose id is no longer in the current content set is dropped. Log **one** `console.warn` for the whole load, with the count and the first 5 ids.
+  2. A content id that is missing from the save and not in `removed` is spawned from content. World entities are merged into `def.entities`. Props are already spawned by `World.load`, except ids in `savedIds` or in the new `opts.skipIds` (= `removed`).
+  3. Runtime-spawned entities (no `fromContent`) are always kept.
+  4. A save with a different `contentVersion` loads normally, with an info log only. Rules 1 to 3 are the migration.
+- **Node test:** build from content, remove a prop, serialize. Then change the content (delete one entity, add one) and deserialize. Expect:
+  - the deleted entity is gone, with exactly 1 warning
+  - the new entity exists
+  - the removed prop stays removed
+  - a runtime spawn survives
+
+**9. Contract for US-027b (PC-B can start from this item alone).**
+- **Converter `tools/export-content.mjs`:**
+  - Run the same classic-script list as `game/index.html` in a `vm`.
+  - For each flipped def, write `stringifyContent({ kind, schema: 1, id: key, nextId, ...def })`.
+  - `nextId` = 1 + the highest n over ids in `ID_COLLECTIONS` that match `_(\d+)$`, or 1 if there are none.
+  - Mint ids for items that have none (there are none today).
+  - Keep array order. Refuse functions.
+- **Output:**
+  - `content/manifest.json` with `id: "kestrel"`, `contentVersion: 1`, and `files` in the order world, tower, test_room
+  - `content/worlds/world_m1.world.json`
+  - `content/levels/tower.level.json`
+  - `content/levels/test_room.level.json`
+
+  `overworld_far` stays JS.
+- **Guard (in `export-content.test.mjs`):** `loadContentPack` on the output succeeds. `fromJSON(bundle, globalsWithoutTheFlippedDefs)` deep-equals `fromGlobals(globals)` for levels and worlds. This is the "game identical" check.
+- **Boot (main.js, bootstrap area only):**
+  ```js
+  const bundle = await loadContentPack('../content/manifest.json');
+  const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
+  ```
+  The path is relative to `game/index.html`. The `?gpucompare=1` fixtures read `world_m1` and `test_room` through the registry, so they keep working. Harnesses that read `window.ASSETS.levels.*` directly (`game/js/dev/worldTestMain.js`, `physicsTestMain.js`) switch to the registry.
+- **Node test helper:** write one module, suggested `tools/testing/content-node.mjs`, with `loadTestAssets() -> { globals, bundle, assets }` using the file reader. If check-deps objects to an `engine/**` test importing it, ASK ARCHITECT. Do not copy the loader.
+
+**10. Steps for US-027a.** Each step ends with a green Node test.
+- S1: `schema.js`, `ContentError`, `migrate.js` and its test.
+- S2: `stringify.js`, the golden fixture and its test.
+- S3: `loadPack.js`, the fixture pack and the error-case tests.
+- S4: `AssetRegistry.fromJSON`, `contentVersion` and the deep-equal test.
+- S5: the serialize/deserialize id rule and its test. The existing `serialize.test.js` must stay unchanged and green.
+- S6: `index.js` exports, `node tools/check-deps.mjs`, all suites. The main session then runs `?gpucompare=1`, expecting 27/27 because no game path changed.
+
+**Do not:**
+- fetch inside `AssetRegistry`
+- read `window` or `ASSETS` in `engine/content`
+- use array-index references
+- sort arrays or ordered maps
+- drop unknown keys
+- let `stringify` output depend on the input's `Object.keys` order
+- change the format of runtime entity ids
+
+## 22. US-038a live grid change `engine.setGrid` (architect, 2026-09-25; D-025)
+
+**1. Principle: resize in place, never rebuild.**
+- **Why:** today `setGrid` builds a new `RenderTarget` on the same canvas. Each call reuses the same WebGL context but adds a new program, new textures and 2 more context listeners, so it leaks. A new `GpuCellPipeline` would also recompile 9 programs, which takes more than 100 ms.
+- **Rule:** keep every object (rt, pipeline, sprite pass, UiLayer) and reallocate **only the resources sized by the grid**.
+- **Effect:** `rt` stays the same object, so every `rt` reference in main.js stays valid.
+
+**2. Grid math (`engine/core/engine.js`).**
+- `GRID_MAX_COLS = 480`. Otherwise `clampGrid` stays as it is: round cols, clamp to [160, 480], `rows = round(cols*3/8)`. This gives exactly 240x90, 320x120, 400x150 and 480x180.
+- Update the `?grid=` warning text in main.js to "160x60..480x180".
+- `grid.test.js` cases:
+  - 500 -> 480x180, clamped
+  - 100 -> 160x60
+  - (400, 150): not clamped
+  - (400, 151): clamped
+  - 401 -> 401x150
+
+**3. What the grid sizes.** This list is complete as of today. The programmer should still re-grep for `cols`/`rows` captured in constructors.
+| Owner | Grid-sized resources | Action |
+|---|---|---|
+| `RenderTargetGL` | `cells` (CellBuffer), `fgTex`/`bgTex` (units 0/1), `uGrid`, canvas size, scene atlas, UI atlas (`fontPx*sy`) | `setGrid(cols, rows)`: delete and recreate fg/bg, new CellBuffer, `resize(...this._refBox)` |
+| `RenderTargetCanvas2D` | `cells`, canvas | `setGrid` with the same shape (only reachable at cpuGrid) |
+| `GpuCellPipeline` | GI/GA/GD/Depth/Mask/Light/ShadeFg/ShadeBg (cols x rows); SGI/SGA/SDepth, 2 sets (cols*rays x rows*rays); 7 FBOs (`fboFinal` attaches **rt's new** fg/bg); CPU staging `_GI` .. `_SDepth`, `_readbackFg/Bg`; the lazy `_readbackGI/GA/Depth/Light` (they are cached with `\|\|`, so they **must be reset to null**) | `resizeGrid(cols, rows)` |
+| `GpuSpritePass` | `texEdgeFg/Bg`, `cols/rows` | `resizeGrid(cols, rows)` |
+| engine | `DepthBuffer`, `OpenSpans` | new instances (CPU side, small) |
+| game (main.js) | `gbuf` (GBuffer); `fb.light` (`makeLightBuffer`); `matTable` (its `cellAspect = pxCellH/pxCellW` can change with fontPx) | recreate in the `grid:changed` handler: `bindShading` again, then `gpuPipeline.bind(matTable, palette)` |
+| `UiLayer` | none (fixed at 160x60) | `ui.bindScene(cols, rows)` gives sx 1.5 / 2 / 2.5 / 3; `rt.setUiLayer(ui)` rebuilds the UI atlas |
+
+**Not grid-sized, keep as they are:** programs, VAOs, the world atlas (GEOM/MATS/FLAGS), terrain textures (farH/farType/tlook), voxel VOX/VOXINST, LVIS, material/sky/gain textures, and the sprite atlas and palette.
+
+**Camera values:** `planeDist`, `screenAspect` and `horizonRow` are computed every frame from `this.cols/rows` and `rt.pxCell*`. Updating `this.cols/rows` is enough. Do not cache them anywhere.
+
+**4. Extract `engine/render/gpu/gridTargets.js`** (the testable core).
+- **API:** `allocGridTargets(gl, cols, rows, rays, outFgTex, outBgTex) -> targets` creates all grid-sized textures and FBOs and checks FBO completeness. `freeGridTargets(gl, targets)` deletes them.
+- **`GpuCellPipeline`:**
+  - `_initGL` is split into `_initPrograms()`, which runs once and again on context restore, and `this._t = allocGridTargets(...)`.
+  - `resizeGrid` runs, in order: `freeGridTargets`, update cols/rows/subCols, `allocGridTargets`, reallocate the staging arrays, reset the lazy readbacks.
+  - Context restore uses the same two calls.
+- **Leak test (Node):** use a counting mock `gl`, a Proxy where:
+  - `create*` returns `{}` and increments a counter
+  - `delete*` decrements it
+  - `checkFramebufferStatus` returns `FRAMEBUFFER_COMPLETE`
+  - every other method is a no-op
+
+  Run 20 alloc/free cycles through 240 -> 320 -> 400 -> 480 -> 240. The live texture and FBO counts must end at the single-alloc value.
+- **Dev counter:** add `glUtil.glCounts`, incremented in the `createTexture2D` / `deleteTexture2D` helpers. RenderTargetGL switches to these helpers too, so the browser soak can log the counts.
+
+**5. Limits (checked before anything is changed).**
+- `rt.canHoldGrid(cols, rows, rays) -> { ok, reason }` checks:
+  - `cols*rays` and `rows*rays` <= `MAX_TEXTURE_SIZE`
+  - canvas backing size (`pxCellW*cols` x `pxCellH*rows`) <= `MAX_VIEWPORT_DIMS`
+  - `MAX_DRAW_BUFFERS >= 3`
+  - estimated GPU memory `est = cols*rows*(85 + rays²*56)` bytes <= 256 MB. That is about 27 MB at 480x180 with rays 2, and about 85 MB with rays 4 (320x120 uses about 12 MB).
+- WebGL2 guarantees a 2048 texture size, and the worst case here is 480*4 = 1920, so refusals are unlikely. Keep the check anyway.
+- **On refusal:** `console.error`, keep the current grid, and have `setGrid` return `{ cols, rows, error: reason }`. Do not throw: a settings menu must not crash.
+- **Atlas warning:** warn once if an atlas width (`pxCellW*95`, or `pxCellW*sx*95` for the UI) exceeds `MAX_TEXTURE_SIZE`. This is an existing risk on high-DPR screens.
+
+**6. Engine API.**
+```js
+engine.setGrid(cols, rows, { immediate = false } = {}) -> { cols, rows, clamped, pending, error? }
+```
+- **Request handling, in order:**
+  1. Clamp. Log one `console.warn` if the input was clamped.
+  2. Without a GPU grid (`rt.backend !== 'gl2'`, or `gridRequest.gpu === false`): return the cpuGrid, warn, and change nothing.
+  3. If the result equals the current grid: no-op.
+  4. Otherwise run `canHoldGrid`, then store the request in `engine._pendingGrid`.
+- **Frame boundary:** `engine.run` wraps `render` once (no closure per frame): `loop.render = (a) => { if (engine._pendingGrid) applyGrid(); render(a); }`. The simulation does not depend on the grid, so this is safe.
+- **`immediate: true`** applies at once. Only the startup CPU fallback in main.js uses it. That code becomes `engine.setGrid(c, r, { immediate: true })`, and `rt` stays the same object.
+- **`applyGrid` order:**
+  1. `t0 = performance.now()`
+  2. `rt.setGrid`: textures, CellBuffer, canvas re-fit using the stored `_refBox`
+  3. new DepthBuffer and OpenSpans
+  4. `ui.bindScene` and `rt.setUiLayer(ui)`
+  5. update `gridRequest`
+  6. `events.emit('grid:changed', { cols, rows, renderTarget: rt })`. Listeners run **synchronously** here and rebuild the pipeline, sprite pass, gbuf, fb.light and matTable. rt goes first because `fboFinal` needs rt's new textures.
+  7. `engine.stats.lastGridSwitchMs = performance.now() - t0` and one log line, e.g. `[grid] 240x90 -> 480x180 in 23.4 ms`. The F3 overlay shows `lastGridSwitchMs`.
+- **Ref box:** `rt.resize(refW, refH, refDpr)` stores `this._refBox`, and `setGrid` reuses it. `?gpucompare` keeps its fixed 1280x720 box after a switch. The window `resize` listener keeps working because rt is the same object.
+- The engine holds no list of player grid options.
+
+**7. Game side (about 25 lines or fewer in main.js).**
+- One `engine.events.on('grid:changed', ...)` handler rebuilds everything in the "game (main.js)" row of the item 3 table.
+- **F4**, only with `?debug=1`, in 5 lines or fewer: `const G = [240, 320, 400, 480]; engine.setGrid(G[(G.indexOf(rt.cols) + 1) % 4]);`
+- Open cards, fades, player pose, lights, audio and the loop clock are not touched, because nothing outside render state is recreated.
+
+**8. Parity.**
+- `?gpucompare=1` still pins 160x60 at boot.
+- New flag `?gpucompare=1&roundtrip=1`: before the compare state is built, run `setGrid(480, 180, { immediate: true })`, render one frame, run `setGrid(160, 60, { immediate: true })`, then run the usual 27 poses. Expected: all PASS, with `_refBox` kept.
+- A plain `?gpucompare=1` run must give the same result as before.
+
+**9. Steps.** Each step ends with a green Node test.
+- S1: clamp range and `grid.test.js`.
+- S2: `gridTargets.js` and the mock-gl leak test. The pipeline uses it with no change in behaviour; `glsl.test.js` and `gpuCompare.test.js` stay green.
+- S3: `GpuCellPipeline.resizeGrid`, `GpuSpritePass.resizeGrid`, `RenderTargetGL/Canvas2D.setGrid`, `canHoldGrid` and `_refBox`. Node test: `canHoldGrid` against a fake `getParameter`.
+- S4: `engine.setGrid` with pending/immediate, the `run` wrapper and stats. Node test with a fake rt:
+  - a pending request is applied once, at the next render
+  - asking for the current grid is a no-op
+  - a refusal keeps the current grid
+  - the clamp warning fires once
+- S5: the main.js handler, F4, and `roundtrip=1`.
+- S6: ONE browser pass.
+  - `?debug=1&gridsoak=1` (dev only) runs 20 switches through the AC cycle, then logs `glCounts`, the `performance.memory.usedJSHeapSize` change and `gl.getError()`.
+  - Press F4 by hand in the tower with the map card open.
+  - The owner bench (`?bench=1&grid=400x150` and `?bench=1&grid=480x180`) is run by the main session or the owner, and the result is recorded in the story.
+
+**Do not:**
+- create a second RenderTarget or pipeline for a grid change
+- recompile shaders
+- re-upload the world, terrain or voxel atlases
+- switch grids inside the sim step or in the middle of a render
+- allocate in the per-frame wrapper
+- let the engine know the player grid list
+- lose the gpucompare ref box

@@ -3033,7 +3033,7 @@ Design needed: no (the designer keeps authoring in `design/`; export is a tool).
 Notes / dependencies: US-024, US-025. Editor prerequisite (M5).
 **Superseded by the D-023 split below (US-027a engine, US-027b tool + flip).** The sketch's "palette/terrain util as named engine implementations" stays out of scope (code-like content stays JS, D-023).
 
-### US-027a Engine content loader: loadContentPack / migrate / canonical stringify / AssetRegistry.fromJSON  [Priority: P1 (M2)] [Status: todo]  [PC-A]
+### US-027a Engine content loader: loadContentPack / migrate / canonical stringify / AssetRegistry.fromJSON  [Priority: P1 (M2)] [Status: todo (notes ready)]  [PC-A]
 As the engine (and the future editor), I want to load JSON content packs with stable ids and a schema version, so that levels can be tool-written and saves survive content updates.
 Spec: architecture.md 19 items 1-6 (normative: id scheme + save rule, D-023).
 Acceptance criteria:
@@ -3048,6 +3048,7 @@ Acceptance criteria:
 Design needed: no.
 Files: `engine/content/{loadPack,migrate,stringify}.js` (+ tests), `engine/core/AssetRegistry*`, `engine/world/World.js` (serialize/deserialize id rule only), `engine/index.js`.
 Dependencies: D-023. Architect (opus) notes first, ARCH review (fable). Lands on master before PC-B starts US-027b. **Test = none owner-visible:** Node suites + ARCH OK + main session gpucompare; no owner walk.
+Tech notes (architect, 2026-09-25): **architecture.md 21** (normative; steps S1-S6 in 21.10). Two deviations from the AC text, reasons in 21: (a) local ids unique **per collection** (tower reuses `brazier`/`lantern`/`beacon`/`lever` across lights/props/interactables; ids stay verbatim); (b) stringify keeps array order, **no sort by id** (runtime order-sensitive; game must stay identical). Injected reader is `fetchText` (loader parses, names the file). US-027b contract = 21.9.
 
 ### US-027b Converter tool + flip world_m1 / tower / test_room to `content/` JSON  [Priority: P1 (M2)] [Status: todo]  [PC-B]
 As a designer (and the editor), I want the M1 world and levels to live as canonical JSON, so that tools can write them and there is one source of truth.
@@ -3080,7 +3081,7 @@ Design needed: yes (small) – `uiStyle.settings` (panel plate, row and selected
 Notes / dependencies: US-018 (grid range + `createEngine({cols, rows})`), US-015 (panel overlay primitive), US-020 (mute, optional). **Engine story** for the live grid change (`engine.setGrid(cols, rows)`: G-buffer/texture re-allocation, no reload); the architect writes tech notes. Later options: volume, key rebinding, gamepad (M6), auto-grid-by-window.
 **Amended (D-025):** the Grid AC's list is now 240x90 (default) / 320x120 / 400x150 / 480x180 ('ultra'); 160x60 dev-only via `?grid=`. Split: US-038a (engine, below) + US-038b (game panel, row 30f) + US-060 (storage, row 30e).
 
-### US-038a Live grid change `engine.setGrid` + D-025 grid range  [Priority: P1 (M2)] [Status: todo]  [PC-A]
+### US-038a Live grid change `engine.setGrid` + D-025 grid range  [Priority: P1 (M2)] [Status: todo (notes ready)]  [PC-A]
 As a player, I want to switch the glyph grid while playing, without a reload, so that I can pick the sharpest grid my machine handles.
 Acceptance criteria:
 - [ ] `engine.setGrid(cols, rows)` applies at the next frame boundary, no reload; returns the applied `{cols, rows}`. Range **160x60..480x180**, 8:3 kept (rows from cols, clamped); out-of-range input clamps with one `console.warn`. `createEngine({cols, rows})` and `?grid=WxH` use the same clamp (was max 320x120). The engine holds no player option list (that is US-038b data).
@@ -3095,6 +3096,7 @@ Acceptance criteria:
 Design needed: no.
 Files: `engine/core/engine.js`, `engine/render/RenderTargetGL.js`, `engine/render/gpu/*`, `engine/ui/*` (layer re-bind), `game/js/main.js` (F4 dev key only).
 Dependencies: US-027a on master first (one PC-A agent at a time). Architect (opus) notes (re-alloc order, max texture sizes at 480x180, UI re-bind), ARCH review (opus). **Test = owner:** in the tower press F4 through all four grids while walking and with the map card open (nothing resets, no flash longer than a blink), then the two bench runs.
+Tech notes (architect, 2026-09-25): **architecture.md 22** (resize in place: no new RenderTarget/pipeline, no shader recompile; grid-sized resource table 22.3; `gridTargets.js` + mock-gl leak test 22.4; limits 22.5; `setGrid(c, r, {immediate})` applied at the render boundary 22.6; `?gpucompare=1&roundtrip=1` 22.8; steps S1-S6 in 22.9).
 
 ### US-042 Talking animals + dialogue system  [Priority: P1 (M2/M3)] [Status: todo (sketch)]
 As a player, I want to walk up to an animal, press E and have it speak to me, so that I discover, with the same surprise as Wick, that magic is real out here.
