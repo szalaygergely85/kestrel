@@ -246,7 +246,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
 export function compareLight(fbLight, lightBuf, kind, cols, rows) {
   const n = cols * rows;
   let nonSky = 0, checked = 0, sunlitChecked = 0, sunlitMismatch = 0;
-  let dLMax = 0, dLViol = 0;
+  let dLMax = 0, dLViol = 0, litFlip = 0;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -259,19 +259,30 @@ export function compareLight(fbLight, lightBuf, kind, cols, rows) {
       if (gpuSunlit !== cpuSunlit) { sunlitMismatch++; continue; }
       sunlitChecked++;
       const o = i * 3;
+      let cellMax = 0;
       for (let k = 0; k < 3; k++) {
-        const gpuL = u32ToF32(lightBuf[i * 4 + k]);
-        const cpuL = fbLight.rgb[o + k];
-        const dL = Math.abs(gpuL - cpuL);
-        if (dL > dLMax) dLMax = dL;
-        if (dL > 1e-3) dLViol++;
+        const dL = Math.abs(u32ToF32(lightBuf[i * 4 + k]) - fbLight.rgb[o + k]);
+        if (dL > cellMax) cellMax = dL;
+      }
+      if (cellMax <= 1e-3) { if (cellMax > dLMax) dLMax = cellMax; continue; }
+      // BUG-GPU-004: a violating cell whose litCount also differs is a
+      // whole point light in/out (vis-cell floor coin flip: the 0.02 m
+      // "toward the light" sample lands within float32 noise, ~1e-4 m at
+      // x ~ 1500, of a vis-grid cell boundary). Same class and budget as a
+      // sunlit flip (architecture.md 14.3 item 7). litCount alone is not a
+      // flip signal: the GPU counts OFF lights (col = 0) the CPU skips.
+      if (fbLight.litCount && ((lightBuf[i * 4 + 3] >>> 8) & 0xff) !== fbLight.litCount[i]) { litFlip++; continue; }
+      if (cellMax > dLMax) dLMax = cellMax;
+      for (let k = 0; k < 3; k++) {
+        if (Math.abs(u32ToF32(lightBuf[i * 4 + k]) - fbLight.rgb[o + k]) > 1e-3) dLViol++;
       }
     }
   }
   const sunlitMismatchFrac = nonSky ? sunlitMismatch / nonSky : 0;
+  const litFlipFrac = nonSky ? litFlip / nonSky : 0;
   return {
-    nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac, dLMax, dLViol,
-    pass: sunlitMismatchFrac <= 0.005 && dLViol === 0,
+    nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac, dLMax, dLViol, litFlip, litFlipFrac,
+    pass: sunlitMismatchFrac <= 0.005 && litFlipFrac <= 0.005 && dLViol === 0,
   };
 }
 

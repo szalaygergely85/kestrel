@@ -32,11 +32,14 @@ export class Loop {
     // the F3 overlay / `?bench=1`. One preallocated object, mutated in
     // place every tick - never replaced (rule 9, no per-frame allocation).
     this.stats = {
-      simMs: 0, renderMs: 0, jsMs: 0,
+      simMs: 0, renderMs: 0, jsMs: 0, steps: 0,
       intervalMs: 0, worstIntervalMs: 0,
       over25: 0, frames: 0,
     };
     this._skipIntervals = SKIP_INTERVAL_FRAMES;
+    // US-018 spike hunt: optional `FrameProfiler` (engine/core/FrameProfiler.js),
+    // null = off. Set by a dev harness (`?bench=1`), never required.
+    this.profiler = null;
   }
 
   /**
@@ -68,6 +71,8 @@ export class Loop {
   _tick = (now) => {
     if (!this._running) return;
     const frameStart = performance.now();
+    const prof = this.profiler;
+    if (prof) prof.beginFrame();
 
     let frameTime = (now - this._lastTime) / 1000;
     const intervalMs = now - this._lastTime;
@@ -110,6 +115,8 @@ export class Loop {
     st.simMs = simMs;
     st.renderMs = renderMs;
     st.jsMs = simMs + renderMs;
+    st.steps = steps;
+    if (prof) prof.endFrame(simMs, renderMs, steps);
     st.intervalMs = intervalMs;
     if (this._skipIntervals > 0) {
       this._skipIntervals--;
