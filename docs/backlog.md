@@ -3033,7 +3033,7 @@ Design needed: no (the designer keeps authoring in `design/`; export is a tool).
 Notes / dependencies: US-024, US-025. Editor prerequisite (M5).
 **Superseded by the D-023 split below (US-027a engine, US-027b tool + flip).** The sketch's "palette/terrain util as named engine implementations" stays out of scope (code-like content stays JS, D-023).
 
-### US-027a Engine content loader: loadContentPack / migrate / canonical stringify / AssetRegistry.fromJSON  [Priority: P1 (M2)] [Status: todo (notes ready)]  [PC-A]
+### US-027a Engine content loader: loadContentPack / migrate / canonical stringify / AssetRegistry.fromJSON  [Priority: P1 (M2)] [Status: arch-review]  [PC-A]
 As the engine (and the future editor), I want to load JSON content packs with stable ids and a schema version, so that levels can be tool-written and saves survive content updates.
 Spec: architecture.md 19 items 1-6 (normative: id scheme + save rule, D-023).
 Acceptance criteria:
@@ -3049,6 +3049,7 @@ Design needed: no.
 Files: `engine/content/{loadPack,migrate,stringify}.js` (+ tests), `engine/core/AssetRegistry*`, `engine/world/World.js` (serialize/deserialize id rule only), `engine/index.js`.
 Dependencies: D-023. Architect (opus) notes first, ARCH review (fable). Lands on master before PC-B starts US-027b. **Test = none owner-visible:** Node suites + ARCH OK + main session gpucompare; no owner walk.
 Tech notes (architect, 2026-09-25): **architecture.md 21** (normative; steps S1-S6 in 21.10). Two deviations from the AC text, reasons in 21: (a) local ids unique **per collection** (tower reuses `brazier`/`lantern`/`beacon`/`lever` across lights/props/interactables; ids stay verbatim); (b) stringify keeps array order, **no sort by id** (runtime order-sensitive; game must stay identical). Injected reader is `fetchText` (loader parses, names the file). US-027b contract = 21.9.
+Programmer notes (2026-09-25): implemented per 21 S1-S6, no deviations beyond the architect's two. Files: `engine/content/{schema,ContentError,migrate,stringify,loadPack}.js` + `.test.js` each, fixtures under `engine/content/fixtures/` (golden.level.json, pack/{manifest,levels/tiny.level,worlds/tiny_world.world}.json); `engine/core/assets.js` (`fromJSON`, `contentVersion` getter) + `assets.test.js`; `engine/world/World.js` (`contentVersion`, `_contentIds`/`_removedContent`, `opts.skipIds`) + new `engine/world/serialize.contentIds.test.js` (existing `serialize.test.js` untouched, still green); `engine/index.js` exports. All 63 `run-tests.mjs` suites + check-deps green. Browser pass on port 9300: game loads/plays the tower unchanged (still `fromGlobals`, no JSON fixture wired into main.js - that's US-027b), `?gpucompare=1` 27/27 PASS, no console errors (pointer-lock click is a no-op in the automated browser, as usual - not a regression). Known limitation: `deserialize`'s content-id migration recomputes the current content-id set by re-reading `assets.level`/`assets.world` rather than caching it on the registry - fine for a save-load path, not hot. Status -> arch-review.
 
 ### US-027b Converter tool + flip world_m1 / tower / test_room to `content/` JSON  [Priority: P1 (M2)] [Status: todo]  [PC-B]
 As a designer (and the editor), I want the M1 world and levels to live as canonical JSON, so that tools can write them and there is one source of truth.

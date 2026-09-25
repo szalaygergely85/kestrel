@@ -25,6 +25,13 @@ function stripScratch(value) {
 
 /** @returns {Object} JSON-safe WorldState (docs/architecture.md section 10) */
 export function serialize(world) {
+  // US-027a (architecture.md 21.8): additive only, and only written when
+  // the world came from content (`contentVersion != null`) - a save built
+  // with `fromGlobals` assets (or the `R` restart state) stays byte-
+  // identical to before this story.
+  const fromContent = world.contentVersion != null;
+  const contentIds = world._contentIds || new Set();
+
   return {
     version: VERSION,
     world: (world.def && world.def.name) || null,
@@ -43,15 +50,23 @@ export function serialize(world) {
       yawSteps: s.yawSteps,
       dynamics: structuredClone(s.dynamics || {}),
     })),
-    entities: Array.from(world._entities.values()).map((e) => ({
-      id: e.id,
-      type: e.type,
-      transform: { x: e.transform.x, y: e.transform.y, z: e.transform.z, yawDeg: e.transform.yawDeg, pitchDeg: e.transform.pitchDeg },
-      components: stripScratch(structuredClone(e.components)),
-    })),
+    entities: Array.from(world._entities.values()).map((e) => {
+      const out = {
+        id: e.id,
+        type: e.type,
+        transform: { x: e.transform.x, y: e.transform.y, z: e.transform.z, yawDeg: e.transform.yawDeg, pitchDeg: e.transform.pitchDeg },
+        components: stripScratch(structuredClone(e.components)),
+      };
+      if (fromContent && contentIds.has(e.id)) out.fromContent = true;
+      return out;
+    }),
     state: structuredClone(world.state),
     nextId: world.nextId,
     time: { timeOfDay: (world.def && world.def.time) || null },
+    ...(fromContent ? {
+      contentVersion: world.contentVersion,
+      removed: Array.from(world._removedContent || []).sort(),
+    } : {}),
   };
 }
 
@@ -66,17 +81,78 @@ export function deserialize(state, assets, opts = {}) {
     throw new Error(`deserialize: unknown WorldState version ${state.version} (expected ${VERSION})`);
   }
 
+  // US-027a (architecture.md 21.8): the content-id migration only applies
+  // to a save that was itself content-backed, against a registry that
+  // still knows this world (an ephemeral/JS-only world, or one dropped
+  // from content entirely, loads exactly as before this story).
+  const useContentRule = state.contentVersion != null && assets && typeof assets.has === 'function' && assets.has('world', state.world);
+  let keptSavedEntities = state.entities; // state shape: {id,type,transform,components,fromContent?}
+  let appendedContentEntities = []; // raw content shape (may use x/y/z or spawn, not transform)
+  const removedSet = new Set(state.removed || []);
+
+  if (useContentRule) {
+    if (state.contentVersion !== assets.contentVersion) {
+      console.info(`[World] deserialize: content version changed (${state.contentVersion} -> ${assets.contentVersion}) for world "${state.world}"`);
+    }
+
+    // Canonical content id set, per the SAME rule `World.load` uses (21.8):
+    // level props (by placement) + this world's own `entities[].id`, read
+    // from `assets`, never from `state` (a stale save must not decide
+    // what's "current content").
+    const currentContentIds = new Set();
+    for (const s of state.structures) {
+      if (!assets.has('level', s.level)) continue;
+      for (const p of assets.level(s.level).props || []) {
+        if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
+        if (p.from || p.to) continue;
+        currentContentIds.add(`${s.id}.${p.id}`);
+      }
+    }
+    for (const ce of assets.world(state.world).entities || []) {
+      if (ce && ce.id) currentContentIds.add(ce.id);
+    }
+
+    // Rule 1: drop a saved `fromContent` entity whose id is no longer
+    // current content, warning ONCE for the whole load.
+    const dropped = [];
+    keptSavedEntities = state.entities.filter((e) => {
+      if (e.fromContent && !currentContentIds.has(e.id)) { dropped.push(e.id); return false; }
+      return true; // rule 3: a runtime-spawned entity (no fromContent) is always kept
+    });
+    if (dropped.length) {
+      console.warn(`[World] deserialize: dropped ${dropped.length} saved entit${dropped.length === 1 ? 'y' : 'ies'} no longer in content: ${dropped.slice(0, 5).join(', ')}`);
+    }
+
+    // Rule 2: a content id missing from the save and not `removed` spawns
+    // from content. Props are handled by `World.load`'s own spawn loop
+    // (via `opts.skipIds` below - it already skips ids present in
+    // `def.entities`/saved); world entities need appending here, in their
+    // ORIGINAL content shape (World.load's entities loop already knows how
+    // to read `spawn`/inline x,y,z/`transform`), since re-mapping them to
+    // the saved-entity shape below would drop those fields.
+    const keptIds = new Set(keptSavedEntities.map((e) => e.id));
+    for (const ce of assets.world(state.world).entities || []) {
+      if (!ce || !ce.id) continue;
+      if (keptIds.has(ce.id) || removedSet.has(ce.id)) continue;
+      appendedContentEntities.push(ce);
+    }
+  }
+
   const def = {
     name: state.world,
     terrain: state.terrain ? state.terrain.recipe : null,
     horizon: state.horizon || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => ({ id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps })),
-    entities: state.entities.map((e) => ({ id: e.id, type: e.type, transform: e.transform, components: e.components })),
+    entities: [
+      ...keptSavedEntities.map((e) => ({ id: e.id, type: e.type, transform: e.transform, components: e.components })),
+      ...appendedContentEntities,
+    ],
     state: state.state,
   };
 
-  const world = World.load(def, assets, opts);
+  const world = World.load(def, assets, { ...opts, skipIds: useContentRule ? removedSet : opts.skipIds });
+  if (useContentRule) world._removedContent = new Set(removedSet);
 
   // Re-apply dynamics AFTER load (World.load's own structures[].dynamics
   // handling already does this from `def.structures[i].dynamics`, but that

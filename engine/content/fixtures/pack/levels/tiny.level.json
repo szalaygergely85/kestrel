@@ -1,0 +1,29 @@
+{
+  "kind": "level",
+  "schema": 1,
+  "id": "tiny",
+  "nextId": 3,
+  "name": "tiny",
+  "title": "Tiny Room",
+  "cellSize": 1,
+  "size": {"w": 2, "h": 2},
+  "rows": [
+    "##",
+    ".."
+  ],
+  "legend": {
+    "#": {"floorH": 3, "ceilH": "sky", "wallMat": "stone", "floorMat": "stone", "ceilMat": "sky", "solid": true},
+    ".": {"floorH": 0, "ceilH": 3, "wallMat": "stone", "floorMat": "wood", "ceilMat": "stone", "solid": false}
+  },
+  "start": {"x": 0.5, "y": 0.5, "facingDeg": 0},
+  "lights": [
+    {"id": "brazier", "x": 0.5, "y": 0.5, "z": 1, "color": "#ffaa33", "intensity": 2}
+  ],
+  "props": [
+    {"id": "brazier", "model": "torch", "x": 0.5, "y": 0.5, "z": 0}
+  ],
+  "interactables": [
+    {"id": "lever", "interact": "use", "x": 1.5, "y": 1.5, "z": 0, "radius": 1, "prop": "brazier", "light": "brazier"}
+  ],
+  "triggers": []
+}

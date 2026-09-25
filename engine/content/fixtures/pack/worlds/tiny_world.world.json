@@ -1,0 +1,11 @@
+{
+  "kind": "world",
+  "schema": 1,
+  "id": "tiny_world",
+  "nextId": 1,
+  "name": "tiny_world",
+  "structures": [],
+  "entities": [],
+  "horizon": [],
+  "state": {}
+}

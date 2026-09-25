@@ -59,10 +59,17 @@ export class AssetRegistry {
     // content pack - optional (older bundles / tests without it get the v1
     // look everywhere, same as `?detail=0`).
     this._detailPass = bundle.detailPass || null;
+    // US-027a (architecture.md 21.7): null for a registry built with
+    // `fromGlobals` - only `fromJSON` sets this to the manifest's value.
+    this._contentVersion = bundle.contentVersion != null ? bundle.contentVersion : null;
   }
 
   get palette() {
     return this._palette;
+  }
+
+  get contentVersion() {
+    return this._contentVersion;
   }
 
   get detailPass() {
@@ -144,7 +151,47 @@ export class AssetRegistry {
     });
   }
 
-  static async fromJSON(urls) {
-    throw new Error('AssetRegistry.fromJSON: not implemented (US-027)');
+  /**
+   * US-027a (architecture.md 21.7): sync, replaces the old async stub.
+   * `codeParts` has the SAME shape as `fromGlobals`'s input (the game
+   * passes `window.ASSETS`) - still the source of palette/detailPass/
+   * uiStyle/models and the code terrain recipe (e.g. `overworld_far`).
+   * `bundle.levels`/`bundle.worlds` (a `ContentBundle` from
+   * `loadContentPack`) are overlaid on top; a key present in both JS and
+   * JSON throws (D-023 item 4: no dual source).
+   * @param {Object} bundle  a `ContentBundle` (loadPack.js)
+   * @param {Object} codeParts  same shape as `fromGlobals`'s `globals`
+   */
+  static fromJSON(bundle, codeParts) {
+    const allLevels = codeParts.levels || {};
+    const levels = {};
+    const terrain = {};
+    for (const key of Object.keys(allLevels)) {
+      const def = allLevels[key];
+      if (def && def.util && typeof def.util.heightAt === 'function') {
+        terrain[key] = def;
+      } else {
+        levels[key] = def;
+      }
+    }
+    for (const key of Object.keys(bundle.levels || {})) {
+      if (key in levels) throw new Error(`AssetRegistry.fromJSON: level "${key}" is defined in both JS and JSON content`);
+      levels[key] = bundle.levels[key];
+    }
+    const worlds = { ...(codeParts.worlds || {}) };
+    for (const key of Object.keys(bundle.worlds || {})) {
+      if (key in worlds) throw new Error(`AssetRegistry.fromJSON: world "${key}" is defined in both JS and JSON content`);
+      worlds[key] = bundle.worlds[key];
+    }
+    return new AssetRegistry({
+      palette: codeParts.palette,
+      models: codeParts.models,
+      levels,
+      terrain,
+      worlds,
+      uiStyle: codeParts.uiStyle,
+      detailPass: codeParts.detailPass || null,
+      contentVersion: bundle.contentVersion,
+    });
   }
 }

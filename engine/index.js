@@ -16,6 +16,13 @@ export { createEngine, clampGrid, GRID_MIN_COLS, GRID_MAX_COLS, GRID_DEFAULT_COL
 export { AssetRegistry } from './core/assets.js';
 export { loadLevel } from './world/Level.js';
 
+// ---- US-027a JSON content pack loader (architecture.md 21) ----------------
+export { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS, KEY_ORDER, ORDERED_MAPS, ENVELOPE_KEYS } from './content/schema.js';
+export { ContentError } from './content/ContentError.js';
+export { migrateContent, MIGRATIONS } from './content/migrate.js';
+export { stringifyContent } from './content/stringify.js';
+export { loadContentPack, globalId } from './content/loadPack.js';
+
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims } from './world/World.js';
 export { Terrain } from './world/Terrain.js';

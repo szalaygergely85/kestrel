@@ -1,0 +1,52 @@
+{
+  "kind": "level",
+  "schema": 1,
+  "id": "tiny",
+  "nextId": 3,
+  "name": "tiny",
+  "title": "Tiny Room",
+  "version": 1,
+  "cellSize": 1,
+  "size": {
+    "h": 3,
+    "w": 3
+  },
+  "rows": [
+    "###",
+    "#.#",
+    "###"
+  ],
+  "legend": {
+    "#": {"kind": "wall", "material": "stone"},
+    ".": {"kind": "floor", "material": "wood"}
+  },
+  "layers": [
+    {"id": "floor", "rows": [
+      "AAA",
+      "ABA",
+      "AAA"
+    ], "z": 0}
+  ],
+  "start": {
+    "facingDeg": 0,
+    "x": 1.5,
+    "y": 1.5
+  },
+  "lights": [
+    {"id": "brazier", "color": "#ffaa33", "intensity": 2, "x": 1.5, "y": 1.5, "z": 1}
+  ],
+  "props": [
+    {"id": "brazier", "model": "torch", "x": 1.5, "y": 1.5, "z": 0},
+    {"id": "lever", "model": "lever", "x": 0.5, "y": 0.5, "z": 0}
+  ],
+  "interactables": [
+    {"id": "lever", "interact": "use", "prop": "lever", "radius": 1, "x": 0.5, "y": 0.5, "z": 0}
+  ],
+  "triggers": [],
+  "markers": {},
+  "route": [],
+  "routeNotes": {
+    "a": "start here",
+    "b": "exit"
+  }
+}

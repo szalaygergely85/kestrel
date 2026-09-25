@@ -100,6 +100,19 @@ export class World {
     this.structVersion = 0;
     this.nextId = 0;
     this.state = {};
+    // US-027a (architecture.md 21.8): `null` until `load()` sets it from
+    // `assets.contentVersion` - a world built with `fromGlobals` assets (or
+    // a bare `new World()`) stays `null` forever, so `serialize` writes
+    // nothing extra for it.
+    this.contentVersion = null;
+    // Runtime ids that come from content data (a level's `props[]`, keyed
+    // `${placementId}.${propId}`, and a content world's `entities[].id` -
+    // looked up from `assets`, NOT from whatever `def.entities` this
+    // particular `load()` call was given, so a deserialize's merged
+    // entity list can't mislabel a runtime-spawned entity as content).
+    // `remove(id)` on one of these adds it to `_removedContent`.
+    this._contentIds = new Set();
+    this._removedContent = new Set();
     // (US-011) `AssetRegistry` used to resolve `sprite.model`/`anim` for
     // `EntityHandle.play`/`stepAnimations` and the prop spawn below. Set by
     // `World.load`; stays null on a bare `new World()`.
@@ -156,6 +169,9 @@ export class World {
     // that as "skip, warn, never throw" (7.5 item 3).
     w.assets = assets;
     w.state = structuredClone(def.state || {});
+    // US-027a (architecture.md 21.8): `assets` may be `null` on a bare
+    // ephemeral load (7.5 item 3 convention - never throw, just skip).
+    w.contentVersion = assets ? (assets.contentVersion ?? null) : null;
 
     if (def.terrain) {
       w.terrainKey = def.terrain;
@@ -223,7 +239,10 @@ export class World {
           if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
           if (p.from || p.to) continue;
           const entId = `${s.id}.${p.id}`;
-          if (savedIds.has(entId)) continue;
+          // US-027a (21.8): a content id regardless of whether it's spawned
+          // THIS call (saved/removed ones are skipped below but stay content).
+          w._contentIds.add(entId);
+          if (savedIds.has(entId) || (opts.skipIds && opts.skipIds.has(entId))) continue;
           // Animation names (7.5 item 2): a string `variant` (or legacy
           // `pose`) is the anim name; unknown -> the model's first anim,
           // warned once. A numeric `variant` selects `model.variants[n]`,
@@ -293,6 +312,16 @@ export class World {
       for (const rs of w.terrain.recipe.structures) {
         const placed = w.structures.find((p) => p.id === rs.id);
         if (placed) rs.ringHAt = makeRingHAt(placed.level, placed.origin);
+      }
+    }
+
+    // US-027a (21.8): world-entity content ids come from the ASSET's own
+    // canonical `entities[]` (looked up by `def.name`), not from this
+    // call's `def.entities` - deserialize passes a merged saved+content
+    // list there, which must not be mistaken for "all content".
+    if (assets && def.name && typeof assets.has === 'function' && assets.has('world', def.name)) {
+      for (const ce of assets.world(def.name).entities || []) {
+        if (ce && ce.id) w._contentIds.add(ce.id);
       }
     }
 
@@ -569,6 +598,9 @@ export class World {
     // create-then-immediately-remove a handle (which used to emit a spurious
     // `entity:removed`).
     if (!this._entities.has(id)) return;
+    // US-027a (21.8): removing a content id records it so a later
+    // deserialize (or this same save's `serialize`) knows it stays removed.
+    if (this._contentIds.has(id)) this._removedContent.add(id);
     const h = this._handleFor(id);
     h.remove();
   }

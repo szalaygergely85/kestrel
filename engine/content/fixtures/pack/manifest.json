@@ -1,0 +1,10 @@
+{
+  "kind": "manifest",
+  "schema": 1,
+  "id": "kestrel_test",
+  "contentVersion": 1,
+  "files": [
+    "worlds/tiny_world.world.json",
+    "levels/tiny.level.json"
+  ]
+}
