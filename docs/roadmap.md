@@ -6,7 +6,9 @@ Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in
 - **Engine** (`engine/`): reusable, data-driven ASCII 3D engine (WebGL2 char-grid presenter, hybrid sector + terrain renderer, 2.5D physics, plain-data world/entities, serializable). A product of its own later, with an editor UI in `tools/`.
 - **Game** (`game/` + `design/`): ASCII Quest, an open-world Zelda-like built on the engine.
 
-## Milestone 1 – "The Awakening" (vertical slice) — status: IN PROGRESS
+**Current (2026-09-25):** M1 **done** (D-024). Sprint 3 (D-026, `docs/sprints/sprint-3.md`) opens M2: US-027a/b content format, US-038a/b settings + grids (D-025), US-026a walk-out. Sprint 4: US-026b streaming + US-051a object physics; US-031 editor at the earliest.
+
+## Milestone 1 – "The Awakening" (vertical slice) — status: DONE (2026-09-25, D-024)
 
 Goal: a polished 3–5 minute playable slice, from waking at the bottom of the Hollow Watchtower to stepping through the summit breach and seeing the overworld. Content unchanged by the open-world pivot; the engine underneath is now open-world-capable.
 
@@ -20,14 +22,14 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 - The tower structure: wake spot, brazier, lantern, boulder, broken stair with jump gap, mid ledge with lever + grate, summit breach. Props/lights/interactables/triggers declared as level data.
 - Far overworld view = terrain caster at far LOD, GPU-first (US-016, after US-030).
 - Wake sequence, title, hints, end trigger + fade + restart.
-- 60 fps, <= 8 ms JS + <= 4 ms GPU at the default grid (240x90 on GPU after US-030), grid configurable 160x60..320x120 (US-018).
+- 60 fps, <= 8 ms JS + <= 4 ms GPU at the default grid (240x90 on GPU after US-030), grid configurable 160x60..320x120 (US-018). *(D-025: engine range 160x60..480x180, player options 240/320/400/480, via US-038a in M2.)*
 - **D-019 (2026-09-24, owner OWN-REQ-001): tower props are voxel models, fixed in the world.** US-040 (GPU voxel pass A3) and US-041a (voxel lighting + entity binding + prop-only rigid parts) are M1 P0; the designer builds the solid props once as voxel ModelDefs (ART-OWN-001). Flames/glows/sparks stay billboards (BUG-OWN-003 slimmed to `fill` for those). Gate: US-040 fails gpucompare or 0.5 ms p95 after one fix round -> fall back to billboards + fill/outline + fixed yaw, voxel props move to M2.
 - **D-017 (2026-09-24):** JS render path = correctness reference only (gpucompare + Node tests, no perf ACs); no playable CPU fallback - no WebGL2 shows a "WebGL2 required" screen.
 
 **Engine build order (D-009, D-019):** US-028 -> US-025 -> US-029 -> US-030 -> US-006 -> US-007 -> US-011 -> US-016 (finishing) -> US-040 -> US-041a -> US-056 voxel props in `world_m1` + owner walk-check -> BUG-OWN-003 (slim, if still needed) -> US-018. Voxel prop art (ART-OWN-001) runs in parallel with US-040.
 - **Ending (D-020):** no walk-on past the breach in M1. The end trigger stays, made deliberate by the vista, a summit hint and an "End of Chapter One" card (BUG-OWN-005, P0).
 - **Sprint 1 (D-020):** US-016 finish -> US-040 -> US-041a -> US-056, BUG-OWN-005 in parallel, US-018 stretch. Exit = owner end-to-end walk-test.
-- **Sprint 1: done** (goal met, owner walk-test 2026-09-25). **Sprint 2 (D-022, `docs/sprints/sprint-2.md`):** BUG-OWN-007 -> US-020a sound slice -> US-022 -> BUG-GPU-003 -> US-018 -> OWN-REQ-003 (stretch); OWN-REQ-004 decision (D-023) in parallel. Goal: M1 closes. Sprint 3 opens M2 with US-051a + US-026.
+- **Sprint 1: done** (goal met, owner walk-test 2026-09-25). **Sprint 2 (D-022, `docs/sprints/sprint-2.md`):** BUG-OWN-007 -> US-020a sound slice -> US-022 -> BUG-GPU-003 -> US-018 -> OWN-REQ-003 (stretch); OWN-REQ-004 decision (D-023) in parallel. Goal: M1 closes. **Sprint 2: done** (goal met, stranger test PASS -> M1 closed, D-024).
 - **P1 (after all P0):** light the summit beacon (US-022, D-003); minimal procedural sound slice (lever, gear, grate, boulder, footsteps; carved out of US-020, D-020, not an exit criterion).
 
 **P2 stretch (not exit criteria):** dust motes (US-019), rest of procedural WebAudio (US-020, D-004), wall scrawl (US-021), see-through grate (US-023).
@@ -38,7 +40,7 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 
 **Exit criteria:** PO OK + tester PASS on every P0 story; the owner's end-to-end walk-test (sprint 1 exit) passes; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
 
-## Milestone 1.5 – "Editor Preview" (D-010) — status: planned (starts when M1 exit criteria are met)
+## Milestone 1.5 – "Editor Preview" (D-010) — status: unlocked (M1 done); editor code from sprint 4 at the earliest, after US-027a/b (D-023)
 Level viewer + object placer in `tools/editor/`, a second client of `engine/index.js`.
 - **In:** load world, fly-cam, idle re-render skip; pick/select/move/yaw/delete; place props (existing models), lights (presets), triggers/hint zones; property panel (JSON components, behaviour-name dropdown); undo/redo; save/load world JSON (File System Access API + download fallback); Play-test in the game via `?world=` (world-file loading half of US-027).
 - **Out:** terrain paint, structure/sector editing, model editing, multi-viewport, prefabs, CPU fallback, visual scripting, asset store.
@@ -47,7 +49,8 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 
 **Story (D-011 amendment 2, D-013):** fantasy canon with steampunk machine accents. Wick, a young man from machine-only Ferrum (no amnesia), is shot down in the stolen balloon *Kestrel* and holds a Crown sky-chart with his pencil course to the SOS (3 short, 3 long, 3 short). M1 is a text and art reskin only (lamp, wreckage, relay, signal tower). The only scope change is the US-015 map card (static overlay, `M` re-opens it).
 
-## Milestone 2 – "Out of the Wreck" — status: planned
+## Milestone 2 – "Out of the Wreck" — status: IN PROGRESS (sprint 3, D-026)
+**Sprint order:** sprint 3 = US-027a/b (content JSON), US-038a/b + US-060 (settings, D-025 grids), US-026a (bounded walk-out), US-058 validator; sprint 4 = US-026b (chunk streaming, `content/chunks/`, OWN-REQ-002) + US-051a object physics; then combat core (sword, first enemy, hearts).
 **Owner story + progression idea (D-020, `docs/owner-ideas/2026-09-24-story-and-progression.md`), M2+:** crash intro animation (PO places it: M2 at the earliest, or M1.5 if it's a cheap title-card beat), vanished loved one + SOS hook (writer). Progression without XP: gear has levels (weapons, armour, shields; first in M2 with the sword); magic comes from beacons/wells/quests via a small skill tree (fireball, freeze, lightning, one big spell; starts with M3 Spark); bow in M3. Trading, crafting, animals/monsters/plants and the biomes (forest, desert, snow, mountains, wind) get assigned to M3+ once the GDD section exists.
 Step out of the breach onto real terrain (US-026 replaces the M1 end trigger with the walk-out, D-020): terrain caster near LOD + slope physics + chunk regeneration (US-026), JSON content packs (US-027; world-file loading moved to M1.5), day/night sun cycle, first melee enemy (Hush-touched beast), sword + lock-on, a hidden chest, the relay tower as save point. **Release prep (D-012):** settings menu (grid, sensitivity, invert Y, volume, fullscreen + pointer lock, pause on focus loss), saves via a `game/js/platform/` adapter with a versioned save format. **itch.io browser demo** (M1+M2 slice) at the end of M2. Architect may evaluate Rust/WASM for measured hot spots only (terrain bake, pathfinding; D-015).
 - **Object physics epic, part 1 (D-018, owner-required before release):** in-house compound-sphere rigid bodies in `engine/physics/rigid.js`. US-051a (bodies + world contacts + sleep), then US-051b (body-body contacts, stacks <= 3, player contacts), then US-052 (pick up / carry / throw). US-053 particles (smoke, dust, sparks, splash; folds in US-019) can run in parallel. Gate: if US-051a misses the 10-body settle test after one fix round, a Rapier spike becomes its own story.

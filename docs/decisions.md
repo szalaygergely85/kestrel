@@ -281,6 +281,7 @@ Owner feedback: the image looks flat / low-detail, shimmers ("lines jumping") wh
 4. **Grid size becomes a setting** (`createEngine({cols, rows})` + URL `?grid=WxH` + an in-game option later), allowed range 160x60 to 320x120, cell aspect preserved. **Default 160x60 until US-030 is `done`, then 240x90 on the `gl2` GPU path.** Design art (models, UI, text) must stay readable at both; the designer checks the previews at 240x90.
    - **Owner amendment (2026-09-23):** the owner chose **320x120 as the GPU-path default** after US-030 (was 240x90). 240x90 stays as a selectable step-back if the owner walk-test finds glyphs too small. Budgets and designer checks move to 320x120. The CPU fallback stays 160x60.
    - **Owner amendment 2 (2026-09-23):** after seeing 320x120 on normal screens (4-6 px cells, glyphs unreadable), the owner set the **GPU-path default to 240x90**, with the grid **changeable in an in-game settings menu** (160x60 / 240x90 / 320x120, maybe auto-by-window later). `?grid=WxH` stays as the dev override. Settings menu = new UI story (PO to write).
+   - **Amendment 3 (2026-09-25, D-025):** player options 240x90 / 320x120 / 400x150 / 480x180 ("ultra"); engine range 160x60..480x180; 160x60 dev-only. Replaces the menu list in amendment 2.
 5. **Fallback policy:** no WebGL2, context-creation failure, or a software renderer (`UNMASKED_RENDERER` contains SwiftShader/llvmpipe/Basic Render) -> JS path + existing Canvas2D-capped/GL presenter, **grid forced to 160x60**, coverage anti-shimmer off, lighting via the JS reference at reduced light count. Fallback must be playable end-to-end (M1 exit), not visually equal. `?gpu=0` forces it for testing; F3 overlay shows `gpu` / `cpu`.
 6. **The JS path is the oracle**: every GLSL pass ships with a parity test against it; `shadetest`, `bench-cast` and designer oracles stay headless in Node. No headless-browser CI in M1 (would be a separate decision).
 
@@ -663,4 +664,65 @@ Option B as in architecture.md 19. Normative now (expensive to reverse): stable 
 - Designer edits levels as JSON after the flip (same data, new syntax).
 - Editor save-to-disk uses the File System Access API: Chrome/Edge only, download fallback elsewhere.
 - Old dev saves (if any) may break once; the id rules protect real player saves from the itch demo on.
+
+## D-024 Milestone 1 "The Awakening" is closed
+**Date:** 2026-09-25
+**Status:** Accepted
+
+### Context
+Roadmap M1 exit criteria: PO OK + test record on every P0; owner end-to-end walk-test; a stranger finishes without instructions and without the lamp; check-deps clean. Sprint 2 review (docs/sprints/sprint-2.md): every P0 row `done` (US-040/041a/056 use the owner walk-test as test record, D-019 amendment 1); owner walk-tests passed (sprint 1 + sprint 2); stranger test PASSED 2026-09-25; master at the latest pc-a + pc-b merge: 58 Node suites + check-deps green; owner real-GPU `?gpucompare=1` 27/27 and US-018 bench PASS on the same render code.
+
+### Options
+- Close M1 now.
+- Hold M1 open for BUG-PERF-001 (P2, under the binding 8 ms bar) or the P2 sound rows. Rejected: none are exit criteria.
+
+### Decision
+M1 is **done**. Open M1-era P2 rows (US-019, US-020b/c/d, US-021, US-023, BUG-PERF-001) move to the general backlog, no milestone gate.
+
+### Consequences
+- M1.5 (editor) and M2 are unlocked; D-023 keeps US-031 at sprint 4 at the earliest.
+- The tower slice is the regression baseline: `?gpucompare=1` all PASS + bench PASS stay required on every master merge.
+
+## D-025 Player grid options 240x90 / 320x120 / 400x150 / 480x180; 160x60 dev-only (amends D-009 amendment 2 and the US-018 grid AC; OWN-REQ-007)
+**Date:** 2026-09-25
+**Status:** Accepted
+
+### Context
+Owner (OWN-REQ-007, row 25v): 160x60 looks like a blur; wants bigger grids. Owner Intel GPU: 320x120 ~2.1 ms p95; GPU cost scales ~with cells -> 400x150 ~3.3 ms, 480x180 ~4.7 ms (est.). UI stays on the fixed 160x60 UI layer (OWN-REQ-003), so UI is grid-independent. D-017: no CPU fallback, so 160x60 has no player role left.
+
+### Options
+- A. Keep 160..320, add nothing. Ignores the owner.
+- B. Four player options, engine clamp widened to 160x60..480x180, budget binding only where it is realistic.
+- C. Free-form / auto-by-window grid. More test surface, parity poses at odd sizes; later maybe.
+
+### Decision
+**B.**
+1. **Engine range:** `createEngine({cols, rows})`, `?grid=WxH` and `engine.setGrid` accept **160x60 to 480x180** (8:3, clamped). The engine has no "player list"; that is game data.
+2. **Player options** (game `options` list, US-038b): **240x90 (default), 320x120, 400x150, 480x180**. 160x60 is reachable only via `?grid=` and stays the `?gpucompare=1` / Node reference grid.
+3. **Budgets:** JS <= 8 ms binding at every player grid. GPU <= 4 ms binding at 240x90 and 320x120 (unchanged). 400x150: owner `?bench=1` must show GPU <= 4 ms p95, else it is also labelled "ultra". 480x180 is labelled **"ultra"**, no GPU bar, but must run error-free and stay >= 30 fps on the owner's laptop.
+4. **Delivery:** the clamp change ships inside **US-038a** (live `setGrid`, PC-A, sprint 3), with an owner bench at 400x150 and 480x180 as its AC. Designer previews keep checking at 240x90; the UI layer is 160x60 at every grid (sx up to 3, integer at 480x180).
+
+### Consequences
+- US-018 grid AC amended (backlog note under the AC); D-009 amendment 2's "160x60 / 240x90 / 320x120" menu list is replaced by item 2.
+- G-buffer/texture memory at 480x180 is 2.25x 320x120; architect checks max texture sizes in the US-038a notes.
+- gpucompare poses stay at 160x60/240x90; no new parity grid.
+
+## D-026 Sprint 3 scope: walk out of the tower on the new content format; US-051a moves to sprint 4
+**Date:** 2026-09-25
+**Status:** Accepted (amends D-022 "sprint 3 opens with US-051a + US-026")
+
+### Context
+M1 closed (D-024). Inputs: D-022 (sprint 3 = US-051a + US-026), D-023 (sprint 3 = US-027a PC-A then US-027b PC-B), D-025 (grid options via US-038a), sprint-2 gap list (1: walk-out, 5: settings, 6: content pipeline), BUG-PERF-001. PC-A runs one agent at a time and must also feed PC-B (sonnet programmers only) with ACs, notes and art. US-026 is a sketch and large (near LOD, slope physics, chunk regeneration).
+
+### Options
+- A. D-022 as written: US-027a + US-051a + US-026 whole on PC-A. Three large engine stories through one agent slot plus PC-B prep: will not finish; half-done walk-out.
+- B. Walk-out first: US-027a, US-038a (+D-025), US-026a (bounded walk-out, no streaming) on PC-A; US-051a to sprint 4. Delivers the #1 "missing to be playable" item and the next owner walk-test.
+- C. Physics first: US-027a + US-051a, walk-out in sprint 4. Owner-required but not what makes the game playable now.
+
+### Decision
+**B.** US-026 is split: **US-026a** = step out of the breach onto real terrain in a bounded area around the tower (near-LOD terrain band, walk on terrain with slope limits/slide, the end card moves to a terrain end marker chosen by the PO); **US-026b** = chunk regeneration/streaming + `content/chunks/` (D-023 item 5) + OWN-REQ-002 finer detail, sprint 4 with US-051a. Sprint plan: `docs/sprints/sprint-3.md`.
+
+### Consequences
+- Object physics starts sprint 4 (still well before M6 release, D-018 unaffected).
+- PC-A order is set by PC-B's needs: US-027a lands on master before PC-B's ready queue runs out.
 
