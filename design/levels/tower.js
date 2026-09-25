@@ -223,9 +223,11 @@
         once: true, note: 'US-012 (D-011 reskin: the brass lamp): hook sprite -> hookEmpty, attaches palette lights.lantern to the player' },
       { id: 'lever', prop: 'lever', x: 19.25, y: 9.3, z: 3.7, radius: 1.8, prompt: '[E] Pull lever', interact: 'lever.pull',
         once: true, target: { tag: 'grate' }, note: 'US-014: lever pull animation, then the grate sector dynamic ceiling opens' },
-      { id: 'beacon', prop: 'beaconBowl', x: 9.0, y: 7.0, z: 7.2, radius: 1.8, prompt: '[E] Light the beacon', interact: 'beacon.light',
-        once: true, requires: 'lantern', optional: true, light: 'beacon',
-        note: 'US-022 (P1): no prompt without the lantern; mounts beaconFire on the bowl and switches lights[beacon] on' }
+      { id: 'beacon', prop: 'beaconBowl', x: 9.0, y: 7.0, z: 7.2, radius: 1.8, prompt: '[E] Wake the relay', interact: 'beacon.light',
+        once: true, requires: 'tower.lantern.taken', optional: true, light: 'beacon',
+        note: 'US-022 (D-011 reskin, done): no prompt without the lantern (requires = the quest-state key ' +
+              'lantern.js actually writes, docs/architecture.md 7.4 "used flags"); plays relay.wake on the bowl and ' +
+              'switches lights[beacon] (preset relay) on partway through, via game/js/quest/beacon.js `stepBeacon`' }
     ],
 
     triggers: [

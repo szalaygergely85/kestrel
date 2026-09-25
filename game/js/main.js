@@ -31,6 +31,7 @@ import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } fro
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
 import { stepEnd, endFadeAmount } from './quest/end.js';
+import { stepBeacon } from './quest/beacon.js';
 import { wakeFrame, drawEyelid } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
@@ -552,6 +553,13 @@ function runGame(mode) {
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
       updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), !ending && !uiLocked && input.pressed('KeyE'));
+      // US-022: the relay's own wake timer (clip switch wake -> awake, point
+      // light on + 1.0 s grow) - a no-op every step before `beacon.light`
+      // fires (game/js/quest/beacon.js), same "reads its own state key" split
+      // as `stepEnd` below. `lightSet` may be null (`?lights=0` or before the
+      // first `buildLightSet`) - `stepBeacon` treats that as a no-op past the
+      // clip switch (the light ramp itself just does not run without one).
+      stepBeacon(engine.world, lightSet, dt, assets.palette);
       // US-017: the scripted walk/pitch (only through WALK_SEC - a no-op
       // otherwise, including every non-ending step). Runs AFTER `integrate`
       // so it overrides this step's `controls`-driven (frozen) transform.

@@ -12,6 +12,7 @@
 import { registerBehaviour } from '../../../engine/index.js';
 import { leverPull } from './lever.js';
 import { lanternTake } from './lantern.js';
+import { beaconLight } from './beacon.js';
 import { questEnd } from './end.js';
 import { request as requestHint } from './hints.js';
 
@@ -55,6 +56,7 @@ function hintShow(ctx) {
 const REAL_BEHAVIOURS = {
   'lever.pull': leverPull,
   'lantern.take': lanternTake,
+  'beacon.light': beaconLight,
   'quest.end': questEnd,
   'hint.show': hintShow,
 };

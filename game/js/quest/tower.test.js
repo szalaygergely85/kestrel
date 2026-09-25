@@ -13,6 +13,7 @@ import {
   updateTriggers,
 } from '../../../engine/index.js';
 import { registerQuestBehaviours, QUEST_BEHAVIOURS } from './index.js';
+import { stepBeacon } from './beacon.js';
 import { resetHints, currentHintId, stepHints, setPaletteColors } from './hints.js'; // BUG-OWN-005
 
 const noHintSignals = { walking: false, pointerUnlocked: false, moveOrLook: false, run: false, jump: false, pointerLocked: false, mPressed: false };
@@ -152,15 +153,18 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /lever\.pull/.test(behaviourWarns[0]), warns.join(' | '));
   registerQuestBehaviours();
   ok('re-registration restores an empty list', validateBehaviours(worldFull).length === 0);
-  // The remaining stubs (US-012/US-014 replaced their own bodies; US-022/
-  // US-015/US-017 have not landed yet) are callable, return false and log
-  // "not implemented" once.
-  const logged = [];
-  console.warn = (m) => logged.push(String(m));
-  const r1 = worldFull.fireInteraction('beacon.light', { def: {} });
-  const r2 = worldFull.fireInteraction('beacon.light', { def: {} });
-  console.warn = origWarn;
-  ok('stub returns false and logs "not implemented" once', r1 === false && r2 === false && logged.length === 1 && /not implemented/.test(logged[0]), logged.join(' | '));
+  // Every name QUEST_BEHAVIOURS lists now has a real body (US-012/US-014/
+  // US-015/US-017/US-022) - the "callable stub logs not implemented once"
+  // case is exercised generically by `engine/core/behaviours.js`'s own
+  // tests, nothing tower-specific is left un-implemented to probe here.
+  const stillStub = Object.keys(QUEST_BEHAVIOURS).filter((n) => {
+    const logged = [];
+    const orig = console.warn; console.warn = (m) => logged.push(String(m));
+    const r = worldFull.fireInteraction(n, { def: {} });
+    console.warn = orig;
+    return r === false && logged.some((m) => /not implemented/.test(m));
+  });
+  ok('no quest behaviour is still a stub', stillStub.length === 0, stillStub.join(','));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +207,76 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   // this checks the World-built table carries that key at all.
   const rec = lanternWorld.interactables.find((it) => it.id === 'lantern' && it.structId === 'tower');
   ok('World.load built an interactables entry for the lantern with a usedKey (once: true)', !!rec && rec.usedKey === 'used.tower.lantern');
+}
+
+// ---------------------------------------------------------------------------
+// 3c. US-022: `beacon.light` behaviour body + `stepBeacon`'s per-step ramp,
+//    on the real tower data (D-011 reskin: "wake the relay"). As with the
+//    lantern above, the real World.load-spawned relay prop entity is used
+//    (US-011 tech note 5). `stepBeacon`'s `lights` arg only needs the
+//    public surface it actually reads/writes (`key`/`count`/`baseIntensity`/
+//    `on`/`setOn`), so a small fake stands in for the real `LightSet` class.
+// ---------------------------------------------------------------------------
+{
+  const beaconDef = towerDef.interactables.find((i) => i.id === 'beacon');
+  ok('beacon interactable prompt is "[E] Wake the relay" (D-011 reskin)', beaconDef.prompt === '[E] Wake the relay', beaconDef.prompt);
+  ok('beacon interactable data: once, requires the quest-state key lantern.js writes, light id "beacon"',
+    beaconDef.once === true && beaconDef.requires === 'tower.lantern.taken' && beaconDef.interact === 'beacon.light' && beaconDef.light === 'beacon');
+
+  const beaconWorld = World.load({
+    name: 'tower_beacon_test', terrain: null,
+    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+    entities: [], state: {},
+  }, assets, {});
+
+  const relayProp = beaconWorld.get('tower.beaconBowl');
+  ok('World.load auto-spawns the real relay prop entity, dead', !!relayProp && relayProp.getComponent('sprite').model === 'relay' && relayProp.getComponent('sprite').anim === 'dead');
+
+  const relayLightDef = towerDef.lights.find((l) => l.id === 'beacon');
+  ok('the relay light starts off in level data (US-022 wakes it)', relayLightDef && relayLightDef.on === false && relayLightDef.preset === 'relay');
+
+  const r = beaconWorld.fireInteraction('beacon.light', { def: beaconDef, entity: relayProp });
+  ok('beacon.light returns true (consumes the once-flag path)', r === true);
+  ok('beacon.light plays the wake clip', relayProp.getComponent('sprite').anim === 'wake');
+  ok('beacon.light sets tower.beacon.lit (US-017 end-card altWhen key)', beaconWorld.state['tower.beacon.lit'] === true);
+  ok('beacon.light derives structId "tower" from the prop id, no hard-coded string', beaconWorld.state['tower.beacon.structId'] === 'tower');
+  ok('beacon.light records the light id from def.light', beaconWorld.state['tower.beacon.lightId'] === 'beacon');
+
+  const rec = beaconWorld.interactables.find((it) => it.id === 'beacon' && it.structId === 'tower');
+  ok('World.load built an interactables entry for the beacon with a usedKey (once: true)', !!rec && rec.usedKey === 'used.tower.beacon');
+
+  const fakeLights = {
+    key: ['tower.beacon'], count: 1, baseIntensity: new Float32Array(1), on: new Uint8Array(1),
+    setOn(h, on) { this.on[h] = on ? 1 : 0; },
+  };
+  const palette = assets.palette;
+  const relayModel = assets.model('relay');
+  const wakeAnim = relayModel.animations.wake;
+  const startT = relayModel.wakeLightFrame / wakeAnim.fps; // when the point light itself starts (not press time)
+  const growDur = palette.lights[towerDef.lights.find((l) => l.id === 'beacon').preset].grow.duration;
+  const targetIntensity = palette.lights[towerDef.lights.find((l) => l.id === 'beacon').preset].intensity;
+
+  beaconWorld.state['tower.beacon.wakeT'] = startT / 2;
+  stepBeacon(beaconWorld, fakeLights, 0, palette);
+  ok('stepBeacon: light stays off before wakeLightFrame', fakeLights.on[0] === 0);
+
+  beaconWorld.state['tower.beacon.wakeT'] = startT + growDur / 2;
+  stepBeacon(beaconWorld, fakeLights, 0, palette);
+  ok('stepBeacon: light on, intensity partway through its own 1.0 s grow', fakeLights.on[0] === 1
+    && fakeLights.baseIntensity[0] > 0 && fakeLights.baseIntensity[0] < targetIntensity, fakeLights.baseIntensity[0]);
+
+  beaconWorld.state['tower.beacon.wakeT'] = startT + growDur + 1;
+  stepBeacon(beaconWorld, fakeLights, 0, palette);
+  ok('stepBeacon: intensity ramps to (and clamps at) the relay preset value, never the legacy orange beacon preset',
+    near(fakeLights.baseIntensity[0], targetIntensity), `${fakeLights.baseIntensity[0]} vs ${targetIntensity}`);
+
+  // wake -> awake once the (non-looping) wake clip ends - frame count/fps
+  // come from the real model data, not a literal.
+  const frameMs = 1000 / wakeAnim.fps;
+  for (let i = 0; i < wakeAnim.frames.length; i++) stepAnimations(beaconWorld, frameMs);
+  ok('the wake clip finished (non-looping, holds its last frame)', relayProp.getComponent('sprite').playing === false);
+  stepBeacon(beaconWorld, fakeLights, 0, palette);
+  ok('stepBeacon switches wake -> awake once the clip ends', relayProp.getComponent('sprite').anim === 'awake');
 }
 
 // ---------------------------------------------------------------------------
