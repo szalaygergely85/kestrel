@@ -50,3 +50,6 @@ Minimal sound slice (P1 per D-020: lever, gear, grate, boulder, footsteps; PO ca
 ## Later (not in M1)
 - **Owner story + progression idea** (`docs/owner-ideas/2026-09-24-story-and-progression.md`): crash intro animation, vanished loved one + SOS hook, no XP (gear levels, magic from beacons/wells/quests with a small skill tree, bow), trading, crafting, animals/monsters/plants, biomes. Writer + PO fold it into the GDD (story section 3 + a new progression section). The manager adds it to roadmap M2+ (D-020). The crash intro isn't added to M1.
 - Walk-out through the breach onto real terrain replaces the end trigger in M2 (US-026, D-020).
+
+## Owner exit walk-test (2026-09-25)
+After US-056 (commit 995cc57), port 8000, default grid 240x90: owner played the tower and reported **"tested and all working"** (props recognisable and fixed in the world, lamp/boulder/lever/grate/summit/end card/restart all OK). Earlier the same day: lamp pickup + carried light OK, but the carried light goes dark next to walls (BUG-OWN-007, filed); unlit lamp on the hook is by design (glint restored in ART-OWN-002). Real-GPU: 60 fps at the summit at 240x90 and 320x120 (BUG-OWN-006 -> watch).
