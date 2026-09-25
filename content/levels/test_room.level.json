@@ -1,0 +1,45 @@
+{
+  "kind": "level",
+  "schema": 1,
+  "id": "test_room",
+  "nextId": 1,
+  "name": "test_room",
+  "rows": [
+    "####################",
+    "#..................#",
+    "#.S.....^^^^.......#",
+    "#.......^^^^.......#",
+    "#.......^^^^.......#",
+    "#.......^^^^.......#",
+    "#.......wwww.......#",
+    "#.............O....#",
+    "#..##D###..........#",
+    "#............m.....#",
+    "#............m.....#",
+    "#..................#",
+    "#..................#",
+    "#..123........PP...#",
+    "#.............PP...#",
+    "#........v1........#",
+    "#........vv........#",
+    "####################"
+  ],
+  "legend": {
+    "1": {"ceilH": 3, "ceilMat": "ceiling_timber", "floorH": 0.3, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "2": {"ceilH": 3, "ceilMat": "ceiling_timber", "floorH": 0.6, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "3": {"ceilH": 3, "ceilMat": "ceiling_timber", "floorH": 0.9, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "#": {"ceilH": "sky", "ceilMat": "sky", "floorH": 3, "floorMat": "floor", "solid": true, "wallMat": "stone"},
+    ".": {"ceilH": 3, "ceilMat": "ceiling_timber", "floorH": 0, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "^": {"ceilH": "sky", "ceilMat": "sky", "floorH": 0, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "O": {"ceilH": "sky", "ceilMat": "sky", "floorH": 3, "floorMat": "floor", "solid": true, "wallMat": "stone"},
+    "w": {"ceilH": "sky", "ceilMat": "sky", "floorH": 1, "floorMat": "floor", "solid": true, "wallMat": "stone"},
+    "m": {"ceilH": "sky", "ceilMat": "sky", "floorH": 3, "floorMat": "floor", "solid": true, "wallMat": "stone_moss"},
+    "D": {"ceilH": 2.2, "ceilMat": "ceiling_timber", "floorH": 0, "floorMat": "floor", "solid": false, "topH": 3, "wallMat": "stone"},
+    "S": {"ceilH": 3, "ceilMat": "ceiling_timber", "facingDeg": 90, "floorH": 0, "floorMat": "floor", "solid": false, "start": true, "wallMat": "stone"},
+    "P": {"ceilH": 3, "ceilMat": "ceiling_timber", "floorH": 1, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "v": {"ceilH": 3, "ceilMat": "ceiling_timber", "floorH": -0.6, "floorMat": "rubble", "solid": false, "wallMat": "rubble"}
+  },
+  "lights": [
+    {"id": "torch", "on": true, "preset": "torch", "x": 14.5, "y": 13.5, "z": 1.2}
+  ]
+}

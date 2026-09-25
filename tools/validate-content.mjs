@@ -29,8 +29,17 @@
 // design/models/voxel_world.js (the waystone, US-026a) is NOT in that list
 // yet (not wired into index.html/world_m1.js as of this writing) - see the
 // note at the bottom of this file.
-import { validateVoxelModel } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+//
+// US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are no
+// longer classic scripts (design/levels/{tower,test_room,world_m1}.js were
+// deleted) - they are content/levels/*.level.json and
+// content/worlds/world_m1.world.json now, loaded through the real
+// loadContentPack (same loader the game uses) and merged onto the
+// `globalThis.ASSETS` the remaining classic scripts (palette, models,
+// overworld_far's terrain RECIPE - still code, unaffected) already built.
+import { validateVoxelModel, loadContentPack } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 
 const CLASSIC_SCRIPTS = [
   '../design/palette.js',
@@ -47,19 +56,28 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_tower.js',
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',
-  '../design/levels/test_room.js',
-  '../design/levels/tower.js',
   '../design/levels/overworld_far.js',
-  '../design/levels/world_m1.js',
 ];
 
-/** Dynamic-imports every design/ classic script above, in order, then
- * returns `globalThis.ASSETS` (built up as a side effect by each import). */
+const MANIFEST_URL = new URL('../content/manifest.json', import.meta.url).href;
+function fetchText(url) { return readFile(new URL(url), 'utf8'); }
+
+/** Dynamic-imports every design/ classic script above, in order (side effect:
+ * builds up `globalThis.ASSETS`), then loads content/manifest.json (US-027a
+ * loader) and merges its levels/worlds (tower/test_room/world_m1) onto the
+ * same object, and returns it - same final shape `loadDesignAssets` always
+ * returned, just sourced from JSON for the three flipped defs. */
 export async function loadDesignAssets() {
   for (const rel of CLASSIC_SCRIPTS) {
     await import(rel);
   }
-  return globalThis.ASSETS;
+  const ASSETS = globalThis.ASSETS = globalThis.ASSETS || {};
+  const bundle = await loadContentPack(MANIFEST_URL, { fetchText });
+  ASSETS.levels = ASSETS.levels || {};
+  ASSETS.worlds = ASSETS.worlds || {};
+  Object.assign(ASSETS.levels, bundle.levels);
+  Object.assign(ASSETS.worlds, bundle.worlds);
+  return ASSETS;
 }
 
 // ---------------------------------------------------------------------------

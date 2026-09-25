@@ -11,23 +11,21 @@
 // against a `world.structures` array padded to a size that would make an
 // O(n) scan expensive; (2) once the ramp finishes, `stepBeacon` is an O(1)
 // no-op (rule 9) - it does not keep touching `world.structures` at all.
-import { World, AssetRegistry } from '../../../engine/index.js';
+import { World } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
-import towerMod from '../../../design/levels/tower.js';
 import lanternMod from '../../../design/models/lantern.js';
 import leverMod from '../../../design/models/lever.js';
 import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
-import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
-import worldMod from '../../../design/levels/world_m1.js';
 import './index.js'; // registers every quest.* behaviour (silences "not registered" warnings)
 import { beaconLight, stepBeacon } from './beacon.js';
+import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
+const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
 const failures = [];

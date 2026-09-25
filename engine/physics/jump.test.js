@@ -29,7 +29,10 @@ import { loadLevel } from '../world/Level.js';
 import { Player } from '../entities/Player.js';
 import { PHYSICS } from './config.js';
 import { isSectorPassable } from './capsule.js';
-import testRoomDef from '../../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+const { bundle } = await loadTestAssets();
+const testRoomDef = bundle.levels.test_room;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

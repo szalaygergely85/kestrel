@@ -8,7 +8,6 @@
 // packed updates equal to a fresh `packLevel`, the GPU dirty-row upload plan
 // (`planFrameUpdate`), no allocation in `stepSectorAnims`, and a save mid-
 // open resuming bit-identical to an uninterrupted run.
-import { AssetRegistry } from '../core/assets.js';
 import { World, stepSectorAnims } from './World.js';
 import { serialize, deserialize } from './serialize.js';
 import { packLevel } from './packed.js';
@@ -16,10 +15,7 @@ import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../ren
 import { isSectorPassable } from '../physics/capsule.js';
 import { PHYSICS_DEFAULTS } from '../physics/config.js';
 import paletteMod from '../../design/palette.js';
-import towerDef from '../../design/levels/tower.js';
-import testRoomDef from '../../design/levels/test_room.js';
 import terrainDef from '../../design/levels/overworld_far.js';
-import worldMod from '../../design/levels/world_m1.js';
 // US-011 (7.5 item 1): World.load throws on an unregistered props[].model.
 import lanternMod from '../../design/models/lantern.js';
 import leverMod from '../../design/models/lever.js';
@@ -27,11 +23,13 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+// US-027b: tower/test_room/world_m1 moved to content/*.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; towerDef; testRoomDef; terrainDef; worldMod;
+paletteMod; terrainDef;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];

@@ -69,10 +69,9 @@
       from ceilH). Gold dot = player start (tick = facing, compass degrees).
     </div>
   </div>
-  <!-- US-024: test_room moved to design/ - loaded as a classic script so it
-       sits on window.ASSETS before js/dev/worldTestMain.js (US-024 Phase C)
-       reads it. -->
-  <script src="../design/levels/test_room.js"></script>
+  <!-- US-027b: test_room moved to content/levels/test_room.level.json -
+       js/dev/worldTestMain.js (a module) loads it itself via
+       loadContentPack, top-level awaited before this page's body runs. -->
   <script type="module" src="js/dev/worldTestMain.js"></script>
 </body>
 </html>

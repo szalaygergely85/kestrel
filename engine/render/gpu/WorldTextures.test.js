@@ -1,13 +1,9 @@
 // engine/render/gpu/WorldTextures.test.js (US-030a). Headless Node ESM, no
 // framework. Run: node engine/render/gpu/WorldTextures.test.js
-import { AssetRegistry } from '../../core/assets.js';
 import { World } from '../../world/World.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import paletteMod from '../../../design/palette.js';
-import towerDef from '../../../design/levels/tower.js';
-import testRoomDef from '../../../design/levels/test_room.js';
 import terrainDef from '../../../design/levels/overworld_far.js';
-import worldMod from '../../../design/levels/world_m1.js';
 // US-011 (7.5 item 1): World.load throws on an unregistered props[].model.
 import lanternMod from '../../../design/models/lantern.js';
 import leverMod from '../../../design/models/lever.js';
@@ -18,12 +14,14 @@ import relayMod from '../../../design/models/relay.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
+// US-027b: tower/test_room/world_m1 moved to content/*.json.
+import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; towerDef; testRoomDef; terrainDef; worldMod;
+paletteMod; terrainDef;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 farTowerMod; ferrumLightsMod;
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];

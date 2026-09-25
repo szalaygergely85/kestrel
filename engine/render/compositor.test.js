@@ -3,7 +3,6 @@
 // Run: node engine/render/compositor.test.js
 //      node --expose-gc engine/render/compositor.test.js   (also checks for heap growth)
 import { World } from '../world/World.js';
-import { AssetRegistry } from '../core/assets.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
@@ -16,11 +15,12 @@ import { VoxelPool } from './voxelPool.js';
 import quadruped12Fixture from '../voxel/fixtures/quadruped12.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
-import testRoomDef from '../../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; detailPassMod; testRoomDef;
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+paletteMod; detailPassMod;
+const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];

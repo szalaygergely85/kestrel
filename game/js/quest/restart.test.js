@@ -12,11 +12,10 @@
 // mutation (the lever's mid-tween `animateSector`, `quest.end`) ever leaked
 // into the shared level def/legend objects other loads read from.
 import {
-  World, AssetRegistry, serialize, deserialize, validateBehaviours,
+  World, serialize, deserialize, validateBehaviours,
   stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS, stepSectorAnims,
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
-import towerMod from '../../../design/levels/tower.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any
 // props[].model that isn't registered - every tower prop model must
 // load, same reasoning as game/index.html's script tags.
@@ -29,13 +28,12 @@ import relayMod from '../../../design/models/relay.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
-import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
-import worldMod from '../../../design/levels/world_m1.js';
 import './index.js'; // registers every quest.* behaviour (lantern.take, lever.pull, quest.end, ...)
+import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
+const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
 const failures = [];

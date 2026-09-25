@@ -9,14 +9,15 @@
 // sky-ceiling cells, void/gap cells (negative floorH), doorway/lintel cells
 // (topH != ceilH) and the player start (with v2 facing/pitch/eye/pose).
 //
-// Imports only engine/index.js (check-deps rule 3). test_room comes off
-// `window.ASSETS` - world-test.html loads design/levels/test_room.js as a
-// classic script before this module, same as game/index.html does for
-// main.js.
+// Imports only engine/index.js (check-deps rule 3). test_room is now
+// content/levels/test_room.level.json (US-027b) - this module loads it
+// itself via loadContentPack (top-level await), instead of world-test.html
+// loading design/levels/test_room.js as a classic script first.
 
-import { loadLevel } from '../../../engine/index.js';
+import { loadLevel, loadContentPack } from '../../../engine/index.js';
 
-const testRoom = window.ASSETS.levels.test_room;
+const bundle = await loadContentPack('../content/manifest.json');
+const testRoom = bundle.levels.test_room;
 
 const CELL_PX = 28;
 

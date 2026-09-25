@@ -180,9 +180,11 @@ Output: `out.glyph`, `out.fg[3]`, `out.bg[3]` (0..255 floats) and `out.b`. Pass 
 
 ---
 
-## 3. Levels (`design/levels/*.js`)
+## 3. Levels (`design/levels/*.js`, `content/*.json`)
 
-Plain scripts that set `ASSETS.levels.<name>`. Each has a companion `design/levels/<name>_layout.md` and a preview. The format is **`game/js/world/MAP_FORMAT.md` v1**, validated by `loadLevel` in `game/js/world/Level.js`. The preview runs the real loader when served over http. In summary:
+**US-027b (2026-09-25): `tower`, `test_room` and `world_m1` are edited in `content/levels/*.level.json` / `content/worlds/world_m1.world.json` now, NOT in `design/levels/*.js`** - those three classic-script files were deleted (converted once, byte-for-byte, by `tools/export-content.mjs`; see `docs/architecture.md` section 21). Edit the JSON directly (`stringifyContent`'s canonical layout - 2-space indent, LF, keys in `KEY_ORDER`) and keep every id verbatim; the game loads them through `loadContentPack` + `AssetRegistry.fromJSON`, not a `<script>` tag. `overworld_far` is the one exception: it is a **terrain recipe** (generative code, not authored content), so it stays a plain script at `design/levels/overworld_far.js`, loaded exactly as before. A NEW level would still start life as a classic script here (or, going forward, could be authored directly as JSON) - ask the architect if you're adding one.
+
+Plain scripts that set `ASSETS.levels.<name>`. Each has a companion `design/levels/<name>_layout.md` and a preview. The format is **`game/js/world/MAP_FORMAT.md` v1**, validated by `loadLevel` in `game/js/world/Level.js`. The preview runs the real loader when served over http (via `design/preview/content-shim.js` for tower/world_m1 now - US-027b). In summary:
 - `rows[y]` strings, one char per 1 m cell; x = east, y = south.
 - `legend[char]` = sector `{ floorH, ceilH: number | 'sky', wallMat, floorMat, ceilMat, solid }`.
 - Optional extensions (full list in `tower_layout.md` section 6):
@@ -521,6 +523,7 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
 ---
 
 ## Change log
+- **v1.17 (2026-09-25, US-027b content flip, PC-B)**: `tower`, `test_room` and `world_m1` moved from `design/levels/{tower,test_room,world_m1}.js` (deleted) to `content/levels/tower.level.json`, `content/levels/test_room.level.json` and `content/worlds/world_m1.world.json` - converted once, byte-for-byte, by `tools/export-content.mjs` (every id kept verbatim). Edit them as JSON from now on (see section 3 above); `overworld_far` is unaffected (a terrain recipe, still code). No content VALUES changed, only where they live.
 - **v1.16 (2026-09-25, US-026a waystone + US-038b settings style)**:
   - New `models/voxel_world.js` (section 7.2): `waystone` voxel model, 4 materials, `ASSETS.models.waystone`, `ASSETS.worldPatch.world_m1` (new format: world-file additions as data, hand-copied by the content story).
   - `palette.js`: colours `wayStoneLight`, `wayStone`, `wayStoneDark`, `lichen`; materials `waystone_light`, `waystone`, `waystone_dark`, `waystone_mark` appended after `canvas_burnt`. `detail-pass.js`: the same 4 v2 records + remap, glyph set `rune`. No existing value or id changed.

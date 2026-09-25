@@ -81,9 +81,11 @@
 <canvas id="ferrum"></canvas>
 
 <script src="../palette.js"></script>
-<script src="../levels/tower.js"></script>
+<!-- US-027b: tower/world_m1 moved to content/*.json - content-shim.js
+     reshapes them back onto window.ASSETS the same way the deleted
+     design/levels/{tower,world_m1}.js classic scripts used to. -->
+<script src="content-shim.js"></script>
 <script src="../levels/overworld_far.js"></script>
-<script src="../levels/world_m1.js"></script>
 <script src="../models/far_tower.js"></script>
 <script src="../models/ferrum_lights.js"></script>
 <script src="../models/wreckage.js"></script>

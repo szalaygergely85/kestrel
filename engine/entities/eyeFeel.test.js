@@ -15,7 +15,8 @@ import { loadLevel } from '../world/Level.js';
 import { Player } from './Player.js';
 import { createEyeFeel, updateEyeFeel } from './EyeFeel.js';
 import { PHYSICS } from '../physics/config.js';
-import testRoomDef from '../../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -34,7 +35,8 @@ function approxEqual(a, b, eps = 1e-3) {
   return Math.abs(a - b) <= eps;
 }
 
-const testRoom = loadLevel(testRoomDef);
+const { bundle } = await loadTestAssets();
+const testRoom = loadLevel(bundle.levels.test_room);
 const dt = PHYSICS.fixedDt;
 
 // A fresh "not moving, grounded, nothing happened this step" body - tests

@@ -1,0 +1,11 @@
+{
+  "kind": "manifest",
+  "schema": 1,
+  "id": "kestrel",
+  "contentVersion": 1,
+  "files": [
+    "worlds/world_m1.world.json",
+    "levels/tower.level.json",
+    "levels/test_room.level.json"
+  ]
+}

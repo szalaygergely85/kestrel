@@ -4,7 +4,8 @@
 // checks the pack-time asserts fire on an oversized synthetic set.
 // Run: node engine/render/gpu/ShadeTextures.test.js
 import { bindShading, bindLevel } from '../MaterialTable.js';
-import testRoomDef from '../../../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import paletteModule from '../../../design/palette.js';
 import detailPassModule from '../../../design/detail-pass.js';
 import { loadLevel } from '../../world/Level.js';
@@ -15,6 +16,8 @@ import {
 
 const palette = paletteModule.default || paletteModule;
 const detailPass = detailPassModule.default || detailPassModule;
+const { bundle } = await loadTestAssets();
+const testRoomDef = bundle.levels.test_room;
 
 let pass = 0, fail = 0;
 const failures = [];

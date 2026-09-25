@@ -31,12 +31,15 @@ import { bindShading, bindLevel } from '../engine/render/MaterialTable.js';
 import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.js';
 import { edgePass } from '../engine/render/edgePass.js';
 import { ambientL } from '../engine/render/sectorCaster.js';
-import testRoomDef from '../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from './testing/content-node.mjs';
 import paletteModule from '../design/palette.js';
 import detailPassModule from '../design/detail-pass.js';
 
 const palette = paletteModule.default || paletteModule;
 const detailPass = detailPassModule.default || detailPassModule;
+const { bundle } = await loadTestAssets();
+const testRoomDef = bundle.levels.test_room;
 
 const KIND_NAMES = ['sky', 'wall', 'step', 'upper', 'floor', 'top', 'ceil'];
 const RULE_NAMES = ['none', 'cap', 'lip', 'side', 'convex', 'concave', 'seamFloor', 'seamCeil', 'nosing'];

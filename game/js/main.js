@@ -21,6 +21,7 @@ import {
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
+  loadContentPack,
 } from '../../engine/index.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -88,7 +89,13 @@ let rays = Number.isFinite(rayParam) && rayParam >= 1 && rayParam <= 4 ? Math.ro
 if (isDdaCompare) rays = 1;
 
 const canvas = document.getElementById('screen');
-const assets = AssetRegistry.fromGlobals(window.ASSETS);
+// US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
+// content/*.json, loaded through the US-027a loader; `window.ASSETS` still
+// carries palette/models/detailPass/uiStyle and the overworld_far terrain
+// recipe (still a classic script - see game/index.html), passed as
+// `codeParts` so `fromJSON` can overlay the JSON levels/worlds on top.
+const bundle = await loadContentPack('../content/manifest.json');
+const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 
 // US-045 (D-017 item 2): no playable CPU fallback any more. `?gpu=0` and
 // `?force2d=1` are dev/debug switches (D-017 item 3/4) and stay unaffected -

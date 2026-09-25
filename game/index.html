@@ -100,17 +100,12 @@
        (world_m1.js's `farTower` entity + `horizon[]` entry reference these). -->
   <script src="../design/models/far_tower.js"></script>
   <script src="../design/models/ferrum_lights.js"></script>
-  <!-- US-024: test_room moved from game/js/world/levels/test_room.js into
-       the content pack (design/), loaded the same way as palette.js above -
-       AssetRegistry.fromGlobals (js/main.js) reads window.ASSETS.levels.* -->
-  <script src="../design/levels/test_room.js"></script>
-  <!-- US-025: the tower level, its terrain recipe, and the world definition
-       that places one inside the other (D-007) - same classic-script
-       loading as above. AssetRegistry.fromGlobals splits levels vs. terrain
-       recipes by shape (has util.heightAt) and reads window.ASSETS.worlds.*. -->
-  <script src="../design/levels/tower.js"></script>
+  <!-- US-025: overworld_far is a terrain RECIPE (code, generative), not
+       content - stays a classic script (D-007). test_room/tower/world_m1
+       moved to content/*.json by US-027b (architecture.md 21.9) - js/main.js
+       now loads them via loadContentPack + AssetRegistry.fromJSON instead of
+       a classic <script> tag; see design/README.md. -->
   <script src="../design/levels/overworld_far.js"></script>
-  <script src="../design/levels/world_m1.js"></script>
 
   <script type="module" src="js/main.js"></script>
 </body>

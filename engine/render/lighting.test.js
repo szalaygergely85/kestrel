@@ -10,13 +10,15 @@ import { attachedLightPos } from '../entities/attach.js';
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
 import paletteMod from '../../design/palette.js';
-import testRoomDef from '../../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 // US-041a (15.3 item 3): face-7 (FACE_PACKED) decode test fixtures.
 import { KIND_MODEL, FACE_PACKED } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; testRoomDef;
+paletteMod;
+await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];

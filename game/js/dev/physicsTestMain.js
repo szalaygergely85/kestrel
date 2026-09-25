@@ -18,12 +18,14 @@
 // has no separate "pressed" concept - a plain key Set already only reports
 // "down", which is exactly the HELD level `Player.update` expects.
 //
-// test_room comes off `window.ASSETS` - physics-test.html loads
-// design/levels/test_room.js as a classic script before this module.
+// test_room is content/levels/test_room.level.json (US-027b) - this module
+// loads it itself via loadContentPack (top-level await), instead of
+// physics-test.html loading design/levels/test_room.js as a classic script.
 
-import { loadLevel, Player, PHYSICS } from '../../../engine/index.js';
+import { loadLevel, Player, PHYSICS, loadContentPack } from '../../../engine/index.js';
 
-const testRoom = window.ASSETS.levels.test_room;
+const bundle = await loadContentPack('../content/manifest.json');
+const testRoom = bundle.levels.test_room;
 
 const CELL_PX = 26;
 const TURN_RATE_DEG = 120; // deg/s, matches US-005's arrow-key fallback rate

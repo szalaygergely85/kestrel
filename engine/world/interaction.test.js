@@ -10,12 +10,13 @@
 // `world.state`/`components.light` round-tripping is `serialize.js`'s job,
 // not this story's.
 import { findInteractTarget, updateInteraction, hasLineOfSight } from './interaction.js';
-import { World, AssetRegistry, serialize, deserialize } from '../index.js';
+import { World, serialize, deserialize } from '../index.js';
 import paletteMod from '../../design/palette.js';
-import testRoomMod from '../../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
-paletteMod; testRoomMod; // classic scripts: side effects on globalThis.ASSETS
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+paletteMod; // classic script: side effect on globalThis.ASSETS
+const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];

@@ -10,10 +10,9 @@
 // needed" - this file spawns the entity itself, since the generic
 // prop-to-entity spawn is US-011's, not yet built).
 import {
-  World, AssetRegistry, stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS,
+  World, stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS,
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
-import towerMod from '../../../design/levels/tower.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any
 // props[].model that isn't registered - every tower prop model must
 // load, same reasoning as game/index.html's script tags.
@@ -23,12 +22,11 @@ import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
-import testRoomMod from '../../../design/levels/test_room.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
-import worldMod from '../../../design/levels/world_m1.js';
+import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 
-paletteMod; towerMod; testRoomMod; terrainMod; worldMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
+const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
 const failures = [];

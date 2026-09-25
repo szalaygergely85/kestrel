@@ -2,13 +2,12 @@
 // Run: node engine/world/packed.test.js
 import { loadLevel } from './Level.js';
 import { packLevel, SKY_H } from './packed.js';
-import towerDef from '../../design/levels/tower.js';
-import testRoomDef from '../../design/levels/test_room.js';
+// US-027b: tower/test_room moved to content/levels/*.level.json.
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
-globalThis.window = globalThis.window || globalThis;
-towerDef; testRoomDef;
-const towerRawDef = globalThis.ASSETS.levels.tower;
-const testRoomRawDef = globalThis.ASSETS.levels.test_room;
+const { globals } = await loadTestAssets();
+const towerRawDef = globals.levels.tower;
+const testRoomRawDef = globals.levels.test_room;
 
 let pass = 0, fail = 0;
 const failures = [];

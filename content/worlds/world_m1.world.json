@@ -1,0 +1,35 @@
+{
+  "kind": "world",
+  "schema": 1,
+  "id": "world_m1",
+  "nextId": 1,
+  "name": "world_m1",
+  "version": 1,
+  "title": "The Emberlands - Milestone 1",
+  "terrain": "overworld_far",
+  "time": "morning",
+  "structures": [
+    {"id": "tower", "level": "tower", "note": "level (0,0) -> world (1480, 1018); footprint 24 x 14 m = world x 1480..1504, y 1018..1032; matches overworld_far.structures[0]", "origin": {"x": 1480, "y": 1018, "z": 0}, "yawSteps": 0}
+  ],
+  "entities": [
+    {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
+    {"id": "farTower", "detailRows": 12, "fogMax": 0.4, "fogModel": "far", "minCells": {"h": 4, "w": 3}, "model": "farTower", "note": "the signal tower; matches overworld_far.farTower (azimuth 255 from the breach, 15 deg left of centre, top ~1.9 deg above the horizon)", "sizeM": {"h": 42, "w": 14}, "type": "billboard", "unlit": true, "x": 713.8, "y": 1232.1, "z": -8}
+  ],
+  "horizon": [
+    {"id": "ferrumLights", "angular": {"hDeg": 2.2, "wDeg": 13.2}, "bearingDeg": 87.6, "distanceM": 9000, "drawOver": "sky", "elevDeg": 1, "fog": 0.55, "fogColor": "fogFar", "model": "ferrumLights", "note": "bearing = compass deg of the band centre, elevDeg = its bottom edge above the horizon (eye-independent: at infinity). Cells: az = cam yaw + atan((col + 0.5 - cols/2) / focalCols), el = atan((horizonRow - row - 0.5) / planeDistY); sample the model by angle fraction (nearest), tier by projected rows (hDeg * rows/deg / size.h < 0.75 -> lods.half). M1 only: the band base floats 1.0 deg up, hidden behind the east wall from every M1 viewpoint; M2 (outside) adds a hill row or elevDeg 0", "type": "horizon", "unlit": true}
+  ],
+  "state": {
+    "tower.lantern.taken": false,
+    "tower.lever.pulled": false,
+    "tower.beacon.lit": false,
+    "hints.shown": [],
+    "hints.done": [],
+    "hints.walkT": 0,
+    "hints.chartT": -1,
+    "quest.endT": -1,
+    "quest.wakeT": 0,
+    "ui.mapCard.shown": false,
+    "ui.mapCard.dismissed": false,
+    "ui.mapCard.opened": false
+  }
+}

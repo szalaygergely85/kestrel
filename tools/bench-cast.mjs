@@ -58,10 +58,14 @@ import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.
 import { edgePass } from '../engine/render/edgePass.js';
 import { World } from '../engine/world/World.js';
 import { buildLightSet, lightSurfaces, makeLightBuffer } from '../engine/render/lighting.js';
-import testRoomDef from '../design/levels/test_room.js';
+// US-027b: test_room moved to content/levels/test_room.level.json.
+import { loadTestAssets } from './testing/content-node.mjs';
 import paletteModule from '../design/palette.js';
 import detailPassModule from '../design/detail-pass.js';
 import { POSES as SHARED_POSES, EYE_H as SHARED_EYE_H } from './bench-poses.js';
+
+const { bundle } = await loadTestAssets();
+const testRoomDef = bundle.levels.test_room;
 
 const palette = paletteModule.default || paletteModule;
 const detailPass = detailPassModule.default || detailPassModule;

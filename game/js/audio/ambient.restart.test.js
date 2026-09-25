@@ -16,16 +16,17 @@
 //      AudioContext that tracks exactly which nodes are still "live"
 //      (created but not yet stopped+disconnected), driving the REAL
 //      build/teardown code in ambient.js (not a re-implementation).
-import { World, AssetRegistry } from '../../../engine/index.js';
+import { World } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
-import towerMod from '../../../design/levels/tower.js';
 import lanternMod from '../../../design/models/lantern.js';
 import leverMod from '../../../design/models/lever.js';
 import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
-paletteMod; towerMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
+// US-027b: tower moved to content/levels/tower.level.json.
+import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
+paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
 
 import {
   resetAmbientAudio, __test_build, __test_teardown, __test_liveNodeCount, __test_resolvePositions,
@@ -44,7 +45,7 @@ function ok(name, cond, detail) {
 //    world), so the resolved world-space positions must equal the raw
 //    design/levels/tower.js values exactly.
 // ---------------------------------------------------------------------------
-const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+const { assets } = await loadTestAssets();
 const towerDef = assets.level('tower');
 const world = World.load({
   name: 'adhoc_ambient_test', terrain: null,

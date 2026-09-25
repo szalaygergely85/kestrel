@@ -83,7 +83,10 @@
 
 <script src="../palette.js"></script>
 <script src="../detail-pass.js"></script>
-<script src="../levels/tower.js"></script>
+<!-- US-027b: tower moved to content/levels/tower.level.json - content-shim.js
+     reshapes it back onto window.ASSETS the same way the deleted
+     design/levels/tower.js classic script used to. -->
+<script src="content-shim.js"></script>
 <script src="../models/boulder.js"></script>
 <script src="../models/rubble.js"></script>
 <script src="../models/wreckage.js"></script>
