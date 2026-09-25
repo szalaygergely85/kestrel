@@ -116,6 +116,9 @@ export class RenderTargetGL {
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
       this._contextLost = true;
+      // OWN-REQ-003 arch review: handles from the lost context are dead -
+      // drop them so the restore path recreates (not re-binds) them.
+      this._uiFgTex = null; this._uiBgTex = null; this._uiAtlasTex = null;
     });
     canvas.addEventListener('webglcontextrestored', () => {
       this._contextLost = false;

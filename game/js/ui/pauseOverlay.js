@@ -39,9 +39,11 @@ export function drawPauseOverlay(ui, rt, assets) {
   // however much bigger/smaller the scene grid is than the UI grid.
   const sx = ui.sx, sy = ui.sy;
   const r0 = Math.max(0, Math.floor((row - pad) * sy));
-  const r1 = Math.min(rt.rows - 1, Math.ceil((row + pad) * sy));
+  // Inclusive last scene row/col covered by the last UI cell (arch review:
+  // `ceil(end*s)` was one scene row/col short at non-integer 240/320 ratios).
+  const r1 = Math.min(rt.rows - 1, Math.ceil((row + pad + 1) * sy) - 1);
   const c0 = Math.max(0, Math.floor((startCol - pad) * sx));
-  const c1 = Math.min(rt.cols - 1, Math.ceil((startCol + text.length - 1 + pad) * sx));
+  const c1 = Math.min(rt.cols - 1, Math.ceil((startCol + text.length + pad) * sx) - 1);
 
   const cb = rt.cells;
   for (let y = r0; y <= r1; y++) {
