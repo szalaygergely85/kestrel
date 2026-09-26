@@ -28,6 +28,11 @@ import {
   classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS,
 } from './panel.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty } from './io.js';
+import { getModelThumbnail } from './thumbnails.js';
+import {
+  createVisibilityState, isHidden, isLocked, setHiddenFlag, setLockedFlag,
+  setEntityComponentsHidden, setLightHiddenLive, pickSelectionOrNull,
+} from './visibility.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -69,6 +74,13 @@ const keysPanelEl = document.getElementById('keys-panel');
 const modelPickerEl = document.getElementById('model-picker');
 const modelPickerSearchEl = document.getElementById('model-picker-search');
 const modelPickerListEl = document.getElementById('model-picker-list');
+// US-067: Assets tab (model library) + the armed-model ribbon chip.
+const leftDockTabsEl = document.getElementById('left-dock-tabs');
+const treePanelEl = document.getElementById('tree-panel');
+const assetsPanelEl = document.getElementById('assets-panel');
+const assetsSearchInput = document.getElementById('assets-search-input');
+const assetsListEl = document.getElementById('assets-list');
+const armedModelChipEl = document.getElementById('armed-model-chip');
 
 // ---- US-066: dock/drawer collapse state (design/editor-ui.md 2: "docks +
 // drawer collapsible, state remembered (localStorage in try/catch)"). Purely
@@ -115,6 +127,18 @@ drawerTabs.forEach((tab) => {
     const isLog = tab.dataset.tab === 'log';
     statusEl.classList.toggle('active', isLog);
     keysPanelEl.classList.toggle('active', !isLog);
+  });
+});
+
+// ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
+leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    leftDockTabsEl.querySelectorAll('.dock-tab').forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+    const isTree = tab.dataset.dockTab === 'tree';
+    treePanelEl.classList.toggle('active', isTree);
+    assetsPanelEl.classList.toggle('active', !isTree);
+    if (!isTree) renderAssetsList(assetsSearchInput.value);
   });
 });
 
@@ -229,6 +253,15 @@ let markersOn = true;
 let helpOn = false; // US-063: `H` toggles the in-viewport key-help overlay (drawHelpOverlay below)
 let lastPickText = '';
 let placeMode = null; // 'prop'|'light'|'trigger'|'interactable'|null (US-033, 24.9)
+// US-067: the model key armed via the Assets tab's thumbnail list (a prop
+// placement pre-picked, skipping the US-063 model-picker modal) - null while
+// `placeMode === 'prop'` was armed the old way (a key / the ribbon's Prop
+// button), in which case the modal still opens as before.
+let armedModelKey = null;
+// US-067: scene-tree hide/lock overlay - in-memory only (visibility.js's own
+// header note: never part of `doc`, never persisted, a fresh session starts
+// with nothing hidden/locked).
+const visState = createVisibilityState();
 // US-066: ribbon tool mode - 'move' matches the editor's pre-existing
 // re-click-drag-to-move behaviour exactly (the default, so nothing changes
 // unless the owner picks a different ribbon button); 'select' disables the
@@ -276,7 +309,26 @@ function updatePlaceToolbar() {
  * refuse/cancel/place-committed path clearing it back to null. */
 function setPlaceMode(k) {
   placeMode = k;
+  if (k !== 'prop') armedModelKey = null; // US-067: an armed Assets-tab model only ever applies to prop placement
   updatePlaceToolbar();
+  updateArmedModelChip();
+}
+
+/** US-067: arms placement of `key` (an Assets-tab thumbnail click) - the next viewport click places it via the SAME `placeAt` path the US-063 model-picker modal uses, with no modal step. */
+function armModelPlacement(key) {
+  armedModelKey = key;
+  setPlaceMode('prop');
+  flash(`place: prop "${key}" (click viewport to place, Esc to cancel)`);
+}
+
+/** US-067 AC: "the ribbon shows the currently-armed model name". */
+function updateArmedModelChip() {
+  if (placeMode === 'prop' && armedModelKey) {
+    armedModelChipEl.textContent = `model: ${armedModelKey}`;
+    armedModelChipEl.style.display = '';
+  } else {
+    armedModelChipEl.style.display = 'none';
+  }
 }
 placeToolbarEl.querySelectorAll('.place-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -299,6 +351,60 @@ function structureForFile(fileId) {
 function originForFile(fileId) {
   const s = structureForFile(fileId);
   return s ? s.origin : { x: 0, y: 0, z: 0 };
+}
+
+// ---- US-067: scene-tree hide/lock - live application ------------------------
+// `visState` (visibility.js) is the source of truth for WHICH items are
+// hidden/locked; these two functions push that onto the live `world`/
+// `frame.lightSet` (never onto `doc` - see visibility.js's own header note).
+// Locked has no live state to push (it is only ever checked at pick/drag
+// time, in the canvas mousedown handler below) - only hidden does.
+
+/** Applies (or clears) one item's live hidden state - a prop/world-entity's components are stashed/restored (visibility.js), a light's glow is toggled via its live `LightSet` handle (US-069's `setOn`). No-ops quietly when the live entity/light isn't found (e.g. right after a rebuild, before this is reapplied - see `reapplyVisibility`). */
+function applyHiddenForItem(item, hidden) {
+  if (item.collection === 'lights') {
+    const s = structureForFile(item.fileId);
+    const ls = frame.lightSet;
+    if (!s || !ls) return;
+    const handle = findLightHandle(ls, `${s.id}.${item.id}`);
+    if (handle === -1) return;
+    const data = selectionItemData(doc, item);
+    setLightHiddenLive(ls, handle, hidden, data ? data.on !== false : true);
+    return;
+  }
+  const entId = selectionEntityId(world, item);
+  if (!entId) return;
+  const data = world.entity(entId);
+  if (data) setEntityComponentsHidden(data, hidden);
+}
+
+/** Toggles one item's hidden flag (an eye-icon click) and applies it live immediately. */
+function toggleItemHidden(item) {
+  const next = !isHidden(visState, item);
+  setHiddenFlag(visState, item, next);
+  applyHiddenForItem(item, next);
+  world.renderVersion++;
+  frame.markDirty();
+  renderOutliner();
+}
+
+/** Toggles one item's locked flag (a lock-icon click) - checked at pick/drag time only, nothing to apply live. */
+function toggleItemLocked(item) {
+  setLockedFlag(visState, item, !isLocked(visState, item));
+  renderOutliner();
+}
+
+/**
+ * Reapplies every currently-hidden item's live state onto a freshly rebuilt
+ * `world`/`frame.lightSet` (US-067 AC: "survives a rebuild - add/delete/undo
+ * elsewhere - within the same editor session"). Called right after
+ * `engine.setWorld(w)` in `rebuild()`, where `frame.lightSet` is already
+ * live (built synchronously off the `world:loaded` event, see frame.js).
+ */
+function reapplyVisibility() {
+  for (const item of visState.hidden.values()) applyHiddenForItem(item, true);
+  world.renderVersion++;
+  frame.markDirty();
 }
 
 /**
@@ -343,6 +449,7 @@ function rebuild() {
   const t0 = performance.now();
   const w = World.load(assets.world(doc.worldId), assets, { events: engine.events });
   engine.setWorld(w);
+  reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
   frame.markDirty();
   renderOutliner();
@@ -612,10 +719,15 @@ function renderOutliner() {
     header.textContent = fileId;
     outlinerEl.appendChild(header);
     items.forEach((o, i) => {
+      const item = { fileId: o.fileId, collection: o.collection, id: o.id };
       const row = document.createElement('div');
       row.className = 'tree-row';
       const isSel = selection && selection.fileId === o.fileId && selection.collection === o.collection && selection.id === o.id;
       if (isSel) row.classList.add('selected');
+      const hidden = isHidden(visState, item);
+      const locked = isLocked(visState, item);
+      if (hidden) row.classList.add('row-hidden');
+      if (locked) row.classList.add('row-locked');
       const branch = document.createElement('span');
       branch.className = 'tree-branch';
       branch.textContent = i === items.length - 1 ? '└─' : '├─';
@@ -628,6 +740,29 @@ function renderOutliner() {
       row.appendChild(branch);
       row.appendChild(glyph);
       row.appendChild(label);
+      // US-067: eye (hidden = not drawn in the 3D viewport) + lock (locked =
+      // skipped by viewport pick and drag) - stopPropagation so the icon
+      // click never also fires the row's own select click below. Hidden/
+      // locked items stay selectable from the tree (this row's own click
+      // handler is untouched) and editable in the inspector (selection is
+      // orthogonal to this overlay).
+      const icons = document.createElement('span');
+      icons.className = 'tree-row-icons';
+      const eyeBtn = document.createElement('button');
+      eyeBtn.type = 'button';
+      eyeBtn.className = `tree-icon-btn${hidden ? ' on' : ''}`;
+      eyeBtn.title = hidden ? 'Shown (click to hide)' : 'Hidden (click to show)';
+      eyeBtn.textContent = hidden ? '◌' : '◉';
+      eyeBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleItemHidden(item); });
+      const lockBtn = document.createElement('button');
+      lockBtn.type = 'button';
+      lockBtn.className = `tree-icon-btn${locked ? ' on' : ''}`;
+      lockBtn.title = locked ? 'Locked (click to unlock)' : 'Unlocked (click to lock)';
+      lockBtn.textContent = locked ? '▣' : '▢';
+      lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleItemLocked(item); });
+      icons.appendChild(eyeBtn);
+      icons.appendChild(lockBtn);
+      row.appendChild(icons);
       row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }));
       row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }); teleportToSelection(); });
       outlinerEl.appendChild(row);
@@ -636,6 +771,58 @@ function renderOutliner() {
 }
 renderOutliner();
 renderProperties();
+
+// ---- US-067: Assets tab (model library) -------------------------------------
+
+/** Builds a `<div class="asset-thumb">` grid of coloured `<span>`s for one `thumbnails.js` result. */
+function buildThumbEl(thumb) {
+  const el = document.createElement('div');
+  el.className = 'asset-thumb';
+  el.style.gridTemplateColumns = `repeat(${thumb.w}, 1ch)`;
+  el.style.gridTemplateRows = `repeat(${thumb.h}, 1.15em)`;
+  for (const cell of thumb.cells) {
+    const span = document.createElement('span');
+    span.textContent = cell.ch;
+    span.style.color = cell.fg || 'transparent';
+    el.appendChild(span);
+  }
+  return el;
+}
+
+function renderAssetsList(query) {
+  assetsListEl.textContent = '';
+  const keys = filterModelKeys(listPlaceableModels(assets), query || '');
+  if (!keys.length) {
+    const empty = document.createElement('div');
+    empty.className = 'asset-empty';
+    empty.textContent = '(no matching models)';
+    assetsListEl.appendChild(empty);
+    return;
+  }
+  for (const key of keys) {
+    const row = document.createElement('div');
+    row.className = 'asset-row';
+    if (armedModelKey === key) row.classList.add('armed');
+    let thumb;
+    try { thumb = getModelThumbnail(assets, key); } catch (e) { thumb = { w: 1, h: 1, cells: [{ ch: '?', fg: null }] }; }
+    row.appendChild(buildThumbEl(thumb));
+    const name = document.createElement('span');
+    name.className = 'asset-name';
+    name.textContent = key;
+    row.appendChild(name);
+    // mousedown (not click): same reasoning as the US-063 model-picker rows -
+    // fires before the search input's blur / the canvas's own mousedown
+    // handlers steal focus for this same event.
+    row.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      armModelPlacement(key);
+      renderAssetsList(assetsSearchInput.value); // refresh the "armed" highlight
+    });
+    assetsListEl.appendChild(row);
+  }
+}
+renderAssetsList('');
+assetsSearchInput.addEventListener('input', () => renderAssetsList(assetsSearchInput.value));
 
 // ---- US-034: save/load/play-test (24.10/24.11) -----------------------------
 
@@ -868,7 +1055,14 @@ canvas.addEventListener('mousedown', (e) => {
     // picks one (see `openModelPicker` below). Other kinds keep no picker
     // (their "default" fields are the whole point - a light/trigger/
     // interactable has no model to choose).
-    if (placeMode === 'prop') { openModelPicker(point); return; }
+    if (placeMode === 'prop') {
+      // US-067: a model already armed via the Assets tab places directly -
+      // same `placeAt` call the model-picker modal's own row click makes,
+      // just with no modal step in between.
+      if (armedModelKey) { const key = armedModelKey; armedModelKey = null; updateArmedModelChip(); placeAt('prop', point, key); return; }
+      openModelPicker(point);
+      return;
+    }
     placeAt(placeMode, point);
     return;
   }
@@ -877,7 +1071,18 @@ canvas.addEventListener('mousedown', (e) => {
   lastPickText = formatPickResult(result);
 
   if (result.kind === 'entity' && result.entityId) {
-    const item = selectionFromEntityId(doc, world, result.entityId);
+    const rawItem = selectionFromEntityId(doc, world, result.entityId);
+    // US-067: "locked = skipped by viewport pick and drag" - a locked entity
+    // is treated exactly as if the click had missed it (falls through to a
+    // marker pick / clears the selection below), same as clicking open sky.
+    // It stays selectable from the scene tree (that path never calls this).
+    const item = pickSelectionOrNull(visState, rawItem);
+    if (!item) {
+      const marker = pickMarkers(col, row, pickCtx());
+      if (marker) { selectItem(marker); return; }
+      selectItem(null);
+      return;
+    }
     const already = selection && selection.fileId === item.fileId && selection.collection === item.collection && selection.id === item.id;
     selectItem(item);
     // US-066 ribbon tool mode: 'move' (the default) reproduces the pre-066
@@ -1141,6 +1346,9 @@ window.__editor = {
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), commitFieldEdit, renameSelected,
   doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
   openModelPicker, closeModelPicker,
+  // US-067
+  visState, toggleItemHidden, toggleItemLocked, armModelPlacement,
+  get armedModelKey() { return armedModelKey; },
 };
 
 if (!gpuBlocked) engine.run({ update, render });

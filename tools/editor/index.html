@@ -137,9 +137,44 @@
     .ed-dock-head button { background: none; border: none; color: var(--ed-fg-dim); cursor: pointer; font: 11px var(--ed-font-mono); }
     .ed-dock-head button:hover { color: var(--ed-fg-hi); }
 
+    /* US-067: left-dock tabs (Scene Tree / Assets) - same visual language as
+       the drawer's Log/Keys tabs below. */
+    #left-dock-tabs { display: flex; gap: 2px; }
+    .dock-tab { background: none; border: none; color: var(--ed-fg-dim); padding: 0; margin-right: 10px; cursor: pointer; font: 600 11px var(--ed-font-head); letter-spacing: -0.02em; text-transform: uppercase; }
+    .dock-tab.active { color: var(--ed-cyan); }
+    .dock-panel { display: none; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+    .dock-panel.active { display: flex; }
+
+    /* US-067: Assets tab list */
+    #assets-list { flex: 1 1 auto; overflow-y: auto; padding: 4px; }
+    .asset-row { display: flex; align-items: center; gap: 6px; padding: 4px; cursor: pointer; border-bottom: 1px solid var(--ed-line); }
+    .asset-row:hover { background: var(--ed-hover); }
+    .asset-row.armed { background: var(--ed-hover); box-shadow: inset 2px 0 0 var(--ed-cyan); }
+    .asset-thumb {
+      display: grid;
+      flex: 0 0 auto;
+      background: var(--ed-void);
+      border: 1px solid var(--ed-line);
+      padding: 1px;
+      line-height: 1.15;
+      font: 10px var(--ed-font-mono);
+      white-space: pre;
+    }
+    .asset-thumb span { display: inline-block; width: 1ch; }
+    .asset-name { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .asset-empty { padding: 8px; color: var(--ed-fg-dim); font-size: 11px; }
+
+    /* US-067: scene-tree row eye/lock icons */
+    .tree-row-icons { margin-left: auto; display: flex; gap: 2px; flex: 0 0 auto; }
+    .tree-icon-btn { background: none; border: none; color: var(--ed-fg-ghost); cursor: pointer; font: 11px var(--ed-font-mono); padding: 0 2px; line-height: 1; }
+    .tree-icon-btn:hover { color: var(--ed-fg-hi); }
+    .tree-icon-btn.on { color: var(--ed-amber); }
+    .tree-row.row-hidden .tree-label { color: var(--ed-fg-dim); font-style: italic; }
+    .tree-row.row-locked .tree-label { color: var(--ed-fg-dim); }
+
     /* scene tree */
-    #tree-search-row { flex: 0 0 auto; padding: 4px; border-bottom: 1px solid var(--ed-line); }
-    #tree-search-input {
+    #tree-search-row, #assets-search-row { flex: 0 0 auto; padding: 4px; border-bottom: 1px solid var(--ed-line); }
+    #tree-search-input, #assets-search-input {
       width: 100%;
       background: var(--ed-void);
       color: var(--ed-fg);
@@ -147,7 +182,7 @@
       padding: 4px;
       font: 11px var(--ed-font-mono);
     }
-    #tree-search-input:focus { outline: 1px solid var(--ed-cyan); outline-offset: -1px; }
+    #tree-search-input:focus, #assets-search-input:focus { outline: 1px solid var(--ed-cyan); outline-offset: -1px; }
     #tree-chips { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; border-bottom: 1px solid var(--ed-line); }
     .tree-chip {
       background: var(--ed-hover);
@@ -359,28 +394,46 @@
       <button type="button" id="save-btn" class="ed-btn">S Save (Ctrl+S)</button>
       <button type="button" id="load-btn" class="ed-btn">L Load...</button>
       <div class="ed-spacer"></div>
+      <!-- US-067: the currently-armed Assets-tab model (see main.js armModelPlacement) - empty while nothing is armed. -->
+      <div id="armed-model-chip" class="chip" style="display:none"></div>
       <div id="io-status" class="chip"></div>
     </div>
 
     <div id="main-row">
-      <!-- LEFT DOCK: scene tree -->
+      <!-- LEFT DOCK: scene tree / assets (US-067 adds the Assets tab) -->
       <div id="left-dock" class="ed-dock">
         <div class="ed-dock-head">
-          <span>Scene Tree</span>
+          <div id="left-dock-tabs">
+            <button type="button" class="dock-tab active" data-dock-tab="tree">Scene Tree</button>
+            <button type="button" class="dock-tab" data-dock-tab="assets">Assets</button>
+          </div>
           <button type="button" id="left-dock-collapse" title="Collapse">-</button>
         </div>
-        <div id="tree-search-row">
-          <input type="text" id="tree-search-input" placeholder="search id..." autocomplete="off" />
+        <div id="tree-panel" class="dock-panel active">
+          <div id="tree-search-row">
+            <input type="text" id="tree-search-input" placeholder="search id..." autocomplete="off" />
+          </div>
+          <div id="tree-chips">
+            <button type="button" class="tree-chip active" data-filter="all">ALL (0)</button>
+            <button type="button" class="tree-chip" data-filter="entities">STRUCT (0)</button>
+            <button type="button" class="tree-chip" data-filter="props">PROPS (0)</button>
+            <button type="button" class="tree-chip" data-filter="lights">LIGHTS (0)</button>
+            <button type="button" class="tree-chip" data-filter="triggers">TRIGGERS (0)</button>
+            <button type="button" class="tree-chip" data-filter="interactables">INTERACT (0)</button>
+          </div>
+          <div id="outliner">(loading...)</div>
         </div>
-        <div id="tree-chips">
-          <button type="button" class="tree-chip active" data-filter="all">ALL (0)</button>
-          <button type="button" class="tree-chip" data-filter="entities">STRUCT (0)</button>
-          <button type="button" class="tree-chip" data-filter="props">PROPS (0)</button>
-          <button type="button" class="tree-chip" data-filter="lights">LIGHTS (0)</button>
-          <button type="button" class="tree-chip" data-filter="triggers">TRIGGERS (0)</button>
-          <button type="button" class="tree-chip" data-filter="interactables">INTERACT (0)</button>
+        <!-- US-067: Assets tab - every placeable model, an ASCII thumbnail
+             (thumbnails.js, <= 16x8 cells, built once and cached) + a search
+             box. Click a thumbnail, then click the viewport, to place it
+             (main.js armModelPlacement -> the SAME placeAt() the US-063
+             model-picker modal uses). -->
+        <div id="assets-panel" class="dock-panel">
+          <div id="assets-search-row">
+            <input type="text" id="assets-search-input" placeholder="search models..." autocomplete="off" />
+          </div>
+          <div id="assets-list">(loading...)</div>
         </div>
-        <div id="outliner">(loading...)</div>
       </div>
 
       <!-- VIEWPORT -->

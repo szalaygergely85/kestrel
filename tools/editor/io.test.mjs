@@ -8,6 +8,7 @@
 import { stringifyContent, migrateContent, ContentError } from '../../engine/index.js';
 import { toFileObject, validateDoc, anyDirty } from './io.js';
 import { fileKey } from './doc.js';
+import { createVisibilityState, setHiddenFlag, setLockedFlag } from './visibility.js';
 
 let pass = 0;
 let fail = 0;
@@ -136,6 +137,29 @@ const codeParts = { palette: {}, models: {}, worlds: {}, levels: {}, uiStyle: nu
 
 // ---- fileKey sanity (used throughout io.js) --------------------------------
 ok("fileKey('level','fixture') -> 'level/fixture'", fileKey('level', 'fixture') === 'level/fixture');
+
+// ---- US-067: hide/lock state NEVER leaks into a save ------------------------
+// The overlay (visibility.js's `createVisibilityState`) lives entirely
+// outside `doc` - toggling it must not change a single byte of what
+// `toFileObject`/`stringifyContent` would write for any file, proving the
+// state really never reaches the JSON (not just "the UI doesn't show it").
+{
+  const docA = fixtureDoc();
+  const props = docA.files.get('level/fixture').def.props;
+  props.push({ id: 'lantern_1', model: 'lantern', x: 1, y: 1, z: 0, facing: 0 });
+  const textsBefore = [...docA.files.values()].map((f) => stringifyContent(toFileObject(f)));
+
+  const docB = fixtureDoc();
+  docB.files.get('level/fixture').def.props.push({ id: 'lantern_1', model: 'lantern', x: 1, y: 1, z: 0, facing: 0 });
+  const visState = createVisibilityState();
+  const propItem = { fileId: 'level/fixture', collection: 'props', id: 'lantern_1' };
+  setHiddenFlag(visState, propItem, true);
+  setLockedFlag(visState, propItem, true);
+  const textsAfter = [...docB.files.values()].map((f) => stringifyContent(toFileObject(f)));
+
+  ok('save output is byte-identical whether or not hide/lock is toggled', JSON.stringify(textsBefore) === JSON.stringify(textsAfter));
+  ok('hidden/locked state does not add any field to the saved prop', !textsAfter.some((t) => t.includes('hidden') || t.includes('locked')), textsAfter.join('\n'));
+}
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {
