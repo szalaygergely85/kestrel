@@ -118,6 +118,30 @@ function goodAssets() {
   };
 }
 
+// A small (3x3) level with a correct non-solid outer ring, for the
+// outer-ring-rule fixtures below (23.9). Every border cell is 'o' (open,
+// solid: false); the single interior cell is '#' (solid: true) - solid
+// interior is fine, only the ring matters.
+function ringLevel() {
+  return {
+    legend: {
+      o: { floorH: 2.4, solid: false },
+      '#': { floorH: 3, solid: true },
+    },
+    rows: ['ooo', 'o#o', 'ooo'],
+  };
+}
+
+function assetsWithRingWorld() {
+  const a = goodAssets();
+  a.levels.keep = ringLevel();
+  a.worlds.terrainWorld = {
+    terrain: 'overworld_far', // truthy -> this world HAS terrain
+    structures: [{ id: 'keepPlaced', level: 'keep', origin: { x: 0, y: 0, z: 0 } }],
+  };
+  return a;
+}
+
 // 1. Clean fixture: zero errors.
 {
   const a = goodAssets();
@@ -222,6 +246,45 @@ function goodAssets() {
   a.uiStyle.endText.lines[0].text = 'x'.repeat(41);
   const { errors } = validateContent(a);
   ok('reports endText line too long', hasFinding(errors, ['endText line is 41 chars']), JSON.stringify(errors));
+}
+
+// 12. Outer-ring rule (23.9): a level placed in a world WITH terrain must
+// have a non-solid outer ring.
+{
+  // Correct ring, placed in a world with terrain: stays quiet.
+  const a = assetsWithRingWorld();
+  const { errors } = validateContent(a);
+  ok('correct outer ring in a terrain world reports no ring findings', !errors.some((e) => e.includes('outer ring')), JSON.stringify(errors));
+}
+{
+  // Deliberately broken: one outer-ring cell (top-left corner) made solid.
+  const a = assetsWithRingWorld();
+  a.levels.keep.legend.o.solid = false; // sanity: still false
+  a.levels.keep.rows = ['#oo', 'o#o', 'ooo']; // (0,0) is now the solid '#' char
+  const { errors } = validateContent(a);
+  ok(
+    'reports the solid outer-ring cell',
+    hasFinding(errors, ['terrainWorld.structures[keepPlaced]', 'rows[0][0]', 'outer ring', 'is solid']),
+    JSON.stringify(errors)
+  );
+}
+{
+  // A level with the same broken ring but never placed in a world with
+  // terrain (no world references it) must NOT be flagged - the rule only
+  // applies to levels actually placed in a terrain world.
+  const a = goodAssets();
+  a.levels.orphan = { legend: { o: { solid: false }, '#': { solid: true } }, rows: ['#oo', 'ooo', 'ooo'] };
+  const { errors } = validateContent(a);
+  ok('unplaced level with a solid ring cell is not flagged', !errors.some((e) => e.includes('outer ring')), JSON.stringify(errors));
+}
+{
+  // Same broken level placed in a world WITHOUT terrain (world.terrain
+  // falsy/absent) - also must not be flagged.
+  const a = assetsWithRingWorld();
+  a.levels.keep.rows = ['#oo', 'o#o', 'ooo'];
+  delete a.worlds.terrainWorld.terrain;
+  const { errors } = validateContent(a);
+  ok('solid ring cell in a world without terrain is not flagged', !errors.some((e) => e.includes('outer ring')), JSON.stringify(errors));
 }
 
 // 11. Sanity: a terrain recipe (has util.heightAt) is never treated as a level.

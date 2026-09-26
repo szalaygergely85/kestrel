@@ -396,6 +396,44 @@ export function validateContent(ASSETS) {
     check(Object.prototype.hasOwnProperty.call(paletteMaterials, fallback[key]), `voxelMaterials.fallback.${key}`, `fallback target "${fallback[key]}" not found in palette.js materials`);
   }
 
+  // ---- 5. Outer-ring rule (docs/architecture.md 23.9, BUG-OWN-008) ----
+  // A level placed (via world.structures[]) in a world that HAS terrain
+  // (world.terrain truthy) must have a non-solid outer ring: from outside
+  // the footprint the caster uses the ring's floorH as the ground reference
+  // (23.9 fix item 1, "Ring rule"); a solid ring cell there draws the wall
+  // face down to level height 0 (CPU) or one cell deep (GPU) instead of
+  // blending to terrain - see 23.9 "Known limits (b)". A level never placed
+  // in a world with terrain (e.g. test_room today) is unaffected.
+  for (const worldKey of Object.keys(worlds)) {
+    const world = worlds[worldKey];
+    if (!world || typeof world !== 'object' || !world.terrain) continue;
+    const base = `worlds.${worldKey}`;
+    for (const structure of world.structures || []) {
+      const level = levels[structure.level];
+      // A dangling structure.level id is not this check's job (no such
+      // cross-ref check exists yet either way); just skip what can't be read.
+      if (!level || !Array.isArray(level.rows) || !level.legend) continue;
+      const rows = level.rows;
+      const h = rows.length;
+      const w = h > 0 ? rows[0].length : 0;
+      const path = `${base}.structures[${structure.id}].level(${structure.level})`;
+      for (let y = 0; y < h; y++) {
+        const row = rows[y] || '';
+        const onRing = y === 0 || y === h - 1;
+        for (let x = 0; x < w; x++) {
+          if (!onRing && x !== 0 && x !== w - 1) continue; // interior cell
+          const ch = row[x];
+          const entry = level.legend[ch];
+          check(
+            !(entry && entry.solid),
+            `${path}.rows[${y}][${x}]`,
+            `outer ring cell '${ch}' is solid; a level in a world with terrain needs a non-solid outer ring (ground reference for the outside-footprint caster, architecture.md 23.9)`
+          );
+        }
+      }
+    }
+  }
+
   // ---- 4. UI text: ASCII 32-126, endText lines <= 40 chars ----
   for (const { path, text, isEndTextLine } of collectUiTexts(uiStyle)) {
     check(isAscii(text), path, `not ASCII 32-126: ${JSON.stringify(text)}`);
