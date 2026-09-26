@@ -411,7 +411,7 @@ TerrainOut shadeTerrain(float t, int type, float b, float u, float v, float time
   }
 
   // 23.4 close-band features (wildflower/pebble): up to MAX_FEATURES_PER_TYPE
-  // slots packed into TLOOK texels 8-11 (TerrainTextures.js's own doc
+  // slots packed into TLOOK texels 8-15 (TerrainTextures.js's own doc
   // comment has the exact layout) - fi (texel .w of the "A" slot) is the
   // feature's index in the FLAT list the JS oracle hashes with the SAME salt
   // (20+fi), so the dice never drift between the two paths. First slot (by

@@ -74,6 +74,19 @@ const VOID_SECTOR = {
   // strays outside the level grid still has valid G-buffer material ids.
   wallMatId: 0, floorMatId: 0, ceilMatId: 0, upperMatId: 0,
 };
+// BUG-OWN-008 (architecture.md 23.9): the "near sector" of the segment
+// between a camera OUTSIDE this level's footprint and the footprint edge.
+// Like VOID_SECTOR (no floor/ceiling plane of its own) but its `floorH` is
+// the ENTRY cell's floor (the level's outer ring, which the terrain recipe
+// blends the ground to - `makeRingHAt`), so the first transition at the
+// footprint edge draws no phantom step from height 0 up to the ring, and
+// rows whose ray is already below the ring at the edge are left to the
+// terrain pass. Mutable scratch (floorH set per column), never allocated.
+const OUTSIDE_SECTOR = {
+  floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'stone',
+  wallMatId: 0, floorMatId: 0, ceilMatId: 0, upperMatId: 0,
+};
+function isVoid(sector) { return sector === VOID_SECTOR || sector === OUTSIDE_SECTOR; }
 // Cheap (4 Map.get's), done once per `castScene` call when a G-buffer path
 // is active - NOT per row/sample. `VOID_SECTOR` is a shared singleton, so
 // this only needs to track "was it bound to THIS session's table" once.
@@ -83,6 +96,7 @@ function bindVoidSectorIds(matTable) {
   VOID_SECTOR.wallMatId = matTable.idFor(VOID_SECTOR.wallMat);
   VOID_SECTOR.floorMatId = matTable.idFor(VOID_SECTOR.floorMat);
   VOID_SECTOR.upperMatId = matTable.idFor(VOID_SECTOR.upperMat);
+  OUTSIDE_SECTOR.wallMatId = VOID_SECTOR.wallMatId; OUTSIDE_SECTOR.floorMatId = VOID_SECTOR.floorMatId; OUTSIDE_SECTOR.upperMatId = VOID_SECTOR.upperMatId;
   voidBoundTable = matTable;
 }
 
@@ -369,7 +383,7 @@ export function castScene(rt, level, camera, palette, opts = {}) {
     // inputs computed ONCE per DDA hit (not per row) - see `primeWallGSample`.
     _wFace: 0, _wPlaneId: 0, _wFr: 0, _wNbrA: null, _wNbrB: null,
     // US-030a footprintEntry fix: entry point scratch (see footprintEntry).
-    _entryX: 0, _entryY: 0,
+    _entryX: 0, _entryY: 0, _entryT: 0, _outside: false,
     // castFloorCeiling outputs (BUG-GPU-003: + the ceiling plane's own rows).
     _fcCeilingFilledTo: 0, _fcFloorFilledTo: 0, _fcSkyPending: false, _fcCeilR0: 0, _fcCeilR1: -1,
   };
@@ -454,6 +468,7 @@ function startRay(ctx, rayDirX, rayDirY, startX, startY) {
 function footprintEntry(ctx, level, rayDirX, rayDirY) {
   const { posX, posY } = ctx;
   const w = level.width, h = level.height;
+  ctx._outside = false; ctx._entryT = 0;
   if (posX >= 0 && posX < w && posY >= 0 && posY < h) { ctx._entryX = posX; ctx._entryY = posY; return true; }
 
   let tMin = -Infinity, tMax = Infinity;
@@ -473,9 +488,17 @@ function footprintEntry(ctx, level, rayDirX, rayDirY) {
   }
   if (tMax < tMin || tMax < 0) return false;
 
-  const t = Math.max(tMin, 0) + 1e-4; // nudge past the boundary, into the first cell
+  // BUG-OWN-008: start the walk a hair BEFORE the footprint edge (not
+  // inside the entry cell), so the edge crossing is the first DDA
+  // transition: the entry cell's own floor is cast from the edge inward and
+  // a solid entry cell's outer face is drawn at the edge (the old inside-
+  // nudge skipped the entry cell entirely - its face landed one cell deep).
+  const tIn = Math.max(tMin, 0);
+  const t = tIn - 1e-4;
   ctx._entryX = posX + rayDirX * t;
   ctx._entryY = posY + rayDirY * t;
+  ctx._entryT = tIn;
+  ctx._outside = true;
   return true;
 }
 
@@ -566,7 +589,24 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
   // else covers that range for the ceiling).
   let prevFloorDist = 0;
   let prevCeilDist = 0;
-  let nearSector = level.sectorAt(posX, posY) || VOID_SECTOR;
+  // BUG-OWN-008 (architecture.md 23.9): camera outside the footprint. The
+  // segment up to the edge has no floor of its own (OUTSIDE_SECTOR), but its
+  // reference height is the ENTRY cell's floor (the outer ring the terrain
+  // blends to), not 0 - and every row whose ray is already below that
+  // height AT the edge belongs to the terrain pass: this structure must not
+  // claim it (the ground in front of the tower occludes it). `handoffBottom`
+  // keeps the caller's full span for `resolveColumn`, so those rows are
+  // reported open (terrain/sky) even though this walk never touches them.
+  const handoffBottom = openBottom;
+  let nearSector;
+  if (ctx._outside) {
+    const ec = level.sectorAt(ctx._entryX + rayDirX * 2e-4, ctx._entryY + rayDirY * 2e-4);
+    OUTSIDE_SECTOR.floorH = ec && !ec.solid ? ec.floorH : 0;
+    nearSector = OUTSIDE_SECTOR;
+    openBottom = Math.min(openBottom, Math.floor(rowAtHeight(ctx, OUTSIDE_SECTOR.floorH, ctx._entryT)));
+  } else {
+    nearSector = level.sectorAt(posX, posY) || VOID_SECTOR;
+  }
   // BUG-GPU-003: the contiguous run of rows the most recent ceiling PLANE
   // draws (GK_CEIL, not sky) have claimed in this column, [ceilRunR0,
   // ceilRunR1] (empty when r1 < r0). Ceiling rows are only tracked by
@@ -608,7 +648,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
       // Left the level grid: this is a job for the terrain pass (D-008 item
       // 2), not this one - leave the remaining span unresolved unless the
       // caller asked for the old stand-alone sky fallback.
-      resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, perpDist, floorFilledTo, skyPending, ceilingFilledTo);
+      resolveColumn(rt, level, ctx, x, openTop <= openBottom ? openTop : openBottom + 1, handoffBottom, azimuthDeg, perpDist, floorFilledTo, skyPending, ceilingFilledTo);
       return;
     }
 
@@ -780,7 +820,7 @@ function castColumn(rt, level, ctx, x, rayDirX, rayDirY) {
   // Ran out of step budget / max distance without closing the span or
   // leaving the grid (an unusually large open room) - same "hand off
   // whatever's left" treatment as leaving the grid (D-008 item 2).
-  resolveColumn(rt, level, ctx, x, openTop, openBottom, azimuthDeg, prevFloorDist, floorFilledTo, skyPending, ceilingFilledTo);
+  resolveColumn(rt, level, ctx, x, openTop <= openBottom ? openTop : openBottom + 1, handoffBottom, azimuthDeg, prevFloorDist, floorFilledTo, skyPending, ceilingFilledTo);
 }
 
 // Finishes a column: pays off any deferred sky fill (US-004b overdraw fix,
@@ -877,7 +917,7 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
   // floor-side counterpart, only reachable now that a column can legitimately
   // start with `sector` == VOID_SECTOR (camera outside the footprint).
   ctx._fcCeilR0 = 0; ctx._fcCeilR1 = -1; // BUG-GPU-003: this call's ceiling-plane rows (none yet)
-  if (sector !== VOID_SECTOR && openTop <= openBottom && dFar > dNearFloor) {
+  if (!isVoid(sector) && openTop <= openBottom && dFar > dNearFloor) {
     castPlane(rt, x, ctx, sector.floorMat, sector.floorMatId, sector.floorH, dNearFloor, dFar, openTop, openBottom, sector.floorH,
       sector.solid ? GK_TOP : GK_FLOOR);
     if (ctx._planeR1 >= ctx._planeR0) floorFilledTo = Math.min(floorFilledTo, ctx._planeR0);
@@ -890,7 +930,7 @@ function castFloorCeiling(rt, x, ctx, sector, farSector, dNearFloor, dNearCeil, 
         // US-004b ARCH CHANGES item 1 (skylight far-ceiling bug): the sky
         // band must be bounded by whatever's on the far side of THIS
         // segment, not left open until something eventually stops it.
-        if (sector === VOID_SECTOR) {
+        if (isVoid(sector)) {
           // (d) the ray left the grid (or started outside any sector) -
           // request nothing at all, and don't touch `skyPending` either.
           // These rows stay open: `resolveColumn` fills them with sky when

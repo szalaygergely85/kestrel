@@ -179,6 +179,18 @@ void main() {
     int mapX = int(floor(ex)), mapY = int(floor(ey));
     mapX = clamp(mapX, 0, w - 1); mapY = clamp(mapY, 0, h - 1);
 
+    // BUG-OWN-008 (architecture.md 23.9, twin of castColumn's OUTSIDE_SECTOR
+    // clamp): camera outside the footprint (t0 > 0) and the ray is already
+    // BELOW the entry cell's floor (the outer ring the terrain blends to) at
+    // the footprint edge -> the ground in front occludes whatever this
+    // structure would find under its ring; this structure claims nothing,
+    // the terrain pass owns the sub-ray. A solid entry cell has no ring
+    // height to compare against (ring convention: outer ring non-solid).
+    if (t0 > 0.0) {
+      Cell E = fetchCell(yOff, w, mapX, mapY);
+      if (!E.solid && leyeH + slope * t0 < E.floorH) continue;
+    }
+
     float deltaDistX = rayDirX == 0.0 ? 1.0e30 : abs(1.0 / rayDirX);
     float deltaDistY = rayDirY == 0.0 ? 1.0e30 : abs(1.0 / rayDirY);
     int stepX = rayDirX < 0.0 ? -1 : 1;
