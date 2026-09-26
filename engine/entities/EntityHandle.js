@@ -7,6 +7,7 @@
 // `play`/`stop`/`onAnimEnd` (US-011, docs/architecture.md 10.1) sit on top
 // of `animation.js`'s clip compiler/player.
 import { compileClip, compileVoxelClip, warnUnknownAnimOnce } from './animation.js';
+import { yawFromDelta } from '../core/transform.js';
 
 let warnedDeadOnce = new WeakSet();
 
@@ -105,8 +106,7 @@ export class EntityHandle {
     const d = this.data;
     if (!d) { this._deadNoop('lookAt'); return this; }
     const ex = d.transform.x, ey = d.transform.y;
-    let deg = Math.atan2(x - ex, -(y - ey)) * 180 / Math.PI;
-    deg = ((deg % 360) + 360) % 360;
+    const deg = yawFromDelta(x - ex, y - ey);
     d.transform.yawDeg = deg;
     this.world.renderVersion++;
     return this;

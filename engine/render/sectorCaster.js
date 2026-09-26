@@ -65,7 +65,14 @@ export const HFOV_DEG = 75;
 // single source of truth for shared layout constants) instead of hand-
 // copying them - the CPU caster's own use is unaffected.
 export const MAX_RAY_STEPS = 96; // DDA safety cap per column (levels are well under this in practice)
-export const MAX_DIST = 120; // meters; beyond this, whatever's left open is treated as void/sky
+// Meters; a DDA boundary past this is never processed (the column is handed
+// off). BUG-OWN-008 reopen (architecture.md 23.9): 120 -> 400. The walk
+// starts at the footprint entry, so this bounds WHICH structures draw, not
+// how many steps a column takes (MAX_RAY_STEPS does that): at 120 m a placed
+// structure simply vanished on both paths - and, since the terrain never
+// draws inside a structure bbox (skip rectangles), left a sky-coloured hole
+// in the hills where it stood. 400 m covers the whole 384 m near band.
+export const MAX_DIST = 400;
 const INTERIOR_FOG = 'interior';
 const VOID_SECTOR = {
   floorH: 0, ceilH: 'sky', wallMat: 'stone', floorMat: 'floor', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'stone',

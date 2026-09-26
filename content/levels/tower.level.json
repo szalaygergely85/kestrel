@@ -129,7 +129,8 @@
   ],
   "props": [
     {"id": "pallet", "facing": 0, "model": "canvasHeap", "note": "the wake spot: torn envelope canvas (D-011 reskin of the straw pallet); walk-over (no collision)", "x": 17, "y": 9.5, "z": 0},
-    {"id": "brazier", "collide": "sector", "facing": 180, "model": "burner", "note": "the Kestrel's copper burner (D-011 reskin of the brazier), on the stone ring (*); torch light source", "x": 18.5, "y": 6.5, "z": 0.5},
+    {"id": "brazier", "collide": "sector", "facing": 180, "model": "burner", "note": "the Kestrel's copper burner (D-011 reskin of the brazier), on the stone ring (*); torch light source. OWN-REQ-008: voxel body (voxel_tower.js burner), the fire is the burnerFlame prop", "x": 18.5, "y": 6.5, "z": 0.5},
+    {"id": "burnerFlame", "facing": 180, "model": "burnerFlame", "note": "OWN-REQ-008: the burner's fire (billboard until US-053 particles) at voxelModels.burner.mounts.flame = the grate top; lights.brazier stays at z 1.2", "variant": "burn", "x": 18.5, "y": 6.5, "z": 1.05},
     {"id": "lantern", "facing": 270, "hook": true, "interactable": "lantern", "model": "lantern", "note": "the brass lamp on its own bracket (D-011), 1.4 m from the burner. OWN-REQ-006: hangs LIT by default (was unlit) - hook light `lights.lanternHook` above + the `lampFlame` prop below; `lantern.take` swaps both off", "variant": "lit", "x": 19.9, "y": 6.5, "z": 1.3},
     {"id": "lampFlame", "facing": 270, "model": "lampFlame", "note": "OWN-REQ-006: the lamp's flame, removed by lantern.take (game/js/quest/lantern.js), respawned on restart with the level", "variant": "burn", "x": 19.719, "y": 6.5, "z": 1.456},
     {"id": "boulder", "dynamic": true, "model": "boulder", "note": "on the stair base, 5 cm onto step 1: blocks the only stair entrance", "radius": 0.6, "x": 15.55, "y": 3.5, "z": 0},

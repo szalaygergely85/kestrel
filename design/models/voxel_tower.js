@@ -19,6 +19,9 @@
  *                                     crown ring + mouth hoop + 3 ropes toward the tower, 5.0 x 2.2 x 1.5 m (+1.0 m skirt; v1.14)
  *   ASSETS.voxelModels.relay          the summit relay: brass tripod + bowl + cracked mirror + crystals (dead / wake / awake);
  *                                     the GLOW stays a billboard (US-022, a separate prop at relay.mounts.glow)
+ *   ASSETS.voxelModels.burner         the Kestrel's copper burner on the stone ring: splayed iron legs, riveted brass
+ *                                     mouth, coil band, front gauge, side handles, back valve + hose (OWN-REQ-008 part 1);
+ *                                     the FIRE stays a billboard (ASSETS.models.burnerFlame, prop at burner.mounts.flame)
  *   ASSETS.voxelMaterials.*           + 18 new prop materials (v1 + v2 + remap + fallback), listed in `.batch2`
  *                                     (12 of batch 2 + 6 of the ART-OWN-002 rework: linen_light, linen, linen_dark,
  *                                     gore_red, gore_red_dark, canvas_burnt)
@@ -99,7 +102,8 @@
     T: 'block_light', D: 'block_dark', L: 'granite_light', g: 'granite_dark', m: 'moss_cap',              // stone props
     x: 'crystal_dead', X: 'crystal_lit', M: 'mirror_dark',                                                // relay
     P: 'linen_light', p: 'linen', q: 'linen_dark',                                                        // wake-spot tarp
-    E: 'gore_red', e: 'gore_red_dark', z: 'canvas_burnt'                                                  // envelope
+    E: 'gore_red', e: 'gore_red_dark', z: 'canvas_burnt',                                                 // envelope
+    u: 'copper'                                                                                           // burner can (palette)
   };
   function matsOf(G) {
     var used = {}, o = {}, k;
@@ -866,13 +870,104 @@
   };
 
   // ===================================================================================================================
-  // 9. ATTACH (15.3 item 1), per model: only when every material key OF THAT MODEL is merged into palette.materials and
+  // 9. BURNER (OWN-REQ-008 part 1)  16 x 16 x 14 @ 0.05 m = 0.8 x 0.8 x 0.7 m on the 0.5 m stone ring (cell 18,6).
+  //    The Kestrel's balloon burner, thrown clear in the crash and still burning. Blood / Build brazier read: a solid
+  //    metal pot on legs with sprite fire in it. Bottom to top:
+  //      z0      4 iron_dark foot pads at the corners (0.35 m out from the axis, inside the 1 m ring cell);
+  //      z1..4   4 splayed iron_dark legs, meeting under the pot;
+  //      z3..4   iron_dark bottom dish + brass_dark base band (the dark contour on the ring);
+  //      z5..6   the COIL band: an iron_light / iron_dark helix one voxel proud of the can (reads as ")))" wound tube);
+  //      z7..10  the copper can (palette `copper`: red-orange bands, verdigris joints) with a few patina spots;
+  //              FRONT: a brass_light gauge bezel with mirror_dark glass and an iron_dark needle; SIDES: iron_light
+  //              carry handles; BACK: brass_light valve wheel (brass_hot hub) with a dark fuel hose down onto the ring;
+  //      z10     inside the mouth: the iron_dark grate with a few brass_hot glints (the flame billboard stands on it);
+  //      z11..12 the brass_dark flared collar, hollow mouth 0.4 m across;
+  //      z13     the bright brass_light rim with 12 brass_hot rivets = the brightest outline, cuts the flame base.
+  //    FIRE: a billboard prop (ASSETS.models.burnerFlame, wreckage.js) at mounts.flame = the grate top; its ember row
+  //    sits 0.1 m deep in the mouth (seen from above, hidden by the near rim from low eyes), the tongues rise 0.4 m
+  //    over the rim. Light: lights.brazier (18.5, 6.5, 1.2) = mounts.light, unchanged.
+  //    Front (gauge) faces SOUTH at the level facing 180 = toward the wake spot and the hint circle.
+  // ===================================================================================================================
+  function buildBurner() {
+    var G = new Grid(16, 16, 14), x, y, z, t, CX = 8, CY = 8, TAU = 2 * Math.PI;
+    function rr(x, y) { var dx = x + 0.5 - CX, dy = y + 0.5 - CY; return Math.sqrt(dx * dx + dy * dy); }
+    function ang(x, y) { return Math.atan2(y + 0.5 - CY, x + 0.5 - CX); }
+    // feet + splayed legs (dense samples so each leg stays one connected staircase)
+    [[1, 1], [13, 1], [1, 13], [13, 13]].forEach(function (f) {
+      G.box(f[0], f[1], 0, f[0] + 2, f[1] + 2, 1, 'd');
+      var fx = f[0] + 1, fy = f[1] + 1;
+      for (t = 0; t <= 1.0001; t += 1 / 24) {
+        G.set(Math.floor(fx + (CX - fx) * 0.55 * t), Math.floor(fy + (CY - fy) * 0.55 * t), 1 + Math.min(3, Math.floor(t * 3.999)), 'd');
+      }
+    });
+    for (z = 3; z < 14; z++) for (y = 0; y < 16; y++) for (x = 0; x < 16; x++) {
+      var r = rr(x, y), a = ang(x, y), h = hash(x, y, z, 61), c = null;
+      if (z === 3 && r <= 3.6) c = 'd';                                              // bottom dish
+      else if (z === 4 && r <= 5.0) c = 'b';                                         // base band
+      else if ((z === 5 || z === 6) && r <= 5.3) {                                   // coil band (helix)
+        c = r <= 4.3 ? 'u' : ((Math.floor((a / TAU + 1) * 14) + z) % 2 === 0 ? 'i' : 'd');
+      } else if (z >= 7 && z <= 9 && r <= 4.6) c = (r > 3.6 && h < 0.09) ? 'v' : 'u';   // copper can + patina
+      else if (z === 10 && r <= 4.6) c = r <= 3.8 ? (h < 0.12 ? 'H' : 'd') : 'u';   // can top + grate in the mouth
+      else if (z === 11 && r <= 5.2 && r > 3.8) c = 'b';                             // collar
+      else if (z === 12 && r <= 5.8 && r > 4.0) c = 'b';                             // flare
+      else if (z === 13 && r <= 5.9 && r > 4.0) {                                    // bright rim + 12 rivets
+        var k = (a / TAU) * 12;
+        c = Math.abs(k - Math.round(k)) < 0.16 ? 'H' : 'R';
+      }
+      if (c) G.set(x, y, z, c);
+    }
+    // front gauge (y 2, one voxel proud of the can face y 3): bezel, glass, needle
+    [['.RR.', 10], ['RdMR', 9], ['RMMR', 8], ['.RR.', 7]].forEach(function (row) {
+      for (var i = 0; i < 4; i++) if (row[0].charAt(i) !== '.') G.set(6 + i, 2, row[1], row[0].charAt(i));
+    });
+    // carry handles, west (x 1..2) and east (x 13..14), y 7..8, z 8..10
+    [[2, 1], [13, 14]].forEach(function (s) {
+      for (y = 7; y <= 8; y++) {
+        G.set(s[0], y, 8, 'i'); G.set(s[0], y, 10, 'i');
+        for (z = 8; z <= 10; z++) G.set(s[1], y, z, 'i');
+      }
+    });
+    // back: pipe stub (y 13), valve wheel (y 14, brass_hot hub), fuel hose down the back onto the ring (y 15)
+    G.set(7, 13, 7, 'i'); G.set(8, 13, 7, 'i');
+    [['.RR.', 8], ['RHHR', 7], ['.RR.', 6]].forEach(function (row) {
+      for (var i = 0; i < 4; i++) if (row[0].charAt(i) !== '.') G.set(6 + i, 14, row[1], row[0].charAt(i));
+    });
+    for (z = 1; z <= 6; z++) G.set(8, 15, z, 'd');
+    G.set(8, 15, 0, 'd'); G.set(9, 15, 0, 'd'); G.set(10, 15, 0, 'i');             // hose lies on the ring, clamp end
+    return G;
+  }
+  var gBu = buildBurner();
+  A.voxelModels.burner = {
+    name: 'burner',
+    desc: 'Voxel Kestrel burner (OWN-REQ-008): a copper pot on four splayed iron legs, iron / steel coil band, brass gauge ' +
+          'on the front, iron carry handles, a valve wheel and fuel hose at the back, a brass collar and a bright riveted ' +
+          'rim round an open mouth with a dark grate. The fire is a separate billboard (burnerFlame) on mounts.flame.',
+    voxel: {
+      version: 1, cellM: 0.05, size: [16, 16, 14], anchor: [8, 8, 0], mats: matsOf(gBu), layers: gBu.layers(),
+      parts: { body: { box: [0, 0, 0, 16, 16, 14], pivot: [8, 8, 0] } },               // extent 46
+      animations: { burn: idle1() },                                                    // = the billboard anim name
+      mounts: {
+        flame:  { at: [8, 8, 11], part: 'body' },     // grate top, 0.55 m above the ring = world z 1.05 (burnerFlame base)
+        light:  { at: [8, 8, 14], part: 'body' },     // lights.brazier origin (level z 1.2 = 0.5 + 0.7)
+        prompt: { at: [8, 0, 10], part: 'body' }
+      }
+    },
+    placement: { level: 'tower', prop: 'brazier', x: 18.5, y: 6.5, z: 0.5, facing: 180, levelEdit: false,
+                 note: 'same prop, same model key `burner` (the voxel rides on models.burner); all voxels over the * ring cell' },
+    flame: { prop: 'burnerFlame', model: 'burnerFlame', anim: 'burn', mount: 'flame', world: { x: 18.5, y: 6.5, z: 1.05 },
+             note: 'level prop next to props.brazier; stays a billboard until particles (US-053)' },
+    readability: { note: 'At 2.5 m, eye 1.1 m above the ring: 160x60 ~19 rows tall incl. legs; the bright rim + copper can + ' +
+                   'dark legs read as "pot on legs", the fire above it as "burning".' }
+  };
+
+  // ===================================================================================================================
+  // 10. ATTACH (15.3 item 1), per model: only when every material key OF THAT MODEL is merged into palette.materials and
   //    detailPass.materials (a missing v2 record would switch the GPU path off, 15.3 item 6). Rubble goes onto the
   //    variant sub-models (the registry exposes them as rubble#0..2, the same objects).
   // ===================================================================================================================
   var TARGETS = { boulder: ['boulder'], rubble0: ['rubble', 0], rubble1: ['rubble', 1], rubble2: ['rubble', 2],
                   canvasHeap: ['canvasHeap'], gondola: ['gondola'], strut: ['strut'], envelopeHeap: ['envelopeHeap'],
-                  relay: ['relay'] };
+                  relay: ['relay'], burner: ['burner'] };
   A.voxelModels.batch2 = Object.keys(TARGETS);
   A.voxelModels.attachTower = function attachTower() {
     var P = A.palette, DP = A.detailPass, M = A.models, done = [], n, t, def, vox, k, ok;

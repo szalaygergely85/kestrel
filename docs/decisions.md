@@ -747,3 +747,81 @@ Owner wants ray-traced shadows etc. in our own WebGL2 shaders (no RTX/DLSS in br
 - Architect rules in 25.7 "Do not" are binding (no noise, no per-sub-sample rays, JS oracle = GLSL, LVIS kept).
 - Roadmap: RT lighting is an M2 visual-quality track, never an M2 exit criterion.
 
+## D-028 Coordinates & saves first: one frame system (docs/coordinates.md), WorldState v2, rotation later, chunk files static-only
+**Date:** 2026-09-26
+**Status:** Accepted (amends D-023 item 5, D-026/D-027 sprint-4 order; adopts docs/coordinates.md as normative)
+
+### Context
+Owner after BUG-OWN-008: "do the coordinates, saves and everything like in a real game engine". Architect audit (coordinates.md 1): frame math hand-copied in ~50 places, `yawSteps` stored but ignored, `sun` in a level file, tower placement duplicated in the far recipe. Escalations: coordinates.md 12 items 1-2, architecture.md 26.1 item 7.
+
+### Options
+- Formats: (a) WorldState v2 + migration chain + additive keys; (b) additive keys only, stay v1.
+- Rotation CO-4: (a) now with the rest; (b) with the first rotated/second-structure content.
+- Order: (a) CO work before sprint-4 features; (b) interleave with US-070a/US-026b/US-051a.
+
+### Decision
+1. **Formats = (a), under D-023.** Content schema 1 gains additive keys: world-file `sun` (level `sun` deprecated, validator warns), `structures[].yawSteps` 0..3, `entity.parent` (a record, not a live parent). The recipe `overworld_far.js` loses `origin/tower/structures[].x,y,w,h`; `World.load` injects `bbox`+`ringHAt` by id (one placement source). Saves = `WorldState` **version 2** via `engine/world/migrateState.js` (v1->v2 adds `parent`; older migrates, newer throws), world coordinates only, byte-stable through `stringifyContent`. Reason: the itch demo needs a tested save-migration path anyway, and this one is trivial.
+2. **Rotation = (b).** CO-4 ships with the first rotated or second structure in content; the `yawSteps != 0` throw stays until then so content cannot ask for something the engine ignores.
+3. **D-023 item 5 narrowed (26.1 item 7, accepted):** chunk files carry static outdoor placements only; terrain overrides/stamps are never streamed (stay in recipe/world `overrides`, load-time, no near/far seam); no per-entity state in chunks (a chunk entity is content, never in a save). Stateful chunk entities need a new ADR with the first outdoor quest content.
+4. **Order = (a).** Coordinate work is the head of sprint 4: CO-1 -> CO-2 -> CO-3 (PC-A, sequential, arch review each), CO-6 inside US-026b S1. **PC-B now: CO-5** (serialize.js, migrateState.js, content/schema.js `KEY_ORDER.save`; CO-5 owns serialize.js, CO-2 must not touch it; ends in `arch-review` on PC-A). **PC-B after CO-2 is on master: CO-8** (content/recipe/validator/game cleanup), then **CO-7** (editor frames; its `yawSteps` property waits for CO-4). Then US-026b -> US-070a shader half (step 4) -> US-051a; PO re-cuts `docs/sprints/sprint-4.md` (whatever does not fit moves to sprint 5, US-051a first to slip). Every CO step leaves all Node suites + check-deps + `?gpucompare=1` green with no image change.
+
+### Consequences
+- coordinates.md sections 2-11 are normative; section 9 do-not list binds all roles; check-deps gains the warn rule in CO-1.
+- PO: CO-1..CO-8 rows in the backlog with PC tags as in item 4; CO-4 row parked "with first rotated structure".
+- Designer moves `sun` into `world_m1.world.json` in CO-8 (values identical).
+- Sprint-4 feature stories start ~4-5 programmer-days later; accepted by the owner's priority.
+
+## D-029 Engine direction: our own mesh engine, ASCII look as the final stage (architecture.md section 27)
+**Date:** 2026-09-26
+**Status:** Accepted (owner decision in chat 2026-09-26: "own mesh engine, ASCII as the final stage; not Three.js, not the long-term ray-caster hybrid; stay JavaScript, JSDoc/@ts-check; WebGL2 now behind a backend interface, WebGPU later; own capsule-vs-mesh collision now, Rapier later for rigid bodies"; "ok do the plan and stories"). Amends D-002, D-007, D-009, D-015, D-016/D-019, D-022/D-026 (US-051a timing), D-023, D-027, D-028. Phase-1 and phase-2 gate results are recorded as amendments to this entry.
+
+### Context
+Three per-cell ray marchers (sector DDA, terrain march, voxel march) never agree exactly where they meet (BUG-OWN-008 class: tower foot seams, grass through the base, deformed tower from outside). Every fix is local and the next structure/storey/door brings the next seam. The architect plan (architecture.md 27) keeps everything that makes the ASCII look (G-buffer contract 8.1, resolve -> deriv -> light -> shade -> edge -> sprites, y-shear camera, JS oracle) and replaces only how the G-buffer is filled: one triangle raster pass with a real depth buffer. Six items were escalated (27.14).
+
+### Options
+- A. Keep the hybrid, fix seams one by one (BUG-OWN-008 part 3, US-026b S5, US-070a ray plan). Cheapest this week; the seam class stays; any-shape buildings stay out of reach.
+- B. Three.js as the renderer, ASCII as a post pass. Fast start; a ~600 KB runtime dependency, its camera/scene graph fights the shear camera, the JS oracle and D-006's data-driven engine. Owner rejected.
+- C. Own mesh engine per architecture.md 27, gated, old renderer kept side by side until the gates pass. ~6 calendar weeks for phases 0-3; seams gone by construction; glTF buildings, shadow maps and BVH collision on one data path.
+
+### Decision
+**C.** The six 27.14 items:
+1. **Adopt architecture.md 27 as the engine plan, with both gates exactly as written in 27.11.** Amendments: **D-002/D-007** (renderer = one `raster` pass for structures, terrain chunks and props; the sector grid and heightfield stay as *content* and physics data, the terrain band/far bake and streaming stay); **D-009** (stages A1-A3 `cast/terrain/voxel` replaced by `raster`; stages B-F unchanged; GPU-first + JS oracle unchanged); **D-016/D-019** (voxel format, tools and rigid-part animation kept; render path = greedy-meshed parts); **D-027** (the ray plan 25.1-25.3 is replaced by shadow maps, 27.9: sun shadow map satisfies US-070b/070c; `lighting: 'rt' | 'classic'` now means "shadowed top-2 point lights" vs "no point-light shadows"; the 'rt-high' restriction on 070c is lifted since it comes free); **D-028** (`Frame` gains `yawDeg` for mesh placements only; grid levels keep `yawSteps`; CO-4 stays parked); **D-015** (JS confirmed; no TypeScript source, no WASM without a measured hot spot; Rapier only behind the `World.contacts` seam of 27.10 and D-018's gate). **D-005, D-006, D-017, D-018, D-025 stand unchanged** (D-017's JS oracle becomes `rasterJS`; D-018 rigid bodies consume only `World.contacts`). `?renderer=mesh|dda` coexist; nothing is deleted before ME-19 (end of phase 3, after the phase-2 gate). Phase-1 no-go = mesh path parked as an experiment, sprint continues on the hybrid, and a second attempt needs a new manager decision.
+2. **Freeze until the phase-1 gate:** `dda.frag`, `terrain.frag`, `voxel.frag` (and their JS twins `sectorCaster/terrainCaster/voxelMarch` render halves), **US-026b S5** (claimed-cell terrain march) and **US-070a** (all steps, 25.1-25.3). Allowed in the window: owner-visible bug fixes with a regression test, nothing else. The parked branch **`wip/bug-own-008-part3` is not merged**; the mesh path replaces it (it stays on origin as reference, deleted at ME-19). If phase 1 is a no-go, the freeze lifts and US-070a / S5 resume unchanged.
+3. **Mesh asset format (D-023 extension):** source assets = `.glb` in `design/meshes/` (Blender, +Y up, metres; binary, like `.vox`, not canonical JSON); derived canonical data = `content/meshes/<id>.mesh.json` (MeshData schema 1, 27.3), produced only by `tools/gltf-import.mjs`, formatted by `stringifyContent`, listed in the manifest under kind `mesh`. Both are committed; the `.mesh.json` is what the engine loads (engine never fetches or parses `.glb` at runtime from `engine/`). No colours, no textures in meshes (the ASCII detail shader is the texture). A `.bin` sidecar is deferred until a mesh file exceeds ~2 MB (new ADR then).
+4. **Sprint 4 re-cut.** Sprint 4 = **CO-2 -> CO-3 (PC-A, D-028 order kept) + mesh phase 0 (ME-00) + phase 1 (ME-01..ME-08)**, plus **US-026b S1 (band double buffer, with CO-6)** because ME-05 depends on it. Goal: "the tower, terrain and props render as meshes next to the old renderer and look the same". PC-B order: Queue 3 items 1-10 (incl. 5b CO-5, 6b fix pass) -> ME-00 -> ME-01 -> ME-02 -> ME-03 -> ME-05 -> ME-07 -> ME-09 (ME-03b mock + tests if PC-A asks). PC-A: CO-2, CO-3, ME-03b, ME-04, ME-06, ME-08 + the gate report. **US-051a moves behind the phase-2 gate** (it must consume `World.contacts`, ME-11). US-026b S2-S4, S6, S7 move to sprint 5 (data/shade rules, still valid; they feed `terrainMesh.js`). Paused **PC-B Queue 3 items 11-13**: **11 (US-070a steps 1-3) dropped** - superseded by ME-15/16; **12 (US-072 step 1) dropped as written** - re-written in phase 3 against `bvh.js` ray queries instead of `firstHitSectors` (27.9); **13 (US-073 step 1, temporal oracle) kept but deferred** - G-buffer only, renderer-independent; it becomes PC-B filler after ME-09, not a sprint-4 story. Both 11 and 12 come back unchanged only if phase 1 is a no-go.
+5. **Dev dependencies:** a root `package.json` with **`devDependencies: { "typescript" }` only**, no `dependencies`, no scripts that the game needs, no bundler; `npx tsc` works without installing. The runtime stays build-free and dependency-free (open `game/index.html` or a static server); `check-deps` unchanged. `node_modules/` is git-ignored. Any further devDependency needs a manager decision; any runtime dependency needs a new ADR.
+6. **WebGPU = phase 4, recorded now, scheduled later.** Principle "WebGL2 everywhere, WebGPU where available": every GPU call goes through `GpuDevice` from ME-03b/ME-04 on, and the phase 1-3 rules of 27.11 (no GLSL-only tricks, `texelFetch` only, typed-array uniform blocks, no `sampler2DShadow`, no `EXT_*` beyond the timer) are review rules. No WebGPU story (ME-30..34) starts before ME-19 ships on WebGL2 **and** one trigger is measured and recorded in the story: (a) a compute-heavy feature is scheduled (GPU culling/indirect draws, GPU particles, many shadow-casting lights, GPU broadphase); (b) ME-17 measures WebGL2 per-draw/upload overhead > 1 ms JS at target draw counts; (c) the Steam/Electron build (D-012) makes WebGPU the practical default on the owner's target platforms. WebGL2 stays the fallback forever.
+
+### Consequences
+- architecture.md 27 wins over 14.2/14.4/15/25 where they differ; 27.13 "Do not" list is binding for all roles (no three.js, no gl-matrix, no TS source/`.d.ts`, no `gl.*` outside `engine/render/gpu/device/`, no deletion before ME-19).
+- PO: ME-00..ME-12 rows in the backlog with PC tags per 27.11 (phase 3/4 rows as `later`), US-070a/US-026b S5 rows marked `frozen (D-029)`, Queue 3 items 11/12 struck with a D-029 note, item 13 moved to filler; rewrite `docs/sprints/sprint-4.md` to item 4. Architect writes per-story addenda in the rows before each ME story starts.
+- Owner cost: two renderers coexist ~5 weeks; RT-look work (US-070..073) waits for phase 3 but lands cheaper (shadow maps). M2 exit moves out by ~3.5-4 weeks (roadmap).
+- Owner actions: phase-1 gate side-by-side on 6 poses + `?bench=1`; phase-2 walk-test; designer/Blender test building for ME-13 (phase 3).
+
+## D-030 Milestone re-plan M2-M6 + parallel engine release track (accepts the PO re-plan of 2026-09-26, with adjustments)
+**Date:** 2026-09-26
+**Status:** Accepted. Owner request ("we miss a lot"). Amends **D-010** (M1.5 / M5 editor slots), **D-011** (M2-M4 milestone themes; story canon unchanged), **D-012** (demo and Coming Soon timing; Electron/steamworks/platform-adapter decisions unchanged), **D-020** (sword/gear levels "first in M2" -> M3/M4). **D-029 stands unchanged**, including both gates and the freezes.
+
+### Context
+The PO rewrote `docs/roadmap.md` around the missing game loop (combat -> save/items/dungeon -> chapter two -> polish) and added 40 gap stories US-078..US-118 (`docs/backlog.md` "Game + engine gap epics") plus GDD sections 9-11. After D-029, M2 is already the mesh engine phases 0-2 + walk-out; the old M2 extras (sword, enemy, chest, save point, day/night, demo) no longer fit.
+
+### Options
+1. Keep D-011's themes, squeeze combat into M2 after the mesh gates. M2 becomes the heaviest milestone again, combat is built on a renderer that has not passed its gates.
+2. Accept the re-plan as written. Clear one-loop-per-milestone shape; two risks: the engine release track can starve the game, and editor items sit in two places.
+3. Accept the re-plan with scope rules (chosen).
+
+### Decision
+**Option 3.** The milestone plan in `docs/roadmap.md` (2026-09-26) is accepted: **M2** "Out of the Wreck" = D-029 phases 0-2 + walk-out on meshes; **M3** "Steel and Hush" = combat core + itch.io demo; **M4** "Keys and Relays" = saves, inventory, first tool, first dungeon, streaming, day/night; **M5** "The Relay Line" = chapter two + Steam Coming Soon; **M6** Polish & Release; plus a parallel **engine release track**. Adjustments:
+1. **D-029 gates rule everything.** No M3 story (US-078..087) starts dev before the phase-2 gate passes; ACs, tech notes and art may be prepared earlier. If phase 1 is a no-go, M3 runs on the hybrid and this plan is re-checked.
+2. **Game first.** The engine release track is filler: it never takes a sprint slot from the current game milestone's P0 stories, and it has no date. Exception: items a game milestone needs (ME-00, ME-18, US-087, US-075..077 as M4 content speed-up) count as that milestone's work.
+3. **Editors (amends D-010).** M1.5 is no longer a separate milestone: the level viewer/placer scope of D-010 (US-031..034) ships as **ME-18 editor on meshes** in M4 "content speed-up". The model + animation editor (US-035..037, US-067/068) moves from M5 to the engine release track.
+4. **Release timing (amends D-012).** itch.io browser demo at the **end of M3** (M1 + walk-out + combat slice; needs US-080 respawn, so no save system required); Steam "Coming Soon" once **M5** is playable; Steam launch end of M6. Early Access vs full 1.0 stays open (owner question 11).
+5. **Canon checks.** D-011 story canon and D-013 stand; magic follows **D-021** (Fireball/Freeze/Telekinesis/Teleport) - the roadmap/backlog "Spark" wording for US-101 is to be replaced by the first D-021 spell. Sound stays deferred to M6 as the owner set, and US-082 ships without sounds unless the owner lifts that.
+6. **Owner questions 1-11** at the end of `docs/roadmap.md` are **open, not decided**. PO proposals there are working assumptions for sketches only; each answer gets its own amendment or ADR. M3 opener ACs (US-078/079/080) are finalised only after questions 1, 2, 3 and 7 are answered.
+
+### Consequences
+- PO: replace "Spark" in US-101 / roadmap M5 with the D-021 spell; mark the M1.5 section in the roadmap as folded into ME-18; confirm PC tags of US-078..118 at each sprint planning; ask the owner questions 1-3, 7 before sprint 6 planning.
+- Architect: tech notes for US-078/079/080/083 after the phase-2 gate is in sight, not before.
+- Sprint 5 stays as D-029 planned (phase 2 + US-026b S2+). The first M3 sprint is planned only after the phase-2 gate result is recorded in D-029.
+- Owner: answer the 11 roadmap questions (1, 2, 3, 7 first; 10 and 11 can wait until the engine track / M5).
+

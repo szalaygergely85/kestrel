@@ -17,12 +17,12 @@
 // final `GI.y` (a per-frame `uMask` upload the resolve pass reads instead).
 //
 // Scope notes (flagged for architect review, not silent):
-//  - The CPU's "camera outside a structure's own footprint" VOID_SECTOR
-//    first-segment quirk (sectorCaster.js's 'nearSector = ... || VOID_SECTOR'
-//    before the loop) is NOT reproduced: this shader starts 'C' at the real
-//    entry cell's own sector. Simpler, and arguably more correct, but a
-//    documented deviation - not exercised by '?gpucompare=1''s poses or any
-//    in-scope level (the camera always spawns inside a placed structure).
+//  - Camera outside a structure's own footprint: this shader starts 'C' at
+//    the real entry cell's own sector (the CPU's OUTSIDE_SECTOR segment has
+//    no plane of its own, so the two agree - architecture.md 23.9). Every
+//    distance in the walk is CAMERA-relative ('sideDist += t0' below); the
+//    headless twin of this shader for outside poses is
+//    engine/render/sectorCaster.silhouette.test.js (BUG-OWN-008 reopen).
 //  - Structure order for the 't0 >= bestT' early-out is upload order (world
 //    placement order), not a per-frame camera-distance sort - correctness
 //    (nearest-candidate-wins) does not depend on order, only the early-out's
@@ -197,6 +197,18 @@ void main() {
     int stepY = rayDirY < 0.0 ? -1 : 1;
     float sideDistX = rayDirX < 0.0 ? (ex - float(mapX)) * deltaDistX : (float(mapX) + 1.0 - ex) * deltaDistX;
     float sideDistY = rayDirY < 0.0 ? (ey - float(mapY)) * deltaDistY : (float(mapY) + 1.0 - ey) * deltaDistY;
+    // BUG-OWN-008 (reopen; architecture.md 23.9 "real root cause"): the
+    // sideDist accumulators start at the footprint ENTRY point (ex, ey), so
+    // without this offset every boundary distance 't1' below - and with it
+    // every projected height 'hb = leyeH + slope * t1', the wall/step depth
+    // 'bestT', the plane guards 'tp >= t0seg' and the u/v hit positions -
+    // was measured from the footprint edge instead of the camera. Inside a
+    // footprint 't0 == 0' hides it; from outside a structure was projected
+    // as if the camera stood at its edge (a 8.5 m tower at 80 m drawn like
+    // one 2 m away: off the top of the screen, taller the farther you go,
+    // silhouette changing with every step). The CPU twin ('ddaStep')
+    // recomputes 'perpDist' from the camera every step and never had it.
+    sideDistX += t0; sideDistY += t0;
 
     Cell C = fetchCell(yOff, w, mapX, mapY);
     float t0seg = t0;

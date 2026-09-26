@@ -180,3 +180,31 @@ Burner crackle and hiss (positional, loudness by distance), footsteps on stone (
 - **M6 Polish and Release:** includes the Steam release (D-012: Electron + steamworks.js, itch.io browser demo first; US-043). Ferrum itself stays off-screen until after M6.
 
 Magic progression across milestones: relay wakes (M1, hint) -> talking animals (M2/M3) -> Spark (M3) -> gauntlet crystals: Gust, Ward (M4+). Hearts/health UI, items and combat are designed in detail when M2 is planned.
+
+**Re-plan 2026-09-26 (PO, pending a manager D-entry; `docs/roadmap.md` wins where this list differs):** M2 = mesh engine + walk-out; **M3 "Steel and Hush"** = sword, first beast, hearts; **M4 "Keys and Relays"** = saves, inventory, first tool item, first small dungeon; **M5 "The Relay Line"** = the old M3 content (exiles, dialogue, Spark, sentinel, 3 relays) plus the Signal Source (owner question); M6 = polish + release; the editor moves to the engine release track. Sections 9-11 below outline combat, items and progression; the M-numbers in the lines above are the pre-re-plan ones.
+
+## 9. Combat (outline, M3; ACs in backlog US-078..US-082)
+
+- **Style:** first-person, real-time, simple and readable at 240x90. One weapon button, short swings, clear enemy telegraphs, punishing windows after enemy attacks. Zelda-like fairness, not a soulslike.
+- **Sword:** ruin steel, found on the hillside (proposal). Left mouse swings (0.35 s, 2-swing chain), reach 1.6 m, 100 deg arc. Lock-on (US-081) keeps one enemy centred; strafing around it is the main defensive move.
+- **Enemies:** every enemy has one readable tell (pose + glyph + light, e.g. a lowered head and scrape before a charge) and one opening. M3: the Hush-touched beast (charger). M5: the Crown clockwork sentinel (ranged, weak spot). Enemies avoid woken relay light (safe zones); later, Spark stuns them.
+- **Feel:** hit-stop 50-80 ms, white flash, knockback, camera kick, sparks and dust (US-082, US-053). Sounds arrive with the M6 audio pass.
+- **Open questions (owner):** block/parry with a shield in M3 or later (US-086)? A dodge-step on double-tap? Enemy count per encounter (proposal: at most 3 in M3)?
+
+## 10. Items and tools (outline, M4; backlog US-089..US-097)
+
+- **Inventory:** a small ASCII panel (no grid of loot): sword slot, 2 tool slots on quick keys, key items (chart, lamp, small keys), collectibles count (heart pieces, chart pieces). Items are content JSON.
+- **Tools open the map (Zelda gating):** each tool has a verb that the world asks for in plain sight. First tool (proposal): a **brass grapple hook** salvaged from the *Kestrel* wreck (a machine, fits Wick and the Ferrum rule "machines only"): pulls to brass rings on cliffs, pulls levers across gaps, drags crates. Alternatives for the owner: bow, bombs, or a lamp upgrade that burns brambles.
+- **Chests:** small (keys, pieces) and big (tools, gear). Item-get card with a one-line writer text. The hidden hillside chest is the first.
+- **Keys:** small keys per dungeon, one big key per dungeon boss door.
+- **Consumables:** heart pickups from enemies and grass/pots (proposal); no potions in M4.
+- **Open questions (owner):** first tool? Currency and a trader at Outwall (owner idea "trading", D-020) or no money at all? Crafting in 1.0 or later?
+
+## 11. Progression and health (outline, M3-M5)
+
+- **No XP (owner idea, D-020).** Wick grows through things he finds or is given, each one a small wonder (pillar 6).
+- **Health:** 3 hearts to start, damage in half-hearts. **Heart vessels:** 4 heart pieces = +1 heart; dungeons also give a full vessel. Death = fade, then wake at the last woken relay with full hearts; items and world flags are kept, enemies reset (proposal).
+- **Gear levels:** sword Lv1 ruin steel -> Lv2 reforged at a forge (M4) -> later levels; shields and armour have levels too (owner idea), from M5 at the earliest.
+- **Magic (canon, section 3):** Spark from the artificer's gauntlet (M5 after the re-plan), then Gust and Ward from gauntlet crystals in ruins/dungeons, never bought. The owner's small skill tree (fireball, freeze, lightning, one big spell) maps onto these light verbs; the mapping is an open question for the writer + owner.
+- **Saving:** woken relays are save points (rest = save + heal + respawn point) plus autosave on area change; 3 slots labelled with Wick's name, place and play time (canon: the name shows in save slots).
+- **Open questions (owner):** fall damage from M3 (proposal: > 6 m)? Fast travel between woken relays? How the skill tree maps onto Spark/Gust/Ward?

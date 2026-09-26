@@ -14,6 +14,7 @@
 import { sectorOrOutside } from './capsule.js';
 import { moveCapsule } from './capsule.js';
 import { moveSphere } from './sphere.js';
+import { yawFromDelta } from '../core/transform.js';
 
 const EPS = 1e-9;
 const OVERLAP_EPS = 1e-3; // architecture.md 7.4: "if more than 1e-3 m still overlaps"
@@ -86,7 +87,7 @@ function stepOneRoller(e) {
     if (distMoved > EPS) {
       roller.rollDist += distMoved;
       // Compass heading of the motion (0 = north = -y, 90 = east = +x, clockwise).
-      t.yawDeg = Math.atan2(dx, -dy) * 180 / Math.PI;
+      t.yawDeg = yawFromDelta(dx, dy);
     }
     const sprite = e.components.sprite;
     if (sprite) {
