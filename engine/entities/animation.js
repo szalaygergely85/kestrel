@@ -131,38 +131,52 @@ export function warnUnknownAnimOnce(modelKey, animName) {
  * are never advanced here. Events queue through `world._emit`, flushed by
  * `world.flushEvents()` after the sim step (10.1).
  */
-export function stepAnimations(world, dtMs) {
-  world.forEachEntity((e, id) => {
-    const comps = e.components;
-    if (!comps) return;
-    // US-041a (15.3 item 1): `sprite ?? voxel` - an entity never has both
-    // (World.spawn throws on that), so this alone tells us which shape
-    // `anim.model`/`anim.anim` resolve through (clipFor's `isVoxel`).
-    const sprite = comps.sprite, voxel = comps.voxel;
-    const anim = sprite || voxel;
-    if (!anim || !anim.playing) return;
-    const clip = clipFor(world, anim.model, anim.anim, !sprite);
-    if (!clip || clip.fps0 || clip.count === 0) return;
-    anim.t += dtMs * (anim.speed || 1);
-    let steps = 0;
-    while (anim.t >= clip.durMs[anim.frame] && steps++ < MAX_STEPS_PER_CALL) {
-      anim.t -= clip.durMs[anim.frame];
-      anim.frame++;
-      if (anim.frame >= clip.count) {
-        // `anim.loop` (set by `play()`/the spawn) is the serialized state; a
-        // hand-built component without it falls back to the clip's own flag.
-        if (anim.loop !== undefined ? anim.loop : clip.loop) {
-          anim.frame = 0;
-        } else {
-          anim.frame = clip.count - 1;
-          anim.t = 0;
-          anim.playing = false;
-          world._emit(id, 'animEnd', anim.anim);
-          break;
-        }
+// BUG-PERF-001 (b): `stepAnimations` used to pass a fresh `(e, id) => {...}`
+// arrow literal to `world.forEachEntity` every fixed step, forever - the
+// same per-step-closure class of bug fixed in `engine/physics/roller.js`
+// (`stepRollers`/`resolveBodyContacts`) and BUG-PERF-001 (a)'s `stepBeacon`.
+// This module's own header already claims "allocation-free" - the callback
+// is now a single module-level function, created once, reading `world`/
+// `dtMs` off this reused context instead of capturing them fresh per call.
+const _animCtx = { world: null, dtMs: 0 };
+
+function stepOneEntityAnim(e, id) {
+  const { world, dtMs } = _animCtx;
+  const comps = e.components;
+  if (!comps) return;
+  // US-041a (15.3 item 1): `sprite ?? voxel` - an entity never has both
+  // (World.spawn throws on that), so this alone tells us which shape
+  // `anim.model`/`anim.anim` resolve through (clipFor's `isVoxel`).
+  const sprite = comps.sprite, voxel = comps.voxel;
+  const anim = sprite || voxel;
+  if (!anim || !anim.playing) return;
+  const clip = clipFor(world, anim.model, anim.anim, !sprite);
+  if (!clip || clip.fps0 || clip.count === 0) return;
+  anim.t += dtMs * (anim.speed || 1);
+  let steps = 0;
+  while (anim.t >= clip.durMs[anim.frame] && steps++ < MAX_STEPS_PER_CALL) {
+    anim.t -= clip.durMs[anim.frame];
+    anim.frame++;
+    if (anim.frame >= clip.count) {
+      // `anim.loop` (set by `play()`/the spawn) is the serialized state; a
+      // hand-built component without it falls back to the clip's own flag.
+      if (anim.loop !== undefined ? anim.loop : clip.loop) {
+        anim.frame = 0;
+      } else {
+        anim.frame = clip.count - 1;
+        anim.t = 0;
+        anim.playing = false;
+        world._emit(id, 'animEnd', anim.anim);
+        break;
       }
-      const tag = clip.tagCodes[anim.frame];
-      if (tag) world._emit(id, tag, undefined);
     }
-  });
+    const tag = clip.tagCodes[anim.frame];
+    if (tag) world._emit(id, tag, undefined);
+  }
+}
+
+export function stepAnimations(world, dtMs) {
+  _animCtx.world = world;
+  _animCtx.dtMs = dtMs;
+  world.forEachEntity(stepOneEntityAnim);
 }
