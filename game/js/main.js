@@ -1253,6 +1253,15 @@ function runGpuCompareDdaMode() {
       cam: { x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: 5 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: waystoneDown',
       cam: { x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: -35 }, real: true },
+    // BUG-OWN-008 reopen (architecture.md 23.9): the owner's two outside
+    // repro poses (tower at ~25 m pitched up / ~80 m with the eye below the
+    // level origin z). The GLSL walk measured distances from the footprint
+    // edge instead of the camera - only an OUTSIDE pose can catch that class
+    // of bug, inside poses have t0 == 0. Node twin: sectorCaster.silhouette.test.js.
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideNear (owner pose A)',
+      cam: { x: 1464.33, y: 1045.50, z: 2.32, yawDeg: 54, pitchDeg: 19 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideFar (owner pose B)',
+      cam: { x: 1401.80, y: 1038.32, z: -2.38, yawDeg: 83, pitchDeg: 14 }, real: true },
   ];
 
   // US-040 step 5 (architecture.md 15.2 item 7): the formal `?gpucompare=1`
