@@ -2224,6 +2224,7 @@ Dependency rule unchanged: `engine/mesh` never imports `game/`/`design/`; `check
  * @property {Object<string,string>} [mats]       glTF material name -> palette/detailPass key (importer sidecar `*.mats.json` merged in)
  */
 ```
+- **Amended by 27.15.0 items 2, 6, 7** (`aux` = 8 floats/vertex, terrain layout has no `uv`, `ranges` in triangles, one voxel MeshData per model with a range per part); full typedef in 27.15.2.
 - Sizes: tower ~12k triangles unrolled = 36k verts x 48 B = 1.7 MB VRAM, once. Near band 192x192 cells indexed = 37k verts x 16 B; far ring LOD <= 60k tris. Props <= 2k tris each after greedy meshing.
 - **Material ids** stay `MaterialTable` ids (8.1); meshes carry the *key* in JSON and the id after `bindLevel`-style resolution at load (`MeshData.resolveMats(table)` fills `flat[1]`'s mat bits). No hex colours, no textures in mesh files: the ASCII detail shader is the texture.
 - **Content JSON:** `world.structures[]` gains `mesh: '<meshId>'` as an alternative to `level` (`frame` = same `Frame`, plus `yawDeg` allowed for mesh placements only - needs a D-028 amendment, 27.14). `manifest.files` lists `.mesh.json` under kind `mesh`; `ID_COLLECTIONS.mesh = []`, `KEY_ORDER.mesh` in `schema.js`. Chunk files may place mesh props exactly like voxel props (`components.mesh`).
@@ -2257,6 +2258,7 @@ z_clip = (d * (F + N) - 2 F N) / (F - N),  w_clip = d          // N = 0.05 m, F 
 ```
 `shearProjection(cam, cols, rows, out16)` builds M = P * V from these; `unprojectCell(cam, col, row, dist, out)` is the inverse and **must equal `cellRayP`** (test: 1000 random (cell, dist) -> project(unproject) round-trips within 1e-9 cells; `rasterJS` uses the same matrix). Sub-sample grid: the viewport is `cols*n x rows*n`; pixel centre `(i+0.5)/n` = the 14.2 offsets by construction. Near plane: anything closer than 5 cm to the camera plane is clipped (today's rays start at the eye); capsule radius 0.3 m keeps walls out of that band; the far-plane check replaces `FOG_FULL` marching caps.
 Depth precision: 24-bit with N = 0.05 gives ~1 cm at 30 m, ~12 cm at 100 m, ~3 m at 1500 m. Coplanar quads never happen within one mesh by construction (a cell has one floor); far terrain under the near band is excluded from the far index buffer (26.3-style), not depth-fought. If z-fighting shows up in phase 1 between a placed mesh and terrain, use polygon offset on terrain only (1 unit), never per-object hacks.
+**Amended by 27.15.0 items 1 and 8:** engine row convention (cell rows sample at `row`, not `row + 0.5`) gives `y_clip = (d*tan(pitch) - h) * (2 planeDistY/rows) + d/rows` with no viewport flip, and `shearProjection` takes grid terms (cell aspect), not `(cols, rows)`.
 
 ### 27.6 Frames, transforms, draw list (uses `transform.js`, D-028)
 
@@ -2392,3 +2394,287 @@ Do not: keep column/row state in the raster shaders; use `dFdx/dFdy` for the det
 ### 27.14 ESCALATE TO MANAGER (D-029 "engine direction")
 
 (1) Adopt 27 as the plan: amends D-002/D-007 (renderer), D-009 (stages A1-A3), D-016/D-019 (voxel rendering path, format kept), D-027 (RT plan -> shadow maps; `lighting` option meaning), D-028 (`Frame.yawDeg` for mesh placements; CO-4 stays parked), D-015 (JS confirmed; WASM/Rapier only behind the recorded seams and triggers) - recommendation: adopt with the two gates as written. (2) Freeze `dda/terrain/voxel.frag`, US-026b S5 and US-070a steps 1-6 until the phase-1 gate (recommendation: freeze; PC-B continues Queue 3 items 1-10, then ME-00, ME-01/02/03/05/07/09 in that order). (3) Mesh asset format: `.glb` source in `design/`, derived `.mesh.json` in `content/` (D-023 extension; recommendation: yes, `.bin` sidecar deferred). (4) Sprint 4 re-cut: phase 0+1 replaces US-070a/US-026b-S5 in sprint 4; US-051a moves behind the phase-2 gate. (5) Dev dependency policy: `package.json` with `devDependencies: { typescript }` only (runtime stays dependency-free; `check-deps` unchanged) - recommendation: yes. (6) WebGPU = phase 4 with the triggers in 27.11, "WebGL2 everywhere, WebGPU where available" - recommendation: record now, schedule later.
+
+### 27.15 Implementation notes for PC-B stories (architect, 2026-09-26; normative for ME-00, ME-01, ME-02, ME-03, ME-05, ME-07, ME-09)
+
+PC-B builds these seven from this text alone (no architect on PC-B). Where 27.15 differs from 27.2-27.8, **27.15 wins**; 27.15.0 lists every correction and its reason (each was found by reading the code the story touches). Anything not named here is as in 27.1-27.13.
+
+#### 27.15.0 Common rules, amendments, order
+
+**Order / parallel plan (up to two sonnet programmers, disjoint files):** P1: ME-00 -> ME-01 -> ME-03 -> ME-05. P2 (once ME-00 is on `pc-b`): ME-02 -> ME-09 (needs ME-01 in) -> ME-07 (needs ME-03 in). None of the seven waits for a PC-A commit (ME-05 included, see 27.15.5). One commit per story (code + tests), status `arch-review`.
+
+**Amendments (normative):**
+1. *Row convention and y mapping (fixes 27.5).* The engine samples cell `(col, row)` at column coordinate `col + 0.5` but row coordinate `row`, not `row + 0.5` (`castModels` comment, `dda.frag.js` `main`, `cellRayP`). Sub-sample `(i, j)` of cell `(cx, cy)` at `n`: `col = cx + (i + 0.5)/n - 0.5`, `row = cy + (j + 0.5)/n - 0.5`. Raster window: `W = cols*n`, `H = rows*n`, pixel `(px, py)` centre `(px + 0.5, py + 0.5)`, index `py*W + px`, texel row `py` = screen row (row 0 = top, as every existing pass; **no viewport flip**). Mapping `X = n*(col + 0.5)`, `Y = n*(row + 0.5)`, hence `y_clip = (d*tan(pitch) - h) * (2*planeDistY/rows) + d/rows` (sign flipped vs 27.5, `+ d/rows` added). `planeDistY` keeps the cell aspect exactly as today: `(rows/2) * (cols*pxCellW)/(rows*pxCellH) / tanHalf`.
+2. *Static vertex layout (fixes 27.3 `aux`).* `aux` is **8 floats per vertex** (`AUX_STRIDE = 8`): today's wall AO compares the *pixel height* with each along-wall neighbour's floor (`wallAoD`: `nbr.floorH > h`), which edge bits + faceW/faceH cannot express. Layout in 27.15.2. Static stride = pos 12 + uv 8 + nrm 4 + flat 8 + aux 32 = 64 B/vertex.
+3. *Ceiling `zRef` = the cell's floorH* (`castPlane(..., sector.floorH, GK_CEIL)`); floors/tops `zRef = h`. 27.4's "the plane's own h" is wrong for ceilings.
+4. *Grates are not alpha-tested and never set `mask`* (overrides the ME-01 AC wording). The tower grate `G` is an ordinary sector (animated `ceilH`, `upperMat: 'grate'`); the caster draws it opaque and the detail shader draws the bars. `mask` (GI.y bit 12) is the per-cell UI mask owned by resolve. Dynamic cells go into a separately rebuilt mesh (27.15.2).
+5. *Voxel face code in phase 1 = `castModels`' rule:* axis-aligned part pose -> nearest world axis (1-6, `roundedFace`), else 7 + normal. 27.4's "0.9 dominance" rule stays an ME-08 option for PC-A; `rasterJS` matches the DDA oracle first.
+6. *Terrain layout has no `uv`* (`uv.length === 0`); `u, v` = world x, y of the fragment. Vertex normals mirror `terrainCaster.js` `terrainNormal()`: near band from `near.height` (ground, not `hDraw`) with c = 2 m, far grid from `farHDraw` (`_farGridDraw`) with c = 8 m, missing samples -> `groundAt` (near) / `heightAt` (far).
+7. *`ranges` are in triangles* (`start`, `count`; terrain triangle `t` = `idx[3t..3t+2]`). A voxel model is **one** MeshData (`vox:<modelKey>`) with one range per part in part-index order (`ranges[p].part` = part name); this is how the AC's "one MeshData per part" is met (27.2 `uPart[8]`, one draw per instance).
+8. *`shearProjection` takes camera terms built from a grid spec* `{cols, rows, pxCellW?, pxCellH?}` (the cell aspect is part of `planeDistY`), not `(cam, cols, rows)`.
+9. *Root `package.json` gets `"type": "module"`, plus a new `design/package.json` = `{ "type": "commonjs" }`.* Reason: a type-less root package.json makes Node 22+ print `MODULE_TYPELESS_PACKAGE_JSON` for every ESM `.js` (every engine test) and reparse it; `"type": "module"` alone breaks the `design/*.js` classic scripts that tests import as CommonJS (`module.exports`). Checked on a copy of HEAD with both files (Node 24.21): 94/94 suites PASS, no warnings. Neither file affects the browser. Within D-029 item 5 (no scripts, no dependencies).
+10. *`tools/tsconfig.json` uses `"checkJs": false` + `// @ts-check` per file* (27.7 item 7 said `checkJs`): `engine/index.js` imports the whole engine, so `checkJs: true` would type-check every legacy file it reaches. With `false`, only `// @ts-check` files report semantic errors.
+11. *"uv within 1e-6 of the analytic ray-plane hit" holds only with snapping off*: the 1/256-px vertex snap moves the attribute plane by ~2e-4 m at 10 m. `rasterJS` has a test-only `snap: false`; with snapping on the tolerance is the parity one (`1e-3 * depth`).
+12. *Every fragment rule for kinds 1-8 lives in `rasterJS.js` from ME-03* (kinds 7/8 tested there on hand-made meshes). ME-05/ME-07 add feeds + integration tests only, so no two stories edit `rasterJS.js`.
+13. *No new exports in `engine/index.js` / `engine/dev.js` in ME-01..ME-09* (tests import the modules directly; PC-A adds dev exports in ME-04 and public ones after the gate). Keeps both shared files conflict-free.
+14. *Level `structSeq` in the mesh path = `placed.structSeq`* (placement index, what `dda.frag.js` gets via `WorldTextures`), not the CPU compositor's per-frame near-to-far index: stable per structure, so planeIds never change when the camera moves. Single-structure tests are identical either way.
+
+**Imports of the new modules** (check-deps rule 1 already forces "inside engine/"): `engine/mesh/*` may import `engine/core/*`, `engine/render/GBuffer.js`, `engine/render/projection.js`, `engine/voxel/octNormal.js`, `engine/voxel/voxelPose.js`, `engine/voxel/VoxelModel.js` (constants). `engine/render/projection.js` imports nothing. `engine/physics/bvh.js` imports nothing (MeshData only as a JSDoc `import()` type). Never import a caster (`sectorCaster`, `terrainCaster`, `voxelMarch`), `gpu/*`, `game/` or `design/` from these modules; **tests may** (the casters are the oracle).
+
+**Do not touch (all seven):** frozen `engine/render/gpu/glsl/{dda,terrain,voxel}.frag.js`, `engine/render/sectorCaster.js`, `engine/render/terrainCaster.js`, `engine/voxel/voxelMarch.js` (tests import them, nobody edits them); PC-A in flight: `engine/world/World.js`, `triggers.js`, `interaction.js`, `engine/render/lighting.js`, `engine/physics/roller.js` (CO-2), `engine/render/*.invariance.test.js` (CO-3), `engine/render/gpu/device/*`, `tools/check-deps.mjs` (ME-03b), `engine/render/gpu/GpuCellPipeline.js`, `engine/render/gpu/glsl/*`, `MeshBuffers.js` (ME-04), `engine/world/Terrain.js` (US-026b S1 / CO-6); `engine/voxel/*`; `engine/render/GBuffer.js`, `engine/index.js`, `engine/dev.js` (ME-00 JSDoc only); `game/js/main.js`; `docs/backlog.md` (the PC-B main session writes row notes).
+
+**Test conventions (all seven):** hand-rolled like the existing suites (`check(name, cond)`, `console.error('FAIL:', ...)`, `process.exitCode = 1` on any failure, a summary line). Seeded inputs: `mulberry32(seed)` in the test, never `Math.random`. **Zero-allocation gates are hard**: when `global.gc` is missing the test re-runs itself with `--expose-gc` (`spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' })`, exit with its status) - never the silent skip of `terrainCaster.test.js`; warm up, `gc()`, run >= 1000 iterations, `gc()`, gate `heapUsed` growth < 64 KB. **Timing gates warn-only unless `PERF_STRICT=1`** (print `WARN`, never `FAIL`). Each suite < 20 s. New engine files start with `// @ts-check`; JSDoc on every export (`@param`/`@returns` with units and frames, `@type {Float32Array}` on typed-array fields, no `any` in exported signatures).
+
+**If unclear:** write `NEEDS PC-A: architect <one-line question>` in the story row (PC-B main session), commit what is green, move to the next item. Never guess on anything that changes a G-buffer field value, a data layout or a public signature.
+
+#### 27.15.1 ME-00 typecheck + typed public API (1.5 d)
+
+Files: new `package.json`, `package-lock.json`, `design/package.json`, `tools/tsconfig.json`, `tools/typecheck.mjs`; changed `.gitignore`, `tools/run-tests.mjs`, `tools/run-tests.test.mjs`, `engine/core/transform.js`, `engine/index.js`, `engine/dev.js`, `engine/render/GBuffer.js` (comments/JSDoc only), `docs/architecture.md` section 11 (one line).
+```jsonc
+// package.json (repo root) - exactly these keys
+{ "name": "kestrel", "private": true, "type": "module",
+  "description": "Dev tooling only (D-029 item 5): the game and engine run without npm install.",
+  "devDependencies": { "typescript": "~5.9.3" } }
+// design/package.json
+{ "type": "commonjs" }
+// tools/tsconfig.json (paths relative to tools/)
+{ "compilerOptions": { "allowJs": true, "checkJs": false, "noEmit": true, "strict": false, "noImplicitAny": false,
+    "target": "es2022", "module": "es2022", "moduleResolution": "bundler", "lib": ["es2022", "dom"], "types": [],
+    "skipLibCheck": true, "forceConsistentCasingInFileNames": true, "maxNodeModuleJsDepth": 0 },
+  "include": ["../engine/core/transform.js", "../engine/index.js", "../engine/dev.js", "../engine/render/GBuffer.js",
+              "../engine/mesh/*.js", "../engine/render/projection.js", "../engine/physics/bvh.js"],
+  "exclude": ["../**/*.test.js", "../**/*.test.mjs", "../node_modules"] }
+```
+- `typescript`: the newest **5.x** at install time with a `~` range (not 6/7: 27.7 was written against the JS compiler's JSDoc support; a major bump = architect question). Commit `package-lock.json`; `.gitignore` += `node_modules/`. The mesh/projection/bvh globs are in `include` from day one so later stories never edit tsconfig.
+- `tools/typecheck.mjs` (Node built-ins only): looks for `<cwd>/node_modules/typescript/bin/tsc` and runs `spawnSync(process.execPath, [tsc, '--noEmit', '-p', 'tools/tsconfig.json', '--pretty', 'false'])`; else `tsc` on PATH if `tsc --version` prints `Version 5.`; else prints `typecheck SKIP: typescript not installed - run "npm install" (dev only, D-029 item 5)` and **exits 3**. Exit 0 = clean, 1 = type errors (tsc output passed through, last line `typecheck: N error(s)`). `--tsc <path>` override for tests. Never run a bare `npx tsc` (npm resolves it to the unrelated `tsc` package) and never download anything.
+- `tools/run-tests.mjs`: `const TYPECHECK_MODE = process.env.KESTREL_TYPECHECK_MODE || 'warn';` (the flip line); `tools/typecheck.mjs` is collected like `validate-content.mjs`, after it. Status: exit 0 -> PASS; exit 3 -> WARN in both modes; other non-zero -> WARN in `'warn'`, FAIL in `'fail'`. `--filter typecheck` works through the existing substring filter. Header comment updated.
+- JSDoc: `transform.js` gets `// @ts-check` and typedefs `Frame` (`yawSteps: 0|1|2|3`), `Transform`, `Vec3` (`{x,y,z}`), `Vec2Out` (`number[]|Float32Array|Float64Array`, length >= 2), `BBox2` (`{x0,y0,x1,y1}`), `Size2` (`{w,h}`); `@param`/`@returns` on every function (degrees, metres, compass yaw, frames per D-028). `makeFrame` returns `/** @type {Frame} */ ({ x, y, z, yawSteps })` (JSDoc cast, same runtime). `GBuffer.js`: `// @ts-check`, field types, `@typedef GBufferSample`, `@param`/`@returns` on `packPlaneId`, `writeSample`, `readSample`. `index.js`/`dev.js`: `// @ts-check`, `@module` header, public typedef re-exports `/** @typedef {import('./core/transform.js').Frame} Frame */` (+ `Transform`, `Vec3`).
+- A tsc file-casing error for `engine/render/voxelPool.js` (git tracks `voxelPool.js`; a Windows working copy may show `VoxelPool.js`) is a working-copy artefact: note `NEEDS PC-A` in the row, do not rename files.
+
+Steps: 1. package files + `.gitignore`, `npm install` -> `node tools/run-tests.mjs`: same PASS count as before, no `MODULE_TYPELESS_PACKAGE_JSON` in the output. 2. tsconfig + `typecheck.mjs` -> `node tools/typecheck.mjs` exits 0/1 (list errors); `--tsc nonexistent` exits 3 with the SKIP line. 3. run-tests wiring -> `run-tests.test.mjs` fixture stand-ins: typecheck exit 1 -> line `WARN tools/typecheck.mjs`, runner exit 0; exit 3 -> WARN; exit 0 -> PASS; `KESTREL_TYPECHECK_MODE=fail` + exit 1 -> FAIL, runner exit 1. 4. JSDoc until `node tools/typecheck.mjs` exits 0 -> `transform.test.js` same check count (4839), `check-deps` green. 5. Section 11 line: "Types: `npm install` once, then `node tools/typecheck.mjs` (also a `run-tests` suite; WARN until clean, flip = `TYPECHECK_MODE` in `run-tests.mjs`)."
+Do not: add `// @ts-check` to other legacy files, add scripts or other devDependencies, write `.d.ts`, change runtime code in the four files.
+
+#### 27.15.2 ME-01 MeshData + levelMesh (2.5 d)
+
+Files: new `engine/mesh/MeshData.js`, `engine/mesh/levelMesh.js`, `engine/mesh/MeshData.test.js`, `engine/mesh/levelMesh.test.js`.
+```js
+// engine/mesh/MeshData.js
+export const MESH_VERSION = 1, AUX_STRIDE = 8, FLAT_STRIDE = 2;
+export const AO_NONE = 0, AO_WALL = 1, AO_PLANE = 2;
+export const AO_FAR = 1e30;          // "no limit" inside vertex data (never Infinity in GPU attributes)
+/** @typedef {Object} MeshData                         27.3 as amended by 27.15.0 items 2, 6, 7
+ * @property {1} version
+ * @property {string} id                              `level:<name>`, `level:<name>#<tag>`, `vox:<modelKey>`, `terrain:near<k>|stitch|far<t>`
+ * @property {'static'|'terrain'} layout
+ * @property {Float32Array} pos                        3/vertex, mesh-local m (levels: level-local; voxels: model voxel units; terrain: chunk-local)
+ * @property {Float32Array} uv                         static 2/vertex (m); terrain length 0
+ * @property {Uint32Array} nrm                         1/vertex, packNormalOct (engine/voxel/octNormal.js) of the mesh-local unit normal
+ * @property {Uint32Array} flat                        static 2/vertex [planeIdBase, kind | face<<8 | mat<<16]; terrain length 0
+ * @property {Float32Array} aux                        static 8/vertex (layout below); terrain length 0
+ * @property {Uint16Array|Uint32Array|null} idx        terrain 3/triangle; static null
+ * @property {number} triCount
+ * @property {Float64Array} bbox                       [x0,y0,z0,x1,y1,z1] mesh-local
+ * @property {{start:number, count:number, part?:string}[]} ranges   triangle units, >= 1 range
+ * @property {string[]} matKeys                        mat bits index this list until resolveMats
+ * @property {boolean} matsResolved                    true = mat bits are MaterialTable ids
+ * @property {number} meshVersion                      +1 on every in-place rebuild (ME-04 re-upload key) */
+export function packFlat1(kind, face, mat)           // ((kind & 0xff) | (face & 0xf) << 8 | (mat & 0xffff) << 16) >>> 0
+export function flatKind(f1), flatFace(f1), flatMat(f1)
+export function wallPlaneIdBase(face, boundary)      // packPlaneId(0, face, boundary)                        (primeWallGSample)
+export function planePlaneIdBase(kind, h)            // packPlaneId(0, kind, Math.round(h * 1000) + 0x800000)  (castPlane)
+export class StaticMeshBuilder {                      // build time only, may allocate
+  constructor(id); matIndex(key) /* first-use order */; beginRange(part);
+  addQuad(p12, uv8, nx, ny, nz, flat0, flat1, aux8)   // corners 0..3 -> triangles (0,1,2), (0,2,3)
+  build() /* -> MeshData */ }
+export function validateMesh(mesh)                   // -> { errors: string[] }, 'path: problem', all problems
+export function assertMesh(mesh)                     // throws Error(errors.join('\n'))
+export function resolveMats(mesh, matIdFor)          // in place, once (throws if matsResolved)
+export function meshToJSON(mesh) / meshFromJSON(obj) // content form: plain number arrays, same keys (stringifyContent-canonical)
+```
+- **Winding:** every triangle `(p0, p1, p2)` has `cross(p1 - p0, p2 - p0)` (plain algebraic formula) along its stored normal. Phase 1 draws with cull `none` in both twins; ME-09/10/17 rely on the winding.
+- `planeIdBase` has structSeq/instance bits = 0; the draw item ORs its own (`planeIdOr`, 27.15.4).
+- **aux layout:** `[0] zRef` (mesh-local z subtracted for G-buffer `z`), `[1] aoMode`; `AO_WALL`: `[2] ceilZ` (viewer cell's numeric ceilH, else AO_FAR), `[3] nbrALo`, `[4] nbrBLo` (floorH of the viewer-side neighbour at along-wall index -1 / +1, AO_FAR when that cell is missing), `[5] u0` (integer along-wall cell coordinate); `AO_PLANE`: `[2] bits` (W=1, E=2, N=4, S=8), `[3] cellX0`, `[4] cellY0`; unused slots 0. The 3 vertices of a triangle carry identical `flat`/`aux`, so GL-vs-WebGPU provoking-vertex rules never matter.
+- **Fragment formulas (rasterJS and the later GLSL, literally):** `AO_NONE`: `aoD = Infinity`. `AO_WALL` (u = along-wall uv, h = v = mesh-local z): `d = max(0, h - zRef); zc = ceilZ - h; if (zc < d) d = max(0, zc); fr = u - u0; if (h < nbrALo) d = min(d, fr); if (h < nbrBLo) d = min(d, 1 - fr); aoD = d` (= `wallAoD`). `AO_PLANE` (u = local x, v = local y): `fx = u - cellX0; fy = v - cellY0; a = Infinity; W: a = min(a, fx); E: a = min(a, 1 - fx); N: a = min(a, fy); S: a = min(a, 1 - fy); aoD = a` (= `planeAoDFast`).
+- Validator: version 1; id non-empty; layout; typed-array classes; lengths (`pos` 3V; static: V % 3 == 0, `uv` 2V, `flat` 2V, `aux` 8V, `idx` null; terrain: `idx.length % 3 == 0`, max index < V, `uv/flat/aux` empty); `nrm` V; finite values; bbox contains all pos (1e-6); ranges inside `[0, triCount]`; static flat/aux equal on the 3 vertices of each triangle; kind 1..9, face 1..7; unresolved mat bits < `matKeys.length`.
+```js
+// engine/mesh/levelMesh.js
+/** @typedef {{base: MeshData, dyn: {tag: string, mesh: MeshData}[], levelName: string}} LevelMeshSet */
+export function buildLevelMesh(level, opts)          // opts { matIdFor?: (key: string) => number, footZ?: number = -2 } -> LevelMeshSet
+export function rebuildLevelMeshDyn(set, level, tag, opts)   // new MeshData for dyn[tag] from live legend values; event-driven (allocation allowed), never per frame
+export function computeRelief(level)                 // {w, h, floorRise: Uint8Array, ceilDrop: Uint8Array}: literal copy of sectorCaster ensureRelief (0.01 m epsilon, missing neighbour = rises)
+```
+`S(c, r)` = `level.sectorAt(c + 0.5, r + 0.5)` (null outside the grid / unknown char). Mesh-local = level-local (1 cell = 1 m). Emission order (determinism): `r = 0..h-1`, `c = 0..w-1`; per cell: its planes, west boundary if `c == 0`, north boundary if `r == 0`, east boundary, south boundary. Skip quads with `z1 - z0 <= 1e-9`. `yawSteps != 0` placements are rejected (throw), as World does until CO-4.
+- **Planes** (cell with `S != null`): floor/top at `h = S.floorH`: kind `S.solid ? 5 TOP : 4 FLOOR`, face 5 U, mat `S.floorMat`, `planePlaneIdBase(kind, h)`, `zRef = h`, `AO_PLANE` + `floorRise` bits. Ceiling if `typeof S.ceilH === 'number'` (solid or not, as the caster): kind 6, face 6 D, mat `S.ceilMat`, `planePlaneIdBase(6, S.ceilH)`, `zRef = S.floorH`, `AO_PLANE` + `ceilDrop` bits. `uv = (x, y)`.
+- **Boundary faces** between `A` (west/north side) and `B` (east/south side). `V` = viewer cell; the normal points into `V`; face: E/W boundary, `V` west -> 4 W, east -> 2 E; N/S boundary, `V` north -> 1 N, south -> 3 S. `wallPlaneIdBase(face, boundary)`, `boundary` = the integer x (E/W) or y (N/S) of the line. `uv`: E/W `(y, z)`, N/S `(x, z)`. `AO_WALL`: `zRef = V.floorH`, `ceilZ` = `V.ceilH` if numeric else AO_FAR, neighbours on `V`'s side (E/W: `S(vc, r-1)`, `S(vc, r+1)`, `u0 = r`; N/S: `S(c-1, vr)`, `S(c+1, vr)`, `u0 = c`).
+  1. Both null: nothing. One null (grid edge), other `X`: `X.solid` -> WALL (kind 1) from `footZ` to `X.floorH`, mat `X.wallMat`, `V` = outside (`zRef 0`, `ceilZ = nbrALo = nbrBLo = AO_FAR`); non-solid `X` -> nothing (terrain owns it).
+  2. Floor riser if `A.floorH !== B.floorH`: `L` = lower, `Hc` = higher; from `L.floorH` to `Hc.floorH`, `V = L`, kind `Hc.solid ? 1 WALL : 2 STEP`, mat `Hc.wallMat`. (This one rule reproduces the caster's solid face, step front and BUG-CPU-001 exit face.)
+  3. Upper face if both non-solid, both `ceilH` numeric and different: `Lc` = lower ceilH, `Hc2` = other; from `Lc.ceilH` to `max(Lc.topH, Hc2.ceilH)`, `V = Hc2`, kind 3 UPPER, mat `Lc.upperMat` (loadLevel defaults it to wallMat).
+- **Dynamic split:** a quad goes to `dyn[tag]` when its own cell (planes) or either side (boundaries) is a legend entry with `dynamic` (tag = `entry.tag`; two tags on one boundary -> lexicographically smaller), else to `base`. `World.animateSector` mutates `sector.ceilH` in place; `rebuildLevelMeshDyn` re-reads it. `base` never changes at runtime.
+- Materials: `matIdFor` given -> ids, `matsResolved = true`; absent -> `matKeys` indices (tests, JSON).
+
+Steps: 1. `MeshData.js` -> `MeshData.test.js`: packFlat1 round trip at kind/face/mat extremes; planeId helpers == `packPlaneId` on 100 seeded inputs; every builder triangle's cross product parallel to its normal (1e-12); validator rejects 3 broken fixtures (bad length, bbox miss, range overflow) and accepts a clean mesh; JSON round trip byte-equal; `resolveMats` twice throws. 2. Planes + boundaries -> `levelMesh.test.js` on synthetic `loadLevel` grids: (a) 3x3 room with ceilings: 9 floors, 9 ceilings, no inner walls; (b) floors 0/0.3: one STEP facing the low cell, `zRef 0`, mat of the high cell; (c) 2 m solid pillar: 4 WALL + 1 TOP; (d) lintel (ceilH 2.2 vs 3, topH 3): UPPER facing the 3 m cell over 2.2..3; (e) sky next to numeric ceiling: no UPPER; (f) solid grid edge: outward WALL from `footZ`; (g) `computeRelief` == `level._relief028` after one `castSectors` frame on `tower` + `test_room`. 3. **Caster oracle (the ME-01 gate):** `tower` + `test_room` via `loadTestAssets`, `footZ = 0`, `bindLevel` ids; 20 seeded open cells per level x yaw {0, 90, 180, 270} x pitch {0, -25}, eye = cell centre at floorH + 1.6, grid 48x27 (`pxCellW = pxCellH = 1`): `castSectors` into GBuffer + DepthBuffer (setup as `sectorCaster.silhouette.test.js`); for every written cell brute-force the first hit of the same ray (literal `cellRayP`) against all `base` + `dyn` triangles (Moeller-Trumbore, float64, double-sided). On cells that are not 4-neighbour kind edges in the caster output and whose hit is >= 1e-6 from a triangle edge: kind, face, mat, planeId equal on >= 99 %; depth within 1e-4 relative; u, v, z, aoD within 1e-4 (Infinity == Infinity). Print every mismatch (pose, cell, both values); explain the remainder in the row (caster clips: BUG-CAST-001 band, `floorFilledTo`). 4. Dynamic: grate `ceilH` -> 5.4, `rebuildLevelMeshDyn(set, tower, 'grate')`: dyn changes, base byte-identical, oracle re-run on 3 poses facing the grate. 5. Determinism: two builds byte-identical (typed arrays + JSON string).
+Do not: import the caster in `levelMesh.js` (copy the relief rule; the test compares), merge quads across cells (per-cell quads keep `u0` and cell AO exact; the tower is ~3k triangles), add alpha test or mask.
+
+#### 27.15.3 ME-02 projection + culling (1 d)
+
+Files: new `engine/render/projection.js`, `engine/render/projection.test.js`, `engine/mesh/culling.js`, `engine/mesh/culling.test.js`.
+```js
+// engine/render/projection.js - the ONE place the shear camera matrix lives (27.5 + 27.15.0 items 1, 8)
+export const PROJ_HFOV_DEG = 75, PROJ_NEAR = 0.05, PROJ_FAR = 2000;
+/** @typedef {{cols:number, rows:number, pxCellW?:number, pxCellH?:number}} GridSpec
+ *  @typedef {{x:number, y:number, z:number, yawDeg:number, pitchDeg:number}} CamPose   world m, z = eye height, compass yaw (D-028)
+ *  @typedef {{cols:number, rows:number, eyeX:number, eyeY:number, eyeZ:number, dirX:number, dirY:number, planeX:number, planeY:number,
+ *             tanHalf:number, planeDistX:number, planeDistY:number, horizonRow:number, tanPitch:number}} ProjTerms */
+export function projTerms(cam, grid, out)              // -> out (ProjTerms), castScene's expression order
+export function shearProjection(terms, out16)          // -> out16: column-major M = P*V, world -> clip (Float64Array in JS; ME-04 copies to Float32Array)
+export function projectPoint(M, W, H, x, y, z, out4)   // -> [X, Y, zNdc, w]: X = W/2 * x/w + W/2, Y = H/2 * y/w + H/2; w <= 0 -> only out4[3] valid
+export function unprojectCell(terms, col, row, dist, out3)   // == cellRayP: cameraX = 2(col + 0.5)/cols - 1; P = eye + (dir + plane*cameraX)*dist; z = eyeZ + (horizonRow - row)/planeDistY * dist
+export function windowToCell(n, X, Y, out2)            // col = X/n - 0.5, row = Y/n - 0.5
+```
+- Terms, literally: `hFovRad = PROJ_HFOV_DEG * Math.PI / 180; tanHalf = Math.tan(hFovRad / 2); yawRad = cam.yawDeg * Math.PI / 180; dirX = Math.sin(yawRad); dirY = -Math.cos(yawRad); planeX = -dirY * tanHalf; planeY = dirX * tanHalf; aspect = (cols * (pxCellW || 1)) / (rows * (pxCellH || 1)); planeDistY = (rows / 2) * aspect / tanHalf; tanPitch = Math.tan(cam.pitchDeg * Math.PI / 180); horizonRow = rows / 2 + tanPitch * planeDistY; planeDistX = cols / (2 * tanHalf)`, with the coordinates.md 3 comment citing `transform.js` (hot-loop exception, same expression order as `castScene`).
+- Rows of M (`clip = M * [x, y, z, 1]`), right `rX = -dirY, rY = dirX`, eye `e`: `row_w = (dirX, dirY, 0, -(dirX*eX + dirY*eY))`; `row_x = (1/tanHalf) * (rX, rY, 0, -(rX*eX + rY*eY))`; `row_y = (ky*tanPitch + 1/rows) * row_w - ky * (0, 0, 1, -eZ)`, `ky = 2*planeDistY/rows`; `row_z = A*row_w + (0, 0, 0, B)`, `A = (F+N)/(F-N)`, `B = -2FN/(F-N)`. Storage `out16[c*4 + r]` (column c, row r).
+- `culling.js`: `frustumPlanes(M, out24)` (Gribb-Hartmann from the same M: `w+x, w-x, w+y, w-y, w+z` (near), `w-z` (far); each normalised by `|(a,b,c)|`; inside = `a x + b y + c z + d >= 0`, world space) and `classifyAABB(planes, x0, y0, z0, x1, y1, z1, marginM = 0)` -> `CULL_OUT = 0 | CULL_IN = 1 | CULL_STRADDLE = 2` (p-/n-vertex test). No allocation, no returned objects.
+
+Steps: 1. `projTerms` bit-identical to `castScene` (`fb.gbuf.cam.planeDistY` after one `castSectors` frame) and to `instanceRect.computeProjection` on 20 seeded poses -> `projection.test.js`. 2. Round trip: 1000 seeded (col in [-0.5, cols - 0.5], row in [-0.5, rows - 0.5], dist in [0.06, 1500], n in {1, 2, 3}): `windowToCell(projectPoint(M, ..., unprojectCell(...)))` within 1e-9 cells, `w` within 1e-9 relative; `unprojectCell` == a literal JS copy of GLSL `cellRayP` within 1e-9; pitch sweep -30..+30 deg: a point at eye height 100 m ahead lands on `row == horizonRow` within 1e-9; pixel centres `(px + 0.5)` map to `cx + (i + 0.5)/n - 0.5` (the `dda.frag.js` offsets) within 1e-12. 3. `culling.test.js`: boxes inside / outside each plane / straddling / behind the eye / containing the eye / pitch +-35; property: 2000 seeded boxes classified OUT -> 200 seeded points inside each never project into `[0,W) x [0,H)` with `N <= w <= F`; zero-allocation gate on 100k `classifyAABB` calls.
+Do not: rotate the camera by pitch or add a pitched view matrix; build this matrix anywhere else (ME-03 and later import it).
+
+#### 27.15.4 ME-03 rasterJS + DrawList (3 d)
+
+Files: new `engine/mesh/DrawList.js`, `engine/mesh/rasterJS.js`, `engine/mesh/DrawList.test.js`, `engine/mesh/rasterJS.test.js`.
+```js
+// engine/mesh/DrawList.js
+export const DRAW_STATIC = 0, DRAW_VOXEL = 1, DRAW_TERRAIN = 2;
+export const DRAW_FLAG_DEPTH_BIAS = 1;          // terrain only; off until ME-06 decides (27.5)
+export const MAX_DRAW_ITEMS = 256;
+/** @typedef {Object} DrawItem
+ * @property {MeshData|null} mesh
+ * @property {number} type                 DRAW_*
+ * @property {Float64Array} matrix         12: A (3x3 row-major) then t (3) - voxelPose FORWARD layout; mesh-local -> world; A = rotation x uniform scale only
+ * @property {Float64Array} partMatrices   8*12, DRAW_VOXEL: part p -> world (copied from FORWARD)
+ * @property {Uint8Array} partFlags        8; bit 0 = part pose axis-aligned (computeVoxelPose out[p*16 + 12])
+ * @property {number} rangeFirst           triangles (static/terrain); voxel items use mesh.ranges per part
+ * @property {number} rangeCount
+ * @property {number} planeIdOr            levels (structSeq & 7) << 28; voxels (slot & 0xF) << 24; terrain 0
+ * @property {number} objectId             levels structSeq; terrain 0x7000 | chunkIndex; voxels 0x8000 | slot (27.4)
+ * @property {number} zBase                G-buffer z = worldZ - zBase - aux.zRef (levels origin.z; voxels inst.z; terrain 0)
+ * @property {number} flags                DRAW_FLAG_*
+ * @property {Float64Array} aabb           6, world, for culling */
+export class DrawList {
+  constructor(capacity = MAX_DRAW_ITEMS)   // preallocates capacity items (typed arrays inside)
+  begin()                                  // count = 0
+  push(mesh, type)                         // -> next preallocated DrawItem, reset to identity/0; throws past capacity
+  cull(planes)                             // -> count; stable in-place compaction dropping CULL_OUT (culling.js)
+  count; items }
+export class LevelMeshCache { constructor(matIdFor); get(structure) /* -> LevelMeshSet: Map by structure.id, built on first sight, dyn rebuilt when structure.packed.version changed */ }
+export function addStructures(list, world, cam, cache, fogFarM)   // draw order near -> far (literal copy of renderWorld's bboxDist insertion sort, fog cull, <= 8); structSeq = placed.structSeq (27.15.0 item 14)
+```
+`addStructures` pushes one `DRAW_STATIC` item for `set.base` and one per `set.dyn[k].mesh`: `matrix = [1,0,0, 0,1,0, 0,0,1, origin.x, origin.y, origin.z]`, `zBase = origin.z`, `planeIdOr = (structSeq & 7) << 28`, `objectId = structSeq`, `aabb` = mesh bbox + origin, whole mesh range.
+```js
+// engine/mesh/rasterJS.js
+export const SUBPIX = 256, GUARD = 16, BIAS_FACTOR = 1, BIAS_UNITS = 1;
+/** @typedef {Object} RasterTarget  cols, rows, n, W, H; zbuf Float64Array (z_ndc, clear 1); depth Float32Array (view depth d, clear Infinity);
+ *  kind Uint8Array; face Uint8Array; mat Uint16Array; planeId Int32Array; u, v, z, aoD Float32Array; nrm Uint32Array; objectId Uint32Array;
+ *  writes Uint32Array|null (per-pixel write count, test instrumentation) - all W*H, index py*W + px */
+/** @typedef {{M: Float64Array, terms: ProjTerms, snap?: boolean, kind7Mat?: (x: number, y: number) => number}} RasterCtx */
+export function createRasterTarget(cols, rows, n, opts)   // opts.countWrites
+export function clearRasterTarget(t)
+export function rasterDrawList(list, target, ctx)          // items[0..count)
+export function copyToGBuffer(target, gbuf, depthArr)      // n === 1 only (throws otherwise); caller ran beginFrame; kind-0 pixels untouched; face 7 -> aoD bits = nrm (CPU v2 convention, voxelMarch getAoAlias)
+```
+Per triangle (float64, module scratch, zero allocation):
+1. Vertex -> world `w = A p + t` (item matrix; `partMatrices[p]` for voxel range p). Normal -> world `A n`, normalised (static: the triangle's `nrm`; terrain: per vertex).
+2. Clip `c = M [w, 1]`; Sutherland-Hodgman (<= 9 vertices) against `w - PROJ_NEAR >= 0`, then `GUARD*w - x >= 0`, `GUARD*w + x >= 0`, same for y. Intersections interpolate every attribute linearly in clip space with `t` computed from the endpoint pair in canonical order (lexicographically smaller `(w, x, y, z)` first), so a shared edge clips identically in both triangles. Fan `(v0, vk, vk+1)`.
+3. Window `X = W/2 * x/w + W/2`, `Y = H/2 * y/w + H/2`, `zn = z/w`, keep `iw = 1/w`. Snap `Xs = Math.round(X * SUBPIX)`, `Ys` likewise (skipped when `ctx.snap === false`, tests only).
+4. Setup `A2 = (X1-X0)(Y2-Y0) - (Y1-Y0)(X2-X0)`; `A2 == 0` -> skip; `A2 < 0` -> swap v1/v2 (cull none). `E_ab(P) = (Xb-Xa)(Py-Ya) - (Yb-Ya)(Px-Xa)`. **Top-left rule** (window y grows down): edge a->b is top-left iff `(Yb == Ya && Xb > Xa) || Yb < Ya`; centre `P = (256 px + 128, 256 py + 128)` is covered iff every edge has `E > 0`, or `E == 0` on a top-left edge. Exact: integer inputs, the guard band keeps `|X*256| < 2^23`, products < 2^53.
+5. Range `pxMin = max(0, ceil((minX - 128)/256))`, `pxMax = min(W - 1, floor((maxX - 128)/256))`, same for y.
+6. `l0 = E_12/A2, l1 = E_20/A2, l2 = E_01/A2`; `zn = l0 zn0 + l1 zn1 + l2 zn2` (+ `2*(BIAS_FACTOR * max(|dzw/dX|, |dzw/dY|) + BIAS_UNITS * 2^-24)` for `DRAW_FLAG_DEPTH_BIAS`, `zw = (zn + 1)/2`, slopes of the snapped triangle); reject `zn > 1`; test `zn < zbuf[i]` (LESS). Perspective-correct: `q = l0 iw0 + l1 iw1 + l2 iw2`, `attr = (l0 a0 iw0 + l1 a1 iw1 + l2 a2 iw2) / q`, `depth = 1/q`.
+7. Writes: `kind`, `mat` from flat (terrain: kind 7, `mat = ctx.kind7Mat(x, y)`); `planeId = flat0 | planeIdOr` (terrain `PLANEID_TERRAIN`); `face`: kinds 1-6 flat face, kind 7 -> 7, kind 8 -> part axis-aligned ? `roundedFace(nWorld)` (literal copy of voxelMarch's) : 7; `u, v`: static uv, terrain world x, y; `z = pz - zBase - zRef` (terrain `pz`); `aoD` per 27.15.2 (kinds 7/8 Infinity); `nrm = packNormalOct(world normal)` (terrain: interpolated, normalised); `objectId`; `writes[i]++` when counting.
+
+Steps: 1. Target + single triangles -> `rasterJS.test.js`: exact pixel sets for 6 hand-computed triangles incl. edges through pixel centres (top-left decisions). 2. Watertightness (snap on): a 2-triangle quad and a 200-triangle fan write every inside pixel exactly once (`writes == 1`), none outside; repeated with the eye inside the fan (near clipping). 3. Perspective: a planar quad (coords < 64 m, float32 storage) at 20 seeded poses, `snap: false`: `unprojectCell(pixel, depth)` on the plane within 1e-6 m, `u, v` == analytic ray-plane hit within 1e-6; snap on: within `1e-3 * depth`. 4. Kinds 7/8 on hand-made meshes: 2x2 terrain grid with a `kind7Mat` stub (u, v = world xy, planeId -1, aoD Infinity, normal interpolated); 1-part voxel cube at yaw 30 deg (face 7 + normal) and 90 deg (rounded face). 5. `DrawList.test.js`: structSeq/order on a 3-structure fake world; cull drops an item behind the eye; 200 synthetic items `begin/push/cull` <= 0.3 ms median (warn-only); zero-allocation gates on 1000 `begin/push/cull` frames and on 200 `rasterDrawList` frames (tower, 160x60). 6. **Tower vs CPU DDA:** 3 inside tower poses copied from the `game/js/main.js` gpucompare list, 160x60, n = 1: `castSectors` -> GBuffer A; `buildLevelMesh` (`footZ = 0`) -> `addStructures` -> `rasterDrawList` -> `copyToGBuffer` -> GBuffer B: kind equal on >= 98 % of cells excluding cells with a differently-kinded 4-neighbour in A; list the rest; shuffled item order -> identical target.
+Do not: use screen-space derivatives, store world xyz, allocate per triangle/frame, write `u, v` from screen data, special-case the tower, cache anything keyed on the camera.
+
+#### 27.15.5 ME-05 terrainMesh (2.5 d)
+
+**US-026b S1 is not a blocker:** code against today's `terrain.near` contract `{x0, y0, w, h, cell, height, type, hDraw, minH, maxH, version}` and "a flip = a new `near` object with `version + 1`" - today's `bakeNearBand(cx, cy)` already behaves so and S1 keeps it (26.1 item 4). Detect flips by object identity; tests call `terrain.bakeNearBand(cx, cy)` to simulate a recentre. No reorder, no wait; after S1 lands on master re-run the suite (a changed `near` shape = NEEDS PC-A). Do not edit `Terrain.js`. Preconditions asserted at construction: `chunkSize % farCell == 0`, band `x0, y0` multiples of the far cell (8 m), `w == h == 3 * chunkSize/nearCell`.
+
+Files: new `engine/mesh/terrainMesh.js`, `engine/mesh/terrainMesh.test.js`.
+```js
+export const FAR_TILE_QUADS = 32, FAR_LOD1_STEP = 4, RING0_M = 512;
+export class TerrainMeshSet {
+  constructor(terrain, opts)          // opts.fogFullM = 1500 (test: == terrainCaster FOG_FULL); preallocates everything (2 x 9 near chunks, stitch, far tiles)
+  step(msBudget = 2)                  // -> boolean pending; per RENDERED frame, never per fixed step: far tiles once after farReady / farVersion change, near rebuild on flip
+  addToDrawList(list, cam)            // near chunks + stitch + far tiles (LOD by distance), DRAW_TERRAIN items, zBase 0, planeIdOr 0
+  typeAt(x, y)                        // kind-7 mat: near nearest texel inside the band else far nearest (castTerrain's rule); allocation-free; = ctx.kind7Mat
+  near; stitch; far; pending }        // MeshData[] / MeshData / MeshData[]
+```
+- **Near chunks:** band vertex `(i, j)` at the cell centre `(x0 + (i + 0.5) cell, y0 + (j + 0.5) cell)`, `z = hDraw[i + j*w]`. Chunk `(kx, ky)` owns vertex columns `64 kx .. min(64 kx + 64, w - 1)` (65 or 64; the shared column is duplicated, so chunks are watertight); chunk-local positions, origin `(x0 + 128 kx, y0 + 128 ky, 0)` = the item translation. Quad `(i, j)` -> triangles `(a, b, c)`, `(a, c, d)`, `a = (i, j)`, `b = (i+1, j)`, `c = (i+1, j+1)`, `d = (i, j+1)` (normal up by the winding rule). Vertex normal `(-(hR - hL)/(2c), -(hU - hD)/(2c), 1)` normalised, `c = 2`, heights `util.gridHeight(near, x +- c, y)` / `(x, y +- c)`, null -> `terrain.groundAt` (literal `terrainNormal`). Index buffers static per chunk width (two variants, built once). objectId `0x7000 | (3 ky + kx)`.
+- **Far tiles:** far vertex `(i, j)` at `((i + 0.5) 8, (j + 0.5) 8)`, `z = farHDraw`, normals as above with `c = 8` on `terrain._farGridDraw`, null -> `heightAt`. Tiles of 32x32 quads over quads `0 .. mapW - 2` (last tile narrower). One MeshData per tile: `ranges[0]` = LOD0 (8 m quads + skirt), `ranges[1]` = LOD1 (every 4th vertex column/row plus the tile's last one, + skirt), each at a fixed offset in `idx` (LOD0 capacity = full tile) so a LOD0 count change never moves LOD1. Skirts on all 4 edges: bottom vertices at `z = tileMinH - 1` (tile's own min `farHDraw`), same x, y, normal copied from the top vertex. objectId `0x7000 | (16 + tileIndex)`. Built tile by tile inside `step`.
+- **Far-under-band exclusion:** far quad `(i, j)` (spanning `[8i+4, 8i+12] x [8j+4, 8j+12]`) is dropped from LOD0 when it intersects the open near-surface rectangle `(x0 + cell/2, x0 + w cell - cell/2) x (y0 + cell/2, y0 + h cell - cell/2)` (tower band: `i in [x0/8 - 1, x0/8 + 47]`). Band-intersecting tiles are always LOD0; their LOD0 index region is rewritten on every flip.
+- **Stitch** (`terrain:stitch`, indexed, objectId `0x7000 | 9`) closes the ring between the near boundary loop (band perimeter vertices, 4 x (w - 1)) and the kept far boundary loop (far vertices from the first to one past the last excluded quad index, perimeter, 4 x 49 for the tower band). Both loops start at their min-x/min-y corner and run +x, +y, -x, -y; parameter `t = edgeIndex + fraction` in [0, 4). Zip: emit the triangle that advances the loop whose next vertex has the smaller `t` (tie -> advance the far loop) until both loops are closed; reverse a triangle whose cross z < 0. Heights/normals = the loop vertices' own (no new samples). If the far loop leaves the far grid: no stitch, warn once.
+- **Rebuild on flip:** `step` sees `terrain.near !== this._builtFor` -> fills the back set row by row (192 band vertices per unit, `performance.now()` checked per row), then the stitch and the band tiles' LOD0 regions, then swaps front/back and bumps `meshVersion` of every changed MeshData in the same call (a frame renders all-old or all-new). Retarget while pending: restart from row 0 on the newest `near`.
+- `addToDrawList`: near chunks and stitch always (culling by `DrawList.cull`); far tiles LOD0 when the 2D distance eye -> tile rectangle < `RING0_M` or the tile intersects the band, else LOD1; skip beyond `fogFullM`; order near chunks, stitch, far tiles by distance.
+
+Steps: 1. Near chunks on a stub recipe (analytic sinusoid heights, the `util.bake`/`gridHeight` literal from `overworld_far.js`) -> `terrainMesh.test.js`: vertex z == `hDraw` exactly; chunk edges share identical positions; vertex normals == the `terrainNormal` formula within 1e-9; normals at 1000 seeded interior points vs `groundNormalAt` within 0.02 (print max). 2. Far tiles: skirts at `tileMinH - 1`; LOD1 uses only every 4th column/row + last; no LOD0 triangle's xy footprint intersects the open near rectangle (area test on every triangle). 3. Stitch: loop counts; every triangle positive xy area and cross z > 0; near + stitch + kept far triangles cover 5000 seeded xy points of the far map exactly once (points within 1e-6 of an edge excluded). 4. Flip: `bakeNearBand(cx + 1, cy)` then `step(2)` until done: each call <= 2 ms + one row (warn-only), `meshVersion` changes only on the swap call, result byte-equal to a fresh `TerrainMeshSet` on the new band; zero-allocation gate over 2000 `step` + `addToDrawList` calls incl. 3 flips. 5. Raster integration: real `overworld_far.js` recipe, `bakeNearBand` at the tower chunk, 3 hillside poses, `rasterDrawList` (`kind7Mat = set.typeAt`) vs `castTerrain`, kind-7 cells excluding 4-neighbour kind edges: kind >= 97 %, mat equal on >= 97 % of matched cells, depth within 2 %; print the rest (phase-1 known differences: triangles vs bilinear, near/far switch).
+Do not: edit `Terrain.js`/`terrainCaster.js`; sample `heightAt` for vertices inside the band; rebuild inside a fixed step or inside `rasterDrawList`; give terrain per-cell planeIds; enable `DRAW_FLAG_DEPTH_BIAS` by default.
+
+#### 27.15.6 ME-07 voxelMesh (2 d)
+
+Files: new `engine/mesh/voxelMesh.js`, `engine/mesh/voxelMesh.test.js`.
+```js
+export function buildVoxelMesh(pm, opts)               // pm = packVoxelModel output (resolved matIds); opts { id: 'vox:<modelKey>', partNames: string[] } -> MeshData (static)
+export class VoxelMeshCache { get(pm, modelKey, partNames) }   // WeakMap by pm identity (VoxelPool.bind repacks -> rebuild on first sight)
+export function addVoxelInstances(list, pool, cache, partNamesFor)   // one DRAW_VOXEL item per pool.list entry k (already posed + culled by VoxelPool.project)
+```
+- Mesh-local = model voxel units (the space of `parts[].box`/`pivot`); **no cellM in the mesh** (FORWARD carries cellM, yaw, anchor, instance translation). `ranges[p] = {start, count, part: partNames[p]}` in part order (count may be 0).
+- **Exposed face:** solid voxel `(x, y, z)` of part `p` (`pm.vox[atlasOff + (x-x0) + bx((y-y0) + by(z-z0))] != 0`, value = local mat) has an exposed face in direction f iff the neighbour is outside part p's box or empty **in part p** (the march only sees part p's atlas). Part-local face codes: 4 W (-x), 2 E (+x), 1 N (-y), 3 S (+y), 5 U (+z), 6 D (-z).
+- **Layer** (planeId bits 0-17) = the solid voxel's index along the face axis from the box min (`x - x0` for W and E, `y - y0` N/S, `z - z0` U/D) = `marchVoxelRay`'s `curLayer`. Plane: W at `x`, E at `x + 1`, N at `y`, S at `y + 1`, D at `z`, U at `z + 1`.
+- **Greedy** per (part, face, layer): 2D mask over `(a, b)` = `(y, z)` for W/E, `(x, z)` for N/S, `(x, y)` for U/D, value = local mat or 0; scan `b` ascending then `a` ascending; at an unvisited cell extend `a` while same mat and unvisited, then extend `b` while the whole run matches; emit; mark visited. Merge equal mat only.
+- Per quad: corner `uv = ((a - boxMinA) * cellM, (b - boxMinB) * cellM)` (castModels mapping); `nrm` = local face normal; `flat0 = (0xF << 28) | ((p & 7) << 21) | ((f & 7) << 18) | (layer & 0x3FFFF)` (instance bits from the item); `flat1 = packFlat1(8, f, pm.matIds[local])` (face bits = local face, informational; rasterJS derives the world face); aux `[0, AO_NONE, 0, ...]`; `matsResolved = true`.
+- `addVoxelInstances`: for `k` in `pool.list` order: `computeVoxelPose(pm, inst, scratch)`, copy `FORWARD[12p .. 12p + 11]` into `partMatrices`, `partFlags[p] = scratch[16p + 12]`, `planeIdOr = (k & 0xF) << 24`, `objectId = 0x8000 | k`, `zBase = inst.z`, `aabb` from `inst.rect` min/max. Zero allocation (cache hits, module scratch).
+
+Steps: 1. Mesher on `quadruped12` + `lever` + `boulder` (side-effect import `design/models/voxel_props.js` + `voxel_tower.js` as `world.test.js` does) -> `voxelMesh.test.js`: area invariant (sum of quad areas per part/face == brute-force exposed faces), every quad on its layer plane, no overlap within one (part, face, layer), determinism (byte-equal twice). 2. Triangle table for every content voxel model; fixtures asserted <= 2000; a content model over 2000 prints `WARN` and goes into the row as `NEEDS PC-A: PO/architect triangle budget <model> <n>` (content decision, not a code failure). 3. March oracle: `quadruped12` mid-clip and `lever` at yaw 37: for every quad, world point = FORWARD(quad centre + 1e-3 * normal); `marchVoxelRay` from 0.5 m out along the world normal back toward it hits the same part/face/layer, `t` within 1e-6. 4. Raster integration: `addVoxelInstances` + `rasterDrawList` vs `castModels` at 3 poses (lever, burner, boulder; 160x60), kind-8 cells excluding kind edges: kind >= 98 %, planeId/mat equal on >= 99 % of matched cells, depth within 1 %; zero-allocation gate on 1000 `addVoxelInstances` calls.
+Do not: write a second pose implementation (use `computeVoxelPose`/`FORWARD`), bake poses into vertices, merge across mats or parts, edit `engine/voxel/*`.
+
+#### 27.15.7 ME-09 bvh (1.5 d)
+
+Files: new `engine/physics/bvh.js`, `engine/physics/bvh.test.js`.
+```js
+export const BVH_LEAF_MAX = 4;
+/** @typedef {Object} Bvh
+ * @property {number} triCount
+ * @property {number} nodeCount
+ * @property {Float64Array} tri          9 per triangle, world m, BVH order
+ * @property {Int32Array} triId          BVH order -> source triangle index (MeshData triangle)
+ * @property {Float64Array} nodeMin      3 per node
+ * @property {Float64Array} nodeMax
+ * @property {Int32Array} nodeStart      inner: left child (right = left + 1); leaf: first triangle (BVH order)
+ * @property {Int32Array} nodeCount      inner 0; leaf 1..BVH_LEAF_MAX
+ * @property {Int32Array} stack          traversal stack (depth + 2); queries are not re-entrant per Bvh */
+/** @typedef {{t:number, tri:number, u:number, v:number, nx:number, ny:number, nz:number}} RayHit   tri = BVH-order index; n = unit winding normal */
+export function buildBvh(pos, idx, matrix12)          // pos xyz Float32Array|Float64Array; idx null = unrolled, else Uint16Array|Uint32Array; matrix12 null = identity, else DrawItem layout, baked at build
+export function buildBvhFromMesh(mesh, matrix12)      // MeshData static or terrain, whole mesh
+export function refit(bvh, pos, idx, matrix12)        // same topology, new positions (grate collider, ME-11); zero allocation
+export function queryAABB(bvh, x0, y0, z0, x1, y1, z1, out, maxOut)   // -> count; BVH-order indices into out (Int32Array), inclusive overlap, left-first order, stops at maxOut
+export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out)       // -> boolean; nearest t in [0, tMax]; double-sided Moeller-Trumbore (|det| < 1e-12 = parallel)
+export function raycastAny(bvh, ox, oy, oz, dx, dy, dz, tMax)         // -> boolean, early out (later shadow/VPL use)
+export function segment(bvh, ax, ay, az, bx, by, bz, out)             // raycast with d = b - a, tMax = 1
+```
+- Build (load time, allocates): float64 centroids; recursion over index ranges: bounds = triangle bounds; `count <= 4` -> leaf; else axis = longest axis of the **centroid** bounds (ties x, y, z), sort the range by centroid on that axis, ties by source index (deterministic), split at `start + (count >> 1)`; children adjacent. Arrays trimmed to size.
+- Queries: explicit stack; `raycast` visits the nearer child first by slab entry (tie -> left), prunes by the best t, replaces only on strictly smaller t. Hit normal = normalised `cross(p1 - p0, p2 - p0)` of the stored world triangle.
+
+Steps: 1. Build invariants on seeded soups (10, 1000, 20000 triangles) and the tower `levelMesh` base (matrix = tower origin) -> `bvh.test.js`: each triangle in exactly one leaf, node bounds contain children/triangles, two builds byte-identical. 2. `queryAABB` vs brute force on 2000 seeded boxes (sorted set equality). 3. `raycast`/`segment` vs brute force on 5000 seeded rays incl. axis-parallel rays and rays through shared edges/vertices: same hit/miss, `t` within 1e-9, same triangle unless another has equal t within 1e-12. 4. `refit` after moving vertices == fresh build's query results. 5. Zero-allocation gate on 10k mixed queries; print tower build ms and 10k raycasts ms (warn-only).
+Do not: recurse in queries, allocate hit objects, import `engine/mesh` at runtime, expose nodes outside physics (27.10: `rigid.js`/player never see triangles or nodes).
+
+#### 27.15.8 Estimate
+
+| Story | Programmer-days | Can start |
+|---|---|---|
+| ME-00 | 1.5 | now |
+| ME-01 | 2.5 (caster oracle) | after ME-00 |
+| ME-02 | 1 | after ME-00, parallel to ME-01 |
+| ME-03 | 3 | after ME-01 + ME-02 |
+| ME-09 | 1.5 | after ME-01, parallel to ME-03 |
+| ME-05 | 2.5 (stitch + far tiles) | after ME-03 (no S1 wait) |
+| ME-07 | 2 | after ME-03, parallel to ME-05 |
+
+Total ~14 programmer-days (27.11 said 13: +1 for the ME-01 oracle and the ME-05 stitch). Two programmers on the parallel plan: ~8-9 working days. In 2-3 days PC-B can realistically land ME-00, ME-01 and ME-02 and start ME-09.
