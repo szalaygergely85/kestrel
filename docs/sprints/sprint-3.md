@@ -57,3 +57,24 @@ Owner plays the tower at 240x90, steps through the breach and walks the terrain 
 - the end card appears at the terrain end marker; `R` restarts cleanly;
 - settings: grid change without reload, mute/volume/sensitivity survive a reload; 240x90 + 320x120 meet the US-018 bar, 400x150 per D-025;
 - main session: levels load from `content/*.json`, `?gpucompare=1` all PASS, all Node suites + `node tools/check-deps.mjs` + `node tools/validate-content.mjs` OK.
+
+## Review (PO, 2026-09-26; closed by D-029 re-cut)
+**Done:** US-027a, US-027b (+ US-027c guard), US-038a (400x150 normal, 480x180 ultra), US-058 (+ US-061 in run-tests), US-060. Main-session checks: content from `content/*.json`, `?gpucompare=1` 31/31 on the owner Intel GPU (merge @0df9b7a), 92/92 suites, check-deps + validate-content clean.
+**Testing (waiting for the owner walk-test):** US-026a S1-S6 (walk-out + waystone end card), US-038b settings panel, BUG-PERF-001 (a)(b), BUG-OWN-008 fix 2. Bonus work from PC-B queues also in `testing`: editor US-031..034/063/064/066, US-062 real pause.
+**Not done:** BUG-PERF-001 (c) + US-069/US-047 in the ARCH CHANGES fix pass (Queue 3 item 6b); BUG-OWN-008 part 3 (tower not meeting the ground) - frozen by D-029, replaced by the mesh path; US-020d deferred to M6 (owner).
+**Bugs found:** BUG-OWN-008 (tower deformed/too tall from outside; fix 2 on master, part 3 regressed gpucompare on the real GPU -> not merged); stale title.html checks + 45-char end line (fixed, BUG-CONTENT-001/BUG-PREV-001); US-059 SwiftShader flags (fixed).
+**Open owner walk-test items (please):**
+1. Waystone end: wake -> breach -> hill -> waystone -> end card -> `R`, plus one walk into the bound (slide + hint once).
+2. Settings: Esc -> `S`; grid change live; mute vs `N`; click-to-resume closes the panel; reload remembers the grid; `?bench=1` still at 240x90.
+3. Tower walk: around the tower outside at 20-150 m (shape/height; the "meets the ground" part now waits for the mesh gate).
+4. Editor: the 4-step walk-through in `### US-032` on the reskinned layout (covers US-063/064/066).
+5. Pause: Esc = everything stops, click = resume with no jump, alt-tab = forced pause, ambient ducks.
+Plus: `?bench=1` 60 s walk (is the 3.1 ms physics spike gone?).
+
+**Missing to be playable (gap list):**
+- The tower seen from outside does not sit on the ground cleanly (seam class) -> mesh engine phase 1 (sprint 4).
+- No sword combat, no enemy, no hearts/items UI yet - the vertical slice's core loop after the tower is still missing (M2 after the mesh gates).
+- The world ends at the 96 m bound: no streaming/chunk regeneration (US-026b S2+ sprint 5).
+- No object physics beyond the boulder (US-051a behind the phase-2 gate).
+- Terrain features beyond the close band (reeds, foam, trunks, steep rock faces) - US-026b / OWN-REQ-002.
+- Sound frozen at the M1 set (M6 polish).
