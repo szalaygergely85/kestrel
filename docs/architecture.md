@@ -1427,7 +1427,7 @@ ESCALATE TO MANAGER (D-023): pick A, B or C. Recommendation **B**, with the id a
 
 ## 20. M1.5 editor tech notes: outline (P7; full notes after D-023; architect, 2026-09-25)
 
-1. **Layout:** `tools/editor/index.html` + `tools/editor/{main,camera,select,tools,panel,io,undo}.js`; imports `engine/index.js` (+ `engine/dev.js`, US-047) only, never `game/` (add a `tools/editor` fixture to check-deps).
+1. **Layout:** `tools/editor/index.html` + `tools/editor/{main,camera,select,tools,panel,io,undo}.js`; imports `engine/index.js` only (never `engine/dev.js`, check-deps rule 7, US-047), never `game/` (add a `tools/editor` fixture to check-deps).
 2. **Rendering:** `createWorldRenderer(canvas, assets, opts)` (US-046) = the game's compositor/GPU path with its own RenderTarget; the editor owns no render code.
 3. **Fly-cam without `game/`:** a free `CameraPose` driven by `Input` (WASD, Q/E down/up, RMB look); no Player, no physics step; the sim runs only in "Play" mode.
 4. **Idle skip:** render only when `world.renderVersion`, the camera pose or the animation clock changed (section 10); target ~0 ms when idle.
