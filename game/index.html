@@ -96,6 +96,11 @@
        those ASSETS.models entries to already exist), same classic-script
        loading. -->
   <script src="../design/models/voxel_tower.js"></script>
+  <!-- US-026a-S6: the waystone voxel model (world entity `endMarker`,
+       content/worlds/world_m1.world.json) - loaded right after
+       voxel_tower.js, same classic-script convention (materials merged
+       append-only onto ASSETS.voxelMaterials). -->
+  <script src="../design/models/voxel_world.js"></script>
   <!-- US-016 D-011 addendum: the far signal tower + Ferrum's horizon lights
        (world_m1.js's `farTower` entity + `horizon[]` entry reference these). -->
   <script src="../design/models/far_tower.js"></script>

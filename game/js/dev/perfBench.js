@@ -32,6 +32,10 @@ export const VIEWS = [
   { name: 'ground floor (brazier + sun shaft)', x: 1494, y: 1026, z: 1.6, yawDeg: 110, pitchDeg: 0 },
   { name: 'mid ledge, looking down', x: 1500, y: 1028, z: 4.6, yawDeg: 200, pitchDeg: -30 },
   { name: 'summit, out the breach', x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 },
+  // US-026a-S6 (architecture.md 23.6): `?bench=1` poses = breach looking out
+  // (above) + this one, the exact `world_m1: waystoneLookBack` gpucompare
+  // pose (main.js), eye height already baked into z (2.13).
+  { name: 'waystone, looking back at the tower', x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: 5 },
 ];
 
 function sum(arr, n) { let s = 0; for (let i = 0; i < n; i++) s += arr[i]; return s; }

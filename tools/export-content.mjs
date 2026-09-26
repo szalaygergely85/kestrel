@@ -51,6 +51,7 @@ export const CLASSIC_SCRIPTS = [
   'design/models/relay.js',
   'design/models/voxel_props.js',
   'design/models/voxel_tower.js',
+  'design/models/voxel_world.js', // US-026a-S6: waystone, mirrors game/index.html
   'design/models/far_tower.js',
   'design/models/ferrum_lights.js',
   'design/levels/test_room.js',

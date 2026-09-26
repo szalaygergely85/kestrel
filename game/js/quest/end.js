@@ -1,16 +1,30 @@
-// game/js/quest/end.js (US-017, D-006/D-008, D-011 reskin). The real body of
-// `quest.end`, named by `design/levels/tower.js`'s trigger `{ id: 'end',
-// cells: [...], walkTo: {x,y}, pitchTo, trigger: 'quest.end' }`. No literal
-// coordinate here (US-010 tech note 1 rule): the walk target is `origin +
-// def.walkTo`, `origin` resolved from `world.structures[]` by the
-// `structId` the engine hands the behaviour (`updateTriggers`/
-// `World.fireTrigger`, engine/world/triggers.js), never a constant.
+// game/js/quest/end.js (US-017, D-006/D-008, D-011 reskin; US-026a-S6
+// extends this for a world-level trigger, architecture.md 23.5). The real
+// body of `quest.end`, named by a trigger `{ id: 'end', walkTo: {x,y},
+// pitchTo, lookAt, trigger: 'quest.end' }` - either a structure-local one
+// (`structId` set, `def.walkTo` is level-local, added to the structure's
+// origin) or a world-level one (`structId == null`, `def.walkTo` is already
+// an absolute world coordinate - no origin to add, there is no structure).
+// No literal coordinate or yaw here (US-010 tech note 1 rule / 23.7 do-not
+// list): the walk target and look direction both come from the trigger's
+// own data (`updateTriggers`/`World.fireTrigger`, engine/world/triggers.js),
+// never a constant.
 //
 // Tech notes (architect, 2026-09-23), docs/backlog.md US-017 item 2:
 // `quest.end` sets `world.state['quest.endT'] = 0` and returns `true`; a
 // per-step function (`stepEnd`, called from main.js's fixed step, after
-// `updateTriggers`) advances it and drives the scripted walk + pitch.
-// `main.js` reads `endT` itself to drive the scene fade and the end card.
+// `updateTriggers`) advances it and drives the scripted walk + pitch (and,
+// since US-026a-S6, yaw). `main.js` reads `endT` itself to drive the scene
+// fade and the end card.
+//
+// `lookAt` (US-026a-S6, architecture.md 23.5): a trigger def may carry
+// `lookAt: '<entityId>'` (e.g. `farTower`) instead of/alongside `pitchTo`.
+// The target entity's world position is resolved ONCE at fire time (not per
+// step - rule 9) via `world.entity(id)`, and `yawTo = atan2(ex - x, -(ey -
+// y))` (compass degrees, same convention as `PlayerLook`/`transform.yawDeg`:
+// 0 = north/-y, 90 = east/+x) is stored into `_endWalk`. `stepEnd` eases
+// yaw toward it on the shortest arc (wrapping through 0/360), same
+// smoothstep curve as pitch.
 //
 // Timings: `WALK_SEC`/`FADE_SEC`/`GAP_SEC`/`TYPE_CPS` are the AC fallback
 // (1.5 s walk, 2 s fade, 1.5 s gap, 30 chars/s) - `ASSETS.uiStyle.endText`/
@@ -37,25 +51,55 @@ export function readEndTimings(uiStyle) {
 
 function ease(t) { return t * t * (3 - 2 * t); } // smoothstep, same curve World.js's sector animation uses
 
+/** Shortest signed delta (deg) from `a` to `b`, in (-180, 180]. */
+function shortestDeltaDeg(a, b) {
+  return ((b - a + 540) % 360) - 180;
+}
+
 /**
  * `quest.end` behaviour (fired once, on the trigger's enter edge). Stores
  * the scripted walk on the actor's own `components.body` under a `_`
  * prefixed key - transient scratch, stripped by `serialize.js`'s
  * `stripScratch` (same convention as `integrate.js`'s `_move`/
  * `_collideOpts`), never part of a save.
+ *
+ * `structId == null` (US-026a-S6, a world-level trigger): `def.walkTo` is
+ * already an absolute world coordinate - no structure origin to add (there
+ * is none). `structId` set (the original structure-local end): `def.walkTo`
+ * is level-local, added to the structure's own origin, as before.
  */
 export function questEnd(ctx) {
   const { world, def, entity, structId } = ctx;
   if (!entity || !entity.transform) return false;
 
-  const struct = world.structures.find((s) => s.id === structId);
-  const ox = struct ? struct.origin.x : 0, oy = struct ? struct.origin.y : 0;
-  const tx = ox + ((def.walkTo && def.walkTo.x) || 0);
-  const ty = oy + ((def.walkTo && def.walkTo.y) || 0);
+  let tx, ty;
+  if (structId == null) {
+    tx = (def.walkTo && def.walkTo.x) || 0;
+    ty = (def.walkTo && def.walkTo.y) || 0;
+  } else {
+    const struct = world.structures.find((s) => s.id === structId);
+    const ox = struct ? struct.origin.x : 0, oy = struct ? struct.origin.y : 0;
+    tx = ox + ((def.walkTo && def.walkTo.x) || 0);
+    ty = oy + ((def.walkTo && def.walkTo.y) || 0);
+  }
 
   const x0 = entity.transform.x, y0 = entity.transform.y;
   const dx = tx - x0, dy = ty - y0;
   const len = Math.hypot(dx, dy);
+
+  // `lookAt: '<entityId>'` (23.5): resolve the target entity's world
+  // position once, here, and compute the compass-degree yaw toward it -
+  // never per step (rule 9), never a literal coordinate/yaw in this file.
+  let yaw0 = null, yawTo = null;
+  if (typeof def.lookAt === 'string') {
+    const target = world.entity(def.lookAt);
+    if (target && target.transform) {
+      const ex = target.transform.x, ey = target.transform.y;
+      yaw0 = entity.transform.yawDeg;
+      yawTo = Math.atan2(ex - x0, -(ey - y0)) * (180 / Math.PI);
+      yawTo = ((yawTo % 360) + 360) % 360;
+    }
+  }
 
   const body = entity.components.body || (entity.components.body = {});
   body._endWalk = {
@@ -64,6 +108,8 @@ export function questEnd(ctx) {
     dirY: len > 1e-6 ? dy / len : 0,
     pitch0: entity.transform.pitchDeg,
     pitchTo: typeof def.pitchTo === 'number' ? def.pitchTo : entity.transform.pitchDeg,
+    yaw0,
+    yawTo,
   };
 
   world.state['quest.endT'] = 0;
@@ -112,6 +158,14 @@ export function stepEnd(world, actor, dt, uiStyle, moveCapsule) {
     actor.transform.y = out.y;
   }
   actor.transform.pitchDeg = ew.pitch0 + (ew.pitchTo - ew.pitch0) * ease(frac);
+  // US-026a-S6 (23.5): ease yaw toward `lookAt`'s target on the SHORTEST
+  // arc (wraps through 0/360), same smoothstep curve as pitch above. A
+  // no-op (yaw untouched) when the trigger had no `lookAt` or it didn't
+  // resolve (yaw0/yawTo both null, see questEnd).
+  if (ew.yawTo !== null) {
+    const delta = shortestDeltaDeg(ew.yaw0, ew.yawTo);
+    actor.transform.yawDeg = ((ew.yaw0 + delta * ease(frac)) % 360 + 360) % 360;
+  }
 }
 
 /**

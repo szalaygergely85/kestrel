@@ -1234,6 +1234,17 @@ function runGpuCompareDdaMode() {
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 255, pitchDeg: 20 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: signal tower',
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 255, pitchDeg: 2 }, real: true },
+    // US-026a-S6 (architecture.md 23.6): the 4 near-terrain/waystone parity
+    // poses. Eye z already includes eyeHeight (1.60 m) per this table's own
+    // convention (ground z + 1.60).
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: terrainNearTower',
+      cam: { x: 1470, y: 1025, z: 4.0, yawDeg: 270, pitchDeg: -10 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: bandEdge',
+      cam: { x: 1470, y: 1025, z: 4.0, yawDeg: 270, pitchDeg: 0 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: waystoneLookBack',
+      cam: { x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: 5 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: waystoneDown',
+      cam: { x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: -35 }, real: true },
   ];
 
   // US-040 step 5 (architecture.md 15.2 item 7): the formal `?gpucompare=1`

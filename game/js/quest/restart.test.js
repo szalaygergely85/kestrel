@@ -14,6 +14,7 @@
 import {
   World, serialize, deserialize, validateBehaviours,
   stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS, stepSectorAnims,
+  updateTriggers,
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any
@@ -103,10 +104,11 @@ ok('3a: boulder moved from its start position', boulder.transform.x !== bx || bo
 // 4. Fire quest.end directly (same shape `updateTriggers` fires it with).
 // US-026a-content: the 'end' trigger moved off the tower level onto
 // worlds.world_m1.triggers (world coordinates, structId: null - the
-// waystone). `world.triggers` (built by the current `buildTriggers`, which
-// only reads structure-level `def.triggers`) does not include it yet - that
-// wiring is PC-A's US-026a-engine work (S2/S5). This still exercises the
-// real registered 'quest.end' behaviour with a ctx built straight from the
+// waystone). US-026a-S6 note: `world.triggers` now DOES include this
+// world-level record (`buildTriggers`/S2 landed) - see section 8 below for
+// the real `updateTriggers`-driven fire (walking onto the circle) rather
+// than this direct `fireTrigger` call. This still exercises the real
+// registered 'quest.end' behaviour with a ctx built straight from the
 // content data, same as `fireTrigger` always does.
 // ---------------------------------------------------------------------------
 const worldEndDef = (worldDef.triggers || []).find((t) => t.id === 'end');
@@ -146,6 +148,70 @@ function geomEqual(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// 8. US-026a-S6: the REAL trigger-fired path (walking onto the waystone
+// circle, through `updateTriggers` - not the direct `fireTrigger` call in
+// section 4), plus a restart-after-terrain-end round trip: `R` (deserialize
+// (initialState)) rebuilds `world.triggers` fresh (inside reset to 0, used
+// flags gone) so the SAME walk fires the end again, not a stale one-shot.
+// A dedicated fresh world (not the heavily-mutated `world` above).
+// ---------------------------------------------------------------------------
+{
+  const engineStub = { assets };
+  const w = World.load(worldDef, assets, {});
+  const initB = serialize(w);
+  const p = w.get('player');
+
+  // US-026a-engine S2 landed since the section-4 comment above was written:
+  // world.triggers now really does include the world-level end trigger.
+  const endRec = w.triggers.find((t) => t.key === 'world.end');
+  ok('8a: world.triggers includes the world-level end trigger', !!endRec && endRec.structId === null);
+
+  // Teleport onto the waystone circle (content: x 1428, y 1040, r 2.5) and
+  // step triggers for real - `updateTriggers` -> `quest.end` -> `questEnd`,
+  // structId null, absolute walkTo, lookAt farTower - not a synthetic ctx.
+  p.data.transform.x = 1428; p.data.transform.y = 1040; p.data.transform.z = w.terrain.groundAt(1428, 1040);
+  updateTriggers(w, engineStub, p.data);
+  ok('8b: walking onto the waystone circle fires quest.end (endT=0)', w.state['quest.endT'] === 0);
+  const ew = p.data.components.body._endWalk;
+  const endDef = worldDef.triggers.find((t) => t.id === 'end');
+  ok('8c: walk target is the content walkTo verbatim (absolute, not origin-shifted)',
+    Math.abs(ew.x0 + ew.dirX * Math.hypot(endDef.walkTo.x - 1428, endDef.walkTo.y - 1040) - endDef.walkTo.x) < 1e-6);
+  ok('8d: lookAt farTower resolved to a real finite yaw', typeof ew.yawTo === 'number' && Number.isFinite(ew.yawTo));
+
+  // once: true - staying inside (or being asked again) must not refire.
+  w.state['quest.endT'] = -1; // pretend the sequence "finished", so a refire is unmistakable
+  updateTriggers(w, engineStub, p.data);
+  ok('8e: the end trigger is once - does not refire while still inside', w.state['quest.endT'] === -1);
+
+  // ---- Restart ("R"): main.js does exactly `deserialize(initialState)` ----
+  const restored = deserialize(initB, assets);
+  const restoredEndRec = restored.triggers.find((t) => t.key === 'world.end');
+  ok('8f: restart rebuilds world.triggers fresh (inside reset to 0)', !!restoredEndRec && restoredEndRec.inside === 0);
+  ok('8g: restart clears the used-once flag', !restored.state['used.world.end']);
+  ok('8h: restart resets quest.endT to -1 (no card/fade carried over)', restored.state['quest.endT'] === -1);
+
+  // Walking onto the waystone again after the restart fires it again -
+  // proves this is a real reset, not "the flag just happens to be unset".
+  const p2 = restored.get('player');
+  p2.data.transform.x = 1428; p2.data.transform.y = 1040; p2.data.transform.z = restored.terrain.groundAt(1428, 1040);
+  updateTriggers(restored, engineStub, p2.data);
+  ok('8i: after restart, walking onto the waystone fires quest.end again', restored.state['quest.endT'] === 0);
+
+  // ---- hint.show once-per-trigger (23.5's "fires exactly once") ----
+  // 'hintStone' ('terrain' shape) is inside the moment the actor is outside
+  // any structure footprint AND the world has terrain - true at the
+  // waystone spot used above. Confirm it fired once (used flag set) and a
+  // second updateTriggers call (still inside, no edge) does not re-set the
+  // hint queue (hints.shown/done stay whatever `request` left them - the
+  // used flag not flipping again is the trigger-level "once" guarantee).
+  ok('8j: hintStone fired once (used flag set) on the same walk-in', restored.state['used.world.hintStone'] === true);
+  const shownAfterFirst = JSON.stringify(restored.state['hints.shown'] || []);
+  updateTriggers(restored, engineStub, p2.data); // still inside - no edge, must not refire
+  ok('8k: a second updateTriggers call (still inside) does not touch hints state again',
+    JSON.stringify(restored.state['hints.shown'] || []) === shownAfterFirst);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
