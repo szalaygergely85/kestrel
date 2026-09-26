@@ -27,7 +27,11 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : voxel props (D-019, US-056, US-026a) : lever, lamp, boulder, rubble, canvas heap, gondola, strut, envelope heap, relay, waystone</h1>
+<h1>Kestrel : voxel props (D-019, US-056, US-026a, OWN-REQ-008) : lever, lamp, boulder, rubble, canvas heap, gondola, strut, envelope heap, relay, burner, waystone</h1>
+<div class="note"><b>OWN-REQ-008 burner</b> (<code>design/models/voxel_tower.js</code> section 9, show: burner): the Kestrel's copper burner on the stone ring is now a voxel pot on
+  four splayed iron legs (coil band, front gauge, side handles, back valve + hose, riveted brass rim round an open mouth with a dark grate). The fire stays a billboard:
+  <code>ASSETS.models.burnerFlame</code> (<code>models/wreckage.js</code>), its own level prop at <code>burner.mounts.flame</code>; the torch light <code>lights.brazier</code> = <code>mounts.light</code>.
+  Look at the in-game view (light: torch point or both) and the orbit view from above: the near rim should cut the ember row, the tongues rise over it.</div>
 <div class="note"><b>v1.16 waystone</b> (<code>design/models/voxel_world.js</code>, show: waystone): the US-026a end marker on the terrain below the tower. In-game views: 20 m walking up
   (slider applies), from the breach (60.4 m, eye 7.07 m above the stone's ground) and the end camera (2.5 m); grass floor, far fog. The checks read the terrain recipe
   (<code>levels/overworld_far.js</code>): spot type / slope, foot vs terrain, facing the breach, sightline from the breach, the end trigger, the 1 m end walk and the end camera toward the signal tower.</div>
@@ -141,6 +145,10 @@ const ENTRIES = [
     wallMat: 'rock', floorMat: 'grass', view: { dist: 4.5, eye: 2.4 }, rim: ['canvas_light'], body: ['canvas_dark'] },
   { name: 'relay', title: 'Relay (crystalDead + crystalLit + mount; the glow is a billboard)', clips: ['dead', 'wake', 'awake'], floorZ: 0, wallY: null,
     wallMat: 'stone', floorMat: 'floor', view: { dist: 2.4, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'mirror_dark', 'crystal_dead'] },
+  // OWN-REQ-008 part 1: the burner body is voxel, its fire the burnerFlame billboard on mounts.flame (drawn here with the
+  // burner's own torch light at mounts.light). Typical view: standing on the floor 2.5 m away, eye 1.1 m above the ring top.
+  { name: 'burner', title: 'Kestrel burner (body; the fire = burnerFlame billboard on mounts.flame, torch light at mounts.light)', clips: ['burn'], floorZ: 0,
+    wallY: 2.0, wallMat: 'stone_scorched', floorMat: 'ash', view: { dist: 2.5, eye: 1.1 }, rim: ['brass_light', 'brass_hot'], body: ['copper', 'iron_dark'] },
   // v1.16 US-026a: world prop on the terrain (grass floor, far fog). Typical view = 20 m walking up (the brief's "readable
   // from ~20 m"); extra fixed views = from the breach (60.4 m, eye 7.07 m above the stone's ground) and the end camera.
   { name: 'waystone', title: 'Waystone (US-026a end marker: slate menhir + emissive teal mark; one part, buried foot)', clips: ['idle'], floorZ: 0, wallY: null,
@@ -229,7 +237,15 @@ function buildScene(g, now) {
     const f = mountWorld(g, inst.fwd, 'flame', [0, 0, 0]);
     const fh0 = LF ? LF.world.h : 0.13, fw0 = LF ? LF.world.w : 0.075;
     const fl = fh0 + 0.008 * Math.sin(now * 0.021) + 0.005 * Math.sin(now * 0.047);   // calm lamp sway
-    sc.flames.push({ x: f[0], y: f[1], z: f[2], w: fw0, h: fl });
+    sc.flames.push({ x: f[0], y: f[1], z: f[2], w: fw0, h: fl, h0: fh0 });
+  }
+  if (g.name === 'burner') {   // OWN-REQ-008: burnerFlame billboard on mounts.flame + lights.brazier (torch) at mounts.light
+    const p = mountWorld(g, inst.fwd, 'light', [0, 0, 0]), TL = P.lights.torch, BF = A.models.burnerFlame;
+    sc.lights.push({ x: p[0], y: p[1], z: p[2], col: TL.color, int: TL.intensity * (0.92 + 0.08 * Math.sin(now * 0.013)), r: TL.radius, fromInside: true });
+    const f = mountWorld(g, inst.fwd, 'flame', [0, 0, 0]);
+    const fh0 = BF ? BF.world.h : 0.5, fw0 = BF ? BF.world.w : 0.5;
+    const fl = fh0 * (0.94 + 0.05 * Math.sin(now * 0.031) + 0.03 * Math.sin(now * 0.071));   // 10 fps fire sway
+    sc.flames.push({ x: f[0], y: f[1], z: f[2], w: fw0, h: fl, h0: fh0 });
   }
   let glint = 0;
   if (g.name === 'lever' && g.clip === 'idle') {
@@ -554,7 +570,7 @@ function frame() {
     } else { sc.floorZ = null; sc.wallY = null; }
     if (!v.dynamic && !v.ingame) key = sc.sig.replace(/\|\d+\|\d+$/, '') + '|' + ctlVer;   // small grid: no glint / flame flicker
     if (v.key === key) continue;                                                          // (orbit sliders reset v.key)
-    if (!v.dynamic && !v.ingame) { const save = [sc.glints, sc.flames]; sc.glints = []; if (sc.flames.length) sc.flames = [Object.assign({}, sc.flames[0], { h: 0.13 })];
+    if (!v.dynamic && !v.ingame) { const save = [sc.glints, sc.flames]; sc.glints = []; if (sc.flames.length) sc.flames = [Object.assign({}, sc.flames[0], { h: sc.flames[0].h0 || 0.13 })];
       renderView(v, sc); sc.glints = save[0]; sc.flames = save[1]; }
     else renderView(v, sc);
     v.key = key;
@@ -856,7 +872,7 @@ function runChecks() {
     return { wv, cells, x0, x1, y0, y1, z };
   }
   const batchProps = [['boulder', 'boulder', 'roll'], ['canvasHeap', 'pallet', 'idle'], ['gondola', 'gondola', 'idle'], ['strut', 'strut', 'idle'],
-                      ['envelopeHeap', 'envelopeHeap', 'idle'], ['relay', 'beaconBowl', 'dead']];
+                      ['envelopeHeap', 'envelopeHeap', 'idle'], ['relay', 'beaconBowl', 'dead'], ['burner', 'brazier', 'burn']];
   for (const [name, id, clip] of batchProps) {
     const p = prop(id), pl = MODELS[name] && MODELS[name].placement;
     if (!p || !packed[name]) continue;
@@ -893,6 +909,27 @@ function runChecks() {
          own.every((v) => (v.k === 1) === (M2[v.ch] === 'crystal_lit')), 'relay: crystalDead owns only crystal_dead / iron_light, crystalLit only crystal_lit, mount no crystal');
       const wk = MODELS.relay.voxel.animations.wake, wl = A.models.relay && A.models.relay.wakeLightFrame;
       ok(wk.events.glowOn === wl && wk.durations.reduce((a, b) => a + b, 0) === 1000, 'relay: wake 1.0 s, event glowOn at key ' + wk.events.glowOn + ' = billboard wakeLightFrame ' + wl);
+    }
+    if (name === 'burner') {   // OWN-REQ-008 part 1
+      ok(Object.values(r.cells).every((c) => c === '*'), 'burner: every voxel over the stone ring cell * (18,6); x ' + (r.x0 - 0.025).toFixed(2) + '..' + (r.x1 + 0.025).toFixed(2) +
+         ', y ' + (r.y0 - 0.025).toFixed(2) + '..' + (r.y1 + 0.025).toFixed(2));
+      const BV = MODELS.burner, bi = posedInstance('burner', p.x, p.y, p.z, p.facing, clipState(packed.burner, 'burn', 0));
+      const lp = worldPoint(bi, 0, BV.voxel.mounts.light.at), fp = worldPoint(bi, 0, BV.voxel.mounts.flame.at);
+      const bl = TOWER.lights.filter((l) => l.id === 'brazier')[0], fprop = prop(BV.flame.prop), BF = A.models.burnerFlame;
+      ok(!!bl && Math.abs(lp[0] - bl.x) < 1e-6 && Math.abs(lp[1] - bl.y) < 1e-6 && Math.abs(lp[2] - bl.z) < 1e-6,
+         'burner: mounts.light (' + lp.map((v) => v.toFixed(3)).join(', ') + ') = lights.brazier (' + (bl ? bl.x + ', ' + bl.y + ', ' + bl.z : 'missing') + '), light unchanged');
+      ok(!!fprop && fprop.model === 'burnerFlame' && fprop.variant === 'burn' && Math.abs(fprop.x - fp[0]) < 1e-6 && Math.abs(fprop.y - fp[1]) < 1e-6 && Math.abs(fprop.z - fp[2]) < 1e-6,
+         'burner: level prop ' + BV.flame.prop + ' (' + (fprop ? fprop.x + ', ' + fprop.y + ', ' + fprop.z + ', model ' + fprop.model : 'missing') + ') = posed mounts.flame (' + fp.map((v) => v.toFixed(3)).join(', ') + ')');
+      const rimTop = p.z + BV.voxel.size[2] * BV.voxel.cellM;
+      ok(!!BF && BF.world.h > (rimTop - fp[2]) * 2 && fp[2] + BF.world.h / 5 <= rimTop + 1e-9,
+         'burnerFlame: ' + (BF ? BF.world.w + ' x ' + BF.world.h : '?') + ' m; ember row (bottom 1/5) inside the mouth (top ' + (fp[2] + (BF ? BF.world.h / 5 : 0)).toFixed(3) + ' <= rim ' + rimTop.toFixed(2) + '), tongues rise ' + (BF ? (fp[2] + BF.world.h - rimTop).toFixed(2) : '?') + ' m over the rim');
+      if (BF) {
+        const cellsOk = [BF].concat([BF.lods.half]).every((m) => m.animations.burn.frames.every((fr) =>
+          fr.S.glyphs.length === m.size.h && fr.S.glyphs.every((rw, ri) => rw.length === m.size.w && fr.S.fg[ri].length === m.size.w &&
+            rw.split('').every((ch, ci) => (ch === ' ') === (fr.S.fg[ri][ci] === ' ') && (ch === ' ' || (BF.keys[fr.S.fg[ri][ci]] && BF.keys[fr.S.fg[ri][ci]].e))))));
+        ok(cellsOk && BF.animations.burn.frames.length === 6 && BF.animations.burn.fps === 10,
+           'burnerFlame: rows = size (full 9x5, half 5x3), glyph/colour rows line up, every drawn cell emissive; 6 frames @ 10 fps (style guide fire)');
+      }
     }
     if (name === 'envelopeHeap') {
       const all = worldVoxels(name, p.x, p.y, r.z, p.facing, 'idle');

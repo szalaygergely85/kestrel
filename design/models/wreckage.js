@@ -7,6 +7,9 @@
  *   ASSETS.models.envelopeHeap   crumpled envelope on the ground (seen from the summit, snagged below)   14x4  (half 7x2)
  *   ASSETS.models.burner         the Kestrel's copper burner: flame + embers, brass gauge (@)           13x11 (half 7x6)
  *                                (replaces the iron `brazier` in the level; same `burn` anim name, same torch light)
+ *                                OWN-REQ-008: the game draws the VOXEL burner (voxel_tower.js attaches `.voxel`); this
+ *                                billboard is the fallback only
+ *   ASSETS.models.burnerFlame    the voxel burner's fire: flame tongues over an ember row, all emissive    9x5  (half 5x3)
  *   ASSETS.models.rigging        a coil of rope and a snapped line on the floor                          14x4  (half 7x2)
  *   ASSETS.models.canvasHeap     the wake spot: crumpled envelope canvas                                  20x4  (half 10x2)
  *   ASSETS.models.rope           2 hanging snapped stays (variants)                                       3x16  (half 3x8)
@@ -276,6 +279,45 @@
     replaces: 'brazier',
     animations: { burn: { fps: 10, loop: true, frames: bFull } },
     lods: { half: { size: { w: 7, h: 6 }, anchor: { x: 3, y: 5 }, animations: { burn: { fps: 10, loop: true, frames: bHalf } } } }
+  };
+
+  // =====================================================================================================
+  // BURNER FLAME 9x5 (OWN-REQ-008 part 1): the fire of the VOXEL burner (ASSETS.voxelModels.burner, voxel_tower.js).
+  // The same flame unit as the billboard burner above (6 frames, 10 fps, heat keys 1 tip .. 4 core) standing on an
+  // ember row (emberHot / emberDim, alternating per frame like the old ember mouth). Anchored bottom centre at the
+  // voxel burner mount `flame` (grate top, world z 1.05): the ember row sits in the 0.15 m deep mouth (seen from
+  // above, cut by the near rim from low eyes - the Build look), the tongues rise ~0.4 m above the rim.
+  // Every cell emissive; no fill plate (the rim and the grate behind show between the tongues).
+  // Billboard until particles (US-053). The billboard `burner` above keeps its own flame (fallback only; do NOT
+  // spawn burnerFlame on it).
+  // =====================================================================================================
+  var EMB = [{ g: ' *#*#*#* ', k: ' EyEyEyE ' }, { g: ' #*#*#*# ', k: ' yEyEyEy ' }];
+  var EMBH = [{ g: '*#*#*', k: 'EyEyE' }, { g: '#*#*#', k: 'yEyEy' }];
+  function flameFrame(f) {
+    var u = FL[f], m = EMB[f % 2];
+    return { S: { glyphs: u.g.concat([m.g]), fg: u.h.concat([m.k]) } };
+  }
+  function flameHalf(f) {
+    var u = FLH[f], m = EMBH[f % 2];
+    return { S: { glyphs: u.g.concat([m.g]), fg: u.h.concat([m.k]) } };
+  }
+  var fFull = [], fHalf = [];
+  for (i = 0; i < 6; i++) { fFull.push(flameFrame(i)); fHalf.push(flameHalf(i)); }
+  A.models.burnerFlame = {
+    name: 'burnerFlame',
+    desc: 'OWN-REQ-008: the fire in the voxel burner\'s mouth - flame tongues (tip red, core yellow-white) over a bed of ' +
+          'glowing embers. All emissive.',
+    size: { w: 9, h: 5 }, anchor: { x: 4, y: 4 }, world: { w: 0.5, h: 0.5 },
+    directions: ['S'], billboard: true,
+    keys: {
+      '1': { c: 'flameTip', e: true }, '2': { c: 'flameOuter', e: true },
+      '3': { c: 'flameMid', e: true }, '4': { c: 'flameCore', e: true },
+      E: { c: 'emberHot', e: true }, y: { c: 'emberDim', e: true }
+    },
+    mountOn: { model: 'burner', mount: 'flame', clip: 'burn',
+               note: 'spawned as its own level prop (tower props.burnerFlame at the posed mount, 18.5, 6.5, 1.05); permanent' },
+    animations: { burn: { fps: 10, loop: true, frames: fFull } },
+    lods: { half: { size: { w: 5, h: 3 }, anchor: { x: 2, y: 2 }, animations: { burn: { fps: 10, loop: true, frames: fHalf } } } }
   };
 
   // =====================================================================================================

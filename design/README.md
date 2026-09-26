@@ -501,6 +501,9 @@ Solid props are real 3D voxel models. The format is `VoxelModelDef` (docs/archit
   - the value ladder per model (rim / body >= 1.5, and rim > stoneLight or body < 0.8 x stoneMid), and no wall/floor stone tones;
   - tower.js placement: no voxel inside a taller cell, the corridor, the rigging distance, the canvas hollow, and the strut/rubble overlap;
   - the relay part swap, and rows at the typical view distance.
+- **Burner (OWN-REQ-008 part 1, v1.19):** `ASSETS.voxelModels.burner` (section 9 of `voxel_tower.js`), cellM 0.05, 16x16x14 (0.8 x 0.8 x 0.7 m), one part `body` (extent 46), clip `burn` (1 frame, = the billboard anim name), anchor `[8, 8, 0]`, attached onto `models.burner` by `attachTower()` (so `props.brazier` spawns voxel, no level edit for the body). Mounts `flame` `[8, 8, 11]` (grate top, world z 1.05), `light` `[8, 8, 14]` (= `lights.brazier` z 1.2, unchanged), `prompt`. Materials: existing only (`copper` from palette + `brass_light`, `brass_hot`, `brass_dark`, `iron_light`, `iron_dark`, `patina`, `mirror_dark`); new voxel char `u` = `copper`. Record extras: `placement`, `flame` (the billboard prop data).
+  - **Fire = billboard `ASSETS.models.burnerFlame`** (`wreckage.js`, 9x5, half 5x3, 6 frames @ 10 fps, all emissive, no fill): the burner flame unit over an ember row, `mountOn: { model: 'burner', mount: 'flame' }`. Level: new prop `burnerFlame` (18.5, 6.5, 1.05, variant `burn`) in `content/levels/tower.level.json`, like the lamp's `lampFlame`. The billboard `burner` keeps its own flame as the fallback only (never spawn `burnerFlame` on it).
+  - Tower voxel instances: 14 (+ the waystone = 15 <= 16). VOX atlas ~35k texels.
 
 ### 7.2 Batch 3: world props on the terrain (`design/models/voxel_world.js`, US-026a, v1.16)
 
@@ -535,6 +538,7 @@ The owner's workflow for a NEW rigged/animated voxel prop, no JS required:
 ---
 
 ## Change log
+- **v1.19 (2026-09-26, OWN-REQ-008 part 1 voxel burner)**: `voxel_tower.js` section 9 `burner` (+ `TARGETS.burner`, voxel char `u` = `copper`); `wreckage.js` `burnerFlame` billboard; `content/levels/tower.level.json` new prop `burnerFlame` (the brazier prop and light unchanged); `preview/voxel-props.html` burner entry + checks. No new material, colour or format field.
 - **v1.18 (2026-09-25, OWN-REQ-010 Blockbench animation importer, PC-B, tooling only - no design/ data changed)**: new section 7.3, documenting `tools/bb-import.mjs` + `tools/bb-import.test.mjs` (not files owned by this doc's format list - listed here only as the owner-facing workflow note). No palette/model/level data touched.
 - **v1.17 (2026-09-25, US-027b content flip, PC-B)**: `tower`, `test_room` and `world_m1` moved from `design/levels/{tower,test_room,world_m1}.js` (deleted) to `content/levels/tower.level.json`, `content/levels/test_room.level.json` and `content/worlds/world_m1.world.json` - converted once, byte-for-byte, by `tools/export-content.mjs` (every id kept verbatim). Edit them as JSON from now on (see section 3 above); `overworld_far` is unaffected (a terrain recipe, still code). No content VALUES changed, only where they live.
 - **v1.16 (2026-09-25, US-026a waystone + US-038b settings style)**:
