@@ -136,6 +136,33 @@ function fakeAssets({ levels = {}, worlds = {} }) {
   ok('listOutlinerItems: includes the prop and the world entity', outlined.some((o) => o.id === 'brazier' && o.collection === 'props') && outlined.some((o) => o.id === 'farTower' && o.collection === 'entities'), JSON.stringify(outlined));
 }
 
+// ---- US-063: `?world=<id>` opens another world -----------------------------
+// No content/design world def wraps test_room today (only world_m1, which
+// wraps tower) - this constructs a minimal one in-memory, the way the task
+// note suggests, to prove `createDoc`'s `worldId` option (fed from
+// `params.get('world')` in main.js) picks whichever world the registry
+// actually has, not just the 'world_m1' default.
+{
+  const towerDef = { props: [] };
+  const testRoomDef = { name: 'test_room', props: [], lights: [] };
+  const worldM1 = { structures: [{ id: 'tower', level: 'tower' }], entities: [] };
+  const testRoomWorld = { structures: [{ id: 'room', level: 'test_room' }], entities: [] };
+  const assets = fakeAssets({
+    levels: { tower: towerDef, test_room: testRoomDef },
+    worlds: { world_m1: worldM1, test_room_world: testRoomWorld },
+  });
+
+  const defaultDoc = createDoc(assets, null, {});
+  ok('createDoc: no worldId option -> defaults to world_m1', defaultDoc.worldId === 'world_m1');
+
+  const otherDoc = createDoc(assets, null, { worldId: 'test_room_world' });
+  ok('createDoc: an arbitrary ?world= id is honoured verbatim', otherDoc.worldId === 'test_room_world');
+  ok('createDoc: still builds a doc.files entry for every level/world the registry has (both worlds coexist)',
+    otherDoc.files.has('level/test_room') && otherDoc.files.has('world/test_room_world') && otherDoc.files.has('world/world_m1'));
+  const roomFile = otherDoc.files.get('level/test_room');
+  ok('createDoc: the test_room-wrapping world\'s own level file is the real registry object', roomFile.def === testRoomDef);
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {
   console.log('FAILURES:');

@@ -5,6 +5,7 @@
 import {
   isValidId, lightPresetNames, countLights, harvestBehaviourNames,
   defaultItemForKind, defaultWorldPropItem, kindForSelection, validateItem,
+  classifyPlacement, listPlaceableModels, filterModelKeys,
 } from './panel.js';
 
 let pass = 0;
@@ -140,6 +141,61 @@ const palette = { lights: { ambient: {}, sun: {}, torch: {}, lantern: {} } };
   const item = { id: 'player', x: 1, y: 2, z: 0 };
   const errs = validateItem('entity', item, { assets: fakeAssets, palette, siblingIds: new Set() });
   ok('validateItem: a plain entity with no model field is not forced to have one', errs.length === 0, JSON.stringify(errs));
+}
+
+// ---- classifyPlacement (US-063: real per-cell "inside a structure" test) ---
+{
+  // A fake world: `structureAt` mimics the AABB test (a 10x10 structure at
+  // the origin); `sectorAt` mimics `Level.sectorAt` - null for a "gap" cell
+  // (e.g. an unmapped courtyard char), a truthy sector object otherwise.
+  const GAP = new Set(['5,5', '5,6']); // a 2-cell courtyard hole inside the bbox
+  const fakeWorld = {
+    structureAt(x, y) {
+      return (x >= 0 && x < 10 && y >= 0 && y < 10) ? { id: 'tower' } : null;
+    },
+    sectorAt(x, y) {
+      const cx = Math.floor(x), cy = Math.floor(y);
+      if (!(cx >= 0 && cx < 10 && cy >= 0 && cy < 10)) return null;
+      if (GAP.has(`${cx},${cy}`)) return null;
+      return { floorH: 0, solid: false };
+    },
+  };
+  const inside = classifyPlacement(fakeWorld, { x: 2, y: 2 });
+  ok('classifyPlacement: a real cell inside the bbox -> zone "structure"', inside.zone === 'structure' && inside.structure && inside.structure.id === 'tower', JSON.stringify(inside));
+
+  const gap = classifyPlacement(fakeWorld, { x: 5.5, y: 5.5 });
+  ok('classifyPlacement: a courtyard-gap cell inside the bbox -> zone "gap", no structure', gap.zone === 'gap' && gap.structure === null, JSON.stringify(gap));
+
+  const outside = classifyPlacement(fakeWorld, { x: 50, y: 50 });
+  ok('classifyPlacement: outside every bbox -> zone "outside"', outside.zone === 'outside' && outside.structure === null, JSON.stringify(outside));
+
+  // The old bug this fixes: a bbox-only test would have called the gap cell
+  // "inside" (it IS inside the rectangle) - classifyPlacement must not.
+  ok('classifyPlacement: the gap cell really is inside the old bbox test (sanity: this is the bug being fixed, not a vacuous case)',
+    fakeWorld.structureAt(5.5, 5.5) !== null);
+}
+
+// ---- listPlaceableModels / filterModelKeys (US-063 model picker) -----------
+{
+  const fakeAssetsReg = {
+    keys: (kind) => (kind === 'model' ? ['lantern', 'brazier', 'title', 'mapCard', 'Boulder'] : []),
+    model: (k) => ({
+      lantern: {}, brazier: {}, Boulder: {},
+      title: { ui: true }, mapCard: { ui: true },
+    }[k]),
+  };
+  const placeable = listPlaceableModels(fakeAssetsReg);
+  ok('listPlaceableModels: excludes ui:true models', !placeable.includes('title') && !placeable.includes('mapCard'), JSON.stringify(placeable));
+  ok('listPlaceableModels: keeps real prop/voxel models', placeable.includes('lantern') && placeable.includes('brazier') && placeable.includes('Boulder'), JSON.stringify(placeable));
+  ok('listPlaceableModels: sorted', JSON.stringify(placeable) === JSON.stringify([...placeable].sort()));
+}
+{
+  const keys = ['lantern', 'brazier', 'Boulder', 'rubble0'];
+  ok('filterModelKeys: empty query returns all keys', filterModelKeys(keys, '').length === 4);
+  ok('filterModelKeys: case-insensitive substring match', JSON.stringify(filterModelKeys(keys, 'boul')) === JSON.stringify(['Boulder']));
+  ok('filterModelKeys: matches mid-string', JSON.stringify(filterModelKeys(keys, 'ant')) === JSON.stringify(['lantern']));
+  ok('filterModelKeys: no match -> empty array', filterModelKeys(keys, 'zzz').length === 0);
+  ok('filterModelKeys: whitespace-only query -> all keys (trimmed)', filterModelKeys(keys, '   ').length === 4);
 }
 
 console.log(`panel.test.mjs: ${pass} passed, ${fail} failed`);

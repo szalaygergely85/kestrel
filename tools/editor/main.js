@@ -5,7 +5,7 @@
 import {
   AssetRegistry, createEngine, GRID_DEFAULT_COLS, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
-  DebugOverlay,
+  DebugOverlay, drawText,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
@@ -24,6 +24,7 @@ import { createStack } from './undo.js';
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
+  classifyPlacement, listPlaceableModels, filterModelKeys,
 } from './panel.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty } from './io.js';
 
@@ -43,6 +44,12 @@ const saveBtn = document.getElementById('save-btn');
 const loadBtn = document.getElementById('load-btn');
 const playtestBtn = document.getElementById('playtest-btn');
 const ioStatusEl = document.getElementById('io-status');
+// US-063: the place-a-prop model picker (a searchable list, shown right
+// after clicking a surface in place-prop mode instead of a later panel
+// fix-up - see `openModelPicker` below).
+const modelPickerEl = document.getElementById('model-picker');
+const modelPickerSearchEl = document.getElementById('model-picker-search');
+const modelPickerListEl = document.getElementById('model-picker-list');
 
 function gridFromParam(p, def) {
   const g = p.get('grid');
@@ -61,6 +68,10 @@ try {
 }
 const assets = bundle ? AssetRegistry.fromJSON(bundle, window.ASSETS) : AssetRegistry.fromGlobals(window.ASSETS);
 
+// `?world=<id>` (US-063): already just a normal `assets.world(id)` lookup
+// below (`assets.world` throws with a clear "unknown world" message +known
+// list if `id` isn't registered) - no extra wiring needed, just confirmed and
+// Node-tested here (see doc.test.mjs "createDoc: an arbitrary ?world= id").
 const doc = createDoc(assets, bundle, { worldId: params.get('world') || 'world_m1' });
 if (doc.readOnly) statusEl.textContent = 'content: design/*.js (read-only source)\n';
 
@@ -139,6 +150,7 @@ let selection = null; // {fileId, collection, id} | null
 let drag = null; // {entId, item, index, startTransform} | null
 let hoverCol = null, hoverRow = null;
 let markersOn = true;
+let helpOn = false; // US-063: `H` toggles the in-viewport key-help overlay (drawHelpOverlay below)
 let lastPickText = '';
 let placeMode = null; // 'prop'|'light'|'trigger'|'interactable'|null (US-033, 24.9)
 
@@ -440,36 +452,41 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
-// ---- US-033: place (24.9) --------------------------------------------------
-
-/** The structure whose level footprint contains `pt` (world metres), or `null` - a bounding-box test, good enough for M1's axis-aligned, never-rotated placements (24.1 decision 4: `yawSteps` always 0). */
-function structureAt(pt) {
-  for (const s of world.structures) {
-    const lx = pt.x - s.origin.x, ly = pt.y - s.origin.y;
-    if (lx >= 0 && lx <= s.level.width && ly >= 0 && ly <= s.level.height) return s;
-  }
-  return null;
-}
+// ---- US-033/US-063: place (24.9) -------------------------------------------
 
 /**
- * Places a new item of `kind` at world point `pt` (24.9). Inside a
- * structure's footprint -> that level file (local metres); outside -> the
- * world file's `entities` (world metres), props only - refused for the
- * level-only kinds (light/trigger/interactable) per the architecture note.
+ * Places a new item of `kind` at world point `pt` (24.9, fixed by US-063 to
+ * use the level's real per-cell data instead of a bounding-box test - see
+ * `classifyPlacement` in panel.js). A real structure cell -> that level file
+ * (local metres); a courtyard gap/hole inside a structure's bbox is refused
+ * outright (it used to be silently treated as "inside"); truly outside any
+ * structure -> the world file's `entities` (world metres), props only -
+ * refused for the level-only kinds (light/trigger/interactable) per the
+ * architecture note.
+ * @param {string} kind
+ * @param {{x:number,y:number,z:number}} pt
+ * @param {string} [modelKeyOverride] the model the US-063 picker modal chose
+ *   (prop placement only - see `openModelPicker`/mousedown below); falls
+ *   back to the old single-default-model choice when omitted (light/trigger/
+ *   interactable placement never passes one).
  */
-function placeAt(kind, pt) {
-  const s = structureAt(pt);
+function placeAt(kind, pt, modelKeyOverride) {
+  const { zone, structure: s } = classifyPlacement(world, pt);
+  if (zone === 'gap') {
+    flash('place refused: no floor here (a courtyard gap or hole inside the structure)');
+    placeMode = null;
+    return;
+  }
   if (!s && kind !== 'prop') { flash(`place refused: a ${kind} must be placed inside a structure`); placeMode = null; return; }
   if (kind === 'light' && countLights(doc) >= MAX_LIGHTS) { flash(`place refused: MAX_LIGHTS (${MAX_LIGHTS}) reached`); placeMode = null; return; }
 
-  // Default model for a freshly placed prop (24.9's "model = <picker>" - the
-  // editor has no full model-browser UI yet, so it seeds a real placeable
-  // prop model rather than `assets.keys('model')[0]`, which is whatever the
-  // index.html script tag list happens to load first (`title` - a UI/menu
-  // sprite, not a world prop, and not actually placeable as a billboard).
-  // The property panel's own `model` datalist lets the user change it right
-  // after placing, validated the same way either way.
-  const modelKey = assets.has('model', 'lantern') ? 'lantern' : (assets.keys('model')[0] || '');
+  // Model for a freshly placed prop: the US-063 picker modal's choice when
+  // given (see `openModelPicker` below); else the old single-default-model
+  // fallback (a real placeable prop model rather than `assets.keys('model')
+  // [0]`, which is whatever the index.html script tag list happens to load
+  // first - `title`, a UI/menu sprite, not a world prop, and not actually
+  // placeable as a billboard).
+  const modelKey = modelKeyOverride || (assets.has('model', 'lantern') ? 'lantern' : (assets.keys('model')[0] || ''));
   let fileId, collection, item;
   if (s) {
     fileId = fileKey('level', s.level.name);
@@ -496,6 +513,62 @@ function placeAt(kind, pt) {
   placeMode = null;
 }
 
+// ---- US-063: place-a-prop model picker -------------------------------------
+// A searchable list of every placeable model (panel.js's `listPlaceableModels`
+// / `filterModelKeys`, pure and Node-tested); opened right after clicking a
+// surface in place-prop mode (see the mousedown handler above), closed by a
+// pick (commits `placeAt('prop', point, key)`) or by Esc (cancels the whole
+// placement, same message as the other place kinds' Esc cancel).
+let pendingPropPoint = null;
+modelPickerEl.style.display = 'none'; // CSS already hides it; set the inline style too so `.style.display` reads reliably below
+
+function openModelPicker(pt) {
+  pendingPropPoint = pt;
+  modelPickerSearchEl.value = '';
+  renderModelPickerList('');
+  modelPickerEl.style.display = 'flex';
+  modelPickerSearchEl.focus();
+}
+
+function closeModelPicker() {
+  modelPickerEl.style.display = 'none';
+  modelPickerListEl.textContent = '';
+  pendingPropPoint = null;
+}
+
+function renderModelPickerList(query) {
+  modelPickerListEl.textContent = '';
+  const keys = filterModelKeys(listPlaceableModels(assets), query);
+  if (!keys.length) {
+    modelPickerListEl.textContent = '(no matching models)';
+    return;
+  }
+  for (const key of keys) {
+    const row = document.createElement('div');
+    row.className = 'model-picker-row';
+    row.textContent = key;
+    row.addEventListener('mousedown', (e) => {
+      // mousedown (not click): fires before the search input's blur steals
+      // focus back and before the canvas's own document-level mousedown
+      // handlers run for this same event.
+      e.preventDefault();
+      const pt = pendingPropPoint;
+      closeModelPicker();
+      placeMode = null;
+      placeAt('prop', pt, key);
+    });
+    modelPickerListEl.appendChild(row);
+  }
+}
+
+modelPickerSearchEl.addEventListener('input', () => renderModelPickerList(modelPickerSearchEl.value));
+modelPickerSearchEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  closeModelPicker();
+  placeMode = null;
+  flash('place: cancelled');
+});
+
 function computeMouseCell(e) {
   const r = canvas.getBoundingClientRect();
   const col = Math.floor(((e.clientX - r.left) / r.width) * rt.cols);
@@ -519,6 +592,7 @@ function formatPickResult(r) {
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
+  if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
@@ -529,6 +603,12 @@ canvas.addEventListener('mousedown', (e) => {
     // gives a real point; looking at open sky falls back to a point 8 m out
     // along the click ray, so placing never silently no-ops.
     const point = result.world || rayPoint(ray, 8);
+    // US-063: placing a prop opens the searchable model picker instead of
+    // seeding a default model - `placeAt` runs only once the user actually
+    // picks one (see `openModelPicker` below). Other kinds keep no picker
+    // (their "default" fields are the whole point - a light/trigger/
+    // interactable has no model to choose).
+    if (placeMode === 'prop') { openModelPicker(point); return; }
     placeAt(placeMode, point);
     return;
   }
@@ -626,6 +706,7 @@ function update(dt) {
   if (input.pressed('Home')) { cam = startPose(); frame.markDirty(); }
   if (input.pressed('KeyT')) teleportToSelection();
   if (input.pressed('KeyM')) { markersOn = !markersOn; frame.markDirty(); }
+  if (input.pressed('KeyH')) { helpOn = !helpOn; frame.markDirty(); } // US-063 key-help overlay
 
   // US-032 (24.8): Esc cancels an in-progress drag (no record) instead of
   // committing it - checked before the drag's own mousemove/mouseup handlers
@@ -678,10 +759,41 @@ function update(dt) {
   input.endFrame();
 }
 
+// US-063: `H` key-help overlay - every editor key, drawn into the viewport
+// (not just the always-visible sidebar text in index.html, which a
+// fullscreen/kiosk-style pass of the editor would never show). Same route as
+// the selection highlight/markers above: plain `rt.setCell` writes (via
+// `drawText`) before `present()`, so they survive the GPU compositor pass
+// (24.4's "JS-written rt cells survive the GPU pass" note).
+const HELP_LINES = [
+  'EDITOR KEYS (H to close)',
+  'LMB: select / drag        RMB drag: look',
+  'WASD/R/F: fly   Shift: fast   Ctrl: slow   Wheel: fly speed',
+  'Arrows: nudge x/y   PgUp/PgDn: nudge z   [ ]: cycle snap',
+  'Q/E: yaw   G: drop to floor   Del/Backspace: delete',
+  'Ctrl+Z/Y: undo/redo   T: teleport to selection   Home: start pose',
+  'M: toggle markers   F3: debug overlay',
+  '1/2/3/4: place prop/light/trigger/interactable, then click',
+  'Esc: cancel drag/place',
+  'Ctrl+S: save   P: play-test (new tab)',
+];
+
+function drawHelpOverlay() {
+  const fg = (assets.palette.colors && assets.palette.colors.uiText) || '#e8e2d0';
+  const bg = '#0c120c'; // matches index.html's #panel background
+  const x0 = 2, y0 = 2;
+  let width = 0;
+  for (const line of HELP_LINES) width = Math.max(width, line.length);
+  for (let i = 0; i < HELP_LINES.length; i++) {
+    drawText(rt, x0, y0 + i, HELP_LINES[i].padEnd(width, ' '), fg, bg);
+  }
+}
+
 function drawOverlay(fb) {
   drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a');
   if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection);
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
+  if (helpOn) drawHelpOverlay();
   void fb;
 }
 
@@ -707,11 +819,13 @@ window.__editor = {
   get world() { return world; },
   get selection() { return selection; },
   get placeMode() { return placeMode; },
+  get helpOn() { return helpOn; },
   undoStack,
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, applyNudge, applyYaw, dropToFloor, doUndo, doRedo,
-  placeAt, structureAt, commitFieldEdit, renameSelected,
+  placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), commitFieldEdit, renameSelected,
   doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
+  openModelPicker, closeModelPicker,
 };
 
 if (!gpuBlocked) engine.run({ update, render });
