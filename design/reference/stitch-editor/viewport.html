@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-tertiary-container": "#004f25", "on-secondary": "#472a00", "on-error-container": "#ffdad6", "error": "#ffb4ab", "surface-container-lowest": "#0a0e14", "tertiary-fixed-dim": "#4de082", "primary-fixed": "#c4e7ff", "primary-fixed-dim": "#7bd0ff", "surface-dim": "#10141a", "on-error": "#690005", "on-secondary-fixed-variant": "#653e00", "tertiary-container": "#2fca6f", "on-tertiary-fixed-variant": "#005227", "on-surface": "#dfe2eb", "surface-container-low": "#181c22", "secondary-fixed": "#ffddb8", "surface-container-high": "#262a31", "surface-tint": "#7bd0ff", "surface-container": "#1c2026", "tertiary": "#54e788", "surface-variant": "#31353c", "background": "#10141a", "on-primary-fixed-variant": "#004c69", "error-container": "#93000a", "primary-container": "#38bdf8", "tertiary-fixed": "#6dfe9c", "on-background": "#dfe2eb", "on-primary": "#00354a", "primary": "#8ed5ff", "secondary-fixed-dim": "#ffb95f", "on-tertiary-fixed": "#00210c", "outline-variant": "#3e484f", "on-secondary-fixed": "#2a1700", "surface-bright": "#353940", "inverse-primary": "#00668a", "on-primary-fixed": "#001e2c", "outline": "#87929a", "inverse-on-surface": "#2d3137", "on-secondary-container": "#5b3800", "on-surface-variant": "#bdc8d1", "surface-container-highest": "#31353c", "surface": "#10141a", "secondary": "#ffb95f", "secondary-container": "#ee9800", "on-primary-container": "#004965", "on-tertiary": "#003919", "inverse-surface": "#dfe2eb" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "1rem", "margin": "0.75rem", "space-xs": "0.125rem", "space-md": "0.5rem", "gutter": "0.5rem", "space-lg": "0.75rem", "gutter-mobile": "0.25rem", "space-sm": "0.25rem", "margin-mobile": "0.375rem" }, "fontFamily": { "label-sm": [ "JetBrains Mono" ], "headline-md": [ "Space Grotesk" ], "body-md": [ "JetBrains Mono" ], "label-lg": [ "JetBrains Mono" ], "headline-lg": [ "Space Grotesk" ], "body-sm": [ "JetBrains Mono" ], "body-lg": [ "JetBrains Mono" ], "headline-sm": [ "Space Grotesk" ], "title-md": [ "Space Grotesk" ], "label-md": [ "JetBrains Mono" ] }, "fontSize": { "label-sm": [ "0.625rem", { "lineHeight": "0.75rem", "fontWeight": "500" } ], "headline-md": [ "1.25rem", { "lineHeight": "1.75rem", "fontWeight": "600" } ], "body-md": [ "0.75rem", { "lineHeight": "1.125rem", "fontWeight": "400" } ], "label-lg": [ "0.75rem", { "lineHeight": "1rem", "fontWeight": "600" } ], "headline-lg": [ "1.75rem", { "lineHeight": "2.25rem", "fontWeight": "600" } ], "body-sm": [ "0.6875rem", { "lineHeight": "1rem", "fontWeight": "400" } ], "body-lg": [ "0.875rem", { "lineHeight": "1.375rem", "fontWeight": "400" } ], "headline-sm": [ "1rem", { "lineHeight": "1.375rem", "fontWeight": "600" } ], "title-md": [ "0.875rem", { "lineHeight": "1.25rem", "fontWeight": "500" } ], "label-md": [ "0.6875rem", { "lineHeight": "0.875rem", "fontWeight": "500" } ] } } } };</script><style>@layer base{html,body{width:100%;margin:0;padding:0;background-color:#10141a;color:#dfe2eb;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased min-h-screen flex flex-col selection:bg-primary selection:text-on-primary"><header class="fixed top-0 w-full z-50 pt-safe bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_12px_rgba(0,0,0,0.4)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm min-w-0 flex-1"><img alt="MAGE ASCII 3D Engine Logo" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1VKWG0rtA5RCO5e3XnBbmoE6zrFlO90_5_cDrmypqM8qgiy0oWMhTLKYadzJ2jWLh2uoEDiKkGwz8-HwSVziGPGDSpiEJPpYi6RBHlk2d0Yyh68C973DPEvzlqxb_xfQVEp0HwlyXmBzew8D1iqvFpRNfX-oSymwTefIsuGMNuwHIV0h8RnF2eAtwW9WFPrIHg1p7Jb5ZoP7jN_CPp84WxySdv-_hwlfTyAmt2E6HJQT70-ANXAfZ2Y"/><div class="flex flex-col min-w-0"><div class="flex items-center gap-space-xs"><span class="font-title-md text-title-md text-on-surface truncate font-semibold">Viewport</span><span class="font-label-sm text-label-sm text-secondary bg-surface-container px-space-xs py-0 rounded">PRO</span></div><div class="flex items-center gap-space-xs truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse shrink-0"></span><span class="font-label-sm text-label-sm text-tertiary truncate tracking-tight">v0.9.4 [RUNNING 60FPS]</span></div></div></div><div class="flex items-center gap-space-xs shrink-0"><div class="flex items-center bg-surface-container-low rounded-lg p-space-xs"><button aria-label="Play Simulation" class="w-11 h-11 flex items-center justify-center rounded text-tertiary hover:bg-surface-container-high active:bg-tertiary-container active:text-on-tertiary-container" type="button"><span class="material-symbols-outlined text-[20px]">play_arrow</span></button><button aria-label="Pause Simulation" class="w-11 h-11 flex items-center justify-center rounded text-secondary hover:bg-surface-container-high active:bg-secondary-container active:text-on-secondary-container" type="button"><span class="material-symbols-outlined text-[18px]">pause</span></button><button aria-label="Stop Simulation" class="w-11 h-11 flex items-center justify-center rounded text-error hover:bg-surface-container-high active:bg-error-container active:text-on-error-container" type="button"><span class="material-symbols-outlined text-[18px]">stop</span></button></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-20 bg-surface flex-1"><div class="flex flex-col w-full relative select-none">
+<!-- Interactive Viewport Space -->
+<div class="relative w-full overflow-hidden bg-surface-container-lowest shadow-2xl flex flex-col" style="min-height: 480px; height: calc(100vh - 144px);">
+<!-- Subtle Retro CRT Scanline & Grain Overlay -->
+<div class="pointer-events-none absolute inset-0 z-10 opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.5)_50%)] bg-[length:100%_4px]"></div>
+<div class="pointer-events-none absolute inset-0 z-10 opacity-15 bg-radial from-transparent via-transparent to-black"></div>
+<!-- Top Floating Header Strip inside Viewport -->
+<div class="relative z-20 flex items-center justify-between px-margin pt-space-md">
+<!-- Camera Lens & Rendering Mode Badge -->
+<div class="flex items-center gap-space-xs bg-surface-container-low/90 backdrop-blur-md px-space-md py-space-xs rounded-lg shadow-sm">
+<span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+<span class="font-label-sm text-label-sm text-primary tracking-wider uppercase">CAM: PERSPECTIVE (ISO-35)</span>
+<span class="text-outline-variant font-label-sm text-label-sm">|</span>
+<button class="font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface flex items-center gap-space-xs active:text-primary transition-colors" id="wireframe-toggle-btn">
+<span class="material-symbols-outlined text-[14px]">grid_4x4</span>
+<span>DENSITY: CHAR-SHADE</span>
+</button>
+</div>
+<!-- Top-Right Orbit / Axis Gizmo (ASCII Matrix Native) -->
+<div class="flex flex-col items-end gap-space-xs">
+<div class="bg-surface-container-low/95 p-space-xs rounded-xl shadow-lg flex flex-col items-center">
+<div class="relative w-16 h-16 flex items-center justify-center font-label-sm text-label-sm tracking-tighter">
+<!-- Center Pivot -->
+<div class="absolute w-2 h-2 rounded-full bg-on-surface/40 flex items-center justify-center">
+<div class="w-1 h-1 rounded-full bg-primary"></div>
+</div>
+<!-- Axis lines with micro-buttons -->
+<!-- Y-Axis (Green Up) -->
+<button aria-label="Snap Camera to Top Y View" class="absolute top-0.5 flex flex-col items-center text-tertiary hover:scale-110 active:opacity-75 transition-transform" id="gizmo-y" type="button">
+<span class="font-bold text-[10px] leading-none">+Y</span>
+<span class="text-[9px] leading-none opacity-60">|</span>
+</button>
+<!-- X-Axis (Amber/Red Right) -->
+<button aria-label="Snap Camera to Right X View" class="absolute right-0.5 flex items-center text-secondary hover:scale-110 active:opacity-75 transition-transform" id="gizmo-x" type="button">
+<span class="text-[9px] leading-none opacity-60">-</span>
+<span class="font-bold text-[10px] leading-none">+X</span>
+</button>
+<!-- Z-Axis (Cyan Down-Left Isometric Depth) -->
+<button aria-label="Snap Camera to Front Z View" class="absolute bottom-1 left-1 flex items-center text-primary-container hover:scale-110 active:opacity-75 transition-transform" id="gizmo-z" type="button">
+<span class="font-bold text-[10px] leading-none">+Z</span>
+<span class="text-[9px] leading-none opacity-60">/</span>
+</button>
+</div>
+<!-- Fast Snap Controls -->
+<div class="grid grid-cols-3 gap-space-xs w-full pt-space-xs">
+<button class="bg-surface-container hover:bg-surface-container-high active:bg-primary active:text-on-primary text-on-surface-variant font-label-sm text-[9px] py-0.5 px-1 rounded text-center transition-colors" id="cam-top">TOP</button>
+<button class="bg-surface-container hover:bg-surface-container-high active:bg-primary active:text-on-primary text-on-surface-variant font-label-sm text-[9px] py-0.5 px-1 rounded text-center transition-colors" id="cam-front">FRT</button>
+<button class="bg-primary/20 text-primary hover:bg-primary active:bg-primary active:text-on-primary font-label-sm text-[9px] py-0.5 px-1 rounded text-center font-bold transition-colors" id="cam-iso">ISO</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Floating Tool Bar (Left Viewport Overlay) -->
+<div class="absolute left-margin top-20 z-20 flex flex-col gap-space-xs bg-surface-container-low/95 p-space-xs rounded-xl shadow-xl">
+<!-- Select Pointer -->
+<button class="w-10 h-10 rounded-lg flex items-center justify-center bg-primary text-on-primary shadow-sm transition-all" id="tool-select" title="Select (Q)">
+<span class="material-symbols-outlined text-[20px]">near_me</span>
+</button>
+<!-- Translate Tool -->
+<button class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface active:bg-primary active:text-on-primary transition-all" id="tool-translate" title="Translate (G)">
+<span class="material-symbols-outlined text-[20px]">open_with</span>
+</button>
+<!-- Rotate Tool -->
+<button class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface active:bg-primary active:text-on-primary transition-all" id="tool-rotate" title="Rotate (R)">
+<span class="material-symbols-outlined text-[20px]">sync</span>
+</button>
+<!-- Scale Tool -->
+<button class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface active:bg-primary active:text-on-primary transition-all" id="tool-scale" title="Scale (S)">
+<span class="material-symbols-outlined text-[20px]">aspect_ratio</span>
+</button>
+<div class="w-6 h-px bg-surface-container-highest mx-auto my-space-xs"></div>
+<!-- Snapping Grid Toggle -->
+<button class="w-10 h-10 rounded-lg flex flex-col items-center justify-center text-secondary hover:bg-surface-container-high active:bg-secondary-container active:text-on-secondary-container transition-all" id="tool-snap" title="Grid Snap (0.5m)">
+<span class="material-symbols-outlined text-[18px]">straighten</span>
+<span class="font-label-sm text-[8px] leading-none">0.5m</span>
+</button>
+<!-- Orbit Lock Toggle -->
+<button class="w-10 h-10 rounded-lg flex items-center justify-center text-tertiary hover:bg-surface-container-high active:bg-tertiary active:text-on-tertiary transition-all" id="tool-orbit" title="Toggle Free Orbit">
+<span class="material-symbols-outlined text-[19px]">360</span>
+</button>
+</div>
+<!-- Active Entity Overlay Card (Contextual floating inspector tag) -->
+<div class="absolute left-1/2 -translate-x-1/2 top-20 z-20 flex items-center gap-space-sm bg-surface-container/90 backdrop-blur-md px-space-md py-space-xs rounded-full shadow-lg" id="selection-tag">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-secondary font-bold">@_Hero_Knight</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant">POS: [0.0, 1.25, -0.4]</span>
+<button class="text-on-surface-variant hover:text-on-surface flex items-center" id="dismiss-tag">
+<span class="material-symbols-outlined text-[14px]">close</span>
+</button>
+</div>
+<!-- Central ASCII Canvas Render Frame -->
+<div class="flex-1 w-full h-full flex items-center justify-center p-space-xs overflow-hidden cursor-grab active:cursor-grabbing font-body-sm text-body-sm leading-[12px] tracking-widest text-center text-on-surface select-none" id="ascii-viewport-canvas">
+<pre class="font-body-sm text-[11px] leading-[13px] text-left opacity-90 transition-transform duration-200" id="ascii-buffer">             <span class="text-outline-variant">. . . . . . . . . . . . . . . . . . . . . . . . . . . . .</span>
+         <span class="text-outline-variant">. . : : : : : : : : : : : : : : : : : : : : : : : : : : . .</span>
+       <span class="text-outline-variant">. : : : : : :</span><span class="text-primary-container font-bold">+-----------------------------+</span><span class="text-outline-variant">: : : : : : .</span>
+     <span class="text-outline-variant">. : : :</span><span class="text-primary-container">/ \</span><span class="text-outline-variant">: : : :</span><span class="text-primary-container">|  M A G E   D U N G E O N    |</span><span class="text-outline-variant">: : : :</span><span class="text-primary-container">/ \</span><span class="text-outline-variant">: : : .</span>
+   <span class="text-outline-variant">. : : :</span><span class="text-primary-container">/___\</span><span class="text-outline-variant">: : :</span><span class="text-primary-container">|   [ROOM_01_NORTH_SANCTUM]   |</span><span class="text-outline-variant">: : :</span><span class="text-primary-container">/___\</span><span class="text-outline-variant">: : : .</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span><span class="text-primary-container">+-----------------------------+</span><span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : : : : : : : : : : : : : : : : : : : : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">  . . . . </span><span class="text-tertiary">^#^</span><span class="text-outline-variant"> . . . . . . . . . . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . </span><span class="text-tertiary">/###\</span><span class="text-outline-variant">   [ENT_LIGHT_01]  . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . .  </span><span class="text-tertiary">/#####\</span><span class="text-outline-variant">      *~*            . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . </span><span class="text-secondary-fixed">|#|</span><span class="text-outline-variant"> . . . </span><span class="text-secondary font-bold">@_Hero</span><span class="text-outline-variant"> . . . . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . </span><span class="text-secondary-fixed">|#|</span><span class="text-outline-variant"> . . </span><span class="text-primary-container">/ [O] \</span><span class="text-outline-variant"> . . . . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . </span><span class="text-secondary-fixed">|#|</span><span class="text-outline-variant"> . . </span><span class="text-primary-container">|     |</span><span class="text-outline-variant"> . . . </span><span class="text-primary font-bold">[X_CHEST]</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . . . . </span><span class="text-primary-container">/       \</span><span class="text-outline-variant"> . . . . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . . . . </span><span class="text-primary">| # # # |</span><span class="text-outline-variant"> . . . . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant"> . . . . . . </span><span class="text-primary">\=======/</span><span class="text-outline-variant"> . . . . . . . </span><span class="text-surface-variant">|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">|:::|_______________________________________|:::|</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : :</span><span class="text-surface-variant">\###########################################/</span><span class="text-outline-variant">: : : :</span>
+   <span class="text-outline-variant">: : : : :</span><span class="text-outline-variant">\~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/</span><span class="text-outline-variant">: : : : :</span>
+   <span class="text-outline-variant">. . : : : : : : : : : : : : : : : : : : : : : : : : : : . .</span>
+      <span class="text-outline-variant">. . . . . . . . . . . . . . . . . . . . . . . . . . . .</span>
+      </pre>
+</div>
+<!-- Bottom Viewport HUD Overlay Bar -->
+<div class="relative z-20 flex flex-col w-full bg-surface-container-low/95 px-margin py-space-sm shadow-xl">
+<!-- Diagnostics / Metrics Strip -->
+<div class="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant pb-space-xs">
+<div class="flex items-center gap-space-sm truncate">
+<span class="flex items-center gap-space-xs text-tertiary font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+            60.2 FPS
+          </span>
+<span class="text-outline-variant">|</span>
+<span class="text-primary-container truncate">1,420 GLYPHS</span>
+<span class="text-outline-variant">|</span>
+<span class="truncate">4 DRAW CALLS</span>
+</div>
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="font-label-sm text-[10px] text-secondary">MEM: 18.4MB</span>
+</div>
+</div>
+<!-- Quick Action Spawn Entities Drawer Bar -->
+<div class="flex items-center justify-between gap-space-xs pt-space-xs">
+<div class="flex items-center gap-space-xs overflow-x-auto py-0.5 no-scrollbar flex-1 min-w-0">
+<!-- Add Entity Buttons -->
+<button class="spawn-btn flex items-center gap-space-xs bg-surface-container px-space-md py-space-xs rounded text-primary hover:bg-surface-container-high active:bg-primary active:text-on-primary font-label-sm text-label-sm shrink-0 transition-colors" data-entity="Mesh">
+<span class="material-symbols-outlined text-[16px]">deployed_code</span>
+<span>+Mesh</span>
+</button>
+<button class="spawn-btn flex items-center gap-space-xs bg-surface-container px-space-md py-space-xs rounded text-secondary hover:bg-surface-container-high active:bg-secondary active:text-on-secondary font-label-sm text-label-sm shrink-0 transition-colors" data-entity="Light">
+<span class="material-symbols-outlined text-[16px]">lightbulb</span>
+<span>+Light</span>
+</button>
+<button class="spawn-btn flex items-center gap-space-xs bg-surface-container px-space-md py-space-xs rounded text-tertiary hover:bg-surface-container-high active:bg-tertiary active:text-on-tertiary font-label-sm text-label-sm shrink-0 transition-colors" data-entity="Camera">
+<span class="material-symbols-outlined text-[16px]">videocam</span>
+<span>+Cam</span>
+</button>
+<button class="spawn-btn flex items-center gap-space-xs bg-surface-container px-space-md py-space-xs rounded text-primary-fixed-dim hover:bg-surface-container-high active:bg-primary active:text-on-primary font-label-sm text-label-sm shrink-0 transition-colors" data-entity="Emitter">
+<span class="material-symbols-outlined text-[16px]">bubble_chart</span>
+<span>+Particle</span>
+</button>
+<button class="spawn-btn flex items-center gap-space-xs bg-surface-container px-space-md py-space-xs rounded text-error hover:bg-surface-container-high active:bg-error active:text-on-error font-label-sm text-label-sm shrink-0 transition-colors" data-entity="Trigger">
+<span class="material-symbols-outlined text-[16px]">crisis_alert</span>
+<span>+Trigger</span>
+</button>
+</div>
+<button class="flex items-center justify-center w-8 h-8 rounded bg-surface-container text-on-surface-variant hover:text-on-surface active:bg-surface-bright shrink-0 transition-colors" id="toggle-console-btn" title="Toggle Mini Console">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Touch Gesture Navigation Guide Bar -->
+<div class="px-margin py-space-sm bg-surface-container-low flex flex-col gap-space-xs shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-[10px] uppercase text-outline tracking-wider font-bold">Touch Controls</span>
+<span class="font-label-sm text-[10px] text-tertiary">ASCII Raster Engine v0.9</span>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-space-xs">
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-[16px] text-primary">touch_app</span>
+<span class="font-label-sm text-[10px] text-on-surface truncate">1-Finger Orbit</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-[16px] text-secondary">pan_tool</span>
+<span class="font-label-sm text-[10px] text-on-surface truncate">2-Finger Pan</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-[16px] text-tertiary">pinch</span>
+<span class="font-label-sm text-[10px] text-on-surface truncate">Pinch Zoom</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed-dim">ads_click</span>
+<span class="font-label-sm text-[10px] text-on-surface truncate">Tap Entity Select</span>
+</div>
+</div>
+</div>
+<!-- Realtime Terminal Mini Drawer (Collapsible) -->
+<div class="px-margin py-space-sm bg-surface-container-lowest flex flex-col gap-space-xs font-label-sm text-label-sm" id="mini-terminal-drawer">
+<div class="flex items-center justify-between text-on-surface-variant pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px] text-tertiary">terminal</span>
+<span class="text-[11px] font-bold uppercase tracking-wider text-on-surface">Console Log Stream</span>
+</div>
+<span class="text-[10px] text-outline">BUFFER: 44.1k</span>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1 text-[11px] leading-[14px]">
+<div class="text-tertiary flex items-center gap-space-xs">
+<span>[0.003s]</span>
+<span class="text-on-surface">Viewport attached. GL_ASCII_Buffer initialised 80x28 cells.</span>
+</div>
+<div class="text-primary-container flex items-center gap-space-xs">
+<span>[0.012s]</span>
+<span class="text-on-surface">Scene 'Dungeon_Room_01' loaded. 2 meshes, 1 light, 1 hero entity.</span>
+</div>
+<div class="text-secondary flex items-center gap-space-xs">
+<span>[0.045s]</span>
+<span>Active tool switched to: <strong id="active-tool-name">Select (Pointer)</strong></span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    // Interactive Tool Buttons Switcher
+    const tools = [
+      { id: 'tool-select', name: 'Select (Pointer)' },
+      { id: 'tool-translate', name: 'Translate (G)' },
+      { id: 'tool-rotate', name: 'Rotate (R)' },
+      { id: 'tool-scale', name: 'Scale (S)' }
+    ];
+
+    const activeToolLabel = document.getElementById('active-tool-name');
+
+    tools.forEach(tool => {
+      const el = document.getElementById(tool.id);
+      if (!el) return;
+      el.addEventListener('click', () => {
+        tools.forEach(t => {
+          const btn = document.getElementById(t.id);
+          if (btn) {
+            btn.classList.remove('bg-primary', 'text-on-primary');
+            btn.classList.add('text-on-surface-variant');
+          }
+        });
+        el.classList.add('bg-primary', 'text-on-primary');
+        el.classList.remove('text-on-surface-variant');
+        if (activeToolLabel) activeToolLabel.textContent = tool.name;
+      });
+    });
+
+    // Orbit Lock toggle micro-interaction
+    const orbitBtn = document.getElementById('tool-orbit');
+    let orbitActive = true;
+    if (orbitBtn) {
+      orbitBtn.addEventListener('click', () => {
+        orbitActive = !orbitActive;
+        if (orbitActive) {
+          orbitBtn.classList.add('text-tertiary');
+          orbitBtn.classList.remove('text-on-surface-variant');
+        } else {
+          orbitBtn.classList.remove('text-tertiary');
+          orbitBtn.classList.add('text-on-surface-variant');
+        }
+      });
+    }
+
+    // Dismiss floating selection tag
+    const dismissBtn = document.getElementById('dismiss-tag');
+    const selectionTag = document.getElementById('selection-tag');
+    if (dismissBtn && selectionTag) {
+      dismissBtn.addEventListener('click', () => {
+        selectionTag.style.display = 'none';
+      });
+    }
+
+    // Camera preset snap handlers
+    const camTop = document.getElementById('cam-top');
+    const camFront = document.getElementById('cam-front');
+    const camIso = document.getElementById('cam-iso');
+    const asciiBuffer = document.getElementById('ascii-buffer');
+
+    function setActiveCamBtn(activeBtn) {
+      [camTop, camFront, camIso].forEach(b => {
+        if (!b) return;
+        b.classList.remove('bg-primary', 'text-on-primary', 'font-bold');
+        b.classList.add('bg-surface-container', 'text-on-surface-variant');
+      });
+      activeBtn.classList.remove('bg-surface-container', 'text-on-surface-variant');
+      activeBtn.classList.add('bg-primary', 'text-on-primary', 'font-bold');
+    }
+
+    if (camTop && asciiBuffer) {
+      camTop.addEventListener('click', () => {
+        setActiveCamBtn(camTop);
+        asciiBuffer.style.transform = 'scale(0.95) rotateX(15deg)';
+      });
+    }
+
+    if (camFront && asciiBuffer) {
+      camFront.addEventListener('click', () => {
+        setActiveCamBtn(camFront);
+        asciiBuffer.style.transform = 'scale(1.02) rotateY(10deg)';
+      });
+    }
+
+    if (camIso && asciiBuffer) {
+      camIso.addEventListener('click', () => {
+        setActiveCamBtn(camIso);
+        asciiBuffer.style.transform = 'scale(1) rotate(0deg)';
+      });
+    }
+
+    // Entity Spawn Buttons Micro-Interactions
+    const spawnButtons = document.querySelectorAll('.spawn-btn');
+    spawnButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.entity;
+        if (activeToolLabel) {
+          activeToolLabel.textContent = 'Spawned ' + type + ' at [0, 0, 0]';
+        }
+        btn.classList.add('scale-95');
+        setTimeout(() => btn.classList.remove('scale-95'), 150);
+      });
+    });
+
+    // Toggle Console Mini Drawer
+    const consoleToggleBtn = document.getElementById('toggle-console-btn');
+    const miniDrawer = document.getElementById('mini-terminal-drawer');
+    if (consoleToggleBtn && miniDrawer) {
+      consoleToggleBtn.addEventListener('click', () => {
+        if (miniDrawer.style.display === 'none') {
+          miniDrawer.style.display = 'flex';
+          consoleToggleBtn.classList.add('text-primary');
+        } else {
+          miniDrawer.style.display = 'none';
+          consoleToggleBtn.classList.remove('text-primary');
+        }
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-2px_16px_rgba(0,0,0,0.5)]" data-active-classes="text-primary font-semibold"><div class="grid grid-cols-4 items-center h-16 px-space-xs"><a aria-current="page" class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-primary font-semibold" data-path="viewport" href="#"><span class="material-symbols-outlined text-[20px]">view_in_ar</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Viewport</span></a><a class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface" data-path="scene-tree" href="#"><span class="material-symbols-outlined text-[20px]">account_tree</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Scene Tree</span></a><a class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface" data-path="inspector" href="#"><span class="material-symbols-outlined text-[20px]">tune</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Inspector</span></a><a class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface" data-path="terminal-log" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Terminal</span></a></div></nav></body></html>

@@ -244,6 +244,9 @@ M1 exit criteria = all P0 stories `done` (roadmap), and `node tools/check-deps.m
 | US-033 | Place props/lights/triggers + property panel + undo | P0 (M1.5) | testing [PC-B] **PO OK 2026-09-26** -> editor owner walk-through (see `### US-032`); `tools/editor/*` - architecture.md 24.9 done, see `### US-033` for the implementation note |
 | US-034 | World JSON save/load + play-test | P0 (M1.5) | testing [PC-B] **PO OK 2026-09-26** -> editor owner walk-through (see `### US-032`); `tools/editor/*` - architecture.md 24.10/24.11 done, see `### US-034` for the implementation note. Last M1.5 editor story - milestone (US-031/032/033/034) complete pending PO review. |
 | BUG-EDITOR-001 | Editor viewport renders solid black despite correct geometry/pick | P0 (M1.5) | done [PC-B] **PO OK 2026-09-26 (7ebd119):** `ui.clear()` only on rendered frames (idle skip intact, 24.14), `?gpu=0` gate matches game main.js; real-browser verified; re-seen in the editor walk-through step 1. `tools/editor/*` - found in live-browser testing after US-031/032/033, see `### BUG-EDITOR-001` for the fix note |
+| US-066 | Editor UI reskin to the Stitch "Retro-Terminal ASCII Studio" layout (ribbon, scene tree, inspector, place toolbar, log drawer) | P1 (M1.5) | todo [PC-B] `tools/editor/index.html` + `tools/editor/panel.js`/`main.js` (DOM/CSS only) - spec `design/editor-ui.md`, refs `design/reference/stitch-editor/`; **Ready: after the editor owner walk-through (US-031..034) passes**; ACs in `### US-066` |
+| US-067 | Editor asset library (model browser with ASCII thumbnails, click to place) + tree visibility/lock | P2 (M1.5+) | todo (sketch) [PC-B] - after US-066; `NEEDS PC-A: PO ACs` |
+| US-068 | Editor axis gizmo + TOP/FRONT/ISO ortho views | P2 (M5) | todo (sketch) [PC-A engine camera + PC-B UI] - `NEEDS PC-A: architect` (ortho camera mode = the owner's future 2D/2.5D camera idea) |
 
 ## Milestone 2 "First Steps" (sketched, see bottom of file)
 | ID | Title | Priority | Status |
@@ -3386,6 +3389,21 @@ Notes / dependencies: US-033, US-027 (world file format shared with content pack
 - **Known limitations / `NEEDS PC-A`: none new.** The AC-vs-24.11 discrepancy on "in place" vs "new tab" is a spec authority note, not a gap (the briefing itself said to follow 24.11). `saveFile`'s File System Access path (`showSaveFilePicker`) is untested against the real native dialog in this pass (Chromium headless-automation limitation, not a code gap) - the `<a download>` fallback path and the whole validate/stringify/migrate pipeline underneath both paths are fully covered by `io.test.mjs` + the browser pass above.
 - **Milestone note:** this is the last story in the M1.5 "engine editor v0" slice (US-031 editor shell -> US-032 pick/select/move/delete -> US-033 place+panel -> US-034 save/load/play-test). All four are now `po-review` or better (US-031 already has a PO OK pending an owner walk-test). No further PC-B editor work is queued behind this one.
 - **How to check:** `http://localhost:8000/tools/editor/index.html?debug=1` - move a prop, watch the `#io-status` line go to "unsaved changes"; `Ctrl+S` saves (native file picker, or a `.json` download); `Load...` picks a file back in; `P` (or the Play-test button) opens `game/index.html?playtest=1&world=world_m1` in a new tab showing the live edit.
+
+### US-066 Editor UI reskin (Stitch design)  [Priority: P1 (M1.5)] [Status: todo]  [PC-B]
+Source: owner's Stitch project "ASCII 3D Engine Editor" (2026-09-26). Spec = **`design/editor-ui.md`** (tokens, layout, Stitch -> editor mapping, "not adopted" list); generated reference HTML in `design/reference/stitch-editor/` (look only, never import it: Tailwind CDN + web fonts).
+As a level designer, I want the editor to look and work like a proper engine editor (docked panels, scene tree, inspector, toolbar), so that it is quicker to read and use than the single side panel.
+Acceptance criteria (main-session draft 2026-09-26; PC-A PO confirms at the next review):
+- [ ] Colour/type/shape tokens from `design/editor-ui.md` 1 as CSS custom properties; 0px corners, no shadows; **no network fetches** (no web fonts, icon fonts or CDN; glyph icons per 4).
+- [ ] Layout per 2: 36px ribbon, left dock 240px (scene tree), right dock 280px (inspector), bottom drawer (Log / Keys tabs); docks + drawer collapsible, state remembered (localStorage in try/catch); canvas still fills the remaining space and resizes correctly.
+- [ ] Ribbon: Play-test, Animate, tool mode Select / Move / Yaw (sets what LMB-drag does; all keys keep working), snap readout that cycles like `[`/`]`, Save / Load, save-state chip (saved green / unsaved amber / invalid red).
+- [ ] Scene tree: filter chips with counts for the doc's real kinds, id search, tree glyphs, selected-row style; clicking a row selects (same path as now), and a viewport selection highlights its row.
+- [ ] Inspector: header (glyph, id, kind chip), POSITION X/Y/Z with axis colours (X amber, Y green, Z cyan) + YAW, then one card per property group; all US-033 validation/inline errors and undo behave exactly as before.
+- [ ] Viewport plates: camera readout (top-left), place toolbar +Prop/+Light/+Trigger/+Interact (same code path as keys 1-4, active mode highlighted), stats (fps, grid, `presented`) bottom-right.
+- [ ] No behaviour change: the editor owner walk-through in `### US-032` (4 steps) still passes; idle re-render skip intact (`presented` stops rising when idle - DOM updates must not force frames); `?gpu=0` still works.
+- [ ] Existing `tools/editor/*.test.mjs` + `node tools/run-tests.mjs` + `node tools/check-deps.mjs` green; one browser pass with screenshots at 1280x800 and 1920x1080.
+Design needed: done (Stitch -> `design/editor-ui.md`). Architect: no (tools/ only, no engine change).
+Out of scope: everything in `design/editor-ui.md` 5; tree visibility/lock + asset browser (US-067); ortho views/gizmo (US-068).
 
 ## Milestone 5 "Engine Editor v0" – sketches (D-010, not yet refined; not M1 scope)
 

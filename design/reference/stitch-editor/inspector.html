@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-tertiary-container": "#004f25", "on-secondary": "#472a00", "on-error-container": "#ffdad6", "error": "#ffb4ab", "surface-container-lowest": "#0a0e14", "tertiary-fixed-dim": "#4de082", "primary-fixed": "#c4e7ff", "primary-fixed-dim": "#7bd0ff", "surface-dim": "#10141a", "on-error": "#690005", "on-secondary-fixed-variant": "#653e00", "tertiary-container": "#2fca6f", "on-tertiary-fixed-variant": "#005227", "on-surface": "#dfe2eb", "surface-container-low": "#181c22", "secondary-fixed": "#ffddb8", "surface-container-high": "#262a31", "surface-tint": "#7bd0ff", "surface-container": "#1c2026", "tertiary": "#54e788", "surface-variant": "#31353c", "background": "#10141a", "on-primary-fixed-variant": "#004c69", "error-container": "#93000a", "primary-container": "#38bdf8", "tertiary-fixed": "#6dfe9c", "on-background": "#dfe2eb", "on-primary": "#00354a", "primary": "#8ed5ff", "secondary-fixed-dim": "#ffb95f", "on-tertiary-fixed": "#00210c", "outline-variant": "#3e484f", "on-secondary-fixed": "#2a1700", "surface-bright": "#353940", "inverse-primary": "#00668a", "on-primary-fixed": "#001e2c", "outline": "#87929a", "inverse-on-surface": "#2d3137", "on-secondary-container": "#5b3800", "on-surface-variant": "#bdc8d1", "surface-container-highest": "#31353c", "surface": "#10141a", "secondary": "#ffb95f", "secondary-container": "#ee9800", "on-primary-container": "#004965", "on-tertiary": "#003919", "inverse-surface": "#dfe2eb" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "1rem", "margin": "0.75rem", "space-xs": "0.125rem", "space-md": "0.5rem", "gutter": "0.5rem", "space-lg": "0.75rem", "gutter-mobile": "0.25rem", "space-sm": "0.25rem", "margin-mobile": "0.375rem" }, "fontFamily": { "label-sm": [ "JetBrains Mono" ], "headline-md": [ "Space Grotesk" ], "body-md": [ "JetBrains Mono" ], "label-lg": [ "JetBrains Mono" ], "headline-lg": [ "Space Grotesk" ], "body-sm": [ "JetBrains Mono" ], "body-lg": [ "JetBrains Mono" ], "headline-sm": [ "Space Grotesk" ], "title-md": [ "Space Grotesk" ], "label-md": [ "JetBrains Mono" ] }, "fontSize": { "label-sm": [ "0.625rem", { "lineHeight": "0.75rem", "fontWeight": "500" } ], "headline-md": [ "1.25rem", { "lineHeight": "1.75rem", "fontWeight": "600" } ], "body-md": [ "0.75rem", { "lineHeight": "1.125rem", "fontWeight": "400" } ], "label-lg": [ "0.75rem", { "lineHeight": "1rem", "fontWeight": "600" } ], "headline-lg": [ "1.75rem", { "lineHeight": "2.25rem", "fontWeight": "600" } ], "body-sm": [ "0.6875rem", { "lineHeight": "1rem", "fontWeight": "400" } ], "body-lg": [ "0.875rem", { "lineHeight": "1.375rem", "fontWeight": "400" } ], "headline-sm": [ "1rem", { "lineHeight": "1.375rem", "fontWeight": "600" } ], "title-md": [ "0.875rem", { "lineHeight": "1.25rem", "fontWeight": "500" } ], "label-md": [ "0.6875rem", { "lineHeight": "0.875rem", "fontWeight": "500" } ] } } } };</script><style>@layer base{html,body{width:100%;margin:0;padding:0;background-color:#10141a;color:#dfe2eb;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased min-h-screen flex flex-col selection:bg-primary selection:text-on-primary"><header class="fixed top-0 w-full z-50 pt-safe bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_12px_rgba(0,0,0,0.4)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm min-w-0 flex-1"><img alt="MAGE ASCII 3D Engine Logo" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1VKWG0rtA5RCO5e3XnBbmoE6zrFlO90_5_cDrmypqM8qgiy0oWMhTLKYadzJ2jWLh2uoEDiKkGwz8-HwSVziGPGDSpiEJPpYi6RBHlk2d0Yyh68C973DPEvzlqxb_xfQVEp0HwlyXmBzew8D1iqvFpRNfX-oSymwTefIsuGMNuwHIV0h8RnF2eAtwW9WFPrIHg1p7Jb5ZoP7jN_CPp84WxySdv-_hwlfTyAmt2E6HJQT70-ANXAfZ2Y"/><div class="flex flex-col min-w-0"><div class="flex items-center gap-space-xs"><span class="font-title-md text-title-md text-on-surface truncate font-semibold">Inspector</span><span class="font-label-sm text-label-sm text-secondary bg-surface-container px-space-xs py-0 rounded">PRO</span></div><div class="flex items-center gap-space-xs truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse shrink-0"></span><span class="font-label-sm text-label-sm text-tertiary truncate tracking-tight">v0.9.4 [RUNNING 60FPS]</span></div></div></div><div class="flex items-center gap-space-xs shrink-0"><div class="flex items-center bg-surface-container-low rounded-lg p-space-xs"><button aria-label="Play Simulation" class="w-11 h-11 flex items-center justify-center rounded text-tertiary hover:bg-surface-container-high active:bg-tertiary-container active:text-on-tertiary-container" type="button"><span class="material-symbols-outlined text-[20px]">play_arrow</span></button><button aria-label="Pause Simulation" class="w-11 h-11 flex items-center justify-center rounded text-secondary hover:bg-surface-container-high active:bg-secondary-container active:text-on-secondary-container" type="button"><span class="material-symbols-outlined text-[18px]">pause</span></button><button aria-label="Stop Simulation" class="w-11 h-11 flex items-center justify-center rounded text-error hover:bg-surface-container-high active:bg-error-container active:text-on-error-container" type="button"><span class="material-symbols-outlined text-[18px]">stop</span></button></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-20 bg-surface flex-1"><div class="flex flex-col w-full px-margin space-y-space-md pb-6">
+<!-- Active Entity Card -->
+<div class="bg-surface-container-low rounded-xl p-space-md shadow-md flex flex-col space-y-space-sm">
+<div class="flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm min-w-0 flex-1">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center font-headline-sm text-primary text-headline-sm shadow-inner shrink-0 select-none">
+          @
+        </div>
+<div class="flex flex-col min-w-0 flex-1">
+<label class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+<span>ENTITY ID #0421</span>
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+</label>
+<input class="bg-surface-container font-headline-sm text-headline-sm text-on-surface px-space-sm py-0.5 rounded outline-none w-full tracking-wide focus:bg-surface-container-highest" type="text" value="Player_Hero_3D"/>
+</div>
+</div>
+<!-- Active Switch Control -->
+<button aria-label="Toggle active state" class="flex flex-col items-center justify-center px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high active:scale-95 transition-transform shrink-0" id="toggle-active-btn" type="button">
+<span class="font-label-sm text-label-sm text-tertiary" id="toggle-active-status">ACTIVE</span>
+<span class="material-symbols-outlined text-tertiary text-[20px]" id="toggle-active-icon">check_box</span>
+</button>
+</div>
+<!-- Entity Meta tags -->
+<div class="flex items-center gap-space-xs pt-space-xs">
+<span class="font-label-sm text-label-sm px-space-xs py-0.5 rounded bg-primary-container/20 text-primary">TAG: Player</span>
+<span class="font-label-sm text-label-sm px-space-xs py-0.5 rounded bg-surface-container-high text-on-surface-variant">LAYER: Default (0)</span>
+<span class="font-label-sm text-label-sm px-space-xs py-0.5 rounded bg-surface-container-high text-secondary">SYNC: NetLocal</span>
+</div>
+</div>
+<!-- Section 1: Transform Matrix -->
+<div class="bg-surface-container-low rounded-xl p-space-md shadow-md flex flex-col space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">transform</span>
+<span class="font-title-md text-title-md text-on-surface font-semibold tracking-wide">Transform Matrix</span>
+</div>
+<button class="flex items-center gap-1 font-label-sm text-label-sm px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high text-primary active:scale-95" id="uniform-lock-btn" title="Lock Uniform Scale" type="button">
+<span class="material-symbols-outlined text-[14px]" id="uniform-lock-icon">lock</span>
+<span>LINKED</span>
+</button>
+</div>
+<!-- Vector Coordinates Grid -->
+<div class="space-y-space-xs pt-space-xs">
+<!-- Position -->
+<div class="bg-surface-container rounded-lg p-space-xs flex flex-col space-y-space-xs">
+<div class="flex items-center justify-between px-space-xs">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-semibold">POSITION (m)</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant/60">WORLD SPACE</span>
+</div>
+<div class="grid grid-cols-3 gap-space-xs">
+<!-- X -->
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-secondary-container/40 text-secondary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">X</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="-1.20"/>
+<div class="flex flex-col gap-0.5">
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface active:bg-secondary leading-none">+</button>
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface active:bg-secondary leading-none">-</button>
+</div>
+</div>
+<!-- Y -->
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-tertiary-container/30 text-tertiary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">Y</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="0.00"/>
+<div class="flex flex-col gap-0.5">
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface active:bg-tertiary leading-none">+</button>
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface active:bg-tertiary leading-none">-</button>
+</div>
+</div>
+<!-- Z -->
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-primary-container/30 text-primary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">Z</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="3.50"/>
+<div class="flex flex-col gap-0.5">
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface active:bg-primary leading-none">+</button>
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface active:bg-primary leading-none">-</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Rotation -->
+<div class="bg-surface-container rounded-lg p-space-xs flex flex-col space-y-space-xs">
+<div class="flex items-center justify-between px-space-xs">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-semibold">ROTATION (deg)</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant/60">EULER XYZ</span>
+</div>
+<div class="grid grid-cols-3 gap-space-xs">
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-secondary-container/40 text-secondary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">X</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="0.0°"/>
+<div class="flex flex-col gap-0.5">
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface leading-none">+</button>
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface leading-none">-</button>
+</div>
+</div>
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-tertiary-container/30 text-tertiary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">Y</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-tertiary text-right pr-1 outline-none" type="text" value="45.0°"/>
+<div class="flex flex-col gap-0.5">
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface leading-none">+</button>
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface leading-none">-</button>
+</div>
+</div>
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-primary-container/30 text-primary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">Z</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="0.0°"/>
+<div class="flex flex-col gap-0.5">
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface leading-none">+</button>
+<button class="w-4 h-2.5 bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-[10px] text-on-surface leading-none">-</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Scale -->
+<div class="bg-surface-container rounded-lg p-space-xs flex flex-col space-y-space-xs">
+<div class="flex items-center justify-between px-space-xs">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-semibold">SCALE RATIO</span>
+<span class="font-label-sm text-label-sm text-primary">1.00x UNIFORM</span>
+</div>
+<div class="grid grid-cols-3 gap-space-xs">
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-secondary-container/40 text-secondary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">X</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="1.00"/>
+</div>
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-tertiary-container/30 text-tertiary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">Y</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="1.00"/>
+</div>
+<div class="flex items-center bg-surface-container-lowest rounded p-1">
+<span class="w-4 h-4 rounded-xs bg-primary-container/30 text-primary font-label-sm text-label-sm flex items-center justify-center font-bold mr-1">Z</span>
+<input class="w-full bg-transparent font-body-sm text-body-sm text-on-surface text-right pr-1 outline-none" type="text" value="1.00"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 2: ASCII Shading & Glyph Material -->
+<div class="bg-surface-container-low rounded-xl p-space-md shadow-md flex flex-col space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">texture</span>
+<span class="font-title-md text-title-md text-on-surface font-semibold tracking-wide">ASCII Shader Matrix</span>
+</div>
+<span class="font-label-sm text-label-sm text-tertiary bg-tertiary/10 px-space-xs py-0.5 rounded">GPU SHADER</span>
+</div>
+<!-- Preset Selector Chips -->
+<div class="flex flex-col space-y-1">
+<label class="font-label-sm text-label-sm text-on-surface-variant font-medium">GLYPH RAMP PRESET</label>
+<div class="grid grid-cols-2 gap-space-xs">
+<button class="preset-btn bg-primary-container/20 text-primary px-space-sm py-1.5 rounded text-left flex items-center justify-between font-label-sm text-label-sm font-semibold shadow-xs" type="button">
+<span>Classic CP437</span>
+<span class="material-symbols-outlined text-[14px]">check</span>
+</button>
+<button class="preset-btn bg-surface-container text-on-surface-variant hover:text-on-surface px-space-sm py-1.5 rounded text-left flex items-center justify-between font-label-sm text-label-sm" type="button">
+<span>Blocks (░▒▓█)</span>
+</button>
+<button class="preset-btn bg-surface-container text-on-surface-variant hover:text-on-surface px-space-sm py-1.5 rounded text-left flex items-center justify-between font-label-sm text-label-sm" type="button">
+<span>Matrix Green</span>
+</button>
+<button class="preset-btn bg-surface-container text-on-surface-variant hover:text-on-surface px-space-sm py-1.5 rounded text-left flex items-center justify-between font-label-sm text-label-sm" type="button">
+<span>Minimal Dots</span>
+</button>
+</div>
+</div>
+<!-- Ramp Character Density Preview -->
+<div class="bg-surface-container-lowest rounded-lg p-space-sm flex flex-col space-y-1.5">
+<div class="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant">
+<span>RAMP DENSITY GRADIENT (10 STAGES)</span>
+<span class="text-primary font-mono font-semibold">100% COVERAGE</span>
+</div>
+<div class="flex items-center justify-between bg-surface-container px-space-sm py-2 rounded font-body-lg text-body-lg text-primary tracking-widest text-center shadow-inner overflow-x-auto">
+<span class="text-on-surface-variant/30 font-bold"> </span>
+<span class="opacity-40">.</span>
+<span class="opacity-50">:</span>
+<span class="opacity-60">-</span>
+<span class="opacity-70">=</span>
+<span class="opacity-80">+</span>
+<span class="opacity-90">*</span>
+<span class="text-secondary font-bold">#</span>
+<span class="text-secondary font-bold">%</span>
+<span class="text-primary font-extrabold">@</span>
+</div>
+<!-- Gradient Luminance Bar -->
+<div class="h-1.5 w-full rounded-full bg-gradient-to-r from-surface to-primary opacity-80"></div>
+</div>
+<!-- Sliders and Dither Controls -->
+<div class="space-y-space-sm pt-space-xs">
+<!-- Dither Dropdown / Type -->
+<div class="flex items-center justify-between bg-surface-container p-space-xs rounded-lg">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-medium pl-1">DITHERING ALGORITHM</span>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-sm text-label-sm text-primary font-semibold">Bayer 4x4 Ordered</span>
+<button class="w-6 h-6 rounded bg-surface-container-high flex items-center justify-center text-on-surface hover:text-primary">
+<span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Contrast Slider -->
+<div class="bg-surface-container p-space-xs rounded-lg space-y-1">
+<div class="flex justify-between items-center font-label-sm text-label-sm">
+<span class="text-on-surface-variant">CONTRAST EXPONENT</span>
+<span class="text-primary font-bold" id="contrast-val">1.25</span>
+</div>
+<input class="w-full accent-primary h-1.5 bg-surface-container-lowest rounded-lg cursor-pointer" id="contrast-slider" max="2.5" min="0.5" step="0.05" type="range" value="1.25"/>
+</div>
+<!-- Ambient Occlusion Switch -->
+<div class="flex items-center justify-between bg-surface-container p-space-xs rounded-lg">
+<div class="flex items-center gap-1.5 pl-1">
+<span class="material-symbols-outlined text-secondary text-[16px]">wb_twilight</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">CHAR AMBIENT OCCLUSION</span>
+</div>
+<button class="w-10 h-5 bg-tertiary-container/40 rounded-full relative p-0.5 transition-colors flex items-center justify-end pr-0.5" type="button">
+<span class="w-4 h-4 rounded-full bg-tertiary shadow-sm"></span>
+</button>
+</div>
+<!-- Color Pickers (Foreground / Background) -->
+<div class="grid grid-cols-2 gap-space-xs pt-space-xs">
+<div class="bg-surface-container p-space-xs rounded-lg flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant">FOREGROUND</span>
+<span class="font-label-sm text-label-sm text-primary font-mono">#38BDF8</span>
+</div>
+<div class="w-7 h-7 rounded bg-primary-container shadow-md flex items-center justify-center">
+<span class="font-label-sm text-label-sm text-on-primary font-bold">@</span>
+</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded-lg flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant">BACKGROUND</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant/80 font-mono">#0D1117 (0.8)</span>
+</div>
+<div class="w-7 h-7 rounded bg-surface-container-lowest shadow-md flex items-center justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant/40">VOID</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 3: 3D Mesh & Collision Component -->
+<div class="bg-surface-container-low rounded-xl p-space-md shadow-md flex flex-col space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-tertiary text-[18px]">view_in_ar</span>
+<span class="font-title-md text-title-md text-on-surface font-semibold tracking-wide">Mesh &amp; RigidBody Physics</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary bg-secondary-container/20 px-space-xs py-0.5 rounded">DYNAMIC</span>
+</div>
+<!-- Mesh Source Details -->
+<div class="bg-surface-container rounded-lg p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">token</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-semibold truncate">hero_warrior.obj</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">384 Vertices • Voxelized ASCII</span>
+</div>
+</div>
+<button class="w-8 h-8 rounded bg-surface-container-high hover:bg-surface-bright flex items-center justify-center text-on-surface-variant active:text-primary">
+<span class="material-symbols-outlined text-[16px]">folder_open</span>
+</button>
+</div>
+<!-- Physics Attributes -->
+<div class="grid grid-cols-2 gap-space-xs">
+<div class="bg-surface-container p-space-xs rounded-lg flex flex-col space-y-0.5">
+<span class="font-label-sm text-label-sm text-on-surface-variant">RIGIDBODY MASS</span>
+<div class="flex items-center justify-between">
+<input class="w-20 bg-transparent font-body-sm text-body-sm text-on-surface outline-none font-bold" type="text" value="65.0 kg"/>
+<div class="flex gap-0.5">
+<button class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-on-surface text-[12px] hover:bg-surface-bright">+</button>
+<button class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-on-surface text-[12px] hover:bg-surface-bright">-</button>
+</div>
+</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded-lg flex flex-col space-y-0.5">
+<span class="font-label-sm text-label-sm text-on-surface-variant">SURFACE FRICTION</span>
+<div class="flex items-center justify-between">
+<input class="w-20 bg-transparent font-body-sm text-body-sm text-on-surface outline-none font-bold" type="text" value="0.80 mu"/>
+<div class="flex gap-0.5">
+<button class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-on-surface text-[12px] hover:bg-surface-bright">+</button>
+<button class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-on-surface text-[12px] hover:bg-surface-bright">-</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Inspector Action Buttons -->
+<div class="flex flex-col gap-space-xs pt-space-xs">
+<button class="w-full h-11 bg-primary text-on-primary rounded-xl font-headline-sm text-headline-sm flex items-center justify-center gap-space-xs shadow-md active:scale-[0.98] transition-transform" id="apply-changes-btn" type="button">
+<span class="material-symbols-outlined text-[20px]">save</span>
+<span>Apply Changes</span>
+</button>
+<div class="grid grid-cols-2 gap-space-xs">
+<button class="h-10 bg-surface-container-high hover:bg-surface-bright text-on-surface rounded-lg font-label-lg text-label-lg flex items-center justify-center gap-space-xs active:bg-surface-variant transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+<span>Copy Comp</span>
+</button>
+<button class="h-10 bg-surface-container-high hover:bg-surface-bright text-error rounded-lg font-label-lg text-label-lg flex items-center justify-center gap-space-xs active:bg-surface-variant transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">restart_alt</span>
+<span>Reset Defaults</span>
+</button>
+</div>
+</div>
+</div>
+<script>
+  (function initInspectorInteractivity() {
+    // Active switch micro-interaction
+    const toggleBtn = document.getElementById('toggle-active-btn');
+    const toggleText = document.getElementById('toggle-active-status');
+    const toggleIcon = document.getElementById('toggle-active-icon');
+    let isActive = true;
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        isActive = !isActive;
+        if (isActive) {
+          toggleText.textContent = 'ACTIVE';
+          toggleText.className = 'font-label-sm text-label-sm text-tertiary';
+          toggleIcon.textContent = 'check_box';
+          toggleIcon.className = 'material-symbols-outlined text-tertiary text-[20px]';
+        } else {
+          toggleText.textContent = 'DISABLED';
+          toggleText.className = 'font-label-sm text-label-sm text-on-surface-variant';
+          toggleIcon.textContent = 'check_box_outline_blank';
+          toggleIcon.className = 'material-symbols-outlined text-on-surface-variant text-[20px]';
+        }
+      });
+    }
+
+    // Uniform Lock Button
+    const lockBtn = document.getElementById('uniform-lock-btn');
+    const lockIcon = document.getElementById('uniform-lock-icon');
+    let isLocked = true;
+
+    if (lockBtn) {
+      lockBtn.addEventListener('click', () => {
+        isLocked = !isLocked;
+        lockIcon.textContent = isLocked ? 'lock' : 'lock_open';
+        lockBtn.querySelector('span:last-child').textContent = isLocked ? 'LINKED' : 'FREE';
+        lockBtn.classList.toggle('text-primary', isLocked);
+        lockBtn.classList.toggle('text-on-surface-variant', !isLocked);
+      });
+    }
+
+    // Contrast slider display update
+    const slider = document.getElementById('contrast-slider');
+    const contrastVal = document.getElementById('contrast-val');
+    if (slider && contrastVal) {
+      slider.addEventListener('input', (e) => {
+        contrastVal.textContent = parseFloat(e.target.value).toFixed(2);
+      });
+    }
+
+    // Preset chips switcher
+    const presetButtons = document.querySelectorAll('.preset-btn');
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        presetButtons.forEach(b => {
+          b.className = 'preset-btn bg-surface-container text-on-surface-variant hover:text-on-surface px-space-sm py-1.5 rounded text-left flex items-center justify-between font-label-sm text-label-sm';
+          const icon = b.querySelector('.material-symbols-outlined');
+          if (icon) icon.remove();
+        });
+        btn.className = 'preset-btn bg-primary-container/20 text-primary px-space-sm py-1.5 rounded text-left flex items-center justify-between font-label-sm text-label-sm font-semibold shadow-xs';
+        const checkIcon = document.createElement('span');
+        checkIcon.className = 'material-symbols-outlined text-[14px]';
+        checkIcon.textContent = 'check';
+        btn.appendChild(checkIcon);
+      });
+    });
+
+    // Apply Changes feedback
+    const applyBtn = document.getElementById('apply-changes-btn');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', () => {
+        const originalText = applyBtn.innerHTML;
+        applyBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">check_circle</span><span>Shader Compiled &amp; Saved!</span>';
+        applyBtn.classList.replace('bg-primary', 'bg-tertiary-container');
+        applyBtn.classList.replace('text-on-primary', 'text-on-tertiary-container');
+        setTimeout(() => {
+          applyBtn.innerHTML = originalText;
+          applyBtn.classList.replace('bg-tertiary-container', 'bg-primary');
+          applyBtn.classList.replace('text-on-tertiary-container', 'text-on-primary');
+        }, 1400);
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-2px_16px_rgba(0,0,0,0.5)]" data-active-classes="text-primary font-semibold"><div class="grid grid-cols-4 items-center h-16 px-space-xs"><a class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface" data-path="viewport" href="#"><span class="material-symbols-outlined text-[20px]">view_in_ar</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Viewport</span></a><a class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface" data-path="scene-tree" href="#"><span class="material-symbols-outlined text-[20px]">account_tree</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Scene Tree</span></a><a aria-current="page" class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-primary font-semibold" data-path="inspector" href="#"><span class="material-symbols-outlined text-[20px]">tune</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Inspector</span></a><a class="flex flex-col items-center justify-center h-full min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface" data-path="terminal-log" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span><span class="font-label-sm text-label-sm tracking-tight text-center truncate w-full px-space-xs">Terminal</span></a></div></nav></body></html>
