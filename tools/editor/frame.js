@@ -29,9 +29,9 @@ export function idleSkip(dirty, animate, farBaking) {
 }
 
 /**
- * @param {{engine:Object, assets:Object, rt:Object}} deps
+ * @param {{engine:Object, assets:Object, rt:Object, gpuParam?:boolean}} deps
  */
-export function createFrame({ engine, assets, rt }) {
+export function createFrame({ engine, assets, rt, gpuParam = true }) {
   // D-025-style "no per-frame allocation" (24.14): everything below is built
   // once and reused every frame; only `bindLevel`/`repackMaterials` (which
   // run once per `world:loaded`, not per frame) touch it after that.
@@ -41,11 +41,16 @@ export function createFrame({ engine, assets, rt }) {
   const voxelPool = new VoxelPool();
   voxelPool.bind(assets, matTable);
 
-  // US-029 gate (24.4/main.js precedent): only when every condition holds -
-  // `?gpu=0` is handled by `createEngine`/`RenderTarget` itself (rt.backend
-  // stays c2d-capped), so this file only checks `rt.backend`.
+  // US-029 gate (24.4/main.js precedent). BUG-EDITOR-001 fix: `?gpu=0`
+  // deliberately does NOT change `rt.backend` away from 'gl2' (see
+  // RenderTarget.js's own comment: it only forces the CPU-budget grid size -
+  // the caller is responsible for skipping the `GpuCellPipeline` itself, the
+  // same way game/js/main.js checks `params.get('gpu') !== '0'` before its
+  // own `new GpuCellPipeline(...)`), so `gpuParam` (main.js's own read of
+  // that same param) is checked here too - the old comment above this gate
+  // claiming "`?gpu=0` is handled by RenderTarget itself" was wrong.
   let gpuPipeline = null;
-  if (rt.backend === 'gl2' && detailPass && matTable.allV2) {
+  if (gpuParam && rt.backend === 'gl2' && detailPass && matTable.allV2) {
     const candidate = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true });
     if (candidate.ready) {
       candidate.bind(matTable, assets.palette);
@@ -108,6 +113,18 @@ export function createFrame({ engine, assets, rt }) {
       const skip = idleSkip(dirty, animate, farBaking);
       if (!skip.shouldRender) return false; // idle skip (24.1 decision 6 / 24.4)
       dirty = skip.nextDirty;
+
+      // BUG-EDITOR-001: OWN-REQ-003 (architecture.md 17.4) requires the
+      // fixed UI layer to be cleared every rendered frame, same as
+      // game/js/main.js's `ui.clear()` - a `CellBuffer` (engine/render/
+      // CellBuffer.js) defaults every cell's bg alpha to 255 (opaque black)
+      // at construction, and present()'s second (UI-layer) draw pass keeps
+      // any cell whose bg alpha is >= 0.5 (17.2 "no blending" rule), so a
+      // never-cleared UI layer paints solid black over the entire scene on
+      // every frame. The editor draws no HUD into `engine.ui` at all, but
+      // still owns the same UiLayer/present() contract as the game, so it
+      // must clear it every frame regardless.
+      engine.ui.clear();
 
       if (farBaking) world.terrain.bakeFarStep(1);
 

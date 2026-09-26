@@ -75,7 +75,10 @@ const { renderTarget: rt, input } = engine;
 
 // ---- GPU gate (24.3): a real WebGL2 pipeline is required unless ?gpu=0 ----
 const gpuDevSwitch = params.get('gpu') === '0';
-const frame = createFrame({ engine, assets, rt });
+// BUG-EDITOR-001 fix: `?gpu=0` keeps `rt.backend === 'gl2'` (RenderTarget.js
+// only shrinks the grid for it) - createFrame needs the raw param too, so it
+// can skip constructing GpuCellPipeline the same way main.js does.
+const frame = createFrame({ engine, assets, rt, gpuParam: !gpuDevSwitch });
 const gpuReady = rt.backend === 'gl2' && frame.gpuPipeline && frame.gpuPipeline.ready;
 const gpuBlocked = !gpuDevSwitch && !gpuReady;
 if (gpuBlocked) {
