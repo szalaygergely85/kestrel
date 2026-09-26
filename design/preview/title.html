@@ -177,26 +177,38 @@
   check('Map card behaviour data: 0.5 s after the title, min 1.0 s, dismiss key consumed, scene dim 0.35, M toggle with no timeout; move hint starts on the first dismissal; one hint on screen (FIFO)',
     MCS.showOnce.delaySec === 0.5 && MCS.minShowSec === 1.0 && MCS.dismiss.consumeKey === true && MCS.sceneDim.bgMul === 0.35 && MCS.reopenKey === 'M' && MCS.reopen.toggle && MCS.reopen.timeout === null &&
     ST.hints[0].on.event === 'mapCard.firstDismiss' && ST.hint.maxOnScreen === 1 && ST.hint.queue === 'fifo');
-  // hint zones vs the tower data (read-only)
+  // hint zones vs the tower data (read-only). Since the US-026 content migration, levels/tower.js's hint triggers
+  // (hintBurner/hintClimb/hintExit) are already merged into content/levels/tower.level.json - levelPatch.towerHints
+  // here documents them, so the check confirms they MATCH the merged trigger data by id, not that the ids are "new"
+  // (BUG-PREV-001, 2026-09-26: the old "ids new" clash check always failed once the merge happened).
   var LV = A.levels && A.levels.tower, HZ = A.levelPatch && A.levelPatch.towerHints, zonesOk = false, zoneMsg = 'levels/tower.js or levelPatch.towerHints missing';
   if (LV && HZ) {
     var Z = {}; HZ.triggers.append.forEach(function (z) { Z[z.id] = z; });
-    var ids = (LV.triggers || []).map(function (t) { return t.id; }), clash = HZ.triggers.append.some(function (z) { return ids.indexOf(z.id) >= 0; });
+    var byId = {}; (LV.triggers || []).forEach(function (t) { byId[t.id] = t; });
+    var MATCH_FIELDS = ['type', 'shape', 'x', 'y', 'r', 'once', 'trigger', 'zMin'];
+    var allMatch = HZ.triggers.append.every(function (z) {
+      var real = byId[z.id];
+      return !!real && MATCH_FIELDS.every(function (f) { return z[f] === real[f] || (z[f] === undefined && real[f] === undefined); });
+    });
     var cellAt = function (x, y) { var r = LV.rows[Math.floor(y)]; return r ? LV.legend[r.charAt(Math.floor(x))] : null; };
     var burner = (LV.props || []).filter(function (p) { return p.id === 'brazier'; })[0], lamp = (LV.props || []).filter(function (p) { return p.id === 'lantern'; })[0], st0 = LV.start;
     var zb = Z.hintBurner, zc = Z.hintClimb, d = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
     var baseCell = cellAt(zc.x, zc.y), gapBC = d(zb, zc) - zb.r - zc.r;
     var shapeOk = [zb, zc].every(function (z) { return z.type === 'hint' && z.shape === 'circle' && z.once === true && z.trigger === 'hint.show'; });
-    zonesOk = !clash && shapeOk && zb.r === 3.0 && zc.r === 1.5 && burner && d(zb, burner) < 1e-9 && baseCell && baseCell.tag === 'stairBase' &&
+    zonesOk = allMatch && shapeOk && zb.r === 3.0 && zc.r === 1.5 && burner && d(zb, burner) < 1e-9 && baseCell && baseCell.tag === 'stairBase' &&
       d(zb, st0) > zb.r && lamp && d(zb, lamp) < zb.r && gapBC > 0;
     zoneMsg = 'hintBurner r ' + zb.r + ' on the burner (' + zb.x + ', ' + zb.y + '), spawn ' + d(zb, st0).toFixed(2) + ' m away (outside), lamp ' + (lamp ? d(zb, lamp).toFixed(2) : '?') +
-      ' m (inside); hintClimb r ' + zc.r + ' on the ' + (baseCell && baseCell.tag) + ' cell; circles ' + gapBC.toFixed(2) + ' m apart (no overlap); ids new: ' + !clash;
+      ' m (inside); hintClimb r ' + zc.r + ' on the ' + (baseCell && baseCell.tag) + ' cell; circles ' + gapBC.toFixed(2) + ' m apart (no overlap); matches merged tower triggers: ' + allMatch;
   }
-  check('Hint zones (levelPatch.towerHints, tower-local, once-triggers like hintJump): ' + zoneMsg, zonesOk);
+  check('Hint zones (levelPatch.towerHints vs the merged levels/tower.js triggers, tower-local, once-triggers like hintJump): ' + zoneMsg, zonesOk);
   var E = ST.endText, EL = {}; E.lines.forEach(function (l) { EL[l.id] = l; });
-  var US017 = ['The signal is still calling.', 'One relay wakes. The signal is still calling.', 'Someone is out there.', '- to be continued -', '[R] Wake again'];
-  check('End card (US-017 re-check): strings incl. the woken variant = the US-017 AC lines, each <= 60 chars; colours are palette keys',
-    EL.signal.text === US017[0] && EL.signal.alt === US017[1] && EL.signal.altWhen === 'tower.beacon.lit' && EL.someone.text === US017[2] && EL.continue.text === US017[3] && EL.restart.text === US017[4] &&
+  // BUG-OWN-005 (row 25j, 2026-09-24) rewrote continue/restart and added the "thanks" line so the card doesn't read
+  // like a respawn; BUG-CONTENT-001 (row 30i, 2026-09-26) shortened the woken alt line to <= 40 ASCII chars.
+  var US017 = ['The signal is still calling.', 'One relay wakes. The signal still calls.', 'Someone is out there.',
+    '- End of Chapter One: The Tower -', 'Thank you for playing.', '[R] Play again from the wreck'];
+  check('End card (US-017 re-check, BUG-OWN-005 wording): strings incl. the woken variant = the current end-card lines, each <= 60 chars; colours are palette keys',
+    EL.signal.text === US017[0] && EL.signal.alt === US017[1] && EL.signal.altWhen === 'tower.beacon.lit' && EL.someone.text === US017[2] &&
+    EL.continue.text === US017[3] && EL.thanks.text === US017[4] && EL.restart.text === US017[5] &&
     E.lines.every(function (l) { return (l.alt || l.text).length <= 60 && !!P.colors[l.color]; }) && !!P.colors[E.cursor.color] && E.placeholder === false);
   check('End card timings as data: walkSec ' + E.walkSec + ', fade.sec ' + ST.fade.sec + ', gapSec ' + E.gapSec + ', cps ' + E.cps + ' (US-017 ACs 1.5 / 2 / 1.5 / 30); cursor "' + E.cursor.glyph + '" period ' + E.cursor.periodSec + ' s; rows ' + E.lines.map(function (l) { return l.row; }).join('/'),
     E.walkSec === 1.5 && ST.fade.sec === 2.0 && E.gapSec === 1.5 && E.cps === 30 && E.cursor.glyph === '_' && EL.restart.cursor && EL.restart.enablesRestart);

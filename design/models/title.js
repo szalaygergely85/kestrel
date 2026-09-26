@@ -319,7 +319,7 @@
       lines: [
         { id: 'signal', row: 29, typed: true, color: 'uiText',
           text: 'The signal is still calling.',
-          alt: 'One relay wakes. The signal is still calling.', altWhen: 'tower.beacon.lit',
+          alt: 'One relay wakes. The signal still calls.', altWhen: 'tower.beacon.lit',
           note: 'first line depends on the relay state (D-003, D-011); default and without US-022 = text' },
         { id: 'someone', row: 30, typed: true, color: 'uiText', text: 'Someone is out there.' },
         { id: 'continue', row: 32, typed: false, color: 'uiHint', text: '- End of Chapter One: The Tower -', afterGap: true },
