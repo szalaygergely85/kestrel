@@ -51,7 +51,7 @@ import paletteMod from '../../design/palette.js';
 import titleMod from '../../design/models/title.js';
 import { loadTestAssets } from '../testing/content-node.mjs';
 import { setPaletteColors, request as requestHint, resetHints, stepHints, drawHints, pushHintDim } from '../../game/js/quest/hints.js';
-import { makeOk } from '../test/assert.js';
+import { makeOk } from '../../engine/test/assert.js';
 
 paletteMod; titleMod; // classic scripts: side effects on globalThis.ASSETS (uiStyle, models.mapCard, palette)
 const { assets } = await loadTestAssets();
