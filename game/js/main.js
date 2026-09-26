@@ -73,9 +73,13 @@ if (gridParam) {
   if (m) { reqCols = Number(m[1]); reqRows = Number(m[2]); }
   else console.warn(`[grid] ?grid=${gridParam} not "WxH" - using the default ${GRID_DEFAULT_COLS}`);
 }
-// US-038b: a saved grid choice applies at boot, unless ?grid= overrides it for this session.
+// US-038b: a saved grid choice applies at boot, unless ?grid= overrides it for
+// this session - or unless this is a capture/bench/compare page (?bench=,
+// ?voxelbench=, ?gpucompare=), which must stay comparable across runs
+// regardless of what the player last saved (PC-A PO REJECT, backlog row 30f).
 const savedSettings = loadSettings();
-if (!gridParam) {
+const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare');
+if (!gridParam && !isCaptureOrBench) {
   const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
   if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
 }

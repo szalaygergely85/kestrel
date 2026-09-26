@@ -36,7 +36,7 @@
 import { createPanel } from '../../../engine/index.js';
 import { OPTIONS, findOption, getDefaultValues, stepOptionValue } from '../settings/options.js';
 import { loadSettings, saveSettings } from '../platform/index.js';
-import { setMuted } from '../audio/synth.js';
+import { setMuted, isMuted } from '../audio/synth.js';
 
 let panel = null;          // createPanel()'s fade/open-close state machine (fake `{w,h}` art - see header)
 let values = { ...getDefaultValues(), ...toOptionValues(loadSettings()) };
@@ -69,12 +69,33 @@ function openPanel(ctx) {
   if (ctx.engine && ctx.engine.renderTarget) {
     values.grid = `${ctx.engine.renderTarget.cols}x${ctx.engine.renderTarget.rows}`;
   }
+  // PC-A PO REJECT (backlog row 30f, fix 1): `values.mute`/`values.fullscreen`
+  // are otherwise only ever set when THIS panel changes them, so a mute
+  // toggled via the `N` key (or fullscreen toggled by the browser/Esc) while
+  // the panel was closed would show stale on reopen - refresh both live here.
+  values.mute = isMuted();
+  if (typeof document !== 'undefined') values.fullscreen = !!document.fullscreenElement;
   selected = 0;
   panel.open();
 }
 
 function closePanel() {
   if (panel) panel.close();
+}
+
+/**
+ * Closes the panel immediately, with no fade-out - used for fix 2 (PC-A PO
+ * REJECT, backlog row 30f): once the pointer re-locks (click-to-resume) play
+ * has already resumed, so a fading panel would keep drawing/blocking input
+ * over live gameplay. Bypasses `panel`'s opening/closing state machine
+ * directly rather than adding a "skip fade" mode to the shared `engine/ui/
+ * panel.js` primitive for this one caller.
+ */
+function closePanelInstant() {
+  if (!panel) return;
+  panel.state = 'closed';
+  panel.a = 0;
+  panel.openSec = 0;
 }
 
 function moveSelection(dir) {
@@ -130,6 +151,15 @@ export function updateSettings(dt, input, ctx) {
   if (panel) panel.step(dt);
   const style = ctx.assets && ctx.assets.uiStyle && ctx.assets.uiStyle.settings;
   if (!style) return;
+
+  // PC-A PO REJECT (backlog row 30f, fix 2): clicking the canvas while
+  // Settings is open re-locks the pointer and resumes play (main.js's own
+  // click-to-resume handling), but left the panel drawn and `uiLocked` true
+  // with no way to move - close it immediately once the look is locked again.
+  if (isSettingsOpen() && ctx.look && ctx.look.locked) {
+    closePanelInstant();
+    return;
+  }
 
   if (!isSettingsOpen()) {
     if (ctx.canOpen && input.pressed('KeyS')) {

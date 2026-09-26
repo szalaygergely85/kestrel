@@ -25,6 +25,7 @@ globalThis.window = { localStorage: makeFakeStorage() };
 
 const { updateSettings, drawSettingsPanel, isSettingsOpen } = await import('./settings.js');
 const { loadSettings } = await import('../platform/index.js');
+const { setMuted } = await import('../audio/synth.js');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -224,6 +225,68 @@ ok('drawSettingsPanel while closed does not throw (checked by reaching here)', t
   input._clearFrame();
   input._press('Escape');
   for (let i = 0; i < 20; i++) updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
+}
+
+// ---- PC-A PO REJECT fix 1 (backlog row 30f): mute row must not go stale --
+// A `fakeUi` that records every `setCellRGB` glyph write so we can read back
+// the rendered text of a row without peeking at settings.js's internal
+// `values` (same black-box approach the rest of this file already uses).
+function recordingUi(cols = 160, rows = 60) {
+  const cells = new Map(); // "x,y" -> char
+  return {
+    cols, rows, sx: 1, sy: 1,
+    setCellRGB(x, y, gi) { cells.set(`${x},${y}`, gi === 0 ? ' ' : String.fromCharCode(gi + 32)); },
+    rowText(y, x0, len) {
+      let s = '';
+      for (let x = x0; x < x0 + len; x++) s += cells.get(`${x},${y}`) || ' ';
+      return s;
+    },
+  };
+}
+{
+  // mute row = index 4 in rowOrder -> y = panel.y + rows.first + 4*rows.gap
+  const muteY = style.panel.y + style.rows.first + 4 * style.rows.gap;
+  const valueX = style.panel.x + style.rows.valueCol;
+
+  setMuted(true); // toggle from OUTSIDE the panel (like the `N` key does mid-play)
+  {
+    const input = fakeInput();
+    input._press('KeyS');
+    updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
+    const ui = recordingUi();
+    drawSettingsPanel(ui, fakeRt(), assets, {});
+    ok('reopening after an external setMuted(true) shows "on", not a stale value',
+      ui.rowText(muteY, valueX, 8).includes('on'), ui.rowText(muteY, valueX, 8));
+    input._clearFrame();
+    input._press('Escape');
+    for (let i = 0; i < 20; i++) updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
+  }
+
+  setMuted(false); // and the other direction
+  {
+    const input = fakeInput();
+    input._press('KeyS');
+    updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
+    const ui = recordingUi();
+    drawSettingsPanel(ui, fakeRt(), assets, {});
+    ok('reopening after an external setMuted(false) shows "off", not a stale value',
+      ui.rowText(muteY, valueX, 8).includes('off'), ui.rowText(muteY, valueX, 8));
+    input._clearFrame();
+    input._press('Escape');
+    for (let i = 0; i < 20; i++) updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
+  }
+}
+
+// ---- PC-A PO REJECT fix 2 (backlog row 30f): click-to-resume (look.locked) closes the panel ----
+{
+  const input = fakeInput();
+  input._press('KeyS');
+  updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
+  ok('panel open before the click-to-resume lock', isSettingsOpen() === true);
+  input._clearFrame();
+  const look = { locked: true };
+  updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look, canOpen: true });
+  ok('look.locked becoming true closes the panel immediately (no fade wait)', isSettingsOpen() === false);
 }
 
 if (failures.length) {
