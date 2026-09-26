@@ -3,11 +3,13 @@
 // pipeline gate, world loop) in ~100 lines so the sprite pass could be built
 // and verified while US-030a rewrites main.js in parallel; once main.js is
 // wired (4 lines, see spriteDev.js header) this page becomes redundant.
-// Imports only engine/index.js (check-deps rule 3).
+// Imports only engine/index.js (check-deps rule 3), plus engine/dev.js for
+// PlayerLook (US-047 - game/js/dev/** is an allowed engine/dev.js importer).
 import {
-  AssetRegistry, createEngine, GBuffer, bindShading, bindLevel, PlayerLook, DebugOverlay,
+  AssetRegistry, createEngine, GBuffer, bindShading, bindLevel, DebugOverlay,
   integrate, Camera, renderWorld, GpuCellPipeline, ambientL, World, drawSprites,
 } from '../../../engine/index.js';
+import { PlayerLook } from '../../../engine/dev.js';
 import { POSES } from '../../../tools/bench-poses.js';
 import { createSpriteSystem, spawnTestSprites, runSpriteCompareMode } from './spriteDev.js';
 

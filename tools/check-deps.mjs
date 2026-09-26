@@ -22,7 +22,13 @@
 //   6. tools/editor/**/*.js: an import that resolves inside game/ is a
 //      finding (architecture.md 24.2 - the editor is a second client of
 //      engine/index.js only, it must never depend on the game/ product).
-//   7. success message as above.
+//   7. game/**/*.js and tools/**/*.js: an import that resolves to exactly
+//      engine/dev.js (US-047, docs/architecture.md section 5) is allowed
+//      only from game/js/dev/**, game/js/main.js, or tools/** OUTSIDE
+//      tools/editor/** - everywhere else (game/js/quest/**, game/js/ui/**,
+//      tools/editor/**) it is a finding: those get only the stable
+//      engine/index.js surface.
+//   8. success message as above.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -148,6 +154,19 @@ const RULE3_TOOL_ALLOWLIST = new Set([
 
 const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');
 
+// Rule 7 (US-047): who may import engine/dev.js. game/js/dev/** and
+// game/js/main.js (dev-mode code paths) and tools/** (bench/capture/parity
+// tooling) - but NOT tools/editor/** (a stable-API-only client, same as
+// engine/index.js's rule 3/6), and NOT anywhere else in game/ (quest/ui code
+// gets only the stable engine/index.js surface).
+function isDevJsAllowed(file) {
+  const relPath = rel(file); // POSIX-style, relative to ROOT
+  if (relPath === 'game/js/main.js') return true;
+  if (relPath.startsWith('game/js/dev/')) return true;
+  if (relPath.startsWith('tools/') && !relPath.startsWith('tools/editor/')) return true;
+  return false;
+}
+
 function checkConsumerFile(file, src) {
   filesScanned++;
   const relPath = path.relative(ROOT, file);
@@ -161,8 +180,16 @@ function checkConsumerFile(file, src) {
     if (isInsideEngine) {
       const normalized = resolved.replace(/\\/g, '/');
       const indexPath = path.join(ENGINE_DIR, 'index.js').replace(/\\/g, '/');
-      if (normalized !== indexPath) {
-        findings.push(`${rel(file)}:${line}: deep import "${spec}" - game/tools must import exactly engine/index.js`);
+      const devPath = path.join(ENGINE_DIR, 'dev.js').replace(/\\/g, '/');
+      if (normalized === indexPath) {
+        // OK: the stable surface, open to every game/tools consumer.
+      } else if (normalized === devPath) {
+        // Rule 7: engine/dev.js is dev-only.
+        if (!isDevJsAllowed(file)) {
+          findings.push(`${rel(file)}:${line}: import "${spec}" resolves to engine/dev.js - only game/js/dev/**, game/js/main.js and tools/** (not tools/editor/**) may import it`);
+        }
+      } else {
+        findings.push(`${rel(file)}:${line}: deep import "${spec}" - game/tools must import exactly engine/index.js (or engine/dev.js where allowed)`);
       }
     }
     // Rule 6: tools/editor/** is a second client of engine/index.js only -

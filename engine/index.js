@@ -30,7 +30,11 @@ export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 
 // ---- render passes --------------------------------------------------------
-export { beginFrame, castSectors, fillSky, ambientL, HFOV_DEG } from './render/sectorCaster.js';
+// US-047 (architecture.md section 5): beginFrame/castSectors/fillSky are
+// sector-cast pass internals used only by parity/bench tooling - moved to
+// engine/dev.js. ambientL/HFOV_DEG stay here (stable clients: main.js render
+// path, tools/editor/*).
+export { ambientL, HFOV_DEG } from './render/sectorCaster.js';
 export { castTerrain, shadeTerrainCells, marchTerrainRay, sunFromWorld, FOG_FULL, T_START, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K } from './render/terrainCaster.js';
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
@@ -40,7 +44,8 @@ export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
 export { GpuSpritePass } from './render/gpu/spritesPass.js';
 export { runSpriteCompare } from './render/gpu/spritesCompare.js';
 export { drawText } from './render/textDraw.js';
-export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';
+// US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
+// engine/dev.js.
 
 // ---- US-028 detail pass v2 (G-buffer shading, edge pass) -------------------
 // US-069 (architecture.md 24.12 item 4): the full KIND_* range, not just the
@@ -60,8 +65,9 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
-export { computeDerivatives, shadeSurfaces, shadeV2 } from './render/detailShade.js';
-export { edgePass } from './render/edgePass.js';
+// US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
+// edgePass moved to engine/dev.js - pass internals + parity tooling only,
+// no stable client calls them directly.
 
 // ---- world compositor (US-025) ---------------------------------------------
 export { renderWorld } from './render/compositor.js';
@@ -77,7 +83,8 @@ export {
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
 export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';
-export { runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells } from './render/gpu/gpuCompare.js';
+// US-047: runGpuCompare/compareCells/compareGeometry/compareLight/poison*
+// (gpucompare parity harness) moved to engine/dev.js.
 export { flickerStep } from './render/gpu/flicker.js';
 
 // ---- physics ----------------------------------------------------------------
@@ -117,14 +124,7 @@ export { createFadeLut, fadeGlyph, applySceneFade, clearMaskForSceneFade } from 
 // ---- behaviours ---------------------------------------------------------------
 export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTrigger, getBehaviour, validateBehaviours, listBehaviours } from './core/behaviours.js';
 
-// ---- not (yet) in the normative API, but exported for main.js's use ---------
-// (check-deps rule 3 forces every game/tools import through this one file;
-// PlayerLook has no reusable-engine home per architecture.md section 2's
-// folder table - it is DOM/canvas/pointer-lock first-person mouse-look
-// glue specific to this game's bootstrap - so it is re-exported here rather
-// than duplicated in game/. May change without notice, per the header note
-// on architecture.md section 5.)
-export { Input } from './core/input.js';
-export { PlayerLook } from './core/playerLook.js';
-export { Events } from './core/events.js';
-export { FrameProfiler } from './core/FrameProfiler.js'; // US-018 spike hunt (worst-frame section breakdown)
+// US-047 (architecture.md section 5): Input/PlayerLook/Events/FrameProfiler
+// ("may change without notice") moved to engine/dev.js - dev-mode code
+// (game/js/main.js, game/js/dev/*, tools/* except tools/editor/**) imports
+// them from there now.

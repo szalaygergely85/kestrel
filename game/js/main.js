@@ -8,14 +8,12 @@
 
 import {
   AssetRegistry, createEngine, clampGrid, GRID_DEFAULT_COLS,
-  runShadeTest, runDetailShadeTest,
   GBuffer, bindShading, bindLevel,
-  PlayerLook, DebugOverlay, FrameProfiler,
+  DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations, animComponent,
-  GpuCellPipeline, PASS_NAMES, runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, flickerStep,
+  GpuCellPipeline, PASS_NAMES, flickerStep,
   VoxelPool,
-  loadLevel, beginFrame, castSectors, fillSky, computeDerivatives,
-  shadeSurfaces, edgePass, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
+  loadLevel, ambientL, World, repackMaterials, drawSprites, HFOV_DEG,
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
   isSoftwareRenderer,
@@ -23,6 +21,16 @@ import {
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
   loadContentPack,
 } from '../../engine/index.js';
+// US-047 (architecture.md section 5): pass internals + parity tooling +
+// "may change" glue now live in engine/dev.js - main.js's dev-mode code
+// paths (?bench=1, shadetest, ?gpucompare=1|shade) and the real-game mouse
+// look/perf-spike-hunt glue (PlayerLook/FrameProfiler) import from there.
+import {
+  runShadeTest, runDetailShadeTest,
+  PlayerLook, FrameProfiler,
+  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells,
+  beginFrame, castSectors, fillSky, computeDerivatives, shadeSurfaces, edgePass,
+} from '../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings.js'; // US-038b
