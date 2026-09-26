@@ -136,3 +136,5 @@ Order: itch.io demo (end of M3) -> Steam Coming Soon (M5) -> launch (end of M6).
 9. **Saving:** relay save points + autosave with 3 slots (proposal), or save anywhere?
 10. **Engine:** licence (e.g. MIT vs source-available) and the engine's name.
 11. **Release shape:** itch.io demo at the end of M3 OK? Steam full 1.0 after M6, or Early Access after M5?
+
+**Owner answers (2026-09-26, in chat):** 1 **block + parry included** (shield in M3, US-086 in scope). 2 **wolves or boar** - designer/PO pick one for the first fight (both fine; wolves could come as the pack variant later). 3 **sword found in the tower**. 4 **first tool = a torch** (not the lamp; e.g. light/burn things - PO to define). 5 **yes**, the Signal Source dungeon + boss ship in 1.0. 6 **open** (owner: "no idea" - PO/writer propose 2-3 options). 7 **HP + mana** system instead of hearts (mana ties to D-021 magic). 8 **yes**, money + trading. 9 **both** save points and autosave. 10 **open** - main session explained; owner to decide name + licence later. 11 **open** ("don't know yet").
