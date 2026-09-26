@@ -62,6 +62,21 @@ function dimAt(d, x, y) {
  * (glyph unchanged - a dim is not a fade). Identity (`all === 1 && n === 0`)
  * is a no-op, same contract as `applySceneFade`. Call right after
  * `applySceneFade` (same call site, CPU path only).
+ *
+ * BUG-PERF-001 (c) (docs/backlog.md row 25w): while `d.all === 1` (no
+ * whole-scene dim active - the common case, e.g. a single hint's small
+ * plate rect, never the map card), every cell OUTSIDE the pushed rects is
+ * unaffected by definition (`dimAt` can only return < 1 for a cell inside
+ * at least one rect) - scanning the full `cols x rows` grid to discover
+ * that was the actual per-frame cost here (measured: ~0.14 ms at 320x120,
+ * ~0.31 ms at 480x180, entirely inside this one full-grid double loop, for
+ * a rect that is typically a few dozen cells). Bounding the scan to the
+ * union of the (at most 4, `MAX_RECTS`) rects' own bounding boxes instead
+ * keeps the exact same per-cell result (still routed through `dimAt`, which
+ * already takes the min over every overlapping rect - no double-multiply
+ * even where two pushed rects overlap) while touching only the cells that
+ * can possibly change. A real whole-scene dim (`d.all < 1`, the map card)
+ * still needs every cell, so that case is untouched.
  * @param {import('../render/RenderTarget.js').RenderTarget} rt
  * @param {SceneDim} d
  */
@@ -70,8 +85,28 @@ export function applySceneDim(rt, d) {
   const cb = rt.cells;
   const cols = cb.cols, rows = cb.rows;
   const mask = cb.mask, fg = cb.fg, bg = cb.bg;
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
+
+  let y0 = 0, y1 = rows, x0 = 0, x1 = cols;
+  if (d.all >= 1) {
+    // Only rects are live - bound the scan to their union (clamped to the
+    // grid; a rect may have been pushed with UI-cell coords scaled larger
+    // than the scene grid, or with x1<=x0/y1<=y0 - either way the clamp
+    // below makes an out-of-range or degenerate rect scan zero cells, not
+    // throw/underflow).
+    let ux0 = Infinity, uy0 = Infinity, ux1 = -Infinity, uy1 = -Infinity;
+    for (let i = 0; i < d.n; i++) {
+      const b = i * FIELDS;
+      if (d.rects[b] < ux0) ux0 = d.rects[b];
+      if (d.rects[b + 1] < uy0) uy0 = d.rects[b + 1];
+      if (d.rects[b + 2] > ux1) ux1 = d.rects[b + 2];
+      if (d.rects[b + 3] > uy1) uy1 = d.rects[b + 3];
+    }
+    x0 = Math.max(0, Math.floor(ux0)); y0 = Math.max(0, Math.floor(uy0));
+    x1 = Math.min(cols, Math.ceil(ux1)); y1 = Math.min(rows, Math.ceil(uy1));
+  }
+
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
       const i = y * cols + x;
       if (mask[i]) continue;
       const k = dimAt(d, x, y);
