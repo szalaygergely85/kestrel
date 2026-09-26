@@ -4,8 +4,9 @@
 //   node tools/run-tests.test.mjs
 //
 // Builds a temp directory with fixture suites (pass / fail / hang / warn),
-// then runs the real tools/run-tests.mjs as a child process against that
-// temp dir (via cwd) and asserts on its stdout, exit code and --json report.
+// plus check-deps.mjs and validate-content.mjs stand-ins (US-061), then
+// runs the real tools/run-tests.mjs as a child process against that temp
+// dir (via cwd) and asserts on its stdout, exit code and --json report.
 
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -42,6 +43,14 @@ function makeFixtureRoot() {
   fs.writeFileSync(
     path.join(root, 'tools', 'check-deps.mjs'),
     "console.log('check-deps OK (0 files)');\n"
+  );
+
+  // US-061: a minimal validate-content.mjs stand-in, deliberately broken
+  // (nonzero exit + a finding-shaped message) to prove run-tests.mjs wires
+  // it in as a FAIL-able suite, same as check-deps.mjs above.
+  fs.writeFileSync(
+    path.join(root, 'tools', 'validate-content.mjs'),
+    "console.error('finding: broken content fixture');\nprocess.exit(1);\n"
   );
 
   fs.writeFileSync(
@@ -112,12 +121,14 @@ await test('reports PASS/FAIL/WARN/TIMEOUT correctly and exits 1 on failure', as
     assert.ok(/^WARN tools\/warn\.test\.js \d+ms$/.test(line('warn.test.js') || ''), stdout);
     assert.ok(/^TIMEOUT tools\/hang\.test\.js \d+ms$/.test(line('hang.test.js') || ''), stdout);
     assert.ok(/^PASS tools\/check-deps\.mjs \d+ms$/.test(line('check-deps.mjs') || ''), stdout);
+    assert.ok(/^FAIL tools\/validate-content\.mjs \d+ms$/.test(line('validate-content.mjs') || ''), stdout);
 
     // design/preview and node_modules fixtures must never appear.
     assert.ok(!stdout.includes('skipped.test.js'), stdout);
 
-    // Exactly 5 suites: good, bad, warn, hang, check-deps (good + check-deps both PASS).
-    assert.ok(stdout.includes('5 suite(s): 2 PASS, 1 FAIL, 1 TIMEOUT, 1 WARN'), stdout);
+    // Exactly 6 suites: good, bad, warn, hang, check-deps, validate-content
+    // (good + check-deps PASS, bad + validate-content FAIL).
+    assert.ok(stdout.includes('6 suite(s): 2 PASS, 2 FAIL, 1 TIMEOUT, 1 WARN'), stdout);
 
     assert.strictEqual(code, 1, `expected exit code 1, got ${code}\n${stdout}`);
   } finally {
@@ -132,8 +143,23 @@ await test('--filter only runs matching suites', async () => {
     assert.ok(stdout.includes('good.test.js'), stdout);
     assert.ok(!stdout.includes('bad.test.js'), stdout);
     assert.ok(!stdout.includes('check-deps.mjs'), stdout);
+    assert.ok(!stdout.includes('validate-content.mjs'), stdout);
     assert.ok(stdout.includes('1 suite(s): 1 PASS, 0 FAIL, 0 TIMEOUT, 0 WARN'), stdout);
     assert.strictEqual(code, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await test('--filter validate matches the validate-content suite', async () => {
+  const root = makeFixtureRoot();
+  try {
+    const { code, stdout } = await runRunner(root, ['--filter', 'validate', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(stdout.includes('validate-content.mjs'), stdout);
+    assert.ok(!stdout.includes('good.test.js'), stdout);
+    assert.ok(!stdout.includes('check-deps.mjs'), stdout);
+    assert.ok(stdout.includes('1 suite(s): 0 PASS, 1 FAIL, 0 TIMEOUT, 0 WARN'), stdout);
+    assert.strictEqual(code, 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

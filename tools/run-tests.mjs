@@ -8,7 +8,8 @@
 // child `node` process with a timeout (default 60s, override with
 // --timeout-ms or the KESTREL_TEST_TIMEOUT_MS env var - used by
 // run-tests.test.mjs to test the TIMEOUT path without actually waiting
-// 60s), plus runs `node tools/check-deps.mjs` as one more suite.
+// 60s), plus runs `node tools/check-deps.mjs` and `node
+// tools/validate-content.mjs` (US-061) as two more suites.
 //
 // Prints one line per suite:
 //   PASS|FAIL|TIMEOUT|WARN <name> <ms>ms
@@ -89,6 +90,10 @@ function collectSuites(root, filter) {
   // check-deps.mjs is not itself a *.test.* file but is required by the ACs.
   const checkDeps = path.join(root, 'tools', 'check-deps.mjs');
   if (fs.existsSync(checkDeps)) files.push(checkDeps);
+  // US-061: validate-content.mjs is also not a *.test.* file but a real
+  // exit-code-driven check - run it the same way as check-deps.mjs above.
+  const validateContent = path.join(root, 'tools', 'validate-content.mjs');
+  if (fs.existsSync(validateContent)) files.push(validateContent);
   if (filter) files = files.filter((f) => toPosix(path.relative(root, f)).includes(filter));
   return files;
 }
