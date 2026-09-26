@@ -361,7 +361,7 @@ export class GpuCellPipeline {
    * `setGrid` - engine.js's `applyGrid` runs that FIRST). A previous version
    * of `resizeGrid` patched the old tables via an old-texture -> new-texture
    * map that only knew about this pipeline's OWN textures, so `uFgTex`/
-   * `uBgTex` (the two entries in `_shadeBinds` pointing at `rt`'s textures)
+   * `uBgTex` (the two entries in `_shadeBindsSet1`/`Set2` pointing at `rt`'s textures)
    * kept sampling the just-deleted pre-resize `fgTex`/`bgTex` objects -
    * `gl.drawArrays` raised `INVALID_OPERATION` for the whole shade pass
    * (caught via `?gpucompare=1&roundtrip=1`, which is exactly why that flag
@@ -369,7 +369,29 @@ export class GpuCellPipeline {
    * could never have caught this).
    */
   _buildAllBindTables() {
-    this._shadeBinds = this._buildBindTable(this._locsShade, [
+    // BUG-GPU-SHADE-001 fix: `uSGI`/`uSGA` here MUST track `_subSetCur` the
+    // same way `_resolveBindsSet1`/`_resolveBindsSet2` already do (see that
+    // pair's own comment below) - `shadeCore`'s per-sub-sample average loop
+    // (shade.frag.js) re-reads the sub-sample G-buffer directly, by the SAME
+    // (kind, planeId, mat) key `resolve.frag.js` voted on. When terrain
+    // and/or a voxel-model hit flips the "current" sub-sample set to 2 for
+    // this frame (terrain/voxel write into whichever set the OTHER one
+    // isn't), a single fixed `texSGI`/`texSGA` binding here silently reads
+    // the STALE set-1 (plain cast) data instead - the resolved cell's own
+    // (kind, planeId, mat) then matches NONE of that stale sub-sample's
+    // members, `shadeCore`'s loop finds `count == 0`, and `main()`'s safety
+    // net (shade.frag.js ~line 490) falls back to the raw JS layer texture
+    // cells for that pixel: transparent alpha with whatever default color
+    // sat in `uFgTex`/`uBgTex` (this pipeline never initializes them to
+    // anything - a stray opaque-black/white sentinel), instead of the real
+    // shaded surface. Visually: solid black (the compositor's fallback for
+    // an alpha-0 cell) or a near-white sentinel up close, on exactly the
+    // cells whose closest hit came from terrain/a voxel model that frame -
+    // this is BUG-GPU-SHADE-001 ("props render solid black/white in the
+    // editor and the game's own GPU path"). Fixed the same way resolve
+    // already does it: two prebuilt tables, picked by `_subSetCur` at
+    // `_passShade()`'s bind-time (no per-frame allocation, no new uniform).
+    this._shadeBindsSet1 = this._buildBindTable(this._locsShade, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uGD', this.texGD], ['uDepth', this.texDepth],
       // US-030b: the sub-sample G-buffer, for shadeCore's per-sub-sample average.
       ['uSGI', this.texSGI], ['uSGA', this.texSGA],
@@ -381,6 +403,15 @@ export class GpuCellPipeline {
       // US-016 (14.4 item 5): terrain colour/glyph look-up (b/normal arrive
       // pre-computed via GA.w - see terrain.frag.js's doc comment on why
       // uFarH stays out of this program's texture-unit budget).
+      ['uTlook', this.texTlook],
+    ]);
+    this._shadeBindsSet2 = this._buildBindTable(this._locsShade, [
+      ['uGI', this.texGI], ['uGA', this.texGA], ['uGD', this.texGD], ['uDepth', this.texDepth],
+      ['uSGI', this.texSGI2], ['uSGA', this.texSGA2],
+      ['uFgTex', this.rt.fgTex], ['uBgTex', this.rt.bgTex],
+      ['uMatF', this.texMatF], ['uMatI', this.texMatI], ['uSetI', this.texSetI],
+      ['uSetF', this.texSetF], ['uGain', this.texGain], ['uSky', this.texSky],
+      ['uLightTex', this.texLight],
       ['uTlook', this.texTlook],
     ]);
     this._edgeBinds = this._buildBindTable(this._locsEdge, [
@@ -439,7 +470,10 @@ export class GpuCellPipeline {
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
       ['uWorldGeom', this.texWorldGeom], ['uWorldFlags', this.texWorldFlags],
     ]);
-    this._setSamplerUniforms(this.progShade, this._shadeBinds);
+    // `_shadeBindsSet1`/`Set2` list every entry in the same order (only the
+    // uSGI/uSGA texture object differs), so their unit assignment is
+    // identical - either table sets the same sampler-unit uniforms.
+    this._setSamplerUniforms(this.progShade, this._shadeBindsSet1);
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
     this._setSamplerUniforms(this.progDebug, this._debugBinds);
     this._setSamplerUniforms(this.progCast, this._castBinds);
@@ -639,7 +673,7 @@ export class GpuCellPipeline {
     Object.assign(this, t);
 
     // Rebuilds every [loc, tex, unit] bind table AND `rt.fgTex`/`rt.bgTex`'s
-    // own entry in `_shadeBinds` - see `_buildAllBindTables`'s own comment
+    // own entry in `_shadeBindsSet1`/`Set2` - see `_buildAllBindTables`'s own comment
     // for why this (re-reading current fields) is correct where an
     // old-texture -> new-texture remap of only THIS pipeline's own textures
     // was not (it missed `rt`'s fg/bg, which `RenderTargetGL.setGrid` had
@@ -1576,9 +1610,12 @@ export class GpuCellPipeline {
     gl.useProgram(this.progShade);
     gl.bindVertexArray(this.vao);
 
-    this._bindTextures(this._shadeBinds);
+    // BUG-GPU-SHADE-001 fix: pick the bind table matching whichever
+    // sub-sample set is actually current this frame (same rule
+    // `_passResolve` uses) - see `_buildAllBindTables`'s comment.
+    this._bindTextures(this._subSetCur === 2 ? this._shadeBindsSet2 : this._shadeBindsSet1);
 
-    // US-006: light is now `uLightTex` (bound in `_shadeBinds`, filled by
+    // US-006: light is now `uLightTex` (bound in `_shadeBindsSet1`/`Set2`, filled by
     // `_passLight` right before this call) - no `uLight` uniform any more.
     gl.uniform1f(loc.uTimeSec, this._fb.timeSec || 0);
     // US-030b: the legacy 'upload' test source (14.2 item 7) only mirrors a
