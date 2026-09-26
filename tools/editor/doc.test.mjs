@@ -4,7 +4,10 @@
 //
 //   node tools/editor/doc.test.mjs
 
-import { createDoc, fileKey, mintId, toLocal, toWorld, computeNextId } from './doc.js';
+import {
+  createDoc, fileKey, mintId, toLocal, toWorld, computeNextId,
+  selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex, listOutlinerItems,
+} from './doc.js';
 
 let pass = 0;
 let fail = 0;
@@ -104,6 +107,33 @@ function fakeAssets({ levels = {}, worlds = {} }) {
   ok('toLocal subtracts the origin', local.x === 17 && local.y === 9.5 && local.z === 3.2, JSON.stringify(local));
   const back = toWorld(origin, local);
   ok('toWorld(toLocal(p)) round-trips to p', back.x === worldPoint.x && back.y === worldPoint.y && back.z === worldPoint.z);
+}
+
+// ---- US-032 selection item <-> entity id mapping (24.7) --------------------
+{
+  const towerDef = { name: 'tower', props: [{ id: 'brazier', model: 'brazier', x: 1, y: 1, z: 0 }] };
+  const worldDef = { structures: [{ id: 'tower', level: 'tower' }], entities: [{ id: 'farTower', x: 1, y: 2, z: 3 }] };
+  const assets = fakeAssets({ levels: { tower: towerDef }, worlds: { world_m1: worldDef } });
+  const doc = createDoc(assets, null, { worldId: 'world_m1' });
+  // A fake World: just enough shape for selectionFromEntityId/selectionEntityId (structures[].id/.level.name).
+  const world = { structures: [{ id: 'tower', level: { name: 'tower' } }] };
+
+  const propItem = selectionFromEntityId(doc, world, 'tower.brazier');
+  ok('selectionFromEntityId: a prop entity id maps to level/props', propItem.fileId === 'level/tower' && propItem.collection === 'props' && propItem.id === 'brazier', JSON.stringify(propItem));
+  const backId = selectionEntityId(world, propItem);
+  ok('selectionEntityId: round-trips back to the runtime id', backId === 'tower.brazier', backId);
+
+  const worldEntItem = selectionFromEntityId(doc, world, 'farTower');
+  ok('selectionFromEntityId: an unprefixed id maps to the world file entities', worldEntItem.fileId === 'world/world_m1' && worldEntItem.collection === 'entities' && worldEntItem.id === 'farTower');
+  ok('selectionEntityId: world entity round-trips to its own id', selectionEntityId(world, worldEntItem) === 'farTower');
+
+  const data = selectionItemData(doc, propItem);
+  ok('selectionItemData: finds the prop object', data && data.model === 'brazier', JSON.stringify(data));
+  ok('selectionItemIndex: finds its array index', selectionItemIndex(doc, propItem) === 0);
+  ok('selectionItemIndex: -1 for an id that does not exist', selectionItemIndex(doc, { fileId: 'level/tower', collection: 'props', id: 'nope' }) === -1);
+
+  const outlined = listOutlinerItems(doc);
+  ok('listOutlinerItems: includes the prop and the world entity', outlined.some((o) => o.id === 'brazier' && o.collection === 'props') && outlined.some((o) => o.id === 'farTower' && o.collection === 'entities'), JSON.stringify(outlined));
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);

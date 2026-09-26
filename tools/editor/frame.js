@@ -121,6 +121,11 @@ export function createFrame({ engine, assets, rt }) {
       if (!fb.gpuDda) voxelPool.project(cam, rt);
       renderWorld(fb, world, cam);
       sprites.render(fb, world, cam);
+      // US-032 (24.4/24.7): an optional overlay hook (highlight/markers/
+      // hover outline/status text), called right here - JS-written rt cells
+      // between the sprite pass and the GPU compositor survive it (same
+      // route drawText/the eyelid already use, 24.4's own note).
+      if (opts.drawOverlay) opts.drawOverlay(fb, world, cam);
       if (gpuPipeline) gpuPipeline.frame(fb, fb.lights || ambientL, cam, world);
       rt.present();
       presented++;

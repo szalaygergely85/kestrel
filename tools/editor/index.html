@@ -87,7 +87,13 @@
         <label>Speed <input type="number" id="speed-input" min="0.5" max="200" step="0.5" value="6" /> m/s</label>
       </section>
       <section>
-        <div id="outliner">(outliner - US-032+)</div>
+        <h1 style="font-size:12px;margin:0 0 4px 0;">Outliner</h1>
+        <div id="outliner">(loading...)</div>
+      </section>
+      <section style="font-size:11px;color:#8fae8f;line-height:1.5;">
+        click: select/drag &middot; arrows/PgUp/PgDn: nudge &middot; [ ]: snap<br/>
+        Q/E: yaw &middot; G: drop to floor &middot; Del: delete &middot; Esc: cancel drag<br/>
+        Ctrl+Z/Y: undo/redo &middot; T: teleport to selection &middot; M: markers
       </section>
       <section>
         <div id="status"></div>
@@ -113,6 +119,15 @@
   <script src="../../design/models/relay.js"></script>
   <script src="../../design/models/voxel_props.js"></script>
   <script src="../../design/models/voxel_tower.js"></script>
+  <!-- US-032: world_m1's `endMarker` entity references model "waystone"
+       (content/worlds/world_m1.world.json); design/README.md 7.2 says this
+       script goes right after voxel_tower.js. game/index.html does NOT have
+       this tag yet (PC-A's US-026a-engine S6, docs/backlog.md row 30g/30i
+       handoff - not a PC-B file to add it to); the editor is not blocked on
+       that and needs it now so the waystone entity is even pickable/visible
+       here (ray.js/select.js also guard `assets.has()` either way, in case
+       a future world references a model no page's script list carries). -->
+  <script src="../../design/models/voxel_world.js"></script>
   <script src="../../design/models/far_tower.js"></script>
   <script src="../../design/models/ferrum_lights.js"></script>
   <script src="../../design/levels/overworld_far.js"></script>
