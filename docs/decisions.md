@@ -726,3 +726,24 @@ M1 closed (D-024). Inputs: D-022 (sprint 3 = US-051a + US-026), D-023 (sprint 3 
 - Object physics starts sprint 4 (still well before M6 release, D-018 unaffected).
 - PC-A order is set by PC-B's needs: US-027a lands on master before PC-B's ready queue runs out.
 
+## D-027 Ray-traced lighting ("RTX look", US-070..073): terrain shadow scope, lighting quality setting, order
+**Date:** 2026-09-26
+**Status:** Accepted (amends D-007 "Lighting on terrain"; extends D-025; item B provisional until the US-070a owner bench)
+
+### Context
+Owner wants ray-traced shadows etc. in our own WebGL2 shaders (no RTX/DLSS in browsers). Architect estimate: architecture.md section 25. Two escalations (25.7 A/B). Owner iGPU headroom: ~1.6 ms at 320x120, ~0.9 ms at 400x150; 070a costs ~0.4-0.55 ms at 400x150, a+b+072+073+071 lands at the 4 ms line there. Sprint 3 still finishing (US-026a S6/S8, BUG-OWN-008 testing); PC-B runs Queue 3.
+
+### Options
+- A (terrain shadows): 1 structure->terrain sun shadows only (070b); 2 plus hill self-shadow (070c); 3 keep D-007.
+- B (quality): 1 `lighting: 'rt' | 'classic'`, 'rt' default, auto 'classic' at 480x180, 070c/d only under a later 'rt-high'; 2 force 320x120 when 'rt'; 3 no setting, cut features to fit 400x150.
+
+### Decision
+- **A = 1.** D-007 amended: kind-7 terrain cells may run the sun ray against placed structures and voxel props (070b, M2). No terrain-heightfield marching (070c) and no point-light rays on terrain until a later ADR; tower-shadow-on-grass is the visible win at ~0.08 ms, hills are not.
+- **B = 1, provisional.** `lighting: 'rt' | 'classic'` is a game option next to the grid (D-025); 'classic' = today's LVIS path (`?shadows=grid`), never removed. 'rt' default; 480x180 'ultra' auto-selects 'classic' (player may override, no budget). 070c/070d only under a future 'rt-high', no story before M3. Confirmed or revised after the US-070a owner bench: if 400x150 + 'rt' misses GPU p95 <= 4 ms, 400x150 joins 'ultra' (auto 'classic'), per D-025 item 3. Option 2 rejected (takes the owner's bigger grid away); option 3 rejected (throws away the feature the owner asked for).
+- **Order.** Sprint 3 closes first; no RT work on PC-A before US-026a S6/S8 and BUG-OWN-008 are done. **US-070a = sprint 4, PC-A**, next to US-026b/US-051a (PO sets the sprint-4 cut; if too full, US-051a keeps priority over 070b, not over 070a). Then 070b -> 072 -> 073 -> 071 (architect order 25.7). **US-070a steps 1-3 (25.3, JS/Node only) go to PC-B now** as a new item appended to the end of Queue 3 (does not jump existing items); gate = green Node suites + check-deps + zero-alloc test, no PO needed (pure engine JS); architect reviews them on PC-A together with step 4.
+
+### Consequences
+- PO: split US-070 into 070a/070b rows (PC-B tag on the 070a steps 1-3 sub-item), ACs from 25.3 gates plus the bench as the B confirmation point; options story (US-038b) gains the `lighting` entry.
+- Architect rules in 25.7 "Do not" are binding (no noise, no per-sub-sample rays, JS oracle = GLSL, LVIS kept).
+- Roadmap: RT lighting is an M2 visual-quality track, never an M2 exit criterion.
+
