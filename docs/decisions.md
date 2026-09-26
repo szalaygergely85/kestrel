@@ -747,3 +747,27 @@ Owner wants ray-traced shadows etc. in our own WebGL2 shaders (no RTX/DLSS in br
 - Architect rules in 25.7 "Do not" are binding (no noise, no per-sub-sample rays, JS oracle = GLSL, LVIS kept).
 - Roadmap: RT lighting is an M2 visual-quality track, never an M2 exit criterion.
 
+## D-028 Coordinates & saves first: one frame system (docs/coordinates.md), WorldState v2, rotation later, chunk files static-only
+**Date:** 2026-09-26
+**Status:** Accepted (amends D-023 item 5, D-026/D-027 sprint-4 order; adopts docs/coordinates.md as normative)
+
+### Context
+Owner after BUG-OWN-008: "do the coordinates, saves and everything like in a real game engine". Architect audit (coordinates.md 1): frame math hand-copied in ~50 places, `yawSteps` stored but ignored, `sun` in a level file, tower placement duplicated in the far recipe. Escalations: coordinates.md 12 items 1-2, architecture.md 26.1 item 7.
+
+### Options
+- Formats: (a) WorldState v2 + migration chain + additive keys; (b) additive keys only, stay v1.
+- Rotation CO-4: (a) now with the rest; (b) with the first rotated/second-structure content.
+- Order: (a) CO work before sprint-4 features; (b) interleave with US-070a/US-026b/US-051a.
+
+### Decision
+1. **Formats = (a), under D-023.** Content schema 1 gains additive keys: world-file `sun` (level `sun` deprecated, validator warns), `structures[].yawSteps` 0..3, `entity.parent` (a record, not a live parent). The recipe `overworld_far.js` loses `origin/tower/structures[].x,y,w,h`; `World.load` injects `bbox`+`ringHAt` by id (one placement source). Saves = `WorldState` **version 2** via `engine/world/migrateState.js` (v1->v2 adds `parent`; older migrates, newer throws), world coordinates only, byte-stable through `stringifyContent`. Reason: the itch demo needs a tested save-migration path anyway, and this one is trivial.
+2. **Rotation = (b).** CO-4 ships with the first rotated or second structure in content; the `yawSteps != 0` throw stays until then so content cannot ask for something the engine ignores.
+3. **D-023 item 5 narrowed (26.1 item 7, accepted):** chunk files carry static outdoor placements only; terrain overrides/stamps are never streamed (stay in recipe/world `overrides`, load-time, no near/far seam); no per-entity state in chunks (a chunk entity is content, never in a save). Stateful chunk entities need a new ADR with the first outdoor quest content.
+4. **Order = (a).** Coordinate work is the head of sprint 4: CO-1 -> CO-2 -> CO-3 (PC-A, sequential, arch review each), CO-6 inside US-026b S1. **PC-B now: CO-5** (serialize.js, migrateState.js, content/schema.js `KEY_ORDER.save`; CO-5 owns serialize.js, CO-2 must not touch it; ends in `arch-review` on PC-A). **PC-B after CO-2 is on master: CO-8** (content/recipe/validator/game cleanup), then **CO-7** (editor frames; its `yawSteps` property waits for CO-4). Then US-026b -> US-070a shader half (step 4) -> US-051a; PO re-cuts `docs/sprints/sprint-4.md` (whatever does not fit moves to sprint 5, US-051a first to slip). Every CO step leaves all Node suites + check-deps + `?gpucompare=1` green with no image change.
+
+### Consequences
+- coordinates.md sections 2-11 are normative; section 9 do-not list binds all roles; check-deps gains the warn rule in CO-1.
+- PO: CO-1..CO-8 rows in the backlog with PC tags as in item 4; CO-4 row parked "with first rotated structure".
+- Designer moves `sun` into `world_m1.world.json` in CO-8 (values identical).
+- Sprint-4 feature stories start ~4-5 programmer-days later; accepted by the owner's priority.
+
