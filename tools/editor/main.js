@@ -3,21 +3,28 @@
 // engine/index.js (check-deps rule 3 + the editor boundary rule: no `game/`
 // import) - `design/` stays classic <script> tags, like game/index.html.
 import {
-  AssetRegistry, createEngine, GRID_DEFAULT_COLS,
+  AssetRegistry, createEngine, GRID_DEFAULT_COLS, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
   DebugOverlay,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
-  listOutlinerItems, toLocal, toWorld,
+  listOutlinerItems, toLocal, toWorld, mintId, fileKey,
 } from './doc.js';
 import { createFrame } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
 import { unprojectCell, rayPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline } from './select.js';
-import { makeFieldEditRecord, makeDeleteRecord, applyEdit, invert, findReferrers } from './commands.js';
+import {
+  makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
+  applyEdit, invert, findReferrers,
+} from './commands.js';
 import { createStack } from './undo.js';
+import {
+  PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
+  defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
+} from './panel.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -30,6 +37,7 @@ const gateEl = document.getElementById('gate-message');
 const animateToggle = document.getElementById('animate-toggle');
 const speedInput = document.getElementById('speed-input');
 const outlinerEl = document.getElementById('outliner');
+const propertiesEl = document.getElementById('properties');
 
 function gridFromParam(p, def) {
   const g = p.get('grid');
@@ -124,6 +132,7 @@ let drag = null; // {entId, item, index, startTransform} | null
 let hoverCol = null, hoverRow = null;
 let markersOn = true;
 let lastPickText = '';
+let placeMode = null; // 'prop'|'light'|'trigger'|'interactable'|null (US-033, 24.9)
 
 function flash(msg) {
   lastPickText = msg;
@@ -148,6 +157,7 @@ function rebuild() {
   const ms = performance.now() - t0;
   frame.markDirty();
   renderOutliner();
+  renderProperties();
   return ms;
 }
 
@@ -155,29 +165,81 @@ function commit(rec) {
   applyEdit(doc, rec);
   undoStack.push(rec);
   const ms = rebuild();
-  flash(`${rec.label} "${rec.id}" (rebuild ${ms.toFixed(2)} ms)`);
+  flash(`${rec.id ? `${rec.label} "${rec.id}"` : rec.label} (rebuild ${ms.toFixed(2)} ms)`);
+}
+
+/**
+ * A rename batch (US-033, 24.9) carries `renameFrom`/`renameTo` so the live
+ * `selection` pointer (a plain `{fileId,collection,id}`) follows the id
+ * across undo/redo - a rename is the one edit whose own id changes, so
+ * `selection.id` would otherwise point at nothing after the edit applies.
+ */
+function followRename(appliedRec) {
+  if (appliedRec.renameFrom === undefined) return;
+  if (selection && selection.fileId === appliedRec.fileId && selection.collection === appliedRec.collection
+    && selection.id === appliedRec.renameFrom) {
+    selection = { ...selection, id: appliedRec.renameTo };
+  }
 }
 
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
-  applyEdit(doc, invert(rec));
+  const inv = invert(rec);
+  followRename(inv);
+  applyEdit(doc, inv);
   rebuild();
-  flash(`undo: ${rec.label} "${rec.id}"`);
+  flash(`undo: ${rec.label}`);
 }
 
 function doRedo() {
   const rec = undoStack.redo();
   if (!rec) { flash('redo: nothing to redo'); return; }
+  followRename(rec);
   applyEdit(doc, rec);
   rebuild();
-  flash(`redo: ${rec.label} "${rec.id}"`);
+  flash(`redo: ${rec.label}`);
 }
 
 function selectItem(item) {
   selection = item;
   renderOutliner();
+  renderProperties();
   frame.markDirty();
+}
+
+/** Property-panel field edit: one `EditRecord` per committed field (24.9). */
+function commitFieldEdit(patch) {
+  if (!selection) return;
+  const item = selectionItemData(doc, selection);
+  if (!item) return;
+  const index = selectionItemIndex(doc, selection);
+  commit(makeFieldEditRecord('edit', selection.fileId, selection.collection, item, index, patch));
+}
+
+/** Property-panel id rename (24.9): validated here too (defence in depth - the form already checks), one batch record. */
+function renameSelected(newId, setError) {
+  if (!selection) return;
+  const item = selectionItemData(doc, selection);
+  if (!item) return;
+  const file = doc.files.get(selection.fileId);
+  const siblingIds = new Set((file.def[selection.collection] || []).map((it) => it.id));
+  siblingIds.delete(item.id);
+  if (!isValidId(newId)) { setError(`id: "${newId}" must start with a letter and contain only letters, digits, "_" or "-"`); return; }
+  if (siblingIds.has(newId)) { setError(`id: "${newId}" is already used in this collection`); return; }
+  const index = selectionItemIndex(doc, selection);
+  const rec = makeRenameBatch(selection.fileId, file.kind, selection.collection, item, index, newId, file.def);
+  selection = { ...selection, id: newId };
+  commit(rec);
+}
+
+function renderProperties() {
+  renderPropertyPanel(propertiesEl, {
+    doc, selection, assets, palette: assets.palette,
+    behaviourNames: harvestBehaviourNames(doc),
+    onFieldCommit: commitFieldEdit,
+    onRename: renameSelected,
+  });
 }
 
 function applyNudge(axis, sign) {
@@ -240,6 +302,7 @@ function deleteSelected() {
   commit(makeDeleteRecord(selection.fileId, selection.collection, item, index));
   selection = null;
   renderOutliner();
+  renderProperties();
 }
 
 function teleportToSelection() {
@@ -292,6 +355,63 @@ function renderOutliner() {
   if (!items.length) outlinerEl.textContent = '(no props/lights/interactables/entities)';
 }
 renderOutliner();
+renderProperties();
+
+// ---- US-033: place (24.9) --------------------------------------------------
+
+/** The structure whose level footprint contains `pt` (world metres), or `null` - a bounding-box test, good enough for M1's axis-aligned, never-rotated placements (24.1 decision 4: `yawSteps` always 0). */
+function structureAt(pt) {
+  for (const s of world.structures) {
+    const lx = pt.x - s.origin.x, ly = pt.y - s.origin.y;
+    if (lx >= 0 && lx <= s.level.width && ly >= 0 && ly <= s.level.height) return s;
+  }
+  return null;
+}
+
+/**
+ * Places a new item of `kind` at world point `pt` (24.9). Inside a
+ * structure's footprint -> that level file (local metres); outside -> the
+ * world file's `entities` (world metres), props only - refused for the
+ * level-only kinds (light/trigger/interactable) per the architecture note.
+ */
+function placeAt(kind, pt) {
+  const s = structureAt(pt);
+  if (!s && kind !== 'prop') { flash(`place refused: a ${kind} must be placed inside a structure`); placeMode = null; return; }
+  if (kind === 'light' && countLights(doc) >= MAX_LIGHTS) { flash(`place refused: MAX_LIGHTS (${MAX_LIGHTS}) reached`); placeMode = null; return; }
+
+  // Default model for a freshly placed prop (24.9's "model = <picker>" - the
+  // editor has no full model-browser UI yet, so it seeds a real placeable
+  // prop model rather than `assets.keys('model')[0]`, which is whatever the
+  // index.html script tag list happens to load first (`title` - a UI/menu
+  // sprite, not a world prop, and not actually placeable as a billboard).
+  // The property panel's own `model` datalist lets the user change it right
+  // after placing, validated the same way either way.
+  const modelKey = assets.has('model', 'lantern') ? 'lantern' : (assets.keys('model')[0] || '');
+  let fileId, collection, item;
+  if (s) {
+    fileId = fileKey('level', s.level.name);
+    collection = kind === 'prop' ? 'props' : kind === 'light' ? 'lights' : kind === 'trigger' ? 'triggers' : 'interactables';
+    const file = doc.files.get(fileId);
+    const id = mintId(file, kind);
+    item = defaultItemForKind(kind, id, toLocal(s.origin, pt), { modelKey });
+  } else {
+    fileId = fileKey('world', doc.worldId);
+    collection = 'entities';
+    const file = doc.files.get(fileId);
+    const id = mintId(file, 'prop');
+    item = defaultWorldPropItem(id, pt, modelKey);
+  }
+
+  const file = doc.files.get(fileId);
+  const siblingIds = new Set((file.def[collection] || []).map((it) => it.id));
+  const validateKind = s ? kind : 'entity';
+  const errors = validateItem(validateKind, item, { assets, palette: assets.palette, siblingIds });
+  if (errors.length) { flash(`place refused: ${errors.join('; ')}`); placeMode = null; return; }
+
+  commit(makeInsertRecord(fileId, collection, item));
+  selectItem({ fileId, collection, id: item.id });
+  placeMode = null;
+}
 
 function computeMouseCell(e) {
   const r = canvas.getBoundingClientRect();
@@ -318,6 +438,18 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   const { col, row } = computeMouseCell(e);
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
+
+  if (placeMode) {
+    const result = pickAt(col, row, pickCtx());
+    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row);
+    // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
+    // gives a real point; looking at open sky falls back to a point 8 m out
+    // along the click ray, so placing never silently no-ops.
+    const point = result.world || rayPoint(ray, 8);
+    placeAt(placeMode, point);
+    return;
+  }
+
   const result = pickAt(col, row, pickCtx());
   lastPickText = formatPickResult(result);
 
@@ -421,6 +553,16 @@ function update(dt) {
     drag = null;
     world.renderVersion++;
     frame.markDirty();
+  } else if (input.pressed('Escape') && placeMode) {
+    placeMode = null;
+    flash('place: cancelled');
+  }
+
+  // US-033 (24.9): `1`/`2`/`3`/`4` arm place mode; the next left click places
+  // at the picked point (or the cursor ray on open sky, see the mousedown
+  // handler above).
+  for (const code of Object.keys(PLACE_KEYS)) {
+    if (input.pressed(code)) { placeMode = PLACE_KEYS[code]; flash(`place: ${placeMode} (click to place, Esc to cancel)`); }
   }
 
   if (input.pressed('BracketLeft')) { snapIdx = (snapIdx - 1 + SNAP_OPTIONS.length) % SNAP_OPTIONS.length; flash(`snap: ${SNAP_OPTIONS[snapIdx]} m`); }
@@ -468,7 +610,7 @@ function render() {
     overlay.update(fps, engine.loop.stats.jsMs,
       `pose: ${cam.x.toFixed(1)}, ${cam.y.toFixed(1)}, ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}\n`
       + `speed: ${speed.toFixed(1)} m/s  animate: ${animate}  snap: ${SNAP_OPTIONS[snapIdx]} m  cell: (${hoverCol ?? '-'},${hoverRow ?? '-'})\n`
-      + `selected: ${selText}\n`
+      + `selected: ${selText}${placeMode ? `  place: ${placeMode}` : ''}\n`
       + `${lastPickText}\n`
       + `presented: ${lastPresented}  backend: ${rt.backend}${frame.gpuPipeline ? ' gpu' : ' js'}`);
   }
@@ -479,9 +621,11 @@ window.__editor = {
   engine, assets, doc, cam, frame,
   get world() { return world; },
   get selection() { return selection; },
+  get placeMode() { return placeMode; },
   undoStack,
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, applyNudge, applyYaw, dropToFloor, doUndo, doRedo,
+  placeAt, structureAt, commitFieldEdit, renameSelected,
 };
 
 if (!gpuBlocked) engine.run({ update, render });

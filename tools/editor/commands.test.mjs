@@ -1,7 +1,8 @@
 // tools/editor/commands.test.mjs - US-032 S4 (docs/architecture.md 24.13).
 // Plain Node ESM, no framework. Run with `node tools/editor/commands.test.mjs`.
 import {
-  makeRecord, invert, applyEdit, findReferrers, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord,
+  makeRecord, invert, applyEdit, findReferrers, findReferrersDetailed, makeFieldEditRecord, makeDeleteRecord,
+  makeInsertRecord, makeRenameBatch,
 } from './commands.js';
 
 let pass = 0;
@@ -110,6 +111,34 @@ function snapshot(doc) {
   ok('findReferrers: the lever interactable references the brazier prop', referrers.includes('interactables.lever'), JSON.stringify(referrers));
   const noReferrers = findReferrers(def, 'level', 'props', 'rubble');
   ok('findReferrers: an unreferenced prop has none', noReferrers.length === 0);
+}
+
+// ---- US-033: id rename rewrites referrers in the same batch record --------
+{
+  const doc = fixtureDoc();
+  const before = snapshot(doc);
+  const def = doc.files.get('level/fixture').def;
+  const detailed = findReferrersDetailed(def, 'level', 'props', 'brazier');
+  ok('findReferrersDetailed: names the referring field', detailed.length === 1 && detailed[0].field === 'prop' && detailed[0].id === 'lever', JSON.stringify(detailed));
+
+  const item = def.props[0]; // brazier, index 0
+  const rec = makeRenameBatch('level/fixture', 'level', 'props', item, 0, 'brazier2', def);
+  ok('makeRenameBatch: carries renameFrom/renameTo for selection tracking', rec.renameFrom === 'brazier' && rec.renameTo === 'brazier2');
+  ok('makeRenameBatch: one sub-record for the item + one per referrer', rec.batch.length === 2);
+
+  applyEdit(doc, rec);
+  ok('rename: the prop itself got the new id', def.props[0].id === 'brazier2');
+  ok('rename: the lever interactable\'s `prop` field was rewritten', def.interactables[0].prop === 'brazier2');
+  // The light collection ALSO has an item literally id "brazier" (a
+  // different collection, not a referrer of the prop - REF_FIELDS only
+  // wires interactables[].prop/light/flameProp -> props/lights, never
+  // lights[].id itself) - it must be untouched by a PROP rename.
+  ok('rename: an unrelated same-named item in another collection is untouched', def.lights[0].id === 'brazier');
+
+  const inv = invert(rec);
+  ok('invert: swaps renameFrom/renameTo', inv.renameFrom === 'brazier2' && inv.renameTo === 'brazier');
+  applyEdit(doc, inv);
+  ok('rename: undo (invert) returns a deep-equal def', snapshot(doc) === before, snapshot(doc));
 }
 
 // ---- makeRecord structuredClone's before/after once ------------------------
