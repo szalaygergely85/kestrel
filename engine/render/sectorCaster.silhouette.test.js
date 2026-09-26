@@ -22,8 +22,30 @@
 // pair did until 23.9), the analytic projection is. Keep the twin in step
 // with the shader when the shader's geometry rules change.
 // Run: node engine/render/sectorCaster.silhouette.test.js [--verbose]
+//
+// BUG-OWN-008 part 3 ("I can see under the tower"): a GROUND CONTACT check
+// per column - below the structure's lowest row every cell must be terrain
+// hit IN FRONT of the footprint (depth <= tIn), never sky and never a hit
+// under/behind the structure, and the lowest structure row must sit within
+// 1 row of the ring hand-off row. CPU: the real `castSectors` + `castTerrain`
+// frame. GPU: `glslTwin` for the structure rows and `marchTerrainRay` (the
+// literal JS twin of `terrain.frag.js`'s march, 23.4) for the terrain rows.
+// Needs the real world (terrain + placed tower): World.load(world_m1).
 import { loadLevel } from '../world/Level.js';
+import { World } from '../world/World.js';
 import { castSectors, beginFrame, HFOV_DEG, MAX_RAY_STEPS, MAX_DIST } from './sectorCaster.js';
+import { castTerrain, marchTerrainRay, FOG_FULL } from './terrainCaster.js';
+import { KIND_TERRAIN } from './GBuffer.js';
+import terrainDef from '../../design/levels/overworld_far.js';
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import voxelPropsMod from '../../design/models/voxel_props.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
+import farTowerMod from '../../design/models/far_tower.js';
+import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import { GBuffer } from './GBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
@@ -34,7 +56,8 @@ import detailPassMod from '../../design/detail-pass.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; detailPassMod;
+paletteMod; detailPassMod; terrainDef;
+lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod;
 const { assets } = await loadTestAssets();
 const VERBOSE = process.argv.includes('--verbose');
 
@@ -53,6 +76,11 @@ const worldDef = assets.world('world_m1');
 const S = worldDef.structures.find((s) => s.level === 'tower');
 const level = loadLevel(assets.level('tower'));
 const O = { x: S.origin.x, y: S.origin.y, z: S.origin.z || 0 };
+// The placed world (terrain + tower bbox) for the ground-contact check; the
+// far grid is baked synchronously, the near band by World.load itself.
+const world = World.load(worldDef, assets, {});
+world.terrain.bakeFarSync();
+const BB = world.structures.find((s) => s.id === S.id).bbox;
 const matTable = bindShading(assets.palette, assets.detailPass, PXH / PXW);
 bindLevel(matTable, level);
 const fb = {
@@ -126,6 +154,7 @@ function analytic(cam, x, out) {
 function renderCpu(cam) {
   beginFrame(fb);
   castSectors(fb, level, cam, O);
+  castTerrain(fb, world.terrain, cam, world);
   const top = new Int16Array(COLS).fill(-1), bot = new Int16Array(COLS).fill(-1);
   for (let x = 0; x < COLS; x++) {
     for (let r = 0; r < ROWS; r++) {
@@ -242,9 +271,62 @@ function checkPath(name, path, cam, { top, bot }, tolRows) {
   ok(`${tag}: claimed columns == analytic footprint crossing (+-2)`, extentMiss <= 2 && extentExtra <= 2, `missing ${extentMiss}, extra ${extentExtra}`);
   ok(`${tag}: nothing runs off the top of the screen`, offTop === 0, `${offTop} columns`);
 }
+// --- ground contact (BUG-OWN-008 part 3) -----------------------------------
+// Per rendered column: rows below the structure's lowest row are terrain
+// hit at depth <= tIn (in front of the footprint edge - the recipe blends the
+// ground to the ring height there, so a ray under the ring at the edge has
+// crossed the ground before it); no sky/unresolved cell; and the lowest
+// structure row is within 1 row of the ring hand-off row.
+const skipScratch = new Float64Array(2);
+function footprintSkip(cam, dx, dy) { // terrainCaster.js buildSkips/slab2D twin, one structure
+  let tMin = -Infinity, tMax = Infinity;
+  for (const [p, d, a0, a1] of [[cam.x, dx, BB.x0, BB.x1], [cam.y, dy, BB.y0, BB.y1]]) {
+    if (d !== 0) { const t1 = (a0 - p) / d, t2 = (a1 - p) / d; tMin = Math.max(tMin, Math.min(t1, t2)); tMax = Math.min(tMax, Math.max(t1, t2)); }
+    else if (p < a0 || p > a1) return 0;
+  }
+  if (tMax < tMin || tMax < 0) return 0;
+  skipScratch[0] = Math.max(0, tMin); skipScratch[1] = tMax;
+  return 1;
+}
+const marchOut = { t: 0, x: 0, y: 0, h: 0, near: false };
+function checkGround(name, path, cam, { bot }) {
+  const b = basis(cam);
+  let cols = 0, under = 0, holes = 0, seam = 0, worst = -1, worstT = 0;
+  for (let x = 0; x < COLS; x++) {
+    if (bot[x] < 0 || bot[x] >= ROWS - 1) continue;
+    const a = analytic(cam, x, scratch);
+    if (!a.crosses) continue;
+    cols++;
+    if (Math.abs(bot[x] - Math.floor(a.ringRow)) > 1) seam++;
+    const c = (2 * (x + 0.5)) / COLS - 1;
+    const dx = b.dirX + b.planeX * c, dy = b.dirY + b.planeY * c;
+    const nSkips = footprintSkip(cam, dx, dy);
+    for (let r = bot[x] + 1; r < ROWS; r++) {
+      let t;
+      if (path === 'CPU') {
+        const i = r * COLS + x;
+        if (fb.gbuf.kind[i] !== KIND_TERRAIN) { holes++; continue; }
+        t = fb.depth.depth[i];
+      } else {
+        const slope = (b.horizonRow - r) / planeDistY;
+        if (!marchTerrainRay(world.terrain, cam.x, cam.y, cam.z, dx, dy, slope, FOG_FULL, skipScratch, nSkips, {}, marchOut)) { holes++; continue; }
+        t = marchOut.t;
+      }
+      if (t > a.tIn + 0.05) { under++; if (t > worstT) { worstT = t; worst = x; } }
+    }
+  }
+  if (VERBOSE) console.log(`${path} ${name.padEnd(34)} ground: cols ${cols} under ${under} holes ${holes} seam ${seam}${worst >= 0 ? ` (col ${worst}, t ${worstT.toFixed(1)})` : ''}`);
+  const tag = `${path} ${name}`;
+  ok(`${tag}: ground contact - no terrain hit under/behind the structure below its base`, under === 0, `${under} cells, worst col ${worst} t ${worstT.toFixed(1)}`);
+  ok(`${tag}: ground contact - no sky/unresolved cell below the base`, holes === 0, `${holes} cells`);
+  ok(`${tag}: ground contact - base within 1 row of the ring hand-off row`, seam === 0, `${seam} columns`);
+}
 function checkPose(name, cam, tolRows = 2) {
-  checkPath(name, 'CPU', cam, renderCpu(cam), tolRows);
-  checkPath(name, 'GPU', cam, renderGpu(cam), tolRows);
+  const cpu = renderCpu(cam), gpu = renderGpu(cam);
+  checkPath(name, 'CPU', cam, cpu, tolRows);
+  checkPath(name, 'GPU', cam, gpu, tolRows);
+  checkGround(name, 'CPU', cam, cpu);
+  checkGround(name, 'GPU', cam, gpu);
 }
 
 // --- owner's poses (400x150, GPU screenshots; z = eye) ------------------------
@@ -271,6 +353,19 @@ for (const d of [20, 40, 80]) {
     const rad = a * Math.PI / 180;
     checkPose(`circle ${d} m az ${a}`, aimAt(CX + Math.sin(rad) * (d + 12) + 0.37, CY - Math.cos(rad) * (d + 7) + 0.37, 4.0, 5));
   }
+}
+
+// --- BUG-OWN-008 part 3: close poses pitched down at the base (the owner's
+// pose C: feet z 2.40 + eye 1.60, 8.5 m west; then 3/6/10/15 m out at a
+// standing and a crouching eye, and a 12-point circle at 8 m, pitch -8) ----
+checkPose('owner pose C (8.5 m west, pitch -6)', { x: 1471.53, y: 1026.86, z: 4.0, yawDeg: 86, pitchDeg: -6 });
+for (const d of [3, 6, 10, 15]) {
+  checkPose(`west ${d} m, eye 4.0, pitch -10`, aimAt(O.x - d, CY + 0.37, 4.0, -10));
+  checkPose(`west ${d} m, eye 2.9 (crouch), pitch -6`, aimAt(O.x - d, CY + 0.37, 2.9, -6));
+}
+for (let a = 0; a < 360; a += 30) {
+  const rad = a * Math.PI / 180;
+  checkPose(`circle 8 m az ${a}, pitch -8`, aimAt(CX + Math.sin(rad) * 20 + 0.37, CY - Math.cos(rad) * 15 + 0.37, 4.0, -8));
 }
 
 // --- sideways / forward 1 m: the silhouette must stay on the analytic

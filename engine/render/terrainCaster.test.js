@@ -338,5 +338,35 @@ function makeNearRecipe({ w = 64, h = 64, cell = 8 } = {}) {
   }
 }
 
+// BUG-OWN-008 part 3 (architecture.md 23.9): skip intervals. The march never
+// samples inside a structure bbox, but it must (a) test the footprint EDGE
+// itself, so a ground crossing between the last regular sample and `tIn` is
+// found (the old code left that segment untested - up to a full 3 m far
+// step - and the first post-exit sample then bisected back INTO the
+// footprint: a phantom terrain band drawn under the tower base), and (b)
+// resume from `tOut`, so no hit is ever placed inside the footprint.
+{
+  const terrain = new Terrain(makeFlatRecipe());
+  terrain.bakeFarSync();
+  const out = { t: 0, x: 0, y: 0, h: 0, near: false };
+  const skips = new Float64Array([26, 40]); // structure bbox x in [126, 140], eye at x = 100
+  // (a) crossing at t = 25 (eye 10 -> flat 5 at slope -0.2), 1 m before the edge;
+  // far samples land at 24.5 (no hit) and 27.5 (inside the skip).
+  let hit = marchTerrainRay(terrain, 100, 100, 10, 1, 0, -0.2, FOG_FULL, skips, 1, {}, out);
+  check('skip: crossing just before the footprint edge is found', hit === true);
+  check('skip: ...at the true crossing (t = 25 +- 0.1), not under the structure', Math.abs(out.t - 25) < 0.1);
+  // (b) crossing at t = 45, 5 m past the exit: the march must resume from 40 and hit ~45.
+  hit = marchTerrainRay(terrain, 100, 100, 10, 1, 0, -5 / 45, FOG_FULL, skips, 1, {}, out);
+  check('skip: crossing past the exit is found', hit === true);
+  check('skip: ...at the true crossing (t = 45 +- 0.1)', Math.abs(out.t - 45) < 0.1);
+  // (c) crossing INSIDE the footprint (t = 33.3): the hit must land at/after
+  // the exit (the structure owns those cells), never inside the bbox.
+  hit = marchTerrainRay(terrain, 100, 100, 10, 1, 0, -0.15, FOG_FULL, skips, 1, {}, out);
+  check('skip: a crossing inside the footprint resolves at/after tOut', hit === true && out.t >= 40 - 1e-9 && out.t < 40.5);
+  // (d) no skip on this ray at all: behaviour unchanged (hit at t = 25).
+  hit = marchTerrainRay(terrain, 100, 100, 10, 1, 0, -0.2, FOG_FULL, new Float64Array(0), 0, {}, out);
+  check('skip: none -> plain hit at t = 25', hit === true && Math.abs(out.t - 25) < 0.1);
+}
+
 console.log(`terrainCaster.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

@@ -206,6 +206,25 @@ export function marchTerrainRay(terrain, ex, ey, eyeH, dx, dy, slope, tMax, skip
     let t1 = t0 + dt, last = false;
     if (t1 >= tMax) { t1 = tMax; last = true; }
 
+    // BUG-OWN-008 part 3 (architecture.md 23.9): a skip interval [tIn, tOut]
+    // (a structure bbox) is never SAMPLED, but the step that reaches it is
+    // clamped to `tIn` so the footprint EDGE itself is tested (the terrain
+    // meets the outer ring there by the recipe's blend rule), and the march
+    // resumes from `tOut` so the bisection bracket never starts inside the
+    // footprint. The old "ignore samples inside a skip" rule left the
+    // segment [last sample, tIn] untested (up to a whole 3 m far step) and
+    // then bisected the first post-exit hit back INTO the footprint - a
+    // phantom terrain band drawn under the tower base ("I can see under").
+    let jump = -1;
+    for (let k = 0; k < nSkips; k++) {
+      const sIn = skips[k * 2], sOut = skips[k * 2 + 1];
+      if (sIn < t1 && sOut > t0) {
+        if (t0 < sIn) { t1 = sIn + 1e-4; last = false; } // same 1e-4 entry nudge as dda.frag.js, so both hand-offs agree
+        else if (sOut > jump) jump = sOut;
+      }
+    }
+    if (jump >= 0) { t0 = jump; continue; }
+
     const hAtT1 = eyeH + slope * t1;
     if (slope > 0 && hAtT1 > maxHDraw) return false; // climbing above every hill
 
@@ -214,11 +233,7 @@ export function marchTerrainRay(terrain, ex, ey, eyeH, dx, dy, slope, tMax, skip
     const H = hSample.h;
     if (H === null) return false; // outside the far map: haze, the sky pass paints it
 
-    let inSkip = false;
-    for (let k = 0; k < nSkips; k++) {
-      if (t1 >= skips[k * 2] && t1 <= skips[k * 2 + 1]) { inSkip = true; break; }
-    }
-    if (!inSkip && hAtT1 < H) {
+    if (hAtT1 < H) {
       // 5 bisection steps on f(t) = h(t) - H(p(t)) in [t0, t1]. At the near
       // step schedule's floor (0.5 m) this converges to 0.5/32 ~= 16 mm.
       let a = t0, b = t1;

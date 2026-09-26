@@ -271,6 +271,21 @@ void main() {
     bool last = false;
     if (t1 >= tMax) { t1 = tMax; last = true; }
 
+    // BUG-OWN-008 part 3 (architecture.md 23.9, literal twin of
+    // terrainCaster.js): never sample inside a skip; clamp the reaching
+    // step to the footprint edge (tIn) so the edge is tested, resume from
+    // the exit (tOut) so no bisection bracket starts inside the footprint.
+    float jump = -1.0;
+    for (int k = 0; k < MAX_SKIPS; k++) {
+      if (k >= nSkips) break;
+      float sIn = skipIn[k], sOut = skipOut[k];
+      if (sIn < t1 && sOut > t0) {
+        if (t0 < sIn) { t1 = sIn + 1e-4; last = false; } // same 1e-4 entry nudge as dda.frag.js, so both hand-offs agree
+        else if (sOut > jump) jump = sOut;
+      }
+    }
+    if (jump >= 0.0) { t0 = jump; continue; }
+
     float hAtT1 = uEyeH + slope * t1;
     if (slope > 0.0 && hAtT1 > uTerrainMaxH) return; // climbing above every hill
 
@@ -278,13 +293,7 @@ void main() {
     float H; bool isNear;
     if (!sampleHeight(t1, px, py, H, isNear)) return; // outside the far map: haze, the sky pass paints it
 
-    bool inSkip = false;
-    for (int k = 0; k < MAX_SKIPS; k++) {
-      if (k >= nSkips) break;
-      if (t1 >= skipIn[k] && t1 <= skipOut[k]) { inSkip = true; break; }
-    }
-
-    if (!inSkip && hAtT1 < H) {
+    if (hAtT1 < H) {
       // 5 bisection steps on f(t) = h(t) - H(p(t)) in [t0, t1].
       float a = t0, b = t1;
       for (int bi = 0; bi < 5; bi++) {

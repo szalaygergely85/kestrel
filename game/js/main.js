@@ -1262,6 +1262,9 @@ function runGpuCompareDdaMode() {
       cam: { x: 1464.33, y: 1045.50, z: 2.32, yawDeg: 54, pitchDeg: 19 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideFar (owner pose B)',
       cam: { x: 1401.80, y: 1038.32, z: -2.38, yawDeg: 83, pitchDeg: 14 }, real: true },
+    // BUG-OWN-008 part 3 (23.9): 8.5 m west of the tower, pitched down at its base (feet z 2.40 + eye 1.60): terrain must meet the ring, no band under the base.
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideClose (owner pose C)',
+      cam: { x: 1471.53, y: 1026.86, z: 4.0, yawDeg: 86, pitchDeg: -6 }, real: true },
   ];
 
   // US-040 step 5 (architecture.md 15.2 item 7): the formal `?gpucompare=1`

@@ -83,6 +83,13 @@ ok('edge.frag.js reads uDepth back with uintBitsToFloat', EDGE_FRAG_SRC.includes
 // literal band/fog numbers; shade.frag.js's kind==7 branch reads it back.
 checkOnlyAddressLine('terrain.frag.js', TERRAIN_FRAG_SRC);
 ok('terrain.frag.js: no round(', !stripComments(TERRAIN_FRAG_SRC).includes('round('));
+// BUG-OWN-008 part 3 (23.9): skip intervals clamp the step to the footprint
+// edge and resume from the exit - the same two lines as terrainCaster.js's
+// marchTerrainRay; the old "ignore samples inside a skip" rule is gone.
+ok('terrain.frag.js: skip clamp to the footprint edge (sIn < t1 && sOut > t0)', TERRAIN_FRAG_SRC.includes('sIn < t1 && sOut > t0'));
+ok('terrain.frag.js: edge sample carries the DDA entry nudge (t1 = sIn + 1e-4)', TERRAIN_FRAG_SRC.includes('t1 = sIn + 1e-4'));
+ok('terrain.frag.js: resumes from the skip exit (t0 = jump; continue;)', TERRAIN_FRAG_SRC.includes('t0 = jump; continue;'));
+ok('terrain.frag.js: no inSkip sample filter left', !stripComments(TERRAIN_FRAG_SRC).includes('inSkip'));
 ok('terrain.frag.js: no EXT_color_buffer_float', !TERRAIN_FRAG_SRC.includes('EXT_color_buffer_float'));
 ok('terrain.frag.js: no layout(std140', !TERRAIN_FRAG_SRC.includes('layout(std140'));
 ok('terrain.frag.js contains MAX_TERRAIN_STEPS', TERRAIN_FRAG_SRC.includes('MAX_TERRAIN_STEPS'));
