@@ -21,6 +21,7 @@ import {
   applyEdit, invert, findReferrers,
 } from './commands.js';
 import { createStack } from './undo.js';
+import { isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle } from './livepatch.js';
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
@@ -158,12 +159,51 @@ function flash(msg) {
   lastPickText = msg;
 }
 
+/** The placed structure a level file's items live in (null for a world file). US-064: also used to find a light's live `${structId}.${lightId}` key. */
+function structureForFile(fileId) {
+  if (fileId.startsWith('world/')) return null;
+  const levelId = fileId.slice('level/'.length);
+  return world.structures.find((st) => st.level.name === levelId) || null;
+}
+
 /** `{x,y,z}` origin to add/subtract for a file's collection (0 for a world file - 24.1 decision 4). */
 function originForFile(fileId) {
-  if (fileId.startsWith('world/')) return { x: 0, y: 0, z: 0 };
-  const levelId = fileId.slice('level/'.length);
-  const s = world.structures.find((st) => st.level.name === levelId);
+  const s = structureForFile(fileId);
   return s ? s.origin : { x: 0, y: 0, z: 0 };
+}
+
+/**
+ * US-064: patches `rec.after` live (an entity's `transform`, or a light's
+ * `LightSet` handle) instead of rebuilding the World - only called once
+ * `isPatchableRecord(rec)` is true. Returns false (caller falls back to a
+ * full `rebuild()`) when the live entity/light can't actually be found -
+ * e.g. the world hasn't rendered a frame yet so `frame.lightSet` is still
+ * null - which should not happen in practice for an edit on an EXISTING
+ * selected item, but is not assumed.
+ * @param {Object} rec a commands.js EditRecord (or its `invert()`), `before != null && after != null`
+ */
+function patchLive(rec) {
+  const item = rec.after;
+  const isWorldSpace = rec.fileId.startsWith('world/');
+  const origin = originForFile(rec.fileId);
+  if (rec.collection === 'lights') {
+    const s = structureForFile(rec.fileId);
+    const ls = frame.lightSet;
+    if (!s || !ls) return false;
+    const handle = findLightHandle(ls, `${s.id}.${rec.id}`);
+    if (handle === -1) return false;
+    applyLightPatch(ls, handle, item, origin, isWorldSpace);
+    frame.markDirty();
+    return true;
+  }
+  const entId = selectionEntityId(world, { fileId: rec.fileId, collection: rec.collection, id: rec.id });
+  if (!entId) return false;
+  const data = world.entity(entId);
+  if (!data) return false;
+  applyPropTransformPatch(data.transform, item, origin, isWorldSpace);
+  world.renderVersion++;
+  frame.markDirty();
+  return true;
 }
 
 function normZero(v) { return v === 0 ? 0 : v; }
@@ -182,9 +222,25 @@ function rebuild() {
   return ms;
 }
 
+/**
+ * US-064: a patchable field edit (nudge/yaw/drop/drag/property-edit on an
+ * EXISTING prop or light - `isPatchableRecord`) skips `World.load` entirely:
+ * `patchLive` writes straight into the already-live entity/`LightSet`
+ * handle, same as US-032's drag path did for x/y during the drag itself.
+ * Add/delete/rename/any other field (a prop's `model`, a light's `preset`
+ * and everything that changes it - no live setter exists for those, see the
+ * US-064 backlog note) still falls through to the full `rebuild()`.
+ */
 function commit(rec) {
   applyEdit(doc, rec);
   undoStack.push(rec);
+  if (isPatchableRecord(rec) && patchLive(rec)) {
+    renderOutliner();
+    renderProperties();
+    refreshIoStatus();
+    flash(`${rec.label} "${rec.id}" (patched, no rebuild)`);
+    return;
+  }
   const ms = rebuild();
   flash(`${rec.id ? `${rec.label} "${rec.id}"` : rec.label} (rebuild ${ms.toFixed(2)} ms)`);
 }
@@ -203,13 +259,24 @@ function followRename(appliedRec) {
   }
 }
 
+/** US-064: undo/redo skip the rebuild too when the record being (re)applied is itself patchable - only a boundary case (add/delete/rename/any other field) still crosses into a full `rebuild()`. */
+function applyAndSync(appliedRec) {
+  if (isPatchableRecord(appliedRec) && patchLive(appliedRec)) {
+    renderOutliner();
+    renderProperties();
+    refreshIoStatus();
+    return;
+  }
+  rebuild();
+}
+
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
   const inv = invert(rec);
   followRename(inv);
   applyEdit(doc, inv);
-  rebuild();
+  applyAndSync(inv);
   flash(`undo: ${rec.label}`);
 }
 
@@ -218,7 +285,7 @@ function doRedo() {
   if (!rec) { flash('redo: nothing to redo'); return; }
   followRename(rec);
   applyEdit(doc, rec);
-  rebuild();
+  applyAndSync(rec);
   flash(`redo: ${rec.label}`);
 }
 
