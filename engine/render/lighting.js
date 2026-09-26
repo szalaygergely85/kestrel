@@ -202,7 +202,16 @@ export class LightSet {
    */
   setParams(handle, params = {}) {
     if (handle < 0 || handle >= this.count) return;
-    if (params.radius != null) this.radius[handle] = params.radius;
+    if (params.radius != null && params.radius !== this.radius[handle]) {
+      this.radius[handle] = params.radius;
+      // US-069 item 6b fix: the LVIS box (visW/visH/visOx/visOy) is sized
+      // for the OLD radius - invalidate the vis key so `computeVisGrid`
+      // (below, the per-frame stale-key check) resizes it on the very next
+      // `update()` instead of reusing a box built for the previous radius.
+      // Same sentinel/convention as the constructor and `remove()` above.
+      this._visKeyX[handle] = 0x7fffffff; this._visKeyY[handle] = 0x7fffffff;
+      this._visStructVersion[handle] = -1; this._visPackedVersion[handle] = -2;
+    }
     if (params.hue != null) {
       this.baseHue[handle * 3] = params.hue[0];
       this.baseHue[handle * 3 + 1] = params.hue[1];

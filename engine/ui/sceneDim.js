@@ -57,26 +57,38 @@ function dimAt(d, x, y) {
   return k;
 }
 
+/** Multiplies one cell's fg/bg rgb in place by `k`. No allocation. */
+function applyGain(fg, bg, fi, k) {
+  fg[fi] = (fg[fi] * k) | 0; fg[fi + 1] = (fg[fi + 1] * k) | 0; fg[fi + 2] = (fg[fi + 2] * k) | 0;
+  bg[fi] = (bg[fi] * k) | 0; bg[fi + 1] = (bg[fi + 1] * k) | 0; bg[fi + 2] = (bg[fi + 2] * k) | 0;
+}
+
 /**
  * Multiplies `fg.rgb` and `bg.rgb` of every non-mask cell by its dim gain
  * (glyph unchanged - a dim is not a fade). Identity (`all === 1 && n === 0`)
  * is a no-op, same contract as `applySceneFade`. Call right after
  * `applySceneFade` (same call site, CPU path only).
  *
- * BUG-PERF-001 (c) (docs/backlog.md row 25w): while `d.all === 1` (no
- * whole-scene dim active - the common case, e.g. a single hint's small
- * plate rect, never the map card), every cell OUTSIDE the pushed rects is
- * unaffected by definition (`dimAt` can only return < 1 for a cell inside
- * at least one rect) - scanning the full `cols x rows` grid to discover
- * that was the actual per-frame cost here (measured: ~0.14 ms at 320x120,
- * ~0.31 ms at 480x180, entirely inside this one full-grid double loop, for
- * a rect that is typically a few dozen cells). Bounding the scan to the
- * union of the (at most 4, `MAX_RECTS`) rects' own bounding boxes instead
- * keeps the exact same per-cell result (still routed through `dimAt`, which
- * already takes the min over every overlapping rect - no double-multiply
- * even where two pushed rects overlap) while touching only the cells that
- * can possibly change. A real whole-scene dim (`d.all < 1`, the map card)
- * still needs every cell, so that case is untouched.
+ * BUG-PERF-001 (c) (docs/backlog.md row 25w, item 6b fix pass): two live
+ * paths, both bounded to the union bbox of the (at most 4, `MAX_RECTS`)
+ * pushed rects wherever that is cheaper than the naive full-grid `dimAt`
+ * scan:
+ *  - `d.all >= 1` (rects only, no whole-scene dim - the common case, e.g. a
+ *    single hint's small plate rect): every cell OUTSIDE the union bbox is
+ *    unaffected by definition (`dimAt` can only return < 1 for a cell inside
+ *    at least one rect), so only the bbox interior is scanned at all.
+ *  - `d.all < 1` (a real whole-scene dim, e.g. the map card, optionally with
+ *    extra rects darkening a sub-area further): every cell changes, so the
+ *    full grid must still be visited, but only cells INSIDE the union bbox
+ *    can differ from the plain constant `k = d.all` (outside the bbox no
+ *    rect applies, so `dimAt` would just return `d.all` anyway) - those
+ *    cells get the constant applied directly in a tight loop, no `dimAt`
+ *    call, no per-cell loop over rects. Both paths route bbox-interior cells
+ *    through `dimAt` unchanged, which already takes the min over every
+ *    overlapping rect - no double-multiply even where two pushed rects
+ *    overlap, and the per-cell result is identical to the old always-`dimAt`
+ *    scan either way (see sceneDim.test.js's "(d.all<1) identical output"
+ *    cases).
  * @param {import('../render/RenderTarget.js').RenderTarget} rt
  * @param {SceneDim} d
  */
@@ -86,13 +98,13 @@ export function applySceneDim(rt, d) {
   const cols = cb.cols, rows = cb.rows;
   const mask = cb.mask, fg = cb.fg, bg = cb.bg;
 
-  let y0 = 0, y1 = rows, x0 = 0, x1 = cols;
-  if (d.all >= 1) {
-    // Only rects are live - bound the scan to their union (clamped to the
-    // grid; a rect may have been pushed with UI-cell coords scaled larger
-    // than the scene grid, or with x1<=x0/y1<=y0 - either way the clamp
-    // below makes an out-of-range or degenerate rect scan zero cells, not
-    // throw/underflow).
+  // Union bbox of the live rects, clamped to the grid (a rect may have been
+  // pushed with coords outside the grid, or degenerate x1<=x0/y1<=y0 -
+  // either way the clamp below makes it scan zero cells, not throw/
+  // underflow). `haveBox` is false only when there are no rects at all.
+  let bx0 = 0, by0 = 0, bx1 = 0, by1 = 0;
+  const haveBox = d.n > 0;
+  if (haveBox) {
     let ux0 = Infinity, uy0 = Infinity, ux1 = -Infinity, uy1 = -Infinity;
     for (let i = 0; i < d.n; i++) {
       const b = i * FIELDS;
@@ -101,19 +113,36 @@ export function applySceneDim(rt, d) {
       if (d.rects[b + 2] > ux1) ux1 = d.rects[b + 2];
       if (d.rects[b + 3] > uy1) uy1 = d.rects[b + 3];
     }
-    x0 = Math.max(0, Math.floor(ux0)); y0 = Math.max(0, Math.floor(uy0));
-    x1 = Math.min(cols, Math.ceil(ux1)); y1 = Math.min(rows, Math.ceil(uy1));
+    bx0 = Math.max(0, Math.floor(ux0)); by0 = Math.max(0, Math.floor(uy0));
+    bx1 = Math.min(cols, Math.ceil(ux1)); by1 = Math.min(rows, Math.ceil(uy1));
   }
 
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
+  if (d.all >= 1) {
+    // Rects only - the bbox interior is the whole affected area.
+    for (let y = by0; y < by1; y++) {
+      for (let x = bx0; x < bx1; x++) {
+        const i = y * cols + x;
+        if (mask[i]) continue;
+        const k = dimAt(d, x, y);
+        if (k >= 1) continue;
+        applyGain(fg, bg, i * 4, k);
+      }
+    }
+    return;
+  }
+
+  // A real whole-scene dim: every cell changes, but only the bbox interior
+  // needs the per-rect `dimAt` calculation - everywhere else gets the plain
+  // constant `d.all` gain with no `dimAt` call.
+  const k0 = d.all;
+  for (let y = 0; y < rows; y++) {
+    const inYBand = haveBox && y >= by0 && y < by1;
+    for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       if (mask[i]) continue;
-      const k = dimAt(d, x, y);
+      const k = (inYBand && x >= bx0 && x < bx1) ? dimAt(d, x, y) : k0;
       if (k >= 1) continue;
-      const fi = i * 4;
-      fg[fi] = (fg[fi] * k) | 0; fg[fi + 1] = (fg[fi + 1] * k) | 0; fg[fi + 2] = (fg[fi + 2] * k) | 0;
-      bg[fi] = (bg[fi] * k) | 0; bg[fi + 1] = (bg[fi + 1] * k) | 0; bg[fi + 2] = (bg[fi + 2] * k) | 0;
+      applyGain(fg, bg, i * 4, k);
     }
   }
 }

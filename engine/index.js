@@ -42,10 +42,12 @@ export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
 export { GpuSpritePass } from './render/gpu/spritesPass.js';
-export { runSpriteCompare } from './render/gpu/spritesCompare.js';
 export { drawText } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
-// engine/dev.js.
+// engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only
+// real caller is game/js/dev/spriteDev.js (a dev-only parity mode), so it
+// belongs in engine/dev.js with the other parity harnesses, not the stable
+// surface - moved there.
 
 // ---- US-028 detail pass v2 (G-buffer shading, edge pass) -------------------
 // US-069 (architecture.md 24.12 item 4): the full KIND_* range, not just the

@@ -29,6 +29,17 @@ export {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells,
 } from './render/gpu/gpuCompare.js';
 
+// ---- GPU/CPU sprite parity harness (?spritecompare=1, US-030c) -------------
+// Item 6b fix pass: moved from engine/index.js - its only real caller is
+// game/js/dev/spriteDev.js's `?spritecompare=1` dev mode.
+export { runSpriteCompare } from './render/gpu/spritesCompare.js';
+
+// ---- cell grid buffer (dev/perf tooling only) ------------------------------
+// Item 6b fix pass: added so tools/perf/uiDraw.perf.test.mjs can build a raw
+// scene RenderTarget without importing engine/render/CellBuffer.js directly
+// (tools/* may only import engine/index.js + engine/dev.js, check-deps rule 3/7).
+export { CellBuffer } from './render/CellBuffer.js';
+
 // ---- "may change without notice" glue (docs/architecture.md section 5) ----
 // PlayerLook has no reusable-engine home per architecture.md section 2's
 // folder table - it is DOM/canvas/pointer-lock first-person mouse-look

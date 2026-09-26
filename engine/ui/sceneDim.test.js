@@ -160,6 +160,64 @@ function fakeRt(cols, rows) {
     rectMs * 10 < fullMs, `rectMs=${rectMs.toFixed(4)} fullMs=${fullMs.toFixed(4)}`);
 }
 
+// ---- item 6b fix: d.all<1 (whole-scene dim, e.g. the map card) bbox-bounded
+// path produces IDENTICAL output to the old always-`dimAt` full scan, on 3
+// different rect layouts (no rects, one rect, two overlapping rects). This
+// is a correctness proof for the optimization, not a behaviour change.
+{
+  // Reference: the pre-fix algorithm (every cell through `dimAt`-equivalent
+  // logic, reimplemented here directly from pushed rect fields so it does
+  // not depend on the file under test).
+  function referenceApply(rt, all, rects) {
+    const cb = rt.cells;
+    const cols = cb.cols, rows = cb.rows;
+    const mask = cb.mask, fg = cb.fg, bg = cb.bg;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const i = y * cols + x;
+        if (mask[i]) continue;
+        let k = all;
+        for (const r of rects) {
+          if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1 && r.mul < k) k = r.mul;
+        }
+        if (k >= 1) continue;
+        const fi = i * 4;
+        fg[fi] = (fg[fi] * k) | 0; fg[fi + 1] = (fg[fi + 1] * k) | 0; fg[fi + 2] = (fg[fi + 2] * k) | 0;
+        bg[fi] = (bg[fi] * k) | 0; bg[fi + 1] = (bg[fi + 1] * k) | 0; bg[fi + 2] = (bg[fi + 2] * k) | 0;
+      }
+    }
+  }
+
+  function compareLayout(name, all, rects) {
+    const rtA = fakeRt(20, 20);
+    const rtB = fakeRt(20, 20);
+    // Punch in a couple of masked cells so the mask-skip path is exercised too.
+    rtA.cells.mask[7] = 1; rtB.cells.mask[7] = 1;
+    rtA.cells.mask[250] = 1; rtB.cells.mask[250] = 1;
+
+    referenceApply(rtA, all, rects);
+
+    const d = createSceneDim();
+    resetSceneDim(d);
+    d.all = all;
+    for (const r of rects) pushDimRect(d, r.x0, r.y0, r.x1, r.y1, r.mul);
+    applySceneDim(rtB, d);
+
+    let identical = true;
+    for (let i = 0; i < rtA.cells.fg.length; i++) {
+      if (rtA.cells.fg[i] !== rtB.cells.fg[i] || rtA.cells.bg[i] !== rtB.cells.bg[i]) { identical = false; break; }
+    }
+    ok(`(d.all<1) identical output: ${name}`, identical);
+  }
+
+  compareLayout('no rects, whole-scene dim only', 0.35, []);
+  compareLayout('one rect inside the dimmed scene', 0.5, [{ x0: 4, y0: 4, x1: 9, y1: 9, mul: 0.2 }]);
+  compareLayout('two overlapping rects', 0.6, [
+    { x0: 2, y0: 2, x1: 10, y1: 10, mul: 0.4 },
+    { x0: 6, y0: 6, x1: 14, y1: 14, mul: 0.15 },
+  ]);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

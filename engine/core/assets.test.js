@@ -108,6 +108,15 @@ const bundle = await loadContentPack(PACK_MANIFEST, { fetchText: (u) => readFile
   }
   ok('replace: a throw on an unknown key never adds an entry', !reg.has('level', 'nope'));
   ok('replace: keys() still lists exactly the original set (no new entry added)', deepEqual(reg.keys('level').sort(), ['alpha']));
+
+  // Item 6b fix: replace(kind, key, def) with def === the SAME object the
+  // registry already holds must be a no-op, not wipe-then-reassign-from-
+  // itself (which would first delete every own key off `existing`, and since
+  // `def` IS `existing`, erase the very content it was about to copy back).
+  const same = reg.level('alpha');
+  reg.replace('level', 'alpha', same);
+  ok('replace: def === existing is a no-op (content untouched)', JSON.stringify(reg.level('alpha').rows) === JSON.stringify(['new']));
+  ok('replace: def === existing keeps the same object reference', reg.level('alpha') === same);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

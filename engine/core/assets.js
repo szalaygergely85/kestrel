@@ -123,6 +123,12 @@ export class AssetRegistry {
     const map = this._mapFor(kind);
     if (!(key in map)) throwUnknown(kind, key, map);
     const existing = map[key];
+    // Item 6b fix: a caller passing back the exact same object reference it
+    // already holds (nothing actually changed) should be a no-op - wiping
+    // every own key off `existing` and reassigning from itself is wasteful
+    // (and, if `def === existing`, actively wrong: the delete loop below
+    // would erase `def`'s own keys before Object.assign could read them back).
+    if (def === existing) return;
     for (const k of Object.keys(existing)) delete existing[k];
     Object.assign(existing, def);
   }

@@ -720,6 +720,38 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('setParams: out-of-range handle is a no-op, no throw', (() => { ls.setParams(-1, { radius: 1 }); ls.setParams(99, { radius: 1 }); return true; })());
 }
 
+// --- setParams item 6b fix: a radius change must invalidate the LVIS box so
+// computeVisGrid resizes it (before the fix, `_visKeyX`/`_visKeyY` were left
+// alone by setParams - since the light's cell position hadn't changed, the
+// stale-key check at the top of update() never fired, so `visW`/`visH` kept
+// the OLD radius's box forever). ----------------------------------------
+{
+  // Reuse the __visTest8x8 level registered by the computeVisGrid block
+  // above (still on globalThis.ASSETS.levels) - computeVisGrid needs a real
+  // world to size a non-zero vis box; `world: null` short-circuits to
+  // visW=0/visH=0 unconditionally, which would hide the bug this test checks.
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const world = World.load({ terrain: null, structures: [{ id: 'vt2', level: '__visTest8x8', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+
+  const ls = new LightSet();
+  const h = ls.add({ x: 1.5, y: 1.5, z: 1.2, hue: [1, 1, 1], intensity: 1, radius: 5, on: true });
+  ls.update(0, world); // seeds the LVIS box for radius 5
+  const w5 = ls.visW[h];
+  ok('precondition: vis box sized for radius 5', w5 === 2 * Math.ceil(5) + 1, String(w5));
+
+  ls.setParams(h, { radius: 10 }); // stays under MAX_VIS_RADIUS (16), so no box-size clamp to worry about
+  ls.update(0, world); // one update() call, as the AC asks
+  const w10 = ls.visW[h];
+  ok('setParams radius change: visW changed to match the new radius after one update()', w10 !== w5, `w5=${w5} w10=${w10}`);
+  ok('setParams radius change: visW matches the new radius exactly', w10 === 2 * Math.ceil(10) + 1, String(w10));
+
+  // Setting the SAME radius again must not be treated as a change (no
+  // spurious invalidation - not required by the AC, but cheap to check).
+  const keyXBefore = ls._visKeyX[h];
+  ls.setParams(h, { radius: 10 });
+  ok('setParams with the SAME radius does not re-invalidate the vis key', ls._visKeyX[h] === keyXBefore);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILED:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }
 else console.log('ALL PASS');

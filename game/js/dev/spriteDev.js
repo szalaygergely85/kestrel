@@ -10,8 +10,11 @@
 //   sprites.render(fb, engine.world, cam);   // in render(), right after renderWorld(...), before rt.present()
 //   extra += sprites.overlayLine();          // F3 overlay (optional)
 import {
-  buildSpriteAtlas, SpritePool, GpuSpritePass, drawSprites, runSpriteCompare, ambientL,
+  buildSpriteAtlas, SpritePool, GpuSpritePass, drawSprites, ambientL,
 } from '../../../engine/index.js';
+// runSpriteCompare is a dev-only parity harness (US-047 two-tier split) -
+// engine/dev.js, not the stable engine/index.js surface.
+import { runSpriteCompare } from '../../../engine/dev.js';
 
 export function createSpriteSystem({ assets, rt, gpuPipeline }) {
   const atlas = buildSpriteAtlas(assets, assets.palette);

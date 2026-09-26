@@ -1,15 +1,20 @@
-// engine/ui/uiDraw.perf.test.js (BUG-PERF-001 (c), docs/backlog.md row 25w,
-// PC-B QUEUE 3 item 3). Headless Node ESM, no framework.
-// Run: node engine/ui/uiDraw.perf.test.js
-// Allocation check: node --expose-gc engine/ui/uiDraw.perf.test.js
+// tools/perf/uiDraw.perf.test.mjs (BUG-PERF-001 (c), docs/backlog.md row 25w,
+// PC-B QUEUE 3 items 3 and 6b). Headless Node ESM, no framework.
+// Run: node tools/perf/uiDraw.perf.test.mjs
+// Allocation check: node --expose-gc tools/perf/uiDraw.perf.test.mjs
 //
-// Lives under engine/ui/ (rather than game/js/ui/) so this test-only probe
-// can import game/js/quest/hints.js directly for the real hint step/draw
-// functions without tripping check-deps.mjs's rule 3 ("game/tools must
-// import exactly engine/index.js" - game/**/*.js test files are NOT exempt
-// from that rule, unlike engine/**/*.test.js, which check-deps skips
-// entirely as "not engine API surface"). It still exercises exactly the
-// engine/ui/* + game/js/quest/hints.js code this row's file list covers.
+// Moved here from engine/ui/uiDraw.perf.test.js (item 6b fix pass): engine/
+// must never import from game/ - even a test-only probe - and this one
+// imports game/js/quest/hints.js directly for the real hint step/draw
+// functions. `engine/**/*.test.js` is exempt from check-deps's engine-import
+// scan, but living inside engine/ui/ at all was the actual boundary
+// violation, so the file moved out to tools/perf/ instead (tools/**, other
+// than tools/editor/**, has no such restriction against importing game/).
+// Engine access goes through the stable engine/index.js surface plus
+// engine/dev.js for CellBuffer (a dev/perf-only need, not a stable-client
+// dependency) - both allowed for tools/** per check-deps rule 7. It still
+// exercises exactly the engine/ui/* + game/js/quest/hints.js code this row's
+// file list covers.
 //
 // Reproduces the EXACT frame this row's AC names: "the ground-floor frame
 // (hint + crosshair + a card)" - a hint on screen (with its plate dim),
@@ -40,11 +45,11 @@
 import { performance } from 'node:perf_hooks';
 import { AssetRegistry, createUiLayer, createFadeLut, createSceneDim,
   resetSceneDim, applySceneDim, drawCrosshair, buildPanelArt, createPanel, drawPanel,
-} from '../index.js';
-import { CellBuffer } from '../render/CellBuffer.js';
+} from '../../engine/index.js';
+import { CellBuffer } from '../../engine/dev.js';
 import paletteMod from '../../design/palette.js';
 import titleMod from '../../design/models/title.js';
-import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { loadTestAssets } from '../testing/content-node.mjs';
 import { setPaletteColors, request as requestHint, resetHints, stepHints, drawHints, pushHintDim } from '../../game/js/quest/hints.js';
 
 paletteMod; titleMod; // classic scripts: side effects on globalThis.ASSETS (uiStyle, models.mapCard, palette)
