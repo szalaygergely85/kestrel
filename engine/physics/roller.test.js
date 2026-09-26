@@ -15,14 +15,11 @@ import { World } from '../world/World.js';
 import { moveCapsule } from './capsule.js';
 import { stepRollers, resolveBodyContacts, rollFrame } from './roller.js';
 import { PHYSICS } from './config.js';
+import { makeOk, approxEqual } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
-function approxEqual(a, b, eps = 1e-3) { return Math.abs(a - b) <= eps; }
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- a small synthetic level (14x10), open floor/sky ceiling everywhere
 // except the border and one obstacle 'o', a tiny 0.01 m rise 'r' and a pit

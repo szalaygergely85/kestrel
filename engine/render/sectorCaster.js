@@ -52,6 +52,7 @@
 import { OpenSpans } from './OpenSpans.js';
 import { fastShade, fastShadeSky, primeFastShadeFrame } from './fastShade.js';
 import { packPlaneId, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from './GBuffer.js';
+import { clampByte } from '../core/math.js';
 
 // US-028: kind codes the G-buffer path writes at each of this module's
 // existing shading call sites (docs/backlog.md tech notes item 2/3). Only
@@ -206,11 +207,6 @@ export function primeAmbientLight(P) {
   ambientL[0] = hue[0] * amb.intensity;
   ambientL[1] = hue[1] * amb.intensity;
   ambientL[2] = hue[2] * amb.intensity;
-}
-
-function clampByte(v) {
-  v = Math.round(v);
-  return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
 // Shades (mat, u, v, dist, z) through whichever shader this frame is using

@@ -1,3 +1,4 @@
+import { makeOk } from '../../engine/test/assert.js';
 // tools/editor/commands.test.mjs - US-032 S4 (docs/architecture.md 24.13).
 // Plain Node ESM, no framework. Run with `node tools/editor/commands.test.mjs`.
 import {
@@ -9,14 +10,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function deepEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);

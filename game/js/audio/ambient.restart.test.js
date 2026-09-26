@@ -26,6 +26,7 @@ import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 // US-027b: tower moved to content/levels/tower.level.json.
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
+import { makeOk } from '../../../engine/test/assert.js';
 paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
 
 import {
@@ -35,10 +36,7 @@ import {
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---------------------------------------------------------------------------
 // 1. Level-data derivation: real tower level, no origin offset (adhoc bare

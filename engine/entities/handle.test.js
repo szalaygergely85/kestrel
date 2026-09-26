@@ -1,13 +1,11 @@
 // engine/entities/handle.test.js (US-025, docs/architecture.md 10.1).
 // Headless Node ESM, no framework. Run: node engine/entities/handle.test.js
 import { World } from '../world/World.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function freshWorld() {
   const w = new World();

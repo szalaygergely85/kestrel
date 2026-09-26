@@ -1,13 +1,11 @@
 // engine/ui/uiLayer.test.js (OWN-REQ-003). Headless Node ESM, no framework.
 // Run: node engine/ui/uiLayer.test.js
 import { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './uiLayer.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- clampUiCols ----
 {

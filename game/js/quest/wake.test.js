@@ -1,13 +1,11 @@
 // game/js/quest/wake.test.js (US-015). Headless Node ESM, no framework.
 // Run: node game/js/quest/wake.test.js
 import { wakeFrame } from './wake.js';
+import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 
 const cfg = { blackSec: 1.0, riseSec: 1.2, blinkCurve: [[0, 0], [0.6, 0.6], [0.9, 0.25], [1.5, 1.0]], titleIn: 1, titleHold: 3, titleOut: 1, startEyeH: 0.3, bodyEyeH: 1.6 };

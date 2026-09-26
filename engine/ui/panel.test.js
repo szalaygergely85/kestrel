@@ -2,13 +2,11 @@
 // Run: node engine/ui/panel.test.js
 import { buildPanelArt, createPanel, drawPanel, Panel } from './panel.js';
 import { createSceneDim, resetSceneDim } from './sceneDim.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const palette = { colors: { red: '#ff0000', blue: '#0000ff' } };
 const model = {

@@ -26,6 +26,7 @@
 import { PHYSICS } from '../physics/config.js';
 import { moveCapsule, sectorOrOutside } from '../physics/capsule.js';
 import { createEyeFeel, updateEyeFeel } from './EyeFeel.js';
+import { clamp, approach } from '../core/math.js';
 
 // Module-level scratch, built once from PHYSICS (architecture.md section 9:
 // no per-step allocations). `moveCapsule`'s `opts` never changes at runtime
@@ -263,17 +264,6 @@ export class Player {
       pitchDeg: this.pitchDeg,
     };
   }
-}
-
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-// Move `value` toward `target` by at most `maxDelta` (sign-aware) - a
-// constant-rate ramp, so a constant `rate` produces an exact "time to reach
-// target" of target/rate seconds when starting from (or going to) 0.
-function approach(value, target, maxDelta) {
-  const diff = target - value;
-  if (Math.abs(diff) <= maxDelta || maxDelta <= 0) return target;
-  return value + Math.sign(diff) * maxDelta;
 }
 
 // ---------------------------------------------------------------------

@@ -2,13 +2,11 @@
 // no framework - same style as game/js/ui/titleCard.test.js.
 // Run: node game/js/settings/options.test.js
 import { OPTIONS, GRID_VALUES, ULTRA_GRID_VALUES, findOption, getDefaultValues, stepOptionValue, isValidValue } from './options.js';
+import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- shape (US-038 AC "Data-driven") ----
 for (const o of OPTIONS) {

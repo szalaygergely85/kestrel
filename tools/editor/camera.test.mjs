@@ -5,23 +5,15 @@
 //   node tools/editor/camera.test.mjs
 
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
+import { makeOk, approxEqual as approxEqualCore } from '../../engine/test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-function approxEqual(a, b, eps = 1e-9) {
-  return Math.abs(a - b) <= eps;
-}
+function approxEqual(a, b, eps = 1e-9) { return approxEqualCore(a, b, eps); }
 
 // A fake Input: only `isDown(code)` is used by updateCamera (24.5's own
 // signature note - it accepts anything with that shape).

@@ -3,13 +3,11 @@
 // Covers `validateBehaviours` over a fake world shape (no game code, no
 // content pack - the engine never knows the names, so these are made up).
 import { registerBehaviour, unregisterBehaviour, getBehaviour, validateBehaviours, listBehaviours } from './behaviours.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function fakeWorld(defs) {

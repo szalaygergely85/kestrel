@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringifyContent } from './stringify.js';
+import { makeOk } from '../test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = path.join(__dirname, 'fixtures', 'golden.level.json');
@@ -15,10 +16,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // A small but representative level: an ordered map (legend), a top-level
 // string array (rows, the grid), a nested string array (layers[].rows,

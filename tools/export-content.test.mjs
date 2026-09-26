@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildContent, writeContent, runClassicScripts } from './export-content.mjs';
 import { loadContentPack, AssetRegistry } from '../engine/index.js';
+import { makeOk } from '../engine/test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -56,10 +57,7 @@ function sameData(a, b) {
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // --- 1. pure buildContent() is deterministic: two in-process calls give the
 // exact same strings (no id-minting/counter side effects survive a call) ---

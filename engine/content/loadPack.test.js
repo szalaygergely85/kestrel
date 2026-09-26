@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadContentPack, globalId } from './loadPack.js';
+import { makeOk } from '../test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACK_MANIFEST = pathToFileURL(path.join(__dirname, 'fixtures', 'pack', 'manifest.json')).href;
@@ -15,10 +16,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function nodeFetchText(u) {
   return readFile(new URL(u), 'utf8');

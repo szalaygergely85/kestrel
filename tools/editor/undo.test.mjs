@@ -1,19 +1,13 @@
 // tools/editor/undo.test.mjs - US-032 S4 (docs/architecture.md 24.13).
 // Plain Node ESM, no framework. Run with `node tools/editor/undo.test.mjs`.
 import { createStack } from './undo.js';
+import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- basic push/undo/redo --------------------------------------------------
 {

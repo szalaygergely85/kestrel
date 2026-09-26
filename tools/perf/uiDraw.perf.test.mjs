@@ -51,16 +51,14 @@ import paletteMod from '../../design/palette.js';
 import titleMod from '../../design/models/title.js';
 import { loadTestAssets } from '../testing/content-node.mjs';
 import { setPaletteColors, request as requestHint, resetHints, stepHints, drawHints, pushHintDim } from '../../game/js/quest/hints.js';
+import { makeOk } from '../test/assert.js';
 
 paletteMod; titleMod; // classic scripts: side effects on globalThis.ASSETS (uiStyle, models.mapCard, palette)
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const P = assets.palette;
 setPaletteColors(assets.uiStyle, P.colors);

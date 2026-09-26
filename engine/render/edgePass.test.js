@@ -7,6 +7,7 @@
 import { GBuffer, KIND_MODEL, KIND_WALL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from './GBuffer.js';
 import { edgePass, RULE_CAP, RULE_SIDE } from './edgePass.js';
 import detailPassMod from '../../design/detail-pass.js';
+import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 detailPassMod;
@@ -14,9 +15,7 @@ const DP = globalThis.ASSETS.detailPass;
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++; else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const COLS = 3, ROWS = 3;
 

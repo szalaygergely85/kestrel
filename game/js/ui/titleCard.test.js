@@ -1,13 +1,11 @@
 // game/js/ui/titleCard.test.js (US-015). Headless Node ESM, no framework.
 // Run: node game/js/ui/titleCard.test.js
 import { initTitleCard, drawTitleCard } from './titleCard.js';
+import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const titleModel = {
   size: { w: 6, h: 1 }, keys: { h: { c: 'hot' } },

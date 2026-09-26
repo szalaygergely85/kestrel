@@ -20,6 +20,7 @@ import relayMod from '../../design/models/relay.js';
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import terrainDef from '../../design/levels/overworld_far.js';
+import { makeOk } from '../../engine/test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
@@ -31,10 +32,7 @@ const { assets: realAssets } = await loadTestAssets();
 let pass = 0;
 let fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 function approxArr(a, b, eps = 1e-6) {
   return a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
 }

@@ -30,6 +30,7 @@ import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import titleMod from '../../design/models/title.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod;
@@ -38,10 +39,7 @@ const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const P = PHYSICS_DEFAULTS;
 const DT = P.fixedDt;

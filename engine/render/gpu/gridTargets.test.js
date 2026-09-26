@@ -6,13 +6,11 @@
 //   node engine/render/gpu/gridTargets.test.js
 
 import { allocGridTargets, freeGridTargets, computeGridLimits } from './gridTargets.js';
+import { makeOk } from '../../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- mock gl: create*/delete* count live objects; everything else is a
 // no-op; any ALL_CAPS property name is treated as a GL constant (a stable

@@ -24,16 +24,14 @@ import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
+import { makeOk } from '../../../engine/test/assert.js';
 
 paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const P = PHYSICS_DEFAULTS;
 const DT = P.fixedDt;

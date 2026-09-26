@@ -11,13 +11,11 @@
 // models" comment for a real example of a check that started out too
 // strict before this fixture existed).
 import { validateContent } from './validate-content.mjs';
+import { makeOk } from '../engine/test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 function hasFinding(errors, substrings) {
   return errors.some((e) => substrings.every((s) => e.includes(s)));
 }

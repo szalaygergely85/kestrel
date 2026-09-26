@@ -12,13 +12,11 @@ import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
+import { makeOk } from '../../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const HASH_CONSTANTS = ['0x27d4eb2d', '0x165667b1', '0x9e3779b1', '0x85ebca6b', '0xc2b2ae35'];
 

@@ -10,13 +10,11 @@
 import { World } from '../world/World.js';
 import { AssetRegistry } from '../core/assets.js';
 import { stepAnimations, compileClip, compileVoxelClip, animComponent } from './animation.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const palette = { rgb: { x: [1, 1, 1] }, util: { validate: () => [] } };
 const model = {

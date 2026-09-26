@@ -11,19 +11,13 @@
 // `document.hidden` (Loop's only globals) so the whole tick can be driven
 // by hand, one fake "frame" at a time, with a controlled interval and a
 // controlled amount of CPU work spent inside update()/render().
+import { makeOk } from '../test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- fake clock + rAF -----------------------------------------------------
 let fakeNow = 0;

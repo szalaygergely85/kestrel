@@ -13,19 +13,13 @@
 // result is dropped rather than pushed into the history.
 
 import { GpuPassTimer } from './GpuTimer.js';
+import { makeOk } from '../../test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function makeFakeGl() {
   let nextQueryId = 1;

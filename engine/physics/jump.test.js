@@ -31,6 +31,7 @@ import { PHYSICS } from './config.js';
 import { isSectorPassable } from './capsule.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk, approxEqual } from '../test/assert.js';
 const { bundle } = await loadTestAssets();
 const testRoomDef = bundle.levels.test_room;
 
@@ -40,18 +41,8 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-function approxEqual(a, b, eps = 1e-3) {
-  return Math.abs(a - b) <= eps;
-}
 
 // Synthetic level for the unit-style cases (kinematics, buffer/coyote, air
 // control, flat head-clearance) - independent of test_room's exact layout.

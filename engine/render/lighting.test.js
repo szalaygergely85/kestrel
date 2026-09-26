@@ -15,6 +15,7 @@ import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 // US-041a (15.3 item 3): face-7 (FACE_PACKED) decode test fixtures.
 import { KIND_MODEL, KIND_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
+import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod;
@@ -22,10 +23,7 @@ await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
 
 // --- falloff: 0 at/after radius, continuous, decreasing -------------------

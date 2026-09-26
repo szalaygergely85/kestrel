@@ -1,3 +1,4 @@
+import { makeOk } from '../../../engine/test/assert.js';
 // game/js/ui/settings.test.js (US-038b, docs/backlog.md row 30f). Headless
 // Node ESM, no framework - same style as titleCard.test.js/mapCard.test.js.
 // Run: node game/js/ui/settings.test.js
@@ -29,10 +30,7 @@ const { setMuted } = await import('../audio/synth.js');
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function fakeInput() {
   let pressedSet = new Set();

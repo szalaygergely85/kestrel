@@ -10,6 +10,7 @@ import { EntityHandle } from '../entities/EntityHandle.js';
 import { EventRing } from '../entities/eventRing.js';
 import { getBehaviour, validateBehaviours } from '../core/behaviours.js';
 import { buildTriggers } from './triggers.js';
+import { clamp01 } from '../core/math.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -20,7 +21,6 @@ const SOLID_OUTSIDE = Object.freeze({
   solid: true, topH: 'sky', upperMat: 'stone',
 });
 
-function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
 function ease(kind, t) {
   if (kind === 'inOut') return t * t * (3 - 2 * t); // smoothstep
   return t; // linear (default)

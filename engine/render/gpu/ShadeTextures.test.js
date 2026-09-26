@@ -9,6 +9,7 @@ import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import paletteModule from '../../../design/palette.js';
 import detailPassModule from '../../../design/detail-pass.js';
 import { loadLevel } from '../../world/Level.js';
+import { makeOk } from '../../test/assert.js';
 import {
   packMaterialTable, unpackSetEntry, unpackMatF, unpackMatI,
   MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH,
@@ -21,10 +22,7 @@ const testRoomDef = bundle.levels.test_room;
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 function closeEnough(a, b, eps = 1e-4) { return Math.abs(a - b) <= eps; }
 
 const level = loadLevel(testRoomDef);

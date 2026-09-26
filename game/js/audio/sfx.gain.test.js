@@ -17,19 +17,13 @@
 // failures otherwise.
 import { GAIN_DESIGNS, MUTUALLY_EXCLUSIVE_GROUPS } from './sfx.js';
 import { MASTER_GAIN } from './synth.js';
+import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // Sum of a design's own component peaks (e.g. lever's tone + noise, both
 // always fired together from the same call - see playLeverClunk).

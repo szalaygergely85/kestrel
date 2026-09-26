@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { AssetRegistry } from './assets.js';
 import { loadContentPack } from '../content/loadPack.js';
+import { makeOk } from '../test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACK_MANIFEST = pathToFileURL(path.join(__dirname, '..', 'content', 'fixtures', 'pack', 'manifest.json')).href;
@@ -16,10 +17,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function deepEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);

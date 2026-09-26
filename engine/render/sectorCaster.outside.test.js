@@ -13,13 +13,11 @@ import { loadLevel } from '../world/Level.js';
 import { castScene, HFOV_DEG } from './sectorCaster.js';
 import { GBuffer, KIND_WALL, KIND_STEP, KIND_FLOOR } from './GBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const sector = (floorH, solid) => ({ floorH, ceilH: 'sky', wallMat: 'stone', floorMat: 'stone', ceilMat: 'sky', solid: !!solid });
 const legend = { '.': sector(2.0, false), '#': sector(6.0, true), 'o': sector(0.0, false) };

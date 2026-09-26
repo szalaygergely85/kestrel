@@ -6,13 +6,11 @@
 // gain curve, applySceneFade leaves mask cells alone, no allocation.
 import { createFadeLut, fadeGlyph, applySceneFade, clearMaskForSceneFade } from './fade.js';
 import { CellBuffer } from '../render/CellBuffer.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // A 10-step ramp (index 0 = space = darkest, index 9 = '@' = brightest),
 // same shape/convention as design/palette.js's real ramps.

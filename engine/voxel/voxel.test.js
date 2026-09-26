@@ -17,23 +17,15 @@ import { packNormalOct, unpackNormalOct } from './octNormal.js';
 import { GBuffer } from '../render/GBuffer.js';
 import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from '../render/GBuffer.js';
 import quadruped12 from './fixtures/quadruped12.js';
+import { makeOk, approxEqual as approxEqualCore } from '../test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-function approxEqual(a, b, eps = 1e-6) {
-  return Math.abs(a - b) <= eps;
-}
+function approxEqual(a, b, eps = 1e-6) { return approxEqualCore(a, b, eps); }
 
 function clone(def) {
   return JSON.parse(JSON.stringify(def));

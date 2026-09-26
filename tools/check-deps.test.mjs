@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { makeOk } from '../engine/test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CHECKER = path.join(__dirname, 'check-deps.mjs');
@@ -20,14 +21,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function writeFile(root, rel, content) {
   const full = path.join(root, rel);
@@ -59,9 +53,15 @@ writeFile(tmp, 'tools/bench-good7.mjs', `import { DEV_OK } from '../engine/dev.j
 writeFile(tmp, 'game/js/quest/bad7.js', `import { DEV_OK } from '../../../engine/dev.js';\nexport const u = DEV_OK;\n`);
 writeFile(tmp, 'game/js/ui/bad7b.js', `import { DEV_OK } from '../../../engine/dev.js';\nexport const v = DEV_OK;\n`);
 writeFile(tmp, 'tools/editor/bad7c.js', `import { DEV_OK } from '../../engine/dev.js';\nexport const x = DEV_OK;\n`);
+// Rule 8 (US-050): a *.test.js/*.test.mjs file may import engine/test/assert.js
+// (including inside tools/editor/**) - a non-test file may NOT.
+writeFile(tmp, 'game/js/quest/good8.test.js', `import { makeOk } from '../../../engine/test/assert.js';\nexport const ok8 = makeOk;\n`);
+writeFile(tmp, 'tools/editor/good8.test.mjs', `import { makeOk } from '../../engine/test/assert.js';\nexport const ok8b = makeOk;\n`);
+writeFile(tmp, 'game/js/quest/bad8.js', `import { makeOk } from '../../../engine/test/assert.js';\nexport const ok8c = makeOk;\n`);
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
+writeFile(tmp, 'engine/test/assert.js', `export function makeOk() {}\n`);
 writeFile(tmp, 'game/js/good.js', `import { OK } from '../../engine/index.js';\nexport const w = OK;\n`);
 writeFile(tmp, 'tools/editor/good.js', `import { OK } from '../../engine/index.js';\nexport const p = OK;\n`);
 
@@ -88,6 +88,9 @@ ok('rule 7: dev.js import from tools/** (outside editor) NOT flagged', !/bench-g
 ok('rule 7: dev.js import from game/js/quest/** flagged', /bad7\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
 ok('rule 7: dev.js import from game/js/ui/** flagged', /bad7b\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
 ok('rule 7: dev.js import from tools/editor/** flagged', /bad7c\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
+ok('rule 8: engine/test/assert.js import from a game .test.js NOT flagged', !/good8\.test\.js/.test(output), output);
+ok('rule 8: engine/test/assert.js import from a tools/editor .test.mjs NOT flagged', !/good8\.test\.mjs/.test(output), output);
+ok('rule 8: engine/test/assert.js import from a non-test file flagged', /bad8\.js.*deep import/.test(output), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -1,3 +1,4 @@
+import { makeOk } from '../test/assert.js';
 // engine/ui/debugOverlay.test.js
 //
 // Headless test suite for US-018 (docs/architecture.md section 16) step 3:
@@ -33,14 +34,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const { DebugOverlay } = await import('./debugOverlay.js');
 

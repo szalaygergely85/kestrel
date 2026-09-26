@@ -16,6 +16,7 @@ import { PHYSICS } from './config.js';
 import { isSectorPassable, moveCapsule, sectorOrOutside } from './capsule.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk, approxEqual } from '../test/assert.js';
 const { bundle } = await loadTestAssets();
 const testRoomDef = bundle.levels.test_room;
 
@@ -29,18 +30,8 @@ const failures = [];
 // each call, before the next one overwrites it.
 const moveOut = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0 };
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-function approxEqual(a, b, eps = 1e-3) {
-  return Math.abs(a - b) <= eps;
-}
 
 // A tiny synthetic level, built with loadLevel like any other, so tests are
 // exact and don't depend on test_room's exact layout for the basics.

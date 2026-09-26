@@ -8,19 +8,13 @@
 //   node engine/core/grid.test.js
 
 import { clampGrid, GRID_DEFAULT_COLS, GRID_MIN_COLS, GRID_MAX_COLS, GRID_ASPECT } from './engine.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- below the minimum clamps up to 160x60 --------------------------------
 {

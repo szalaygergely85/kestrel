@@ -8,19 +8,13 @@ import {
   classifyPlacement, listPlaceableModels, filterModelKeys,
 } from './panel.js';
 import { registerBehaviour, unregisterBehaviour } from '../../engine/index.js';
+import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- isValidId --------------------------------------------------------------
 ok('isValidId: accepts letter-start alnum/_/-', isValidId('prop_7') && isValidId('a') && isValidId('A-b_9'));

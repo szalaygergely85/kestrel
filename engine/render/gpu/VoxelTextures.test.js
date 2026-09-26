@@ -11,13 +11,11 @@ import { computeVoxelPose } from '../../voxel/voxelPose.js';
 import { VoxelPool } from '../voxelPool.js';
 import { buildVoxelAtlas, writeInstanceRows, VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE } from './VoxelTextures.js';
 import quadruped12 from '../../voxel/fixtures/quadruped12.js';
+import { makeOk } from '../../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const MAT_IDS = { mat_a: 1, mat_b: 2, mat_c: 3 };
 const table = { idFor: (k) => MAT_IDS[k] };

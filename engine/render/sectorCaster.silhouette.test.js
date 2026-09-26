@@ -32,6 +32,7 @@ import { bindShading, bindLevel } from './MaterialTable.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod;
@@ -40,10 +41,7 @@ const VERBOSE = process.argv.includes('--verbose');
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // Owner's grid: 400x150 (GPU) - the CPU caster is the twin, same projection.
 const COLS = 400, ROWS = 150, PXW = 9, PXH = 16;

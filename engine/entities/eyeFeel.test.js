@@ -17,23 +17,14 @@ import { createEyeFeel, updateEyeFeel } from './EyeFeel.js';
 import { PHYSICS } from '../physics/config.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk, approxEqual } from '../test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-function approxEqual(a, b, eps = 1e-3) {
-  return Math.abs(a - b) <= eps;
-}
 
 const { bundle } = await loadTestAssets();
 const testRoom = loadLevel(bundle.levels.test_room);

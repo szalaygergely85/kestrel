@@ -14,16 +14,14 @@ import { World, serialize, deserialize } from '../index.js';
 import paletteMod from '../../design/palette.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk } from '../test/assert.js';
 
 paletteMod; // classic script: side effect on globalThis.ASSETS
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---------------------------------------------------------------------------
 // Inline fixture: a "world" with just the surface interaction.js reads.

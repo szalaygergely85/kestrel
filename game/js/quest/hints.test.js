@@ -2,13 +2,11 @@
 // Headless Node ESM, no framework. Run: node game/js/quest/hints.test.js
 import { request, markDone, stepHints, resetHints, drawHints, pushHintDim, setPaletteColors, currentHintId } from './hints.js';
 import { createSceneDim, resetSceneDim } from '../../../engine/index.js';
+import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function makeUiStyle() {
   const s = {

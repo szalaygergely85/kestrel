@@ -11,12 +11,11 @@ import { castModels } from '../voxel/voxelMarch.js';
 import { GBuffer, KIND_MODEL } from './GBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import quadruped12 from '../voxel/fixtures/quadruped12.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++; else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ---- fake registry + material table (mirrors MaterialTable.bindShading's idFor shape) ----
 const registry = {

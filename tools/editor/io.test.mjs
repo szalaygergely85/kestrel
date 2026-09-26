@@ -9,14 +9,12 @@ import { stringifyContent, migrateContent, ContentError } from '../../engine/ind
 import { toFileObject, validateDoc, anyDirty } from './io.js';
 import { fileKey } from './doc.js';
 import { createVisibilityState, setHiddenFlag, setLockedFlag } from './visibility.js';
+import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // A tiny, valid level (a 3x3 room) - just enough for `loadLevel`/
 // `World.placeStructure` to accept it (rectangular rows, a fully-specified

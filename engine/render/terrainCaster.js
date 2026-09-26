@@ -17,6 +17,7 @@ import { HFOV_DEG } from './sectorCaster.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
 import { shadeTerrain, makeTerrainShadeCtx, hashFast01 } from './terrainShade.js';
 import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
+import { clampByte } from '../core/math.js';
 
 export const FOG_FULL = 1500;
 export const T_START = 0.5;
@@ -461,6 +462,3 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0) {
   }
 }
 
-function clampByte(v) {
-  return v < 0 ? 0 : v > 255 ? 255 : Math.floor(v + 0.5);
-}

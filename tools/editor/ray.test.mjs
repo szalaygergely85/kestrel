@@ -5,23 +5,15 @@ import {
   KIND_NONE, KIND_WALL,
 } from './ray.js';
 import { KIND_TERRAIN, KIND_MODEL } from '../../engine/index.js';
+import { makeOk, approxEqual as approxEqualCore } from '../../engine/test/assert.js';
 
 let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-function approxEqual(a, b, eps = 1e-6) {
-  return Math.abs(a - b) <= eps;
-}
+function approxEqual(a, b, eps = 1e-6) { return approxEqualCore(a, b, eps); }
 
 const COLS = 240, ROWS = 90, PX_W = 8, PX_H = 16;
 

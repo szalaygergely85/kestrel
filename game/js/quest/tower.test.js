@@ -36,16 +36,14 @@ import terrainMod from '../../../design/levels/overworld_far.js';
 // the new 'stone'/'boundsEdge' entries) - needed for the section 2b check below.
 import titleMod from '../../../design/models/title.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
+import { makeOk } from '../../../engine/test/assert.js';
 
 paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; titleMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 // US-014 helpers (generic over any `Level`, unlike section 7's `cellsWhere`/`cellSector` which close over the shared `L`).
 function cellsForZoneWhere(level, pred) {

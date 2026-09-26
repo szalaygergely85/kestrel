@@ -1,13 +1,11 @@
 // game/js/quest/mapCard.test.js (US-015, docs/architecture.md 7.6 item 9).
 // Headless Node ESM, no framework. Run: node game/js/quest/mapCard.test.js
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './mapCard.js';
+import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const model = {
   size: { w: 5, h: 3 }, keys: {},

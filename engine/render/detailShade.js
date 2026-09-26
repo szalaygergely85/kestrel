@@ -23,6 +23,7 @@
 
 import { fastShade, samplePowLUT } from './fastShade.js';
 import { KIND_MODEL, FACE_PACKED } from './GBuffer.js';
+import { clamp01, clampByte } from '../core/math.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -69,7 +70,6 @@ function orientClassFast(cx, cy, cellAspect) {
 // twin (`engine/render/gpu/glsl/common.js`'s `qfloor`, same epsilon).
 function qfloor(x) { return Math.floor(x + (1 / 256)); }
 
-function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 function smoothstepFast(a, b, x) { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
 function coverFast(cx, cy) { return Math.abs(cx) + Math.abs(cy); }
 function bandFactorFast(band, z) {
@@ -282,11 +282,6 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   out.b = b;
   out.f = f;
   return out;
-}
-
-function clampByte(v) {
-  v = Math.round(v);
-  return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
 // ===========================================================================

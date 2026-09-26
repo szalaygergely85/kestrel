@@ -4,13 +4,11 @@
 // `attachedLightPos` is pure (architect tech note 6): offset at yaw
 // 0/90/180, sway bounded by `amp`.
 import { attachedLightPos } from './attach.js';
+import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 function entityAt(x, y, z, yawDeg, light) {

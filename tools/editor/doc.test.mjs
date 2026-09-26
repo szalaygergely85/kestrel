@@ -1,3 +1,4 @@
+import { makeOk } from '../../engine/test/assert.js';
 // tools/editor/doc.test.mjs - US-031 (docs/architecture.md 24.13 S1).
 // Plain Node ESM, no test framework, no build step - matches
 // engine/core/playerLook.test.js / engine/core/loop.test.js. Run with:
@@ -13,14 +14,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) {
-    pass++;
-  } else {
-    fail++;
-    failures.push(`${name}${detail ? ' - ' + detail : ''}`);
-  }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // A minimal fake AssetRegistry: only `keys('level'|'world')`/`level(id)`/
 // `world(id)` are used by `createDoc` - this test exercises doc.js's own

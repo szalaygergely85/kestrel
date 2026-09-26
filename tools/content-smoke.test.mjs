@@ -60,6 +60,7 @@ import '../design/levels/overworld_far.js'; // terrain RECIPE, still a design/ c
 // "triggers reference existing behaviours" check below runs against the
 // REAL registrations the game itself uses, not a fixture.
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
+import { makeOk } from '../engine/test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -68,10 +69,7 @@ const CONTENT_DIR = path.join(ROOT, 'content');
 let pass = 0;
 let fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 /** Runs `fn()` with `console.warn`/`console.error` captured instead of
  * printed; returns `{ result, threw, error, warnings }` (warnings holds

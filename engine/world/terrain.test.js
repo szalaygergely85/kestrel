@@ -2,6 +2,7 @@
 // Run: node engine/world/terrain.test.js
 import { Terrain } from './Terrain.js';
 import terrainDef from '../../design/levels/overworld_far.js';
+import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 terrainDef; // runs the IIFE, sets window.ASSETS.levels.overworld_far
@@ -9,10 +10,7 @@ const recipe = globalThis.ASSETS.levels.overworld_far;
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // --- bakeFarSync checksum == bakeFarStep run to completion ----------------
 const a = new Terrain(recipe);

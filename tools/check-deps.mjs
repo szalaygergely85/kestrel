@@ -28,7 +28,11 @@
 //      tools/editor/** - everywhere else (game/js/quest/**, game/js/ui/**,
 //      tools/editor/**) it is a finding: those get only the stable
 //      engine/index.js surface.
-//   8. success message as above.
+//   8. game/**/*.test.js|*.test.mjs and tools/**/*.test.js|*.test.mjs may
+//      import exactly engine/test/assert.js (US-050 shared test kit), in
+//      addition to engine/index.js - this is the one deep-import exception
+//      that also applies inside tools/editor/**'s own tests.
+//   9. success message as above.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -181,8 +185,13 @@ function checkConsumerFile(file, src) {
       const normalized = resolved.replace(/\\/g, '/');
       const indexPath = path.join(ENGINE_DIR, 'index.js').replace(/\\/g, '/');
       const devPath = path.join(ENGINE_DIR, 'dev.js').replace(/\\/g, '/');
+      const testAssertPath = path.join(ENGINE_DIR, 'test', 'assert.js').replace(/\\/g, '/');
       if (normalized === indexPath) {
         // OK: the stable surface, open to every game/tools consumer.
+      } else if (normalized === testAssertPath && /\.test\.(js|mjs)$/.test(relPath)) {
+        // Rule 8 (US-050): the shared test-assertion kit, open to every
+        // *.test.js/*.test.mjs file (including tools/editor/**'s tests) -
+        // it is test-only tooling, not part of engine's stable API surface.
       } else if (normalized === devPath) {
         // Rule 7: engine/dev.js is dev-only.
         if (!isDevJsAllowed(file)) {

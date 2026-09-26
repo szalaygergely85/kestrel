@@ -2,6 +2,7 @@
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
 import { compareCells, compareGeometry } from './gpuCompare.js';
+import { makeOk } from '../../test/assert.js';
 
 // f32<->u32 bit-cast helper for building synthetic readbackGeometry() data.
 const _bitBuf = new ArrayBuffer(4);
@@ -11,10 +12,7 @@ function f32Bits(x) { _bitF32[0] = x; return _bitU32[0]; }
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const COLS = 4, ROWS = 4, N = COLS * ROWS;
 

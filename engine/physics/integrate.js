@@ -14,17 +14,9 @@
 //   6. updateEyeFeel (visual only).
 import { moveCapsule, sectorOrOutside } from './capsule.js';
 import { updateEyeFeel } from '../entities/EyeFeel.js';
+import { clamp, approach } from '../core/math.js';
 
 const EPS = 1e-6;
-
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-// Move `value` toward `target` by at most `maxDelta` (sign-aware).
-function approach(value, target, maxDelta) {
-  const diff = target - value;
-  if (Math.abs(diff) <= maxDelta || maxDelta <= 0) return target;
-  return value + Math.sign(diff) * maxDelta;
-}
 
 // Per-body scratch (architecture.md section 9: no per-step allocations) -
 // created once per entity (on first `integrate` call for it) and reused

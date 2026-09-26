@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeOk } from '../engine/test/assert.js';
 import { stringifyContent } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,10 +24,7 @@ let pass = 0;
 let fail = 0;
 const failures = [];
 
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 function lf(text) {
   return text.replace(/\r\n/g, '\n');

@@ -4,6 +4,7 @@ import { loadLevel } from './Level.js';
 import { packLevel, SKY_H } from './packed.js';
 // US-027b: tower/test_room moved to content/levels/*.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk } from '../test/assert.js';
 
 const { globals } = await loadTestAssets();
 const towerRawDef = globals.levels.tower;
@@ -11,10 +12,7 @@ const testRoomRawDef = globals.levels.test_room;
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // Tiny fake MaterialTable: deterministic small ids per key, no allocation
 // per call after the first sighting (same contract as the real one).

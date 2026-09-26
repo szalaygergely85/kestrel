@@ -17,6 +17,7 @@ import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod;
@@ -24,10 +25,7 @@ const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];
-function ok(name, cond, detail) {
-  if (cond) pass++;
-  else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
-}
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const COLS = 40, ROWS = 20;
 
