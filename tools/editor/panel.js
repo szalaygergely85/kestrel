@@ -5,6 +5,7 @@
 //
 // Imports only engine/index.js + doc.js/commands.js (the editor boundary rule).
 import { selectionItemData } from './doc.js';
+import { listBehaviours } from '../../engine/index.js';
 
 /** Place keys (24.9): `1` prop, `2` light, `3` trigger, `4` interactable. */
 export const PLACE_KEYS = { Digit1: 'prop', Digit2: 'light', Digit3: 'trigger', Digit4: 'interactable' };
@@ -34,22 +35,36 @@ export function countLights(doc) {
 }
 
 /**
- * Every behaviour-shaped name found in the loaded content (24.9/24.12 item
- * 5 workaround: no `listBehaviours()` yet). Harvests `interact`/`trigger`
- * fields off every `interactables[]`/`triggers[]` item in `doc`.
+ * Behaviour names to suggest in the interact/trigger field's autocomplete
+ * (24.9). US-069 (24.12 item 5) swapped the old pure-content-scan workaround
+ * for the real `listBehaviours()` API, but keeps the SAME filtering the
+ * workaround had: only names actually used somewhere in `doc`'s content, not
+ * every behaviour the game happens to have registered (a huge, mostly
+ * irrelevant list once real quest behaviours are registered). `main.js`
+ * registers a no-op for exactly the names the loaded world's content
+ * references (`validateBehaviours`, right after `World.load`) before this is
+ * ever called, so in the real editor `listBehaviours()` already IS that same
+ * "used in content" set; scanning `doc` here as well is what keeps this
+ * function correct (and Node-testable without a registry) even when that
+ * isn't true yet, e.g. a name just typed into a field before its next
+ * rebuild re-registers it.
  * @returns {string[]} sorted, de-duplicated
  */
 export function harvestBehaviourNames(doc) {
-  const names = new Set();
+  const used = new Set();
   for (const file of doc.files.values()) {
     for (const it of file.def.interactables || []) {
-      if (typeof it.interact === 'string' && it.interact) names.add(it.interact);
+      if (typeof it.interact === 'string' && it.interact) used.add(it.interact);
     }
     for (const tr of file.def.triggers || []) {
-      if (typeof tr.trigger === 'string' && tr.trigger) names.add(tr.trigger);
+      if (typeof tr.trigger === 'string' && tr.trigger) used.add(tr.trigger);
     }
   }
-  return [...names].sort();
+  const registered = listBehaviours();
+  // No registry yet (e.g. an isolated Node test) - fall back to the raw
+  // content scan so "used in content" is still the answer.
+  if (registered.length === 0) return [...used].sort();
+  return registered.filter((n) => used.has(n)).sort();
 }
 
 /**

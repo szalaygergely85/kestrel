@@ -14,15 +14,20 @@
 // re-places every structure, re-spawns every entity) just to move one prop.
 // `isPatchableRecord` decides whether a given `commands.js` `EditRecord`
 // only touches such fields; `applyPropTransformPatch`/`applyLightPatch` do
-// the actual write. Everything else (add/delete/rename/any other field,
-// e.g. a prop's `model` or a light's `preset`/`radius`-affecting fields -
-// no live setter exists for those, see the US-064 backlog note) still goes
-// through `main.js`'s full `rebuild()`.
+// the actual write. Everything else (add/delete/rename/any other field, e.g.
+// a prop's `model`) still goes through `main.js`'s full `rebuild()`.
+//
+// US-069 (24.12 item 6 / the US-064 backlog note's own documented gap):
+// `LightSet.setParams(handle, {radius, hue, intensity, flicker})` now exists
+// (engine/render/lighting.js), so a light's `preset` edit is patchable too -
+// `applyLightPatch` resolves the new preset through the palette (same
+// `palette.lights[name]` / `palette.hue[preset.color]` rule as
+// `buildLightSet`/`syncEntityLights`) and calls `setParams`.
 
 /** Prop fields patchable straight onto a live entity's `transform` (position + facing). */
 export const PROP_LIVE_FIELDS = new Set(['x', 'y', 'z', 'facing', 'yawDeg']);
-/** Light fields patchable via `LightSet.move`/`LightSet.setOn` (engine/render/lighting.js's own public per-edit mutators). */
-export const LIGHT_LIVE_FIELDS = new Set(['x', 'y', 'z', 'on']);
+/** Light fields patchable via `LightSet.move`/`setOn`/`setParams` (engine/render/lighting.js's own public per-edit mutators). */
+export const LIGHT_LIVE_FIELDS = new Set(['x', 'y', 'z', 'on', 'preset']);
 
 /**
  * Field-value inequality that treats two structurally-equal objects as
@@ -85,23 +90,52 @@ export function applyPropTransformPatch(transform, item, origin, isWorldSpace) {
 }
 
 /**
- * Writes `item`'s x/y/z/on into a live `LightSet` handle via its own public
- * per-edit mutators (`move`/`setOn`, engine/render/lighting.js) - no
- * rebuild. `ls` is duck-typed (`{move(handle,x,y,z), setOn(handle,on)}`) so
- * this is Node-testable with a plain fake, same split as `pick.js`.
- * @param {{move(h:number,x:number,y:number,z:number):void, setOn(h:number,on:boolean):void}} ls
+ * Resolves a light `preset` name to `LightSet.setParams`'s shape via the
+ * palette - the SAME rule `buildLightSet`/`syncEntityLights`
+ * (engine/render/lighting.js) use to resolve a light def at load time:
+ * `radius`/`intensity`/`flicker` come straight off `palette.lights[name]`,
+ * `hue` off `palette.hue[preset.color]`.
+ * @param {Object} palette `assets.palette` (design/palette.js's `P`)
+ * @param {string} presetName
+ * @returns {{radius:number, hue:[number,number,number], intensity:number, flicker:Object|null}|null} null for an unknown preset name
+ */
+export function resolveLightPreset(palette, presetName) {
+  const preset = palette && palette.lights && palette.lights[presetName];
+  if (!preset) return null;
+  return {
+    radius: preset.radius,
+    hue: palette.hue[preset.color],
+    intensity: preset.intensity,
+    flicker: preset.flicker || null,
+  };
+}
+
+/**
+ * Writes `item`'s x/y/z/on/preset into a live `LightSet` handle via its own
+ * public per-edit mutators (`move`/`setOn`/`setParams`,
+ * engine/render/lighting.js) - no rebuild. `ls` is duck-typed
+ * (`{move, setOn, setParams}`) so this is Node-testable with a plain fake,
+ * same split as `pick.js`. `palette` is only needed when `item.preset` is
+ * present (US-069: preset edits now patch live instead of forcing a
+ * rebuild) - omit it for a plain move/toggle.
+ * @param {{move(h:number,x:number,y:number,z:number):void, setOn(h:number,on:boolean):void, setParams?:(h:number,p:Object)=>void}} ls
  * @param {number} handle
  * @param {Object} item the doc item's new (`after`) state
  * @param {{x:number,y:number,z:number}} origin
  * @param {boolean} isWorldSpace
+ * @param {Object} [palette] `assets.palette`, required only for a `preset` edit
  */
-export function applyLightPatch(ls, handle, item, origin, isWorldSpace) {
+export function applyLightPatch(ls, handle, item, origin, isWorldSpace, palette) {
   const wx = isWorldSpace ? item.x : item.x + origin.x;
   const wy = isWorldSpace ? item.y : item.y + origin.y;
   const zLocal = typeof item.z === 'number' ? item.z : 0;
   const wz = isWorldSpace ? zLocal : zLocal + origin.z;
   ls.move(handle, wx, wy, wz);
   if (typeof item.on === 'boolean') ls.setOn(handle, item.on);
+  if (typeof item.preset === 'string' && typeof ls.setParams === 'function') {
+    const params = resolveLightPreset(palette, item.preset);
+    if (params) ls.setParams(handle, params);
+  }
 }
 
 /**

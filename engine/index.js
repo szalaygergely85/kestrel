@@ -43,7 +43,14 @@ export { drawText } from './render/textDraw.js';
 export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';
 
 // ---- US-028 detail pass v2 (G-buffer shading, edge pass) -------------------
-export { GBuffer, KIND_TERRAIN, KIND_MODEL, FACE_PACKED, PLANEID_TERRAIN, packPlaneId } from './render/GBuffer.js';
+// US-069 (architecture.md 24.12 item 4): the full KIND_* range, not just the
+// two callers had needed before the editor - `tools/editor/ray.js` used to
+// hard-code KIND_NONE..KIND_CEIL as a workaround; it now imports the real
+// constants from here.
+export {
+  GBuffer, KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
+  KIND_TERRAIN, KIND_MODEL, FACE_PACKED, PLANEID_TERRAIN, packPlaneId,
+} from './render/GBuffer.js';
 
 // ---- US-039/US-040 voxel models (architecture.md 15.1/15.2) ---------------
 // Exported now (15.2 item 1 supersedes 15.1's "no exports until US-041"):
@@ -108,7 +115,7 @@ export { buildTriggers, updateTriggers } from './world/triggers.js';
 export { createFadeLut, fadeGlyph, applySceneFade, clearMaskForSceneFade } from './ui/fade.js';
 
 // ---- behaviours ---------------------------------------------------------------
-export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTrigger, getBehaviour, validateBehaviours } from './core/behaviours.js';
+export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTrigger, getBehaviour, validateBehaviours, listBehaviours } from './core/behaviours.js';
 
 // ---- not (yet) in the normative API, but exported for main.js's use ---------
 // (check-deps rule 3 forces every game/tools import through this one file;

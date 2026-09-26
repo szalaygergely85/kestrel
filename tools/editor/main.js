@@ -321,7 +321,7 @@ function patchLive(rec) {
     if (!s || !ls) return false;
     const handle = findLightHandle(ls, `${s.id}.${rec.id}`);
     if (handle === -1) return false;
-    applyLightPatch(ls, handle, item, origin, isWorldSpace);
+    applyLightPatch(ls, handle, item, origin, isWorldSpace, assets.palette);
     frame.markDirty();
     return true;
   }
@@ -356,9 +356,10 @@ function rebuild() {
  * EXISTING prop or light - `isPatchableRecord`) skips `World.load` entirely:
  * `patchLive` writes straight into the already-live entity/`LightSet`
  * handle, same as US-032's drag path did for x/y during the drag itself.
- * Add/delete/rename/any other field (a prop's `model`, a light's `preset`
- * and everything that changes it - no live setter exists for those, see the
- * US-064 backlog note) still falls through to the full `rebuild()`.
+ * Add/delete/rename/any other field (a prop's `model` and anything not in
+ * `PROP_LIVE_FIELDS`/`LIGHT_LIVE_FIELDS` - `livepatch.js`; US-069 added a
+ * light's `preset` to that set via `LightSet.setParams`) still falls through
+ * to the full `rebuild()`.
  */
 function commit(rec) {
   applyEdit(doc, rec);
@@ -673,7 +674,7 @@ async function doSave() {
 
 async function doLoad() {
   try {
-    const fid = await loadFile(doc, window.ASSETS);
+    const fid = await loadFile(doc, assets, window.ASSETS);
     if (!fid) { flash('load: cancelled'); return; }
     undoStack.clear();
     selection = null;

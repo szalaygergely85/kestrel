@@ -60,21 +60,33 @@ export function unduckAudio() {
 /**
  * Zeroes the fixed-step accumulator so the frame right after pause ends
  * never sees a big backlog of queued `update(dt)` calls (no catch-up burst /
- * teleport). `engine.loop` is `engine/core/loop.js`'s `Loop` instance;
- * `_accumulator` is a plain (non-private) field, so this needs no engine API.
- * @param {{loop?: {_accumulator: number}}|null} engine
+ * teleport). `engine.loop` is `engine/core/loop.js`'s `Loop` instance; US-069
+ * gave it a real `resetAccumulator()` method, so this no longer pokes the
+ * (still-plain) `_accumulator` field directly.
+ * @param {{loop?: {resetAccumulator: () => void}}|null} engine
  */
 export function resetSimAccumulator(engine) {
-  if (engine && engine.loop) engine.loop._accumulator = 0;
+  if (engine && engine.loop) engine.loop.resetAccumulator();
 }
+
+// US-069 (Queue 2 review note): `installAutoPause()` must only ever wire up
+// its listeners once per page load - module-level state (ES modules are
+// singletons per page) makes a second call a safe no-op instead of stacking
+// a duplicate `blur`/`visibilitychange` listener.
+let _autoPauseInstalled = false;
+let _autoPauseForcePause = null;
 
 /**
  * Installs the window blur / tab-hidden -> forced pause listeners. Call once
  * per page (gameplay mode only - never for `?bench=`/`?gpucompare=`/
- * `?voxelbench=`, which must stay unaffected).
+ * `?voxelbench=`, which must stay unaffected). Idempotent: a second (or
+ * later) call returns the already-installed handler without adding another
+ * listener pair.
  */
 export function installAutoPause() {
-  if (typeof window === 'undefined') return;
+  if (_autoPauseInstalled) return _autoPauseForcePause;
+  if (typeof window === 'undefined') return undefined;
+  _autoPauseInstalled = true;
   const forcePause = () => {
     if (typeof document !== 'undefined' && document.pointerLockElement && document.exitPointerLock) {
       document.exitPointerLock();
@@ -82,5 +94,12 @@ export function installAutoPause() {
   };
   window.addEventListener('blur', forcePause);
   document.addEventListener('visibilitychange', () => { if (document.hidden) forcePause(); });
+  _autoPauseForcePause = forcePause;
   return forcePause; // exposed for tests
+}
+
+/** Test-only: resets the once-per-page guard so a Node test can call `installAutoPause()` more than once in the same process. */
+export function _resetAutoPauseForTest() {
+  _autoPauseInstalled = false;
+  _autoPauseForcePause = null;
 }

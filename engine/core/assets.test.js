@@ -76,6 +76,40 @@ const bundle = await loadContentPack(PACK_MANIFEST, { fetchText: (u) => readFile
   }
 }
 
+// --- AssetRegistry.replace (US-069, 24.12 item 6): replace-only, throws on unknown kind/key ----
+{
+  const reg = new AssetRegistry({
+    palette: fakePalette,
+    models: {},
+    worlds: {},
+    levels: { alpha: { rows: ['old'], keep: 1 } },
+    uiStyle: null,
+    detailPass: null,
+  });
+  const before = reg.level('alpha'); // the SAME object every other holder (a World, doc.files) would have
+  reg.replace('level', 'alpha', { rows: ['new'] });
+  const after = reg.level('alpha');
+  ok('replace: mutates the SAME object reference (every existing holder sees the new content)', after === before);
+  ok('replace: new content is in place', JSON.stringify(after.rows) === JSON.stringify(['new']), JSON.stringify(after));
+  ok('replace: old keys not in the new def are gone (full replace, not a merge)', !('keep' in after), JSON.stringify(after));
+
+  try {
+    reg.replace('bogus_kind', 'alpha', {});
+    ok('replace: throws on an unknown kind', false, 'did not throw');
+  } catch (e) {
+    ok('replace: throws on an unknown kind', /unknown kind "bogus_kind"/.test(e.message), e.message);
+  }
+
+  try {
+    reg.replace('level', 'nope', {});
+    ok('replace: throws on an unknown key', false, 'did not throw');
+  } catch (e) {
+    ok('replace: throws on an unknown key', /unknown level "nope"/.test(e.message), e.message);
+  }
+  ok('replace: a throw on an unknown key never adds an entry', !reg.has('level', 'nope'));
+  ok('replace: keys() still lists exactly the original set (no new entry added)', deepEqual(reg.keys('level').sort(), ['alpha']));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log('FAILURES:');

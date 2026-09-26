@@ -19,6 +19,19 @@ export function unregisterBehaviour(name) {
 export const registerInteraction = registerBehaviour; // D-006 wording
 export const registerTrigger = registerBehaviour;
 
+/**
+ * US-069 (architecture.md 24.12 item 5): every registered behaviour name,
+ * sorted. A COPY (`Array.from`) - never the live `registry` - so a caller
+ * can't accidentally mutate registration state through the returned array.
+ * Replaces the editor's old workaround (`tools/editor/panel.js`'s
+ * `harvestBehaviourNames` scanning content for `interact`/`trigger`
+ * strings) as the real source of truth for "what names exist".
+ * @returns {string[]}
+ */
+export function listBehaviours() {
+  return Array.from(registry.keys()).sort();
+}
+
 const warned = new Set();
 
 /** @returns {Function|undefined} unknown name -> console.error once, no throw */

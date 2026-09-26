@@ -2,7 +2,7 @@
 // Run: node engine/core/behaviours.test.js
 // Covers `validateBehaviours` over a fake world shape (no game code, no
 // content pack - the engine never knows the names, so these are made up).
-import { registerBehaviour, unregisterBehaviour, getBehaviour, validateBehaviours } from './behaviours.js';
+import { registerBehaviour, unregisterBehaviour, getBehaviour, validateBehaviours, listBehaviours } from './behaviours.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -56,6 +56,20 @@ console.error = origErr;
 ok('getBehaviour(known) -> the function', typeof getBehaviour('t.alpha') === 'function');
 
 for (const n of ['t.alpha', 't.beta', 't.end', 't.hint']) unregisterBehaviour(n);
+
+// --- listBehaviours (US-069, 24.12 item 5): sorted, a copy ------------------
+{
+  ok('listBehaviours: empty registry -> []', same(listBehaviours(), []));
+  registerBehaviour('z.last', () => {});
+  registerBehaviour('a.first', () => {});
+  registerBehaviour('m.mid', () => {});
+  ok('listBehaviours: sorted', same(listBehaviours(), ['a.first', 'm.mid', 'z.last']), JSON.stringify(listBehaviours()));
+  const copy = listBehaviours();
+  copy.push('bogus');
+  ok('listBehaviours: returns a COPY, not the live registry', same(listBehaviours(), ['a.first', 'm.mid', 'z.last']));
+  unregisterBehaviour('z.last'); unregisterBehaviour('a.first'); unregisterBehaviour('m.mid');
+  ok('listBehaviours: reflects unregistration', same(listBehaviours(), []));
+}
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

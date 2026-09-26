@@ -691,6 +691,35 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('BUG-OWN-007 corner: clamped', clampLightToFree(world, 6.7, 1.3, 1.6, o3) === true && Math.floor(o3[0]) === 6 && Math.floor(o3[1]) === 1, `${o3[0]},${o3[1]}`);
 }
 
+// --- setParams (US-069, 24.12 item 6 / the US-064 live-patch gap): the live buffer picks it up on the next update() ----
+{
+  const ls = new LightSet();
+  const h = ls.add({
+    x: 0, y: 0, z: 0, hue: [1, 0, 0], intensity: 0.5, radius: 6, on: true,
+    flicker: { hzMin: 8, hzMax: 12, amount: 0.15, jitter: 0.05 },
+  });
+  ls.update(0, null); // seed pos/col from the original params (flicker active, so col varies within [0.85,1.15]*0.5)
+  ok('setParams precondition: radius seeded from add()', ls.pos[h * 4 + 3] === 6);
+  ok('setParams precondition: col seeded from add() (within the flicker band)', ls.col[h * 4] > 0.4 && ls.col[h * 4] < 0.6, String(ls.col[h * 4]));
+
+  ls.setParams(h, { radius: 10, hue: [0, 1, 0], intensity: 2, flicker: null });
+  ok('setParams: raw fields updated immediately', ls.radius[h] === 10 && ls.baseHue[h * 3] === 0 && ls.baseHue[h * 3 + 1] === 1 && ls.baseIntensity[h] === 2);
+  ok('setParams: flicker:null zeroes the flicker fields (same as add() with no flicker)', ls.flickerAmount[h] === 0 && ls.flickerHzMin[h] === 0);
+  // Not yet reflected in pos/col - only update() re-packs the GPU buffer, same as move()/setOn().
+  ok('setParams: pos/col NOT touched before the next update() (same path as move/setOn)', ls.pos[h * 4 + 3] === 6 && approx(ls.col[h * 4 + 1], 0));
+
+  ls.update(0, null); // "next frame"
+  ok('setParams: radius picked up by the next update()', ls.pos[h * 4 + 3] === 10);
+  ok('setParams: hue*intensity picked up by the next update() (green channel = 1*2)', approx(ls.col[h * 4 + 1], 2) && approx(ls.col[h * 4], 0));
+
+  // Partial update: only radius given - hue/intensity/flicker untouched.
+  ls.setParams(h, { radius: 3 });
+  ls.update(0, null);
+  ok('setParams: a partial call only touches the given fields', ls.pos[h * 4 + 3] === 3 && approx(ls.col[h * 4 + 1], 2));
+
+  ok('setParams: out-of-range handle is a no-op, no throw', (() => { ls.setParams(-1, { radius: 1 }); ls.setParams(99, { radius: 1 }); return true; })());
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILED:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }
 else console.log('ALL PASS');

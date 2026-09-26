@@ -1,7 +1,7 @@
 // US-062 pause gate unit tests (Node, no DOM). See game/js/ui/pause.js header.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isPaused, resetSimAccumulator } from './pause.js';
+import { isPaused, resetSimAccumulator, installAutoPause, _resetAutoPauseForTest } from './pause.js';
 
 test('isPaused: true only while unlocked, map closed and not ending', () => {
   assert.equal(isPaused({ ending: false, look: { locked: false }, isMapOpen: () => false }), true);
@@ -29,12 +29,35 @@ test('pause gate: N steps while paused run 0 sim steps; resume runs normally', (
   assert.equal(simSteps, 7, 'every step should run once resumed');
 });
 
-test('resetSimAccumulator zeroes engine.loop._accumulator and no-ops when missing', () => {
-  const engine = { loop: { _accumulator: 0.183 } };
+test('resetSimAccumulator calls engine.loop.resetAccumulator() and no-ops when missing (US-069: real Loop API, not a direct _accumulator poke)', () => {
+  let calls = 0;
+  const engine = { loop: { resetAccumulator: () => { calls++; } } };
   resetSimAccumulator(engine);
-  assert.equal(engine.loop._accumulator, 0);
+  assert.equal(calls, 1);
 
   assert.doesNotThrow(() => resetSimAccumulator(null));
   assert.doesNotThrow(() => resetSimAccumulator(undefined));
   assert.doesNotThrow(() => resetSimAccumulator({}));
+});
+
+test('installAutoPause: only installs its listeners once per page (US-069, Queue 2 review: R restart must not stack listeners)', () => {
+  _resetAutoPauseForTest();
+  let addBlur = 0, addVis = 0;
+  const origWindow = globalThis.window;
+  const origDocument = globalThis.document;
+  globalThis.window = { addEventListener: (name) => { if (name === 'blur') addBlur++; } };
+  globalThis.document = { addEventListener: (name) => { if (name === 'visibilitychange') addVis++; }, hidden: false };
+  try {
+    const first = installAutoPause();
+    const second = installAutoPause();
+    const third = installAutoPause();
+    assert.equal(addBlur, 1, 'blur listener added exactly once');
+    assert.equal(addVis, 1, 'visibilitychange listener added exactly once');
+    assert.equal(second, first, 'later calls return the same handler, no new listeners');
+    assert.equal(third, first);
+  } finally {
+    globalThis.window = origWindow;
+    globalThis.document = origDocument;
+    _resetAutoPauseForTest();
+  }
 });

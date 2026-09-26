@@ -3,24 +3,19 @@
 // World; Node-tested (ray.test.mjs). `pick.js` is the browser-only half that
 // wires this to a real click, a GPU readback or `fb.gbuf`, and the world.
 //
-// Imports only engine/index.js (the editor boundary rule); `KIND_WALL..
-// KIND_CEIL` (1..6) are NOT exported from engine/index.js today (24.12 item
-// 4) - hard-coded here per that note's own instruction, with the source
-// comment pointing at the real definition so a future export swap is a
-// one-line diff.
-import { HFOV_DEG, KIND_TERRAIN, KIND_MODEL } from '../../engine/index.js';
+// Imports only engine/index.js (the editor boundary rule). US-069
+// (architecture.md 24.12 item 4): `KIND_NONE..KIND_CEIL` are now exported
+// from engine/index.js - re-exported here (rather than hard-coded) so every
+// existing `from './ray.js'` import (pick.js, ray.test.mjs) keeps working.
+import {
+  HFOV_DEG, KIND_TERRAIN, KIND_MODEL,
+  KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
+} from '../../engine/index.js';
+
+export { KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL };
 
 const DEG2RAD = Math.PI / 180;
 const TAN_HALF_HFOV = Math.tan((HFOV_DEG * DEG2RAD) / 2);
-
-// engine/render/GBuffer.js KIND_* (0 none/sky, 1 wall, 2 step, 3 upper, 4 floor, 5 top, 6 ceil, 7 terrain, 8 model)
-export const KIND_NONE = 0;
-export const KIND_WALL = 1;
-export const KIND_STEP = 2;
-export const KIND_UPPER = 3;
-export const KIND_FLOOR = 4;
-export const KIND_TOP = 5;
-export const KIND_CEIL = 6;
 
 /** Compass yaw 0 = N = -y, clockwise (same convention as camera.js). */
 export function cameraBasis(cam) {

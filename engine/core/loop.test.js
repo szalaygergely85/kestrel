@@ -132,6 +132,24 @@ const { Loop } = await import('./loop.js');
   loop.stop();
 }
 
+// ---- resetAccumulator(): US-069 real API for the direct _accumulator poke ----
+{
+  const loop = new Loop(() => {}, () => {});
+  loop._accumulator = 0.5; // simulate a big leftover backlog (e.g. time paused/hidden)
+  loop.resetAccumulator();
+  ok('resetAccumulator zeroes the accumulator', loop._accumulator === 0, `acc=${loop._accumulator}`);
+
+  // The very next tick must not apply a catch-up burst for the dropped backlog.
+  let updates = 0;
+  const loop2 = new Loop(() => { updates++; }, () => {});
+  loop2.start();
+  loop2._accumulator = 0.5; // same simulated backlog, on a running loop this time
+  loop2.resetAccumulator();
+  stepFrame(16.9); // one ordinary frame right after "resume" (> one 1/60 s step)
+  ok('no catch-up burst right after resetAccumulator (only the ordinary frame\'s step runs)', updates === 1, `updates=${updates}`);
+  loop2.stop();
+}
+
 // ---------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {

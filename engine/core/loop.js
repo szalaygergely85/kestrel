@@ -55,6 +55,18 @@ export class Loop {
     this._skipIntervals = SKIP_INTERVAL_FRAMES;
   }
 
+  /**
+   * US-069 (architecture.md 24.12 item 5 area / the `_accumulator` poke
+   * flagged in the Queue 2 review): zeroes the fixed-step accumulator so the
+   * very next tick applies no backlog of queued `update(dt)` calls. Public
+   * equivalent of writing `loop._accumulator = 0` directly (still a plain
+   * field internally, but callers - `game/js/ui/pause.js`'s
+   * `resetSimAccumulator`, the editor - now go through a real API).
+   */
+  resetAccumulator() {
+    this._accumulator = 0;
+  }
+
   start() {
     if (this._running) return;
     this._running = true;

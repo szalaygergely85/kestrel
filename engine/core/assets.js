@@ -105,6 +105,28 @@ export class AssetRegistry {
     return key in map;
   }
 
+  /**
+   * US-069 (architecture.md 24.12 item 6): replaces an EXISTING entry's
+   * content in place - never adds a new one. Throws on an unknown `kind`
+   * (via `_mapFor`) or an unknown `key`. Deletes every own key off the
+   * current object and `Object.assign`s `def` onto it, so the SAME object
+   * reference every other holder (a `World`, the editor's `doc.files`
+   * entries - see `tools/editor/doc.js`'s header) already has stays valid;
+   * no event is emitted (callers that need to react, e.g. the editor's
+   * `rebuild()`, already know they just called this). Replaces the editor's
+   * old in-place-replace workaround (`tools/editor/io.js`'s `loadFile`).
+   * @param {'model'|'level'|'terrain'|'world'} kind
+   * @param {string} key
+   * @param {Object} def
+   */
+  replace(kind, key, def) {
+    const map = this._mapFor(kind);
+    if (!(key in map)) throwUnknown(kind, key, map);
+    const existing = map[key];
+    for (const k of Object.keys(existing)) delete existing[k];
+    Object.assign(existing, def);
+  }
+
   keys(kind) {
     return Object.keys(this._mapFor(kind));
   }

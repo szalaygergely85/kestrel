@@ -188,6 +188,37 @@ export class LightSet {
   }
 
   /**
+   * US-069 (architecture.md 24.12 item 6 / the US-064 live-patch gap):
+   * updates a light's radius/hue/intensity/flicker in place - same shape as
+   * `add()`'s def, same "raw field write, picked up by the next `update()`"
+   * path as `move()`/`setOn()` (no GPU buffer touch here; `update()` re-packs
+   * `pos`/`col` from these fields every frame regardless of whether they
+   * changed). Only the fields present in `params` are touched, so a caller
+   * (e.g. `tools/editor/livepatch.js`'s light-preset patch) can pass just
+   * `{radius, hue, intensity, flicker}` without first reading the old values.
+   * @param {number} handle
+   * @param {{radius?:number, hue?:[number,number,number], intensity?:number,
+   *   flicker?:{hzMin?:number,hzMax?:number,amount?:number,jitter?:number}|null}} params
+   */
+  setParams(handle, params = {}) {
+    if (handle < 0 || handle >= this.count) return;
+    if (params.radius != null) this.radius[handle] = params.radius;
+    if (params.hue != null) {
+      this.baseHue[handle * 3] = params.hue[0];
+      this.baseHue[handle * 3 + 1] = params.hue[1];
+      this.baseHue[handle * 3 + 2] = params.hue[2];
+    }
+    if (params.intensity != null) this.baseIntensity[handle] = params.intensity;
+    if (params.flicker !== undefined) {
+      const fl = params.flicker || {};
+      this.flickerHzMin[handle] = fl.hzMin || 0;
+      this.flickerHzMax[handle] = fl.hzMax || 0;
+      this.flickerAmount[handle] = fl.amount || 0;
+      this.flickerJitter[handle] = fl.jitter || 0;
+    }
+  }
+
+  /**
    * Compacts the light at `handle` out of [0,count) by swapping the last
    * slot into its place (architecture.md 9: no holes to skip every frame).
    * NOTE: this can change OTHER lights' handles - safe for this game's

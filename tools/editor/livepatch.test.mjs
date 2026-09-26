@@ -4,10 +4,10 @@
 //
 //   node tools/editor/livepatch.test.mjs
 import {
-  isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle,
+  isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle, resolveLightPreset,
 } from './livepatch.js';
 import { makeFieldEditRecord, makeInsertRecord, makeDeleteRecord, makeRenameBatch, applyEdit, invert } from './commands.js';
-import { World } from '../../engine/index.js';
+import { World, LightSet, buildLightSet } from '../../engine/index.js';
 import { loadTestAssets } from '../testing/content-node.mjs';
 import paletteMod from '../../design/palette.js';
 import lanternMod from '../../design/models/lantern.js';
@@ -35,6 +35,9 @@ function ok(name, cond, detail) {
   if (cond) pass++;
   else { fail++; failures.push(`${name}${detail ? ' - ' + detail : ''}`); }
 }
+function approxArr(a, b, eps = 1e-6) {
+  return a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
+}
 
 // ---- isPatchableRecord: classification -------------------------------------
 {
@@ -57,7 +60,7 @@ function ok(name, cond, detail) {
   const lightToggle = makeFieldEditRecord('edit', 'level/fixture', 'lights', lightBefore, 0, { on: false });
   ok('light on/off toggle is patchable', isPatchableRecord(lightToggle));
   const lightPreset = makeFieldEditRecord('edit', 'level/fixture', 'lights', lightBefore, 0, { preset: 'relay' });
-  ok('light preset edit is NOT patchable (no live radius/hue/intensity setter)', !isPatchableRecord(lightPreset));
+  ok('light preset edit IS patchable (US-069: LightSet.setParams closed the gap)', isPatchableRecord(lightPreset));
 
   const worldProp = { id: 'endMarker', type: 'prop', components: { voxel: { model: 'x' } }, x: 0, y: 0, z: 0, yawDeg: 0 };
   const worldPropMove = makeFieldEditRecord('nudge', 'world/w', 'entities', worldProp, 0, { x: 1 });
@@ -97,13 +100,16 @@ function ok(name, cond, detail) {
   function fakeLightSet() {
     const moves = [];
     let onCalls = [];
+    const paramCalls = [];
     return {
       count: 2,
       key: ['tower.brazier', 'tower.beacon'],
       move(h, x, y, z) { moves.push({ h, x, y, z }); },
       setOn(h, on) { onCalls.push({ h, on }); },
+      setParams(h, p) { paramCalls.push({ h, p }); },
       _moves: moves,
       get _onCalls() { return onCalls; },
+      _paramCalls: paramCalls,
     };
   }
   const ls = fakeLightSet();
@@ -114,6 +120,21 @@ function ok(name, cond, detail) {
   applyLightPatch(ls, 0, { x: 1, y: 2, z: 1.2, on: false }, { x: 10, y: 20, z: 0 }, false);
   ok('applyLightPatch moves the handle in world space (origin added)', ls._moves[0].x === 11 && ls._moves[0].y === 22 && ls._moves[0].z === 1.2, JSON.stringify(ls._moves[0]));
   ok('applyLightPatch toggles on/off when the patch carries it', ls._onCalls[0].h === 0 && ls._onCalls[0].on === false);
+  ok('applyLightPatch does not call setParams when the patch carries no preset', ls._paramCalls.length === 0);
+
+  // US-069: a `preset` edit resolves through the palette and calls `setParams`.
+  const torch = resolveLightPreset(realAssets.palette, 'torch');
+  ok('resolveLightPreset resolves a real preset', torch && typeof torch.radius === 'number' && Array.isArray(torch.hue), JSON.stringify(torch));
+  ok('resolveLightPreset returns null for an unknown preset', resolveLightPreset(realAssets.palette, 'nope_preset') === null);
+
+  applyLightPatch(ls, 1, { x: 5, y: 5, z: 1.2, preset: 'torch' }, { x: 0, y: 0, z: 0 }, true, realAssets.palette);
+  ok('applyLightPatch: a preset edit calls setParams with the resolved params', ls._paramCalls.length === 1 && ls._paramCalls[0].h === 1, JSON.stringify(ls._paramCalls));
+  ok('applyLightPatch: setParams params match resolveLightPreset', JSON.stringify(ls._paramCalls[0].p) === JSON.stringify(torch), JSON.stringify(ls._paramCalls[0].p));
+
+  // An unknown preset name: still moves/no throw, but no setParams call (nothing to resolve to).
+  const lsBad = fakeLightSet();
+  applyLightPatch(lsBad, 0, { x: 1, y: 1, z: 1, preset: 'not_a_real_preset' }, { x: 0, y: 0, z: 0 }, true, realAssets.palette);
+  ok('applyLightPatch: an unknown preset name is a no-op for setParams (no throw)', lsBad._paramCalls.length === 0);
 }
 
 // ---- integration: a real tower prop + a real tower light, patched live ----
@@ -146,6 +167,41 @@ function ok(name, cond, detail) {
   // collection - see commands.test.mjs's own note on this).
   const lightDef = tower.level.def.lights.find((l) => l.id === 'brazier');
   ok('fixture: the real tower has a "brazier" light', !!lightDef);
+  ok('fixture: it starts on the "torch" preset', lightDef.preset === 'torch', lightDef.preset);
+}
+
+// ---- integration: a real LightSet, a light `preset` edit patched live -----
+// (US-069, closing the US-064 gap: "extend the existing live-patch timing
+// test to cover a light preset edit going through the PATCH path now, not a
+// full World.load rebuild").
+{
+  const world = World.load(realAssets.world('world_m1'), realAssets, {});
+  const ls = buildLightSet(world, realAssets.palette);
+  const key = 'tower.brazier';
+  const handle = findLightHandle(ls, key);
+  ok('a real LightSet has a handle for the tower brazier light', handle >= 0, String(handle));
+
+  ls.update(0, world); // seed pos/col from the initial ("torch") preset
+  const torchExpected = resolveLightPreset(realAssets.palette, 'torch');
+  ok('fixture: the live handle starts with the torch preset\'s radius', ls.pos[handle * 4 + 3] === torchExpected.radius, String(ls.pos[handle * 4 + 3]));
+
+  const rec = makeFieldEditRecord('edit', 'level/tower', 'lights', { id: 'brazier', preset: 'torch', x: 18.5, y: 6.5, z: 1.2, on: true }, 0, { preset: 'relay' });
+  ok('a real preset edit record is patchable (isPatchableRecord)', isPatchableRecord(rec));
+
+  let worldLoadCallsForPreset = 0;
+  const realLoadForPreset = World.load;
+  World.load = (...args) => { worldLoadCallsForPreset++; return realLoadForPreset.apply(World, args); };
+  try {
+    applyLightPatch(ls, handle, rec.after, { x: 0, y: 0, z: 0 }, false, realAssets.palette);
+  } finally {
+    World.load = realLoadForPreset;
+  }
+  ok('the "gap closed" proof: a preset edit patches live with ZERO World.load calls', worldLoadCallsForPreset === 0, String(worldLoadCallsForPreset));
+
+  const relayExpected = resolveLightPreset(realAssets.palette, 'relay');
+  ok('setParams was applied to the raw fields immediately', ls.radius[handle] === relayExpected.radius && approxArr(ls.baseHue.slice(handle * 3, handle * 3 + 3), relayExpected.hue));
+  ls.update(0, world); // "next frame" - the live buffer picks it up
+  ok('the GPU-facing pos/col buffer reflects the new preset on the next update()', ls.pos[handle * 4 + 3] === relayExpected.radius, `${ls.pos[handle * 4 + 3]} vs ${relayExpected.radius}`);
 }
 
 // ---- Node timing probe: 100 nudges of one existing prop, doc+patch only ---

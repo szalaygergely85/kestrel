@@ -7,6 +7,7 @@ import {
   defaultItemForKind, defaultWorldPropItem, kindForSelection, validateItem,
   classifyPlacement, listPlaceableModels, filterModelKeys,
 } from './panel.js';
+import { registerBehaviour, unregisterBehaviour } from '../../engine/index.js';
 
 let pass = 0;
 let fail = 0;
@@ -45,8 +46,22 @@ ok('isValidId: rejects empty/non-string', !isValidId('') && !isValidId(undefined
     ]),
   };
   ok('countLights: sums lights across level files', countLights(doc) === 3, String(countLights(doc)));
+
+  // Empty registry (no `registerBehaviour` calls yet): falls back to the raw content scan.
   const names = harvestBehaviourNames(doc);
-  ok('harvestBehaviourNames: finds interact + trigger names', names.includes('lever.pull') && names.includes('hint.show'), JSON.stringify(names));
+  ok('harvestBehaviourNames: empty registry falls back to content scan', names.includes('lever.pull') && names.includes('hint.show'), JSON.stringify(names));
+
+  // US-069 (24.12 item 5): once behaviours ARE registered (main.js's own
+  // no-op registration for the loaded world's referenced names), the result
+  // is `listBehaviours()` filtered down to names actually used in `doc` -
+  // a name registered but never referenced by this doc is excluded.
+  registerBehaviour('lever.pull', () => {});
+  registerBehaviour('hint.show', () => {});
+  registerBehaviour('unused.elsewhere', () => {});
+  const namesWithRegistry = harvestBehaviourNames(doc);
+  ok('harvestBehaviourNames: uses listBehaviours() once populated', namesWithRegistry.includes('lever.pull') && namesWithRegistry.includes('hint.show'), JSON.stringify(namesWithRegistry));
+  ok('harvestBehaviourNames: still filters to names used in this doc (not every registered name)', !namesWithRegistry.includes('unused.elsewhere'), JSON.stringify(namesWithRegistry));
+  unregisterBehaviour('lever.pull'); unregisterBehaviour('hint.show'); unregisterBehaviour('unused.elsewhere');
 }
 
 // ---- defaultItemForKind ------------------------------------------------------

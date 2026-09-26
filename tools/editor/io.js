@@ -191,14 +191,17 @@ async function pickTextFile() {
 /**
  * Loads a world/level JSON file back into `doc` (24.10 "Load"): parses,
  * migrates, validates with the new content substituted, then replaces the
- * matching registry object IN PLACE (24.12 item 6's workaround) so every
- * existing reference into it stays valid. Throws (a `ContentError` or a
- * plain `Error`) on any failure - `doc` is left untouched in that case.
+ * matching registry entry via `AssetRegistry.replace` (US-069, 24.12 item 6 -
+ * the editor's old in-place-object-mutation workaround) so every existing
+ * reference into it (the World, other selections) stays valid. Throws (a
+ * `ContentError` or a plain `Error`) on any failure - `doc` is left untouched
+ * in that case.
  * @param {{files: Map<string, Object>}} doc
+ * @param {import('../../engine/index.js').AssetRegistry} assets
  * @param {Object} codeParts - passed straight through to `validateDoc`
  * @returns {Promise<string|null>} the loaded file's `fileKey`, or `null` if the user cancelled the picker
  */
-export async function loadFile(doc, codeParts) {
+export async function loadFile(doc, assets, codeParts) {
   const picked = await pickTextFile();
   if (!picked) return null;
 
@@ -224,11 +227,11 @@ export async function loadFile(doc, codeParts) {
   if (err) throw err;
 
   const { kind: _k, schema, id: _id, nextId, ...defRest } = migrated;
-  // In-place replace (24.12 item 6 workaround): every live reference to
-  // `existing.def` (the World, other selections, etc.) sees the new content
-  // without needing to be re-resolved.
-  for (const k of Object.keys(existing.def)) delete existing.def[k];
-  Object.assign(existing.def, defRest);
+  // AssetRegistry.replace (US-069, 24.12 item 6): replaces the registry's
+  // own object in place - every live reference to `existing.def` (the World,
+  // other selections, etc.) sees the new content without needing to be
+  // re-resolved.
+  assets.replace(existing.kind, existing.id, defRest);
   existing.meta.schema = schema;
   existing.meta.nextId = nextId;
   existing.dirty = false;
