@@ -10,6 +10,10 @@
 // No allocation: writes into the caller's `out` (a `Float64Array(3)` per
 // the tech note, but any 3-slot indexable works - the function never reads
 // `out`'s type).
+import { forwardOf, rightOf } from '../core/transform.js';
+
+const _fwd = [0, 0];
+const _right = [0, 0];
 
 /**
  * @param {Object} entity - plain entity data ({transform, components})
@@ -31,12 +35,12 @@ export function attachedLightPos(entity, eyeFeel, out) {
   const offDown = off && typeof off.down === 'number' ? off.down : 0;
   const offFwd = off && typeof off.fwd === 'number' ? off.fwd : 0;
 
-  const yawRad = t.yawDeg * Math.PI / 180;
-  const sinY = Math.sin(yawRad), cosY = Math.cos(yawRad);
   // Compass convention (7.4): forward = (sinY, -cosY); right = forward
   // rotated 90 deg clockwise = (cosY, sinY).
-  const fwdX = sinY, fwdY = -cosY;
-  const rightX = cosY, rightY = sinY;
+  forwardOf(t.yawDeg, _fwd);
+  rightOf(t.yawDeg, _right);
+  const fwdX = _fwd[0], fwdY = _fwd[1];
+  const rightX = _right[0], rightY = _right[1];
 
   let swayRight = 0, swayDown = 0;
   const sway = light && light.sway;

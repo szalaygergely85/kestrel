@@ -3,6 +3,8 @@
 // real; `fromEntity` needs the real `Entity`/`components.body` shape and is
 // a stub until then.
 
+import { wrapDeg } from '../core/transform.js';
+
 const PITCH_CLAMP_DEG = 35; // matches the y-shear clamp (architecture.md 4)
 
 export class Camera {
@@ -25,7 +27,7 @@ export class Camera {
    * up (dy<0) -> pitch+.
    */
   lookDelta(dxPx, dyPx, degPerPx) {
-    this.yawDeg = ((this.yawDeg + dxPx * degPerPx) % 360 + 360) % 360;
+    this.yawDeg = wrapDeg(this.yawDeg + dxPx * degPerPx);
     this.pitchDeg = Camera.clampPitch(this.pitchDeg - dyPx * degPerPx);
     return this;
   }
