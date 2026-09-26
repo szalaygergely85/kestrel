@@ -798,3 +798,30 @@ Three per-cell ray marchers (sector DDA, terrain march, voxel march) never agree
 - Owner cost: two renderers coexist ~5 weeks; RT-look work (US-070..073) waits for phase 3 but lands cheaper (shadow maps). M2 exit moves out by ~3.5-4 weeks (roadmap).
 - Owner actions: phase-1 gate side-by-side on 6 poses + `?bench=1`; phase-2 walk-test; designer/Blender test building for ME-13 (phase 3).
 
+## D-030 Milestone re-plan M2-M6 + parallel engine release track (accepts the PO re-plan of 2026-09-26, with adjustments)
+**Date:** 2026-09-26
+**Status:** Accepted. Owner request ("we miss a lot"). Amends **D-010** (M1.5 / M5 editor slots), **D-011** (M2-M4 milestone themes; story canon unchanged), **D-012** (demo and Coming Soon timing; Electron/steamworks/platform-adapter decisions unchanged), **D-020** (sword/gear levels "first in M2" -> M3/M4). **D-029 stands unchanged**, including both gates and the freezes.
+
+### Context
+The PO rewrote `docs/roadmap.md` around the missing game loop (combat -> save/items/dungeon -> chapter two -> polish) and added 40 gap stories US-078..US-118 (`docs/backlog.md` "Game + engine gap epics") plus GDD sections 9-11. After D-029, M2 is already the mesh engine phases 0-2 + walk-out; the old M2 extras (sword, enemy, chest, save point, day/night, demo) no longer fit.
+
+### Options
+1. Keep D-011's themes, squeeze combat into M2 after the mesh gates. M2 becomes the heaviest milestone again, combat is built on a renderer that has not passed its gates.
+2. Accept the re-plan as written. Clear one-loop-per-milestone shape; two risks: the engine release track can starve the game, and editor items sit in two places.
+3. Accept the re-plan with scope rules (chosen).
+
+### Decision
+**Option 3.** The milestone plan in `docs/roadmap.md` (2026-09-26) is accepted: **M2** "Out of the Wreck" = D-029 phases 0-2 + walk-out on meshes; **M3** "Steel and Hush" = combat core + itch.io demo; **M4** "Keys and Relays" = saves, inventory, first tool, first dungeon, streaming, day/night; **M5** "The Relay Line" = chapter two + Steam Coming Soon; **M6** Polish & Release; plus a parallel **engine release track**. Adjustments:
+1. **D-029 gates rule everything.** No M3 story (US-078..087) starts dev before the phase-2 gate passes; ACs, tech notes and art may be prepared earlier. If phase 1 is a no-go, M3 runs on the hybrid and this plan is re-checked.
+2. **Game first.** The engine release track is filler: it never takes a sprint slot from the current game milestone's P0 stories, and it has no date. Exception: items a game milestone needs (ME-00, ME-18, US-087, US-075..077 as M4 content speed-up) count as that milestone's work.
+3. **Editors (amends D-010).** M1.5 is no longer a separate milestone: the level viewer/placer scope of D-010 (US-031..034) ships as **ME-18 editor on meshes** in M4 "content speed-up". The model + animation editor (US-035..037, US-067/068) moves from M5 to the engine release track.
+4. **Release timing (amends D-012).** itch.io browser demo at the **end of M3** (M1 + walk-out + combat slice; needs US-080 respawn, so no save system required); Steam "Coming Soon" once **M5** is playable; Steam launch end of M6. Early Access vs full 1.0 stays open (owner question 11).
+5. **Canon checks.** D-011 story canon and D-013 stand; magic follows **D-021** (Fireball/Freeze/Telekinesis/Teleport) - the roadmap/backlog "Spark" wording for US-101 is to be replaced by the first D-021 spell. Sound stays deferred to M6 as the owner set, and US-082 ships without sounds unless the owner lifts that.
+6. **Owner questions 1-11** at the end of `docs/roadmap.md` are **open, not decided**. PO proposals there are working assumptions for sketches only; each answer gets its own amendment or ADR. M3 opener ACs (US-078/079/080) are finalised only after questions 1, 2, 3 and 7 are answered.
+
+### Consequences
+- PO: replace "Spark" in US-101 / roadmap M5 with the D-021 spell; mark the M1.5 section in the roadmap as folded into ME-18; confirm PC tags of US-078..118 at each sprint planning; ask the owner questions 1-3, 7 before sprint 6 planning.
+- Architect: tech notes for US-078/079/080/083 after the phase-2 gate is in sight, not before.
+- Sprint 5 stays as D-029 planned (phase 2 + US-026b S2+). The first M3 sprint is planned only after the phase-2 gate result is recorded in D-029.
+- Owner: answer the 11 roadmap questions (1, 2, 3, 7 first; 10 and 11 can wait until the engine track / M5).
+
