@@ -515,6 +515,91 @@ What the owner checks, on the ME-08 side-by-side page (Chrome, owner Intel GPU, 
 
 Per D-016 the M5 model editor edits **voxel models** (`ModelDef.voxel`: z-layer row strings, part boxes, rigid-part keyframes), as well as the existing 2D sprite frames.
 
+## Game + engine gap epics (PO 2026-09-26, owner "what do we miss?"; milestones per the re-planned `docs/roadmap.md`, needs a manager D-entry)
+Sketch rows only, except the three M3 openers (US-078/079/080) which have ACs below. PC tags are guesses; PO confirms at sprint planning. Existing rows are linked, not duplicated: mesh engine ME-00..34, streaming US-026b, save format CO-5, creature clips US-041b, dialogue US-042, Steam US-043, physics/particles/water US-051..055, model editor US-035..037, MCP/AI/text meshes US-075..077, sound US-020/020d, log US-021.
+| ID | Title / one-line story | Priority | Milestone / epic | Status |
+|---|---|---|---|---|
+| US-078 | Sword swing + hit detection: as a player I swing a sword with the mouse and it hits what it visibly touches | P0 | M3 EP-COMBAT (opener) | todo (sketch, ACs below) [PC-A engine hit query + view-model layer; PC-B game wiring] - needs architect notes + designer |
+| US-079 | First enemy with simple AI (Hush-touched beast): as a player I meet a beast that notices me, telegraphs, charges and can be beaten | P0 | M3 EP-ENEMY (opener) | todo (sketch, ACs below) [PC-A engine AI/entity hooks; PC-B brain + content] - needs architect notes + designer; after US-078, US-041b |
+| US-080 | Hearts, damage, death + respawn: as a player I see my hearts, lose them when hit and wake again at the last relay when I fall | P0 | M3 EP-HEALTH (opener) | todo (sketch, ACs below) [PC-B HUD/quest; PC-A `health` component + damage events] - needs architect notes + designer |
+| US-081 | Lock-on / target focus: as a player I hold a key to keep the nearest enemy centred so first-person melee stays readable | P1 | M3 EP-COMBAT | todo (sketch) [PC-A camera + PC-B game] - after US-079 |
+| US-082 | Combat feel: hit-stop (50-80 ms), knockback, camera kick, enemy flash, hit sparks/death dust, so every hit feels heavy | P1 | M3 EP-COMBAT | todo (sketch) [PC-B game + PC-A particles] - uses US-053; sounds wait for M6 unless the owner lifts the freeze |
+| US-083 | Character animation state machine (engine): named clip states (idle/walk/run/windup/attack/hurt/die) with rigid-part pose cross-fade and frame events, for voxel and mesh models | P0 | M3 EP-ENEMY | todo (sketch) [PC-A] - extends US-041b; needs architect notes |
+| US-084 | NPC navigation (engine): walkable nav grid over terrain + meshes, A* paths, steering on the capsule physics, per-frame budget | P1 | M3 (needed by M5) EP-ENEMY/EP-NPC | todo (sketch) [PC-A] - after ME-11 (mesh colliders); Rust/WASM only if benched hot (D-015) |
+| US-085 | AI behaviour component (engine): data-driven state machine with perception (sight cone + line of sight, hearing, light awareness), home area, leash, reused by enemies, animals, NPCs | P1 | M3 EP-ENEMY | todo (sketch) [PC-A] - generalises the US-079 brain |
+| US-086 | Guard / block with a shield (and optional parry window) | P2 | M3 EP-COMBAT | todo (sketch) [PC-B] - owner question 1 (roadmap) |
+| US-087 | Input action map (engine): actions (move/look/attack/interact/lock/use-tool/menu) instead of raw keys, rebindable, one source for keyboard/mouse/gamepad | P1 | M3 EP-INPUT | todo (sketch) [PC-A] - basis for US-107/108 |
+| US-089 | Save/load runtime: resting at a woken relay saves, autosave on area change, versioned saves through the platform adapter (CO-5 format) | P0 | M4 EP-SAVE | todo (sketch) [PC-B game + PC-A engine save API] - after CO-5, US-080 |
+| US-090 | Title/start menu: New game, Continue, 3 save slots (label "Wick - place - play time", D-013), delete slot, Settings | P0 | M4 EP-SAVE | todo (sketch) [PC-B] - after US-089; designer title/menu style |
+| US-091 | Inventory + item data: items as content JSON, equip slots (sword, 2 tool slots), inventory panel, quick-select | P0 | M4 EP-ITEMS | todo (sketch) [PC-B] - designer `uiStyle.inventory` + item icons |
+| US-092 | Chests + pickups: small/big chests, open animation, item-get card, hidden chest on the hillside (was M2 plan) | P1 | M4 EP-ITEMS | todo (sketch) [PC-B content + designer] - after US-091 |
+| US-093 | First tool item that opens an area (proposal: brass grapple hook from the wreck; owner question 4) with at least 3 gated spots in the world | P0 | M4 EP-ITEMS | todo (sketch) [PC-A engine if it needs physics/rope, PC-B game] - needs architect notes |
+| US-094 | First small dungeon: 3-5 rooms, one puzzle chain (plate + boulder/lever + light), small key + locked door, mini-boss, the tool as reward | P0 | M4 EP-DUNGEON | todo (sketch) [PC-A designer level + PC-B behaviours] - after ME-21 (mesh buildings), US-091 |
+| US-095 | Heart vessels + gear levels: +1 heart per vessel (4 pieces = 1 vessel), sword Lv2 reforged at a forge; no XP (D-020) | P1 | M4 EP-ITEMS | todo (sketch) [PC-B] |
+| US-096 | Quest system (engine flags/objectives/events, save-safe) + journal page on the chart card | P1 | M4 EP-QUEST | todo (sketch) [PC-A engine + PC-B UI] - extends today's quest flags; pairs with US-042 |
+| US-097 | Chart with live position, woken relays and discovered places (fast travel between relays = owner question) | P2 | M4 EP-QUEST | todo (sketch) [PC-B] |
+| US-098 | Day/night cycle: sun path + sky/ambient colours over a 24 min day, relay and lamp light matter at night | P2 | M4 EP-WORLD | todo (sketch) [PC-A] - after ME-15 shadow maps |
+| US-099 | Exile village "Outwall": 3-5 NPCs with idle routines, talk via US-042, first to say "Wick" (D-013) | P1 | M5 EP-NPC | todo (sketch) [PC-B content + designer + writer] - after US-042, US-084, US-085 |
+| US-100 | Chapter-two region: open area along the pencil line with 3 dead relays, landmarks and terrain overrides as data | P0 | M5 EP-REGION | todo (sketch) [PC-A designer + PC-B content] - after US-026b; owner question 6 |
+| US-101 | Artificer's gauntlet + Spark: first spell (light verb: lights braziers/relays, stuns enemies), cooldown or aether meter | P0 | M5 EP-MAGIC | todo (sketch) [PC-B game + PC-A particles/light] |
+| US-102 | Second enemy: stray Crown clockwork sentinel (patrol, ranged, weak spot) | P1 | M5 EP-ENEMY 2 | todo (sketch) [PC-B brain + designer] - after US-085 |
+| US-103 | Ranged tool: bow or crossbow with arrows as physics bodies | P1 | M5 EP-ENEMY 2 | todo (sketch) [PC-A projectile physics + PC-B game] - unless it is the M4 tool |
+| US-104 | Secrets + collectibles pass: hidden chests, heart pieces, chart pieces in chapters one and two | P2 | M5 EP-REGION | todo (sketch) [PC-B content] |
+| US-105 | The Signal Source dungeon + boss (reason for the SOS, D-013 deferred reveal) | P1 | M5 or post-1.0 (owner question 5) | todo (sketch) [PC-A designer + writer] |
+| US-106 | Crash intro: the *Kestrel* escape and crash as a short in-engine sequence before the wake (owner idea D-020) | P2 | M6 EP-POLISH | todo (sketch) [PC-B + designer + writer] |
+| US-107 | Gamepad support: Steam Deck layout, look curve, UI navigation with the stick, button prompts | P0 | M6 EP-INPUT 2 | todo (sketch) [PC-A input + PC-B UI] - after US-087; US-043 needs it |
+| US-108 | Key remapping row in Settings (keyboard + gamepad), conflicts shown, remembered | P1 | M6 EP-INPUT 2 | todo (sketch) [PC-B] - after US-087 |
+| US-109 | Music: procedural/adaptive score (exploration, combat, relay wake stinger, night) | P1 | M6 EP-AUDIO | todo (sketch) [PC-B] - owner deferred sound to M6 |
+| US-110 | Accessibility: cell-size / font scale, colourblind palette variants, toggle vs hold, visual cues for sounds, reduced shake | P1 | M6 EP-POLISH | todo (sketch) [PC-B + designer palettes] |
+| US-111 | Performance + Steam Deck pass: 60 fps at 240x90 on the Deck, load times, memory | P0 | M6 EP-POLISH | todo (sketch) [PC-A] |
+| US-112 | itch.io browser demo build (M1 + walk-out + combat slice), static bundle, page text by the writer | P1 | M3 exit EP-RELEASE | todo (sketch) [PC-B] - was end of M2 (D-012) |
+| US-113 | Engine API reference generated from JSDoc (ME-00 types) + concept guide + content-format spec | P1 | Engine track EP-DOCS | todo (sketch) [PC-B tool + PC-A architect text] |
+| US-114 | Engine examples: 3 runnable samples in `examples/` (lit room, terrain walk, props + physics), smoke-tested in run-tests | P1 | Engine track EP-EXAMPLES | todo (sketch) [PC-B] - after ME-19 |
+| US-115 | Public API freeze: `@public`/`@internal` tags, semver 0.x, CHANGELOG, deprecation rule | P1 | Engine track EP-API | todo (sketch) [PC-A architect] - after US-047, ME-00 |
+| US-116 | Licences: engine licence, `LICENSE` + `THIRD_PARTY_NOTICES` (TypeScript devDep, Electron/steamworks.js in the game build, fonts), asset licence for `design/` | P1 | Engine track EP-LICENSE | todo (sketch) [owner decision + PC-B] - owner question 10 |
+| US-117 | Standalone engine package (ESM zip/npm, no build step) + engine name | P2 | Engine track EP-PACKAGE | todo (sketch) [PC-B] - after US-113..116 |
+| US-118 | Localisation-ready strings: all UI/hint/dialogue text through one string table, ASCII-safe per locale | P2 | M6 EP-POLISH | todo (sketch) [PC-B + writer] |
+(US-088 intentionally unused: gear levels are folded into US-095.)
+
+### US-078 Sword swing + hit detection  [Priority: P0 (M3 opener)] [Status: todo (sketch)]  [PC-A engine / PC-B game]
+As a player, I want to swing a sword with the mouse and have it hit what it visibly touches, so that the world outside the tower can be fought in, not just walked.
+Acceptance criteria:
+- [ ] **Getting it:** a ruin-steel sword lies at a designer-placed spot on the hillside between the breach and the waystone (`[E] Take sword`; owner question 3). Before that, attack input does nothing. Taking it sets a save-safe flag.
+- [ ] **Swing:** left mouse (action `attack`, US-087 when it exists) swings. One swing = 0.35 s: windup 0.08 s, active 0.12 s, recover 0.15 s. Pressing again during recover queues one follow-up swing in the opposite direction (L->R, then R->L); max 2 in a chain, then 0.25 s rest. Walk speed x0.6 while swinging; no swing in mid-air in M3.
+- [ ] **View model:** the sword is drawn in the lower right of the view as a first-person model with idle sway, a readable swing arc (>= 5 poses per swing) and never clips into walls (drawn in its own depth range). Readable at 160x60 and 240x90. With the sword taken, the carried lamp light moves to the left side (0.3 m left instead of right, GDD 7.3).
+- [ ] **Hit detection:** during the active window only, a hit arc in front of the eye: reach 1.6 m, 100 deg horizontal, from 1.0 m below to 0.3 m above eye height. Targets are entity hurt spheres; a target is hit at most once per swing; a target behind world geometry (ray from the eye to the hit point blocked) is not hit.
+- [ ] **Hit event:** each hit sends `hit {source, target, damage: 1, dir, point}` to the target's behaviour. A test target (designer: a mossy practice stump or old armour stand near the sword) flashes white for 0.1 s and shows a 3-cell spark at the hit point.
+- [ ] **World hit:** if the arc meets a wall/terrain within reach first, the swing stops early with a `*` spark for 0.1 s and 0.05 s hit-stop ("clink").
+- [ ] **Tests:** Node tests for the arc query (in arc = hit, outside angle/reach = miss, behind a wall = miss, one hit per swing, chain timing) at the fixed 60 Hz step, deterministic. Hit query <= 0.1 ms with 16 entities, no per-frame allocation.
+Design needed: yes - sword view model (idle + 2 swing directions, >= 5 poses each), world sword prop, practice target, spark glyphs (designer).
+Notes / dependencies: **needs architect notes (engine: hitboxes/hurt spheres, arc query in `World`, view-model render layer on the mesh pass, event routing).** **Needs designer (sword/enemy art).** After the phase-2 gate (ME-11 colliders) and ME-19 at best; can prototype on the current renderer if the architect agrees. US-082 adds the full feel; sounds wait for M6.
+
+### US-079 First enemy with simple AI (Hush-touched beast)  [Priority: P0 (M3 opener)] [Status: todo (sketch)]  [PC-A engine / PC-B brain + content]
+As a player, I want to meet a beast that notices me, warns me, charges and can be beaten, so that the sword has a purpose and the wild outside the Wall feels dangerous.
+Acceptance criteria:
+- [ ] **Model:** a creature about 1.0 m long and 0.7 m tall (working: a Hush-touched boar; owner question 2) with clips idle, walk, run, windup, charge, hurt, die (US-041b / US-083). Silhouette readable at 10 m at 160x60.
+- [ ] **Stats:** 3 HP (3 sword hits), contact damage 1 heart, walk 1.5 m/s, chase 4.5 m/s, charge 7 m/s. Same capsule physics as the player (no climbing above step-up, turns back at drops > 1 m).
+- [ ] **States:** `wander` (within 6 m of home, 2-4 s pauses) -> `notice` (player within 12 m inside a 120 deg view cone with line of sight, or within 3 m in any direction; 0.6 s pause with a `!` above its head) -> `chase` -> `windup` at 5 m (0.5 s, visible scrape + lowered head) -> `charge` (straight line up to 1.2 s or until it hits a wall/the player) -> `recover` (1.0 s, 2.0 s after a wall hit = open to hits) -> back to `chase`. `return` home and heal to full when the player is > 20 m away or out of sight for 5 s.
+- [ ] **Hurt/die:** a hit flashes it white 0.1 s, flinches it 0.25 s and knocks it back 1.5 m; a hit during `windup` cancels the charge. At 0 HP: die clip 0.6 s, then it fades into dust over 0.5 s and is removed; 50 % chance to drop a heart (US-080).
+- [ ] **Light:** it never enters a woken relay's light radius (safe zone, pillar "light is life").
+- [ ] **Content:** 2 beasts placed on the hillside as `entities[]` in content JSON (`brain: "beast"`), none within 15 m of the breach. Killed beasts come back after a relay rest or a reload.
+- [ ] **Tests + budget:** Node tests drive every state transition with scripted player positions; a 600-step replay is deterministic. AI for 8 beasts <= 0.3 ms/frame JS, no per-frame allocation.
+Design needed: yes - beast model + 7 clips, `!` alert glyph, dust fade (designer). Writer: the beast's name.
+Notes / dependencies: **needs architect notes (engine: AI/brain component hooks, perception ray, entity spawn/despawn + respawn state).** **Needs designer (sword/enemy art).** After US-078, US-041b; uses US-080 for damage. US-085 later generalises the brain; US-084 pathfinding is not needed here (direct steering + edge check).
+
+### US-080 Hearts, damage, death + respawn  [Priority: P0 (M3 opener)] [Status: todo (sketch)]  [PC-B HUD/quest / PC-A health component]
+As a player, I want to see my hearts, lose them when I get hit and wake again when I fall, so that fights have stakes but never cost me my progress.
+Acceptance criteria:
+- [ ] **HUD:** 3 hearts top-left (designer glyph art, ASCII 32-126 only, full / half / empty states), readable at 160x60, hidden during the title, map and end cards. At 1 heart or less the last heart pulses at 1 Hz.
+- [ ] **Health:** player `health {hp, max}` in half-hearts (start 6/6) as an entity component in the serialized state (survives save/load, CO-5).
+- [ ] **Damage:** beast contact = 1 heart; falls > 6 m = 1 heart, > 10 m = 2 hearts (changes GDD 5 "no fall damage" from M3; owner question 7). On damage: 1.0 s of invulnerability, red screen-edge flash 0.15 s, knockback 2 m/s away from the source, 2 deg camera kick.
+- [ ] **Death:** at 0 hp controls lock, the eye sinks to 0.4 m over 0.8 s, fade to black 1.5 s, card (writer text) with `[E] Wake again`. Respawn at the last woken relay (the tower wake spot until one exists) with full hearts; enemies reset to home; world flags (lamp, lever, sword, chests) are kept.
+- [ ] **Heart pickup:** restores 1 heart, bobs, collected within 0.8 m, despawns after 20 s (blinks the last 3 s).
+- [ ] **Dev:** with `?debug=1`, a key toggles invulnerability and a key deals 1 heart to the player.
+- [ ] **Tests:** Node tests for damage/invulnerability timing, fall-damage thresholds, death -> respawn state (flags kept, hp full, enemies reset), save round trip of `health`.
+Design needed: yes - heart glyph states, heart pickup, damage flash colour, death card style (designer); death card text (writer).
+Notes / dependencies: **needs architect notes (engine: `health` component + damage events, respawn hook in `World`).** **Needs designer (heart/HUD art).** Pairs with US-079; heart vessels come in US-095; relay save = US-089.
+
 ---
 
 ### US-001 Char-grid canvas + game loop  [Priority: P0] [Status: done]
