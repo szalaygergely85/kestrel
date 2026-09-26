@@ -17,4 +17,4 @@
 // `mouseSensitivity` and `invertY` - see web.js's header comment for the
 // full schema and fallback rules.
 
-export { loadSettings, saveSettings, DEFAULT_SETTINGS } from './web.js';
+export { loadSettings, saveSettings, DEFAULT_SETTINGS, readPlaytest } from './web.js';

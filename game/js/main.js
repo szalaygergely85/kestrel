@@ -31,6 +31,7 @@ import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { loadSettings, saveSettings } from './platform/index.js'; // US-060: remembered mute (D-012)
+import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
 import { stepEnd, endFadeAmount } from './quest/end.js';
@@ -106,6 +107,11 @@ const canvas = document.getElementById('screen');
 // recipe (still a classic script - see game/index.html), passed as
 // `codeParts` so `fromJSON` can overlay the JSON levels/worlds on top.
 const bundle = await loadContentPack('../content/manifest.json');
+// US-034 (24.11): `?playtest=1` overlays the editor's in-memory (possibly
+// unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE
+// the registry is built, so the rest of boot is unaware anything special
+// happened - same content shape either way.
+applyPlaytestOverlay(bundle);
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 
 // US-045 (D-017 item 2): no playable CPU fallback any more. `?gpu=0` and
@@ -428,7 +434,7 @@ function runGame(mode) {
         entities: [{ id: 'player', type: 'player', spawn: { structure: levelParam, from: 'start' } }],
         state: {},
       }
-      : assets.world('world_m1');
+      : assets.world(params.get('world') || 'world_m1'); // US-034 (24.11): the play-test handoff's `?world=` param
 
     // US-017 (7.4 "Restart / world swap"): every runtime rebuild this block
     // used to do ONCE, inline, now happens on `'world:loaded'` - emitted by

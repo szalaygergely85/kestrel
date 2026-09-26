@@ -38,6 +38,39 @@ export const DEFAULT_SETTINGS = Object.freeze({
   invertY: false,
 });
 
+// US-034 (docs/architecture.md 24.11): the editor's play-test handoff writes
+// `kestrel.playtest` = `{ savedAt, world, files: { '<kind>/<id>': def } }`
+// (envelope-free defs) and opens `game/index.html?playtest=1&world=<id>` in
+// a new tab. `readPlaytest()` is the one place `game/` reads that key, per
+// this file's own "only file allowed to touch localStorage" rule (US-060) -
+// `game/js/dev/playtest.js` calls this instead of `localStorage` directly.
+const PLAYTEST_KEY = 'kestrel.playtest';
+
+/**
+ * Reads `kestrel.playtest`, or `null` if it is missing, corrupt, or storage
+ * is unavailable (never throws - same defensive shape as `loadSettings`).
+ * @returns {{savedAt:number, world:string, files:Object}|null}
+ */
+export function readPlaytest() {
+  const storage = getStorage();
+  if (!storage) return null;
+  let raw;
+  try {
+    raw = storage.getItem(PLAYTEST_KEY);
+  } catch {
+    return null;
+  }
+  if (raw == null) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || typeof parsed.world !== 'string' || !parsed.files || typeof parsed.files !== 'object') return null;
+  return parsed;
+}
+
 /** @returns {Storage|null} the real `localStorage`, or null if unavailable (no `window`, or access itself throws - some private-browsing modes). */
 function getStorage() {
   try {

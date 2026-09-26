@@ -25,6 +25,7 @@ import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
 } from './panel.js';
+import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty } from './io.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -38,6 +39,10 @@ const animateToggle = document.getElementById('animate-toggle');
 const speedInput = document.getElementById('speed-input');
 const outlinerEl = document.getElementById('outliner');
 const propertiesEl = document.getElementById('properties');
+const saveBtn = document.getElementById('save-btn');
+const loadBtn = document.getElementById('load-btn');
+const playtestBtn = document.getElementById('playtest-btn');
+const ioStatusEl = document.getElementById('io-status');
 
 function gridFromParam(p, def) {
   const g = p.get('grid');
@@ -161,6 +166,7 @@ function rebuild() {
   frame.markDirty();
   renderOutliner();
   renderProperties();
+  refreshIoStatus(); // US-034 (function declaration, hoisted - defined below but callable here)
   return ms;
 }
 
@@ -359,6 +365,80 @@ function renderOutliner() {
 }
 renderOutliner();
 renderProperties();
+
+// ---- US-034: save/load/play-test (24.10/24.11) -----------------------------
+
+/**
+ * Re-validates the whole document and reflects the result in the Save
+ * button + status line (24.10: "the Save button is disabled with the error
+ * text while invalid"). Fire-and-forget (async, called after every
+ * `rebuild()`) - a stale in-flight validation is harmless since only the
+ * LAST call's result matters and `validateDoc` is a pure read over `doc`
+ * (no race that could corrupt anything, just a possibly-stale button state
+ * for one frame).
+ */
+let ioGeneration = 0;
+async function refreshIoStatus() {
+  const gen = ++ioGeneration;
+  const err = await validateDoc(doc, window.ASSETS);
+  if (gen !== ioGeneration) return; // a newer edit landed while this was in flight
+  const dirty = anyDirty(doc);
+  saveBtn.disabled = !!err;
+  saveBtn.title = err ? err.message : '';
+  ioStatusEl.textContent = err ? `invalid: ${err.message}` : (dirty ? 'unsaved changes' : 'saved');
+  ioStatusEl.style.color = err ? '#ff6b6b' : (dirty ? '#ffd24a' : '#8fae8f');
+}
+refreshIoStatus();
+
+async function doSave() {
+  try {
+    const saved = await saveAll(doc);
+    flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
+  } catch (e) {
+    flash(`save failed: ${e && e.message ? e.message : e}`);
+  }
+  refreshIoStatus();
+}
+
+async function doLoad() {
+  try {
+    const fid = await loadFile(doc, window.ASSETS);
+    if (!fid) { flash('load: cancelled'); return; }
+    undoStack.clear();
+    selection = null;
+    rebuild();
+    flash(`loaded: ${fid}`);
+  } catch (e) {
+    flash(`load failed: ${e && e.message ? e.message : e}`);
+  }
+  refreshIoStatus();
+}
+
+function doPlaytest() {
+  launchPlaytest(doc);
+  flash(`play-test: opened game/index.html?playtest=1&world=${doc.worldId}`);
+}
+
+saveBtn.addEventListener('click', doSave);
+loadBtn.addEventListener('click', doLoad);
+playtestBtn.addEventListener('click', doPlaytest);
+
+// Ctrl+S/Ctrl+P are browser shortcuts (save page / print) that `Input`
+// deliberately never intercepts (engine/core/input.js: "never swallow a
+// browser/OS shortcut") - the editor still wants the KEY, just not the
+// browser's own dialog, so it prevents default itself, once, at the window
+// level, regardless of `editorKeysActive()` (matches the browser's own
+// scope for these shortcuts).
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.code === 'KeyP')) e.preventDefault();
+});
+
+// 24.10: "beforeunload warns while any file is dirty".
+window.addEventListener('beforeunload', (e) => {
+  if (!anyDirty(doc)) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // ---- US-033: place (24.9) --------------------------------------------------
 
@@ -583,6 +663,8 @@ function update(dt) {
   const ctrl = input.isDown('ControlLeft') || input.isDown('ControlRight');
   if (ctrl && input.pressed('KeyZ')) doUndo();
   if (ctrl && input.pressed('KeyY')) doRedo();
+  if (ctrl && input.pressed('KeyS')) doSave(); // US-034 (24.10)
+  if (input.pressed('KeyP') && !ctrl) doPlaytest(); // US-034 (24.11)
 
   // Always drain the accumulated mouse delta (even while RMB is up), same
   // "discard unless active" precedent as PlayerLook - otherwise a stale
@@ -629,6 +711,7 @@ window.__editor = {
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, applyNudge, applyYaw, dropToFloor, doUndo, doRedo,
   placeAt, structureAt, commitFieldEdit, renameSelected,
+  doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
 };
 
 if (!gpuBlocked) engine.run({ update, render });

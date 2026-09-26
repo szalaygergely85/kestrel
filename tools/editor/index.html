@@ -87,6 +87,12 @@
         <label>Speed <input type="number" id="speed-input" min="0.5" max="200" step="0.5" value="6" /> m/s</label>
       </section>
       <section>
+        <button type="button" id="save-btn">Save (Ctrl+S)</button>
+        <button type="button" id="load-btn">Load...</button>
+        <button type="button" id="playtest-btn">Play-test (P)</button>
+        <div id="io-status" style="font-size:11px;color:#8fae8f;margin-top:4px;"></div>
+      </section>
+      <section>
         <h1 style="font-size:12px;margin:0 0 4px 0;">Outliner</h1>
         <div id="outliner">(loading...)</div>
       </section>
@@ -98,7 +104,8 @@
         click: select/drag &middot; arrows/PgUp/PgDn: nudge &middot; [ ]: snap<br/>
         Q/E: yaw &middot; G: drop to floor &middot; Del: delete &middot; Esc: cancel drag/place<br/>
         Ctrl+Z/Y: undo/redo &middot; T: teleport to selection &middot; M: markers<br/>
-        1/2/3/4: place prop/light/trigger/interactable, then click
+        1/2/3/4: place prop/light/trigger/interactable, then click<br/>
+        Ctrl+S: save &middot; P: play-test (new tab)
       </section>
       <section>
         <div id="status"></div>
