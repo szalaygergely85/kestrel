@@ -25,7 +25,7 @@ import { isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightH
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
-  classifyPlacement, listPlaceableModels, filterModelKeys,
+  classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS,
 } from './panel.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty } from './io.js';
 
@@ -45,12 +45,87 @@ const saveBtn = document.getElementById('save-btn');
 const loadBtn = document.getElementById('load-btn');
 const playtestBtn = document.getElementById('playtest-btn');
 const ioStatusEl = document.getElementById('io-status');
+// US-066 reskin: ribbon/dock/drawer chrome (styling + small UI-state wiring
+// only - every element below drives the SAME functions the old plain sidebar
+// and keyboard shortcuts already called; no new edit/commit path).
+const treeSearchInput = document.getElementById('tree-search-input');
+const treeChipsEl = document.getElementById('tree-chips');
+const snapBtn = document.getElementById('snap-btn');
+const toolModeGroupEl = document.getElementById('tool-mode-group');
+const camPlateEl = document.getElementById('cam-plate');
+const statsPlateEl = document.getElementById('stats-plate');
+const placeToolbarEl = document.getElementById('place-toolbar');
+const leftDockEl = document.getElementById('left-dock');
+const rightDockEl = document.getElementById('right-dock');
+const leftDockCollapseBtn = document.getElementById('left-dock-collapse');
+const rightDockCollapseBtn = document.getElementById('right-dock-collapse');
+const drawerEl = document.getElementById('drawer');
+const drawerCollapseBtn = document.getElementById('drawer-collapse-btn');
+const drawerTabs = document.querySelectorAll('.drawer-tab');
+const keysPanelEl = document.getElementById('keys-panel');
 // US-063: the place-a-prop model picker (a searchable list, shown right
 // after clicking a surface in place-prop mode instead of a later panel
 // fix-up - see `openModelPicker` below).
 const modelPickerEl = document.getElementById('model-picker');
 const modelPickerSearchEl = document.getElementById('model-picker-search');
 const modelPickerListEl = document.getElementById('model-picker-list');
+
+// ---- US-066: dock/drawer collapse state (design/editor-ui.md 2: "docks +
+// drawer collapsible, state remembered (localStorage in try/catch)"). Purely
+// a CSS class toggle - never touches `frame.markDirty()` or the render loop,
+// so idle re-render skip stays intact.
+const UI_KEY = 'kestrel.editor.ui';
+function loadUiState() {
+  try {
+    const raw = localStorage.getItem(UI_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) { return {}; }
+}
+function saveUiState(state) {
+  try { localStorage.setItem(UI_KEY, JSON.stringify(state)); } catch (_) { /* storage unavailable - not fatal */ }
+}
+const uiState = loadUiState();
+function applyDockCollapse() {
+  leftDockEl.classList.toggle('collapsed', !!uiState.leftCollapsed);
+  rightDockEl.classList.toggle('collapsed', !!uiState.rightCollapsed);
+  drawerEl.classList.toggle('collapsed', !!uiState.drawerCollapsed);
+}
+applyDockCollapse();
+leftDockCollapseBtn.addEventListener('click', () => {
+  uiState.leftCollapsed = !uiState.leftCollapsed;
+  applyDockCollapse();
+  saveUiState(uiState);
+});
+rightDockCollapseBtn.addEventListener('click', () => {
+  uiState.rightCollapsed = !uiState.rightCollapsed;
+  applyDockCollapse();
+  saveUiState(uiState);
+});
+drawerCollapseBtn.addEventListener('click', () => {
+  uiState.drawerCollapsed = !uiState.drawerCollapsed;
+  applyDockCollapse();
+  saveUiState(uiState);
+});
+
+// ---- US-066: drawer tabs (Log / Keys) --------------------------------------
+drawerTabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    drawerTabs.forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+    const isLog = tab.dataset.tab === 'log';
+    statusEl.classList.toggle('active', isLog);
+    keysPanelEl.classList.toggle('active', !isLog);
+  });
+});
+
+// ---- US-066: keyboard focus (design/editor-ui.md AC 6) - Esc blurs a
+// focused tree-search/inspector field so editor keys resume; clicking the
+// viewport already does this via canvas's own mousedown->focus() below.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) a.blur();
+});
 
 function gridFromParam(p, def) {
   const g = p.get('grid');
@@ -154,10 +229,64 @@ let markersOn = true;
 let helpOn = false; // US-063: `H` toggles the in-viewport key-help overlay (drawHelpOverlay below)
 let lastPickText = '';
 let placeMode = null; // 'prop'|'light'|'trigger'|'interactable'|null (US-033, 24.9)
+// US-066: ribbon tool mode - 'move' matches the editor's pre-existing
+// re-click-drag-to-move behaviour exactly (the default, so nothing changes
+// unless the owner picks a different ribbon button); 'select' disables the
+// re-click drag start (pick-only); 'yaw' drags to spin instead of move. Q/E
+// yaw and every other key keep working in every mode (design/editor-ui.md 3).
+let toolMode = 'move';
+let yawDrag = null; // {entId, item, index, field, startYawDeg, startClientX} | null
 
 function flash(msg) {
   lastPickText = msg;
 }
+
+// ---- US-066: ribbon readouts (tool mode / snap / place toolbar) -----------
+function updateToolModeButtons() {
+  toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.mode === toolMode);
+  });
+}
+toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    toolMode = btn.dataset.mode;
+    updateToolModeButtons();
+  });
+});
+updateToolModeButtons();
+
+function updateSnapReadout() {
+  snapBtn.textContent = `# Snap ${SNAP_OPTIONS[snapIdx]}m`;
+}
+function cycleSnap(dir) {
+  snapIdx = (snapIdx + dir + SNAP_OPTIONS.length) % SNAP_OPTIONS.length;
+  updateSnapReadout();
+  flash(`snap: ${SNAP_OPTIONS[snapIdx]} m`);
+}
+snapBtn.addEventListener('click', () => cycleSnap(1));
+updateSnapReadout();
+
+function updatePlaceToolbar() {
+  placeToolbarEl.querySelectorAll('.place-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.kind === placeMode);
+  });
+}
+/** Every `placeMode` write goes through here so the ribbon/toolbar highlight
+ * always matches, whether set by a key (1-4), a toolbar click, or a
+ * refuse/cancel/place-committed path clearing it back to null. */
+function setPlaceMode(k) {
+  placeMode = k;
+  updatePlaceToolbar();
+}
+placeToolbarEl.querySelectorAll('.place-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    // Same "arm placement, next click places" code path as the 1/2/3/4 keys
+    // (update()'s PLACE_KEYS loop below) - just a mouse entry point into it.
+    setPlaceMode(placeMode === btn.dataset.kind ? null : btn.dataset.kind);
+    flash(placeMode ? `place: ${placeMode} (click to place, Esc to cancel)` : 'place: cancelled');
+  });
+});
+updatePlaceToolbar();
 
 /** The placed structure a level file's items live in (null for a world file). US-064: also used to find a light's live `${structId}.${lightId}` key. */
 function structureForFile(fileId) {
@@ -421,26 +550,88 @@ function teleportToSelection() {
 function selectableLabel(o) {
   const it = o.item;
   const desc = it.model || it.preset || it.type || '';
-  return `${o.collection}/${o.id}${desc ? ' (' + desc + ')' : ''}`;
+  return `${o.id}${desc ? ' (' + desc + ')' : ''}`;
 }
+
+// US-066: scene tree filter chips + id search (design/editor-ui.md 3: "Chips
+// = ALL / STRUCT / PROPS / LIGHTS / TRIGGERS / INTERACT (the doc's real
+// kinds) with counts"). `entities` (world-file items) map to STRUCT - the
+// doc's other collection is per-level (props/lights/triggers/interactables).
+let treeFilter = 'all'; // 'all' | a listOutlinerItems() collection name
+let treeSearch = '';
+const TREE_CHIP_LABELS = { all: 'ALL', entities: 'STRUCT', props: 'PROPS', lights: 'LIGHTS', triggers: 'TRIGGERS', interactables: 'INTERACT' };
+
+treeSearchInput.addEventListener('input', () => { treeSearch = treeSearchInput.value; renderOutliner(); });
+treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    treeFilter = chip.dataset.filter;
+    treeChipsEl.querySelectorAll('.tree-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    renderOutliner();
+  });
+});
 
 function renderOutliner() {
   outlinerEl.textContent = '';
-  const items = listOutlinerItems(doc);
-  for (const o of items) {
-    const row = document.createElement('div');
-    row.textContent = selectableLabel(o);
-    row.style.cursor = 'pointer';
-    row.style.whiteSpace = 'nowrap';
-    row.style.overflow = 'hidden';
-    row.style.textOverflow = 'ellipsis';
-    const isSel = selection && selection.fileId === o.fileId && selection.collection === o.collection && selection.id === o.id;
-    if (isSel) { row.style.color = '#ffd24a'; row.style.fontWeight = 'bold'; }
-    row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }));
-    row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }); teleportToSelection(); });
-    outlinerEl.appendChild(row);
+  const allItems = listOutlinerItems(doc);
+
+  const counts = { all: allItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
+  for (const o of allItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
+  treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
+    const key = chip.dataset.filter;
+    chip.textContent = `${TREE_CHIP_LABELS[key]} (${counts[key] || 0})`;
+  });
+
+  const q = treeSearch.trim().toLowerCase();
+  const filtered = allItems.filter((o) => {
+    if (treeFilter !== 'all' && o.collection !== treeFilter) return false;
+    if (q && !o.id.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tree-empty';
+    empty.textContent = allItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
+    outlinerEl.appendChild(empty);
+    return;
   }
-  if (!items.length) outlinerEl.textContent = '(no props/lights/interactables/entities)';
+
+  // Group by fileId (a level or the world file) so the tree reads as
+  // structure -> its props/lights/... , with `├─`/`└─` branch glyphs
+  // (design/editor-ui.md 4) - purely a visual grouping, same flat
+  // `listOutlinerItems` data and the same `selectItem` click path as before.
+  const groups = new Map();
+  for (const o of filtered) {
+    if (!groups.has(o.fileId)) groups.set(o.fileId, []);
+    groups.get(o.fileId).push(o);
+  }
+  for (const [fileId, items] of groups) {
+    const header = document.createElement('div');
+    header.className = 'tree-group-header';
+    header.textContent = fileId;
+    outlinerEl.appendChild(header);
+    items.forEach((o, i) => {
+      const row = document.createElement('div');
+      row.className = 'tree-row';
+      const isSel = selection && selection.fileId === o.fileId && selection.collection === o.collection && selection.id === o.id;
+      if (isSel) row.classList.add('selected');
+      const branch = document.createElement('span');
+      branch.className = 'tree-branch';
+      branch.textContent = i === items.length - 1 ? '└─' : '├─';
+      const glyph = document.createElement('span');
+      glyph.className = 'tree-glyph';
+      glyph.textContent = KIND_GLYPHS[kindForSelection({ collection: o.collection })] || '?';
+      const label = document.createElement('span');
+      label.className = 'tree-label';
+      label.textContent = selectableLabel(o);
+      row.appendChild(branch);
+      row.appendChild(glyph);
+      row.appendChild(label);
+      row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }));
+      row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }); teleportToSelection(); });
+      outlinerEl.appendChild(row);
+    });
+  }
 }
 renderOutliner();
 renderProperties();
@@ -465,7 +656,8 @@ async function refreshIoStatus() {
   saveBtn.disabled = !!err;
   saveBtn.title = err ? err.message : '';
   ioStatusEl.textContent = err ? `invalid: ${err.message}` : (dirty ? 'unsaved changes' : 'saved');
-  ioStatusEl.style.color = err ? '#ff6b6b' : (dirty ? '#ffd24a' : '#8fae8f');
+  ioStatusEl.classList.remove('saved', 'unsaved', 'invalid');
+  ioStatusEl.classList.add(err ? 'invalid' : (dirty ? 'unsaved' : 'saved'));
 }
 refreshIoStatus();
 
@@ -541,11 +733,11 @@ function placeAt(kind, pt, modelKeyOverride) {
   const { zone, structure: s } = classifyPlacement(world, pt);
   if (zone === 'gap') {
     flash('place refused: no floor here (a courtyard gap or hole inside the structure)');
-    placeMode = null;
+    setPlaceMode(null);
     return;
   }
-  if (!s && kind !== 'prop') { flash(`place refused: a ${kind} must be placed inside a structure`); placeMode = null; return; }
-  if (kind === 'light' && countLights(doc) >= MAX_LIGHTS) { flash(`place refused: MAX_LIGHTS (${MAX_LIGHTS}) reached`); placeMode = null; return; }
+  if (!s && kind !== 'prop') { flash(`place refused: a ${kind} must be placed inside a structure`); setPlaceMode(null); return; }
+  if (kind === 'light' && countLights(doc) >= MAX_LIGHTS) { flash(`place refused: MAX_LIGHTS (${MAX_LIGHTS}) reached`); setPlaceMode(null); return; }
 
   // Model for a freshly placed prop: the US-063 picker modal's choice when
   // given (see `openModelPicker` below); else the old single-default-model
@@ -573,11 +765,11 @@ function placeAt(kind, pt, modelKeyOverride) {
   const siblingIds = new Set((file.def[collection] || []).map((it) => it.id));
   const validateKind = s ? kind : 'entity';
   const errors = validateItem(validateKind, item, { assets, palette: assets.palette, siblingIds });
-  if (errors.length) { flash(`place refused: ${errors.join('; ')}`); placeMode = null; return; }
+  if (errors.length) { flash(`place refused: ${errors.join('; ')}`); setPlaceMode(null); return; }
 
   commit(makeInsertRecord(fileId, collection, item));
   selectItem({ fileId, collection, id: item.id });
-  placeMode = null;
+  setPlaceMode(null);
 }
 
 // ---- US-063: place-a-prop model picker -------------------------------------
@@ -621,7 +813,7 @@ function renderModelPickerList(query) {
       e.preventDefault();
       const pt = pendingPropPoint;
       closeModelPicker();
-      placeMode = null;
+      setPlaceMode(null);
       placeAt('prop', pt, key);
     });
     modelPickerListEl.appendChild(row);
@@ -632,7 +824,7 @@ modelPickerSearchEl.addEventListener('input', () => renderModelPickerList(modelP
 modelPickerSearchEl.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   closeModelPicker();
-  placeMode = null;
+  setPlaceMode(null);
   flash('place: cancelled');
 });
 
@@ -687,9 +879,24 @@ canvas.addEventListener('mousedown', (e) => {
     const item = selectionFromEntityId(doc, world, result.entityId);
     const already = selection && selection.fileId === item.fileId && selection.collection === item.collection && selection.id === item.id;
     selectItem(item);
-    if (already) {
+    // US-066 ribbon tool mode: 'move' (the default) reproduces the pre-066
+    // re-click-to-drag behaviour exactly; 'select' starts no drag at all;
+    // 'yaw' drags to spin instead of translate (design/editor-ui.md 3).
+    if (already && toolMode === 'move') {
       const data = world.entity(result.entityId);
       if (data && data.transform) drag = { entId: result.entityId, item, index: selectionItemIndex(doc, item), startTransform: { ...data.transform } };
+    } else if (already && toolMode === 'yaw') {
+      const data = world.entity(result.entityId);
+      const itemData = selectionItemData(doc, item);
+      const field = itemData && typeof itemData.facing === 'number' ? 'facing' : (itemData && typeof itemData.yawDeg === 'number' ? 'yawDeg' : null);
+      if (data && data.transform && field) {
+        yawDrag = {
+          entId: result.entityId, item, index: selectionItemIndex(doc, item), field,
+          startYawDeg: data.transform.yawDeg, startClientX: e.clientX,
+        };
+      } else if (field == null) {
+        flash('yaw: item has no facing/yawDeg field');
+      }
     }
     return;
   }
@@ -701,6 +908,16 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   const { col, row } = computeMouseCell(e);
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
+  if (yawDrag) {
+    const data = world.entity(yawDrag.entId);
+    if (data) {
+      const deltaDeg = (e.clientX - yawDrag.startClientX) * 0.5; // 0.5 deg/px, matches Q/E's 45-deg feel over a short drag
+      data.transform.yawDeg = ((yawDrag.startYawDeg + deltaDeg) % 360 + 360) % 360;
+      world.renderVersion++;
+      frame.markDirty();
+    }
+    return;
+  }
   if (!drag) return;
   const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row);
   if (Math.abs(ray.dz) < 1e-4) return;
@@ -717,7 +934,18 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button !== 0 || !drag) return;
+  if (e.button !== 0) return;
+  if (yawDrag) {
+    const data = world.entity(yawDrag.entId);
+    const yd = yawDrag;
+    yawDrag = null;
+    if (!data) return;
+    const before = selectionItemData(doc, yd.item);
+    if (!before) return;
+    commit(makeFieldEditRecord('yaw', yd.item.fileId, yd.item.collection, before, yd.index, { [yd.field]: data.transform.yawDeg }));
+    return;
+  }
+  if (!drag) return;
   const data = world.entity(drag.entId);
   const d = drag;
   drag = null;
@@ -784,8 +1012,14 @@ function update(dt) {
     drag = null;
     world.renderVersion++;
     frame.markDirty();
+  } else if (input.pressed('Escape') && yawDrag) {
+    const data = world.entity(yawDrag.entId);
+    if (data) data.transform.yawDeg = yawDrag.startYawDeg;
+    yawDrag = null;
+    world.renderVersion++;
+    frame.markDirty();
   } else if (input.pressed('Escape') && placeMode) {
-    placeMode = null;
+    setPlaceMode(null);
     flash('place: cancelled');
   }
 
@@ -793,11 +1027,11 @@ function update(dt) {
   // at the picked point (or the cursor ray on open sky, see the mousedown
   // handler above).
   for (const code of Object.keys(PLACE_KEYS)) {
-    if (input.pressed(code)) { placeMode = PLACE_KEYS[code]; flash(`place: ${placeMode} (click to place, Esc to cancel)`); }
+    if (input.pressed(code)) { setPlaceMode(PLACE_KEYS[code]); flash(`place: ${placeMode} (click to place, Esc to cancel)`); }
   }
 
-  if (input.pressed('BracketLeft')) { snapIdx = (snapIdx - 1 + SNAP_OPTIONS.length) % SNAP_OPTIONS.length; flash(`snap: ${SNAP_OPTIONS[snapIdx]} m`); }
-  if (input.pressed('BracketRight')) { snapIdx = (snapIdx + 1) % SNAP_OPTIONS.length; flash(`snap: ${SNAP_OPTIONS[snapIdx]} m`); }
+  if (input.pressed('BracketLeft')) cycleSnap(-1);
+  if (input.pressed('BracketRight')) cycleSnap(1);
   if (input.pressed('ArrowLeft')) applyNudge('x', -1);
   if (input.pressed('ArrowRight')) applyNudge('x', 1);
   if (input.pressed('ArrowUp')) applyNudge('y', -1);
@@ -865,9 +1099,22 @@ function drawOverlay(fb) {
 }
 
 let lastPresented = 0;
+// US-066: viewport plates (design/editor-ui.md 2/3) - a plain textContent
+// refresh throttled to 4 Hz, same "cheap DOM write, no markDirty" shape as
+// `statusEl` below; never forces a frame, so idle re-render skip stays intact.
+let lastPlateRefresh = -Infinity;
+function refreshViewportPlates(nowMs) {
+  if (nowMs - lastPlateRefresh < 250) return;
+  lastPlateRefresh = nowMs;
+  camPlateEl.textContent = `CAM ${cam.x.toFixed(1)} ${cam.y.toFixed(1)} ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}  SPD ${speed.toFixed(1)} m/s`;
+  const fps = engine.loop.stats.intervalMs > 0 ? 1000 / engine.loop.stats.intervalMs : 0;
+  statsPlateEl.textContent = `${fps.toFixed(0)} fps  grid ${rt.cols}x${rt.rows}  presented ${lastPresented}`;
+}
+
 function render() {
   const rendered = frame.step(world, cam, { animate, dt: 1 / 60, drawOverlay });
   if (rendered) lastPresented++;
+  refreshViewportPlates(performance.now());
   if (overlay.shouldRefresh(performance.now())) {
     const fps = engine.loop.stats.intervalMs > 0 ? 1000 / engine.loop.stats.intervalMs : 0;
     const selText = selection ? `${selection.fileId}/${selection.collection}/${selection.id}${drag ? ' (dragging)' : ''}` : '(none)';

@@ -9,6 +9,9 @@ import { selectionItemData } from './doc.js';
 /** Place keys (24.9): `1` prop, `2` light, `3` trigger, `4` interactable. */
 export const PLACE_KEYS = { Digit1: 'prop', Digit2: 'light', Digit3: 'trigger', Digit4: 'interactable' };
 
+/** US-066 glyph icons (design/editor-ui.md 4, no icon font): one per `kindForSelection` kind, reused by the scene tree and the inspector header. */
+export const KIND_GLYPHS = { prop: '♣', light: '☼', trigger: '◇', interactable: '¤', entity: '▦' };
+
 /** Id format (24.9): starts with a letter, then letters/digits/`_`/`-`. */
 export const ID_REGEX = /^[A-Za-z][A-Za-z0-9_-]*$/;
 export function isValidId(id) {
@@ -219,26 +222,57 @@ function makeDatalist(container, id, values) {
   return dl;
 }
 
+/** US-066: `x`/`y`/`z` get amber/green/cyan axis badges (design/editor-ui.md 1: "X amber, Y green, Z cyan"). */
+const AXIS_CLASS = { x: 'x', y: 'y', z: 'z' };
+
 /**
  * Renders the property form for the current selection into `container`
  * (24.9: a form generated from the item's own JSON shape - number/string/
- * boolean inputs, array-or-object fields as a JSON textarea). `ctx`:
+ * boolean inputs, array-or-object fields as a JSON textarea; US-066 restyles
+ * this into a header + POSITION card + a Properties card, same per-field
+ * commit/validate/undo path as before - no behaviour change). `ctx`:
  * `{ doc, selection, assets, palette, behaviourNames, onFieldCommit(patch),
  * onRename(newId, setError) }`.
  */
 export function renderPropertyPanel(container, ctx) {
   container.textContent = '';
   const { doc, selection } = ctx;
-  if (!selection) { container.textContent = '(nothing selected)'; return; }
+  if (!selection) {
+    const empty = document.createElement('div');
+    empty.className = 'insp-empty';
+    empty.textContent = '(nothing selected)';
+    container.appendChild(empty);
+    return;
+  }
   const item = selectionItemData(doc, selection);
-  if (!item) { container.textContent = '(item not found)'; return; }
+  if (!item) {
+    const empty = document.createElement('div');
+    empty.className = 'insp-empty';
+    empty.textContent = '(item not found)';
+    container.appendChild(empty);
+    return;
+  }
   const kind = kindForSelection(selection);
 
   const errEl = document.createElement('div');
-  errEl.style.color = '#ff6b6b';
-  errEl.style.fontSize = '11px';
-  errEl.style.marginBottom = '4px';
+  errEl.className = 'insp-error';
   container.appendChild(errEl);
+
+  const header = document.createElement('div');
+  header.className = 'insp-header';
+  const glyph = document.createElement('span');
+  glyph.className = 'insp-glyph';
+  glyph.textContent = KIND_GLYPHS[kind] || '?';
+  const idEl = document.createElement('span');
+  idEl.className = 'insp-id';
+  idEl.textContent = item.id;
+  const kindChip = document.createElement('span');
+  kindChip.className = 'insp-kind-chip';
+  kindChip.textContent = kind;
+  header.appendChild(glyph);
+  header.appendChild(idEl);
+  header.appendChild(kindChip);
+  container.appendChild(header);
 
   const file = doc.files.get(selection.fileId);
   const siblingIdsFor = (collection, excludeId) => {
@@ -247,11 +281,15 @@ export function renderPropertyPanel(container, ctx) {
     return ids;
   };
 
-  for (const key of Object.keys(item)) {
-    const row = document.createElement('label');
-    row.style.display = 'block';
-    row.style.margin = '4px 0';
-    row.textContent = `${key} `;
+  /**
+   * Builds one field's input (exactly the original 24.9 type-dispatch +
+   * datalist wiring) and wires the same commit/validate/undo path as before -
+   * `renderOutliner`/`renderProperties` call site owns the undo stack, this
+   * function only ever calls `ctx.onFieldCommit`/`ctx.onRename`. Returns the
+   * `<input>`/`<textarea>` element (the caller lays it out, e.g. an axis
+   * field vs. a generic labelled row).
+   */
+  function buildInput(key) {
     const val = item[key];
     let input;
     if (typeof val === 'number') {
@@ -266,7 +304,6 @@ export function renderPropertyPanel(container, ctx) {
     } else if (val !== null && typeof val === 'object') {
       input = document.createElement('textarea');
       input.rows = 2;
-      input.style.width = '100%';
       input.value = JSON.stringify(val);
     } else {
       input = document.createElement('input');
@@ -286,8 +323,6 @@ export function renderPropertyPanel(container, ctx) {
         input.setAttribute('list', listId);
       }
     }
-    row.appendChild(input);
-    container.appendChild(row);
 
     const commitField = () => {
       let raw;
@@ -314,5 +349,67 @@ export function renderPropertyPanel(container, ctx) {
       ctx.onFieldCommit(patch);
     };
     input.addEventListener(input.type === 'checkbox' ? 'change' : 'blur', commitField);
+    return input;
   }
+
+  // ---- POSITION card: x/y/z (axis-coloured) + yaw (facing/yawDeg) --------
+  const posKeys = ['x', 'y', 'z'].filter((k) => k in item);
+  const yawKey = typeof item.facing === 'number' ? 'facing' : (typeof item.yawDeg === 'number' ? 'yawDeg' : null);
+  if (posKeys.length || yawKey) {
+    const card = document.createElement('div');
+    card.className = 'insp-card';
+    const title = document.createElement('div');
+    title.className = 'insp-card-title';
+    title.textContent = 'Position';
+    card.appendChild(title);
+    if (posKeys.length) {
+      const grid = document.createElement('div');
+      grid.className = 'insp-pos-grid';
+      for (const axis of posKeys) {
+        const field = document.createElement('div');
+        field.className = 'insp-axis-field';
+        const badge = document.createElement('span');
+        badge.className = `insp-axis-badge ${AXIS_CLASS[axis] || ''}`;
+        badge.textContent = axis.toUpperCase();
+        const input = buildInput(axis);
+        field.appendChild(badge);
+        field.appendChild(input);
+        grid.appendChild(field);
+      }
+      card.appendChild(grid);
+    }
+    if (yawKey) {
+      const yawRow = document.createElement('div');
+      yawRow.className = 'insp-field-row insp-yaw-row';
+      const label = document.createElement('span');
+      label.className = 'insp-field-label';
+      label.textContent = 'YAW (deg)';
+      const input = buildInput(yawKey);
+      yawRow.appendChild(label);
+      yawRow.appendChild(input);
+      card.appendChild(yawRow);
+    }
+    container.appendChild(card);
+  }
+
+  // ---- Properties card: id + every remaining field ------------------------
+  const handled = new Set([...posKeys, yawKey].filter(Boolean));
+  const card = document.createElement('div');
+  card.className = 'insp-card';
+  const title = document.createElement('div');
+  title.className = 'insp-card-title';
+  title.textContent = 'Properties';
+  card.appendChild(title);
+  for (const key of Object.keys(item)) {
+    if (handled.has(key)) continue;
+    const row = document.createElement('label');
+    row.className = 'insp-field-row';
+    const label = document.createElement('span');
+    label.className = 'insp-field-label';
+    label.textContent = key;
+    row.appendChild(label);
+    row.appendChild(buildInput(key));
+    card.appendChild(row);
+  }
+  container.appendChild(card);
 }
