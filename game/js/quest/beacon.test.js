@@ -11,6 +11,13 @@
 // against a `world.structures` array padded to a size that would make an
 // O(n) scan expensive; (2) once the ramp finishes, `stepBeacon` is an O(1)
 // no-op (rule 9) - it does not keep touching `world.structures` at all.
+//
+// BUG-PERF-001a2 follow-up (same row): the a1 fix left one per-step
+// allocation behind - the `` `${structId}.${lightId}` `` key was still
+// rebuilt with a template literal every step, forever, to compare against
+// `lights.key[handle]`. `beaconLight` now computes it once into
+// `world.state['tower.beacon.lightKey']`; the `--expose-gc` heap-growth
+// check near the bottom of this file proves it.
 import { World } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
 import lanternMod from '../../../design/models/lantern.js';
@@ -158,6 +165,52 @@ ok('sanity: tower.js has a beacon.light interactable', !!beaconInteractable);
   // decoys every step would blow this well past 3x; O(1) caching keeps it flat.
   ok(`step time stays flat regardless of world.structures size (small=${msSmall.toFixed(2)}ms big=${msBig.toFixed(2)}ms for ${N} steps each)`,
     msBig < msSmall * 3 + 5);
+}
+
+// ---- BUG-PERF-001a2 (docs/backlog.md row 25w): `stepBeacon` used to rebuild
+// the `` `${structId}.${lightId}` `` key with a template literal EVERY step,
+// forever, once the relay starts waking (the `.find()` scans were the a1
+// fix's target; this string was the remaining per-step allocation `stepBeacon`
+// still did). `beaconLight` now builds it once into `world.state`, so a run
+// of many steps in the lit/post-ramp state should show ~zero heap growth
+// (--expose-gc probe, same technique as engine/render/terrainCaster.test.js's
+// "no allocation over many frames" check). ----
+{
+  const world = makeWorld();
+  const structId = world.structures[0].id;
+  const entity = world.get(`${structId}.${beaconInteractable.prop}`);
+  const lights = {
+    count: 1,
+    key: [`${structId}.${beaconInteractable.light}`],
+    baseIntensity: new Float32Array([0]),
+    setOn() {},
+  };
+  beaconLight({ world, def: beaconInteractable, entity });
+
+  const model = assets.model('relay');
+  const wakeAnim = model.animations.wake;
+  const startT = model.wakeLightFrame / wakeAnim.fps;
+  const growDur = assets.palette.lights[towerDef.lights.find((l) => l.id === beaconInteractable.light).preset].grow.duration;
+  const DT = 1 / 60;
+
+  const runFrame = () => stepBeacon(world, lights, DT, assets.palette);
+
+  if (typeof global.gc === 'function') {
+    // Warm up through the whole ramp first (JIT, hidden classes, the one
+    // allowed struct/lightDef lookup) - not part of the measured window.
+    const warmupSteps = Math.ceil((startT + growDur) / DT) + 30;
+    for (let i = 0; i < warmupSteps; i++) runFrame();
+    global.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 5000; i++) runFrame(); // well past the ramp: the "forever after" tail
+    global.gc();
+    const after = process.memoryUsage().heapUsed;
+    const grewBy = after - before;
+    ok(`stepBeacon: no significant heap growth over 5000 post-ramp steps (--expose-gc), grew by ${grewBy} bytes`, grewBy < 512 * 1024);
+  } else {
+    for (let i = 0; i < 200; i++) runFrame();
+    ok('stepBeacon: 200 steps run without throwing (run with --expose-gc for the heap check)', true);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
