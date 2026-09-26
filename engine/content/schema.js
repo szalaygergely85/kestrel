@@ -50,6 +50,10 @@ export const KEY_ORDER = {
   // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
   // optional keys - schema stays 1, a world file without them still loads.
   world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'structures', 'entities', 'horizon', 'state', 'bounds', 'triggers'],
+  // CO-5 (docs/coordinates.md section 8): `WorldState` (engine/world/
+  // serialize.js), not a content file - `stringifySave` tags it
+  // `kind: 'save'` only to select this order, it is not an envelope key.
+  save: ['kind', 'version', 'world', 'contentVersion', 'terrain', 'structures', 'entities', 'state', 'nextId', 'time', 'removed', 'horizon', 'bounds', 'triggers'],
 };
 
 /**
@@ -59,4 +63,5 @@ export const KEY_ORDER = {
 export const ORDERED_MAPS = {
   level: ['legend', 'markers', 'layers', 'routeNotes'],
   world: ['state'],
+  save: ['state'],
 };

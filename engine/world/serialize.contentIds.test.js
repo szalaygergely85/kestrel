@@ -51,6 +51,8 @@ world.remove('room.brazier');
 world.spawn('debris', { x: 1, y: 1, z: 0, yawDeg: 0, pitchDeg: 0 }, {}, 'debris_1');
 
 const state = serialize(world);
+// CO-5 (docs/coordinates.md 8): WorldState is version 2 going forward.
+ok('serialize writes version 2', state.version === 2);
 ok('serialize writes contentVersion when content-backed', state.contentVersion === assetsA.contentVersion);
 ok('serialize records the removed prop', Array.isArray(state.removed) && state.removed.includes('room.brazier'));
 ok('serialize tags the content entity fromContent', !!state.entities.find((e) => e.id === 'npc1').fromContent);

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "world": "world_m1",
+  "contentVersion": 1,
+  "terrain": { "recipe": "overworld_far", "seed": 7331, "overrides": {} },
+  "structures": [
+    { "id": "tower", "level": "tower", "origin": { "x": 1480, "y": 1018, "z": 0 }, "yawSteps": 0, "dynamics": { "grate": { "t": 0.5, "target": 1, "delay": 0 } } },
+    { "id": "annex", "level": "tower", "origin": { "x": 1500, "y": 1040, "z": -3 }, "yawSteps": 2, "dynamics": {} }
+  ],
+  "entities": [
+    { "id": "player", "type": "player", "transform": { "x": 1400, "y": 1000, "z": 0, "yawDeg": 0, "pitchDeg": 0 }, "components": { "body": { "radius": 0.3, "height": 1.7, "eyeH": 1.6, "vx": 0, "vy": 0, "vz": 0, "grounded": true } } },
+    { "id": "tower.brazier", "type": "prop", "transform": { "x": 1481, "y": 1019, "z": 0, "yawDeg": 0, "pitchDeg": 0 }, "components": {}, "fromContent": true },
+    { "id": "annex.lantern", "type": "prop", "transform": { "x": 1501, "y": 1041, "z": -3, "yawDeg": 180, "pitchDeg": 0 }, "components": {}, "fromContent": true },
+    { "id": "debris_1", "type": "debris", "transform": { "x": 1350, "y": 950, "z": 0, "yawDeg": 45, "pitchDeg": 0 }, "components": {} }
+  ],
+  "state": { "tower.lantern.taken": true, "quest.endT": -1 },
+  "nextId": 4,
+  "time": { "timeOfDay": null },
+  "horizon": [],
+  "bounds": null,
+  "triggers": [],
+  "removed": []
+}

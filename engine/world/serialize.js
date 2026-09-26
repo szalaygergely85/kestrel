@@ -3,8 +3,10 @@
 // opts?)` -> a brand-new `World` (old handles report `alive === false` -
 // D-006: class instances are rebuilt from content by key, never stored).
 import { World } from './World.js';
+import { migrateState, parentFromId, LATEST_VERSION } from './migrateState.js';
+import { stringifyContent } from '../content/stringify.js';
 
-const VERSION = 1;
+const VERSION = LATEST_VERSION;
 
 // Item 5c (architect review #1): `integrate.js`'s `ensureScratch` stashes
 // per-body scratch (`_move`, `_collideOpts`) directly on `components.body`
@@ -60,6 +62,11 @@ export function serialize(world) {
       const out = {
         id: e.id,
         type: e.type,
+        // CO-5 (coordinates.md 8): world coordinates only (never a
+        // structure-local number) - `e.transform` already is world-space,
+        // this is a straight copy. `parent` is a save-format record, not a
+        // live frame (see `parentFromId`'s own comment).
+        parent: parentFromId(e.id, world.structures),
         transform: { x: e.transform.x, y: e.transform.y, z: e.transform.z, yawDeg: e.transform.yawDeg, pitchDeg: e.transform.pitchDeg },
         components: stripScratch(structuredClone(e.components)),
       };
@@ -83,9 +90,9 @@ export function serialize(world) {
  * @returns {World}
  */
 export function deserialize(state, assets, opts = {}) {
-  if (state.version !== VERSION) {
-    throw new Error(`deserialize: unknown WorldState version ${state.version} (expected ${VERSION})`);
-  }
+  // CO-5: accepts v1 (migrated up) and v2; any other version throws a
+  // clear, specific error (`migrateState` - never a silent best-effort).
+  state = migrateState(state);
 
   // US-027a (architecture.md 21.8): the content-id migration only applies
   // to a save that was itself content-backed, against a registry that
@@ -185,4 +192,17 @@ export function deserialize(state, assets, opts = {}) {
 
   world.nextId = state.nextId;
   return world;
+}
+
+/**
+ * Canonical, byte-stable text for a `WorldState` (coordinates.md 8): the
+ * same writer content files use (`KEY_ORDER.save` in `content/schema.js`),
+ * so `stringifySave(serialize(deserialize(s))) === stringifySave(s)` for
+ * any save. `kind: 'save'` is added only to pick the right key order/tag -
+ * it is not part of the `WorldState` shape itself.
+ * @param {Object} state - a `WorldState` (a `serialize()` result).
+ * @returns {string}
+ */
+export function stringifySave(state) {
+  return stringifyContent({ kind: 'save', ...state });
 }
