@@ -73,6 +73,53 @@
       color: #e8e2d0;
       line-height: 1.6;
     }
+    /* US-063: place-a-prop model picker - a searchable modal shown right
+       after clicking a surface in place-prop mode (tools/editor/main.js
+       openModelPicker). `display: none` by default; main.js flips it to
+       `flex` to open/close. */
+    #model-picker {
+      position: fixed;
+      inset: 0;
+      z-index: 1500;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.55);
+    }
+    #model-picker-box {
+      width: 320px;
+      max-height: 70vh;
+      background: #0c120c;
+      border: 1px solid #2a3a2a;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    #model-picker-search {
+      width: 100%;
+      box-sizing: border-box;
+      margin-bottom: 6px;
+      background: #050805;
+      color: #cfead0;
+      border: 1px solid #2a3a2a;
+      font: 13px "Courier New", monospace;
+      padding: 4px;
+    }
+    #model-picker-list {
+      overflow-y: auto;
+      flex: 1 1 auto;
+    }
+    .model-picker-row {
+      padding: 3px 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .model-picker-row:hover {
+      background: #1c2a1c;
+      color: #ffd24a;
+    }
   </style>
 </head>
 <body>
@@ -105,7 +152,7 @@
         Q/E: yaw &middot; G: drop to floor &middot; Del: delete &middot; Esc: cancel drag/place<br/>
         Ctrl+Z/Y: undo/redo &middot; T: teleport to selection &middot; M: markers<br/>
         1/2/3/4: place prop/light/trigger/interactable, then click<br/>
-        Ctrl+S: save &middot; P: play-test (new tab)
+        Ctrl+S: save &middot; P: play-test (new tab) &middot; H: key-help overlay
       </section>
       <section>
         <div id="status"></div>
@@ -113,6 +160,15 @@
     </div>
   </div>
   <div id="gate-message"></div>
+
+  <!-- US-063: place-a-prop model picker (main.js openModelPicker/closeModelPicker). -->
+  <div id="model-picker">
+    <div id="model-picker-box">
+      <input type="text" id="model-picker-search" placeholder="search models..." autocomplete="off" />
+      <div id="model-picker-list"></div>
+      <div style="font-size:11px;color:#8fae8f;margin-top:4px;">Esc: cancel</div>
+    </div>
+  </div>
 
   <!-- Same design/ script list as game/index.html (24.3) - classic scripts so
        window.ASSETS.palette/detailPass/models/uiStyle are ready before

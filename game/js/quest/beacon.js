@@ -74,6 +74,17 @@ export function beaconLight(ctx) {
   // `LightSet` (a fresh one every world load/restart - stale numeric handles
   // from a previous `LightSet` are never valid on a new one).
   world.state['tower.beacon.lightHandle'] = null;
+  // BUG-PERF-001a2 (docs/backlog.md row 25w): the `` `${structId}.${lightId}` ``
+  // key `stepBeacon` needs to compare against `lights.key[handle]` is built
+  // HERE, once, right when structId/lightId are known - never in the per-step
+  // function itself. `structId`/`lightId` never change again for this
+  // wake/lit run (only a fresh `beaconLight()` call - a restart or a new
+  // interaction - can change them), so a per-step template-literal allocation
+  // was pure waste for the entire rest of the run, same class of bug as the
+  // `.find()` scans BUG-PERF-001a already fixed in this same function.
+  const structIdNow = world.state['tower.beacon.structId'];
+  const lightIdNow = world.state['tower.beacon.lightId'];
+  world.state['tower.beacon.lightKey'] = (structIdNow && lightIdNow) ? `${structIdNow}.${lightIdNow}` : null;
 
   return true;
 }
@@ -111,8 +122,21 @@ export function stepBeacon(world, lights, dt, palette) {
   const structId = world.state['tower.beacon.structId'];
   if (!lightId || !structId) return;
 
+  // BUG-PERF-001a2: `key` used to be rebuilt with a template literal EVERY
+  // step (a string allocation, forever, once the relay starts waking) just
+  // to compare against `lights.key[handle]` - `beaconLight` now computes it
+  // once and stores it in `world.state['tower.beacon.lightKey']`, so this is
+  // a plain read, no allocation. Old worlds/saves from before this fix (or a
+  // dev-only direct `world.state['tower.beacon.wakeT']` poke in a test) may
+  // not have the key cached yet - fall back to building it that one time
+  // only, never on the steps after.
+  let key = world.state['tower.beacon.lightKey'];
+  if (typeof key !== 'string') {
+    key = `${structId}.${lightId}`;
+    world.state['tower.beacon.lightKey'] = key;
+  }
+
   let handle = world.state['tower.beacon.lightHandle'];
-  const key = `${structId}.${lightId}`;
   if (typeof handle !== 'number' || handle < 0 || handle >= lights.count || lights.key[handle] !== key) {
     handle = lights.key.indexOf(key);
     world.state['tower.beacon.lightHandle'] = handle;

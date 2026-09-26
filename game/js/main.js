@@ -26,6 +26,7 @@ import {
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings.js'; // US-038b
+import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } from './audio/sfx.js';
@@ -395,6 +396,8 @@ function runGame(mode) {
   let look = null;
   let playerHandle = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
+  let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
+  if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
 
   // Reused every physics step (architecture.md section 9 rule 9.3: no
   // per-step allocations) - US-009 hoisted this out of update()'s body,
@@ -609,7 +612,19 @@ function runGame(mode) {
       if (uiLocked) input.consumeMouseDelta();
       else look.update(dt);
     }
-    if (mode === 'world' && playerHandle) {
+    // US-062: real pause - freeze player/physics/quest/animations/triggers
+    // while the pause overlay or Settings is up (the same condition main.js
+    // already draws them with, ui/pause.js's `isPaused`); edge-detected once
+    // here so audio ducks/resumes and the loop's accumulator resets exactly
+    // on the transition, not on every paused step. `render()` is untouched,
+    // so the scene keeps drawing. Never true for `?bench=`/`?gpucompare=`/
+    // `?voxelbench=` (`isCaptureOrBench`).
+    const paused = mode === 'world' && !isCaptureOrBench && isPaused({ ending, look, isMapOpen });
+    if (paused !== wasPaused) {
+      wasPaused = paused;
+      if (paused) duckAudio(); else { unduckAudio(); resetSimAccumulator(engine); }
+    }
+    if (mode === 'world' && playerHandle && !paused) {
       if (ending || uiLocked) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {

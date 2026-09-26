@@ -90,6 +90,14 @@ export function createFrame({ engine, assets, rt, gpuParam = true }) {
   return {
     fb, gpuPipeline, sprites, voxelPool,
     get presented() { return presented; },
+    // US-064: the live `LightSet` (built once per `world:loaded`, not
+    // per-frame) - main.js patches a moved/toggled light's handle directly
+    // through this (`findLightHandle`/`applyLightPatch`, livepatch.js)
+    // instead of rebuilding the whole World. `fb.lights` is only assigned
+    // inside `step()`, and only on frames that actually render (the idle
+    // skip returns before it) - this getter reads the same closure variable
+    // directly, so it is always current, first-frame included.
+    get lightSet() { return lightSet; },
     /** Forces the next `step()` to actually render (24.4's `dirty = true`) - camera move, `?gpu=0` toggle, etc. */
     markDirty() { dirty = true; },
     /**

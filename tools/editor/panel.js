@@ -85,6 +85,61 @@ export function defaultWorldPropItem(id, pos, modelKey) {
 }
 
 /**
+ * US-063 fix: classifies a placement point against the world's REAL per-cell
+ * data, not just a structure's bounding rectangle. The old `structureAt` in
+ * `main.js` only checked `pt` against each structure's axis-aligned bbox
+ * (flagged as a known limitation in the US-033 implementation note) - a
+ * courtyard gap or any other hole inside that rectangle (a cell with no
+ * legend entry) was wrongly treated as "inside". `world.sectorAt(x,y)`
+ * already returns `null` for exactly that cell (`Level.sectorAt`'s own
+ * "outside the grid" answer, D-008) even when `world.structureAt(x,y)` finds
+ * a structure whose bbox contains the point - that is the real per-cell test
+ * this function uses. Takes a `world`-shaped object exposing
+ * `structureAt(x,y)`/`sectorAt(x,y)` (the real `World` class - see
+ * `engine/world/World.js` - or a fake with the same two methods for Node
+ * tests, see `panel.test.mjs`).
+ * @param {{structureAt(x:number,y:number):Object|null, sectorAt(x:number,y:number):Object|null}} world
+ * @param {{x:number,y:number}} pt
+ * @returns {{ zone: 'structure'|'gap'|'outside', structure: Object|null }}
+ *   'structure' = a real, walkable/wall cell inside a structure's footprint;
+ *   'gap' = inside a structure's bbox but on a cell with no real sector (a
+ *   courtyard, a hole - placement must be refused here); 'outside' = not in
+ *   any structure's bbox at all (world space, props only).
+ */
+export function classifyPlacement(world, pt) {
+  const structure = world.structureAt(pt.x, pt.y);
+  if (!structure) return { zone: 'outside', structure: null };
+  const sector = world.sectorAt(pt.x, pt.y);
+  return sector ? { zone: 'structure', structure } : { zone: 'gap', structure: null };
+}
+
+/**
+ * Model keys placeable as a world prop (US-063's place-a-prop model picker):
+ * every registered model except UI-only sprites (`ui: true` - `title`/
+ * `subtitle`/`mapCard` etc, design/models/title.js - not meant to be dropped
+ * into the world as a prop; `main.js`'s old single-default-model comment
+ * flagged `title` by name as exactly this kind of non-placeable sprite).
+ * Sorted for a stable list.
+ * @param {import('../../engine/index.js').AssetRegistry} assets
+ * @returns {string[]}
+ */
+export function listPlaceableModels(assets) {
+  return assets.keys('model')
+    .filter((k) => {
+      const def = assets.model(k);
+      return !(def && def.ui === true);
+    })
+    .sort();
+}
+
+/** Case-insensitive substring filter for the model picker's search box (US-063). */
+export function filterModelKeys(keys, query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return keys;
+  return keys.filter((k) => k.toLowerCase().includes(q));
+}
+
+/**
  * Selection collection -> validation/place "kind" (24.9). World file items
  * (`entities`) get the generic `'entity'` kind - looser validation (no
  * model/preset requirement unless the field is actually present).
