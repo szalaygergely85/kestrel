@@ -3,3 +3,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 node_modules/
+
+# Third-party asset packs with unverified licences - local only, never pushed (repo is public)
+design/local/
+design/vox/
+design/meshes/source/

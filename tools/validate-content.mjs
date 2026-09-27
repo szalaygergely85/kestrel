@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -70,6 +71,8 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_world.js', // US-026a-content: waystone. Node/tooling only - see the header note above.
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',
+  // Optional local third-party packs (git-ignored design/local/, licence unverified - never pushed): loaded only if present.
+  { optional: '../design/local/voxel_pack.js' },
   '../design/levels/overworld_far.js',
 ];
 
@@ -83,6 +86,10 @@ function fetchText(url) { return readFile(new URL(url), 'utf8'); }
  * returned, just sourced from JSON for the three flipped defs. */
 export async function loadDesignAssets() {
   for (const rel of CLASSIC_SCRIPTS) {
+    if (typeof rel === 'object') {
+      if (existsSync(new URL(rel.optional, import.meta.url))) await import(rel.optional);
+      continue;
+    }
     await import(rel);
   }
   const ASSETS = globalThis.ASSETS = globalThis.ASSETS || {};
