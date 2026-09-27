@@ -189,6 +189,49 @@ async function pickTextFile() {
 }
 
 /**
+ * Opens a native file picker (or an `<input type=file>` fallback) for a
+ * BINARY file and resolves `{ buffer, name }` (an `ArrayBuffer` - not text),
+ * or `null` if the user cancelled. Same two-path shape as `pickTextFile`
+ * above; used by OWN-REQ-011's "Import .vox" button (main.js), which needs
+ * the raw bytes, not a text decode.
+ * @param {{accept?: string, description?: string}} [opts] `accept`: an
+ *   `<input accept>`-shaped extension/MIME string, e.g. `.vox`.
+ * @returns {Promise<{buffer: ArrayBuffer, name: string}|null>}
+ */
+export async function pickBinaryFile(opts = {}) {
+  const accept = opts.accept || '*/*';
+  const description = opts.description || 'File';
+  if (typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function') {
+    let handles;
+    try {
+      handles = await window.showOpenFilePicker({
+        types: [{ description, accept: { 'application/octet-stream': [accept] } }],
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') return null; // user cancelled
+      throw e;
+    }
+    const f = await handles[0].getFile();
+    return { buffer: await f.arrayBuffer(), name: f.name };
+  }
+  // `<input type=file>` fallback (no FSA API) - same pattern as `pickTextFile`.
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', async () => {
+      const f = input.files && input.files[0];
+      input.remove();
+      if (!f) { resolve(null); return; }
+      resolve({ buffer: await f.arrayBuffer(), name: f.name });
+    });
+    input.click();
+  });
+}
+
+/**
  * Loads a world/level JSON file back into `doc` (24.10 "Load"): parses,
  * migrates, validates with the new content substituted, then replaces the
  * matching registry entry via `AssetRegistry.replace` (US-069, 24.12 item 6 -

@@ -1,0 +1,692 @@
+// @ts-check
+// engine/mesh/terrainMesh.js - ME-05 (docs/backlog.md, docs/architecture.md
+// 27.4, 27.8, 27.15.5 - normative). Turns the near band (`Terrain.near`,
+// US-026a) and the far 8 m grid (`Terrain.farHDraw`) into indexed
+// `MeshData` (ME-01) chunks the rasteriser (ME-03) can draw through the same
+// `DrawList`/`rasterJS` path as levels and voxel props - so terrain and
+// structures share one depth buffer with no seam at the tower foot.
+//
+// Per 27.15.5: "US-026b S1 is not a blocker." This codes against TODAY'S
+// `terrain.near` contract - `{x0, y0, w, h, cell, height, type, hDraw,
+// minH, maxH, version}` - and detects a band flip by OBJECT IDENTITY (a
+// flip = a new `near` object). `Terrain.js` is read-only here: never edited,
+// never monkey-patched.
+//
+// engine/mesh/* may import only engine/core/*, engine/render/GBuffer.js,
+// engine/render/projection.js and engine/voxel/{octNormal,voxelPose,
+// VoxelModel}.js (27.15.0) - never a caster (Terrain.js's sibling
+// terrainCaster.js), gpu/*, game/ or design/. The "analytic normal" formula
+// and the near/far type-pick rule below are therefore literal, independent
+// copies of `terrainCaster.js`'s `terrainNormal`/`castTerrain` logic, not
+// imports of it (that file is off-limits per the "Do not" list below).
+//
+// Do not: edit Terrain.js/terrainCaster.js; sample `heightAt` for vertices
+// inside the band; rebuild inside a fixed step or inside `rasterDrawList`;
+// give terrain per-cell planeIds; enable `DRAW_FLAG_DEPTH_BIAS` by default.
+import { packNormalOct } from '../voxel/octNormal.js';
+import { DRAW_TERRAIN } from './DrawList.js';
+
+/** Far tile size in 8 m quads (32 quads = 256 m per tile). */
+export const FAR_TILE_QUADS = 32;
+/** LOD1 far tiles keep every 4th vertex column/row (32 m effective spacing). */
+export const FAR_LOD1_STEP = 4;
+/** Far tiles within this 2D distance of the eye draw at LOD0 (8 m); beyond it, LOD1. */
+export const RING0_M = 512;
+
+function now() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+// ---------------------------------------------------------------------------
+// Small geometry helpers (module-level scratch where the hot path uses them)
+// ---------------------------------------------------------------------------
+
+/** `(-(hR-hL)/(2c), -(hU-hD)/(2c), 1)` normalised - the far grid's analytic
+ * normal (c = 8 m on `terrain._farGridDraw`, falling back to the smooth
+ * analytic `heightAt` past the grid edge). Literal copy of
+ * `terrainCaster.js`'s `terrainNormal(terrain, x, y, false, out)` - that
+ * file cannot be imported (27.15.0 import allow-list), so this is
+ * independently maintained; `terrain.groundNormalAt` already covers the
+ * NEAR (c = 2, `groundAt` fallback) case for near-band vertices below. */
+function farNormalAt(terrain, x, y, out) {
+  const c = 8;
+  const grid = terrain._farGridDraw;
+  const gh = terrain.util.gridHeight;
+  let hL = gh(grid, x - c, y); if (hL === null) hL = terrain.heightAt(x - c, y);
+  let hR = gh(grid, x + c, y); if (hR === null) hR = terrain.heightAt(x + c, y);
+  let hD = gh(grid, x, y - c); if (hD === null) hD = terrain.heightAt(x, y - c);
+  let hU = gh(grid, x, y + c); if (hU === null) hU = terrain.heightAt(x, y + c);
+  const dhdx = (hR - hL) / (2 * c), dhdy = (hU - hD) / (2 * c);
+  const len = Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);
+  out.x = -dhdx / len; out.y = -dhdy / len; out.z = 1 / len;
+  return out;
+}
+
+/** `Array.from`-free inclusive index list at `step` (always includes both `start` and `end`). */
+function stepIndices(start, end, step) {
+  const arr = [];
+  for (let i = start; i < end; i += step) arr.push(i);
+  if (arr.length === 0 || arr[arr.length - 1] !== end) arr.push(end);
+  return arr;
+}
+
+/** Ordered perimeter of a `cols x rows` grid (position indices into `cols`/`rows`, not world coords), starting at the min corner, +x, +y, -x, -y. */
+function perimeterPosList(nc, nr) {
+  const list = [];
+  for (let cp = 0; cp < nc; cp++) list.push([cp, 0]);
+  for (let rp = 1; rp < nr; rp++) list.push([nc - 1, rp]);
+  for (let cp = nc - 2; cp >= 0; cp--) list.push([cp, nr - 1]);
+  for (let rp = nr - 2; rp > 0; rp--) list.push([0, rp]);
+  return list;
+}
+
+/** Same shape as `perimeterPosList` but over explicit global (i, j) integer ranges (used by the near/far stitch loops). */
+function perimeterIJList(iMin, iMax, jMin, jMax) {
+  const list = [];
+  for (let i = iMin; i <= iMax; i++) list.push([i, jMin]);
+  for (let j = jMin + 1; j <= jMax; j++) list.push([iMax, j]);
+  for (let i = iMax - 1; i >= iMin; i--) list.push([i, jMax]);
+  for (let j = jMax - 1; j > jMin; j--) list.push([iMin, j]);
+  return list;
+}
+
+// ---------------------------------------------------------------------------
+// Near band chunks
+// ---------------------------------------------------------------------------
+
+/** Static grid index buffer (2 triangles per quad), shared by front/back chunk MeshData of the same shape (topology never changes). */
+function buildGridIndex(cols, rows) {
+  const nq = (cols - 1) * (rows - 1);
+  const idx = new Uint32Array(nq * 6);
+  let o = 0;
+  for (let j = 0; j < rows - 1; j++) {
+    for (let i = 0; i < cols - 1; i++) {
+      const a = i + j * cols, b = (i + 1) + j * cols, c = (i + 1) + (j + 1) * cols, d = i + (j + 1) * cols;
+      idx[o++] = a; idx[o++] = b; idx[o++] = c;
+      idx[o++] = a; idx[o++] = c; idx[o++] = d;
+    }
+  }
+  return idx;
+}
+
+/** @typedef {import('./MeshData.js').MeshData & {_origin: {x:number,y:number,z:number}}} NearChunkMesh */
+
+/** @returns {NearChunkMesh} */
+function makeNearChunkMesh(id, cols, rows, idxBuf) {
+  const vCount = cols * rows;
+  return {
+    version: /** @type {1} */ (1), id, layout: /** @type {'terrain'} */ ('terrain'),
+    pos: new Float32Array(vCount * 3),
+    uv: new Float32Array(0),
+    nrm: new Uint32Array(vCount),
+    flat: new Uint32Array(0),
+    aux: new Float32Array(0),
+    idx: idxBuf,
+    triCount: idxBuf.length / 3,
+    bbox: new Float64Array(6),
+    ranges: [{ start: 0, count: idxBuf.length / 3 }],
+    matKeys: [], matsResolved: true, meshVersion: 1,
+    _origin: { x: 0, y: 0, z: 0 },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Far tiles (LOD0 8 m + LOD1 32 m, each with its own skirt)
+// ---------------------------------------------------------------------------
+
+/** One LOD level's vertex layout for a far tile: `cols`/`rows` are GLOBAL far-grid indices (step 1 for LOD0, `FAR_LOD1_STEP` for LOD1), `perim` is the position-index perimeter loop over them (skirt order). */
+function buildFarLodLayout(desc, step) {
+  const cols = stepIndices(desc.colStart, desc.colEnd, step);
+  const rows = stepIndices(desc.rowStart, desc.rowEnd, step);
+  const perim = perimeterPosList(cols.length, rows.length);
+  return { cols, rows, perim };
+}
+
+/** Fills one LOD level's vertices + main-quad/skirt indices at the given typed-array offsets. Returns `{minH}` (tile's own min height on this level's sampled vertices - close enough to a full 8 m tile scan for the skirt floor). */
+function fillFarLevel(terrain, level, cell, pos, nrm, idx, vertBase, idxMainOff, idxSkirtOff, scratchN) {
+  const { cols, rows, perim } = level;
+  const nc = cols.length, nr = rows.length;
+  let minH = Infinity;
+  for (let rp = 0; rp < nr; rp++) {
+    const j = rows[rp];
+    for (let cp = 0; cp < nc; cp++) {
+      const i = cols[cp];
+      const vi = vertBase + cp + rp * nc;
+      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      const z = terrain.farHDraw[i + j * terrain.mapW];
+      pos[vi * 3] = x; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = z;
+      farNormalAt(terrain, x, y, scratchN);
+      nrm[vi] = packNormalOct(scratchN.x, scratchN.y, scratchN.z);
+      if (z < minH) minH = z;
+    }
+  }
+  let qo = idxMainOff;
+  for (let rp = 0; rp < nr - 1; rp++) {
+    for (let cp = 0; cp < nc - 1; cp++) {
+      const a = vertBase + cp + rp * nc, b = vertBase + (cp + 1) + rp * nc;
+      const c = vertBase + (cp + 1) + (rp + 1) * nc, d = vertBase + cp + (rp + 1) * nc;
+      idx[qo++] = a; idx[qo++] = b; idx[qo++] = c;
+      idx[qo++] = a; idx[qo++] = c; idx[qo++] = d;
+    }
+  }
+  const bottomBase = vertBase + nc * nr;
+  const skirtZ = minH - 1;
+  for (let k = 0; k < perim.length; k++) {
+    const cp = perim[k][0], rp = perim[k][1];
+    const i = cols[cp], j = rows[rp];
+    const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const topI = vertBase + cp + rp * nc;
+    const bi = bottomBase + k;
+    pos[bi * 3] = x; pos[bi * 3 + 1] = y; pos[bi * 3 + 2] = skirtZ;
+    nrm[bi] = nrm[topI];
+  }
+  let so = idxSkirtOff;
+  const perimLen = perim.length;
+  for (let k = 0; k < perimLen; k++) {
+    const k2 = (k + 1) % perimLen;
+    const t0 = vertBase + perim[k][0] + perim[k][1] * nc;
+    const t1 = vertBase + perim[k2][0] + perim[k2][1] * nc;
+    const b0 = bottomBase + k, b1 = bottomBase + k2;
+    idx[so++] = t0; idx[so++] = t1; idx[so++] = b1;
+    idx[so++] = t0; idx[so++] = b1; idx[so++] = b0;
+  }
+  return { minH };
+}
+
+/** @typedef {{cols: number[], rows: number[], perim: number[][]}} FarLodLayout */
+/** @typedef {import('./MeshData.js').MeshData & {_desc: Object, _lod0: FarLodLayout}} FarTileMesh */
+
+/** Builds one far tile's MeshData (LOD0 + LOD1, both with skirts) once. Index layout is FIXED forever (`ranges` never change size): band-under exclusion (`applyFarExclusion`) only ever rewrites LOD0 main-quad index VALUES in place (real quad <-> degenerate 0,0,0 triangle), never resizes anything.
+ * @returns {FarTileMesh} */
+function buildFarTileMesh(terrain, desc) {
+  const cell = terrain.mapCell;
+  const lod0 = buildFarLodLayout(desc, 1);
+  const lod1 = buildFarLodLayout(desc, FAR_LOD1_STEP);
+  const nc0 = lod0.cols.length, nr0 = lod0.rows.length, perim0 = lod0.perim.length;
+  const nc1 = lod1.cols.length, nr1 = lod1.rows.length, perim1 = lod1.perim.length;
+  const vCount0 = nc0 * nr0 + perim0, vCount1 = nc1 * nr1 + perim1;
+  const totalV = vCount0 + vCount1;
+
+  const mainCap0 = (nc0 - 1) * (nr0 - 1) * 6, skirtCap0 = perim0 * 6;
+  const mainCap1 = (nc1 - 1) * (nr1 - 1) * 6, skirtCap1 = perim1 * 6;
+  const OFF_MAIN0 = 0, OFF_SKIRT0 = mainCap0;
+  const OFF_MAIN1 = mainCap0 + skirtCap0, OFF_SKIRT1 = OFF_MAIN1 + mainCap1;
+  const idxCap = OFF_SKIRT1 + skirtCap1;
+
+  const pos = new Float32Array(totalV * 3);
+  const nrm = new Uint32Array(totalV);
+  const idx = new Uint32Array(idxCap);
+  const scratchN = { x: 0, y: 0, z: 1 };
+
+  fillFarLevel(terrain, lod0, cell, pos, nrm, idx, 0, OFF_MAIN0, OFF_SKIRT0, scratchN);
+  fillFarLevel(terrain, lod1, cell, pos, nrm, idx, vCount0, OFF_MAIN1, OFF_SKIRT1, scratchN);
+
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let v = 0; v < totalV; v++) {
+    const px = pos[v * 3], py = pos[v * 3 + 1], pz = pos[v * 3 + 2];
+    if (px < x0) x0 = px; if (py < y0) y0 = py; if (pz < z0) z0 = pz;
+    if (px > x1) x1 = px; if (py > y1) y1 = py; if (pz > z1) z1 = pz;
+  }
+
+  /** @type {FarTileMesh} */
+  const mesh = {
+    version: /** @type {1} */ (1), id: `terrain:far${desc.tileIndex}`, layout: /** @type {'terrain'} */ ('terrain'),
+    pos, uv: new Float32Array(0), nrm, flat: new Uint32Array(0), aux: new Float32Array(0),
+    idx, triCount: idxCap / 3,
+    bbox: new Float64Array([x0, y0, z0, x1, y1, z1]),
+    ranges: [
+      { start: OFF_MAIN0 / 3, count: (mainCap0 + skirtCap0) / 3 },
+      { start: OFF_MAIN1 / 3, count: (mainCap1 + skirtCap1) / 3 },
+    ],
+    matKeys: [], matsResolved: true, meshVersion: 1,
+    _desc: desc, _lod0: lod0,
+  };
+  return mesh;
+}
+
+/** Sets far tile `mesh`'s LOD0 main quad `(qx, qy)` (tile-local, 0-based) real or degenerate (0,0,0 - zero area, `rasterFanTri`'s `A2 === 0` skips it for free). */
+function setFarMainQuad0(mesh, qx, qy, real) {
+  const nc0 = mesh._lod0.cols.length;
+  const o = (qy * (nc0 - 1) + qx) * 6;
+  if (!real) { for (let k = 0; k < 6; k++) mesh.idx[o + k] = 0; return; }
+  const a = qx + qy * nc0, b = (qx + 1) + qy * nc0, c = (qx + 1) + (qy + 1) * nc0, d = qx + (qy + 1) * nc0;
+  mesh.idx[o] = a; mesh.idx[o + 1] = b; mesh.idx[o + 2] = c;
+  mesh.idx[o + 3] = a; mesh.idx[o + 4] = c; mesh.idx[o + 5] = d;
+}
+
+/** True iff far quad `(i, j)` (world rect `[8i+4, 8i+12] x [8j+4, 8j+12]`) intersects the near band's OPEN surface rectangle. */
+function farQuadUnderBand(cell, i, j, bandRect) {
+  const qx0 = cell * i + cell / 2, qx1 = cell * (i + 1) + cell / 2;
+  const qy0 = cell * j + cell / 2, qy1 = cell * (j + 1) + cell / 2;
+  return qx0 < bandRect.x1 && qx1 > bandRect.x0 && qy0 < bandRect.y1 && qy1 > bandRect.y0;
+}
+
+/** Rewrites `mesh`'s LOD0 main-quad index values to match `bandRect` (or fully restores every quad when `bandRect` is null - the tile no longer intersects the band). Only ever touches tiles the caller already knows are candidates (cheap AABB test in `_updateFarExclusion`). */
+function applyFarExclusion(terrain, mesh, bandRect) {
+  const lod0 = mesh._lod0;
+  const nc0 = lod0.cols.length, nr0 = lod0.rows.length;
+  const cell = terrain.mapCell;
+  for (let qy = 0; qy < nr0 - 1; qy++) {
+    for (let qx = 0; qx < nc0 - 1; qx++) {
+      const i = lod0.cols[qx], j = lod0.rows[qy];
+      const under = bandRect && farQuadUnderBand(cell, i, j, bandRect);
+      setFarMainQuad0(mesh, qx, qy, !under);
+    }
+  }
+  mesh.meshVersion++;
+}
+
+// ---------------------------------------------------------------------------
+// Stitch (near <-> kept far boundary ring)
+// ---------------------------------------------------------------------------
+
+/** Bridges two closed vertex loops (`A`, `B`, `{x,y,z,nx,ny,nz}` each) into `nA + nB` triangles by advancing whichever loop's next vertex is closer along the shared `[0,4)` perimeter parameter (uniform per loop since both are built by `perimeterIJList`/`perimeterPosList` - equal vertex spacing per side); ties advance `B` (27.15.5). Winding fixed up per triangle (`cross.z < 0` -> swap) so every triangle has positive xy area. */
+function zipLoops(A, B) {
+  const nA = A.length, nB = B.length;
+  const tris = [];
+  if (nA === 0 || nB === 0) return tris;
+  let ca = 0, cb = 0;
+  while (ca < nA || cb < nB) {
+    const tANext = ca < nA ? ((ca + 1) / nA) * 4 : Infinity;
+    const tBNext = cb < nB ? ((cb + 1) / nB) * 4 : Infinity;
+    const vA = A[ca % nA], vB = B[cb % nB];
+    if (ca < nA && tANext < tBNext) {
+      const vA2 = A[(ca + 1) % nA];
+      tris.push(fixWinding(vA, vA2, vB));
+      ca++;
+    } else {
+      const vB2 = B[(cb + 1) % nB];
+      tris.push(fixWinding(vA, vB2, vB));
+      cb++;
+    }
+  }
+  return tris;
+}
+
+function fixWinding(v0, v1, v2) {
+  const ax = v1.x - v0.x, ay = v1.y - v0.y, bx = v2.x - v0.x, by = v2.y - v0.y;
+  return (ax * by - ay * bx) < 0 ? [v0, v2, v1] : [v0, v1, v2];
+}
+
+/** Unrolled-into-an-indexed-mesh stitch build (each triangle keeps its own 3 unique vertices - no cross-triangle vertex sharing, which the zip's independently-computed triangles don't need).
+ * @returns {import('./MeshData.js').MeshData} */
+function buildStitchMesh(tris) {
+  const vCount = tris.length * 3;
+  const pos = new Float32Array(vCount * 3);
+  const nrm = new Uint32Array(vCount);
+  const idx = new Uint32Array(vCount);
+  let x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
+  if (tris.length) {
+    x0 = y0 = z0 = Infinity; x1 = y1 = z1 = -Infinity;
+  }
+  for (let t = 0; t < tris.length; t++) {
+    for (let c = 0; c < 3; c++) {
+      const v = tris[t][c], vi = t * 3 + c;
+      pos[vi * 3] = v.x; pos[vi * 3 + 1] = v.y; pos[vi * 3 + 2] = v.z;
+      nrm[vi] = packNormalOct(v.nx, v.ny, v.nz);
+      idx[vi] = vi;
+      if (v.x < x0) x0 = v.x; if (v.y < y0) y0 = v.y; if (v.z < z0) z0 = v.z;
+      if (v.x > x1) x1 = v.x; if (v.y > y1) y1 = v.y; if (v.z > z1) z1 = v.z;
+    }
+  }
+  return {
+    version: /** @type {1} */ (1), id: 'terrain:stitch', layout: /** @type {'terrain'} */ ('terrain'),
+    pos, uv: new Float32Array(0), nrm, flat: new Uint32Array(0), aux: new Float32Array(0),
+    idx, triCount: tris.length,
+    bbox: new Float64Array([x0, y0, z0, x1, y1, z1]),
+    ranges: [{ start: 0, count: tris.length }],
+    matKeys: [], matsResolved: true, meshVersion: 1,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// DrawList feed
+// ---------------------------------------------------------------------------
+
+function identity12(m) {
+  m[0] = 1; m[1] = 0; m[2] = 0; m[3] = 0; m[4] = 1; m[5] = 0; m[6] = 0; m[7] = 0; m[8] = 1;
+  m[9] = 0; m[10] = 0; m[11] = 0;
+}
+
+function pushTerrainItem(list, mesh, ox, oy, oz, objectId, rangeIdx) {
+  const item = list.push(mesh, DRAW_TERRAIN);
+  identity12(item.matrix);
+  item.matrix[9] = ox; item.matrix[10] = oy; item.matrix[11] = oz;
+  item.zBase = 0;
+  item.planeIdOr = 0;
+  item.objectId = objectId;
+  const r = mesh.ranges[rangeIdx || 0];
+  item.rangeFirst = r.start; item.rangeCount = r.count;
+  const b = mesh.bbox;
+  item.aabb[0] = b[0] + ox; item.aabb[1] = b[1] + oy; item.aabb[2] = b[2] + oz;
+  item.aabb[3] = b[3] + ox; item.aabb[4] = b[4] + oy; item.aabb[5] = b[5] + oz;
+  return item;
+}
+
+function distToRectXY(cx, cy, x0, y0, x1, y1) {
+  const nx = Math.min(Math.max(cx, x0), x1);
+  const ny = Math.min(Math.max(cy, y0), y1);
+  return Math.hypot(cx - nx, cy - ny);
+}
+
+// ---------------------------------------------------------------------------
+// TerrainMeshSet
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {import('./MeshData.js').MeshData} MeshData
+ */
+
+/**
+ * Turns a `Terrain` (engine/world/Terrain.js) into drawable `MeshData`: 9
+ * near-band chunks (double-buffered, rebuilt row by row on a band flip), one
+ * stitch mesh closing the ring to the far grid, and a fixed set of far tiles
+ * (LOD0/LOD1, band-under quads carved out). See docs/architecture.md 27.15.5
+ * for the full spec this is built against.
+ */
+export class TerrainMeshSet {
+  /**
+   * @param {import('../world/Terrain.js').Terrain} terrain
+   * @param {{fogFullM?: number}} [opts]
+   */
+  constructor(terrain, opts = {}) {
+    this.terrain = terrain;
+    this.fogFullM = (opts && opts.fogFullM) || 1500;
+
+    const chunkSize = terrain.chunkSize, nearCell = terrain.nearCell, farCell = terrain.mapCell;
+    if (chunkSize % nearCell !== 0) throw new Error(`TerrainMeshSet: chunkSize (${chunkSize}) must be a multiple of nearCell (${nearCell})`);
+    if (chunkSize % farCell !== 0) throw new Error(`TerrainMeshSet: chunkSize (${chunkSize}) must be a multiple of the far cell (${farCell})`);
+    const n = chunkSize / nearCell;
+    const bandW = 3 * n;
+    if (terrain.near) {
+      const g = terrain.near;
+      if (g.w !== bandW || g.h !== bandW) throw new Error(`TerrainMeshSet: terrain.near is ${g.w}x${g.h}, expected ${bandW}x${bandW} (3 * chunkSize/nearCell)`);
+      if (g.x0 % farCell !== 0 || g.y0 % farCell !== 0) throw new Error('TerrainMeshSet: terrain.near.x0/y0 must be multiples of the far cell');
+    }
+    this._bandW = bandW;
+
+    // Chunk (kx) column bounds: [n*kx, min(n*kx+n, bandW-1)] - the shared
+    // boundary column/row is duplicated across neighbours (watertight by
+    // construction: both read the SAME `hDraw`/normal value there).
+    this._chunkCol = [];
+    for (let k = 0; k < 3; k++) {
+      const start = n * k, end = Math.min(n * k + n, bandW - 1);
+      this._chunkCol.push({ start, end, count: end - start + 1 });
+    }
+    this._chunkRow = this._chunkCol; // square band
+
+    /** @type {NearChunkMesh[]} */
+    this._nearA = new Array(9);
+    /** @type {NearChunkMesh[]} */
+    this._nearB = new Array(9);
+    for (let ky = 0; ky < 3; ky++) {
+      for (let kx = 0; kx < 3; kx++) {
+        const i9 = ky * 3 + kx;
+        const cc = this._chunkCol[kx].count, rc = this._chunkRow[ky].count;
+        const idxBuf = buildGridIndex(cc, rc); // shared topology - same idx array reused by both buffers
+        this._nearA[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
+        this._nearB[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
+      }
+    }
+    /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
+    this.near = this._nearA;
+
+    /** @type {MeshData} */
+    this.stitch = buildStitchMesh([]);
+
+    // Far tile layout (fixed: depends only on mapW/mapH/mapCell).
+    const mapW = terrain.mapW, mapH = terrain.mapH;
+    const tilesX = Math.ceil((mapW - 1) / FAR_TILE_QUADS);
+    const tilesY = Math.ceil((mapH - 1) / FAR_TILE_QUADS);
+    this._tilesX = tilesX;
+    this._farTiles = [];
+    for (let ty = 0; ty < tilesY; ty++) {
+      for (let tx = 0; tx < tilesX; tx++) {
+        const colStart = tx * FAR_TILE_QUADS, colEnd = Math.min(colStart + FAR_TILE_QUADS, mapW - 1);
+        const rowStart = ty * FAR_TILE_QUADS, rowEnd = Math.min(rowStart + FAR_TILE_QUADS, mapH - 1);
+        const cell = terrain.mapCell;
+        this._farTiles.push({
+          tx, ty, colStart, colEnd, colCount: colEnd - colStart + 1,
+          rowStart, rowEnd, rowCount: rowEnd - rowStart + 1,
+          tileIndex: ty * tilesX + tx,
+          worldRect: { x0: colStart * cell, y0: rowStart * cell, x1: (colEnd + 1) * cell, y1: (rowEnd + 1) * cell },
+        });
+      }
+    }
+    /** @type {(FarTileMesh|null)[]} */
+    this.far = new Array(this._farTiles.length).fill(null);
+    this._farBuilt = false;
+    this._farBuiltVersion = -1;
+    /** Tile indices currently carved by the band (kept exact so an out-of-band tile is restored fully real). */
+    this._excludedTileSet = new Set();
+
+    // Row-granular near-band build state.
+    this._builtFor = null;      // the `near` object the PUBLISHED (front) set matches
+    this._buildingFor = null;   // the `near` object currently being built into the back set
+    this._buildRow = 0;
+    this._bandNrm = new Float32Array(bandW * bandW * 3); // scratch: per-band-vertex normal, filled row by row
+    this._scratchN = { x: 0, y: 0, z: 1 };
+    // Far-tile scratch for _updateFarExclusion (avoids a per-call array literal).
+    this._farOrder = new Int32Array(this._farTiles.length);
+    this._farDist = new Float64Array(this._farTiles.length);
+
+    this.pending = !!terrain.near; // a near band already present at construction still needs its first mesh build
+  }
+
+  // -- near band --------------------------------------------------------
+
+  _buildRowData(j) {
+    const g = this._buildingFor;
+    const w = g.w, cell = g.cell, x0 = g.x0, y0 = g.y0;
+    const y = y0 + (j + 0.5) * cell;
+    const rowBase = j * w;
+    const sN = this._scratchN;
+    for (let i = 0; i < w; i++) {
+      const x = x0 + (i + 0.5) * cell;
+      this.terrain.groundNormalAt(x, y, sN); // c=2 central diff, gridHeight(near)->groundAt fallback (27.15.5 formula)
+      const o3 = (rowBase + i) * 3;
+      this._bandNrm[o3] = sN.x; this._bandNrm[o3 + 1] = sN.y; this._bandNrm[o3 + 2] = sN.z;
+    }
+  }
+
+  _publishNear(g) {
+    const back = this.near === this._nearA ? this._nearB : this._nearA;
+    for (let ky = 0; ky < 3; ky++) {
+      for (let kx = 0; kx < 3; kx++) {
+        const i9 = ky * 3 + kx;
+        const mesh = back[i9];
+        const colInfo = this._chunkCol[kx], rowInfo = this._chunkRow[ky];
+        const cc = colInfo.count, rc = rowInfo.count;
+        const ox = g.x0 + colInfo.start * g.cell, oy = g.y0 + rowInfo.start * g.cell;
+        mesh._origin.x = ox; mesh._origin.y = oy; mesh._origin.z = 0;
+        let minZ = Infinity, maxZ = -Infinity;
+        for (let lj = 0; lj < rc; lj++) {
+          const gj = rowInfo.start + lj;
+          for (let li = 0; li < cc; li++) {
+            const gi = colInfo.start + li;
+            const srcIdx = gi + gj * g.w;
+            const z = g.hDraw[srcIdx];
+            const dstV = li + lj * cc;
+            mesh.pos[dstV * 3] = li * g.cell;
+            mesh.pos[dstV * 3 + 1] = lj * g.cell;
+            mesh.pos[dstV * 3 + 2] = z;
+            const nOff = srcIdx * 3;
+            mesh.nrm[dstV] = packNormalOct(this._bandNrm[nOff], this._bandNrm[nOff + 1], this._bandNrm[nOff + 2]);
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+          }
+        }
+        mesh.bbox[0] = 0; mesh.bbox[1] = 0; mesh.bbox[2] = minZ;
+        mesh.bbox[3] = (cc - 1) * g.cell; mesh.bbox[4] = (rc - 1) * g.cell; mesh.bbox[5] = maxZ;
+        mesh.meshVersion++;
+      }
+    }
+    this.near = back;
+  }
+
+  _rebuildStitch(g) {
+    const terrain = this.terrain, w = g.w;
+    const nearIJ = perimeterIJList(0, w - 1, 0, w - 1);
+    const nearVerts = new Array(nearIJ.length);
+    for (let k = 0; k < nearIJ.length; k++) {
+      const i = nearIJ[k][0], j = nearIJ[k][1];
+      const o3 = (i + j * w) * 3;
+      nearVerts[k] = {
+        x: g.x0 + (i + 0.5) * g.cell, y: g.y0 + (j + 0.5) * g.cell, z: g.hDraw[i + j * w],
+        nx: this._bandNrm[o3], ny: this._bandNrm[o3 + 1], nz: this._bandNrm[o3 + 2],
+      };
+    }
+
+    const bandRect = this._bandRectFor(g);
+    const cell = terrain.mapCell;
+    const iLo = Math.max(0, Math.floor(bandRect.x0 / cell) - 2), iHi = Math.min(terrain.mapW - 2, Math.ceil(bandRect.x1 / cell) + 2);
+    const jLo = Math.max(0, Math.floor(bandRect.y0 / cell) - 2), jHi = Math.min(terrain.mapH - 2, Math.ceil(bandRect.y1 / cell) + 2);
+    let iMin = Infinity, iMax = -Infinity, jMin = Infinity, jMax = -Infinity;
+    for (let j = jLo; j <= jHi; j++) {
+      for (let i = iLo; i <= iHi; i++) {
+        if (farQuadUnderBand(cell, i, j, bandRect)) {
+          if (i < iMin) iMin = i; if (i > iMax) iMax = i;
+          if (j < jMin) jMin = j; if (j > jMax) jMax = j;
+        }
+      }
+    }
+    this._bandRect = bandRect;
+    if (!isFinite(iMin)) { this.stitch = buildStitchMesh([]); return; } // band excludes nothing (tiny band/huge cell) - no hole to stitch
+    if (iMin - 1 < 0 || jMin - 1 < 0 || iMax + 2 > terrain.mapW || jMax + 2 > terrain.mapH) {
+      console.warn('terrainMesh: stitch far loop leaves the far grid - skipping stitch this flip');
+      this.stitch = buildStitchMesh([]);
+      return;
+    }
+
+    const farIJ = perimeterIJList(iMin, iMax + 1, jMin, jMax + 1);
+    const farVerts = new Array(farIJ.length);
+    const sN = this._scratchN;
+    for (let k = 0; k < farIJ.length; k++) {
+      const i = farIJ[k][0], j = farIJ[k][1];
+      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      farNormalAt(terrain, x, y, sN);
+      farVerts[k] = { x, y, z: terrain.farHDraw[i + j * terrain.mapW], nx: sN.x, ny: sN.y, nz: sN.z };
+    }
+
+    const tris = zipLoops(nearVerts, farVerts);
+    this.stitch = buildStitchMesh(tris);
+  }
+
+  _bandRectFor(g) {
+    return { x0: g.x0 + g.cell / 2, x1: g.x0 + g.w * g.cell - g.cell / 2, y0: g.y0 + g.cell / 2, y1: g.y0 + g.h * g.cell - g.cell / 2 };
+  }
+
+  // -- far tiles ----------------------------------------------------------
+
+  _buildFarTiles() {
+    for (let k = 0; k < this._farTiles.length; k++) this.far[k] = buildFarTileMesh(this.terrain, this._farTiles[k]);
+    this._farBuilt = true;
+    this._farBuiltVersion = this.terrain.farVersion;
+    this._excludedTileSet = new Set();
+  }
+
+  /** Recomputes which far tiles intersect `bandRect` and rewrites their LOD0 exclusion (restoring any tile that fell out of range). */
+  _updateFarExclusion(bandRect) {
+    const tiles = this._farTiles;
+    const nextExcluded = new Set();
+    for (let k = 0; k < tiles.length; k++) {
+      const r = tiles[k].worldRect;
+      if (r.x0 < bandRect.x1 && r.x1 > bandRect.x0 && r.y0 < bandRect.y1 && r.y1 > bandRect.y0) nextExcluded.add(k);
+    }
+    for (const k of this._excludedTileSet) if (!nextExcluded.has(k)) applyFarExclusion(this.terrain, this.far[k], null);
+    for (const k of nextExcluded) applyFarExclusion(this.terrain, this.far[k], bandRect);
+    this._excludedTileSet = nextExcluded;
+  }
+
+  // -- public API -----------------------------------------------------------
+
+  /**
+   * Advances mesh building by at most `msBudget` ms. Call once per RENDERED
+   * frame (never per fixed step). @param {number} [msBudget]
+   * @returns {boolean} true while a build is still in progress
+   */
+  step(msBudget = 2) {
+    const terrain = this.terrain;
+    const t0 = now();
+
+    if (terrain.farReady && (!this._farBuilt || this._farBuiltVersion !== terrain.farVersion)) {
+      this._buildFarTiles();
+      if (terrain.near) this._updateFarExclusion(this._bandRectFor(terrain.near));
+    }
+
+    if (terrain.near && terrain.near !== this._builtFor) {
+      if (this._buildingFor !== terrain.near) { this._buildingFor = terrain.near; this._buildRow = 0; } // retarget: restart from row 0 on the newest `near`
+      const w = this._buildingFor.w;
+      while (this._buildRow < w) {
+        this._buildRowData(this._buildRow);
+        this._buildRow++;
+        if (now() - t0 >= msBudget) { this.pending = true; return true; }
+      }
+      const g = this._buildingFor;
+      this._publishNear(g);
+      this._rebuildStitch(g);
+      if (this._farBuilt) this._updateFarExclusion(this._bandRect);
+      this._builtFor = g;
+      this._buildingFor = null;
+    }
+
+    this.pending = false;
+    return false;
+  }
+
+  /**
+   * Pushes near chunks + stitch (always) and far tiles (LOD by distance,
+   * skipped beyond `fogFullM`) into `list`.
+   * @param {import('./DrawList.js').DrawList} list
+   * @param {{x:number,y:number,z:number}} cam
+   */
+  addToDrawList(list, cam) {
+    for (let i = 0; i < 9; i++) {
+      const mesh = this.near[i];
+      if (mesh.triCount === 0) continue;
+      pushTerrainItem(list, mesh, mesh._origin.x, mesh._origin.y, mesh._origin.z, 0x7000 | i);
+    }
+    if (this.stitch.triCount > 0) pushTerrainItem(list, this.stitch, 0, 0, 0, 0x7000 | 9);
+
+    const tiles = this._farTiles, order = this._farOrder, dist = this._farDist;
+    let count = 0;
+    for (let k = 0; k < tiles.length; k++) {
+      const mesh = this.far[k];
+      if (!mesh) continue;
+      const r = tiles[k].worldRect;
+      const d = distToRectXY(cam.x, cam.y, r.x0, r.y0, r.x1, r.y1);
+      if (d > this.fogFullM) continue;
+      order[count] = k; dist[count] = d; count++;
+    }
+    for (let i = 1; i < count; i++) { // insertion sort, near -> far (zero allocation)
+      const ok = order[i], od = dist[i];
+      let j = i - 1;
+      while (j >= 0 && dist[j] > od) { order[j + 1] = order[j]; dist[j + 1] = dist[j]; j--; }
+      order[j + 1] = ok; dist[j + 1] = od;
+    }
+    for (let s = 0; s < count; s++) {
+      const k = order[s], mesh = this.far[k];
+      const useLod0 = this._excludedTileSet.has(k) || dist[s] < RING0_M;
+      const rangeIdx = useLod0 ? 0 : 1;
+      if (mesh.ranges[rangeIdx].count === 0) continue;
+      pushTerrainItem(list, mesh, 0, 0, 0, 0x7000 | (16 + k), rangeIdx);
+    }
+  }
+
+  /**
+   * `rasterJS`'s `ctx.kind7Mat`: near nearest texel inside the band, else
+   * far nearest - literal copy of `terrainCaster.js`'s `castTerrain` hit-type
+   * rule (`terrain._nearGridType` then `farType` nearest). Allocation-free.
+   * @param {number} x @param {number} y @returns {number}
+   */
+  typeAt(x, y) {
+    const terrain = this.terrain;
+    if (terrain.nearReady) {
+      const t = terrain._nearGridType(x, y);
+      if (t !== null) return t;
+    }
+    const ix = Math.floor(x / terrain.mapCell), iy = Math.floor(y / terrain.mapCell);
+    if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) return 0;
+    return terrain.farType[iy * terrain.mapW + ix];
+  }
+}

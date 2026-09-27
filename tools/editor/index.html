@@ -183,6 +183,7 @@
       font: 11px var(--ed-font-mono);
     }
     #tree-search-input:focus, #assets-search-input:focus { outline: 1px solid var(--ed-cyan); outline-offset: -1px; }
+    #assets-import-vox-btn { width: 100%; margin-top: 4px; }
     #tree-chips { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; border-bottom: 1px solid var(--ed-line); }
     .tree-chip {
       background: var(--ed-hover);
@@ -431,6 +432,12 @@
         <div id="assets-panel" class="dock-panel">
           <div id="assets-search-row">
             <input type="text" id="assets-search-input" placeholder="search models..." autocomplete="off" />
+            <!-- OWN-REQ-011: pick a MagicaVoxel .vox file from disk, parse it
+                 in-browser (tools/voxParse.js), auto-match its colors to
+                 design/palette.js materials (tools/voxAutoMap.js) and
+                 register it as a new model (AssetRegistry.add) - no CLI, no
+                 hand-written map.json. -->
+            <button type="button" id="assets-import-vox-btn" class="ed-btn" title="Import a MagicaVoxel .vox file as a new model">Import .vox</button>
           </div>
           <div id="assets-list">(loading...)</div>
         </div>

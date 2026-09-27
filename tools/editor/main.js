@@ -5,7 +5,7 @@
 import {
   AssetRegistry, createEngine, GRID_DEFAULT_COLS, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
-  DebugOverlay, drawText,
+  DebugOverlay, drawText, validateVoxelModel,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
@@ -27,12 +27,20 @@ import {
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
   classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS,
 } from './panel.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty } from './io.js';
+import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile } from './io.js';
 import { getModelThumbnail } from './thumbnails.js';
 import {
   createVisibilityState, isHidden, isLocked, setHiddenFlag, setLockedFlag,
   setEntityComponentsHidden, setLightHiddenLive, pickSelectionOrNull,
 } from './visibility.js';
+// OWN-REQ-011: "Import .vox" (Assets tab) - the same portable vox parser
+// tools/vox-import.mjs's CLI uses (voxParse.js), plus the editor-only
+// auto color-to-material mapper that replaces its hand-written map.json
+// step (voxAutoMap.js). Both are plain tools/**/*.js, not engine/ or
+// game/ - allowed from tools/editor/** (check-deps rules 3/6 only restrict
+// engine/game imports, not tools/-to-tools/ imports).
+import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.js';
+import { autoMapColors } from '../voxAutoMap.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -80,6 +88,7 @@ const treePanelEl = document.getElementById('tree-panel');
 const assetsPanelEl = document.getElementById('assets-panel');
 const assetsSearchInput = document.getElementById('assets-search-input');
 const assetsListEl = document.getElementById('assets-list');
+const assetsImportVoxBtn = document.getElementById('assets-import-vox-btn'); // OWN-REQ-011
 const armedModelChipEl = document.getElementById('armed-model-chip');
 
 // ---- US-066: dock/drawer collapse state (design/editor-ui.md 2: "docks +
@@ -823,6 +832,70 @@ function renderAssetsList(query) {
 }
 renderAssetsList('');
 assetsSearchInput.addEventListener('input', () => renderAssetsList(assetsSearchInput.value));
+
+// ---- OWN-REQ-011: "Import .vox" (Assets tab) -------------------------------
+//
+// Click -> file picker -> parse (voxParse.js, single-part only for v1) ->
+// auto-map every used color to the nearest design/palette.js material
+// (voxAutoMap.js, no hand-written map.json) -> AssetRegistry.add() a new
+// model key, immediately visible in the Assets tab. KNOWN FOLLOW-UP: the
+// model DEFINITION itself is only ever added to the in-memory registry for
+// this browser tab/session - it is not written to design/models/*.js or
+// content/, so reloading the editor loses it (an object placed with it still
+// saves fine into the world JSON via its `model` key; a later story would
+// need to add a "download this model" / "save into content/" step).
+
+// v1 default cellM (design/models/voxel_props.js's own props use this same
+// value) - no UI for it yet, matches vox-import.mjs's own --cell example.
+const VOX_IMPORT_DEFAULT_CELL_M = 0.05;
+
+/** Derives a valid, unused model key from a picked filename (24.9's ID_REGEX shape: starts with a letter, then letters/digits/_/-). */
+function deriveVoxModelName(filename) {
+  const base = String(filename || 'vox_model').replace(/\.[^./\\]+$/, '');
+  let s = base.replace(/[^A-Za-z0-9_]/g, '_');
+  if (!/^[A-Za-z]/.test(s)) s = 'vox_' + s;
+  s = s || 'vox_model';
+  if (!assets.has('model', s)) return s;
+  let n = 2;
+  while (assets.has('model', `${s}_${n}`)) n++;
+  return `${s}_${n}`;
+}
+
+async function doImportVox() {
+  let picked;
+  try {
+    picked = await pickBinaryFile({ accept: '.vox', description: 'MagicaVoxel .vox' });
+  } catch (e) {
+    flash(`import .vox failed: ${e && e.message ? e.message : e}`);
+    return;
+  }
+  if (!picked) { flash('import .vox: cancelled'); return; }
+
+  try {
+    const parsed = parseVox(picked.buffer);
+    const usedEntries = usedPaletteEntries(parsed.voxels, parsed.palette);
+    const map = autoMapColors(usedEntries, assets.palette);
+    // Single-part only for v1 (parts: false forces the OWN-REQ-005a body-box
+    // path even when the file happens to carry a v200 scene graph) - see the
+    // header note above.
+    const def = buildVoxelModel(parsed, map, VOX_IMPORT_DEFAULT_CELL_M, null, { parts: false });
+    const { errors } = validateVoxelModel(def);
+    if (errors.length) throw new Error(errors.join('; '));
+
+    const name = deriveVoxModelName(picked.name);
+    assets.add('model', name, {
+      name,
+      desc: `Imported from '${picked.name}' via the editor's Import .vox button (OWN-REQ-011). Colors auto-matched to the nearest palette material.`,
+      voxel: def,
+    });
+    renderAssetsList(assetsSearchInput.value);
+    armModelPlacement(name);
+    flash(`imported: ${name} (click viewport to place)`);
+  } catch (e) {
+    flash(`import .vox failed: ${e && e.message ? e.message : e}`);
+  }
+}
+assetsImportVoxBtn.addEventListener('click', doImportVox);
 
 // ---- US-034: save/load/play-test (24.10/24.11) -----------------------------
 
