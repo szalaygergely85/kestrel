@@ -718,6 +718,7 @@ guard.on('arrive', g => g.play('idle'));
 - **Pages (browser, tester):** `game/index.html` with `?debug=1 ?bench=1 ?glyphs=1 ?shadetest=1 ?force2d=1 ?demo=1 ?origin=x,y ?level=name ?serializetest=1`; `game/world-test.html`, `game/physics-test.html`; `design/preview/*.html` (designer's, unaffected by engine changes).
 - **Regression on structural stories (US-024):** screenshot compare at a fixed camera before/after; `CellBuffer.glyphIdx` checksum via `window.__debug.rt` is the exact form of "pixel-identical".
 - **Every story:** `node tools/check-deps.mjs` OK; all existing `*.test.js` pass; no console errors on every page/switch above.
+- **Typecheck (ME-00, no build step):** `node tools/typecheck.mjs` runs `tsc --noEmit -p tools/tsconfig.json` (plain JS + JSDoc via `// @ts-check`, no `npm install` needed to run the game itself - `npm install` at the repo root only enables the check locally); it's also wired into `node tools/run-tests.mjs` as the `typecheck` suite (`--filter typecheck` to run just it). Today a nonzero exit is reported **WARN**, not FAIL, so it never fails the overall run - policy may flip this to **FAIL** once TypeScript coverage is wider and installed everywhere run-tests.mjs runs.
 
 ## 12. Performance notes (state as of US-004, 2026-09-22)
 

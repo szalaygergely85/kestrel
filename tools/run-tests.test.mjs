@@ -53,6 +53,14 @@ function makeFixtureRoot() {
     "console.error('finding: broken content fixture');\nprocess.exit(1);\n"
   );
 
+  // ME-00: a deliberately broken typecheck.mjs stand-in (nonzero exit) to
+  // prove run-tests.mjs reports it WARN, not FAIL, and does NOT flip the
+  // overall exit code - unlike check-deps.mjs/validate-content.mjs above.
+  fs.writeFileSync(
+    path.join(root, 'tools', 'typecheck.mjs'),
+    "console.error('type error: broken typecheck fixture');\nprocess.exit(2);\n"
+  );
+
   fs.writeFileSync(
     path.join(root, 'tools', 'good.test.js'),
     "console.log('ALL PASS');\nprocess.exit(0);\n"
@@ -122,13 +130,16 @@ await test('reports PASS/FAIL/WARN/TIMEOUT correctly and exits 1 on failure', as
     assert.ok(/^TIMEOUT tools\/hang\.test\.js \d+ms$/.test(line('hang.test.js') || ''), stdout);
     assert.ok(/^PASS tools\/check-deps\.mjs \d+ms$/.test(line('check-deps.mjs') || ''), stdout);
     assert.ok(/^FAIL tools\/validate-content\.mjs \d+ms$/.test(line('validate-content.mjs') || ''), stdout);
+    // ME-00: typecheck.mjs exits nonzero (2) but is reported WARN, not FAIL.
+    assert.ok(/^WARN tools\/typecheck\.mjs \d+ms$/.test(line('typecheck.mjs') || ''), stdout);
 
     // design/preview and node_modules fixtures must never appear.
     assert.ok(!stdout.includes('skipped.test.js'), stdout);
 
-    // Exactly 6 suites: good, bad, warn, hang, check-deps, validate-content
-    // (good + check-deps PASS, bad + validate-content FAIL).
-    assert.ok(stdout.includes('6 suite(s): 2 PASS, 2 FAIL, 1 TIMEOUT, 1 WARN'), stdout);
+    // Exactly 7 suites: good, bad, warn, hang, check-deps, validate-content,
+    // typecheck (good + check-deps PASS, bad + validate-content FAIL, warn +
+    // typecheck WARN).
+    assert.ok(stdout.includes('7 suite(s): 2 PASS, 2 FAIL, 1 TIMEOUT, 2 WARN'), stdout);
 
     assert.strictEqual(code, 1, `expected exit code 1, got ${code}\n${stdout}`);
   } finally {
@@ -144,6 +155,7 @@ await test('--filter only runs matching suites', async () => {
     assert.ok(!stdout.includes('bad.test.js'), stdout);
     assert.ok(!stdout.includes('check-deps.mjs'), stdout);
     assert.ok(!stdout.includes('validate-content.mjs'), stdout);
+    assert.ok(!stdout.includes('typecheck.mjs'), stdout);
     assert.ok(stdout.includes('1 suite(s): 1 PASS, 0 FAIL, 0 TIMEOUT, 0 WARN'), stdout);
     assert.strictEqual(code, 0);
   } finally {
@@ -160,6 +172,21 @@ await test('--filter validate matches the validate-content suite', async () => {
     assert.ok(!stdout.includes('check-deps.mjs'), stdout);
     assert.ok(stdout.includes('1 suite(s): 0 PASS, 1 FAIL, 0 TIMEOUT, 0 WARN'), stdout);
     assert.strictEqual(code, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await test('--filter typecheck matches the typecheck suite and reports WARN without failing the run', async () => {
+  const root = makeFixtureRoot();
+  try {
+    const { code, stdout } = await runRunner(root, ['--filter', 'typecheck', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(/^WARN tools\/typecheck\.mjs \d+ms$/m.test(stdout), stdout);
+    assert.ok(!stdout.includes('good.test.js'), stdout);
+    assert.ok(!stdout.includes('check-deps.mjs'), stdout);
+    assert.ok(stdout.includes('1 suite(s): 0 PASS, 0 FAIL, 0 TIMEOUT, 1 WARN'), stdout);
+    // WARN must not flip the exit code, even though the fixture exits 2.
+    assert.strictEqual(code, 0);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

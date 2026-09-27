@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "target": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"],
+    "types": []
+  },
+  "include": [
+    "../engine/core/transform.js",
+    "../engine/index.js",
+    "../engine/dev.js",
+    "../engine/render/GBuffer.js"
+  ]
+}

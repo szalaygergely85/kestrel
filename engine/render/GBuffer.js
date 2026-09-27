@@ -1,3 +1,4 @@
+// @ts-check
 // US-028 G-buffer: one surface sample per screen cell, struct-of-typed-
 // arrays, allocated once (createEngine/resize) and reused every frame - see
 // docs/architecture.md 8.1 items 1-2 and docs/backlog.md US-028 tech notes
@@ -32,6 +33,10 @@ export const FACE_D = 6;
 export const FACE_PACKED = 7;
 
 export class GBuffer {
+  /**
+   * @param {number} cols
+   * @param {number} rows
+   */
   constructor(cols, rows) {
     this.cols = cols;
     this.rows = rows;
@@ -73,7 +78,12 @@ export class GBuffer {
     this.structSeq = 0;
   }
 
-  /** Reads sample `i` into a reused plain object (test/oracle helper - no allocation when `obj` is reused). */
+  /**
+   * Reads sample `i` into a reused plain object (test/oracle helper - no allocation when `obj` is reused).
+   * @param {number} i
+   * @param {{kind?: number, mat?: number, face?: number, planeId?: number, u?: number, v?: number, dudx?: number, dvdx?: number, dudy?: number, dvdy?: number, z?: number, aoD?: number}} obj caller-owned, written in place
+   * @returns {{kind?: number, mat?: number, face?: number, planeId?: number, u?: number, v?: number, dudx?: number, dvdx?: number, dudy?: number, dvdy?: number, z?: number, aoD?: number}} `obj`
+   */
   readSample(i, obj) {
     obj.kind = this.kind[i];
     obj.mat = this.mat[i];
@@ -90,6 +100,17 @@ export class GBuffer {
     return obj;
   }
 
+  /**
+   * @param {number} i
+   * @param {number} kind
+   * @param {number} mat
+   * @param {number} face
+   * @param {number} planeId
+   * @param {number} u
+   * @param {number} v
+   * @param {number} z
+   * @param {number} aoD
+   */
   writeSample(i, kind, mat, face, planeId, u, v, z, aoD) {
     this.kind[i] = kind;
     this.mat[i] = mat;
@@ -103,7 +124,13 @@ export class GBuffer {
   }
 }
 
-// planeId packing (backlog US-028 item 2): (structSeq<<28) | (tag<<24) | (coord & 0xffffff).
+/**
+ * planeId packing (backlog US-028 item 2): (structSeq<<28) | (tag<<24) | (coord & 0xffffff).
+ * @param {number} structSeq
+ * @param {number} tag
+ * @param {number} coord
+ * @returns {number}
+ */
 export function packPlaneId(structSeq, tag, coord) {
   return ((structSeq & 0x7) << 28) | ((tag & 0xf) << 24) | (coord & 0xffffff);
 }

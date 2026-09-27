@@ -1,3 +1,4 @@
+// @ts-check
 // engine/dev.js - the DEV/INTERNAL tier of the engine's public surface
 // (docs/architecture.md section 5; US-047, "Refactor candidates" item 3).
 // Re-exports only, no logic - same underlying files engine/index.js also

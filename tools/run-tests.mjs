@@ -9,12 +9,23 @@
 // --timeout-ms or the KESTREL_TEST_TIMEOUT_MS env var - used by
 // run-tests.test.mjs to test the TIMEOUT path without actually waiting
 // 60s), plus runs `node tools/check-deps.mjs` and `node
-// tools/validate-content.mjs` (US-061) as two more suites.
+// tools/validate-content.mjs` (US-061) as two more suites, plus `node
+// tools/typecheck.mjs` (ME-00) as a `typecheck` suite reported WARN (never
+// FAIL) on a nonzero exit - see "typecheck suite" below.
 //
 // Prints one line per suite:
 //   PASS|FAIL|TIMEOUT|WARN <name> <ms>ms
 // then a total summary line, and exits 1 if any suite FAILed or TIMEOUT'd
 // (WARN does not fail the run by itself - see below).
+//
+// typecheck suite (ME-00): tools/typecheck.mjs runs `tsc --noEmit` over a
+// handful of `// @ts-check`d engine files without requiring `npm install`
+// for the game itself. Today a nonzero exit from it is reported WARN, not
+// FAIL, because TypeScript may not be installed in every environment this
+// runs in (see tools/typecheck.mjs's local-tsc/npx/skip fallback chain) -
+// someday policy may flip this to FAIL once TypeScript is a hard
+// requirement everywhere run-tests.mjs runs (see docs/architecture.md
+// section 11).
 //
 // WARN: this project's suites are hand-rolled (no test framework) and most
 // print a line starting with "FAIL" per failed check (see e.g.
@@ -82,6 +93,11 @@ function findTestFiles(dir, out = []) {
   return out;
 }
 
+/** Suites named here are still run as `node <file>`, but a nonzero exit is
+ * reported WARN instead of FAIL (see tools/typecheck.mjs's header and the
+ * "typecheck suite" note above) - so they never fail the overall run. */
+const WARN_ON_FAIL = new Set(['tools/typecheck.mjs']);
+
 function collectSuites(root, filter) {
   const dirs = ['engine', 'game', 'tools'].map((d) => path.join(root, d));
   let files = [];
@@ -94,13 +110,18 @@ function collectSuites(root, filter) {
   // exit-code-driven check - run it the same way as check-deps.mjs above.
   const validateContent = path.join(root, 'tools', 'validate-content.mjs');
   if (fs.existsSync(validateContent)) files.push(validateContent);
+  // ME-00: typecheck.mjs, same shape as the two above, but WARN-not-FAIL
+  // (see WARN_ON_FAIL).
+  const typecheck = path.join(root, 'tools', 'typecheck.mjs');
+  if (fs.existsSync(typecheck)) files.push(typecheck);
   if (filter) files = files.filter((f) => toPosix(path.relative(root, f)).includes(filter));
   return files;
 }
 
 /** Runs one suite as `node <file>`, capturing combined stdout+stderr,
- * honouring `timeoutMs`. Resolves with { status, ms, output }. */
-function runSuite(file, timeoutMs) {
+ * honouring `timeoutMs`. `warnOnFail` downgrades a nonzero exit (and a
+ * TIMEOUT) from FAIL/TIMEOUT to WARN. Resolves with { status, ms, output }. */
+function runSuite(file, timeoutMs, warnOnFail) {
   return new Promise((resolve) => {
     const start = Date.now();
     const child = spawn(process.execPath, [file], { cwd: ROOT });
@@ -122,11 +143,11 @@ function runSuite(file, timeoutMs) {
       clearTimeout(timer);
       const ms = Date.now() - start;
       if (timedOut) {
-        resolve({ status: 'TIMEOUT', ms, output });
+        resolve({ status: warnOnFail ? 'WARN' : 'TIMEOUT', ms, output });
         return;
       }
       if (code !== 0) {
-        resolve({ status: 'FAIL', ms, output });
+        resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
         return;
       }
       // Exit 0: check for a suite that printed a FAIL-shaped line anyway.
@@ -140,7 +161,7 @@ function runSuite(file, timeoutMs) {
       clearTimeout(timer);
       const ms = Date.now() - start;
       output += `\n[run-tests] failed to spawn: ${err.message}`;
-      resolve({ status: 'FAIL', ms, output });
+      resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
     });
   });
 }
@@ -162,7 +183,7 @@ async function main() {
 
   for (const file of suites) {
     const name = toPosix(path.relative(ROOT, file));
-    const { status, ms, output } = await runSuite(file, timeoutMs);
+    const { status, ms, output } = await runSuite(file, timeoutMs, WARN_ON_FAIL.has(name));
     if (status === 'FAIL' || status === 'TIMEOUT') anyFail = true;
     console.log(`${status} ${name} ${ms}ms`);
     results.push({ name, status, ms, output });

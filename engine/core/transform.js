@@ -1,3 +1,4 @@
+// @ts-check
 // engine/core/transform.js (CO-1, docs/coordinates.md section 3 — "the one
 // conversion module"). Pure functions, allocation-free in the per-call path
 // (caller-owned `out`), no engine imports besides itself. This is the ONLY
@@ -19,12 +20,21 @@ export const QUARTER_SIN = [0, 1, 0, -1];
 
 // ---- angles (the only place the compass convention is spelled out) --------
 
-/** Wrap degrees into [0, 360). */
+/**
+ * Wrap degrees into [0, 360).
+ * @param {number} deg
+ * @returns {number}
+ */
 export function wrapDeg(deg) {
   return ((deg % 360) + 360) % 360;
 }
 
-/** Shortest signed arc from `fromDeg` to `toDeg`, result in (-180, 180]. */
+/**
+ * Shortest signed arc from `fromDeg` to `toDeg`, result in (-180, 180].
+ * @param {number} fromDeg
+ * @param {number} toDeg
+ * @returns {number}
+ */
 export function shortestArcDeg(fromDeg, toDeg) {
   let d = (toDeg - fromDeg) % 360;
   if (d <= -180) d += 360;
@@ -35,12 +45,20 @@ export function shortestArcDeg(fromDeg, toDeg) {
 /**
  * Compass yaw (deg) of a direction (dx, dy): 0 = north (-y), 90 = east (+x),
  * clockwise. Replaces the 4 hand-written `atan2(dx, -dy)` copies.
+ * @param {number} dx
+ * @param {number} dy
+ * @returns {number}
  */
 export function yawFromDelta(dx, dy) {
   return wrapDeg(Math.atan2(dx, -dy) * RAD2DEG);
 }
 
-/** Forward unit vector for a compass yaw: (sin yaw, -cos yaw). */
+/**
+ * Forward unit vector for a compass yaw: (sin yaw, -cos yaw).
+ * @param {number} yawDeg
+ * @param {number[]|Float32Array} out caller-owned length-2 vector, written in place
+ * @returns {number[]|Float32Array} `out`
+ */
 export function forwardOf(yawDeg, out) {
   const r = yawDeg * DEG2RAD;
   out[0] = Math.sin(r);
@@ -48,7 +66,12 @@ export function forwardOf(yawDeg, out) {
   return out;
 }
 
-/** Right unit vector for a compass yaw: (cos yaw, sin yaw). */
+/**
+ * Right unit vector for a compass yaw: (cos yaw, sin yaw).
+ * @param {number} yawDeg
+ * @param {number[]|Float32Array} out caller-owned length-2 vector, written in place
+ * @returns {number[]|Float32Array} `out`
+ */
 export function rightOf(yawDeg, out) {
   const r = yawDeg * DEG2RAD;
   out[0] = Math.cos(r);
@@ -56,7 +79,14 @@ export function rightOf(yawDeg, out) {
   return out;
 }
 
-/** Rotate vector (x, y) by compass yaw `yawDeg` (same convention as forward/right). */
+/**
+ * Rotate vector (x, y) by compass yaw `yawDeg` (same convention as forward/right).
+ * @param {number} yawDeg
+ * @param {number} x
+ * @param {number} y
+ * @param {number[]|Float32Array} out caller-owned length-2 vector, written in place
+ * @returns {number[]|Float32Array} `out`
+ */
 export function rotateVec2(yawDeg, x, y, out) {
   const r = yawDeg * DEG2RAD;
   const c = Math.cos(r), s = Math.sin(r);
@@ -71,6 +101,10 @@ export function rotateVec2(yawDeg, x, y, out) {
  * Direction the light travels FROM, given compass azimuth + elevation
  * (degrees): sun direction, horizon billboards.
  * out = (sin az * cos el, -cos az * cos el, sin el)
+ * @param {number} azimuthDeg
+ * @param {number} elevationDeg
+ * @param {number[]|Float32Array} out caller-owned length-3 vector, written in place
+ * @returns {number[]|Float32Array} `out`
  */
 export function dirFromAzEl(azimuthDeg, elevationDeg, out) {
   const az = azimuthDeg * DEG2RAD, el = elevationDeg * DEG2RAD;
@@ -83,7 +117,19 @@ export function dirFromAzEl(azimuthDeg, elevationDeg, out) {
 
 // ---- Frame (local <-> world; rotation about the frame origin, then translation) ----
 
-/** Build a validated plain Frame object. Throws on non-finite x/y/z or a non-0..3 integer yawSteps. */
+/**
+ * @typedef {{x: number, y: number, z: number, yawSteps: 0|1|2|3}} Frame
+ * @typedef {{x: number, y: number, yawDeg: number, pitchDeg?: number, z?: number}} Transform
+ */
+
+/**
+ * Build a validated plain Frame object. Throws on non-finite x/y/z or a non-0..3 integer yawSteps.
+ * @param {number} x
+ * @param {number} y
+ * @param {number} z
+ * @param {0|1|2|3} [yawSteps]
+ * @returns {Frame}
+ */
 export function makeFrame(x, y, z, yawSteps = 0) {
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
     throw new Error(`makeFrame: x/y/z must be finite (got ${x}, ${y}, ${z})`);
@@ -94,7 +140,15 @@ export function makeFrame(x, y, z, yawSteps = 0) {
   return { x, y, z, yawSteps };
 }
 
-/** Local point (lx, ly, lz) of `frame` -> world point, written into `out`. */
+/**
+ * Local point (lx, ly, lz) of `frame` -> world point, written into `out`.
+ * @param {Frame} frame
+ * @param {number} lx
+ * @param {number} ly
+ * @param {number} lz
+ * @param {{x: number, y: number, z: number}} out caller-owned point, written in place
+ * @returns {{x: number, y: number, z: number}} `out`
+ */
 export function localToWorld(frame, lx, ly, lz, out) {
   const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
   out.x = frame.x + c * lx - s * ly;
@@ -103,7 +157,15 @@ export function localToWorld(frame, lx, ly, lz, out) {
   return out;
 }
 
-/** World point (wx, wy, wz) -> local point of `frame` (exact inverse, integer table -> no drift). */
+/**
+ * World point (wx, wy, wz) -> local point of `frame` (exact inverse, integer table -> no drift).
+ * @param {Frame} frame
+ * @param {number} wx
+ * @param {number} wy
+ * @param {number} wz
+ * @param {{x: number, y: number, z: number}} out caller-owned point, written in place
+ * @returns {{x: number, y: number, z: number}} `out`
+ */
 export function worldToLocal(frame, wx, wy, wz, out) {
   const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
   const dx = wx - frame.x, dy = wy - frame.y;
@@ -114,7 +176,14 @@ export function worldToLocal(frame, wx, wy, wz, out) {
   return out;
 }
 
-/** Rotate a local direction (dx, dy) of `frame` into world (rotation only, no translation). */
+/**
+ * Rotate a local direction (dx, dy) of `frame` into world (rotation only, no translation).
+ * @param {Frame} frame
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number[]|Float32Array} out caller-owned length-2 vector, written in place
+ * @returns {number[]|Float32Array} `out`
+ */
 export function localDirToWorld(frame, dx, dy, out) {
   const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
   out[0] = c * dx - s * dy;
@@ -122,12 +191,22 @@ export function localDirToWorld(frame, dx, dy, out) {
   return out;
 }
 
-/** Local compass yaw of `frame` -> world compass yaw. */
+/**
+ * Local compass yaw of `frame` -> world compass yaw.
+ * @param {Frame} frame
+ * @param {number} yawDeg
+ * @returns {number}
+ */
 export function localYawToWorld(frame, yawDeg) {
   return wrapDeg(yawDeg + 90 * frame.yawSteps);
 }
 
-/** World compass yaw -> local compass yaw of `frame`. */
+/**
+ * World compass yaw -> local compass yaw of `frame`.
+ * @param {Frame} frame
+ * @param {number} yawDeg
+ * @returns {number}
+ */
 export function worldYawToLocal(frame, yawDeg) {
   return wrapDeg(yawDeg - 90 * frame.yawSteps);
 }
@@ -136,6 +215,11 @@ export function worldYawToLocal(frame, yawDeg) {
  * Axis-aligned world bounding box of the local rectangle [0,w) x [0,h) of
  * `frame`. Integers stay integers (exact quarter-turn table). Writes
  * {x0,y0,x1,y1} into `out`.
+ * @param {Frame} frame
+ * @param {number} w
+ * @param {number} h
+ * @param {{x0: number, y0: number, x1: number, y1: number}} out caller-owned rect, written in place
+ * @returns {{x0: number, y0: number, x1: number, y1: number}} `out`
  */
 export function frameBBox(frame, w, h, out) {
   const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
@@ -163,7 +247,14 @@ export function frameBBox(frame, w, h, out) {
   return out;
 }
 
-/** Rotated size of a local w x h rectangle for `yawSteps` (swapped for odd steps). */
+/**
+ * Rotated size of a local w x h rectangle for `yawSteps` (swapped for odd steps).
+ * @param {0|1|2|3} yawSteps
+ * @param {number} w
+ * @param {number} h
+ * @param {{w: number, h: number}} out caller-owned size, written in place
+ * @returns {{w: number, h: number}} `out`
+ */
 export function rotatedSize(yawSteps, w, h, out) {
   const odd = (yawSteps & 1) === 1;
   out.w = odd ? h : w;
@@ -176,12 +267,22 @@ export function rotatedSize(yawSteps, w, h, out) {
  * grid described by `frame` — see docs/coordinates.md section 5 for the
  * rotatedSize/rotateLevel mapping this composes with; here it is a plain
  * point transform of the cell's min corner.
+ * @param {Frame} frame
+ * @param {number} col
+ * @param {number} row
+ * @param {{x: number, y: number, z: number}} out caller-owned point, written in place
+ * @returns {{x: number, y: number, z: number}} `out`
  */
 export function localCellToWorld(frame, col, row, out) {
   return localToWorld(frame, col, row, 0, out);
 }
 
-/** Structural equality of two frames (x, y, z, yawSteps all equal). */
+/**
+ * Structural equality of two frames (x, y, z, yawSteps all equal).
+ * @param {Frame} a
+ * @param {Frame} b
+ * @returns {boolean}
+ */
 export function frameEquals(a, b) {
   return a.x === b.x && a.y === b.y && a.z === b.z && a.yawSteps === b.yawSteps;
 }
@@ -192,6 +293,12 @@ export function frameEquals(a, b) {
  * Yaw-rotate local point (lx, ly, lz) by `t.yawDeg` then translate by
  * (t.x, t.y, t.z). Used by eye/attach/model helpers that need a general
  * (non-quarter-turn) yaw, unlike Frame's exact quarter-turn table.
+ * @param {Transform} t
+ * @param {number} lx
+ * @param {number} ly
+ * @param {number} lz
+ * @param {{x: number, y: number, z: number}} out caller-owned point, written in place
+ * @returns {{x: number, y: number, z: number}} `out`
  */
 export function transformPoint(t, lx, ly, lz, out) {
   const r = t.yawDeg * DEG2RAD;

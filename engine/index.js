@@ -1,3 +1,4 @@
+// @ts-check
 // engine/index.js - the ONLY public entry point (docs/architecture.md
 // section 2/5). Re-exports only, no logic. `game/` and `tools/` must import
 // exactly this file, never a deep `engine/**` path (check-deps rule 3).
