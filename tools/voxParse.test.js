@@ -1,17 +1,17 @@
-// Tests for tools/voxParse.mjs (OWN-REQ-011). Plain Node script, no
+// Tests for tools/voxParse.js (OWN-REQ-011). Plain Node script, no
 // framework (matches tools/vox-import.test.mjs's own style) - run directly:
 //   node tools/voxParse.test.mjs
 //
 // tools/vox-import.test.mjs already exercises the full parsing/building
 // surface via tools/vox-import.mjs's re-exports (unchanged after the
 // OWN-REQ-011 extraction - see that file). This suite instead focuses on
-// what's NEW here: that voxParse.mjs's `parseVox` is genuinely portable
+// what's NEW here: that voxParse.js's `parseVox` is genuinely portable
 // (accepts a plain ArrayBuffer/Uint8Array, not just a Node Buffer - the
 // whole point of the extraction), and the new `usedPaletteEntries` helper
 // the editor's auto color-mapping (OWN-REQ-011) is built on.
 
 import assert from 'node:assert';
-import { parseVox, buildVoxelModel, usedPaletteEntries } from './voxParse.mjs';
+import { parseVox, buildVoxelModel, usedPaletteEntries } from './voxParse.js';
 
 let passed = 0;
 function test(name, fn) {

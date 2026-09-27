@@ -34,13 +34,13 @@ import {
   setEntityComponentsHidden, setLightHiddenLive, pickSelectionOrNull,
 } from './visibility.js';
 // OWN-REQ-011: "Import .vox" (Assets tab) - the same portable vox parser
-// tools/vox-import.mjs's CLI uses (voxParse.mjs), plus the editor-only
+// tools/vox-import.mjs's CLI uses (voxParse.js), plus the editor-only
 // auto color-to-material mapper that replaces its hand-written map.json
-// step (voxAutoMap.mjs). Both are plain tools/**/*.js, not engine/ or
+// step (voxAutoMap.js). Both are plain tools/**/*.js, not engine/ or
 // game/ - allowed from tools/editor/** (check-deps rules 3/6 only restrict
 // engine/game imports, not tools/-to-tools/ imports).
-import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.mjs';
-import { autoMapColors } from '../voxAutoMap.mjs';
+import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.js';
+import { autoMapColors } from '../voxAutoMap.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -835,9 +835,9 @@ assetsSearchInput.addEventListener('input', () => renderAssetsList(assetsSearchI
 
 // ---- OWN-REQ-011: "Import .vox" (Assets tab) -------------------------------
 //
-// Click -> file picker -> parse (voxParse.mjs, single-part only for v1) ->
+// Click -> file picker -> parse (voxParse.js, single-part only for v1) ->
 // auto-map every used color to the nearest design/palette.js material
-// (voxAutoMap.mjs, no hand-written map.json) -> AssetRegistry.add() a new
+// (voxAutoMap.js, no hand-written map.json) -> AssetRegistry.add() a new
 // model key, immediately visible in the Assets tab. KNOWN FOLLOW-UP: the
 // model DEFINITION itself is only ever added to the in-memory registry for
 // this browser tab/session - it is not written to design/models/*.js or

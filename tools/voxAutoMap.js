@@ -1,4 +1,4 @@
-// tools/voxAutoMap.mjs - OWN-REQ-011 (docs/backlog.md): auto color-to-
+// tools/voxAutoMap.js - OWN-REQ-011 (docs/backlog.md): auto color-to-
 // material mapping for the editor's "Import .vox" button. Replaces
 // tools/vox-import.mjs's hand-written `map.json` step for v1: for each
 // distinct RGBA color actually used in the .vox file, finds the nearest

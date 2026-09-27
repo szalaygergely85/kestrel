@@ -1,4 +1,4 @@
-// Tests for tools/voxAutoMap.mjs (OWN-REQ-011). Plain Node script, no
+// Tests for tools/voxAutoMap.js (OWN-REQ-011). Plain Node script, no
 // framework - run directly:
 //   node tools/voxAutoMap.test.mjs
 //
@@ -8,7 +8,7 @@
 // `window.ASSETS.palette` through as a plain object, same shape as here).
 
 import assert from 'node:assert';
-import { hexToRgb, nearestMaterialKey, autoMapColors } from './voxAutoMap.mjs';
+import { hexToRgb, nearestMaterialKey, autoMapColors } from './voxAutoMap.js';
 
 let passed = 0;
 function test(name, fn) {

@@ -55,11 +55,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateVoxelModel } from '../engine/index.js';
-import { parseVox, buildVoxelModel } from './voxParse.mjs';
+import { parseVox, buildVoxelModel } from './voxParse.js';
 
 // OWN-REQ-011: the RIFF/.vox chunk parsing + VoxelModelDef-building logic
 // (parseVox/buildVoxelModel and everything they call) has moved to the
-// portable, browser-safe tools/voxParse.mjs so tools/editor/*'s "Import
+// portable, browser-safe tools/voxParse.js so tools/editor/*'s "Import
 // .vox" button can share the exact same implementation - see that file for
 // the full parsing code and its own header comment. This file re-exports
 // `parseVox` for its existing test suite (tools/vox-import.test.mjs) and

@@ -1,4 +1,4 @@
-// tools/voxParse.mjs - OWN-REQ-011 (docs/backlog.md): the MagicaVoxel `.vox`
+// tools/voxParse.js - OWN-REQ-011 (docs/backlog.md): the MagicaVoxel `.vox`
 // binary-format parsing + VoxelModelDef building logic, extracted from
 // tools/vox-import.mjs (OWN-REQ-005a/005b) so it can be shared by BOTH the
 // Node CLI (tools/vox-import.mjs) and the browser (tools/editor/*'s "Import
