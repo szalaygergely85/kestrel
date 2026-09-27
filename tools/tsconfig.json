@@ -15,6 +15,7 @@
     "../engine/index.js",
     "../engine/dev.js",
     "../engine/render/GBuffer.js",
+    "../engine/render/projection.js",
     "../engine/mesh/*.js"
   ],
   "exclude": [
