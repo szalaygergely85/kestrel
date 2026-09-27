@@ -16,6 +16,7 @@
     "../engine/dev.js",
     "../engine/render/GBuffer.js",
     "../engine/render/projection.js",
+    "../engine/render/stable.js",
     "../engine/mesh/*.js",
     "../engine/physics/bvh.js"
   ],
