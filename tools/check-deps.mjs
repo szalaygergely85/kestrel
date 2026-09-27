@@ -41,7 +41,14 @@
 //      meant to converge on engine/render/gpu/device/* over time; this rule
 //      flips to a real (exit-code) finding only in ME-19, once the old
 //      per-pass GL call sites are gone.
-//   10. success message as above.
+//   11. (ME-09, docs/architecture.md 27.15.7) engine/physics/**/*.js may not
+//       import engine/mesh/**/*.js at runtime (engine/mesh's own convention,
+//       ME-01/ME-07, restricting *its own* imports, has no automated check
+//       yet - this rule instead guards the physics side of that boundary:
+//       bvh.js takes MeshData-shaped plain data as a parameter, never a live
+//       import of the mesh module, so rigid.js/player consumers never end up
+//       transitively depending on engine/mesh internals through physics).
+//   12. success message as above.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,6 +70,8 @@ let filesScanned = 0;
 
 const GPU_DIR = path.join(ROOT, 'engine', 'render', 'gpu');
 const GPU_DEVICE_DIR = path.join(GPU_DIR, 'device');
+const PHYSICS_DIR = path.join(ROOT, 'engine', 'physics');
+const MESH_DIR = path.join(ROOT, 'engine', 'mesh');
 
 function walk(dir, exts = ['.js', '.mjs']) {
   const out = [];
@@ -129,6 +138,12 @@ function checkEngineFile(file, src) {
     const resolved = path.resolve(path.dirname(file), spec);
     if (!resolved.startsWith(ENGINE_DIR + path.sep) && resolved !== ENGINE_DIR) {
       findings.push(`${rel(file)}:${line}: import "${spec}" resolves outside engine/`);
+    }
+    // Rule 11 (ME-09): engine/physics/** must not import engine/mesh/**.
+    const isPhysicsFile = file.startsWith(PHYSICS_DIR + path.sep) || file === PHYSICS_DIR;
+    const resolvesIntoMesh = resolved.startsWith(MESH_DIR + path.sep) || resolved === MESH_DIR;
+    if (isPhysicsFile && resolvesIntoMesh) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" resolves into engine/mesh/ - engine/physics/** must take MeshData-shaped plain data as a parameter, never import engine/mesh at runtime (ME-09)`);
     }
   }
 
