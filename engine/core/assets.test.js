@@ -117,6 +117,39 @@ const bundle = await loadContentPack(PACK_MANIFEST, { fetchText: (u) => readFile
   ok('replace: def === existing keeps the same object reference', reg.level('alpha') === same);
 }
 
+// --- add() registers a genuinely new key (OWN-REQ-011) ----------------------
+{
+  const reg = new AssetRegistry({
+    palette: fakePalette,
+    models: { torch: { name: 'torch' } },
+    worlds: {},
+    levels: {},
+    uiStyle: null,
+    detailPass: null,
+  });
+
+  const def = { name: 'imported_thing', voxel: { size: [1, 1, 1] } };
+  reg.add('model', 'imported_thing', def);
+  ok('add: new key is reachable via has()', reg.has('model', 'imported_thing'));
+  ok('add: new key is reachable via model()', reg.model('imported_thing') === def);
+  ok('add: keys() lists the new key alongside the existing one', deepEqual(reg.keys('model').sort(), ['imported_thing', 'torch']));
+
+  try {
+    reg.add('model', 'torch', { name: 'clobber' });
+    ok('add: throws on a key that already exists', false, 'did not throw');
+  } catch (e) {
+    ok('add: throws on a key that already exists', /already exists/.test(e.message), e.message);
+  }
+  ok('add: a throw on an existing key never overwrites it', reg.model('torch').name === 'torch');
+
+  try {
+    reg.add('bogus_kind', 'x', {});
+    ok('add: throws on an unknown kind', false, 'did not throw');
+  } catch (e) {
+    ok('add: throws on an unknown kind', /unknown kind "bogus_kind"/.test(e.message), e.message);
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log('FAILURES:');

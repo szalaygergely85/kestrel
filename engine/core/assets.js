@@ -133,6 +133,24 @@ export class AssetRegistry {
     Object.assign(existing, def);
   }
 
+  /**
+   * OWN-REQ-011 (docs/backlog.md): registers a genuinely NEW key - the
+   * mirror image of `replace()` above (which requires an EXISTING key and
+   * throws if the key is missing). Throws on an unknown `kind` (via
+   * `_mapFor`) or if `key` already exists (use `replace()` to update an
+   * existing entry instead - this method never overwrites). Used by the
+   * editor's "Import .vox" flow to add an imported model to the running
+   * registry at runtime, immediately visible without a page reload.
+   * @param {'model'|'level'|'terrain'|'world'} kind
+   * @param {string} key
+   * @param {Object} def
+   */
+  add(kind, key, def) {
+    const map = this._mapFor(kind);
+    if (key in map) throw new Error(`AssetRegistry.add: ${kind} "${key}" already exists (use replace() to update it)`);
+    map[key] = def;
+  }
+
   keys(kind) {
     return Object.keys(this._mapFor(kind));
   }
