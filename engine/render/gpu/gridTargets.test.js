@@ -17,7 +17,7 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 // number, memoized) so `formatFor`'s switch and `checkFramebufferStatus`
 // comparisons both work without a real context. ----
 function makeMockGL() {
-  let liveTex = 0, liveFbo = 0;
+  let liveTex = 0, liveFbo = 0, liveRb = 0;
   const consts = {};
   let nextConst = 1;
   const gl = new Proxy({}, {
@@ -31,11 +31,16 @@ function makeMockGL() {
       if (prop === 'createFramebuffer') return () => { liveFbo++; return {}; };
       if (prop === 'deleteTexture') return (o) => { if (o) liveTex--; };
       if (prop === 'deleteFramebuffer') return (o) => { if (o) liveFbo--; };
+      // ME-04: the raster pass' depth24 renderbuffer (gridTargets.js's
+      // GRID_RENDERBUFFER_FIELDS) - same create/delete counting as tex/fbo
+      // above, so the alloc/free cycle below also proves it never leaks.
+      if (prop === 'createRenderbuffer') return () => { liveRb++; return {}; };
+      if (prop === 'deleteRenderbuffer') return (o) => { if (o) liveRb--; };
       if (prop === 'checkFramebufferStatus') return () => gl.FRAMEBUFFER_COMPLETE;
       return () => {}; // every other GL method (bindTexture, texImage2D, drawBuffers, ...) is a no-op
     },
   });
-  return { gl, counts: () => ({ tex: liveTex, fbo: liveFbo }) };
+  return { gl, counts: () => ({ tex: liveTex, fbo: liveFbo, rb: liveRb }) };
 }
 
 const GRIDS = [[240, 90], [320, 120], [400, 150], [480, 180], [240, 90]];
@@ -49,15 +54,17 @@ const RAYS = 2;
     for (const [cols, rows] of GRIDS) {
       const t = allocGridTargets(gl, cols, rows, RAYS, fgTex, bgTex);
       ok(`cycle ${cycle} ${cols}x${rows}: alloc produced every field`, !!(t.texGI && t.texShadeBg && t.fboFinal));
+      ok(`cycle ${cycle} ${cols}x${rows}: alloc produced the ME-04 raster fields`, !!(t.texRasterDepth && t.fboRasterSub));
       const afterAlloc = counts();
       if (baseline === null) baseline = afterAlloc;
-      else ok(`cycle ${cycle} ${cols}x${rows}: live count matches the single-alloc baseline`, afterAlloc.tex === baseline.tex && afterAlloc.fbo === baseline.fbo, JSON.stringify(afterAlloc));
+      else ok(`cycle ${cycle} ${cols}x${rows}: live count matches the single-alloc baseline`, afterAlloc.tex === baseline.tex && afterAlloc.fbo === baseline.fbo && afterAlloc.rb === baseline.rb, JSON.stringify(afterAlloc));
       freeGridTargets(gl, t);
     }
   }
   const final = counts();
   ok('20 alloc/free cycles through 240->320->400->480->240 leave zero live textures', final.tex === 0, `tex=${final.tex}`);
   ok('20 alloc/free cycles through 240->320->400->480->240 leave zero live FBOs', final.fbo === 0, `fbo=${final.fbo}`);
+  ok('20 alloc/free cycles through 240->320->400->480->240 leave zero live renderbuffers', final.rb === 0, `rb=${final.rb}`);
 }
 
 // ---- computeGridLimits: fake getParameter, no real gl needed ----

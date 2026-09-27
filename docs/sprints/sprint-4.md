@@ -26,7 +26,7 @@ Stories are larger than the usual 5-6 because phase 1 is one gated unit (D-029);
 
 ## Order
 - **PC-B** (Queue 3 in `docs/backlog.md`): items 1-10 incl. 6b, 5b (CO-5) -> ME-00 -> ME-01 || ME-02 -> ME-03 -> ME-05 || ME-07 -> ME-09 -> (filler) item 13.
-- **PC-A** (one agent at a time): CO-1b/CO-1 review -> CO-2 -> CO-3 -> US-026b S1 -> ME-03b -> (after ME-01..03 on master) ME-04 -> ME-06 -> ME-08 -> gate report. Architect writes the per-story addendum into each ME row before PC-B reaches it.
+- **PC-A** (one agent at a time; **reordered 2026-09-27, owner: see the mesh tower sooner**): ME-03b -> ME-04 (ME-01..03 are on master) -> batched reviews + CO-1b -> ME-06 -> ME-08 -> gate report; CO-2 -> CO-3 -> US-026b S1 fit in between (not on the phase-1 critical path). Architect writes the per-story addendum into each ME row before PC-B reaches it.
 
 ## Freeze (D-029 item 2, until the gate)
 `dda.frag`, `terrain.frag`, `voxel.frag` and their JS render twins (`sectorCaster`/`terrainCaster`/`voxelMarch` render halves): owner-visible bug fixes with a regression test only. US-070a (all steps), US-026b S5, BUG-OWN-008 part 3 (`wip/bug-own-008-part3`, not merged).

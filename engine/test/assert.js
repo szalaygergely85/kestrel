@@ -51,3 +51,61 @@ export function makeOk(incPass, incFail, pushFailure) {
 export function approxEqual(a, b, eps) {
   return Math.abs(a - b) <= eps;
 }
+
+// ME-03b (docs/backlog.md, docs/architecture.md 27.2/27.11): a Node-only
+// in-memory GpuDevice (engine/render/gpu/device/GpuDevice.js's shape) so
+// MeshBuffers.js and other ME-04+ modules can be unit-tested without a real
+// WebGL2 context. Every "resource" is a plain object with a `_disposed`
+// flag; `createBuffer`/`createTexture` etc. just record their descriptor so
+// a test can assert on alloc/free pairs and "no per-frame (re)creation"
+// (compare the object identity/version across frames) - no actual pixels or
+// vertices are ever computed here, this is a bookkeeping double, not a
+// software rasteriser.
+/**
+ * @returns {{
+ *   device: import('../render/gpu/device/GpuDevice.js').GpuDevice,
+ *   liveCount: () => number,
+ *   createCount: number,
+ * }}
+ */
+export function makeMockGpuDevice() {
+  const live = new Set();
+  const state = { createCount: 0 };
+  function makeHandle(kind, desc) {
+    state.createCount++;
+    const h = { kind, desc, _disposed: false };
+    live.add(h);
+    return h;
+  }
+  const device = {
+    createBuffer(desc) { return makeHandle('buffer', desc); },
+    createTexture(desc) { return makeHandle('texture', desc); },
+    createTarget(desc) { return makeHandle('target', desc); },
+    createPipeline(desc) { return makeHandle('pipeline', desc); },
+    beginPass(target, opts) { device._activeTarget = target; },
+    bind(pipeline, desc) { device._activePipeline = pipeline; device._lastBind = desc; },
+    draw(count, first = 0, instances = 1) {
+      device._drawCalls = (device._drawCalls || 0) + 1;
+      device._lastDraw = { count, first, instances };
+    },
+    endPass() { device._activeTarget = null; },
+    readback(tex, rect, out) { if (out && out.fill) out.fill(0); },
+    dispose(handle) {
+      // Two call shapes on purpose: `device.dispose()` (whole-device
+      // teardown, GpuDevice.js's own contract) frees every live handle;
+      // `device.dispose(handle)` (this mock's extra convenience, used by
+      // MeshBuffers' own eviction tests) frees just one, so a test can
+      // assert "evicting one mesh's buffer frees exactly that buffer".
+      if (handle) { handle._disposed = true; live.delete(handle); return; }
+      for (const h of live) h._disposed = true;
+      live.clear();
+    },
+    timer: { begin() {}, end() {} },
+    caps: { maxColorAttachments: 4, timerQueries: false, softwareRenderer: false },
+  };
+  return {
+    device,
+    liveCount: () => live.size,
+    get createCount() { return state.createCount; },
+  };
+}

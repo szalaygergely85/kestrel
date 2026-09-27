@@ -32,7 +32,16 @@
 //      import exactly engine/test/assert.js (US-050 shared test kit), in
 //      addition to engine/index.js - this is the one deep-import exception
 //      that also applies inside tools/editor/**'s own tests.
-//   9. success message as above.
+//   9. (ME-03b, architecture.md 27.2/27.11) engine/render/gpu/**/*.js
+//      (excluding engine/render/gpu/device/*.js and *.test.js) referencing
+//      `gl.`, `WebGL2RenderingContext` or `navigator.gpu` (outside comments)
+//      is a WARNING, not a finding: printed on its own "WARN ..." line
+//      (never a bare "FAIL" prefix - tools/run-tests.mjs greps for that) and
+//      never affects the exit code. Backend-only code (D-029 item 9) is
+//      meant to converge on engine/render/gpu/device/* over time; this rule
+//      flips to a real (exit-code) finding only in ME-19, once the old
+//      per-pass GL call sites are gone.
+//   10. success message as above.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,7 +58,11 @@ const ENGINE_DIR = path.join(ROOT, 'engine');
 const GAME_DIR = path.join(ROOT, 'game');
 
 const findings = [];
+const warnings = [];
 let filesScanned = 0;
+
+const GPU_DIR = path.join(ROOT, 'engine', 'render', 'gpu');
+const GPU_DEVICE_DIR = path.join(GPU_DIR, 'device');
 
 function walk(dir, exts = ['.js', '.mjs']) {
   const out = [];
@@ -133,6 +146,25 @@ function checkEngineFile(file, src) {
     while ((m = re.exec(stripped))) {
       const line = stripped.slice(0, m.index).split('\n').length;
       findings.push(`${rel(file)}:${line}: forbidden pattern "${label}" in engine/ (engine takes canvas/assets/options as arguments)`);
+    }
+  }
+
+  // Rule 9 (ME-03b, WARN only): engine/render/gpu/** outside device/* should
+  // not touch the GL/WebGPU surface directly - see the header comment.
+  const isGpuFile = file.startsWith(GPU_DIR + path.sep) || file === GPU_DIR;
+  const isDeviceFile = file.startsWith(GPU_DEVICE_DIR + path.sep) || file === GPU_DEVICE_DIR;
+  if (isGpuFile && !isDeviceFile) {
+    const gpuPatterns = [
+      [/\bgl\.\w+/g, 'gl.*'],
+      [/\bWebGL2RenderingContext\b/g, 'WebGL2RenderingContext'],
+      [/\bnavigator\.gpu\b/g, 'navigator.gpu'],
+    ];
+    for (const [re, label] of gpuPatterns) {
+      let m;
+      while ((m = re.exec(stripped))) {
+        const line = stripped.slice(0, m.index).split('\n').length;
+        warnings.push(`${rel(file)}:${line}: "${label}" outside engine/render/gpu/device/* (D-029 item 9, ME-19 will make this a FAIL)`);
+      }
     }
   }
 }
@@ -244,11 +276,13 @@ for (const file of walk(path.join(ROOT, 'design'))) {
   checkDesignFile(file, fs.readFileSync(file, 'utf8'));
 }
 
+for (const w of warnings) console.warn(`WARN ${w}`);
+
 if (findings.length) {
   for (const f of findings) console.error(f);
   console.error(`\ncheck-deps FAILED (${findings.length} finding(s), ${filesScanned} files scanned)`);
   process.exit(1);
 } else {
-  console.log(`check-deps OK (${filesScanned} files)`);
+  console.log(`check-deps OK (${filesScanned} files)${warnings.length ? `, ${warnings.length} warning(s)` : ''}`);
   process.exit(0);
 }

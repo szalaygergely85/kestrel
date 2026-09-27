@@ -12,6 +12,8 @@ import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
+import { MESH_VERT_SRC } from './glsl/mesh.vert.js';
+import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 import { makeOk } from '../../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -137,6 +139,35 @@ ok('voxel.frag.js contains the verbatim axis rule', /if \(tMaxX < tMaxY\) axis =
 ok('voxel.frag.js contains the +Inf aoD bit pattern 0x7f800000u', VOXEL_FRAG_SRC.includes('0x7f800000u'));
 ok('voxel.frag.js contains floatBitsToUint', VOXEL_FRAG_SRC.includes('floatBitsToUint'));
 ok('voxel.frag.js contains KIND_MODEL', VOXEL_FRAG_SRC.includes('KIND_MODEL'));
+
+// ME-04 (docs/backlog.md, docs/architecture.md 27.4, 27.7 item 1, 27.11
+// ME-04 row): the raster pass' vertex/fragment pair writes the SAME 3
+// sub-sample outputs dda.frag.js does (location 0/1/2, RG32UI/RGBA32UI/
+// R32UI - no behaviour change to the shared resolve/deriv/light/shade
+// chain), cull none (27.15.2 "Phase 1 draws with cull none"), no
+// dFdx/gl_FragDepth/screen-space uv (27.13's "do not" list), the AO
+// formulas literal to engine/mesh/rasterJS.js's `computeAoD` (27.15.2).
+ok('mesh.vert.js: no gl_FragCoord (vertex stage)', !MESH_VERT_SRC.includes('gl_FragCoord'));
+ok('mesh.vert.js: no round(', !stripComments(MESH_VERT_SRC).includes('round('));
+ok('mesh.vert.js declares the 6 MeshBuffers.js STATIC_VERTEX_LAYOUT attributes', [0, 1, 2, 3, 4, 5].every((loc) => new RegExp(`layout\\(location = ${loc}\\) in`).test(MESH_VERT_SRC)));
+ok('mesh.vert.js reads uModel/uViewProj (mesh-local -> world -> clip, no camera pitch rotation)', MESH_VERT_SRC.includes('uModel') && MESH_VERT_SRC.includes('uViewProj'));
+ok('mesh.vert.js does not build its own projection matrix (imports none, no shear/pitch trig)', !/tan\(|sin\(|cos\(/.test(MESH_VERT_SRC));
+
+ok('mesh.frag.js: no round(', !stripComments(MESH_FRAG_SRC).includes('round('));
+ok('mesh.frag.js: no EXT_color_buffer_float', !MESH_FRAG_SRC.includes('EXT_color_buffer_float'));
+ok('mesh.frag.js: no layout(std140', !MESH_FRAG_SRC.includes('layout(std140'));
+ok('mesh.frag.js: no dFdx/dFdy', !/dFdx|dFdy/.test(MESH_FRAG_SRC));
+ok('mesh.frag.js: no gl_FragDepth', !MESH_FRAG_SRC.includes('gl_FragDepth'));
+// mesh.frag.js has no per-cell ADDRESS decoding at all (unlike the other
+// passes' checkOnlyAddressLine calls, which guard `ivec2(gl_FragCoord.xy)`
+// cell lookups): a real rasteriser's fragment already lands on the right
+// pixel by construction. Its one gl_FragCoord use is `.w`, the hardware
+// perspective-correct 1/w (27.5 "w_clip = d") - never a cell address.
+ok('mesh.frag.js reads gl_FragCoord only once, as the perspective-correct depth reciprocal (27.5 "w_clip = d"), never as a cell address', (MESH_FRAG_SRC.match(/gl_FragCoord/g) || []).length === 1 && MESH_FRAG_SRC.includes('1.0 / gl_FragCoord.w'));
+ok('mesh.frag.js writes the same 3 sub-sample outputs as dda.frag.js (outGI uvec2, outGA uvec4, outDepth uint)', MESH_FRAG_SRC.includes('out uvec2 outGI') && MESH_FRAG_SRC.includes('out uvec4 outGA') && MESH_FRAG_SRC.includes('out uint outDepth'));
+ok('mesh.frag.js contains floatBitsToUint (same all-uint MRT convention)', MESH_FRAG_SRC.includes('floatBitsToUint'));
+ok('mesh.frag.js contains the AO_WALL formula (literal to rasterJS.js computeAoD)', MESH_FRAG_SRC.includes('float zc = a2 - h;') && MESH_FRAG_SRC.includes('float fr = u - a5;'));
+ok('mesh.frag.js contains the AO_PLANE formula (literal to rasterJS.js computeAoD)', MESH_FRAG_SRC.includes('float fx = u - a3, fy = v - a4;'));
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

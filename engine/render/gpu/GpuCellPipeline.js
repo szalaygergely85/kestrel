@@ -55,6 +55,16 @@ import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS }
 import { HFOV_DEG } from '../sectorCaster.js';
 import { SKY_LUT_N } from './glsl/common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
+// ME-04 (docs/backlog.md, docs/architecture.md 27.2/27.4/27.11 ME-04 row):
+// the GPU raster pass - `renderer:'mesh'` only, additive (the default
+// `renderer:'dda'` path above is untouched by any of these).
+import { GpuDeviceGL2 } from './device/GpuDeviceGL2.js';
+import { MeshBuffers, STATIC_VERTEX_LAYOUT } from './MeshBuffers.js';
+import { MESH_VERT_SRC } from './glsl/mesh.vert.js';
+import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
+import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC } from '../../mesh/DrawList.js';
+import { projTerms, shearProjection } from '../projection.js';
+import { frustumPlanes } from '../../mesh/culling.js';
 
 const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
 
@@ -88,6 +98,12 @@ export class GpuCellPipeline {
     // default true (terrain on), main.js passes `false` to force pass A2 off
     // regardless of `world.terrain.farReady` (see `_terrainActiveThisFrame`).
     this.terrainEnabled = opts.terrainEnabled !== false;
+    // ME-04 (27.11 ME-04 AC "createEngine({ renderer: 'mesh' | 'dda' })"):
+    // 'dda' (default) is every pass this class had before this story,
+    // completely untouched; 'mesh' additionally builds the raster-pass
+    // program/device/caches below and swaps pass A for `_passRaster()` in
+    // `_hook()` - resolve/deriv/light/shade/edge run unchanged either way.
+    this.renderer = opts.renderer === 'mesh' ? 'mesh' : 'dda';
     this.ready = false;
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
@@ -172,6 +188,27 @@ export class GpuCellPipeline {
     // US-040 (15.2 item 4, GPU build order step 3): pass A3, ping-ponging
     // between the SAME two sub-sample sets A1/A2 already own (no third set).
     this.progVoxel = linkProgram(gl, CELL_VERT_SRC, VOXEL_FRAG_SRC);
+    // ME-04: the raster pass' own program (real geometry, not the
+    // fullscreen-triangle CELL_VERT_SRC every other pass above uses) - only
+    // compiled/allocated when this instance is the 'mesh' renderer, so the
+    // default 'dda' pipeline's init cost/VRAM is exactly unchanged.
+    this.progMesh = null;
+    this._meshDevice = null;
+    this._meshBuffers = null;
+    this._levelMeshCache = null;
+    this._meshDrawList = null;
+    if (this.renderer === 'mesh') {
+      this.progMesh = linkProgram(gl, MESH_VERT_SRC, MESH_FRAG_SRC);
+      this._meshDevice = new GpuDeviceGL2(gl);
+      this._meshBuffers = new MeshBuffers(this._meshDevice);
+      this._meshDrawList = new DrawList(64);
+      this._meshViewProj = new Float64Array(16);
+      this._meshViewProjF32 = new Float32Array(16);
+      this._meshModelF32 = new Float32Array(16);
+      this._meshFrustumPlanes = new Float64Array(24);
+      this._meshTerms = { cols: 0, rows: 0, eyeX: 0, eyeY: 0, eyeZ: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, tanHalf: 0, planeDistX: 0, planeDistY: 0, horizonRow: 0, tanPitch: 0 };
+      this._meshVao = gl.createVertexArray();
+    }
 
     // --- G-buffer + shade-output textures and every FBO built ON them
     // (US-030a: all-uint now - 14.2 item 3): US-038a (D-025, architecture.md
@@ -288,6 +325,7 @@ export class GpuCellPipeline {
     this._locsLight = this._uniformLocs(this.progLight, LIGHT_UNIFORMS);
     this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
     this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
+    this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
     // plain per-frame loop over these bind-time arrays of [loc, tex, unit]
@@ -610,8 +648,14 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
+    // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
+    // frees every vertex buffer MeshBuffers uploaded, mirroring how every
+    // other data texture above is freed on teardown/context loss).
+    if (this._meshVao) gl.deleteVertexArray(this._meshVao);
+    if (this._meshBuffers) this._meshBuffers.dispose();
+    if (this._meshDevice) this._meshDevice.dispose();
     if (this.timer) this.timer.dispose();
     // US-030a: the world atlas textures are gone too - force a full
     // re-upload on the next frame after a context restore.
@@ -747,6 +791,12 @@ export class GpuCellPipeline {
     this._bindStaticUniforms();
     if (this._palette) this._bakeSkyLUT(this._palette);
     if (this.debugMode >= 0) this.setDebugMode(this.debugMode);
+    // ME-04: a rebind means matIdFor may have changed (new palette/detail
+    // pass) - rebuild the level-mesh cache from scratch rather than risk a
+    // stale mat id baked into an old MeshData (LevelMeshCache itself only
+    // rebuilds a structure's OWN mesh on its `packed.version` change, never
+    // on a matIdFor change, so this is the one seam that must reset it).
+    if (this.renderer === 'mesh') this._levelMeshCache = new LevelMeshCache(table.idFor);
   }
 
   /**
@@ -950,7 +1000,22 @@ export class GpuCellPipeline {
       this._voxelPool.project(this._cam, this.rt);
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
-    if (useDda) {
+    if (useDda && this.renderer === 'mesh') {
+      // ME-04: pass A entirely replaced by the raster pass (27.11 ME-04 AC
+      // "'mesh' skips A1-A3") - no terrain/voxel pass this story (ME-06/08
+      // add their own draws to `_passRaster` later); `_subSetCur = 1`
+      // because `_passRaster` writes the SAME set-1 textures `_passCast`
+      // does (fboRasterSub reuses fboCastSub's texSGI/texSGA/texSDepth), so
+      // resolve/deriv below are byte-for-byte the same call they already are.
+      if (passTimingOn) this.passTimer.begin(PASS_CAST);
+      this._passRaster();
+      if (passTimingOn) this.passTimer.end();
+      this._subSetCur = 1;
+      if (passTimingOn) this.passTimer.begin(PASS_RESOLVE);
+      this._passResolve();
+      this._passDeriv();
+      if (passTimingOn) this.passTimer.end();
+    } else if (useDda) {
       if (passTimingOn) this.passTimer.begin(PASS_CAST);
       this._passCast();
       if (passTimingOn) this.passTimer.end();
@@ -1400,6 +1465,86 @@ export class GpuCellPipeline {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /**
+   * ME-04 (docs/backlog.md, docs/architecture.md 27.2/27.4/27.11 ME-04 row):
+   * the GPU raster pass - an alternative way to fill pass A's sub-sample
+   * output (`fboRasterSub`, gridTargets.js: the SAME `texSGI`/`texSGA`/
+   * `texSDepth` textures `fboCastSub` writes, plus this pass' own depth24
+   * renderbuffer for the real triangle-vs-triangle z-test). Only called
+   * when `this.renderer === 'mesh'`; `resolve`/`deriv`/`light`/`shade`/
+   * `edge` read whichever set was written last exactly as they already do
+   * for the DDA path (`_subSetCur`) - no changes there.
+   *
+   * Scope (this story): `DRAW_STATIC` items only (engine/mesh/levelMesh.js
+   * level meshes - the tower). Voxel/terrain items in the draw list are
+   * skipped (a later story, ME-06/08, adds their own pipelines here) -
+   * their cells simply stay at the "nothing drawn" sentinel this pass
+   * clears to, same as any other kind-0 cell.
+   */
+  _passRaster() {
+    const gl = this.gl, loc = this._locsMesh;
+    const cam = this._cam, world = this._world;
+
+    // Camera basis: the ONE shear-camera matrix (engine/render/projection.js)
+    // world -> clip - the same matrix rasterJS.js and the CPU caster agree
+    // the DDA ray formula is the inverse of (27.5/27.15.3).
+    const grid = { cols: this.cols, rows: this.rows, pxCellW: this.rt.pxCellW || 1, pxCellH: this.rt.pxCellH || 1 };
+    projTerms(cam, grid, this._meshTerms);
+    shearProjection(this._meshTerms, this._meshViewProj);
+    for (let i = 0; i < 16; i++) this._meshViewProjF32[i] = this._meshViewProj[i];
+    frustumPlanes(this._meshViewProj, this._meshFrustumPlanes);
+
+    const list = this._meshDrawList;
+    list.begin();
+    // 2000 m fog-far cull, matching the DDA/compositor path's own
+    // MAX_STRUCTS/fog-cull convention (DrawList.js's addStructures) - not a
+    // recipe constant read here on purpose (this story's scope is the
+    // tower; a real fogFarM wiring is ME-06's terrain-parity concern).
+    addStructures(list, world, cam, this._levelMeshCache, 2000);
+    list.cull(this._meshFrustumPlanes);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRasterSub);
+    gl.viewport(0, 0, this.subCols, this.subRows);
+    // Sentinel clear (14.2 item 3's "kind 0 = nothing drawn"): GI/GA all
+    // zero, DEPTH = 0x7f800000 (the +Inf bit pattern dda.frag.js's own
+    // kind==0 branch writes) - shade.frag.js's `kindU == 0u` branch (sky)
+    // reads exactly this on every cell the raster pass never touches.
+    gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+    gl.clearBufferuiv(gl.COLOR, 1, [0, 0, 0, 0]);
+    gl.clearBufferuiv(gl.COLOR, 2, [0x7f800000, 0, 0, 0]);
+    gl.clearBufferfv(gl.DEPTH, 0, [1]);
+
+    gl.useProgram(this.progMesh);
+    gl.bindVertexArray(this._meshVao);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LESS);
+    gl.depthMask(true);
+    gl.disable(gl.CULL_FACE); // 27.15.2: "Phase 1 draws with cull none in both twins"
+    gl.uniformMatrix4fv(loc.uViewProj, false, this._meshViewProjF32);
+
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
+      const entry = this._meshBuffers.get(item.mesh);
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+      for (const attr of STATIC_VERTEX_LAYOUT) {
+        gl.enableVertexAttribArray(attr.location);
+        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, 64, attr.offsetBytes);
+        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, 64, attr.offsetBytes);
+      }
+      const m = item.matrix;
+      const M = this._meshModelF32;
+      M[0] = m[0]; M[1] = m[3]; M[2] = m[6]; M[3] = 0;
+      M[4] = m[1]; M[5] = m[4]; M[6] = m[7]; M[7] = 0;
+      M[8] = m[2]; M[9] = m[5]; M[10] = m[8]; M[11] = 0;
+      M[12] = m[9]; M[13] = m[10]; M[14] = m[11]; M[15] = 1;
+      gl.uniformMatrix4fv(loc.uModel, false, M);
+      gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
+      gl.uniform1f(loc.uZBase, item.zBase);
+      gl.drawArrays(gl.TRIANGLES, item.rangeFirst * 3, item.rangeCount * 3);
+    }
+  }
+
   // US-016 (14.4 items 2/4, GPU build order step 2): pass A2 - the same
   // sub-sample resolution/camera basis as `_passCast`, reading set 1
   // (fboCastSub's own output) and writing set 2 (fboTerrainSub). US-026a S5
@@ -1695,6 +1840,7 @@ const CAST_UNIFORMS = [
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
+const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase'];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];
 // US-006/US-007: light pass uniforms (14.3 items 3/4).
 const LIGHT_UNIFORMS = [

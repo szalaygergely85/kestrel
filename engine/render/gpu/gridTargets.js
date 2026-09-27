@@ -15,7 +15,7 @@
 // the caller's job (GpuCellPipeline already tracks those) - this file only
 // allocates/frees the GL objects.
 
-import { createTexture2D, createFramebuffer2D, deleteTexture2D, deleteFramebuffer2D } from './glUtil.js';
+import { createTexture2D, createFramebuffer2D, deleteTexture2D, deleteFramebuffer2D, glCounts } from './glUtil.js';
 
 // Field names of every grid-sized TEXTURE this module owns (used by both
 // `allocGridTargets` and `freeGridTargets`, and by `GpuCellPipeline.
@@ -29,7 +29,22 @@ export const GRID_TEXTURE_FIELDS = Object.freeze([
 
 const GRID_FBO_FIELDS = Object.freeze([
   'fboCastSub', 'fboTerrainSub', 'fboCast', 'fboDeriv', 'fboLight', 'fboShade', 'fboFinal',
+  'fboRasterSub',
 ]);
+
+// ME-04 (docs/backlog.md, docs/architecture.md 27.4 MRT, 27.11 ME-04 row):
+// the raster pass' own real hardware depth attachment (a triangle
+// rasteriser needs a genuine per-fragment z-test between overlapping
+// triangles - the DDA/terrain/voxel passes never did, so they never needed
+// one). Sub-sample sized (`subCols x subRows`), a RENDERBUFFER (never
+// sampled by another pass in phase 1 - `readback()`/texture sampling of
+// depth is out of scope, GpuDeviceGL2.js's own comment). `fboRasterSub`
+// (below) reuses the SAME `texSGI`/`texSGA`/`texSDepth` colour textures
+// `fboCastSub` already owns - the raster pass, when `renderer:'mesh'`, is
+// just an alternative way to fill pass A's sub-sample output (same RG32UI/
+// RGBA32UI/R32UI shapes dda.frag.js writes), so resolve/deriv/light/shade
+// downstream need NO changes (27.11 ME-04 AC "'dda' output unchanged").
+const GRID_RENDERBUFFER_FIELDS = Object.freeze(['texRasterDepth']);
 
 /**
  * Creates every grid-sized texture + FBO at `cols x rows` (sub-sample sets
@@ -122,15 +137,38 @@ function _allocGridTargetsInner(gl, cols, rows, subCols, subRows, outFgTex, outB
   gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
   if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('gridTargets: fboFinal incomplete');
 
+  // ME-04: the raster pass' own depth24 renderbuffer + FBO (see the
+  // GRID_RENDERBUFFER_FIELDS comment above) - allocated unconditionally,
+  // same "always allocate, 1x1/placeholder-sized if unused" pattern as
+  // texFarH/texVOX etc. elsewhere in this pipeline, so `renderer:'mesh'`
+  // never needs its own resize path.
+  glCounts.renderbuffers = (glCounts.renderbuffers || 0) + 1;
+  t.texRasterDepth = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, t.texRasterDepth);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, subCols, subRows);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+
+  t.fboRasterSub = createFramebuffer2D(gl);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboRasterSub);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.texSGI, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, t.texSGA, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, t.texSDepth, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, t.texRasterDepth);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('gridTargets: fboRasterSub incomplete');
+
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   return t;
 }
 
-/** Deletes every texture/FBO `allocGridTargets` created (safe on a partial object). */
+/** Deletes every texture/FBO/renderbuffer `allocGridTargets` created (safe on a partial object). */
 export function freeGridTargets(gl, t) {
   if (!t) return;
   for (const f of GRID_TEXTURE_FIELDS) deleteTexture2D(gl, t[f]);
   for (const f of GRID_FBO_FIELDS) deleteFramebuffer2D(gl, t[f]);
+  for (const f of GRID_RENDERBUFFER_FIELDS) {
+    if (t[f]) { gl.deleteRenderbuffer(t[f]); glCounts.renderbuffers--; }
+  }
 }
 
 /**

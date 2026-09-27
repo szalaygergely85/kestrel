@@ -58,6 +58,12 @@ writeFile(tmp, 'tools/editor/bad7c.js', `import { DEV_OK } from '../../engine/de
 writeFile(tmp, 'game/js/quest/good8.test.js', `import { makeOk } from '../../../engine/test/assert.js';\nexport const ok8 = makeOk;\n`);
 writeFile(tmp, 'tools/editor/good8.test.mjs', `import { makeOk } from '../../engine/test/assert.js';\nexport const ok8b = makeOk;\n`);
 writeFile(tmp, 'game/js/quest/bad8.js', `import { makeOk } from '../../../engine/test/assert.js';\nexport const ok8c = makeOk;\n`);
+// Rule 9 (ME-03b): engine/render/gpu/** touching gl./WebGL2RenderingContext/
+// navigator.gpu outside device/* is a WARNING (own "WARN ..." line, not a
+// FAIL-exit finding); device/* itself and *.test.js are exempt.
+writeFile(tmp, 'engine/render/gpu/bad9.js', `export function f(gl) { return gl.createTexture(); }\n`);
+writeFile(tmp, 'engine/render/gpu/device/good9.js', `export function f(gl) { return gl.createTexture(); }\n`);
+writeFile(tmp, 'engine/render/gpu/bad9.test.js', `export function f(gl) { return gl.createTexture(); }\n`);
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
@@ -91,6 +97,9 @@ ok('rule 7: dev.js import from tools/editor/** flagged', /bad7c\.js.*engine\/dev
 ok('rule 8: engine/test/assert.js import from a game .test.js NOT flagged', !/good8\.test\.js/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a tools/editor .test.mjs NOT flagged', !/good8\.test\.mjs/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a non-test file flagged', /bad8\.js.*deep import/.test(output), output);
+ok('rule 9: gpu file touching gl. outside device/* WARNs (not a FAIL finding)', /WARN.*bad9\.js.*gl\.\*/.test(output), output);
+ok('rule 9: gpu/device/* file touching gl. NOT flagged', !/good9\.js/.test(output), output);
+ok('rule 9: gpu *.test.js touching gl. NOT flagged', !/bad9\.test\.js/.test(output), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });

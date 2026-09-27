@@ -237,6 +237,11 @@ const sunEnabled = params.get('sun') !== '0';
 // gate; JS/CPU: `compositor.js`'s `castTerrain` call). Same shape as
 // `?lights=0`/`?sun=0` above. Needed for item 4's GPU-ms A/B measurement.
 const terrainEnabled = params.get('terrain') !== '0';
+// ME-04 (docs/backlog.md, architecture.md 27.11 ME-04 AC "createEngine({
+// renderer: 'mesh' | 'dda' })"): `?renderer=mesh` opts into the GPU raster
+// pass (tower only, this story); default 'dda' is every existing pass,
+// completely unchanged.
+const renderer = params.get('renderer') === 'mesh' ? 'mesh' : 'dda';
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -268,7 +273,7 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // world/* (US-025, off-limits this story).
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled });
+  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;
