@@ -14,6 +14,12 @@
     "../engine/core/transform.js",
     "../engine/index.js",
     "../engine/dev.js",
-    "../engine/render/GBuffer.js"
+    "../engine/render/GBuffer.js",
+    "../engine/mesh/*.js"
+  ],
+  "exclude": [
+    "../**/*.test.js",
+    "../**/*.test.mjs",
+    "../node_modules"
   ]
 }
