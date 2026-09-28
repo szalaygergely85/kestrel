@@ -198,6 +198,7 @@ ok('terrain.vert.js raster frag writes the same 3 sub-sample outputs, GI.z = pac
 ok('terrain.vert.js raster frag aoD (GA.w) is +Inf (kind 7 has no seam AO)', TERRAIN_RASTER_FRAG_SRC.includes('floatBitsToUint(1.0e30)'));
 ok('terrain.vert.js raster frag reuses the march pass\' shared type-lookup snippets (no drifting second copy)', TERRAIN_RASTER_FRAG_SRC.includes('farTypeNearest') && TERRAIN_RASTER_FRAG_SRC.includes('nearTypeNearest'));
 ok('terrain.vert.js raster frag reads gl_FragCoord only once, as the perspective-correct depth reciprocal, never as a cell address', (TERRAIN_RASTER_FRAG_SRC.match(/gl_FragCoord/g) || []).length === 1 && TERRAIN_RASTER_FRAG_SRC.includes('1.0 / gl_FragCoord.w'));
+ok('terrain.vert.js raster frag carves structure footprints (uStructFoot/uStructCount + discard, the DDA buildSkips rule)', TERRAIN_RASTER_FRAG_SRC.includes('uniform vec4 uStructFoot[') && TERRAIN_RASTER_FRAG_SRC.includes('uniform int uStructCount') && TERRAIN_RASTER_FRAG_SRC.includes('discard'));
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

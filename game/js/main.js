@@ -1265,8 +1265,13 @@ function runGpuCompareDdaMode() {
     // of bug, inside poses have t0 == 0. Node twin: sectorCaster.silhouette.test.js.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideNear (owner pose A)',
       cam: { x: 1464.33, y: 1045.50, z: 2.32, yawDeg: 54, pitchDeg: 19 }, real: true },
+    // Architect (ME-06): eye raised from -2.38 (= `groundAt` there to 1 mm -
+    // an eye ON the surface is ill-conditioned for any triangle renderer:
+    // bilinear vs two triangles differ by cm, so the mesh path saw the
+    // underside of the ground) to ground + eyeHeight = -0.78, still below
+    // the level origin z, which is what this BUG-OWN-008 pose is for.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideFar (owner pose B)',
-      cam: { x: 1401.80, y: 1038.32, z: -2.38, yawDeg: 83, pitchDeg: 14 }, real: true },
+      cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 83, pitchDeg: 14 }, real: true },
   ];
 
   // US-040 step 5 (architecture.md 15.2 item 7): the formal `?gpucompare=1`

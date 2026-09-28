@@ -91,6 +91,28 @@ function stepUntilDone(set, maxCalls = 500) {
   }
   ok('near chunk vertex z == band hDraw exactly (sampled)', allMatch, `worst diff=${worst}`);
 
+  // Architect fix (ME-06): band vertex (i, j) is at the CELL CENTRE
+  // `x0 + (i + 0.5) cell` (27.15.5) - the point `util.gridHeight`'s
+  // bilinear, the far tiles and the stitch ring all use. A corner
+  // placement was a 1 m shift of the whole band vs the DDA oracle.
+  let centreOk = true, worstXY = 0;
+  for (let ky = 0; ky < 3; ky++) {
+    for (let kx = 0; kx < 3; kx++) {
+      const mesh = set.near[ky * 3 + kx];
+      const cc = set._chunkCol[kx].count, rc = set._chunkRow[ky].count;
+      const colStart = set._chunkCol[kx].start, rowStart = set._chunkRow[ky].start;
+      for (let lj = 0; lj < rc; lj += 5) {
+        for (let li = 0; li < cc; li += 5) {
+          const wx = mesh._origin.x + mesh.pos[(li + lj * cc) * 3], wy = mesh._origin.y + mesh.pos[(li + lj * cc) * 3 + 1];
+          const ex = g.x0 + (colStart + li + 0.5) * g.cell, ey = g.y0 + (rowStart + lj + 0.5) * g.cell;
+          const d = Math.max(Math.abs(wx - ex), Math.abs(wy - ey));
+          if (d > 1e-6) { centreOk = false; worstXY = Math.max(worstXY, d); }
+        }
+      }
+    }
+  }
+  ok('near chunk vertex world xy == band cell centre x0 + (i + 0.5) cell', centreOk, `worst=${worstXY}`);
+
   // Shared boundary column between chunk (0,0) and (1,0): world positions equal.
   const m00 = set.near[0], m10 = set.near[1];
   const cc0 = set._chunkCol[0].count;
@@ -237,11 +259,15 @@ function stepUntilDone(set, maxCalls = 500) {
   const set = new TerrainMeshSet(terrain);
   stepUntilDone(set);
   const meshesBefore = set.near.slice(); // object identities of the published (front) set
+  const versionsBefore = set.near.map((m) => m.meshVersion);
 
   let identityChangedMidway = false;
   terrain.bakeNearBand(towerCx + 1, towerCy);
   let calls = 0;
-  while (set.step(2)) {
+  // Architect (ME-06): a 0.2 ms budget here, not the production 2 ms - the
+  // assertion is "row-granular", and a fast machine finished all 192 rows
+  // inside one 2 ms call (the "flip took more than one step call" flake).
+  while (set.step(0.2)) {
     calls++;
     if (set.near.some((m, i) => m !== meshesBefore[i])) identityChangedMidway = true;
     if (calls > 1000) break;
@@ -250,6 +276,15 @@ function stepUntilDone(set, maxCalls = 500) {
   ok('front set identity does not change until the final swap call', !identityChangedMidway);
   ok('front set swaps to the other buffer once the flip completes', set.near.every((m, i) => m !== meshesBefore[i]));
   ok('each swapped-in chunk mesh has a bumped meshVersion (>= 2, was fully rebuilt)', set.near.every((m) => m.meshVersion >= 2));
+  // Architect fix (ME-06): front/back share ids (the MeshBuffers cache key),
+  // so versions must be unique ACROSS both sets, not per mesh - a second
+  // flip used to hand the GPU cache "version 2" twice (stale buffer).
+  ok('swapped-in meshVersion is strictly greater than the previous front version (shared id, one counter)',
+    set.near.every((m, i) => m.meshVersion > versionsBefore[i]));
+  terrain.bakeNearBand(towerCx, towerCy);
+  const versionsMid = set.near.map((m) => m.meshVersion);
+  stepUntilDone(set);
+  ok('second flip: versions strictly increase again', set.near.every((m, i) => m.meshVersion > versionsMid[i]));
 
   const fresh = new TerrainMeshSet(terrain);
   stepUntilDone(fresh);
@@ -289,6 +324,26 @@ function stepUntilDone(set, maxCalls = 500) {
   let kind7Count = 0;
   for (let i = 0; i < target.kind.length; i++) if (target.kind[i] === 7) kind7Count++;
   ok('rasterDrawList produced kind-7 (terrain) pixels', kind7Count > 0, `kind7Count=${kind7Count}`);
+
+  // Architect fix (ME-06): structure footprint carve - `ctx.structFoot`
+  // boxes (the DDA `buildSkips` rule) leave no kind-7 fragment with world
+  // (u, v) inside the box, and every fragment outside is unchanged.
+  // The cam above looks north (yaw 0) from tower.y - 40 at 40 m height, pitch -10: the
+  // nearest visible ground is ~90 m ahead, so put the box 80-160 m ahead of it.
+  const box = new Float64Array([recipe.tower.x - 40, recipe.tower.y - 200, recipe.tower.x + 40, recipe.tower.y - 120]);
+  const target2 = createRasterTarget(cols, rows, 1);
+  clearRasterTarget(target2);
+  rasterDrawList(list, target2, { M, terms, kind7Mat: set.typeAt.bind(set), structFoot: box, structCount: 1 });
+  let inBox = 0, carved = 0, outsideChanged = 0;
+  for (let i = 0; i < target2.kind.length; i++) {
+    const wasIn = target.kind[i] === 7 && target.u[i] >= box[0] && target.u[i] < box[2] && target.v[i] >= box[1] && target.v[i] < box[3];
+    if (target2.kind[i] === 7 && target2.u[i] >= box[0] && target2.u[i] < box[2] && target2.v[i] >= box[1] && target2.v[i] < box[3]) inBox++;
+    if (wasIn) { if (target2.kind[i] !== 7 || target2.depth[i] !== target.depth[i]) carved++; }
+    else if (target2.kind[i] !== target.kind[i] || target2.depth[i] !== target.depth[i]) outsideChanged++;
+  }
+  ok('structFoot carve: no kind-7 fragment lands inside the footprint box', inBox === 0, `inBox=${inBox}`);
+  ok('structFoot carve: fragments that were inside the box changed (carved), and some existed', carved > 0, `carved=${carved}`);
+  ok('structFoot carve: fragments outside the box are byte-identical', outsideChanged === 0, `outsideChanged=${outsideChanged}`);
 }
 
 // ---------------------------------------------------------------------------

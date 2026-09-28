@@ -430,6 +430,8 @@ export class TerrainMeshSet {
     }
     /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
     this.near = this._nearA;
+    /** One counter for both near sets (they share ids) - see `_publishNear`. */
+    this._nearVersion = 1;
 
     /** @type {MeshData} */
     this.stitch = buildStitchMesh([]);
@@ -507,8 +509,13 @@ export class TerrainMeshSet {
             const srcIdx = gi + gj * g.w;
             const z = g.hDraw[srcIdx];
             const dstV = li + lj * cc;
-            mesh.pos[dstV * 3] = li * g.cell;
-            mesh.pos[dstV * 3 + 1] = lj * g.cell;
+            // Band vertex (i, j) sits at the CELL CENTRE `x0 + (i + 0.5) cell`
+            // (27.15.5) - the same sample point `util.gridHeight`'s bilinear
+            // (`fx = x/cell - 0.5`), the far tiles and the stitch ring use.
+            // Architect fix (ME-06): this was `li * cell` (cell corner), a
+            // 1 m shift of the whole band vs the DDA oracle and the stitch.
+            mesh.pos[dstV * 3] = (li + 0.5) * g.cell;
+            mesh.pos[dstV * 3 + 1] = (lj + 0.5) * g.cell;
             mesh.pos[dstV * 3 + 2] = z;
             const nOff = srcIdx * 3;
             mesh.nrm[dstV] = packNormalOct(this._bandNrm[nOff], this._bandNrm[nOff + 1], this._bandNrm[nOff + 2]);
@@ -516,9 +523,13 @@ export class TerrainMeshSet {
             if (z > maxZ) maxZ = z;
           }
         }
-        mesh.bbox[0] = 0; mesh.bbox[1] = 0; mesh.bbox[2] = minZ;
-        mesh.bbox[3] = (cc - 1) * g.cell; mesh.bbox[4] = (rc - 1) * g.cell; mesh.bbox[5] = maxZ;
-        mesh.meshVersion++;
+        mesh.bbox[0] = 0.5 * g.cell; mesh.bbox[1] = 0.5 * g.cell; mesh.bbox[2] = minZ;
+        mesh.bbox[3] = (cc - 0.5) * g.cell; mesh.bbox[4] = (rc - 0.5) * g.cell; mesh.bbox[5] = maxZ;
+        // Architect fix (ME-06): front/back chunks share one `id` (the GPU
+        // cache key, MeshBuffers.js) so the version must be unique across
+        // BOTH sets - a per-mesh `++` gave A and B the same numbers and the
+        // second flip re-used a stale vertex buffer.
+        mesh.meshVersion = ++this._nearVersion;
       }
     }
     this.near = back;
@@ -611,6 +622,13 @@ export class TerrainMeshSet {
 
     if (terrain.farReady && (!this._farBuilt || this._farBuiltVersion !== terrain.farVersion)) {
       this._buildFarTiles();
+      // Carve for `terrain.near` right away, even though the near chunks
+      // are still all-zero until their row-by-row build publishes (a hole in
+      // the ground outside for the first few frames after load). Architect
+      // note (ME-06): tried "carve only once published" - worse: the 8 m far
+      // grid (+ canopy) then pokes through the tower floor for those frames
+      // (spawn pose kind 4 %). The hole is the lesser evil and matches the
+      // DDA's own "no terrain until baked" transient.
       if (terrain.near) this._updateFarExclusion(this._bandRectFor(terrain.near));
     }
 

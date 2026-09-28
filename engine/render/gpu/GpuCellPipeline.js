@@ -230,6 +230,10 @@ export class GpuCellPipeline {
       this.progMeshTerrain = linkProgram(gl, TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC);
       this._meshTerrainVao = gl.createVertexArray();
       this._terrainMeshSets = new WeakMap();
+      // Structure footprints (x0, y0, x1, y1 per placed structure) for the
+      // terrain raster frag's carve (terrain.vert.js header) - filled per
+      // frame in `_passRaster`, allocated once.
+      this._meshStructFoot = new Float32Array(MAX_STRUCTS * 4);
     }
 
     // --- G-buffer + shade-output textures and every FBO built ON them
@@ -1627,6 +1631,22 @@ export class GpuCellPipeline {
       // pass' own `uFarMap` (ARCH CHANGES item 5: never a hard-coded 0,0).
       const fg = terrain._farGridDraw;
       gl.uniform4f(locT.uFarMap, fg.x0, fg.y0, terrain.mapCell, terrain.mapW);
+      // Structure footprint carve (architect fix, ME-06): the DDA's
+      // `buildSkips` rule - terrain is never drawn inside a placed
+      // structure's 2D bbox. Same `world.structures[].bbox` the CPU caster
+      // reads, capped at MAX_STRUCTS like every other structure uniform.
+      const structs = world.structures || [];
+      const foot = this._meshStructFoot;
+      let structCount = 0;
+      for (let i = 0; i < structs.length && structCount < MAX_STRUCTS; i++) {
+        const b = structs[i].bbox;
+        if (!b) continue;
+        const o4 = structCount * 4;
+        foot[o4] = b.x0; foot[o4 + 1] = b.y0; foot[o4 + 2] = b.x1; foot[o4 + 3] = b.y1;
+        structCount++;
+      }
+      gl.uniform4fv(locT.uStructFoot, foot);
+      gl.uniform1i(locT.uStructCount, structCount);
       for (let i = 0; i < list.count; i++) {
         const item = list.items[i];
         if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
@@ -1964,6 +1984,7 @@ const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase'];
 const TERRAIN_MESH_UNIFORMS = [
   'uModel', 'uViewProj', 'uObjectId',
   'uNearType', 'uNearMap', 'uNearReady', 'uFarType', 'uFarMap',
+  'uStructFoot', 'uStructCount',
 ];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];
 // US-006/US-007: light pass uniforms (14.3 items 3/4).

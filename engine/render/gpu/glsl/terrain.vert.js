@@ -49,8 +49,18 @@
 // matching the shadow-pass bias already planned for phase 3, 27.9) only if
 // the owner's real-GPU `?gpucompare=1&renderer=mesh` pass shows a seam at
 // the tower foot - never enabled speculatively.
+//
+// Structure footprints (architect fix, ME-06): the DDA never draws terrain
+// inside a placed structure's 2D bbox ("cells in a structure bbox belong to
+// the structure", terrainCaster.js `buildSkips` / terrain.frag.js's skip
+// slabs). The mesh path has no ray to skip, so the fragment stage DISCARDS
+// terrain fragments whose world xy falls inside any `uStructFoot` box -
+// the literal per-fragment twin of that rule (rasterJS.js: `ctx.structFoot`).
+// Without it the 2 m band under the tower pokes through the tower floor
+// (the hill crown is above the level's floor z in places).
 import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
+import { MAX_STRUCTS } from '../WorldTextures.js';
 import { NEAR_TYPE_NEAREST_GLSL, FAR_TYPE_NEAREST_GLSL } from './terrain.frag.js';
 
 export const TERRAIN_VERT_SRC = `${GLSL_VERSION}${PRECISION}
@@ -90,6 +100,8 @@ uniform vec4 uNearMap;        // x0, y0, cell (2), size (near.w == near.h)
 uniform int uNearReady;       // activeNearLOD(terrain) != null (23.4/terrainCaster.js)
 uniform usampler2D uFarType;  // R8UI, mapW x mapH, nearest
 uniform vec4 uFarMap;         // x0, y0, cell, size (mapW == mapH)
+uniform vec4 uStructFoot[${MAX_STRUCTS}]; // x0, y0, x1, y1 (world m) per placed structure - terrain is never drawn inside
+uniform int uStructCount;
 
 ${OCT_NORMAL}
 ${NEAR_TYPE_NEAREST_GLSL}
@@ -115,6 +127,13 @@ int terrainTypeAt(float x, float y) {
 }
 
 void main() {
+  // Structure footprint carve (see the header): [x0, x1) x [y0, y1), the
+  // same half-open rule rasterJS.js's twin uses.
+  for (int i = 0; i < ${MAX_STRUCTS}; i++) {
+    if (i >= uStructCount) break;
+    vec4 b = uStructFoot[i];
+    if (vWorldPos.x >= b.x && vWorldPos.x < b.z && vWorldPos.y >= b.y && vWorldPos.y < b.w) discard;
+  }
   vec3 N = normalize(vNormal);
   int type = terrainTypeAt(vWorldPos.x, vWorldPos.y);
   float dist = 1.0 / gl_FragCoord.w; // perpendicular camera-forward distance d (27.5 w_clip = d), same convention mesh.frag.js uses
