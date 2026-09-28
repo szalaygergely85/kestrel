@@ -40,9 +40,10 @@ import {
 import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 // US-016 (14.4 item 5, GPU build order step 3), reworked by US-026a S5 (23.4
 // "Lighting"): terrain (kind==7) branch - literal GLSL twin of
-// terrainShade.js's shadeTerrain (renamed from shadeTerrainFar). `GA.w`
-// (aoD) now carries the PACKED NORMAL the pass A2 march wrote (never `b` any
-// more - see terrain.frag.js's own doc comment); this program decodes it and
+// terrainShade.js's shadeTerrain (renamed from shadeTerrainFar). `GI.z`
+// (ME-06, 27.1 item 5) now carries the PACKED NORMAL the pass A2 march or
+// the mesh raster pass wrote (never `b` any more - see terrain.frag.js's
+// own doc comment); this program decodes it and
 // computes `b` itself (sun + this cell's own uLightTex point-light term),
 // which is why it needs its own uSunDir/uAmbientI/uSunI uniforms now (moved
 // out of the march pass - still no FARH/NEARH texture unit needed here,
@@ -396,8 +397,9 @@ void main() {
   // pass"): terrain cells are a completely different look-up (TLOOK, not a
   // MaterialTable/G-D derivatives) - deterministic per cell, no sub-sample
   // averaging (the JS oracle's shadeTerrainCells is likewise a single
-  // per-cell call, not per-sub-sample). aoD (GA.w) now carries the PACKED
-  // NORMAL the march pass wrote (not b any more) - decoded here, then
+  // per-cell call, not per-sub-sample). GI.z (ME-06) carries the PACKED
+  // NORMAL the march/raster pass wrote (not b any more; aoD/GA.w is
+  // genuinely +Inf again) - decoded here, then
   // combined with the sun + this cell's already-computed point-light term
   // (uLightTex, written by the light pass right before this one - literal
   // twin of terrainShade.js's shadeTerrainCells: b = ambientI + sunI*max(0,
@@ -408,7 +410,11 @@ void main() {
     int typeId = int(giMat(gi.y));
     uvec4 gaT = texelFetch(uGA, cell, 0);
     float uT = uintBitsToFloat(gaT.x), vT = uintBitsToFloat(gaT.y);
-    vec3 Nt = unpackNormalOct(gaT.w);
+    // ME-06 (27.1 item 5, 27.4): the packed normal moved OFF aoD (GA.w,
+    // now genuinely +Inf again) and onto GI.z - shared by the march pass
+    // (terrain.frag.js) and the mesh raster pass (terrain.vert.js), so this
+    // is the one read site for either renderer.
+    vec3 Nt = unpackNormalOct(texelFetch(uGI, cell, 0).z);
     float ndotlT = Nt.x * uSunDir.x + Nt.y * uSunDir.y + Nt.z * uSunDir.z;
     float bSunT = uAmbientI + uSunI * max(0.0, ndotlT);
     uvec4 lightT = texelFetch(uLightTex, cell, 0);

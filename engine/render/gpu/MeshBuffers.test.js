@@ -16,9 +16,16 @@
 //     GpuDevice: one upload per mesh id+version, no re-upload on a
 //     cache-hit frame, a version bump frees the old buffer and uploads a
 //     new one, `dispose()` frees everything.
+//  3. ME-06: the same two checks for `buildTerrainVertexData`/the
+//     'terrain'-layout branch of `MeshBuffers.get()` (indexed: a vertex
+//     AND an index buffer per upload/eviction), against a real
+//     `TerrainMeshSet` chunk (ME-05's own tower-band fixture).
 //
 //   node engine/render/gpu/MeshBuffers.test.js
-import { buildStaticVertexData, STATIC_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, MeshBuffers } from './MeshBuffers.js';
+import {
+  buildStaticVertexData, STATIC_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, MeshBuffers,
+  buildTerrainVertexData, TERRAIN_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT,
+} from './MeshBuffers.js';
 import { AUX_STRIDE, FLAT_STRIDE } from '../../mesh/MeshData.js';
 import { LevelMeshCache } from '../../mesh/DrawList.js';
 import { loadLevel } from '../../world/Level.js';
@@ -27,6 +34,9 @@ import paletteMod from '../../../design/palette.js'; // side effect: globalThis.
 import detailPassMod from '../../../design/detail-pass.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk, makeMockGpuDevice } from '../../test/assert.js';
+import { Terrain } from '../../world/Terrain.js';
+import terrainDef from '../../../design/levels/overworld_far.js';
+import { TerrainMeshSet } from '../../mesh/terrainMesh.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -130,11 +140,86 @@ function decode(buf, vertCount) {
   ok('dispose() frees the remaining buffer', mock.liveCount() === 0, String(mock.liveCount()));
 }
 
-// ---- non-static layout rejected clearly (terrain wiring is a later story) ----
+// ---- buildStaticVertexData rejects a non-static mesh ----
 {
   let threw = false;
   try { buildStaticVertexData(/** @type {any} */({ layout: 'terrain' })); } catch (e) { threw = true; }
   ok('buildStaticVertexData rejects a non-static mesh', threw);
+}
+
+// ---- buildTerrainVertexData rejects a non-terrain mesh ----
+{
+  let threw = false;
+  try { buildTerrainVertexData(/** @type {any} */({ layout: 'static' })); } catch (e) { threw = true; }
+  ok('buildTerrainVertexData rejects a non-terrain mesh', threw);
+}
+
+// ---- 3. ME-06 terrain vertex buffer parity (real TerrainMeshSet chunk) ----
+{
+  globalThis.window = globalThis.window || globalThis;
+  terrainDef; // side effect: window.ASSETS.levels.overworld_far
+  const recipe = globalThis.ASSETS.levels.overworld_far;
+  const terrain = new Terrain(recipe);
+  terrain.bakeFarSync();
+  const towerCx = Math.floor(recipe.tower.x / terrain.chunkSize), towerCy = Math.floor(recipe.tower.y / terrain.chunkSize);
+  terrain.bakeNearBand(towerCx, towerCy);
+  const set = new TerrainMeshSet(terrain);
+  let n = 0;
+  while (set.step(2) && n++ < 500);
+
+  const mesh = set.near[4]; // centre chunk - always non-empty
+  ok('near chunk has triangles (sanity)', mesh.triCount > 0, String(mesh.triCount));
+  const vertCount = mesh.pos.length / 3;
+
+  const buf = buildTerrainVertexData(mesh);
+  ok('terrain buffer size matches stride x vertCount', buf.byteLength === vertCount * TERRAIN_STRIDE_BYTES, `${buf.byteLength} vs ${vertCount * TERRAIN_STRIDE_BYTES}`);
+
+  const f32 = new Float32Array(buf), u32 = new Uint32Array(buf);
+  const words = TERRAIN_STRIDE_BYTES / 4;
+  let posOk = true, nrmOk = true;
+  for (let v = 0; v < vertCount; v++) {
+    const base = v * words;
+    if (Math.fround(mesh.pos[v * 3]) !== f32[base] || Math.fround(mesh.pos[v * 3 + 1]) !== f32[base + 1] || Math.fround(mesh.pos[v * 3 + 2]) !== f32[base + 2]) { posOk = false; break; }
+    if (mesh.nrm[v] !== u32[base + 3]) { nrmOk = false; break; }
+  }
+  ok('decoded terrain pos matches mesh.pos exactly (float32-rounded)', posOk);
+  ok('decoded terrain nrm (packed normal bits) matches mesh.nrm exactly', nrmOk);
+
+  const byName = Object.fromEntries(TERRAIN_VERTEX_LAYOUT.map((a) => [a.name, a]));
+  ok('TERRAIN_VERTEX_LAYOUT.aPos offset matches the encoder', byName.aPos.offsetBytes === 0);
+  ok('TERRAIN_VERTEX_LAYOUT.aNrmBits offset matches the encoder', byName.aNrmBits.offsetBytes === 12);
+
+  // MeshBuffers cache/eviction for the indexed terrain layout (mock device):
+  // one vertex + one index buffer per upload, both freed together.
+  const mock = makeMockGpuDevice();
+  const buffers = new MeshBuffers(mock.device);
+  const createsBefore = mock.createCount;
+  const e1 = buffers.get(mesh);
+  ok('terrain get() uploads exactly two buffers (vertex + index)', mock.createCount - createsBefore === 2, String(mock.createCount - createsBefore));
+  ok('terrain entry carries an indexBuffer + indexCount', !!e1.indexBuffer && e1.indexCount === mesh.idx.length);
+
+  const e2 = buffers.get(mesh);
+  ok('second get() with the same version is a cache hit (no re-upload)', mock.createCount - createsBefore === 2);
+  ok('cache hit returns the same vertex + index handles', e1.vertexBuffer === e2.vertexBuffer && e1.indexBuffer === e2.indexBuffer);
+
+  mesh.meshVersion = (mesh.meshVersion || 1) + 1;
+  const e3 = buffers.get(mesh);
+  ok('a version bump re-uploads both buffers', mock.createCount - createsBefore === 4);
+  ok('the old vertex buffer was disposed on the version bump', e1.vertexBuffer._disposed === true);
+  ok('the old index buffer was disposed on the version bump', e1.indexBuffer._disposed === true);
+  ok('a version bump returns different handles', e3.vertexBuffer !== e1.vertexBuffer && e3.indexBuffer !== e1.indexBuffer);
+
+  buffers.dispose();
+  ok('dispose() frees every remaining buffer', mock.liveCount() === 0, String(mock.liveCount()));
+}
+
+// ---- an unsupported layout throws clearly (voxel per-part instancing is ME-07/08) ----
+{
+  const mock = makeMockGpuDevice();
+  const buffers = new MeshBuffers(mock.device);
+  let threw = false;
+  try { buffers.get(/** @type {any} */({ id: 'x', layout: 'voxel', meshVersion: 1 })); } catch (e) { threw = true; }
+  ok('MeshBuffers.get rejects an unsupported layout', threw);
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);

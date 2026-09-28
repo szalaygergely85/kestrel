@@ -37,7 +37,7 @@ const KIND_WALL = 1, KIND_STEP = 2, KIND_UPPER = 3, KIND_FLOOR = 4, KIND_TOP = 5
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
 export const DDA_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
-layout(location = 0) out uvec2 outGI;
+layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
@@ -360,14 +360,19 @@ void main() {
   // US-030b: mask/cov are per-CELL (resolve.frag.js applies them once to the
   // final GI.y) - this sub-sample texel always writes them as 0.
   if (bestKind == 0) {
-    outGI = uvec2(0u, 0u);
+    outGI = uvec4(0u, 0u, 0u, 0u);
     outGA = uvec4(0u);
     // Architect review 1 item 4: a constant division by zero is unspecified
     // in GLSL ES 3.00 (it happened to fold to Inf on ANGLE) - write the
     // sentinel literally instead of relying on that fold.
     outDepth = 0x7f800000u; // the "Inf" sentinel (14.2 item 3)
   } else {
-    outGI = uvec2(uint(bestPlaneId), uint(bestKind) | (uint(bestFace) << 8) | (bestMat << 16));
+    // ME-06 (27.4): GI.z/GI.w (normal/objectId) are the mesh raster pass'
+    // fields - grid quads have a fixed axis normal from face alone (no
+    // GI.z reader for kind 1-6) and objectId has no reader before ME-18, so
+    // this DDA path writes 0 for both (kept at the previous RG32UI shape's
+    // implicit zero, no behaviour change).
+    outGI = uvec4(uint(bestPlaneId), uint(bestKind) | (uint(bestFace) << 8) | (bestMat << 16), 0u, 0u);
     outGA = uvec4(floatBitsToUint(bestU), floatBitsToUint(bestV), floatBitsToUint(bestZ), floatBitsToUint(bestAo));
     outDepth = floatBitsToUint(bestT);
   }

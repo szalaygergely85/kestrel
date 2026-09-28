@@ -116,6 +116,8 @@ Order: itch.io demo (end of M3) -> Steam Coming Soon (M5) -> launch (end of M6).
 - EP-EXAMPLES: US-114 three runnable examples under `examples/` (lit room, terrain walk, props + physics), smoke-tested in `run-tests.mjs`.
 - EP-LICENSE: US-116 engine licence + `LICENSE`/`THIRD_PARTY_NOTICES` (owner question 10).
 - EP-EDITOR (was M5 "Engine Editor v0", D-010): US-035..037 model + animation editor, US-067 asset library, US-068 gizmo/ortho views, ME-18 editor on meshes, US-075..077 MCP/AI/text meshes. Future: 2D/2.5D strategy camera (D-014; renderer stays camera-agnostic by review rule).
+- EP-UI (friend feedback 2026-09-28): US-120 engine UI toolkit (data-declared UI, cell-grid layout, focus/gamepad nav, editor live preview) - the feature most small engines lack; game menus dogfood it.
+- EP-LOOKS: US-121 look/shader preset library (glyph ramps, palettes, post effects, material effects); US-122 day/night cycle is M3 game work that feeds it. Light types (owner 2026-09-28): US-123 spot, US-124 area/strip, US-125 emissive, US-126 light probes, US-127 volumetric shafts (moon + sky light inside US-122).
 - EP-PACKAGE: US-117 standalone engine package (ESM zip/npm, no build step) + engine name (GDD: still open).
 **Exit test:** an outside developer follows the guide and gets one example running plus a walkable room with a prop and a light in under 1 hour; typecheck + check-deps clean; every public export documented; licence files present.
 

@@ -33,6 +33,22 @@ import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 // shade.frag.js therefore no longer needs this block/a FARH texture unit at
 // all - see terrainShade.js's `shadeTerrainCells` doc comment for the JS
 // twin of this split).
+// ME-06 (27.15.5's `TerrainMeshSet.typeAt`, "near nearest texel inside the
+// band" half): factored out so `terrain.vert.js`'s raster fragment can
+// reuse the exact same rule as the march pass instead of a drifting copy.
+// `uNearType`/`uNearMap` are declared by whichever shader includes this
+// (NEARH_BILINEAR_GLSL below declares both; terrain.vert.js's fragment
+// declares its own copies).
+export const NEAR_TYPE_NEAREST_GLSL = `
+int nearTypeNearest(float x, float y) {
+  int ix = int(floor((x - uNearMap.x) / uNearMap.z));
+  int iy = int(floor((y - uNearMap.y) / uNearMap.z));
+  int W = int(uNearMap.w);
+  if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
+  return int(texelFetch(uNearType, ivec2(ix, iy), 0).r);
+}
+`;
+
 export const FARH_BILINEAR_GLSL = `
 uniform sampler2D uFarH;   // R32F, mapW x mapH
 uniform vec4 uFarMap;      // x0, y0, cell, size (mapW == mapH)
@@ -93,13 +109,7 @@ bool nearHBilinear(float x, float y, out float H) {
   return true;
 }
 
-int nearTypeNearest(float x, float y) {
-  int ix = int(floor((x - uNearMap.x) / uNearMap.z));
-  int iy = int(floor((y - uNearMap.y) / uNearMap.z));
-  int W = int(uNearMap.w);
-  if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
-  return int(texelFetch(uNearType, ivec2(ix, iy), 0).r);
-}
+${NEAR_TYPE_NEAREST_GLSL}
 
 const int DITHER_SEED = ${DITHER_SEED};
 
@@ -152,8 +162,24 @@ vec3 terrainNormalNear(float x, float y, bool isNear, float H0) {
 }
 `;
 
+// ME-06 (27.15.5's `TerrainMeshSet.typeAt`, "far nearest texel" half):
+// factored out of the march pass so `terrain.vert.js`'s raster fragment
+// (kind-7 variant) can reuse it verbatim instead of a second, drifting copy
+// - both need the exact same nearest-far-type rule. `uFarType`/`uFarMap`
+// are declared by whichever shader includes this (never redeclared here -
+// TERRAIN_FRAG_SRC already owns both; terrain.vert.js's fragment declares
+// its own copies).
+export const FAR_TYPE_NEAREST_GLSL = `
+int farTypeNearest(float x, float y) {
+  int ix = int(floor(x / uFarMap.z)), iy = int(floor(y / uFarMap.z));
+  int W = int(uFarMap.w);
+  if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
+  return int(texelFetch(uFarType, ivec2(ix, iy), 0).r);
+}
+`;
+
 export const TERRAIN_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
-layout(location = 0) out uvec2 outGI;
+layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
@@ -211,20 +237,16 @@ bool slabTerrain(float ex, float ey, float dx, float dy, float x0, float y0, flo
   return true;
 }
 
-int farTypeNearest(float x, float y) {
-  int ix = int(floor(x / uFarMap.z)), iy = int(floor(y / uFarMap.z));
-  int W = int(uFarMap.w);
-  if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
-  return int(texelFetch(uFarType, ivec2(ix, iy), 0).r);
-}
+${FAR_TYPE_NEAREST_GLSL}
 
 void main() {
   ivec2 sub = ivec2(gl_FragCoord.xy);
   int cx = sub.x / uN, i = sub.x - cx * uN;
   int cy = sub.y / uN, j = sub.y - cy * uN;
 
-  // Default: copy the pass-A (cast) sample through unchanged.
-  uvec2 sgi = texelFetch(uSGI, sub, 0).xy;
+  // Default: copy the pass-A (cast) sample through unchanged. ME-06: uSGI is
+  // now RGBA32UI - copy all 4 components (GI.z/GI.w, unused by structures).
+  uvec4 sgi = texelFetch(uSGI, sub, 0);
   outGI = sgi;
   outGA = texelFetch(uSGA, sub, 0);
   outDepth = texelFetch(uSDepth, sub, 0).x;
@@ -307,8 +329,15 @@ void main() {
       // decodes this same normal back out (terrainShade.js's shadeTerrainCells
       // split, ported literally - see the doc comment above uTerrainMaxH).
       vec3 N = terrainNormalNear(hx, hy, isNearHit, hh);
-      outGI = uvec2(uint(PLANEID_TERRAIN), uint(KIND_TERRAIN) | (uint(FACE_PACKED) << 8u) | (uint(type) << 16u));
-      outGA = uvec4(floatBitsToUint(hx), floatBitsToUint(hy), floatBitsToUint(hh), packNormalOct(N));
+      // ME-06 (27.1 item 5, 27.4): the packed normal moves OFF aoD
+      // (GA.w) and onto GI.z - kind 7's aoD is genuinely +Inf again
+      // (terrain has no seam AO, matching the 27.4 table), shared with the
+      // mesh raster path's own terrain fragment (terrain.vert.js) so
+      // shade.frag.js's kind==7 branch has exactly one read site regardless
+      // of which pass produced the hit. GI.w (objectId) has no reader on
+      // this march path (0x7000|chunkIndex is a mesh-only concept) - 0.
+      outGI = uvec4(uint(PLANEID_TERRAIN), uint(KIND_TERRAIN) | (uint(FACE_PACKED) << 8u) | (uint(type) << 16u), packNormalOct(N), 0u);
+      outGA = uvec4(floatBitsToUint(hx), floatBitsToUint(hy), floatBitsToUint(hh), floatBitsToUint(1.0e30));
       outDepth = floatBitsToUint(tHit);
       return;
     }

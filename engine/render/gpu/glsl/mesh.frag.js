@@ -39,7 +39,7 @@ import { GLSL_VERSION, PRECISION } from './common.js';
 const AO_NONE = 0, AO_WALL = 1, AO_PLANE = 2;
 
 export const MESH_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
-layout(location = 0) out uvec2 outGI;
+layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
@@ -88,7 +88,12 @@ void main() {
   // from its own barycentric 1/w sum).
   float dist = 1.0 / gl_FragCoord.w;
 
-  outGI = uvec2(uint(vPlaneId), vKind | (vFace << 8u) | (vMat << 16u));
+  // ME-06 (27.4): GI.z (normal) has no reader for kind 1-6 (face alone
+  // decides the shading normal) - 0. GI.w (objectId) = structSeq, decoded
+  // straight back out of planeId's own top 3 bits (mesh.vert.js's
+  // uPlaneIdOr = (structSeq&7)<<28) rather than a second uniform.
+  uint objId = uint(vPlaneId >> 28) & 7u;
+  outGI = uvec4(uint(vPlaneId), vKind | (vFace << 8u) | (vMat << 16u), 0u, objId);
   outGA = uvec4(floatBitsToUint(vUV.x), floatBitsToUint(vUV.y), floatBitsToUint(z), floatBitsToUint(aoD));
   outDepth = floatBitsToUint(dist);
 }

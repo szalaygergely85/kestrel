@@ -13,7 +13,7 @@ import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED
 import { VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE } from '../VoxelTextures.js';
 
 export const VOXEL_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
-layout(location = 0) out uvec2 outGI;
+layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
@@ -64,8 +64,10 @@ void main() {
   int cx = sub.x / uN, i = sub.x - cx * uN;
   int cy = sub.y / uN, j = sub.y - cy * uN;
 
-  // Default: copy the input sample through unchanged.
-  outGI = texelFetch(uSGI, sub, 0).xy;
+  // Default: copy the input sample through unchanged. ME-06: uSGI is now
+  // RGBA32UI (GI.z/GI.w, unused by this pass) - copy all 4 components so a
+  // sub-ray this pass doesn't touch still carries whatever pass A wrote.
+  outGI = texelFetch(uSGI, sub, 0);
   outGA = texelFetch(uSGA, sub, 0);
   uint depthBitsIn = texelFetch(uSDepth, sub, 0).x;
   outDepth = depthBitsIn;
@@ -241,7 +243,9 @@ void main() {
   }
 
   if (hit) {
-    outGI = uvec2(hitPlaneId, uint(KIND_MODEL) | (uint(hitFace) << 8u) | (hitMat << 16u));
+    // ME-06 (27.4): objectId (0x8000|slot) is ME-08 scope (voxel meshes in
+    // the raster pass) - this march pass writes 0 for GI.w, unread today.
+    outGI = uvec4(hitPlaneId, uint(KIND_MODEL) | (uint(hitFace) << 8u) | (hitMat << 16u), 0u, 0u);
     // US-041a (15.3 item 3): face 7 (FACE_PACKED) writes the octahedral-
     // packed normal into GA.w instead of the +Inf bits (0x7f800000u) - the
     // shade pass forces aoD = Inf for EVERY kind-8 cell itself (it is

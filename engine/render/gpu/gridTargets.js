@@ -72,14 +72,20 @@ export function allocGridTargets(gl, cols, rows, rays, outFgTex, outBgTex) {
 }
 
 function _allocGridTargetsInner(gl, cols, rows, subCols, subRows, outFgTex, outBgTex, t) {
-  t.texGI = createTexture2D(gl, gl.RG32UI, cols, rows);
+  // ME-06 (docs/architecture.md 27.1 item 5, 27.4): GI widens RG32UI ->
+  // RGBA32UI (z = octahedral-packed normal, currently only the kind-7/
+  // terrain raster+march writers fill it; w = objectId, unread until
+  // ME-18 - every other writer fills both with 0). SGI/SGI2 (the two
+  // sub-sample ping-pong sets pass A1/A2/A3 share) widen the same way so a
+  // kind-7 sub-sample's normal survives into the resolve pass unchanged.
+  t.texGI = createTexture2D(gl, gl.RGBA32UI, cols, rows);
   t.texGA = createTexture2D(gl, gl.RGBA32UI, cols, rows);
   t.texGD = createTexture2D(gl, gl.RGBA32UI, cols, rows);
   t.texDepth = createTexture2D(gl, gl.R32UI, cols, rows);
-  t.texSGI = createTexture2D(gl, gl.RG32UI, subCols, subRows);
+  t.texSGI = createTexture2D(gl, gl.RGBA32UI, subCols, subRows);
   t.texSGA = createTexture2D(gl, gl.RGBA32UI, subCols, subRows);
   t.texSDepth = createTexture2D(gl, gl.R32UI, subCols, subRows);
-  t.texSGI2 = createTexture2D(gl, gl.RG32UI, subCols, subRows);
+  t.texSGI2 = createTexture2D(gl, gl.RGBA32UI, subCols, subRows);
   t.texSGA2 = createTexture2D(gl, gl.RGBA32UI, subCols, subRows);
   t.texSDepth2 = createTexture2D(gl, gl.R32UI, subCols, subRows);
   t.texMask = createTexture2D(gl, gl.R8UI, cols, rows);
