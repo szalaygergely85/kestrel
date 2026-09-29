@@ -437,6 +437,47 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('sunVisible(null, ...) defaults to lit', sunVisible(null, 0, 0, 0, dir) === true);
 }
 
+// --- CO-3 (docs/coordinates.md 10 item 4): sunVisible is invariant under the structure's z ---
+// Same 8x8 fixture (walls, crack, thin slab) placed at z = 0, -3 and +5 in a terrain-less world
+// (and shifted in xy too): for every sample point given RELATIVE to the structure the verdict at
+// z != 0 equals the z = 0 one, for several sun elevations/azimuths.
+{
+  const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
+  const place = (o) => World.load({ terrain: null, structures: [{ id: 'sun', level: '__sun8x8', origin: o }], entities: [] }, assets, {});
+  const w0 = place({ x: 0, y: 0, z: 0 });
+  const shifted = [{ x: 0, y: 0, z: -3 }, { x: 0, y: 0, z: 5 }, { x: 1480, y: 1018, z: -3 }, { x: 512, y: -77, z: 5 }].map((o) => ({ o, w: place(o) }));
+  let checked = 0, litSeen = 0, shadowSeen = 0, mismatches = [];
+  for (const [elevation, azimuth] of [[45, 180], [30, 90], [60, 225], [20, 0], [89, 10]]) {
+    const ls = new LightSet();
+    ls.setSun({ elevation, azimuth, on: true });
+    const dir = ls.sun.dir;
+    for (let x = 0.25; x < 8; x += 0.5) for (let y = 0.25; y < 8; y += 0.5) for (const z of [0.05, 0.3, 0.6, 1.5, 2.5, 4, 6, 9]) {
+      const ref = sunVisible(w0, x, y, z, dir);
+      if (ref) litSeen++; else shadowSeen++;
+      for (const { o, w } of shifted) {
+        checked++;
+        const got = sunVisible(w, x + o.x, y + o.y, z + o.z, dir);
+        if (got !== ref && mismatches.length < 3) mismatches.push(`o=(${o.x},${o.y},${o.z}) local (${x},${y},${z}) sun ${elevation}/${azimuth}: ${ref} vs ${got}`);
+      }
+    }
+  }
+  ok('sunVisible fixture has both lit and shadowed samples (test is not vacuous)', litSeen > 100 && shadowSeen > 100, `lit ${litSeen} shadow ${shadowSeen}`);
+  // XFAIL (found by CO-3): a FRACTIONAL xy origin (513.25,-77.5) gives different sunVisible verdicts -
+  // the sun walk steps world integer cells and samples `sectorAt(cx + .5)`, not level cells (same
+  // class as the point-light vis grid, see sectorCaster.invariance.test.js). Fixing it must
+  // promote this to a live check.
+  {
+    const wf = place({ x: 513.25, y: -77.5, z: 5 });
+    const ls = new LightSet(); ls.setSun({ elevation: 45, azimuth: 180, on: true });
+    let differs = 0;
+    for (let x = 0.25; x < 8; x += 0.5) for (let y = 0.25; y < 8; y += 0.5) for (const z of [0.05, 0.3, 0.6, 1.5, 2.5, 4, 6]) {
+      if (sunVisible(wf, x + 513.25, y - 77.5, z + 5, ls.sun.dir) !== sunVisible(w0, x, y, z, ls.sun.dir)) differs++;
+    }
+    ok('XFAIL sunVisible with a fractional xy origin still differs from origin 0 (known bug; fix promotes this to live)', differs > 0, 'now identical: promote to a live check');
+  }
+  ok(`sunVisible at z = -3 / +5 (and integer-shifted xy) equals z = 0 relative to the structure (${checked} samples)`, mismatches.length === 0, mismatches.join(' | '));
+}
+
 // --- US-007: two placed structures - the second shadows a point in the first ---
 {
   const legend = {
