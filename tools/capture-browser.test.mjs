@@ -257,6 +257,8 @@ check('todayStr format', /^\d{4}-\d{2}-\d{2}$/.test(todayStr(new Date('2026-09-2
   const p = captureFilePath({ date: '2026-09-25', sha: 'abc1234', mode: 'bench', grid: '240x90' });
   check('captureFilePath name shape', p.endsWith('2026-09-25-abc1234-bench-240x90.json'));
   check('captureFilePath in captures dir', p.replace(/\\/g, '/').includes('docs/test-reports/captures/'));
+  const pv = captureFilePath({ date: '2026-09-25', sha: 'abc1234', mode: 'gpucompare', grid: null, variant: 'mesh' });
+  check('captureFilePath keeps variants apart', pv.endsWith('2026-09-25-abc1234-gpucompare-mesh-grid.json'));
 }
 
 if (failures > 0) {

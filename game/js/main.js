@@ -28,7 +28,7 @@ import {
 import {
   runShadeTest, runDetailShadeTest,
   PlayerLook, FrameProfiler,
-  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells,
+  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
   beginFrame, castSectors, fillSky, computeDerivatives, shadeSurfaces, edgePass,
 } from '../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
@@ -72,10 +72,18 @@ const params = new URLSearchParams(window.location.search);
 // always forces 160x60 regardless of `?grid=` - `?gpucompare=shade` (the
 // unchanged US-029 shading-only page) keeps whatever grid was requested.
 const isDdaCompare = params.get('gpucompare') === '1';
+// ME-06 (27.7 item 3): `?gpucompare=mesh` (GPU dda vs GPU mesh) needs the
+// same fixed 160x60/n=1/reference-box treatment as `?gpucompare=1` - both
+// are geometry-parity pages comparing two GPU renders pixel for pixel.
+const isMeshMigrationCompare = params.get('gpucompare') === 'mesh';
+// ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
+// instance queue on both sides after each pose's feed, so a mesh-vs-oracle
+// gap can be split into "voxel props (ME-08)" vs "everything else".
+const compareNoVoxels = params.get('voxels') === '0';
 // BUG-GPU-002 tooling fix: both compare pages (`=1` and `=shade`) need the
 // window-independent fixed camera box, not just the DDA/geometry one - see
 // the `rt.resize(GPU_COMPARE_REF_*)` comment below.
-const isGpuCompareMode = isDdaCompare || params.get('gpucompare') === 'shade';
+const isGpuCompareMode = isDdaCompare || isMeshMigrationCompare || params.get('gpucompare') === 'shade';
 const gridParam = params.get('grid');
 let reqCols = GRID_DEFAULT_COLS, reqRows;
 if (gridParam) {
@@ -93,7 +101,7 @@ if (!gridParam && !isCaptureOrBench) {
   const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
   if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
 }
-if (isDdaCompare) { reqCols = 160; reqRows = 60; }
+if (isDdaCompare || isMeshMigrationCompare) { reqCols = 160; reqRows = 60; }
 const gridResult = clampGrid(reqCols, reqRows);
 if (gridParam && gridResult.clamped) {
   console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..480x180, 8:3 aspect - D-025)`);
@@ -386,6 +394,8 @@ if (gpuBlocked) {
   runGpuCompareDdaMode();
 } else if (params.get('gpucompare') === 'shade') {
   runGpuCompareShadeMode();
+} else if (params.get('gpucompare') === 'mesh') {
+  runGpuCompareMeshMode();
 } else if (params.get('flicker') === '1') {
   runFlickerMode();
 } else if (params.get('voxelbench') === '1') {
@@ -1070,21 +1080,15 @@ function runGpuCompareShadeMode() {
 // `fb.gpuDda = true` for the real GLSL DDA + GPU shade/edge. `compareCells`
 // reports shading parity; `compareGeometry` (new, pure) reports geometry
 // parity from a `readbackGeometry()` of `GI`/`GA`/`DEPTH`.
-function runGpuCompareDdaMode() {
-  if (!gpuPipeline) {
-    const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
-      ', allV2=' + matTable.allV2 + ') - nothing to compare.';
-    console.error(msg);
-    overlay.visible = true; overlay.el.style.display = 'block';
-    overlay.el.textContent = msg;
-    return;
-  }
-  if (rt.cols !== 160 || rt.rows !== 60) {
-    console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
-  }
-
-  gpuPipeline.setSource('dda');
-
+// ME-06 (27.15.5a item 6): the two worlds + fixed pose list `?gpucompare=1`
+// and `?gpucompare=mesh` (the migration oracle, 27.7 item 3) both need -
+// factored out so a second GPU pipeline compare mode never has to keep a
+// hand-copied pose list in sync with this one. Does NOT bind
+// `compareVoxelPool` to any `GpuCellPipeline` (a caller may need it bound to
+// one pipeline, two, or none) and does NOT run the `?roundtrip=1` DDA-only
+// smoke test (that stays inline in `runGpuCompareDdaMode`, the only mode it
+// applies to).
+function buildCompareRuns() {
   // Two worlds: `test_room` with the shared US-029 pose set, plus `world_m1`
   // at the player's spawn pose (tower start, world (1497, 1027.5), yaw 330,
   // pitch 30) - the pose that exposed the "colour blocks, no glyphs" bug
@@ -1102,24 +1106,6 @@ function runGpuCompareDdaMode() {
   const testRoom = loadCompareWorld(
     { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
   );
-  // D-025 (US-038a, architecture.md 22.8): `?gpucompare=1&roundtrip=1` -
-  // before the usual poses run (at the 160x60 this page pins), do one live
-  // round trip up to 480x180 and back, rendering one real frame at the top
-  // end, proving a switch doesn't leave stale GL state behind. Expected:
-  // every pose below still ALL PASSes, with `_refBox` (the fixed 1280x720
-  // compare box) kept across both switches.
-  if (params.get('roundtrip') === '1') {
-    engine.setGrid(480, 180, { immediate: true });
-    const p0 = GPU_COMPARE_POSES[0];
-    gpuPipeline.frame({ rt }, ambientL, { x: p0.x, y: p0.y, z: p0.z, yawDeg: p0.yawDeg, pitchDeg: p0.pitchDeg }, testRoom);
-    rt.present();
-    engine.setGrid(160, 60, { immediate: true });
-    // The top-level `grid:changed` handler rebuilds `matTable` fresh on
-    // every switch (real gameplay's `engine.world` rebind) - this harness's
-    // `testRoom` was bound to the PRE-roundtrip `matTable` above, so it
-    // needs the same re-bind the handler would give a live `engine.world`.
-    for (const s of testRoom.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
-  }
   const worldM1 = loadCompareWorld(assets.world('world_m1'));
   // US-016 step 4 (14.4 item 6/9, D-017 item 11): this compare page must
   // exercise terrain (kind 7) cells, which `castTerrain`/`_passTerrain` both
@@ -1264,7 +1250,10 @@ function runGpuCompareDdaMode() {
     // edge instead of the camera - only an OUTSIDE pose can catch that class
     // of bug, inside poses have t0 == 0. Node twin: sectorCaster.silhouette.test.js.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideNear (owner pose A)',
-      cam: { x: 1464.33, y: 1045.50, z: 2.32, yawDeg: 54, pitchDeg: 19 }, real: true },
+      // ME-06: eye raised from 2.32 (= `groundAt` there to 1 mm, same
+      // ill-conditioned "eye on the surface" case as outsideFar below) to
+      // ground + eyeHeight 1.6 = 3.92.
+      cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 }, real: true },
     // Architect (ME-06): eye raised from -2.38 (= `groundAt` there to 1 mm -
     // an eye ON the surface is ill-conditioned for any triangle renderer:
     // bilinear vs two triangles differ by cm, so the mesh path saw the
@@ -1286,7 +1275,8 @@ function runGpuCompareDdaMode() {
   // designer's separate ART-OWN-001 pass), so the "near" pose uses the lamp.
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.bind(assets, matTable);
-  gpuPipeline.bindVoxels(compareVoxelPool);
+  // Not bound to any `GpuCellPipeline` here - the caller does that (one
+  // pipeline for `?gpucompare=1`, two for `?gpucompare=mesh`).
   const LEVER_X = 1499.25, LEVER_Y = 1027.3, LEVER_Z = 3.0;
   const LANTERN_X = 1499.9, LANTERN_Y = 1024.5, LANTERN_Z = 1.3;
   // Architect review 1 item 2 (the k8 cpu/gpu gate) caught a real bug in
@@ -1362,9 +1352,55 @@ function runGpuCompareDdaMode() {
     // Programmer notes.
   );
 
+  return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool };
+}
+
+function runGpuCompareDdaMode() {
+  if (!gpuPipeline) {
+    const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
+      ', allV2=' + matTable.allV2 + ') - nothing to compare.';
+    console.error(msg);
+    overlay.visible = true; overlay.el.style.display = 'block';
+    overlay.el.textContent = msg;
+    return;
+  }
+  if (rt.cols !== 160 || rt.rows !== 60) {
+    console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
+  }
+
+  gpuPipeline.setSource('dda');
+
+  const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool } = buildCompareRuns();
+  gpuPipeline.bindVoxels(compareVoxelPool);
+
+  // D-025 (US-038a, architecture.md 22.8): `?gpucompare=1&roundtrip=1` -
+  // before the usual poses run (at the 160x60 this page pins), do one live
+  // round trip up to 480x180 and back, rendering one real frame at the top
+  // end, proving a switch doesn't leave stale GL state behind. Expected:
+  // every pose below still ALL PASSes, with `_refBox` (the fixed 1280x720
+  // compare box) kept across both switches.
+  if (params.get('roundtrip') === '1') {
+    engine.setGrid(480, 180, { immediate: true });
+    const p0 = GPU_COMPARE_POSES[0];
+    gpuPipeline.frame({ rt }, ambientL, { x: p0.x, y: p0.y, z: p0.z, yawDeg: p0.yawDeg, pitchDeg: p0.pitchDeg }, testRoom);
+    rt.present();
+    engine.setGrid(160, 60, { immediate: true });
+    // The top-level `grid:changed` handler rebuilds `matTable` fresh on
+    // every switch (real gameplay's `engine.world` rebind) - this harness's
+    // `testRoom` was bound to the PRE-roundtrip `matTable` above, so it
+    // needs the same re-bind the handler would give a live `engine.world`.
+    for (const s of testRoom.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+  }
+
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: false,
+    // 27.15.5a item 6 (ME-06): the JS oracle must draw the SAME geometry
+    // path the GPU pipeline was constructed with (`renderer`, top of this
+    // file, from `?renderer=mesh`) - otherwise `?gpucompare=1&renderer=mesh`
+    // silently compares a mesh GPU render against a DDA CPU oracle and the
+    // 27.7 item 2 thresholds can never hold on structures/terrain.
+    renderer, terrainEnabled,
     // US-017: fixed LUT (fadeLut is built once at startup), sceneFade set
     // per pose below (1 = off for every row except the fade pose).
     fadeLut, sceneFade: 1,
@@ -1398,6 +1434,7 @@ function runGpuCompareDdaMode() {
       compareVoxelPool.beginFrame(); // US-040 step 5: clear the previous pose's instance queue first
       if (before) before();
     }
+    if (compareNoVoxels) compareVoxelPool.beginFrame();
     compareVoxelPool.project(cam, rt); // poses + culls this pose's queued instance(s), if any (15.2 item 2)
     // US-015: per-pose scene dim - identity for every row except the "card
     // open" pose. Mirrors `sceneFade` just below: both the CPU oracle
@@ -1504,7 +1541,9 @@ function runGpuCompareDdaMode() {
     // model cells, exactly the false-positive the first "ALL PASS" of this
     // story produced (the missing voxel_props.js script tag).
     const isVoxelPose = name.includes('voxel');
-    const k8Ok = !isVoxelPose || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
+    // `&voxels=0` (ME-06 diagnostic) empties the voxel queue on purpose - the
+    // "a voxel pose must show voxels" gate is n/a there.
+    const k8Ok = !isVoxelPose || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
     const ok = cmpCells.pass && cmpGeom.pass && cmpLight.pass && k8Ok;
     overallOk = overallOk && ok;
     rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok });
@@ -1599,7 +1638,7 @@ function runGpuCompareDdaMode() {
       `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
       // BUG-LIGHT-001: light-pass-only readback (reported only, see above).
       `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)\n`;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip})`);
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip})`);
   }
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
@@ -1619,6 +1658,132 @@ function runGpuCompareDdaMode() {
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
   window.__gpuCompare = { rows: rowsOut, ok: overallOk, infoRows };
+}
+
+// `?gpucompare=mesh` (27.7 item 3, ME-06 "migration oracle", 27.15.5a item
+// 6's closing rule): renders every existing pose with TWO real GPU
+// pipelines - one `renderer:'dda'`, one `renderer:'mesh'` - and compares
+// their readbacks directly (neither side is the CPU/JS oracle, unlike
+// `?gpucompare=1`). `unpackReadback` turns the dda side's uint textures
+// into a plain `{kind,mat,planeId,u,v,depth}` object so `compareGeometry`'s
+// existing rules can be reused as-is with the dda side standing in for its
+// `gbuf`/`depthArr` parameters. Looser bars than `?gpucompare=1` (27.7 item
+// 3): kind >= 98%, glyph >= 97%, excl. edge cells - voxel (kind-8) cells
+// get the same "ExclK8" treatment as `?gpucompare=1&renderer=mesh` (ME-08
+// hasn't put props in the raster pass yet, so a real kind-8 difference here
+// is the same documented, non-blocking gap).
+function runGpuCompareMeshMode() {
+  if (!gpuPipeline) {
+    const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
+      ', allV2=' + matTable.allV2 + ') - nothing to compare.';
+    console.error(msg);
+    overlay.visible = true; overlay.el.style.display = 'block';
+    overlay.el.textContent = msg;
+    return;
+  }
+  if (rt.cols !== 160 || rt.rows !== 60) {
+    console.warn(`[gpucompare] expected 160x60 for ?gpucompare=mesh, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
+  }
+
+  const pipelineDda = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'dda' });
+  const pipelineMesh = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'mesh' });
+  if (!pipelineDda.ready || !pipelineMesh.ready) {
+    const msg = `[gpucompare] mesh-migration pipelines failed to compile (dda ready=${pipelineDda.ready}, mesh ready=${pipelineMesh.ready}) - nothing to compare.`;
+    console.error(msg);
+    overlay.visible = true; overlay.el.style.display = 'block';
+    overlay.el.textContent = msg;
+    return;
+  }
+  pipelineDda.bind(matTable, assets.palette);
+  pipelineMesh.bind(matTable, assets.palette);
+  pipelineDda.setSource('dda');
+  pipelineMesh.setSource('dda');
+
+  const { m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool } = buildCompareRuns();
+  pipelineDda.bindVoxels(compareVoxelPool);
+  pipelineMesh.bindVoxels(compareVoxelPool);
+  void m1Eye; void testRoomLights; void worldM1Lights; // only `runs`/`compareVoxelPool` are used directly below
+
+  const cols = rt.cols, rows = rt.rows;
+  const fbCompare = {
+    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    lights: null, light: makeLightBuffer(cols, rows), timeSec: 0, gpuDda: true, terrainEnabled,
+    voxelPool: compareVoxelPool,
+  };
+
+  const rbDdaFg = new Uint8Array(cols * rows * 4), rbDdaBg = new Uint8Array(cols * rows * 4);
+  const rowsOut = [];
+  let overallOk = true;
+  for (const { world, lights, name, cam, real, before } of runs) {
+    if (real) {
+      if (before) before();
+      compareVoxelPool.collect(world, cam);
+    } else {
+      compareVoxelPool.beginFrame();
+      if (before) before();
+    }
+    if (compareNoVoxels) compareVoxelPool.beginFrame();
+    fbCompare.lights = lights;
+    if (lights) lights.update(0, world);
+
+    // Same pose, same queued voxel instances/lights, cast through the dda
+    // pipeline first (primes ambientL via `renderWorld`'s `gpuDda` early-out,
+    // exactly like `?gpucompare=1` does).
+    compareVoxelPool.project(cam, rt);
+    fbCompare.gpuDda = true;
+    renderWorld(fbCompare, world, cam);
+    // `RenderTargetGL` only ever has ONE active present hook (the last
+    // `GpuCellPipeline` to call `setEnabled(true)`, incl. at construction -
+    // see `setEnabled`'s `rt.setCellPass(...)`) - re-assert it here so
+    // `rt.present()` below actually samples THIS pipeline, not whichever
+    // one happened to be constructed/bound last.
+    pipelineDda.setEnabled(true);
+    pipelineDda.frame(fbCompare, lights || ambientL, cam, world);
+    rt.present();
+    // Own arrays: `readbackPresent()` without args reuses ONE cached pair, so
+    // the mesh readback below would overwrite this one (glyph 100% tautology).
+    const rbDda = rt.readbackPresent(rbDdaFg, rbDdaBg);
+    const { GI: giDda, GA: gaDda, Depth: depthDda } = pipelineDda.readbackGeometry();
+
+    // Then the mesh pipeline, same pose (re-project: `VoxelPool.project`
+    // is a pure function of `cam`/the already-queued instances, safe to
+    // call twice).
+    compareVoxelPool.project(cam, rt);
+    pipelineMesh.setEnabled(true);
+    pipelineMesh.frame(fbCompare, lights || ambientL, cam, world);
+    rt.present();
+    const rbMesh = rt.readbackPresent();
+    const { GI: giMesh, GA: gaMesh, Depth: depthMesh } = pipelineMesh.readbackGeometry();
+
+    const ddaSide = unpackReadback(giDda, gaDda, depthDda, cols, rows);
+    const cmpGeom = compareGeometry(ddaSide, ddaSide.depth, giMesh, gaMesh, depthMesh, cols, rows);
+    const cmpCells = compareCells(rbDda.fg, rbDda.bg, rbMesh.fg, rbMesh.bg, ddaSide.kind, cols, rows, undefined, ddaSide.mat, 0.02);
+
+    // 27.7 item 3 bars, voxel (kind-8) cells excepted (ME-08 gap, see
+    // `kindMatchPctExclK8`'s own doc comment in gpuCompare.js).
+    const kindOk = cmpGeom.kindMatchPctExclK8 >= 98;
+    const glyphOk = cmpCells.glyphMatchPct >= 97;
+    const ok = kindOk && glyphOk;
+    overallOk = overallOk && ok;
+    rowsOut.push({ pose: name, ok, cmpGeom, cmpCells });
+    console.log(`[gpucompare=mesh] ${ok ? 'PASS' : 'FAIL'} ${name}: kind=${cmpGeom.kindMatchPct.toFixed(2)}%(>=98%) kindExclK8=${cmpGeom.kindMatchPctExclK8.toFixed(2)}% glyph=${cmpCells.glyphMatchPct.toFixed(2)}%(>=97%) holes=${cmpGeom.holes} holesExclK8=${cmpGeom.holesExclK8} k8dda=${cmpGeom.k8Cpu} k8mesh=${cmpGeom.k8Gpu} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol}`);
+  }
+
+  let text = `?gpucompare=mesh  dda: ${pipelineDda.rendererString}  mesh: ${pipelineMesh.rendererString}  grid: ${cols}x${rows}\n`;
+  for (const r of rowsOut) {
+    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
+      `  kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%(raw) ${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}%(excl. voxel, >=98% required)  glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%(>=97% required)\n` +
+      `  holes ${r.cmpGeom.holes} (${r.cmpGeom.holesExclK8} excl. voxel)  k8 dda ${r.cmpGeom.k8Cpu} mesh ${r.cmpGeom.k8Gpu}  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}\n`;
+  }
+  text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
+  console.log(`[gpucompare=mesh] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
+
+  overlay.visible = true;
+  overlay.el.style.display = 'block';
+  overlay.el.style.font = '13px "Courier New", monospace';
+  overlay.el.style.whiteSpace = 'pre';
+  overlay.el.textContent = text;
+  window.__gpuCompare = { rows: rowsOut, ok: overallOk };
 }
 
 // `?flicker=1` (docs/architecture.md 14.2 item 8, US-030b build plan):

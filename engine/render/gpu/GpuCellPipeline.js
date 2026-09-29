@@ -68,7 +68,7 @@ import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 // `addToDrawList()` per rendered frame, exactly like the CPU's own amortised
 // band-flip rebuild - `_passRaster` never rebuilds inside a fixed step).
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
-import { TerrainMeshSet } from '../../mesh/terrainMesh.js';
+import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN } from '../GBuffer.js';
 import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { projTerms, shearProjection } from '../projection.js';
@@ -225,11 +225,11 @@ export class GpuCellPipeline {
       // vertex layout (pos+nrm only, indexed) and its own near/far type
       // texture lookup, so it cannot share `progMesh`/`_meshVao` (the
       // DRAW_STATIC level-quad pipeline). One `TerrainMeshSet` per `Terrain`
-      // instance (WeakMap, survives a world switch without leaking the old
-      // one - `dispose()` below never needs to walk it, GC does).
+      // instance, shared with the JS twin via `terrainMeshSetFor`'s own
+      // WeakMap (27.15.5a item 6) - survives a world switch without leaking
+      // the old one - `dispose()` below never needs to walk it, GC does.
       this.progMeshTerrain = linkProgram(gl, TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC);
       this._meshTerrainVao = gl.createVertexArray();
-      this._terrainMeshSets = new WeakMap();
       // Structure footprints (x0, y0, x1, y1 per placed structure) for the
       // terrain raster frag's carve (terrain.vert.js header) - filled per
       // frame in `_passRaster`, allocated once.
@@ -1553,11 +1553,7 @@ export class GpuCellPipeline {
     // (matching the DDA path's own no-op until `farReady`).
     let terrainMeshSet = null;
     if (this.terrainEnabled && world && world.terrain) {
-      terrainMeshSet = this._terrainMeshSets.get(world.terrain);
-      if (!terrainMeshSet) {
-        terrainMeshSet = new TerrainMeshSet(world.terrain, {});
-        this._terrainMeshSets.set(world.terrain, terrainMeshSet);
-      }
+      terrainMeshSet = terrainMeshSetFor(world.terrain);
       terrainMeshSet.step(2);
       terrainMeshSet.addToDrawList(list, cam);
     }

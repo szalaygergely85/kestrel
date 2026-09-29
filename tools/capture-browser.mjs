@@ -131,9 +131,21 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 export function buildQuery(mode, { grid, variant, rays } = {}) {
   const parts = [];
   if (mode === 'gpucompare') {
-    parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
+    // ME-06 (27.7 item 3): `--variant mesh` requests the migration oracle
+    // (`?gpucompare=mesh`, GPU dda vs GPU mesh - `window.__gpuCompare`'s
+    // shape is the same as the default `dda` variant, so `normalizeLiveResult`
+    // needs no change).
+    parts.push(variant === 'shade' ? 'gpucompare=shade' : variant === 'mesh' ? 'gpucompare=mesh' : 'gpucompare=1');
   } else if (mode === 'bench') {
-    parts.push('bench=present');
+    // ME-06 (docs/architecture.md 27.11 ME-06 row): `--variant world`
+    // requests the real US-018 `?bench=1` pass-timing bench (3 fixed views
+    // + a 60 s walk, real GPU per-pass numbers via `window.__bench` - see
+    // game/js/dev/perfBench.js) instead of the plain canvas-only
+    // `?bench=present` (US-001, the default). The walk phase waits for a
+    // real WASD keydown that never arrives headless - `runLiveCapture`
+    // sends one synthetic `KeyW` keydown (never released) right after
+    // navigation for this variant, so the 60 s walk starts on its own.
+    parts.push(variant === 'world' ? 'bench=1' : 'bench=present');
   } else if (mode === 'voxelbench') {
     parts.push('voxelbench=1');
     // voxelbench does not force its own grid (unlike bench/gpucompare -
@@ -411,9 +423,12 @@ export function shortShaSync(cwd = ROOT) {
   }
 }
 
-export function captureFilePath({ date, sha, mode, grid }) {
+export function captureFilePath({ date, sha, mode, grid, variant }) {
   const g = (grid || 'grid').replace(/[^\w-]/g, '');
-  return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}-${g}.json`);
+  // ME-06: a `--variant` (mesh/shade/world) gets its own file, so e.g. a
+  // `?gpucompare=mesh` run no longer overwrites the plain `?gpucompare=1` one.
+  const v = variant ? `-${String(variant).replace(/[^\w-]/g, '')}` : '';
+  return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}${v}-${g}.json`);
 }
 
 export function writeCapture(filePath, payload) {
@@ -622,6 +637,16 @@ export async function runLiveCapture(opts) {
     await cdp.send('Page.navigate', { url });
     await navigated;
 
+    // ME-06: `--mode bench --variant world` (`?bench=1`) needs one real
+    // WASD keydown to start its 60 s walk phase (`perfBench.js`'s
+    // `waitForMove`) - held down (no matching keyup), which is harmless
+    // during the 3 fixed views (they re-teleport and zero velocity every
+    // rendered frame) and starts the walk the instant the views finish.
+    if (opts.mode === 'bench' && opts.variant === 'world') {
+      await new Promise((resolve) => setTimeout(resolve, 500)); // let the engine finish booting
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyW', key: 'w' });
+    }
+
     const globalName = resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
@@ -687,7 +712,7 @@ async function main() {
       rows: normalized.rows,
       raw,
     };
-    const filePath = captureFilePath({ date, sha, mode, grid });
+    const filePath = captureFilePath({ date, sha, mode, grid, variant: opts.variant });
     writeCapture(filePath, payload);
     console.log(`wrote ${path.relative(ROOT, filePath)}`);
   }

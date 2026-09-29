@@ -211,6 +211,26 @@ function stepUntilDone(set, maxCalls = 500) {
     }
   }
   ok('far LOD0 quads under the band are degenerate, others real', exclusionOk, `checked=${checked}`);
+
+  // ME-06: no real LOD0 skirt triangle may stand inside the band's open
+  // rectangle (its top edge poked up through the near ground at outsideNear).
+  let skirtInside = 0, skirtChecked = 0, skirtKept = 0;
+  for (const k of set._excludedTileSet) {
+    const mesh = set.far[k];
+    const l0 = mesh._lod0;
+    const o0 = (l0.cols.length - 1) * (l0.rows.length - 1) * 6;
+    for (let s = 0; s < l0.perim.length; s++) {
+      const o = o0 + s * 6;
+      skirtChecked++;
+      if (mesh.idx[o] === 0 && mesh.idx[o + 1] === 0 && mesh.idx[o + 2] === 0) continue;
+      skirtKept++;
+      const a = mesh.idx[o], b = mesh.idx[o + 1];
+      const mx = (mesh.pos[a * 3] + mesh.pos[b * 3]) / 2, my = (mesh.pos[a * 3 + 1] + mesh.pos[b * 3 + 1]) / 2;
+      if (mx > bandRect.x0 && mx < bandRect.x1 && my > bandRect.y0 && my < bandRect.y1) skirtInside++;
+    }
+  }
+  ok('no real far LOD0 skirt segment inside the band rectangle', skirtInside === 0, `inside=${skirtInside} kept=${skirtKept}/${skirtChecked}`);
+  ok('skirt segments outside the band stay real', skirtKept > 0, `kept=${skirtKept}`);
 }
 
 // ---------------------------------------------------------------------------

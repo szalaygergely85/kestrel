@@ -27,7 +27,7 @@ export { edgePass } from './render/edgePass.js';
 
 // ---- GPU/CPU parity harness (?gpucompare=1) --------------------------------
 export {
-  runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells,
+  runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells, unpackReadback,
 } from './render/gpu/gpuCompare.js';
 
 // ---- GPU/CPU sprite parity harness (?spritecompare=1, US-030c) -------------
