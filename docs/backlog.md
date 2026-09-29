@@ -527,6 +527,13 @@ Notes / dependencies: 27.4 (voxel column), 27.7 item 4, 27.15.6 (normative). Dep
 4. The "quadruped12 mid-clip" oracle pose is the rest pose (`clip: -1`); use a real mid-clip frame (`clip: walk, frame 1, tMs = durMs/2`) so a child part with a non-identity `Ak` (parent chain) is exercised - yaw 37 only rotates about z.
 Nit (non-blocking): delete `FACE_ORDER` + `void FACE_ORDER`. ME-08 notes are in architecture.md 27.16 and assume items 1-2.
 
+**Programmer 2026-09-29 (PC-A): ARCH CHANGES fixed.** 117/117 suites green (was 116; +1 new `engine/mesh/voxelRaster.test.js`), check-deps + typecheck green.
+1. `emitFaceQuad` packs `pm.matIds[local]` (merging still by local index); `voxelMesh.test.js` asserts flat1 mat set == `pm.matIds[1..]` with a 37/91 mapping.
+2. `VoxelMeshCache.get` stamps `meshVersion = ++_buildSeq`; test: two `pm` -> same id, different versions. `sharedVoxelMeshCache` now lives in `voxelMesh.js`; `voxelMeshShared.js` deleted, importers (`GpuCellPipeline.js`, `MeshBuffers.test.js`) updated.
+3. `voxelRaster.test.js` (self re-spawns with --expose-gc): VoxelPool + `castModels` vs `addVoxelInstances` + `rasterDrawList`, lever/burner/boulder at 160x60: kind 100 %, planeId/mat/depth 100 % of matched at all 3 poses; 1000 `addVoxelInstances` heap growth < 64 KB. Note: eye z must not sit exactly on a voxel-layer boundary (horizon-row grazing tie-breaks differ, ~2-5 % of one row) - pose nudged by 0.0137 m.
+4. March oracle 'quadruped12 mid-clip' now uses walk frame 1, tMs = durMs/2 (legs carry non-identity Ak; asserted). Nit: `FACE_ORDER` removed. voxelMesh.test.js 189 pass (was 183).
+Status stays `arch-review` (opus re-review next).
+
 ### ME-08 Voxel meshes on the GPU + side-by-side page + gate report  [Priority: P0 (sprint 4)] [Status: todo]  [PC-A]
 As the owner, I want props rendered by the mesh pass and one page that shows `?renderer=mesh` next to `dda` with pass timings, so that I can run the phase-1 go/no-go check myself.
 Acceptance criteria:

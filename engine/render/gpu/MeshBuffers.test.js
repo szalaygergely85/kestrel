@@ -37,7 +37,7 @@ import { makeOk, makeMockGpuDevice } from '../../test/assert.js';
 import { Terrain } from '../../world/Terrain.js';
 import terrainDef from '../../../design/levels/overworld_far.js';
 import { TerrainMeshSet } from '../../mesh/terrainMesh.js';
-import { sharedVoxelMeshCache } from '../../mesh/voxelMeshShared.js';
+import { sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
 import { packVoxelModel } from '../../voxel/voxelPack.js';
 import post12 from '../../voxel/fixtures/post12.js';
 

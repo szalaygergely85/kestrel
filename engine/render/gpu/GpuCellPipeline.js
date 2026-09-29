@@ -71,8 +71,7 @@ import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.j
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN } from '../GBuffer.js';
 import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
-import { addVoxelInstances } from '../../mesh/voxelMesh.js';
-import { sharedVoxelMeshCache } from '../../mesh/voxelMeshShared.js';
+import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
 import { projTerms, shearProjection } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 

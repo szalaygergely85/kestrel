@@ -38,11 +38,6 @@ import { DRAW_VOXEL } from './DrawList.js';
  * @property {Uint16Array} matIds - local mat index -> resolved MaterialTable id
  */
 
-// Fixed, deterministic per-part face processing order (27.15.6: "Emission
-// order (determinism)" is implicit in the greedy-mesh spec via the 2D scan
-// order; the 6 face types themselves need their own fixed order too).
-const FACE_ORDER = [FACE_W, FACE_E, FACE_N, FACE_S, FACE_U, FACE_D];
-
 /**
  * Reads one solid voxel's LOCAL material index (0 = empty/out of part p's
  * own box - the march "only sees part p's atlas", 27.15.6) at absolute
@@ -107,15 +102,16 @@ function greedyRects(domA, domB, valueAt) {
  * triangle's `cross(p1-p0, p2-p0)` is parallel to the given face normal
  * (MeshData.js's builder invariant, checked by `MeshData.test.js`/ours).
  * @param {StaticMeshBuilder} builder
+ * @param {PackedVoxelModel} pm
  * @param {number} face
  * @param {number} x0 @param {number} y0 @param {number} z0
  * @param {number} layer
  * @param {number} a0 @param {number} a1 @param {number} b0 @param {number} b1
- * @param {number} mat
+ * @param {number} mat - LOCAL mat index (flat1 gets `pm.matIds[mat]`)
  * @param {number} cellM
  * @param {number} partIndex
  */
-function emitFaceQuad(builder, face, x0, y0, z0, layer, a0, a1, b0, b1, mat, cellM, partIndex) {
+function emitFaceQuad(builder, pm, face, x0, y0, z0, layer, a0, a1, b0, b1, mat, cellM, partIndex) {
   const uvA0 = a0 * cellM, uvA1 = a1 * cellM, uvB0 = b0 * cellM, uvB1 = b1 * cellM;
   /** @type {number[]} */ let p12;
   /** @type {number[]} */ let uv8;
@@ -164,7 +160,7 @@ function emitFaceQuad(builder, face, x0, y0, z0, layer, a0, a1, b0, b1, mat, cel
   // mesh is shared by every instance of the model); layer kept so greedy
   // quads still outline at voxel steps.
   const flat0 = ((0xF << 28) | ((partIndex & 7) << 21) | ((face & 7) << 18) | (layer & 0x3FFFF)) | 0;
-  const flat1 = packFlat1(KIND_MODEL, face, mat);
+  const flat1 = packFlat1(KIND_MODEL, face, pm.matIds[mat]);
   const aux8 = [0, AO_NONE, 0, 0, 0, 0, 0, 0];
   builder.addQuad(p12, uv8, nx, ny, nz, flat0, flat1, aux8);
 }
@@ -192,13 +188,13 @@ function emitPartFaces(builder, pm, p, cellM) {
       const m = matAt(X, y0 + a, z0 + b);
       return m !== 0 && matAt(X - 1, y0 + a, z0 + b) === 0 ? m : 0;
     });
-    for (const r of rectsW) emitFaceQuad(builder, FACE_W, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
+    for (const r of rectsW) emitFaceQuad(builder, pm, FACE_W, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
 
     const rectsE = greedyRects(by, bz, (a, b) => {
       const m = matAt(X, y0 + a, z0 + b);
       return m !== 0 && matAt(X + 1, y0 + a, z0 + b) === 0 ? m : 0;
     });
-    for (const r of rectsE) emitFaceQuad(builder, FACE_E, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
+    for (const r of rectsE) emitFaceQuad(builder, pm, FACE_E, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
   }
 
   // N/S: layer = y - y0, mask (a, b) = (x, z) box-local.
@@ -208,13 +204,13 @@ function emitPartFaces(builder, pm, p, cellM) {
       const m = matAt(x0 + a, Y, z0 + b);
       return m !== 0 && matAt(x0 + a, Y - 1, z0 + b) === 0 ? m : 0;
     });
-    for (const r of rectsN) emitFaceQuad(builder, FACE_N, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
+    for (const r of rectsN) emitFaceQuad(builder, pm, FACE_N, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
 
     const rectsS = greedyRects(bx, bz, (a, b) => {
       const m = matAt(x0 + a, Y, z0 + b);
       return m !== 0 && matAt(x0 + a, Y + 1, z0 + b) === 0 ? m : 0;
     });
-    for (const r of rectsS) emitFaceQuad(builder, FACE_S, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
+    for (const r of rectsS) emitFaceQuad(builder, pm, FACE_S, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
   }
 
   // U/D: layer = z - z0, mask (a, b) = (x, y) box-local.
@@ -224,15 +220,14 @@ function emitPartFaces(builder, pm, p, cellM) {
       const m = matAt(x0 + a, y0 + b, Z);
       return m !== 0 && matAt(x0 + a, y0 + b, Z + 1) === 0 ? m : 0;
     });
-    for (const r of rectsU) emitFaceQuad(builder, FACE_U, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
+    for (const r of rectsU) emitFaceQuad(builder, pm, FACE_U, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
 
     const rectsD = greedyRects(bx, by, (a, b) => {
       const m = matAt(x0 + a, y0 + b, Z);
       return m !== 0 && matAt(x0 + a, y0 + b, Z - 1) === 0 ? m : 0;
     });
-    for (const r of rectsD) emitFaceQuad(builder, FACE_D, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
+    for (const r of rectsD) emitFaceQuad(builder, pm, FACE_D, x0, y0, z0, layer, r.a0, r.a1, r.b0, r.b1, r.mat, cellM, p);
   }
-  void FACE_ORDER; // documents the intended fixed order above (W,E,N,S,U,D); no runtime use
 }
 
 /**
@@ -258,6 +253,8 @@ export function buildVoxelMesh(pm, opts) {
   return mesh;
 }
 
+let _buildSeq = 1;
+
 /**
  * Builds-once, caches-by-`pm`-identity MeshData for voxel models (a repack,
  * e.g. a hot content reload, gives a new `pm` object and so a fresh build -
@@ -279,11 +276,17 @@ export class VoxelMeshCache {
     let mesh = this._map.get(pm);
     if (!mesh) {
       mesh = buildVoxelMesh(pm, { id: `vox:${modelKey}`, partNames });
+      // Unique per build: MeshBuffers keys GPU buffers by id + meshVersion,
+      // and a repacked model reuses the id (ME-07 review item 2).
+      mesh.meshVersion = ++_buildSeq;
       this._map.set(pm, mesh);
     }
     return mesh;
   }
 }
+
+/** The ONE module-level cache shared by the GPU raster pass and the JS twin. */
+export const sharedVoxelMeshCache = new VoxelMeshCache();
 
 // Scratch for the `computeVoxelPose` call `addVoxelInstances` makes purely
 // to refresh the shared `FORWARD` side-channel for the CURRENT instance (the
