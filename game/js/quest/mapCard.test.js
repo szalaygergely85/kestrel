@@ -36,7 +36,7 @@ function fakeInput() {
 
 function makeWorld(state) { return { state }; }
 
-// ---- first show: gated on wakeT >= titleDoneAtSec + delaySec, not before ----
+// ---- no auto-show: M is inert until the latch fires at titleDoneAtSec+delaySec ----
 {
   const assets = makeAssets();
   initMapCard(assets, 160, 60);
@@ -44,34 +44,28 @@ function makeWorld(state) { return { state }; }
   const input = fakeInput();
   const titleDoneAtSec = 7.5;
 
+  input._press('KeyM');
   stepMapCard(world, assets, 1 / 60, input, 5.0, titleDoneAtSec); // well before the delay
-  ok('not shown before titleDoneAtSec+delay', !world.state['ui.mapCard.shown'] && getMapPanel().state === 'closed');
+  ok('not shown before titleDoneAtSec+delay, M inert', !world.state['ui.mapCard.dismissed'] && getMapPanel().state === 'closed');
 
   stepMapCard(world, assets, 1 / 60, input, titleDoneAtSec + 0.5, titleDoneAtSec);
-  ok('first show fires at titleDoneAtSec+delaySec', world.state['ui.mapCard.shown'] === true && getMapPanel().state === 'opening');
+  ok('first show fires at titleDoneAtSec+delaySec', world.state['ui.mapCard.shown'] === true);
+  ok('the card panel never opens on its own', getMapPanel().state === 'closed');
 }
 
-// ---- minShowSec: cannot dismiss before 1.0s, even with a key press ----
+// ---- the latch dismisses immediately (no minShowSec), arms the chart hint ----
 {
   const assets = makeAssets();
   initMapCard(assets, 160, 60);
   const world = makeWorld({ 'ui.mapCard.shown': false, 'ui.mapCard.dismissed': false, 'quest.endT': -1 });
   const input = fakeInput();
-  stepMapCard(world, assets, 1 / 60, input, 100, 0); // show immediately (titleDoneAtSec=0, wakeT way past delay)
-  ok('sanity: shown', world.state['ui.mapCard.shown'] === true);
-
-  input._press('KeyE');
-  for (let i = 0; i < 30; i++) { stepMapCard(world, assets, 1 / 60, input, 100 + i / 60, 0); } // 0.5s, still under minShowSec, key held the whole time
-  ok('still open before minShowSec (1.0s) elapses', isMapOpen() === true);
-  ok('the held key was never consumed early', input.pressed('KeyE') === true);
-
-  for (let i = 0; i < 40; i++) { stepMapCard(world, assets, 1 / 60, input, 100.5 + i / 60, 0); } // cross 1.0s with the key still "pressed"
-  ok('dismissible once minShowSec has elapsed', world.state['ui.mapCard.dismissed'] === true);
-  ok('the dismissing key was consumed', input.pressed('KeyE') === false);
-  ok('hints.chartT armed to 0 on first dismissal', world.state['hints.chartT'] === 0);
+  stepMapCard(world, assets, 1 / 60, input, 100, 0); // titleDoneAtSec=0, wakeT way past delay
+  ok('dismissed latches in the same step as shown', world.state['ui.mapCard.shown'] === true && world.state['ui.mapCard.dismissed'] === true);
+  ok('panel stayed closed throughout', getMapPanel().state === 'closed');
+  ok('hints.chartT armed to 0 on the latch', world.state['hints.chartT'] === 0);
 }
 
-// ---- M reopen: no minShowSec, only after first dismissal, blocked while ending ----
+// ---- M reopen: only after the latch, blocked while ending ----
 {
   const assets = makeAssets();
   initMapCard(assets, 160, 60);
@@ -79,13 +73,11 @@ function makeWorld(state) { return { state }; }
   const input = fakeInput();
   input._press('KeyM');
   stepMapCard(world, assets, 1 / 60, input, 100, 0);
-  // Arch review: first show is derived from state (shown && !dismissed), so a state restored mid-first-show
-  // resumes the card; M must not toggle it or count as the first `M` open.
-  ok('M does nothing before the first dismissal (restored first show resumes, not an M open)',
-    getMapPanel().state === 'opening' && world.state['ui.mapCard.opened'] !== true);
+  // Restored state with shown && !dismissed latches immediately rather than ever locking M out;
+  // M must not toggle it or count as the first `M` open on that same step.
+  ok('M does nothing on the latching step (restored first show just latches, not an M open)',
+    getMapPanel().state === 'closed' && world.state['ui.mapCard.opened'] !== true && world.state['ui.mapCard.dismissed'] === true);
 
-  world.state['ui.mapCard.dismissed'] = true;
-  initMapCard(assets, 160, 60); // fresh closed panel, as after a load with the card already dismissed
   input._clearFrame();
   input._press('KeyM');
   stepMapCard(world, assets, 1 / 60, input, 100, 0);
