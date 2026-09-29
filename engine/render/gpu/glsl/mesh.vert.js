@@ -32,12 +32,13 @@
 // test.js's parity check guards the encoder side, this file's own
 // `glsl.test.js` string checks guard the decoder side (attribute count/
 // locations).
-import { GLSL_VERSION, PRECISION } from './common.js';
+import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
 
 export const MESH_VERT_SRC = `${GLSL_VERSION}${PRECISION}
+${OCT_NORMAL}
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUV;
-layout(location = 2) in uint aNrmBits;    // oct-packed normal - unread this story (mesh.frag.js's header comment: GI.z write deferred to ME-06+); kept in the layout so the vertex stride matches MeshBuffers.js exactly
+layout(location = 2) in uint aNrmBits;    // oct-packed normal - ME-08a: read for vNrmW (kind-8 voxel face rule); the vertex stride still matches MeshBuffers.js exactly
 layout(location = 3) in uvec2 aFlat;      // x = planeIdBase, y = kind | face<<8 | mat<<16
 layout(location = 4) in vec4 aAux0123;    // zRef, aoMode, aux2, aux3
 layout(location = 5) in vec4 aAux4567;    // aux4, aux5, unused, unused
@@ -46,11 +47,14 @@ uniform mat4 uModel;     // mesh-local -> world (DrawItem.matrix, D-028)
 uniform mat4 uViewProj;  // world -> clip (engine/render/projection.js shearProjection - the ONE camera matrix)
 uniform int uPlaneIdOr;  // DrawItem.planeIdOr (27.15.4): (structSeq&7)<<28 for level structures
 uniform float uZBase;    // DrawItem.zBase (G-buffer z = worldZ - zBase - aux.zRef)
+uniform int uObjectId;   // ME-08a: DrawItem.objectId -> GI.w (structSeq for levels, 0x8000|slot for voxels)
+uniform int uAxisAligned; // ME-08a: voxel part pose axis-aligned (partFlags[p] & 1); 0 for static draws
 
 flat out int vPlaneId;
 flat out uint vKind, vFace, vMat;
 flat out float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat out float vZBase;
+flat out vec3 vNrmW;     // ME-08a: world-space face normal (one per greedy quad)
 out vec2 vUV;
 out float vWorldZ;
 
@@ -69,6 +73,9 @@ void main() {
   vAux4 = aAux4567.x;
   vAux5 = aAux4567.y;
   vZBase = uZBase;
+
+  // mat3(uModel) = rotation x uniform cellM, so normalising is exact.
+  vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
 
   vUV = aUV;
   vWorldZ = worldPos.z;

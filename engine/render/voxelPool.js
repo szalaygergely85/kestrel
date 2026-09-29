@@ -32,6 +32,12 @@ export class VoxelPool {
     // GPU instance rows / planeId's slot field key off.
     this.list = [];
     this.stats = { count: 0, instancesCulled: 0 };
+    // ME-08a (27.16 item 5): modelKey -> part-name array (voxelPack order),
+    // recorded once at bind(); `partNamesFor` returns the stored array,
+    // never a new one (zero per-frame allocation in addVoxelInstances).
+    this._partNames = new Map();
+    /** @type {(modelKey: string) => string[]} */
+    this.partNamesFor = (key) => /** @type {string[]} */ (this._partNames.get(key));
     // Camera eye position from this frame's project() call - VoxelTextures.js's
     // writeInstanceRows reads these to compute the part-local eye (oL = A*eye+b,
     // 15.2 item 3) in float64 JS.
@@ -64,11 +70,13 @@ export class VoxelPool {
    * re-upload key is `this.atlas.version`, bumped on every bind(). */
   bind(registry, table) {
     this.models.clear();
+    this._partNames.clear();
     const keys = registry.keys('model');
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       const def = registry.model(key);
       if (def && def.voxel) {
+        this._partNames.set(key, Object.keys(def.voxel.parts));
         this.models.set(key, packVoxelModel(def.voxel, (matKey) => table.idFor(matKey)));
       }
     }

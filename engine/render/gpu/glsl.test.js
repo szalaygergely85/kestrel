@@ -200,5 +200,24 @@ ok('terrain.vert.js raster frag reuses the march pass\' shared type-lookup snipp
 ok('terrain.vert.js raster frag reads gl_FragCoord only once, as the perspective-correct depth reciprocal, never as a cell address', (TERRAIN_RASTER_FRAG_SRC.match(/gl_FragCoord/g) || []).length === 1 && TERRAIN_RASTER_FRAG_SRC.includes('1.0 / gl_FragCoord.w'));
 ok('terrain.vert.js raster frag carves structure footprints (uStructFoot/uStructCount + discard, the DDA buildSkips rule)', TERRAIN_RASTER_FRAG_SRC.includes('uniform vec4 uStructFoot[') && TERRAIN_RASTER_FRAG_SRC.includes('uniform int uStructCount') && TERRAIN_RASTER_FRAG_SRC.includes('discard'));
 
+// ME-08a (27.16 items 2-4): voxel draws extend the mesh.vert/frag family.
+ok('mesh.vert.js declares uObjectId/uAxisAligned uniforms', MESH_VERT_SRC.includes('uniform int uObjectId;') && MESH_VERT_SRC.includes('uniform int uAxisAligned;'));
+ok('mesh.vert.js outputs flat vec3 vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits))', MESH_VERT_SRC.includes('flat out vec3 vNrmW;') && MESH_VERT_SRC.includes('vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));'));
+ok('mesh.frag.js reads flat in vec3 vNrmW + uObjectId/uAxisAligned', MESH_FRAG_SRC.includes('flat in vec3 vNrmW;') && MESH_FRAG_SRC.includes('uniform int uObjectId;') && MESH_FRAG_SRC.includes('uniform int uAxisAligned;'));
+ok('mesh.frag.js GI.w = uint(uObjectId), kind 8 packs the normal for face 7', MESH_FRAG_SRC.includes('uint(uObjectId)') && MESH_FRAG_SRC.includes('packNormalOct(vNrmW)') && MESH_FRAG_SRC.includes('roundedFace(vNrmW)'));
+{
+  // roundedFace body (the 3 comparison lines) must be string-equal with voxel.frag.js (whitespace-normalised).
+  const norm = (s) => s.replace(/\s+/g, ' ').trim();
+  const grab = (src) => {
+    const a = src.indexOf('float anx = abs(nWorld.x)');
+    const endMark = 'hitFace = nWorld.z >= 0.0 ? FACE_U : FACE_D;';
+    const b = src.indexOf(endMark, a);
+    return a < 0 || b < 0 ? null : norm(src.slice(a, b + endMark.length));
+  };
+  const vb = grab(VOXEL_FRAG_SRC), mb = grab(MESH_FRAG_SRC);
+  ok('mesh.frag.js roundedFace body is string-equal with voxel.frag.js (whitespace-normalised)', vb !== null && vb === mb, String(mb));
+}
+
+
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

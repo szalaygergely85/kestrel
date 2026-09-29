@@ -37,6 +37,9 @@ import { makeOk, makeMockGpuDevice } from '../../test/assert.js';
 import { Terrain } from '../../world/Terrain.js';
 import terrainDef from '../../../design/levels/overworld_far.js';
 import { TerrainMeshSet } from '../../mesh/terrainMesh.js';
+import { sharedVoxelMeshCache } from '../../mesh/voxelMeshShared.js';
+import { packVoxelModel } from '../../voxel/voxelPack.js';
+import post12 from '../../voxel/fixtures/post12.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -211,6 +214,31 @@ function decode(buf, vertCount) {
 
   buffers.dispose();
   ok('dispose() frees every remaining buffer', mock.liveCount() === 0, String(mock.liveCount()));
+}
+
+// ---- 4. ME-08a: a voxel MeshData (all parts' ranges in ONE buffer) uploads once ----
+{
+  const mock = makeMockGpuDevice();
+  const buffers = new MeshBuffers(mock.device);
+  const pm = packVoxelModel(post12, () => 1);
+  const partNames = Object.keys(post12.parts);
+  const mesh = sharedVoxelMeshCache.get(pm, 'post12', partNames);
+  ok('voxel mesh: cache returns the same MeshData for the same pm (no per-frame rebuild)', sharedVoxelMeshCache.get(pm, 'post12', partNames) === mesh);
+  ok('voxel mesh: one range per part', mesh.ranges.length === partNames.length, String(mesh.ranges.length));
+  const before = mock.createCount;
+  const e1 = buffers.get(mesh);
+  ok('voxel mesh: first get() uploads exactly one buffer', mock.createCount - before === 1, String(mock.createCount - before));
+  const after1 = mock.createCount;
+  const e2 = buffers.get(sharedVoxelMeshCache.get(pm, 'post12', partNames));
+  ok('voxel mesh: second frame with the same pool creates no buffer, same entry', mock.createCount === after1 && e1 === e2);
+  // A repack (new pm, same id 'vox:post12') gets a NEW unique meshVersion -> exactly one re-upload.
+  const pm2 = packVoxelModel(post12, () => 1);
+  const mesh2 = sharedVoxelMeshCache.get(pm2, 'post12', partNames);
+  ok('voxel mesh: a rebuilt model has the same id but a different meshVersion', mesh2.id === mesh.id && mesh2.meshVersion !== mesh.meshVersion);
+  const e3 = buffers.get(mesh2);
+  ok('voxel mesh: a new meshVersion re-uploads once and frees the old buffer', mock.createCount - after1 === 1 && e3.vertexBuffer !== e1.vertexBuffer && e1.vertexBuffer._disposed === true);
+  buffers.dispose();
+  ok('voxel mesh: dispose() frees every buffer', mock.liveCount() === 0, String(mock.liveCount()));
 }
 
 // ---- an unsupported layout throws clearly (voxel per-part instancing is ME-07/08) ----

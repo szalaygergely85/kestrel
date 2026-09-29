@@ -70,7 +70,9 @@ import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN } from '../GBuffer.js';
-import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { addVoxelInstances } from '../../mesh/voxelMesh.js';
+import { sharedVoxelMeshCache } from '../../mesh/voxelMeshShared.js';
 import { projTerms, shearProjection } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 
@@ -1037,7 +1039,9 @@ export class GpuCellPipeline {
     // entity binding yet); this only consumes what is already queued.
     this._voxelActiveThisFrame = false;
     if (useDda && this._voxelPool) {
-      this._ensureVoxelAtlas(this._voxelPool);
+      // ME-08a (27.16 item 6): the mesh path draws voxels as triangles in
+      // `_passRaster`, so the DDA voxel atlas (VRAM + upload) is skipped.
+      if (this.renderer !== 'mesh') this._ensureVoxelAtlas(this._voxelPool);
       this._voxelPool.project(this._cam, this.rt);
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
@@ -1557,6 +1561,13 @@ export class GpuCellPipeline {
       terrainMeshSet.step(2);
       terrainMeshSet.addToDrawList(list, cam);
     }
+    // ME-08a (27.16 item 5): voxel prop instances (already posed + screen-
+    // culled by `VoxelPool.project` in `frame()`), after the terrain items
+    // and before the frustum cull (a second, cheap cull).
+    const voxelPool = this._voxelPool;
+    if (voxelPool && voxelPool.list.length > 0) {
+      addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
+    }
     list.cull(this._meshFrustumPlanes);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRasterSub);
@@ -1597,7 +1608,43 @@ export class GpuCellPipeline {
       gl.uniformMatrix4fv(loc.uModel, false, M);
       gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
       gl.uniform1f(loc.uZBase, item.zBase);
+      gl.uniform1i(loc.uObjectId, item.objectId);
+      gl.uniform1i(loc.uAxisAligned, 0);
       gl.drawArrays(gl.TRIANGLES, item.rangeFirst * 3, item.rangeCount * 3);
+    }
+
+    // ME-08a (27.16 items 1/4): voxel props - one draw per (instance, part)
+    // over `mesh.ranges[p]`, `uModel` = that part's world matrix. Same
+    // program/VAO/depth buffer as the static loop above.
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_VOXEL || !item.mesh) continue;
+      const mesh = item.mesh;
+      const entry = this._meshBuffers.get(mesh);
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+      for (const attr of STATIC_VERTEX_LAYOUT) {
+        gl.enableVertexAttribArray(attr.location);
+        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, 64, attr.offsetBytes);
+        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, 64, attr.offsetBytes);
+      }
+      gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
+      gl.uniform1f(loc.uZBase, item.zBase);
+      gl.uniform1i(loc.uObjectId, item.objectId);
+      const ranges = mesh.ranges;
+      const M = this._meshModelF32;
+      const pm = item.partMatrices;
+      for (let p = 0; p < ranges.length; p++) {
+        const range = ranges[p];
+        if (range.count <= 0) continue;
+        const o = p * 12;
+        M[0] = pm[o]; M[1] = pm[o + 3]; M[2] = pm[o + 6]; M[3] = 0;
+        M[4] = pm[o + 1]; M[5] = pm[o + 4]; M[6] = pm[o + 7]; M[7] = 0;
+        M[8] = pm[o + 2]; M[9] = pm[o + 5]; M[10] = pm[o + 8]; M[11] = 0;
+        M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
+        gl.uniformMatrix4fv(loc.uModel, false, M);
+        gl.uniform1i(loc.uAxisAligned, item.partFlags[p] & 1);
+        gl.drawArrays(gl.TRIANGLES, range.start * 3, range.count * 3);
+      }
     }
 
     // ME-06: terrain items (near chunks, stitch, far tiles), same depth
@@ -1972,7 +2019,7 @@ const CAST_UNIFORMS = [
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
-const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase'];
+const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uAxisAligned'];
 // ME-06: terrain's own raster program (terrain.vert.js) - no planeIdOr/
 // zBase (terrain items always carry 0/0, 27.15.5), but its own objectId
 // uniform (no per-vertex flat data to derive it from, unlike mesh.frag.js's
