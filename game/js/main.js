@@ -1574,12 +1574,20 @@ function runGpuCompareDdaMode() {
     // colour allowance (<= 1 % cells, fgMax <= 96) - fp32 GPU vs fp64 twin u/v
     // ties in discrete shading choices - but only while geometry is exact
     // (uv/ao/z/face 0 violations) and glyph >= 99.5 %. The DDA bar is unchanged.
-    const meshColourOk = renderer === 'mesh' && cmpGeom.pass && cmpGeom.uvViol === 0 && cmpGeom.aoViol === 0 &&
-      cmpGeom.zViol === 0 && cmpGeom.faceViol === 0 && cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 &&
-      compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96).pass;
-    const ok = (cmpCells.pass || meshColourOk) && cmpGeom.pass && cmpLight.pass && k8Ok;
+    // ME-08b 8a (architecture.md 27.16): geometry may show <= 4 violations per pose, all on kind-8 cells
+    // (violNonK8 === 0, aoViol === 0); the fgMax cap applies to non-kind-8 cells only, kind-8 outliers
+    // still count toward the 1 %. DDA bar unchanged.
+    const geomViol = cmpGeom.depthViol + cmpGeom.uvViol + cmpGeom.aoViol + cmpGeom.zViol + cmpGeom.faceViol + cmpGeom.nrmViol;
+    const cmpCellsMesh = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true) : null;
+    // `cmpGeom.pass` also demands depth/uv == 0; under 8a those may be non-zero on kind-8 cells, so the
+    // mesh path keeps the rest of `pass` (kind >= 99.5 %, holes 0) and bounds depth/uv via geomViol/violNonK8.
+    const geomBaseOk = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0;
+    const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
+      cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
+    if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${name}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);
+    const ok = (cmpCells.pass || meshColourOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok });
+    rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
   }
   overallOk = overallOk && sampledOwnTextures;
   // US-017: the informational n=2 loop below never fades (it has no
@@ -1666,6 +1674,8 @@ function runGpuCompareDdaMode() {
       `  edgeKindMismatch ${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells}\n` +
       // US-040 architect review 1 item 2: k8 cpu/gpu cell counts, reported on
       // every pose but only gated (k8Ok) on poses whose name includes "voxel".
+      (r.mesh8a ? `  mesh8a: geomViol ${r.mesh8a.geomViol}  geomViolCells ${r.mesh8a.geomViolCells}  violNonK8 ${r.mesh8a.violNonK8}  k8 colour outliers ${r.mesh8a.k8Outside}  fgMaxNonK8 ${r.mesh8a.fgMaxNonK8}
+` : '') +
       `  k8 cpu ${r.cmpGeom.k8Cpu}  gpu ${r.cmpGeom.k8Gpu}${r.isVoxelPose ? (r.k8Ok ? ' (both > 0, OK)' : ' (must both be > 0 on a voxel pose - FAIL)') : ''}\n` +
       `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
       `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +

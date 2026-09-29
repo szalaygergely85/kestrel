@@ -49,6 +49,7 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  * @param {Uint8Array} gpuFg readPixels output, same layout
  * @param {Uint8Array} gpuBg readPixels output, same layout
  * @param {Uint8Array} kind gbuf.kind
+ * @param {boolean} [k8NoCap] ME-08b 8a: the fgCap applies to non-kind-8 cells only (kind-8 outliers still count toward maxOutsideFrac)
  * @param {Uint8Array} [rule] gbuf.rule, optional (per-rule mismatch breakdown)
  * @param {Uint16Array} [mat] gbuf.mat, optional (mat==0 count)
  * @param {number} [maxOutsideFrac] Architect review 1 item 5 tolerance ruling
@@ -60,7 +61,7 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  *   world_m1 spawn colour gap and the stair near-miss once BUG-OWN-001 (the
  *   DDA sky `break`) is fixed; a real bug still fails this bar.
  */
-export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64) {
+export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64, k8NoCap = false) {
   const n = cols * rows;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
@@ -70,6 +71,8 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   // a cell once if ANY channel is outside tolerance (the already-computed
   // `cellOutside` flag below); `outsideFrac` is now `cellsOutside / nonSky`.
   let cellsOutside = 0;
+  // ME-08b 8a: kind-8 vs other split of the colour stats (reported; fgMax/bgMax above stay all-kinds).
+  let k8Outside = 0, fgMaxNonK8 = 0, bgMaxNonK8 = 0;
   let matZeroCount = 0, poisonedSurvivors = 0;
   const ruleMismatch = new Array(9).fill(0);
   const ruleTotal = new Array(9).fill(0);
@@ -108,11 +111,12 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
         fgSumAbs += dFg; bgSumAbs += dBg;
         if (dFg > fgMax) fgMax = dFg;
         if (dBg > bgMax) bgMax = dBg;
+        if (kind[i] !== 8) { if (dFg > fgMaxNonK8) fgMaxNonK8 = dFg; if (dBg > bgMaxNonK8) bgMaxNonK8 = dBg; }
         if (dFg > TOLERANCE) { fgOutside++; cellOutside = true; }
         if (dBg > TOLERANCE) { bgOutside++; cellOutside = true; }
         fgSamples++;
       }
-      if (cellOutside) { cellsOutside++; outsideByKind[kind[i] & 15]++; if (outsideSample.length < 60) outsideSample.push(x, y, jsFg[fi], jsFg[fi + 1], jsFg[fi + 2], gpuFg[fi], gpuFg[fi + 1], gpuFg[fi + 2], jsBg[fi], gpuBg[fi]); }
+      if (cellOutside) { cellsOutside++; if (kind[i] === 8) k8Outside++; outsideByKind[kind[i] & 15]++; if (outsideSample.length < 60) outsideSample.push(x, y, jsFg[fi], jsFg[fi + 1], jsFg[fi + 2], gpuFg[fi], gpuFg[fi + 1], gpuFg[fi + 2], jsBg[fi], gpuBg[fi]); }
 
       if (rule) {
         const r = rule[i];
@@ -128,11 +132,11 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   // exact-zero rule; a positive fraction also requires fgMax/bgMax <= 64 so
   // the allowance can never mask an actually-wrong colour, only a band flip.
   const outsideOk = maxOutsideFrac > 0
-    ? outsideFrac <= maxOutsideFrac && fgMax <= fgCap && bgMax <= fgCap
+    ? outsideFrac <= maxOutsideFrac && (k8NoCap ? fgMaxNonK8 <= fgCap && bgMaxNonK8 <= fgCap : fgMax <= fgCap && bgMax <= fgCap)
     : fgOutside === 0 && bgOutside === 0;
   return {
     nonSky, edgeCells, nonEdgeChecked, glyphMismatchNonEdge, glyphMatchPct,
-    fgOutside, bgOutside, fgMax, bgMax, cellsOutside, outsideFrac,
+    fgOutside, bgOutside, fgMax, bgMax, cellsOutside, outsideFrac, k8Outside, fgMaxNonK8, bgMaxNonK8,
     fgMeanAbs: fgSamples ? fgSumAbs / fgSamples : 0, bgMeanAbs: fgSamples ? bgSumAbs / fgSamples : 0,
     matZeroCount, ruleMismatch, ruleTotal, poisonedSurvivors,
     mismatchByKind, mismatchByRow6, outsideByKind, outsideSample,
@@ -270,6 +274,8 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   // the plain ones without a second implementation. Reported only - `pass`
   // above is unchanged (still the strict all-kinds bar other callers rely on).
   let kindCheckedExclK8 = 0, kindMismatchExclK8 = 0, holesExclK8 = 0;
+  // ME-08b 8a (27.16): cells with any depth/uv/ao/z/face/nrm violation whose kind is not 8 (reported only).
+  let violNonK8 = 0, geomViolCells = 0; // geomViolCells: distinct cells with any depth/uv/ao/z/face/nrm violation
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -298,6 +304,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       if (kind[i] === 0) continue; // both agree "sky" - nothing else to compare
 
       matched++;
+      const violBefore = depthViol + uvViol + aoViol + zViol + faceViol + nrmViol;
       const gpuMat = (giBuf[i * 4 + 1] >>> 16) & 0xffff;
       const gpuPlaneId = giBuf[i * 4] | 0; // ToInt32 - matches JS's Int32Array planeId
       if (mat[i] === gpuMat) matEqual++;
@@ -345,6 +352,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
         }
       }
       if (gbuf.z && Number.isFinite(cpuDepth) && Math.abs(u32ToF32(gaBuf[i * 4 + 2]) - gbuf.z[i]) > 1e-3 * Math.max(1, Math.abs(cpuDepth))) zViol++;
+      if (depthViol + uvViol + aoViol + zViol + faceViol + nrmViol > violBefore) { geomViolCells++; if (kind[i] !== 8) violNonK8++; }
     }
   }
 
@@ -354,7 +362,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     kindChecked, kindMismatch, kindMatchPct,
     kindCheckedExclK8, kindMismatchExclK8, kindMatchPctExclK8, holesExclK8, // ME-06: voxel (kind-8) cells excluded, see comment above
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
-    faceViol, zViol, aoViol, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
+    faceViol, zViol, aoViol, violNonK8, geomViolCells, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
     pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0,
