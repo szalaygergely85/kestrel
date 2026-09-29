@@ -1,20 +1,22 @@
 // @ts-check
-// engine/physics/meshCollide.js - ME-10a (docs/backlog.md, docs/architecture.md
+// engine/physics/meshCollide.js - ME-10a/b (docs/backlog.md, docs/architecture.md
 // 27.17). Banded 2.5D mesh collider: the literal triangle-mesh twin of
 // `moveCapsule` (capsule.js) - same iterative minimum-translation push-out,
 // same <=4 iterations / single-deepest-contact-per-iteration / strict `>`
 // tie-break / `dist == 0` defensive branch, but resolved against clipped
 // triangle cross-sections instead of grid cells.
 //
-// ME-10a implements `moveCircleMesh` only. `probeSupport`, `meshSupportSector`
-// and `moveSphereMesh` are ME-10b - not implemented here (see 27.17's step
-// list); importing this module for them today is a mistake, not an oversight.
+// ME-10a implemented `moveCircleMesh`. ME-10b adds `probeSupport` (floor +
+// ceiling raycast probe), `meshSupportSector` (sector-shaped merge with an
+// optional terrain floor, the `World.supportAt`/`sectorOrOutside` twin) and
+// `moveSphereMesh` (the `sphere.js` twin). `integrate.js`'s hooks are ME-10c
+// - not wired here.
 //
 // Runtime imports: `./bvh.js` only (check-deps rule 11: engine/physics/**
 // must not import engine/mesh/** at runtime). Tests build synthetic/real
 // meshes via `buildBvh` directly, same as bvh.test.js.
 
-import { queryAABB } from './bvh.js';
+import { queryAABB, raycast } from './bvh.js';
 
 /** @typedef {Object} MeshCollider
  * @property {string} id              `${structure.id}` (base) or `${structure.id}:${tag}` (dynamic tag)
@@ -28,6 +30,8 @@ import { queryAABB } from './bvh.js';
 
 /** @typedef {{floorZ:number, floorHit:boolean, fnx:number, fny:number, fnz:number, floorCollider:number, floorTri:number,
  *             ceilZ:number, ceilHit:boolean}} MeshSupport   floorZ = FLOOR_NONE (-1e9) when !floorHit; ceilZ = Infinity when !ceilHit */
+/** @typedef {{floorH:number, ceilH:(number|'sky'), solid:boolean, terrain:boolean, slope:boolean,
+ *             nx:number, ny:number, nz:number}} MeshSector   meshSupportSector's output (World.supportAt/sectorOrOutside shape, 27.18) */
 
 export const FLOOR_NONE = -1e9;
 export const MESH_PROBE_DROP = 256;   // m, max floor ray length below the start point (ME-10b)
@@ -51,6 +55,11 @@ const _cand = new Int32Array(MESH_CAND_MAX);
 // grows to at most 5 verts (27.17); stride 3 (x, y, z) per vertex.
 const _clipA = new Float64Array(5 * 3);
 const _clipB = new Float64Array(5 * 3);
+
+// probeSupport's two raycasts (floor down, ceiling up) reuse one RayHit-shaped
+// scratch object each - not re-entrant, as bvh.js's own queries.
+const _floorRay = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
+const _ceilRay = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
 
 // ---------------------------------------------------------------------------
 // Small geometry helpers (module-local, zero allocation)
@@ -308,4 +317,158 @@ export function moveCircleMesh(colliders, count, x, y, dx, dy, radius, footZ, gr
   out.ny = ny;
   out.overflow = overflow;
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// probeSupport
+// ---------------------------------------------------------------------------
+
+/**
+ * Centre-point floor/ceiling probe against the enabled trimesh colliders
+ * whose horizontal (xy) AABB contains (x, y) - the mesh twin of a grid
+ * `sectorAt`/`outsideSector` lookup, but by raycast instead of a cell index.
+ *
+ * Floor: straight down from `(x, y, footZ + up)`, `up = grounded ?
+ * stepUpMax + SKIN : SKIN` (airborne never snaps up onto something above the
+ * feet), `tMax = up + MESH_PROBE_DROP + SKIN`. Nearest hit wins (strictly
+ * smaller t; a tie keeps the lower collider index, since a later collider's
+ * raycast is called with the already-narrowed `tMax` and `intersectTri`
+ * rejects `t >= bestT`). Any slope counts as floor here - walkability is
+ * `moveCircleMesh`'s job, not this probe's; a 51 deg ramp is stood on (and,
+ * via `meshSupportSector`, slid down). Normal flipped so `fnz >= 0`.
+ *
+ * Ceiling: straight up from `(x, y, max(footZ, floorZ) + SKIN)`, `tMax =
+ * MESH_PROBE_RISE`. Vertical walls are parallel to this ray and never hit.
+ *
+ * Zero allocation (module RayHit scratch, not re-entrant - never call this
+ * from inside another probeSupport/moveCircleMesh/moveSphereMesh).
+ *
+ * @param {MeshCollider[]} colliders
+ * @param {number} count
+ * @param {number} x @param {number} y
+ * @param {number} footZ
+ * @param {boolean} grounded
+ * @param {{height:number, stepUpMax:number, walkCos:number}} opts
+ * @param {MeshSupport} out
+ * @returns {MeshSupport}
+ */
+export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out) {
+  const up = grounded ? opts.stepUpMax + SKIN : SKIN;
+  const originZ = footZ + up;
+  const tMaxDrop = up + MESH_PROBE_DROP + SKIN;
+
+  let floorHit = false;
+  let floorT = tMaxDrop;
+  let floorCollider = -1;
+  let floorTri = -1;
+  let fnx = 0, fny = 0, fnz = 0;
+
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    const min = c.min, max = c.max;
+    if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
+    if (raycast(c.bvh, x, y, originZ, 0, 0, -1, floorT, _floorRay)) {
+      floorHit = true;
+      floorT = _floorRay.t;
+      floorCollider = ci;
+      floorTri = _floorRay.tri;
+      fnx = _floorRay.nx; fny = _floorRay.ny; fnz = _floorRay.nz;
+    }
+  }
+  if (floorHit && fnz < 0) { fnx = -fnx; fny = -fny; fnz = -fnz; }
+  const floorZ = floorHit ? originZ - floorT : FLOOR_NONE;
+
+  const ceilOriginZ = Math.max(footZ, floorZ) + SKIN; // floorZ = FLOOR_NONE when !floorHit -> footZ wins
+  let ceilHit = false;
+  let ceilT = MESH_PROBE_RISE;
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    const min = c.min, max = c.max;
+    if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
+    if (raycast(c.bvh, x, y, ceilOriginZ, 0, 0, 1, ceilT, _ceilRay)) {
+      ceilHit = true;
+      ceilT = _ceilRay.t;
+    }
+  }
+  const ceilZ = ceilHit ? ceilOriginZ + ceilT : Infinity;
+
+  out.floorZ = floorZ;
+  out.floorHit = floorHit;
+  out.fnx = fnx; out.fny = fny; out.fnz = fnz;
+  out.floorCollider = floorCollider;
+  out.floorTri = floorTri;
+  out.ceilZ = ceilZ;
+  out.ceilHit = ceilHit;
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// meshSupportSector
+// ---------------------------------------------------------------------------
+
+/**
+ * Merges a `probeSupport` result with an optional terrain floor into the
+ * sector shape `integrate.js`/`sectorOrOutside` already consume (World's
+ * `supportAt`, 27.18). `terrainZ` NaN = no terrain under this point (all NaN
+ * comparisons are false, so `terrain` correctly comes out false; `Math.max`
+ * would otherwise poison `floorH` to NaN, so it is special-cased below).
+ *
+ * `terrain = terrainZ >= sup.floorZ` (terrain wins ties - 23.3's terrain
+ * slide rule owns the terrain-floor case). `slope = !terrain && sup.floorHit`
+ * - true whenever the mesh floor (not a terrain merge) is the support, same
+ * as `sector.terrain` gates the grid slide branch; flat mesh floors have
+ * `nz = 1` so the caller's `nz < slideStartCos` check never fires (27.17:
+ * "flat floors have nz = 1 and never slide") - `slope` itself does not mean
+ * "currently sliding".
+ *
+ * @param {MeshSupport} sup
+ * @param {number} terrainZ - NaN = no terrain
+ * @param {number} tnx @param {number} tny @param {number} tnz - terrain normal (used iff terrain wins)
+ * @param {MeshSector} out
+ * @returns {MeshSector}
+ */
+export function meshSupportSector(sup, terrainZ, tnx, tny, tnz, out) {
+  const terrain = terrainZ >= sup.floorZ;
+  const floorH = Number.isNaN(terrainZ) ? sup.floorZ : Math.max(sup.floorZ, terrainZ);
+  const slope = !terrain && sup.floorHit;
+
+  out.floorH = floorH;
+  out.ceilH = sup.ceilHit ? sup.ceilZ : 'sky';
+  out.solid = false;
+  out.terrain = terrain;
+  out.slope = slope;
+  if (terrain) {
+    out.nx = tnx; out.ny = tny; out.nz = tnz;
+  } else {
+    out.nx = sup.fnx; out.ny = sup.fny; out.nz = sup.fnz;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// moveSphereMesh
+// ---------------------------------------------------------------------------
+
+/**
+ * `moveCircleMesh` with height 2r, stepUpMax 0, grounded true (the
+ * `sphere.js`/`moveSphere` twin). `opts` is caller-owned and reused every
+ * call, like `moveSphere`'s - this only overwrites `height`/`stepUpMax`
+ * in place, it never allocates a fresh options object (`walkCos` is left as
+ * the caller set it).
+ * @param {MeshCollider[]} colliders
+ * @param {number} count
+ * @param {number} x @param {number} y
+ * @param {number} dx @param {number} dy
+ * @param {number} radius
+ * @param {number} z - the sphere's bottom (moveCircleMesh's footZ convention)
+ * @param {{height:number, stepUpMax:number, walkCos:number}} opts - caller-owned scratch, overwritten in place
+ * @param {CircleMove} out
+ * @returns {CircleMove}
+ */
+export function moveSphereMesh(colliders, count, x, y, dx, dy, radius, z, opts, out) {
+  opts.height = radius * 2;
+  opts.stepUpMax = 0;
+  return moveCircleMesh(colliders, count, x, y, dx, dy, radius, z, /* grounded */ true, opts, out);
 }
