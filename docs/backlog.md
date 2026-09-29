@@ -526,7 +526,8 @@ Acceptance criteria:
 Design needed: no.
 Notes / dependencies: architect tech notes first. Do together with US-046 (it removes most pass internals from main.js's import list). Must land before US-031.
 
-### US-048 Split `game/js/main.js` into bootstrap + dev modes  [Priority: P1 (M1.5)] [Status: todo]
+### US-048 Split `game/js/main.js` into bootstrap + dev modes  [Priority: P1 (M1.5)] [Status: po-review]
+**Done (PC-B, 2026-09-29):** see the build-order table row above (implementation/verification summary) - the AC below is superseded in detail by PC-B QUEUE 4 item 2's own text (owner cross-track waiver of the "after US-046/047" dependency), kept here for history.
 As a programmer maintaining `game/js/main.js`, I want the game bootstrap separated from dev/test harnesses (bench, shadetest, gpucompare, flicker, glyphs, demo), so that the bootstrap is small and each harness is independently maintainable.
 Acceptance criteria:
 - [ ] `game/js/dev/modes/*.js` implement a `{ name, run(ctx) }` table for each URL-flag mode currently inlined in `main.js`.
