@@ -50,7 +50,7 @@ export function shortestArcDeg(fromDeg, toDeg) {
  * @returns {number}
  */
 export function yawFromDelta(dx, dy) {
-  return wrapDeg(Math.atan2(dx, -dy) * RAD2DEG);
+  return wrapDeg(Math.atan2(dx, -dy) * 180 / Math.PI);
 }
 
 /**
@@ -60,7 +60,7 @@ export function yawFromDelta(dx, dy) {
  * @returns {number[]|Float32Array} `out`
  */
 export function forwardOf(yawDeg, out) {
-  const r = yawDeg * DEG2RAD;
+  const r = yawDeg * Math.PI / 180;
   out[0] = Math.sin(r);
   out[1] = -Math.cos(r);
   return out;
@@ -73,7 +73,7 @@ export function forwardOf(yawDeg, out) {
  * @returns {number[]|Float32Array} `out`
  */
 export function rightOf(yawDeg, out) {
-  const r = yawDeg * DEG2RAD;
+  const r = yawDeg * Math.PI / 180;
   out[0] = Math.cos(r);
   out[1] = Math.sin(r);
   return out;
@@ -88,7 +88,7 @@ export function rightOf(yawDeg, out) {
  * @returns {number[]|Float32Array} `out`
  */
 export function rotateVec2(yawDeg, x, y, out) {
-  const r = yawDeg * DEG2RAD;
+  const r = yawDeg * Math.PI / 180;
   const c = Math.cos(r), s = Math.sin(r);
   const ox = x * c - y * s;
   const oy = x * s + y * c;
@@ -120,7 +120,7 @@ export function dirFromAzEl(azimuthDeg, elevationDeg, out) {
 
 /**
  * @typedef {{x: number, y: number, z: number, yawSteps: 0|1|2|3}} Frame
- * @typedef {{x: number, y: number, yawDeg: number, pitchDeg?: number, z?: number}} Transform
+ * @typedef {{x: number, y: number, z: number, yawDeg: number, pitchDeg?: number}} Transform
  */
 
 /**
@@ -224,23 +224,15 @@ export function worldYawToLocal(frame, yawDeg) {
  */
 export function frameBBox(frame, w, h, out) {
   const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
-  // Corners of [0,w]x[0,h] rotated by the frame, then translated.
-  const corners = [
-    [0, 0],
-    [w, 0],
-    [0, h],
-    [w, h],
-  ];
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (let i = 0; i < 4; i++) {
-    const lx = corners[i][0], ly = corners[i][1];
-    const wx = frame.x + c * lx - s * ly;
-    const wy = frame.y + s * lx + c * ly;
-    if (wx < x0) x0 = wx;
-    if (wy < y0) y0 = wy;
-    if (wx > x1) x1 = wx;
-    if (wy > y1) y1 = wy;
-  }
+  // Corners of [0,w]x[0,h] rotated by the frame, then translated (inlined: no allocation).
+  const ax = frame.x, ay = frame.y;
+  // (lx,ly) = (0,0),(w,0),(0,h),(w,h)
+  const x00 = ax, y00 = ay;
+  const x10 = ax + c * w, y10 = ay + s * w;
+  const x01 = ax - s * h, y01 = ay + c * h;
+  const x11 = ax + c * w - s * h, y11 = ay + s * w + c * h;
+  const x0 = Math.min(x00, x10, x01, x11), x1 = Math.max(x00, x10, x01, x11);
+  const y0 = Math.min(y00, y10, y01, y11), y1 = Math.max(y00, y10, y01, y11);
   out.x0 = x0;
   out.y0 = y0;
   out.x1 = x1;
@@ -302,7 +294,7 @@ export function frameEquals(a, b) {
  * @returns {{x: number, y: number, z: number}} `out`
  */
 export function transformPoint(t, lx, ly, lz, out) {
-  const r = t.yawDeg * DEG2RAD;
+  const r = t.yawDeg * Math.PI / 180;
   const c = Math.cos(r), s = Math.sin(r);
   out.x = t.x + c * lx - s * ly;
   out.y = t.y + s * lx + c * ly;

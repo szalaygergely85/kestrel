@@ -199,12 +199,40 @@ function mulberry32(seed) {
   check('transformPoint yaw=90 local (1,0) -> world (5, 6, 0)', Math.abs(p.x - 5) < 1e-9 && Math.abs(p.y - 6) < 1e-9);
 }
 
+// ---- bit-identical to the pre-CO-1 inline expressions (deg * PI / 180) ----
+{
+  const yaws = [];
+  for (let i = 0; i < 3600; i++) yaws.push(i / 10);
+  yaws.push(-0.1, -37.3, -90, -359.9, 361.7, 720.5, 1234.56, -1000.1);
+  let ok = true, bad = null;
+  const v = [0, 0], p = {}, pt = { x: 3.5, y: -2.25, z: 1.5, yawDeg: 0 };
+  for (const yaw of yaws) {
+    const r = yaw * Math.PI / 180; // attach.js / EntityHandle / roller / Camera old form
+    const c = Math.cos(r), s = Math.sin(r);
+    forwardOf(yaw, v);
+    if (v[0] !== s || v[1] !== -c) { ok = false; bad = ['forwardOf', yaw]; break; }
+    rightOf(yaw, v);
+    if (v[0] !== c || v[1] !== s) { ok = false; bad = ['rightOf', yaw]; break; }
+    rotateVec2(yaw, 1.5, -2.5, v);
+    if (v[0] !== 1.5 * c - -2.5 * s || v[1] !== 1.5 * s + -2.5 * c) { ok = false; bad = ['rotateVec2', yaw]; break; }
+    pt.yawDeg = yaw;
+    transformPoint(pt, 1.5, -2.5, 0.75, p);
+    if (p.x !== 3.5 + c * 1.5 - s * -2.5 || p.y !== -2.25 + s * 1.5 + c * -2.5 || p.z !== 1.5 + 0.75) { ok = false; bad = ['transformPoint', yaw]; break; }
+    if (!Number.isFinite(p.x + p.y + p.z)) { ok = false; bad = ['transformPoint finite', yaw]; break; }
+    // yawFromDelta: old form atan2(dx,-dy) * 180 / Math.PI, then wrap
+    const dx = Math.sin(r), dy = Math.cos(r);
+    if (yawFromDelta(dx, dy) !== wrapDeg(Math.atan2(dx, -dy) * 180 / Math.PI)) { ok = false; bad = ['yawFromDelta', yaw]; break; }
+  }
+  check('helpers bit-identical to old inline deg*PI/180 expressions over 3600+ yaws', ok, bad);
+}
+
 // ---- no-allocation probe over the per-call hot path (--expose-gc) --------
 {
   if (typeof global.gc === 'function') {
     const frame = makeFrame(1, 2, 0, 2);
     const out = { x: 0, y: 0, z: 0 };
     const v = [0, 0];
+    const bb = { x0: 0, y0: 0, x1: 0, y1: 0 };
     // warm up
     for (let i = 0; i < 1000; i++) {
       localToWorld(frame, i, i, 0, out);
@@ -220,6 +248,7 @@ function mulberry32(seed) {
       forwardOf(i % 360, v);
       rightOf(i % 360, v);
       yawFromDelta(1, 2);
+      frameBBox(frame, 5, 7, bb);
       wrapDeg(i);
     }
     global.gc();
