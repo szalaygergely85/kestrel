@@ -239,6 +239,7 @@ export function buildBvhFromMesh(mesh, matrix12) {
  */
 export function refit(bvh, pos, idx, matrix12) {
   const triCount = bvh.triCount;
+  if (triCount === 0) return; // ME-10a fix: an empty BVH has no root children to refit
   for (let i = 0; i < triCount; i++) {
     const t = bvh.triId[i];
     let i0, i1, i2;
@@ -416,8 +417,9 @@ function writeHitNormal(bvh, ti, out) {
 }
 
 /**
- * Nearest hit in [0, tMax]. Visits the nearer child first by slab entry (tie
- * -> left), prunes by the current best t.
+ * Nearest hit in [0, tMax) (ME-10a fix: exclusive of tMax - `intersectTri`
+ * rejects `t >= bestT`, and `bestT` starts at `tMax`). Visits the nearer
+ * child first by slab entry (tie -> left), prunes by the current best t.
  * @param {Bvh} bvh
  * @param {number} ox @param {number} oy @param {number} oz
  * @param {number} dx @param {number} dy @param {number} dz
