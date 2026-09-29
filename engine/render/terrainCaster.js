@@ -399,6 +399,17 @@ export function castTerrain(fb, terrain, cam, world, opts = {}) {
 }
 
 /** Lazily (re)builds and caches `terrain`'s shading context, keyed by `farVersion`. */
+function terrainShadingFor(matTable, ctx) {
+  if (!ctx._paletteShading) ctx._paletteShading = ctx.shading;
+  const ms = matTable && matTable.shading;
+  if (!ms || !matTable.gainLUT) return ctx._paletteShading;
+  if (!ctx._mtShading || ctx._mtShadingSrc !== matTable) {
+    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT };
+    ctx._mtShadingSrc = matTable;
+  }
+  return ctx._mtShading;
+}
+
 function ensureShadeCtx(terrain, palette) {
   if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) return terrain._shadeCtx;
   const packed = packTerrainTextures(terrain, palette);
@@ -435,6 +446,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0) {
   if (!terrain || !terrain.farReady || !fb.gbuf) return;
   const gbuf = fb.gbuf, palette = fb.palette;
   const ctx = ensureShadeCtx(terrain, palette);
+  // BUG-GPU-005: the GPU terrain branch takes fgMin/fgMaxGain + the gain LUT
+  // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
+  // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.
+  ctx.shading = terrainShadingFor(fb.matTable, ctx);
   const sun = sunFromWorld(world, palette);
   const cells = fb.rt.cells || fb.rt;
   const n = gbuf.cols * gbuf.rows;

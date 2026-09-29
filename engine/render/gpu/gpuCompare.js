@@ -60,7 +60,7 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  *   world_m1 spawn colour gap and the stair near-miss once BUG-OWN-001 (the
  *   DDA sky `break`) is fixed; a real bug still fails this bar.
  */
-export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0) {
+export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64) {
   const n = cols * rows;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
@@ -128,7 +128,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   // exact-zero rule; a positive fraction also requires fgMax/bgMax <= 64 so
   // the allowance can never mask an actually-wrong colour, only a band flip.
   const outsideOk = maxOutsideFrac > 0
-    ? outsideFrac <= maxOutsideFrac && fgMax <= 64 && bgMax <= 64
+    ? outsideFrac <= maxOutsideFrac && fgMax <= fgCap && bgMax <= fgCap
     : fgOutside === 0 && bgOutside === 0;
   return {
     nonSky, edgeCells, nonEdgeChecked, glyphMismatchNonEdge, glyphMatchPct,

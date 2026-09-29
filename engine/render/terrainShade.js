@@ -10,6 +10,8 @@
 // `glsl/common.js`'s `HASH_FAST` (same avalanche constants), so a cell's
 // colour/glyph pick never drifts between the two languages.
 
+import { samplePowLUT } from './fastShade.js';
+
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
 // be world-cell keyed, exactly like every other hash in this file.
@@ -34,7 +36,10 @@ function toByte(v255) {
  */
 function gainOf(bc, shading) {
   const bcc = bc < 0 ? 0 : bc;
-  let gain = shading.fgMin + (1 - shading.fgMin) * Math.pow(bcc > 1 ? 1 : bcc, shading.fgGamma);
+  // BUG-GPU-005: with `shading.gainLUT` (the MaterialTable's, see
+  // `shadeTerrainCells`) use the same pow LUT the GPU shade pass samples.
+  const p = shading.gainLUT ? samplePowLUT(shading.gainLUT, bcc > 1 ? 1 : bcc) : Math.pow(bcc > 1 ? 1 : bcc, shading.fgGamma);
+  let gain = shading.fgMin + (1 - shading.fgMin) * p;
   if (bcc > 1) gain = Math.min(shading.fgMaxGain, gain + (bcc - 1) * 0.5);
   return gain;
 }

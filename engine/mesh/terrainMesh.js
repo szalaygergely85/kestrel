@@ -415,6 +415,8 @@ export class TerrainMeshSet {
    */
   constructor(terrain, opts = {}) {
     this.terrain = terrain;
+    /** `typeAt` pre-bound once, for `rasterJS`'s `ctx.kind7Mat` (no per-frame bind). */
+    this.typeAtFn = this.typeAt.bind(this);
     this.fogFullM = (opts && opts.fogFullM) || 1500;
 
     const chunkSize = terrain.chunkSize, nearCell = terrain.nearCell, farCell = terrain.mapCell;

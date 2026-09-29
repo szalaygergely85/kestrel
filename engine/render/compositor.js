@@ -108,8 +108,7 @@ function renderWorldMesh(fb, world, cam) {
 
   const target = meshRasterTargetFor(cols, rows);
   if (terrainMeshSet) {
-    if (!terrainMeshSet._typeAtBound) terrainMeshSet._typeAtBound = terrainMeshSet.typeAt.bind(terrainMeshSet);
-    meshCtx.kind7Mat = terrainMeshSet._typeAtBound;
+    meshCtx.kind7Mat = terrainMeshSet.typeAtFn;
     const structs = world.structures || [];
     let structCount = 0;
     for (let i = 0; i < structs.length && structCount < MAX_STRUCTS; i++) {

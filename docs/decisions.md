@@ -825,3 +825,11 @@ The PO rewrote `docs/roadmap.md` around the missing game loop (combat -> save/it
 - Sprint 5 stays as D-029 planned (phase 2 + US-026b S2+). The first M3 sprint is planned only after the phase-2 gate result is recorded in D-029.
 - Owner: answer the 11 roadmap questions (1, 2, 3, 7 first; 10 and 11 can wait until the engine track / M5).
 
+## D-031 Terrain near-band sampling (`nearLOD.step`) stays OFF on the DDA until the mesh phase-1 gate (owner, 2026-09-29)
+Context: ME-06 migration compare (`?gpucompare=mesh`) - the DDA samples terrain on the 8 m far grid, the mesh always draws the 2 m near band, so hillside poses differ by design. Trial with `overworld_far.nearLOD.step {min: 0.5, k: 0.012}`: dda-vs-mesh terrain gap closes (20/33, only voxels + one far-LOD pose left), but the DDA's own CPU/GPU parity drops 32/33 -> 25/33 (near march hits `MAX_TERRAIN_STEPS` 320 on horizon rays; US-026a S5 near-march parity never exercised) and DDA GPU p95 at 400x150 rises 3.8 -> 5.7 ms (over25 = 5). Architect recommended off; owner chose off.
+Decision:
+- `step` stays out of `design/levels/overworld_far.js`. The mesh is unaffected (always 2 m).
+- `?gpucompare=mesh` terrain poses are judged by kind (>= 99.96 %) + geometry, with "DDA 8 m vs mesh 2 m band" as a listed known difference; the owner judges the hillside look by eye on `?renderer=mesh`.
+- Dev switch `&nearstep=1` (compare pages only) turns it on for DDA diagnostics.
+- If the phase-1 gate FAILS and the DDA stays: a separate DDA story (near-march parity, step budget, bench) before `step` is enabled.
+

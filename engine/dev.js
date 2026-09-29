@@ -29,6 +29,8 @@ export { edgePass } from './render/edgePass.js';
 export {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells, unpackReadback,
 } from './render/gpu/gpuCompare.js';
+// ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
+export { terrainMeshSetFor } from './mesh/terrainMesh.js';
 
 // ---- GPU/CPU sprite parity harness (?spritecompare=1, US-030c) -------------
 // Item 6b fix pass: moved from engine/index.js - its only real caller is

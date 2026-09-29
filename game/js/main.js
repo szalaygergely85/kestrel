@@ -28,7 +28,7 @@ import {
 import {
   runShadeTest, runDetailShadeTest,
   PlayerLook, FrameProfiler,
-  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
+  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback, terrainMeshSetFor,
   beginFrame, castSectors, fillSky, computeDerivatives, shadeSurfaces, edgePass,
 } from '../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
@@ -80,6 +80,10 @@ const isMeshMigrationCompare = params.get('gpucompare') === 'mesh';
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
 // gap can be split into "voxel props (ME-08)" vs "everything else".
 const compareNoVoxels = params.get('voxels') === '0';
+// ME-06 architect review item 5 (owner 2026-09-29: near step stays OFF until
+// the phase-1 gate): `&nearstep=1` turns `overworld_far.nearLOD.step` on for a
+// compare page only - DDA near-march diagnostics, never the shipped look.
+const compareNearStep = params.get('nearstep') === '1';
 // BUG-GPU-002 tooling fix: both compare pages (`=1` and `=shade`) need the
 // window-independent fixed camera box, not just the DDA/geometry one - see
 // the `rt.resize(GPU_COMPARE_REF_*)` comment below.
@@ -1106,6 +1110,10 @@ function buildCompareRuns() {
   const testRoom = loadCompareWorld(
     { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
   );
+  if (compareNearStep) {
+    const rec = globalThis.ASSETS && globalThis.ASSETS.levels && globalThis.ASSETS.levels.overworld_far;
+    if (rec && rec.nearLOD && !rec.nearLOD.step) rec.nearLOD.step = { min: 0.5, k: 0.012 };
+  }
   const worldM1 = loadCompareWorld(assets.world('world_m1'));
   // US-016 step 4 (14.4 item 6/9, D-017 item 11): this compare page must
   // exercise terrain (kind 7) cells, which `castTerrain`/`_passTerrain` both
@@ -1304,7 +1312,11 @@ function buildCompareRuns() {
       cam: { x: 1497.3, y: 1026.6, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 40 },
       before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: voxel yaw 45',
-      cam: { x: 1497.0, y: 1025.5, z: engine.physics.eyeHeight, yawDeg: 100, pitchDeg: 40 },
+      // ME-06 architect review item 3: yaw 100 put the tower's vertical corner
+      // edge (1503, 1024) 0.6/256 px off cell 33's centre column - an fp32/fp64
+      // tie that flips the whole column on renderer=mesh. Rule: no silhouette
+      // edge within 1/64 px of a cell-centre column in a compare pose.
+      cam: { x: 1497.0, y: 1025.5, z: engine.physics.eyeHeight, yawDeg: 100.3, pitchDeg: 40 },
       before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 45) },
     // Architect review 1 item 3: a real `lantern` instance, cam ~1.5 m west
     // of it, yaw 90 (facing +X, toward the lantern's wall-bracket placement
@@ -1419,6 +1431,9 @@ function runGpuCompareDdaMode() {
   let overallOk = true;
   let sampledOwnTextures = true;
   for (const { world, lights, name, cam, fade, dim, real, before } of runs) {
+    // ME-06 (27.15.5a item 6, architect review 1a): settle the shared terrain
+    // mesh set so the GPU frame and the JS twin draw identical geometry.
+    if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     // Architect review 1 item 1 (fix round): `real` poses must feed the real
     // entity's `components.voxel` through `collect(world, cam)` (it calls
     // `beginFrame` itself), run AFTER `before()` so a pose that mutates the
@@ -1544,7 +1559,14 @@ function runGpuCompareDdaMode() {
     // `&voxels=0` (ME-06 diagnostic) empties the voxel queue on purpose - the
     // "a voxel pose must show voxels" gate is n/a there.
     const k8Ok = !isVoxelPose || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
-    const ok = cmpCells.pass && cmpGeom.pass && cmpLight.pass && k8Ok;
+    // ME-06 architect review item 2: renderer=mesh vs its JS twin gets a wider
+    // colour allowance (<= 1 % cells, fgMax <= 96) - fp32 GPU vs fp64 twin u/v
+    // ties in discrete shading choices - but only while geometry is exact
+    // (uv/ao/z/face 0 violations) and glyph >= 99.5 %. The DDA bar is unchanged.
+    const meshColourOk = renderer === 'mesh' && cmpGeom.pass && cmpGeom.uvViol === 0 && cmpGeom.aoViol === 0 &&
+      cmpGeom.zViol === 0 && cmpGeom.faceViol === 0 && cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 &&
+      compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96).pass;
+    const ok = (cmpCells.pass || meshColourOk) && cmpGeom.pass && cmpLight.pass && k8Ok;
     overallOk = overallOk && ok;
     rowsOut.push({ pose: name, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok });
   }
@@ -1715,6 +1737,9 @@ function runGpuCompareMeshMode() {
   const rowsOut = [];
   let overallOk = true;
   for (const { world, lights, name, cam, real, before } of runs) {
+    // ME-06 (27.15.5a item 6, architect review 1a): settle the shared terrain
+    // mesh set so the GPU frame and the JS twin draw identical geometry.
+    if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
       if (before) before();
       compareVoxelPool.collect(world, cam);
