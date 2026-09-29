@@ -13,6 +13,13 @@
 // ---- bootstrap --------------------------------------------------------
 export { createEngine, clampGrid, GRID_MIN_COLS, GRID_MAX_COLS, GRID_DEFAULT_COLS } from './core/engine.js';
 
+// ---- CO-1 coordinate/transform API (docs/coordinates.md section 3) ------------
+export {
+  DEG2RAD, RAD2DEG, QUARTER_COS, QUARTER_SIN, wrapDeg, shortestArcDeg, yawFromDelta, forwardOf, rightOf,
+  rotateVec2, dirFromAzEl, makeFrame, localToWorld, worldToLocal, localDirToWorld, localYawToWorld,
+  worldYawToLocal, frameBBox, rotatedSize, localCellToWorld, frameEquals, transformPoint,
+} from './core/transform.js';
+
 // ---- content ------------------------------------------------------------
 export { AssetRegistry } from './core/assets.js';
 export { loadLevel } from './world/Level.js';

@@ -48,6 +48,7 @@
 //       bvh.js takes MeshData-shaped plain data as a parameter, never a live
 //       import of the mesh module, so rigid.js/player consumers never end up
 //       transitively depending on engine/mesh internals through physics).
+//   13. (CO-1b) coordinate-math WARN rule, see COORD_ALLOW below.
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -272,16 +273,57 @@ function checkDesignFile(file, src) {
   }
 }
 
+// Rule 13 (CO-1b, docs/coordinates.md sections 3/9, WARN only): coordinate
+// math that engine/core/transform.js owns must not be re-spelled elsewhere:
+// `atan2(.. -..)` (yawFromDelta), `* Math.PI / 180` (DEG2RAD/dirFromAzEl) and
+// `+/- <x>.origin.x|y|z` (localToWorld / World.gridLocal). Allow-list = files
+// that legitimately inline the math (hot-loop casters/shaders, the frame
+// owner World.js, lighting's per-light cell math, dev harnesses, tests).
+// Allowed entries are exact rel paths or prefixes ending in '/'.
+const COORD_ALLOW = [
+  'engine/core/transform.js',
+  'engine/world/World.js',                // gridLocal owner
+  'engine/render/sectorCaster.js',        // hot loop (camera sin/cos, DDA setup)
+  'engine/render/terrainCaster.js',       // hot loop
+  'engine/render/sprites.js',             // hot loop
+  'engine/render/detailShade.js',         // hot loop
+  'engine/render/lighting.js',            // per-light visibility grid origin math
+  'engine/render/gpu/GpuCellPipeline.js', // JS twin of the GLSL cast
+  'engine/render/gpu/glsl/',              // GLSL-generating files
+  'game/js/dev/',                         // page harnesses / parity modes
+];
+const COORD_PATTERNS = [
+  [/\batan2\(.*-/g, 'atan2(.., -..) -> yawFromDelta'],
+  [/\* Math\.PI \/ 180/g, '* Math.PI / 180 -> DEG2RAD / dirFromAzEl'],
+  [/[+-] *[\w.]*origin\.[xyz]\b|\borigin\.[xyz] *[+-]/g, '+/- origin.x|y|z -> localToWorld / gridLocal'],
+];
+function checkCoordMath(file, src) {
+  const r = rel(file);
+  if (COORD_ALLOW.some((a) => (a.endsWith('/') ? r.startsWith(a) : r === a))) return;
+  const stripped = stripComments(src);
+  for (const [re, label] of COORD_PATTERNS) {
+    let m;
+    while ((m = re.exec(stripped))) {
+      const line = stripped.slice(0, m.index).split('\n').length;
+      warnings.push(`${r}:${line}: coordinate math "${label}" outside engine/core/transform.js (docs/coordinates.md 3/9)`);
+    }
+  }
+}
+
 function rel(file) {
   return path.relative(ROOT, file).replace(/\\/g, '/');
 }
 
 for (const file of walk(path.join(ROOT, 'engine'))) {
   if (file.endsWith('.test.js')) continue; // test fixtures aren't engine API surface
-  checkEngineFile(file, fs.readFileSync(file, 'utf8'));
+  const src = fs.readFileSync(file, 'utf8');
+  checkEngineFile(file, src);
+  checkCoordMath(file, src);
 }
 for (const file of walk(path.join(ROOT, 'game'))) {
-  checkConsumerFile(file, fs.readFileSync(file, 'utf8'));
+  const src = fs.readFileSync(file, 'utf8');
+  checkConsumerFile(file, src);
+  if (!/\.test\.m?js$/.test(file)) checkCoordMath(file, src);
 }
 for (const file of walk(path.join(ROOT, 'tools'))) {
   if (path.resolve(file) === path.resolve(__filename)) continue;

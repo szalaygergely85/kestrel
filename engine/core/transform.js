@@ -107,7 +107,8 @@ export function rotateVec2(yawDeg, x, y, out) {
  * @returns {number[]|Float32Array} `out`
  */
 export function dirFromAzEl(azimuthDeg, elevationDeg, out) {
-  const az = azimuthDeg * DEG2RAD, el = elevationDeg * DEG2RAD;
+  // deg * PI / 180 (NOT deg * DEG2RAD): bit-identical to the pre-CO-1b LightSet.setSun
+  const az = azimuthDeg * Math.PI / 180, el = elevationDeg * Math.PI / 180;
   const cel = Math.cos(el);
   out[0] = Math.sin(az) * cel;
   out[1] = -Math.cos(az) * cel;

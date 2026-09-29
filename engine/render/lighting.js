@@ -28,6 +28,7 @@
 // and documents its own version of this deviation.
 
 import { HFOV_DEG } from './sectorCaster.js';
+import { dirFromAzEl } from '../core/transform.js';
 import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 
@@ -263,10 +264,7 @@ export class LightSet {
   setSun({ elevation, azimuth, on }) {
     this.sun.elevation = elevation; this.sun.azimuth = azimuth;
     this.sun.on = elevation > 0 ? !!on : false;
-    const elRad = elevation * Math.PI / 180, azRad = azimuth * Math.PI / 180;
-    this.sun.dir[0] = Math.sin(azRad) * Math.cos(elRad);
-    this.sun.dir[1] = -Math.cos(azRad) * Math.cos(elRad);
-    this.sun.dir[2] = Math.sin(elRad);
+    dirFromAzEl(azimuth, elevation, this.sun.dir); // core/transform.js (CO-1b), bit-identical
   }
 
   /**
