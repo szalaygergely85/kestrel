@@ -15,7 +15,7 @@
 import { KIND_TERRAIN, PLANEID_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { HFOV_DEG } from './sectorCaster.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
-import { shadeTerrain, makeTerrainShadeCtx, hashFast01 } from './terrainShade.js';
+import { shadeTerrain, makeTerrainShadeCtx, hashFast01, terrainFogF } from './terrainShade.js';
 import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 
@@ -469,6 +469,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0) {
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
     shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut);
+    gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);
     shadeOut.fg[2] = clampByte(shadeOut.fg[2] + lb * 0.5 * 255);

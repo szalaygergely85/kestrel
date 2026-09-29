@@ -1346,6 +1346,13 @@ export class GpuCellPipeline {
       gl.uniform1f(locS.uTerrainFogCurve, fogRec.curve || 1);
       if (nearRGB) gl.uniform3f(locS.uTerrainFogNearRGB, nearRGB[0], nearRGB[1], nearRGB[2]);
       if (farRGB) gl.uniform3f(locS.uTerrainFogFarRGB, farRGB[0], farRGB[1], farRGB[2]);
+      // BUG-GPU-005: the edge pass gates kind-7 cells on the same terrain fog.
+      const locEd = this._locsEdge;
+      gl.useProgram(this.progEdge);
+      gl.uniform1f(locEd.uTerrainFogStart, fogRec.start);
+      gl.uniform1f(locEd.uTerrainFogFull, fogRec.full);
+      gl.uniform1f(locEd.uTerrainFogCurve, fogRec.curve || 1);
+      gl.useProgram(this.progShade);
     }
     // US-026a S5 (23.4 near-detail): a DIFFERENT, more lenient gate than
     // `uNearReady` above - literal twin of terrainShade.js's
@@ -2013,7 +2020,7 @@ const SHADE_UNIFORMS = [
   // band/jitter/2 m-vs-8 m hash-cell switch, gated by uNearDetailOn).
   'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand',
 ];
-const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull'];
+const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
 // US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
 const CAST_UNIFORMS = [

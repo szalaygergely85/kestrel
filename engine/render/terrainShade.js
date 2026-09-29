@@ -140,9 +140,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
 
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.
   const F = ctx.fog;
-  let f = (t - F.start) / (F.full - F.start);
-  f = f < 0 ? 0 : f > 1 ? 1 : f;
-  f = Math.pow(f, F.curve || 1);
+  const f = terrainFogF(t, F);
   const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f;
   const fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f;
   const fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
@@ -155,6 +153,18 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;
+}
+
+/**
+ * Terrain fog factor for distance `t` (50 -> 1500 m, curve 0.7). Shared by
+ * `shadeTerrain` and `shadeTerrainCells` (which stores it in `gbuf.fogF` so
+ * the edge pass gates terrain cells on the TERRAIN fog, not a stale value;
+ * GLSL twin: `terrainFogF` in glsl/edge.frag.js - BUG-GPU-005).
+ */
+export function terrainFogF(t, F) {
+  let f = (t - F.start) / (F.full - F.start);
+  f = f < 0 ? 0 : f > 1 ? 1 : f;
+  return Math.pow(f, F.curve || 1);
 }
 
 function packFeatureCode(str, idx) {
