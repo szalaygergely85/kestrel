@@ -193,7 +193,7 @@ export const MIGRATION_CATS = ['match', 'voxel', 'terrainGrid', 'kindOther', 'gl
 /**
  * ME-06 (`?gpucompare=mesh`): classifies every cell of a dda-vs-mesh pose into
  * one of MIGRATION_CATS (index = value written to `cat`):
- *  voxel       either side kind 8 (ME-08 gap)
+ *  voxel       exactly one side kind 8 (silhouette/edge cells; both-kind-8 cells fall through to glyph/colour since ME-08b)
  *  terrainGrid dda or mesh kind 7 and kind/glyph/colour differs (D-031: DDA 8 m vs mesh 2 m band)
  *  kindOther   kind differs, neither 7 nor 8
  *  glyphOther  same kind, glyph differs
@@ -212,7 +212,7 @@ export function classifyMigrationCells(ddaKind, meshKind, ddaFg, ddaBg, meshFg, 
       if (Math.abs(ddaFg[fi + k] - meshFg[fi + k]) > TOLERANCE || Math.abs(ddaBg[fi + k] - meshBg[fi + k]) > TOLERANCE) colDiff = true;
     }
     let c;
-    if (a === 8 || b === 8) c = 1;
+    if ((a === 8 || b === 8) && a !== b) c = 1;
     else if (a !== b) c = (a === 7 || b === 7) ? 2 : 3;
     else if (glyphDiff || colDiff) c = a === 7 ? 2 : glyphDiff ? 4 : 5;
     else c = 0;

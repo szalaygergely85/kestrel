@@ -18,6 +18,7 @@ import { castModels } from '../voxel/voxelMarch.js';
 import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
+import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { projTerms, shearProjection } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
 
@@ -77,9 +78,7 @@ function meshRasterTargetFor(cols, rows) {
  * - one cache, one object, both twins), rasterises it with `rasterJS.js`
  * and copies the `n === 1` result into `fb.gbuf`/`fb.depth.depth` exactly
  * like `GpuCellPipeline._passRaster` fills the GPU G-buffer. Voxel props
- * are out of scope (ME-08); `castModels` below still runs unconditionally,
- * so a pose with props reports a real (expected, documented) kind-8 gap
- * until ME-08 lands.
+ * (ME-08b) are added as mesh items too; `castModels` does not run on mesh.
  * @param {Object} fb
  * @param {import('../world/World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
@@ -103,6 +102,12 @@ function renderWorldMesh(fb, world, cam) {
     terrainMeshSet = terrainMeshSetFor(world.terrain);
     terrainMeshSet.step(2);
     terrainMeshSet.addToDrawList(list, cam);
+  }
+  // ME-08b (27.16 item 5/7): voxel props from the pool (already posed and
+  // screen-culled by `VoxelPool.project`), same cache the GPU pass uses.
+  const voxelPool = fb.voxelPool;
+  if (voxelPool && voxelPool.list.length > 0) {
+    addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
   }
   list.cull(meshFrustumPlanes);
 
@@ -233,7 +238,7 @@ export function renderWorld(fb, world, cam) {
   // GPU path). US-041a (15.3 item 3): default `faceMode: 'packed'` now (US-040
   // forced 'nearest' - "face 7 is US-041a" - the rotated-normal GPU/light
   // pass work this story adds; `voxelMarch.js`'s own default is 'packed').
-  if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length) {
+  if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length && fb.renderer !== 'mesh') {
     modelsFbShim.rt = fb.rt; modelsFbShim.depth = fb.depth.depth; modelsFbShim.gbuf = fb.gbuf;
     castModels(modelsFbShim, fb.voxelPool.list, cam);
   }

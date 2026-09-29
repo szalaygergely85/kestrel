@@ -1143,6 +1143,12 @@ function buildCompareRuns() {
     if (testRoomLights) testRoomLights.setSun({ elevation: testRoomLights.sun.elevation, azimuth: testRoomLights.sun.azimuth, on: false });
     if (worldM1Lights) worldM1Lights.setSun({ elevation: worldM1Lights.sun.elevation, azimuth: worldM1Lights.sun.azimuth, on: false });
   }
+  // ME-08b: waystone look poses, eye 2 m behind the old (inside-the-model) spot.
+  const waystoneEye = (pitchDeg, yawNudge = 0) => {
+    const yawDeg = 76, yr = yawDeg * Math.PI / 180;
+    const x = 1428 - 2 * Math.sin(yr), y = 1040 + 2 * Math.cos(yr);
+    return { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0.53) + 1.6, yawDeg: yawDeg + yawNudge, pitchDeg };
+  };
   const runs = [
     ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, lights: testRoomLights, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
@@ -1211,7 +1217,8 @@ function buildCompareRuns() {
     // had the boulder ~50 deg off-axis, outside the 37.5 deg half-FOV). Known FAIL: BUG-LIGHT-001
     // (surface light-pass parity at the stair's depth discontinuities, not sprites).
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: boulder mid-roll',
-      cam: { x: 1493.5, y: 1022.5, z: engine.physics.eyeHeight, yawDeg: 64, pitchDeg: -20 }, real: true,
+      cam: { x: 1493.5, y: 1022.5, z: engine.physics.eyeHeight, yawDeg: 64.5, pitchDeg: -20 }, real: true, // ME-08b: yaw 64 -> 64.5, a vertical boulder edge sat on a cell-centre column (19-cell flip)
+     
       before: () => { const h = worldM1.get('tower.boulder'); if (h) animComponent(h.data).frame = 4; } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
@@ -1248,10 +1255,14 @@ function buildCompareRuns() {
       cam: { x: 1470, y: 1025, z: 4.0, yawDeg: 270, pitchDeg: -10 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: bandEdge',
       cam: { x: 1470, y: 1025, z: 4.0, yawDeg: 270, pitchDeg: 0 }, real: true },
+    // ME-08b (27.16 item 8): the old eye (1428, 1040, 2.13) sits INSIDE the
+    // waystone's voxel volume - the DDA sees a solid kind-8 screen at t ~ 0,
+    // the mesh sees the model from inside, so any number was meaningless.
+    // Same yaw/pitch, eye moved 2 m back along -forward, z = ground + 1.6.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: waystoneLookBack',
-      cam: { x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: 5 }, real: true },
+      cam: waystoneEye(5), real: true, needK8: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: waystoneDown',
-      cam: { x: 1428, y: 1040, z: 2.13, yawDeg: 76, pitchDeg: -35 }, real: true },
+      cam: waystoneEye(-35), real: true, needK8: true },
     // BUG-OWN-008 reopen (architecture.md 23.9): the owner's two outside
     // repro poses (tower at ~25 m pitched up / ~80 m with the eye below the
     // level origin z). The GLSL walk measured distances from the footprint
@@ -1430,7 +1441,7 @@ function runGpuCompareDdaMode() {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name, cam, fade, dim, real, before } of runs) {
+  for (const { world, lights, name, cam, fade, dim, real, before, needK8 } of runs) {
     // ME-06 (27.15.5a item 6, architect review 1a): settle the shared terrain
     // mesh set so the GPU frame and the JS twin draw identical geometry.
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
@@ -1558,7 +1569,7 @@ function runGpuCompareDdaMode() {
     const isVoxelPose = name.includes('voxel');
     // `&voxels=0` (ME-06 diagnostic) empties the voxel queue on purpose - the
     // "a voxel pose must show voxels" gate is n/a there.
-    const k8Ok = !isVoxelPose || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
+    const k8Ok = !(isVoxelPose || needK8) || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
     // ME-06 architect review item 2: renderer=mesh vs its JS twin gets a wider
     // colour allowance (<= 1 % cells, fgMax <= 96) - fp32 GPU vs fp64 twin u/v
     // ties in discrete shading choices - but only while geometry is exact
@@ -1824,7 +1835,8 @@ function runGpuCompareMeshMode() {
 
     // 27.7 item 3 bars, voxel (kind-8) cells excepted (ME-08 gap, see
     // `kindMatchPctExclK8`'s own doc comment in gpuCompare.js).
-    const kindOk = cmpGeom.kindMatchPctExclK8 >= 98;
+    // ME-08b: voxels are in the mesh raster pass now - judge kind-8 cells too.
+    const kindOk = cmpGeom.kindMatchPct >= 98;
     const glyphOk = cmpCells.glyphMatchPct >= 97;
     const ok = kindOk && glyphOk;
     overallOk = overallOk && ok;
