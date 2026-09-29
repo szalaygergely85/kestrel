@@ -4,8 +4,34 @@
     {
       "name": "ascii-quest-http",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "baseline-pre-today",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "9001",
+        "--directory",
+        "C:/dev/projects/game_project_test"
+      ],
+      "port": 9001
+    },
+    {
+      "name": "owner-fresh",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "9123"
+      ],
+      "port": 9123
     }
   ]
 }
