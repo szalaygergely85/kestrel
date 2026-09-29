@@ -28,7 +28,7 @@ import {
 import {
   runShadeTest, runDetailShadeTest,
   PlayerLook, FrameProfiler,
-  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback, terrainMeshSetFor,
+  runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback, classifyMigrationCells, MIGRATION_CATS, terrainMeshSetFor,
   beginFrame, castSectors, fillSky, computeDerivatives, shadeSurfaces, edgePass,
 } from '../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
@@ -1694,6 +1694,43 @@ function runGpuCompareDdaMode() {
 // get the same "ExclK8" treatment as `?gpucompare=1&renderer=mesh` (ME-08
 // hasn't put props in the raster pass yet, so a real kind-8 difference here
 // is the same documented, non-blocking gap).
+// Diff-PNG painter for `?gpucompare=mesh`: 3 panels (dda fg, mesh fg, category
+// map), 4x8 px per cell, 2 px gaps. One canvas/ImageData per page run.
+function makeDiffPngPainter(cols, rows) {
+  const DIFF_CAT_RGB = [null, [255, 0, 255], [0, 255, 255], [255, 0, 0], [255, 255, 0], [255, 140, 0]]; // (function-local: mode runs before module-level consts are initialised)
+  const CW = 4, CH = 8, GAP = 2;
+  const w = cols * CW * 3 + GAP * 2, h = rows * CH;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  return function paint(ddaFg, meshFg, cat) {
+    const d = img.data;
+    d.fill(0);
+    for (let i = 3; i < d.length; i += 4) d[i] = 255;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const i = y * cols + x, fi = i * 4, c = cat[i];
+        const ov = DIFF_CAT_RGB[c];
+        for (let p = 0; p < 3; p++) {
+          let r, g, b;
+          if (p === 0) { r = ddaFg[fi]; g = ddaFg[fi + 1]; b = ddaFg[fi + 2]; }
+          else if (p === 1) { r = meshFg[fi]; g = meshFg[fi + 1]; b = meshFg[fi + 2]; }
+          else if (ov) { r = ov[0]; g = ov[1]; b = ov[2]; }
+          else { r = ddaFg[fi] >> 2; g = ddaFg[fi + 1] >> 2; b = ddaFg[fi + 2] >> 2; }
+          const x0 = p * (cols * CW + GAP) + x * CW;
+          for (let yy = 0; yy < CH; yy++) {
+            let o = ((y * CH + yy) * w + x0) * 4;
+            for (let xx = 0; xx < CW; xx++, o += 4) { d[o] = r; d[o + 1] = g; d[o + 2] = b; }
+          }
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas.toDataURL('image/png');
+  };
+}
+
 function runGpuCompareMeshMode() {
   if (!gpuPipeline) {
     const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
@@ -1736,6 +1773,7 @@ function runGpuCompareMeshMode() {
   const rbDdaFg = new Uint8Array(cols * rows * 4), rbDdaBg = new Uint8Array(cols * rows * 4);
   const rowsOut = [];
   let overallOk = true;
+  const paintDiff = makeDiffPngPainter(cols, rows);
   for (const { world, lights, name, cam, real, before } of runs) {
     // ME-06 (27.15.5a item 6, architect review 1a): settle the shared terrain
     // mesh set so the GPU frame and the JS twin draw identical geometry.
@@ -1790,7 +1828,16 @@ function runGpuCompareMeshMode() {
     const glyphOk = cmpCells.glyphMatchPct >= 97;
     const ok = kindOk && glyphOk;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: name, ok, cmpGeom, cmpCells });
+    // Known-difference categories + diff PNG (ME-06 AC 4).
+    const meshKind = new Uint8Array(cols * rows);
+    for (let i = 0; i < meshKind.length; i++) meshKind[i] = giMesh[i * 4 + 1] & 0xff;
+    const mig = classifyMigrationCells(ddaSide.kind, meshKind, rbDda.fg, rbDda.bg, rbMesh.fg, rbMesh.bg, cols * rows);
+    const diffCats = { counts: mig.counts, pct: {} };
+    for (const k of MIGRATION_CATS) diffCats.pct[k] = +mig.pct[k].toFixed(3);
+    const diffPng = paintDiff(rbDda.fg, rbMesh.fg, mig.cat);
+    rowsOut.push({ pose: name, ok, cmpGeom, cmpCells, diffCats, diffPng });
+    const catStr = MIGRATION_CATS.slice(1).map((k) => `${k}=${diffCats.pct[k].toFixed(2)}%`).join(' ');
+    console.log(`[gpucompare=mesh] diffCats ${name}: ${catStr}`);
     console.log(`[gpucompare=mesh] ${ok ? 'PASS' : 'FAIL'} ${name}: kind=${cmpGeom.kindMatchPct.toFixed(2)}%(>=98%) kindExclK8=${cmpGeom.kindMatchPctExclK8.toFixed(2)}% glyph=${cmpCells.glyphMatchPct.toFixed(2)}%(>=97%) holes=${cmpGeom.holes} holesExclK8=${cmpGeom.holesExclK8} k8dda=${cmpGeom.k8Cpu} k8mesh=${cmpGeom.k8Gpu} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol}`);
   }
 

@@ -14,7 +14,7 @@ import {
   parseArgs, validatePort, buildQuery, resultGlobalFor,
   normalizeLiveResult, parseImportText, detectImportMode,
   diffResults, formatDiff, formatSummary, todayStr, captureFilePath,
-  buildLaunchFlags, isSoftwareRendererLine,
+  buildLaunchFlags, isSoftwareRendererLine, diffPngSlug, diffPngRelPath, stripDiffPngs,
 } from './capture-browser.mjs';
 
 let failures = 0;
@@ -259,6 +259,20 @@ check('todayStr format', /^\d{4}-\d{2}-\d{2}$/.test(todayStr(new Date('2026-09-2
   check('captureFilePath in captures dir', p.replace(/\\/g, '/').includes('docs/test-reports/captures/'));
   const pv = captureFilePath({ date: '2026-09-25', sha: 'abc1234', mode: 'gpucompare', grid: null, variant: 'mesh' });
   check('captureFilePath keeps variants apart', pv.endsWith('2026-09-25-abc1234-gpucompare-mesh-grid.json'));
+}
+
+// --- ME-06 diff PNG helpers ---
+{
+  check('diffPngSlug', diffPngSlug('Outside Near (pose #3)!') === 'outside-near-pose-3');
+  check('diffPngSlug max 40', diffPngSlug('a'.repeat(80)).length === 40);
+  const rp = diffPngRelPath('/x/captures/2026-09-29-abc-gpucompare-mesh-160x60.json', 3, 'Breach');
+  check('diffPngRelPath', rp === '2026-09-29-abc-gpucompare-mesh-160x60/03-breach.png');
+  const raw = { ok: true, rows: [{ pose: 'A', diffPng: 'data:image/png;base64,AAAA' }, { pose: 'B' }] };
+  const { raw: out, files } = stripDiffPngs(raw, '/x/c.json');
+  check('strip removes diffPng', !('diffPng' in out.rows[0]) && out.rows[0].diffPngPath === 'c/00-a.png');
+  check('strip keeps rows without png', out.rows[1].pose === 'B' && !out.rows[1].diffPngPath);
+  check('strip files', files.length === 1 && files[0].dataUrl.endsWith('AAAA'));
+  check('strip does not mutate input', raw.rows[0].diffPng === 'data:image/png;base64,AAAA');
 }
 
 if (failures > 0) {

@@ -431,6 +431,41 @@ export function captureFilePath({ date, sha, mode, grid, variant }) {
   return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}${v}-${g}.json`);
 }
 
+// ME-06: `?gpucompare=mesh` rows carry a `diffPng` data URL per pose. They are
+// written as PNG files next to the JSON (folder = JSON basename) and replaced
+// by a relative `diffPngPath`, so the JSON stays small.
+export function diffPngSlug(pose) {
+  return String(pose).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'pose';
+}
+
+/** Path relative to CAPTURES_DIR, forward slashes: `<capture basename>/<NN>-<slug>.png`. */
+export function diffPngRelPath(captureFile, index, pose) {
+  const base = path.basename(captureFile).replace(/\.json$/, '');
+  return `${base}/${String(index).padStart(2, '0')}-${diffPngSlug(pose)}.png`;
+}
+
+/** Returns `{ raw, files }`: raw without any `diffPng` (replaced by `diffPngPath`), files = [{relPath, dataUrl}]. */
+export function stripDiffPngs(raw, captureFile) {
+  if (!raw || !Array.isArray(raw.rows)) return { raw, files: [] };
+  const files = [];
+  const rows = raw.rows.map((r, i) => {
+    if (!r || typeof r.diffPng !== 'string') return r;
+    const { diffPng, ...rest } = r;
+    const relPath = diffPngRelPath(captureFile, i, r.pose);
+    files.push({ relPath, dataUrl: diffPng });
+    return { ...rest, diffPngPath: relPath };
+  });
+  return { raw: { ...raw, rows }, files };
+}
+
+export function writeDiffPngs(files, dir = CAPTURES_DIR) {
+  for (const f of files) {
+    const out = path.join(dir, f.relPath);
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, Buffer.from(f.dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
+  }
+}
+
 export function writeCapture(filePath, payload) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
@@ -693,7 +728,13 @@ async function main() {
   } else {
     if (!mode) throw new Error('--mode gpucompare|voxelbench|bench is required (or use --import)');
     if (opts.port == null) throw new Error('--port <95xx> is required for a live capture');
-    const { raw, ua, gpuRenderer } = await runLiveCapture(opts);
+    const live = await runLiveCapture(opts);
+    const { ua, gpuRenderer } = live;
+    const date = todayStr();
+    const sha = shortShaSync();
+    const filePath = captureFilePath({ date, sha, mode, grid: opts.grid || live.raw.grid || null, variant: opts.variant });
+    const stripped = stripDiffPngs(live.raw, filePath);
+    const raw = stripped.raw;
     normalized = normalizeLiveResult(mode, raw, { variant: opts.variant });
     headless = true;
     let derivedGrid = raw.grid || opts.grid || null;
@@ -703,8 +744,6 @@ async function main() {
     }
     grid = grid || derivedGrid;
 
-    const date = todayStr();
-    const sha = shortShaSync();
     const payload = {
       date, sha, mode, grid, headless,
       ua, gpuRenderer,
@@ -712,9 +751,11 @@ async function main() {
       rows: normalized.rows,
       raw,
     };
-    const filePath = captureFilePath({ date, sha, mode, grid, variant: opts.variant });
-    writeCapture(filePath, payload);
-    console.log(`wrote ${path.relative(ROOT, filePath)}`);
+    const finalPath = captureFilePath({ date, sha, mode, grid, variant: opts.variant });
+    if (finalPath !== filePath) stripped.files = stripDiffPngs(live.raw, finalPath).files, payload.raw = stripDiffPngs(live.raw, finalPath).raw;
+    writeCapture(finalPath, payload);
+    writeDiffPngs(stripped.files);
+    console.log(`wrote ${path.relative(ROOT, finalPath)}` + (stripped.files.length ? ` + ${stripped.files.length} diff PNGs` : ''));
   }
 
   console.log(formatSummary(mode, { ...normalized, headless }));

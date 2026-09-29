@@ -188,6 +188,42 @@ export function unpackReadback(giBuf, gaBuf, depthBuf, cols, rows) {
   return { kind, mat, planeId, u, v, depth };
 }
 
+export const MIGRATION_CATS = ['match', 'voxel', 'terrainGrid', 'kindOther', 'glyphOther', 'colourOther'];
+
+/**
+ * ME-06 (`?gpucompare=mesh`): classifies every cell of a dda-vs-mesh pose into
+ * one of MIGRATION_CATS (index = value written to `cat`):
+ *  voxel       either side kind 8 (ME-08 gap)
+ *  terrainGrid dda or mesh kind 7 and kind/glyph/colour differs (D-031: DDA 8 m vs mesh 2 m band)
+ *  kindOther   kind differs, neither 7 nor 8
+ *  glyphOther  same kind, glyph differs
+ *  colourOther same kind + glyph, an fg/bg rgb channel differs by more than TOLERANCE
+ * Fg/bg are readback layout (r,g,b,glyph) x n. Returns `{cat, counts, pct}`.
+ * @param {ArrayLike<number>} ddaKind @param {ArrayLike<number>} meshKind
+ */
+export function classifyMigrationCells(ddaKind, meshKind, ddaFg, ddaBg, meshFg, meshBg, n) {
+  const cat = new Uint8Array(n);
+  const counts = { match: 0, voxel: 0, terrainGrid: 0, kindOther: 0, glyphOther: 0, colourOther: 0 };
+  for (let i = 0; i < n; i++) {
+    const a = ddaKind[i], b = meshKind[i], fi = i * 4;
+    const glyphDiff = ddaFg[fi + 3] !== meshFg[fi + 3];
+    let colDiff = false;
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(ddaFg[fi + k] - meshFg[fi + k]) > TOLERANCE || Math.abs(ddaBg[fi + k] - meshBg[fi + k]) > TOLERANCE) colDiff = true;
+    }
+    let c;
+    if (a === 8 || b === 8) c = 1;
+    else if (a !== b) c = (a === 7 || b === 7) ? 2 : 3;
+    else if (glyphDiff || colDiff) c = a === 7 ? 2 : glyphDiff ? 4 : 5;
+    else c = 0;
+    cat[i] = c;
+    counts[MIGRATION_CATS[c]]++;
+  }
+  const pct = {};
+  for (const k of MIGRATION_CATS) pct[k] = n ? 100 * counts[k] / n : 0;
+  return { cat, counts, pct };
+}
+
 // ME-06 per-field diff helpers: FACE_PACKED (terrain, v2) cells keep the
 // packed normal's bits in `aoD` (GBuffer.js), so those compare bit-exact.
 let _aoAlias = null;
