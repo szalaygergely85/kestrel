@@ -83,6 +83,8 @@ export function parseArgs(argv) {
     else if (a === '--port') opts.port = Number(next());
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
+    else if (a === '--query') opts.query = next();
+    else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--import') {
       // `--import` alone (no path following, or followed by another flag)
@@ -153,8 +155,10 @@ export function buildQuery(mode, { grid, variant, rays } = {}) {
     // gate's own grid must be requested explicitly.
     parts.push(`grid=${grid || '240x90'}`);
     parts.push(`rays=${rays || 2}`);
+  } else if (mode === 'flicker') {
+    parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
   } else {
-    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench)`);
+    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker)`);
   }
   if (grid && mode !== 'voxelbench') parts.push(`grid=${grid}`);
   return parts.join('&');
@@ -164,6 +168,7 @@ export function resultGlobalFor(mode) {
   if (mode === 'gpucompare') return '__gpuCompare';
   if (mode === 'bench') return '__bench';
   if (mode === 'voxelbench') return '__voxelBench';
+  if (mode === 'flicker') return '__flicker';
   throw new Error(`unknown --mode '${mode}'`);
 }
 
@@ -207,6 +212,11 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     // D-019 gate, per the overlay text this mode itself prints.
     const pass = raw.voxelMsP95 <= 0.5 && raw.gpuMsP95 <= 4;
     return { rows: [{ name: 'voxelbench', pass, metrics }], ok: pass };
+  }
+  if (mode === 'flicker') {
+    const metrics = {};
+    flatten(raw, '', metrics);
+    return { rows: [{ name: 'flicker', pass: null, metrics }], ok: null };
   }
   throw new Error(`unknown --mode '${mode}'`);
 }
@@ -596,8 +606,9 @@ async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftware
         );
       }
     }
-    const has = await evaluate(cdp, `typeof window.${globalName} !== 'undefined'`);
-    if (has) return evaluate(cdp, `window.${globalName}`);
+    const expr = globalName.startsWith('(') ? globalName : `window.${globalName}`; // ME-08c: `--global "(expr)"` override
+    const has = await evaluate(cdp, `typeof ${expr} !== 'undefined'`);
+    if (has) return evaluate(cdp, expr);
     await sleep(300);
   }
   throw new Error(`timed out after ${timeoutMs}ms waiting for window.${globalName} (mode never produced a result - check the page loaded, WebGL2 is available, and the query string is right)`);
@@ -661,7 +672,7 @@ export async function runLiveCapture(opts) {
       if (isSoftwareRendererLine(text)) softwareRendererLine = text;
     });
 
-    const query = buildQuery(opts.mode, opts);
+    const query = opts.query || buildQuery(opts.mode, opts); // ME-08c: `--query <raw>` override
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
     // game/index.html, not at the root.
@@ -682,7 +693,7 @@ export async function runLiveCapture(opts) {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyW', key: 'w' });
     }
 
-    const globalName = resultGlobalFor(opts.mode);
+    const globalName = opts.global || resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
       failFast, getSoftwareRendererLine: () => softwareRendererLine,

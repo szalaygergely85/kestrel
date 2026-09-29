@@ -124,7 +124,7 @@ export class GpuCellPipeline {
       // without `?terrain=0` - see main.js and this story's Programmer notes.
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
-      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0,
+      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
       // US-018 (architecture.md 16): real per-pass GPU ms, filled only
       // while `setPassTiming(true)` (F3 overlay open or `?bench=1`) - NaN
       // otherwise. `passMsP50`/`passMsP95` line up with `PASS_NAMES`.
@@ -1615,6 +1615,7 @@ export class GpuCellPipeline {
     // ME-08a (27.16 items 1/4): voxel props - one draw per (instance, part)
     // over `mesh.ranges[p]`, `uModel` = that part's world matrix. Same
     // program/VAO/depth buffer as the static loop above.
+    let voxelDraws = 0;
     for (let i = 0; i < list.count; i++) {
       const item = list.items[i];
       if (item.type !== DRAW_VOXEL || !item.mesh) continue;
@@ -1643,8 +1644,10 @@ export class GpuCellPipeline {
         gl.uniformMatrix4fv(loc.uModel, false, M);
         gl.uniform1i(loc.uAxisAligned, item.partFlags[p] & 1);
         gl.drawArrays(gl.TRIANGLES, range.start * 3, range.count * 3);
+        voxelDraws++;
       }
     }
+    this.stats.voxelDraws = voxelDraws;
 
     // ME-06: terrain items (near chunks, stitch, far tiles), same depth
     // buffer/viewport - a different program (terrain.vert.js's kind-7

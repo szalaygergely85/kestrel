@@ -1,0 +1,58 @@
+{
+  "date": "2026-09-29",
+  "sha": "80fc904",
+  "mode": "flicker",
+  "grid": "240x90&renderer=dda",
+  "headless": true,
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "gpuRenderer": "ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "ok": null,
+  "rows": [
+    {
+      "name": "flicker",
+      "pass": null,
+      "metrics": {
+        "jsRow.fwd": 4.77185266150741,
+        "jsRow.strafe": 9.74207676169287,
+        "jsRow.yaw": 5.990324860640353,
+        "jsRow.avg": 6.834751427946877,
+        "jsRow.fwdInterior": 4.523710567171502,
+        "jsRow.strafeInterior": 8.931503193018377,
+        "jsRow.yawInterior": 5.4171016187422145,
+        "jsRow.avgInterior": 6.290771792977364,
+        "gpuRow.fwd": 6.8559943886372094,
+        "gpuRow.strafe": 9.923221757526667,
+        "gpuRow.yaw": 6.144198251257603,
+        "gpuRow.avg": 7.641138132473826,
+        "gpuRow.fwdInterior": 6.596269344251334,
+        "gpuRow.strafeInterior": 8.988256242704411,
+        "gpuRow.yawInterior": 5.493453870216196,
+        "gpuRow.avgInterior": 7.025993152390647,
+        "improvementPct": -11.798332580606875
+      }
+    }
+  ],
+  "raw": {
+    "jsRow": {
+      "fwd": 4.77185266150741,
+      "strafe": 9.74207676169287,
+      "yaw": 5.990324860640353,
+      "avg": 6.834751427946877,
+      "fwdInterior": 4.523710567171502,
+      "strafeInterior": 8.931503193018377,
+      "yawInterior": 5.4171016187422145,
+      "avgInterior": 6.290771792977364
+    },
+    "gpuRow": {
+      "fwd": 6.8559943886372094,
+      "strafe": 9.923221757526667,
+      "yaw": 6.144198251257603,
+      "avg": 7.641138132473826,
+      "fwdInterior": 6.596269344251334,
+      "strafeInterior": 8.988256242704411,
+      "yawInterior": 5.493453870216196,
+      "avgInterior": 7.025993152390647
+    },
+    "improvementPct": -11.798332580606875
+  }
+}

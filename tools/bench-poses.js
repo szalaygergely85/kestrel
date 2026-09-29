@@ -23,3 +23,20 @@ export const POSES = [
       { desc: 'column 116 rows 0-3: sky over the w cell, not the far ceiling', cols: [116], rows: [0, 3], kind: 'infinite' },
     ] },
 ];
+
+// ME-08c (27.16 item 10): the 6 phase-1 gate poses, WORLD metres (world_m1),
+// same cams as the `?gpucompare=1` rows they reuse. `cam.z` = EYE height;
+// `groundEye: true` = z is "terrain groundAt(x, y) + 1.6" (main.js resolves
+// it, the terrain lives in the world). Used by `?pose=<slug>` (main.js) and
+// `game/sidebyside.html`.
+const yawR = (d) => d * Math.PI / 180;
+export const GATE_POSES = [
+  { slug: 'crash', name: 'crash room', cam: { x: 1497.5, y: 1026.5, z: EYE_H, yawDeg: 30, pitchDeg: 5 } },
+  { slug: 'stairs', name: 'stairs (stair edge, lever half occluded)', cam: { x: 1497.3, y: 1026.6, z: EYE_H, yawDeg: 90, pitchDeg: 40 } },
+  // tower.level.json light 'brazier' local (18.5, 6.5) -> world (1498.5, 1024.5); eye 2.5 m west, facing east (+x)
+  { slug: 'brazier', name: 'brazier (2.5 m in front)', cam: { x: 1496.0, y: 1024.5, z: EYE_H, yawDeg: 90, pitchDeg: -5 } },
+  { slug: 'breach', name: 'breach (looking out)', cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 } },
+  { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
+  // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model
+  { slug: 'waystone', name: 'waystone', cam: { x: 1428 - 2 * Math.sin(yawR(76)), y: 1040 + 2 * Math.cos(yawR(76)), z: EYE_H, yawDeg: 76, pitchDeg: 5, groundEye: true } },
+];

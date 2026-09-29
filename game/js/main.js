@@ -31,7 +31,7 @@ import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback, classifyMigrationCells, MIGRATION_CATS, terrainMeshSetFor,
   beginFrame, castSectors, fillSky, computeDerivatives, shadeSurfaces, edgePass,
 } from '../../engine/dev.js';
-import { POSES as GPU_COMPARE_POSES } from '../../tools/bench-poses.js';
+import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../tools/bench-poses.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
@@ -413,7 +413,7 @@ if (gpuBlocked) {
 }
 
 function runGame(mode) {
-  if (params.get('debug') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`
+  if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
   initAudio();
@@ -531,6 +531,13 @@ function runGame(mode) {
         radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
         vx: 0, vy: 0, vz: 0, grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: startT.z,
       });
+      // ME-08c (27.16 item 10): `?pose=<slug>` (tools/bench-poses.js GATE_POSES) puts the player at a gate pose (side-by-side page); no wake sequence.
+      const gatePose = mode === 'world' && GATE_POSES.find((g) => g.slug === params.get('pose'));
+      if (gatePose) {
+        const c = gatePose.cam, gz = c.groundEye && world.terrain ? world.terrain.groundAt(c.x, c.y) + c.z : c.z;
+        Object.assign(startT, { x: c.x, y: c.y, z: gz - engine.physics.eyeHeight, yawDeg: c.yawDeg, pitchDeg: c.pitchDeg });
+        playerHandle.data.components.body.peakZ = startT.z;
+      }
       if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
       look.sensDegPerPx = savedSettings.mouseSensitivity; // US-038b (no-op until PlayerLook reads instance fields, see NEEDS PC-A)
@@ -539,7 +546,7 @@ function runGame(mode) {
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
 
       // ---- US-015: wake sequence + title card + map card + hints (7.6 item 6: runtime rebuilt here, every load AND every restart) ----
-      questUiActive = typeof world.state['quest.wakeT'] === 'number';
+      questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose;
       if (questUiActive && assets.uiStyle) {
         const spawnDef = (worldDef.entities || []).find((e) => e.id === 'player' && e.spawn);
         const spawnStruct = spawnDef && world.structures.find((s) => s.id === spawnDef.spawn.structure);

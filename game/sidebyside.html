@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASCII Quest - mesh vs dda</title>
+  <!-- ME-08c (architecture.md 27.16 item 10): the phase-1 gate look check. Two
+       game instances, same gate pose + grid, F3 pass times on: left =
+       ?renderer=mesh, right = default dda. Static page, no engine imports.
+       Click a pane to grab the mouse (Esc releases); each pane is a full game. -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; color: #e8e2d0; font: 14px "Courier New", monospace; }
+    body { display: flex; flex-direction: column; }
+    #bar { padding: 6px 10px; display: flex; gap: 14px; align-items: center; background: #14110c; border-bottom: 1px solid #3a3226; flex-wrap: wrap; }
+    select, button { font: inherit; background: #000; color: inherit; border: 1px solid #5a4d38; padding: 2px 6px; }
+    #panes { flex: 1; display: flex; gap: 4px; min-height: 0; }
+    .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .pane h2 { margin: 0; padding: 2px 8px; font-size: 13px; background: #1c1710; }
+    iframe { flex: 1; border: 0; width: 100%; background: #000; }
+    .hint { opacity: .6; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <label>pose <select id="pose"></select></label>
+    <label>grid <select id="grid">
+      <option value="240x90">240x90</option>
+      <option value="320x120">320x120</option>
+      <option value="400x150" selected>400x150</option>
+    </select></label>
+    <button id="reload">reload both</button>
+    <span class="hint">F3 pass times are on in both panes. Ctrl+Shift+R after a code change.</span>
+  </div>
+  <div id="panes">
+    <div class="pane"><h2>mesh (?renderer=mesh)</h2><iframe id="fmesh"></iframe></div>
+    <div class="pane"><h2>dda (default)</h2><iframe id="fdda"></iframe></div>
+  </div>
+  <script type="module">
+    // Same six slugs as GATE_POSES in tools/bench-poses.js (plain module import, no engine).
+    import { GATE_POSES } from '../tools/bench-poses.js';
+    const poseSel = document.getElementById('pose'), gridSel = document.getElementById('grid');
+    for (const g of GATE_POSES) poseSel.add(new Option(g.name, g.slug));
+    const q = new URLSearchParams(location.search);
+    if (q.get('pose')) poseSel.value = q.get('pose');
+    if (q.get('grid')) gridSel.value = q.get('grid');
+    function load() {
+      const base = `index.html?pose=${poseSel.value}&grid=${gridSel.value}&f3=1`;
+      document.getElementById('fmesh').src = base + '&renderer=mesh';
+      document.getElementById('fdda').src = base + '&renderer=dda';
+      history.replaceState(null, '', `?pose=${poseSel.value}&grid=${gridSel.value}`);
+    }
+    poseSel.onchange = gridSel.onchange = document.getElementById('reload').onclick = load;
+    load();
+  </script>
+</body>
+</html>
