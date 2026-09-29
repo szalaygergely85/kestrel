@@ -25,6 +25,7 @@ import {
   MAX_TERRAIN_STEPS, STEP_MIN, STEP_K, T_START, FOG_FULL, DITHER_SEED,
 } from '../../terrainCaster.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
 // Used by the terrain march pass only (US-026a S5: the normal is now PACKED
 // at hit time in the march pass itself - `terrainNormalNear` below, in
@@ -391,7 +392,10 @@ const int MAX_FEATURES_PER_TYPE = ${MAX_FEATURES_PER_TYPE};
 
 struct TerrainOut { float fr, fg, fb, br, bg, bb; int glyph; };
 
-TerrainOut shadeTerrain(float t, int type, float b, float u, float v, float timeSec) {
+// ME-06b: literal twin of terrainShade.js's faceMode (0 surface, 1 canopy face, 2 foot row).
+const float FOREST_FACE_NZ = ${FOREST_FACE_NZ.toFixed(4)};
+
+TerrainOut shadeTerrain(float t, int type, float b, float u, float v, float timeSec, int faceMode) {
   // 23.4 near-detail: hash cell 2 m inside the near-handover band, else 8 m
   // (the far grid's cell size) - "hash cell 2 m when t < h1, else 8 m".
   float cellSz = (uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0;
@@ -460,6 +464,21 @@ TerrainOut shadeTerrain(float t, int type, float b, float u, float v, float time
       br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
       break;
     }
+  }
+
+  // ME-06b: background canopy FACE look (twin of terrainShade.js): TLOOK texel 3 .z/.w = face glyphs + count (forest only), texel 16 = trunk colour.
+  if (faceMode != 0 && t3.w > 0.5 && !close && t >= uBandNear) {
+    int faceCount = int(t3.w);
+    bool trunk = faceMode == 2 && hashFast(cx, cy, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
+    code = trunk ? ${FOREST_TRUNK_CODE} : pickCodeFromPacked(int(t3.z), faceCount, faceMode == 2 ? faceCount - 1 : int(hB * float(faceCount)));
+    if (trunk) {
+      vec4 tc = texelFetch(uTlook, ivec2(16, base), 0);
+      fr = tc.r * 255.0 * gain; fgc = tc.g * 255.0 * gain; fbc = tc.b * 255.0 * gain;
+    }
+    vec4 dk = texelFetch(uTlook, ivec2(0, base), 0);
+    br = dk.r * 255.0 * gain * 0.3; bgc = dk.g * 255.0 * gain * 0.3; bbc = dk.b * 255.0 * gain * 0.3;
+    fr *= ${FOREST_FACE_K.toFixed(4)}; fgc *= ${FOREST_FACE_K.toFixed(4)}; fbc *= ${FOREST_FACE_K.toFixed(4)};
+    br *= ${FOREST_FACE_K.toFixed(4)}; bgc *= ${FOREST_FACE_K.toFixed(4)}; bbc *= ${FOREST_FACE_K.toFixed(4)};
   }
 
   float f = (t - uTerrainFogStart) / (uTerrainFogFull - uTerrainFogStart);

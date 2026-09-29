@@ -421,7 +421,18 @@ void main() {
     vec3 LcT = uintBitsToFloat(lightT.xyz);
     float bT = bSunT + max(LcT.r, max(LcT.g, LcT.b));
     float distT = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
-    TerrainOut to = shadeTerrain(distT, typeId, bT, uT, vT, uTimeSec);
+    // ME-06b: canopy face mode (twin of terrainCaster.js forestFaceMode): steep forest cell beyond
+    // the near band = 1; 2 when the cell below (row + 1) is not a steep cell of the same type.
+    int faceModeT = 0;
+    if (texelFetch(uTlook, ivec2(3, typeId), 0).w > 0.5 && distT >= uBandNear && Nt.z < FOREST_FACE_NZ) {
+      faceModeT = 2;
+      ivec2 dnC = cell + ivec2(0, 1);
+      if (dnC.y < textureSize(uGI, 0).y) {
+        uvec4 giDn = texelFetch(uGI, dnC, 0);
+        if (giKind(giDn.y) == ${KIND_TERRAIN}u && int(giMat(giDn.y)) == typeId && unpackNormalOct(giDn.z).z < FOREST_FACE_NZ) faceModeT = 1;
+      }
+    }
+    TerrainOut to = shadeTerrain(distT, typeId, bT, uT, vT, uTimeSec, faceModeT);
     float frQ = floor(clamp(to.fr, 0.0, 255.0) + 0.5);
     float fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
     float fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);

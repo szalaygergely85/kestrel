@@ -26,6 +26,18 @@ export function hashFast01(x, y, s) {
   return (hashFastU(x, y, s) >>> 8) * (1 / 16777216);
 }
 
+// ME-06b background canopy face: rules from overworld_far.js nearLOD ('Surface
+// vs face' 0.8x, 'Forest near LOD' trunk `|` 1 cell in 3). FOREST_FACE_NZ:
+// forest grows only where slope <= 0.5 (N.z >= 0.894 on real ground); the
+// canopy ramp (+10 m over one 8 m cell, normals from an 8 m central
+// difference) measures N.z 0.67-0.9 (probe on overworld_far), so 0.9 splits
+// them. GLSL literals come from these exports.
+export const FOREST_FACE_NZ = 0.9;
+export const FOREST_FACE_K = 0.8;
+export const FOREST_TRUNK_CHANCE = 1 / 3;
+export const FOREST_TRUNK_SALT = 30;
+export const FOREST_TRUNK_CODE = 124 - 32; // '|' as glyphIdx
+
 function toByte(v255) {
   const c = v255 < 0 ? 0 : v255 > 255 ? 255 : v255;
   return Math.floor(c + 0.5);
@@ -69,7 +81,7 @@ function pickCodeFromPacked(x, count, idx) {
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
  */
-export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
+export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) {
   // 23.4 near-detail: inside the near-handover band the world-cell hash is
   // keyed at 2 m (matches the near band's own cell size), else at 8 m (the
   // far grid's cell size) - `nearLOD.rules` ("hash cell 2 m when t < h1,
@@ -136,6 +148,27 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
       br = fr * 0.3; bg = fg * 0.3; bb = fb * 0.3;
       break;
     }
+  }
+
+  // ME-06b: background canopy FACE look (overworld_far nearLOD 'Surface vs
+  // face' + 'Forest near LOD'): only for a type whose TLOOK row carries face
+  // glyphs (forest), never in the close band. faceMode 1 = face row, 2 = the
+  // foot row (lowest face row of the run, `forestFaceMode`): trunk `|` in
+  // woodDark for 1 cell in 3, else dark foliage; above the foot the face
+  // glyphs; all at 0.8x brightness.
+  const faceCount = TL[base + 3 * 4 + 3];
+  if (faceMode !== 0 && faceCount > 0 && !close && t >= ctx.bands.near) {
+    const faceX = TL[base + 3 * 4 + 2];
+    const trunk = faceMode === 2 && hashFast01(cx, cy, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
+    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : Math.floor(hB * faceCount));
+    if (trunk) {
+      const tOff = base + 16 * 4;
+      fr = TL[tOff] * 255 * gain; fg = TL[tOff + 1] * 255 * gain; fb = TL[tOff + 2] * 255 * gain;
+    }
+    const dOff = base; // forestDark bg (TLOOK texel 0), gained
+    br = TL[dOff] * 255 * gain * 0.3; bg = TL[dOff + 1] * 255 * gain * 0.3; bb = TL[dOff + 2] * 255 * gain * 0.3;
+    fr *= FOREST_FACE_K; fg *= FOREST_FACE_K; fb *= FOREST_FACE_K;
+    br *= FOREST_FACE_K; bg *= FOREST_FACE_K; bb *= FOREST_FACE_K;
   }
 
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.

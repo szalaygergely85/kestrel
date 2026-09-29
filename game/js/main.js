@@ -1287,6 +1287,10 @@ function buildCompareRuns() {
     // the level origin z, which is what this BUG-OWN-008 pose is for.
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: outsideFar (owner pose B)',
       cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 83, pitchDeg: 14 }, real: true },
+    // ME-06b: background forest edge - same eye as outsideFar, looking WSW so
+    // steep canopy-ramp cells (~25 face + ~215 foot rows, Node probe) sit beyond the near band.
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: forestEdge (ME-06b background canopy face)',
+      cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 240, pitchDeg: 10 }, real: true },
   ];
 
   // US-040 step 5 (architecture.md 15.2 item 7): the formal `?gpucompare=1`

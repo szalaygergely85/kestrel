@@ -15,7 +15,7 @@
 import { KIND_TERRAIN, PLANEID_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { HFOV_DEG } from './sectorCaster.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
-import { shadeTerrain, makeTerrainShadeCtx, hashFast01, terrainFogF } from './terrainShade.js';
+import { shadeTerrain, makeTerrainShadeCtx, hashFast01, terrainFogF, FOREST_FACE_NZ } from './terrainShade.js';
 import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 
@@ -398,6 +398,26 @@ export function castTerrain(fb, terrain, cam, world, opts = {}) {
   }
 }
 
+const faceNrm = new Float32Array(3);
+/**
+ * ME-06b: 0 = normal surface look, 1 = background canopy FACE cell, 2 = the
+ * foot (lowest face row of the run: the cell below is not a face cell, or
+ * off-grid). Face cell = kind-7 cell of a type whose TLOOK row has face
+ * glyphs (forest) with a steep normal (N.z < FOREST_FACE_NZ). GLSL twin: the
+ * `forestFaceMode` helper in shade.frag.js. Zero allocation.
+ */
+export function forestFaceMode(gbuf, alias, ctx, i, t) {
+  const type = gbuf.mat[i];
+  const TL = ctx.tlook, base = type * ctx.tlookWidth * 4;
+  if (!(TL[base + 3 * 4 + 3] > 0) || t < ctx.bands.near) return 0;
+  unpackNormalOct(alias[i], faceNrm);
+  if (!(faceNrm[2] < FOREST_FACE_NZ)) return 0;
+  const j = i + gbuf.cols;
+  if (j >= gbuf.cols * gbuf.rows || gbuf.kind[j] !== KIND_TERRAIN || gbuf.mat[j] !== type) return 2;
+  unpackNormalOct(alias[j], faceNrm);
+  return faceNrm[2] < FOREST_FACE_NZ ? 1 : 2;
+}
+
 /** Lazily (re)builds and caches `terrain`'s shading context, keyed by `farVersion`. */
 function terrainShadingFor(matTable, ctx) {
   if (!ctx._paletteShading) ctx._paletteShading = ctx.shading;
@@ -468,7 +488,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0) {
       lr = light.rgb[0]; lg = light.rgb[1]; lb = light.rgb[2];
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
-    shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut);
+    shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t));
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);
