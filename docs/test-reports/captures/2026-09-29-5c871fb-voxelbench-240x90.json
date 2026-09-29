@@ -1,0 +1,36 @@
+{
+  "date": "2026-09-29",
+  "sha": "5c871fb",
+  "mode": "voxelbench",
+  "grid": "240x90",
+  "headless": true,
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "gpuRenderer": "ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "ok": true,
+  "rows": [
+    {
+      "name": "voxelbench",
+      "pass": true,
+      "metrics": {
+        "frames": 300,
+        "grid": "240x90",
+        "rays": 2,
+        "instances": 13,
+        "voxelMsP50": 0,
+        "voxelMsP95": 0.1,
+        "gpuMsP50": null,
+        "gpuMsP95": null
+      }
+    }
+  ],
+  "raw": {
+    "frames": 300,
+    "grid": "240x90",
+    "rays": 2,
+    "instances": 13,
+    "voxelMsP50": 0,
+    "voxelMsP95": 0.1,
+    "gpuMsP50": null,
+    "gpuMsP95": null
+  }
+}

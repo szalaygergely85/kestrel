@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-29",
+  "sha": "5c871fb",
+  "mode": "bench",
+  "grid": "240x90",
+  "headless": true,
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "gpuRenderer": "ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "ok": false,
+  "rows": [
+    {
+      "name": "present",
+      "pass": false,
+      "metrics": {
+        "frames": 600,
+        "backend": "gl2",
+        "canvasPxW": 720,
+        "canvasPxH": 450,
+        "devicePixelRatio": 1,
+        "pxCellW": 3,
+        "pxCellH": 5,
+        "present.avgMs": 0.1,
+        "present.p95Ms": 0.2,
+        "present.maxMs": 0.7,
+        "fullFrame.avgMs": 36.34,
+        "fullFrame.p95Ms": 46.1,
+        "fullFrame.maxMs": 64.2
+      }
+    }
+  ],
+  "raw": {
+    "frames": 600,
+    "backend": "gl2",
+    "canvasPxW": 720,
+    "canvasPxH": 450,
+    "devicePixelRatio": 1,
+    "pxCellW": 3,
+    "pxCellH": 5,
+    "present": {
+      "avgMs": 0.1,
+      "p95Ms": 0.2,
+      "maxMs": 0.7
+    },
+    "fullFrame": {
+      "avgMs": 36.34,
+      "p95Ms": 46.1,
+      "maxMs": 64.2
+    }
+  }
+}
