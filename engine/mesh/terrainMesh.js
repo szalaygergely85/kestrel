@@ -254,6 +254,19 @@ function setFarMainQuad0(mesh, qx, qy, real) {
   mesh.idx[o + 3] = a; mesh.idx[o + 4] = c; mesh.idx[o + 5] = d;
 }
 
+/** Sets far tile `mesh`'s LOD0 skirt segment `k` (perimeter edge k -> k+1, same index layout as `fillFarLevel`) real or degenerate. */
+function setFarSkirt0(mesh, k, real) {
+  const lod0 = mesh._lod0;
+  const nc0 = lod0.cols.length, nr0 = lod0.rows.length, perim = lod0.perim, perimLen = perim.length;
+  const o = (nc0 - 1) * (nr0 - 1) * 6 + k * 6;
+  if (!real) { for (let m = 0; m < 6; m++) mesh.idx[o + m] = 0; return; }
+  const k2 = (k + 1) % perimLen;
+  const t0 = perim[k][0] + perim[k][1] * nc0, t1 = perim[k2][0] + perim[k2][1] * nc0;
+  const b0 = nc0 * nr0 + k, b1 = nc0 * nr0 + k2;
+  mesh.idx[o] = t0; mesh.idx[o + 1] = t1; mesh.idx[o + 2] = b1;
+  mesh.idx[o + 3] = t0; mesh.idx[o + 4] = b1; mesh.idx[o + 5] = b0;
+}
+
 /** True iff far quad `(i, j)` (world rect `[8i+4, 8i+12] x [8j+4, 8j+12]`) intersects the near band's OPEN surface rectangle. */
 function farQuadUnderBand(cell, i, j, bandRect) {
   const qx0 = cell * i + cell / 2, qx1 = cell * (i + 1) + cell / 2;
@@ -272,6 +285,17 @@ function applyFarExclusion(terrain, mesh, bandRect) {
       const under = bandRect && farQuadUnderBand(cell, i, j, bandRect);
       setFarMainQuad0(mesh, qx, qy, !under);
     }
+  }
+  // ME-06: the LOD0 skirt goes with its quad - a skirt segment whose one
+  // adjacent main quad is under the band is blanked too, otherwise its top
+  // edge (the far surface) pokes up through the near-band ground wherever
+  // the 8 m far heights sit above the 2 m near ones (seen at outsideNear).
+  const perim = lod0.perim, perimLen = perim.length;
+  for (let k = 0; k < perimLen; k++) {
+    const p0 = perim[k], p1 = perim[(k + 1) % perimLen];
+    const qx = Math.min(p0[0], p1[0], nc0 - 2), qy = Math.min(p0[1], p1[1], nr0 - 2);
+    const under = bandRect && farQuadUnderBand(cell, lod0.cols[qx], lod0.rows[qy], bandRect);
+    setFarSkirt0(mesh, k, !under);
   }
   mesh.meshVersion++;
 }
@@ -391,6 +415,8 @@ export class TerrainMeshSet {
    */
   constructor(terrain, opts = {}) {
     this.terrain = terrain;
+    /** `typeAt` pre-bound once, for `rasterJS`'s `ctx.kind7Mat` (no per-frame bind). */
+    this.typeAtFn = this.typeAt.bind(this);
     this.fogFullM = (opts && opts.fogFullM) || 1500;
 
     const chunkSize = terrain.chunkSize, nearCell = terrain.nearCell, farCell = terrain.mapCell;
@@ -430,6 +456,8 @@ export class TerrainMeshSet {
     }
     /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
     this.near = this._nearA;
+    /** One counter for both near sets (they share ids) - see `_publishNear`. */
+    this._nearVersion = 1;
 
     /** @type {MeshData} */
     this.stitch = buildStitchMesh([]);
@@ -507,8 +535,13 @@ export class TerrainMeshSet {
             const srcIdx = gi + gj * g.w;
             const z = g.hDraw[srcIdx];
             const dstV = li + lj * cc;
-            mesh.pos[dstV * 3] = li * g.cell;
-            mesh.pos[dstV * 3 + 1] = lj * g.cell;
+            // Band vertex (i, j) sits at the CELL CENTRE `x0 + (i + 0.5) cell`
+            // (27.15.5) - the same sample point `util.gridHeight`'s bilinear
+            // (`fx = x/cell - 0.5`), the far tiles and the stitch ring use.
+            // Architect fix (ME-06): this was `li * cell` (cell corner), a
+            // 1 m shift of the whole band vs the DDA oracle and the stitch.
+            mesh.pos[dstV * 3] = (li + 0.5) * g.cell;
+            mesh.pos[dstV * 3 + 1] = (lj + 0.5) * g.cell;
             mesh.pos[dstV * 3 + 2] = z;
             const nOff = srcIdx * 3;
             mesh.nrm[dstV] = packNormalOct(this._bandNrm[nOff], this._bandNrm[nOff + 1], this._bandNrm[nOff + 2]);
@@ -516,9 +549,13 @@ export class TerrainMeshSet {
             if (z > maxZ) maxZ = z;
           }
         }
-        mesh.bbox[0] = 0; mesh.bbox[1] = 0; mesh.bbox[2] = minZ;
-        mesh.bbox[3] = (cc - 1) * g.cell; mesh.bbox[4] = (rc - 1) * g.cell; mesh.bbox[5] = maxZ;
-        mesh.meshVersion++;
+        mesh.bbox[0] = 0.5 * g.cell; mesh.bbox[1] = 0.5 * g.cell; mesh.bbox[2] = minZ;
+        mesh.bbox[3] = (cc - 0.5) * g.cell; mesh.bbox[4] = (rc - 0.5) * g.cell; mesh.bbox[5] = maxZ;
+        // Architect fix (ME-06): front/back chunks share one `id` (the GPU
+        // cache key, MeshBuffers.js) so the version must be unique across
+        // BOTH sets - a per-mesh `++` gave A and B the same numbers and the
+        // second flip re-used a stale vertex buffer.
+        mesh.meshVersion = ++this._nearVersion;
       }
     }
     this.near = back;
@@ -611,6 +648,13 @@ export class TerrainMeshSet {
 
     if (terrain.farReady && (!this._farBuilt || this._farBuiltVersion !== terrain.farVersion)) {
       this._buildFarTiles();
+      // Carve for `terrain.near` right away, even though the near chunks
+      // are still all-zero until their row-by-row build publishes (a hole in
+      // the ground outside for the first few frames after load). Architect
+      // note (ME-06): tried "carve only once published" - worse: the 8 m far
+      // grid (+ canopy) then pokes through the tower floor for those frames
+      // (spawn pose kind 4 %). The hole is the lesser evil and matches the
+      // DDA's own "no terrain until baked" transient.
       if (terrain.near) this._updateFarExclusion(this._bandRectFor(terrain.near));
     }
 
@@ -689,4 +733,34 @@ export class TerrainMeshSet {
     if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) return 0;
     return terrain.farType[iy * terrain.mapW + ix];
   }
+}
+
+// ---------------------------------------------------------------------------
+// terrainMeshSetFor - shared cache (ME-06, 27.15.5a item 6)
+// ---------------------------------------------------------------------------
+
+/**
+ * One `TerrainMeshSet` per `Terrain` instance, shared by every caller
+ * (`GpuCellPipeline`'s raster pass, `renderWorld`'s `fb.renderer === 'mesh'`
+ * JS-twin branch, and any Node harness/test) so the GPU and JS twins draw
+ * the exact same geometry from the exact same object - never two competing
+ * `TerrainMeshSet`s silently diverging (a flip mid-frame on one but not the
+ * other). Built lazily on first use; never freed (matches the `Terrain`'s
+ * own lifetime - one per loaded world).
+ * @type {WeakMap<import('../world/Terrain.js').Terrain, TerrainMeshSet>}
+ */
+const _terrainMeshSets = new WeakMap();
+
+/**
+ * @param {import('../world/Terrain.js').Terrain} terrain
+ * @param {{fogFullM?: number}} [opts] - only used the first time `terrain` is seen
+ * @returns {TerrainMeshSet}
+ */
+export function terrainMeshSetFor(terrain, opts) {
+  let set = _terrainMeshSets.get(terrain);
+  if (!set) {
+    set = new TerrainMeshSet(terrain, opts);
+    _terrainMeshSets.set(terrain, set);
+  }
+  return set;
 }

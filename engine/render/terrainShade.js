@@ -10,6 +10,8 @@
 // `glsl/common.js`'s `HASH_FAST` (same avalanche constants), so a cell's
 // colour/glyph pick never drifts between the two languages.
 
+import { samplePowLUT } from './fastShade.js';
+
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
 // be world-cell keyed, exactly like every other hash in this file.
@@ -24,6 +26,18 @@ export function hashFast01(x, y, s) {
   return (hashFastU(x, y, s) >>> 8) * (1 / 16777216);
 }
 
+// ME-06b background canopy face: rules from overworld_far.js nearLOD ('Surface
+// vs face' 0.8x, 'Forest near LOD' trunk `|` 1 cell in 3). FOREST_FACE_NZ:
+// forest grows only where slope <= 0.5 (N.z >= 0.894 on real ground); the
+// canopy ramp (+10 m over one 8 m cell, normals from an 8 m central
+// difference) measures N.z 0.67-0.9 (probe on overworld_far), so 0.9 splits
+// them. GLSL literals come from these exports.
+export const FOREST_FACE_NZ = 0.9;
+export const FOREST_FACE_K = 0.8;
+export const FOREST_TRUNK_CHANCE = 1 / 3;
+export const FOREST_TRUNK_SALT = 30;
+export const FOREST_TRUNK_CODE = 124 - 32; // '|' as glyphIdx
+
 function toByte(v255) {
   const c = v255 < 0 ? 0 : v255 > 255 ? 255 : v255;
   return Math.floor(c + 0.5);
@@ -34,7 +48,10 @@ function toByte(v255) {
  */
 function gainOf(bc, shading) {
   const bcc = bc < 0 ? 0 : bc;
-  let gain = shading.fgMin + (1 - shading.fgMin) * Math.pow(bcc > 1 ? 1 : bcc, shading.fgGamma);
+  // BUG-GPU-005: with `shading.gainLUT` (the MaterialTable's, see
+  // `shadeTerrainCells`) use the same pow LUT the GPU shade pass samples.
+  const p = shading.gainLUT ? samplePowLUT(shading.gainLUT, bcc > 1 ? 1 : bcc) : Math.pow(bcc > 1 ? 1 : bcc, shading.fgGamma);
+  let gain = shading.fgMin + (1 - shading.fgMin) * p;
   if (bcc > 1) gain = Math.min(shading.fgMaxGain, gain + (bcc - 1) * 0.5);
   return gain;
 }
@@ -64,7 +81,7 @@ function pickCodeFromPacked(x, count, idx) {
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
  */
-export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
+export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) {
   // 23.4 near-detail: inside the near-handover band the world-cell hash is
   // keyed at 2 m (matches the near band's own cell size), else at 8 m (the
   // far grid's cell size) - `nearLOD.rules` ("hash cell 2 m when t < h1,
@@ -133,11 +150,30 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
     }
   }
 
+  // ME-06b: background canopy FACE look (overworld_far nearLOD 'Surface vs
+  // face' + 'Forest near LOD'): only for a type whose TLOOK row carries face
+  // glyphs (forest), never in the close band. faceMode 1 = face row, 2 = the
+  // foot row (lowest face row of the run, `forestFaceMode`): trunk `|` in
+  // woodDark for 1 cell in 3, else dark foliage; above the foot the face
+  // glyphs; all at 0.8x brightness.
+  const faceCount = TL[base + 3 * 4 + 3];
+  if (faceMode !== 0 && faceCount > 0 && !close && t >= ctx.bands.near) {
+    const faceX = TL[base + 3 * 4 + 2];
+    const trunk = faceMode === 2 && hashFast01(cx, cy, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
+    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : Math.floor(hB * faceCount));
+    if (trunk) {
+      const tOff = base + 16 * 4;
+      fr = TL[tOff] * 255 * gain; fg = TL[tOff + 1] * 255 * gain; fb = TL[tOff + 2] * 255 * gain;
+    }
+    const dOff = base; // forestDark bg (TLOOK texel 0), gained
+    br = TL[dOff] * 255 * gain * 0.3; bg = TL[dOff + 1] * 255 * gain * 0.3; bb = TL[dOff + 2] * 255 * gain * 0.3;
+    fr *= FOREST_FACE_K; fg *= FOREST_FACE_K; fb *= FOREST_FACE_K;
+    br *= FOREST_FACE_K; bg *= FOREST_FACE_K; bb *= FOREST_FACE_K;
+  }
+
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.
   const F = ctx.fog;
-  let f = (t - F.start) / (F.full - F.start);
-  f = f < 0 ? 0 : f > 1 ? 1 : f;
-  f = Math.pow(f, F.curve || 1);
+  const f = terrainFogF(t, F);
   const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f;
   const fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f;
   const fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
@@ -150,6 +186,18 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out) {
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;
+}
+
+/**
+ * Terrain fog factor for distance `t` (50 -> 1500 m, curve 0.7). Shared by
+ * `shadeTerrain` and `shadeTerrainCells` (which stores it in `gbuf.fogF` so
+ * the edge pass gates terrain cells on the TERRAIN fog, not a stale value;
+ * GLSL twin: `terrainFogF` in glsl/edge.frag.js - BUG-GPU-005).
+ */
+export function terrainFogF(t, F) {
+  let f = (t - F.start) / (F.full - F.start);
+  f = f < 0 ? 0 : f > 1 ? 1 : f;
+  return Math.pow(f, F.curve || 1);
 }
 
 function packFeatureCode(str, idx) {

@@ -34,21 +34,29 @@
 // `d = max(0, h-zRef); zc = ceilZ-h; if (zc<d) d=max(0,zc); fr=u-u0;
 // if (h<nbrALo) d=min(d,fr); if (h<nbrBLo) d=min(d,1-fr)`; AO_PLANE(2)
 // `fx=u-cellX0, fy=v-cellY0; W/E/N/S bits narrow a=min(a,...)`.
-import { GLSL_VERSION, PRECISION } from './common.js';
+import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
+import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const AO_NONE = 0, AO_WALL = 1, AO_PLANE = 2;
 
 export const MESH_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
-layout(location = 0) out uvec2 outGI;
+${OCT_NORMAL}
+layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
 const int AO_NONE = ${AO_NONE}, AO_WALL = ${AO_WALL}, AO_PLANE = ${AO_PLANE};
+const uint KIND_MODEL = ${KIND_MODEL}u;
+const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
+const int FACE_PACKED = ${FACE_PACKED};
 
 flat in int vPlaneId;
 flat in uint vKind, vFace, vMat;
 flat in float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat in float vZBase;
+flat in vec3 vNrmW;
+uniform int uObjectId;
+uniform int uAxisAligned;
 in vec2 vUV;
 in float vWorldZ;
 
@@ -78,6 +86,18 @@ float computeAoD(float mode, float u, float v, float zRef, float a2, float a3, f
   return 1.0e30;
 }
 
+// ME-08a (27.16 item 2): literal twin of voxelMarch.js roundedFace (>=
+// comparisons, E/W first, then S/N, then U/D) - the body is copied from
+// voxel.frag.js and glsl.test.js asserts the two are string-equal.
+uint roundedFace(vec3 nWorld) {
+  int hitFace;
+  float anx = abs(nWorld.x), any = abs(nWorld.y), anz = abs(nWorld.z);
+  if (anx >= any && anx >= anz) hitFace = nWorld.x >= 0.0 ? FACE_E : FACE_W;
+  else if (any >= anx && any >= anz) hitFace = nWorld.y >= 0.0 ? FACE_S : FACE_N;
+  else hitFace = nWorld.z >= 0.0 ? FACE_U : FACE_D;
+  return uint(hitFace);
+}
+
 void main() {
   float aoD = computeAoD(vAoMode, vUV.x, vUV.y, vZRef, vAux2, vAux3, vAux4, vAux5);
   float z = vWorldZ - vZBase - vZRef;
@@ -88,8 +108,26 @@ void main() {
   // from its own barycentric 1/w sum).
   float dist = 1.0 / gl_FragCoord.w;
 
-  outGI = uvec2(uint(vPlaneId), vKind | (vFace << 8u) | (vMat << 16u));
-  outGA = uvec4(floatBitsToUint(vUV.x), floatBitsToUint(vUV.y), floatBitsToUint(z), floatBitsToUint(aoD));
+  // ME-08a (27.16 item 3): kind 8 (voxel part) takes castModels' face rule -
+  // axis-aligned pose -> roundedFace(N), else face 7 + packed normal (GA.w on
+  // both twins; GI.z carries it too for the future 27.4 reader, nothing reads
+  // it for kind 8 in phase 1). Kinds 1-6: face alone decides, GI.z = 0.
+  uint face = vFace;
+  uint nrmBits = 0u;
+  uint gaW = floatBitsToUint(aoD);
+  if (vKind == KIND_MODEL) {
+    if (uAxisAligned != 0) {
+      face = roundedFace(vNrmW);
+    } else {
+      face = uint(FACE_PACKED);
+      nrmBits = packNormalOct(vNrmW);
+      gaW = nrmBits;
+    }
+  }
+  // GI.w = uObjectId (structSeq for levels = the old planeId top-3-bit
+  // decode; 0x8000|slot for voxels).
+  outGI = uvec4(uint(vPlaneId), vKind | (face << 8u) | (vMat << 16u), nrmBits, uint(uObjectId));
+  outGA = uvec4(floatBitsToUint(vUV.x), floatBitsToUint(vUV.y), floatBitsToUint(z), gaW);
   outDepth = floatBitsToUint(dist);
 }
 `;

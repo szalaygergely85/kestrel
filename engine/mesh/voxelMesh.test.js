@@ -1,7 +1,7 @@
 // engine/mesh/voxelMesh.test.js (ME-07, docs/backlog.md, docs/architecture.md
 // 27.7 item 4, 27.15.6). Plain Node ESM, no framework.
 // Run: node engine/mesh/voxelMesh.test.js
-import { buildVoxelMesh } from './voxelMesh.js';
+import { buildVoxelMesh, VoxelMeshCache } from './voxelMesh.js';
 import { validateMesh } from './MeshData.js';
 import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
@@ -316,9 +316,46 @@ function marchOracle(name, def, inst) {
     `mismatches=${mismatches}/${checked}; ${badDetails.join(' | ')}`);
 }
 
-marchOracle('quadruped12 mid-clip', quadruped12, { model: null, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 });
+// Real mid-clip frame (ME-07 review item 4): walk frame 1 halfway to frame 2,
+// so the leg parts (children of body) carry a non-identity Ak.
+{
+  const walkIdx = pack(quadruped12).pm.clips.findIndex((c) => c.name === 'walk');
+  const walk = pack(quadruped12).pm.clips[walkIdx];
+  ok('quadruped12: walk clip found', walkIdx >= 0);
+  marchOracle('quadruped12 mid-clip', quadruped12, { model: null, x: 0, y: 0, z: 0, yawDeg: 0, clip: walkIdx, frame: 1, tMs: walk.durMs[1] / 2 });
+  const pm = pack(quadruped12).pm, pose = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+  computeVoxelPose(pm, { x: 0, y: 0, z: 0, yawDeg: 0, clip: walkIdx, frame: 1, tMs: walk.durMs[1] / 2 }, pose);
+  let nonIdentity = false;
+  for (let p = 0; p < pm.partCount; p++) {
+    const f = p * 12;
+    if (Math.abs(FORWARD[f + 4] / FORWARD[f + 0] - 1) > 1e-6 || Math.abs(FORWARD[f + 5]) > 1e-6) nonIdentity = true;
+  }
+  ok('quadruped12 mid-clip: some part matrix is not a pure yaw/scale (Ak exercised)', nonIdentity);
+}
 marchOracle('quadruped12 yaw37', quadruped12, { model: null, x: 1.5, y: -2, z: 0.3, yawDeg: 37, clip: -1, frame: 0, tMs: 0 });
 marchOracle('post12 yaw90', post12, { model: null, x: -0.4, y: 0.8, z: 0.1, yawDeg: 90, clip: -1, frame: 0, tMs: 0 });
+
+// ---------------------------------------------------------------------------
+// 5. Review items 1-2: flat1 carries pm.matIds[local]; unique meshVersion per build.
+// ---------------------------------------------------------------------------
+{
+  const ids = new Map();
+  const pm = packVoxelModel(post12, (key) => { if (!ids.has(key)) ids.set(key, ids.size === 0 ? 37 : 91); return ids.get(key); });
+  const partNames = Object.keys(post12.parts);
+  const mesh = buildVoxelMesh(pm, { id: 'vox:post12mat', partNames });
+  const found = new Set();
+  for (let v = 0; v < mesh.triCount * 3; v++) found.add(mesh.flat[v * 2 + 1] >>> 16);
+  const want = new Set(Array.from(pm.matIds).slice(1));
+  ok('post12: pm.matIds are the remapped ids (37/91), not local 1..n', want.has(37) && want.has(91), [...want].join(','));
+  ok('flat1 mat set == pm.matIds[1..] (MaterialTable ids, not local indices)',
+    found.size === want.size && [...want].every((m) => found.has(m)), `found=${[...found]} want=${[...want]}`);
+
+  const cache = new VoxelMeshCache();
+  const pm2 = packVoxelModel(post12, (key) => 5);
+  const m1 = cache.get(pm, 'post12', partNames), m2 = cache.get(pm2, 'post12', partNames);
+  ok('VoxelMeshCache: two builds of the same id get different meshVersion', m1.id === m2.id && m1.meshVersion !== m2.meshVersion, `${m1.meshVersion} ${m2.meshVersion}`);
+  ok('VoxelMeshCache: same pm -> same mesh, version unchanged', cache.get(pm, 'post12', partNames) === m1 && m1.meshVersion === cache.get(pm, 'post12', partNames).meshVersion);
+}
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

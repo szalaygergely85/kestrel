@@ -53,6 +53,8 @@ import '../design/models/voxel_tower.js';
 import '../design/models/voxel_world.js'; // waystone (endMarker, world_m1.world.json)
 import '../design/models/far_tower.js';
 import '../design/models/ferrum_lights.js';
+// Optional local third-party pack (git-ignored design/local/, licence unverified): only if present.
+if ((await import('node:fs')).existsSync(new URL('../design/local/voxel_pack.js', import.meta.url))) await import('../design/local/voxel_pack.js');
 import '../design/levels/overworld_far.js'; // terrain RECIPE, still a design/ classic script (US-027b)
 
 // Registers, by name, every behaviour the real level/world data's

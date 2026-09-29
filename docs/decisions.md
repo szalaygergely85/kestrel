@@ -798,6 +798,13 @@ Three per-cell ray marchers (sector DDA, terrain march, voxel march) never agree
 - Owner cost: two renderers coexist ~5 weeks; RT-look work (US-070..073) waits for phase 3 but lands cheaper (shadow maps). M2 exit moves out by ~3.5-4 weeks (roadmap).
 - Owner actions: phase-1 gate side-by-side on 6 poses + `?bench=1`; phase-2 walk-test; designer/Blender test building for ME-13 (phase 3).
 
+### Amendment 1 (2026-09-29): phase-1 gate PASSED (owner GO)
+Owner verdict after `game/sidebyside.html`: "go, I like it". Gate data (ME-08c, backlog `### Mesh phase-1 gate`): mesh GPU p95 walk 2.52 ms vs dda 3.11 at 400x150, 1.34 vs 1.56 at 240x90 (mesh faster at every view, over25 = 0); flicker x1.001 of dda; `?gpucompare=1` 32/33 on both renderers (outsideNear = BUG-GPU-005); `?gpucompare=mesh` 9 FAIL rows, all `terrainGrid` = the D-031 known difference (kind >= 99.95 % on all 33).
+Consequences:
+- Phase 2 (ME-09..12) starts; the phase-2 gate stays as written in 27.11.
+- Dropped for good (no longer "frozen"): **US-070a** (superseded by ME-15/16), **US-026b S5**, **BUG-OWN-008 part 3** (branch `wip/bug-own-008-part3` stays on origin as reference until ME-19 deletes it). D-031's "gate FAILS" branch lapses; `nearLOD.step` stays off.
+- `?renderer=mesh` is the path to make default. Roadmap has no flip story yet: **default flip = a phase-2 story, PO to write** (after ME-12's browser pass, before ME-19; `?renderer=dda` stays as the compare/oracle switch until ME-19).
+
 ## D-030 Milestone re-plan M2-M6 + parallel engine release track (accepts the PO re-plan of 2026-09-26, with adjustments)
 **Date:** 2026-09-26
 **Status:** Accepted. Owner request ("we miss a lot"). Amends **D-010** (M1.5 / M5 editor slots), **D-011** (M2-M4 milestone themes; story canon unchanged), **D-012** (demo and Coming Soon timing; Electron/steamworks/platform-adapter decisions unchanged), **D-020** (sword/gear levels "first in M2" -> M3/M4). **D-029 stands unchanged**, including both gates and the freezes.
@@ -824,4 +831,12 @@ The PO rewrote `docs/roadmap.md` around the missing game loop (combat -> save/it
 - Architect: tech notes for US-078/079/080/083 after the phase-2 gate is in sight, not before.
 - Sprint 5 stays as D-029 planned (phase 2 + US-026b S2+). The first M3 sprint is planned only after the phase-2 gate result is recorded in D-029.
 - Owner: answer the 11 roadmap questions (1, 2, 3, 7 first; 10 and 11 can wait until the engine track / M5).
+
+## D-031 Terrain near-band sampling (`nearLOD.step`) stays OFF on the DDA until the mesh phase-1 gate (owner, 2026-09-29)
+Context: ME-06 migration compare (`?gpucompare=mesh`) - the DDA samples terrain on the 8 m far grid, the mesh always draws the 2 m near band, so hillside poses differ by design. Trial with `overworld_far.nearLOD.step {min: 0.5, k: 0.012}`: dda-vs-mesh terrain gap closes (20/33, only voxels + one far-LOD pose left), but the DDA's own CPU/GPU parity drops 32/33 -> 25/33 (near march hits `MAX_TERRAIN_STEPS` 320 on horizon rays; US-026a S5 near-march parity never exercised) and DDA GPU p95 at 400x150 rises 3.8 -> 5.7 ms (over25 = 5). Architect recommended off; owner chose off.
+Decision:
+- `step` stays out of `design/levels/overworld_far.js`. The mesh is unaffected (always 2 m).
+- `?gpucompare=mesh` terrain poses are judged by kind (>= 99.96 %) + geometry, with "DDA 8 m vs mesh 2 m band" as a listed known difference; the owner judges the hillside look by eye on `?renderer=mesh`.
+- Dev switch `&nearstep=1` (compare pages only) turns it on for DDA diagnostics.
+- If the phase-1 gate FAILS and the DDA stays: a separate DDA story (near-march parity, step budget, bench) before `step` is enabled.
 

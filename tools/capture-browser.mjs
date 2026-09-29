@@ -83,6 +83,8 @@ export function parseArgs(argv) {
     else if (a === '--port') opts.port = Number(next());
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
+    else if (a === '--query') opts.query = next();
+    else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--import') {
       // `--import` alone (no path following, or followed by another flag)
@@ -131,9 +133,21 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 export function buildQuery(mode, { grid, variant, rays } = {}) {
   const parts = [];
   if (mode === 'gpucompare') {
-    parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
+    // ME-06 (27.7 item 3): `--variant mesh` requests the migration oracle
+    // (`?gpucompare=mesh`, GPU dda vs GPU mesh - `window.__gpuCompare`'s
+    // shape is the same as the default `dda` variant, so `normalizeLiveResult`
+    // needs no change).
+    parts.push(variant === 'shade' ? 'gpucompare=shade' : variant === 'mesh' ? 'gpucompare=mesh' : 'gpucompare=1');
   } else if (mode === 'bench') {
-    parts.push('bench=present');
+    // ME-06 (docs/architecture.md 27.11 ME-06 row): `--variant world`
+    // requests the real US-018 `?bench=1` pass-timing bench (3 fixed views
+    // + a 60 s walk, real GPU per-pass numbers via `window.__bench` - see
+    // game/js/dev/perfBench.js) instead of the plain canvas-only
+    // `?bench=present` (US-001, the default). The walk phase waits for a
+    // real WASD keydown that never arrives headless - `runLiveCapture`
+    // sends one synthetic `KeyW` keydown (never released) right after
+    // navigation for this variant, so the 60 s walk starts on its own.
+    parts.push(variant === 'world' ? 'bench=1' : 'bench=present');
   } else if (mode === 'voxelbench') {
     parts.push('voxelbench=1');
     // voxelbench does not force its own grid (unlike bench/gpucompare -
@@ -141,8 +155,10 @@ export function buildQuery(mode, { grid, variant, rays } = {}) {
     // gate's own grid must be requested explicitly.
     parts.push(`grid=${grid || '240x90'}`);
     parts.push(`rays=${rays || 2}`);
+  } else if (mode === 'flicker') {
+    parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
   } else {
-    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench)`);
+    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker)`);
   }
   if (grid && mode !== 'voxelbench') parts.push(`grid=${grid}`);
   return parts.join('&');
@@ -152,6 +168,7 @@ export function resultGlobalFor(mode) {
   if (mode === 'gpucompare') return '__gpuCompare';
   if (mode === 'bench') return '__bench';
   if (mode === 'voxelbench') return '__voxelBench';
+  if (mode === 'flicker') return '__flicker';
   throw new Error(`unknown --mode '${mode}'`);
 }
 
@@ -195,6 +212,11 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     // D-019 gate, per the overlay text this mode itself prints.
     const pass = raw.voxelMsP95 <= 0.5 && raw.gpuMsP95 <= 4;
     return { rows: [{ name: 'voxelbench', pass, metrics }], ok: pass };
+  }
+  if (mode === 'flicker') {
+    const metrics = {};
+    flatten(raw, '', metrics);
+    return { rows: [{ name: 'flicker', pass: null, metrics }], ok: null };
   }
   throw new Error(`unknown --mode '${mode}'`);
 }
@@ -411,9 +433,47 @@ export function shortShaSync(cwd = ROOT) {
   }
 }
 
-export function captureFilePath({ date, sha, mode, grid }) {
+export function captureFilePath({ date, sha, mode, grid, variant }) {
   const g = (grid || 'grid').replace(/[^\w-]/g, '');
-  return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}-${g}.json`);
+  // ME-06: a `--variant` (mesh/shade/world) gets its own file, so e.g. a
+  // `?gpucompare=mesh` run no longer overwrites the plain `?gpucompare=1` one.
+  const v = variant ? `-${String(variant).replace(/[^\w-]/g, '')}` : '';
+  return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}${v}-${g}.json`);
+}
+
+// ME-06: `?gpucompare=mesh` rows carry a `diffPng` data URL per pose. They are
+// written as PNG files next to the JSON (folder = JSON basename) and replaced
+// by a relative `diffPngPath`, so the JSON stays small.
+export function diffPngSlug(pose) {
+  return String(pose).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'pose';
+}
+
+/** Path relative to CAPTURES_DIR, forward slashes: `<capture basename>/<NN>-<slug>.png`. */
+export function diffPngRelPath(captureFile, index, pose) {
+  const base = path.basename(captureFile).replace(/\.json$/, '');
+  return `${base}/${String(index).padStart(2, '0')}-${diffPngSlug(pose)}.png`;
+}
+
+/** Returns `{ raw, files }`: raw without any `diffPng` (replaced by `diffPngPath`), files = [{relPath, dataUrl}]. */
+export function stripDiffPngs(raw, captureFile) {
+  if (!raw || !Array.isArray(raw.rows)) return { raw, files: [] };
+  const files = [];
+  const rows = raw.rows.map((r, i) => {
+    if (!r || typeof r.diffPng !== 'string') return r;
+    const { diffPng, ...rest } = r;
+    const relPath = diffPngRelPath(captureFile, i, r.pose);
+    files.push({ relPath, dataUrl: diffPng });
+    return { ...rest, diffPngPath: relPath };
+  });
+  return { raw: { ...raw, rows }, files };
+}
+
+export function writeDiffPngs(files, dir = CAPTURES_DIR) {
+  for (const f of files) {
+    const out = path.join(dir, f.relPath);
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, Buffer.from(f.dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
+  }
 }
 
 export function writeCapture(filePath, payload) {
@@ -546,8 +606,9 @@ async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftware
         );
       }
     }
-    const has = await evaluate(cdp, `typeof window.${globalName} !== 'undefined'`);
-    if (has) return evaluate(cdp, `window.${globalName}`);
+    const expr = globalName.startsWith('(') ? globalName : `window.${globalName}`; // ME-08c: `--global "(expr)"` override
+    const has = await evaluate(cdp, `typeof ${expr} !== 'undefined'`);
+    if (has) return evaluate(cdp, expr);
     await sleep(300);
   }
   throw new Error(`timed out after ${timeoutMs}ms waiting for window.${globalName} (mode never produced a result - check the page loaded, WebGL2 is available, and the query string is right)`);
@@ -611,7 +672,7 @@ export async function runLiveCapture(opts) {
       if (isSoftwareRendererLine(text)) softwareRendererLine = text;
     });
 
-    const query = buildQuery(opts.mode, opts);
+    const query = opts.query || buildQuery(opts.mode, opts); // ME-08c: `--query <raw>` override
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
     // game/index.html, not at the root.
@@ -622,7 +683,17 @@ export async function runLiveCapture(opts) {
     await cdp.send('Page.navigate', { url });
     await navigated;
 
-    const globalName = resultGlobalFor(opts.mode);
+    // ME-06: `--mode bench --variant world` (`?bench=1`) needs one real
+    // WASD keydown to start its 60 s walk phase (`perfBench.js`'s
+    // `waitForMove`) - held down (no matching keyup), which is harmless
+    // during the 3 fixed views (they re-teleport and zero velocity every
+    // rendered frame) and starts the walk the instant the views finish.
+    if (opts.mode === 'bench' && opts.variant === 'world') {
+      await new Promise((resolve) => setTimeout(resolve, 500)); // let the engine finish booting
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyW', key: 'w' });
+    }
+
+    const globalName = opts.global || resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
       failFast, getSoftwareRendererLine: () => softwareRendererLine,
@@ -668,7 +739,13 @@ async function main() {
   } else {
     if (!mode) throw new Error('--mode gpucompare|voxelbench|bench is required (or use --import)');
     if (opts.port == null) throw new Error('--port <95xx> is required for a live capture');
-    const { raw, ua, gpuRenderer } = await runLiveCapture(opts);
+    const live = await runLiveCapture(opts);
+    const { ua, gpuRenderer } = live;
+    const date = todayStr();
+    const sha = shortShaSync();
+    const filePath = captureFilePath({ date, sha, mode, grid: opts.grid || live.raw.grid || null, variant: opts.variant });
+    const stripped = stripDiffPngs(live.raw, filePath);
+    const raw = stripped.raw;
     normalized = normalizeLiveResult(mode, raw, { variant: opts.variant });
     headless = true;
     let derivedGrid = raw.grid || opts.grid || null;
@@ -678,8 +755,6 @@ async function main() {
     }
     grid = grid || derivedGrid;
 
-    const date = todayStr();
-    const sha = shortShaSync();
     const payload = {
       date, sha, mode, grid, headless,
       ua, gpuRenderer,
@@ -687,9 +762,11 @@ async function main() {
       rows: normalized.rows,
       raw,
     };
-    const filePath = captureFilePath({ date, sha, mode, grid });
-    writeCapture(filePath, payload);
-    console.log(`wrote ${path.relative(ROOT, filePath)}`);
+    const finalPath = captureFilePath({ date, sha, mode, grid, variant: opts.variant });
+    if (finalPath !== filePath) stripped.files = stripDiffPngs(live.raw, finalPath).files, payload.raw = stripDiffPngs(live.raw, finalPath).raw;
+    writeCapture(finalPath, payload);
+    writeDiffPngs(stripped.files);
+    console.log(`wrote ${path.relative(ROOT, finalPath)}` + (stripped.files.length ? ` + ${stripped.files.length} diff PNGs` : ''));
   }
 
   console.log(formatSummary(mode, { ...normalized, headless }));

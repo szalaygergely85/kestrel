@@ -36,7 +36,11 @@
 // by the current content.
 import { buildFeatures } from '../terrainShade.js';
 
-export const TLOOK_WIDTH = 16;
+// ME-06b: texel 3 .z/.w = FACE glyph codes (packed like texel 4-7) + count and
+// texel 16 = trunk fg colour rgb, on the canopy type (forest) ONLY - count 0
+// everywhere else = "no canopy face look" (background forest edge, terrainShade.js).
+export const TLOOK_WIDTH = 17;
+const TRUNK_TEXEL = 16;
 export const MAX_FEATURES_PER_TYPE = 4;
 const FEAT_BASE_TEXEL = 8; // first feature-slot texel (see TLOOK layout above)
 
@@ -91,6 +95,17 @@ export function packTerrainTextures(terrain, palette) {
     tlook[o3] = t.albedo != null ? t.albedo : 1;
     tlook[o3 + 1] = t.glint ? 1 : 0;
     tlook[o3 + 2] = 0; tlook[o3 + 3] = 0;
+    // ME-06b: the canopy type (recipe.recipe.forest.canopy > 0, type "forest") gets its FACE look.
+    const forestRec = recipe.recipe && recipe.recipe.forest;
+    if (key === 'forest' && forestRec && forestRec.canopy > 0 && t.face) {
+      const g = packGlyphCodes(t.face);
+      tlook[o3 + 2] = g.x; tlook[o3 + 3] = g.count;
+      const trunk = palette.rgb.woodDark;
+      if (trunk) {
+        const ot = base + TRUNK_TEXEL * 4;
+        tlook[ot] = trunk[0] / 255; tlook[ot + 1] = trunk[1] / 255; tlook[ot + 2] = trunk[2] / 255;
+      }
+    }
 
     const bandNames = ['near', 'mid', 'far'];
     for (let b = 0; b < 3; b++) {

@@ -10,6 +10,17 @@ import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
 import { lightSurfaces } from './lighting.js';
 import { castModels } from '../voxel/voxelMarch.js';
+// ME-06 (27.15.5a item 6): the JS-twin oracle for `fb.renderer === 'mesh'` -
+// same `DrawList`/`rasterJS` path the GPU raster pass (`GpuCellPipeline.
+// _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
+// mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
+// only hold that way - see 27.15.5a item 6's "Oracle rule").
+import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
+import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget } from '../mesh/rasterJS.js';
+import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
+import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
+import { projTerms, shearProjection } from './projection.js';
+import { frustumPlanes } from '../mesh/culling.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // Preallocated (architecture.md section 9: no per-frame allocation in renderWorld).
@@ -20,6 +31,108 @@ const distScratch = new Float32Array(MAX_STRUCTS);
 // a `DepthBuffer` object, `.depth` its typed array) - reused, never
 // reallocated (architecture.md section 9).
 const modelsFbShim = { rt: null, depth: null, gbuf: null };
+
+// ---------------------------------------------------------------------------
+// ME-06 mesh JS twin (27.15.5a item 6) - module-level scratch, zero
+// allocation per frame (27.7 item 5). Same fog-far cull constant
+// (`GpuCellPipeline._passRaster`'s literal 2000) and the same MAX_STRUCTS
+// cap the DDA structFoot loop above uses.
+// ---------------------------------------------------------------------------
+const meshDrawList = new DrawList();
+const meshTerms = {
+  cols: 0, rows: 0, eyeX: 0, eyeY: 0, eyeZ: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0,
+  tanHalf: 0, planeDistX: 0, planeDistY: 0, horizonRow: 0, tanPitch: 0,
+};
+const meshViewProj = new Float64Array(16);
+const meshFrustumPlanes = new Float64Array(24);
+const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
+const meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
+const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0 };
+/** @type {WeakMap<import('../world/World.js').World, LevelMeshCache>} */
+const _meshLevelMeshCaches = new WeakMap();
+/** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
+let _meshRasterTarget = null;
+
+function meshLevelMeshCacheFor(world, matTable) {
+  let cache = _meshLevelMeshCaches.get(world);
+  if (!cache) {
+    cache = new LevelMeshCache(matTable ? matTable.idFor : undefined);
+    _meshLevelMeshCaches.set(world, cache);
+  }
+  return cache;
+}
+
+function meshRasterTargetFor(cols, rows) {
+  if (!_meshRasterTarget || _meshRasterTarget.cols !== cols || _meshRasterTarget.rows !== rows) {
+    _meshRasterTarget = createRasterTarget(cols, rows, 1);
+  } else {
+    clearRasterTarget(_meshRasterTarget);
+  }
+  return _meshRasterTarget;
+}
+
+/**
+ * `fb.renderer === 'mesh'` twin of the DDA block below (structs loop +
+ * `castTerrain`): builds the exact same `DrawList` the GPU raster pass
+ * draws (`addStructures` + the shared `TerrainMeshSet`, `terrainMeshSetFor`
+ * - one cache, one object, both twins), rasterises it with `rasterJS.js`
+ * and copies the `n === 1` result into `fb.gbuf`/`fb.depth.depth` exactly
+ * like `GpuCellPipeline._passRaster` fills the GPU G-buffer. Voxel props
+ * (ME-08b) are added as mesh items too; `castModels` does not run on mesh.
+ * @param {Object} fb
+ * @param {import('../world/World.js').World} world
+ * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
+ */
+function renderWorldMesh(fb, world, cam) {
+  const cols = fb.gbuf.cols, rows = fb.gbuf.rows;
+  meshGrid.cols = cols; meshGrid.rows = rows;
+  meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
+  meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
+  projTerms(cam, meshGrid, meshTerms);
+  shearProjection(meshTerms, meshViewProj);
+  frustumPlanes(meshViewProj, meshFrustumPlanes);
+
+  const list = meshDrawList;
+  list.begin();
+  const cache = meshLevelMeshCacheFor(world, fb.matTable);
+  addStructures(list, world, cam, cache, 2000);
+
+  let terrainMeshSet = null;
+  if (fb.terrainEnabled !== false && world.terrain) {
+    terrainMeshSet = terrainMeshSetFor(world.terrain);
+    terrainMeshSet.step(2);
+    terrainMeshSet.addToDrawList(list, cam);
+  }
+  // ME-08b (27.16 item 5/7): voxel props from the pool (already posed and
+  // screen-culled by `VoxelPool.project`), same cache the GPU pass uses.
+  const voxelPool = fb.voxelPool;
+  if (voxelPool && voxelPool.list.length > 0) {
+    addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
+  }
+  list.cull(meshFrustumPlanes);
+
+  const target = meshRasterTargetFor(cols, rows);
+  if (terrainMeshSet) {
+    meshCtx.kind7Mat = terrainMeshSet.typeAtFn;
+    const structs = world.structures || [];
+    let structCount = 0;
+    for (let i = 0; i < structs.length && structCount < MAX_STRUCTS; i++) {
+      const b = structs[i].bbox;
+      if (!b) continue;
+      const o4 = structCount * 4;
+      meshStructFoot[o4] = b.x0; meshStructFoot[o4 + 1] = b.y0; meshStructFoot[o4 + 2] = b.x1; meshStructFoot[o4 + 3] = b.y1;
+      structCount++;
+    }
+    meshCtx.structFoot = meshStructFoot;
+    meshCtx.structCount = structCount;
+  } else {
+    meshCtx.kind7Mat = null;
+    meshCtx.structFoot = null;
+    meshCtx.structCount = 0;
+  }
+  rasterDrawList(list, target, meshCtx);
+  copyToGBuffer(target, fb.gbuf, fb.depth.depth);
+}
 
 function bboxDist(cam, bbox) {
   const cx = Math.min(Math.max(cam.x, bbox.x0), bbox.x1);
@@ -57,55 +170,65 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
 
-  const structs = world.structures;
-  const fogFar = (fb.palette && fb.palette.fog && fb.palette.fog.far) || 2000;
-  let count = 0;
+  // ME-06 (27.15.5a item 6): `fb.renderer === 'mesh'` replaces the
+  // structs-loop + `castTerrain` geometry below with the JS mesh twin
+  // (`renderWorldMesh`) - same `DrawList`/`TerrainMeshSet` the GPU raster
+  // pass draws. Everything after this block (models, derivatives, light,
+  // shade, edge, sky) is unchanged and runs on top of whichever geometry
+  // path just filled `fb.gbuf`/`fb.depth`.
+  if (fb.renderer === 'mesh') {
+    renderWorldMesh(fb, world, cam);
+  } else {
+    const structs = world.structures;
+    const fogFar = (fb.palette && fb.palette.fog && fb.palette.fog.far) || 2000;
+    let count = 0;
 
-  for (let i = 0; i < structs.length; i++) {
-    const d = bboxDist(cam, structs[i].bbox);
-    if (d > fogFar) continue; // too far to matter this frame
-    if (count < MAX_STRUCTS) {
-      order[count] = i;
-      distScratch[count] = d;
-      count++;
-    } else {
-      let worst = 0, worstD = distScratch[0];
-      for (let k = 1; k < MAX_STRUCTS; k++) {
-        if (distScratch[k] > worstD) { worstD = distScratch[k]; worst = k; }
+    for (let i = 0; i < structs.length; i++) {
+      const d = bboxDist(cam, structs[i].bbox);
+      if (d > fogFar) continue; // too far to matter this frame
+      if (count < MAX_STRUCTS) {
+        order[count] = i;
+        distScratch[count] = d;
+        count++;
+      } else {
+        let worst = 0, worstD = distScratch[0];
+        for (let k = 1; k < MAX_STRUCTS; k++) {
+          if (distScratch[k] > worstD) { worstD = distScratch[k]; worst = k; }
+        }
+        if (d < worstD) { order[worst] = i; distScratch[worst] = d; }
+        if (fb.loop && fb.loop.stats) fb.loop.stats.structuresCulled = (fb.loop.stats.structuresCulled || 0) + 1;
       }
-      if (d < worstD) { order[worst] = i; distScratch[worst] = d; }
-      if (fb.loop && fb.loop.stats) fb.loop.stats.structuresCulled = (fb.loop.stats.structuresCulled || 0) + 1;
     }
-  }
 
-  // Insertion sort near -> far (count <= 8, so this is cheap and allocation-free).
-  for (let i = 1; i < count; i++) {
-    const oi = order[i], di = distScratch[i];
-    let j = i - 1;
-    while (j >= 0 && distScratch[j] > di) {
-      order[j + 1] = order[j];
-      distScratch[j + 1] = distScratch[j];
-      j--;
+    // Insertion sort near -> far (count <= 8, so this is cheap and allocation-free).
+    for (let i = 1; i < count; i++) {
+      const oi = order[i], di = distScratch[i];
+      let j = i - 1;
+      while (j >= 0 && distScratch[j] > di) {
+        order[j + 1] = order[j];
+        distScratch[j + 1] = distScratch[j];
+        j--;
+      }
+      order[j + 1] = oi;
+      distScratch[j + 1] = di;
     }
-    order[j + 1] = oi;
-    distScratch[j + 1] = di;
-  }
 
-  for (let k = 0; k < count; k++) {
-    const s = structs[order[k]];
-    castSectors(fb, s.level, cam, s.origin);
-  }
+    for (let k = 0; k < count; k++) {
+      const s = structs[order[k]];
+      castSectors(fb, s.level, cam, s.origin);
+    }
 
-  // US-016: writes fb.gbuf/fb.depth for every open span it can resolve (a
-  // no-op until `world.terrain.farReady`); `shadeTerrainCells` below paints
-  // those kind-7 cells (a separate look-up from `shadeSurfaces`'s
-  // MaterialTable), and only what's left open after both goes to `fillSky`.
-  // ARCH CHANGES item 3: `fb.terrainEnabled === false` (`?terrain=0`, set by
-  // main.js) skips terrain on this (CPU/JS oracle) path too, the same way
-  // `GpuCellPipeline`'s `terrainEnabled` gates pass A2 - `castTerrain`
-  // already no-ops on a null/not-ready terrain, so passing `null` here reuses
-  // that same early-out with no new branch inside terrainCaster.js.
-  castTerrain(fb, fb.terrainEnabled === false ? null : world.terrain, cam, world);
+    // US-016: writes fb.gbuf/fb.depth for every open span it can resolve (a
+    // no-op until `world.terrain.farReady`); `shadeTerrainCells` below paints
+    // those kind-7 cells (a separate look-up from `shadeSurfaces`'s
+    // MaterialTable), and only what's left open after both goes to `fillSky`.
+    // ARCH CHANGES item 3: `fb.terrainEnabled === false` (`?terrain=0`, set by
+    // main.js) skips terrain on this (CPU/JS oracle) path too, the same way
+    // `GpuCellPipeline`'s `terrainEnabled` gates pass A2 - `castTerrain`
+    // already no-ops on a null/not-ready terrain, so passing `null` here reuses
+    // that same early-out with no new branch inside terrainCaster.js.
+    castTerrain(fb, fb.terrainEnabled === false ? null : world.terrain, cam, world);
+  }
 
   // US-040 step 5 (architecture.md 15.2 item 5): `castModels` runs after
   // terrain, before the shading passes - `fb.voxelPool` is optional (US-040
@@ -115,7 +238,7 @@ export function renderWorld(fb, world, cam) {
   // GPU path). US-041a (15.3 item 3): default `faceMode: 'packed'` now (US-040
   // forced 'nearest' - "face 7 is US-041a" - the rotated-normal GPU/light
   // pass work this story adds; `voxelMarch.js`'s own default is 'packed').
-  if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length) {
+  if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length && fb.renderer !== 'mesh') {
     modelsFbShim.rt = fb.rt; modelsFbShim.depth = fb.depth.depth; modelsFbShim.gbuf = fb.gbuf;
     castModels(modelsFbShim, fb.voxelPool.list, cam);
   }

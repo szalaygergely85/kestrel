@@ -105,6 +105,13 @@
        (world_m1.js's `farTower` entity + `horizon[]` entry reference these). -->
   <script src="../design/models/far_tower.js"></script>
   <script src="../design/models/ferrum_lights.js"></script>
+  <!-- Owner request 2026-09-27: OPTIONAL local third-party voxel pack in git-ignored design/local/ (licence unverified, never pushed; a 404 here is expected on other checkouts). Split by
+       tools/vox-split.mjs), 31 models that fit today's voxel limits,
+       auto-mapped to existing materials - loaded after palette.js/
+       detail-pass.js (attach guard needs both), same classic-script
+       convention as voxel_tower.js/voxel_world.js above. Not placed in any
+       level/world yet - placeholder ids until the designer names them. -->
+  <script src="../design/local/voxel_pack.js" onerror="this.remove()"></script>
   <!-- US-025: overworld_far is a terrain RECIPE (code, generative), not
        content - stays a classic script (D-007). test_room/tower/world_m1
        moved to content/*.json by US-027b (architecture.md 21.9) - js/main.js

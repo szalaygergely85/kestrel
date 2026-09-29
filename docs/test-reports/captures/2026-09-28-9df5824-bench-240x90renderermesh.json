@@ -1,0 +1,204 @@
+{
+  "date": "2026-09-28",
+  "sha": "9df5824",
+  "mode": "bench",
+  "grid": "240x90&renderer=mesh",
+  "headless": true,
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "gpuRenderer": "ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "ok": null,
+  "rows": [
+    {
+      "name": "present",
+      "pass": null,
+      "metrics": {
+        "0.name": "ground floor (brazier + sun shaft)",
+        "0.avgFps": 59.808610961935464,
+        "0.jsAvg": 2.9749999948342642,
+        "0.jsP95": 4.099999904632568,
+        "0.jsMax": 46.29999923706055,
+        "0.gpuP50": 0.99178726375103,
+        "0.gpuP95": 1.1597360372543335,
+        "0.passP50": [
+          0.3566659986972809,
+          null,
+          null,
+          0.2737500071525574,
+          0.07994700223207474,
+          0.40916600823402405,
+          0.04229100048542023
+        ],
+        "0.worstFrame": "worst frame #195: js 46.30 ms (sim 0.80 x1 steps, render 45.50)\n  sections: sim.physics 0.10  sim.quest 0.60  r.bake 5.70  r.world 0.20  r.ui 0.10  r.present 39.50  unattributed 0.10 (GC/JIT/driver)",
+        "1.name": "mid ledge, looking down",
+        "1.avgFps": 60.0108002912281,
+        "1.jsAvg": 1.5546666630109152,
+        "1.jsP95": 2.200000047683716,
+        "1.jsMax": 5.5,
+        "1.gpuP50": 1.1807836961746216,
+        "1.gpuP95": 1.2225500345230103,
+        "1.passP50": [
+          0.3971349895000458,
+          null,
+          null,
+          0.2693749964237213,
+          0.08776000142097473,
+          0.41802000999450684,
+          0.04854099825024605
+        ],
+        "1.worstFrame": "worst frame #29: js 5.50 ms (sim 0.60 x1 steps, render 4.90)\n  sections: sim.physics 0.50  sim.quest 0.10  r.voxel 0.10  r.world 0.10  r.ui 0.10  r.present 4.60  unattributed 0.00 (GC/JIT/driver)",
+        "2.name": "summit, out the breach",
+        "2.avgFps": 60.00960045099866,
+        "2.jsAvg": 1.5866666714350381,
+        "2.jsP95": 1.899999976158142,
+        "2.jsMax": 3.700000047683716,
+        "2.gpuP50": 0.8513615173101425,
+        "2.gpuP95": 1.200935959815979,
+        "2.passP50": [
+          0.3803119957447052,
+          null,
+          null,
+          0.24729099869728088,
+          0.08479099720716476,
+          0.07260400056838989,
+          0.031978998333215714
+        ],
+        "2.worstFrame": "worst frame #117: js 3.70 ms (sim 0.30 x1 steps, render 3.40)\n  sections: sim.input 0.10  sim.quest 0.20  r.world 0.10  r.present 3.30  unattributed 0.00 (GC/JIT/driver)",
+        "3.name": "waystone, looking back at the tower",
+        "3.avgFps": 60.01200132430506,
+        "3.jsAvg": 1.5796666653951008,
+        "3.jsP95": 2,
+        "3.jsMax": 3.799999952316284,
+        "3.gpuP50": 0.8155596343676249,
+        "3.gpuP95": 0.8473930358886719,
+        "3.passP50": [
+          0.3214060068130493,
+          null,
+          null,
+          0.25150999426841736,
+          0.09833300113677979,
+          0.14489500224590302,
+          0.03291599825024605
+        ],
+        "3.worstFrame": "worst frame #11: js 3.80 ms (sim 0.30 x1 steps, render 3.50)\n  sections: sim.physics 0.10  sim.quest 0.20  r.world 0.10  r.present 3.30  r.overlay 0.10  unattributed 0.00 (GC/JIT/driver)",
+        "4.name": "60s walk",
+        "4.avgFps": 60.009864426802146,
+        "4.jsAvg": 1.438461529400838,
+        "4.jsP95": 1.899999976158142,
+        "4.jsMax": 4.5,
+        "4.gpuP50": 0.814235211478045,
+        "4.gpuP95": 0.8518199920654297,
+        "4.passP50": [
+          0.3208329975605011,
+          null,
+          null,
+          0.2517699897289276,
+          0.09796799719333649,
+          0.14531199634075165,
+          0.03296799957752228
+        ],
+        "4.worstIntervalMs": 19.40000000000873,
+        "4.over25": 0,
+        "4.worstFrame": "worst frame #1838: js 4.50 ms (sim 0.30 x1 steps, render 4.20)\n  sections: sim.physics 0.20  r.world 0.10  r.ui 0.10  r.present 3.90  unattributed 0.20 (GC/JIT/driver)"
+      }
+    }
+  ],
+  "raw": [
+    {
+      "name": "ground floor (brazier + sun shaft)",
+      "avgFps": 59.808610961935464,
+      "jsAvg": 2.9749999948342642,
+      "jsP95": 4.099999904632568,
+      "jsMax": 46.29999923706055,
+      "gpuP50": 0.99178726375103,
+      "gpuP95": 1.1597360372543335,
+      "passP50": [
+        0.3566659986972809,
+        null,
+        null,
+        0.2737500071525574,
+        0.07994700223207474,
+        0.40916600823402405,
+        0.04229100048542023
+      ],
+      "worstFrame": "worst frame #195: js 46.30 ms (sim 0.80 x1 steps, render 45.50)\n  sections: sim.physics 0.10  sim.quest 0.60  r.bake 5.70  r.world 0.20  r.ui 0.10  r.present 39.50  unattributed 0.10 (GC/JIT/driver)"
+    },
+    {
+      "name": "mid ledge, looking down",
+      "avgFps": 60.0108002912281,
+      "jsAvg": 1.5546666630109152,
+      "jsP95": 2.200000047683716,
+      "jsMax": 5.5,
+      "gpuP50": 1.1807836961746216,
+      "gpuP95": 1.2225500345230103,
+      "passP50": [
+        0.3971349895000458,
+        null,
+        null,
+        0.2693749964237213,
+        0.08776000142097473,
+        0.41802000999450684,
+        0.04854099825024605
+      ],
+      "worstFrame": "worst frame #29: js 5.50 ms (sim 0.60 x1 steps, render 4.90)\n  sections: sim.physics 0.50  sim.quest 0.10  r.voxel 0.10  r.world 0.10  r.ui 0.10  r.present 4.60  unattributed 0.00 (GC/JIT/driver)"
+    },
+    {
+      "name": "summit, out the breach",
+      "avgFps": 60.00960045099866,
+      "jsAvg": 1.5866666714350381,
+      "jsP95": 1.899999976158142,
+      "jsMax": 3.700000047683716,
+      "gpuP50": 0.8513615173101425,
+      "gpuP95": 1.200935959815979,
+      "passP50": [
+        0.3803119957447052,
+        null,
+        null,
+        0.24729099869728088,
+        0.08479099720716476,
+        0.07260400056838989,
+        0.031978998333215714
+      ],
+      "worstFrame": "worst frame #117: js 3.70 ms (sim 0.30 x1 steps, render 3.40)\n  sections: sim.input 0.10  sim.quest 0.20  r.world 0.10  r.present 3.30  unattributed 0.00 (GC/JIT/driver)"
+    },
+    {
+      "name": "waystone, looking back at the tower",
+      "avgFps": 60.01200132430506,
+      "jsAvg": 1.5796666653951008,
+      "jsP95": 2,
+      "jsMax": 3.799999952316284,
+      "gpuP50": 0.8155596343676249,
+      "gpuP95": 0.8473930358886719,
+      "passP50": [
+        0.3214060068130493,
+        null,
+        null,
+        0.25150999426841736,
+        0.09833300113677979,
+        0.14489500224590302,
+        0.03291599825024605
+      ],
+      "worstFrame": "worst frame #11: js 3.80 ms (sim 0.30 x1 steps, render 3.50)\n  sections: sim.physics 0.10  sim.quest 0.20  r.world 0.10  r.present 3.30  r.overlay 0.10  unattributed 0.00 (GC/JIT/driver)"
+    },
+    {
+      "name": "60s walk",
+      "avgFps": 60.009864426802146,
+      "jsAvg": 1.438461529400838,
+      "jsP95": 1.899999976158142,
+      "jsMax": 4.5,
+      "gpuP50": 0.814235211478045,
+      "gpuP95": 0.8518199920654297,
+      "passP50": [
+        0.3208329975605011,
+        null,
+        null,
+        0.2517699897289276,
+        0.09796799719333649,
+        0.14531199634075165,
+        0.03296799957752228
+      ],
+      "worstIntervalMs": 19.40000000000873,
+      "over25": 0,
+      "worstFrame": "worst frame #1838: js 4.50 ms (sim 0.30 x1 steps, render 4.20)\n  sections: sim.physics 0.20  r.world 0.10  r.ui 0.10  r.present 3.90  unattributed 0.20 (GC/JIT/driver)"
+    }
+  ]
+}

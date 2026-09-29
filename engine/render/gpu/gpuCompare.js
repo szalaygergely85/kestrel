@@ -1,4 +1,5 @@
-import { KIND_TERRAIN } from '../GBuffer.js';
+import { KIND_TERRAIN, FACE_PACKED } from '../GBuffer.js';
+import { unpackNormalOct } from '../../voxel/octNormal.js';
 
 // US-029 tech notes item 7 / AC "Parity page": `compareCells` is the pure,
 // Node-testable comparison core; `runGpuCompare` drives it against a real
@@ -48,6 +49,7 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  * @param {Uint8Array} gpuFg readPixels output, same layout
  * @param {Uint8Array} gpuBg readPixels output, same layout
  * @param {Uint8Array} kind gbuf.kind
+ * @param {boolean} [k8NoCap] ME-08b 8a: the fgCap applies to non-kind-8 cells only (kind-8 outliers still count toward maxOutsideFrac)
  * @param {Uint8Array} [rule] gbuf.rule, optional (per-rule mismatch breakdown)
  * @param {Uint16Array} [mat] gbuf.mat, optional (mat==0 count)
  * @param {number} [maxOutsideFrac] Architect review 1 item 5 tolerance ruling
@@ -59,7 +61,7 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  *   world_m1 spawn colour gap and the stair near-miss once BUG-OWN-001 (the
  *   DDA sky `break`) is fixed; a real bug still fails this bar.
  */
-export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0) {
+export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64, k8NoCap = false) {
   const n = cols * rows;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
@@ -69,9 +71,13 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   // a cell once if ANY channel is outside tolerance (the already-computed
   // `cellOutside` flag below); `outsideFrac` is now `cellsOutside / nonSky`.
   let cellsOutside = 0;
+  // ME-08b 8a: kind-8 vs other split of the colour stats (reported; fgMax/bgMax above stay all-kinds).
+  let k8Outside = 0, fgMaxNonK8 = 0, bgMaxNonK8 = 0;
   let matZeroCount = 0, poisonedSurvivors = 0;
   const ruleMismatch = new Array(9).fill(0);
   const ruleTotal = new Array(9).fill(0);
+  // ME-06 locator (reported only): non-edge glyph mismatches per JS kind and per sixth of the screen height.
+  const mismatchByKind = new Array(16).fill(0), mismatchByRow6 = new Array(6).fill(0), outsideByKind = new Array(16).fill(0), outsideSample = [];
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -95,7 +101,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
       const glyphMismatch = jsFg[fi + 3] !== gpuFg[fi + 3];
       if (!edge) {
         nonEdgeChecked++;
-        if (glyphMismatch) glyphMismatchNonEdge++;
+        if (glyphMismatch) { glyphMismatchNonEdge++; mismatchByKind[kind[i] & 15]++; mismatchByRow6[Math.min(5, (y * 6 / rows) | 0)]++; }
       }
 
       let cellOutside = false;
@@ -105,11 +111,12 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
         fgSumAbs += dFg; bgSumAbs += dBg;
         if (dFg > fgMax) fgMax = dFg;
         if (dBg > bgMax) bgMax = dBg;
+        if (kind[i] !== 8) { if (dFg > fgMaxNonK8) fgMaxNonK8 = dFg; if (dBg > bgMaxNonK8) bgMaxNonK8 = dBg; }
         if (dFg > TOLERANCE) { fgOutside++; cellOutside = true; }
         if (dBg > TOLERANCE) { bgOutside++; cellOutside = true; }
         fgSamples++;
       }
-      if (cellOutside) cellsOutside++;
+      if (cellOutside) { cellsOutside++; if (kind[i] === 8) k8Outside++; outsideByKind[kind[i] & 15]++; if (outsideSample.length < 60) outsideSample.push(x, y, jsFg[fi], jsFg[fi + 1], jsFg[fi + 2], gpuFg[fi], gpuFg[fi + 1], gpuFg[fi + 2], jsBg[fi], gpuBg[fi]); }
 
       if (rule) {
         const r = rule[i];
@@ -125,13 +132,14 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   // exact-zero rule; a positive fraction also requires fgMax/bgMax <= 64 so
   // the allowance can never mask an actually-wrong colour, only a band flip.
   const outsideOk = maxOutsideFrac > 0
-    ? outsideFrac <= maxOutsideFrac && fgMax <= 64 && bgMax <= 64
+    ? outsideFrac <= maxOutsideFrac && (k8NoCap ? fgMaxNonK8 <= fgCap && bgMaxNonK8 <= fgCap : fgMax <= fgCap && bgMax <= fgCap)
     : fgOutside === 0 && bgOutside === 0;
   return {
     nonSky, edgeCells, nonEdgeChecked, glyphMismatchNonEdge, glyphMatchPct,
-    fgOutside, bgOutside, fgMax, bgMax, cellsOutside, outsideFrac,
+    fgOutside, bgOutside, fgMax, bgMax, cellsOutside, outsideFrac, k8Outside, fgMaxNonK8, bgMaxNonK8,
     fgMeanAbs: fgSamples ? fgSumAbs / fgSamples : 0, bgMeanAbs: fgSamples ? bgSumAbs / fgSamples : 0,
     matZeroCount, ruleMismatch, ruleTotal, poisonedSurvivors,
+    mismatchByKind, mismatchByRow6, outsideByKind, outsideSample,
     pass: glyphMatchPct >= 99 && outsideOk && poisonedSurvivors === 0,
   };
 }
@@ -155,6 +163,79 @@ const _f32ViewBuf = new ArrayBuffer(4);
 const _f32View = new Float32Array(_f32ViewBuf);
 const _u32View = new Uint32Array(_f32ViewBuf);
 function u32ToF32(u) { _u32View[0] = u >>> 0; return _f32View[0]; }
+
+/**
+ * ME-06 (27.7 item 3, `?gpucompare=mesh`): unpacks one side's
+ * `readbackGeometry()` result (`giBuf`/`gaBuf`/`depthBuf`, the same
+ * RGBA_INTEGER-shaped Uint32Arrays `compareGeometry` reads as its "GPU"
+ * argument) into a plain `{kind, mat, planeId, u, v, depth}` object shaped
+ * like a `GBuffer` + a depth array - so a GPU-vs-GPU comparison (dda vs
+ * mesh, neither side is the CPU oracle) can pass one side into
+ * `compareGeometry`'s `gbuf`/`depthArr` parameters unchanged, reusing its
+ * exact kind/mat/planeId/depth/uv rules instead of a second implementation.
+ * Test-only (allocates 6 typed arrays); never called from the frame loop.
+ * @param {Uint32Array} giBuf @param {Uint32Array} gaBuf @param {Uint32Array} depthBuf
+ * @param {number} cols @param {number} rows
+ */
+export function unpackReadback(giBuf, gaBuf, depthBuf, cols, rows) {
+  const n = cols * rows;
+  const kind = new Uint8Array(n), mat = new Uint16Array(n), planeId = new Int32Array(n);
+  const u = new Float32Array(n), v = new Float32Array(n), depth = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    kind[i] = giBuf[i * 4 + 1] & 0xff;
+    mat[i] = (giBuf[i * 4 + 1] >>> 16) & 0xffff;
+    planeId[i] = giBuf[i * 4] | 0;
+    u[i] = u32ToF32(gaBuf[i * 4]);
+    v[i] = u32ToF32(gaBuf[i * 4 + 1]);
+    depth[i] = u32ToF32(depthBuf[i * 4]);
+  }
+  return { kind, mat, planeId, u, v, depth };
+}
+
+export const MIGRATION_CATS = ['match', 'voxel', 'terrainGrid', 'kindOther', 'glyphOther', 'colourOther'];
+
+/**
+ * ME-06 (`?gpucompare=mesh`): classifies every cell of a dda-vs-mesh pose into
+ * one of MIGRATION_CATS (index = value written to `cat`):
+ *  voxel       exactly one side kind 8 (silhouette/edge cells; both-kind-8 cells fall through to glyph/colour since ME-08b)
+ *  terrainGrid dda or mesh kind 7 and kind/glyph/colour differs (D-031: DDA 8 m vs mesh 2 m band)
+ *  kindOther   kind differs, neither 7 nor 8
+ *  glyphOther  same kind, glyph differs
+ *  colourOther same kind + glyph, an fg/bg rgb channel differs by more than TOLERANCE
+ * Fg/bg are readback layout (r,g,b,glyph) x n. Returns `{cat, counts, pct}`.
+ * @param {ArrayLike<number>} ddaKind @param {ArrayLike<number>} meshKind
+ */
+export function classifyMigrationCells(ddaKind, meshKind, ddaFg, ddaBg, meshFg, meshBg, n) {
+  const cat = new Uint8Array(n);
+  const counts = { match: 0, voxel: 0, terrainGrid: 0, kindOther: 0, glyphOther: 0, colourOther: 0 };
+  for (let i = 0; i < n; i++) {
+    const a = ddaKind[i], b = meshKind[i], fi = i * 4;
+    const glyphDiff = ddaFg[fi + 3] !== meshFg[fi + 3];
+    let colDiff = false;
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(ddaFg[fi + k] - meshFg[fi + k]) > TOLERANCE || Math.abs(ddaBg[fi + k] - meshBg[fi + k]) > TOLERANCE) colDiff = true;
+    }
+    let c;
+    if ((a === 8 || b === 8) && a !== b) c = 1;
+    else if (a !== b) c = (a === 7 || b === 7) ? 2 : 3;
+    else if (glyphDiff || colDiff) c = a === 7 ? 2 : glyphDiff ? 4 : 5;
+    else c = 0;
+    cat[i] = c;
+    counts[MIGRATION_CATS[c]]++;
+  }
+  const pct = {};
+  for (const k of MIGRATION_CATS) pct[k] = n ? 100 * counts[k] / n : 0;
+  return { cat, counts, pct };
+}
+
+// ME-06 per-field diff helpers: FACE_PACKED (terrain, v2) cells keep the
+// packed normal's bits in `aoD` (GBuffer.js), so those compare bit-exact.
+let _aoAlias = null;
+const _nA = new Float64Array(3), _nB = new Float64Array(3);
+function gbufAoBits(gbuf, i) {
+  if (!_aoAlias || _aoAlias.buffer !== gbuf.aoD.buffer) _aoAlias = new Uint32Array(gbuf.aoD.buffer, gbuf.aoD.byteOffset, gbuf.aoD.length);
+  return _aoAlias[i] >>> 0;
+}
 
 export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, rows) {
   const n = cols * rows;
@@ -180,14 +261,33 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   // first "ALL PASS" of this story produced). Reported only here - the
   // caller (a voxel-specific pose) gates on these being non-zero.
   let k8Cpu = 0, k8Gpu = 0;
+  let faceViol = 0, zViol = 0, aoViol = 0, faceSample = -1, aoSampleCpu = 0, aoSampleGpu = 0, aoSampleIdx = -1, nrmViol = 0, nrmMaxDeg = 0;
+  const matSample = [];
+  let terrainUvMaxErr = 0, terrainUvMaxAt = null; // ME-06 per-field diff, reported only
+  // ME-06 (27.15.5a item 6 / backlog "voxel poses excepted until ME-08,
+  // report k8 gap only"): the mesh raster pass does not draw voxel props
+  // yet (ME-08), so a CPU cell the JS twin marked kind-8 legitimately shows
+  // something else (terrain/sky/wall) on the GPU side - not a bug. These
+  // "ExclK8" counters are the same tally as the ones above with every cell
+  // where the CPU (JS) side is kind-8 skipped entirely, so a caller judging
+  // the mesh renderer can use `kindMatchPctExclK8`/`holesExclK8` instead of
+  // the plain ones without a second implementation. Reported only - `pass`
+  // above is unchanged (still the strict all-kinds bar other callers rely on).
+  let kindCheckedExclK8 = 0, kindMismatchExclK8 = 0, holesExclK8 = 0;
+  // ME-08b 8a (27.16): cells with any depth/uv/ao/z/face/nrm violation whose kind is not 8 (reported only).
+  let violNonK8 = 0, geomViolCells = 0; // geomViolCells: distinct cells with any depth/uv/ao/z/face/nrm violation
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       const gpuKind = giBuf[i * 4 + 1] & 0xff;
-      if (kind[i] === 8) k8Cpu++;
+      const cpuIsVoxel = kind[i] === 8;
+      if (cpuIsVoxel) k8Cpu++;
       if (gpuKind === 8) k8Gpu++;
-      if (gpuKind === 0 && kind[i] !== 0) holes++;
+      if (gpuKind === 0 && kind[i] !== 0) {
+        holes++;
+        if (!cpuIsVoxel) holesExclK8++;
+      }
       const edge = isEdgeCell(kind, cols, rows, x, y, i) || isEdgeCellU32(giBuf, cols, rows, x, y, i);
       if (edge) {
         edgeCells++;
@@ -195,13 +295,20 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
         continue;
       }
       kindChecked++;
-      if (kind[i] !== gpuKind) { kindMismatch++; continue; }
+      if (!cpuIsVoxel) kindCheckedExclK8++;
+      if (kind[i] !== gpuKind) {
+        kindMismatch++;
+        if (!cpuIsVoxel) kindMismatchExclK8++;
+        continue;
+      }
       if (kind[i] === 0) continue; // both agree "sky" - nothing else to compare
 
       matched++;
+      const violBefore = depthViol + uvViol + aoViol + zViol + faceViol + nrmViol;
       const gpuMat = (giBuf[i * 4 + 1] >>> 16) & 0xffff;
       const gpuPlaneId = giBuf[i * 4] | 0; // ToInt32 - matches JS's Int32Array planeId
       if (mat[i] === gpuMat) matEqual++;
+      else if (matSample.length < 12) matSample.push(x, y, mat[i], gpuMat, +u[i].toFixed(3), +v[i].toFixed(3));
       if (planeId[i] === gpuPlaneId) planeEqual++;
 
       const gpuU = u32ToF32(gaBuf[i * 4]);
@@ -217,13 +324,45 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       // (1% of depth) for kind 7, keep 1e-3 for sector kinds.
       const uvTol = (kind[i] === KIND_TERRAIN ? 0.01 : 1e-3) * Math.max(1, Math.abs(cpuDepth));
       if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) uvViol++;
+      if (kind[i] === KIND_TERRAIN && Number.isFinite(cpuDepth)) { const e = Math.max(Math.abs(gpuU - u[i]), Math.abs(gpuV - v[i])); if (e > terrainUvMaxErr) { terrainUvMaxErr = e; terrainUvMaxAt = [x, y, u[i], v[i], gpuU, gpuV, cpuDepth, gpuDepth]; } }
+      // ME-06 per-field diff (reported only, never gates `pass`): face, GA.z
+      // (world z) and GA.w (aoD; the packed normal bits for FACE_PACKED
+      // cells) - the fields the rules above don't look at but shading does.
+      if (gbuf.face) {
+        const gpuFace = (giBuf[i * 4 + 1] >>> 8) & 0xf; // bits 12-15 carry other flags
+        if (gbuf.face[i] !== gpuFace) { if (!faceViol) faceSample = gbuf.face[i] * 256 + gpuFace; faceViol++; }
+        else if (gpuFace === FACE_PACKED && gbuf.aoD) {
+          // Mesh path: the GPU normal is in GI.z; the JS twin keeps it in aoD's bits.
+          const cb = gbufAoBits(gbuf, i), gb = giBuf[i * 4 + 2] >>> 0;
+          if (cb !== gb) {
+            unpackNormalOct(cb, _nA); unpackNormalOct(gb, _nB);
+            const dot = _nA[0] * _nB[0] + _nA[1] * _nB[1] + _nA[2] * _nB[2];
+            const ang = Math.acos(Math.min(1, Math.max(-1, dot))) * 57.29578;
+            if (ang > nrmMaxDeg) nrmMaxDeg = ang;
+            if (ang > 0.5) nrmViol++;
+          }
+        } else if (gpuFace !== FACE_PACKED && gbuf.aoD) {
+          // FACE_PACKED cells hold normal bits (CPU: aoD, mesh GPU: GI.z) - skipped.
+          // GPU writes 1e30 for "no AO" where the JS side writes Infinity.
+          const ca = gbuf.aoD[i], ga0 = u32ToF32(gaBuf[i * 4 + 3]), ga = ga0 >= 1e29 ? Infinity : ga0;
+          if (!(ca === ga || (Number.isFinite(ca) && Number.isFinite(ga) && Math.abs(ca - ga) <= 1e-3 * Math.max(1, Math.abs(ca))))) {
+            if (!aoViol) { aoSampleCpu = ca; aoSampleGpu = ga; aoSampleIdx = i; }
+            aoViol++;
+          }
+        }
+      }
+      if (gbuf.z && Number.isFinite(cpuDepth) && Math.abs(u32ToF32(gaBuf[i * 4 + 2]) - gbuf.z[i]) > 1e-3 * Math.max(1, Math.abs(cpuDepth))) zViol++;
+      if (depthViol + uvViol + aoViol + zViol + faceViol + nrmViol > violBefore) { geomViolCells++; if (kind[i] !== 8) violNonK8++; }
     }
   }
 
   const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
+  const kindMatchPctExclK8 = kindCheckedExclK8 ? 100 * (kindCheckedExclK8 - kindMismatchExclK8) / kindCheckedExclK8 : 100;
   return {
     kindChecked, kindMismatch, kindMatchPct,
+    kindCheckedExclK8, kindMismatchExclK8, kindMatchPctExclK8, holesExclK8, // ME-06: voxel (kind-8) cells excluded, see comment above
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
+    faceViol, zViol, aoViol, violNonK8, geomViolCells, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
     pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0,

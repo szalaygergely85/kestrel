@@ -1,0 +1,26 @@
+{
+  "date": "2026-09-29",
+  "sha": "80fc904",
+  "mode": "flicker",
+  "grid": null,
+  "headless": true,
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "gpuRenderer": "ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "ok": null,
+  "rows": [
+    {
+      "name": "flicker",
+      "pass": null,
+      "metrics": {
+        "draws": 0,
+        "gpuP50": 1.042705999687314,
+        "gpuP95": 5.2964558731764555
+      }
+    }
+  ],
+  "raw": {
+    "draws": 0,
+    "gpuP50": 1.042705999687314,
+    "gpuP95": 5.2964558731764555
+  }
+}

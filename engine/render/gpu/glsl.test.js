@@ -14,6 +14,8 @@ import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 import { MESH_VERT_SRC } from './glsl/mesh.vert.js';
 import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
+import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
+import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { makeOk } from '../../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -164,10 +166,58 @@ ok('mesh.frag.js: no gl_FragDepth', !MESH_FRAG_SRC.includes('gl_FragDepth'));
 // pixel by construction. Its one gl_FragCoord use is `.w`, the hardware
 // perspective-correct 1/w (27.5 "w_clip = d") - never a cell address.
 ok('mesh.frag.js reads gl_FragCoord only once, as the perspective-correct depth reciprocal (27.5 "w_clip = d"), never as a cell address', (MESH_FRAG_SRC.match(/gl_FragCoord/g) || []).length === 1 && MESH_FRAG_SRC.includes('1.0 / gl_FragCoord.w'));
-ok('mesh.frag.js writes the same 3 sub-sample outputs as dda.frag.js (outGI uvec2, outGA uvec4, outDepth uint)', MESH_FRAG_SRC.includes('out uvec2 outGI') && MESH_FRAG_SRC.includes('out uvec4 outGA') && MESH_FRAG_SRC.includes('out uint outDepth'));
+// ME-06 (27.1 item 5): GI widened RG32UI -> RGBA32UI - every raster/march
+// writer now declares `out uvec4 outGI` (never uvec2).
+ok('mesh.frag.js writes the same 3 sub-sample outputs as dda.frag.js (outGI uvec4, outGA uvec4, outDepth uint)', MESH_FRAG_SRC.includes('out uvec4 outGI') && MESH_FRAG_SRC.includes('out uvec4 outGA') && MESH_FRAG_SRC.includes('out uint outDepth'));
 ok('mesh.frag.js contains floatBitsToUint (same all-uint MRT convention)', MESH_FRAG_SRC.includes('floatBitsToUint'));
 ok('mesh.frag.js contains the AO_WALL formula (literal to rasterJS.js computeAoD)', MESH_FRAG_SRC.includes('float zc = a2 - h;') && MESH_FRAG_SRC.includes('float fr = u - a5;'));
 ok('mesh.frag.js contains the AO_PLANE formula (literal to rasterJS.js computeAoD)', MESH_FRAG_SRC.includes('float fx = u - a3, fy = v - a4;'));
+
+// ME-06 (docs/backlog.md, docs/architecture.md 27.1 item 5, 27.4): every GI
+// writer/copy-through now declares `out uvec4 outGI` (RGBA32UI) - the
+// kind-7 (terrain) normal moves to GI.z, objectId to GI.w.
+ok('dda.frag.js writes out uvec4 outGI', DDA_FRAG_SRC.includes('out uvec4 outGI'));
+ok('voxel.frag.js writes out uvec4 outGI', VOXEL_FRAG_SRC.includes('out uvec4 outGI'));
+ok('terrain.frag.js writes out uvec4 outGI', TERRAIN_FRAG_SRC.includes('out uvec4 outGI'));
+ok('resolve.frag.js writes out uvec4 outGI', RESOLVE_FRAG_SRC.includes('out uvec4 outGI'));
+ok('terrain.frag.js no longer writes the normal into GA.w (aoD is +Inf again for kind 7)', TERRAIN_FRAG_SRC.includes('floatBitsToUint(1.0e30)') && !/outGA = uvec4\([^)]*packNormalOct/.test(TERRAIN_FRAG_SRC));
+ok('resolve.frag.js propagates the winning sub-sample\'s GI.z/GI.w through (kind-7 normal survives the vote)', /outGI = uvec4\(uint\(pk\[nearest\]\)[^;]*sgiWin\.z[^;]*sgiWin\.w\)/.test(RESOLVE_FRAG_SRC));
+
+// ME-06: terrain.vert.js - the kind-7 raster variant (a different vertex
+// layout than mesh.vert.js's static one: pos+nrm only, no uv/flat/aux -
+// 27.3 "terrain layout has no uv"). Like mesh.frag.js, this is real
+// geometry landing on its own pixel by construction - no per-cell ADDRESS
+// decoding, so checkOnlyAddressLine (fullscreen-triangle passes only)
+// doesn't apply here.
+ok('terrain.vert.js: no gl_FragCoord (vertex stage)', !TERRAIN_VERT_SRC.includes('gl_FragCoord'));
+ok('terrain.vert.js declares the 2 TERRAIN_VERTEX_LAYOUT attributes', [0, 1].every((loc) => new RegExp(`layout\\(location = ${loc}\\) in`).test(TERRAIN_VERT_SRC)));
+ok('terrain.vert.js unpacks the normal in the vertex stage (smooth-interpolated, not a flat face constant)', TERRAIN_VERT_SRC.includes('unpackNormalOct(aNrmBits)') && TERRAIN_VERT_SRC.includes('out vec3 vNormal'));
+ok('terrain.vert.js reads uModel/uViewProj (mesh-local -> world -> clip)', TERRAIN_VERT_SRC.includes('uModel') && TERRAIN_VERT_SRC.includes('uViewProj'));
+ok('terrain.vert.js does not build its own projection matrix', !/tan\(|sin\(|cos\(/.test(TERRAIN_VERT_SRC));
+ok('terrain.vert.js raster frag writes the same 3 sub-sample outputs, GI.z = packed normal, GI.w = objectId', TERRAIN_RASTER_FRAG_SRC.includes('out uvec4 outGI') && TERRAIN_RASTER_FRAG_SRC.includes('out uvec4 outGA') && TERRAIN_RASTER_FRAG_SRC.includes('out uint outDepth') && TERRAIN_RASTER_FRAG_SRC.includes('packNormalOct(N)') && TERRAIN_RASTER_FRAG_SRC.includes('uint(uObjectId)'));
+ok('terrain.vert.js raster frag aoD (GA.w) is +Inf (kind 7 has no seam AO)', TERRAIN_RASTER_FRAG_SRC.includes('floatBitsToUint(1.0e30)'));
+ok('terrain.vert.js raster frag reuses the march pass\' shared type-lookup snippets (no drifting second copy)', TERRAIN_RASTER_FRAG_SRC.includes('farTypeNearest') && TERRAIN_RASTER_FRAG_SRC.includes('nearTypeNearest'));
+ok('terrain.vert.js raster frag reads gl_FragCoord only once, as the perspective-correct depth reciprocal, never as a cell address', (TERRAIN_RASTER_FRAG_SRC.match(/gl_FragCoord/g) || []).length === 1 && TERRAIN_RASTER_FRAG_SRC.includes('1.0 / gl_FragCoord.w'));
+ok('terrain.vert.js raster frag carves structure footprints (uStructFoot/uStructCount + discard, the DDA buildSkips rule)', TERRAIN_RASTER_FRAG_SRC.includes('uniform vec4 uStructFoot[') && TERRAIN_RASTER_FRAG_SRC.includes('uniform int uStructCount') && TERRAIN_RASTER_FRAG_SRC.includes('discard'));
+
+// ME-08a (27.16 items 2-4): voxel draws extend the mesh.vert/frag family.
+ok('mesh.vert.js declares uObjectId/uAxisAligned uniforms', MESH_VERT_SRC.includes('uniform int uObjectId;') && MESH_VERT_SRC.includes('uniform int uAxisAligned;'));
+ok('mesh.vert.js outputs flat vec3 vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits))', MESH_VERT_SRC.includes('flat out vec3 vNrmW;') && MESH_VERT_SRC.includes('vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));'));
+ok('mesh.frag.js reads flat in vec3 vNrmW + uObjectId/uAxisAligned', MESH_FRAG_SRC.includes('flat in vec3 vNrmW;') && MESH_FRAG_SRC.includes('uniform int uObjectId;') && MESH_FRAG_SRC.includes('uniform int uAxisAligned;'));
+ok('mesh.frag.js GI.w = uint(uObjectId), kind 8 packs the normal for face 7', MESH_FRAG_SRC.includes('uint(uObjectId)') && MESH_FRAG_SRC.includes('packNormalOct(vNrmW)') && MESH_FRAG_SRC.includes('roundedFace(vNrmW)'));
+{
+  // roundedFace body (the 3 comparison lines) must be string-equal with voxel.frag.js (whitespace-normalised).
+  const norm = (s) => s.replace(/\s+/g, ' ').trim();
+  const grab = (src) => {
+    const a = src.indexOf('float anx = abs(nWorld.x)');
+    const endMark = 'hitFace = nWorld.z >= 0.0 ? FACE_U : FACE_D;';
+    const b = src.indexOf(endMark, a);
+    return a < 0 || b < 0 ? null : norm(src.slice(a, b + endMark.length));
+  };
+  const vb = grab(VOXEL_FRAG_SRC), mb = grab(MESH_FRAG_SRC);
+  ok('mesh.frag.js roundedFace body is string-equal with voxel.frag.js (whitespace-normalised)', vb !== null && vb === mb, String(mb));
+}
+
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

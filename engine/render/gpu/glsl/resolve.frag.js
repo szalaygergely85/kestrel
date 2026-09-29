@@ -22,11 +22,11 @@ import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
 export const MAX_SUB = 16; // 4x4, the architecture's hard cap (n <= 4)
 
 export const RESOLVE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
-layout(location = 0) out uvec2 outGI;
+layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
 layout(location = 2) out uint outDepth;
 
-uniform usampler2D uSGI;    // RG32UI, sub-grid cols*n x rows*n
+uniform usampler2D uSGI;    // RGBA32UI (x=planeId, y=kind|face|mask|cov|mat, z=normal, w=objectId - ME-06 27.4), sub-grid
 uniform usampler2D uSGA;    // RGBA32UI (floatBitsToUint u,v,z,aoD), sub-grid
 uniform usampler2D uSDepth; // R32UI (floatBitsToUint dist), sub-grid
 uniform usampler2D uMask;   // R8UI, cols x rows (per-cell UI overlay bit)
@@ -92,12 +92,18 @@ void main() {
 
   ivec2 sc = ivec2(cell.x * uN + (nearest - (nearest / uN) * uN), cell.y * uN + (nearest / uN));
   if (kind == 0u) {
-    outGI = uvec2(0u, mask << 12u);
+    outGI = uvec4(0u, mask << 12u, 0u, 0u);
     outGA = uvec4(0u);
     outDepth = 0x7f800000u;
   } else {
-    uint faceBits = (texelFetch(uSGI, sc, 0).y >> 8u) & 0xfu;
-    outGI = uvec2(uint(pk[nearest]), kind | (faceBits << 8u) | (mask << 12u) | (uint(cov) << 13u) | (mk[nearest] << 16u));
+    // ME-06 (27.4): GI.z/GI.w (normal/objectId) are per-sample data, not
+    // votable keys - they ride through unchanged from the SAME winning
+    // sub-sample (sc) that already supplies GA/DEPTH (kind 7's packed
+    // normal is written there by the raster/march pass; every other kind
+    // writes 0 for both, so this is a no-op copy for them).
+    uvec4 sgiWin = texelFetch(uSGI, sc, 0);
+    uint faceBits = (sgiWin.y >> 8u) & 0xfu;
+    outGI = uvec4(uint(pk[nearest]), kind | (faceBits << 8u) | (mask << 12u) | (uint(cov) << 13u) | (mk[nearest] << 16u), sgiWin.z, sgiWin.w);
     outGA = texelFetch(uSGA, sc, 0);
     outDepth = texelFetch(uSDepth, sc, 0).x;
   }

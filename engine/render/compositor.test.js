@@ -301,6 +301,47 @@ function worldDefFor(origin) {
   ok('fillSky still paints every non-model cell with Infinity depth (sky), unaffected by the guard', skyCells > 0 && skyCellsInfiniteDepth === skyCells);
 }
 
+// --- ME-08b (27.16 item 7): renderer === 'mesh' draws voxel props through the
+// mesh twin (addVoxelInstances -> rasterJS) and must NOT run castModels. -----
+{
+  const registry = {
+    keys(kind) { return kind === 'model' ? ['bear'] : []; },
+    model(key) { return key === 'bear' ? { voxel: quadruped12Fixture } : null; },
+  };
+  let nextId = 1;
+  const idMap = new Map();
+  const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, nextId++); return idMap.get(key); } };
+  const pool = new VoxelPool();
+  pool.bind(registry, table);
+  const world = new World();
+  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
+  const fb = makeFb();
+  fb.voxelPool = pool;
+  fb.renderer = 'mesh';
+  pool.beginFrame();
+  pool.pushInstance('bear', 0, 0, 0, 180);
+  pool.pushInstance('bear', 0.6, 0.5, 0, 180);
+  pool.project(cam, fb.rt);
+  renderWorld(fb, world, cam);
+  let k8 = 0, slotOk = 0, depthOk = 0;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (fb.gbuf.kind[i] !== KIND_MODEL) continue;
+    k8++;
+    const slot = (fb.gbuf.planeId[i] >>> 24) & 0xF;
+    if (slot < pool.list.length) slotOk++;
+    if (Number.isFinite(fb.depth.depth[i])) depthOk++;
+  }
+  ok('mesh renderer: voxel pool instances write kind-8 cells', k8 > 0, String(k8));
+  ok('mesh renderer: kind-8 planeId carries the pool slot in bits 24-27', k8 > 0 && slotOk === k8);
+  ok('mesh renderer: kind-8 cells have finite depth', k8 > 0 && depthOk === k8);
+  // Frame twice: castModels-free path is deterministic (no double draw).
+  const snap = fb.gbuf.kind.slice();
+  renderWorld(fb, world, cam);
+  let same = true;
+  for (let i = 0; i < snap.length; i++) if (snap[i] !== fb.gbuf.kind[i]) { same = false; break; }
+  ok('mesh renderer: repeated frame gives identical kind map', same);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

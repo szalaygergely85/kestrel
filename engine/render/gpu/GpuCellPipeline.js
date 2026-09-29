@@ -59,10 +59,19 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
 // the GPU raster pass - `renderer:'mesh'` only, additive (the default
 // `renderer:'dda'` path above is untouched by any of these).
 import { GpuDeviceGL2 } from './device/GpuDeviceGL2.js';
-import { MeshBuffers, STATIC_VERTEX_LAYOUT } from './MeshBuffers.js';
+import { MeshBuffers, STATIC_VERTEX_LAYOUT, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES } from './MeshBuffers.js';
 import { MESH_VERT_SRC } from './glsl/mesh.vert.js';
 import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
-import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC } from '../../mesh/DrawList.js';
+// ME-06 (docs/backlog.md, docs/architecture.md 27.4, 27.15.5): terrain in
+// the raster pass - its own program (`terrain.vert.js`'s kind-7 variant)
+// and a persistent `TerrainMeshSet` per bound `Terrain` (one `step()`/
+// `addToDrawList()` per rendered frame, exactly like the CPU's own amortised
+// band-flip rebuild - `_passRaster` never rebuilds inside a fixed step).
+import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
+import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
+import { KIND_TERRAIN } from '../GBuffer.js';
+import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
 import { projTerms, shearProjection } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 
@@ -115,7 +124,7 @@ export class GpuCellPipeline {
       // without `?terrain=0` - see main.js and this story's Programmer notes.
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
-      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0,
+      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
       // US-018 (architecture.md 16): real per-pass GPU ms, filled only
       // while `setPassTiming(true)` (F3 overlay open or `?bench=1`) - NaN
       // otherwise. `passMsP50`/`passMsP95` line up with `PASS_NAMES`.
@@ -201,13 +210,31 @@ export class GpuCellPipeline {
       this.progMesh = linkProgram(gl, MESH_VERT_SRC, MESH_FRAG_SRC);
       this._meshDevice = new GpuDeviceGL2(gl);
       this._meshBuffers = new MeshBuffers(this._meshDevice);
-      this._meshDrawList = new DrawList(64);
+      // ME-06: was 64 (level structures only, ME-04) - terrain items (9 near
+      // chunks + 1 stitch + up to `_farTiles.length` far tiles, e.g. 64 for
+      // overworld_far) push real worlds well past that, hence the shared
+      // MAX_DRAW_ITEMS cap (27.8's own preallocation constant) instead of a
+      // second, smaller ad hoc number.
+      this._meshDrawList = new DrawList(MAX_DRAW_ITEMS);
       this._meshViewProj = new Float64Array(16);
       this._meshViewProjF32 = new Float32Array(16);
       this._meshModelF32 = new Float32Array(16);
       this._meshFrustumPlanes = new Float64Array(24);
       this._meshTerms = { cols: 0, rows: 0, eyeX: 0, eyeY: 0, eyeZ: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, tanHalf: 0, planeDistX: 0, planeDistY: 0, horizonRow: 0, tanPitch: 0 };
       this._meshVao = gl.createVertexArray();
+      // ME-06 (27.4/27.15.5): terrain's own program/VAO - a different
+      // vertex layout (pos+nrm only, indexed) and its own near/far type
+      // texture lookup, so it cannot share `progMesh`/`_meshVao` (the
+      // DRAW_STATIC level-quad pipeline). One `TerrainMeshSet` per `Terrain`
+      // instance, shared with the JS twin via `terrainMeshSetFor`'s own
+      // WeakMap (27.15.5a item 6) - survives a world switch without leaking
+      // the old one - `dispose()` below never needs to walk it, GC does.
+      this.progMeshTerrain = linkProgram(gl, TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC);
+      this._meshTerrainVao = gl.createVertexArray();
+      // Structure footprints (x0, y0, x1, y1 per placed structure) for the
+      // terrain raster frag's carve (terrain.vert.js header) - filled per
+      // frame in `_passRaster`, allocated once.
+      this._meshStructFoot = new Float32Array(MAX_STRUCTS * 4);
     }
 
     // --- G-buffer + shade-output textures and every FBO built ON them
@@ -295,7 +322,10 @@ export class GpuCellPipeline {
     // alias is a free reinterpret-cast, matching `floatBitsToUint` exactly -
     // used only by the legacy `_repackAndUpload` ('upload' test-only source,
     // 14.1/US-029 compat - see `setSource`). ---
-    this._GI = new Uint32Array(2 * n);
+    // ME-06: _GI widens 2 -> 4 words/cell (RGBA32UI: z = kind-7 packed
+    // normal via the getAoAlias-style transfer `_repackAndUpload` does
+    // below, w = objectId, unused by this legacy path - 0).
+    this._GI = new Uint32Array(4 * n);
     const gaBuf = new ArrayBuffer(16 * n);
     this._GAf = new Float32Array(gaBuf); this._GA = new Uint32Array(gaBuf);
     const gdBuf = new ArrayBuffer(16 * n);
@@ -310,7 +340,7 @@ export class GpuCellPipeline {
     // ALWAYS averages over the sub-grid, so that path also mirrors its own
     // single sample into SGI/SGA/SDepth's (0,0,cols,rows) sub-rect and
     // `_passShade` binds `uN = 1` for it (see `setSource`/`_passShade`).
-    this._SGI = new Uint32Array(2 * n);
+    this._SGI = new Uint32Array(4 * n); // ME-06: mirrors _GI's widened shape
     const sgaBuf = new ArrayBuffer(16 * n);
     this._SGAf = new Float32Array(sgaBuf); this._SGA = new Uint32Array(sgaBuf);
     const sdepthBuf = new ArrayBuffer(4 * n);
@@ -326,6 +356,7 @@ export class GpuCellPipeline {
     this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
     this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
     this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
+    this._locsMeshTerrain = this.progMeshTerrain ? this._uniformLocs(this.progMeshTerrain, TERRAIN_MESH_UNIFORMS) : null;
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
     // plain per-frame loop over these bind-time arrays of [loc, tex, unit]
@@ -484,6 +515,13 @@ export class GpuCellPipeline {
       // until a world with `terrain.nearReady && activeNearLOD` is bound.
       ['uNearH', this.texNearH], ['uNearType', this.texNearType],
     ]);
+    // ME-06: the raster pass' own terrain program only needs the type
+    // (mat) lookup textures - no height sampling (real triangles supply
+    // z), no sub-sample input (it draws real geometry, not a fullscreen
+    // triangle).
+    this._meshTerrainBinds = this.progMeshTerrain ? this._buildBindTable(this._locsMeshTerrain, [
+      ['uFarType', this.texFarType], ['uNearType', this.texNearType],
+    ]) : null;
     // US-040 (15.2 item 4): pass A3 ping-pongs between set 1 (fboCastSub's
     // textures) and set 2 (fboTerrainSub's) - two bind tables sharing the
     // same sampler->unit mapping (both built from `_locsVoxel`), one per
@@ -523,6 +561,7 @@ export class GpuCellPipeline {
     this._setSamplerUniforms(this.progDeriv, this._derivBinds);
     this._setSamplerUniforms(this.progLight, this._lightBinds);
     this._setSamplerUniforms(this.progTerrain, this._terrainBinds);
+    if (this.progMeshTerrain) this._setSamplerUniforms(this.progMeshTerrain, this._meshTerrainBinds);
     // US-040: both voxel bind tables share the same sampler->unit mapping
     // (same reasoning as the terrain resolve tables above).
     this._setSamplerUniforms(this.progVoxel, this._voxelBindsSet1In);
@@ -648,12 +687,15 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshTerrain]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
-    // other data texture above is freed on teardown/context loss).
+    // other data texture above is freed on teardown/context loss). ME-06:
+    // the terrain program shares that same MeshBuffers/device cache, only
+    // its own VAO is separate.
     if (this._meshVao) gl.deleteVertexArray(this._meshVao);
+    if (this._meshTerrainVao) gl.deleteVertexArray(this._meshTerrainVao);
     if (this._meshBuffers) this._meshBuffers.dispose();
     if (this._meshDevice) this._meshDevice.dispose();
     if (this.timer) this.timer.dispose();
@@ -732,7 +774,7 @@ export class GpuCellPipeline {
     // Staging arrays sized by cols*rows / subCols*subRows (architecture.md
     // 9: allocated here, not per frame - same shapes as `_initGL`'s).
     const n = cols * rows;
-    this._GI = new Uint32Array(2 * n);
+    this._GI = new Uint32Array(4 * n); // ME-06: widened, see _initGL's own comment
     const gaBuf = new ArrayBuffer(16 * n);
     this._GAf = new Float32Array(gaBuf); this._GA = new Uint32Array(gaBuf);
     const gdBuf = new ArrayBuffer(16 * n);
@@ -740,7 +782,7 @@ export class GpuCellPipeline {
     const depthBuf = new ArrayBuffer(4 * n);
     this._DepthF = new Float32Array(depthBuf); this._Depth = new Uint32Array(depthBuf);
     this._MASK = new Uint8Array(n);
-    this._SGI = new Uint32Array(2 * n);
+    this._SGI = new Uint32Array(4 * n); // ME-06: widened
     const sgaBuf = new ArrayBuffer(16 * n);
     this._SGAf = new Float32Array(sgaBuf); this._SGA = new Uint32Array(sgaBuf);
     const sdepthBuf = new ArrayBuffer(4 * n);
@@ -996,7 +1038,9 @@ export class GpuCellPipeline {
     // entity binding yet); this only consumes what is already queued.
     this._voxelActiveThisFrame = false;
     if (useDda && this._voxelPool) {
-      this._ensureVoxelAtlas(this._voxelPool);
+      // ME-08a (27.16 item 6): the mesh path draws voxels as triangles in
+      // `_passRaster`, so the DDA voxel atlas (VRAM + upload) is skipped.
+      if (this.renderer !== 'mesh') this._ensureVoxelAtlas(this._voxelPool);
       this._voxelPool.project(this._cam, this.rt);
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
@@ -1302,6 +1346,13 @@ export class GpuCellPipeline {
       gl.uniform1f(locS.uTerrainFogCurve, fogRec.curve || 1);
       if (nearRGB) gl.uniform3f(locS.uTerrainFogNearRGB, nearRGB[0], nearRGB[1], nearRGB[2]);
       if (farRGB) gl.uniform3f(locS.uTerrainFogFarRGB, farRGB[0], farRGB[1], farRGB[2]);
+      // BUG-GPU-005: the edge pass gates kind-7 cells on the same terrain fog.
+      const locEd = this._locsEdge;
+      gl.useProgram(this.progEdge);
+      gl.uniform1f(locEd.uTerrainFogStart, fogRec.start);
+      gl.uniform1f(locEd.uTerrainFogFull, fogRec.full);
+      gl.uniform1f(locEd.uTerrainFogCurve, fogRec.curve || 1);
+      gl.useProgram(this.progShade);
     }
     // US-026a S5 (23.4 near-detail): a DIFFERENT, more lenient gate than
     // `uNearReady` above - literal twin of terrainShade.js's
@@ -1475,11 +1526,13 @@ export class GpuCellPipeline {
    * `edge` read whichever set was written last exactly as they already do
    * for the DDA path (`_subSetCur`) - no changes there.
    *
-   * Scope (this story): `DRAW_STATIC` items only (engine/mesh/levelMesh.js
-   * level meshes - the tower). Voxel/terrain items in the draw list are
-   * skipped (a later story, ME-06/08, adds their own pipelines here) -
-   * their cells simply stay at the "nothing drawn" sentinel this pass
-   * clears to, same as any other kind-0 cell.
+   * Scope: `DRAW_STATIC` items (engine/mesh/levelMesh.js level meshes - the
+   * tower, ME-04) and, since ME-06, `DRAW_TERRAIN` items (engine/mesh/
+   * terrainMesh.js near/far/stitch chunks) - drawn by a second program/VAO
+   * right after the level-mesh loop, into the SAME sub-sample targets (one
+   * shared depth buffer, so a structure and the terrain under it never
+   * seam). Voxel items (ME-08) are still skipped - their cells stay at the
+   * "nothing drawn" sentinel this pass clears to, same as any kind-0 cell.
    */
   _passRaster() {
     const gl = this.gl, loc = this._locsMesh;
@@ -1501,6 +1554,26 @@ export class GpuCellPipeline {
     // recipe constant read here on purpose (this story's scope is the
     // tower; a real fogFarM wiring is ME-06's terrain-parity concern).
     addStructures(list, world, cam, this._levelMeshCache, 2000);
+    // ME-06 (27.15.5): one `TerrainMeshSet` per bound `Terrain` instance,
+    // built lazily and advanced by at most 2 ms per RENDERED frame (never
+    // inside a fixed step, never inside this draw loop itself) - the same
+    // amortised band-flip rebuild the CPU near-band bake already uses.
+    // `terrain.farReady`/`.near` gate exactly like the DDA terrain pass
+    // (`_terrainActiveThisFrame`), so an unbaked terrain draws nothing
+    // (matching the DDA path's own no-op until `farReady`).
+    let terrainMeshSet = null;
+    if (this.terrainEnabled && world && world.terrain) {
+      terrainMeshSet = terrainMeshSetFor(world.terrain);
+      terrainMeshSet.step(2);
+      terrainMeshSet.addToDrawList(list, cam);
+    }
+    // ME-08a (27.16 item 5): voxel prop instances (already posed + screen-
+    // culled by `VoxelPool.project` in `frame()`), after the terrain items
+    // and before the frustum cull (a second, cheap cull).
+    const voxelPool = this._voxelPool;
+    if (voxelPool && voxelPool.list.length > 0) {
+      addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
+    }
     list.cull(this._meshFrustumPlanes);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRasterSub);
@@ -1541,7 +1614,112 @@ export class GpuCellPipeline {
       gl.uniformMatrix4fv(loc.uModel, false, M);
       gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
       gl.uniform1f(loc.uZBase, item.zBase);
+      gl.uniform1i(loc.uObjectId, item.objectId);
+      gl.uniform1i(loc.uAxisAligned, 0);
       gl.drawArrays(gl.TRIANGLES, item.rangeFirst * 3, item.rangeCount * 3);
+    }
+
+    // ME-08a (27.16 items 1/4): voxel props - one draw per (instance, part)
+    // over `mesh.ranges[p]`, `uModel` = that part's world matrix. Same
+    // program/VAO/depth buffer as the static loop above.
+    let voxelDraws = 0;
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_VOXEL || !item.mesh) continue;
+      const mesh = item.mesh;
+      const entry = this._meshBuffers.get(mesh);
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+      for (const attr of STATIC_VERTEX_LAYOUT) {
+        gl.enableVertexAttribArray(attr.location);
+        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, 64, attr.offsetBytes);
+        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, 64, attr.offsetBytes);
+      }
+      gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
+      gl.uniform1f(loc.uZBase, item.zBase);
+      gl.uniform1i(loc.uObjectId, item.objectId);
+      const ranges = mesh.ranges;
+      const M = this._meshModelF32;
+      const pm = item.partMatrices;
+      for (let p = 0; p < ranges.length; p++) {
+        const range = ranges[p];
+        if (range.count <= 0) continue;
+        const o = p * 12;
+        M[0] = pm[o]; M[1] = pm[o + 3]; M[2] = pm[o + 6]; M[3] = 0;
+        M[4] = pm[o + 1]; M[5] = pm[o + 4]; M[6] = pm[o + 7]; M[7] = 0;
+        M[8] = pm[o + 2]; M[9] = pm[o + 5]; M[10] = pm[o + 8]; M[11] = 0;
+        M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
+        gl.uniformMatrix4fv(loc.uModel, false, M);
+        gl.uniform1i(loc.uAxisAligned, item.partFlags[p] & 1);
+        gl.drawArrays(gl.TRIANGLES, range.start * 3, range.count * 3);
+        voxelDraws++;
+      }
+    }
+    this.stats.voxelDraws = voxelDraws;
+
+    // ME-06: terrain items (near chunks, stitch, far tiles), same depth
+    // buffer/viewport - a different program (terrain.vert.js's kind-7
+    // variant), VAO (pos+nrm, no uv/flat/aux, 27.3) and index buffer per
+    // item (indexed layout, unlike the unrolled static one above).
+    if (terrainMeshSet && this.progMeshTerrain) {
+      const locT = this._locsMeshTerrain;
+      gl.useProgram(this.progMeshTerrain);
+      gl.bindVertexArray(this._meshTerrainVao);
+      this._bindTextures(this._meshTerrainBinds);
+      gl.uniformMatrix4fv(locT.uViewProj, false, this._meshViewProjF32);
+      // ME-06 (27.15.5's `typeAt`): "near nearest texel inside the band"
+      // gates on `terrain.nearReady` alone (never the march pass' own
+      // stricter `activeNearLOD`, which also requires a configured
+      // handover/step - height sampling concerns this raster path's real
+      // triangles have no part in). Uploaded once per frame here, not
+      // cached per-program-version like `_uploadTerrainUniforms`: this
+      // program only draws a handful of items per frame, the cost is noise.
+      const terrain = world.terrain;
+      gl.uniform1i(locT.uNearReady, terrain.nearReady ? 1 : 0);
+      if (terrain.nearReady && terrain.near) {
+        const ng = terrain.near;
+        gl.uniform4f(locT.uNearMap, ng.x0, ng.y0, ng.cell, ng.w);
+      }
+      // Same source of truth `_uploadTerrainUniforms` reads for the march
+      // pass' own `uFarMap` (ARCH CHANGES item 5: never a hard-coded 0,0).
+      const fg = terrain._farGridDraw;
+      gl.uniform4f(locT.uFarMap, fg.x0, fg.y0, terrain.mapCell, terrain.mapW);
+      // Structure footprint carve (architect fix, ME-06): the DDA's
+      // `buildSkips` rule - terrain is never drawn inside a placed
+      // structure's 2D bbox. Same `world.structures[].bbox` the CPU caster
+      // reads, capped at MAX_STRUCTS like every other structure uniform.
+      const structs = world.structures || [];
+      const foot = this._meshStructFoot;
+      let structCount = 0;
+      for (let i = 0; i < structs.length && structCount < MAX_STRUCTS; i++) {
+        const b = structs[i].bbox;
+        if (!b) continue;
+        const o4 = structCount * 4;
+        foot[o4] = b.x0; foot[o4 + 1] = b.y0; foot[o4 + 2] = b.x1; foot[o4 + 3] = b.y1;
+        structCount++;
+      }
+      gl.uniform4fv(locT.uStructFoot, foot);
+      gl.uniform1i(locT.uStructCount, structCount);
+      for (let i = 0; i < list.count; i++) {
+        const item = list.items[i];
+        if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
+        const entry = this._meshBuffers.get(item.mesh);
+        gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+        for (const attr of TERRAIN_VERTEX_LAYOUT) {
+          gl.enableVertexAttribArray(attr.location);
+          if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, TERRAIN_STRIDE_BYTES, attr.offsetBytes);
+          else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, TERRAIN_STRIDE_BYTES, attr.offsetBytes);
+        }
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
+        const m = item.matrix;
+        const M = this._meshModelF32;
+        M[0] = m[0]; M[1] = m[3]; M[2] = m[6]; M[3] = 0;
+        M[4] = m[1]; M[5] = m[4]; M[6] = m[7]; M[7] = 0;
+        M[8] = m[2]; M[9] = m[5]; M[10] = m[8]; M[11] = 0;
+        M[12] = m[9]; M[13] = m[10]; M[14] = m[11]; M[15] = 1;
+        gl.uniformMatrix4fv(locT.uModel, false, M);
+        gl.uniform1i(locT.uObjectId, item.objectId);
+        gl.drawElements(gl.TRIANGLES, item.rangeCount * 3, gl.UNSIGNED_INT, item.rangeFirst * 3 * 4);
+      }
     }
   }
 
@@ -1699,18 +1877,28 @@ export class GpuCellPipeline {
     const uArr = gbuf.u, vArr = gbuf.v, zArr = gbuf.z, aoDArr = gbuf.aoD;
     const dudx = gbuf.dudx, dvdx = gbuf.dvdx, dudy = gbuf.dudy, dvdy = gbuf.dvdy;
     const mask = fb.rt.cells.mask;
+    // ME-06 (27.1 item 5): the CPU oracle (terrainCaster.js's `castTerrain`)
+    // still packs a kind-7 cell's normal into `gbuf.aoD`'s bit pattern (its
+    // own `getAoAlias` trick) - this legacy path transfers those bits into
+    // GI.z so shade.frag.js's single (now GI.z-only) read site still gets a
+    // real normal for a terrain pose run through `?gpucompare=shade`'s
+    // 'upload' source, not just the GPU DDA/mesh paths.
+    const aoAlias = new Uint32Array(aoDArr.buffer, aoDArr.byteOffset, aoDArr.length);
 
     for (let i = 0; i < n; i++) {
-      GI[i * 2] = planeId[i] >>> 0;
-      GI[i * 2 + 1] = (kind[i] & 0xff) | ((face[i] & 0xf) << 8) | ((mask[i] & 0xf) << 12) | ((mat[i] & 0xffff) << 16);
+      GI[i * 4] = planeId[i] >>> 0;
+      GI[i * 4 + 1] = (kind[i] & 0xff) | ((face[i] & 0xf) << 8) | ((mask[i] & 0xf) << 12) | ((mat[i] & 0xffff) << 16);
+      GI[i * 4 + 2] = kind[i] === KIND_TERRAIN ? aoAlias[i] : 0;
+      GI[i * 4 + 3] = 0; // objectId - unread by this legacy path
       const gi4 = i * 4;
-      GAf[gi4] = uArr[i]; GAf[gi4 + 1] = vArr[i]; GAf[gi4 + 2] = zArr[i]; GAf[gi4 + 3] = aoDArr[i];
+      GAf[gi4] = uArr[i]; GAf[gi4 + 1] = vArr[i]; GAf[gi4 + 2] = zArr[i];
+      GAf[gi4 + 3] = kind[i] === KIND_TERRAIN ? 1.0e30 : aoDArr[i];
       GDf[gi4] = dudx[i]; GDf[gi4 + 1] = dvdx[i]; GDf[gi4 + 2] = dudy[i]; GDf[gi4 + 3] = dvdy[i];
       DepthF[i] = depth[i];
     }
 
     gl.bindTexture(gl.TEXTURE_2D, this.texGI);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RG_INTEGER, gl.UNSIGNED_INT, GI);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, GI);
     gl.bindTexture(gl.TEXTURE_2D, this.texGA);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, GA);
     gl.bindTexture(gl.TEXTURE_2D, this.texGD);
@@ -1726,7 +1914,7 @@ export class GpuCellPipeline {
     // cov bits GI carries are irrelevant here: shade.frag.js's sub-sample
     // key match only reads kind/planeId/mat (giKind/giMat).
     gl.bindTexture(gl.TEXTURE_2D, this.texSGI);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RG_INTEGER, gl.UNSIGNED_INT, GI);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, GI);
     gl.bindTexture(gl.TEXTURE_2D, this.texSGA);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, GA);
     gl.bindTexture(gl.TEXTURE_2D, this.texSDepth);
@@ -1832,7 +2020,7 @@ const SHADE_UNIFORMS = [
   // band/jitter/2 m-vs-8 m hash-cell switch, gated by uNearDetailOn).
   'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand',
 ];
-const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull'];
+const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
 // US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
 const CAST_UNIFORMS = [
@@ -1840,7 +2028,16 @@ const CAST_UNIFORMS = [
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
-const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase'];
+const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uAxisAligned'];
+// ME-06: terrain's own raster program (terrain.vert.js) - no planeIdOr/
+// zBase (terrain items always carry 0/0, 27.15.5), but its own objectId
+// uniform (no per-vertex flat data to derive it from, unlike mesh.frag.js's
+// structSeq trick) and the near/far type-lookup textures.
+const TERRAIN_MESH_UNIFORMS = [
+  'uModel', 'uViewProj', 'uObjectId',
+  'uNearType', 'uNearMap', 'uNearReady', 'uFarType', 'uFarMap',
+  'uStructFoot', 'uStructCount',
+];
 const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlaneDistY'];
 // US-006/US-007: light pass uniforms (14.3 items 3/4).
 const LIGHT_UNIFORMS = [

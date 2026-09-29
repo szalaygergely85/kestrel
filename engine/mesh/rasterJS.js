@@ -62,6 +62,9 @@ export const BIAS_UNITS = 1;
  * @property {import('../render/projection.js').ProjTerms} [terms]
  * @property {boolean} [snap] - false disables the 1/256 px vertex snap (tests only)
  * @property {(x: number, y: number) => number} [kind7Mat] - terrain mat lookup by world x, y
+ * @property {Float64Array|Float32Array} [structFoot] - x0, y0, x1, y1 per placed structure (world m): terrain
+ *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
+ * @property {number} [structCount] - boxes used in `structFoot`
  */
 
 /**
@@ -127,7 +130,17 @@ const _info = {
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
   biasFlag: 0,
+  structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
 };
+
+/** True when world (x, y) is inside any `[x0, x1) x [y0, y1)` box of `foot` (structure footprint carve, terrain only). */
+function insideStructFoot(foot, count, x, y) {
+  for (let i = 0; i < count; i++) {
+    const o = i * 4;
+    if (x >= foot[o] && x < foot[o + 2] && y >= foot[o + 1] && y < foot[o + 3]) return true;
+  }
+  return false;
+}
 
 /** Literal copy of `voxelMarch.js`'s `roundedFace` (never import a caster/march module - 27.15.0). */
 function roundedFace(nx, ny, nz) {
@@ -350,6 +363,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
         let face = info.face, mat = info.mat, outU = u, outV = v;
         if (info.isTerrain) {
+          if (info.structCount > 0 && insideStructFoot(info.structFoot, info.structCount, wx, wy)) continue;
           outU = wx; outV = wy;
           mat = info.kind7Mat ? info.kind7Mat(wx, wy) : 0;
         } else if (info.isVoxel) {
@@ -420,6 +434,8 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.isVoxel = false;
       _info.partAxisAligned = false;
       _info.kind7Mat = ctx.kind7Mat || null;
+      _info.structFoot = ctx.structFoot || null;
+      _info.structCount = ctx.structFoot ? (ctx.structCount || 0) : 0;
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
     } else {
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;

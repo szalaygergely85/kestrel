@@ -7,7 +7,7 @@
 // (quantisation happens at the same point as JS): `floor(min(255,
 // byte*gain)+0.5)`, min 1.
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
-import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
+import { KIND_MODEL, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
 
 export const EDGE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out vec4 outFg;
@@ -37,6 +37,13 @@ bool isUp(uint kind, uint face) { return kind == 4u || kind == 5u || (kind == ${
 // depth in this pass, tech notes item 5 - "no float aux target"); the fog
 // factor formula matches shade.frag.js's (start/full uniforms).
 uniform float uFogStart, uFogFull;
+// BUG-GPU-005: terrain cells (kind 7) gate on the TERRAIN fog (terrainShade.js
+// terrainFogF, same uniforms as shade.frag.js), not the interior fog.
+uniform float uTerrainFogStart, uTerrainFogFull, uTerrainFogCurve;
+float terrainFogF(float dist) {
+  float f = clamp((dist - uTerrainFogStart) / (uTerrainFogFull - uTerrainFogStart), 0.0, 1.0);
+  return pow(f, uTerrainFogCurve);
+}
 float fogF(float dist) {
   return dist <= uFogStart ? 0.0 : (dist >= uFogFull ? 1.0 : (dist - uFogStart) / (uFogFull - uFogStart));
 }
@@ -71,7 +78,7 @@ void main() {
   uint kind = giKind(gi.y);
   uint face = giFace(gi.y);
   float dist = depthAt(cell);
-  float ff = fogF(dist);
+  float ff = kind == ${KIND_TERRAIN}u ? terrainFogF(dist) : fogF(dist);
 
   int rule = 0;
   if (kind != 0u && ff <= uFogMax) {

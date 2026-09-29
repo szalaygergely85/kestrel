@@ -170,5 +170,34 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('feature on a different type never overrides this cell', o2.glyph !== 10 && o2.glyph !== 11);
 }
 
+// ME-06b: background canopy FACE look (forest row 0 with face glyphs, row 1 without).
+{
+  const W = 17;
+  const tl = new Float32Array(4 * W * 2);
+  for (let r = 0; r < 2; r++) {
+    const b0 = r * W * 4;
+    [[0.1, 0.2, 0.1], [0.2, 0.4, 0.2], [0.3, 0.6, 0.3]].forEach((c, i) => { tl[b0 + i * 4] = c[0]; tl[b0 + i * 4 + 1] = c[1]; tl[b0 + i * 4 + 2] = c[2]; });
+    [4, 5, 6, 7].forEach((texel) => { tl[b0 + texel * 4] = 5; tl[b0 + texel * 4 + 1] = 1; }); // glyph code 5 everywhere
+  }
+  tl[3 * 4 + 2] = 6 | (7 << 8); tl[3 * 4 + 3] = 2; // row 0 face glyphs: codes 6, 7
+  tl[16 * 4] = 0.35; tl[16 * 4 + 1] = 0.22; tl[16 * 4 + 2] = 0.12; // trunk colour
+  const c2 = { tlook: tl, tlookWidth: W, bands: { near: 150, mid: 600 },
+    fog: { start: 50, full: 1500, curve: 0.7, nearRGB: [0, 0, 0], farRGB: [0, 0, 0] },
+    shading: { fgMin: 0.15, fgGamma: 0.6, fgMaxGain: 1.6 } };
+  const flat = shadeTerrain(200, 0, 0.9, 5, 5, 0, c2, out(), 0);
+  const face = shadeTerrain(200, 0, 0.9, 5, 5, 0, c2, out(), 1);
+  check('surface look unchanged when faceMode 0', flat.glyph === 5);
+  check('face cell picks a face glyph', face.glyph === 6 || face.glyph === 7);
+  check('face cell is 0.8x the surface brightness', Math.abs(face.fg[1] - 0.8 * flat.fg[1]) <= 1.5);
+  let trunks = 0, foliage = 0;
+  for (let k = 0; k < 300; k++) { const o = shadeTerrain(200, 0, 0.9, k * 8 + 1, 3, 0, c2, out(), 2); if (o.glyph === 92) trunks++; else if (o.glyph === 7) foliage++; }
+  check('foot row: about 1 cell in 3 is a trunk |', trunks > 70 && trunks < 130);
+  check('foot row: the rest is dark foliage %', trunks + foliage === 300);
+  const beyond = shadeTerrain(100, 0, 0.9, 5, 5, 0, c2, out(), 1);
+  check('inside the near band no face look', beyond.glyph === 5);
+  const nonForest = shadeTerrain(200, 1, 0.9, 5, 5, 0, c2, out(), 1);
+  check('type without face glyphs unchanged even with faceMode', nonForest.glyph === 5);
+}
+
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

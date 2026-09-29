@@ -8,12 +8,13 @@
 // once per frame (27.11 ME-04 AC "mock-device alloc test").
 //
 // Phase 1 scope (27.12: "Deletion happens only after phase gates" - this
-// file grows incrementally, not all at once): `static` layout only
-// (engine/mesh/levelMesh.js's level meshes - the tower). `terrain`-layout
-// MeshData (indexed, ME-05/ME-06) and per-part voxel instancing (ME-07/08)
-// are a later story's addition to this same cache, not implemented here -
-// `get()` throws a clear error on a non-static mesh so a caller finds out
-// immediately rather than uploading garbage.
+// file grows incrementally, not all at once): `static` layout
+// (engine/mesh/levelMesh.js's level meshes - the tower), extended by ME-06
+// to `terrain` layout (engine/mesh/terrainMesh.js's near/far/stitch chunks
+// - indexed, no uv/flat/aux, 27.3 "terrain layout has no uv"). Per-part
+// voxel instancing (ME-07/08) is a later story's addition to this same
+// cache, not implemented here - `get()` throws a clear error on any other
+// layout so a caller finds out immediately rather than uploading garbage.
 //
 // Vertex layout (27.15.0 amendment 2, "Static vertex layout"): interleaved,
 // stride 64 bytes = pos(12) + uv(8) + nrm(4) + flat(8) + aux(32). One
@@ -70,6 +71,41 @@ export const STATIC_VERTEX_LAYOUT = Object.freeze([
   { name: 'aAux4567', location: 5, components: 4, type: 'float', offsetBytes: 48 },
 ]);
 
+/** Bytes per vertex in the interleaved terrain buffer (ME-06, 27.3 "terrain layout has no uv"): pos(12) + nrm(4). */
+export const TERRAIN_STRIDE_BYTES = 16;
+const TERRAIN_STRIDE_WORDS = TERRAIN_STRIDE_BYTES / 4; // 4
+
+/**
+ * Builds the interleaved terrain vertex buffer for one `MeshData` (layout
+ * 'terrain' only - engine/mesh/terrainMesh.js's near/far/stitch chunks).
+ * No `uv`/`flat`/`aux` (27.3 amendment) - just position and the smooth,
+ * per-vertex analytic normal (oct-packed) `terrain.vert.js`'s vertex stage
+ * unpacks and interpolates.
+ * @param {import('../../mesh/MeshData.js').MeshData} mesh
+ * @returns {ArrayBuffer}
+ */
+export function buildTerrainVertexData(mesh) {
+  if (mesh.layout !== 'terrain') throw new Error(`buildTerrainVertexData: mesh "${mesh.id}" is not 'terrain' layout (got "${mesh.layout}")`);
+  const vertCount = mesh.pos.length / 3;
+  const buf = new ArrayBuffer(vertCount * TERRAIN_STRIDE_BYTES);
+  const f32 = new Float32Array(buf);
+  const u32 = new Uint32Array(buf);
+  for (let v = 0; v < vertCount; v++) {
+    const base = v * TERRAIN_STRIDE_WORDS;
+    f32[base + 0] = mesh.pos[v * 3 + 0];
+    f32[base + 1] = mesh.pos[v * 3 + 1];
+    f32[base + 2] = mesh.pos[v * 3 + 2];
+    u32[base + 3] = mesh.nrm[v];
+  }
+  return buf;
+}
+
+/** The `PipelineDesc.vertex.layout` matching `buildTerrainVertexData`'s byte layout - shared by terrain.vert.js's pipeline creation. */
+export const TERRAIN_VERTEX_LAYOUT = Object.freeze([
+  { name: 'aPos', location: 0, components: 3, type: 'float', offsetBytes: 0 },
+  { name: 'aNrmBits', location: 1, components: 1, type: 'uint', offsetBytes: 12 },
+]);
+
 /**
  * Per-world-pipeline cache: one GPU vertex buffer per `mesh.id`, re-uploaded
  * only when `mesh.meshVersion` changes (level dynamics rebuild a `dyn[tag]`
@@ -81,28 +117,51 @@ export class MeshBuffers {
   /** @param {import('./device/GpuDevice.js').GpuDevice} device */
   constructor(device) {
     this.device = device;
-    /** @type {Map<string, {vertexBuffer: any, version: number, vertexCount: number}>} */
+    /** @type {Map<string, {vertexBuffer: any, version: number, vertexCount: number, indexBuffer?: any, indexCount?: number}>} */
     this.cache = new Map();
   }
 
   /**
    * @param {import('../../mesh/MeshData.js').MeshData} mesh
-   * @returns {{vertexBuffer: any, vertexCount: number}}
+   * @returns {{vertexBuffer: any, vertexCount: number, indexBuffer?: any, indexCount?: number}}
    */
   get(mesh) {
     const existing = this.cache.get(mesh.id);
     if (existing && existing.version === mesh.meshVersion) return existing;
-    if (existing) this.device.dispose(existing.vertexBuffer);
-    const data = buildStaticVertexData(mesh);
-    const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(data) });
-    const entry = { vertexBuffer, version: mesh.meshVersion, vertexCount: mesh.pos.length / 3 };
+    if (existing) {
+      this.device.dispose(existing.vertexBuffer);
+      if (existing.indexBuffer) this.device.dispose(existing.indexBuffer);
+    }
+    let entry;
+    if (mesh.layout === 'terrain') {
+      // ME-06: indexed layout - upload both the interleaved vertex buffer
+      // and mesh.idx's index buffer (a chunk's topology is static per
+      // width/tile shape, 27.15.5 - only the front/back vertex data
+      // changes on a band flip, keyed by the SAME `meshVersion`).
+      const data = buildTerrainVertexData(mesh);
+      const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(data) });
+      const indexBuffer = this.device.createBuffer({ usage: 'index', data: mesh.idx });
+      entry = {
+        vertexBuffer, indexBuffer, version: mesh.meshVersion,
+        vertexCount: mesh.pos.length / 3, indexCount: mesh.idx.length,
+      };
+    } else if (mesh.layout === 'static') {
+      const data = buildStaticVertexData(mesh);
+      const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(data) });
+      entry = { vertexBuffer, version: mesh.meshVersion, vertexCount: mesh.pos.length / 3 };
+    } else {
+      throw new Error(`MeshBuffers.get: mesh "${mesh.id}" has unsupported layout "${mesh.layout}" (static/terrain only - ME-06)`);
+    }
     this.cache.set(mesh.id, entry);
     return entry;
   }
 
   /** Frees every cached buffer (context loss / world unload). */
   dispose() {
-    for (const entry of this.cache.values()) this.device.dispose(entry.vertexBuffer);
+    for (const entry of this.cache.values()) {
+      this.device.dispose(entry.vertexBuffer);
+      if (entry.indexBuffer) this.device.dispose(entry.indexBuffer);
+    }
     this.cache.clear();
   }
 }

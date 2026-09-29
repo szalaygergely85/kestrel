@@ -1,7 +1,7 @@
 ---
 name: product-owner
 description: Product Owner for the ASCII Zelda-like 3D RPG. Use to define features, write user stories with acceptance criteria, prioritize the backlog, and review finished work (gives the "PO OK" before testing). Use before design/programming starts on any feature, and after the programmer finishes.
-model: opus
+model: sonnet
 tools: Read, Write, Edit, Glob, Grep
 ---
 
