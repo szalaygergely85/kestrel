@@ -18,7 +18,8 @@
     "../engine/render/projection.js",
     "../engine/render/stable.js",
     "../engine/mesh/*.js",
-    "../engine/physics/bvh.js"
+    "../engine/physics/bvh.js",
+    "../engine/physics/meshCollide.js"
   ],
   "exclude": [
     "../**/*.test.js",

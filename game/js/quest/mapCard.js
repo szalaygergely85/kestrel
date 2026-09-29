@@ -46,29 +46,28 @@ export function stepMapCard(world, assets, dt, input, wakeT, titleDoneAtSec) {
   const cfg = uiStyle.mapCard;
   const ending = typeof world.state['quest.endT'] === 'number' && world.state['quest.endT'] >= 0;
 
-  if (!world.state['ui.mapCard.shown']) {
-    if (wakeT >= titleDoneAtSec + cfg.showOnce.delaySec) {
+  // Owner request (2026-09-27): no automatic first show - the card is
+  // `M`-only from the start. The old showOnce/minShowSec/dismiss timeline
+  // (cfg.showOnce/minShowSec/dismiss, design/models/title.js) is unused now;
+  // left in uiStyle for the moment rather than editing a shared content file
+  // for a behaviour-only change. Latches `dismissed` true (without ever
+  // calling panel.open()) at the same relative moment the auto-open used to
+  // fire (title fade + delaySec), purely to keep the "Press M to read the
+  // chart" hint's pacing unchanged. Also covers restored/legacy state where
+  // `shown` is already true but `dismissed` isn't (the old mid-first-show
+  // case) - latches immediately rather than ever locking `M` out.
+  if (!world.state['ui.mapCard.dismissed']) {
+    if (!world.state['ui.mapCard.shown']) {
+      if (wakeT < titleDoneAtSec + cfg.showOnce.delaySec) return; // not yet
       world.state['ui.mapCard.shown'] = true;
-      panel.open();
     }
+    world.state['ui.mapCard.dismissed'] = true;
+    world.state['hints.chartT'] = 0; // arms the "Press M to read the chart" 20 s timer (hints.js stepHints)
+    requestHint(world, uiStyle, 'move');
     return;
   }
 
-  // First show = shown && !dismissed, derived from world.state only (arch review: no module flag, so a
-  // state restored mid-first-show reopens the card instead of locking `M` forever).
-  if (!world.state['ui.mapCard.dismissed']) {
-    if (panel.state === 'closed') panel.open();
-    if (panel.state === 'open' && panel.openSec >= cfg.minShowSec && input.anyPressed()) {
-      input.consumePressed();
-      panel.close();
-      world.state['ui.mapCard.dismissed'] = true;
-      world.state['hints.chartT'] = 0; // arms the "Press M to read the chart" 20 s timer (hints.js stepHints)
-      requestHint(world, uiStyle, 'move');
-    }
-    return; // `M` is not available until after the first dismissal
-  }
-
-  if (!world.state['ui.mapCard.dismissed'] || ending) return; // never during wake/title or the end sequence/screen
+  if (ending) return; // never during the end sequence/screen
   if (panel.state === 'closed') {
     if (input.pressed('KeyM')) {
       input.consumePressed();
