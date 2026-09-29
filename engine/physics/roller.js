@@ -15,6 +15,7 @@ import { sectorOrOutside } from './capsule.js';
 import { moveCapsule } from './capsule.js';
 import { moveSphere } from './sphere.js';
 import { yawFromDelta } from '../core/transform.js';
+import { gridLocal } from '../world/gridLocal.js';
 
 const EPS = 1e-9;
 const OVERLAP_EPS = 1e-3; // architecture.md 7.4: "if more than 1e-3 m still overlaps"
@@ -166,11 +167,12 @@ function ensureBody(body) {
 }
 
 /** Level-local `tiltAt`, resolved through whichever structure (x, y) falls inside; (0, 0) outside any. */
+const tiltGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
 function tiltAt(world, x, y, out) {
   out.x = 0;
   out.y = 0;
   const s = world.structureAt ? world.structureAt(x, y) : null;
-  if (s && s.level && s.level.tiltAt) s.level.tiltAt(x - s.origin.x, y - s.origin.y, out);
+  if (s && s.level && s.level.tiltAt) { gridLocal(s, x, y, tiltGrid); s.level.tiltAt(tiltGrid.x, tiltGrid.y, out); }
   return out;
 }
 

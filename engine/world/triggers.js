@@ -1,3 +1,5 @@
+import { localToWorld } from '../core/transform.js';
+
 // engine/world/triggers.js (US-017, D-006/D-008). Generic trigger-zone
 // mechanism, mirroring engine/world/interaction.js's split: the engine only
 // knows `world.triggers` (built by `World.load` from every placed
@@ -76,11 +78,14 @@ function buildWorldTriggers(world) {
  */
 export function buildTriggers(world) {
   const out = [];
+  const tmpW = { x: 0, y: 0, z: 0 };
   for (const s of world.structures) {
     const def = s.level.def;
     for (const tr of (def && def.triggers) || []) {
       const usedKey = tr.once ? `used.${s.id}.${tr.id}` : null;
       if (tr.shape === 'circle') {
+        // CO-2: circle centre/zMin go through the authored frame (cells stay in the baked grid).
+        localToWorld(s.frame, tr.x, tr.y, typeof tr.zMin === 'number' ? tr.zMin : 0, tmpW);
         out.push({
           key: `${s.id}.${tr.id}`,
           structId: s.id,
@@ -89,10 +94,10 @@ export function buildTriggers(world) {
           once: !!tr.once,
           shape: 'circle',
           mask: null,
-          x: tr.x + s.origin.x,
-          y: tr.y + s.origin.y,
+          x: tmpW.x,
+          y: tmpW.y,
           r: tr.r,
-          zMin: typeof tr.zMin === 'number' ? tr.zMin + s.origin.z : -Infinity,
+          zMin: typeof tr.zMin === 'number' ? tmpW.z : -Infinity,
           def: tr,
           inside: 0,
           usedKey,

@@ -66,7 +66,8 @@ writeFile(tmp, 'engine/render/gpu/device/good9.js', `export function f(gl) { ret
 writeFile(tmp, 'engine/render/gpu/bad9.test.js', `export function f(gl) { return gl.createTexture(); }\n`);
 // Rule 13 (CO-1b): coordinate math outside transform.js WARNs; allow-listed file does not.
 writeFile(tmp, 'engine/entities/bad13.js', `export const f = (a, dx, dy) => Math.atan2(dx, -dy) + a * Math.PI / 180 + a.origin.x + 1;\n`);
-writeFile(tmp, 'engine/world/World.js', `export const g = (s) => 1 + s.origin.x;\n`);
+writeFile(tmp, 'engine/render/sectorCaster.js', `export const g = (s) => 1 + s.origin.x;\n`);
+writeFile(tmp, 'engine/world/marked13.js', `export const g = (s) => 1 + s.origin.x; // coord-ok\nexport const h = (s) => 1 + s.origin.y;\n`);
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
@@ -104,7 +105,8 @@ ok('rule 9: gpu file touching gl. outside device/* WARNs (not a FAIL finding)', 
 ok('rule 9: gpu/device/* file touching gl. NOT flagged', !/good9\.js/.test(output), output);
 ok('rule 9: gpu *.test.js touching gl. NOT flagged', !/bad9\.test\.js/.test(output), output);
 ok('rule 13: coordinate math WARNs (atan2, PI/180, origin)', /WARN.*bad13\.js.*atan2/.test(output) && /WARN.*bad13\.js.*Math\.PI/.test(output) && /WARN.*bad13\.js.*origin/.test(output), output);
-ok('rule 13: allow-listed World.js NOT flagged', !/World\.js/.test(output), output);
+ok('rule 13: allow-listed sectorCaster.js NOT flagged', !/sectorCaster\.js.*origin/.test(output), output);
+ok('rule 13: // coord-ok line skipped, unmarked line still WARNs', /WARN.*marked13\.js:2:.*origin/.test(output) && !/marked13\.js:1:/.test(output), output);
 ok('rule 13: warning only, no FAIL finding for it', !/bad13\.js:\d+: (?!coordinate)/.test(output.replace(/WARN [^\n]*/g,'')), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
 

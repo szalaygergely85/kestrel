@@ -56,6 +56,17 @@ function shortestDeltaDeg(a, b) {
   return ((b - a + 540) % 360) - 180;
 }
 
+import { localToWorld, makeFrame } from '../../../engine/index.js';
+
+// `world.frameOf` (CO-2); duck-typed fallback for hand-built worlds in tests.
+function frameOfStruct(world, structId) {
+  if (typeof world.frameOf === 'function') return world.frameOf(structId);
+  const st = (world.structures || []).find((s) => s.id === structId);
+  return st ? (st.frame || makeFrame(st.origin.x, st.origin.y, st.origin.z || 0, st.yawSteps || 0)) : null;
+}
+
+const walkTmp = { x: 0, y: 0, z: 0 };
+
 /**
  * `quest.end` behaviour (fired once, on the trigger's enter edge). Stores
  * the scripted walk on the actor's own `components.body` under a `_`
@@ -63,24 +74,25 @@ function shortestDeltaDeg(a, b) {
  * `stripScratch` (same convention as `integrate.js`'s `_move`/
  * `_collideOpts`), never part of a save.
  *
- * `structId == null` (US-026a-S6, a world-level trigger): `def.walkTo` is
- * already an absolute world coordinate - no structure origin to add (there
- * is none). `structId` set (the original structure-local end): `def.walkTo`
- * is level-local, added to the structure's own origin, as before.
+ * `ctx.frame == null` (US-026a-S6, a world-level trigger): `def.walkTo` is
+ * already an absolute world coordinate. `ctx.frame` set (the original
+ * structure-local end): `def.walkTo` is level-local, converted through the
+ * structure's frame (`localToWorld`).
  */
 export function questEnd(ctx) {
-  const { world, def, entity, structId } = ctx;
+  const { world, def, entity } = ctx;
+  const frame = ctx.frame !== undefined ? ctx.frame : (ctx.structId != null ? frameOfStruct(world, ctx.structId) : null);
   if (!entity || !entity.transform) return false;
 
-  let tx, ty;
-  if (structId == null) {
-    tx = (def.walkTo && def.walkTo.x) || 0;
-    ty = (def.walkTo && def.walkTo.y) || 0;
-  } else {
-    const struct = world.structures.find((s) => s.id === structId);
-    const ox = struct ? struct.origin.x : 0, oy = struct ? struct.origin.y : 0;
-    tx = ox + ((def.walkTo && def.walkTo.x) || 0);
-    ty = oy + ((def.walkTo && def.walkTo.y) || 0);
+  // `def.walkTo` is in the frame of the file it was written in: a level
+  // trigger gets `ctx.frame` (its structure's frame), a world-level one
+  // `null` = already world (CO-2, docs/coordinates.md 4).
+  const wx = (def.walkTo && def.walkTo.x) || 0, wy = (def.walkTo && def.walkTo.y) || 0;
+  let tx = wx, ty = wy;
+  if (frame) {
+    localToWorld(frame, wx, wy, 0, walkTmp);
+    tx = walkTmp.x;
+    ty = walkTmp.y;
   }
 
   const x0 = entity.transform.x, y0 = entity.transform.y;

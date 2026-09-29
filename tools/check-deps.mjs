@@ -282,12 +282,10 @@ function checkDesignFile(file, src) {
 // Allowed entries are exact rel paths or prefixes ending in '/'.
 const COORD_ALLOW = [
   'engine/core/transform.js',
-  'engine/world/World.js',                // gridLocal owner
   'engine/render/sectorCaster.js',        // hot loop (camera sin/cos, DDA setup)
   'engine/render/terrainCaster.js',       // hot loop
   'engine/render/sprites.js',             // hot loop
   'engine/render/detailShade.js',         // hot loop
-  'engine/render/lighting.js',            // per-light visibility grid origin math
   'engine/render/gpu/GpuCellPipeline.js', // JS twin of the GLSL cast
   'engine/render/gpu/glsl/',              // GLSL-generating files
   'game/js/dev/',                         // page harnesses / parity modes
@@ -301,10 +299,12 @@ function checkCoordMath(file, src) {
   const r = rel(file);
   if (COORD_ALLOW.some((a) => (a.endsWith('/') ? r.startsWith(a) : r === a))) return;
   const stripped = stripComments(src);
+  const origLines = src.split('\n');
   for (const [re, label] of COORD_PATTERNS) {
     let m;
     while ((m = re.exec(stripped))) {
       const line = stripped.slice(0, m.index).split('\n').length;
+      if ((origLines[line - 1] || '').includes('coord-ok')) continue; // audited exception (CO-2)
       warnings.push(`${r}:${line}: coordinate math "${label}" outside engine/core/transform.js (docs/coordinates.md 3/9)`);
     }
   }

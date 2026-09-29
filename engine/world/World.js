@@ -11,6 +11,8 @@ import { EventRing } from '../entities/eventRing.js';
 import { getBehaviour, validateBehaviours } from '../core/behaviours.js';
 import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
+import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
+import { gridLocal } from './gridLocal.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -21,6 +23,10 @@ const SOLID_OUTSIDE = Object.freeze({
   solid: true, topH: 'sky', upperMat: 'stone',
 });
 
+const tmpW = { x: 0, y: 0, z: 0 }; // localToWorld scratch (load-time only)
+// console.info of the level-sun fallback: once per process.
+let sunInfoShown = false;
+
 function ease(kind, t) {
   if (kind === 'inOut') return t * t * (3 - 2 * t); // smoothstep
   return t; // linear (default)
@@ -30,10 +36,13 @@ function ease(kind, t) {
 // structure, wired into `recipe.structures[i]` before the terrain bakes, so
 // `structureBlend` in the recipe blends against the REAL level data instead
 // of the flat `ringH` fallback constant.
-function makeRingHAt(level, origin) {
+function makeRingHAt(placed) {
+  const level = placed.level;
   const w = level.width, h = level.height;
+  const g = { x: 0, y: 0, z: 0 };
   return function ringHAt(x, y) {
-    const lx = x - origin.x, ly = y - origin.y;
+    gridLocal(placed, x, y, g);
+    const lx = g.x, ly = g.y;
     let cx = Math.min(Math.max(lx, 0.5), w - 0.5);
     let cy = Math.min(Math.max(ly, 0.5), h - 0.5);
     const dl = cx, dr = w - cx, dt = cy, db = h - cy;
@@ -41,7 +50,7 @@ function makeRingHAt(level, origin) {
     if (m === dl) cx = 0.5; else if (m === dr) cx = w - 0.5;
     if (m === dt) cy = 0.5; else if (m === db) cy = h - 0.5;
     const s = level.sectorAt(cx, cy);
-    return s ? s.floorH + origin.z : origin.z;
+    return s ? s.floorH + g.z : g.z;
   };
 }
 
@@ -147,6 +156,7 @@ export class World {
     this.triggers = [];
 
     this._entities = new Map();   // id -> plain entity data
+    this._grid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
     this._handles = new Map();    // id -> EntityHandle (cached, same object until remove)
     this._listeners = new Map();  // id -> Map<event, Set<fn>>
     this._eventRing = new EventRing(256);
@@ -201,6 +211,12 @@ export class World {
     }
     w.bounds = validateBounds(def.bounds);
 
+    // CO-2 (coordinates.md 4): the sun is a world property. `def.sun` wins;
+    // an ephemeral `?level=` world (no world file) falls back to the first
+    // structure's level `sun` (announced once); `null` = palette default.
+    w.sun = def.sun || null;
+    w.sunSource = w.sun ? 'world' : null;
+
     // US-016 D-011 addendum (architecture.md 14.4 item 13): `world.horizon[]`
     // - validated up front (throws WITH the offending id, never silently
     // dropped) so a bad level def fails fast at load, same as everything
@@ -237,6 +253,19 @@ export class World {
       w.terrain.bakeNearBand(cx, cy);
     }
 
+    if (!w.sun) {
+      const first = w.structures[0];
+      const lsun = first && first.level && first.level.def && first.level.def.sun;
+      if (lsun) {
+        w.sun = lsun;
+        w.sunSource = 'level';
+        if (!w.terrain && !sunInfoShown) {
+          sunInfoShown = true;
+          console.info('[World] no world sun: using the first structure level sun (ephemeral ?level= world, coordinates.md 4)');
+        }
+      }
+    }
+
     // (US-012, 7.4) `world.interactables`: every placed structure's
     // `def.interactables`, in world coords (level x,y,z + origin).
     // `usedKey` is precomputed here (not in the hot `findInteractTarget`
@@ -246,14 +275,15 @@ export class World {
     for (const s of w.structures) {
       const def = s.level.def;
       for (const it of (def && def.interactables) || []) {
+        localToWorld(s.frame, it.x, it.y, it.z, tmpW);
         w.interactables.push({
           key: `${s.id}.${it.id}`,
           structId: s.id,
           id: it.id,
           name: it.interact,
-          x: it.x + s.origin.x,
-          y: it.y + s.origin.y,
-          z: it.z + s.origin.z,
+          x: tmpW.x,
+          y: tmpW.y,
+          z: tmpW.z,
           radius: it.radius,
           prompt: it.prompt || '',
           once: !!it.once,
@@ -314,7 +344,8 @@ export class World {
           } else {
             anim = animNames[0];
           }
-          const x = s.origin.x + p.x, y = s.origin.y + p.y;
+          localToWorld(s.frame, p.x, p.y, 0, tmpW);
+          const x = tmpW.x, y = tmpW.y;
           let z;
           if (p.z === 'ground') {
             if (w.terrain) {
@@ -326,7 +357,7 @@ export class World {
               z = 0;
             }
           } else {
-            z = s.origin.z + (p.z || 0);
+            z = localToWorld(s.frame, p.x, p.y, p.z || 0, tmpW).z;
           }
           const comps = isVoxel
             ? { voxel: { model: modelKey, anim, loop: !!(anim && animsDict[anim].loop) } }
@@ -338,7 +369,8 @@ export class World {
             comps.body = { radius: p.radius, vx: 0, vy: 0, vz: 0, grounded: true };
             comps.roller = {};
           }
-          w.spawn('prop', { x, y, z, yawDeg: p.facing || 0, pitchDeg: 0 }, comps, entId);
+          // `facing` stays unrotated until CO-4 (yawSteps != 0 still throws).
+          w.spawn('prop', { x, y, z, yawDeg: p.facing || 0, pitchDeg: 0 }, comps, entId, s.id);
         }
       }
     }
@@ -357,7 +389,12 @@ export class World {
     if (w.terrain && w.terrain.recipe.structures) {
       for (const rs of w.terrain.recipe.structures) {
         const placed = w.structures.find((p) => p.id === rs.id);
-        if (placed) rs.ringHAt = makeRingHAt(placed.level, placed.origin);
+        if (placed) {
+          rs.ringHAt = makeRingHAt(placed);
+          // CO-2: the placement has ONE source (the world file); the recipe's
+          // own x/y/w/h copy (until CO-8 deletes it) is not consulted for it.
+          rs.bbox = { x0: placed.bbox.x0, y0: placed.bbox.y0, x1: placed.bbox.x1, y1: placed.bbox.y1 };
+        }
       }
     }
 
@@ -373,6 +410,7 @@ export class World {
 
     for (const ed of def.entities || []) {
       let transform;
+      let parent = null; // CO-2: structId when spawned from a structure (record, not a live frame)
       let components = ed.components ? structuredClone(ed.components) : undefined;
       if (ed.transform) {
         transform = { ...ed.transform };
@@ -418,15 +456,16 @@ export class World {
         if (!st) throw new Error(`World.load: entity "${ed.id}" spawn.structure "${ed.spawn.structure}" not placed`);
         const local = ed.spawn.from === 'start' ? st.level.start : null;
         if (!local) throw new Error(`World.load: entity "${ed.id}" spawn.from "${ed.spawn.from}" not supported`);
+        localToWorld(st.frame, local.x, local.y, st.level.floorAt(local.x, local.y) ?? 0, tmpW);
         transform = {
-          x: local.x + st.origin.x, y: local.y + st.origin.y,
-          z: (st.level.floorAt(local.x, local.y) ?? 0) + st.origin.z,
+          x: tmpW.x, y: tmpW.y, z: tmpW.z,
           yawDeg: local.facingDeg || 0, pitchDeg: local.pitchDeg || 0,
         };
+        parent = st.id;
       } else {
         throw new Error(`World.load: entity "${ed.id}" needs "transform" or "spawn"`);
       }
-      w.spawn(ed.type, transform, components || {}, ed.id);
+      w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
 
     if (typeof def.nextId === 'number') w.nextId = def.nextId;
@@ -454,7 +493,8 @@ export class World {
     if (!level) throw new Error(`World.placeStructure: level "${levelDef && levelDef.name}" failed to load (see console)`);
     const structSeq = this.structures.length;
     const structId = id || `struct_${structSeq}`;
-    const bbox = { x0: origin.x, y0: origin.y, x1: origin.x + level.width, y1: origin.y + level.height };
+    const frame = makeFrame(origin.x, origin.y, origin.z || 0, yawSteps);
+    const bbox = frameBBox(frame, level.width, level.height, { x0: 0, y0: 0, x1: 0, y1: 0 });
     const packed = packLevel(level, null);
     // US-014 tech note 1: a tag -> legend-char Map built once here, instead
     // of `animateSector` scanning `Object.keys(level.legend)` on every call
@@ -465,7 +505,9 @@ export class World {
       const sec = level.legend[ch];
       if (sec.dynamic && sec.tag) tagMap.set(sec.tag, ch);
     }
-    const placed = { id: structId, level, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap };
+    // CO-2: `frame` = the authored placement (content items convert through
+    // it); `origin`/`bbox` = the baked grid (equal to the frame while yawSteps = 0).
+    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap };
     this.structures.push(placed);
 
     if (structSeq < 8) {
@@ -486,6 +528,15 @@ export class World {
     return placed;
   }
 
+  /** Authored `Frame` of a placed structure by id (`null` if unknown). */
+  frameOf(id) {
+    for (let i = 0; i < this.structures.length; i++) if (this.structures[i].id === id) return this.structures[i].frame;
+    return null;
+  }
+
+  /** World (x, y) -> the placed structure's baked grid; see `gridLocal.js`. */
+  static gridLocal(placed, x, y, out) { return gridLocal(placed, x, y, out); }
+
   /** Bbox test first (structures.length is tiny), then the level's own footprint. */
   structureAt(x, y) {
     for (let i = 0; i < this.structures.length; i++) {
@@ -499,14 +550,16 @@ export class World {
   sectorAt(x, y) {
     const s = this.structureAt(x, y);
     if (!s) return null;
-    return s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+    const g = gridLocal(s, x, y, this._grid);
+    return s.level.sectorAt(g.x, g.y);
   }
 
   floorAt(x, y) {
     const s = this.structureAt(x, y);
     if (s) {
-      const sec = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
-      return sec ? sec.floorH + s.origin.z : null;
+      const g = gridLocal(s, x, y, this._grid);
+      const sec = s.level.sectorAt(g.x, g.y);
+      return sec ? sec.floorH + g.z : null;
     }
     // US-026a (23.1 decision 2): the near band once it's ready, else analytic.
     return this.terrain ? this.terrain.groundAt(x, y) : null;
@@ -515,9 +568,10 @@ export class World {
   ceilAt(x, y) {
     const s = this.structureAt(x, y);
     if (s) {
-      const sec = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+      const g = gridLocal(s, x, y, this._grid);
+      const sec = s.level.sectorAt(g.x, g.y);
       if (!sec) return null;
-      return sec.ceilH === 'sky' ? 'sky' : sec.ceilH + s.origin.z;
+      return sec.ceilH === 'sky' ? 'sky' : sec.ceilH + g.z;
     }
     return 'sky';
   }
@@ -631,7 +685,7 @@ export class World {
 
   // ---- entities/handles (10.1) ----------------------------------------------
 
-  spawn(type, transform, components = {}, id) {
+  spawn(type, transform, components = {}, id, parent = null) {
     const entId = id || `${type}_${this.nextId++}`;
     if (this._entities.has(entId)) throw new Error(`World.spawn: id "${entId}" already exists`);
     // US-041a (15.3 item 1): `voxel` is a component, not a type - same shape
@@ -647,7 +701,7 @@ export class World {
     if (components.voxel) {
       components.voxel = { t: 0, frame: 0, speed: 1, playing: true, ...components.voxel };
     }
-    const entity = Entity.create(type, transform, components, entId);
+    const entity = Entity.create(type, transform, components, entId, parent);
     this._entities.set(entId, entity);
     this.renderVersion++;
     if (this.events) this.events.emit('entity:added', { id: entId, type });
@@ -754,12 +808,17 @@ export class World {
   /** Look up (by name, via `def.interactables`/`def.triggers`) and call a registered behaviour (D-006/D-008). */
   fireInteraction(id, ctx) {
     const fn = getBehaviour(id);
-    return fn ? fn({ world: this, ...ctx }) : undefined;
+    return fn ? fn({ world: this, frame: this._ctxFrame(ctx), ...ctx }) : undefined;
   }
 
   fireTrigger(id, ctx) {
     const fn = getBehaviour(id);
-    return fn ? fn({ world: this, ...ctx }) : undefined;
+    return fn ? fn({ world: this, frame: this._ctxFrame(ctx), ...ctx }) : undefined;
+  }
+
+  /** `ctx.frame` for behaviours (coordinates.md 4): the structure's frame, `null` = def positions are already world. */
+  _ctxFrame(ctx) {
+    return ctx && ctx.structId != null ? this.frameOf(ctx.structId) : null;
   }
 }
 

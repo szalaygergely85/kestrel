@@ -28,7 +28,8 @@
 // and documents its own version of this deviation.
 
 import { HFOV_DEG } from './sectorCaster.js';
-import { dirFromAzEl } from '../core/transform.js';
+import { dirFromAzEl, localToWorld } from '../core/transform.js';
+import { gridLocal } from '../world/gridLocal.js';
 import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 
@@ -339,6 +340,8 @@ export class LightSet {
  * per-frame flicker) is set directly here, once, like a point light's
  * `baseHue`/`baseIntensity`.
  */
+const lightW = { x: 0, y: 0, z: 0 }; // localToWorld scratch (load-time only)
+const sunGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (sunVisible is per-pixel: no allocation)
 export function buildLightSet(world, palette) {
   const ls = new LightSet();
   const amb = palette.lights.ambient;
@@ -347,8 +350,10 @@ export function buildLightSet(world, palette) {
   ls.ambient[1] = ambHue[1] * amb.intensity;
   ls.ambient[2] = ambHue[2] * amb.intensity;
 
+  // CO-2: the sun is a world property (`world.sun`, level fallback resolved in World.load).
   const firstStruct = world.structures[0];
-  const sunDef = (firstStruct && firstStruct.level && firstStruct.level.def && firstStruct.level.def.sun) || null;
+  const sunDef = world.sun !== undefined ? world.sun
+    : ((firstStruct && firstStruct.level && firstStruct.level.def && firstStruct.level.def.sun) || null);
   const sunPreset = palette.lights[(sunDef && sunDef.preset) || 'sun'];
   if (sunPreset) {
     const sunHue = palette.hue[sunPreset.color];
@@ -368,8 +373,9 @@ export function buildLightSet(world, palette) {
       const preset = palette.lights[ld.preset];
       if (!preset) { console.warn(`[lighting] unknown light preset "${ld.preset}" (${s.id}.${ld.id})`); continue; }
       const hue = palette.hue[preset.color];
+      localToWorld(s.frame, ld.x, ld.y, ld.z, lightW);
       ls.add({
-        x: ld.x + s.origin.x, y: ld.y + s.origin.y, z: ld.z + s.origin.z,
+        x: lightW.x, y: lightW.y, z: lightW.z,
         hue, intensity: preset.intensity, radius: preset.radius,
         flicker: preset.flicker || null,
         on: ld.on !== false,
@@ -727,7 +733,7 @@ export function sunVisible(world, x, y, z, dir) {
   let worldMaxH = 0;
   for (let i = 0; i < world.structures.length; i++) {
     const s = world.structures[i];
-    const m = s.origin.z + s.packed.maxH;
+    const m = s.frame.z + s.packed.maxH;
     if (m > worldMaxH) worldMaxH = m;
   }
 
@@ -736,9 +742,10 @@ export function sunVisible(world, x, y, z, dir) {
     // slab test on the starting cell against an unbounded band above.
     const struct = world.structureAt(x, y);
     if (!struct) return true;
-    const sec = struct.level.sectorAt(x - struct.origin.x, y - struct.origin.y);
+    const g = gridLocal(struct, x, y, sunGrid);
+    const sec = struct.level.sectorAt(g.x, g.y);
     if (!sec) return true;
-    return !sunCellBlocked(sec, h0 - struct.origin.z, Infinity);
+    return !sunCellBlocked(sec, h0 - g.z, Infinity);
   }
 
   const ndx = dx / horiz, ndy = dy / horiz;
@@ -763,9 +770,10 @@ export function sunVisible(world, x, y, z, dir) {
     else { t1 = sideDistY; sideDistY += deltaDistY; mapY += stepY; }
     const h1 = h0 + tanElev * (t1 - tPrev);
     if (owner) {
-      const sec = owner.level.sectorAt(cx + 0.5 - owner.origin.x, cy + 0.5 - owner.origin.y);
+      const g = gridLocal(owner, cx + 0.5, cy + 0.5, sunGrid);
+      const sec = owner.level.sectorAt(g.x, g.y);
       if (sec) {
-        const oz = owner.origin.z;
+        const oz = g.z;
         if (sunCellBlocked(sec, h0 - oz, h1 - oz)) return false;
       }
     }
@@ -773,7 +781,7 @@ export function sunVisible(world, x, y, z, dir) {
     // Structure just entered (post-step): its own local maxH bounds it -
     // once h0 clears it, THIS structure can no longer block (item iv).
     const entered = world.structureAt(mapX + 0.5, mapY + 0.5);
-    if (entered && h0 - entered.origin.z > entered.packed.maxH) return true;
+    if (entered && h0 - entered.frame.z > entered.packed.maxH) return true;
     if (h0 > worldMaxH) return true;
   }
   return true; // step cap - bias to lit

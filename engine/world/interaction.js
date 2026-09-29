@@ -7,6 +7,7 @@
 // Allocation rule (9): `findInteractTarget` runs every fixed step (7.4 item
 // 5) and must not allocate. `world.interactables[i].usedKey` is precomputed
 // once in `World.load` so the hot loop never concatenates a string.
+import { gridLocal } from './gridLocal.js';
 
 /**
  * @typedef {{key:string, structId:string, id:string, name:string, x:number,
@@ -20,6 +21,7 @@ const DEFAULT_REACH = 1.8;
 const DEFAULT_CONE_DEG = 20;
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
+const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
 
 /**
  * 0.1 m samples (<= 20, capped), WORLD heights (2026-09-24 review fix):
@@ -44,11 +46,12 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
     const s = world.structureAt(x, y);
     let floorH, ceilH, solid;
     if (s) {
-      const sector = s.level.sectorAt(x - s.origin.x, y - s.origin.y);
+      const g = gridLocal(s, x, y, losGrid);
+      const sector = s.level.sectorAt(g.x, g.y);
       if (!sector) return false;
       solid = sector.solid;
-      floorH = sector.floorH + s.origin.z;
-      ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + s.origin.z : sector.ceilH;
+      floorH = sector.floorH + g.z;
+      ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + g.z : sector.ceilH;
     } else {
       const sector = world.outsideSector(x, y);
       solid = sector.solid;
@@ -156,7 +159,7 @@ export function updateInteraction(world, engine, eye, usePressed) {
 
   const actor = world.get('player');
   const entity = rec.propId ? world.get(rec.propId) : null;
-  const result = world.fireInteraction(rec.name, { engine, def: rec.def, entity, actor });
+  const result = world.fireInteraction(rec.name, { engine, def: rec.def, entity, actor, structId: rec.structId });
 
   if (result !== false && rec.usedKey) world.state[rec.usedKey] = true;
   if (world.events) world.events.emit('interaction:fired', { key: rec.key, name: rec.name });

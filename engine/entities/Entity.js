@@ -11,7 +11,7 @@ export class Entity {
    * @param {string} [id]
    * @returns {Object} plain entity data
    */
-  static create(type, transform, components = {}, id) {
+  static create(type, transform, components = {}, id, parent = null) {
     if (!transform || typeof transform.x !== 'number' || typeof transform.y !== 'number' || typeof transform.z !== 'number') {
       throw new Error(`Entity.create("${type}"): transform must have finite numeric x, y, z`);
     }
@@ -26,6 +26,7 @@ export class Entity {
         pitchDeg: typeof transform.pitchDeg === 'number' ? transform.pitchDeg : 0,
       },
       components: components || {},
+      parent, // CO-2: structId record (null = free world entity), never a live frame
     };
   }
 
