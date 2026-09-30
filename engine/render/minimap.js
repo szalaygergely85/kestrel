@@ -42,6 +42,10 @@ const LS_X = -1 / LS_LEN, LS_Y = -1 / LS_LEN, LS_Z = 2 / LS_LEN;
  * @property {Uint8ClampedArray} fogged - `base` through the fog LUT, stride 4 (alpha fixed 255)
  * @property {Uint8ClampedArray} rgba   - final output, stride 4 - what the caller uploads/draws
  * @property {Int32Array} visIdx        - per pixel-centre: `view` cell index, or -1 outside its grid
+ * @property {number} _hMin @property {number} _fogVersion @property {number} _fogTeam - internal state
+ * @property {{ox:number,oy:number,oz:number,dx:number,dy:number,dz:number}} _ray - scratch ray
+ * @property {{x:number,y:number,z:number,t:number,hit:boolean}} _hit - scratch hit
+ * @property {Int32Array} _cornerPx - scratch, 4 corners x (px, py)
  */
 
 /**

@@ -148,6 +148,48 @@ const BOUNDS = { x0: 0, y0: 0, x1: 200, y1: 150 };
   ok('zoomBy clamps above zoomMax', approxEqual(rts.zoom, rts.opts.zoomMax, 1e-12), `zoom=${rts.zoom}`);
 }
 
+// ---------------------------------------------------------------------------
+// RE-03 fixes: 10-frame drag keeps the grabbed ground point under the cursor;
+// key pan honours yaw.
+// ---------------------------------------------------------------------------
+{
+  const rts = createRtsCamera({ bounds: BOUNDS });
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: -58, vfovDeg: 36, projection: 'pitched' };
+  update(rts, 1 / 60, {}, GRID, cam);
+  const terms = createPitchedTerms();
+  const ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
+  const groundAt = (col, row) => {
+    pitchedTerms(cam, GRID, terms);
+    screenRay(terms, col, row, ray);
+    const t = (rts.focusZ - ray.oz) / ray.dz;
+    return [ray.ox + t * ray.dx, ray.oy + t * ray.dy];
+  };
+  let col = 200, row = 75;
+  const grabbed = groundAt(col, row);
+  let worst = 0;
+  for (let i = 1; i <= 10; i++) {
+    const nc = col + 3, nr = row + 1.5;
+    update(rts, 1 / 60, { dragging: true, dragCol0: col, dragRow0: row, dragCol1: nc, dragRow1: nr }, GRID, cam);
+    col = nc; row = nr;
+    const g = groundAt(col, row);
+    worst = Math.max(worst, Math.hypot(g[0] - grabbed[0], g[1] - grabbed[1]));
+  }
+  ok('10-frame drag keeps grabbed ground point under cursor (1e-6 m)', worst < 1e-6, `worst=${worst}`);
+}
+{
+  const yaw = 90;
+  const rts = createRtsCamera({ bounds: BOUNDS, yawDeg: yaw });
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: -58, vfovDeg: 36, projection: 'pitched' };
+  const x0 = rts.focusX, y0 = rts.focusY;
+  update(rts, 0.1, { right: true }, GRID, cam);
+  // yaw 90: R = (0, 1) -> right moves +y.
+  ok('yaw 90: right key pans along +y', Math.abs(rts.focusX - x0) < 1e-9 && rts.focusY - y0 > 0.1, `d=(${rts.focusX - x0}, ${rts.focusY - y0})`);
+  const x1 = rts.focusX, y1 = rts.focusY;
+  update(rts, 0.1, { up: true }, GRID, cam);
+  // yaw 90: F = (1, 0) -> up moves +x.
+  ok('yaw 90: up key pans along +x', rts.focusX - x1 > 0.1 && Math.abs(rts.focusY - y1) < 1e-9, `d=(${rts.focusX - x1}, ${rts.focusY - y1})`);
+}
+
 console.log(`rtsCamera.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) {
   for (const f of failures) console.log(`  FAIL: ${f}`);

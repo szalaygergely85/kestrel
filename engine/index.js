@@ -133,6 +133,26 @@ export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 export { NavGrid } from './nav/NavGrid.js';
 export { createAStar, findPath, smoothPath, pathCrossesRect } from './nav/astar.js';
 
+// ---- RE-EXP: RTS layer exports (docs/architecture.md 28.x) -------------------
+export {
+  PROJ_PITCHED_VFOV_DEG, createPitchedTerms, pitchedTerms, pitchedProjection, screenRay,
+  unprojectPitched, worldToCell, pitchedEyeFromFocus, pitchedFogScale, frameMatrix,
+} from './render/projection.js';
+export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
+export { createFlowField, FlowCache } from './nav/flowField.js';
+export { createSteer } from './nav/steer.js';
+export { Visibility } from './world/Visibility.js';
+export {
+  createMinimap, minimapToWorld, worldToMinimap,
+  update as updateMinimap, bakeTerrain as bakeMinimapTerrain, bindFog as bindMinimapFog,
+} from './render/minimap.js';
+export { createRtsCamera, update as updateRtsCamera, zoomBy as zoomRtsCamera } from './core/rtsCamera.js';
+export { createCommandQueue } from './core/commands.js';
+export { createRng } from './core/rng.js';
+export { createHasher } from './core/hash.js';
+export { createRecorder, createPlayer as createReplayPlayer } from './core/replay.js';
+export { STEP } from './core/loop.js';
+
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
 export { attachedLightPos } from './entities/attach.js';

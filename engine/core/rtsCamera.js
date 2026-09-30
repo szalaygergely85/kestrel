@@ -11,7 +11,7 @@
 // reused frame to frame (all scratch lives on the rtsCamera instance).
 
 import { DEG2RAD } from './transform.js';
-import { pitchedEyeFromFocus } from '../render/projection.js';
+import { pitchedEyeFromFocus, createPitchedTerms, pitchedTerms, screenRay } from '../render/projection.js';
 
 /** Default vertical FOV comes from projection.js if not given in options
  * (RE-03 spec); imported lazily-by-value at create time so this module has
@@ -50,8 +50,8 @@ import { PROJ_PITCHED_VFOV_DEG } from '../render/projection.js';
  * @property {number} [mouseX] @property {number} [mouseY]    - device px, for edge-scroll
  * @property {number} [screenW] @property {number} [screenH]  - device px, viewport size (edge-scroll needs these to know where the edges are)
  * @property {boolean} [dragging] - true while a pan-drag is active
- * @property {number} [dragCol0] @property {number} [dragRow0] - drag start, screen cell coords (fractional ok)
- * @property {number} [dragCol1] @property {number} [dragRow1] - drag current, screen cell coords
+ * @property {number} [dragCol0] @property {number} [dragRow0] - the PREVIOUS frame's cursor cell (not the press point); rays are cast from last frame's eye, so the grabbed ground point stays under the cursor (fractional ok)
+ * @property {number} [dragCol1] @property {number} [dragRow1] - the current frame's cursor cell
  * @property {number} [zoomDelta] - +in/-out (or -in/+out, caller's convention - see zoomBy), applied and clamped this frame
  */
 
@@ -61,6 +61,10 @@ import { PROJ_PITCHED_VFOV_DEG } from '../render/projection.js';
  * @property {number} zoom - current zoom factor, clamped to [zoomMin, zoomMax]
  * @property {number} focusZ - smoothed ground height under the focus (internal, exposed for debugging)
  * @property {RtsCameraOptions} opts - resolved options (all defaults filled in)
+ * @property {any} _terms - scratch pitched terms (createPitchedTerms), reused by drag-pan
+ * @property {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number,vfovDeg:number}} _camIn - scratch camera for pitchedTerms
+ * @property {{ox:number,oy:number,oz:number,dx:number,dy:number,dz:number}} _ray0 @property {{ox:number,oy:number,oz:number,dx:number,dy:number,dz:number}} _ray1 - scratch rays
+ * @property {number[]} _hit0 @property {number[]} _hit1 @property {number[]} _eye - scratch points
  */
 
 /**
@@ -94,6 +98,8 @@ export function createRtsCamera(opts) {
     focusZ: resolved.heightFn(startX, startY),
     opts: resolved,
     // Scratch (reused every update() call - zero alloc on the hot path).
+    _terms: createPitchedTerms(),
+    _camIn: { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0, vfovDeg: 0 },
     _ray0: { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 },
     _ray1: { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 },
     _hit0: [0, 0, 0],
@@ -148,9 +154,8 @@ function intersectPlaneZ(ray, planeZ, out3) {
  * `cam.yawDeg`, `cam.pitchDeg`, `cam.vfovDeg`. Zero allocation.
  *
  * Pan (keys/edge-scroll): `panSpeed*zoom*dt` metres, screen-relative
- * directions for `yawDeg` (v1 handles yaw 0 exactly: "up" = -y, "right" =
- * +x; a nonzero yaw would need the camera's R/F basis rotated into these
- * directions, out of scope here since RE-03's camera is fixed-yaw).
+ * directions for `yawDeg` (right = R = (cos yaw, sin yaw), up = ground part
+ * of F = (sin yaw, -cos yaw); yaw 0: "up" = -y, "right" = +x).
  *
  * Drag-pan: exact ground delta of two `screenRay` hits (drag start/current
  * screen cell) on the plane z = focus z, so the ground point under the
@@ -188,30 +193,28 @@ export function update(rts, dt, input, grid, cam) {
     else if (input.mouseY > input.screenH - o.edgePx) dy += panDist;
   }
 
+  // Rotate screen-relative (dx right, dy down) into world: right = R,
+  // up = ground part of F, so world = dx*R - dy*F (yaw 0: (dx, dy)).
+  if (o.yawDeg !== 0) {
+    const yr = o.yawDeg * DEG2RAD;
+    const sy = Math.sin(yr), cy = Math.cos(yr);
+    const wx = dx * cy - dy * sy;
+    const wy = dx * sy + dy * cy;
+    dx = wx; dy = wy;
+  }
   rts.focusX += dx;
   rts.focusY += dy;
 
   if (input.dragging
     && input.dragCol0 !== undefined && input.dragRow0 !== undefined
     && input.dragCol1 !== undefined && input.dragRow1 !== undefined) {
-    // Build minimal pitched terms for the CURRENT eye/basis (from the
-    // previous frame's cam pose) so we can cast the two drag rays.
-    const tanHalfX = tanHalfXFor(o.vfovDeg, grid);
-    const tanHalfY = Math.tan((o.vfovDeg * DEG2RAD) / 2);
-    const yawRad = o.yawDeg * DEG2RAD;
-    const p = o.pitchDeg * DEG2RAD;
-    const fx = Math.sin(yawRad), fy = -Math.cos(yawRad);
-    const cosP = Math.cos(p), sinP = Math.sin(p);
-    const terms = {
-      cols: grid.cols, rows: grid.rows,
-      eyeX: cam.x, eyeY: cam.y, eyeZ: cam.z,
-      fX: cosP * fx, fY: cosP * fy, fZ: sinP,
-      rX: Math.cos(yawRad), rY: Math.sin(yawRad),
-      uX: -sinP * fx, uY: -sinP * fy, uZ: cosP,
-      tanHalfX, tanHalfY,
-    };
-    screenRayInto(terms, input.dragCol0, input.dragRow0, rts._ray0);
-    screenRayInto(terms, input.dragCol1, input.dragRow1, rts._ray1);
+    // Terms for the CURRENT eye (last frame's cam pose) to cast the drag rays.
+    const ci = rts._camIn;
+    ci.x = cam.x; ci.y = cam.y; ci.z = cam.z;
+    ci.yawDeg = o.yawDeg; ci.pitchDeg = o.pitchDeg; ci.vfovDeg = o.vfovDeg;
+    pitchedTerms(ci, grid, rts._terms);
+    screenRay(rts._terms, input.dragCol0, input.dragRow0, rts._ray0);
+    screenRay(rts._terms, input.dragCol1, input.dragRow1, rts._ray1);
     intersectPlaneZ(rts._ray0, rts.focusZ, rts._hit0);
     intersectPlaneZ(rts._ray1, rts.focusZ, rts._hit1);
     // Move the focus by the negated ground delta so the ground point under
@@ -244,26 +247,6 @@ export function update(rts, dt, input, grid, cam) {
   cam.focusX = rts.focusX;
   cam.focusY = rts.focusY;
   cam.focusZ = rts.focusZ;
-}
-
-/**
- * Local (not exported from projection.js) screenRay math, applied to a
- * manually-built minimal terms object (used by the drag-pan path above,
- * which needs rays cast against the PREVIOUS frame's eye/basis before this
- * frame's new eye is known). Same expression as `screenRay` in
- * engine/render/projection.js. Zero allocation (writes into `out`).
- * @param {{cols:number,rows:number,eyeX:number,eyeY:number,eyeZ:number,fX:number,fY:number,fZ:number,rX:number,rY:number,uX:number,uY:number,uZ:number,tanHalfX:number,tanHalfY:number}} terms
- * @param {number} col
- * @param {number} row
- * @param {{ox:number,oy:number,oz:number,dx:number,dy:number,dz:number}} out
- */
-function screenRayInto(terms, col, row, out) {
-  const a = ((2 * (col + 0.5)) / terms.cols - 1) * terms.tanHalfX;
-  const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
-  out.ox = terms.eyeX; out.oy = terms.eyeY; out.oz = terms.eyeZ;
-  out.dx = terms.fX + a * terms.rX + b * terms.uX;
-  out.dy = terms.fY + a * terms.rY + b * terms.uY;
-  out.dz = terms.fZ + b * terms.uZ;
 }
 
 /**
