@@ -1070,7 +1070,7 @@ export class GpuCellPipeline {
       // ME-08a (27.16 item 6): the mesh path draws voxels as triangles in
       // `_passRaster`, so the DDA voxel atlas (VRAM + upload) is skipped.
       if (this.renderer !== 'mesh') this._ensureVoxelAtlas(this._voxelPool);
-      this._voxelPool.project(this._cam, this.rt);
+      this._voxelPool.project(this._cam, this.rt, this.renderer);
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
     if (useDda && this.renderer === 'mesh') {

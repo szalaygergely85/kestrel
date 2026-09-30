@@ -13,6 +13,7 @@ import {
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
   GpuCellPipeline, GpuOverlayPass, PASS_NAMES,
   VoxelPool,
+  PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
@@ -257,6 +258,8 @@ const terrainEnabled = params.get('terrain') !== '0';
 // pass (tower only, this story); default 'dda' is every existing pass,
 // completely unchanged.
 const renderer = params.get('renderer') === 'mesh' ? 'mesh' : 'dda';
+// RE-02b (28.1 A2 item 6): first person is pitched on the mesh renderer (look clamp 70), shear on dda (35).
+const pitchClampDeg = renderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -352,6 +355,8 @@ if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass
 // no-op today - wiring only, ready for that story.
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
+gameVoxelPool.renderer = renderer; // RE-02b F1
+engine.overlay.renderer = renderer;
 if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
 
@@ -556,7 +561,7 @@ function runGame(mode) {
         playerHandle.data.components.body.peakZ = startT.z;
       }
       if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
-      look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg);
+      look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg, { pitchClampDeg }); // RE-02b: 70 on the pitched mesh camera, 35 shear
       look.sensDegPerPx = savedSettings.mouseSensitivity; // US-038b (no-op until PlayerLook reads instance fields, see NEEDS PC-A)
       look.invertY = savedSettings.invertY;
       // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
@@ -730,7 +735,7 @@ function runGame(mode) {
       // step's position, before the event flush - `E` is edge-triggered the
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
-      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye), !ending && !uiLocked && input.pressed('KeyE'));
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed('KeyE'));
       // US-022: the relay's own wake timer (clip switch wake -> awake, point
       // light on + 1.0 s grow) - a no-op every step before `beacon.light`
       // fires (game/js/quest/beacon.js), same "reads its own state key" split
@@ -847,7 +852,7 @@ function runGame(mode) {
       // Player and camera live in WORLD coordinates (US-025 AC) - no origin
       // translation needed at the call site any more, `renderWorld` casts
       // each placed structure at its own origin internally (7.3).
-      const eye = Camera.fromEntityInto(playerHandle.data, undefined, renderEye); // reused (rule 9: no per-frame Camera)
+      const eye = Camera.fromEntityInto(playerHandle.data, undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera)
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
@@ -880,7 +885,7 @@ function runGame(mode) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
-      if (!fb.gpuDda) gameVoxelPool.project(cam, rt);
+      if (!fb.gpuDda) gameVoxelPool.project(cam, rt, renderer);
       lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.

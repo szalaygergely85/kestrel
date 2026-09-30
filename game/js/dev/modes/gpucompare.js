@@ -286,6 +286,19 @@ function buildCompareRuns(ctx) {
     },
   });
 
+  // RE-02b (28.1 A2 items 5, 8): mesh-only first-person poses on the DEFAULT projection (pitched on mesh; the
+  // `pitchedDefault` flag keeps the shear pin below off them). fpLevel0 is additionally compared against the
+  // same pose's shear JS twin (`anchorShear`): pitch 0 pitched == shear at the same bars.
+  const fpRun = (name, cam, extra) => runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${name} (RE-02b first person, pitched default)`,
+    cam, real: true, meshOnly: true, pitchedDefault: true, ...extra });
+  fpRun('fpLevel0', { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: 0 }, { anchorShear: true });
+  fpRun('fpUp30', { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 215, pitchDeg: 30 }); // interior, looks up at walls/ceiling
+  fpRun('fpDown60', { x: 1470, y: 1025, z: 4.0, yawDeg: 270, pitchDeg: -60 });
+  fpRun('fpTowerDown45', { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 40, pitchDeg: -45 });
+
+  // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
+  for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
+
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -356,7 +369,7 @@ function runGpuCompareDdaMode(ctx) {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps } of runs) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear } of runs) {
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
@@ -368,7 +381,7 @@ function runGpuCompareDdaMode(ctx) {
       if (before) before();
     }
     if (compareNoVoxels) compareVoxelPool.beginFrame();
-    compareVoxelPool.project(cam, rt);
+    compareVoxelPool.project(cam, rt, renderer);
     resetSceneDim(compareSceneDim);
     if (dim) {
       compareSceneDim.all = dim.all;
@@ -386,7 +399,7 @@ function runGpuCompareDdaMode(ctx) {
     }
     if (real) sprites.pool.collect(world);
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
-    sprites.pool.project(cam, rt, lights || ambientL, world);
+    sprites.pool.project(cam, rt, lights || ambientL, world, renderer);
 
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
     if (overlayOps) overlayOps(engine.overlay);
@@ -441,7 +454,20 @@ function runGpuCompareDdaMode(ctx) {
     // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
     const pitchedHashOk = renderer === 'mesh' && cam && cam.projection === 'pitched' && geomBaseOk &&
       cmpCells.outsideFrac <= 0.005 && cmpCells.glyphMatchPct >= 99.9 && cmpCells.bgMax <= 64 && cmpCells.poisonedSurvivors === 0;
-    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk;
+    // RE-02b b3 anchor: the same pose's shear JS twin vs the pitched GPU output, same mesh bars.
+    let anchorOk = true;
+    if (anchorShear && renderer === 'mesh') {
+      const shearCam = { ...cam, projection: 'shear' };
+      compareVoxelPool.project(shearCam, rt, renderer);
+      rt.gpuActive = false; fbCompare.gpuDda = false;
+      renderWorld(fbCompare, world, shearCam);
+      drawSprites(fbCompare, sprites.pool);
+      rt.gpuActive = wasActive;
+      const cmpA = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true);
+      anchorOk = cmpA.pass && cmpA.glyphMatchPct >= 99;
+      console.log(`[gpucompare] anchor ${poseName}: pitched GPU vs shear twin pass=${cmpA.pass} glyph=${cmpA.glyphMatchPct.toFixed(2)}% fgMaxNonK8=${cmpA.fgMaxNonK8} k8Outside=${cmpA.k8Outside}`);
+    }
+    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk;
     overallOk = overallOk && ok;
     rowsOut.push({ pose: poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
   }
@@ -627,7 +653,7 @@ function runGpuCompareMeshMode(ctx) {
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
 
-    compareVoxelPool.project(cam, rt);
+    compareVoxelPool.project(cam, rt, 'dda');
     fbCompare.gpuDda = true;
     renderWorld(fbCompare, world, cam);
     pipelineDda.setEnabled(true);
@@ -636,7 +662,7 @@ function runGpuCompareMeshMode(ctx) {
     const rbDda = rt.readbackPresent(rbDdaFg, rbDdaBg);
     const { GI: giDda, GA: gaDda, Depth: depthDda } = pipelineDda.readbackGeometry();
 
-    compareVoxelPool.project(cam, rt);
+    compareVoxelPool.project(cam, rt, 'mesh');
     pipelineMesh.setEnabled(true);
     pipelineMesh.frame(fbCompare, lights || ambientL, cam, world);
     rt.present();

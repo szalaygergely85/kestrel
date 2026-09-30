@@ -54,6 +54,7 @@ export function computeProjectionPitched(pt, proj) {
   proj.rX = pt.rX; proj.rY = pt.rY;
   proj.uX = pt.uX; proj.uY = pt.uY; proj.uZ = pt.uZ;
   proj.tanHalfX = pt.tanHalfX; proj.tanHalfY = pt.tanHalfY;
+  proj.near = pt.near;
   proj.pitched = true;
   return proj;
 }
@@ -119,7 +120,7 @@ export function instanceRect(proj, pm, inst, pose, partAABB, rect) {
     for (let c = 0; c < 8; c++) {
       const dx = ((c & 1) ? maxX : minX) - proj.eyeX, dy = ((c & 2) ? maxY : minY) - proj.eyeY, dz = ((c & 4) ? maxZ : minZ) - proj.eyeZ;
       const vd = dx * proj.fX + dy * proj.fY + dz * proj.fZ;
-      if (vd <= 0.05) { useFull = true; break; }
+      if (vd <= proj.near) { useFull = true; break; }
       const vx = dx * proj.rX + dy * proj.rY;
       const vy = dx * proj.uX + dy * proj.uY + dz * proj.uZ;
       const colF = (vx / vd / proj.tanHalfX + 1) * (cols / 2) - 0.5;

@@ -94,7 +94,7 @@ function renderWorldMesh(fb, world, cam) {
   meshGrid.cols = cols; meshGrid.rows = rows;
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
   meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
-  meshPitched = resolveProjection(cam, 'mesh') === 'pitched';
+  meshPitched = resolveProjection(cam, fb.renderer || 'mesh') === 'pitched';
   projTerms(cam, meshGrid, meshTerms);
   // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh), so
   // write it on every mesh frame (RE-02a review: shear frames left it stale / at defaults).

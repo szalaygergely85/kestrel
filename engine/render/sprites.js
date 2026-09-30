@@ -53,7 +53,7 @@ const LOD_HALF_BELOW = 0.75;
 
 // Camera basis (same formulas as sectorCaster.js's castScene / fillSky -
 // one source of truth for the projection; recomputed once per project()).
-function camBasis(cam, rt, out) {
+function camBasis(cam, rt, out, renderer) {
   const cols = rt.cols, rows = rt.rows;
   const tanHalfHFov = Math.tan(HFOV_DEG * Math.PI / 360);
   const yawRad = cam.yawDeg * Math.PI / 180;
@@ -66,7 +66,7 @@ function camBasis(cam, rt, out) {
   out.tanHalfHFov = tanHalfHFov; out.planeDistY = planeDistY; out.horizonRow = horizonRow;
   out.cols = cols; out.rows = rows; out.yawDeg = cam.yawDeg;
   // RE-02a (28.1 A2 item 2): `out.pt` is the pitched terms object when the cam is pitched, else null.
-  if (resolveProjection(cam, 'mesh') === 'pitched') {
+  if (resolveProjection(cam, renderer) === 'pitched') {
     const pt = out.pt || (out.pt = createPitchedTerms());
     const g = out.grid || (out.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
     g.cols = cols; g.rows = rows; g.pxCellW = rt.pxCellW || 1; g.pxCellH = rt.pxCellH || 1;
@@ -208,6 +208,8 @@ export class SpritePool {
    * @param {Object} palette - `assets.palette` (shading constants, fog, util.shadeSprite/fogFactor)
    */
   constructor(atlas, palette) {
+    /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
+    this.renderer = 'dda';
     this.atlas = atlas;
     this.palette = palette;
     this.count = 0;             // projected sprites this frame (rows 0..count-1 of `spr` are valid)
@@ -281,8 +283,8 @@ export class SpritePool {
    * skipping the per-cell normal factor everywhere), in which case `world`
    * is required (`lightAt`'s vis-grid/sun-shadow sampling).
    */
-  project(cam, rt, light, world) {
-    const cb = camBasis(cam, rt, this._cb);
+  project(cam, rt, light, world, renderer = this.renderer) {
+    const cb = camBasis(cam, rt, this._cb, renderer);
     const P = this.palette, S = P.shading, spr = this.spr, frames = this.atlas.frames;
     const perSprite = !!(light && typeof light.count === 'number' && light.pos);
     // Uniform path (legacy `[r,g,b]` light): the per-sprite part of

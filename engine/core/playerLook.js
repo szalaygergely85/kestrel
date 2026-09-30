@@ -10,8 +10,8 @@ const ARROW_YAW_SPEED = 120; // deg/s
 const ARROW_PITCH_SPEED = 60; // deg/s
 const PITCH_CLAMP = 35; // degrees, matches US-004's y-shear clamp
 
-function clampPitch(p) {
-  return Math.max(-PITCH_CLAMP, Math.min(PITCH_CLAMP, p));
+function clampPitch(p, clampDeg = PITCH_CLAMP) {
+  return Math.max(-clampDeg, Math.min(clampDeg, p));
 }
 
 export class PlayerLook {
@@ -20,12 +20,14 @@ export class PlayerLook {
    * @param {import('./input.js').Input} input
    * @param {number} initialYawDeg
    * @param {number} [initialPitchDeg]
+   * @param {{pitchClampDeg?: number}} [opts] pitchClampDeg: 35 (shear, default) | 70 (pitched, 28.1 A2 item 6)
    */
-  constructor(canvas, input, initialYawDeg, initialPitchDeg = 0) {
+  constructor(canvas, input, initialYawDeg, initialPitchDeg = 0, opts = {}) {
+    this.pitchClampDeg = opts.pitchClampDeg || PITCH_CLAMP;
     this.canvas = canvas;
     this.input = input;
     this.yawDeg = initialYawDeg;
-    this.pitchDeg = clampPitch(initialPitchDeg);
+    this.pitchDeg = clampPitch(initialPitchDeg, this.pitchClampDeg);
     // Already-locked canvas (e.g. a PlayerLook rebuilt on a world restart,
     // US-017): no 'pointerlockchange' will fire, so read the state directly.
     this.locked = typeof document !== 'undefined' && document.pointerLockElement === canvas;
@@ -86,7 +88,7 @@ export class PlayerLook {
       if (this.input.isDown('ArrowDown')) this.pitchDeg -= ARROW_PITCH_SPEED * dt;
     }
     this.yawDeg = ((this.yawDeg % 360) + 360) % 360;
-    this.pitchDeg = clampPitch(this.pitchDeg);
+    this.pitchDeg = clampPitch(this.pitchDeg, this.pitchClampDeg);
   }
 
   dispose() {

@@ -48,6 +48,7 @@ export function createOverlay(cols = 0, rows = 0) {
 
   const ov = {
     cols: 0, rows: 0,
+    renderer: 'dda', // RE-02b F1: the host sets 'mesh' so an unset cam.projection resolves to pitched
     ovl: new Uint8Array(0), ovlZ: new Float32Array(0),
     touched, // first `stats.cells` entries are valid
     // RE-07b seam: dirty row span = union of this frame's and last frame's touched rows.
@@ -127,7 +128,7 @@ export function createOverlay(cols = 0, rows = 0) {
       nTouched = 0;
       let minRow = rows, maxRow = -1;
       if (nOps > 0) {
-        frameMatrix(cam, grid, M);
+        frameMatrix(cam, grid, M, ov.renderer);
         for (let k = 0; k < nOps; k++) {
           const o = k * OPW, type = ops[o], style = ops[o + 1] | 0;
           if (type === OP_RING) rasterRing(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], style);
