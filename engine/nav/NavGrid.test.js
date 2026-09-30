@@ -2,6 +2,7 @@
 // import (leaf-module rule) - fixtures fake the duck-typed `world.terrain`
 // shape by hand. Run: node engine/nav/NavGrid.test.js
 import { NavGrid } from './NavGrid.js';
+import { pathCrossesRect } from './astar.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -133,6 +134,182 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   grid.terrainCost.set([1, 2, 3, 4]);
   grid._recomputeCost();
   ok('cost mirrors terrainCost when blockCount is 0', grid.cost.join(',') === '1,2,3,4', grid.cost.join(','));
+}
+
+// ---- RE-10: block/unblock restore cost/blockCount byte-equal -------------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 5, h: 5, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid.terrainCost[12] = 3; // centre cell, distinct cost
+  grid._recomputeCost();
+  const costBefore = grid.cost.slice();
+  const blockCountBefore = grid.blockCount.slice();
+  const versionBefore = grid.version;
+
+  grid.block(1, 1, 1, 4, 4);
+  ok('block sets cost 0 in the rect', grid.cost[12] === 0 && grid.cost[6] === 0);
+  ok('block increments blockCount in the rect', grid.blockCount[12] === 1);
+  ok('block leaves cells outside the rect untouched', grid.cost[0] === 1 && grid.blockCount[0] === 0);
+  ok('block bumps version by exactly 1', grid.version === versionBefore + 1, `version=${grid.version}`);
+
+  grid.unblock(1);
+  ok('unblock restores cost byte-equal', grid.cost.join(',') === costBefore.join(','), grid.cost.join(','));
+  ok('unblock restores blockCount byte-equal', grid.blockCount.join(',') === blockCountBefore.join(','), grid.blockCount.join(','));
+  ok('unblock restores minCost', grid.minCost === 1, `minCost=${grid.minCost}`);
+
+  let threw = false;
+  try { grid.unblock(1); } catch (e) { threw = true; }
+  ok('unblock on a non-blocked owner throws', threw);
+}
+
+// ---- RE-10: overlapping footprints -----------------------------------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 4, h: 1, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+
+  grid.block(1, 0, 0, 2, 1); // covers cells 0,1
+  grid.block(2, 1, 0, 3, 1); // covers cells 1,2 (overlaps owner 1 at cell 1)
+  ok('overlap: cell 1 has blockCount 2', grid.blockCount[1] === 2, `blockCount[1]=${grid.blockCount[1]}`);
+  ok('overlap: cost is 0 while any owner blocks it', grid.cost[1] === 0);
+
+  let threw = false;
+  try { grid.block(1, 3, 0, 4, 1); } catch (e) { threw = true; }
+  ok('re-blocking an already-blocked owner throws', threw);
+
+  grid.unblock(1); // cell 0 clears, cell 1 still blocked by owner 2
+  ok('cell 0 restored after owner 1 unblocks', grid.cost[0] === 1 && grid.blockCount[0] === 0);
+  ok('cell 1 still blocked by remaining owner', grid.cost[1] === 0 && grid.blockCount[1] === 1);
+
+  grid.unblock(2);
+  ok('all cells restored once every owner unblocks', grid.cost.join(',') === '1,1,1,1', grid.cost.join(','));
+}
+
+// ---- RE-10: blockWorldRect covers cells overlapped by > 1e-6 m --------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 5, h: 5, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+
+  // Rect exactly [1,3) x [1,3): must cover cells (1,1)..(2,2) only, not
+  // the neighbours at x=3/y=3 (zero-width overlap at the boundary).
+  grid.blockWorldRect(9, 1, 1, 3, 3);
+  ok('blockWorldRect covers the interior cells', grid.cost[grid.index(1, 1)] === 0 && grid.cost[grid.index(2, 2)] === 0);
+  ok('blockWorldRect does not pull in a cell touched only at the boundary', grid.cost[grid.index(3, 1)] === 1 && grid.cost[grid.index(1, 3)] === 1);
+  grid.unblock(9);
+}
+
+// ---- RE-10: masked footprint only blocks flagged cells -----------------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 2, h: 2, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+  // 2x2 rect, mask blocks only the diagonal cells (0,0) and (1,1).
+  grid.block(1, 0, 0, 2, 2, new Uint8Array([1, 0, 0, 1]));
+  ok('masked cell (0,0) blocked', grid.cost[grid.index(0, 0)] === 0);
+  ok('masked cell (1,1) blocked', grid.cost[grid.index(1, 1)] === 0);
+  ok('unmasked cell (1,0) stays walkable', grid.cost[grid.index(1, 0)] === 1);
+  ok('unmasked cell (0,1) stays walkable', grid.cost[grid.index(0, 1)] === 1);
+  grid.unblock(1);
+  ok('unblocking a masked footprint restores every cell', grid.cost.join(',') === '1,1,1,1');
+}
+
+// ---- RE-10: saveBlockers / loadBlockers round trip ----------------------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 6, h: 6, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid.terrainCost[grid.index(4, 4)] = 5;
+  grid._recomputeCost();
+
+  grid.block(20, 0, 0, 2, 2);
+  grid.block(3, 3, 3, 5, 5, new Uint8Array([1, 0, 1, 0]));
+  grid.block(11, 1, 4, 3, 6);
+
+  const saved = grid.saveBlockers();
+  ok('saveBlockers sorts by owner', saved.map((r) => r.owner).join(',') === '3,11,20', saved.map((r) => r.owner).join(','));
+  ok('saveBlockers stores the rect', saved[1].rect.join(',') === '1,4,3,6', saved[1].rect.join(','));
+  ok('saveBlockers stores the mask when present', Array.isArray(saved[0].mask) && saved[0].mask.join(',') === '1,0,1,0');
+  ok('saveBlockers omits mask when the footprint has none', saved[1].mask === undefined);
+
+  const costBefore = grid.cost.slice();
+  const blockCountBefore = grid.blockCount.slice();
+  grid.loadBlockers(saved);
+  ok('loadBlockers restores cost byte-equal', grid.cost.join(',') === costBefore.join(','));
+  ok('loadBlockers restores blockCount byte-equal', grid.blockCount.join(',') === blockCountBefore.join(','));
+
+  const saved2 = grid.saveBlockers();
+  ok('loadBlockers round trip preserves the owner set', JSON.stringify(saved2) === JSON.stringify(saved));
+}
+
+// ---- RE-10: maxBlockers overflow throws ---------------------------------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 10, h: 10, cell: 1, maxBlockers: 2 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+  grid.block(1, 0, 0, 1, 1);
+  grid.block(2, 1, 0, 2, 1);
+  let threw = false;
+  try { grid.block(3, 2, 0, 3, 1); } catch (e) { threw = true; }
+  ok('block throws once maxBlockers is exceeded', threw);
+}
+
+// ---- RE-10: maxFootprintCells overflow throws (masked footprints only) --
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 10, h: 10, cell: 1, maxFootprintCells: 4 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+  let threw = false;
+  try { grid.block(1, 0, 0, 3, 3, new Uint8Array(9)); } catch (e) { threw = true; }
+  ok('block throws when a masked footprint exceeds maxFootprintCells', threw);
+}
+
+// ---- RE-10: version + dirty ring ----------------------------------------
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 5, h: 5, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+  const v0 = grid.version;
+  const out = new Int32Array(32);
+
+  ok('takeDirty(current version) returns 0 (nothing new)', grid.takeDirty(v0, out) === 0);
+
+  grid.block(1, 0, 0, 2, 2);
+  const n1 = grid.takeDirty(v0, out);
+  ok('takeDirty reports one dirty rect after one block', n1 === 1, `n1=${n1}`);
+  ok('dirty rect matches the blocked rect', out[0] === 0 && out[1] === 0 && out[2] === 2 && out[3] === 2);
+  const v1 = grid.version;
+
+  grid.block(2, 3, 3, 5, 5);
+  grid.unblock(1);
+  const n2 = grid.takeDirty(v1, out);
+  ok('takeDirty reports both later changes', n2 === 2, `n2=${n2}`);
+  ok('dirty rects are oldest first', out[0] === 3 && out[1] === 3 && out[4] === 0 && out[5] === 0);
+
+  // Overflow the ring (size 8) with block/unblock pairs on a fresh owner
+  // range so an old watermark can no longer be replayed.
+  const grid2 = new NavGrid({ x0: 0, y0: 0, w: 20, h: 20, cell: 1, maxBlockers: 64 });
+  grid2.terrainCost.fill(1);
+  grid2._recomputeCost();
+  const vStart = grid2.version;
+  for (let i = 0; i < 10; i++) {
+    grid2.block(100 + i, i, 0, i + 1, 1);
+    grid2.unblock(100 + i);
+  }
+  ok('takeDirty returns -1 once the ring has wrapped past the watermark', grid2.takeDirty(vStart, out) === -1);
+  ok('takeDirty succeeds for a watermark still covered by the ring', grid2.takeDirty(grid2.version - 1, out) === 1);
+}
+
+// ---- RE-10: pathCrossesRect true/false fixtures (astar.js, RE-05) -------
+{
+  // Straight path along y=0, x = 0..4.
+  const path = Int32Array.from([0, 1, 2, 3, 4]);
+  const gridStub = { w: 5 };
+  ok('pathCrossesRect true when a path cell falls inside the rect',
+    pathCrossesRect(path, path.length, gridStub, { cx0: 2, cy0: 0, cx1: 3, cy1: 1 }) === true);
+  ok('pathCrossesRect false when the rect is outside every path cell',
+    pathCrossesRect(path, path.length, gridStub, { cx0: 0, cy0: 1, cx1: 5, cy1: 2 }) === false);
+  ok('pathCrossesRect respects the half-open rect bound (cx1 exclusive)',
+    pathCrossesRect(path, path.length, gridStub, { cx0: 4, cy0: 0, cx1: 4, cy1: 1 }) === false);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
