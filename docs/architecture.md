@@ -2923,3 +2923,173 @@ Perf asserts are warn-only unless `PERF_STRICT=1`.
 - **RE-10** (in `NavGrid.test.js`): block + unblock restores `cost`/`blockCount` byte-equal; overlapping footprints; `saveBlockers`/`loadBlockers` round trip; `version` and dirty ring; `pathCrossesRect` true/false fixtures.
 
 **Do not:** import render, mesh or World into nav; store world objects or closures in NavGrid; run per-unit A* for large group moves (use the flow field); emit callback events from nav; sample `groundAt` for walkability.
+
+### 28.3 Fog of war: RE-11 visibility grid (PC-B, pure JS) + RE-12 shading (PC-A, GLSL)
+
+**RE-11 `engine/world/Visibility.js`** (leaf: imports nothing; `// @ts-check`; exported via `engine/index.js`). This is sim state: it advances only inside the fixed step, and 28.2's determinism and zero-alloc rules apply.
+```
+new Visibility({x0, y0, w, h, cell = 1, teams = 2, maxSources = 1024, maxRadiusCells = 16})   // teams <= 8; allocates everything
+state[t]   Uint8Array(w*h)  0 = unseen, 128 = explored (not visible now), 255 = visible  (the byte IS the R8 texel; no conversion pass)
+count[t]   Uint16Array(w*h) sources of team t covering the cell (derived, never saved)
+version    Uint32Array(teams), +1 whenever state[t] changes
+sources    SoA by id: cx, cy, rc Int32Array; mask, active Uint8Array
+setSource(id, teamMask, x, y, radiusM)  // cx = floor((x-x0)/cell), rc = floor(radiusM/cell + 0.5) (> maxRadiusCells throws); no-op if (cx,cy,rc,mask) unchanged, else unstamp old + stamp new
+removeSource(id);  clearSources()       // clearSources: counts = 0, every 255 -> 128 (used after load)
+stateAt(t, x, y) -> 0|128|255 (outside -> 0);  isVisible(t,x,y);  isExplored(t,x,y)
+takeDirty(t, out4) -> bool              // out4 Int32Array [cx0, cy0, cx1, cy1) = union of changed cells since the last call; resets
+revealAll(t)                            // explored = everywhere (scenario/debug)
+saveExplored() -> {x0,y0,w,h,cell,teams,maxSources,maxRadiusCells, explored: number[][]}   // per team: row-major RLE of the explored bit; runs alternate, starting with "unexplored"
+static fromSave(obj) -> Visibility      // explored restored (state 128), no sources
+hashInto(h)                             // RE-14 hasher: state bytes of every team (counts follow from the sources)
+```
+**Update rule (v1: sight circles, no occlusion).** The circle table is built at construction: `span[r][dy] = floor(sqrt(r*r + r - dy*dy))` for `0 <= dy <= r <= maxRadiusCells`. A stamp loops over rows `cy-rc..cy+rc` and columns `cx-span..cx+span`, clipped to the grid. For each team bit in `mask` it does `++count`; on 0 -> 1 it sets `state = 255` and marks the cell dirty. An unstamp does `--count`; on 1 -> 0 it sets `state = 128`. Stamps commute, so the result does not depend on call order (the game still calls in slot order). A source that stays in its cell costs nothing: that is the incremental update. Shared vision = a mask with several bits.
+
+**Occlusion is out of scope:** no LOS against the heightfield or structures. A later story adds `opts.occluder` behind the same API (a per-cell height Uint8 + the source's eye height, recursive shadowcasting per source).
+
+Game tick order: commands -> orders/AI -> nav/steer -> `supportAt` z -> `setSource` for every unit in slot order -> combat -> hash checkpoint -> `tick++`.
+
+**Save (the AC's "CO-5 extension").** `WorldState` gets an optional top-level key `visibility`; nothing else changes. `World` gets a `visibility` field (default null). `serialize` writes `world.visibility.saveExplored()` when that field is non-null and omits the key otherwise. `deserialize` sets `world.visibility = Visibility.fromSave(state.visibility)` when the key is present. No `VERSION` bump (same pattern as US-027a). `stringifySave(serialize(deserialize(s))) === stringifySave(s)` must still hold. After a load, the game re-adds its sources on the first tick.
+
+**Budgets / tests** (`Visibility.test.js`):
+- Perf (AC 1): 200 sources with rc = 8, all moving one cell per tick: <= 0.5 ms per tick. Warn-only unless `PERF_STRICT=1`.
+- Stamp + unstamp restores `count` byte-equal.
+- The same sources applied in shuffled order give byte-equal `state`.
+- The explored bit survives a remove.
+- Clipping at all 4 edges, and a negative origin.
+- The dirty rect is exact.
+- `saveExplored`/`fromSave` round trip, and the `serialize` round trip.
+- Zero alloc over 10k `setSource` calls.
+- `hashInto` gives the same value in two runs.
+
+**RE-12 shading (PC-A).** The renderer gets a duck-typed `FogView = {state: Uint8Array, version: Uint32Array, x0, y0, cell, w, h}` and never imports `engine/world`.
+- API: `engine.setFog(view | null)` does a full upload; the texture is reallocated only when the size changes. `engine.updateFog(cx0, cy0, cx1, cy1)` does a sub-upload; the game calls it when `vis.takeDirty(viewTeam, d)` returns true.
+- Texture: `R8`/`RED`/`UNSIGNED_BYTE`, NEAREST, CLAMP.
+- Sub-upload, zero alloc: set `UNPACK_ROW_LENGTH = w`, call the `texSubImage2D` overload with `srcOffset = cy0*w + cx0`, then reset ROW_LENGTH to 0. No `subarray`.
+- Uniforms: `uFowOn`, `uFowMap = vec4(x0, y0, 1/cell, 0)`, `uFowSize ivec2`, `uFowDimL`, `uFowSat`, `uFowBgDim`. Values come from `createEngine({ fow: {dimL: 0.45, sat: 0.25, bgDim: 0.5} })`; no literals in GLSL.
+- `fowAt(P)` lives in `glsl/common.js` with a literal JS twin. It does a **manual 4-tap bilinear via texelFetch**: no hardware filtering, same rule as 27.9.
+  - `gx = (P.x-x0)*invCell - 0.5`, `ix = floor(gx)`, `fx = gx-ix`; y likewise.
+  - A tap outside the grid counts as 0, so the map edge is unseen.
+  - `v = mix(mix(t00,t10,fx), mix(t01,t11,fx), fy)` with `t = byte/255`.
+  - Cells with infinite depth (sky) get `v = 1`.
+  - P is rebuilt from the depth with the 28.1 / 27.5 cell ray. P is a world point, so the fog is world-anchored and cannot swim when panning (AC 2).
+- `e = clamp(2v, 0, 1)` (explored-ness), `s = clamp(2v-1, 0, 1)` (visible-ness).
+- **Light pass:** `L *= uFowDimL + (1-uFowDimL)*s`. Explored ground then picks darker glyphs from its own ramp. That is the "dim ramp"; no new glyph tables.
+- **Edge pass tail.** Edge is the last pass before sprites, so outlines cannot leak through the fog.
+  - If `e < 0.5`: glyph = space, fg = bg = 0.
+  - Else, with luma weights `(0.299, 0.587, 0.114)`: `sat = mix(uFowSat, 1, s)`; `fg = mix(luma(fg), fg, sat)`; `bg = mix(luma(bg), bg, sat) * mix(uFowBgDim, 1, s)`.
+  - Then `fg *= (2e - 1)` and `bg *= (2e - 1)`: colours fade to black over the last half metre before the unseen line.
+  - Rounding: the pass's existing rounding.
+- Sprites and RE-07 overlay ops are not fogged. The game submits enemy units (instances, rings, bars) only where `vis.isVisible(viewTeam, ...)`. The DDA and CPU-caster paths ignore fog and `console.warn` once.
+- **Tests:**
+  - The JS twins (rasterJS light twin + edge twin) read `view.state` directly.
+  - New gpucompare pose: hillside, pitch -58, a fixture Visibility with 3 sources plus one source that moved away (leaves an explored strip). Glyphs equal except in the boundary set `|e-0.5| < 1/64`; fg/bg within +-4 (AC 1).
+  - `fowAt` unit test: exact at texel centres, 0 outside the grid, identical for a fixed world point under 5 camera pans.
+  - GPU cost: +<= 0.1 ms (8 texelFetch per cell) (AC 3).
+
+### 28.4 RE-13 minimap `engine/render/minimap.js` (PC-B, pure JS; deps RE-01, RE-04, RE-11)
+
+Imports only `engine/render/projection.js` (`screenRay`) and `engine/render/pick.js` (`rayTerrain`). Terrain, fog and units are duck-typed parameters. The image is `rgba` Uint8ClampedArray(W*H*4), north up: image u = +x (east), v = +y (south). `sx = (x1-x0)/W`, `sy = (y1-y0)/H`.
+```
+createMinimap({width = 256, height = 256, x0, y0, x1, y1, teamRgb: Uint8Array(3*8), unseenRgb = [0,0,0], exploredQ8 = 110, footprintRgb = [255,255,255], hideUnseen = true})  // allocates base, fogged, rgba, visIdx
+mm.bakeTerrain(terrain, typeRgb: Uint8Array(3*nTypes), opts)   // load time, <= 30 ms at 256^2, no alloc
+mm.bindFog(view)                                              // fills visIdx Int32Array(W*H): vis cell of each pixel centre (-1 outside)
+mm.update(units, view, viewTeam, terms, terrain)             // per UI refresh; writes rgba
+minimapToWorld(mm, u, v, out2)   // x = x0 + u*sx; u, v in pixels (pixel centre = i + 0.5)
+worldToMinimap(mm, x, y, out2)   // exact inverse
+```
+`units` is a game-owned, reused `MinimapUnits {count, x: Float64Array, y: Float64Array, team: Uint8Array, half: Uint8Array}`. `half` = half-size of the drawn square in px: 0 = 1 px (unit), 2-4 = building.
+
+**Bake**, per pixel centre:
+- Use the **analytic** `heightAt/normalAt/typeAt` (camera-independent, as nav does).
+- `shade = (0.35 + 0.65*max(0, N.Ls)) * (0.8 + 0.2*hn)`, with `Ls = normalize(-1, -1, 2)` (light from the north-west) and `hn` = height normalised to `opts.hMin..hMax`.
+- `base = round(typeRgb * shade)`.
+- Pixels where `opts.structureAt?.(x,y)` is true get `opts.structureRgb`.
+
+**Update:**
+1. If `view.version[viewTeam]` changed since the last update, rebuild `fogged` from `base`: state 0 -> `unseenRgb`, 128 -> `(c*exploredQ8)>>8`, 255 -> c.
+2. `rgba.set(fogged)`.
+3. Units in index order, drawn as clipped filled squares in `teamRgb[team]`. With `hideUnseen`, a unit of another team is skipped unless its cell has `state == 255`.
+4. Camera footprint: `screenRay` at the 4 screen corners `(-0.5, 0)`, `(cols-0.5, 0)`, `(cols-0.5, rows)`, `(-0.5, rows)` (28.1 cell convention), then `rayTerrain`. On a miss, fall back to the plane `z = terrain min`: `t = (zMin-oz)/dz` when `dz < 0`, else `maxT`. Draw the 4 edges as integer Bresenham lines, clipped.
+
+**Budgets / tests** (`minimap.test.js`):
+- AC 1: `update` <= 0.5 ms at 256^2 with 200 units and the fog rebuilt.
+- AC 2: the footprint corners equal `worldToMinimap(rayTerrain hit)` within 1 px, on a slope fixture.
+- AC 3: `worldToMinimap(minimapToWorld(u,v))` within 1e-9, and a click maps to the right world cell.
+- Also: `hideUnseen`, clipping, zero alloc per `update`.
+
+**Display: Canvas2D overlay (picked as the simplest).** `game/js/rts/ui/minimapView.js` (game code, presentation):
+- At setup, create one `<canvas width=W height=H>`, absolutely positioned over the RenderTarget and CSS-scaled with `image-rendering: pixelated`, and one `new ImageData(mm.rgba, W, H)`.
+- Refresh at 20 Hz (every 3rd frame): `mm.update`, then `ctx.putImageData`.
+- Pointer: `u = offsetX*W/clientWidth`, then `minimapToWorld`. Left drag sets the `rtsCamera` focus; right click issues a move command through RE-14.
+- No GPU texture, no engine UI code.
+
+Open question for PO/owner (not part of RE-13): a pixel minimap next to an ASCII view. A later ASCII variant could downsample `rgba` into half-block cells through the RE-07 overlay.
+
+### 28.5 RE-14 deterministic commands, RNG, state hash, replay (PC-B, pure JS; `engine/core/`)
+
+**Files:** `engine/core/commands.js`, `rng.js`, `hash.js`, `replay.js`, each with a `*.test.js`, all leaves inside core. `loop.js` gains `export const STEP` (no behaviour change); the sim uses `STEP`, never the frame dt.
+
+**Amends the RE-14 row: no `world.hashState()`.** RTS sim state lives in game SoA and `engine/nav`, not in World. Instead, each sim module exposes `hashInto(h)` (`steer`, `NavGrid` blockers, `Visibility`, `rng`, game units), and the game registers them in a fixed order.
+
+**Commands.** `createCommandQueue({maxRecords = 4096, maxIds = 65536, inputDelay = 1})` allocates two rings:
+- Records: Int32Array, stride 8, `[tick, player, seq, type, nIds, idOff, a0, a1]`, plus a parallel Int32 array for `a2`.
+- Ids: an Int32Array ring.
+
+Payloads are integers only: world x/y as millimetres `Math.round(x*1000)`, a target unit id or -1. With no floats in commands, replays and network traffic are bit-exact.
+
+API:
+- `q.issue(player, type, ids: Int32Array, n, a0, a1, a2)` copies the ids and stamps `tick = q.tick + inputDelay` and `seq = per-player counter++`. Called from input/UI or AI, never by the sim mid-step. Overflow throws.
+- `q.insert(tick, player, seq, type, ids, n, a0, a1, a2)`: replay/network injection. A tick < `q.tick` throws (that tick has already run).
+- `q.execute(handler)` runs the records whose tick is `q.tick`, ordered by `(player, seq)` (insertion sort into a scratch index array). It calls `handler(q, rec)`, which reads the record with `q.type(rec)`, `q.player(rec)`, `q.ids` + `q.idOff(rec)`, `q.nIds(rec)`, `q.a0/a1/a2(rec)`. Then it frees the records and does `q.tick++`.
+- Types 0-15 are engine-reserved (0 = NOP); game types start at 16. The engine never interprets game types.
+- Save: `q.save()` returns the pending records in execute order as `[[tick, player, seq, type, a0, a1, a2, [ids...]], ...]`, plus `tick` and the seq counters. Load with `q.load(obj)`.
+
+**Loop integration** (in the game's `update(dt)`; `Loop` itself unchanged):
+1. `q.execute(applyCommand)`.
+2. The systems, in the 28.3 tick order.
+3. `recorder?.afterTick(q.tick - 1)`.
+
+`q.tick` is the sim tick. Commands carry ticks, not wall time, so the loop dropping catch-up steps (`MAX_STEPS_PER_FRAME`) cannot desync anything. Input picking and `rtsCamera` run on the frame side and only call `issue`.
+
+**RNG (`rng.js`).** xoshiro128** on a Uint32Array(4) state, seeded by splitmix32 from a u32. Integer ops only (`Math.imul`, `>>>`, `|`, `^`).
+- API: `createRng(seed)`, `nextU32()`, `nextFloat() = (nextU32() >>> 8) / 16777216` (exact, in [0,1)), `int(n) = Math.floor(nextFloat()*n)` (n <= 2^24, else throw), `save() -> [s0, s1, s2, s3]`, `load(a)`, `hashInto(h)`.
+- One sim stream, owned by the game sim. It is drawn only inside fixed steps, in slot/cell order. Presentation (particles, idle anims) uses its own stream, never the sim stream.
+
+**Hash (`hash.js`).** 32-bit FNV-1a over little-endian bytes; stateful, zero alloc.
+- API: `createHasher()` -> `h.reset()`, `h.u32(x)`, `h.i32(x)`, `h.f64(x)`, `h.u8Array(a, start, end)`, `h.u32Array(a, start, end)`, `h.value()` (returns a u32).
+- `h.f64` hashes the bit pattern through a module-level Float64Array(1)/Uint32Array(2) scratch: lo word, then hi.
+- Owners of Float64/Float32 SoA create a Uint32Array view once, at allocation, and hash that.
+- **Sim state hash** after tick T: `reset`, `u32(T)`, `rng.hashInto`, then each registered part's `hashInto` in registration order.
+- Hash every 60 ticks (budget <= 0.1 ms for 500 agents), or every tick with `?hashEveryTick=1`.
+
+**Replay (`replay.js`).** JSON Lines, UTF-8, extension `.kreplay.jsonl`:
+```
+{"kind":"kestrel-replay","v":1,"content":<contentVersion>,"world":"<name>","seed":<u32>,"step":60,"inputDelay":1,"players":[0,1],"start":<WorldState|null>}
+{"t":120,"p":0,"s":3,"c":16,"u":[4,5,9],"a":[12500,-3000,-1]}     one line per executed command, in execute order
+{"t":120,"h":"9f3a0c1d"}                                          checkpoint every 60 ticks (hash after tick t ran)
+{"end":600,"h":"..."}
+```
+- `createRecorder(q, hashFn)`: `afterTick(tick)` appends lines. It allocates only on ticks with commands or a checkpoint; empty ticks allocate nothing. `text()` joins the lines.
+- `createPlayer(text)` parses once at load (allocation allowed there). `beforeTick(q)` `insert`s the next tick's commands; recorded ticks are execution ticks, so it inserts at exactly `q.tick`. `check(tick, hash)` compares against the checkpoint; on a mismatch it sets `divergedAt = tick` and stops.
+
+**Lockstep-ready constraints** (review rules):
+- Commands are the only sim input.
+- Every player's commands for tick T are known before T runs (`inputDelay`; lockstep will use ~6).
+- Command payloads are integers.
+- 28.2's float rules apply to all sim code: no `Math.sin/cos/atan2/exp/pow/hypot/random`. If the sim ever needs trig, it gets a lookup table in `engine/core`.
+- No `Map`/`Set`/object-key iteration in the sim.
+- Render reads sim state and never writes it.
+
+**check-deps rule 15 (WARN, added in RE-14; the number is reserved even if RE-05's rule 14 lands later).**
+- Scope: non-test files under `engine/nav/**`, `engine/core/{commands,rng,hash,replay}.js`, `engine/world/Visibility.js` and `game/js/rts/sim/**` (convention: RTS sim code goes in `sim/`, UI in `ui/`).
+- With comments stripped, WARN on `Math.random`, `Date.now`, `performance.now`, `Math.sin|cos|tan|atan2|exp|pow|hypot`.
+- Pass/fail fixtures go in `tools/check-deps.test.mjs`.
+
+**Tests:**
+- `rng`: golden first 8 outputs for seeds 1 and 0xDEADBEEF (recorded once, then frozen); save/load mid-stream continues identically; `int` bounds.
+- `commands`: two players issuing in reversed arrival order still execute in `(player, seq)` order; insert into the past throws; ring overflow throws; save/load of pending records; zero alloc over 10k ticks, both with no commands and with 1 command per tick.
+- `hash`: known FNV vectors; `f64(-0) != f64(0)`.
+- `replay` (AC 1): a toy sim (64 agents; integer-seeded rng jitter plus `createSteer` if RE-09 exists, else a local integrator) runs a scripted 600-tick command list. Record once, play back 10x: same checkpoints and final hash. A tampered command reports `divergedAt`. JSONL text round trip.
+- Budget: `execute` <= 0.02 ms at 32 commands per tick.
+
+**Do not:** read input, time or the DOM in the sim; put floats or object references in commands; hash `Map`s or objects; let presentation draw from the sim RNG; re-execute a tick.
