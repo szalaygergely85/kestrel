@@ -20,10 +20,13 @@
 // an edge, or a vertex - is covered by one of those five pairs) and needs no
 // heap allocation, unlike a general GJK/EPA distance query.
 //
-// `shape.z` is this project's established "feet" convention (matches
+// `shape.z` is the Rapier-style shape-position convention (unlike
 // `moveSphereMesh`/`moveCircleMesh`'s `z` = the sphere's bottom / capsule's
-// footZ, engine/physics/meshCollide.js): a sphere's CENTRE is `(x, y, z +
-// r)`, a capsule's segment runs from `(x, y, z)` to `(x, y, z + h)`.
+// footZ, engine/physics/meshCollide.js, which is a "feet" convention):
+// a sphere's CENTRE is `(x, y, z)` directly, and a capsule's segment runs
+// from `(x, y, z)` to `(x, y, z + h)` - `z` is the lower segment endpoint,
+// not the feet. Callers that track feet (the 2.5D banded twins, 27.17)
+// convert by adding the sphere radius before calling `contacts()`.
 //
 // Runtime imports: `./bvh.js` only (check-deps rule 11: engine/physics/**
 // never imports engine/mesh/**).
@@ -251,24 +254,25 @@ function capsuleTriangleContact(px, py, pz, qx, qy, qz, r, ax, ay, az, bx, by, b
 
 // ---------------------------------------------------------------------------
 // Terrain (heightfield) contact - one contact, from `world.terrain`'s
-// `groundAt`/`groundNormalAt` tangent plane under the shape's "feet" (x, y)
-// (this project's z convention throughout, 27.17/27.18: a sphere/capsule's
-// own `z` is already its feet).
+// `groundAt`/`groundNormalAt` tangent plane under the sphere's CENTRE (x, y)
+// (Rapier shape-position convention, see the file header: `shape.z` is the
+// sphere's centre, not its feet). A sphere resting exactly on flat ground
+// has its centre at `z = groundZ + r`, i.e. `dist === r`, `depth === 0`.
 // ---------------------------------------------------------------------------
 const _tn = { x: 0, y: 0, z: 0 };
 
 function terrainContact(world, shape) {
   const groundZ = world.terrain.groundAt(shape.x, shape.y);
   const n = world.terrain.groundNormalAt(shape.x, shape.y, _tn);
-  const footX = shape.x, footY = shape.y, footZ = shape.z;
-  // Signed distance from the feet to the ground's tangent plane along its
+  const cx = shape.x, cy = shape.y, cz = shape.z;
+  // Signed distance from the centre to the ground's tangent plane along its
   // normal (positive = above ground).
-  const dist = (footX - shape.x) * n.x + (footY - shape.y) * n.y + (footZ - groundZ) * n.z;
+  const dist = (cx - shape.x) * n.x + (cy - shape.y) * n.y + (cz - groundZ) * n.z;
   const depth = shape.r - dist;
   if (depth <= 0) { _hit.depth = -Infinity; return; }
   _hit.depth = depth;
-  // Contact point: the foot projected onto the plane along the normal.
-  _hit.px = footX - dist * n.x; _hit.py = footY - dist * n.y; _hit.pz = footZ - dist * n.z;
+  // Contact point: the centre projected onto the plane along the normal.
+  _hit.px = cx - dist * n.x; _hit.py = cy - dist * n.y; _hit.pz = cz - dist * n.z;
   _hit.nx = n.x; _hit.ny = n.y; _hit.nz = n.z;
 }
 
@@ -304,12 +308,45 @@ function isBefore(depthA, colA, triA, depthB, colB, triB) {
   return triA < triB;
 }
 
+// Writes `_hit` into `out` as contact `colliderIdx`/`triIdx`. When `out` is
+// already at CONTACT_MAX, keeps the CONTACT_MAX DEEPEST contacts seen so far
+// instead of the first CONTACT_MAX found: replaces the current shallowest
+// entry only if `_hit.depth` is strictly deeper (ties keep the earlier-found
+// contact, so results stay deterministic under a fixed candidate order).
+// O(CONTACT_MAX) scan for the shallowest slot - CONTACT_MAX is <= 16, so this
+// is cheaper than keeping a separate heap, and allocates nothing.
+function pushContact(out, colliderIdx, triIdx) {
+  if (out.count < CONTACT_MAX) {
+    const idx = out.count++;
+    out.px[idx] = _hit.px; out.py[idx] = _hit.py; out.pz[idx] = _hit.pz;
+    out.nx[idx] = _hit.nx; out.ny[idx] = _hit.ny; out.nz[idx] = _hit.nz;
+    out.depth[idx] = _hit.depth;
+    out.collider[idx] = colliderIdx;
+    out.tri[idx] = triIdx;
+    return;
+  }
+  let minIdx = 0;
+  let minDepth = out.depth[0];
+  for (let i = 1; i < CONTACT_MAX; i++) {
+    if (out.depth[i] < minDepth) { minDepth = out.depth[i]; minIdx = i; }
+  }
+  if (_hit.depth <= minDepth) return;
+  out.px[minIdx] = _hit.px; out.py[minIdx] = _hit.py; out.pz[minIdx] = _hit.pz;
+  out.nx[minIdx] = _hit.nx; out.ny[minIdx] = _hit.ny; out.nz[minIdx] = _hit.nz;
+  out.depth[minIdx] = _hit.depth;
+  out.collider[minIdx] = colliderIdx;
+  out.tri[minIdx] = triIdx;
+}
+
 /**
  * Fills `out` with every contact between `shape` and `world.colliders`
  * (trimesh candidates via each collider's BVH `queryAABB`) plus, when
- * `world.terrain` exists, one heightfield contact under the shape's feet.
- * Sorted by `depth` desc, then `collider` asc, then `tri` asc. Silently
- * truncates at `CONTACT_MAX` (no allocation, no error). Zero allocation.
+ * `world.terrain` exists, one heightfield contact under the shape's centre
+ * (`shape.z`, the Rapier shape-position convention - see file header).
+ * Sorted by `depth` desc, then `collider` asc, then `tri` asc. Keeps the
+ * `CONTACT_MAX` DEEPEST contacts found (not just the first `CONTACT_MAX`):
+ * once full, a new contact replaces the current shallowest entry only if it
+ * is strictly deeper. No allocation, no error on truncation. Zero allocation.
  * @param {{colliders: Array<Object>, terrain?: Object}} world
  * @param {{type:'sphere'|'capsule', x:number, y:number, z:number, r:number, h?:number}} shape
  * @param {ContactList} out
@@ -328,7 +365,7 @@ export function contacts(world, shape, out) {
   const shapeMinY = py - r, shapeMaxY = py + r;
 
   const colliders = world.colliders || [];
-  for (let ci = 0; ci < colliders.length && out.count < CONTACT_MAX; ci++) {
+  for (let ci = 0; ci < colliders.length; ci++) {
     const c = colliders[ci];
     if (!c.enabled || c.kind !== 'trimesh') continue;
     const min = c.min, max = c.max;
@@ -338,7 +375,7 @@ export function contacts(world, shape, out) {
 
     const cnt = queryAABB(c.bvh, shapeMinX, shapeMinY, shapeMinZ, shapeMaxX, shapeMaxY, shapeMaxZ, _cand, CAND_MAX);
     const bvhTri = c.bvh.tri;
-    for (let k = 0; k < cnt && out.count < CONTACT_MAX; k++) {
+    for (let k = 0; k < cnt; k++) {
       const ti = _cand[k];
       const o = ti * 9;
       const ax = bvhTri[o], ay = bvhTri[o + 1], az = bvhTri[o + 2];
@@ -348,27 +385,14 @@ export function contacts(world, shape, out) {
       if (isCapsule) capsuleTriangleContact(px, py, pz, px, py, qz, r, ax, ay, az, bx, by, bz, cx, cy, cz);
       else sphereTriangleContact(px, py, pz, r, ax, ay, az, bx, by, bz, cx, cy, cz);
 
-      if (_hit.depth > 0) {
-        const idx = out.count++;
-        out.px[idx] = _hit.px; out.py[idx] = _hit.py; out.pz[idx] = _hit.pz;
-        out.nx[idx] = _hit.nx; out.ny[idx] = _hit.ny; out.nz[idx] = _hit.nz;
-        out.depth[idx] = _hit.depth;
-        out.collider[idx] = ci;
-        out.tri[idx] = ti;
-      }
+      if (_hit.depth > 0) pushContact(out, ci, ti);
     }
   }
 
-  if (world.terrain && out.count < CONTACT_MAX) {
+  if (world.terrain) {
     terrainContact(world, shape);
-    if (_hit.depth > 0) {
-      const idx = out.count++;
-      out.px[idx] = _hit.px; out.py[idx] = _hit.py; out.pz[idx] = _hit.pz;
-      out.nx[idx] = _hit.nx; out.ny[idx] = _hit.ny; out.nz[idx] = _hit.nz;
-      out.depth[idx] = _hit.depth;
-      out.collider[idx] = -1; // terrain has no `world.colliders` index of its own
-      out.tri[idx] = -1;
-    }
+    // terrain has no `world.colliders` index of its own
+    if (_hit.depth > 0) pushContact(out, -1, -1);
   }
 
   sortContacts(out);
