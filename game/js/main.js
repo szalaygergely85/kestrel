@@ -890,7 +890,7 @@ function runGame(mode) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
-      if (!fb.gpuDda) gameVoxelPool.project(cam, rt, renderer);
+      if (!fb.gpuDda) gameVoxelPool.project(cam, rt, effRenderer); // RE-02b re-review: effective renderer (CPU fallback = shear)
       lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
