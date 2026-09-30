@@ -497,10 +497,14 @@ export class World {
           x: tmpW.x, y: tmpW.y, z: tmpW.z,
           yawDeg: local.facingDeg || 0, pitchDeg: local.pitchDeg || 0,
         };
-        parent = st.id;
+        parent = st.id; // spawned FROM this structure - always its parent, takes priority over ed.parent
       } else {
         throw new Error(`World.load: entity "${ed.id}" needs "transform" or "spawn"`);
       }
+      // CO-5 follow-up: a restored entity (transform/inline-xyz branch, not
+      // `ed.spawn`) carries its own live `parent` on the def when it came
+      // through `deserialize` - use it instead of leaving `null`.
+      if (parent === null && typeof ed.parent === 'string') parent = ed.parent;
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
 
