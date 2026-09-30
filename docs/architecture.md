@@ -3225,6 +3225,8 @@ Goal: cut vertex traffic of both voxel raster paths (ME-08 `DRAW_VOXEL` and RE-0
 - route level structures or glTF meshes through `getVoxel`;
 - widen any gpucompare threshold or change the existing poses.
 
+**Amendment 1 (architect, 2026-09-30, after the RE-06b review).** Measured: fetch -67 % and VS invocations -33 % gave no raster change (units delta 0.91 -> 0.88 ms at 400x150). Probe at 200x75 (1/4 pixels, same views): delta 1.09-1.17 ms, i.e. **resolution-independent**, so it is not fragment/MRT fill or overdraw either. The cost is per primitive: 200 x 354 tris = 71k tris, all rasterized (`CULL_FACE` off, 27.15.2) with ~16 flat varyings each, on an Intel iGPU front end (~65 Mtri/s effective here). Consequences: (1) no more vertex-format work; front-to-back sort or a depth pre-pass do not help (fill is not the cost). (2) Levers the next cost down: back-face culling for the two voxel paths (greedy voxel meshes are closed; halves primitives; needs the rasterJS twin to cull the same way, so a paired twin change + gpucompare) -> row RE-06c; then triangle count per unit via LOD / distance culling in RE-15. (3) The `?units` harness (1 m grid, 5 m from the eye) is a worst case for triangle size, not for count; the RTS camera sees the same count, so keep it as the stress view. RE-06b AC1 is re-baselined to "no regression vs RE-06 (raster delta <= RE-06 AC3's +1.5 ms)"; the -50 % goal moves to RE-06c + RE-15.
+
 ### 28.8 RTS-01 spike layout `game/js/rts/` (normative for the spike; architect, 2026-09-30; PC-A)
 
 28.1-28.6 cover the engine side. This note fixes the game-side shape so the spike code can grow into the real RTS instead of being thrown away. Spike only: no new engine code (gaps -> RE rows).
