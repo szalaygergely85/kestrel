@@ -444,7 +444,7 @@ export function pitchedEyeFromFocus(fx, fy, fz, yawDeg, pitchDeg, dist, out3) {
  * RE-02b the default is `'shear'` on every renderer; `'pitched'` must be
  * requested explicitly (`cam.projection = 'pitched'`).
  * @param {{projection?: 'shear'|'pitched'}} cam
- * @param {string} [renderer] - 'dda' | 'mesh' (unused until RE-02b flips the mesh default)
+ * @param {string} [renderer] - 'dda' | 'mesh' - an unset projection resolves to pitched on 'mesh', shear on 'dda' (RE-02b)
  * @returns {'shear'|'pitched'}
  */
 export function resolveProjection(cam, renderer) {

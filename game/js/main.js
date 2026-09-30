@@ -259,7 +259,8 @@ const terrainEnabled = params.get('terrain') !== '0';
 // completely unchanged.
 const renderer = params.get('renderer') === 'mesh' ? 'mesh' : 'dda';
 // RE-02b (28.1 A2 item 6): first person is pitched on the mesh renderer (look clamp 70), shear on dda (35).
-const pitchClampDeg = renderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
+// Set from the EFFECTIVE renderer once the GPU pipeline is known (review: ?renderer=mesh can fall back to CPU = shear).
+let pitchClampDeg = 35;
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -355,8 +356,12 @@ if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass
 // no-op today - wiring only, ready for that story.
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
-gameVoxelPool.renderer = renderer; // RE-02b F1
-engine.overlay.renderer = renderer;
+// RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
+const effRenderer = renderer === 'mesh' && gpuPipeline ? 'mesh' : 'dda';
+pitchClampDeg = effRenderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
+gameVoxelPool.renderer = effRenderer;
+engine.overlay.renderer = effRenderer;
+sprites.pool.renderer = effRenderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
 
