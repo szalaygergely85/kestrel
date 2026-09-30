@@ -133,6 +133,39 @@ async function main() {
     sum.afterShiftClick = await state();
   }
 
+  // RTS-01b: box-select a big group, right-click move (real events), watch it arrive, then sample perf while moving
+  {
+    const a2 = cellPx(dims.cols * 0.05, dims.rows * 0.05), b2 = cellPx(dims.cols * 0.95, dims.rows * 0.95);
+    await press(a2.x, a2.y);
+    for (let i = 1; i <= 4; i++) { await mouse('mouseMoved', a2.x + (b2.x - a2.x) * i / 4, a2.y + (b2.y - a2.y) * i / 4, { buttons: 1 }); await sleep(30); }
+    await release(b2.x, b2.y); await sleep(400);
+    sum.boxGroup = (await state()).selected;
+    await evaluate(cdp, '__rts.selectNear(60)'); // the headless box only catches the few units on screen: use a 60-unit group for the perf window
+    sum.moveGroup = (await state()).selected;
+    const tgt = cellPx(dims.cols * 0.62, dims.rows * 0.6);
+    sum.tickA = await evaluate(cdp, '__rts.units.tick'); await sleep(1000); sum.tickB = await evaluate(cdp, '__rts.units.tick');
+    const before = JSON.parse(await evaluate(cdp, 'JSON.stringify(__rts.moveProbe())'));
+    await mouse('mouseMoved', tgt.x, tgt.y); await sleep(100);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tgt.x, y: tgt.y, button: 'right', buttons: 2, clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tgt.x, y: tgt.y, button: 'right', buttons: 0, clickCount: 1 });
+    await sleep(700);
+    sum.moveMidShot = await shot('6-moving');
+    sum.moveMid = JSON.parse(await evaluate(cdp, 'JSON.stringify(__rts.moveProbe())'));
+    // perf window while the group is moving: 6 s
+    await evaluate(cdp, '__rts.resetStats && __rts.resetStats()');
+    await sleep(6000);
+    sum.f3Moving = await evaluate(cdp, '__rts.hud.f3El.textContent');
+    sum.gpuMoving = JSON.parse(await evaluate(cdp, 'JSON.stringify((() => { const s = __rts.gpuPipeline.stats; return { gpuMsP50: s.gpuMsP50, gpuMsP95: s.gpuMsP95, instancedDraws: s.instancedDraws, loop: __rts.engine.loop.stats, fps: __rts.engine.loop.fps, st: __rts.stats() }; })())'));
+    let after = null;
+    for (let t = 0; t < 40; t++) { await sleep(1000); after = JSON.parse(await evaluate(cdp, 'JSON.stringify(__rts.moveProbe())')); if (after.moving === 0) { sum.arriveSec = 7 + t; break; } }
+    sum.moveBefore = before; sum.moveAfter = after;
+    sum.moveShotAfter = await shot('7-arrived');
+    await sleep(1500);
+    sum.pageShot = path.join(outDir, grid + '-page.png');
+    const png = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(sum.pageShot, Buffer.from(png.data, 'base64'));
+  }
+
   // wheel zoom + sample the F3 numbers over a few seconds
   await mouse('mouseMoved', rect.left + rect.width / 2, rect.top + rect.height / 2);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, deltaX: 0, deltaY: 100 });

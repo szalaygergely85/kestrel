@@ -19,7 +19,7 @@ import { makeUnitModelDef, teamSurfaceFraction, RTS_TEAM_SPEC, UNIT_SLOT_MAT } f
 import { createUnits, TEAM_OWN, TEAM_ENEMY, UNIT_HEIGHT } from './sim/units.js';
 import { buildNavGrid, PLAY_AREA } from './sim/navSetup.js';
 import { placeUnits } from './sim/place.js';
-import { simStep } from './sim/tick.js';
+import { simStep, createSim } from "./sim/tick.js";
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod;
@@ -68,7 +68,7 @@ ok('another seed differs', other.x[0] !== u.x[0] || other.y[0] !== u.y[0]);
 ok('n = 20 and n = 500 fit', place(1, 20).k === 20 && place(1, 500).k > 0);
 
 // ---- sim step keeps prev = cur (no movement in 01a) -------------------------------------------------------------
-simStep(u);
+simStep(createSim(u, nav));
 ok('simStep latches prev and counts ticks', u.tick === 1 && u.prevX[5] === u.x[5] && u.prevY[7] === u.y[7]);
 
 // ---- a1/a4: unit screen size at min / default / max zoom, 400x150 and 240x90 -------------------------------------

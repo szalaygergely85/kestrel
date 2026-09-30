@@ -20,9 +20,9 @@ export function createStatRing() {
 }
 
 const HOWTO = [
-  'RTS-01a spike - left click = select, left drag = box (shift adds), click ground = clear',
-  'pan: WASD / arrows / cursor at the screen edge / middle or right drag   zoom: mouse wheel   F3: stats',
-  'RTS-01b (not yet): right click = move order',
+  'RTS-01 spike - LEFT click = select, LEFT drag = box (shift adds), click ground = deselect',
+  'RIGHT click = move the selection (on an enemy = go to it)   pan: WASD / arrows / screen edge / middle or right DRAG',
+  'zoom: mouse wheel   F3: stats (sim / JS / GPU ms)   ?n=200 units  ?grid=400x150|240x90',
 ];
 
 export function createHud(visibleF3) {

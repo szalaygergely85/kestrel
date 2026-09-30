@@ -698,6 +698,43 @@
       grid: { u: 0.06, v: 0.06, stagger: 0, lines: false },
       face: { set: 'rune', mid: 'rune', far: 'rune' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // RTS-01 (D-032) team materials (palette.js `team.*`): slot `team.a` + per-team targets. Mostly base tone with a
+    // light fleck, dense ironFace set, small emissive, so the team colour holds on shadowed slopes at 4-8 cells.
+    'team.a': {
+      v1: 'team.a', seed: 233, desc: 'RTS UNITS. Team slot (neutral), remapped per team.',
+      albedo: 1.00, bgK: 0.20, detail: 32, jitter: 0.04, emissive: 0.10,
+      tones: [['unitNeutral', 4], ['unitNeutralLight', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' }, lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'team.teal': {
+      v1: 'team.teal', seed: 234, desc: 'RTS UNITS. Team 1 (own), cyan-blue.',
+      albedo: 1.00, bgK: 0.20, detail: 32, jitter: 0.04, emissive: 0.15,
+      tones: [['unitTeal', 4], ['unitTealLight', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' }, lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'team.red': {
+      v1: 'team.red', seed: 235, desc: 'RTS UNITS. Team 2 (enemy), signal red.',
+      albedo: 1.00, bgK: 0.20, detail: 32, jitter: 0.04, emissive: 0.15,
+      tones: [['unitRed', 4], ['unitRedLight', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' }, lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'team.gold': {
+      v1: 'team.gold', seed: 236, desc: 'RTS UNITS. Spare team 3, gold.',
+      albedo: 1.00, bgK: 0.20, detail: 32, jitter: 0.04, emissive: 0.15,
+      tones: [['unitGold', 4], ['unitGoldLight', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' }, lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'team.violet': {
+      v1: 'team.violet', seed: 237, desc: 'RTS UNITS. Spare team 4, violet.',
+      albedo: 1.00, bgK: 0.20, detail: 32, jitter: 0.04, emissive: 0.15,
+      tones: [['unitViolet', 4], ['unitVioletLight', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' }, lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -718,7 +755,9 @@
     linen_light: 'linen_light', linen: 'linen', linen_dark: 'linen_dark', gore_red: 'gore_red', gore_red_dark: 'gore_red_dark',
     canvas_burnt: 'canvas_burnt',
     // v1.16 US-026a waystone (design/models/voxel_world.js), same key in both files.
-    waystone_light: 'waystone_light', waystone: 'waystone', waystone_dark: 'waystone_dark', waystone_mark: 'waystone_mark'
+    waystone_light: 'waystone_light', waystone: 'waystone', waystone_dark: 'waystone_dark', waystone_mark: 'waystone_mark',
+    // RTS-01 team materials (palette.js), same key in both files.
+    'team.a': 'team.a', 'team.teal': 'team.teal', 'team.red': 'team.red', 'team.gold': 'team.gold', 'team.violet': 'team.violet'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

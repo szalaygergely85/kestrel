@@ -5,8 +5,7 @@
       "name": "ascii-quest-http",
       "runtimeExecutable": "python",
       "runtimeArgs": [
-        "-m",
-        "http.server",
+        "tools/serve.py",
         "8000"
       ],
       "port": 8000
@@ -32,6 +31,15 @@
         "9123"
       ],
       "port": 9123
+    },
+    {
+      "name": "rts-fresh",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "tools/serve.py",
+        "9132"
+      ],
+      "port": 9132
     }
   ]
 }

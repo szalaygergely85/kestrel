@@ -7,17 +7,17 @@
 import {
   AssetRegistry, loadContentPack, createEngine, clampGrid, bindShading, bindLevel, repackMaterials, GBuffer,
   GpuCellPipeline, GpuOverlayPass, VoxelPool, buildLightSet, makeLightBuffer,
-  createRtsCamera, updateRtsCamera, createPitchedTerms, pitchedTerms, screenRay, pickNearest, selectInRect, worldToCell,
+  createRtsCamera, updateRtsCamera, createPitchedTerms, pitchedTerms, screenRay, pickNearest, selectInRect, worldToCell, rayTerrain,
   PASS_NAMES,
 } from '../../../engine/index.js';
 import { prebuildTerrainMesh } from '../dev/terrainPrebuild.js'; // load-time terrain mesh build (engine/dev.js stays in game/js/dev)
 import { UNIT_MODEL_KEY, makeUnitModelDef, RTS_TEAM_SPEC } from './unitModel.js';
 import { createUnits, TEAM_OWN, TEAM_ENEMY, UNIT_HEIGHT } from './sim/units.js';
-import { simStep } from './sim/tick.js';
+import { simStep, createSim, CMD_MOVE, PLAYER_1, POS_SCALE } from './sim/tick.js';
 import { buildNavGrid, PLAY_AREA } from './sim/navSetup.js';
 import { placeUnits } from './sim/place.js';
-import { createRtsInput, ACT_NONE, ACT_CLICK, ACT_BOX } from './ui/input.js';
-import { createSelection, selectClick, selectBox } from './ui/select.js';
+import { createRtsInput, ACT_NONE, ACT_CLICK, ACT_BOX, ACT_MOVE } from './ui/input.js';
+import { createSelection, selectClick, selectBox, selectedIds } from './ui/select.js';
 import { createUnitsView } from './ui/unitsView.js';
 import { createHud, createStatRing } from './ui/hud.js';
 
@@ -47,6 +47,9 @@ const grid = clampGrid(gridM ? Number(gridM[1]) : 400, gridM ? Number(gridM[2]) 
 const engine = createEngine({ canvas, assets, cols: grid.cols, rows: grid.rows, rays: 2, gpu: true,
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 } });
 const rt = engine.renderTarget;
+// The UI layer starts opaque and is drawn over the scene by rt.present(); the RTS page draws no UI
+// cells (HUD is DOM), so clear it once - otherwise the whole canvas presents black (main.js clears per frame).
+engine.ui.clear();
 if (rt.backend !== 'gl2') fail('RTS spike needs a real WebGL2 GPU (renderer mesh); backend = ' + rt.backend);
 const P = assets.palette;
 const matTable = bindShading(P, assets.detailPass, rt.pxCellH / rt.pxCellW);
@@ -77,6 +80,7 @@ const nav = buildNavGrid(world);
 const units = createUnits(N_UNITS);
 const placed = placeUnits(units, N_UNITS, SEED, nav, PLACE);
 if (placed < N_UNITS) console.warn(`[rts] placed ${placed}/${N_UNITS} units (area too crowded)`);
+const sim = createSim(units, nav); // steer + command queue + flow fields (sim/tick.js)
 
 // ---- presentation: camera, units view, selection, overlay ---------------------------------------------------
 const rts = createRtsCamera({
@@ -90,6 +94,9 @@ const ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
 const view = createUnitsView(engine, world, units, UNIT_MODEL_KEY);
 const sel = createSelection(units.max);
 const idsScratch = new Int32Array(units.max);
+const rayHit = { x: 0, y: 0, z: 0, t: 0, hit: false };
+const marker = { t: -1, x: 0, y: 0 }; // right-click target marker (presentation only)
+const MARKER_SEC = 0.5;
 const input = createRtsInput(canvas, rt);
 const ov = engine.overlay;
 ov.setStyles({
@@ -99,9 +106,10 @@ ov.setStyles({
   barFill: { glyph: '=', fg: [70, 235, 70] },
   barEmpty: { glyph: '.', fg: [90, 90, 90] },
   box: { glyphs: '-|++', fg: [255, 255, 255] },
+  marker: { glyphs: '-|\\/', fg: [120, 255, 255] },
 });
 const S_SELECT = ov.styleId('select'), S_HOVER = ov.styleId('hover'), S_HOVER_ENEMY = ov.styleId('hoverEnemy');
-const S_FILL = ov.styleId('barFill'), S_EMPTY = ov.styleId('barEmpty'), S_BOX = ov.styleId('box');
+const S_FILL = ov.styleId('barFill'), S_EMPTY = ov.styleId('barEmpty'), S_BOX = ov.styleId('box'), S_MARKER = ov.styleId('marker');
 ov.setGroundFn(groundAt);
 
 const fb = {
@@ -126,14 +134,30 @@ function countOnScreen(n) {
   }
   return c;
 }
+/** Right click: target = the picked unit's position (b3: enemy or own, no attack) or the terrain under the cursor. */
+function issueMove(col, row, n) {
+  const k = selectedIds(sel, n, idsScratch);
+  if (!k) return;
+  screenRay(terms, col, row, ray);
+  const hit = pickNearest(ray, view.pos, view.radii, view.heights, n);
+  let x, y;
+  if (hit >= 0) { x = view.pos[hit * 3]; y = view.pos[hit * 3 + 1]; }
+  else {
+    rayTerrain(terrain, ray, rayHit);
+    if (!rayHit.hit) return;
+    x = rayHit.x; y = rayHit.y;
+  }
+  sim.q.issue(PLAYER_1, CMD_MOVE, idsScratch, k, Math.round(x * POS_SCALE), Math.round(y * POS_SCALE));
+  marker.t = 0; marker.x = x; marker.y = y;
+}
 const f2 = (v) => (Number.isNaN(v) ? 'n/a' : v.toFixed(2));
 function hudText(n) {
   onScreen = countOnScreen(n);
   const ps = gpuPipeline.stats, st = engine.loop.stats, o = rt.overlayPassStats;
   let own = 0; for (let i = 0; i < n; i++) if (units.team[i] === TEAM_OWN) own++;
   hud.setF3Text(
-    `RTS-01a  grid ${rt.cols}x${rt.rows}  renderer mesh  fps ${engine.loop.fps.toFixed(0)}  zoom ${rts.zoom.toFixed(2)}\n` +
-    `units ${n} (own ${own})  on screen ${onScreen}  selected ${sel.count}  hover ${hoverId}\n` +
+    `RTS-01b  grid ${rt.cols}x${rt.rows}  renderer mesh  fps ${engine.loop.fps.toFixed(0)}  zoom ${rts.zoom.toFixed(2)}\n` +
+    `units ${n} (own ${own})  on screen ${onScreen}  selected ${sel.count}  moving ${sim.moving}  hover ${hoverId}\n` +
     `instancedDraws ${ps.instancedDraws}  instances ${ps.instances}  voxelDraws ${ps.voxelDraws}\n` +
     `sim ms p50/p95 ${f2(simRing.pct(0.5))}/${f2(simRing.pct(0.95))}  JS ms p50/p95 ${f2(jsRing.pct(0.5))}/${f2(jsRing.pct(0.95))}  over25 ${st.over25}/${st.frames}\n` +
     `GPU ms p50/p95 ${f2(ps.gpuMsP50)}/${f2(ps.gpuMsP95)}  overlay pass p95 ${o ? f2(o.gpuMsP95) : 'n/a'}\n` +
@@ -144,7 +168,7 @@ function hudText(n) {
 engine.run({
   update() {
     const t0 = performance.now();
-    simStep(units);
+    simStep(sim);
     simAcc += performance.now() - t0;
   },
   render(alpha) {
@@ -178,6 +202,7 @@ engine.run({
         selectBox(sel, units.team, idsScratch, k, input.actShift, TEAM_OWN);
         lastBox.k = k; lastBox.c0 = input.actC0; lastBox.r0 = input.actR0; lastBox.c1 = input.actC1; lastBox.r1 = input.actR1;
       }
+      else if (input.act === ACT_MOVE) issueMove(input.actCol, input.actRow, n);
       input.act = ACT_NONE;
     }
 
@@ -195,6 +220,11 @@ engine.run({
     if (hoverId >= 0) {
       const pos = view.pos;
       ov.ring(pos[hoverId * 3], pos[hoverId * 3 + 1], pos[hoverId * 3 + 2], 0.9, units.team[hoverId] === TEAM_ENEMY ? S_HOVER_ENEMY : S_HOVER);
+    }
+    if (marker.t >= 0) { // move marker: a shrinking ground ring for MARKER_SEC
+      const f = marker.t / MARKER_SEC;
+      if (f >= 1) marker.t = -1;
+      else { ov.ring(marker.x, marker.y, groundAt(marker.x, marker.y), 1.4 - 0.9 * f, S_MARKER); marker.t += dt; }
     }
     if (input.boxActive) ov.rect(input.boxC0, input.boxR0, input.boxC1, input.boxR1, S_BOX);
 
@@ -217,7 +247,7 @@ engine.run({
 
 // dev/test hook (headless checks drive the page through real mouse events; this only reads state)
 window.__rts = {
-  engine, rt, rts, cam, terms, units, view, sel, input, gpuPipeline, hud, nav, world, ov, lastBox,
+  engine, rt, rts, cam, terms, units, sim, view, sel, input, gpuPipeline, hud, nav, world, ov, lastBox,
   /** dev: resolves to a PNG dataURL (per cell 4x4 px: left half bg, right half fg colour) of the next presented frame */
   snap: () => new Promise((res) => { snapReq = ({ fg, bg }) => {
     const c = document.createElement('canvas'); c.width = rt.cols * 4; c.height = rt.rows * 4;
@@ -227,6 +257,33 @@ window.__rts = {
         im.data[o] = src[i]; im.data[o + 1] = src[i + 1]; im.data[o + 2] = src[i + 2]; im.data[o + 3] = 255; } }
     g.putImageData(im, 0, 0); res(c.toDataURL('image/png')); }; }),
   projectBody: (i, out) => worldToCell(terms, view.posBody[i * 3], view.posBody[i * 3 + 1], view.posBody[i * 3 + 2], out),
-  stats: () => ({ onScreen: countOnScreen(units.count), selected: sel.count, hoverId, simP95: simRing.pct(0.95), jsP95: jsRing.pct(0.95) }),
+  /** dev: selects the k own units nearest the camera focus (headless perf pass needs a 60-unit group) */
+  selectNear: (k) => {
+    const ids = []; for (let i = 0; i < units.count; i++) if (units.team[i] === TEAM_OWN) ids.push(i);
+    const d = (i) => Math.hypot(units.x[i] - rts.focusX, units.y[i] - rts.focusY);
+    ids.sort((a, b) => d(a) - d(b) || a - b);
+    for (let i = 0; i < units.count; i++) sel.flags[i] = 0; sel.count = 0;
+    for (const i of ids.slice(0, k)) { sel.flags[i] = 1; sel.count++; }
+    return sel.count;
+  },
+  /** dev: state of the selected group (headless move check): min pair distance, units in blocked nav cells, centroid, spread */
+  moveProbe: () => {
+    let k = 0, cx = 0, cy = 0, inBlocked = 0, minD = 1e9, maxR = 0, moving = 0;
+    const ids = []; for (let i = 0; i < units.count; i++) if (sel.flags[i]) ids.push(i);
+    for (const i of ids) {
+      cx += units.x[i]; cy += units.y[i]; k++;
+      const ccx = nav.cellX(units.x[i]), ccy = nav.cellY(units.y[i]);
+      if (!nav.inBounds(ccx, ccy) || nav.cost[nav.index(ccx, ccy)] === 0) inBlocked++;
+      if (units.state[i] === 1) moving++;
+    }
+    if (k) { cx /= k; cy /= k; }
+    for (let a = 0; a < ids.length; a++) {
+      maxR = Math.max(maxR, Math.hypot(units.x[ids[a]] - cx, units.y[ids[a]] - cy));
+      for (let b = 0; b < a; b++) minD = Math.min(minD, Math.hypot(units.x[ids[a]] - units.x[ids[b]], units.y[ids[a]] - units.y[ids[b]]));
+    }
+    const tgt = k ? { x: units.tx[ids[0]], y: units.ty[ids[0]] } : null;
+    return { n: k, moving, cx, cy, inBlocked, minD: k > 1 ? minD : null, maxR, target: tgt, simTick: units.tick };
+  },
+  stats: () => ({ moving: sim.moving, onScreen: countOnScreen(units.count), selected: sel.count, hoverId, simP95: simRing.pct(0.95), jsP95: jsRing.pct(0.95) }),
 };
 console.log(`[rts] ${placed} units, grid ${rt.cols}x${rt.rows}, GPU ${gpuPipeline.rendererString}`);

@@ -1,14 +1,15 @@
 // game/js/rts/ui/input.js - RTS-01a mouse/keyboard -> camera input + selection actions (28.8). Reads DOM events,
 // never writes sim arrays. Coordinates: CSS px relative to the canvas; `cellCol/cellRow` are fractional cell
 // coordinates in the screenRay convention (an integer = the centre of that cell).
-// Left click / left drag box = select (resolved by rtsMain after the camera update); middle or right drag = pan;
+// Left click / left drag box = select, right click (press + release without moving) = move order (both resolved by
+// rtsMain after the camera update); middle or right DRAG = pan (right press only becomes a pan once it moves);
 // wheel = zoom; WASD / arrows = pan; cursor within 2 cells of the canvas edge = edge scroll.
 
 const KEYS = {
   KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
   KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down',
 };
-export const ACT_NONE = 0, ACT_CLICK = 1, ACT_BOX = 2;
+export const ACT_NONE = 0, ACT_CLICK = 1, ACT_BOX = 2, ACT_MOVE = 3;
 const CLICK_PX = 4;        // a left press that moves less than this (px) is a click, not a box
 const ZOOM_PER_NOTCH = 0.05; // RtsCamera zoom units per wheel notch (range is ~0.33 wide)
 
@@ -29,6 +30,7 @@ export function createRtsInput(canvas, rt) {
     leftDown: false, leftX0: 0, leftY0: 0,                 // left press origin (css px)
     boxActive: false, boxC0: 0, boxR0: 0, boxC1: 0, boxR1: 0, // integer cells, for the rect overlay
     panButton: -1, lastCol: 0, lastRow: 0,
+    rightDown: false, rightX0: 0, rightY0: 0, rightCol0: 0, rightRow0: 0, // right press origin (css px / cell)
     wheel: 0,
     /** pending selection action, consumed by rtsMain once per frame */
     act: ACT_NONE, actShift: false, actCol: 0, actRow: 0, actC0: 0, actR0: 0, actC1: 0, actR1: 0,
@@ -71,6 +73,9 @@ export function createRtsInput(canvas, rt) {
 
   on(window, 'mousemove', (e) => {
     const { cw, ch } = locate(e);
+    if (s.rightDown && s.panButton < 0 && Math.abs(s.mx - s.rightX0) + Math.abs(s.my - s.rightY0) >= CLICK_PX) {
+      s.panButton = 2; s.lastCol = s.rightCol0; s.lastRow = s.rightRow0; // grab the ground point under the press
+    }
     if (s.leftDown) {
       s.boxActive = Math.abs(s.mx - s.leftX0) + Math.abs(s.my - s.leftY0) >= CLICK_PX;
       if (s.boxActive) s.boxC1 = cellIdx(s.mx, cw), s.boxR1 = cellIdx(s.my, ch);
@@ -81,7 +86,10 @@ export function createRtsInput(canvas, rt) {
     if (e.button === 0) {
       s.leftDown = true; s.leftX0 = s.mx; s.leftY0 = s.my;
       s.boxC0 = s.boxC1 = cellIdx(s.mx, cw); s.boxR0 = s.boxR1 = cellIdx(s.my, ch); s.boxActive = false;
-    } else if (e.button === 1 || e.button === 2) {
+    } else if (e.button === 2) {
+      s.rightDown = true; s.rightX0 = s.mx; s.rightY0 = s.my; s.rightCol0 = s.cellCol; s.rightRow0 = s.cellRow;
+      e.preventDefault();
+    } else if (e.button === 1) {
       s.panButton = e.button; s.lastCol = s.cellCol; s.lastRow = s.cellRow;
       e.preventDefault();
     }
@@ -99,6 +107,10 @@ export function createRtsInput(canvas, rt) {
         s.act = ACT_CLICK; s.actCol = s.cellCol; s.actRow = s.cellRow;
       }
       s.boxActive = false;
+    } else if (e.button === 2 && s.rightDown) {
+      s.rightDown = false;
+      if (s.panButton === 2) s.panButton = -1; // it was a drag-pan
+      else { s.act = ACT_MOVE; s.actCol = s.cellCol; s.actRow = s.cellRow; }
     } else if (e.button === s.panButton) {
       s.panButton = -1;
     }
@@ -109,7 +121,7 @@ export function createRtsInput(canvas, rt) {
     s.wheel += (e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0) * ZOOM_PER_NOTCH; // wheel down = zoom out = wider view
   }, { passive: false });
   on(document, 'mouseleave', () => { s.hasMouse = false; s.leftDown = false; s.boxActive = false; });
-  on(window, 'blur', () => { for (const k in keys) keys[k] = false; s.panButton = -1; s.leftDown = false; s.boxActive = false; });
+  on(window, 'blur', () => { for (const k in keys) keys[k] = false; s.panButton = -1; s.rightDown = false; s.leftDown = false; s.boxActive = false; });
   on(window, 'keydown', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (KEYS[e.code]) { keys[KEYS[e.code]] = true; e.preventDefault(); }

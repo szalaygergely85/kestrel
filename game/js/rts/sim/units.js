@@ -8,7 +8,7 @@ export const STATE_IDLE = 0;
 export const STATE_MOVING = 1;
 export const UNIT_RADIUS = 0.5;  // m, pick cylinder radius + separation radius
 export const UNIT_HEIGHT = 1.6;  // m, pick cylinder height (matches unitModel.js)
-export const PATH_SLOTS = 32;    // path pool slots per unit (RTS-01b)
+export const PATH_SLOTS = 32;    // waypoint slots per unit (A* groups, RTS-01b)
 
 /**
  * @param {number} max capacity
@@ -23,7 +23,8 @@ export function createUnits(max) {
     tx: new Float64Array(max), ty: new Float64Array(max),
     team: new Uint8Array(max), state: new Uint8Array(max),
     pathOff: new Int32Array(max), pathLen: new Int32Array(max), pathPos: new Int32Array(max),
-    pathPool: new Int32Array(max * PATH_SLOTS),
+    stall: new Uint16Array(max), // ticks in a row moving below 0.3 m/s (arrival by blockage)
+    pathPool: new Float64Array(max * PATH_SLOTS * 2), // waypoints (x,y) of A* groups: pathLen of them at pathOff + 2k
   };
 }
 
@@ -33,6 +34,6 @@ export function addUnit(u, x, y, team) {
   const i = u.count++;
   u.x[i] = x; u.y[i] = y; u.prevX[i] = x; u.prevY[i] = y; u.tx[i] = x; u.ty[i] = y;
   u.team[i] = team; u.state[i] = STATE_IDLE;
-  u.pathOff[i] = i * PATH_SLOTS; u.pathLen[i] = 0; u.pathPos[i] = 0;
+  u.pathOff[i] = i * PATH_SLOTS * 2; u.stall[i] = 0; u.pathLen[i] = 0; u.pathPos[i] = 0;
   return i;
 }

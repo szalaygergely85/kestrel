@@ -186,7 +186,14 @@
     wayStoneLight:  '#b4b8a8', // rain-bleached top rim
     wayStone:       '#5a616d', // blue-grey slate body
     wayStoneDark:   '#383d46', // damp foot, cut edges round the mark
-    lichen:         '#c9c58c'  // yellow-grey lichen patches
+    lichen:         '#c9c58c', // yellow-grey lichen patches
+    // RTS-01 (D-032) team colours: saturated and light, so they survive the 58 deg sun + fog on green/brown hills.
+    // Hue picks stay away from grass (yellow-green) and soil (low-sat brown): cyan-blue, signal red, gold, violet.
+    unitNeutralLight: '#f0ebde', unitNeutral: '#cfc9ba', unitNeutralDark: '#6e6a60', // team.a slot (team 0 / unowned)
+    unitTealLight:    '#b4f2ff', unitTeal:    '#30c8f0', unitTealDark:    '#12607e', // team 1 (own)
+    unitRedLight:     '#ffa48c', unitRed:     '#f04a3a', unitRedDark:     '#7c1a14', // team 2 (enemy)
+    unitGoldLight:    '#fff0a8', unitGold:    '#f4c238', unitGoldDark:    '#8a6412', // spare team 3
+    unitVioletLight:  '#e8c8ff', unitViolet:  '#b86af4', unitVioletDark:  '#5a2c8c'  // spare team 4
   };
 
   // ---------------------------------------------------------------------------
@@ -911,6 +918,27 @@
       a: { shade: 1.00 }, c: { shade: 1.15, tint: 'aetherLight', amount: 0.5 }, m: { shade: 0.85, tint: 'aetherMid', amount: 0.5 }
     }, rows: ['acam', 'maac', 'acma', 'caam'] }
   };
+  // RTS-01 (D-032, architecture.md 28.6 item 5) team materials, appended so no existing id moves. `team.a` = the
+  // neutral SLOT material a unit model paints (tabard, pauldrons, helmet, pack); engine.setTeamMaterials remaps it
+  // per team to one of the `team.<colour>` targets. All share the dense iron ramp (solid top end # X M reads as a
+  // filled shape at 4-8 cells), albedo ~1, and a small emissive 0.15 so a unit on a shadowed slope never goes dark.
+  function teamMat(desc, base, light, dark, emissive) {
+    return {
+      desc: desc, base: base, albedo: 1.00, ramp: 'iron', spec: 0.10, emissive: emissive,
+      bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 12],
+      texture: { w: 2, h: 2, scale: [16, 16], key: {
+        a: { shade: 1.00 }, l: { shade: 1.10, tint: light, amount: 0.4 }, d: { shade: 0.85, tint: dark, amount: 0.3 }
+      }, rows: ['al', 'da'] }
+    };
+  }
+  materials['team.a'] = teamMat('RTS UNITS. Team SLOT (neutral bone-grey): what team 0 / unowned units show. Remapped ' +
+    'per team by engine.setTeamMaterials; never pick it as a target.', 'unitNeutral', 'unitNeutralLight', 'unitNeutralDark', 0.10);
+  materials['team.teal'] = teamMat('RTS UNITS. Team 1 (own): bright cyan-blue, bluer than aether so it never reads as ' +
+    'magic, clear of the grass greens.', 'unitTeal', 'unitTealLight', 'unitTealDark', 0.15);
+  materials['team.red'] = teamMat('RTS UNITS. Team 2 (enemy): signal red, far more saturated than soil and wood browns.',
+    'unitRed', 'unitRedLight', 'unitRedDark', 0.15);
+  materials['team.gold'] = teamMat('RTS UNITS. Spare team 3: gold yellow.', 'unitGold', 'unitGoldLight', 'unitGoldDark', 0.15);
+  materials['team.violet'] = teamMat('RTS UNITS. Spare team 4: violet.', 'unitViolet', 'unitVioletLight', 'unitVioletDark', 0.15);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)

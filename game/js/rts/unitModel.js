@@ -1,86 +1,39 @@
-// game/js/rts/unitModel.js - RTS-01a placeholder unit (docs/architecture.md 28.8).
-// A small upright voxel figure: 1.0 m wide (incl. the spear), 0.5 m deep, 1.6 m tall (cellM 0.1, 10 x 5 x 16).
-// The body, shoulders and arms use ONE slot material ('linen') that `engine.setTeamMaterials` repaints per team
-// (RTS_TEAM_SPEC below); legs, belt, head, helmet and spear keep their own materials. Moves to design/ when the
-// designer takes over. Pure data + helpers, no engine import.
+// game/js/rts/unitModel.js - RTS-01 unit model glue (docs/architecture.md 28.8).
+// The voxel data now lives in design/models/rts_unit.js (designer readability pass: 1.0 x 0.8 x 1.6 m soldier,
+// cellM 0.1, 10 x 8 x 16, parts body + head). Tabard, arms, pauldrons, legs, pack and helmet use the neutral slot
+// material `team.a` that `engine.setTeamMaterials` repaints per team (RTS_TEAM_SPEC below); boots, belt, skin,
+// bedroll and spear keep their own materials. Pure data + helpers, no engine import (the design file is a classic
+// script that only writes globalThis.ASSETS.rtsModels).
+import '../../../design/models/rts_unit.js';
 
 export const UNIT_MODEL_KEY = 'rtsUnit';
-export const UNIT_SLOT_MAT = 'linen';   // the team remap slot (neutral in team 0)
-
-// Letter -> material (all exist in palette.materials with a v2 detail record, so the GPU gate stays open).
-const MATS = { T: UNIT_SLOT_MAT, I: 'iron_dark', H: 'canvas', W: 'wood', M: 'iron_light' };
+export const UNIT_SLOT_MAT = 'team.a';   // the team remap slot (neutral in team 0), design/palette.js
 
 /**
- * Team colours as a `setTeamMaterials` spec: team 1 = own (teal crystal, bright), team 2 = enemy (red gore).
- * Placeholder until the designer adds `team.*` palette entries.
+ * Team colours as a `setTeamMaterials` spec: team 1 = own (cyan-blue), team 2 = enemy (signal red).
+ * Spare targets for later teams: 'team.gold', 'team.violet' (design/palette.js).
  */
 export const RTS_TEAM_SPEC = {
   slots: [UNIT_SLOT_MAT],
-  teams: [null, { [UNIT_SLOT_MAT]: 'crystal_lit' }, { [UNIT_SLOT_MAT]: 'gore_red' }],
+  teams: [null, { [UNIT_SLOT_MAT]: 'team.teal' }, { [UNIT_SLOT_MAT]: 'team.red' }],
 };
 
-const SX = 10, SY = 5, SZ = 16;
-
-/** Voxel letter at (x, y, z), or '.' for empty. */
-function voxelAt(x, y, z) {
-  const inY = (a, b) => y >= a && y <= b;
-  if (z <= 4) { // legs: x 2-3 and 6-7, y 1-3
-    return inY(1, 3) && ((x >= 2 && x <= 3) || (x >= 6 && x <= 7)) ? 'I' : '.';
-  }
-  if (z === 5) return inY(1, 3) && x >= 1 && x <= 8 ? 'I' : '.';            // belt
-  if (z >= 6 && z <= 11) { // torso + arms; the shoulder row (z 11) is the widest top face
-    if (inY(1, 3) && x >= 1 && x <= 8) return 'T';
-    if (z <= 10 && inY(2, 3) && (x === 0 || x === 9)) return 'T';           // arms
-    if (z === 11 && inY(2, 3) && (x === 0 || x === 9)) return 'T';          // shoulders
-    return '.';
-  }
-  if (z >= 12 && z <= 14) return inY(1, 3) && x >= 3 && x <= 6 ? 'H' : '.'; // head
-  if (z === 15 && inY(1, 3) && x >= 3 && x <= 6) return 'M';                 // helmet
-  return '.';
+function designDef() {
+  const d = globalThis.ASSETS && globalThis.ASSETS.rtsModels && globalThis.ASSETS.rtsModels[UNIT_MODEL_KEY];
+  if (!d) throw new Error('unitModel: design/models/rts_unit.js did not register ASSETS.rtsModels.rtsUnit');
+  return d;
 }
 
-function buildLayers() {
-  const layers = [];
-  for (let z = 0; z < SZ; z++) {
-    const rows = [];
-    for (let y = 0; y < SY; y++) {
-      let row = '';
-      for (let x = 0; x < SX; x++) {
-        // spear: x 9, y 2 above the hand, z 11..15 (wood shaft, iron tip)
-        let ch = voxelAt(x, y, z);
-        if (x === 9 && y === 2 && z >= 12 && z <= 15) ch = z === 15 ? 'M' : 'W';
-        row += ch;
-      }
-      rows.push(row);
-    }
-    layers.push(rows);
-  }
-  return layers;
-}
-
-/** The `ModelDef` (`{name, voxel}`) to register with `assets.add('model', UNIT_MODEL_KEY, ...)`. */
+/** The `ModelDef` (`{name, voxel}`) to register with `assets.add('model', UNIT_MODEL_KEY, ...)`. Fresh copy per call. */
 export function makeUnitModelDef() {
-  return {
-    name: UNIT_MODEL_KEY,
-    desc: 'RTS-01a placeholder unit: upright 1.6 m figure, torso/arms in the team slot material.',
-    voxel: {
-      version: 1,
-      cellM: 0.1,
-      size: [SX, SY, SZ],
-      anchor: [4.5, 2.5, 0],               // feet centre
-      mats: { T: MATS.T, I: MATS.I, H: MATS.H, W: MATS.W, M: MATS.M },
-      layers: buildLayers(),
-      parts: {
-        body: { box: [0, 0, 0, 10, 5, 12], pivot: [4.5, 2.5, 0] },
-        head: { box: [3, 1, 12, 10, 4, 16], pivot: [4.5, 2.5, 11], parent: 'body' },
-      },
-    },
-  };
+  return JSON.parse(JSON.stringify(designDef()));
 }
 
 /** Exposed-face stats of the model (test/measure helper): fraction of non-bottom exposed faces that are team-slot voxels. */
 export function teamSurfaceFraction(def = makeUnitModelDef()) {
   const v = def.voxel, L = v.layers;
+  const [SX, SY, SZ] = v.size;
+  const slotLetters = new Set(Object.keys(v.mats).filter((k) => v.mats[k] === UNIT_SLOT_MAT));
   const at = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= SX || y >= SY || z >= SZ ? '.' : L[z][y][x]);
   let team = 0, all = 0;
   const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1]]; // no bottom faces
@@ -90,7 +43,7 @@ export function teamSurfaceFraction(def = makeUnitModelDef()) {
     for (const d of dirs) {
       if (at(x + d[0], y + d[1], z + d[2]) !== '.') continue;
       all++;
-      if (c === 'T') team++;
+      if (slotLetters.has(c)) team++;
     }
   }
   return { team, all, fraction: all ? team / all : 0 };

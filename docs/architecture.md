@@ -3341,3 +3341,18 @@ Background: 28.7 Amendment 1 (unit cost is per triangle; `CULL_FACE` off per 27.
 Size 0.5 d, one step.
 
 **Do not:** cull level structures/terrain/glTF, cull in the vertex shader, flip the quad order in `voxelMesh.js`, or leave `CULL_FACE` enabled past the voxel loops (context state).
+
+### 28.11 BUG-RTS-001 terrain hash cell on pitched views (normative; architect, 2026-09-30; PC-A)
+
+**Cause (code + arithmetic, no capture needed).** `shadeTerrain` (terrainShade.js:90 / terrain.frag.js:401) keys ALL per-cell look dice on a world cell of 2 m (t < handover h1 = 320) or 8 m: `hA` (colour tier dark/mid/light +-1), `hB` (glyph), the +-0.08 close-band jitter (salt 10) and features. The whole 2 m x 2 m square gets ONE glyph and ONE colour tier. In the third-person view a 2 m cell is ~1 row high and reads as texture. At rtsHill58 (focus 30 m wide, vd ~35 m, 160x60) one column is ~0.19 m on the ground, so a 2 m hash cell is a ~10 x 5 block of identical glyph + colour: the "tiles". Ruled out: (a) the bands/handover do not switch inside the view (t = 0.53 x vd ~ 12-25 m, all in the close band < 40). (b) terrain planeId is a constant -1 (terrain.vert.js:112), and the terrain branch does not use the edge or deriv planes. (d) the terrain branch does not read GD. Secondary: (c) the near type grid is nearest-texel at 2 m (`terrainTypeAt`), so grass/path borders are 2 m staircases. That is minor next to the hash, and the fix below does not touch it (see 28.11b).
+
+**28.11a fix (one step, ~0.5 d).** A per-frame `hashCell` (metres) replaces the 2/8 constant when it is > 0.
+1. `terrainShade.js shadeTerrain`: `const cellSz = ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);`. Add `hashCell?: number` to the ctx JSDoc. `makeTerrainShadeCtx` leaves it at 0.
+2. GLSL twin, terrain.frag.js TERRAIN_SHADE_GLSL: `uniform float uHashCell;` and the same expression. GpuCellPipeline sets it every frame, 0.0 in shear mode.
+3. Value (pitched only; one helper `pitchedHashCell(cam, cols, zRef)` in `engine/render/projection.js`, exported, used by both twins). `vdC = (cam.z - zRef) / sin(-pitch)`, where `zRef = cam.focusZ` if finite, else `terrain.groundAt(cam.x, cam.y)`. `fp = 2 * tanHalfX * vdC / cols` (ground metres per column). `hashCell = clamp(2^ceil(log2(fp)), 0.125, 2)`. Powers of two nest, so zoom steps change the glyphs without blocks. The value depends on zoom and grid only, so it stays stable while panning (world-keyed, no shimmer). Shear mode returns 0.
+4. Leave the close/handover/band gates on `t` as they are. Leave feature chances as they are: the density per screen cell stays the same as in the third-person view.
+5. Do not: key the hash on screen cells (shimmer when panning), make the cell size per fragment (seams across rows), or change `typeAt`/physics.
+
+**Tests.** terrainShade.test.js: hashCell 0 matches the old output byte for byte (8 test points). With hashCell 0.25, u and u + 0.3 fall in different cells. `pitchedHashCell` at the rtsHill58 pose at 160 cols is 0.25 and at 400 cols is 0.125. Shear gives 0. glsl.test.js twin check for the expression. gpucompare mesh: the existing non-rtsHill poses are identical (shear sends uHashCell 0). rtsHill55/58/60/Sky15 and the RE-07b overlay pose change: GPU and the JS twin must match each other, and that becomes the new baseline, recorded in the story. dda: identical. Owner check: `game/rts-test.html` at 400x150 and 240x90 shows continuous ground.
+
+**28.11b (only if the owner still sees 2 m staircases at type borders after 28.11a).** Dither the render-only type lookup (terrain.vert.js `terrainTypeAt` + rasterJS `kind7Mat`) by +-0.5 texel with a fine world hash. Physics `typeAt` stays as it is. Separate 0.5 d step, not planned now.
