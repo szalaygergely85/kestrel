@@ -666,9 +666,8 @@ export class World {
    * legend cells' `floorH`) - feeding that into `meshSupportSector`'s
    * "terrain wins ties" rule would make the mesh floor probe's correct
    * interior answer get overridden by outside terrain, exactly the ME-11c
-   * parity failure this guards against. NEEDS PC-A: architect confirm - this
-   * deviates from 27.18's literal terrainZ-always-merged formula in
-   * `meshSupportSector` by gating the input at the call site instead.
+   * parity failure this guards against. Architect confirmed 2026-09-30 (27.18): a placed
+   * structure occludes terrain across its bbox, same gate as sectorAt/floorAt.
    */
   supportAt(x, y, footZ, grounded, opts) {
     probeSupport(this.colliders, this.colliders.length, x, y, footZ, grounded, opts, this._meshSupportScratch);

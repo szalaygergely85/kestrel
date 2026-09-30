@@ -2767,6 +2767,8 @@ export function moveSphereMesh(colliders, count, x, y, dx, dy, radius, z, opts, 
 
 Known, accepted difference: grid `solid` cells (and `SOLID_OUTSIDE`) block at any height; the mesh blocks only up to the rendered top of that geometry, so feet above a low solid block's top can cross it (mesh = what you see). The parity harness reports such steps separately; if a US-008/009 scenario depends on it -> ASK ARCHITECT.
 
+Known difference 2 (ME-10c review, 2026-09-30, parked): `tower`'s grate cell borders `ceilH: 'sky'` on both sides, so `levelMesh`'s upper/lintel rule emits no barrier face and the closed grate is walk-through under mesh physics (grid blocks it per cell via `isSectorPassable`). Content rule for any mesh-physics level (ME-14 or its RTS successor): a dynamic sector must have numeric-`ceilH` neighbours or a numeric `topH`, so the closed state has a meshed face; `levelMesh.js` is not changed for this.
+
 Do not: import `engine/mesh` or `engine/world` at runtime, allocate per call, add a second step-up mechanism (the band *is* the step-up), touch `Player.js` (the US-008/009 suites keep running on it unchanged), or make terrain a trimesh collider.
 
 ### 27.18 ME-11 implementation notes: World integration, `physics: 'mesh'` (normative; architect, 2026-09-29; PC-B)
@@ -2777,17 +2779,20 @@ Files: new `engine/world/colliders.js` (+ `colliders.test.js`), new `engine/phys
 ```js
 // World.load(def, assets, { physics: 'grid' | 'mesh' })   default 'grid' until the "mesh as default" story
 world.physicsMode                    // 'grid' | 'mesh'; content, not state (never serialised)
-world.colliders                      // MeshCollider[] (27.17), then one { id: 'terrain', kind: 'heightfield', enabled: true } entry when world.terrain; [] on 'grid'
+world.colliders                      // MeshCollider[] (27.17), trimesh only; [] on 'grid'. Amended 2026-09-30 (ME-11 review): NO heightfield entry - terrain is `world.terrain`, `contacts()` reports it as `collider: -1, tri: -1`; a bvh-less entry would only trap iterators
 world.collideCircle(x, y, dx, dy, radius, footZ, grounded, opts, out)   // moveCircleMesh over the trimesh colliders
 world.collideSphere(x, y, dx, dy, radius, z, opts, out)                 // moveSphereMesh
 world.supportAt(x, y, footZ, grounded, opts)                            // meshSupportSector(probeSupport(...), terrain groundAt/groundNormalAt or NaN) -> reused scratch (callers must not keep it, as outsideSector)
+//   Terrain is consulted only when `!structureAt(x, y)` (architect confirmed 2026-09-30, ME-11c fix 7a59162): a placed structure occludes the terrain
+//   across its bbox, the same gate `sectorAt`/`floorAt` use - world_m1 bakes hillside terrain under the tower, so an always-merge would lift the
+//   interior floor to the hillside height. `meshSupportSector` itself stays the literal always-merge formula (NaN = no terrain).
 // engine/world/colliders.js
 export function buildWorldColliders(world)                     // -> MeshCollider[]; per structure: base (id = structure.id) + one per dyn tag (id = `${structure.id}:${tag}`, tags sorted); matrix12 = translation(origin) (yawSteps is 0 in M1, placeStructure throws otherwise)
 export function refitDynCollider(world, structure, tag)        // zero allocation, see "Grate" below
 // engine/physics/contacts.js (the Rapier seam, 27.10)
 export const CONTACT_MAX = 16;
 export function createContactList()                            // {count, px,py,pz,nx,ny,nz,depth: Float64Array(CONTACT_MAX), collider, tri: Int32Array(CONTACT_MAX)}
-export function contacts(world, shape, out)                    // shape {type:'sphere'|'capsule', x,y,z, r, h}; -> out.count; sphere / capsule-segment vs triangle closest points (Ericson 5.1.5 / 5.1.9) over queryAABB candidates + one heightfield contact from groundAt/groundNormalAt; sorted by depth desc, then collider, then tri; zero allocation
+export function contacts(world, shape, out)                    // shape {type:'sphere'|'capsule', x,y,z, r, h}; `z` = sphere CENTRE / capsule lower segment endpoint (Rapier convention, callers convert from feet - amended 2026-09-30, PC-B QUEUE 5 item 8); -> out.count; sphere / capsule-segment vs triangle closest points (Ericson 5.1.5 / 5.1.9) over queryAABB candidates + one heightfield contact from groundAt/groundNormalAt (collider -1, tri -1); sorted by depth desc, then collider, then tri; when more than CONTACT_MAX overlap keep the deepest; zero allocation
 ```
 Load order: structures placed, dynamics restored (`_restoreDynamics`), then `if (physics === 'mesh') w.colliders = buildWorldColliders(w)` with every dyn collider refitted to the restored `ceilH` - a save taken mid-animation loads with the right collider. Colliders are derived data: never in `serialize`, rebuilt on load.
 
