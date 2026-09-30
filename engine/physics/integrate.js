@@ -25,10 +25,14 @@ const EPS = 1e-6;
 // it copies this scratch too (harmless - it is rebuilt as reused the moment
 // the entity moves again after a load).
 function ensureScratch(body, cfg) {
-  if (!body._move) body._move = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0 };
+  if (!body._move) body._move = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0, overflow: false };
   if (!body.feel) body.feel = { stepOffset: 0, dipT: 0, dipAmount: 0, bobPhase: 0, offset: 0 };
-  if (!body._collideOpts || body._collideOpts.height !== cfg.height || body._collideOpts.stepUpMax !== cfg.stepUpMax) {
-    body._collideOpts = { height: cfg.height, stepUpMax: cfg.stepUpMax };
+  if (!body._collideOpts || body._collideOpts.height !== cfg.height || body._collideOpts.stepUpMax !== cfg.stepUpMax
+    || body._collideOpts.maxSlopeDeg !== cfg.maxSlopeDeg) {
+    body._collideOpts = {
+      height: cfg.height, stepUpMax: cfg.stepUpMax,
+      walkCos: Math.cos(cfg.maxSlopeDeg * Math.PI / 180), maxSlopeDeg: cfg.maxSlopeDeg,
+    };
   }
   if (typeof body.vx !== 'number') body.vx = 0;
   if (typeof body.vy !== 'number') body.vy = 0;
@@ -143,10 +147,15 @@ export function integrate(entity, dt, controls, world, cfg) {
   }
 
   // ---- 4. Resolve horizontal movement against the grid --------------------
-  const moved = moveCapsule(
-    world, t.x, t.y, body.vx * dt, body.vy * dt,
-    body.radius, t.z, body.grounded, body._collideOpts, body._move
-  );
+  const moved = world.physicsMode === 'mesh'
+    ? world.collideCircle(
+      t.x, t.y, body.vx * dt, body.vy * dt,
+      body.radius, t.z, body.grounded, body._collideOpts, body._move
+    )
+    : moveCapsule(
+      world, t.x, t.y, body.vx * dt, body.vy * dt,
+      body.radius, t.z, body.grounded, body._collideOpts, body._move
+    );
   t.x = moved.x;
   t.y = moved.y;
 
@@ -188,7 +197,9 @@ export function integrate(entity, dt, controls, world, cfg) {
   }
 
   // ---- 5. Vertical, gated on the CURRENT grounded --------------------------
-  const sector = sectorOrOutside(world, t.x, t.y);
+  const sector = world.physicsMode === 'mesh'
+    ? world.supportAt(t.x, t.y, t.z, body.grounded, body._collideOpts)
+    : sectorOrOutside(world, t.x, t.y);
   const floorH = sector.floorH;
 
   if (body.grounded) {
@@ -202,7 +213,7 @@ export function integrate(entity, dt, controls, world, cfg) {
       // no `terrain` field). `isSectorPassable` already lets any slope
       // through horizontally (decision 3) - steepness is decided here, at
       // the actor's own position, from the real ground normal.
-      if (sector.terrain) {
+      if (sector.terrain || sector.slope) {
         const nz = sector.nz;
         if (nz < P.slideStartCos) body.sliding = true;
         else if (nz > P.slideStopCos) body.sliding = false;

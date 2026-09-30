@@ -56,6 +56,16 @@
 // >= 1 ms single-step spike in Node - see docs/backlog.md row 25w "(b) PC-B
 // second pass" for the full numbers and the escape-hatch analysis
 // (architecture.md 23.3's terrain band cost bound).
+//
+// ME-11c (architecture.md 27.18 "ME-11 implementation notes", test matrix +
+// steps): this file also gains `physics: 'mesh'` coverage alongside the
+// original grid-mode checks above - (1) a bit-equal determinism check
+// (same 3600-step walk run twice in mesh mode), (2) a 600-step grid-vs-mesh
+// parity check inside the tower (same style as ME-10c's
+// meshCollide.parity.test.js), (3) a mesh-mode repeat of the 3-run worst-
+// step perf gate (same warn-vs-PERF_STRICT gating as grid mode), and (4) a
+// mesh-mode repeat of the zero-allocation `--expose-gc` gate. None of the
+// grid-mode checks above are changed.
 import { performance } from 'node:perf_hooks';
 import {
   World, PHYSICS_DEFAULTS, integrate, stepRollers, resolveBodyContacts,
@@ -103,8 +113,8 @@ function makePlayer(x, y, z) {
   };
 }
 
-function loadWorld() {
-  const w = World.load(assets.world('world_m1'), assets, {});
+function loadWorld({ physics } = {}) {
+  const w = World.load(assets.world('world_m1'), assets, { physics });
   // Bypass the lever quest-gate directly (a physics probe, not a quest
   // test) - `animateSector` is the same real API `lever.pull` calls, just
   // invoked without the interaction/behaviour layer, so the scripted walk
@@ -319,6 +329,142 @@ if (typeof global.gc === 'function') {
     grewBy < 512 * 1024, `grew by ${grewBy} bytes`);
 } else {
   ok('steady-state physics steps run without throwing (run with --expose-gc for the heap check)', true);
+}
+
+// =============================================================================
+// ME-11c: physics: 'mesh' coverage (architecture.md 27.18 "ME-11
+// implementation notes", ME-11c bullet + test matrix). All grid-mode checks
+// above are unchanged; everything below is additional mesh-mode coverage.
+// =============================================================================
+
+/** Runs `steps` on `world`/`player`, recording (x,y,z) after every step. */
+function recordPositions(world, player, waypoints, steps) {
+  const out = new Array(steps);
+  walk(world, player, waypoints, steps, (i) => {
+    out[i] = { x: player.transform.x, y: player.transform.y, z: player.transform.z };
+  });
+  return out;
+}
+
+// ---- (1) Determinism: the 3600-step walk run twice in mesh mode must be
+// bit-equal (no RNG anywhere in this walk - waypoint seeking is purely a
+// function of current position). ----
+{
+  const wA = loadWorld({ physics: 'mesh' });
+  const pA = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
+  ok('mesh-mode world_m1 loads with physicsMode "mesh"', wA.physicsMode === 'mesh', `physicsMode=${wA.physicsMode}`);
+  const runA = recordPositions(wA, pA, buildWaypoints(wA), TOTAL_STEPS);
+
+  const wB = loadWorld({ physics: 'mesh' });
+  const pB = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
+  const runB = recordPositions(wB, pB, buildWaypoints(wB), TOTAL_STEPS);
+
+  let firstDivergeAt = -1;
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    if (runA[i].x !== runB[i].x || runA[i].y !== runB[i].y || runA[i].z !== runB[i].z) { firstDivergeAt = i; break; }
+  }
+  // Sample a handful of positions along the way (not just the end) so a
+  // mid-walk divergence that happens to cancel out by the end is still caught.
+  const sampleEvery = 200;
+  let sampledMismatch = -1;
+  for (let i = 0; i < TOTAL_STEPS; i += sampleEvery) {
+    if (runA[i].x !== runB[i].x || runA[i].y !== runB[i].y || runA[i].z !== runB[i].z) { sampledMismatch = i; break; }
+  }
+  console.log(`[ME-11c determinism] mesh-mode 3600-step walk run twice: firstDivergeAt=${firstDivergeAt} (sampled check every ${sampleEvery} steps: mismatch at ${sampledMismatch})`);
+  ok('mesh-mode determinism: two runs of the 3600-step walk are bit-equal (===, no tolerance)',
+    firstDivergeAt === -1,
+    firstDivergeAt === -1 ? undefined : `diverged at step ${firstDivergeAt}: A=${JSON.stringify(runA[firstDivergeAt])} B=${JSON.stringify(runB[firstDivergeAt])}`);
+}
+
+// ---- (2) Grid vs mesh parity inside the tower: a 600-step scripted walk
+// (distinct from the 3600-step full-route perf walk above), same waypoints/
+// seed, one on the grid world one on the mesh world, comparing position
+// every step (same style as engine/physics/meshCollide.parity.test.js). ----
+//
+// OPEN ISSUE found by this check (2026-09-30, ME-11c), needs ARCHITECT
+// review before this gate can be softened or closed - NOT the same as the
+// already-documented ME-10c "tower grate borders open-sky cells" known
+// difference (meshCollide.parity.test.js): this is a DIFFERENT, wider
+// mismatch. Repro (isolated with a stationary-drop probe outside this
+// walk, forward=0, 60 steps from z=5 or z=1): at the real start point
+// `content/levels/tower.level.json` "start" (local 17, 9.5, legend '.',
+// floorH 0) the mesh world settles the player at z=2.4 while the grid
+// settles at ~0 (correct). Same 2.4 m mismatch reproduces at local (8,5)
+// (legend '=', correct floorH 6 on the grid) - mesh again reports 2.4.
+// Two other probed points, local (3,6) (floorH 5.4) and (20,6) (floorH
+// 2.4, where 2.4 IS correct), match exactly on both worlds. 2.4 is a
+// common numeric ceilH/floorH value used by several OTHER cells in this
+// level (see `packed.geom`) - the mesh collider appears to occasionally
+// pick up an unrelated cell's floor/ceiling triangle instead of the one
+// directly under the probe point, rather than this being confined to the
+// sky-ceiling boundary case ME-10c already flagged. Left as a real,
+// non-softened failure below per this story's own instructions ("don't
+// silently loosen the gate to hide a real regression") - out of scope to
+// fix here (engine/physics/meshCollide.js, engine/world/colliders.js,
+// engine/mesh/levelMesh.js are all off-limits for this story).
+const PARITY_STEPS = 600;
+const near1 = (v) => Math.abs(v - Math.round(v)) < 1e-9; // cell-boundary steps excluded, same rule as meshCollide.parity.test.js
+const PARITY_TOL = 0.01; // 1 cm, per the ME-11c spec
+{
+  const wg = loadWorld();
+  const wm = loadWorld({ physics: 'mesh' });
+  ok('grid-mode world_m1 loads with physicsMode "grid"', wg.physicsMode === 'grid', `physicsMode=${wg.physicsMode}`);
+  const pg = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
+  const pm = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
+  const posG = recordPositions(wg, pg, buildWaypoints(wg), PARITY_STEPS);
+  const posM = recordPositions(wm, pm, buildWaypoints(wm), PARITY_STEPS);
+
+  let maxErr = 0, maxErrStep = -1, compared = 0, boundaryExcluded = 0, insideTowerSteps = 0;
+  const mismatches = [];
+  for (let i = 0; i < PARITY_STEPS; i++) {
+    const g = posG[i], m = posM[i];
+    if (wg.structureAt(g.x, g.y) !== null) insideTowerSteps++;
+    if (near1(g.x) || near1(g.y) || near1(m.x) || near1(m.y)) { boundaryExcluded++; continue; }
+    compared++;
+    const err = Math.max(Math.abs(g.x - m.x), Math.abs(g.y - m.y), Math.abs(g.z - m.z));
+    if (err > maxErr) { maxErr = err; maxErrStep = i; }
+    if (err > PARITY_TOL) mismatches.push({ step: i, err, grid: g, mesh: m });
+  }
+  console.log(`[ME-11c parity] grid vs mesh, 600-step tower-route walk: maxErr=${maxErr.toFixed(6)} m at step ${maxErrStep}, compared=${compared} steps, boundary-excluded=${boundaryExcluded}, insideTowerSteps=${insideTowerSteps}/${PARITY_STEPS}`);
+  ok('grid vs mesh 600-step tower-route parity within 1 cm', mismatches.length === 0,
+    mismatches.length ? `${mismatches.length} mismatch(es), first: ${JSON.stringify(mismatches[0])}` : undefined);
+}
+
+// ---- (3) Perf: same 3-run median-worst-step measurement, mesh mode. Same
+// warn-vs-PERF_STRICT gating as the grid-mode check above. ----
+function runOnceMesh() {
+  const w = loadWorld({ physics: 'mesh' });
+  const wps = buildWaypoints(w);
+  const p = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
+  return walk(w, p, wps, TOTAL_STEPS, null);
+}
+const runsMesh = [runOnceMesh(), runOnceMesh(), runOnceMesh()].sort((a, b) => a - b);
+const medianWorstMesh = runsMesh[1];
+console.log(`mesh-mode: 3 full-walk runs, worst step per run = [${runsMesh.map((r) => r.toFixed(4)).join(', ')}] ms, median=${medianWorstMesh.toFixed(4)} ms`);
+console.log(`worldWalk.perf: grid worst-step median=${medianWorst.toFixed(4)}ms vs mesh worst-step median=${medianWorstMesh.toFixed(4)}ms`);
+if (process.env.PERF_STRICT === '1') ok('mesh-mode: worst single step over the 60 s walk < 1 ms (median of 3 runs)', medianWorstMesh < 1, `median worst=${medianWorstMesh.toFixed(4)}ms`);
+else if (!(medianWorstMesh < 1)) console.log('PERF WARN: mesh-mode worst single step < 1 ms missed on this machine (set PERF_STRICT=1 to gate)');
+
+// ---- (4) Zero allocation, mesh mode: same steady-state --expose-gc gate. ----
+if (typeof global.gc === 'function') {
+  const w = loadWorld({ physics: 'mesh' });
+  const p = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
+  const controls = { forward: 1, strafe: 0, run: true, jump: false, yawDeg: 90 };
+  const steadyStep = () => {
+    stepSectorAnims(w, DT); integrate(p, DT, controls, w, P); stepRollers(w, DT, P);
+    stepAnimations(w, DT * 1000); resolveBodyContacts(w, p, P);
+  };
+  for (let i = 0; i < 200; i++) steadyStep(); // warm-up
+  global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 5000; i++) steadyStep();
+  global.gc();
+  const after = process.memoryUsage().heapUsed;
+  const grewBy = after - before;
+  ok('mesh-mode: no significant heap growth over 5000 steady-state physics steps (--expose-gc)',
+    grewBy < 512 * 1024, `grew by ${grewBy} bytes`);
+} else {
+  ok('mesh-mode: steady-state physics steps run without throwing (run with --expose-gc for the heap check)', true);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

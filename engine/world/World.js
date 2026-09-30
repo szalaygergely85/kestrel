@@ -13,6 +13,8 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
+import { buildWorldColliders, refitDynCollider } from './colliders.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector } from '../physics/meshCollide.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -104,6 +106,16 @@ export class World {
   constructor() {
     this.terrain = null;
     this.terrainKey = null;
+    // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
+    // behaviour) or 'mesh'. Content, not state - never goes through
+    // `structuredClone(def.state)`/`serialize.js`, set once by `World.load`
+    // from `opts.physics` and never touched afterward.
+    this.physicsMode = 'grid';
+    // `MeshCollider[]` (engine/physics/meshCollide.js 27.17 shape), built by
+    // `colliders.js`'s `buildWorldColliders` when `physicsMode === 'mesh'`;
+    // stays `[]` on 'grid' (derived data - never serialized, always rebuilt
+    // fresh on load).
+    this.colliders = [];
     // US-026a (architecture.md 23.1 decision 4): the walk-bound circle, or
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
@@ -165,6 +177,11 @@ export class World {
     this._outsideScratch = { floorH: 0, ceilH: 'sky', wallMat: 'rock', floorMat: 'grass', ceilMat: 'sky', solid: false, topH: 'sky', upperMat: 'rock', terrain: false, nx: 0, ny: 0, nz: 1 };
     // Reused (rule 9) output for `groundNormalAt` inside `outsideSector`.
     this._outsideNormalScratch = { x: 0, y: 0, z: 1 };
+    // ME-11a (27.18): `supportAt`'s reused scratch (same "callers must not
+    // keep it across calls" contract as `_outsideScratch`/`outsideSector`).
+    this._meshSupportScratch = { floorZ: 0, floorHit: false, fnx: 0, fny: 0, fnz: 0, floorCollider: -1, floorTri: -1, ceilZ: 0, ceilHit: false };
+    this._meshSectorScratch = { floorH: 0, ceilH: 'sky', solid: false, terrain: false, slope: false, nx: 0, ny: 0, nz: 1 };
+    this._meshTerrainNormalScratch = { x: 0, y: 0, z: 1 };
     this.eventsDropped = 0;
 
     // Item 5a (architect review #1): bound once here, not re-created (a
@@ -195,6 +212,9 @@ export class World {
     const w = new World();
     w.events = opts.events || null;
     w.def = def;
+    // ME-11a (27.18): default 'grid' (unchanged behaviour when `opts.physics`
+    // is omitted - every existing caller/suite stays bit-identical).
+    w.physicsMode = opts.physics === 'mesh' ? 'mesh' : 'grid';
     // (US-011) Kept for `EntityHandle.play`/`stepAnimations`/the prop-spawn
     // block below to resolve `sprite.model`/`anim` through - a bare `new
     // World()` (no `load`) has `assets === null`, and every consumer treats
@@ -230,6 +250,15 @@ export class World {
           w._restoreDynamics(placed, tag, s.dynamics[tag]);
         }
       }
+    }
+
+    // ME-11a (27.18): built AFTER structures are placed and dynamics are
+    // restored above - `buildWorldColliders`'s dyn colliders read each tag's
+    // CURRENT (already-restored) `ceilH`, so a save taken mid-animation
+    // loads with the right collider. Colliders are derived data: never in
+    // `serialize`, always rebuilt fresh here.
+    if (w.physicsMode === 'mesh') {
+      w.colliders = buildWorldColliders(w);
     }
 
     // US-026a (architecture.md 23.1 decision 1, 23.7 S2): bake the near
@@ -608,6 +637,50 @@ export class World {
     return sc;
   }
 
+  // ---- mesh physics (ME-11a, 27.18) ------------------------------------------
+
+  /** `moveCircleMesh` over `world.colliders` (empty on 'grid' - always a well-defined, if trivial, call). */
+  collideCircle(x, y, dx, dy, radius, footZ, grounded, opts, out) {
+    return moveCircleMesh(this.colliders, this.colliders.length, x, y, dx, dy, radius, footZ, grounded, opts, out);
+  }
+
+  /** `moveSphereMesh` over `world.colliders` (roller.js wiring is ME-11b - not called from here yet). */
+  collideSphere(x, y, dx, dy, radius, z, opts, out) {
+    return moveSphereMesh(this.colliders, this.colliders.length, x, y, dx, dy, radius, z, opts, out);
+  }
+
+  /**
+   * `meshSupportSector(probeSupport(...), ...)` merged with the terrain
+   * floor (same trio `outsideSector` reads: `groundAt`/`groundNormalAt`, or
+   * NaN/0/0/0 with no terrain) - the mesh-mode twin of `sectorOrOutside`.
+   * Written into a REUSED scratch object - callers must not keep it across
+   * calls (same contract as `outsideSector`).
+   *
+   * Terrain is only consulted OUTSIDE a placed structure's footprint - same
+   * rule `sectorAt`/`floorAt` already apply (`structureAt` gates the terrain
+   * fallback there). A structure occludes the ground beneath it: world_m1's
+   * terrain is baked under/around the tower for the outside hillside look
+   * (US-026a/BUG-OWN-008, ME-11a's colliders.test.js finding), so inside the
+   * tower's own bbox `terrain.groundAt` can legitimately return a height
+   * ABOVE the tower's real interior floor (e.g. ~2.4m, the hillside/hilltop
+   * legend cells' `floorH`) - feeding that into `meshSupportSector`'s
+   * "terrain wins ties" rule would make the mesh floor probe's correct
+   * interior answer get overridden by outside terrain, exactly the ME-11c
+   * parity failure this guards against. NEEDS PC-A: architect confirm - this
+   * deviates from 27.18's literal terrainZ-always-merged formula in
+   * `meshSupportSector` by gating the input at the call site instead.
+   */
+  supportAt(x, y, footZ, grounded, opts) {
+    probeSupport(this.colliders, this.colliders.length, x, y, footZ, grounded, opts, this._meshSupportScratch);
+    let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
+    if (this.terrain && !this.structureAt(x, y)) {
+      terrainZ = this.terrain.groundAt(x, y);
+      const n = this.terrain.groundNormalAt(x, y, this._meshTerrainNormalScratch);
+      tnx = n.x; tny = n.y; tnz = n.z;
+    }
+    return meshSupportSector(this._meshSupportScratch, terrainZ, tnx, tny, tnz, this._meshSectorScratch);
+  }
+
   /** `{s, ch, sector}` for the structure whose legend has a `dynamic` sector tagged `tag`, or null. Uses the tag Map (US-014). */
   _findDynamic(tag) {
     for (const s of this.structures) {
@@ -642,6 +715,15 @@ export class World {
     // fresh PackedLevel every call - this runs on every animation sim
     // step (the grate's open/close), not just once per interaction.
     updateAnimatedSector(s.packed, s.level, ch);
+    // ME-11a (27.18): keeps a direct jump (interaction, `_restoreDynamics`)
+    // in sync with `physicsMode === 'mesh'`. Needed in particular for
+    // `serialize.js`'s `deserialize`, which calls `_restoreDynamics` AFTER
+    // `World.load` returns (its own comment: "that field isn't part of
+    // `def`" - so `World.load`'s inline restore-before-buildWorldColliders
+    // ordering doesn't apply there) - a no-op before `world.colliders` has
+    // this tag's collider yet (`structure._dynColliders` undefined,
+    // `refitDynCollider` already guards that).
+    if (this.physicsMode === 'mesh') refitDynCollider(this, s, tag);
     const prev = s.dynamics[tag];
     s.dynamics[tag] = { t, target: prev ? prev.target : t, delay: prev ? prev.delay : 0 };
     this.renderVersion++;
@@ -872,6 +954,7 @@ export function stepSectorAnims(world, dtSec) {
 
       sector.ceilH = sector.floorH + (dyn.ceilOpen - sector.floorH) * ease(dyn.ease, t);
       updateAnimatedSector(s.packed, s.level, ch);
+      if (world.physicsMode === 'mesh') refitDynCollider(world, s, tag);
       d.t = t;
       world.renderVersion++;
       if (world.events) world.events.emit('world:sectorAnimated', { structureId: s.id, tag, t01: t });

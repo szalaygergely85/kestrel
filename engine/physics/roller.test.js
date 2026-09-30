@@ -16,6 +16,21 @@ import { moveCapsule } from './capsule.js';
 import { stepRollers, resolveBodyContacts, rollFrame } from './roller.js';
 import { PHYSICS } from './config.js';
 import { makeOk, approxEqual } from '../test/assert.js';
+// ME-11b (27.18): the grid-vs-mesh boulder trace parity case below reuses
+// the real tower content, same pattern as game/js/quest/boulder.test.js and
+// engine/world/colliders.test.js (World.load with `{ physics: 'mesh' }`).
+import paletteMod from '../../design/palette.js';
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
+import terrainMod from '../../design/levels/overworld_far.js';
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+
+paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; terrainMod;
+const { assets: towerAssets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -346,6 +361,58 @@ const dt = PHYSICS.fixedDt;
   });
   ok('serialize/deserialize mid-roll continues identically', JSON.stringify(snap(e1)) === JSON.stringify(snap(e2)),
     `${JSON.stringify(snap(e1))} vs ${JSON.stringify(snap(e2))}`);
+}
+
+// ---- L. ME-11b: grid vs mesh physics give the same boulder trace ----------
+// A boulder roll on the real tower stair base (docs/architecture.md 27.18
+// "a boulder roll on the tower stair base giving the same trace (1 cm) in
+// both modes"): identical scripted push, run once on a plain-grid `World`
+// and once on `World.load(..., { physics: 'mesh' })`, positions compared
+// every step within 1 cm.
+{
+  function buildTowerWorld(opts) {
+    const towerDef = towerAssets.level('tower');
+    const worldM1 = towerAssets.world('world_m1');
+    const placement = worldM1.structures.find((s) => s.level === 'tower');
+    const world = World.load({
+      name: 'tower_only', terrain: null,
+      structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
+      entities: [], state: {},
+    }, towerAssets, opts);
+    return { world, towerDef, origin: placement.origin };
+  }
+
+  function runTrace(opts, steps) {
+    const { world, towerDef, origin } = buildTowerWorld(opts);
+    const boulder = world.entity('tower.boulder');
+    const boulderProp = towerDef.props.find((p) => p.id === 'boulder');
+    // Kick it off the stair base toward the hollow (same angle/speed used
+    // by game/js/quest/boulder.test.js's settling cases).
+    boulder.components.body.vx = Math.cos(0.35) * 2.0;
+    boulder.components.body.vy = Math.sin(0.35) * 2.0;
+    const trace = [];
+    for (let i = 0; i < steps; i++) {
+      stepRollers(world, dt, PHYSICS);
+      const t = boulder.transform;
+      trace.push({ x: t.x, y: t.y, z: t.z });
+    }
+    return { trace, startX: origin.x + boulderProp.x, startY: origin.y + boulderProp.y };
+  }
+
+  const STEPS = 240; // 4 s @ 60 Hz, matches boulder.test.js's settle window
+  const grid = runTrace({}, STEPS);
+  const mesh = runTrace({ physics: 'mesh' }, STEPS);
+
+  let maxErr = 0;
+  for (let i = 0; i < STEPS; i++) {
+    const a = grid.trace[i], b = mesh.trace[i];
+    maxErr = Math.max(maxErr, Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+  }
+  ok('ME-11b: boulder trace matches within 1 cm in grid vs mesh physics over 240 steps',
+    maxErr <= 0.01, `maxErr=${maxErr}`);
+  ok('ME-11b: sanity - the boulder actually moved off the stair base in both modes',
+    Math.hypot(grid.trace[STEPS - 1].x - grid.startX, grid.trace[STEPS - 1].y - grid.startY) > 0.5 &&
+    Math.hypot(mesh.trace[STEPS - 1].x - mesh.startX, mesh.trace[STEPS - 1].y - mesh.startY) > 0.5);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
