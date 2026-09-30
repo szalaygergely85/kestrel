@@ -1,3 +1,4 @@
+// @ts-check
 // engine/core/commands.js (RE-14, docs/architecture.md 28.5).
 //
 // Deterministic command queue: the only sim input. Two preallocated rings -

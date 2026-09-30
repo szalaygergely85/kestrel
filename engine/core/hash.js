@@ -1,3 +1,4 @@
+// @ts-check
 // engine/core/hash.js (RE-14, docs/architecture.md 28.5).
 //
 // Stateful, zero-allocation 32-bit FNV-1a hasher over little-endian bytes.
