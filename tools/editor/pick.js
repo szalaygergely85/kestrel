@@ -6,7 +6,7 @@
 // "do not call readbackGeometry outside a click").
 //
 // Imports only engine/index.js + ray.js (the editor boundary rule).
-import { KIND_TERRAIN } from '../../engine/index.js';
+import { KIND_TERRAIN, localToWorld, worldToLocal } from '../../engine/index.js';
 import {
   unprojectCell, rayPoint, projectPoint, decodePlaneId, rayPickEntities,
   KIND_WALL, KIND_STEP, KIND_UPPER,
@@ -116,7 +116,9 @@ export function pickAt(col, row, ctx) {
     result.world = point;
     if (s) {
       result.structureId = s.id;
-      result.cell = { x: Math.floor(point.x - s.origin.x), y: Math.floor(point.y - s.origin.y) };
+      // CO-7: the local cell of the placed structure's own frame (was `point - s.origin`).
+      const local = worldToLocal(s.frame, point.x, point.y, point.z, { x: 0, y: 0, z: 0 });
+      result.cell = { x: Math.floor(local.x), y: Math.floor(local.y) };
     }
   }
 
@@ -144,22 +146,31 @@ export function pickAt(col, row, ctx) {
  * point" cheap enough for this pass - the outliner (24.7) is the fallback
  * for those, same as the architecture note's own "only way to select
  * triggers with cells".
- * @returns {{fileId:string, collection:string, id:string}|null}
+ * @returns {{fileId:string, collection:string, id:string, structId:string}|null}
  */
 export function pickMarkers(col, row, ctx) {
   const { cam, cols, rows, pxCellW, pxCellH, world } = ctx;
   const surf = readSurface(col, row, ctx);
   let best = null;
-  const consider = (fileId, collection, id, x, y, z) => {
+  const consider = (fileId, collection, id, structId, x, y, z) => {
     const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x, y, z });
     if (!(proj.depth > 0) || proj.depth >= surf.depth) return;
     if (Math.abs(proj.col - col) > 1 || Math.abs(proj.row - row) > 1) return;
-    if (!best || proj.depth < best.depth) best = { fileId, collection, id, depth: proj.depth };
+    if (!best || proj.depth < best.depth) best = { fileId, collection, id, structId, depth: proj.depth };
   };
+  // CO-7: each marker's world position comes from ITS OWN placement's frame
+  // (was `+ s.origin`) - two placements of one level each convert through
+  // their own structure, never mixed up (docs/coordinates.md section 10 item 7).
   for (const s of world.structures) {
     const def = s.level.def;
-    for (const l of def.lights || []) consider(`level/${s.level.name}`, 'lights', l.id, l.x + s.origin.x, l.y + s.origin.y, l.z + s.origin.z);
-    for (const it of def.interactables || []) consider(`level/${s.level.name}`, 'interactables', it.id, it.x + s.origin.x, it.y + s.origin.y, it.z + s.origin.z);
+    for (const l of def.lights || []) {
+      const p = localToWorld(s.frame, l.x, l.y, l.z, { x: 0, y: 0, z: 0 });
+      consider(`level/${s.level.name}`, 'lights', l.id, s.id, p.x, p.y, p.z);
+    }
+    for (const it of def.interactables || []) {
+      const p = localToWorld(s.frame, it.x, it.y, it.z, { x: 0, y: 0, z: 0 });
+      consider(`level/${s.level.name}`, 'interactables', it.id, s.id, p.x, p.y, p.z);
+    }
   }
-  return best ? { fileId: best.fileId, collection: best.collection, id: best.id } : null;
+  return best ? { fileId: best.fileId, collection: best.collection, id: best.id, structId: best.structId } : null;
 }

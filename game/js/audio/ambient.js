@@ -27,6 +27,9 @@
 // first load AND every restart (`R`) go through, so a restart cannot double
 // up loops (see ambient.restart.test.js).
 import { getCtx, getMaster, isMuted, playNoiseBurst } from './synth.js';
+import { localToWorld } from '../../../engine/index.js';
+
+const findTmp = { x: 0, y: 0, z: 0 }; // localToWorld scratch, load-time-ish calls only (world:loaded)
 
 // ---- tuning constants (distances/peaks are tuning, not level data - only
 // the brazier/breach POSITIONS themselves come from level data, per AC) ----
@@ -68,7 +71,10 @@ function findWorldLight(world, lightId) {
   for (const s of world.structures) {
     const def = s.level && s.level.def;
     const ld = def && def.lights && def.lights.find((l) => l.id === lightId);
-    if (ld) return { x: ld.x + s.origin.x, y: ld.y + s.origin.y, z: ld.z + s.origin.z };
+    if (ld) {
+      localToWorld(s.frame, ld.x, ld.y, ld.z || 0, findTmp);
+      return { x: findTmp.x, y: findTmp.y, z: findTmp.z };
+    }
   }
   return null;
 }
@@ -77,7 +83,10 @@ function findWorldMarker(world, markerId) {
   for (const s of world.structures) {
     const def = s.level && s.level.def;
     const m = def && def.markers && def.markers[markerId];
-    if (m) return { x: m.x + s.origin.x, y: m.y + s.origin.y, z: (m.z || 0) + s.origin.z };
+    if (m) {
+      localToWorld(s.frame, m.x, m.y, m.z || 0, findTmp);
+      return { x: findTmp.x, y: findTmp.y, z: findTmp.z };
+    }
   }
   return null;
 }
@@ -86,7 +95,7 @@ function findSummitZMin(world) {
   for (const s of world.structures) {
     const def = s.level && s.level.def;
     const trig = def && def.triggers && def.triggers.find((t) => t.id === 'hintExit');
-    if (trig && typeof trig.zMin === 'number') return trig.zMin + s.origin.z;
+    if (trig && typeof trig.zMin === 'number') return localToWorld(s.frame, 0, 0, trig.zMin, findTmp).z;
   }
   return SUMMIT_ZMIN_FALLBACK;
 }

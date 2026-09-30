@@ -107,13 +107,15 @@ function fakeInput(downCodes = []) {
 }
 
 // ---- startPoseForStructure (24.5 "Start pose") -----------------------------
+// CO-7: takes the structure's authored `Frame` (docs/coordinates.md 3) instead
+// of a bare `{x,y,z}` origin - identical numbers while `yawSteps` is 0.
 {
-  const origin = { x: 1480, y: 1018, z: 0 };
+  const frame = { x: 1480, y: 1018, z: 0, yawSteps: 0 };
   const level = { width: 24, height: 14 };
-  const p = startPoseForStructure(origin, level);
-  ok('start pose x = origin.x + width/2', approxEqual(p.x, 1480 + 12));
-  ok('start pose y = origin.y + height + 10', approxEqual(p.y, 1018 + 14 + 10));
-  ok('start pose z = origin.z + 8', approxEqual(p.z, 8));
+  const p = startPoseForStructure(frame, level);
+  ok('start pose x = frame.x + width/2', approxEqual(p.x, 1480 + 12));
+  ok('start pose y = frame.y + height + 10', approxEqual(p.y, 1018 + 14 + 10));
+  ok('start pose z = frame.z + 8', approxEqual(p.z, 8));
   ok('start pose looks north (yaw 0)', p.yawDeg === 0);
   ok('start pose pitched down -15', p.pitchDeg === -15);
 }

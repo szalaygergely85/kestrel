@@ -9,7 +9,7 @@ import {
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
-  listOutlinerItems, toLocal, toWorld, mintId, fileKey,
+  listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createFrame } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
@@ -242,7 +242,7 @@ function savePoseDebounced(pose) {
 
 function startPose() {
   const s = world.structures.find((st) => st.id === 'tower') || world.structures[0];
-  return s ? startPoseForStructure(s.origin, s.level) : createCameraPose({ z: 8, pitchDeg: -15 });
+  return s ? startPoseForStructure(s.frame, s.level) : createCameraPose({ z: 8, pitchDeg: -15 });
 }
 
 let world = engine.loadWorld(assets.world(doc.worldId));
@@ -357,11 +357,13 @@ function structureForFile(fileId) {
   return world.structures.find((st) => st.level.name === levelId) || null;
 }
 
-/** `{x,y,z}` origin to add/subtract for a file's collection (0 for a world file - 24.1 decision 4). */
-function originForFile(fileId) {
-  const s = structureForFile(fileId);
-  return s ? s.origin : { x: 0, y: 0, z: 0 };
-}
+// CO-7 (docs/coordinates.md 7): `originForFile` is deleted - every local<->
+// world conversion now goes through `frameFor(world, selection)` (structId,
+// never a level-name/`isWorldSpace` guess) + `itemToWorld`/`worldToItem`
+// (doc.js). `structureForFile` itself stays (still needed to find a level
+// file's live `${structId}.${lightId}` key in `patchLive` below, and it has
+// no selection/structId to go on there - an `EditRecord` only carries
+// `fileId`, same pre-existing "first structure using this level" limitation).
 
 // ---- US-067: scene-tree hide/lock - live application ------------------------
 // `visState` (visibility.js) is the source of truth for WHICH items are
@@ -429,23 +431,22 @@ function reapplyVisibility() {
  */
 function patchLive(rec) {
   const item = rec.after;
-  const isWorldSpace = rec.fileId.startsWith('world/');
-  const origin = originForFile(rec.fileId);
+  const s = structureForFile(rec.fileId);
+  const sFrame = s ? s.frame : null; // CO-7: `frame` (module scope) is the render frame - this is the coordinate Frame
   if (rec.collection === 'lights') {
-    const s = structureForFile(rec.fileId);
     const ls = frame.lightSet;
     if (!s || !ls) return false;
     const handle = findLightHandle(ls, `${s.id}.${rec.id}`);
     if (handle === -1) return false;
-    applyLightPatch(ls, handle, item, origin, isWorldSpace, assets.palette);
+    applyLightPatch(ls, handle, item, sFrame, assets.palette);
     frame.markDirty();
     return true;
   }
-  const entId = selectionEntityId(world, { fileId: rec.fileId, collection: rec.collection, id: rec.id });
+  const entId = selectionEntityId(world, { fileId: rec.fileId, collection: rec.collection, id: rec.id, structId: s ? s.id : null });
   if (!entId) return false;
   const data = world.entity(entId);
   if (!data) return false;
-  applyPropTransformPatch(data.transform, item, origin, isWorldSpace);
+  applyPropTransformPatch(data.transform, item, sFrame);
   world.renderVersion++;
   frame.markDirty();
   return true;
@@ -582,16 +583,15 @@ function applyNudge(axis, sign) {
   const item = selectionItemData(doc, selection);
   if (!item) return;
   if (axis === 'z' && typeof item.z !== 'number') { flash('nudge: z is not numeric (e.g. "ground") - left alone'); return; }
-  const origin = originForFile(selection.fileId);
-  const isWorldSpace = selection.fileId.startsWith('world/');
+  const sFrame = frameFor(world, selection);
   const localZ = typeof item.z === 'number' ? item.z : 0;
-  const worldPos = isWorldSpace ? { x: item.x, y: item.y, z: localZ } : toWorld(origin, { x: item.x, y: item.y, z: localZ });
+  const worldPos = itemToWorld(sFrame, item.x, item.y, localZ);
   const snap = SNAP_OPTIONS[snapIdx];
   const delta = { x: 0, y: 0, z: 0 };
   delta[axis] = sign * snap;
   const nextWorld = { x: worldPos.x + delta.x, y: worldPos.y + delta.y, z: worldPos.z + delta.z };
   const snapped = { x: snapTo(nextWorld.x, snap), y: snapTo(nextWorld.y, snap), z: snapTo(nextWorld.z, snap) };
-  const nextLocal = isWorldSpace ? snapped : toLocal(origin, snapped);
+  const nextLocal = worldToItem(sFrame, snapped.x, snapped.y, snapped.z);
   const patch = { x: nextLocal.x, y: nextLocal.y };
   if (axis === 'z') patch.z = nextLocal.z;
   const index = selectionItemIndex(doc, selection);
@@ -614,12 +614,11 @@ function dropToFloor() {
   const item = selectionItemData(doc, selection);
   if (!item) return;
   if (item.z === 'ground') { flash('drop: z is "ground" - left alone (24.8)'); return; }
-  const origin = originForFile(selection.fileId);
-  const isWorldSpace = selection.fileId.startsWith('world/');
-  const worldPos = isWorldSpace ? { x: item.x, y: item.y } : toWorld(origin, { x: item.x, y: item.y, z: 0 });
+  const sFrame = frameFor(world, selection);
+  const worldPos = itemToWorld(sFrame, item.x, item.y, 0);
   const floorZ = world.floorAt(worldPos.x, worldPos.y);
   if (floorZ == null) { flash('drop: no floor under this point'); return; }
-  const nextZ = isWorldSpace ? floorZ : floorZ - origin.z;
+  const nextZ = worldToItem(sFrame, worldPos.x, worldPos.y, floorZ).z;
   const index = selectionItemIndex(doc, selection);
   commit(makeFieldEditRecord('drop', selection.fileId, selection.collection, item, index, { z: nextZ }));
 }
@@ -651,9 +650,9 @@ function teleportToSelection() {
   if (!point) {
     const item = selectionItemData(doc, selection);
     if (item && typeof item.x === 'number' && typeof item.y === 'number') {
-      const origin = originForFile(selection.fileId);
+      const sFrame = frameFor(world, selection);
       const z = typeof item.z === 'number' ? item.z : 0;
-      point = selection.fileId.startsWith('world/') ? { x: item.x, y: item.y, z } : toWorld(origin, { x: item.x, y: item.y, z });
+      point = itemToWorld(sFrame, item.x, item.y, z);
     }
   }
   if (!point) { flash('teleport: no position for this item'); return; }
@@ -690,7 +689,7 @@ treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
 
 function renderOutliner() {
   outlinerEl.textContent = '';
-  const allItems = listOutlinerItems(doc);
+  const allItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
 
   const counts = { all: allItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
   for (const o of allItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
@@ -773,8 +772,8 @@ function renderOutliner() {
       icons.appendChild(eyeBtn);
       icons.appendChild(lockBtn);
       row.appendChild(icons);
-      row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }));
-      row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id }); teleportToSelection(); });
+      row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }));
+      row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
       outlinerEl.appendChild(row);
     });
   }
@@ -1002,7 +1001,7 @@ function placeAt(kind, pt, modelKeyOverride) {
     collection = kind === 'prop' ? 'props' : kind === 'light' ? 'lights' : kind === 'trigger' ? 'triggers' : 'interactables';
     const file = doc.files.get(fileId);
     const id = mintId(file, kind);
-    item = defaultItemForKind(kind, id, toLocal(s.origin, pt), { modelKey });
+    item = defaultItemForKind(kind, id, worldToItem(s.frame, pt.x, pt.y, pt.z), { modelKey });
   } else {
     fileId = fileKey('world', doc.worldId);
     collection = 'entities';
@@ -1018,7 +1017,7 @@ function placeAt(kind, pt, modelKeyOverride) {
   if (errors.length) { flash(`place refused: ${errors.join('; ')}`); setPlaceMode(null); return; }
 
   commit(makeInsertRecord(fileId, collection, item));
-  selectItem({ fileId, collection, id: item.id });
+  selectItem({ fileId, collection, id: item.id, structId: s ? s.id : null });
   setPlaceMode(null);
 }
 
@@ -1218,11 +1217,9 @@ window.addEventListener('mouseup', (e) => {
   const d = drag;
   drag = null;
   if (!data) return;
-  const origin = originForFile(d.item.fileId);
-  const isWorldSpace = d.item.fileId.startsWith('world/');
-  const nextLocal = isWorldSpace
-    ? { x: data.transform.x, y: data.transform.y }
-    : toLocal(origin, { x: data.transform.x, y: data.transform.y, z: data.startTransform ? d.startTransform.z : data.transform.z });
+  const sFrame = frameFor(world, d.item);
+  const zForConv = d.startTransform ? d.startTransform.z : data.transform.z; // unused by the patch below - only x/y are committed - but worldToItem needs a number
+  const nextLocal = worldToItem(sFrame, data.transform.x, data.transform.y, zForConv);
   const before = selectionItemData(doc, d.item);
   if (!before) return;
   commit(makeFieldEditRecord('drag', d.item.fileId, d.item.collection, before, d.index, { x: nextLocal.x, y: nextLocal.y }));

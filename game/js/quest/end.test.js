@@ -5,7 +5,7 @@
 // don't: `questEnd` with `structId == null` treats `walkTo` as an ABSOLUTE
 // world coordinate (no structure origin added); `lookAt: '<entityId>'`
 // resolves the target's position once, at fire time, into a compass-degree
-// `yawTo` (`atan2(ex - x, -(ey - y))`); `stepEnd` eases that yaw on the
+// `yawTo` (`yawFromDelta(ex - x, ey - y)`); `stepEnd` eases that yaw on the
 // SHORTEST arc, including a wraparound case that crosses 0/360 - and the
 // original structure-local path (`structId` set, origin added) still works
 // unchanged (regression).
@@ -129,6 +129,12 @@ ok('2d: target due west (-10,0) -> yawTo 270', near(yawToCase('W', -10, 0), 270)
     structures: [{ id: 'tower', origin: { x: 1480, y: 1018, z: 0 } }],
     state: {},
     entity: () => null,
+    // CO-8: end.js calls world.frameOf(structId) directly (no more duck-typed
+    // fallback) - a fake world exercising the structure-local path needs one.
+    frameOf(id) {
+      const s = this.structures.find((st) => st.id === id);
+      return s ? { x: s.origin.x, y: s.origin.y, z: s.origin.z || 0, yawSteps: 0 } : null;
+    },
   };
   const entity = makeEntity(1497, 1027.5, 0, 30); // world coords (inside the tower footprint)
   const def = { walkTo: { x: 15.0, y: 8.0 }, pitchTo: 0 }; // level-local

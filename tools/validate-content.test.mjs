@@ -292,6 +292,93 @@ function assetsWithRingWorld() {
   ok('terrain recipe produced no findings of its own', !errors.some((e) => e.startsWith('levels.terrainA')), JSON.stringify(errors));
 }
 
+// ---------------------------------------------------------------------------
+// 13. CO-8 (docs/coordinates.md section 8): coordinate/frame content rules.
+// ---------------------------------------------------------------------------
+
+// 13a. world.structures[].origin.x/y/z must be finite.
+{
+  const a = goodAssets();
+  a.worlds.w1.structures = [{ id: 'tower', level: 'room', origin: { x: NaN, y: 0, z: 0 } }];
+  const { errors } = validateContent(a);
+  ok('reports non-finite origin.x', hasFinding(errors, ['structures[tower]', 'origin.x', 'finite']), JSON.stringify(errors));
+}
+
+// 13b. world.structures[].yawSteps must be an integer 0..3.
+{
+  const a = goodAssets();
+  a.worlds.w1.structures = [{ id: 'tower', level: 'room', origin: { x: 0, y: 0, z: 0 }, yawSteps: 4 }];
+  const { errors } = validateContent(a);
+  ok('reports out-of-range yawSteps', hasFinding(errors, ['structures[tower]', 'yawSteps', '0..3']), JSON.stringify(errors));
+}
+{
+  const a = goodAssets();
+  a.worlds.w1.structures = [{ id: 'tower', level: 'room', origin: { x: 0, y: 0, z: 0 }, yawSteps: 1.5 }];
+  const { errors } = validateContent(a);
+  ok('reports non-integer yawSteps', hasFinding(errors, ['structures[tower]', 'yawSteps', '0..3']), JSON.stringify(errors));
+}
+
+// 13c. z (level prop / world entity) must be a number or 'ground'.
+{
+  const a = goodAssets();
+  a.levels.room.props[0].z = 'sky'; // not a number, not 'ground'
+  const { errors } = validateContent(a);
+  ok('reports bad level prop z', hasFinding(errors, ['props[lamp].z', 'number or "ground"']), JSON.stringify(errors));
+}
+{
+  const a = goodAssets();
+  a.worlds.w1.entities[0].z = 'sky';
+  const { errors } = validateContent(a);
+  ok('reports bad world entity z', hasFinding(errors, ['entities[tower].z', 'number or "ground"']), JSON.stringify(errors));
+}
+
+// 13d. level items (props/lights/interactables) must stay inside [0,w)x[0,h).
+{
+  const a = goodAssets();
+  a.levels.room.size = { w: 10, h: 10 };
+  a.levels.room.props[0].x = 20; // outside [0,10)
+  const { errors } = validateContent(a);
+  ok('reports a prop outside the level bounds', hasFinding(errors, ['props[lamp]', 'out of level bounds', '[0,10) x [0,10)']), JSON.stringify(errors));
+}
+{
+  // In-bounds items with a size present: no finding.
+  const a = goodAssets();
+  a.levels.room.size = { w: 10, h: 10 };
+  const { errors } = validateContent(a);
+  ok('in-bounds items with a level size report nothing', !errors.some((e) => e.includes('out of level bounds')), JSON.stringify(errors));
+}
+
+// 13e. A level file's own `sun` is deprecated: a WARNING, not an error.
+{
+  const a = goodAssets();
+  a.levels.room.sun = { preset: 'sun' };
+  const { errors, warnings } = validateContent(a);
+  ok('level sun is a warning, not an error', !errors.some((e) => e.includes('levels.room.sun')), JSON.stringify(errors));
+  ok('level sun warning is reported', warnings.some((w) => w.includes('levels.room.sun') && w.includes('deprecated')), JSON.stringify(warnings));
+}
+
+// 13f. A world file with terrain but no `sun` gets a warning (CO-8 moved
+// sun to the world file; a real gameplay world missing it is worth flagging).
+{
+  const a = goodAssets();
+  a.worlds.w1.terrain = 'overworld_far';
+  const { warnings } = validateContent(a);
+  ok('world with terrain and no sun is warned', warnings.some((w) => w.includes('worlds.w1.sun')), JSON.stringify(warnings));
+}
+{
+  const a = goodAssets();
+  a.worlds.w1.terrain = 'overworld_far';
+  a.worlds.w1.sun = { preset: 'sun' };
+  const { warnings } = validateContent(a);
+  ok('world with terrain and a sun is not warned', !warnings.some((w) => w.includes('worlds.w1.sun')), JSON.stringify(warnings));
+}
+{
+  // No terrain (an interior-only / ephemeral world) - no sun warning either way.
+  const a = goodAssets();
+  const { warnings } = validateContent(a);
+  ok('world without terrain is never warned about sun', !warnings.some((w) => w.includes('worlds.w1.sun')), JSON.stringify(warnings));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) {
   console.error('FAILURES:');

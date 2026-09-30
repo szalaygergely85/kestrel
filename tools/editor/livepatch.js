@@ -23,6 +23,17 @@
 // `applyLightPatch` resolves the new preset through the palette (same
 // `palette.lights[name]` / `palette.hue[preset.color]` rule as
 // `buildLightSet`/`syncEntityLights`) and calls `setParams`.
+//
+// CO-7 (docs/coordinates.md 7/11): the old `(origin, isWorldSpace)` pair is
+// replaced by a single `frame` value (`Frame | null`, `null` = already world
+// space) passed through `localToWorld`/`localYawToWorld` - do-not-list item
+// 2 ("do not decide a frame from a string/boolean, pass the frame itself").
+import { localToWorld, localYawToWorld } from '../../engine/index.js';
+
+/** Local point of `frame` -> world point; `frame = null` = identity (already world-space). */
+function toWorldPoint(frame, lx, ly, lz) {
+  return frame ? localToWorld(frame, lx, ly, lz, { x: 0, y: 0, z: 0 }) : { x: lx, y: ly, z: lz };
+}
 
 /** Prop fields patchable straight onto a live entity's `transform` (position + facing). */
 export const PROP_LIVE_FIELDS = new Set(['x', 'y', 'z', 'facing', 'yawDeg']);
@@ -78,15 +89,15 @@ export function isPatchableRecord(rec) {
  * `transform.z` untouched.
  * @param {{x:number,y:number,z:number,yawDeg:number}} transform live entity transform (mutated in place)
  * @param {Object} item the doc item's new (`after`) state
- * @param {{x:number,y:number,z:number}} origin local->world offset (0 for a world-file item)
- * @param {boolean} isWorldSpace true when `item`'s own x/y/z are already world metres
+ * @param {import('../../engine/index.js').Frame|null} frame the item's owning structure's frame, or `null` for a world-space item (CO-7)
  */
-export function applyPropTransformPatch(transform, item, origin, isWorldSpace) {
-  transform.x = isWorldSpace ? item.x : item.x + origin.x;
-  transform.y = isWorldSpace ? item.y : item.y + origin.y;
-  if (typeof item.z === 'number') transform.z = isWorldSpace ? item.z : item.z + origin.z;
-  if (typeof item.facing === 'number') transform.yawDeg = item.facing;
-  else if (typeof item.yawDeg === 'number') transform.yawDeg = item.yawDeg;
+export function applyPropTransformPatch(transform, item, frame) {
+  const p = toWorldPoint(frame, item.x, item.y, typeof item.z === 'number' ? item.z : 0);
+  transform.x = p.x;
+  transform.y = p.y;
+  if (typeof item.z === 'number') transform.z = p.z;
+  if (typeof item.facing === 'number') transform.yawDeg = frame ? localYawToWorld(frame, item.facing) : item.facing;
+  else if (typeof item.yawDeg === 'number') transform.yawDeg = frame ? localYawToWorld(frame, item.yawDeg) : item.yawDeg;
 }
 
 /**
@@ -121,16 +132,13 @@ export function resolveLightPreset(palette, presetName) {
  * @param {{move(h:number,x:number,y:number,z:number):void, setOn(h:number,on:boolean):void, setParams?:(h:number,p:Object)=>void}} ls
  * @param {number} handle
  * @param {Object} item the doc item's new (`after`) state
- * @param {{x:number,y:number,z:number}} origin
- * @param {boolean} isWorldSpace
+ * @param {import('../../engine/index.js').Frame|null} frame the item's owning structure's frame, or `null` for a world-space item (CO-7)
  * @param {Object} [palette] `assets.palette`, required only for a `preset` edit
  */
-export function applyLightPatch(ls, handle, item, origin, isWorldSpace, palette) {
-  const wx = isWorldSpace ? item.x : item.x + origin.x;
-  const wy = isWorldSpace ? item.y : item.y + origin.y;
+export function applyLightPatch(ls, handle, item, frame, palette) {
   const zLocal = typeof item.z === 'number' ? item.z : 0;
-  const wz = isWorldSpace ? zLocal : zLocal + origin.z;
-  ls.move(handle, wx, wy, wz);
+  const p = toWorldPoint(frame, item.x, item.y, zLocal);
+  ls.move(handle, p.x, p.y, p.z);
   if (typeof item.on === 'boolean') ls.setOn(handle, item.on);
   if (typeof item.preset === 'string' && typeof ls.setParams === 'function') {
     const params = resolveLightPreset(palette, item.preset);

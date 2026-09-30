@@ -126,6 +126,12 @@ export { createSceneDim, resetSceneDim, pushDimRect, applySceneDim } from './ui/
 // ---- OWN-REQ-003 UI layer (docs/architecture.md 17) -------------------------
 export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 
+// ---- RE-05 pathfinding: NavGrid + A* (docs/architecture.md 28.2) ------------
+// Leaf module (engine/nav/**): never imports render/mesh/ui/world
+// (check-deps rule 14); World is passed into buildFromWorld duck-typed.
+export { NavGrid } from './nav/NavGrid.js';
+export { createAStar, findPath, smoothPath, pathCrossesRect } from './nav/astar.js';
+
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
 export { attachedLightPos } from './entities/attach.js';

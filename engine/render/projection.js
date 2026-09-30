@@ -200,3 +200,230 @@ export function windowToCell(n, X, Y, out2) {
   out2[1] = Y / n - 0.5;
   return out2;
 }
+
+// ---------------------------------------------------------------------------
+// RE-01 (docs/architecture.md 28.1): a real rotated view matrix for
+// `cam.projection: 'pitched'` (mesh renderer only, RE-02). `'shear'` above
+// stays bit-identical - nothing here is called from that path.
+// ---------------------------------------------------------------------------
+
+/** Default vertical FOV for the pitched camera, degrees (28.1). */
+export const PROJ_PITCHED_VFOV_DEG = 36;
+
+/**
+ * @typedef {Object} PitchedTerms   filled by pitchedTerms; consumers read, never write
+ * @property {'pitched'} projection
+ * @property {number} cols
+ * @property {number} rows
+ * @property {number} aspect
+ * @property {number} eyeX
+ * @property {number} eyeY
+ * @property {number} eyeZ
+ * @property {number} fX
+ * @property {number} fY
+ * @property {number} fZ
+ * @property {number} rX
+ * @property {number} rY
+ * @property {number} uX
+ * @property {number} uY
+ * @property {number} uZ
+ * @property {number} tanHalfX
+ * @property {number} tanHalfY
+ * @property {number} yawDeg
+ * @property {number} pitchDeg
+ * @property {number} vfovDeg
+ * @property {Float64Array} M - world -> clip, refreshed by pitchedTerms
+ */
+
+/**
+ * Allocates a `PitchedTerms` object (with its `M` Float64Array(16)). The
+ * only allocation in the pitched-camera API; every other function here is
+ * zero-alloc when given a reused `out`.
+ * @returns {PitchedTerms}
+ */
+export function createPitchedTerms() {
+  return {
+    projection: 'pitched',
+    cols: 0, rows: 0, aspect: 0,
+    eyeX: 0, eyeY: 0, eyeZ: 0,
+    fX: 0, fY: 0, fZ: 0,
+    rX: 0, rY: 0,
+    uX: 0, uY: 0, uZ: 0,
+    tanHalfX: 0, tanHalfY: 0,
+    yawDeg: 0, pitchDeg: 0, vfovDeg: 0,
+    M: new Float64Array(16),
+  };
+}
+
+/**
+ * Fills (and returns) `out` with the pitched-camera basis/terms and its
+ * world -> clip matrix (28.1). `pitchDeg` keeps the engine sign (positive =
+ * up); range `-89..89`, else throws. Zero allocation.
+ * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number,vfovDeg?:number}} cam
+ * @param {GridSpec} grid
+ * @param {PitchedTerms} out
+ * @returns {PitchedTerms}
+ */
+export function pitchedTerms(cam, grid, out) {
+  if (cam.pitchDeg < -89 || cam.pitchDeg > 89) {
+    throw new Error(`pitchedTerms: pitchDeg ${cam.pitchDeg} out of range [-89, 89]`);
+  }
+  const cols = grid.cols, rows = grid.rows;
+  const yawRad = (cam.yawDeg * Math.PI) / 180;
+  const p = (cam.pitchDeg * Math.PI) / 180;
+  const fx = Math.sin(yawRad), fy = -Math.cos(yawRad);
+  const cosP = Math.cos(p), sinP = Math.sin(p);
+
+  const fX = cosP * fx, fY = cosP * fy, fZ = sinP;
+  const rX = Math.cos(yawRad), rY = Math.sin(yawRad);
+  const uX = -sinP * fx, uY = -sinP * fy, uZ = cosP;
+
+  const aspect = (cols * (grid.pxCellW || 1)) / (rows * (grid.pxCellH || 1));
+  const vfovDeg = cam.vfovDeg || PROJ_PITCHED_VFOV_DEG;
+  const tanHalfY = Math.tan((vfovDeg * Math.PI) / 180 / 2);
+  const tanHalfX = tanHalfY * aspect;
+
+  out.projection = 'pitched';
+  out.cols = cols; out.rows = rows; out.aspect = aspect;
+  out.eyeX = cam.x; out.eyeY = cam.y; out.eyeZ = cam.z;
+  out.fX = fX; out.fY = fY; out.fZ = fZ;
+  out.rX = rX; out.rY = rY;
+  out.uX = uX; out.uY = uY; out.uZ = uZ;
+  out.tanHalfX = tanHalfX; out.tanHalfY = tanHalfY;
+  out.yawDeg = cam.yawDeg; out.pitchDeg = cam.pitchDeg; out.vfovDeg = vfovDeg;
+
+  pitchedProjection(out, out.M);
+  return out;
+}
+
+/**
+ * Builds `M = P*V` (world -> clip, column-major, `out16[col*4+row]`,
+ * Float64Array(16)) from `terms` (28.1). At `pitchDeg = 0` with
+ * `vfovDeg = 2*atan(tan(PROJ_HFOV_DEG/2)/aspect)` this equals
+ * `shearProjection`'s matrix element-wise within 1e-12.
+ * @param {PitchedTerms} terms
+ * @param {Float64Array} out16
+ * @returns {Float64Array}
+ */
+export function pitchedProjection(terms, out16) {
+  const {
+    fX, fY, fZ, rX, rY, uX, uY, uZ,
+    eyeX, eyeY, eyeZ, tanHalfX, tanHalfY, rows,
+  } = terms;
+
+  // row_w = (F.x, F.y, F.z, -dot(F,eye))
+  const wA = fX, wB = fY, wC = fZ, wD = -(fX * eyeX + fY * eyeY + fZ * eyeZ);
+
+  // row_x = (1/tanHalfX) * (R.x, R.y, 0, -dot(R,eye))  (rZ = 0)
+  const xScale = 1 / tanHalfX;
+  const xA = xScale * rX, xB = xScale * rY, xC = 0, xD = xScale * -(rX * eyeX + rY * eyeY);
+
+  // row_y = -(1/tanHalfY) * (U.x, U.y, U.z, -dot(U,eye)) + (1/rows)*row_w
+  const yScale = 1 / tanHalfY;
+  const dotU = uX * eyeX + uY * eyeY + uZ * eyeZ;
+  const invRows = 1 / rows;
+  const yA = -yScale * uX + invRows * wA;
+  const yB = -yScale * uY + invRows * wB;
+  const yC = -yScale * uZ + invRows * wC;
+  const yD = yScale * dotU + invRows * wD;
+
+  // row_z = A*row_w + (0, 0, 0, B), A/B exactly as shearProjection.
+  const A = (PROJ_FAR + PROJ_NEAR) / (PROJ_FAR - PROJ_NEAR);
+  const B = (-2 * PROJ_FAR * PROJ_NEAR) / (PROJ_FAR - PROJ_NEAR);
+  const zA = A * wA, zB = A * wB, zC = A * wC, zD = A * wD + B;
+
+  out16[0] = xA; out16[1] = yA; out16[2] = zA; out16[3] = wA;
+  out16[4] = xB; out16[5] = yB; out16[6] = zB; out16[7] = wB;
+  out16[8] = xC; out16[9] = yC; out16[10] = zC; out16[11] = wC;
+  out16[12] = xD; out16[13] = yD; out16[14] = zD; out16[15] = wD;
+  return out16;
+}
+
+/**
+ * Cell ray for the pitched camera (28.1 "cell convention"): origin = eye,
+ * direction `F + a*R + b*U` (not normalised - the forward component is 1,
+ * so the distance along `dir` is the view depth `vd`). `col`/`row` may be
+ * fractional. Zero allocation.
+ * @param {PitchedTerms} terms
+ * @param {number} col
+ * @param {number} row
+ * @param {{ox:number,oy:number,oz:number,dx:number,dy:number,dz:number}} out
+ * @returns {{ox:number,oy:number,oz:number,dx:number,dy:number,dz:number}}
+ */
+export function screenRay(terms, col, row, out) {
+  const a = ((2 * (col + 0.5)) / terms.cols - 1) * terms.tanHalfX;
+  const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
+  out.ox = terms.eyeX; out.oy = terms.eyeY; out.oz = terms.eyeZ;
+  out.dx = terms.fX + a * terms.rX + b * terms.uX;
+  out.dy = terms.fY + a * terms.rY + b * terms.uY;
+  out.dz = terms.fZ + b * terms.uZ; // rZ = 0
+  return out;
+}
+
+/**
+ * `eye + vd*dir` for the pitched cell ray - JS twin of GLSL `cellRayPitched`.
+ * @param {PitchedTerms} terms
+ * @param {number} col
+ * @param {number} row
+ * @param {number} vd - view depth, metres
+ * @param {Float64Array|number[]} out3
+ * @returns {Float64Array|number[]}
+ */
+export function unprojectPitched(terms, col, row, vd, out3) {
+  const a = ((2 * (col + 0.5)) / terms.cols - 1) * terms.tanHalfX;
+  const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
+  const dx = terms.fX + a * terms.rX + b * terms.uX;
+  const dy = terms.fY + a * terms.rY + b * terms.uY;
+  const dz = terms.fZ + b * terms.uZ;
+  out3[0] = terms.eyeX + dx * vd;
+  out3[1] = terms.eyeY + dy * vd;
+  out3[2] = terms.eyeZ + dz * vd;
+  return out3;
+}
+
+/**
+ * Inverse of `unprojectPitched`/`screenRay`: world point -> `[col, row, vd]`.
+ * `vd <= 0` means the point is behind (or on) the eye plane - only `out3[2]`
+ * (`vd`) is valid in that case. Zero allocation.
+ * @param {PitchedTerms} terms
+ * @param {number} x
+ * @param {number} y
+ * @param {number} z
+ * @param {Float64Array|number[]} out3
+ * @returns {Float64Array|number[]}
+ */
+export function worldToCell(terms, x, y, z, out3) {
+  const dx = x - terms.eyeX, dy = y - terms.eyeY, dz = z - terms.eyeZ;
+  const vd = dx * terms.fX + dy * terms.fY + dz * terms.fZ;
+  out3[2] = vd;
+  if (vd <= 0) return out3;
+  const vx = dx * terms.rX + dy * terms.rY; // rZ = 0
+  const vy = dx * terms.uX + dy * terms.uY + dz * terms.uZ;
+  out3[0] = (vx / vd / terms.tanHalfX + 1) * (terms.cols / 2) - 0.5;
+  out3[1] = (1 - vy / vd / terms.tanHalfY) * (terms.rows / 2);
+  return out3;
+}
+
+/**
+ * `eye = focus - dist*F`, `F` from `yawDeg`/`pitchDeg` (28.1's basis, same
+ * sign convention). Zero allocation.
+ * @param {number} fx - focus x
+ * @param {number} fy - focus y
+ * @param {number} fz - focus z
+ * @param {number} yawDeg
+ * @param {number} pitchDeg
+ * @param {number} dist
+ * @param {Float64Array|number[]} out3
+ * @returns {Float64Array|number[]}
+ */
+export function pitchedEyeFromFocus(fx, fy, fz, yawDeg, pitchDeg, dist, out3) {
+  const yawRad = (yawDeg * Math.PI) / 180;
+  const p = (pitchDeg * Math.PI) / 180;
+  const sfx = Math.sin(yawRad), sfy = -Math.cos(yawRad);
+  const cosP = Math.cos(p), sinP = Math.sin(p);
+  const Fx = cosP * sfx, Fy = cosP * sfy, Fz = sinP;
+  out3[0] = fx - dist * Fx;
+  out3[1] = fy - dist * Fy;
+  out3[2] = fz - dist * Fz;
+  return out3;
+}

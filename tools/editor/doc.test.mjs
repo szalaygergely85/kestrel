@@ -6,7 +6,7 @@ import { makeOk } from '../../engine/test/assert.js';
 //   node tools/editor/doc.test.mjs
 
 import {
-  createDoc, fileKey, mintId, toLocal, toWorld, computeNextId,
+  createDoc, fileKey, mintId, frameFor, itemToWorld, worldToItem, computeNextId,
   selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex, listOutlinerItems,
 } from './doc.js';
 
@@ -93,17 +93,26 @@ function fakeAssets({ levels = {}, worlds = {} }) {
   ok('file.meta.nextId reflects the mint', file.meta.nextId === 5);
 }
 
-// ---- toLocal/toWorld round trip (24.1 decision 4) --------------------------
+// ---- CO-7: frameFor / itemToWorld / worldToItem round trip (replaces the old translation-only toLocal/toWorld) ----
 {
-  const origin = { x: 1480, y: 1018, z: 0 };
+  const frame = { x: 1480, y: 1018, z: 0, yawSteps: 0 };
   const worldPoint = { x: 1497, y: 1027.5, z: 3.2 };
-  const local = toLocal(origin, worldPoint);
-  ok('toLocal subtracts the origin', local.x === 17 && local.y === 9.5 && local.z === 3.2, JSON.stringify(local));
-  const back = toWorld(origin, local);
-  ok('toWorld(toLocal(p)) round-trips to p', back.x === worldPoint.x && back.y === worldPoint.y && back.z === worldPoint.z);
+  const local = worldToItem(frame, worldPoint.x, worldPoint.y, worldPoint.z);
+  ok('worldToItem subtracts the frame origin', local.x === 17 && local.y === 9.5 && local.z === 3.2, JSON.stringify(local));
+  const back = itemToWorld(frame, local.x, local.y, local.z);
+  ok('itemToWorld(worldToItem(p)) round-trips to p', back.x === worldPoint.x && back.y === worldPoint.y && back.z === worldPoint.z);
+
+  ok('itemToWorld with frame=null is the identity (world-space item)', itemToWorld(null, 5, 6, 7).x === 5 && itemToWorld(null, 5, 6, 7).z === 7);
+  ok('worldToItem with frame=null is the identity (world-space item)', worldToItem(null, 5, 6, 7).y === 6);
+
+  // frameFor(selection) = structId ? world.frameOf(structId) : null (CO-7).
+  const fakeWorld = { frameOf: (id) => (id === 'tower' ? frame : null) };
+  ok('frameFor resolves through world.frameOf by structId', frameFor(fakeWorld, { structId: 'tower' }) === frame);
+  ok('frameFor returns null for a selection with no structId (world-space item)', frameFor(fakeWorld, { structId: null }) === null);
+  ok('frameFor returns null for a null selection', frameFor(fakeWorld, null) === null);
 }
 
-// ---- US-032 selection item <-> entity id mapping (24.7) --------------------
+// ---- US-032 selection item <-> entity id mapping (24.7), CO-7's `structId` ----
 {
   const towerDef = { name: 'tower', props: [{ id: 'brazier', model: 'brazier', x: 1, y: 1, z: 0 }] };
   const worldDef = { structures: [{ id: 'tower', level: 'tower' }], entities: [{ id: 'farTower', x: 1, y: 2, z: 3 }] };
@@ -114,11 +123,13 @@ function fakeAssets({ levels = {}, worlds = {} }) {
 
   const propItem = selectionFromEntityId(doc, world, 'tower.brazier');
   ok('selectionFromEntityId: a prop entity id maps to level/props', propItem.fileId === 'level/tower' && propItem.collection === 'props' && propItem.id === 'brazier', JSON.stringify(propItem));
+  ok('selectionFromEntityId: carries the owning structId (CO-7)', propItem.structId === 'tower', JSON.stringify(propItem));
   const backId = selectionEntityId(world, propItem);
   ok('selectionEntityId: round-trips back to the runtime id', backId === 'tower.brazier', backId);
 
   const worldEntItem = selectionFromEntityId(doc, world, 'farTower');
   ok('selectionFromEntityId: an unprefixed id maps to the world file entities', worldEntItem.fileId === 'world/world_m1' && worldEntItem.collection === 'entities' && worldEntItem.id === 'farTower');
+  ok('selectionFromEntityId: a world entity has structId null (already world-space)', worldEntItem.structId === null);
   ok('selectionEntityId: world entity round-trips to its own id', selectionEntityId(world, worldEntItem) === 'farTower');
 
   const data = selectionItemData(doc, propItem);
@@ -128,6 +139,48 @@ function fakeAssets({ levels = {}, worlds = {} }) {
 
   const outlined = listOutlinerItems(doc);
   ok('listOutlinerItems: includes the prop and the world entity', outlined.some((o) => o.id === 'brazier' && o.collection === 'props') && outlined.some((o) => o.id === 'farTower' && o.collection === 'entities'), JSON.stringify(outlined));
+  ok('listOutlinerItems: with no world arg, structId is null (back-compat)', outlined.every((o) => o.structId === null));
+
+  const outlinedWithWorld = listOutlinerItems(doc, world);
+  const propRow = outlinedWithWorld.find((o) => o.id === 'brazier');
+  ok('listOutlinerItems(doc, world): resolves structId for a level-owned item', propRow && propRow.structId === 'tower', JSON.stringify(propRow));
+}
+
+// ---- CO-7: two placements of one level select the right structure's frame (section 10 item 7) ----
+{
+  const roomDef = { name: 'test_room', props: [{ id: 'torch', model: 'torch', x: 2, y: 3, z: 0 }] };
+  const worldDef = { structures: [{ id: 'roomA', level: 'test_room' }, { id: 'roomB', level: 'test_room' }], entities: [] };
+  const assets = fakeAssets({ levels: { test_room: roomDef }, worlds: { two_rooms: worldDef } });
+  const doc = createDoc(assets, null, { worldId: 'two_rooms' });
+  const frameA = { x: 0, y: 0, z: 0, yawSteps: 0 };
+  const frameB = { x: 100, y: 50, z: 0, yawSteps: 0 };
+  const world = {
+    structures: [
+      { id: 'roomA', level: { name: 'test_room' }, frame: frameA },
+      { id: 'roomB', level: { name: 'test_room' }, frame: frameB },
+    ],
+    frameOf(id) { return (this.structures.find((s) => s.id === id) || {}).frame || null; },
+  };
+
+  const selA = selectionFromEntityId(doc, world, 'roomA.torch');
+  const selB = selectionFromEntityId(doc, world, 'roomB.torch');
+  ok('selectionFromEntityId picks roomA for a roomA-prefixed entity id (not the first structure sharing the level)', selA.structId === 'roomA', JSON.stringify(selA));
+  ok('selectionFromEntityId picks roomB for a roomB-prefixed entity id', selB.structId === 'roomB', JSON.stringify(selB));
+
+  ok('selectionEntityId (by structId) round-trips roomA', selectionEntityId(world, selA) === 'roomA.torch');
+  ok('selectionEntityId (by structId) round-trips roomB, NOT roomA', selectionEntityId(world, selB) === 'roomB.torch');
+
+  const item = selectionItemData(doc, selA); // the shared content item (x:2,y:3,z:0)
+  const worldA = itemToWorld(frameFor(world, selA), item.x, item.y, item.z);
+  const worldB = itemToWorld(frameFor(world, selB), item.x, item.y, item.z);
+  ok('the SAME content item resolves to a DIFFERENT world position through each placement\'s own frame',
+    worldA.x === 2 && worldA.y === 3 && worldB.x === 102 && worldB.y === 53, JSON.stringify({ worldA, worldB }));
+
+  // Outliner: the level file is shared content (one row), but the row's
+  // structId resolves to a placement - here the FIRST one, documented above.
+  const outlined = listOutlinerItems(doc, world);
+  const row = outlined.find((o) => o.id === 'torch');
+  ok('listOutlinerItems documented limitation: one row for the shared content, structId = the first placement', row && row.structId === 'roomA', JSON.stringify(row));
 }
 
 // ---- US-063: `?world=<id>` opens another world -----------------------------

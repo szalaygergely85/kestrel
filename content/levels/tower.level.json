@@ -114,11 +114,6 @@
     "x": 17,
     "y": 9.5
   },
-  "sun": {
-    "azimuth": 112.5,
-    "elevation": 60,
-    "preset": "sun"
-  },
   "ambient": {
     "preset": "ambient"
   },

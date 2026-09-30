@@ -209,9 +209,11 @@ const MAX_ENDTEXT_LINE = 40;
  */
 export function validateContent(ASSETS) {
   const errors = [];
+  const warnings = [];
   let checks = 0;
   const fail = (path, msg) => errors.push(`${path}: ${msg}`);
   const check = (cond, path, msg) => { checks++; if (!cond) fail(path, msg); };
+  const warn = (path, msg) => warnings.push(`${path}: ${msg}`);
 
   const models = (ASSETS && ASSETS.models) || {};
   const palette = (ASSETS && ASSETS.palette) || {};
@@ -449,7 +451,71 @@ export function validateContent(ASSETS) {
     }
   }
 
-  return { errors, checks };
+  // ---- 6. CO-8 (docs/coordinates.md section 8): coordinate/frame content rules ----
+  // World structures: origin.x/y/z finite, yawSteps an integer 0..3.
+  for (const worldKey of Object.keys(worlds)) {
+    const world = worlds[worldKey];
+    if (!world || typeof world !== 'object') continue;
+    const base = `worlds.${worldKey}`;
+    for (const s of world.structures || []) {
+      const path = `${base}.structures[${s.id}]`;
+      if (s.origin) {
+        check(Number.isFinite(s.origin.x), `${path}.origin.x`, `origin.x must be finite, got ${JSON.stringify(s.origin.x)}`);
+        check(Number.isFinite(s.origin.y), `${path}.origin.y`, `origin.y must be finite, got ${JSON.stringify(s.origin.y)}`);
+        check(Number.isFinite(s.origin.z), `${path}.origin.z`, `origin.z must be finite, got ${JSON.stringify(s.origin.z)}`);
+      }
+      if (s.yawSteps !== undefined) {
+        check(Number.isInteger(s.yawSteps) && s.yawSteps >= 0 && s.yawSteps <= 3, `${path}.yawSteps`, `yawSteps must be an integer 0..3, got ${JSON.stringify(s.yawSteps)}`);
+      }
+    }
+    // World entities: z is a number or 'ground'.
+    for (const e of world.entities || []) {
+      if (e.z === undefined) continue;
+      check(typeof e.z === 'number' || e.z === 'ground', `${base}.entities[${e.id}].z`, `z must be a number or "ground", got ${JSON.stringify(e.z)}`);
+    }
+    // A world with terrain (a real gameplay world) is the sun's home now
+    // (CO-8 moved it out of the level file) - missing it here is worth
+    // flagging even though `sun` stays optional (schema 1, additive).
+    if (world.terrain && !world.sun) {
+      warn(`${base}.sun`, 'world has terrain but no "sun" - since CO-8, sun lives on the world file (docs/coordinates.md section 8), not the level file');
+    }
+  }
+
+  // Level: `sun` is deprecated (moved to the world file); props' z is a
+  // number or 'ground'; props/lights/interactables x,y stay inside the
+  // level's own [0,w) x [0,h) footprint (a level-local coordinate outside
+  // its own grid is very likely a mistake - do-not list item 6 territory).
+  for (const levelKey of Object.keys(levels)) {
+    const level = levels[levelKey];
+    if (!level || typeof level !== 'object') continue;
+    const base = `levels.${levelKey}`;
+    if (level.sun) {
+      warn(`${base}.sun`, '"sun" on a level file is deprecated (CO-8): it is a world property now - move it to the world file');
+    }
+    for (const p of level.props || []) {
+      if (p.z === undefined) continue;
+      check(typeof p.z === 'number' || p.z === 'ground', `${base}.props[${p.id}].z`, `z must be a number or "ground", got ${JSON.stringify(p.z)}`);
+    }
+    if (level.size && typeof level.size.w === 'number' && typeof level.size.h === 'number') {
+      const w = level.size.w, h = level.size.h;
+      const items = [
+        ...(level.props || []).map((item) => ({ kind: 'props', item })),
+        ...(level.lights || []).map((item) => ({ kind: 'lights', item })),
+        ...(level.interactables || []).map((item) => ({ kind: 'interactables', item })),
+      ];
+      for (const { kind, item } of items) {
+        // A chain prop (from/to) or a decal has no x/y of its own - skip.
+        if (typeof item.x !== 'number' || typeof item.y !== 'number') continue;
+        check(
+          item.x >= 0 && item.x < w && item.y >= 0 && item.y < h,
+          `${base}.${kind}[${item.id}]`,
+          `x/y (${item.x}, ${item.y}) out of level bounds [0,${w}) x [0,${h})`
+        );
+      }
+    }
+  }
+
+  return { errors, warnings, checks };
 }
 
 function validateVoxelModelSafe(def, opts) {
@@ -465,13 +531,14 @@ function validateVoxelModelSafe(def, opts) {
 // ---------------------------------------------------------------------------
 async function main() {
   const ASSETS = await loadDesignAssets();
-  const { errors, checks } = validateContent(ASSETS);
+  const { errors, warnings, checks } = validateContent(ASSETS);
+  for (const w of warnings) console.warn(`WARN ${w}`);
   if (errors.length) {
     for (const e of errors) console.error(e);
     console.error(`content INVALID: ${errors.length} finding(s) out of ${checks} checks`);
     process.exitCode = 1;
   } else {
-    console.log(`content OK (${checks} checks)`);
+    console.log(`content OK (${checks} checks${warnings.length ? `, ${warnings.length} warning(s)` : ''})`);
   }
 }
 

@@ -2,7 +2,11 @@
 // frame/tab-switch cannot spiral into ever more catch-up steps), and a
 // separate render(alpha) driven by requestAnimationFrame.
 
-const STEP = 1 / 60;
+// RE-14 (docs/architecture.md 28.5): exported so sim code (engine/core's
+// deterministic command/RNG/hash/replay family) advances on this exact fixed
+// step, never the frame dt - no behaviour change here, just a public name
+// for the constant that already existed.
+export const STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5;
 // US-018 (architecture.md 16): skip this many rAF intervals after start()/
 // resetStats() (load/setup jank, not real frame pacing) and while the tab

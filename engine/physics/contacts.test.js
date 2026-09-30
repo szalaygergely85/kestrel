@@ -232,31 +232,91 @@ function bruteForce(shape) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Terrain contact: synthetic flat terrain, sphere resting near it
+// 3. Terrain contact: synthetic flat terrain, sphere resting near it.
+// `shape.z` is the Rapier shape-position convention (sphere CENTRE), not
+// feet - see contacts.js's file header. groundZ = 5, r = 0.25 (exact in
+// binary float, so `groundZ + r - groundZ === r` bit-for-bit and the
+// "exactly resting" case lands on depth === 0, not a rounding-noise
+// epsilon): the centre rests exactly on the ground at z = groundZ + r
+// (queue item 8b).
 // ---------------------------------------------------------------------------
 {
+  const groundZ = 5, r = 0.25;
   const flatTerrain = {
-    groundAt() { return 5; },
+    groundAt() { return groundZ; },
     groundNormalAt(x, y, out) { out.x = 0; out.y = 0; out.z = 1; return out; },
   };
   const w = { colliders: [], terrain: flatTerrain };
   const out = createContactList();
 
-  // Resting exactly on the ground: feet (shape.z, this project's convention)
-  // at z = 5, radius 0.3 -> depth 0.3.
-  contacts(w, { type: 'sphere', x: 0, y: 0, z: 5, r: 0.3 }, out);
-  ok('terrain: sphere resting on flat ground gets exactly one contact', out.count === 1, `count=${out.count}`);
-  ok('terrain: depth = radius when feet sit exactly on the ground', Math.abs(out.depth[0] - 0.3) < 1e-9, `depth=${out.depth[0]}`);
-  ok('terrain: normal points straight up', out.nx[0] === 0 && out.ny[0] === 0 && out.nz[0] === 1);
-  ok('terrain: contact point is at ground height', Math.abs(out.pz[0] - 5) < 1e-9, `pz=${out.pz[0]}`);
+  // Resting exactly on the ground: centre at z = groundZ + r -> no contact
+  // (tangent, depth 0, which this module treats as "no contact").
+  contacts(w, { type: 'sphere', x: 0, y: 0, z: groundZ + r, r }, out);
+  ok('terrain: sphere resting exactly on flat ground gets no contact', out.count === 0, `count=${out.count}`);
 
   // Well above the ground: no contact.
-  contacts(w, { type: 'sphere', x: 0, y: 0, z: 20, r: 0.3 }, out);
+  contacts(w, { type: 'sphere', x: 0, y: 0, z: 20, r }, out);
   ok('terrain: sphere far above the ground gets no contact', out.count === 0, `count=${out.count}`);
 
-  // Partially penetrating: feet 0.1 m below ground level, radius 0.3 -> depth 0.4.
-  contacts(w, { type: 'sphere', x: 0, y: 0, z: 4.9, r: 0.3 }, out);
-  ok('terrain: penetrating sphere depth = r - signedDist', Math.abs(out.depth[0] - 0.4) < 1e-9, `depth=${out.depth[0]}`);
+  // Centre 0.1 m below the resting height -> depth 0.1.
+  contacts(w, { type: 'sphere', x: 0, y: 0, z: groundZ + r - 0.1, r }, out);
+  ok('terrain: sphere resting 0.1m into flat ground gets exactly one contact', out.count === 1, `count=${out.count}`);
+  ok('terrain: depth = 0.1 when the centre sits 0.1m below the resting height', Math.abs(out.depth[0] - 0.1) < 1e-9, `depth=${out.depth[0]}`);
+  ok('terrain: normal points straight up', out.nx[0] === 0 && out.ny[0] === 0 && out.nz[0] === 1);
+  ok('terrain: contact point is at ground height', Math.abs(out.pz[0] - groundZ) < 1e-9, `pz=${out.pz[0]}`);
+
+  // Same two cases against a flat trimesh floor at z=0 must agree (queue
+  // item 8b: "the same two cases vs a flat trimesh floor - must agree").
+  // xy offset to (3, -3), well inside one half of the floor quad's two
+  // triangles (away from the a-c diagonal seam at y=x) so the sphere's
+  // footprint doesn't straddle both triangles and double-count a contact.
+  const flatFloor = buildCollider('flatFloor', [[[-10, -10, 0], [10, -10, 0], [10, 10, 0], [-10, 10, 0]]]);
+  const wMesh = { colliders: [flatFloor], terrain: null };
+
+  contacts(wMesh, { type: 'sphere', x: 3, y: -3, z: 0 + r, r }, out);
+  ok('terrain/trimesh agreement: resting exactly on a flat trimesh floor gets no contact', out.count === 0, `count=${out.count}`);
+
+  contacts(wMesh, { type: 'sphere', x: 3, y: -3, z: 0 + r - 0.1, r }, out);
+  ok('terrain/trimesh agreement: count matches the terrain case', out.count === 1, `count=${out.count}`);
+  ok('terrain/trimesh agreement: depth matches the terrain case (0.1)', Math.abs(out.depth[0] - 0.1) < 1e-9, `depth=${out.depth[0]}`);
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Truncation policy (queue item 8c): once `out` is full, a new contact
+// replaces the current shallowest entry only if it is strictly deeper -
+// i.e. `contacts()` keeps the CONTACT_MAX DEEPEST contacts found, not just
+// the first CONTACT_MAX. Built from 20 overlapping triangles (as parallel,
+// separately-penetrating quads at increasing depth) under one sphere.
+// ---------------------------------------------------------------------------
+{
+  const n = 20;
+  const quads = [];
+  // Quad i is a small flat square at z = -i*0.01, all centred under the
+  // sphere so every one of the 20 produces a contact candidate. Sphere
+  // centre z=0.05, r=0.5 -> depth(i) = r - (centreZ - quadZ) = 0.45 - 0.01*i,
+  // strictly decreasing (i=0 deepest at 0.45, i=19 shallowest at 0.26) and
+  // all positive, so all 20 are real contacts before truncation.
+  for (let i = 0; i < n; i++) {
+    const z = -i * 0.01;
+    quads.push([[-1, -1, z], [1, -1, z], [1, 1, z], [-1, 1, z]]);
+  }
+  const overlapping = buildCollider('overlapping20', quads);
+  const w = { colliders: [overlapping], terrain: null };
+  const out = createContactList();
+
+  // xy offset to (0.5, -0.5), off the quads' a-c diagonal seam (y=x), so
+  // each quad contributes exactly one contact instead of one per triangle.
+  // Expected surviving depths are the CONTACT_MAX=16 deepest: i=0..15,
+  // depths 0.45 down to 0.30; i=16..19 (depths 0.29..0.26) must be dropped.
+  contacts(w, { type: 'sphere', x: 0.5, y: -0.5, z: 0.05, r: 0.5 }, out);
+  ok('truncation: keeps exactly CONTACT_MAX contacts out of 20 candidates', out.count === CONTACT_MAX, `count=${out.count}`);
+  let minDepth = Infinity, maxDepth = -Infinity;
+  for (let i = 0; i < out.count; i++) {
+    if (out.depth[i] < minDepth) minDepth = out.depth[i];
+    if (out.depth[i] > maxDepth) maxDepth = out.depth[i];
+  }
+  ok('truncation: shallowest surviving depth is the 16th-deepest (0.30), not one of the 4 shallow ones dropped', Math.abs(minDepth - 0.30) < 1e-9, `minDepth=${minDepth}`);
+  ok('truncation: deepest surviving depth is 0.45', Math.abs(maxDepth - 0.45) < 1e-9, `maxDepth=${maxDepth}`);
 }
 
 // ---------------------------------------------------------------------------

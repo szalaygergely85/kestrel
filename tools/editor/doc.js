@@ -10,7 +10,7 @@
 //
 // Imports only engine/index.js (check-deps rule 3; no `game/` import, per
 // the editor boundary rule).
-import { ID_COLLECTIONS, LATEST_SCHEMA } from '../../engine/index.js';
+import { ID_COLLECTIONS, LATEST_SCHEMA, localToWorld, worldToLocal, localYawToWorld } from '../../engine/index.js';
 
 /** `fileKey('level', 'tower') -> 'level/tower'` (24.7). */
 export function fileKey(kind, id) {
@@ -75,17 +75,42 @@ export function mintId(file, type) {
   return `${type}_${file.meta.nextId++}`;
 }
 
+// ---- CO-7 (docs/coordinates.md 7/11): the shared Frame API replaces the
+// old translation-only `toLocal`/`toWorld` (24.1 decision 4). A selection
+// carries `structId` (never a level-name lookup, never an `isWorldSpace`
+// string test - do-not-list items 2/3): `frameFor` resolves it to the
+// structure's authored `Frame` (or `null` = the item is already in `W`,
+// a world-file entity). `itemToWorld`/`worldToItem` wrap `localToWorld`/
+// `worldToLocal` from engine/core/transform.js with the `frame === null`
+// identity case the editor needs (plain small objects - edit-time only,
+// never a per-frame hot path, so no caller-owned `out` here).
+
 /**
- * Level-local metres <-> world metres (24.1 decision 4): `local = world -
- * structure.origin` (M1 never rotates a placed structure, `yawSteps` is
- * always 0). Both take/return plain `{x,y,z}`.
+ * `frameFor(selection) = structId ? world.frameOf(structId) : null` (CO-7,
+ * docs/coordinates.md section 7). `null` means the item's own x/y/z are
+ * already world metres (a world-file entity, or a selection with no
+ * `structId`).
+ * @param {import('../../engine/index.js').World} world
+ * @param {{structId?: string|null}|null} selection
+ * @returns {import('../../engine/index.js').Frame|null}
  */
-export function toLocal(origin, worldPoint) {
-  return { x: worldPoint.x - origin.x, y: worldPoint.y - origin.y, z: worldPoint.z - origin.z };
+export function frameFor(world, selection) {
+  return selection && selection.structId != null ? world.frameOf(selection.structId) : null;
 }
 
-export function toWorld(origin, localPoint) {
-  return { x: localPoint.x + origin.x, y: localPoint.y + origin.y, z: localPoint.z + origin.z };
+/** Local point (structure frame) -> world point. `frame = null` = identity (already world-space). */
+export function itemToWorld(frame, lx, ly, lz) {
+  return frame ? localToWorld(frame, lx, ly, lz, { x: 0, y: 0, z: 0 }) : { x: lx, y: ly, z: lz };
+}
+
+/** World point -> local point of `frame`. `frame = null` = identity (already world-space). */
+export function worldToItem(frame, wx, wy, wz) {
+  return frame ? worldToLocal(frame, wx, wy, wz, { x: 0, y: 0, z: 0 }) : { x: wx, y: wy, z: wz };
+}
+
+/** Local compass yaw (a level prop's `facing`) -> world compass yaw. `frame = null` = identity. */
+export function yawItemToWorld(frame, yawDeg) {
+  return frame ? localYawToWorld(frame, yawDeg) : yawDeg;
 }
 
 // ---- US-032 additions: selection item <-> runtime mapping, outliner (24.7) ----
@@ -94,12 +119,14 @@ export function toWorld(origin, localPoint) {
 // `doc.js`'s existing shapes were built with this in mind.
 
 /**
- * `{ fileId, collection, id }` for content items (`level/tower`/`props`/
- * `brazier`), or `{ fileId:'world/<id>', collection:'entities', id }` for a
- * world entity (`player`, `farTower`). A picked prop's runtime entity id is
- * `${structId}.${propId}` (World.js) - matched against every placed
- * structure's id prefix, never against the level name (two structures could
- * share one level def, though M1 never does).
+ * `{ fileId, collection, id, structId }` for content items (`level/tower`/
+ * `props`/`brazier`), or `{ fileId:'world/<id>', collection:'entities', id,
+ * structId:null }` for a world entity (`player`, `farTower`). A picked
+ * prop's runtime entity id is `${structId}.${propId}` (World.js) - matched
+ * against every placed structure's id prefix, never against the level name
+ * (CO-7 do-not-list item 3: two structures may share one level def).
+ * `structId` is carried on the selection itself so `frameFor` can resolve
+ * the RIGHT placement's `Frame` even when two placements share one level.
  * @param {ReturnType<typeof createDoc>} doc
  * @param {import('../../engine/index.js').World} world
  * @param {string} entityId
@@ -108,23 +135,26 @@ export function selectionFromEntityId(doc, world, entityId) {
   for (const s of world.structures) {
     const prefix = `${s.id}.`;
     if (entityId.startsWith(prefix)) {
-      return { fileId: fileKey('level', s.level.name), collection: 'props', id: entityId.slice(prefix.length) };
+      return { fileId: fileKey('level', s.level.name), collection: 'props', id: entityId.slice(prefix.length), structId: s.id };
     }
   }
-  return { fileId: fileKey('world', doc.worldId), collection: 'entities', id: entityId };
+  return { fileId: fileKey('world', doc.worldId), collection: 'entities', id: entityId, structId: null };
 }
 
 /**
  * Reverse of `selectionFromEntityId`: a selection item -> the runtime entity
  * id, or `null` for a content item with no entity (lights, interactables,
- * triggers - addressed by content id alone, 24.7).
+ * triggers - addressed by content id alone, 24.7). Prefers `item.structId`
+ * (CO-7: by id, never by level name); falls back to the old level-name match
+ * only for a caller that has not been updated to carry `structId` yet.
  * @param {import('../../engine/index.js').World} world
- * @param {{fileId:string, collection:string, id:string}} item
+ * @param {{fileId:string, collection:string, id:string, structId?:string|null}} item
  */
 export function selectionEntityId(world, item) {
   if (item.collection === 'props' && item.fileId.startsWith('level/')) {
-    const levelId = item.fileId.slice('level/'.length);
-    const s = world.structures.find((st) => st.level.name === levelId);
+    const s = item.structId != null
+      ? world.structures.find((st) => st.id === item.structId)
+      : world.structures.find((st) => st.level.name === item.fileId.slice('level/'.length));
     return s ? `${s.id}.${item.id}` : null;
   }
   if (item.fileId.startsWith('world/') && item.collection === 'entities') {
@@ -154,13 +184,27 @@ export function selectionItemIndex(doc, item) {
 /** Every collection this kind of file carries an id-collection for (24.7's outliner grouping). */
 const OUTLINER_COLLECTIONS = { level: ['props', 'lights', 'interactables', 'triggers'], world: ['entities'] };
 
-/** Flat `{fileId, collection, id, item}[]` for every content item in `doc` (the outliner's DOM list, 24.7). */
-export function listOutlinerItems(doc) {
+/**
+ * Flat `{fileId, collection, id, item, structId}[]` for every content item in
+ * `doc` (the outliner's DOM list, 24.7). `world` is optional (back-compat for
+ * callers/tests that only need the content listing); when given, a level
+ * file's items get the `structId` of the (first) structure placing that
+ * level - CO-7's documented outliner limitation: the outliner lists one row
+ * per CONTENT item (the level file is shared data), not one per placement,
+ * so with two placements of one level both share a row and the row's
+ * `structId` picks one of them (matches this file's pre-existing
+ * `structureForFile`-by-level-name convention for that one UI list; viewport
+ * picks/markers always resolve the exact placement instead, see pick.js).
+ */
+export function listOutlinerItems(doc, world) {
   const out = [];
   for (const file of doc.files.values()) {
     for (const coll of OUTLINER_COLLECTIONS[file.kind] || []) {
       for (const it of file.def[coll] || []) {
-        if (it && it.id) out.push({ fileId: fileKey(file.kind, file.id), collection: coll, id: it.id, item: it });
+        if (it && it.id) {
+          const struct = file.kind === 'level' && world ? world.structures.find((st) => st.level.name === file.id) : null;
+          out.push({ fileId: fileKey(file.kind, file.id), collection: coll, id: it.id, item: it, structId: struct ? struct.id : null });
+        }
       }
     }
   }
