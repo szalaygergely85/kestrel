@@ -3251,3 +3251,91 @@ Goal: cut vertex traffic of both voxel raster paths (ME-08 `DRAW_VOXEL` and RE-0
 **Timing:** F3 `sim ms` = sum of `simStep` calls in the frame (profiler section), `JS ms` includes it. Units view + instance writes <= 0.1 ms for 200.
 
 **Do not:** put unit logic in `engine/`; call `performance.now`/`Math.random`/trig in `sim/`; allocate per step or frame (ids scratch preallocated); path every unit separately for a 60-unit group; read `groundAt` for sim decisions.
+
+### 28.9 RE-07 selection overlay layer `engine/ui/overlay.js` (normative; architect, 2026-09-30; PC-A)
+
+Goal: world-anchored RTS marks (ground rings, health-bar rows, box-select rect, move marker), depth-tested against the scene, the same cells on the GPU and CPU paths, on `'pitched'` and `'shear'`.
+
+**Decisions**
+1. **Ops are rasterised in JS into a scene-grid overlay layer; only the depth-tested composite runs per path.** Both paths share the op rasteriser, so which cells get a glyph is decided by construction. The only per-path code is the per-cell compare `ref <= sceneDepth + bias`: GLSL on GPU, JS on CPU. There is no GPU geometry pass, and no ops are uploaded to shaders.
+2. **Frame position (both twins):** surfaces -> edge -> sprites (pass F, incl. fade/dim) -> **overlay** -> present (scene, then UI layer 17.2). Overlay marks are not faded or dimmed: they are UI, and RTS has no fade. On the CPU path the composite runs right after `applySceneFade` (main.js / the rts-test bootstrap). On the GPU path it is a new `RenderTargetGL.setOverlayPass(fn)` hook, run after the sprite-pass hook and before the draw.
+3. **Projection = the frame's raster matrix.** `overlay.flush(cam, cols, rows)` builds M in its own scratch `Float64Array(16)` with the call the mesh raster uses. If two build sites exist, one helper `frameMatrix(cam, grid, out16)` goes into `projection.js`, using `resolveProjection` (28.1 A2 item 1). Then `projectPoint(M, cols, rows, x, y, z, out4)` gives `cell = floor(out4[0]), floor(out4[1])` and `ref = out4[3]` (= w = pitched `vd` / shear `d` = the DEPTH/SDEPTH value of that camera, as `projectSprite.depth`). Points with `w <= PROJ_NEAR` are skipped. Shear and pitched are the same code.
+4. **Depth test:** pass iff `ref <= sceneDepth + max(OVL_BIAS_M = 0.25, OVL_BIAS_REL = 0.01 * ref)`. Sky/horizon depth (+Inf / `HORIZON_DEPTH`) always passes. Scene depth = the resolved per-cell DEPTH: GPU `pipeline.texDepth` (decode as `sprites.frag.js depthAt`), CPU `fb.depth.depth` after the pitched fog-scale restore (`scaleDepthForShade(..., false)` in compositor). `ref = 0` means "no depth test" (screen-space ops). Units occlude the back half of their own ring through the unit's raster depth (28.6 `zBase` does not matter here: DEPTH is the view depth, not the G-buffer z). A ring behind the tower or terrain fails the test.
+5. **Layer storage** (scene grid, rebuilt on `grid:changed` like `engine.ui`): `ovl Uint8Array(4n)` = (r, g, b, glyphIdx) and `ovlZ Float32Array(n)` = ref. **glyphIdx 0 (space) = empty cell** (sentinel; a space op is meaningless). Write rule when two ops hit a cell: empty, or `ref == 0` (screen op wins), or `newRef < cellRef`; ties go to the first op written. Clearing uses a touched-index list (`Int32Array(OVL_MAX_TOUCHED = 16384)`), not a full fill.
+6. **Composite writes glyph + fg only.** The scene bg stays, so the ring reads as marks on the ground. CPU: direct writes into the scene `CellBuffer` glyph/fg arrays; `mask` is untouched (not `setCellRGB`, which sets mask = 1). GPU: `engine/render/gpu/overlayPass.js` = a fullscreen triangle into an FBO with **only `rt.fgTex`** attached. It reads `uOvl` (RGBA8) + `uOvlZ` (R32F) + `uDepth` and `discard`s empty or depth-failed cells. There is no read of fg/bg, so no edge copy is needed (unlike pass F). Upload: `texSubImage2D` of the dirty row span (union of this frame's and last frame's touched rows). The pass and the upload are skipped when both frames had no ops.
+7. **Styles are data, not engine colours.** `overlay.setStyles(styles)`: `{key: {glyph: 'o' | glyphs: 4-char string (by segment slope: horizontal, vertical, down-right, up-right, e.g. "-|\/"), fg: [r,g,b], empty?: {glyph, fg}}}`. The game passes them from design (`uiStyle.overlay`, keys e.g. `select`, `hover`, `barFill`, `barEmpty`, `box`, `marker`; programmer placeholders until the designer sets them). `overlay.styleId(key) -> int` is called once at load and throws on an unknown key. Per-frame ops take the int, never a string. The engine has no default colours.
+
+**API** (`engine/ui/overlay.js`, exported via `engine/index.js`, `engine.overlay` created in `createEngine`):
+```js
+/** @typedef {Object} Overlay
+ * @property {(styles:Object)=>void} setStyles   @property {(key:string)=>number} styleId
+ * @property {()=>void} clear                                   // per frame, before the game records ops
+ * @property {(x:number,y:number,z:number,r:number,style:number)=>void} ring      // world circle at height z, 24 samples, cells joined by a DDA line, ref lerped per cell
+ * @property {(x:number,y:number,z:number,frac:number,width:number,style:number,emptyStyle:number)=>void} bar  // row of `width` cells centred on the projected point; round(frac*width) cells fill, rest empty; ref = the point's w
+ * @property {(c0:number,r0:number,c1:number,r1:number,style:number)=>void} rect  // screen cells, border only, normalises c0<=c1/r0<=r1, ref 0
+ * @property {(fn:((x:number,y:number)=>number)|null)=>void} setGroundFn        // optional: ring samples use z = fn(x,y) + OVL_RING_LIFT (0.05 m) so rings follow slopes
+ * @property {(cam:Object, cols:number, rows:number)=>void} flush              // engine-internal, once per rendered frame: rasterise ops -> ovl/ovlZ
+ * @property {{ops:number, dropped:number, cells:number}} stats
+ */
+export const OVL_MAX_OPS = 1024;   // op buffer Float64Array(OVL_MAX_OPS * 8): [type, style, a..f]
+```
+Capacity: 200 selected rings + 200 bars + hover + rect + markers < 1024. Overflow drops the op and counts `stats.dropped` (shown in F3); it does not throw, because UI must not crash a frame. `ring`/`bar`/`rect` only append numbers. All work happens in `flush`. Zero allocation after create.
+
+**Split (> 1 d):**
+- **RE-07a (Node, CPU twin, ~0.6 d):** `overlay.js` (ops, styles, rasteriser, touched list, `applyOverlay(overlay, cells, depth)` CPU composite), `engine.overlay` + grid rebind, CPU call site, `frameMatrix` helper if needed.
+- **RE-07b (GPU, ~0.5 d):** `overlayPass.js` + `setOverlayPass` hook + dirty-row upload + GPU parity + perf. RTS-01a needs both.
+
+**Tests.** 07a `engine/ui/overlay.test.js`:
+1. Ring on a flat depth fixture at pitch -58: every touched cell is 8-connected to the next (closed loop) and the ring is symmetric about the centre column within 1 cell.
+2. The ring hides where a synthetic wall depth is closer (> bias) and shows on open ground.
+3. Bar fill count at frac 0 / 0.5 / 1.
+4. Rect normalisation and border-only.
+5. Overlap rule (nearer wins, rect wins).
+6. Shear and pitched give the same cells for a pitch-0 pitched cam vs the shear cam (28.1 parity anchor).
+7. Unknown style throws; overflow counts `dropped`.
+8. Zero allocation over 1000 frames of 200 rings + 200 bars.
+9. Perf warn-only: 60 rings + 60 bars flush + composite <= 0.3 ms, 200 + 200 <= 0.6 ms (Node, 400x150).
+
+07b: gpucompare mesh-only pose `rtsOverlay` (rtsHill58, 30 rings incl. >= 5 behind the tower, 30 bars, 1 rect). It compares the fg glyph/colour after the overlay pass with the CPU composite applied to the JS twin's cells + depth. Bar:
+- identical on every overlay cell except depth-boundary cells (`|ref - sceneDepth - bias| < 1e-3 * ref`);
+- boundary cells <= 0.5 % of overlay cells;
+- existing poses unchanged (no ops, so the pass is skipped).
+
+GPU overlay pass <= 0.1 ms p95 at 400x150 (`?bench=1` pass timer, new `PASS_OVERLAY` slot).
+
+**Do not:**
+- hardcode colours/glyph choices in the engine;
+- use string keys in per-frame ops;
+- read `cam.pitchDeg` or build projection terms by hand (use M / `projection.js`);
+- test depth against `zBase`/G-buffer z;
+- set the scene `mask`;
+- alpha-blend;
+- add a shader permutation;
+- read and write `rt.fgTex` in one pass;
+- upload the full layer every frame;
+- put selection or team rules into `overlay.js` (game `ui/select.js`, 28.8).
+
+### 28.10 RE-06c back-face culling for voxel draws (normative; architect, 2026-09-30; PC-A)
+
+Background: 28.7 Amendment 1 (unit cost is per triangle; `CULL_FACE` off per 27.15.2).
+
+**Decisions**
+1. **Winding (verified in `voxelMesh.js emitFaceQuad`):** every face emits its corners clockwise seen from outside in world (x east, y south, z up). Example: U face `(xA,yA)->(xB,yA)->(xB,yB)`. The pipeline writes grid row r at window y = r with no viewport flip. So a front face has **positive** snapped screen area `A2 = (X1-X0)(Y2-Y0) - (Y1-Y0)(X2-X0)` in `rasterJS rasterFanTri`, which is GL CCW. GL state: `frontFace(CCW)` (set explicitly at init) + `cullFace(BACK)`. The programmer proves this with test 1 below before touching GL; if the sign comes out the other way, flip both twins together.
+2. **Scope:** `gl.enable(CULL_FACE)` right before the ME-08 voxel loop and `gl.disable` right after the RE-06 instanced loop (before terrain). `DRAW_STATIC` (level structures: open quads, seen from both sides) and `DRAW_TERRAIN` stay cull-none.
+3. **rasterJS twin:** `info.cullBack` is set for `DRAW_VOXEL` and `DRAW_INSTANCED` items only. In `rasterFanTri`, `if (A2 < 0 && info.cullBack) return;` goes **before** the existing swap. It uses the same snapped subpixel area the GPU uses, so slivers classify alike. It applies to fan triangles after clipping (the fan keeps the winding). The rule is the same on shear and pitched (it is purely screen-space).
+4. **Mirroring:** part matrices are rotation * positive `cellM` and instances are rigid (28.6: orthonormal, no scale), so det > 0 always. Test 3 asserts it. A future mirrored part needs a per-item front-face flip in both twins (not in this story).
+5. **Camera inside a voxel model:** inner faces are back faces, so they are culled and the model disappears from inside. This is accepted and identical on both twins. The first-person capsule keeps the eye out of entity models and RTS cameras never enter one.
+
+**Tests / ACs:**
+1. `rasterJS.test.js`:
+   - For the lever and a multi-part model, from 26 outside viewpoints (6 axes, 8 corners, 12 edges; shear + pitched): every triangle with `dot(n, eye - p) > 0` has `A2 > 0`.
+   - Culled output == unculled output bit-identical (kind/face/mat/planeId/depth/uv) for those viewpoints, instanced and `DRAW_VOXEL`.
+   - Rasterised triangle count ~halves (logged).
+2. Static/terrain items are never culled (fixture with an open quad seen from behind).
+3. det > 0 for every part at 3 poses of every registered model.
+4. **gpucompare: identical numbers on all poses** (mesh 39/39 on the current baseline incl. RE-02a poses, dda 34/34). Back faces of a closed mesh never win a pixel from outside. If a voxel pose differs, stop and report the differing cells (likely cause: greedy T-junction cracks) as ASK ARCHITECT. Do not widen any threshold.
+5. Bench `?bench=1&units=200` vs `units=0`, RE-06b views: raster-pass p50 delta <= 0.65 ms binding (RE-06b 0.88), goal <= 0.44. Culled triangles still cost vertex-shader and setup time. A miss is recorded, and RE-15 LOD takes the rest.
+
+Size 0.5 d, one step.
+
+**Do not:** cull level structures/terrain/glTF, cull in the vertex shader, flip the quad order in `voxelMesh.js`, or leave `CULL_FACE` enabled past the voxel loops (context state).
