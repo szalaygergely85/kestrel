@@ -470,3 +470,30 @@ export function pitchedFogScale(terms, row) {
   const k = terms.cosP - b * terms.sinP;
   return k > 0 ? k : 0;
 }
+
+// ---------------------------------------------------------------------------
+// RE-07a (28.9 item 3): the frame's world -> clip matrix for ANY camera, so UI
+// overlays project with exactly the matrix the mesh raster uses.
+// ---------------------------------------------------------------------------
+const _frameTerms = /** @type {ProjTerms} */ ({});
+const _framePitched = createPitchedTerms();
+
+/**
+ * Writes the raster matrix M (column-major, world -> clip) of `cam` for a
+ * `cols x rows` grid into `out16`. Shear and pitched: the same call the mesh
+ * raster makes (`resolveProjection`). Zero allocation after first use.
+ * @param {Object} cam
+ * @param {{cols:number, rows:number, pxCellW?:number, pxCellH?:number}} grid
+ * @param {Float64Array} out16
+ * @returns {Float64Array}
+ */
+export function frameMatrix(cam, grid, out16) {
+  if (resolveProjection(cam, 'mesh') === 'pitched') {
+    pitchedTerms(cam, grid, _framePitched);
+    out16.set(_framePitched.M);
+  } else {
+    projTerms(cam, grid, _frameTerms);
+    shearProjection(_frameTerms, out16);
+  }
+  return out16;
+}

@@ -14,6 +14,7 @@ import { Camera } from '../entities/Camera.js';
 import { PHYSICS_DEFAULTS } from '../physics/config.js';
 import { World } from '../world/World.js';
 import { createUiLayer } from '../ui/uiLayer.js';
+import { createOverlay } from '../ui/overlay.js';
 
 export const GRID_MIN_COLS = 160;
 // D-025 (US-038a, architecture.md 22.2): raised from 320 to 480 - gives
@@ -87,6 +88,9 @@ export function createEngine(opts) {
   // Loop is created here but not started (per the API note) - `run()`
   // rewires its callbacks and starts it. A no-op placeholder pair avoids a
   // special "not yet wired" state in Loop itself.
+  // RE-07a (28.9): selection overlay layer, rebound to the scene grid on every grid change.
+  const overlay = createOverlay(renderTarget.cols, renderTarget.rows);
+  overlay.bind(renderTarget.cols, renderTarget.rows, renderTarget.pxCellW || 1, renderTarget.pxCellH || 1);
   const loop = new Loop(() => {}, () => {});
 
   // D-025 (US-038a, architecture.md 22.6): applies a clamped, already-
@@ -107,6 +111,7 @@ export function createEngine(opts) {
     engine.openSpans = new OpenSpans(rt.cols);
     ui.bindScene(rt.cols, rt.rows);
     if (rt.setUiLayer) rt.setUiLayer(ui);
+    overlay.bind(rt.cols, rt.rows, rt.pxCellW || 1, rt.pxCellH || 1);
     engine.gridRequest = { cols: rt.cols, rows: rt.rows, clamped: request.clamped, cpuGrid, gpu, force2d };
     engine._pendingGrid = null;
     events.emit('grid:changed', { cols: rt.cols, rows: rt.rows, renderTarget: rt });
@@ -118,6 +123,7 @@ export function createEngine(opts) {
     renderTarget,
     depthBuffer,
     openSpans,
+    overlay, // RE-07a: world-anchored selection marks (engine/ui/overlay.js)
     ui, // OWN-REQ-003: the fixed UI glyph layer (engine/ui/uiLayer.js)
     world: null,
     input,

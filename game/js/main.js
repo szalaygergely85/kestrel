@@ -902,6 +902,8 @@ function runGame(mode) {
         clearMaskForSceneFade(fb.rt);
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
+      // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
+      if (!fb.gpuDda && engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
       lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen());
