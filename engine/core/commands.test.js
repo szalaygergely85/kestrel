@@ -59,6 +59,45 @@ const EMPTY = new Int32Array(0);
   ok('id ring overflow throws', threw);
 }
 
+// ---- id ring occupancy guard catches an out-of-order-free wraparound overlap that liveIdWords alone would miss ----
+{
+  const maxIds = 8;
+  const q = createCommandQueue({ maxRecords: 8, maxIds, inputDelay: 0 });
+  const idsA = new Int32Array([101, 102, 103]);
+  const idsB = new Int32Array([201, 202, 203]);
+  const idsC = new Int32Array([301, 302, 303, 304, 305]);
+
+  // A allocated first (idOff 0..2), tagged tick 5 - executes/frees last.
+  q.insert(5, 0, 0, 16, idsA, 3);
+  // B allocated second (idOff 3..5), tagged tick 2 - executes/frees BEFORE
+  // A, i.e. out of allocation order.
+  q.insert(2, 0, 1, 16, idsB, 3);
+
+  // Advance to tick 2 so B executes and frees, while A (tick 5) stays live.
+  q.execute(() => {}); // tick 0 -> 1
+  q.execute(() => {}); // tick 1 -> 2
+  q.execute(() => {}); // tick 2: frees B, -> 3
+
+  // idCursor is now 6 (after A+B were allocated back to back). liveIdWords
+  // is 3 (only A is still live). The OLD count-only guard would allow
+  // n=5 here (3+5=8 <= maxIds=8) and silently overlap A's still-live slots
+  // 0,1,2 via wraparound (idOff=6 -> slots 6,7,0,1,2). The occupancy guard
+  // must throw instead.
+  let threw = false;
+  let msg = '';
+  try {
+    q.issue(2, 16, idsC, 5);
+  } catch (e) { threw = true; msg = e.message; }
+  ok('id ring occupancy guard catches an out-of-order-free wraparound overlap', threw, msg);
+
+  // The still-live record A must not have been corrupted by the failed alloc.
+  const saved = q.save();
+  const recA = saved.records.find((r) => r[1] === 0 && r[2] === 0);
+  ok('failed alloc left the still-live record\'s ids uncorrupted',
+    !!recA && JSON.stringify(recA[7]) === JSON.stringify([101, 102, 103]),
+    JSON.stringify(recA));
+}
+
 // ---- save/load of pending records --------------------------------------------
 {
   const q = createCommandQueue({ inputDelay: 3 });

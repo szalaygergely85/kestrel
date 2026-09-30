@@ -338,6 +338,23 @@ export class NavGrid {
   }
 
   /**
+   * Hashes deterministic sim state into `h` (duck-typed external hasher,
+   * see engine/core/hash.js's `createHasher()` - only `h.u32`/`h.u8Array`
+   * are used; NavGrid never imports hash.js). Per the architect: over
+   * `blockCount`/`cost` only, NEVER `_ownerSlot`/the slot tables - the
+   * owner-id -> slot bookkeeping is not part of deterministic sim state
+   * (two grids that reached the same blockCount/cost via a different
+   * owner-id allocation history must hash identically). `blockCount` is a
+   * Uint16Array with no dedicated batch method on `h`, so it's mixed word
+   * by word via `h.u32`; `cost` (Uint8Array) uses `h.u8Array` directly.
+   */
+  hashInto(h) {
+    const blockCount = this.blockCount;
+    for (let i = 0; i < blockCount.length; i++) h.u32(blockCount[i]);
+    h.u8Array(this.cost, 0, this.cost.length);
+  }
+
+  /**
    * Walkability from a (possibly fake, duck-typed) world's ANALYTIC terrain
    * queries - load time only, <= 50 ms at 256x256 (28.2 budget). Per cell
    * centre: unwalkable if `normal.z < cos(opts.maxSlopeDeg)` (default 30),

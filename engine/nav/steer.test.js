@@ -3,6 +3,7 @@
 import { NavGrid } from './NavGrid.js';
 import { createFlowField } from './flowField.js';
 import { createSteer } from './steer.js';
+import { createHasher } from '../core/hash.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -176,6 +177,57 @@ function build600StepFixture() {
   for (let s = 0; s < 300; s++) { steerA.step(DT, grid1); steerB.step(DT, grid2); }
   ok('same slots via different activation history -> identical hash()', steerA.hash() === steerB.hash(),
     `${steerA.hash()} vs ${steerB.hash()}`);
+}
+
+// ---- hashInto(h): deterministic via a real createHasher(), exercises every field hash() does ----
+{
+  function buildFixture() {
+    const grid = openGrid(10, 10);
+    const steer = createSteer({ maxAgents: 5, bounds: { x0: 0, y0: 0, w: 10, h: 10 } });
+    for (let i = 0; i < 5; i++) {
+      const id = steer.addAgent(1 + i * 0.5, 2 + i * 0.3, 0.2 + i * 0.01, 1 + i * 0.1, 2);
+      if (i % 2 === 0) steer.setWaypoint(id, 8, 8, 1);
+    }
+    for (let s = 0; s < 20; s++) steer.step(DT, grid);
+    return steer;
+  }
+  const steerA = buildFixture();
+  const steerB = buildFixture();
+  const h1 = createHasher();
+  const h2 = createHasher();
+  steerA.hashInto(h1);
+  steerB.hashInto(h2);
+  ok('hashInto: identical builds give the same hash', h1.value() === h2.value(), `${h1.value()} vs ${h2.value()}`);
+
+  // Changing state (one more step on only one of the two) must change it.
+  const grid2 = openGrid(10, 10);
+  steerB.step(DT, grid2);
+  const h3 = createHasher();
+  steerB.hashInto(h3);
+  ok('hashInto: differs after further state change', h3.value() !== h2.value(), `${h3.value()} vs ${h2.value()}`);
+}
+
+// ---- dist===0 tie push: exactly-coincident agents separate by slot order, deterministically ----
+{
+  const grid = openGrid(10, 10);
+  const steer = createSteer({ maxAgents: 2, bounds: { x0: 0, y0: 0, w: 10, h: 10 } });
+  const i = steer.addAgent(5, 5, 0.3, 1, 2); // slot 0
+  const j = steer.addAgent(5, 5, 0.3, 1, 2); // slot 1, exactly coincident
+  ok('dist-0 fixture: slots in expected order', i === 0 && j === 1, `${i},${j}`);
+
+  steer.step(DT, grid);
+  ok('dist-0: lower slot pushed along -x', steer.vx[i] < 0, `vx[i]=${steer.vx[i]}`);
+  ok('dist-0: higher slot pushed along +x', steer.vx[j] > 0, `vx[j]=${steer.vx[j]}`);
+  ok('dist-0: no y push (x-only per spec)', steer.vy[i] === 0 && steer.vy[j] === 0, `${steer.vy[i]},${steer.vy[j]}`);
+
+  // Determinism: rerun the identical setup, bit-identical velocities.
+  const grid2 = openGrid(10, 10);
+  const steer2 = createSteer({ maxAgents: 2, bounds: { x0: 0, y0: 0, w: 10, h: 10 } });
+  const i2 = steer2.addAgent(5, 5, 0.3, 1, 2);
+  const j2 = steer2.addAgent(5, 5, 0.3, 1, 2);
+  steer2.step(DT, grid2);
+  ok('dist-0: rerun is bit-identical', steer2.vx[i2] === steer.vx[i] && steer2.vx[j2] === steer.vx[j],
+    `${steer2.vx[i2]},${steer2.vx[j2]} vs ${steer.vx[i]},${steer.vx[j]}`);
 }
 
 // ---- 50 agents through a 3 m gap: overlap, no deadlock, stays walkable --

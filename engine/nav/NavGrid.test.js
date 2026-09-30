@@ -3,6 +3,7 @@
 // shape by hand. Run: node engine/nav/NavGrid.test.js
 import { NavGrid } from './NavGrid.js';
 import { pathCrossesRect } from './astar.js';
+import { createHasher } from '../core/hash.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -297,6 +298,59 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   }
   ok('takeDirty returns -1 once the ring has wrapped past the watermark', grid2.takeDirty(vStart, out) === -1);
   ok('takeDirty succeeds for a watermark still covered by the ring', grid2.takeDirty(grid2.version - 1, out) === 1);
+}
+
+// ---- hashInto(h): deterministic, over blockCount/cost only, never slots ----
+{
+  const grid = new NavGrid({ x0: 0, y0: 0, w: 5, h: 5, cell: 1 });
+  grid.terrainCost.fill(1);
+  grid._recomputeCost();
+
+  const h1 = createHasher();
+  const h2 = createHasher();
+  grid.hashInto(h1);
+  grid.hashInto(h2);
+  ok('hashInto: same grid state -> same hash across two calls', h1.value() === h2.value(), `${h1.value()} vs ${h2.value()}`);
+
+  const beforeBlock = h1.value();
+  grid.block(1, 1, 1, 3, 3);
+  const h3 = createHasher();
+  grid.hashInto(h3);
+  ok('hashInto: blocking a footprint changes the hash (blockCount/cost change)', h3.value() !== beforeBlock, `${h3.value()} vs ${beforeBlock}`);
+
+  grid.unblock(1);
+  const h4 = createHasher();
+  grid.hashInto(h4);
+  ok('hashInto: unblocking restores the original hash', h4.value() === beforeBlock, `${h4.value()} vs ${beforeBlock}`);
+
+  // Two grids with the SAME final blockCount/cost, reached through a
+  // different owner-id allocation history, must hash identically - the
+  // owner table (_ownerSlot) must never leak into hashInto.
+  const gridA = new NavGrid({ x0: 0, y0: 0, w: 5, h: 5, cell: 1 });
+  gridA.terrainCost.fill(1);
+  gridA._recomputeCost();
+  gridA.block(1, 0, 0, 2, 2);
+  gridA.block(2, 2, 2, 4, 4);
+
+  const gridB = new NavGrid({ x0: 0, y0: 0, w: 5, h: 5, cell: 1 });
+  gridB.terrainCost.fill(1);
+  gridB._recomputeCost();
+  // Different owner ids and a different call order/history (block+unblock
+  // some throwaway owners first) than gridA, same end footprints.
+  gridB.block(99, 0, 0, 1, 1);
+  gridB.unblock(99);
+  gridB.block(7, 2, 2, 4, 4);
+  gridB.block(3, 0, 0, 2, 2);
+
+  ok('hashInto: same cost/blockCount but different owner-id history is unaffected',
+    JSON.stringify(Array.from(gridA.cost)) === JSON.stringify(Array.from(gridB.cost))
+    && JSON.stringify(Array.from(gridA.blockCount)) === JSON.stringify(Array.from(gridB.blockCount)));
+  const hA = createHasher();
+  const hB = createHasher();
+  gridA.hashInto(hA);
+  gridB.hashInto(hB);
+  ok('hashInto: identical for grids with identical blockCount/cost despite different owner-id history',
+    hA.value() === hB.value(), `${hA.value()} vs ${hB.value()}`);
 }
 
 // ---- RE-10: pathCrossesRect true/false fixtures (astar.js, RE-05) -------
