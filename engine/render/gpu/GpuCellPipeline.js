@@ -59,7 +59,7 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
 // the GPU raster pass - `renderer:'mesh'` only, additive (the default
 // `renderer:'dda'` path above is untouched by any of these).
 import { GpuDeviceGL2 } from './device/GpuDeviceGL2.js';
-import { MeshBuffers, STATIC_VERTEX_LAYOUT, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES } from './MeshBuffers.js';
+import { MeshBuffers, STATIC_VERTEX_LAYOUT, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from './MeshBuffers.js';
 import { MESH_VERT_SRC, MESH_INST_VERT_SRC } from './glsl/mesh.vert.js';
 import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 // ME-06 (docs/backlog.md, docs/architecture.md 27.4, 27.15.5): terrain in
@@ -216,7 +216,12 @@ export class GpuCellPipeline {
       this._meshInstVbo = gl.createBuffer();
       this._meshInstVao = gl.createVertexArray();
       gl.bindVertexArray(this._meshInstVao);
+      // RE-06b (28.7): voxel attribs 0-3 enabled, 4/5 (aux) disabled -> generic constant zero.
+      for (let a = 0; a <= 3; a++) gl.enableVertexAttribArray(a);
       for (let a = 6; a <= 9; a++) { gl.enableVertexAttribArray(a); gl.vertexAttribDivisor(a, 1); }
+      this._meshVoxVao = gl.createVertexArray();
+      gl.bindVertexArray(this._meshVoxVao);
+      for (let a = 0; a <= 3; a++) gl.enableVertexAttribArray(a);
       gl.bindVertexArray(null);
       this._teamSlotI32 = new Int32Array(4);
       this._teamMatI32 = new Int32Array(32);
@@ -709,6 +714,7 @@ export class GpuCellPipeline {
     // its own VAO is separate.
     if (this._meshVao) gl.deleteVertexArray(this._meshVao);
     if (this._meshInstVao) gl.deleteVertexArray(this._meshInstVao);
+    if (this._meshVoxVao) gl.deleteVertexArray(this._meshVoxVao);
     if (this._meshInstVbo) gl.deleteBuffer(this._meshInstVbo);
     if (this._meshTerrainVao) gl.deleteVertexArray(this._meshTerrainVao);
     if (this._meshBuffers) this._meshBuffers.dispose();
@@ -1645,17 +1651,25 @@ export class GpuCellPipeline {
     // over `mesh.ranges[p]`, `uModel` = that part's world matrix. Same
     // program/VAO/depth buffer as the static loop above.
     let voxelDraws = 0;
+    // RE-06b (28.7): voxel paths use 32 B verts + index buffer; aux (locations 4/5) = generic zero.
+    const GL_IDX_U16 = gl.UNSIGNED_SHORT, GL_IDX_U32 = gl.UNSIGNED_INT;
+    gl.vertexAttrib4f(4, 0, 0, 0, 0);
+    gl.vertexAttrib4f(5, 0, 0, 0, 0);
+    gl.bindVertexArray(this._meshVoxVao);
     for (let i = 0; i < list.count; i++) {
       const item = list.items[i];
       if (item.type !== DRAW_VOXEL || !item.mesh) continue;
       const mesh = item.mesh;
-      const entry = this._meshBuffers.get(mesh);
+      const entry = this._meshBuffers.getVoxel(mesh);
       gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
-      for (const attr of STATIC_VERTEX_LAYOUT) {
-        gl.enableVertexAttribArray(attr.location);
-        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, 64, attr.offsetBytes);
-        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, 64, attr.offsetBytes);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
+      for (let a = 0; a < VOXEL_VERTEX_LAYOUT.length; a++) {
+        const attr = VOXEL_VERTEX_LAYOUT[a];
+        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, VOXEL_STRIDE_BYTES, attr.offsetBytes);
+        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, VOXEL_STRIDE_BYTES, attr.offsetBytes);
       }
+      const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
+      const idxBytes = entry.indexType === 'u16' ? 2 : 4;
       gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
       gl.uniform1f(loc.uZBase, item.zBase);
       gl.uniform1i(loc.uObjectId, item.objectId);
@@ -1672,7 +1686,7 @@ export class GpuCellPipeline {
         M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
         gl.uniformMatrix4fv(loc.uModel, false, M);
         gl.uniform1i(loc.uAxisAligned, item.partFlags[p] & 1);
-        gl.drawArrays(gl.TRIANGLES, range.start * 3, range.count * 3);
+        gl.drawElements(gl.TRIANGLES, range.count * 3, idxEnum, range.start * 3 * idxBytes);
         voxelDraws++;
       }
     }
@@ -1715,13 +1729,16 @@ export class GpuCellPipeline {
           gl.vertexAttribIPointer(9, 2, gl.UNSIGNED_INT, INSTANCE_BYTES, baseBytes + 48);
           instTotal += n;
           const mesh = item.mesh;
-          const entry = this._meshBuffers.get(mesh);
+          const entry = this._meshBuffers.getVoxel(mesh);
           gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
-          for (const attr of STATIC_VERTEX_LAYOUT) {
-            gl.enableVertexAttribArray(attr.location);
-            if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, 64, attr.offsetBytes);
-            else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, 64, attr.offsetBytes);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
+          for (let a = 0; a < VOXEL_VERTEX_LAYOUT.length; a++) {
+            const attr = VOXEL_VERTEX_LAYOUT[a];
+            if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, VOXEL_STRIDE_BYTES, attr.offsetBytes);
+            else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, VOXEL_STRIDE_BYTES, attr.offsetBytes);
           }
+          const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
+          const idxBytes = entry.indexType === 'u16' ? 2 : 4;
           const ranges = mesh.ranges;
           const pm = item.partMatrices;
           for (let p = 0; p < ranges.length; p++) {
@@ -1734,7 +1751,7 @@ export class GpuCellPipeline {
             M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
             gl.uniformMatrix4fv(locI.uModel, false, M);
             gl.uniform1i(locI.uAxisAligned, item.partFlags[p] & 1);
-            gl.drawArraysInstanced(gl.TRIANGLES, range.start * 3, range.count * 3, n);
+            gl.drawElementsInstanced(gl.TRIANGLES, range.count * 3, idxEnum, range.start * 3 * idxBytes, n);
             instancedDraws++;
           }
         }

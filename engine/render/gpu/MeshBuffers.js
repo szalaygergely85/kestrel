@@ -71,6 +71,52 @@ export const STATIC_VERTEX_LAYOUT = Object.freeze([
   { name: 'aAux4567', location: 5, components: 4, type: 'float', offsetBytes: 48 },
 ]);
 
+/** RE-06b (architecture 28.7): bytes per voxel vertex = the first 32 B of the static vertex (pos, uv, nrm, flat); aux is constant zero. */
+export const VOXEL_STRIDE_BYTES = 32;
+const VOXEL_STRIDE_WORDS = VOXEL_STRIDE_BYTES / 4; // 8
+
+/** `STATIC_VERTEX_LAYOUT[0..3]` - same names/locations/offsets, stride 32 (locations 4/5 = generic attribs, zero). */
+export const VOXEL_VERTEX_LAYOUT = Object.freeze(STATIC_VERTEX_LAYOUT.slice(0, 4));
+
+/**
+ * Build-time encoder for a voxel MeshData (unrolled quads, corners 0,1,2,0,2,3): 4 x 32 B
+ * verts per quad + index pattern 4q+(0,1,2,0,2,3) = the exact unrolled triangle order, so
+ * GPU primitive order equals rasterJS's. Validates the assumptions and throws with mesh.id.
+ * @param {import('../../mesh/MeshData.js').MeshData} mesh
+ * @returns {{vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount: number}}
+ */
+export function buildVoxelVertexData(mesh) {
+  if (mesh.layout !== 'static') throw new Error(`buildVoxelVertexData: mesh "${mesh.id}" is not 'static' layout (got "${mesh.layout}")`);
+  if (mesh.triCount % 2 !== 0) throw new Error(`buildVoxelVertexData: mesh "${mesh.id}" has odd triCount ${mesh.triCount} (not quads)`);
+  const quadCount = mesh.triCount / 2;
+  for (let i = 0; i < mesh.aux.length; i++) {
+    if (mesh.aux[i] !== 0) throw new Error(`buildVoxelVertexData: mesh "${mesh.id}" has non-zero aux at ${i}`);
+  }
+  const posU = new Uint32Array(mesh.pos.buffer, mesh.pos.byteOffset, mesh.pos.length);
+  const uvU = new Uint32Array(mesh.uv.buffer, mesh.uv.byteOffset, mesh.uv.length);
+  const sameVert = (a, b) => posU[a * 3] === posU[b * 3] && posU[a * 3 + 1] === posU[b * 3 + 1] && posU[a * 3 + 2] === posU[b * 3 + 2]
+    && uvU[a * 2] === uvU[b * 2] && uvU[a * 2 + 1] === uvU[b * 2 + 1];
+  const vertex = new ArrayBuffer(quadCount * 4 * VOXEL_STRIDE_BYTES);
+  const f32 = new Float32Array(vertex);
+  const u32 = new Uint32Array(vertex);
+  const index = quadCount * 4 > 65536 ? new Uint32Array(quadCount * 6) : new Uint16Array(quadCount * 6);
+  for (let q = 0; q < quadCount; q++) {
+    const s = q * 6; // unrolled source verts
+    if (!sameVert(s + 3, s) || !sameVert(s + 4, s + 2)) throw new Error(`buildVoxelVertexData: mesh "${mesh.id}" quad ${q} is not (0,1,2,0,2,3)`);
+    for (let c = 0; c < 4; c++) {
+      const v = c === 3 ? s + 5 : s + c;
+      const base = (q * 4 + c) * VOXEL_STRIDE_WORDS;
+      f32[base] = mesh.pos[v * 3]; f32[base + 1] = mesh.pos[v * 3 + 1]; f32[base + 2] = mesh.pos[v * 3 + 2];
+      f32[base + 3] = mesh.uv[v * 2]; f32[base + 4] = mesh.uv[v * 2 + 1];
+      u32[base + 5] = mesh.nrm[v];
+      u32[base + 6] = mesh.flat[v * FLAT_STRIDE]; u32[base + 7] = mesh.flat[v * FLAT_STRIDE + 1];
+    }
+    const i = q * 6, b = q * 4;
+    index[i] = b; index[i + 1] = b + 1; index[i + 2] = b + 2; index[i + 3] = b; index[i + 4] = b + 2; index[i + 5] = b + 3;
+  }
+  return { vertex, index, quadCount };
+}
+
 /** Bytes per vertex in the interleaved terrain buffer (ME-06, 27.3 "terrain layout has no uv"): pos(12) + nrm(4). */
 export const TERRAIN_STRIDE_BYTES = 16;
 const TERRAIN_STRIDE_WORDS = TERRAIN_STRIDE_BYTES / 4; // 4
@@ -119,6 +165,30 @@ export class MeshBuffers {
     this.device = device;
     /** @type {Map<string, {vertexBuffer: any, version: number, vertexCount: number, indexBuffer?: any, indexCount?: number}>} */
     this.cache = new Map();
+    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, vertexCount: number, indexCount: number}>} */
+    this.voxelCache = new Map();
+  }
+
+  /**
+   * RE-06b (28.7): GPU-side 32 B vertex + index buffer for a voxel MeshData (ME-08 + RE-06 paths only).
+   * @param {import('../../mesh/MeshData.js').MeshData} mesh
+   */
+  getVoxel(mesh) {
+    const existing = this.voxelCache.get(mesh.id);
+    if (existing && existing.version === mesh.meshVersion) return existing;
+    if (existing) {
+      this.device.dispose(existing.vertexBuffer);
+      this.device.dispose(existing.indexBuffer);
+    }
+    const d = buildVoxelVertexData(mesh);
+    const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(d.vertex) });
+    const indexBuffer = this.device.createBuffer({ usage: 'index', data: d.index });
+    const entry = {
+      vertexBuffer, indexBuffer, indexType: /** @type {'u16'|'u32'} */ (d.index instanceof Uint16Array ? 'u16' : 'u32'),
+      version: mesh.meshVersion, vertexCount: d.quadCount * 4, indexCount: d.quadCount * 6,
+    };
+    this.voxelCache.set(mesh.id, entry);
+    return entry;
   }
 
   /**
@@ -163,5 +233,10 @@ export class MeshBuffers {
       if (entry.indexBuffer) this.device.dispose(entry.indexBuffer);
     }
     this.cache.clear();
+    for (const entry of this.voxelCache.values()) {
+      this.device.dispose(entry.vertexBuffer);
+      this.device.dispose(entry.indexBuffer);
+    }
+    this.voxelCache.clear();
   }
 }
