@@ -53,7 +53,7 @@ export class GpuOverlayPass {
     this.rt = rt; this.gl = rt.gl; this.pipeline = pipeline; this.overlay = overlay;
     this.depthUint = opts.depthUint !== false;
     this.ready = false;
-    this.cols = 0; this.rows = 0; this._fgTex = null; this._fullUpload = true;
+    this.cols = 0; this.rows = 0; this._fgTex = null; this._fullUpload = true; this._ovlRef = null;
     this.stats = { uploadMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN, rows: 0, runs: 0 };
     rt.overlayPassStats = this.stats; // F3 / gpucompare read the pass timer here
     this._onCtxLost = () => { this.ready = false; };
@@ -136,6 +136,9 @@ export class GpuOverlayPass {
     if (!hasNow && !hadPrev) { this.stats.rows = 0; return; }
     const gl = this.gl;
     this._sync();
+    // RE-07b review: `overlay.bind` swaps in fresh arrays on every accepted grid request, also at the
+    // same size (prev rows reset) - the texture still holds the old rows, so re-upload everything once.
+    if (ov.ovl !== this._ovlRef) { this._ovlRef = ov.ovl; this._fullUpload = true; }
     const t0 = performance.now();
     const cols = this.cols;
     // dirty rows = this frame's touched rows + last frame's (wiped) rows
