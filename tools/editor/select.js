@@ -8,6 +8,7 @@
 // Imports only engine/index.js + ray.js (the editor boundary rule).
 import { projectPoint, cameraBasis } from './ray.js';
 import { selectionEntityId, selectionItemData } from './doc.js';
+import { localToWorld } from '../../engine/index.js';
 
 /** Model world-space radius/height for the highlight box (same rule as ray.js's `rayPickEntities`). */
 function modelExtent(assets, comps) {
@@ -92,12 +93,17 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
     }
   }
   // Marker-only selection (light/interactable): highlight its point.
+  // CO-7: resolves the owning structure by `structId` (never the level name)
+  // when the selection carries one, so two placements of one level pick the
+  // right frame; falls back to the level-name match for an older-shaped
+  // selection with no `structId`.
   if (selection.collection === 'lights' || selection.collection === 'interactables') {
     const item = selectionItemData(doc, selection);
-    const levelId = selection.fileId.slice('level/'.length);
-    const s = world.structures.find((st) => st.level.name === levelId);
+    const s = selection.structId != null
+      ? world.structures.find((st) => st.id === selection.structId)
+      : world.structures.find((st) => st.level.name === selection.fileId.slice('level/'.length));
     if (item && s) {
-      const point = { x: item.x + s.origin.x, y: item.y + s.origin.y, z: (item.z || 0) + s.origin.z };
+      const point = localToWorld(s.frame, item.x, item.y, item.z || 0, { x: 0, y: 0, z: 0 });
       const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, point);
       if (proj.depth > 0) rt.setCell(Math.round(proj.col), Math.round(proj.row), '*', fgHex);
     }
@@ -125,16 +131,25 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
   };
   const dimHex = (palette.colors && palette.colors.uiDim) || '#666666';
   const goldHex = (palette.colors && palette.colors.gold) || '#ffd24a';
+  // CO-7: world position via the structure's own frame (was `+ s.origin`);
+  // the "is this the selected one" check also requires `structId` to match
+  // when the selection carries one, so selecting a marker in ONE placement
+  // never highlights the same-id marker in another placement of the same level.
   for (const s of world.structures) {
     const def = s.level.def;
+    const sameStruct = (sel) => sel.structId == null || sel.structId === s.id;
     for (const l of def.lights || []) {
       const on = l.on !== false;
-      const sel = selection && selection.collection === 'lights' && selection.id === l.id && selection.fileId === `level/${s.level.name}`;
-      put(l.x + s.origin.x, l.y + s.origin.y, l.z + s.origin.z, '*', sel ? goldHex : on ? goldHex : dimHex);
+      const sel = selection && selection.collection === 'lights' && selection.id === l.id
+        && selection.fileId === `level/${s.level.name}` && sameStruct(selection);
+      const p = localToWorld(s.frame, l.x, l.y, l.z, { x: 0, y: 0, z: 0 });
+      put(p.x, p.y, p.z, '*', sel ? goldHex : on ? goldHex : dimHex);
     }
     for (const it of def.interactables || []) {
-      const sel = selection && selection.collection === 'interactables' && selection.id === it.id && selection.fileId === `level/${s.level.name}`;
-      put(it.x + s.origin.x, it.y + s.origin.y, it.z + s.origin.z, 'o', sel ? goldHex : dimHex);
+      const sel = selection && selection.collection === 'interactables' && selection.id === it.id
+        && selection.fileId === `level/${s.level.name}` && sameStruct(selection);
+      const p = localToWorld(s.frame, it.x, it.y, it.z, { x: 0, y: 0, z: 0 });
+      put(p.x, p.y, p.z, 'o', sel ? goldHex : dimHex);
     }
   }
 }

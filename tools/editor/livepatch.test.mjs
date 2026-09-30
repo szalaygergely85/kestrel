@@ -75,22 +75,23 @@ function approxArr(a, b, eps = 1e-6) {
   ok('a rename batch is NOT patchable - always a full rebuild', !isPatchableRecord(rename));
 }
 
-// ---- applyPropTransformPatch --------------------------------------------
+// ---- applyPropTransformPatch (CO-7: takes a Frame|null, not origin+isWorldSpace) ----
 {
+  const structFrame = { x: 100, y: 200, z: 10, yawSteps: 0 };
   const t = { x: 0, y: 0, z: 0, yawDeg: 0 };
-  applyPropTransformPatch(t, { x: 5, y: 6, z: 1, facing: 90 }, { x: 100, y: 200, z: 10 }, false);
-  ok('level-space prop: x/y/z add the structure origin', t.x === 105 && t.y === 206 && t.z === 11, JSON.stringify(t));
-  ok('level-space prop: facing maps to transform.yawDeg', t.yawDeg === 90);
+  applyPropTransformPatch(t, { x: 5, y: 6, z: 1, facing: 90 }, structFrame);
+  ok('level-space prop: x/y/z go through the structure frame', t.x === 105 && t.y === 206 && t.z === 11, JSON.stringify(t));
+  ok('level-space prop: facing maps to transform.yawDeg (localYawToWorld, yawSteps 0 -> identity)', t.yawDeg === 90);
 
   const t2 = { x: 0, y: 0, z: 3, yawDeg: 45 };
-  applyPropTransformPatch(t2, { x: 5, y: 6, z: 'ground' }, { x: 0, y: 0, z: 0 }, false);
+  applyPropTransformPatch(t2, { x: 5, y: 6, z: 'ground' }, { x: 0, y: 0, z: 0, yawSteps: 0 });
   ok('a non-numeric z (\'ground\') leaves transform.z untouched', t2.z === 3);
   ok('an untouched facing leaves transform.yawDeg untouched', t2.yawDeg === 45);
 
   const t3 = { x: 0, y: 0, z: 0, yawDeg: 0 };
-  applyPropTransformPatch(t3, { x: 5, y: 6, z: 1, yawDeg: 200 }, { x: 0, y: 0, z: 0 }, true);
-  ok('world-space prop: x/y/z pass through unchanged (no origin)', t3.x === 5 && t3.y === 6 && t3.z === 1);
-  ok('world-space prop: yawDeg field maps directly', t3.yawDeg === 200);
+  applyPropTransformPatch(t3, { x: 5, y: 6, z: 1, yawDeg: 200 }, null);
+  ok('world-space prop (frame null): x/y/z pass through unchanged', t3.x === 5 && t3.y === 6 && t3.z === 1);
+  ok('world-space prop: yawDeg field maps directly (frame null -> identity)', t3.yawDeg === 200);
 }
 
 // ---- applyLightPatch / findLightHandle (fake LightSet) ---------------------
@@ -115,8 +116,8 @@ function approxArr(a, b, eps = 1e-6) {
   ok('findLightHandle finds the second key', findLightHandle(ls, 'tower.beacon') === 1);
   ok('findLightHandle returns -1 for an unknown key', findLightHandle(ls, 'tower.nope') === -1);
 
-  applyLightPatch(ls, 0, { x: 1, y: 2, z: 1.2, on: false }, { x: 10, y: 20, z: 0 }, false);
-  ok('applyLightPatch moves the handle in world space (origin added)', ls._moves[0].x === 11 && ls._moves[0].y === 22 && ls._moves[0].z === 1.2, JSON.stringify(ls._moves[0]));
+  applyLightPatch(ls, 0, { x: 1, y: 2, z: 1.2, on: false }, { x: 10, y: 20, z: 0, yawSteps: 0 });
+  ok('applyLightPatch moves the handle in world space (frame applied)', ls._moves[0].x === 11 && ls._moves[0].y === 22 && ls._moves[0].z === 1.2, JSON.stringify(ls._moves[0]));
   ok('applyLightPatch toggles on/off when the patch carries it', ls._onCalls[0].h === 0 && ls._onCalls[0].on === false);
   ok('applyLightPatch does not call setParams when the patch carries no preset', ls._paramCalls.length === 0);
 
@@ -125,13 +126,13 @@ function approxArr(a, b, eps = 1e-6) {
   ok('resolveLightPreset resolves a real preset', torch && typeof torch.radius === 'number' && Array.isArray(torch.hue), JSON.stringify(torch));
   ok('resolveLightPreset returns null for an unknown preset', resolveLightPreset(realAssets.palette, 'nope_preset') === null);
 
-  applyLightPatch(ls, 1, { x: 5, y: 5, z: 1.2, preset: 'torch' }, { x: 0, y: 0, z: 0 }, true, realAssets.palette);
+  applyLightPatch(ls, 1, { x: 5, y: 5, z: 1.2, preset: 'torch' }, null, realAssets.palette);
   ok('applyLightPatch: a preset edit calls setParams with the resolved params', ls._paramCalls.length === 1 && ls._paramCalls[0].h === 1, JSON.stringify(ls._paramCalls));
   ok('applyLightPatch: setParams params match resolveLightPreset', JSON.stringify(ls._paramCalls[0].p) === JSON.stringify(torch), JSON.stringify(ls._paramCalls[0].p));
 
   // An unknown preset name: still moves/no throw, but no setParams call (nothing to resolve to).
   const lsBad = fakeLightSet();
-  applyLightPatch(lsBad, 0, { x: 1, y: 1, z: 1, preset: 'not_a_real_preset' }, { x: 0, y: 0, z: 0 }, true, realAssets.palette);
+  applyLightPatch(lsBad, 0, { x: 1, y: 1, z: 1, preset: 'not_a_real_preset' }, null, realAssets.palette);
   ok('applyLightPatch: an unknown preset name is a no-op for setParams (no throw)', lsBad._paramCalls.length === 0);
 }
 
@@ -150,7 +151,7 @@ function approxArr(a, b, eps = 1e-6) {
 
   const rec = makeFieldEditRecord('nudge', 'level/tower', 'props', brazierProp, 0, { x: brazierProp.x + 0.25 });
   ok('a real nudge record is patchable', isPatchableRecord(rec));
-  applyPropTransformPatch(entity.transform, rec.after, tower.origin, false);
+  applyPropTransformPatch(entity.transform, rec.after, tower.frame);
   ok('the live entity transform moved by the nudge amount', Math.abs(entity.transform.x - (beforeTransform.x + 0.25)) < 1e-9, String(entity.transform.x));
   ok('no other transform field moved', entity.transform.y === beforeTransform.y && entity.transform.z === beforeTransform.z && entity.transform.yawDeg === beforeTransform.yawDeg);
 
@@ -158,7 +159,7 @@ function approxArr(a, b, eps = 1e-6) {
   // US-064 AC's "a patch-path-specific undo test proving a patched-then-
   // undone edit produces byte-identical state to before the edit".
   const inv = invert(rec);
-  applyPropTransformPatch(entity.transform, inv.after, tower.origin, false);
+  applyPropTransformPatch(entity.transform, inv.after, tower.frame);
   ok('undo (patch path) restores the exact pre-edit transform (byte-identical)', JSON.stringify(entity.transform) === JSON.stringify(beforeTransform), JSON.stringify(entity.transform));
 
   // The real tower light "brazier" (co-located, same id, different
@@ -190,7 +191,9 @@ function approxArr(a, b, eps = 1e-6) {
   const realLoadForPreset = World.load;
   World.load = (...args) => { worldLoadCallsForPreset++; return realLoadForPreset.apply(World, args); };
   try {
-    applyLightPatch(ls, handle, rec.after, { x: 0, y: 0, z: 0 }, false, realAssets.palette);
+    // frame: null (the original test used a zero origin/world-space flag,
+    // an identity conversion either way - only setParams/preset behaviour is checked here).
+    applyLightPatch(ls, handle, rec.after, null, realAssets.palette);
   } finally {
     World.load = realLoadForPreset;
   }
@@ -229,7 +232,7 @@ function approxArr(a, b, eps = 1e-6) {
       const sign = i % 2 === 0 ? 1 : -1;
       const rec = makeFieldEditRecord('nudge', 'level/tower', 'props', item, index, { x: item.x + sign * 0.05 });
       applyEdit(doc, rec);
-      if (isPatchableRecord(rec)) applyPropTransformPatch(entity.transform, rec.after, tower.origin, false);
+      if (isPatchableRecord(rec)) applyPropTransformPatch(entity.transform, rec.after, tower.frame);
       durations.push(performance.now() - t0);
     }
   } finally {

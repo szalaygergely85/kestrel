@@ -3,7 +3,7 @@
 // never implicit view state buried in a camera object. `updateCamera` is
 // pure over `pose` so it is Node-testable with a fake `input` (see
 // camera.test.mjs) - no DOM/canvas/pointer-lock here, `main.js` owns that.
-import { Camera, HFOV_DEG } from '../../engine/index.js';
+import { Camera, HFOV_DEG, localToWorld } from '../../engine/index.js';
 
 const DEG2RAD = Math.PI / 180;
 
@@ -24,16 +24,13 @@ export function clonePose(pose) {
 /**
  * 24.5 "Start pose": tower placement `s` looking north (yaw 0) from above
  * and slightly south of it, pitched down. `level` is the placed structure's
- * `Level` (has `.width`/`.height` in metres), `origin` its world placement.
+ * `Level` (has `.width`/`.height` in metres), `frame` its authored `Frame`
+ * (CO-7: routed through `localToWorld` instead of hand-written `+ origin`
+ * math - identical numbers while `yawSteps` is always 0).
  */
-export function startPoseForStructure(origin, level) {
-  return createCameraPose({
-    x: origin.x + level.width / 2,
-    y: origin.y + level.height + 10,
-    z: origin.z + 8,
-    yawDeg: 0,
-    pitchDeg: -15,
-  });
+export function startPoseForStructure(frame, level) {
+  const p = localToWorld(frame, level.width / 2, level.height + 10, 8, { x: 0, y: 0, z: 0 });
+  return createCameraPose({ x: p.x, y: p.y, z: p.z, yawDeg: 0, pitchDeg: -15 });
 }
 
 /**
