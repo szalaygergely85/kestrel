@@ -3170,3 +3170,69 @@ Goal: N copies of one voxel model = one instanced draw per part, both twins. ME-
 **Amendments (architect first review, 2026-09-30, ARCH OK):**
 - Engine fields added by the implementation (kept): `engine.attachMaterialTable(table)`, `engine.teamSpec`, `engine.matTable`, so `setTeamMaterials` survives every `bindShading` rebuild. `writeUnitInstance` masks team `& 7` (MAX_TEAMS).
 - **AC3 re-baselined:** raster-pass p50 delta +<= 1.5 ms for 200 levers on screen at 400x150 on the Intel iGPU (measured +0.9..1.5). Measure the raster pass with units on screen (ground/walk views), not total GPU p95 (noise floor ~0.3 ms). The +0.5 ms figure assumed a faster vertex path: the lever is 354 tris = 1062 unrolled 64 B verts, so 200 units = 13.6 MB vertex fetch per frame with no reuse. Fix = RE-06b (index buffer + 32 B voxel vertex, note 28.7 before dev), AC -50 % raster delta.
+
+### 28.7 RE-06b voxel vertex format + index buffer (normative; architect, 2026-09-30; PC-A)
+
+Goal: cut vertex traffic of both voxel raster paths (ME-08 `DRAW_VOXEL` and RE-06 `DRAW_INSTANCED`) from 6 x 64 B per greedy quad to 4 x 32 B + 6 indices, without touching `MeshData`, rasterJS or the level/terrain paths. Lever: 177 quads = 1062 x 64 B (68 KB) -> 708 x 32 B (22.7 KB) + 2.1 KB u16 indices; 200 units ~4.5 MB/frame (was 13.6 MB) and 4 VS invocations per quad with index reuse (was 6).
+
+**Facts verified in `voxelMesh.js` (`emitFaceQuad`)**
+- Every voxel triangle comes from `StaticMeshBuilder.addQuad`: quad q = unrolled verts `6q..6q+5` = corners `(0,1,2,0,2,3)`, so vert `6q+3 == 6q+0` and `6q+4 == 6q+2` on every field. Ranges start on quad boundaries (`beginRange` per part between quads).
+- `aux8 = [0, AO_NONE(=0), 0, 0, 0, 0, 0, 0]` on every voxel vertex: aux is **constant zero for the whole mesh**, not just per part. No uniform needed.
+- nrm/flat are per quad; pos/uv are per corner (uv = box-local cell index * cellM, f32).
+
+**Decisions**
+1. **MeshData unchanged** (`layout: 'static'`, unrolled, `idx: null`). The 32 B + index form is a GPU-side encoding only, derived at upload. Reason: rasterJS, meshCollide, serialization and `validateMesh` keep one format; the twin cannot drift.
+2. **32 B voxel vertex** = the first 32 B of the static vertex, same offsets: `pos f32x3 @0, uv f32x2 @12, nrm u32 @20, flat u32x2 @24`, stride 32. f32 uv (not f16/u16): 12+8+4+8 = 32 already, and f32 keeps uv bit-identical to the twin. Export `VOXEL_STRIDE_BYTES = 32`, `VOXEL_VERTEX_LAYOUT` (locations 0-3, same names as `STATIC_VERTEX_LAYOUT[0..3]`) from `MeshBuffers.js`.
+3. **aux = generic vertex attribute constants.** Locations 4/5 stay declared in both existing programs; on the voxel VAOs their arrays are **disabled** and the pipeline sets `gl.vertexAttrib4f(4, 0,0,0,0)` and `(5, 0,0,0,0)` once per frame before the first voxel loop (context state; the static VAO keeps 4/5 enabled so it is unaffected). **No shader change, no new program**: `progMesh` draws ME-08 voxels, `progMeshInst` draws units, both as today. `mesh.vert.js`/`mesh.frag.js`/`glsl.test.js` stay byte-identical.
+4. **Index buffer per voxel mesh, pattern `4q + (0,1,2,0,2,3)`** = the exact unrolled triangle order and diagonal, so GPU primitive order == rasterJS triangle order by construction. Type: `Uint16Array` when `4 * quads <= 65536`, else `Uint32Array` (WebGL2 has no base-vertex, so the whole mesh shares one index space). Ranges map 1:1 (triangle units): `drawElements(TRIANGLES, range.count*3, type, range.start*3*idx.BYTES_PER_ELEMENT)`; units: `drawElementsInstanced(..., n)`.
+5. **Encoder** `buildVoxelVertexData(mesh) -> {vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount}` in `MeshBuffers.js`, build-time only (may allocate). It **validates** and throws with `mesh.id` if: layout not static, `triCount` odd, any quad's verts 3/4 differ bitwise from 0/2 (compare via `Uint32Array` views of pos/uv), any aux value != 0. That keeps a future voxelMesh AO/uv change from silently rendering wrong.
+6. **`MeshBuffers.getVoxel(mesh) -> {vertexBuffer, indexBuffer, indexType: 'u16'|'u32', vertexCount, indexCount}`**: own `Map` (`voxelCache`), same `id + meshVersion` invalidation and dispose-on-replace as `get()`; `dispose()` frees both maps. `get()` and `buildStaticVertexData` are not edited (level structures, glTF, terrain unchanged).
+7. **Pipeline (`_passRaster`)**: new `_meshVoxVao` (attribs 0-3 enabled, 4/5 disabled) for the ME-08 loop, which now does `useProgram(progMesh)` again + `bindVertexArray(_meshVoxVao)`; `_meshInstVao` gets 0-3 from `VOXEL_VERTEX_LAYOUT` and 4/5 disabled (6-9 unchanged). Per mesh: bind its VBO, set the 4 pointers with stride 32, bind `ELEMENT_ARRAY_BUFFER` (VAO state: bind it only while the voxel VAO is bound). Map `indexType` to the GL enum once per mesh, not per part. Delete `_meshVoxVao` in `dispose`. Stats unchanged (`voxelDraws`, `instancedDraws`, `instances`).
+8. **Both voxel paths switch**; `DRAW_STATIC` and `DRAW_TERRAIN` loops untouched. The ME-08 loop keeps its per-part uniforms; nothing else moves.
+
+**rasterJS twin:** no change. It keeps walking the unrolled `MeshData` in triangle order; the GPU index pattern reproduces that order and the same vertex values, so parity is structural. The Node test below proves the encoding round-trips.
+
+**Zero alloc:** `getVoxel` is a Map hit after warm-up; no views, closures or `{}` in the loops; indexed `for` over `VOXEL_VERTEX_LAYOUT` (no `for...of` in the new code).
+
+**Node tests**
+1. `MeshBuffers.test.js` (extend): for the lever + one multi-part model from `packVoxelModel` + `buildVoxelMesh`, decode `buildVoxelVertexData` (index -> 32 B verts) back to an unrolled triangle list and compare **bitwise** with `mesh.pos/uv/nrm/flat` per triangle, in order; indexType u16 for the lever, u32 path via a synthetic mesh with > 16384 quads; each range's byte offset/count; validator throws on a non-quad mesh, non-zero aux, odd triCount; `getVoxel` caches by id+meshVersion, re-uploads on a bump, disposes both buffers on the mock device; existing static tests unchanged and green.
+2. `glsl.test.js`, `rasterJS.test.js`, `DrawList.test.js`, `instances.test.js`: unchanged and green (proves no shader/twin change).
+3. `node tools/run-tests.mjs` + `check-deps.mjs` green.
+
+**Parity + bench (main session):** gpucompare mesh 35/35 and dda 34/34 with **the same numbers** as the RE-06 captures (`2026-09-30-e9d8ac1-gpucompare-*`); `?bench=1&units=200` vs `units=0`, same views as RE-06, raster-pass p50 delta <= 0.65 ms (RE-06: ~1.3 ms, i.e. >= 50 % lower). If the delta lands at 35-50 %, stop and ASK ARCHITECT with the per-view numbers (next levers: u8/u16 pos, per-quad flat via instancing-free `gl_VertexID/4` lookup) - no ad hoc shader tuning.
+
+**Estimate:** ~1 d, one story. If it overruns, split at the natural seam: RE-06b1 = encoder + `getVoxel` + test 1 (Node only); RE-06b2 = pipeline VAOs/loops + gpucompare + bench.
+
+**Do not:**
+- change `MeshData`, `StaticMeshBuilder`, `voxelMesh.js` output, `buildStaticVertexData`, `STATIC_VERTEX_LAYOUT` or `get()`;
+- edit `mesh.vert.js`/`mesh.frag.js` or add a program variant (generic attributes cover aux);
+- reorder triangles, flip the quad diagonal or dedupe vertices across quads (would break twin order and flat data);
+- use f16/u16 uv (not needed for 32 B; loses bit parity);
+- bind `ELEMENT_ARRAY_BUFFER` with the static or terrain VAO bound (it is VAO state);
+- route level structures or glTF meshes through `getVoxel`;
+- widen any gpucompare threshold or change the existing poses.
+
+### 28.8 RTS-01 spike layout `game/js/rts/` (normative for the spike; architect, 2026-09-30; PC-A)
+
+28.1-28.6 cover the engine side. This note fixes the game-side shape so the spike code can grow into the real RTS instead of being thrown away. Spike only: no new engine code (gaps -> RE rows).
+
+**Prerequisites (engine, must be done first):** RE-02 (pitched raster on the mesh renderer), RE-03 fixes, RE-EXP (exports `pick.js`, `createSteer`, `createFlowField`, the pitched projection API), RE-07 (screen rect + ground rings) for a5/a6. RE-06b is not a prerequisite (see the RTS-01 b5 note).
+
+**Layout** (game imports only `engine/index.js`; `sim/` never imports `ui/`, `ui/` reads sim state read-only):
+- `game/rts-test.html` + `game/js/rts/rtsMain.js`: bootstrap (AssetRegistry via the main.js export, `World.load(world_m1)`, `?renderer=mesh`, `?n=`, `?grid=`), owns the `Loop`.
+- `sim/units.js`: `createUnits(max)` SoA, Float64Array `x, y, prevX, prevY, tx, ty`; Uint8Array `team, state` (0 idle, 1 moving); Int32Array `pathOff, pathLen, pathPos` into one preallocated `Int32Array` path pool. Unit id = steer slot = instance index source. No z, no yaw in sim.
+- `sim/orders.js`: applies `commands.js` entries due at `q.tick` (`MOVE`: ids + target x,y). Group move: one `findPath` from the group centroid, per-unit target = target + formation offset (ring slots by ascending id); groups > 12 units use one flow field (28.2 "no per-unit A* for large groups"). A* expansions capped per tick (28.2).
+- `sim/tick.js`: `simStep(state)` = copy x,y -> prev, apply orders, `steer.step(STEP, grid)`, copy steer x,y back, arrival -> idle. Fixed step only.
+- `sim/navSetup.js`: `NavGrid.buildFromWorld(world, {maxSlopeDeg: 30})` at load, tower footprint via `blockWorldRect`. Load-time only.
+- `ui/input.js`: mouse/keys -> `updateRtsCamera`, selection, `q.issue(1, MOVE, ids, n, x, y, 0)` (inputDelay 0). Never writes sim arrays.
+- `ui/select.js`: pure selection rules (own team, box ids ascending, shift-add, clear) on plain arrays; a7 test lives here (`select.test.js`).
+- `ui/unitsView.js`: per rendered frame, interpolated `x = prev + (cur-prev)*alpha`, z = `world.supportAt` (terrain height), **yaw smoothing here** (render-side, 28.2: atan2 is not sim math), writes `writeUnitInstance` into 2 `engine.instances` groups (one per team), `count` = team size. Zero alloc.
+- `ui/hud.js`: F3 lines (b6) + how-to-play text (b8).
+
+**Placeholder unit model:** a `.vox`-free voxel model object built in `game/js/rts/unitModel.js` (2 parts: body + head/weapon, one `team.a` slot on >= 40 % of the visible faces), registered with the same registry path `?units=N` uses; team materials via `engine.setTeamMaterials`. It moves to `design/` when the designer takes over.
+
+**Determinism (check-deps rule 15, already scoped to `game/js/rts/sim/`):** 0 warnings in `sim/`. Iterate by id, never over Map/Set. Seeded placement uses `rng.js`. Sim reads no DOM, camera or frame dt. The hash/replay are not wired for the spike, but every sim module keeps its state in typed arrays so `hashInto` can be added later without restructuring.
+
+**Timing:** F3 `sim ms` = sum of `simStep` calls in the frame (profiler section), `JS ms` includes it. Units view + instance writes <= 0.1 ms for 200.
+
+**Do not:** put unit logic in `engine/`; call `performance.now`/`Math.random`/trig in `sim/`; allocate per step or frame (ids scratch preallocated); path every unit separately for a 60-unit group; read `groundAt` for sim decisions.

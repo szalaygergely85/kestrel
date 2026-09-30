@@ -868,3 +868,5 @@ The engine (mesh renderer + ASCII shading, lighting, terrain, content packs, edi
 - **Docs later (after the spike, owner confirms):** `docs/game-design.md` rewrite, `docs/roadmap.md` new plan, CLAUDE.md title line ("Zelda-like") - main session asks the owner; manager does not edit CLAUDE.md.
 - Owner: RTS-01 walk-test; then setting choice.
 
+**Note (2026-09-30, architect via RTS-01 ACs, main session):** the spike frame budget = D-025 (GPU p95 <= 4 ms, JS p95 <= 8 ms at 400x150 and 240x90; sim p95 <= 2 ms inside JS); D-029 2.52 / 1.34 ms are recorded measurements, not a budget. A GPU miss measured before RE-06b is recorded and re-measured after it; it does not block the owner walk-test.
+
