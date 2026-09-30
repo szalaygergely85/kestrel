@@ -126,6 +126,13 @@ export class World {
     // angle). `World.load` copies `def.horizon` here; `serialize` writes it
     // straight back.
     this.horizon = [];
+    // RE-11b (architecture.md 28.3, "Save" / CO-5 extension): the sight/fog
+    // grid, or `null` (default - every world before this story, and most
+    // worlds even after it: `Visibility` needs grid dimensions the GAME
+    // decides, not level/world content, so it is never built from `def`
+    // here - the game sets this field once it knows its grid, and
+    // `serialize`/`deserialize` round-trip it when non-null).
+    this.visibility = null;
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;

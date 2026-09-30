@@ -56,7 +56,11 @@ export const KEY_ORDER = {
   // CO-5 (docs/coordinates.md section 8): `WorldState` (engine/world/
   // serialize.js), not a content file - `stringifySave` tags it
   // `kind: 'save'` only to select this order, it is not an envelope key.
-  save: ['kind', 'version', 'world', 'contentVersion', 'terrain', 'structures', 'entities', 'state', 'nextId', 'time', 'removed', 'horizon', 'bounds', 'triggers'],
+  // RE-11b (architecture.md 28.3): `visibility` is additive/optional, same
+  // treatment as `horizon`/`bounds`/`triggers` above it - listed explicitly
+  // (not left to the alphabetical "rest" fallback) so its position stays a
+  // deliberate choice rather than an accident of where "visibility" sorts.
+  save: ['kind', 'version', 'world', 'contentVersion', 'terrain', 'structures', 'entities', 'state', 'nextId', 'time', 'removed', 'horizon', 'bounds', 'triggers', 'visibility'],
 };
 
 /**

@@ -93,11 +93,6 @@ export class Visibility {
     this._span = buildSpanTable(this.maxRadiusCells);
   }
 
-  /** cx/cy of the world point (x,y), no clamping (may land outside the grid). */
-  _cellOf(x, y) {
-    return [Math.floor((x - this.x0) / this.cell), Math.floor((y - this.y0) / this.cell)];
-  }
-
   /** Marks (cx,cy) dirty for team t and bumps version[t]. Zero allocation. */
   _markDirty(t, cx, cy) {
     this.version[t]++;

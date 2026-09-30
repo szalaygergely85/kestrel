@@ -5,6 +5,7 @@
 import { World } from './World.js';
 import { migrateState, LATEST_VERSION } from './migrateState.js';
 import { stringifyContent } from '../content/stringify.js';
+import { Visibility } from './Visibility.js';
 
 const VERSION = LATEST_VERSION;
 
@@ -84,6 +85,10 @@ export function serialize(world) {
       contentVersion: world.contentVersion,
       removed: Array.from(world._removedContent || []).sort(),
     } : {}),
+    // RE-11b (28.3 "Save"): optional, omitted entirely when the world has
+    // no `Visibility` (the default - keeps every existing save byte-
+    // identical). Sources are never saved (`saveExplored`'s own contract).
+    ...(world.visibility != null ? { visibility: world.visibility.saveExplored() } : {}),
   };
 }
 
@@ -199,6 +204,10 @@ export function deserialize(state, assets, opts = {}) {
   // source (already true: `structuredClone` in `serialize`).
 
   world.nextId = state.nextId;
+  // RE-11b (28.3 "Save"): only when the key is present (most saves have no
+  // `visibility` at all - see `serialize` above). `fromSave` never restores
+  // sources; the game re-adds them on the first tick after a load.
+  if (state.visibility != null) world.visibility = Visibility.fromSave(state.visibility);
   return world;
 }
 
