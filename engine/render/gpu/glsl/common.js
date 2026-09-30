@@ -148,6 +148,48 @@ vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
 }
 `;
 
+// RE-02a (docs/architecture.md 28.1 Amendment 2): the pitched camera's
+// counterpart of `cellRayP`. `cellDirPitched` is the literal twin of
+// `screenRay` (engine/render/projection.js) and `cellRayPitched` of
+// `unprojectPitched` (same expression order; glsl.test.js transpiles both
+// and compares them with the JS at 1e-9). `uProjMode` (int, 0 = shear, 1 =
+// pitched) selects the camera in light/shade/edge - no shader permutation
+// (A2 item 10). `pitchFogScale` = `pitchedFogScale`: `vd * scale` is the
+// horizontal forward distance the fog curves read (A2 item 3); mode 0
+// returns 1.0 without arithmetic so every shear frame is byte-identical.
+export const PITCH_UNIFORMS = `
+uniform int uProjMode;  // 0 = shear (cellRayP / uHorizonRow), 1 = pitched (cellRayPitched)
+uniform vec4 uPitchA;   // fX, fY, fZ, tanHalfX
+uniform vec4 uPitchB;   // rX, rY, uX, uY
+uniform vec4 uPitchC;   // uZ, tanHalfY, cosP, sinP
+`;
+
+export const CELL_RAY_PITCHED = `
+vec3 cellDirPitched(vec2 cell, ivec2 grid, vec3 F, vec2 R, vec3 U, vec2 tanHalf) {
+  float a = ((2.0 * (cell.x + 0.5)) / float(grid.x) - 1.0) * tanHalf.x;
+  float b = (1.0 - (2.0 * cell.y) / float(grid.y)) * tanHalf.y;
+  return vec3(F.x + a * R.x + b * U.x, F.y + a * R.y + b * U.y, F.z + b * U.z);
+}
+
+vec3 cellRayPitched(vec2 cell, ivec2 grid, vec3 eye, vec3 F, vec2 R, vec3 U, vec2 tanHalf, float vd) {
+  vec3 dir = cellDirPitched(cell, grid, F, R, U, tanHalf);
+  return vec3(eye.x + dir.x * vd, eye.y + dir.y * vd, eye.z + dir.z * vd);
+}
+
+float pitchFogScale(int row, int rows, float tanHalfY, float cosP, float sinP) {
+  float b = (1.0 - (2.0 * float(row)) / float(rows)) * tanHalfY;
+  return max(0.0, cosP - b * sinP);
+}
+
+// Uniform-driven wrappers (need PITCH_UNIFORMS declared before this chunk).
+vec3 pitchedCellDir(vec2 cell, ivec2 grid) {
+  return cellDirPitched(cell, grid, uPitchA.xyz, uPitchB.xy, vec3(uPitchB.zw, uPitchC.x), vec2(uPitchA.w, uPitchC.y));
+}
+float fogScaleCell(int row, int rows) {
+  return uProjMode == 0 ? 1.0 : pitchFogScale(row, rows, uPitchC.y, uPitchC.z, uPitchC.w);
+}
+`;
+
 // US-041a (15.3 item 3): literal GLSL twin of engine/voxel/octNormal.js's
 // `packNormalOct`/`unpackNormalOct` - the octahedral normal packing used for
 // a rotated voxel-model part's face 7 (`GA.w`, `aoD` on the CPU). `pack` is

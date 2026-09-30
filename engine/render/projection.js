@@ -232,6 +232,8 @@ export const PROJ_PITCHED_VFOV_DEG = 36;
  * @property {number} yawDeg
  * @property {number} pitchDeg
  * @property {number} vfovDeg
+ * @property {number} cosP - cos(pitch), RE-02a: the horizontal fog-distance factor (28.1 A2 item 3)
+ * @property {number} sinP - sin(pitch)
  * @property {Float64Array} M - world -> clip, refreshed by pitchedTerms
  */
 
@@ -250,7 +252,7 @@ export function createPitchedTerms() {
     rX: 0, rY: 0,
     uX: 0, uY: 0, uZ: 0,
     tanHalfX: 0, tanHalfY: 0,
-    yawDeg: 0, pitchDeg: 0, vfovDeg: 0,
+    yawDeg: 0, pitchDeg: 0, vfovDeg: 0, cosP: 0, sinP: 0,
     M: new Float64Array(16),
   };
 }
@@ -291,6 +293,7 @@ export function pitchedTerms(cam, grid, out) {
   out.uX = uX; out.uY = uY; out.uZ = uZ;
   out.tanHalfX = tanHalfX; out.tanHalfY = tanHalfY;
   out.yawDeg = cam.yawDeg; out.pitchDeg = cam.pitchDeg; out.vfovDeg = vfovDeg;
+  out.cosP = cosP; out.sinP = sinP;
 
   pitchedProjection(out, out.M);
   return out;
@@ -426,4 +429,44 @@ export function pitchedEyeFromFocus(fx, fy, fz, yawDeg, pitchDeg, dist, out3) {
   out3[1] = fy - dist * Fy;
   out3[2] = fz - dist * Fz;
   return out3;
+}
+
+// ---------------------------------------------------------------------------
+// RE-02a (docs/architecture.md 28.1 Amendment 2): the pipeline renders a
+// pitched cam. Helpers the mesh path's consumers share.
+// ---------------------------------------------------------------------------
+
+/**
+ * The ONE place a camera's projection is resolved (28.1 A2 item 1). Until
+ * RE-02b the default is `'shear'` on every renderer; `'pitched'` must be
+ * requested explicitly (`cam.projection = 'pitched'`).
+ * @param {{projection?: 'shear'|'pitched'}} cam
+ * @param {string} [renderer] - 'dda' | 'mesh' (unused until RE-02b flips the mesh default)
+ * @returns {'shear'|'pitched'}
+ */
+export function resolveProjection(cam, renderer) { // eslint-disable-line no-unused-vars
+  return cam.projection === 'pitched' ? 'pitched' : 'shear';
+}
+
+/** The 28.1 throw: DDA, voxel march and the CPU caster only know the shear camera. */
+export function assertProjectionRenderer(cam, renderer) {
+  if (resolveProjection(cam, renderer) === 'pitched' && renderer !== 'mesh') {
+    throw new Error("cam.projection 'pitched' requires renderer 'mesh'");
+  }
+}
+
+/**
+ * Horizontal forward distance factor for a cell row: `max(0, dot(dir, (fx,fy,0)))`
+ * with `dir = F + a*R + b*U`; `R.(fx,fy) = 0`, so it is `cosP - b*sinP`, `b =
+ * (1 - 2*row/rows)*tanHalfY`. `vd * pitchedFogScale(row)` is the shear `d`
+ * (28.1 A2 item 3: fog never swims with pitch; pitch 0 == shear). GLSL twin:
+ * `pitchFogScale` in glsl/common.js.
+ * @param {PitchedTerms} terms
+ * @param {number} row
+ * @returns {number}
+ */
+export function pitchedFogScale(terms, row) {
+  const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
+  const k = terms.cosP - b * terms.sinP;
+  return k > 0 ? k : 0;
 }

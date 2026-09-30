@@ -6,7 +6,7 @@
 // (1.18 / 0.35) as the JS pass. Gain applies to the pass-1 BYTE values
 // (quantisation happens at the same point as JS): `floor(min(255,
 // byte*gain)+0.5)`, min 1.
-import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
+import { GLSL_VERSION, PRECISION, GBUF_UNPACK, PITCH_UNIFORMS, CELL_RAY_PITCHED } from './common.js';
 import { KIND_MODEL, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
 
 export const EDGE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
@@ -24,6 +24,8 @@ uniform float uEdgeGain[8];
 uniform float uModelRim; // US-040 step 4 (15.2 item 5): kind-8 rule cells, fg AND bg x this. Default 1 = off.
 
 ${GBUF_UNPACK}
+${PITCH_UNIFORMS}
+${CELL_RAY_PITCHED}
 
 // US-040 step 4 (architecture.md 15.2 item 5): kind 8 (KIND_MODEL) joins the
 // rule table via its world face - literal twin of edgePass.js's isVert/isUp.
@@ -77,7 +79,9 @@ void main() {
   uvec2 gi = texelFetch(uGI, cell, 0).xy;
   uint kind = giKind(gi.y);
   uint face = giFace(gi.y);
-  float dist = depthAt(cell);
+  float distRaw = depthAt(cell); // depth comparisons below use the raw view depth
+  // RE-02a (28.1 A2 item 3): fog reads the horizontal forward distance (mode 0: distRaw, unchanged).
+  float dist = uProjMode == 0 ? distRaw : distRaw * fogScaleCell(cell.y, uGrid.y);
   float ff = kind == ${KIND_TERRAIN}u ? terrainFogF(dist) : fogF(dist);
 
   int rule = 0;
@@ -91,14 +95,14 @@ void main() {
     else if (isVert(kind, face) && okRt && isVert(kindAt(rt2), faceAt(rt2)) && planeAt(rt2) != planeAt(cell)) {
       ivec2 l2 = lf, r2 = cell + ivec2(2, 0);
       bool okL2 = okLf, okR2 = r2.x < uGrid.x;
-      float dl = (okL2 && kindAt(l2) != 0u) ? depthAt(l2) : dist;
+      float dl = (okL2 && kindAt(l2) != 0u) ? depthAt(l2) : distRaw;
       float dr = (okR2 && kindAt(r2) != 0u) ? depthAt(r2) : depthAt(rt2);
-      float di = dist, dRt = depthAt(rt2);
+      float di = distRaw, dRt = depthAt(rt2);
       if (di <= dl && dRt <= dr) rule = 4;
       else if (di >= dl && dRt >= dr) rule = 5;
     }
-    if (rule == 0 && isVert(kind, face) && kind != 2u && okDn && isUp(kindAt(dn), faceAt(dn)) && depthAt(dn) <= dist * 1.08) rule = 6;
-    if (rule == 0 && isVert(kind, face) && okUp && kindAt(up) == 6u && depthAt(up) <= dist * 1.08) rule = 7;
+    if (rule == 0 && isVert(kind, face) && kind != 2u && okDn && isUp(kindAt(dn), faceAt(dn)) && depthAt(dn) <= distRaw * 1.08) rule = 6;
+    if (rule == 0 && isVert(kind, face) && okUp && kindAt(up) == 6u && depthAt(up) <= distRaw * 1.08) rule = 7;
     if (rule == 0 && kind == 2u && okUp && isUp(kindAt(up), faceAt(up))) rule = 8;
   }
 

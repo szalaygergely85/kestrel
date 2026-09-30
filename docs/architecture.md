@@ -2164,7 +2164,7 @@ Status: **plan + tech notes; needs D-029 (27.14) before any story starts.** Wher
 ### 27.1 Decisions (reasons inline)
 
 1. **One geometry pass `raster` replaces passes A1 `cast` (sector DDA), A2 `terrain` (heightfield march) and A3 `voxel` (voxel march).** It draws every visible mesh (structures, terrain chunks, props/models) with a real hardware depth buffer into the sub-sample G-buffer set (14.2 item 3: `cols*n x rows*n`, fixed pixel-centre offsets). One depth test = no seams between renderers by construction; any shape, any number of storeys, doors and interiors are just triangles. Passes B-F are kept and read the same textures.
-2. **The camera model stays the y-shear camera** (4: `row = horizonRow - (h - eyeZ)/d * planeDistY`, `d` = perpendicular distance). It is a projective map, so it is one 4x4 matrix (27.5); the rasteriser reproduces today's cell rays at every sub-sample centre exactly, horizons line up at every pitch, `cellRayP()` (light pass, 14.3 item 1) and `projectSprite` keep working unchanged. **Do not** switch to a rotated-pitch perspective camera "because meshes allow it": every downstream pass and the sprite/UI projection assume the shear formula.
+2. **The camera model stays the y-shear camera** (4: `row = horizonRow - (h - eyeZ)/d * planeDistY`, `d` = perpendicular distance). It is a projective map, so it is one 4x4 matrix (27.5); the rasteriser reproduces today's cell rays at every sub-sample centre exactly, horizons line up at every pitch, `cellRayP()` (light pass, 14.3 item 1) and `projectSprite` keep working unchanged. **Do not** switch to a rotated-pitch perspective camera "because meshes allow it": every downstream pass and the sprite/UI projection assume the shear formula. **Superseded for `renderer:'mesh'` by D-029 Amendment 2 (2026-09-30):** the pitched camera (28.1) is the mesh default, first person included; shear stays for `renderer:'dda'` and the dda-vs-mesh parity poses until ME-19 deletes it.
 3. **Existing content is converted at load, not migrated.** Level grids -> quads (`levelMesh.js`, 27.4), the terrain band/far grid -> chunk meshes (`terrainMesh.js`), voxel `ModelDef` -> greedy-meshed parts (`voxelMesh.js`). Level/world/vox/chunk files, the recipe, the editor's document model and the physics grid queries do not change in phase 1. New content (any-shape buildings) arrives in phase 3 as glTF -> `mesh.json`.
 4. **The JS twin stays the oracle (D-017).** `engine/mesh/rasterJS.js` rasterises the same draw list into `fb.gbuf` at `cpuGrid`; `?gpucompare=1` compares it with the GPU as today. Rasteriser conventions are pinned (27.7) so the two agree everywhere except on cells the metric already excludes (4-neighbour kind edges).
 5. **G-buffer v3: `GI` becomes RGBA32UI** (`z` = octahedral-packed normal, `w` = objectId), so `aoD` is an AO distance for every kind again and `face 7` means "read the normal from `GI.z`". Terrain and rotated model parts stop overloading `GA.w`. Every reader keeps its `.xy` reads; only `light.frag`/`shade.frag`'s two `unpackNormalOct(GA.w)` sites move to `GI.z`.
@@ -2260,6 +2260,7 @@ z_clip = (d * (F + N) - 2 F N) / (F - N),  w_clip = d          // N = 0.05 m, F 
 `shearProjection(cam, cols, rows, out16)` builds M = P * V from these; `unprojectCell(cam, col, row, dist, out)` is the inverse and **must equal `cellRayP`** (test: 1000 random (cell, dist) -> project(unproject) round-trips within 1e-9 cells; `rasterJS` uses the same matrix). Sub-sample grid: the viewport is `cols*n x rows*n`; pixel centre `(i+0.5)/n` = the 14.2 offsets by construction. Near plane: anything closer than 5 cm to the camera plane is clipped (today's rays start at the eye); capsule radius 0.3 m keeps walls out of that band; the far-plane check replaces `FOG_FULL` marching caps.
 Depth precision: 24-bit with N = 0.05 gives ~1 cm at 30 m, ~12 cm at 100 m, ~3 m at 1500 m. Coplanar quads never happen within one mesh by construction (a cell has one floor); far terrain under the near band is excluded from the far index buffer (26.3-style), not depth-fought. If z-fighting shows up in phase 1 between a placed mesh and terrain, use polygon offset on terrain only (1 unit), never per-object hacks.
 **Amended by 27.15.0 items 1 and 8:** engine row convention (cell rows sample at `row`, not `row + 0.5`) gives `y_clip = (d*tan(pitch) - h) * (2 planeDistY/rows) + d/rows` with no viewport flip, and `shearProjection` takes grid terms (cell aspect), not `(cols, rows)`.
+**Amended by D-029 Amendment 2 (2026-09-30):** this shear model is the `renderer:'dda'` camera and the parity-pose camera only; `renderer:'mesh'` defaults to the pitched camera (28.1). ME-19 deletes this section's code (28.1 "ME-19 deletes").
 
 ### 27.6 Frames, transforms, draw list (uses `transform.js`, D-028)
 
@@ -2813,7 +2814,7 @@ Do not: serialise colliders or BVHs, rebuild a BVH per step, let `rigid.js`/play
 
 ### 28.1 RE-01 + RE-02 pitched camera (`cam.projection: 'pitched'`)
 
-Amends 27.1 item 2 / 27.5 for this mode only: a real rotated view matrix, mesh path only. `'shear'` (default) stays bit-identical. PC-B may do **RE-01** (pure math + tests, cross-track, ends in `arch-review`); **RE-02** (GPU pipeline, shaders) is PC-A.
+Amends 27.1 item 2 / 27.5: a real rotated view matrix, mesh path only. `'shear'` stays bit-identical. **D-029 Amendment 2 (2026-09-30): pitched is the general camera and the default on `renderer:'mesh'`, first person included** (see "Amendment 2" at the end of 28.1); RE-02 is split into RE-02a/RE-02b. PC-B may do **RE-01** (pure math + tests, cross-track, ends in `arch-review`); **RE-02** (GPU pipeline, shaders) is PC-A.
 
 **Camera fields.** `cam = {x, y, z, yawDeg, pitchDeg, projection?: 'shear'|'pitched', vfovDeg?}`. `pitchDeg` keeps the engine sign (**positive = up**, as `horizonRow` in `projTerms`); an RTS down-look is `pitchDeg = -58`. Backlog ACs saying "pitch 55/58/60" mean -55/-58/-60. Pitched range `-89 <= pitchDeg <= 89`, else throw. `vfovDeg` default `PROJ_PITCHED_VFOV_DEG = 36` (at -58 the top/bottom ground-scale ratio is ~1.51; at 40 deg it is 1.59, too close to the 1.6 AC).
 
@@ -2865,6 +2866,18 @@ Integer cell of a projected point: `floor(col+0.5)`, `floor(row+0.5)`. Mouse -> 
 **RE-01 tests** (`engine/render/projection.pitched.test.js` + a `culling.test.js` case): (1) `worldToCell(unprojectPitched(col,row,vd))` round trip, 1000 seeded random `(col,row,vd in [1,200])` at -55/-58/-60, error <= 1e-9 cells, and `projectPoint(M)` pixel = `n*(col+0.5), n*(row+0.5)` within 1e-9; (2) existing `projection.test.js` unchanged and passing; (3) pitch-0 parity against `shearProjection` (above); (4) at -58, default vfov, 400x150, `pxCellW:1, pxCellH:2`: `screenRay` hits on z = 0 at the centre column for row 0 and row `rows-1`; metres per column ratio top/bottom <= 1.6; (5) 64-box fixture: no box with a visible corner (`worldToCell` inside the grid, vd > PROJ_NEAR) is `CULL_OUT`; (6) basis orthonormal within 1e-12; (7) zero alloc: 10k `screenRay` + `worldToCell` calls with reused outs, `--expose-gc` heap delta < 64 KB (skip when gc is not exposed). Test RNG: a local seeded LCG, never `Math.random`.
 
 **RE-02 (PC-A) rules.** `cam.projection === 'pitched'` with `renderer !== 'mesh'` throws `Error("cam.projection 'pitched' requires renderer 'mesh'")` at the render entry (DDA, voxel march and the CPU caster only know shear). Raster: uniform `M` only. SDEPTH stores `vd`. Light, shade, fog and sky rebuild P with GLSL `cellRayPitched(cell, grid, eye, F, R, U, tanHalf, vd)` in `glsl/common.js`, the literal twin of `unprojectPitched` (same expression order; parity through `rasterJS` + the JS shade twin); an int uniform `uProjMode` selects shear/pitched (no shader permutation). Sky per cell uses the `screenRay` direction. `projectSprite` uses `worldToCell`. Sun shadow box centred on the focus point. Edge, deriv and resolve compare depths only: unchanged.
+
+**Amendment 2 (D-029 A2, 2026-09-30): one camera model on mesh.** Split: **RE-02a** = the pipeline renders a pitched `cam` correctly (explicit `projection:'pitched'`, RTS poses); **RE-02b** = first person on pitched + pitched becomes the mesh default. Rules:
+1. **Default resolution, one place.** `projection.js` adds `resolveProjection(cam, renderer)` -> `cam.projection ?? (renderer === 'mesh' ? 'pitched' : 'shear')` (02b; until 02b it returns `cam.projection ?? 'shear'`). Every consumer (pipeline entry, `compositor.js` mesh twin, `sprites.js`, `pick.js` callers, `instanceRect`/`VoxelPool.project`) calls it; nobody tests `cam.projection` directly. `'pitched'` + `'dda'` still throws.
+2. **Every shear-term reader on the mesh path gets a pitched branch (02a).** Known readers: `GpuCellPipeline` uniforms `uHorizonRow/uPlaneDistY` (light/shade/fog/sky, via `uProjMode` + `cellRayPitched`), `compositor.js` (`projTerms` for the JS twin), `sprites.js` (`projectSprite`, `feetRow`), `engine/voxel/instanceRect.js` + `VoxelPool.project` (screen rect cull: on pitched, project the 8 AABB corners with `worldToCell`; any corner with `vd <= PROJ_NEAR` -> full-screen rect, the frustum cull decides), `lighting.js` CPU sky rows (twin only). `stable.js` is not wired: it throws on pitched until its GPU pass lands. `culling.js`, `rasterJS` (M only), edge/deriv/resolve: no change.
+3. **Fog distance** in both modes = horizontal forward distance `max(0, dot(P - eye, (fx, fy, 0)))` = the shear `d`. Fog therefore does not swim when the player looks up/down, and pitch-0 pitched == shear. Sky per cell = `screenRay` direction (02a).
+4. **Sun shadow box:** centred on `cam.focusX/Y/Z` when set (02a adds the three fields to what `rtsCamera.update` writes), else today's first-person rule unchanged.
+5. **First-person vfov (02b):** when `cam.vfovDeg` is unset and the camera is first person, `vfovDeg = 2*atan(tan(PROJ_HFOV_DEG/2)/aspect)` (the pitch-0 parity anchor above), so the mesh first-person view at pitch 0 equals today's shear view and the hfov stays 75 deg on every aspect. `PROJ_PITCHED_VFOV_DEG = 36` stays the RTS default (rtsCamera sets it explicitly). Helper `fpVfovDeg(grid)` in `projection.js`. Near plane `PROJ_NEAR = 0.05` for both (perpendicular to `F`; the capsule radius keeps walls > 5 cm at any pitch).
+6. **Pitch clamp (02b):** `Camera.clampPitch` / `PlayerLook` take an option `pitchClampDeg` (default 35 = shear); main.js passes `PITCH_CLAMP_PITCHED_DEG = 70` (exported from `projection.js`) when the resolved projection is pitched. The shear clamp stays 35 (the shear image degrades beyond it). Clamp is presentation/look input; the sim transform just stores the clamped value (saves unchanged).
+7. **Rays from the look direction (02b):** any game/engine code that turns yaw+pitch into a 3D ray (aim, look-at interaction, debug pick) uses `screenRay(terms, cols/2 - 0.5, rows/2, out)` on the resolved projection; interaction **cells** stay yaw-only content lookups (27.1 item 7). Programmer greps `pitchDeg` under `game/js` and `engine/entities|physics` and lists each site in the review note.
+8. **gpucompare.** Existing poses (dda-vs-mesh parity and existing mesh poses) set `projection:'shear'` explicitly in 02b, so their results are unchanged until ME-19. New mesh-only pitched poses compare GPU vs the `rasterJS` + JS shade twin (same projection) at the 27.7 item 2 bars (kind >= 99.5 % excl. 4-neighbour edges, glyph >= 99 %, fg/bg +-4, depth 1 %): 02a `rtsHill55/58/60` (hillside, focus-driven eye); 02b `fpLevel0` (pitch 0; additionally vs the same pose in shear at the same bars - the anchor), `fpUp30`, `fpDown60` (beyond the shear clamp), `fpTowerDown45` (interior, walls lean).
+9. **ME-19 deletes the shear camera:** `shearProjection`, `projTerms` shear fields, `unprojectCell`, GLSL `cellRayP` + `uHorizonRow/uPlaneDistY/uProjMode`, the shear branches of `sprites.js`/`instanceRect.js`/`VoxelPool`/`compositor.js`/`lighting.js` sky/`stable.js`, the `'shear'` value and `resolveProjection`'s fallback, the 35-deg clamp; parity poses switch to pitched; 27.5 marked historical.
+10. **Do not:** add a shader permutation per mode; normalise `dir` (the forward component must stay 1 so `vd` is the ray distance); read `cam.pitchDeg` for projection anywhere outside `projection.js` on the mesh path.
 
 **RE-03 `engine/core/rtsCamera.js`** (presentation, not sim: may use `Math.exp` and frame `dt`; may import `engine/render/projection.js`, a leaf with no imports, and `engine/core/transform.js`). State `{focusX, focusY, zoom}`; options `{yawDeg=0, pitchDeg=-58, vfovDeg, widthM=30, zoomMin=25/30, zoomMax=35/30, bounds:{x0,y0,x1,y1}, panSpeed (m/s at zoom 1), edgePx, heightFn}`. `update(dt, input, grid, cam)`: pan by `panSpeed*zoom*dt` (keys, edge) or drag (exact ground delta of two `screenRay` hits on the plane z = focus z); clamp focus to `bounds`; `dist = widthM*zoom/(2*tanHalfX)` (tanHalfX from the current grid, so the ground width at the centre row is `widthM*zoom` by construction); focus z = `heightFn(focusX, focusY)` smoothed by `1-exp(-k*dt)`; `pitchedEyeFromFocus` writes the eye into `cam` in place and sets `projection`, `yawDeg`, `pitchDeg`, `vfovDeg`. Zero alloc per update.
 
@@ -2923,6 +2936,11 @@ Perf asserts are warn-only unless `PERF_STRICT=1`.
 - **RE-10** (in `NavGrid.test.js`): block + unblock restores `cost`/`blockCount` byte-equal; overlapping footprints; `saveBlockers`/`loadBlockers` round trip; `version` and dirty ring; `pathCrossesRect` true/false fixtures.
 
 **Do not:** import render, mesh or World into nav; store world objects or closures in NavGrid; run per-unit A* for large group moves (use the flow field); emit callback events from nav; sample `groundAt` for walkability.
+
+**Amendments (architect review, 2026-09-30, RE-09/RE-10 batch):**
+- RE-09 deviations accepted as the spec: (1) flow-follow slows on arrival through `ff.integ`; (2) `idleSepW` applies only when a stopped agent pushes a moving one; two stopped agents use full `sepW`. The no-tunnelling check runs once per `step()`.
+- RE-10: the owner-slot `Map` is fine (placement-time only, never iterated in the sim). Slot numbers depend on history, so any `NavGrid.hashInto` hashes `blockCount`/`cost`, never slots (RE-14b).
+- **Known limit (lockstep):** `NavGrid.buildFromWorld` samples analytic terrain (`Math.exp/pow/hypot`, a `Math.cos` slope threshold), so the grid can differ between JS engines. Single-machine replay is unaffected. Before networked lockstep, walkability comes from content-baked/saved arrays, or peers exchange a grid hash at start.
 
 ### 28.3 Fog of war: RE-11 visibility grid (PC-B, pure JS) + RE-12 shading (PC-A, GLSL)
 
@@ -3161,3 +3179,163 @@ Goal: N copies of one voxel model = one instanced draw per part, both twins. ME-
 - allocate per frame (views, closures, `{}` in the loop);
 - change the numbers of the existing 34 gpucompare poses or widen any threshold;
 - route units through VoxelPool (`MAX_SPRITES`/16-slot limits).
+
+**Amendments (architect first review, 2026-09-30, ARCH OK):**
+- Engine fields added by the implementation (kept): `engine.attachMaterialTable(table)`, `engine.teamSpec`, `engine.matTable`, so `setTeamMaterials` survives every `bindShading` rebuild. `writeUnitInstance` masks team `& 7` (MAX_TEAMS).
+- **AC3 re-baselined:** raster-pass p50 delta +<= 1.5 ms for 200 levers on screen at 400x150 on the Intel iGPU (measured +0.9..1.5). Measure the raster pass with units on screen (ground/walk views), not total GPU p95 (noise floor ~0.3 ms). The +0.5 ms figure assumed a faster vertex path: the lever is 354 tris = 1062 unrolled 64 B verts, so 200 units = 13.6 MB vertex fetch per frame with no reuse. Fix = RE-06b (index buffer + 32 B voxel vertex, note 28.7 before dev), AC -50 % raster delta.
+
+### 28.7 RE-06b voxel vertex format + index buffer (normative; architect, 2026-09-30; PC-A)
+
+Goal: cut vertex traffic of both voxel raster paths (ME-08 `DRAW_VOXEL` and RE-06 `DRAW_INSTANCED`) from 6 x 64 B per greedy quad to 4 x 32 B + 6 indices, without touching `MeshData`, rasterJS or the level/terrain paths. Lever: 177 quads = 1062 x 64 B (68 KB) -> 708 x 32 B (22.7 KB) + 2.1 KB u16 indices; 200 units ~4.5 MB/frame (was 13.6 MB) and 4 VS invocations per quad with index reuse (was 6).
+
+**Facts verified in `voxelMesh.js` (`emitFaceQuad`)**
+- Every voxel triangle comes from `StaticMeshBuilder.addQuad`: quad q = unrolled verts `6q..6q+5` = corners `(0,1,2,0,2,3)`, so vert `6q+3 == 6q+0` and `6q+4 == 6q+2` on every field. Ranges start on quad boundaries (`beginRange` per part between quads).
+- `aux8 = [0, AO_NONE(=0), 0, 0, 0, 0, 0, 0]` on every voxel vertex: aux is **constant zero for the whole mesh**, not just per part. No uniform needed.
+- nrm/flat are per quad; pos/uv are per corner (uv = box-local cell index * cellM, f32).
+
+**Decisions**
+1. **MeshData unchanged** (`layout: 'static'`, unrolled, `idx: null`). The 32 B + index form is a GPU-side encoding only, derived at upload. Reason: rasterJS, meshCollide, serialization and `validateMesh` keep one format; the twin cannot drift.
+2. **32 B voxel vertex** = the first 32 B of the static vertex, same offsets: `pos f32x3 @0, uv f32x2 @12, nrm u32 @20, flat u32x2 @24`, stride 32. f32 uv (not f16/u16): 12+8+4+8 = 32 already, and f32 keeps uv bit-identical to the twin. Export `VOXEL_STRIDE_BYTES = 32`, `VOXEL_VERTEX_LAYOUT` (locations 0-3, same names as `STATIC_VERTEX_LAYOUT[0..3]`) from `MeshBuffers.js`.
+3. **aux = generic vertex attribute constants.** Locations 4/5 stay declared in both existing programs; on the voxel VAOs their arrays are **disabled** and the pipeline sets `gl.vertexAttrib4f(4, 0,0,0,0)` and `(5, 0,0,0,0)` once per frame before the first voxel loop (context state; the static VAO keeps 4/5 enabled so it is unaffected). **No shader change, no new program**: `progMesh` draws ME-08 voxels, `progMeshInst` draws units, both as today. `mesh.vert.js`/`mesh.frag.js`/`glsl.test.js` stay byte-identical.
+4. **Index buffer per voxel mesh, pattern `4q + (0,1,2,0,2,3)`** = the exact unrolled triangle order and diagonal, so GPU primitive order == rasterJS triangle order by construction. Type: `Uint16Array` when `4 * quads <= 65536`, else `Uint32Array` (WebGL2 has no base-vertex, so the whole mesh shares one index space). Ranges map 1:1 (triangle units): `drawElements(TRIANGLES, range.count*3, type, range.start*3*idx.BYTES_PER_ELEMENT)`; units: `drawElementsInstanced(..., n)`.
+5. **Encoder** `buildVoxelVertexData(mesh) -> {vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount}` in `MeshBuffers.js`, build-time only (may allocate). It **validates** and throws with `mesh.id` if: layout not static, `triCount` odd, any quad's verts 3/4 differ bitwise from 0/2 (compare via `Uint32Array` views of pos/uv), any aux value != 0. That keeps a future voxelMesh AO/uv change from silently rendering wrong.
+6. **`MeshBuffers.getVoxel(mesh) -> {vertexBuffer, indexBuffer, indexType: 'u16'|'u32', vertexCount, indexCount}`**: own `Map` (`voxelCache`), same `id + meshVersion` invalidation and dispose-on-replace as `get()`; `dispose()` frees both maps. `get()` and `buildStaticVertexData` are not edited (level structures, glTF, terrain unchanged).
+7. **Pipeline (`_passRaster`)**: new `_meshVoxVao` (attribs 0-3 enabled, 4/5 disabled) for the ME-08 loop, which now does `useProgram(progMesh)` again + `bindVertexArray(_meshVoxVao)`; `_meshInstVao` gets 0-3 from `VOXEL_VERTEX_LAYOUT` and 4/5 disabled (6-9 unchanged). Per mesh: bind its VBO, set the 4 pointers with stride 32, bind `ELEMENT_ARRAY_BUFFER` (VAO state: bind it only while the voxel VAO is bound). Map `indexType` to the GL enum once per mesh, not per part. Delete `_meshVoxVao` in `dispose`. Stats unchanged (`voxelDraws`, `instancedDraws`, `instances`).
+8. **Both voxel paths switch**; `DRAW_STATIC` and `DRAW_TERRAIN` loops untouched. The ME-08 loop keeps its per-part uniforms; nothing else moves.
+
+**rasterJS twin:** no change. It keeps walking the unrolled `MeshData` in triangle order; the GPU index pattern reproduces that order and the same vertex values, so parity is structural. The Node test below proves the encoding round-trips.
+
+**Zero alloc:** `getVoxel` is a Map hit after warm-up; no views, closures or `{}` in the loops; indexed `for` over `VOXEL_VERTEX_LAYOUT` (no `for...of` in the new code).
+
+**Node tests**
+1. `MeshBuffers.test.js` (extend): for the lever + one multi-part model from `packVoxelModel` + `buildVoxelMesh`, decode `buildVoxelVertexData` (index -> 32 B verts) back to an unrolled triangle list and compare **bitwise** with `mesh.pos/uv/nrm/flat` per triangle, in order; indexType u16 for the lever, u32 path via a synthetic mesh with > 16384 quads; each range's byte offset/count; validator throws on a non-quad mesh, non-zero aux, odd triCount; `getVoxel` caches by id+meshVersion, re-uploads on a bump, disposes both buffers on the mock device; existing static tests unchanged and green.
+2. `glsl.test.js`, `rasterJS.test.js`, `DrawList.test.js`, `instances.test.js`: unchanged and green (proves no shader/twin change).
+3. `node tools/run-tests.mjs` + `check-deps.mjs` green.
+
+**Parity + bench (main session):** gpucompare mesh 35/35 and dda 34/34 with **the same numbers** as the RE-06 captures (`2026-09-30-e9d8ac1-gpucompare-*`); `?bench=1&units=200` vs `units=0`, same views as RE-06, raster-pass p50 delta <= 0.65 ms (RE-06: ~1.3 ms, i.e. >= 50 % lower). If the delta lands at 35-50 %, stop and ASK ARCHITECT with the per-view numbers (next levers: u8/u16 pos, per-quad flat via instancing-free `gl_VertexID/4` lookup) - no ad hoc shader tuning.
+
+**Estimate:** ~1 d, one story. If it overruns, split at the natural seam: RE-06b1 = encoder + `getVoxel` + test 1 (Node only); RE-06b2 = pipeline VAOs/loops + gpucompare + bench.
+
+**Do not:**
+- change `MeshData`, `StaticMeshBuilder`, `voxelMesh.js` output, `buildStaticVertexData`, `STATIC_VERTEX_LAYOUT` or `get()`;
+- edit `mesh.vert.js`/`mesh.frag.js` or add a program variant (generic attributes cover aux);
+- reorder triangles, flip the quad diagonal or dedupe vertices across quads (would break twin order and flat data);
+- use f16/u16 uv (not needed for 32 B; loses bit parity);
+- bind `ELEMENT_ARRAY_BUFFER` with the static or terrain VAO bound (it is VAO state);
+- route level structures or glTF meshes through `getVoxel`;
+- widen any gpucompare threshold or change the existing poses.
+
+**Amendment 1 (architect, 2026-09-30, after the RE-06b review).** Measured: fetch -67 % and VS invocations -33 % gave no raster change (units delta 0.91 -> 0.88 ms at 400x150). Probe at 200x75 (1/4 pixels, same views): delta 1.09-1.17 ms, i.e. **resolution-independent**, so it is not fragment/MRT fill or overdraw either. The cost is per primitive: 200 x 354 tris = 71k tris, all rasterized (`CULL_FACE` off, 27.15.2) with ~16 flat varyings each, on an Intel iGPU front end (~65 Mtri/s effective here). Consequences: (1) no more vertex-format work; front-to-back sort or a depth pre-pass do not help (fill is not the cost). (2) Levers the next cost down: back-face culling for the two voxel paths (greedy voxel meshes are closed; halves primitives; needs the rasterJS twin to cull the same way, so a paired twin change + gpucompare) -> row RE-06c; then triangle count per unit via LOD / distance culling in RE-15. (3) The `?units` harness (1 m grid, 5 m from the eye) is a worst case for triangle size, not for count; the RTS camera sees the same count, so keep it as the stress view. RE-06b AC1 is re-baselined to "no regression vs RE-06 (raster delta <= RE-06 AC3's +1.5 ms)"; the -50 % goal moves to RE-06c + RE-15.
+
+### 28.8 RTS-01 spike layout `game/js/rts/` (normative for the spike; architect, 2026-09-30; PC-A)
+
+28.1-28.6 cover the engine side. This note fixes the game-side shape so the spike code can grow into the real RTS instead of being thrown away. Spike only: no new engine code (gaps -> RE rows).
+
+**Prerequisites (engine, must be done first):** RE-02 (pitched raster on the mesh renderer), RE-03 fixes, RE-EXP (exports `pick.js`, `createSteer`, `createFlowField`, the pitched projection API), RE-07 (screen rect + ground rings) for a5/a6. RE-06b is not a prerequisite (see the RTS-01 b5 note).
+
+**Layout** (game imports only `engine/index.js`; `sim/` never imports `ui/`, `ui/` reads sim state read-only):
+- `game/rts-test.html` + `game/js/rts/rtsMain.js`: bootstrap (AssetRegistry via the main.js export, `World.load(world_m1)`, `?renderer=mesh`, `?n=`, `?grid=`), owns the `Loop`.
+- `sim/units.js`: `createUnits(max)` SoA, Float64Array `x, y, prevX, prevY, tx, ty`; Uint8Array `team, state` (0 idle, 1 moving); Int32Array `pathOff, pathLen, pathPos` into one preallocated `Int32Array` path pool. Unit id = steer slot = instance index source. No z, no yaw in sim.
+- `sim/orders.js`: applies `commands.js` entries due at `q.tick` (`MOVE`: ids + target x,y). Group move: one `findPath` from the group centroid, per-unit target = target + formation offset (ring slots by ascending id); groups > 12 units use one flow field (28.2 "no per-unit A* for large groups"). A* expansions capped per tick (28.2).
+- `sim/tick.js`: `simStep(state)` = copy x,y -> prev, apply orders, `steer.step(STEP, grid)`, copy steer x,y back, arrival -> idle. Fixed step only.
+- `sim/navSetup.js`: `NavGrid.buildFromWorld(world, {maxSlopeDeg: 30})` at load, tower footprint via `blockWorldRect`. Load-time only.
+- `ui/input.js`: mouse/keys -> `updateRtsCamera`, selection, `q.issue(1, MOVE, ids, n, x, y, 0)` (inputDelay 0). Never writes sim arrays.
+- `ui/select.js`: pure selection rules (own team, box ids ascending, shift-add, clear) on plain arrays; a7 test lives here (`select.test.js`).
+- `ui/unitsView.js`: per rendered frame, interpolated `x = prev + (cur-prev)*alpha`, z = `world.supportAt` (terrain height), **yaw smoothing here** (render-side, 28.2: atan2 is not sim math), writes `writeUnitInstance` into 2 `engine.instances` groups (one per team), `count` = team size. Zero alloc.
+- `ui/hud.js`: F3 lines (b6) + how-to-play text (b8).
+
+**Placeholder unit model:** a `.vox`-free voxel model object built in `game/js/rts/unitModel.js` (2 parts: body + head/weapon, one `team.a` slot on >= 40 % of the visible faces), registered with the same registry path `?units=N` uses; team materials via `engine.setTeamMaterials`. It moves to `design/` when the designer takes over.
+
+**Determinism (check-deps rule 15, already scoped to `game/js/rts/sim/`):** 0 warnings in `sim/`. Iterate by id, never over Map/Set. Seeded placement uses `rng.js`. Sim reads no DOM, camera or frame dt. The hash/replay are not wired for the spike, but every sim module keeps its state in typed arrays so `hashInto` can be added later without restructuring.
+
+**Timing:** F3 `sim ms` = sum of `simStep` calls in the frame (profiler section), `JS ms` includes it. Units view + instance writes <= 0.1 ms for 200.
+
+**Do not:** put unit logic in `engine/`; call `performance.now`/`Math.random`/trig in `sim/`; allocate per step or frame (ids scratch preallocated); path every unit separately for a 60-unit group; read `groundAt` for sim decisions.
+
+### 28.9 RE-07 selection overlay layer `engine/ui/overlay.js` (normative; architect, 2026-09-30; PC-A)
+
+Goal: world-anchored RTS marks (ground rings, health-bar rows, box-select rect, move marker), depth-tested against the scene, the same cells on the GPU and CPU paths, on `'pitched'` and `'shear'`.
+
+**Decisions**
+1. **Ops are rasterised in JS into a scene-grid overlay layer; only the depth-tested composite runs per path.** Both paths share the op rasteriser, so which cells get a glyph is decided by construction. The only per-path code is the per-cell compare `ref <= sceneDepth + bias`: GLSL on GPU, JS on CPU. There is no GPU geometry pass, and no ops are uploaded to shaders.
+2. **Frame position (both twins):** surfaces -> edge -> sprites (pass F, incl. fade/dim) -> **overlay** -> present (scene, then UI layer 17.2). Overlay marks are not faded or dimmed: they are UI, and RTS has no fade. On the CPU path the composite runs right after `applySceneFade` (main.js / the rts-test bootstrap). On the GPU path it is a new `RenderTargetGL.setOverlayPass(fn)` hook, run after the sprite-pass hook and before the draw.
+3. **Projection = the frame's raster matrix.** `overlay.flush(cam, cols, rows)` builds M in its own scratch `Float64Array(16)` with the call the mesh raster uses. If two build sites exist, one helper `frameMatrix(cam, grid, out16)` goes into `projection.js`, using `resolveProjection` (28.1 A2 item 1). Then `projectPoint(M, cols, rows, x, y, z, out4)` gives `cell = floor(out4[0]), floor(out4[1])` and `ref = out4[3]` (= w = pitched `vd` / shear `d` = the DEPTH/SDEPTH value of that camera, as `projectSprite.depth`). Points with `w <= PROJ_NEAR` are skipped. Shear and pitched are the same code.
+4. **Depth test:** pass iff `ref <= sceneDepth + max(OVL_BIAS_M = 0.25, OVL_BIAS_REL = 0.01 * ref)`. Sky/horizon depth (+Inf / `HORIZON_DEPTH`) always passes. Scene depth = the resolved per-cell DEPTH: GPU `pipeline.texDepth` (decode as `sprites.frag.js depthAt`), CPU `fb.depth.depth` after the pitched fog-scale restore (`scaleDepthForShade(..., false)` in compositor). `ref = 0` means "no depth test" (screen-space ops). Units occlude the back half of their own ring through the unit's raster depth (28.6 `zBase` does not matter here: DEPTH is the view depth, not the G-buffer z). A ring behind the tower or terrain fails the test.
+5. **Layer storage** (scene grid, rebuilt on `grid:changed` like `engine.ui`): `ovl Uint8Array(4n)` = (r, g, b, glyphIdx) and `ovlZ Float32Array(n)` = ref. **glyphIdx 0 (space) = empty cell** (sentinel; a space op is meaningless). Write rule when two ops hit a cell: empty, or `ref == 0` (screen op wins), or `newRef < cellRef`; ties go to the first op written. Clearing uses a touched-index list (`Int32Array(OVL_MAX_TOUCHED = 16384)`), not a full fill.
+6. **Composite writes glyph + fg only.** The scene bg stays, so the ring reads as marks on the ground. CPU: direct writes into the scene `CellBuffer` glyph/fg arrays; `mask` is untouched (not `setCellRGB`, which sets mask = 1). GPU: `engine/render/gpu/overlayPass.js` = a fullscreen triangle into an FBO with **only `rt.fgTex`** attached. It reads `uOvl` (RGBA8) + `uOvlZ` (R32F) + `uDepth` and `discard`s empty or depth-failed cells. There is no read of fg/bg, so no edge copy is needed (unlike pass F). Upload: `texSubImage2D` of the dirty row span (union of this frame's and last frame's touched rows). The pass and the upload are skipped when both frames had no ops.
+7. **Styles are data, not engine colours.** `overlay.setStyles(styles)`: `{key: {glyph: 'o' | glyphs: 4-char string (by segment slope: horizontal, vertical, down-right, up-right, e.g. "-|\/"), fg: [r,g,b], empty?: {glyph, fg}}}`. The game passes them from design (`uiStyle.overlay`, keys e.g. `select`, `hover`, `barFill`, `barEmpty`, `box`, `marker`; programmer placeholders until the designer sets them). `overlay.styleId(key) -> int` is called once at load and throws on an unknown key. Per-frame ops take the int, never a string. The engine has no default colours.
+
+**API** (`engine/ui/overlay.js`, exported via `engine/index.js`, `engine.overlay` created in `createEngine`):
+```js
+/** @typedef {Object} Overlay
+ * @property {(styles:Object)=>void} setStyles   @property {(key:string)=>number} styleId
+ * @property {()=>void} clear                                   // per frame, before the game records ops
+ * @property {(x:number,y:number,z:number,r:number,style:number)=>void} ring      // world circle at height z, 24 samples, cells joined by a DDA line, ref lerped per cell
+ * @property {(x:number,y:number,z:number,frac:number,width:number,style:number,emptyStyle:number)=>void} bar  // row of `width` cells centred on the projected point; round(frac*width) cells fill, rest empty; ref = the point's w
+ * @property {(c0:number,r0:number,c1:number,r1:number,style:number)=>void} rect  // screen cells, border only, normalises c0<=c1/r0<=r1, ref 0
+ * @property {(fn:((x:number,y:number)=>number)|null)=>void} setGroundFn        // optional: ring samples use z = fn(x,y) + OVL_RING_LIFT (0.05 m) so rings follow slopes
+ * @property {(cam:Object, cols:number, rows:number)=>void} flush              // engine-internal, once per rendered frame: rasterise ops -> ovl/ovlZ
+ * @property {{ops:number, dropped:number, cells:number}} stats
+ */
+export const OVL_MAX_OPS = 1024;   // op buffer Float64Array(OVL_MAX_OPS * 8): [type, style, a..f]
+```
+Capacity: 200 selected rings + 200 bars + hover + rect + markers < 1024. Overflow drops the op and counts `stats.dropped` (shown in F3); it does not throw, because UI must not crash a frame. `ring`/`bar`/`rect` only append numbers. All work happens in `flush`. Zero allocation after create.
+
+**Split (> 1 d):**
+- **RE-07a (Node, CPU twin, ~0.6 d):** `overlay.js` (ops, styles, rasteriser, touched list, `applyOverlay(overlay, cells, depth)` CPU composite), `engine.overlay` + grid rebind, CPU call site, `frameMatrix` helper if needed.
+- **RE-07b (GPU, ~0.5 d):** `overlayPass.js` + `setOverlayPass` hook + dirty-row upload + GPU parity + perf. RTS-01a needs both.
+
+**Tests.** 07a `engine/ui/overlay.test.js`:
+1. Ring on a flat depth fixture at pitch -58: every touched cell is 8-connected to the next (closed loop) and the ring is symmetric about the centre column within 1 cell.
+2. The ring hides where a synthetic wall depth is closer (> bias) and shows on open ground.
+3. Bar fill count at frac 0 / 0.5 / 1.
+4. Rect normalisation and border-only.
+5. Overlap rule (nearer wins, rect wins).
+6. Shear and pitched give the same cells for a pitch-0 pitched cam vs the shear cam (28.1 parity anchor).
+7. Unknown style throws; overflow counts `dropped`.
+8. Zero allocation over 1000 frames of 200 rings + 200 bars.
+9. Perf warn-only: 60 rings + 60 bars flush + composite <= 0.3 ms, 200 + 200 <= 0.6 ms (Node, 400x150).
+
+07b: gpucompare mesh-only pose `rtsOverlay` (rtsHill58, 30 rings incl. >= 5 behind the tower, 30 bars, 1 rect). It compares the fg glyph/colour after the overlay pass with the CPU composite applied to the JS twin's cells + depth. Bar:
+- identical on every overlay cell except depth-boundary cells (`|ref - sceneDepth - bias| < 1e-3 * ref`);
+- boundary cells <= 0.5 % of overlay cells;
+- existing poses unchanged (no ops, so the pass is skipped).
+
+GPU overlay pass <= 0.1 ms p95 at 400x150 (`?bench=1` pass timer, new `PASS_OVERLAY` slot).
+
+**Do not:**
+- hardcode colours/glyph choices in the engine;
+- use string keys in per-frame ops;
+- read `cam.pitchDeg` or build projection terms by hand (use M / `projection.js`);
+- test depth against `zBase`/G-buffer z;
+- set the scene `mask`;
+- alpha-blend;
+- add a shader permutation;
+- read and write `rt.fgTex` in one pass;
+- upload the full layer every frame;
+- put selection or team rules into `overlay.js` (game `ui/select.js`, 28.8).
+
+### 28.10 RE-06c back-face culling for voxel draws (normative; architect, 2026-09-30; PC-A)
+
+Background: 28.7 Amendment 1 (unit cost is per triangle; `CULL_FACE` off per 27.15.2).
+
+**Decisions**
+1. **Winding (verified in `voxelMesh.js emitFaceQuad`):** every face emits its corners clockwise seen from outside in world (x east, y south, z up). Example: U face `(xA,yA)->(xB,yA)->(xB,yB)`. The pipeline writes grid row r at window y = r with no viewport flip. So a front face has **positive** snapped screen area `A2 = (X1-X0)(Y2-Y0) - (Y1-Y0)(X2-X0)` in `rasterJS rasterFanTri`, which is GL CCW. GL state: `frontFace(CCW)` (set explicitly at init) + `cullFace(BACK)`. The programmer proves this with test 1 below before touching GL; if the sign comes out the other way, flip both twins together.
+2. **Scope:** `gl.enable(CULL_FACE)` right before the ME-08 voxel loop and `gl.disable` right after the RE-06 instanced loop (before terrain). `DRAW_STATIC` (level structures: open quads, seen from both sides) and `DRAW_TERRAIN` stay cull-none.
+3. **rasterJS twin:** `info.cullBack` is set for `DRAW_VOXEL` and `DRAW_INSTANCED` items only. In `rasterFanTri`, `if (A2 < 0 && info.cullBack) return;` goes **before** the existing swap. It uses the same snapped subpixel area the GPU uses, so slivers classify alike. It applies to fan triangles after clipping (the fan keeps the winding). The rule is the same on shear and pitched (it is purely screen-space).
+4. **Mirroring:** part matrices are rotation * positive `cellM` and instances are rigid (28.6: orthonormal, no scale), so det > 0 always. Test 3 asserts it. A future mirrored part needs a per-item front-face flip in both twins (not in this story).
+5. **Camera inside a voxel model:** inner faces are back faces, so they are culled and the model disappears from inside. This is accepted and identical on both twins. The first-person capsule keeps the eye out of entity models and RTS cameras never enter one.
+
+**Tests / ACs:**
+1. `rasterJS.test.js`:
+   - For the lever and a multi-part model, from 26 outside viewpoints (6 axes, 8 corners, 12 edges; shear + pitched): every triangle with `dot(n, eye - p) > 0` has `A2 > 0`.
+   - Culled output == unculled output bit-identical (kind/face/mat/planeId/depth/uv) for those viewpoints, instanced and `DRAW_VOXEL`.
+   - Rasterised triangle count ~halves (logged).
+2. Static/terrain items are never culled (fixture with an open quad seen from behind).
+3. det > 0 for every part at 3 poses of every registered model.
+4. **gpucompare: identical numbers on all poses** (mesh 39/39 on the current baseline incl. RE-02a poses, dda 34/34). Back faces of a closed mesh never win a pixel from outside. If a voxel pose differs, stop and report the differing cells (likely cause: greedy T-junction cracks) as ASK ARCHITECT. Do not widen any threshold.
+5. Bench `?bench=1&units=200` vs `units=0`, RE-06b views: raster-pass p50 delta <= 0.65 ms binding (RE-06b 0.88), goal <= 0.44. Culled triangles still cost vertex-shader and setup time. A miss is recorded, and RE-15 LOD takes the rest.
+
+Size 0.5 d, one step.
+
+**Do not:** cull level structures/terrain/glTF, cull in the vertex shader, flip the quad order in `voxelMesh.js`, or leave `CULL_FACE` enabled past the voxel loops (context state).

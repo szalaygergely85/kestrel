@@ -53,6 +53,7 @@ import { OpenSpans } from './OpenSpans.js';
 import { fastShade, fastShadeSky, primeFastShadeFrame } from './fastShade.js';
 import { packPlaneId, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from './GBuffer.js';
 import { clampByte } from '../core/math.js';
+import { createPitchedTerms, pitchedTerms, screenRay, resolveProjection } from './projection.js';
 
 // US-028: kind codes the G-buffer path writes at each of this module's
 // existing shading call sites (docs/backlog.md tech notes item 2/3). Only
@@ -1086,6 +1087,11 @@ export function castSectors(fb, level, cam, origin) {
   if (fb.gbuf) fb.gbuf.structSeq++;
 }
 
+// RE-02a: fillSky's pitched-branch scratch.
+const skyTerms = createPitchedTerms();
+const skyGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
+const skyRay = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
+
 /**
  * Paints whatever is still open in `fb.spans` with sky, exactly like
  * `castScene`'s old `skyFallback: true` did at column-end (same
@@ -1121,11 +1127,31 @@ export function fillSky(fb, cam) {
     depthBuffer: fb.depth, useReferenceShader: false,
   };
 
+  // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives
+  // azimuth and elevation (GLSL: `pitchedCellDir` in shade.frag.js's sky branch).
+  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  if (pitched) {
+    skyGrid.cols = cols; skyGrid.rows = rows; skyGrid.pxCellW = rt.pxCellW || 1; skyGrid.pxCellH = rt.pxCellH || 1;
+    pitchedTerms(cam, skyGrid, skyTerms);
+  }
+
   for (let x = 0; x < cols; x++) {
     const open = spans ? spans.isOpen(x) : true;
     if (!open) continue;
     const top = spans ? spans.top[x] : 0;
     const bottom = spans ? spans.bottom[x] : rows - 1;
+
+    if (pitched) {
+      for (let row = top; row <= bottom; row++) {
+        if (ctx.depthBuffer && ctx.depthBuffer.depth[row * cols + x] < Infinity) continue;
+        screenRay(skyTerms, x, row, skyRay);
+        const az = compassAzimuthDeg(skyRay.dx, skyRay.dy);
+        const el = Math.atan2(skyRay.dz, Math.hypot(skyRay.dx, skyRay.dy)) * 180 / Math.PI;
+        shadeSkyAndWrite(rt, x, row, ctx, az, el, 'fillsky');
+      }
+      if (spans) spans.close(x);
+      continue;
+    }
 
     const cameraX = (2 * (x + 0.5)) / cols - 1;
     const rayDirX = dirX + planeX * cameraX;

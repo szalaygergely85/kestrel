@@ -38,6 +38,23 @@ export function computeProjection(cam, rt, proj) {
   proj.planeDet = planeDet;
   proj.horizonRow = horizonRow; proj.planeDistY = planeDistY;
   proj.eyeX = cam.x; proj.eyeY = cam.y; proj.eyeZ = cam.z;
+  proj.pitched = false;
+  return proj;
+}
+
+/**
+ * RE-02a (28.1 A2 item 2): the pitched counterpart - copies the view basis out of a `PitchedTerms`
+ * (engine/render/projection.js; duck-typed here so engine/voxel imports nothing from render) so
+ * `instanceRect` projects the AABB corners with the `worldToCell` formula. Zero allocation.
+ */
+export function computeProjectionPitched(pt, proj) {
+  proj.cols = pt.cols; proj.rows = pt.rows;
+  proj.eyeX = pt.eyeX; proj.eyeY = pt.eyeY; proj.eyeZ = pt.eyeZ;
+  proj.fX = pt.fX; proj.fY = pt.fY; proj.fZ = pt.fZ;
+  proj.rX = pt.rX; proj.rY = pt.rY;
+  proj.uX = pt.uX; proj.uY = pt.uY; proj.uZ = pt.uZ;
+  proj.tanHalfX = pt.tanHalfX; proj.tanHalfY = pt.tanHalfY;
+  proj.pitched = true;
   return proj;
 }
 
@@ -95,7 +112,28 @@ export function instanceRect(proj, pm, inst, pose, partAABB, rect) {
   let minCol = 0, maxCol = cols - 1, minRow = 0, maxRow = rows - 1;
   let useFull = false;
   const planeDet = proj.planeDet;
-  if (planeDet !== 0) {
+  if (proj.pitched) {
+    // RE-02a: a real rotated camera. Any corner at view depth <= 0.05 -> full screen (the frustum
+    // cull decides); else the AABB's projection is the hull of its 8 corner projections.
+    let rMinCol = cols, rMaxCol = -1, rMinRow = rows, rMaxRow = -1;
+    for (let c = 0; c < 8; c++) {
+      const dx = ((c & 1) ? maxX : minX) - proj.eyeX, dy = ((c & 2) ? maxY : minY) - proj.eyeY, dz = ((c & 4) ? maxZ : minZ) - proj.eyeZ;
+      const vd = dx * proj.fX + dy * proj.fY + dz * proj.fZ;
+      if (vd <= 0.05) { useFull = true; break; }
+      const vx = dx * proj.rX + dy * proj.rY;
+      const vy = dx * proj.uX + dy * proj.uY + dz * proj.uZ;
+      const colF = (vx / vd / proj.tanHalfX + 1) * (cols / 2) - 0.5;
+      const rowF = (1 - vy / vd / proj.tanHalfY) * (rows / 2);
+      const c0 = Math.floor(colF) - 1, c1 = Math.ceil(colF) + 1;
+      const r0 = Math.floor(rowF) - 1, r1 = Math.ceil(rowF) + 1;
+      if (c0 < rMinCol) rMinCol = c0; if (c1 > rMaxCol) rMaxCol = c1;
+      if (r0 < rMinRow) rMinRow = r0; if (r1 > rMaxRow) rMaxRow = r1;
+    }
+    if (!useFull) {
+      minCol = Math.max(0, rMinCol); maxCol = Math.min(cols - 1, rMaxCol);
+      minRow = Math.max(0, rMinRow); maxRow = Math.min(rows - 1, rMaxRow);
+    }
+  } else if (planeDet !== 0) {
     let rMinCol = cols, rMaxCol = -1, rMinRow = rows, rMaxRow = -1;
     for (let c = 0; c < 8 && !useFull; c++) {
       const wx = (c & 1) ? maxX : minX, wy = (c & 2) ? maxY : minY, wz = (c & 4) ? maxZ : minZ;

@@ -20,7 +20,7 @@
 // simplification `lighting.js`'s JS reference makes with `world.sectorAt`
 // (see that file's module doc) - kept in sync by construction, not by
 // re-deriving the same "which structure" answer two different ways.
-import { GLSL_VERSION, PRECISION, GBUF_UNPACK, CELL_RAY, FALLOFF_FAST, OCT_NORMAL } from './common.js';
+import { GLSL_VERSION, PRECISION, GBUF_UNPACK, CELL_RAY, PITCH_UNIFORMS, CELL_RAY_PITCHED, FALLOFF_FAST, OCT_NORMAL } from './common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
@@ -82,6 +82,8 @@ const float VIS_FLOOR_EPS = 1e-3;
 
 ${GBUF_UNPACK}
 ${CELL_RAY}
+${PITCH_UNIFORMS}
+${CELL_RAY_PITCHED}
 ${FALLOFF_FAST}
 ${OCT_NORMAL}
 
@@ -215,7 +217,13 @@ void main() {
     return;
   }
   float dist = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
-  vec3 P = cellRayP(vec2(cell), uGrid, uPosX, uPosY, uEyeH, uDirX, uDirY, uPlaneX, uPlaneY, uHorizonRow, uPlaneDistY, dist);
+  vec3 P;
+  if (uProjMode == 0) {
+    P = cellRayP(vec2(cell), uGrid, uPosX, uPosY, uEyeH, uDirX, uDirY, uPlaneX, uPlaneY, uHorizonRow, uPlaneDistY, dist);
+  } else {
+    // RE-02a: pitched camera (28.1 A2); dist is the view depth vd.
+    P = cellRayPitched(vec2(cell), uGrid, vec3(uPosX, uPosY, uEyeH), uPitchA.xyz, uPitchB.xy, vec3(uPitchB.zw, uPitchC.x), vec2(uPitchA.w, uPitchC.y), dist);
+  }
   uint faceU = giFace(gi.y);
   // US-041a (15.3 item 3): the only light-pass change - face 7 (a rotated
   // voxel-model part) has no fixed axis normal; decode it from GA.w's

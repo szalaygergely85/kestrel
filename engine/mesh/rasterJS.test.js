@@ -563,6 +563,145 @@ const { assets } = await loadTestAssets();
   ok('rasterDrawList: no significant heap growth over 200 tower frames (--expose-gc)', grew < 64 * 1024, `grew by ${grew} bytes`);
 }
 
+
+// ---------------------------------------------------------------------------
+// 9. RE-06 DRAW_INSTANCED: N instances == N DRAW_VOXEL items (bit-identical at
+//    yaws that are exact in f32), team remap changes only slot-material pixels.
+// ---------------------------------------------------------------------------
+{
+  await import('../../design/models/voxel_props.js');
+  const { VoxelPool } = await import('../render/voxelPool.js');
+  const { computeVoxelPose, FORWARD } = await import('../voxel/voxelPose.js');
+  const { VoxelMeshCache } = await import('./voxelMesh.js');
+  const { MAX_VOX_PARTS, PART_STRIDE } = await import('../voxel/VoxelModel.js');
+  const { createInstanceBuffer, createInstanceParts, writeUnitInstance, computeGroupParts } = await import('./instances.js');
+  const { DRAW_INSTANCED } = await import('./DrawList.js');
+  const { buildTeamRemap } = await import('../render/teamRemap.js');
+
+  const VM = globalThis.ASSETS.voxelModels;
+  const idMap = new Map();
+  const table = {
+    idFor(key) { if (!idMap.has(key)) idMap.set(key, idMap.size + 1); return idMap.get(key); },
+    hasKey() { return true; },
+  };
+  const pool = new VoxelPool();
+  pool.bind({ keys: (k) => (k === 'model' ? ['lever'] : []), model: () => ({ voxel: VM.lever.voxel }) }, table);
+  const pm = pool.models.get('lever');
+  const mesh = new VoxelMeshCache().get(pm, 'lever', pool.partNamesFor('lever'));
+  const nParts = pm.partCount;
+
+  const C = 160, R = 60;
+  const h = pm.sz * pm.cellM;
+  const cam = { x: 0, y: 4 + h, z: 0.5 * h + 0.3137, yawDeg: 0, pitchDeg: 0 };
+  const M = new Float64Array(16);
+  { const terms = {}; projTerms(cam, { cols: C, rows: R, pxCellW: 1, pxCellH: 1 }, terms); shearProjection(terms, M); }
+  const xs = [-1.5, -0.75, 0, 0.75, 1.5, 2.25];
+  const teams = [0, 1, 2, 0, 1, 2];
+
+  // Slot = the lever's first material; team 1 -> a new material id, team 2 -> another.
+  const slotId = pm.matIds[1];
+  let slotKey = null;
+  for (const [k, id] of idMap) if (id === slotId) slotKey = k;
+  const team = buildTeamRemap(table, { slots: [slotKey], teams: [null, { [slotKey]: 'testRedA' }, { [slotKey]: 'testBlueB' }] });
+
+  function buildInstanced(yaws, useTeams) {
+    const ib = createInstanceBuffer(xs.length);
+    for (let i = 0; i < xs.length; i++) writeUnitInstance(ib, i, xs[i], 0, 0, yaws[i], 0x10000 | i, useTeams ? teams[i] : 0);
+    const parts = createInstanceParts();
+    computeGroupParts(pm, { clip: -1, frame: 0, tMs: 0 }, parts);
+    const list = new DrawList(8);
+    list.begin();
+    list.addInstances(mesh, parts, ib, xs.length);
+    return list;
+  }
+  function buildVoxelItems(yaws) {
+    const list = new DrawList(16);
+    list.begin();
+    const scratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+    for (let i = 0; i < xs.length; i++) {
+      computeVoxelPose(pm, { x: xs[i], y: 0, z: 0, yawDeg: yaws[i], clip: -1, frame: 0, tMs: 0 }, scratch);
+      const it = list.push(mesh, DRAW_VOXEL);
+      for (let p = 0; p < nParts; p++) {
+        for (let c = 0; c < 12; c++) it.partMatrices[p * 12 + c] = FORWARD[p * 12 + c];
+        it.partFlags[p] = scratch[p * PART_STRIDE + 12];
+      }
+      it.planeIdOr = (i & 0xF) << 24;
+      it.objectId = 0x10000 | i;
+      it.zBase = 0;
+    }
+    return list;
+  }
+  function raster(list, ctxTeam) {
+    const t = createRasterTarget(C, R, 1, {});
+    rasterDrawList(list, t, { M, snap: true, team: ctxTeam });
+    return t;
+  }
+  const FIELDS = ['kind', 'face', 'mat', 'planeId', 'depth', 'u', 'v', 'z', 'aoD', 'nrm', 'objectId'];
+
+  const yawsExact = [0, 90, 180, 270, 90, 0];
+  const ti = raster(buildInstanced(yawsExact, false), null);
+  const tv = raster(buildVoxelItems(yawsExact), null);
+  let covered = 0;
+  for (let i = 0; i < ti.kind.length; i++) if (ti.kind[i] === KIND_MODEL) covered++;
+  ok(`instanced: ${xs.length} units rasterise (${covered} kind-8 pixels)`, covered > 200, String(covered));
+  ok('addInstances item is DRAW_INSTANCED', buildInstanced(yawsExact, false).items[0].type === DRAW_INSTANCED);
+  let diffs = 0, firstDiff = '';
+  for (const f of FIELDS) {
+    for (let i = 0; i < ti[f].length; i++) {
+      const a = ti[f][i], b = tv[f][i];
+      if (!(a === b || (Number.isNaN(a) && Number.isNaN(b)))) { diffs++; if (!firstDiff) firstDiff = `${f}[${i}] ${a} vs ${b}`; }
+    }
+  }
+  ok('N instanced == N DRAW_VOXEL items: kind/face/mat/planeId/depth/u/v/z/aoD/nrm/objectId bit-identical (yaws 0/90/180/270)', diffs === 0, `${diffs} diffs, first ${firstDiff}`);
+  let idOk = 0, planeOk = 0, model = 0;
+  for (let i = 0; i < ti.kind.length; i++) {
+    if (ti.kind[i] !== KIND_MODEL) continue;
+    model++;
+    if ((ti.objectId[i] >>> 16) === 1 && (ti.objectId[i] & 0xFFFF) < xs.length) idOk++;
+    if (((ti.planeId[i] >>> 24) & 0xF) === (ti.objectId[i] & 0xF)) planeOk++;
+  }
+  ok('objectId = 0x10000|i and planeId slot bits = objectId low 4 bits on every unit pixel', idOk === model && planeOk === model, `${idOk}/${planeOk}/${model}`);
+
+  // Non-multiples of 90: same picture within silhouette tolerance (I is stored as f32).
+  const yawsFree = [37.5, 200, 12, 300, 77, 151];
+  const tf = raster(buildInstanced(yawsFree, false), null);
+  const tg = raster(buildVoxelItems(yawsFree), null);
+  let same = 0, either = 0;
+  for (let i = 0; i < tf.kind.length; i++) {
+    if (tf.kind[i] === KIND_MODEL || tg.kind[i] === KIND_MODEL) { either++; if (tf.kind[i] === tg.kind[i] && tf.face[i] === tg.face[i]) same++; }
+  }
+  ok(`free yaws: kind+face agree on >= 99% of unit pixels (${same}/${either})`, either > 200 && same / either >= 0.99);
+
+  // Team remap: team 1/2 change only the slot material of their own units.
+  const t0 = raster(buildInstanced(yawsExact, false), team);
+  const t1 = raster(buildInstanced(yawsExact, true), team);
+  const redId = idMap.get('testRedA'), blueId = idMap.get('testBlueB');
+  let bad = 0, changed = 0, slotPixels = 0;
+  for (let i = 0; i < t0.kind.length; i++) {
+    for (const f of FIELDS) if (f !== 'mat' && t0[f][i] !== t1[f][i] && !(Number.isNaN(t0[f][i]) && Number.isNaN(t1[f][i]))) bad++;
+    if (t0.kind[i] !== KIND_MODEL) continue;
+    const tm = teams[t0.objectId[i] & 0xFFFF];
+    if (t0.mat[i] === slotId) slotPixels++;
+    const want = t0.mat[i] === slotId ? (tm === 1 ? redId : tm === 2 ? blueId : slotId) : t0.mat[i];
+    if (t1.mat[i] !== want) bad++;
+    if (t0.mat[i] !== t1.mat[i]) changed++;
+  }
+  ok(`team 1/2 change only slot-material pixels of team units (${changed} changed of ${slotPixels} slot pixels)`, bad === 0 && changed > 0, `bad=${bad}`);
+  ok('team 0 leaves the picture identical to a run without ctx.team', (() => { for (let i = 0; i < t0.kind.length; i++) if (t0.mat[i] !== ti.mat[i]) return false; return true; })());
+
+  // zero allocation
+  const list = buildInstanced(yawsExact, true);
+  const tt = createRasterTarget(C, R, 1, {});
+  const ctx = { M, snap: true, team };
+  for (let i = 0; i < 5; i++) { clearRasterTarget(tt); rasterDrawList(list, tt, ctx); }
+  global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 100; i++) { clearRasterTarget(tt); rasterDrawList(list, tt, ctx); }
+  global.gc();
+  const grew = process.memoryUsage().heapUsed - before;
+  ok('rasterDrawList DRAW_INSTANCED: no significant heap growth over 100 frames', grew < 64 * 1024, `grew=${grew}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

@@ -36,6 +36,7 @@ import {
   GLSL_VERSION, PRECISION, GBUF_UNPACK, HASH_FAST, SAMPLE_POW_LUT, BYTE_OUT,
   SMOOTHSTEP_FAST, QFLOOR, ORIENT_AND_LINES, LEVEL_FROM_THRESHOLDS, SKY_LUT_N,
   OCT_NORMAL,
+  PITCH_UNIFORMS, CELL_RAY_PITCHED,
 } from './common.js';
 import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 // US-016 (14.4 item 5, GPU build order step 3), reworked by US-026a S5 (23.4
@@ -106,6 +107,8 @@ uniform vec3 uSunDir;
 uniform float uAmbientI, uSunI;
 
 ${GBUF_UNPACK}
+${PITCH_UNIFORMS}
+${CELL_RAY_PITCHED}
 ${HASH_FAST}
 ${SAMPLE_POW_LUT}
 ${BYTE_OUT}
@@ -375,7 +378,14 @@ void main() {
     // 3) - a masked-over-sky cell (HUD over open sky) still passes through
     // to the JS layer; an un-masked one gets the baked flat-gradient sky.
     if (uGpuSky != 0 && maskU == 0u) {
-      float elevDeg = degrees(atan(uHorizonRow - float(cell.y), uPlaneDistY));
+      float elevDeg;
+      if (uProjMode == 0) {
+        elevDeg = degrees(atan(uHorizonRow - float(cell.y), uPlaneDistY));
+      } else {
+        // RE-02a (28.1 A2 item 2): per-cell elevation of the screenRay direction.
+        vec3 sd = pitchedCellDir(vec2(cell), textureSize(uGI, 0));
+        elevDeg = degrees(atan(sd.z, length(sd.xy)));
+      }
       float t = clamp(elevDeg / uSkyElevTop, 0.0, 1.0);
       int idx = int(t * ${SKY_LUT_N - 1}.0 + 0.5);
       vec3 col255 = texelFetch(uSky, ivec2(idx, 0), 0).rgb;
@@ -420,7 +430,9 @@ void main() {
     uvec4 lightT = texelFetch(uLightTex, cell, 0);
     vec3 LcT = uintBitsToFloat(lightT.xyz);
     float bT = bSunT + max(LcT.r, max(LcT.g, LcT.b));
+    // RE-02a (28.1 A2 item 3): the horizontal forward distance (mode 0: unchanged, vd * 1.0 skipped).
     float distT = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
+    if (uProjMode != 0) distT *= fogScaleCell(cell.y, textureSize(uGI, 0).y);
     // ME-06b: canopy face mode (twin of terrainCaster.js forestFaceMode): steep forest cell beyond
     // the near band = 1; 2 when the cell below (row + 1) is not a steep cell of the same type.
     int faceModeT = 0;
@@ -448,6 +460,7 @@ void main() {
   vec4 gd = vec4(uintBitsToFloat(gdU.x), uintBitsToFloat(gdU.y), uintBitsToFloat(gdU.z), uintBitsToFloat(gdU.w));
   float dudx = gd.x, dvdx = gd.y, dudy = gd.z, dvdy = gd.w;
   float dist = uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
+  if (uProjMode != 0) dist *= fogScaleCell(cell.y, textureSize(uGI, 0).y); // RE-02a: horizontal forward distance
   // US-006: sampled once per fragment (constant over every sub-sample of
   // this cell - see the module doc comment).
   vec3 Lc = uintBitsToFloat(texelFetch(uLightTex, cell, 0).xyz);

@@ -22,6 +22,8 @@ import { classifyAABB, CULL_OUT } from './culling.js';
 export const DRAW_STATIC = 0;
 export const DRAW_VOXEL = 1;
 export const DRAW_TERRAIN = 2;
+/** RE-06 (28.6): N instances of one voxel model, one draw per part (`instBuf`/`instCount`, engine/mesh/instances.js). */
+export const DRAW_INSTANCED = 3;
 
 /** `DrawItem.flags` bits. Terrain only; off until ME-06 decides (27.5). */
 export const DRAW_FLAG_DEPTH_BIAS = 1;
@@ -46,6 +48,8 @@ const MAX_STRUCTS = 8;
  * @property {number} zBase - G-buffer z = worldZ - zBase - aux.zRef
  * @property {number} flags - DRAW_FLAG_*
  * @property {Float64Array} aabb - 6, world, for culling
+ * @property {import('./instances.js').InstanceBuffer|null} instBuf - DRAW_INSTANCED: per-instance buffer (64 B each)
+ * @property {number} instCount - DRAW_INSTANCED: instances used
  */
 
 /** @returns {DrawItem} a fresh, identity-initialised DrawItem. */
@@ -63,6 +67,8 @@ function makeDrawItem() {
     zBase: 0,
     flags: 0,
     aabb: new Float64Array(6),
+    instBuf: null,
+    instCount: 0,
   };
 }
 
@@ -84,6 +90,8 @@ function resetDrawItem(item) {
   item.zBase = 0;
   item.flags = 0;
   item.aabb.fill(0);
+  item.instBuf = null;
+  item.instCount = 0;
 }
 
 /**
@@ -113,6 +121,54 @@ export class DrawList {
     resetDrawItem(item);
     item.mesh = mesh;
     item.type = type;
+    return item;
+  }
+
+  /**
+   * RE-06 (28.6): one `DRAW_INSTANCED` item for `count` instances of `mesh`.
+   * `parts` = P_p (part matrices at the identity instance) + identity flags;
+   * `objectId` stays 0 (per instance, in `ib`). `aabb` = union of the instance
+   * translations +- R, R = max |corner| of the mesh bbox under any P_p, so
+   * `cull()` drops or keeps the whole group (no per-instance culling).
+   * @param {import('./MeshData.js').MeshData} mesh
+   * @param {{m: Float64Array, flags: Uint8Array, count: number}} parts
+   * @param {import('./instances.js').InstanceBuffer} ib
+   * @param {number} count
+   * @returns {DrawItem|null} null when count <= 0
+   */
+  addInstances(mesh, parts, ib, count) {
+    if (count <= 0) return null;
+    if (count > ib.capacity) throw new Error(`DrawList.addInstances: count ${count} > buffer capacity ${ib.capacity}`);
+    const item = this.push(mesh, DRAW_INSTANCED);
+    item.instBuf = ib;
+    item.instCount = count;
+    item.partMatrices.set(parts.m);
+    for (let p = 0; p < 8; p++) item.partFlags[p] = parts.flags[p];
+    const b = mesh.bbox;
+    let r2 = 0;
+    for (let p = 0; p < parts.count; p++) {
+      const o = p * 12;
+      for (let c = 0; c < 8; c++) {
+        const x = (c & 1) ? b[3] : b[0], y = (c & 2) ? b[4] : b[1], z = (c & 4) ? b[5] : b[2];
+        const wx = parts.m[o] * x + parts.m[o + 1] * y + parts.m[o + 2] * z + parts.m[o + 9];
+        const wy = parts.m[o + 3] * x + parts.m[o + 4] * y + parts.m[o + 5] * z + parts.m[o + 10];
+        const wz = parts.m[o + 6] * x + parts.m[o + 7] * y + parts.m[o + 8] * z + parts.m[o + 11];
+        const d2 = wx * wx + wy * wy + wz * wz;
+        if (d2 > r2) r2 = d2;
+      }
+    }
+    const R = Math.sqrt(r2);
+    const f = ib.f32;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < count; i++) {
+      const o = i * 16;
+      const tx = f[o + 3], ty = f[o + 7], tz = f[o + 11];
+      if (tx < x0) x0 = tx; if (tx > x1) x1 = tx;
+      if (ty < y0) y0 = ty; if (ty > y1) y1 = ty;
+      if (tz < z0) z0 = tz; if (tz > z1) z1 = tz;
+    }
+    const a = item.aabb;
+    a[0] = x0 - R; a[1] = y0 - R; a[2] = z0 - R; a[3] = x1 + R; a[4] = y1 + R; a[5] = z1 + R;
     return item;
   }
 

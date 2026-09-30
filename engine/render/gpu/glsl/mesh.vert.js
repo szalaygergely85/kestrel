@@ -34,7 +34,14 @@
 // locations).
 import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
 
-export const MESH_VERT_SRC = `${GLSL_VERSION}${PRECISION}
+// RE-06 (docs/architecture.md 28.6): `meshVertSrc(true)` is the instanced variant
+// (progMeshInst) - per-instance rows/meta attributes 6-9 (divisor 1), team
+// material remap, world = instance rows applied to uModel*aPos. The static
+// variant is byte-for-byte the pre-RE-06 source plus the two new varyings
+// vObjectId/vAxisAligned (the fragment stage reads them instead of uniforms).
+
+export function meshVertSrc(instanced) {
+  return `${GLSL_VERSION}${PRECISION}
 ${OCT_NORMAL}
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUV;
@@ -42,24 +49,56 @@ layout(location = 2) in uint aNrmBits;    // oct-packed normal - ME-08a: read fo
 layout(location = 3) in uvec2 aFlat;      // x = planeIdBase, y = kind | face<<8 | mat<<16
 layout(location = 4) in vec4 aAux0123;    // zRef, aoMode, aux2, aux3
 layout(location = 5) in vec4 aAux4567;    // aux4, aux5, unused, unused
-
-uniform mat4 uModel;     // mesh-local -> world (DrawItem.matrix, D-028)
+${instanced ? `layout(location = 6) in vec4 iRow0;       // RE-06: instance rigid transform rows [A_r0 A_r1 A_r2 t_r] (divisor 1)
+layout(location = 7) in vec4 iRow1;
+layout(location = 8) in vec4 iRow2;       // .w = zBase (G-buffer z = worldZ - inst z)
+layout(location = 9) in uvec2 iMeta;      // x = objectId, y = flags (bit0 yawAligned, bits 8-15 team)
+` : ''}
+uniform mat4 uModel;     // mesh-local -> world (DrawItem.matrix, D-028)${instanced ? '; instanced: the part matrix P_p (world = instance rows * uModel * aPos)' : ''}
 uniform mat4 uViewProj;  // world -> clip (engine/render/projection.js shearProjection - the ONE camera matrix)
 uniform int uPlaneIdOr;  // DrawItem.planeIdOr (27.15.4): (structSeq&7)<<28 for level structures
 uniform float uZBase;    // DrawItem.zBase (G-buffer z = worldZ - zBase - aux.zRef)
 uniform int uObjectId;   // ME-08a: DrawItem.objectId -> GI.w (structSeq for levels, 0x8000|slot for voxels)
 uniform int uAxisAligned; // ME-08a: voxel part pose axis-aligned (partFlags[p] & 1); 0 for static draws
-
+${instanced ? `uniform int uTeamSlot[4];   // RE-06: table.team.slotIds (0 = unused slot)
+uniform int uTeamMat[32];   // table.team.mat: team*4 + slot
+` : ''}
 flat out int vPlaneId;
 flat out uint vKind, vFace, vMat;
 flat out float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat out float vZBase;
 flat out vec3 vNrmW;     // ME-08a: world-space face normal (one per greedy quad)
+flat out uint vObjectId, vAxisAligned; // RE-06: were fragment uniforms; per-instance now
 out vec2 vUV;
 out float vWorldZ;
 
 void main() {
-  vec4 worldPos = uModel * vec4(aPos, 1.0);
+${instanced ? `  vec3 lp = (uModel * vec4(aPos, 1.0)).xyz;
+  vec3 wp = vec3(dot(iRow0.xyz, lp) + iRow0.w, dot(iRow1.xyz, lp) + iRow1.w, dot(iRow2.xyz, lp) + iRow2.w);
+  vec4 worldPos = vec4(wp, 1.0);
+  gl_Position = uViewProj * worldPos;
+
+  vPlaneId = int(aFlat.x) | uPlaneIdOr | int((iMeta.x & 0xFu) << 24);
+  vKind = aFlat.y & 0xffu;
+  vFace = (aFlat.y >> 8u) & 0xfu;
+  uint mat = (aFlat.y >> 16u) & 0xffffu;
+  uint team = (iMeta.y >> 8u) & 0xffu;
+  if (team != 0u) {
+    for (int s = 0; s < 4; s++) {
+      if (uTeamSlot[s] != 0 && int(mat) == uTeamSlot[s]) { mat = uint(uTeamMat[int(team) * 4 + s]); break; }
+    }
+  }
+  vMat = mat;
+  vAoMode = aAux0123.y;
+  vZRef = aAux0123.x;
+  vAux2 = aAux0123.z;
+  vAux3 = aAux0123.w;
+  vAux4 = aAux4567.x;
+  vAux5 = aAux4567.y;
+  vZBase = iRow2.w;
+  vObjectId = iMeta.x;
+  vAxisAligned = uint(uAxisAligned) & (iMeta.y & 1u);
+` : `  vec4 worldPos = uModel * vec4(aPos, 1.0);
   gl_Position = uViewProj * worldPos;
 
   vPlaneId = int(aFlat.x) | uPlaneIdOr;
@@ -73,11 +112,19 @@ void main() {
   vAux4 = aAux4567.x;
   vAux5 = aAux4567.y;
   vZBase = uZBase;
-
+  vObjectId = uint(uObjectId);
+  vAxisAligned = uint(uAxisAligned);
+`}
   // mat3(uModel) = rotation x uniform cellM, so normalising is exact.
-  vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
-
+${instanced ? `  vec3 ln = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
+  vNrmW = normalize(vec3(dot(iRow0.xyz, ln), dot(iRow1.xyz, ln), dot(iRow2.xyz, ln)));
+` : `  vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
+`}
   vUV = aUV;
   vWorldZ = worldPos.z;
 }
 `;
+}
+
+export const MESH_VERT_SRC = meshVertSrc(false);
+export const MESH_INST_VERT_SRC = meshVertSrc(true);

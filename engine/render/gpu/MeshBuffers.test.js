@@ -25,6 +25,7 @@
 import {
   buildStaticVertexData, STATIC_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, MeshBuffers,
   buildTerrainVertexData, TERRAIN_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT,
+  buildVoxelVertexData, VOXEL_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT,
 } from './MeshBuffers.js';
 import { AUX_STRIDE, FLAT_STRIDE } from '../../mesh/MeshData.js';
 import { LevelMeshCache } from '../../mesh/DrawList.js';
@@ -239,6 +240,72 @@ function decode(buf, vertCount) {
   ok('voxel mesh: a new meshVersion re-uploads once and frees the old buffer', mock.createCount - after1 === 1 && e3.vertexBuffer !== e1.vertexBuffer && e1.vertexBuffer._disposed === true);
   buffers.dispose();
   ok('voxel mesh: dispose() frees every buffer', mock.liveCount() === 0, String(mock.liveCount()));
+}
+
+// ---- 5. RE-06b: voxel vertex encoder (32 B verts + index buffer) ----
+{
+  const pm = packVoxelModel(post12, () => 1);
+  const partNames = Object.keys(post12.parts);
+  const mesh = sharedVoxelMeshCache.get(pm, 'post12', partNames);
+  const enc = buildVoxelVertexData(mesh);
+  ok('voxel enc: quadCount = triCount/2', enc.quadCount * 2 === mesh.triCount, String(enc.quadCount));
+  ok('voxel enc: vertex bytes = 4 x 32 per quad', enc.vertex.byteLength === enc.quadCount * 4 * VOXEL_STRIDE_BYTES);
+  ok('voxel enc: u16 indices for a small mesh', enc.index instanceof Uint16Array && enc.index.length === enc.quadCount * 6);
+  const vu = new Uint32Array(enc.vertex);
+  const posU = new Uint32Array(mesh.pos.buffer, mesh.pos.byteOffset, mesh.pos.length);
+  const uvU = new Uint32Array(mesh.uv.buffer, mesh.uv.byteOffset, mesh.uv.length);
+  let same = true;
+  const W = VOXEL_STRIDE_BYTES / 4;
+  for (let t = 0; t < mesh.triCount * 3 && same; t++) {
+    const base = enc.index[t] * W; // index[t] = encoded vertex for unrolled vert t
+    same = vu[base] === posU[t * 3] && vu[base + 1] === posU[t * 3 + 1] && vu[base + 2] === posU[t * 3 + 2]
+      && vu[base + 3] === uvU[t * 2] && vu[base + 4] === uvU[t * 2 + 1]
+      && vu[base + 5] === mesh.nrm[t] && vu[base + 6] === mesh.flat[t * FLAT_STRIDE] && vu[base + 7] === mesh.flat[t * FLAT_STRIDE + 1];
+  }
+  ok('voxel enc: index -> vertex round-trips bitwise to the unrolled triangle list, in order', same);
+  ok('voxel enc: ranges start on quad boundaries', mesh.ranges.every((r) => r.start % 2 === 0));
+  const byName = Object.fromEntries(VOXEL_VERTEX_LAYOUT.map((a) => [a.name, a]));
+  ok('VOXEL_VERTEX_LAYOUT = static attribs 0-3', VOXEL_VERTEX_LAYOUT.length === 4 && VOXEL_VERTEX_LAYOUT.every((a, i) => a === STATIC_VERTEX_LAYOUT[i]) && byName.aFlat.offsetBytes === 24);
+
+  // u32 path: synthetic > 16384 quads
+  const Q = 16385, V = Q * 6;
+  const big = {
+    id: 'vox:big', layout: 'static', meshVersion: 1, triCount: Q * 2,
+    pos: new Float32Array(V * 3), uv: new Float32Array(V * 2), nrm: new Uint32Array(V),
+    flat: new Uint32Array(V * FLAT_STRIDE), aux: new Float32Array(V * AUX_STRIDE),
+  };
+  const corner = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  const order = [0, 1, 2, 0, 2, 3];
+  for (let q = 0; q < Q; q++) {
+    for (let k = 0; k < 6; k++) {
+      const v = q * 6 + k;
+      big.pos[v * 3] = q + corner[order[k]][0]; big.pos[v * 3 + 1] = corner[order[k]][1];
+      big.nrm[v] = q;
+    }
+  }
+  const eb = buildVoxelVertexData(/** @type {any} */(big));
+  ok('voxel enc: u32 indices above 65536 verts', eb.index instanceof Uint32Array && eb.index[eb.index.length - 1] === Q * 4 - 1);
+
+  const thr = (m) => { try { buildVoxelVertexData(m); return false; } catch (e) { return String(e.message).includes(String(m.id)); } };
+  ok('voxel enc: rejects non-static layout', thr({ ...big, id: 'a', layout: 'terrain' }));
+  ok('voxel enc: rejects odd triCount', thr({ ...big, id: 'b', triCount: 3 }));
+  const aux = new Float32Array(big.aux); aux[5] = 1;
+  ok('voxel enc: rejects non-zero aux', thr({ ...big, id: 'c', aux }));
+  const pos = new Float32Array(big.pos); pos[3 * 3] += 1; // vert 3 != vert 0
+  ok('voxel enc: rejects non-quad triangle pairs', thr({ ...big, id: 'd', pos }));
+
+  const mock = makeMockGpuDevice();
+  const buffers = new MeshBuffers(mock.device);
+  const before = mock.createCount;
+  const e1 = buffers.getVoxel(mesh);
+  ok('getVoxel: first call uploads vertex + index (2 buffers)', mock.createCount - before === 2 && e1.indexType === 'u16' && e1.indexCount === enc.index.length);
+  ok('getVoxel: cache hit, no upload', buffers.getVoxel(mesh) === e1 && mock.createCount - before === 2);
+  const pm2 = packVoxelModel(post12, () => 1);
+  const mesh2 = sharedVoxelMeshCache.get(pm2, 'post12', partNames);
+  const e3 = buffers.getVoxel(mesh2);
+  ok('getVoxel: new meshVersion re-uploads and frees both old buffers', mock.createCount - before === 4 && e1.vertexBuffer._disposed && e1.indexBuffer._disposed && e3 !== e1);
+  buffers.dispose();
+  ok('getVoxel: dispose() frees both buffers', mock.liveCount() === 0, String(mock.liveCount()));
 }
 
 // ---- an unsupported layout throws clearly (voxel per-part instancing is ME-07/08) ----

@@ -7,10 +7,14 @@
 
 import { MAX_VOX_INSTANCES, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
-import { computeProjection, instanceRect } from '../voxel/instanceRect.js';
+import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
+import { createPitchedTerms, pitchedTerms, resolveProjection } from './projection.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 
-const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0 };
+const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0,
+  pitched: false, fX: 0, fY: 0, fZ: 0, rX: 0, rY: 0, uX: 0, uY: 0, uZ: 0, tanHalfX: 0, tanHalfY: 0 };
+const _poolPitch = createPitchedTerms(); // RE-02a
+const _poolGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 
 function warnOnce(pool, msg) {
   if (!pool._warned) pool._warned = new Set();
@@ -204,7 +208,13 @@ export class VoxelPool {
    * `this.list` in queue order (slot = compact index). Zero allocation once
    * `raw`/`list` are warm (reused per-slot objects/typed arrays). */
   project(cam, rt) {
-    computeProjection(cam, rt, _proj);
+    if (resolveProjection(cam, 'mesh') === 'pitched') {
+      // RE-02a (28.1 A2 item 2): pitched screen-rect cull.
+      _poolGrid.cols = rt.cols; _poolGrid.rows = rt.rows; _poolGrid.pxCellW = rt.pxCellW || 1; _poolGrid.pxCellH = rt.pxCellH || 1;
+      computeProjectionPitched(pitchedTerms(cam, _poolGrid, _poolPitch), _proj);
+    } else {
+      computeProjection(cam, rt, _proj);
+    }
     this.eyeX = _proj.eyeX; this.eyeY = _proj.eyeY; this.eyeZ = _proj.eyeZ;
     let count = 0;
     let culled = 0;

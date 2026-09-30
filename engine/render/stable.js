@@ -47,7 +47,7 @@
 // in the real pass; this module just requires it to be supplied per-cell.
 
 import { KIND_NONE, KIND_MODEL } from './GBuffer.js';
-import { projTerms, unprojectCell } from './projection.js';
+import { projTerms, unprojectCell, resolveProjection } from './projection.js';
 
 /** Global kill-switch: yaw delta beyond this turns history off for the whole frame (25.6). */
 export const YAW_DISABLE_DEG = 3;
@@ -85,6 +85,7 @@ export const DEFAULT_DETAIL = 16;
  * @property {number} z
  * @property {number} yawDeg
  * @property {number} pitchDeg
+ * @property {'shear'|'pitched'} [projection] - RE-02a: 'pitched' throws (stable.js has no pitched GPU pass yet)
  * @property {number} cols
  * @property {number} rows
  * @property {boolean} [teleport] - true the one frame a teleport/warp happened (25.6: history off)
@@ -185,6 +186,9 @@ function blendPacked(prevPacked, curPacked) {
  * @returns {StableOut}
  */
 export function stabilizeCells(prev, cur, prevCam, cam, out) {
+  if (resolveProjection(cam, 'mesh') === 'pitched' || resolveProjection(prevCam, 'mesh') === 'pitched') {
+    throw new Error("stable.js: cam.projection 'pitched' is not supported (28.1 A2 item 2)");
+  }
   const cols = cur.cols, rows = cur.rows;
   const n = cols * rows;
 

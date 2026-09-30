@@ -55,8 +55,7 @@ flat in uint vKind, vFace, vMat;
 flat in float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat in float vZBase;
 flat in vec3 vNrmW;
-uniform int uObjectId;
-uniform int uAxisAligned;
+flat in uint vObjectId, vAxisAligned; // RE-06: were uniforms; the vertex stage supplies them per draw / per instance
 in vec2 vUV;
 in float vWorldZ;
 
@@ -116,7 +115,7 @@ void main() {
   uint nrmBits = 0u;
   uint gaW = floatBitsToUint(aoD);
   if (vKind == KIND_MODEL) {
-    if (uAxisAligned != 0) {
+    if (vAxisAligned != 0u) {
       face = roundedFace(vNrmW);
     } else {
       face = uint(FACE_PACKED);
@@ -126,7 +125,7 @@ void main() {
   }
   // GI.w = uObjectId (structSeq for levels = the old planeId top-3-bit
   // decode; 0x8000|slot for voxels).
-  outGI = uvec4(uint(vPlaneId), vKind | (face << 8u) | (vMat << 16u), nrmBits, uint(uObjectId));
+  outGI = uvec4(uint(vPlaneId), vKind | (face << 8u) | (vMat << 16u), nrmBits, vObjectId);
   outGA = uvec4(floatBitsToUint(vUV.x), floatBitsToUint(vUV.y), floatBitsToUint(z), gaW);
   outDepth = floatBitsToUint(dist);
 }

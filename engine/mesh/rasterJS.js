@@ -24,7 +24,7 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_FLAG_DEPTH_BIAS } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_FLAG_DEPTH_BIAS } from './DrawList.js';
 
 /** Sub-pixel bits (1/256 px vertex snap, 27.7 item 1). */
 export const SUBPIX = 256;
@@ -65,6 +65,7 @@ export const BIAS_UNITS = 1;
  * @property {Float64Array|Float32Array} [structFoot] - x0, y0, x1, y1 per placed structure (world m): terrain
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
+ * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
  */
 
 /**
@@ -123,8 +124,15 @@ const _bufA = new Float64Array(CLIP_MAX * STRIDE);
 const _bufB = new Float64Array(CLIP_MAX * STRIDE);
 const _matScratch = new Float64Array(12);
 const _nrmScratch = new Float64Array(3);
+// RE-06 (28.6): DRAW_INSTANCED scratch - the per-instance item rasterRange sees.
+const _instItem = {
+  matrix: _matScratch, planeIdOr: 0, objectId: 0, zBase: 0, flags: 0,
+  partMatrices: /** @type {Float64Array|null} */ (null), partFlags: /** @type {Uint8Array|null} */ (null),
+};
+let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
+  cullBack: false,
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false,
@@ -148,6 +156,13 @@ function roundedFace(nx, ny, nz) {
   if (ax >= ay && ax >= az) return nx >= 0 ? FACE_E : FACE_W;
   if (ay >= ax && ay >= az) return ny >= 0 ? FACE_S : FACE_N;
   return nz >= 0 ? FACE_U : FACE_D;
+}
+
+/** Scalar twin of the instanced vertex shader's team loop (engine/render/teamRemap.js `remapTeamMat`, copied: no render imports here). */
+function teamMat(team, teamIdx, mat) {
+  if (mat === 0) return mat;
+  for (let s = 0; s < 4; s++) if (team.slotIds[s] === mat) return team.mat[teamIdx * 4 + s];
+  return mat;
 }
 
 /** AO_WALL/AO_PLANE fragment formulas (27.15.2, literal - identical to levelMesh.test.js's oracle). */
@@ -296,6 +311,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
   let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
   if (A2 === 0) return;
+  if (A2 < 0 && info.cullBack) return; // RE-06c (28.10): voxel/instanced back faces, same snapped area as the GPU
   if (A2 < 0) {
     let t;
     t = Xs1; Xs1 = Xs2; Xs2 = t; t = Ys1; Ys1 = Ys2; Ys2 = t;
@@ -412,9 +428,11 @@ function clipAndRasterTri(mesh, v0, v1, v2, target, ctx, info) {
  * .. +rangeCount`; voxel: one call per `mesh.ranges[partIdx]`, matrix =
  * `item.partMatrices[partIdx]`).
  */
-function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVoxelItem) {
+function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVoxelItem, instAligned) {
   const isTerrain = mesh.layout === 'terrain';
-  if (isVoxelItem) {
+  if (instAligned !== undefined) {
+    // DRAW_INSTANCED: the caller already composed I_i * P_p into _matScratch (== item.matrix).
+  } else if (isVoxelItem) {
     for (let k = 0; k < 12; k++) _matScratch[k] = item.partMatrices[partIdx * 12 + k];
   } else {
     for (let k = 0; k < 12; k++) _matScratch[k] = item.matrix[k];
@@ -437,6 +455,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.structFoot = ctx.structFoot || null;
       _info.structCount = ctx.structFoot ? (ctx.structCount || 0) : 0;
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
+      _info.cullBack = false;
     } else {
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;
       const flat0 = mesh.flat[v0 * FLAT_STRIDE];
@@ -445,7 +464,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.isTerrain = false;
       _info.kind = kind;
       _info.face = flatFace(flat1);
-      _info.mat = flatMat(flat1);
+      _info.mat = _team !== 0 && ctx.team ? teamMat(ctx.team, _team, flatMat(flat1)) : flatMat(flat1);
       _info.planeId = (flat0 | item.planeIdOr) | 0;
       _info.aoMode = mesh.aux[v0 * AUX_STRIDE + 1];
       _info.zRef = mesh.aux[v0 * AUX_STRIDE + 0];
@@ -454,15 +473,60 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.aux4 = mesh.aux[v0 * AUX_STRIDE + 4];
       _info.aux5 = mesh.aux[v0 * AUX_STRIDE + 5];
       _info.isVoxel = kind === KIND_MODEL;
-      _info.partAxisAligned = isVoxelItem && (item.partFlags[partIdx] & 1) !== 0;
+      _info.partAxisAligned = instAligned !== undefined ? instAligned : (isVoxelItem && (item.partFlags[partIdx] & 1) !== 0);
       _info.kind7Mat = null;
       _info.biasFlag = 0;
+      _info.cullBack = isVoxelItem || instAligned !== undefined;
     }
     _info.zBase = item.zBase;
     _info.objectId = item.objectId;
 
     clipAndRasterTri(mesh, v0, v1, v2, target, ctx, _info);
   }
+}
+
+/**
+ * RE-06 (28.6): part-major, then instance order - the GPU primitive order
+ * (one instanced draw per part). Composes I_i * P_p in float64 per
+ * (part, instance) into `_matScratch`; objectId/planeIdOr/zBase/aligned/team
+ * come from the instance words. Zero allocation.
+ */
+function rasterInstanced(mesh, item, target, ctx) {
+  const ranges = mesh.ranges;
+  const ib = item.instBuf;
+  if (!ib) return;
+  const f = ib.f32, u = ib.u32, pm = item.partMatrices, n = item.instCount;
+  const M = _matScratch;
+  for (let p = 0; p < ranges.length; p++) {
+    const range = ranges[p];
+    if (range.count <= 0) continue;
+    const o = p * 12;
+    const a00 = pm[o], a01 = pm[o + 1], a02 = pm[o + 2];
+    const a10 = pm[o + 3], a11 = pm[o + 4], a12 = pm[o + 5];
+    const a20 = pm[o + 6], a21 = pm[o + 7], a22 = pm[o + 8];
+    const tx = pm[o + 9], ty = pm[o + 10], tz = pm[o + 11];
+    const partAligned = (item.partFlags[p] & 1) !== 0;
+    for (let i = 0; i < n; i++) {
+      const b = i * 16;
+      const i00 = f[b], i01 = f[b + 1], i02 = f[b + 2], itx = f[b + 3];
+      const i10 = f[b + 4], i11 = f[b + 5], i12 = f[b + 6], ity = f[b + 7];
+      const i20 = f[b + 8], i21 = f[b + 9], i22 = f[b + 10], itz = f[b + 11];
+      M[0] = i00 * a00 + i01 * a10 + i02 * a20; M[1] = i00 * a01 + i01 * a11 + i02 * a21; M[2] = i00 * a02 + i01 * a12 + i02 * a22;
+      M[3] = i10 * a00 + i11 * a10 + i12 * a20; M[4] = i10 * a01 + i11 * a11 + i12 * a21; M[5] = i10 * a02 + i11 * a12 + i12 * a22;
+      M[6] = i20 * a00 + i21 * a10 + i22 * a20; M[7] = i20 * a01 + i21 * a11 + i22 * a21; M[8] = i20 * a02 + i21 * a12 + i22 * a22;
+      M[9] = i00 * tx + i01 * ty + i02 * tz + itx;
+      M[10] = i10 * tx + i11 * ty + i12 * tz + ity;
+      M[11] = i20 * tx + i21 * ty + i22 * tz + itz;
+      const oid = u[b + 12];
+      const meta = u[b + 13];
+      _instItem.objectId = oid;
+      _instItem.planeIdOr = (oid & 0xF) << 24;
+      _instItem.zBase = itz;
+      _team = (meta >>> 8) & 0xff;
+      rasterRange(mesh, _instItem, target, ctx, range.start, range.count, p, false, partAligned && (meta & 1) !== 0);
+    }
+  }
+  _team = 0;
 }
 
 /**
@@ -476,7 +540,9 @@ export function rasterDrawList(list, target, ctx) {
     const item = list.items[i];
     const mesh = item.mesh;
     if (!mesh) continue;
-    if (item.type === DRAW_VOXEL) {
+    if (item.type === DRAW_INSTANCED) {
+      rasterInstanced(mesh, item, target, ctx);
+    } else if (item.type === DRAW_VOXEL) {
       const ranges = mesh.ranges;
       for (let p = 0; p < ranges.length; p++) {
         rasterRange(mesh, item, target, ctx, ranges[p].start, ranges[p].count, p, true);

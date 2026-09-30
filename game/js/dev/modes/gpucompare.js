@@ -15,9 +15,10 @@ import {
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
   classifyMigrationCells, MIGRATION_CATS, terrainMeshSetFor, beginFrame, castSectors, fillSky,
-  computeDerivatives, shadeSurfaces, edgePass,
+  computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
 } from '../../../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
+import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
 
 export const name = 'gpucompare';
@@ -99,7 +100,7 @@ function runGpuCompareShadeMode(ctx) {
 // so a second GPU pipeline compare mode never has to keep a hand-copied
 // pose list in sync with this one.
 function buildCompareRuns(ctx) {
-  const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep } = ctx;
+  const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep, rt } = ctx;
   function loadCompareWorld(def) {
     const w = World.load(def, assets, {});
     for (const s of w.structures) {
@@ -221,7 +222,46 @@ function buildCompareRuns(ctx) {
     // (pre-existing terrain/sun-visibility parity gap, not a voxel-pass bug).
   );
 
-  return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool };
+  // RE-02a (28.1 A2 item 8): mesh-only pitched poses, RTS view of the world_m1 hillside west of the tower.
+  // Focus-driven eye exactly like `engine/core/rtsCamera.js` (dist = widthM * zoom / (2 tanHalfX), widthM 30),
+  // vfov 36, yaw 20. Compared GPU vs the rasterJS + JS shade twin (same projection) - `?gpucompare=1` (dda) SKIPs them.
+  const rtsHillPose = (pitchDeg) => {
+    const fx = 1440, fy = 1040, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
+    const aspect = (rt.cols * (rt.pxCellW || 1)) / (rt.rows * (rt.pxCellH || 1));
+    const tanHalfX = Math.tan((PROJ_PITCHED_VFOV_DEG * Math.PI) / 360) * aspect;
+    const e = pitchedEyeFromFocus(fx, fy, fz, 20, pitchDeg, 30 / (2 * tanHalfX), [0, 0, 0]);
+    return { x: e[0], y: e[1], z: e[2], yawDeg: 20, pitchDeg, vfovDeg: PROJ_PITCHED_VFOV_DEG, projection: 'pitched', focusX: fx, focusY: fy, focusZ: fz };
+  };
+  for (const pitch of [-55, -58, -60]) {
+    runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: rtsHill${-pitch} (RE-02a pitched RTS view, hillside)`,
+      cam: rtsHillPose(pitch), real: true, meshOnly: true });
+  }
+  // Extra (not in the 28.1 A2 list): a shallow -15 deg pitched pose so sky cells exist - covers the GLSL/JS
+  // per-cell `screenRay` sky elevation and the fog scale at a large |b*sinP| (the RTS poses are 100 % ground).
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
+    cam: rtsHillPose(-15), real: true, meshOnly: true });
+
+  // RE-06 (28.6 "Parity"): mesh-renderer-only pose. 20 instances of the 2-part lever (until the
+  // designer's unit model exists), yaws {0, 90, 37.5, 200}, teams {0, 1, 2}, mid-animation pose,
+  // in the test_room start area (floor z 0). The dda renderer has no instanced path: it SKIPs
+  // the pose (not counted), so `?gpucompare=1` stays 34/34 and `renderer=mesh` becomes 35/35.
+  const compareInstances = engine.instances;
+  compareInstances.bindPool(compareVoxelPool);
+  const unitsGroup = compareInstances.group('lever', 20);
+  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; };
+  runs.push({
+    world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
+    cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
+    before: () => {
+      const pm = compareVoxelPool.models.get('lever');
+      engine.setTeamMaterials(placeholderTeamSpec(matTable, pm));
+      const pullIdx = pm && pm.clipIndex.pull !== undefined ? pm.clipIndex.pull : -1;
+      unitsGroup.pose.clip = pullIdx; unitsGroup.pose.frame = 2; unitsGroup.pose.tMs = 45;
+      fillUnitGrid(unitsGroup, 20, 4.5, 1.5, 0, 1.0, 4, null);
+    },
+  });
+
+  return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
 function runGpuCompareDdaMode(ctx) {
@@ -236,8 +276,9 @@ function runGpuCompareDdaMode(ctx) {
 
   gpuPipeline.setSource('dda');
 
-  const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool } = buildCompareRuns(ctx);
+  const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);
+  gpuPipeline.bindInstances(compareInstances);
   void m1Eye; void testRoomLights; void worldM1Lights;
 
   if (params.get('roundtrip') === '1') {
@@ -255,6 +296,7 @@ function runGpuCompareDdaMode(ctx) {
     renderer, terrainEnabled,
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
+    instances: compareInstances,
   };
   const compareSceneDim = createSceneDim();
 
@@ -263,7 +305,9 @@ function runGpuCompareDdaMode(ctx) {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8 } of runs) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly } of runs) {
+    if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
+    resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
       if (before) before();
@@ -344,7 +388,9 @@ function runGpuCompareDdaMode(ctx) {
       pipeline2.bind(matTable, assets.palette);
       pipeline2.setSource('dda');
       infoRows = [];
-      for (const { world, lights, name: poseName, cam, real, before } of runs) {
+      resetInstances();
+      for (const { world, lights, name: poseName, cam, real, before, meshOnly } of runs) {
+        if (meshOnly) continue;
         if (real) {
           if (before) before();
           compareVoxelPool.collect(world, cam);
@@ -497,7 +543,8 @@ function runGpuCompareMeshMode(ctx) {
   const rowsOut = [];
   let overallOk = true;
   const paintDiff = makeDiffPngPainter(cols, rows);
-  for (const { world, lights, name: poseName, cam, real, before } of runs) {
+  for (const { world, lights, name: poseName, cam, real, before, meshOnly } of runs) {
+    if (meshOnly) continue; // RE-06: the dda pipeline has no instanced path
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
       if (before) before();

@@ -53,3 +53,6 @@ export { Input } from './core/input.js';
 export { PlayerLook } from './core/playerLook.js';
 export { Events } from './core/events.js';
 export { FrameProfiler } from './core/FrameProfiler.js'; // US-018 spike hunt (worst-frame section breakdown)
+
+// ---- pitched camera helpers (RE-02a: gpucompare's focus-driven RTS poses) ----
+export { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from './render/projection.js';

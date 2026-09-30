@@ -32,6 +32,12 @@ import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { gridLocal } from '../world/gridLocal.js';
 import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
+import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
+
+// RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
+const litPitchTerms = createPitchedTerms();
+const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
+const litP3 = new Float64Array(3);
 
 export const MAX_LIGHTS = 16;
 // PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
@@ -890,6 +896,12 @@ export function lightSurfaces(fb, lights, cam, world) {
   const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
 
   const kind = gbuf.kind, face = gbuf.face, rgb = lb.rgb;
+  // RE-02a (28.1 A2 item 2): pitched twin of `cellRayPitched` - P = `unprojectPitched(d = vd)`.
+  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  if (pitched) {
+    litGrid.cols = cols; litGrid.rows = rows; litGrid.pxCellW = rt.pxCellW || 1; litGrid.pxCellH = rt.pxCellH || 1;
+    pitchedTerms(cam, litGrid, litPitchTerms);
+  }
   for (let y = 0; y < rows; y++) {
     const slope = -(y - horizonRow) / planeDistY;
     const rowBase = y * cols;
@@ -898,9 +910,15 @@ export function lightSurfaces(fb, lights, cam, world) {
       if (kind[i] === 0) continue;
       const d = depth[i];
       if (!(d > 0) || !Number.isFinite(d)) continue;
-      const cameraX = (2 * (x + 0.5)) / cols - 1;
-      const rdx = dirX + planeX * cameraX, rdy = dirY + planeY * cameraX;
-      const px = cam.x + rdx * d, py = cam.y + rdy * d, pz = cam.z + slope * d;
+      let px, py, pz;
+      if (pitched) {
+        unprojectPitched(litPitchTerms, x, y, d, litP3);
+        px = litP3[0]; py = litP3[1]; pz = litP3[2];
+      } else {
+        const cameraX = (2 * (x + 0.5)) / cols - 1;
+        const rdx = dirX + planeX * cameraX, rdy = dirY + planeY * cameraX;
+        px = cam.x + rdx * d; py = cam.y + rdy * d; pz = cam.z + slope * d;
+      }
       const f = face[i];
       let nx, ny, nz;
       if (f === FACE_PACKED) {

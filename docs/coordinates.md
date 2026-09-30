@@ -225,7 +225,7 @@ Why bake: the DDA, the packed atlas, the sun grid, the terrain skip rectangles a
 
 ## 10. Test strategy
 
-Node, in `engine/core/transform.test.js`, `engine/world/rotateLevel.test.js`, `engine/world/frame.test.js`, `engine/render/sectorCaster.invariance.test.js`, `engine/world/serialize.v2.test.js`, `tools/editor/frame.test.mjs`:
+Node, in `engine/core/transform.test.js`, `engine/world/rotateLevel.test.js`, `engine/world/frame.test.js`, `engine/render/sectorCaster.invariance.test.js`, `engine/world/serialize.v2.test.js`, `tools/editor/coordFrame.test.mjs`:
 
 1. **Round-trip property tests:** 10k seeded random points, frames with `yawSteps 0..3`, `x/y/z` in `[-2000, 2000]` incl. non-integers: `worldToLocal(localToWorld(p)) === p` **exactly** for integer frames (table trig), `<= 1e-9` otherwise; `localYawToWorld/worldYawToLocal` inverse; `frameBBox` equals the AABB of the 4 rotated corners; `forwardOf` matches the inline expressions in the 8 hot-loop files (a test imports each file's exported helper or re-types the expression with a citation).
 2. **rotateLevel:** for every `k`, every cell: `localCellToWorld(frame, col, row)` of the rotated grid contains `localToWorld(frame, col + 0.5, row + 0.5)` of the original; `rotateLevel(rotateLevel(L, 1), 3)`-style compositions equal `rotateLevel(L, 0)` cell-for-cell; tilt chars rotate; `start.facingDeg` rotates; `k = 0` returns the same object.

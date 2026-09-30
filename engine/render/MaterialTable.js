@@ -19,6 +19,7 @@
 // resolved here, once; `detailShade.js` never calls into `design/` code.
 
 import { buildPowLUT } from './fastShade.js';
+import { buildTeamRemap } from './teamRemap.js';
 
 const FACE_STR = [null, 'N', 'E', 'S', 'W', 'U', 'D']; // index = face code (GBuffer.js)
 export const GAIN_LUT_SIZE = 256;
@@ -260,7 +261,12 @@ export function bindShading(P, DP, cellAspect) {
   const missingV2 = [];
   if (DP) for (let id = 1; id < records.length; id++) { if (records[id] && !records[id].v2) { allV2 = false; missingV2.push(records[id].key); } }
 
-  return { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2, missingV2 };
+  // RE-06 (28.6 item 5): `hasKey` = does the palette/detail pass define it (idFor invents ids);
+  // `team` = identity remap until engine.setTeamMaterials() rebuilds it (teamRemap.js).
+  const hasKey = (key) => !!(P.materials[key] || (DP && (DP.materials[key] || DP.remap[key])));
+  const table = { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2, missingV2, hasKey, team: null };
+  table.team = buildTeamRemap(table, null);
+  return table;
 }
 
 /**
