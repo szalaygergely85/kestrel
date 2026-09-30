@@ -2803,3 +2803,118 @@ Load order: structures placed, dynamics restored (`_restoreDynamics`), then `if 
 - **ME-11c - determinism + perf + flag.** 600-step scripted walk on world_m1 (the `worldWalk.perf` script) with `physics: 'mesh'`, twice, traces bit-equal; mesh vs grid traces within 1 cm inside the tower (report max); `worldWalk.perf` mesh p95 sim <= 1 ms (warn-only unless `PERF_STRICT=1`, print both modes); zero allocation over the walk; `?physics=mesh` in `main.js` (passes `{ physics }` to `World.load`, <= 5 lines). Done-when: run-tests + check-deps + typecheck green, numbers in the ME-11 row, -> `arch-review`; ME-12 (PC-A) does the browser pass.
 
 Do not: serialise colliders or BVHs, rebuild a BVH per step, let `rigid.js`/player/quest code touch `bvh`/triangles (only `contacts()`, `collideCircle`, `collideSphere`, `supportAt`), add prop colliders (grid physics has none today; props/trees get colliders in ME-06c/ME-14), or change grid-mode behaviour (all existing suites bit-identical with `physics` omitted).
+
+## 28. RTS engine capability, Epic RE (architect, 2026-09-30; D-032; normative for PC-B)
+
+### 28.1 RE-01 + RE-02 pitched camera (`cam.projection: 'pitched'`)
+
+Amends 27.1 item 2 / 27.5 for this mode only: a real rotated view matrix, mesh path only. `'shear'` (default) stays bit-identical. PC-B may do **RE-01** (pure math + tests, cross-track, ends in `arch-review`); **RE-02** (GPU pipeline, shaders) is PC-A.
+
+**Camera fields.** `cam = {x, y, z, yawDeg, pitchDeg, projection?: 'shear'|'pitched', vfovDeg?}`. `pitchDeg` keeps the engine sign (**positive = up**, as `horizonRow` in `projTerms`); an RTS down-look is `pitchDeg = -58`. Backlog ACs saying "pitch 55/58/60" mean -55/-58/-60. Pitched range `-89 <= pitchDeg <= 89`, else throw. `vfovDeg` default `PROJ_PITCHED_VFOV_DEG = 36` (at -58 the top/bottom ground-scale ratio is ~1.51; at 40 deg it is 1.59, too close to the 1.6 AC).
+
+**Basis** (x east, y south, z up, compass yaw; the frame is left-handed, so no cross products): `p = pitchDeg*DEG2RAD`, `fx = sin yaw`, `fy = -cos yaw`:
+```
+F = ( cos p*fx,  cos p*fy,  sin p)     forward (view-depth axis)
+R = ( cos yaw,   sin yaw,   0    )     right
+U = (-sin p*fx, -sin p*fy,  cos p)     up
+aspect   = cols*pxCellW / (rows*pxCellH)          (grid spec as projTerms, px default 1)
+tanHalfY = tan(vfovDeg/2),  tanHalfX = tanHalfY*aspect
+```
+View coords of P: `vx = dot(P-eye,R)`, `vy = dot(P-eye,U)`, `vd = dot(P-eye,F)` (view depth, > 0 in front).
+
+**Cell convention** (same as shear, 27.15.0 item 1): cell `(col,row)` samples the ray at `a = (2(col+0.5)/cols - 1)*tanHalfX`, `b = (1 - 2*row/rows)*tanHalfY`; `dir = F + a*R + b*U`, **not normalised** (forward component 1, so the distance along `dir` is `vd`). Raster pixel centre `Y = n(row+0.5)` maps to that ray through the `+w/rows` term below; no viewport flip.
+
+**Matrix** `M = P*V`, column-major `M[col*4+row]`, Float64Array(16); each row is `(a,b,c,d)` meaning `a*x+b*y+c*z+d`:
+```
+row_w = (F.x, F.y, F.z, -dot(F,eye))
+row_x = (1/tanHalfX) * (R.x, R.y, 0, -dot(R,eye))
+row_y = -(1/tanHalfY) * (U.x, U.y, U.z, -dot(U,eye)) + (1/rows)*row_w
+row_z = A*row_w + (0,0,0,B)      A, B from PROJ_NEAR/PROJ_FAR exactly as shearProjection
+```
+Parity anchor: at `pitchDeg = 0` with `vfovDeg = 2*atan(tan(PROJ_HFOV_DEG/2)/aspect)` the matrix equals `shearProjection` element-wise within 1e-12.
+
+**API added to `engine/render/projection.js`** (still imports nothing; zero allocation after create):
+```js
+/** @typedef {Object} PitchedTerms   filled by pitchedTerms; consumers read, never write
+ * @property {'pitched'} projection
+ * @property {number} cols @property {number} rows @property {number} aspect
+ * @property {number} eyeX @property {number} eyeY @property {number} eyeZ
+ * @property {number} fX @property {number} fY @property {number} fZ
+ * @property {number} rX @property {number} rY             (rZ = 0)
+ * @property {number} uX @property {number} uY @property {number} uZ
+ * @property {number} tanHalfX @property {number} tanHalfY
+ * @property {number} yawDeg @property {number} pitchDeg @property {number} vfovDeg
+ * @property {Float64Array} M                                world -> clip, refreshed by pitchedTerms
+ */
+export const PROJ_PITCHED_VFOV_DEG = 36;
+export function createPitchedTerms()                         // the only allocation (object + M)
+export function pitchedTerms(cam, grid, out)                 // fills every field + out.M (via pitchedProjection); returns out
+export function pitchedProjection(terms, out16)              // M as above
+export function screenRay(terms, col, row, out)              // out {ox,oy,oz,dx,dy,dz}: origin = eye, dir per cell convention; col/row may be fractional
+export function unprojectPitched(terms, col, row, vd, out3)  // eye + vd*dir; JS twin of GLSL cellRayPitched
+export function worldToCell(terms, x, y, z, out3)            // [col, row, vd]: col = (vx/vd/tanHalfX + 1)*cols/2 - 0.5, row = (1 - vy/vd/tanHalfY)*rows/2; vd <= 0 -> only out3[2] valid
+export function pitchedEyeFromFocus(fx, fy, fz, yawDeg, pitchDeg, dist, out3)  // eye = focus - dist*F
+```
+Integer cell of a projected point: `floor(col+0.5)`, `floor(row+0.5)`. Mouse -> cell: `windowToCell(1, mx/pxCellW, my/pxCellH, out2)`, then `screenRay`. `projectPoint(M, ...)` works unchanged on the pitched M. `culling.js frustumPlanes` is generic Gribb-Hartmann: no code change, test only.
+
+**RE-01 tests** (`engine/render/projection.pitched.test.js` + a `culling.test.js` case): (1) `worldToCell(unprojectPitched(col,row,vd))` round trip, 1000 seeded random `(col,row,vd in [1,200])` at -55/-58/-60, error <= 1e-9 cells, and `projectPoint(M)` pixel = `n*(col+0.5), n*(row+0.5)` within 1e-9; (2) existing `projection.test.js` unchanged and passing; (3) pitch-0 parity against `shearProjection` (above); (4) at -58, default vfov, 400x150, `pxCellW:1, pxCellH:2`: `screenRay` hits on z = 0 at the centre column for row 0 and row `rows-1`; metres per column ratio top/bottom <= 1.6; (5) 64-box fixture: no box with a visible corner (`worldToCell` inside the grid, vd > PROJ_NEAR) is `CULL_OUT`; (6) basis orthonormal within 1e-12; (7) zero alloc: 10k `screenRay` + `worldToCell` calls with reused outs, `--expose-gc` heap delta < 64 KB (skip when gc is not exposed). Test RNG: a local seeded LCG, never `Math.random`.
+
+**RE-02 (PC-A) rules.** `cam.projection === 'pitched'` with `renderer !== 'mesh'` throws `Error("cam.projection 'pitched' requires renderer 'mesh'")` at the render entry (DDA, voxel march and the CPU caster only know shear). Raster: uniform `M` only. SDEPTH stores `vd`. Light, shade, fog and sky rebuild P with GLSL `cellRayPitched(cell, grid, eye, F, R, U, tanHalf, vd)` in `glsl/common.js`, the literal twin of `unprojectPitched` (same expression order; parity through `rasterJS` + the JS shade twin); an int uniform `uProjMode` selects shear/pitched (no shader permutation). Sky per cell uses the `screenRay` direction. `projectSprite` uses `worldToCell`. Sun shadow box centred on the focus point. Edge, deriv and resolve compare depths only: unchanged.
+
+**RE-03 `engine/core/rtsCamera.js`** (presentation, not sim: may use `Math.exp` and frame `dt`; may import `engine/render/projection.js`, a leaf with no imports, and `engine/core/transform.js`). State `{focusX, focusY, zoom}`; options `{yawDeg=0, pitchDeg=-58, vfovDeg, widthM=30, zoomMin=25/30, zoomMax=35/30, bounds:{x0,y0,x1,y1}, panSpeed (m/s at zoom 1), edgePx, heightFn}`. `update(dt, input, grid, cam)`: pan by `panSpeed*zoom*dt` (keys, edge) or drag (exact ground delta of two `screenRay` hits on the plane z = focus z); clamp focus to `bounds`; `dist = widthM*zoom/(2*tanHalfX)` (tanHalfX from the current grid, so the ground width at the centre row is `widthM*zoom` by construction); focus z = `heightFn(focusX, focusY)` smoothed by `1-exp(-k*dt)`; `pitchedEyeFromFocus` writes the eye into `cam` in place and sets `projection`, `yawDeg`, `pitchDeg`, `vfovDeg`. Zero alloc per update.
+
+**RE-04 `engine/render/pick.js`.** `rayTerrain(terrain, ray, out, opts)`: march `t` in `opts.step` (default 0.5 m) from 0 to `opts.maxT` (default `4*eyeZ/-dz`); first sample with `oz+t*dz < terrain.groundAt(x,y)` (what is rendered), then 24 bisections -> `out {x,y,z,t,hit}`. `pickNearest(ray, positions, radii, heights, count)`: ray vs vertical cylinder per unit (`positions` Float64Array stride 3 = base point), smallest `t`, ties to the lower index, -1 if none. `selectInRect(terms, c0, r0, c1, r1, positions, count, outIds)` -> count; iterate ascending, `worldToCell`, inclusive rect, `vd > 0`; ids come out ascending. Zero alloc.
+
+### 28.2 `engine/nav/` (RE-05, RE-08, RE-09, RE-10)
+
+Amends D-032's "grid/A* in `engine/world/`": nav is a separate **leaf** module, so it never depends on World internals and tests run with a fake world. Unit and command logic stays in `game/js/rts/`.
+
+**Layout.** `engine/nav/heap.js` (`IndexHeap`, shared), `NavGrid.js` (RE-05, RE-10), `astar.js` (RE-05), `flowField.js` (RE-08), `steer.js` (RE-09), each with its `*.test.js`; all `// @ts-check`. Exported through `engine/index.js`: `NavGrid`, `createAStar`, `findPath`, `smoothPath`, `pathCrossesRect`, `createFlowField`, `FlowCache`, `createSteer`.
+
+**check-deps rule 14 (added in RE-05):** non-test `engine/nav/**/*.js` may import only `engine/nav/**` and `engine/core/**`; files under `engine/render/**`, `engine/mesh/**`, `engine/ui/**` and `engine/world/**` may not import `engine/nav/**`. Tests may also import `engine/world/**` for real terrain fixtures. World is passed in as a duck-typed parameter. Add pass/fail fixtures to `tools/check-deps.test.mjs`.
+
+**NavGrid data** (cell index `i = cy*w + cx`; world metres via the origin):
+```
+new NavGrid({x0, y0, w, h, cell = 1})   allocates everything; later calls allocate nothing
+grid.cellX(x) = Math.floor((x - x0)/cell)    (cellY likewise); centre = x0 + (cx + 0.5)*cell
+terrainCost  Uint8Array(N)   0 = unwalkable (slope/type/structure/mask); 1..254 = entry-cost multiplier; derived, never saved
+blockCount   Uint16Array(N)  number of footprints covering the cell (RE-10)
+cost         Uint8Array(N)   blockCount > 0 ? 0 : terrainCost  (the ONLY array A* and flow read)
+height       Float32Array(N) analytic ground z at the centre (info only; units get z from world.supportAt)
+version      int, +1 per change; dirty = ring of 8 {version, cx0, cy0, cx1, cy1} (half-open)
+minCost      smallest non-zero cost (heuristic scale)
+```
+**Walkability build** `grid.buildFromWorld(world, opts)` (load time; <= 50 ms at 256x256). Per cell centre it uses the **analytic** `terrain.heightAt/normalAt/typeAt`. These do not depend on the camera; `groundAt` depends on where the near band was baked and would make nav differ between sessions. A cell is unwalkable if `normal.z < cos(opts.maxSlopeDeg)` (default 30), if `terrain.typeName(typeAt)` is in `opts.blockedTypes` (default `['water']`), if `world.structureAt(x,y)` (structures block in v1; walking inside multi-floor structures is out of scope for a 2.5D grid), or if `opts.mask[i]`. Otherwise `terrainCost = opts.typeCost[typeName] ?? 1` (e.g. `{path:1, grass:1, forest:3}`). Thresholds come from options, never literals. For tests without a world: `grid.buildFromArrays(heightF32, slopeOkU8, typeU8, opts)`.
+
+**Footprints (RE-10).** `grid.block(ownerId, cx0, cy0, cx1, cy1, maskU8?)` and `grid.unblock(ownerId)`; `grid.blockWorldRect(ownerId, x0, y0, x1, y1)` covers every cell the rect overlaps by > 1e-6 m. The owner table is preallocated (`maxBlockers`, default 1024; overflow throws): ownerId Int32, rect Int16 x4, mask offset into a preallocated pool. `block` increments `blockCount` and `unblock` decrements it; both recompute `cost` in the rect, bump `version` and push the dirty rect. Re-blocking an owner that is already blocked throws. The footprint comes from the caller (content `footprint` or mesh bbox); nav does not read meshes. Save: `grid.saveBlockers()` -> `[{owner, rect:[cx0,cy0,cx1,cy1], mask?:number[]}]` sorted by owner; `grid.loadBlockers(arr)` clears, then re-applies in that order. Consumers poll `grid.version` each tick (no callbacks in sim). `pathCrossesRect(path, len, grid, rect)` decides re-plans, so only paths through the rect re-plan. Flow fields rebuild on any version change.
+
+**A\*.** `createAStar(grid)` preallocates `g` Int32Array(N), `parent` Int32Array(N), `open`/`closed` stamps Uint32Array(N) (search generation, so nothing is cleared per query) and an `IndexHeap` (Int32 heap + Int32 heapPos, decrease-key). `findPath(astar, sx, sy, gx, gy, outPath, opts)` works in cell coordinates and returns the path length (cell indices start..goal in `outPath` Int32Array); 0 if the start is unwalkable. Integer costs only: straight `10*cost[j]`, diagonal `14*cost[j]` (cost of the entered cell). Heuristic: octile `minCost*(10*max(dx,dy) + 4*min(dx,dy))`. Fixed neighbour order `(0,-1),(1,0),(0,1),(-1,0),(1,-1),(1,1),(-1,1),(-1,-1)`. A diagonal is allowed only if both orthogonal neighbours are walkable (no corner cutting). Heap order: `f` asc, then `h` asc, then cell index asc. If the goal is unreachable or blocked, or `opts.maxNodes` is hit: return the path to the closed cell with the smallest `h` (then `g`, then index) and set `astar.partial = true`. `smoothPath(grid, path, len, outXY)` string-pulls with a supercover line of sight on `cost > 0` (same corner rule) -> world waypoints at cell centres; returns the count.
+
+**Flow field (RE-08).** `createFlowField(grid)`: `integ` Uint32Array(N) (0xFFFFFFFF = unreached), `dir` Uint8Array(N) (0..7 = neighbour index in the A* order, 254 = goal, 255 = none) and its own `IndexHeap`. `ff.begin(goalCells Int32Array, count)`, then `ff.step(cellBudget)` returns true when done. It runs Dijkstra with the A* integer costs, heap order `integ` asc then index asc. A settled cell's direction points to the neighbour with the lowest `integ`; ties go by neighbour order, and there is no corner cutting. `ff.dirAt(x, y, out2)` returns the cell direction as a unit vector (8-entry table; the diagonal uses the literal 1/sqrt(2)). `ff.cellsDone` is state: a save stores `{goals, cellsDone}` and load does `begin` + `step(cellsDone)` (deterministic). `FlowCache(grid, slots = 8)`: key = sorted goal cells + `grid.version`; LRU by the sim tick passed in, never wall time.
+
+**Steering (RE-09).** `createSteer({maxAgents, hashCell = 2, maxNeighbours = 8, bounds})` keeps one Float64Array per field (SoA): `x, y, vx, vy, radius, maxSpeed, accel`, plus `mode` Uint8 (0 idle, 1 waypoint, 2 flow), target fields and `active` Uint8. Agent id = slot; the game allocates slots lowest-free-first. `steer.step(dt, grid)` does three things:
+1. It rebuilds the spatial hash: head Int32Array per hash cell, next Int32Array per agent, inserted in ascending slot order.
+2. For each active slot in ascending order, it gathers neighbours from the 3x3 hash cells in fixed order and keeps the K nearest by `(dist2, slot)` in a fixed-size, insertion-sorted scratch. Desired velocity = seek (waypoint or `ff.dirAt`), slowed down inside `arriveR`, plus separation `sum (ri+rj-dist)/dist * (pi-pj)` weighted by `sepW`. Arrived or idle agents push moving ones only with `idleSepW = 0.25`, which prevents gap deadlock. The new velocity goes to a scratch array (Jacobi: every agent reads the old state).
+3. It applies the result in slot order: clamp speed, `x += vx*dt`; if the new cell has `cost == 0`, try x-only, then y-only, else stay. No tunnelling: `maxSpeed*dt < cell/2` is asserted at create.
+
+Z and facing belong to the caller (`world.supportAt`; yaw is computed on the render side). `steer.hash()` is FNV-1a over the u32 view of the SoA buffers (zero alloc).
+
+**Determinism (review rule, D-032 item 5).** Sim advances in fixed steps only (`dt` = the loop's fixed step, never frame time). Iterate by slot or cell index, never over `Map`/`Set`/object keys. No `Math.random`, `Date.now` or `performance.now` in `engine/nav` (use RE-14's seeded RNG if ever needed). Float math is limited to `+ - * /`, `Math.sqrt`, `floor`, `abs`, `min` and `max` (exact or correctly rounded). **No** `Math.sin/cos/atan2/exp/pow/hypot` in sim steps: their results can differ between JS engines and would break lockstep. Costs and heuristics are integers. Caches (paths, fields, hash) are derived and not saved; their outputs must be reproducible from saved state.
+
+**Zero allocation** per query, step or block: no arrays, closures, destructuring or returned objects; outs are owned by the caller. Only constructors, `create*`, `buildFromWorld` and `saveBlockers` allocate.
+
+**Budgets** (Node, sim thread; D-032 sim <= 2 ms at 200 units):
+- A*: open 256x256 corner-to-corner <= 1 ms (this is RE-05 AC 1); maze fixture <= 5 ms (recorded only). The game caps A* at 20k node expansions per tick using a queue.
+- Flow field: full 256x256 <= 3 ms; `step(16384)` <= 0.8 ms.
+- Steering: 200 agents <= 0.4 ms, 500 <= 1 ms.
+- `block`/`unblock` 16x16: <= 0.05 ms.
+
+Perf asserts are warn-only unless `PERF_STRICT=1`.
+
+**Test matrix.**
+- **RE-05** (`NavGrid.test.js`, `astar.test.js`): slope/type/mask/structure driven by options (fake world); cell <-> world round trip, incl. a negative origin; open-field path cost = octile optimum; corner rule (no diagonal past a blocked orthogonal cell); blocked goal -> partial path; 1000 seeded random queries run twice -> identical paths; `smoothPath` never crosses `cost 0`; perf; zero alloc; check-deps rule 14 fixtures.
+- **RE-08** (`flowField.test.js`): following `dir` from every reached cell descends strictly to a goal; `step` in chunks of 1000 == one shot (bit-equal `integ`/`dir`); save/load mid-build gives the same result; multi-goal; perf.
+- **RE-09** (`steer.test.js`): 600-step scripted run twice -> same `hash()`; 50 agents through a 3 m gap reach the goal area, max overlap <= 20 % of radius, no agent stays still for > 120 steps before arriving; no agent ever in a `cost 0` cell; same result when agents are activated in a different order but get the same slots; perf at 500.
+- **RE-10** (in `NavGrid.test.js`): block + unblock restores `cost`/`blockCount` byte-equal; overlapping footprints; `saveBlockers`/`loadBlockers` round trip; `version` and dirty ring; `pathCrossesRect` true/false fixtures.
+
+**Do not:** import render, mesh or World into nav; store world objects or closures in NavGrid; run per-unit A* for large group moves (use the flow field); emit callback events from nav; sample `groundAt` for walkability.
