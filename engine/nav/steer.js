@@ -379,7 +379,18 @@ export function createSteer(opts) {
         const j = nbSlot[p];
         const dist = Math.sqrt(nbDist2[p]);
         const rj = steer.radius[j];
-        if (dist > 0 && dist < ri + rj) {
+        if (dist === 0) {
+          // Exactly-coincident agents (e.g. two units spawned at the
+          // identical point): the dist>0 branch below can never fire for
+          // them (division by zero), so without this they overlap forever.
+          // Push apart deterministically by SLOT ORDER (28.2's determinism
+          // rule - never insertion order or any other non-reproducible
+          // tiebreak): the lower-numbered slot goes -x, the higher-numbered
+          // slot goes +x. x-only per spec - no fy component.
+          const w = (stopped[j] && !stopped[i]) ? idleSepW : sepW;
+          const mag = (ri + rj) * w;
+          fx += (i < j ? -1 : 1) * mag;
+        } else if (dist < ri + rj) {
           const push = (ri + rj - dist) / dist;
           // idleSepW only for "a stopped/idle agent pushes a moving one"
           // (spec: "arrived or idle agents push moving ones only with
@@ -455,6 +466,24 @@ export function createSteer(opts) {
       h = Math.imul(h, FNV_PRIME);
     }
     return h >>> 0;
+  };
+
+  /** Mixes the same fields as `hash()` into an external duck-typed hasher
+   * `h` (see `engine/core/hash.js`'s `createHasher()` - only `h.u32Array`/
+   * `h.u8Array` are used). steer.js stays a dependency-free leaf: it never
+   * imports hash.js, just calls methods on whatever `h` the caller passes
+   * (same pattern as `Visibility.js`'s `hashInto(h)`). Zero allocation.
+   * Does not replace `hash()`, which keeps its own standalone FNV-1a for
+   * the existing RE-09 determinism tests. */
+  steer.hashInto = function hashInto(h) {
+    const views = steer._hashViews;
+    for (let f = 0; f < views.length; f++) {
+      const v = views[f];
+      h.u32Array(v, 0, v.length);
+    }
+    h.u8Array(steer.mode, 0, steer.mode.length);
+    h.u8Array(steer.active, 0, steer.active.length);
+    return h;
   };
 
   return steer;

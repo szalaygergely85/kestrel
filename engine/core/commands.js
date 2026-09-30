@@ -18,15 +18,16 @@
 //
 // Records are allocated from a free-list stack (O(1) alloc/free, zero
 // allocation after construction). The id ring is a bump cursor with
-// wraparound indexing (`(idOff + k) % maxIds`) plus a "live word count"
-// overflow guard: correct under the normal FIFO-ish usage pattern this
-// engine has (commands are issued a small, bounded number of ticks ahead via
-// `inputDelay` and freed the tick they execute) - it is not a general
-// out-of-order allocator. A pathological caller that inserts far-future
-// commands and frees them wildly out of allocation order could in principle
-// alias live id data before the live-word guard catches it; this is a known,
-// documented simplification (RE-14 scope), not something the normal
-// issue -> execute cadence can trigger.
+// wraparound indexing (`(idOff + k) % maxIds`), guarded two ways (RE-14b,
+// docs/architecture.md 28.5): a cheap "live word count" (`liveIdWords`)
+// early-reject, plus a per-slot `idOccupied` occupancy byte array that is
+// checked (all slots in the range, in one pass, before any write) and
+// throws on any overlap with a still-live slot. The occupancy check is the
+// real guard - it also catches a pathological out-of-order free/alloc
+// sequence that wraps the bump cursor back onto live id data before
+// `liveIdWords` alone would notice (the normal issue -> execute cadence,
+// bounded by `inputDelay`, never triggers this path; the occupancy check
+// exists for callers that free out of allocation order).
 
 const RECORD_STRIDE = 8; // tick, player, seq, type, nIds, idOff, a0, a1
 const OFF_TICK = 0, OFF_PLAYER = 1, OFF_SEQ = 2, OFF_TYPE = 3;
@@ -51,6 +52,15 @@ export function createCommandQueue(opts = {}) {
   for (let i = 0; i < maxRecords; i++) freeStack[i] = i;
   let freeTop = maxRecords;
 
+  // One byte per id-ring slot (0 = free, 1 = occupied). Hard occupancy
+  // guard on top of the `liveIdWords` count guard below: a pathological
+  // out-of-order free/alloc sequence can wrap the bump cursor back onto a
+  // still-live id range before `liveIdWords` alone would catch it (see file
+  // header). This catches that case unconditionally, at the cost of one
+  // extra byte array scan per alloc/free - still O(n) in the ids requested/
+  // freed, not O(maxIds).
+  const idOccupied = new Uint8Array(maxIds);
+
   // Scratch index array for execute()'s insertion sort - reused every call.
   const scratch = new Int32Array(maxRecords);
 
@@ -71,10 +81,20 @@ export function createCommandQueue(opts = {}) {
     if (liveIdWords + n > maxIds) {
       throw new Error(`commands: id ring overflow (maxIds=${maxIds}, requested ${n}, live ${liveIdWords})`);
     }
-    const idx = freeStack[--freeTop];
     const idOff = idCursor;
+    // Check the whole range for overlap with a still-live slot BEFORE
+    // writing anything, so a throw here leaves no partial state.
     for (let k = 0; k < n; k++) {
-      ids[(idOff + k) % maxIds] = idsIn[k];
+      const slot = (idOff + k) % maxIds;
+      if (idOccupied[slot]) {
+        throw new Error(`commands: id ring overlap at slot ${slot} (allocating ${n} ids at idOff=${idOff}, maxIds=${maxIds})`);
+      }
+    }
+    const idx = freeStack[--freeTop];
+    for (let k = 0; k < n; k++) {
+      const slot = (idOff + k) % maxIds;
+      ids[slot] = idsIn[k];
+      idOccupied[slot] = 1;
     }
     idCursor = (idOff + n) % maxIds;
     liveIdWords += n;
@@ -95,7 +115,10 @@ export function createCommandQueue(opts = {}) {
 
   function freeRecord(idx) {
     const base = idx * RECORD_STRIDE;
-    liveIdWords -= records[base + OFF_NIDS];
+    const n = records[base + OFF_NIDS];
+    const idOff = records[base + OFF_IDOFF];
+    for (let k = 0; k < n; k++) idOccupied[(idOff + k) % maxIds] = 0;
+    liveIdWords -= n;
     used[idx] = 0;
     freeStack[freeTop++] = idx;
   }

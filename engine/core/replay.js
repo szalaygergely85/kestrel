@@ -6,7 +6,7 @@
 //
 //   {"kind":"kestrel-replay","v":1,"content":<n>,"world":"<name>","seed":<u32>,"step":60,"inputDelay":1,"players":[0,1],"start":<WorldState|null>}
 //   {"t":120,"p":0,"s":3,"c":16,"u":[4,5,9],"a":[12500,-3000,-1]}   one line per executed command, in execute order
-//   {"t":120,"h":"9f3a0c1d"}                                        checkpoint at every tick t with t % 60 === 0 (hash after tick t ran)
+//   {"t":120,"h":"9f3a0c1d"}                                        checkpoint every 60 ticks (hash after tick t ran, 0-indexed; tick % checkpointEvery === 0)
 //   {"end":600,"h":"..."}
 //
 // `createRecorder` needs each executed record's fields *before* commands.js
@@ -44,12 +44,14 @@ export function createRecorder(q, hashFn, header, opts = {}) {
   let pendingCount = 0;
   const pT = [], pP = [], pS = [], pC = [], pU = [], pA0 = [], pA1 = [], pA2 = [];
 
-  const origExecute = q.execute.bind(q);
-  // ONE capture wrapper for the recorder's lifetime; the per-call user handler
-  // lives in `curHandler` (no closure allocated per tick).
-  /** @type {(qq:any, rec:any)=>void} */
-  let curHandler = () => {};
-  const capture = (qq, rec) => {
+  // The wrapper passed to `origExecute` must be created ONCE (here, at
+  // recorder-construction time), not per tick - a fresh arrow function on
+  // every `q.execute` call would allocate every tick, against the zero-
+  // alloc-per-tick contract. The "current handler" (the real per-tick
+  // handler passed into our `q.execute` override) lives in this closure
+  // variable, which the one hoisted wrapper reads and calls.
+  let currentHandler = null;
+  function recordingHandler(qq, rec) {
     const n = qq.nIds(rec);
     const idsCopy = new Array(n);
     for (let k = 0; k < n; k++) idsCopy[k] = qq.idAt(rec, k);
@@ -62,11 +64,13 @@ export function createRecorder(q, hashFn, header, opts = {}) {
     pA0[i] = qq.a0(rec);
     pA1[i] = qq.a1(rec);
     pA2[i] = qq.a2(rec);
-    curHandler(qq, rec);
-  };
+    currentHandler(qq, rec);
+  }
+
+  const origExecute = q.execute.bind(q);
   q.execute = function execute(handler) {
-    curHandler = handler;
-    origExecute(capture);
+    currentHandler = handler;
+    origExecute(recordingHandler);
   };
 
   const recorder = {};
@@ -86,6 +90,10 @@ export function createRecorder(q, hashFn, header, opts = {}) {
       lines.push(JSON.stringify(line));
     }
     pendingCount = 0;
+    // 28.5's worked example shows a checkpoint at the same "t" as a command
+    // line (`{"t":120,...}`), both on the raw 0-indexed engine-tick scale
+    // `recTick`/`afterTick` already use - so the gate is on `tick` itself,
+    // not `tick + 1`.
     if (tick % checkpointEvery === 0) {
       lines.push(JSON.stringify({ t: tick, h: toHex(hashFn()) }));
     }

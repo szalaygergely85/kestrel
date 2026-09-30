@@ -10,6 +10,10 @@ import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
 globalThis.window = globalThis.window || globalThis;
 terrainDef;
 const recipe = globalThis.ASSETS.levels.overworld_far;
+// CO-9: no more x/y/w/h/ringH fallback in the recipe itself - inject the
+// tower's bbox/ringHAt directly (same numbers the old fallback hardcoded).
+recipe.structures[0].bbox = { x0: 1480, y0: 1018, x1: 1504, y1: 1032 };
+recipe.structures[0].ringHAt = () => 2.4;
 const pal = globalThis.ASSETS.palette || palette;
 let fail = 0;
 const t = new Terrain(recipe);

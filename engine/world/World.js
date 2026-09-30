@@ -126,6 +126,13 @@ export class World {
     // angle). `World.load` copies `def.horizon` here; `serialize` writes it
     // straight back.
     this.horizon = [];
+    // RE-11b (architecture.md 28.3, "Save" / CO-5 extension): the sight/fog
+    // grid, or `null` (default - every world before this story, and most
+    // worlds even after it: `Visibility` needs grid dimensions the GAME
+    // decides, not level/world content, so it is never built from `def`
+    // here - the game sets this field once it knows its grid, and
+    // `serialize`/`deserialize` round-trip it when non-null).
+    this.visibility = null;
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;
@@ -277,8 +284,10 @@ export class World {
         const placed = w.structures.find((p) => p.id === rs.id);
         if (placed) {
           rs.ringHAt = makeRingHAt(placed);
-          // CO-2: the placement has ONE source (the world file); the recipe's
-          // own x/y/w/h copy (deleted by CO-8) is not consulted for it.
+          // CO-2/CO-9: the placement has ONE source (the world file); the recipe
+          // no longer carries its own x/y/w/h/ringH copy at all (that literal
+          // fallback was removed by CO-9) - `bbox`/`ringHAt` injected here are the
+          // only path `structureBlend` reads.
           rs.bbox = { x0: placed.bbox.x0, y0: placed.bbox.y0, x1: placed.bbox.x1, y1: placed.bbox.y1 };
         }
       }
@@ -497,10 +506,14 @@ export class World {
           x: tmpW.x, y: tmpW.y, z: tmpW.z,
           yawDeg: local.facingDeg || 0, pitchDeg: local.pitchDeg || 0,
         };
-        parent = st.id;
+        parent = st.id; // spawned FROM this structure - always its parent, takes priority over ed.parent
       } else {
         throw new Error(`World.load: entity "${ed.id}" needs "transform" or "spawn"`);
       }
+      // CO-5 follow-up: a restored entity (transform/inline-xyz branch, not
+      // `ed.spawn`) carries its own live `parent` on the def when it came
+      // through `deserialize` - use it instead of leaving `null`.
+      if (parent === null && typeof ed.parent === 'string') parent = ed.parent;
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
 

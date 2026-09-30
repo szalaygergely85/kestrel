@@ -50,7 +50,6 @@ export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
 export { GpuSpritePass } from './render/gpu/spritesPass.js';
-export { GpuOverlayPass } from './render/gpu/overlayPass.js'; // RE-07b
 export { drawText } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
 // engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only
@@ -133,33 +132,12 @@ export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 export { NavGrid } from './nav/NavGrid.js';
 export { createAStar, findPath, smoothPath, pathCrossesRect } from './nav/astar.js';
 
-// ---- RE-EXP: RTS layer exports (docs/architecture.md 28.x) -------------------
-export {
-  PROJ_PITCHED_VFOV_DEG, createPitchedTerms, pitchedTerms, pitchedProjection, screenRay,
-  unprojectPitched, worldToCell, pitchedEyeFromFocus, pitchedFogScale, frameMatrix,
-} from './render/projection.js';
-export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
-export { createFlowField, FlowCache } from './nav/flowField.js';
-export { createSteer } from './nav/steer.js';
-export { Visibility } from './world/Visibility.js';
-export {
-  createMinimap, minimapToWorld, worldToMinimap,
-  update as updateMinimap, bakeTerrain as bakeMinimapTerrain, bindFog as bindMinimapFog,
-} from './render/minimap.js';
-export { createRtsCamera, update as updateRtsCamera, zoomBy as zoomRtsCamera } from './core/rtsCamera.js';
-export { createCommandQueue } from './core/commands.js';
-export { createRng } from './core/rng.js';
-export { createHasher } from './core/hash.js';
-export { createRecorder, createPlayer as createReplayPlayer } from './core/replay.js';
-export { STEP as SIM_STEP } from './core/loop.js';
-
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
 export { attachedLightPos } from './entities/attach.js';
 
 // ---- triggers + fade + restart (US-017) ------------------------------------
 export { buildTriggers, updateTriggers } from './world/triggers.js';
-export { createOverlay, applyOverlay, OVL_MAX_OPS } from './ui/overlay.js';
 export { createFadeLut, fadeGlyph, applySceneFade, clearMaskForSceneFade } from './ui/fade.js';
 
 // ---- behaviours ---------------------------------------------------------------
@@ -169,3 +147,42 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 // ("may change without notice") moved to engine/dev.js - dev-mode code
 // (game/js/main.js, game/js/dev/*, tools/* except tools/editor/**) imports
 // them from there now.
+
+// ---- RE-01/28.1 pitched camera projection (docs/architecture.md 28.1) ------
+// Only the pitched-camera API; the pre-existing shear-path exports
+// (projTerms/shearProjection/projectPoint/unprojectCell/windowToCell/
+// PROJ_HFOV_DEG/PROJ_NEAR/PROJ_FAR) stay internal/test-only as before.
+export {
+  createPitchedTerms, pitchedTerms, pitchedProjection, screenRay, unprojectPitched,
+  worldToCell, pitchedEyeFromFocus, resolveProjection, PROJ_PITCHED_VFOV_DEG, pitchedFogScale, frameMatrix,
+} from './render/projection.js';
+
+// ---- RE-04 screen -> world picking (docs/architecture.md 28.1) ------------
+export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
+
+// ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
+export { createFlowField, FlowCache } from './nav/flowField.js';
+export { createSteer } from './nav/steer.js';
+
+// ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
+export { Visibility } from './world/Visibility.js';
+
+// ---- RE-13 minimap (docs/architecture.md 28.4; generic names prefixed per architect note) --
+export {
+  createMinimap, minimapToWorld, worldToMinimap,
+  bakeTerrain as bakeMinimapTerrain, update as updateMinimap, bindFog as bindMinimapFog,
+} from './render/minimap.js';
+
+// ---- RE-03 RTS camera controller (docs/architecture.md 28.1; generic names prefixed per architect note) --
+export { createRtsCamera, update as updateRtsCamera, zoomBy as zoomRtsCamera } from './core/rtsCamera.js';
+
+// ---- RE-14 deterministic sim: commands/rng/hash/replay + loop STEP --------
+export { createCommandQueue } from './core/commands.js';
+export { createRng } from './core/rng.js';
+export { createHasher } from './core/hash.js';
+export { createRecorder, createPlayer as createReplayPlayer } from './core/replay.js';
+export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: not a bare STEP next to STEP_MIN/KIND_STEP
+
+// ---- RE-07 selection overlay (docs/architecture.md 28.9) ----
+export { createOverlay, applyOverlay, OVL_MAX_OPS } from './ui/overlay.js';
+export { GpuOverlayPass } from './render/gpu/overlayPass.js'; // RE-07b

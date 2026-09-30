@@ -8,8 +8,6 @@
 // `createFlowField(grid)` preallocates everything a build needs (N =
 // grid.w*grid.h cells); `begin`/`step`/`dirAt` allocate nothing afterwards.
 
-import { IndexHeap } from './heap.js';
-
 // Fixed neighbour order (28.2, same as astar.js): N, E, S, W, then the 4
 // diagonals. `dir[i]` stores the index into this table (0..7), or the two
 // sentinels below.
@@ -38,10 +36,133 @@ function diagonalOk(cost, w, cx, cy, dx, dy, nx, ny) {
   return cost[o1] !== 0 && cost[o2] !== 0;
 }
 
+// RE-08p (docs/architecture.md 28.2): a binary min-heap specialized for this
+// file only (NOT the shared IndexHeap in heap.js - astar.js/RE-05 keeps using
+// that one unchanged). Same push/pop/has/decreaseKey/clear contract as
+// IndexHeap, but with the priority comparison inlined: `key` is a
+// Uint32Array indexed by HEAP POSITION (not item id) holding a snapshot of
+// that slot's `integ` value, so every sift step is a plain typed-array read
+// (`key[i] < key[j]`) instead of a closure call through `less(a, b)`. `key`
+// is kept in sync with `integ` at the only two points integ can change for
+// a heap member: push (new entry) and decreaseKey (integ[item] just got
+// smaller) - every other heap mutation (siftUp/siftDown swaps, pop's
+// move-last-to-root) just moves the existing key alongside its item, it
+// never recomputes it, so key[i] always equals integ[heap[i]]. Ties break by
+// item index, exactly like IndexHeap's closure did, inlined too. Zero
+// allocation after construction.
+class FlowFieldHeap {
+  /** @param {number} capacity */
+  constructor(capacity) {
+    this.capacity = capacity | 0;
+    this.heap = new Int32Array(this.capacity);
+    this.key = new Uint32Array(this.capacity);
+    /** heapPos[item] = index in `heap`, or -1 if `item` is not in the heap. */
+    this.heapPos = new Int32Array(this.capacity).fill(-1);
+    this.size = 0;
+  }
+
+  get length() {
+    return this.size;
+  }
+
+  has(item) {
+    return this.heapPos[item] >= 0;
+  }
+
+  /** Resets to empty. O(size), not O(capacity) - same as IndexHeap. */
+  clear() {
+    const heap = this.heap, heapPos = this.heapPos;
+    for (let i = 0; i < this.size; i++) heapPos[heap[i]] = -1;
+    this.size = 0;
+  }
+
+  /** @param {number} item @param {number} k - current integ[item] */
+  push(item, k) {
+    const i = this.size++;
+    this.heap[i] = item;
+    this.key[i] = k;
+    this.heapPos[item] = i;
+    this._siftUp(i, item, k);
+  }
+
+  /** Removes and returns the top (highest-priority) item. Undefined if empty. */
+  pop() {
+    const heap = this.heap, key = this.key, heapPos = this.heapPos;
+    const top = heap[0];
+    heapPos[top] = -1;
+    this.size--;
+    if (this.size > 0) {
+      const last = heap[this.size];
+      const lastKey = key[this.size];
+      heap[0] = last;
+      key[0] = lastKey;
+      heapPos[last] = 0;
+      this._siftDown(0, last, lastKey);
+    }
+    return top;
+  }
+
+  /** Call after `item`'s priority has improved (integ[item] got smaller).
+   * @param {number} item @param {number} k - current integ[item] */
+  decreaseKey(item, k) {
+    const i = this.heapPos[item];
+    if (i >= 0) { this.key[i] = k; this._siftUp(i, item, k); }
+  }
+
+  _siftUp(i, item, k) {
+    const heap = this.heap, key = this.key, heapPos = this.heapPos;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      const parentItem = heap[parent];
+      const parentKey = key[parent];
+      // less(item, parentItem): k < parentKey, tie-break by item index.
+      if (!(k < parentKey || (k === parentKey && item < parentItem))) break;
+      heap[i] = parentItem;
+      key[i] = parentKey;
+      heapPos[parentItem] = i;
+      i = parent;
+    }
+    heap[i] = item;
+    key[i] = k;
+    heapPos[item] = i;
+  }
+
+  _siftDown(i, item, k) {
+    const heap = this.heap, key = this.key, heapPos = this.heapPos, size = this.size;
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = l + 1;
+      let smallest = i;
+      let smallestItem = item;
+      let smallestKey = k;
+      if (l < size) {
+        const lItem = heap[l], lKey = key[l];
+        if (lKey < smallestKey || (lKey === smallestKey && lItem < smallestItem)) {
+          smallest = l; smallestItem = lItem; smallestKey = lKey;
+        }
+      }
+      if (r < size) {
+        const rItem = heap[r], rKey = key[r];
+        if (rKey < smallestKey || (rKey === smallestKey && rItem < smallestItem)) {
+          smallest = r; smallestItem = rItem; smallestKey = rKey;
+        }
+      }
+      if (smallest === i) break;
+      heap[i] = smallestItem;
+      key[i] = smallestKey;
+      heapPos[smallestItem] = i;
+      i = smallest;
+    }
+    heap[i] = item;
+    key[i] = k;
+    heapPos[item] = i;
+  }
+}
+
 /**
  * Preallocates a flow field over `grid`: `integ` Uint32Array(N) (0xFFFFFFFF
  * = unreached), `dir` Uint8Array(N) (0..7 = neighbour index above, 254 =
- * goal, 255 = none/unreached) and its own IndexHeap. Reuse one instance per
+ * goal, 255 = none/unreached) and its own FlowFieldHeap (RE-08p). Reuse one instance per
  * distinct group-move "channel"; `FlowCache` below manages a small pool of
  * these keyed by goal set + grid version.
  * @param {import('./NavGrid.js').NavGrid} grid
@@ -53,12 +174,9 @@ export function createFlowField(grid) {
     integ: new Uint32Array(n),
     dir: new Uint8Array(n),
     cellsDone: 0,
-    heap: /** @type {IndexHeap} */ (/** @type {unknown} */ (null)),
+    heap: /** @type {FlowFieldHeap} */ (/** @type {unknown} */ (null)),
   };
-  ff.heap = new IndexHeap(n, (a, b) => {
-    if (ff.integ[a] !== ff.integ[b]) return ff.integ[a] < ff.integ[b];
-    return a < b;
-  });
+  ff.heap = new FlowFieldHeap(n);
   ff.integ.fill(UNREACHED);
   ff.dir.fill(DIR_NONE);
 
@@ -79,7 +197,7 @@ export function createFlowField(grid) {
       if (ff.heap.has(g)) continue;
       ff.integ[g] = 0;
       ff.dir[g] = DIR_GOAL;
-      ff.heap.push(g);
+      ff.heap.push(g, 0);
     }
   };
 
@@ -133,8 +251,8 @@ export function createFlowField(grid) {
         const tentative = selfInteg + edgeCost;
         if (tentative < integ[nIdx]) {
           integ[nIdx] = tentative;
-          if (heap.has(nIdx)) heap.decreaseKey(nIdx);
-          else heap.push(nIdx);
+          if (heap.has(nIdx)) heap.decreaseKey(nIdx, tentative);
+          else heap.push(nIdx, tentative);
         }
       }
       if (needsDir) dir[idx] = bestK === -1 ? DIR_NONE : bestK;

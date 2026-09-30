@@ -47,8 +47,17 @@ ok('1a: serialize writes version 2', state.version === 2);
 const brazier = state.entities.find((e) => e.id === 'tower.brazier');
 ok('1b: a structure-owned content prop gets parent = its structure id', !!brazier && brazier.parent === 'tower');
 
+// CO-5 follow-up: `player`'s id has no "tower."-dot prefix, but it IS
+// spawned via `ed.spawn: {structure: "tower", ...}` (world_m1.world.json) -
+// its real, live `parent` is "tower". Before the follow-up fix, serialize()
+// recomputed `parent` from the id prefix instead of reading the live field,
+// so this wrongly came out `null`; `endMarker`/`farTower` below (inline
+// x/y/z, no `spawn`, no dot prefix) correctly stay `null` either way.
 const player = state.entities.find((e) => e.id === 'player');
-ok('1c: a world-level entity (no struct-id prefix) gets parent = null', !!player && player.parent === null);
+ok('1c: an entity spawned from a structure gets parent = that structure\'s id (even without a dot-id)', !!player && player.parent === 'tower');
+
+const endMarker = state.entities.find((e) => e.id === 'endMarker');
+ok('1c2: a world-level entity with no struct-id prefix and no spawn gets parent = null', !!endMarker && endMarker.parent === null);
 
 ok('1d: every entity has a parent key (string or null)', state.entities.every((e) => e.parent === null || typeof e.parent === 'string'));
 

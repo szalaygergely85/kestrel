@@ -12,6 +12,10 @@ const NEI_DX = [0, 1, 0, -1, 1, 1, -1, -1];
 const NEI_DY = [-1, 0, 1, 0, -1, 1, 1, -1];
 const STRAIGHT_COST = 10;
 const DIAG_COST = 14;
+// Shared default for findPath's `opts` - nothing in the function mutates it,
+// so one module-level object avoids a fresh {} allocation on every call
+// that omits opts.
+const EMPTY_OPTS = {};
 
 function octile(dx, dy, minCost) {
   const adx = dx < 0 ? -dx : dx;
@@ -61,7 +65,7 @@ export function createAStar(grid) {
  * @param {Int32Array} outPath
  * @param {{maxNodes?: number}} [opts]
  */
-export function findPath(astar, sx, sy, gx, gy, outPath, opts = {}) {
+export function findPath(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
   const grid = astar.grid;
   const w = grid.w, gh = grid.h;
   astar.partial = false;

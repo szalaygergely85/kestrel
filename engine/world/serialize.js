@@ -3,8 +3,9 @@
 // opts?)` -> a brand-new `World` (old handles report `alive === false` -
 // D-006: class instances are rebuilt from content by key, never stored).
 import { World } from './World.js';
-import { migrateState, parentFromId, LATEST_VERSION } from './migrateState.js';
+import { migrateState, LATEST_VERSION } from './migrateState.js';
 import { stringifyContent } from '../content/stringify.js';
+import { Visibility } from './Visibility.js';
 
 const VERSION = LATEST_VERSION;
 
@@ -64,9 +65,13 @@ export function serialize(world) {
         type: e.type,
         // CO-5 (coordinates.md 8): world coordinates only (never a
         // structure-local number) - `e.transform` already is world-space,
-        // this is a straight copy. `parent` is a save-format record, not a
-        // live frame (see `parentFromId`'s own comment).
-        parent: parentFromId(e.id, world.structures),
+        // this is a straight copy. CO-5 follow-up: `parent` comes from the
+        // entity's own live field (set at spawn time by `World.spawn`/
+        // `World.load`), not recomputed from the `<structId>.` id-prefix
+        // convention - a live `parent` may not follow that convention (see
+        // `migrateState.js`'s `parentFromId`, kept there only for the v1->v2
+        // migration of old saves that never had a `parent` field at all).
+        parent: e.parent,
         transform: { x: e.transform.x, y: e.transform.y, z: e.transform.z, yawDeg: e.transform.yawDeg, pitchDeg: e.transform.pitchDeg },
         components: stripScratch(structuredClone(e.components)),
       };
@@ -80,6 +85,10 @@ export function serialize(world) {
       contentVersion: world.contentVersion,
       removed: Array.from(world._removedContent || []).sort(),
     } : {}),
+    // RE-11b (28.3 "Save"): optional, omitted entirely when the world has
+    // no `Visibility` (the default - keeps every existing save byte-
+    // identical). Sources are never saved (`saveExplored`'s own contract).
+    ...(world.visibility != null ? { visibility: world.visibility.saveExplored() } : {}),
   };
 }
 
@@ -160,7 +169,11 @@ export function deserialize(state, assets, opts = {}) {
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => ({ id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps })),
     entities: [
-      ...keptSavedEntities.map((e) => ({ id: e.id, type: e.type, transform: e.transform, components: e.components })),
+      // CO-5 follow-up: `parent` must travel through too - otherwise a
+      // restored entity always lands on the `ed.spawn` branch's `null`
+      // default in `World.load`'s entity loop even when it was really
+      // attached to a structure.
+      ...keptSavedEntities.map((e) => ({ id: e.id, type: e.type, transform: e.transform, parent: e.parent, components: e.components })),
       ...appendedContentEntities,
     ],
     state: state.state,
@@ -191,6 +204,10 @@ export function deserialize(state, assets, opts = {}) {
   // source (already true: `structuredClone` in `serialize`).
 
   world.nextId = state.nextId;
+  // RE-11b (28.3 "Save"): only when the key is present (most saves have no
+  // `visibility` at all - see `serialize` above). `fromSave` never restores
+  // sources; the game re-adds them on the first tick after a load.
+  if (state.visibility != null) world.visibility = Visibility.fromSave(state.visibility);
   return world;
 }
 

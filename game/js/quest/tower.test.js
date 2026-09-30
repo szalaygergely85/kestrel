@@ -90,8 +90,10 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   const rs = assets.terrain(worldM1.terrain).structures.find((s) => s.id === 'tower');
   ok('World.load(world_m1) places the tower', !!towerFull);
   ok('tower origin == world_m1 placement', towerFull.origin.x === placement.origin.x && towerFull.origin.y === placement.origin.y && towerFull.origin.z === (placement.origin.z || 0));
+  // CO-9: the recipe entry no longer carries its own x/y - it only gets a
+  // real bbox (World.load's injection, from the actual placement) now.
   ok('tower origin == terrain recipe structures[tower] (two sources agree)',
-    !!rs && rs.x === towerFull.origin.x && rs.y === towerFull.origin.y, JSON.stringify(rs));
+    !!rs && !!rs.bbox && rs.bbox.x0 === towerFull.origin.x && rs.bbox.y0 === towerFull.origin.y, JSON.stringify(rs));
   const st = towerFull.level.start, o = towerFull.origin;
   const pallet = towerDef.props.find((p) => p.id === 'pallet');
   ok('floorAt(wake start in world coords) == the wake pallet floor', near(worldFull.floorAt(st.x + o.x, st.y + o.y), pallet.z + o.z));

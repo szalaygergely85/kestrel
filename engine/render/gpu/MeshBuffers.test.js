@@ -163,6 +163,10 @@ function decode(buf, vertCount) {
   globalThis.window = globalThis.window || globalThis;
   terrainDef; // side effect: window.ASSETS.levels.overworld_far
   const recipe = globalThis.ASSETS.levels.overworld_far;
+  // CO-9: no more x/y/w/h/ringH fallback in the recipe itself - inject the
+  // tower's bbox/ringHAt directly (same numbers the old fallback hardcoded).
+  recipe.structures[0].bbox = { x0: 1480, y0: 1018, x1: 1504, y1: 1032 };
+  recipe.structures[0].ringHAt = () => 2.4;
   const terrain = new Terrain(recipe);
   terrain.bakeFarSync();
   const towerCx = Math.floor(recipe.tower.x / terrain.chunkSize), towerCy = Math.floor(recipe.tower.y / terrain.chunkSize);
