@@ -183,15 +183,6 @@ function playback(text) {
   ok('every line round-trips through parse/stringify unchanged', matches);
 }
 
-console.log(`\n${pass} passed, ${fail} failed.`);
-if (fail > 0) {
-  console.log('Failures:');
-  for (const f of failures) console.log(`  - ${f}`);
-  process.exit(1);
-} else {
-  console.log('ALL PASS');
-}
-
 // ---- RE-14 review fixes: checkpoints at tick % 60 === 0; zero-alloc empty ticks ----
 {
   const cps = replayText.split('\n').filter((l) => l.length > 0).map((l) => JSON.parse(l)).filter((l) => 'h' in l && 't' in l);
@@ -206,4 +197,13 @@ if (fail > 0) {
   if (global.gc) global.gc();
   const grew = process.memoryUsage().heapUsed - before;
   ok('recorder: empty ticks do not allocate (10k execute calls)', !global.gc || grew < 200000, `grew ${grew} bytes (run with --expose-gc for a strict check)`);
+}
+
+console.log(`\n${pass} passed, ${fail} failed.`);
+if (fail > 0) {
+  console.log('Failures:');
+  for (const f of failures) console.log(`  - ${f}`);
+  process.exit(1);
+} else {
+  console.log('ALL PASS');
 }

@@ -6,7 +6,7 @@
 //
 //   {"kind":"kestrel-replay","v":1,"content":<n>,"world":"<name>","seed":<u32>,"step":60,"inputDelay":1,"players":[0,1],"start":<WorldState|null>}
 //   {"t":120,"p":0,"s":3,"c":16,"u":[4,5,9],"a":[12500,-3000,-1]}   one line per executed command, in execute order
-//   {"t":119,"h":"9f3a0c1d"}                                        checkpoint at every tick t with t % 60 === 0 (hash after tick t ran)
+//   {"t":120,"h":"9f3a0c1d"}                                        checkpoint at every tick t with t % 60 === 0 (hash after tick t ran)
 //   {"end":600,"h":"..."}
 //
 // `createRecorder` needs each executed record's fields *before* commands.js
