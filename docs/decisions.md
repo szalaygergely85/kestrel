@@ -805,6 +805,12 @@ Consequences:
 - Dropped for good (no longer "frozen"): **US-070a** (superseded by ME-15/16), **US-026b S5**, **BUG-OWN-008 part 3** (branch `wip/bug-own-008-part3` stays on origin as reference until ME-19 deletes it). D-031's "gate FAILS" branch lapses; `nearLOD.step` stays off.
 - `?renderer=mesh` is the path to make default. Roadmap has no flip story yet: **default flip = a phase-2 story, PO to write** (after ME-12's browser pass, before ME-19; `?renderer=dda` stays as the compare/oracle switch until ME-19).
 
+### Amendment 2 (2026-09-30): one camera model - true pitched perspective on the mesh path (owner)
+Owner accepted (chat, 2026-09-30): the y-shear camera (vertical image plane, look up/down = picture shift) exists only because the DDA column caster needs it; a modern engine uses a real view matrix. Consequences:
+- **RE-02 widens:** the pitched camera (`cam.projection: 'pitched'`, architecture.md 28.1) is a general camera for any pitch, not an RTS special case; it becomes the **default on `renderer:'mesh'`, first person included** (walls lean when looking up/down, like any modern game). Architect amends 28.1 + the RE-02 row.
+- **Shear stays dda-only** until ME-19 deletes the casters; the shear projection is deleted with them. After ME-19 the engine has one camera model.
+- gpucompare parity poses (dda vs mesh) keep the shear view until ME-19; new mesh-only poses use pitched. First-person feel checks (mouse look, pitch clamp) move to the pitched camera on mesh.
+
 ## D-030 Milestone re-plan M2-M6 + parallel engine release track (accepts the PO re-plan of 2026-09-26, with adjustments)
 **Date:** 2026-09-26
 **Status:** Accepted. Owner request ("we miss a lot"). Amends **D-010** (M1.5 / M5 editor slots), **D-011** (M2-M4 milestone themes; story canon unchanged), **D-012** (demo and Coming Soon timing; Electron/steamworks/platform-adapter decisions unchanged), **D-020** (sword/gear levels "first in M2" -> M3/M4). **D-029 stands unchanged**, including both gates and the freezes.
