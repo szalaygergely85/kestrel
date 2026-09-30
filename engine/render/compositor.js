@@ -94,15 +94,15 @@ function renderWorldMesh(fb, world, cam) {
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
   meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
   meshPitched = resolveProjection(cam, 'mesh') === 'pitched';
+  projTerms(cam, meshGrid, meshTerms);
+  // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh), so
+  // write it on every mesh frame (RE-02a review: shear frames left it stale / at defaults).
+  // GPU `_passDeriv` uses the shear constants for every camera (28.1 A2: deriv unchanged) - same here.
+  fb.gbuf.cam.tanHalfHFov = meshTerms.tanHalf; fb.gbuf.cam.cols = cols; fb.gbuf.cam.planeDistY = meshTerms.planeDistY;
   if (meshPitched) {
     pitchedTerms(cam, meshGrid, meshPitchTerms);
     meshViewProj.set(meshPitchTerms.M);
-    // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh).
-    // GPU `_passDeriv` uses the shear constants for every camera (28.1 A2: deriv unchanged) - same here.
-    projTerms(cam, meshGrid, meshTerms);
-    fb.gbuf.cam.tanHalfHFov = meshTerms.tanHalf; fb.gbuf.cam.cols = cols; fb.gbuf.cam.planeDistY = meshTerms.planeDistY;
   } else {
-    projTerms(cam, meshGrid, meshTerms);
     shearProjection(meshTerms, meshViewProj);
   }
   frustumPlanes(meshViewProj, meshFrustumPlanes);
