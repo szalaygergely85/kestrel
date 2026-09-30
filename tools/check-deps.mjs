@@ -49,6 +49,14 @@
 //       import of the mesh module, so rigid.js/player consumers never end up
 //       transitively depending on engine/mesh internals through physics).
 //   13. (CO-1b) coordinate-math WARN rule, see COORD_ALLOW below.
+//   14. (RE-05, docs/architecture.md 28.2) engine/nav/**/*.js (non-test) may
+//       import only engine/nav/** and engine/core/** - never render/mesh/ui/
+//       world; engine/nav/**/*.test.js may additionally import
+//       engine/world/** (real terrain fixtures) and engine/test/** (the
+//       shared assert kit, same as rule 8). Conversely,
+//       engine/render/**, engine/mesh/**, engine/ui/** and engine/world/**
+//       (any file, including their tests) may never import engine/nav/** -
+//       nav is a leaf module, World is passed into buildFromWorld duck-typed.
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -73,6 +81,12 @@ const GPU_DIR = path.join(ROOT, 'engine', 'render', 'gpu');
 const GPU_DEVICE_DIR = path.join(GPU_DIR, 'device');
 const PHYSICS_DIR = path.join(ROOT, 'engine', 'physics');
 const MESH_DIR = path.join(ROOT, 'engine', 'mesh');
+const NAV_DIR = path.join(ROOT, 'engine', 'nav');
+const RENDER_DIR = path.join(ROOT, 'engine', 'render');
+const UI_DIR = path.join(ROOT, 'engine', 'ui');
+const WORLD_DIR = path.join(ROOT, 'engine', 'world');
+const CORE_DIR = path.join(ROOT, 'engine', 'core');
+const TEST_DIR = path.join(ROOT, 'engine', 'test');
 
 function walk(dir, exts = ['.js', '.mjs']) {
   const out = [];
@@ -310,6 +324,37 @@ function checkCoordMath(file, src) {
   }
 }
 
+// Rule 14 (RE-05, docs/architecture.md 28.2): engine/nav/** is a leaf module.
+// Runs over EVERY engine file including *.test.js (unlike the main
+// checkEngineFile loop below, which skips tests) because the rule's "tests
+// may additionally import engine/world/**" clause needs test files checked
+// too, just against a slightly wider allow-list.
+function inDir(resolved, dir) {
+  return resolved.startsWith(dir + path.sep) || resolved === dir;
+}
+function checkNavLeafRule(file, src) {
+  const isTest = /\.test\.(js|mjs)$/.test(file);
+  const isNavFile = inDir(file, NAV_DIR);
+  const isForbiddenConsumer = inDir(file, RENDER_DIR) || inDir(file, MESH_DIR) || inDir(file, UI_DIR) || inDir(file, WORLD_DIR);
+  if (!isNavFile && !isForbiddenConsumer) return;
+  const stripped = stripComments(src);
+  for (const { spec, line } of findImports(stripped)) {
+    if (isBareSpecifier(spec)) continue; // rule 1 already flags this
+    const resolved = path.resolve(path.dirname(file), spec);
+    if (isNavFile) {
+      const allowed = inDir(resolved, NAV_DIR) || inDir(resolved, CORE_DIR)
+        || (isTest && (inDir(resolved, WORLD_DIR) || inDir(resolved, TEST_DIR)));
+      if (!allowed) {
+        const scope = isTest ? 'engine/nav/**/*.test.js may only import engine/nav/**, engine/core/**, engine/world/** and engine/test/**' : 'engine/nav/** (non-test) may only import engine/nav/** and engine/core/**';
+        findings.push(`${rel(file)}:${line}: import "${spec}" - ${scope} (rule 14, docs/architecture.md 28.2)`);
+      }
+    }
+    if (isForbiddenConsumer && inDir(resolved, NAV_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" resolves into engine/nav/ - render/mesh/ui/world must not import engine/nav/** (rule 14, docs/architecture.md 28.2)`);
+    }
+  }
+}
+
 function rel(file) {
   return path.relative(ROOT, file).replace(/\\/g, '/');
 }
@@ -319,6 +364,10 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
   const src = fs.readFileSync(file, 'utf8');
   checkEngineFile(file, src);
   checkCoordMath(file, src);
+}
+for (const file of walk(path.join(ROOT, 'engine'))) {
+  // Rule 14 runs over every file, including *.test.js (see its own comment).
+  checkNavLeafRule(file, fs.readFileSync(file, 'utf8'));
 }
 for (const file of walk(path.join(ROOT, 'game'))) {
   const src = fs.readFileSync(file, 'utf8');

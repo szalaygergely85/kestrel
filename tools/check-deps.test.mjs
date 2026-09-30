@@ -68,6 +68,21 @@ writeFile(tmp, 'engine/render/gpu/bad9.test.js', `export function f(gl) { return
 writeFile(tmp, 'engine/entities/bad13.js', `export const f = (a, dx, dy) => Math.atan2(dx, -dy) + a * Math.PI / 180 + a.origin.x + 1;\n`);
 writeFile(tmp, 'engine/render/sectorCaster.js', `export const g = (s) => 1 + s.origin.x;\n`);
 writeFile(tmp, 'engine/world/marked13.js', `export const g = (s) => 1 + s.origin.x; // coord-ok\nexport const h = (s) => 1 + s.origin.y;\n`);
+// Rule 14 (RE-05): engine/nav/** is a leaf module.
+writeFile(tmp, 'engine/nav/bad14a.js', `import { Terrain } from '../world/Terrain.js';\nexport const a1 = Terrain;\n`);
+writeFile(tmp, 'engine/nav/good14a.js', `import { IndexHeap } from './heap.js';\nimport { DEG2RAD } from '../core/transform.js';\nexport const a2 = [IndexHeap, DEG2RAD];\n`);
+writeFile(tmp, 'engine/nav/heap.js', `export class IndexHeap {}\n`);
+writeFile(tmp, 'engine/core/transform.js', `export const DEG2RAD = 1;\n`);
+writeFile(tmp, 'engine/nav/good14b.test.js', `import { Terrain } from '../world/Terrain.js';\nimport { makeOk } from '../test/assert.js';\nexport const a3 = [Terrain, makeOk];\n`);
+writeFile(tmp, 'engine/nav/bad14b.test.js', `import { drawSprites } from '../render/sprites.js';\nexport const a4 = drawSprites;\n`);
+writeFile(tmp, 'engine/world/Terrain.js', `export class Terrain {}\n`);
+writeFile(tmp, 'engine/render/bad14c.js', `import { NavGrid } from '../nav/NavGrid.js';\nexport const a5 = NavGrid;\n`);
+writeFile(tmp, 'engine/mesh/bad14d.js', `import { NavGrid } from '../nav/NavGrid.js';\nexport const a6 = NavGrid;\n`);
+writeFile(tmp, 'engine/ui/bad14e.js', `import { NavGrid } from '../nav/NavGrid.js';\nexport const a7 = NavGrid;\n`);
+writeFile(tmp, 'engine/world/bad14f.js', `import { NavGrid } from '../nav/NavGrid.js';\nexport const a8 = NavGrid;\n`);
+writeFile(tmp, 'engine/render/good14.js', `export const a9 = 1;\n`);
+writeFile(tmp, 'engine/nav/NavGrid.js', `export class NavGrid {}\n`);
+
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
@@ -108,6 +123,15 @@ ok('rule 13: coordinate math WARNs (atan2, PI/180, origin)', /WARN.*bad13\.js.*a
 ok('rule 13: allow-listed sectorCaster.js NOT flagged', !/sectorCaster\.js.*origin/.test(output), output);
 ok('rule 13: // coord-ok line skipped, unmarked line still WARNs', /WARN.*marked13\.js:2:.*origin/.test(output) && !/marked13\.js:1:/.test(output), output);
 ok('rule 13: warning only, no FAIL finding for it', !/bad13\.js:\d+: (?!coordinate)/.test(output.replace(/WARN [^\n]*/g,'')), output);
+ok('rule 14: nav non-test importing world/ flagged', /bad14a\.js.*non-test.*may only import engine\/nav.*engine\/core/.test(output), output);
+ok('rule 14: nav non-test importing nav+core NOT flagged', !/good14a\.js/.test(output), output);
+ok('rule 14: nav test importing world+assert NOT flagged', !/good14b\.test\.js/.test(output), output);
+ok('rule 14: nav test importing render/ flagged', /bad14b\.test\.js.*may only import engine\/nav.*engine\/world.*engine\/test/.test(output), output);
+ok('rule 14: render importing nav/ flagged', /bad14c\.js.*must not import engine\/nav/.test(output), output);
+ok('rule 14: mesh importing nav/ flagged', /bad14d\.js.*must not import engine\/nav/.test(output), output);
+ok('rule 14: ui importing nav/ flagged', /bad14e\.js.*must not import engine\/nav/.test(output), output);
+ok('rule 14: world importing nav/ flagged', /bad14f\.js.*must not import engine\/nav/.test(output), output);
+ok('rule 14: unrelated render file NOT flagged', !/[^d]good14\.js/.test(output), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });
