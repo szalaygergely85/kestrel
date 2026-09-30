@@ -1,3 +1,4 @@
+// @ts-check
 // engine/core/replay.js (RE-14, docs/architecture.md 28.5).
 //
 // JSON Lines (UTF-8, extension `.kreplay.jsonl`) recorder/player for a
@@ -5,7 +6,7 @@
 //
 //   {"kind":"kestrel-replay","v":1,"content":<n>,"world":"<name>","seed":<u32>,"step":60,"inputDelay":1,"players":[0,1],"start":<WorldState|null>}
 //   {"t":120,"p":0,"s":3,"c":16,"u":[4,5,9],"a":[12500,-3000,-1]}   one line per executed command, in execute order
-//   {"t":119,"h":"9f3a0c1d"}                                        checkpoint every 60 ticks (hash after tick t ran, 0-indexed)
+//   {"t":119,"h":"9f3a0c1d"}                                        checkpoint at every tick t with t % 60 === 0 (hash after tick t ran)
 //   {"end":600,"h":"..."}
 //
 // `createRecorder` needs each executed record's fields *before* commands.js
@@ -25,7 +26,7 @@ function toHex(h) {
 }
 
 /**
- * @param {import('./commands.js').createCommandQueue extends (...a:any)=>infer R ? R : never} q
+ * @param {ReturnType<typeof import('./commands.js').createCommandQueue>} q
  * @param {() => number} hashFn - returns the current sim state hash (u32);
  *   called by the recorder right after a tick's systems have run.
  * @param {object} [header] - the replay header fields (kind/v/content/world/
@@ -44,22 +45,28 @@ export function createRecorder(q, hashFn, header, opts = {}) {
   const pT = [], pP = [], pS = [], pC = [], pU = [], pA0 = [], pA1 = [], pA2 = [];
 
   const origExecute = q.execute.bind(q);
+  // ONE capture wrapper for the recorder's lifetime; the per-call user handler
+  // lives in `curHandler` (no closure allocated per tick).
+  /** @type {(qq:any, rec:any)=>void} */
+  let curHandler = () => {};
+  const capture = (qq, rec) => {
+    const n = qq.nIds(rec);
+    const idsCopy = new Array(n);
+    for (let k = 0; k < n; k++) idsCopy[k] = qq.idAt(rec, k);
+    const i = pendingCount++;
+    pT[i] = qq.recTick(rec);
+    pP[i] = qq.player(rec);
+    pS[i] = qq.seq(rec);
+    pC[i] = qq.type(rec);
+    pU[i] = idsCopy;
+    pA0[i] = qq.a0(rec);
+    pA1[i] = qq.a1(rec);
+    pA2[i] = qq.a2(rec);
+    curHandler(qq, rec);
+  };
   q.execute = function execute(handler) {
-    origExecute((qq, rec) => {
-      const n = qq.nIds(rec);
-      const idsCopy = new Array(n);
-      for (let k = 0; k < n; k++) idsCopy[k] = qq.idAt(rec, k);
-      const i = pendingCount++;
-      pT[i] = qq.recTick(rec);
-      pP[i] = qq.player(rec);
-      pS[i] = qq.seq(rec);
-      pC[i] = qq.type(rec);
-      pU[i] = idsCopy;
-      pA0[i] = qq.a0(rec);
-      pA1[i] = qq.a1(rec);
-      pA2[i] = qq.a2(rec);
-      handler(qq, rec);
-    });
+    curHandler = handler;
+    origExecute(capture);
   };
 
   const recorder = {};
@@ -79,7 +86,7 @@ export function createRecorder(q, hashFn, header, opts = {}) {
       lines.push(JSON.stringify(line));
     }
     pendingCount = 0;
-    if ((tick + 1) % checkpointEvery === 0) {
+    if (tick % checkpointEvery === 0) {
       lines.push(JSON.stringify({ t: tick, h: toHex(hashFn()) }));
     }
   };

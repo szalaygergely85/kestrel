@@ -132,9 +132,9 @@ function makeUnits(cap) {
   units.x[1] = 7.5; units.y[1] = 7.5; units.team[1] = 0; units.half[1] = 0; // own team
 
   update(mm, units, view, 0, cam, flat);
-  // px = Math.round((x-x0)/sx): 3.5 -> 4, 7.5 -> 8 (JS rounds .5 up).
-  const enemyIdx = (4 * 10 + 4) * 4;
-  const ownIdx = (8 * 10 + 8) * 4;
+  // px = Math.floor((x-x0)/sx): 3.5 -> 3, 7.5 -> 7 (pixel centre = i+0.5).
+  const enemyIdx = (3 * 10 + 3) * 4;
+  const ownIdx = (7 * 10 + 7) * 4;
   ok('hideUnseen: enemy unit in an unseen cell is not drawn', !(mm.rgba[enemyIdx] === 0 && mm.rgba[enemyIdx + 1] === 255 && mm.rgba[enemyIdx + 2] === 0));
   ok('own-team unit always drawn', mm.rgba[ownIdx] === 255 && mm.rgba[ownIdx + 1] === 0 && mm.rgba[ownIdx + 2] === 0);
 

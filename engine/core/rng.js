@@ -1,3 +1,4 @@
+// @ts-check
 // engine/core/rng.js (RE-14, docs/architecture.md 28.5).
 //
 // Deterministic sim RNG: xoshiro128** over a Uint32Array(4) state, seeded by

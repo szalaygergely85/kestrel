@@ -191,3 +191,19 @@ if (fail > 0) {
 } else {
   console.log('ALL PASS');
 }
+
+// ---- RE-14 review fixes: checkpoints at tick % 60 === 0; zero-alloc empty ticks ----
+{
+  const cps = replayText.split('\n').filter((l) => l.length > 0).map((l) => JSON.parse(l)).filter((l) => 'h' in l && 't' in l);
+  ok('checkpoints sit at tick % 60 === 0 (incl. t:0 and t:120)', cps.length > 0 && cps.every((c) => c.t % 60 === 0) && cps.some((c) => c.t === 120), cps.map((c) => c.t).join(','));
+  const q2 = createCommandQueue({ inputDelay: 0 });
+  const rec2 = createRecorder(q2, () => 0, { content: 1 });
+  const handler = () => {};
+  for (let i = 0; i < 100; i++) q2.execute(handler);
+  if (global.gc) global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 10000; i++) q2.execute(handler);
+  if (global.gc) global.gc();
+  const grew = process.memoryUsage().heapUsed - before;
+  ok('recorder: empty ticks do not allocate (10k execute calls)', !global.gc || grew < 200000, `grew ${grew} bytes (run with --expose-gc for a strict check)`);
+}
