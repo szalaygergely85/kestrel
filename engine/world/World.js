@@ -601,11 +601,25 @@ export class World {
    * NaN/0/0/0 with no terrain) - the mesh-mode twin of `sectorOrOutside`.
    * Written into a REUSED scratch object - callers must not keep it across
    * calls (same contract as `outsideSector`).
+   *
+   * Terrain is only consulted OUTSIDE a placed structure's footprint - same
+   * rule `sectorAt`/`floorAt` already apply (`structureAt` gates the terrain
+   * fallback there). A structure occludes the ground beneath it: world_m1's
+   * terrain is baked under/around the tower for the outside hillside look
+   * (US-026a/BUG-OWN-008, ME-11a's colliders.test.js finding), so inside the
+   * tower's own bbox `terrain.groundAt` can legitimately return a height
+   * ABOVE the tower's real interior floor (e.g. ~2.4m, the hillside/hilltop
+   * legend cells' `floorH`) - feeding that into `meshSupportSector`'s
+   * "terrain wins ties" rule would make the mesh floor probe's correct
+   * interior answer get overridden by outside terrain, exactly the ME-11c
+   * parity failure this guards against. NEEDS PC-A: architect confirm - this
+   * deviates from 27.18's literal terrainZ-always-merged formula in
+   * `meshSupportSector` by gating the input at the call site instead.
    */
   supportAt(x, y, footZ, grounded, opts) {
     probeSupport(this.colliders, this.colliders.length, x, y, footZ, grounded, opts, this._meshSupportScratch);
     let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
-    if (this.terrain) {
+    if (this.terrain && !this.structureAt(x, y)) {
       terrainZ = this.terrain.groundAt(x, y);
       const n = this.terrain.groundNormalAt(x, y, this._meshTerrainNormalScratch);
       tnx = n.x; tny = n.y; tnz = n.z;
