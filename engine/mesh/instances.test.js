@@ -57,6 +57,8 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   const o = 2 * INSTANCE_STRIDE;
   ok('row0/row1/row2 at 90 deg are exact', ib.f32[o] === 0 && ib.f32[o + 1] === -1 && ib.f32[o + 3] === 1.5 && ib.f32[o + 4] === 1 && ib.f32[o + 5] === 0 && ib.f32[o + 7] === -2.25 && ib.f32[o + 10] === 1 && ib.f32[o + 11] === 3);
   ok('objectId word + team bits + aligned bit at 90 deg', ib.u32[o + 12] === (UNIT_OBJECT_BASE | 7) && ib.u32[o + 13] === (1 | (5 << 8)));
+  writeUnitInstance(ib, 1, 0, 0, 0, 0, UNIT_OBJECT_BASE, 13); // architect RE-06 review: team masked to MAX_TEAMS (8)
+  ok('team bits masked to 0..7', ((ib.u32[INSTANCE_STRIDE + 13] >>> 8) & 0xff) === (13 & 7));
   writeUnitInstance(ib, 0, 0, 0, 0, 37.5, 1, 0);
   ok('yawAligned bit clear at 37.5 deg', (ib.u32[13] & 1) === 0);
   for (const yaw of [0, 180, -90, 450, 270]) {

@@ -2924,6 +2924,11 @@ Perf asserts are warn-only unless `PERF_STRICT=1`.
 
 **Do not:** import render, mesh or World into nav; store world objects or closures in NavGrid; run per-unit A* for large group moves (use the flow field); emit callback events from nav; sample `groundAt` for walkability.
 
+**Amendments (architect review, 2026-09-30, RE-09/RE-10 batch):**
+- RE-09 deviations accepted as the spec: (1) flow-follow slows on arrival through `ff.integ`; (2) `idleSepW` applies only when a stopped agent pushes a moving one; two stopped agents use full `sepW`. The no-tunnelling check runs once per `step()`.
+- RE-10: the owner-slot `Map` is fine (placement-time only, never iterated in the sim). Slot numbers depend on history, so any `NavGrid.hashInto` hashes `blockCount`/`cost`, never slots (RE-14b).
+- **Known limit (lockstep):** `NavGrid.buildFromWorld` samples analytic terrain (`Math.exp/pow/hypot`, a `Math.cos` slope threshold), so the grid can differ between JS engines. Single-machine replay is unaffected. Before networked lockstep, walkability comes from content-baked/saved arrays, or peers exchange a grid hash at start.
+
 ### 28.3 Fog of war: RE-11 visibility grid (PC-B, pure JS) + RE-12 shading (PC-A, GLSL)
 
 **RE-11 `engine/world/Visibility.js`** (leaf: imports nothing; `// @ts-check`; exported via `engine/index.js`). This is sim state: it advances only inside the fixed step, and 28.2's determinism and zero-alloc rules apply.
@@ -3161,3 +3166,7 @@ Goal: N copies of one voxel model = one instanced draw per part, both twins. ME-
 - allocate per frame (views, closures, `{}` in the loop);
 - change the numbers of the existing 34 gpucompare poses or widen any threshold;
 - route units through VoxelPool (`MAX_SPRITES`/16-slot limits).
+
+**Amendments (architect first review, 2026-09-30, ARCH OK):**
+- Engine fields added by the implementation (kept): `engine.attachMaterialTable(table)`, `engine.teamSpec`, `engine.matTable`, so `setTeamMaterials` survives every `bindShading` rebuild. `writeUnitInstance` masks team `& 7` (MAX_TEAMS).
+- **AC3 re-baselined:** raster-pass p50 delta +<= 1.5 ms for 200 levers on screen at 400x150 on the Intel iGPU (measured +0.9..1.5). Measure the raster pass with units on screen (ground/walk views), not total GPU p95 (noise floor ~0.3 ms). The +0.5 ms figure assumed a faster vertex path: the lever is 354 tris = 1062 unrolled 64 B verts, so 200 units = 13.6 MB vertex fetch per frame with no reuse. Fix = RE-06b (index buffer + 32 B voxel vertex, note 28.7 before dev), AC -50 % raster delta.

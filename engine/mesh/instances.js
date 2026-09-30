@@ -62,7 +62,7 @@ export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {
   f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = 1; f[o + 11] = z;
   const aligned = (((yawDeg % 90) + 90) % 90 === 0) ? INST_FLAG_ALIGNED : 0; // the exact voxelPose test
   ib.u32[o + 12] = objectId >>> 0;
-  ib.u32[o + 13] = (aligned | ((team & 0xff) << INST_TEAM_SHIFT)) >>> 0;
+  ib.u32[o + 13] = (aligned | ((team & 7) << INST_TEAM_SHIFT)) >>> 0;
   f[o + 14] = 0; f[o + 15] = 0;
 }
 
