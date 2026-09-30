@@ -471,6 +471,26 @@ export function pitchedFogScale(terms, row) {
   return k > 0 ? k : 0;
 }
 
+/**
+ * BUG-RTS-001 (28.11a): per-frame terrain look-hash cell (metres) for the pitched view, 0 for shear
+ * (= keep the fixed 2/8 m cell). Ground metres per column at the view-centre distance, rounded up to
+ * a power of two (zoom steps nest), clamped 0.125..2. Depends on zoom + grid only (world-keyed,
+ * no panning shimmer). Shared by the JS oracle (compositor) and GpuCellPipeline (`uHashCell`).
+ * @param {PitchedTerms|{projection?:string}} terms  pitchedTerms output (shear terms -> 0)
+ * @param {number} cols
+ * @param {number} zRef  ground height under the view focus
+ * @returns {number}
+ */
+export function pitchedHashCell(terms, cols, zRef) {
+  const t = /** @type {PitchedTerms} */ (terms);
+  if (!t || t.projection !== 'pitched' || !(t.sinP < 0) || !(cols > 0) || !Number.isFinite(zRef)) return 0;
+  const vdC = (t.eyeZ - zRef) / -t.sinP;
+  const fp = (2 * t.tanHalfX * vdC) / cols;
+  if (!(fp > 0)) return 0;
+  const c = Math.pow(2, Math.ceil(Math.log2(fp)));
+  return c < 0.125 ? 0.125 : c > 2 ? 2 : c;
+}
+
 // ---------------------------------------------------------------------------
 // RE-07a (28.9 item 3): the frame's world -> clip matrix for ANY camera, so UI
 // overlays project with exactly the matrix the mesh raster uses.

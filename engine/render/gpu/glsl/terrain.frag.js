@@ -381,6 +381,7 @@ uniform vec3 uTerrainFogNearRGB, uTerrainFogFarRGB;
 // computed the same lenient way, independently of uNearReady.
 uniform int uNearDetailOn;
 uniform vec2 uHandover;  // recipe.nearLOD.handover [h0, h1] - never a literal
+uniform float uHashCell; // BUG-RTS-001 (28.11a): per-frame hash cell (m), 0 = fixed 2/8 m
 uniform float uCloseBand; // recipe.nearLOD.bands.close - never a literal (40)
 
 int pickCodeFromPacked(int x, int count, int idx) {
@@ -398,7 +399,7 @@ const float FOREST_FACE_NZ = ${FOREST_FACE_NZ.toFixed(4)};
 TerrainOut shadeTerrain(float t, int type, float b, float u, float v, float timeSec, int faceMode) {
   // 23.4 near-detail: hash cell 2 m inside the near-handover band, else 8 m
   // (the far grid's cell size) - "hash cell 2 m when t < h1, else 8 m".
-  float cellSz = (uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0;
+  float cellSz = uHashCell > 0.0 ? uHashCell : ((uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0);
   int cx = int(floor(u / cellSz)), cy = int(floor(v / cellSz));
   float hA = hashFast(cx, cy, type);
   float hB = hashFast(cx, cy, 7);

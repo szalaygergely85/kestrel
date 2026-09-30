@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   PROJ_HFOV_DEG, PROJ_NEAR, PROJ_PITCHED_VFOV_DEG,
   projTerms, shearProjection,
-  createPitchedTerms, pitchedTerms, pitchedProjection,
+  createPitchedTerms, pitchedTerms, pitchedProjection, pitchedHashCell,
   screenRay, unprojectPitched, worldToCell, pitchedEyeFromFocus,
   projectPoint, windowToCell,
 } from './projection.js';
@@ -276,6 +276,25 @@ function makeLcg(seed) {
   try { pitchedTerms({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: -90 }, { cols: 10, rows: 10 }, terms); } catch (e) { threwLow = true; }
   try { pitchedTerms({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 90 }, { cols: 10, rows: 10 }, terms); } catch (e) { threwHigh = true; }
   ok('pitchedTerms throws for pitchDeg outside [-89, 89]', threwLow && threwHigh);
+}
+
+// BUG-RTS-001 (28.11a): pitchedHashCell at the rtsHill58 pose (focus width 30 m, vfov 36, yaw 20).
+{
+  const hashAt = (cols, rows, pitch) => {
+    const g = { cols, rows, pxCellW: 1, pxCellH: 2 };
+    const aspect = (cols * 1) / (rows * 2);
+    const tanHalfX = Math.tan((PROJ_PITCHED_VFOV_DEG * Math.PI) / 360) * aspect;
+    const e = pitchedEyeFromFocus(1440, 1040, 50, 20, pitch, 30 / (2 * tanHalfX), [0, 0, 0]);
+    const cam = { x: e[0], y: e[1], z: e[2], yawDeg: 20, pitchDeg: pitch, vfovDeg: PROJ_PITCHED_VFOV_DEG };
+    return { cam, g, h: pitchedHashCell(pitchedTerms(cam, g, createPitchedTerms()), cols, 50) };
+  };
+  ok('pitchedHashCell rtsHill58 160x60 = 0.25', hashAt(160, 60, -58).h === 0.25);
+  ok('pitchedHashCell rtsHill58 400x150 = 0.125', hashAt(400, 150, -58).h === 0.125);
+  ok('pitchedHashCell rtsHill58 240x90 = 0.125', hashAt(240, 90, -58).h === 0.125);
+  const r = hashAt(160, 60, -58);
+  ok('pitchedHashCell shear terms = 0', pitchedHashCell(projTerms(r.cam, r.g, {}), 160, 50) === 0);
+  const far = pitchedTerms({ x: 0, y: 0, z: 500, yawDeg: 0, pitchDeg: -58 }, r.g, createPitchedTerms());
+  ok('pitchedHashCell clamps at 2 m', pitchedHashCell(far, 40, 0) === 2);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

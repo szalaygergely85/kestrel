@@ -19,7 +19,7 @@ import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, pitchedHashCell, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
@@ -48,6 +48,7 @@ const meshViewProj = new Float64Array(16);
 // horizontal-distance shading pass swaps in and out (see `renderWorld`).
 const meshPitchTerms = createPitchedTerms();
 let meshPitched = false;
+let meshHashCell = 0; // BUG-RTS-001 (28.11a)
 let pitchDepthSave = /** @type {Float32Array|null} */ (null);
 const meshFrustumPlanes = new Float64Array(24);
 const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
@@ -102,6 +103,9 @@ function renderWorldMesh(fb, world, cam) {
   if (meshPitched) {
     pitchedTerms(cam, meshGrid, meshPitchTerms);
     meshViewProj.set(meshPitchTerms.M);
+    const tr = world.terrain;
+    const zRef = Number.isFinite(cam.focusZ) ? cam.focusZ : (tr && tr.groundAt ? tr.groundAt(cam.x, cam.y) : NaN);
+    meshHashCell = pitchedHashCell(meshPitchTerms, cols, zRef);
   } else {
     shearProjection(meshTerms, meshViewProj);
   }
@@ -204,6 +208,7 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
   meshPitched = false;
+  meshHashCell = 0;
 
   // ME-06 (27.15.5a item 6): `fb.renderer === 'mesh'` replaces the
   // structs-loop + `castTerrain` geometry below with the JS mesh twin
@@ -302,7 +307,7 @@ export function renderWorld(fb, world, cam) {
     // GLSL twin: `dist *= fogScaleCell(...)` in shade.frag.js / edge.frag.js.
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, true);
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
-    shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0);
+    shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges);
   }

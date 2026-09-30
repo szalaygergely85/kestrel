@@ -73,7 +73,7 @@ import { KIND_TERRAIN } from '../GBuffer.js';
 import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, pitchedHashCell, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 
 const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
@@ -1531,6 +1531,11 @@ export class GpuCellPipeline {
       a[0] = t.fX; a[1] = t.fY; a[2] = t.fZ; a[3] = t.tanHalfX;
       b[0] = t.rX; b[1] = t.rY; b[2] = t.uX; b[3] = t.uY;
       c[0] = t.uZ; c[1] = t.tanHalfY; c[2] = t.cosP; c[3] = t.sinP;
+      const tr = this._world && this._world.terrain;
+      const zRef = Number.isFinite(cam.focusZ) ? cam.focusZ : (tr && tr.groundAt ? tr.groundAt(cam.x, cam.y) : NaN);
+      this._hashCell = pitchedHashCell(t, this.cols, zRef);
+    } else {
+      this._hashCell = 0;
     }
   }
 
@@ -2111,6 +2116,7 @@ export class GpuCellPipeline {
     const useDda = this._useDdaThisFrame;
     gl.uniform1i(loc.uGpuSky, useDda ? 1 : 0);
     this._uploadPitchUniforms(loc); // RE-02a
+    if (loc.uHashCell) gl.uniform1f(loc.uHashCell, this._pitched && this._useDdaThisFrame ? (this._hashCell || 0) : 0); // BUG-RTS-001 (28.11a): per frame (not version-gated)
     if (useDda) {
       const cb = this._camBasis;
       gl.uniform1f(loc.uHorizonRow, cb.horizonRow);
@@ -2168,7 +2174,7 @@ const SHADE_UNIFORMS = [
   // US-026a S5 (23.4): the sun (moved out of the march pass - `aoD` now
   // carries the packed normal, decoded and lit here) + near-detail (close
   // band/jitter/2 m-vs-8 m hash-cell switch, gated by uNearDetailOn).
-  'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand',
+  'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand', 'uHashCell',
 ];
 const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];

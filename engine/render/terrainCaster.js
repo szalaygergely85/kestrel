@@ -461,11 +461,13 @@ function ensureShadeCtx(terrain, palette) {
  * @param {import('../world/Terrain.js').Terrain} terrain
  * @param {import('../world/World.js').World} world
  * @param {number} [timeSec]
+ * @param {number} [hashCell] BUG-RTS-001: pitched-view hash cell (m), 0 = off
  */
-export function shadeTerrainCells(fb, terrain, world, timeSec = 0) {
+export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0) {
   if (!terrain || !terrain.farReady || !fb.gbuf) return;
   const gbuf = fb.gbuf, palette = fb.palette;
   const ctx = ensureShadeCtx(terrain, palette);
+  ctx.hashCell = hashCell; // BUG-RTS-001 (28.11a): per-frame, 0 = fixed 2/8 m cell
   // BUG-GPU-005: the GPU terrain branch takes fgMin/fgMaxGain + the gain LUT
   // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
   // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.

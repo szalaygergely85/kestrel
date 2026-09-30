@@ -199,5 +199,33 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('type without face glyphs unchanged even with faceMode', nonForest.glyph === 5);
 }
 
+
+// BUG-RTS-001 (28.11a): ctx.hashCell override.
+{
+  const ctxH = { ...ctx, closeBand: 40, handover: [130, 170] };
+  const pts = [[30, 0.5, 3.1, 7.7], [30, 0.9, 101.3, 55.2], [60, 0.3, 12.5, 400.1], [100, 0.6, 77.7, 13.3],
+    [150, 0.7, 5.5, 5.5], [200, 0.5, 222.2, 11.1], [400, 0.8, 9.9, 901.4], [1000, 0.4, 333.3, 444.4]];
+  let same = true;
+  for (const [t, b, u, v] of pts) {
+    const a = shadeTerrain(t, 0, b, u, v, 1, ctxH, out());
+    const c = shadeTerrain(t, 0, b, u, v, 1, { ...ctxH, hashCell: 0 }, out());
+    if (a.glyph !== c.glyph || a.fg[0] !== c.fg[0] || a.fg[1] !== c.fg[1] || a.fg[2] !== c.fg[2] || a.bg[0] !== c.bg[0]) same = false;
+  }
+  check('hashCell 0 == absent (8 test points, byte identical)', same);
+  // With a 0.25 m cell, u and u + 0.3 fall in different cells: over many samples they differ somewhere;
+  // with the 2 m cell they are the same cell (u 10.1 -> 10.4 within [10,12)) so always identical.
+  const c25 = { ...ctxH, hashCell: 0.25 };
+  let diff25 = 0, diff2 = 0;
+  for (let i = 0; i < 64; i++) {
+    const u = 40 + i * 1.37, v = 13.3 + i * 0.71;
+    const a = shadeTerrain(20, 0, 0.6, u, v, 0, c25, out()), c = shadeTerrain(20, 0, 0.6, u + 0.3, v, 0, c25, out());
+    if (a.glyph !== c.glyph || a.fg[0] !== c.fg[0]) diff25++;
+    const e = shadeTerrain(20, 0, 0.6, Math.floor(u / 2) * 2 + 0.1, v, 0, ctxH, out()), g = shadeTerrain(20, 0, 0.6, Math.floor(u / 2) * 2 + 0.4, v, 0, ctxH, out());
+    if (e.glyph !== g.glyph || e.fg[0] !== g.fg[0]) diff2++;
+  }
+  check('hashCell 0.25: u and u+0.3 land in different cells (output differs)', diff25 > 10);
+  check('fixed 2 m cell: u and u+0.3 inside one cell are identical', diff2 === 0);
+}
+
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

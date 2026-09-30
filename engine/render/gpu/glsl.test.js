@@ -115,9 +115,10 @@ ok('terrain.frag.js: no literal 130.0/170.0/0.5/0.012 (near recipe constants via
 // oracle's own rename); near-detail (close band/jitter/features) uniforms.
 ok('shade.frag.js: no shadeTerrainFar( function definition/call (renamed to shadeTerrain)', !/shadeTerrainFar\(/.test(SHADE_FRAG_SRC));
 ok('shade.frag.js contains shadeTerrain(', SHADE_FRAG_SRC.includes('shadeTerrain('));
-for (const u of ['uNearDetailOn', 'uHandover', 'uCloseBand', 'uSunDir', 'uAmbientI', 'uSunI']) {
+for (const u of ['uNearDetailOn', 'uHandover', 'uCloseBand', 'uHashCell', 'uSunDir', 'uAmbientI', 'uSunI']) {
   ok(`shade.frag.js contains ${u}`, SHADE_FRAG_SRC.includes(u));
 }
+ok('BUG-RTS-001: GLSL cellSz expression is the twin of terrainShade.js (uHashCell > 0 overrides 2/8 m)', SHADE_FRAG_SRC.includes('float cellSz = uHashCell > 0.0 ? uHashCell : ((uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0);'));
 ok('shade.frag.js contains unpackNormalOct (decodes the march pass packed normal)', SHADE_FRAG_SRC.includes('unpackNormalOct'));
 ok('shade.frag.js contains MAX_FEATURES_PER_TYPE', SHADE_FRAG_SRC.includes('MAX_FEATURES_PER_TYPE'));
 

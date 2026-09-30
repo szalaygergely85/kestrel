@@ -77,6 +77,7 @@ function pickCodeFromPacked(x, count, idx) {
  *   fog: {start:number, full:number, curve:number, nearRGB:number[], farRGB:number[]},
  *   shading: Object,                                   // palette.shading
  *   closeBand?: number,                                 // recipe.nearLOD.bands.close (23.4 near-detail); omitted = no close band
+ *   hashCell?: number,                                  // BUG-RTS-001: per-frame hash cell (m); > 0 overrides the 2/8 m constant, 0/absent = off
  *   handover?: number[],                                // recipe.nearLOD.handover [h0, h1] - picks the 2 m vs 8 m hash cell
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
@@ -87,7 +88,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   // far grid's cell size) - `nearLOD.rules` ("hash cell 2 m when t < h1,
   // else 8 m"). No `ctx.handover` (old callers/tests, far-only recipes) ->
   // unchanged 8 m behaviour.
-  const cellSz = ctx.handover && t < ctx.handover[1] ? 2 : 8;
+  // BUG-RTS-001 (28.11a): a per-frame `ctx.hashCell` > 0 (pitched views) replaces the fixed cell.
+  const cellSz = ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
   const cx = Math.floor(u / cellSz), cy = Math.floor(v / cellSz);
   const hA = hashFast01(cx, cy, type);
   const hB = hashFast01(cx, cy, 7);
