@@ -3093,3 +3093,71 @@ API:
 - Budget: `execute` <= 0.02 ms at 32 commands per tick.
 
 **Do not:** read input, time or the DOM in the sim; put floats or object references in commands; hash `Map`s or objects; let presentation draw from the sim RNG; re-execute a tick.
+
+### 28.6 RE-06 instanced voxel units (normative; architect, 2026-09-30; PC-A)
+
+Goal: N copies of one voxel model = one instanced draw per part, both twins. ME-08's per-instance path (`addVoxelInstances`, `DRAW_VOXEL`, props/entities) stays as is.
+
+**Decisions**
+1. **Raw gl inside `_passRaster`**, like the rest of that pass (it already binds device buffers via `.handle`). The `GpuDeviceGL2.draw()` `instances` gap stays with ME-19, which moves the whole pass including this loop. `MeshBuffers` unchanged; the instance VBO belongs to the pipeline.
+2. **Pose split, no second pose implementation.** `world_p(v) = I * P_p * v`. `I` = instance rigid transform `[Rz(yaw) | x,y,z]`. `P_p` = the part matrix at the identity instance = `FORWARD` after `computeVoxelPose(pm, {x:0,y:0,z:0,yawDeg:0, clip, frame, tMs}, scratch)`. This works because `Aw = Rz*cellM` and `bw = inst - Aw*anchor`, so `FORWARD(inst) = I * FORWARD(identity)`. One pose per group: instances in different animation phases go in different groups (the game buckets them). Per-instance part poses (a texture) are later work, not RE-06.
+3. **Axis-aligned face rule (27.16 item 2):** aligned = identity `partFlags[p] & 1` AND the instance flag bit 0. The helper sets bit 0 when `((yaw%90)+90)%90 === 0`, the exact voxelPose test.
+4. **objectId:** per instance, u32, set by the game. Unit convention: `0x10000 | unitIndex` (bit 16 = unit space; 27.4 ranges <= 0x8FFF stay as they are). planeId = `flat0 | ((objectId & 0xF) << 24)`, the same slot bits as ME-08, so neighbouring units still outline.
+5. **Team colour = material remap in the vertex stage.** `vMat` is flat, so the fragment's mat logic does not change. `engine/render/teamRemap.js`: `buildTeamRemap(table, spec) -> {slotIds: Uint32Array(TEAM_SLOTS=4), mat: Uint32Array(MAX_TEAMS=8 * 4)}`, where `spec = {slots:['team.a',...], teams:[null, {'team.a':'unitRed',...}, ...]}` (palette keys; the designer adds the `team.*` slot materials, neutral colour). Keys resolve through the same id lookup `MeshData.resolveMats` uses; an unknown key throws. Team 0 and unlisted slots = identity. It is stored on the bound table as `table.team` (rebuilt with `bindShading`). The game sets it through `engine.setTeamMaterials(spec)`. Both twins read `table.team`.
+
+**Per-instance buffer** (`engine/mesh/instances.js`): `INSTANCE_STRIDE = 16` words = 64 B, std layout. It is one ArrayBuffer with `f32`/`u32` views: `createInstanceBuffer(capacity) -> {f32, u32, capacity}`.
+```
+[0..3]  row0 = A00 A01 A02 tx     [4..7] row1     [8..11] row2 (tz = zBase: G-buffer z = worldZ - inst z, as castModels)
+[12]    u32 objectId              [13] u32 flags: bit0 yawAligned, bits 8-15 team (0..7)     [14..15] 0
+```
+- `writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team)`: yaw-only, uses `cosSinDeg` (exact at multiples of 90), zero alloc.
+- A general `I` must be orthonormal: test `|A A^T - 1| < 1e-6`, no scale. `mat3(I)*mat3(P_p)` stays rotation*cellM, so `normalize` is exact.
+
+**API**
+- `DRAW_INSTANCED = 3` in `DrawList.js`. The DrawItem gains `instBuf` (the ib or null) and `instCount`. `partMatrices`/`partFlags` hold `P_p` and the identity flags. `matrix` is unused.
+- `DrawList.addInstances(mesh, parts, ib, count)`. `mesh` is the `MeshData` from `sharedVoxelMeshCache.get` (DrawList never resolves ids; this amends the row's `meshId`). `parts = {m: Float64Array(8*12), flags: Uint8Array(8), count}`. It copies `parts`, sets `objectId = 0` (per instance), and sets `aabb` = the union of instance translations +- R, where R = the max |corner| of the mesh bbox under `P_p`.
+- **Culling:** whole group only, through `list.cull`. No per-instance culling (RE-15 compacts the buffer).
+- **Group registry** (`engine/mesh/instances.js` `InstanceGroups`, `MAX_INSTANCE_GROUPS = 32`), exposed as `engine.instances`:
+  - `group(modelKey, capacity) -> {ib, count, pose:{clip, frame, tMs}}`, `remove(g)`.
+  - The game writes `ib`, sets `count` and `pose` each frame.
+  - Each rendered frame the engine resolves `modelKey -> pm` (the VoxelPool.bind registry, cached once), computes `parts` for each group with `count > 0` into group-owned scratch, then calls `addInstances`. This runs after `addVoxelInstances` and before `list.cull`, in both `_passRaster` and `renderWorldMesh`.
+- **Entity-less fast path only.** RTS units are SoA sim arrays, and the game writes the buffers. Voxel-component entities keep using VoxelPool/ME-08. Dev harness: `game/js/dev/unitsHarness.js`, `?units=N` (grid of N units, 3 teams, mixed yaws). `main.js` edit <= 5 lines.
+
+**Shaders**
+- `mesh.vert.js` exports `meshVertSrc(instanced)`. `MESH_VERT_SRC = meshVertSrc(false)` must stay byte-for-byte what it is now, plus the two new outs.
+- Instanced variant:
+  - Adds `layout(location=6..8) in vec4 iRow0..2; layout(location=9) in uvec2 iMeta;` (objectId, flags).
+  - `lp = (uModel*vec4(aPos,1)).xyz` (uModel = `P_p`), `world = vec3(dot(iRow0.xyz,lp)+iRow0.w, ...)`. The normal is `normalize(mat3(uModel)*n)`, then rotated by the three rows the same way.
+  - `vPlaneId |= int((iMeta.x & 0xFu) << 24)`, `vZBase = iRow2.w`, team remap loop over `uTeamSlot[4]`/`uTeamMat[32]` when team != 0.
+- `mesh.frag.js`: `uObjectId`/`uAxisAligned` become `flat in uint vObjectId, vAxisAligned`. The static vert writes `uint(uObjectId)`/`uint(uAxisAligned)`, so the output for existing draws is unchanged.
+- Second program `progMeshInst` (instanced vert + the same frag) and `_meshInstVao` with `vertexAttribDivisor(6..9, 1)` set once. Only `uViewProj` carries the camera: no shear-specific math, so RE-02's pitched matrix works with no change.
+
+**GPU loop:**
+- Instance VBO: `MAX_INSTANCES_PER_FRAME = 2048` x 64 B = 128 KB, `DYNAMIC_DRAW`. It is orphaned once per frame (`bufferData(size)`); each group then gets one `bufferSubData(ib.f32, 0, count*16)` at `base*64`. More than 2048 instances throws (dev) like DrawList.
+- Per group: bind the mesh VBO (attribs 0-5) and re-point 6-9 at `base*64` (no baseInstance in WebGL2).
+- Per part: `uModel`, `uAxisAligned`, then `drawArraysInstanced(TRIANGLES, start*3, count*3, instCount)`.
+- Order: after the ME-08 voxel loop, before terrain.
+
+**rasterJS twin:** `rasterDrawList` handles `DRAW_INSTANCED` **part-major, then instance order** (the GPU primitive order). It composes `I_i * P_p` in float64 into `_matScratch`; `objectId`/`planeIdOr`/`zBase`/aligned come from the instance words; mat is remapped through `ctx.team` (`= table.team`). Same `_info` path, zero alloc.
+
+**Stats:** `stats.voxelDraws` = ME-08 draws + instanced draws. Add `stats.instancedDraws` and `stats.instances` (F3). AC1: `?units=200` with no props on screen gives `voxelDraws === 2`, `instances === 200`.
+
+**Parity:** new gpucompare pose `unitsInstanced`, **mesh renderer only** (dda reports SKIP, not counted, so dda stays 34/34). test_room floor, 20 instances of a 2-part model (the lever until the designer's unit model exists), yaws {0, 90, 37.5, 200}, teams {0, 1, 2}, mid-animation pose, `k8Gpu > 0` guard, 27.16 item 8a bar. Mesh = 35/35, and the existing 34 give identical numbers. When RE-02 lands, it adds `unitsInstancedPitched` (pitch -58).
+
+**Node tests:**
+1. `instances.test.js`: `I*P_p == FORWARD(inst)` within 1e-9 for 200 random yaw/pos and every part of 2 models; yawAligned bit; stride/offset constants; zero alloc over 1000 `writeUnitInstance` + group frames.
+2. `DrawList.test.js`: `addInstances` item fields, aabb union, cull drops an off-screen group, zero alloc.
+3. `rasterJS.test.js`: N instanced == N `DRAW_VOXEL` items with equal objectId/planeIdOr, bit-identical kind/face/mat/planeId/depth/uv; team 1 changes only slot-mat pixels.
+4. `teamRemap.test.js`: identity team 0, unknown key throws, rebuild after `bindShading`.
+5. `glsl.test.js`: attribute locations 0-9, divisor-attribute names, the frag varyings, `meshVertSrc(false)` unchanged except the two outs.
+6. `MeshBuffers.test.js` unchanged and green.
+
+**Budget:** game writes 200 instances <= 0.03 ms; engine per group (pose + upload + 2 draws) <= 0.02 ms; JS for 200 units in 1-4 groups <= 0.1 ms. GPU at 400x150: 200 x ~600-1300 tris, AC3 +<= 0.5 ms p95 (`?bench=1&units=200` vs `units=0`, same view). If it misses, suspect vertex count (unrolled 64 B verts) before overdraw.
+
+**Do not:**
+- change ME-08's per-instance path, `voxel.frag.js`/`voxelMarch.js`, or MeshBuffers;
+- recompute poses per instance;
+- put the camera or projection into the instanced vert other than `uViewProj`;
+- allocate per frame (views, closures, `{}` in the loop);
+- change the numbers of the existing 34 gpucompare poses or widen any threshold;
+- route units through VoxelPool (`MAX_SPRITES`/16-slot limits).
