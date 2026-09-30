@@ -352,6 +352,7 @@ const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
+engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
 
 // D-025 (US-038a, architecture.md 22.3/22.7): the ONE `grid:changed`
 // listener that rebuilds every game-owned, grid-sized object - the render
@@ -364,6 +365,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
   if (sprites.pass) sprites.pass.resizeGrid(cols, rows);
   gbuf = new GBuffer(cols, rows);
   matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
+  engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
   if (gpuPipeline) gpuPipeline.bind(matTable, assets.palette);
   if (engine.world) for (const s of engine.world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
   if (fb) { fb.depth = engine.depthBuffer; fb.spans = engine.openSpans; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
@@ -500,6 +502,7 @@ function runGame(mode) {
       // limit, footstep accumulator, boulder settle-watch) here - the one
       // place both the first load and every restart go through (7.4 rule).
       resetGameAudio(world);
+      if (params.get('units')) import('./dev/unitsHarness.js').then((m) => m.startUnits(engine, matTable, params, world)); // RE-06 dev harness: ?units=N
       // ---- US-010: `?strict=1` turns World.load's behaviour warning into a hard error ----
       if (params.get('strict') === '1') {
         const missing = validateBehaviours(world);
@@ -797,6 +800,7 @@ function runGame(mode) {
     light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, // US-028
     voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
+    instances: engine.instances, // RE-06 (28.6)
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.

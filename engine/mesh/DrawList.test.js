@@ -5,8 +5,9 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  DrawList, DRAW_STATIC, addStructures, LevelMeshCache,
+  DrawList, DRAW_STATIC, DRAW_INSTANCED, addStructures, LevelMeshCache,
 } from './DrawList.js';
+import { createInstanceBuffer, writeUnitInstance, createInstanceParts } from './instances.js';
 import { projTerms, shearProjection } from '../render/projection.js';
 import { frustumPlanes, classifyAABB, CULL_OUT } from './culling.js';
 import { StaticMeshBuilder, packFlat1, AO_NONE } from './MeshData.js';
@@ -192,6 +193,59 @@ function makeQuadMesh(id) {
   const after = process.memoryUsage().heapUsed;
   const grew = after - before;
   ok('DrawList begin/push/cull: no significant heap growth over 1000 frames (--expose-gc)', grew < 64 * 1024, `grew by ${grew} bytes (sink=${sink})`);
+}
+
+
+// ---------------------------------------------------------------------------
+// 5. RE-06 addInstances: item fields, aabb union, whole-group cull, zero alloc.
+// ---------------------------------------------------------------------------
+{
+  const mesh = makeQuadMesh('inst'); // bbox 0..1 x 0..1 x 0
+  const ib = createInstanceBuffer(4);
+  writeUnitInstance(ib, 0, 0, -20, 0, 0, 0x10000, 0);
+  writeUnitInstance(ib, 1, 10, -30, 2, 37.5, 0x10001, 1);
+  const parts = createInstanceParts();
+  parts.count = 2;
+  for (let p = 0; p < 2; p++) { const o = p * 12; parts.m[o] = 1; parts.m[o + 4] = 1; parts.m[o + 8] = 1; parts.m[o + 9] = p; parts.flags[p] = p === 0 ? 1 : 0; }
+  const list = new DrawList(8);
+  list.begin();
+  ok('addInstances(count 0) adds nothing', list.addInstances(mesh, parts, ib, 0) === null && list.count === 0);
+  let threw = false;
+  try { list.addInstances(mesh, parts, ib, 5); } catch (e) { threw = true; }
+  ok('addInstances over the buffer capacity throws', threw);
+  const it = list.addInstances(mesh, parts, ib, 2);
+  ok('item type/instBuf/instCount/objectId', it.type === DRAW_INSTANCED && it.instBuf === ib && it.instCount === 2 && it.objectId === 0 && it.mesh === mesh);
+  ok('partMatrices/partFlags copied', it.partMatrices[9] === 0 && it.partMatrices[12 + 9] === 1 && it.partFlags[0] === 1 && it.partFlags[1] === 0);
+  // R = max |corner| of bbox (0..1,0..1,0) under part 1 (t=(1,0,0)) = |(2,1,0)| = sqrt(5)
+  const R = Math.sqrt(5);
+  const a = it.aabb;
+  ok('aabb = union of instance translations +- R', Math.abs(a[0] - (0 - R)) < 1e-9 && Math.abs(a[3] - (10 + R)) < 1e-9
+    && Math.abs(a[1] - (-30 - R)) < 1e-9 && Math.abs(a[4] - (-20 + R)) < 1e-9 && Math.abs(a[2] - (0 - R)) < 1e-9 && Math.abs(a[5] - (2 + R)) < 1e-9, Array.from(a).join(','));
+  ok('push after an instanced item resets instBuf/instCount', (() => { list.begin(); const q = list.push(mesh, DRAW_STATIC); return q.instBuf === null && q.instCount === 0; })());
+
+  // cull: on-screen group kept, off-screen group dropped whole.
+  const cam = { x: 0, y: 0, z: 1, yawDeg: 0, pitchDeg: 0 };
+  const grid = { cols: 240, rows: 90 };
+  const terms = {}; const M = new Float64Array(16); const planes = new Float64Array(24);
+  projTerms(cam, grid, terms); shearProjection(terms, M); frustumPlanes(M, planes);
+  const ibBehind = createInstanceBuffer(2);
+  writeUnitInstance(ibBehind, 0, 0, 30, 0, 0, 0x10000, 0);
+  writeUnitInstance(ibBehind, 1, 2, 40, 0, 0, 0x10001, 0);
+  list.begin();
+  list.addInstances(mesh, parts, ib, 2);
+  const gBehind = list.addInstances(mesh, parts, ibBehind, 2);
+  const n = list.cull(planes);
+  ok('cull keeps the ahead group and drops the behind group whole', n === 1 && list.items[0].instBuf === ib && gBehind !== null);
+
+  // zero allocation
+  const frame = () => { list.begin(); list.addInstances(mesh, parts, ib, 2); list.addInstances(mesh, parts, ibBehind, 2); list.cull(planes); };
+  for (let i = 0; i < 50; i++) frame();
+  global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1000; i++) frame();
+  global.gc();
+  const grew = process.memoryUsage().heapUsed - before;
+  ok('addInstances + cull: no significant heap growth over 1000 frames', grew < 64 * 1024, `grew=${grew}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -3,6 +3,8 @@
 // implementation lives here.
 
 import { RenderTarget } from '../render/RenderTarget.js';
+import { InstanceGroups } from '../mesh/instances.js';
+import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
 import { OpenSpans } from '../render/OpenSpans.js';
 import { Input } from './input.js';
@@ -131,6 +133,20 @@ export function createEngine(opts) {
     _pendingGrid: null,
     stats: { lastGridSwitchMs: NaN },
     physics, // PHYSICS_DEFAULTS merged with opts.physics
+    // RE-06 (28.6): instanced voxel units. The game creates groups here and refills them per frame;
+    // `setTeamMaterials` stores the spec and (re)applies it to the attached MaterialTable
+    // (`table.team`), also after every `bindShading` rebuild via `attachMaterialTable`.
+    instances: new InstanceGroups(),
+    teamSpec: null,
+    matTable: null,
+    attachMaterialTable(table) {
+      engine.matTable = table;
+      if (table && engine.teamSpec) table.team = buildTeamRemap(table, engine.teamSpec);
+    },
+    setTeamMaterials(spec) {
+      engine.teamSpec = spec;
+      if (engine.matTable) engine.matTable.team = buildTeamRemap(engine.matTable, spec);
+    },
     loadWorld(def, worldOpts) {
       engine.world = World.load(def, assets, { events, ...worldOpts });
       return engine.world;

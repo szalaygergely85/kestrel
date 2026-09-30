@@ -75,6 +75,9 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
+// RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
+export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_BASE, MAX_INSTANCES_PER_FRAME } from './mesh/instances.js';
+export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
 // edgePass moved to engine/dev.js - pass internals + parity tooling only,
 // no stable client calls them directly.

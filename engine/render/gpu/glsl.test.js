@@ -12,7 +12,7 @@ import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
-import { MESH_VERT_SRC } from './glsl/mesh.vert.js';
+import { MESH_VERT_SRC, MESH_INST_VERT_SRC, meshVertSrc } from './glsl/mesh.vert.js';
 import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
@@ -203,8 +203,8 @@ ok('terrain.vert.js raster frag carves structure footprints (uStructFoot/uStruct
 // ME-08a (27.16 items 2-4): voxel draws extend the mesh.vert/frag family.
 ok('mesh.vert.js declares uObjectId/uAxisAligned uniforms', MESH_VERT_SRC.includes('uniform int uObjectId;') && MESH_VERT_SRC.includes('uniform int uAxisAligned;'));
 ok('mesh.vert.js outputs flat vec3 vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits))', MESH_VERT_SRC.includes('flat out vec3 vNrmW;') && MESH_VERT_SRC.includes('vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));'));
-ok('mesh.frag.js reads flat in vec3 vNrmW + uObjectId/uAxisAligned', MESH_FRAG_SRC.includes('flat in vec3 vNrmW;') && MESH_FRAG_SRC.includes('uniform int uObjectId;') && MESH_FRAG_SRC.includes('uniform int uAxisAligned;'));
-ok('mesh.frag.js GI.w = uint(uObjectId), kind 8 packs the normal for face 7', MESH_FRAG_SRC.includes('uint(uObjectId)') && MESH_FRAG_SRC.includes('packNormalOct(vNrmW)') && MESH_FRAG_SRC.includes('roundedFace(vNrmW)'));
+ok('mesh.frag.js reads flat in vec3 vNrmW + the vObjectId/vAxisAligned varyings (RE-06: no uObjectId/uAxisAligned uniforms any more)', MESH_FRAG_SRC.includes('flat in vec3 vNrmW;') && MESH_FRAG_SRC.includes('flat in uint vObjectId, vAxisAligned;') && !MESH_FRAG_SRC.includes('uniform int uObjectId') && !MESH_FRAG_SRC.includes('uniform int uAxisAligned'));
+ok('mesh.frag.js GI.w = vObjectId, kind 8 packs the normal for face 7', MESH_FRAG_SRC.includes('nrmBits, vObjectId)') && MESH_FRAG_SRC.includes('packNormalOct(vNrmW)') && MESH_FRAG_SRC.includes('roundedFace(vNrmW)'));
 {
   // roundedFace body (the 3 comparison lines) must be string-equal with voxel.frag.js (whitespace-normalised).
   const norm = (s) => s.replace(/\s+/g, ' ').trim();

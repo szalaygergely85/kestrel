@@ -60,7 +60,7 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
 // `renderer:'dda'` path above is untouched by any of these).
 import { GpuDeviceGL2 } from './device/GpuDeviceGL2.js';
 import { MeshBuffers, STATIC_VERTEX_LAYOUT, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES } from './MeshBuffers.js';
-import { MESH_VERT_SRC } from './glsl/mesh.vert.js';
+import { MESH_VERT_SRC, MESH_INST_VERT_SRC } from './glsl/mesh.vert.js';
 import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 // ME-06 (docs/backlog.md, docs/architecture.md 27.4, 27.15.5): terrain in
 // the raster pass - its own program (`terrain.vert.js`'s kind-7 variant)
@@ -70,7 +70,8 @@ import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN } from '../GBuffer.js';
-import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
 import { projTerms, shearProjection } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
@@ -124,7 +125,7 @@ export class GpuCellPipeline {
       // without `?terrain=0` - see main.js and this story's Programmer notes.
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
-      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
+      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
       // US-018 (architecture.md 16): real per-pass GPU ms, filled only
       // while `setPassTiming(true)` (F3 overlay open or `?bench=1`) - NaN
       // otherwise. `passMsP50`/`passMsP95` line up with `PASS_NAMES`.
@@ -140,6 +141,7 @@ export class GpuCellPipeline {
     // bindVoxels() - null until the caller has one (US-040 has no entity
     // binding yet, so a dev harness/main.js owns pushInstance()).
     this._voxelPool = null;
+    this._instances = null; // RE-06: InstanceGroups (engine.instances), set by bindInstances()
 
     // Registered once, up front, regardless of whether init below succeeds -
     // a lost context is possible even on a pipeline that never became ready
@@ -208,6 +210,16 @@ export class GpuCellPipeline {
     this._meshDrawList = null;
     if (this.renderer === 'mesh') {
       this.progMesh = linkProgram(gl, MESH_VERT_SRC, MESH_FRAG_SRC);
+      // RE-06 (28.6): instanced voxel units - second program (instanced vert + the same frag),
+      // one pipeline-owned dynamic instance VBO refilled per frame, divisors set once on its VAO.
+      this.progMeshInst = linkProgram(gl, MESH_INST_VERT_SRC, MESH_FRAG_SRC);
+      this._meshInstVbo = gl.createBuffer();
+      this._meshInstVao = gl.createVertexArray();
+      gl.bindVertexArray(this._meshInstVao);
+      for (let a = 6; a <= 9; a++) { gl.enableVertexAttribArray(a); gl.vertexAttribDivisor(a, 1); }
+      gl.bindVertexArray(null);
+      this._teamSlotI32 = new Int32Array(4);
+      this._teamMatI32 = new Int32Array(32);
       this._meshDevice = new GpuDeviceGL2(gl);
       this._meshBuffers = new MeshBuffers(this._meshDevice);
       // ME-06: was 64 (level structures only, ME-04) - terrain items (9 near
@@ -356,6 +368,7 @@ export class GpuCellPipeline {
     this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
     this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
     this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
+    this._locsMeshInst = this.progMeshInst ? this._uniformLocs(this.progMeshInst, MESH_INST_UNIFORMS) : null;
     this._locsMeshTerrain = this.progMeshTerrain ? this._uniformLocs(this.progMeshTerrain, TERRAIN_MESH_UNIFORMS) : null;
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
@@ -687,7 +700,7 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshTerrain]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
@@ -695,6 +708,8 @@ export class GpuCellPipeline {
     // the terrain program shares that same MeshBuffers/device cache, only
     // its own VAO is separate.
     if (this._meshVao) gl.deleteVertexArray(this._meshVao);
+    if (this._meshInstVao) gl.deleteVertexArray(this._meshInstVao);
+    if (this._meshInstVbo) gl.deleteBuffer(this._meshInstVbo);
     if (this._meshTerrainVao) gl.deleteVertexArray(this._meshTerrainVao);
     if (this._meshBuffers) this._meshBuffers.dispose();
     if (this._meshDevice) this._meshDevice.dispose();
@@ -806,6 +821,11 @@ export class GpuCellPipeline {
    */
   bindVoxels(pool) {
     this._voxelPool = pool;
+  }
+
+  /** RE-06: binds the `InstanceGroups` (engine.instances) whose groups `_passRaster` draws instanced. */
+  bindInstances(groups) {
+    this._instances = groups;
   }
 
   /**
@@ -1574,6 +1594,8 @@ export class GpuCellPipeline {
     if (voxelPool && voxelPool.list.length > 0) {
       addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
     }
+    // RE-06 (28.6): instanced unit groups, after the ME-08 voxel items, before the cull.
+    if (this._instances) this._instances.addToDrawList(list, sharedVoxelMeshCache);
     list.cull(this._meshFrustumPlanes);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRasterSub);
@@ -1654,7 +1676,73 @@ export class GpuCellPipeline {
         voxelDraws++;
       }
     }
-    this.stats.voxelDraws = voxelDraws;
+
+    // RE-06 (28.6): DRAW_INSTANCED groups - raw gl here (the device `draw()` instances gap stays
+    // with ME-19). One orphaned 128 KB VBO per frame, one bufferSubData per group, one
+    // drawArraysInstanced per part. Same depth buffer / viewport as above.
+    let instancedDraws = 0, instTotal = 0;
+    {
+      let any = false;
+      for (let i = 0; i < list.count; i++) if (list.items[i].type === DRAW_INSTANCED) { any = true; break; }
+      if (any) {
+        const locI = this._locsMeshInst;
+        gl.useProgram(this.progMeshInst);
+        gl.bindVertexArray(this._meshInstVao);
+        gl.uniformMatrix4fv(locI.uViewProj, false, this._meshViewProjF32);
+        gl.uniform1i(locI.uPlaneIdOr, 0);
+        gl.uniform1f(locI.uZBase, 0);
+        gl.uniform1i(locI.uObjectId, 0);
+        const team = this._table && this._table.team;
+        const ts = this._teamSlotI32, tm = this._teamMatI32;
+        for (let k = 0; k < 4; k++) ts[k] = team ? team.slotIds[k] : 0;
+        for (let k = 0; k < 32; k++) tm[k] = team ? team.mat[k] : 0;
+        gl.uniform1iv(locI.uTeamSlot, ts);
+        gl.uniform1iv(locI.uTeamMat, tm);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._meshInstVbo);
+        gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES_PER_FRAME * INSTANCE_BYTES, gl.DYNAMIC_DRAW); // orphan
+        const M = this._meshModelF32;
+        for (let i = 0; i < list.count; i++) {
+          const item = list.items[i];
+          if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
+          const n = item.instCount;
+          if (instTotal + n > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
+          const baseBytes = instTotal * INSTANCE_BYTES;
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._meshInstVbo);
+          gl.bufferSubData(gl.ARRAY_BUFFER, baseBytes, item.instBuf.f32, 0, n * 16);
+          gl.vertexAttribPointer(6, 4, gl.FLOAT, false, INSTANCE_BYTES, baseBytes);
+          gl.vertexAttribPointer(7, 4, gl.FLOAT, false, INSTANCE_BYTES, baseBytes + 16);
+          gl.vertexAttribPointer(8, 4, gl.FLOAT, false, INSTANCE_BYTES, baseBytes + 32);
+          gl.vertexAttribIPointer(9, 2, gl.UNSIGNED_INT, INSTANCE_BYTES, baseBytes + 48);
+          instTotal += n;
+          const mesh = item.mesh;
+          const entry = this._meshBuffers.get(mesh);
+          gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+          for (const attr of STATIC_VERTEX_LAYOUT) {
+            gl.enableVertexAttribArray(attr.location);
+            if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, 64, attr.offsetBytes);
+            else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, 64, attr.offsetBytes);
+          }
+          const ranges = mesh.ranges;
+          const pm = item.partMatrices;
+          for (let p = 0; p < ranges.length; p++) {
+            const range = ranges[p];
+            if (range.count <= 0) continue;
+            const o = p * 12;
+            M[0] = pm[o]; M[1] = pm[o + 3]; M[2] = pm[o + 6]; M[3] = 0;
+            M[4] = pm[o + 1]; M[5] = pm[o + 4]; M[6] = pm[o + 7]; M[7] = 0;
+            M[8] = pm[o + 2]; M[9] = pm[o + 5]; M[10] = pm[o + 8]; M[11] = 0;
+            M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
+            gl.uniformMatrix4fv(locI.uModel, false, M);
+            gl.uniform1i(locI.uAxisAligned, item.partFlags[p] & 1);
+            gl.drawArraysInstanced(gl.TRIANGLES, range.start * 3, range.count * 3, n);
+            instancedDraws++;
+          }
+        }
+      }
+    }
+    this.stats.voxelDraws = voxelDraws + instancedDraws;
+    this.stats.instancedDraws = instancedDraws;
+    this.stats.instances = instTotal;
 
     // ME-06: terrain items (near chunks, stitch, far tiles), same depth
     // buffer/viewport - a different program (terrain.vert.js's kind-7
@@ -2029,6 +2117,8 @@ const CAST_UNIFORMS = [
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uAxisAligned'];
+// RE-06: the instanced variant adds the team remap arrays (element 0 location for uniform1iv).
+const MESH_INST_UNIFORMS = [...MESH_UNIFORMS, 'uTeamSlot', 'uTeamMat'];
 // ME-06: terrain's own raster program (terrain.vert.js) - no planeIdOr/
 // zBase (terrain items always carry 0/0, 27.15.5), but its own objectId
 // uniform (no per-vertex flat data to derive it from, unlike mesh.frag.js's

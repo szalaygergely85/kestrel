@@ -47,7 +47,7 @@ const meshViewProj = new Float64Array(16);
 const meshFrustumPlanes = new Float64Array(24);
 const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
 const meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
-const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0 };
+const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0, team: null };
 /** @type {WeakMap<import('../world/World.js').World, LevelMeshCache>} */
 const _meshLevelMeshCaches = new WeakMap();
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
@@ -109,6 +109,9 @@ function renderWorldMesh(fb, world, cam) {
   if (voxelPool && voxelPool.list.length > 0) {
     addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
   }
+  // RE-06 (28.6): instanced unit groups (engine.instances) after the ME-08 items, before the cull.
+  if (fb.instances) fb.instances.addToDrawList(list, sharedVoxelMeshCache);
+  meshCtx.team = fb.matTable ? fb.matTable.team : null;
   list.cull(meshFrustumPlanes);
 
   const target = meshRasterTargetFor(cols, rows);
