@@ -41,6 +41,7 @@ import {
 // engine/game imports, not tools/-to-tools/ imports).
 import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.js';
 import { autoMapColors } from '../voxAutoMap.js';
+import { deriveVoxModelName } from './voxImportName.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -849,18 +850,6 @@ assetsSearchInput.addEventListener('input', () => renderAssetsList(assetsSearchI
 // value) - no UI for it yet, matches vox-import.mjs's own --cell example.
 const VOX_IMPORT_DEFAULT_CELL_M = 0.05;
 
-/** Derives a valid, unused model key from a picked filename (24.9's ID_REGEX shape: starts with a letter, then letters/digits/_/-). */
-function deriveVoxModelName(filename) {
-  const base = String(filename || 'vox_model').replace(/\.[^./\\]+$/, '');
-  let s = base.replace(/[^A-Za-z0-9_]/g, '_');
-  if (!/^[A-Za-z]/.test(s)) s = 'vox_' + s;
-  s = s || 'vox_model';
-  if (!assets.has('model', s)) return s;
-  let n = 2;
-  while (assets.has('model', `${s}_${n}`)) n++;
-  return `${s}_${n}`;
-}
-
 async function doImportVox() {
   let picked;
   try {
@@ -882,7 +871,7 @@ async function doImportVox() {
     const { errors } = validateVoxelModel(def);
     if (errors.length) throw new Error(errors.join('; '));
 
-    const name = deriveVoxModelName(picked.name);
+    const name = deriveVoxModelName(picked.name, (k) => assets.has('model', k));
     assets.add('model', name, {
       name,
       desc: `Imported from '${picked.name}' via the editor's Import .vox button (OWN-REQ-011). Colors auto-matched to the nearest palette material.`,
