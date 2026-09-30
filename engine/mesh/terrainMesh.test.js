@@ -27,6 +27,12 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 globalThis.window = globalThis.window || globalThis;
 terrainDef; // runs the IIFE, sets window.ASSETS.levels.overworld_far
 const recipe = globalThis.ASSETS.levels.overworld_far;
+// CO-9: no more x/y/w/h/ringH fallback in the recipe itself - a standalone
+// Terrain built with no World.load must inject the tower's bbox/ringHAt
+// itself, using the same numbers the old fallback hardcoded (world_m1's
+// placed tower footprint; every outer-ring cell is a flat 2.4 m).
+recipe.structures[0].bbox = { x0: 1480, y0: 1018, x1: 1504, y1: 1032 };
+recipe.structures[0].ringHAt = () => 2.4;
 
 function makeTerrain() {
   const t = new Terrain(recipe);

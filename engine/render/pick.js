@@ -149,6 +149,9 @@ const _rectScratch = new Float64Array(3);
  * Ids (ascending) of units whose base point projects inside the inclusive
  * screen rect `[c0,c1] x [r0,r1]` and is in front of the camera (`vd > 0`).
  * Iterates `k` ascending, so `outIds` comes out ascending. Zero allocation.
+ * Caller must pass an already-normalised rect (`c0 <= c1`, `r0 <= r1`) - this
+ * function does no swapping/normalisation itself; a flipped rect just
+ * matches nothing (the `col >= c0 && col <= c1` checks both fail).
  * @param {import('./projection.js').PitchedTerms} terms
  * @param {number} c0 @param {number} r0 @param {number} c1 @param {number} r1
  * @param {Float64Array} positions - stride 3, base points

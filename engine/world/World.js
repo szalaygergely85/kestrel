@@ -284,8 +284,10 @@ export class World {
         const placed = w.structures.find((p) => p.id === rs.id);
         if (placed) {
           rs.ringHAt = makeRingHAt(placed);
-          // CO-2: the placement has ONE source (the world file); the recipe's
-          // own x/y/w/h copy (deleted by CO-8) is not consulted for it.
+          // CO-2/CO-9: the placement has ONE source (the world file); the recipe
+          // no longer carries its own x/y/w/h/ringH copy at all (that literal
+          // fallback was removed by CO-9) - `bbox`/`ringHAt` injected here are the
+          // only path `structureBlend` reads.
           rs.bbox = { x0: placed.bbox.x0, y0: placed.bbox.y0, x1: placed.bbox.x1, y1: placed.bbox.y1 };
         }
       }

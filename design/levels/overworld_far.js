@@ -62,13 +62,15 @@
     // LINEARLY to the height of the nearest outer-ring cell: h = ring + (terrain - ring) * (d / blend).
     // At the footprint edge (d = 0) terrain == ring cell floorH exactly (mismatch 0 where the player crosses).
     // Authoring rule: keep a structure's outer ring flat, or varying <= 0.3 m between neighbours (step-up safe).
-    // CO-2/CO-8 (docs/coordinates.md 8): `World.load` injects the REAL `bbox`/`ringHAt` here by id, from the
-    // actual placed structure (world_m1.world.json's origin) - one source for real gameplay. `x/y/w/h`/`ringH`
-    // below stay ONLY as the fallback this same recipe uses when driven directly with no World.load
-    // (`new Terrain(recipe)` in terrain.test.js/terrainMesh.test.js/MeshBuffers.test.js - no placement to inject
-    // from); `structureBlend` below prefers `bbox`/`ringHAt` and falls back to these when absent.
+    // CO-2/CO-8/CO-9 (docs/coordinates.md 8): `World.load` injects the REAL `bbox`/`ringHAt` here by id, from
+    // the actual placed structure (world_m1.world.json's origin) - the ONLY source, for real gameplay AND for
+    // `structureBlend` below. There is no literal x/y/w/h/ringH fallback any more (removed by CO-9): a recipe
+    // driven directly with no World.load (`new Terrain(recipe)` in terrain.test.js/terrainMesh.test.js/
+    // MeshBuffers.test.js/TerrainTextures.features.test.js) must inject a stub `bbox`/`ringHAt` onto this entry
+    // itself before constructing Terrain, or `structureBlend` throws reading `undefined.bbox` - intentional,
+    // so a caller that forgot the injection fails loudly instead of silently blending against stale numbers.
     structures: [
-      { id: 'tower', level: 'tower', x: 1480, y: 1018, w: 24, h: 14, blend: 6, ringH: 2.4,
+      { id: 'tower', level: 'tower', blend: 6,
         note: 'every outer-ring cell of tower.js is 2.4 m (legend , and ;), equal to the crown' }
     ],
 
@@ -206,13 +208,15 @@
     var S = DEF.structures;
     for (var i = 0; i < S.length; i++) {
       var st = S[i];
-      // CO-2/CO-8: `st.bbox` (World.load's injection, the real placement) wins;
-      // `st.x/y/w/h` is only the fallback for a recipe driven with no World.load.
-      var x0 = st.bbox ? st.bbox.x0 : st.x, y0 = st.bbox ? st.bbox.y0 : st.y;
-      var x1 = st.bbox ? st.bbox.x1 : st.x + st.w, y1 = st.bbox ? st.bbox.y1 : st.y + st.h;
+      // CO-9: `st.bbox`/`st.ringHAt` are the ONLY source now (World.load's injection,
+      // the real placement) - no literal x/y/w/h/ringH fallback exists any more. A
+      // caller with no placement (standalone `new Terrain(recipe)`) must inject a stub
+      // itself; if it forgot, this throws on `undefined.x0` instead of blending wrong.
+      var x0 = st.bbox.x0, y0 = st.bbox.y0;
+      var x1 = st.bbox.x1, y1 = st.bbox.y1;
       var dx = Math.max(x0 - x, 0, x - x1), dy = Math.max(y0 - y, 0, y - y1), d = Math.hypot(dx, dy);
       if (d >= st.blend) continue;
-      var ring = st.ringHAt ? st.ringHAt(x, y) : st.ringH;     // engine: floorH of the nearest outer-ring cell
+      var ring = st.ringHAt(x, y);                              // engine: floorH of the nearest outer-ring cell
       h = ring + (h - ring) * (d / st.blend);
     }
     return h;

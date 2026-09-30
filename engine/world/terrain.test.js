@@ -1,12 +1,35 @@
 // engine/world/terrain.test.js (US-025). Headless Node ESM, no framework.
 // Run: node engine/world/terrain.test.js
 import { Terrain } from './Terrain.js';
+import { World } from './World.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 import { makeOk } from '../test/assert.js';
+// CO-9 regression test (below): needs a real World.load of world_m1, same
+// asset set world.test.js/serialize.visibility.test.js use (every model
+// world_m1.world.json's props/structures reference must be registered).
+import paletteMod from '../../design/palette.js';
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import voxelPropsMod from '../../design/models/voxel_props.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
+import farTowerMod from '../../design/models/far_tower.js';
+import ferrumLightsMod from '../../design/models/ferrum_lights.js';
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
 terrainDef; // runs the IIFE, sets window.ASSETS.levels.overworld_far
+paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; voxelPropsMod;
+farTowerMod; ferrumLightsMod;
 const recipe = globalThis.ASSETS.levels.overworld_far;
+// CO-9: no more x/y/w/h/ringH fallback in the recipe itself - every
+// standalone `new Terrain(recipe)` below drives the SAME shared recipe
+// object, so inject the tower's bbox/ringHAt once, here, before any of
+// them (same numbers the old fallback hardcoded).
+recipe.structures[0].bbox = { x0: 1480, y0: 1018, x1: 1504, y1: 1032 };
+recipe.structures[0].ringHAt = () => 2.4;
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -181,6 +204,21 @@ ok('normalAt on the flat tower crown points mostly up', n.z > 0.9, `z=${n.z}`);
   let gVal, hVal;
   try { gVal = i.groundAt(recipe.tower.x, recipe.tower.y); hVal = i.heightAt(recipe.tower.x, recipe.tower.y); } catch (e) { threw = true; }
   ok('groundAt before bakeNearBand does not throw and matches heightAt', !threw && gVal === hVal);
+}
+
+// --- CO-9 regression: World.load's real injection is the ONLY path (no --
+// --- fallback left to mask a regression here) -----------------------------
+{
+  const { assets } = await loadTestAssets();
+  const world = World.load(assets.world('world_m1'), assets, {});
+  const rs = world.terrain.recipe.structures.find((s) => s.id === 'tower');
+  ok('World.load injects a real bbox onto the tower structure entry',
+    !!rs && !!rs.bbox && isFinite(rs.bbox.x0) && isFinite(rs.bbox.y0) && isFinite(rs.bbox.x1) && isFinite(rs.bbox.y1),
+    JSON.stringify(rs && rs.bbox));
+  ok('World.load injects a real ringHAt function onto the tower structure entry',
+    !!rs && typeof rs.ringHAt === 'function');
+  const ringSample = rs && rs.ringHAt((rs.bbox.x0 + rs.bbox.x1) / 2, rs.bbox.y0 - 1);
+  ok('the injected ringHAt returns a finite height near the tower ring', typeof ringSample === 'number' && isFinite(ringSample), `${ringSample}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
