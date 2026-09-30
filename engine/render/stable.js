@@ -6,10 +6,14 @@
 // resolved cells ("history") and this frame's freshly-shaded cells, decide,
 // per cell, whether to keep blending toward the old glyph/color or to snap
 // straight to the new one. This module is NOT wired into the real frame
-// render (no GBuffer/GpuDevice import, imports nothing per 27.15.0's "the
-// new modules import nothing" convention followed by projection.js) - it is
-// PC-A's job later to feed it real G-buffer snapshots every frame. It is
-// deliberately a free-standing algorithm test bed.
+// render (no GpuDevice import) - it is PC-A's job later to feed it real
+// G-buffer snapshots every frame. It is deliberately a free-standing
+// algorithm test bed. ARCH CHANGES (2026-09-29 opus batch 2): this module now
+// imports the REAL `projTerms`/`unprojectCell` from `engine/render/
+// projection.js` (out-params into this module's own module-level scratch, so
+// still zero-allocation) instead of a copied/hardcoded-HFOV `fillTerms`/
+// `cellRayP` twin - only the inverse `reprojectToCell` (below) stays
+// module-local, since no other module needs that direction.
 //
 // Reprojection: 25.6 says "reproject the current world point (`cellRayP
 // (depth)`) with the previous camera uniforms". `cellRayP` (GLSL) / its JS
@@ -42,7 +46,8 @@
 // bit from the real entity/voxel-instance data is PC-A's job when this lands
 // in the real pass; this module just requires it to be supplied per-cell.
 
-import { KIND_MODEL } from './GBuffer.js';
+import { KIND_NONE, KIND_MODEL } from './GBuffer.js';
+import { projTerms, unprojectCell } from './projection.js';
 
 /** Global kill-switch: yaw delta beyond this turns history off for the whole frame (25.6). */
 export const YAW_DISABLE_DEG = 3;
@@ -55,8 +60,12 @@ export const DEFAULT_DETAIL = 16;
  * @typedef {Object} StableFrame
  * @property {number} cols
  * @property {number} rows
- * @property {Uint16Array} glyph - ramp-ordered glyph code per cell; adjacent
- *   codes must be adjacent brightness-ramp levels (US-073's "one ramp level" rule).
+ * @property {Uint16Array} glyph - the real ASCII glyph code per cell (NOT
+ *   ramp-ordered - two adjacent brightness-ramp levels can be arbitrarily far
+ *   apart as raw codes; use `level` for the "one ramp level" hysteresis rule).
+ * @property {Uint8Array} level - ramp level per cell (0..N-1 within its
+ *   brightness ramp); ARCH CHANGES: adjacent LEVELS, not adjacent glyph codes,
+ *   are what "one ramp level" (US-073) means.
  * @property {Uint32Array} fg - packed 0xRRGGBB per cell
  * @property {Uint32Array} bg - packed 0xRRGGBB per cell
  * @property {Uint8Array} kind - GBuffer.kind codes (KIND_NONE..KIND_MODEL)
@@ -103,43 +112,11 @@ const _prevTerms = {
 };
 const _P = [0, 0, 0];
 const _cellScratch = [0, 0];
-
-/** Fills `terms` (one of the module scratch objects) the same way `projTerms` does, without importing projection.js's allocation-facing helpers (self-contained per this module's "imports nothing" convention). */
-function fillTerms(cam, cols, rows, terms) {
-  const HFOV_DEG = 75;
-  const hFovRad = (HFOV_DEG * Math.PI) / 180;
-  const tanHalf = Math.tan(hFovRad / 2);
-  const yawRad = (cam.yawDeg * Math.PI) / 180;
-  const dirX = Math.sin(yawRad);
-  const dirY = -Math.cos(yawRad);
-  const planeX = -dirY * tanHalf;
-  const planeY = dirX * tanHalf;
-  const aspect = cols / rows;
-  const planeDistY = (rows / 2) * aspect / tanHalf;
-  const planeDistX = cols / (2 * tanHalf);
-  const tanPitch = Math.tan((cam.pitchDeg * Math.PI) / 180);
-  const horizonRow = rows / 2 + tanPitch * planeDistY;
-  terms.cols = cols; terms.rows = rows;
-  terms.eyeX = cam.x; terms.eyeY = cam.y; terms.eyeZ = cam.z;
-  terms.dirX = dirX; terms.dirY = dirY;
-  terms.planeX = planeX; terms.planeY = planeY;
-  terms.tanHalf = tanHalf;
-  terms.planeDistX = planeDistX; terms.planeDistY = planeDistY;
-  terms.horizonRow = horizonRow; terms.tanPitch = tanPitch;
-  return terms;
-}
-
-/** Literal twin of `unprojectCell` (engine/render/projection.js): screen (col, row, dist) -> world point, written into `out3`. */
-function cellRayP(terms, col, row, dist, out3) {
-  const cameraX = (2 * (col + 0.5)) / terms.cols - 1;
-  const rayDirX = terms.dirX + terms.planeX * cameraX;
-  const rayDirY = terms.dirY + terms.planeY * cameraX;
-  const slope = (terms.horizonRow - row) / terms.planeDistY;
-  out3[0] = terms.eyeX + rayDirX * dist;
-  out3[1] = terms.eyeY + rayDirY * dist;
-  out3[2] = terms.eyeZ + slope * dist;
-  return out3;
-}
+// `projTerms`'s `grid` out-param (ARCH CHANGES: real projection.js terms
+// instead of a copied/hardcoded-HFOV twin) - mutated in place, never
+// reallocated (cols/rows are the same for `cam`/`prevCam` here: a resolution
+// mismatch already forces `globallyOff` before this is used).
+const _gridScratch = { cols: 0, rows: 0 };
 
 /**
  * Exact algebraic inverse of `cellRayP` for a given camera's terms: world
@@ -179,9 +156,9 @@ function yawDeltaDeg(a, b) {
   return Math.abs(d);
 }
 
-/** `|a - b| <= 1`, the "within one ramp level" rule (25.6a). */
-function withinOneRampLevel(prevGlyph, curGlyph) {
-  return Math.abs(curGlyph - prevGlyph) <= 1;
+/** `|a - b| <= 1`, the "within one ramp level" rule (25.6a) - ARCH CHANGES: takes ramp LEVELS (`StableFrame.level`), not raw glyph codes. */
+function withinOneRampLevel(prevLevel, curLevel) {
+  return Math.abs(curLevel - prevLevel) <= 1;
 }
 
 /** `mix(prev, cur, 0.5)` per channel, snapping straight to `cur` on any channel where `|delta| > CHANNEL_SNAP` (25.6b). */
@@ -225,8 +202,9 @@ export function stabilizeCells(prev, cur, prevCam, cam, out) {
     return out;
   }
 
-  fillTerms(cam, cols, rows, _curTerms);
-  fillTerms(prevCam, cols, rows, _prevTerms);
+  _gridScratch.cols = cols; _gridScratch.rows = rows;
+  projTerms(cam, _gridScratch, _curTerms);
+  projTerms(prevCam, _gridScratch, _prevTerms);
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -238,8 +216,10 @@ export function stabilizeCells(prev, cur, prevCam, cam, out) {
 
       if (cur.rule[i] !== 0) continue; // edge cells: always recomputed (25.6)
       if (cur.kind[i] === KIND_MODEL && cur.playing[i]) continue; // playing kind-8 clip (25.6)
+      if (cur.kind[i] === KIND_NONE) continue; // ARCH CHANGES: sky - no real depth to reproject
+      if (!Number.isFinite(cur.z[i]) || cur.z[i] <= 0) continue; // ARCH CHANGES: degenerate/non-finite depth
 
-      cellRayP(_curTerms, col, row, cur.z[i], _P);
+      unprojectCell(_curTerms, col, row, cur.z[i], _P);
       const cellPrev = reprojectToCell(_prevTerms, _P[0], _P[1], _P[2], _cellScratch);
       if (!cellPrev) continue; // behind the previous camera
 
@@ -256,7 +236,7 @@ export function stabilizeCells(prev, cur, prevCam, cam, out) {
       const dUV = Math.sqrt(du * du + dv * dv);
       if (dUV >= 0.5 / detail) continue;
 
-      out.glyph[i] = withinOneRampLevel(prev.glyph[h], cur.glyph[i]) ? prev.glyph[h] : cur.glyph[i];
+      out.glyph[i] = withinOneRampLevel(prev.level[h], cur.level[i]) ? prev.glyph[h] : cur.glyph[i];
       out.fg[i] = blendPacked(prev.fg[h], cur.fg[i]);
       out.bg[i] = blendPacked(prev.bg[h], cur.bg[i]);
     }

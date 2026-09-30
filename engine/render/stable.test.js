@@ -8,7 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { stabilizeCells, YAW_DISABLE_DEG } from './stable.js';
-import { KIND_WALL, KIND_MODEL } from './GBuffer.js';
+import { KIND_NONE, KIND_WALL, KIND_MODEL } from './GBuffer.js';
 import { projTerms, unprojectCell } from './projection.js';
 import { makeOk } from '../test/assert.js';
 
@@ -31,6 +31,7 @@ function makeFrame(cols, rows, defaults, overrides = {}) {
   const f = {
     cols, rows,
     glyph: new Uint16Array(n).fill(defaults.glyph ?? 0),
+    level: new Uint8Array(n).fill(defaults.level ?? defaults.glyph ?? 0),
     fg: new Uint32Array(n).fill(defaults.fg ?? 0),
     bg: new Uint32Array(n).fill(defaults.bg ?? 0),
     kind: new Uint8Array(n).fill(defaults.kind ?? KIND_WALL),
@@ -75,6 +76,32 @@ const CAM0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0, cols: 1, rows: 1 };
   const out = makeOut(1, 1);
   stabilizeCells(prev, cur, CAM0, CAM0, out);
   ok('glyph beyond one ramp level: snaps to current glyph', out.glyph[0] === 13, `got ${out.glyph[0]}`);
+}
+// ARCH CHANGES (2026-09-29 opus batch 2, item 2): `level` (not raw `glyph`
+// codes) decides the "one ramp level" hysteresis - real glyph codes are NOT
+// ramp-ordered, so a small `level` delta with a large `glyph` delta must
+// still keep history, and vice versa.
+{
+  // level differs by 1 (within one ramp level) but glyph codes are far apart
+  // (not ramp-ordered) - history must still be kept (the OLD glyph-diff rule
+  // would have wrongly snapped here: |97 - 42| = 55 > 1).
+  const prev = makeFrame(1, 1, { glyph: 42, level: 5, u: 0.5, v: 0.5 });
+  const cur = makeFrame(1, 1, { glyph: 97, level: 6, u: 0.5, v: 0.5 });
+  const out = makeOut(1, 1);
+  stabilizeCells(prev, cur, CAM0, CAM0, out);
+  ok('level within one ramp level keeps previous glyph even when raw glyph codes are far apart',
+    out.glyph[0] === 42, `got ${out.glyph[0]}`);
+}
+{
+  // level differs by 2 (beyond one ramp level) but glyph codes are adjacent
+  // (not ramp-ordered) - history must be rejected (the OLD glyph-diff rule
+  // would have wrongly kept history here: |43 - 42| = 1 <= 1).
+  const prev = makeFrame(1, 1, { glyph: 42, level: 5, u: 0.5, v: 0.5 });
+  const cur = makeFrame(1, 1, { glyph: 43, level: 7, u: 0.5, v: 0.5 });
+  const out = makeOut(1, 1);
+  stabilizeCells(prev, cur, CAM0, CAM0, out);
+  ok('level beyond one ramp level snaps to current glyph even when raw glyph codes are adjacent',
+    out.glyph[0] === 43, `got ${out.glyph[0]}`);
 }
 {
   // All channels differ by 16 (<=48): full mix(prev,cur,0.5).
@@ -173,6 +200,28 @@ const CAM0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0, cols: 1, rows: 1 };
   ok('kind-8 cell mid-clip (playing) is always recomputed while its non-playing neighbour blends',
     out.glyph[0] === 10 && out.glyph[1] === 11, `got [${out.glyph[0]}, ${out.glyph[1]}]`);
 }
+// ARCH CHANGES (2026-09-29 opus batch 2, item 3): sky (kind===KIND_NONE) and
+// non-finite/<=0 `z` cells are always recomputed - per-cell, not global.
+{
+  const camB = { ...CAM0, cols: 2, rows: 1 };
+  const prev = makeFrame(2, 1, { glyph: 10, kind: KIND_NONE, u: 0.5, v: 0.5 });
+  const cur = makeFrame(2, 1, { glyph: 11, kind: KIND_NONE, u: 0.5, v: 0.5 });
+  const out = makeOut(2, 1);
+  stabilizeCells(prev, cur, camB, camB, out);
+  ok('sky cell (kind===KIND_NONE) is always recomputed', out.glyph[0] === 11, `got ${out.glyph[0]}`);
+}
+{
+  // Cell 0: non-finite z (NaN). Cell 1: z <= 0. Both always recomputed; a
+  // normal cell 2 (default z=5) still blends as the control.
+  const camB = { ...CAM0, cols: 3, rows: 1 };
+  const prev = makeFrame(3, 1, { glyph: 10, u: 0.5, v: 0.5 });
+  const cur = makeFrame(3, 1, { glyph: 11, u: 0.5, v: 0.5 }, { z: { 0: NaN, 1: 0 } });
+  const out = makeOut(3, 1);
+  stabilizeCells(prev, cur, camB, camB, out);
+  ok('non-finite z is always recomputed', out.glyph[0] === 11, `got ${out.glyph[0]}`);
+  ok('z <= 0 is always recomputed', out.glyph[1] === 11, `got ${out.glyph[1]}`);
+  ok('control cell with a normal z still blends', out.glyph[2] === 10, `got ${out.glyph[2]}`);
+}
 
 // ---------------------------------------------------------------------------
 // 3. Scripted strafe sequence: fewer changed glyphs with stabilization than
@@ -207,6 +256,7 @@ const CAM0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0, cols: 1, rows: 1 };
         const base = 4 + Math.round(((Math.sin(P[0] * 0.7) + Math.cos(P[2] * 0.9)) * 0.5 + 0.5) * 8); // 4..12
         const dither = ((col + row + t) % 3 === 0) ? 1 : 0; // flips ~1/3 of cells every frame
         f.glyph[i] = base + dither;
+        f.level[i] = f.glyph[i]; // ramp-ordered by construction in this synthetic scene
         const shade = 40 + Math.round(((Math.sin(P[0] * 0.5) + 1) * 0.5) * 60); // 40..100
         f.fg[i] = (shade << 16) | (shade << 8) | shade;
         f.bg[i] = 0;
@@ -236,7 +286,7 @@ const CAM0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0, cols: 1, rows: 1 };
       cols: COLS, rows: ROWS,
       kind: prevGeom.kind, planeId: prevGeom.planeId, u: prevGeom.u, v: prevGeom.v,
       z: prevGeom.z, rule: prevGeom.rule, playing: prevGeom.playing, detail: prevGeom.detail,
-      glyph: prevOutGlyph, fg: prevOutFg, bg: prevOutBg,
+      glyph: prevOutGlyph, level: prevOutGlyph, fg: prevOutFg, bg: prevOutBg,
     };
     stabilizeCells(historyFrame, frames[t], cams[t - 1], cams[t], out);
 
