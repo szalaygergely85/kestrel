@@ -33,7 +33,7 @@ A browser game (HTML/CSS/JS, no build step): Zelda-inspired 3D open-world action
 ## Layout
 - `docs/` – game-design.md, backlog.md, roadmap.md, decisions.md, architecture.md, test-reports/
 - `design/` – content pack: palette.js, models/*.js, levels/*.js, preview/*.html, style-guide.md, README.md
-- `engine/` – reusable engine library: core, render, world, physics, entities, ui; `engine/index.js` is the only public entry; never imports from `game/` or `design/`
+- `engine/` – reusable engine library: core, render, world, physics, entities, ui; `engine/index.js` is the only public entry; never imports from `game/` or `design/`. Try to keep `engine/physics/` stand-alone (imports only from itself; owner 2026-09-30, see architecture.md 27.10)
 - `game/` – the product: index.html, world-test.html, physics-test.html, js/main.js (bootstrap, builds the AssetRegistry), js/dev/ (page harnesses), js/quest/ (game-specific behaviours)
 - `tools/` – dev tools (check-deps.mjs, run-tests.mjs), future editor
 - Dependency check: `node tools/check-deps.mjs` (fixture test: `node tools/check-deps.test.mjs`). Physics/entities tests: `node engine/physics/physics.test.js`, `node engine/physics/jump.test.js`, `node engine/entities/eyeFeel.test.js`, `node engine/core/playerLook.test.js`. Bench: `node --expose-gc tools/bench-cast.mjs --gc`. **All-in-one:** `node tools/run-tests.mjs` (US-057) runs every `*.test.js`/`*.test.mjs` under `engine/`/`game/`/`tools/` plus `check-deps.mjs`, one line per suite (`--filter`/`--json` available).
