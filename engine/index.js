@@ -147,3 +147,38 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 // ("may change without notice") moved to engine/dev.js - dev-mode code
 // (game/js/main.js, game/js/dev/*, tools/* except tools/editor/**) imports
 // them from there now.
+
+// ---- RE-01/28.1 pitched camera projection (docs/architecture.md 28.1) ------
+// Only the pitched-camera API; the pre-existing shear-path exports
+// (projTerms/shearProjection/projectPoint/unprojectCell/windowToCell/
+// PROJ_HFOV_DEG/PROJ_NEAR/PROJ_FAR) stay internal/test-only as before.
+export {
+  createPitchedTerms, pitchedTerms, pitchedProjection, screenRay, unprojectPitched,
+  worldToCell, pitchedEyeFromFocus, resolveProjection, PROJ_PITCHED_VFOV_DEG,
+} from './render/projection.js';
+
+// ---- RE-04 screen -> world picking (docs/architecture.md 28.1) ------------
+export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
+
+// ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
+export { createFlowField, FlowCache } from './nav/flowField.js';
+export { createSteer } from './nav/steer.js';
+
+// ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
+export { Visibility } from './world/Visibility.js';
+
+// ---- RE-13 minimap (docs/architecture.md 28.4; generic names prefixed per architect note) --
+export {
+  createMinimap, minimapToWorld, worldToMinimap,
+  bakeTerrain as bakeMinimapTerrain, update as updateMinimap, bindFog as bindMinimapFog,
+} from './render/minimap.js';
+
+// ---- RE-03 RTS camera controller (docs/architecture.md 28.1; generic names prefixed per architect note) --
+export { createRtsCamera, update as updateRtsCamera, zoomBy as zoomRtsCamera } from './core/rtsCamera.js';
+
+// ---- RE-14 deterministic sim: commands/rng/hash/replay + loop STEP --------
+export { createCommandQueue } from './core/commands.js';
+export { createRng } from './core/rng.js';
+export { createHasher } from './core/hash.js';
+export { createRecorder, createPlayer } from './core/replay.js';
+export { STEP } from './core/loop.js';
