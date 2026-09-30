@@ -398,7 +398,7 @@
   // Kept here, not in models/wreckage.js levelPatch.tower, because wreckage.js and levels/tower.js are in the US-011
   // pass right now. Same rule as levelPatch.tower: NO runtime applier (architecture.md 7.5); the US-015 programmer
   // appends `triggers.append` to design/levels/tower.js `triggers[]` by hand, after the existing `hintJump`.
-  // Coordinates are tower-local metres (engine/world/triggers.js adds the structure origin), same shape as hintJump.
+  // Coordinates are tower-local metres (engine/world/triggers.js converts through the structure's frame, CO-2), same shape as hintJump.
   A.levelPatch = A.levelPatch || {};
   A.levelPatch.towerHints = {
     story: 'US-015', target: 'levels.tower.triggers', op: 'append',

@@ -8,6 +8,11 @@
   "title": "The Emberlands - Milestone 1",
   "terrain": "overworld_far",
   "time": "morning",
+  "sun": {
+    "azimuth": 112.5,
+    "elevation": 60,
+    "preset": "sun"
+  },
   "structures": [
     {"id": "tower", "level": "tower", "note": "level (0,0) -> world (1480, 1018); footprint 24 x 14 m = world x 1480..1504, y 1018..1032; matches overworld_far.structures[0]", "origin": {"x": 1480, "y": 1018, "z": 0}, "yawSteps": 0}
   ],

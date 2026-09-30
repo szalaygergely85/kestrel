@@ -14,7 +14,9 @@
 // itself via loadContentPack (top-level await), instead of world-test.html
 // loading design/levels/test_room.js as a classic script first.
 
-import { loadLevel, loadContentPack } from '../../../engine/index.js';
+import { loadLevel, loadContentPack, forwardOf } from '../../../engine/index.js';
+
+const facingTmp = [0, 0]; // forwardOf() scratch for the start-facing tick (rule 9, no per-frame allocation)
 
 const bundle = await loadContentPack('../content/manifest.json');
 const testRoom = bundle.levels.test_room;
@@ -93,14 +95,15 @@ function draw(level) {
   ctx.strokeStyle = '#3a2a00';
   ctx.lineWidth = 2;
   ctx.stroke();
-  // Facing tick. facingDeg is compass (0=N,90=E,clockwise); screen/math angle
-  // 0 = east, increasing clockwise (since canvas y grows down), so subtract 90.
-  const rad = (level.start.facingDeg - 90) * Math.PI / 180;
+  // Facing tick. CO-8 (docs/coordinates.md do-not 7): forwardOf(facingDeg)
+  // = (sin, -cos) is bit-identical to the old inline `(facingDeg - 90)`
+  // canvas-angle conversion (canvas x/y align with level x/y 1:1 here).
+  const fwd = forwardOf(level.start.facingDeg, facingTmp);
   ctx.beginPath();
   ctx.moveTo(level.start.x * CELL_PX, level.start.y * CELL_PX);
   ctx.lineTo(
-    level.start.x * CELL_PX + Math.cos(rad) * CELL_PX * 0.5,
-    level.start.y * CELL_PX + Math.sin(rad) * CELL_PX * 0.5
+    level.start.x * CELL_PX + fwd[0] * CELL_PX * 0.5,
+    level.start.y * CELL_PX + fwd[1] * CELL_PX * 0.5
   );
   ctx.strokeStyle = '#ffe08a';
   ctx.lineWidth = 2;

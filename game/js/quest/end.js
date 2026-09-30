@@ -1,3 +1,5 @@
+import { localToWorld, yawFromDelta } from '../../../engine/index.js';
+
 // game/js/quest/end.js (US-017, D-006/D-008, D-011 reskin; US-026a-S6
 // extends this for a world-level trigger, architecture.md 23.5). The real
 // body of `quest.end`, named by a trigger `{ id: 'end', walkTo: {x,y},
@@ -20,9 +22,10 @@
 // `lookAt` (US-026a-S6, architecture.md 23.5): a trigger def may carry
 // `lookAt: '<entityId>'` (e.g. `farTower`) instead of/alongside `pitchTo`.
 // The target entity's world position is resolved ONCE at fire time (not per
-// step - rule 9) via `world.entity(id)`, and `yawTo = atan2(ex - x, -(ey -
-// y))` (compass degrees, same convention as `PlayerLook`/`transform.yawDeg`:
-// 0 = north/-y, 90 = east/+x) is stored into `_endWalk`. `stepEnd` eases
+// step - rule 9) via `world.entity(id)`, and `yawTo = yawFromDelta(ex - x,
+// ey - y)` (engine/core/transform.js; compass degrees, same convention as
+// `PlayerLook`/`transform.yawDeg`: 0 = north/-y, 90 = east/+x) is stored into
+// `_endWalk`. `stepEnd` eases
 // yaw toward it on the shortest arc (wrapping through 0/360), same
 // smoothstep curve as pitch.
 //
@@ -56,15 +59,6 @@ function shortestDeltaDeg(a, b) {
   return ((b - a + 540) % 360) - 180;
 }
 
-import { localToWorld, makeFrame } from '../../../engine/index.js';
-
-// `world.frameOf` (CO-2); duck-typed fallback for hand-built worlds in tests.
-function frameOfStruct(world, structId) {
-  if (typeof world.frameOf === 'function') return world.frameOf(structId);
-  const st = (world.structures || []).find((s) => s.id === structId);
-  return st ? (st.frame || makeFrame(st.origin.x, st.origin.y, st.origin.z || 0, st.yawSteps || 0)) : null;
-}
-
 const walkTmp = { x: 0, y: 0, z: 0 };
 
 /**
@@ -81,7 +75,7 @@ const walkTmp = { x: 0, y: 0, z: 0 };
  */
 export function questEnd(ctx) {
   const { world, def, entity } = ctx;
-  const frame = ctx.frame !== undefined ? ctx.frame : (ctx.structId != null ? frameOfStruct(world, ctx.structId) : null);
+  const frame = ctx.frame !== undefined ? ctx.frame : (ctx.structId != null ? world.frameOf(ctx.structId) : null);
   if (!entity || !entity.transform) return false;
 
   // `def.walkTo` is in the frame of the file it was written in: a level
@@ -108,8 +102,7 @@ export function questEnd(ctx) {
     if (target && target.transform) {
       const ex = target.transform.x, ey = target.transform.y;
       yaw0 = entity.transform.yawDeg;
-      yawTo = Math.atan2(ex - x0, -(ey - y0)) * (180 / Math.PI);
-      yawTo = ((yawTo % 360) + 360) % 360;
+      yawTo = yawFromDelta(ex - x0, ey - y0);
     }
   }
 

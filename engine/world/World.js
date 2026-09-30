@@ -261,6 +261,29 @@ export class World {
       w.colliders = buildWorldColliders(w);
     }
 
+    // (US-016b, moved by CO-8) Wire each placed structure's real ring height
+    // into the terrain recipe's own `structures[i]` entry (matched by id),
+    // BEFORE `bakeNearBand` runs below - `structureBlend` inside the recipe
+    // reads real level data (not its flat `ringH` fallback) even on the
+    // FIRST bake. This block only needs `w.structures` (already placed
+    // above, each with `.bbox`/`.frame` set by `placeStructure`) and
+    // `w.terrain.recipe.structures` - nothing computed later (`w.triggers`,
+    // entities) - so running it here is safe. Previously this ran after
+    // `bakeNearBand` (docs/backlog.md CO-2 row), so the first bake read the
+    // recipe's stale/fallback `ringHAt`/`bbox` instead of the real placed
+    // data.
+    if (w.terrain && w.terrain.recipe.structures) {
+      for (const rs of w.terrain.recipe.structures) {
+        const placed = w.structures.find((p) => p.id === rs.id);
+        if (placed) {
+          rs.ringHAt = makeRingHAt(placed);
+          // CO-2: the placement has ONE source (the world file); the recipe's
+          // own x/y/w/h copy (deleted by CO-8) is not consulted for it.
+          rs.bbox = { x0: placed.bbox.x0, y0: placed.bbox.y0, x1: placed.bbox.x1, y1: placed.bbox.y1 };
+        }
+      }
+    }
+
     // US-026a (architecture.md 23.1 decision 1, 23.7 S2): bake the near
     // terrain band synchronously, BEFORE any prop/entity spawns below (a
     // `z: 'ground'` prop/entity needs `terrain.groundAt` ready). Centered on
@@ -410,22 +433,6 @@ export class World {
     // starts at 0, so standing inside a trigger right after a load counts
     // as a fresh enter on the next `updateTriggers` call (7.4).
     w.triggers = buildTriggers(w);
-
-    // (US-016b) Wire each placed structure's real ring height into the
-    // terrain recipe's own `structures[i]` entry (matched by id), BEFORE any
-    // bake/sample happens - `structureBlend` inside the recipe then reads
-    // real level data instead of its flat `ringH` fallback.
-    if (w.terrain && w.terrain.recipe.structures) {
-      for (const rs of w.terrain.recipe.structures) {
-        const placed = w.structures.find((p) => p.id === rs.id);
-        if (placed) {
-          rs.ringHAt = makeRingHAt(placed);
-          // CO-2: the placement has ONE source (the world file); the recipe's
-          // own x/y/w/h copy (until CO-8 deletes it) is not consulted for it.
-          rs.bbox = { x0: placed.bbox.x0, y0: placed.bbox.y0, x1: placed.bbox.x1, y1: placed.bbox.y1 };
-        }
-      }
-    }
 
     // US-027a (21.8): world-entity content ids come from the ASSET's own
     // canonical `entities[]` (looked up by `def.name`), not from this

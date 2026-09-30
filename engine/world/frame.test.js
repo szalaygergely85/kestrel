@@ -101,7 +101,19 @@ ok('ctx.frame = null for a world-level trigger', seen === null);
 unregisterBehaviour('co2.probe');
 
 // ---- world.sun ---------------------------------------------------------------
-ok('ephemeral world without sun: level sun fallback', wz.sun === ldef.sun && wz.sunSource === 'level');
+// CO-8 (docs/coordinates.md section 8): real level content no longer carries
+// `sun` (moved to the world file) - the level-sun FALLBACK mechanism itself
+// (an ephemeral `?level=` world with no world file) is still real engine
+// behaviour, exercised here with a synthetic sun temporarily injected into
+// the shared `tower` level def (restored immediately after) rather than via
+// real content.
+const towerLevelDef = assets.level('tower');
+const savedTowerSun = towerLevelDef.sun;
+towerLevelDef.sun = { preset: 'sun', elevation: 21, azimuth: 99 };
+const wzFallback = World.load({ terrain: null, structures: [{ id: 'tw', level: 'tower', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
+ok('ephemeral world without sun: level sun fallback', wzFallback.sun === towerLevelDef.sun && wzFallback.sunSource === 'level');
+towerLevelDef.sun = savedTowerSun;
+ok('ephemeral world, level has no sun (real content, post-CO-8): world.sun null', wz.sun === null && wz.sunSource === null);
 const wSun = World.load({ terrain: null, sun: { preset: 'sun', elevation: 33, azimuth: 44 }, structures: [{ id: 'tw', level: 'tower', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
 ok('def.sun wins and is world-sourced', wSun.sun.elevation === 33 && wSun.sunSource === 'world');
 const lsSun = buildLightSet(wSun, paletteMod);
@@ -115,7 +127,9 @@ const tower = wm.structures.find((s) => s.id === 'tower');
 const rs = wm.terrain.recipe.structures.find((s) => s.id === 'tower');
 ok('recipe structure gets bbox from placed.bbox', rs.bbox && rs.bbox.x0 === tower.bbox.x0 && rs.bbox.y0 === tower.bbox.y0 && rs.bbox.x1 === tower.bbox.x1 && rs.bbox.y1 === tower.bbox.y1);
 ok('recipe structure gets ringHAt', typeof rs.ringHAt === 'function' && typeof rs.ringHAt(tower.bbox.x0 - 5, tower.bbox.y0 + 3) === 'number');
-ok('world_m1 world (no world sun yet): level sun fallback equals tower sun', wm.sun === tower.level.def.sun);
+// CO-8: world_m1.world.json now carries its own `sun` (moved out of
+// content/levels/tower.level.json) - def.sun wins, no level fallback.
+ok('world_m1 world: def.sun wins, world-sourced (CO-8 sun move)', wm.sun === assets.world('world_m1').sun && wm.sunSource === 'world');
 
 // ringHAt at z != 0: shifted structure lifts the ring height by frame.z
 const wz2 = World.load({ terrain: null, structures: [{ id: 'tw', level: 'tower', origin: { x: 0, y: 0, z: 0 } }, { id: 'tw3', level: 'tower', origin: { x: 500, y: 500, z: OZ } }], entities: [] }, assets, {});

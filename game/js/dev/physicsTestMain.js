@@ -22,7 +22,7 @@
 // loads it itself via loadContentPack (top-level await), instead of
 // physics-test.html loading design/levels/test_room.js as a classic script.
 
-import { loadLevel, Player, PHYSICS, loadContentPack } from '../../../engine/index.js';
+import { loadLevel, Player, PHYSICS, loadContentPack, forwardOf } from '../../../engine/index.js';
 
 const bundle = await loadContentPack('../content/manifest.json');
 const testRoom = bundle.levels.test_room;
@@ -71,6 +71,7 @@ const FIXED_DT = PHYSICS.fixedDt;
 let acc = 0;
 let last = performance.now();
 let fps = 0, fpsAcc = 0, fpsFrames = 0;
+const facingTmp = [0, 0]; // forwardOf() scratch for the render() facing tick (rule 9, no per-frame allocation)
 
 // Fall-tracking for the HUD (useful when eyeballing US-009 landing-dip work later).
 let maxFallDropThisAir = 0;
@@ -138,10 +139,13 @@ function render() {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  const rad = (player.yawDeg - 90) * Math.PI / 180;
+  // CO-8 (docs/coordinates.md do-not 7): forwardOf(yawDeg) = (sin, -cos) is
+  // bit-identical to the old inline `(yawDeg - 90)` canvas-angle conversion
+  // here (canvas x/y align with world x/y 1:1 in this top-down harness).
+  const fwd = forwardOf(player.yawDeg, facingTmp);
   ctx.beginPath();
   ctx.moveTo(px, py);
-  ctx.lineTo(px + Math.cos(rad) * r * 1.8, py + Math.sin(rad) * r * 1.8);
+  ctx.lineTo(px + fwd[0] * r * 1.8, py + fwd[1] * r * 1.8);
   ctx.strokeStyle = '#ffe08a';
   ctx.lineWidth = 2;
   ctx.stroke();
