@@ -57,6 +57,11 @@
 //       engine/render/**, engine/mesh/**, engine/ui/** and engine/world/**
 //       (any file, including their tests) may never import engine/nav/** -
 //       nav is a leaf module, World is passed into buildFromWorld duck-typed.
+//   15. (RE-14, docs/architecture.md 28.5, WARN only) non-test files under
+//       engine/nav/**, engine/core/{commands,rng,hash,replay}.js,
+//       engine/world/Visibility.js and game/js/rts/sim/** should not use
+//       Math.random, Date.now, performance.now or Math.sin|cos|tan|atan2|
+//       exp|pow|hypot (comments stripped first) - deterministic-sim leaves.
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -355,6 +360,48 @@ function checkNavLeafRule(file, src) {
   }
 }
 
+// Rule 15 (RE-14, docs/architecture.md 28.5, WARN only - the number is
+// reserved even if RE-05's rule 14 lands separately, which it already has).
+// Scope: non-test files under engine/nav/**, engine/core/{commands,rng,hash,
+// replay}.js, engine/world/Visibility.js and game/js/rts/sim/** (RTS sim
+// code convention: sim/ for sim logic, ui/ for presentation). These are the
+// deterministic-sim leaves (28.2/28.5's float and RNG rules) - with comments
+// stripped, using a non-deterministic time/random/trig source in one of them
+// is very likely a determinism bug, but WARN (not FAIL) because a handful of
+// legitimate non-sim helpers can live alongside sim code in the same file
+// during early development.
+const CORE_DETERMINISM_FILES = new Set(
+  ['commands.js', 'rng.js', 'hash.js', 'replay.js'].map((f) => path.join(CORE_DIR, f)),
+);
+const VISIBILITY_FILE = path.join(WORLD_DIR, 'Visibility.js');
+const RTS_SIM_DIR = path.join(GAME_DIR, 'js', 'rts', 'sim');
+function inDeterminismScope(file) {
+  if (/\.test\.(js|mjs)$/.test(file)) return false;
+  if (inDir(file, NAV_DIR)) return true;
+  if (CORE_DETERMINISM_FILES.has(file)) return true;
+  if (file === VISIBILITY_FILE) return true;
+  if (inDir(file, RTS_SIM_DIR)) return true;
+  return false;
+}
+const DETERMINISM_PATTERNS = [
+  [/\bMath\.random\s*\(/g, 'Math.random'],
+  [/\bDate\.now\s*\(/g, 'Date.now'],
+  [/\bperformance\.now\s*\(/g, 'performance.now'],
+  [/\bMath\.(sin|cos|tan|atan2|exp|pow|hypot)\s*\(/g, 'Math.$1'],
+];
+function checkDeterminismWarnRule(file, src) {
+  if (!inDeterminismScope(file)) return;
+  const stripped = stripComments(src);
+  for (const [re, label] of DETERMINISM_PATTERNS) {
+    let m;
+    while ((m = re.exec(stripped))) {
+      const line = stripped.slice(0, m.index).split('\n').length;
+      const shown = label.includes('$1') ? label.replace('$1', m[1]) : label;
+      warnings.push(`${rel(file)}:${line}: "${shown}" in deterministic sim code (rule 15, docs/architecture.md 28.5)`);
+    }
+  }
+}
+
 function rel(file) {
   return path.relative(ROOT, file).replace(/\\/g, '/');
 }
@@ -364,6 +411,7 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
   const src = fs.readFileSync(file, 'utf8');
   checkEngineFile(file, src);
   checkCoordMath(file, src);
+  checkDeterminismWarnRule(file, src);
 }
 for (const file of walk(path.join(ROOT, 'engine'))) {
   // Rule 14 runs over every file, including *.test.js (see its own comment).
@@ -373,6 +421,7 @@ for (const file of walk(path.join(ROOT, 'game'))) {
   const src = fs.readFileSync(file, 'utf8');
   checkConsumerFile(file, src);
   if (!/\.test\.m?js$/.test(file)) checkCoordMath(file, src);
+  checkDeterminismWarnRule(file, src);
 }
 for (const file of walk(path.join(ROOT, 'tools'))) {
   if (path.resolve(file) === path.resolve(__filename)) continue;

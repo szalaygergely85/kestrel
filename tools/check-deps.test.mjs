@@ -83,6 +83,21 @@ writeFile(tmp, 'engine/world/bad14f.js', `import { NavGrid } from '../nav/NavGri
 writeFile(tmp, 'engine/render/good14.js', `export const a9 = 1;\n`);
 writeFile(tmp, 'engine/nav/NavGrid.js', `export class NavGrid {}\n`);
 
+// Rule 15 (RE-14): deterministic-sim leaves WARN on Math.random/Date.now/
+// performance.now/trig - engine/nav/**, engine/core/{commands,rng,hash,
+// replay}.js, engine/world/Visibility.js, game/js/rts/sim/**.
+writeFile(tmp, 'engine/nav/bad15.js', `export function f(x) { return Math.random() + Math.sin(x); }\n`);
+writeFile(tmp, 'engine/nav/good15.js', `export function f(x, y) { return Math.sqrt(x * x + y * y); }\n`);
+writeFile(tmp, 'engine/nav/bad15.test.js', `export function f() { return Math.random(); }\n`); // test file: exempt
+writeFile(tmp, 'engine/core/rng.js', `export function f() { return Date.now(); }\n`);
+writeFile(tmp, 'engine/core/hash.js', `export function f(a) { return Math.pow(a, 2); }\n`);
+writeFile(tmp, 'engine/core/commands.js', `export function f() { return performance.now(); }\n`);
+writeFile(tmp, 'engine/core/replay.js', `export function f(x) { return Math.atan2(x, -x); }\n`);
+writeFile(tmp, 'engine/core/good15.js', `export function f() { return Date.now(); }\n`); // NOT in scope: wrong filename
+writeFile(tmp, 'engine/world/Visibility.js', `export function f() { return Math.hypot(1, 2); }\n`);
+writeFile(tmp, 'game/js/rts/sim/bad15.js', `export function f() { return Math.random(); }\n`);
+writeFile(tmp, 'game/js/rts/ui/good15.js', `export function f() { return Math.random(); }\n`); // ui/, not sim/: NOT in scope
+
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
@@ -133,6 +148,17 @@ ok('rule 14: ui importing nav/ flagged', /bad14e\.js.*must not import engine\/na
 ok('rule 14: world importing nav/ flagged', /bad14f\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: unrelated render file NOT flagged', !/[^d]good14\.js/.test(output), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
+ok('rule 15: nav Math.random+Math.sin WARNs', /WARN.*bad15\.js:1:.*Math\.random/.test(output) && /WARN.*bad15\.js:1:.*Math\.sin/.test(output), output);
+ok('rule 15: nav Math.sqrt NOT flagged', !/good15\.js/.test(output), output);
+ok('rule 15: nav *.test.js exempt (no WARN)', !/bad15\.test\.js/.test(output), output);
+ok('rule 15: engine/core/rng.js Date.now WARNs', /WARN.*core\/rng\.js:1:.*Date\.now/.test(output), output);
+ok('rule 15: engine/core/hash.js Math.pow WARNs', /WARN.*core\/hash\.js:1:.*Math\.pow/.test(output), output);
+ok('rule 15: engine/core/commands.js performance.now WARNs', /WARN.*core\/commands\.js:1:.*performance\.now/.test(output), output);
+ok('rule 15: engine/core/replay.js Math.atan2 WARNs', /WARN.*core\/replay\.js:1:.*Math\.atan2/.test(output), output);
+ok('rule 15: engine/core file NOT in the four-name allowlist NOT flagged', !/core\/good15\.js/.test(output), output);
+ok('rule 15: engine/world/Visibility.js Math.hypot WARNs', /WARN.*world\/Visibility\.js:1:.*Math\.hypot/.test(output), output);
+ok('rule 15: game/js/rts/sim/** Math.random WARNs', /WARN.*rts\/sim\/bad15\.js:1:.*Math\.random/.test(output), output);
+ok('rule 15: game/js/rts/ui/** (not sim/) NOT flagged', !/rts\/ui\/good15\.js/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 
