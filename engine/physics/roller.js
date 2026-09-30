@@ -19,10 +19,39 @@ import { yawFromDelta } from '../core/transform.js';
 const EPS = 1e-9;
 const OVERLAP_EPS = 1e-3; // architecture.md 7.4: "if more than 1e-3 m still overlaps"
 
+// ME-11b (27.18 "roller.js hooks"): `walkCos` classifies a mesh triangle as
+// a walkable floor (`nz >= walkCos`, skipped by the horizontal blocker test
+// in `moveCircleMesh`) vs a wall/blocker (steeper than that, or facing down).
+// Measured directly: `walkCos = -1` ("accept any slope") makes EVERY
+// triangle satisfy `nz >= -1` and so treats every surface - including
+// vertical walls (nz = 0) - as walkable floor, which disables ALL
+// horizontal wall collision for rollers in mesh mode (confirmed with a
+// scripted push at the tower: the -1 boulder sailed straight through the
+// stair-base wall the grid-mode boulder correctly bounced off). That is NOT
+// what "rollers have no slope tolerance in the grid path" means - grid
+// walls block via `isSectorPassable`'s per-CELL `solid` flag, a completely
+// separate mechanism from the mesh's per-TRIANGLE floor/wall classification,
+// so there is no grid concept to mirror here at all. The right value is the
+// project's one slope-classification constant (`cfg.maxSlopeDeg`, default
+// 50 deg, architecture.md 23.3/27.17 - the same cutoff `integrate.js` uses
+// for the player capsule): a wall stays a wall, a ramp within tolerance
+// still counts as floor. Recomputed only when `cfg.maxSlopeDeg` changes
+// (same pattern as `integrate.js`'s `_collideOpts`).
+let _rollerMaxSlopeDeg = NaN;
+let _rollerWalkCos = -1;
+function walkCosFor(cfg) {
+  const deg = (cfg && typeof cfg.maxSlopeDeg === 'number') ? cfg.maxSlopeDeg : 50;
+  if (deg !== _rollerMaxSlopeDeg) {
+    _rollerMaxSlopeDeg = deg;
+    _rollerWalkCos = Math.cos(deg * Math.PI / 180);
+  }
+  return _rollerWalkCos;
+}
+
 const _tilt = { x: 0, y: 0 };
-const _sphereOpts = { height: 0, stepUpMax: 0 };
+const _sphereOpts = { height: 0, stepUpMax: 0, walkCos: -1 };
 const _sphereMove = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0 };
-const _actorOpts = { height: 0, stepUpMax: 0 };
+const _actorOpts = { height: 0, stepUpMax: 0, walkCos: -1 };
 const _actorMove = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0 };
 
 // BUG-PERF-001 (b): `stepRollers`/`resolveBodyContacts` used to pass a fresh
@@ -65,8 +94,13 @@ function stepOneRoller(e) {
     }
 
     // ---- horizontal: moveSphere against the grid, stepUpMax 0 ----------
+    // ME-11b: `world.collideSphere` (moveSphereMesh) sets `_sphereOpts.height`
+    // itself from this call's radius - only `walkCos` needs to be pre-set
+    // (done once above), same as `moveSphere` never touching it either.
     const x0 = t.x, y0 = t.y;
-    const moved = moveSphere(world, t.x, t.y, body.vx * _rollerDt, body.vy * _rollerDt, body.radius, t.z, _sphereOpts, _sphereMove);
+    const moved = world.physicsMode === 'mesh'
+      ? world.collideSphere(t.x, t.y, body.vx * _rollerDt, body.vy * _rollerDt, body.radius, t.z, _sphereOpts, _sphereMove)
+      : moveSphere(world, t.x, t.y, body.vx * _rollerDt, body.vy * _rollerDt, body.radius, t.z, _sphereOpts, _sphereMove);
     t.x = moved.x;
     t.y = moved.y;
 
@@ -112,7 +146,13 @@ function stepOneRoller(e) {
   }
 
   // ---- vertical: 7.1 step 5 pattern, stepUpMax 0 (drops fall and land) ---
-  const sector = sectorOrOutside(world, t.x, t.y);
+  // ME-11b: `probeSupport` (unlike `moveSphereMesh`) never sets `opts.height`
+  // itself, so it must be set here before the mesh call - `2 * radius`,
+  // matching `moveSphereMesh`'s own convention for the same body.
+  _sphereOpts.height = body.radius * 2;
+  const sector = world.physicsMode === 'mesh'
+    ? world.supportAt(t.x, t.y, t.z, true, _sphereOpts)
+    : sectorOrOutside(world, t.x, t.y);
   const floorH = sector.floorH;
   if (body.grounded) {
     const floorDiff = floorH - t.z;
@@ -191,6 +231,7 @@ export function stepRollers(world, dtSec, cfg) {
   _rollerCtx.sleepTime = typeof _rollerCtx.defaults.sleepTime === 'number' ? _rollerCtx.defaults.sleepTime : 0.25;
   _rollerCtx.nFrames = (cfg && cfg.rollFrames) || 8;
   _rollerDt = dtSec;
+  _sphereOpts.walkCos = walkCosFor(cfg);
 
   world.forEachEntity(stepOneRoller);
 }
@@ -255,7 +296,9 @@ function resolveOneContact(e) {
 
   // ---- separation: roller out along -n, then actor out along +n ---------
   const overlap = minSep - dist;
-  const rollerMoved = moveSphere(world, t.x, t.y, -nx * overlap, -ny * overlap, body.radius, t.z, _sphereOpts, _sphereMove);
+  const rollerMoved = world.physicsMode === 'mesh'
+    ? world.collideSphere(t.x, t.y, -nx * overlap, -ny * overlap, body.radius, t.z, _sphereOpts, _sphereMove)
+    : moveSphere(world, t.x, t.y, -nx * overlap, -ny * overlap, body.radius, t.z, _sphereOpts, _sphereMove);
   t.x = rollerMoved.x;
   t.y = rollerMoved.y;
 
@@ -264,7 +307,9 @@ function resolveOneContact(e) {
   if (remaining > OVERLAP_EPS) {
     _actorOpts.height = actorHeight;
     _actorOpts.stepUpMax = actorStepUpMax;
-    const actorMoved = moveCapsule(world, at.x, at.y, nx * remaining, ny * remaining, actorBody.radius, at.z, actorBody.grounded, _actorOpts, _actorMove);
+    const actorMoved = world.physicsMode === 'mesh'
+      ? world.collideCircle(at.x, at.y, nx * remaining, ny * remaining, actorBody.radius, at.z, actorBody.grounded, _actorOpts, _actorMove)
+      : moveCapsule(world, at.x, at.y, nx * remaining, ny * remaining, actorBody.radius, at.z, actorBody.grounded, _actorOpts, _actorMove);
     at.x = actorMoved.x;
     at.y = actorMoved.y;
 
@@ -302,6 +347,9 @@ export function resolveBodyContacts(world, actor, cfg) {
   // they cannot serve as the "step-start" the 7.4 induction argument needs).
   _contactCtx.startX = actorBody.prevX;
   _contactCtx.startY = actorBody.prevY;
+  const walkCos = walkCosFor(cfg);
+  _sphereOpts.walkCos = walkCos;
+  _actorOpts.walkCos = walkCos;
 
   world.forEachEntity(resolveOneContact);
 }
