@@ -151,7 +151,7 @@ export { createCommandQueue } from './core/commands.js';
 export { createRng } from './core/rng.js';
 export { createHasher } from './core/hash.js';
 export { createRecorder, createPlayer as createReplayPlayer } from './core/replay.js';
-export { STEP } from './core/loop.js';
+export { STEP as SIM_STEP } from './core/loop.js';
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';

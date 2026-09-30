@@ -9,7 +9,7 @@ const names = [
   'createFlowField', 'FlowCache', 'createSteer', 'Visibility',
   'createMinimap', 'minimapToWorld', 'worldToMinimap', 'updateMinimap', 'bakeMinimapTerrain', 'bindMinimapFog',
   'createRtsCamera', 'updateRtsCamera', 'zoomRtsCamera',
-  'createCommandQueue', 'createRng', 'createHasher', 'createRecorder', 'createReplayPlayer', 'STEP',
+  'createCommandQueue', 'createRng', 'createHasher', 'createRecorder', 'createReplayPlayer', 'SIM_STEP',
 ];
 const missing = names.filter((n) => E[n] === undefined);
 console.log(`index.exports.test.js: ${names.length - missing.length} defined, ${missing.length} missing`);
