@@ -19,7 +19,7 @@ import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
@@ -44,6 +44,11 @@ const meshTerms = {
   tanHalf: 0, planeDistX: 0, planeDistY: 0, horizonRow: 0, tanPitch: 0,
 };
 const meshViewProj = new Float64Array(16);
+// RE-02a (28.1 A2): the pitched twin's terms (filled by renderWorldMesh) + the raw-depth scratch the
+// horizontal-distance shading pass swaps in and out (see `renderWorld`).
+const meshPitchTerms = createPitchedTerms();
+let meshPitched = false;
+let pitchDepthSave = /** @type {Float32Array|null} */ (null);
 const meshFrustumPlanes = new Float64Array(24);
 const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
 const meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
@@ -88,8 +93,18 @@ function renderWorldMesh(fb, world, cam) {
   meshGrid.cols = cols; meshGrid.rows = rows;
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
   meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
-  projTerms(cam, meshGrid, meshTerms);
-  shearProjection(meshTerms, meshViewProj);
+  meshPitched = resolveProjection(cam, 'mesh') === 'pitched';
+  if (meshPitched) {
+    pitchedTerms(cam, meshGrid, meshPitchTerms);
+    meshViewProj.set(meshPitchTerms.M);
+    // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh).
+    // GPU `_passDeriv` uses the shear constants for every camera (28.1 A2: deriv unchanged) - same here.
+    projTerms(cam, meshGrid, meshTerms);
+    fb.gbuf.cam.tanHalfHFov = meshTerms.tanHalf; fb.gbuf.cam.cols = cols; fb.gbuf.cam.planeDistY = meshTerms.planeDistY;
+  } else {
+    projTerms(cam, meshGrid, meshTerms);
+    shearProjection(meshTerms, meshViewProj);
+  }
   frustumPlanes(meshViewProj, meshFrustumPlanes);
 
   const list = meshDrawList;
@@ -137,6 +152,21 @@ function renderWorldMesh(fb, world, cam) {
   copyToGBuffer(target, fb.gbuf, fb.depth.depth);
 }
 
+/** Swaps `depth` to horizontal forward distance (`toShade`) and back from the saved raw copy. Zero alloc once warm. */
+function scaleDepthForShade(depth, cols, rows, toShade) {
+  if (!toShade) { depth.set(/** @type {Float32Array} */ (pitchDepthSave)); return; }
+  if (!pitchDepthSave || pitchDepthSave.length !== depth.length) pitchDepthSave = new Float32Array(depth.length);
+  pitchDepthSave.set(depth);
+  for (let y = 0; y < rows; y++) {
+    const k = pitchedFogScale(meshPitchTerms, y);
+    const base = y * cols;
+    for (let x = 0; x < cols; x++) {
+      const d = depth[base + x];
+      if (d !== Infinity) depth[base + x] = d * k;
+    }
+  }
+}
+
 function bboxDist(cam, bbox) {
   const cx = Math.min(Math.max(cam.x, bbox.x0), bbox.x1);
   const cy = Math.min(Math.max(cam.y, bbox.y0), bbox.y1);
@@ -150,6 +180,7 @@ function bboxDist(cam, bbox) {
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
  */
 export function renderWorld(fb, world, cam) {
+  assertProjectionRenderer(cam, fb.renderer); // RE-02a: 'pitched' needs renderer 'mesh'
   // US-030a AC "the CPU caster no longer runs on the gl2 path": when a
   // ready GPU pipeline owns this frame's cast (`fb.gpuDda`, set by
   // main.js), skip the entire CPU cast/derivative/shade/edge/sky sequence
@@ -172,6 +203,7 @@ export function renderWorld(fb, world, cam) {
   }
 
   beginFrame(fb);
+  meshPitched = false;
 
   // ME-06 (27.15.5a item 6): `fb.renderer === 'mesh'` replaces the
   // structs-loop + `castTerrain` geometry below with the JS mesh twin
@@ -265,8 +297,13 @@ export function renderWorld(fb, world, cam) {
         fb.light.rgb[0] = ambientL[0]; fb.light.rgb[1] = ambientL[1]; fb.light.rgb[2] = ambientL[2];
       }
     }
+    // RE-02a (28.1 A2 item 3): the shade passes (fog, LOD dither, terrain bands) read the horizontal
+    // forward distance `vd * pitchedFogScale(row)`; light/edge/sky/sprites keep the raw view depth.
+    // GLSL twin: `dist *= fogScaleCell(...)` in shade.frag.js / edge.frag.js.
+    if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, true);
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0);
+    if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges);
   }
 

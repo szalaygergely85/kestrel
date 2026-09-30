@@ -41,6 +41,7 @@
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { HFOV_DEG } from './sectorCaster.js';
 import { lightAt } from './lighting.js';
+import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection } from './projection.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
@@ -64,7 +65,64 @@ function camBasis(cam, rt, out) {
   out.rightX = -dirY; out.rightY = dirX; // screen-right, compass-clockwise from dir (castScene's plane / tanHalfHFov)
   out.tanHalfHFov = tanHalfHFov; out.planeDistY = planeDistY; out.horizonRow = horizonRow;
   out.cols = cols; out.rows = rows; out.yawDeg = cam.yawDeg;
+  // RE-02a (28.1 A2 item 2): `out.pt` is the pitched terms object when the cam is pitched, else null.
+  if (resolveProjection(cam, 'mesh') === 'pitched') {
+    const pt = out.pt || (out.pt = createPitchedTerms());
+    const g = out.grid || (out.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
+    g.cols = cols; g.rows = rows; g.pxCellW = rt.pxCellW || 1; g.pxCellH = rt.pxCellH || 1;
+    pitchedTerms(cam, g, pt);
+    out.ptOn = true;
+  } else {
+    out.ptOn = false;
+  }
   return out;
+}
+
+const _w3 = new Float64Array(3); // projectSprite's worldToCell scratch
+const _ps = { depth: 0, fogDepth: 0, colCenter: 0, feetRow: 0, rowsOnScreen: 0 };
+/**
+ * One sprite's screen placement (RE-02a: shear and pitched). Writes `out`:
+ * `depth` (the z-test value, = the G-buffer depth of that camera: shear `d`,
+ * pitched view depth `vd`), `fogDepth` (horizontal forward distance, what the
+ * fog curve reads in both modes), `colCenter` (cell-edge units: cell index +
+ * 0.5), `feetRow` (row, top-edge convention), `rowsOnScreen` (projected
+ * height of `worldH` metres standing on the foot point). Returns false when
+ * the point is not in front of the camera (`depth <= MIN_DEPTH`).
+ * The shear branch keeps `project()`'s original expressions byte for byte.
+ * @param {{ptOn:boolean, pt:any, dirX:number, dirY:number, rightX:number, rightY:number, tanHalfHFov:number, planeDistY:number, horizonRow:number, cols:number}} cb
+ * @param {{x:number,y:number,z:number}} cam
+ * @returns {boolean}
+ */
+export function projectSprite(cb, cam, px, py, pz, worldH, out) {
+  const relX = px - cam.x, relY = py - cam.y;
+  if (cb.ptOn) {
+    worldToCell(cb.pt, px, py, pz, _w3);
+    const vd = _w3[2];
+    if (!(vd > MIN_DEPTH)) return false;
+    out.depth = vd;
+    const hd = relX * cb.dirX + relY * cb.dirY;
+    out.fogDepth = hd > 0 ? hd : 0;
+    out.colCenter = _w3[0] + 0.5;
+    out.feetRow = _w3[1];
+    worldToCell(cb.pt, px, py, pz + worldH, _w3);
+    out.rowsOnScreen = _w3[2] > 0 ? out.feetRow - _w3[1] : 0;
+    return true;
+  }
+  const depth = relX * cb.dirX + relY * cb.dirY;
+  if (!(depth > MIN_DEPTH)) return false;
+  out.depth = depth; out.fogDepth = depth;
+  out.rowsOnScreen = worldH * cb.planeDistY / depth;
+  const lateral = relX * cb.rightX + relY * cb.rightY;
+  out.colCenter = (lateral / (depth * cb.tanHalfHFov) + 1) * cb.cols / 2;
+  out.feetRow = cb.horizonRow - ((pz - cam.z) / depth) * cb.planeDistY;
+  return true;
+}
+
+const _h0 = new Float64Array(3), _h1 = new Float64Array(3);
+/** [col, row, vd] of the (bearing, elevation) direction seen from the pitched eye (a point 1e4 m along it). */
+function horizonCell(pt, bearingDeg, elevDeg, out3) {
+  const b = bearingDeg * DEG2RAD, e = elevDeg * DEG2RAD, ce = Math.cos(e);
+  return worldToCell(pt, pt.eyeX + 1e4 * Math.sin(b) * ce, pt.eyeY - 1e4 * Math.cos(b) * ce, pt.eyeZ + 1e4 * Math.sin(e), out3);
 }
 
 const _horizonWarned = new Set(); // model-not-found is a content bug, not a per-frame condition - warn at most once per model key
@@ -95,15 +153,27 @@ function projectHorizon(h, atlas, cb, P, unlitGain, spr, o) {
     if (!_horizonWarned.has(h.model)) { _horizonWarned.add(h.model); console.warn(`SpritePool: unknown horizon model "${h.model}"`); }
     return -1;
   }
+  let col, row, rowsOnScreen;
+  if (cb.ptOn) {
+    // RE-02a: pitched - project the bearing/elevation direction (a far point along it).
+    horizonCell(cb.pt, h.bearingDeg, h.elevDeg, _h0);
+    if (!(_h0[2] > 0)) return -1;
+    horizonCell(cb.pt, h.bearingDeg, h.elevDeg + h.angular.hDeg, _h1);
+    if (!(_h1[2] > 0)) return -1;
+    col = _h0[0] + 0.5; row = _h0[1];
+    rowsOnScreen = _h0[1] - _h1[1];
+    if (!(rowsOnScreen > 0)) return -1;
+  } else {
   let diff = (h.bearingDeg - cb.yawDeg) % 360;
   if (diff > 180) diff -= 360; else if (diff < -180) diff += 360;
   if (Math.abs(diff) >= 90) return -1; // behind the camera - never wraps onto screen at this HFOV
   const focalCols = (cb.cols / 2) / cb.tanHalfHFov;
-  const col = cb.cols / 2 + focalCols * Math.tan(diff * DEG2RAD);
+  col = cb.cols / 2 + focalCols * Math.tan(diff * DEG2RAD);
   const elevRad = h.elevDeg * DEG2RAD;
-  const row = cb.horizonRow - cb.planeDistY * Math.tan(elevRad);
-  const rowsOnScreen = cb.planeDistY * (Math.tan((h.elevDeg + h.angular.hDeg) * DEG2RAD) - Math.tan(elevRad));
+  row = cb.horizonRow - cb.planeDistY * Math.tan(elevRad);
+  rowsOnScreen = cb.planeDistY * (Math.tan((h.elevDeg + h.angular.hDeg) * DEG2RAD) - Math.tan(elevRad));
   if (!(rowsOnScreen > 0)) return -1;
+  }
 
   let lod = m.full;
   let scale = rowsOnScreen / lod.size.h;
@@ -233,16 +303,15 @@ export class SpritePool {
     for (let i = 0; i < this.rawCount; i++) {
       const m = this._model[i];
       const px = this._pos[i * 3], py = this._pos[i * 3 + 1], pz = this._pos[i * 3 + 2];
-      const relX = px - cam.x, relY = py - cam.y;
-      const depth = relX * cb.dirX + relY * cb.dirY;
-      if (!(depth > MIN_DEPTH)) continue;
+      if (!projectSprite(cb, cam, px, py, pz, m.world.h, _ps)) continue;
+      const depth = _ps.depth, rowsOnScreen = _ps.rowsOnScreen;
+      if (cb.ptOn && !(rowsOnScreen > 0)) continue; // pitched: head behind the eye plane
       // BUG-OWN-002: on-screen rows = world.h * planeDistY / depth for EVERY
       // tier (the prop tracks the world). No upscale cap: a capped billboard
       // is anchored at its feet, so it froze in size and sank toward the
       // floor as you walked closer (and was culled below the screen). The
       // half tier's scale comes from its own size.h (lever 3x5 -> 3x3 is not
       // an exact half; `scale *= 2` made it jump bigger when moving away).
-      const rowsOnScreen = m.world.h * cb.planeDistY / depth;
       let lod = m.full;
       let scale = rowsOnScreen / lod.size.h;
       if (scale < LOD_HALF_BELOW && m.half) { lod = m.half; scale = rowsOnScreen / lod.size.h; }
@@ -258,9 +327,7 @@ export class SpritePool {
       if (!anim || anim.count === 0) { this._warnOnce(`SpritePool: model has no animation "${this._anim[i]}"`); continue; }
       const fr = frames[anim.base + (((this._frame[i] % anim.count) + anim.count) % anim.count)];
 
-      const lateral = relX * cb.rightX + relY * cb.rightY;
-      const colCenter = (lateral / (depth * cb.tanHalfHFov) + 1) * cb.cols / 2;
-      const feetRow = cb.horizonRow - ((pz - cam.z) / depth) * cb.planeDistY;
+      const colCenter = _ps.colCenter, feetRow = _ps.feetRow;
       let x0 = Math.floor(colCenter - (lod.anchor.x + 0.5) * scale + 0.5);
       let y0 = Math.floor(feetRow - (lod.anchor.y + 1) * scale + 0.5);
       let w = Math.ceil(lod.size.w * scale), h = Math.ceil(lod.size.h * scale);
@@ -302,7 +369,7 @@ export class SpritePool {
       // = `overworld_far`'s far-view fog curve) instead of always the
       // interior curve, capped at `fogMax` (1 = no cap).
       const isFar = !!(bb && bb.fogModel === 'far');
-      const f0 = P.util.fogFactor(depth, isFar ? 'far' : undefined);
+      const f0 = P.util.fogFactor(_ps.fogDepth, isFar ? 'far' : undefined);
       const f = bb && typeof bb.fogMax === 'number' ? Math.min(f0, bb.fogMax) : f0;
       const visible = b * (1 - f) >= S.cutoff ? 1 : 0;
       // US-016 (architecture.md 14.4 item 14, D-017 review): per-sprite fog

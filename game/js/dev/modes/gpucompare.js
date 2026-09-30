@@ -15,7 +15,7 @@ import {
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
   classifyMigrationCells, MIGRATION_CATS, terrainMeshSetFor, beginFrame, castSectors, fillSky,
-  computeDerivatives, shadeSurfaces, edgePass,
+  computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
 } from '../../../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
@@ -100,7 +100,7 @@ function runGpuCompareShadeMode(ctx) {
 // so a second GPU pipeline compare mode never has to keep a hand-copied
 // pose list in sync with this one.
 function buildCompareRuns(ctx) {
-  const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep } = ctx;
+  const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep, rt } = ctx;
   function loadCompareWorld(def) {
     const w = World.load(def, assets, {});
     for (const s of w.structures) {
@@ -221,6 +221,25 @@ function buildCompareRuns(ctx) {
     // "voxel over terrain" NOT added - see this story's Programmer notes
     // (pre-existing terrain/sun-visibility parity gap, not a voxel-pass bug).
   );
+
+  // RE-02a (28.1 A2 item 8): mesh-only pitched poses, RTS view of the world_m1 hillside west of the tower.
+  // Focus-driven eye exactly like `engine/core/rtsCamera.js` (dist = widthM * zoom / (2 tanHalfX), widthM 30),
+  // vfov 36, yaw 20. Compared GPU vs the rasterJS + JS shade twin (same projection) - `?gpucompare=1` (dda) SKIPs them.
+  const rtsHillPose = (pitchDeg) => {
+    const fx = 1440, fy = 1040, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
+    const aspect = (rt.cols * (rt.pxCellW || 1)) / (rt.rows * (rt.pxCellH || 1));
+    const tanHalfX = Math.tan((PROJ_PITCHED_VFOV_DEG * Math.PI) / 360) * aspect;
+    const e = pitchedEyeFromFocus(fx, fy, fz, 20, pitchDeg, 30 / (2 * tanHalfX), [0, 0, 0]);
+    return { x: e[0], y: e[1], z: e[2], yawDeg: 20, pitchDeg, vfovDeg: PROJ_PITCHED_VFOV_DEG, projection: 'pitched', focusX: fx, focusY: fy, focusZ: fz };
+  };
+  for (const pitch of [-55, -58, -60]) {
+    runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: rtsHill${-pitch} (RE-02a pitched RTS view, hillside)`,
+      cam: rtsHillPose(pitch), real: true, meshOnly: true });
+  }
+  // Extra (not in the 28.1 A2 list): a shallow -15 deg pitched pose so sky cells exist - covers the GLSL/JS
+  // per-cell `screenRay` sky elevation and the fog scale at a large |b*sinP| (the RTS poses are 100 % ground).
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
+    cam: rtsHillPose(-15), real: true, meshOnly: true });
 
   // RE-06 (28.6 "Parity"): mesh-renderer-only pose. 20 instances of the 2-part lever (until the
   // designer's unit model exists), yaws {0, 90, 37.5, 200}, teams {0, 1, 2}, mid-animation pose,

@@ -73,7 +73,7 @@ import { KIND_TERRAIN } from '../GBuffer.js';
 import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
-import { projTerms, shearProjection } from '../projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 
 const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
@@ -237,6 +237,7 @@ export class GpuCellPipeline {
       this._meshViewProjF32 = new Float32Array(16);
       this._meshModelF32 = new Float32Array(16);
       this._meshFrustumPlanes = new Float64Array(24);
+      this._meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 }; // RE-02a: reused, no per-frame literal
       this._meshTerms = { cols: 0, rows: 0, eyeX: 0, eyeY: 0, eyeZ: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, tanHalf: 0, planeDistX: 0, planeDistY: 0, horizonRow: 0, tanPitch: 0 };
       this._meshVao = gl.createVertexArray();
       // ME-06 (27.4/27.15.5): terrain's own program/VAO - a different
@@ -957,6 +958,8 @@ export class GpuCellPipeline {
    * `fbCompare`, which never passes `cam`/`world`, keeps working unchanged).
    */
   frame(fb, light, cam, world) {
+    // RE-02a (28.1): 'pitched' only exists on the mesh renderer - fail loudly at the entry.
+    if (cam) assertProjectionRenderer(cam, this.renderer);
     this._fb = fb;
     this._light = light;
     this._cam = cam || null;
@@ -1514,6 +1517,33 @@ export class GpuCellPipeline {
     cb.posX = cam.x; cb.posY = cam.y; cb.eyeH = cam.z;
     cb.dirX = dirX; cb.dirY = dirY; cb.planeX = planeX; cb.planeY = planeY;
     cb.horizonRow = horizonRow; cb.planeDistY = planeDistY; cb.tanHalfHFov = tanHalfHFov;
+    // RE-02a: the pitched terms ride along (only when the cam asks for them); light/shade/edge
+    // read them through `_uploadPitchUniforms`, the raster pass through `_pitchTerms.M`.
+    this._pitched = resolveProjection(cam, this.renderer) === 'pitched';
+    if (this._pitched) {
+      const t = this._pitchTerms || (this._pitchTerms = createPitchedTerms());
+      const g = this._meshGrid || (this._meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
+      g.cols = this.cols; g.rows = this.rows; g.pxCellW = this.rt.pxCellW || 1; g.pxCellH = this.rt.pxCellH || 1;
+      pitchedTerms(cam, g, t);
+      const a = this._pitchA || (this._pitchA = new Float32Array(4));
+      const b = this._pitchB || (this._pitchB = new Float32Array(4));
+      const c = this._pitchC || (this._pitchC = new Float32Array(4));
+      a[0] = t.fX; a[1] = t.fY; a[2] = t.fZ; a[3] = t.tanHalfX;
+      b[0] = t.rX; b[1] = t.rY; b[2] = t.uX; b[3] = t.uY;
+      c[0] = t.uZ; c[1] = t.tanHalfY; c[2] = t.cosP; c[3] = t.sinP;
+    }
+  }
+
+  /** RE-02a: `uProjMode` + the pitched basis for a program (light/shade/edge). Program must be in use. */
+  _uploadPitchUniforms(loc) {
+    const gl = this.gl;
+    const on = !!this._pitched && this._useDdaThisFrame;
+    gl.uniform1i(loc.uProjMode, on ? 1 : 0);
+    if (on) {
+      gl.uniform4fv(loc.uPitchA, this._pitchA);
+      gl.uniform4fv(loc.uPitchB, this._pitchB);
+      gl.uniform4fv(loc.uPitchC, this._pitchC);
+    }
   }
 
   _ensureCamBasis() {
@@ -1567,9 +1597,15 @@ export class GpuCellPipeline {
     // Camera basis: the ONE shear-camera matrix (engine/render/projection.js)
     // world -> clip - the same matrix rasterJS.js and the CPU caster agree
     // the DDA ray formula is the inverse of (27.5/27.15.3).
-    const grid = { cols: this.cols, rows: this.rows, pxCellW: this.rt.pxCellW || 1, pxCellH: this.rt.pxCellH || 1 };
-    projTerms(cam, grid, this._meshTerms);
-    shearProjection(this._meshTerms, this._meshViewProj);
+    const grid = this._meshGrid;
+    grid.cols = this.cols; grid.rows = this.rows; grid.pxCellW = this.rt.pxCellW || 1; grid.pxCellH = this.rt.pxCellH || 1;
+    if (this._pitched) {
+      // RE-02a (28.1): rotated view matrix; `_computeCamBasis` already filled `_pitchTerms`.
+      this._meshViewProj.set(this._pitchTerms.M);
+    } else {
+      projTerms(cam, grid, this._meshTerms);
+      shearProjection(this._meshTerms, this._meshViewProj);
+    }
     for (let i = 0; i < 16; i++) this._meshViewProjF32[i] = this._meshViewProj[i];
     frustumPlanes(this._meshViewProj, this._meshFrustumPlanes);
 
@@ -1906,6 +1942,7 @@ export class GpuCellPipeline {
     gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
     gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
     gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
+    this._uploadPitchUniforms(loc);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -2068,6 +2105,7 @@ export class GpuCellPipeline {
     // painted `fgTex`/`bgTex` for those cells - unchanged behaviour).
     const useDda = this._useDdaThisFrame;
     gl.uniform1i(loc.uGpuSky, useDda ? 1 : 0);
+    this._uploadPitchUniforms(loc); // RE-02a
     if (useDda) {
       const cb = this._camBasis;
       gl.uniform1f(loc.uHorizonRow, cb.horizonRow);
@@ -2102,6 +2140,7 @@ export class GpuCellPipeline {
     gl.bindVertexArray(this.vao);
 
     this._bindTextures(binds);
+    if (!debug) this._uploadPitchUniforms(this._locsEdge); // RE-02a: fog distance scale
     // uGrid/uFogMax/uEdgeGlyph/uEdgeGain/uFogStart/uFogFull (edge) and
     // uMode (debug) are all static once set - `_bindStaticUniforms()` /
     // `setDebugMode()`, not here (architect review 1 items 3/4a).
@@ -2117,6 +2156,7 @@ const SHADE_UNIFORMS = [
   'uFogStipple0', 'uFogStipple1', 'uFogSparse', 'uFogSparseCodes', 'uFogHazeCodes', 'uFogSparseAlt', 'uFogHazeAlt',
   // US-030a: GPU sky (14.2 item 3).
   'uSky', 'uSkyElevTop', 'uGpuSky', 'uHorizonRow', 'uPlaneDistY',
+  'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', // RE-02a (28.1 A2): pitched sky + fog scale
   // US-016 (14.4 item 5): terrain (kind==7) branch.
   'uTlook', 'uBandNear', 'uBandMid',
   'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uTerrainFogNearRGB', 'uTerrainFogFarRGB',
@@ -2125,7 +2165,7 @@ const SHADE_UNIFORMS = [
   // band/jitter/2 m-vs-8 m hash-cell switch, gated by uNearDetailOn).
   'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand',
 ];
-const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve'];
+const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
 // US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
 const CAST_UNIFORMS = [
@@ -2151,6 +2191,7 @@ const LIGHT_UNIFORMS = [
   'uGI', 'uGA', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
   'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
+  'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', // RE-02a
 ];
 // US-016 (14.4 items 2-4, GPU build order step 2): pass A2 terrain march.
 const TERRAIN_UNIFORMS = [

@@ -163,7 +163,7 @@ function intersectPlaneZ(ray, planeZ, out3) {
  * @param {number} dt seconds
  * @param {RtsCameraInput} input
  * @param {{cols:number,rows:number,pxCellW?:number,pxCellH?:number}} grid
- * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number,vfovDeg:number,projection:string}} cam
+ * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number,vfovDeg:number,projection:string,focusX?:number,focusY?:number,focusZ?:number}} cam
  */
 export function update(rts, dt, input, grid, cam) {
   const o = rts.opts;
@@ -240,6 +240,10 @@ export function update(rts, dt, input, grid, cam) {
   cam.yawDeg = o.yawDeg;
   cam.pitchDeg = o.pitchDeg;
   cam.vfovDeg = o.vfovDeg;
+  // RE-02a (28.1 A2 item 4): the ground focus point, for consumers centred on what the player looks at.
+  cam.focusX = rts.focusX;
+  cam.focusY = rts.focusY;
+  cam.focusZ = rts.focusZ;
 }
 
 /**
