@@ -390,6 +390,12 @@ export class RenderTargetGL {
     this._spritePass = fn || null;
   }
 
+  // RE-07b (28.9): third slot, after the sprite pass and before present()'s draw
+  // (engine/render/gpu/overlayPass.js - selection overlay composite). Same contract.
+  setOverlayPass(fn) {
+    this._overlayPass = fn || null;
+  }
+
   // Test-only (`?gpucompare=*`, never the frame loop - readPixels stalls the
   // GPU): reads back EXACTLY the two cell textures the last `present()` draw
   // sampled - whatever is bound on texture units 0 (`uFg`) and 1 (`uBg`)
@@ -436,6 +442,7 @@ export class RenderTargetGL {
 
     if (this._cellPass) this._cellPass();
     if (this._spritePass) this._spritePass(); // US-030c
+    if (this._overlayPass) this._overlayPass(); // RE-07b
 
     // A texture is never read AND written in the same pass (14.1 section
     // 4) - the hook may have left its own program/framebuffer/units bound,

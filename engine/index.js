@@ -50,6 +50,7 @@ export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
 export { GpuSpritePass } from './render/gpu/spritesPass.js';
+export { GpuOverlayPass } from './render/gpu/overlayPass.js'; // RE-07b
 export { drawText } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
 // engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only

@@ -241,6 +241,31 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
     cam: rtsHillPose(-15), real: true, meshOnly: true });
 
+  // RE-07b (28.9 "Tests"): mesh-only overlay pose. Same pitched -58 RTS view as rtsHill58 but focused on the
+  // signal tower so rings behind it fail the depth test: 30 rings (6x5 lattice, r 1 m), 30 bars, 1 screen rect.
+  // The JS twin = rtsHill58-style CPU render + `overlay.renderCpu`; the GPU result is the GpuOverlayPass.
+  const overlayOps = (ov) => {
+    ov.setStyles({ ring: { glyphs: '-|\\/', fg: [255, 220, 60] }, barFill: { glyph: '=', fg: [80, 255, 80] },
+      barEmpty: { glyph: '.', fg: [120, 120, 120] }, box: { glyphs: '-|++', fg: [255, 255, 255] } });
+    const sRing = ov.styleId('ring'), sFill = ov.styleId('barFill'), sEmpty = ov.styleId('barEmpty'), sBox = ov.styleId('box');
+    const g = worldM1.terrain ? (x, y) => worldM1.terrain.groundAt(x, y) : () => 0;
+    ov.setGroundFn(g);
+    let n = 0;
+    for (let j = 0; j < 5; j++) for (let i = 0; i < 6; i++, n++) {
+      const x = 1483.5 + 3 * i, y = 1020 + 3 * j;
+      ov.ring(x, y, g(x, y), 1.0, sRing);
+      ov.bar(x, y, g(x, y) + 2.5, n / 29, 5, sFill, sEmpty);
+    }
+    ov.rect(8, 6, 44, 22, sBox);
+  };
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsOverlay (RE-07b, pitched -58 at the tower, 30 rings + 30 bars + rect)',
+    cam: (() => { const c = rtsHillPose(-58); const fx = 1492, fy = 1028, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
+      const aspect = (rt.cols * (rt.pxCellW || 1)) / (rt.rows * (rt.pxCellH || 1));
+      const tanHalfX = Math.tan((PROJ_PITCHED_VFOV_DEG * Math.PI) / 360) * aspect;
+      const e = pitchedEyeFromFocus(fx, fy, fz, 20, -58, 30 / (2 * tanHalfX), [0, 0, 0]);
+      return { ...c, x: e[0], y: e[1], z: e[2], focusX: fx, focusY: fy, focusZ: fz }; })(),
+    real: true, meshOnly: true, overlayOps });
+
   // RE-06 (28.6 "Parity"): mesh-renderer-only pose. 20 instances of the 2-part lever (until the
   // designer's unit model exists), yaws {0, 90, 37.5, 200}, teams {0, 1, 2}, mid-animation pose,
   // in the test_room start area (floor z 0). The dda renderer has no instanced path: it SKIPs
@@ -262,6 +287,32 @@ function buildCompareRuns(ctx) {
   });
 
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
+}
+
+/**
+ * RE-07b: per touched overlay cell, "GPU shows the overlay" vs "JS twin shows it" (fg rgb + glyph equal to the layer).
+ * Cells where the depth compare sits within 1e-3 * ref of the bias edge are boundary cells (excluded from mismatch).
+ */
+function compareOverlayCells(ov, twinFg, gpuFg, depth) {
+  const r = { cells: ov.stats.cells, shownTwin: 0, shownGpu: 0, hidden: 0, mismatch: 0, boundary: 0, boundaryPct: 0 };
+  for (let t = 0; t < ov.stats.cells; t++) {
+    const i = ov.touched[t], f = i * 4;
+    if (ov.ovl[f + 3] === 0) continue;
+    let tw = true, gp = true;
+    for (let k = 0; k < 3; k++) { if (twinFg[f + k] !== ov.ovl[f + k]) tw = false; if (gpuFg[f + k] !== ov.ovl[f + k]) gp = false; }
+    if (twinFg[f + 3] !== ov.ovl[f + 3]) tw = false;
+    if (gpuFg[f + 3] !== ov.ovl[f + 3]) gp = false;
+    if (tw) r.shownTwin++;
+    if (gp) r.shownGpu++;
+    if (!tw) r.hidden++;
+    if (tw !== gp) {
+      const ref = ov.ovlZ[i], d = depth[i];
+      const bias = Math.max(0.25, 0.01 * ref);
+      if (Math.abs(ref - d - bias) < 1e-3 * ref) r.boundary++; else r.mismatch++;
+    }
+  }
+  r.boundaryPct = r.cells ? (100 * r.boundary) / r.cells : 0;
+  return r;
 }
 
 function runGpuCompareDdaMode(ctx) {
@@ -305,7 +356,7 @@ function runGpuCompareDdaMode(ctx) {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly } of runs) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps } of runs) {
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
@@ -337,10 +388,13 @@ function runGpuCompareDdaMode(ctx) {
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
     sprites.pool.project(cam, rt, lights || ambientL, world);
 
+    engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
+    if (overlayOps) overlayOps(engine.overlay);
     poisonAllCells(rt.cells, n);
     fbCompare.gpuDda = true;
     renderWorld(fbCompare, world, cam);
     gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
+    engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass composites inside present()
     rt.present();
     const rb = rt.readbackPresent();
     sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
@@ -359,6 +413,16 @@ function runGpuCompareDdaMode(ctx) {
     }
     applySceneDim(fbCompare.rt, compareSceneDim);
     rt.gpuActive = wasActive;
+    let ovlRes = null;
+    if (overlayOps) { // JS twin composite, then per-overlay-cell GPU-vs-twin check (28.9 bar)
+      engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth);
+      ovlRes = compareOverlayCells(engine.overlay, rt.cells.fg, gpuFg, depthBuffer.depth);
+      console.log(`[gpucompare] rtsOverlay: cells=${ovlRes.cells} shownTwin=${ovlRes.shownTwin} shownGpu=${ovlRes.shownGpu} hidden=${ovlRes.hidden} mismatch=${ovlRes.mismatch} boundary=${ovlRes.boundary} (${ovlRes.boundaryPct.toFixed(3)}% , <=0.5%)`);
+      // pass timer (async GpuTimer ring): repeat the composite so p50/p95 fill in (NaN if the timer extension is missing)
+      for (let k = 0; k < 140; k++) rt.present();
+      const ps = rt.overlayPassStats; ovlRes.gpuMsP50 = ps ? ps.gpuMsP50 : NaN; ovlRes.gpuMsP95 = ps ? ps.gpuMsP95 : NaN;
+      console.log(`[gpucompare] rtsOverlay pass ms: p50=${ovlRes.gpuMsP50} p95=${ovlRes.gpuMsP95} uploadRows=${ps ? ps.rows : -1}`);
+    }
 
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows);
@@ -371,9 +435,10 @@ function runGpuCompareDdaMode(ctx) {
     const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
       cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
     if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${poseName}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);
-    const ok = (cmpCells.pass || meshColourOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok;
+    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 && ovlRes.hidden > 0 && ovlRes.shownGpu > 0);
+    const ok = (cmpCells.pass || meshColourOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
+    rowsOut.push({ pose: poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
   }
   overallOk = overallOk && sampledOwnTextures;
   fbCompare.sceneFade = 1;

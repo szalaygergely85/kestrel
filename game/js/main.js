@@ -11,7 +11,7 @@ import {
   GBuffer, bindShading, bindLevel,
   DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
-  GpuCellPipeline, PASS_NAMES,
+  GpuCellPipeline, GpuOverlayPass, PASS_NAMES,
   VoxelPool,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
@@ -337,6 +337,7 @@ console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.renderer
 
 // ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
 const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
+if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass(rt, gpuPipeline, engine.overlay); // RE-07b (28.9)
 // ---- end US-030c ----
 
 // ---- US-041a (15.3 item 1): the REAL gameplay voxel pool - `collect(world,
@@ -903,7 +904,8 @@ function runGame(mode) {
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
-      if (!fb.gpuDda && engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
+      if (fb.gpuDda) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
+      else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
       lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
       const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen());

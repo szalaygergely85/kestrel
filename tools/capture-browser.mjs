@@ -667,6 +667,8 @@ export async function runLiveCapture(opts) {
     // timeout when there's no real GPU to measure.
     let softwareRendererLine = null;
     cdp.onEvent((method, params) => {
+      if (process.env.CAP_LOG && method === 'Runtime.exceptionThrown') console.error('[page exception]', JSON.stringify(params.exceptionDetails).slice(0, 600));
+      if (process.env.CAP_LOG && method === 'Runtime.consoleAPICalled') console.error('[page]', (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : a.description || '')).join(' ').slice(0, 300));
       if (method !== 'Runtime.consoleAPICalled') return;
       const text = (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : '')).join(' ');
       if (isSoftwareRendererLine(text)) softwareRendererLine = text;
