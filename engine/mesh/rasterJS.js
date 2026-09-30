@@ -132,6 +132,7 @@ const _instItem = {
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
+  cullBack: false,
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false,
@@ -310,6 +311,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
   let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
   if (A2 === 0) return;
+  if (A2 < 0 && info.cullBack) return; // RE-06c (28.10): voxel/instanced back faces, same snapped area as the GPU
   if (A2 < 0) {
     let t;
     t = Xs1; Xs1 = Xs2; Xs2 = t; t = Ys1; Ys1 = Ys2; Ys2 = t;
@@ -453,6 +455,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.structFoot = ctx.structFoot || null;
       _info.structCount = ctx.structFoot ? (ctx.structCount || 0) : 0;
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
+      _info.cullBack = false;
     } else {
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;
       const flat0 = mesh.flat[v0 * FLAT_STRIDE];
@@ -473,6 +476,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.partAxisAligned = instAligned !== undefined ? instAligned : (isVoxelItem && (item.partFlags[partIdx] & 1) !== 0);
       _info.kind7Mat = null;
       _info.biasFlag = 0;
+      _info.cullBack = isVoxelItem || instAligned !== undefined;
     }
     _info.zBase = item.zBase;
     _info.objectId = item.objectId;

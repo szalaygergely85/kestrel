@@ -1692,6 +1692,10 @@ export class GpuCellPipeline {
     gl.vertexAttrib4f(4, 0, 0, 0, 0);
     gl.vertexAttrib4f(5, 0, 0, 0, 0);
     gl.bindVertexArray(this._meshVoxVao);
+    // RE-06c (28.10): back-face cull for closed voxel meshes only (front = positive snapped area = CCW).
+    gl.frontFace(gl.CCW);
+    gl.cullFace(gl.BACK);
+    gl.enable(gl.CULL_FACE);
     for (let i = 0; i < list.count; i++) {
       const item = list.items[i];
       if (item.type !== DRAW_VOXEL || !item.mesh) continue;
@@ -1793,6 +1797,7 @@ export class GpuCellPipeline {
         }
       }
     }
+    gl.disable(gl.CULL_FACE); // RE-06c: never leave cull on past the voxel loops
     this.stats.voxelDraws = voxelDraws + instancedDraws;
     this.stats.instancedDraws = instancedDraws;
     this.stats.instances = instTotal;
