@@ -369,7 +369,7 @@ function runGpuCompareDdaMode(ctx) {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear } of runs) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault } of runs) {
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
@@ -452,7 +452,7 @@ function runGpuCompareDdaMode(ctx) {
     // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
     // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
     // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
-    const pitchedHashOk = renderer === 'mesh' && cam && cam.projection === 'pitched' && geomBaseOk &&
+    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOk &&
       cmpCells.outsideFrac <= 0.005 && cmpCells.glyphMatchPct >= 99.9 && cmpCells.bgMax <= 64 && cmpCells.poisonedSurvivors === 0;
     // RE-02b b3 anchor: the same pose's shear JS twin vs the pitched GPU output, same mesh bars.
     let anchorOk = true;

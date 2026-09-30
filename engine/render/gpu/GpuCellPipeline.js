@@ -1533,7 +1533,7 @@ export class GpuCellPipeline {
       c[0] = t.uZ; c[1] = t.tanHalfY; c[2] = t.cosP; c[3] = t.sinP;
       const tr = this._world && this._world.terrain;
       const zRef = Number.isFinite(cam.focusZ) ? cam.focusZ : (tr && tr.groundAt ? tr.groundAt(cam.x, cam.y) : NaN);
-      this._hashCell = pitchedHashCell(t, this.cols, zRef);
+      this._hashCell = -(2 * t.tanHalfX / this.cols); void zRef; // BUG-FP-002: per-cell mode on every pitched frame
     } else {
       this._hashCell = 0;
     }

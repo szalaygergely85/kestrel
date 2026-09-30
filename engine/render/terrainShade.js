@@ -89,7 +89,11 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   // else 8 m"). No `ctx.handover` (old callers/tests, far-only recipes) ->
   // unchanged 8 m behaviour.
   // BUG-RTS-001 (28.11a): a per-frame `ctx.hashCell` > 0 (pitched views) replaces the fixed cell.
-  const cellSz = ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
+  // BUG-FP-002: hashCell < 0 = per-cell mode, k = -hashCell (ground m per column per m of depth): each cell keys
+  // its own power-of-two cell from its distance (0.125..2 m near, 8 m past the handover) - no 2 m blocks at the feet.
+  const hk = ctx.hashCell < 0 ? -ctx.hashCell : 0;
+  const cellSz = hk > 0 ? (ctx.handover && !(t < ctx.handover[1]) ? 8 : Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * hk, 1e-6)))))))
+    : ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
   const cx = Math.floor(u / cellSz), cy = Math.floor(v / cellSz);
   const hA = hashFast01(cx, cy, type);
   const hB = hashFast01(cx, cy, 7);

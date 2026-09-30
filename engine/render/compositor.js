@@ -105,7 +105,7 @@ function renderWorldMesh(fb, world, cam) {
     meshViewProj.set(meshPitchTerms.M);
     const tr = world.terrain;
     const zRef = Number.isFinite(cam.focusZ) ? cam.focusZ : (tr && tr.groundAt ? tr.groundAt(cam.x, cam.y) : NaN);
-    meshHashCell = pitchedHashCell(meshPitchTerms, cols, zRef);
+    meshHashCell = -(2 * meshPitchTerms.tanHalfX / cols); void zRef; // BUG-FP-002: per-cell mode on every pitched frame
   } else {
     shearProjection(meshTerms, meshViewProj);
   }

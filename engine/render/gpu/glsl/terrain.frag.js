@@ -399,7 +399,13 @@ const float FOREST_FACE_NZ = ${FOREST_FACE_NZ.toFixed(4)};
 TerrainOut shadeTerrain(float t, int type, float b, float u, float v, float timeSec, int faceMode) {
   // 23.4 near-detail: hash cell 2 m inside the near-handover band, else 8 m
   // (the far grid's cell size) - "hash cell 2 m when t < h1, else 8 m".
-  float cellSz = uHashCell > 0.0 ? uHashCell : ((uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0);
+  // BUG-FP-002: uHashCell < 0 = per-cell mode (literal twin of terrainShade.js).
+  float cellSz;
+  if (uHashCell < 0.0) {
+    cellSz = (uNearDetailOn != 0 && !(t < uHandover.y)) ? 8.0 : clamp(exp2(ceil(log2(max(t * -uHashCell, 1e-6)))), 0.125, 2.0);
+  } else {
+    cellSz = uHashCell > 0.0 ? uHashCell : ((uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0);
+  }
   int cx = int(floor(u / cellSz)), cy = int(floor(v / cellSz));
   float hA = hashFast(cx, cy, type);
   float hB = hashFast(cx, cy, 7);

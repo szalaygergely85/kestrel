@@ -118,7 +118,8 @@ ok('shade.frag.js contains shadeTerrain(', SHADE_FRAG_SRC.includes('shadeTerrain
 for (const u of ['uNearDetailOn', 'uHandover', 'uCloseBand', 'uHashCell', 'uSunDir', 'uAmbientI', 'uSunI']) {
   ok(`shade.frag.js contains ${u}`, SHADE_FRAG_SRC.includes(u));
 }
-ok('BUG-RTS-001: GLSL cellSz expression is the twin of terrainShade.js (uHashCell > 0 overrides 2/8 m)', SHADE_FRAG_SRC.includes('float cellSz = uHashCell > 0.0 ? uHashCell : ((uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0);'));
+ok('BUG-RTS-001: GLSL cellSz: uHashCell > 0 overrides 2/8 m', SHADE_FRAG_SRC.includes('cellSz = uHashCell > 0.0 ? uHashCell : ((uNearDetailOn != 0 && t < uHandover.y) ? 2.0 : 8.0);'));
+ok('BUG-FP-002: GLSL per-cell hash mode (uHashCell < 0) is the twin of terrainShade.js', SHADE_FRAG_SRC.includes('clamp(exp2(ceil(log2(max(t * -uHashCell, 1e-6)))), 0.125, 2.0)'));
 ok('shade.frag.js contains unpackNormalOct (decodes the march pass packed normal)', SHADE_FRAG_SRC.includes('unpackNormalOct'));
 ok('shade.frag.js contains MAX_FEATURES_PER_TYPE', SHADE_FRAG_SRC.includes('MAX_FEATURES_PER_TYPE'));
 
