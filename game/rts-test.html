@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASCII Quest - RTS spike (RTS-01a)</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #screen { display: block; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+  <canvas id="screen"></canvas>
+  <script>
+    if (location.protocol === 'file:') {
+      document.write('<div style="position:fixed;inset:0;background:#000;color:#e8e2d0;font:16px monospace;padding:2em">Run a static server (python -m http.server) and open /game/rts-test.html</div>');
+    }
+  </script>
+  <!-- Same classic-script content as game/index.html (palette, detail pass, models, terrain recipe); the RTS spike
+       adds its own unit model in js/rts/unitModel.js. -->
+  <script src="../design/palette.js"></script>
+  <script src="../design/detail-pass.js"></script>
+  <script src="../design/models/title.js"></script>
+  <script src="../design/models/lantern.js"></script>
+  <script src="../design/models/brazier.js"></script>
+  <script src="../design/models/lever.js"></script>
+  <script src="../design/models/boulder.js"></script>
+  <script src="../design/models/rubble.js"></script>
+  <script src="../design/models/wreckage.js"></script>
+  <script src="../design/models/relay.js"></script>
+  <script src="../design/models/voxel_props.js"></script>
+  <script src="../design/models/voxel_tower.js"></script>
+  <script src="../design/models/voxel_world.js"></script>
+  <script src="../design/models/far_tower.js"></script>
+  <script src="../design/models/ferrum_lights.js"></script>
+  <script src="../design/levels/overworld_far.js"></script>
+  <script type="module" src="js/rts/rtsMain.js"></script>
+</body>
+</html>

@@ -2942,6 +2942,8 @@ Perf asserts are warn-only unless `PERF_STRICT=1`.
 - RE-10: the owner-slot `Map` is fine (placement-time only, never iterated in the sim). Slot numbers depend on history, so any `NavGrid.hashInto` hashes `blockCount`/`cost`, never slots (RE-14b).
 - **Known limit (lockstep):** `NavGrid.buildFromWorld` samples analytic terrain (`Math.exp/pow/hypot`, a `Math.cos` slope threshold), so the grid can differ between JS engines. Single-machine replay is unaffected. Before networked lockstep, walkability comes from content-baked/saved arrays, or peers exchange a grid hash at start.
 
+- **RE-08p re-baseline (architect, 2026-09-30):** flow-field budgets stay warn-only; callers run `step(3072)` per tick (~0.6-0.8 ms on the Intel iGPU laptop, a full 256x256 field in ~22 ticks); AC = per-tick step <= 0.8 ms, the full build time is recorded, not gated. Dial bucket queue = RE-08q (parked).
+
 ### 28.3 Fog of war: RE-11 visibility grid (PC-B, pure JS) + RE-12 shading (PC-A, GLSL)
 
 **RE-11 `engine/world/Visibility.js`** (leaf: imports nothing; `// @ts-check`; exported via `engine/index.js`). This is sim state: it advances only inside the fixed step, and 28.2's determinism and zero-alloc rules apply.

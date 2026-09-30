@@ -503,7 +503,7 @@ export function findBrowserBinary() {
   return null;
 }
 
-async function waitForHttp(url, timeoutMs) {
+export async function waitForHttp(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -515,7 +515,7 @@ async function waitForHttp(url, timeoutMs) {
   throw new Error(`timed out waiting for ${url}`);
 }
 
-function killTree(pid) {
+export function killTree(pid) {
   if (!pid) return;
   try {
     if (process.platform === 'win32') {
@@ -526,7 +526,7 @@ function killTree(pid) {
   } catch { /* already gone */ }
 }
 
-async function connectCdp(cdpPort, timeoutMs = 10000) {
+export async function connectCdp(cdpPort, timeoutMs = 10000) {
   const listUrl = `http://127.0.0.1:${cdpPort}/json/list`;
   await waitForHttp(listUrl, timeoutMs);
   let page = null;
@@ -570,7 +570,7 @@ async function connectCdp(cdpPort, timeoutMs = 10000) {
   return { ws, send, onEvent, close: () => { try { ws.close(); } catch {} } };
 }
 
-async function evaluate(cdp, expression) {
+export async function evaluate(cdp, expression) {
   const result = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false });
   if (result.exceptionDetails) throw new Error('page eval threw: ' + JSON.stringify(result.exceptionDetails));
   return result.result.value;
