@@ -4,7 +4,7 @@
 // Run: node engine/mesh/culling.test.js
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { projTerms, shearProjection } from '../render/projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, worldToCell, PROJ_NEAR } from '../render/projection.js';
 import { frustumPlanes, classifyAABB, CULL_IN, CULL_OUT, CULL_STRADDLE } from './culling.js';
 import { makeOk } from '../test/assert.js';
 
@@ -143,6 +143,33 @@ for (const pitchDeg of [-35, 35]) {
     }
   }
   ok(`property: ${outCount} seeded boxes classified OUT -> none of their 200 sampled points are inside every plane`, outCount > 0 && violations === 0, `${violations} violations over ${outCount} OUT boxes`);
+}
+
+// ---- RE-01 (28.1): frustumPlanes/classifyAABB are generic Gribb-Hartmann,
+// so they work unchanged on a `pitchedProjection` matrix too. -------------
+{
+  const grid = { cols: 200, rows: 80 };
+  const cam = { x: 3, y: -4, z: 10, yawDeg: 25, pitchDeg: -58 };
+  const terms = createPitchedTerms();
+  pitchedTerms(cam, grid, terms);
+  const planes = new Float64Array(24);
+  frustumPlanes(terms.M, planes);
+
+  // A box centred straight ahead in view space (col/row centre, moderate
+  // depth) must not be CULL_OUT.
+  const cellOut = new Float64Array(3);
+  // Reconstruct a point ~30 m ahead at the screen centre via worldToCell's
+  // inverse relationship: pick a world point along F from the eye.
+  const px = cam.x + terms.fX * 30, py = cam.y + terms.fY * 30, pz = cam.z + terms.fZ * 30;
+  worldToCell(terms, px, py, pz, cellOut); // sanity: vd > 0, ahead of the eye
+  const r = classifyAABB(planes, px - 1, py - 1, pz - 1, px + 1, py + 1, pz + 1);
+  ok('pitched camera: box straight ahead along F -> not CULL_OUT', r !== CULL_OUT, `got ${r}, vd=${cellOut[2]}`);
+  ok('sanity: the ahead point has vd > PROJ_NEAR', cellOut[2] > PROJ_NEAR, `vd=${cellOut[2]}`);
+
+  // A box far behind the eye (along -F) must be CULL_OUT.
+  const bx = cam.x - terms.fX * 30, by = cam.y - terms.fY * 30, bz = cam.z - terms.fZ * 30;
+  const rBehind = classifyAABB(planes, bx - 1, by - 1, bz - 1, bx + 1, by + 1, bz + 1);
+  ok('pitched camera: box behind the eye along -F -> CULL_OUT', rBehind === CULL_OUT, `got ${rBehind}`);
 }
 
 // ---- zero allocation: 100k classifyAABB calls --------------------------
