@@ -876,3 +876,11 @@ The engine (mesh renderer + ASCII shading, lighting, terrain, content packs, edi
 
 **Note (2026-09-30, architect via RTS-01 ACs, main session):** the spike frame budget = D-025 (GPU p95 <= 4 ms, JS p95 <= 8 ms at 400x150 and 240x90; sim p95 <= 2 ms inside JS); D-029 2.52 / 1.34 ms are recorded measurements, not a budget. A GPU miss measured before RE-06b is recorded and re-measured after it; it does not block the owner walk-test.
 
+### Amendment 1 (2026-09-30): RTS-01 gate = NO-GO, back to the RPG (owner)
+Owner verdict after the RTS-01 walk-test (`game/rts-test.html`, chat 2026-09-30): "rts doesnt look good on ascii ... we have to go back to rpg", and "its good the engine capable of 2 and 3d games". Consequences:
+- **Game direction = the Zelda-like RPG again.** Everything D-032 froze is unfrozen: D-011 canon, D-030 milestones M3-M5, US-078..087 combat/enemy/health, M4 content, M5, US-106 crash intro, object-physics stories, US-112 demo, first-person feel stories, writer proposals (D-013/D-020/D-021). The manager re-plans the next sprint from there (M2 tail -> M3).
+- **Engine work from the RTS track stays** (genre-neutral engine capability, done and reviewed): pitched camera (and D-029 amendment 2: pitched is the one mesh camera, RE-02b), instanced units RE-06/06b/06c, nav RE-05/08/09/10, overlay RE-07, fog RE-11, minimap RE-13, commands/replay RE-14, picking RE-04, RTS camera RE-03. Open RE rows (RE-12, RE-15, RE-16, RE-07c, RE-08q) become engine-release-track items, not game priorities.
+- **`game/rts-test.html` + `game/js/rts/` stay as an engine sample** (top-down demo of the same engine), not a product; no further RTS game stories. RTS-01 closes as "gate FAIL (readability in ASCII)". OWN-REQ-012 (RTS player complaints) parked.
+- **ME-12 phase-2 gate is un-paused** (back to the RPG walk-out gate on `?renderer=mesh&physics=mesh`); the old-renderer block ME-15 -> ME-16 -> ME-12b -> ME-19 runs as scheduled (it was "after the RTS-01 walk-test").
+- Epic PX (pixel output) and the ortho/iso camera idea stay engine-release-track options (owner likes that the engine can do 2D-ish and 3D views).
+
