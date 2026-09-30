@@ -215,6 +215,7 @@ export const PROJ_PITCHED_VFOV_DEG = 36;
  * @property {'pitched'} projection
  * @property {number} cols
  * @property {number} rows
+ * @property {number} near - PROJ_NEAR, carried so instanceRect never hard-codes it (RE-02b F3)
  * @property {number} aspect
  * @property {number} eyeX
  * @property {number} eyeY
@@ -246,6 +247,7 @@ export const PROJ_PITCHED_VFOV_DEG = 36;
 export function createPitchedTerms() {
   return {
     projection: 'pitched',
+    near: PROJ_NEAR,
     cols: 0, rows: 0, aspect: 0,
     eyeX: 0, eyeY: 0, eyeZ: 0,
     fX: 0, fY: 0, fZ: 0,
@@ -281,11 +283,12 @@ export function pitchedTerms(cam, grid, out) {
   const uX = -sinP * fx, uY = -sinP * fy, uZ = cosP;
 
   const aspect = (cols * (grid.pxCellW || 1)) / (rows * (grid.pxCellH || 1));
-  const vfovDeg = cam.vfovDeg || PROJ_PITCHED_VFOV_DEG;
+  const vfovDeg = cam.vfovDeg || fpVfovDeg(grid);
   const tanHalfY = Math.tan((vfovDeg * Math.PI) / 180 / 2);
   const tanHalfX = tanHalfY * aspect;
 
   out.projection = 'pitched';
+  out.near = PROJ_NEAR;
   out.cols = cols; out.rows = rows; out.aspect = aspect;
   out.eyeX = cam.x; out.eyeY = cam.y; out.eyeZ = cam.z;
   out.fX = fX; out.fY = fY; out.fZ = fZ;
@@ -441,12 +444,28 @@ export function pitchedEyeFromFocus(fx, fy, fz, yawDeg, pitchDeg, dist, out3) {
  * RE-02b the default is `'shear'` on every renderer; `'pitched'` must be
  * requested explicitly (`cam.projection = 'pitched'`).
  * @param {{projection?: 'shear'|'pitched'}} cam
- * @param {string} [renderer] - 'dda' | 'mesh' (unused until RE-02b flips the mesh default)
+ * @param {string} [renderer] - 'dda' | 'mesh' - an unset projection resolves to pitched on 'mesh', shear on 'dda' (RE-02b)
  * @returns {'shear'|'pitched'}
  */
-export function resolveProjection(cam, renderer) { // eslint-disable-line no-unused-vars
-  return cam.projection === 'pitched' ? 'pitched' : 'shear';
+export function resolveProjection(cam, renderer) {
+  if (cam.projection === 'pitched') return 'pitched';
+  if (cam.projection === 'shear') return 'shear';
+  return renderer === 'mesh' ? 'pitched' : 'shear';
 }
+
+/**
+ * First-person vertical fov (28.1 A2 item 5): `2*atan(tan(PROJ_HFOV_DEG/2)/aspect)`, so the horizontal
+ * fov stays 75 deg on every aspect and the pitched view at pitch 0 equals the shear view.
+ * @param {{cols:number, rows:number, pxCellW?:number, pxCellH?:number}} grid
+ * @returns {number} degrees
+ */
+export function fpVfovDeg(grid) {
+  const aspect = (grid.cols * (grid.pxCellW || 1)) / (grid.rows * (grid.pxCellH || 1));
+  return (2 * Math.atan(Math.tan((PROJ_HFOV_DEG * Math.PI) / 360) / aspect) * 180) / Math.PI;
+}
+
+/** Look-pitch clamp on the pitched camera (28.1 A2 item 6); the shear clamp stays 35. */
+export const PITCH_CLAMP_PITCHED_DEG = 70;
 
 /** The 28.1 throw: DDA, voxel march and the CPU caster only know the shear camera. */
 export function assertProjectionRenderer(cam, renderer) {
@@ -501,14 +520,14 @@ const _framePitched = createPitchedTerms();
 /**
  * Writes the raster matrix M (column-major, world -> clip) of `cam` for a
  * `cols x rows` grid into `out16`. Shear and pitched: the same call the mesh
- * raster makes (`resolveProjection`). Zero allocation after first use.
+ * raster makes (`resolveProjection(cam, renderer)`, renderer default 'mesh'). Zero allocation after first use.
  * @param {Object} cam
  * @param {{cols:number, rows:number, pxCellW?:number, pxCellH?:number}} grid
  * @param {Float64Array} out16
  * @returns {Float64Array}
  */
-export function frameMatrix(cam, grid, out16) {
-  if (resolveProjection(cam, 'mesh') === 'pitched') {
+export function frameMatrix(cam, grid, out16, renderer = 'mesh') {
+  if (resolveProjection(cam, renderer) === 'pitched') {
     pitchedTerms(cam, grid, _framePitched);
     out16.set(_framePitched.M);
   } else {

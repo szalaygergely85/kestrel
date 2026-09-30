@@ -154,7 +154,7 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 // PROJ_HFOV_DEG/PROJ_NEAR/PROJ_FAR) stay internal/test-only as before.
 export {
   createPitchedTerms, pitchedTerms, pitchedProjection, screenRay, unprojectPitched,
-  worldToCell, pitchedEyeFromFocus, resolveProjection, PROJ_PITCHED_VFOV_DEG, pitchedFogScale, frameMatrix,
+  worldToCell, pitchedEyeFromFocus, resolveProjection, fpVfovDeg, PITCH_CLAMP_PITCHED_DEG, PROJ_PITCHED_VFOV_DEG, pitchedFogScale, frameMatrix,
 } from './render/projection.js';
 
 // ---- RE-04 screen -> world picking (docs/architecture.md 28.1) ------------

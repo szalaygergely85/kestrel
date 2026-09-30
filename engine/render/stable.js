@@ -185,8 +185,8 @@ function blendPacked(prevPacked, curPacked) {
  * @param {StableOut} out
  * @returns {StableOut}
  */
-export function stabilizeCells(prev, cur, prevCam, cam, out) {
-  if (resolveProjection(cam, 'mesh') === 'pitched' || resolveProjection(prevCam, 'mesh') === 'pitched') {
+export function stabilizeCells(prev, cur, prevCam, cam, out, renderer = 'dda') {
+  if (resolveProjection(cam, renderer) === 'pitched' || resolveProjection(prevCam, renderer) === 'pitched') {
     throw new Error("stable.js: cam.projection 'pitched' is not supported (28.1 A2 item 2)");
   }
   const cols = cur.cols, rows = cur.rows;

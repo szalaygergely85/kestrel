@@ -2883,6 +2883,8 @@ Integer cell of a projected point: `floor(col+0.5)`, `floor(row+0.5)`. Mouse -> 
 
 **RE-04 `engine/render/pick.js`.** `rayTerrain(terrain, ray, out, opts)`: march `t` in `opts.step` (default 0.5 m) from 0 to `opts.maxT` (default `4*eyeZ/-dz`); first sample with `oz+t*dz < terrain.groundAt(x,y)` (what is rendered), then 24 bisections -> `out {x,y,z,t,hit}`. `pickNearest(ray, positions, radii, heights, count)`: ray vs vertical cylinder per unit (`positions` Float64Array stride 3 = base point), smallest `t`, ties to the lower index, -1 if none. `selectInRect(terms, c0, r0, c1, r1, positions, count, outIds)` -> count; iterate ascending, `worldToCell`, inclusive rect, `vd > 0`; ids come out ascending. Zero alloc.
 
+- **RE-02b review note (2026-09-30):** SpritePool, VoxelPool, the overlay and `stabilizeCells` default to renderer 'dda'; the host sets 'mesh' - and only when the mesh GpuCellPipeline is actually active (main.js `effRenderer`), so the look clamp and every projection follow the effective renderer, not the URL.
+
 ### 28.2 `engine/nav/` (RE-05, RE-08, RE-09, RE-10)
 
 Amends D-032's "grid/A* in `engine/world/`": nav is a separate **leaf** module, so it never depends on World internals and tests run with a fake world. Unit and command logic stays in `game/js/rts/`.

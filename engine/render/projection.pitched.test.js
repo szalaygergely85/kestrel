@@ -9,7 +9,7 @@ import {
   projTerms, shearProjection,
   createPitchedTerms, pitchedTerms, pitchedProjection, pitchedHashCell,
   screenRay, unprojectPitched, worldToCell, pitchedEyeFromFocus,
-  projectPoint, windowToCell,
+  projectPoint, windowToCell, fpVfovDeg, resolveProjection, PITCH_CLAMP_PITCHED_DEG,
 } from './projection.js';
 import { frustumPlanes, classifyAABB, CULL_OUT } from '../mesh/culling.js';
 import { makeOk, approxEqual } from '../test/assert.js';
@@ -128,7 +128,7 @@ function makeLcg(seed) {
 // ---------------------------------------------------------------------------
 {
   const grid = { cols: 400, rows: 150, pxCellW: 1, pxCellH: 2 };
-  const cam = { x: 0, y: 0, z: 20, yawDeg: 0, pitchDeg: -58 };
+  const cam = { x: 0, y: 0, z: 20, yawDeg: 0, pitchDeg: -58, vfovDeg: PROJ_PITCHED_VFOV_DEG };
   const terms = createPitchedTerms();
   pitchedTerms(cam, grid, terms);
 
@@ -295,6 +295,24 @@ function makeLcg(seed) {
   ok('pitchedHashCell shear terms = 0', pitchedHashCell(projTerms(r.cam, r.g, {}), 160, 50) === 0);
   const far = pitchedTerms({ x: 0, y: 0, z: 500, yawDeg: 0, pitchDeg: -58 }, r.g, createPitchedTerms());
   ok('pitchedHashCell clamps at 2 m', pitchedHashCell(far, 40, 0) === 2);
+}
+
+// RE-02b b1: first-person vfov anchor - pitched M at pitch 0 == shearProjection element-wise on 3 aspects.
+{
+  for (const [cols, rows, pw, ph] of [[160, 60, 1, 2], [400, 150, 1, 1], [240, 90, 5, 8]]) {
+    const g = { cols, rows, pxCellW: pw, pxCellH: ph };
+    const cam = { x: 3, y: -2, z: 1.7, yawDeg: 37, pitchDeg: 0 };
+    const M = pitchedProjection(pitchedTerms(cam, g, createPitchedTerms()), new Float64Array(16));
+    const S = shearProjection(projTerms(cam, g, {}), new Float64Array(16));
+    let maxD = 0;
+    for (let i = 0; i < 16; i++) maxD = Math.max(maxD, Math.abs(M[i] - S[i]));
+    ok(`b1: fpVfovDeg pitched M == shear M at pitch 0 (${cols}x${rows} ${pw}:${ph}) maxDiff ${maxD.toExponential(2)}`, maxD < 1e-12);
+    ok('b1: fpVfovDeg keeps hfov 75', approxEqual(2 * Math.atan(Math.tan(fpVfovDeg(g) * Math.PI / 360) * (cols * pw) / (rows * ph)) * 180 / Math.PI, 75, 1e-9));
+  }
+  ok("b5: resolveProjection default: mesh -> pitched, dda -> shear, explicit wins",
+    resolveProjection({}, 'mesh') === 'pitched' && resolveProjection({}, 'dda') === 'shear' && resolveProjection({}) === 'shear' &&
+    resolveProjection({ projection: 'shear' }, 'mesh') === 'shear' && resolveProjection({ projection: 'pitched' }, 'dda') === 'pitched');
+  ok('b2: PITCH_CLAMP_PITCHED_DEG = 70', PITCH_CLAMP_PITCHED_DEG === 70);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

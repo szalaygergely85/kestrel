@@ -17,8 +17,9 @@ export class Camera {
     this.pitchDeg = Camera.clampPitch(pitchDeg);
   }
 
-  static clampPitch(p) {
-    return Math.max(-PITCH_CLAMP_DEG, Math.min(PITCH_CLAMP_DEG, p));
+  /** @param {number} p @param {number} [clampDeg] 35 (shear) default; 70 on the pitched camera (28.1 A2 item 6) */
+  static clampPitch(p, clampDeg = PITCH_CLAMP_DEG) {
+    return Math.max(-clampDeg, Math.min(clampDeg, p));
   }
 
   /**
@@ -39,9 +40,10 @@ export class Camera {
    * state); omit it to use the entity's own eye height.
    * @param {Object} entity - plain `Entity` data (`{transform, components}`)
    * @param {number} [eyeH]
+   * @param {number} [pitchClampDeg]
    */
-  static fromEntity(entity, eyeH) {
-    return Camera.fromEntityInto(entity, eyeH, new Camera());
+  static fromEntity(entity, eyeH, pitchClampDeg) {
+    return Camera.fromEntityInto(entity, eyeH, new Camera(), pitchClampDeg);
   }
 
   /**
@@ -50,10 +52,10 @@ export class Camera {
    * `updateInteraction` (US-012 arch review, 2026-09-24). `out` must already
    * be a `Camera` (or at least have its fields); its `pitchDeg` is clamped
    * same as the constructor.
-   * @param {Object} entity @param {number} [eyeH] @param {Camera} out
+   * @param {Object} entity @param {number} [eyeH] @param {Camera} out @param {number} [pitchClampDeg]
    * @returns {Camera} out
    */
-  static fromEntityInto(entity, eyeH, out) {
+  static fromEntityInto(entity, eyeH, out, pitchClampDeg) {
     const body = entity.components && entity.components.body;
     const baseEyeH = typeof eyeH === 'number' ? eyeH : (body && typeof body.eyeH === 'number' ? body.eyeH : 0);
     const offset = body && body.feel && typeof body.feel.offset === 'number' ? body.feel.offset : 0;
@@ -62,7 +64,7 @@ export class Camera {
     out.y = t.y;
     out.z = t.z + baseEyeH + offset;
     out.yawDeg = t.yawDeg;
-    out.pitchDeg = Camera.clampPitch(t.pitchDeg);
+    out.pitchDeg = Camera.clampPitch(t.pitchDeg, pitchClampDeg);
     return out;
   }
 }

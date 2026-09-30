@@ -25,6 +25,8 @@ function warnOnce(pool, msg) {
 
 export class VoxelPool {
   constructor() {
+    /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
+    this.renderer = 'dda';
     /** modelKey -> PackedVoxelModel (packed at bind()). */
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
@@ -207,8 +209,8 @@ export class VoxelPool {
    * pool must be able to never disagree), compacting survivors into
    * `this.list` in queue order (slot = compact index). Zero allocation once
    * `raw`/`list` are warm (reused per-slot objects/typed arrays). */
-  project(cam, rt) {
-    if (resolveProjection(cam, 'mesh') === 'pitched') {
+  project(cam, rt, renderer = this.renderer) {
+    if (resolveProjection(cam, renderer) === 'pitched') {
       // RE-02a (28.1 A2 item 2): pitched screen-rect cull.
       _poolGrid.cols = rt.cols; _poolGrid.rows = rt.rows; _poolGrid.pxCellW = rt.pxCellW || 1; _poolGrid.pxCellH = rt.pxCellH || 1;
       computeProjectionPitched(pitchedTerms(cam, _poolGrid, _poolPitch), _proj);

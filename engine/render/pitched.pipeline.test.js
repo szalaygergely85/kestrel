@@ -210,8 +210,8 @@ function makeLcg(seed) {
     throwsMsg(() => renderWorld({ gpuDda: true }, null, pitchedCam)).includes("requires renderer 'mesh'"));
   ok("pitched + 'mesh' and shear + either renderer do not throw",
     throwsMsg(() => { assertProjectionRenderer(pitchedCam, 'mesh'); assertProjectionRenderer(shearCam, 'dda'); assertProjectionRenderer(shearCam, 'mesh'); }) === '');
-  ok('resolveProjection: unset -> shear (until RE-02b), explicit pitched -> pitched',
-    resolveProjection(shearCam, 'mesh') === 'shear' && resolveProjection(pitchedCam, 'mesh') === 'pitched');
+  ok('resolveProjection: unset -> pitched on mesh (RE-02b), shear on dda, explicit wins',
+    resolveProjection({ x: 0 }, 'mesh') === 'pitched' && resolveProjection({ x: 0 }, 'dda') === 'shear' && resolveProjection(pitchedCam, 'mesh') === 'pitched');
   const st = { cols: 2, rows: 2, glyph: new Uint8Array(4), fg: new Uint32Array(4), bg: new Uint32Array(4) };
   ok('stable.js throws on a pitched camera',
     throwsMsg(() => stabilizeCells(st, st, { ...shearCam, cols: 2, rows: 2 }, { ...pitchedCam, cols: 2, rows: 2 }, st)).includes('pitched'));
