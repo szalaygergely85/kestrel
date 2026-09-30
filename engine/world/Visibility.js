@@ -131,26 +131,32 @@ export class Visibility {
     let y1 = cy + rc;
     if (y1 >= h) y1 = h - 1;
 
-    for (let cy2 = y0; cy2 <= y1; cy2++) {
-      const dy = cy2 - cy;
-      const s = span[dy < 0 ? -dy : dy];
-      let cx0 = cx - s;
-      if (cx0 < 0) cx0 = 0;
-      let cx1 = cx + s;
-      if (cx1 >= w) cx1 = w - 1;
-      const rowBase = cy2 * w;
-      for (let cx2 = cx0; cx2 <= cx1; cx2++) {
-        const idx = rowBase + cx2;
-        for (let t = 0; t < teams; t++) {
-          if (!(mask & (1 << t))) continue;
-          const cnt = this.count[t];
+    // Teams outer (only bits actually set in mask), cell double-loop inner:
+    // the row-bounds math (span/cx0/cx1) doesn't depend on t, but for a
+    // source with the common 1-2 team mask this is far cheaper than the
+    // mask-test + this.count[t]/this.state[t] lookup repeated per cell that
+    // the old team-inner loop paid for every single covered cell.
+    for (let t = 0; t < teams; t++) {
+      if (!(mask & (1 << t))) continue;
+      const cnt = this.count[t];
+      const st = this.state[t];
+      for (let cy2 = y0; cy2 <= y1; cy2++) {
+        const dy = cy2 - cy;
+        const s = span[dy < 0 ? -dy : dy];
+        let cx0 = cx - s;
+        if (cx0 < 0) cx0 = 0;
+        let cx1 = cx + s;
+        if (cx1 >= w) cx1 = w - 1;
+        const rowBase = cy2 * w;
+        for (let cx2 = cx0; cx2 <= cx1; cx2++) {
+          const idx = rowBase + cx2;
           const c = cnt[idx] + delta;
           cnt[idx] = c;
           if (delta > 0 && c === 1) {
-            this.state[t][idx] = 255;
+            st[idx] = 255;
             this._markDirty(t, cx2, cy2);
           } else if (delta < 0 && c === 0) {
-            this.state[t][idx] = 128;
+            st[idx] = 128;
             this._markDirty(t, cx2, cy2);
           }
         }
