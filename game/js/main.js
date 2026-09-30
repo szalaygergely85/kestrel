@@ -6,6 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
+import { prebuildTerrainMesh } from './dev/terrainPrebuild.js';
 import {
   AssetRegistry, createEngine, clampGrid, GRID_DEFAULT_COLS,
   GBuffer, bindShading, bindLevel,
@@ -615,6 +616,14 @@ function runGame(mode) {
     // collider path instead of the grid (default, unchanged when omitted).
     const physicsMode = params.get('physics') === 'mesh' ? 'mesh' : undefined;
     engine.loadWorld(worldDef, physicsMode && { physics: physicsMode });
+    // BUG-FP-001: on the mesh renderer the terrain mesh needs the far bake (streamed at 1 ms/frame = ~10-15 s) before
+    // far tiles exist, so the ground stayed black after spawn. Bake + build the terrain mesh once at load, like rts-test.
+    if (effRenderer === 'mesh' && engine.world.terrain) {
+      const tb = performance.now();
+      engine.world.terrain.bakeFarSync();
+      prebuildTerrainMesh(engine.world.terrain);
+      console.log(`[terrain] mesh prebuild ${(performance.now() - tb).toFixed(0)} ms`);
+    }
     // US-017: taken right after World.load (the listener above has already
     // run synchronously by the time `loadWorld` returns - `Events.emit` is
     // synchronous) - so this already includes the body-physics defaults and
