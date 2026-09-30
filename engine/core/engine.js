@@ -131,8 +131,8 @@ export function createEngine(opts) {
     _pendingGrid: null,
     stats: { lastGridSwitchMs: NaN },
     physics, // PHYSICS_DEFAULTS merged with opts.physics
-    loadWorld(def) {
-      engine.world = World.load(def, assets, { events });
+    loadWorld(def, worldOpts) {
+      engine.world = World.load(def, assets, { events, ...worldOpts });
       return engine.world;
     },
     /**

@@ -597,7 +597,10 @@ function runGame(mode) {
       window.__debug.look = look;
     });
 
-    engine.loadWorld(worldDef);
+    // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
+    // collider path instead of the grid (default, unchanged when omitted).
+    const physicsMode = params.get('physics') === 'mesh' ? 'mesh' : undefined;
+    engine.loadWorld(worldDef, physicsMode && { physics: physicsMode });
     // US-017: taken right after World.load (the listener above has already
     // run synchronously by the time `loadWorld` returns - `Events.emit` is
     // synchronous) - so this already includes the body-physics defaults and
