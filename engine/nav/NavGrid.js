@@ -1,4 +1,6 @@
 // @ts-check
+import { DEG2RAD } from '../core/transform.js';
+
 // engine/nav/NavGrid.js (RE-05, docs/architecture.md 28.2). Leaf module:
 // engine/nav/** may only import engine/nav/** + engine/core/** (check-deps
 // rule 14). World is passed into `buildFromWorld` as a duck-typed parameter
@@ -75,7 +77,7 @@ export class NavGrid {
    */
   buildFromWorld(world, opts = {}) {
     const maxSlopeDeg = opts.maxSlopeDeg ?? 30;
-    const cosThresh = Math.cos(maxSlopeDeg * Math.PI / 180);
+    const cosThresh = Math.cos(maxSlopeDeg * DEG2RAD);
     const blockedTypes = opts.blockedTypes ?? ['water'];
     const typeCost = opts.typeCost ?? {};
     const mask = opts.mask ?? null;
