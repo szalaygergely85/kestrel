@@ -138,6 +138,57 @@ const BOUNDS = { x0: 0, y0: 0, x1: 200, y1: 150 };
 }
 
 // ---------------------------------------------------------------------------
+// AC5 (RE-03 fixes item 2): drag-pan ground fidelity - the world point
+// grabbed under the cursor when a drag starts stays under the cursor across
+// 10 consecutive drag frames, within 1e-6 m. `dragCol0/Row0` is fed the
+// PREVIOUS frame's cursor cell each frame (per the updated JSDoc), not the
+// original drag-start cell.
+// ---------------------------------------------------------------------------
+{
+  const terms = createPitchedTerms();
+  const ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
+  const rts = createRtsCamera({ bounds: BOUNDS });
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: -58, vfovDeg: 36, projection: 'pitched' };
+  // Settle the camera pose with one no-input frame first.
+  update(rts, 1 / 60, {}, GRID, cam);
+
+  // Grab the ground point under the starting cursor cell.
+  const col0 = 150, row0 = 80;
+  pitchedTerms(cam, GRID, terms);
+  screenRay(terms, col0, row0, ray);
+  let t = (rts.focusZ - ray.oz) / ray.dz;
+  const grabbedX = ray.ox + t * ray.dx, grabbedY = ray.oy + t * ray.dy;
+
+  // Drag the cursor across 10 frames; each frame's dragCol0/Row0 is the
+  // PREVIOUS frame's cursor cell (not the drag-start cell).
+  let prevCol = col0, prevRow = row0;
+  let worstErr = 0;
+  for (let i = 1; i <= 10; i++) {
+    const curCol = col0 + i * 3;
+    const curRow = row0 - i * 2;
+    const input = {
+      dragging: true,
+      dragCol0: prevCol, dragRow0: prevRow,
+      dragCol1: curCol, dragRow1: curRow,
+    };
+    update(rts, 1 / 60, input, GRID, cam);
+
+    // Re-derive the world point under the CURRENT cursor cell with the
+    // post-update cam pose; it must still be the originally grabbed point.
+    pitchedTerms(cam, GRID, terms);
+    screenRay(terms, curCol, curRow, ray);
+    t = (rts.focusZ - ray.oz) / ray.dz;
+    const px = ray.ox + t * ray.dx, py = ray.oy + t * ray.dy;
+    const err = Math.hypot(px - grabbedX, py - grabbedY);
+    worstErr = Math.max(worstErr, err);
+
+    prevCol = curCol; prevRow = curRow;
+  }
+  ok('drag-pan keeps the grabbed ground point under the cursor within 1e-6 m over 10 frames',
+    worstErr < 1e-6, `worstErr=${worstErr}`);
+}
+
+// ---------------------------------------------------------------------------
 // Sanity: zoomBy clamps to [zoomMin, zoomMax].
 // ---------------------------------------------------------------------------
 {

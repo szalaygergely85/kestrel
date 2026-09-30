@@ -270,8 +270,10 @@ export function update(mm, units, view, viewTeam, terms, terrain) {
       if (view.stateAt(viewTeam, x, y) !== 255) continue;
     }
     const x = units.x[k], y = units.y[k];
-    const px = Math.round((x - x0) / sx);
-    const py = Math.round((y - y0) / sy);
+    // floor (not round): pixel-space conversion must match minimapToWorld's
+    // convention, where pixel i's centre is u = i + 0.5 (RE-13 fix).
+    const px = Math.floor((x - x0) / sx);
+    const py = Math.floor((y - y0) / sy);
     const ti = team * 3;
     drawSquare(rgba, width, height, px, py, units.half[k], teamRgb[ti], teamRgb[ti + 1], teamRgb[ti + 2]);
   }
@@ -290,10 +292,13 @@ export function update(mm, units, view, viewTeam, terms, terrain) {
       const t = ray.dz < 0 ? (mm._hMin - ray.oz) / ray.dz : FOOTPRINT_FALLBACK_MAX_T;
       wx = ray.ox + t * ray.dx; wy = ray.oy + t * ray.dy;
     }
-    px[k * 2] = Math.round((wx - x0) / sx);
-    px[k * 2 + 1] = Math.round((wy - y0) / sy);
+    // floor (not round): same pixel-centre convention fix as above (RE-13).
+    px[k * 2] = Math.floor((wx - x0) / sx);
+    px[k * 2 + 1] = Math.floor((wy - y0) / sy);
   }
-  const [fr, fg, fb] = mm.footprintRgb;
+  // Plain indexed reads (not array destructuring) to avoid iterator-protocol
+  // overhead/allocation on this hot per-frame path (RE-13 fix).
+  const fr = mm.footprintRgb[0], fg = mm.footprintRgb[1], fb = mm.footprintRgb[2];
   for (let k = 0; k < 4; k++) {
     const kk = (k + 1) & 3;
     drawLineClipped(rgba, width, height, px[k * 2], px[k * 2 + 1], px[kk * 2], px[kk * 2 + 1], fr, fg, fb);
