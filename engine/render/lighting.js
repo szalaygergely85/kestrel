@@ -100,8 +100,8 @@ export class LightSet {
     // pipeline that missed the recompute frame (context restore, a second
     // compare pipeline, one not ready yet) still uploads on its next frame.
     this.visVersion = new Int32Array(MAX_LIGHTS);
-    this.visOx = new Int32Array(MAX_LIGHTS);
-    this.visOy = new Int32Array(MAX_LIGHTS);
+    this.visOx = new Float32Array(MAX_LIGHTS); // world x of the box corner (BUG-COORD-001: fractional with a fractional structure origin)
+    this.visOy = new Float32Array(MAX_LIGHTS);
     this.visW = new Int32Array(MAX_LIGHTS);
     this.visH = new Int32Array(MAX_LIGHTS);
     this._visKeyX = new Int32Array(MAX_LIGHTS).fill(0x7fffffff);
@@ -303,7 +303,6 @@ export class LightSet {
       // Off lights contribute zero on EVERY path: light.frag has no `on` test,
       // it reads `col` (architect re-review 1: tower's beacon, on:false).
       if (!this.on[i]) { this.col[o4] = 0; this.col[o4 + 1] = 0; this.col[o4 + 2] = 0; continue; }
-      const cellX = Math.floor(this.defX[i]), cellY = Math.floor(this.defY[i]);
       const sv = world ? world.structVersion : 0;
       // Architect review 1 item 5: the containing structure's own
       // `packed.version` - a sector animation (the US-012 grate) changes
@@ -311,6 +310,8 @@ export class LightSet {
       // light sitting next to it must still see the recompute.
       const struct = world ? world.structureAt(this.defX[i], this.defY[i]) : null;
       const pv = struct ? struct.packed.version : -2;
+      // BUG-COORD-001: key on the owner-local cell (the box is aligned to it)
+      const cellX = Math.floor(this.defX[i] - (struct ? struct.origin.x : 0)), cellY = Math.floor(this.defY[i] - (struct ? struct.origin.y : 0));
       if (cellX !== this._visKeyX[i] || cellY !== this._visKeyY[i] || sv !== this._visStructVersion[i] || pv !== this._visPackedVersion[i]) {
         computeVisGrid(this, i, world);
         this._visKeyX[i] = cellX; this._visKeyY[i] = cellY; this._visStructVersion[i] = sv; this._visPackedVersion[i] = pv;
@@ -453,7 +454,7 @@ export function clampLightToFree(world, ex, ey, ez, out) {
   let mapX = Math.floor(ex), mapY = Math.floor(ey);
   const endX = Math.floor(out[0]), endY = Math.floor(out[1]);
   if (mapX === endX && mapY === endY) return false;
-  if (cellBlocks(world, mapX, mapY, ez)) return false;
+  if (cellBlocks(world, mapX + 0.5, mapY + 0.5, ez)) return false;
   const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0, stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
   const tDX = dx === 0 ? Infinity : 1 / Math.abs(dx), tDY = dy === 0 ? Infinity : 1 / Math.abs(dy);
   let tMaxX = dx === 0 ? Infinity : (dx > 0 ? mapX + 1 - ex : ex - mapX) * tDX;
@@ -462,7 +463,7 @@ export function clampLightToFree(world, ex, ey, ez, out) {
     let t;
     if (tMaxX < tMaxY) { t = tMaxX; tMaxX += tDX; mapX += stepX; } else { t = tMaxY; tMaxY += tDY; mapY += stepY; }
     if (t >= 1) return false;
-    if (cellBlocks(world, mapX, mapY, ez + dz * t)) {
+    if (cellBlocks(world, mapX + 0.5, mapY + 0.5, ez + dz * t)) {
       const len = Math.hypot(dx, dy);
       const tc = Math.max(0, t - ATTACH_WALL_MARGIN / len);
       out[0] = ex + dx * tc; out[1] = ey + dy * tc; out[2] = ez + dz * tc;
@@ -614,9 +615,16 @@ export function sampleVis(lights, i, x, y) {
 // cellBlocks: solid -> lightZ < floorH; non-solid -> lightZ < floorH ||
 // (!ceilSky && lightZ > ceilH && lightZ <= topH) (14.3 item 5). No sector at
 // (cx,cy) (outside every structure) does not block - open air/terrain.
-function cellBlocks(world, cx, cy, lz) {
-  const sec = world.sectorAt(cx + 0.5, cy + 0.5);
+// BUG-COORD-001: takes the WORLD xy of the cell centre, resolves the owning
+// structure and compares level-local heights against `lz - origin.z`.
+const cbGrid = { x: 0, y: 0, z: 0 };
+function cellBlocks(world, wx, wy, lz) {
+  const st = world.structureAt(wx, wy);
+  if (!st) return false;
+  const g = gridLocal(st, wx, wy, cbGrid);
+  const sec = st.level.sectorAt(g.x, g.y);
   if (!sec) return false;
+  lz -= g.z;
   if (sec.solid) return lz < sec.floorH;
   if (lz < sec.floorH) return true;
   if (sec.ceilH === 'sky') return false;
@@ -629,10 +637,10 @@ function cellBlocks(world, cx, cy, lz) {
 // per frame for a static light, so this need not be the fastest possible
 // walk). Returns true if anything blocks along the way (including the
 // target cell itself).
-function segmentBlocked(world, x0, y0, x1, y1, lz) {
+function segmentBlocked(world, ox, oy, x0, y0, x1, y1, lz) {
   const targetX = Math.floor(x1), targetY = Math.floor(y1);
   let mapX = Math.floor(x0), mapY = Math.floor(y0);
-  if (mapX === targetX && mapY === targetY) return cellBlocks(world, targetX, targetY, lz);
+  if (mapX === targetX && mapY === targetY) return cellBlocks(world, ox + targetX + 0.5, oy + targetY + 0.5, lz);
   let dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   dx /= dist; dy /= dist;
@@ -642,7 +650,7 @@ function segmentBlocked(world, x0, y0, x1, y1, lz) {
   let sideDistY = dy === 0 ? Infinity : (dy > 0 ? (mapY + 1 - y0) : (y0 - mapY)) * deltaDistY;
   for (let guard = 0; guard < 256; guard++) {
     if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; } else { sideDistY += deltaDistY; mapY += stepY; }
-    if (cellBlocks(world, mapX, mapY, lz)) return true;
+    if (cellBlocks(world, ox + mapX + 0.5, oy + mapY + 0.5, lz)) return true;
     if (mapX === targetX && mapY === targetY) return false;
   }
   return false; // safety cap - treat as unreached-but-not-blocked -> caller marks reached (bias to lit, matches sun's own MAX_SUN_STEPS bias)
@@ -658,15 +666,19 @@ export function computeVisGrid(lights, slot, world) {
   const r = lights.radius[slot], lz = lights.defZ[slot];
   if (!world) { lights.visW[slot] = 0; lights.visH[slot] = 0; return; }
   const R = Math.min(MAX_VIS_RADIUS, Math.ceil(r));
-  const cellX = Math.floor(lx), cellY = Math.floor(ly);
+  // BUG-COORD-001: the box + DDA live in the owning structure's level cells
+  // (owner null -> world cells, offset 0 = the old path).
+  const owner = world.structureAt(lx, ly);
+  const gx = owner ? owner.origin.x : 0, gy = owner ? owner.origin.y : 0;
+  const cellX = Math.floor(lx - gx), cellY = Math.floor(ly - gy);
   const ox = cellX - R, oy = cellY - R;
   const w = 2 * R + 1, h = 2 * R + 1;
-  lights.visOx[slot] = ox; lights.visOy[slot] = oy; lights.visW[slot] = w; lights.visH[slot] = h;
+  lights.visOx[slot] = gx + ox; lights.visOy[slot] = gy + oy; lights.visW[slot] = w; lights.visH[slot] = h;
   const base = slot * MAX_VIS_CELLS;
   const vis = lights.vis;
   vis.fill(0, base, base + MAX_VIS_CELLS);
 
-  const ownBlocked = cellBlocks(world, cellX, cellY, lz);
+  const ownBlocked = cellBlocks(world, gx + cellX + 0.5, gy + cellY + 0.5, lz);
   if (ownBlocked) return; // light sitting in solid geometry - nothing reached (unit test item 8)
 
   const sx = cellX + 0.5, sy = cellY + 0.5;
@@ -674,7 +686,7 @@ export function computeVisGrid(lights, slot, world) {
     for (let tx = 0; tx < w; tx++) {
       const wx = ox + tx, wy = oy + ty;
       if (wx === cellX && wy === cellY) { vis[base + ty * MAX_VIS_DIM + tx] = 255; continue; }
-      const blocked = segmentBlocked(world, sx, sy, wx + 0.5, wy + 0.5, lz);
+      const blocked = segmentBlocked(world, gx, gy, sx, sy, wx + 0.5, wy + 0.5, lz);
       vis[base + ty * MAX_VIS_DIM + tx] = blocked ? 0 : 255;
     }
   }
@@ -750,6 +762,11 @@ export function sunVisible(world, x, y, z, dir) {
 
   const ndx = dx / horiz, ndy = dy / horiz;
   const tanElev = dz / horiz;
+  // BUG-COORD-001: walk the owning structure's level cells (fractional origin
+  // keeps its fractional part); no owner at the start -> world cells (offset 0).
+  const own0 = world.structureAt(x, y);
+  const gx = own0 ? own0.origin.x : 0, gy = own0 ? own0.origin.y : 0;
+  x -= gx; y -= gy;
   let mapX = Math.floor(x), mapY = Math.floor(y);
   const stepX = ndx > 0 ? 1 : ndx < 0 ? -1 : 0;
   const stepY = ndy > 0 ? 1 : ndy < 0 ? -1 : 0;
@@ -764,13 +781,13 @@ export function sunVisible(world, x, y, z, dir) {
     // be null between/around footprints - never blocks, no fetch, the walk
     // continues (item iv), it does not exit early.
     const cx = mapX, cy = mapY;
-    const owner = world.structureAt(cx + 0.5, cy + 0.5);
+    const owner = world.structureAt(gx + cx + 0.5, gy + cy + 0.5);
     let t1;
     if (sideDistX < sideDistY) { t1 = sideDistX; sideDistX += deltaDistX; mapX += stepX; }
     else { t1 = sideDistY; sideDistY += deltaDistY; mapY += stepY; }
     const h1 = h0 + tanElev * (t1 - tPrev);
     if (owner) {
-      const g = gridLocal(owner, cx + 0.5, cy + 0.5, sunGrid);
+      const g = gridLocal(owner, gx + cx + 0.5, gy + cy + 0.5, sunGrid);
       const sec = owner.level.sectorAt(g.x, g.y);
       if (sec) {
         const oz = g.z;
@@ -780,7 +797,7 @@ export function sunVisible(world, x, y, z, dir) {
     h0 = h1; tPrev = t1;
     // Structure just entered (post-step): its own local maxH bounds it -
     // once h0 clears it, THIS structure can no longer block (item iv).
-    const entered = world.structureAt(mapX + 0.5, mapY + 0.5);
+    const entered = world.structureAt(gx + mapX + 0.5, gy + mapY + 0.5);
     if (entered && h0 - entered.frame.z > entered.packed.maxH) return true;
     if (h0 > worldMaxH) return true;
   }

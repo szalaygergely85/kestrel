@@ -178,17 +178,11 @@ for (const key of ['B', 'Bp']) {
   const bad = compare('Bint', true);
   ok('point lights on: A == integer-xy shift (1480,1018,0) bit-identical', bad.length === 0, first(bad));
 }
-// XFAIL (real bugs, see the story note; these flip to a suite FAILURE once fixed):
-//  (a) z != 0: `computeVisGrid`/`cellBlocks` (lighting.js) compare the light's WORLD z (`defZ`)
-//      against level-local `sec.floorH/ceilH/topH` without subtracting `frame.z` (sunVisible does
-//      subtract it), so the per-light occlusion box differs for a structure at z = -3.
-//  (b) fractional xy origin: the vis grid box/DDA is aligned to WORLD integer cells
-//      (`floor(defX)`, `cellBlocks(world, cx, cy)` -> `sectorAt(cx + 0.5, ...)`), not to the level
-//      grid, so a structure at x/y .25/.5 gets a shifted occlusion grid.
+// LIVE (BUG-COORD-001 fixed): z-only, fractional-xy and combined shifts are bit-identical too -
+// `computeVisGrid`/`cellBlocks` subtract the structure's z and walk the owner's level cells.
 for (const [key, what] of [['Bz', 'z-only shift (1480,1018,-3)'], ['Bfrac', 'fractional-xy-only shift (513.25,-77.5,0)'], ['B', 'spec B (1480,1018,-3)'], ['Bp', "spec B' (513.25,-77.5,4)"]]) {
   const bad = compare(key, true, ['sector']);
-  ok(`XFAIL point lights on, ${what}: still differs from A (known light-vis bug; fixing it must promote this to a live check)`, bad.length > 0, `now bit-identical in all ${N / 2} sector renders: promote to a live check`);
-  if (bad.length) console.log(`  (xfail) ${what}: ${bad.length}/${N / 2} sector renders differ, first: ${bad[0].label}: ${bad[0].d}`);
+  ok(`point lights on: A == ${what} bit-identical, ${N / 2} sector renders`, bad.length === 0, first(bad));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

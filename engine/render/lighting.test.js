@@ -462,18 +462,15 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
     }
   }
   ok('sunVisible fixture has both lit and shadowed samples (test is not vacuous)', litSeen > 100 && shadowSeen > 100, `lit ${litSeen} shadow ${shadowSeen}`);
-  // XFAIL (found by CO-3): a FRACTIONAL xy origin (513.25,-77.5) gives different sunVisible verdicts -
-  // the sun walk steps world integer cells and samples `sectorAt(cx + .5)`, not level cells (same
-  // class as the point-light vis grid, see sectorCaster.invariance.test.js). Fixing it must
-  // promote this to a live check.
+  // BUG-COORD-001 (was the CO-3 XFAIL): a FRACTIONAL xy origin gives the same verdicts as origin 0.
   {
     const wf = place({ x: 513.25, y: -77.5, z: 5 });
     const ls = new LightSet(); ls.setSun({ elevation: 45, azimuth: 180, on: true });
-    let differs = 0;
+    let differs = 0, first = '';
     for (let x = 0.25; x < 8; x += 0.5) for (let y = 0.25; y < 8; y += 0.5) for (const z of [0.05, 0.3, 0.6, 1.5, 2.5, 4, 6]) {
-      if (sunVisible(wf, x + 513.25, y - 77.5, z + 5, ls.sun.dir) !== sunVisible(w0, x, y, z, ls.sun.dir)) differs++;
+      if (sunVisible(wf, x + 513.25, y - 77.5, z + 5, ls.sun.dir) !== sunVisible(w0, x, y, z, ls.sun.dir)) { differs++; if (!first) first = `(${x},${y},${z})`; }
     }
-    ok('XFAIL sunVisible with a fractional xy origin still differs from origin 0 (known bug; fix promotes this to live)', differs > 0, 'now identical: promote to a live check');
+    ok('sunVisible with a fractional xy origin (513.25,-77.5,5) equals origin 0 (strict)', differs === 0, `${differs} differ, first ${first}`);
   }
   ok(`sunVisible at z = -3 / +5 (and integer-shifted xy) equals z = 0 relative to the structure (${checked} samples)`, mismatches.length === 0, mismatches.join(' | '));
 }
