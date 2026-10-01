@@ -65,6 +65,16 @@ function pickCodeFromPacked(x, count, idx) {
 }
 
 /**
+ * BUG-FP-002: per-cell look-hash size (m) for depth `t` and k = ground m per column per m of depth.
+ * Power of two clamped 0.125..2; 8 m once past the handover's far edge (near band absent). GLSL twin: terrain.frag.js.
+ * @param {number} t @param {number} k @param {number[]} [handover]
+ */
+export function perCellHashSize(t, k, handover) {
+  if (handover && !(t < handover[1])) return 8;
+  return Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * k, 1e-6))))));
+}
+
+/**
  * @param {number} t - camera distance (m)
  * @param {number} type - terrain type id
  * @param {number} b - lighting (ambientI + sunI*N.L)
@@ -77,7 +87,7 @@ function pickCodeFromPacked(x, count, idx) {
  *   fog: {start:number, full:number, curve:number, nearRGB:number[], farRGB:number[]},
  *   shading: Object,                                   // palette.shading
  *   closeBand?: number,                                 // recipe.nearLOD.bands.close (23.4 near-detail); omitted = no close band
- *   hashCell?: number,                                  // BUG-RTS-001: per-frame hash cell (m); > 0 overrides the 2/8 m constant, 0/absent = off
+ *   hashCell?: number,                                  // <0 = per-cell mode, value = -k ground m per column per m depth; 0 = 2/8 m bands; >0 = fixed cell size (m)
  *   handover?: number[],                                // recipe.nearLOD.handover [h0, h1] - picks the 2 m vs 8 m hash cell
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
@@ -92,7 +102,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   // BUG-FP-002: hashCell < 0 = per-cell mode, k = -hashCell (ground m per column per m of depth): each cell keys
   // its own power-of-two cell from its distance (0.125..2 m near, 8 m past the handover) - no 2 m blocks at the feet.
   const hk = ctx.hashCell < 0 ? -ctx.hashCell : 0;
-  const cellSz = hk > 0 ? (ctx.handover && !(t < ctx.handover[1]) ? 8 : Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * hk, 1e-6)))))))
+  const cellSz = hk > 0 ? perCellHashSize(t, hk, ctx.handover)
     : ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
   const cx = Math.floor(u / cellSz), cy = Math.floor(v / cellSz);
   const hA = hashFast01(cx, cy, type);

@@ -73,7 +73,7 @@ import { KIND_TERRAIN } from '../GBuffer.js';
 import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, pitchedHashCell, resolveProjection, assertProjectionRenderer } from '../projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 
 const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
@@ -1535,8 +1535,7 @@ export class GpuCellPipeline {
       b[0] = t.rX; b[1] = t.rY; b[2] = t.uX; b[3] = t.uY;
       c[0] = t.uZ; c[1] = t.tanHalfY; c[2] = t.cosP; c[3] = t.sinP;
       const tr = this._world && this._world.terrain;
-      const zRef = Number.isFinite(cam.focusZ) ? cam.focusZ : (tr && tr.groundAt ? tr.groundAt(cam.x, cam.y) : NaN);
-      this._hashCell = -(2 * t.tanHalfX / this.cols); void zRef; // BUG-FP-002: per-cell mode on every pitched frame
+      this._hashCell = -(2 * t.tanHalfX / this.cols); // BUG-FP-002: per-cell mode on every pitched frame
     } else {
       this._hashCell = 0;
     }

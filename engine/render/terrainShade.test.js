@@ -1,6 +1,6 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
-import { shadeTerrain, hashFast01 } from './terrainShade.js';
+import { shadeTerrain, hashFast01, perCellHashSize } from './terrainShade.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) { if (cond) pass++; else { fail++; console.error('FAIL:', name); } }
@@ -225,6 +225,31 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   }
   check('hashCell 0.25: u and u+0.3 land in different cells (output differs)', diff25 > 10);
   check('fixed 2 m cell: u and u+0.3 inside one cell are identical', diff2 === 0);
+}
+
+// BUG-FP-002 per-cell hash size (hashCell = -k).
+{
+  const H = [130, 170];
+  check('perCellHashSize t*k=0.3 -> 0.5', perCellHashSize(30, 0.01, H) === 0.5);
+  check('perCellHashSize t*k=0.01 -> 0.125', perCellHashSize(0.02, 0.5, H) === 0.125);
+  check('perCellHashSize t*k=5 -> 2', perCellHashSize(100, 0.05, undefined) === 2);
+  check('perCellHashSize t >= handover[1] -> 8', perCellHashSize(170, 0.001, H) === 8 && perCellHashSize(500, 0.001, H) === 8);
+  check('perCellHashSize no handover never 8', perCellHashSize(1e6, 1, undefined) === 2);
+  // through shadeTerrain: hashCell=-k equals a fixed positive cell of the same size; hashCell 0 equals the explicit 2/8 m path
+  const cH = { ...ctx, handover: [130, 170] };
+  const same = (a, b) => a.glyph === b.glyph && a.fg[0] === b.fg[0] && a.fg[1] === b.fg[1] && a.fg[2] === b.fg[2] && a.bg[0] === b.bg[0] && a.bg[1] === b.bg[1] && a.bg[2] === b.bg[2];
+  let okNeg = true, ok0 = true;
+  for (let i = 0; i < 64; i++) {
+    const u = 40 + i * 1.37, v = 13.3 + i * 0.71, t = [30, 3, 100, 150, 175, 400][i % 6];
+    const kk = 0.3 / t * (1 + (i % 3));
+    const sz = perCellHashSize(t, kk, cH.handover);
+    if (!same(shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: -kk }, out()), shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: sz }, out()))) okNeg = false;
+    const fixed = t < 170 ? 2 : 8;
+    if (!same(shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: 0 }, out()), shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: fixed }, out()))) ok0 = false;
+    if (!same(shadeTerrain(t, 0, 0.6, u, v, 0, cH, out()), shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: 0 }, out()))) ok0 = false;
+  }
+  check('hashCell -k == fixed cell of perCellHashSize', okNeg);
+  check('hashCell 0 == explicit 2/8 m path (unchanged)', ok0);
 }
 
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);

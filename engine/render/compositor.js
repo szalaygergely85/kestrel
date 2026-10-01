@@ -19,7 +19,7 @@ import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, pitchedHashCell, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
@@ -112,8 +112,7 @@ function renderWorldMesh(fb, world, cam) {
     pitchedTerms(cam, meshGrid, meshPitchTerms);
     meshViewProj.set(meshPitchTerms.M);
     const tr = world.terrain;
-    const zRef = Number.isFinite(cam.focusZ) ? cam.focusZ : (tr && tr.groundAt ? tr.groundAt(cam.x, cam.y) : NaN);
-    meshHashCell = -(2 * meshPitchTerms.tanHalfX / cols); void zRef; // BUG-FP-002: per-cell mode on every pitched frame
+    meshHashCell = -(2 * meshPitchTerms.tanHalfX / cols); // BUG-FP-002: per-cell mode on every pitched frame
   } else {
     shearProjection(meshTerms, meshViewProj);
   }

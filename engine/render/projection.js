@@ -495,6 +495,7 @@ export function pitchedFogScale(terms, row) {
  * (= keep the fixed 2/8 m cell). Ground metres per column at the view-centre distance, rounded up to
  * a power of two (zoom steps nest), clamped 0.125..2. Depends on zoom + grid only (world-keyed,
  * no panning shimmer). Shared by the JS oracle (compositor) and GpuCellPipeline (`uHashCell`).
+ * @deprecated (28.11c) superseded by per-cell mode (hashCell = -k); kept for its tests.
  * @param {PitchedTerms|{projection?:string}} terms  pitchedTerms output (shear terms -> 0)
  * @param {number} cols
  * @param {number} zRef  ground height under the view focus
