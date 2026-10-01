@@ -20,6 +20,7 @@ From GDD pillar 4, the same order decides every art call:
 | **Danger / harm** | `danger` | enemies, hazards, damage flashes (M2+) |
 | **Magic = aether** (D-011) | `aether` family: `aetherCore` `aetherLight` `aether` `aetherMid` `aetherDim` (+ `aetherDead`, lit) | the relay crystals, the signal, later gauntlet spells. Emissive, sparkle `* + . '` |
 | **Machine** (D-011) | `brass*`, `copper*`, `verdigris*` | only on machines: the *Kestrel* gondola and burner, the brass lamp, the relay mount, later lever housings, pressure doors, sentinels |
+| **Old-world metal** (US-078) | steel `mirror` / `ironLight` / `ironDark`, bronze `bronzeLight` `bronze` `bronzeDark` (proposed, `models/sword.js`) | weapons and relics of the Emberlands (the ruin-steel sword, later armour, ruin fittings): pale steel edges, a dark fuller, brown-ochre bronze. Never brass-yellow, no rivets / gauges. The steel "take me" glint is a cool white bar that slides down the blade |
 | **Ferrum** (D-011) | `cityLightHot` `cityLight` `cityLightDim` (`colorRamps.cityLight`) + `ferrumSil`; `ferrum` `ferrumDim` on the chart | the city's warm amber pinpoints on the eastern horizon (hotter toward the Crown on top), a faint silhouette under them; FERRUM on the chart |
 
 Rules:

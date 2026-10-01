@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - the ruin-steel sword (US-078): pickup in the tower + first-person view model</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e8c060; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:40px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  pre.slice, pre.plan { font:11px/11px Consolas, monospace; margin:0; background:#0b0c12; padding:3px; letter-spacing:1px; }
+  pre.plan { font:13px/14px Consolas, monospace; padding:6px; }
+  textarea { width:100%; height:160px; background:#0b0c12; color:#cfc8b2; font:11px Consolas, monospace; border:1px solid #22252e; }
+  details > summary { cursor:pointer; color:#e8c060; font-size:14px; margin:10px 0 4px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : the ruin-steel sword (US-078) : tower pickup + first-person view model</h1>
+<div class="note">
+  Data: <code>design/models/sword.js</code> - <code>ASSETS.voxelModels.sword</code> (world pickup, planted point-down in the rubble heap by the west wall, leaning, with a
+  white "take me" glint sliding down the blade), <code>ASSETS.voxelModels.swordHeld</code> (the same voxels tip-up, pivot = grip), <code>ASSETS.viewModels.sword</code>
+  (eye-space key poses: idle sway, swingLR, swingRL, chain rule, trail, sparks; README 7.4) and <code>ASSETS.levelPatch.towerSword</code> (placement data).
+  Old pitted steel, dark fuller, nicked edges, worn dark-leather grip, small down-curved <b>bronze</b> guard + pommel - no brass / copper / verdigris / aether.
+  Materials are <b>proposed</b> (<code>ASSETS.swordKit</code>); this page injects their 3 new colours locally, the game does not see them until the merge step.
+  <b>Rendering uses the engine oracle</b> (<code>packVoxelModel</code>, <code>computeVoxelPose</code>, <code>marchVoxelRay</code> from <code>engine/voxel/</code>) + the v1 reference shader
+  (<code>palette.util.shade</code>) + an approximate edge pass, like <code>voxel-props.html</code>. The view model is drawn in its own depth range over a stand-in tower room.
+  <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/sword.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>light azimuth <input type="range" id="az" min="-180" max="180" step="1" value="-60"><span class="val" id="azV"></span></label>
+  <label>elevation <input type="range" id="el" min="-20" max="85" step="1" value="45"><span class="val" id="elV"></span></label>
+  <label>intensity <input type="range" id="int" min="0" max="1.5" step="0.01" value="0.9"><span class="val" id="intV"></span></label>
+  <label>colour <select id="lcol"><option>sun</option><option>torch</option><option>lantern</option></select></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1"><span class="val" id="ambV"></span></label>
+  <label>carried lamp (left) <select id="lamp"><option value="1">on</option><option value="0">off</option></select></label>
+  <label>edges <select id="edges"><option value="rim">engine rules + modelRim</option><option value="off">off</option></select></label>
+  <label>materials <select id="mats"><option value="prop">proposed (steel_edge ...)</option><option value="fb">fallback (existing)</option></select></label>
+  <label>speed <select id="speed"><option>1</option><option>0.5</option><option>0.25</option><option>0.1</option></select></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>1. First-person view model (full screens, scene HFOV 75 deg, 16:9)</h2>
+<div class="note">Left 160x60 (6x9 px cells), right 240x90 (4x6 px cells), the same screen area. Stand-in room: flagstone floor 1.6 m below the eye, stone wall 3.5 m ahead,
+  ivy wall on the left. Lit by the light sliders (azimuth 0 = light from straight ahead, 90 = from the right) + ambient + the carried lamp, which hangs on the <b>left</b> once the sword is taken
+  (x -0.3, down 0.3, forward 0.4; US-078 AC). The crosshair <code>+</code> is drawn at the centre. The trail (tip, newest <code>=</code> / <code>/</code> / <code>\</code> / <code>|</code>, white -> mirror -> ironLight) only exists in the
+  active window (80-200 ms), the ghost blade line <code>:</code> 50 ms behind.</div>
+<div class="row" id="vmButtons"></div>
+<div class="row" id="vmHost"></div>
+<div class="cap" id="vmInfo"></div>
+
+<h2>2. Swing key poses (every key of both swings, 160x60, trail as it is at that time)</h2>
+<div class="note">k0 rest - k1 windup end (anticipation) - k2 / k3 / k4 active arc - k5 follow-through (overshoot) - k6 recovered. Windup 80 ms, active 120 ms, recover 150 ms = 0.35 s.</div>
+<div id="strips"></div>
+
+<h2>3. World pickup (orbit + 6 yaws, clip idle with the glint)</h2>
+<div class="note">Planted 12 cm deep (the 4 buried layers are below the heap plane, shown here in the orbit view), lean 8 deg back + 10 deg sideways (one rot on both parts, same pivot,
+  so the glint bar stays sealed inside the guard at rest). Glint: 2.4 s rest, then 3 x 70 ms steps down the blade front.</div>
+<div class="row" id="clipBar"></div>
+<div id="pickupHost"></div>
+
+<h2>4. Pickup in-game size (engine projection, rubble heap top + ivy wall 1.9 m behind)</h2>
+<div class="note">Typical view = from the wake spot, 5.3 m, standing (eye 0.7 m above the heap top). Second view = standing in the nook at the take distance (1.0 m).
+  The view-angle slider turns the camera round the sword (0 = straight at its front, which faces ESE toward the room in the level).</div>
+<div class="controls" style="position:static">
+  <label>distance x <input type="range" id="dist" min="0.4" max="3" step="0.05" value="1"><span class="val" id="distV"></span></label>
+  <label>view angle <input type="range" id="vaz" min="-90" max="90" step="1" value="0"><span class="val" id="vazV"></span></label>
+</div>
+<div id="ingameHost"></div>
+
+<h2>5. Sparks and trail glyphs</h2>
+<div id="sparkHost" class="row"></div>
+
+<h2>6. Placement in the tower (content/levels/tower.level.json, read live)</h2>
+<div class="note"><b>S</b> sword (12.86, 6.12, z 0.9 on heap <code>z</code> cell 12,6, facing 110) - <b>@</b> wake spot (17.0, 9.5) - <b>w</b> stand / take spot (13.45, 6.3) -
+  <b>T</b> proposed practice target (14.6, 6.6) - <b>*</b> sightline cells from (16.5, 8.0) (1-2 steps from the wake spot, standing) to the guard - <b>B</b> boulder rest (hollow).
+  Data: <code>ASSETS.levelPatch.towerSword</code> (prop, interactable <code>[E] Take sword</code>, scrawl decal, state flag <code>tower.sword.taken</code>).</div>
+<div class="row"><pre class="plan" id="plan"></pre><div class="note" id="planNote" style="max-width:560px"></div></div>
+
+<h2>7. Layers (top view per z, y0 = front row at the top) + JSON</h2>
+<div id="layers"></div>
+<div class="row"><select id="dumpSel"><option>sword</option><option>swordHeld</option><option>viewModel</option><option>levelPatch</option><option>swordKit</option></select><button id="dumpBtn">dump</button></div>
+<textarea id="dump" readonly></textarea>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="content-shim.js"></script>
+<script src="../models/boulder.js"></script>
+<script src="../models/rubble.js"></script>
+<script src="../models/wreckage.js"></script>
+<script src="../models/relay.js"></script>
+<script src="../models/lantern.js"></script>
+<script src="../models/voxel_props.js"></script>
+<script src="../models/voxel_tower.js"></script>
+<script src="../models/sword.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__voxOK) document.getElementById('fatal').textContent =
+      'Engine voxel modules did not load. This page must be served over http (ES modules): python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose, FORWARD } from '../../engine/voxel/voxelPose.js';
+import * as VM from '../../engine/voxel/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from '../../engine/render/GBuffer.js';
+
+window.__voxOK = true;
+const A = window.ASSETS, P = A.palette, DP = A.detailPass, KIT = A.swordKit, VMOD = A.viewModels.sword;
+const U = P.util, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const TOWER = A.levels && A.levels.tower;
+const PATCH = A.levelPatch.towerSword;
+const TAN_HALF = Math.tan(37.5 * D2R);
+
+// ------------------------------------------------------------------ proposed colours (preview only; the merge puts them in palette.js)
+const injected = [];
+for (const k of Object.keys(KIT.colors)) {
+  if (P.colors[k]) continue;
+  P.colors[k] = KIT.colors[k];
+  const c = U.hexToRgb(KIT.colors[k]), mx = Math.max(c[0], c[1], c[2]) || 1;
+  P.rgb[k] = c; P.hue[k] = [c[0] / mx, c[1] / mx, c[2] / mx];
+  injected.push(k);
+}
+
+// ------------------------------------------------------------------ controls
+const ctl = {};
+let ctlVer = 1;
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.lcol = $('lcol').value; ctl.amb = +$('amb').value;
+  ctl.lamp = $('lamp').value === '1'; ctl.edges = $('edges').value; ctl.mats = $('mats').value; ctl.speed = +$('speed').value;
+  ctl.dist = +$('dist').value; ctl.vaz = +$('vaz').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('distV').textContent = 'x ' + ctl.dist.toFixed(2); $('vazV').textContent = ctl.vaz;
+  ctlVer++;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', readCtl));
+readCtl();
+
+// ------------------------------------------------------------------ packing (engine)
+const MODELS = { sword: A.voxelModels.sword, swordHeld: A.voxelModels.swordHeld };
+const matKeys = [];
+function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
+const packed = {}, packErr = {};
+for (const n of Object.keys(MODELS)) {
+  try { packed[n] = packVoxelModel(MODELS[n].voxel, matIdFor); } catch (err) { packErr[n] = String(err.message || err); }
+}
+function resolveMat(key) {
+  if (ctl.mats === 'fb') return P.materials[KIT.fallback[key]] || P.materials[key] || P.materials.iron;
+  return KIT.v1[key] || P.materials[key] || P.materials.iron;
+}
+
+// ------------------------------------------------------------------ pose helpers (engine)
+function clipState(pm, name, e) {
+  const ci = pm.clipIndex[name];
+  if (ci === undefined) return { clip: -1, frame: 0, tMs: 0, done: true };
+  const c = pm.clips[ci];
+  if (c.n === 1) return { clip: ci, frame: 0, tMs: 0, done: true };
+  let total = 0; for (let i = 0; i < c.n; i++) total += c.durMs[i];
+  if (c.loop) e = e % total;
+  else if (e >= total) return { clip: ci, frame: c.n - 1, tMs: 0, done: true };
+  let f = 0;
+  while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
+  return { clip: ci, frame: f, tMs: e, done: false };
+}
+function posedInstance(name, x, y, z, yaw, st) {
+  const inst = { model: packed[name], x, y, z, yawDeg: yaw, clip: st.clip, frame: st.frame, tMs: st.tMs };
+  inst.pose = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+  computeVoxelPose(packed[name], inst, inst.pose);
+  inst.fwd = Float64Array.from(FORWARD);
+  return inst;
+}
+function partIndex(name, part) { return Object.keys(MODELS[name].voxel.parts).indexOf(part); }
+function worldPoint(inst, k, a) {   // voxel coords of part k -> world metres (forward transform, as voxel-props mountWorld)
+  const f = inst.fwd, b = k * 12;
+  return [f[b] * a[0] + f[b + 1] * a[1] + f[b + 2] * a[2] + f[b + 9],
+          f[b + 3] * a[0] + f[b + 4] * a[1] + f[b + 5] * a[2] + f[b + 10],
+          f[b + 6] * a[0] + f[b + 7] * a[1] + f[b + 8] * a[2] + f[b + 11]];
+}
+
+// ------------------------------------------------------------------ shared light + shading
+const NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+  return o;
+}
+function gatherLight(nx, ny, nz, px, py, pz, points) {
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.12 * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, ctl.lcol, ctl.int * ndl);
+  for (const L of points) {
+    const lx = L.x - px, ly = L.y - py, lz = L.z - pz, d = Math.hypot(lx, ly, lz) || 1e-6;
+    const f = U.falloff(d, L.r), nd = (nx * lx + ny * ly + nz * lz) / d;
+    if (f > 0 && nd > 0) U.addLight(Lacc, L.col, L.int * f * nd);
+  }
+  return Lacc;
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.max(4, Math.round(ch * 0.9)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+function newBuf(n) {
+  return { n, kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n).fill(' '), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) };
+}
+function edgePass(B, cols, rows) {
+  if (ctl.edges === 'off') return;
+  const E = DP.edges, rim = (A.voxelMaterials && A.voxelMaterials.edges) ? A.voxelMaterials.edges.modelRim : 0.55, n = cols * rows;
+  const far = (i, j) => B.kind[j] !== 8 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+  const rule = new Int8Array(n);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    if (B.kind[i] !== 8) continue;
+    if (r > 0 && far(i, i - cols)) rule[i] = 1;
+    else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+    else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+  }
+  for (let i = 0; i < n; i++) {
+    if (!rule[i]) continue;
+    const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+    if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+  }
+}
+function present(grid, B) {
+  const { ctx, cols, rows, cw, ch } = grid;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+}
+const SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+function setCell(B, i, kind, depth, sh) {
+  B.kind[i] = kind; B.depth[i] = depth; B.glyph[i] = sh.glyph;
+  B.fg[i * 3] = sh.fg[0]; B.fg[i * 3 + 1] = sh.fg[1]; B.fg[i * 3 + 2] = sh.fg[2];
+  B.bg[i * 3] = sh.bg[0]; B.bg[i * 3 + 1] = sh.bg[1]; B.bg[i * 3 + 2] = sh.bg[2];
+}
+function setEmissive(B, i, glyph, key) {
+  const c = P.rgb[key] || [255, 255, 255];
+  B.glyph[i] = glyph; B.fg[i * 3] = c[0]; B.fg[i * 3 + 1] = c[1]; B.fg[i * 3 + 2] = c[2];
+}
+
+// ================================================================== VIEW MODEL
+// rotation R = Rz * Ry * Rx (row-major 3x3), the engine's setRot order
+function rotMat(r) {
+  const cx = Math.cos(r[0] * D2R), sx = Math.sin(r[0] * D2R), cy = Math.cos(r[1] * D2R), sy = Math.sin(r[1] * D2R);
+  const cz = Math.cos(r[2] * D2R), sz = Math.sin(r[2] * D2R);
+  const Rx = [1, 0, 0, 0, cx, -sx, 0, sx, cx], Ry = [cy, 0, sy, 0, 1, 0, -sy, 0, cy], Rz = [cz, -sz, 0, sz, cz, 0, 0, 0, 1];
+  return mul3(Rz, mul3(Ry, Rx));
+}
+function mul3(a, b) {
+  const o = new Array(9);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) o[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+  return o;
+}
+function apply(R, v) { return [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[3] * v[0] + R[4] * v[1] + R[5] * v[2], R[6] * v[0] + R[7] * v[1] + R[8] * v[2]]; }
+function applyT(R, v) { return [R[0] * v[0] + R[3] * v[1] + R[6] * v[2], R[1] * v[0] + R[4] * v[1] + R[7] * v[2], R[2] * v[0] + R[5] * v[1] + R[8] * v[2]]; }
+function sampleKeys(keys, t, loop) {
+  const T = keys[keys.length - 1].t;
+  t = loop ? ((t % T) + T) % T : Math.min(Math.max(t, 0), T);
+  let i = 0;
+  while (i < keys.length - 2 && t > keys[i + 1].t) i++;
+  const a = keys[i], b = keys[i + 1], f = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
+  const L = (x, y) => x + (y - x) * f;
+  return { pos: [L(a.pos[0], b.pos[0]), L(a.pos[1], b.pos[1]), L(a.pos[2], b.pos[2])],
+           rot: [L(a.rot[0], b.rot[0]), L(a.rot[1], b.rot[1]), L(a.rot[2], b.rot[2])] };
+}
+const HELD = packed.swordHeld ? posedInstance('swordHeld', 0, 0, 0, 0, clipState(packed.swordHeld, 'held', 0)) : null;
+const HDEF = MODELS.swordHeld.voxel, HCM = HDEF.cellM, HAN = HDEF.anchor;
+function heldPoint(v) { return [(v[0] - HAN[0]) * HCM, (v[1] - HAN[1]) * HCM, (v[2] - HAN[2]) * HCM]; }   // voxel -> model metres (rest)
+const H_CENTRE = heldPoint([HDEF.size[0] / 2, HDEF.size[1] / 2, HDEF.size[2] / 2]);
+const H_RADIUS = 0.5 * HCM * Math.hypot(HDEF.size[0], HDEF.size[1], HDEF.size[2]) + 0.01;
+const H_TIP = heldPoint(HDEF.mounts.tip.at), H_MID = heldPoint(HDEF.mounts.mid.at), H_GUARD = heldPoint(HDEF.mounts.guard.at);
+function eyePoint(pose, m) { const R = rotMat(pose.rot), q = apply(R, m); return [pose.pos[0] + q[0], pose.pos[1] + q[1], pose.pos[2] + q[2]]; }
+function project(spec, p) {
+  const s = -p[1];
+  if (s < 0.01) return null;
+  const pd = (spec.rows / 2) * (16 / 9) / TAN_HALF;
+  return { c: ((p[0] / s) / TAN_HALF + 1) * spec.cols / 2 - 0.5, r: spec.rows / 2 - 0.5 - pd * (p[2] / s), camX: (p[0] / s) / TAN_HALF };
+}
+// carried lamp in eye space while the sword is held: x = heldOffsetX (-0.3 = left), down 0.3, forward 0.4
+function lampPos() { const Lp = P.lights.lantern, h = Lp.hold || { down: 0.3, forward: 0.4 };
+  return { x: VMOD.carriedLight.heldOffsetX, y: -h.forward, z: -h.down, col: Lp.color, int: Lp.intensity, r: Lp.radius }; }
+
+// background room (eye space): floor z -1.6, front wall y -3.5, left ivy wall x -2.2
+function shadeBackground(spec) {
+  const { cols, rows } = spec, n = cols * rows, B = newBuf(n), pd = (rows / 2) * (16 / 9) / TAN_HALF;
+  const pts = ctl.lamp ? [lampPos()] : [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, camX = 2 * (c + 0.5) / cols - 1;
+    const dx = camX * TAN_HALF, dy = -1, dz = (rows / 2 - (r + 0.5)) / pd;
+    let t = 3.5, kind = 2;                                   // front wall
+    if (dz < 0) { const tf = -1.6 / dz; if (tf < t) { t = tf; kind = 1; } }
+    if (dx < 0) { const tw = -2.2 / dx; if (tw < t) { t = tw; kind = 3; } }
+    const px = dx * t, py = dy * t, pz = dz * t, dist = t * Math.hypot(dx, dy, dz);
+    let mat, u, v, nx = 0, ny = 0, nz = 0;
+    if (kind === 1) { mat = P.materials.floor; u = px; v = py; nz = 1; }
+    else if (kind === 2) { mat = P.materials.stone; u = px; v = pz + 1.6; ny = 1; }
+    else { mat = P.materials.stone_ivy || P.materials.stone_moss; u = py; v = pz + 1.6; nx = 1; }
+    gatherLight(nx, ny, nz, px, py, pz, pts);
+    U.shade(mat, Lacc, u, v, dist, SH, { fog: 'interior', z: v });
+    setCell(B, i, kind, t, SH);
+  }
+  return B;
+}
+const HIT = new Float64Array(8);
+function drawHeld(spec, B, pose) {
+  const { cols, rows } = spec, pd = (rows / 2) * (16 / 9) / TAN_HALF, pm = packed.swordHeld;
+  const R = rotMat(pose.rot), C = eyePoint(pose, H_CENTRE), pts = ctl.lamp ? [lampPos()] : [];
+  const CC = C[0] * C[0] + C[1] * C[1] + C[2] * C[2] - H_RADIUS * H_RADIUS;
+  const o = applyT(R, [-pose.pos[0], -pose.pos[1], -pose.pos[2]]);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const camX = 2 * (c + 0.5) / cols - 1, dx = camX * TAN_HALF, dy = -1, dz = (rows / 2 - (r + 0.5)) / pd;
+    const dc = dx * C[0] + dy * C[1] + dz * C[2], dd = dx * dx + dy * dy + dz * dz;
+    if (dc * dc - dd * CC < 0) continue;                                  // bounding-sphere cull
+    const d = applyT(R, [dx, dy, dz]);
+    if (!VM.marchVoxelRay(pm, 0, HELD.pose, o[0], o[1], o[2], d[0], d[1], d[2], Infinity, HIT)) continue;
+    const t = HIT[0], face = HIT[4], matKey = matKeys[pm.matIds[VM.LAST_MAT_LOCAL] - 1];
+    if (t * Math.sqrt(dd) < VMOD.depth.near) continue;
+    const nv = apply(R, faceNormal(face, NL));
+    const px = dx * t, py = dy * t, pz = dz * t;
+    let u, v;
+    if (face === FACE_E || face === FACE_W) { u = HIT[2] * HCM; v = HIT[3] * HCM; }
+    else if (face === FACE_N || face === FACE_S) { u = HIT[1] * HCM; v = HIT[3] * HCM; }
+    else { u = HIT[1] * HCM; v = HIT[2] * HCM; }
+    gatherLight(nv[0], nv[1], nv[2], px, py, pz, pts);
+    U.shade(resolveMat(matKey), Lacc, u, v, 0.6, SH, { fog: null, z: v });
+    setCell(B, r * cols + c, 8, t, SH);
+  }
+}
+function slopeGlyph(dc, dr, spec, head) {
+  const ang = ((Math.atan2(-dr * spec.ch, dc * spec.cw) / D2R) + 360) % 180, S = VMOD.trail.slope, G = head ? VMOD.trail.glyphs.head : VMOD.trail.glyphs;
+  if (ang < S.hMaxDeg || ang > 180 - S.hMaxDeg) return G.h;
+  if (ang >= S.vMinDeg && ang <= 180 - S.vMinDeg) return G.v;
+  return ang < 90 ? G.d1 : G.d2;
+}
+function line(B, spec, a, b, glyph, color) {
+  let x0 = Math.round(a.c), y0 = Math.round(a.r), x1 = Math.round(b.c), y1 = Math.round(b.r);
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy, guard = 0;
+  while (guard++ < 400) {
+    if (x0 >= 0 && y0 >= 0 && x0 < spec.cols && y0 < spec.rows) setEmissive(B, y0 * spec.cols + x0, glyph, color);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+function drawTrail(spec, B, clip, keys, t) {
+  const Tr = VMOD.trail, act = clip.active;
+  if (!act || t < act[0] || t > act[1] + Tr.lifeMs) return;
+  // ghost blade line (mid -> tip) ageMs behind
+  const tg = t - Tr.ghost.ageMs;
+  if (tg >= act[0] && tg <= act[1]) {
+    const pg = sampleKeys(keys, tg, false), a = project(spec, eyePoint(pg, H_MID)), b = project(spec, eyePoint(pg, H_TIP));
+    if (a && b) line(B, spec, a, b, Tr.ghost.glyph, Tr.ghost.color);
+  }
+  const step = 10, samples = [];
+  for (let ts = Math.min(t, act[1]); ts >= Math.max(act[0], t - Tr.lifeMs); ts -= step) samples.push(ts);
+  for (let i = samples.length - 1; i >= 1; i--) {
+    const pa = project(spec, eyePoint(sampleKeys(keys, samples[i], false), H_TIP));
+    const pb = project(spec, eyePoint(sampleKeys(keys, samples[i - 1], false), H_TIP));
+    if (!pa || !pb) continue;
+    const age = t - samples[i - 1];
+    let col = Tr.colors[Tr.colors.length - 1][1];
+    for (const [ms, key] of Tr.colors) if (age <= ms) { col = key; break; }
+    line(B, spec, pa, pb, slopeGlyph(pb.c - pa.c, pb.r - pa.r, spec, i === 1), col);
+  }
+}
+function crosshair(spec, B) { const i = Math.floor(spec.rows / 2) * spec.cols + Math.floor(spec.cols / 2); setEmissive(B, i, '+', 'uiDim'); }
+
+// --- view-model player (idle / swings / chain / auto)
+const VS = { name: 'idle', keys: VMOD.clips.idle.keys, loop: true, t0: performance.now(), chainNext: null, script: null };
+function currentPose(now) { return sampleKeys(VS.keys, (now - VS.t0) * ctl.speed, VS.loop); }
+function play(name, fromPose, now) {
+  const clip = VMOD.clips[name];
+  VS.name = name; VS.loop = clip.loop; VS.t0 = now;
+  VS.keys = fromPose ? [{ t: 0, pos: fromPose.pos, rot: fromPose.rot }].concat(clip.keys.slice(1)) : clip.keys;
+}
+function vmTick(now) {
+  const t = (now - VS.t0) * ctl.speed, clip = VMOD.clips[VS.name];
+  if (VS.chainNext && t >= VMOD.chain.startAtMs) { const p = currentPose(now), nx = VS.chainNext; VS.chainNext = null; play(nx, p, now); return; }
+  if (!clip.loop && t >= clip.keys[clip.keys.length - 1].t) {
+    play('idle', null, now);
+    if (VS.script) VS.scriptAt = now;
+  }
+  if (VS.script && VS.name === 'idle' && (now - (VS.scriptAt || 0)) * ctl.speed > 1200) {
+    const s = VS.script[VS.scriptI++ % VS.script.length];
+    play(s[0], null, now); VS.chainNext = s[1] || null;
+  }
+}
+const vmViews = [];
+function buildVM() {
+  const bar = $('vmButtons');
+  const btns = [['idle', 'idle'], ['swingLR', 'swing L->R'], ['swingRL', 'swing R->L'], ['chain', 'chain LR + RL'], ['auto', 'auto demo']];
+  for (const [id, label] of btns) {
+    const b = document.createElement('button'); b.textContent = label; b.dataset.id = id;
+    b.onclick = () => {
+      const now = performance.now();
+      VS.script = null; VS.chainNext = null;
+      if (id === 'chain') { play('swingLR', null, now); VS.chainNext = 'swingRL'; }
+      else if (id === 'auto') { VS.script = [['swingLR', 'swingRL'], ['swingLR'], ['swingRL']]; VS.scriptI = 0; VS.scriptAt = now; play('idle', null, now); }
+      else play(id, null, now);
+      bar.querySelectorAll('button').forEach((x) => x.className = x === b ? 'on' : '');
+    };
+    bar.appendChild(b);
+  }
+  for (const spec of [{ cols: 160, rows: 60, cw: 6, ch: 9 }, { cols: 240, rows: 90, cw: 4, ch: 6 }]) {
+    const grid = makeCanvas(spec.cols, spec.rows, spec.cw, spec.ch);
+    const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
+    const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = spec.cols + 'x' + spec.rows; wrap.appendChild(cap);
+    $('vmHost').appendChild(wrap);
+    vmViews.push({ spec, grid, cap, bgVer: -1, bg: null });
+  }
+}
+function renderVMView(v, pose, clipName, keys, t) {
+  if (v.bgVer !== ctlVer) { v.bg = shadeBackground(v.spec); v.bgVer = ctlVer; }
+  const n = v.spec.cols * v.spec.rows, B = newBuf(n);
+  B.kind.set(v.bg.kind); B.depth.set(v.bg.depth); B.fg.set(v.bg.fg); B.bg.set(v.bg.bg);
+  for (let i = 0; i < n; i++) B.glyph[i] = v.bg.glyph[i];
+  drawTrail(v.spec, B, VMOD.clips[clipName], keys, t);
+  drawHeld(v.spec, B, pose);
+  edgePass(B, v.spec.cols, v.spec.rows);
+  crosshair(v.spec, B);
+  present(v.grid, B);
+  return B;
+}
+
+// --- key-pose strips (static; re-rendered when a control changes)
+const strips = [];
+function buildStrips() {
+  const host = $('strips');
+  for (const name of ['swingLR', 'swingRL']) {
+    const h = document.createElement('h3'); h.textContent = name + ' (' + VMOD.clips[name].keys.length + ' keys, lead edge ' + VMOD.clips[name].leadEdge + ')'; host.appendChild(h);
+    const row = document.createElement('div'); row.className = 'row'; host.appendChild(row);
+    VMOD.clips[name].keys.forEach((key, ki) => {
+      const spec = { cols: 160, rows: 60, cw: 3, ch: 4.5 };
+      const grid = makeCanvas(spec.cols, spec.rows, spec.cw, spec.ch);
+      const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
+      const cap = document.createElement('div'); cap.className = 'cap';
+      const w = VMOD.clips[name];
+      const phase = key.t <= w.windup[1] ? (key.t === 0 ? 'rest' : 'windup end') : key.t <= w.active[1] ? 'active' : key.t < w.recover[1] ? 'follow-through' : 'recovered';
+      cap.textContent = 'k' + ki + ' t ' + key.t + ' ms (' + phase + ') pos ' + key.pos.join(', ') + ' rot ' + key.rot.join(', ');
+      wrap.appendChild(cap); row.appendChild(wrap);
+      strips.push({ spec, grid, name, key, ver: -1, bgVer: -1, bg: null });
+    });
+  }
+}
+
+// ================================================================== WORLD PICKUP
+function modelBounds(name) {
+  const pm = packed[name], cm = pm.cellM, a = pm.anchor;
+  return { x0: -a[0] * cm, x1: (pm.sx - a[0]) * cm, y0: -a[1] * cm, y1: (pm.sy - a[1]) * cm, z0: -a[2] * cm, z1: (pm.sz - a[2]) * cm };
+}
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, planeDistY, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+const RES = { kind: 0, t: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0 };
+function trace(sc, ox, oy, oz, dx, dy, dz) {
+  let best = Infinity, kind = 0;
+  const pm = sc.pm, pose = sc.inst.pose;
+  for (let k = 0; k < pm.partCount; k++) {
+    if (VM.marchVoxelRay(pm, k, pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+      best = HIT[0]; kind = 8; RES.k = k; RES.face = HIT[4]; RES.lx = HIT[1]; RES.ly = HIT[2]; RES.lz = HIT[3]; RES.mat = VM.LAST_MAT_LOCAL;
+    }
+  }
+  if (sc.floorZ !== null && dz < 0) { const t = (sc.floorZ - oz) / dz; if (t > 0 && t < best) { best = t; kind = 1; } }
+  if (sc.wallY !== null && dy > 0) {
+    const t = (sc.wallY - oy) / dy, z = oz + dz * t;
+    if (t > 0 && t < best && (sc.floorZ === null || z >= sc.floorZ)) { best = t; kind = 2; }
+  }
+  RES.kind = kind; RES.t = best;
+  return kind;
+}
+function shadeHit(sc, ox, oy, oz, dx, dy, dz, dist, fogOn) {
+  const t = RES.t, px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
+  let nx, ny, nz, mat, u, v;
+  if (RES.kind === 8) {
+    const pm = sc.pm, A9 = sc.inst.pose, b = RES.k * PART_STRIDE, cm = pm.cellM;
+    faceNormal(RES.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    mat = resolveMat(matKeys[pm.matIds[RES.mat] - 1]);
+    if (RES.face === FACE_E || RES.face === FACE_W) { u = RES.ly * cm; v = RES.lz * cm; }
+    else if (RES.face === FACE_N || RES.face === FACE_S) { u = RES.lx * cm; v = RES.lz * cm; }
+    else { u = RES.lx * cm; v = RES.ly * cm; }
+  } else if (RES.kind === 1) { nx = 0; ny = 0; nz = 1; mat = P.materials[sc.floorMat]; u = px; v = py; }
+  else { nx = 0; ny = -1; nz = 0; mat = P.materials[sc.wallMat] || P.materials.stone; u = px; v = pz + 0.9; }
+  gatherLight(nx, ny, nz, px, py, pz, []);
+  U.shade(mat, Lacc, u, v, dist, SH, { fog: fogOn ? 'interior' : null, z: v });
+}
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderWorld(view, sc) {
+  const { cols, rows } = view.grid, n = cols * rows, cam = view.cam, B = newBuf(n);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2]);
+    if (!kind) { B.bg[i * 3] = 7; B.bg[i * 3 + 1] = 8; B.bg[i * 3 + 2] = 12; continue; }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp);
+    setCell(B, i, kind, RES.t, SH);
+  }
+  edgePass(B, cols, rows);
+  present(view.grid, B);
+  if (view.stats) {
+    let mc = 0, r0 = 1e9, r1 = -1, c0 = 1e9, c1 = -1;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (B.kind[r * cols + c] === 8) { mc++; r0 = Math.min(r0, r); r1 = Math.max(r1, r); c0 = Math.min(c0, c); c1 = Math.max(c1, c); }
+    view.stats(mc, r1 >= 0 ? r1 - r0 + 1 : 0, c1 >= 0 ? c1 - c0 + 1 : 0);
+  }
+  return B;
+}
+const PK = { clip: 'idle', t0: performance.now() };
+const worldViews = [];
+function buildPickup() {
+  const bar = $('clipBar');
+  for (const cn of Object.keys(MODELS.sword.voxel.animations)) {
+    const b = document.createElement('button'); b.textContent = cn; if (cn === PK.clip) b.className = 'on';
+    b.onclick = () => { PK.clip = cn; PK.t0 = performance.now(); bar.querySelectorAll('button').forEach((x) => x.className = x.textContent === cn ? 'on' : ''); };
+    bar.appendChild(b);
+  }
+  const rp = document.createElement('button'); rp.textContent = 'replay (glint after 2.4 s)'; rp.onclick = () => { PK.t0 = performance.now(); }; bar.appendChild(rp);
+  const info = document.createElement('span'); info.className = 'cap'; bar.appendChild(info); PK.info = info;
+  const bb = modelBounds('sword'), center = [0, 0, (bb.z0 + bb.z1) / 2 + 0.05], radius = 0.55;
+  const host = $('pickupHost');
+  const big = document.createElement('div'); big.className = 'row';
+  const bigRows = 48, bigGrid = makeCanvas(bigRows, bigRows, 9, 14);
+  const orbit = document.createElement('div');
+  orbit.innerHTML = '<div class="controls" style="position:static"><label>orbit yaw <input type="range" min="-180" max="180" value="-25" step="1"></label>' +
+                    '<label>pitch <input type="range" min="-10" max="80" value="15" step="1"></label></div>';
+  const [oy, op] = orbit.querySelectorAll('input');
+  const bigView = { grid: bigGrid, mk: () => orthoCam(center, +oy.value, +op.value, bigRows, bigRows, radius * 2.2 / bigRows), orbit: true };
+  oy.oninput = () => { bigView.cam = bigView.mk(); }; op.oninput = oy.oninput; bigView.cam = bigView.mk();
+  orbit.appendChild(bigGrid.cv); big.appendChild(orbit); host.appendChild(big); worldViews.push(bigView);
+  const row = document.createElement('div'); row.className = 'row';
+  for (const [y, lab] of [[0, 'front'], [45, '45'], [90, 'E side'], [135, '135'], [180, 'back'], [270, 'W side']]) {
+    const rows = 26, grid = makeCanvas(rows, rows, 7, 10.5);
+    const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
+    const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = 'cam yaw ' + y + ' (' + lab + '), pitch 15'; wrap.appendChild(cap);
+    row.appendChild(wrap);
+    worldViews.push({ grid, cam: orthoCam(center, y, 15, rows, rows, radius * 2.2 / rows) });
+  }
+  host.appendChild(row);
+}
+const ingameViews = [];
+function buildIngame() {
+  const host = $('ingameHost');
+  for (const vw of [{ label: 'from the room (5.3 m = the wake spot distance, standing; the distance slider applies)', dist: 5.3, eye: 0.7 },
+                    { label: 'take distance (1.0 m, standing in the nook)', dist: 1.0, eye: 0.7, fixed: true }]) {
+    const lab = document.createElement('div'); lab.className = 'cap'; lab.textContent = vw.label; host.appendChild(lab);
+    const row = document.createElement('div'); row.className = 'row';
+    for (const spec of [{ cols: 160, rows: 60, cc: 60, cr: 30, cw: 12, ch: 18 }, { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }]) {
+      const grid = makeCanvas(spec.cc, spec.cr, spec.cw * 0.75, spec.ch * 0.75);
+      const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
+      const cap = document.createElement('div'); cap.className = 'cap'; wrap.appendChild(cap); row.appendChild(wrap);
+      const view = { grid, spec, vw, ingame: true };
+      view.stats = (mc, hr, wc) => {
+        const d = vw.dist * (vw.fixed ? 1 : ctl.dist);
+        cap.textContent = spec.cols + 'x' + spec.rows + ' at ' + d.toFixed(1) + ' m: sword ' + hr + ' rows x ' + wc + ' cols on screen, ' + mc + ' cells';
+        view.last = { rows: hr, cols: wc, cells: mc, d };
+      };
+      ingameViews.push(view); worldViews.push(view);
+    }
+    host.appendChild(row);
+  }
+}
+function pickupScene(now) {
+  const pm = packed.sword, st = clipState(pm, PK.clip, (now - PK.t0) * ctl.speed);
+  if (PK.info) PK.info.textContent = ' ' + PK.clip + ': key ' + st.frame + ', t ' + Math.round(st.tMs) + ' ms';
+  return { pm, st, inst: posedInstance('sword', 0, 0, 0, 0, st), floorZ: null, wallY: null, wallMat: 'stone_ivy', floorMat: 'rubble' };
+}
+
+// ================================================================== sparks + trail legend
+function buildSparks() {
+  const host = $('sparkHost');
+  const sp = VMOD.sparks;
+  for (const name of ['clink', 'hit']) {
+    const s = sp[name];
+    s.frames.forEach((fr, fi) => {
+      const w = fr.glyphs[0].length + 4, grid = makeCanvas(w, 3, 14, 21);
+      const B = newBuf(w * 3);
+      for (let i = 0; i < w * 3; i++) { B.bg[i * 3] = 20; B.bg[i * 3 + 1] = 22; B.bg[i * 3 + 2] = 30; }
+      for (let c = 0; c < fr.glyphs[0].length; c++) {
+        const ch = fr.glyphs[0][c], key = fr.fg[0][c];
+        if (ch !== ' ' && s.keys[key]) setEmissive(B, w + 2 + c, ch, s.keys[key].c);
+      }
+      present(grid, B);
+      const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
+      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = name + ' frame ' + fi + ' (' + s.durations[fi] + ' ms)'; wrap.appendChild(cap);
+      host.appendChild(wrap);
+    });
+  }
+  const pre = document.createElement('div'); pre.className = 'note';
+  pre.innerHTML = 'Trail glyph by on-screen slope (pixels): flat <code>-</code> (head <code>=</code>), rising <code>/</code>, falling <code>\\</code>, steep <code>|</code>; ' +
+    'colour by age: ' + VMOD.trail.colors.map((c) => '&lt;= ' + c[0] + ' ms <span style="color:' + P.colors[c[1]] + '">' + c[1] + '</span>').join(', ') +
+    '; ghost <code>' + VMOD.trail.ghost.glyph + '</code> ' + VMOD.trail.ghost.color + ' at ' + VMOD.trail.ghost.ageMs + ' ms. Target hit: white flash ' + VMOD.sparks.targetFlash.ms + ' ms + the 3-cell spark; world hit: clink + ' + VMOD.sparks.clink.hitStopMs + ' ms hit-stop.';
+  host.appendChild(pre);
+}
+
+// ================================================================== placement plan
+function cellAt(x, y) { const r = TOWER.rows[Math.floor(y)]; return r ? r.charAt(Math.floor(x)) : ''; }
+function floorAt(x, y) { const ch = cellAt(x, y), L = TOWER.legend[ch]; return L ? L.floorH : NaN; }
+function sightline(a, b, n) {   // returns the blocking samples (terrain / walls above the line), sampled every ~5 cm
+  const blocks = [], cells = new Set();
+  for (let i = 1; i < n; i++) {
+    const f = i / n, x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, z = a[2] + (b[2] - a[2]) * f;
+    const ch = cellAt(x, y), L = TOWER.legend[ch];
+    cells.add(Math.floor(x) + ',' + Math.floor(y));
+    if (!L || L.floorH > z) blocks.push({ x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2), ch });
+  }
+  return { blocks, cells };
+}
+function buildPlan() {
+  if (!TOWER) { $('plan').textContent = 'tower level not loaded'; return; }
+  const P0 = A.voxelModels.sword.placement, st = TOWER.start;
+  const guard = swordWorld().prompt;
+  const vf = PATCH.checks.viewFrom, sl = sightline([vf.x, vf.y, 1.6], guard, 400);
+  const mark = {};
+  for (const c of sl.cells) mark[c] = '*';
+  mark['13,6'] = 'w'; mark[Math.floor(st.x) + ',' + Math.floor(st.y)] = '@'; mark[Math.floor(P0.x) + ',' + Math.floor(P0.y)] = 'S';
+  mark[Math.floor(PATCH.practiceTarget.x) + ',' + Math.floor(PATCH.practiceTarget.y)] = 'T';
+  mark[Math.floor(TOWER.markers.hollowCenter.x) + ',' + Math.floor(TOWER.markers.hollowCenter.y)] = 'B';
+  const colOf = { S: '#ffffff', '@': '#4fd66a', w: '#ffd24a', T: '#e8c060', '*': '#8fb4e0', B: '#a9a390' };
+  let html = '    ' + Array.from({ length: TOWER.rows[0].length }, (_, x) => x % 10).join('') + '\n';
+  TOWER.rows.forEach((row, y) => {
+    html += String(y).padStart(3, ' ') + ' ';
+    for (let x = 0; x < row.length; x++) {
+      const m = mark[x + ',' + y], ch = row.charAt(x), L = TOWER.legend[ch];
+      if (m) html += '<span style="color:' + colOf[m] + ';font-weight:bold">' + m + '</span>';
+      else html += '<span style="color:' + (L && L.solid ? '#5a5650' : L && L.zone === 'ground' ? '#b8ab94' : '#6a6a78') + '">' + ch.replace('<', '&lt;') + '</span>';
+    }
+    html += '\n';
+  });
+  $('plan').innerHTML = html;
+  $('planNote').innerHTML = 'Hint scrawl (writer may refine): <code>' + PATCH.decals.append[0].model.replace('decal:', '') + '</code> on the north face of upper step I (13,7) right beside the sword.<br>' +
+    'Prompt: <code>' + PATCH.interactables.append[0].prompt + '</code>, state flag <code>' + PATCH.stateFlag + '</code>.<br>' +
+    'Sightline (marked *) from 1-2 steps NW of the wake spot (' + vf.x + ', ' + vf.y + ', standing) -> guard (' + guard.map((v) => v.toFixed(2)).join(', ') + '): ' +
+    (sl.blocks.length ? sl.blocks.length + ' blocked samples (first ' + JSON.stringify(sl.blocks[0]) + ')' : 'clear of every sector') +
+    '. Lying at the wake spot the gondola hides it; standing on the spot the NE corner of the stair column (13,7) just clips it; one or two steps and it is in full view in the sun patch.';
+}
+function swordWorld() {   // the posed pickup at its level placement (rest of clip idle), via the engine forward transforms
+  const P0 = A.voxelModels.sword.placement, pm = packed.sword, st = clipState(pm, 'idle', 0);
+  const inst = posedInstance('sword', P0.x, P0.y, P0.z, P0.facing, st);
+  const def = MODELS.sword.voxel, ks = partIndex('sword', 'sword'), pts = [];
+  for (let z = 0; z < def.size[2]; z++) for (let y = 0; y < def.size[1]; y++) for (let x = 0; x < def.size[0]; x++) {
+    const ch = def.layers[z][y].charAt(x);
+    if (ch === '.' || ch === 'W') continue;
+    pts.push(worldPoint(inst, ks, [x + 0.5, y + 0.5, z + 0.5]));
+  }
+  return { inst, pts, prompt: worldPoint(inst, ks, def.mounts.prompt.at), top: worldPoint(inst, ks, [4.5, 1.5, 32]) };
+}
+
+// ================================================================== layers + dump
+function buildLayers() {
+  const host = $('layers');
+  for (const name of Object.keys(MODELS)) {
+    const def = MODELS[name].voxel;
+    const det = document.createElement('details');
+    const sum = document.createElement('summary'); sum.textContent = name + ' (' + def.size.join(' x ') + ' voxels, cellM ' + def.cellM + ')'; det.appendChild(sum);
+    const row = document.createElement('div'); row.className = 'row';
+    for (let z = def.layers.length - 1; z >= 0; z--) {
+      const wrap = document.createElement('div');
+      const pre = document.createElement('pre'); pre.className = 'slice';
+      pre.innerHTML = def.layers[z].map((r) => r.split('').map((ch) => {
+        const key = def.mats[ch];
+        if (!key) return '<span style="color:#2a2c36">.</span>';
+        const m = KIT.v1[key] || P.materials[key];
+        return '<span style="color:' + (m ? P.colors[m.base] : '#f0f') + '">' + ch + '</span>';
+      }).join('')).join('\n');
+      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = 'z' + z;
+      wrap.appendChild(pre); wrap.appendChild(cap); row.appendChild(wrap);
+    }
+    det.appendChild(row); host.appendChild(det);
+  }
+  $('dumpBtn').onclick = () => {
+    const s = $('dumpSel').value;
+    const obj = s === 'viewModel' ? VMOD : s === 'levelPatch' ? PATCH : s === 'swordKit' ? KIT : MODELS[s].voxel;
+    $('dump').value = JSON.stringify(obj, null, 1);
+  };
+}
+
+// ================================================================== checks
+function lum(key) { const c = P.rgb[key]; return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+function hueDeg(key) {
+  const [r, g, b] = P.rgb[key].map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (d === 0) return 0;
+  let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+function countMatFront(frameIdx, matKey) {   // front ortho trace of the pickup at one idle key: cells showing matKey
+  const pm = packed.sword, ci = pm.clipIndex.idle;
+  const inst = posedInstance('sword', 0, 0, 0, 0, { clip: ci, frame: frameIdx, tMs: 0 });
+  const sc = { pm, inst, floorZ: null, wallY: null };
+  const bb = modelBounds('sword'), cam = orthoCam([0, 0, (bb.z0 + bb.z1) / 2], 0, 0, 40, 80, 1.1 / 80);
+  let n = 0;
+  for (let r = 0; r < 80; r++) for (let c = 0; c < 40; c++) {
+    cam.ray(c, r, Ov, Dv);
+    if (trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2]) === 8 && matKeys[pm.matIds[RES.mat] - 1] === matKey) n++;
+  }
+  return n;
+}
+function runChecks() {
+  const out = [];
+  const ok = (c, msg) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + msg]);
+  const info = (msg) => out.push(['info', 'INFO ' + msg]);
+  ok(true, 'engine voxel modules loaded; proposed colours injected for the preview: ' + (injected.join(', ') || 'none (already merged)'));
+  const allKeys = new Set(Object.keys(P.materials).concat(Object.keys(KIT.v1)));
+  for (const name of Object.keys(MODELS)) {
+    const def = MODELS[name].voxel, vr = validateVoxelModel(def, { materialKeys: allKeys });
+    ok(vr.errors.length === 0, name + ': validateVoxelModel (palette + proposed keys) ' + (vr.errors.length ? vr.errors.slice(0, 6).join(' ; ') : 'no errors'));
+    if (vr.warnings.length) info(name + ': warnings ' + vr.warnings.join(' ; '));
+    ok(!!packed[name], name + ': packVoxelModel ' + (packed[name] ? 'OK, ' + packed[name].partCount + ' part(s), atlas ' + packed[name].vox.length + ' texels' : packErr[name]));
+    for (const pn of Object.keys(def.parts)) { const b = def.parts[pn].box; info(name + '.' + pn + ': box extent ' + (b[3] - b[0] + b[4] - b[1] + b[5] - b[2]) + ' (<= 48)'); }
+    let vox = 0; for (const L of def.layers) for (const r of L) for (const ch of r) if (ch !== '.') vox++;
+    info(name + ': ' + vox + ' voxels in a ' + def.size.join('x') + ' grid (' + def.size.map((v) => (v * def.cellM).toFixed(2)).join(' x ') + ' m)');
+  }
+  // materials + colour language
+  const sw = MODELS.sword.voxel, usedMats = new Set(Object.values(sw.mats));
+  let bad = [];
+  for (const mk of usedMats) {
+    const m1 = KIT.v1[mk] || P.materials[mk], m2 = KIT.v2[mk];
+    const keys = [m1.base].concat(m1.texture ? Object.values(m1.texture.key).map((e) => e.tint).filter(Boolean) : []).concat(m2 ? m2.tones.map((t) => t[0]) : []);
+    for (const k of keys) {
+      if (!P.colors[k]) bad.push(mk + ': unknown colour ' + k);
+      if (KIT.forbiddenColorPrefixes.some((p) => k.indexOf(p) === 0)) bad.push(mk + ': machine / magic colour ' + k);
+    }
+    if (KIT.v1[mk] && (!KIT.v2[mk] || !KIT.remap[mk])) bad.push(mk + ': missing v2 record or remap');
+    if (m2 && DP.sets && !DP.sets[m2.face.set]) bad.push(mk + ': unknown v2 glyph set ' + m2.face.set);
+  }
+  ok(bad.length === 0, 'materials: every colour key exists, v1 + v2 + remap present, no brass / copper / verdigris / aether / hero / danger colour ' + (bad.length ? '- ' + bad.join(', ') : ''));
+  bad = [];
+  for (const mk of Object.keys(KIT.v1)) { const t = KIT.v1[mk].texture; if (t) { const e = t.rows.every((r) => r.length === t.w && r.split('').every((c) => t.key[c])) && t.rows.length === t.h; if (!e) bad.push(mk + ' texture'); } }
+  ok(bad.length === 0, 'proposed v1 textures: row count / widths / texel keys consistent');
+  ok(Math.abs(hueDeg('bronze') - hueDeg('brass')) >= 8 && lum('bronzeLight') < lum('brassLight') - 25,
+     'bronze is not brass: hue bronze ' + hueDeg('bronze').toFixed(0) + ' vs brass ' + hueDeg('brass').toFixed(0) + ' deg, luma bronzeLight ' + lum('bronzeLight').toFixed(0) + ' vs brassLight ' + lum('brassLight').toFixed(0));
+  ok(lum('mirror') > lum('stoneLight') && lum('ironDark') < 0.8 * lum('stoneMid'),
+     'value ladder: steel edge (mirror ' + lum('mirror').toFixed(0) + ') > stoneLight ' + lum('stoneLight').toFixed(0) + ', fuller (ironDark ' + lum('ironDark').toFixed(0) + ') < 0.8 x stoneMid ' + lum('stoneMid').toFixed(0));
+  // glint: sealed at rest, visible from the front at keys 1-3
+  const g = sw.parts.glint.box; let sealed = true;
+  const at = (x, y, z) => (z < 0 || z >= sw.size[2] || y < 0 || y >= sw.size[1] || x < 0 || x >= sw.size[0]) ? '.' : sw.layers[z][y].charAt(x);
+  for (let z = g[2]; z < g[5]; z++) for (let y = g[1]; y < g[4]; y++) for (let x = g[0]; x < g[3]; x++) {
+    if (at(x, y, z) !== 'W') sealed = false;
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) if (at(x + dx, y + dy, z + dz) === '.') sealed = false;
+  }
+  ok(sealed, 'glint storage: the 3 W cells fill the glint box and all their neighbours are solid (sealed in the guard)');
+  if (packed.sword) {
+    const vis = [0, 1, 2, 3].map((f) => countMatFront(f, 'steel_glint'));
+    ok(vis[0] === 0 && vis[1] > 0 && vis[2] > 0 && vis[3] > 0, 'glint (engine pose, front view): hidden at rest (' + vis[0] + ' cells), shown at keys 1-3 (' + vis.slice(1).join(' / ') + ' cells)');
+    const idle = sw.animations.idle;
+    ok(idle.interp === 'step' && idle.durations[0] >= 2000 && idle.durations.length === 4, 'clip idle: step, ' + idle.durations.join(' + ') + ' ms');
+  }
+  ok(!A.models || !A.models.sword || !!A.models.sword.voxel, 'attachSword(): ' + (A.models && A.models.sword ? 'attached' : 'not attached (materials not merged yet - expected until the merge step)'));
+  // placement
+  if (TOWER && packed.sword) {
+    const P0 = sw ? A.voxelModels.sword.placement : null, W = swordWorld();
+    ok(cellAt(P0.x, P0.y) === 'z' && floorAt(P0.x, P0.y) === P0.z, 'placement cell (' + Math.floor(P0.x) + ',' + Math.floor(P0.y) + ') is the 0.9 m rubble heap z and z = its floorH');
+    const above = W.pts.filter((p) => p[2] > P0.z + 0.005), below = W.pts.length - above.length;
+    const inCell = above.every((p) => p[0] >= 12.0 && p[0] <= 13.08 && p[1] >= 6.0 && p[1] <= 7.0);
+    ok(inCell, 'every voxel above the heap stays over cell (12,6) (x 12.0..13.08, y 6..7); ' + below + ' voxels buried below the heap top');
+    const rb = TOWER.props.find((p) => p.id === 'rubble3'), rd = A.voxelModels.rubble2 && A.voxelModels.rubble2.voxel;
+    if (rb && rd) {
+      const cm = rd.cellM, x0 = rb.x - rd.anchor[0] * cm, x1 = rb.x + (rd.size[0] - rd.anchor[0]) * cm, y0 = rb.y - rd.anchor[1] * cm, y1 = rb.y + (rd.size[1] - rd.anchor[1]) * cm, z1 = rb.z + rd.size[2] * cm;
+      const hit = above.filter((p) => p[0] > x0 - 0.015 && p[0] < x1 + 0.015 && p[1] > y0 - 0.015 && p[1] < y1 + 0.015 && p[2] < z1 + 0.015);
+      ok(hit.length === 0, 'no voxel inside the rubble3 chunk (' + x0.toFixed(2) + '..' + x1.toFixed(2) + ' x ' + y0.toFixed(2) + '..' + y1.toFixed(2) + ', top ' + z1.toFixed(2) + '): ' + hit.length + ' overlaps');
+    }
+    info('posed pommel top ' + W.top.map((v) => v.toFixed(2)).join(', ') + ', guard (prompt mount) ' + W.prompt.map((v) => v.toFixed(2)).join(', '));
+    const st = TOWER.start, dW = Math.hypot(P0.x - st.x, P0.y - st.y);
+    ok(dW > 4 && dW < 6.5, 'distance from the wake spot (' + st.x + ', ' + st.y + '): ' + dW.toFixed(2) + ' m (inside the tower, ~5 m)');
+    const bearing = (q) => (Math.atan2(q.x - P0.x, -(q.y - P0.y)) / D2R + 360) % 360;
+    const angDiff = (a, b) => Math.abs(((a - b) + 540) % 360 - 180);
+    const bW = bearing(st), bB = bearing(PATCH.checks.burnerSide);
+    ok(angDiff(bW, P0.facing) <= 25 && angDiff(bB, P0.facing) <= 25, 'front faces the room: facing ' + P0.facing + ' vs bearing to the wake spot ' + bW.toFixed(0) +
+       ' and to the burner side ' + bB.toFixed(0) + ' deg (both within 25)');
+    const stand = [13.45, 6.3];
+    ok(floorAt(stand[0], stand[1]) === 0 && !TOWER.legend[cellAt(stand[0], stand[1])].solid, 'stand spot (13.45, 6.3) is walkable ground floor (0.0)');
+    const ia = PATCH.interactables.append[0], dI = Math.hypot(ia.x - stand[0], ia.y - stand[1], ia.z - 1.6);
+    ok(dI <= ia.radius && Math.abs(ia.z - W.prompt[2]) < 0.1, 'take: eye at the stand spot -> aim point ' + dI.toFixed(2) + ' m <= radius ' + ia.radius + '; aim z ' + ia.z + ' ~ posed guard z ' + W.prompt[2].toFixed(2));
+    const slW = sightline([st.x, st.y, 1.6], W.prompt, 400);
+    info('sightline wake spot (standing) -> guard: ' + (slW.blocks.length ? slW.blocks.length + ' samples clipped (first ' + JSON.stringify(slW.blocks[0]) + ': the NE corner of the stair column 13,7) - intended, revealed after 1-2 steps' : 'clear'));
+    for (const vp of [PATCH.checks.viewFrom, PATCH.checks.burnerSide]) {
+      const sl = sightline([vp.x, vp.y, 1.6], W.prompt, 400), dV = Math.hypot(vp.x - W.prompt[0], vp.y - W.prompt[1]);
+      ok(sl.blocks.length === 0, 'sightline from (' + vp.x + ', ' + vp.y + ', eye 1.6), ' + dV.toFixed(1) + ' m -> guard clear of every sector' + (sl.blocks.length ? ': blocked at ' + JSON.stringify(sl.blocks[0]) : ''));
+    }
+    {   // where the (16.5, 8.0) sightline crosses the gondola basket footprint (x 15.06..15.94 per README 7.1)
+      const vp = PATCH.checks.viewFrom, f = (vp.x - 15.94) / (vp.x - W.prompt[0]), zc = 1.6 + (W.prompt[2] - 1.6) * f;
+      info('that sightline crosses the gondola footprint edge x 15.94 at y ' + (vp.y + (W.prompt[1] - vp.y) * f).toFixed(2) + ', z ' + zc.toFixed(2) + ' m (basket rim ~1.1 m): clear over it');
+    }
+    const trig = TOWER.triggers.filter((t) => t.shape === 'circle' && Math.hypot(t.x - P0.x, t.y - P0.y) < t.r);
+    ok(trig.length === 0, 'outside every hint circle (' + TOWER.triggers.filter((t) => t.shape === 'circle').map((t) => t.id).join(', ') + ')');
+    const hc = TOWER.markers.hollowCenter, dB = Math.hypot(hc.x - P0.x, hc.y - P0.y);
+    ok(dB > 0.6 + 0.4, 'boulder at rest in the hollow (' + hc.x + ', ' + hc.y + ', r 0.6) is ' + dB.toFixed(2) + ' m away (no overlap with the sword or the nook)');
+    const rt = TOWER.route.some((c) => c[0] === Math.floor(P0.x) && c[1] === Math.floor(P0.y));
+    ok(!rt, 'not on the climb route (route cells)');
+    const pt = PATCH.practiceTarget;
+    ok(floorAt(pt.x, pt.y) === 0 && !TOWER.legend[cellAt(pt.x, pt.y)].solid, 'proposed practice-target spot (' + pt.x + ', ' + pt.y + ') is walkable floor, ' + Math.hypot(pt.x - P0.x, pt.y - P0.y).toFixed(2) + ' m from the sword');
+  }
+  // readability (analytic, plus the live crop counts)
+  for (const [cols, rows] of [[160, 60], [240, 90]]) {
+    const pd = (rows / 2) * (16 / 9) / TAN_HALF, colPerM = (cols / 2) / TAN_HALF, d = 5.3, hVis = (sw.size[2] - sw.anchor[2]) * sw.cellM;
+    const rTall = hVis * pd / d, cGuard = sw.size[0] * sw.cellM * colPerM / d;
+    ok(rTall >= (rows === 90 ? 14 : 9) && cGuard >= 4, cols + 'x' + rows + ' at 5.3 m: ' + rTall.toFixed(1) + ' rows tall (visible ' + hVis.toFixed(2) + ' m), guard ' + cGuard.toFixed(1) + ' cols wide');
+  }
+  // view model
+  const vm = VMOD;
+  for (const nm of ['swingLR', 'swingRL']) {
+    const c = vm.clips[nm], K = c.keys, T = K[K.length - 1].t;
+    const poses = K.filter((k) => k.t > 0 && k.t < T).length;
+    ok(T === 350 && c.windup[1] - c.windup[0] === 80 && c.active[1] - c.active[0] === 120 && c.recover[1] - c.recover[0] === 150 && poses >= 5,
+       nm + ': ' + T + ' ms = windup ' + (c.windup[1] - c.windup[0]) + ' + active ' + (c.active[1] - c.active[0]) + ' + recover ' + (c.recover[1] - c.recover[0]) + ', ' + poses + ' poses between rest keys (>= 5)');
+    const tips = K.filter((k) => k.t >= c.active[0] && k.t <= c.active[1]).map((k) => eyePoint(k, H_TIP)[0]);
+    const mono = tips.every((x, i) => i === 0 || (nm === 'swingLR' ? x > tips[i - 1] : x < tips[i - 1]));
+    ok(mono, nm + ': blade tip moves ' + (nm === 'swingLR' ? 'left -> right' : 'right -> left') + ' through the active keys (x ' + tips.map((x) => x.toFixed(2)).join(' -> ') + ')');
+    let minD = 9;
+    for (let t = 0; t <= T; t += 5) { const p = sampleKeys(K, t, false); for (const m of [H_TIP, H_MID, H_GUARD, heldPoint([4.5, 1.5, 0])]) minD = Math.min(minD, -eyePoint(p, m)[1]); }
+    ok(minD >= vm.depth.near, nm + ': nearest sampled point stays ' + minD.toFixed(3) + ' m in front of the eye (>= depth.near ' + vm.depth.near + ')');
+  }
+  for (const spec of [{ cols: 160, rows: 60 }, { cols: 240, rows: 90 }]) {
+    const g2 = project(spec, eyePoint(vm.rest, H_GUARD)), tp = project(spec, eyePoint(vm.rest, H_TIP));
+    ok(g2 && g2.r < spec.rows && g2.c < spec.cols && g2.c > spec.cols / 2 && tp && tp.r < spec.rows / 2 && Math.abs(tp.camX) >= 0.15,
+       spec.cols + 'x' + spec.rows + ' idle: guard at col ' + (g2 ? g2.c.toFixed(0) : '-') + ' row ' + (g2 ? g2.r.toFixed(0) : '-') + ' (lower right, on screen), tip at col ' + (tp ? tp.c.toFixed(0) : '-') + ' row ' + (tp ? tp.r.toFixed(0) : '-') +
+       ' (above the horizon, clear of the crosshair)');
+  }
+  const asc = (s) => s.split('').every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) <= 126);
+  const glyphs = JSON.stringify(vm.trail.glyphs) + vm.trail.ghost.glyph + vm.sparks.clink.frames.concat(vm.sparks.hit.frames).map((f) => f.glyphs.join('')).join('');
+  ok(asc(glyphs) && asc(PATCH.decals.append[0].model) && asc(PATCH.interactables.append[0].prompt), 'trail / spark glyphs, scrawl and prompt are ASCII 32..126');
+  ok(PATCH.props.append[0].x === A.voxelModels.sword.placement.x && PATCH.props.append[0].facing === A.voxelModels.sword.placement.facing && PATCH.interactables.append[0].prop === 'sword',
+     'levelPatch.towerSword prop = placement; interactable links prop sword');
+  ok(!TOWER || !TOWER.props.some((p) => p.id === 'sword'), 'tower.level.json not edited yet (the patch is applied by the US-078 content step)');
+  $('checks').innerHTML = out.map(([c, m]) => '<div class="' + c + '">' + m.replace(/</g, '&lt;') + '</div>').join('');
+}
+
+// ================================================================== main loop
+function frame() {
+  const now = performance.now();
+  // view model
+  vmTick(now);
+  const t = (now - VS.t0) * ctl.speed, pose = currentPose(now);
+  for (const v of vmViews) renderVMView(v, pose, VS.name, VS.keys, VS.loop ? 0 : t);
+  $('vmInfo').textContent = VS.name + (VS.loop ? '' : ' t ' + Math.round(Math.min(t, 350)) + ' ms') + ' | pos ' + pose.pos.map((x) => x.toFixed(3)).join(', ') + ' rot ' + pose.rot.map((x) => x.toFixed(1)).join(', ');
+  for (const s of strips) {
+    if (s.ver === ctlVer) continue;
+    if (s.bgVer !== ctlVer) { s.bg = shadeBackground(s.spec); s.bgVer = ctlVer; }
+    renderVMView(s, s.key, s.name, VMOD.clips[s.name].keys, s.key.t);
+    s.ver = ctlVer;
+  }
+  // pickup
+  const sc = pickupScene(now);
+  for (const v of worldViews) {
+    if (v.ingame) {
+      sc.floorZ = 0; sc.wallY = 1.9;
+      const d = v.vw.dist * (v.vw.fixed ? 1 : ctl.dist);
+      v.cam = perspCam(v.spec.cols, v.spec.rows, v.spec.cc, v.spec.cr, [0, 0, 0.42], ctl.vaz, d, v.vw.eye);
+    } else { sc.floorZ = null; sc.wallY = null; }
+    renderWorld(v, sc);
+  }
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+try {
+  buildVM(); buildStrips(); buildPickup(); buildIngame(); buildSparks(); buildPlan(); buildLayers();
+  runChecks();
+} catch (err) {
+  $('fatal').textContent = 'preview error: ' + (err && err.stack || err);
+}
+frame();
+</script>
+</body>
+</html>
