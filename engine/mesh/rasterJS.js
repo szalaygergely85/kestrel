@@ -41,6 +41,7 @@ export const BIAS_UNITS = 1;
  * @property {number} n - sub-samples per cell
  * @property {number} W - cols*n
  * @property {number} H - rows*n
+ * @property {boolean} depthOnly - ME-15a: only `zbuf` is allocated/written (all other planes have length 0)
  * @property {Float64Array} zbuf - z_ndc, cleared to 1
  * @property {Float32Array} depth - view-space forward distance d, cleared to Infinity
  * @property {Uint8Array} kind
@@ -66,32 +67,39 @@ export const BIAS_UNITS = 1;
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
  * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
+ * @property {{factor: number, units: number}} [depthBias] - ME-15a (27.9a items 5, 9): GPU polygon-offset twin
+ *   (`zn += factor * max(|dz/dx|, |dz/dy|) + 2 * units * 2^-24`, NDC z in [-1,1]) applied to EVERY item
+ *   (the shadow pass); absent = the per-item terrain `DRAW_FLAG_DEPTH_BIAS` rule with `BIAS_FACTOR/BIAS_UNITS`
  */
 
 /**
  * @param {number} cols
  * @param {number} rows
  * @param {number} n
- * @param {{countWrites?: boolean}} [opts]
+ * @param {{countWrites?: boolean, depthOnly?: boolean}} [opts] - `depthOnly` (ME-15a, shadow maps): allocates
+ *   `zbuf` only (every other plane is length 0); `rasterDrawList` skips attribute interpolation
  * @returns {RasterTarget}
  */
 export function createRasterTarget(cols, rows, n, opts) {
   const W = cols * n, H = rows * n;
+  const depthOnly = !!(opts && opts.depthOnly);
   const size = W * H;
+  const a = depthOnly ? 0 : size; // attribute plane length
   const t = {
     cols, rows, n, W, H,
+    depthOnly,
     zbuf: new Float64Array(size),
-    depth: new Float32Array(size),
-    kind: new Uint8Array(size),
-    face: new Uint8Array(size),
-    mat: new Uint16Array(size),
-    planeId: new Int32Array(size),
-    u: new Float32Array(size),
-    v: new Float32Array(size),
-    z: new Float32Array(size),
-    aoD: new Float32Array(size),
-    nrm: new Uint32Array(size),
-    objectId: new Uint32Array(size),
+    depth: new Float32Array(a),
+    kind: new Uint8Array(a),
+    face: new Uint8Array(a),
+    mat: new Uint16Array(a),
+    planeId: new Int32Array(a),
+    u: new Float32Array(a),
+    v: new Float32Array(a),
+    z: new Float32Array(a),
+    aoD: new Float32Array(a),
+    nrm: new Uint32Array(a),
+    objectId: new Uint32Array(a),
     writes: opts && opts.countWrites ? new Uint32Array(size) : null,
   };
   clearRasterTarget(t);
@@ -137,7 +145,7 @@ const _info = {
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
-  biasFlag: 0,
+  biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS,
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
 };
 
@@ -341,7 +349,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
     const dE01dX = -(Ys1 - Ys0), dE01dY = (Xs1 - Xs0);
     const dznX = ((dE12dX * zn0 + dE20dX * zn1 + dE01dX * zn2) / A2) * SUBPIX;
     const dznY = ((dE12dY * zn0 + dE20dY * zn1 + dE01dY * zn2) / A2) * SUBPIX;
-    biasAdd = BIAS_FACTOR * Math.max(Math.abs(dznX), Math.abs(dznY)) + 2 * BIAS_UNITS * Math.pow(2, -24);
+    biasAdd = info.biasFactor * Math.max(Math.abs(dznX), Math.abs(dznY)) + 2 * info.biasUnits * Math.pow(2, -24);
   }
 
   for (let py = pyMin; py <= pyMax; py++) {
@@ -363,6 +371,19 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       if (zn > 1) continue;
 
       const idx = rowBase + px;
+      if (target.depthOnly) { // ME-15a shadow map: depth (+ terrain footprint carve) only
+        if (zn < target.zbuf[idx]) {
+          if (info.isTerrain && info.structCount > 0) {
+            const iq = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
+            const cwx = (l0 * wx0 * iw0 + l1 * wx1 * iw1 + l2 * wx2 * iw2) * iq;
+            const cwy = (l0 * wy0 * iw0 + l1 * wy1 * iw1 + l2 * wy2 * iw2) * iq;
+            if (insideStructFoot(info.structFoot, info.structCount, cwx, cwy)) continue;
+          }
+          target.zbuf[idx] = zn;
+          if (target.writes) target.writes[idx]++;
+        }
+        continue;
+      }
       if (zn < target.zbuf[idx]) {
         const q = l0 * iw0 + l1 * iw1 + l2 * iw2;
         const invq = 1 / q;
@@ -477,6 +498,11 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.kind7Mat = null;
       _info.biasFlag = 0;
       _info.cullBack = isVoxelItem || instAligned !== undefined;
+    }
+    if (ctx.depthBias) { // ME-15a: the shadow pass biases every caster
+      _info.biasFlag = 1; _info.biasFactor = ctx.depthBias.factor; _info.biasUnits = ctx.depthBias.units;
+    } else {
+      _info.biasFactor = BIAS_FACTOR; _info.biasUnits = BIAS_UNITS;
     }
     _info.zBase = item.zBase;
     _info.objectId = item.objectId;
