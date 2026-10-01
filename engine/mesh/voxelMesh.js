@@ -107,7 +107,7 @@ function greedyRects(domA, domB, valueAt) {
  * so `uv = a * cellM` needs no further subtraction). Winding: every
  * triangle's `cross(p1-p0, p2-p0)` is parallel to the given face normal
  * (MeshData.js's builder invariant, checked by `MeshData.test.js`/ours).
- * @param {StaticMeshBuilder} builder
+ * @param {StaticMeshBuilder|ScaledMeshBuilder} builder
  * @param {PackedVoxelModel} pm
  * @param {number} face
  * @param {number} x0 @param {number} y0 @param {number} z0
@@ -173,7 +173,9 @@ function emitFaceQuad(builder, pm, face, x0, y0, z0, layer, a0, a1, b0, b1, mat,
 
 /**
  * Greedy-meshes every exposed face of part `p` into `builder` (27.15.6).
- * @param {StaticMeshBuilder} builder
+ * @param {StaticMeshBuilder|ScaledMeshBuilder} builder - RE-15b: a plain
+ *   `StaticMeshBuilder` for LOD0, or a `ScaledMeshBuilder` proxy (same
+ *   `addQuad`/`beginRange` surface) for LOD1's 2x-scaled emit.
  * @param {PackedVoxelModel} pm
  * @param {number} p
  * @param {number} cellM
@@ -325,7 +327,7 @@ class ScaledMeshBuilder {
  * being marked solid purely from the alignment padding.
  * @param {PackedVoxelModel} pm
  * @param {number} p
- * @returns {{x0:number,y0:number,z0:number,x1:number,y1:number,z1:number,bx:number,by:number,bz:number,vox:Uint8Array}}
+ * @returns {{x0:number,y0:number,z0:number,x1:number,y1:number,z1:number,bx:number,by:number,bz:number,vox:Uint8Array,atlasOff:number}}
  */
 export function downsamplePart(pm, p) {
   const base = p * PART_STRIDE;
@@ -379,7 +381,7 @@ export function downsamplePart(pm, p) {
       }
     }
   }
-  return { x0: x0L, y0: y0L, z0: z0L, x1: x0L + bxL, y1: y0L + byL, z1: z0L + bzL, bx: bxL, by: byL, bz: bzL, vox };
+  return { x0: x0L, y0: y0L, z0: z0L, x1: x0L + bxL, y1: y0L + byL, z1: z0L + bzL, bx: bxL, by: byL, bz: bzL, vox, atlasOff: 0 };
 }
 
 /**
@@ -417,7 +419,13 @@ export function buildVoxelMeshLod1(pm, opts) {
     parts[base + 10] = d.atlasOff;
     parts[base + 11] = d.bx; parts[base + 12] = d.by; parts[base + 13] = d.bz;
   }
-  const pmLod1 = { parts, vox, matIds: pm.matIds, partCount, cellM: pm.cellM * 2 };
+  const pmLod1 = {
+    parts, vox, matIds: pm.matIds, partCount, cellM: pm.cellM * 2,
+    // sx/sy/sz: unused by emitPartFaces/localMatAt (only part-local box
+    // bounds and the shared vox atlas are read) - half-res values kept only
+    // so this stays a structurally complete PackedVoxelModel.
+    sx: Math.ceil(pm.sx / 2), sy: Math.ceil(pm.sy / 2), sz: Math.ceil(pm.sz / 2),
+  };
 
   const realBuilder = new StaticMeshBuilder(opts.id);
   const builder = new ScaledMeshBuilder(realBuilder, 2);

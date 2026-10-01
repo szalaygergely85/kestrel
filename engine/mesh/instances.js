@@ -206,9 +206,9 @@ export class InstanceGroups {
       pose: { clip: -1, frame: 0, tMs: 0 }, parts: createInstanceParts(), used: true,
       // RE-15a (28.13 point 3): both LOD buckets allocated now (index 1 is
       // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
-      drawIb: [createInstanceBuffer(capacity), createInstanceBuffer(capacity)],
-      drawCount: [0, 0],
-      _memoFrameNo: null,
+      drawIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
+      drawCount: /** @type {[number, number]} */ ([0, 0]),
+      _memoFrameNo: /** @type {number|null} */ (null),
     };
     this.groups.push(g);
     return g;
