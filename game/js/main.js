@@ -6,7 +6,6 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
-import { prebuildTerrainMesh } from './dev/terrainPrebuild.js';
 import {
   AssetRegistry, createEngine, clampGrid, GRID_DEFAULT_COLS,
   GBuffer, bindShading, bindLevel,
@@ -21,7 +20,7 @@ import {
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
-  loadContentPack, createRng,
+  loadContentPack, createRng, prebuildTerrainMesh, DEFAULT_RENDERER,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -268,7 +267,7 @@ const terrainEnabled = params.get('terrain') !== '0';
 // renderer: 'mesh' | 'dda' })"): `?renderer=mesh` opts into the GPU raster
 // pass (tower only, this story); default 'dda' is every existing pass,
 // completely unchanged.
-const renderer = params.get('renderer') === 'mesh' ? 'mesh' : 'dda';
+const renderer = (params.get('renderer') || DEFAULT_RENDERER) === 'mesh' ? 'mesh' : 'dda';
 // RE-02b (28.1 A2 item 6): first person is pitched on the mesh renderer (look clamp 70), shear on dda (35).
 // Set from the EFFECTIVE renderer once the GPU pipeline is known (review: ?renderer=mesh can fall back to CPU = shear).
 let pitchClampDeg = 35;

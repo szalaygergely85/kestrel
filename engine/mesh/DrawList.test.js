@@ -120,6 +120,11 @@ function makeQuadMesh(id) {
     `order=${[0, 1, 2].map((i) => list.items[i].objectId)}`);
   ok('planeIdOr uses structSeq (not sort order)', list.items[1].planeIdOr === (2 & 7) << 28);
   ok('cache reuses the built mesh on a second call', cache.get(structs[0]) === cache.get(structs[0]));
+  // ED-MESH-1a: same id + equal packed.version but a NEW Level object (editor rebuild) -> a new mesh set.
+  const edited = { ...structs[0], level: fakeLevel('l0-edited'), packed: { version: 1 } };
+  const first = cache.get(structs[0]);
+  ok('cache rebuilds on a new Level object with equal version', cache.get(edited) !== first);
+  ok('...and then reuses it for that Level', cache.get(edited) === cache.get(edited));
 }
 
 // ---------------------------------------------------------------------------

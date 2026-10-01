@@ -353,6 +353,16 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   }
 }
 
+// --- ED-MESH-1a: World.load({terrain}) reuses a Terrain baked from the same recipe --------------
+{
+  const def = assets.world('world_m1');
+  const reused = World.load(def, assets, { terrain: world.terrain });
+  ok('World.load({terrain}) with the same recipe reuses it', reused.terrain === world.terrain);
+  const fresh = World.load(def, assets, { terrain: { recipe: {} } });
+  ok('World.load({terrain}) with a different recipe builds a new Terrain', fresh.terrain !== world.terrain && fresh.terrain.recipe === world.terrain.recipe);
+  ok('World.load without opts.terrain builds a new Terrain', World.load(def, assets, {}).terrain !== world.terrain);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
