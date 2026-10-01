@@ -735,7 +735,14 @@
       tones: [['unitViolet', 4], ['unitVioletLight', 1]],
       grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
       face: { set: 'ironFace', mid: 'ironFace', far: 'ironFace' }, lod: { mid: 12, far: 25, dither: 3 }
-    }
+    },
+    // US-078 ruin-steel sword (design/models/sword.js `swordKit.v2`, designer merge), same keys as palette.js.
+    steel_edge: {"v1":"steel_edge","seed":401,"desc":"SWORD (US-078). The two honed edges and the tip of the ruin-steel blade: pale cool steel (mirror), high spec, so the edges catch the sun patch / lamp first and frame the dark fuller. A few duller nicks in the texture.","albedo":0.95,"bgK":0.16,"detail":66,"jitter":0.05,"tones":[["mirror",3],["white",1]],"grid":{"u":0.015,"v":0.015,"stagger":0,"lines":false},"face":{"set":"ironFace","mid":"ironFace","far":"ironFace"},"lod":{"mid":12,"far":25,"dither":3}},
+    steel_old: {"v1":"steel_old","seed":402,"desc":"SWORD (US-078). The blade flats + ricasso: old grey steel with rust pits and grey wear (ironLight). Lower spec than the edge, so the flat reads as \"worn\", the edge as \"still sharp\".","albedo":0.85,"bgK":0.15,"detail":66,"jitter":0.05,"tones":[["ironLight",5],["ashLight",2],["rust",1]],"grid":{"u":0.015,"v":0.015,"stagger":0,"lines":false},"face":{"set":"ironFace","mid":"ironFace","far":"ironFace"},"lod":{"mid":12,"far":25,"dither":3}},
+    bronze_light: {"v1":"bronze_light","seed":403,"desc":"SWORD (US-078). Bronze high points: the crossguard top + the down-curved quillon tips, the pommel cap. Old fantasy bronze (pale ochre-brown), NOT machine brass: no rivets, no `o` plate glyphs.","albedo":0.92,"bgK":0.16,"detail":66,"jitter":0.05,"tones":[["bronzeLight",3],["bronze",1]],"grid":{"u":0.015,"v":0.015,"stagger":0,"lines":false},"face":{"set":"copperFace","mid":"copperFace","far":"copperFace"},"lod":{"mid":12,"far":25,"dither":3}},
+    bronze: {"v1":"bronze","seed":404,"desc":"SWORD (US-078). Old bronze body: the guard underside, the ferrule ring, the pommel. Tarnished brown, a step below bronze_light so the guard has a lit top and a dark underside (Blood-style rim / body).","albedo":0.78,"bgK":0.14,"detail":66,"jitter":0.05,"tones":[["bronze",3],["bronzeDark",1]],"grid":{"u":0.015,"v":0.015,"stagger":0,"lines":false},"face":{"set":"copperFace","mid":"copperFace","far":"copperFace"},"lod":{"mid":12,"far":25,"dither":3}},
+    leather: {"v1":"leather","seed":405,"desc":"SWORD (US-078). The worn dark-leather grip wrap: woodDark with a diagonal wrap seam `/` (ropeDark) and a few hand-polished spots (rope). Matte (spec 0.08).","albedo":0.75,"bgK":0.12,"detail":66,"jitter":0.05,"tones":[["woodDark",3],["ropeDark",2],["rope",1]],"grid":{"u":0.015,"v":0.015,"stagger":0,"lines":false},"face":{"set":"canvasFace","mid":"canvasFace","far":"canvasFace"},"lod":{"mid":12,"far":25,"dither":3}},
+    steel_glint: {"v1":"steel_glint","seed":406,"desc":"SWORD (US-078). The pickup's \"take me\" glint: a white-hot bar that slides down the blade front in 3 steps (70 ms each) every 2.4 s (clip idle). Emissive 0.90, cool white (mirror tint, not brass). Never on a static voxel.","albedo":1,"bgK":0.25,"detail":66,"jitter":0.05,"tones":[["white",3],["mirror",2]],"grid":{"u":0.015,"v":0.015,"stagger":0,"lines":false},"face":{"set":"glint","mid":"glint","far":"glint"},"lod":{"mid":12,"far":25,"dither":3},"emissive":0.9}
   };
 
   // v1 material key -> v2 key. Since US-029 every non-sky v1 material has a v2 record (sky keeps its own shader).
@@ -757,7 +764,9 @@
     // v1.16 US-026a waystone (design/models/voxel_world.js), same key in both files.
     waystone_light: 'waystone_light', waystone: 'waystone', waystone_dark: 'waystone_dark', waystone_mark: 'waystone_mark',
     // RTS-01 team materials (palette.js), same key in both files.
-    'team.a': 'team.a', 'team.teal': 'team.teal', 'team.red': 'team.red', 'team.gold': 'team.gold', 'team.violet': 'team.violet'
+    'team.a': 'team.a', 'team.teal': 'team.teal', 'team.red': 'team.red', 'team.gold': 'team.gold', 'team.violet': 'team.violet',
+    // US-078 ruin-steel sword (design/models/sword.js), same key in both files.
+    steel_edge: 'steel_edge', steel_old: 'steel_old', bronze_light: 'bronze_light', bronze: 'bronze', leather: 'leather', steel_glint: 'steel_glint'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

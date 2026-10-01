@@ -193,7 +193,11 @@
     unitTealLight:    '#b4f2ff', unitTeal:    '#30c8f0', unitTealDark:    '#12607e', // team 1 (own)
     unitRedLight:     '#ffa48c', unitRed:     '#f04a3a', unitRedDark:     '#7c1a14', // team 2 (enemy)
     unitGoldLight:    '#fff0a8', unitGold:    '#f4c238', unitGoldDark:    '#8a6412', // spare team 3
-    unitVioletLight:  '#e8c8ff', unitViolet:  '#b86af4', unitVioletDark:  '#5a2c8c'  // spare team 4
+    unitVioletLight:  '#e8c8ff', unitViolet:  '#b86af4', unitVioletDark:  '#5a2c8c', // spare team 4
+    // US-078 ruin-steel sword (design/models/sword.js `swordKit.colors`, designer merge): fantasy bronze, NOT machine brass/copper
+    bronzeLight: '#c49a6c',
+    bronze: '#866044',
+    bronzeDark: '#4a3424'
   };
 
   // ---------------------------------------------------------------------------
@@ -939,6 +943,13 @@
     'unitRed', 'unitRedLight', 'unitRedDark', 0.15);
   materials['team.gold'] = teamMat('RTS UNITS. Spare team 3: gold yellow.', 'unitGold', 'unitGoldLight', 'unitGoldDark', 0.15);
   materials['team.violet'] = teamMat('RTS UNITS. Spare team 4: violet.', 'unitViolet', 'unitVioletLight', 'unitVioletDark', 0.15);
+  // US-078 ruin-steel sword (design/models/sword.js `swordKit.v1`, designer merge): appended last so no material id moves.
+  materials.steel_edge = {"desc":"SWORD (US-078). The two honed edges and the tip of the ruin-steel blade: pale cool steel (mirror), high spec, so the edges catch the sun patch / lamp first and frame the dark fuller. A few duller nicks in the texture.","base":"mirror","albedo":0.95,"ramp":"iron","spec":0.75,"bg":{"mode":"darken","k":0.16},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"h":{"shade":1.12,"tint":"white","amount":0.3},"n":{"shade":0.8,"tint":"iron","amount":0.5}},"rows":["ahaa","aaan","aaha","naaa"]}};
+  materials.steel_old = {"desc":"SWORD (US-078). The blade flats + ricasso: old grey steel with rust pits and grey wear (ironLight). Lower spec than the edge, so the flat reads as \"worn\", the edge as \"still sharp\".","base":"ironLight","albedo":0.85,"ramp":"iron","spec":0.45,"bg":{"mode":"darken","k":0.15},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"p":{"shade":0.78,"tint":"rust","amount":0.45,"glyph":"."},"g":{"shade":0.9,"tint":"ash","amount":0.4}},"rows":["aapa","gaaa","aaga","paag"]}};
+  materials.bronze_light = {"desc":"SWORD (US-078). Bronze high points: the crossguard top + the down-curved quillon tips, the pommel cap. Old fantasy bronze (pale ochre-brown), NOT machine brass: no rivets, no `o` plate glyphs.","base":"bronzeLight","albedo":0.92,"ramp":"iron","spec":0.45,"bg":{"mode":"darken","k":0.16},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"t":{"shade":0.82,"tint":"bronzeDark","amount":0.45}},"rows":["aata","aaaa","taaa","aaat"]}};
+  materials.bronze = {"desc":"SWORD (US-078). Old bronze body: the guard underside, the ferrule ring, the pommel. Tarnished brown, a step below bronze_light so the guard has a lit top and a dark underside (Blood-style rim / body).","base":"bronze","albedo":0.78,"ramp":"iron","spec":0.3,"bg":{"mode":"darken","k":0.14},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"t":{"shade":0.75,"tint":"bronzeDark","amount":0.6}},"rows":["ataa","aaaa","aata","taaa"]}};
+  materials.leather = {"desc":"SWORD (US-078). The worn dark-leather grip wrap: woodDark with a diagonal wrap seam `/` (ropeDark) and a few hand-polished spots (rope). Matte (spec 0.08).","base":"woodDark","albedo":0.75,"ramp":"wood","spec":0.08,"bg":{"mode":"darken","k":0.12},"textureFade":[3,10],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"w":{"shade":0.7,"tint":"ropeDark","amount":0.6,"glyph":"/"},"s":{"shade":1.2,"tint":"rope","amount":0.4}},"rows":["waaa","awas","aawa","saaw"]}};
+  materials.steel_glint = {"desc":"SWORD (US-078). The pickup's \"take me\" glint: a white-hot bar that slides down the blade front in 3 steps (70 ms each) every 2.4 s (clip idle). Emissive 0.90, cool white (mirror tint, not brass). Never on a static voxel.","base":"white","albedo":1,"ramp":"iron","spec":0.9,"emissive":0.9,"bg":{"mode":"darken","k":0.25},"textureFade":[4,12],"texture":{"w":2,"h":2,"scale":[33,33],"key":{"a":{"shade":1,"glyph":"*"},"h":{"shade":1,"tint":"mirror","amount":0.4,"glyph":"+"}},"rows":["ah","ha"]}};
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
