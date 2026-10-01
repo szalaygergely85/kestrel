@@ -51,6 +51,7 @@ import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 // since the normal is already resolved by the time it reaches this pass).
 import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
 import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
+import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
 
 export const MAX_SUB = 16; // 4x4, matches resolve.frag.js's cap
 
@@ -85,6 +86,7 @@ uniform isampler2D uSetI; // RGBA32I, width ${SET_I_WIDTH}
 // main() (constant over a cell's sub-samples, 14.3 item 3) and threaded
 // into shadeCore as Lm (only max(r,g,b) is needed there).
 uniform usampler2D uLightTex;
+uniform int uSunMapOn; // ME-15c: 1 = the light pass ran the sun shadow map; LIGHT.w bits 16..18 = n (0..4), terrain sun term *= n/4
 uniform float uTimeSec; // US-016: the terrain water-glint timer (item 5); unused by the material path
 uniform float uCellAspect;
 uniform float uCutoff, uLift, uFgMin, uFgMaxGain, uTintK, uOverbright, uOverbrightMax;
@@ -426,8 +428,9 @@ void main() {
     // is the one read site for either renderer.
     vec3 Nt = unpackNormalOct(texelFetch(uGI, cell, 0).z);
     float ndotlT = Nt.x * uSunDir.x + Nt.y * uSunDir.y + Nt.z * uSunDir.z;
-    float bSunT = uAmbientI + uSunI * max(0.0, ndotlT);
     uvec4 lightT = texelFetch(uLightTex, cell, 0);
+    float sunFT = uSunMapOn != 0 ? float((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25 : 1.0; // ME-15c (US-070b)
+    float bSunT = uAmbientI + uSunI * max(0.0, ndotlT) * sunFT;
     vec3 LcT = uintBitsToFloat(lightT.xyz);
     float bT = bSunT + max(LcT.r, max(LcT.g, LcT.b));
     // RE-02a (28.1 A2 item 3): the horizontal forward distance (mode 0: unchanged, vd * 1.0 skipped).

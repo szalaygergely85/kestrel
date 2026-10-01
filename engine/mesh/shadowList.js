@@ -6,11 +6,11 @@
 // props) and culled with the shadow ortho planes (`shadowSunMatrix().planes`).
 // Sprites / kind 0 are never in a DrawList. Zero allocation per frame.
 //
-// Limits (documented, ME-15b/c to revisit): the voxel feed reads whatever pool
-// the caller passes (`VoxelPool.project` already drops off-screen props, so
-// pass an unculled pool to shadow-cast from behind the camera); RE-06
-// instanced groups are not included (their per-instance buffers are shared
-// with the camera list, memoised on the camera frustum).
+// ME-15c: the voxel feed reads `src.voxelPool` (pass `VoxelPool.shadowView`, posed
+// without the screen cull by `projectShadow()`, so props behind the camera
+// cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
+// instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
+// outside the view still shadow what is on screen; the sun-plane cull is per group.
 import { DrawList, addStructures, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 
@@ -30,6 +30,7 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {{list: any[], partNamesFor: (k: string) => string[]}|null} [voxelPool]
  * @property {import('./voxelMesh.js').VoxelMeshCache} [voxelMeshCache]
  * @property {number} [fogFarM] - structure distance cull (default 2000, as the camera feed)
+ * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): full buffer, parts from the camera pass
  */
 
 /**
@@ -49,6 +50,17 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
     addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor);
+  }
+  const ig = src.instances;
+  if (ig && ig.pool && src.voxelMeshCache) {
+    const groups = ig.groups;
+    for (let k = 0; k < groups.length; k++) {
+      const g = groups[k];
+      if (g.count <= 0) continue;
+      const pm = ig.pool.models.get(g.modelKey);
+      if (!pm) continue;
+      list.addInstances(src.voxelMeshCache.get(pm, g.modelKey, ig.pool.partNamesFor(g.modelKey)), g.parts, g.ib, g.count);
+    }
   }
   list.cull(planes);
   if (cameraList) syncTerrainLod(list, cameraList);

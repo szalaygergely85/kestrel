@@ -13,6 +13,7 @@ import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 
 const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0,
   pitched: false, fX: 0, fY: 0, fZ: 0, rX: 0, rY: 0, uX: 0, uY: 0, uZ: 0, tanHalfX: 0, tanHalfY: 0 };
+const _noCullProj = { cols: 1, rows: 1, planeDet: 0, pitched: false }; // ME-15c: instanceRect with no screen cull (world AABB only)
 const _poolPitch = createPitchedTerms(); // RE-02a
 const _poolGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 
@@ -44,6 +45,11 @@ export class VoxelPool {
     this._partNames = new Map();
     /** @type {(modelKey: string) => string[]} */
     this.partNamesFor = (key) => /** @type {string[]} */ (this._partNames.get(key));
+    // ME-15c (27.9a amendment, caster gap b): every queued prop posed WITHOUT the screen cull, for the sun
+    // shadow list (props behind the player still cast). `shadowView` is the {list, partNamesFor} shape
+    // `buildShadowList` feeds to `addVoxelInstances`.
+    this.shadowList = [];
+    this.shadowView = { list: this.shadowList, partNamesFor: this.partNamesFor };
     // Camera eye position from this frame's project() call - VoxelTextures.js's
     // writeInstanceRows reads these to compute the part-local eye (oL = A*eye+b,
     // 15.2 item 3) in float64 JS.
@@ -212,6 +218,32 @@ export class VoxelPool {
       }
     }
     for (let k = 0; k < count; k++) this._queueEntity(ents[idx[k]]);
+  }
+
+  /**
+   * ME-15c: poses every queued instance (same cap as `project`, meshOnly models included - shadows are mesh-only)
+   * into `this.shadowList` with no screen cull; `rect` carries the world AABB the shadow-plane cull uses.
+   * Zero allocation once warm.
+   */
+  projectShadow() {
+    const n = Math.min(this._rawCount, MAX_VOX_INSTANCES);
+    for (let i = 0; i < n; i++) {
+      const inst = this.raw[i];
+      let out = this.shadowList[i];
+      if (!out) {
+        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, slot: i,
+          pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
+          rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
+        this.shadowList[i] = out;
+      }
+      instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
+      out.model = inst.model; out.modelKey = inst.modelKey;
+      out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs;
+      out.slot = i;
+    }
+    this.shadowList.length = n;
+    return n;
   }
 
   /** Poses and culls this frame's queued instances via the shared

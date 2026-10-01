@@ -386,6 +386,12 @@ export function compareLight(fbLight, lightBuf, kind, cols, rows) {
   const n = cols * rows;
   let nonSky = 0, checked = 0, sunlitChecked = 0, sunlitMismatch = 0;
   let dLMax = 0, dLViol = 0, litFlip = 0;
+  // ME-15c (27.9a item 10): with the sun shadow map (`fbLight.sunMapOn`) the sunlit metric excludes the boundary set
+  // (cells where any PCF tap compares within 2 * biasM of the stored depth or the tap choice is within 0.01 texel of
+  // flipping - float32 vs float64 may legitimately differ there, shadowSun.js `sunShadowInfo`), is taken over LIT cells
+  // (<= 0.5 %), and `n` (LIGHT.w bits 16..18) may differ on <= 1 % of the checked cells.
+  const mapOn = !!fbLight.sunMapOn;
+  let boundaryCells = 0, nMismatch = 0, litCells = 0, nChecked = 0;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -395,6 +401,16 @@ export function compareLight(fbLight, lightBuf, kind, cols, rows) {
       checked++;
       const gpuSunlit = lightBuf[i * 4 + 3] & 1;
       const cpuSunlit = fbLight.sunlit ? fbLight.sunlit[i] : 0;
+      if (mapOn) {
+        if (fbLight.sunBoundary[i]) { boundaryCells++; continue; }
+        nChecked++;
+        if (cpuSunlit || gpuSunlit) litCells++;
+        if (((lightBuf[i * 4 + 3] >>> 16) & 7) !== fbLight.sunN[i]) {
+          nMismatch++;
+          if (gpuSunlit !== cpuSunlit) sunlitMismatch++;
+          continue;
+        }
+      }
       if (gpuSunlit !== cpuSunlit) { sunlitMismatch++; continue; }
       sunlitChecked++;
       const o = i * 3;
@@ -417,8 +433,17 @@ export function compareLight(fbLight, lightBuf, kind, cols, rows) {
       }
     }
   }
-  const sunlitMismatchFrac = nonSky ? sunlitMismatch / nonSky : 0;
   const litFlipFrac = nonSky ? litFlip / nonSky : 0;
+  if (mapOn) {
+    const sunlitMismatchFracLit = litCells ? sunlitMismatch / litCells : 0;
+    const nMismatchFrac = nChecked ? nMismatch / nChecked : 0;
+    return {
+      nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac: sunlitMismatchFracLit, dLMax, dLViol, litFlip, litFlipFrac,
+      sunMap: true, boundaryCells, boundaryFrac: checked ? boundaryCells / checked : 0, litCells, nMismatch, nMismatchFrac,
+      pass: sunlitMismatchFracLit <= 0.005 && nMismatchFrac <= 0.01 && litFlipFrac <= 0.005 && dLViol === 0,
+    };
+  }
+  const sunlitMismatchFrac = nonSky ? sunlitMismatch / nonSky : 0;
   return {
     nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac, dLMax, dLViol, litFlip, litFlipFrac,
     pass: sunlitMismatchFrac <= 0.005 && litFlipFrac <= 0.005 && dLViol === 0,

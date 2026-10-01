@@ -48,6 +48,28 @@ export function resolveSunShadowOptions(user, renderer) {
 
 const _fwd = [0, 0];
 
+/** `LIGHT.w` layout (27.9a item 6): bits 0 sunlit, 8..15 litCount, 16..18 the quantised PCF tap count `n`. */
+export const SUN_N_SHIFT = 16;
+export const SUN_N_MASK = 7;
+
+/**
+ * Side output of `sunShadowTaps` (single-threaded scratch, like `lightFlags`): `boundary` = 1 when any tap
+ * compares within `2 * biasM` metres of the stored depth, or the tap selection `floor(uv*res - 0.5)` is within
+ * 0.01 texel of flipping (27.9a item 10's "boundary set": cells where float32 vs float64 may legitimately differ).
+ */
+export const sunShadowInfo = { boundary: 0 };
+
+/**
+ * Structure/terrain distance cull for the shadow list (27.9a amendment 2 / 15c): the palette's far-fog
+ * `full` distance (nothing beyond it is visible), never less than the shadow box. Default 2000 (camera feed).
+ * @param {{fog?: {far?: {full?: number}}}|null|undefined} palette
+ * @param {{boxM: number}} opts
+ */
+export function sunShadowFogFar(palette, opts) {
+  const f = palette && palette.fog && palette.fog.far;
+  return f && /** @type {number} */ (f.full) > 0 ? Math.max(/** @type {number} */ (f.full), opts.boxM) : 2000;
+}
+
 /** Depth-range box centre is snapped to this grid (m) and grown by one quantum, so `M` stays bit-stable under sub-texel eye moves. */
 const DEPTH_QUANTUM_M = 8;
 
@@ -166,18 +188,27 @@ export function sunShadowTaps(map, M, P, N, opts) {
   const cx = M[0] * px + M[4] * py + M[8] * pz + M[12];
   const cy = M[1] * px + M[5] * py + M[9] * pz + M[13];
   const cz = M[2] * px + M[6] * py + M[10] * pz + M[14];
+  sunShadowInfo.boundary = 0;
   const u = (cx + 1) * 0.5, v = (cy + 1) * 0.5;
   if (u < 0 || u >= 1 || v < 0 || v >= 1 || cz < -1 || cz > 1) return 4;
   const res = opts.res;
-  const tx0 = Math.floor(u * res - 0.5), ty0 = Math.floor(v * res - 0.5);
+  const fu = u * res - 0.5, fv = v * res - 0.5;
+  const tx0 = Math.floor(fu), ty0 = Math.floor(fv);
+  const du = fu - tx0, dv = fv - ty0;
+  let boundary = (du < 0.01 || du > 0.99 || dv < 0.01 || dv > 0.99) ? 1 : 0;
   const W = map.W, zb = map.zbuf;
+  const tolNdc = 2 * opts.biasM * fl; // metres -> NDC z (fl = |depth row| = 2 / depth range)
   let n = 0;
   for (let j = 0; j < 2; j++) {
     const ty = ty0 + j;
     for (let i = 0; i < 2; i++) {
       const tx = tx0 + i;
-      if (tx < 0 || ty < 0 || tx >= W || ty >= W || cz <= zb[ty * W + tx]) n++;
+      if (tx < 0 || ty < 0 || tx >= W || ty >= W) { n++; continue; }
+      const z = zb[ty * W + tx];
+      if (cz <= z) n++;
+      if (Math.abs(cz - z) <= tolNdc) boundary = 1;
     }
   }
+  sunShadowInfo.boundary = boundary;
   return n;
 }

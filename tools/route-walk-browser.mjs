@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/route-walk-browser.mjs (ME-12 phase-2 gate, AC 1, 6, 7). Headless Chrome over CDP, own server on --port.
-//   node tools/route-walk-browser.mjs --port 9230 --grid 400x150 --renderer mesh --physics mesh [--out file.json]
+//   node tools/route-walk-browser.mjs --port 9230 --grid 400x150 --renderer mesh --physics mesh [--shadows map] [--out file.json]
 // Loads game/index.html?voxelbench=0&... (any truthy voxelbench/bench param = isCaptureOrBench = no pause overlay, so no
 // pointer lock is needed; =0 does not start the voxel bench), waits for the player, then F3 (GPU pass timing) and walks the whole M1 route by
 // writing the game's own Input (KeyW/ShiftLeft/Space/KeyE) and look.yawDeg each frame. Per frame it samples
@@ -18,7 +18,8 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (
 const port = Number(args.port);
 validatePort(port);
 const grid = args.grid || '400x150', renderer = args.renderer || 'mesh', physics = args.physics || 'mesh';
-const query = `voxelbench=0&grid=${grid}&renderer=${renderer}&physics=${physics}`;
+const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
+const query = `voxelbench=0&grid=${grid}&renderer=${renderer}&physics=${physics}${shadows ? `&shadows=${shadows}` : ''}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.

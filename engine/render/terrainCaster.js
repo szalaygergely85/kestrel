@@ -476,13 +476,15 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   const cells = fb.rt.cells || fb.rt;
   const n = gbuf.cols * gbuf.rows;
   const light = fb.light;
+  const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
   const alias = terrainAoAlias(gbuf);
   for (let i = 0; i < n; i++) {
     if (gbuf.kind[i] !== KIND_TERRAIN) continue;
     const u = gbuf.u[i], v = gbuf.v[i], t = fb.depth.depth[i];
     unpackNormalOct(alias[i], shadeNrm);
     const ndotl = shadeNrm[0] * sun.dirX + shadeNrm[1] * sun.dirY + shadeNrm[2] * sun.dirZ;
-    const b = sun.ambientI + sun.sunI * Math.max(0, ndotl);
+    // ME-15c (27.9a item 6, US-070b): with the sun shadow map the analytic sun term is scaled by n/4 (light pass PCF taps).
+    const b = sun.ambientI + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1);
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
       const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];

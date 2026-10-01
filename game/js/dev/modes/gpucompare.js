@@ -296,6 +296,28 @@ function buildCompareRuns(ctx) {
   fpRun('fpDown60', { x: 1470, y: 1025, z: 4.0, yawDeg: 270, pitchDeg: -60 });
   fpRun('fpTowerDown45', { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 40, pitchDeg: -45 });
 
+  // ME-15c (27.9a item 11): sun-shadow parity poses (mesh-only; GPU light pass + shade vs the JS twin with the same
+  // rasterJS depth-only map). With `&shadows=map` every pose above also runs the map; these pin sun az 135 el 30
+  // (shadows fall NW) so the casters are long and obvious. Without `&shadows=map` they are plain mesh poses.
+  const SUN_135_30 = { azimuth: 135, elevation: 30 };
+  const groundZ = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0);
+  // signal tower shadow on terrain: eye 9 m above the grass 28 m NNW of the tower looking SE-down (into the sun), the shadow lies on the grass between
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: towerShadowGrass (ME-15c, signal tower shadow on terrain, sun az 135 el 30)',
+    cam: { x: 1474, y: 1006, z: groundZ(1474, 1006) + 9.0, yawDeg: 137, pitchDeg: -17 }, real: true, meshOnly: true, sun: SUN_135_30 });
+  // voxel lever lit through the tower doorway, part in shadow (existing lever feet position)
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: leverSunShaft (ME-15c, voxel lever through a doorway, sun az 135 el 30)',
+    cam: { x: LEVER_X - 2.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 40 }, meshOnly: true, sun: SUN_135_30,
+    before: () => compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90) });
+  // crash room: burner (voxel prop) and gondola cast on the floor
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: burnerShadowFloor (ME-15c, crash room, burner shadow on the floor, sun az 135 el 30)',
+    cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: -32 }, real: true, meshOnly: true, sun: SUN_135_30 });
+  // pitched RTS hill, focus-centred box
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHill58Shadow (ME-15c, pitched RTS hillside, focus-centred sun box, sun az 135 el 30)',
+    cam: rtsHillPose(-58), real: true, meshOnly: true, sun: SUN_135_30 });
+  // first person at open terrain looking west: the box far edge (eye + 64 m + 96 m = 160 m ahead) lies inside the fog; no seam
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: fpBoxEdge (ME-15c, first person, sun box edge 160 m ahead, sun az 135 el 30)',
+    cam: { x: 1464.33, y: 1045.5, z: groundZ(1464.33, 1045.5) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -2 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30 });
+
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 
@@ -326,6 +348,24 @@ function compareOverlayCells(ov, twinFg, gpuFg, depth) {
   }
   r.boundaryPct = r.cells ? (100 * r.boundary) / r.cells : 0;
   return r;
+}
+
+/**
+ * ME-15c: temporarily points BOTH sun sources at `sun = {azimuth, elevation}` for one pose - the light set (the shadow
+ * map + the light pass) and the first structure's `def.sun` (the terrain's analytic sun, `sunFromWorld`) - so a pose
+ * can pin e.g. az 135 el 30. Returns the restore closure.
+ */
+function applySunOverride(world, lights, sun) {
+  const s0 = world.structures && world.structures[0];
+  const def = s0 && s0.level && s0.level.def;
+  const hadDef = def && 'sun' in def, oldDef = def ? def.sun : undefined;
+  const old = lights ? { elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: lights.sun.on } : null;
+  if (def) def.sun = { ...(def.sun || {}), azimuth: sun.azimuth, elevation: sun.elevation };
+  if (lights) lights.setSun({ elevation: sun.elevation, azimuth: sun.azimuth, on: true });
+  return () => {
+    if (def) { if (hadDef) def.sun = oldDef; else delete def.sun; }
+    if (lights && old) lights.setSun(old);
+  };
 }
 
 function runGpuCompareDdaMode(ctx) {
@@ -361,6 +401,8 @@ function runGpuCompareDdaMode(ctx) {
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
     instances: compareInstances,
+    // ME-15c: the JS twin renders the same sun shadow map as the GPU pass whenever the pipeline runs sun 'map'.
+    shadowOpts: renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,
   };
   const compareSceneDim = createSceneDim();
 
@@ -373,8 +415,11 @@ function runGpuCompareDdaMode(ctx) {
   const shadowRows = [];
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault } of runs) {
+  let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride } of runs) {
+    if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
+    if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
@@ -484,6 +529,7 @@ function runGpuCompareDdaMode(ctx) {
     overallOk = overallOk && ok;
     rowsOut.push({ pose: poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
   }
+  if (restoreSun) { restoreSun(); restoreSun = null; }
   overallOk = overallOk && sampledOwnTextures;
   for (const r of shadowRows) overallOk = overallOk && r.ok;
   fbCompare.sceneFade = 1;
@@ -556,8 +602,9 @@ function runGpuCompareDdaMode(ctx) {
       `  k8 cpu ${r.cmpGeom.k8Cpu}  gpu ${r.cmpGeom.k8Gpu}${r.isVoxelPose ? (r.k8Ok ? ' (both > 0, OK)' : ' (must both be > 0 on a voxel pose - FAIL)') : ''}\n` +
       `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
       `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
-      `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)\n`;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip})`);
+      `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.sunMap ? r.cmpLight.litCells + ' lit' : r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)` +
+      (r.cmpLight.sunMap ? `  [sun map] boundary ${r.cmpLight.boundaryCells} (${(r.cmpLight.boundaryFrac * 100).toFixed(2)}%)  n mismatch ${r.cmpLight.nMismatch} (${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%, <=1%)` : '') + '\n';
+    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip}${r.cmpLight.sunMap ? `, sunMap lit=${r.cmpLight.litCells} sunlitFrac=${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% boundary=${r.cmpLight.boundaryCells} nMismatch=${r.cmpLight.nMismatch}(${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%)` : ''})`);
   }
   for (const r of shadowRows) {
     const d = r.shadowDepth;
@@ -628,7 +675,7 @@ function runGpuCompareMeshMode(ctx) {
   }
 
   const pipelineDda = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'dda' });
-  const pipelineMesh = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'mesh' });
+  const pipelineMesh = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'mesh', shadows: { sun: 'dda' } }); // ME-15c: dda-vs-mesh pins the sun DDA
   if (!pipelineDda.ready || !pipelineMesh.ready) {
     const msg = `[gpucompare] mesh-migration pipelines failed to compile (dda ready=${pipelineDda.ready}, mesh ready=${pipelineMesh.ready}) - nothing to compare.`;
     console.error(msg);

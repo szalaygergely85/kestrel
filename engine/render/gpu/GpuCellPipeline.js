@@ -76,7 +76,7 @@ import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 // ME-15b (27.9a): sun shadow map pass (depth only, before the raster pass).
-import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre } from '../shadowSun.js';
+import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from '../shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../mesh/shadowList.js';
 import { SHADOW_FRAG_SRC, SHADOW_TERRAIN_FRAG_SRC, SHADOW_DEPTH_COPY_FRAG_SRC } from './glsl/shadow.frag.js';
 import { CELL_VERT_SRC as SHADOW_COPY_VERT_SRC } from './glsl/cell.vert.js';
@@ -271,7 +271,7 @@ export class GpuCellPipeline {
       this.shadowActive = false;
       this._shadowDepthTex = null;
       this._shadowTarget = null;
-      this.progShadow = null; this.progShadowTerrain = null;
+      this.progShadow = null; this.progShadowTerrain = null; this.progShadowInst = null;
       this._copyPipeline = null; this._copyTarget = null; this._copyTex = null;
       if (this.shadowOpts.sun === 'map') {
         const dev = this._meshDevice, res = this.shadowOpts.res;
@@ -279,12 +279,13 @@ export class GpuCellPipeline {
         this._shadowTarget = dev.createTarget({ color: [], depth: this._shadowDepthTex });
         this.progShadow = linkProgram(gl, MESH_VERT_SRC, SHADOW_FRAG_SRC);
         this.progShadowTerrain = linkProgram(gl, TERRAIN_VERT_SRC, SHADOW_TERRAIN_FRAG_SRC);
+        this.progShadowInst = linkProgram(gl, MESH_INST_VERT_SRC, SHADOW_FRAG_SRC); // ME-15c: RE-06 instanced casters
         this._sunMat = createSunShadowMatrix();
         this._sunMatF32 = new Float32Array(16);
         this._shadowList = createShadowList();
         this._shadowCentre = new Float64Array(3);
         this._shadowWorldZ = { min: 0, max: 0 };
-        this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000 };
+        this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null };
       }
     }
 
@@ -410,6 +411,7 @@ export class GpuCellPipeline {
     this._locsMeshInst = this.progMeshInst ? this._uniformLocs(this.progMeshInst, MESH_INST_UNIFORMS) : null;
     this._locsMeshTerrain = this.progMeshTerrain ? this._uniformLocs(this.progMeshTerrain, TERRAIN_MESH_UNIFORMS) : null;
     this._locsShadow = this.progShadow ? this._uniformLocs(this.progShadow, ['uModel', 'uViewProj']) : null;
+    this._locsShadowInst = this.progShadowInst ? this._uniformLocs(this.progShadowInst, ['uModel', 'uViewProj']) : null;
     this._locsShadowTerrain = this.progShadowTerrain ? this._uniformLocs(this.progShadowTerrain, ['uModel', 'uViewProj', 'uStructFoot', 'uStructCount']) : null;
 
     // Architect review 1 item 3 (blocking): texture bindings are now a
@@ -599,6 +601,7 @@ export class GpuCellPipeline {
     this._lightBinds = this._buildBindTable(this._locsLight, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
       ['uWorldGeom', this.texWorldGeom], ['uWorldFlags', this.texWorldFlags],
+      ['uSunShadow', this._shadowDepthTex ? this._shadowDepthTex.handle : null], // ME-15c (null = DDA sun: sampler unused)
     ]);
     // `_shadeBindsSet1`/`Set2` list every entry in the same order (only the
     // uSGI/uSGA texture object differs), so their unit assignment is
@@ -741,7 +744,7 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
@@ -1966,7 +1969,12 @@ export class GpuCellPipeline {
     c.x = this._shadowCentre[0]; c.y = this._shadowCentre[1]; c.z = this._shadowCentre[2];
     src.cache = this._levelMeshCache;
     src.terrainSet = this._rasterTerrainSet;
-    src.voxelPool = this._voxelPool;
+    // ME-15c (27.9a amendment, caster gaps a/b): props posed WITHOUT the screen cull (casters behind the player),
+    // RE-06 instanced groups with their full instance buffer, structure cull at the real fog distance.
+    const vp = this._voxelPool;
+    if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
+    src.instances = this._instances || null;
+    src.fogFarM = sunShadowFogFar(this._palette, so);
     shadowWorldZ(world, this._levelMeshCache, this._shadowWorldZ);
     const sm = shadowSunMatrix(sun.dir, this._shadowCentre, so, this._shadowWorldZ, this._sunMat);
     const Mf = this._sunMatF32;
@@ -2028,6 +2036,61 @@ export class GpuCellPipeline {
         this._setModel(loc.uModel, pm, p * 12);
         gl.drawElements(gl.TRIANGLES, range.count * 3, idxEnum, range.start * 3 * idxBytes);
         draws++;
+      }
+    }
+
+    // RE-06 instanced casters (ME-15c): same instanced vertex shader + draw as the raster pass, depth only.
+    {
+      let any = false;
+      for (let i = 0; i < list.count; i++) if (list.items[i].type === DRAW_INSTANCED) { any = true; break; }
+      if (any) {
+        const locI = this._locsShadowInst;
+        gl.useProgram(this.progShadowInst);
+        gl.bindVertexArray(this._meshInstVao);
+        gl.uniformMatrix4fv(locI.uViewProj, false, Mf);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._meshInstVbo);
+        gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES_PER_FRAME * INSTANCE_BYTES, gl.DYNAMIC_DRAW); // orphan
+        const GL_IDX_U16 = gl.UNSIGNED_SHORT, GL_IDX_U32 = gl.UNSIGNED_INT;
+        const M = this._meshModelF32;
+        let instTotal = 0;
+        for (let i = 0; i < list.count; i++) {
+          const item = list.items[i];
+          if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
+          const n = item.instCount;
+          if (instTotal + n > MAX_INSTANCES_PER_FRAME) break; // shadow-only overflow: drop the rest (never throw for a shadow)
+          const baseBytes = instTotal * INSTANCE_BYTES;
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._meshInstVbo);
+          gl.bufferSubData(gl.ARRAY_BUFFER, baseBytes, item.instBuf.f32, 0, n * 16);
+          gl.vertexAttribPointer(6, 4, gl.FLOAT, false, INSTANCE_BYTES, baseBytes);
+          gl.vertexAttribPointer(7, 4, gl.FLOAT, false, INSTANCE_BYTES, baseBytes + 16);
+          gl.vertexAttribPointer(8, 4, gl.FLOAT, false, INSTANCE_BYTES, baseBytes + 32);
+          gl.vertexAttribIPointer(9, 2, gl.UNSIGNED_INT, INSTANCE_BYTES, baseBytes + 48);
+          instTotal += n;
+          const mesh = item.mesh;
+          const entry = this._meshBuffers.getVoxel(mesh);
+          gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
+          for (let a = 0; a < VOXEL_VERTEX_LAYOUT.length; a++) {
+            const attr = VOXEL_VERTEX_LAYOUT[a];
+            if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, VOXEL_STRIDE_BYTES, attr.offsetBytes);
+            else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, VOXEL_STRIDE_BYTES, attr.offsetBytes);
+          }
+          const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
+          const idxBytes = entry.indexType === 'u16' ? 2 : 4;
+          const ranges = mesh.ranges, pm = item.partMatrices;
+          for (let p = 0; p < ranges.length; p++) {
+            const range = ranges[p];
+            if (range.count <= 0) continue;
+            const o = p * 12;
+            M[0] = pm[o]; M[1] = pm[o + 3]; M[2] = pm[o + 6]; M[3] = 0;
+            M[4] = pm[o + 1]; M[5] = pm[o + 4]; M[6] = pm[o + 7]; M[7] = 0;
+            M[8] = pm[o + 2]; M[9] = pm[o + 5]; M[10] = pm[o + 8]; M[11] = 0;
+            M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
+            gl.uniformMatrix4fv(locI.uModel, false, M);
+            gl.drawElementsInstanced(gl.TRIANGLES, range.count * 3, idxEnum, range.start * 3 * idxBytes, n);
+            draws++;
+          }
+        }
       }
     }
     gl.disable(gl.CULL_FACE);
@@ -2186,6 +2249,7 @@ export class GpuCellPipeline {
       gl.uniform3f(loc.uAmbient, a[0] || 0, a[1] || 0, a[2] || 0);
       gl.uniform1i(loc.uLightCount, 0);
       gl.uniform1i(loc.uSunOn, 0);
+      gl.uniform1i(loc.uSunMode, 0);
       return;
     }
     gl.uniform3f(loc.uAmbient, light.ambient[0], light.ambient[1], light.ambient[2]);
@@ -2197,6 +2261,17 @@ export class GpuCellPipeline {
     if (sun) {
       gl.uniform3f(loc.uSunDir, sun.dir[0], sun.dir[1], sun.dir[2]);
       gl.uniform3f(loc.uSunCol, sun.col[0], sun.col[1], sun.col[2]);
+    }
+    // ME-15c: sun mode 2 (shadow map: the sun DDA is skipped) only when this frame's shadow pass actually ran.
+    const mapOn = this.shadowActive && !!sun && sun.on;
+    gl.uniform1i(loc.uSunMode, mapOn ? 2 : (sun && sun.on ? 1 : 0));
+    if (mapOn) {
+      const so = this.shadowOpts;
+      gl.uniformMatrix4fv(loc.uSunShadowM, false, this._sunMatF32);
+      gl.uniform1f(loc.uSunShadowRes, so.res);
+      gl.uniform1f(loc.uSunShadowTexelM, this._sunMat.texelM);
+      gl.uniform1f(loc.uSunShadowBiasM, so.biasM);
+      gl.uniform1f(loc.uSunShadowNormalOff, so.normalOffsetTexels);
     }
     const n = Math.min(MAX_LIGHTS, light.count);
     gl.uniform1i(loc.uLightCount, n);
@@ -2322,6 +2397,7 @@ export class GpuCellPipeline {
     // US-006: light is now `uLightTex` (bound in `_shadeBindsSet1`/`Set2`, filled by
     // `_passLight` right before this call) - no `uLight` uniform any more.
     gl.uniform1f(loc.uTimeSec, this._fb.timeSec || 0);
+    gl.uniform1i(loc.uSunMapOn, this.shadowActive && this._light && this._light.sun && this._light.sun.on ? 1 : 0); // ME-15c: terrain sun term *= n/4
     // US-030b: the legacy 'upload' test source (14.2 item 7) only mirrors a
     // single sample per cell into the sub-grid textures (see
     // `_repackAndUpload`) - shadeCore's average must run at n=1 for it,
@@ -2381,7 +2457,7 @@ export class GpuCellPipeline {
 
 const SHADE_UNIFORMS = [
   'uGI', 'uGA', 'uGD', 'uDepth', 'uSGI', 'uSGA', 'uN', 'uFgTex', 'uBgTex', 'uMatF', 'uMatI', 'uSetI', 'uSetF', 'uGain',
-  'uLightTex', 'uTimeSec', 'uCellAspect', 'uCutoff', 'uLift', 'uFgMin', 'uFgMaxGain', 'uTintK',
+  'uLightTex', 'uSunMapOn', 'uTimeSec', 'uCellAspect', 'uCutoff', 'uLift', 'uFgMin', 'uFgMaxGain', 'uTintK',
   'uOverbright', 'uOverbrightMax', 'uAoR', 'uAoK', 'uFaceK', 'uFogFg', 'uFogBg', 'uFogStart', 'uFogFull',
   'uFogStipple0', 'uFogStipple1', 'uFogSparse', 'uFogSparseCodes', 'uFogHazeCodes', 'uFogSparseAlt', 'uFogHazeAlt',
   // US-030a: GPU sky (14.2 item 3).
@@ -2422,6 +2498,7 @@ const LIGHT_UNIFORMS = [
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
   'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
   'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', // RE-02a
+  'uSunMode', 'uSunShadowM', 'uSunShadowRes', 'uSunShadowTexelM', 'uSunShadowBiasM', 'uSunShadowNormalOff', 'uSunShadow', // ME-15c
 ];
 // US-016 (14.4 items 2-4, GPU build order step 2): pass A2 terrain march.
 const TERRAIN_UNIFORMS = [

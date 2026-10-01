@@ -54,7 +54,7 @@ if (rt.backend !== 'gl2') fail('RTS spike needs a real WebGL2 GPU (renderer mesh
 const P = assets.palette;
 const matTable = bindShading(P, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const gbuf = new GBuffer(rt.cols, rt.rows);
-const gpuPipeline = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, renderer: 'mesh' });
+const gpuPipeline = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, renderer: 'mesh', shadows: { sun: 'dda' } /* ME-15c: pinned until the default flips */ });
 if (!gpuPipeline.ready || !matTable.allV2) fail('GpuCellPipeline not ready (missingV2: ' + (matTable.missingV2 || []).join(',') + ')');
 gpuPipeline.bind(matTable, P);
 new GpuOverlayPass(rt, gpuPipeline, engine.overlay);

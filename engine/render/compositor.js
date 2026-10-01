@@ -21,6 +21,9 @@ import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
+// ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
+import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
+import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // Preallocated (architecture.md section 9: no per-frame allocation in renderWorld).
@@ -65,6 +68,49 @@ const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount
 const _meshLevelMeshCaches = new WeakMap();
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
 let _meshRasterTarget = null;
+
+// ME-15c: JS sun shadow map state (module scratch, rebuilt per mesh frame when `fb.shadowOpts.sun === 'map'`).
+const sunShadowList = createShadowList();
+const sunShadowMat = createSunShadowMatrix();
+const sunShadowCentreV = new Float64Array(3);
+const sunShadowWorldZ = { min: 0, max: 0 };
+const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: /** @type {any} */ (null) };
+const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0 };
+/** What `lightSurfaces` reads (`fb.sunMap`): {map, M, opts}. */
+const sunMapState = { map: /** @type {any} */ (null), M: sunShadowMat.M, opts: /** @type {any} */ (null) };
+/** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
+let _sunShadowTarget = null;
+
+/**
+ * Renders the sun shadow map for this frame (called by `renderWorldMesh` after the camera list was built and
+ * culled) and publishes it as `fb.sunMap`; `null` when shadows.sun is not 'map' or there is no sun.
+ */
+function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
+  const so = fb.shadowOpts;
+  const sun = fb.lights && fb.lights.sun;
+  fb.sunMap = null;
+  if (!so || so.sun !== 'map' || !sun || !sun.on) return;
+  if (!_sunShadowTarget || _sunShadowTarget.cols !== so.res) _sunShadowTarget = createRasterTarget(so.res, so.res, 1, { depthOnly: true });
+  else clearRasterTarget(_sunShadowTarget);
+  sunShadowCentre(cam, so, sunShadowCentreV);
+  const src = sunShadowSrc, c = src.centre;
+  c.x = sunShadowCentreV[0]; c.y = sunShadowCentreV[1]; c.z = sunShadowCentreV[2];
+  src.cache = cache;
+  src.terrainSet = terrainMeshSet;
+  const vp = fb.voxelPool;
+  if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
+  src.instances = fb.instances || null;
+  src.fogFarM = sunShadowFogFar(fb.palette, so);
+  shadowWorldZ(world, cache, sunShadowWorldZ);
+  const sm = shadowSunMatrix(sun.dir, sunShadowCentreV, so, sunShadowWorldZ, sunShadowMat);
+  buildShadowList(sunShadowList, cameraList, world, sm.planes, src);
+  const ctx = sunShadowRasterCtx;
+  ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
+  ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
+  rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
+  sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
+  fb.sunMap = sunMapState;
+}
 
 function meshLevelMeshCacheFor(world, matTable) {
   let cache = _meshLevelMeshCaches.get(world);
@@ -171,6 +217,7 @@ function renderWorldMesh(fb, world, cam) {
   }
   rasterDrawList(list, target, meshCtx);
   copyToGBuffer(target, fb.gbuf, fb.depth.depth);
+  renderSunShadowJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
 }
 
 /** Swaps `depth` to horizontal forward distance (`toShade`) and back from the saved raw copy. Zero alloc once warm. */

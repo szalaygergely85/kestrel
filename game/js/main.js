@@ -183,6 +183,8 @@ const engine = createEngine({
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
+  // ME-15c (27.9a): sun shadow map is opt-in (`?renderer=mesh&shadows=map`) until the owner walk-tests ME-12; default keeps the sun DDA.
+  shadows: { sun: params.get('renderer') === 'mesh' && params.get('shadows') === 'map' ? 'map' : 'dda' },
 });
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
@@ -293,8 +295,7 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // world/* (US-025, off-limits this story).
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  // ME-15b: the sun shadow map pass is opt-in (`?shadows=map`) until ME-15c reads it and ME-15d meets the +1.0 ms budget; default keeps the sun DDA.
-  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer, shadows: params.get('shadows') === 'map' ? engine.shadows : { ...(engine.shadows || {}), sun: renderer === 'mesh' ? 'dda' : undefined } });
+  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer, shadows: engine.shadows });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;

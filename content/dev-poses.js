@@ -54,6 +54,8 @@ export const GATE_POSES = [
   // tower.level.json light 'brazier' local (18.5, 6.5) -> world (1498.5, 1024.5); eye 2.5 m west, facing east (+x)
   { slug: 'brazier', name: 'brazier (2.5 m in front)', cam: { x: 1496.0, y: 1024.5, z: EYE_H, yawDeg: 90, pitchDeg: -5 } },
   { slug: 'breach', name: 'breach (looking out)', cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 } },
+  // ME-15c: signal tower seen from the NNW looking SE (towards the sun), its sun shadow (az 135) lies on the grass between, for the sun shadow map captures (`?pose=towerShadow&shadows=map`, sun az 135 el 30 set by the capture script)
+  { slug: 'towerShadow', name: 'signal tower + its NW shadow, seen from the NNW (ME-15c)', cam: { x: 1474, y: 1006, z: 9.0, yawDeg: 137, pitchDeg: -17, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model
   { slug: 'waystone', name: 'waystone', cam: { x: 1428 - 2 * Math.sin(yawR(76)), y: 1040 + 2 * Math.cos(yawR(76)), z: EYE_H, yawDeg: 76, pitchDeg: 5, groundEye: true } },

@@ -33,6 +33,7 @@ import { gridLocal } from '../world/gridLocal.js';
 import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
+import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -511,7 +512,10 @@ function aoU32(gbuf) {
 // (never allocated per call - architecture.md 9), mirroring `LIGHT.w`'s
 // `sunlit | litCount << 8` (14.3 item 3). Single-threaded/synchronous JS
 // only (no re-entrant `lightAt` calls), same pattern as `evalScratch`.
-export const lightFlags = { sunlit: 0, litCount: 0 };
+// ME-15c: `sunN` (0..4, the quantised PCF tap count, LIGHT.w bits 16..18) and `sunBoundary` (parity boundary set,
+// shadowSun.js) are only written when a sun shadow map is passed to `lightAt`; both are 0 otherwise.
+const lightP = new Float64Array(3), lightN = new Float64Array(3); // sunShadowTaps inputs (no alloc)
+export const lightFlags = { sunlit: 0, litCount: 0, sunN: 0, sunBoundary: 0 };
 
 /**
  * Shared per-point evaluator (surfaces here, sprites in a later story) -
@@ -533,8 +537,13 @@ export const lightFlags = { sunlit: 0, litCount: 0 };
  * rays) - `lightSurfaces` passes `true` for a KIND_TERRAIN cell so this
  * function contributes only the ambient + point-light terms there, never a
  * second (here, shadow-ray-tested) sun contribution.
+ *
+ * `sunMap` (optional, ME-15c, 27.9a item 6): `{map, M, opts}` = the JS twin of the sun shadow map. When given,
+ * the sun DDA is NOT run: `n = sunShadowTaps(...)` (0..4), the sun term is `sunCol * ndotsun * n / 4` and
+ * `sunlit = n >= 2`. Terrain (`skipSun`) only gets `n` (the terrain shade pass multiplies its analytic sun term
+ * by `n / 4`); with the sun off terrain reports `n = 4` (no occlusion info = lit, as before ME-15).
  */
-export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount, skipSun) {
+export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount, skipSun, sunMap) {
   out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
   let litCount = 0;
   const n = idxList ? idxCount : lights.count;
@@ -572,7 +581,24 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   lightFlags.litCount = litCount;
   let sunlit = 0;
   const sun = lights.sun;
-  if (!skipSun && sun && sun.on) {
+  lightFlags.sunN = 0; lightFlags.sunBoundary = 0;
+  if (sunMap) {
+    // ME-15c: shadow-map sun (replaces the DDA); same conditions as the GLSL twin.
+    if (sun && sun.on) {
+      const sd = sun.dir;
+      const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
+      if (skipSun || ndotsun > 0) {
+        lightP[0] = x; lightP[1] = y; lightP[2] = z; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
+        const nTap = sunShadowTaps(sunMap.map, sunMap.M, lightP, lightN, sunMap.opts);
+        lightFlags.sunN = nTap; lightFlags.sunBoundary = sunShadowInfo.boundary;
+        sunlit = nTap >= 2 ? 1 : 0;
+        if (!skipSun && ndotsun > 0) {
+          const f = ndotsun * nTap * 0.25;
+          out[0] += sun.col[0] * f; out[1] += sun.col[1] * f; out[2] += sun.col[2] * f;
+        }
+      }
+    } else if (skipSun) lightFlags.sunN = 4;
+  } else if (!skipSun && sun && sun.on) {
     const sd = sun.dir;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
@@ -896,6 +922,9 @@ export function lightSurfaces(fb, lights, cam, world) {
   const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
 
   const kind = gbuf.kind, face = gbuf.face, rgb = lb.rgb;
+  // ME-15c: the JS sun shadow map (compositor.js, mesh renderer + shadows.sun 'map') replaces the sun DDA; shade reads `lb.sunMapOn`.
+  const sunMap = fb.sunMap || null;
+  lb.sunMapOn = !!sunMap;
   // RE-02a (28.1 A2 item 2): pitched twin of `cellRayPitched` - P = `unprojectPitched(d = vd)`.
   const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
   if (pitched) {
@@ -934,7 +963,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       // US-026a (23.4): terrain (kind 7) skips the sun term here - it's
       // added analytically by the terrain shade pass instead (D-007, no
       // terrain shadow rays).
-      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN);
+      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
@@ -943,6 +972,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       // `lightAt` call.
       if (lb.sunlit) lb.sunlit[i] = lightFlags.sunlit;
       if (lb.litCount) lb.litCount[i] = lightFlags.litCount;
+      if (lb.sunN) { lb.sunN[i] = lightFlags.sunN; lb.sunBoundary[i] = lightFlags.sunBoundary; }
     }
   }
 }
@@ -954,5 +984,7 @@ export function makeLightBuffer(cols, rows) {
     // `?gpucompare=1`'s sunlit-flag mismatch metric reads `sunlit` back
     // against the GPU readout.
     sunlit: new Uint8Array(cols * rows), litCount: new Uint8Array(cols * rows),
+    // ME-15c: per-cell PCF tap count n (LIGHT.w bits 16..18) + parity boundary flag; `sunMapOn` = this frame used the map.
+    sunN: new Uint8Array(cols * rows), sunBoundary: new Uint8Array(cols * rows), sunMapOn: false,
   };
 }

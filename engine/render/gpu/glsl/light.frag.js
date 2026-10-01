@@ -24,6 +24,7 @@ import { GLSL_VERSION, PRECISION, GBUF_UNPACK, CELL_RAY, PITCH_UNIFORMS, CELL_RA
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
+import { SUN_N_SHIFT } from '../../shadowSun.js';
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -63,11 +64,24 @@ uniform int uStructCount;
 // footprints instead of returning lit the instant it leaves one.
 uniform float uWorldMaxH;
 
+// ME-15c (27.9a items 6/8, JS twin: shadowSun.js's sunShadowTaps): sun shadow map lookup. uSunMode 0 off, 1 sun DDA,
+// 2 map (the DDA is then skipped - that is what pays for the map). The map is a depth24 texture read with
+// texelFetch (NEAREST, no hardware compare), 4 taps at floor(uv*res - 0.5) + {0,1}^2, EXPLICIT bounds check on every
+// tap (texelFetch out of range returns 0 = "nearest" = shadowed, the opposite of the JS rule: outside = sunlit).
+uniform int uSunMode;
+uniform mat4 uSunShadowM;        // world -> clip (float32 copy of shadowSunMatrix().M)
+uniform float uSunShadowRes;     // map side in texels
+uniform float uSunShadowTexelM;  // metres per texel
+uniform float uSunShadowBiasM;   // receiver offset toward the sun (m)
+uniform float uSunShadowNormalOff; // receiver offset along N, in texels
+uniform sampler2D uSunShadow;
+
 const int MAX_VIS_DIM = ${MAX_VIS_DIM};
 const int MAX_STRUCTS = ${MAX_STRUCTS};
 const int MAX_SUN_STEPS = ${MAX_SUN_STEPS};
 const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
 const int FACE_PACKED = ${FACE_PACKED};
+const uint SUN_N_SHIFT = ${SUN_N_SHIFT}u;
 // US-026a S5 (23.4 "Lighting"): kind 7 (terrain) is lit by the sun
 // ANALYTICALLY in the terrain shade pass instead (D-007: no terrain shadow
 // rays) - literal twin of lighting.js's kind[i] === KIND_TERRAIN skipSun.
@@ -188,6 +202,26 @@ bool sunVisible(vec3 S, vec3 dir) {
   return true; // step cap - bias to lit
 }
 
+// Quantised 4-tap PCF: n in 0..4 (taps where depth(P') <= mapDepth). Receivers outside the box (uv or depth outside
+// [0,1]) and taps outside the map are sunlit. P' = P + N * normalOff * texelM + sunDir * biasM.
+int sunShadowTaps(vec3 P, vec3 N) {
+  vec3 Pp = P + N * (uSunShadowNormalOff * uSunShadowTexelM) + uSunDir * uSunShadowBiasM;
+  vec4 c = uSunShadowM * vec4(Pp, 1.0);
+  float u = (c.x + 1.0) * 0.5, v = (c.y + 1.0) * 0.5, d = (c.z + 1.0) * 0.5;
+  if (u < 0.0 || u >= 1.0 || v < 0.0 || v >= 1.0 || d < 0.0 || d > 1.0) return 4;
+  ivec2 t0 = ivec2(floor(vec2(u, v) * uSunShadowRes - 0.5));
+  int res = int(uSunShadowRes);
+  int n = 0;
+  for (int j = 0; j < 2; j++) {
+    for (int i = 0; i < 2; i++) {
+      ivec2 t = t0 + ivec2(i, j);
+      if (t.x < 0 || t.y < 0 || t.x >= res || t.y >= res) { n++; continue; }
+      if (d <= texelFetch(uSunShadow, t, 0).r) n++;
+    }
+  }
+  return n;
+}
+
 vec3 faceNormal(uint face) {
   if (face == uint(FACE_N)) return vec3(0.0, -1.0, 0.0);
   if (face == uint(FACE_E)) return vec3(1.0, 0.0, 0.0);
@@ -229,7 +263,9 @@ void main() {
   // voxel-model part) has no fixed axis normal; decode it from GA.w's
   // octahedral-packed bits instead (literal twin of voxelMarch.js's
   // packNormalOct / lighting.js's CPU decode).
-  vec3 N = (faceU == uint(FACE_PACKED)) ? unpackNormalOct(texelFetch(uGA, cell, 0).w) : faceNormal(faceU);
+  vec3 N;
+  if (kindU == uint(KIND_TERRAIN)) N = unpackNormalOct(texelFetch(uGI, cell, 0).z); // ME-06: terrain's packed normal lives in GI.z (GA.w is +Inf)
+  else N = (faceU == uint(FACE_PACKED)) ? unpackNormalOct(texelFetch(uGA, cell, 0).w) : faceNormal(faceU);
 
   int litCount = 0;
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
@@ -262,7 +298,22 @@ void main() {
   // term itself, analytically (D-007); a second, shadow-ray-tested sun
   // contribution here would double the sun on every terrain cell.
   int sunlit = 0;
-  if (uSunOn != 0 && kindU != uint(KIND_TERRAIN)) {
+  int sunN = 0;
+  if (uSunMode == 2) {
+    // ME-15c: shadow-map sun. Terrain only gets n (the shade pass scales its analytic sun term by n/4); with the sun
+    // off, terrain reports n = 4 (lit, as before ME-15). Twin of lighting.js's lightAt 'sunMap' branch.
+    bool isT = kindU == uint(KIND_TERRAIN);
+    if (uSunOn != 0) {
+      float ndotsun = dot(N, uSunDir);
+      if (isT || ndotsun > 0.0) {
+        sunN = sunShadowTaps(P, N);
+        sunlit = sunN >= 2 ? 1 : 0;
+        if (!isT && ndotsun > 0.0) L += uSunCol * (ndotsun * float(sunN) * 0.25);
+      }
+    } else if (isT) {
+      sunN = 4;
+    }
+  } else if (uSunOn != 0 && kindU != uint(KIND_TERRAIN)) {
     float ndotsun = dot(N, uSunDir);
     if (ndotsun > 0.0) {
       // BUG-LIGHT-001 fix: nudge toward the sun direction (JS twin above),
@@ -275,6 +326,6 @@ void main() {
     }
   }
 
-  outLight = uvec4(floatBitsToUint(L), uint(sunlit) | (uint(litCount) << 8));
+  outLight = uvec4(floatBitsToUint(L), uint(sunlit) | (uint(litCount) << 8) | (uint(sunN) << SUN_N_SHIFT));
 }
 `;
