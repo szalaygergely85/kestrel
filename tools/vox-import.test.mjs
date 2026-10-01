@@ -495,6 +495,56 @@ test('OWN-REQ-005b: fallback to top-level group naming when the file has no name
   assert.deepStrictEqual(errors, []);
 });
 
+// ---- PC-B Q7 item 3 (ME-22 nit): multi-part part-box-extent-48 auto-flag ---
+// `wing_R`'s own box is 30x19x1 (sum 50 > 48) but the combined model
+// (30x19x6, counting `wing_L`'s separate z) still fits the OLD 32/axis +
+// 4096-voxel bounds, so the combined-size check alone would NOT set
+// meshOnly - only the per-part axis-sum check does. This mirrors
+// buildSinglePartModel's own sx+sy+sz>48 auto-flag instead of a hard
+// refusal (voxParse.js buildMultiPartModel).
+
+function wingModels() {
+  return [
+    { size: [1, 1, 1], voxels: [{ x: 0, y: 0, z: 0, c: 1 }] },
+    { size: [30, 19, 1], voxels: [{ x: 0, y: 0, z: 0, c: 2 }, { x: 29, y: 18, z: 0, c: 2 }] }
+  ];
+}
+
+function wingSceneChunks() {
+  return [
+    nTRNChunk(0, { childId: 1 }),
+    nGRPChunk(1, [2, 4]),
+    nTRNChunk(2, { childId: 3, t: '0 0 5', name: 'wing_L' }),
+    nSHPChunk(3, 0),
+    nTRNChunk(4, { childId: 5, t: '0 0 0', name: 'wing_R' }),
+    nSHPChunk(5, 1)
+  ];
+}
+
+test('PC-B Q7 item 3: multi-part model inside 32^3/4096 whose part box extent > 48 auto-flags meshOnly by default', () => {
+  const buf = buildVoxSceneBuffer(wingModels(), wingSceneChunks());
+  const parsed = parseVox(buf);
+
+  const def = buildVoxelModel(parsed, { 1: 'stone', 2: 'brass' }, 0.05);
+  assert.strictEqual(def.meshOnly, true);
+  assert.deepStrictEqual(Object.keys(def.parts), ['wing_L', 'wing_R']);
+
+  const { errors } = validateVoxelModel(def, { materialKeys: ['stone', 'brass'] });
+  assert.deepStrictEqual(errors, []);
+});
+
+test('PC-B Q7 item 3: --no-mesh-only still refuses the same model with the old box-extent error', () => {
+  const buf = buildVoxSceneBuffer(wingModels(), wingSceneChunks());
+  const parsed = parseVox(buf);
+  assert.throws(
+    () => buildVoxelModel(parsed, { 1: 'stone', 2: 'brass' }, 0.05, undefined, { meshOnly: false }),
+    (err) => {
+      assert.ok(err.message.includes('exceeds 48'), err.message);
+      return true;
+    }
+  );
+});
+
 // ---- ME-22 CLI: runCli prints mesh stats by default, --no-mesh-only refuses --
 
 test('ME-22 CLI: oversize model imports by default, prints quads/tris/GPU KB, writes voxel.meshOnly: true', () => {

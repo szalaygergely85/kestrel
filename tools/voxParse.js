@@ -568,7 +568,7 @@ function buildMultiPartModel(parsed, map, cellM, anchor, opts) {
     for (const v of voxels) { v.x -= gMinX; v.y -= gMinY; v.z -= gMinZ; }
   }
   const sx = gMaxX - gMinX + 1, sy = gMaxY - gMinY + 1, sz = gMaxZ - gMinZ + 1;
-  const meshOnly = resolveSizeMeshOnly(sx, sy, sz, opts, 'combined size');
+  let meshOnly = resolveSizeMeshOnly(sx, sy, sz, opts, 'combined size');
 
   // Per-part tight bounding box + bottom-centre pivot, box-extent check,
   // and pairwise overlap check (validateVoxelModel does NOT catch
@@ -589,7 +589,15 @@ function buildMultiPartModel(parsed, map, cellM, anchor, opts) {
     // ME-22: the axis-sum-48 rule is skipped for a meshOnly model (same
     // VoxelModel.js rule the combined-size check above already resolved).
     if (!meshOnly && bx + by + bz > 48) {
-      throw new Error(`vox-import: part '${group.rawName || key}' box extent ${bx + by + bz} exceeds 48 (box [${x0},${y0},${z0},${x1},${y1},${z1}])`);
+      if (opts && opts.meshOnly === false) {
+        throw new Error(`vox-import: part '${group.rawName || key}' box extent ${bx + by + bz} exceeds 48 (box [${x0},${y0},${z0},${x1},${y1},${z1}])`);
+      }
+      // PC-B Q7 item 3 nit: auto-flag meshOnly like buildSinglePartModel's
+      // sx+sy+sz>48 path, instead of a hard refusal, when --no-mesh-only
+      // wasn't passed - the combined box already fits inside the mesh-only
+      // dim/cell bounds (resolveSizeMeshOnly above), only this one part's
+      // own box extent exceeds 48.
+      meshOnly = true;
     }
     const name = sanitizePartName(group.rawName, i, taken);
     partDefs.push({ name, box: [x0, y0, z0, x1, y1, z1], pivot: [(x0 + x1) / 2, (y0 + y1) / 2, z0] });

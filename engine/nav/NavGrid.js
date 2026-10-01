@@ -355,6 +355,49 @@ export class NavGrid {
   }
 
   /**
+   * RE-05c: second pass over `height`, after the per-cell walkability pass
+   * and before `_recomputeCost()`. A still-walkable cell is dropped
+   * (`terrainCost` forced to 0) if any in-grid 8-neighbour's height differs
+   * by more than `maxStepM`. No-op (and zero allocation) when `maxStepM` is
+   * `Infinity` - today's behaviour, the default for callers that don't pass
+   * it. The decision is made into a scratch `Uint8Array(N)` first from the
+   * first-pass `terrainCost`/`height` only, then applied - so a drop never
+   * cascades into making a neighbour drop within the same pass (order
+   * independent). The scratch buffer is lazily allocated once per grid size
+   * and reused across builds.
+   * @param {number} maxStepM
+   */
+  _applyMaxStepM(maxStepM) {
+    if (!(maxStepM < Infinity)) return;
+    const w = this.w, h = this.h, n = w * h;
+    const height = this.height;
+    const terrainCost = this.terrainCost;
+    if (!this._stepDrop || this._stepDrop.length !== n) this._stepDrop = new Uint8Array(n);
+    const drop = this._stepDrop;
+    drop.fill(0);
+    for (let cy = 0; cy < h; cy++) {
+      for (let cx = 0; cx < w; cx++) {
+        const i = this.index(cx, cy);
+        if (terrainCost[i] === 0) continue; // already unwalkable, nothing to drop
+        const hi = height[i];
+        let bad = false;
+        for (let dy = -1; dy <= 1 && !bad; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            if (Math.abs(height[this.index(nx, ny)] - hi) > maxStepM) { bad = true; break; }
+          }
+        }
+        if (bad) drop[i] = 1;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (drop[i]) terrainCost[i] = 0;
+    }
+  }
+
+  /**
    * Walkability from a (possibly fake, duck-typed) world's ANALYTIC terrain
    * queries - load time only, <= 50 ms at 256x256 (28.2 budget). Per cell
    * centre: unwalkable if `normal.z < cos(opts.maxSlopeDeg)` (default 30),
@@ -362,9 +405,12 @@ export class NavGrid {
    * `['water']`), if `world.structureAt(x,y)` is truthy (structures block
    * in v1), or if `opts.mask[i]`. Otherwise
    * `terrainCost = opts.typeCost[typeName] ?? 1`. Every threshold comes
-   * from `opts`, never a literal in the comparison itself.
+   * from `opts`, never a literal in the comparison itself. `opts.maxStepM`
+   * (default `Infinity`, RE-05c) then drops any still-walkable cell next to
+   * an in-grid 8-neighbour whose height differs by more than `maxStepM` -
+   * see `_applyMaxStepM`.
    * @param {{terrain: {heightAt(x:number,y:number):number, normalAt(x:number,y:number,out:{x:number,y:number,z:number}):void, typeAt(x:number,y:number):number, typeName(id:number):string}, structureAt?: (x:number,y:number)=>boolean}} world
-   * @param {{maxSlopeDeg?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null}} [opts]
+   * @param {{maxSlopeDeg?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number}} [opts]
    */
   buildFromWorld(world, opts = {}) {
     const maxSlopeDeg = opts.maxSlopeDeg ?? 30;
@@ -372,6 +418,7 @@ export class NavGrid {
     const blockedTypes = opts.blockedTypes ?? ['water'];
     const typeCost = opts.typeCost ?? {};
     const mask = opts.mask ?? null;
+    const maxStepM = opts.maxStepM ?? Infinity;
     const terrain = world.terrain;
     const normal = { x: 0, y: 0, z: 0 };
     for (let cy = 0; cy < this.h; cy++) {
@@ -390,6 +437,7 @@ export class NavGrid {
         this.terrainCost[i] = unwalkable ? 0 : (typeCost[typeName] ?? 1);
       }
     }
+    this._applyMaxStepM(maxStepM);
     this._recomputeCost();
   }
 
@@ -399,17 +447,19 @@ export class NavGrid {
    * the caller against its own `maxSlopeDeg` (kept out of NavGrid so the
    * threshold is never a literal here either) and passed in as
    * `slopeOkU8[i]` (1 = passes, 0 = too steep). `typeU8[i]` indexes
-   * `opts.typeNames`.
+   * `opts.typeNames`. `opts.maxStepM` (default `Infinity`, RE-05c) is the
+   * same second-pass drop rule as `buildFromWorld` - see `_applyMaxStepM`.
    * @param {Float32Array} heightF32
    * @param {Uint8Array} slopeOkU8
    * @param {Uint8Array} typeU8
-   * @param {{blockedTypes?:string[], typeCost?:Record<string,number>, typeNames?:string[], mask?:Uint8Array|null}} [opts]
+   * @param {{blockedTypes?:string[], typeCost?:Record<string,number>, typeNames?:string[], mask?:Uint8Array|null, maxStepM?:number}} [opts]
    */
   buildFromArrays(heightF32, slopeOkU8, typeU8, opts = {}) {
     const blockedTypes = opts.blockedTypes ?? ['water'];
     const typeCost = opts.typeCost ?? {};
     const typeNames = opts.typeNames ?? [];
     const mask = opts.mask ?? null;
+    const maxStepM = opts.maxStepM ?? Infinity;
     const n = this.w * this.h;
     for (let i = 0; i < n; i++) {
       this.height[i] = heightF32[i];
@@ -419,6 +469,7 @@ export class NavGrid {
       if (!unwalkable && mask && mask[i]) unwalkable = true;
       this.terrainCost[i] = unwalkable ? 0 : (typeCost[typeName] ?? 1);
     }
+    this._applyMaxStepM(maxStepM);
     this._recomputeCost();
   }
 }

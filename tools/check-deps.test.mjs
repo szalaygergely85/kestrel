@@ -97,6 +97,8 @@ writeFile(tmp, 'engine/core/good15.js', `export function f() { return Date.now()
 writeFile(tmp, 'engine/world/Visibility.js', `export function f() { return Math.hypot(1, 2); }\n`);
 writeFile(tmp, 'game/js/rts/sim/bad15.js', `export function f() { return Math.random(); }\n`);
 writeFile(tmp, 'game/js/rts/ui/good15.js', `export function f() { return Math.random(); }\n`); // ui/, not sim/: NOT in scope
+writeFile(tmp, 'game/js/quest/sim/bad15.js', `export function f() { return Math.random(); }\n`); // US-079a beast sim (29.1)
+writeFile(tmp, 'game/js/quest/beastView.js', `export function f() { return Math.random(); }\n`); // quest/, not quest/sim/: NOT in scope
 
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
@@ -159,6 +161,8 @@ ok('rule 15: engine/core file NOT in the four-name allowlist NOT flagged', !/cor
 ok('rule 15: engine/world/Visibility.js Math.hypot WARNs', /WARN.*world\/Visibility\.js:1:.*Math\.hypot/.test(output), output);
 ok('rule 15: game/js/rts/sim/** Math.random WARNs', /WARN.*rts\/sim\/bad15\.js:1:.*Math\.random/.test(output), output);
 ok('rule 15: game/js/rts/ui/** (not sim/) NOT flagged', !/rts\/ui\/good15\.js/.test(output), output);
+ok('rule 15: game/js/quest/sim/** Math.random WARNs', /WARN.*quest\/sim\/bad15\.js:1:.*Math\.random/.test(output), output);
+ok('rule 15: game/js/quest/** (not sim/) NOT flagged', !/quest\/beastView\.js/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 
