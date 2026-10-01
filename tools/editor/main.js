@@ -876,9 +876,17 @@ async function doImportVox() {
       desc: `Imported from '${picked.name}' via the editor's Import .vox button (OWN-REQ-011). Colors auto-matched to the nearest palette material.`,
       voxel: def,
     });
+    // The VoxelPool packs models (and the GPU DDA atlas) only in bind(); a
+    // runtime add is invisible to it until re-bound (placed prop rendered
+    // nothing). Re-bind with the live material table; bumps atlas.version so
+    // the GPU re-uploads lazily.
+    frame.voxelPool.bind(assets, frame.fb.matTable);
+    frame.markDirty();
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
-    flash(`imported: ${name} (click viewport to place)`);
+    flash(def.meshOnly
+      ? `imported: ${name} (too large for the editor view: mesh-only model, placed but NOT drawn here - only on ?renderer=mesh; max 32 per axis to see it)`
+      : `imported: ${name} (click viewport to place)`);
   } catch (e) {
     flash(`import .vox failed: ${e && e.message ? e.message : e}`);
   }
