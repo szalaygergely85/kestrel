@@ -289,6 +289,26 @@ Related, not duplicated: US-068 (editor ortho views) stays editor-only - RE-01 l
 | P4 | US-054 | Cuttable tree -> trunk log + branches as physics pieces (engine + content story) | P0 | M3 | todo (sketch) - after US-051/052, the M2 sword, US-041 voxel |
 | P5 | US-055 | Water surface + splash + floating props (engine story) | P1 | M3 | todo (sketch) - after US-051, US-053, US-026 |
 
+## Epic EP-ELEMENTS "Particles, water, fire, wind, weather" (PO 2026-10-01, owner request; sketches, see `### US-053a` onwards near the bottom of the file)
+**Scope:** particles, liquid surfaces, burning, fire spread, explosions, wind as a real force, weather/fog. Engine parts stay genre-neutral (D-006); which things burn, what explodes and the tuning numbers are content data. **Existing rows are linked, not duplicated:** US-053 (particles) and US-055 (water) stay the umbrella rows and close when their steps below are done; floating props stay in US-055 after US-051. US-093 (torch burns barriers/brush) and US-101 (Spark lights braziers) use this epic; US-082 (combat feel) uses the particles; US-121 "wind grass" stays a visual shader preset that will read the US-138 wind uniform; US-122 (day/night) and US-127 (light in fog) pair with US-139/140. **Object physics (US-051/052) is not a blocker:** every story here first works on the player capsule, entities and static world data; "pushes / ignites / floats physics bodies" is a later AC marked *(after US-051)*. **Phasing:** particles (053a-c) first, they feed everything else -> water (055a/b) and fire (132-135) -> explosions (136/137) -> wind (138) -> weather (139/140, stretch). **Tech note before dev (NEEDS PC-A: architect note):** US-053a+053b (one note: module home e.g. `engine/fx/`, pool layout, sprite-pass draw, JS twin), US-055a, US-132+133 (one note: status-effect component, flammability on materials vs entities, fire grid), US-136, US-138, US-139. Sim rules for every row: fixed step, seeded RNG, iteration by id, zero per-frame allocation, save-safe state where it persists.
+
+| ID | Title / one-line story | Priority | Milestone / epic | Status |
+|---|---|---|---|---|
+| US-053a | Particle sim core (engine): pooled emitters + particles on the fixed step (rate, life, velocity + spread, gravity/buoyancy, drag, wind input), no drawing yet; Node tests | P1 | M3 EP-ELEMENTS (step of US-053) | todo (sketch) [PC-A engine, new module] - NEEDS PC-A: architect note (053a+b). ~1 d |
+| US-053b | Particle draw: particles through the GPU sprite pass with depth test, glyph + colour ramp over life, emissive flag, lit by ambient + point lights; JS twin, gpucompare pose `particles` | P1 | M3 EP-ELEMENTS (step of US-053) | todo (sketch) [PC-A engine/render] - deps: US-053a. NEEDS PC-A: architect note (053a+b). ~1 d |
+| US-053c | Particle presets as data + first placements: burner flame + smoke on the *Kestrel* burner (replaces the OWN-REQ-008 billboard flame), sparks for US-078d/US-082, landing dust, splash drops; US-019 dust motes rebuilt as a preset | P1 | M3 EP-ELEMENTS (step of US-053) | todo (sketch) [PC-B content + designer ramps + preview page] - deps: US-053b. ~1 d |
+| US-055a | Water surface render (engine): water regions as world data (sector or terrain region + surface height), animated wave glyphs, depth tint, see-through in shallows; JS twin + gpucompare pose `water` | P1 | M3/M4 EP-ELEMENTS (step of US-055) | todo (sketch) [PC-A engine/render + world] - deps: US-026 regions (or sector-only first). NEEDS PC-A: architect note. ~1 d |
+| US-055b | Wade, swim, splash: player wades (< 0.6 m) / swims (>= 0.6 m), splash particles + ripple ring on entry scaled by speed, water puts out burning (US-132) | P1 | M3/M4 EP-ELEMENTS (step of US-055) | todo (sketch) [PC-B game + PC-A `waterAt` query if 055a lacks it] - deps: US-055a, US-053c. ~1 d |
+| US-132 | Burning status effect: as a player I can catch fire (and so can enemies and flammable props): damage over time, flame + smoke on whatever burns, spreads to touching flammable entities, put out by water or by time | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-A engine status-effect component + PC-B game tuning] - deps: US-053c, US-080a1 (damage). NEEDS PC-A: architect note (132+133). ~1 d |
+| US-133 | Fire spread (engine sim): flammable materials/props as data (fuel, ignite chance), a coarse fire cell grid with a neighbour-propagation rule (seeded, fixed step), fuel burns out -> charred material; wind bias hook; Node tests | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-A engine/world] - deps: none for the sim (view in US-134). NEEDS PC-A: architect note (132+133). ~1 d |
+| US-134 | Fire view: burning cells render flame glyphs + emissive + smoke particles, a capped number of flicker lights per fire area, charred material swap visible after burn-out | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-A engine/render + designer fire/char ramps] - deps: US-133, US-053c. ~1 d |
+| US-135 | Fire in the game: a fire test room - torch/burner ignites dry brush, fire spreads across the patch, a wooden barrier burns away and opens a path, things in the fire catch fire (US-132) | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-B content + game/js/quest] - deps: US-132, US-134; feeds US-093 (torch gates). ~0.5-1 d |
+| US-136 | Explosion query + force (engine): `explode(pos, radius, damage, impulse)` - falloff, line-of-sight occlusion through `World`, `explosion` event per hit entity, knockback impulse on the player capsule; Node tests | P2 | M4/M5 EP-ELEMENTS | todo (sketch) [PC-A engine/world + physics] - deps: US-080a1 (damage). NEEDS PC-A: architect note. ~1 d |
+| US-137 | Explosion view + content: burst preset (flash, debris, smoke), short-lived flash light, camera kick, ignites flammables in radius (US-133), one explosive prop (e.g. a blast-bloom pod) | P2 | M4/M5 EP-ELEMENTS | todo (sketch) [PC-B content + game + designer] - deps: US-136, US-053c, US-133. ~1 d |
+| US-138 | Wind as a force (engine): one `windAt(x, y, z, t)` field (global dir + speed + seeded gusts, optional zone overrides as data) read by particles, fire spread bias and thrown/projectile bodies; optional push on the player in strong-wind zones; shader sway reads the same uniform | P2 | M4/M5 EP-ELEMENTS | todo (sketch) [PC-A engine/world] - deps: US-053a, US-133. NEEDS PC-A: architect note. ~1 d |
+| US-139 | Height fog + fog banks (stretch): fog density that varies with height and with data-placed fog volumes (valley mist, swamp), drifting with wind, instead of only flat distance fog | P2 (stretch) | M5/M6 EP-ELEMENTS | todo (sketch) [PC-A engine/render light/shade pass + designer] - deps: US-138; pairs with US-127, US-121. NEEDS PC-A: architect note. ~1 d |
+| US-140 | Weather states (stretch): clear / rain / storm / snow as a world state with transitions; rain + snow particles, wet darkening, rain puts out open fires, storm raises wind | P3 (stretch) | M6 EP-ELEMENTS | todo (sketch) [PC-B content/game + PC-A hooks if needed] - deps: US-053c, US-138, US-139, US-133; pairs with US-122. Split at planning if > 1 d |
+
 ## Milestone 6 "Polish & Release" (sketched, see bottom of file; D-012)
 | ID | Title | Priority | Status |
 |---|---|---|---|
@@ -815,6 +835,147 @@ Acceptance criteria (sketch):
 - [ ] Budgets (US-018) hold with one water region on screen.
 Design needed: yes – water palette + glyph ramps, ripple/splash ramps, a test pool/river level.
 Notes / dependencies: US-051, US-053, US-026 (terrain regions). Water puzzles in M4 build on this.
+
+## Epic EP-ELEMENTS – sketches (PO 2026-10-01; table + scope in "Epic EP-ELEMENTS" near the top)
+
+Sketch ACs only. Engine rows need an architect tech note before dev (listed in the epic header); numbers are PO proposals the note may adjust. US-053 and US-055 above stay the umbrella stories.
+
+### US-053a Particle sim core (engine)  [Priority: P1 (M3)] [Status: todo (sketch)]  [PC-A engine]
+As a player, I want smoke, sparks and dust to move believably, so that fires, hits and landings feel physical; as the engine, I want one pooled particle sim every effect can reuse.
+Acceptance criteria (sketch):
+- [ ] An emitter definition as data (rate or burst count, lifetime range, initial velocity + cone spread, gravity/buoyancy, drag, wind factor, max live count) attachable to an entity or a world point; start/stop/burst from code.
+- [ ] Particles live in one preallocated pool (proposal 2000 slots, SoA typed arrays) on the fixed step; zero allocation per step; oldest particle is recycled when full.
+- [ ] Deterministic: same seed + inputs give byte-identical particle state in Node after 600 steps.
+- [ ] 500 live particles step in <= 0.3 ms JS (Node bench number recorded in the story).
+- [ ] Wind input is a plain vector per step for now (US-138 later feeds it from `windAt`).
+Design needed: no.
+Notes / dependencies: NEEDS PC-A: architect note (one note for 053a+053b: module home, e.g. `engine/fx/`, layering vs `engine/physics/` stand-alone rule, pool layout). No collision with the world in this story (particles may pass through walls; optional floor kill-plane only).
+
+### US-053b Particle draw  [Priority: P1 (M3)] [Status: todo (sketch)]  [PC-A engine/render]
+As a player, I want particles drawn as glyphs that fade and change colour over their life and sit correctly in the 3D scene, so that a fire's smoke goes behind the pillar, not on top of it.
+Acceptance criteria (sketch):
+- [ ] Particles render through the GPU sprite pass with depth test on both mesh twins; glyph ramp over life (e.g. `@ O o . `) and colour ramp over life from the emitter def.
+- [ ] Non-emissive particles are lit by ambient + point lights; emissive ones (sparks, flame) are full-bright and do not darken in shadow.
+- [ ] JS twin; new gpucompare pose `particles` (frozen seed, fixed step count) PASSes at the 27.7 bars.
+- [ ] 500 live particles on screen at 400x150: GPU cost <= 0.5 ms, `over25 == 0` (numbers recorded).
+Design needed: no (debug ramp only; real ramps in US-053c).
+Notes / dependencies: US-053a, US-030c sprite pass, US-006/007 lighting.
+
+### US-053c Particle presets + first placements  [Priority: P1 (M3)] [Status: todo (sketch)]  [PC-B content + designer]
+As a player, I want the burner in the *Kestrel* to have a real flickering flame with rising smoke, sparks when my sword hits metal and a dust puff when I land hard, so that the first room already feels alive.
+Acceptance criteria (sketch):
+- [ ] Presets as data in `design/` (designer ramps): `flame` (emissive, rises ~1 m/s, 0.5 s life), `smoke` (rises ~0.6 m/s, drifts with wind, fades over 4 s), `sparks` (emissive, gravity, 0.4 s), `dust` (landing puff), `splash` (drops for US-055b), `motes` (US-019 sun-shaft dust).
+- [ ] The *Kestrel* burner shows `flame` + `smoke` instead of the billboard flame on its `flame` mount (OWN-REQ-008 follow-up); its point-light flicker is unchanged.
+- [ ] Player landings above a data-defined speed (proposal 6 m/s) emit `dust` at the feet; US-078d sword hits on hard materials emit `sparks` at the hit point (event hook, works before US-082).
+- [ ] US-019 is closed in favour of the `motes` preset (or kept with a note); preview page shows every preset side by side.
+Design needed: yes - glyph + colour ramps per preset, `design/preview/particles.html`.
+Notes / dependencies: US-053b, US-078d (sparks hook), OWN-REQ-008, US-019.
+
+### US-055a Water surface render (engine)  [Priority: P1 (M3/M4)] [Status: todo (sketch)]  [PC-A engine/render + world]
+As a player, I want pools and streams with a moving, see-through surface, so that water reads as water from a distance and up close.
+Acceptance criteria (sketch):
+- [ ] Water regions as world data (sector region first; terrain region once US-026 regions exist) with a surface height and a colour/material id; `World.waterAt(x, y)` returns surface height + depth (used by US-055b).
+- [ ] Rendered on the GPU path: animated wave glyph ramp (`~ - =`), depth tint (shallow -> deep), floor visible through shallow water (<= 0.5 m), sky/light highlight on the surface; world-anchored (no swim when the camera turns).
+- [ ] JS twin; gpucompare pose `water` PASSes; one water region on screen at 400x150 stays inside the D-029 GPU numbers.
+Design needed: yes - water palette + glyph ramps, a test pool in a test level.
+Notes / dependencies: NEEDS PC-A: architect note (water as a material vs a separate surface pass). US-026 for terrain regions (not a blocker for the sector version).
+
+### US-055b Wade, swim, splash  [Priority: P1 (M3/M4)] [Status: todo (sketch)]  [PC-B game + PC-A query if missing]
+As a player, I want to wade into a pool, swim when it gets deep and see it splash when I jump in, so that water is a place I can go, not a wall.
+Acceptance criteria (sketch):
+- [ ] Depth < 0.6 m: wade (speed x0.6); depth >= 0.6 m: swim (slow, surface-locked, no sword, no jump); no drowning in this story.
+- [ ] Entering water spawns `splash` particles + a ring ripple glyph at the entry point, count scaled by vertical speed (a walk-in barely splashes, a jump from 3 m splashes hard).
+- [ ] Entering water ends `burning` (US-132) on the player and on any burning entity that enters it.
+- [ ] *(after US-051)* Bodies entering water splash too; floating props and currents stay in US-055.
+Design needed: yes - ripple ramp (designer, with US-053c).
+Notes / dependencies: US-055a, US-053c, US-132 (the extinguish AC lands with whichever story comes second).
+
+### US-132 Burning status effect  [Priority: P1 (M4)] [Status: todo (sketch)]  [PC-A engine component + PC-B tuning]
+As a player, I want to catch fire when I walk through flames (and set enemies on fire with my torch), so that fire is a danger and a weapon.
+Acceptance criteria (sketch):
+- [ ] A generic status-effect component (first effect `burning`: duration, damage per tick, tick interval) on any entity flagged `flammable`; save-safe while active.
+- [ ] Burning deals damage over time through the existing damage path (US-080a1, proposal 1 HP per 0.5 s for 4 s); stepping into a burning fire cell (US-133) or touching a burning entity re-applies it.
+- [ ] A burning entity emits `flame` + `smoke` particles (US-053c) and a small flicker light; the player sees a hurt-edge tint while burning.
+- [ ] Spread: a burning entity ignites flammable entities within touch range (proposal 0.5 m) after 1 s of contact; non-flammable entities (stone, metal) never burn.
+- [ ] Ends on timeout, on entering water (US-055b) or on rain (US-140 later); Node tests for timing, spread and determinism.
+Design needed: yes - burning overlay tint for the hero view, flame attach points on the beast model.
+Notes / dependencies: NEEDS PC-A: architect note (one note for 132+133: engine status-effect component vs `game/js/quest/sim`, flammability on materials vs entities). US-080a1, US-053c. No physics dependency.
+
+### US-133 Fire spread (engine sim)  [Priority: P1 (M4)] [Status: todo (sketch)]  [PC-A engine/world]
+As a player, I want a fire in dry grass to creep outward and burn itself out, so that I can use fire to clear a path or trap an enemy.
+Acceptance criteria (sketch):
+- [ ] Flammability as data: material entries (e.g. `dryGrass`, `wood`, `brush`) carry `fuel` (burn time) and `ignite` (chance per neighbour per step); props can be flagged flammable too. Stone/metal/water never burn.
+- [ ] A coarse fire grid (proposal 0.5 m cells) built per sector/area from the flammable materials; each cell: unburnt / burning / burnt. Rule per fixed step: a burning cell ignites each flammable neighbour with its `ignite` chance (seeded RNG), burns for its `fuel`, then becomes burnt (charred material id).
+- [ ] `fire.ignite(x, y, z)`, `fire.isBurning(x, y, z)` and a `fire:cell` event (ignite / burnt) for game code; wind bias hook (a per-step vector that raises downwind ignite chance; US-138 feeds it).
+- [ ] Deterministic Node tests: a 20x20 grass patch lit in one corner burns out fully in the same steps every run; a stone strip stops the front; zero allocation per step; 4000 cells step in <= 0.2 ms.
+- [ ] Burnt state is save-safe (a burnt patch stays burnt after save/load).
+Design needed: no (charred material ids come with US-134).
+Notes / dependencies: NEEDS PC-A: architect note (132+133). No physics dependency; *(after US-051)* burning props carried or rolled by physics move their fire with them.
+
+### US-134 Fire view  [Priority: P1 (M4)] [Status: todo (sketch)]  [PC-A engine/render + designer]
+As a player, I want a spreading fire to look like a wall of flickering flame and leave black ground behind, so that I can read where it is safe to walk.
+Acceptance criteria (sketch):
+- [ ] Burning cells draw flame glyphs (emissive, animated) + `smoke` particles (US-053c) on top of their surface; burnt cells switch to the charred material.
+- [ ] Light: at most N flicker point lights per fire area (proposal 2, placed at the burning-cell centroid clusters) so a big fire never exhausts `MAX_LIGHTS`.
+- [ ] A 20x20 burning patch at 400x150 stays inside the D-029 numbers; gpucompare pose `fire` (frozen fire state) PASSes.
+Design needed: yes - flame glyph ramp, charred material colours.
+Notes / dependencies: US-133, US-053c.
+
+### US-135 Fire in the game  [Priority: P1 (M4)] [Status: todo (sketch)]  [PC-B content + game/js/quest]
+As a player, I want to light dry brush with a flame and watch it burn open a way forward, so that fire is part of exploring, not just decoration.
+Acceptance criteria (sketch):
+- [ ] A fire test room: a dry brush patch, a wooden barrier blocking a doorway, a lit burner as the flame source; the player (dev key until US-093's torch exists) ignites the brush.
+- [ ] Fire spreads across the patch (US-133), reaches the barrier, the barrier burns for ~3 s and is removed (path open, save-safe flag).
+- [ ] The player standing in the fire catches fire (US-132); a beast (US-079a) chased through the patch catches fire too.
+Design needed: yes - wooden barrier model + burnt variant, brush material (designer).
+Notes / dependencies: US-132, US-134; US-093 torch reuses this room's rules for its 3 gated spots.
+
+### US-136 Explosion query + force (engine)  [Priority: P2 (M4/M5)] [Status: todo (sketch)]  [PC-A engine/world + physics]
+As a player, I want an explosion to hurt and throw back everything close to it, but not through a wall, so that blasts feel powerful and fair.
+Acceptance criteria (sketch):
+- [ ] `explode(pos, { radius, damage, impulse })` finds entities in range through `World`, falloff by distance (full at the centre, 0 at the radius), skipped when a wall blocks the line of sight to the target's centre.
+- [ ] Emits one `explosion:hit` event per entity (amount, direction) for game code; the player capsule gets a knockback impulse (proposal 8 m/s at the centre) that respects walls and ceilings.
+- [ ] Node tests: falloff values, occlusion behind a wall, knockback never tunnels the capsule through a wall; zero allocation per call.
+- [ ] *(after US-051)* dynamic bodies in range get the same impulse.
+Design needed: no.
+Notes / dependencies: NEEDS PC-A: architect note (capsule impulse API in the physics engine, keeping `engine/physics/` stand-alone). US-080a1 for damage.
+
+### US-137 Explosion view + content  [Priority: P2 (M4/M5)] [Status: todo (sketch)]  [PC-B content + game + designer]
+As a player, I want a blast to flash, shake the screen and throw out debris and smoke, and to set dry things around it on fire, so that it feels like a real explosion.
+Acceptance criteria (sketch):
+- [ ] An `explosion` particle burst preset (flash core, debris, smoke ring) + a short-lived point light (proposal 0.2 s, bright, warm) + camera kick scaled by distance.
+- [ ] Flammable cells (US-133) and entities (US-132) inside the radius ignite.
+- [ ] One explosive content prop (name from the writer, e.g. a blast-bloom pod) that explodes when hit by the sword or by fire, in a test room.
+Design needed: yes - explosive prop model, burst ramps.
+Notes / dependencies: US-136, US-053c, US-132/133.
+
+### US-138 Wind as a force (engine)  [Priority: P2 (M4/M5)] [Status: todo (sketch)]  [PC-A engine/world]
+As a player, I want the wind to visibly push smoke, spread fire downwind and drift my thrown things, so that the weather has an effect I can use.
+Acceptance criteria (sketch):
+- [ ] One wind field `windAt(x, y, z, t)`: global direction + speed + seeded gusts (deterministic), optional data-defined wind zones (e.g. a cliff edge) that override or add to it.
+- [ ] Consumers: particles (US-053a wind factor), fire spread bias (US-133 downwind cells ignite faster, a test shows the front moves further downwind), and thrown/projectile bodies once they exist (US-052/US-103).
+- [ ] Optional per zone: a push on the player capsule (proposal max 1.5 m/s at gust peak), off by default.
+- [ ] The same wind is exposed as a shader uniform so US-121 "wind grass" sway matches the real wind direction.
+Design needed: no.
+Notes / dependencies: NEEDS PC-A: architect note. US-053a, US-133.
+
+### US-139 Height fog + fog banks (stretch)  [Priority: P2 (stretch, M5/M6)] [Status: todo (sketch)]  [PC-A engine/render + designer]
+As a player, I want mist lying in a valley and fog rolling over a swamp, so that places have mood beyond flat distance fog.
+Acceptance criteria (sketch):
+- [ ] Fog density from height (thicker near a data-defined base height) plus data-placed fog volumes (box/ellipsoid, density, colour), applied in the light/shade pass; density glyphs where fog is thick.
+- [ ] Fog volumes drift slowly with wind (US-138); world-anchored, no swim when the camera turns.
+- [ ] JS twin + gpucompare pose `fogBank`; GPU cost <= 0.2 ms at 400x150.
+Design needed: yes - fog colours/glyphs per region.
+Notes / dependencies: NEEDS PC-A: architect note. US-138; pairs with US-127 (light in fog) and US-121 `look` presets.
+
+### US-140 Weather states (stretch)  [Priority: P3 (stretch, M6)] [Status: todo (sketch)]  [PC-B content/game + PC-A hooks]
+As a player, I want it to rain and storm sometimes, so that the world changes and rain can put out the fires I start.
+Acceptance criteria (sketch):
+- [ ] Weather as a world state (clear / rain / storm / snow) with timed or scripted transitions (fade over ~10 s), save-safe.
+- [ ] Rain and snow as screen-anchored + world particles (US-053c presets), wet darkening of surfaces while raining, storm raises wind (US-138).
+- [ ] Rain puts out open fire cells (US-133) and `burning` (US-132) after ~2 s.
+Design needed: yes - rain/snow ramps, wet colour shift.
+Notes / dependencies: US-053c, US-138, US-139, US-132/133; pairs with US-122 day/night. Split at planning if > 1 d.
 
 ---
 
