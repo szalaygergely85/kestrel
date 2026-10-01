@@ -149,8 +149,9 @@ export function createWind(def, seed) {
    * (vz always 0 - no vertical wind in v1). Zero allocation. */
   field.sampleInto = function sampleInto(x, y, z, tick, out) {
     const g = gustG(x, y, tick);
-    let vx = dirX * speedAt(speed, g);
-    let vy = dirY * speedAt(speed, g);
+    const sp = speedAt(speed, g);
+    let vx = dirX * sp;
+    let vy = dirY * sp;
     for (let i = 0; i < zones.length; i++) {
       const zn = zones[i];
       const dist = insideDistance(zn, x, y);
@@ -227,6 +228,8 @@ export function createWind(def, seed) {
       h.f64(zn.edge);
       h.u32(zn.mode === 'set' ? 1 : 0);
       h.u32(zn.push ? 1 : 0);
+      h.u32(zn.shape === 'circle' ? 1 : 0); // review: zone geometry is part of the hash
+      if (zn.shape === 'circle') { h.f64(zn.cx); h.f64(zn.cy); h.f64(zn.r); } else { h.f64(zn.x0); h.f64(zn.y0); h.f64(zn.x1); h.f64(zn.y1); }
     }
   };
 

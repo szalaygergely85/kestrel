@@ -528,7 +528,7 @@ function applyAndSync(appliedRec) {
     refreshIoStatus();
     return;
   }
-  rebuild();
+  rebuildSched.flushNow(); // 31 amendment 2: undo/redo folds any pending coalesced request
 }
 
 function doUndo() {

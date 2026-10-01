@@ -63,7 +63,7 @@ function nearBandKey(w, cx, cy) {
   let k = `${cx},${cy}`;
   for (const p of w.structures) {
     const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
-    k += `|${p.id}:${b.x0},${b.y0},${b.x1},${b.y1},${p.frame.z}:`;
+    k += `|${p.id}:${b.x0},${b.y0},${b.x1},${b.y1},${p.origin.x},${p.origin.y},${p.origin.z},${p.yawSteps}:`; // origin = what ringHAt reads (31 amendment 2)
     const f = (x, y) => { const s = lv.sectorAt(x, y); k += (s ? s.floorH : 'n') + ','; };
     for (let x = 0.5; x < W; x++) { f(x, 0.5); f(x, H - 0.5); }
     for (let y = 1.5; y < H - 1; y++) { f(0.5, y); f(W - 0.5, y); }
