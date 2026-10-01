@@ -3637,13 +3637,14 @@ Mesh-only per D-033 item 1 (`?renderer=mesh`; on `dda` the view model is a docum
 - GPU: after the scene draw loop, `gl.clear(gl.DEPTH_BUFFER_BIT)`, then the voxel draw loop over the vm list (factor the existing loop into one function). JS: new `clearRasterDepth(t)` (`t.zbuf.fill(1)` only) in rasterJS.js, then `rasterDrawList(vmList, target, ctx)`, before `copyToGBuffer`.
 ```js
 /** @typedef {Object} ViewModelLayer   engine.viewModel (createEngine); fb.viewModel + pipeline.bindViewModel(vm)
- * @property {(key:string, def:Object, registry:AssetRegistry)=>number} load   load time: validate the README 7.4 def, resolve def.model, pack clip keys into a Float64Array; throws on bad data; returns a handle
+ * @property {(key:string, def:Object, pool:VoxelPool)=>number} load   load time (review ruling 2026-10-01: a bound VoxelPool, not the registry - it needs the packed model + partNamesFor): validate the README 7.4 def, resolve def.model, pack clip keys into a Float64Array; throws on bad data; returns a handle
  * @property {(h:number, clip:string)=>number} clipId     @property {(h:number, mount:string)=>number} mountId
  * @property {(h:number, clip:number, tMs:number, blend:boolean)=>void} show   per rendered frame; blend = key 0 replaced by the captured pose (chain rule)
  * @property {()=>void} hide     @property {()=>void} capture   snapshot of the last shown pose = the blend source
  * @property {(phase:number, amount:number)=>void} setBob   def.bob numbers; phase = eyeFeel bobPhase, amount 0..1
  * @property {(h:number, clip:number, tMs:number, mount:number, out3:Float64Array)=>Float64Array} mountEye   pure: eye-space mount at a clip time (no bob)
  * @property {(cam:Object, pe:ArrayLike<number>, out3:Float64Array)=>Float64Array} eyeToWorld   the map above
+ * @property {(cam:Object, pitched:boolean)=>(DrawList|null)} buildList   the list both twins draw (own DrawList(8)); null when hidden or pitched
  * @property {{visible:boolean, items:number}} stats */
 ```
 Sampling is linear per component between keys (no easing); loop clips use `tMs mod last.t`, others clamp. Zero allocation after `load`.
