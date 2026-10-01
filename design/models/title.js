@@ -394,6 +394,23 @@
              note: 'curve = [time s, open fraction]; rows with |row - centre| > open*centre are black; the row just inside the lid gets edgeGlyph in edgeColor at 50%' }
   };
 
+  // ---- US-128 Z-targeting overlay styles (architecture.md 28.9 decision 7 / 29.2) ----
+  // Passed as-is to engine.overlay.setStyles (shape: {glyph | glyphs 4 chars by slope "horiz vert down-right up-right", fg [r,g,b]};
+  // extra keys like `note` are ignored). fg is literal RGB (the overlay takes no palette keys); the palette key it is based on is
+  // in `note`. The overlay draws glyph + fg only on top of the scene bg, no alpha, no fog: so every colour is picked to read on
+  // bright grass/moss (~#5a8a3a) AND on dark stone (~#2a2a30) at 240x90. Key names = 29.2 present() ids.
+  A.uiStyle.overlay = {
+    // lock ring under the target: warm flame-gold, '=' on the (mostly horizontal) far ellipse = a heavier band than the RTS '-' ring
+    target:         { glyphs: '=|\\/', fg: [255, 194, 60],  note: 'flameMid #ffc23c; lock ring, radius = target radius + 0.2 m' },
+    // the same ring for fadeSec 0.2 s after a break: thinner glyphs + dim brass, still visible on dark stone but clearly "off"
+    targetFade:     { glyphs: '-|\\/', fg: [150, 100, 42],  note: 'between brass #c9a04a and brassDark #7a5e28; 0.2 s ring fade (no alpha)' },
+    // "no target" tick: two 1-cell x at crosshair col +-2 for noTargetSec 0.3 s; soft ember, not danger red (nothing is wrong, nothing is there)
+    targetNone:     { glyph: 'x',          fg: [214, 112, 64],  note: 'soft ember (between ember #ff5a1f and copper #b85f2e); 1-cell rect ops' },
+    // target HP bar (5 cells, z + height + 0.3): enemy health = danger red (reserved colour: it belongs to the enemy)
+    targetBarFill:  { glyph: '=',          fg: [255, 59, 59],   note: 'danger #ff3b3b; filled cells' },
+    targetBarEmpty: { glyph: '-',          fg: [112, 48, 40],   note: 'dark ember-red (~emberDark #8a2a10 lifted); empty cells keep the bar length readable' },
+  };
+
   // ---- US-015 hint zones: the story-hint part of the tower levelPatch (PO CR 2026-09-23 item 2) ----
   // Kept here, not in models/wreckage.js levelPatch.tower, because wreckage.js and levels/tower.js are in the US-011
   // pass right now. Same rule as levelPatch.tower: NO runtime applier (architecture.md 7.5); the US-015 programmer

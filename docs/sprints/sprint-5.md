@@ -1,6 +1,6 @@
 # Sprint 5 (planned 2026-09-30 night, D-032 amendment 1: back to the RPG)
 
-Owner: Manager (scope), Product Owner (stories/acceptance). This sprint closes M2 (mesh phase-2 gate) and starts M3 "Steel and Hush" with the RTS engine parts we already built (nav, overlay). Draft by the PO. **NEEDS MANAGER: confirm the scope and order** (see "Open").
+Owner: Manager (scope), Product Owner (stories/acceptance). This sprint closes M2 (mesh phase-2 gate) and starts M3 "Steel and Hush" with the RTS engine parts we already built (nav, overlay). Draft by the PO. Scope and order confirmed by the manager 2026-10-01 (D-033).
 
 ## Goal
 **Walk out of the tower onto a lit hillside on the mesh engine, then meet a beast that finds its way to you and that you can lock on to.**
@@ -33,8 +33,20 @@ Owner: Manager (scope), Product Owner (stories/acceptance). This sprint closes M
 - `engine/voxel/*`, `engine/mesh/voxelMesh.js`: ME-22 and RE-15b both touch `voxelMesh.js`. **Do them in sequence, not in parallel.**
 
 ## Open (for the main session)
-- **NEEDS MANAGER:** (1) confirm that the old-renderer block (ME-15/16/12b/19) waits until sprint 6 while M3 openers start, instead of running before M3. (2) Move US-026b S2-S4/S6/S7 streaming to sprint 6+. (3) Record the owner's 2026-09-26 roadmap answers (sword in the tower, HP + mana instead of hearts, block + parry in M3, torch as the first tool) as a D-030 amendment, so that the US-078/080 ACs can be rewritten (they still say "hillside sword" and "hearts").
+- Decided: old-renderer block ME-15/16/12b/19 = sprint 6 head; US-079a/US-128 start dev after the ME-12 owner GO, mesh-only (D-033 item 1).
+- Decided: US-026b S2-S4/S6/S7 streaming -> sprint 6+ (D-033 item 2).
+- Decided: owner 2026-09-26 answers recorded as D-030 amendment 1 (sword in the tower, HP + mana, block + parry in M3, torch first tool); PO rewrites US-078/080 ACs (D-033 item 3).
 - **Owner:** BUG-FP-001 repro on your machine if the headless probe is unclear; ME-12 walk-test; RE-02b b7 first-person feel check (pitched camera, 70 deg clamp); first enemy = boar (the PO picked it from your "wolves or boar"; wolves come later as a pack), OK?
+
+## Sprint 6 draft (PO 2026-10-01)
+**Goal (draft): one renderer, and a sword in your hand with HP on the screen.** Manager confirms later.
+Head, PC-A in order (D-033 item 1): ME-15 -> ME-16 -> ME-12b -> ME-19 (old-renderer block).
+Carry-over if not done in sprint 5: US-128a/b (look lock, then Z-target) and US-079a (beast brain + nav chase).
+New stories:
+1. US-078 sword found in the tower, swing + hit arc (PC-A engine hit query + PC-B wiring; needs designer sword art + architect note first).
+2. US-080a HP bar, damage via `combat:hit`, death/respawn (PC-B HUD + PC-A health component; needs designer bar art + architect note). US-080b mana follows if room.
+PC-B fillers: US-026b streaming S2-S4/S6/S7, PX-05a.
+Count: 4 old-renderer + US-078 + US-080a = 6 PC-A-led stories; carry-overs and PC-B fillers run beside them.
 
 ## Review
 (PO fills in at sprint end: done / not done / bugs, "missing to be playable", owner walk-test request.)

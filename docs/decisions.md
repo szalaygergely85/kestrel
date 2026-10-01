@@ -884,3 +884,25 @@ Owner verdict after the RTS-01 walk-test (`game/rts-test.html`, chat 2026-09-30)
 - **ME-12 phase-2 gate is un-paused** (back to the RPG walk-out gate on `?renderer=mesh&physics=mesh`); the old-renderer block ME-15 -> ME-16 -> ME-12b -> ME-19 runs as scheduled (it was "after the RTS-01 walk-test").
 - Epic PX (pixel output) and the ortho/iso camera idea stay engine-release-track options (owner likes that the engine can do 2D-ish and 3D views).
 
+## D-033 Sprint 5 scope: M3 openers before the old-renderer block; streaming to sprint 6+; owner roadmap answers recorded (D-030 amendment 1)
+**Date:** 2026-10-01
+**Status:** Accepted (manager). Answers the 3 NEEDS MANAGER items in `docs/sprints/sprint-5.md` "Open". Amends D-032 amendment 1 (old-renderer block timing) and D-030 (amendment 1 below). State today: architect notes for US-079a/US-128 are on PC-A (architecture.md 29); ME-12 gate pass running; PC-B on queue 7.
+
+### Context
+D-032 amendment 1 put ME-15 -> ME-16 -> ME-12b -> ME-19 back "as scheduled", i.e. before M3. The mesh path already renders and is faster (D-029 amendment 1); the old-renderer block is cleanup + shadows, not playability. Sprint goal is a beast you can fight toward. Owner answered the D-030 roadmap questions on 2026-09-26 (`docs/roadmap.md` "Owner answers").
+
+### Options
+1. Old-renderer block first, M3 after: clean single renderer before combat; delays the first playable beast by ~1-2 weeks.
+2. **M3 openers right after ME-12 GO, old-renderer block = sprint 6 head** (chosen): game first (D-030 item 2); costs ~1 more sprint of two renderers side by side.
+
+### Decision
+1. **Old-renderer block (ME-15/16/12b/19) waits for sprint 6 head.** US-079a and US-128 start dev only after the ME-12 owner GO (D-030 item 1 unchanged). Rules: new M3 code targets `?renderer=mesh` only (no dda parity required, no dda-only paths added); ME-12b keeps its ME-15/ME-16 deps. If ME-12 is NO-GO, the gate fixes come first and US-079a/US-128 stay in notes/ACs only. PC-A spare time after US-128's camera part may start ME-15.
+2. **US-026b S2-S4/S6/S7 (streaming) -> sprint 6+** (M4 streaming per D-030; PC-B filler candidate once queue 7 is empty). Not a sprint-5 story.
+3. **D-030 amendment 1 - owner answers 2026-09-26 (binding for M3/M4 ACs):** (Q1) block + parry are in M3 (shield, US-086 in scope); (Q2) first enemy = boar (PO pick; wolves later as a pack variant) - owner may still veto; (Q3) the sword is **found in the tower**, not on the hillside; (Q4) first tool = **torch** (light/burn, PO defines; replaces the lamp); (Q5) Signal Source dungeon + boss in 1.0; (Q7) **HP + mana** instead of hearts (mana feeds D-021 spells; heart vessels US-095 become HP/mana upgrades); (Q8) money + trading yes; (Q9) save points **and** autosave. Still open: Q6, Q10 (licence, before engine release), Q11 (EA vs 1.0). D-030 item 6's precondition for US-078/079/080 ACs (Q1, 2, 3, 7) is met.
+
+### Consequences
+- PO (sonnet): rewrite US-078 ACs (sword pickup in the tower, block/parry hook to US-086) and US-080 ACs (HP + mana bars, no hearts; respawn unchanged); fix US-095 and the M4 tool row to torch; move ME-15/16/12b/19 and US-026b S2+ into the sprint-6 draft.
+- Designer: HP/mana HUD art instead of hearts (when US-080 is scheduled); sword-in-tower placement with the level data.
+- Architect: US-078/080 notes after ME-12 GO (D-030 consequences unchanged).
+- Owner: ME-12 walk-test (GO/NO-GO); confirm boar as first enemy.
+
