@@ -195,7 +195,7 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 const engine = createEngine({
   canvas, assets, cols: gridFromParam(params, GRID_DEFAULT_COLS), rays: 1,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
-  shadows: { sun: params.get('renderer') === 'mesh' && params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
+  shadows: { sun: editorRenderer(params) === 'mesh' && params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
@@ -460,7 +460,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events });
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain });
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
