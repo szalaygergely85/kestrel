@@ -8,7 +8,7 @@
 
 import {
   validateVoxelModel, assertVoxelModel, RESERVED_EVENTS, MAX_VOX_PARTS,
-  KIND_MODEL, FACE_PACKED,
+  KIND_MODEL, FACE_PACKED, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS,
 } from './VoxelModel.js';
 import { packVoxelModel } from './voxelPack.js';
 import { cosSinDeg, computeVoxelPose, voxelMountWorld } from './voxelPose.js';
@@ -699,6 +699,72 @@ if (typeof globalThis.gc === 'function') {
 
 void FACE_N; void FACE_E; void FACE_S; void FACE_W; void FACE_U;
 void LAST_MAT_LOCAL;
+
+// =============================================================================
+// ME-22 (docs/architecture.md 28.12): mesh-only large voxel models.
+// =============================================================================
+
+/** A dense, single-part, single-material def of the given size - just
+ * enough shape to exercise `validateVoxelModel`'s size/meshOnly rules in
+ * isolation (not meant to mesh/march - no part-extent trickery needed since
+ * the part box always equals the whole grid). */
+function makeLargeDef(sx, sy, sz, meshOnly) {
+  const layers = [];
+  for (let z = 0; z < sz; z++) {
+    const rows = [];
+    for (let y = 0; y < sy; y++) rows.push('#'.repeat(sx));
+    layers.push(rows);
+  }
+  const def = {
+    version: 1, cellM: 0.05, size: [sx, sy, sz], anchor: [sx / 2, sy / 2, 0],
+    mats: { '#': 'mat_a' }, layers,
+    parts: { body: { box: [0, 0, 0, sx, sy, sz], pivot: [sx / 2, sy / 2, 0] } },
+  };
+  if (meshOnly !== undefined) def.meshOnly = meshOnly;
+  return def;
+}
+
+{
+  // 1. 40^3 without the flag -> error naming `meshOnly`.
+  const r1 = validateVoxelModel(makeLargeDef(40, 40, 40), { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: 40^3 without meshOnly flag errors', r1.errors.length > 0);
+  ok('ME-22: 40^3 without meshOnly flag names the flag', r1.errors.some((e) => e.indexOf('meshOnly') >= 0), JSON.stringify(r1.errors));
+
+  // 2. 40^3 WITH the flag -> ok (0 errors).
+  const r2 = validateVoxelModel(makeLargeDef(40, 40, 40, true), { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: 40^3 with meshOnly:true validates with 0 errors', r2.errors.length === 0, JSON.stringify(r2.errors));
+
+  // 3. 257/axis (flagged) -> error.
+  const r3 = validateVoxelModel(makeLargeDef(257, 1, 1, true), { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: 257/axis (flagged) errors', r3.errors.length > 0 && r3.errors.some((e) => e.indexOf('voxel.size[0]') >= 0), JSON.stringify(r3.errors));
+
+  // 4. box product > MESH_ONLY_MAX_CELLS, each axis <= 256 (flagged) -> error.
+  //    200*200*53 = 2,120,000 > 2,097,152, every axis well under 256.
+  const r4 = validateVoxelModel(makeLargeDef(200, 200, 53, true), { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: box > MESH_ONLY_MAX_CELLS (flagged) errors', r4.errors.length > 0 && r4.errors.some((e) => e.indexOf('voxel.size') >= 0), JSON.stringify(r4.errors));
+  ok('ME-22: MESH_ONLY_MAX_DIM/CELLS exported as documented', MESH_ONLY_MAX_DIM === 256 && MESH_ONLY_MAX_CELLS === 2097152);
+
+  // 5. 9 parts, flagged -> still an error (MAX_VOX_PARTS stays 8 even for mesh-only).
+  const d5 = clone(quadruped12);
+  d5.meshOnly = true;
+  for (let i = 0; i < 3; i++) d5.parts['extra' + i] = { box: [0, 0, 0, 1, 1, 1], pivot: [0, 0, 0], parent: 'body' };
+  const r5 = validateVoxelModel(d5, { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: 9 parts (flagged) still errors (MAX_VOX_PARTS unchanged)', r5.errors.some((e) => e.indexOf('> 8 parts') >= 0), JSON.stringify(r5.errors));
+
+  // 6. non-boolean flag -> error.
+  const d6 = clone(quadruped12);
+  d6.meshOnly = 'yes';
+  const r6 = validateVoxelModel(d6, { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: non-boolean meshOnly errors', r6.errors.some((e) => e.indexOf('voxel.meshOnly') >= 0), JSON.stringify(r6.errors));
+
+  // 7. existing small models stay byte-identical (meshOnly absent/false is
+  // a pure no-op) - the fixture round-trip test at the top of this file
+  // already covers this; re-check here the error SET is identical with an
+  // explicit `meshOnly: false` vs. omitted.
+  const rOmitted = validateVoxelModel(quadruped12, { materialKeys: MATERIAL_KEYS });
+  const rFalse = validateVoxelModel({ ...clone(quadruped12), meshOnly: false }, { materialKeys: MATERIAL_KEYS });
+  ok('ME-22: meshOnly:false behaves exactly like omitted (byte-identical results)', JSON.stringify(rOmitted) === JSON.stringify(rFalse));
+}
 
 // =============================================================================
 console.log(`${pass} pass, ${fail} fail`);

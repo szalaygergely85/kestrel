@@ -74,6 +74,17 @@ const pm = packVoxelModel(quadruped12, table.idFor);
   ok('buildVoxelAtlas throws when the atlas needs > 256 rows', threw);
 }
 
+{
+  // ME-22 assert-guard: a meshOnly packed model reaching buildVoxelAtlas
+  // directly (bypassing VoxelPool.bind's router) is a programmer error -
+  // throws, never silently included.
+  const moPm = packVoxelModel(quadruped12, () => 1);
+  moPm.meshOnly = true;
+  let threw = false, msg = '';
+  try { buildVoxelAtlas([moPm], 1); } catch (e) { threw = true; msg = e.message; }
+  ok('ME-22: buildVoxelAtlas throws on a meshOnly packed model', threw && msg.indexOf('meshOnly') >= 0, msg);
+}
+
 // =============================================================================
 // VoxelPool.bind builds the same atlas + a modelKey -> index map
 // =============================================================================

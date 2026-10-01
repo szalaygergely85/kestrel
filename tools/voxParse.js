@@ -17,7 +17,34 @@
 // `MAX_VOX_PARTS` / `validateVoxelModel` come from engine/index.js (the
 // stable engine surface - both tools/** and tools/editor/** may import it
 // per check-deps rule 3).
-import { MAX_VOX_PARTS } from '../engine/index.js';
+import { MAX_VOX_PARTS, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from '../engine/index.js';
+
+// ---- ME-22 (docs/architecture.md 28.12 item 5): old-limit vs. mesh-only
+// size resolution, shared by the single-part and multi-part builders below.
+// `opts.meshOnly === false` (the CLI's `--no-mesh-only`) restores today's
+// hard refusal at the OLD limits exactly; otherwise (the default) a size
+// over the OLD limits but within the MESH_ONLY bounds is allowed through -
+// the caller must still set `voxel.meshOnly: true` on the returned def
+// itself (done by buildSinglePartModel/buildMultiPartModel below), and the
+// CLI prints WHY (this function only decides/throws, it never prints).
+function resolveSizeMeshOnly(sx, sy, sz, opts, label) {
+  const total = sx * sy * sz;
+  const oldOk = sx <= 32 && sy <= 32 && sz <= 32 && total <= 4096;
+  if (oldOk) return false;
+  if (opts && opts.meshOnly === false) {
+    if (sx > 32 || sy > 32 || sz > 32) {
+      throw new Error(`vox-import: ${label} too large - size [${sx}, ${sy}, ${sz}] exceeds 32 on at least one axis`);
+    }
+    throw new Error(`vox-import: ${label} [${sx}, ${sy}, ${sz}] = ${total} voxels, exceeds the 4096 limit`);
+  }
+  if (sx > MESH_ONLY_MAX_DIM || sy > MESH_ONLY_MAX_DIM || sz > MESH_ONLY_MAX_DIM) {
+    throw new Error(`vox-import: ${label} too large even for mesh-only - size [${sx}, ${sy}, ${sz}] exceeds ${MESH_ONLY_MAX_DIM} on at least one axis`);
+  }
+  if (total > MESH_ONLY_MAX_CELLS) {
+    throw new Error(`vox-import: ${label} [${sx}, ${sy}, ${sz}] = ${total} voxels, exceeds the mesh-only limit of ${MESH_ONLY_MAX_CELLS}`);
+  }
+  return true;
+}
 
 // ---- portable byte-buffer wrapper -----------------------------------------
 
@@ -319,33 +346,33 @@ function buildMatsAndLayers(sx, sy, sz, voxels, map, palette) {
  * @param {[number,number,number]} [anchor]
  * @returns {Object} VoxelModelDef
  */
-export function buildSinglePartModel(parsed, map, cellM, anchor) {
+export function buildSinglePartModel(parsed, map, cellM, anchor, opts) {
   const [sx, sy, sz] = parsed.size;
 
-  if (sx > 32 || sy > 32 || sz > 32) {
-    throw new Error(`vox-import: dimension too large - size [${sx}, ${sy}, ${sz}] exceeds 32 on at least one axis`);
-  }
-  const total = sx * sy * sz;
-  if (total > 4096) {
-    throw new Error(`vox-import: size [${sx}, ${sy}, ${sz}] = ${total} voxels, exceeds the 4096 limit`);
-  }
+  let meshOnly = resolveSizeMeshOnly(sx, sy, sz, opts, 'size');
   // One root `body` part covering the full box (`--parts off`, or no usable
   // scene graph found): VoxelModel.js rule 5 caps a part's box extent
-  // (bx+by+bz) at 48, so a full-box single part additionally needs
-  // sx+sy+sz <= 48. (OWN-REQ-005b's parts-from-layers path does not have
-  // this restriction - each part's own, smaller box is checked instead.)
-  if (sx + sy + sz > 48) {
-    throw new Error(
-      `vox-import: size [${sx}, ${sy}, ${sz}] sums to ${sx + sy + sz}, exceeds 48 - a single full-box 'body' part ` +
-      `cannot cover it (VoxelModel.js part-box extent limit). Use the .vox file's layers/groups (--parts on, the ` +
-      `default) to split it into smaller parts instead.`
-    );
+  // (bx+by+bz) at 48 UNLESS meshOnly - so a full-box single part additionally
+  // needs sx+sy+sz <= 48 only on the non-mesh-only path. (OWN-REQ-005b's
+  // parts-from-layers path does not have this restriction - each part's
+  // own, smaller box is checked instead.)
+  if (!meshOnly && sx + sy + sz > 48) {
+    if (opts && opts.meshOnly === false) {
+      throw new Error(
+        `vox-import: size [${sx}, ${sy}, ${sz}] sums to ${sx + sy + sz}, exceeds 48 - a single full-box 'body' part ` +
+        `cannot cover it (VoxelModel.js part-box extent limit). Use the .vox file's layers/groups (--parts on, the ` +
+        `default) to split it into smaller parts instead.`
+      );
+    }
+    // ME-22: the axis-sum-48 rule is skipped for a meshOnly model - this
+    // size needs the flag even though it passed the dim/cell checks above.
+    meshOnly = true;
   }
 
   const { mats, layers } = buildMatsAndLayers(sx, sy, sz, parsed.voxels, map, parsed.palette);
   const finalAnchor = anchor || [sx / 2, sy / 2, 0];
 
-  return {
+  const def = {
     version: 1,
     cellM,
     size: [sx, sy, sz],
@@ -356,6 +383,8 @@ export function buildSinglePartModel(parsed, map, cellM, anchor) {
       body: { box: [0, 0, 0, sx, sy, sz], pivot: finalAnchor }
     }
   };
+  if (meshOnly) def.meshOnly = true;
+  return def;
 }
 
 // ---- OWN-REQ-005b: parts from the .vox scene graph ------------------------
@@ -461,7 +490,7 @@ function sanitizePartName(raw, fallbackIndex, taken) {
 /** Builds the parts-from-layers VoxelModelDef (OWN-REQ-005b). Throws a
  * clear error for anything the walk/grouping can't resolve unambiguously
  * (see tools/vox-import.mjs's KNOWN LIMITATIONS note). */
-function buildMultiPartModel(parsed, map, cellM, anchor) {
+function buildMultiPartModel(parsed, map, cellM, anchor, opts) {
   const shapeInstances = walkVoxScene(parsed.scene);
   if (!shapeInstances.length) {
     throw new Error('vox-import: the .vox scene graph has no reachable nSHP (shape) nodes');
@@ -539,12 +568,7 @@ function buildMultiPartModel(parsed, map, cellM, anchor) {
     for (const v of voxels) { v.x -= gMinX; v.y -= gMinY; v.z -= gMinZ; }
   }
   const sx = gMaxX - gMinX + 1, sy = gMaxY - gMinY + 1, sz = gMaxZ - gMinZ + 1;
-  if (sx > 32 || sy > 32 || sz > 32) {
-    throw new Error(`vox-import: combined size [${sx}, ${sy}, ${sz}] exceeds 32 on at least one axis`);
-  }
-  if (sx * sy * sz > 4096) {
-    throw new Error(`vox-import: combined size [${sx}, ${sy}, ${sz}] = ${sx * sy * sz} voxels, exceeds the 4096 limit`);
-  }
+  const meshOnly = resolveSizeMeshOnly(sx, sy, sz, opts, 'combined size');
 
   // Per-part tight bounding box + bottom-centre pivot, box-extent check,
   // and pairwise overlap check (validateVoxelModel does NOT catch
@@ -562,7 +586,9 @@ function buildMultiPartModel(parsed, map, cellM, anchor) {
       if (v.z < z0) z0 = v.z; if (v.z + 1 > z1) z1 = v.z + 1;
     }
     const bx = x1 - x0, by = y1 - y0, bz = z1 - z0;
-    if (bx + by + bz > 48) {
+    // ME-22: the axis-sum-48 rule is skipped for a meshOnly model (same
+    // VoxelModel.js rule the combined-size check above already resolved).
+    if (!meshOnly && bx + by + bz > 48) {
       throw new Error(`vox-import: part '${group.rawName || key}' box extent ${bx + by + bz} exceeds 48 (box [${x0},${y0},${z0},${x1},${y1},${z1}])`);
     }
     const name = sanitizePartName(group.rawName, i, taken);
@@ -588,7 +614,7 @@ function buildMultiPartModel(parsed, map, cellM, anchor) {
     parts[p.name] = i === 0 ? { box: p.box, pivot: p.pivot } : { box: p.box, pivot: p.pivot, parent: partDefs[0].name };
   });
 
-  return {
+  const def = {
     version: 1,
     cellM,
     size: [sx, sy, sz],
@@ -597,6 +623,8 @@ function buildMultiPartModel(parsed, map, cellM, anchor) {
     layers,
     parts
   };
+  if (meshOnly) def.meshOnly = true;
+  return def;
 }
 
 /**
@@ -604,8 +632,13 @@ function buildMultiPartModel(parsed, map, cellM, anchor) {
  * @param {Object<string,string>} map   palette index (decimal string) -> material key
  * @param {number} cellM
  * @param {[number,number,number]} [anchor]
- * @param {{parts?: boolean}} [opts]   `parts: false` forces the OWN-REQ-005a
- *   single-`body`-part output even if the file has a usable scene graph
+ * @param {{parts?: boolean, meshOnly?: boolean}} [opts]   `parts: false` forces the OWN-REQ-005a
+ *   single-`body`-part output even if the file has a usable scene graph.
+ *   `meshOnly: false` (the CLI's `--no-mesh-only`) restores the OLD hard
+ *   refusal at 32/axis + 4096 voxels; default (omitted/true) allows a
+ *   bigger model through with `voxel.meshOnly: true` set on the result
+ *   (ME-22, architecture.md 28.12 item 5) - still refused, with numbers,
+ *   past the MESH_ONLY bounds.
  *   (default: true - use the scene graph when one is present and has at
  *   least one reachable shape; otherwise this is a silent no-op fallback
  *   to the single-part output, same as OWN-REQ-005a on a v150 file with no
@@ -615,7 +648,7 @@ function buildMultiPartModel(parsed, map, cellM, anchor) {
 export function buildVoxelModel(parsed, map, cellM, anchor, opts) {
   const useParts = !opts || opts.parts !== false;
   if (useParts && parsed.scene) {
-    return buildMultiPartModel(parsed, map, cellM, anchor);
+    return buildMultiPartModel(parsed, map, cellM, anchor, opts);
   }
-  return buildSinglePartModel(parsed, map, cellM, anchor);
+  return buildSinglePartModel(parsed, map, cellM, anchor, opts);
 }

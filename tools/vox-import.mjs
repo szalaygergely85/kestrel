@@ -54,7 +54,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateVoxelModel } from '../engine/index.js';
+import { validateVoxelModel, packVoxelModel, buildVoxelMesh, MESH_ONLY_MAX_QUADS } from '../engine/index.js';
 import { parseVox, buildVoxelModel } from './voxParse.js';
 
 // OWN-REQ-011: the RIFF/.vox chunk parsing + VoxelModelDef-building logic
@@ -110,11 +110,16 @@ export function formatModule(name, def) {
   const descText = partCount > 1
     ? `Imported from .vox by tools/vox-import.mjs (OWN-REQ-005a/005b). ${partCount} parts from the file's layers/groups.`
     : `Imported from .vox by tools/vox-import.mjs (OWN-REQ-005a). One root 'body' part (--parts off, or no usable scene graph).`;
+  // ME-22: `meshOnly: true` is a visible TOOL decision (buildVoxelModel/
+  // resolveSizeMeshOnly set it on `def` when the model is over the OLD
+  // limits but within the mesh-only bounds) - written out explicitly so it
+  // is never silently lost between the generated def and the saved file.
+  const meshOnlyLine = def.meshOnly ? '\n    meshOnly: true,' : '';
   return `ASSETS.voxelModels.${name} = {
   name: ${jsStringLiteral(name)},
   desc: ${jsStringLiteral(descText)},
   voxel: {
-    version: 1,
+    version: 1,${meshOnlyLine}
     cellM: ${def.cellM},
     size: ${formatArray(def.size)},
     anchor: ${formatArray(def.anchor)},
@@ -157,19 +162,29 @@ Options:
                         ONE root part 'body' = the full box (the
                         OWN-REQ-005a core behaviour), ignoring any scene
                         graph in the file.
+  --no-mesh-only        restore the OLD hard refusal at 32/axis + 4096
+                        voxels (no voxel.meshOnly auto-flagging). Without
+                        this flag (the default), a model over those limits
+                        but within the mesh-only bounds (<=256/axis,
+                        <=2097152 voxels, mesh quads <=32768) imports whole
+                        with voxel.meshOnly: true set automatically (ME-22,
+                        docs/architecture.md 28.12) - this tool prints why,
+                        plus quads/tris/estimated GPU KB.
 
 Output: a design/models/*.js-style snippet:
   ASSETS.voxelModels.<name> = { name, desc, voxel: { ...VoxelModelDef } }
 This tool only reads <in.vox>/<map.json> and writes --out - it never edits
 files under design/.
 
-Rejects combined dimensions over 32 per axis or 4096 total voxels, more
-than 8 parts, overlapping part boxes, or (single-part 'body' output only,
-a corollary of the single-box design) a size whose axes sum to more than
-48 - each part's own box is checked against that 48 limit instead when
-parts-splitting is on. See the file's own header comment for exactly which
-.vox scene-graph shapes are supported (rotated/animated nodes and
-multi-model shapes are not).
+Rejects more than 8 parts and overlapping part boxes always. Rejects
+combined dimensions over 32 per axis or 4096 total voxels (axis-sum over 48
+for a single-part 'body') UNLESS the result fits the mesh-only bounds, in
+which case it imports with voxel.meshOnly: true instead (see --no-mesh-only
+above to disable that and keep the old hard refusal). Still refused, with
+the numbers, past the mesh-only bounds (256/axis, 2,097,152 voxels, 32768
+mesh quads) or MAX_VOX_PARTS (8, unchanged for mesh-only). See the file's
+own header comment for exactly which .vox scene-graph shapes are supported
+(rotated/animated nodes and multi-model shapes are not).
 `;
 
 function parseArgs(argv) {
@@ -183,6 +198,7 @@ function parseArgs(argv) {
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--name') { args.name = argv[++i]; continue; }
     if (a === '--parts') { args.parts = argv[++i]; continue; }
+    if (a === '--no-mesh-only') { args.noMeshOnly = true; continue; }
     args._.push(a);
   }
   return args;
@@ -232,11 +248,43 @@ export function runCli(argv) {
     else throw new Error(`vox-import: --parts '${args.parts}' must be 'on' or 'off'`);
   }
 
-  const def = buildVoxelModel(parsed, map, cellM, anchor, { parts: useParts });
+  const def = buildVoxelModel(parsed, map, cellM, anchor, { parts: useParts, meshOnly: !args.noMeshOnly });
 
   const { errors } = validateVoxelModel(def);
   if (errors.length) {
     throw new Error(`vox-import: generated model failed validateVoxelModel:\n${errors.join('\n')}`);
+  }
+
+  // ME-22 (architecture.md 28.12 item 5): a meshOnly def means the model
+  // exceeds the OLD limits - this is a visible TOOL decision (not engine
+  // auto-promotion), so print why plus the real mesh-build numbers. Runs
+  // pack + buildVoxelMesh once; a model over MESH_ONLY_MAX_QUADS is refused
+  // here, with the numbers, even though validateVoxelModel already passed
+  // (the quad budget is a mesh-build-time check, not a validator rule).
+  let meshStats = null;
+  if (def.meshOnly) {
+    // Resolve matIds against a stable 1..n local-index identity - this only
+    // needs the GEOMETRY (quad count), not real GPU material ids.
+    const idFor = (() => { const seen = new Map(); let n = 1; return (k) => { if (!seen.has(k)) seen.set(k, n++); return seen.get(k); }; })();
+    const pm = packVoxelModel(def, idFor);
+    const modelName = args.name || path.basename(inPath, path.extname(inPath));
+    let triCount;
+    try {
+      const mesh = buildVoxelMesh(pm, { id: `vox:${modelName}`, partNames: Object.keys(def.parts) });
+      triCount = mesh.triCount;
+    } catch (e) {
+      throw new Error(`vox-import: generated model is meshOnly but its mesh is over budget:\n${e.message}`);
+    }
+    const quadCount = triCount / 2;
+    // u16/u32-index-aware estimate per architecture.md 28.12 item 3:
+    // quads*(128 + 12|24)/1024 (12 B/quad u16 index, 24 B/quad u32 above
+    // MESH_ONLY_MAX_QUADS/2 = 16384 quads, matching MeshBuffers.js's own
+    // u32 switch at quadCount*4 > 65536).
+    const idxBytesPerQuad = quadCount > MESH_ONLY_MAX_QUADS / 2 ? 24 : 12;
+    const gpuKB = quadCount * (128 + idxBytesPerQuad) / 1024;
+    meshStats = { quadCount, triCount, gpuKB };
+    console.log(`vox-import: model exceeds the OLD limits (32/axis, 4096 voxels) - set voxel.meshOnly: true (mesh renderer only, ME-22)`);
+    console.log(`vox-import: quads=${quadCount} tris=${triCount} est. GPU KB=${gpuKB.toFixed(1)}`);
   }
 
   const name = args.name || path.basename(inPath, path.extname(inPath));
@@ -244,9 +292,9 @@ export function runCli(argv) {
 
   if (args.out) {
     fs.writeFileSync(args.out, text, 'utf8');
-    return { help: false, wrote: args.out, text };
+    return { help: false, wrote: args.out, text, meshStats };
   }
-  return { help: false, wrote: null, text };
+  return { help: false, wrote: null, text, meshStats };
 }
 
 function main() {

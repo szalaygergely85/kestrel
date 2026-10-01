@@ -83,15 +83,25 @@ export class VoxelPool {
       const def = registry.model(key);
       if (def && def.voxel) {
         this._partNames.set(key, Object.keys(def.voxel.parts));
-        this.models.set(key, packVoxelModel(def.voxel, (matKey) => table.idFor(matKey)));
+        const pm = packVoxelModel(def.voxel, (matKey) => table.idFor(matKey));
+        // ME-22 (28.12 item 4): a static per-model flag, set once here (not
+        // re-read from JSON per frame) - routes a mesh-only model away from
+        // the shared VOX atlas/VoxelTextures (DDA-only, 16-slot/256-row
+        // budget) below, and away from the DDA instance queue in project().
+        pm.meshOnly = def.voxel.meshOnly === true;
+        this.models.set(key, pm);
       }
     }
     const modelKeys = Array.from(this.models.keys());
-    const packedList = modelKeys.map((k) => this.models.get(k));
+    // A mesh-only model never enters the atlas: it can be far larger than
+    // the atlas budget, and the mesh renderer reads `pm.vox` directly via
+    // buildVoxelMesh, never through this atlas/index map.
+    const atlasKeys = modelKeys.filter((k) => !this.models.get(k).meshOnly);
+    const packedList = atlasKeys.map((k) => this.models.get(k));
     this._atlasVersion++;
     this.atlas = buildVoxelAtlas(packedList, this._atlasVersion);
     this._modelIndexByKey = {};
-    for (let i = 0; i < modelKeys.length; i++) this._modelIndexByKey[modelKeys[i]] = i;
+    for (let i = 0; i < atlasKeys.length; i++) this._modelIndexByKey[atlasKeys[i]] = i;
   }
 
   /** Clears this frame's instance queue. Call once before this frame's
@@ -222,6 +232,16 @@ export class VoxelPool {
     let culled = 0;
     for (let i = 0; i < this._rawCount; i++) {
       const inst = this.raw[i];
+      // ME-22 (28.12 item 4): the single place instances are routed into
+      // the per-frame DDA/CPU-oracle list - a meshOnly model is skipped
+      // (one warn per modelKey, never thrown, no placeholder geometry)
+      // whenever the renderer actually used THIS frame is not 'mesh'. Uses
+      // the `renderer` param (not `this.renderer`) since callers like
+      // ?gpucompare=1 pass it per-call without ever setting `this.renderer`.
+      if (inst.model && inst.model.meshOnly && renderer !== 'mesh') {
+        warnOnce(this, `VoxelPool: model '${inst.modelKey}' is meshOnly, skipped for a non-mesh renderer (ME-22)`);
+        continue;
+      }
       let out = this.list[count];
       if (!out) {
         out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, slot: 0,

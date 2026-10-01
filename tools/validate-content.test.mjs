@@ -143,9 +143,19 @@ function assetsWithRingWorld() {
 // 1. Clean fixture: zero errors.
 {
   const a = goodAssets();
-  const { errors, checks } = validateContent(a);
+  const { errors, checks, meshOnlyCount } = validateContent(a);
   ok('clean fixture reports zero errors', errors.length === 0, JSON.stringify(errors));
   ok('clean fixture ran a non-trivial number of checks', checks > 10, String(checks));
+  ok('clean fixture has 0 mesh-only models', meshOnlyCount === 0, String(meshOnlyCount));
+}
+
+// 1b. ME-22 (28.12 item 7): a flagged model validates and is counted.
+{
+  const a = goodAssets();
+  a.models.crate.voxel.meshOnly = true;
+  const { errors, meshOnlyCount } = validateContent(a);
+  ok('meshOnly:true model still reports zero errors', errors.length === 0, JSON.stringify(errors));
+  ok('meshOnlyCount counts the flagged model', meshOnlyCount === 1, String(meshOnlyCount));
 }
 
 // 2. Level prop model key missing from ASSETS.models.

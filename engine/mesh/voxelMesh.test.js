@@ -1,7 +1,7 @@
 // engine/mesh/voxelMesh.test.js (ME-07, docs/backlog.md, docs/architecture.md
 // 27.7 item 4, 27.15.6). Plain Node ESM, no framework.
 // Run: node engine/mesh/voxelMesh.test.js
-import { buildVoxelMesh, VoxelMeshCache } from './voxelMesh.js';
+import { buildVoxelMesh, VoxelMeshCache, MESH_ONLY_MAX_QUADS } from './voxelMesh.js';
 import { validateMesh } from './MeshData.js';
 import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
@@ -355,6 +355,84 @@ marchOracle('post12 yaw90', post12, { model: null, x: -0.4, y: 0.8, z: 0.1, yawD
   const m1 = cache.get(pm, 'post12', partNames), m2 = cache.get(pm2, 'post12', partNames);
   ok('VoxelMeshCache: two builds of the same id get different meshVersion', m1.id === m2.id && m1.meshVersion !== m2.meshVersion, `${m1.meshVersion} ${m2.meshVersion}`);
   ok('VoxelMeshCache: same pm -> same mesh, version unchanged', cache.get(pm, 'post12', partNames) === m1 && m1.meshVersion === cache.get(pm, 'post12', partNames).meshVersion);
+}
+
+// ---------------------------------------------------------------------------
+// 6. ME-22 (architecture.md 28.12 item 3): quad budget. A checkerboard
+// layout (every solid cell's 4 side neighbors AND its lone z-layer's top/
+// bottom are all empty/boundary) defeats greedy merging entirely, so
+// quadCount ~= 6 * solidCount - the fastest way to blow the quad budget
+// with a small, cheap-to-validate grid.
+// ---------------------------------------------------------------------------
+function makeCheckerboardDef(sx, sy) {
+  const row = (y) => {
+    let s = '';
+    for (let x = 0; x < sx; x++) s += ((x + y) % 2 === 0) ? '#' : '.';
+    return s;
+  };
+  const rows = [];
+  for (let y = 0; y < sy; y++) rows.push(row(y));
+  return {
+    version: 1, cellM: 0.05, size: [sx, sy, 1], anchor: [sx / 2, sy / 2, 0],
+    mats: { '#': 'mat_a' },
+    layers: [rows],
+    parts: { body: { box: [0, 0, 0, sx, sy, 1], pivot: [sx / 2, sy / 2, 0] } },
+    meshOnly: true,
+  };
+}
+
+{
+  // Between 16384 and MESH_ONLY_MAX_QUADS (32768): builds fine, warns.
+  const { pm, partNames } = pack(makeCheckerboardDef(80, 80));
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(msg);
+  let mesh;
+  try { mesh = buildVoxelMesh(pm, { id: 'vox:checker80', partNames }); } finally { console.warn = origWarn; }
+  const quadCount = mesh.triCount / 2;
+  ok('ME-22: checker80 lands between 16384 and MESH_ONLY_MAX_QUADS', quadCount > 16384 && quadCount <= MESH_ONLY_MAX_QUADS, `quadCount=${quadCount}`);
+  ok('ME-22: > 16384 quads warns (u32 index path)', warnings.some((w) => w.indexOf('u32') >= 0), JSON.stringify(warnings));
+}
+
+{
+  // Over MESH_ONLY_MAX_QUADS: throws, naming the model id.
+  const { pm, partNames } = pack(makeCheckerboardDef(110, 110));
+  let threw = false, msg = '';
+  try { buildVoxelMesh(pm, { id: 'vox:checker110', partNames }); } catch (e) { threw = true; msg = e.message; }
+  ok('ME-22: checkerboard over MESH_ONLY_MAX_QUADS throws', threw, msg);
+  ok('ME-22: throw names the model id', msg.indexOf('vox:checker110') >= 0, msg);
+}
+
+// ---------------------------------------------------------------------------
+// 7. ME-22 point 7 (real asset test): if design/vox/environment has any
+// *.vox files, import one as a mesh-only model and confirm it packs+meshes
+// under budget. Skipped gracefully (no fail) when that directory/files
+// don't exist - this repo has no committed .vox binaries under design/vox
+// as of this writing.
+// ---------------------------------------------------------------------------
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const envDir = path.default.join(process.cwd(), 'design', 'vox', 'environment');
+  let files = [];
+  try { files = fs.default.readdirSync(envDir).filter((f) => f.endsWith('.vox')); } catch { /* directory doesn't exist - skip */ }
+  if (!files.length) {
+    console.log('SKIP ME-22 real-asset test (no design/vox/environment/*.vox present)');
+  } else {
+    const { parseVox, buildVoxelModel } = await import('../../tools/voxParse.js');
+    const buf = fs.default.readFileSync(path.default.join(envDir, files[0]));
+    const parsed = parseVox(buf);
+    // A permissive map (every used index -> 'mat_a') - this test only cares
+    // that the resulting model packs and meshes under budget, not real materials.
+    const map = {};
+    for (const v of parsed.voxels) map[String(v.c)] = 'mat_a';
+    const def = buildVoxelModel(parsed, map, 0.05, undefined, { parts: false, meshOnly: true });
+    const { pm: envPm, partNames: envPartNames } = pack(def);
+    let envMesh, envThrew = false;
+    try { envMesh = buildVoxelMesh(envPm, { id: `vox:${files[0]}`, partNames: envPartNames }); } catch { envThrew = true; }
+    ok(`ME-22: real asset ${files[0]} meshes without throwing`, !envThrew);
+    if (!envThrew) ok(`ME-22: real asset ${files[0]} quad count under budget`, envMesh.triCount / 2 <= MESH_ONLY_MAX_QUADS);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

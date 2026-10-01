@@ -9,7 +9,7 @@
 import assert from 'node:assert';
 import {
   splitVoxFile, fingerprintModel, findDuplicates, mapSceneNodesToModels,
-  tightBBox, dominantColors, projections, fitsCurrentLimits, buildSingleModelVox
+  tightBBox, dominantColors, projections, fitsCurrentLimits, fitsMeshOnly, buildSingleModelVox
 } from './vox-split.mjs';
 import { parseVox } from './voxParse.js';
 
@@ -227,6 +227,25 @@ test('fitsCurrentLimits: under both caps but axis-sum over 48 does not fit (sing
   assert.strictEqual(fitsCurrentLimits([16, 16, 16]), true);  // sum 48, 4096 voxels - exactly at both caps
 });
 
+// ---- fitsMeshOnly (ME-22, docs/architecture.md 28.12 item 6) ---------------
+
+test('fitsMeshOnly: small model fits (no axis-sum rule - mesh-only skips it)', () => {
+  assert.strictEqual(fitsMeshOnly([20, 20, 20]), true); // sum 60, would fail fitsCurrentLimits
+});
+
+test('fitsMeshOnly: a model over fitsCurrentLimits but within mesh-only bounds fits', () => {
+  assert.strictEqual(fitsCurrentLimits([40, 40, 40]), false);
+  assert.strictEqual(fitsMeshOnly([40, 40, 40]), true); // 64000 voxels, well under 2,097,152
+});
+
+test('fitsMeshOnly: an axis over 256 does not fit', () => {
+  assert.strictEqual(fitsMeshOnly([300, 8, 8]), false);
+});
+
+test('fitsMeshOnly: under 256/axis but over 2,097,152 total does not fit', () => {
+  assert.strictEqual(fitsMeshOnly([200, 200, 53]), false); // 2,120,000 voxels
+});
+
 // ---- buildSingleModelVox round-trips through parseVox ---------------------
 
 test('buildSingleModelVox: round-trips through parseVox (size, voxels, palette)', () => {
@@ -279,13 +298,23 @@ test('splitVoxFile: writes one file per unique model, skips exact duplicates', (
   assert.strictEqual(parsedFirst.voxels.length, 8);
 });
 
-test('splitVoxFile: fits/fitsNote reflects current engine limits per model', () => {
+test('splitVoxFile: fits/fitsNote reflects current engine limits per model (ME-22 mesh-only note)', () => {
   const models = [cube([8, 8, 8], 1), cube([40, 40, 40], 1)];
   const result = splitVoxFile(buildMultiModelVox(models), 'pack');
   assert.strictEqual(result.entries[0].fits, true);
   assert.strictEqual(result.entries[0].fitsNote, null);
   assert.strictEqual(result.entries[1].fits, false);
-  assert.match(result.entries[1].fitsNote, /mesh path/);
+  // 40^3 = 64000 voxels - over fitsCurrentLimits but well within the
+  // mesh-only bounds (ME-22).
+  assert.strictEqual(result.entries[1].fitsNote, 'mesh-only (ME-22)');
+});
+
+test('splitVoxFile: fitsNote is "too large even for mesh-only" past the mesh-only bounds too', () => {
+  // A single axis of 300 (> MESH_ONLY_MAX_DIM 256) - cheap (300 voxels total).
+  const models = [cube([300, 1, 1], 1)];
+  const result = splitVoxFile(buildMultiModelVox(models), 'pack');
+  assert.strictEqual(result.entries[0].fits, false);
+  assert.strictEqual(result.entries[0].fitsNote, 'too large even for mesh-only - split');
 });
 
 console.log(`${passed} passed`);

@@ -367,11 +367,17 @@ export function validateContent(ASSETS) {
   // voxelMaterials.v1/v2 registry is checked separately, for INTERNAL
   // consistency, right after.
   const paletteMaterialKeys = new Set(Object.keys(paletteMaterials));
+  let meshOnlyCount = 0;
   for (const modelKey of Object.keys(models)) {
     const model = models[modelKey];
     if (!model || !model.voxel) continue;
     const path = `models.${modelKey}.voxel`;
     checks++; // the validateVoxelModel call itself counts as one check
+    // ME-22 (28.12 item 7): the `meshOnly` flag passes straight through to
+    // validateVoxelModel (it's just a field on `model.voxel`) - counted
+    // here for the summary line, so a dda-only test page knows up front
+    // what it won't show.
+    if (model.voxel.meshOnly === true) meshOnlyCount++;
     const { errors: voxErrs } = validateVoxelModelSafe(model.voxel, { materialKeys: paletteMaterialKeys });
     for (const e of voxErrs) fail(path, e);
 
@@ -515,7 +521,7 @@ export function validateContent(ASSETS) {
     }
   }
 
-  return { errors, warnings, checks };
+  return { errors, warnings, checks, meshOnlyCount };
 }
 
 function validateVoxelModelSafe(def, opts) {
@@ -531,14 +537,15 @@ function validateVoxelModelSafe(def, opts) {
 // ---------------------------------------------------------------------------
 async function main() {
   const ASSETS = await loadDesignAssets();
-  const { errors, warnings, checks } = validateContent(ASSETS);
+  const { errors, warnings, checks, meshOnlyCount } = validateContent(ASSETS);
   for (const w of warnings) console.warn(`WARN ${w}`);
+  const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (errors.length) {
     for (const e of errors) console.error(e);
-    console.error(`content INVALID: ${errors.length} finding(s) out of ${checks} checks`);
+    console.error(`content INVALID: ${errors.length} finding(s) out of ${checks} checks${meshOnlyText}`);
     process.exitCode = 1;
   } else {
-    console.log(`content OK (${checks} checks${warnings.length ? `, ${warnings.length} warning(s)` : ''})`);
+    console.log(`content OK (${checks} checks${warnings.length ? `, ${warnings.length} warning(s)` : ''}${meshOnlyText})`);
   }
 }
 

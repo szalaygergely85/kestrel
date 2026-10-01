@@ -32,6 +32,13 @@ export function buildVoxelAtlas(packedList, version = 1) {
   const modelBase = new Int32Array(n);
   let total = 0;
   for (let m = 0; m < n; m++) {
+    // ME-22 assert-guard: VoxelPool.bind() must already have filtered a
+    // meshOnly packed model out of `packedList` before calling here - this
+    // is a programmer-error guard (not a normal runtime path), since this
+    // atlas is the DDA-only, 16-slot/256-row budget ME-22 exists to protect.
+    if (packedList[m].meshOnly) {
+      throw new Error('buildVoxelAtlas: refusing a meshOnly packed model - the router must filter it out first (ME-22)');
+    }
     modelBase[m] = total;
     total += packedList[m].vox.length;
   }

@@ -36,6 +36,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseVox, paletteColor } from './voxParse.js';
+import { MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from '../engine/index.js';
 
 // ---- low-level RIFF / .vox chunk writers (mirrors tools/vox-export.mjs) --
 
@@ -202,6 +203,16 @@ export function fitsCurrentLimits(size) {
   return sx <= 32 && sy <= 32 && sz <= 32 && sx * sy * sz <= 4096 && (sx + sy + sz) <= 48;
 }
 
+/** True if a single-part `body` import would fit the ME-22 mesh-only bounds
+ * (docs/architecture.md 28.12): <=256 per axis, <=2,097,152 total voxels.
+ * The mesh-only path skips the axis-sum-48 rule entirely (mesh renderer
+ * only, never raymarched) - so unlike `fitsCurrentLimits`, there is no
+ * axis-sum check here. */
+export function fitsMeshOnly(size) {
+  const [sx, sy, sz] = size;
+  return sx <= MESH_ONLY_MAX_DIM && sy <= MESH_ONLY_MAX_DIM && sz <= MESH_ONLY_MAX_DIM && sx * sy * sz <= MESH_ONLY_MAX_CELLS;
+}
+
 // ---- top-level split ------------------------------------------------------
 
 /**
@@ -226,6 +237,7 @@ export function splitVoxFile(voxBuffer, fileId) {
     const bbox = tightBBox(model.voxels);
     const voxelCount = model.voxels.length;
     const fits = fitsCurrentLimits(model.size);
+    const meshOnlyFits = fitsMeshOnly(model.size);
     let id = null;
     if (dup.isUnique) {
       uniqueCount++;
@@ -244,7 +256,12 @@ export function splitVoxFile(voxBuffer, fileId) {
       // first occurrence) copy of this shape, so its id is already known.
       duplicateOf: dup.duplicateOf === null ? null : idByIndex[dup.duplicateOf],
       fits,
-      fitsNote: fits ? null : 'needs mesh path (ME-07/voxelMesh) or a split - do NOT raise the engine limits',
+      // ME-22 (28.12 item 6): a model over fitsCurrentLimits but within the
+      // mesh-only bounds no longer NEEDS a split - vox-import's default
+      // behaviour (voxel.meshOnly: true) handles it whole. The OLD limits
+      // themselves are still never raised - this is a separate, additional
+      // path (mesh renderer only).
+      fitsNote: fits ? null : (meshOnlyFits ? 'mesh-only (ME-22)' : 'too large even for mesh-only - split'),
       dominantColors: dominantColors(model.voxels, parsed.palette),
       sceneNodes: sceneByModel[i] || [],
       views: projections(model, parsed.palette)
@@ -270,8 +287,11 @@ Usage:
 
 Writes <dir>/<name>/<name>_NN.vox (one per unique model, palette kept
 as-is) + <dir>/<name>/index.json (per-model report: id, size, voxel count,
-bbox, duplicate-of, fits-current-limits, dominant colors, scene-node
-reuse, and small front/top colour projections for a contact-sheet preview).
+bbox, duplicate-of, fits-current-limits (fitsNote 'mesh-only (ME-22)' when a
+model is over those limits but still importable whole via vox-import's
+default voxel.meshOnly: true, 'too large even for mesh-only - split'
+otherwise), dominant colors, scene-node reuse, and small front/top colour
+projections for a contact-sheet preview).
 Exact duplicate models (same size + identical voxel set) are skipped - no
 file is written for them, only an index.json entry pointing at the model
 they duplicate.

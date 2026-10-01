@@ -23,6 +23,12 @@ import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { computeVoxelPose, FORWARD } from '../voxel/voxelPose.js';
 import { DRAW_VOXEL } from './DrawList.js';
 
+// ME-22 (architecture.md 28.12 item 3): the quad budget is checked here,
+// where the mesh is actually built, not in the (cheap/pure) validator.
+// MeshBuffers.js already switches to a u32 index automatically above
+// 16384 quads (quadCount*4 > 65536) - no change needed there.
+export const MESH_ONLY_MAX_QUADS = 32768;
+
 /** @typedef {import('./MeshData.js').MeshData} MeshData */
 /** @typedef {import('./DrawList.js').DrawList} DrawList */
 /**
@@ -250,6 +256,13 @@ export function buildVoxelMesh(pm, opts) {
   }
   const mesh = builder.build();
   mesh.matsResolved = true;
+  const quadCount = mesh.triCount / 2;
+  if (quadCount > MESH_ONLY_MAX_QUADS) {
+    throw new Error(`buildVoxelMesh: model '${opts.id}' has ${quadCount} quads, exceeds MESH_ONLY_MAX_QUADS (${MESH_ONLY_MAX_QUADS})`);
+  }
+  if (quadCount > 16384 && typeof console !== 'undefined' && console.warn) {
+    console.warn(`buildVoxelMesh: model '${opts.id}' has ${quadCount} quads (> 16384) - u32 index path`);
+  }
   return mesh;
 }
 

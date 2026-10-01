@@ -160,6 +160,43 @@ if (global.gc) {
   }
 }
 
+// ---- ME-22 (28.12 item 4): meshOnly router - dda never receives a mesh-
+// only model: no pool entry, no throw, exactly one console.warn per modelKey.
+{
+  const meshOnlyDef = { ...quadruped12, meshOnly: true };
+  const registryMO = {
+    keys(kind) { return kind === 'model' ? ['bear', 'bigbear'] : []; },
+    model(key) { return key === 'bear' ? { voxel: quadruped12 } : { voxel: meshOnlyDef }; },
+  };
+  const poolMO = new VoxelPool();
+  poolMO.bind(registryMO, table);
+  ok('ME-22 bind: meshOnly model is still packed (mesh renderer needs it)', poolMO.models.has('bigbear'));
+  ok('ME-22 bind: meshOnly model excluded from the DDA atlas index map', poolMO._modelIndexByKey.bigbear === undefined && poolMO._modelIndexByKey.bear === 0);
+
+  const origWarn = console.warn;
+  const warnings = [];
+  console.warn = (msg) => warnings.push(msg);
+  let threw = false;
+  try {
+    poolMO.beginFrame();
+    poolMO.pushInstance('bigbear', 3, 0, 2, 0);
+    poolMO.pushInstance('bear', 4, 0, 2, 0);
+    poolMO.project(cam, rt, 'dda');
+    poolMO.project(cam, rt, 'dda'); // second frame - still exactly one warn total (warnOnce)
+  } catch (e) { threw = true; } finally { console.warn = origWarn; }
+  ok('ME-22 router: dda renderer never throws for a meshOnly model', !threw);
+  ok('ME-22 router: meshOnly instance never enters pool.list', poolMO.list.every((inst) => inst.modelKey !== 'bigbear'));
+  ok('ME-22 router: the non-meshOnly instance still renders', poolMO.list.some((inst) => inst.modelKey === 'bear'));
+  const meshOnlyWarnings = warnings.filter((w) => w.indexOf('bigbear') >= 0);
+  ok('ME-22 router: exactly one console.warn for the meshOnly modelKey (warnOnce across frames)', meshOnlyWarnings.length === 1, JSON.stringify(warnings));
+
+  // A mesh-renderer project() call DOES include the meshOnly instance.
+  poolMO.beginFrame();
+  poolMO.pushInstance('bigbear', 3, 0, 2, 0);
+  poolMO.project(cam, rt, 'mesh');
+  ok('ME-22 router: renderer "mesh" keeps the meshOnly instance', poolMO.list.some((inst) => inst.modelKey === 'bigbear'));
+}
+
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');

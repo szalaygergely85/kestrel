@@ -6,7 +6,10 @@
 // binary .vox file is committed to the repo).
 
 import assert from 'node:assert';
-import { parseVox, buildVoxelModel, formatModule } from './vox-import.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { parseVox, buildVoxelModel, formatModule, runCli } from './vox-import.mjs';
 import { validateVoxelModel } from '../engine/index.js';
 
 // OWN-REQ-005b (docs/backlog.md row 25r split) additions below the
@@ -178,12 +181,16 @@ test('unmapped palette index is a clear, actionable error listing the index and 
 });
 
 // ---- 4. oversize SIZE chunk -------------------------------------------------
+// ME-22 (docs/architecture.md 28.12 item 5): by DEFAULT these now import
+// whole with voxel.meshOnly: true (they fit the mesh-only bounds easily) -
+// `{ meshOnly: false }` (the CLI's --no-mesh-only) restores the exact OLD
+// hard-refusal behaviour these tests originally covered.
 
-test('oversize SIZE chunk (dimension > 32) is a clear error stating the dims found', () => {
+test('oversize SIZE chunk (dimension > 32) is a clear error stating the dims found (--no-mesh-only)', () => {
   const buf = buildVoxBuffer([40, 2, 2], []);
   const parsed = parseVox(buf);
   assert.throws(
-    () => buildVoxelModel(parsed, {}, 0.05),
+    () => buildVoxelModel(parsed, {}, 0.05, undefined, { meshOnly: false }),
     (err) => {
       assert.ok(err.message.includes('[40, 2, 2]'), err.message);
       assert.ok(err.message.includes('32'), err.message);
@@ -192,14 +199,46 @@ test('oversize SIZE chunk (dimension > 32) is a clear error stating the dims fou
   );
 });
 
-test('oversize SIZE chunk (total > 4096) is a clear error stating the count found', () => {
+test('oversize SIZE chunk (total > 4096) is a clear error stating the count found (--no-mesh-only)', () => {
   const buf = buildVoxBuffer([32, 32, 8], []); // 8192 > 4096, all axes <= 32
   const parsed = parseVox(buf);
   assert.throws(
-    () => buildVoxelModel(parsed, {}, 0.05),
+    () => buildVoxelModel(parsed, {}, 0.05, undefined, { meshOnly: false }),
     (err) => {
       assert.ok(err.message.includes('8192'), err.message);
       assert.ok(err.message.includes('4096'), err.message);
+      return true;
+    }
+  );
+});
+
+test('ME-22: oversize SIZE chunk (dimension > 32) imports whole by default with voxel.meshOnly: true', () => {
+  const buf = buildVoxBuffer([40, 2, 2], []);
+  const parsed = parseVox(buf);
+  const def = buildVoxelModel(parsed, {}, 0.05);
+  assert.strictEqual(def.meshOnly, true);
+  assert.deepStrictEqual(def.size, [40, 2, 2]);
+});
+
+test('ME-22: oversize SIZE chunk (total > 4096) imports whole by default with voxel.meshOnly: true', () => {
+  const buf = buildVoxBuffer([32, 32, 8], []);
+  const parsed = parseVox(buf);
+  const def = buildVoxelModel(parsed, {}, 0.05);
+  assert.strictEqual(def.meshOnly, true);
+  assert.deepStrictEqual(def.size, [32, 32, 8]);
+});
+
+test('ME-22: a size over even the mesh-only bounds is refused with numbers', () => {
+  const buf = buildVoxBuffer([2, 2, 2], []); // size chunk is what's checked, not voxel count
+  // Fake an over-mesh-only-bounds parsed size directly (building a real
+  // 257-axis .vox buffer in a test would be wastefully large).
+  const parsed = parseVox(buf);
+  parsed.size = [257, 1, 1];
+  assert.throws(
+    () => buildVoxelModel(parsed, {}, 0.05),
+    (err) => {
+      assert.ok(err.message.includes('mesh-only'), err.message);
+      assert.ok(err.message.includes('256'), err.message);
       return true;
     }
   );
@@ -454,6 +493,49 @@ test('OWN-REQ-005b: fallback to top-level group naming when the file has no name
   assert.deepStrictEqual(Object.keys(def.parts), ['wing_L', 'wing_R']);
   const { errors } = validateVoxelModel(def, { materialKeys: ['stone', 'brass'] });
   assert.deepStrictEqual(errors, []);
+});
+
+// ---- ME-22 CLI: runCli prints mesh stats by default, --no-mesh-only refuses --
+
+test('ME-22 CLI: oversize model imports by default, prints quads/tris/GPU KB, writes voxel.meshOnly: true', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vox-import-me22-'));
+  const voxPath = path.join(dir, 'big.vox');
+  const voxels = [];
+  for (let z = 0; z < 2; z++) for (let y = 0; y < 2; y++) for (let x = 0; x < 40; x++) voxels.push({ x, y, z, c: 1 });
+  fs.writeFileSync(voxPath, buildVoxBuffer([40, 2, 2], voxels));
+  const mapPath = path.join(dir, 'map.json');
+  fs.writeFileSync(mapPath, JSON.stringify({ 1: 'stone' }));
+  const outPath = path.join(dir, 'big.js');
+
+  const logs = [];
+  const origLog = console.log;
+  console.log = (msg) => logs.push(msg);
+  let result;
+  try {
+    result = runCli([voxPath, '--map', mapPath, '--cell', '0.05', '--out', outPath]);
+  } finally {
+    console.log = origLog;
+  }
+  assert.ok(result.meshStats, 'expected meshStats to be set for an over-the-old-limits model');
+  assert.ok(result.meshStats.quadCount > 0);
+  assert.ok(result.meshStats.gpuKB > 0);
+  const written = fs.readFileSync(outPath, 'utf8');
+  assert.ok(written.includes('meshOnly: true'), written);
+});
+
+test('ME-22 CLI: --no-mesh-only restores the hard refusal', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vox-import-me22-'));
+  const voxPath = path.join(dir, 'big2.vox');
+  const mapPath = path.join(dir, 'map.json');
+  fs.writeFileSync(voxPath, buildVoxBuffer([40, 2, 2], []));
+  fs.writeFileSync(mapPath, JSON.stringify({}));
+  assert.throws(
+    () => runCli([voxPath, '--map', mapPath, '--cell', '0.05', '--no-mesh-only']),
+    (err) => {
+      assert.ok(err.message.includes('32'), err.message);
+      return true;
+    }
+  );
 });
 
 console.log(`\n${passed} test(s) passed`);
