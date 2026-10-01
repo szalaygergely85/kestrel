@@ -811,6 +811,18 @@ Owner accepted (chat, 2026-09-30): the y-shear camera (vertical image plane, loo
 - **Shear stays dda-only** until ME-19 deletes the casters; the shear projection is deleted with them. After ME-19 the engine has one camera model.
 - gpucompare parity poses (dda vs mesh) keep the shear view until ME-19; new mesh-only poses use pitched. First-person feel checks (mouse look, pitch clamp) move to the pitched camera on mesh.
 
+### Amendment 3 (2026-10-01): phase-2 gate PASSED (owner GO)
+Owner verdict (chat, 2026-10-01): "GO on ME-12", after the walk-test on `?renderer=mesh&physics=mesh`. Gate data: `docs/test-reports/me-12-phase2-gate.md`; all rows PASS, architect verdict AC 10 PASS; BUG-ME12-1 (closed grate walk-through on mesh physics) fixed via architecture.md 27.18b barrier quads (`2a4dac4`).
+Unlocks (D-030 item 1, D-033 item 1):
+- **M3 dev starts:** US-079a, US-128a/b, US-078a-d, US-080a1/a2/b. New M3 code targets `?renderer=mesh` only (D-033).
+- **ME-12b** (mesh-default flip) after ME-15/ME-16, sprint 6 head per D-033; **ME-19** (delete casters, branch `wip/bug-own-008-part3`) after that. `?renderer=dda` stays as the compare/oracle switch until ME-19.
+- Architect: US-078/080 notes now (D-033 consequences).
+Carried notes:
+- **Perf bar re-based (AC 7a, architect):** on the route walk, mesh GPU p95 at 400x150 <= 2.75 ms **and** <= dda on the same walk (measured 2.656 median vs dda 3.44). This is the regression bar for ME-13+; the phase-1 2.52 / 1.34 ms stay recorded measurements.
+- **Sun shadow map stays opt-in** (`?shadows=map`) until ME-15d closes the +1.0-1.1 ms p95 cost.
+- **Lintel-blocks-head** not testable on world_m1 (the grate is the only walk-under lintel); add a probe when content gets one.
+- Non-blocking: restore the `allPos.length === 0 -> return null` guard in `colliders.js` next time it is touched; BUG-2 (scripted `E` on dda) and the dda start stall are outside mesh scope.
+
 ## D-030 Milestone re-plan M2-M6 + parallel engine release track (accepts the PO re-plan of 2026-09-26, with adjustments)
 **Date:** 2026-09-26
 **Status:** Accepted. Owner request ("we miss a lot"). Amends **D-010** (M1.5 / M5 editor slots), **D-011** (M2-M4 milestone themes; story canon unchanged), **D-012** (demo and Coming Soon timing; Electron/steamworks/platform-adapter decisions unchanged), **D-020** (sword/gear levels "first in M2" -> M3/M4). **D-029 stands unchanged**, including both gates and the freezes.
