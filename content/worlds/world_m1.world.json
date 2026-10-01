@@ -19,7 +19,9 @@
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
     {"id": "farTower", "detailRows": 12, "fogMax": 0.4, "fogModel": "far", "minCells": {"h": 4, "w": 3}, "model": "farTower", "note": "the signal tower; matches overworld_far.farTower (azimuth 255 from the breach, 15 deg left of centre, top ~1.9 deg above the horizon)", "sizeM": {"h": 42, "w": 14}, "type": "billboard", "unlit": true, "x": 713.8, "y": 1232.1, "z": -8},
-    {"id": "endMarker", "components": {"voxel": {"anim": "idle", "loop": true, "model": "waystone"}}, "note": "US-026a waystone: copied verbatim from design/models/voxel_world.js ASSETS.worldPatch.world_m1.entities.append", "type": "prop", "x": 1428, "y": 1040, "yawDeg": 75, "z": "ground"}
+    {"id": "endMarker", "components": {"voxel": {"anim": "idle", "loop": true, "model": "waystone"}}, "note": "US-026a waystone: copied verbatim from design/models/voxel_world.js ASSETS.worldPatch.world_m1.entities.append", "type": "prop", "x": 1428, "y": 1040, "yawDeg": 75, "z": "ground"},
+    {"id": "boar1", "components": {"brain": {"home": [1461.01, 1031], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~26 m from the breach (1486.5,1025) - clear of the 15 m AC 6 radius", "type": "beast", "x": 1461.01, "y": 1031, "z": "ground"},
+    {"id": "boar2", "components": {"brain": {"home": [1444.02, 1035], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~43 m from the breach - further along toward the waystone than boar1", "type": "beast", "x": 1444.02, "y": 1035, "z": "ground"}
   ],
   "horizon": [
     {"id": "ferrumLights", "angular": {"hDeg": 2.2, "wDeg": 13.2}, "bearingDeg": 87.6, "distanceM": 9000, "drawOver": "sky", "elevDeg": 1, "fog": 0.55, "fogColor": "fogFar", "model": "ferrumLights", "note": "bearing = compass deg of the band centre, elevDeg = its bottom edge above the horizon (eye-independent: at infinity). Cells: az = cam yaw + atan((col + 0.5 - cols/2) / focalCols), el = atan((horizonRow - row - 0.5) / planeDistY); sample the model by angle fraction (nearest), tier by projected rows (hDeg * rows/deg / size.h < 0.75 -> lods.half). M1 only: the band base floats 1.0 deg up, hidden behind the east wall from every M1 viewpoint; M2 (outside) adds a hill row or elevDeg 0", "type": "horizon", "unlit": true}
@@ -48,5 +50,15 @@
     {"id": "end", "lookAt": "farTower", "once": true, "pitchTo": 0, "r": 2.5, "shape": "circle", "trigger": "quest.end", "walkTo": {"x": 1429.86, "y": 1038.33}, "x": 1428, "y": 1040},
     {"id": "hintStone", "hint": "stone", "once": true, "shape": "terrain", "trigger": "hint.show"},
     {"id": "boundsEdge", "hint": "boundsEdge", "once": true, "shape": "bounds", "trigger": "hint.show"}
-  ]
+  ],
+  "nav": {
+    "area": {"h": 192, "w": 192, "x0": 1400, "y0": 928},
+    "blockedTypes": [
+      "water"
+    ],
+    "cell": 1,
+    "maxSlopeDeg": 30,
+    "maxStepM": 1,
+    "seed": 1
+  }
 }

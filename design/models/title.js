@@ -409,6 +409,11 @@
     // target HP bar (5 cells, z + height + 0.3): enemy health = danger red (reserved colour: it belongs to the enemy)
     targetBarFill:  { glyph: '=',          fg: [255, 59, 59],   note: 'danger #ff3b3b; filled cells' },
     targetBarEmpty: { glyph: '-',          fg: [112, 48, 40],   note: 'dark ember-red (~emberDark #8a2a10 lifted); empty cells keep the bar length readable' },
+    // US-079a (architecture.md 29.1) placeholder: the '!' notice marker drawn
+    // over a beast's head while it's in the `notice` state (before it starts
+    // chasing). Alert yellow - distinct from the enemy-red target bar above,
+    // reads on both bright grass and dark stone. Final art/clips come with US-079.
+    beastNotice:    { glyph: '!',          fg: [255, 214, 64],  note: 'alert yellow (placeholder); 1-cell overlay.bar over the beast while noticing' },
   };
 
   // ---- US-015 hint zones: the story-hint part of the tower levelPatch (PO CR 2026-09-23 item 2) ----

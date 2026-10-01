@@ -21,7 +21,7 @@ import {
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
-  loadContentPack,
+  loadContentPack, createRng,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -52,9 +52,13 @@ import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
 import { stepEnd, endFadeAmount } from './quest/end.js';
 import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
+import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { wakeFrame, drawEyelid } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
+import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
+import { presentBeasts } from './quest/beastView.js';
+import { questOverlayStyles } from './quest/overlayStyles.js';
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -364,6 +368,8 @@ const effRenderer = renderer === 'mesh' && gpuPipeline ? 'mesh' : 'dda';
 pitchClampDeg = effRenderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
 gameVoxelPool.renderer = effRenderer;
 engine.overlay.renderer = effRenderer;
+engine.overlay.setStyles(questOverlayStyles(assets.uiStyle)); // US-079a/US-128 (29.1/29.2): beastNotice + target* overlay styles
+const ovlStyles = { beastNotice: engine.overlay.styleId('beastNotice') }; // US-079a (29.1): resolved once, not per frame
 sprites.pool.renderer = effRenderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
@@ -451,6 +457,7 @@ function runGame(mode) {
   let simTime = 0;
   let look = null;
   let playerHandle = null;
+  let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
   if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
@@ -556,6 +563,9 @@ function runGame(mode) {
       }
 
       playerHandle = world.get('player');
+      // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
+      beasts = createBeastSim(world, { nav: worldDef.nav, rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
         radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
@@ -740,6 +750,7 @@ function runGame(mode) {
       // glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
+      if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
       lap(SEC.physics);
       // US-020a: footsteps (distance accumulator + `body.landed`) and the
       // boulder-thud speed watch - after physics settles this step's
@@ -926,6 +937,9 @@ function runGame(mode) {
         clearMaskForSceneFade(fb.rt);
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
+      // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
+      engine.overlay.clear();
+      if (beasts) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpuDda) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
