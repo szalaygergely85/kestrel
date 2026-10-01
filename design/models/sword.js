@@ -373,9 +373,10 @@
         note: 'US-078 (writer may refine): scratched on the north face of upper step I (13,7), right beside the sword, ' +
               'same style as the KEEP THE LIGHT scrawl (props[] entry with model decal:..., like `scrawl`)' }
     ] },
-    practiceTarget: { x: 14.6, y: 6.6, z: 0, facing: 270, note: 'PROPOSED spot for the US-078 test target (mossy stump / ' +
-                      'old armour stand, not modelled yet): floor cell (14,6), 1.8 m east of the sword, in the sun patch, ' +
-                      'off the wake -> burner -> stair corridor' },
+    practiceTarget: { x: 14.6, y: 6.6, z: 0, facing: 270, note: 'spot for the US-078 test target: floor cell (14,6), 1.8 m ' +
+                      'east of the sword, in the sun patch, off the wake -> burner -> stair corridor. Modelled in ' +
+                      'models/m3_props.js (voxelModels.practiceTarget, the old sword pell); its placement data is ' +
+                      'levelPatch.towerPracticeTarget (supersedes this entry)' },
     checks: { wakeSpot: { x: 17.0, y: 9.5 }, distanceM: 5.34, bearingFromSwordDeg: 129, standCell: [13, 6],
               viewFrom: { x: 16.5, y: 8.0, note: '1-2 steps NW of the wake spot, standing: clear sightline (preview check)' },
               burnerSide: { x: 17.6, y: 6.4, note: 'beside the burner ring (cell 17,6), 4.7 m: clear sightline down the sun patch' } }
