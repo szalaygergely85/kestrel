@@ -17,6 +17,7 @@
 // (literal copy of `compositor.js`'s `renderWorld` insertion sort).
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { groupRadius } from './instances.js';
 
 /** `DrawItem.type` values. */
 export const DRAW_STATIC = 0;
@@ -144,20 +145,10 @@ export class DrawList {
     item.instCount = count;
     item.partMatrices.set(parts.m);
     for (let p = 0; p < 8; p++) item.partFlags[p] = parts.flags[p];
-    const b = mesh.bbox;
-    let r2 = 0;
-    for (let p = 0; p < parts.count; p++) {
-      const o = p * 12;
-      for (let c = 0; c < 8; c++) {
-        const x = (c & 1) ? b[3] : b[0], y = (c & 2) ? b[4] : b[1], z = (c & 4) ? b[5] : b[2];
-        const wx = parts.m[o] * x + parts.m[o + 1] * y + parts.m[o + 2] * z + parts.m[o + 9];
-        const wy = parts.m[o + 3] * x + parts.m[o + 4] * y + parts.m[o + 5] * z + parts.m[o + 10];
-        const wz = parts.m[o + 6] * x + parts.m[o + 7] * y + parts.m[o + 8] * z + parts.m[o + 11];
-        const d2 = wx * wx + wy * wy + wz * wz;
-        if (d2 > r2) r2 = d2;
-      }
-    }
-    const R = Math.sqrt(r2);
+    // RE-15a (28.13 point 2): factored into instances.js's `groupRadius` so
+    // the per-instance cull (InstanceGroups.addToDrawList) shares this exact
+    // computation instead of redoing it.
+    const R = groupRadius(mesh, parts);
     const f = ib.f32;
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
     for (let i = 0; i < count; i++) {

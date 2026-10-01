@@ -13,6 +13,7 @@
 // only (never render/gpu). Zero allocation per frame after group creation.
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
+import { classifyAABB, CULL_OUT } from './culling.js';
 
 /** Words / bytes per instance. */
 export const INSTANCE_STRIDE = 16;
@@ -99,12 +100,76 @@ export function computeGroupParts(pm, pose, out) {
 }
 
 /**
+ * RE-15a (28.13 point 2): max |corner| of `mesh.bbox` under any of `parts`'
+ * part matrices - the group's conservative bounding radius R, s.t. every
+ * instance's world AABB is `t-R .. t+R` (t = the instance translation).
+ * Factored out of `DrawList.addInstances` so both the whole-group AABB
+ * (DrawList.js) and the new per-instance cull (below) share one computation,
+ * done once per group per frame rather than per instance. Zero allocation.
+ * @param {import('./MeshData.js').MeshData} mesh
+ * @param {{m: Float64Array, count: number}} parts
+ * @returns {number}
+ */
+export function groupRadius(mesh, parts) {
+  const b = mesh.bbox;
+  let r2 = 0;
+  for (let p = 0; p < parts.count; p++) {
+    const o = p * 12;
+    for (let c = 0; c < 8; c++) {
+      const x = (c & 1) ? b[3] : b[0], y = (c & 2) ? b[4] : b[1], z = (c & 4) ? b[5] : b[2];
+      const wx = parts.m[o] * x + parts.m[o + 1] * y + parts.m[o + 2] * z + parts.m[o + 9];
+      const wy = parts.m[o + 3] * x + parts.m[o + 4] * y + parts.m[o + 5] * z + parts.m[o + 10];
+      const wz = parts.m[o + 6] * x + parts.m[o + 7] * y + parts.m[o + 8] * z + parts.m[o + 11];
+      const d2 = wx * wx + wy * wy + wz * wz;
+      if (d2 > r2) r2 = d2;
+    }
+  }
+  return Math.sqrt(r2);
+}
+
+/**
+ * RE-15a (28.13 point 3): compacts the survivors of `classifyAABB(planes,
+ * t-R, t+R)` (t = instance translation, words 3/7/11) from `g.ib` (the
+ * game-owned, never-written source) into `g.drawIb[0]` (engine-owned scratch),
+ * stable, in game order. Copies all 16 words through the `u32` view so the
+ * objectId/flags words (stored as uint32 bit patterns in the same buffer)
+ * round-trip bit-exact - a `Float32Array` get/set round-trip is not
+ * guaranteed bit-exact for arbitrary bit patterns (NaN payloads). Zero
+ * allocation (plain `for` loop, never `subarray`/`set(subarray)`).
+ * Conservative: a straddling box (CULL_STRADDLE) is kept, only CULL_OUT drops.
+ * @param {InstanceGroup} g
+ * @param {Float64Array|null} planes - `frustumPlanes` output, or null/undefined = no cull (keep all)
+ * @param {number} R - `groupRadius(mesh, g.parts)`, this group this frame
+ * @returns {number} survivor count
+ */
+function compactGroup(g, planes, R) {
+  const srcF = g.ib.f32, srcU = g.ib.u32;
+  const dstU = g.drawIb[0].u32;
+  const n = g.count;
+  let w = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * INSTANCE_STRIDE;
+    if (planes) {
+      const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
+      if (classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
+    }
+    const wo = w * INSTANCE_STRIDE;
+    for (let c = 0; c < INSTANCE_STRIDE; c++) dstU[wo + c] = srcU[o + c];
+    w++;
+  }
+  return w;
+}
+
+/**
  * @typedef {Object} InstanceGroup
  * @property {string} modelKey
- * @property {InstanceBuffer} ib - the game writes instances here
+ * @property {InstanceBuffer} ib - the game writes instances here, never written by the engine
  * @property {number} count - the game sets it each frame
  * @property {{clip: number, frame: number, tMs: number}} pose - one animation pose for the whole group
  * @property {InstanceParts} parts - engine-owned scratch
+ * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a: engine-owned compacted scratch, index 0 = LOD0 (used), 1 = LOD1 (RE-15c, allocated but unused here)
+ * @property {[number, number]} drawCount - survivor counts into `drawIb[0]`/`drawIb[1]`
+ * @property {number|null} _memoFrameNo - RE-15a: the `frameNo` this group's `drawIb`/`drawCount` were last computed for
  * @property {boolean} used
  */
 
@@ -118,6 +183,12 @@ export class InstanceGroups {
     /** @type {InstanceGroup[]} */
     this.groups = [];
     this.pool = /** @type {any} */ (null);
+    // RE-15a (28.13 point 8): F3 stats, reset once per memoized frame (not
+    // per group/call) so a second same-frameNo `addToDrawList` call never
+    // double-counts. `instancesLod1` stays 0 until RE-15c.
+    this.stats = { instances: 0, instancesCulled: 0, instancesLod1: 0 };
+    /** @type {number|null} the last `frameNo` seen by `addToDrawList` */
+    this._lastFrameNo = null;
   }
 
   /** @param {any} pool - the bound VoxelPool (models registry + partNamesFor) */
@@ -133,6 +204,11 @@ export class InstanceGroups {
     const g = {
       modelKey, ib: createInstanceBuffer(capacity), count: 0,
       pose: { clip: -1, frame: 0, tMs: 0 }, parts: createInstanceParts(), used: true,
+      // RE-15a (28.13 point 3): both LOD buckets allocated now (index 1 is
+      // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
+      drawIb: [createInstanceBuffer(capacity), createInstanceBuffer(capacity)],
+      drawCount: [0, 0],
+      _memoFrameNo: null,
     };
     this.groups.push(g);
     return g;
@@ -145,23 +221,47 @@ export class InstanceGroups {
   }
 
   /**
-   * Pushes one DRAW_INSTANCED item per non-empty group (after
-   * `addVoxelInstances`, before `list.cull`; both twins call this).
+   * Pushes one DRAW_INSTANCED item per non-empty, non-fully-culled group
+   * (after `addVoxelInstances`, before `list.cull`; both twins call this).
+   * RE-15a (28.13): per-instance frustum cull + compaction into `g.drawIb[0]`,
+   * memoized on `frameNo` - a group already computed for this `frameNo` is
+   * re-pushed from its cached `drawIb[0]`/`drawCount[0]` without recomputing
+   * (matters when `?gpucompare=1` runs the GPU pass and the JS twin for the
+   * same logical frame; also keeps RE-15c's future LOD hysteresis state from
+   * advancing twice). `stats` (F3) is reset once per NEW `frameNo`, not per
+   * call, so a memoized repeat never double-counts.
    * @param {import('./DrawList.js').DrawList} list
    * @param {import('./voxelMesh.js').VoxelMeshCache} cache
+   * @param {Float64Array|null} [planes] - `frustumPlanes` output; omitted/null = no cull (back-compat, keeps all)
+   * @param {number} [frameNo] - the rendered-frame counter; omitted = always recompute (no memo)
    */
-  addToDrawList(list, cache) {
+  addToDrawList(list, cache, planes, frameNo) {
     const pool = this.pool;
     if (!pool) return;
     const groups = this.groups;
+    if (frameNo !== this._lastFrameNo) {
+      this._lastFrameNo = frameNo;
+      this.stats.instances = 0;
+      this.stats.instancesCulled = 0;
+      this.stats.instancesLod1 = 0;
+    }
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0) continue;
       const pm = pool.models.get(g.modelKey);
       if (!pm) continue;
       const mesh = cache.get(pm, g.modelKey, pool.partNamesFor(g.modelKey));
-      computeGroupParts(pm, g.pose, g.parts);
-      list.addInstances(mesh, g.parts, g.ib, g.count);
+      if (g._memoFrameNo !== frameNo) {
+        computeGroupParts(pm, g.pose, g.parts);
+        const R = groupRadius(mesh, g.parts);
+        g.drawCount[0] = compactGroup(g, planes, R);
+        g.drawCount[1] = 0; // RE-15c fills the LOD1 bucket
+        g._memoFrameNo = frameNo;
+        this.stats.instances += g.drawCount[0];
+        this.stats.instancesCulled += g.count - g.drawCount[0];
+      }
+      if (g.drawCount[0] <= 0) continue;
+      list.addInstances(mesh, g.parts, g.drawIb[0], g.drawCount[0]);
     }
   }
 }

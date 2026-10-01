@@ -126,6 +126,7 @@ export class GpuCellPipeline {
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
+      instancesCulled: 0, instancesLod1: 0, // RE-15a (28.13 point 8): F3 `inst <drawn>/<total> lod1 <n> cull <culled>`
       // US-018 (architecture.md 16): real per-pass GPU ms, filled only
       // while `setPassTiming(true)` (F3 overlay open or `?bench=1`) - NaN
       // otherwise. `passMsP50`/`passMsP95` line up with `PASS_NAMES`.
@@ -142,6 +143,7 @@ export class GpuCellPipeline {
     // binding yet, so a dev harness/main.js owns pushInstance()).
     this._voxelPool = null;
     this._instances = null; // RE-06: InstanceGroups (engine.instances), set by bindInstances()
+    this._frameNo = 0; // RE-15a (28.13 point 4): increments once per frame(), fed to InstanceGroups.addToDrawList's memo
 
     // Registered once, up front, regardless of whether init below succeeds -
     // a lost context is possible even on a pipeline that never became ready
@@ -960,6 +962,7 @@ export class GpuCellPipeline {
   frame(fb, light, cam, world) {
     // RE-02a (28.1): 'pitched' only exists on the mesh renderer - fail loudly at the entry.
     if (cam) assertProjectionRenderer(cam, this.renderer);
+    this._frameNo++; // RE-15a (28.13 point 4): once per GPU-pipeline-rendered frame
     this._fb = fb;
     this._light = light;
     this._cam = cam || null;
@@ -1642,7 +1645,14 @@ export class GpuCellPipeline {
       addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
     }
     // RE-06 (28.6): instanced unit groups, after the ME-08 voxel items, before the cull.
-    if (this._instances) this._instances.addToDrawList(list, sharedVoxelMeshCache);
+    // RE-15a (28.13): per-instance cull + compaction, memoized on `this._frameNo` (incremented once
+    // per `frame()` call - `?gpucompare=1&renderer=mesh` calls `frame()` and the JS mesh twin once
+    // each per pose, in step, so both see the same value and the twin's call re-pushes this cache).
+    if (this._instances) {
+      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._frameNo);
+      this.stats.instancesCulled = this._instances.stats.instancesCulled;
+      this.stats.instancesLod1 = this._instances.stats.instancesLod1;
+    }
     list.cull(this._meshFrustumPlanes);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRasterSub);

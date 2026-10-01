@@ -12,7 +12,7 @@ import { DrawList, DRAW_INSTANCED } from './DrawList.js';
 import { VoxelMeshCache } from './voxelMesh.js';
 import {
   INSTANCE_STRIDE, INSTANCE_BYTES, INST_OBJECT_ID, INST_FLAGS, UNIT_OBJECT_BASE, MAX_INSTANCE_GROUPS,
-  createInstanceBuffer, createInstanceParts, writeUnitInstance, computeGroupParts, InstanceGroups,
+  createInstanceBuffer, createInstanceParts, writeUnitInstance, computeGroupParts, InstanceGroups, groupRadius,
 } from './instances.js';
 import { makeOk } from '../test/assert.js';
 import '../../design/palette.js';
@@ -138,19 +138,24 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   const cache = new VoxelMeshCache();
   const g = groups.group('lever', 8);
   ok('group starts empty', g.count === 0 && g.modelKey === 'lever' && g.ib.capacity === 8);
+  ok('drawIb[0]/[1] both allocated at group capacity (RE-15a point 3)', g.drawIb[0].capacity === 8 && g.drawIb[1].capacity === 8);
   const list = new DrawList(8);
   list.begin();
-  groups.addToDrawList(list, cache);
+  groups.addToDrawList(list, cache, null, 1);
   ok('empty group adds no item', list.count === 0);
   for (let i = 0; i < 5; i++) writeUnitInstance(g.ib, i, i * 2, 10, 0, i * 30, UNIT_OBJECT_BASE | i, i % 3);
   g.count = 5;
   list.begin();
-  groups.addToDrawList(list, cache);
+  groups.addToDrawList(list, cache, null, 2);
   const it = list.items[0];
-  ok('non-empty group adds one DRAW_INSTANCED item', list.count === 1 && it.type === DRAW_INSTANCED && it.instBuf === g.ib && it.instCount === 5);
+  // RE-15a: with no planes (no cull) every instance survives into the compacted g.drawIb[0], not g.ib itself.
+  ok('non-empty group adds one DRAW_INSTANCED item, drawn from the compacted scratch buffer', list.count === 1 && it.type === DRAW_INSTANCED && it.instBuf === g.drawIb[0] && it.instCount === 5);
+  let bitEq = true;
+  for (let w = 0; w < 5 * INSTANCE_STRIDE; w++) if (g.drawIb[0].u32[w] !== g.ib.u32[w]) bitEq = false;
+  ok('compacted words are bit-equal to the uncompacted source (no cull)', bitEq);
   const mesh0 = it.mesh;
   list.begin();
-  groups.addToDrawList(list, cache);
+  groups.addToDrawList(list, cache, null, 3);
   ok('item mesh = the cached voxel mesh (same object on a second frame)', list.items[0].mesh === mesh0);
   let threw = false;
   try { for (let i = 0; i < MAX_INSTANCE_GROUPS + 1; i++) groups.group('lever', 1); } catch (e) { threw = true; }
@@ -159,26 +164,126 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   ok('remove() drops the group', !groups.groups.includes(g));
 }
 
-// ---- zero allocation: 1000 x (writeUnitInstance x 200 + group frame) ---------
+// ---- RE-15a: per-instance cull + compaction + memo + stats -------------------
 {
+  // A simple box frustum [-5,5] x [-5,5] x [-1000,1000] (world space is "flat"
+  // enough here - z barely matters), (a,b,c,d) s.t. a*x+b*y+c*z+d >= 0 = inside.
+  const PL = new Float64Array([
+    1, 0, 0, 5, /* left:   x >= -5 */
+    -1, 0, 0, 5, /* right:  x <= 5 */
+    0, 1, 0, 5, /* bottom: y >= -5 */
+    0, -1, 0, 5, /* top:    y <= 5 */
+    0, 0, 1, 1000, /* near */
+    0, 0, -1, 1000, /* far */
+  ]);
+
+  const groups = new InstanceGroups();
+  groups.bindPool(pool);
+  const cache = new VoxelMeshCache();
+  const g = groups.group('lever', 8);
+  const pm = pool.models.get('lever');
+  const mesh = cache.get(pm, 'lever', pool.partNamesFor('lever'));
+  computeGroupParts(pm, g.pose, g.parts);
+  const R = groupRadius(mesh, g.parts);
+  ok('groupRadius > 0 for the lever model', R > 0);
+
+  // off-screen-only group -> 0 items, 0 drawn, all culled.
+  {
+    const list = new DrawList(4);
+    for (let i = 0; i < 4; i++) writeUnitInstance(g.ib, i, 500 + i, 500, 0, 0, UNIT_OBJECT_BASE | i, 0);
+    g.count = 4;
+    list.begin();
+    groups.addToDrawList(list, cache, PL, 10);
+    ok('off-screen-only group: 0 draw items', list.count === 0);
+    ok('off-screen-only group: stats.instances 0, instancesCulled 4', groups.stats.instances === 0 && groups.stats.instancesCulled === 4);
+  }
+
+  // mixed group: 2 inside, 1 far outside, 1 straddling the right plane (x=5) - survivors in game order, bit-equal.
+  {
+    const list = new DrawList(4);
+    writeUnitInstance(g.ib, 0, -2, 0, 0, 0, UNIT_OBJECT_BASE | 0, 0); // inside
+    writeUnitInstance(g.ib, 1, 900, 0, 0, 0, UNIT_OBJECT_BASE | 1, 0); // far outside
+    writeUnitInstance(g.ib, 2, 1, 1, 0, 0, UNIT_OBJECT_BASE | 2, 0); // inside
+    // Placed so its AABB [x-R, x+R] straddles x=5 (kept, never falsely culled - "conservative").
+    writeUnitInstance(g.ib, 3, 5 - R * 0.5, 0, 0, 0, UNIT_OBJECT_BASE | 3, 0);
+    g.count = 4;
+    list.begin();
+    groups.addToDrawList(list, cache, PL, 11);
+    const it = list.items[0];
+    ok('mixed group: 3 survivors (0, 2, 3), in game order', it.instCount === 3);
+    let order = true, bitExact = true;
+    const survivors = [0, 2, 3];
+    for (let s = 0; s < 3; s++) {
+      const srcO = survivors[s] * INSTANCE_STRIDE, dstO = s * INSTANCE_STRIDE;
+      if (g.ib.f32[srcO + 3] !== it.instBuf.f32[dstO + 3]) order = false;
+      for (let w = 0; w < INSTANCE_STRIDE; w++) if (g.ib.u32[srcO + w] !== it.instBuf.u32[dstO + w]) bitExact = false;
+    }
+    ok('mixed group: survivors in stable game order', order);
+    ok('mixed group: survivor words bit-equal to the source (u32 copy)', bitExact);
+    ok('mixed group: stats.instances 3, instancesCulled 1', groups.stats.instances === 3 && groups.stats.instancesCulled === 1);
+
+    // Second call, SAME frameNo (gpucompare's GPU + JS-twin double call): corrupt g.ib first -
+    // if addToDrawList recomputed, the corruption would show up in the result.
+    const savedX = g.ib.f32[2 * INSTANCE_STRIDE + 3];
+    g.ib.f32[2 * INSTANCE_STRIDE + 3] = 12345; // would move instance 2 outside the box if re-scanned
+    const list2 = new DrawList(4);
+    list2.begin();
+    groups.addToDrawList(list2, cache, PL, 11); // same frameNo (11)
+    ok('same-frameNo repeat: still 3 survivors (did not recompute against the corrupted source)', list2.items[0].instCount === 3);
+    ok('same-frameNo repeat: stats unchanged (no double count)', groups.stats.instances === 3 && groups.stats.instancesCulled === 1);
+    g.ib.f32[2 * INSTANCE_STRIDE + 3] = savedX;
+
+    // A new frameNo recomputes (and now really drops the corrupted-then-restored instance 2's old position check - just verifying recompute happens).
+    const list3 = new DrawList(4);
+    list3.begin();
+    groups.addToDrawList(list3, cache, PL, 12);
+    ok('new frameNo: recomputes (3 survivors again, position restored)', list3.items[0].instCount === 3);
+    ok('instancesLod1 stays 0 (RE-15c not implemented yet)', groups.stats.instancesLod1 === 0);
+  }
+}
+
+// ---- zero allocation: 1000 x (writeUnitInstance x 200 + group frame) ---------
+// RE-15a: a real (encompassing) frustum + an incrementing frameNo, so every
+// call actually runs the per-instance classifyAABB + u32-copy compaction
+// (not a memoized no-op) - this is the hot path AC2's 0.1 ms/zero-alloc budget covers.
+{
+  const PL_ALL = new Float64Array([
+    1, 0, 0, 1e6, -1, 0, 0, 1e6, 0, 1, 0, 1e6, 0, -1, 0, 1e6, 0, 0, 1, 1e6, 0, 0, -1, 1e6,
+  ]);
   const groups = new InstanceGroups();
   groups.bindPool(pool);
   const cache = new VoxelMeshCache();
   const g = groups.group('burner', 200);
   const list = new DrawList(8);
+  let frameNo = 0;
   const frame = () => {
     for (let i = 0; i < 200; i++) writeUnitInstance(g.ib, i, i, i * 0.5, 0, i * 7, UNIT_OBJECT_BASE | i, i & 3);
     g.count = 200;
     list.begin();
-    groups.addToDrawList(list, cache);
+    groups.addToDrawList(list, cache, PL_ALL, ++frameNo);
   };
   for (let i = 0; i < 20; i++) frame();
+  ok('zero-alloc warmup: all 200 survive the encompassing frustum', groups.stats.instances === 200 && groups.stats.instancesCulled === 0);
   global.gc();
   const before = process.memoryUsage().heapUsed;
   for (let i = 0; i < 1000; i++) frame();
   global.gc();
   const grew = process.memoryUsage().heapUsed - before;
-  ok('zero-alloc: 1000 frames of 200 writeUnitInstance + group->DrawList grow the heap < 64 KB', grew < 65536, `grew=${grew}`);
+  ok('zero-alloc: 1000 frames of 200 writeUnitInstance + cull/compact grow the heap < 64 KB', grew < 65536, `grew=${grew}`);
+
+  // AC2 (28.13 budget): cull + compaction for 500 instances <= 0.1 ms JS (soft/informational -
+  // CI machine speed varies; gated loosely at 5 ms/frame to catch gross regressions, not micro-noise).
+  const g2 = groups.group('burner', 500);
+  for (let i = 0; i < 500; i++) writeUnitInstance(g2.ib, i, i, i * 0.5, 0, i * 7, UNIT_OBJECT_BASE | i, i & 3);
+  g2.count = 500;
+  const list2 = new DrawList(2);
+  for (let i = 0; i < 50; i++) { list2.begin(); groups.addToDrawList(list2, cache, PL_ALL, ++frameNo); } // warmup/JIT
+  const t0 = performance.now();
+  const N = 500;
+  for (let i = 0; i < N; i++) { list2.begin(); groups.addToDrawList(list2, cache, PL_ALL, ++frameNo); }
+  const perFrameMs = (performance.now() - t0) / N;
+  console.log(`[RE-15a] cull+compact (burner x500, encompassing frustum): ${perFrameMs.toFixed(4)} ms/frame (target <= 0.1 ms)`);
+  ok(`cull+compact 500 instances well under budget (<= 5 ms/frame soft gate, measured ${perFrameMs.toFixed(4)})`, perFrameMs <= 5);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
