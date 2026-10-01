@@ -28,8 +28,10 @@ export { edgePass } from './render/edgePass.js';
 // ---- GPU/CPU parity harness (?gpucompare=1) --------------------------------
 export {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells, unpackReadback,
-  classifyMigrationCells, MIGRATION_CATS,
+  classifyMigrationCells, MIGRATION_CATS, compareShadowDepth,
 } from './render/gpu/gpuCompare.js';
+// ME-15b (27.9a item 10): GPU sun shadow depth vs the rasterJS depth-only twin.
+export { createShadowParityRunner } from './render/gpu/shadowParity.js';
 // ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
 export { terrainMeshSetFor } from './mesh/terrainMesh.js';
 

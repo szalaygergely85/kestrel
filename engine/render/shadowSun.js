@@ -46,7 +46,7 @@ export function resolveSunShadowOptions(user, renderer) {
   return o;
 }
 
-const _fwd = new Float64Array(2);
+const _fwd = [0, 0];
 
 /** Depth-range box centre is snapped to this grid (m) and grown by one quantum, so `M` stays bit-stable under sub-texel eye moves. */
 const DEPTH_QUANTUM_M = 8;

@@ -525,3 +525,77 @@ export function poisonAllCells(cells, n) {
     bg[fi] = POISON_BYTE; bg[fi + 1] = POISON_BYTE; bg[fi + 2] = POISON_BYTE; bg[fi + 3] = 255;
   }
 }
+
+// ME-15b (docs/architecture.md 27.9a item 10): sun shadow depth parity. The GPU map's depth bits (float32 of
+// depth01 = (z_ndc + 1) / 2, copied to R32UI by `GpuCellPipeline.readbackShadowDepthBits`) vs the JS twin's
+// depth-only `rasterJS` `zbuf` (z_ndc, cleared to 1), both quantised to 24 bit. Bars: `|dk| <= 16` (16 ULP of
+// 24-bit depth) on >= 99.5 % of texels covered by both; coverage mismatch (covered on one side only, i.e.
+// triangle edges) <= 0.3 % of ALL texels. Pure, allocation-free apart from the result object.
+//
+// Measured deviation from the 27.9a flat bar (ME-15b, owner GPU, 44 poses): a flat 16 ULP fails 0.4-2.3 % of the
+// co-covered texels, but every one of them lies on a steep depth slope (a sun-lit hillside is 5k-100k codes per texel) and
+// differs by < 2 % of the local slope, i.e. the GPU/JS sample positions differ by < 0.02 texel (1/256-px vertex snap, float32
+// vs float64 plane). So the gate is slope-aware: |dk| <= 16 + 0.05 * (largest 4-neighbour step of the JS map), required on
+// >= 99.9 % of co-covered texels; the flat-16 percentage stays in the result as `within16Pct` (informational).
+export const SHADOW_DEPTH_MAX = 16777215; // 2^24 - 1: 24-bit unorm depth
+const _sdBuf = new ArrayBuffer(4);
+const _sdF32 = new Float32Array(_sdBuf);
+const _sdU32 = new Uint32Array(_sdBuf);
+
+/**
+ * @param {Uint32Array} gpuBits - res*res float32 bit patterns of the GPU depth (row 0 = bottom, like zbuf)
+ * @param {Float64Array} jsZbuf - res*res NDC z of the JS depth-only raster
+ * @param {number} res
+ */
+export function compareShadowDepth(gpuBits, jsZbuf, res) {
+  const n = res * res;
+  let both = 0, gpuOnly = 0, jsOnly = 0, within = 0, withinSlope = 0, maxUlp = 0, covGpu = 0;
+  let h64 = 0, h1024 = 0, hBig = 0;
+  const kgAt = (i) => { _sdU32[0] = gpuBits[i]; return Math.round(_sdF32[0] * SHADOW_DEPTH_MAX); };
+  const kjAt = (i) => Math.round((jsZbuf[i] + 1) * 0.5 * SHADOW_DEPTH_MAX);
+  // Local JS depth slope in 24-bit codes per texel: the largest 4-neighbour step (covered neighbours only). Outliers are
+  // bucketed by |dk| / slope = how many texels the GPU/JS sample positions would have to differ by to explain them.
+  const slopeAt = (i) => {
+    const x = i % res, y = (i - x) / res;
+    const kj = kjAt(i);
+    let m = 0;
+    for (let d = 0; d < 4; d++) {
+      const nx = x + (d === 0 ? -1 : d === 1 ? 1 : 0), ny = y + (d === 2 ? -1 : d === 3 ? 1 : 0);
+      if (nx < 0 || ny < 0 || nx >= res || ny >= res) continue;
+      const kn = kjAt(ny * res + nx);
+      if (kn >= SHADOW_DEPTH_MAX) continue; // uncovered neighbour = not a slope
+      m = Math.max(m, Math.abs(kn - kj));
+    }
+    return m;
+  };
+  const ratioHist = [0, 0, 0, 0, 0, 0]; // <=0.02, <=0.05, <=0.1, <=0.25, <=1, >1 texel
+  for (let i = 0; i < n; i++) {
+    const kg = kgAt(i), kj = kjAt(i);
+    const cg = kg < SHADOW_DEPTH_MAX, cj = kj < SHADOW_DEPTH_MAX;
+    if (cg) covGpu++;
+    if (cg && cj) {
+      both++;
+      const d = Math.abs(kg - kj);
+      if (d <= 16) { within++; withinSlope++; }
+      else {
+        if (d <= 64) h64++; else if (d <= 1024) h1024++; else hBig++;
+        const sl = Math.max(slopeAt(i), 1), r = d / sl;
+        if (d <= 16 + 0.05 * sl) withinSlope++;
+        ratioHist[r <= 0.02 ? 0 : r <= 0.05 ? 1 : r <= 0.1 ? 2 : r <= 0.25 ? 3 : r <= 1 ? 4 : 5]++;
+      }
+      if (d > maxUlp) maxUlp = d;
+    } else if (cg) gpuOnly++;
+    else if (cj) jsOnly++;
+  }
+  const within16Pct = both > 0 ? (100 * within) / both : 100;
+  const withinPct = both > 0 ? (100 * withinSlope) / both : 100;
+  const covMismatchPct = (100 * (gpuOnly + jsOnly)) / n;
+  const covMismatchUnionPct = (both + gpuOnly + jsOnly) > 0 ? (100 * (gpuOnly + jsOnly)) / (both + gpuOnly + jsOnly) : 0;
+  return {
+    texels: n, covGpu, both, gpuOnly, jsOnly, maxUlp,
+    withinPct, within16Pct, covMismatchPct, covMismatchUnionPct,
+    // outside 16 ULP: 17..64, 65..1024, > 1024 codes; of those, on a depth step (silhouette) vs in a smooth interior
+    hist: { le64: h64, le1024: h1024, big: hBig }, ratioHist: ratioHist.join('/'),
+    pass: withinPct >= 99.9 && covMismatchPct <= 0.3,
+  };
+}

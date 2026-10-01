@@ -60,6 +60,10 @@ export function clampGrid(cols, rows) {
  *   Default 2 (2x2), the architecture's confirmed default at 320x120 (14.2 item 5) - `?rays=1..4` overrides.
  * @param {{cols:number, rows?:number}} [opts.uiGrid] - OWN-REQ-003 (architecture.md 17): the fixed UI glyph
  *   layer's grid (`assets.uiStyle.uiGrid`, design/models/title.js) - default 160x60, clamped to [96, 320] cols.
+ * @param {Partial<import('../render/shadowSun.js').SunShadowOptions>} [opts.shadows] - ME-15b (27.9a item 1): sun shadow map
+ *   options ({ sun: 'map'|'dda'|false, res, boxM, aheadM, depthBias, biasM, normalOffsetTexels }); stored frozen as
+ *   `engine.shadows` and handed to `new GpuCellPipeline(rt, { ..., shadows: engine.shadows })`, which merges it over
+ *   `SUN_SHADOW_DEFAULTS` once (the default `sun` depends on the renderer, so the merge happens where the renderer is known).
  * @returns {import('./engine.js').Engine}
  */
 export function createEngine(opts) {
@@ -67,7 +71,7 @@ export function createEngine(opts) {
     canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false,
     cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
     uiGrid = { cols: 160, rows: 60 },
-    physics: physicsOverrides = {}, inputTarget = typeof window !== 'undefined' ? window : undefined,
+    physics: physicsOverrides = {}, shadows = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
   const grid = clampGrid(cols, rows);
@@ -132,6 +136,7 @@ export function createEngine(opts) {
     events,
     assets,
     rays,
+    shadows: shadows ? Object.freeze({ ...shadows }) : undefined, // ME-15b: raw user options (see the doc above)
     gridRequest: { cols: grid.cols, rows: grid.rows, clamped: grid.clamped, cpuGrid, gpu, force2d },
     // D-025 (US-038a): a request accepted by `setGrid` but not yet applied
     // (waiting for the next `run()` render boundary) - null when there is

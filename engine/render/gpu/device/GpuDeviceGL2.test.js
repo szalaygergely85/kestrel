@@ -18,6 +18,7 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 function makeMockGL() {
   const live = { buffer: 0, texture: 0, framebuffer: 0, program: 0, vao: 0, renderbuffer: 0, shader: 0 };
   const consts = {};
+  const calls = []; // [name, ...args] of every state call (ME-15b descriptor checks)
   let nextConst = 1;
   const gl = new Proxy({}, {
     get(_t, prop) {
@@ -46,11 +47,11 @@ function makeMockGL() {
         case 'getProgramParameter': return () => true;
         case 'getParameter': return () => 8;
         case 'getUniformLocation': return () => null;
-        default: return () => {};
+        default: return (...a) => { calls.push([prop, ...a]); };
       }
     },
   });
-  return { gl, live };
+  return { gl, live, calls };
 }
 
 // ---- shape ----
@@ -94,6 +95,37 @@ function makeMockGL() {
   device.dispose();
   const allZero = Object.values(live).every((n) => n === 0);
   ok('dispose() frees every handle this device created', allZero, JSON.stringify(live));
+}
+
+// ---- ME-15b (27.9a item 7): depthBias, depth-only target, sampled depth24 ----
+{
+  const { gl, live, calls } = makeMockGL();
+  const device = new GpuDeviceGL2(/** @type {any} */(gl));
+  const names = () => calls.map((c) => c[0]);
+  const depthTex = device.createTexture({ format: 'depth24', width: 8, height: 8, sampled: true });
+  ok('sampled depth24 is a texture (not a renderbuffer)', live.renderbuffer === 0 && live.texture === 1 && depthTex.kind === 'texture');
+  ok('sampled depth24 sets TEXTURE_COMPARE_MODE to NONE', calls.some((c) => c[0] === 'texParameteri' && c[2] === gl.TEXTURE_COMPARE_MODE && c[3] === gl.NONE));
+  calls.length = 0;
+  const target = device.createTarget({ color: [], depth: depthTex });
+  ok('depth-only target: drawBuffers([NONE]) + readBuffer(NONE)', calls.some((c) => c[0] === 'drawBuffers' && c[1].length === 1 && c[1][0] === gl.NONE) && calls.some((c) => c[0] === 'readBuffer' && c[1] === gl.NONE));
+  ok('depth-only target attaches the depth texture and records its size', calls.some((c) => c[0] === 'framebufferTexture2D' && c[2] === gl.DEPTH_ATTACHMENT) && target.colorCount === 0 && target.width === 8 && target.height === 8);
+  const biased = device.createPipeline({ vertex: { src: { glsl: 'x' } }, fragment: { src: { glsl: 'x' }, targets: 0 }, depth: { test: true, write: true }, depthBias: { factor: 2, units: 4 } });
+  const plain = device.createPipeline({ vertex: { src: { glsl: 'x' } }, fragment: { src: { glsl: 'x' }, targets: 1 } });
+  calls.length = 0;
+  device.beginPass(target, { clear: true });
+  const n = names();
+  ok('beginPass sets the viewport to the target size and unmasks depth before clearing', calls.some((c) => c[0] === 'viewport' && c[3] === 8 && c[4] === 8) && n.indexOf('depthMask') >= 0 && n.indexOf('depthMask') < n.indexOf('clearBufferfv'));
+  calls.length = 0;
+  device.bind(biased, {});
+  ok('bind(depthBias pipeline) enables POLYGON_OFFSET_FILL with (factor, units)', calls.some((c) => c[0] === 'enable' && c[1] === gl.POLYGON_OFFSET_FILL) && calls.some((c) => c[0] === 'polygonOffset' && c[1] === 2 && c[2] === 4));
+  calls.length = 0;
+  device.endPass();
+  ok('endPass disables POLYGON_OFFSET_FILL after a biased pipeline', calls.some((c) => c[0] === 'disable' && c[1] === gl.POLYGON_OFFSET_FILL));
+  calls.length = 0;
+  device.bind(plain, {});
+  ok('bind(plain pipeline) leaves polygon offset off', !calls.some((c) => c[0] === 'enable' && c[1] === gl.POLYGON_OFFSET_FILL) && calls.some((c) => c[0] === 'disable' && c[1] === gl.POLYGON_OFFSET_FILL));
+  device.dispose();
+  ok('dispose() frees the sampled depth texture too', Object.values(live).every((v) => v === 0), JSON.stringify(live));
 }
 
 // ---- unhandled texture format throws (no silent GLenum fallback) ----

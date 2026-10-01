@@ -293,7 +293,8 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // world/* (US-025, off-limits this story).
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer });
+  // ME-15b: the sun shadow map pass is opt-in (`?shadows=map`) until ME-15c reads it and ME-15d meets the +1.0 ms budget; default keeps the sun DDA.
+  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer, shadows: params.get('shadows') === 'map' ? engine.shadows : { ...(engine.shadows || {}), sun: renderer === 'mesh' ? 'dda' : undefined } });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     gpuPipeline = candidate;

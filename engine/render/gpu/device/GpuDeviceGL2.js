@@ -91,6 +91,15 @@ export class GpuDeviceGL2 {
   /** @param {TextureDesc} desc */
   createTexture(desc) {
     const gl = this.gl;
+    if (desc.format === 'depth24' && desc.sampled) {
+      // ME-15b (27.9a item 7): a sampled depth texture (the sun shadow map). NEAREST + compare mode NONE
+      // (createTexture2D sets NEAREST/CLAMP); read with texelFetch on a plain sampler2D (.r) - never a
+      // hardware compare (parity: manual fetch + explicit compare in both twins).
+      const tex = createTexture2D(gl, gl.DEPTH_COMPONENT24, desc.width, desc.height);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.NONE);
+      this._live.push({ obj: tex, free: (g, o) => deleteTexture2D(g, o) });
+      return { kind: 'texture', handle: tex, width: desc.width, height: desc.height, format: 'depth24' };
+    }
     if (desc.format === 'depth24') {
       // Depth attachments are renderbuffers here (never sampled by another
       // pass in phase 1 - the raster pass only needs a real HW z-test
@@ -119,7 +128,8 @@ export class GpuDeviceGL2 {
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, desc.color[i].handle, 0);
       drawBuffers.push(gl.COLOR_ATTACHMENT0 + i);
     }
-    gl.drawBuffers(drawBuffers);
+    // Depth-only target (`color: []`, ME-15b): no draw/read buffer.
+    if (drawBuffers.length === 0) { gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE); } else gl.drawBuffers(drawBuffers);
     if (desc.depth) {
       if (desc.depth.kind === 'renderbuffer') {
         gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, desc.depth.handle);
@@ -131,7 +141,8 @@ export class GpuDeviceGL2 {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error(`GpuDeviceGL2.createTarget: incomplete FBO (status ${status})`);
     this._live.push({ obj: fbo, free: (g, o) => deleteFramebuffer2D(g, o) });
-    return { kind: 'target', handle: fbo, colorCount: desc.color.length, hasDepth: !!desc.depth };
+    const first = desc.color[0] || desc.depth;
+    return { kind: 'target', handle: fbo, colorCount: desc.color.length, hasDepth: !!desc.depth, width: first ? first.width : 0, height: first ? first.height : 0 };
   }
 
   /** @param {PipelineDesc} desc */
@@ -161,6 +172,7 @@ export class GpuDeviceGL2 {
       layout: desc.vertex.layout || [], strideBytes: desc.vertex.strideBytes || 0,
       depth: desc.depth || { test: false, write: false },
       cull: desc.cull || 'none',
+      depthBias: desc.depthBias || null,
       uniformLoc,
     };
   }
@@ -170,7 +182,9 @@ export class GpuDeviceGL2 {
     const gl = this.gl;
     this._boundTarget = target;
     gl.bindFramebuffer(gl.FRAMEBUFFER, target.handle);
+    if (target.width > 0) gl.viewport(0, 0, target.width, target.height);
     if (opts && opts.clear) {
+      if (target.hasDepth) gl.depthMask(true); // a masked depth write also masks the clear
       const colorClear = opts.clear === true ? new Array(target.colorCount).fill([0, 0, 0, 0]) : (opts.clear.color || []);
       for (let i = 0; i < target.colorCount; i++) {
         const v = colorClear[i] || [0, 0, 0, 0];
@@ -191,6 +205,7 @@ export class GpuDeviceGL2 {
     gl.bindVertexArray(pipeline.vao);
     if (pipeline.depth.test) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); } else { gl.disable(gl.DEPTH_TEST); }
     gl.depthMask(!!pipeline.depth.write);
+    if (pipeline.depthBias) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(pipeline.depthBias.factor, pipeline.depthBias.units); } else gl.disable(gl.POLYGON_OFFSET_FILL);
     if (pipeline.cull === 'none') gl.disable(gl.CULL_FACE);
     else { gl.enable(gl.CULL_FACE); gl.cullFace(pipeline.cull === 'back' ? gl.BACK : gl.FRONT); }
 
@@ -233,6 +248,7 @@ export class GpuDeviceGL2 {
   }
 
   endPass() {
+    if (this._boundPipeline && this._boundPipeline.depthBias) this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     this._boundTarget = null;
   }

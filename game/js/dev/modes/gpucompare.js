@@ -15,7 +15,7 @@ import {
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
   classifyMigrationCells, MIGRATION_CATS, terrainMeshSetFor, beginFrame, castSectors, fillSky,
-  computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
+  computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
@@ -369,6 +369,10 @@ function runGpuCompareDdaMode(ctx) {
   const rowsOut = [];
   let overallOk = true;
   let sampledOwnTextures = true;
+  // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
+  const shadowRows = [];
+  const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
+    ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault } of runs) {
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     resetInstances();
@@ -414,6 +418,15 @@ function runGpuCompareDdaMode(ctx) {
     const gpuFg = rb.fg, gpuBg = rb.bg;
     const { GI, GA, Depth } = gpuPipeline.readbackGeometry();
     const lightBuf = gpuPipeline.readbackLight();
+    if (shadowRunner) {
+      const sd = shadowRunner.run(gpuPipeline);
+      if (sd) {
+        shadowRows.push({ pose: `${poseName} [shadow depth parity]`, ok: sd.pass, shadowDepth: sd });
+        console.log(`[gpucompare] shadowDepth ${sd.pass ? 'PASS' : 'FAIL'} ${poseName}: items=${sd.items} both=${sd.both} slopeAwareWithin=${sd.withinPct.toFixed(4)}%(>=99.9) flat16=${sd.within16Pct.toFixed(3)}% maxUlp=${sd.maxUlp} covMismatch=${sd.covMismatchPct.toFixed(4)}%(<=0.3, union ${sd.covMismatchUnionPct.toFixed(3)}%) gpuOnly=${sd.gpuOnly} jsOnly=${sd.jsOnly} outside16: le64=${sd.hist.le64} le1024=${sd.hist.le1024} big=${sd.hist.big} ratioHist(<=.02/.05/.1/.25/1/>1 texel)=${sd.ratioHist}`);
+      } else {
+        console.log(`[gpucompare] shadowDepth SKIP ${poseName} (no sun pass this pose)`);
+      }
+    }
 
     const wasActive = rt.gpuActive;
     rt.gpuActive = false;
@@ -472,6 +485,7 @@ function runGpuCompareDdaMode(ctx) {
     rowsOut.push({ pose: poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
   }
   overallOk = overallOk && sampledOwnTextures;
+  for (const r of shadowRows) overallOk = overallOk && r.ok;
   fbCompare.sceneFade = 1;
   if (sprites.pass) sprites.pass.sceneFade = 1;
   resetSceneDim(compareSceneDim);
@@ -545,6 +559,10 @@ function runGpuCompareDdaMode(ctx) {
       `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)\n`;
     console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip})`);
   }
+  for (const r of shadowRows) {
+    const d = r.shadowDepth;
+    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  items ${d.items}  co-covered ${d.both}  within 16 ULP+0.05 texel ${d.withinPct.toFixed(4)}% (>=99.9%)  flat 16 ULP ${d.within16Pct.toFixed(3)}%  maxUlp ${d.maxUlp}  coverage mismatch ${d.covMismatchPct.toFixed(4)}% (<=0.3%)\n`;
+  }
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 
@@ -562,7 +580,7 @@ function runGpuCompareDdaMode(ctx) {
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut, ok: overallOk, infoRows };
+  window.__gpuCompare = { rows: rowsOut.concat(shadowRows), ok: overallOk, infoRows };
 }
 
 // Diff-PNG painter for `?gpucompare=mesh`: 3 panels (dda fg, mesh fg,

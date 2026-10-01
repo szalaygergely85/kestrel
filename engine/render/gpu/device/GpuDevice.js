@@ -32,11 +32,12 @@
  * @property {number} width
  * @property {number} height
  * @property {number} [layers] - reserved (cube/array textures, phase 3); omit for a plain 2D texture
+ * @property {boolean} [sampled] - `depth24` only (ME-15b, 27.9a item 7): a real texture (NEAREST, compare mode NONE, `texelFetch` on a `sampler2D`) instead of the default write-only renderbuffer
  */
 
 /**
  * @typedef {Object} TargetDesc
- * @property {GpuHandle[]} color - texture handles (createTexture results), draw-buffer order
+ * @property {GpuHandle[]} color - texture handles (createTexture results), draw-buffer order; `[]` = depth-only target (ME-15b: draw buffers NONE)
  * @property {GpuHandle} [depth] - a `depth24` texture handle, or omitted for no depth attachment
  */
 
@@ -50,9 +51,10 @@
 /**
  * @typedef {Object} PipelineDesc
  * @property {PipelineStageDesc} vertex
- * @property {{src: {glsl: string, wgsl?: string}, targets: number}} fragment - `targets` = number of colour draw buffers written
+ * @property {{src: {glsl: string, wgsl?: string}, targets: number}} fragment - `targets` = number of colour draw buffers written (0 = depth-only, ME-15b)
  * @property {{test: boolean, write: boolean}} [depth]
  * @property {'none'|'back'|'front'} [cull]
+ * @property {{factor: number, units: number}} [depthBias] - ME-15b (27.9a item 7): polygon offset (GL2: `POLYGON_OFFSET_FILL` enabled on bind, disabled again by `endPass`); no hardware depth compare is ever used
  */
 
 /**
