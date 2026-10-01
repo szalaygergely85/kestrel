@@ -34,6 +34,10 @@ const k2z = (k) => (2 * k) / SHADOW_DEPTH_MAX - 1;        // 24-bit code -> NDC 
   const { g, j } = build((g, j) => { for (let i = 0; i < 3000; i++) { j[i] = k2z(1000000 + i * 5000); g[i] = bits(k2d(1000000 + i * 5000 + 60)); } });
   const r = compareShadowDepth(g, j, RES);
   ok('60 ULP on a 5000 codes/texel slope passes the slope-aware gate but not the flat-16 figure', r.pass && r.within16Pct < 1 && r.withinPct > 99.9, JSON.stringify(r)); }
+{ // silhouette edge: a 1M-code depth jump between two flat plateaus must not widen the bar of the edge texel (min of left/right step)
+  const { g, j } = build((g, j) => { for (let i = 0; i < 10; i++) { const k = i < 5 ? 1000000 : 2000000; j[i] = k2z(k); g[i] = bits(k2d(k + (i === 4 ? 5000 : 0))); } });
+  const r = compareShadowDepth(g, j, RES);
+  ok('+5000-code error on an edge texel next to a 1M-code jump fails the per-texel bar', !r.pass && r.withinPct === 90 && r.both === 10, JSON.stringify(r)); }
 { const { g, j } = build(() => {});
   const r = compareShadowDepth(g, j, RES);
   ok('empty maps (both cleared to 1) pass', r.pass && r.both === 0 && r.covGpu === 0); }

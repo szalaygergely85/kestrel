@@ -45,6 +45,10 @@ function glInternalFormat(gl, format) {
 // JSDoc `@implements` because tsc's JSDoc parser rejects an inline
 // `import('./GpuDevice.js').GpuDevice` reference there; GpuDevice.test.js
 // and GpuDeviceGL2.test.js both assert the method list matches instead.
+// beginPass clear scratch (no per-frame allocation)
+const ZERO4 = new Uint32Array(4); // never written (typed arrays cannot be frozen)
+const _depthClear = new Float32Array(1);
+
 export class GpuDeviceGL2 {
   /** @param {WebGL2RenderingContext} gl */
   constructor(gl) {
@@ -185,14 +189,15 @@ export class GpuDeviceGL2 {
     if (target.width > 0) gl.viewport(0, 0, target.width, target.height);
     if (opts && opts.clear) {
       if (target.hasDepth) gl.depthMask(true); // a masked depth write also masks the clear
-      const colorClear = opts.clear === true ? new Array(target.colorCount).fill([0, 0, 0, 0]) : (opts.clear.color || []);
-      for (let i = 0; i < target.colorCount; i++) {
-        const v = colorClear[i] || [0, 0, 0, 0];
-        gl.clearBufferuiv(gl.COLOR, i, v);
+      if (target.colorCount > 0) {
+        const colorClear = opts.clear === true ? null : opts.clear.color;
+        for (let i = 0; i < target.colorCount; i++) {
+          gl.clearBufferuiv(gl.COLOR, i, (colorClear && colorClear[i]) || ZERO4);
+        }
       }
       if (target.hasDepth) {
-        const depthClear = opts.clear === true ? 1 : (opts.clear.depth != null ? opts.clear.depth : 1);
-        gl.clearBufferfv(gl.DEPTH, 0, [depthClear]);
+        _depthClear[0] = opts.clear === true ? 1 : (opts.clear.depth != null ? opts.clear.depth : 1);
+        gl.clearBufferfv(gl.DEPTH, 0, _depthClear);
       }
     }
   }

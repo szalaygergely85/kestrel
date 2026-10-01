@@ -116,6 +116,11 @@ function makeMockGL() {
   const n = names();
   ok('beginPass sets the viewport to the target size and unmasks depth before clearing', calls.some((c) => c[0] === 'viewport' && c[3] === 8 && c[4] === 8) && n.indexOf('depthMask') >= 0 && n.indexOf('depthMask') < n.indexOf('clearBufferfv'));
   calls.length = 0;
+  device.beginPass(target, { clear: true });
+  device.beginPass(target, { clear: true });
+  const fvs = calls.filter((c) => c[0] === 'clearBufferfv');
+  ok('beginPass(depth-only, clear) reuses the same clear array objects (no per-frame allocation) and clears no colour', fvs.length === 2 && fvs[0][3] === fvs[1][3] && !calls.some((c) => c[0] === 'clearBufferuiv'));
+  calls.length = 0;
   device.bind(biased, {});
   ok('bind(depthBias pipeline) enables POLYGON_OFFSET_FILL with (factor, units)', calls.some((c) => c[0] === 'enable' && c[1] === gl.POLYGON_OFFSET_FILL) && calls.some((c) => c[0] === 'polygonOffset' && c[1] === 2 && c[2] === 4));
   calls.length = 0;

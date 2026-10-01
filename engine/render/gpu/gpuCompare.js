@@ -535,7 +535,7 @@ export function poisonAllCells(cells, n) {
 // Measured deviation from the 27.9a flat bar (ME-15b, owner GPU, 44 poses): a flat 16 ULP fails 0.4-2.3 % of the
 // co-covered texels, but every one of them lies on a steep depth slope (a sun-lit hillside is 5k-100k codes per texel) and
 // differs by < 2 % of the local slope, i.e. the GPU/JS sample positions differ by < 0.02 texel (1/256-px vertex snap, float32
-// vs float64 plane). So the gate is slope-aware: |dk| <= 16 + 0.05 * (largest 4-neighbour step of the JS map), required on
+// vs float64 plane). So the gate is slope-aware: |dk| <= 16 + 0.05 * (slope = max over x/y of min(|left step|, |right step|) of the JS map, covered neighbours only), required on
 // >= 99.9 % of co-covered texels; the flat-16 percentage stays in the result as `within16Pct` (informational).
 export const SHADOW_DEPTH_MAX = 16777215; // 2^24 - 1: 24-bit unorm depth
 const _sdBuf = new ArrayBuffer(4);
@@ -558,15 +558,15 @@ export function compareShadowDepth(gpuBits, jsZbuf, res) {
   const slopeAt = (i) => {
     const x = i % res, y = (i - x) / res;
     const kj = kjAt(i);
-    let m = 0;
-    for (let d = 0; d < 4; d++) {
-      const nx = x + (d === 0 ? -1 : d === 1 ? 1 : 0), ny = y + (d === 2 ? -1 : d === 3 ? 1 : 0);
-      if (nx < 0 || ny < 0 || nx >= res || ny >= res) continue;
+    // per axis: min(|left step|, |right step|) over covered neighbours (one covered side -> that step, none -> 0), so a
+    // silhouette jump on one side never widens the bar of the edge texel; slope = max over x and y.
+    const step = (nx, ny) => {
+      if (nx < 0 || ny < 0 || nx >= res || ny >= res) return -1;
       const kn = kjAt(ny * res + nx);
-      if (kn >= SHADOW_DEPTH_MAX) continue; // uncovered neighbour = not a slope
-      m = Math.max(m, Math.abs(kn - kj));
-    }
-    return m;
+      return kn >= SHADOW_DEPTH_MAX ? -1 : Math.abs(kn - kj); // uncovered neighbour = not a slope
+    };
+    const axis = (a, b) => (a < 0 ? (b < 0 ? 0 : b) : b < 0 ? a : Math.min(a, b));
+    return Math.max(axis(step(x - 1, y), step(x + 1, y)), axis(step(x, y - 1), step(x, y + 1)));
   };
   const ratioHist = [0, 0, 0, 0, 0, 0]; // <=0.02, <=0.05, <=0.1, <=0.25, <=1, >1 texel
   for (let i = 0; i < n; i++) {
