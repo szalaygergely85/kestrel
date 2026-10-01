@@ -363,6 +363,44 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('World.load without opts.terrain builds a new Terrain', World.load(def, assets, {}).terrain !== world.terrain);
 }
 
+// --- ED-MESH-1d: a reused Terrain skips the near-band bake while the footprints are unchanged --
+{
+  const def = assets.world('world_m1');
+  const t = world.terrain;
+  let bakes = 0;
+  const orig = t.bakeNearBand.bind(t);
+  t.bakeNearBand = (cx, cy) => { bakes++; return orig(cx, cy); };
+  t._nearKey = undefined;
+  World.load(def, assets, { terrain: t });
+  ok('first load with an unkeyed terrain bakes', bakes === 1);
+  const nv = t.near.version;
+  World.load(def, assets, { terrain: t });
+  ok('reload with an unchanged footprint skips the bake', bakes === 1 && t.near.version === nv);
+  // moved structure -> different bbox -> bakes again
+  const moved = { ...def, structures: def.structures.map((s, i) => i === 0 ? { ...s, origin: { ...s.origin, x: s.origin.x + 2 } } : s) };
+  World.load(moved, assets, { terrain: t });
+  ok('a moved structure footprint bakes again', bakes === 2);
+  World.load(def, assets, { terrain: t });
+  ok('moving it back bakes again (key differs from the last bake)', bakes === 3);
+  // outer-ring floorH change in the level -> ringHAt differs -> bakes again
+  const lvName = def.structures[0].level;
+  const lvDef = assets.level(lvName);
+  const savedAssets = assets.level;
+  let bumped = false;
+  assets.level = (n) => {
+    const d = savedAssets.call(assets, n);
+    if (n !== lvName || !bumped) return d;
+    const c = structuredClone(d);
+    for (const k of Object.keys(c.legend || {})) if (typeof c.legend[k].floorH === 'number') c.legend[k] = { ...c.legend[k], floorH: c.legend[k].floorH + 1, ...(typeof c.legend[k].ceilH === 'number' ? { ceilH: c.legend[k].ceilH + 1 } : {}) };
+    return c;
+  };
+  bumped = true;
+  World.load(def, assets, { terrain: t });
+  assets.level = savedAssets;
+  ok('a changed ring floorH bakes again', bakes === 4 && !!lvDef);
+  t.bakeNearBand = orig;
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

@@ -131,6 +131,17 @@ function ok(name, cond, detail) {
   ok('getModelThumbnail: cache is keyed per-registry (a different assets object is not affected)', t3 !== t1 && JSON.stringify(t3) === JSON.stringify(t1));
 }
 
+// ---- ED-MESH-1d (31.5): a 21x21x60 meshOnly model yields <= 16x8 cells ---------
+{
+  const layers = [];
+  for (let z = 0; z < 60; z++) layers.push(Array.from({ length: 21 }, () => 'M'.repeat(21)));
+  const model = { voxel: { size: [21, 21, 60], mats: { M: 'm' }, layers } };
+  const pal = { colors: { c: '#fff' }, materials: { m: { base: 'c', ramp: 'r', albedo: 1 } }, ramps: { r: ' .#' } };
+  const t = buildModelThumbnail(pal, model);
+  ok('21x21x60 thumbnail fits 16x8', t.w <= THUMB_MAX_W && t.h <= THUMB_MAX_H && t.cells.length === t.w * t.h, `${t.w}x${t.h}`);
+  ok('21x21x60 thumbnail is filled (not blank)', t.cells.every((c) => c.ch !== ' '));
+}
+
 console.log(`thumbnails.test.mjs: ${pass} passed, ${fail} failed`);
 if (fail) {
   for (const f of failures) console.error(`  FAIL: ${f}`);

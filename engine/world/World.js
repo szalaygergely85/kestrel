@@ -56,6 +56,20 @@ function makeRingHAt(placed) {
   };
 }
 
+// ED-MESH-1d: cheap key of everything the near-band bake reads from the placed structures
+// (`structureBlend`: bbox + ringHAt = outer-ring sector floorH + frame z). Perimeter cells only.
+function nearBandKey(w, cx, cy) {
+  let k = `${cx},${cy}`;
+  for (const p of w.structures) {
+    const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
+    k += `|${p.id}:${b.x0},${b.y0},${b.x1},${b.y1},${p.frame.z}:`;
+    const f = (x, y) => { const s = lv.sectorAt(x, y); k += (s ? s.floorH : 'n') + ','; };
+    for (let x = 0.5; x < W; x++) { f(x, 0.5); f(x, H - 0.5); }
+    for (let y = 1.5; y < H - 1; y++) { f(0.5, y); f(W - 0.5, y); }
+  }
+  return k;
+}
+
 // US-026a (architecture.md 23.1 decision 4, 23.2): `world.bounds` - the walk
 // bound circle, optional (absent = unbounded, matching every world before
 // this story). Validated up front like `validateHorizon` below (throws,
@@ -313,7 +327,13 @@ export class World {
       }
       const cx = Math.floor((bx0 + bx1) / 2 / w.terrain.chunkSize);
       const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
-      w.terrain.bakeNearBand(cx, cy);
+      // ED-MESH-1d: a reused Terrain whose band was baked for the same centre and the same
+      // structure footprints (bbox + z + outer-ring floorH, all `ringHAt` can read) is still valid.
+      const key = nearBandKey(w, cx, cy);
+      if (!(w.terrain.nearReady && w.terrain._nearKey === key)) {
+        w.terrain.bakeNearBand(cx, cy);
+        w.terrain._nearKey = key;
+      }
     }
 
     if (!w.sun) {

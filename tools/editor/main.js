@@ -42,6 +42,7 @@ import {
 import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.js';
 import { autoMapColors } from '../voxAutoMap.js';
 import { deriveVoxModelName } from './voxImportName.js';
+import { createRebuildScheduler } from './rebuildScheduler.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -491,9 +492,19 @@ function commit(rec) {
     flash(`${rec.label} "${rec.id}" (patched, no rebuild)`);
     return;
   }
-  const ms = rebuild();
-  flash(`${rec.id ? `${rec.label} "${rec.id}"` : rec.label} (rebuild ${ms.toFixed(2)} ms)`);
+  lastRebuildFlash = `${rec.id ? `${rec.label} "${rec.id}"` : rec.label}`;
+  // 31.3: field edits coalesce to one rebuild per frame; place/delete/batch rebuild now (callers read the new world).
+  if (rec.batch || rec.before == null || rec.after == null) rebuildSched.flushNow();
+  else rebuildSched.request();
 }
+
+let lastRebuildFlash = '';
+/** ED-MESH-1d: coalesces the commit() rebuilds (flushed from the frame loop, `render()`). */
+const rebuildSched = createRebuildScheduler(rebuild, (ms, folded) => {
+  console.log(`[editor] rebuild ${ms.toFixed(1)} ms${folded > 1 ? ` (${folded} edits coalesced)` : ''}`);
+  window.__lastRebuildMs = ms;
+  flash(`${lastRebuildFlash} (rebuild ${ms.toFixed(2)} ms)`);
+});
 
 /**
  * A rename batch (US-033, 24.9) carries `renameFrom`/`renameTo` so the live
@@ -1387,6 +1398,7 @@ function refreshViewportPlates(nowMs) {
 }
 
 function render() {
+  rebuildSched.flush(); // ED-MESH-1d: one coalesced rebuild per frame (31.3)
   const rendered = frame.step(world, cam, { animate, dt: 1 / 60, drawOverlay });
   if (rendered) lastPresented++;
   refreshViewportPlates(performance.now());
@@ -1416,6 +1428,7 @@ window.__editor = {
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), commitFieldEdit, renameSelected,
   doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
   openModelPicker, closeModelPicker,
+  rebuildNow: () => rebuildSched.flushNow(), get rebuildRuns() { return rebuildSched.runs; }, // ED-MESH-1d (headless measure)
   // US-067
   visState, toggleItemHidden, toggleItemLocked, armModelPlacement,
   get armedModelKey() { return armedModelKey; },
