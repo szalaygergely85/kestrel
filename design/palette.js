@@ -197,7 +197,15 @@
     // US-078 ruin-steel sword (design/models/sword.js `swordKit.colors`, designer merge): fantasy bronze, NOT machine brass/copper
     bronzeLight: '#c49a6c',
     bronze: '#866044',
-    bronzeDark: '#4a3424'
+    bronzeDark: '#4a3424',
+    // US-078d/US-080 M3 props (design/models/m3_props.js `m3Kit.colors`): HP crimson `vital*`, MP blue `mana*`
+    vitalLight: '#ff8f7e',
+    vital: '#d8344a',
+    vitalDark: '#5c1422',
+    manaCore: '#e8f2ff',
+    manaLight: '#9cc2ff',
+    mana: '#4c84f2',
+    manaDark: '#1e2f6a'
   };
 
   // ---------------------------------------------------------------------------
@@ -950,6 +958,12 @@
   materials.bronze = {"desc":"SWORD (US-078). Old bronze body: the guard underside, the ferrule ring, the pommel. Tarnished brown, a step below bronze_light so the guard has a lit top and a dark underside (Blood-style rim / body).","base":"bronze","albedo":0.78,"ramp":"iron","spec":0.3,"bg":{"mode":"darken","k":0.14},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"t":{"shade":0.75,"tint":"bronzeDark","amount":0.6}},"rows":["ataa","aaaa","aata","taaa"]}};
   materials.leather = {"desc":"SWORD (US-078). The worn dark-leather grip wrap: woodDark with a diagonal wrap seam `/` (ropeDark) and a few hand-polished spots (rope). Matte (spec 0.08).","base":"woodDark","albedo":0.75,"ramp":"wood","spec":0.08,"bg":{"mode":"darken","k":0.12},"textureFade":[3,10],"texture":{"w":4,"h":4,"scale":[33,33],"key":{"a":{"shade":1},"w":{"shade":0.7,"tint":"ropeDark","amount":0.6,"glyph":"/"},"s":{"shade":1.2,"tint":"rope","amount":0.4}},"rows":["waaa","awas","aawa","saaw"]}};
   materials.steel_glint = {"desc":"SWORD (US-078). The pickup's \"take me\" glint: a white-hot bar that slides down the blade front in 3 steps (70 ms each) every 2.4 s (clip idle). Emissive 0.90, cool white (mirror tint, not brass). Never on a static voxel.","base":"white","albedo":1,"ramp":"iron","spec":0.9,"emissive":0.9,"bg":{"mode":"darken","k":0.25},"textureFade":[4,12],"texture":{"w":2,"h":2,"scale":[33,33],"key":{"a":{"shade":1,"glyph":"*"},"h":{"shade":1,"tint":"mirror","amount":0.4,"glyph":"+"}},"rows":["ah","ha"]}};
+  // US-078d/US-080 M3 props (design/models/m3_props.js `m3Kit.v1`, designer merge): appended last so no material id moves.
+  materials.straw_light = {"desc":"PELL (US-078d). Sun-bleached straw: the upper half of the bundle and the cut top ends. Vertical stalk texels `|` and loose ends `'`. Matte.","base":"strawLight","albedo":0.92,"ramp":"grass","spec":0.04,"bg":{"mode":"darken","k":0.16},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[20,20],"key":{"a":{"shade":1},"s":{"shade":0.86,"tint":"straw","amount":0.4,"glyph":"|"},"e":{"shade":1.08,"tint":"white","amount":0.15,"glyph":"'"}},"rows":["asaa","aaae","saas","aeaa"]}};
+  materials.straw = {"desc":"PELL (US-078d). Old straw, the bulk of the bundle: gold-grey with darker stalk lines `|` and a few crossed stalks `/`. Under the rope bands it is pinched (the bands are their own material: rope).","base":"straw","albedo":0.84,"ramp":"grass","spec":0.04,"bg":{"mode":"darken","k":0.15},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[20,20],"key":{"a":{"shade":1},"s":{"shade":0.78,"tint":"strawDark","amount":0.5,"glyph":"|"},"l":{"shade":1.1,"tint":"strawLight","amount":0.35,"glyph":"/"}},"rows":["saaa","aala","asaa","aaas"]}};
+  materials.straw_dark = {"desc":"PELL (US-078d). Damp, rotting straw: the underside, the lower bundle and the old sword cuts (dark slashes on the front and back faces). Brown-grey, rot spots `,`.","base":"strawDark","albedo":0.7,"ramp":"grass","spec":0.02,"bg":{"mode":"darken","k":0.12},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[20,20],"key":{"a":{"shade":1},"s":{"shade":0.8,"tint":"ropeDark","amount":0.45,"glyph":"|"},"r":{"shade":0.7,"tint":"woodDark","amount":0.55,"glyph":","}},"rows":["asaa","aaar","saaa","aras"]}};
+  materials.timber_old = {"desc":"PELL (US-078d). The weathered oak post and crossbar: dark wood gone silver-grey with age (ashDark tint), long drying cracks `|`. Not the plank `wood` (no seams, no knots): one old beam.","base":"woodDark","albedo":0.82,"ramp":"wood","spec":0.05,"bg":{"mode":"darken","k":0.14},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[20,20],"key":{"a":{"shade":1},"g":{"shade":1.12,"tint":"ashDark","amount":0.45},"c":{"shade":0.55,"tint":"woodDark","amount":0.7,"glyph":"|"}},"rows":["agca","gaaa","acag","aaga"]}};
+  materials.hit_flash = {"desc":"HIT FLASH (US-078d, reusable by US-079 beasts). The white 100 ms flash on a struck target: a shell of emissive white `*` / `#` voxels 1 voxel proud of the target, hidden 64 voxels under the floor except during clip `flash` (the lamp-glint trick, README 7 v1.14). Never on a static voxel.","base":"white","albedo":1,"ramp":"iron","spec":0,"emissive":1,"bg":{"mode":"darken","k":0.3},"textureFade":[4,12],"texture":{"w":2,"h":2,"scale":[20,20],"key":{"a":{"shade":1,"glyph":"*"},"h":{"shade":1,"tint":"flameCore","amount":0.25,"glyph":"#"}},"rows":["ah","ha"]}};
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)

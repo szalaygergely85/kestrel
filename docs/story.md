@@ -188,3 +188,11 @@ Voice: Wick, first person, present tense. He is never named or shown, only his h
 ```
 
 Panel 5's "Then nothing" deliberately echoes the Crown print `BEYOND THE WALL: NOTHING`. The wake then shows that it is not nothing.
+
+## Death card
+
+Shown when Wick falls, before he wakes at the last save point (relay or autosave). It uses the same voice as the opening panels: first person, present tense, never named, ASCII only, 8 words or fewer.
+
+1. `The dark again. The light still blinks.` **(PICK)** The signal is still sending, so he gets up. It answers "nothing" without saying the word.
+2. `Cold stone. Not nothing. Not yet.` This one echoes the Crown print directly. It is stronger, but it leans close to panel 5.
+3. `Ash in my mouth. I am still here.` The most bodily of the three, and the plainest.

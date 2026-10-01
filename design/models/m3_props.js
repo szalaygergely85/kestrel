@@ -579,7 +579,7 @@
               'over the sink, then the scene fades to black; the HUD hides at the first death step' },
       lines: [
         { id: 'fall', row: 28, align: 'center', typed: true, cps: 30, fg: RGB.uiText, text: null,
-          placeholder: 'The dark closes. Somewhere, a light holds.',
+          placeholder: 'The dark again. The light still blinks.',
           note: 'WRITER: the death line (docs/story.md has none yet). Typed on after the fade at cps' },
         { id: 'wake', row: 31, align: 'center', typed: false, afterGapSec: 1.0, fg: RGB.uiText, key: [255, 210, 74],
           text: '[E] Wake again', keys: ['[E]'], cursor: { glyph: '_', periodSec: 1.0, duty: 0.5 },
