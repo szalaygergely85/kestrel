@@ -5,6 +5,7 @@ import assert from 'node:assert';
 import {
   DEG2RAD, RAD2DEG, QUARTER_COS, QUARTER_SIN,
   wrapDeg, shortestArcDeg, yawFromDelta, forwardOf, rightOf, rotateVec2, dirFromAzEl,
+  minNormalZFromSlopeDeg,
   makeFrame, localToWorld, worldToLocal, localDirToWorld, localYawToWorld, worldYawToLocal,
   frameBBox, rotatedSize, localCellToWorld, frameEquals, transformPoint,
 } from './transform.js';
@@ -145,6 +146,13 @@ function mulberry32(seed) {
   threw = false;
   try { makeFrame(0, 0, 0, 1.5); } catch (e) { threw = true; }
   check('makeFrame throws on non-integer yawSteps', threw);
+}
+
+// minNormalZFromSlopeDeg: 0 deg -> normal.z threshold 1 (flat only), 90 deg -> ~0 (any slope)
+{
+  check('minNormalZFromSlopeDeg(0) == 1', minNormalZFromSlopeDeg(0) === 1);
+  check('minNormalZFromSlopeDeg(90) close to 0', Math.abs(minNormalZFromSlopeDeg(90)) < 1e-9);
+  check('minNormalZFromSlopeDeg(30) == cos(30deg)', Math.abs(minNormalZFromSlopeDeg(30) - Math.cos(30 * DEG2RAD)) < 1e-12);
 }
 
 // ---- yaw helper cases: wrap across 0/360, shortest arc ----

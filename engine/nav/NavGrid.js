@@ -1,5 +1,5 @@
 // @ts-check
-import { DEG2RAD } from '../core/transform.js';
+import { minNormalZFromSlopeDeg } from '../core/transform.js';
 
 // engine/nav/NavGrid.js (RE-05, docs/architecture.md 28.2). Leaf module:
 // engine/nav/** may only import engine/nav/** + engine/core/** (check-deps
@@ -405,16 +405,19 @@ export class NavGrid {
    * `['water']`), if `world.structureAt(x,y)` is truthy (structures block
    * in v1), or if `opts.mask[i]`. Otherwise
    * `terrainCost = opts.typeCost[typeName] ?? 1`. Every threshold comes
-   * from `opts`, never a literal in the comparison itself. `opts.maxStepM`
+   * from `opts`, never a literal in the comparison itself. `opts.minNormalZ`
+   * sets the walkability threshold directly (skips the degrees conversion)
+   * when present; otherwise it is derived from `opts.maxSlopeDeg` via
+   * `minNormalZFromSlopeDeg` (engine/core/transform.js — the one place this
+   * trig conversion is allowed to live, rule 15). `opts.maxStepM`
    * (default `Infinity`, RE-05c) then drops any still-walkable cell next to
    * an in-grid 8-neighbour whose height differs by more than `maxStepM` -
    * see `_applyMaxStepM`.
    * @param {{terrain: {heightAt(x:number,y:number):number, normalAt(x:number,y:number,out:{x:number,y:number,z:number}):void, typeAt(x:number,y:number):number, typeName(id:number):string}, structureAt?: (x:number,y:number)=>boolean}} world
-   * @param {{maxSlopeDeg?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number}} [opts]
+   * @param {{maxSlopeDeg?:number, minNormalZ?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number}} [opts]
    */
   buildFromWorld(world, opts = {}) {
-    const maxSlopeDeg = opts.maxSlopeDeg ?? 30;
-    const cosThresh = Math.cos(maxSlopeDeg * DEG2RAD);
+    const cosThresh = opts.minNormalZ ?? minNormalZFromSlopeDeg(opts.maxSlopeDeg ?? 30);
     const blockedTypes = opts.blockedTypes ?? ['water'];
     const typeCost = opts.typeCost ?? {};
     const mask = opts.mask ?? null;

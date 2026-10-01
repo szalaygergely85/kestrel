@@ -104,6 +104,14 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   grid2.buildFromWorld(world, { maxSlopeDeg: 61, blockedTypes: ['water'], typeCost: { grass: 1 } });
   ok('AC3: maxSlopeDeg from opts changes the outcome for the same terrain', grid2.cost[1] === 1, `cost=${grid2.cost[1]}`);
 
+  // opts.minNormalZ sets the threshold directly, bypassing maxSlopeDeg -
+  // same result as the equivalent maxSlopeDeg=30 (cos(30deg)~=0.8660254).
+  const grid2b = new NavGrid({ x0: 0, y0: 0, w: 3, h: 1, cell: 1 });
+  grid2b.buildFromWorld(world, { minNormalZ: 0.8660254037844387, blockedTypes: ['water'], typeCost: { grass: 1 } });
+  ok('minNormalZ direct matches maxSlopeDeg=30 result (flat)', grid2b.cost[0] === grid.cost[0]);
+  ok('minNormalZ direct matches maxSlopeDeg=30 result (steep)', grid2b.cost[1] === grid.cost[1]);
+  ok('minNormalZ direct matches maxSlopeDeg=30 result (water)', grid2b.cost[2] === grid.cost[2]);
+
   // Structures block regardless of slope/type.
   const world2 = fakeWorld({
     heightFn: () => 0, normalZFn: () => 1, typeFn: () => 0,
