@@ -18,6 +18,14 @@ function ensureHealth(player, cfg) {
   return c.health;
 }
 
+// `components.mana {mp, max, regen, pause}` (US-080b): same lazy-create-on-the-player-entity convention as
+// `components.health` above - plain data, round-trips through serialize/deserialize with no engine change.
+function ensureMana(player, cfg) {
+  const c = player.components || (player.components = {});
+  if (!c.mana) c.mana = { mp: cfg.startMp, max: cfg.maxMp, regen: 0, pause: 0 };
+  return c.mana;
+}
+
 /**
  * @param {any} world engine World (used only to resolve a `combat:hit`'s `source` entity for knockback direction)
  * @param {any} events engine.events (Events instance) - listens for `combat:hit`
@@ -30,6 +38,7 @@ export function createVitals(world, events, cfg, hooks) {
 
   let player = null;      // last entity passed to step() (same object every call in practice)
   let health = null;      // player.components.health (same reference as the live entity's)
+  let mana = null;        // player.components.mana (same reference as the live entity's), US-080b
   let spawnDefault = null; // player's transform at the very first step() call, used when no save point is set
   let eyeHStart = 1.6;     // standing eyeH captured the instant death starts, for eyeH()'s sink lerp
   let tick = 0;
@@ -39,6 +48,7 @@ export function createVitals(world, events, cfg, hooks) {
     deathStep: 0,
     cardReady: false,
     hurtTick: 0,
+    manaFlashTick: 0, // US-080b: set to `tick` on a spendMana() that was too short, same pattern as hurtTick
     inputLocked: false,
     godMode: false, // dev (`?debug=1`): applyDamage no-ops while true
   };
@@ -48,6 +58,9 @@ export function createVitals(world, events, cfg, hooks) {
   Object.defineProperty(sim, 'hp', { enumerable: true, get: () => (health ? health.hp : cfg.startHp) });
   Object.defineProperty(sim, 'max', { enumerable: true, get: () => (health ? health.max : cfg.maxHp) });
   Object.defineProperty(sim, 'invuln', { enumerable: true, get: () => (health ? health.invuln : 0) });
+  // Same read-through pattern for mana (US-080b): one source of truth (player.components.mana).
+  Object.defineProperty(sim, 'mp', { enumerable: true, get: () => (mana ? mana.mp : cfg.startMp) });
+  Object.defineProperty(sim, 'mpMax', { enumerable: true, get: () => (mana ? mana.max : cfg.maxMp) });
 
   /** `n` hp, `dirX/dirY` an optional unit knockback direction (absent = no source = no knockback). */
   function applyDamage(n, dirX, dirY) {
@@ -64,6 +77,19 @@ export function createVitals(world, events, cfg, hooks) {
         body.vy = (body.vy || 0) + dirY * cfg.knockbackSpeed;
       }
     }
+  }
+
+  /**
+   * US-080b. `n` mp: returns false and records `manaFlashTick` (same pattern as `hurtTick`) without changing
+   * mp/pause when short; else spends it and starts the regen pause. Nothing calls this yet (D-021 spells later) -
+   * exposed on the sim object for that future use, covered by tests here.
+   */
+  function spendMana(n) {
+    if (!mana) return false;
+    if (mana.mp < n) { sim.manaFlashTick = tick; return false; }
+    mana.mp -= n;
+    mana.pause = cfg.manaPauseSteps;
+    return true;
   }
 
   function onHit(p) {
@@ -119,6 +145,7 @@ export function createVitals(world, events, cfg, hooks) {
     if (body) { body.vx = 0; body.vy = 0; body.vz = 0; }
     health.hp = health.max;
     health.invuln = cfg.invulnSteps;
+    if (mana) mana.mp = mana.max; // US-080b: full mana on respawn, per the US-080 AC
     sim.dead = false;
     sim.deathStep = 0;
     sim.cardReady = false;
@@ -131,6 +158,7 @@ export function createVitals(world, events, cfg, hooks) {
     tick++;
     player = p;
     health = ensureHealth(player, cfg);
+    mana = ensureMana(player, cfg);
     if (!spawnDefault && player.transform) {
       const t = player.transform;
       spawnDefault = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg };
@@ -140,6 +168,12 @@ export function createVitals(world, events, cfg, hooks) {
       if (health.invuln > 0) health.invuln--;
       checkFall(player);
       if (health.hp === 0) enterDead();
+      // US-080b mana regen: paused `pause` steps after any spend, else +1 mp every `manaRegenSteps` steps.
+      if (mana.pause > 0) mana.pause--;
+      else {
+        mana.regen++;
+        if (mana.regen >= cfg.manaRegenSteps) { mana.mp = Math.min(mana.max, mana.mp + 1); mana.regen = 0; }
+      }
     } else {
       sim.deathStep++;
       if (sim.deathStep >= cfg.sinkSteps + cfg.fadeSteps) sim.cardReady = true;
@@ -162,11 +196,15 @@ export function createVitals(world, events, cfg, hooks) {
     hh.u32(sim.deathStep);
     hh.u32(sim.cardReady ? 1 : 0);
     hh.u32(sim.hurtTick);
+    hh.u32(mana ? mana.mp : 0);
+    hh.u32(mana ? mana.pause : 0);
+    hh.u32(mana ? mana.regen : 0);
   };
 
   // ---- dev (`?debug=1`, game side: main.js binds a free key to each of these - not this file's job) ----
   sim.setGodMode = function setGodMode(on) { sim.godMode = !!on; };
   sim.debugHit = function debugHit() { applyDamage(5); };
+  sim.spendMana = spendMana; // US-080b: exposed for D-021 spells later; nothing calls it yet
 
   return sim;
 }

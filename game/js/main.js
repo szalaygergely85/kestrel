@@ -62,6 +62,8 @@ import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
+import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
+import { presentPickups } from './quest/pickupsView.js';
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -570,6 +572,7 @@ function runGame(mode) {
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       beasts = createBeastSim(world, { nav: worldDef.nav, rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting: null }); // US-128b adds targeting later
+      resetPickups(); // US-080b (30.2): same "rebuilt on every load/restart" precedent as beasts/vitals above
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
@@ -756,7 +759,10 @@ function runGame(mode) {
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
-      if (vitals) vitals.step(playerHandle.data, input.pressed('KeyE')); // US-080a1 (30.2)
+      if (vitals) {
+        vitals.step(playerHandle.data, input.pressed('KeyE')); // US-080a1 (30.2)
+        stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
+      }
       lap(SEC.physics);
       // US-020a: footsteps (distance accumulator + `body.landed`) and the
       // boulder-thud speed watch - after physics settles this step's
@@ -985,10 +991,11 @@ function runGame(mode) {
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
         const mapPanel = getMapPanel();
         if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
-        // US-080a2 (30.2): HP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
+        // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
-          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead);
+          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead, vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
+          presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
         }
       }
       // US-017: the end card, drawn last (over the faded scene) - `setCell`

@@ -1,6 +1,6 @@
 // game/js/quest/vitalsView.test.js (US-080a2). Headless Node ESM, no framework. Run: node game/js/quest/vitalsView.test.js
 import {
-  cellCounts, lowPulseAmount, chipStageAt, raggedHash100, hurtEdgeStage, kickDeg,
+  cellCounts, lowPulseAmount, chipStageAt, raggedHash100, hurtEdgeStage, kickDeg, shortFlashOn,
   deathFadeAmount, computeDeathCardState, drawVitals, drawHurtEdge, drawDeathCard, resetVitalsView,
 } from './vitalsView.js';
 import { makeOk } from '../../../engine/test/assert.js';
@@ -25,6 +25,16 @@ const style = {
     chip: { stages: [{ ms: 120, glyph: '#', fg: [255, 214, 190] }, { ms: 150, glyph: '=', fg: [200, 90, 90] }, { ms: 150, glyph: ':', fg: [130, 46, 52] }] },
     gain: { ms: 220, fg: [255, 236, 228] },
   },
+  mp: {
+    label: { text: 'MP', fg: [156, 194, 255] },
+    brackets: { open: '[', close: ']', fg: RGB.uiHint },
+    fill: { glyph: '=', fg: [76, 132, 242], bg: [16, 24, 60] },
+    part: { glyph: '-', fg: [64, 108, 200], bg: [12, 18, 44] },
+    empty: { glyph: '.', fg: [44, 62, 112], bg: [8, 10, 26] },
+    number: { format: '{mp}/{max}', fg: RGB.uiText },
+    short: { ms: 320, blinks: 2, brackets: { fg: [232, 242, 255] }, empty: { glyph: '-', fg: [156, 194, 255] }, label: { fg: [232, 242, 255] } },
+    gain: { ms: 160, fg: [232, 242, 255] },
+  },
   hurtEdge: {
     steps: 9, ms: 150,
     rings: [
@@ -47,8 +57,10 @@ function fakeUi(cols = 160, rows = 60) {
   const cells = new Map();
   return { cols, rows, setCellRGB(x, y, gi, r, g, b, br, bg, bb) { cells.set(`${x},${y}`, { gi, r, g, b, br, bg, bb }); }, _cells: cells };
 }
-function fakeWorld(hp, max) {
-  return { get: (id) => (id === 'player' ? { data: { components: { health: { hp, max } } } } : null) };
+function fakeWorld(hp, max, mp, mpMax) {
+  const components = { health: { hp, max } };
+  if (mp !== undefined) components.mana = { mp, max: mpMax };
+  return { get: (id) => (id === 'player' ? { data: { components } } : null) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -231,6 +243,38 @@ function fakeWorld(hp, max) {
   const state = computeDeathCardState({ dead: true, deathStep: total }, style);
   drawDeathCard(ui, style, state);
   ok('drawDeathCard writes nothing for an untyped (count=0) line', ui._cells.size === 0);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// shortFlashOn (US-080b): 2 blinks in 320 ms (80 ms on / 80 off each segment), inactive outside the window.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const short = { ms: 320, blinks: 2 };
+  ok('t=0: on', shortFlashOn(0, short) === true);
+  ok('t=79: still on', shortFlashOn(79, short) === true);
+  ok('t=80: off', shortFlashOn(80, short) === false);
+  ok('t=159: still off', shortFlashOn(159, short) === false);
+  ok('t=160: on again (2nd blink)', shortFlashOn(160, short) === true);
+  ok('t=240: off again', shortFlashOn(240, short) === false);
+  ok('t=320 (ms): inactive', shortFlashOn(320, short) === false);
+  ok('t<0: inactive', shortFlashOn(-1, short) === false);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// drawVitals: the MP bar draws next to the HP bar when a mana component is present; absent -> no MP row drawn.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  resetVitalsView();
+  const ui = fakeUi();
+  drawVitals(ui, fakeWorld(30, 30, 15, 20), style, 0, true);
+  const fillCol = 2 + 4;
+  ok('MP bar fill glyph drawn on its own row', ui._cells.get(`${fillCol},2`).gi === '='.charCodeAt(0) - 32);
+}
+{
+  resetVitalsView();
+  const ui = fakeUi();
+  drawVitals(ui, fakeWorld(30, 30), style, 0, true); // no mana component on this fake player
+  ok('no mana component: MP row untouched', !ui._cells.has(`${2 + 4},2`));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

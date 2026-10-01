@@ -13,4 +13,10 @@ export const VITALS_DEFAULTS = Object.freeze({
   knockbackSpeed: 2,     // m/s, added to the player's body velocity away from the hit's source, once per hit
   sinkSteps: 48,         // steps, death timeline: sink phase length
   fadeSteps: 90,         // steps, death timeline: fade phase length (after sink, before cardReady)
+
+  // ---- US-080b (mana) ----
+  startMp: 20,           // mp, player spawn/respawn MP
+  maxMp: 20,             // mp, max MP
+  manaRegenSteps: 120,   // steps, +1 mp every this many steps while not paused (2 s @ 60 Hz)
+  manaPauseSteps: 180,   // steps, regen pause after any spendMana (3 s @ 60 Hz)
 });
