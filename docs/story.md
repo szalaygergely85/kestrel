@@ -163,3 +163,28 @@ Maren was fined twice for "stone-talk". One winter night she didn't come down fr
 - End card `Someone is out there.` could become `She is out there.` (the relay-woken variant only), or stay as it is to keep M1 unspoiled.
 - Relay-keeper's log: no change. It must not know Maren or Wick.
 - Maren's name never appears on screen in M1. The hope stays implied ("she", nothing more).
+
+## Scrawl (wall text, ASCII, each line <= 60 chars)
+
+| Where | Text | Notes |
+|---|---|---|
+| Hollow Watchtower, north face of the stair column, beside the ruin-steel sword in the rubble (US-078) | `STEEL FOR THE HUSH` | Kept as the designer proposed. Knife-scratched capitals, shallow and old, with moss in the grooves and no signature. "Hush" is Ferrum's word for the wild, so whoever cut it came from inside the Wall, long ago. It fits B (the keeper) and the Maren hooks, and it doesn't contradict A or C. It says nothing about the signal. |
+
+## Opening sequence (panels)
+
+Voice: Wick, first person, present tense. He is never named or shown, only his hands. One caption per still and ASCII only. It replaces the beat list in section 9.4 with five panels, ending on the existing wake.
+
+```
+1. Thirty nights on the skyworks roof. Same light, same
+   pattern. I pencil its bearing.
+2. Midnight. A knife, a mooring rope, a Crown ship that
+   was never mine. The rope gives.
+3. The Wall slides under me. Its lamps wake one by one.
+   Then the ballistae.
+4. A bolt through the envelope. The burner roars. Below,
+   a broken tower opens like a mouth.
+5. Stone, moss, a rain of brass. The chart still in my
+   fist. Then nothing.
+```
+
+Panel 5's "Then nothing" deliberately echoes the Crown print `BEYOND THE WALL: NOTHING`. The wake then shows that it is not nothing.
