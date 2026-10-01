@@ -37,7 +37,7 @@ Tools written for this gate (kept minimal, reusable):
 | 8c | `?gpucompare=1` dda renderer | all PASS | 34/34 | - | PASS | `docs/test-reports/captures/2026-10-01-ae57a2f-gpucompare-grid.json` (incl. forestEdge) |
 | 8d | `?gpucompare=1&renderer=mesh` (160x60) | all PASS | - | 44/44 | PASS | `2026-10-01-ae57a2f-gpucompare-160x60.json` (the mesh list has 44 rows) |
 | 9 | Fixes in this story | | | none made (see BUG candidates) | - | |
-| 10 | Architect verdict | | | open | OPEN | |
+| 10 | Architect verdict | | | ready for owner walk-test | **PASS (architect 2026-10-01)** | see "Architect verdict (2026-10-01)" below |
 | 11 | Owner walk-test + GO/NO-GO | | | open | OPEN | needs the owner: closed grate, doorway, stairs by hand |
 
 Raw perf (walk = full route, headless, per config):
@@ -81,3 +81,15 @@ Recommendation: (a) for M1 (data fix, zero engine risk), (c) if the architect wa
 - Lintel-blocks-head-height cannot be tested on world_m1 (no walk-under lintel besides the grate).
 - GPU numbers 7a: re-measure with the plain `?bench=1` walk on a clean tree (other agents' render WIP present).
 - AC 10 architect verdict: open.
+
+## Architect verdict (2026-10-01)
+
+**Architect verdict (2026-10-01): AC 10 PASS - the phase-2 gate is ready for the owner walk-test (AC 11).** BUG-ME12-1 (`2a4dac4`) is ARCH OK against 27.18b: edge rule, emitWall corner order/winding (all 4 faces checked), `z0 = sentinel` so the existing `trackCeil` refit moves the barriers (refit path unchanged, zero alloc), fallback appends the same barriers at the current `ceilH`, physics-only (no engine/render, engine/mesh, levelMesh.js or index.js change), engine/physics untouched.
+Per-row notes:
+- 1a-1i, 2, 3a, 3b, 4, 5, 6a-6c, 7b-7d, 8a-8d: PASS as measured; no further architect action.
+- 7a: PASS against the re-based route-walk bar (mesh p95 <= 2.75 ms and <= dda). The "re-measure 7a on a clean tree" item under "Not covered" is closed by the fix round (clean tree, 3-run median 2.656).
+- 8a WARN (typecheck, RE-15a/b / ME-22 files) is not ME-12 scope; does not block.
+- Lintel-blocks-head: not testable on world_m1 (only the grate); accepted for phase 2, add a probe when content gets a walk-under lintel.
+- BUG-2 (scripted `E` on dda) and the dda start stall: not gate-blocking, outside mesh-physics scope.
+- Still open (owner): AC 1 "once by hand" and AC 11 walk-test + GO/NO-GO (closed grate from both sides, lever/open grate, stairs, doorway on `?renderer=mesh&physics=mesh`).
+- Non-blocking follow-up for ME-13+: a dyn sector with 0 dyn tris and 0 barrier edges now reaches `buildBvh` with an empty array instead of returning null (previous guard removed); restore an `allPos.length === 0 -> return null` guard next time colliders.js is touched.
