@@ -28,8 +28,8 @@ Tools written for this gate (kept minimal, reusable):
 | 6a | Sim p95 <= 1 ms, walk, 400x150 | <= 1 ms | 0.4 ms (mesh renderer), 0.4 (dda) | 0.5 ms (p50 0.2, timer resolution 0.1) | PASS | browser `loop.stats.simMs`, full route ~2050 frames |
 | 6b | Sim p95 at 240x90 | <= 1 ms | 0.4 / 0.4 | 0.5 | PASS | |
 | 6c | No per-frame allocation in collide path | none | - | `node --expose-gc engine/physics/worldWalk.perf.test.js`: 13 passed (5000-step heap growth gate in mesh mode green); Node sim per step p95 0.048 ms (grid 0.034) | PASS | single-step spikes up to 9.6 ms (mesh) vs 6.3-6.6 (grid/dda) in the browser: one-off JIT/GC in all three configs, not mesh-specific |
-| 7a | GPU p95, 400x150 | <= 2.52 + 0.1 = 2.62 ms | 2.66 (mesh renderer), 3.44 (dda) | **2.77** | **FAIL by 0.15 ms** | mesh renderer is faster than dda (3.44) as in phase 1, but this route walk (interior + hillside) is not the phase-1 bench walk; mesh renderer with grid physics gives 2.66, so most of the gap is the renderer/route, not the physics. Other agents' uncommitted render edits were in the tree. Re-measure with `?bench=1` on the clean tree |
-| 7b | GPU p95, 240x90 | <= 1.34 + 0.1 = 1.44 | 1.23 / 1.55 (dda) | 1.27 | PASS | |
+| 7a | GPU p95, 400x150 | <= 2.62 ms | 2.66 / 2.66 / 2.71 (mesh renderer, grid physics, 3 runs) | **2.656** median (2.66, 2.65, 2.66) | **PASS (re-based)** | **Architect 2026-10-01: bar re-based.** The 2.62 bar came from the phase-1 bench walk, a different route; on this route walk mesh 400x150 GPU p95 = 2.656 (3-run median) beats dda 3.44 by 23 %, and physics mode does not move it. New AC 7a bar for the route walk (ME-13+ regressions): mesh p95 <= 2.75 ms (2.656 + 0.1 noise) and <= dda on the same walk. Fix round 2026-10-01, clean tree (no render WIP). Physics mode does not affect GPU time (mesh vs grid physics identical within 0.05). Phase-1 bench walk vs this longer route differ; recommend the architect accept 2.66 as the bar for the route walk or re-base the bar |
+| 7b | GPU p95, 240x90 | <= 1.44 | 1.23 / 1.55 (dda) | 1.30 (1.30, 1.29, 1.32; 3 runs) | PASS | |
 | 7c | JS p95 <= 8 ms | <= 8 | 4.7 / 2.7 | 6.4 (400x150), 3.0 (240x90) | PASS | jsMax 17.3 ms at 400x150 mesh (14.7 on mesh+grid): one frame |
 | 7d | over25 == 0 on the walk | 0 | 0 / 0 (mesh renderer); dda: 1 (one 617 ms stall at the start of the route, every dda run, not in mesh runs) | 0 / 0, worst interval 17.6 / 19.7 ms | PASS | dda stall is outside this gate |
 | 8a | `node tools/run-tests.mjs` | green | - | 155 suites: 154 PASS, 0 FAIL, 1 WARN (typecheck, 4 TS errors in `engine/mesh/instances.js` / `voxelMesh.js` = RE-15a/b, ME-22 work in progress, not ME-12) | PASS (WARN) | |
@@ -50,6 +50,14 @@ Raw perf (walk = full route, headless, per config):
 | 240x90 | mesh/mesh | 2157 | 0.2 / 0.5 / 8.0 | 3.0 / 12.2 | 0.97 / 1.27 | 0 / 19.7 |
 | 240x90 | mesh/grid | 2291 | 0.2 / 0.4 / 4.6 | 2.7 / 9.9 | 1.19 / 1.23 | 0 / 19.1 |
 | 240x90 | dda/grid | 2207 | 0.2 / 0.4 / 7.1 | 2.5 / 11.8 | 1.41 / 1.55 | 1 / 616.6 |
+
+## Fix round 2026-10-01 (BUG-1, content route a): NOT landed, blocked, ASK ARCHITECT
+
+Tried `content/levels/tower.level.json`: grate neighbours get numeric `ceilH 6.6` (= grate `topH`; A at (17,10) edited in place, new legend `Q` for the ledge cell (19,10), `ceilMat stone` because the loader rejects `ceilMat sky` with a numeric ceilH). Result in Node: `route-walk` leg 5a mesh blocks at x = 19.30 identical to grid, 5b open passes, all legs maxDiff 0.000. Reverted because of two side effects (attempt saved in the session scratchpad `tower.grate-fix-attempt.json`):
+1. `engine/render/sectorCaster.silhouette.test.js`: 94 FAIL (was 0; Q only: 30, A only: 64; ceilH 8.6 / 12: worse). The two numeric-ceil cells add a roof slab over the inside of the tower that the GPU-twin silhouette sees from outside. So the content rule is not visually free on this level.
+2. `colliders.js` sentinel sanity check: base mesh differs (rule 3 face flips side and moves between base/dyn), so `tower:grate` falls back to a full mesh rebuild on every refit (allocates, warns once). Any numeric-ceil neighbour will trigger this with the current sentinel scheme, i.e. the 27.18 content rule cannot be satisfied zero-alloc.
+Options: (c) physics-only closed-state barrier quads in `colliders.js` (no render change, no fallback; recommended), or accept the roof cells + update the silhouette test and the fallback.
+**Architect 2026-10-01: option (c) accepted**, spec = architecture.md 27.18b (barrier quads on dyn-cell edges facing out-of-grid or non-solid `'sky'`-ceil neighbours, `ceilH..topH`, tracked by the existing sentinel/`trackCeil` refit). One step (~0.5 programmer-day, PC-A or PC-B cross-track, ends in arch-review); content stays reverted.
 
 ## Fixes made
 
