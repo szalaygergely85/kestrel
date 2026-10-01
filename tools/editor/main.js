@@ -1098,7 +1098,7 @@ function pickCtx() {
   return {
     cam, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH,
     world, assets, fb: frame.fb, gpuPipeline: frame.gpuPipeline, gpuActive: rt.gpuActive,
-    voxelPool: frame.voxelPool,
+    voxelPool: frame.voxelPool, renderer: frame.renderer,
   };
 }
 
@@ -1116,7 +1116,7 @@ canvas.addEventListener('mousedown', (e) => {
 
   if (placeMode) {
     const result = pickAt(col, row, pickCtx());
-    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row);
+    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
     // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
     // gives a real point; looking at open sky falls back to a point 8 m out
     // along the click ray, so placing never silently no-ops.
@@ -1196,7 +1196,7 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
   if (!drag) return;
-  const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row);
+  const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
   if (Math.abs(ray.dz) < 1e-4) return;
   const d = (drag.startTransform.z - cam.z) / ray.dz;
   if (d <= 0) return;
@@ -1366,8 +1366,8 @@ function drawHelpOverlay() {
 }
 
 function drawOverlay(fb) {
-  drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a');
-  if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection);
+  drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a', frame.renderer);
+  if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer);
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
   if (helpOn) drawHelpOverlay();
   void fb;
@@ -1406,6 +1406,7 @@ function render() {
 window.__editor = {
   engine, assets, doc, cam, frame,
   get world() { return world; },
+  get rt() { return rt; },
   get selection() { return selection; },
   get placeMode() { return placeMode; },
   get helpOn() { return helpOn; },

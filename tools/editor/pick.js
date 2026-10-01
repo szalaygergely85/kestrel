@@ -8,7 +8,7 @@
 // Imports only engine/index.js + ray.js (the editor boundary rule).
 import { KIND_TERRAIN, localToWorld, worldToLocal } from '../../engine/index.js';
 import {
-  unprojectCell, rayPoint, projectPoint, decodePlaneId, rayPickEntities,
+  unprojectCell, rayPoint, projectPoint, decodePlaneId, rayPickEntities, resolveVoxelSlot,
   KIND_WALL, KIND_STEP, KIND_UPPER,
 } from './ray.js';
 
@@ -86,10 +86,10 @@ function findEntityForVoxelInstance(world, inst) {
  * @returns {PickResult}
  */
 export function pickAt(col, row, ctx) {
-  const { cam, cols, rows, pxCellW, pxCellH, world, assets, voxelPool } = ctx;
+  const { cam, cols, rows, pxCellW, pxCellH, world, assets, voxelPool, renderer } = ctx;
   const surf = readSurface(col, row, ctx);
   const decoded = decodePlaneId(surf.kind, surf.planeId);
-  const ray = unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row);
+  const ray = unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row, renderer);
 
   /** @type {PickResult} */
   const result = {
@@ -103,7 +103,9 @@ export function pickAt(col, row, ctx) {
     result.world = rayPoint(ray, surf.depth);
   } else if (decoded.type === 'voxel') {
     result.world = rayPoint(ray, surf.depth);
-    const inst = voxelPool && voxelPool.list[decoded.slot];
+    // 31.4c: >16 instances alias the 4-bit slot -> accept only a rect-contained candidate.
+    const idx = voxelPool ? resolveVoxelSlot(voxelPool.list, decoded.slot, result.world) : -1;
+    const inst = idx >= 0 ? voxelPool.list[idx] : null;
     if (inst) {
       const entId = findEntityForVoxelInstance(world, inst);
       if (entId) { result.kind = 'entity'; result.entityId = entId; }
@@ -149,11 +151,11 @@ export function pickAt(col, row, ctx) {
  * @returns {{fileId:string, collection:string, id:string, structId:string}|null}
  */
 export function pickMarkers(col, row, ctx) {
-  const { cam, cols, rows, pxCellW, pxCellH, world } = ctx;
+  const { cam, cols, rows, pxCellW, pxCellH, world, renderer } = ctx;
   const surf = readSurface(col, row, ctx);
   let best = null;
   const consider = (fileId, collection, id, structId, x, y, z) => {
-    const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x, y, z });
+    const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x, y, z }, renderer);
     if (!(proj.depth > 0) || proj.depth >= surf.depth) return;
     if (Math.abs(proj.col - col) > 1 || Math.abs(proj.row - row) > 1) return;
     if (!best || proj.depth < best.depth) best = { fileId, collection, id, structId, depth: proj.depth };
