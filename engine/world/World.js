@@ -220,7 +220,7 @@ export class World {
   /**
    * @param {Object} def - WorldDef (design/levels/world_m1.js shape) or an ephemeral equivalent (`?level=test_room`).
    * @param {import('../core/assets.js').AssetRegistry} assets
-   * @param {{events?: import('../core/events.js').Events}} [opts]
+   * @param {{events?: import('../core/events.js').Events, terrain?: import('./Terrain.js').Terrain}} [opts]
    * @returns {World}
    */
   static load(def, assets, opts = {}) {
@@ -242,7 +242,9 @@ export class World {
 
     if (def.terrain) {
       w.terrainKey = def.terrain;
-      w.terrain = new Terrain(assets.terrain(def.terrain));
+      // ED-MESH-1a (31.2): reuse a passed Terrain baked from the same recipe (a prop-only editor reload keeps the bake).
+      const recipe = assets.terrain(def.terrain);
+      w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe);
     }
     w.bounds = validateBounds(def.bounds);
     // US-138 (32.5): built once here, after bounds, before the sun block

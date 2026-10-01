@@ -193,7 +193,7 @@ export class LevelMeshCache {
   /** @param {(key: string) => number} [matIdFor] */
   constructor(matIdFor) {
     this.matIdFor = matIdFor;
-    /** @type {Map<string, {set: import('./levelMesh.js').LevelMeshSet, version: number}>} */
+    /** @type {Map<string, {set: import('./levelMesh.js').LevelMeshSet, version: number, level: object}>} */
     this.cache = new Map();
   }
 
@@ -204,8 +204,10 @@ export class LevelMeshCache {
   get(structure) {
     let entry = this.cache.get(structure.id);
     const opts = this.matIdFor ? { matIdFor: this.matIdFor } : undefined;
-    if (!entry) {
-      entry = { set: buildLevelMesh(structure.level, opts), version: structure.packed.version };
+    // ED-MESH-1a: a NEW Level object under the same id (editor rebuild = World.load + setWorld) must not reuse the old mesh,
+    // even when `packed.version` is equal.
+    if (!entry || entry.level !== structure.level) {
+      entry = { set: buildLevelMesh(structure.level, opts), version: structure.packed.version, level: structure.level };
       this.cache.set(structure.id, entry);
     } else if (entry.version !== structure.packed.version) {
       for (let i = 0; i < entry.set.dyn.length; i++) {

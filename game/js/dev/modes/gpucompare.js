@@ -184,6 +184,10 @@ function buildCompareRuns(ctx) {
       cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 240, pitchDeg: 10 }, real: true },
   ];
 
+  // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);
+  // register a mesh-only copy for this harness so the pool packs it (kept out of the DDA atlas: existing poses unchanged).
+  const swordHeldDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.swordHeld;
+  if (swordHeldDef && !assets.has('model', 'swordHeld')) assets.add('model', 'swordHeld', { ...swordHeldDef, voxel: { ...swordHeldDef.voxel, meshOnly: true } });
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.bind(assets, matTable);
   const LEVER_X = 1499.25, LEVER_Y = 1027.3, LEVER_Z = 3.0;
@@ -273,7 +277,7 @@ function buildCompareRuns(ctx) {
   const compareInstances = engine.instances;
   compareInstances.bindPool(compareVoxelPool);
   const unitsGroup = compareInstances.group('lever', 20);
-  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; };
+  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); };
   runs.push({
     world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
     cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
@@ -317,6 +321,21 @@ function buildCompareRuns(ctx) {
   // first person at open terrain looking west: the box far edge (eye + 64 m + 96 m = 160 m ahead) lies inside the fog; no seam
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: fpBoxEdge (ME-15c, first person, sun box edge 160 m ahead, sun az 135 el 30)',
     cam: { x: 1464.33, y: 1045.5, z: groundZ(1464.33, 1045.5) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -2 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30 });
+
+  // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
+  // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).
+  // `resetInstances` hides the layer before every pose; `before` shows it.
+  if (globalThis.ASSETS && globalThis.ASSETS.viewModels && globalThis.ASSETS.viewModels.sword && compareVoxelPool.models.has('swordHeld')) {
+    const vmLayer = engine.viewModel;
+    const vmH = vmLayer.load('sword', globalThis.ASSETS.viewModels.sword, compareVoxelPool);
+    for (const [clip, tMs, label] of [['idle', 0, 'rest'], ['swingLR', 160, 'swingLR t=160']]) {
+      for (const pitch of [0, 30]) {
+        runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: viewModel ${label} pitch ${pitch} (US-078a, held sword, crash room)`,
+          cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: pitch }, real: true, meshOnly: true, needK8: true,
+          before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, clip), tMs, false); } });
+      }
+    }
+  }
 
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
@@ -383,6 +402,7 @@ function runGpuCompareDdaMode(ctx) {
   const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);
   gpuPipeline.bindInstances(compareInstances);
+  gpuPipeline.bindViewModel(engine.viewModel); // US-078a
   void m1Eye; void testRoomLights; void worldM1Lights;
 
   if (params.get('roundtrip') === '1') {
@@ -401,6 +421,7 @@ function runGpuCompareDdaMode(ctx) {
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
     instances: compareInstances,
+    viewModel: engine.viewModel, // US-078a: both twins draw the layer when a pose shows it
     // ME-15c: the JS twin renders the same sun shadow map as the GPU pass whenever the pipeline runs sun 'map'.
     shadowOpts: renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,
     // RE-15a fixes (28.13 point 4, PC-B Q7 item 1): host-owned "rendered frame" counter,

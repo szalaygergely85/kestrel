@@ -14,6 +14,8 @@ const GAME_KEYS = new Set([
   // US-015 (docs/architecture.md 7.6 item 5): KeyM opens/closes the map
   // card; KeyN is reserved for mute (US-020) - nothing binds it yet.
   'KeyM', 'KeyN',
+  // US-128a (29.2): KeyQ = lock-on, Tab = cycle target (must not move browser focus).
+  'KeyQ', 'Tab',
 ]);
 
 export class Input {
@@ -27,6 +29,7 @@ export class Input {
     // keyup, even through OS auto-repeat keydown events (which would
     // otherwise re-arm `_pressedThisFrame` every repeat interval).
     this._consumed = new Set();
+    this._wheel = 0; // US-128a: accumulated wheel notches (sign of deltaY)
 
     // `movementX/Y` are raw deltas (unclamped by screen edges once pointer
     // lock is active). Input itself doesn't know about lock state, so it
@@ -67,6 +70,9 @@ export class Input {
       this._down.delete('Mouse0');
       this._consumed.delete('Mouse0');
     };
+    this._onWheel = (e) => {
+      this._wheel += Math.sign(e.deltaY || 0);
+    };
     this._onBlur = () => {
       // Release everything when the window loses focus so keys never get
       // "stuck" down.
@@ -74,8 +80,10 @@ export class Input {
       this._consumed.clear();
       this._mouseDX = 0;
       this._mouseDY = 0;
+      this._wheel = 0;
     };
 
+    target.addEventListener('wheel', this._onWheel, { passive: true });
     target.addEventListener('keydown', this._onKeyDown);
     target.addEventListener('keyup', this._onKeyUp);
     target.addEventListener('mousedown', this._onMouseDown);
@@ -129,5 +137,12 @@ export class Input {
     this._mouseDX = 0;
     this._mouseDY = 0;
     return d;
+  }
+
+  // US-128a: wheel notches (+ = down/right, - = up/left) since the last call, then 0. No allocation.
+  consumeWheel() {
+    const w = this._wheel;
+    this._wheel = 0;
+    return w;
   }
 }

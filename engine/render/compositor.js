@@ -16,7 +16,7 @@ import { castModels } from '../voxel/voxelMarch.js';
 // mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
 import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
-import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget } from '../mesh/rasterJS.js';
+import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
@@ -212,6 +212,13 @@ function renderWorldMesh(fb, world, cam) {
     meshCtx.structCount = 0;
   }
   rasterDrawList(list, target, meshCtx);
+  // US-078a (architecture.md 30.1): first-person view model, same pass after a depth-only clear (twin of the GPU
+  // `_passRaster` tail); off on pitched frames and when nothing is shown.
+  const vmList = fb.viewModel ? fb.viewModel.buildList(cam, meshPitched) : null;
+  if (vmList) {
+    clearRasterDepth(target);
+    rasterDrawList(vmList, target, meshCtx);
+  }
   copyToGBuffer(target, fb.gbuf, fb.depth.depth);
   renderSunShadowJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
 }

@@ -918,3 +918,9 @@ D-032 amendment 1 put ME-15 -> ME-16 -> ME-12b -> ME-19 back "as scheduled", i.e
 - Architect: US-078/080 notes after ME-12 GO (D-030 consequences unchanged).
 - Owner: ME-12 walk-test (GO/NO-GO); confirm boar as first enemy.
 
+## D-034 Sword: one swing motion with light and hard attacks (owner, 2026-10-01)
+**Owner:** "it will be just one type of swing ... I mean hard and light". Answers: tap vs hold; the hard swing does more damage, is slower (you're open), knocks back / staggers, and costs something.
+- Replaces the US-078 left/right 2-swing chain (architecture.md 30.1, design/models/sword.js `swingLR`/`swingRL`).
+- **Light** = tap: the current 0.35 s swing, base damage, no cost, max 2 in a row. **Hard** = hold >= 0.4 s, release: held wind-up pose while charging, damage x3, knockback + stagger (interrupts a beast windup/charge), recover 0.45 s, walk x0.3, **costs 4 mana** (mana is the only resource; no stamina system - falls back to a light swing below 4 mana).
+- Consequences: US-078 Swing AC rewritten; US-078d sim = light + hard; **designer:** keep one swing clip (`swingLR`) as the motion, add a `charge` hold pose + a heavier hard-swing variant (bigger trail/sparks), drop `swingRL`; **architect:** 30.1 amendment (input hold timer in integer steps, stagger/knockback on the beast sim, mana spend via the US-080b API) before US-078d; owner tunes the numbers at the feel check. Block/parry (US-086) stays on its own input.
+

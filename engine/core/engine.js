@@ -4,6 +4,7 @@
 
 import { RenderTarget } from '../render/RenderTarget.js';
 import { InstanceGroups } from '../mesh/instances.js';
+import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
 import { OpenSpans } from '../render/OpenSpans.js';
@@ -148,6 +149,8 @@ export function createEngine(opts) {
     // `setTeamMaterials` stores the spec and (re)applies it to the attached MaterialTable
     // (`table.team`), also after every `bindShading` rebuild via `attachMaterialTable`.
     instances: new InstanceGroups(),
+    // US-078a (architecture.md 30.1): first-person view-model layer; the host sets `fb.viewModel` and calls `pipeline.bindViewModel`.
+    viewModel: createViewModelLayer(),
     teamSpec: null,
     matTable: null,
     attachMaterialTable(table) {

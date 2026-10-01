@@ -38,12 +38,12 @@ function modelExtent(assets, comps) {
  * visual extent (e.g. a light/interactable/trigger - those get a marker
  * dot highlighted instead, see `drawMarkers`).
  */
-export function computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, center, radius, height) {
-  const base = projectPoint(cam, cols, rows, pxCellW, pxCellH, center);
+export function computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, center, radius, height, renderer = 'dda') {
+  const base = projectPoint(cam, cols, rows, pxCellW, pxCellH, center, renderer);
   if (!(base.depth > 0)) return null;
-  const top = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x: center.x, y: center.y, z: center.z + height });
+  const top = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x: center.x, y: center.y, z: center.z + height }, renderer);
   const { rightX, rightY } = cameraBasis(cam);
-  const side = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x: center.x + rightX * radius, y: center.y + rightY * radius, z: center.z });
+  const side = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x: center.x + rightX * radius, y: center.y + rightY * radius, z: center.z }, renderer);
   const halfW = Math.max(1, Math.abs(side.col - base.col));
   return {
     minCol: Math.round(base.col - halfW), maxCol: Math.round(base.col + halfW),
@@ -78,7 +78,7 @@ export function drawHighlightRect(rt, rect, fgHex) {
  * (prop/world entity - projects its cylinder) and a marker-only item
  * (light/interactable - a single highlighted cell at its point).
  */
-export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex) {
+export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex, renderer = 'dda') {
   if (!selection) return;
   const entId = selectionEntityId(world, selection);
   if (entId) {
@@ -86,7 +86,7 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
     if (data && data.transform) {
       const extent = modelExtent(assets, data.components || {});
       if (extent) {
-        const rect = computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, data.transform, extent.radius, extent.height);
+        const rect = computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, data.transform, extent.radius, extent.height, renderer);
         if (rect) drawHighlightRect(rt, rect, fgHex);
         return;
       }
@@ -104,7 +104,7 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
       : world.structures.find((st) => st.level.name === selection.fileId.slice('level/'.length));
     if (item && s) {
       const point = localToWorld(s.frame, item.x, item.y, item.z || 0, { x: 0, y: 0, z: 0 });
-      const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, point);
+      const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer);
       if (proj.depth > 0) rt.setCell(Math.round(proj.col), Math.round(proj.row), '*', fgHex);
     }
   }
@@ -118,11 +118,11 @@ const MAX_MARKER_CELLS = 200; // 24.7 budget
  * outliner is the way to select them, per the architecture note); this is a
  * documented limitation, not an oversight.
  */
-export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palette, selection) {
+export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palette, selection, renderer = 'dda') {
   let budget = MAX_MARKER_CELLS;
   const put = (x, y, z, glyph, fgHex) => {
     if (budget <= 0) return;
-    const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x, y, z });
+    const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x, y, z }, renderer);
     if (!(proj.depth > 0)) return;
     const c = Math.round(proj.col), r = Math.round(proj.row);
     if (c < 0 || c >= cols || r < 0 || r >= rows) return;

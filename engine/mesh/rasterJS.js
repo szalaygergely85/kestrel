@@ -106,6 +106,15 @@ export function createRasterTarget(cols, rows, n, opts) {
   return t;
 }
 
+/**
+ * US-078a (architecture.md 30.1): depth-buffer-only clear - the view-model layer draws after the scene with a fresh
+ * depth range but keeps every attribute plane the scene wrote (twin of `gl.clear(DEPTH_BUFFER_BIT)`).
+ * @param {RasterTarget} t
+ */
+export function clearRasterDepth(t) {
+  t.zbuf.fill(1);
+}
+
 /** @param {RasterTarget} t */
 export function clearRasterTarget(t) {
   t.zbuf.fill(1);

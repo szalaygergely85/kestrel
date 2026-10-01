@@ -10,6 +10,7 @@
 import {
   HFOV_DEG, KIND_TERRAIN, KIND_MODEL,
   KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
+  resolveProjection, createPitchedTerms, pitchedTerms, screenRay, worldToCell,
 } from '../../engine/index.js';
 
 export { KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL };
@@ -39,13 +40,27 @@ export function planeGeometry(cols, rows, pxCellW, pxCellH, pitchDeg) {
   return { screenAspect, planeDistY, horizonRow };
 }
 
+// ED-MESH-1c (architecture.md 31.4): on `renderer === 'mesh'` the camera is the
+// engine's pitched projection (depth = view depth vd, ray = F + a*R + b*U) and
+// the shear maths below is bypassed. `renderer` defaults to 'dda' = unchanged.
+const _terms = createPitchedTerms();
+const _grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
+const _c3 = new Float64Array(3);
+function pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer) {
+  if (resolveProjection(cam, renderer) !== 'pitched') return null;
+  _grid.cols = cols; _grid.rows = rows; _grid.pxCellW = pxCellW || 1; _grid.pxCellH = pxCellH || 1;
+  return pitchedTerms(cam, _grid, _terms);
+}
+
 /**
  * Cell -> ray (24.6). Returns a plain-data ray `{ ox, oy, oz, dx, dy, dz }`
  * such that `rayPoint(ray, d)` at perpendicular depth `d` gives the world
  * point that cell projects to.
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
  */
-export function unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row) {
+export function unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row, renderer = 'dda') {
+  const terms = pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer);
+  if (terms) return screenRay(terms, col, row, { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 });
   const { dirX, dirY, rightX, rightY } = cameraBasis(cam);
   const { planeDistY, horizonRow } = planeGeometry(cols, rows, pxCellW, pxCellH, cam.pitchDeg);
   const a = ((2 * (col + 0.5)) / cols - 1) * TAN_HALF_HFOV;
@@ -63,7 +78,12 @@ export function rayPoint(ray, d) {
  * same equations `sprites.js`/the casters use). Used by the round-trip test
  * and by `select.js`'s highlight-rect projection.
  */
-export function projectPoint(cam, cols, rows, pxCellW, pxCellH, point) {
+export function projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer = 'dda') {
+  const terms = pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer);
+  if (terms) {
+    worldToCell(terms, point.x, point.y, point.z, _c3);
+    return { col: _c3[0], row: _c3[1], depth: _c3[2] }; // depth <= 0: behind the eye, col/row invalid
+  }
   const { dirX, dirY, rightX, rightY } = cameraBasis(cam);
   const { planeDistY, horizonRow } = planeGeometry(cols, rows, pxCellW, pxCellH, cam.pitchDeg);
   const relX = point.x - cam.x;
@@ -163,4 +183,25 @@ export function rayPickEntities(ray, entities, assets, maxDepth) {
     if (d != null && (!best || d < best.depth)) best = { id: e.id, depth: d };
   }
   return best;
+}
+
+/**
+ * Slot-alias guard (31.4c + amendment 1). The G-buffer carries only a 4-bit
+ * voxel slot, so with more than 16 pool instances slot `s` aliases `s+16`,
+ * `s+32`, ... Returns the list index of the first candidate whose world `rect`
+ * AABB (+`eps`) contains `point`, else -1 (caller falls back to ray-cylinder
+ * entity picking). Holds for any MAX_VOX_INSTANCES. With <= 16 instances there
+ * is no aliasing and the plain slot is returned unchanged.
+ * @param {Array<{rect:Object}>} list  voxelPool.list
+ */
+export function resolveVoxelSlot(list, slot, point, eps = 0.05) {
+  if (!list || slot >= list.length) return -1;
+  if (list.length <= 16) return slot;
+  for (let k = slot; k < list.length; k += 16) {
+    const r = list[k].rect;
+    if (point.x >= r.minX - eps && point.x <= r.maxX + eps
+      && point.y >= r.minY - eps && point.y <= r.maxY + eps
+      && point.z >= r.minZ - eps && point.z <= r.maxZ + eps) return k;
+  }
+  return -1;
 }

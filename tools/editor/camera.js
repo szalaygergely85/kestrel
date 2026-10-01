@@ -43,7 +43,7 @@ export function startPoseForStructure(frame, level) {
  * @param {CameraPose} pose
  * @param {{isDown:(code:string)=>boolean}} input
  * @param {number} dt
- * @param {{speed:number, lookDx?:number, lookDy?:number}} opts
+ * @param {{speed:number, lookDx?:number, lookDy?:number, pitchClampDeg?:number}} opts
  * @returns {boolean} changed
  */
 export function updateCamera(pose, input, dt, opts) {
@@ -82,7 +82,7 @@ export function updateCamera(pose, input, dt, opts) {
 
   if (lookDx || lookDy) {
     pose.yawDeg = ((pose.yawDeg + lookDx * 0.15) % 360 + 360) % 360;
-    pose.pitchDeg = Camera.clampPitch(pose.pitchDeg - lookDy * 0.15);
+    pose.pitchDeg = Camera.clampPitch(pose.pitchDeg - lookDy * 0.15, opts.pitchClampDeg);
     changed = true;
   }
 

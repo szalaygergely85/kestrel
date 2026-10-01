@@ -6,7 +6,6 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
-import { prebuildTerrainMesh } from './dev/terrainPrebuild.js';
 import {
   AssetRegistry, createEngine, clampGrid, GRID_DEFAULT_COLS,
   GBuffer, bindShading, bindLevel,
@@ -21,7 +20,7 @@ import {
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
-  loadContentPack, createRng,
+  loadContentPack, createRng, prebuildTerrainMesh, DEFAULT_RENDERER,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -57,6 +56,7 @@ import { wakeFrame, drawEyelid } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
+import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
@@ -269,7 +269,7 @@ const terrainEnabled = params.get('terrain') !== '0';
 // renderer: 'mesh' | 'dda' })"): `?renderer=mesh` opts into the GPU raster
 // pass (tower only, this story); default 'dda' is every existing pass,
 // completely unchanged.
-const renderer = params.get('renderer') === 'mesh' ? 'mesh' : 'dda';
+const renderer = (params.get('renderer') || DEFAULT_RENDERER) === 'mesh' ? 'mesh' : 'dda';
 // RE-02b (28.1 A2 item 6): first person is pitched on the mesh renderer (look clamp 70), shear on dda (35).
 // Set from the EFFECTIVE renderer once the GPU pipeline is known (review: ?renderer=mesh can fall back to CPU = shear).
 let pitchClampDeg = 35;
@@ -570,7 +570,7 @@ function runGame(mode) {
 
       playerHandle = world.get('player');
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
-      beasts = createBeastSim(world, { nav: worldDef.nav, rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting: null }); // US-128b adds targeting later
       resetPickups(); // US-080b (30.2): same "rebuilt on every load/restart" precedent as beasts/vitals above
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword

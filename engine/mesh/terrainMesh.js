@@ -764,3 +764,13 @@ export function terrainMeshSetFor(terrain, opts) {
   }
   return set;
 }
+
+/**
+ * ED-MESH-1a (31.2): builds the terrain mesh (near band + far tiles) synchronously so a page without a streaming
+ * budget (rts-test, the mesh editor, the game's mesh boot) shows the ground on frame 1.
+ * @param {import('../world/Terrain.js').Terrain} terrain a baked Terrain (farReady)
+ */
+export function prebuildTerrainMesh(terrain) {
+  const set = terrainMeshSetFor(terrain);
+  while (set.step(1000)) { /* until the near band is published */ }
+}

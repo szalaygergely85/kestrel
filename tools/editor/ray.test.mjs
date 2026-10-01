@@ -1,10 +1,10 @@
 // tools/editor/ray.test.mjs - US-032 S1 (docs/architecture.md 24.13).
 // Plain Node ESM, no framework - run with `node tools/editor/ray.test.mjs`.
 import {
-  unprojectCell, projectPoint, rayPoint, decodePlaneId, rayCylinderHit, rayPickEntities,
+  unprojectCell, projectPoint, rayPoint, decodePlaneId, rayCylinderHit, rayPickEntities, resolveVoxelSlot,
   KIND_NONE, KIND_WALL,
 } from './ray.js';
-import { KIND_TERRAIN, KIND_MODEL } from '../../engine/index.js';
+import { KIND_TERRAIN, KIND_MODEL, createPitchedTerms, pitchedTerms, unprojectPitched, worldToCell } from '../../engine/index.js';
 import { makeOk, approxEqual as approxEqualCore } from '../../engine/test/assert.js';
 
 let pass = 0;
@@ -83,6 +83,61 @@ const COLS = 240, ROWS = 90, PX_W = 8, PX_H = 16;
   ok('ray/cylinder: nearest of two entities wins', nearest && nearest.id === 'near', JSON.stringify(nearest));
   ok('ray/cylinder: an entity with an unknown model key is skipped, not thrown', nearest && nearest.id !== 'unknownModel');
   void cylNear; void cylFar; void cylOutOfHeight;
+}
+
+// ---- ED-MESH-1c: pitched (mesh) projection ---------------------------------
+{
+  const grid = { cols: COLS, rows: ROWS, pxCellW: PX_W, pxCellH: PX_H };
+  for (const cam of [{ x: 10, y: 20, z: 3, yawDeg: 37, pitchDeg: -10 }, { x: -4, y: 7, z: 12, yawDeg: 200, pitchDeg: -55 }, { x: 0, y: 0, z: 2, yawDeg: 90, pitchDeg: 60 }]) {
+    const terms = pitchedTerms(cam, grid, createPitchedTerms());
+    for (const [col, row, vd] of [[120, 45, 5], [10, 80, 12], [230, 5, 30], [3, 3, 1.5]]) {
+      const ray = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, col, row, 'mesh');
+      const pt = rayPoint(ray, vd);
+      const ref = unprojectPitched(terms, col, row, vd, new Float64Array(3));
+      ok(`pitched unproject == engine unprojectPitched (yaw ${cam.yawDeg} col ${col})`, approxEqual(pt.x, ref[0]) && approxEqual(pt.y, ref[1]) && approxEqual(pt.z, ref[2]));
+      const proj = projectPoint(cam, COLS, ROWS, PX_W, PX_H, pt, 'mesh');
+      ok(`pitched round trip col/row/vd (yaw ${cam.yawDeg} col ${col} row ${row})`,
+        approxEqual(proj.col, col) && approxEqual(proj.row, row) && approxEqual(proj.depth, vd), JSON.stringify(proj));
+      const w2c = worldToCell(terms, pt.x, pt.y, pt.z, new Float64Array(3));
+      ok('pitched project == engine worldToCell', approxEqual(proj.col, w2c[0]) && approxEqual(proj.row, w2c[1]));
+    }
+  }
+  // dda default and explicit 'dda' stay identical (shear untouched); mesh differs when pitched.
+  const cam = { x: 1, y: 2, z: 3, yawDeg: 15, pitchDeg: -20 };
+  const a = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, 50, 30);
+  const b = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, 50, 30, 'dda');
+  const m = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, 50, 30, 'mesh');
+  ok('dda explicit == default', a.dx === b.dx && a.dy === b.dy && a.dz === b.dz);
+  ok('mesh ray differs from shear ray at pitch', Math.abs(a.dz - m.dz) > 1e-3);
+}
+
+// ---- ED-MESH-1c: planeId encodings (DrawList levels / addVoxelInstances) ----
+{
+  for (let seq = 0; seq < 8; seq++) {
+    const d = decodePlaneId(KIND_WALL, ((seq & 7) << 28) | (3 << 24) | 77);
+    ok(`decode level planeId structSeq ${seq}`, d.type === 'structure' && d.structSeq === seq);
+  }
+  for (const k of [0, 1, 15, 16, 17, 31]) {
+    const planeId = (0xf << 28) | ((k & 0xf) << 24); // planeIdOr = (k&0xF)<<24 plus the voxel marker nibble
+    const d = decodePlaneId(KIND_MODEL, planeId >>> 0);
+    ok(`decode voxel planeId k=${k} -> slot ${k & 15}`, d.type === 'voxel' && d.slot === (k & 15), JSON.stringify(d));
+  }
+}
+
+// ---- ED-MESH-1c: slot-alias guard ------------------------------------------
+{
+  const mk = (x) => ({ rect: { minX: x - 0.5, maxX: x + 0.5, minY: -0.5, maxY: 0.5, minZ: 0, maxZ: 2 } });
+  const list = Array.from({ length: 20 }, (_, i) => mk(i * 3));
+  // slot 1 aliases index 1 (x=3) and 17 (x=51).
+  ok('guard: point in instance 17 resolves to 17 (not 1)', resolveVoxelSlot(list, 1, { x: 51, y: 0, z: 1 }) === 17);
+  ok('guard: point in instance 1 resolves to 1', resolveVoxelSlot(list, 1, { x: 3, y: 0, z: 1 }) === 1);
+  ok('guard: point in neither -> -1 (ray-cylinder fallback)', resolveVoxelSlot(list, 1, { x: 30, y: 0, z: 1 }) === -1);
+  ok('guard: eps tolerance 0.05', resolveVoxelSlot(list, 1, { x: 3.54, y: 0, z: 1 }) === 1 && resolveVoxelSlot(list, 1, { x: 3.6, y: 0, z: 1 }) === -1);
+  ok('guard: <=16 instances, slot returned as is (dda unchanged)', resolveVoxelSlot(list.slice(0, 16), 5, { x: 999, y: 0, z: 0 }) === 5);
+  ok('guard: slot beyond list -> -1', resolveVoxelSlot(list.slice(0, 5), 9, { x: 0, y: 0, z: 0 }) === -1);
+  // generalises past 32 instances
+  const big = Array.from({ length: 70 }, (_, i) => mk(i * 3));
+  ok('guard: 4th alias (index 65, slot 1)', resolveVoxelSlot(big, 1, { x: 195, y: 0, z: 1 }) === 65);
 }
 
 console.log(`ray.test.mjs: ${pass} passed, ${fail} failed`);

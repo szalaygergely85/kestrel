@@ -73,10 +73,14 @@ export {
 export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
 export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
+export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
+/** Renderer used when `?renderer=` is absent (ME-12b flips it to 'mesh'; game main.js and the editor read it). */
+export const DEFAULT_RENDERER = 'dda';
 export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
+export { createViewModelLayer, VM_OBJECT_ID, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
 export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_BASE, MAX_INSTANCES_PER_FRAME } from './mesh/instances.js';
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and

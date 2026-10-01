@@ -163,9 +163,9 @@ export class MeshBuffers {
   /** @param {import('./device/GpuDevice.js').GpuDevice} device */
   constructor(device) {
     this.device = device;
-    /** @type {Map<string, {vertexBuffer: any, version: number, vertexCount: number, indexBuffer?: any, indexCount?: number}>} */
+    /** @type {Map<string, {vertexBuffer: any, version: number, mesh: any, vertexCount: number, indexBuffer?: any, indexCount?: number}>} */
     this.cache = new Map();
-    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, vertexCount: number, indexCount: number}>} */
+    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number}>} */
     this.voxelCache = new Map();
   }
 
@@ -175,7 +175,7 @@ export class MeshBuffers {
    */
   getVoxel(mesh) {
     const existing = this.voxelCache.get(mesh.id);
-    if (existing && existing.version === mesh.meshVersion) return existing;
+    if (existing && existing.version === mesh.meshVersion && existing.mesh === mesh) return existing;
     if (existing) {
       this.device.dispose(existing.vertexBuffer);
       this.device.dispose(existing.indexBuffer);
@@ -185,7 +185,7 @@ export class MeshBuffers {
     const indexBuffer = this.device.createBuffer({ usage: 'index', data: d.index });
     const entry = {
       vertexBuffer, indexBuffer, indexType: /** @type {'u16'|'u32'} */ (d.index instanceof Uint16Array ? 'u16' : 'u32'),
-      version: mesh.meshVersion, vertexCount: d.quadCount * 4, indexCount: d.quadCount * 6,
+      version: mesh.meshVersion, mesh, vertexCount: d.quadCount * 4, indexCount: d.quadCount * 6,
     };
     this.voxelCache.set(mesh.id, entry);
     return entry;
@@ -197,7 +197,7 @@ export class MeshBuffers {
    */
   get(mesh) {
     const existing = this.cache.get(mesh.id);
-    if (existing && existing.version === mesh.meshVersion) return existing;
+    if (existing && existing.version === mesh.meshVersion && existing.mesh === mesh) return existing;
     if (existing) {
       this.device.dispose(existing.vertexBuffer);
       if (existing.indexBuffer) this.device.dispose(existing.indexBuffer);
@@ -212,13 +212,13 @@ export class MeshBuffers {
       const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(data) });
       const indexBuffer = this.device.createBuffer({ usage: 'index', data: mesh.idx });
       entry = {
-        vertexBuffer, indexBuffer, version: mesh.meshVersion,
+        vertexBuffer, indexBuffer, version: mesh.meshVersion, mesh,
         vertexCount: mesh.pos.length / 3, indexCount: mesh.idx.length,
       };
     } else if (mesh.layout === 'static') {
       const data = buildStaticVertexData(mesh);
       const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(data) });
-      entry = { vertexBuffer, version: mesh.meshVersion, vertexCount: mesh.pos.length / 3 };
+      entry = { vertexBuffer, version: mesh.meshVersion, mesh, vertexCount: mesh.pos.length / 3 };
     } else {
       throw new Error(`MeshBuffers.get: mesh "${mesh.id}" has unsupported layout "${mesh.layout}" (static/terrain only - ME-06)`);
     }
