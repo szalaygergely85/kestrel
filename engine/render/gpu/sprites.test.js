@@ -16,6 +16,7 @@ import { spritesFragSrc } from './glsl/sprites.frag.js';
 import { World } from '../../world/World.js';
 import { buildLightSet } from '../lighting.js';
 import paletteMod from '../../../design/palette.js';
+import detailPassMod from '../../../design/detail-pass.js';
 import lanternMod from '../../../design/models/lantern.js';
 import brazierMod from '../../../design/models/brazier.js';
 // US-011 (7.5 item 7): the wreck/tower packs, for the atlas/light checks
@@ -25,6 +26,7 @@ import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
+import swordMod from '../../../design/models/sword.js';
 import overworldFarMod from '../../../design/levels/overworld_far.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
@@ -34,8 +36,8 @@ import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; lanternMod; brazierMod;
-leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; overworldFarMod;
+paletteMod; detailPassMod; lanternMod; brazierMod;
+leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; overworldFarMod;
 farTowerMod; ferrumLightsMod;
 const { assets } = await loadTestAssets();
 const P = assets.palette;
@@ -352,6 +354,13 @@ for (const depthUint of [true, false]) {
     if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
     if (p.from || p.to) continue;
     const key = typeof p.variant === 'number' ? `${p.model}#${p.variant}` : p.model;
+    // US-078c: the sword is voxel-only (design/models/sword.js, "no
+    // billboard exists, like the waystone") - buildSpriteAtlas itself only
+    // ever packs `m.billboard` defs (spritesAtlas.js's own loop), so a
+    // voxel-only model correctly has no atlas entry at all. Same exemption
+    // as the decal:/chain skips just above.
+    const def = assets2.model(key);
+    if (def && !def.billboard) continue;
     const m = atlas2.models.get(key);
     if (!m || !m.half) { allPacked = false; missing.push(key); }
   }

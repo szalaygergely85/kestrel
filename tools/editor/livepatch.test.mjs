@@ -10,6 +10,7 @@ import { makeFieldEditRecord, makeInsertRecord, makeDeleteRecord, makeRenameBatc
 import { World, LightSet, buildLightSet } from '../../engine/index.js';
 import { loadTestAssets } from '../testing/content-node.mjs';
 import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
 import lanternMod from '../../design/models/lantern.js';
 import leverMod from '../../design/models/lever.js';
 import voxelPropsMod from '../../design/models/voxel_props.js';
@@ -17,13 +18,14 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 import { makeOk } from '../../engine/test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+paletteMod; detailPassMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod;
 farTowerMod; ferrumLightsMod; terrainDef;
 // Loaded ONCE (world.test.js's own precedent) - `loadTestAssets` merges into
 // `globalThis.ASSETS` and a second call trips the "no dual source" guard.

@@ -11,6 +11,7 @@ import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
+import swordMod from '../../../design/models/sword.js';
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import titleMod from '../../../design/models/title.js';
@@ -23,7 +24,7 @@ import { simStep, createSim } from "./sim/tick.js";
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod;
-relayMod; farTowerMod; ferrumLightsMod; titleMod;
+relayMod; swordMod; farTowerMod; ferrumLightsMod; titleMod;
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;

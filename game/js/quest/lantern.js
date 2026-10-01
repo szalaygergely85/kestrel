@@ -39,11 +39,16 @@ export function lanternTake(ctx) {
   const { world, entity, actor, def } = ctx;
 
   if (actor) {
+    // US-078c (architecture.md 30.1): if the sword is already taken, its
+    // view model owns the usual right-hand slot - move the carried lantern
+    // light to the left (same offset `swordTake` applies the other way
+    // around, for whichever pickup happens second).
+    const right = world.state['tower.sword.taken'] ? -0.3 : 0.3;
     actor.setComponent('light', {
       preset: 'lantern',
       on: true,
       attach: 'eye',
-      offset: { right: 0.3, down: 0.3, fwd: 0.4 },
+      offset: { right, down: 0.3, fwd: 0.4 },
       sway: { amp: 0.02 },
     });
   }

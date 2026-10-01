@@ -4,6 +4,7 @@ import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
 import { updateTriggers } from './triggers.js';
 import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any props[].model
 // that isn't registered - every tower prop model must load, same reasoning
@@ -17,6 +18,7 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
@@ -25,8 +27,8 @@ import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; terrainDef;
-lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; voxelPropsMod;
+paletteMod; detailPassMod; terrainDef;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod;
 farTowerMod; ferrumLightsMod;
 const { assets } = await loadTestAssets();
 
@@ -134,8 +136,18 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
 // ---------------------------------------------------------------------------
 {
   const lever = world.get('tower.lever');
+  // US-078c (incidental): this file now also imports detail-pass.js (the
+  // sword model needs BOTH palette.js and detail-pass.js merged to exist at
+  // all, 30.1 - it has no billboard fallback, unlike the lever/lantern) -
+  // voxel_props.js's own unconditional `attach()` (design/models/
+  // voxel_props.js) now also fires for real, so `tower.lever` spawns with
+  // `components.voxel` here already, same as the "US-041a" block below
+  // always expected it eventually would ("no level edit" - 15.3 item 1).
+  // Pick whichever component the live entity actually has, same
+  // `getComponent('voxel') ? 'voxel' : 'sprite'` convention `lantern.js` uses.
+  const compName = lever.getComponent('voxel') ? 'voxel' : 'sprite';
   lever.play('pull', { restart: true });
-  lever.data.components.sprite.frame = 2;
+  lever.data.components[compName].frame = 2;
   lever.stop();
 
   const idsBefore = new Set();
@@ -151,8 +163,8 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
     `${idsBefore.size} vs ${idsAfter.size}`);
 
   const lever2 = world2.get('tower.lever');
-  const s = lever2.getComponent('sprite');
-  ok('deserialize keeps the saved sprite anim/frame (lever mid-pull, held)', s.anim === 'pull' && s.frame === 2 && s.playing === false, JSON.stringify(s));
+  const s = lever2.getComponent(compName);
+  ok(`deserialize keeps the saved ${compName} anim/frame (lever mid-pull, held)`, s.anim === 'pull' && s.frame === 2 && s.playing === false, JSON.stringify(s));
 }
 
 // US-041a (15.3 item 1): `voxel` component binding. `ASSETS.voxelModels.lever`

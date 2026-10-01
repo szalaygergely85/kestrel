@@ -18,16 +18,18 @@
 //      build/teardown code in ambient.js (not a re-implementation).
 import { World } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
+import detailPassMod from '../../../design/detail-pass.js';
 import lanternMod from '../../../design/models/lantern.js';
 import leverMod from '../../../design/models/lever.js';
 import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
+import swordMod from '../../../design/models/sword.js';
 // US-027b: tower moved to content/levels/tower.level.json.
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
-paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; detailPassMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; // classic scripts: side effects on globalThis.ASSETS
 
 import {
   resetAmbientAudio, __test_build, __test_teardown, __test_liveNodeCount, __test_resolvePositions,

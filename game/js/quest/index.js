@@ -12,6 +12,7 @@
 import { registerBehaviour } from '../../../engine/index.js';
 import { leverPull } from './lever.js';
 import { lanternTake } from './lantern.js';
+import { swordTake } from './swordTake.js';
 import { beaconLight } from './beacon.js';
 import { questEnd } from './end.js';
 import { request as requestHint } from './hints.js';
@@ -23,6 +24,7 @@ export const QUEST_BEHAVIOURS = {
   'beacon.light': 'US-022',
   'quest.end': 'US-017',
   'hint.show': 'US-015',
+  'sword.take': 'US-078c',
 };
 
 const logged = new Set();
@@ -59,6 +61,7 @@ const REAL_BEHAVIOURS = {
   'beacon.light': beaconLight,
   'quest.end': questEnd,
   'hint.show': hintShow,
+  'sword.take': swordTake,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

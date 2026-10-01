@@ -8,6 +8,7 @@ import { makeOk } from '../test/assert.js';
 // asset set world.test.js/serialize.visibility.test.js use (every model
 // world_m1.world.json's props/structures reference must be registered).
 import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
 import lanternMod from '../../design/models/lantern.js';
 import leverMod from '../../design/models/lever.js';
 import voxelPropsMod from '../../design/models/voxel_props.js';
@@ -15,13 +16,14 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
 globalThis.window = globalThis.window || globalThis;
 terrainDef; // runs the IIFE, sets window.ASSETS.levels.overworld_far
-paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; voxelPropsMod;
+paletteMod; detailPassMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod;
 farTowerMod; ferrumLightsMod;
 const recipe = globalThis.ASSETS.levels.overworld_far;
 // CO-9: no more x/y/w/h/ringH fallback in the recipe itself - every

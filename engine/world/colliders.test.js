@@ -17,6 +17,7 @@ import { buildLevelMesh } from '../mesh/levelMesh.js';
 import { isSectorPassable } from '../physics/capsule.js';
 import { buildBvh } from '../physics/bvh.js';
 import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 import lanternMod from '../../design/models/lantern.js';
 import leverMod from '../../design/models/lever.js';
@@ -25,6 +26,7 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
@@ -36,8 +38,8 @@ if (typeof global.gc !== 'function') {
 }
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; terrainDef;
-lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; voxelPropsMod;
+paletteMod; detailPassMod; terrainDef;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod;
 farTowerMod; ferrumLightsMod;
 const { assets } = await loadTestAssets();
 

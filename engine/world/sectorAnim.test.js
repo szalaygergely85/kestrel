@@ -15,6 +15,7 @@ import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../ren
 import { isSectorPassable } from '../physics/capsule.js';
 import { PHYSICS_DEFAULTS } from '../physics/config.js';
 import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 // US-011 (7.5 item 1): World.load throws on an unregistered props[].model.
 import lanternMod from '../../design/models/lantern.js';
@@ -23,13 +24,14 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 // US-027b: tower/test_room/world_m1 moved to content/*.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; terrainDef;
-lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+paletteMod; detailPassMod; terrainDef;
+lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod;
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;

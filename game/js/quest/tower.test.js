@@ -19,6 +19,7 @@ import { resetHints, currentHintId, stepHints, setPaletteColors } from './hints.
 
 const noHintSignals = { walking: false, pointerUnlocked: false, moveOrLook: false, run: false, jump: false, pointerLocked: false, mPressed: false };
 import paletteMod from '../../../design/palette.js';
+import detailPassMod from '../../../design/detail-pass.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any
 // props[].model that isn't registered - every tower prop model must
 // load, same reasoning as game/index.html's script tags.
@@ -28,6 +29,7 @@ import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
+import swordMod from '../../../design/models/sword.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
@@ -38,7 +40,7 @@ import titleMod from '../../../design/models/title.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 
-paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; titleMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; titleMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
@@ -119,7 +121,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   for (const k of ['props', 'lights', 'interactables', 'triggers', 'markers']) ok(`def.${k} present`, Array.isArray(d[k]) || (d[k] && typeof d[k] === 'object'));
   ok('def.layers.tilt present, same grid size', Array.isArray(d.layers && d.layers.tilt) && d.layers.tilt.length === towerFull.level.height);
   const ids = (d.interactables || []).map((i) => i.id).sort();
-  ok('interactables ids = beacon, lantern, lever', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'lever']), ids.join(','));
+  // US-078c: + the "sword" interactable (content/levels/tower.level.json, copied in from design/models/sword.js's levelPatch.towerSword).
+  ok('interactables ids = beacon, lantern, lever, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'lever', 'sword']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
   // US-026a-content: the tower's own 'end' trigger is gone - the ending
   // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
