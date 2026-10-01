@@ -375,12 +375,17 @@ const CORE_DETERMINISM_FILES = new Set(
 );
 const VISIBILITY_FILE = path.join(WORLD_DIR, 'Visibility.js');
 const RTS_SIM_DIR = path.join(GAME_DIR, 'js', 'rts', 'sim');
+// US-079a (architecture.md 29.1): the beast brain's sim/ leaves (beastSim.js,
+// beastNav.js, sight.js, beastConfig.js) are deterministic-sim code same as
+// game/js/rts/sim/** - widened here per PC-B QUEUE 7 item 5.
+const QUEST_SIM_DIR = path.join(GAME_DIR, 'js', 'quest', 'sim');
 function inDeterminismScope(file) {
   if (/\.test\.(js|mjs)$/.test(file)) return false;
   if (inDir(file, NAV_DIR)) return true;
   if (CORE_DETERMINISM_FILES.has(file)) return true;
   if (file === VISIBILITY_FILE) return true;
   if (inDir(file, RTS_SIM_DIR)) return true;
+  if (inDir(file, QUEST_SIM_DIR)) return true;
   return false;
 }
 const DETERMINISM_PATTERNS = [

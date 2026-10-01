@@ -353,6 +353,52 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
     hA.value() === hB.value(), `${hA.value()} vs ${hB.value()}`);
 }
 
+// ---- RE-05c: maxStepM drop rule (buildFromArrays) -----------------------
+{
+  // 3x1 strip, all flat/grass/slope-ok so only the height step drives the
+  // outcome. Step of 1.5 m between cell 1 and cell 2 (both neighbours).
+  const w = 3, h = 1, n = w * h;
+  const slopeOk = new Uint8Array(n).fill(1);
+  const type = new Uint8Array(n).fill(0);
+  const bigStep = Float32Array.from([0, 0, 1.5]);
+
+  const gridBlocked = new NavGrid({ x0: 0, y0: 0, w, h, cell: 1 });
+  gridBlocked.buildFromArrays(bigStep, slopeOk, type, { typeNames: ['grass'], maxStepM: 1.0 });
+  ok('RE-05c: 1.5m step with maxStepM=1.0 drops the lower cell (1)', gridBlocked.cost[1] === 0, `cost=${gridBlocked.cost.join(',')}`);
+  ok('RE-05c: 1.5m step with maxStepM=1.0 drops the upper cell (2)', gridBlocked.cost[2] === 0, `cost=${gridBlocked.cost.join(',')}`);
+  ok('RE-05c: the far cell (0), not adjacent to the step, stays walkable', gridBlocked.cost[0] === 1, `cost=${gridBlocked.cost.join(',')}`);
+
+  // 0.9 m step, under the 1.0 m threshold: both cells stay walkable.
+  const smallStep = Float32Array.from([0, 0, 0.9]);
+  const gridOk = new NavGrid({ x0: 0, y0: 0, w, h, cell: 1 });
+  gridOk.buildFromArrays(smallStep, slopeOk, type, { typeNames: ['grass'], maxStepM: 1.0 });
+  ok('RE-05c: 0.9m step under maxStepM=1.0 stays walkable (cell 1)', gridOk.cost[1] === 1, `cost=${gridOk.cost.join(',')}`);
+  ok('RE-05c: 0.9m step under maxStepM=1.0 stays walkable (cell 2)', gridOk.cost[2] === 1, `cost=${gridOk.cost.join(',')}`);
+
+  // Default options (no maxStepM): byte-equal to today's output on the same
+  // big-step fixture - i.e. the drop rule is a no-op unless opted in.
+  const gridDefault = new NavGrid({ x0: 0, y0: 0, w, h, cell: 1 });
+  gridDefault.buildFromArrays(bigStep, slopeOk, type, { typeNames: ['grass'] });
+  ok('RE-05c: default maxStepM (Infinity) is a no-op - all cells walkable', gridDefault.cost.join(',') === '1,1,1', gridDefault.cost.join(','));
+
+  // Same drop rule through buildFromWorld.
+  function fakeFlatWorld(heightFn) {
+    return {
+      terrain: {
+        heightAt: (x) => heightFn(Math.floor(x)),
+        normalAt: (x, y, out) => { out.x = 0; out.y = 0; out.z = 1; },
+        typeAt: () => 0,
+        typeName: () => 'grass',
+      },
+      structureAt: () => false,
+    };
+  }
+  const worldStep = fakeFlatWorld((cx) => (cx === 2 ? 1.5 : 0));
+  const gridWorld = new NavGrid({ x0: 0, y0: 0, w: 3, h: 1, cell: 1 });
+  gridWorld.buildFromWorld(worldStep, { typeCost: { grass: 1 }, maxStepM: 1.0 });
+  ok('RE-05c: buildFromWorld drops both sides of a 1.5m step at maxStepM=1.0', gridWorld.cost[1] === 0 && gridWorld.cost[2] === 0, gridWorld.cost.join(','));
+}
+
 // ---- RE-10: pathCrossesRect true/false fixtures (astar.js, RE-05) -------
 {
   // Straight path along y=0, x = 0..4.

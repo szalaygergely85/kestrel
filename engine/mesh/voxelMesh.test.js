@@ -516,6 +516,85 @@ for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
   ok('downsamplePart: most-frequent mat wins over a lower id (3 vs 1)', dFreq.vox[0] === 2, `vox=${[...dFreq.vox]}`);
 }
 
+// 8.4b (RE-15b fix, architecture.md 28.13 point 5): odd box-min alignment to
+// the global even grid - a part whose box min x is odd must not shift its
+// LOD1 output by one cell, and sampling must never mark a LOD1 block solid
+// from out-of-range padding alone.
+{
+  // 1-part model, box min x = 1 (odd), single solid cell at box-local x = 0
+  // (absolute x = 1). Even-grid alignment: x0L = floor(1/2) = 0, x1L =
+  // ceil(5/2) = 3 for a 4-wide box (x0=1, x1=5) -> bxL = 3, local x in
+  // [0..3). The solid LOD0 cell (box-local cx=0, abs x=1) falls in LOD1
+  // block lx=0: cx = 2*(x0L+lx)+dx-x0 = 2*(0+0)+dx-1 -> dx=0 gives cx=-1
+  // (skipped, out of range), dx=1 gives cx=0 (in range, the solid cell) - so
+  // block lx=0 is solid.
+  const def = {
+    version: 1, cellM: 0.1, size: [8, 2, 1], anchor: [0, 0, 0],
+    mats: { '#': 'mat_a' },
+    // size[0]=8 so the model grid is big enough for a box starting at x=1
+    // with width 4 (x1=5); one z layer, solid cell only at (x=1, y=0).
+    layers: [['.#......', '........']],
+    parts: { body: { box: [1, 0, 0, 5, 1, 1], pivot: [0, 0, 0] } },
+  };
+  const { pm } = pack(def);
+  const d = downsamplePart(pm, 0);
+  ok('RE-15b fix: odd box-min x aligns to the even grid (bxL spans local x [0..3))',
+    d.x0 === 0 && d.x1 === 3 && d.bx === 3, `x0=${d.x0} x1=${d.x1} bx=${d.bx}`);
+  // The single solid LOD0 cell (abs x=1) must land in LOD1 block lx=0
+  // (covers abs x 0..1, i.e. local [0..2) of LOD1 after alignment) and that
+  // block must be solid.
+  ok('RE-15b fix: the solid LOD0 cell maps into a solid LOD1 block at local x=0',
+    d.vox[0] === 1, `vox=${[...d.vox]}`);
+
+  // 2-part model: one part with an odd box min, one with an even box min.
+  // Every solid LOD1 block (for both parts) must contain >= 1 solid LOD0
+  // cell - no LOD1 cell may be marked solid purely from out-of-range
+  // (alignment-padding) sampling.
+  const def2 = {
+    version: 1, cellM: 0.1, size: [8, 4, 1], anchor: [0, 0, 0],
+    mats: { '#': 'mat_a' },
+    layers: [
+      ['.#......', '........', '........', '........'],
+    ],
+    parts: {
+      oddPart: { box: [1, 0, 0, 5, 1, 1], pivot: [0, 0, 0] },
+      evenPart: { box: [0, 2, 0, 4, 4, 1], pivot: [0, 0, 0] },
+    },
+  };
+  const { pm: pm2 } = pack(def2);
+  for (let p = 0; p < pm2.partCount; p++) {
+    const dd = downsamplePart(pm2, p);
+    const base = p * PART_STRIDE;
+    const x0 = pm2.parts[base], y0 = pm2.parts[base + 1], z0 = pm2.parts[base + 2];
+    const bx = pm2.parts[base + 11], by = pm2.parts[base + 12];
+    const atlasOff = pm2.parts[base + 10];
+    let allOk = true;
+    for (let lz = 0; lz < dd.bz; lz++) {
+      for (let ly = 0; ly < dd.by; ly++) {
+        for (let lx = 0; lx < dd.bx; lx++) {
+          if (!dd.vox[lx + dd.bx * (ly + dd.by * lz)]) continue;
+          let foundSolid = false;
+          for (let dz = 0; dz < 2 && !foundSolid; dz++) {
+            const cz = 2 * (dd.z0 + lz) + dz - z0;
+            if (cz < 0 || cz >= pm2.parts[base + 13]) continue;
+            for (let dy = 0; dy < 2 && !foundSolid; dy++) {
+              const cy = 2 * (dd.y0 + ly) + dy - y0;
+              if (cy < 0 || cy >= by) continue;
+              for (let dx = 0; dx < 2 && !foundSolid; dx++) {
+                const cx = 2 * (dd.x0 + lx) + dx - x0;
+                if (cx < 0 || cx >= bx) continue;
+                if (pm2.vox[atlasOff + cx + bx * (cy + by * cz)] !== 0) foundSolid = true;
+              }
+            }
+          }
+          if (!foundSolid) allOk = false;
+        }
+      }
+    }
+    ok(`RE-15b fix: part ${p} - every solid LOD1 block has >= 1 solid LOD0 cell (no out-of-range false solid)`, allOk);
+  }
+}
+
 // 8.5: cached identity - two `.get(pm, key, names, 1)` calls return the same object.
 {
   const { pm, partNames } = pack(quadruped12);

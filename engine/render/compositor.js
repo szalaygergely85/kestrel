@@ -52,13 +52,6 @@ const meshViewProj = new Float64Array(16);
 const meshPitchTerms = createPitchedTerms();
 let meshPitched = false;
 let meshHashCell = 0; // BUG-RTS-001 (28.11a)
-// RE-15a (28.13 point 4): increments once per `renderWorldMesh` call (the CPU
-// mesh twin's own "rendered frame" counter) - `fb.gpuDda` early-outs `renderWorld`
-// before this runs, so in gameplay this and `GpuCellPipeline`'s own per-`frame()`
-// counter never both advance for the same tick; `?gpucompare=1&renderer=mesh`
-// calls both once per pose, in step, so `InstanceGroups.addToDrawList`'s memo
-// (keyed on this value) sees the same `frameNo` for the GPU pass and this twin.
-let meshInstFrameNo = 0;
 let pitchDepthSave = /** @type {Float32Array|null} */ (null);
 const meshFrustumPlanes = new Float64Array(24);
 const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
@@ -143,7 +136,6 @@ function meshRasterTargetFor(cols, rows) {
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
  */
 function renderWorldMesh(fb, world, cam) {
-  meshInstFrameNo++; // RE-15a (28.13 point 4): once per CPU mesh-twin render
   const cols = fb.gbuf.cols, rows = fb.gbuf.rows;
   meshGrid.cols = cols; meshGrid.rows = rows;
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
@@ -182,11 +174,15 @@ function renderWorldMesh(fb, world, cam) {
     addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
   }
   // RE-06 (28.6): instanced unit groups (engine.instances) after the ME-08 items, before the cull.
-  // RE-15a (28.13): per-instance cull + compaction (`meshFrustumPlanes`, same viewProj as `list.cull`
-  // below), memoized on `meshInstFrameNo` - F3 stats copied onto `fb.loop.stats` (27.16 item 5
-  // precedent: `fb.loop.stats.structuresCulled` above, same "only when a Loop is wired" guard).
+  // RE-15a fixes (28.13 point 4, PC-B Q7 item 1): per-instance cull + compaction
+  // (`meshFrustumPlanes`, same viewProj as `list.cull` below), memoized on the host-owned
+  // `fb.frameNo` (one shared counter, bumped once per actual rendered frame by the caller -
+  // main.js's render tick / gpucompare's per-pose bump - not by this twin) so the CPU mesh
+  // twin and `GpuCellPipeline`'s GPU pass agree on the same frame even if they're called an
+  // uneven number of times. F3 stats copied onto `fb.loop.stats` (27.16 item 5 precedent:
+  // `fb.loop.stats.structuresCulled` above, same "only when a Loop is wired" guard).
   if (fb.instances) {
-    fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, meshInstFrameNo);
+    fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo);
     if (fb.loop && fb.loop.stats) {
       fb.loop.stats.instances = fb.instances.stats.instances;
       fb.loop.stats.instancesCulled = fb.instances.stats.instancesCulled;

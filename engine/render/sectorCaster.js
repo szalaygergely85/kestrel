@@ -1052,7 +1052,20 @@ function fillSkySpan(rt, x, ctx, openTop, openBottom, azimuthDeg) {
 
 // ---------------------------------------------------------------------------
 // US-024 new API surface (architecture.md section 5). `FrameBuffers` =
-// { rt, depth, spans, palette, lights, timeSec }.
+// { rt, depth, spans, palette, lights, timeSec, frameNo }.
+// RE-15a fixes (28.13 point 4, PC-B Q7 item 1): `frameNo` is the host-owned
+// "actual rendered frame" counter (int, +1 per rendered frame - bumped by
+// main.js's render tick in gameplay, or once per pose before both twins run
+// in `?gpucompare=1`), fed to `InstanceGroups.addToDrawList`'s memo by both
+// the CPU mesh twin (compositor.js) and the GPU pipeline (GpuCellPipeline.js)
+// so they share one counter instead of each keeping its own.
+
+/** @typedef {Object} FrameBuffers
+ * @property {Object} rt
+ * @property {Object} depth
+ * @property {Object} [spans]
+ * @property {number} [frameNo] - host-owned "rendered frame" counter, see above
+ */
 
 /** @param {{rt, depth, spans}} fb */
 export function beginFrame(fb) {
