@@ -17,6 +17,16 @@
 // physics/config.js `eyeHeight`.
 export const EYE_H = 1.60;
 
+// RE-02a / PC-B Q6 item 11: same focus-driven eye math as gpucompare.js's
+// `rtsHillPose(-58)` (engine/dev.js `pitchedEyeFromFocus`), but the eye
+// distance depends on the live aspect ratio (`rt.cols/rows`, `pxCellW/H`),
+// which differs per `--variant world` grid size (400x150 vs 240x90) - so,
+// unlike every other GATE_POSES entry, `cam` here is a function of
+// `(rt, world)`, not a static object. `main.js`'s one `gatePose.cam` call
+// site resolves either shape.
+import { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from '../engine/dev.js';
+const RTS_HILL_FX = 1440, RTS_HILL_FY = 1040, RTS_HILL_YAW = 20, RTS_HILL_PITCH = -58, RTS_HILL_WIDTH_M = 30;
+
 export const POSES = [
   { name: 'start pose (S, facing east, level)', x: 2.5, y: 2.5, z: EYE_H, yawDeg: 90, pitchDeg: 0,
     probes: [
@@ -47,4 +57,15 @@ export const GATE_POSES = [
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model
   { slug: 'waystone', name: 'waystone', cam: { x: 1428 - 2 * Math.sin(yawR(76)), y: 1040 + 2 * Math.cos(yawR(76)), z: EYE_H, yawDeg: 76, pitchDeg: 5, groundEye: true } },
+  // RE-02a / PC-B Q6 item 11: RTS hillside bench pose, same framing as
+  // gpucompare's `rtsHill58` (mesh renderer only - pitch -58 needs
+  // `?renderer=mesh`, resolveProjection's default pitched-on-mesh rule).
+  { slug: 'rtsHill58', name: 'RTS hillside, pitched -58 (RE-02a bench pose)',
+    cam: (rt, world) => {
+      const fz = world.terrain ? world.terrain.groundAt(RTS_HILL_FX, RTS_HILL_FY) : 0;
+      const aspect = (rt.cols * (rt.pxCellW || 1)) / (rt.rows * (rt.pxCellH || 1));
+      const tanHalfX = Math.tan((PROJ_PITCHED_VFOV_DEG * Math.PI) / 360) * aspect;
+      const e = pitchedEyeFromFocus(RTS_HILL_FX, RTS_HILL_FY, fz, RTS_HILL_YAW, RTS_HILL_PITCH, RTS_HILL_WIDTH_M / (2 * tanHalfX), [0, 0, 0]);
+      return { x: e[0], y: e[1], z: e[2], yawDeg: RTS_HILL_YAW, pitchDeg: RTS_HILL_PITCH };
+    } },
 ];
