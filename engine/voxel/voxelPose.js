@@ -107,7 +107,7 @@ function transpose3(a, out) {
 }
 
 // Builds R(rot) = Rz(rz) * Ry(ry) * Rx(rx) into `out`.
-function setRot(rx, ry, rz, out) {
+export function setRot(rx, ry, rz, out) {
   setRz(rz, _Rz);
   setRy(ry, _Ry);
   setRx(rx, _Rx);

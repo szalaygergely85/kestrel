@@ -151,6 +151,8 @@ export class GpuCellPipeline {
     // bindVoxels() - null until the caller has one (US-040 has no entity
     // binding yet, so a dev harness/main.js owns pushInstance()).
     this._voxelPool = null;
+    this._viewModel = null; // US-078a: ViewModelLayer (engine.viewModel), set by bindViewModel()
+    this._vmList = null;
     this._instances = null; // RE-06: InstanceGroups (engine.instances), set by bindInstances()
 
     // Registered once, up front, regardless of whether init below succeeds -
@@ -865,6 +867,12 @@ export class GpuCellPipeline {
    */
   bindVoxels(pool) {
     this._voxelPool = pool;
+  }
+
+  /** US-078a (architecture.md 30.1): binds `engine.viewModel`; `_passRaster` draws its list after a depth-only clear. */
+  bindViewModel(vm) {
+    this._viewModel = vm;
+    this._vmList = null;
   }
 
   /** RE-06: binds the `InstanceGroups` (engine.instances) whose groups `_passRaster` draws instanced. */
@@ -1695,6 +1703,8 @@ export class GpuCellPipeline {
     }
     list.cull(this._meshFrustumPlanes);
     this._rasterTerrainSet = terrainMeshSet;
+    // US-078a: the view-model layer's own (never culled) list, null when hidden / pitched.
+    this._vmList = this._viewModel ? this._viewModel.buildList(cam, this._pitched) : null;
   }
 
   _passRaster() {
@@ -1746,53 +1756,9 @@ export class GpuCellPipeline {
       gl.drawArrays(gl.TRIANGLES, item.rangeFirst * 3, item.rangeCount * 3);
     }
 
-    // ME-08a (27.16 items 1/4): voxel props - one draw per (instance, part)
-    // over `mesh.ranges[p]`, `uModel` = that part's world matrix. Same
-    // program/VAO/depth buffer as the static loop above.
-    let voxelDraws = 0;
-    // RE-06b (28.7): voxel paths use 32 B verts + index buffer; aux (locations 4/5) = generic zero.
+    // ME-08a (27.16 items 1/4): voxel props - one draw per (instance, part) (see `_drawVoxelItems`).
+    const voxelDraws = this._drawVoxelItems(list, loc);
     const GL_IDX_U16 = gl.UNSIGNED_SHORT, GL_IDX_U32 = gl.UNSIGNED_INT;
-    gl.vertexAttrib4f(4, 0, 0, 0, 0);
-    gl.vertexAttrib4f(5, 0, 0, 0, 0);
-    gl.bindVertexArray(this._meshVoxVao);
-    // RE-06c (28.10): back-face cull for closed voxel meshes only (front = positive snapped area = CCW).
-    gl.frontFace(gl.CCW);
-    gl.cullFace(gl.BACK);
-    gl.enable(gl.CULL_FACE);
-    for (let i = 0; i < list.count; i++) {
-      const item = list.items[i];
-      if (item.type !== DRAW_VOXEL || !item.mesh) continue;
-      const mesh = item.mesh;
-      const entry = this._meshBuffers.getVoxel(mesh);
-      gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
-      for (let a = 0; a < VOXEL_VERTEX_LAYOUT.length; a++) {
-        const attr = VOXEL_VERTEX_LAYOUT[a];
-        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, VOXEL_STRIDE_BYTES, attr.offsetBytes);
-        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, VOXEL_STRIDE_BYTES, attr.offsetBytes);
-      }
-      const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
-      const idxBytes = entry.indexType === 'u16' ? 2 : 4;
-      gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
-      gl.uniform1f(loc.uZBase, item.zBase);
-      gl.uniform1i(loc.uObjectId, item.objectId);
-      const ranges = mesh.ranges;
-      const M = this._meshModelF32;
-      const pm = item.partMatrices;
-      for (let p = 0; p < ranges.length; p++) {
-        const range = ranges[p];
-        if (range.count <= 0) continue;
-        const o = p * 12;
-        M[0] = pm[o]; M[1] = pm[o + 3]; M[2] = pm[o + 6]; M[3] = 0;
-        M[4] = pm[o + 1]; M[5] = pm[o + 4]; M[6] = pm[o + 7]; M[7] = 0;
-        M[8] = pm[o + 2]; M[9] = pm[o + 5]; M[10] = pm[o + 8]; M[11] = 0;
-        M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
-        gl.uniformMatrix4fv(loc.uModel, false, M);
-        gl.uniform1i(loc.uAxisAligned, item.partFlags[p] & 1);
-        gl.drawElements(gl.TRIANGLES, range.count * 3, idxEnum, range.start * 3 * idxBytes);
-        voxelDraws++;
-      }
-    }
 
     // RE-06 (28.6): DRAW_INSTANCED groups - raw gl here (the device `draw()` instances gap stays
     // with ME-19). One orphaned 128 KB VBO per frame, one bufferSubData per group, one
@@ -1922,6 +1888,79 @@ export class GpuCellPipeline {
         gl.drawElements(gl.TRIANGLES, item.rangeCount * 3, gl.UNSIGNED_INT, item.rangeFirst * 3 * 4);
       }
     }
+
+    // US-078a (architecture.md 30.1): first-person view model - a depth-only clear, then the same voxel draw
+    // loop over the layer's own list (G-buffer written like any prop; never clipped by walls).
+    const vmList = this._vmList;
+    if (vmList) {
+      gl.useProgram(this.progMesh);
+      gl.uniformMatrix4fv(loc.uViewProj, false, this._meshViewProjF32);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LESS);
+      gl.depthMask(true);
+      gl.clearDepth(1);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      this.stats.vmDraws = this._drawVoxelItems(vmList, loc);
+      gl.disable(gl.CULL_FACE);
+    } else {
+      this.stats.vmDraws = 0;
+    }
+  }
+
+  /**
+   * ME-08a / US-078a: draws every `DRAW_VOXEL` item of `list` with the mesh program `loc` (already in use, `uViewProj`
+   * set) - one draw per (item, part) over `mesh.ranges[p]`, `uModel` = that part's world matrix. Sets the voxel VAO and
+   * back-face cull (RE-06c); leaves CULL_FACE enabled (the caller disables it). Returns the draw count.
+   * @param {import('../../mesh/DrawList.js').DrawList} list
+   * @param {any} loc
+   */
+  _drawVoxelItems(list, loc) {
+    const gl = this.gl;
+    let voxelDraws = 0;
+    // RE-06b (28.7): voxel paths use 32 B verts + index buffer; aux (locations 4/5) = generic zero.
+    const GL_IDX_U16 = gl.UNSIGNED_SHORT, GL_IDX_U32 = gl.UNSIGNED_INT;
+    gl.vertexAttrib4f(4, 0, 0, 0, 0);
+    gl.vertexAttrib4f(5, 0, 0, 0, 0);
+    gl.bindVertexArray(this._meshVoxVao);
+    // RE-06c (28.10): back-face cull for closed voxel meshes only (front = positive snapped area = CCW).
+    gl.frontFace(gl.CCW);
+    gl.cullFace(gl.BACK);
+    gl.enable(gl.CULL_FACE);
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_VOXEL || !item.mesh) continue;
+      const mesh = item.mesh;
+      const entry = this._meshBuffers.getVoxel(mesh);
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
+      for (let a = 0; a < VOXEL_VERTEX_LAYOUT.length; a++) {
+        const attr = VOXEL_VERTEX_LAYOUT[a];
+        if (attr.type === 'uint') gl.vertexAttribIPointer(attr.location, attr.components, gl.UNSIGNED_INT, VOXEL_STRIDE_BYTES, attr.offsetBytes);
+        else gl.vertexAttribPointer(attr.location, attr.components, gl.FLOAT, false, VOXEL_STRIDE_BYTES, attr.offsetBytes);
+      }
+      const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
+      const idxBytes = entry.indexType === 'u16' ? 2 : 4;
+      gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
+      gl.uniform1f(loc.uZBase, item.zBase);
+      gl.uniform1i(loc.uObjectId, item.objectId);
+      const ranges = mesh.ranges;
+      const M = this._meshModelF32;
+      const pm = item.partMatrices;
+      for (let p = 0; p < ranges.length; p++) {
+        const range = ranges[p];
+        if (range.count <= 0) continue;
+        const o = p * 12;
+        M[0] = pm[o]; M[1] = pm[o + 3]; M[2] = pm[o + 6]; M[3] = 0;
+        M[4] = pm[o + 1]; M[5] = pm[o + 4]; M[6] = pm[o + 7]; M[7] = 0;
+        M[8] = pm[o + 2]; M[9] = pm[o + 5]; M[10] = pm[o + 8]; M[11] = 0;
+        M[12] = pm[o + 9]; M[13] = pm[o + 10]; M[14] = pm[o + 11]; M[15] = 1;
+        gl.uniformMatrix4fv(loc.uModel, false, M);
+        gl.uniform1i(loc.uAxisAligned, item.partFlags[p] & 1);
+        gl.drawElements(gl.TRIANGLES, range.count * 3, idxEnum, range.start * 3 * idxBytes);
+        voxelDraws++;
+      }
+    }
+    return voxelDraws;
   }
 
   /** Structure footprints (x0, y0, x1, y1 per placed structure, capped at MAX_STRUCTS) into `_meshStructFoot`; returns the count (raster + shadow terrain carve). */
