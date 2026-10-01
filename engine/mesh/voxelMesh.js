@@ -268,24 +268,207 @@ export function buildVoxelMesh(pm, opts) {
 
 let _buildSeq = 1;
 
+// ---------------------------------------------------------------------------
+// RE-15b (architecture.md 28.13 point 5): LOD1 = a 2x2x2-downsampled voxel
+// grid, greedy-meshed with the SAME `emitPartFaces` as LOD0 (one mesher in
+// the codebase), vertices kept in LOD0's part-local space by scaling the
+// emitted quad corners by 2 (`ScaledMeshBuilder` below) rather than
+// reimplementing position math. `parts`/part names/ranges are identical to
+// LOD0 - only the atlas + box dims differ (downsampled), so `emitPartFaces`
+// needs no changes at all.
+// ---------------------------------------------------------------------------
+
+/**
+ * Thin `StaticMeshBuilder` proxy that scales only the position corners
+ * (`p12`) of every quad by `scale`, leaving uv/normal/flat/aux untouched.
+ * Lets LOD1 reuse `emitPartFaces` unmodified while still landing vertices in
+ * LOD0's part-local grid units (half-res box-local index i -> LOD0 index 2i,
+ * via boxes already halved before this runs - see `downsamplePart`).
+ * Build-time only - may allocate (one `sp` array per quad).
+ */
+class ScaledMeshBuilder {
+  constructor(builder, scale) {
+    this._b = builder;
+    this._s = scale;
+  }
+
+  beginRange(name) { this._b.beginRange(name); }
+
+  addQuad(p12, uv8, nx, ny, nz, flat0, flat1, aux8) {
+    const s = this._s;
+    const sp = [
+      p12[0] * s, p12[1] * s, p12[2] * s,
+      p12[3] * s, p12[4] * s, p12[5] * s,
+      p12[6] * s, p12[7] * s, p12[8] * s,
+      p12[9] * s, p12[10] * s, p12[11] * s,
+    ];
+    this._b.addQuad(sp, uv8, nx, ny, nz, flat0, flat1, aux8);
+  }
+
+  build() { return this._b.build(); }
+}
+
+/**
+ * Downsamples one part's box + atlas 2x2x2 (box-local, anchored at the
+ * part's own box min - "half-res cell i covers LOD0 cells 2i..2i+1",
+ * 28.13 point 5). A LOD1 block is solid if ANY of its (up to 8) covered LOD0
+ * cells is solid; its local mat = the most frequent solid mat among them,
+ * ties broken by the lowest local mat id. Odd box dims downsample to
+ * `ceil(n/2)` (the last LOD1 slab covers a single LOD0 slab) - this, plus an
+ * odd box min, is why the LOD1 mesh may be up to 1 LOD0 cell off at an edge
+ * (28.13 point 5/6, "odd dims may stick out one cell").
+ * @param {PackedVoxelModel} pm
+ * @param {number} p
+ * @returns {{x0:number,y0:number,z0:number,x1:number,y1:number,z1:number,bx:number,by:number,bz:number,vox:Uint8Array}}
+ */
+export function downsamplePart(pm, p) {
+  const base = p * PART_STRIDE;
+  const x0 = pm.parts[base], y0 = pm.parts[base + 1], z0 = pm.parts[base + 2];
+  const x1 = pm.parts[base + 3], y1 = pm.parts[base + 4], z1 = pm.parts[base + 5];
+  const atlasOff = pm.parts[base + 10];
+  const bx = pm.parts[base + 11], by = pm.parts[base + 12], bz = pm.parts[base + 13];
+
+  const bxL = Math.ceil(bx / 2), byL = Math.ceil(by / 2), bzL = Math.ceil(bz / 2);
+  const x0L = Math.floor(x0 / 2), y0L = Math.floor(y0 / 2), z0L = Math.floor(z0 / 2);
+  const vox = new Uint8Array(bxL * byL * bzL);
+
+  // Local-mat histogram scratch, reused per block (0 unused: 0 = empty).
+  const counts = new Uint16Array(256);
+  for (let lz = 0; lz < bzL; lz++) {
+    for (let ly = 0; ly < byL; ly++) {
+      for (let lx = 0; lx < bxL; lx++) {
+        let any = 0, touched = 0;
+        const touchedIds = [];
+        for (let dz = 0; dz < 2; dz++) {
+          const cz = lz * 2 + dz;
+          if (cz >= bz) continue;
+          for (let dy = 0; dy < 2; dy++) {
+            const cy = ly * 2 + dy;
+            if (cy >= by) continue;
+            for (let dx = 0; dx < 2; dx++) {
+              const cx = lx * 2 + dx;
+              if (cx >= bx) continue;
+              const m = pm.vox[atlasOff + cx + bx * (cy + by * cz)];
+              if (m === 0) continue;
+              any = 1;
+              if (counts[m] === 0) touchedIds.push(m);
+              counts[m]++;
+              touched++;
+            }
+          }
+        }
+        if (any) {
+          // Most-frequent local mat, tie -> lowest id. `touchedIds` is tiny
+          // (<= 8 entries), so a linear scan is cheap and keeps determinism
+          // independent of iteration order.
+          let bestMat = 0, bestCount = -1;
+          for (const m of touchedIds) {
+            const c = counts[m];
+            if (c > bestCount || (c === bestCount && m < bestMat)) { bestMat = m; bestCount = c; }
+          }
+          vox[lx + bxL * (ly + byL * lz)] = bestMat;
+          for (const m of touchedIds) counts[m] = 0;
+        }
+      }
+    }
+  }
+  return { x0: x0L, y0: y0L, z0: z0L, x1: x0L + bxL, y1: y0L + byL, z1: z0L + bzL, bx: bxL, by: byL, bz: bzL, vox };
+}
+
+/**
+ * Builds the LOD1 PackedVoxelModel-shaped object (downsampled parts/vox,
+ * SAME `matIds` - downsampling only picks among existing local mat ids, it
+ * never invents one) and then its mesh via `emitPartFaces` (unchanged),
+ * scaled 2x so vertices land in LOD0's part-local space. Pure function of
+ * `pm` (the already-packed grid) - never reads the ModelDef (28.13 point 5/7).
+ * @param {PackedVoxelModel} pm
+ * @param {{id: string, partNames: string[]}} opts
+ * @returns {MeshData}
+ */
+export function buildVoxelMeshLod1(pm, opts) {
+  const partCount = pm.partCount;
+  const downs = new Array(partCount);
+  let atlasTotal = 0;
+  for (let p = 0; p < partCount; p++) {
+    const d = downsamplePart(pm, p);
+    downs[p] = d;
+    d.atlasOff = atlasTotal;
+    atlasTotal += d.bx * d.by * d.bz;
+  }
+  const vox = new Uint8Array(atlasTotal);
+  const parts = new Float64Array(partCount * PART_STRIDE);
+  for (let p = 0; p < partCount; p++) {
+    const d = downs[p];
+    vox.set(d.vox, d.atlasOff);
+    const base = p * PART_STRIDE;
+    parts[base] = d.x0; parts[base + 1] = d.y0; parts[base + 2] = d.z0;
+    parts[base + 3] = d.x1; parts[base + 4] = d.y1; parts[base + 5] = d.z1;
+    // Pivot/parent (base+6..9) copied from LOD0 - unused by emitPartFaces,
+    // kept only so this pm-shaped object stays self-consistent.
+    parts[base + 6] = pm.parts[base + 6]; parts[base + 7] = pm.parts[base + 7]; parts[base + 8] = pm.parts[base + 8];
+    parts[base + 9] = pm.parts[base + 9];
+    parts[base + 10] = d.atlasOff;
+    parts[base + 11] = d.bx; parts[base + 12] = d.by; parts[base + 13] = d.bz;
+  }
+  const pmLod1 = { parts, vox, matIds: pm.matIds, partCount, cellM: pm.cellM * 2 };
+
+  const realBuilder = new StaticMeshBuilder(opts.id);
+  const builder = new ScaledMeshBuilder(realBuilder, 2);
+  for (let p = 0; p < partCount; p++) {
+    builder.beginRange(opts.partNames[p]);
+    emitPartFaces(builder, pmLod1, p, pmLod1.cellM);
+  }
+  const mesh = realBuilder.build();
+  mesh.matsResolved = true;
+  const quadCount = mesh.triCount / 2;
+  // Same budget as LOD0 (ME-22): LOD1 is always <= LOD0's quad count (a
+  // downsample never adds detail), so this should never actually trip, but
+  // the check is cheap and keeps the invariant explicit rather than assumed.
+  if (quadCount > MESH_ONLY_MAX_QUADS) {
+    throw new Error(`buildVoxelMeshLod1: model '${opts.id}' has ${quadCount} quads, exceeds MESH_ONLY_MAX_QUADS (${MESH_ONLY_MAX_QUADS})`);
+  }
+  return mesh;
+}
+
 /**
  * Builds-once, caches-by-`pm`-identity MeshData for voxel models (a repack,
  * e.g. a hot content reload, gives a new `pm` object and so a fresh build -
- * 27.15.6).
+ * 27.15.6). RE-15b (28.13 point 5): `lod = 1` lazily builds + caches a
+ * separate downsampled mesh per `pm`, in its own WeakMap, id `vox:<key>@1`.
  */
 export class VoxelMeshCache {
   constructor() {
     /** @type {WeakMap<object, MeshData>} */
     this._map = new WeakMap();
+    /** @type {WeakMap<object, MeshData>} */
+    this._mapLod1 = new WeakMap();
   }
 
   /**
    * @param {PackedVoxelModel} pm
    * @param {string} modelKey
    * @param {string[]} partNames
+   * @param {number} [lod]
    * @returns {MeshData}
    */
-  get(pm, modelKey, partNames) {
+  get(pm, modelKey, partNames, lod = 0) {
+    if (lod === 1) {
+      let mesh = this._mapLod1.get(pm);
+      if (!mesh) {
+        const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        mesh = buildVoxelMeshLod1(pm, { id: `vox:${modelKey}@1`, partNames });
+        const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+        mesh.meshVersion = ++_buildSeq;
+        this._mapLod1.set(pm, mesh);
+        if (typeof console !== 'undefined' && console.log) {
+          console.log(`VoxelMeshCache: LOD1 build '${modelKey}' ${ms.toFixed(2)} ms`);
+        }
+        if (ms > 5 && typeof console !== 'undefined' && console.warn) {
+          console.warn(`VoxelMeshCache: LOD1 build '${modelKey}' took ${ms.toFixed(2)} ms (> 5 ms budget)`);
+        }
+      }
+      return mesh;
+    }
     let mesh = this._map.get(pm);
     if (!mesh) {
       mesh = buildVoxelMesh(pm, { id: `vox:${modelKey}`, partNames });

@@ -1,7 +1,7 @@
 // engine/mesh/voxelMesh.test.js (ME-07, docs/backlog.md, docs/architecture.md
 // 27.7 item 4, 27.15.6). Plain Node ESM, no framework.
 // Run: node engine/mesh/voxelMesh.test.js
-import { buildVoxelMesh, VoxelMeshCache, MESH_ONLY_MAX_QUADS } from './voxelMesh.js';
+import { buildVoxelMesh, VoxelMeshCache, MESH_ONLY_MAX_QUADS, downsamplePart, buildVoxelMeshLod1 } from './voxelMesh.js';
 import { validateMesh } from './MeshData.js';
 import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
@@ -432,6 +432,123 @@ function makeCheckerboardDef(sx, sy) {
     try { envMesh = buildVoxelMesh(envPm, { id: `vox:${files[0]}`, partNames: envPartNames }); } catch { envThrew = true; }
     ok(`ME-22: real asset ${files[0]} meshes without throwing`, !envThrew);
     if (!envThrew) ok(`ME-22: real asset ${files[0]} quad count under budget`, envMesh.triCount / 2 <= MESH_ONLY_MAX_QUADS);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 8. RE-15b (architecture.md 28.13 point 5): LOD1 mesh build + cache.
+// ---------------------------------------------------------------------------
+
+/** Single-part, single-z-layer synthetic grid def, for direct `downsamplePart` checks. */
+function makeGridDef(sx, sy, rows, mats) {
+  return {
+    version: 1, cellM: 0.1, size: [sx, sy, 1], anchor: [0, 0, 0],
+    mats,
+    layers: [rows],
+    parts: { body: { box: [0, 0, 0, sx, sy, 1], pivot: [0, 0, 0] } },
+  };
+}
+
+// 8.1/8.2: representative models - LOD1 has fewer quads, bbox close to LOD0's.
+for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
+  const { pm, partNames } = pack(def);
+  const m0 = buildVoxelMesh(pm, { id: `vox:${name}`, partNames });
+  const m1 = buildVoxelMeshLod1(pm, { id: `vox:${name}@1`, partNames });
+  // post12 is tiny (12 quads at LOD0) and can downsample to the same quad
+  // count (no further merge possible); the strict "<" AC only needs ONE
+  // representative model (quadruped12, checked below with `<`) - here <=
+  // just guards against LOD1 ever being MORE detailed than LOD0.
+  ok(`${name}: LOD1 quad count <= LOD0 quad count`, m1.triCount / 2 <= m0.triCount / 2,
+    `lod1=${m1.triCount / 2} lod0=${m0.triCount / 2}`);
+  let within = true;
+  for (let i = 0; i < 3; i++) {
+    if (m1.bbox[i] < m0.bbox[i] - 1 || m1.bbox[i + 3] > m0.bbox[i + 3] + 1) within = false;
+  }
+  ok(`${name}: LOD1 bbox within LOD0 bbox + 1 cell`, within, `lod0=${[...m0.bbox]} lod1=${[...m1.bbox]}`);
+}
+
+// 8.1b: quadruped12 specifically demonstrates the strict AC ("LOD1 quad
+// count < LOD0 quad count for a representative model").
+{
+  const { pm, partNames } = pack(quadruped12);
+  const m0 = buildVoxelMesh(pm, { id: 'vox:quadruped12', partNames });
+  const m1 = buildVoxelMeshLod1(pm, { id: 'vox:quadruped12@1', partNames });
+  ok('quadruped12: LOD1 quad count < LOD0 quad count (strict AC)', m1.triCount / 2 < m0.triCount / 2,
+    `lod1=${m1.triCount / 2} lod0=${m0.triCount / 2}`);
+}
+
+// 8.3: any-solid -> block solid, verified directly against `downsamplePart`.
+{
+  // 4x4 grid, single solid cell at (3,3) (opposite corner from the origin
+  // block) - only the LOD1 block covering it should be solid.
+  const rows = ['....', '....', '....', '...#'];
+  const def = makeGridDef(4, 4, rows, { '#': 'mat_a' });
+  const { pm } = pack(def);
+  const d = downsamplePart(pm, 0);
+  ok('downsamplePart: 2x2x1 LOD1 grid (4x4 -> 2x2)', d.bx === 2 && d.by === 2 && d.bz === 1, `${d.bx}x${d.by}x${d.bz}`);
+  const expected = [0, 0, 0, 1]; // only block (1,1) (covers cell (3,3)) is solid
+  ok('downsamplePart: any-solid rule (single corner cell -> only its block solid)',
+    expected.every((v, i) => d.vox[i] === (v ? 1 : 0)), `vox=${[...d.vox]}`);
+
+  // Second cell in the SAME block as an already-solid one must not create a
+  // second solid block or change which block is solid.
+  const rows2 = ['....', '....', '....', '..##'];
+  const def2 = makeGridDef(4, 4, rows2, { '#': 'mat_a' });
+  const d2 = downsamplePart(pack(def2).pm, 0);
+  ok('downsamplePart: any-solid rule (two cells, same LOD1 block -> still one solid block)',
+    d2.vox[0] === 0 && d2.vox[1] === 0 && d2.vox[2] === 0 && d2.vox[3] === 1, `vox=${[...d2.vox]}`);
+}
+
+// 8.4: most-frequent-mat, tie -> lowest id.
+{
+  // mats insertion order: 'a' -> local id 1, 'b' -> local id 2.
+  // Tie (2 vs 2) in the single 2x2 block -> lowest id (1, 'a') wins.
+  const tieRows = ['ab', 'ab'];
+  const tieDef = makeGridDef(2, 2, tieRows, { a: 'mat_a', b: 'mat_b' });
+  const dTie = downsamplePart(pack(tieDef).pm, 0);
+  ok('downsamplePart: tie (2 vs 2) -> lowest local mat id wins', dTie.vox[0] === 1, `vox=${[...dTie.vox]}`);
+
+  // No tie (3 vs 1) -> the more frequent mat ('b', local id 2) wins even
+  // though its id is higher.
+  const freqRows = ['bb', 'ba'];
+  const freqDef = makeGridDef(2, 2, freqRows, { a: 'mat_a', b: 'mat_b' });
+  const dFreq = downsamplePart(pack(freqDef).pm, 0);
+  ok('downsamplePart: most-frequent mat wins over a lower id (3 vs 1)', dFreq.vox[0] === 2, `vox=${[...dFreq.vox]}`);
+}
+
+// 8.5: cached identity - two `.get(pm, key, names, 1)` calls return the same object.
+{
+  const { pm, partNames } = pack(quadruped12);
+  const cache = new VoxelMeshCache();
+  const a = cache.get(pm, 'quadruped12', partNames, 1);
+  const b = cache.get(pm, 'quadruped12', partNames, 1);
+  ok('VoxelMeshCache: lod=1 cached identity (same pm -> same object, not rebuilt)', a === b);
+  ok('VoxelMeshCache: lod=1 id is vox:<key>@1', a.id === 'vox:quadruped12@1', a.id);
+  // lod=0 and lod=1 caches are independent (different WeakMaps/ids).
+  const lod0 = cache.get(pm, 'quadruped12', partNames, 0);
+  ok('VoxelMeshCache: lod=0 and lod=1 are different mesh objects', lod0 !== a);
+}
+
+// 8.6 (budget, 28.13): LOD1 build is one-time per model and fast. Uses the
+// content 'lever' fixture per the backlog note (small, RTS-lever-proportioned
+// model already used by RE-06/06b/06c); skipped gracefully if not registered.
+{
+  const leverDef = globalThis.ASSETS.voxelModels.lever && globalThis.ASSETS.voxelModels.lever.voxel;
+  if (!leverDef) {
+    console.log('SKIP RE-15b lever timing test (lever content model not found)');
+  } else {
+    const { pm, partNames } = pack(leverDef);
+    const cache = new VoxelMeshCache();
+    const t0 = performance.now();
+    cache.get(pm, 'lever', partNames, 1);
+    const ms = performance.now() - t0;
+    console.log(`[RE-15b] LOD1 build 'lever': ${ms.toFixed(3)} ms (budget <= 5 ms, one-time per model)`);
+    ok('RE-15b: LOD1 build budget (<= 5 ms, one-time per model)', ms <= 5, `${ms.toFixed(3)} ms`);
+    // Second call must not rebuild (memoized) - near-zero time.
+    const t1 = performance.now();
+    cache.get(pm, 'lever', partNames, 1);
+    const ms2 = performance.now() - t1;
+    ok('RE-15b: LOD1 second call is memoized (no rebuild)', ms2 < ms || ms2 < 0.5, `${ms2.toFixed(4)} ms`);
   }
 }
 
