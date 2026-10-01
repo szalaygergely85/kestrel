@@ -353,6 +353,25 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   }
 }
 
+// ---------------------------------------------------------------------------
+// US-138 (architecture.md 32.5): world.wind - content, not state, same
+// convention as bounds/horizon above (built by World.load, never null).
+// ---------------------------------------------------------------------------
+{
+  const baseNoTerrain = { terrain: 'overworld_far', structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 } }], entities: [] };
+  const wCalm = World.load(baseNoTerrain, assets, {});
+  ok('no wind key -> world.wind is a calm field, never null', !!wCalm.wind && typeof wCalm.wind.sampleInto === 'function');
+  const oCalm = [1, 1, 1];
+  wCalm.wind.sampleInto(0, 0, 0, 0, oCalm);
+  ok('calm default world.wind samples to (0,0,0)', oCalm[0] === 0 && oCalm[1] === 0 && oCalm[2] === 0, `${oCalm}`);
+
+  const wDef = { dirDeg: 90, speed: 3, gust: { amp: 0.4, periodSec: 2, travel: 6 } };
+  const wWind = World.load({ ...baseNoTerrain, wind: wDef }, assets, {});
+  const oWind = [0, 0, 0];
+  wWind.wind.sampleInto(0, 0, 0, 0, oWind);
+  ok('a world.wind block is picked up by World.load (non-calm sample)', oWind[0] !== 0 || oWind[1] !== 0, `${oWind}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
