@@ -6,7 +6,7 @@
 //
 //   node tools/editor/frame.test.mjs
 
-import { idleSkip } from './frame.js';
+import { idleSkip, editorRenderer } from './frame.js';
 import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
@@ -14,6 +14,16 @@ let fail = 0;
 const failures = [];
 
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
+
+// ---- ED-MESH-1b: editorRenderer (param x default) ----
+{
+  const P = (v) => new URLSearchParams(v ? `renderer=${v}` : '');
+  ok('?renderer=mesh, default dda -> mesh', editorRenderer(P('mesh'), 'dda') === 'mesh');
+  ok('?renderer=dda, default mesh -> dda', editorRenderer(P('dda'), 'mesh') === 'dda');
+  ok('absent, default dda -> dda', editorRenderer(P(''), 'dda') === 'dda');
+  ok('absent, default mesh -> mesh', editorRenderer(P(''), 'mesh') === 'mesh');
+  ok('junk value falls back to the default', editorRenderer(P('x'), 'mesh') === 'mesh');
+}
 
 // ---- dirty (a camera move / world reload / toggle) -> render once, then idle ----
 {

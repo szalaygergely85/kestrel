@@ -5,13 +5,13 @@
 import {
   AssetRegistry, createEngine, GRID_DEFAULT_COLS, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
-  DebugOverlay, drawText, validateVoxelModel,
+  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
-import { createFrame } from './frame.js';
+import { createFrame, editorRenderer } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
 import { unprojectCell, rayPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
@@ -195,6 +195,7 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 const engine = createEngine({
   canvas, assets, cols: gridFromParam(params, GRID_DEFAULT_COLS), rays: 1,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
+  shadows: { sun: params.get('renderer') === 'mesh' && params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
@@ -204,7 +205,8 @@ const gpuDevSwitch = params.get('gpu') === '0';
 // BUG-EDITOR-001 fix: `?gpu=0` keeps `rt.backend === 'gl2'` (RenderTarget.js
 // only shrinks the grid for it) - createFrame needs the raw param too, so it
 // can skip constructing GpuCellPipeline the same way main.js does.
-const frame = createFrame({ engine, assets, rt, gpuParam: !gpuDevSwitch });
+const frame = createFrame({ engine, assets, rt, gpuParam: !gpuDevSwitch, renderer: editorRenderer(params) });
+const pitchClampDeg = frame.renderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35; // 31.4: per effective renderer
 const gpuReady = rt.backend === 'gl2' && frame.gpuPipeline && frame.gpuPipeline.ready;
 const gpuBlocked = !gpuDevSwitch && !gpuReady;
 if (gpuBlocked) {
@@ -884,7 +886,7 @@ async function doImportVox() {
     frame.markDirty();
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
-    flash(def.meshOnly
+    flash(def.meshOnly && frame.renderer !== 'mesh'
       ? `imported: ${name} (too large for the editor view: mesh-only model, placed but NOT drawn here - only on ?renderer=mesh; max 32 per axis to see it)`
       : `imported: ${name} (click viewport to place)`);
   } catch (e) {
@@ -1325,7 +1327,7 @@ function update(dt) {
   // "discard unless active" precedent as PlayerLook - otherwise a stale
   // delta from before the RMB press would apply as one big jump on drag start.
   const { dx, dy } = input.consumeMouseDelta();
-  const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0 });
+  const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
     savePoseDebounced(cam);
