@@ -309,14 +309,20 @@ class ScaledMeshBuilder {
 }
 
 /**
- * Downsamples one part's box + atlas 2x2x2 (box-local, anchored at the
- * part's own box min - "half-res cell i covers LOD0 cells 2i..2i+1",
- * 28.13 point 5). A LOD1 block is solid if ANY of its (up to 8) covered LOD0
- * cells is solid; its local mat = the most frequent solid mat among them,
- * ties broken by the lowest local mat id. Odd box dims downsample to
- * `ceil(n/2)` (the last LOD1 slab covers a single LOD0 slab) - this, plus an
- * odd box min, is why the LOD1 mesh may be up to 1 LOD0 cell off at an edge
- * (28.13 point 5/6, "odd dims may stick out one cell").
+ * Downsamples one part's box + atlas 2x2x2, ALIGNED TO THE GLOBAL EVEN GRID
+ * (28.13 point 5, RE-15b fix): `x0L = floor(x0/2)`, `x1L = ceil(x1/2)`,
+ * `bxL = x1L - x0L` (same pattern for y, z). Without this alignment, a part
+ * whose box min is odd gets its downsample shifted by one cell relative to
+ * neighbouring parts/world space, since "box-local cell i covers LOD0 cells
+ * 2i..2i+1 of the BOX" silently assumed the box min itself sits on an even
+ * boundary. A LOD1 block is solid if ANY of its (up to 8) covered LOD0 cells
+ * is solid; its local mat = the most frequent solid mat among them, ties
+ * broken by the lowest local mat id. Because the even-grid window can extend
+ * outside the original box (when x0 is odd, or bx is odd), each sampled
+ * box-local source cell is bounds-checked (`cx < 0 || cx >= bx`, same for
+ * y/z) and skipped (treated as empty) when out of range - this is what
+ * prevents a LOD1 block from reading stale/out-of-bounds atlas data or
+ * being marked solid purely from the alignment padding.
  * @param {PackedVoxelModel} pm
  * @param {number} p
  * @returns {{x0:number,y0:number,z0:number,x1:number,y1:number,z1:number,bx:number,by:number,bz:number,vox:Uint8Array}}
@@ -328,8 +334,9 @@ export function downsamplePart(pm, p) {
   const atlasOff = pm.parts[base + 10];
   const bx = pm.parts[base + 11], by = pm.parts[base + 12], bz = pm.parts[base + 13];
 
-  const bxL = Math.ceil(bx / 2), byL = Math.ceil(by / 2), bzL = Math.ceil(bz / 2);
   const x0L = Math.floor(x0 / 2), y0L = Math.floor(y0 / 2), z0L = Math.floor(z0 / 2);
+  const x1L = Math.ceil(x1 / 2), y1L = Math.ceil(y1 / 2), z1L = Math.ceil(z1 / 2);
+  const bxL = x1L - x0L, byL = y1L - y0L, bzL = z1L - z0L;
   const vox = new Uint8Array(bxL * byL * bzL);
 
   // Local-mat histogram scratch, reused per block (0 unused: 0 = empty).
@@ -340,14 +347,14 @@ export function downsamplePart(pm, p) {
         let any = 0, touched = 0;
         const touchedIds = [];
         for (let dz = 0; dz < 2; dz++) {
-          const cz = lz * 2 + dz;
-          if (cz >= bz) continue;
+          const cz = 2 * (z0L + lz) + dz - z0;
+          if (cz < 0 || cz >= bz) continue;
           for (let dy = 0; dy < 2; dy++) {
-            const cy = ly * 2 + dy;
-            if (cy >= by) continue;
+            const cy = 2 * (y0L + ly) + dy - y0;
+            if (cy < 0 || cy >= by) continue;
             for (let dx = 0; dx < 2; dx++) {
-              const cx = lx * 2 + dx;
-              if (cx >= bx) continue;
+              const cx = 2 * (x0L + lx) + dx - x0;
+              if (cx < 0 || cx >= bx) continue;
               const m = pm.vox[atlasOff + cx + bx * (cy + by * cz)];
               if (m === 0) continue;
               any = 1;

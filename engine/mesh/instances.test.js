@@ -242,6 +242,44 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   }
 }
 
+// ---- RE-15a fixes (PC-B Q7 item 1b): omitted frameNo never memoizes ----------
+// Two calls with NO frameNo argument, after moving an instance between them,
+// must both reflect the moved position - `frameNo !== this._lastFrameNo` alone
+// is false on two `undefined` calls in a row, so the fix needs an explicit
+// `typeof frameNo === 'number'` memo gate.
+{
+  const PL = new Float64Array([
+    1, 0, 0, 5, -1, 0, 0, 5, 0, 1, 0, 5, 0, -1, 0, 5, 0, 0, 1, 1000, 0, 0, -1, 1000,
+  ]);
+  const groups = new InstanceGroups();
+  groups.bindPool(pool);
+  const cache = new VoxelMeshCache();
+  const g = groups.group('lever', 4);
+  writeUnitInstance(g.ib, 0, -2, 0, 0, 0, UNIT_OBJECT_BASE | 0, 0); // inside
+  g.count = 1;
+
+  const list1 = new DrawList(4);
+  list1.begin();
+  groups.addToDrawList(list1, cache, PL, undefined); // no frameNo -> no memo
+  ok('no-frameNo call 1: instance inside -> 1 survivor', list1.items[0].instCount === 1);
+  const x1 = list1.items[0].instBuf.f32[3];
+  ok('no-frameNo call 1: survivor at the original position', x1 === -2);
+
+  // Move the instance far outside the frustum, then call again with no frameNo.
+  writeUnitInstance(g.ib, 0, 900, 0, 0, 0, UNIT_OBJECT_BASE | 0, 0);
+  const list2 = new DrawList(4);
+  list2.begin();
+  groups.addToDrawList(list2, cache, PL, undefined); // no frameNo again
+  ok('no-frameNo call 2: did not reuse call 1\'s memo - instance now culled', list2.count === 0);
+
+  // And moving it back inside is picked up on a third no-frameNo call.
+  writeUnitInstance(g.ib, 0, 3, 0, 0, 0, UNIT_OBJECT_BASE | 0, 0);
+  const list3 = new DrawList(4);
+  list3.begin();
+  groups.addToDrawList(list3, cache, PL, undefined);
+  ok('no-frameNo call 3: reflects the instance moved back inside', list3.items[0].instCount === 1 && list3.items[0].instBuf.f32[3] === 3);
+}
+
 // ---- zero allocation: 1000 x (writeUnitInstance x 200 + group frame) ---------
 // RE-15a: a real (encompassing) frustum + an incrementing frameNo, so every
 // call actually runs the per-instance classifyAABB + u32-copy compaction

@@ -143,7 +143,6 @@ export class GpuCellPipeline {
     // binding yet, so a dev harness/main.js owns pushInstance()).
     this._voxelPool = null;
     this._instances = null; // RE-06: InstanceGroups (engine.instances), set by bindInstances()
-    this._frameNo = 0; // RE-15a (28.13 point 4): increments once per frame(), fed to InstanceGroups.addToDrawList's memo
 
     // Registered once, up front, regardless of whether init below succeeds -
     // a lost context is possible even on a pipeline that never became ready
@@ -962,7 +961,6 @@ export class GpuCellPipeline {
   frame(fb, light, cam, world) {
     // RE-02a (28.1): 'pitched' only exists on the mesh renderer - fail loudly at the entry.
     if (cam) assertProjectionRenderer(cam, this.renderer);
-    this._frameNo++; // RE-15a (28.13 point 4): once per GPU-pipeline-rendered frame
     this._fb = fb;
     this._light = light;
     this._cam = cam || null;
@@ -1644,11 +1642,12 @@ export class GpuCellPipeline {
       addVoxelInstances(list, voxelPool, sharedVoxelMeshCache, voxelPool.partNamesFor);
     }
     // RE-06 (28.6): instanced unit groups, after the ME-08 voxel items, before the cull.
-    // RE-15a (28.13): per-instance cull + compaction, memoized on `this._frameNo` (incremented once
-    // per `frame()` call - `?gpucompare=1&renderer=mesh` calls `frame()` and the JS mesh twin once
-    // each per pose, in step, so both see the same value and the twin's call re-pushes this cache).
+    // RE-15a fixes (28.13 point 4, PC-B Q7 item 1): per-instance cull + compaction, memoized on the
+    // host-owned `this._fb.frameNo` (bumped once per actual rendered frame by the caller - main.js's
+    // render tick / gpucompare's per-pose bump - not by this pipeline), so the GPU pass and the JS mesh
+    // twin (`compositor.js`'s `renderWorldMesh`) share one counter instead of two independent ones.
     if (this._instances) {
-      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._frameNo);
+      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo);
       this.stats.instancesCulled = this._instances.stats.instancesCulled;
       this.stats.instancesLod1 = this._instances.stats.instancesLod1;
     }

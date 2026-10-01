@@ -233,13 +233,17 @@ export class InstanceGroups {
    * @param {import('./DrawList.js').DrawList} list
    * @param {import('./voxelMesh.js').VoxelMeshCache} cache
    * @param {Float64Array|null} [planes] - `frustumPlanes` output; omitted/null = no cull (back-compat, keeps all)
-   * @param {number} [frameNo] - the rendered-frame counter; omitted = always recompute (no memo)
+   * @param {number} [frameNo] - the rendered-frame counter; omitted (not a number) = always
+   *   recompute, no memo - every call resets stats and recomputes every group, even back to back
+   *   in the same tick (RE-15a fixes, PC-B Q7 item 1: `frameNo !== this._lastFrameNo` alone let two
+   *   `undefined`-frameNo calls in a row see "unchanged" and wrongly reuse a stale memo).
    */
   addToDrawList(list, cache, planes, frameNo) {
     const pool = this.pool;
     if (!pool) return;
     const groups = this.groups;
-    if (frameNo !== this._lastFrameNo) {
+    const memo = typeof frameNo === 'number';
+    if (!memo || frameNo !== this._lastFrameNo) {
       this._lastFrameNo = frameNo;
       this.stats.instances = 0;
       this.stats.instancesCulled = 0;
@@ -251,7 +255,7 @@ export class InstanceGroups {
       const pm = pool.models.get(g.modelKey);
       if (!pm) continue;
       const mesh = cache.get(pm, g.modelKey, pool.partNamesFor(g.modelKey));
-      if (g._memoFrameNo !== frameNo) {
+      if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
         const R = groupRadius(mesh, g.parts);
         g.drawCount[0] = compactGroup(g, planes, R);

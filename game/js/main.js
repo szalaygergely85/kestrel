@@ -905,6 +905,7 @@ function runGame(mode) {
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
+      fb.frameNo = (fb.frameNo || 0) + 1; // RE-15a: one host-owned counter for instances.js addToDrawList's memo
       renderWorld(fb, engine.world, cam);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from

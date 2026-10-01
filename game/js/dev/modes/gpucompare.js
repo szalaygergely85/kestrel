@@ -361,6 +361,10 @@ function runGpuCompareDdaMode(ctx) {
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
     instances: compareInstances,
+    // RE-15a fixes (28.13 point 4, PC-B Q7 item 1): host-owned "rendered frame" counter,
+    // bumped once per pose below, before both twins (GPU + JS) run for that pose - replaces
+    // the two independent per-caller counters compositor.js/GpuCellPipeline.js used to keep.
+    frameNo: 0,
   };
   const compareSceneDim = createSceneDim();
 
@@ -404,6 +408,7 @@ function runGpuCompareDdaMode(ctx) {
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
     if (overlayOps) overlayOps(engine.overlay);
     poisonAllCells(rt.cells, n);
+    fbCompare.frameNo++; // RE-15a fixes: once per pose, before both twins run (see fbCompare init above)
     fbCompare.gpuDda = true;
     renderWorld(fbCompare, world, cam);
     gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
