@@ -32,7 +32,7 @@
 // engine/physics/bvh.js at runtime (27.18: no rule against it - engine/mesh
 // never imports engine/world, so there is no cycle).
 import { buildLevelMesh } from '../mesh/levelMesh.js';
-import { buildBvhFromMesh, refit } from '../physics/bvh.js';
+import { buildBvh, buildBvhFromMesh, refit } from '../physics/bvh.js';
 
 /** @typedef {import('../physics/meshCollide.js').MeshCollider} MeshCollider */
 
@@ -59,6 +59,67 @@ function meshesEqual(a, b) {
     && typedArrayEqual(a.nrm, b.nrm)
     && typedArrayEqual(a.flat, b.flat)
     && typedArrayEqual(a.aux, b.aux);
+}
+
+
+/** Structures:tags already warned about for a bad `topH` (one warn per key). */
+const _warnedBarrierTopH = new Set();
+
+/**
+ * 27.18b: vertical barrier quads on every edge of the dynamic sector `ch`'s
+ * cells that faces the open sky (grid edge, or a non-solid neighbour with
+ * `ceilH: 'sky'`), spanning z0..topH. `levelMesh` emits no face there (rule 3
+ * needs a numeric neighbour ceilH), so the closed grate would be walk-through.
+ * Same corner order/winding as `levelMesh.emitWall` for the face pointing out
+ * of the dyn cell. Positions are float32-rounded like the mesh's. Build time
+ * only (allocates). Appends 18 numbers per edge (2 tris, non-indexed) to `out`.
+ * @param {import('./Level.js').Level} level
+ * @param {string} ch legend char of the dynamic sector
+ * @param {number} z0 bottom edge (the sector's current ceilH, or a sentinel)
+ * @param {number[]} [out]
+ * @returns {number[]}
+ */
+export function dynBarrierQuads(level, ch, z0, out = []) {
+  const sec = level.legend[ch];
+  const topH = sec && sec.topH;
+  if (typeof topH !== 'number' || !(topH > sec.dynamic.ceilOpen)) {
+    const key = `${level.name}:${sec && sec.tag}`;
+    if (!_warnedBarrierTopH.has(key)) {
+      _warnedBarrierTopH.add(key);
+      console.warn(`engine/world/colliders.js: "${key}": dynamic sector needs a numeric topH > dynamic.ceilOpen for its barrier quads; none emitted (content error).`);
+    }
+    return out;
+  }
+  const zb = Math.fround(z0), zt = Math.fround(topH);
+  const corners = [0, 1, 2, 0, 2, 3];
+  const push = (p12) => { for (const c of corners) out.push(p12[c * 3], p12[c * 3 + 1], p12[c * 3 + 2]); };
+  const open = (c, r) => {
+    if (!level.inBounds(c, r)) return true;
+    const n = level.legend[level.rows[r][c]];
+    if (!n) return true;
+    if (n.solid || (n.dynamic && n.tag === sec.tag)) return false;
+    return n.ceilH === 'sky';
+  };
+  for (let r = 0; r < level.height; r++) {
+    for (let c = 0; c < level.width; c++) {
+      if (level.rows[r][c] !== ch) continue;
+      // neighbour west (face W), east (E), north (N), south (S) - emitWall's layouts
+      if (open(c - 1, r)) push([c, r, zb, c, r, zt, c, r + 1, zt, c, r + 1, zb]);
+      if (open(c + 1, r)) push([c + 1, r + 1, zb, c + 1, r + 1, zt, c + 1, r, zt, c + 1, r, zb]);
+      if (open(c, r - 1)) push([c + 1, r, zb, c + 1, r, zt, c, r, zt, c, r, zb]);
+      if (open(c, r + 1)) push([c, r + 1, zb, c, r + 1, zt, c + 1, r + 1, zt, c + 1, r + 1, zb]);
+    }
+  }
+  return out;
+}
+
+/** Static-layout pos with the tag's barrier quads appended (z0 = `z0`). */
+function posWithBarriers(mesh, level, ch, z0) {
+  const extra = dynBarrierQuads(level, ch, z0);
+  const pos = new Float64Array(mesh.pos.length + extra.length);
+  pos.set(mesh.pos, 0);
+  pos.set(extra, mesh.pos.length);
+  return pos;
 }
 
 /** One MeshCollider from a MeshData (static layout, idx === null), or null if it has no triangles. */
@@ -110,8 +171,10 @@ function refitColliderInPlace(collider, ceilH) {
 function rebuildDynColliderFallback(collider, structure, tag) {
   const set = buildLevelMesh(structure.level);
   const dynEntry = set.dyn.find((d) => d.tag === tag);
-  if (!dynEntry || dynEntry.mesh.triCount === 0) { collider.enabled = false; return; }
-  collider.bvh = buildBvhFromMesh(dynEntry.mesh, collider._matrix12);
+  if (!dynEntry) { collider.enabled = false; return; }
+  const ch = structure.tagMap.get(tag);
+  const pos = posWithBarriers(dynEntry.mesh, structure.level, ch, structure.level.legend[ch].ceilH);
+  collider.bvh = buildBvh(pos, null, collider._matrix12);
   refreshAabb(collider);
   collider.enabled = true;
 }
@@ -145,7 +208,9 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
     }
     const normalSet = buildLevelMesh(level); // level is back at currentCeilH here
     const normalDyn = normalSet.dyn.find((d) => d.tag === tag);
-    const collider = colliderFromMesh(key, normalDyn ? normalDyn.mesh : null, matrix12);
+    if (!normalDyn) return null;
+    const fbPos = posWithBarriers(normalDyn.mesh, level, ch, currentCeilH);
+    const collider = colliderFromMesh(key, { triCount: fbPos.length / 9, pos: fbPos, idx: null }, matrix12);
     if (!collider) return null;
     collider._matrix12 = matrix12;
     collider._fallback = true;
@@ -153,15 +218,17 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
   }
 
   const dynEntry = sentinelSet.dyn.find((d) => d.tag === tag);
-  if (!dynEntry || dynEntry.mesh.triCount === 0) return null;
+  if (!dynEntry) return null;
   const mesh = dynEntry.mesh;
-  const vertexCount = mesh.pos.length / 3;
+  // 27.18b: barrier quads built with z0 = sentinel so trackCeil marks them too.
+  const allPos = posWithBarriers(mesh, level, ch, sentinel);
+  const vertexCount = allPos.length / 3;
   const trackCeil = new Uint8Array(vertexCount);
   for (let i = 0; i < vertexCount; i++) {
-    if (mesh.pos[i * 3 + 2] === sentinel) trackCeil[i] = 1;
+    if (allPos[i * 3 + 2] === sentinel) trackCeil[i] = 1;
   }
 
-  const bvh = buildBvhFromMesh(mesh, matrix12);
+  const bvh = buildBvh(allPos, null, matrix12);
   const collider = {
     id: key,
     kind: /** @type {'trimesh'} */ ('trimesh'),
@@ -171,7 +238,7 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
     enabled: true,
     // ME-11a refit bookkeeping - not part of the 27.17 MeshCollider typedef,
     // read only by refitDynCollider/refitColliderInPlace in this module.
-    _pos: Float64Array.from(mesh.pos),
+    _pos: allPos,
     _idx: null,
     _matrix12: matrix12,
     _trackCeil: trackCeil,

@@ -12,9 +12,10 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
-import { refitDynCollider } from './colliders.js';
+import { refitDynCollider, dynBarrierQuads } from './colliders.js';
 import { buildLevelMesh } from '../mesh/levelMesh.js';
-import { buildBvhFromMesh } from '../physics/bvh.js';
+import { isSectorPassable } from '../physics/capsule.js';
+import { buildBvh } from '../physics/bvh.js';
 import paletteMod from '../../design/palette.js';
 import terrainDef from '../../design/levels/overworld_far.js';
 import lanternMod from '../../design/models/lantern.js';
@@ -126,7 +127,9 @@ ok('deterministic ids/order: [tower, tower:grate]', world.colliders.map((c) => c
     // Fresh, independent build at the same ceilH.
     const fresh = buildLevelMesh(tower.level);
     const freshDyn = fresh.dyn.find((d) => d.tag === 'grate');
-    const freshBvh = buildBvhFromMesh(freshDyn.mesh, matrix12);
+    // 27.18b: a fresh build = rebuilt dyn mesh + the barrier quads at the same ceilH.
+    const freshPos = Float64Array.from([...freshDyn.mesh.pos, ...dynBarrierQuads(tower.level, grateCh, ceilH)]);
+    const freshBvh = buildBvh(freshPos, null, matrix12);
 
     const cmp = multisetMatch(collider.bvh, freshBvh);
     worstErr = Math.max(worstErr, cmp.maxErr);
@@ -213,6 +216,68 @@ ok('deterministic ids/order: [tower, tower:grate]', world.colliders.map((c) => c
     JSON.stringify(floorMismatches.slice(0, 5)));
   ok('supportAt.ceilH matches world.ceilAt on every walkable cell (known grate/sky diff excepted)', ceilMismatches.length === 0,
     JSON.stringify(ceilMismatches.slice(0, 5)));
+}
+
+// ---------------------------------------------------------------------------
+// 4b. 27.18b barrier quads: block parity with the grid, tri count, no warn
+// ---------------------------------------------------------------------------
+
+{
+  const grateCh = tower.tagMap.get('grate');
+  const sector = tower.level.legend[grateCh];
+  const saved = sector.ceilH;
+  const opts = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(toRad(50)) };
+  const o = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0, overflow: false };
+  // Walk a 0.3 m circle along the grate row from x0 to x1 in 0.02 m steps; returns the x it stops at (or the end x).
+  function walkX(w, st, x0, x1, footZ) {
+    const y = st.origin.y + 10.5, dir = Math.sign(x1 - x0), step = 0.02;
+    let x = st.origin.x + x0;
+    const end = st.origin.x + x1;
+    for (let i = 0; i < 400 && (end - x) * dir > 1e-9; i++) {
+      w.collideCircle(x, y, dir * step, 0, 0.3, footZ, true, opts, o);
+      const moved = o.x - x;
+      x = o.x;
+      if (Math.abs(moved - dir * step) > 1e-6) break;
+    }
+    return x - st.origin.x;
+  }
+  const footZ = tower.origin.z + sector.floorH + 0.001;
+  const anim = (w, t) => w.animateSector('grate', t);
+  // Grid reference: grid physics blocks per cell via isSectorPassable, so the circle stops at the cell edge +- radius when impassable.
+  const gridStop = (fromEast, end, fz = footZ) => (isSectorPassable(sector, fz, true, opts) ? end : (fromEast ? 19.3 : 17.7));
+  anim(world, 0);
+  const fromE = walkX(world, tower, 20.5, 17.5, footZ), gE = gridStop(true, 17.5);
+  ok('closed grate (mesh) blocks from the east within 0.05 m of the grid (19.30)', Math.abs(fromE - gE) <= 0.05 && Math.abs(fromE - 19.3) <= 0.05, `mesh ${fromE} grid ${gE}`);
+  const fromW = walkX(world, tower, 17.5, 20.5, tower.origin.z + 3.3), gW = gridStop(false, 20.5, tower.origin.z + 3.3);
+  ok('closed grate (mesh) blocks from the west within 0.05 m of the grid', Math.abs(fromW - gW) <= 0.05 && fromW < 18 && Math.abs(fromW - 17.7) <= 0.05, `mesh ${fromW} grid ${gW}`);
+  let allOk = true, detail = '';
+  for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+    anim(world, t);
+    const m = walkX(world, tower, 20.5, 17.5, footZ), g = gridStop(true, 17.5);
+    const same = Math.abs(m - g) <= 0.05 && (t < 1 || m <= 17.51);
+    if (!same) { allOk = false; detail += ` t=${t}: mesh ${m} grid ${g};`; }
+    const gc = world.colliders.find((c) => c.id === 'tower:grate');
+    const triN = gc.bvh.triCount;
+    ok(`grate tri count at t=${t} = 10 + 2 x barrier edges (16)`, triN === 16, `tris ${triN}`);
+  }
+  ok('open (t=1) passes; closed..mid-anim blocks equal the grid at footZ = floorH (+-0.05 m)', allOk, detail);
+  anim(world, 0);
+
+  // refit == fresh rebuild + barriers is covered in section 2; 1000 refits heap growth:
+  const warns = [];
+  const w0 = console.warn; console.warn = (...a) => { warns.push(a.join(' ')); };
+  World.load(assets.world('world_m1'), assets, { physics: 'mesh' });
+  console.warn = w0;
+  ok('no sentinel warning logged on world_m1 load', !warns.some((m) => /sentinel/.test(m)), warns.join(' | '));
+
+  for (let i = 0; i < 3000; i++) { sector.ceilH = sector.floorH + (i % 97) / 97 * 2.4; refitDynCollider(world, tower, 'grate'); }
+  global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1000; i++) { sector.ceilH = sector.floorH + (i % 89) / 89 * 2.4; refitDynCollider(world, tower, 'grate'); }
+  global.gc();
+  const grew = process.memoryUsage().heapUsed - before;
+  sector.ceilH = saved; refitDynCollider(world, tower, 'grate');
+  ok('1000 refits with barriers: no significant heap growth', grew < 64 * 1024, `grew ${grew} bytes`);
 }
 
 // ---------------------------------------------------------------------------
