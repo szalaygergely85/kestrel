@@ -3365,6 +3365,15 @@ If a future pose exceeds 0.5 % outside or < 99.9 % glyph match, that is a real b
 
 **28.11b (only if the owner still sees 2 m staircases at type borders after 28.11a).** Dither the render-only type lookup (terrain.vert.js `terrainTypeAt` + rasterJS `kind7Mat`) by +-0.5 texel with a fine world hash. Physics `typeAt` stays as it is. Separate 0.5 d step, not planned now.
 
+**28.11c BUG-FP-002 per-cell hash size (normative; architect, 2026-10-01; supersedes 28.11a items 3 and 5 for pitched frames).**
+1. On every pitched frame both twins send `hashCell = -k`, `k = 2 * tanHalfX / cols` (ground metres per column per metre of view distance). Shear frames send 0 (unchanged).
+2. `hashCell < 0` = per-cell mode: `cellSz = 8` if a near band exists and `t >= handover[1]`, else `clamp(2^ceil(log2(max(t*k, 1e-6))), 0.125, 2)` (JS: `perCellHashSize` in terrainShade.js; GLSL: terrain.frag.js, same expression and branch order). `hashCell > 0` (fixed cell) and `0` (2/8 m bands) keep the 28.11a meaning.
+3. Accepted: per-fragment cell size (28.11a item 5 lifted for this mode). Power-of-two cells nest, so a depth doubling only swaps the pattern along one contour, no block seam. The contour moves with the camera; a cross-fade/dither at the step is a follow-up only if the owner sees it.
+4. `pitchedHashCell()` is no longer called per frame; it stays exported for tools/tests, deprecated, removed with the next projection.js cleanup.
+5. gpucompare: shear/dda poses identical. Pitched and pitchedDefault mesh poses use the 28.11a pitched gate (outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64, fgMax reported only). GPU log2/float32 vs JS double flips cells at the doubling contours (same boundary class as 28.11a). Baseline: the 2026-09-30 b72c3b9 run.
+6. Tests: terrainShade.test.js per-cell sizes (0.125 / 0.5 / 2 / 8 past handover) and hashCell 0 byte-identical; glsl.test.js expression twin.
+7. Do not: key the hash on screen cells, change typeAt/physics, or reuse the sign of `hashCell` for anything else.
+
 ### 28.12 ME-22 large voxel models, mesh-only (normative; architect, 2026-09-30; PC-B, ends in arch-review)
 The 32/axis, 4096-voxel, axis-sum-48 limits exist only for voxelMarch/voxel.frag + VoxelTextures (16 slots). The mesh path (voxelMesh greedy mesh, RE-06b 32 B verts + u16/u32 index, RE-06c cull) does not need them. ME-19 later deletes the old limits entirely.
 1. **Marking = explicit flag**, never automatic: ModelDef `voxel.meshOnly: true` (JSON-safe bool, default false; same key in `.model.json`). A def over the old limits without the flag stays an error (message names the flag). Reason: silent auto-promotion would make a typo'd size vanish from `?renderer=dda` without anyone noticing.
@@ -3396,3 +3405,167 @@ Background: 28.6-28.10. Unit cost is per triangle; today only the whole group is
 **Bench AC (RE-15c, Intel iGPU, 400x150):** `?bench=1&units=200&lod=8` vs `units=0`, RE-06b views: raster-pass p50 delta <= 0.65 ms binding, goal 0.44. Plus one RTS view (`game/rts-test.html?bench=1`) where delta <= 0.44 binding. Record drawn/culled/lod1 next to the ms.
 **Steps:** RE-15a cull + compaction + memo + stats (0.5 d, PC-B, pure JS engine/mesh + 1-line caller edits). RE-15b LOD1 mesh build + cache (0.5 d, PC-B). RE-15c LOD selection/hysteresis + 2 items per group + unitsView/harness opt-in + gpucompare pose + bench (0.5 d, PC-A: GPU check and bench on the iGPU).
 **Do not:** cull or pick LOD in the vertex shader or the game view; write into the game's `g.ib`; allocate per frame (subarray, closures, per-frame arrays); recompute on the second twin call; add new GLSL or change `mesh.vert.js`; pick LOD by metres alone; add LOD2/impostors or decimation (later); turn LOD on by default in the engine; widen any gpucompare threshold; touch ME-08 `DRAW_VOXEL`/VoxelPool culling (ME-17 owns the rest).
+
+## 29. M3 openers: US-079a beast brain + nav chase, US-128 Z-targeting (architect, 2026-10-01; PC-B game side, PC-A camera)
+
+Both stories are **game** code on top of existing engine exports (`NavGrid`, `createAStar`, `findPath`, `smoothPath`, `createSteer`, `createRng`, `createHasher`, `SIM_STEP`, `hasLineOfSight`, `engine.overlay`, `PlayerLook`, `HFOV_DEG`, `PHYSICS`). Only two small engine steps are new: **RE-05c** (nav drop rule) and **US-128a** (look lock + input keys). The game imports only `engine/index.js` and never `game/js/rts/` (copy patterns only).
+
+### 29.1 US-079a beast brain + nav chase (PC-B; engine step RE-05c first)
+
+PO 2026-10-01: answers to 29 questions: all accepted - content in `components.brain {kind, home}` + `components.targetable`; returnSpeed 1.5 m/s (re-notice allowed); event `combat:hit` {source, target, damage:1}; replay bit-equal within one world load only (AC 7 reworded).
+
+**Decision: the brain is game code** in `game/js/quest/`, not an engine `brain` hook. There is one enemy kind; an engine AI layer waits for a second one. **Walkability does not move into the engine as a new function.** `NavGrid.buildFromWorld` already is the engine API, and `navSetup.js` is a 5-line wrapper the game copies. The only missing piece is a drop rule, which is **RE-05c**.
+
+**RE-05c (PC-B cross-track, ~0.25 d, `engine/nav/NavGrid.js` + test -> arch-review).**
+- New option `maxStepM` for `buildFromWorld` and `buildFromArrays`. Default `Infinity` = today's behaviour.
+- After the per-cell pass, a second pass over `height`: a walkable cell gets `terrainCost 0` if any in-grid 8-neighbour has `|height[j] - height[i]| > maxStepM`.
+- Decide from the first-pass result into a scratch `Uint8Array(N)` (no cascade, order-independent), then apply, then `_recomputeCost()`.
+- Tests: a 1.5 m step fixture blocks both cells at the edge; a 0.9 m step stays walkable; default options give `cost` byte-equal to today on the existing fixtures; check-deps green.
+
+**Files (PC-B):**
+- `game/js/quest/sim/beastConfig.js`: `BEAST_DEFAULTS`, seconds/metres taken from the ACs: `wanderR 6, pauseMin 2, pauseMax 4, walk 1.5, noticeR 12, coneCos 0.5 (120 deg), nearR 3, noticeSec 0.6, chase 4.5, windupR 5, windupSec 0.5, charge 7, chargeMaxSec 1.2, recoverSec 1.0, recoverWallSec 2.0, loseR 20, loseSightSec 5, repathSec 0.5, repathMoveM 2, returnSpeed 1.5, homeArriveR 1, radius 0.45, eyeZ 0.5, targetZ 1.0, losEvery 6`. At create, `toSteps(sec) = Math.round(sec / SIM_STEP)` runs once; every timer is an **integer step counter**.
+- `game/js/quest/sim/sight.js`: `canSee(world, ax, ay, az, bx, by, bz)` calls `hasLineOfSight` on chunks of <= 5 m (20 samples, so <= 0.25 m spacing; the engine caps samples at 20 per call). US-128 uses it too.
+- `game/js/quest/sim/beastNav.js`: `buildBeastNav(world, navCfg)` returns `{grid, astar}`. It runs `new NavGrid({x0,y0,w,h,cell})` + `buildFromWorld(world, {maxSlopeDeg, maxStepM, blockedTypes})` with the content `nav` values (below). Load time, may allocate.
+- `game/js/quest/sim/beastSim.js`: `createBeastSim(world, {nav, rng, events, cfg?})` returns the sim, or `null` if no entity has `components.brain.kind === 'beast'`.
+- `game/js/quest/beastView.js` (presentation, outside `sim/`): `presentBeasts(sim, world, overlay, styleIds)` writes `transform.yawDeg = atan2(fx, -fy)` in degrees and draws the `!` marker as a 1-cell `overlay.bar` with style `beastNotice`. This is the only place trig is allowed.
+- `design/models/voxel_beast.js`: placeholder `boarPlaceholder` voxel model (~1.0 x 0.5 x 0.7 m), plus one `<script>` line in `game/index.html` (PC-B main session).
+- `content/worlds/world_m1.world.json`:
+  - world-level `"nav": {"area":{"x0":1400,"y0":928,"w":192,"h":192}, "cell":1, "maxSlopeDeg":30, "maxStepM":1, "blockedTypes":["water"], "seed":1}`;
+  - 2 entities like `{"id":"boar1","type":"beast","x":..,"y":..,"z":"ground","components":{"voxel":{"anim":"idle","loop":true,"model":"boarPlaceholder"},"brain":{"kind":"beast","home":[x,y]},"targetable":{"radius":0.5,"height":0.7}}}`.
+  - AC 6's `brain`/`home` go inside `components` because World only keeps components. `targetable` is for US-128.
+- `tools/check-deps.mjs` + fixture: add `game/js/quest/sim/**` to the rule 15 scope.
+
+**Sim API.** All numbers; zero allocation after create.
+- SoA with `maxBeasts = 16`; slot = index in content order = steer slot.
+- Fields: `state Uint8`; `timer Int32` (steps); `unseen Int32`; `repath Int32`; Float64 `homeX/homeY`, `fx/fy` (unit facing), `cdx/cdy` (charge dir), `goalX/goalY` (player position at the last path), `prevX/prevY`; `path Float64Array(16*64*2)`; `pathLen/pathIdx Int32`; `seen Uint8`; `pathReq Uint8`.
+- Methods: `step(px, py, pz)` (player feet position), `hashInto(h)`, `save() -> plain object`, `load(obj)`, `stats {astar, astarNodes}`.
+- One `createSteer({maxAgents:16, bounds: nav area})`.
+- Hit: one preallocated `{source, target:'player', damage:1}` payload per slot, sent with `events.emit('combat:hit', payload)`. The bus is synchronous, so listeners must copy. There is no listener until US-080.
+
+**Fixed-step order inside `step`** (called after `resolveBodyContacts`, before `updateTriggers`):
+1. **Perception** per slot, from `d2` to the player:
+   - If `tick % losEvery == slot % losEvery` and `d <= loseR`: `seen = canSee(beast z + eyeZ -> player z + targetZ)`, and `unseen = seen ? 0 : unseen + losEvery`.
+   - Beyond `loseR`: `seen = 0`, no ray.
+   - `noticed = (d <= noticeR && dot(f, dir) >= coneCos && seen) || d <= nearR`.
+2. **Transitions** (table below); timers count down.
+3. **Paths.** A slot sets `pathReq` when it enters chase/return/wander-walk, when `repath <= 0` and the player has moved > `repathMoveM` from `goal`, or when its path is used up.
+   - **At most one `findPath` per tick** across all beasts: the lowest requesting slot after the last one served (round robin). `maxNodes 3000` (wander 500).
+   - Then `smoothPath` into the slot's path and `repath = toSteps(repathSec)`.
+4. **Steer targets:**
+   - `setWaypoint(slot, wpX, wpY, 0.5)` toward the current waypoint; advance to the next one within 0.6 m.
+   - `steer.maxSpeed[slot]` = the state's speed (0 in notice/windup/recover/pause).
+   - Charge: waypoint `pos + cd*20`, `accel 70`.
+5. `steer.step(SIM_STEP, grid)`. Steering never cuts corners and never enters a `cost 0` cell; that is what keeps beasts off drops and out of the tower footprint.
+6. **Post:**
+   - Charge wall check, from charge step 4 on: moved < `0.35*charge*STEP` on 2 steps in a row = wall.
+   - Contact: `dist2D <= radius + PHYSICS.radius + 0.1` sends the hit.
+   - Facing follows the velocity when speed > 0.1 (`sqrt` normalise); in notice/windup it faces the player.
+   - `z` = the floor of `world.supportAt(x, y, prevZ + 0.6, true, ...)` (terrain/mesh). x/y/z are written into `transform`.
+
+**States:**
+| state | enter | per step | exit |
+|---|---|---|---|
+| wander | start / home reached | pause `rng.int(pauseMax-pauseMin steps + 1) + pauseMin steps`, then pick a point <= `wanderR` from home (rejection sampling in the square, <= 8 draws, walkable cell) and walk at 1.5 | `noticed` -> notice |
+| notice | from wander/return | stop, face the player, `!` drawn | `noticeSec` -> chase |
+| chase | notice / recover | path to the player at 4.5 | `d <= windupR && seen` -> windup; `d > loseR` or `unseen >= toSteps(5)` -> return |
+| windup | | stop, face the player | `windupSec` -> charge, `cd` = unit(player - beast) at that tick |
+| charge | | straight along `cd` at 7 | contact -> recover 1.0; wall -> recover 2.0; `chargeMaxSec` -> recover 1.0 |
+| recover | | stop | timer -> chase (chase's lose checks apply on its first step) |
+| return | | path home at `returnSpeed` | `noticed` -> notice; `<= homeArriveR` -> wander |
+
+The RNG is drawn only in wander, in slot order. No `Math.random`, wall clock or trig (rule 15).
+
+**Determinism + replay tests** (`beastSim.test.js`, Node, real world_m1 load like `game/js/quest/tower.test.js`):
+1. Scripted player positions drive every transition: in cone, out of cone, behind the tower, > 20 m, hidden 5 s, wall hit, and contact (exactly one `combat:hit`).
+2. 5 scripted chases from the far side of the tower reach contact within 30 s. The beast is never in a `cost 0` cell, and its z stays within 0.1 m of `supportAt`.
+3. 600 steps with a scripted player path, run twice from a fresh load. The hash (`h.u32(tick)`, `rng.hashInto`, `steer.hash()`, `sim.hashInto`) is equal at every 60-step checkpoint and at the end.
+4. `save()` at step 300, then `load` into a fresh sim: same hash at 600.
+5. The RE-05c drop fixture through `buildFromArrays`.
+
+Known limit (as in 28.2): LOS and z read `groundAt`, so replays are bit-equal for one world load, not across machines.
+
+**Budget:** 8 beasts chasing, in Node: `step` mean <= 0.1 ms, p95 (ticks that run an A*) <= 0.3 ms. Zero allocation over 10k steps (`--expose-gc` heap check, as in the nav tests). Perf asserts are warn-only unless `PERF_STRICT=1`.
+
+**main.js (PC-B main session: 7 lines, plus 1 line in index.html):**
+1. `import { createBeastSim } from './quest/sim/beastSim.js';`
+2. `import { presentBeasts } from './quest/beastView.js';` (and add `createRng` to the existing engine import).
+3. At boot: `engine.overlay.setStyles(questOverlayStyles(assets.uiStyle));`. Placeholders live in `game/js/quest/overlayStyles.js`, keys `beastNotice, target, targetFade, targetBarFill, targetBarEmpty, targetNone`.
+4. On world load/restart, next to `playerHandle`: `beasts = createBeastSim(engine.world, { nav: worldContent.nav, rng: createRng(worldContent.nav?.seed ?? 1), events: engine.events });`
+5. In `update`, after `resolveBodyContacts`: `if (beasts) beasts.step(pt.x, pt.y, pt.z);`
+6. In `render`, right before the RE-07 overlay flush: `engine.overlay.clear();`
+7. Right after that: `if (beasts) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);`
+
+**Do not:**
+- add a brain hook or game rules to `engine/`;
+- import `game/js/rts/`;
+- run A* every step, or per beast per tick;
+- use float timers;
+- iterate `Map`s in the sim;
+- let `beastView.js` write any sim state other than `yawDeg`.
+
+### 29.2 US-128 Z-targeting (US-128a PC-A engine, US-128b PC-B game)
+
+PO 2026-10-01: answers to 29 questions: all accepted - ring fade = 0.2 s dimmer `targetFade` colour (designer colour needed); no-target tick = two 1-cell `x` at crosshair +-2 cols, `targetNone`; locked mouse = 25 % into an offset clamped +-20 deg yaw / +-10 deg pitch, no decay (owner tunes at feel check).
+
+**US-128a (PC-A, ~0.5 d, `engine/core/playerLook.js`, `engine/core/input.js` + tests -> arch-review).**
+- The `PlayerLook` constructor `opts` gain `lockTurnDegPerSec = 360`, `lockMouseScale = 0.25`, `lockOffsetYawDeg = 20` and `lockOffsetPitchDeg = 10`.
+- `look.setLockPoint(ex, ey, ez, tx, ty, tz)`: call every step while locked, **before** `update(dt)`.
+  - `lockYaw = atan2(dx, -dy)` in degrees, wrapped to [0, 360). Compass: 0 = N = -y, clockwise. It must match Player's forward (asserted in the test).
+  - `lockPitch = atan2(dz, sqrt(dx*dx + dy*dy))`.
+  - The first call after a clear sets `lockActive = true` and resets the offsets to 0.
+- `look.clearLock()` sets `lockActive = false`. `look.lockActive` is a read-only boolean.
+- `update(dt)` while locked:
+  - mouse/arrow deltas `* lockMouseScale` go into `offYaw/offPitch`, clamped to the offset limits;
+  - aim = `lockYaw + offYaw`, `lockPitch + offPitch`;
+  - yaw moves by the shortest signed delta in (-180, 180], clamped to `+-lockTurnDegPerSec*dt`;
+  - pitch moves the same way, then the existing `pitchClampDeg` clamp applies.
+  - Unlocked: no change.
+- `Input`: add `KeyQ` and `Tab` to `GAME_KEYS` (Tab must not move focus). A `wheel` listener accumulates notches (`sign(deltaY)`); `consumeWheel() -> int`, no allocation.
+- Tests (`playerLook.test.js`):
+  - target 90 deg to the right: after 10 steps at `SIM_STEP` yaw has moved exactly 60 deg, after 15 steps exactly 90;
+  - wrap across 0/360 takes the short way;
+  - pitch stops at 70 with `pitchClampDeg 70`;
+  - mouse at 25 %, with the offset clamp;
+  - `clearLock` restores full mouse;
+  - the yaw formula agrees with Player's forward vector for 8 compass points.
+
+**US-128b (PC-B, ~1 d, after US-079a + US-128a): `game/js/quest/targeting.js` + test.**
+`createTargeting(world, events, cfg)`. `cfg` defaults: `range 15, breakRange 20, losLostSec 1.0, fadeSec 0.2, noTargetSec 0.3, maxTargets 16, losEvery 6, hfovDeg HFOV_DEG`. Candidates are entities with `components.targetable {radius, height}`. They are kept in a preallocated array that is rebuilt at load and on `entity:added/removed` (events), never per step.
+- **Selection (`Q` while unlocked):**
+  - Eye = player x, y, z + eyeH. Forward = unit vector from look yaw/pitch (one `sin/cos` per step; this is the input side, not lockstep sim).
+  - A candidate is valid if its 3D distance to its centre (`z + height/2`) is <= `range`, its horizontal yaw offset is <= `hfovDeg/2`, and it is alive (`health.hp > 0`, or no `health`).
+  - Score = `1 - dot(forward, dir)` (closest to the screen centre). Valid candidates are insertion-sorted into an `Int32Array(16)` by (score, dist, list order).
+  - `canSee` (29.1 `sight.js`) runs in that order; the first visible candidate wins.
+  - None found: `noTargetT = noTargetSec`.
+  - `Q` while locked unlocks (toggle).
+- **Cycle** (`Tab` = right, `Shift+Tab` = left, wheel down = right, wheel up = left): use the signed yaw offset in (-180, 180] of the valid, visible candidates. Right = the smallest offset greater than the current one, else wrap to the smallest. Left is mirrored. The ring moves on the same step.
+- **Each step while locked:**
+  - Break if the entity is gone or `hp <= 0`, if the 3D distance is > `breakRange`, or if `lostSteps >= toSteps(losLostSec)`. `canSee` runs every `losEvery` steps: `lostSteps += losEvery` when hidden, 0 when seen.
+  - Otherwise call `look.setLockPoint(eye..., target centre)`.
+  - On break: `look.clearLock()`, and `fadeT = fadeSec` at the last position.
+- **`present(overlay, ids)` (render):**
+  - Locked: `overlay.ring(x, y, z, radius + 0.2, ids.target)` and `overlay.bar(x, y, z + height + 0.3, hpFrac, 5, ids.targetBarFill, ids.targetBarEmpty)`; `hpFrac = 1` without `health`.
+  - Fading: the ring with `ids.targetFade` (the overlay has no alpha).
+  - No target: two 1-cell `overlay.rect`s at the crosshair column +-2 with `ids.targetNone`.
+- **Slopes and occlusion:** at boot, `engine.overlay.setGroundFn(groundFn)` with `groundFn = (x, y) => world.terrain.groundAt(x, y)`, created once (beasts are outdoors). Ring samples follow the slope (28.9 `OVL_RING_LIFT`). The 28.9 depth test hides them behind terrain and walls, the same as the RE-07 rings.
+- **main.js (PC-B main session, 5 lines):**
+  1. the import;
+  2. create after the world load;
+  3. in `update`, before `look.update(dt)`: `targeting.step(dt, input.pressed('KeyQ'), cycleDir(input), playerHandle.data, look)`, where `cycleDir` = Tab/Shift + `input.consumeWheel()`;
+  4. in `render`, after `presentBeasts`: `targeting.present(engine.overlay, ovlStyles)`;
+  5. `setGroundFn` at boot.
+- **Tests** (`targeting.test.js`, fake world + stub look):
+  - centre weighting beats a nearer but off-centre target;
+  - the range 15 and break 20 edges;
+  - a LOS-hidden candidate is skipped, and a hidden lock breaks after 60 steps, not after 54;
+  - cycle order right/left with wrap;
+  - a dead or removed target breaks the lock;
+  - `noTargetT` is set;
+  - the query for 16 entities takes <= 0.05 ms, with zero allocation over 10k steps;
+  - `overlay.test.js` and the `rtsOverlay` gpucompare pose are unchanged.
+
+**Do not:**
+- turn the camera from game code (use `setLockPoint`);
+- add a text or alpha op to the overlay for this;
+- run `canSee` for every candidate every step;
+- read targeting state from the beast sim (one-way: targeting reads entities).
