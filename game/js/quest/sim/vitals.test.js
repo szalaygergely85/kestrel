@@ -238,6 +238,92 @@ function scriptedRun() {
     a.length === b.length && a.every((v, i) => v === b[i]), JSON.stringify({ a, b }));
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// 7. US-080b mana: starts 20/20; regen +1 per 120 steps; spendMana pauses regen 180 steps; a short spend returns
+//    false, sets manaFlashTick, and changes neither mp nor pause; respawn gives full mp; serialize round trip.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const world = buildWorld([playerEntity()]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+
+  vitals.step(player, false); // tick 1: lazily creates components.mana (this step's own regen++ counts too)
+  ok('mana starts at 20/20', vitals.mp === CFG.startMp && vitals.mpMax === CFG.maxMp, `mp=${vitals.mp}/${vitals.mpMax}`);
+
+  player.components.mana.mp = 10;   // drop below max so regen has somewhere to go
+  player.components.mana.regen = 0; // clean baseline (tick 1 above already bumped it once)
+  for (let i = 0; i < CFG.manaRegenSteps - 1; i++) vitals.step(player, false);
+  ok('no regen tick yet, 1 step before manaRegenSteps', vitals.mp === 10, `mp=${vitals.mp}`);
+  vitals.step(player, false);
+  ok('regen +1 exactly at manaRegenSteps (120)', vitals.mp === 11, `mp=${vitals.mp}`);
+}
+{
+  const world = buildWorld([playerEntity()]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+  vitals.step(player, false);
+
+  const ok1 = vitals.spendMana(5);
+  ok('spendMana(5) succeeds when mp (20) >= 5', ok1 === true && vitals.mp === 15, `ok=${ok1} mp=${vitals.mp}`);
+
+  // During the 180-step pause, no regen tick happens even after manaRegenSteps (120) more steps.
+  for (let i = 0; i < CFG.manaPauseSteps - 1; i++) vitals.step(player, false);
+  ok('mp unchanged 1 step before the 180-step pause ends (no regen during pause)', vitals.mp === 15, `mp=${vitals.mp}`);
+  vitals.step(player, false); // pause reaches 0 this step
+  player.components.mana.regen = 0; // clean baseline (regen keeps counting underneath a pause - zero it here)
+  for (let i = 0; i < CFG.manaRegenSteps - 1; i++) vitals.step(player, false);
+  ok('still 15 one step before a full manaRegenSteps after the pause ended', vitals.mp === 15, `mp=${vitals.mp}`);
+  vitals.step(player, false);
+  ok('regen +1 once manaRegenSteps have elapsed after the pause ended', vitals.mp === 16, `mp=${vitals.mp}`);
+}
+{
+  const world = buildWorld([playerEntity()]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+  vitals.step(player, false);
+
+  const before = { mp: vitals.mp, pause: player.components.mana.pause };
+  const okSpend = vitals.spendMana(25); // > 20 available
+  ok('spendMana returns false when short', okSpend === false, `ok=${okSpend}`);
+  ok('a short spendMana changes neither mp nor pause', vitals.mp === before.mp && player.components.mana.pause === before.pause,
+    `mp=${vitals.mp} pause=${player.components.mana.pause}`);
+  ok('a short spendMana sets manaFlashTick', vitals.manaFlashTick > 0, `manaFlashTick=${vitals.manaFlashTick}`);
+}
+{
+  // Respawn gives full mp (same killAndRespawn helper as the hp respawn tests above).
+  const world = buildWorld([playerEntity()]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, { beasts: { resetAll() {} } });
+  const player = world.get('player').data;
+  vitals.step(player, false);
+  vitals.spendMana(15);
+  ok('mp is 5 right before death', vitals.mp === 5, `mp=${vitals.mp}`);
+
+  killAndRespawn(vitals, player);
+  ok('respawn restores full mp', vitals.mp === CFG.maxMp, `mp=${vitals.mp}`);
+}
+{
+  // Serialize/deserialize round trip of components.mana {mp, max, regen, pause}.
+  const world = buildWorld([playerEntity(0, 0, 0)]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+  vitals.step(player, false);
+  player.components.mana.mp = 7;
+  player.components.mana.pause = 42;
+  player.components.mana.regen = 3;
+
+  const saved = JSON.parse(JSON.stringify(serialize(world)));
+  const world2 = deserialize(saved, assets, {});
+  const mana2 = world2.get('player').data.components.mana;
+  ok('serialize/deserialize round-trips components.mana {mp, max, regen, pause}',
+    !!mana2 && mana2.mp === 7 && mana2.max === CFG.maxMp && mana2.pause === 42 && mana2.regen === 3,
+    JSON.stringify(mana2));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

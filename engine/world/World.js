@@ -15,6 +15,7 @@ import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, refitDynCollider } from './colliders.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector } from '../physics/meshCollide.js';
+import { createWind } from './wind.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -140,6 +141,13 @@ export class World {
     // angle). `World.load` copies `def.horizon` here; `serialize` writes it
     // straight back.
     this.horizon = [];
+    // US-138 (architecture.md 32.5): the wind field - `World.load` builds it
+    // from the optional `def.wind` block (content, not state: never in
+    // `serialize.js`, same convention as `bounds`/`horizon` above). A world
+    // with no `wind` block gets a calm field (speed 0), never `null`, so
+    // every consumer (particles, fire, the player push) can call
+    // `world.wind.sampleInto`/`pushAt` unconditionally.
+    this.wind = createWind(null, 1);
     // RE-11b (architecture.md 28.3, "Save" / CO-5 extension): the sight/fog
     // grid, or `null` (default - every world before this story, and most
     // worlds even after it: `Visibility` needs grid dimensions the GAME
@@ -253,6 +261,10 @@ export class World {
       w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe);
     }
     w.bounds = validateBounds(def.bounds);
+    // US-138 (32.5): built once here, after bounds, before the sun block
+    // below (order doesn't matter to wind itself - it reads nothing else off
+    // `w`). `def.wind` may be absent -> `createWind(null, ...)` -> calm.
+    w.wind = createWind(def.wind, 1);
 
     // CO-2 (coordinates.md 4): the sun is a world property. `def.sun` wins;
     // an ephemeral `?level=` world (no world file) falls back to the first

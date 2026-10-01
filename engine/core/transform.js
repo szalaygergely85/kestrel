@@ -30,6 +30,19 @@ export function wrapDeg(deg) {
 }
 
 /**
+ * Minimum walkable normal.z for a max-slope threshold in degrees:
+ * `cos(slopeDeg * DEG2RAD)`. The one place nav-grid slope thresholds are
+ * converted from degrees to a normal.z comparison value (see
+ * engine/nav/NavGrid.js `buildFromWorld`, rule 15 — deterministic-sim
+ * leaves may not call Math.cos/sin/tan directly).
+ * @param {number} slopeDeg
+ * @returns {number}
+ */
+export function minNormalZFromSlopeDeg(slopeDeg) {
+  return Math.cos(slopeDeg * DEG2RAD);
+}
+
+/**
  * Shortest signed arc from `fromDeg` to `toDeg`, result in (-180, 180].
  * @param {number} fromDeg
  * @param {number} toDeg

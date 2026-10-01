@@ -59,9 +59,10 @@
 //       nav is a leaf module, World is passed into buildFromWorld duck-typed.
 //   15. (RE-14, docs/architecture.md 28.5, WARN only) non-test files under
 //       engine/nav/**, engine/core/{commands,rng,hash,replay}.js,
-//       engine/world/Visibility.js and game/js/rts/sim/** should not use
-//       Math.random, Date.now, performance.now or Math.sin|cos|tan|atan2|
-//       exp|pow|hypot (comments stripped first) - deterministic-sim leaves.
+//       engine/world/Visibility.js, engine/world/wind.js (US-138, 32.0 item
+//       2) and game/js/rts/sim/** should not use Math.random, Date.now,
+//       performance.now or Math.sin|cos|tan|atan2|exp|pow|hypot (comments
+//       stripped first) - deterministic-sim leaves.
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -374,6 +375,10 @@ const CORE_DETERMINISM_FILES = new Set(
   ['commands.js', 'rng.js', 'hash.js', 'replay.js'].map((f) => path.join(CORE_DIR, f)),
 );
 const VISIBILITY_FILE = path.join(WORLD_DIR, 'Visibility.js');
+// US-138 (docs/architecture.md 32.0 item 2): rule 15 scope grows by this one
+// exact file (not a folder) - the wind field's gust math must stay
+// trig-free/wall-clock-free, same reasoning as Visibility.js.
+const WIND_FILE = path.join(WORLD_DIR, 'wind.js');
 const RTS_SIM_DIR = path.join(GAME_DIR, 'js', 'rts', 'sim');
 // US-079a (architecture.md 29.1): the beast brain's sim/ leaves (beastSim.js,
 // beastNav.js, sight.js, beastConfig.js) are deterministic-sim code same as
@@ -384,6 +389,7 @@ function inDeterminismScope(file) {
   if (inDir(file, NAV_DIR)) return true;
   if (CORE_DETERMINISM_FILES.has(file)) return true;
   if (file === VISIBILITY_FILE) return true;
+  if (file === WIND_FILE) return true;
   if (inDir(file, RTS_SIM_DIR)) return true;
   if (inDir(file, QUEST_SIM_DIR)) return true;
   return false;

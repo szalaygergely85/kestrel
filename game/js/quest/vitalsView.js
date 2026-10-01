@@ -81,7 +81,14 @@ function writeSpaces(ui, x0, x1, y, bg) {
  * previous value (`barState`) to detect a damage chip or a gain flash - the caller never passes a "did it change"
  * flag (vitalsConfig's "the view remembers the previous hp and the tick it changed" note).
  */
-function drawBar(ui, key, value, max, style, def, row, simTime) {
+/** `uiStyle.vitals.mp.short`: true during an "on" blink segment within `short.ms` of `flashTick` (steps). Pure. */
+export function shortFlashOn(elapsedMs, short) {
+  if (elapsedMs < 0 || elapsedMs >= short.ms) return false;
+  const segMs = short.ms / (short.blinks * 2);
+  return Math.floor(elapsedMs / segMs) % 2 === 0;
+}
+
+function drawBar(ui, key, value, max, style, def, row, simTime, flashTick) {
   const L = style.layout;
   const totalCells = L.cells;
   const st = getBarState(key);
@@ -104,6 +111,10 @@ function drawBar(ui, key, value, max, style, def, row, simTime) {
 
   const counts = cellCounts(value, max, totalCells);
   const a = lowPulseAmount(value, max, def.low, simTime);
+  // US-080b mana-short flash (uiStyle.vitals.mp.short): 2 blinks in 320 ms, driven by `manaFlashTick` the same
+  // way the hurt edge/kick are driven by `hurtTick` - brackets, label and the empty cells switch to `def.short`;
+  // the fill is unchanged (the design data's own rule).
+  const shortOn = !!(def.short && flashTick && shortFlashOn((simTime - flashTick / 60) * 1000, def.short));
 
   const labelX = L.x + (L.labelCol || 0);
   const openX = L.x + L.openCol;
@@ -112,11 +123,13 @@ function drawBar(ui, key, value, max, style, def, row, simTime) {
   const numberX = L.x + L.numberCol;
 
   const textBg = style.textBg || [0, 0, 0];
-  writeChar(ui, labelX, row, def.label.text[0], def.label.fg, textBg);
-  writeChar(ui, labelX + 1, row, def.label.text[1], def.label.fg, textBg);
+  const labelFg = shortOn ? def.short.label.fg : def.label.fg;
+  writeChar(ui, labelX, row, def.label.text[0], labelFg, textBg);
+  writeChar(ui, labelX + 1, row, def.label.text[1], labelFg, textBg);
   if (openX > labelX + 2) writeSpaces(ui, labelX + 2, openX - 1, row, textBg);
 
-  const bracketFg = def.low && a > 0 ? lerp3(def.brackets.fg, def.low.brackets.fgTo, a) : def.brackets.fg;
+  const bracketFg = shortOn ? def.short.brackets.fg
+    : def.low && a > 0 ? lerp3(def.brackets.fg, def.low.brackets.fgTo, a) : def.brackets.fg;
   writeChar(ui, openX, row, def.brackets.open, bracketFg, textBg);
   writeChar(ui, closeX, row, def.brackets.close, bracketFg, textBg);
   if (closeX > firstX + totalCells - 1 + 1) writeSpaces(ui, firstX + totalCells, closeX - 1, row, textBg);
@@ -135,6 +148,8 @@ function drawBar(ui, key, value, max, style, def, row, simTime) {
       glyph = stage.glyph; fg = stage.fg; bg = def.empty.bg; // chip spec gives no bg - defaults to the empty cell's
     } else if (st.gain && i >= st.gain.from && i < st.gain.to) {
       glyph = def.fill.glyph; fg = def.gain.fg; bg = def.fill.bg;
+    } else if (shortOn) {
+      glyph = def.short.empty.glyph; fg = def.short.empty.fg; bg = def.empty.bg;
     } else {
       glyph = def.empty.glyph; fg = def.empty.fg; bg = def.empty.bg;
     }
@@ -156,15 +171,19 @@ function drawBar(ui, key, value, max, style, def, row, simTime) {
  * @param {Object} style - `ASSETS.uiStyle.vitals`
  * @param {number} simTime - seconds, for the low-HP pulse / chip-gain timing
  * @param {boolean} visible - false on title/map/end/death cards (caller's call)
+ * @param {{manaFlashTick?: number}} [vitals] - US-080b: the sim object, for the mana-short flash timing only
  */
-export function drawVitals(ui, world, style, simTime, visible) {
+export function drawVitals(ui, world, style, simTime, visible, vitals) {
   if (!visible || !style) return;
   const handle = world.get('player');
-  const health = handle && handle.data && handle.data.components && handle.data.components.health;
+  const data = handle && handle.data;
+  const health = data && data.components && data.components.health;
+  const mana = data && data.components && data.components.mana;
   if (!health) return;
   drawBar(ui, 'hp', health.hp, health.max, style, style.hp, style.layout.hpRow, simTime);
-  // style.mp / style.layout.mpRow are already in the design data - US-080b adds `drawBar(ui, 'mp', ...)` here,
-  // no change to this function's own shape or signature needed.
+  if (mana && style.mp) {
+    drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, vitals && vitals.manaFlashTick);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------

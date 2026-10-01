@@ -3740,3 +3740,518 @@ Budget: frame cost = the game's mesh path, with no extra per-frame editor cost. 
 - Editor `rebuild()` passes `{events, terrain: engine.world && engine.world.terrain}` to `World.load` (31.3 "only at boot" depends on it). The 303 ms measured without it was a fresh Terrain + far bake + terrain-mesh prebuild per edit.
 - Rebuild budget stays <= 30 ms for world_m1 on mesh, measured as `rebuild()` + the first frame's `LevelMeshCache` rebuilds (log both). 1d keeps the `World.load` + `setWorld` rebuild (no incremental world patching in the editor). Caches kept across a rebuild: the Terrain and its terrain mesh set (via the reuse above), `sharedVoxelMeshCache` (per packed model), and LevelMeshCache for unchanged Level objects. If it is still over 30 ms after the terrain fix: ASK ARCHITECT with the split (World.load ms / buildLevelMesh ms per structure). The fallback is to reuse the Level object for unchanged structure defs, not cache bookkeeping in the editor.
 - MAX_VOX_INSTANCES (16) is the dda atlas/VOXINST limit, but `VoxelPool.collect` applies it on both renderers, and `addVoxelInstances` walks `pool.list`. So the mesh path really draws only the nearest 16 today, in the game as well. This is accepted for ED-MESH-1 (the warning is expected on world_m1). A per-renderer cap for mesh (e.g. 64, objectId `0x8000|k` stays < 0x10000, the 4-bit planeId slot aliases and is covered by the 31.4(c) AABB guard) is a separate PC-A engine story, not 1c/1d.
+
+## 32. EP-ELEMENTS: particles, water, fire, explosions, wind, fog (architect, 2026-10-01)
+
+Notes for the rows flagged `NEEDS PC-A: architect note` in the epic header (backlog "Epic EP-ELEMENTS"): US-053a+b, US-055a, US-132+133, US-136, US-138, US-139. US-053c, US-055b, US-134, US-135, US-137 and US-140 get no note of their own; the seams they use are defined here. AC changes for the PO are collected in 32.8.
+
+### 32.0 Cross-cutting decisions
+
+1. **Module homes.**
+   - `engine/fx/` (new) holds the particle **sim** only. It is a leaf like `engine/nav/`: it imports only `engine/fx/**` and `engine/core/**`.
+   - The particle **draw** goes in `engine/render/particleLayer.js`, and render reads fx arrays.
+   - World-data sims and queries go in `engine/world/`: `fireGrid.js`, `wind.js`, `explosion.js`, `entityEmitters.js`, and the water regions inside `World.js`.
+   - The capsule impulse goes in `engine/physics/impulse.js`. It imports nothing and touches only `body` fields, so it complies with 27.10 (physics stand-alone).
+   - Particles never read physics. fx never imports world, physics or render. The world and its fields reach fx as duck-typed arguments (`sampleInto(...)`), the same way nav receives World (28.2).
+2. **check-deps (lands with US-053a, PC-A, + fixture case in `tools/check-deps.test.mjs`).**
+   - **New rule 16:** non-test `engine/fx/**` may import only `engine/fx/**` and `engine/core/**`. fx tests may also import `engine/test/**`. Any import that resolves into `engine/fx/` is allowed from render/world/ui/mesh (one-way).
+   - **Rule 15 scope** (WARN; no trig, no `Math.random`, no wall clock) grows by `engine/fx/particles.js`, `engine/world/fireGrid.js` and `engine/world/wind.js` (exact files, not folders). Load-time compile files (`engine/fx/emitterDef.js`) stay out of scope and may use `Math.tan`.
+   - Rule 13 (coord math) applies as usual. Use `forwardOf/rightOf` from `core/transform.js`.
+3. **Renderer scope (D-033).**
+   - Water (055a), fire view (134) and fog (139) are **mesh-only**. On `dda` they are documented no-ops; the sim and queries still run.
+   - Particles go through the sprite pass, which runs on both renderers, so they work on `dda` at no extra cost.
+4. **Determinism (all new sims).**
+   - Fixed step (`STEP` from `core/loop.js`).
+   - Integer step timers.
+   - Iteration by slot or cell index; never `Map`/`Set` iteration in a step.
+   - Zero allocation after create.
+   - `hashInto(h)` on every sim.
+   - **RNG streams (28.5):** each sim owns its own `createRng(seed)` stream. Particles use a presentation stream. The fire grid has its own stream (seed from content), so adding a beast never changes a fire. Nothing draws from the beast stream.
+5. **Events (zero-alloc rule vs `Events.emit`).** `Events.emit` allocates (`Array.from` of the listener set). Per-cell or per-particle bus events are therefore **not allowed**.
+   - Sims expose typed change lists that are valid until their next step (fire: `changes/changeCount`).
+   - The bus is used only for rare, game-relevant facts, with one preallocated payload per channel. Listeners copy the payload (the 29.1/30.1 convention).
+6. **Content homes.**
+   - World/level JSON gains optional blocks `water`, `fire`, `wind`, `fog`. All are validated at load, throw with the offending id, and are content, not state (same as `bounds`/`horizon`).
+   - Level-local coordinates go through the structure frame at load (`localToWorld`, the 90-degree `yawSteps` only).
+   - Designer data (particle presets, fire materials) are classic scripts in `design/`. `main.js` exposes them as `assets.particles` / `assets.fireMaterials`, the way `assets.palette` and `assets.uiStyle` work, not as new AssetRegistry kinds. The engine receives already-resolved numbers and never reads `design/` or palette keys.
+
+### 32.1 US-053a particle sim + US-053b particle draw
+
+**US-053a (PC-A, ~1 d, engine -> arch-review). Files:** `engine/fx/particles.js`, `engine/fx/emitterDef.js`, `engine/world/entityEmitters.js` + tests. Owned as `engine.particles` (createEngine option `particles: {capacity, seed}`).
+- **Pool size: 2048 slots** (PO proposed 2000; rounded to a power of two to match `MAX_INSTANCES_PER_FRAME 2048` in `mesh/instances.js`). Other limits: `MAX_EMITTERS 64` (persistent + transient), `MAX_PARTICLE_DEFS 32`, ramps <= 16 entries.
+- **Memory:** about 160 KB (Float64 SoA, the same convention as `beastSim`/`instances`).
+- **SoA per slot:**
+  - `px,py,pz, vx,vy,vz, kz` (Float64; `kz` = kill-plane z, `-Infinity` when off);
+  - `age, life` (Int32, steps);
+  - `def` (Uint8);
+  - `em` (Int16, emitter slot);
+  - `alive` (Uint8).
+- Allocation is a **ring head** (`head = (head + 1) % cap`). The slot under the head is always the oldest spawn, so "recycle the oldest when full" is O(1) and needs no search. `stats.recycled++` counts each overwritten live slot.
+- **EmitterDef** (content, JSON-able; `defineEmitter` validates and throws per key):
+```js
+/** @typedef {Object} EmitterDef
+ * @property {number} [rate=0]        particles/s while on (0 = burst only)
+ * @property {number} [burst=0]       default count for burst()
+ * @property {[number,number]} life   s, uniform in [min,max]
+ * @property {[number,number]} speed  m/s along the cone
+ * @property {[number,number,number]} [dir=[0,0,1]]  cone axis (normalised at define)
+ * @property {number} [spreadDeg=0]   cone half-angle, < 89
+ * @property {[number,number,number]} [box=[0,0,0]]  spawn jitter half-extents, m
+ * @property {number} [accelZ=0]      m/s^2: + buoyancy (smoke 0.6), - gravity (sparks -9.8)
+ * @property {number} [drag=0]        1/s, pulls velocity toward the wind velocity
+ * @property {number} [wind=0]        0..1 share of the emitter's wind vector
+ * @property {number} [maxLive=64]    per emitter
+ * @property {number|null} [killBelow=null]  m below the spawn z where a particle dies (floor kill-plane)
+ * @property {string} glyphs          ramp over life, e.g. "@Oo. " (' ' = invisible step)
+ * @property {number[][]} colors      ramp over life, [r,g,b] bytes - resolved from palette keys by the CALLER
+ * @property {boolean} [emissive=false]
+ * @property {number} [emissiveFog=0] fog share for emissive particles (0 = unfogged, like sprites' fogMax) */
+```
+- **Define-time compile (`emitterDef.js`, may allocate):**
+  - converts seconds to integer steps (`Math.round(s / STEP)`, min 1);
+  - computes `dragK = min(1, drag*STEP)`;
+  - computes `spreadTan`;
+  - builds an orthonormal basis (a, b) of `dir`;
+  - copies glyph codes and colours into the def table (`Float64Array` record + `Uint8Array` ramps).
+- **API** (all numbers; zero allocation after create; handles are ints):
+```js
+/** @typedef {Object} ParticleSystem   engine.particles
+ * @property {(key:string, def:EmitterDef)=>number} defineEmitter      load time; returns defId
+ * @property {(defId:number, x:number, y:number, z:number)=>number} createEmitter  -1 if no free slot (stats.dropped++)
+ * @property {(h:number, x:number, y:number, z:number)=>void} setEmitterPos
+ * @property {(h:number, dx:number, dy:number, dz:number)=>void} setEmitterDir   optional cone override (sword sparks along the hit normal)
+ * @property {(h:number, on:boolean)=>void} setOn
+ * @property {(h:number, n?:number)=>void} burst
+ * @property {(h:number)=>void} release      stop now, free the slot when its last particle dies
+ * @property {(defId:number, x:number, y:number, z:number, n:number, dx?:number, dy?:number, dz?:number)=>void} burstAt   one-shot: takes a transient emitter slot, auto-released
+ * @property {(wx:number, wy:number, wz:number)=>void} setWind            global wind (053a input)
+ * @property {(h:number, wx:number, wy:number, wz:number)=>void} setEmitterWind  per-emitter override (US-138 fills it)
+ * @property {(field:any, tick:number)=>void} sampleWind   US-138: per live emitter, field.sampleInto(ex,ey,ez,tick,scratch) -> emitter wind (duck-typed, no world import)
+ * @property {()=>void} step                 one fixed step
+ * @property {()=>void} clear                world load / restart
+ * @property {(h:any)=>void} hashInto
+ * @property {number} cap
+ * @property {Float64Array} px  (read-only SoA for the draw: px,py,pz,age,life,def,em,alive and the def/emitter tables)
+ * @property {{live:number, spawned:number, recycled:number, dropped:number}} stats */
+```
+- **`step()` order** (slot order 0..cap-1, then emitter order 0..MAX_EMITTERS-1):
+  1. **Integrate each live slot:**
+     - `age++`; when `age >= life`, kill it (`emitter.live--`).
+     - Otherwise, with `w` = the emitter's wind times `def.wind` (wind is in m/s):
+       - `vx += (wx - vx)*dragK` (same for y);
+       - `vz += (wz - vz)*dragK + accelZ*STEP`;
+       - `p += v*STEP`;
+       - kill when `pz < kz`.
+  2. **Spawn per emitter:**
+     - When on: `acc += rate*STEP`; `while (acc >= 1 && live < maxLive) { spawn; acc -= 1 }`. If `live >= maxLive`, `acc = min(acc, 1)` so the backlog never bursts later.
+     - Pending bursts spawn in the same place, up to maxLive.
+     - **RNG draw order per particle (fixed, for replay):** `life`, `speed`, `jx`, `jy`, `jz` (always 3 draws), then disk rejection for the cone: `u = 2r-1`, `v = 2r-1`, accept when `u*u + v*v <= 1`, <= 8 tries, else (0, 0).
+     - `dir' = normalise(axis + (u*a + v*b)*spreadTan)`. No trig.
+     - New particles first move on the next step.
+- **Transient emitters** (`burstAt`) are ordinary emitter slots with `rate 0`, a flag and auto-release. Because of this, every particle has an emitter, and the draw lights per emitter (053b).
+- **`engine/world/entityEmitters.js`** (the AC "attachable to an entity"):
+  - `createEntityEmitters(world, particles, events, defIdOf)` returns `{sync()}`.
+  - Component: `components.emitters: [{preset, offset:{right, fwd, up} (m), on}]` (JSON; `on` is saved, handles are not).
+  - The pair list (entity ref, emitter handle) is preallocated with max 64 pairs. It is rebuilt on `world:loaded` / `entity:added` / `entity:removed`; allocation is fine there.
+  - `sync()` runs once per step before `particles.step()`. It writes `transform + yaw-rotated offset` (`forwardOf/rightOf`) and copies `on` into `setOn`.
+  - World points: the game calls `createEmitter` directly.
+- **Tests (`engine/fx/particles.test.js`):**
+  - same seed + script -> equal hash at every 60-step checkpoint and at 600, run twice;
+  - ring recycle (cap 8 fixture: the 9th spawn overwrites slot 0, the oldest);
+  - per-emitter `maxLive`, plus no burst after the cap clears;
+  - kill plane;
+  - drag converges to the wind;
+  - rate 20/s gives exactly 20 spawns over 60 steps;
+  - `burstAt` releases its slot after the last death;
+  - zero allocation over 10k steps (`--expose-gc`);
+  - entityEmitters: offset rotation at yaw 0/90/225; add/remove rebuild;
+  - check-deps fixture for rule 16.
+- **Budget (revised, Node, warn-only unless `PERF_STRICT=1`):** 500 live <= 0.05 ms per step, 2048 live <= 0.15 ms. PO proposed 0.3 ms for 500; the SoA loop is about 20 ns per particle.
+
+**US-053b (PC-A, ~1 d, engine/render -> arch-review): draw through the sprite pass.**
+- **Decision: a JS-rasterised particle layer, read by the existing sprite pass as one extra candidate per cell** (the RE-07 overlay pattern, 28.9). Particles are not added to the `SPR` list.
+- **Reason:** `sprites.frag` loops over every sprite for every cell (`MAX_SPRITES 64`). 500-2048 entries would cost about 60k cells x 2k iterations at 400x150, far over 0.5 ms. With the layer, the GPU cost is 2 texel fetches per cell.
+- **Parity:** the cell decision is made once in JS and both twins read the same arrays, so parity is exact by construction.
+- **Size:** 1 particle = 1 cell (a glyph). Bigger puffs are more particles (designer).
+- **`engine/render/particleLayer.js`:**
+  - `createParticleLayer()` returns `{bind(cols, rows), build(ps, cam, rt, lights, world, palette, renderer), part: Uint8Array(cols*rows*4), partZ: Float32Array(cols*rows), minRow, maxRow, prevMinRow, prevMaxRow, stats}`.
+  - Owned as `engine.particleLayer`, and rebound on `grid:changed` like `overlay.bind` (`engine.js` line ~118).
+- **`build`, once per rendered frame:**
+  1. Clear the cells touched last frame (`touched Int32Array(cap)`).
+  2. Camera basis once (`camBasis`, as `SpritePool.project`).
+  3. Per **emitter** (not per particle): `lightAt(lights, world, ex, ey, ez + 0.1, 0, 0, 1, scratch)` -> an rgb multiplier using the `shadeSprite` gain rule. This is at most 64 calls per frame. **Known limit:** a long plume is lit as at its source. Per-particle light can be an opt-in def flag later.
+  4. Per live slot, in slot order:
+     - ramp index `i = Math.floor(age * n / life)` (integer math, stepped ramps, no lerp);
+     - skip if the glyph is `' '`;
+     - `projectSprite(cb, cam, px, py, pz, 0, _ps)`, the same function and depth convention as sprites (shear `d`, pitched `vd`, so it compares with G-buffer DEPTH);
+     - cell = `floor(colCenter)`, `floor(feetRow)`, skip if off-grid;
+     - keep it if `partZ[c] === 0 || depth < partZ[c]` (strict: the lower slot wins a tie);
+     - rgb = emissive ? `ramp` (fog x `emissiveFog`) : `ramp * emitterLight`, then fog toward the sprite fog colour at `_ps.fogDepth`. **Factor the fog-colour resolution out of `SpritePool.project` into one shared helper** in `sprites.js` (no second fog code).
+     - Write bytes rgb + glyph index into `part`, depth into `partZ`, and update the dirty rows.
+- **GPU (`spritesPass.js`, `glsl/sprites.frag.js`):**
+  - New samplers `uPart` (RGBA8, a = glyph index / 255) and `uPartZ` (R32F, 0 = empty).
+  - `bindParticleLayer(layer)` uploads only the union of this frame's and last frame's dirty rows (overlay precedent).
+  - In the shader, **after** the sprite loop: `pz > 0 && pz < cellDepth && pz < best` -> use the layer rgb + glyph, bg = edge bg.
+  - Fade and dim then apply as for any cell. A sprite therefore wins an exact tie.
+  - `run()` must not skip the pass when `uCount == 0` but the layer has cells.
+- **JS twin:** `drawSprites(fb, pool, layer?)` runs the same test after its sprite loop, against `fb.depth.depth`. Both sides compare the same f32 values.
+- **Tests (`engine/render/particleLayer.test.js` + `sprites.test.js`):**
+  - particle behind a wall fixture hidden, in front shown;
+  - tie: the lower slot wins; sprite vs particle at equal depth: the sprite wins;
+  - ramp index at age 0, life/2 and life-1;
+  - emissive ignores light;
+  - pitched and shear cells match `projectSprite` for the same point;
+  - dirty-row union;
+  - zero allocation over 1000 builds;
+  - the GLSL lexical rules (`glsl.test.js`, no `round(`).
+- **gpucompare pose `particles`** (mesh, tower interior): debug def, rate 200, seed 1, 120 steps from `clear()`, frozen camera. Expect 0 mismatching particle cells, and the rest within the 27.7 bars. Existing poses must be unchanged (layer empty).
+- **Budget (revised; numbers recorded in the story):**
+  - JS `build`: 500 live <= 0.1 ms, 2048 <= 0.3 ms;
+  - GPU extra in the sprite pass <= 0.05 ms p95;
+  - row upload <= 0.15 ms at 400x150;
+  - `over25 == 0`.
+  - The PO proposed "GPU <= 0.5 ms" as one number. It is split here because most of the cost is the JS build and the upload, not the GPU.
+- **main.js (PC-B or PC-A main session, 4 lines):**
+  1. boot: define presets (053c);
+  2. `sprites.pass?.bindParticleLayer(engine.particleLayer)`;
+  3. update, after the beast/sword/vitals steps: `entityEmitters.sync(); engine.particles.step();`;
+  4. render, before `sprites.render`: `engine.particleLayer.build(engine.particles, cam, rt, engine.lights, engine.world, assets.palette, effRenderer)`.
+- **Do not:**
+  - put particles in the `SPR` list or raise `MAX_SPRITES`;
+  - light each particle with `lightAt`;
+  - lerp colours (parity);
+  - collide particles with the world (out of scope; kill-plane only);
+  - draw from the game's sim RNG;
+  - save particles (transient; `clear()` on load).
+
+### 32.2 US-055a water surface (split: 055a1 data + query, 055a2 render)
+
+**Decision: water is a separate surface layer computed analytically per cell (view ray vs a flat region), composited in the shade pass. It is not a material on raster geometry and not a new raster pass.**
+- **Why not a material:** a material on a water mesh would be the nearest G-buffer surface. The floor, props and beasts under it would be gone, and the AC "floor visible in shallows" could only be faked.
+- **Why not a raster pass:** a second raster pass would need its own depth attachment, a sub-sample twin and a JS triangle raster.
+- **Water regions are flat** (one `z` per region), so a per-cell ray-plane test is exact:
+  - it is world-anchored by construction (no swim when the camera turns);
+  - it has no aliasing beyond the cell grid;
+  - it gives the water path length directly as `sceneDepth - waterDepth`, which is the depth tint and the see-through rule;
+  - its JS twin is the same 10 lines of arithmetic.
+  - `cellRayP` / `cellRayPitched` (`glsl/common.js`, JS twins in `projection.js`) are linear in depth, so `zDir = P(1).z - eyeZ` and `dW = (z - eyeZ) / zDir` is in **the same units as the DEPTH texel** in both projections.
+- **Rivers:** terrain rivers stay as today (terrain type `water`, glint look) until US-026 regions. A sloped river later becomes a chain of flat regions.
+
+**US-055a1 (PC-A, or PC-B cross-track, ~0.5 d, engine/world -> arch-review): data + `waterAt`.**
+- **Data.** World or level JSON `"water": [{ "id": "pool1", "shape": "rect", "rect": [x0, y0, x1, y1] | "shape": "circle", "c": [x, y], "r": 3, "z": 1.2, "look": "water", "flow": [0, 0] }]`.
+  - Shapes are axis-aligned rects and circles only. A level `yawSteps` keeps rects axis-aligned. More complex shapes are unions of rects.
+  - `look` is a key into the designer water look table (055a2).
+  - `flow` is stored for US-055 currents and unused here.
+  - Max 32 regions per world.
+  - Validated at load and throws with the id. Content, not state; `serialize` round-trips it like `horizon`.
+- `World.water`: a SoA (`x0,y0,x1,y1, cx,cy,r2, z` Float64, `kind` Uint8, `look` Uint8 resolved at load).
+- **`World.waterAt(x, y, out) -> boolean`**, `out {surfaceZ, depth, region}`:
+  - linear scan with an AABB reject, then the point test;
+  - with overlaps, the highest `z` wins;
+  - `depth = z - floorZ`, clamped at >= 0. `floorZ` comes from the floor query `integrate` uses for the current physics mode: `physicsMode === 'mesh'` -> `supportAt(x, y, z + 0.01, false, null).floorH`, the query the beasts use; grid -> `floorAt(x, y)`.
+  - Pure, zero allocation, <= 0.005 ms for 32 regions.
+- **Nav:** `NavGrid.buildFromWorld` may later block cells with `depth >= 0.6` (option; not this story).
+- **Tests:** rect/circle in and out; overlap = highest z; level frame offset + `yawSteps 1`; depth over a stepped floor fixture; serialize round trip; validation throws.
+
+**US-055a2 (PC-A, ~1 d, engine/render -> arch-review; mesh only): render.**
+- **`engine/render/water.js`, per frame:**
+  - `selectWater(world, cam, out)` copies the <= `WATER_MAX 8` regions that are on screen and nearest the camera into a `Float32Array(8*8)` uniform block (rect/circle params, z, look).
+  - It skips regions with `eyeZ < z` (no underwater view in v1).
+  - Zero allocation.
+- **Look table** (designer, `assets.waterLooks`, resolved to numbers at bind):
+  - wave glyph ramp `~-=`;
+  - `shallow`/`deep` rgb;
+  - `opaqueAt` (m of path, default 1.5);
+  - `seeThrough` (alpha threshold, default 0.35);
+  - `glint` rgb;
+  - `waveHz` (default 2).
+- **Shade (`glsl/shade.frag.js`) helper `waterComposite(cell, rawDepth, inout vec3 fg, inout vec3 bg, inout int glyph)`:**
+  - It is called at all three output sites: sky (`kind 0`), the terrain early return and the material tail.
+  - It runs **after** that site's own fog. The water itself is fogged with its own distance.
+  - Per active region:
+    - `dW = (z - eyeZ) / zDir`; keep it if `dW > PROJ_NEAR`, `dW < rawDepth` and `dW < best`;
+    - the hit point `P(dW)` must be inside the region;
+    - nearest wins; a tie goes to the lower index.
+  - With a hit:
+    - `a = clamp((rawDepth - dW) / opaqueAt, 0, 1)`, with sky = 1;
+    - `rgbW = mix(shallow, deep, a)` x (ambient + sun term for an up normal, the same `bSun` formula as the terrain path);
+    - if `a < seeThrough`: keep the floor glyph, `fg = mix(fg, rgbW, a)`;
+    - else: glyph = `ramp[hash(floor(Px/0.5), floor(Py/0.5), floor(timeSec*waveHz)) % n]` (the `hashFast` salt list gets a new salt), `fg = rgbW`;
+    - glint: when the same hash > 0.9, `fg = mix(fg, glint, 0.5)`;
+    - `bg = rgbW * bgK`.
+- **Edge pass:** suppress the outline on cells where the water glyph won (`a >= seeThrough`). Submerged silhouettes must not draw through opaque water. The water layer is passed as one `uWater` uniform block, the same block in both passes.
+- **JS twin:** `waterCompositeJS(fb, cam, sel, look)` runs right after the JS shade stage of `renderWorld` on mesh and before the JS edge stage, with the same expression order (glsl.test.js transpile check, like `cellRayP`).
+- **Tests:**
+  - cell over the pool: hit `dW` equals the analytic value at yaw 0/90 and pitch 0/-30, in shear and pitched;
+  - a wall in front hides the water;
+  - shallow keeps the floor glyph, deep shows waves;
+  - hash stable while the camera turns (world-anchored);
+  - eye below z = no water;
+  - zero allocation.
+- **gpucompare mesh pose `water`:** test pool level, two views (grazing + top-down). The usual mesh-pose bar.
+- **Budget (D-029):** shade extra <= 0.1 ms p95 at 400x150 with 1 region (8 regions <= 0.2 ms). JS twin extra <= 0.3 ms at 240x90 (warn-only).
+- **Do not:**
+  - add water geometry to the draw list;
+  - write water into the G-buffer (physics, picking and edges stay on the real floor);
+  - animate in world time from `performance.now` (use `fb.timeSec`, the existing shade uniform `uTimeSec`);
+  - change the terrain river look in this story.
+
+### 32.3 US-132 burning + US-133 fire spread
+
+**Decision on ownership: split like 30.2.**
+- **US-133 fire grid = engine** (`engine/world/fireGrid.js`). It is a genre-neutral, deterministic spatial cellular sim with save state, the same class of module as `Visibility.js`.
+- **US-132 burning = game** (`game/js/quest/sim/status.js`). Damage per tick, who burns and how long are game rules. The engine status-effect layer waits for a second game, as the brain (29.1) and health (30.2) did.
+- The row's "PC-A engine status-effect component" falls away: US-132 is PC-B game code, PO-reviewed, no arch-review.
+
+**Decision on flammability:**
+- **materials** for static world surfaces (fire grid cells);
+- **`components.flammable`** for entities (props, beasts, the player).
+- Both are data. The two sims meet through two calls: `fire.isBurning(x, y, z)` (an entity stands in fire) and `fire.ignite(x, y, z)` (a burning entity lights the cell under it). An entity is never a fire cell, and a cell is never an entity.
+
+**US-133 (PC-A, or PC-B cross-track since it is pure JS, ~1 d, engine -> arch-review): `engine/world/fireGrid.js` + test.**
+- **Materials** (`assets.fireMaterials`, designer file `design/fire-materials.js`):
+  - `{ dryGrass: {fuelSec: 2, ignite: 0.35, charred: 'charredGrass'}, brush: {...}, wood: {...} }`;
+  - `ignite` = the chance **per fire tick per burning orthogonal neighbour**;
+  - `charred` = the material key the view (US-134) swaps to;
+  - surfaces not in the table (stone, metal, water, `path`) never burn.
+- **Surface mapping, per world** (`fire.surfaces`): `{ "grass": "dryGrass", "<sector floorMat>": "wood" }` maps a terrain type name (`groundTypeAt` -> `typeName`) or a sector `floorMat` to a material key.
+- **Areas** (world/level JSON):
+  - `"fire": {"seed": 1, "surfaces": {...}, "areas": [{"id": "brush1", "x0": .., "y0": .., "w": 40, "h": 40, "cell": 0.5, "zMin": .., "zMax": .., "paint": [{"rect": [x0, y0, x1, y1], "mat": "brush"}], "tag": "barrierPatch"}]}`;
+  - cell count `w*h <= 4096` per area, max 8 areas, `maxCells 16384` total;
+  - per cell at build: material = the last `paint` rect containing the cell centre, else `surfaces[surface name at the cell centre]`, else none;
+  - `cz` (Float32) = the surface z at the centre (`supportAt` / `groundAt`), for the view.
+- **No spread between areas** (designers cover a patch with one area).
+- **Built by the game** like the nav grid (29.1): `createFireGrid({materials, seed, tickSteps: 6, windK: 0.15})`, then `grid.addArea(def, world)` per area (load time; may allocate), then `world.fire = grid`.
+- **Save:** `serialize` writes `fire: world.fire.save()` when it is set, the same optional pattern as `world.visibility` (RE-11b). After building, the game calls `grid.load(state.fire)`.
+- **Cell state** (SoA over all cells):
+  - `state` Uint8: 0 none, 1 unburnt, 2 burning, 3 burnt;
+  - `fuel` Uint16 (fire ticks left);
+  - `mat` Uint8;
+  - `cz` Float32.
+  - Scratch: `igniteList`, `burnList` (Int32Array of `maxCells`; the precedent is RE-05c's decide-then-apply scratch, 29.1).
+- **Rule.** The fire ticks at **10 Hz** (every `tickSteps = 6` sim steps; integer counter). A 60 Hz tick would need per-step chances near 0.01 and would cost 6x for nothing. Per tick, per area, in cell index order:
+  1. **Decide.** The step-start `state` is read-only during this pass.
+     - A burning cell: `fuel--`; at 0, push it to `burnList`.
+     - An unburnt cell with at least one burning 8-neighbour: `q = product over burning neighbours n of (1 - ignite[mat] * wDir(n) * wWind(n))`. `wDir` = 1 orthogonal, 0.7 diagonal. `wWind = clamp(1 + windK * (wx*ux + wy*uy), 0.25, 3)`, where `u` is the fixed unit direction from the neighbour to this cell (the table holds 0.70710678 for diagonals) and `(wx, wy)` is the area wind in m/s.
+     - Then **one** draw `rng.nextFloat() < 1 - q` pushes it to `igniteList`.
+     - Exactly one draw per candidate cell, in index order, gives order-independent, replayable results.
+  2. **Apply:** `burnList` -> state 3, change kind 2; `igniteList` -> state 2, `fuel = fuelTicks[mat]`, change kind 1.
+- **API** (zero allocation after `addArea`):
+  - `step()` (every sim step; ticks when its counter wraps);
+  - `ignite(x, y, z) -> boolean`: immediate and deterministic, no RNG; only an unburnt flammable cell of the area whose `zMin..zMax` contains z;
+  - `igniteRadius(x, y, z, r) -> count`: for US-137;
+  - `isBurning(x, y, z)`, `stateAt(x, y, z)`;
+  - `setAreaWind(a, wx, wy)` and `sampleWind(field, tick)` (US-138: one `sampleInto` at each area centre per fire tick);
+  - `changes: Int32Array`, `changeCount` (`(globalCell << 2) | kind`, valid from the tick that made them until the next tick);
+  - `cellCenter(globalCell, out3)`;
+  - `hashInto(h)`, `save()`, `load(obj)`;
+  - `stats {burning, ticks}`.
+- **Bus event:** a single `fire:area` `{id, kind: 'burnt'}` (preallocated) when the last burning cell of an area with a `tag` goes out, for US-135's "patch done". There is no per-cell bus event (32.0 item 5).
+- **`save()`:** `{ v: 1, rng: rng.save(), tick, areas: { [id]: { s: "<RLE of state digits, e.g. '1x40,3x12'>", b: [cell, fuel, ...] } } }`: plain JSON, burning cells keep their fuel.
+- **Tests (`fireGrid.test.js`):**
+  - 20x20 dryGrass fixture lit in a corner burns out in the same tick count and with the same hash on every run, and twice in one process;
+  - a stone strip 1 cell wide stops the front (no diagonal leak: give the strip a diagonal-proof width of 1 cell plus the `wDir` rule, and assert it);
+  - wind (4, 0): the burnt extent on +x after N ticks is greater than on -x;
+  - a cell burns for exactly `fuelTicks`;
+  - `ignite` on stone = false;
+  - `save` at tick 20 then `load` into a fresh grid gives an equal hash at tick 60;
+  - zero allocation over 10k steps.
+- **Budget (revised):** a 4096-cell area tick <= 0.1 ms, which is about 0.017 ms per step amortised. The PO proposed "4000 cells <= 0.2 ms per step".
+- **Do not:**
+  - emit bus events per cell;
+  - read `world` during `step` (everything is baked at `addArea`);
+  - share the beast or particle RNG;
+  - use float timers;
+  - iterate areas by `Map` (`areas` is an array; ids go through a load-time `Map` for `save`/`load` only).
+
+**US-132 (PC-B, game; split 132a sim ~0.6 d, 132b view ~0.5 d after US-053c).**
+- **Components (JSON, saved with the entity, no `serialize.js` change):**
+  - `components.flammable {burnSec: 4, contactSec: 1, radius?}`. The radius defaults to `targetable.radius` or `body.radius`.
+  - `components.effects {burning?: {left, tick}}`, with integer steps.
+  - The generic part is the `effects` object plus a fixed `EFFECT_KINDS = ['burning']` array that the sim iterates. Keys are never iterated with `for...in` in a step.
+- **`game/js/quest/sim/status.js`:**
+  - `createStatusSim(world, events, cfg, hooks)`, with `hooks {fire, damage(id, n), waterAt}`;
+  - the flammable list is a preallocated SoA (max 32), rebuilt on load and on `entity:added/removed`.
+  - Config `statusConfig.js`: `tickSteps 30` (0.5 s), `dmgPerTick 1`, `touchGap 0.5`, `igniteCellEvery 30`, `waterOutDepth 0.3`.
+- **Step order (after `fire.step()`):**
+  1. Per flammable entity: if `fire.isBurning(feet)`, set `left = burnSec steps` (a refresh, never stacking).
+  2. Contact pass, O(n^2) over at most 32: a not-burning flammable entity with a burning one at `gap = dist2D - rA - rB <= touchGap` and overlapping z bands -> `contact++`, else `contact = 0`. At `contact >= contactSec steps` it ignites.
+  3. Per burning entity:
+     - `left--`;
+     - when `--tick <= 0`: `hooks.damage(id, dmgPerTick)` and `tick = tickSteps`;
+     - every `igniteCellEvery` steps: `fire.ignite(feet)`;
+     - `waterAt(depth >= waterOutDepth)` or `left == 0` -> delete `effects.burning`.
+  - `contact` is a sim SoA field, not saved; a reload restarts the 1 s count, which is accepted.
+- **Damage path (architect note, revise the AC):** "through the existing damage path" must **not** be `combat:hit`. In `vitals` (30.2), `combat:hit` applies `damageScale 5` (any source other than the player) and a 60-step invuln, so the 0.5 s ticks would be swallowed or multiplied by 5.
+  - New in `vitals.js`: `applyDot(n)`. It skips invuln and knockback, sets `hpTick` for a soft hurt tint, and still runs death at 0.
+  - The `hooks.damage` wiring is: player -> `vitals.applyDot`; others -> `health.hp = max(0, hp - n)` when `components.health` exists.
+  - Numbers kept (1 HP / 0.5 s / 4 s = 8 of 30 HP).
+- **132b view (`game/js/quest/statusView.js`, called in `update` after `status.step`, so it runs on the fixed step):**
+  - a fixed table of 16 slots `(entityId, flameH, smokeH)`: `createEmitter` on burn start, `setEmitterPos` each step, `release` on end;
+  - a flicker point light only for the 2 burning entities nearest the camera (`MAX_LIGHTS 16` stays safe);
+  - the player hurt-edge tint while burning goes through `vitalsView` (designer style `vitals.burnEdge`).
+- **Tests (`sim/status.test.js`):**
+  - ticks at 30/60/.../240 steps = 8 damage calls;
+  - a refresh in a burning cell;
+  - contact 59 steps = no ignite, 60 = ignite;
+  - stone (no `flammable`) never burns;
+  - water out;
+  - replay hash equal twice;
+  - zero allocation.
+- **Do not:**
+  - put `effects`/`flammable` rules in `engine/`;
+  - route DoT through `combat:hit`;
+  - let `statusView` write sim state.
+
+### 32.4 US-136 explosion query + impulse (PC-A, ~0.75 d, engine -> arch-review; needs US-078b `World.raySegment` first)
+
+**`engine/physics/impulse.js`** (stand-alone: touches only the `body` object, imports nothing):
+```js
+export const IMPULSE_MAX_H = 12; // m/s; 12*STEP = 0.2 m/step < PHYSICS.radius 0.3 -> moveCapsule/moveCircleMesh never skip a wall
+export const IMPULSE_MAX_V = 8;  // m/s; the ceiling clamp in integrate step 5 bounds it
+/** Adds a velocity impulse to a capsule body (components.body). iz > 0 lifts off: grounded=false,
+ *  coyote=0, sliding=false, peakZ=footZ, vz=max(vz, min(iz, IMPULSE_MAX_V)). Horizontal speed after
+ *  the add is clamped to IMPULSE_MAX_H. Zero alloc. */
+export function applyImpulse(body, footZ, ix, iy, iz) {}
+```
+- **Same convention as the 30.2 knockback** (`body.vx/vy +=`). A horizontal-only kick on the ground dies in about 0.18 s (decel 43.75 m/s^2, so about 0.7 m), which is too weak for a blast. The lift moves the body into the air-control branch (decel x0.35), so an 8 m/s + 4 m/s blast carries about 2 m.
+- Walls and ceilings stay with `integrate` (`moveCapsule`/mesh, ceiling clamp). No new collision code.
+- **`engine/world/explosion.js`** (pure query, next to `meleeArc.js`):
+```js
+/** cand: {count, x, y, z (feet), r, h} SoA - the game's shared targetables list (30.1), or any list.
+ *  Per candidate (index order): cz = clamp(ez, z, z+h); dS = max(0, |(x,y,cz) - e| - r); skip if dS >= radius;
+ *  f = 1 - dS/radius; LOS: world.raySegment(e -> (x, y, z + h/2), ray) blocked iff ray hit and
+ *  ray.t*L < L - r - 0.05 (L = |centre - e|); dir = unit(centre - e) or (0,0,1) when L < 1e-6.
+ *  Writes outIdx[n], outF[n], outDir[3n]; returns n. Zero alloc. */
+export function explosionHits(world, ex, ey, ez, radius, cand, outIdx, outF, outDir, ray) {}
+```
+- The candidate list comes from the game, so the engine reads no `targetable`/`health` convention. Falloff is linear, as the AC asks.
+- The game removes the exploding prop **before** the query, because a ray that starts inside its collider is blocked at t of about 0.
+- **Event and damage = game** (US-137, `game/js/quest/sim/explosions.js`):
+  - one preallocated `explosion:hit {target, damage: round(f*damage), dirX, dirY, f}`;
+  - the player gets `applyImpulse(body, z, dirX*f*8, dirY*f*8, f*4)`, and the `vitals` listener applies the damage unscaled, with no second knockback (dir 0).
+  - The engine API stays the pure query + impulse, like `arcHits` (30.1).
+- **Tests:**
+  - falloff at 0, r/2 and r;
+  - target behind a wall fixture skipped, beside it hit;
+  - a target whose capsule touches the radius edge;
+  - `applyImpulse` at max into a 0.1 m mesh wall, 120 steps: never on the far side;
+  - under a 2.2 m ceiling: z <= ceil - height;
+  - lift sets `fallDistance` from `peakZ` (no fake fall damage);
+  - 16 candidates <= 0.35 ms per call (one-off, not per frame);
+  - zero allocation.
+- **Do not:**
+  - write a new occlusion raycast (use `raySegment`);
+  - write `t.x/t.y` directly (that would tunnel);
+  - add damage or event logic to `engine/`.
+
+### 32.5 US-138 wind (PC-A, ~0.75 d, engine/world + one physics field -> arch-review)
+
+- **`engine/world/wind.js`:**
+  - `createWind(def, seed)` returns `WindField`. World JSON `"wind": {"dirDeg": 90, "speed": 2, "gust": {"amp": 0.5, "periodSec": 3, "travel": 8}, "zones": [{"id", "shape": "rect"|"circle", ..., "edge": 2, "mode": "add"|"set", "dirDeg", "speed", "push": false}]}`.
+  - `dirDeg` is a compass bearing the wind blows **toward** (0 = N = -y, clockwise; converted with `forwardOf` at create).
+  - Max 16 zones.
+  - `World.load` builds `world.wind`; with no block it is calm (speed 0). Content, not state.
+- **Gusts without trig or wall clock:**
+  - 64 knot values from `createRng(seed).nextFloat()` at create;
+  - `P = round(periodSec/STEP)` steps;
+  - local tick `tl = tick - (x*dirX + y*dirY) / (travel*STEP)`, so gusts travel downwind;
+  - `k = floor(tl/P)`, `fr = (tl - k*P)/P`, `s = fr*fr*(3 - 2*fr)`;
+  - `g = K[k mod 64] + (K[(k+1) mod 64] - K[k mod 64])*s`, with a positive modulo;
+  - `speedNow = speed * max(0, 1 + amp*(2g - 1))`.
+- **Zones** (array order): weight `w = clamp(insideDistance/edge, 0, 1)`; `set` -> `v = v + (vZone - v)*w`; `add` -> `v += vZone*w`. The zone vector uses the same `g`.
+- **API:**
+  - `sampleInto(x, y, z, tick, out3) -> out3` (z reserved, vz = 0);
+  - `pushAt(x, y, tick, out2)`: the sum over `push:true` zones, scaled so the gust peak gives `pushMax 1.5 m/s`;
+  - `uniforms(tick, camX, camY, out4)` -> `(dirX, dirY, speedNow at camera, tick*STEP)`;
+  - `hashInto`.
+  - **`t` is the integer sim tick** (the game's step counter), not seconds. Gust phase restarts on load, which is accepted (presentation-level).
+- **Consumers, no per-frame allocation:**
+  - `particles.sampleWind(world.wind, tick)`: once per emitter per step;
+  - `fire.sampleWind(world.wind, tick)`: once per area per fire tick;
+  - future projectiles (US-052/103): `sampleInto` per body per step;
+  - the US-121 shader reads `uniforms()`. The GLSL upload lands with US-121, not here (no dead uniform).
+- **Player push (physics, PC-A):** `integrate.js` gains `body.pushX/pushY` (m/s; typeof guard, default 0, like `speedScale`). They are added to the horizontal **displacement** only (`(vx + pushX)*dt` into `moveCapsule`/mesh), so accel/decel never fights them, and walls block them as usual. The caller sets them every step before `integrate` (game: `pushAt`), and they reset to 0 on respawn. The same field serves US-055 currents later.
+- **Tests:**
+  - same seed -> same `sampleInto` at 1000 ticks;
+  - gust continuity (no jump > `amp*speed*2/P` between ticks);
+  - travel: a downwind point lags by `along/(travel*STEP)` ticks;
+  - zone set/add edges;
+  - push peak <= 1.5;
+  - the push against a wall fixture never passes it;
+  - zero allocation;
+  - the fire bias test from 32.3 driven through `sampleWind`.
+- **Budget:** `sampleInto` with 16 zones <= 0.5 us; 64 emitters + 8 areas per step <= 0.05 ms.
+- **Do not:**
+  - use `Math.sin`/`performance.now` for gusts;
+  - let fx import `world/wind.js` (duck-typed);
+  - add the push to `vx/vy` (decel would erase it).
+
+### 32.6 US-139 height fog + fog banks (stretch; PC-A, ~1 d when picked; mesh only)
+
+Enough for whoever picks it up:
+- **Data:** world JSON `"fog": {"height": {"base": z, "top": z, "density": d}, "volumes": [{"id", "shape": "box"|"ellipsoid", "c": [x, y, z], "half": [hx, hy, hz], "density": d, "drift": m}]}`, max 8 volumes on screen (`engine/render/fogVolumes.js` selects and packs them, like `selectWater`). Content, not state.
+- **Math (no `exp`, for tight parity):** along the cell ray from the eye E to the surface point P (the `cellRayP`/`cellRayPitched` helpers, L = |P - E|; sky -> L = 300 m):
+  - height ramp `r(z) = clamp((top - z)/(top - base), 0, 1)`;
+  - `G(z) = z <= base ? z - base : z < top ? (z - base) - (z - base)^2 / (2(top - base)) : (top - base)/2`;
+  - `tauH = density * L * (G(z1) - G(z0)) / (z1 - z0)`, with `density * L * r(z0)` when `|z1 - z0| < 1e-4`;
+  - volumes: slab chord (box) or scaled-sphere chord (ellipsoid) of the segment `[0, L]`, `tauV = density * chord`;
+  - total: `f = min(1, f_dist + tauH + sum of tauV)`.
+- **Where:**
+  - material path: replaces `f` before the existing stipple/blend, so the glyph stipple and colour blend reuse today's code;
+  - terrain path: one extra blend toward `uFogFg` by `min(1, tau)` after `shadeTerrain`;
+  - sky: the same blend;
+  - sprites and particles: CPU `fogExtra` at their point.
+  - JS twin `fogExtra(u, E, P)` in `fogVolumes.js`; GLSL string in `common.js`; glsl.test.js transpile check.
+- **Drift:** bounded and stateless: `offset = driftM * (2g(tick) - 1)` along the wind direction (the 32.5 gust function). No sim state, no save.
+- **Budget:** <= 0.2 ms at 400x150 with 8 volumes (kept). gpucompare mesh pose `fogBank`.
+- **Do not:** add a fog pass, use `exp`/`pow` in the shared formula, or store a fog volume position in saves.
+
+### 32.7 Seams for the rows without a note
+- **US-053c (PC-B):**
+  - `design/particles.js` presets with palette keys; `main.js` resolves them to `[r,g,b]` and calls `defineEmitter`;
+  - the Kestrel burner uses `components.emitters` (flame + smoke) on its prop;
+  - landing dust is game code on `body.landed && fallSpeed > cfg`;
+  - sword `clink`/hit sparks use `burstAt` at the 30.1 hit point.
+- **US-055b (PC-B):** `waterAt` each step at the feet. Wade: `speedScale *= 0.6`. Swim: surface lock at `surfaceZ - 1.2`, which needs a small `integrate` hook; raise it as `ASK ARCHITECT` when started. Splash: `burstAt(splash, n = clamp(round(-vz*4), 2, 40))`.
+- **US-134 (PC-A):** the view reads `fire.changes` and `cz`. Burning cells become particle emitters per cluster (max 8 transient flame emitters per area) and up to 2 lights at the burning-cell centroids. Charred cells use a material-id swap in a per-area overlay texture. This needs its own short note at pickup (it touches the raster material path).
+- **US-137 (PC-B):** the 32.4 game wrapper + `fire.igniteRadius` + the particle burst + one transient light.
+- **US-140 (PC-B):** rain = particles + `fire` extinguish via a new `fire.douse(rate)` (PC-A hook, ask then).
+
+### 32.8 AC changes for the PO (relay; the architect does not edit backlog rows)
+1. **US-053a:**
+   - pool **2048** (not 2000);
+   - budget 500 live <= **0.05 ms** and 2048 <= **0.15 ms** per step (was 500 <= 0.3 ms);
+   - determinism = equal `hashInto` at every 60-step checkpoint to 600.
+2. **US-053b:**
+   - "lit by ambient + point lights" = **per emitter, at its position** (known limit for long plumes);
+   - "GPU <= 0.5 ms" -> JS build 500 <= 0.1 ms, GPU extra <= 0.05 ms, upload <= 0.15 ms at 400x150;
+   - 1 particle = 1 cell.
+3. **US-055a:**
+   - split **055a1** (data + `waterAt(x, y, out) -> boolean`, ~0.5 d) / **055a2** (render, ~1 d, mesh only);
+   - regions are rect/circle with a flat z;
+   - "see-through <= 0.5 m" is expressed as view-path thickness (`opaqueAt`/`seeThrough` look data), which is physically right at grazing angles;
+   - terrain rivers unchanged until US-026.
+4. **US-132:**
+   - **PC-B game**, not "PC-A engine component" (30.2 precedent);
+   - split 132a sim / 132b view;
+   - the damage path = new `vitals.applyDot` (not `combat:hit`: `damageScale` + invuln);
+   - numbers kept.
+5. **US-133:**
+   - fire tick **10 Hz**;
+   - `ignite` = chance per fire tick per burning orthogonal neighbour;
+   - no per-cell `fire:cell` bus event: a typed change list plus one `fire:area` event for tagged areas;
+   - budget a 4096-cell tick <= 0.1 ms;
+   - flammability: materials for cells, `components.flammable` for entities;
+   - built by the game, saved through `serialize` when `world.fire` is set.
+6. **US-136:**
+   - the engine part = pure `explosionHits` + `applyImpulse`; `explosion:hit` is emitted by game code;
+   - impulse = **8 m/s horizontal + 4 m/s lift** at the centre, clamped at 12/8 m/s;
+   - **depends on US-078b** (`World.raySegment`).
+7. **US-138:**
+   - signature `sampleInto(x, y, z, tick, out)`, with the integer sim tick, not seconds;
+   - the player push goes through the new `body.pushX/pushY` (integrate change, PC-A);
+   - the shader gets values only; the upload lands with US-121.
+8. **US-139:** a linear height ramp (no exp); <= 8 volumes; budget kept.
+
+**Build order:** 053a -> 053b -> (053c PC-B) -> 055a1 -> 055a2 -> 133 -> 132a/b (PC-B) -> 134 -> 135 -> US-078b -> 136 -> 137 -> 138 -> 139/140. Each step ends with a green Node suite + check-deps; one browser/gpucompare pass per render step.
