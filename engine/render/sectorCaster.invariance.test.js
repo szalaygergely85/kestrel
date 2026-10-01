@@ -38,6 +38,7 @@ import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import terrainDef from '../../design/levels/overworld_far.js';
@@ -45,7 +46,7 @@ import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; detailPassMod; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; terrainDef;
+paletteMod; detailPassMod; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; terrainDef;
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;

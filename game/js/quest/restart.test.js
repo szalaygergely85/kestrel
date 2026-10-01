@@ -17,6 +17,7 @@ import {
   updateTriggers,
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
+import detailPassMod from '../../../design/detail-pass.js';
 // US-011 (7.5 item 1): World.load's prop spawn throws on any
 // props[].model that isn't registered - every tower prop model must
 // load, same reasoning as game/index.html's script tags.
@@ -26,6 +27,7 @@ import boulderMod from '../../../design/models/boulder.js';
 import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
+import swordMod from '../../../design/models/sword.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
@@ -34,7 +36,7 @@ import './index.js'; // registers every quest.* behaviour (lantern.take, lever.p
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 
-paletteMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;

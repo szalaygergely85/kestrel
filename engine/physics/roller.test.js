@@ -20,16 +20,18 @@ import { makeOk, approxEqual } from '../test/assert.js';
 // the real tower content, same pattern as game/js/quest/boulder.test.js and
 // engine/world/colliders.test.js (World.load with `{ physics: 'mesh' }`).
 import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
 import lanternMod from '../../design/models/lantern.js';
 import leverMod from '../../design/models/lever.js';
 import boulderMod from '../../design/models/boulder.js';
 import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
 import terrainMod from '../../design/levels/overworld_far.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 
-paletteMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; terrainMod;
+paletteMod; detailPassMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; terrainMod;
 const { assets: towerAssets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
