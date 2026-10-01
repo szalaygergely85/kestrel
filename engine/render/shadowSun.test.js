@@ -117,6 +117,10 @@ function bitEq(A, B) { for (let i = 0; i < 16; i++) if (!Object.is(A[i], B[i])) 
   ok('tower really is outside the xy box', outsideXY, `dx=${tx - c0[0]} dy=${ty - c0[1]}`);
   const cls = classifyAABB(m0.planes, tx - 2, ty - 2, 0, tx + 2, ty + 2, 40);
   ok('tower 30 m upstream: classifyAABB != OUT', cls !== CULL_OUT, `cls=${cls}`);
+  const tzTop = m0.M[2] * tx + m0.M[6] * ty + m0.M[10] * 40 + m0.M[14];
+  ok('tower top clip z >= -1', tzTop >= -1, `z=${tzTop}`);
+  const clsTop = classifyAABB(m0.planes, tx - 2, ty - 2, 20, tx + 2, ty + 2, 40);
+  ok('tower top slab (z 20..40): classifyAABB != OUT', clsTop !== CULL_OUT, `cls=${clsTop}`);
   // and a box well off to the side (lateral > half) is OUT
   const side = classifyAABB(m0.planes, c0[0] + R[0] * (H + 20) - 1, c0[1] + R[1] * (H + 20) - 1, 0, c0[0] + R[0] * (H + 20) + 1, c0[1] + R[1] * (H + 20) + 1, 2);
   ok('lateral caster beyond the box is OUT', side === CULL_OUT, `cls=${side}`);

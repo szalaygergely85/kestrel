@@ -371,7 +371,8 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       if (zn > 1) continue;
 
       const idx = rowBase + px;
-      if (target.depthOnly) { // ME-15a shadow map: depth (+ terrain footprint carve) only
+      if (target.depthOnly) {
+        if (zn < -1) continue; // GPU near-clip parity (depth-only path) // ME-15a shadow map: depth (+ terrain footprint carve) only
         if (zn < target.zbuf[idx]) {
           if (info.isTerrain && info.structCount > 0) {
             const iq = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);

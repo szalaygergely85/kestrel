@@ -125,6 +125,9 @@ export function shadowSunMatrix(sunDir, centre, opts, worldZ, out) {
     if (d < dmin) dmin = d;
     if (d > dmax) dmax = d;
   }
+  // Low sun: casters above the receivers' z range sit further upstream along the light; extend the near plane.
+  const sz = sunDir[2];
+  dmin -= (z1 - z0) * (1 - sz * sz) / Math.max(sz, 0.05);
   const range = Math.max(dmax - dmin, 1e-6);
   const k = 2 / range;
 
