@@ -126,7 +126,8 @@ export function createClothSystem(defs, world, presets, opts) {
     if (b.mat !== undefined && typeof b.mat !== 'string') fail(id, '"mat" must be a MaterialTable key (string)');
     mats.push(b.mat || null);
     const presetKey = b.preset === undefined ? 'canvas' : b.preset;
-    const preset = (presets && presets[presetKey]) || DEFAULT_CLOTH_PRESETS[presetKey];
+    const dp = DEFAULT_CLOTH_PRESETS[presetKey], up = presets && presets[presetKey];
+    const preset = up ? { ...dp, ...up } : dp; // designer preset overrides the engine default per key (load time only)
     if (!preset) fail(id, `unknown preset "${presetKey}"`);
     const sleepDist = b.sleepDist === undefined ? CLOTH_SLEEP_DIST : b.sleepDist;
     if (!(isNum(sleepDist) && sleepDist > 0)) fail(id, `"sleepDist" must be a number > 0, got ${sleepDist}`);
