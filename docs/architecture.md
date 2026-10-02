@@ -3679,6 +3679,50 @@ Sampling is linear per component between keys (no easing); loop clips use `tMs m
 - **main.js (PC-B main session, 5 lines):** (1) imports; (2) boot: `swordVm = engine.viewModel.load('sword', assets.viewModels.sword, registry)` + trail/spark styles in the merged `setStyles`; (3) world load: `sword = createSwordSim(engine.world, engine.events, SWORD_CFG, targetables)`; (4) update, after `beasts.step`: `sword.step(playerHandle.data, fwd[0], fwd[1], input.pressed('Mouse0') && look.locked && !uiLocked && !ending)`; (5) render, after `targeting.present`: `presentSword(...)` (it calls `vm.hide()` while the flag is unset).
 - **Do not:** pose the sword in game code (use `show`); add a second projection; use trig or float timers in `sim/`; emit a second hit event; allocate a payload per hit.
 
+#### 30.1 amendment (D-034): light tap / hard hold-release (architect, 2026-10-02) - normative for US-078d
+
+**Supersedes in US-078d above:** the LR -> RL chain (no `swingRL`; both lights use `swingLR` and the LR slice order), `attackPressed` (now `attackDown`), states windup/active/recover as top-level states. Everything else in US-078d stands (arc slices, `raySegment` world gate, `arcHits`, LOS check, hitMask, clink, targetables, view helpers, main.js lines, the "Do not" list). Still no engine change.
+
+**Input (sim-side, integer steps).** `step(player, fx, fy, attackDown)`; main.js passes `attackDown = (input.isDown('Mouse0') || input.pressed('Mouse0')) && look.locked && !uiLocked && !ending` once per sim step (the `pressed` term keeps a sub-step tap). The sim derives edges itself from its own `prevDown` (hashed); a **press** = `attackDown && !prevDown`. Only a press starts anything: a button held through `rest`/`hard`/`recover` does nothing until released and pressed again. `holdSteps` counts steps with the button down since the press (saturates at 9999). Threshold `cfg.holdSteps = 24` (0.4 s).
+
+**State machine** (`sword.state`, one `stateStep` counter, both hashed; 60 Hz):
+
+| state | entered by | steps | hit window (stateStep) | speedScale x | exits |
+|---|---|---|---|---|---|
+| idle | - | - | - | 1 | press (allowed, see gate) -> hold |
+| hold | press | 1..23 | none | 1 | release -> light; `holdSteps == 24` -> charge |
+| charge | holdSteps 24 | unbounded | none | 0.3 | release -> `spendMana(4)` true -> hard, false -> light |
+| light | release in hold, or mana-short release | windup 5, active 7, recover 9 = 21 (0.35 s) | 5..11 (slice i = stateStep-5) | 0.6 | end -> idle (chain 0), or rest if chain == 2; queued press -> see chain |
+| hard | release in charge with mana | windup 4, active 7, recover 27 = 38 (0.633 s) | 4..10 (slice i = stateStep-4) | 0.3 | end -> idle, chain 0 |
+| rest | end of the 2nd light | 15 | none | 0.6 | end -> idle, chain 0 |
+
+- **Gate (press and every hold/charge step):** `tower.sword.taken`, grounded, not blocking. Leaving the ground, `onBlockStart()` or `cancel()` during hold/charge -> idle, no mana spent, no swing. A release while not grounded = cancel.
+- **Chain (max 2 lights):** `chain` = lights in a row. A press in light #1's recover (stateStep 12..20) sets `queued`; presses in windup/active, in light #2, in hard, in rest are ignored. At `max(pressStep+1, chainStart 16)`: button already up -> light #2 (blend = true); still down -> hold, `holdSteps` keeps counting from the press (so a hard can follow a light; a hard resets chain to 0). Light #2 ends in rest 15. A light that ends with nothing queued -> idle, chain 0 (taps >= 21 steps apart are unlimited, as before).
+- **Release during recover** (light or hard): nothing, unless it is the queued press of light #1 (above).
+- **Hit-stop:** clink (world hit first, both swings) -> recover from the current step, `stateStep` frozen 3 steps. Entity hit: light 0, hard `hitStopHard 4` (freeze only, the swing continues). While frozen the view freezes tMs.
+- `speedScale`: multiply `body.speedScale` (after `resolveBodyContacts`), never assign.
+
+**Numbers live in data:** `game/js/quest/swordConfig.js` `SWORD_CFG` (one frozen object, seconds/ms in comments beside every step count, owner edits it at the feel check): `holdSteps 24, chainStart 16, rest 15, hitStop 3, hitStopHard 4, flash 6, light {windup 5, active 7, recover 9, damage 1, reach 1.6, speed 0.6}, hard {windup 4, active 7, recover 27, damageMul 3, reach 1.6, speed 0.3, mana 4, knock 3}` (`hard.speed` applies to charge and hard); arc slices shared. Beast-side numbers in `beastConfig.js` (seconds): `staggerSec 0.6, staggerKnock 4` (m/s). Test: the step windows match the clip windows in `ASSETS.viewModels.sword` within 1 step.
+
+**Mana:** spent **once, on release** (the commit point, hit or miss) via the 30.2 API: `createSwordSim(world, events, cfg, targetables, hooks)` with `hooks.spendMana(n) -> boolean` (main.js passes `(n) => vitals.spendMana(n)`, built once at load; no hook = hard is free, for tests). `false` -> a light swing instead (counts as chain +1; `spendMana` already sets `manaFlashTick`, the HUD flash is the feedback). Never checked or spent during charge.
+
+**Hits:** payload gains one number field: `p {source:'player', target, damage, heavy, dirX, dirY, px, py, pz}`, `heavy` 0|1, `damage` = light.damage or light.damage * hard.damageMul (3), `dirX/dirY` = unit 2D (target - player), fallback (fx, fy). Still one preallocated object, one channel. Once per target per swing (hitMask), both swings.
+- **Knockback, generic (sword sim, heavy only):** a target with `components.body` gets `applyImpulse(body, t.z, dirX*hard.knock, dirY*hard.knock, 0)` (engine export, US-136). Beasts have no body (position is the steer SoA), so they are skipped here and handled by their own listener; the practice target has neither (flash only).
+- **Stagger (beastSim, heavy only):** `beastSim` registers one `combat:hit` listener at create (ids -> slot via a prebuilt object lookup, no Map iteration). On `p.heavy && slot found`: new `STATE_STAGGER = 7`, `timer = staggerSteps (36)`, `steer.vx/vy = dir * staggerKnock` (assign, not add), `accel = DEFAULT_ACCEL`. Enters from **any** state; it interrupts windup and charge (charge contact damage is impossible while staggered), and the charge wall counter is cleared. In `setSteerTarget`: waypoint = own position, arrive 0, `maxSpeed = staggerKnock` (so the steer clamp keeps the shove; it decays by accel 12, ~0.67 m slide). Facing frozen. At timer 0: `seen` -> chase, else return. Light hits: no beast-side effect in 078d (beast HP/hurt = US-079 proper). `resetAll` clears stagger; save/hash already cover `state`/`timer`.
+- Listener order: the sword steps after `beasts.step`, so the stagger acts from the next beast step. Deterministic (synchronous emit).
+
+**View (`swordView.js`)**, clip per state: idle/rest -> `idle`; hold + charge -> `charge` with tMs = (steps since entering hold) * 1000/60 (blend true when entered from a light at chainStart); light -> `swingLR` (blend on light #2); hard -> `swingHard` (blend true: key 0 = the captured charge pose). `setBob` amount: charge/hard 0.2, light 0.4. Hard swings use `trailHard` and spark `hitHeavy`; clink shared. When `holdSteps` reaches 24 and `mana.mp >= hard.mana`, one `chargeGlint` at the tip (presentation only, reads `mana` at render; no glint = this will be a light).
+
+**Designer must deliver (in `design/models/sword.js`, `ASSETS.viewModels.sword`):**
+1. `clips.charge` - `loop:false`, keys from REST (t 0) to the cocked hold pose at **t 400 ms**, clamped after (the pose is held while charging); short taps show only its first keys as anticipation, so the first ~100 ms must read as a small pull-back.
+2. `clips.swingHard` - `loop:false`, same left -> right motion as `swingLR` but bigger/slower follow-through, windows `windup [0, 67]`, `active [67, 183]`, `recover [183, 633]`, key 0 = the charge end pose, `leadEdge '+x'`.
+3. `trailHard` (same schema as `trail`; heavier: e.g. more samples / heavier head glyphs / hotter colours) and `sparks.hitHeavy` (bigger than `hit`, e.g. 5 cells, 3 frames <= 150 ms) and `sparks.chargeGlint` (1 cell at the tip, <= 100 ms).
+4. Drop `swingRL`; `chain` becomes `{max:2, queueDuring:'recover', restMs:250, startAtMs:270, blendMs:80}` (no `order`). Update the preview page to show tap and hold.
+
+**Save / hash:** the sword sim is transient (not saved; load = idle, chain 0). `hashInto(h)`: state, stateStep, holdSteps, prevDown, chain, queued, pressStep, frozen, hitMask, spark ring. Beast stagger: in the existing beast hash/save (state + timer + steer).
+
+**Tests (`sim/sword.test.js`, + beastSim):** tap (down 1 step, 6 steps, 23 steps) -> light; 24 -> charge, release -> hard; hard with mp 3 -> light + `manaFlashTick` set, mp unchanged; mp spent once on release, also on a miss; L, queued L -> rest 15, 3rd press ignored; L then queued hold -> hard (chain reset); press held through rest does not start a swing; release in recover ignored; jump / block during charge cancels, no mana; speedScale 1 / 0.3 / 0.6 / 0.3 per state (multiplied); hit windows at the exact steps; `heavy` and `damage 3` in the payload; body target gets `applyImpulse`; beastSim: heavy hit in windup and in charge -> stagger 36 steps, no contact hit during it, displaced ~0.6-0.7 m, then chase; light hit -> no stagger; clink freezes 3, hard entity hit freezes 4; config windows vs clip windows; 600-step replay (with tap + hold input) hash equal twice; zero alloc over 10k steps.
+
 ### 30.2 US-080 HP + mana, damage, death/respawn (all PC-B game; no engine step)
 
 **Decision: `health`/`mana` are game components, not an engine module** (same reason as the beast brain, 29.1: the rules are game rules; an engine combat layer waits for a second game). Convention, documented for reuse: `components.health {hp, max, invuln}` and `components.mana {mp, max, regen, pause}` - integers, timers in steps, serialized with the entity (no `serialize.js` change). US-128b reads `health.hp/max` for its bar. The row's "PC-A health component" falls away; content/game only, so no arch-review (the PO reviews).
