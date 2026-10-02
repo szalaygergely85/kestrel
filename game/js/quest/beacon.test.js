@@ -28,6 +28,7 @@ import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 import swordMod from '../../../design/models/sword.js';
+import m3PropsMod from '../../../design/models/m3_props.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import './index.js'; // registers every quest.* behaviour (silences "not registered" warnings)
 import { beaconLight, stepBeacon } from './beacon.js';

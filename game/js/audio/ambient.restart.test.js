@@ -26,6 +26,7 @@ import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 import swordMod from '../../../design/models/sword.js';
+import m3PropsMod from '../../../design/models/m3_props.js';
 // US-027b: tower moved to content/levels/tower.level.json.
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';

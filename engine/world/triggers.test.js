@@ -16,6 +16,7 @@ import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
 import swordMod from '../../design/models/sword.js';
+import m3PropsMod from '../../design/models/m3_props.js';
 // US-026a: test 6 now loads the real world_m1 (terrain + its farTower/
 // ferrumLights entity/horizon models), not a bare `{tower}` structures list.
 import terrainDef from '../../design/levels/overworld_far.js';

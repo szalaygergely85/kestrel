@@ -49,3 +49,28 @@ export function createPracticeTarget(world, events, cfg) {
 
   return { step, dispose: () => off() };
 }
+
+/**
+ * Q12 item 1(b) (PO REJECT gap 2): `World.load` reads a prop's `targetable` key for nothing (engine.world/World.js
+ * never maps it to `components.targetable` - that stays game-side per the architect's "do not touch World.js"
+ * ruling). Any placed prop entity whose content def carries `targetable: {r, zMin, zMax}` gets
+ * `components.targetable = {radius, height}` here instead - `sword.js` (and US-128b's `targeting.js`) only ever
+ * read `components.targetable`, never the raw content shape. Call once per `'world:loaded'` (main.js), same
+ * "rebuilt fresh every load" precedent as `removeSwordIfTaken`.
+ * @param {any} world engine World (`structures`, `get(id)`)
+ */
+export function applyPropTargetables(world) {
+  for (const s of world.structures) {
+    const props = s.level && s.level.def && s.level.def.props;
+    if (!props) continue;
+    for (const p of props) {
+      if (!p.targetable) continue;
+      const handle = world.get(`${s.id}.${p.id}`);
+      if (!handle) continue; // taken/removed props stay skipped, same as World.load's own savedIds/skipIds check
+      // PO REJECT's exact mapping: radius = r, height = zMax (not zMax-zMin - zMin is folded into the already-
+      // posed prop's feet z, same convention US-079a's `components.targetable {radius, height}` uses elsewhere).
+      const t = p.targetable;
+      handle.data.components.targetable = { radius: t.r, height: t.zMax };
+    }
+  }
+}

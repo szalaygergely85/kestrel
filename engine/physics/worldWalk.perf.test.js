@@ -82,6 +82,7 @@ import rubbleMod from '../../design/models/rubble.js';
 import wreckageMod from '../../design/models/wreckage.js';
 import relayMod from '../../design/models/relay.js';
 import swordMod from '../../design/models/sword.js';
+import m3PropsMod from '../../design/models/m3_props.js';
 import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 import titleMod from '../../design/models/title.js';

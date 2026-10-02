@@ -27,6 +27,7 @@ import rubbleMod from '../../../design/models/rubble.js';
 import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 import swordMod from '../../../design/models/sword.js';
+import m3PropsMod from '../../../design/models/m3_props.js';
 import overworldFarMod from '../../../design/levels/overworld_far.js';
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';

@@ -65,7 +65,7 @@ import { createTargeting } from './quest/targeting.js'; // US-128b (architecture
 import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 30.1 + D-034 amendment)
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
-import { createPracticeTarget } from './quest/practiceTarget.js';
+import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -684,6 +684,11 @@ function runGame(mode) {
       }
 
       playerHandle = world.get('player');
+      // US-078d Q12 item 1(b): must run BEFORE createSwordSim/createTargeting below - both scan
+      // `components.targetable` once at creation (rebuilt only on entity:added/removed after that), so a prop
+      // whose `targetable` component gets added here instead of at World.load time would otherwise be invisible
+      // to both of this load's targetable lists.
+      applyPropTargetables(world);
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.

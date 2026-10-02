@@ -71,6 +71,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_world.js', // US-026a-content: waystone. Node/tooling only - see the header note above.
   '../design/models/sword.js', // US-078c: the ruin-steel sword (content/levels/tower.level.json prop "sword"), same load position as game/index.html.
   '../design/models/voxel_beast.js', // US-079a: the placeholder boar (content/worlds/world_m1.world.json entities "boar1"/"boar2"), same load position as game/index.html.
+  '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',
   // Optional local third-party packs (git-ignored design/local/, licence unverified - never pushed): loaded only if present.
