@@ -18,6 +18,7 @@ import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycas
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
+import { createWater, collectWaterDefs } from './water.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -166,6 +167,10 @@ export class World {
     // `world.wind.sampleInto`/`pushAt` unconditionally.
     this.wind = createWind(null, 1);
     this.cloths = createClothSystem([], null, null); // CLOTH-1b3: empty until `load`
+    // US-055a1 (32.2): water regions (SoA, `engine/world/water.js`), content not state. `waterDef` = the WORLD-level
+    // block as authored (what `serialize` round-trips, like `horizon`); level blocks come back from the level.
+    this.water = createWater([]);
+    this.waterDef = [];
     // RE-11b (architecture.md 28.3, "Save" / CO-5 extension): the sight/fog
     // grid, or `null` (default - every world before this story, and most
     // worlds even after it: `Visibility` needs grid dimensions the GAME
@@ -297,6 +302,7 @@ export class World {
     // dropped) so a bad level def fails fast at load, same as everything
     // else in this function.
     w.horizon = validateHorizon(def.horizon, assets);
+    w.waterDef = structuredClone(def.water || []);
 
     for (const s of def.structures || []) {
       const placed = w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
@@ -595,6 +601,9 @@ export class World {
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
 
+    // US-055a1 (32.2): world + level `water` blocks (validated; throws naming the region).
+    w.water = createWater(collectWaterDefs(def, w.structures));
+
     // CLOTH-1b3 (33.5): world + level `cloths` blocks (content, not state: never saved, never hashed). Terrain is baked above.
     w.cloths = createClothSystem(collectClothDefs(def, w.structures), w, assets && assets.clothPresets);
 
@@ -779,6 +788,31 @@ export class World {
       tnx = n.x; tny = n.y; tnz = n.z;
     }
     return meshSupportSector(this._meshSupportScratch, terrainZ, tnx, tny, tnz, this._meshSectorScratch);
+  }
+
+  // ---- water query (US-055a1, architecture.md 32.2) ---------------------------
+
+  /**
+   * Water at (x, y): highest-z region containing the point. Fills `out {surfaceZ, depth, region, look}` and returns
+   * true, or returns false (out untouched). `depth = surfaceZ - floorZ`, >= 0; floorZ = `supportAt(...).floorH` in
+   * mesh physics, `floorAt` in grid (no floor there -> depth 0). `region` = the id string, `look` = look index
+   * (`world.water.lookNames[look]`). Pure, zero allocation.
+   * @param {number} x @param {number} y
+   * @param {{surfaceZ:number,depth:number,region:string,look:number}} out
+   * @returns {boolean}
+   */
+  waterAt(x, y, out) {
+    const wt = this.water;
+    const i = wt.find(x, y);
+    if (i < 0) return false;
+    const z = wt.z[i];
+    const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
+    const d = fz === fz && fz !== null ? z - fz : 0; // NaN / null floor = depth 0
+    out.surfaceZ = z;
+    out.depth = d > 0 ? d : 0;
+    out.region = wt.ids[i];
+    out.look = wt.look[i];
+    return true;
   }
 
   // ---- ray / segment query (US-078b, architecture.md 30.1) -------------------
