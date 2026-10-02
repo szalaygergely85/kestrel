@@ -166,6 +166,11 @@
     glint:      ["'", "'+", "+'", "+*", "*+", "*", "*", "*"],   // v1.14: the voxel lamp's sparkle (emissive, always near the top)
     rune:       ["'", ".'", ":'", ":;", "=:", "=+", "#=", "#"],  // v1.16: the waystone's carved teal mark (emissive: solid cut lines at the top levels)
     strawFace:  [".'",".,'",",'`","',;",";|'","|;/","|/\\","/|\\"],  // M3 pell straw stalks (m3_props.js m3Kit.sets)
+    // CLOTH-1b4 (design/cloth.js): simulated cloth. Brightness (the smooth fold normal) walks these levels, so a fold
+    // reads as lit crest `) ( =` -> shaded flank `~ -` -> dark valley `. '`. clothFace = canvas / silk / linen (light,
+    // airy), bannerFace = heavy wool (denser `= : %` weave). No '.' at level 3 (blank-share rule).
+    clothFace:  [".'", ".'~", "~-'", "~)-", ")~(", "()~", "(~)=", "()=%"],
+    bannerFace: [".'", ".,'", ",~'", "~:,", "~=:", "=~)", ")=(", "(%)="],
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
@@ -749,7 +754,54 @@
     straw: {"v1":"straw","seed":412,"desc":"PELL (US-078d). Old straw, the bulk of the bundle: gold-grey with darker stalk lines `|` and a few crossed stalks `/`. Under the rope bands it is pinched (the bands are their own material: rope).","albedo":0.84,"bgK":0.15,"detail":40,"jitter":0.06,"tones":[["straw",3],["strawLight",1],["strawDark",1]],"grid":{"u":0.025,"v":0.025,"stagger":0,"lines":false},"face":{"set":"strawFace","mid":"strawFace","far":"strawFace"},"lod":{"mid":12,"far":25,"dither":3}},
     straw_dark: {"v1":"straw_dark","seed":413,"desc":"PELL (US-078d). Damp, rotting straw: the underside, the lower bundle and the old sword cuts (dark slashes on the front and back faces). Brown-grey, rot spots `,`.","albedo":0.7,"bgK":0.12,"detail":40,"jitter":0.06,"tones":[["strawDark",3],["ropeDark",1],["straw",1]],"grid":{"u":0.025,"v":0.025,"stagger":0,"lines":false},"face":{"set":"strawFace","mid":"strawFace","far":"strawFace"},"lod":{"mid":12,"far":25,"dither":3}},
     timber_old: {"v1":"timber_old","seed":414,"desc":"PELL (US-078d). The weathered oak post and crossbar: dark wood gone silver-grey with age (ashDark tint), long drying cracks `|`. Not the plank `wood` (no seams, no knots): one old beam.","albedo":0.82,"bgK":0.14,"detail":40,"jitter":0.06,"tones":[["woodDark",3],["ashDark",2],["wood",1]],"grid":{"u":0.025,"v":0.025,"stagger":0,"lines":false},"face":{"set":"grainV","mid":"grainV","far":"grainV"},"lod":{"mid":12,"far":25,"dither":3}},
-    hit_flash: {"v1":"hit_flash","seed":415,"desc":"HIT FLASH (US-078d, reusable by US-079 beasts). The white 100 ms flash on a struck target: a shell of emissive white `*` / `#` voxels 1 voxel proud of the target, hidden 64 voxels under the floor except during clip `flash` (the lamp-glint trick, README 7 v1.14). Never on a static voxel.","albedo":1,"bgK":0.3,"detail":40,"jitter":0.06,"tones":[["white",3],["flameCore",1]],"grid":{"u":0.025,"v":0.025,"stagger":0,"lines":false},"face":{"set":"glint","mid":"glint","far":"glint"},"lod":{"mid":12,"far":25,"dither":3},"emissive":1}
+    hit_flash: {"v1":"hit_flash","seed":415,"desc":"HIT FLASH (US-078d, reusable by US-079 beasts). The white 100 ms flash on a struck target: a shell of emissive white `*` / `#` voxels 1 voxel proud of the target, hidden 64 voxels under the floor except during clip `flash` (the lamp-glint trick, README 7 v1.14). Never on a static voxel.","albedo":1,"bgK":0.3,"detail":40,"jitter":0.06,"tones":[["white",3],["flameCore",1]],"grid":{"u":0.025,"v":0.025,"stagger":0,"lines":false},"face":{"set":"glint","mid":"glint","far":"glint"},"lod":{"mid":12,"far":25,"dither":3},"emissive":1},
+    // CLOTH-1b4 cloth materials (design/cloth.js; palette.js v1 records of the same key). uv = rest-space metres
+    // (u along cols, v along rows, v grows DOWN the cloth). Existing vocabulary only: tones, grid, band, overlay.
+    'cloth.canvas': {
+      v1: 'cloth.canvas', seed: 501,
+      desc: 'CLOTH (CLOTH-1b). Torn balloon canvas: alternating faded-red (band) and pale-ochre gores 0.6 m wide with ' +
+            'seam lines between them and every 1.2 m down, airy clothFace folds, scorch near the tears (soot overlay).',
+      albedo: 0.84, bgK: 0.20, detail: 14, jitter: 0.08,
+      tones: [['canvas', 4], ['canvasLight', 2], ['canvasDark', 1]],
+      grid: { u: 0.6, v: 1.2, stagger: 0, shade: 0.66, tint: 'canvasDark', amount: 0.55, bgK: 0.14, maxCover: 0.25, tie: false },
+      band: { axis: 'u', period: 1.2, width: 0.6, set: 'clothFace', tone: 'goreRed', shade: 0.96, edgeShade: 0.62 },
+      face: { set: 'clothFace', mid: 'clothFace', far: 'clothFace' },
+      overlay: { set: 'soot', tints: ['canvasScorch', 'scorch'], amount: 0.70, shade: 0.60, joint: 0.12, face: 0.07 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'cloth.banner': {
+      v1: 'cloth.banner', seed: 502,
+      desc: 'CLOTH (CLOTH-1b). The ruin banner: woad wool, sun-faded in 10 cm patches (tones), three pale-ochre pales ' +
+            '0.1 m wide every 0.5 m (u 0 / 0.5 / 1.0: author it 1.1 m wide), dense bannerFace weave, a few weather stains.',
+      albedo: 0.80, bgK: 0.18, detail: 20, jitter: 0.07,
+      tones: [['woad', 4], ['woadLight', 1], ['woadDark', 1]],
+      grid: { u: 0.1, v: 0.1, stagger: 0, lines: false },
+      band: { axis: 'u', period: 0.5, width: 0.1, set: 'bannerFace', tone: 'canvasLight', shade: 1.0, edgeShade: 0.7 },
+      face: { set: 'bannerFace', mid: 'bannerFace', far: 'bannerFace' },
+      overlay: { set: 'soot', tints: ['woadDark', 'canvasScorch'], amount: 0.55, shade: 0.75, joint: 0.0, face: 0.06 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'cloth.flag': {
+      v1: 'cloth.flag', seed: 503,
+      desc: 'CLOTH (CLOTH-1b). Silk flag in the watch colours: pale woad, pale-ochre stripes 0.08 m every 0.36 m down ' +
+            '(v 0 / 0.36 / 0.72: author it 0.8 m tall), light clothFace, no stains (it is the one bright thing).',
+      albedo: 0.88, bgK: 0.18, detail: 20, jitter: 0.06,
+      tones: [['woad', 3], ['woadLight', 2]],
+      grid: { u: 0.15, v: 0.15, stagger: 0, lines: false },
+      band: { axis: 'v', period: 0.36, width: 0.08, set: 'clothFace', tone: 'canvasLight', shade: 1.05, edgeShade: 0.75 },
+      face: { set: 'clothFace', mid: 'clothFace', far: 'clothFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    'cloth.linen': {
+      v1: 'cloth.linen', seed: 504,
+      desc: 'CLOTH (CLOTH-1b). Linen curtain / tarp: pale warm white, faint weave, a grubby hem now and then (overlay).',
+      albedo: 0.86, bgK: 0.16, detail: 24, jitter: 0.06,
+      tones: [['linen', 4], ['linenLight', 1], ['linenDark', 1]],
+      grid: { u: 0.08, v: 0.08, stagger: 0, lines: false },
+      face: { set: 'clothFace', mid: 'clothFace', far: 'clothFace' },
+      overlay: { set: 'soot', tints: ['linenDark', 'ashDark'], amount: 0.50, shade: 0.80, joint: 0.0, face: 0.05 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    }
   };
 
   // v1 material key -> v2 key. Since US-029 every non-sky v1 material has a v2 record (sky keeps its own shader).
@@ -775,7 +827,9 @@
     // US-078 ruin-steel sword (design/models/sword.js), same key in both files.
     steel_edge: 'steel_edge', steel_old: 'steel_old', bronze_light: 'bronze_light', bronze: 'bronze', leather: 'leather', steel_glint: 'steel_glint',
     // US-078d pell (design/models/m3_props.js), same key in both files.
-    straw_light: 'straw_light', straw: 'straw', straw_dark: 'straw_dark', timber_old: 'timber_old', hit_flash: 'hit_flash'
+    straw_light: 'straw_light', straw: 'straw', straw_dark: 'straw_dark', timber_old: 'timber_old', hit_flash: 'hit_flash',
+    // CLOTH-1b4 cloth (design/cloth.js), same key in both files.
+    'cloth.canvas': 'cloth.canvas', 'cloth.banner': 'cloth.banner', 'cloth.flag': 'cloth.flag', 'cloth.linen': 'cloth.linen'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

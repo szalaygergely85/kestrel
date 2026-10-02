@@ -115,6 +115,19 @@ Once the engine supports v2, these rules apply:
 - **Fog is haze**: far glyphs thin to a lighter blue `. :` on a dark cool bg, never blank-black.
 - Ambient-only surfaces sit at level 3 of 8 or above. No surface in view shows only `.`.
 
+## 7c. Particles (US-053c, `models/particles.js`)
+- 1 particle = 1 cell. Bigger puffs are more particles, never bigger glyphs. Ramps run over life: dense when young, sparse when dying (`% # * ^ ' .` fire, `o O ; : ~ ' .` smoke). ASCII 33..126, no space steps (fade by colour, then die).
+- **Emissive = fire only** (flame, sparks). Everything else is lit by its emitter's light and ignores the cutoff, so a lit particle colour must be **dark**: smoke keys <= 35 % brightness (`ashDark` and darker), darkening with age. Smoke is a faint haze, never a glowing cloud in a dark room.
+- Fire colour walks `flameCore -> flameMid -> flameOuter -> flameTip -> ember -> emberDark`; sparks start `white`. Dust uses the floor's own tones (`ashLight`, `flagWarm`, `ash`). No aether / danger / hero hues in particles unless the effect means that (spells, harm, hero).
+- Bursts are short (0.3-0.8 s) and few (8-14). Continuous emitters stay under ~40 live each.
+
+## 7d. Cloth (CLOTH-1b, `cloth.js`)
+- **Folds are drawn by light**: smooth normals give each fold a lit crest and a dark valley, and the glyph set walks `. ' ~ - ) ( = %` with it. Keep the light/dark ladder of a cloth material at 8 levels with 3 alternates (`clothFace`, `bannerFace`).
+- **Every cloth has a pattern anchored on the cloth** (stripes, gores, pales, weave), so the pattern bends with the folds. A flat-colour sheet reads as a wall.
+- **Fray = holes** along the free edges: ragged hems, a swallowtail, a torn corner, a rip. Never a straight cut edge on old cloth.
+- Colours: canvas = the envelope (`canvas*` + `goreRed*`), wool banner / silk flag = the old watch's **woad** blue (`woad*`, greyer and more violet than `mana`, never teal) with pale-ochre `canvasLight` trim (no saturated yellow: the brass rule), linen = `linen*`. At most 2 hue families per cloth.
+- Motion by preset: canvas billows, banner swings heavy, silk ripples. All settle within ~4 s when the wind stops and then sleep (no glyph shimmer at rest).
+
 ## 8. Mood target for M1 (the Awakening)
 **D-011 update:** the same room, now the site of the crash. The brazier pool of light is the *Kestrel's* copper burner. The brass gondola with its KESTREL board sits on the floor, torn canvas hangs in the stairwell, and ivy spills in where the crown broke. At the summit a dead relay sits grey until the lamp wakes it: then the scene's first cold teal light appears. Reference picture: `preview/wreckage.html`.
 

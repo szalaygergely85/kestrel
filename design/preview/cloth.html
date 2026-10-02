@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - cloth look (CLOTH-1b4): canvas, banner, flag, curtain</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:100px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  pre.sw { font:16px/18px Consolas, monospace; margin:0; background:#000; padding:6px 8px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : cloth look (CLOTH-1b4) : torn canvas, ruin banner, watch flag, linen curtain</h1>
+<div class="note">
+  Data: <code>design/cloth.js</code> (<code>ASSETS.clothPresets</code> silk / canvas / banner, numbers merged over the engine defaults;
+  <code>ASSETS.clothLooks</code> = reference <code>cloths</code> blocks with pins + fray / tear holes), materials <code>cloth.canvas</code>,
+  <code>cloth.banner</code>, <code>cloth.flag</code>, <code>cloth.linen</code> in <code>palette.js</code> (v1) + <code>detail-pass.js</code> (v2, glyph sets
+  <code>clothFace</code> / <code>bannerFace</code>), colours <code>woadLight</code> / <code>woad</code> / <code>woadDark</code>.
+  <b>The sim is the real engine</b>: <code>createClothSystem</code> (<code>engine/world/cloths.js</code> -> <code>engine/physics/cloth.js</code>), fixed 60 Hz ticks,
+  <code>markDrawn</code> + sleep rules, the walker as body capsule 0. <b>The raster is a preview stand-in</b> for the rasterJS twin: perspective triangles,
+  smooth area-weighted vertex normals (as <code>updateClothMesh</code>), two-sided (N flipped toward the eye), per-cell <code>detailPass.util.shade</code>
+  with the cloth's rest-space uv, the kind-8 <code>modelRim</code> on silhouettes. No sun shadows here (the engine's sun map adds them).
+  <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/cloth.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>view <select id="focus">
+    <option value="all">all four</option><option value="canvas" selected>stairwell canvas</option><option value="banner">ruin banner</option>
+    <option value="flag">watch flag</option><option value="curtain">door curtain</option></select></label>
+  <label>wind <input type="range" id="wind" min="0" max="12" step="0.1" value="4"><span class="val" id="windV"></span></label>
+  <label>heading <input type="range" id="head" min="-180" max="180" step="5" value="60"><span class="val" id="headV"></span></label>
+  <label>gusts <select id="gust"><option value="0">steady</option><option value="1" selected>gusty</option><option value="2">storm</option></select></label>
+  <button id="calm">gust then calm</button>
+  <label>sun <select id="sun"><option value="1">on</option><option value="0">off (interior)</option></select></label>
+  <label>sun az <input type="range" id="saz" min="-180" max="180" step="5" value="35"><span class="val" id="sazV"></span></label>
+  <label>elev <input type="range" id="sel" min="5" max="85" step="1" value="40"><span class="val" id="selV"></span></label>
+  <label>torch <select id="torch"><option value="1">on</option><option value="0">off</option></select></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.1" value="1"><span class="val" id="ambV"></span></label>
+  <label>shader <select id="shader"><option value="v2">detail pass v2</option><option value="v1">v1 (fallback)</option></select></label>
+  <label>grid <select id="grid"><option value="160">160x60</option><option value="240" selected>240x90</option></select></label>
+  <label>orbit <input type="range" id="yaw" min="-70" max="70" step="1" value="-12"><span class="val" id="yawV"></span></label>
+  <label>dist <input type="range" id="dist" min="1.5" max="25" step="0.1" value="4.2"><span class="val" id="distV"></span></label>
+  <label>walker <select id="walk"><option value="0">off</option><option value="1">walks through (curtain + canvas)</option></select></label>
+  <button id="pause">pause</button>
+  <span class="val" id="stat" style="min-width:300px"></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>1. Live view</h2>
+<div class="note">Stairwell canvas: torn envelope piece (red / ochre gores, seams, a rip, the lower-right corner torn off) on 3 pins against a stone wall.
+  Ruin banner: woad wool, three pale-ochre pales, swallowtail hem, on a pole sleeve in front of a wall. Watch flag: silk, pinned down the hoist,
+  tattered fly. Door curtain: linen between two jambs; switch the walker on to see it part and fall back. Try: <b>gust then calm</b> (eases back within a few s),
+  wind 0 (everything settles and stops: glyphs stable), <b>dist 20</b> on the banner (still flutters, different motion per part), sun off + torch (warm tint).</div>
+<canvas id="view"></canvas>
+<div class="cap" id="viewInfo"></div>
+
+<h2>2. Swatches (flat cloth, front lit, 1 cell = 2.5 cm; shows the pattern and the glyph level ladder dark -> bright)</h2>
+<div class="row" id="swatches"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../cloth.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__clothOK) document.getElementById('fatal').textContent =
+      'Engine cloth modules did not load. This page must be served over http (ES modules): python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { createClothSystem } from '../../engine/world/cloths.js';
+window.__clothOK = true;
+
+const P = window.ASSETS.palette, DP = window.ASSETS.detailPass, U = P.util;
+const PRESETS = window.ASSETS.clothPresets, LOOKS = window.ASSETS.clothLooks;
+const $ = (id) => document.getElementById(id);
+const STEP = 1 / 60;
+
+// ------------------------------------------------------------------ scene layout (preview placement)
+const WALL_Y = -0.12;            // wall face (cloth hangs at y = 0, the wall box front face 0.12 m behind)
+function place(look, origin, colliders) { return { ...JSON.parse(JSON.stringify(look)), origin, yawDeg: 0, colliders }; }
+const wallBox = (x0, x1, z1) => ({ type: 'box', c: [(x0 + x1) / 2, WALL_Y - 0.15, z1 / 2], half: [(x1 - x0) / 2, 0.15, z1 / 2], yawDeg: 0 });
+const DEFS = [
+  place(LOOKS.stairwellCanvas, [-5.4, 0, 2.7], [wallBox(-5.9, -2.6, 3.4)]),
+  place(LOOKS.ruinBanner, [-1.95, 0, 3.0], [wallBox(-2.3, -0.5, 3.4)]),
+  place(LOOKS.watchFlag, [0.68, 0, 2.85], []),
+  place(LOOKS.doorCurtain, [3.0, 0, 2.1], [
+    { type: 'box', c: [2.78, 0, 1.15], half: [0.18, 0.3, 1.15], yawDeg: 0 },
+    { type: 'box', c: [4.22, 0, 1.15], half: [0.18, 0.3, 1.15], yawDeg: 0 }])
+];
+const FOCUS = {
+  all: { t: [-0.6, 0, 1.5], d: 9.5 }, canvas: { t: [-4.2, 0, 1.75], d: 4.2 }, banner: { t: [-1.4, 0, 1.9], d: 3.6 },
+  flag: { t: [1.3, 0, 2.5], d: 2.6 }, curtain: { t: [3.5, 0, 1.15], d: 3.4 }
+};
+// static scenery quads: [x0, y0, z0] -> corners, mat (v1 key), plane id
+const QUADS = [];
+function quad(p0, eu, ev, mat, n, id) { QUADS.push({ p0, eu, ev, mat, n, id }); }
+quad([-7, -3.2, 0], [14, 0, 0], [0, 7, 0], 'floor', [0, 0, 1], 1);                       // floor
+quad([-5.9, WALL_Y, 0], [3.3, 0, 0], [0, 0, 3.4], 'stone', [0, 1, 0], 2);                // canvas wall
+quad([-2.3, WALL_Y, 0], [1.8, 0, 0], [0, 0, 3.4], 'stone_ivy', [0, 1, 0], 3);            // banner ruin wall
+quad([0.62, 0.02, 0], [0.06, 0, 0], [0, 0, 3.0], 'wood', [0, 1, 0], 4);                  // flag pole (thin board)
+quad([2.6, 0.3, 0], [0.36, 0, 0], [0, 0, 2.3], 'stone', [0, 1, 0], 5);                   // left jamb
+quad([4.04, 0.3, 0], [0.36, 0, 0], [0, 0, 2.3], 'stone', [0, 1, 0], 6);                  // right jamb
+quad([2.6, 0.3, 2.3], [1.8, 0, 0], [0, 0, 0.35], 'stone', [0, 1, 0], 7);                 // lintel
+quad([2.6, -0.4, 0], [1.8, 0, 0], [0, 0, 2.65], 'stone', [0, 1, 0], 8);                  // dark room behind the door
+const TORCH = { x: -0.45, y: 0.55, z: 1.9 };
+
+// ------------------------------------------------------------------ wind (duck-typed field, sampleInto)
+let calmUntil = -1, gustUntil = -1;
+const wind = {
+  sampleInto(x, y, z, tick, out) {
+    const t = tick * STEP;
+    let s = +$('wind').value;
+    const mode = +$('gust').value;
+    if (t < gustUntil) s = 9;
+    else if (t < calmUntil) s = 0;
+    else if (mode > 0) {
+      const a = mode === 2 ? 0.75 : 0.45;
+      const g = 1 + a * Math.sin(t * 0.83 + x * 0.35) * Math.max(0, Math.sin(t * 0.31 + 1.1)) + 0.22 * Math.sin(t * 2.3 + x);
+      s = Math.max(0, s * g);
+    }
+    const h = +$('head').value * Math.PI / 180;
+    out[0] = Math.cos(h) * s; out[1] = Math.sin(h) * s; out[2] = 0;
+  }
+};
+
+// ------------------------------------------------------------------ system
+let sys, tick = 0;
+function build() {
+  sys = createClothSystem(DEFS, { groundAt: () => 0 }, PRESETS);
+  tick = 0;
+}
+
+// ------------------------------------------------------------------ checks
+const checks = [];
+function check(ok, msg) { checks.push(`<div class="${ok === true ? 'pass' : ok === 'info' ? 'info' : 'fail'}">${ok === true ? 'PASS' : ok === 'info' ? 'INFO' : 'FAIL'} ${msg}</div>`); }
+function runChecks() {
+  const pe = U.validate(); check(pe.length === 0, pe.length ? 'palette.validate(): ' + pe.join('; ') : 'palette.validate() clean (4 cloth materials, 3 woad colours)');
+  const de = DP.util.validate(); check(de.length === 0, de.length ? 'detailPass.validate(): ' + de.join('; ') : 'detailPass.validate() clean (clothFace / bannerFace sets, 4 v2 records, remap)');
+  const le = LOOKS.validate(P, DP); check(le.length === 0, le.length ? 'clothLooks.validate(): ' + le.join('; ') : 'clothLooks.validate(): presets numbers-only sim keys, mats in both files, holes inside the grids');
+  for (const k of ['cloth.canvas', 'cloth.banner', 'cloth.flag', 'cloth.linen']) check(DP.util.resolve('model', k) === k, `remap: ${k} -> v2 ${k}`);
+  let s;
+  try { s = createClothSystem(DEFS, { groundAt: () => 0 }, PRESETS); check(true, `engine createClothSystem builds all 4 looks with the designer presets (${s.cloths.map((c) => c.n).join(' + ')} = ${s.cloths.reduce((a, c) => a + c.n, 0)} nodes <= 768 maxAwakeNodes)`); }
+  catch (e) { check(false, 'createClothSystem threw: ' + e.message); return; }
+  // behaviour per look (engine sim, Node-style): steady 6 m/s side wind 8 s -> deflection; then calm -> settle time; then rest jitter
+  const names = ['canvas', 'banner', 'flag', 'curtain'];
+  const W = { v: 6, sampleInto(x, y, z, t, o) { o[0] = this.v * 0.5; o[1] = this.v * 0.866; o[2] = 0; } };
+  let t = 0;
+  const tickN = (n) => { for (let i = 0; i < n; i++) { for (let k = 0; k < s.count; k++) s.markDrawn(k); s.tick(++t, W, -0.6, 3, 1.5); } };
+  tickN(480);
+  s.cloths.forEach((c, i) => {
+    // free-edge deflection: mean angle from vertical of (bottom row - top row), ignoring holes
+    const cols = c.cols, rows = c.rows, p = c.pos;
+    let dx = 0, dz = 0, n = 0;
+    const freeRow = names[i] === 'flag' ? null : rows - 1;
+    if (freeRow !== null) {
+      for (let col = 0; col < cols; col++) {
+        if (!c.nodeActive[freeRow * cols + col] || !c.nodeActive[col]) continue;   // hole-only nodes stay frozen at rest
+        const a = 3 * col, b = 3 * (freeRow * cols + col);
+        const h = Math.hypot(p[b] - p[a], p[b + 1] - p[a + 1]); dx += h; dz += p[a + 2] - p[b + 2]; n++;
+      }
+      const ang = Math.atan2(dx / n, dz / n) * 180 / Math.PI;
+      check(names[i] === 'banner' ? ang >= 20 : ang >= 30, `${names[i]}: steady 6 m/s wind -> free edge ${ang.toFixed(0)} deg from vertical (bar ${names[i] === 'banner' ? '>= 20 (heavy wool)' : '>= 30 (AC)'})`);
+    } else {
+      // flag: the fly end lifts toward horizontal
+      const a = 3 * (Math.floor(rows / 2) * cols), b = 3 * (Math.floor(rows / 2) * cols + cols - 1);
+      const ang = Math.atan2(p[a + 2] - p[b + 2], Math.hypot(p[b] - p[a], p[b + 1] - p[a + 1])) * 180 / Math.PI;
+      check(ang <= 45, `flag: steady 6 m/s wind -> fly end ${ang.toFixed(0)} deg below horizontal (bar <= 45: it flies)`);
+    }
+  });
+  W.v = 0;
+  const settle = new Array(s.count).fill(-1);
+  for (let k = 0; k < 600; k++) {
+    tickN(1);
+    s.cloths.forEach((c, i) => { if (settle[i] < 0 && (c.asleep || c.maxSpeed < 0.02)) settle[i] = (k + 1) / 60; });
+  }
+  s.cloths.forEach((c, i) => check(settle[i] > 0.4 && settle[i] <= 4.5, `${names[i]}: wind drops 6 -> 0: calm (< 0.02 m/s) after ${settle[i] < 0 ? '> 10' : settle[i].toFixed(1)} s (bar 0.4-4.5 s: eases, no freeze, no 6 s swing)`));
+  tickN(120);
+  s.cloths.forEach((c, i) => check(c.asleep || c.maxSpeed < 0.005, `${names[i]}: at rest ${c.asleep ? 'asleep (rest-sleep: glyphs frozen)' : 'max node speed ' + c.maxSpeed.toFixed(4) + ' m/s'} (bar < 0.005)`));
+  check('info', 'Colour language: woad (banner / flag) is greyer + more violet than mana blue, never teal; trim = pale ochre canvasLight (no saturated yellow: brass rule); canvas keeps the envelope gores (canvas + goreRed).');
+  $('checks').innerHTML = checks.join('');
+}
+
+// ------------------------------------------------------------------ raster (preview stand-in for rasterJS)
+let COLS = 240, ROWS = 90, CW = 4, CH = 8;
+let G = null;
+function alloc() {
+  const n = COLS * ROWS;
+  G = { depth: new Float32Array(n), obj: new Int32Array(n), wx: new Float32Array(n), wy: new Float32Array(n), wz: new Float32Array(n),
+        nx: new Float32Array(n), ny: new Float32Array(n), nz: new Float32Array(n), u: new Float32Array(n), v: new Float32Array(n), mat: new Array(n),
+        glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) };
+}
+const cam = { e: [0, 0, 0], f: [0, -1, 0], r: [1, 0, 0], u: [0, 0, 1], foc: 1 };
+function setCamera() {
+  const F = FOCUS[$('focus').value], yaw = +$('yaw').value * Math.PI / 180, pitch = -8 * Math.PI / 180;
+  const dist = +$('dist').value;
+  const f = [Math.sin(yaw) * Math.cos(pitch), -Math.cos(yaw) * Math.cos(pitch), Math.sin(pitch)];
+  cam.f = f; cam.r = [Math.cos(yaw), Math.sin(yaw), 0];
+  cam.u = [f[1] * cam.r[2] - f[2] * cam.r[1], f[2] * cam.r[0] - f[0] * cam.r[2], f[0] * cam.r[1] - f[1] * cam.r[0]];
+  cam.e = [F.t[0] - f[0] * dist, F.t[1] - f[1] * dist, F.t[2] - f[2] * dist];
+  cam.foc = (COLS / 2) / Math.tan(37.5 * Math.PI / 180);
+}
+const pv = new Float64Array(3 * 3);
+function project(x, y, z, o, k) {
+  const dx = x - cam.e[0], dy = y - cam.e[1], dz = z - cam.e[2];
+  const cz = dx * cam.f[0] + dy * cam.f[1] + dz * cam.f[2];
+  const cx = dx * cam.r[0] + dy * cam.r[1] + dz * cam.r[2];
+  const cy = dx * cam.u[0] + dy * cam.u[1] + dz * cam.u[2];
+  o[k] = COLS / 2 + cx / cz * cam.foc; o[k + 1] = ROWS / 2 - cy / cz * cam.foc / 2; o[k + 2] = cz;
+}
+// attrs per vertex: [x,y,z, nx,ny,nz, u,v]
+function rasterTri(A, B, C, obj, mat) {
+  project(A[0], A[1], A[2], pv, 0); project(B[0], B[1], B[2], pv, 3); project(C[0], C[1], C[2], pv, 6);
+  if (pv[2] < 0.1 || pv[5] < 0.1 || pv[8] < 0.1) return;
+  const x0 = pv[0], y0 = pv[1], x1 = pv[3], y1 = pv[4], x2 = pv[6], y2 = pv[7];
+  const area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+  if (Math.abs(area) < 1e-9) return;
+  const iz0 = 1 / pv[2], iz1 = 1 / pv[5], iz2 = 1 / pv[8];
+  const minX = Math.max(0, Math.floor(Math.min(x0, x1, x2))), maxX = Math.min(COLS - 1, Math.ceil(Math.max(x0, x1, x2)));
+  const minY = Math.max(0, Math.floor(Math.min(y0, y1, y2))), maxY = Math.min(ROWS - 1, Math.ceil(Math.max(y0, y1, y2)));
+  for (let py = minY; py <= maxY; py++) {
+    const sy = py + 0.5;
+    for (let px = minX; px <= maxX; px++) {
+      const sx = px + 0.5;
+      const w0 = ((x1 - sx) * (y2 - sy) - (x2 - sx) * (y1 - sy)) / area;
+      const w1 = ((x2 - sx) * (y0 - sy) - (x0 - sx) * (y2 - sy)) / area;
+      const w2 = 1 - w0 - w1;
+      if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+      const iz = w0 * iz0 + w1 * iz1 + w2 * iz2, z = 1 / iz;
+      const i = py * COLS + px;
+      if (z >= G.depth[i]) continue;
+      G.depth[i] = z; G.obj[i] = obj; G.mat[i] = mat;
+      const a = w0 * iz0 * z, b = w1 * iz1 * z, c = w2 * iz2 * z;
+      G.wx[i] = A[0] * a + B[0] * b + C[0] * c; G.wy[i] = A[1] * a + B[1] * b + C[1] * c; G.wz[i] = A[2] * a + B[2] * b + C[2] * c;
+      G.nx[i] = A[3] * a + B[3] * b + C[3] * c; G.ny[i] = A[4] * a + B[4] * b + C[4] * c; G.nz[i] = A[5] * a + B[5] * b + C[5] * c;
+      G.u[i] = A[6] * a + B[6] * b + C[6] * c; G.v[i] = A[7] * a + B[7] * b + C[7] * c;
+    }
+  }
+}
+const nrmScratch = [];
+function rasterCloth(slot) {
+  const c = sys.cloths[slot], N = c.n, p = c.pos, tri = c.tri, cols = c.cols;
+  const du = sys.uvStep[2 * slot], dv = sys.uvStep[2 * slot + 1];
+  const acc = nrmScratch[slot] || (nrmScratch[slot] = new Float64Array(3 * N));
+  acc.fill(0);
+  for (let t = 0; t < tri.length; t += 3) {   // area-weighted vertex normals (as updateClothMesh)
+    const a = tri[t] * 3, b = tri[t + 1] * 3, d = tri[t + 2] * 3;
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const vx = p[d] - p[a], vy = p[d + 1] - p[a + 1], vz = p[d + 2] - p[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    for (const k of [a, b, d]) { acc[k] += nx; acc[k + 1] += ny; acc[k + 2] += nz; }
+  }
+  const V = (k) => { const l = Math.hypot(acc[3 * k], acc[3 * k + 1], acc[3 * k + 2]) || 1;
+    return [p[3 * k], p[3 * k + 1], p[3 * k + 2], acc[3 * k] / l, acc[3 * k + 1] / l, acc[3 * k + 2] / l, (k % cols) * du, Math.floor(k / cols) * dv]; };
+  for (let t = 0; t < tri.length; t += 3) rasterTri(V(tri[t]), V(tri[t + 1]), V(tri[t + 2]), 100 + slot, sys.mats[slot]);
+  sys.markDrawn(slot);
+}
+function rasterQuad(q) {
+  const v = (s, t) => [q.p0[0] + q.eu[0] * s + q.ev[0] * t, q.p0[1] + q.eu[1] * s + q.ev[1] * t, q.p0[2] + q.eu[2] * s + q.ev[2] * t,
+    q.n[0], q.n[1], q.n[2], 0, 0];
+  const lu = Math.hypot(...q.eu), lv = Math.hypot(...q.ev);
+  // subdivide so perspective uv / light stay smooth
+  const nu = Math.max(1, Math.ceil(lu / 0.5)), nv = Math.max(1, Math.ceil(lv / 0.5));
+  for (let a = 0; a < nu; a++) for (let b = 0; b < nv; b++) {
+    const P0 = v(a / nu, b / nv), P1 = v((a + 1) / nu, b / nv), P2 = v(a / nu, (b + 1) / nv), P3 = v((a + 1) / nu, (b + 1) / nv);
+    for (const [X, s, t] of [[P0, a / nu, b / nv], [P1, (a + 1) / nu, b / nv], [P2, a / nu, (b + 1) / nv], [P3, (a + 1) / nu, (b + 1) / nv]]) {
+      if (q.n[2] === 1) { X[6] = X[0]; X[7] = X[1]; } else { X[6] = s * lu + q.p0[0]; X[7] = t * lv + q.p0[2]; }
+    }
+    rasterTri(P0, P1, P3, q.id, q.mat); rasterTri(P0, P3, P2, q.id, q.mat);
+  }
+}
+// walker capsule drawn as a simple dark figure (cylinder billboard)
+function rasterWalker(w) {
+  const r = 0.3, h = 1.75;
+  const A = [w.x - r * cam.r[0], w.y - r * cam.r[1], w.z, -cam.f[0], -cam.f[1], 0, 0, 0];
+  const B = [w.x + r * cam.r[0], w.y + r * cam.r[1], w.z, -cam.f[0], -cam.f[1], 0, 0.6, 0];
+  const C = [w.x - r * cam.r[0], w.y - r * cam.r[1], w.z + h, -cam.f[0], -cam.f[1], 0, 0, 1.75];
+  const D = [w.x + r * cam.r[0], w.y + r * cam.r[1], w.z + h, -cam.f[0], -cam.f[1], 0, 0.6, 1.75];
+  rasterTri(A, B, D, 50, 'iron_dark'); rasterTri(A, D, C, 50, 'iron_dark');
+}
+
+const shOut = { fg: [0, 0, 0], bg: [0, 0, 0] }, sample = {};
+function lightAtCell(i, tSec, L) {
+  L[0] = L[1] = L[2] = 0;
+  let nx = G.nx[i], ny = G.ny[i], nz = G.nz[i];
+  const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+  const ex = cam.e[0] - G.wx[i], ey = cam.e[1] - G.wy[i], ez = cam.e[2] - G.wz[i];
+  if (nx * ex + ny * ey + nz * ez < 0) { nx = -nx; ny = -ny; nz = -nz; }   // two-sided
+  U.addLight(L, 'ambient', P.lights.ambient.intensity * +$('amb').value);
+  if ($('sun').value === '1') {
+    const az = +$('saz').value * Math.PI / 180, el = +$('sel').value * Math.PI / 180;
+    const sx = Math.sin(az) * Math.cos(el), sy = Math.cos(az) * Math.cos(el), sz = Math.sin(el);   // FROM direction (az 0 = +y side)
+    U.addLight(L, 'sun', Math.max(0, nx * sx + ny * sy + nz * sz));
+  }
+  if ($('torch').value === '1') {
+    const fl = P.lights.torch.flicker, f = 1 + fl.amount * (0.6 * Math.sin(tSec * 2 * Math.PI * fl.hzMin) + 0.4 * Math.sin(tSec * 2 * Math.PI * fl.hzMax + 1.3));
+    const dx = TORCH.x - G.wx[i], dy = TORCH.y - G.wy[i], dz = TORCH.z - G.wz[i], d = Math.hypot(dx, dy, dz) || 1;
+    U.addLight(L, 'torch', f * U.falloff(d, P.lights.torch.radius) * Math.max(0, (nx * dx + ny * dy + nz * dz) / d));
+  }
+  return L;
+}
+function shadeAll(tSec) {
+  const L = [0, 0, 0], v2 = $('shader').value === 'v2';
+  const bgF = P.rgb.fogV2;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x;
+    if (G.depth[i] === Infinity) { G.glyph[i] = ' '; G.fg.fill(0, i * 3, i * 3 + 3); G.bg[i * 3] = bgF[0] * 0.5; G.bg[i * 3 + 1] = bgF[1] * 0.5; G.bg[i * 3 + 2] = bgF[2] * 0.6; continue; }
+    lightAtCell(i, tSec, L);
+    const dist = Math.hypot(G.wx[i] - cam.e[0], G.wy[i] - cam.e[1], G.wz[i] - cam.e[2]);
+    let o;
+    if (v2 && DP.materials[G.mat[i]]) {
+      // screen derivatives of uv from neighbours on the same object (else 0.02 m/cell guess)
+      const ir = x < COLS - 1 && G.obj[i + 1] === G.obj[i] ? i + 1 : (x > 0 && G.obj[i - 1] === G.obj[i] ? i - 1 : -1);
+      const idn = y < ROWS - 1 && G.obj[i + COLS] === G.obj[i] ? i + COLS : (y > 0 && G.obj[i - COLS] === G.obj[i] ? i - COLS : -1);
+      const sxn = ir === i + 1 ? 1 : -1, syn = idn === i + COLS ? 1 : -1;
+      sample.kind = G.obj[i] >= 100 ? 'model' : G.obj[i] === 1 ? 'floor' : 'wall';
+      sample.mat = G.mat[i]; sample.normal = G.obj[i] >= 100 || G.obj[i] === 50 ? null : G.obj[i] === 1 ? 'U' : 'S';
+      sample.u = G.u[i]; sample.v = G.v[i]; sample.z = G.wz[i]; sample.dist = dist; sample.aoD = null;
+      sample.dudx = ir >= 0 ? (G.u[ir] - G.u[i]) * sxn : 0.02; sample.dvdx = ir >= 0 ? (G.v[ir] - G.v[i]) * sxn : 0;
+      sample.dudy = idn >= 0 ? (G.u[idn] - G.u[i]) * syn : 0; sample.dvdy = idn >= 0 ? (G.v[idn] - G.v[i]) * syn : 0.04;
+      o = DP.util.shade(sample, L, shOut);
+    } else {
+      o = U.shade(G.mat[i], L, G.u[i], G.v[i], dist, shOut, { fog: 'interior' });
+    }
+    G.glyph[i] = o.glyph;
+    G.fg[i * 3] = o.fg[0]; G.fg[i * 3 + 1] = o.fg[1]; G.fg[i * 3 + 2] = o.fg[2];
+    G.bg[i * 3] = o.bg[0]; G.bg[i * 3 + 1] = o.bg[1]; G.bg[i * 3 + 2] = o.bg[2];
+  }
+  // kind-8 rim: a cloth / walker cell with a farther (or empty) neighbour on another object -> fg + bg x modelRim
+  const rim = DP.edges.modelRim, rr = DP.edges.depthRatio, ra = DP.edges.depthAbs;
+  const mark = new Uint8Array(COLS * ROWS);
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x; if (G.obj[i] < 50) continue;
+    const d = G.depth[i];
+    for (const j of [x > 0 ? i - 1 : -1, x < COLS - 1 ? i + 1 : -1, y > 0 ? i - COLS : -1, y < ROWS - 1 ? i + COLS : -1]) {
+      if (j < 0) continue;
+      if (G.depth[j] === Infinity || (G.obj[j] !== G.obj[i] && G.depth[j] > d * rr + ra)) { mark[i] = 1; break; }
+    }
+  }
+  for (let i = 0; i < mark.length; i++) if (mark[i]) for (let k = 0; k < 3; k++) { G.fg[i * 3 + k] *= rim + 0.25; G.bg[i * 3 + k] *= rim; }
+}
+function blit(cv) {
+  const g = cv.getContext('2d');
+  g.font = `bold ${CH}px Consolas, monospace`; g.textBaseline = 'top';
+  for (let i = 0; i < COLS * ROWS; i++) {
+    const x = (i % COLS) * CW, y = Math.floor(i / COLS) * CH;
+    g.fillStyle = `rgb(${G.bg[i * 3] | 0},${G.bg[i * 3 + 1] | 0},${G.bg[i * 3 + 2] | 0})`;
+    g.fillRect(x, y, CW, CH);
+    if (G.glyph[i] !== ' ') {
+      g.fillStyle = `rgb(${Math.min(255, G.fg[i * 3]) | 0},${Math.min(255, G.fg[i * 3 + 1]) | 0},${Math.min(255, G.fg[i * 3 + 2]) | 0})`;
+      g.fillText(G.glyph[i], x, y);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ swatches: flat cloth, front light ramp left -> right
+function swatches() {
+  const host = $('swatches'); host.innerHTML = '';
+  const L = [0, 0, 0], s = {};
+  for (const [key, w, h] of [['cloth.canvas', 2.4, 0.9], ['cloth.banner', 1.1, 0.9], ['cloth.flag', 1.2, 0.8], ['cloth.linen', 1.0, 0.9]]) {
+    const cw = 0.025, cols = Math.round(w / cw), rows = Math.round(h / (2 * cw));
+    let html = '';
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const b = 0.05 + 1.05 * (r / (rows - 1));   // light level per row (top dark -> bottom bright)
+        L[0] = L[1] = L[2] = 0; U.addLight(L, 'sun', b);
+        Object.assign(s, { kind: 'model', mat: key, normal: null, u: c * cw, v: r * 2 * cw, z: 1, dist: 2, aoD: null, dudx: cw, dvdx: 0, dudy: 0, dvdy: 2 * cw });
+        const o = DP.util.shade(s, L, { fg: [0, 0, 0], bg: [0, 0, 0] });
+        const ch = o.glyph === '<' ? '&lt;' : o.glyph === '&' ? '&amp;' : o.glyph;
+        html += `<span style="color:rgb(${o.fg[0] | 0},${o.fg[1] | 0},${o.fg[2] | 0});background:rgb(${o.bg[0] | 0},${o.bg[1] | 0},${o.bg[2] | 0})">${ch}</span>`;
+      }
+      html += '\n';
+    }
+    const d = document.createElement('div');
+    d.innerHTML = `<pre class="sw" style="font-size:9px;line-height:10px">${html}</pre><div class="cap">${key} (${w} m wide; light rises down the swatch)</div>`;
+    host.appendChild(d);
+  }
+}
+
+// ------------------------------------------------------------------ loop
+let paused = false, acc = 0, last = performance.now(), simMs = 0;
+const walker = { x: 3.5, y: 1.6, z: 0, dir: -1, x2: -4.6 };
+// second walker: brushes along the canvas between the wall face (y -0.12) and 1.6 m out, never into the wall
+const walker2Y = () => 0.4 + (walker.y + 1.4) / 3 * 1.2;
+function stepSim() {
+  tick++;
+  if ($('walk').value === '1') {
+    walker.y += walker.dir * 1.4 * STEP;
+    if (walker.y < -1.4 || walker.y > 1.6) walker.dir *= -1;
+    sys.setBody(0, walker.x, walker.y, 0, 0.35, 1.8);
+    sys.setBody(1, walker.x2, walker2Y(), 0, 0.35, 1.8);
+  } else sys.clearBodies();
+  const t0 = performance.now();
+  sys.tick(tick, wind, cam.e[0], cam.e[1], cam.e[2]);
+  simMs = simMs * 0.95 + (performance.now() - t0) * 0.05;
+}
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const gsz = +$('grid').value;
+  if (gsz !== COLS) { COLS = gsz; ROWS = gsz === 160 ? 60 : 90; CW = gsz === 160 ? 6 : 4; CH = gsz === 160 ? 12 : 8; alloc(); }
+  const cv = $('view'); if (cv.width !== COLS * CW) { cv.width = COLS * CW; cv.height = ROWS * CH; }
+  setCamera();
+  if (!paused) { acc += dt; while (acc >= STEP) { stepSim(); acc -= STEP; } }
+  G.depth.fill(Infinity); G.obj.fill(0);
+  for (const q of QUADS) rasterQuad(q);
+  for (let s = 0; s < sys.count; s++) rasterCloth(s);
+  if ($('walk').value === '1') { rasterWalker(walker); rasterWalker({ x: walker.x2, y: walker2Y(), z: 0 }); }
+  shadeAll(tick * STEP);
+  blit(cv);
+  $('windV').textContent = (+$('wind').value).toFixed(1) + ' m/s'; $('headV').textContent = $('head').value + ' deg';
+  $('sazV').textContent = $('saz').value; $('selV').textContent = $('sel').value; $('ambV').textContent = $('amb').value;
+  $('yawV').textContent = $('yaw').value; $('distV').textContent = (+$('dist').value).toFixed(1) + ' m';
+  const tt = tick * STEP;
+  $('stat').textContent = `t ${tt.toFixed(1)} s  awake ${sys.stats.awake}/${sys.count} (${sys.stats.awakeNodes} nodes)  sim ${simMs.toFixed(3)} ms/tick` +
+    (tt < gustUntil ? '  GUST 9 m/s' : tt < calmUntil ? '  CALM' : '');
+  $('viewInfo').textContent = sys.cloths.map((c, i) => `${sys.ids[i]}: ${c.asleep ? 'asleep' : 'awake'} v ${c.maxSpeed.toFixed(3)} m/s`).join('   ');
+  requestAnimationFrame(frame);
+}
+
+$('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); $('pause').textContent = paused ? 'play' : 'pause'; };
+$('calm').onclick = () => { const t = tick * STEP; gustUntil = t + 1.5; calmUntil = t + 8; };
+$('focus').onchange = () => { $('dist').value = FOCUS[$('focus').value].d; };
+
+try {
+  alloc();
+  build();
+  runChecks();
+  swatches();
+  requestAnimationFrame(frame);
+} catch (e) {
+  $('fatal').textContent = 'Error: ' + e.message;
+  console.error(e);
+}
+</script>
+</body>
+</html>

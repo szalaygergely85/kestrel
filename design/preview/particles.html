@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - particle presets (US-053c): flame, smoke, sparks, dust</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:40px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; max-width:420px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  pre.ramp { font:16px/18px Consolas, monospace; margin:0; background:#000; padding:4px 8px; letter-spacing:2px; }
+  table.def { border-collapse:collapse; font:12px Consolas, monospace; }
+  table.def td, table.def th { border:1px solid #22252e; padding:2px 6px; text-align:left; }
+  table.def th { color:#e8c060; }
+</style>
+</head>
+<body>
+<h1>Kestrel : particle presets (US-053c) : flame, smoke, sparks, dust</h1>
+<div class="note">
+  Data: <code>design/models/particles.js</code> - <code>ASSETS.particles.presets</code> (32.1 EmitterDef, colours as palette keys) +
+  <code>toEmitterDef(key, palette.rgb)</code> (what main.js passes to <code>engine.particles.defineEmitter</code>).
+  <b>This page runs the real engine sim</b> (<code>engine/fx/particles.js</code>, fixed 60 Hz steps, its own seeded RNG) and draws it with
+  the 32.1 / 053b rules: 1 particle = 1 cell, stepped ramp index <code>floor(age * n / life)</code>, emissive = ramp colour as is,
+  non-emissive = ramp colour x the light at the <b>emitter</b> (sprite gain rule, <code>fgMin</code> floor, no cutoff - US-053c AC8).
+  Side view, 1 cell = 5 cm wide x 10 cm tall (the 2:1 cell, so metres are square on screen). Back wall = the v1 stone shader under the same lights.
+  <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/particles.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>room <select id="room"><option value="lit">lit (ambient + room torch)</option><option value="dark">pitch dark (only the fire's own light)</option></select></label>
+  <label>wind x <input type="range" id="wind" min="-3" max="3" step="0.1" value="0"><span class="val" id="windV"></span></label>
+  <label>speed <select id="speed"><option>1</option><option>0.5</option><option>0.25</option><option>0.1</option></select></label>
+  <label>zoom <select id="zoom"><option value="1">1 (5 cm cells)</option><option value="2">2 (2.5 cm cells)</option></select></label>
+  <label>spark normal <select id="sdir"><option value="up">up (default axis)</option><option value="side">+x (hit on a wall to the left)</option><option value="diag">up-left (glancing)</option></select></label>
+  <button id="pause">pause</button>
+  <button id="burstBtn">burst sparks + dust now</button>
+  <button id="reset">reset (clear)</button>
+  <span class="val" id="stat"></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>1. The four presets side by side (+ the burner as placed: flame + smoke 0.45 m above it)</h2>
+<div class="note">Sparks and dust are bursts (<code>burstAt</code>), repeated here every 0.9 s / 1.1 s. Flip the room to <b>pitch dark</b>: flame and sparks keep
+  their colour (emissive), smoke and dust drop to the <code>fgMin</code> floor of their emitter's light. In the burner panel the burner's own torch light
+  (palette <code>lights.torch</code>, flicker) still lights the smoke - the AC8 case: a faint warm haze, never a glowing cloud.</div>
+<div class="row" id="panels"></div>
+
+<h2>2. Ramps over life (newborn left -> dying right; non-emissive drawn as lit by a full torch, b = 1)</h2>
+<div id="ramps"></div>
+
+<h2>3. Numbers (as passed to defineEmitter)</h2>
+<div id="defs"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/particles.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__partOK) document.getElementById('fatal').textContent =
+      'Engine particle modules did not load. This page must be served over http (ES modules): python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { createParticles } from '../../engine/fx/particles.js';
+import { D, DEF_STRIDE, MAX_RAMP } from '../../engine/fx/emitterDef.js';
+import { STEP } from '../../engine/core/loop.js';
+window.__partOK = true;
+
+const P = window.ASSETS.palette, PS = window.ASSETS.particles, U = P.util, SH = P.shading;
+const $ = (id) => document.getElementById(id);
+const checks = [];
+function check(ok, msg) { checks.push(`<div class="${ok === true ? 'pass' : ok === 'info' ? 'info' : 'fail'}">${ok === true ? 'PASS' : ok === 'info' ? 'INFO' : 'FAIL'} ${msg}</div>`); }
+
+// ---------------------------------------------------------------- light helpers (sprite gain rule, 053b)
+function lightMul(L, out) {
+  const Lm = Math.max(L[0], L[1], L[2]);
+  let hr = 1, hg = 1, hb = 1;
+  if (Lm > 1e-6) { hr = L[0] / Lm; hg = L[1] / Lm; hb = L[2] / Lm; }
+  const b = Lm < 0 ? 0 : Lm;
+  let gain = SH.fgMin + (1 - SH.fgMin) * Math.pow(b > 1 ? 1 : b, SH.fgGamma);
+  if (b > 1) gain = Math.min(SH.fgMaxGain, gain + (b - 1) * 0.5);
+  const k = SH.tint;
+  out[0] = (1 + (hr - 1) * k) * gain; out[1] = (1 + (hg - 1) * k) * gain; out[2] = (1 + (hb - 1) * k) * gain;
+  return out;
+}
+const ROOM_TORCH = { x: -0.9, y: 0.6, z: 1.7, I: 1.0, r: 6 };   // lit room: a wall torch up-left of every panel
+function lightAt(panel, x, y, z, tSec, L) {
+  L[0] = L[1] = L[2] = 0;
+  const lit = $('room').value === 'lit';
+  if (lit) {
+    U.addLight(L, 'ambient', P.lights.ambient.intensity);
+    const d = Math.hypot(x - ROOM_TORCH.x, y - ROOM_TORCH.y, z - ROOM_TORCH.z);
+    U.addLight(L, 'torch', ROOM_TORCH.I * U.falloff(d, ROOM_TORCH.r));
+  }
+  if (panel.fire) {   // the fire's own point light (palette lights.torch, smooth 8-12 Hz flicker)
+    const fl = P.lights.torch.flicker;
+    const f = 1 + fl.amount * (0.6 * Math.sin(tSec * 2 * Math.PI * fl.hzMin) + 0.4 * Math.sin(tSec * 2 * Math.PI * fl.hzMax + 1.3));
+    const d = Math.hypot(x - panel.fire.x, y - panel.fire.y, z - panel.fire.z);
+    U.addLight(L, 'torch', P.lights.torch.intensity * f * U.falloff(d, P.lights.torch.radius));
+  }
+  return L;
+}
+
+// ---------------------------------------------------------------- panels
+const PANELS = [
+  { id: 'burner', title: 'burner: flame + smoke (as placed)', cols: 40, rows: 36, x0: -1.0, zTop: 3.4,
+    emit: [{ k: 'flame', x: 0, y: 0, z: 0.62 }, { k: 'smoke', x: 0, y: 0, z: 1.07 }], fire: { x: 0, y: 0, z: 0.75 }, burner: true },
+  { id: 'flame', title: 'flame (rate 40/s, emissive)', cols: 24, rows: 36, x0: -0.6, zTop: 3.4,
+    emit: [{ k: 'flame', x: 0, y: 0, z: 0.3 }], fire: { x: 0, y: 0, z: 0.45 } },
+  { id: 'smoke', title: 'smoke (lit by its emitter only)', cols: 40, rows: 36, x0: -1.0, zTop: 3.4,
+    emit: [{ k: 'smoke', x: 0, y: 0, z: 0.3 }] },
+  { id: 'sparks', title: 'sparks (burst 10, emissive, gravity)', cols: 40, rows: 36, x0: -1.0, zTop: 3.4,
+    burst: { k: 'sparks', x: 0, y: 0, z: 1.5, every: 54 } },
+  { id: 'dust', title: 'dust (burst 10 at the feet, lit)', cols: 40, rows: 36, x0: -1.0, zTop: 3.4,
+    burst: { k: 'dust', x: 0, y: 0, z: 0.03, every: 66 } },
+];
+
+const defined = {};   // per panel: key -> defId
+function buildSystems() {
+  for (const p of PANELS) {
+    p.ps = createParticles({ capacity: 512, seed: 7 });
+    p.ids = {};
+    for (const k of Object.keys(PS.presets)) p.ids[k] = p.ps.defineEmitter(k, PS.toEmitterDef(k, P.rgb));
+    p.handles = (p.emit || []).map((e) => { const h = p.ps.createEmitter(p.ids[e.k], e.x, e.y, e.z); p.ps.setOn(h, true); return h; });
+    p.t = 0;
+    if (!p.canvas) {
+      const wrap = document.createElement('div');
+      p.canvas = document.createElement('canvas');
+      wrap.appendChild(p.canvas);
+      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = p.title; wrap.appendChild(cap);
+      p.capEl = document.createElement('div'); p.capEl.className = 'cap'; wrap.appendChild(p.capEl);
+      $('panels').appendChild(wrap);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- checks (engine defineEmitter + data rules + AC8 numbers)
+function runChecks() {
+  const probe = createParticles({ capacity: 64, seed: 1 });
+  for (const k of Object.keys(PS.presets)) {
+    try { probe.defineEmitter(k, PS.toEmitterDef(k, P.rgb)); check(true, `engine defineEmitter("${k}") accepts the preset`); }
+    catch (e) { check(false, `engine defineEmitter("${k}") threw: ${e.message}`); }
+  }
+  const errs = PS.validate(P.rgb);
+  check(errs.length === 0, errs.length ? 'particles.validate(): ' + errs.join('; ') : 'particles.validate(): glyphs ASCII 33..126, no space, ramps <= 16, all colour keys in the palette, smoke <= 35 %');
+  const pal = U.validate();
+  check(pal.length === 0, pal.length ? 'palette.validate(): ' + pal.join('; ') : 'palette.validate() clean');
+  for (const k of Object.keys(PS.presets)) {
+    const p = PS.presets[k];
+    check(p.glyphs.length === p.colors.length, `${k}: glyph ramp ${p.glyphs.length} = colour ramp ${p.colors.length} steps (1:1 pairing)`);
+  }
+  check(PS.presets.flame.emissive && PS.presets.sparks.emissive && !PS.presets.smoke.emissive && !PS.presets.dust.emissive,
+    'emissive = fire only (flame, sparks); smoke + dust are lit');
+
+  // AC8: lit smoke under the burner torch at the smoke emitter (0.32 m above the light), worst case b > 1 -> gain cap
+  const L = [0, 0, 0], m = [0, 0, 0];
+  U.addLight(L, 'torch', P.lights.torch.intensity * 1.15 * U.falloff(0.32, P.lights.torch.radius));
+  lightMul(L, m);
+  let worst = 0;
+  for (const key of PS.presets.smoke.colors) { const c = P.rgb[key]; worst = Math.max(worst, c[0] * m[0], c[1] * m[1], c[2] * m[2]); }
+  check(worst <= 0.42 * 255, `AC8 smoke under the full burner torch (+15 % flicker): brightest channel ${worst.toFixed(0)} / 255 = ${(worst / 2.55).toFixed(0)} % (bar <= 42 %: a faint haze)`);
+  let dark = 0;
+  lightMul([0, 0, 0], m);
+  for (const key of PS.presets.smoke.colors) { const c = P.rgb[key]; dark = Math.max(dark, c[0] * m[0]); }
+  check(dark <= 0.12 * 255, `AC8 smoke in a pitch-dark room (fgMin ${SH.fgMin}): brightest channel ${dark.toFixed(0)} / 255 = ${(dark / 2.55).toFixed(0)} % (bar <= 12 %: barely there, never a lit cloud)`);
+
+  // sim behaviour (engine sim, 600 steps)
+  const s = createParticles({ capacity: 512, seed: 3 });
+  const fid = s.defineEmitter('flame', PS.toEmitterDef('flame', P.rgb));
+  const sid = s.defineEmitter('smoke', PS.toEmitterDef('smoke', P.rgb));
+  const pid = s.defineEmitter('sparks', PS.toEmitterDef('sparks', P.rgb));
+  const did = s.defineEmitter('dust', PS.toEmitterDef('dust', P.rgb));
+  const hf = s.createEmitter(fid, 0, 0, 0); s.setOn(hf, true);
+  let spawned0 = 0, maxH = 0, hs = [];
+  for (let i = 0; i < 600; i++) {
+    s.step();
+    if (i === 299) spawned0 = s.stats.spawned;
+    if (i >= 300) for (let j = 0; j < s.cap; j++) if (s.alive[j] && s.def[j] === fid) hs.push(s.pz[j]);
+  }
+  const rate = (s.stats.spawned - spawned0) / 5;
+  hs.sort((a, b) => a - b);
+  const p95 = hs[Math.floor(hs.length * 0.95)] || 0;
+  check(Math.abs(rate - 40) <= 1, `flame spawns ${rate.toFixed(1)}/s (AC ~40/s)`);
+  check(p95 >= 0.35 && p95 <= 0.8, `flame column height (p95 of live particles) ${p95.toFixed(2)} m (0.35-0.8 m: a tongue, not a fountain)`);
+  // smoke rise
+  s.clear();
+  const hsm = s.createEmitter(sid, 0, 0, 0); s.setOn(hsm, true);
+  let topZ = 0;
+  for (let i = 0; i < 600; i++) { s.step(); }
+  for (let j = 0; j < s.cap; j++) if (s.alive[j]) topZ = Math.max(topZ, s.pz[j]);
+  check(topZ > 1.5 && topZ < 3.5, `smoke climbs to ${topZ.toFixed(2)} m above its emitter in its 3-4 s life (1.5-3.5 m: past the burner, under a 4 m ceiling)`);
+  // bursts
+  s.burstAt(pid, 0, 0, 1.2, PS.presets.sparks.burst); s.step();
+  let nSp = 0; for (let j = 0; j < s.cap; j++) if (s.alive[j] && s.def[j] === pid) nSp++;
+  check(nSp >= 8 && nSp <= 12, `sparks burst spawns ${nSp} (AC 8-12)`);
+  let lowest = 9; for (let i = 0; i < 30; i++) { s.step(); for (let j = 0; j < s.cap; j++) if (s.alive[j] && s.def[j] === pid) lowest = Math.min(lowest, s.pz[j]); }
+  check(lowest >= 1.2 - 1.5 - 0.15, `sparks never fall more than ~1.5 m below the hit (kill plane): lowest ${lowest.toFixed(2)} m`);
+  s.burstAt(did, 0, 0, 0, PS.presets.dust.burst); s.step();
+  let nD = 0, maxR = 0, minZ = 9;
+  for (let i = 0; i < 50; i++) { s.step(); for (let j = 0; j < s.cap; j++) if (s.alive[j] && s.def[j] === did) { maxR = Math.max(maxR, Math.hypot(s.px[j], s.py[j])); minZ = Math.min(minZ, s.pz[j]); } }
+  check(maxR > 0.2 && maxR < 1.0, `dust ring radius ${maxR.toFixed(2)} m (a puff round the feet, 0.2-1.0 m)`);
+  check(minZ >= -0.03, `dust never sinks under the floor (kill plane 2 cm): lowest ${minZ.toFixed(3)} m`);
+  check('info', `LANDING_DUST_SPEED = ${PS.LANDING_DUST_SPEED} m/s (AC5 data const)`);
+  $('checks').innerHTML = checks.join('');
+}
+
+// ---------------------------------------------------------------- ramps + defs tables
+function drawRamps() {
+  const host = $('ramps'); host.innerHTML = '';
+  const L = [0, 0, 0]; U.addLight(L, 'torch', 1); const m = lightMul(L, [0, 0, 0]);
+  for (const k of Object.keys(PS.presets)) {
+    const p = PS.presets[k];
+    let html = '';
+    for (let i = 0; i < p.glyphs.length; i++) {
+      const c = P.rgb[p.colors[i]], mul = p.emissive ? [1, 1, 1] : m;
+      const r = Math.min(255, c[0] * mul[0]) | 0, g = Math.min(255, c[1] * mul[1]) | 0, b = Math.min(255, c[2] * mul[2]) | 0;
+      const ch = p.glyphs[i].replace('&', '&amp;').replace('<', '&lt;');
+      html += `<span style="color:rgb(${r},${g},${b})" title="${p.colors[i]}">${ch}</span>`;
+    }
+    const div = document.createElement('div'); div.className = 'row';
+    div.innerHTML = `<pre class="ramp">${html}</pre><div class="cap">${k}: ${p.emissive ? 'emissive' : 'lit'} - ${p.colors.join(' ')}</div>`;
+    host.appendChild(div);
+  }
+  const keys = ['rate', 'burst', 'life', 'speed', 'dir', 'spreadDeg', 'box', 'accelZ', 'drag', 'wind', 'maxLive', 'killBelow', 'emissive', 'emissiveFog', 'glyphs'];
+  let t = '<table class="def"><tr><th>field</th>' + Object.keys(PS.presets).map((k) => `<th>${k}</th>`).join('') + '</tr>';
+  for (const f of keys) t += `<tr><td>${f}</td>` + Object.keys(PS.presets).map((k) => `<td>${JSON.stringify(PS.presets[k][f])}</td>`).join('') + '</tr>';
+  $('defs').innerHTML = t + '</table>';
+}
+
+// ---------------------------------------------------------------- per-panel draw
+const CW = 8, CH = 16;
+const cellOut = { fg: [0, 0, 0], bg: [0, 0, 0] };
+function drawPanel(p, tSec) {
+  const zoom = +$('zoom').value;
+  const cols = p.cols, rows = p.rows;
+  const cw = 0.05 / zoom, ch = 0.1 / zoom;
+  const x0 = -cols * cw / 2 + (p.emit && p.emit[0] ? p.emit[0].x : 0);
+  const zBase = zoom === 1 ? -0.2 : (p.emit ? p.emit[0].z : p.burst.z) - 0.6;
+  const zTop = zBase + rows * ch;
+  const cv = p.canvas;
+  if (cv.width !== cols * CW) { cv.width = cols * CW; cv.height = rows * CH; }
+  const g = cv.getContext('2d');
+  g.font = `${CH - 2}px Consolas, monospace`; g.textBaseline = 'top';
+  const glyph = new Array(cols * rows).fill(' ');
+  const fg = new Float32Array(cols * rows * 3), bg = new Float32Array(cols * rows * 3), depth = new Float32Array(cols * rows).fill(-1e9);
+  const L = [0, 0, 0];
+  // background: stone wall 0.6 m behind (y = -0.6), floor at z = 0
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const wx = x0 + (c + 0.5) * cw, wz = zTop - (r + 0.5) * ch, i = r * cols + c;
+    let o;
+    if (wz >= 0) { lightAt(p, wx, -0.6, wz, tSec, L); o = U.shade('stone', L, wx + 3, wz, 3, cellOut, { fog: null }); }
+    else { lightAt(p, wx, -0.3, 0, tSec, L); o = U.shade('floor', L, wx + 3, (wz) * 4, 3, cellOut, { fog: null }); }
+    glyph[i] = o.glyph;
+    fg[i * 3] = o.fg[0] * 0.8; fg[i * 3 + 1] = o.fg[1] * 0.8; fg[i * 3 + 2] = o.fg[2] * 0.8;
+    bg[i * 3] = o.bg[0]; bg[i * 3 + 1] = o.bg[1]; bg[i * 3 + 2] = o.bg[2];
+  }
+  // the burner can (copper, lit by the room) under the burner flame
+  if (p.burner) {
+    const can = ['  ____  ', ' [=oo=] ', ' |%==%| ', ' |=%%=| ', ' /____\\ '];
+    const c0 = Math.floor((0 - x0) / cw) - 4;
+    for (let k = 0; k < can.length; k++) {
+      const r = Math.floor((zTop - (0.6 - k * 0.12)) / ch);
+      for (let j = 0; j < can[k].length; j++) {
+        const cc = c0 + j; if (r < 0 || r >= rows || cc < 0 || cc >= cols || can[k][j] === ' ') continue;
+        lightAt(p, 0, 0.3, 0.4, tSec, L);
+        const key = can[k][j] === '%' ? 'verdigris' : can[k][j] === 'o' ? 'copperLight' : 'copper';
+        const o = U.shadeSprite(key, L, 0.8, false, 0, cellOut);
+        const i = r * cols + cc;
+        glyph[i] = can[k][j]; fg[i * 3] = o.fg[0]; fg[i * 3 + 1] = o.fg[1]; fg[i * 3 + 2] = o.fg[2];
+        bg[i * 3] = o.fg[0] * 0.18; bg[i * 3 + 1] = o.fg[1] * 0.18; bg[i * 3 + 2] = o.fg[2] * 0.18;
+        depth[i] = 0.2;
+      }
+    }
+  }
+  // per-emitter light multipliers (32.1: lit per EMITTER, not per particle)
+  const ps = p.ps, E = ps.emitters, mul = [];
+  for (let s = 0; s < 64; s++) {
+    if (!E.used[s]) { mul.push(null); continue; }
+    lightAt(p, E.x[s], E.y[s], E.z[s] + 0.1, tSec, L);
+    mul.push(lightMul(L, [0, 0, 0]));
+  }
+  let live = 0;
+  for (let j = 0; j < ps.cap; j++) {
+    if (!ps.alive[j]) continue;
+    live++;
+    const d = ps.def[j], o = d * DEF_STRIDE, n = ps.defRec[o + D.RAMP_LEN];
+    const ri = Math.floor(ps.age[j] * n / ps.life[j]);
+    const code = ps.defGlyphs[d * MAX_RAMP + ri];
+    if (code === 32) continue;
+    const c = Math.floor((ps.px[j] - x0) / cw), r = Math.floor((zTop - ps.pz[j]) / ch);
+    if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
+    const i = r * cols + c;
+    if (ps.py[j] < depth[i]) continue; // camera at +y: nearer (larger y) wins; the burner can sits at y 0.2
+    depth[i] = ps.py[j];
+    const ci = (d * MAX_RAMP + ri) * 3;
+    let cr = ps.defColors[ci], cg = ps.defColors[ci + 1], cb = ps.defColors[ci + 2];
+    if (!ps.defRec[o + D.EMISSIVE]) { const m = mul[ps.em[j]] || [SH.fgMin, SH.fgMin, SH.fgMin]; cr *= m[0]; cg *= m[1]; cb *= m[2]; }
+    glyph[i] = String.fromCharCode(code);
+    fg[i * 3] = Math.min(255, cr); fg[i * 3 + 1] = Math.min(255, cg); fg[i * 3 + 2] = Math.min(255, cb);
+    // keep the wall bg behind the particle (053b: bg = edge bg), only darken slightly so the glyph reads
+    bg[i * 3] *= 0.8; bg[i * 3 + 1] *= 0.8; bg[i * 3 + 2] *= 0.8;
+  }
+  for (let i = 0; i < cols * rows; i++) {
+    const x = (i % cols) * CW, y = Math.floor(i / cols) * CH;
+    g.fillStyle = `rgb(${bg[i * 3] | 0},${bg[i * 3 + 1] | 0},${bg[i * 3 + 2] | 0})`;
+    g.fillRect(x, y, CW, CH);
+    if (glyph[i] !== ' ') {
+      g.fillStyle = `rgb(${fg[i * 3] | 0},${fg[i * 3 + 1] | 0},${fg[i * 3 + 2] | 0})`;
+      g.fillText(glyph[i], x, y + 1);
+    }
+  }
+  p.capEl.textContent = `live ${live}   spawned ${ps.stats.spawned}   recycled ${ps.stats.recycled}   dropped ${ps.stats.dropped}`;
+}
+
+// ---------------------------------------------------------------- loop
+let paused = false, acc = 0, last = performance.now(), simT = 0;
+function sparkDir() {
+  const v = $('sdir').value;
+  return v === 'side' ? [1, 0, 0.15] : v === 'diag' ? [-0.7, 0, 0.7] : [0, 0, 1];
+}
+function burstNow(p) {
+  const b = p.burst; if (!b) return;
+  if (b.k === 'sparks') { const d = sparkDir(); p.ps.burstAt(p.ids.sparks, b.x, b.y, b.z, PS.presets.sparks.burst, d[0], d[1], d[2]); }
+  else p.ps.burstAt(p.ids[b.k], b.x, b.y, b.z, PS.presets[b.k].burst);
+}
+function stepAll() {
+  const w = +$('wind').value;
+  for (const p of PANELS) {
+    p.ps.setWind(w, 0, 0);
+    if (p.burst && (p.t % p.burst.every) === 0) burstNow(p);
+    p.ps.step();
+    p.t++;
+  }
+  simT += STEP;
+}
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!paused) {
+    acc += dt * +$('speed').value;
+    while (acc >= STEP) { stepAll(); acc -= STEP; }
+  }
+  for (const p of PANELS) drawPanel(p, simT);
+  $('windV').textContent = (+$('wind').value).toFixed(1) + ' m/s';
+  $('stat').textContent = `t ${simT.toFixed(1)} s`;
+  requestAnimationFrame(frame);
+}
+
+$('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); $('pause').textContent = paused ? 'play' : 'pause'; };
+$('burstBtn').onclick = () => { for (const p of PANELS) burstNow(p); };
+$('reset').onclick = () => { for (const p of PANELS) { p.ps.clear(); } buildSystems(); };
+
+try {
+  buildSystems();
+  runChecks();
+  drawRamps();
+  requestAnimationFrame(frame);
+} catch (e) {
+  $('fatal').textContent = 'Error: ' + e.message;
+  console.error(e);
+}
+</script>
+</body>
+</html>

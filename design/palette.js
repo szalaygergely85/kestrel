@@ -205,7 +205,12 @@
     manaCore: '#e8f2ff',
     manaLight: '#9cc2ff',
     mana: '#4c84f2',
-    manaDark: '#1e2f6a'
+    manaDark: '#1e2f6a',
+    // CLOTH-1b4 (design/cloth.js): woad blue = the old watch's banner dye, faded. Greyer and more violet than `mana`
+    // (never the cold saturated MP blue), lighter than `ambient`. Trim = the existing pale ochre `canvasLight`.
+    woadLight: '#7c8cba',
+    woad: '#46588e',
+    woadDark: '#262f52'
   };
 
   // ---------------------------------------------------------------------------
@@ -964,6 +969,43 @@
   materials.straw_dark = {"desc":"PELL (US-078d). Damp, rotting straw: the underside, the lower bundle and the old sword cuts (dark slashes on the front and back faces). Brown-grey, rot spots `,`.","base":"strawDark","albedo":0.7,"ramp":"grass","spec":0.02,"bg":{"mode":"darken","k":0.12},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[20,20],"key":{"a":{"shade":1},"s":{"shade":0.8,"tint":"ropeDark","amount":0.45,"glyph":"|"},"r":{"shade":0.7,"tint":"woodDark","amount":0.55,"glyph":","}},"rows":["asaa","aaar","saaa","aras"]}};
   materials.timber_old = {"desc":"PELL (US-078d). The weathered oak post and crossbar: dark wood gone silver-grey with age (ashDark tint), long drying cracks `|`. Not the plank `wood` (no seams, no knots): one old beam.","base":"woodDark","albedo":0.82,"ramp":"wood","spec":0.05,"bg":{"mode":"darken","k":0.14},"textureFade":[4,12],"texture":{"w":4,"h":4,"scale":[20,20],"key":{"a":{"shade":1},"g":{"shade":1.12,"tint":"ashDark","amount":0.45},"c":{"shade":0.55,"tint":"woodDark","amount":0.7,"glyph":"|"}},"rows":["agca","gaaa","acag","aaga"]}};
   materials.hit_flash = {"desc":"HIT FLASH (US-078d, reusable by US-079 beasts). The white 100 ms flash on a struck target: a shell of emissive white `*` / `#` voxels 1 voxel proud of the target, hidden 64 voxels under the floor except during clip `flash` (the lamp-glint trick, README 7 v1.14). Never on a static voxel.","base":"white","albedo":1,"ramp":"iron","spec":0,"emissive":1,"bg":{"mode":"darken","k":0.3},"textureFade":[4,12],"texture":{"w":2,"h":2,"scale":[20,20],"key":{"a":{"shade":1,"glyph":"*"},"h":{"shade":1,"tint":"flameCore","amount":0.25,"glyph":"#"}},"rows":["ah","ha"]}};
+  // CLOTH-1b4 cloth materials (design/cloth.js, architecture.md 33.5 `mat`): v1 fallbacks of the detail-pass records
+  // of the same key, appended last so no material id moves. Cloth uv = rest-space metres, u along cols, v along rows.
+  materials['cloth.canvas'] = {
+    desc: 'CLOTH (CLOTH-1b). Torn balloon-envelope canvas (the stairwell): faded red / pale ochre gores 0.6 m wide, ' +
+          'seams between them, folds ) (, scorch at the tears.',
+    base: 'canvas', albedo: 0.82, ramp: 'canvas', bg: { mode: 'darken', k: 0.20 }, textureFade: [5, 14],
+    texture: { w: 8, h: 2, scale: [6.6667, 4], key: {
+      a: { shade: 1.00 }, l: { shade: 1.10, tint: 'canvasLight', amount: 0.5, glyph: ')' },
+      r: { shade: 0.96, tint: 'goreRed', amount: 0.85 }, k: { shade: 0.86, tint: 'goreRed', amount: 0.85, glyph: '(' },
+      s: { shade: 0.62, tint: 'canvasDark', amount: 0.6, glyph: '~' }
+    }, rows: ['srrksaal', 'srkrsala'] }
+  };
+  materials['cloth.banner'] = {
+    desc: 'CLOTH (CLOTH-1b). The ruin banner: heavy wool dyed woad blue, faded, with three pale-ochre pales (edges + centre, ' +
+          '0.1 m every 0.5 m: author banners 1.1 m wide). Dense ~ = ( ) weave.',
+    base: 'woad', albedo: 0.80, ramp: 'canvas', bg: { mode: 'darken', k: 0.18 }, textureFade: [5, 14],
+    texture: { w: 10, h: 2, scale: [20, 8], key: {
+      a: { shade: 1.00 }, k: { shade: 0.84, tint: 'woadDark', amount: 0.5, glyph: '(' },
+      t: { shade: 1.05, tint: 'canvasLight', amount: 0.85 }
+    }, rows: ['ttaaaaaaaa', 'ttaaakaaaa'] }
+  };
+  materials['cloth.flag'] = {
+    desc: 'CLOTH (CLOTH-1b). A light silk flag / pennant in the watch colours: pale woad with pale-ochre stripes ' +
+          '(0.08 m every 0.36 m along v: author flags 0.8 m tall). Lighter and livelier than the banner.',
+    base: 'woad', albedo: 0.88, ramp: 'canvas', bg: { mode: 'darken', k: 0.18 }, textureFade: [5, 14],
+    texture: { w: 2, h: 9, scale: [4, 25], key: {
+      a: { shade: 1.00, tint: 'woadLight', amount: 0.35 }, t: { shade: 1.05, tint: 'canvasLight', amount: 0.85 }
+    }, rows: ['aa', 'aa', 'aa', 'aa', 'aa', 'aa', 'aa', 'tt', 'tt'] }
+  };
+  materials['cloth.linen'] = {
+    desc: 'CLOTH (CLOTH-1b). Linen curtain / tarp / sail-cloth: pale warm white with a faint weave ~, cooler than the ' +
+          'ochre canvas. For doorway curtains and the spare tarp if it is ever simulated.',
+    base: 'linen', albedo: 0.86, ramp: 'canvas', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, w: { shade: 0.92, tint: 'linenDark', amount: 0.25, glyph: '~' }, l: { shade: 1.06, tint: 'linenLight', amount: 0.5 }
+    }, rows: ['awal', 'laaw', 'waal', 'alwa'] }
+  };
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
