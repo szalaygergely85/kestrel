@@ -57,6 +57,10 @@ import { bindShading, bindLevel } from '../engine/render/MaterialTable.js';
 import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.js';
 import { edgePass } from '../engine/render/edgePass.js';
 import { World } from '../engine/world/World.js';
+import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, shadowInputHash, SUN_SHADOW_DEFAULTS } from '../engine/render/shadowSun.js';
+import { createShadowList, buildShadowList, shadowWorldZ } from '../engine/mesh/shadowList.js';
+import { LevelMeshCache } from '../engine/mesh/DrawList.js';
+import { dirFromAzEl } from '../engine/core/transform.js';
 import { buildLightSet, lightSurfaces, makeLightBuffer } from '../engine/render/lighting.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from './testing/content-node.mjs';
@@ -535,6 +539,42 @@ function runFlickerBench(level, palette, detailPass, rt2, depth2, gbuf, matTable
   return njeOk && totalOk && abaOk;
 }
 
+// --- ME-15d (27.9a item 12): CPU cost of the sun shadow frame work -----------------------------------------
+// shadowSunMatrix + buildShadowList + shadowInputHash (the dirty-skip key) on the test_room world, once per
+// POSES camera; p95 <= 0.15 ms and (with --gc) 0 B/frame. The GPU side is in the browser (route-walk, `shadow` pass ms).
+function runShadowCpuBench(world, frames, withGc) {
+  const so = { ...SUN_SHADOW_DEFAULTS };
+  const sunDir = dirFromAzEl(135, 40, new Float64Array(3));
+  const sm = createSunShadowMatrix(), list = createShadowList(), centre = new Float64Array(3), wz = { min: 0, max: 0 };
+  const cache = new LevelMeshCache(), key = new Int32Array(2);
+  const src = { centre: { x: 0, y: 0, z: 0 }, cache, terrainSet: null, voxelPool: null, voxelMeshCache: null, fogFarM: 2000, instances: null };
+  const one = (cam) => {
+    sunShadowCentre(cam, so, centre);
+    src.centre.x = centre[0]; src.centre.y = centre[1]; src.centre.z = centre[2];
+    shadowWorldZ(world, cache, wz);
+    const m = shadowSunMatrix(sunDir, centre, so, wz, sm);
+    buildShadowList(list, null, world, m.planes, src);
+    shadowInputHash(list, m.M, world.structVersion | 0, key);
+  };
+  let ok = true;
+  const ms = new Float64Array(frames);
+  for (const pose of POSES) {
+    const cam = { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg };
+    for (let i = 0; i < WARMUP_FRAMES * 4; i++) one(cam);
+    if (withGc && global.gc) global.gc();
+    const h0 = process.memoryUsage().heapUsed;
+    for (let i = 0; i < frames; i++) { const t0 = performance.now(); one(cam); ms[i] = performance.now() - t0; }
+    if (withGc && global.gc) global.gc();
+    const perFrame = (process.memoryUsage().heapUsed - h0) / frames;
+    const sorted = Array.from(ms).sort((a, b) => a - b);
+    const p50 = sorted[Math.floor(frames * 0.5)], p95 = sorted[Math.floor(frames * 0.95)];
+    const passP = p95 <= 0.15, passG = !(withGc && global.gc) || perFrame <= 64;
+    console.log(`  [shadow cpu] ${pose.name}: items ${list.count}, p50 ${p50.toFixed(4)} ms, p95 ${p95.toFixed(4)} ms (<= 0.15: ${passP ? 'OK' : 'FAIL'}), heap ${perFrame.toFixed(1)} B/frame${withGc && global.gc ? (passG ? ' OK' : ' FAIL') : ''}`);
+    ok = ok && passP && passG;
+  }
+  return ok;
+}
+
 function main() {
   const args = process.argv.slice(2);
   const frameIdx = args.indexOf('--frames');
@@ -726,6 +766,9 @@ function main() {
     // --- US-028 v2 pipeline: bench + correctness -----------------------
     ok = runDetailPassBench(pose, camera, level, rt2, depth2, fb2, gbuf, matTable, frames, v2Baseline, { p50: v1BestP50 }, updateBaseline, repeats, lightWorld) && ok;
   }
+
+  console.log('\n[bench-cast] ME-15d sun shadow CPU frame work:');
+  ok = runShadowCpuBench(lightWorld, frames, withGc) && ok;
 
   // --- US-028a: flicker metric (start pose only, reuses the v2 pipeline
   // objects above - each call resets/rebuilds them, so no pose leaks in).

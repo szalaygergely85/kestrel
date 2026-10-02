@@ -18,12 +18,14 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (
 const port = Number(args.port);
 validatePort(port);
 const grid = args.grid || '400x150', renderer = args.renderer || 'mesh', physics = args.physics || 'mesh';
+const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
 const query = `voxelbench=0&grid=${grid}&renderer=${renderer}&physics=${physics}${shadows ? `&shadows=${shadows}` : ''}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.
 const DRIVER = `(async () => {
+  const NOSKIP = ${noSkip};
   for (let i = 0; i < 3000 && !(window.__debug && window.__debug.engine); i++) await new Promise((r) => setTimeout(r, 50));
   const D = window.__debug, eng = D.engine, input = D.input, loop = eng.loop;
   const sleepF = () => new Promise((r) => requestAnimationFrame(r));
@@ -35,9 +37,10 @@ const DRIVER = `(async () => {
   const world = () => window.__debug.world || eng.world;
   for (let i = 0; i < 4000 && !(window.__debug.playerHandle); i++) await sleepF();
   const out = { grid: D.rt.cols + 'x' + D.rt.rows, backend: D.rt.backend, physicsMode: world().physicsMode, legs: [], info: {} };
-  const sim = [], js = [], gpu = [], ivl = [];
+  const sim = [], js = [], gpu = [], ivl = [], shp = [], shc = [];
+  const gp0 = D.gpuPipeline; if (NOSKIP && gp0 && gp0.shadowOpts) gp0.shadowOpts.dirtySkip = false;
   let sampling = false;
-  function sample() { if (!sampling) return; const s = loop.stats; sim.push(s.simMs); js.push(s.jsMs); ivl.push(s.intervalMs); const g = D.gpuPipeline && D.gpuPipeline.stats ? D.gpuPipeline.stats.gpuMsP50 : NaN; gpu.push(g); }
+  function sample() { if (!sampling) return; const s = loop.stats; sim.push(s.simMs); js.push(s.jsMs); ivl.push(s.intervalMs); const g = D.gpuPipeline && D.gpuPipeline.stats ? D.gpuPipeline.stats.gpuMsP50 : NaN; gpu.push(g); const gp = D.gpuPipeline; if (gp && gp.stats && gp.stats.passMsP50) { shp.push(gp.stats.passMsP50[7]); shc.push(gp.stats.shadowCpuMs); } }
   input._pressedThisFrame.add('F3'); await sleepF(); await sleepF(); // overlay on -> GPU pass timing on (as the owner's F3)
   for (let i = 0; i < 120; i++) await sleepF(); // let boot / terrain streaming settle (real wake timeline then runs from wakeT)
   out.info.startPose = { x: T().x - O.x, y: T().y - O.y, z: T().z, eyeH: B().eyeH, wakeT: world().state['quest.wakeT'] };
@@ -84,6 +87,9 @@ const DRIVER = `(async () => {
   await leg('2 boulder push', [W(15, 5), W(15, 3)]);
   await idle(480);
   { let bx = null; world().forEachEntity((e) => { if (e.components && e.components.roller) bx = { x: e.transform.x - O.x, y: e.transform.y - O.y, z: e.transform.z, sleeping: e.components.roller.sleeping }; }); out.info.boulder = bx; }
+  // ME-15d AC2: after the boulder push (player still, boulder asleep) -> the shadow map must not re-render (counter delta over 120 idle frames)
+  { const gp = D.gpuPipeline; keys(false, false, false); await idle(30); const r0 = gp ? gp.shadowRenders : 0, s0 = gp ? gp.shadowSkips : 0;
+    await idle(120); out.info.staticShadow = gp ? { frames: 120, renders: gp.shadowRenders - r0, skips: gp.shadowSkips - s0 } : null; }
   await leg('3 stairs', [W(16, 3), W(17, 3), W(18, 3), W(19, 3), W(19, 4), W(20, 4), W(20, 5), W(20, 6), W(20, 7)]);
   await leg('4 gap jump + ledge', [{ ...W(20, 9), jump: true }, W(19, 9)]);
   await leg('5a grate closed (must block)', [W(19, 10), W(17, 10)], { expectBlocked: true, maxFrames: 300 });
@@ -107,9 +113,12 @@ const DRIVER = `(async () => {
   out.info.endTrigger = world().state['quest.endT'] >= 0 || (world().triggers.find((x) => x.name === 'quest.end') || {}).inside === 1;
   out.info.endT = world().state['quest.endT'];
   sampling = false;
+  const mean = (a) => { const v = a.filter((x) => Number.isFinite(x)); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; };
+  out.shadowCpuMean = mean(shc);
   const pct = (a, p) => { const v = a.filter((x) => Number.isFinite(x)).sort((x, y) => x - y); return v.length ? v[Math.min(v.length - 1, Math.floor(v.length * p))] : null; };
   out.perf = { frames: sim.length, simP50: pct(sim, 0.5), simP95: pct(sim, 0.95), simMax: pct(sim, 1), jsP95: pct(js, 0.95), jsMax: pct(js, 1), gpuP95: pct(gpu, 0.95), gpuP50: pct(gpu, 0.5),
-    intervalP95: pct(ivl, 0.95), over25: loop.stats.over25, worstIntervalMs: loop.stats.worstIntervalMs };
+    shadowCpuP50: pct(shc, 0.5), shadowCpuP95: pct(shc, 0.95), shadowPassP50: pct(shp, 0.5), shadowPassP95: pct(shp, 0.95), intervalP95: pct(ivl, 0.95), over25: loop.stats.over25, worstIntervalMs: loop.stats.worstIntervalMs };
+  const gpF = D.gpuPipeline; out.shadow = gpF ? { renders: gpF.shadowRenders, skips: gpF.shadowSkips, dirtySkip: !!(gpF.shadowOpts && gpF.shadowOpts.dirtySkip), items: gpF.stats.shadowItems, draws: gpF.stats.shadowDraws } : null;
   return out;
 })()`;
 

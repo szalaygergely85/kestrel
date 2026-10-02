@@ -18,6 +18,7 @@ import { forwardOf } from '../core/transform.js';
  * @property {readonly [number, number]} depthBias - polygon offset [factor, units] on the caster side
  * @property {number} biasM - receiver offset toward the sun, metres
  * @property {number} normalOffsetTexels - receiver offset along the surface normal, in texels
+ * @property {boolean} dirtySkip - ME-15d: skip the depth pass while the input hash is unchanged
  */
 
 /** 27.9a item 1 (frozen; `createEngine({ shadows })` merges over these once). `sun` also depends on the renderer, see `resolveSunShadowOptions`. */
@@ -29,6 +30,7 @@ export const SUN_SHADOW_DEFAULTS = Object.freeze({
   depthBias: Object.freeze(/** @type {[number, number]} */ ([2, 4])),
   biasM: 0.04,
   normalOffsetTexels: 1.5,
+  dirtySkip: true, // ME-15d: re-render the map only when its inputs changed (false = every frame, the perf worst case)
 });
 
 /**
@@ -211,4 +213,68 @@ export function sunShadowTaps(map, M, P, N, opts) {
   }
   sunShadowInfo.boundary = boundary;
   return n;
+}
+
+// ---- ME-15d: dirty-skip key (27.9a item 12) ---------------------------------
+// The shadow map is re-rendered only when what it depends on changed: the snapped matrix M (centre, sunDir, depth
+// range), the structure version, and every caster item's mesh identity/version, ranges and matrices (instance
+// buffers by content). Two independent 32-bit FNV-style lanes (collision odds ~2^-64 per frame pair). Zero alloc
+// once every mesh has an id (WeakMap insert on first sight only).
+const _f32 = new Float32Array(1), _u32 = new Uint32Array(_f32.buffer);
+const _meshIds = new WeakMap();
+let _nextMeshId = 1;
+const _hs = new Int32Array(2); // hash lanes (typed array: module-level `let` doubles would box)
+
+function mix(w) {
+  _hs[0] = Math.imul(_hs[0] ^ w, 16777619);
+  _hs[1] = Math.imul(_hs[1] ^ ((w << 13) | (w >>> 19)), 0x9e3779b1) + 0x7f4a7c15;
+}
+function mixF(v) { _f32[0] = v; mix(_u32[0]); }
+// Quantised mix: item poses are hashed on a grid (linear part 1/256, translation `_qT` m ~ a quarter texel) so sub-visible
+// jitter (idle breathing, physics settling noise) does not re-render a 2048^2 map; the map is then stale by < 1/4 texel.
+// An item's own matrix uses a size-scaled linear step (max(256, r / tStepM), r = aabb half-diagonal) so a large rotated
+// mesh cannot stay stale by r/512 m > biasM (27.9a amendment 4).
+const _qA = 256;
+let _qT = 1 / 0.02;
+function mixQ(v, inv) { mix(Math.round(v * inv) | 0); }
+function mixXform(a, o, invA) { // 12 floats: A (9) then t (3)
+  for (let k = 0; k < 9; k++) mixQ(a[o + k], invA);
+  for (let k = 9; k < 12; k++) mixQ(a[o + k], _qT);
+}
+
+/**
+ * Hash of every shadow-map input. Compare `out[0..1]` with the previous frame's; equal = the depth map is
+ * still valid. `list` is a `DrawList` (duck-typed: `count`, `items[]`), `M` the Float64Array(16) sun matrix.
+ * @param {{count:number, items:any[]}} list
+ * @param {Float64Array} M
+ * @param {number} structVersion
+ * @param {Int32Array} out - 2 lanes (typed so storing them never boxes)
+ * @param {number} [tStepM] - pose translation quantum in metres (default 0.02 = ~1/4 texel at the defaults)
+ */
+export function shadowInputHash(list, M, structVersion, out, tStepM = 0.02) {
+  _qT = 1 / tStepM;
+  _hs[0] = 0x811c9dc5; _hs[1] = 0x1b873593;
+  for (let i = 0; i < 16; i++) mixF(M[i]);
+  mix(structVersion | 0);
+  mix(list.count);
+  for (let i = 0; i < list.count; i++) {
+    const it = list.items[i], mesh = it.mesh;
+    let id = 0;
+    if (mesh) { id = _meshIds.get(mesh); if (id === undefined) { id = _nextMeshId++; _meshIds.set(mesh, id); } }
+    mix(id); mix(it.type); mix(it.rangeFirst); mix(it.rangeCount); mix(mesh && mesh.meshVersion ? mesh.meshVersion : 0);
+    const bb = it.aabb, ex = bb[3] - bb[0], ey = bb[4] - bb[1], ez = bb[5] - bb[2];
+    const r = 0.5 * Math.sqrt(ex * ex + ey * ey + ez * ez);
+    mixXform(it.matrix, 0, Math.max(_qA, r * _qT));
+    if (it.type === 1 || it.type === 3) { // DRAW_VOXEL / DRAW_INSTANCED: part matrices
+      const np = mesh && mesh.ranges ? mesh.ranges.length : 0, pm = it.partMatrices;
+      for (let p = 0; p < np; p++) mixXform(pm, p * 12, _qA);
+    }
+    if (it.type === 3 && it.instBuf) { // instances by content (their count is capped at 2048 x 16 floats)
+      const f = it.instBuf.f32;
+      mix(it.instCount);
+      for (let k = 0, n = it.instCount * 16; k < n; k++) mixQ(f[k], (k & 3) === 3 && (k & 15) < 12 ? _qT : _qA); // row-major 3x4 + translation in col 3
+    }
+  }
+  out[0] = _hs[0]; out[1] = _hs[1];
+  return out;
 }

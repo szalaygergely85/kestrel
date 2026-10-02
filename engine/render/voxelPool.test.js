@@ -197,6 +197,25 @@ if (global.gc) {
   ok('ME-22 router: renderer "mesh" keeps the meshOnly instance', poolMO.list.some((inst) => inst.modelKey === 'bigbear'));
 }
 
+// ---- ME-15d: projectShadow slot records survive a shrinking prop count (zero alloc when it grows back) ----
+{
+  const sp = new VoxelPool();
+  sp.bind(registry, table);
+  sp.beginFrame();
+  for (let i = 0; i < 6; i++) sp.pushInstance('bear', i, 0, 2, 0);
+  sp.projectShadow();
+  const recs = sp.shadowList.slice();
+  ok('ME-15d projectShadow: 6 posed records', sp.shadowList.length === 6 && recs.every(Boolean));
+  sp.beginFrame();
+  for (let i = 0; i < 2; i++) sp.pushInstance('bear', i, 0, 2, 0);
+  sp.projectShadow();
+  ok('ME-15d projectShadow: view shrinks to 2', sp.shadowList.length === 2);
+  sp.beginFrame();
+  for (let i = 0; i < 6; i++) sp.pushInstance('bear', i, 0, 2, 0);
+  sp.projectShadow();
+  ok('ME-15d projectShadow: growing back reuses the same 6 records (no alloc)', sp.shadowList.length === 6 && recs.every((r, i) => sp.shadowList[i] === r));
+}
+
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');

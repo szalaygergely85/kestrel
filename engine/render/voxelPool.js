@@ -48,7 +48,8 @@ export class VoxelPool {
     // ME-15c (27.9a amendment, caster gap b): every queued prop posed WITHOUT the screen cull, for the sun
     // shadow list (props behind the player still cast). `shadowView` is the {list, partNamesFor} shape
     // `buildShadowList` feeds to `addVoxelInstances`.
-    this.shadowList = [];
+    this.shadowList = []; // ME-15c/d: per-frame view (references), length = prop count
+    this._shadowSlots = []; // ME-15d: posed records, never shrink (zero alloc when the prop count grows back)
     this.shadowView = { list: this.shadowList, partNamesFor: this.partNamesFor };
     // Camera eye position from this frame's project() call - VoxelTextures.js's
     // writeInstanceRows reads these to compute the part-local eye (oL = A*eye+b,
@@ -229,13 +230,14 @@ export class VoxelPool {
     const n = Math.min(this._rawCount, MAX_VOX_INSTANCES);
     for (let i = 0; i < n; i++) {
       const inst = this.raw[i];
-      let out = this.shadowList[i];
+      let out = this._shadowSlots[i];
       if (!out) {
         out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, slot: i,
           pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
           rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
-        this.shadowList[i] = out;
+        this._shadowSlots[i] = out;
       }
+      this.shadowList[i] = out; // references only: the posed records live in the never-shrinking `_shadowSlots`
       instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;

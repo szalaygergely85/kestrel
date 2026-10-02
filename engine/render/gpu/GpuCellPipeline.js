@@ -76,7 +76,7 @@ import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 // ME-15b (27.9a): sun shadow map pass (depth only, before the raster pass).
-import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from '../shadowSun.js';
+import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../mesh/shadowList.js';
 import { SHADOW_FRAG_SRC, SHADOW_TERRAIN_FRAG_SRC, SHADOW_DEPTH_COPY_FRAG_SRC } from './glsl/shadow.frag.js';
 import { CELL_VERT_SRC as SHADOW_COPY_VERT_SRC } from './glsl/cell.vert.js';
@@ -134,7 +134,7 @@ export class GpuCellPipeline {
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
-      shadowItems: 0, shadowDraws: 0, // ME-15b: sun shadow pass caster items / draw calls last frame
+      shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, // ME-15b: sun shadow pass caster items / draw calls last frame
       instancesCulled: 0, instancesLod1: 0, // RE-15a (28.13 point 8): F3 `inst <drawn>/<total> lod1 <n> cull <culled>`
       // US-018 (architecture.md 16): real per-pass GPU ms, filled only
       // while `setPassTiming(true)` (F3 overlay open or `?bench=1`) - NaN
@@ -285,6 +285,8 @@ export class GpuCellPipeline {
         this._sunMatF32 = new Float32Array(16);
         this._shadowList = createShadowList();
         this._shadowCentre = new Float64Array(3);
+        this._shadowKey = new Int32Array(2); this._shadowKeyPrev = new Int32Array(2); this._shadowKeyValid = false; // ME-15d dirty-skip
+        this.shadowRenders = 0; this.shadowSkips = 0; // ME-15d counters (AC 2)
         this._shadowWorldZ = { min: 0, max: 0 };
         this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null };
       }
@@ -2002,6 +2004,7 @@ export class GpuCellPipeline {
     const sun = light && light.sun;
     if (!sun || !sun.on || !cam || !world) return;
     const gl = this.gl, list = this._shadowList, src = this._shadowSrc;
+    const tCpu0 = performance.now();
     sunShadowCentre(cam, so, this._shadowCentre);
     const c = src.centre;
     c.x = this._shadowCentre[0]; c.y = this._shadowCentre[1]; c.z = this._shadowCentre[2];
@@ -2018,6 +2021,18 @@ export class GpuCellPipeline {
     const Mf = this._sunMatF32;
     for (let i = 0; i < 16; i++) Mf[i] = sm.M[i];
     buildShadowList(list, this._meshDrawList, world, sm.planes, src);
+
+    // ME-15d dirty-skip (27.9a item 12): the depth map is a pure function of (M, structVersion, caster list); equal
+    // hash = the texture still holds the right depth, so skip the whole GL pass (the CPU build above stays, ~0.1 ms).
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this._shadowKey);
+    this.stats.shadowCpuMs = performance.now() - tCpu0; // ME-15d: matrix + list + key (27.9a item 12: <= 0.15 ms p95)
+    const prev = this._shadowKeyPrev;
+    if (so.dirtySkip && this._shadowKeyValid && key[0] === prev[0] && key[1] === prev[1]) {
+      this.shadowActive = true; this.shadowSkips++;
+      this.stats.shadowItems = list.count; this.stats.shadowDraws = 0;
+      return;
+    }
+    prev[0] = key[0]; prev[1] = key[1]; this._shadowKeyValid = true; this.shadowRenders++;
 
     this._meshDevice.beginPass(this._shadowTarget, { clear: true }); // binds the FBO, sets the viewport, clears depth to 1
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
