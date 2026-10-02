@@ -21,7 +21,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
   loadContentPack, createRng, prebuildTerrainMesh, DEFAULT_RENDERER,
-  forwardOf, hexToRgb, resolveWaterLooks,
+  forwardOf, hexToRgb, resolveWaterLooks, createEntityEmitters,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -66,6 +66,7 @@ import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
+import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -409,6 +410,19 @@ const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass(rt, gpuPipeline, engine.overlay); // RE-07b (28.9)
 // ---- end US-030c ----
 
+// ---- US-053b/US-053c: particle presets + the draw layer (engine.particles.clear() on every 'world:loaded'
+// already runs inside createEngine - US-053a's own precedent, nothing to do here for that). ----
+if (sprites.pass) sprites.pass.bindParticleLayer(engine.particleLayer);
+const particlePresets = window.ASSETS.particles;
+if (particlePresets) {
+  for (const k of Object.keys(particlePresets.presets)) {
+    engine.particles.defineEmitter(k, particlePresets.toEmitterDef(k, assets.palette.rgb));
+  }
+}
+// US-053a: created once for the page's lifetime (not per world load) - it follows 'world:loaded'/
+// 'entity:added'/'entity:removed' internally and needs no dispose/recreate from this session.
+const entityEmitters = createEntityEmitters(null, engine.particles, engine.events, (k) => engine.particles.defIdOf(k));
+
 // ---- US-041a (15.3 item 1): the REAL gameplay voxel pool - `collect(world,
 // cam)` fills it from `components.voxel` entities each frame (renderer holds
 // no entity state itself, just this frame's projected instance list); the
@@ -579,6 +593,7 @@ function runGame(mode) {
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
+  let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
   if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
@@ -690,6 +705,9 @@ function runGame(mode) {
       // whose `targetable` component gets added here instead of at World.load time would otherwise be invisible
       // to both of this load's targetable lists.
       applyPropTargetables(world);
+      applyPropEmitters(world); // US-053c: content `emitters` -> components.emitters, same timing rule as applyPropTargetables above
+      if (particleHooks) particleHooks.dispose();
+      particleHooks = createParticleHooks(world, engine.events, engine.particles, particlePresets, engine.physics.gravity);
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -917,6 +935,9 @@ function runGame(mode) {
           if (input.pressed('F9')) vitals.debugHit();
         }
       }
+      // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
+      if (particleHooks) particleHooks.step(playerHandle.data);
+      entityEmitters.sync(); engine.particles.step();
       lap(SEC.physics);
       // US-020a: footsteps (distance accumulator + `body.landed`) and the
       // boulder-thud speed watch - after physics settles this step's
@@ -1089,6 +1110,9 @@ function runGame(mode) {
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
       fb.frameNo = (fb.frameNo || 0) + 1; // RE-15a: one host-owned counter for instances.js addToDrawList's memo
       renderWorld(fb, engine.world, cam);
+      // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
+      // cells right after its own sprite loop).
+      engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, effRenderer);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU

@@ -137,6 +137,11 @@ export function createParticleLayer() {
       const px = ps.px, py = ps.py, pz = ps.pz, age = ps.age, life = ps.life, defOf = ps.def, emOf = ps.em, alive = ps.alive;
       const defRec = ps.defRec, defGlyphs = ps.defGlyphs, defColors = ps.defColors;
       const cap = ps.cap;
+      // US-053c AC7 nit (053b nit 1): `resolveFogColor(P, false, f, out)` ignores its `f0` arg entirely on the
+      // `isFar=false` branch (it always returns the single `fog.interior` colour) - every particle in this build()
+      // would recompute the exact same 3 bytes. Hoisted above the loop (was inside it, keyed on each particle's own
+      // `f`, which never mattered).
+      resolveFogColor(P, false, 0, _fog3);
       for (let i = 0; i < cap; i++) {
         if (!alive[i]) continue;
         const d = defOf[i], o = d * DEF_STRIDE;
@@ -165,7 +170,6 @@ export function createParticleLayer() {
         let rr = defColors[colorBase], gg = defColors[colorBase + 1], bb = defColors[colorBase + 2];
         const emissive = defRec[o + D.EMISSIVE] !== 0;
         const f = P.util.fogFactor(_ps.fogDepth);
-        resolveFogColor(P, false, f, _fog3);
         if (emissive) {
           const fe = Math.min(f, defRec[o + D.EMISSIVE_FOG]);
           if (fe > 0) { rr += (_fog3[0] - rr) * fe; gg += (_fog3[1] - gg) * fe; bb += (_fog3[2] - bb) * fe; }
