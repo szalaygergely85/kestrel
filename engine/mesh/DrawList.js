@@ -18,6 +18,7 @@
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
+import { createClothMesh, updateClothMesh } from './clothMesh.js';
 
 /** `DrawItem.type` values. */
 export const DRAW_STATIC = 0;
@@ -25,6 +26,8 @@ export const DRAW_VOXEL = 1;
 export const DRAW_TERRAIN = 2;
 /** RE-06 (28.6): N instances of one voxel model, one draw per part (`instBuf`/`instCount`, engine/mesh/instances.js). */
 export const DRAW_INSTANCED = 3;
+/** CLOTH-1b1 (33.5): one deformable cloth mesh (layout 'cloth'), indexed, smooth per-pixel normal, two-sided. */
+export const DRAW_CLOTH = 4;
 
 /** `DrawItem.flags` bits. Terrain only; off until ME-06 decides (27.5). */
 export const DRAW_FLAG_DEPTH_BIAS = 1;
@@ -294,5 +297,67 @@ export function addStructures(list, world, cam, cache, fogFarM) {
     const set = cache.get(s);
     pushMeshItem(list, set.base, s);
     for (let d = 0; d < set.dyn.length; d++) pushMeshItem(list, set.dyn[d].mesh, s);
+  }
+}
+
+// ---- cloth (CLOTH-1b1, 33.5) ----------------------------------------------------------------
+/**
+ * Pushes one `DRAW_CLOTH` item for cloth slot `slot` of the cloth system (`world.cloths`). Creates the slot's mesh on first
+ * use (`matIdFor(system.mats[slot])`, origin = bbox centre rounded to metres; attached with `system.setMesh`) and refreshes
+ * its arrays (`updateClothMesh`, version-gated, does not bump `meshVersion`: the system owns that). Item: matrix = identity
+ * + t = mesh origin, planeIdOr `(0xD<<28) | (slot<<20)`, objectId `0x9000 | slot` (free ranges, 33.5), zBase = origin z,
+ * aabb = mesh bbox + origin. Used by `addCloths` (camera) and `buildShadowList` (sun).
+ * @param {DrawList} list
+ * @param {{cloths: any[], meshes: any[], mats: (string|null)[]}} system
+ * @param {number} slot
+ * @param {(key: string) => number} [matIdFor]
+ * @returns {DrawItem|null}
+ */
+export function pushClothItem(list, system, slot, matIdFor) {
+  const cloth = system.cloths[slot];
+  let mesh = system.meshes[slot];
+  if (!mesh) {
+    const bb = cloth.bbox;
+    const key = system.mats[slot];
+    const matId = key && matIdFor ? matIdFor(key) : 0;
+    mesh = createClothMesh(cloth, String(slot), matId, [Math.round((bb[0] + bb[3]) * 0.5), Math.round((bb[1] + bb[4]) * 0.5), Math.round((bb[2] + bb[5]) * 0.5)]);
+    system.meshes[slot] = mesh;
+    if (typeof (/** @type {any} */ (system)).setMesh === 'function') /** @type {any} */ (system).setMesh(slot, mesh);
+  } else {
+    updateClothMesh(mesh, cloth);
+  }
+  if (mesh.triCount <= 0) return null;
+  const item = list.push(mesh, DRAW_CLOTH);
+  const o = mesh.origin, m = item.matrix;
+  m[9] = o[0]; m[10] = o[1]; m[11] = o[2];
+  item.zBase = o[2];
+  item.planeIdOr = (0xD << 28) | ((slot & 0xFF) << 20);
+  item.objectId = 0x9000 | (slot & 0xFF);
+  item.rangeFirst = 0;
+  item.rangeCount = mesh.triCount;
+  const b = mesh.bbox, a = item.aabb;
+  a[0] = b[0] + o[0]; a[1] = b[1] + o[1]; a[2] = b[2] + o[2];
+  a[3] = b[3] + o[0]; a[4] = b[4] + o[1]; a[5] = b[5] + o[2];
+  return item;
+}
+
+/**
+ * Camera feed: every cloth whose bbox meets the view frustum becomes a `DRAW_CLOTH` item (call after the voxel feed, before
+ * terrain, 33.5). Drawn cloths are stamped with `system.markDrawn(slot)` (the system wakes/sleeps on it).
+ * @param {DrawList} list
+ * @param {{count: number, cloths: any[], meshes: any[], mats: (string|null)[], markDrawn?: (slot: number) => void}|null|undefined} system
+ * @param {Float64Array|null} planes - `frustumPlanes` output; null = no culling
+ * @param {(key: string) => number} [matIdFor]
+ */
+export function addCloths(list, system, planes, matIdFor) {
+  if (!system) return;
+  for (let i = 0; i < system.count; i++) {
+    const item = pushClothItem(list, system, i, matIdFor);
+    if (!item) continue;
+    if (planes) {
+      const a = item.aabb;
+      if (classifyAABB(planes, a[0], a[1], a[2], a[3], a[4], a[5]) === CULL_OUT) { list.count--; continue; }
+    }
+    if (system.markDrawn) system.markDrawn(i);
   }
 }

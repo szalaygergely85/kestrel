@@ -11,7 +11,7 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, addStructures, pushClothItem, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 
 /** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
@@ -31,6 +31,8 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {import('./voxelMesh.js').VoxelMeshCache} [voxelMeshCache]
  * @property {number} [fogFarM] - structure distance cull (default 2000, as the camera feed)
  * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): full buffer, parts from the camera pass
+ * @property {{count:number, cloths:any[], meshes:any[], mats:(string|null)[], castShadow?:ArrayLike<number>}|null} [cloths] - CLOTH-1b1 (33.5): the cloth system; every cloth with `castShadow` (drawn or not) is pushed, the sun-plane cull decides
+ * @property {(key: string) => number} [matIdFor] - cloth mesh creation (material key -> id)
  */
 
 /**
@@ -60,6 +62,13 @@ export function buildShadowList(list, cameraList, world, planes, src) {
       const pm = ig.pool.models.get(g.modelKey);
       if (!pm) continue;
       list.addInstances(src.voxelMeshCache.get(pm, g.modelKey, ig.pool.partNamesFor(g.modelKey)), g.parts, g.ib, g.count);
+    }
+  }
+  const cs = src.cloths;
+  if (cs) {
+    for (let i = 0; i < cs.count; i++) {
+      if (cs.castShadow && !cs.castShadow[i]) continue;
+      pushClothItem(list, cs, i, src.matIdFor);
     }
   }
   list.cull(planes);

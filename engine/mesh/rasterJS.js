@@ -154,7 +154,7 @@ const _info = {
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
-  biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS,
+  biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
 };
 
@@ -230,7 +230,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   nx /= nlen; ny /= nlen; nz /= nlen;
 
   let u = 0, v = 0;
-  if (mesh.layout === 'static') { u = mesh.uv[vIdx * 2]; v = mesh.uv[vIdx * 2 + 1]; }
+  if (mesh.layout === 'static' || mesh.layout === 'cloth') { u = mesh.uv[vIdx * 2]; v = mesh.uv[vIdx * 2 + 1]; }
 
   const xClip = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
   const yClip = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
@@ -329,6 +329,10 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
   let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
   if (A2 === 0) return;
   if (A2 < 0 && info.cullBack) return; // RE-06c (28.10): voxel/instanced back faces, same snapped area as the GPU
+  // CLOTH-1b1 (33.5): two-sided surface rule. The vertex normals follow the triangle winding (n = cross(b-a, c-a), A2 > 0 =
+  // front, RE-06c). A fragment of a triangle whose snapped screen area is negative (seen from behind) gets N = -N, so the
+  // lit normal always faces the eye. Captured BEFORE the vertex swap below; the GPU twin does the same with gl_FrontFacing.
+  const flipN = info.twoSided && A2 < 0;
   if (A2 < 0) {
     let t;
     t = Xs1; Xs1 = Xs2; Xs2 = t; t = Ys1; Ys1 = Ys2; Ys2 = t;
@@ -407,6 +411,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         let wnz = (l0 * nz0 * iw0 + l1 * nz1 * iw1 + l2 * nz2 * iw2) * invq;
         const nlen = Math.hypot(wnx, wny, wnz) || 1;
         wnx /= nlen; wny /= nlen; wnz /= nlen;
+        if (flipN) { wnx = -wnx; wny = -wny; wnz = -wnz; }
 
         let face = info.face, mat = info.mat, outU = u, outV = v;
         if (info.isTerrain) {
@@ -461,6 +466,7 @@ function clipAndRasterTri(mesh, v0, v1, v2, target, ctx, info) {
  */
 function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVoxelItem, instAligned) {
   const isTerrain = mesh.layout === 'terrain';
+  const isCloth = mesh.layout === 'cloth';
   if (instAligned !== undefined) {
     // DRAW_INSTANCED: the caller already composed I_i * P_p into _matScratch (== item.matrix).
   } else if (isVoxelItem) {
@@ -471,7 +477,25 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
 
   for (let t = triStart; t < triStart + triCount; t++) {
     let v0, v1, v2;
-    if (isTerrain) {
+    if (isCloth) {
+      // CLOTH-1b1: indexed like terrain, kind 8 / face 7 (packed smooth normal), one mat per mesh, one planeId per
+      // cloth (folds outline through depth only), cull none (two-sided, see rasterFanTri).
+      v0 = mesh.idx[t * 3]; v1 = mesh.idx[t * 3 + 1]; v2 = mesh.idx[t * 3 + 2];
+      _info.isTerrain = false;
+      _info.kind = KIND_MODEL;
+      _info.face = FACE_PACKED;
+      _info.mat = mesh.matId;
+      _info.planeId = item.planeIdOr | 0;
+      _info.aoMode = AO_NONE;
+      _info.zRef = 0;
+      _info.isVoxel = false;
+      _info.partAxisAligned = false;
+      _info.kind7Mat = null;
+      _info.biasFlag = 0;
+      _info.cullBack = false;
+      _info.twoSided = true;
+    } else if (isTerrain) {
+      _info.twoSided = false;
       v0 = mesh.idx[t * 3]; v1 = mesh.idx[t * 3 + 1]; v2 = mesh.idx[t * 3 + 2];
       _info.isTerrain = true;
       _info.kind = KIND_TERRAIN;
@@ -488,6 +512,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
       _info.cullBack = false;
     } else {
+      _info.twoSided = false;
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;
       const flat0 = mesh.flat[v0 * FLAT_STRIDE];
       const flat1 = mesh.flat[v0 * FLAT_STRIDE + 1];

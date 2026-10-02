@@ -15,7 +15,7 @@ import { castModels } from '../voxel/voxelMarch.js';
 // _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
 // mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
-import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
+import { DrawList, LevelMeshCache, addStructures, addCloths } from '../mesh/DrawList.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
@@ -67,7 +67,7 @@ const sunShadowList = createShadowList();
 const sunShadowMat = createSunShadowMatrix();
 const sunShadowCentreV = new Float64Array(3);
 const sunShadowWorldZ = { min: 0, max: 0 };
-const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: /** @type {any} */ (null) };
+const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined) };
 const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0 };
 /** What `lightSurfaces` reads (`fb.sunMap`): {map, M, opts}. */
 const sunMapState = { map: /** @type {any} */ (null), M: sunShadowMat.M, opts: /** @type {any} */ (null) };
@@ -94,6 +94,8 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
   src.instances = fb.instances || null;
   src.fogFarM = sunShadowFogFar(fb.palette, so);
+  src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
+  src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
   shadowWorldZ(world, cache, sunShadowWorldZ);
   const sm = shadowSunMatrix(sun.dir, sunShadowCentreV, so, sunShadowWorldZ, sunShadowMat);
   buildShadowList(sunShadowList, cameraList, world, sm.planes, src);
@@ -189,6 +191,8 @@ function renderWorldMesh(fb, world, cam) {
       fb.loop.stats.instancesLod1 = fb.instances.stats.instancesLod1;
     }
   }
+  // CLOTH-1b1 (33.5): cloth meshes after the voxel feed (JS twin only; the GPU pass draws them from CLOTH-1b2).
+  if (world.cloths && world.cloths.count > 0) addCloths(list, world.cloths, meshFrustumPlanes, fb.matTable ? fb.matTable.idFor : undefined);
   meshCtx.team = fb.matTable ? fb.matTable.team : null;
   list.cull(meshFrustumPlanes);
 

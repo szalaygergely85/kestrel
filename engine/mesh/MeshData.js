@@ -40,7 +40,7 @@ export const AO_FAR = 1e30;
  * @typedef {Object} MeshData
  * @property {1} version
  * @property {string} id - `level:<name>`, `level:<name>#<tag>`, `vox:<modelKey>`, `terrain:<...>`
- * @property {'static'|'terrain'} layout
+ * @property {'static'|'terrain'|'cloth'} layout
  * @property {Float32Array} pos - 3 floats/vertex, mesh-local metres
  * @property {Float32Array} uv - static: 2 floats/vertex (metres); terrain: length 0
  * @property {Uint32Array} nrm - 1 uint/vertex, packNormalOct of the mesh-local unit normal
@@ -225,8 +225,8 @@ export function validateMesh(mesh) {
   if (!mesh || typeof mesh !== 'object') { push('(root)', 'not an object'); return { errors }; }
   if (mesh.version !== 1) push('version', `expected 1, got ${JSON.stringify(mesh.version)}`);
   if (typeof mesh.id !== 'string' || mesh.id === '') push('id', 'must be a non-empty string');
-  if (mesh.layout !== 'static' && mesh.layout !== 'terrain') {
-    push('layout', `expected 'static' or 'terrain', got ${JSON.stringify(mesh.layout)}`);
+  if (mesh.layout !== 'static' && mesh.layout !== 'terrain' && mesh.layout !== 'cloth') {
+    push('layout', `expected 'static', 'terrain' or 'cloth', got ${JSON.stringify(mesh.layout)}`);
     return { errors }; // can't validate lengths meaningfully without a valid layout
   }
   const isStatic = mesh.layout === 'static';
@@ -288,10 +288,14 @@ export function validateMesh(mesh) {
       }
     }
   } else {
-    if (mesh.uv.length !== 0) push('uv', 'must be empty on a terrain mesh');
-    if (mesh.flat.length !== 0) push('flat', 'must be empty on a terrain mesh');
-    if (mesh.aux.length !== 0) push('aux', 'must be empty on a terrain mesh');
-    if (!mesh.idx) push('idx', 'required on a terrain mesh');
+    const what = mesh.layout === 'cloth' ? 'cloth' : 'terrain';
+    // CLOTH-1b1 (33.5): cloth = indexed like terrain, plus a static uv (2/vertex, rest-space metres)
+    if (what === 'cloth') {
+      if (mesh.uv.length !== V * 2) push('uv', `length ${mesh.uv.length}, expected ${V * 2} (2/vertex)`);
+    } else if (mesh.uv.length !== 0) push('uv', 'must be empty on a terrain mesh');
+    if (mesh.flat.length !== 0) push('flat', `must be empty on a ${what} mesh`);
+    if (mesh.aux.length !== 0) push('aux', `must be empty on a ${what} mesh`);
+    if (!mesh.idx) push('idx', `required on a ${what} mesh`);
     else {
       if (mesh.idx.length % 3 !== 0) push('idx', `length ${mesh.idx.length} is not a multiple of 3`);
       for (let i = 0; i < mesh.idx.length; i++) {
@@ -304,7 +308,7 @@ export function validateMesh(mesh) {
   }
 
   if (!isFiniteArray(mesh.pos)) push('pos', 'contains a non-finite value');
-  if (isStatic && !isFiniteArray(mesh.uv)) push('uv', 'contains a non-finite value');
+  if (mesh.uv.length > 0 && !isFiniteArray(mesh.uv)) push('uv', 'contains a non-finite value');
   if (isStatic) {
     for (let i = 0; i < mesh.aux.length; i++) {
       if (!Number.isFinite(mesh.aux[i])) { push(`aux[${i}]`, 'contains a non-finite value (use AO_FAR, never Infinity)'); break; }
