@@ -229,6 +229,7 @@ function buildCompareRuns(ctx) {
   // RE-02a (28.1 A2 item 8): mesh-only pitched poses, RTS view of the world_m1 hillside west of the tower.
   // Focus-driven eye exactly like `engine/core/rtsCamera.js` (dist = widthM * zoom / (2 tanHalfX), widthM 30),
   // vfov 36, yaw 20. Compared GPU vs the rasterJS + JS shade twin (same projection) - `?gpucompare=1` (dda) SKIPs them.
+  const CULL_LOD_DX = 14; // RE-15c: grid shift east so ~half the units are off screen
   const rtsHillPose = (pitchDeg) => {
     const fx = 1440, fy = 1040, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
     const aspect = (rt.cols * (rt.pxCellW || 1)) / (rt.rows * (rt.pxCellH || 1));
@@ -287,6 +288,24 @@ function buildCompareRuns(ctx) {
       const pullIdx = pm && pm.clipIndex.pull !== undefined ? pm.clipIndex.pull : -1;
       unitsGroup.pose.clip = pullIdx; unitsGroup.pose.frame = 2; unitsGroup.pose.tMs = 45;
       fillUnitGrid(unitsGroup, 20, 4.5, 1.5, 0, 1.0, 4, null);
+    },
+  });
+
+  // RE-15c (28.13 Parity): mesh-only `unitsCullLod` - pitched -58 RTS view of the hillside, 60 levers on a
+  // 10 x 6 world-axis grid (spacing 4 m) shifted so about half are off screen, lodCells 8 with both LODs visible.
+  // Asserts drawn + culled = 60 and lod1 > 0 (stats of the memoized frame), plus the standard `k8Gpu > 0` bar.
+  const cullLodGroup = compareInstances.group('lever', 60);
+  cullLodGroup.lodCells = 8;
+  runs.push({
+    world: worldM1, lights: worldM1Lights, real: true, meshOnly: true, instAssert: { total: 60 },
+    name: 'world_m1: voxel units cull + LOD (unitsCullLod, RE-15c: 60 x lever, pitched -58, lodCells 8)',
+    cam: rtsHillPose(-58),
+    before: () => {
+      const pm = compareVoxelPool.models.get('lever');
+      engine.setTeamMaterials(placeholderTeamSpec(matTable, pm));
+      cullLodGroup.pose.clip = -1; cullLodGroup.pose.frame = 0; cullLodGroup.pose.tMs = 0;
+      const gz = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0);
+      fillUnitGrid(cullLodGroup, 60, 1440 + CULL_LOD_DX - 18, 1040 - 10, 0, 4.0, 10, gz);
     },
   });
 
@@ -448,7 +467,7 @@ function runGpuCompareDdaMode(ctx) {
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride } of runs) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert } of runs) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -558,9 +577,16 @@ function runGpuCompareDdaMode(ctx) {
       anchorOk = cmpA.pass && cmpA.glyphMatchPct >= 99;
       console.log(`[gpucompare] anchor ${poseName}: pitched GPU vs shear twin pass=${cmpA.pass} glyph=${cmpA.glyphMatchPct.toFixed(2)}% fgMaxNonK8=${cmpA.fgMaxNonK8} k8Outside=${cmpA.k8Outside}`);
     }
-    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk;
+    let instOk = true, instNote = '';
+    if (instAssert) { // RE-15c: drawn + culled = total, LOD1 bucket used (cull+LOD both exercised)
+      const st = engine.instances.stats;
+      instOk = st.instances + st.instancesCulled === instAssert.total && st.instancesCulled > 0 && st.instancesLod1 > 0 && st.instances > st.instancesLod1;
+      instNote = `[drawn ${st.instances} culled ${st.instancesCulled} lod1 ${st.instancesLod1}]`;
+      console.log(`[gpucompare] instances ${poseName}: drawn=${st.instances} culled=${st.instancesCulled} lod1=${st.instancesLod1} total=${instAssert.total} ${instOk ? 'OK' : 'FAIL'}`);
+    }
+    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
+    rowsOut.push({ pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
   overallOk = overallOk && sampledOwnTextures;

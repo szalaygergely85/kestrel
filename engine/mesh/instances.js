@@ -128,36 +128,52 @@ export function groupRadius(mesh, parts) {
 }
 
 /**
- * RE-15a (28.13 point 3): compacts the survivors of `classifyAABB(planes,
- * t-R, t+R)` (t = instance translation, words 3/7/11) from `g.ib` (the
- * game-owned, never-written source) into `g.drawIb[0]` (engine-owned scratch),
- * stable, in game order. Copies all 16 words through the `u32` view so the
- * objectId/flags words (stored as uint32 bit patterns in the same buffer)
- * round-trip bit-exact - a `Float32Array` get/set round-trip is not
- * guaranteed bit-exact for arbitrary bit patterns (NaN payloads). Zero
- * allocation (plain `for` loop, never `subarray`/`set(subarray)`).
- * Conservative: a straddling box (CULL_STRADDLE) is kept, only CULL_OUT drops.
+ * RE-15a/c (28.13 points 2, 3, 6): compacts the survivors of `classifyAABB(planes,
+ * t-R, t+R)` (t = instance translation, words 3/7/11) from `g.ib` (game-owned,
+ * never written) into the engine-owned `g.drawIb[0]` (LOD0) / `g.drawIb[1]`
+ * (LOD1), stable, in game order. Copies all 16 words through the `u32` view so
+ * objectId/flags round-trip bit-exact. Zero allocation (plain loops, never
+ * `subarray`). Conservative: only CULL_OUT drops.
+ * LOD (RE-15c): when `g.lodCells > 0` and `vp` (column-major viewProj) is given,
+ * `cells = R * ySc * rows / w` (ySc = |y_clip row xyz|, w = clip w of t);
+ * LOD1 when cells < lodCells*0.9, LOD0 when > lodCells*1.1, else the previous
+ * choice (`g.lodPrev`, by game slot). w <= 0 (behind/at the eye) -> LOD0.
  * @param {InstanceGroup} g
- * @param {Float64Array|null} planes - `frustumPlanes` output, or null/undefined = no cull (keep all)
- * @param {number} R - `groupRadius(mesh, g.parts)`, this group this frame
- * @returns {number} survivor count
+ * @param {Float64Array|null} planes - null = no cull (keep all)
+ * @param {number} R - conservative radius over both LOD meshes
+ * @param {Float64Array|null} vp
+ * @param {number} rows
  */
-function compactGroup(g, planes, R) {
+function compactGroup(g, planes, R, vp, rows) {
   const srcF = g.ib.f32, srcU = g.ib.u32;
-  const dstU = g.drawIb[0].u32;
+  const dst0 = g.drawIb[0].u32, dst1 = g.drawIb[1].u32;
   const n = g.count;
-  let w = 0;
+  const lodOn = g.lodCells > 0 && !!vp;
+  const lo = g.lodCells * 0.9, hi = g.lodCells * 1.1;
+  let k = 0;
+  if (lodOn) k = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * rows;
+  const lodPrev = g.lodPrev;
+  let w0 = 0, w1 = 0;
   for (let i = 0; i < n; i++) {
     const o = i * INSTANCE_STRIDE;
-    if (planes) {
-      const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
-      if (classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
+    const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
+    if (planes && classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
+    let lod = 0;
+    if (lodOn) {
+      const cw = vp[3] * tx + vp[7] * ty + vp[11] * tz + vp[15];
+      if (cw > 1e-6) {
+        const cells = k / cw;
+        lod = cells < lo ? 1 : cells > hi ? 0 : lodPrev[i];
+      }
+      lodPrev[i] = lod;
     }
-    const wo = w * INSTANCE_STRIDE;
-    for (let c = 0; c < INSTANCE_STRIDE; c++) dstU[wo + c] = srcU[o + c];
-    w++;
+    const dst = lod ? dst1 : dst0;
+    const wo = (lod ? w1 : w0) * INSTANCE_STRIDE;
+    for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
+    if (lod) w1++; else w0++;
   }
-  return w;
+  g.drawCount[0] = w0; g.drawCount[1] = w1;
+  return w0 + w1;
 }
 
 /**
@@ -167,7 +183,10 @@ function compactGroup(g, planes, R) {
  * @property {number} count - the game sets it each frame
  * @property {{clip: number, frame: number, tMs: number}} pose - one animation pose for the whole group
  * @property {InstanceParts} parts - engine-owned scratch
- * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a: engine-owned compacted scratch, index 0 = LOD0 (used), 1 = LOD1 (RE-15c, allocated but unused here)
+ * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a/c: engine-owned compacted scratch, 0 = LOD0, 1 = LOD1
+ * @property {number} _R - cached group radius (both LODs) for the memoized frame
+ * @property {number} lodCells - RE-15c: projected-size LOD threshold in cells; 0 (default) = LOD off
+ * @property {Uint8Array} lodPrev - RE-15c: previous LOD per game slot (hysteresis)
  * @property {[number, number]} drawCount - survivor counts into `drawIb[0]`/`drawIb[1]`
  * @property {number|null} _memoFrameNo - RE-15a: the `frameNo` this group's `drawIb`/`drawCount` were last computed for
  * @property {boolean} used
@@ -208,6 +227,7 @@ export class InstanceGroups {
       // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
       drawIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
       drawCount: /** @type {[number, number]} */ ([0, 0]),
+      lodCells: 0, lodPrev: new Uint8Array(capacity), _R: 0,
       _memoFrameNo: /** @type {number|null} */ (null),
     };
     this.groups.push(g);
@@ -237,8 +257,10 @@ export class InstanceGroups {
    *   recompute, no memo - every call resets stats and recomputes every group, even back to back
    *   in the same tick (RE-15a fixes, PC-B Q7 item 1: `frameNo !== this._lastFrameNo` alone let two
    *   `undefined`-frameNo calls in a row see "unchanged" and wrongly reuse a stale memo).
+   * @param {Float64Array|null} [viewProj] - RE-15c: column-major viewProj (same as `planes`'); with `rows` enables LOD where `g.lodCells > 0`
+   * @param {number} [rows] - RE-15c: grid rows
    */
-  addToDrawList(list, cache, planes, frameNo) {
+  addToDrawList(list, cache, planes, frameNo, viewProj, rows) {
     const pool = this.pool;
     if (!pool) return;
     const groups = this.groups;
@@ -254,18 +276,23 @@ export class InstanceGroups {
       if (g.count <= 0) continue;
       const pm = pool.models.get(g.modelKey);
       if (!pm) continue;
-      const mesh = cache.get(pm, g.modelKey, pool.partNamesFor(g.modelKey));
+      const names = pool.partNamesFor(g.modelKey);
+      const mesh = cache.get(pm, g.modelKey, names);
+      const lodOn = g.lodCells > 0 && !!viewProj;
+      const mesh1 = lodOn ? cache.get(pm, g.modelKey, names, 1) : null;
       if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
-        const R = groupRadius(mesh, g.parts);
-        g.drawCount[0] = compactGroup(g, planes, R);
-        g.drawCount[1] = 0; // RE-15c fills the LOD1 bucket
+        let R = groupRadius(mesh, g.parts);
+        if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
+        g._R = R;
+        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0);
         g._memoFrameNo = frameNo;
-        this.stats.instances += g.drawCount[0];
-        this.stats.instancesCulled += g.count - g.drawCount[0];
+        this.stats.instances += kept;
+        this.stats.instancesCulled += g.count - kept;
+        this.stats.instancesLod1 += g.drawCount[1];
       }
-      if (g.drawCount[0] <= 0) continue;
-      list.addInstances(mesh, g.parts, g.drawIb[0], g.drawCount[0]);
+      if (g.drawCount[0] > 0) list.addInstances(mesh, g.parts, g.drawIb[0], g.drawCount[0], g._R);
+      if (mesh1 && g.drawCount[1] > 0) list.addInstances(mesh1, g.parts, g.drawIb[1], g.drawCount[1], g._R);
     }
   }
 }

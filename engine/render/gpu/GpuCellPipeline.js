@@ -1699,7 +1699,7 @@ export class GpuCellPipeline {
     // render tick / gpucompare's per-pose bump - not by this pipeline), so the GPU pass and the JS mesh
     // twin (`compositor.js`'s `renderWorldMesh`) share one counter instead of two independent ones.
     if (this._instances) {
-      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo);
+      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo, this._meshViewProj, this.rows);
       this.stats.instancesCulled = this._instances.stats.instancesCulled;
       this.stats.instancesLod1 = this._instances.stats.instancesLod1;
     }

@@ -7,6 +7,9 @@ import { TEAM_OWN, TEAM_ENEMY, UNIT_RADIUS, UNIT_HEIGHT } from '../sim/units.js'
 
 const TURN_DEG_PER_S = 720; // 180 deg in 0.25 s (RTS-01b b2)
 const BODY_MID = UNIT_HEIGHT * 0.5;
+// RE-15c: projected-size LOD threshold (28.13 point 6); tune with the owner. `?lod=0` turns it off (bench A/B).
+const RTS_LOD_CELLS = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('lod') !== null)
+  ? Math.max(0, parseFloat(new URLSearchParams(location.search).get('lod')) || 0) : 8;
 
 /**
  * @param {any} engine
@@ -17,6 +20,7 @@ const BODY_MID = UNIT_HEIGHT * 0.5;
 export function createUnitsView(engine, world, units, modelKey) {
   const max = units.max;
   const groups = [null, engine.instances.group(modelKey, max), engine.instances.group(modelKey, max)]; // by team 1, 2
+  for (let t = 1; t <= 2; t++) groups[t].lodCells = RTS_LOD_CELLS;
   const view = {
     groups,
     /** interpolated base points (stride 3) - `pickNearest` input */

@@ -182,7 +182,7 @@ function renderWorldMesh(fb, world, cam) {
   // uneven number of times. F3 stats copied onto `fb.loop.stats` (27.16 item 5 precedent:
   // `fb.loop.stats.structuresCulled` above, same "only when a Loop is wired" guard).
   if (fb.instances) {
-    fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo);
+    fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo, meshViewProj, rows);
     if (fb.loop && fb.loop.stats) {
       fb.loop.stats.instances = fb.instances.stats.instances;
       fb.loop.stats.instancesCulled = fb.instances.stats.instancesCulled;

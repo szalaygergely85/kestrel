@@ -14,6 +14,7 @@ import {
   INSTANCE_STRIDE, INSTANCE_BYTES, INST_OBJECT_ID, INST_FLAGS, UNIT_OBJECT_BASE, MAX_INSTANCE_GROUPS,
   createInstanceBuffer, createInstanceParts, writeUnitInstance, computeGroupParts, InstanceGroups, groupRadius,
 } from './instances.js';
+import { frustumPlanes } from './culling.js';
 import { makeOk } from '../test/assert.js';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
@@ -322,6 +323,71 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   const perFrameMs = (performance.now() - t0) / N;
   console.log(`[RE-15a] cull+compact (burner x500, encompassing frustum): ${perFrameMs.toFixed(4)} ms/frame (target <= 0.1 ms)`);
   ok(`cull+compact 500 instances well under budget (<= 5 ms/frame soft gate, measured ${perFrameMs.toFixed(4)})`, perFrameMs <= 5);
+}
+
+// ---- RE-15c: LOD selection + hysteresis + 2 draw items per group --------------
+{
+  const M = new Float64Array(16); // looks along +y, up = +z, f = 1 (45-deg half fov)
+  M[0] = 1; M[9] = 1; M[6] = 1.002; M[14] = -0.2; M[7] = 1; // x_clip=x, y_clip=z, z_clip=1.002y-0.2, w=y
+  const PLV = frustumPlanes(M, new Float64Array(24));
+  const groups = new InstanceGroups();
+  groups.bindPool(pool);
+  const cache = new VoxelMeshCache();
+  const g = groups.group('lever', 8);
+  const pm = pool.models.get('lever');
+  const names = pool.partNamesFor('lever');
+  computeGroupParts(pm, g.pose, g.parts);
+  const R = Math.max(groupRadius(cache.get(pm, 'lever', names), g.parts), groupRadius(cache.get(pm, 'lever', names, 1), g.parts));
+  const rows = 100;
+  const dAt = (cells) => R * rows / cells; // distance at which projected size = `cells`
+  const put = (i, y) => writeUnitInstance(g.ib, i, 0, y, 0, 0, UNIT_OBJECT_BASE | i, 0);
+  const run = (fn) => { const l = new DrawList(8); l.begin(); groups.addToDrawList(l, cache, PLV, ++fnoLod, M, rows); return l; };
+  let fnoLod = 0;
+  // LOD off (default): everything LOD0, one item
+  put(0, dAt(2)); put(1, dAt(30)); g.count = 2;
+  let l = run();
+  ok('lodCells 0: 1 item, 0 lod1', l.count === 1 && groups.stats.instancesLod1 === 0 && g.drawCount[0] === 2);
+  g.lodCells = 8;
+  l = run();
+  ok('lodCells 8: far -> LOD1, near -> LOD0 = 2 items', l.count === 2 && g.drawCount[0] === 1 && g.drawCount[1] === 1 && groups.stats.instancesLod1 === 1);
+  ok('items: LOD0 mesh then LOD1 mesh, different meshes, LOD1 fewer quads',
+    l.items[0].mesh !== l.items[1].mesh && l.items[1].mesh.id.endsWith('@1') && l.items[1].mesh.triCount <= l.items[0].mesh.triCount);
+  ok('each item holds its own bucket', l.items[0].instBuf === g.drawIb[0] && l.items[1].instBuf === g.drawIb[1] && l.items[0].instCount === 1);
+  ok('g.ib never written (instance 0 still near, id intact)', g.ib.u32[12] === (UNIT_OBJECT_BASE | 0));
+  // hysteresis: inside [7.2, 8.8] keeps previous
+  put(0, dAt(8.4)); put(1, dAt(8.4)); g.count = 2; // inst0 was LOD0, inst1 was LOD1
+  l = run();
+  ok('hysteresis band keeps previous LOD per slot', g.lodPrev[0] === 1 && g.lodPrev[1] === 0 && g.drawCount[0] === 1 && g.drawCount[1] === 1);
+  put(0, dAt(9)); put(1, dAt(7)); // cross both thresholds
+  l = run();
+  ok('crossing 0.9/1.1 flips LOD', g.lodPrev[0] === 0 && g.lodPrev[1] === 1);
+  // same frameNo: no advance
+  put(0, dAt(8.4)); put(1, dAt(8.4));
+  const l2 = new DrawList(8); l2.begin();
+  groups.addToDrawList(l2, cache, PLV, fnoLod, M, rows); // same frameNo as last run -> memo
+  ok('second same-frameNo call keeps lodPrev and re-pushes cached items', g.lodPrev[0] === 0 && g.lodPrev[1] === 1 && l2.count === 2);
+  // culled + lod bookkeeping: drawn + culled = count
+  put(2, dAt(30)); put(3, -50); g.count = 4; // 3 is behind the eye
+  l = run();
+  ok('drawn + culled = count', groups.stats.instances + groups.stats.instancesCulled === 4 && groups.stats.instancesCulled >= 1);
+  // survivors bit-equal words
+  ok('LOD bucket words bit-equal to source', (() => {
+    for (let b = 0; b < 2; b++) for (let j = 0; j < g.drawCount[b]; j++) {
+      const oid = g.drawIb[b].u32[j * INSTANCE_STRIDE + 12];
+      const si = oid & 0xffff;
+      for (let c = 0; c < INSTANCE_STRIDE; c++) if (g.drawIb[b].u32[j * INSTANCE_STRIDE + c] !== g.ib.u32[si * INSTANCE_STRIDE + c]) return false;
+    }
+    return true;
+  })());
+  // zero alloc
+  g.count = 4; l = new DrawList(8);
+  for (let i = 0; i < 50; i++) { l.begin(); groups.addToDrawList(l, cache, PLV, ++fnoLod, M, rows); }
+  global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1000; i++) { l.begin(); groups.addToDrawList(l, cache, PLV, ++fnoLod, M, rows); }
+  global.gc();
+  const grew = process.memoryUsage().heapUsed - before;
+  ok('LOD zero-alloc: 1000 frames grow heap < 64 KB', grew < 65536, `grew=${grew}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

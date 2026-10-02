@@ -57,6 +57,7 @@ export function startUnits(engine, matTable, params, world) {
   const x0 = cx - (nx - 1) * spacing * 0.5, y0 = cy - (Math.ceil(n / nx) - 1) * spacing * 0.5;
   const groundZ = (x, y) => (world.terrain ? world.terrain.groundAt(x, y) : cam.z - engine.physics.eyeHeight);
   const group = engine.instances.group(key, n);
+  group.lodCells = Math.max(0, parseFloat(params.get('lod')) || 0); // RE-15c: `?lod=C` opt-in (0 = off)
   fillUnitGrid(group, n, x0, y0, 0, spacing, nx, groundZ);
   _group = group;
   console.log(`[units] ${n} x ${key} at (${cx.toFixed(1)}, ${cy.toFixed(1)}) via engine.instances (1 group)`);

@@ -135,9 +135,10 @@ export class DrawList {
    * @param {{m: Float64Array, flags: Uint8Array, count: number}} parts
    * @param {import('./instances.js').InstanceBuffer} ib
    * @param {number} count
+   * @param {number} [Rin] - RE-15c: precomputed radius (max over both LOD meshes); default = groupRadius(mesh, parts)
    * @returns {DrawItem|null} null when count <= 0
    */
-  addInstances(mesh, parts, ib, count) {
+  addInstances(mesh, parts, ib, count, Rin) {
     if (count <= 0) return null;
     if (count > ib.capacity) throw new Error(`DrawList.addInstances: count ${count} > buffer capacity ${ib.capacity}`);
     const item = this.push(mesh, DRAW_INSTANCED);
@@ -148,7 +149,7 @@ export class DrawList {
     // RE-15a (28.13 point 2): factored into instances.js's `groupRadius` so
     // the per-instance cull (InstanceGroups.addToDrawList) shares this exact
     // computation instead of redoing it.
-    const R = groupRadius(mesh, parts);
+    const R = Rin !== undefined ? Rin : groupRadius(mesh, parts);
     const f = ib.f32;
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
     for (let i = 0; i < count; i++) {
