@@ -85,6 +85,32 @@ const COLS = 240, ROWS = 90, PX_W = 8, PX_H = 16;
   void cylNear; void cylFar; void cylOutOfHeight;
 }
 
+// ---- ED-SCALE-1c (34.2 item 9): a scaled voxel entity's pick cylinder -----
+{
+  const straightRay = { ox: 0, oy: 0, oz: 1, dx: 0, dy: 1, dz: 0 };
+  const fakeAssets = {
+    has(kind, key) { return kind === 'model' && key === 'crate'; },
+    model(key) {
+      if (key === 'crate') return { voxel: { size: [1, 1, 2], cellM: 0.5 } }; // world radius 0.25, height 1 at scale 1
+      throw new Error(`unknown model "${key}"`);
+    },
+  };
+  // Unscaled: radius 0.25, height 1 - a ray at x=0.5 (just past the unscaled
+  // radius) misses, but a 2x scale (radius 0.5) catches it.
+  const unscaled = [{ id: 'crate1', transform: { x: 0.5, y: 10, z: 0 }, components: { voxel: { model: 'crate' } } }];
+  ok('unscaled voxel cylinder: a ray just past its radius misses', rayPickEntities(straightRay, unscaled, fakeAssets, 100) === null);
+  const scaled = [{ id: 'crate1', transform: { x: 0.5, y: 10, z: 0, scale: 2 }, components: { voxel: { model: 'crate' } } }];
+  const hit = rayPickEntities(straightRay, scaled, fakeAssets, 100);
+  ok('scale: 2 widens the pick cylinder radius, so the same ray now hits', hit && hit.id === 'crate1', JSON.stringify(hit));
+  // Height scales too: a ray level with z=1.5 misses the unscaled height (1)
+  // but hits once height doubles to 2.
+  const rayUp = { ox: 0, oy: 0, oz: 1.5, dx: 0, dy: 1, dz: 0 };
+  const tall = [{ id: 'crate1', transform: { x: 0, y: 10, z: 0, scale: 2 }, components: { voxel: { model: 'crate' } } }];
+  const shortOne = [{ id: 'crate1', transform: { x: 0, y: 10, z: 0 }, components: { voxel: { model: 'crate' } } }];
+  ok('unscaled voxel cylinder: a ray above its (unscaled) height misses', rayPickEntities(rayUp, shortOne, fakeAssets, 100) === null);
+  ok('scale: 2 doubles the pick cylinder height, so the same ray now hits', !!rayPickEntities(rayUp, tall, fakeAssets, 100));
+}
+
 // ---- ED-MESH-1c: pitched (mesh) projection ---------------------------------
 {
   const grid = { cols: COLS, rows: ROWS, pxCellW: PX_W, pxCellH: PX_H };

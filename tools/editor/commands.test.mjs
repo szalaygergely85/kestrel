@@ -70,6 +70,21 @@ function snapshot(doc) {
   ok('drop: z updated', doc.files.get('level/fixture').def.props[0].z === 0.5);
 }
 
+// ---- ED-SCALE-1c (34.3): a scale edit + undo restores the exact item (no
+// stray `scale` key - the record's `after` deletes it at 1, never writes
+// `scale: 1`) --------------------------------------------------------------
+{
+  const doc = fixtureDoc();
+  const before = snapshot(doc);
+  const item = doc.files.get('level/fixture').def.props[0]; // brazier, no scale key
+  const rec = makeRecord('scale', 'level/fixture', 'props', item.id, 0, item, { ...item, scale: 1.25 });
+  applyEdit(doc, rec);
+  ok('scale: applies the new value', doc.files.get('level/fixture').def.props[0].scale === 1.25);
+  applyEdit(doc, invert(rec));
+  ok('scale: undo restores the exact original item (no stray "scale" key)', !('scale' in doc.files.get('level/fixture').def.props[0]));
+  ok('scale: undo returns a deep-equal def', snapshot(doc) === before, snapshot(doc));
+}
+
 // ---- insert (place) ---------------------------------------------------------
 {
   const doc = fixtureDoc();

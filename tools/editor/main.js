@@ -17,7 +17,7 @@ import { unprojectCell, rayPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline } from './select.js';
 import {
-  makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
+  makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
   applyEdit, invert, findReferrers,
 } from './commands.js';
 import { createStack } from './undo.js';
@@ -25,8 +25,9 @@ import { isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightH
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
-  classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS,
+  classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS, isVoxelScaleItem,
 } from './panel.js';
+import { nextScale, fineScale, clampScale } from './scale.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile } from './io.js';
 import { getModelThumbnail } from './thumbnails.js';
 import {
@@ -282,6 +283,9 @@ const visState = createVisibilityState();
 // yaw and every other key keep working in every mode (design/editor-ui.md 3).
 let toolMode = 'move';
 let yawDrag = null; // {entId, item, index, field, startYawDeg, startClientX} | null
+// ED-SCALE-1c (34.3): 'scale' drags to resize instead of move/spin - same
+// shape as yawDrag above.
+let scaleDrag = null; // {entId, item, index, startScale, startClientX} | null
 
 function flash(msg) {
   lastPickText = msg;
@@ -566,6 +570,15 @@ function commitFieldEdit(patch) {
   commit(makeFieldEditRecord('edit', selection.fileId, selection.collection, item, index, patch));
 }
 
+/** Property-panel Scale row commit (34.3): `raw` already clamped by panel.js's own `clampScale` call. */
+function commitScaleField(next) {
+  if (!selection) return;
+  const item = selectionItemData(doc, selection);
+  if (!item) return;
+  const index = selectionItemIndex(doc, selection);
+  commitScaleEdit(selection.fileId, selection.collection, item, index, next);
+}
+
 /** Property-panel id rename (24.9): validated here too (defence in depth - the form already checks), one batch record. */
 function renameSelected(newId, setError) {
   if (!selection) return;
@@ -588,6 +601,7 @@ function renderProperties() {
     behaviourNames: harvestBehaviourNames(doc),
     onFieldCommit: commitFieldEdit,
     onRename: renameSelected,
+    onScaleCommit: commitScaleField,
   });
 }
 
@@ -620,6 +634,33 @@ function applyYaw(deltaDeg) {
   const next = ((item[field] + deltaDeg) % 360 + 360) % 360;
   const index = selectionItemIndex(doc, selection);
   commit(makeFieldEditRecord('yaw', selection.fileId, selection.collection, item, index, { [field]: next }));
+}
+
+/**
+ * ED-SCALE-1c (34.3): commits a new scale value as ONE EditRecord. At 1 the
+ * `after`'s `scale` key is deleted entirely (never written as `scale: 1`,
+ * 34.1's "written only when != 1" rule) - undo/redo then round-trips to the
+ * exact original object, never a stray `scale: 1`. Shared by the key step
+ * (`applyScaleStep`), the panel's Scale row (`commitScaleField`) and the
+ * Scale drag tool's mouseup.
+ */
+function commitScaleEdit(fileId, collection, item, index, next) {
+  const after = { ...item };
+  if (next === 1) delete after.scale; else after.scale = next;
+  commit(makeRecord('scale', fileId, collection, item.id, index, item, after));
+  flash(`scale: ${next}x`);
+}
+
+/** Minus/Equal (ladder) or Shift+Minus/Equal (fine +-0.05) key step (34.3). `dir` is -1/+1. */
+function applyScaleStep(dir, fine) {
+  if (!selection) { flash('scale: nothing selected'); return; }
+  const item = selectionItemData(doc, selection);
+  if (!item) return;
+  if (!isVoxelScaleItem(kindForSelection(selection), item, assets)) { flash('scale: voxel models only'); return; }
+  const cur = typeof item.scale === 'number' ? item.scale : 1;
+  const next = clampScale(fine ? fineScale(cur, dir) : nextScale(cur, dir));
+  const index = selectionItemIndex(doc, selection);
+  commitScaleEdit(selection.fileId, selection.collection, item, index, next);
 }
 
 function dropToFloor() {
@@ -1185,6 +1226,20 @@ canvas.addEventListener('mousedown', (e) => {
       } else if (field == null) {
         flash('yaw: item has no facing/yawDeg field');
       }
+    } else if (already && toolMode === 'scale') {
+      // ED-SCALE-1c (34.3): same shape as the 'yaw' branch above, but
+      // gated on `isVoxelScaleItem` (voxel props/world entities only, 34.1).
+      const data = world.entity(result.entityId);
+      const itemData = selectionItemData(doc, item);
+      if (data && data.transform && itemData && isVoxelScaleItem(kindForSelection(item), itemData, assets)) {
+        scaleDrag = {
+          entId: result.entityId, item, index: selectionItemIndex(doc, item),
+          startScale: typeof data.transform.scale === 'number' ? data.transform.scale : 1,
+          startClientX: e.clientX,
+        };
+      } else {
+        flash('scale: voxel models only');
+      }
     }
     return;
   }
@@ -1201,6 +1256,19 @@ window.addEventListener('mousemove', (e) => {
     if (data) {
       const deltaDeg = (e.clientX - yawDrag.startClientX) * 0.5; // 0.5 deg/px, matches Q/E's 45-deg feel over a short drag
       data.transform.yawDeg = ((yawDrag.startYawDeg + deltaDeg) % 360 + 360) % 360;
+      world.renderVersion++;
+      frame.markDirty();
+    }
+    return;
+  }
+  if (scaleDrag) {
+    // ED-SCALE-1c (34.3): `s = clampScale(start * 2 ** (dx / 200))`, live
+    // preview straight onto the live entity's transform (same "write
+    // transform.X + renderVersion++, no rebuild" shape as yawDrag above).
+    const data = world.entity(scaleDrag.entId);
+    if (data) {
+      const dx = e.clientX - scaleDrag.startClientX;
+      data.transform.scale = clampScale(scaleDrag.startScale * 2 ** (dx / 200));
       world.renderVersion++;
       frame.markDirty();
     }
@@ -1231,6 +1299,16 @@ window.addEventListener('mouseup', (e) => {
     const before = selectionItemData(doc, yd.item);
     if (!before) return;
     commit(makeFieldEditRecord('yaw', yd.item.fileId, yd.item.collection, before, yd.index, { [yd.field]: data.transform.yawDeg }));
+    return;
+  }
+  if (scaleDrag) {
+    const data = world.entity(scaleDrag.entId);
+    const sd = scaleDrag;
+    scaleDrag = null;
+    if (!data) return;
+    const before = selectionItemData(doc, sd.item);
+    if (!before) return;
+    commitScaleEdit(sd.item.fileId, sd.item.collection, before, sd.index, data.transform.scale);
     return;
   }
   if (!drag) return;
@@ -1304,6 +1382,12 @@ function update(dt) {
     yawDrag = null;
     world.renderVersion++;
     frame.markDirty();
+  } else if (input.pressed('Escape') && scaleDrag) {
+    const data = world.entity(scaleDrag.entId);
+    if (data) data.transform.scale = scaleDrag.startScale;
+    scaleDrag = null;
+    world.renderVersion++;
+    frame.markDirty();
   } else if (input.pressed('Escape') && placeMode) {
     setPlaceMode(null);
     flash('place: cancelled');
@@ -1326,6 +1410,10 @@ function update(dt) {
   if (input.pressed('PageDown')) applyNudge('z', -1);
   if (input.pressed('KeyQ')) applyYaw(-45);
   if (input.pressed('KeyE')) applyYaw(45);
+  // ED-SCALE-1c (34.3): Minus/Equal step the scale ladder; Shift = fine +-0.05.
+  const scaleShift = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+  if (input.pressed('Minus') || input.pressed('NumpadSubtract')) applyScaleStep(-1, scaleShift);
+  if (input.pressed('Equal') || input.pressed('NumpadAdd')) applyScaleStep(1, scaleShift);
   if (input.pressed('KeyG')) dropToFloor();
   if (input.pressed('Delete') || input.pressed('Backspace')) deleteSelected();
   const ctrl = input.isDown('ControlLeft') || input.isDown('ControlRight');
@@ -1357,7 +1445,7 @@ const HELP_LINES = [
   'LMB: select / drag        RMB drag: look',
   'WASD/R/F: fly   Shift: fast   Ctrl: slow   Wheel: fly speed',
   'Arrows: nudge x/y   PgUp/PgDn: nudge z   [ ]: cycle snap',
-  'Q/E: yaw   G: drop to floor   Del/Backspace: delete',
+  'Q/E: yaw   -/=: scale (Shift: fine)   G: drop to floor   Del/Backspace: delete',
   'Ctrl+Z/Y: undo/redo   T: teleport to selection   Home: start pose',
   'M: toggle markers   F3: debug overlay',
   '1/2/3/4: place prop/light/trigger/interactable, then click',
@@ -1424,7 +1512,7 @@ window.__editor = {
   get helpOn() { return helpOn; },
   undoStack,
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
-  selectItem, deleteSelected, applyNudge, applyYaw, dropToFloor, doUndo, doRedo,
+  selectItem, deleteSelected, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), commitFieldEdit, renameSelected,
   doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
   openModelPicker, closeModelPicker,

@@ -35,8 +35,8 @@ function toWorldPoint(frame, lx, ly, lz) {
   return frame ? localToWorld(frame, lx, ly, lz, { x: 0, y: 0, z: 0 }) : { x: lx, y: ly, z: lz };
 }
 
-/** Prop fields patchable straight onto a live entity's `transform` (position + facing). */
-export const PROP_LIVE_FIELDS = new Set(['x', 'y', 'z', 'facing', 'yawDeg']);
+/** Prop fields patchable straight onto a live entity's `transform` (position + facing + ED-SCALE-1c's uniform scale). */
+export const PROP_LIVE_FIELDS = new Set(['x', 'y', 'z', 'facing', 'yawDeg', 'scale']);
 /** Light fields patchable via `LightSet.move`/`setOn`/`setParams` (engine/render/lighting.js's own public per-edit mutators). */
 export const LIGHT_LIVE_FIELDS = new Set(['x', 'y', 'z', 'on', 'preset']);
 
@@ -98,6 +98,10 @@ export function applyPropTransformPatch(transform, item, frame) {
   if (typeof item.z === 'number') transform.z = p.z;
   if (typeof item.facing === 'number') transform.yawDeg = frame ? localYawToWorld(frame, item.facing) : item.facing;
   else if (typeof item.yawDeg === 'number') transform.yawDeg = frame ? localYawToWorld(frame, item.yawDeg) : item.yawDeg;
+  // ED-SCALE-1c (34.3): always set (missing = 1, same "never assume the key
+  // exists" rule World.load's own readers follow, 34.1) - unlike z/facing
+  // above, there is no "leave untouched" case for scale.
+  transform.scale = typeof item.scale === 'number' ? item.scale : 1;
 }
 
 /**

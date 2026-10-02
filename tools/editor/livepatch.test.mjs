@@ -5,6 +5,7 @@
 //   node tools/editor/livepatch.test.mjs
 import {
   isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle, resolveLightPreset,
+  PROP_LIVE_FIELDS,
 } from './livepatch.js';
 import { makeFieldEditRecord, makeInsertRecord, makeDeleteRecord, makeRenameBatch, applyEdit, invert } from './commands.js';
 import { World, LightSet, buildLightSet } from '../../engine/index.js';
@@ -47,6 +48,10 @@ function approxArr(a, b, eps = 1e-6) {
 
   const yaw = makeFieldEditRecord('yaw', 'level/fixture', 'props', before, 0, { facing: 45 });
   ok('prop facing yaw is patchable', isPatchableRecord(yaw));
+
+  // ED-SCALE-1c (34.3): a scale field edit is patchable too.
+  const scaleEdit = makeFieldEditRecord('scale', 'level/fixture', 'props', before, 0, { scale: 1.5 });
+  ok('prop scale edit is patchable', isPatchableRecord(scaleEdit));
 
   const modelEdit = makeFieldEditRecord('edit', 'level/fixture', 'props', before, 0, { model: 'rubble' });
   ok('prop model edit is NOT patchable (no live model swap)', !isPatchableRecord(modelEdit));
@@ -94,6 +99,17 @@ function approxArr(a, b, eps = 1e-6) {
   applyPropTransformPatch(t3, { x: 5, y: 6, z: 1, yawDeg: 200 }, null);
   ok('world-space prop (frame null): x/y/z pass through unchanged', t3.x === 5 && t3.y === 6 && t3.z === 1);
   ok('world-space prop: yawDeg field maps directly (frame null -> identity)', t3.yawDeg === 200);
+
+  // ED-SCALE-1c (34.3): PROP_LIVE_FIELDS carries 'scale'; the patch ALWAYS
+  // writes transform.scale (missing = 1), unlike z/facing which only patch
+  // when the item carries them.
+  ok('PROP_LIVE_FIELDS includes "scale"', PROP_LIVE_FIELDS.has('scale'));
+  const t4 = { x: 0, y: 0, z: 0, yawDeg: 0 };
+  applyPropTransformPatch(t4, { x: 0, y: 0, z: 0, scale: 1.5 }, null);
+  ok('a scale edit patches transform.scale directly', t4.scale === 1.5, JSON.stringify(t4));
+  const t5 = { x: 0, y: 0, z: 0, yawDeg: 0, scale: 1.5 };
+  applyPropTransformPatch(t5, { x: 0, y: 0, z: 0 }, null); // item has no scale key (undo-to-1 shape)
+  ok('a missing item.scale patches transform.scale back to 1 (missing = 1)', t5.scale === 1, JSON.stringify(t5));
 }
 
 // ---- applyLightPatch / findLightHandle (fake LightSet) ---------------------
@@ -160,9 +176,21 @@ function approxArr(a, b, eps = 1e-6) {
   // Undo (invert + patch) restores the EXACT pre-edit transform - the
   // US-064 AC's "a patch-path-specific undo test proving a patched-then-
   // undone edit produces byte-identical state to before the edit".
+  // ED-SCALE-1c (34.3) amendment: `applyPropTransformPatch` now ALWAYS
+  // writes `transform.scale` (missing = 1, same "never assume the key
+  // exists" rule as every other scale reader, 34.1) - a live transform that
+  // never had the key before its first patched edit picks up `scale: 1`
+  // after one, same as it would pick up a `yawDeg`/`z` it never had. That is
+  // a one-time, content-invisible addition to the LIVE entity only
+  // (serialize.js still omits `scale` whenever it's 1, so saves are
+  // unaffected) - the byte-identical check below drops that one default key
+  // rather than asserting the pre-ED-SCALE-1 absence of a field this story
+  // deliberately starts always carrying.
   const inv = invert(rec);
   applyPropTransformPatch(entity.transform, inv.after, tower.frame);
-  ok('undo (patch path) restores the exact pre-edit transform (byte-identical)', JSON.stringify(entity.transform) === JSON.stringify(beforeTransform), JSON.stringify(entity.transform));
+  const afterUndo = { ...entity.transform };
+  if (!('scale' in beforeTransform) && afterUndo.scale === 1) delete afterUndo.scale;
+  ok('undo (patch path) restores the exact pre-edit transform (byte-identical)', JSON.stringify(afterUndo) === JSON.stringify(beforeTransform), JSON.stringify(afterUndo));
 
   // The real tower light "brazier" (co-located, same id, different
   // collection - see commands.test.mjs's own note on this).

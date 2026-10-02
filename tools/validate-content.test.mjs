@@ -174,6 +174,42 @@ function assetsWithRingWorld() {
   ok('reports missing variant/clip', hasFinding(errors, ['glowing', 'variant/clip']), JSON.stringify(errors));
 }
 
+// 3b. ED-SCALE-1 (34.1/34.4): level prop scale outside [0.25, 4] is flagged,
+// both too small (0.2) and too large (5); a valid scale reports nothing.
+{
+  const a = goodAssets();
+  a.levels.room.props[0].scale = 0.2;
+  const { errors } = validateContent(a);
+  ok('reports too-small prop scale (0.2)', hasFinding(errors, ['props[lamp].scale', 'outside']), JSON.stringify(errors));
+}
+{
+  const a = goodAssets();
+  a.levels.room.props[0].scale = 5;
+  const { errors } = validateContent(a);
+  ok('reports too-large prop scale (5)', hasFinding(errors, ['props[lamp].scale', 'outside']), JSON.stringify(errors));
+}
+{
+  const a = goodAssets();
+  a.levels.room.props[0].scale = 1.5;
+  const { errors } = validateContent(a);
+  ok('a scale inside [0.25, 4] reports nothing', !errors.some((e) => e.includes('.scale')), JSON.stringify(errors));
+}
+
+// 3c. ED-SCALE-1: a world entity's scale (inline or transform.scale) outside
+// [0.25, 4] is flagged the same way.
+{
+  const a = goodAssets();
+  a.worlds.w1.entities[0].scale = 0.2;
+  const { errors } = validateContent(a);
+  ok('reports too-small world entity scale (0.2)', hasFinding(errors, ['entities[tower].scale', 'outside']), JSON.stringify(errors));
+}
+{
+  const a = goodAssets();
+  a.worlds.w1.entities[0].transform = { scale: 5 };
+  const { errors } = validateContent(a);
+  ok('reports too-large world entity scale (5, via transform.scale)', hasFinding(errors, ['entities[tower].scale', 'outside']), JSON.stringify(errors));
+}
+
 // 4. Light preset missing from palette.js lights.
 {
   const a = goodAssets();

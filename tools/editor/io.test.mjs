@@ -9,6 +9,7 @@ import { stringifyContent, migrateContent, ContentError } from '../../engine/ind
 import { toFileObject, validateDoc, anyDirty } from './io.js';
 import { fileKey } from './doc.js';
 import { createVisibilityState, setHiddenFlag, setLockedFlag } from './visibility.js';
+import { makeRecord, applyEdit } from './commands.js';
 import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
@@ -69,6 +70,31 @@ const codeParts = { palette: {}, models: {}, worlds: {}, levels: {}, uiStyle: nu
   const text2 = stringifyContent(toFileObject(file2));
   ok('stringifyContent(toFileObject(...)) is byte-stable across a parse/re-stringify cycle', text1 === text2);
   ok('the written text starts with the envelope in ENVELOPE_KEYS order', /^\{\n {2}"kind": "level",\n {2}"schema": 1,\n {2}"id": "fixture",\n {2}"nextId": 1,/.test(text1), text1.slice(0, 120));
+}
+
+// ---- ED-SCALE-1c (34.3/34.4): a 1 -> 1.5 -> 1 scale cycle saves
+// byte-identical (the `scale` key is written only when != 1, 34.1's own
+// "untouched content stays byte-identical" rule) -----------------------
+{
+  const doc = fixtureDoc();
+  const file = doc.files.get('level/fixture');
+  file.def.props.push({ id: 'brazier', model: 'brazier', x: 1, y: 1, z: 0, facing: 0 });
+  const text0 = stringifyContent(toFileObject(file));
+
+  const item = file.def.props[0];
+  const rec1 = makeRecord('scale', 'level/fixture', 'props', item.id, 0, item, { ...item, scale: 1.5 });
+  applyEdit(doc, rec1);
+  ok('scale 1.5 written to the live def', file.def.props[0].scale === 1.5);
+
+  const item2 = file.def.props[0];
+  const after2 = { ...item2 };
+  delete after2.scale;
+  const rec2 = makeRecord('scale', 'level/fixture', 'props', item2.id, 0, item2, after2);
+  applyEdit(doc, rec2);
+  ok('scale key deleted going back to 1', !('scale' in file.def.props[0]));
+
+  const text1 = stringifyContent(toFileObject(file));
+  ok('1 -> 1.5 -> 1 cycle saves byte-identical', text0 === text1, `${text0}\n---\n${text1}`);
 }
 
 // ---- validateDoc: a valid doc passes -----------------------------------

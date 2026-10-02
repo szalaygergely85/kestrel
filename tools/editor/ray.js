@@ -173,8 +173,11 @@ export function rayPickEntities(ray, entities, assets, maxDepth) {
       const m = assets.model(comps.voxel.model);
       const v = m && m.voxel;
       if (!v) continue;
-      radius = (Math.max(v.size[0], v.size[1]) * v.cellM) / 2;
-      height = v.size[2] * v.cellM;
+      // ED-SCALE-1c (34.2 item 9): the pick cylinder scales with the prop
+      // (voxel models only, 34.1's scope) - `t.scale` missing/non-numeric = 1.
+      const s = typeof t.scale === 'number' ? t.scale : 1;
+      radius = (Math.max(v.size[0], v.size[1]) * v.cellM * s) / 2;
+      height = v.size[2] * v.cellM * s;
     } else {
       continue;
     }

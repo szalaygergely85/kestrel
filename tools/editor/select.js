@@ -10,8 +10,13 @@ import { projectPoint, cameraBasis } from './ray.js';
 import { selectionEntityId, selectionItemData } from './doc.js';
 import { localToWorld } from '../../engine/index.js';
 
-/** Model world-space radius/height for the highlight box (same rule as ray.js's `rayPickEntities`). */
-function modelExtent(assets, comps) {
+/**
+ * Model world-space radius/height for the highlight box (same rule as
+ * ray.js's `rayPickEntities`). `scale` (ED-SCALE-1c, 34.2 item 9) multiplies
+ * the voxel branch only - sprites/billboards have no scale in this story
+ * (34.1's scope).
+ */
+function modelExtent(assets, comps, scale = 1) {
   // US-032 fix (same as ray.js's rayPickEntities): `assets.model()` throws
   // on an unknown key, so guard with `assets.has()` first - a selected
   // entity whose model the loaded bundle doesn't carry just gets no
@@ -27,7 +32,7 @@ function modelExtent(assets, comps) {
     const m = assets.model(comps.voxel.model);
     const v = m && m.voxel;
     if (!v) return null;
-    return { radius: (Math.max(v.size[0], v.size[1]) * v.cellM) / 2, height: v.size[2] * v.cellM };
+    return { radius: (Math.max(v.size[0], v.size[1]) * v.cellM * scale) / 2, height: v.size[2] * v.cellM * scale };
   }
   return null;
 }
@@ -84,7 +89,8 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
   if (entId) {
     const data = world.entity(entId);
     if (data && data.transform) {
-      const extent = modelExtent(assets, data.components || {});
+      const scale = typeof data.transform.scale === 'number' ? data.transform.scale : 1;
+      const extent = modelExtent(assets, data.components || {}, scale);
       if (extent) {
         const rect = computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, data.transform, extent.radius, extent.height, renderer);
         if (rect) drawHighlightRect(rt, rect, fgHex);

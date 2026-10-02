@@ -5,7 +5,8 @@
 //
 // Imports only engine/index.js + doc.js/commands.js (the editor boundary rule).
 import { selectionItemData } from './doc.js';
-import { listBehaviours } from '../../engine/index.js';
+import { listBehaviours, PROP_SCALE_MIN, PROP_SCALE_MAX } from '../../engine/index.js';
+import { clampScale } from './scale.js';
 
 /** Place keys (24.9): `1` prop, `2` light, `3` trigger, `4` interactable. */
 export const PLACE_KEYS = { Digit1: 'prop', Digit2: 'light', Digit3: 'trigger', Digit4: 'interactable' };
@@ -173,6 +174,31 @@ export function kindForSelection(selection) {
 }
 
 /**
+ * ED-SCALE-1c (34.1's scope, 34.3's panel/key/drag gate): true when `item`
+ * (of `kind` from `kindForSelection`) is a voxel-model item that may carry a
+ * `scale` - a level prop whose `model` resolves to a voxel model
+ * (`assets.model(key).voxel`), or a world entity with `components.voxel`
+ * (mesh-only voxel models included, per 34.1). Sprite/billboard items are
+ * NOT scalable in this story - the editor hides the Scale row/tool for them
+ * rather than writing a scale `World.load` would warn-and-ignore anyway.
+ * @param {'prop'|'entity'|string} kind
+ * @param {Object} item
+ * @param {{has(kind:string,key:string):boolean, model(key:string):Object}} [assets]
+ */
+export function isVoxelScaleItem(kind, item, assets) {
+  if (!item || !assets) return false;
+  if (kind === 'prop') {
+    if (typeof item.model !== 'string' || !item.model || !assets.has('model', item.model)) return false;
+    const m = assets.model(item.model);
+    return !!(m && m.voxel);
+  }
+  if (kind === 'entity') {
+    return !!(item.components && item.components.voxel);
+  }
+  return false;
+}
+
+/**
  * Validates a candidate item (place or a property-panel field edit, 24.9).
  * Never mutates `item`. Returns a (possibly empty) list of error strings -
  * commit is refused while this is non-empty, so a NaN position or a broken
@@ -203,6 +229,9 @@ export function validateItem(kind, item, ctx) {
   }
   if (kind === 'light' && typeof item.preset === 'string' && ctx.palette) {
     if (!lightPresetNames(ctx.palette).includes(item.preset)) errors.push(`preset: "${item.preset}" is not in palette.lights`);
+  }
+  if (typeof item.scale === 'number' && (!Number.isFinite(item.scale) || item.scale < PROP_SCALE_MIN || item.scale > PROP_SCALE_MAX)) {
+    errors.push(`scale: must be between ${PROP_SCALE_MIN} and ${PROP_SCALE_MAX}`);
   }
   if (typeof item.r === 'number' && Number.isFinite(item.r) && !(item.r > 0)) errors.push('r: must be > 0');
   if (typeof item.radius === 'number' && Number.isFinite(item.radius) && !(item.radius > 0)) errors.push('radius: must be > 0');
@@ -367,10 +396,13 @@ export function renderPropertyPanel(container, ctx) {
     return input;
   }
 
-  // ---- POSITION card: x/y/z (axis-coloured) + yaw (facing/yawDeg) --------
+  // ---- POSITION card: x/y/z (axis-coloured) + yaw (facing/yawDeg) + scale -
   const posKeys = ['x', 'y', 'z'].filter((k) => k in item);
   const yawKey = typeof item.facing === 'number' ? 'facing' : (typeof item.yawDeg === 'number' ? 'yawDeg' : null);
-  if (posKeys.length || yawKey) {
+  // ED-SCALE-1c (34.3): voxel props/world entities only - the row is hidden
+  // entirely for a sprite/billboard item or anything else (34.1's scope).
+  const scaleEligible = isVoxelScaleItem(kind, item, ctx.assets);
+  if (posKeys.length || yawKey || scaleEligible) {
     const card = document.createElement('div');
     card.className = 'insp-card';
     const title = document.createElement('div');
@@ -404,11 +436,35 @@ export function renderPropertyPanel(container, ctx) {
       yawRow.appendChild(input);
       card.appendChild(yawRow);
     }
+    if (scaleEligible) {
+      const scaleRow = document.createElement('div');
+      scaleRow.className = 'insp-field-row insp-scale-row';
+      const label = document.createElement('span');
+      label.className = 'insp-field-label';
+      label.textContent = 'SCALE';
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = '0.05';
+      input.min = String(PROP_SCALE_MIN);
+      input.max = String(PROP_SCALE_MAX);
+      input.value = String(typeof item.scale === 'number' ? item.scale : 1);
+      const commitScale = () => {
+        const raw = Number(input.value);
+        if (!Number.isFinite(raw)) { errEl.textContent = 'scale: must be a finite number'; return; }
+        errEl.textContent = '';
+        ctx.onScaleCommit(clampScale(raw));
+      };
+      input.addEventListener('blur', commitScale);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+      scaleRow.appendChild(label);
+      scaleRow.appendChild(input);
+      card.appendChild(scaleRow);
+    }
     container.appendChild(card);
   }
 
   // ---- Properties card: id + every remaining field ------------------------
-  const handled = new Set([...posKeys, yawKey].filter(Boolean));
+  const handled = new Set([...posKeys, yawKey, scaleEligible ? 'scale' : null].filter(Boolean));
   const card = document.createElement('div');
   card.className = 'insp-card';
   const title = document.createElement('div');

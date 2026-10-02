@@ -51,7 +51,7 @@ import { existsSync } from 'node:fs';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
@@ -275,6 +275,13 @@ export function validateContent(ASSETS) {
       if (resolved && typeof variantRaw === 'string') {
         check(hasClip(models[prop.model], variantRaw), `${path}.variant`, `variant/clip "${variantRaw}" not found on model "${prop.model}"`);
       }
+      // ED-SCALE-1 (34.1): optional uniform scale, range [PROP_SCALE_MIN, PROP_SCALE_MAX].
+      if (prop.scale !== undefined) {
+        check(
+          typeof prop.scale === 'number' && Number.isFinite(prop.scale) && prop.scale >= PROP_SCALE_MIN && prop.scale <= PROP_SCALE_MAX,
+          `${path}.scale`, `scale ${JSON.stringify(prop.scale)} outside [${PROP_SCALE_MIN}, ${PROP_SCALE_MAX}]`
+        );
+      }
     }
 
     // -- lights: preset --
@@ -345,6 +352,14 @@ export function validateContent(ASSETS) {
       }
       if (typeof voxelModel === 'string') {
         check(!!resolveModel(models, voxelModel, undefined), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
+      }
+      // ED-SCALE-1 (34.1): `scale` inline shorthand or `transform.scale`.
+      const rawScale = e.scale !== undefined ? e.scale : (e.transform && e.transform.scale);
+      if (rawScale !== undefined) {
+        check(
+          typeof rawScale === 'number' && Number.isFinite(rawScale) && rawScale >= PROP_SCALE_MIN && rawScale <= PROP_SCALE_MAX,
+          `${base}.entities[${e.id}].scale`, `scale ${JSON.stringify(rawScale)} outside [${PROP_SCALE_MIN}, ${PROP_SCALE_MAX}]`
+        );
       }
     }
     for (const h of world.horizon || []) {
