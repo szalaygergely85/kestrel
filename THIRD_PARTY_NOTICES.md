@@ -14,12 +14,12 @@ raw files are committed only when the licence clearly allows redistribution (CC0
 - **Requirement:** the game must contain a hidden easter-egg reference to the author's username **StickyBizcuit**.
 - Credit: "Voxel assets by StickyBizcuit" in the credits, plus the easter egg (tracked in docs/backlog.md, OWN-REQ-013).
 
-## "Voxel Pack" (MagicaVoxel; author / source page not recorded yet)
+## "Voxel Pack" (MagicaVoxel)
 - Files: 4 raw `.vox` (`Raws/`) + 72 MagicaVoxel `.obj`/`.mtl`/palette `.png` exports (Bunny, Pig, Player, Terrain, Tools, Misc, Numbers, UI) - local only in git-ignored `design/vox/voxel-pack-2/`.
-- Terms: owner says "free to use" (2026-10-02); **no licence file in the zip** - record the author + download page URL (and whether commercial use / redistribution is allowed) before committing anything from it.
+- Licence: **CC0** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). Attribution not required. May be committed.
 
-## cozy_nature_free (FBX nature pack; author / source page not recorded yet)
+## cozy_nature_free (FBX nature pack)
 - Files: 20 `.fbx` (oak / pine trees in 3 seasons, grass, tulips, mushroom, rocks) + 11 texture `.png` - local only in git-ignored `design/meshes/source/cozy_nature_free/`.
-- Terms: owner says "free to use" (2026-10-02); **no licence file in the zip** - record the author + download page URL (commercial use / redistribution) before committing anything from it.
+- Licence: **CC0** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). Attribution not required. May be committed.
 - Format: FBX - no importer; convert to `.glb` in Blender for ME-13 (glTF), or use as designer reference for the ME-06c forest.
 
