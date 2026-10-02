@@ -121,6 +121,15 @@ const fb = {
 // ---- HUD / stats ------------------------------------------------------------------------------------------------
 const hud = createHud(params.get('f3') === '1');
 const simRing = createStatRing(), jsRing = createStatRing();
+// BUG-RTS-002 bench hook (`?bench=1`, "if cheap"): cheap warmup+measure pass over the current camera focus (RTS
+// has one fixed view, unlike main.js's 3-pose ?bench=1 - no teleporting needed). RE-15d compares two separate
+// page loads (`?lod=8` vs `?lod=0`, matching RE-15c's own `?bench=1&units=200&lod=8` precedent) against each
+// run's own `voxel` raster-pass p50 for the delta AC, plus the RE-15 instance stats (drawn/culled/lod1).
+const BENCH = params.get('bench') === '1';
+const BENCH_WARMUP = 90, BENCH_MEASURE = 300;
+let benchFrame = 0;
+const benchGpuRing = BENCH ? createStatRing() : null;
+if (BENCH) gpuPipeline.setPassTiming(true); // force pass timing on even with no HUD (perfBench.js's own precedent)
 let snapReq = null; // dev: one-shot readback request (tools/capture-rts.mjs)
 const lastBox = { k: -1, c0: 0, r0: 0, c1: 0, r1: 0 }; // dev: last resolved box (read by tools/capture-rts.mjs)
 let simAcc = 0, hoverId = -1, onScreen = 0, lastHudMs = 0, simTime = 0, lastFrameT = performance.now(), prevJsMs = 0;
@@ -240,8 +249,34 @@ engine.run({
     simRing.push(simAcc); simAcc = 0;
     jsRing.push(prevJsMs); prevJsMs = engine.loop.stats.jsMs;
     const showHud = hud.f3Visible;
-    gpuPipeline.setPassTiming(showHud);
+    if (!BENCH) gpuPipeline.setPassTiming(showHud);
     if (showHud && now - lastHudMs > 250) { lastHudMs = now; hudText(n); }
+
+    if (BENCH) {
+      benchFrame++;
+      if (benchFrame > BENCH_WARMUP && benchFrame <= BENCH_WARMUP + BENCH_MEASURE) {
+        benchGpuRing.push(gpuPipeline.stats.gpuMsP50);
+      } else if (benchFrame === BENCH_WARMUP + BENCH_MEASURE + 1) {
+        const ps = gpuPipeline.stats;
+        // Primary metric: total GPU ms/frame (gpuMsP50/P95), ring-averaged over the measured window - this is
+        // what's populated every frame. `passMs` is a best-effort final-frame snapshot of the per-pass timers
+        // (PASS_NAMES order) for extra detail only - some entries read null in this scene (that pass's GPU timer
+        // query did not resolve this particular frame), so RE-15d should treat it as informational, not load the
+        // RE-15d raster-delta AC onto a specific pass index without checking it is non-null first.
+        const result = {
+          frames: BENCH_MEASURE, grid: `${rt.cols}x${rt.rows}`, units: n,
+          gpuMsP50: benchGpuRing.pct(0.5), gpuMsP95: benchGpuRing.pct(0.95),
+          passNames: PASS_NAMES, passMs: Array.from(ps.passMsP50),
+          instances: ps.instances, instancesCulled: ps.instancesCulled, instancesLod1: ps.instancesLod1,
+        };
+        window.__rtsBench = result;
+        console.log(`RTS BENCH (${result.frames} frames, ${result.grid}, units ${result.units})\n` +
+          `gpu total p50 ${result.gpuMsP50.toFixed(3)} ms  p95 ${result.gpuMsP95.toFixed(3)} ms\n` +
+          `per-pass (final frame, null = no query this frame): ${PASS_NAMES.map((nm, i) => `${nm} ${result.passMs[i] == null ? 'n/a' : result.passMs[i].toFixed(3)}`).join('  ')}\n` +
+          `instances ${result.instances}  culled ${result.instancesCulled}  lod1 ${result.instancesLod1}`);
+        engine.loop.stop();
+      }
+    }
   },
 });
 
