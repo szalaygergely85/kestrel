@@ -170,6 +170,24 @@ Maren was fined twice for "stone-talk". One winter night she didn't come down fr
 |---|---|---|
 | Hollow Watchtower, north face of the stair column, beside the ruin-steel sword in the rubble (US-078) | `STEEL FOR THE HUSH` | Kept as the designer proposed. Knife-scratched capitals, shallow and old, with moss in the grooves and no signature. "Hush" is Ferrum's word for the wild, so whoever cut it came from inside the Wall, long ago. It fits B (the keeper) and the Maren hooks, and it doesn't contradict A or C. It says nothing about the signal. |
 
+## Credits / easter eggs
+
+OWN-REQ-013: the StickyBizcuit voxel pack licence asks for a hidden in-game nod to the username. It must contain the exact string `StickyBizcuit` (keep the case), stay legible, be skippable and never be pointed at by any hint.
+
+**Chosen (option 1): a mason's mark.**
+
+| Where | Text | Medium |
+|---|---|---|
+| Hollow Watchtower, ground floor. A low wall stone behind the stair column, on the side away from the sword scrawl, at knee height and facing the wall. You only see it by walking round the column and looking down. | `Stones set by StickyBizcuit.` | Wall scrawl (same system as US-078). Small, shallow and chisel-cut rather than knife-scratched, moss in the grooves, dimmer than `STEEL FOR THE HUSH`. |
+
+Why it fits: towers have builders, and builders sign their stones. It reads as an old mason's mark, so it doesn't break the world and it says nothing about the signal. The mixed case is the wink.
+
+Rejected:
+2. A maker's stamp on an SB-pack crate or barrel in the walk-out, `Made by StickyBizcuit`. This works, but it depends on which props get placed and it reads more like a shop label.
+3. A boulder in a walk-out corner, `StickyBizcuit was here`. This is the classic graffiti line, but it is too modern for the tone.
+
+Credits screen (later): `Voxel assets by StickyBizcuit`.
+
 ## Opening sequence (panels)
 
 Voice: Wick, first person, present tense. He is never named or shown, only his hands. One caption per still and ASCII only. It replaces the beat list in section 9.4 with five panels, ending on the existing wake.

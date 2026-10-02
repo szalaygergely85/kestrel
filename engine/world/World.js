@@ -819,6 +819,20 @@ export class World {
     return true;
   }
 
+  /**
+   * US-141a (architecture.md 35.1/35.4): the water flow (m/s) at (x, y) = the highest-z region's `flow` plus its radial part. Fills
+   * `out[0], out[1]` and returns true; outside water `out = [0, 0]` and false. Pure, zero allocation.
+   * @param {number} x @param {number} y @param {number[]|Float64Array} out
+   * @returns {boolean}
+   */
+  flowAt(x, y, out) {
+    const wt = this.water;
+    const i = wt.find(x, y);
+    if (i < 0) { out[0] = 0; out[1] = 0; return false; }
+    wt.flowInto(i, x, y, out);
+    return true;
+  }
+
   // ---- ray / segment query (US-078b, architecture.md 30.1) -------------------
 
   /**

@@ -1773,7 +1773,7 @@ export class GpuCellPipeline {
     this._waterActive = this._waterSel.count > 0 && !!this._water;
     this.stats.waterSlots = this._waterSel.count;
     if (this._waterActive) { // US-055a2b: per-slot look rows + own fog (cheap f32 copies, no allocation)
-      fillWaterSlotTable(this._waterSel, world, this._waterLooks, this._waterTable);
+      fillWaterSlotTable(this._waterSel, world, this._waterLooks, this._waterTable, this._fb.timeSec || 0);
       waterFogParams(this._table, this._palette, !!world.terrain, this._waterFog);
       for (let s = 0; s < WL_SLOTS; s++) { this._waterOS[s * 2] = this._waterTable[s * WL_STRIDE + 3]; this._waterOS[s * 2 + 1] = this._waterTable[s * WL_STRIDE + 7]; }
     }

@@ -10,7 +10,7 @@
 // writes the composited bytes to the composite target; cells that are not water, or passthrough cells (shadeBg.a == 0), are copied.
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK, HASH_FAST, BYTE_OUT, PITCH_UNIFORMS, CELL_RAY, CELL_RAY_PITCHED } from './common.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT } from '../../waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT } from '../../waterLook.js';
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
 
@@ -39,6 +39,14 @@ ${BYTE_OUT}
 ${PITCH_UNIFORMS}
 ${CELL_RAY}
 ${CELL_RAY_PITCHED}
+
+// US-141a (35.4): diamond angle in [0, 4), no atan; twin of waterLook.js diamondAngle
+float diamondAngle(float dx, float dy) {
+  float d = abs(dx) + abs(dy);
+  if (d < 1.0e-9) return 0.0;
+  float p = dy / d;
+  return dx < 0.0 ? 2.0 - p : (dy < 0.0 ? 4.0 + p : p);
+}
 
 void main() {
   ivec2 cell = ivec2(gl_FragCoord.xy);
@@ -79,6 +87,22 @@ void main() {
     vec4 gv = uWL[lb + 4 + (gi >> 2)];
     int gc = gi & 3;
     glyph = gc == 0 ? gv.x : (gc == 1 ? gv.y : (gc == 2 ? gv.z : gv.w));
+    // flow streaks (twin of waterLook.js flowStreakHit): r6 = (streak glyph, L, W, K), r7 = (fhat.xy, |f|, o), r8 = (mode, c.xy, nAng)
+    vec4 r6 = uWL[lb + 6], r7 = uWL[lb + 7], r8 = uWL[lb + 8];
+    if (r8.x > 0.5) {
+      float fa, fib;
+      if (r8.x < 1.5) {
+        fa = P.x * r7.x + P.y * r7.y;
+        fib = floor((-P.x * r7.y + P.y * r7.x) / r6.z);
+      } else {
+        float ddx = P.x - r8.y, ddy = P.y - r8.z;
+        fa = sqrt(ddx * ddx + ddy * ddy);
+        fib = min(floor(diamondAngle(ddx, ddy) * 0.25 * r8.w), r8.w - 1.0);
+      }
+      int ia = int(floor((fa - r7.w) / r6.y));
+      uint fh = hashFastU(ia & 1023, int(fib) & 1023, ${WATER_FLOW_SALT});
+      if (float(fh >> 8u) * (1.0 / 16777216.0) > r6.w) glyph = r6.x;
+    }
     if (float(h >> 8u) * (1.0 / 16777216.0) > 0.9) wc += (r2.rgb - wc) * 0.5;
   }
 

@@ -10,11 +10,20 @@
 // Packed row (WL_STRIDE floats, one per water slot; the SAME Float32Array feeds the JS twin and the GPU uniforms):
 //   0..3 shallow.rgb, opaqueAt | 4..7 deep.rgb, seeThrough | 8..11 glint.rgb, waveHz | 12 n, 13 bgK, 14..15 unused
 //   16..19 ramp codes 0..3 | 20..23 ramp codes 4..7   (codes = ASCII - 32, the glyphIdx units of the cell buffer)
+//   US-141a (35.4) 24 streak code, 25 streakLen L, 26 streakW W, 27 streakK   (look; defaults '-', 1.0, 0.35, 0.7)
+//                  28..29 fhat (unit flow dir), 30 |f| (m/s; radial: |s|), 31 o = (signed speed * t) mod (1024 L)   (per slot, f64 -> f32)
+//                  32 mode (0 still, 1 linear, 2 radial), 33..34 circle centre, 35 nAng (radial angular streak count)
 
-export const WL_STRIDE = 24;
+import { hashFastU } from './terrainShade.js';
+
+export const WL_STRIDE = 36;
 export const WL_RAMP_MAX = 8;
 /** Salt of the water glyph hash (`hashFastU(x, y, WATER_HASH_SALT + 31 * tick)`); the shade salt list gets this new one. */
 export const WATER_HASH_SALT = 57;
+/** Salt of the flow streak hash (`hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT)`, 35.4). */
+export const WATER_FLOW_SALT = 59;
+/** Flow below this speed (m/s) is still water: the 32.2 time-bucket hash, no streaks. */
+export const FLOW_MIN = 0.05;
 /** Waterfall sheets later take slots 8..11 (35.3). */
 export const WL_SLOTS = 12;
 
@@ -22,6 +31,7 @@ export const WL_SLOTS = 12;
 export const DEFAULT_WATER_LOOK = Object.freeze({
   ramp: '~-=', shallow: [96, 176, 196], deep: [16, 56, 112], opaqueAt: 1.5, seeThrough: 0.35,
   glint: [235, 245, 255], waveHz: 2, bgK: 0.6,
+  streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7, // US-141a (35.4)
 });
 
 function bad(name, msg) { throw new Error(`waterLook "${name}": ${msg}`); }
@@ -42,7 +52,12 @@ export function packWaterLook(name, look) {
   if (!(L.seeThrough >= 0 && L.seeThrough <= 1)) bad(name, '"seeThrough" must be 0..1');
   if (!(L.waveHz >= 0)) bad(name, '"waveHz" must be >= 0');
   if (!(L.bgK >= 0 && L.bgK <= 1)) bad(name, '"bgK" must be 0..1');
+  if (typeof L.streak !== 'string' || L.streak.length !== 1 || L.streak.charCodeAt(0) < 33 || L.streak.charCodeAt(0) > 126) bad(name, '"streak" must be one printable ASCII glyph (no space)');
+  if (!(L.streakLen > 0)) bad(name, '"streakLen" must be > 0');
+  if (!(L.streakW > 0)) bad(name, '"streakW" must be > 0');
+  if (!(L.streakK >= 0 && L.streakK <= 1)) bad(name, '"streakK" must be 0..1');
   const r = new Float32Array(WL_STRIDE);
+  r[24] = L.streak.charCodeAt(0) - 32; r[25] = L.streakLen; r[26] = L.streakW; r[27] = L.streakK;
   r[0] = L.shallow[0]; r[1] = L.shallow[1]; r[2] = L.shallow[2]; r[3] = L.opaqueAt;
   r[4] = L.deep[0]; r[5] = L.deep[1]; r[6] = L.deep[2]; r[7] = L.seeThrough;
   r[8] = L.glint[0]; r[9] = L.glint[1]; r[10] = L.glint[2]; r[11] = L.waveHz;
@@ -72,11 +87,28 @@ export function defaultWaterLooks() { return _defaultLooks; }
  * Copies the packed row of every selected slot's look into `out` (WL_SLOTS * WL_STRIDE floats). Zero allocation.
  * @param {{count:number, region:Int32Array}} sel @param {{water:any}} world @param {WaterLooks} looks @param {Float32Array} out
  */
-export function fillWaterSlotTable(sel, world, looks, out) {
+export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
   const wt = world.water;
   for (let s = 0; s < sel.count; s++) {
-    const name = wt.lookNames[wt.look[sel.region[s]]];
-    out.set(looks.byName.get(name) || looks.fallback, s * WL_STRIDE);
+    const ri = sel.region[s];
+    const name = wt.lookNames[wt.look[ri]];
+    const b = s * WL_STRIDE;
+    out.set(looks.byName.get(name) || looks.fallback, b);
+    // US-141a flow block (35.4): the streak offset is folded in f64 here, so the f32 side only sees a small phase.
+    const period = 1024 * out[b + 25];
+    const fx = wt.flow[ri * 2], fy = wt.flow[ri * 2 + 1], fr = wt.flowR[ri];
+    out[b + 28] = 0; out[b + 29] = 0; out[b + 30] = 0; out[b + 31] = 0; out[b + 32] = 0; out[b + 33] = 0; out[b + 34] = 0; out[b + 35] = 0;
+    if (fr !== 0 && wt.kind[ri] === 1 && Math.abs(fr) >= FLOW_MIN) { // radial wins when set (v1)
+      out[b + 30] = Math.abs(fr); out[b + 31] = (fr * timeSec) % period;
+      out[b + 32] = 2; out[b + 33] = wt.cx[ri]; out[b + 34] = wt.cy[ri];
+      const rad = Math.sqrt(wt.r2[ri]);
+      out[b + 35] = Math.max(1, Math.round(4 * rad / out[b + 26]));
+    } else {
+      const m = Math.sqrt(fx * fx + fy * fy);
+      if (m >= FLOW_MIN) {
+        out[b + 28] = fx / m; out[b + 29] = fy / m; out[b + 30] = m; out[b + 31] = (m * timeSec) % period; out[b + 32] = 1;
+      }
+    }
   }
 }
 
@@ -104,4 +136,38 @@ export function waterFogParams(table, palette, hasTerrain, out) {
   out[0] = fog.start; out[1] = fog.full; out[2] = 1; out[3] = 1;
   for (let k = 0; k < 3; k++) { out[4 + k] = out[8 + k] = fog.fgRGB[k]; out[12 + k] = out[16 + k] = fog.bgRGB[k]; }
   return out;
+}
+
+// ---- US-141a flow streaks (35.4): the JS half; glsl/waterComposite.frag.js repeats these expressions in the same order ----
+/** Diamond angle of (dx, dy) in [0, 4) (no atan); 0 at the origin. */
+export function diamondAngle(dx, dy) {
+  const d = Math.abs(dx) + Math.abs(dy);
+  if (d < 1e-9) return 0;
+  const p = dy / d;
+  return dx < 0 ? 2 - p : (dy < 0 ? 4 + p : p);
+}
+
+/**
+ * Does the surface point (px, py) of a slot whose packed row starts at `lb` show a flow streak? False for still water (mode 0).
+ * Streak cells are L x W metres in flow space, advected by the row's phase `o`; the key hash wraps every 1024 cells (no time bucket).
+ * @param {Float32Array} t @param {number} lb @param {number} px @param {number} py
+ */
+export function flowStreakHit(t, lb, px, py) {
+  const mode = t[lb + 32];
+  if (mode === 0) return false;
+  const L = t[lb + 25], W = t[lb + 26], o = t[lb + 31];
+  let a, ib;
+  if (mode === 1) {
+    a = px * t[lb + 28] + py * t[lb + 29];
+    const b = -px * t[lb + 29] + py * t[lb + 28];
+    ib = Math.floor(b / W);
+  } else {
+    const dx = px - t[lb + 33], dy = py - t[lb + 34];
+    a = Math.sqrt(dx * dx + dy * dy);
+    const n = t[lb + 35];
+    ib = Math.floor(diamondAngle(dx, dy) * 0.25 * n);
+    if (ib > n - 1) ib = n - 1;
+  }
+  const ia = Math.floor((a - o) / L);
+  return (hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT) >>> 8) * (1 / 16777216) > t[lb + 27];
 }
