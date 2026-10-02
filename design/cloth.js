@@ -15,7 +15,8 @@
  *                               bendCompliance, damping, gravity, drag, lift, flutter, maxSpeed, thickness.
  *   ASSETS.clothLooks.<key>     reference `cloths` content blocks (33.5 JSON shape) for the content step (1b5) and the
  *                               preview: preset + mat + grid + size + pins + the FRAY / TEAR hole pattern, with the
- *                               placement notes. origin / yawDeg / colliders are preview values: 1b5 sets the real
+ *                               placement notes, plus optional per-look sim keys (same 33.2 keys; they override
+ *                               the preset for that cloth only). origin / yawDeg / colliders are preview values: 1b5 sets the real
  *                               ones in the level (local frame). Hand-copied, never read by the engine.
  *   Materials (mat keys)        live in palette.js (v1) + detail-pass.js (v2), same key in both:
  *                               cloth.canvas, cloth.banner, cloth.flag, cloth.linen. Glyph sets clothFace / bannerFace.
@@ -86,6 +87,10 @@
     watchFlag: {
       id: 'watch.flag', preset: 'silk', mat: 'cloth.flag', cols: 14, rows: 9, size: [1.2, 0.8],
       plane: 'vertical', pins: leftCol(9), seed: 5, castShadow: true, sleepDist: 60,
+      // per-look sim overrides (engine: block keys win over the preset, cloths.js `{ ...preset, ...b }`):
+      // +0.6 damping over silk trims the swing tail: rest jitter 0.0051 -> 0.0041 m/s (preview bar < 0.005), calm
+      // after 3.4 s, and it still flies (6 m/s: fly end 23 deg below horizontal). 6 substeps made it worse (never settled).
+      damping: 2.6,
       holes: [[12, 1], [12, 4], [11, 7], [12, 7]],                     // tattered fly end
       note: 'Height MUST stay 0.8 m (3 stripes). Hoist = col 0 on the pole; the fly flies free.'
     },
@@ -93,6 +98,9 @@
     doorCurtain: {
       id: 'door.curtain', preset: 'canvas', mat: 'cloth.linen', cols: 10, rows: 14, size: [1.0, 2.0],
       plane: 'vertical', pins: topRow(10, 1), seed: 3, castShadow: true, sleepDist: 30,
+      // per-look override: thin linen catches more wind than the balloon canvas. A top-pinned sheet leans to
+      // tan(angle) ~ drag * wind / g, so drag 1.4 -> 1.75 takes the 6 m/s lean from ~29 to ~35 deg (AC >= 30).
+      drag: 1.75,
       holes: [[2, 12], [7, 12]],
       note: 'Hang 0.1 m above the floor; the player capsule (setBody) parts it. Jamb boxes either side.'
     }
