@@ -15,16 +15,19 @@ export class Entity {
     if (!transform || typeof transform.x !== 'number' || typeof transform.y !== 'number' || typeof transform.z !== 'number') {
       throw new Error(`Entity.create("${type}"): transform must have finite numeric x, y, z`);
     }
+    const tr = {
+      x: transform.x,
+      y: transform.y,
+      z: transform.z,
+      yawDeg: typeof transform.yawDeg === 'number' ? transform.yawDeg : 0,
+      pitchDeg: typeof transform.pitchDeg === 'number' ? transform.pitchDeg : 0,
+    };
+    // ED-SCALE-1: optional uniform scale (absent = 1); only set when != 1 so unscaled entities stay unchanged.
+    if (transform.scale > 0 && transform.scale !== 1) tr.scale = transform.scale;
     return {
       id,
       type,
-      transform: {
-        x: transform.x,
-        y: transform.y,
-        z: transform.z,
-        yawDeg: typeof transform.yawDeg === 'number' ? transform.yawDeg : 0,
-        pitchDeg: typeof transform.pitchDeg === 'number' ? transform.pitchDeg : 0,
-      },
+      transform: tr,
       components: components || {},
       parent, // CO-2: structId record (null = free world entity), never a live frame
     };

@@ -75,6 +75,8 @@ export function serialize(world) {
         transform: { x: e.transform.x, y: e.transform.y, z: e.transform.z, yawDeg: e.transform.yawDeg, pitchDeg: e.transform.pitchDeg },
         components: stripScratch(structuredClone(e.components)),
       };
+      // ED-SCALE-1 (34.1): written only when != 1, so existing saves stay byte-identical.
+      if (e.transform.scale > 0 && e.transform.scale !== 1) out.transform.scale = e.transform.scale;
       if (fromContent && contentIds.has(e.id)) out.fromContent = true;
       return out;
     }),

@@ -32,7 +32,7 @@ export { stringifyContent } from './content/stringify.js';
 export { loadContentPack, globalId } from './content/loadPack.js';
 
 // ---- world ----------------------------------------------------------------
-export { World, stepSectorAnims } from './world/World.js';
+export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
 export { Terrain } from './world/Terrain.js';
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';

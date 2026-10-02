@@ -28,6 +28,18 @@ const SOLID_OUTSIDE = Object.freeze({
 });
 
 const tmpW = { x: 0, y: 0, z: 0 }; // localToWorld scratch (load-time only)
+
+/** ED-SCALE-1 (architecture.md 34.1): allowed per-object uniform scale range. */
+export const PROP_SCALE_MIN = 0.25;
+export const PROP_SCALE_MAX = 4;
+
+/** Validates a content `scale`; returns it rounded to 0.01. Throws naming `label`. */
+function readScale(v, label) {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < PROP_SCALE_MIN || v > PROP_SCALE_MAX) {
+    throw new Error(`World.load: ${label} scale ${v} outside [${PROP_SCALE_MIN}, ${PROP_SCALE_MAX}]`);
+  }
+  return Math.round(v * 100) / 100;
+}
 // console.info of the level-sun fallback: once per process.
 let sunInfoShown = false;
 
@@ -458,6 +470,15 @@ export class World {
           } else {
             z = localToWorld(s.frame, p.x, p.y, p.z || 0, tmpW).z;
           }
+          // ED-SCALE-1 (34.1): optional uniform scale, voxel models only.
+          let scale = 1;
+          if (p.scale !== undefined) {
+            scale = readScale(p.scale, `prop "${entId}"`);
+            if (!isVoxel && scale !== 1) {
+              console.warn(`World.load: prop "${entId}" is a sprite/billboard - scale ${scale} ignored (voxel models only)`);
+              scale = 1;
+            }
+          }
           const comps = isVoxel
             ? { voxel: { model: modelKey, anim, loop: !!(anim && animsDict[anim].loop) } }
             : { sprite: { model: modelKey, anim, loop: !!(anim && animsDict[anim].loop) } };
@@ -465,11 +486,13 @@ export class World {
           // boulder.test.js built them by hand before this story (US-013
           // tech note); `transform.z` is the feet position, same as `x`/`y`.
           if (p.dynamic) {
-            comps.body = { radius: p.radius, vx: 0, vy: 0, vz: 0, grounded: true };
+            comps.body = { radius: p.radius * scale, vx: 0, vy: 0, vz: 0, grounded: true };
             comps.roller = {};
           }
           // `facing` stays unrotated until CO-4 (yawSteps != 0 still throws).
-          w.spawn('prop', { x, y, z, yawDeg: p.facing || 0, pitchDeg: 0 }, comps, entId, s.id);
+          const pt = { x, y, z, yawDeg: p.facing || 0, pitchDeg: 0 };
+          if (scale !== 1) pt.scale = scale;
+          w.spawn('prop', pt, comps, entId, s.id);
         }
       }
     }
@@ -552,6 +575,19 @@ export class World {
       // `ed.spawn`) carries its own live `parent` on the def when it came
       // through `deserialize` - use it instead of leaving `null`.
       if (parent === null && typeof ed.parent === 'string') parent = ed.parent;
+      // ED-SCALE-1 (34.1): `scale` inline shorthand or `transform.scale`;
+      // stored only when != 1, voxel entities only (sprite/billboard: warn).
+      const rawScale = ed.scale !== undefined ? ed.scale : transform.scale;
+      if (rawScale === undefined) {
+        delete transform.scale;
+      } else {
+        let sc = readScale(rawScale, `entity "${ed.id}"`);
+        if (sc !== 1 && !(components && components.voxel)) {
+          console.warn(`World.load: entity "${ed.id}" is not a voxel entity - scale ${sc} ignored (voxel models only)`);
+          sc = 1;
+        }
+        if (sc === 1) delete transform.scale; else transform.scale = sc;
+      }
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
 
