@@ -12,7 +12,8 @@
  * WHAT THIS FILE SETS
  *   ASSETS.voxelModels.sword       { name, desc, voxel, placement, readability }  the world pickup (planted, leaning)
  *   ASSETS.voxelModels.swordHeld   { name, desc, voxel }                          the same blade, tip UP, pivot = grip
- *   ASSETS.viewModels.sword        view-model clips (idle sway, swingLR, swingRL), chain rules, trail, sparks (README 7.4)
+ *   ASSETS.viewModels.sword        view-model clips (idle sway, swingLR = light, charge + swingHard = hard; D-034),
+ *                                  chain rules, trail + trailHard, sparks (clink, hit, hitHeavy, chargeGlint) (README 7.4)
  *   ASSETS.swordKit                PROPOSED colours + materials (v1 palette format, v2 detail-pass format, remap) and
  *                                  the merge note. NOT merged into palette.js / detail-pass.js yet (shared hot files:
  *                                  the main session merges, see README 7.4 "Merge step").
@@ -280,8 +281,26 @@
   //    A swing = windup / active / recover windows (ms) per the US-078 AC: 80 / 120 / 150 = 350 ms. 7 keys =
   //    rest, windup end (anticipation), 3 active poses (the arc), follow-through (overshoot), back to rest.
   //    Swing direction is named from the PLAYER's view: swingLR sweeps left -> right (the +x edge leads).
+  //
+  //    D-034 (one swing motion, light + hard; architecture.md "30.1 amendment"):
+  //      LIGHT = tap = swingLR (unchanged), max 2 in a row (chain), no swingRL any more.
+  //      HARD  = hold >= 0.4 s then release: clip `charge` (REST -> cocked, blade across the view, by 400 ms, then
+  //              held; a short tap only shows its first ~100 ms = a small pull-back, the anticipation of the light
+  //              swing), then `swingHard` from the captured charge pose: a heave further back (windup 67 ms), a
+  //              WIDER left -> right arc (hand from x -0.24 vs -0.10, blade turn rz -95 -> +92 = 187 deg vs swingLR's
+  //              -80 -> +85 = 165; tip x -0.86 -> +0.98 m over the active keys), a deep follow-through
+  //              that hangs below the right edge (the weight carries the blade on), then a slow lift back to REST
+  //              (recover 450 ms = the "you're open" window). Hot trail `trailHard`, big spark `hitHeavy`, and a
+  //              1-cell `chargeGlint` at the tip when the hard swing is ready (enough mana).
+  //    Every sampled blade point (tip, mid, guard, pommel butt) stays >= 0.05 m in front of the eye (checked in the
+  //    preview, all clips).
   // ===================================================================================================================
   var REST = { pos: [0.27, -0.42, -0.22], rot: [65, -8, 5] };
+  // the cocked hold pose (end of `charge`, key 0 of `swingHard`): the hand pulled in across the body (bottom centre, 6 cm
+  // nearer the eye than REST), the blade laid DIAGONALLY ACROSS THE VIEW, raised 32 deg and turned 55 deg to the left, tip
+  // in the upper-left of the screen (camX ~ -0.89, z/s ~ 0.34: on screen at 160x60 and 240x90, so `chargeGlint` at the tip
+  // is visible). Reads as "loaded": the whole screen is crossed by steel, edge toward the swing.
+  var CHARGE_END = { pos: [0.05, -0.36, -0.17], rot: [58, 0, -55] };
   function k(t, pos, rot) { return { t: t, pos: pos, rot: rot }; }
   A.viewModels.sword = {
     model: 'swordHeld',
@@ -305,22 +324,38 @@
         k(270, [0.28, -0.32, -0.30], [95, 0, 85]),         // follow-through: past the right edge, tip below horizontal
         k(350, REST.pos, REST.rot)                          // recovered
       ] },
-      swingRL: { loop: false, windup: [0, 80], active: [80, 200], recover: [200, 350], leadEdge: '-x', keys: [
+      // HARD, part 1 (D-034): shown in sim states hold + charge, tMs = steps since the press * 1000/60, clamped at 400.
+      // 0-100 ms = a small pull-back (all a tap ever shows: grip back 6 cm + up 5 cm, the tip starts to lean left);
+      // 100-330 the blade swings across the view to the left; 330 = a 5-deg overshoot; 400 settles = the held pose.
+      charge: { loop: false, holdMs: 400, keys: [
         k(0,   REST.pos, REST.rot),
-        k(80,  [0.36, -0.30, -0.12], [70, 0, 85]),         // windup end: cocked to the right, blade pointing right-back
-        k(120, [0.24, -0.40, -0.19], [78, 0, 45]),
-        k(160, [0.08, -0.44, -0.22], [82, 0, 0]),
-        k(200, [-0.08, -0.40, -0.25], [86, 0, -50]),
-        k(270, [-0.18, -0.32, -0.29], [95, 0, -85]),       // follow-through past the left edge
-        k(350, REST.pos, REST.rot)
+        k(100, [0.22, -0.36, -0.17], [60, -6, -14]),       // small pull-back (tap anticipation): back 6 cm, up 5 cm
+        k(230, [0.10, -0.34, -0.14], [57, -3, -42]),       // the hand comes across the body, the blade turns left
+        k(330, [0.04, -0.35, -0.16], [56, 0, -60]),        // overshoot: cocked a hair too far (the arm "loads")
+        k(400, CHARGE_END.pos, CHARGE_END.rot)              // held: blade across the view, tip upper-left
+      ] },
+      // HARD, part 2: release in charge with mana. Same left -> right motion as swingLR, wider and heavier.
+      // windup 0-67 (4 steps), active 67-183 (7 steps), recover 183-633 (27 steps) = SWORD_CFG.hard.
+      swingHard: { loop: false, windup: [0, 67], active: [67, 183], recover: [183, 633], leadEdge: '+x', keys: [
+        k(0,   CHARGE_END.pos, CHARGE_END.rot),             // the charge end pose (blend: replaced by the captured pose)
+        k(67,  [-0.24, -0.30, -0.04], [50, -4, -95]),      // windup end: the heave - hand far up-left, blade thrown back
+        k(100, [-0.10, -0.40, -0.12], [74, 0, -50]),       // active 1: hammering in from the far left
+        k(125, [0.00, -0.46, -0.18], [80, 0, -15]),        // active 2: left of centre, full reach
+        k(150, [0.12, -0.46, -0.22], [84, 0, 25]),         // active 3: through the centre line
+        k(183, [0.26, -0.40, -0.27], [88, 0, 62]),         // active 4: right-forward, dipping
+        k(260, [0.34, -0.30, -0.34], [100, 0, 92]),        // follow-through: past the right edge, tip well below level
+        k(360, [0.36, -0.32, -0.36], [102, -4, 88]),       // hang: the weight drags it on, momentum dies (you're open)
+        k(500, [0.30, -0.40, -0.28], [78, -8, 30]),        // heave it back up
+        k(633, REST.pos, REST.rot)                          // recovered
       ] }
     },
-    chain: { order: ['swingLR', 'swingRL'], max: 2, queueDuring: 'recover', restMs: 250, startAtMs: 270,
-             blendMs: 80, note: 'a queued swing starts when the first reaches its follow-through key (270 ms), from the ' +
-                                'CURRENT pose, and blends into its own windup-end key over its 80 ms windup (its key 0 is ' +
-                                'replaced by the current pose); after 2 swings, 250 ms rest in idle' },
+    chain: { max: 2, queueDuring: 'recover', restMs: 250, startAtMs: 270, blendMs: 80,
+             note: 'D-034: light swings only (swingLR every time). A press queued in light #1\'s recover starts light #2 ' +
+                   'at its follow-through key (270 ms) from the CURRENT pose (key 0 replaced, blend over the 80 ms ' +
+                   'windup); after 2 lights, 250 ms rest in idle. A queued press still held at 270 ms goes to charge ' +
+                   '(blend from the current pose), which can end in a hard swing.' },
     bob: { note: 'engine-side walk bob while moving (not in the keys): z +-0.012 m, x +-0.006 m, roll +-1 deg, ' +
-                 'one cycle per 2 steps; x0.4 while swinging', z: 0.012, x: 0.006, rollDeg: 1.0 },
+                 'one cycle per 2 steps; x0.4 during a light swing, x0.2 during charge / swingHard (D-034)', z: 0.012, x: 0.006, rollDeg: 1.0 },
     carriedLight: { heldOffsetX: -0.3, note: 'US-078 AC: with the sword taken the carried lamp light moves to the LEFT ' +
                                             '(0.3 m left of the eye instead of right, GDD 7.3)' },
     trail: {
@@ -335,6 +370,20 @@
       colors: [[34, 'white'], [67, 'mirror'], [100, 'ironLight']],   // [age ms <=, colour key]
       ghost: { ageMs: 50, glyph: ':', color: 'iron' }
     },
+    // D-034 hard swing trail: same schema + rules as `trail`, used while swingHard's ACTIVE window runs (+ lifeMs).
+    // Heavier: 9 samples (150 ms, the whole 116 ms arc stays on screen while it is cut), doubled body glyphs (`=` flat),
+    // a solid `#` / `%` head blob (sprite-fire style: the head reads as a hot smear, the body gives the direction),
+    // and hot colours: white -> flameCore -> flameMid -> flameOuter -> emberDim as it ages (steel heated by the blow).
+    // Ghost blade line `%` (a smeared heavy afterimage) 33 ms behind, in mirror steel.
+    trailHard: {
+      note: 'as trail (active window only, mount tip, ghost mid -> tip, slope glyphs, colour by age, emissive, drawn ' +
+            'under the blade) but 9 samples / 150 ms, heavier glyphs and fire colours. The head is the newest segment.',
+      mount: 'tip', ghostMount: 'mid', stepMs: 16.7, samples: 9, lifeMs: 150,
+      glyphs: { h: '=', d1: '/', d2: '\\', v: '|', head: { h: '#', d1: '%', d2: '%', v: '#' } },
+      slope: { hMaxDeg: 22.5, vMinDeg: 67.5 },
+      colors: [[25, 'white'], [50, 'flameCore'], [90, 'flameMid'], [125, 'flameOuter'], [150, 'emberDim']],
+      ghost: { ageMs: 33, glyph: '%', color: 'mirror' }
+    },
     sparks: {
       clink: { note: 'world hit (wall / terrain inside reach): 1 cell at the hit point for 100 ms + 50 ms hit-stop',
                durations: [50, 50], frames: [{ glyphs: ['*'], fg: ['W'] }, { glyphs: ['+'], fg: ['f'] }],
@@ -342,6 +391,28 @@
       hit: { note: 'entity hit (practice target / beast): the 3-cell spark at the hit point, 100 ms; target flashes white 100 ms',
              durations: [50, 50], frames: [{ glyphs: ['-*-'], fg: ['fWf'] }, { glyphs: ['.+.'], fg: ['efe'] }],
              keys: { W: { c: 'white', e: true }, f: { c: 'flameCore', e: true }, e: { c: 'ember', e: true } }, anchor: { x: 1, y: 0 } },
+      // D-034 hard-swing entity hit: a 5 x 3 burst at the hit point (anchor = its centre cell), 3 frames = 140 ms.
+      // f0 white-hot cross (7 cells), f1 the burst throws 4 diagonal sparks out to the corners (11 cells),
+      // f2 embers scatter + die (5 cells). ' ' = transparent (draw nothing, fg ' ').
+      hitHeavy: { note: 'hard swing entity hit: 5x3 burst at the hit point, 40 + 50 + 50 ms; target flashes white (targetFlash); ' +
+                        'the sim freezes 4 steps (hitStopHard, ~67 ms) - the burst keeps playing in real time',
+                  durations: [40, 50, 50],
+                  frames: [
+                    { glyphs: ['  |  ', '=-*-=', '  |  '], fg: ['  W  ', 'fWWWf', '  W  '] },
+                    { glyphs: ['\\ | /', '-=#=-', '/ | \\'], fg: ['o f o', 'fWWWf', 'o f o'] },
+                    { glyphs: ['.   \'', '  +  ', '\'   .'], fg: ['e   d', '  o  ', 'd   e'] }
+                  ],
+                  keys: { W: { c: 'white', e: true }, f: { c: 'flameCore', e: true }, o: { c: 'flameOuter', e: true },
+                          e: { c: 'ember', e: true }, d: { c: 'emberDim', e: true } },
+                  anchor: { x: 2, y: 1 }, hitStopMs: 67 },
+      // D-034 "the hard swing is ready": once, when holdSteps reaches 24 AND mana >= hard.mana, at the blade tip
+      // (mount tip, projected to its screen cell). 1 cell, 30 + 35 + 35 = 100 ms: mirror `+` -> white `*` -> fading `'`.
+      // No glint = this release will be a light swing.
+      chargeGlint: { note: 'hard swing ready: 1 cell at the tip mount, 100 ms, emissive, drawn over the blade',
+                     mount: 'tip', durations: [30, 35, 35],
+                     frames: [{ glyphs: ['+'], fg: ['m'] }, { glyphs: ['*'], fg: ['W'] }, { glyphs: ['\''], fg: ['i'] }],
+                     keys: { W: { c: 'white', e: true }, m: { c: 'mirror', e: true }, i: { c: 'ironLight', e: true } },
+                     anchor: { x: 0, y: 0 } },
       targetFlash: { color: 'white', ms: 100 }
     }
   };
