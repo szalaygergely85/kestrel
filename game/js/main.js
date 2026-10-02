@@ -60,6 +60,7 @@ import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
+import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -420,7 +421,15 @@ pitchClampDeg = effRenderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
 gameVoxelPool.renderer = effRenderer;
 engine.overlay.renderer = effRenderer;
 engine.overlay.setStyles(questOverlayStyles(assets.uiStyle)); // US-079a/US-128 (29.1/29.2): beastNotice + target* overlay styles
-const ovlStyles = { beastNotice: engine.overlay.styleId('beastNotice') }; // US-079a (29.1): resolved once, not per frame
+const ovlStyles = {
+  beastNotice: engine.overlay.styleId('beastNotice'), // US-079a (29.1): resolved once, not per frame
+  // US-128b (29.2): resolved once, not per frame.
+  target: engine.overlay.styleId('target'),
+  targetFade: engine.overlay.styleId('targetFade'),
+  targetNone: engine.overlay.styleId('targetNone'),
+  targetBarFill: engine.overlay.styleId('targetBarFill'),
+  targetBarEmpty: engine.overlay.styleId('targetBarEmpty'),
+};
 sprites.pool.renderer = effRenderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
@@ -510,6 +519,7 @@ function runGame(mode) {
   let playerHandle = null;
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
+  let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
   if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
@@ -617,8 +627,13 @@ function runGame(mode) {
       playerHandle = world.get('player');
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      if (targeting) targeting.dispose(); // same "drop the old world's listeners first" precedent as vitals.dispose() below
+      targeting = createTargeting(world, engine.events, {}); // US-128b (29.2): rebuilt on every load/restart
+      // US-128b (29.2): ring samples follow the terrain slope (28.9 OVL_RING_LIFT). `null` on a no-terrain world
+      // (`?level=<name>` ad-hoc, test_room) falls back to `rasterRing`'s own pre-existing flat-z branch.
+      engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
-      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting: null }); // US-128b adds targeting later
+      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting });
       resetPickups(); // US-080b (30.2): same "rebuilt on every load/restart" precedent as beasts/vitals above
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
       const startT = playerHandle.data.transform;
@@ -746,6 +761,13 @@ function runGame(mode) {
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() });
 
+    // US-128b (29.2): before `look.update(dt)` below, so a fresh `setLockPoint`
+    // this step is what `look.update` turns toward. `Q`/cycle are swallowed
+    // while `uiLocked` (wake/map/settings/dead), same as the mouse below.
+    if (mode === 'world' && playerHandle && !ending && targeting) {
+      const cycleDir = (input.pressed('Tab') ? (input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? -1 : 1) : 0) + input.consumeWheel();
+      targeting.step(dt, !uiLocked && input.pressed('KeyQ'), cycleDir, playerHandle.data, look);
+    }
     if (look && !ending) {
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
       // mouse delta every step (so nothing pent up snaps the camera once
@@ -1005,6 +1027,7 @@ function runGame(mode) {
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
       if (beasts) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
+      if (targeting) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpuDda) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
