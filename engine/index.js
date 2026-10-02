@@ -74,6 +74,7 @@ export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES,
 export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
+export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
 /** Renderer used when `?renderer=` is absent (ME-12b flips it to 'mesh'; game main.js and the editor read it). */
 export const DEFAULT_RENDERER = 'dda';
 export { castModels } from './voxel/voxelMarch.js';
