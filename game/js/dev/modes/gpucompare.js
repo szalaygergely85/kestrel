@@ -389,6 +389,20 @@ function buildCompareRuns(ctx) {
     cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30,
     before: waterPose([{ id: 'cmp.sea', shape: 'rect', rect: [1100, 700, 1900, 1400], z: groundZ(waterEye.x, waterEye.y) - 1, look: 'water' }]) });
 
+  // US-141a (architecture.md 35.4, 35.10): flowing water at a frozen clock (t = 10 s; the tick-600 pose of 35.10 once waves.js exists).
+  // A 3 m wide river (flow 4 m/s along +x, 2 m/s in the slow reach) seen grazing, and a circular plunge-pool style pool (flowRadial 2)
+  // from above. Same hash + table in both twins, so the streak glyphs must match cell for cell (modulo the f32 sample point).
+  const riverC = { x: poolC.x, y: poolC.y };
+  const riverSet = waterPose([
+    { id: 'cmp.river', shape: 'rect', rect: [poolC.x - 14, poolC.y - 3, poolC.x + 14, poolC.y + 3], z: groundZ(poolC.x, poolC.y) + 0.9, look: 'water', flow: [4, 0] },
+    { id: 'cmp.fast', shape: 'rect', rect: [poolC.x - 14, poolC.y + 3, poolC.x + 14, poolC.y + 9], z: groundZ(poolC.x, poolC.y) + 0.9, look: 'pond', flow: [-1, 0.6] },
+  ]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water flowing river grazing (US-141a, flow 4 m/s + 1.2 m/s reach, t 10 s, shear pitch -6, sun az 135 el 30)',
+    cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -6 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10, before: riverSet });
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water flowing radial pool top-down (US-141a, flowRadial 2 + flow, t 10 s, pitched default, pitch -75, sun az 135 el 30)',
+    cam: { x: riverC.x + 1.5, y: riverC.y, z: groundZ(riverC.x, riverC.y) + 16, yawDeg: 270, pitchDeg: -75 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
+    before: waterPose([{ id: 'cmp.radial', shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look: 'water', flow: [1, 0], flowRadial: 2 }]) });
+
   // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
   // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).
   // `resetInstances` hides the layer before every pose; `before` shows it.
@@ -542,7 +556,7 @@ function runGpuCompareDdaMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -568,6 +582,7 @@ function runGpuCompareDdaMode(ctx) {
       compareSceneDim.rects.set(dim.rects.subarray(0, dim.n * 5));
     }
     fbCompare.sceneDim = compareSceneDim;
+    fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
     fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;

@@ -67,7 +67,7 @@ function snapshot(fb) {
   for (const b of bads) { try { packWaterLook('lava', b); allThrow = false; } catch (e) { if (!String(e.message).includes('lava')) named = false; } }
   ok('look: every invalid field throws, naming the look', allThrow && named);
   const looks = resolveWaterLooks({ lava: { ramp: '#@', shallow: [255, 80, 0], deep: [120, 20, 0] } });
-  const world = { water: { lookNames: ['water', 'lava', 'lava'], look: Uint8Array.from([0, 1, 2]) } };
+  const world = { water: { lookNames: ['water', 'lava', 'lava'], look: Uint8Array.from([0, 1, 2]), flow: new Float64Array(6), flowR: new Float64Array(3), kind: new Uint8Array(3) } };
   const out = new Float32Array(12 * WL_STRIDE);
   fillWaterSlotTable({ count: 3, region: Int32Array.from([1, 0, 2]) }, world, looks, out);
   ok('look: slot table = region look by name (designer table first, engine default for an unknown name)',

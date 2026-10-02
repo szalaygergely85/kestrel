@@ -10,6 +10,7 @@
 //   a >= seeThrough: glyph = ramp[h % n] with h = hashFastU(floor(Px/0.5), floor(Py/0.5), SALT + 31 * floor(t * waveHz)),
 //                    fg = fogged rgbW (h/2^24 > 0.9: mixed halfway to glint first), bg = fogged rgbW * bgK
 //   fog (own distance dW, x pitched fog scale): see waterLook.js `waterFogParams`.
+//   flow (US-141a, 35.4): a flowing slot replaces the ramp glyph by `look.streak` where the advected streak hash (waterLook.js `flowStreakHit`) says so.
 // Edge suppression: an opaque (a >= seeThrough) surface cell sets `fb.waterMask[i] = 1`; `edgePass` skips masked cells so a
 // submerged silhouette never draws through opaque water.
 //
@@ -19,7 +20,7 @@ import { sunFromWorld } from './terrainCaster.js';
 import { hashFastU } from './terrainShade.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams } from './waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit } from './waterLook.js';
 
 const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
@@ -47,7 +48,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     fb.waterMask = _mask;
   }
   const sel = lastWaterSelection();
-  fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table);
+  fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);
   waterFogParams(fb.matTable, fb.palette, !!world.terrain, _fog);
   const sun = sunFromWorld(world, fb.palette, _sun);
   const light = fb.light;
@@ -85,6 +86,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       const tick = Math.floor(timeSec * waveHz);
       const h = hashFastU(Math.floor(_p[0] / 0.5), Math.floor(_p[1] / 0.5), WATER_HASH_SALT + 31 * tick);
       glyph = _table[lb + 16 + (h % (_table[lb + 12] | 0))];
+      if (flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4): flowing water streaks
       if ((h >>> 8) * (1 / 16777216) > 0.9) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }

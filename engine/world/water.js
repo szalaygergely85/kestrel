@@ -5,6 +5,8 @@
 import { localToWorld, localDirToWorld } from '../core/transform.js';
 
 export const WATER_MAX = 32;
+/** Max flow speed (m/s) of a region's `flow` / `flowRadial` (US-141a, architecture.md 35.1). */
+export const FLOW_MAX = 6;
 const LOOK_MAX = 255;
 const KIND_RECT = 0, KIND_CIRCLE = 1;
 const _p = { x: 0, y: 0, z: 0 }, _q = { x: 0, y: 0, z: 0 }, _d = [0, 0];
@@ -25,7 +27,14 @@ function validateOne(r, tag) {
   } else bad(tag, `unknown shape "${r.shape}" (rect | circle)`);
   if (!num(r.z)) bad(tag, '"z" must be a finite number');
   if (r.look !== undefined && (typeof r.look !== 'string' || !r.look)) bad(tag, '"look" must be a non-empty string');
-  if (r.flow !== undefined && (!Array.isArray(r.flow) || r.flow.length !== 2 || !r.flow.every(num))) bad(tag, '"flow" must be [fx, fy]');
+  if (r.flow !== undefined) {
+    if (!Array.isArray(r.flow) || r.flow.length !== 2 || !r.flow.every(num)) bad(tag, '"flow" must be [fx, fy]');
+    if (Math.hypot(r.flow[0], r.flow[1]) > FLOW_MAX) bad(tag, `"flow" speed must be <= ${FLOW_MAX} m/s`);
+  }
+  if (r.flowRadial !== undefined) {
+    if (r.shape !== 'circle') bad(tag, '"flowRadial" is only valid on a circle');
+    if (!num(r.flowRadial) || Math.abs(r.flowRadial) > FLOW_MAX) bad(tag, `"flowRadial" must be a finite number with |s| <= ${FLOW_MAX} m/s`);
+  }
 }
 
 function checkId(r, where) {
@@ -37,7 +46,7 @@ function checkId(r, where) {
 /**
  * World `def.water` + each placed structure's `level.def.water` -> validated world-space defs.
  * Level ids are prefixed `<structId>.`; level-local x/y/z go through the frame (rect corners re-normalised).
- * @returns {Object[]} fresh plain objects {id, shape, rect|c+r, z, look, flow}
+ * @returns {Object[]} fresh plain objects {id, shape, rect|c+r, z, look, flow, flowRadial}
  */
 export function collectWaterDefs(def, structures) {
   const out = [];
@@ -51,7 +60,7 @@ export function collectWaterDefs(def, structures) {
   for (const r of (def && def.water) || []) {
     const id = checkId(r, 'world');
     validateOne(r, id);
-    push({ id, shape: r.shape, rect: r.rect ? r.rect.slice() : null, c: r.c ? r.c.slice() : null, r: r.r || 0, z: r.z, look: r.look || 'water', flow: r.flow ? r.flow.slice() : [0, 0] });
+    push({ id, shape: r.shape, rect: r.rect ? r.rect.slice() : null, c: r.c ? r.c.slice() : null, r: r.r || 0, z: r.z, look: r.look || 'water', flow: r.flow ? r.flow.slice() : [0, 0], flowRadial: r.flowRadial || 0 });
   }
   for (const s of structures || []) {
     const list = s.level && s.level.def && s.level.def.water;
@@ -71,7 +80,7 @@ export function collectWaterDefs(def, structures) {
       }
       const fl = r.flow || [0, 0];
       localDirToWorld(f, fl[0], fl[1], _d);
-      push({ id, shape: r.shape, rect, c, r: r.r || 0, z: r.z + f.z, look: r.look || 'water', flow: [_d[0], _d[1]] });
+      push({ id, shape: r.shape, rect, c, r: r.r || 0, z: r.z + f.z, look: r.look || 'water', flow: [_d[0], _d[1]], flowRadial: r.flowRadial || 0 });
     }
   }
   return out;
@@ -87,8 +96,21 @@ export function createWater(defs) {
     count: n, ids: new Array(n), lookNames: [],
     x0: new Float64Array(n), y0: new Float64Array(n), x1: new Float64Array(n), y1: new Float64Array(n),
     cx: new Float64Array(n), cy: new Float64Array(n), r2: new Float64Array(n), z: new Float64Array(n),
-    flow: new Float64Array(n * 2), kind: new Uint8Array(n), look: new Uint8Array(n),
+    flow: new Float64Array(n * 2), flowR: new Float64Array(n), kind: new Uint8Array(n), look: new Uint8Array(n),
     /** Highest-z region containing (x, y), or -1 (ties: lower index). Pure, zero allocation. */
+    /**
+     * US-141a: region `i`'s flow at (x, y) into out[0..1] = `flow` + `flowRadial * unit(p - c)` (circle; 0 at the centre). Zero allocation.
+     */
+    flowInto(i, x, y, out) {
+      let vx = this.flow[i * 2], vy = this.flow[i * 2 + 1];
+      const s = this.flowR[i];
+      if (s !== 0) {
+        const dx = x - this.cx[i], dy = y - this.cy[i];
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 1e-9) { vx += s * dx / d; vy += s * dy / d; }
+      }
+      out[0] = vx; out[1] = vy;
+    },
     find(x, y) {
       let best = -1, bz = -Infinity;
       for (let i = 0; i < this.count; i++) {
@@ -108,7 +130,7 @@ export function createWater(defs) {
     const d = defs[i];
     t.ids[i] = d.id;
     t.z[i] = d.z;
-    t.flow[i * 2] = d.flow[0]; t.flow[i * 2 + 1] = d.flow[1];
+    t.flow[i * 2] = d.flow[0]; t.flow[i * 2 + 1] = d.flow[1]; t.flowR[i] = d.flowRadial || 0;
     if (d.shape === 'rect') {
       t.kind[i] = KIND_RECT;
       t.x0[i] = d.rect[0]; t.y0[i] = d.rect[1]; t.x1[i] = d.rect[2]; t.y1[i] = d.rect[3];
