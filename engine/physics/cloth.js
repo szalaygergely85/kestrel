@@ -9,8 +9,9 @@
 // Zero allocation in step(): everything is preallocated in createCloth.
 //
 // Z is up. The caller lays `rest` out (world positions, node k = row*cols+col).
-// Colliders (1a2) are not implemented yet: step()'s 4th argument is accepted
-// and ignored. Aero deviation from 33.3: nodes carry unit mass, so `drag` and
+// Colliders (1a2): a flat preallocated list (createClothColliders + setters) the
+// caller owns and fills; node-vs-primitive pushout to surface + thickness, friction,
+// a per-cloth ground plane (setGround). Aero deviation from 33.3: nodes carry unit mass, so `drag` and
 // `lift` are accelerations per m/s of relative wind (1/s), not forces times
 // area; each node averages the accelerations of its adjacent triangles.
 
@@ -19,6 +20,53 @@ export const MAX_CLOTH_ROWS = 16;
 export const MAX_CLOTH_NODES = MAX_CLOTH_COLS * MAX_CLOTH_ROWS;
 const NO_PIN = 0xffff;
 const MOVE_EPS = 1e-6; // m per step: below this the cloth did not "move" (version gating)
+
+// ---- collider list (33.2): 12 floats per slot. sphere: c(0-2) r(3); capsule: a(0-2) b(3-5) r(6) d=b-a(7-9) 1/|d|^2(10);
+// box: c(0-2) half(3-5) cos(6) sin(7) (yaw about z); plane: n(0-2) d(3), n.p >= d is outside.
+export const COLLIDER_SPHERE = 0, COLLIDER_CAPSULE = 1, COLLIDER_BOX = 2, COLLIDER_PLANE = 3;
+export const MAX_CLOTH_COLLIDERS = 64;
+const BIG = 1e30;
+
+/** @param {number} [max=16] slots */
+export function createClothColliders(max = 16) {
+  if (!(Number.isInteger(max) && max >= 1 && max <= MAX_CLOTH_COLLIDERS)) throw new Error(`createClothColliders: max must be an integer in [1, ${MAX_CLOTH_COLLIDERS}], got ${max}`);
+  return { count: 0, max, type: new Uint8Array(max), f: new Float64Array(12 * max), aabb: new Float64Array(6 * max) };
+}
+function slot(c, i) {
+  if (!(i >= 0 && i < c.max)) throw new Error(`cloth collider slot ${i} out of range [0, ${c.max})`);
+  if (i >= c.count) c.count = i + 1;
+  return 12 * i;
+}
+function setAabb(c, i, x0, y0, z0, x1, y1, z1) {
+  const a = c.aabb, o = 6 * i;
+  a[o] = x0; a[o + 1] = y0; a[o + 2] = z0; a[o + 3] = x1; a[o + 4] = y1; a[o + 5] = z1;
+}
+export function setSphere(c, i, x, y, z, r) {
+  const o = slot(c, i), f = c.f;
+  c.type[i] = COLLIDER_SPHERE; f[o] = x; f[o + 1] = y; f[o + 2] = z; f[o + 3] = r;
+  setAabb(c, i, x - r, y - r, z - r, x + r, y + r, z + r);
+}
+export function setCapsule(c, i, ax, ay, az, bx, by, bz, r) {
+  const o = slot(c, i), f = c.f;
+  c.type[i] = COLLIDER_CAPSULE;
+  f[o] = ax; f[o + 1] = ay; f[o + 2] = az; f[o + 3] = bx; f[o + 4] = by; f[o + 5] = bz; f[o + 6] = r;
+  const dx = bx - ax, dy = by - ay, dz = bz - az, l2 = dx * dx + dy * dy + dz * dz;
+  f[o + 7] = dx; f[o + 8] = dy; f[o + 9] = dz; f[o + 10] = l2 > 1e-12 ? 1 / l2 : 0;
+  setAabb(c, i, Math.min(ax, bx) - r, Math.min(ay, by) - r, Math.min(az, bz) - r, Math.max(ax, bx) + r, Math.max(ay, by) + r, Math.max(az, bz) + r);
+}
+/** Yawed box; the caller supplies cos/sin of the yaw (local x axis = (cos, sin, 0)); no trig here. */
+export function setBox(c, i, cx, cy, cz, hx, hy, hz, cosYaw, sinYaw) {
+  const o = slot(c, i), f = c.f;
+  c.type[i] = COLLIDER_BOX;
+  f[o] = cx; f[o + 1] = cy; f[o + 2] = cz; f[o + 3] = hx; f[o + 4] = hy; f[o + 5] = hz; f[o + 6] = cosYaw; f[o + 7] = sinYaw;
+  const ex = Math.abs(cosYaw) * hx + Math.abs(sinYaw) * hy, ey = Math.abs(sinYaw) * hx + Math.abs(cosYaw) * hy;
+  setAabb(c, i, cx - ex, cy - ey, cz - hz, cx + ex, cy + ey, cz + hz);
+}
+export function setPlane(c, i, nx, ny, nz, d) {
+  const o = slot(c, i), f = c.f;
+  c.type[i] = COLLIDER_PLANE; f[o] = nx; f[o + 1] = ny; f[o + 2] = nz; f[o + 3] = d;
+  setAabb(c, i, -BIG, -BIG, -BIG, BIG, BIG, BIG);
+}
 
 /** @param {string} k @param {number} v @param {number} lo @param {number} hi */
 function checkRange(k, v, lo, hi) {
@@ -203,18 +251,111 @@ export function createCloth(def) {
     pos, prev, n: N, cols, rows, quadOn, tri, bbox,
     nodeActive: active, // render may skip nodes with 0
     thickness, dt, substeps,
-    asleep: false, restSteps: 0, version: 0, maxSpeed: 0, tick: 0,
+    asleep: false, restSteps: 0, version: 0, maxSpeed: 0, tick: 0, survivors: 0,
   };
 
-  // Plane set by setGround is stored for 1a2 (collisions are not applied in 1a1).
+  // Ground plane (setGround); n.p >= d is outside. Not a "collider survivor" for the rest/sleep condition.
   const ground = new Float64Array(4);
+  let hasGround = false;
+  const sv = new Uint8Array(MAX_CLOTH_COLLIDERS); // broadphase survivors (local list)
+  let nsv = 0, calmSteps = 0;
+  const half = 0.5; // friction: tangential velocity kept on contact
 
   cloth.setPinTarget = function setPinTarget(p, x, y, z) {
     pinTarget[3 * p] = x; pinTarget[3 * p + 1] = y; pinTarget[3 * p + 2] = z;
   };
   cloth.setGround = function setGround(nx, ny, nz, d) {
     ground[0] = nx; ground[1] = ny; ground[2] = nz; ground[3] = d;
+    hasGround = true;
   };
+
+  /** Contact friction: drop the normal velocity (no bounce), keep half the tangential part. */
+  function slide(k3, nx, ny, nz) {
+    let vx = pos[k3] - prev[k3], vy = pos[k3 + 1] - prev[k3 + 1], vz = pos[k3 + 2] - prev[k3 + 2];
+    const vn = vx * nx + vy * ny + vz * nz;
+    vx = (vx - vn * nx) * half; vy = (vy - vn * ny) * half; vz = (vz - vn * nz) * half;
+    prev[k3] = pos[k3] - vx; prev[k3 + 1] = pos[k3 + 1] - vy; prev[k3 + 2] = pos[k3 + 2] - vz;
+  }
+
+  /** Node-vs-primitive pushout to surface + thickness for the survivors, then the ground plane. */
+  function collide(f, types) {
+    const P = pos, th = thickness;
+    for (let s = 0; s < nsv; s++) {
+      const ci = sv[s], o = 12 * ci, ty = types[ci];
+      if (ty === COLLIDER_SPHERE) {
+        const cx = f[o], cy = f[o + 1], cz = f[o + 2], R = f[o + 3] + th, R2 = R * R;
+        for (let k = 0; k < N; k++) {
+          if (invMass[k] === 0) continue;
+          const k3 = 3 * k;
+          const dx = P[k3] - cx, dy = P[k3 + 1] - cy, dz = P[k3 + 2] - cz;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= R2) continue;
+          let nx = 0, ny = 0, nz = 1;
+          if (d2 > 1e-18) { const inv = 1 / Math.sqrt(d2); nx = dx * inv; ny = dy * inv; nz = dz * inv; }
+          P[k3] = cx + nx * R; P[k3 + 1] = cy + ny * R; P[k3 + 2] = cz + nz * R;
+          slide(k3, nx, ny, nz);
+        }
+      } else if (ty === COLLIDER_CAPSULE) {
+        const ax = f[o], ay = f[o + 1], az = f[o + 2], R = f[o + 6] + th, R2 = R * R;
+        const dx0 = f[o + 7], dy0 = f[o + 8], dz0 = f[o + 9], il = f[o + 10];
+        for (let k = 0; k < N; k++) {
+          if (invMass[k] === 0) continue;
+          const k3 = 3 * k;
+          const rx = P[k3] - ax, ry = P[k3 + 1] - ay, rz = P[k3 + 2] - az;
+          let t = (rx * dx0 + ry * dy0 + rz * dz0) * il;
+          t = t < 0 ? 0 : (t > 1 ? 1 : t);
+          const qx = ax + dx0 * t, qy = ay + dy0 * t, qz = az + dz0 * t;
+          const dx = P[k3] - qx, dy = P[k3 + 1] - qy, dz = P[k3 + 2] - qz;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= R2) continue;
+          let nx = 1, ny = 0, nz = 0;
+          if (d2 > 1e-18) { const inv = 1 / Math.sqrt(d2); nx = dx * inv; ny = dy * inv; nz = dz * inv; }
+          P[k3] = qx + nx * R; P[k3 + 1] = qy + ny * R; P[k3 + 2] = qz + nz * R;
+          slide(k3, nx, ny, nz);
+        }
+      } else if (ty === COLLIDER_BOX) {
+        const cx = f[o], cy = f[o + 1], cz = f[o + 2];
+        const ex = f[o + 3] + th, ey = f[o + 4] + th, ez = f[o + 5] + th, cs = f[o + 6], sn = f[o + 7];
+        for (let k = 0; k < N; k++) {
+          if (invMass[k] === 0) continue;
+          const k3 = 3 * k;
+          const dx = P[k3] - cx, dy = P[k3 + 1] - cy, lz = P[k3 + 2] - cz;
+          const lx = cs * dx + sn * dy, ly = -sn * dx + cs * dy;
+          const ax = lx < 0 ? -lx : lx, ay = ly < 0 ? -ly : ly, az = lz < 0 ? -lz : lz;
+          if (ax >= ex || ay >= ey || az >= ez) continue;
+          const px = ex - ax, py = ey - ay, pz = ez - az; // penetration depth per axis
+          if (px <= py && px <= pz) {
+            const sg = lx < 0 ? -1 : 1, d = sg * px;
+            P[k3] += cs * d; P[k3 + 1] += sn * d;
+            slide(k3, sg * cs, sg * sn, 0);
+          } else if (py <= pz) {
+            const sg = ly < 0 ? -1 : 1, d = sg * py;
+            P[k3] -= sn * d; P[k3 + 1] += cs * d;
+            slide(k3, -sg * sn, sg * cs, 0);
+          } else {
+            const sg = lz < 0 ? -1 : 1;
+            P[k3 + 2] += sg * pz;
+            slide(k3, 0, 0, sg);
+          }
+        }
+      } else { // plane
+        planePush(f[o], f[o + 1], f[o + 2], f[o + 3]);
+      }
+    }
+    if (hasGround) planePush(ground[0], ground[1], ground[2], ground[3]);
+  }
+  function planePush(nx, ny, nz, d) {
+    const P = pos, th = thickness;
+    for (let k = 0; k < N; k++) {
+      if (invMass[k] === 0) continue;
+      const k3 = 3 * k;
+      const sd = nx * P[k3] + ny * P[k3 + 1] + nz * P[k3 + 2] - d;
+      if (sd >= th) continue;
+      const m = th - sd;
+      P[k3] += nx * m; P[k3 + 1] += ny * m; P[k3 + 2] += nz * m;
+      slide(k3, nx, ny, nz);
+    }
+  }
   cloth.sleep = function sleep() { cloth.asleep = true; };
   cloth.wake = function wake() {
     // zero velocity: no pop
@@ -223,7 +364,6 @@ export function createCloth(def) {
   };
 
   cloth.step = function step(wx, wy, wz, colliders) {
-    void colliders;
     if (cloth.asleep) return;
     const P = pos;
     const tick = cloth.tick;
@@ -284,6 +424,35 @@ export function createCloth(def) {
       pinStart[3 * i] = pos[k3]; pinStart[3 * i + 1] = pos[k3 + 1]; pinStart[3 * i + 2] = pos[k3 + 2];
     }
 
+    // --- 3. broadphase: colliders whose aabb meets the (pre-step) node bbox grown by thickness + max travel
+    nsv = 0;
+    const cf = colliders ? colliders.f : null;
+    if (colliders && colliders.count > 0) {
+      let bx0 = Infinity, by0 = Infinity, bz0 = Infinity, bx1 = -Infinity, by1 = -Infinity, bz1 = -Infinity;
+      for (let k = 0; k < N; k++) {
+        if (!active[k]) continue;
+        const px = pos[3 * k], py = pos[3 * k + 1], pz = pos[3 * k + 2];
+        if (px < bx0) bx0 = px; if (px > bx1) bx1 = px;
+        if (py < by0) by0 = py; if (py > by1) by1 = py;
+        if (pz < bz0) bz0 = pz; if (pz > bz1) bz1 = pz;
+      }
+      let pm = 0; // largest pin displacement this step (pins drag their neighbours along)
+      for (let i = 0; i < nPins; i++) {
+        for (let a = 0; a < 3; a++) { const dd = Math.abs(pinTarget[3 * i + a] - pinStart[3 * i + a]); if (dd > pm) pm = dd; }
+      }
+      const g = thickness + maxSpeedCfg * dt + pm;
+      bx0 -= g; by0 -= g; bz0 -= g; bx1 += g; by1 += g; bz1 += g;
+      const ab = colliders.aabb, cnt = colliders.count;
+      for (let i = 0; i < cnt; i++) {
+        const o = 6 * i;
+        if (ab[o] > bx1 || ab[o + 3] < bx0 || ab[o + 1] > by1 || ab[o + 4] < by0 || ab[o + 2] > bz1 || ab[o + 5] < bz0) continue;
+        sv[nsv++] = i;
+      }
+    }
+    calmSteps = nsv === 0 ? calmSteps + 1 : 0;
+    cloth.survivors = nsv;
+    const doCollide = nsv > 0 || hasGround;
+
     // --- 4. substeps
     for (let sub = 0; sub < substeps; sub++) {
       // predict
@@ -332,7 +501,7 @@ export function createCloth(def) {
           pos[k3] = pos[p3] + dx * s; pos[k3 + 1] = pos[p3 + 1] + dy * s; pos[k3 + 2] = pos[p3 + 2] + dz * s;
         }
       }
-      // (1a2: collisions + friction go here)
+      if (doCollide) collide(cf, colliders ? colliders.type : null);
     }
 
     // --- 5. bookkeeping
@@ -353,7 +522,7 @@ export function createCloth(def) {
     bbox[0] = x0; bbox[1] = y0; bbox[2] = z0; bbox[3] = x1; bbox[4] = y1; bbox[5] = z1;
     const speed = Math.sqrt(ms2) * invH;
     cloth.maxSpeed = speed;
-    if (speed < 0.002 && wx === 0 && wy === 0 && wz === 0) cloth.restSteps++; else cloth.restSteps = 0;
+    if (speed < 0.002 && wx === 0 && wy === 0 && wz === 0 && calmSteps >= 3) cloth.restSteps++; else cloth.restSteps = 0;
     if (speed * h > MOVE_EPS) cloth.version++;
     cloth.tick = tick + 1;
   };
