@@ -173,6 +173,8 @@ export class World {
     // here - the game sets this field once it knows its grid, and
     // `serialize`/`deserialize` round-trip it when non-null).
     this.visibility = null;
+    // US-133 (architecture.md 32.3): the fire-spread grid (engine/world/fireGrid.js), or null; the game builds it and `serialize` saves it when set.
+    this.fire = null;
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;

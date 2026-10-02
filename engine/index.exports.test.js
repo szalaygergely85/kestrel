@@ -10,6 +10,7 @@ const names = [
   'createMinimap', 'minimapToWorld', 'worldToMinimap', 'updateMinimap', 'bakeMinimapTerrain', 'bindMinimapFog',
   'createRtsCamera', 'updateRtsCamera', 'zoomRtsCamera',
   'PROP_SCALE_MIN', 'PROP_SCALE_MAX', 'createCommandQueue', 'createRng', 'createHasher', 'createRecorder', 'createReplayPlayer', 'SIM_STEP',
+  'createParticles', 'PARTICLE_CAP', 'PARTICLE_MAX_EMITTERS', 'createEntityEmitters',
 ];
 const missing = names.filter((n) => E[n] === undefined);
 console.log(`index.exports.test.js: ${names.length - missing.length} defined, ${missing.length} missing`);

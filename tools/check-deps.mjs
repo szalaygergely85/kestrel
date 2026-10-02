@@ -48,6 +48,9 @@
 //       bvh.js takes MeshData-shaped plain data as a parameter, never a live
 //       import of the mesh module, so rigid.js/player consumers never end up
 //       transitively depending on engine/mesh internals through physics).
+//   16. (US-053a, architecture.md 32.0) engine/fx/** leaf: non-test imports only
+//       engine/fx/** + engine/core/**; tests may add engine/test/**; physics/nav
+//       may never import engine/fx/**. engine/fx/particles.js joins rule 15.
 //   13. (CO-1b) coordinate-math WARN rule, see COORD_ALLOW below.
 //   14. (RE-05, docs/architecture.md 28.2) engine/nav/**/*.js (non-test) may
 //       import only engine/nav/** and engine/core/** - never render/mesh/ui/
@@ -88,6 +91,7 @@ const GPU_DEVICE_DIR = path.join(GPU_DIR, 'device');
 const PHYSICS_DIR = path.join(ROOT, 'engine', 'physics');
 const MESH_DIR = path.join(ROOT, 'engine', 'mesh');
 const NAV_DIR = path.join(ROOT, 'engine', 'nav');
+const FX_DIR = path.join(ROOT, 'engine', 'fx');
 const RENDER_DIR = path.join(ROOT, 'engine', 'render');
 const UI_DIR = path.join(ROOT, 'engine', 'ui');
 const WORLD_DIR = path.join(ROOT, 'engine', 'world');
@@ -361,6 +365,33 @@ function checkNavLeafRule(file, src) {
   }
 }
 
+// Rule 16 (US-053a, docs/architecture.md 32.0 item 2): engine/fx/** is a leaf
+// like nav. Non-test fx files may import only engine/fx/** and engine/core/**;
+// fx tests may also import engine/test/**. Importing INTO fx is allowed from
+// render/world/ui/mesh/core/game (one-way), but not from physics (27.10
+// stand-alone) or nav (leaf).
+function checkFxLeafRule(file, src) {
+  const isTest = /\.test\.(js|mjs)$/.test(file);
+  const isFxFile = inDir(file, FX_DIR);
+  const isForbiddenConsumer = inDir(file, PHYSICS_DIR) || inDir(file, NAV_DIR);
+  if (!isFxFile && !isForbiddenConsumer) return;
+  const stripped = stripComments(src);
+  for (const { spec, line } of findImports(stripped)) {
+    if (isBareSpecifier(spec)) continue; // rule 1 already flags this
+    const resolved = path.resolve(path.dirname(file), spec);
+    if (isFxFile) {
+      const allowed = inDir(resolved, FX_DIR) || inDir(resolved, CORE_DIR) || (isTest && inDir(resolved, TEST_DIR));
+      if (!allowed) {
+        const scope = isTest ? 'engine/fx/**/*.test.js may only import engine/fx/**, engine/core/** and engine/test/**' : 'engine/fx/** (non-test) may only import engine/fx/** and engine/core/**';
+        findings.push(`${rel(file)}:${line}: import "${spec}" - ${scope} (rule 16, docs/architecture.md 32.0)`);
+      }
+    }
+    if (isForbiddenConsumer && inDir(resolved, FX_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" resolves into engine/fx/ - physics/nav must not import engine/fx/** (rule 16, docs/architecture.md 32.0)`);
+    }
+  }
+}
+
 // Rule 15 (RE-14, docs/architecture.md 28.5, WARN only - the number is
 // reserved even if RE-05's rule 14 lands separately, which it already has).
 // Scope: non-test files under engine/nav/**, engine/core/{commands,rng,hash,
@@ -379,6 +410,10 @@ const VISIBILITY_FILE = path.join(WORLD_DIR, 'Visibility.js');
 // exact file (not a folder) - the wind field's gust math must stay
 // trig-free/wall-clock-free, same reasoning as Visibility.js.
 const WIND_FILE = path.join(WORLD_DIR, 'wind.js');
+// US-053a (32.0 item 2): the particle sim joins rule 15 (exact file; emitterDef.js is load-time and stays out).
+const PARTICLES_FILE = path.join(FX_DIR, 'particles.js');
+// US-133 (32.0 item 2): the fire spread grid joins rule 15 too.
+const FIRE_FILE = path.join(WORLD_DIR, 'fireGrid.js');
 // CLOTH-1a1 (architecture.md 33.2): the cloth sim core joins rule 15 (no trig,
 // Math.random, exp/pow/hypot, wall clock).
 const CLOTH_FILE = path.join(ROOT, 'engine', 'physics', 'cloth.js');
@@ -393,6 +428,8 @@ function inDeterminismScope(file) {
   if (CORE_DETERMINISM_FILES.has(file)) return true;
   if (file === VISIBILITY_FILE) return true;
   if (file === WIND_FILE) return true;
+  if (file === PARTICLES_FILE) return true;
+  if (file === FIRE_FILE) return true;
   if (file === CLOTH_FILE) return true;
   if (inDir(file, RTS_SIM_DIR)) return true;
   if (inDir(file, QUEST_SIM_DIR)) return true;
@@ -430,7 +467,9 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
 }
 for (const file of walk(path.join(ROOT, 'engine'))) {
   // Rule 14 runs over every file, including *.test.js (see its own comment).
-  checkNavLeafRule(file, fs.readFileSync(file, 'utf8'));
+  const fsrc = fs.readFileSync(file, 'utf8');
+  checkNavLeafRule(file, fsrc);
+  checkFxLeafRule(file, fsrc);
 }
 for (const file of walk(path.join(ROOT, 'game'))) {
   const src = fs.readFileSync(file, 'utf8');

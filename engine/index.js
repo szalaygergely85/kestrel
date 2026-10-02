@@ -196,3 +196,10 @@ export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: n
 // ---- RE-07 selection overlay (docs/architecture.md 28.9) ----
 export { createOverlay, applyOverlay, OVL_MAX_OPS } from './ui/overlay.js';
 export { GpuOverlayPass } from './render/gpu/overlayPass.js'; // RE-07b
+
+// ---- US-133 fire spread sim (architecture.md 32.3) ----
+export { createFireGrid } from './world/fireGrid.js';
+
+// ---- US-053a particle sim (docs/architecture.md 32.1) ----
+export { createParticles, PARTICLE_CAP, MAX_EMITTERS as PARTICLE_MAX_EMITTERS } from './fx/particles.js';
+export { createEntityEmitters } from './world/entityEmitters.js';

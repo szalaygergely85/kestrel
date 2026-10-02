@@ -16,6 +16,7 @@ import { PHYSICS_DEFAULTS } from '../physics/config.js';
 import { World } from '../world/World.js';
 import { createUiLayer } from '../ui/uiLayer.js';
 import { createOverlay } from '../ui/overlay.js';
+import { createParticles } from '../fx/particles.js';
 
 export const GRID_MIN_COLS = 160;
 // D-025 (US-038a, architecture.md 22.2): raised from 320 to 480 - gives
@@ -65,6 +66,8 @@ export function clampGrid(cols, rows) {
  *   options ({ sun: 'map'|'dda'|false, res, boxM, aheadM, depthBias, biasM, normalOffsetTexels }); stored frozen as
  *   `engine.shadows` and handed to `new GpuCellPipeline(rt, { ..., shadows: engine.shadows })`, which merges it over
  *   `SUN_SHADOW_DEFAULTS` once (the default `sun` depends on the renderer, so the merge happens where the renderer is known).
+ * @param {{capacity?:number, seed?:number}} [opts.particles] - US-053a (architecture.md 32.1): pooled particle sim, owned as
+ *   `engine.particles` (default 2048 slots, seed 1); cleared on every `world:loaded`. The game steps it (`entityEmitters.sync(); particles.step()`).
  * @returns {import('./engine.js').Engine}
  */
 export function createEngine(opts) {
@@ -72,7 +75,7 @@ export function createEngine(opts) {
     canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false,
     cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
     uiGrid = { cols: 160, rows: 60 },
-    physics: physicsOverrides = {}, shadows = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
+    physics: physicsOverrides = {}, particles: particleOpts = {}, shadows = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
   const grid = clampGrid(cols, rows);
@@ -151,6 +154,7 @@ export function createEngine(opts) {
     instances: new InstanceGroups(),
     // US-078a (architecture.md 30.1): first-person view-model layer; the host sets `fb.viewModel` and calls `pipeline.bindViewModel`.
     viewModel: createViewModelLayer(),
+    particles: createParticles(particleOpts), // US-053a (32.1)
     teamSpec: null,
     matTable: null,
     attachMaterialTable(table) {
@@ -234,5 +238,6 @@ export function createEngine(opts) {
     },
   };
 
+  events.on('world:loaded', () => engine.particles.clear()); // US-053a: particles are transient, never saved
   return engine;
 }

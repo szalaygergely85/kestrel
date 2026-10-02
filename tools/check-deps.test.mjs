@@ -83,6 +83,43 @@ writeFile(tmp, 'engine/world/bad14f.js', `import { NavGrid } from '../nav/NavGri
 writeFile(tmp, 'engine/render/good14.js', `export const a9 = 1;\n`);
 writeFile(tmp, 'engine/nav/NavGrid.js', `export class NavGrid {}\n`);
 
+// Rule 16 (US-053a): engine/fx/** is a leaf module; physics/nav may not import it; particles.js joins rule 15.
+writeFile(tmp, 'engine/fx/heap16.js', `export const f1 = 1;
+`);
+writeFile(tmp, 'engine/fx/good16a.js', `import { f1 } from './heap16.js';
+import { DEG2RAD } from '../core/transform.js';
+export const f2 = [f1, DEG2RAD];
+`);
+writeFile(tmp, 'engine/fx/bad16a.js', `import { Terrain } from '../world/Terrain.js';
+export const f3 = Terrain;
+`);
+writeFile(tmp, 'engine/fx/bad16b.js', `import { drawSprites } from '../render/sprites.js';
+export const f4 = drawSprites;
+`);
+writeFile(tmp, 'engine/fx/good16b.test.js', `import { makeOk } from '../test/assert.js';
+import { f1 } from './heap16.js';
+export const f5 = [makeOk, f1];
+`);
+writeFile(tmp, 'engine/fx/bad16c.test.js', `import { Terrain } from '../world/Terrain.js';
+export const f6 = Terrain;
+`);
+writeFile(tmp, 'engine/world/good16c.js', `import { f1 } from '../fx/heap16.js';
+export const f7 = f1;
+`);
+writeFile(tmp, 'engine/render/good16d.js', `import { f1 } from '../fx/heap16.js';
+export const f8 = f1;
+`);
+writeFile(tmp, 'engine/physics/bad16d.js', `import { f1 } from '../fx/heap16.js';
+export const f9 = f1;
+`);
+writeFile(tmp, 'engine/nav/bad16e.js', `import { f1 } from '../fx/heap16.js';
+export const f10 = f1;
+`);
+writeFile(tmp, 'engine/fx/particles.js', `export function f() { return Math.random() + Math.sin(1); }
+`);
+writeFile(tmp, 'engine/fx/emitterDef.js', `export function f() { return Math.tan(1); }
+`); // load-time compile: NOT in rule 15
+
 // Rule 15 (RE-14): deterministic-sim leaves WARN on Math.random/Date.now/
 // performance.now/trig - engine/nav/**, engine/core/{commands,rng,hash,
 // replay}.js, engine/world/Visibility.js, game/js/rts/sim/**.
@@ -149,6 +186,16 @@ ok('rule 14: mesh importing nav/ flagged', /bad14d\.js.*must not import engine\/
 ok('rule 14: ui importing nav/ flagged', /bad14e\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: world importing nav/ flagged', /bad14f\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: unrelated render file NOT flagged', !/[^d]good14\.js/.test(output), output);
+ok('rule 16: fx non-test importing world/ flagged', /fx\/bad16a\.js.*non-test.*may only import engine\/fx.*engine\/core/.test(output), output);
+ok('rule 16: fx non-test importing render/ flagged', /fx\/bad16b\.js.*non-test/.test(output), output);
+ok('rule 16: fx importing fx+core NOT flagged', !/good16a\.js/.test(output), output);
+ok('rule 16: fx test importing fx+test NOT flagged', !/good16b\.test\.js/.test(output), output);
+ok('rule 16: fx test importing world/ flagged', /bad16c\.test\.js.*engine\/fx.*engine\/core.*engine\/test/.test(output), output);
+ok('rule 16: world/render importing fx/ NOT flagged', !/good16[cd]\.js/.test(output), output);
+ok('rule 16: physics importing fx/ flagged', /physics\/bad16d\.js.*must not import engine\/fx/.test(output), output);
+ok('rule 16: nav importing fx/ flagged', /nav\/bad16e\.js.*must not import engine\/fx/.test(output), output);
+ok('rule 15: engine/fx/particles.js WARNs', /WARN.*fx\/particles\.js:1:.*Math\.random/.test(output) && /WARN.*fx\/particles\.js:1:.*Math\.sin/.test(output), output);
+ok('rule 15: engine/fx/emitterDef.js Math.tan NOT flagged', !/emitterDef\.js/.test(output), output);
 ok('control good.js NOT flagged', !/[^_]good\.js:/.test(output), output);
 ok('rule 15: nav Math.random+Math.sin WARNs', /WARN.*bad15\.js:1:.*Math\.random/.test(output) && /WARN.*bad15\.js:1:.*Math\.sin/.test(output), output);
 ok('rule 15: nav Math.sqrt NOT flagged', !/good15\.js/.test(output), output);

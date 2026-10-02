@@ -91,6 +91,8 @@ export function serialize(world) {
     // no `Visibility` (the default - keeps every existing save byte-
     // identical). Sources are never saved (`saveExplored`'s own contract).
     ...(world.visibility != null ? { visibility: world.visibility.saveExplored() } : {}),
+    // US-133 (32.3 "Save"): omitted when there is no fire grid; the game calls `grid.load(state.fire)` after rebuilding its areas.
+    ...(world.fire != null ? { fire: world.fire.save() } : {}),
   };
 }
 
