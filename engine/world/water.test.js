@@ -124,7 +124,11 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
   const { assets } = await loadTestAssets();
   globalThis.__waterAssets = assets;
   const def = assets.world('world_m1');
-  const base = World.load(def, assets, {});
+  // US-055a2c (Q12 item 8): world_m1 itself now carries 2 real water regions (the first visible pond/flooded
+  // cellar) - this "no water" baseline fixture strips them back out rather than relying on the real content
+  // happening to have none, same as any other "world_m1 minus one specific thing" test fixture would.
+  const defNoWater = { ...def, water: undefined };
+  const base = World.load(defNoWater, assets, {});
   ok('World.load without water -> empty table, never null', !!base.water && base.water.count === 0 && !base.waterAt(0, 0, out));
   ok('bare new World() has an empty table', new World().water.count === 0 && !new World().waterAt(1, 1, out));
   const st = base.structures.find((x) => x.id === 'tower') || base.structures[0];

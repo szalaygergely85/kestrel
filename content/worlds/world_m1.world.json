@@ -60,5 +60,9 @@
     "maxSlopeDeg": 30,
     "maxStepM": 1,
     "seed": 1
-  }
+  },
+  "water": [
+    {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},
+    {"id": "floodedCellar", "look": "murky", "rect": [1485, 995, 1495, 1005], "shape": "rect", "z": 2.45}
+  ]
 }

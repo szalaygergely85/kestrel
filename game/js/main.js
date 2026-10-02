@@ -21,7 +21,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
   loadContentPack, createRng, prebuildTerrainMesh, DEFAULT_RENDERER,
-  forwardOf, hexToRgb,
+  forwardOf, hexToRgb, resolveWaterLooks,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -359,6 +359,7 @@ if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.
   const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer, shadows: engine.shadows });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
+    candidate.setWaterLooks(window.ASSETS.waterLooks); // US-055a2c (Q12 item 8)
     gpuPipeline = candidate;
   }
 }
@@ -1001,6 +1002,7 @@ function runGame(mode) {
     voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
     instances: engine.instances, // RE-06 (28.6)
     viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
+    waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as gpuPipeline.setWaterLooks
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.

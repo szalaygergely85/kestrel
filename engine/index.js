@@ -102,6 +102,7 @@ export {
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
 export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';
+export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item 8: main.js's fb.waterLooks (JS twin)
 // US-047: runGpuCompare/compareCells/compareGeometry/compareLight/poison*
 // (gpucompare parity harness) moved to engine/dev.js.
 export { flickerStep } from './render/gpu/flicker.js';

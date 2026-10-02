@@ -64,6 +64,9 @@
        edge rules) - loaded right after palette.js, same classic-script
        reasoning; AssetRegistry.fromGlobals reads window.ASSETS.detailPass. -->
   <script src="../design/detail-pass.js"></script>
+  <!-- US-055a2c (Q12 item 8): water look table (window.ASSETS.waterLooks), same classic-script load-order
+       reasoning as palette.js/detail-pass.js above - resolved once via resolveWaterLooks (engine/index.js). -->
+  <script src="../design/water-looks.js"></script>
   <!-- ASSETS.uiStyle (US-005 pause overlay text/plate, US-015/017 hints/
        title/end text later) + the title/subtitle models - same
        classic-script/load-order reasoning as palette.js above. -->
