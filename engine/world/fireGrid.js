@@ -13,6 +13,7 @@
 // reads the world and never allocates. Own RNG stream (32.0 item 4).
 // No trig / Math.random / wall clock (rule 15).
 import { createRng } from '../core/rng.js';
+import { STEP } from '../core/loop.js';
 
 export const FIRE_EMPTY = 0, FIRE_UNBURNT = 1, FIRE_BURNING = 2, FIRE_BURNT = 3;
 export const FIRE_CHANGE_IGNITE = 1, FIRE_CHANGE_BURNT = 2; // change kind (low 2 bits)
@@ -63,7 +64,7 @@ export function createFireGrid(opts) {
     matId.set(key, matKeys.length);
     matKeys.push(key);
     matIgnite.push(m.ignite);
-    matFuelTicks.push(Math.max(1, Math.round(m.fuelSec * 60 / tickSteps)));
+    matFuelTicks.push(Math.max(1, Math.round(m.fuelSec / (STEP * tickSteps))));
     matCharred.push(m.charred || null);
   }
   if (matKeys.length > 255) throw new Error('createFireGrid: too many materials');
@@ -146,9 +147,15 @@ export function createFireGrid(opts) {
           if (px >= r[0] && px < r[2] && py >= r[1] && py < r[3]) { m = paint[k].mat == null ? 0 : matId.get(paint[k].mat); painted = true; }
         }
         if (!painted) {
+          // surface order: surfaceAt override, structure sector floorMat, (inside a structure: none), terrain type
           let name = null;
           if (world && typeof world.surfaceAt === 'function') name = world.surfaceAt(px, py);
-          else if (terrain && typeof terrain.groundTypeAt === 'function') name = terrain.typeName(terrain.groundTypeAt(px, py));
+          else {
+            const sec = world && typeof world.sectorAt === 'function' ? world.sectorAt(px, py) : null;
+            if (sec) name = sec.floorMat;
+            else if (world && typeof world.structureAt === 'function' && world.structureAt(px, py)) name = null;
+            else if (terrain && typeof terrain.groundTypeAt === 'function') name = terrain.typeName(terrain.groundTypeAt(px, py));
+          }
           if (name != null && Object.prototype.hasOwnProperty.call(surf, name)) m = matId.get(surf[name]);
         }
         const g = base + cy * w + cx;
@@ -157,9 +164,9 @@ export function createFireGrid(opts) {
         fuel[g] = 0;
         areaOf[g] = ai;
         let z = 0;
-        if (world && typeof world.heightAt === 'function') z = world.heightAt(px, py);
+        if (world && typeof world.floorAt === 'function') z = world.floorAt(px, py);
         else if (terrain && typeof terrain.groundAt === 'function') z = terrain.groundAt(px, py);
-        cz[g] = z;
+        cz[g] = z == null ? 0 : z;
         if (m) flammable++;
       }
     }
@@ -313,14 +320,14 @@ export function createFireGrid(opts) {
     }
   }
 
-  /** Call once per sim step; ticks when the integer counter wraps. */
-  grid.step = function step() {
+  /** Call once per sim step (pass the sim tick for the wind field); ticks when the integer counter wraps. */
+  grid.step = function step(simTick) {
     if (++counter < tickSteps) return;
     counter = 0;
     grid.stats.ticks++;
     grid.changeCount = 0;
     if (grid.stats.burning === 0 && grid.wind === null) return;
-    if (grid.wind) grid.sampleWind(grid.wind, grid.stats.ticks);
+    if (grid.wind) grid.sampleWind(grid.wind, simTick === undefined ? grid.stats.ticks * tickSteps + counter : simTick);
     for (let i = 0; i < areas.length; i++) {
       if (areas[i].burning > 0) tickArea(areas[i]);
     }
@@ -334,6 +341,7 @@ export function createFireGrid(opts) {
     const n = grid.cellCount;
     h.u8Array(state, 0, n);
     for (let i = 0; i < n; i++) if (state[i] === FIRE_BURNING) h.u32((i << 16) | fuel[i]);
+    for (let i = 0; i < areas.length; i++) { h.f64(areas[i].wx); h.f64(areas[i].wy); }
   };
 
   grid.save = function save() {

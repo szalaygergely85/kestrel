@@ -119,6 +119,45 @@ const count = (g, st) => { let n = 0; for (let i = 0; i < g.cellCount; i++) if (
   ok('wind field sampled at a fire tick', Math.abs(a.wx) + Math.abs(a.wy) > 5.9, `wx ${a.wx} wy ${a.wy}`);
 }
 
+// ---- 4c. review fixes: wind uses the sim tick; structure cell surface/height ----
+{
+  const field = createWind({ dirDeg: 90, speed: 6, gust: 0.5 }, 1);
+  const g = make({ wind: field });
+  g.ignite(0.25, 0.25, 0);
+  const T = 1234;
+  g.step(T - 5); for (let i = 0; i < 5; i++) g.step(T - 5 + 1 + i);
+  const a = g.areas[0], o = [0, 0, 0];
+  g.sampleWind(field, 0); // reference call shape
+  field.sampleInto(a.cx, a.cy, 0, T, o);
+  g.step(T); // counter not at wrap; just ensure no throw
+  const g2 = make({ wind: field }); g2.ignite(0.25, 0.25, 0);
+  for (let i = 0; i < 6; i++) g2.step(T);
+  const b = g2.areas[0], o2 = [0, 0, 0];
+  field.sampleInto(b.cx, b.cy, b.zMin, T, o2);
+  ok('fire-area wind equals field.sampleInto(centre, simTick)', b.wx === o2[0] && b.wy === o2[1], `${b.wx},${b.wy} vs ${o2}`);
+  const h1 = hashOf(g2); g2.areas[0].wx += 1;
+  ok('hash covers area wind', hashOf(g2) !== h1);
+}
+{
+  const st = { bbox: { x0: 0, y0: 0, x1: 5, y1: 10 } };
+  const world = {
+    structureAt: (x, y) => (x >= 0 && x < 5 && y >= 0 && y < 10 ? st : null),
+    sectorAt: (x, y) => (x >= 0 && x < 5 && y >= 0 && y < 5 ? { floorMat: 'grass' } : null),
+    floorAt: (x, y) => (x < 5 ? 2.5 : null),
+    heightAt: () => null,
+    terrain: { groundTypeAt: () => 0, typeName: () => 'grass', groundAt: () => 9 },
+  };
+  const g = createFireGrid({ materials: MATS, seed: 1 });
+  g.addArea({ id: 's', x0: 0, y0: 0, w: 20, h: 20, cell: 0.5, zMin: -50, zMax: 50 }, world, SURF);
+  const c = [0, 0, 0];
+  const idx = (x, y) => Math.floor(y / 0.5) * 20 + Math.floor(x / 0.5);
+  ok('structure sector floorMat -> flammable', g.stateAt(1.25, 1.25, 3) === 1);
+  ok('inside structure bbox, no sector -> no surface', g.stateAt(1.25, 7.25, 3) === 0);
+  ok('outside structure -> terrain type', g.stateAt(7.25, 7.25, 3) === 1 || g.stateAt(7.25, 7.25, 9) === 1);
+  ok('structure cell height = floorAt', g.cellCenter(idx(1.25, 1.25), c)[2] === 2.5);
+  ok('floorAt null -> 0', g.cellCenter(idx(7.25, 7.25), c)[2] === 0);
+}
+
 // ---- 5. igniteRadius ----
 {
   const g = make();
