@@ -26,7 +26,8 @@ import { MAX_SPRITES, SPR_TEXELS, SPR_STRIDE } from '../sprites.js';
 
 const UNIFORMS = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uCount',
   'uSceneFade', 'uFadeMinGain', 'uFadeRampLen', 'uFadeLut', 'uFadeRamp', // US-017
-  'uDimAll', 'uDimCount', 'uDimRect', 'uDimMul']; // US-015 (docs/architecture.md 7.6 item 3)
+  'uDimAll', 'uDimCount', 'uDimRect', 'uDimMul', // US-015 (docs/architecture.md 7.6 item 3)
+  'uPart', 'uPartZ']; // US-053b (32.1): particle layer, read after the sprite loop
 
 export class GpuSpritePass {
   /**
@@ -112,6 +113,18 @@ export class GpuSpritePass {
     this.texFadeRamp = createTexture2D(gl, gl.R8UI, 1, 1);
     this._fadeRampTexLen = 1;
 
+    // US-053b (32.1): particle layer textures. Zero-initialised 1x1 dummies
+    // (createTexture2D's null data) until `bindParticleLayer` + a `run()`
+    // resize them to the layer's grid - harmless since `uPartZ` reads 0
+    // ("empty") everywhere, so the shader's particle branch never fires and
+    // every pre-053b pose stays byte-for-byte unchanged.
+    this.texPart = createTexture2D(gl, gl.RGBA8, 1, 1);
+    this.texPartZ = createTexture2D(gl, gl.R32F, 1, 1);
+    this._partCols = 1; this._partRows = 1;
+    this.particleLayer = null;
+    this._partArrRef = null;
+    this._partFullUpload = true;
+
     // One FBO on rt.fgTex/bgTex: READ side for the edge copies, DRAW side for the composite.
     this.fboFinal = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboFinal);
@@ -123,7 +136,7 @@ export class GpuSpritePass {
 
     // Static uniforms: sampler units (bind order below) + fog colour.
     gl.useProgram(this.program);
-    const units = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uFadeLut', 'uFadeRamp'];
+    const units = ['uGI', 'uDepth', 'uEdgeFg', 'uEdgeBg', 'uSpr', 'uAtlas', 'uPal', 'uFadeLut', 'uFadeRamp', 'uPart', 'uPartZ'];
     for (let i = 0; i < units.length; i++) gl.uniform1i(this.loc[units[i]], i);
     // US-016 (14.4 item 14): fog colour is now per-sprite (SPR T4, resolved
     // in `SpritePool.project()`), not a single static uniform.
@@ -182,13 +195,25 @@ export class GpuSpritePass {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
+  /**
+   * US-053b (32.1): registers `engine.particleLayer` with this pass - a
+   * one-time (boot) call, like the constructor's `pool`/`atlas`. The actual
+   * per-frame dirty-row upload happens inside `run()` (below), same as
+   * `GpuOverlayPass.run()`'s own dirty-row logic.
+   * @param {any} layer engine.particleLayer
+   */
+  bindParticleLayer(layer) {
+    this.particleLayer = layer;
+    this._partArrRef = null; // forces one full upload on the next run()
+  }
+
   dispose() {
     this.rt.canvas.removeEventListener('webglcontextlost', this._onCtxLost);
     this.rt.canvas.removeEventListener('webglcontextrestored', this._onCtxRestored);
     this.rt.setSpritePass(null);
     const gl = this.gl;
     if (!gl) return;
-    for (const t of [this.texEdgeFg, this.texEdgeBg, this.texSpr, this.texPal, this.texAtlas, this.texFadeLut, this.texFadeRamp]) if (t) gl.deleteTexture(t);
+    for (const t of [this.texEdgeFg, this.texEdgeBg, this.texSpr, this.texPal, this.texAtlas, this.texFadeLut, this.texFadeRamp, this.texPart, this.texPartZ]) if (t) gl.deleteTexture(t);
     if (this.fboFinal) gl.deleteFramebuffer(this.fboFinal);
     if (this.program) gl.deleteProgram(this.program);
     if (this.vao) gl.deleteVertexArray(this.vao);
@@ -248,6 +273,47 @@ export class GpuSpritePass {
     return this.ready && this.rt.gpuActive && this.pipeline.ready;
   }
 
+  // US-053b (32.1): (re)creates texPart/texPartZ for the bound layer's
+  // current grid size - mirrors GpuOverlayPass._sync's texture half.
+  _syncParticleTex() {
+    const layer = this.particleLayer;
+    if (!layer || (layer.cols === this._partCols && layer.rows === this._partRows)) return;
+    const gl = this.gl;
+    deleteTexture2D(gl, this.texPart);
+    deleteTexture2D(gl, this.texPartZ);
+    this.texPart = createTexture2D(gl, gl.RGBA8, layer.cols, layer.rows);
+    this.texPartZ = createTexture2D(gl, gl.R32F, layer.cols, layer.rows);
+    this._partCols = layer.cols; this._partRows = layer.rows;
+    this._partFullUpload = true;
+  }
+
+  /**
+   * US-053b (32.1): uploads only the union of this frame's and last frame's
+   * dirty rows of the bound particle layer (overlay precedent,
+   * `GpuOverlayPass.run()`). A no-op when no layer is bound (textures stay
+   * the zero-initialised dummy - the shader's particle branch never fires).
+   */
+  _uploadParticleRows() {
+    const layer = this.particleLayer;
+    if (!layer) return;
+    this._syncParticleTex();
+    if (layer.part !== this._partArrRef) { this._partArrRef = layer.part; this._partFullUpload = true; }
+    if (layer.cols !== this._partCols || layer.rows !== this._partRows) return; // not yet bound to this grid (next build() rebinds)
+    const gl = this.gl, cols = this._partCols, rows = this._partRows;
+    const hasNow = layer.maxRow >= layer.minRow;
+    const hadPrev = layer.prevMaxRow >= layer.prevMinRow;
+    let r0 = rows, r1 = -1;
+    if (hasNow) { r0 = layer.minRow; r1 = layer.maxRow; }
+    if (hadPrev) { if (layer.prevMinRow < r0) r0 = layer.prevMinRow; if (layer.prevMaxRow > r1) r1 = layer.prevMaxRow; }
+    if (this._partFullUpload) { r0 = 0; r1 = rows - 1; this._partFullUpload = false; }
+    if (r1 < r0) return;
+    const nr = r1 - r0 + 1;
+    gl.bindTexture(gl.TEXTURE_2D, this.texPart);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r0, cols, nr, gl.RGBA, gl.UNSIGNED_BYTE, layer.part, r0 * cols * 4);
+    gl.bindTexture(gl.TEXTURE_2D, this.texPartZ);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r0, cols, nr, gl.RED, gl.FLOAT, layer.partZ, r0 * cols);
+  }
+
   // Called from RenderTargetGL.present() after the cell pass. Even with
   // zero sprites the copy + composite runs (the pass output IS rt.fgTex/
   // bgTex), so the frame path is the same every frame.
@@ -262,6 +328,7 @@ export class GpuSpritePass {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SPR_TEXELS, count, gl.RGBA, gl.FLOAT, pool.spr, 0);
     }
     this._copyEdge();
+    this._uploadParticleRows();
     const t1 = performance.now();
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboFinal);
@@ -277,6 +344,8 @@ export class GpuSpritePass {
     this._bind(6, this.texPal);
     this._bind(7, this.texFadeLut);
     this._bind(8, this.texFadeRamp);
+    this._bind(9, this.texPart);
+    this._bind(10, this.texPartZ);
     gl.uniform1i(this.loc.uCount, count);
     // US-017: per-frame scene fade, matches CPU `applySceneFade` exactly.
     gl.uniform1f(this.loc.uSceneFade, this.sceneFade);

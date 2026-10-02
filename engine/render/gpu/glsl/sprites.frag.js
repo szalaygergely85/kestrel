@@ -65,6 +65,14 @@ uniform int uDimCount;      // 0..4 live rects
 uniform vec4 uDimRect[4];   // x0, y0, x1, y1 (scene cells, half-open)
 uniform float uDimMul[4];
 
+// US-053b (docs/architecture.md 32.1): particle layer - one extra per-cell
+// candidate, read AFTER the sprite loop below (never added to uSpr/uCount -
+// that loop is O(MAX_SPRITES) per cell, 500-2048 particles there would blow
+// the per-cell budget). JS-rasterised (engine/render/particleLayer.js); both
+// twins read the identical arrays, so parity is exact by construction.
+uniform sampler2D uPart;   // RGBA8: rgb colour, a = glyph index / 255 (CellBuffer glyphIdx convention)
+uniform sampler2D uPartZ;  // R32F: depth (0 = empty)
+
 const int MAX_SPRITES = ${MAX_SPRITES};
 
 ${GBUF_UNPACK}
@@ -123,6 +131,18 @@ void main() {
       if (fogF > 0.0) rgb += (fogRGB - rgb) * fogF;
     }
     outFg = vec4(toByte01(rgb.r), toByte01(rgb.g), toByte01(rgb.b), toByte01(float(tx.r)));
+    outBg = vec4(ebg.rgb, 1.0);
+  }
+
+  // US-053b (32.1): particle layer, after every sprite - "lower slot wins a
+  // tie" is already baked into best/uPartZ (the JS build), so the only rule
+  // left here is the cross-layer one: a sprite wins an EXACT tie (strict
+  // less-than against best, which still holds the sprite's own depth when
+  // found, or the untouched 3.4e38 sentinel when it does not).
+  float pz = texelFetch(uPartZ, cell, 0).r;
+  if (pz > 0.0 && pz < cellDepth && pz < best) {
+    vec4 pcol = texelFetch(uPart, cell, 0);
+    outFg = pcol;
     outBg = vec4(ebg.rgb, 1.0);
   }
 

@@ -53,7 +53,10 @@ const LOD_HALF_BELOW = 0.75;
 
 // Camera basis (same formulas as sectorCaster.js's castScene / fillSky -
 // one source of truth for the projection; recomputed once per project()).
-function camBasis(cam, rt, out, renderer) {
+// Exported (US-053b, 32.1): `particleLayer.js` computes the SAME basis once
+// per `build()`, so a particle's screen placement never drifts from a
+// sprite's for the same camera.
+export function camBasis(cam, rt, out, renderer) {
   const cols = rt.cols, rows = rt.rows;
   const tanHalfHFov = Math.tan(HFOV_DEG * Math.PI / 360);
   const yawRad = cam.yawDeg * Math.PI / 180;
@@ -74,6 +77,32 @@ function camBasis(cam, rt, out, renderer) {
     out.ptOn = true;
   } else {
     out.ptOn = false;
+  }
+  return out;
+}
+
+/**
+ * US-053b (32.1): the fog colour a non-far-model surface (an ordinary
+ * sprite, or a particle) fogs TOWARD, factored out of `SpritePool.project`
+ * so there is only one copy of this rule (`particleLayer.js` calls it too -
+ * "no second fog code"). `isFar`: the US-016 'far' fogModel gradient
+ * (`mix(fog.far.color, fog.far.colorFar, f0)`); otherwise the single
+ * `fog.interior` colour. `f0` is the RAW (pre-cap) fog fraction.
+ * @param {Object} P palette (assets.palette)
+ * @param {boolean} isFar
+ * @param {number} f0
+ * @param {Float64Array|number[]} out length-3, written in place
+ * @returns {Float64Array|number[]} out
+ */
+export function resolveFogColor(P, isFar, f0, out) {
+  if (isFar) {
+    const near = P.rgb[P.fog.far.color], far = P.rgb[P.fog.far.colorFar];
+    out[0] = near[0] + (far[0] - near[0]) * f0;
+    out[1] = near[1] + (far[1] - near[1]) * f0;
+    out[2] = near[2] + (far[2] - near[2]) * f0;
+  } else {
+    const c = P.rgb[P.fog.interior.color];
+    out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
   }
   return out;
 }
@@ -381,16 +410,8 @@ export class SpritePool {
       // terrain behind it with, at the raw (pre-`fogMax`-cap) fraction `f0`
       // (the gradient is a function of distance, not of how much the cap
       // then lets through).
-      let fogR, fogG, fogB;
-      if (isFar) {
-        const near = P.rgb[P.fog.far.color], far = P.rgb[P.fog.far.colorFar];
-        fogR = near[0] + (far[0] - near[0]) * f0;
-        fogG = near[1] + (far[1] - near[1]) * f0;
-        fogB = near[2] + (far[2] - near[2]) * f0;
-      } else {
-        const c = P.rgb[P.fog.interior.color];
-        fogR = c[0]; fogG = c[1]; fogB = c[2];
-      }
+      resolveFogColor(P, isFar, f0, _fogScratch);
+      const fogR = _fogScratch[0], fogG = _fogScratch[1], fogB = _fogScratch[2];
       const o = n * SPR_STRIDE;
       spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = h;
       spr[o + 4] = 1 / scale; spr[o + 5] = depth; spr[o + 6] = f; spr[o + 7] = visible;
@@ -431,6 +452,7 @@ export class SpritePool {
 
 // Reused scratch (no per-cell/per-sprite allocation - architecture.md 9).
 const sprLightScratch = new Float64Array(3); // project()'s per-sprite lightAt() output
+const _fogScratch = new Float64Array(3); // project()'s resolveFogColor() output
 let spriteDepth = null; // Float32Array(cols*rows): nearest sprite depth per cell this frame (lazily sized)
 
 function toByte(v) { v = Math.floor(v + 0.5); return v < 0 ? 0 : v > 255 ? 255 : v; }
@@ -458,10 +480,17 @@ export function lastSpriteDepth() { return spriteDepth; }
  * rgb += (fogColor-rgb)*fogF`. Emissive cells skip both. This is "parity by
  * construction" (7.5 item 6): both paths read the identical `spr`/atlas
  * data, neither recomputes shading from a separate light input.
+ * US-053b (32.1): optional 3rd arg `layer` (`engine.particleLayer`, after
+ * its own `build()`) is read AFTER the sprite loop, same depth test as the
+ * GPU twin (`sprites.frag.js`) against `fb.depth.depth` AND the sprite
+ * pass's own `spriteDepth` (so a sprite wins an exact tie - `pz` must be
+ * STRICTLY less than both). Only `layer.touched[0..stats.cells)` is visited
+ * (the cells `build()` actually wrote this frame), not a full-grid scan.
  * @param {{rt:Object, depth:{depth:Float32Array}, palette:Object}} fb
  * @param {SpritePool} pool - after `project()`
+ * @param {any} [layer] - engine.particleLayer, after `build()`
  */
-export function drawSprites(fb, pool) {
+export function drawSprites(fb, pool, layer) {
   const rt = fb.rt;
   const cells = rt.cells || rt; // RenderTargetGL/Canvas2D expose `.cells`; a bare CellBuffer (tests) is its own
   const cols = cells.cols, rows = cells.rows, n = cols * rows;
@@ -513,6 +542,22 @@ export function drawSprites(fb, pool) {
         cells.setCellRGB(x, y, A[t], toByte(r), toByte(g), toByte(bl), bg[bi], bg[bi + 1], bg[bi + 2]);
         spriteDepth[i] = sDepth;
       }
+    }
+  }
+
+  // US-053b (32.1): particle layer, read after every sprite - a particle
+  // strictly nearer than both the scene depth and whatever sprite already
+  // won this cell shows; an exact tie against a sprite leaves the sprite
+  // (the GPU twin's `pz < best` has the identical strictness).
+  if (layer) {
+    const n = layer.stats.cells, touched = layer.touched, part = layer.part, partZ = layer.partZ;
+    for (let t = 0; t < n; t++) {
+      const i = touched[t];
+      const pz = partZ[i];
+      if (!(pz > 0 && pz < depth[i] && pz < spriteDepth[i])) continue;
+      const o4 = i * 4;
+      const x = i % cols, y = (i / cols) | 0;
+      cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
     }
   }
 }

@@ -387,6 +387,30 @@ function buildCompareRuns(ctx) {
     }
   }
 
+  // US-053b (32.1): mesh-only `particles` pose - crash room (tower interior), a debug
+  // emitter (rate 200, non-emissive so the per-emitter light term is exercised too),
+  // seed 1 (engine.particles' own seed - `clear()` re-seeds it), stepped 120 times from
+  // a fresh clear() and then frozen (never stepped again - the loop below clears
+  // engine.particles again before every OTHER pose, so this is the only one with live
+  // particles). Expect 0 mismatching cells (the existing compareCells bars already scan
+  // every cell, particle-covered or not).
+  if (engine.particles) {
+    const debugDefId = engine.particles.defineEmitter('gpucompareDebug', {
+      rate: 200, life: [1.2, 1.2], speed: [0.4, 1.2], spreadDeg: 25, box: [0.1, 0.1, 0.1],
+      accelZ: 0.3, drag: 0.5, maxLive: 256, glyphs: '@Oo. ', colors: [[255, 160, 40], [220, 110, 30], [150, 70, 20], [60, 30, 10], [0, 0, 0]],
+    });
+    runs.push({
+      world: worldM1, lights: worldM1Lights, name: 'world_m1: particles (US-053b, crash room, debug emitter rate 200, 120 steps then frozen)',
+      cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: -32 }, real: true, meshOnly: true,
+      before: () => {
+        engine.particles.clear();
+        const h = engine.particles.createEmitter(debugDefId, 1498.0, 1026.0, engine.physics.eyeHeight);
+        engine.particles.setOn(h, true);
+        for (let i = 0; i < 120; i++) engine.particles.step();
+      },
+    });
+  }
+
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 
@@ -454,6 +478,12 @@ function runGpuCompareDdaMode(ctx) {
   gpuPipeline.bindInstances(compareInstances);
   gpuPipeline.bindViewModel(engine.viewModel); // US-078a
   void m1Eye; void testRoomLights; void worldM1Lights;
+  // US-053b (32.1): registers engine.particleLayer with the GPU sprite pass
+  // (a one-time/boot call, like bindVoxels/bindInstances above). Harmless
+  // for every pose that never touches engine.particles - the layer stays
+  // empty, so its textures read all-zero and the shader's particle branch
+  // never fires (requirement: pre-053b poses byte-for-byte unchanged).
+  if (sprites.pass && sprites.pass.bindParticleLayer) sprites.pass.bindParticleLayer(engine.particleLayer);
 
   if (params.get('roundtrip') === '1') {
     engine.setGrid(480, 180, { immediate: true });
@@ -495,6 +525,10 @@ function runGpuCompareDdaMode(ctx) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
+    // US-053b (32.1): cleared before EVERY pose (not just the ones that never touch
+    // particles) - only the `particles` pose's own `before()` hook repopulates it, so a
+    // pose that runs after it never inherits stray live particles from a previous pose.
+    if (engine.particles) engine.particles.clear();
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
@@ -524,6 +558,9 @@ function runGpuCompareDdaMode(ctx) {
     if (real) sprites.pool.collect(world);
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
     sprites.pool.project(cam, rt, lights || ambientL, world, renderer);
+    // US-053b (32.1): particle layer, built once per pose from the current (just-cleared-
+    // or-just-populated) engine.particles state - both twins below read the SAME layer.
+    if (engine.particleLayer) engine.particleLayer.build(engine.particles, cam, rt, lights || ambientL, world, assets.palette, renderer);
 
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
     if (overlayOps) overlayOps(engine.overlay);
@@ -553,7 +590,7 @@ function runGpuCompareDdaMode(ctx) {
     rt.gpuActive = false;
     fbCompare.gpuDda = false;
     renderWorld(fbCompare, world, cam);
-    drawSprites(fbCompare, sprites.pool);
+    drawSprites(fbCompare, sprites.pool, engine.particleLayer);
     if (fbCompare.fadeLut && typeof fbCompare.sceneFade === 'number') {
       clearMaskForSceneFade(fbCompare.rt);
       applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);

@@ -17,6 +17,7 @@ import { World } from '../world/World.js';
 import { createUiLayer } from '../ui/uiLayer.js';
 import { createOverlay } from '../ui/overlay.js';
 import { createParticles } from '../fx/particles.js';
+import { createParticleLayer } from '../render/particleLayer.js';
 
 export const GRID_MIN_COLS = 160;
 // D-025 (US-038a, architecture.md 22.2): raised from 320 to 480 - gives
@@ -99,6 +100,11 @@ export function createEngine(opts) {
   // RE-07a (28.9): selection overlay layer, rebound to the scene grid on every grid change.
   const overlay = createOverlay(renderTarget.cols, renderTarget.rows);
   overlay.bind(renderTarget.cols, renderTarget.rows, renderTarget.pxCellW || 1, renderTarget.pxCellH || 1);
+  // US-053b (32.1): particle layer, bound/rebound to the scene grid exactly
+  // like the overlay above (RE-07b precedent) - the host's sprite pass reads
+  // it as one extra per-cell candidate after its own sprite loop.
+  const particleLayer = createParticleLayer();
+  particleLayer.bind(renderTarget.cols, renderTarget.rows);
   const loop = new Loop(() => {}, () => {});
 
   // D-025 (US-038a, architecture.md 22.6): applies a clamped, already-
@@ -120,6 +126,7 @@ export function createEngine(opts) {
     ui.bindScene(rt.cols, rt.rows);
     if (rt.setUiLayer) rt.setUiLayer(ui);
     overlay.bind(rt.cols, rt.rows, rt.pxCellW || 1, rt.pxCellH || 1);
+    particleLayer.bind(rt.cols, rt.rows);
     engine.gridRequest = { cols: rt.cols, rows: rt.rows, clamped: request.clamped, cpuGrid, gpu, force2d };
     engine._pendingGrid = null;
     events.emit('grid:changed', { cols: rt.cols, rows: rt.rows, renderTarget: rt });
@@ -132,6 +139,7 @@ export function createEngine(opts) {
     depthBuffer,
     openSpans,
     overlay, // RE-07a: world-anchored selection marks (engine/ui/overlay.js)
+    particleLayer, // US-053b (32.1): JS-rasterised particle layer, read by the sprite pass
     ui, // OWN-REQ-003: the fixed UI glyph layer (engine/ui/uiLayer.js)
     world: null,
     input,

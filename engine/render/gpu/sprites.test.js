@@ -267,6 +267,57 @@ const camE = { x: 2.5, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // facing east
   ok('per cell, the nearest opaque sprite texel wins regardless of list order', nearestWins);
 }
 
+// ---- drawSprites + particle layer (US-053b, 32.1) -------------------------------------
+// A minimal fake layer (same shape `particleLayer.js` produces: part/partZ/
+// touched/stats.cells) - exercises ONLY drawSprites' consumption contract,
+// not build() itself (that's particleLayer.test.js's job).
+{
+  function fakeLayer() {
+    return { part: new Uint8Array(COLS * ROWS * 4), partZ: new Float32Array(COLS * ROWS), touched: new Int32Array(4), stats: { cells: 0 } };
+  }
+  function writeParticle(layer, i, depth, glyphIdx, r, g, b) {
+    layer.touched[layer.stats.cells++] = i;
+    layer.partZ[i] = depth;
+    const o = i * 4;
+    layer.part[o] = r; layer.part[o + 1] = g; layer.part[o + 2] = b; layer.part[o + 3] = glyphIdx;
+  }
+
+  const cells = new CellBuffer(COLS, ROWS);
+  const depth = new DepthBuffer(COLS, ROWS);
+  const fb = { rt: cells, depth, palette: P };
+  const i0 = 30 * COLS + 30;
+
+  // behind a wall: wall at 10 m, particle at 15 m -> hidden
+  cells.clear('#000000'); depth.depth.fill(10);
+  pool.reset(); pool.project(camE, cells, light); // no sprites this frame
+  const layerBehind = fakeLayer();
+  writeParticle(layerBehind, i0, 15, 1, 200, 50, 50);
+  drawSprites(fb, pool, layerBehind);
+  ok('particle behind a wall: cell untouched (glyphIdx stays 0)', cells.glyphIdx[i0] === 0);
+
+  // in front of the wall: particle at 5 m -> shown
+  cells.clear('#000000'); depth.depth.fill(10);
+  pool.reset(); pool.project(camE, cells, light);
+  const layerFront = fakeLayer();
+  writeParticle(layerFront, i0, 5, 1, 200, 50, 50);
+  drawSprites(fb, pool, layerFront);
+  ok('particle in front of a wall: drawn (glyph + colour from the layer)',
+    cells.glyphIdx[i0] === 1 && cells.fg[i0 * 4] === 200 && cells.fg[i0 * 4 + 1] === 50 && cells.fg[i0 * 4 + 2] === 50);
+
+  // sprite vs particle at the exact same depth: the sprite wins (strict `<` for the particle to override)
+  cells.clear('#000000'); depth.depth.fill(100);
+  pool.reset(); pool.push('lantern', 'unlit', 0, 6.5, 2.5, 1.6); pool.project(camE, cells, light); // depth = 4.0 exactly (camE at x=2.5 facing +x)
+  ok('setup: the lantern sprite depth is exactly 4.0', pool.spr[5] === 4);
+  const lx0 = pool.spr[0], ly0 = pool.spr[1];
+  const iTieCell = ly0 * COLS + lx0; // top-left of the sprite rect - inside it, opaque (anchor corner; verified below it actually drew)
+  const tieLayer = fakeLayer();
+  writeParticle(tieLayer, iTieCell, 4, 2, 10, 10, 10); // same depth 4.0, distinct glyph/colour
+  drawSprites(fb, pool, tieLayer);
+  ok('setup: the tie cell is inside the drawn sprite', cells.glyphIdx[iTieCell] !== 0 && cells.glyphIdx[iTieCell] !== 2);
+  ok('sprite vs particle at equal depth: the sprite wins (not glyphIdx 2 / rgb 10,10,10)',
+    !(cells.fg[iTieCell * 4] === 10 && cells.fg[iTieCell * 4 + 1] === 10 && cells.fg[iTieCell * 4 + 2] === 10));
+}
+
 // ---- allocation check (project + drawSprites, 300 frames) -------------------------------------
 {
   const cells = new CellBuffer(COLS, ROWS);
