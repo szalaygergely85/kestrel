@@ -21,6 +21,7 @@ import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
+import { renderWaterJS } from './water.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
 import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
@@ -224,6 +225,9 @@ function renderWorldMesh(fb, world, cam) {
     rasterDrawList(vmList, target, meshCtx);
   }
   copyToGBuffer(target, fb.gbuf, fb.depth.depth);
+  // US-055a2a (35.3): the water layer (own target, fb.water; the composite reads it from US-055a2b). No-op without regions.
+  if (world.water && world.water.count > 0) renderWaterJS(fb, world, cam, meshViewProj, meshFrustumPlanes);
+  else if (fb.water) fb.water = null;
   renderSunShadowJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
 }
 

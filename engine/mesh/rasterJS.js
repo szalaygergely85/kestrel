@@ -24,7 +24,8 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_FLAG_DEPTH_BIAS } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS } from './DrawList.js';
+import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
 /** Sub-pixel bits (1/256 px vertex snap, 27.7 item 1). */
 export const SUBPIX = 256;
@@ -599,6 +600,10 @@ function rasterInstanced(mesh, item, target, ctx) {
 export function rasterDrawList(list, target, ctx) {
   for (let i = 0; i < list.count; i++) {
     const item = list.items[i];
+    if (item.type === DRAW_WATER) { // US-055a2a: no MeshData; the shared clipmap + the frame's selection
+      if (item.water) rasterWaterSlot(item.water, item.objectId, target, ctx);
+      continue;
+    }
     const mesh = item.mesh;
     if (!mesh) continue;
     if (item.type === DRAW_INSTANCED) {
@@ -610,6 +615,152 @@ export function rasterDrawList(list, target, ctx) {
       }
     } else {
       rasterRange(mesh, item, target, ctx, item.rangeFirst, item.rangeCount, 0, false);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// US-055a2a (architecture.md 35.3): DRAW_WATER - the JS twin of water.vert/frag.js
+// ---------------------------------------------------------------------------
+const WATER_NRM_UP = packNormalOct(0, 0, 1);
+
+/** Frustum outcode of the clip vertex at `buf[off..]`: bit 0 behind the near plane, bits 1-4 outside -w..w in x / y. */
+function waterOutcode(buf, off) {
+  const x = buf[off], y = buf[off + 1], w = buf[off + 3];
+  return (w < PROJ_NEAR ? 1 : 0) | (x < -w ? 2 : 0) | (x > w ? 4 : 0) | (y < -w ? 8 : 0) | (y > w ? 16 : 0);
+}
+
+/**
+ * Rasterises one selected water slot: every triangle of the clipmap index runs through `waterVertexJS` (clamp to the
+ * region AABB, flat z), the standard near/guard clip, then `rasterWaterTri`. `target` is a cell-resolution (n = 1)
+ * RasterTarget; `ctx.sceneDepth` (Float32Array cols*rows, d units) is the occluder.
+ * @param {any} sel - WaterSelection (engine/render/water.js) @param {number} slot
+ * @param {RasterTarget} target @param {any} ctx
+ */
+function rasterWaterSlot(sel, slot, target, ctx) {
+  const cm = getClipmap(), M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
+  const verts = cm.verts, index = cm.index;
+  const ox = sel.O[0], oy = sel.O[1];
+  const ro = slot * 7, nRuns = sel.runs[ro];
+  const ax0 = u[ub + U_AABB], ay0 = u[ub + U_AABB + 1], ax1 = u[ub + U_AABB + 2], ay1 = u[ub + U_AABB + 3], zW = u[ub + U_Z];
+  for (let r = 0; r < nRuns; r++) {
+    const first = sel.runs[ro + 1 + r * 2], end = first + sel.runs[ro + 2 + r * 2];
+    for (let t = first; t < end; t += 3) {
+      let sameX = true, sameY = true, px0 = 0, py0 = 0;
+      for (let c = 0; c < 3; c++) {
+        const vi = index[t + c] * 4;
+        // = waterVertexJS (waterMesh.js), inlined: no double-argument calls in the per-vertex / per-pixel loops (allocation)
+        const lx = verts[vi] < ax0 ? ax0 : (verts[vi] > ax1 ? ax1 : verts[vi]);
+        const ly = verts[vi + 1] < ay0 ? ay0 : (verts[vi + 1] > ay1 ? ay1 : verts[vi + 1]);
+        if (c === 0) { px0 = lx; py0 = ly; } else { if (lx !== px0) sameX = false; if (ly !== py0) sameY = false; }
+        const wx = ox + lx, wy = oy + ly, wz = zW;
+        const o = c * STRIDE;
+        _bufA[o] = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
+        _bufA[o + 1] = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
+        _bufA[o + 2] = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
+        _bufA[o + 3] = M[3] * wx + M[7] * wy + M[11] * wz + M[15];
+        _bufA[o + 4] = wx; _bufA[o + 5] = wy; _bufA[o + 6] = wz;
+        _bufA[o + 7] = lx; _bufA[o + 8] = ly; _bufA[o + 9] = 0; _bufA[o + 10] = 0; _bufA[o + 11] = 1;
+      }
+      if (sameX || sameY) continue; // collapsed onto the AABB boundary: degenerate
+      // Trivial reject (all three outside the same frustum plane / behind the near plane) and trivial accept (all inside
+      // the frustum: nothing to clip) - the clipmap has ~27k triangles, most are off screen.
+      const c0 = waterOutcode(_bufA, 0), c1 = waterOutcode(_bufA, STRIDE), c2 = waterOutcode(_bufA, 2 * STRIDE);
+      if (c0 & c1 & c2) continue;
+      if ((c0 | c1 | c2) === 0) { rasterWaterTri(_bufA, 0, STRIDE, 2 * STRIDE, target, ctx, sel, ub); continue; }
+      let curBuf = _bufA, curCount = 3, otherBuf = _bufB;
+      for (let p = 0; p < 5 && curCount > 0; p++) {
+        const outCount = clipAgainstPlane(curBuf, curCount, otherBuf, p);
+        const tmp = curBuf; curBuf = otherBuf; otherBuf = tmp;
+        curCount = outCount;
+      }
+      if (curCount < 3) continue;
+      for (let k = 1; k < curCount - 1; k++) rasterWaterTri(curBuf, 0, k * STRIDE, (k + 1) * STRIDE, target, ctx, sel, ub);
+    }
+  }
+}
+
+/**
+ * One clipped fan triangle of the water layer: the same window/edge/top-left/depth rules as `rasterFanTri`, then the
+ * water fragment stage (35.3): region shape test (discard), occluder `vD >= sceneDepth[cell]` (discard), `back` bit from
+ * the winding. Channels: depth = vD, nrm = up (oct), z = h (0, flat), objectId = slot | back << 4 | sheet << 5, kind = 1.
+ * `target.writes` (if present) counts COVERAGE (before any discard / depth test): the "every pixel exactly once" fixture.
+ */
+function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
+  const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
+  const W = target.W, H = target.H;
+  const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2, zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
+  const X1 = (W / 2) * (buf[o1] / w1) + W / 2, Y1 = (H / 2) * (buf[o1 + 1] / w1) + H / 2;
+  const X2 = (W / 2) * (buf[o2] / w2) + W / 2, Y2 = (H / 2) * (buf[o2 + 1] / w2) + H / 2;
+  let zn1 = buf[o1 + 2] / w1, iw1 = 1 / w1, zn2 = buf[o2 + 2] / w2, iw2 = 1 / w2;
+  const lx0 = buf[o0 + 7], ly0 = buf[o0 + 8];
+  let lx1 = buf[o1 + 7], ly1 = buf[o1 + 8], lx2 = buf[o2 + 7], ly2 = buf[o2 + 8];
+
+  let Xs0, Ys0, Xs1, Ys1, Xs2, Ys2;
+  if (ctx.snap === false) {
+    Xs0 = X0 * SUBPIX; Ys0 = Y0 * SUBPIX; Xs1 = X1 * SUBPIX; Ys1 = Y1 * SUBPIX; Xs2 = X2 * SUBPIX; Ys2 = Y2 * SUBPIX;
+  } else {
+    Xs0 = Math.round(X0 * SUBPIX); Ys0 = Math.round(Y0 * SUBPIX);
+    Xs1 = Math.round(X1 * SUBPIX); Ys1 = Math.round(Y1 * SUBPIX);
+    Xs2 = Math.round(X2 * SUBPIX); Ys2 = Math.round(Y2 * SUBPIX);
+  }
+  let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
+  if (A2 === 0) return;
+  const back = A2 < 0 ? 1 : 0; // the clipmap is CCW from above: A2 > 0 = seen from above
+  if (A2 < 0) {
+    let t;
+    t = Xs1; Xs1 = Xs2; Xs2 = t; t = Ys1; Ys1 = Ys2; Ys2 = t;
+    t = zn1; zn1 = zn2; zn2 = t; t = iw1; iw1 = iw2; iw2 = t;
+    t = lx1; lx1 = lx2; lx2 = t; t = ly1; ly1 = ly2; ly2 = t;
+    A2 = -A2;
+  }
+  const topLeft01 = (Ys1 === Ys0 && Xs1 > Xs0) || Ys1 < Ys0;
+  const topLeft12 = (Ys2 === Ys1 && Xs2 > Xs1) || Ys2 < Ys1;
+  const topLeft20 = (Ys0 === Ys2 && Xs0 > Xs2) || Ys0 < Ys2;
+  const minX = Math.min(Xs0, Xs1, Xs2), maxX = Math.max(Xs0, Xs1, Xs2);
+  const minY = Math.min(Ys0, Ys1, Ys2), maxY = Math.max(Ys0, Ys1, Ys2);
+  const pxMin = Math.max(0, Math.ceil((minX - 128) / 256));
+  const pxMax = Math.min(W - 1, Math.floor((maxX - 128) / 256));
+  const pyMin = Math.max(0, Math.ceil((minY - 128) / 256));
+  const pyMax = Math.min(H - 1, Math.floor((maxY - 128) / 256));
+  if (pxMin > pxMax || pyMin > pyMax) return;
+
+  const sceneDepth = ctx.sceneDepth;
+  const wr = target.writes;
+  const tagBase = sel.u[ub + U_SLOT] | (back << 4);
+  const isCircle = sel.u[ub + U_KIND] === 1, sA = sel.u[ub + U_SHAPE], sB = sel.u[ub + U_SHAPE + 1], sC = sel.u[ub + U_SHAPE + 2], sD = sel.u[ub + U_SHAPE + 3];
+  for (let py = pyMin; py <= pyMax; py++) {
+    const Py = py * 256 + 128;
+    const rowBase = py * W;
+    for (let px = pxMin; px <= pxMax; px++) {
+      const Px = px * 256 + 128;
+      const e12 = (Xs2 - Xs1) * (Py - Ys1) - (Ys2 - Ys1) * (Px - Xs1);
+      const e20 = (Xs0 - Xs2) * (Py - Ys2) - (Ys0 - Ys2) * (Px - Xs2);
+      const e01 = (Xs1 - Xs0) * (Py - Ys0) - (Ys1 - Ys0) * (Px - Xs0);
+      const in12 = e12 > 0 || (e12 === 0 && topLeft12);
+      const in20 = e20 > 0 || (e20 === 0 && topLeft20);
+      const in01 = e01 > 0 || (e01 === 0 && topLeft01);
+      if (!(in12 && in20 && in01)) continue;
+      const idx = rowBase + px;
+      if (wr) wr[idx]++;
+      const l0 = e12 / A2, l1 = e20 / A2, l2 = e01 / A2;
+      const zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
+      if (zn > 1 || !(zn < target.zbuf[idx])) continue;
+      const q = l0 * iw0 + l1 * iw1 + l2 * iw2;
+      const invq = 1 / q; // = vD, the perpendicular camera distance (GPU: 1 / gl_FragCoord.w)
+      const lx = (l0 * lx0 * iw0 + l1 * lx1 * iw1 + l2 * lx2 * iw2) * invq;
+      const ly = (l0 * ly0 * iw0 + l1 * ly1 * iw1 + l2 * ly2 * iw2) * invq;
+      if (isCircle) { // = waterInsideJS (waterMesh.js), inlined
+        const dx = lx - sA, dy = ly - sB;
+        if (dx * dx + dy * dy > sC) continue;
+      } else if (!(lx >= sA && lx < sC && ly >= sB && ly < sD)) continue;
+      if (sceneDepth && !(invq < sceneDepth[idx])) continue; // occluder: the scene is nearer (or equal)
+      target.kind[idx] = 1;
+      target.depth[idx] = invq;
+      target.nrm[idx] = WATER_NRM_UP;
+      target.z[idx] = 0;
+      target.objectId[idx] = tagBase;
+      target.zbuf[idx] = zn;
     }
   }
 }

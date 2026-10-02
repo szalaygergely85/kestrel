@@ -80,6 +80,12 @@ import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunSha
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../mesh/shadowList.js';
 import { SHADOW_FRAG_SRC, SHADOW_TERRAIN_FRAG_SRC, SHADOW_DEPTH_COPY_FRAG_SRC } from './glsl/shadow.frag.js';
 import { CELL_VERT_SRC as SHADOW_COPY_VERT_SRC } from './glsl/cell.vert.js';
+// US-055a2a (35.3): the water layer pass (mesh renderer only): clipmap draws into the cell-resolution WATER target.
+import { WATER_VERT_SRC } from './glsl/water.vert.js';
+import { WATER_FRAG_SRC } from './glsl/water.frag.js';
+import { WaterLayer, WATER_CLEAR_X } from './waterLayer.js';
+import { selectWater, createWaterSelection, RUNS_STRIDE } from '../water.js';
+import { WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from '../../mesh/waterMesh.js';
 
 const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither a LightSet nor an array.
 
@@ -87,8 +93,8 @@ const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither 
 // timing - `sprites` is tracked by its own existing GpuTimer (sprites.js),
 // reported alongside these, not a slot here. "resolve" covers both the
 // resolve and deriv draw calls (one query spans both, per the tech notes).
-export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow']);
-const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6, PASS_SHADOW = 7;
+export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water']);
+const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6, PASS_SHADOW = 7, PASS_WATER = 8;
 const PASS_STATS_EVERY = 30; // matches GpuTimer's own STATS_EVERY - see _pollTerrainTs/_pollVoxelTs
 
 function sumFinite(arr) {
@@ -134,6 +140,7 @@ export class GpuCellPipeline {
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
+      waterSlots: 0, waterDraws: 0, // US-055a2a: water regions selected / clipmap draw calls last frame
       shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, // ME-15b: sun shadow pass caster items / draw calls last frame
       instancesCulled: 0, instancesLod1: 0, // RE-15a (28.13 point 8): F3 `inst <drawn>/<total> lod1 <n> cull <culled>`
       // US-018 (architecture.md 16): real per-pass GPU ms, filled only
@@ -227,6 +234,15 @@ export class GpuCellPipeline {
       this.progMeshInst = linkProgram(gl, MESH_INST_VERT_SRC, MESH_FRAG_SRC);
       // CLOTH-1b2 (33.5): cloth program (cloth vert + cloth frag) and its VAO: attribs 0/1/2 (pos, uv, nrm) from two buffers.
       this.progMeshCloth = linkProgram(gl, MESH_CLOTH_VERT_SRC, MESH_CLOTH_FRAG_SRC);
+      // US-055a2a (35.3): water layer - program, VAO (one vec4 attribute), static clipmap buffers + WATER target (lazy, WaterLayer)
+      this.progWater = linkProgram(gl, WATER_VERT_SRC, WATER_FRAG_SRC);
+      this._waterVao = gl.createVertexArray();
+      this._water = null; // WaterLayer, created with the device below
+      this._waterSel = createWaterSelection();
+      this._waterActive = false;
+      this._waterMvp = new Float32Array(16);
+      this._waterClearU = new Uint32Array([WATER_CLEAR_X, 0, 0, 0]);
+      this._waterClearD = new Float32Array([1]);
       this._meshClothVao = gl.createVertexArray();
       gl.bindVertexArray(this._meshClothVao);
       for (let a = 0; a <= 2; a++) gl.enableVertexAttribArray(a);
@@ -245,6 +261,7 @@ export class GpuCellPipeline {
       this._teamMatI32 = new Int32Array(32);
       this._meshDevice = new GpuDeviceGL2(gl);
       this._meshBuffers = new MeshBuffers(this._meshDevice);
+      this._water = new WaterLayer(this._meshDevice);
       // ME-06: was 64 (level structures only, ME-04) - terrain items (9 near
       // chunks + 1 stitch + up to `_farTiles.length` far tiles, e.g. 64 for
       // overworld_far) push real worlds well past that, hence the shared
@@ -418,6 +435,7 @@ export class GpuCellPipeline {
     this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
     this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
     this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
+    this._locsWater = this.progWater ? this._uniformLocs(this.progWater, WATER_UNIFORMS) : null;
     this._locsMeshCloth = this.progMeshCloth ? this._uniformLocs(this.progMeshCloth, MESH_CLOTH_UNIFORMS) : null;
     this._locsShadowCloth = this.progShadowCloth ? this._uniformLocs(this.progShadowCloth, ['uModel', 'uViewProj']) : null;
     this._locsMeshInst = this.progMeshInst ? this._uniformLocs(this.progMeshInst, MESH_INST_UNIFORMS) : null;
@@ -756,7 +774,7 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth, this.progWater]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
@@ -766,10 +784,12 @@ export class GpuCellPipeline {
     if (this._meshVao) gl.deleteVertexArray(this._meshVao);
     if (this._meshInstVao) gl.deleteVertexArray(this._meshInstVao);
     if (this._meshClothVao) gl.deleteVertexArray(this._meshClothVao);
+    if (this._waterVao) gl.deleteVertexArray(this._waterVao);
     if (this._meshVoxVao) gl.deleteVertexArray(this._meshVoxVao);
     if (this._meshInstVbo) gl.deleteBuffer(this._meshInstVbo);
     if (this._meshTerrainVao) gl.deleteVertexArray(this._meshTerrainVao);
     if (this._meshBuffers) this._meshBuffers.dispose();
+    if (this._water) this._water.dispose();
     if (this._meshDevice) this._meshDevice.dispose();
     if (this.timer) this.timer.dispose();
     // US-030a: the world atlas textures are gone too - force a full
@@ -1152,6 +1172,12 @@ export class GpuCellPipeline {
       this._passResolve();
       this._passDeriv();
       if (passTimingOn) this.passTimer.end();
+      // US-055a2a (35.3): the water layer, right after deriv and before light (its own timing span: spans never nest).
+      if (this._waterActive) {
+        if (passTimingOn) this.passTimer.begin(PASS_WATER);
+        this._passWater();
+        if (passTimingOn) this.passTimer.end();
+      }
     } else if (useDda) {
       if (passTimingOn) this.passTimer.begin(PASS_CAST);
       this._passCast();
@@ -1720,6 +1746,11 @@ export class GpuCellPipeline {
     this._rasterTerrainSet = terrainMeshSet;
     // US-078a: the view-model layer's own (never culled) list, null when hidden / pitched.
     this._vmList = this._viewModel ? this._viewModel.buildList(cam, this._pitched) : null;
+    // US-055a2a (35.3): which water regions draw this frame (<= 8; none = the pass is skipped, nothing allocated).
+    selectWater(world, cam, this._meshFrustumPlanes, this._waterSel);
+    this._waterActive = this._waterSel.count > 0 && !!this._water;
+    this.stats.waterSlots = this._waterSel.count;
+    if (!this._waterActive) this.stats.waterDraws = 0;
   }
 
   _passRaster() {
@@ -2282,6 +2313,69 @@ export class GpuCellPipeline {
   // writes the packed normal now) - `uTerrainMaxH`/near uniforms are
   // version-gated statics, uploaded by `_uploadTerrainUniforms` instead of
   // every frame.
+  /**
+   * US-055a2a (35.3): the water layer. One clipmap draw per selected region (indexed, only the ring runs its AABB needs,
+   * <= 3 draws) into the cell-resolution WATER target (RGBA32UI + its own depth24), cleared every frame to x = +Inf.
+   * Vertices never upload per frame; the origin O and the region are folded into one f32 matrix + a few uniforms
+   * (f64 on the CPU). The occluder reads the resolved scene DEPTH (`texDepth`). Nothing reads WATER yet (US-055a2b).
+   */
+  _passWater() {
+    const gl = this.gl, loc = this._locsWater, sel = this._waterSel, layer = this._water;
+    layer.resize(this.cols, this.rows);
+    const clip = layer.clipmap();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.target.handle);
+    gl.viewport(0, 0, this.cols, this.rows);
+    gl.depthMask(true);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.clearBufferuiv(gl.COLOR, 0, this._waterClearU);
+    gl.clearBufferfv(gl.DEPTH, 0, this._waterClearD);
+    gl.useProgram(this.progWater);
+    gl.bindVertexArray(this._waterVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, clip.vertexBuffer.handle);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, clip.indexBuffer.handle);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LESS);
+    gl.disable(gl.CULL_FACE); // both faces (the view from below is 144a); `back` comes from gl_FrontFacing
+    gl.frontFace(gl.CCW);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texDepth);
+    gl.uniform1i(loc.uSceneDepth, 0);
+    const M = this._meshViewProj, F = this._waterMvp, ox = sel.O[0], oy = sel.O[1], u = sel.u;
+    for (let k = 0; k < 12; k++) F[k] = M[k];
+    for (let k = 0; k < 4; k++) F[12 + k] = M[k] * ox + M[4 + k] * oy + M[12 + k]; // viewProj * T(O, 0), f64 -> f32
+    gl.uniformMatrix4fv(loc.uMVP, false, F);
+    let draws = 0;
+    for (let s = 0; s < sel.count; s++) {
+      const b = s * WATER_U_STRIDE, ro = s * RUNS_STRIDE;
+      gl.uniform4f(loc.uAabb, u[b + U_AABB], u[b + U_AABB + 1], u[b + U_AABB + 2], u[b + U_AABB + 3]);
+      gl.uniform1f(loc.uZ, u[b + U_Z]);
+      gl.uniform1i(loc.uKind, u[b + U_KIND]);
+      gl.uniform4f(loc.uShape, u[b + U_SHAPE], u[b + U_SHAPE + 1], u[b + U_SHAPE + 2], u[b + U_SHAPE + 3]);
+      gl.uniform1ui(loc.uSlot, u[b + U_SLOT]);
+      for (let r = 0; r < sel.runs[ro]; r++) {
+        gl.drawElements(gl.TRIANGLES, sel.runs[ro + 2 + r * 2], gl.UNSIGNED_SHORT, sel.runs[ro + 1 + r * 2] * 2);
+        draws++;
+      }
+    }
+    this.stats.waterDraws = draws;
+    gl.disable(gl.DEPTH_TEST);
+  }
+
+  /** US-055a2a: test-only readback of the WATER target (RGBA32UI, cols x rows x 4 words), null when no water drew. */
+  readbackWater() {
+    const gl = this.gl, layer = this._water;
+    if (!layer || !layer.target || !this._waterActive) return null;
+    const n = this.cols * this.rows;
+    this._readbackWater = this._readbackWater && this._readbackWater.length === 4 * n ? this._readbackWater : new Uint32Array(4 * n);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.target.handle);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    gl.readPixels(0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this._readbackWater);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return this._readbackWater;
+  }
+
   _passTerrain() {
     const gl = this.gl, loc = this._locsTerrain, cb = this._camBasis;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboTerrainSub);
@@ -2598,6 +2692,7 @@ const CAST_UNIFORMS = [
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
+const WATER_UNIFORMS = ['uMVP', 'uAabb', 'uZ', 'uKind', 'uShape', 'uSlot', 'uSceneDepth'];
 const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uAxisAligned'];
 // RE-06: the instanced variant adds the team remap arrays (element 0 location for uniform1iv).
 const MESH_INST_UNIFORMS = [...MESH_UNIFORMS, 'uTeamSlot', 'uTeamMat'];

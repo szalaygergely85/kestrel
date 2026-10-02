@@ -28,6 +28,8 @@ export const DRAW_TERRAIN = 2;
 export const DRAW_INSTANCED = 3;
 /** CLOTH-1b1 (33.5): one deformable cloth mesh (layout 'cloth'), indexed, smooth per-pixel normal, two-sided. */
 export const DRAW_CLOTH = 4;
+/** US-055a2a (35.3): one water slot of the clipmap layer (`item.water` = the frame's WaterSelection, `item.objectId` = slot); water has its own list + target. */
+export const DRAW_WATER = 5;
 
 /** `DrawItem.flags` bits. Terrain only; off until ME-06 decides (27.5). */
 export const DRAW_FLAG_DEPTH_BIAS = 1;
@@ -54,6 +56,7 @@ const MAX_STRUCTS = 8;
  * @property {Float64Array} aabb - 6, world, for culling
  * @property {import('./instances.js').InstanceBuffer|null} instBuf - DRAW_INSTANCED: per-instance buffer (64 B each)
  * @property {number} instCount - DRAW_INSTANCED: instances used
+ * @property {any} water - DRAW_WATER: the frame's WaterSelection (engine/render/water.js)
  */
 
 /** @returns {DrawItem} a fresh, identity-initialised DrawItem. */
@@ -73,6 +76,7 @@ function makeDrawItem() {
     aabb: new Float64Array(6),
     instBuf: null,
     instCount: 0,
+    water: null,
   };
 }
 
@@ -96,6 +100,7 @@ function resetDrawItem(item) {
   item.aabb.fill(0);
   item.instBuf = null;
   item.instCount = 0;
+  item.water = null;
 }
 
 /**
