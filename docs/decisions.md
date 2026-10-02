@@ -927,3 +927,8 @@ D-032 amendment 1 put ME-15 -> ME-16 -> ME-12b -> ME-19 back "as scheduled", i.e
 
 ## D-035 Water waves: a real displaced water mesh (owner, 2026-10-02)
 **Owner:** picked option **(b)** for US-143 waves: a displaced, see-through water mesh in the mesh renderer with real moving surface height (not shade-pass normal perturbation on the flat 32.2 plane). One deterministic wave-height function feeds the mesh, `waterAt` live z, bobbing and the view from below. Architect note: the water section after 32.2 (WATER-2 stories US-141..144).
+
+## D-036 - "Show it" first: showcase shots + itch.io demo before the rest of M3-M6 (owner, 2026-10-02)
+**Decision:** the next goal is a showcase: forest, tower, waterfall, grassland, fire and water shots, captured with the trailer tool (US-119, pulled forward), then an itch.io pay-what-you-want demo (US-112) plus a tip jar and short clips. Pulled forward for it: US-142a1/a2 waterfall, ME-06c walkable forest, US-119; terrain close-up fixes (BUG-FP-002, OWN-REQ-002) get priority. Steam "Coming Soon" optional now (was M5).
+**Why:** the owner needs income to pay for a bigger subscription; the ASCII 3D look is the hook and costs little to show. PC-A is a company Team account - owner caps it at ~5-6 % weekly usage per day (revised same night); bigger work goes to PC-B.
+**Plan:** docs/roadmap.md, section "NOW: Show it". Next PC-A session starts by turning Phase A into PC-B queue items (architect notes for ME-06c + US-142a1 deps first).

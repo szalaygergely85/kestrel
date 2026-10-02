@@ -14,6 +14,20 @@ Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in
 
 **Previous (2026-09-25):** M1 **done** (D-024). Sprint 3 (D-026, `docs/sprints/sprint-3.md`) opens M2: US-027a/b content format, US-038a/b settings + grids (D-025), US-026a walk-out. Sprint 4: US-026b streaming + US-051a object physics; US-031 editor at the earliest.
 
+## NOW: "Show it" - showcase + first income (owner 2026-10-02, D-036) - runs before the rest of M3-M6
+**Goal:** a short list of beautiful, shareable shots (forest, tower, waterfall, grassland, fire, water) + an itch.io demo with pay-what-you-want and a tip jar, so the game finds players and pays for its own subscription. Everything else waits unless a shot needs it.
+**Why first:** the ASCII 3D look is the hook; clips and stills cost little and can start earning/wishlisting weeks before the full M3 exit.
+**Phase A - the shots (content + the engine steps they need), ~1.5-2 weeks:**
+- Tower + fire: US-053c burner flame/smoke (Q12), CLOTH-1b5 banners/curtain (Q12), US-078d sword in hand + real swing (Q12).
+- Water: US-055a2c first visible pond (Q12), US-143a waves (Q12); **waterfall pulled forward:** US-142a1 sheet (engine) -> US-142a2 content + test cliff (architect confirms deps vs 35.11 order first).
+- Forest: **ME-06c real big walkable trees** (architect note + designer tree models + PO ACs first), Ruins pack pieces (ME-13a/b) as set dressing in the forest/walk-out.
+- Grassland: terrain close-up quality - BUG-FP-002 / BUG-RTS-001 tiling first, then OWN-REQ-002 detail (grass glyph texture, rocks); US-070b tower shadow on grass.
+- Optional mood: US-122 day/night (dusk/night shots with fire light) - only if cheap.
+**Phase B - capture, ~2-3 days:** US-119 trailer tool pulled forward (camera paths + deterministic frame capture) -> 6-8 stills + 3-4 short clips (15-30 s): forest walk, tower fire at dusk, waterfall, grassland vista, sword swing.
+**Phase C - publish, ~2-3 days:** US-112 itch.io demo (tower + walk-out + first beast; page text by the writer, stills + clips), pay-what-you-want + Ko-fi link; post clips (X, TikTok/Shorts, r/gamedev, r/ASCII, r/proceduralgeneration); optional Steam "Coming Soon" ($100) pulled from M5.
+**Exit test:** the owner picks 6+ stills and 3+ clips they are proud to post; the demo runs in a fresh browser from itch.io start to first beast without a guide; credits include "Voxel assets by StickyBizcuit" if used (OWN-REQ-013).
+**Budget rule:** PC-A (company account) capped at ~5-6 % weekly usage per day; bigger work on PC-B; lean pipeline, one programmer at a time unless files are disjoint.
+
 ## Milestone 1 – "The Awakening" (vertical slice) — status: DONE (2026-09-25, D-024)
 
 Goal: a polished 3–5 minute playable slice, from waking at the bottom of the Hollow Watchtower to stepping through the summit breach and seeing the overworld. Content unchanged by the open-world pivot; the engine underneath is now open-world-capable.
