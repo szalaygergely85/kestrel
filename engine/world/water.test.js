@@ -38,7 +38,7 @@ function bare(list) {
   w.floorAt = (x) => (x < 5 ? 0 : x < 10 ? 0.5 : null);
   return w;
 }
-const out = { surfaceZ: 0, depth: 0, region: '', look: 0 };
+const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
 
 // ---- inside / outside, rect + circle ----
 {
@@ -115,6 +115,7 @@ const out = { surfaceZ: 0, depth: 0, region: '', look: 0 };
 // ---- World.load: world block + level block (frame offset, yawSteps), mesh and grid floors, serialize ----
 {
   const { assets } = await loadTestAssets();
+  globalThis.__waterAssets = assets;
   const def = assets.world('world_m1');
   const base = World.load(def, assets, {});
   ok('World.load without water -> empty table, never null', !!base.water && base.water.count === 0 && !base.waterAt(0, 0, out));
@@ -159,6 +160,16 @@ const out = { surfaceZ: 0, depth: 0, region: '', look: 0 };
   ok('no water -> no "water" key in the save (old saves unchanged)', !('water' in serialize(base)));
 }
 
+// ---- mesh mode: no collider + no terrain -> FLOOR_NONE -> depth 0; out.index ----
+{
+  const w = new World();
+  w.physicsMode = 'mesh';
+  w.water = mk([rect('a', [0, 0, 4, 4], 1), circ('b', [10, 10], 2, 2)]);
+  ok('mesh, no floor: waterAt hits with depth 0', w.waterAt(2, 2, out) && out.depth === 0 && out.surfaceZ === 1, String(out.depth));
+  ok('out.index is the region slot, region stays the id', w.waterAt(10, 10, out) && out.index === 1 && out.region === 'b');
+  ok('out.index of the first region', w.waterAt(1, 1, out) && out.index === 0 && w.water.ids[out.index] === 'a');
+}
+
 // ---- zero allocation + perf ----
 {
   const list = [];
@@ -176,6 +187,23 @@ const out = { surfaceZ: 0, depth: 0, region: '', look: 0 };
   if (process.env.PERF_STRICT) ok('perf: waterAt <= 0.005 ms (32 regions)', ms <= 0.005, ms.toFixed(5));
   else if (ms > 0.005) console.warn(`WARN waterAt ${ms.toFixed(5)} ms > 0.005`);
   ok('perf probe hit some regions', hits > 0);
+  {
+    // mesh mode on world_m1 (baseline for 143a's 0.01 ms bar): a region over the spawn area, real colliders + terrain
+    const assets = globalThis.__waterAssets;
+    const wm = World.load(assets.world('world_m1'), assets, { physics: 'mesh' });
+    wm.water = mk([rect('m1', [-1000, -1000, 1000, 1000], 100)]);
+    const om = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
+    let h = 0;
+    const runM = (n) => { for (let i = 0; i < n; i++) { if (wm.waterAt((i % 100) - 50, (i % 37) - 18, om)) h++; } };
+    runM(20000);
+    const NM = 50000;
+    const m0 = process.hrtime.bigint();
+    runM(NM);
+    const mms = Number(process.hrtime.bigint() - m0) / 1e6 / NM;
+    console.log(`perf: waterAt, mesh mode on world_m1: ${(mms * 1000).toFixed(3)} us/query (${wm.colliders.length} colliders)`);
+    if (mms > 0.01) console.warn(`WARN waterAt mesh ${mms.toFixed(5)} ms > 0.01`);
+    ok('mesh perf probe hit', h > 0);
+  }
   if (globalThis.gc) {
     globalThis.gc();
     let grown = Infinity;

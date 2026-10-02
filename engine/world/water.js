@@ -92,8 +92,10 @@ export function createWater(defs) {
     find(x, y) {
       let best = -1, bz = -Infinity;
       for (let i = 0; i < this.count; i++) {
-        if (x < this.x0[i] || x >= this.x1[i] || y < this.y0[i] || y >= this.y1[i]) continue; // AABB reject
-        if (this.kind[i] === KIND_CIRCLE) {
+        if (x < this.x0[i] || y < this.y0[i]) continue; // AABB reject
+        const circle = this.kind[i] === KIND_CIRCLE;
+        if (circle ? (x > this.x1[i] || y > this.y1[i]) : (x >= this.x1[i] || y >= this.y1[i])) continue; // circle bbox inclusive (rim counts)
+        if (circle) {
           const dx = x - this.cx[i], dy = y - this.cy[i];
           if (dx * dx + dy * dy > this.r2[i]) continue;
         }
@@ -113,7 +115,7 @@ export function createWater(defs) {
     } else {
       t.kind[i] = KIND_CIRCLE;
       t.cx[i] = d.c[0]; t.cy[i] = d.c[1]; t.r2[i] = d.r * d.r;
-      t.x0[i] = d.c[0] - d.r; t.x1[i] = d.c[0] + d.r + 1e-12; t.y0[i] = d.c[1] - d.r; t.y1[i] = d.c[1] + d.r + 1e-12;
+      t.x0[i] = d.c[0] - d.r; t.x1[i] = d.c[0] + d.r; t.y0[i] = d.c[1] - d.r; t.y1[i] = d.c[1] + d.r;
     }
     let li = t.lookNames.indexOf(d.look);
     if (li < 0) {

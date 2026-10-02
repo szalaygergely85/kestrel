@@ -14,7 +14,7 @@ import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, refitDynCollider } from './colliders.js';
-import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders } from '../physics/meshCollide.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
@@ -795,10 +795,13 @@ export class World {
   /**
    * Water at (x, y): highest-z region containing the point. Fills `out {surfaceZ, depth, region, look}` and returns
    * true, or returns false (out untouched). `depth = surfaceZ - floorZ`, >= 0; floorZ = `supportAt(...).floorH` in
-   * mesh physics, `floorAt` in grid (no floor there -> depth 0). `region` = the id string, `look` = look index
+   * mesh physics, `floorAt` in grid (no floor there, FLOOR_NONE, NaN or null -> depth 0). `region` = the id string,
+   * `index` = the region slot (valid only for the current load, not a save key), `look` = look index
    * (`world.water.lookNames[look]`). Pure, zero allocation.
+   * Known grid limitation: grid `floorAt` has no z, so under a grid-sector bridge the depth is 0.
+   * Do not hold a `supportAt` result across `waterAt`: mesh mode reuses the same scratch.
    * @param {number} x @param {number} y
-   * @param {{surfaceZ:number,depth:number,region:string,look:number}} out
+   * @param {{surfaceZ:number,depth:number,region:string,index:number,look:number}} out
    * @returns {boolean}
    */
   waterAt(x, y, out) {
@@ -807,10 +810,11 @@ export class World {
     if (i < 0) return false;
     const z = wt.z[i];
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
-    const d = fz === fz && fz !== null ? z - fz : 0; // NaN / null floor = depth 0
+    const d = fz === fz && fz !== null && fz > FLOOR_NONE ? z - fz : 0; // NaN / null / FLOOR_NONE floor = depth 0
     out.surfaceZ = z;
     out.depth = d > 0 ? d : 0;
     out.region = wt.ids[i];
+    out.index = i;
     out.look = wt.look[i];
     return true;
   }
