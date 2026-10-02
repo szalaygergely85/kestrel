@@ -17,6 +17,7 @@ import { buildWorldColliders, refitDynCollider } from './colliders.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
+import { createClothSystem, collectClothDefs } from './cloths.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -164,6 +165,7 @@ export class World {
     // every consumer (particles, fire, the player push) can call
     // `world.wind.sampleInto`/`pushAt` unconditionally.
     this.wind = createWind(null, 1);
+    this.cloths = createClothSystem([], null, null); // CLOTH-1b3: empty until `load`
     // RE-11b (architecture.md 28.3, "Save" / CO-5 extension): the sight/fog
     // grid, or `null` (default - every world before this story, and most
     // worlds even after it: `Visibility` needs grid dimensions the GAME
@@ -590,6 +592,9 @@ export class World {
       }
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
+
+    // CLOTH-1b3 (33.5): world + level `cloths` blocks (content, not state: never saved, never hashed). Terrain is baked above.
+    w.cloths = createClothSystem(collectClothDefs(def, w.structures), w, assets && assets.clothPresets);
 
     if (typeof def.nextId === 'number') w.nextId = def.nextId;
 

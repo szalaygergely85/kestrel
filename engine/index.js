@@ -143,6 +143,7 @@ export { arcHits } from './world/meleeArc.js'; // US-078b melee wedge query
 export { explosionHits } from './world/explosion.js'; // US-136 blast query (32.4)
 export { applyImpulse, IMPULSE_MAX_H, IMPULSE_MAX_V } from './physics/impulse.js'; // US-136 knockback
 export { createCloth, MAX_CLOTH_NODES, createClothColliders, setSphere as setClothSphere, setCapsule as setClothCapsule, setBox as setClothBox, setPlane as setClothPlane } from './physics/cloth.js'; // CLOTH-1a1 XPBD cloth (33)
+export { createClothSystem, collectClothDefs, MAX_CLOTHS, MAX_CLOTH_BODIES, DEFAULT_CLOTH_PRESETS } from './world/cloths.js'; // CLOTH-1b3 cloth system (33.5)
 export { attachedLightPos } from './entities/attach.js';
 
 // ---- triggers + fade + restart (US-017) ------------------------------------
