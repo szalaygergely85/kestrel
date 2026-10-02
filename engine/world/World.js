@@ -18,7 +18,8 @@ import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycas
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
-import { createWater, collectWaterDefs } from './water.js';
+import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
+import { waveHeight } from './waves.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -602,7 +603,10 @@ export class World {
     }
 
     // US-055a1 (32.2): world + level `water` blocks (validated; throws naming the region).
-    w.water = createWater(collectWaterDefs(def, w.structures));
+    // US-143a (35.1): world key `seaState` (default "calm") seeds the "sea" regions' amplitude at load.
+    const seaState = typeof def.seaState === 'string' ? def.seaState : 'calm';
+    if (!SEA_STATES.has(seaState)) throw new Error(`World.load: "seaState" must be "calm" | "breezy" | "storm" (got "${seaState}")`);
+    w.water = createWater(collectWaterDefs(def, w.structures), seaState);
 
     // CLOTH-1b3 (33.5): world + level `cloths` blocks (content, not state: never saved, never hashed). Terrain is baked above.
     w.cloths = createClothSystem(collectClothDefs(def, w.structures), w, assets && assets.clothPresets);
@@ -793,15 +797,18 @@ export class World {
   // ---- water query (US-055a1, architecture.md 32.2) ---------------------------
 
   /**
-   * Water at (x, y): highest-z region containing the point. Fills `out {surfaceZ, depth, region, look}` and returns
-   * true, or returns false (out untouched). `depth = surfaceZ - floorZ`, >= 0; floorZ = `supportAt(...).floorH` in
-   * mesh physics, `floorAt` in grid (no floor there, FLOOR_NONE, NaN or null -> depth 0). `region` = the id string,
-   * `index` = the region slot (valid only for the current load, not a save key), `look` = look index
+   * Water at (x, y): highest-z region containing the point. Fills `out {surfaceZ, flatZ, depth, region, look}` and
+   * returns true, or returns false (out untouched). `depth = surfaceZ - floorZ`, >= 0; floorZ = `supportAt(...).floorH`
+   * in mesh physics, `floorAt` in grid (no floor there, FLOOR_NONE, NaN or null -> depth 0). `region` = the id
+   * string, `index` = the region slot (valid only for the current load, not a save key), `look` = look index
    * (`world.water.lookNames[look]`). Pure, zero allocation.
+   * US-143a (35.2): `surfaceZ = z + h` is now LIVE (the region's wave height at `world.water.tick`); `flatZ = z`
+   * is the still-water plane (what `surfaceZ` was before this story). The floor probe still starts at `flatZ + 0.01`
+   * (not `surfaceZ + 0.01`) - a crest must not push the probe above a floor it would otherwise have found.
    * Known grid limitation: grid `floorAt` has no z, so under a grid-sector bridge the depth is 0.
    * Do not hold a `supportAt` result across `waterAt`: mesh mode reuses the same scratch.
    * @param {number} x @param {number} y
-   * @param {{surfaceZ:number,depth:number,region:string,index:number,look:number}} out
+   * @param {{surfaceZ:number,flatZ:number,depth:number,region:string,index:number,look:number}} out
    * @returns {boolean}
    */
   waterAt(x, y, out) {
@@ -809,9 +816,12 @@ export class World {
     const i = wt.find(x, y);
     if (i < 0) return false;
     const z = wt.z[i];
+    const h = waveHeight(wt, i, x, y, wt.tick);
+    const surfaceZ = z + h;
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
-    const d = fz === fz && fz !== null && fz > FLOOR_NONE ? z - fz : 0; // NaN / null / FLOOR_NONE floor = depth 0
-    out.surfaceZ = z;
+    const d = fz === fz && fz !== null && fz > FLOOR_NONE ? surfaceZ - fz : 0; // NaN / null / FLOOR_NONE floor = depth 0
+    out.surfaceZ = surfaceZ;
+    out.flatZ = z;
     out.depth = d > 0 ? d : 0;
     out.region = wt.ids[i];
     out.index = i;

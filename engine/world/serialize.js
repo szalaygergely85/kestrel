@@ -94,6 +94,9 @@ export function serialize(world) {
     ...(world.visibility != null ? { visibility: world.visibility.saveExplored() } : {}),
     // US-133 (32.3 "Save"): omitted when there is no fire grid; the game calls `grid.load(state.fire)` after rebuilding its areas.
     ...(world.fire != null ? { fire: world.fire.save() } : {}),
+    // US-143a (35.8 "Save/hash"): `water.tick` + the sea-state blend, only when there is at least one region
+    // (so a world/save with no water stays byte-identical to before this story).
+    ...(world.water && world.water.count > 0 ? { waterState: world.water.saveState() } : {}),
   };
 }
 
@@ -214,6 +217,8 @@ export function deserialize(state, assets, opts = {}) {
   // `visibility` at all - see `serialize` above). `fromSave` never restores
   // sources; the game re-adds them on the first tick after a load.
   if (state.visibility != null) world.visibility = Visibility.fromSave(state.visibility);
+  // US-143a (35.8 "Save"): restored BEFORE the first step, so the bob is continuous across a load.
+  if (state.waterState != null) world.water.loadState(state.waterState);
   return world;
 }
 

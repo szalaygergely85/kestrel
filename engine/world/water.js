@@ -3,10 +3,14 @@
 // `level.def.water` (level-local, converted through the structure frame). No rendering here (US-055a2).
 // Regions are flat (one z): axis-aligned rects and circles only (a level yawSteps keeps rects axis-aligned).
 import { localToWorld, localDirToWorld } from '../core/transform.js';
+import { buildWaveTables, createWaveClock } from './waves.js';
 
 export const WATER_MAX = 32;
 /** Max flow speed (m/s) of a region's `flow` / `flowRadial` (US-141a, architecture.md 35.1). */
 export const FLOW_MAX = 6;
+/** US-143a (architecture.md 35.1): `waves` region key + world `seaState` default. */
+export const WAVES_SET = new Set(['none', 'calm', 'breezy', 'storm', 'sea']);
+export const SEA_STATES = new Set(['calm', 'breezy', 'storm']);
 const LOOK_MAX = 255;
 const KIND_RECT = 0, KIND_CIRCLE = 1;
 const _p = { x: 0, y: 0, z: 0 }, _q = { x: 0, y: 0, z: 0 }, _d = [0, 0];
@@ -35,6 +39,9 @@ function validateOne(r, tag) {
     if (r.shape !== 'circle') bad(tag, '"flowRadial" is only valid on a circle');
     if (!num(r.flowRadial) || Math.abs(r.flowRadial) > FLOW_MAX) bad(tag, `"flowRadial" must be a finite number with |s| <= ${FLOW_MAX} m/s`);
   }
+  if (r.waves !== undefined && (typeof r.waves !== 'string' || !WAVES_SET.has(r.waves))) bad(tag, '"waves" must be "none" | "calm" | "breezy" | "storm" | "sea"');
+  if (r.waveDirDeg !== undefined && !num(r.waveDirDeg)) bad(tag, '"waveDirDeg" must be a finite number');
+  if (r.seed !== undefined && !Number.isInteger(r.seed)) bad(tag, '"seed" must be an integer');
 }
 
 function checkId(r, where) {
@@ -60,7 +67,11 @@ export function collectWaterDefs(def, structures) {
   for (const r of (def && def.water) || []) {
     const id = checkId(r, 'world');
     validateOne(r, id);
-    push({ id, shape: r.shape, rect: r.rect ? r.rect.slice() : null, c: r.c ? r.c.slice() : null, r: r.r || 0, z: r.z, look: r.look || 'water', flow: r.flow ? r.flow.slice() : [0, 0], flowRadial: r.flowRadial || 0 });
+    push({
+      id, shape: r.shape, rect: r.rect ? r.rect.slice() : null, c: r.c ? r.c.slice() : null, r: r.r || 0, z: r.z, look: r.look || 'water',
+      flow: r.flow ? r.flow.slice() : [0, 0], flowRadial: r.flowRadial || 0,
+      waves: r.waves || 'calm', waveDirDeg: typeof r.waveDirDeg === 'number' ? r.waveDirDeg : 0, seed: Number.isInteger(r.seed) ? r.seed : 1,
+    });
   }
   for (const s of structures || []) {
     const list = s.level && s.level.def && s.level.def.water;
@@ -80,7 +91,12 @@ export function collectWaterDefs(def, structures) {
       }
       const fl = r.flow || [0, 0];
       localDirToWorld(f, fl[0], fl[1], _d);
-      push({ id, shape: r.shape, rect, c, r: r.r || 0, z: r.z + f.z, look: r.look || 'water', flow: [_d[0], _d[1]], flowRadial: r.flowRadial || 0 });
+      // US-143a (35.1): "a level frame adds 90*yawSteps" to the local waveDirDeg (compass bearing, level-local).
+      const waveDirDeg = (typeof r.waveDirDeg === 'number' ? r.waveDirDeg : 0) + 90 * (f.yawSteps || 0);
+      push({
+        id, shape: r.shape, rect, c, r: r.r || 0, z: r.z + f.z, look: r.look || 'water', flow: [_d[0], _d[1]], flowRadial: r.flowRadial || 0,
+        waves: r.waves || 'calm', waveDirDeg, seed: Number.isInteger(r.seed) ? r.seed : 1,
+      });
     }
   }
   return out;
@@ -90,7 +106,7 @@ export function collectWaterDefs(def, structures) {
  * The runtime table (SoA, Float64 geometry). `look` = index into `lookNames` (first-seen order), resolved here
  * so 055a2 can bind the designer look table once. Never mutated after creation.
  */
-export function createWater(defs) {
+export function createWater(defs, seaState = 'calm') {
   const n = defs.length;
   const t = {
     count: n, ids: new Array(n), lookNames: [],
@@ -146,5 +162,11 @@ export function createWater(defs) {
     }
     t.look[i] = li;
   }
+  // US-143a (35.1/35.2): the wave field + clock, merged onto `t` so `world.water`
+  // itself IS the `wt` that `waveSampleInto`/`waveHeight` (waves.js) read, and
+  // `world.water.step()`/`setSeaState()`/`hashInto()`/`setTickForTest()` are
+  // plain methods on the water table.
+  const { wk, wa, seaRegions } = buildWaveTables(defs, seaState);
+  createWaveClock(t, wk, wa, seaRegions, seaState); // mutates `t` in place (see waves.js)
   return t;
 }

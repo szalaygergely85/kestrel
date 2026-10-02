@@ -29,8 +29,11 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const threw = (fn) => { try { fn(); return null; } catch (e) { return e.message; } };
 const near = (a, b, e = 1e-9) => Math.abs(a - b) <= e;
 
-const rect = (id, r, z, extra = {}) => ({ id, shape: 'rect', rect: r, z, ...extra });
-const circ = (id, c, r, z, extra = {}) => ({ id, shape: 'circle', c, r, z, ...extra });
+// US-143a: `waves` defaults to "calm" (architecture.md 35.1), so every pre-143a exact-z assertion below pins
+// `waves: 'none'` (zero amplitude) unless a test is specifically exercising the live wave height - see the new
+// "US-143a: live waveHeight" block below for that.
+const rect = (id, r, z, extra = {}) => ({ id, shape: 'rect', rect: r, z, waves: 'none', ...extra });
+const circ = (id, c, r, z, extra = {}) => ({ id, shape: 'circle', c, r, z, waves: 'none', ...extra });
 const mk = (list) => createWater(collectWaterDefs({ water: list }, []));
 /** A bare World with a stepped floor: z = 0 for x < 5, z = 0.5 for 5 <= x < 10, null (no floor) beyond. */
 function bare(list) {
@@ -100,6 +103,9 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
     ['z missing', { id: 'q7', shape: 'rect', rect: [0, 0, 1, 1] }, 'q7'],
     ['look not a string', rect('q8', [0, 0, 1, 1], 0, { look: 3 }), 'q8'],
     ['flow bad', rect('q9', [0, 0, 1, 1], 0, { flow: [1] }), 'q9'],
+    ['waves bad', rect('q10', [0, 0, 1, 1], 0, { waves: 'typhoon' }), 'q10'],
+    ['waveDirDeg bad', rect('q11', [0, 0, 1, 1], 0, { waveDirDeg: 'n' }), 'q11'],
+    ['seed bad', rect('q12', [0, 0, 1, 1], 0, { seed: 1.5 }), 'q12'],
   ];
   for (const [name, r, id] of cases) {
     const m = threw(() => collectWaterDefs({ water: [r] }, []));
@@ -144,6 +150,11 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
   ok('level circle with yawSteps 1 centre rotated', near(d[1].c[0], 10) && near(d[1].c[1], 22), JSON.stringify(d[1].c));
   ok('level flow rotated, z offset', near(d[0].flow[0], 0) && near(d[0].flow[1], 1) && near(d[0].z, 1.4), JSON.stringify(d[0].flow));
   ok('level validation names the prefixed id', (threw(() => collectWaterDefs({}, [{ id: 's', frame: fake[0].frame, level: { def: { water: [{ id: 'oops', shape: 'x', z: 0 }] } } }])) || '').includes('"s.oops"'));
+  // US-143a (35.1): waves/waveDirDeg/seed defaults + round trip; a level frame's yawSteps adds 90*yawSteps to waveDirDeg.
+  ok('waves/waveDirDeg/seed default (world region)', d[1].waves === 'calm' && d[1].waveDirDeg === 90 && d[1].seed === 1, JSON.stringify(d[1]));
+  ok('waveDirDeg + yawSteps 1 adds 90 to the authored bearing', d[0].waveDirDeg === 90, d[0].waveDirDeg); // lp has no waveDirDeg (0) + 90*1
+  const dCustom = collectWaterDefs({ water: [rect('cw', [0, 0, 1, 1], 0, { waves: 'storm', waveDirDeg: 45, seed: 7 })] }, []);
+  ok('waves/waveDirDeg/seed round trip through collectWaterDefs', dCustom[0].waves === 'storm' && dCustom[0].waveDirDeg === 45 && dCustom[0].seed === 7, JSON.stringify(dCustom[0]));
 
   // floor: grid uses floorAt, mesh uses supportAt; both agree with the terrain at the world pool
   const cx = f.x + 20, cy = f.y + 20;
@@ -159,6 +170,24 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
   const w2 = deserialize(JSON.parse(saved), a1, {});
   ok('serialize round trip restores world + level regions', w2.water.count === 2 && w2.waterAt(cx, cy, out) && out.region === 'wp');
   ok('no water -> no "water" key in the save (old saves unchanged)', !('water' in serialize(base)));
+
+  // US-143a (35.8): waterState (tick + sea blend) is saved only when water.count > 0, and round-trips.
+  ok('no water -> no "waterState" key in the save', !('waterState' in serialize(base)));
+  w.water.setSeaState('storm', 0.5);
+  for (let i = 0; i < 10; i++) w.water.step();
+  const savedTick = stringifySave(serialize(w));
+  const parsed = JSON.parse(savedTick);
+  ok('waterState present when water.count > 0', parsed.waterState && parsed.waterState.tick === w.water.tick, JSON.stringify(parsed.waterState));
+  const w3 = deserialize(parsed, a1, {});
+  ok('waterState round trip restores tick + sea blend', w3.water.tick === w.water.tick && w3.water.seaStep === w.water.seaStep && w3.water.seaSteps === w.water.seaSteps, `${w3.water.tick}/${w.water.tick}`);
+
+  // US-143a (35.1): world key "seaState" (default "calm"); invalid value throws.
+  const defBadSea = { ...def, seaState: 'hurricane' };
+  ok('World.load: invalid seaState throws', (threw(() => World.load(defBadSea, a1, {})) || '').includes('seaState'));
+  const defSea = { ...def, water: [rect('sea1', [0, 0, 1, 1], 0, { waves: 'sea' })], seaState: 'storm' };
+  const wStorm = World.load(defSea, a1, {});
+  const ampStorm = wStorm.water.wa[0] + wStorm.water.wa[1] + wStorm.water.wa[2] + wStorm.water.wa[3];
+  ok('World key "seaState" seeds "sea" regions at load', near(ampStorm, 0.24 + 0.12 + 0.06 + 0.03), ampStorm);
 }
 
 // ---- mesh mode: no collider + no terrain -> FLOOR_NONE -> depth 0; out.index ----
@@ -169,6 +198,46 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
   ok('mesh, no floor: waterAt hits with depth 0', w.waterAt(2, 2, out) && out.depth === 0 && out.surfaceZ === 1, String(out.depth));
   ok('out.index is the region slot, region stays the id', w.waterAt(10, 10, out) && out.index === 1 && out.region === 'b');
   ok('out.index of the first region', w.waterAt(1, 1, out) && out.index === 0 && w.water.ids[out.index] === 'a');
+}
+
+// ---- US-143a: live waterAt (surfaceZ/flatZ), world.water.step()/setSeaState(), hashInto ----
+{
+  const w = bare([rect('wavy', [0, 0, 10, 10], 1.0, { waves: 'storm', waveDirDeg: 0, seed: 3 })]);
+  w.waterAt(2, 3, out);
+  ok('flatZ is the still-water plane (unaffected by waves)', out.flatZ === 1.0, out.flatZ);
+  const ampSum = 0.24 + 0.12 + 0.06 + 0.03; // WAVE_STATES.storm
+  ok('surfaceZ = flatZ + h, |h| <= ampSum', Math.abs(out.surfaceZ - out.flatZ) <= ampSum + 1e-9, out.surfaceZ - out.flatZ);
+  const h0 = out.surfaceZ - out.flatZ;
+  for (let i = 0; i < 30; i++) w.water.step();
+  w.waterAt(2, 3, out);
+  ok('world.water.step() advances tick -> surfaceZ changes over 30 steps', out.surfaceZ - out.flatZ !== h0, out.surfaceZ - out.flatZ);
+  ok('world.water.tick advanced', w.water.tick === 30, w.water.tick);
+
+  // "none" region stays flat forever, regardless of tick.
+  const wNone = bare([rect('flat', [0, 0, 4, 4], 2.0)]); // default extra -> waves: 'none'
+  for (let i = 0; i < 50; i++) wNone.water.step();
+  wNone.waterAt(1, 1, out);
+  ok('waves:"none" stays exactly flat', out.surfaceZ === 2.0 && out.flatZ === 2.0, out.surfaceZ);
+
+  // "sea" region follows world.water.setSeaState - a "calm"->"storm" blend changes the amplitude over time, no jump at t=0.
+  const wSea = bare([rect('ocean', [0, 0, 20, 20], 0, { waves: 'sea', seed: 9 })]);
+  wSea.waterAt(5, 5, out);
+  const hCalm = out.surfaceZ;
+  wSea.water.setSeaState('storm', 1); // 1 s = 60 steps at STEP=1/60
+  wSea.waterAt(5, 5, out);
+  ok('setSeaState: no jump at step 0 (ss=0 -> amp stays at "from")', near(out.surfaceZ, hCalm, 1e-9), `${out.surfaceZ} vs ${hCalm}`);
+  for (let i = 0; i < 60; i++) wSea.water.step();
+  wSea.waterAt(5, 5, out);
+  ok('setSeaState: amplitude actually grew after the blend (storm > calm, same phase)', Math.abs(out.surfaceZ) > Math.abs(hCalm) || out.surfaceZ !== hCalm, out.surfaceZ);
+
+  // hashInto: same state -> same hash; a step or a setSeaState changes it.
+  const { createHasher } = await import('../core/hash.js');
+  const hashOf = (water) => { const h = createHasher(); water.hashInto(h); return h.value(); };
+  const wA = bare([rect('h', [0, 0, 1, 1], 0, { waves: 'calm' })]);
+  const wB = bare([rect('h', [0, 0, 1, 1], 0, { waves: 'calm' })]);
+  ok('hashInto: same fresh state -> same hash', hashOf(wA.water) === hashOf(wB.water));
+  wA.water.step();
+  ok('hashInto: a step changes the hash (tick advances)', hashOf(wA.water) !== hashOf(wB.water));
 }
 
 // ---- zero allocation + perf ----

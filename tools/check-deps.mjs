@@ -410,6 +410,12 @@ const VISIBILITY_FILE = path.join(WORLD_DIR, 'Visibility.js');
 // exact file (not a folder) - the wind field's gust math must stay
 // trig-free/wall-clock-free, same reasoning as Visibility.js.
 const WIND_FILE = path.join(WORLD_DIR, 'wind.js');
+// US-143a (docs/architecture.md 35.2, 35.12 "Do not"): the wave field + clock
+// joins rule 15 too - no trig, no exp, no Math.random, no wall clock anywhere
+// in waves.js's clock/query code (the load-time per-region compile is exempt
+// in spirit, same as wind.js's forwardOf-at-create convention, but the rule
+// here is file-scoped like every other rule 15 entry).
+const WAVES_FILE = path.join(WORLD_DIR, 'waves.js');
 // US-053a (32.0 item 2): the particle sim joins rule 15 (exact file; emitterDef.js is load-time and stays out).
 const PARTICLES_FILE = path.join(FX_DIR, 'particles.js');
 // US-133 (32.0 item 2): the fire spread grid joins rule 15 too.
@@ -428,6 +434,7 @@ function inDeterminismScope(file) {
   if (CORE_DETERMINISM_FILES.has(file)) return true;
   if (file === VISIBILITY_FILE) return true;
   if (file === WIND_FILE) return true;
+  if (file === WAVES_FILE) return true;
   if (file === PARTICLES_FILE) return true;
   if (file === FIRE_FILE) return true;
   if (file === CLOTH_FILE) return true;
