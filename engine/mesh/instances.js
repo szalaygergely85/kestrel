@@ -279,7 +279,7 @@ export class InstanceGroups {
       const names = pool.partNamesFor(g.modelKey);
       const mesh = cache.get(pm, g.modelKey, names);
       const lodOn = g.lodCells > 0 && !!viewProj;
-      const mesh1 = lodOn ? cache.get(pm, g.modelKey, names, 1) : null;
+      const mesh1 = (lodOn || g.drawCount[1] > 0) ? cache.get(pm, g.modelKey, names, 1) : null;
       if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);

@@ -355,7 +355,7 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   ok('each item holds its own bucket', l.items[0].instBuf === g.drawIb[0] && l.items[1].instBuf === g.drawIb[1] && l.items[0].instCount === 1);
   ok('g.ib never written (instance 0 still near, id intact)', g.ib.u32[12] === (UNIT_OBJECT_BASE | 0));
   // hysteresis: inside [7.2, 8.8] keeps previous
-  put(0, dAt(8.4)); put(1, dAt(8.4)); g.count = 2; // inst0 was LOD0, inst1 was LOD1
+  put(0, dAt(8.4)); put(1, dAt(8.4)); g.count = 2; // inst0 was LOD1, inst1 was LOD0
   l = run();
   ok('hysteresis band keeps previous LOD per slot', g.lodPrev[0] === 1 && g.lodPrev[1] === 0 && g.drawCount[0] === 1 && g.drawCount[1] === 1);
   put(0, dAt(9)); put(1, dAt(7)); // cross both thresholds
