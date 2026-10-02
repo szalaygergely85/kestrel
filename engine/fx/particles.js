@@ -224,7 +224,7 @@ export function createParticles(opts = {}) {
           while (n > 0 && eLive[s] < maxLive) { spawn(s, o); n--; }
           ePending[s] = 0; // the part over maxLive is dropped, never deferred
         }
-        if (eReleased[s] && eLive[s] === 0) { eUsed[s] = 0; eGen[s]++; }
+        if (eReleased[s] && eLive[s] === 0) { eUsed[s] = 0; eGen[s] = (eGen[s] + 1) & 0x1ffffff; }
       }
     },
 
@@ -233,7 +233,7 @@ export function createParticles(opts = {}) {
       alive.fill(0); kz.fill(-Infinity);
       eUsed.fill(0); eOn.fill(0); eReleased.fill(0); eTransient.fill(0); eHasWind.fill(0);
       eLive.fill(0); ePending.fill(0); eAcc.fill(0);
-      for (let s = 0; s < E; s++) eGen[s]++; // old handles go stale
+      for (let s = 0; s < E; s++) eGen[s] = (eGen[s] + 1) & 0x1ffffff; // old handles go stale (masked: gen << 6 stays positive)
       head = 0; gwx = gwy = gwz = 0;
       rng = createRng(seed);
       stats.live = 0; stats.spawned = 0; stats.recycled = 0; stats.dropped = 0;

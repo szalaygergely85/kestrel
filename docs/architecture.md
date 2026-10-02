@@ -3881,6 +3881,16 @@ Notes for the rows flagged `NEEDS PC-A: architect note` in the epic header (back
   - entityEmitters: offset rotation at yaw 0/90/225; add/remove rebuild;
   - check-deps fixture for rule 16.
 - **Budget (revised, Node, warn-only unless `PERF_STRICT=1`):** 500 live <= 0.05 ms per step, 2048 live <= 0.15 ms. PO proposed 0.3 ms for 500; the SoA loop is about 20 ns per particle.
+- **As built (053a review, 2026-10-02), accepted deviations:**
+  - glyph ramps are `Uint16Array` (BMP code points; > U+FFFF throws at define), not Uint8; 053b packs the glyph *index* into the layer, not the code.
+  - rate accumulator: `acc += rate` per step, one spawn per `HZ = 60` units (exact integer counts; same as `rate*STEP` vs 1 without float drift).
+  - life = integer steps uniform in `[round(min/STEP), round(max/STEP)]`; draw order `life, speed, jx, jy, jz, cone...` is fixed.
+  - handles = `(generation << 6) | slot`; stale handles are silent no-ops; `clear()` bumps every generation. `isValid(h)` and `defIdOf(key)` are part of the API.
+  - `hashInto` covers live slots, used emitters, wind and the RNG state, not generations (handle bookkeeping).
+  - a burst larger than the free `maxLive` is truncated, never deferred.
+  - entityEmitters: `entry.on` means on unless `=== false`. A caller that runs `particles.clear()` outside `world:loaded` must call `entityEmitters.invalidate()` (otherwise its pairs hold stale handles until the next rebuild).
+  - wind-field tests for `sampleWind` live in `engine/world/` (rule 16 bars fx tests from importing world).
+  - check-deps rule 16 also bars `engine/physics/**` and `engine/nav/**` from importing `engine/fx/**` (27.10 stand-alone, nav leaf).
 
 **US-053b (PC-A, ~1 d, engine/render -> arch-review): draw through the sprite pass.**
 - **Decision: a JS-rasterised particle layer, read by the existing sprite pass as one extra candidate per cell** (the RE-07 overlay pattern, 28.9). Particles are not added to the `SPR` list.
@@ -4077,6 +4087,14 @@ Notes for the rows flagged `NEEDS PC-A: architect note` in the epic header (back
   - share the beast or particle RNG;
   - use float timers;
   - iterate areas by `Map` (`areas` is an array; ids go through a load-time `Map` for `save`/`load` only).
+- **As built (133 review, 2026-10-02):**
+  - **Candidate pass:** each burning cell multiplies `qAcc[t] *= max(0, 1 - ignite*wDir*wWind)` into its unburnt neighbours (u = neighbour -> cell, as above), then one linear pass draws one RNG per cell with `q < 1`, in index order. Same rule and draw order as above, with two precisions: a factor with `p >= 1` is 0 (not negative), and a candidate whose every factor is 1 (ignite 0) takes **no** draw. The q product order is burning-cell index order (bitwise determinism holds; a second implementation must use the same order).
+  - **Change list consumers:** `changes` is reset at the start of every fire tick and manual `ignite`/`igniteRadius` between ticks append to it. A per-step reader keeps `(lastTick, lastCount)`: `from = fire.stats.ticks !== lastTick ? 0 : lastCount`, so no entry is processed twice.
+  - **Surfaces at `addArea` (duck-typed world):** `surfaceAt(x, y)` override if present; else inside a structure sector the sector `floorMat` (`world.sectorAt`), inside a structure bbox but outside its sectors nothing; else the terrain `typeName(groundTypeAt)`. Height: `world.floorAt` (structure-aware), else `terrain.groundAt`, else 0. `World.heightAt` is terrain-only and must not be used.
+  - **Wind:** optional `grid.wind` field, sampled at each area centre on every fire tick with the **sim tick** (32.8 item 7), passed as `step(simTick)`. Area wind `wx, wy` is part of `hashInto`.
+  - `World.load`/`deserialize` do not restore fire. The game rebuilds the areas from content, then calls `grid.load(state.fire)`, which throws when the content doesn't match. `save()` also stores `counter`. Level-local -> world conversion of `areas`/`paint` is the game's job (32.0 item 6).
+  - `fire:area` can fire again if a burnt-out tagged area is re-lit and burns out again; US-135 listeners latch.
+  - Perf bar = the **average** tick of a saturated 4096-cell area (<= 0.1 ms); a single worst tick up to ~0.35 ms in Node (once per 6 steps) is accepted.
 
 **US-132 (PC-B, game; split 132a sim ~0.6 d, 132b view ~0.5 d after US-053c).**
 - **Components (JSON, saved with the entity, no `serialize.js` change):**

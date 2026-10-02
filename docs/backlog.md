@@ -322,13 +322,22 @@ Related, not duplicated: US-068 (editor ortho views) stays editor-only - RE-01 l
 
 | ID | Title / one-line story | Priority | Milestone / epic | Status |
 |---|---|---|---|---|
-| US-053a | Particle sim core (engine): pooled emitters + particles on the fixed step (rate, life, velocity + spread, gravity/buoyancy, drag, wind input), no drawing yet; Node tests | P1 | M3 EP-ELEMENTS (step of US-053) | **dev done -> arch-review (2026-10-02):** `engine/fx/particles.js` + `emitterDef.js` (2048-slot SoA pool, 64 emitters, seeded, wind input, hash checkpoints), `engine/world/entityEmitters.js`, `engine.particles` option + clear on world:loaded, check-deps rule 16 (fx leaf; physics/nav may not import fx) + rule 15 scope; 84 Node tests; 500 live 0.010 ms / 2048 live 0.035 ms per step (bars 0.05/0.15); zero heap growth. engine.js wiring not browser-checked yet. Was: todo (sketch) [PC-A engine, new module] - NEEDS PC-A: architect note (053a+b). ~1 d |
+| US-053a | Particle sim core (engine): pooled emitters + particles on the fixed step (rate, life, velocity + spread, gravity/buoyancy, drag, wind input), no drawing yet; Node tests | P1 | M3 EP-ELEMENTS (step of US-053) | **done 2026-10-02 - ARCH OK (opus batch; engine-internal, PO skipped; eGen masked to 25 bits by the main session; 32.1 'As built' block; headless route-walk mesh smoke PASS).** Dev: `engine/fx/particles.js` + `emitterDef.js` (2048-slot SoA pool, 64 emitters, seeded, wind input, hash checkpoints), `engine/world/entityEmitters.js`, `engine.particles` option + clear on world:loaded, check-deps rule 16 (fx leaf; physics/nav may not import fx) + rule 15 scope; 84 Node tests; 500 live 0.010 ms / 2048 live 0.035 ms per step (bars 0.05/0.15); zero heap growth. engine.js wiring not browser-checked yet. Was: todo (sketch) [PC-A engine, new module] - NEEDS PC-A: architect note (053a+b). ~1 d |
 | US-053b | Particle draw: particles through the GPU sprite pass with depth test, glyph + colour ramp over life, emissive flag, lit by ambient + point lights; JS twin, gpucompare pose `particles` | P1 | M3 EP-ELEMENTS (step of US-053) | todo (sketch) [PC-A engine/render] - deps: US-053a. NEEDS PC-A: architect note (053a+b). ~1 d |
 | US-053c | Particle presets as data + first placements: burner flame + smoke on the *Kestrel* burner (replaces the OWN-REQ-008 billboard flame), sparks for US-078d/US-082, landing dust, splash drops; US-019 dust motes rebuilt as a preset | P1 | M3 EP-ELEMENTS (step of US-053) | todo (sketch) [PC-B content + designer ramps + preview page] - deps: US-053b. ~1 d |
 | US-055a | Water surface render (engine): water regions as world data (sector or terrain region + surface height), animated wave glyphs, depth tint, see-through in shallows; JS twin + gpucompare pose `water` | P1 | M3/M4 EP-ELEMENTS (step of US-055) | todo (sketch) [PC-A engine/render + world] - deps: US-026 regions (or sector-only first). NEEDS PC-A: architect note. ~1 d |
 | US-055b | Wade, swim, splash: player wades (< 0.6 m) / swims (>= 0.6 m), splash particles + ripple ring on entry scaled by speed, water puts out burning (US-132) | P1 | M3/M4 EP-ELEMENTS (step of US-055) | todo (sketch) [PC-B game + PC-A `waterAt` query if 055a lacks it] - deps: US-055a, US-053c. ~1 d |
+| US-141a | Flow data + scrolling surface (PO 2026-10-02, owner "water, waterfalls, waves"): water regions get `flow [vx,vy]` (m/s) as data + `World.flowAt(x,y,out)`; surface glyphs/foam streaks scroll with the flow in the water shade | P1 | M4 EP-ELEMENTS (water, step 1) | todo (sketch) [PC-A engine/world + render `water.js`/shade] - deps: US-055a1 (flow field already stored), US-055a2. NEEDS PC-A: architect note (141+143 together). ~0.75 d |
+| US-141b | Currents act: flow pushes the wading/swimming player (same `pushX/pushY` path as US-138b), carries floating props (after US-051) and water particles; river test level with a strong and a weak reach | P1 | M4 EP-ELEMENTS (water, step 2) | todo (sketch) [PC-A physics hook + PC-B game/level `game/js/quest`, `design/levels`] - deps: US-141a, US-055b, US-138b. ~0.75 d |
+| US-142a | Waterfall view: a vertical falling sheet (animated glyph columns `\| : '`, emissive highlight streaks, fast scroll), foot spray/mist particles, plunge pool with expanding ripple rings; one placeable `waterfall` prop/preset in a test cliff | P1 | M4/M5 EP-ELEMENTS (water, step 3) | todo (sketch) [PC-B content `design/` + `game/js/quest`, designer ramps + preview page] - deps: US-053c, US-055a2. NEEDS PC-A: architect note only if the sheet needs a shade hook (else it is a mesh/billboard prop). ~1 d |
+| US-142b | Waterfall sound + cave: loud looping roar with distance falloff + pan (cf. US-020b), spray soaks the lens edge when close, optional walk-behind alcove with a hidden chest spot | P2 | M5/M6 EP-ELEMENTS (water, step 4) | todo (sketch, sound deferred to M6 polish per owner 2026-09-25) [PC-B `game/js/audio`, `game/js/quest`] - deps: US-142a, US-020b. ~0.5 d |
+| US-143a | Wave height field (engine, Node only): `waveHeight(x,y,t,preset)` = sum of <= 4 seeded directional waves (amp, wavelength, speed, dir) on the fixed clock; `waterAt` returns the live surface z; presets calm / breezy / storm as data | P1 | M4/M5 EP-ELEMENTS (water, step 5) | todo (sketch) [PC-A engine/world] - deps: US-055a1. NEEDS PC-A: architect note (see Q below). ~0.5 d |
+| US-143b | Wave render + shoreline foam: surface visibly rises and falls (shade-pass normal/height perturbation or mesh vertex displacement, architect decides), wave crests lit by sun glint, foam glyphs (`* o .`) where depth < 0.3 m and on crests; JS twin, gpucompare pose `waves` | P1 | M4/M5 EP-ELEMENTS (water, step 6) | todo (sketch) [PC-A engine/render + designer foam ramps] - deps: US-143a, US-055a2. NEEDS PC-A: architect note. ~1 d |
+| US-143c | Waves in play: floating objects (player swim bob, props after US-051, boat later) follow the live surface; calm/storm preset follows wind (US-138) and weather (US-140); sea test level | P2 | M5 EP-ELEMENTS (water, step 7) | todo (sketch) [PC-A hook + PC-B game/level] - deps: US-143a/b, US-055b, US-138, US-140 (weather link may land later). ~0.75 d |
+| US-144a | Underwater view: eye below surface gives blue-green tint + short fog, glyph swap to a bubbly ramp, light-shaft streaks, surface seen from below; JS twin | P1 | M4/M5 EP-ELEMENTS (water, step 8) | todo (sketch) [PC-A engine/render shade + designer] - deps: US-055a2 (lifts its "no underwater view in v1" skip), US-055b. NEEDS PC-A: architect note. ~0.75 d |
+| US-144b | Underwater play + sound: muffled low-pass audio, bubble particles on exhale, breath meter hook on the vitals sim (drain when head is under, refill above; drowning damage values are US-080 tuning) | P2 | M5 EP-ELEMENTS (water, step 9) | todo (sketch, audio part deferred to M6) [PC-B game + audio] - deps: US-144a, US-080a1, US-053c. ~0.5 d |
 | US-132 | Burning status effect: as a player I can catch fire (and so can enemies and flammable props): damage over time, flame + smoke on whatever burns, spreads to touching flammable entities, put out by water or by time | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-A engine status-effect component + PC-B game tuning] - deps: US-053c, US-080a1 (damage). NEEDS PC-A: architect note (132+133). ~1 d |
-| US-133 | Fire spread (engine sim): flammable materials/props as data (fuel, ignite chance), a coarse fire cell grid with a neighbour-propagation rule (seeded, fixed step), fuel burns out -> charred material; wind bias hook; Node tests | P1 | M4 EP-ELEMENTS | **dev done -> arch-review (2026-10-02):** `engine/world/fireGrid.js` (+ 38 + 5 tests): 10 Hz seeded fire grid, wind bias, burnt/charred, save/load, `fire:area` event; hooks World.fire=null, serialize writes `fire` when set, rule 15 scope; 4096-cell front tick 0.039 ms (saturated 0.096). Game side: build via createFireGrid + addArea, wire `world.surfaceAt` for sector floorMat, `grid.load(state.fire)` after load. Was: todo (sketch) [PC-A engine/world] - deps: none for the sim (view in US-134). NEEDS PC-A: architect note (132+133). ~1 d |
+| US-133 | Fire spread (engine sim): flammable materials/props as data (fuel, ignite chance), a coarse fire cell grid with a neighbour-propagation rule (seeded, fixed step), fuel burns out -> charred material; wind bias hook; Node tests | P1 | M4 EP-ELEMENTS | **ARCH CHANGES (opus 2026-10-02): wind sampled with the sim tick, floorAt for cell height, sector floorMat surface inside structures, area wind in the hash, fuel ticks from STEP - programmer fixing.** Dev: `engine/world/fireGrid.js` (+ 38 + 5 tests): 10 Hz seeded fire grid, wind bias, burnt/charred, save/load, `fire:area` event; hooks World.fire=null, serialize writes `fire` when set, rule 15 scope; 4096-cell front tick 0.039 ms (saturated 0.096). Game side: build via createFireGrid + addArea, wire `world.surfaceAt` for sector floorMat, `grid.load(state.fire)` after load. Was: todo (sketch) [PC-A engine/world] - deps: none for the sim (view in US-134). NEEDS PC-A: architect note (132+133). ~1 d |
 | US-134 | Fire view: burning cells render flame glyphs + emissive + smoke particles, a capped number of flicker lights per fire area, charred material swap visible after burn-out | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-A engine/render + designer fire/char ramps] - deps: US-133, US-053c. ~1 d |
 | US-135 | Fire in the game: a fire test room - torch/burner ignites dry brush, fire spreads across the patch, a wooden barrier burns away and opens a path, things in the fire catch fire (US-132) | P1 | M4 EP-ELEMENTS | todo (sketch) [PC-B content + game/js/quest] - deps: US-132, US-134; feeds US-093 (torch gates). ~0.5-1 d |
 | US-136 | Explosion query + force (engine): `explode(pos, radius, damage, impulse)` - falloff, line-of-sight occlusion through `World`, `explosion` event per hit entity, knockback impulse on the player capsule; Node tests | P2 | M4/M5 EP-ELEMENTS | **done 2026-10-02 - ARCH OK (opus batch; change 1 = integrate peakZ after the ceiling clamp, applied by the main session, suites 175/175, no hash changes)**: `engine/world/explosion.js` `explosionHits` (SoA candidates, linear falloff, LOS via `World.raySegment`, zero alloc) + `engine/physics/impulse.js` `applyImpulse` (clamps 12/8 m/s; airborne keeps peakZ - 32.4 amendment); 29 Node checks; spec is 32.4 (not 31.4). `explode(pos,{...})` damage/event/kick wiring = game side US-137. Was: todo (sketch) [PC-A engine/world + physics] - deps: US-080a1 (damage). NEEDS PC-A: architect note. ~1 d |
@@ -1004,6 +1013,64 @@ Acceptance criteria (sketch):
 - [ ] Rain puts out open fire cells (US-133) and `burning` (US-132) after ~2 s.
 Design needed: yes - rain/snow ramps, wet colour shift.
 Notes / dependencies: US-053c, US-138, US-139, US-132/133; pairs with US-122 day/night. Split at planning if > 1 d.
+
+### WATER-2 Flowing water, waterfalls, waves, underwater (PO 2026-10-02, owner request)  [US-141a/b, 142a/b, 143a/b/c, 144a/b; all todo (sketch)]
+Design needed (all): yes - water look table additions (flow streak ramp, foam ramp `* o .`, crest glint, underwater tint/bubble ramp), waterfall glyph columns + spray ramp, test levels (river, cliff + falls, sea). Build on 055a/b; keep water an analytic layer (arch 32.2) unless the architect says otherwise.
+**OPEN QUESTION for the architect (US-143, NEEDS PC-A):** arch 32.2 makes water a flat analytic plane, not mesh geometry. Owner wants "surface height that actually moves, mesh vertex displacement". Options: (a) keep the plane, perturb normal + ray-plane hit height by 2-3 wave octaves in the shade pass (cheap, floor/props stay visible, crests only look displaced); (b) add a displaced water mesh to the mesh renderer with alpha/see-through (true silhouette waves, but needs its own depth/blend rule). Architect picks; ACs below are written to hold for either.
+
+**US-141a Flow data + scrolling surface**
+- [ ] Region `flow: [vx,vy]` (m/s, |v| <= 6) is validated at load; `World.flowAt(x,y,out)` returns the flow of the highest-z region at the point, `[0,0]` outside water; zero allocation, <= 0.005 ms for 32 regions; Node tests incl. serialize round trip.
+- [ ] Surface glyph hash is advected by `flow * timeSec` in the shade (JS twin the same); streaks visibly run downstream at 1 m/s vs 4 m/s in the river test level; still pools unchanged (existing `water` pose stays PASS).
+- [ ] gpucompare pose `water` extended with a flowing region PASSes; extra cost <= 0.05 ms p95 at 400x150.
+- Owner walk-test: stand at a river bank, glyphs clearly stream one way, faster in the narrow reach.
+
+**US-141b Currents act**
+- [ ] Wading/swimming player gets pushed by `flowAt * k` (k data, default 0.5 of flow speed) with a hard cap 3 m/s; walking against a 4 m/s reach is slower than with it; wall-fixture test (no tunnelling).
+- [ ] Water particles (splash drops, bubbles, foam) drift with the flow; floating props follow the flow *(after US-051)*; a thrown test leaf/log in the river test level floats downstream and stops at the pool.
+- [ ] Dry land unaffected (Node test).
+- Owner walk-test: step into the strong reach and get carried; swim back out at the bank.
+
+**US-142a Waterfall view**
+- [ ] `waterfall` content def: top lip (x,y,z), width 1-6 m, drop height 2-20 m; sheet glyph columns fall at >= 8 m/s apparent speed, 2-3 brightness levels with emissive highlight streaks; seen from both sides.
+- [ ] Spray: >= 1 particle emitter at the foot (mist, rate scaled by width x drop), drifting with wind (US-138); a second small emitter at the lip.
+- [ ] Plunge pool: a water region at the foot emits ripple rings every ~0.4 s; flow pushes outwards from the foot (US-141 data).
+- [ ] Test cliff level with a 10 m fall; frame cost with the fall on screen <= +0.3 ms p95 (JS twin warn-only).
+- Owner walk-test: approach from downstream, hear/see spray build up, circle behind the sheet.
+
+**US-142b Waterfall sound + cave**
+- [ ] Looping roar gain follows distance (full <= 4 m, silent >= 40 m), pans left/right, louder for taller/wider falls; mute API respected (US-020d).
+- [ ] Walk-behind alcove: a gap behind the sheet of >= 1.5 m, sheet drawn over it when looking out, muffled roar inside; one hidden pickup slot.
+- Owner walk-test: walk into the cave, roar changes.
+
+**US-143a Wave height field**
+- [ ] `waveHeight(x,y,t,preset)` sums <= 4 waves with seeded phases; deterministic across runs; |h| <= preset amp sum (calm 0.03, breezy 0.12, storm 0.45 m); period of the main wave 3-8 s.
+- [ ] `waterAt` out gets `surfaceZ` = region z + wave h, plus `flat z`; depth uses live z; Node hash test + 0.01 ms budget for 32 regions.
+- [ ] Preset is per region data (`waves: "calm"|"breezy"|"storm"`); default calm.
+
+**US-143b Wave render + foam**
+- [ ] The surface visibly heaves: crest-to-trough >= preset amp at the camera, wavelength readable at 20 m; crests catch a sun glint, troughs darker; world-anchored.
+- [ ] Foam glyphs `* o .` appear where water depth < 0.3 m (shoreline band, pulses with the wave) and on storm crests; foam fades by distance.
+- [ ] JS twin + gpucompare pose `waves` PASS (calm + storm); shade extra <= 0.15 ms p95 at 400x150.
+- Owner walk-test: stand on a beach, watch the waves roll in and foam line move.
+
+**US-143c Waves in play**
+- [ ] Player swimming bobs with `surfaceZ` (no jitter > 0.02 m at calm); any `floats` entity follows the live z with a small tilt-free bob; splash (055b) triggers at the live surface.
+- [ ] Switching wind (US-138) between calm/storm changes the wave preset over ~5 s; weather hook is a function `setSeaState(preset, blendSec)` that US-140 calls later.
+- [ ] Sea test level with a shoreline, storm toggle on a debug key.
+- Owner walk-test: toggle storm, waves grow and the player bobs harder.
+
+**US-144a Underwater view**
+- [ ] When eye z < surface z in a region: blue-green tint (rgb from look table), exponential fog reaching full at ~12 m, glyph ramp swapped to a bubbly one; surface visible from below as a bright glyph ceiling.
+- [ ] Transition at the surface line is clean (no one-frame flicker; hysteresis 0.05 m); eye in a pool of depth < 0.3 m does not trigger it.
+- [ ] JS twin; gpucompare pose `underwater` PASSes; cost <= +0.1 ms p95.
+- Owner walk-test: dive, look up at the ceiling of waves, surface.
+
+**US-144b Underwater play + sound**
+- [ ] `vitals.breath` (max 10 s, tuning data) drains only with the head under, refills at 3x rate above; at 0 a damage tick per US-080 numbers; breath bar appears in the HUD only while below max.
+- [ ] Bubble particles on exhale every ~2 s; audio low-pass engages under the surface (deferred to M6 polish if audio stays off).
+- Owner walk-test: stay down until the bar empties, take damage, surface.
+
+Order: 055a1 -> 055a2 -> 055b -> 141a -> 141b | 142a -> 142b | 143a -> 143b -> 143c | 144a -> 144b. 141a and 143 share one architect note.
 
 ### CLOTH-1 Cloth physics - "nice clothes"  [Priority: P1 (M3 content, engine first)] [Status: ACs + architect note (architecture.md 33) -> CLOTH-1a ready (PC-A), 1b needs designer]
 
