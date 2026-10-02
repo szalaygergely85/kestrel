@@ -924,3 +924,6 @@ D-032 amendment 1 put ME-15 -> ME-16 -> ME-12b -> ME-19 back "as scheduled", i.e
 - **Light** = tap: the current 0.35 s swing, base damage, no cost, max 2 in a row. **Hard** = hold >= 0.4 s, release: held wind-up pose while charging, damage x3, knockback + stagger (interrupts a beast windup/charge), recover 0.45 s, walk x0.3, **costs 4 mana** (mana is the only resource; no stamina system - falls back to a light swing below 4 mana).
 - Consequences: US-078 Swing AC rewritten; US-078d sim = light + hard; **designer:** keep one swing clip (`swingLR`) as the motion, add a `charge` hold pose + a heavier hard-swing variant (bigger trail/sparks), drop `swingRL`; **architect:** 30.1 amendment (input hold timer in integer steps, stagger/knockback on the beast sim, mana spend via the US-080b API) before US-078d; owner tunes the numbers at the feel check. Block/parry (US-086) stays on its own input.
 
+
+## D-035 Water waves: a real displaced water mesh (owner, 2026-10-02)
+**Owner:** picked option **(b)** for US-143 waves: a displaced, see-through water mesh in the mesh renderer with real moving surface height (not shade-pass normal perturbation on the flat 32.2 plane). One deterministic wave-height function feeds the mesh, `waterAt` live z, bobbing and the view from below. Architect note: the water section after 32.2 (WATER-2 stories US-141..144).
