@@ -95,7 +95,8 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashTick) {
   if (st.prevValue !== null && value !== st.prevValue) {
     const fromC = cellCounts(st.prevValue, max, totalCells).filled;
     const toC = cellCounts(value, max, totalCells).filled;
-    if (value < st.prevValue) { st.chip = { from: fromC, to: toC, start: simTime }; st.gain = null; }
+    // a bar style without `chip` (the MP bar) just drops the lost cells - no chip stages to play
+    if (value < st.prevValue) { st.chip = def.chip ? { from: fromC, to: toC, start: simTime } : null; st.gain = null; }
     else { st.gain = { from: fromC, to: toC, start: simTime }; st.chip = null; }
   }
   st.prevValue = value;

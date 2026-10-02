@@ -286,6 +286,16 @@ function fakeWorld(hp, max, mp, mpMax) {
   ok('no mana component: MP row untouched', !ui._cells.has(`${2 + 4},2`));
 }
 
+{
+  // regression (owner crash 2026-10-02): mana drops (hard swing spend) -> the MP style has no `chip` -> must not throw
+  resetVitalsView();
+  const ui = fakeUi();
+  drawVitals(ui, fakeWorld(30, 30, 15, 20), style, 0, true);
+  let threw = null;
+  try { drawVitals(ui, fakeWorld(30, 30, 11, 20), style, 0.05, true); drawVitals(ui, fakeWorld(30, 30, 11, 20), style, 0.1, true); }
+  catch (e) { threw = e; }
+  ok('MP drop with no chip style does not throw', threw === null && !style.mp.chip);
+}
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
