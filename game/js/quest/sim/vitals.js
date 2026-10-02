@@ -61,6 +61,11 @@ export function createVitals(world, events, cfg, hooks) {
   // Same read-through pattern for mana (US-080b): one source of truth (player.components.mana).
   Object.defineProperty(sim, 'mp', { enumerable: true, get: () => (mana ? mana.mp : cfg.startMp) });
   Object.defineProperty(sim, 'mpMax', { enumerable: true, get: () => (mana ? mana.max : cfg.maxMp) });
+  // Q9 item 2a: the current step count, read-through so vitalsView.js can age `hurtTick` against it
+  // (`(vitals.tick - vitals.hurtTick) / 60`) instead of a continuous `simTime` that keeps running across a
+  // restart while `tick` resets to 0 - comparing a step count to boot-time seconds never showed the hurt
+  // edge/kick after a restart.
+  Object.defineProperty(sim, 'tick', { enumerable: true, get: () => tick });
 
   /** `n` hp, `dirX/dirY` an optional unit knockback direction (absent = no source = no knockback). */
   function applyDamage(n, dirX, dirY) {
@@ -109,7 +114,7 @@ export function createVitals(world, events, cfg, hooks) {
     }
     applyDamage(n, dirX, dirY);
   }
-  events.on('combat:hit', onHit);
+  const offCombatHit = events.on('combat:hit', onHit);
 
   function checkFall(p) {
     const body = p.components && p.components.body;
@@ -205,6 +210,11 @@ export function createVitals(world, events, cfg, hooks) {
   sim.setGodMode = function setGodMode(on) { sim.godMode = !!on; };
   sim.debugHit = function debugHit() { applyDamage(5); };
   sim.spendMana = spendMana; // US-080b: exposed for D-021 spells later; nothing calls it yet
+
+  // Q9 item 1a: drops the `combat:hit` listener - main.js calls this right before creating the next sim on a
+  // world load/restart, so listeners never pile up across restarts (one `events.on` per `createVitals` call,
+  // same as the old unbounded behaviour, but now exactly one survives at a time).
+  sim.dispose = function dispose() { offCombatHit(); };
 
   return sim;
 }

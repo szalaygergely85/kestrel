@@ -90,6 +90,23 @@ const groundZ = (world, x, y) => world.terrain.heightAt(x, y);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// 0b. Q9 item 4: beast entities present but no `nav` block (main.js only builds one from `worldDef.nav`) -> warns
+//     and returns null instead of throwing on `nav.grid`.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const world = buildWorld([beastEntity('boar1', 1500, 1050)]);
+  const origWarn = console.warn; let warned = false;
+  console.warn = () => { warned = true; };
+  let threw = false;
+  let sim;
+  try { sim = createBeastSim(world, { nav: undefined, rng: createRng(1), events: { emit() {} } }); } catch { threw = true; }
+  console.warn = origWarn;
+  ok('no nav block: does not throw', !threw);
+  ok('no nav block: returns null', sim === null);
+  ok('no nav block: warns once', warned);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // 1. Scripted transitions.
 // ---------------------------------------------------------------------------------------------------------------
 {

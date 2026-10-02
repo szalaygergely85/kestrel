@@ -213,6 +213,27 @@ ok('sanity: tower.js has a beacon.light interactable', !!beaconInteractable);
   }
 }
 
+// ---- Q9 item 1b: beaconLight writes save.x/y/z/yaw from ctx.actor's transform (a woken relay = save point). ----
+{
+  const world = makeWorld();
+  const structId = world.structures[0].id;
+  const entity = world.get(`${structId}.${beaconInteractable.prop}`);
+  const actor = { data: { transform: { x: 12.5, y: 6.25, z: 0.9, yawDeg: 110 } } };
+  beaconLight({ world, def: beaconInteractable, entity, actor });
+  ok('save.x written from the actor transform', world.state['save.x'] === 12.5);
+  ok('save.y written from the actor transform', world.state['save.y'] === 6.25);
+  ok('save.z written from the actor transform', world.state['save.z'] === 0.9);
+  ok('save.yaw written from the actor transform', world.state['save.yaw'] === 110);
+}
+{
+  // No `actor` in ctx (same call shape every other test above already uses) must not throw and must not write.
+  const world = makeWorld();
+  const structId = world.structures[0].id;
+  const entity = world.get(`${structId}.${beaconInteractable.prop}`);
+  beaconLight({ world, def: beaconInteractable, entity });
+  ok('no actor in ctx: no throw, no save.x written', world.state['save.x'] === undefined);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

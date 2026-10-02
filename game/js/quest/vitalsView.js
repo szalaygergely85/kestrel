@@ -219,14 +219,18 @@ function drawRaggedCell(ui, x, y, code, fg, bg, coverage) {
 
 /**
  * @param {import('../../../engine/index.js').UiLayer} ui
- * @param {{hurtTick:number}} vitals
- * @param {number} simTime seconds
+ * @param {{hurtTick:number, tick:number}} vitals
+ * @param {number} simTime seconds (unused for the age math - kept in the signature for call-site symmetry
+ *   with `drawVitals`; see the Q9 item 2a note below)
  * @param {Object} style - `ASSETS.uiStyle.vitals`
  */
 export function drawHurtEdge(ui, vitals, simTime, style) {
   const cfg = style && style.hurtEdge;
   if (!cfg || !vitals || !vitals.hurtTick) return;
-  const elapsedMs = (simTime - vitals.hurtTick / 60) * 1000;
+  // Q9 item 2a: aged against `vitals.tick` (the sim's own step count, reset to 0 on every `createVitals`), not
+  // `simTime` (seconds since page boot, never reset) - comparing a per-load step count to a boot-time clock made
+  // this never show again after a restart, once `simTime` had run past a few seconds.
+  const elapsedMs = ((vitals.tick - vitals.hurtTick) / 60) * 1000;
   const stage = hurtEdgeStage(elapsedMs, cfg);
   if (!stage) return;
 
@@ -266,10 +270,14 @@ export function drawHurtEdge(ui, vitals, simTime, style) {
 const KICK_DEG = 2;
 const KICK_MS = 150; // matches uiStyle.vitals.hurtEdge.ms (duplicated here: kickDeg's signature carries no `style`)
 
-/** @param {{hurtTick:number}} vitals @param {number} simTime seconds @returns {number} degrees, 0 when not decaying */
+/**
+ * @param {{hurtTick:number, tick:number}} vitals
+ * @param {number} simTime seconds (unused for the age math - see the Q9 item 2a note on `drawHurtEdge`)
+ * @returns {number} degrees, 0 when not decaying
+ */
 export function kickDeg(vitals, simTime) {
   if (!vitals || !vitals.hurtTick) return 0;
-  const elapsedMs = (simTime - vitals.hurtTick / 60) * 1000;
+  const elapsedMs = ((vitals.tick - vitals.hurtTick) / 60) * 1000;
   if (elapsedMs < 0 || elapsedMs >= KICK_MS) return 0;
   return KICK_DEG * (1 - elapsedMs / KICK_MS);
 }
@@ -303,8 +311,17 @@ export function applyDeathFade(rt, vitals, fadeLut) {
  * @param {{dead:boolean, deathStep:number}} vitals
  * @param {Object} style - `ASSETS.uiStyle.vitals`
  */
+// Q9 item 2b: one preallocated state object (and its `lines` array) reused across calls instead of a fresh
+// `{visible, lines: [], cursorOn}` literal every frame while dead - same "module-level singleton" precedent as
+// `barState` above. Safe to reuse: the caller (main.js) reads the result and discards it before the next frame's
+// call, same as every other per-frame draw-state object in this file.
+const _deathCardState = { visible: false, lines: [], cursorOn: false };
+
 export function computeDeathCardState(vitals, style) {
-  const out = { visible: false, lines: [], cursorOn: false };
+  const out = _deathCardState;
+  out.visible = false;
+  out.lines.length = 0;
+  out.cursorOn = false;
   if (!vitals || !vitals.dead || !style || !style.deathCard) return out;
   const { sinkSteps, fadeSteps } = VITALS_DEFAULTS;
   const total = sinkSteps + fadeSteps;

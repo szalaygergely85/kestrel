@@ -324,6 +324,33 @@ function scriptedRun() {
     JSON.stringify(mana2));
 }
 
+{
+  // Q9 item 1a: dispose() drops the `combat:hit` listener, so a restart (main.js: `vitals.dispose()` before the
+  // next `createVitals`) never leaves an old sim still reacting to hits meant for its replacement.
+  const world = buildWorld([playerEntity(), sourceEntity('b1', 5, 0)]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+  vitals.step(player, false);
+  const hpBefore = vitals.hp;
+  vitals.dispose();
+  events.emit('combat:hit', { source: 'b1', target: 'player', damage: 1 });
+  ok('after dispose(), a combat:hit no longer changes hp (listener was dropped)', vitals.hp === hpBefore, `hp=${vitals.hp}`);
+}
+{
+  // Q9 item 2a: `vitals.tick` is the sim's own step count (starts at 0, +1 per `step()` call) - what
+  // `vitalsView.js`'s hurt-edge/kick age math reads instead of a continuous `simTime`.
+  const world = buildWorld([playerEntity()]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+  ok('tick starts at 0 before the first step()', vitals.tick === 0);
+  vitals.step(player, false);
+  vitals.step(player, false);
+  vitals.step(player, false);
+  ok('tick is the number of step() calls so far', vitals.tick === 3, `tick=${vitals.tick}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
