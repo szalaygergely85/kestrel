@@ -93,6 +93,17 @@ export function defaultItemForKind(kind, id, pos, opts = {}) {
 }
 
 /**
+ * ED-SNAP-1: a world prop's z should be the terrain surface, not the raw ray-pick z (US-063's "props placed on
+ * forest float" - a pick ray can hit canopy/foliage well above the real ground). Pure, so it is the same under
+ * either renderer (the snap comes from `World.groundAt`, not from how the pick ray itself was cast).
+ * @param {{x:number,y:number,z:number}} pos the raw pick point
+ * @param {number|null|undefined} groundZ `world.groundAt(pos.x, pos.y)` - null with no terrain
+ */
+export function snappedWorldPos(pos, groundZ) {
+  return typeof groundZ === 'number' ? { x: pos.x, y: pos.y, z: groundZ } : pos;
+}
+
+/**
  * A prop placed OUTSIDE any structure (24.9: "outside a structure -> the
  * world file's entities for props, refused for the level-only kinds"). Same
  * shape as the real `endMarker` waystone entity (content/worlds/world_m1.

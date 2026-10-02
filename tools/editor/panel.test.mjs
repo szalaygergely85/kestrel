@@ -4,7 +4,7 @@
 // bottom is browser-only, same split as pick.js/select.js).
 import {
   isValidId, lightPresetNames, countLights, harvestBehaviourNames,
-  defaultItemForKind, defaultWorldPropItem, kindForSelection, validateItem,
+  defaultItemForKind, defaultWorldPropItem, snappedWorldPos, kindForSelection, validateItem,
   classifyPlacement, listPlaceableModels, filterModelKeys,
 } from './panel.js';
 import { registerBehaviour, unregisterBehaviour } from '../../engine/index.js';
@@ -79,6 +79,18 @@ ok('isValidId: rejects empty/non-string', !isValidId('') && !isValidId(undefined
 
   const worldProp = defaultWorldPropItem('prop_2', pos, 'waystone');
   ok('defaultWorldPropItem: components.voxel.model + yawDeg (world-entity shape)', worldProp.type === 'prop' && worldProp.components.voxel.model === 'waystone' && worldProp.yawDeg === 0);
+}
+
+// ---- ED-SNAP-1: snappedWorldPos --------------------------------------------------
+{
+  const pos = { x: 5, y: 6, z: 1.7 }; // a raw pick point above the real ground (e.g. forest canopy)
+  const snapped = snappedWorldPos(pos, 0.4);
+  ok('snappedWorldPos: x/y pass through, z replaced by a numeric groundZ', snapped.x === 5 && snapped.y === 6 && snapped.z === 0.4);
+  ok('snappedWorldPos: groundZ 0 (valid ground height) still snaps, not treated as falsy', snappedWorldPos(pos, 0).z === 0);
+  ok('snappedWorldPos: null groundZ (no terrain) falls back to the raw pick pos unchanged', snappedWorldPos(pos, null) === pos);
+  ok('snappedWorldPos: undefined groundZ falls back the same way', snappedWorldPos(pos, undefined) === pos);
+  const worldPropSnapped = defaultWorldPropItem('prop_3', snappedWorldPos(pos, 2.5), 'waystone');
+  ok('defaultWorldPropItem fed a snapped pos gets the ground z, not the raw pick z', worldPropSnapped.z === 2.5);
 }
 
 // ---- kindForSelection ---------------------------------------------------------
