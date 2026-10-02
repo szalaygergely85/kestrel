@@ -13,3 +13,13 @@ raw files are committed only when the licence clearly allows redistribution (CC0
 - Terms (author's readme, owner confirmed 2026-10-02 "free to use"): free to use, alter and edit; credit appreciated.
 - **Requirement:** the game must contain a hidden easter-egg reference to the author's username **StickyBizcuit**.
 - Credit: "Voxel assets by StickyBizcuit" in the credits, plus the easter egg (tracked in docs/backlog.md, OWN-REQ-013).
+
+## "Voxel Pack" (MagicaVoxel)
+- Files: 4 raw `.vox` (`Raws/`) + 72 MagicaVoxel `.obj`/`.mtl`/palette `.png` exports (Bunny, Pig, Player, Terrain, Tools, Misc, Numbers, UI) - **committed** in `design/vox-cc0/voxel-pack/` (CC0).
+- Licence: **CC0** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). Attribution not required. May be committed.
+
+## cozy_nature_free (FBX nature pack)
+- Files: 20 `.fbx` (oak / pine trees in 3 seasons, grass, tulips, mushroom, rocks) + 11 texture `.png` - **committed** in `design/meshes/cozy_nature/` (CC0).
+- Licence: **CC0** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). Attribution not required. May be committed.
+- Format: FBX - no importer; convert to `.glb` in Blender for ME-13 (glTF), or use as designer reference for the ME-06c forest.
+
