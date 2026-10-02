@@ -13,3 +13,8 @@ raw files are committed only when the licence clearly allows redistribution (CC0
 - Terms (author's readme, owner confirmed 2026-10-02 "free to use"): free to use, alter and edit; credit appreciated.
 - **Requirement:** the game must contain a hidden easter-egg reference to the author's username **StickyBizcuit**.
 - Credit: "Voxel assets by StickyBizcuit" in the credits, plus the easter egg (tracked in docs/backlog.md, OWN-REQ-013).
+
+## "Voxel Pack" (MagicaVoxel; author / source page not recorded yet)
+- Files: 4 raw `.vox` (`Raws/`) + 72 MagicaVoxel `.obj`/`.mtl`/palette `.png` exports (Bunny, Pig, Player, Terrain, Tools, Misc, Numbers, UI) - local only in git-ignored `design/vox/voxel-pack-2/`.
+- Terms: owner says "free to use" (2026-10-02); **no licence file in the zip** - record the author + download page URL (and whether commercial use / redistribution is allowed) before committing anything from it.
+
