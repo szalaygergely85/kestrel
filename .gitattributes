@@ -3,3 +3,4 @@
 *.png binary
 *.glb binary
 *.gltf text
+*.fbx binary
