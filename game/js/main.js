@@ -21,6 +21,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
   loadContentPack, createRng, prebuildTerrainMesh, DEFAULT_RENDERER,
+  forwardOf, hexToRgb,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -61,6 +62,10 @@ import { presentBeasts } from './quest/beastView.js';
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
 import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
+import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 30.1 + D-034 amendment)
+import { createSwordSim } from './quest/sim/sword.js';
+import { presentSword } from './quest/swordView.js';
+import { createPracticeTarget } from './quest/practiceTarget.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -413,6 +418,13 @@ if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass
 // same as the `?gpucompare=1` harness above does by hand). No live prop has
 // a `.voxel` component yet (US-056 does the actual swap), so this is a
 // no-op today - wiring only, ready for that story.
+// US-078d (30.1 + D-034): the sword view-model's held model (`ASSETS.voxelModels.swordHeld`) is a raw classic-
+// script global, not an AssetRegistry model yet - register a mesh-only copy once, same precedent as
+// game/js/dev/modes/gpucompare.js's own identical block (must run BEFORE gameVoxelPool.bind below).
+const swordHeldDef = window.ASSETS && window.ASSETS.voxelModels && window.ASSETS.voxelModels.swordHeld;
+if (swordHeldDef && !assets.has('model', 'swordHeld')) {
+  assets.add('model', 'swordHeld', { ...swordHeldDef, voxel: { ...swordHeldDef.voxel, meshOnly: true } });
+}
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
@@ -420,7 +432,22 @@ const effRenderer = renderer === 'mesh' && gpuPipeline ? 'mesh' : 'dda';
 pitchClampDeg = effRenderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
 gameVoxelPool.renderer = effRenderer;
 engine.overlay.renderer = effRenderer;
-engine.overlay.setStyles(questOverlayStyles(assets.uiStyle)); // US-079a/US-128 (29.1/29.2): beastNotice + target* overlay styles
+// US-078d: trail/ghost/spark style ids, resolved from the designer's palette colour keys (design/models/sword.js
+// `viewModels.sword.trail`/`trailHard`/`sparks`) via the same hexToRgb(palette.colors[key]) convention hints.js/
+// panel.js use - merged into the ONE setStyles call below (setStyles replaces the whole table, never additive).
+const swordOverlayStyles = {
+  trail0: { glyph: '-', fg: hexToRgb(P.colors.ironLight) },
+  trail1: { glyph: '-', fg: hexToRgb(P.colors.mirror) },
+  trail2: { glyph: '-', fg: hexToRgb(P.colors.white) },
+  trailHead: { glyph: '=', fg: hexToRgb(P.colors.white) },
+  ghost: { glyph: ':', fg: hexToRgb(P.colors.iron) },
+  sparkHit: { glyph: '*', fg: hexToRgb(P.colors.flameCore) },
+  sparkHitEmpty: { glyph: '.', fg: hexToRgb(P.colors.ember) },
+  sparkHeavy: { glyph: '#', fg: hexToRgb(P.colors.flameOuter) },
+  sparkHeavyEmpty: { glyph: '.', fg: hexToRgb(P.colors.emberDim) },
+  sparkClink: { glyph: '+', fg: hexToRgb(P.colors.flameCore) },
+};
+engine.overlay.setStyles({ ...questOverlayStyles(assets.uiStyle), ...swordOverlayStyles }); // US-079a/US-128/US-078d: beastNotice + target* + sword trail/spark overlay styles
 const ovlStyles = {
   beastNotice: engine.overlay.styleId('beastNotice'), // US-079a (29.1): resolved once, not per frame
   // US-128b (29.2): resolved once, not per frame.
@@ -430,9 +457,38 @@ const ovlStyles = {
   targetBarFill: engine.overlay.styleId('targetBarFill'),
   targetBarEmpty: engine.overlay.styleId('targetBarEmpty'),
 };
+// US-078d (30.1): resolved once, not per frame - passed as swordView.js's `ids` argument.
+const swordStyleIds = {
+  trail0: engine.overlay.styleId('trail0'), trail1: engine.overlay.styleId('trail1'), trail2: engine.overlay.styleId('trail2'),
+  trailHead: engine.overlay.styleId('trailHead'), ghost: engine.overlay.styleId('ghost'),
+  sparkHit: engine.overlay.styleId('sparkHit'), sparkHitEmpty: engine.overlay.styleId('sparkHitEmpty'),
+  sparkHeavy: engine.overlay.styleId('sparkHeavy'), sparkHeavyEmpty: engine.overlay.styleId('sparkHeavyEmpty'),
+  sparkClink: engine.overlay.styleId('sparkClink'),
+};
 sprites.pool.renderer = effRenderer; // review item 1: sprite rects follow the pitched scene
-if (gpuPipeline) gpuPipeline.bindVoxels(gameVoxelPool);
+if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
+// US-078d (30.1): the held sword's view-model handle, resolved once (gameVoxelPool already carries the
+// mesh-only `swordHeld` model registered above). `window.ASSETS.viewModels.sword` is the raw classic-script
+// def (same `globalThis.ASSETS.viewModels.sword` gpucompare.js reads - not part of the AssetRegistry's own
+// JSON-sourced fields).
+const swordAssetDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.sword;
+const swordVmH = swordAssetDef ? (() => {
+  const h = engine.viewModel.load('sword', swordAssetDef, gameVoxelPool);
+  return {
+    vm: engine.viewModel, h,
+    clip: {
+      idle: engine.viewModel.clipId(h, 'idle'), charge: engine.viewModel.clipId(h, 'charge'),
+      swingLR: engine.viewModel.clipId(h, 'swingLR'), swingHard: engine.viewModel.clipId(h, 'swingHard'),
+    },
+    mount: { tip: engine.viewModel.mountId(h, 'tip'), mid: engine.viewModel.mountId(h, 'mid') },
+    trail: {
+      light: { samples: swordAssetDef.trail.samples, stepMs: swordAssetDef.trail.stepMs },
+      hard: { samples: swordAssetDef.trailHard.samples, stepMs: swordAssetDef.trailHard.stepMs },
+    },
+    windows: { light: SWORD_CFG.light, hard: SWORD_CFG.hard },
+  };
+})() : null;
 
 // D-025 (US-038a, architecture.md 22.3/22.7): the ONE `grid:changed`
 // listener that rebuilds every game-owned, grid-sized object - the render
@@ -520,6 +576,8 @@ function runGame(mode) {
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
+  let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
+  let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
   if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
@@ -528,6 +586,7 @@ function runGame(mode) {
   // per-step allocations) - US-009 hoisted this out of update()'s body,
   // where it used to be rebuilt as a fresh object literal every call.
   const controls = { forward: 0, strafe: 0, run: false, jump: false, yawDeg: 0, pitchDeg: 0 };
+  const swordFwd = new Float64Array(2); // US-078d (30.1): reused forwardOf(look.yawDeg) output, no per-step allocation
   // Reused every fixed step for `updateInteraction` (US-012 arch review,
   // 2026-09-24 item 2): `Camera.fromEntity` allocated a `new Camera` 60x/s.
   // The render path's own `Camera.fromEntity` call (below) may keep
@@ -626,7 +685,14 @@ function runGame(mode) {
 
       playerHandle = world.get('player');
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
+      // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
+      // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
+      if (beasts) beasts.dispose();
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      if (sword) sword.dispose();
+      sword = createSwordSim(world, engine.events, SWORD_CFG, { spendMana: (n) => vitals && vitals.spendMana(n) }); // US-078d (30.1)
+      if (practiceTarget) practiceTarget.dispose();
+      practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
       if (targeting) targeting.dispose(); // same "drop the old world's listeners first" precedent as vitals.dispose() below
       targeting = createTargeting(world, engine.events, {}); // US-128b (29.2): rebuilt on every load/restart
       // US-128b (29.2): ring samples follow the terrain slope (28.9 OVL_RING_LIFT). `null` on a no-terrain world
@@ -828,6 +894,14 @@ function runGame(mode) {
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
+      // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
+      // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
+      if (sword) {
+        forwardOf(look.yawDeg, swordFwd);
+        const attackDown = (input.isDown('Mouse0') || input.pressed('Mouse0')) && look.locked && !uiLocked && !ending;
+        sword.step(playerHandle.data, swordFwd[0], swordFwd[1], attackDown);
+      }
+      if (practiceTarget) practiceTarget.step();
       if (vitals) {
         vitals.step(playerHandle.data, input.pressed('KeyE')); // US-080a1 (30.2)
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
@@ -921,6 +995,7 @@ function runGame(mode) {
     gbuf, matTable, detailPass, // US-028
     voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
     instances: engine.instances, // RE-06 (28.6)
+    viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
@@ -1028,6 +1103,17 @@ function runGame(mode) {
       engine.overlay.clear();
       if (beasts) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
       if (targeting) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
+      // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
+      // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
+      if (sword && swordVmH) {
+        if (engine.world.state['tower.sword.taken']) {
+          const body = playerHandle.data.components.body;
+          const swordMoving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
+          presentSword(sword, swordVmH, engine.overlay, cam, swordStyleIds, simTime, simTime, swordMoving);
+        } else {
+          swordVmH.vm.hide();
+        }
+      }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpuDda) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);

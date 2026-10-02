@@ -31,6 +31,8 @@ export const BEAST_DEFAULTS = Object.freeze({
   eyeZ: 0.5,            // m, beast eye height above its feet (sight ray origin)
   targetZ: 1.0,         // m, target point above the player's feet (sight ray destination)
   losEvery: 6,          // steps between LOS samples per slot (round-robin by slot % losEvery)
+  staggerSec: 0.6,      // s, US-078d amendment (D-034): heavy-hit stagger duration
+  staggerKnock: 4,       // m/s, the stagger shove speed (steer.maxSpeed while staggered; decays by accel)
 });
 
 /** `toSteps(sec) = Math.round(sec / SIM_STEP)` - the ONE place seconds become an integer step count (architecture.md

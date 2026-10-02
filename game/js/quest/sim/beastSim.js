@@ -23,6 +23,7 @@ export const STATE_WINDUP = 3;
 export const STATE_CHARGE = 4;
 export const STATE_RECOVER = 5;
 export const STATE_RETURN = 6;
+export const STATE_STAGGER = 7; // US-078d amendment (D-034) "Stagger (beastSim, heavy only)"
 
 const WALKING = -1; // sentinel for `timer` in STATE_WANDER: "currently walking to a chosen point" (not pausing)
 
@@ -87,6 +88,7 @@ export function createBeastSim(world, opts) {
       recoverWall: toSteps(cfg.recoverWallSec),
       loseSight: toSteps(cfg.loseSightSec),
       repath: toSteps(cfg.repathSec),
+      stagger: toSteps(cfg.staggerSec), // US-078d amendment (D-034)
     },
     count,
     entities: beastEntities.slice(0, count),
@@ -134,7 +136,24 @@ export function createBeastSim(world, opts) {
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
 
+  // US-078d amendment (D-034) "Stagger (beastSim, heavy only)": one `combat:hit` listener registered at create,
+  // id -> slot via a prebuilt plain-object lookup (no Map iteration in step()). Enters STATE_STAGGER from ANY
+  // state on a heavy hit. `events` is one persistent instance for the whole run (main.js never recreates it on a
+  // world reload, unlike `world`) - so, same precedent as `targeting.dispose()`/`vitals.dispose()`, this sim
+  // exposes `dispose()` and the caller MUST drop the old sim's listener before creating the next one on a world
+  // reload (flagged in the programmer report's main.js wiring section - this file alone cannot add that line).
+  const idSlot = {};
+  for (let i = 0; i < count; i++) idSlot[sim.ids[i]] = i;
+  function onCombatHit(p) {
+    if (!p || !p.heavy) return;
+    const i = idSlot[p.target];
+    if (i === undefined) return;
+    enterStagger(sim, i, p.dirX, p.dirY);
+  }
+  const offCombatHit = events.on('combat:hit', onCombatHit);
+
   sim.step = function step(px, py, pz) { stepSim(sim, px, py, pz); };
+  sim.dispose = function dispose() { offCombatHit(); };
   sim.hashInto = function hashInto(h) { hashSim(sim, h); };
   sim.save = function save() { return saveSim(sim); };
   sim.load = function load(obj) { loadSim(sim, obj); };
@@ -204,8 +223,14 @@ function transitionOne(sim, i, px, py) {
     case STATE_CHARGE: /* handled in postOne (needs the post-steer position) */ break;
     case STATE_RECOVER: recoverStep(sim, i, px, py); break;
     case STATE_RETURN: returnStep(sim, i, px, py); break;
+    case STATE_STAGGER: staggerStep(sim, i); break;
     default: break;
   }
+}
+
+function staggerStep(sim, i) {
+  sim.timer[i]--;
+  if (sim.timer[i] <= 0) { if (sim.seen[i]) enterChase(sim, i); else enterReturn(sim, i); }
 }
 
 function wanderStep(sim, i, px, py) {
@@ -305,6 +330,24 @@ function enterRecover(sim, i, wall) {
   sim.state[i] = STATE_RECOVER;
   sim.timer[i] = wall ? sim.cfgSteps.recoverWall : sim.cfgSteps.recover;
   sim.steer.accel[i] = DEFAULT_ACCEL;
+}
+
+/** US-078d amendment (D-034): a heavy sword hit staggers the beast from ANY state (interrupts windup/charge - the
+ * charge wall-slow streak counter, `unseen`, is reused and so must be cleared here too, same field `enterCharge`
+ * resets). `steer.vx/vy` is ASSIGNED (not added) to the knockback direction * `staggerKnock`; `setSteerTarget`'s
+ * STAGGER branch gives `maxSpeed = staggerKnock` so the steer clamp keeps the shove, which then decays by
+ * `DEFAULT_ACCEL` (~0.67 m slide, per the amendment's own worked number). `dirX/dirY` fall back to the beast's
+ * current facing if the hit carried no direction (defensive; `sword.js` always sets one). */
+function enterStagger(sim, i, dirX, dirY) {
+  const steer = sim.steer;
+  const dx = typeof dirX === 'number' ? dirX : sim.fx[i];
+  const dy = typeof dirY === 'number' ? dirY : sim.fy[i];
+  sim.state[i] = STATE_STAGGER;
+  sim.timer[i] = sim.cfgSteps.stagger;
+  sim.unseen[i] = 0; // clears the charge wall-slow streak counter (reused field)
+  steer.vx[i] = dx * sim.cfg.staggerKnock;
+  steer.vy[i] = dy * sim.cfg.staggerKnock;
+  steer.accel[i] = DEFAULT_ACCEL;
 }
 
 function enterReturn(sim, i) {
@@ -410,6 +453,14 @@ function setSteerTarget(sim, i) {
     return;
   }
 
+  // US-078d amendment: waypoint = own position (arrive 0), maxSpeed = staggerKnock - the steer clamp then keeps
+  // the knockback velocity `enterStagger` assigned, decaying it by `accel` (DEFAULT_ACCEL) toward 0.
+  if (st === STATE_STAGGER) {
+    steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
+    steer.maxSpeed[i] = cfg.staggerKnock;
+    return;
+  }
+
   let speed = 0;
   if ((st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_CHASE || st === STATE_RETURN) {
     advanceWaypoint(sim, i);
@@ -449,8 +500,11 @@ function postOne(sim, i, px, py, pz) {
     enterRecover(sim, i, false);
   }
 
-  // Facing: velocity direction when moving; the player's direction in notice/windup.
-  if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP) {
+  // Facing: velocity direction when moving; the player's direction in notice/windup; frozen while staggered
+  // (US-078d amendment: "Facing frozen" - a knockback slide must not spin the beast to face the shove).
+  if (sim.state[i] === STATE_STAGGER) {
+    // frozen
+  } else if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP) {
     const ddx = px - steer.x[i], ddy = py - steer.y[i];
     const d = Math.sqrt(ddx * ddx + ddy * ddy);
     if (d > 1e-9) { sim.fx[i] = ddx / d; sim.fy[i] = ddy / d; }
