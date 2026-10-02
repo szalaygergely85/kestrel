@@ -4261,3 +4261,118 @@ Enough for whoever picks it up:
 8. **US-139:** a linear height ramp (no exp); <= 8 volumes; budget kept.
 
 **Build order:** 053a -> 053b -> (053c PC-B) -> 055a1 -> 055a2 -> 133 -> 132a/b (PC-B) -> 134 -> 135 -> US-078b -> 136 -> 137 -> 138 -> 139/140. Each step ends with a green Node suite + check-deps; one browser/gpucompare pass per render step.
+
+## 33. CLOTH-1 cloth physics: sim, colliders, deformable mesh, cloth system (architect, 2026-10-02)
+
+Scope: CLOTH-1a (sim) and CLOTH-1b (render + content), split into steps in 33.6. CLOTH-1c (capes, skinned pins, limb capsules, tearing) gets its own note at planning; the seams it needs are named here. Uses US-138 wind (32.5), the mesh renderer (27), the sun map + dirty-skip (27.9a item 12), RE-06c winding (28.10).
+
+### 33.1 Answers to the five ASK ARCHITECT lines
+1. **Sim method: XPBD with small steps** (Macklin 2019: `substeps` x 1 iteration, default 4, range 2-8), structural compliance 0 (= inextensible), shear/bend compliance per preset, plus **one long-range tether per node** (distance to its nearest pin <= 1.02 x rest geodesic). Reason: plain Verlet + 4-8 Gauss-Seidel iterations sags and stretches on a 16-row chain (error falls with iterations, not with dt^2) and its stiffness changes with the iteration count, so presets would look different at another LOD; small-step XPBD costs the same per constraint (with compliance 0 the lambda term vanishes), presets mean the same at 2 or 8 substeps, and tethers make the 1.05/1.10 stretch ACs and the "3x size" stability AC hold by construction. Positions stay Verlet-style (`prev` array, implicit velocity), so this is "Verlet + XPBD constraints", not a different plan. Cost: ~2 100 constraints + 384 tethers per substep at 24x16, ~3-4 ns each -> 4 substeps ~0.04 ms (33.4).
+2. **Colliders: a flat preallocated SoA list (`ClothColliders`: sphere / capsule / yawed box / plane) passed into `step`, owned and filled by the caller.** cloth.js imports nothing (27.10). The **engine cloth system** (`engine/world/cloths.js`, 33.5) fills it: static boxes/spheres from the cloth's content block (converted to world once at load) + the dynamic capsules the game hands it each step (the player body in 1b; NPC limb capsules in 1c). Ground is a **plane** per cloth (`nx,ny,nz,d`, fitted by the system from 3 `groundAt` samples at load), not a per-node heightfield callback: 384 nodes x 4 substeps = 1 536 `groundAt` calls per step would cost more than the whole sim.
+3. **Render: one new draw type `DRAW_CLOTH`, an indexed MeshData layout `'cloth'` (pos + smooth packed normal rewritten when the sim moved, uv/idx static), drawn in both twins as kind 8 (KIND_MODEL) with face 7 + a per-fragment interpolated normal, two-sided by flipping N on back faces (GPU `gl_FrontFacing`; rasterJS the RE-06c snapped-area sign `A2 < 0`, captured before the swap).** GPU upload: one new device call `writeBuffer(handle, data, dstOffsetBytes)` (WebGPU `queue.writeBuffer` name; GL2 = `bufferSubData`), one write per cloth per changed version, never a new buffer per frame. Shadow: cloth items go into the shadow list and the shadow pass (cull none); the dirty-skip hash sees `meshVersion`, so a sleeping cloth costs nothing and an awake one re-renders the sun map every frame (the ME-15d "moving caster" cost, as a moving boulder). gpucompare: both twins draw the same Float32 arrays from one `updateClothMesh`, and a fixed pose (`cloth`, step 1b2) freezes the sim after 120 scripted steps, so parity is judged on geometry only, with the 27.7 bars.
+4. **Ownership: an engine system, not an entity system and not game code.** `engine/world/cloths.js` owns the cloths (built by `World.load` from `cloths` content blocks, like `world.wind`), ticked by the game in the fixed step (`world.cloths.step(...)`, like `engine.particles.step()`). Not `engine/entities`: 1b cloths are world fixtures; 1c capes attach to an entity through the pin-target seam (`setPinTarget`), still owned by the same system. **Cloth is presentation-only, one-way coupled** (bodies push cloth; cloth never pushes anything or triggers gameplay). Therefore: **not saved** (re-created from content and pre-settled on load: 60 warm-up steps at zero wind), **not in `World.hashInto` / the RE-14 replay state hash** (its sleep depends on the camera); `hashInto(h)` exists per cloth and per system for the cloth tests and an opt-in replay check only. Sleep: distance from the eye (`sleepDist`, default 40 m), not drawn last frame (`addCloths` stamps `lastDrawn`), a `maxAwake` cap (default 6, nearest first), and rest-sleep (max node speed < 0.002 m/s for 60 steps with zero wind and no collider overlap) - the last one keeps indoor glyphs and the sun map stable.
+5. **Tearing: deferred to 1c, agreed.** Determinism is not the problem (a fixed threshold in fixed order is deterministic); the cost is a topology change in the constraint arrays and the index buffer. 1a takes a static **`holes`** list instead (grid quads removed at create: their triangles, constraints only they owned, and nodes left with no constraint), which is enough for the torn balloon canvas; the ragged edge is the designer's material job (fray edge).
+
+### 33.2 `engine/physics/cloth.js` (CLOTH-1a; imports nothing; check-deps rule 15 scope grows by this file: no trig, no `Math.random`, no wall clock, no `Math.hypot/exp/pow` in `step`)
+```js
+/** @typedef {Object} ClothDef                     plain numbers; the system resolves presets/frames before calling
+ * @property {number} cols  @property {number} rows    2..24, 2..16 (MAX_CLOTH_NODES 384)
+ * @property {Float64Array|number[]} rest           3*cols*rows world rest positions, node k = row*cols + col (the system lays them out, 33.5)
+ * @property {number[]} pins                        node indices, >= 1 (pinned nodes have invMass 0)
+ * @property {number[]} [holes]                     quad indices q = row*(cols-1) + col
+ * @property {number} [seed=1]                      flutter hash seed
+ * @property {number} [dt=1/60]                     fixed; step() takes no dt
+ * @property {number} [substeps=4]                  2..8
+ * @property {number} [shearCompliance=1e-6] @property {number} [bendCompliance=1e-4]   XPBD alpha; alphaTilde = alpha/h^2 at create
+ * @property {number} [damping=0.6]                 1/s; per-substep factor computed at create
+ * @property {number} [gravity=-9.81]
+ * @property {number} [drag=1.2] @property {number} [lift=0.2]   aero coefficients (per triangle, 33.3)
+ * @property {number} [flutter=0.25]                0..1 per-node turbulence share
+ * @property {number} [maxSpeed=8]                  m/s, displacement clamp per substep (pop guard)
+ * @property {number} [thickness=0.03]              m, collision margin around every collider */
+/** @typedef {Object} ClothColliders              createClothColliders(max=16); the caller writes, the cloth reads
+ * @property {number} count  @property {Uint8Array} type   0 sphere, 1 capsule (segment), 2 box (yaw about z), 3 plane
+ * @property {Float64Array} f                       12 floats per slot
+ * @property {Float64Array} aabb                    6 per slot, filled by the setters (broadphase) */
+export function createClothColliders(max) {}
+export function setSphere(c, i, x, y, z, r) {}
+export function setCapsule(c, i, ax, ay, az, bx, by, bz, r) {}      // player: a = (x, y, z+r), b = (x, y, z+h-r)
+export function setBox(c, i, cx, cy, cz, hx, hy, hz, cosYaw, sinYaw) {} // the caller converts yaw (forwardOf); no trig here
+export function setPlane(c, i, nx, ny, nz, d) {}                    // n.p >= d is outside
+/** @returns {Cloth} */ export function createCloth(def) {}         // allocates everything; throws on a bad def naming the key
+/** @typedef {Object} Cloth
+ * @property {Float64Array} pos  @property {Float64Array} prev   3N
+ * @property {number} n  @property {number} cols  @property {number} rows
+ * @property {Uint8Array} quadOn                    (cols-1)*(rows-1), 0 = hole (render reads it once to build idx)
+ * @property {Uint16Array} tri                      3T, front winding (render uses the same order)
+ * @property {(wx:number, wy:number, wz:number, col:ClothColliders|null)=>void} step   one fixed step
+ * @property {(p:number, x:number, y:number, z:number)=>void} setPinTarget   p = index into def.pins; kinematic
+ * @property {(nx:number, ny:number, nz:number, d:number)=>void} setGround
+ * @property {()=>void} sleep  @property {()=>void} wake   wake sets prev = pos (zero velocity): no pop
+ * @property {boolean} asleep  @property {number} restSteps   consecutive calm steps (the system's rest-sleep reads it)
+ * @property {number} version                       ++ per step that moved anything (render keys on it)
+ * @property {number} maxSpeed                      last step's max node speed (m/s)
+ * @property {Float64Array} bbox                    6, world, refreshed each step
+ * @property {(h:{f64:Function,u32:Function})=>void} hashInto   pos + prev + version, fixed order (duck-typed hasher, as wind.js) */
+```
+Data layout (typed arrays, built at create): `pos, prev, rest` Float64 3N; `invMass` Float64 N; constraints SoA `ca, cb` Uint16 + `cr` Float64 rest length in contiguous ranges `[structural | shear | bend]`, one alphaTilde per range; structural ordered red-black (horizontal even, horizontal odd, vertical even, vertical odd) so Gauss-Seidel has no directional bias; bend = skip-one distance constraints (cheap, enough at ASCII resolution; dihedral bending is a 1c option); tethers `tPin` Uint16 + `tLen` Float64 N (Dijkstra over structural + shear rest edges at create, so holes are respected); aero `tri` Uint16 3T + `area` Float64 T (rest); scratch `force` Float64 3N, broadphase `Uint8Array(16)`. No per-step allocation, no closures made in `step`, no `Map/Set`.
+
+### 33.3 `step(wx, wy, wz, colliders)` order (normative, fixed for determinism)
+1. If `asleep`: return (version unchanged).
+2. **Forces once per step:** gravity; per triangle `vrel = w - mean node velocity`, unit normal `n`, `F = area * (drag * dot(n,vrel) * n + lift * |dot(n,vrel)| * (vrel - dot(n,vrel) n) / max(|vrel|, 1e-6))`, a third to each node; per-node flutter multiplier on the aero share `1 + flutter*(2g - 1)`, `g` = smoothstep between hash knots `hash32(seed, k, floor(tick/12))` and the next knot, knot index offset by `col*3 + row*5` so neighbours are out of phase (`tick` = the cloth's own step counter; no `Math.random`). The caller samples wind once per cloth per step (32.5); the travelling wave comes from the aero coupling, not per-node wind samples.
+3. **Broadphase once per step:** colliders whose `aabb` overlaps the cloth `bbox` grown by `thickness + maxSpeed*dt` -> local index list. Typical 0-2 survivors.
+4. **Substeps** (h = dt/substeps), each: predict `x = pos + (pos - prev)*dampK + force*invMass*h^2` (prev = pos), clamp the displacement to `maxSpeed*h`; pins = targets interpolated linearly over the substeps; solve structural, shear, bend (XPBD, one pass each, lambda reset per substep); tethers (only shorten: if `dist > tLen`, project onto the sphere around the pin); collisions for the survivors (push out to `surface + thickness` along the shortest exit: sphere/capsule radial, box minimum-penetration axis in the box frame, plane along n; friction: halve the tangential part of `pos - prev` for contacting nodes).
+5. Bookkeeping: `maxSpeed`, `bbox`, `restSteps` (++ when maxSpeed < 0.002 and the wind is 0 and there was no survivor in 3, else 0), `version++` when any node moved.
+Rules: boxes thinner than `2*(thickness + maxSpeed*h)` (0.12 m at the defaults) can tunnel - walls are authored as boxes >= 0.2 m thick (the system validates); collision is node-vs-primitive only (edges between nodes may graze a thin pillar; the thickness margin hides it at ~8 cm node spacing); no self-collision in 1a (O(n^2) or a spatial hash breaks the budget; bend + the speed clamp stop the visible pops).
+
+### 33.4 Budget (Node, warmed, warn-only unless `PERF_STRICT=1`, as 32.1)
+| case | target |
+|---|---|
+| 24x16, 4 substeps, canvas preset, no colliders | <= 0.05 ms / step |
+| same + 1 box + 1 capsule overlapping | <= 0.07 ms |
+| 24x16, 8 substeps | <= 0.10 ms (warn) |
+| system, 12 cloths placed, `maxAwake` 6 | <= 0.4 ms / step (12 awake <= 0.8 ms, warn) |
+
+The sim budget (27.8) is 1.0 ms per step for everything incl. mesh collision, so the system caps awake cloths, not the content. Render (1b): `updateClothMesh` <= 0.005 ms per 24x16 cloth, upload 6 KB per awake cloth, cloth draws <= 0.05 ms GPU for two cloths at 240x90; the sun-map re-render while a casting cloth is awake is ME-15d's moving-caster cost, reported separately.
+
+### 33.5 Render + content (CLOTH-1b)
+- **`engine/mesh/clothMesh.js`:** `createClothMesh(cloth, id, matId, origin)` -> MeshData `{layout:'cloth', id:'cloth:<id>', pos: Float32Array 3N (mesh-local = world - origin, so f32 keeps sub-mm precision at x ~1500), nrm: Uint32Array N, uv: Float32Array 2N (rest-space metres, u along cols, v along rows; static), idx: Uint16Array (from `cloth.tri`, static), triCount, bbox, meshVersion, ranges:[{start:0, count:triCount}]}`; `updateClothMesh(mesh, cloth)` only when `cloth.version` changed: copy pos, area-weighted vertex normals in a Float64 scratch, normalise, `packNormalOct` (`engine/voxel/octNormal.js`), bbox, `meshVersion++`. Zero alloc. `validateMesh` learns the `'cloth'` layout.
+- **`DrawList.js`:** `DRAW_CLOTH = 4`; `addCloths(list, system, planes, frameNo)`: frustum-test each cloth mesh bbox, push `{mesh, type: DRAW_CLOTH, matrix: identity + t = origin, planeIdOr: (0xD<<28) | (slot<<20), objectId: 0x9000 | slot, zBase: origin z, rangeFirst 0, rangeCount triCount}`, stamp `system.lastDrawn[slot] = frameNo`, and call `updateClothMesh` for drawn cloths. (`0xD` / `0x9000` are free: levels use structSeq&7, voxels 0xF / 0x8000|k<16, glTF 0xE, view model 0xFFFF, units >= 0x10000.) Order: after voxels, before terrain.
+- **JS twin (`rasterJS.js`):** `DRAW_CLOTH` branch = the indexed path terrain already uses (smooth normal interpolated perspective-correct) with kind 8, face 7, mat from the mesh, uv from the mesh, `z = worldZ - zBase`, cull none, `flip = A2 < 0` captured before the swap -> N = -N; packed normal into GA.w (kind-8 face-7 convention, 27.16) and GI.z.
+- **GPU:** `GpuDevice.writeBuffer(handle, data, dstOffsetBytes)` in the typedef, the mock (counts writes) and GL2 (`bufferSubData`); `MeshBuffers.getCloth(mesh)`: the first call creates a dynamic vertex buffer (16 B/vertex: pos f32x3 + nrm u32, the terrain stride), a static uv buffer and the static index buffer; later calls `writeBuffer` once when `meshVersion` differs from the entry's, from a per-entry preallocated ArrayBuffer. `mesh.vert.js` / `mesh.frag.js` gain a third variant `cloth` (template flag like `instanced`): aPos(0)/aNrmBits(2) from the dynamic buffer, aUV(1) from the uv buffer, flat data from a `uFlat` uvec2 uniform, smooth `out vec3 vNrmS`; fragment `N = normalize(vNrmS); if (!gl_FrontFacing) N = -N;`, face 7, `packNormalOct(N)` into GI.z and GA.w. `_passRaster`: a cloth loop after the RE-06 instanced loop, cull none; `_passShadow`: a cloth loop with the depth program (pos only, stride 16). `buildShadowList` takes `src.cloths` (every cloth whose bbox meets the shadow box, drawn or not; `castShadow:false` skips). Nothing in light/shade/edge changes (kind 8 face 7 is handled already; folds outline through depth only, one planeId per cloth).
+- **`engine/world/cloths.js` (the system):** `createClothSystem(defs, world, presets)` -> `{count, cloths[], meshes[], lastDrawn: Int32Array, step(tick, wind, eyeX, eyeY, eyeZ), setBody(i, x, y, z, r, h), bodyCount, hashInto, stats:{awake, steps}}`; MAX_CLOTHS 16, MAX_CLOTH_BODIES 4. `World.load` builds `w.cloths` from `def.cloths` + each level's `cloths` (level-local through the structure frame, 32.0 item 6), after `w.wind` (2 lines in World.js; an empty system when absent, never null). Per cloth at load: preset numbers (`presets[key]`, engine defaults `silk/canvas/banner` when absent) merged with the block; rest layout (`plane:'vertical'` = cols along the yaw's right vector, rows down -z; `'horizontal'` = rows along forward; spacing `size[0]/(cols-1)`, `size[1]/(rows-1)`); static colliders to world (yaw via `forwardOf`); ground plane from 3 `world.groundAt` samples; 60 warm-up steps. `step`: per cloth in slot order: sleep rules (33.1 item 4; wake on distance, drawn, wind > 0 or a body overlapping its bbox), `wind.sampleInto(anchor, tick, scratch)`, body capsules into the collider slots after the static ones, `cloth.step`. Exported from `engine/index.js`: `createCloth`, `createClothColliders` + setters, `createClothSystem` + typedefs.
+- **Content block** (world or level JSON, validated at load, throws naming the id; content, not state):
+```json
+"cloths": [{ "id": "stairwell.canvas", "preset": "canvas", "mat": "cloth.canvas", "cols": 16, "rows": 12, "size": [2.4, 1.8],
+  "origin": [0, 0, 0], "yawDeg": 90, "plane": "vertical", "pins": [[0, 0], [7, 0], [15, 0]], "holes": [[3, 9], [4, 9]],
+  "seed": 7, "castShadow": true, "sleepDist": 40,
+  "colliders": [{ "type": "box", "c": [0, 0, 0], "half": [0.5, 0.1, 1.5], "yawDeg": 0 }, { "type": "sphere", "c": [0, 0, 0], "r": 0.3 }] }]
+```
+  pins/holes are `[col, row]`; `mat` is a MaterialTable key resolved at load; presets are designer data (`design/cloth.js` classic script -> `assets.clothPresets`, 32.0 item 6), numbers only.
+- **main.js (PC-B main session, 2 lines):** update, after the player integrate: `w.cloths.setBody(0, t.x, t.y, t.z, body.radius, body.height); w.cloths.step(tick, w.wind, eye.x, eye.y, eye.z)`. Render: the pipeline adds cloths itself (`addCloths` in the mesh draw-list build, both twins). `dda` renderer: cloths not drawn (mesh-only, 32.0 item 3); the sim still sleeps by distance.
+
+### 33.6 Steps (each <= ~1 programmer-day, ends with a green Node suite + check-deps; engine steps end in arch-review)
+| step | track | size | content | tests / ACs |
+|---|---|---|---|---|
+| **CLOTH-1a1** sim core | PC-A (PC-B cross-track OK: stand-alone file) | 1 d | `cloth.js` create (grid, pins, holes, constraints, tethers, tris), 33.3 steps 1-2, 4 without collisions, 5; `hashInto`, sleep/wake; check-deps rule 15 scope +1 file | `engine/physics/cloth.test.js`: 1a ACs 1-6, 9, perf rows 1 + 3, zero alloc over 10k steps (`--expose-gc`), wake without pop (max displacement on the wake step < 1 mm), preset sag at 4 vs 8 substeps within 2 cm |
+| **CLOTH-1a2** colliders | PC-A (or PC-B cross-track) | 0.75 d | `ClothColliders` + 4 setters, broadphase, 33.3 step 4 collisions + friction | 1a ACs 7-8, perf row 2, thickness rule (0.2 m box, 12 m/s wind, 10 s: 0 penetrations) |
+| **CLOTH-1b1** JS render twin | PC-A | 1 d | `clothMesh.js`, `validateMesh` 'cloth', `DRAW_CLOTH` + `addCloths`, rasterJS branch, `buildShadowList` `src.cloths` + JS shadow twin | `clothMesh.test.js` (normals vs analytic on a cylinder drape within 1e-3, zero alloc, version gating); rasterJS: front/back views give opposite N, same kind/mat; RE-06c winding test extended to cloth (`dot(n, eye-p) > 0` <=> `A2 > 0`); shadow list keeps a cloth outside the camera frustum |
+| **CLOTH-1b2** GPU twin | PC-A | 1 d | `writeBuffer` (typedef + mock + GL2), `MeshBuffers.getCloth`, shader variant, `_passRaster` + `_passShadow` loops, gpucompare mesh pose `cloth` (16x12 banner fixture, seed 1, 6 m/s wind, 120 steps from create then frozen, sun map on) | mock device: 1 create per buffer, 1 write per changed version, 0 writes asleep; `glsl.test.js` variant strings; `cloth` pose within the 27.7 bars, every existing pose unchanged; dirty-skip: asleep cloth -> map rendered once over 120 frames |
+| **CLOTH-1b3** cloth system | PC-A (or PC-B cross-track) | 1 d | `engine/world/cloths.js`, `World.load` 2 lines, validation, presets, layout, ground fit, warm-up, sleep rules, `engine/index.js` exports | `engine/world/cloths.test.js`: layout at yaw 0/90/225, level-frame conversion, throws per key, sleep by distance / not drawn / maxAwake / rest, wake on body overlap, one `sampleInto` per cloth per step (spy), perf row 4, serialize has no cloth state |
+| **CLOTH-1b4** designer | designer (PC-A) | ~0.5 d | `design/cloth.js` presets (silk/canvas/banner), `cloth.canvas` / `cloth.banner` materials + glyph ramp + fray edge in `design/detail-pass.js` / `design/palette.js` within the existing detail-pass vocabulary (a new detail-shader op = ASK ARCHITECT, separate PC-A step), `design/preview/cloth.html` (cloth.js + the rasterJS twin, wind slider, sun/torch toggle). Starts after 1a1 + 1b1; PO checks the preview before 1b5 | preview loads with no console errors; PO look |
+| **CLOTH-1b5** placement | PC-B | 0.5 d | `cloths` blocks: stairwell canvas in `content/levels/tower.level.json` (pins, holes, wall/stair boxes), the ruin banner (its level or world JSON, wall box), main.js 2 lines | `content-canonical.test.mjs`; route-walk dda + mesh; 1b ACs 3-5 checked by the PC-A main session (GPU ms readout) + owner walk-test |
+
+Order: 1a1 -> 1a2 -> 1b1 -> 1b2 -> 1b3 -> 1b5; 1b4 in parallel after 1b1.
+
+### 33.7 AC changes for the PO (with reasons)
+1. **1a AC1:** `cloth.step(wx, wy, wz, colliders)` - no `dt` argument; `dt` is fixed in the def (a varying dt needs Verlet velocity rescaling; the loop is fixed 60 Hz anyway).
+2. **1a AC2:** "4-8 solver iterations" -> "2-8 substeps (XPBD small steps, 1 iteration each), default 4, plus one pin tether per node"; a preset must look the same at 4 and 8 substeps (steady-state sag within 2 cm).
+3. **1a AC7:** ground = a plane per cloth (tilted allowed) set by the caller, not a per-node heightfield callback (cost, 33.1 item 2); walls/pillars are boxes >= 0.2 m thick (tunnelling rule, 33.3).
+4. **1a AC8:** drop "min node spacing" (that is self-collision: O(n^2) or a spatial hash, over budget; 1c if capes need it). Keep the pop test, reworded: a pin moved at 3 m/s through the cloth plane and back gives max per-step displacement < 5 cm for unpinned nodes.
+5. **1a AC10:** 24x16 at 4 substeps <= 0.05 ms without colliders, <= 0.07 ms with 1 box + 1 capsule; "12 active <= 0.6 ms" -> the system keeps <= 6 awake (`maxAwake`), 6 awake <= 0.4 ms; "off screen sleep + wake without pop" moves to 1b3 (cloth.js has no camera); 1a1 tests wake-without-pop only.
+6. **1b AC1:** "casts shadow" holds with sun shadows `map` (`?shadows=map` until the ME-15d default flip); receiving light/shadow/torch tint comes from the existing light pass (kind 8 face 7).
+7. **1b AC5:** 0.3 ms covers `updateClothMesh` + upload + cloth draws; the sun-map re-render while a casting cloth is awake is the ME-15d moving-caster cost, reported separately.
+8. **1b AC2 (designer):** glyphs come from the material/detail-pass path; glyph choice by fold slope would be a new detail-shader op = separate PC-A step, not part of 1b2.
+
+### 33.8 Do not
+Import anything into `cloth.js`; call `world.groundAt` per node; let cloth push bodies or emit gameplay events; save cloth state; create GPU buffers or MeshData per frame (`writeBuffer` only); re-upload a sleeping cloth; use `gl_FrontFacing` on the GPU without the matching `A2` sign rule in rasterJS (parity); give cloth its own projection or light code; put cloth in `SPR` or the particle layer.
