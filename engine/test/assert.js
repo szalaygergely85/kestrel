@@ -66,11 +66,12 @@ export function approxEqual(a, b, eps) {
  *   device: import('../render/gpu/device/GpuDevice.js').GpuDevice,
  *   liveCount: () => number,
  *   createCount: number,
+ *   writeCount: number,
  * }}
  */
 export function makeMockGpuDevice() {
   const live = new Set();
-  const state = { createCount: 0 };
+  const state = { createCount: 0, writeCount: 0 };
   function makeHandle(kind, desc) {
     state.createCount++;
     const h = { kind, desc, _disposed: false };
@@ -79,6 +80,8 @@ export function makeMockGpuDevice() {
   }
   const device = {
     createBuffer(desc) { return makeHandle('buffer', desc); },
+    // CLOTH-1b2: counts writes (tests assert "1 write per changed version, 0 when asleep"); keeps the last payload.
+    writeBuffer(handle, data, dstOffsetBytes = 0) { handle._writes = (handle._writes || 0) + 1; handle._lastWrite = { data, dstOffsetBytes }; state.writeCount++; },
     createTexture(desc) { return makeHandle('texture', desc); },
     createTarget(desc) { return makeHandle('target', desc); },
     createPipeline(desc) { return makeHandle('pipeline', desc); },
@@ -107,5 +110,6 @@ export function makeMockGpuDevice() {
     device,
     liveCount: () => live.size,
     get createCount() { return state.createCount; },
+    get writeCount() { return state.writeCount; },
   };
 }

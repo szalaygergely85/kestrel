@@ -59,9 +59,9 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
 // the GPU raster pass - `renderer:'mesh'` only, additive (the default
 // `renderer:'dda'` path above is untouched by any of these).
 import { GpuDeviceGL2 } from './device/GpuDeviceGL2.js';
-import { MeshBuffers, STATIC_VERTEX_LAYOUT, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from './MeshBuffers.js';
-import { MESH_VERT_SRC, MESH_INST_VERT_SRC } from './glsl/mesh.vert.js';
-import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
+import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from './MeshBuffers.js';
+import { MESH_VERT_SRC, MESH_INST_VERT_SRC, MESH_CLOTH_VERT_SRC } from './glsl/mesh.vert.js';
+import { MESH_FRAG_SRC, MESH_CLOTH_FRAG_SRC } from './glsl/mesh.frag.js';
 // ME-06 (docs/backlog.md, docs/architecture.md 27.4, 27.15.5): terrain in
 // the raster pass - its own program (`terrain.vert.js`'s kind-7 variant)
 // and a persistent `TerrainMeshSet` per bound `Terrain` (one `step()`/
@@ -69,8 +69,8 @@ import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
 // band-flip rebuild - `_passRaster` never rebuilds inside a fixed step).
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
-import { KIND_TERRAIN } from '../GBuffer.js';
-import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../GBuffer.js';
+import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, addCloths, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
@@ -225,6 +225,12 @@ export class GpuCellPipeline {
       // RE-06 (28.6): instanced voxel units - second program (instanced vert + the same frag),
       // one pipeline-owned dynamic instance VBO refilled per frame, divisors set once on its VAO.
       this.progMeshInst = linkProgram(gl, MESH_INST_VERT_SRC, MESH_FRAG_SRC);
+      // CLOTH-1b2 (33.5): cloth program (cloth vert + cloth frag) and its VAO: attribs 0/1/2 (pos, uv, nrm) from two buffers.
+      this.progMeshCloth = linkProgram(gl, MESH_CLOTH_VERT_SRC, MESH_CLOTH_FRAG_SRC);
+      this._meshClothVao = gl.createVertexArray();
+      gl.bindVertexArray(this._meshClothVao);
+      for (let a = 0; a <= 2; a++) gl.enableVertexAttribArray(a);
+      gl.bindVertexArray(null);
       this._meshInstVbo = gl.createBuffer();
       this._meshInstVao = gl.createVertexArray();
       gl.bindVertexArray(this._meshInstVao);
@@ -272,7 +278,7 @@ export class GpuCellPipeline {
       this.shadowActive = false;
       this._shadowDepthTex = null;
       this._shadowTarget = null;
-      this.progShadow = null; this.progShadowTerrain = null; this.progShadowInst = null;
+      this.progShadow = null; this.progShadowTerrain = null; this.progShadowInst = null; this.progShadowCloth = null;
       this._copyPipeline = null; this._copyTarget = null; this._copyTex = null;
       if (this.shadowOpts.sun === 'map') {
         const dev = this._meshDevice, res = this.shadowOpts.res;
@@ -281,6 +287,7 @@ export class GpuCellPipeline {
         this.progShadow = linkProgram(gl, MESH_VERT_SRC, SHADOW_FRAG_SRC);
         this.progShadowTerrain = linkProgram(gl, TERRAIN_VERT_SRC, SHADOW_TERRAIN_FRAG_SRC);
         this.progShadowInst = linkProgram(gl, MESH_INST_VERT_SRC, SHADOW_FRAG_SRC); // ME-15c: RE-06 instanced casters
+        this.progShadowCloth = linkProgram(gl, MESH_CLOTH_VERT_SRC, SHADOW_FRAG_SRC); // CLOTH-1b2: depth-only cloth casters
         this._sunMat = createSunShadowMatrix();
         this._sunMatF32 = new Float32Array(16);
         this._shadowList = createShadowList();
@@ -288,7 +295,7 @@ export class GpuCellPipeline {
         this._shadowKey = new Int32Array(2); this._shadowKeyPrev = new Int32Array(2); this._shadowKeyValid = false; // ME-15d dirty-skip
         this.shadowRenders = 0; this.shadowSkips = 0; // ME-15d counters (AC 2)
         this._shadowWorldZ = { min: 0, max: 0 };
-        this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null };
+        this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined };
       }
     }
 
@@ -411,6 +418,8 @@ export class GpuCellPipeline {
     this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
     this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
     this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
+    this._locsMeshCloth = this.progMeshCloth ? this._uniformLocs(this.progMeshCloth, MESH_CLOTH_UNIFORMS) : null;
+    this._locsShadowCloth = this.progShadowCloth ? this._uniformLocs(this.progShadowCloth, ['uModel', 'uViewProj']) : null;
     this._locsMeshInst = this.progMeshInst ? this._uniformLocs(this.progMeshInst, MESH_INST_UNIFORMS) : null;
     this._locsMeshTerrain = this.progMeshTerrain ? this._uniformLocs(this.progMeshTerrain, TERRAIN_MESH_UNIFORMS) : null;
     this._locsShadow = this.progShadow ? this._uniformLocs(this.progShadow, ['uModel', 'uViewProj']) : null;
@@ -747,7 +756,7 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
@@ -756,6 +765,7 @@ export class GpuCellPipeline {
     // its own VAO is separate.
     if (this._meshVao) gl.deleteVertexArray(this._meshVao);
     if (this._meshInstVao) gl.deleteVertexArray(this._meshInstVao);
+    if (this._meshClothVao) gl.deleteVertexArray(this._meshClothVao);
     if (this._meshVoxVao) gl.deleteVertexArray(this._meshVoxVao);
     if (this._meshInstVbo) gl.deleteBuffer(this._meshInstVbo);
     if (this._meshTerrainVao) gl.deleteVertexArray(this._meshTerrainVao);
@@ -1703,6 +1713,9 @@ export class GpuCellPipeline {
       this.stats.instancesCulled = this._instances.stats.instancesCulled;
       this.stats.instancesLod1 = this._instances.stats.instancesLod1;
     }
+    // CLOTH-1b2 (33.5): cloths after the voxel feed (the JS twin's order); `addCloths` refreshes each drawn cloth's arrays
+    // (`updateClothMesh`) and stamps `markDrawn`; `MeshBuffers.getCloth` uploads afterwards, in the raster/shadow loops.
+    if (world && world.cloths && world.cloths.count > 0) addCloths(list, world.cloths, this._meshFrustumPlanes, this._table ? this._table.idFor : undefined);
     list.cull(this._meshFrustumPlanes);
     this._rasterTerrainSet = terrainMeshSet;
     // US-078a: the view-model layer's own (never culled) list, null when hidden / pitched.
@@ -1833,6 +1846,10 @@ export class GpuCellPipeline {
     this.stats.instancedDraws = instancedDraws;
     this.stats.instances = instTotal;
 
+    // CLOTH-1b2 (33.5): cloths - indexed 16 B dynamic vertices + static uv, smooth normal, two-sided (the fragment stage
+    // flips N on back faces). frontFace is set explicitly (the winding the A2 sign rule of the JS twin assumes), cull none.
+    this.stats.clothDraws = this._drawCloths(list, false);
+
     // ME-06: terrain items (near chunks, stitch, far tiles), same depth
     // buffer/viewport - a different program (terrain.vert.js's kind-7
     // variant), VAO (pos+nrm, no uv/flat/aux, 27.3) and index buffer per
@@ -1907,6 +1924,50 @@ export class GpuCellPipeline {
     } else {
       this.stats.vmDraws = 0;
     }
+  }
+
+  /**
+   * CLOTH-1b2: draws every `DRAW_CLOTH` item of `list`: raster pass (`shadow` false: progMeshCloth, `_locsMeshCloth`) or sun
+   * depth pass (`shadow` true: progShadowCloth, position only; `uViewProj` = `_sunMatF32`). Cull NONE, frontFace CCW set
+   * explicitly. One `MeshBuffers.getCloth` per item (a `writeBuffer` only when the mesh version changed). Returns the draw count.
+   * @param {import('../../mesh/DrawList.js').DrawList} list @param {boolean} shadow
+   */
+  _drawCloths(list, shadow) {
+    let any = false;
+    for (let i = 0; i < list.count; i++) if (list.items[i].type === DRAW_CLOTH) { any = true; break; }
+    if (!any) return 0;
+    const gl = this.gl, loc = shadow ? this._locsShadowCloth : this._locsMeshCloth;
+    gl.useProgram(shadow ? this.progShadowCloth : this.progMeshCloth);
+    gl.bindVertexArray(this._meshClothVao);
+    gl.frontFace(gl.CCW);
+    gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(loc.uViewProj, false, shadow ? this._sunMatF32 : this._meshViewProjF32);
+    let draws = 0;
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_CLOTH || !item.mesh || item.rangeCount <= 0) continue;
+      const entry = this._meshBuffers.getCloth(item.mesh);
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
+      const a0 = CLOTH_DYN_LAYOUT[0], a2 = CLOTH_DYN_LAYOUT[1];
+      gl.vertexAttribPointer(a0.location, a0.components, gl.FLOAT, false, CLOTH_STRIDE_BYTES, a0.offsetBytes);
+      // attribs 1/2 are set in the shadow pass too (the shared vertex shader declares them; an enabled-but-unbound attrib is a GL error)
+      gl.vertexAttribIPointer(a2.location, a2.components, gl.UNSIGNED_INT, CLOTH_STRIDE_BYTES, a2.offsetBytes);
+      const a1 = CLOTH_UV_LAYOUT[0];
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.uvBuffer.handle);
+      gl.vertexAttribPointer(a1.location, a1.components, gl.FLOAT, false, 0, a1.offsetBytes);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.indexBuffer.handle);
+      this._setModel(loc.uModel, item.matrix, 0);
+      if (!shadow) {
+        gl.uniform1i(loc.uPlaneIdOr, item.planeIdOr);
+        gl.uniform1f(loc.uZBase, item.zBase);
+        gl.uniform1i(loc.uObjectId, item.objectId);
+        gl.uniform2ui(loc.uFlat, 0, (KIND_MODEL | (FACE_PACKED << 8) | (item.mesh.matId << 16)) >>> 0);
+      }
+      gl.drawElements(gl.TRIANGLES, item.rangeCount * 3, gl.UNSIGNED_SHORT, item.rangeFirst * 3 * 2);
+      draws++;
+    }
+    gl.disable(gl.CULL_FACE);
+    return draws;
   }
 
   /**
@@ -2015,6 +2076,8 @@ export class GpuCellPipeline {
     const vp = this._voxelPool;
     if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
     src.instances = this._instances || null;
+    src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b2
+    src.matIdFor = this._table ? this._table.idFor : undefined;
     src.fogFarM = sunShadowFogFar(this._palette, so);
     shadowWorldZ(world, this._levelMeshCache, this._shadowWorldZ);
     const sm = shadowSunMatrix(sun.dir, this._shadowCentre, so, this._shadowWorldZ, this._sunMat);
@@ -2147,6 +2210,9 @@ export class GpuCellPipeline {
       }
     }
     gl.disable(gl.CULL_FACE);
+
+    // CLOTH-1b2: cloth casters, depth only, cull none (two-sided), same polygon offset.
+    draws += this._drawCloths(list, true);
 
     // Terrain chunks/tiles: indexed layout, footprint carve in the fragment stage.
     let anyTerrain = false;
@@ -2535,6 +2601,8 @@ const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uAxisAligned'];
 // RE-06: the instanced variant adds the team remap arrays (element 0 location for uniform1iv).
 const MESH_INST_UNIFORMS = [...MESH_UNIFORMS, 'uTeamSlot', 'uTeamMat'];
+// CLOTH-1b2: the cloth variant: flat data in `uFlat` (no aFlat/aux attributes), no uAxisAligned (always 0).
+const MESH_CLOTH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uFlat'];
 // ME-06: terrain's own raster program (terrain.vert.js) - no planeIdOr/
 // zBase (terrain items always carry 0/0, 27.15.5), but its own objectId
 // uniform (no per-vertex flat data to derive it from, unlike mesh.frag.js's

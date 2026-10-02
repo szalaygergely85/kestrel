@@ -85,11 +85,23 @@ export class GpuDeviceGL2 {
     const target = gl[USAGE_TO_GL_TARGET[desc.usage]];
     const buf = gl.createBuffer();
     gl.bindBuffer(target, buf);
-    if (desc.data) gl.bufferData(target, desc.data, gl.STATIC_DRAW);
-    else gl.bufferData(target, desc.bytes || 0, gl.STATIC_DRAW);
+    const hint = desc.dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW;
+    if (desc.data) gl.bufferData(target, desc.data, hint);
+    else gl.bufferData(target, desc.bytes || 0, hint);
     gl.bindBuffer(target, null);
     this._live.push({ obj: buf, free: (g, o) => g.deleteBuffer(o) });
     return { kind: 'buffer', glTarget: target, handle: buf };
+  }
+
+  /**
+   * CLOTH-1b2: `bufferSubData` into an existing buffer (no reallocation). Unbinds the target afterwards, like createBuffer.
+   * @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes]
+   */
+  writeBuffer(handle, data, dstOffsetBytes = 0) {
+    const gl = this.gl, target = handle.glTarget;
+    gl.bindBuffer(target, handle.handle);
+    gl.bufferSubData(target, dstOffsetBytes, data);
+    gl.bindBuffer(target, null);
   }
 
   /** @param {TextureDesc} desc */

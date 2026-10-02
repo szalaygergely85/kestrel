@@ -24,6 +24,7 @@
  * @property {'vertex'|'index'|'uniform'} usage
  * @property {number} [bytes] - allocate this many bytes, uninitialised (mutually exclusive with `data`)
  * @property {ArrayBufferView} [data] - allocate + upload this data (mutually exclusive with `bytes`)
+ * @property {boolean} [dynamic] - CLOTH-1b2: the buffer is rewritten via `writeBuffer` (GL2: DYNAMIC_DRAW instead of STATIC_DRAW)
  */
 
 /**
@@ -102,6 +103,12 @@ export class GpuDevice {
   createTarget(desc) { throw new Error('GpuDevice.createTarget: not implemented'); }
   /** @param {PipelineDesc} desc @returns {GpuHandle} */
   createPipeline(desc) { throw new Error('GpuDevice.createPipeline: not implemented'); }
+  /**
+   * CLOTH-1b2 (33.5): overwrite `data.byteLength` bytes of an existing buffer starting at `dstOffsetBytes` (WebGPU
+   * `queue.writeBuffer`; GL2 `bufferSubData`). Never allocates a new buffer: callers upload only when their data changed.
+   * @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes]
+   */
+  writeBuffer(handle, data, dstOffsetBytes) { throw new Error('GpuDevice.writeBuffer: not implemented'); }
   /** @param {GpuHandle} target @param {PassDesc} [opts] */
   beginPass(target, opts) { throw new Error('GpuDevice.beginPass: not implemented'); }
   /** @param {GpuHandle} pipeline @param {BindDesc} desc */
@@ -132,6 +139,6 @@ export class GpuDevice {
  * separately.
  */
 export const GPU_DEVICE_METHODS = Object.freeze([
-  'createBuffer', 'createTexture', 'createTarget', 'createPipeline',
+  'createBuffer', 'writeBuffer', 'createTexture', 'createTarget', 'createPipeline',
   'beginPass', 'bind', 'draw', 'endPass', 'readback', 'dispose',
 ]);

@@ -32,7 +32,8 @@
 <div class="note">
   Data: <code>design/models/sword.js</code> - <code>ASSETS.voxelModels.sword</code> (world pickup, planted point-down in the rubble heap by the west wall, leaning, with a
   white "take me" glint sliding down the blade), <code>ASSETS.voxelModels.swordHeld</code> (the same voxels tip-up, pivot = grip), <code>ASSETS.viewModels.sword</code>
-  (eye-space key poses: idle sway, swingLR, swingRL, chain rule, trail, sparks; README 7.4) and <code>ASSETS.levelPatch.towerSword</code> (placement data).
+  (eye-space key poses: idle sway, <b>swingLR</b> = light (tap), <b>charge</b> + <b>swingHard</b> = hard (hold >= 0.4 s, release; D-034), chain rule (2 lights), trail + trailHard,
+  sparks clink / hit / hitHeavy / chargeGlint; README 7.4) and <code>ASSETS.levelPatch.towerSword</code> (placement data).
   Old pitted steel, dark fuller, nicked edges, worn dark-leather grip, small down-curved <b>bronze</b> guard + pommel - no brass / copper / verdigris / aether.
   Materials are <b>proposed</b> (<code>ASSETS.swordKit</code>); this page injects their 3 new colours locally, the game does not see them until the merge step.
   <b>Rendering uses the engine oracle</b> (<code>packVoxelModel</code>, <code>computeVoxelPose</code>, <code>marchVoxelRay</code> from <code>engine/voxel/</code>) + the v1 reference shader
@@ -60,13 +61,22 @@
 <div class="note">Left 160x60 (6x9 px cells), right 240x90 (4x6 px cells), the same screen area. Stand-in room: flagstone floor 1.6 m below the eye, stone wall 3.5 m ahead,
   ivy wall on the left. Lit by the light sliders (azimuth 0 = light from straight ahead, 90 = from the right) + ambient + the carried lamp, which hangs on the <b>left</b> once the sword is taken
   (x -0.3, down 0.3, forward 0.4; US-078 AC). The crosshair <code>+</code> is drawn at the centre. The trail (tip, newest <code>=</code> / <code>/</code> / <code>\</code> / <code>|</code>, white -> mirror -> ironLight) only exists in the
-  active window (80-200 ms), the ghost blade line <code>:</code> 50 ms behind.</div>
+  active window (80-200 ms), the ghost blade line <code>:</code> 50 ms behind. The <b>hard</b> swing uses <code>trailHard</code> (9 samples / 150 ms, body <code>=</code> <code>/</code> <code>\</code> <code>|</code>,
+  head <code>#</code> / <code>%</code>, white -> flameCore -> flameMid -> flameOuter -> emberDim, ghost <code>%</code>). Hit sparks are drawn at the crosshair (the target) in the middle of the active window:
+  <code>hit</code> for a light, <code>hitHeavy</code> for a hard. <code>chargeGlint</code> pops at the tip when the charge is ready (400 ms). Segments after the first blend from the current pose (key 0 replaced).</div>
 <div class="row" id="vmButtons"></div>
 <div class="row" id="vmHost"></div>
 <div class="cap" id="vmInfo"></div>
 
-<h2>2. Swing key poses (every key of both swings, 160x60, trail as it is at that time)</h2>
-<div class="note">k0 rest - k1 windup end (anticipation) - k2 / k3 / k4 active arc - k5 follow-through (overshoot) - k6 recovered. Windup 80 ms, active 120 ms, recover 150 ms = 0.35 s.</div>
+<h2>1b. Tap vs hold, side by side (D-034; both press at the same moment)</h2>
+<div class="note">Left = <b>tap</b>: press -> 100 ms of <code>charge</code> (the small pull-back) -> release before 0.4 s -> <code>swingLR</code> (light, 0.35 s, spark <code>hit</code>).
+  Right = <b>hold</b>: press -> <code>charge</code> to the cocked pose (400 ms, <code>chargeGlint</code> at the tip = ready), held -> release at 1.1 s -> <code>swingHard</code> (0.63 s, <code>trailHard</code>, spark <code>hitHeavy</code>, long heavy recover).
+  Use the speed selector to slow both down.</div>
+<div class="row" id="tapHoldHost"></div>
+
+<h2>2. Key poses (every key of swingLR, charge, swingHard; 160x60, trail as it is at that time)</h2>
+<div class="note">swingLR: k0 rest - k1 windup end (anticipation) - k2 / k3 / k4 active arc - k5 follow-through (overshoot) - k6 recovered (80 / 120 / 150 ms = 0.35 s).
+  charge: rest - pull-back (100 ms, all a tap shows) - crossing - overshoot - held (400 ms). swingHard: charge pose - heave (67) - 4 active keys (67-183) - follow-through - hang - lift - recovered (633).</div>
 <div id="strips"></div>
 
 <h2>3. World pickup (orbit + 6 yaws, clip idle with the glint)</h2>
@@ -359,8 +369,9 @@ function drawHeld(spec, B, pose) {
     setCell(B, r * cols + c, 8, t, SH);
   }
 }
-function slopeGlyph(dc, dr, spec, head) {
-  const ang = ((Math.atan2(-dr * spec.ch, dc * spec.cw) / D2R) + 360) % 180, S = VMOD.trail.slope, G = head ? VMOD.trail.glyphs.head : VMOD.trail.glyphs;
+function slopeGlyph(dc, dr, spec, head, Tr) {
+  Tr = Tr || VMOD.trail;
+  const ang = ((Math.atan2(-dr * spec.ch, dc * spec.cw) / D2R) + 360) % 180, S = Tr.slope, G = head ? Tr.glyphs.head : Tr.glyphs;
   if (ang < S.hMaxDeg || ang > 180 - S.hMaxDeg) return G.h;
   if (ang >= S.vMinDeg && ang <= 180 - S.vMinDeg) return G.v;
   return ang < 90 ? G.d1 : G.d2;
@@ -377,8 +388,10 @@ function line(B, spec, a, b, glyph, color) {
     if (e2 <= dx) { err += dx; y0 += sy; }
   }
 }
-function drawTrail(spec, B, clip, keys, t) {
-  const Tr = VMOD.trail, act = clip.active;
+function trailFor(clipName) { return clipName === 'swingHard' ? VMOD.trailHard : VMOD.trail; }
+function drawTrail(spec, B, clip, keys, t, Tr) {
+  Tr = Tr || VMOD.trail;
+  const act = clip.active;
   if (!act || t < act[0] || t > act[1] + Tr.lifeMs) return;
   // ghost blade line (mid -> tip) ageMs behind
   const tg = t - Tr.ghost.ageMs;
@@ -395,43 +408,98 @@ function drawTrail(spec, B, clip, keys, t) {
     const age = t - samples[i - 1];
     let col = Tr.colors[Tr.colors.length - 1][1];
     for (const [ms, key] of Tr.colors) if (age <= ms) { col = key; break; }
-    line(B, spec, pa, pb, slopeGlyph(pb.c - pa.c, pb.r - pa.r, spec, i === 1), col);
+    line(B, spec, pa, pb, slopeGlyph(pb.c - pa.c, pb.r - pa.r, spec, i === 1, Tr), col);
   }
+}
+// a spark / glint record (glyphs / fg / keys / anchor / durations) drawn with its anchor cell at (c, r), local time ts
+function drawSpark(B, spec, sp, c, r, ts) {
+  if (!sp || ts < 0) return false;
+  let f = 0, e = ts;
+  while (f < sp.durations.length && e >= sp.durations[f]) { e -= sp.durations[f]; f++; }
+  if (f >= sp.durations.length) return false;
+  const fr = sp.frames[f];
+  for (let y = 0; y < fr.glyphs.length; y++) for (let x = 0; x < fr.glyphs[y].length; x++) {
+    const ch = fr.glyphs[y][x], key = fr.fg[y][x];
+    if (ch === ' ' || !sp.keys[key]) continue;
+    const cc = Math.round(c) + x - sp.anchor.x, rr = Math.round(r) + y - sp.anchor.y;
+    if (cc >= 0 && rr >= 0 && cc < spec.cols && rr < spec.rows) setEmissive(B, rr * spec.cols + cc, ch, sp.keys[key].c);
+  }
+  return true;
 }
 function crosshair(spec, B) { const i = Math.floor(spec.rows / 2) * spec.cols + Math.floor(spec.cols / 2); setEmissive(B, i, '+', 'uiDim'); }
 
-// --- view-model player (idle / swings / chain / auto)
-const VS = { name: 'idle', keys: VMOD.clips.idle.keys, loop: true, t0: performance.now(), chainNext: null, script: null };
-function currentPose(now) { return sampleKeys(VS.keys, (now - VS.t0) * ctl.speed, VS.loop); }
-function play(name, fromPose, now) {
-  const clip = VMOD.clips[name];
-  VS.name = name; VS.loop = clip.loop; VS.t0 = now;
-  VS.keys = fromPose ? [{ t: 0, pos: fromPose.pos, rot: fromPose.rot }].concat(clip.keys.slice(1)) : clip.keys;
+// --- view-model sequence player (D-034). A sequence = segments { clip, dur? (ms; default = the clip length),
+// blend? (key 0 replaced by the pose captured at the end of the previous segment, like the engine's blend flag),
+// spark? [name, at ms] (drawn at the crosshair = the target), glint? at ms (chargeGlint at the tip), label? }.
+// A virtual clock (vt, scaled by the speed selector) drives every player, so the side-by-side pair stays in sync.
+const TAP_SEQ = [
+  { clip: 'idle', dur: 500, label: 'idle' },
+  { clip: 'charge', dur: 100, blend: true, label: 'press: charge 0-100 ms = the small pull-back' },
+  { clip: 'swingLR', blend: true, spark: ['hit', 140], label: 'released < 0.4 s: LIGHT swingLR' },
+  { clip: 'idle', dur: 1883, label: 'idle' }];   // padded so a tap cycle = a hold cycle (2833 ms)
+const HOLD_SEQ = [
+  { clip: 'idle', dur: 500, label: 'idle' },
+  { clip: 'charge', dur: 1100, blend: true, glint: 400, label: 'held: charge (ready + chargeGlint at 400 ms)' },
+  { clip: 'swingHard', blend: true, spark: ['hitHeavy', 125], label: 'released: HARD swingHard' },
+  { clip: 'idle', dur: 600, label: 'idle' }];
+const SEQS = {
+  idle: [{ clip: 'idle', dur: Infinity, label: 'idle' }],
+  swingLR: [{ clip: 'swingLR', spark: ['hit', 140], label: 'swingLR (light)' }, { clip: 'idle', dur: 800, label: 'idle' }],
+  charge: [{ clip: 'charge', dur: 1400, glint: 400, label: 'charge (held after 400 ms)' }, { clip: 'idle', dur: 700, label: 'idle' }],
+  swingHard: [{ clip: 'swingHard', spark: ['hitHeavy', 125], label: 'swingHard (from the charge pose)' }, { clip: 'idle', dur: 800, label: 'idle' }],
+  chain: [{ clip: 'swingLR', dur: VMOD.chain.startAtMs, spark: ['hit', 140], label: 'light #1' },
+          { clip: 'swingLR', blend: true, spark: ['hit', 140], label: 'light #2 (queued, blends from the current pose)' },
+          { clip: 'idle', dur: VMOD.chain.restMs, label: 'rest ' + VMOD.chain.restMs + ' ms (max ' + VMOD.chain.max + ')' },
+          { clip: 'idle', dur: 900, label: 'idle' }],
+  tap: TAP_SEQ, hold: HOLD_SEQ,
+  // light #1, then a press queued in its recover is still held at 270 ms -> charge -> hard (chain resets)
+  lightThenHard: [{ clip: 'swingLR', dur: VMOD.chain.startAtMs, spark: ['hit', 140], label: 'light #1' },
+                  { clip: 'charge', dur: 700, blend: true, glint: 400, label: 'queued press still held -> charge' },
+                  { clip: 'swingHard', blend: true, spark: ['hitHeavy', 125], label: 'hard' },
+                  { clip: 'idle', dur: 800, label: 'idle' }]
+};
+SEQS.auto = [].concat(TAP_SEQ.slice(0, 3), [{ clip: 'idle', dur: 700, label: 'idle' }], SEQS.chain, HOLD_SEQ, SEQS.lightThenHard);
+let vt = 0, lastNow = performance.now();
+function segDur(s) { return s.dur !== undefined ? s.dur : VMOD.clips[s.clip].keys[VMOD.clips[s.clip].keys.length - 1].t; }
+function makePlayer(seq) { const P = { seq, i: 0, start: vt, keys: null, cap: null }; startSeg(P, vt); return P; }
+function startSeg(P, at) {
+  const s = P.seq[P.i], clip = VMOD.clips[s.clip];
+  P.keys = s.blend && P.cap ? [{ t: 0, pos: P.cap.pos, rot: P.cap.rot }].concat(clip.keys.slice(1)) : clip.keys;
+  P.start = at;
 }
-function vmTick(now) {
-  const t = (now - VS.t0) * ctl.speed, clip = VMOD.clips[VS.name];
-  if (VS.chainNext && t >= VMOD.chain.startAtMs) { const p = currentPose(now), nx = VS.chainNext; VS.chainNext = null; play(nx, p, now); return; }
-  if (!clip.loop && t >= clip.keys[clip.keys.length - 1].t) {
-    play('idle', null, now);
-    if (VS.script) VS.scriptAt = now;
+function tickPlayer(P) {
+  for (let guard = 0; guard < 16; guard++) {
+    const s = P.seq[P.i], d = segDur(s);
+    if (!(vt - P.start >= d)) break;
+    P.cap = sampleKeys(P.keys, d, VMOD.clips[s.clip].loop);
+    P.i = (P.i + 1) % P.seq.length;
+    startSeg(P, P.start + d);
   }
-  if (VS.script && VS.name === 'idle' && (now - (VS.scriptAt || 0)) * ctl.speed > 1200) {
-    const s = VS.script[VS.scriptI++ % VS.script.length];
-    play(s[0], null, now); VS.chainNext = s[1] || null;
-  }
+  const s = P.seq[P.i], t = vt - P.start;
+  return { s, t, clip: VMOD.clips[s.clip], pose: sampleKeys(P.keys, t, VMOD.clips[s.clip].loop) };
 }
-const vmViews = [];
+function playerOverlay(v, P, st) {
+  return (B) => {
+    const spec = v.spec, s = st.s;
+    if (s.spark) drawSpark(B, spec, VMOD.sparks[s.spark[0]], spec.cols / 2, spec.rows / 2, st.t - s.spark[1]);
+    if (s.glint !== undefined) {
+      const tp = project(spec, eyePoint(st.pose, H_TIP));
+      if (tp) drawSpark(B, spec, VMOD.sparks.chargeGlint, tp.c, tp.r, st.t - s.glint);
+    }
+  };
+}
+let MAIN = null;
+const vmViews = [], pairViews = [];
 function buildVM() {
+  MAIN = makePlayer(SEQS.idle);
   const bar = $('vmButtons');
-  const btns = [['idle', 'idle'], ['swingLR', 'swing L->R'], ['swingRL', 'swing R->L'], ['chain', 'chain LR + RL'], ['auto', 'auto demo']];
+  const btns = [['idle', 'idle'], ['swingLR', 'light: swingLR'], ['charge', 'charge (hold pose)'], ['swingHard', 'hard: swingHard'],
+                ['chain', '2 lights + rest'], ['tap', 'tap'], ['hold', 'hold -> hard'], ['lightThenHard', 'light, then hold -> hard'], ['auto', 'auto demo']];
   for (const [id, label] of btns) {
     const b = document.createElement('button'); b.textContent = label; b.dataset.id = id;
+    if (id === 'idle') b.className = 'on';
     b.onclick = () => {
-      const now = performance.now();
-      VS.script = null; VS.chainNext = null;
-      if (id === 'chain') { play('swingLR', null, now); VS.chainNext = 'swingRL'; }
-      else if (id === 'auto') { VS.script = [['swingLR', 'swingRL'], ['swingLR'], ['swingRL']]; VS.scriptI = 0; VS.scriptAt = now; play('idle', null, now); }
-      else play(id, null, now);
+      MAIN = makePlayer(SEQS[id]);
       bar.querySelectorAll('button').forEach((x) => x.className = x === b ? 'on' : '');
     };
     bar.appendChild(b);
@@ -443,26 +511,46 @@ function buildVM() {
     $('vmHost').appendChild(wrap);
     vmViews.push({ spec, grid, cap, bgVer: -1, bg: null });
   }
+  // side by side: tap | hold
+  const tapP = makePlayer(TAP_SEQ), holdP = makePlayer(HOLD_SEQ);
+  for (const [P, title] of [[tapP, 'TAP (light)'], [holdP, 'HOLD (charge -> hard)']]) {
+    const spec = { cols: 160, rows: 60, cw: 4.5, ch: 6.75 };
+    const grid = makeCanvas(spec.cols, spec.rows, spec.cw, spec.ch);
+    const wrap = document.createElement('div');
+    const h = document.createElement('h3'); h.textContent = title; wrap.appendChild(h);
+    wrap.appendChild(grid.cv);
+    const cap = document.createElement('div'); cap.className = 'cap'; wrap.appendChild(cap);
+    $('tapHoldHost').appendChild(wrap);
+    pairViews.push({ spec, grid, cap, bgVer: -1, bg: null, P });
+  }
 }
-function renderVMView(v, pose, clipName, keys, t) {
+function renderVMView(v, pose, clipName, keys, t, overlay) {
   if (v.bgVer !== ctlVer) { v.bg = shadeBackground(v.spec); v.bgVer = ctlVer; }
   const n = v.spec.cols * v.spec.rows, B = newBuf(n);
   B.kind.set(v.bg.kind); B.depth.set(v.bg.depth); B.fg.set(v.bg.fg); B.bg.set(v.bg.bg);
   for (let i = 0; i < n; i++) B.glyph[i] = v.bg.glyph[i];
-  drawTrail(v.spec, B, VMOD.clips[clipName], keys, t);
+  drawTrail(v.spec, B, VMOD.clips[clipName], keys, t, trailFor(clipName));
   drawHeld(v.spec, B, pose);
   edgePass(B, v.spec.cols, v.spec.rows);
   crosshair(v.spec, B);
+  if (overlay) overlay(B);
   present(v.grid, B);
   return B;
+}
+function renderPlayerView(v, P) {
+  const st = tickPlayer(P);
+  renderVMView(v, st.pose, st.s.clip, st.clip.loop ? VMOD.clips.idle.keys : P.keys, st.clip.loop ? 0 : st.t, playerOverlay(v, P, st));
+  return st;
 }
 
 // --- key-pose strips (static; re-rendered when a control changes)
 const strips = [];
 function buildStrips() {
   const host = $('strips');
-  for (const name of ['swingLR', 'swingRL']) {
-    const h = document.createElement('h3'); h.textContent = name + ' (' + VMOD.clips[name].keys.length + ' keys, lead edge ' + VMOD.clips[name].leadEdge + ')'; host.appendChild(h);
+  for (const name of ['swingLR', 'charge', 'swingHard']) {
+    const h = document.createElement('h3');
+    h.textContent = name + ' (' + VMOD.clips[name].keys.length + ' keys' + (VMOD.clips[name].leadEdge ? ', lead edge ' + VMOD.clips[name].leadEdge : ', held after the last key') + ')';
+    host.appendChild(h);
     const row = document.createElement('div'); row.className = 'row'; host.appendChild(row);
     VMOD.clips[name].keys.forEach((key, ki) => {
       const spec = { cols: 160, rows: 60, cw: 3, ch: 4.5 };
@@ -470,7 +558,9 @@ function buildStrips() {
       const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
       const cap = document.createElement('div'); cap.className = 'cap';
       const w = VMOD.clips[name];
-      const phase = key.t <= w.windup[1] ? (key.t === 0 ? 'rest' : 'windup end') : key.t <= w.active[1] ? 'active' : key.t < w.recover[1] ? 'follow-through' : 'recovered';
+      const last = w.keys[w.keys.length - 1].t;
+      const phase = !w.windup ? (key.t === 0 ? 'rest' : key.t === last ? 'held' : key.t <= 100 ? 'pull-back (tap)' : 'charging')
+        : key.t <= w.windup[1] ? (key.t === 0 ? (name === 'swingHard' ? 'charge pose' : 'rest') : 'windup end') : key.t <= w.active[1] ? 'active' : key.t < w.recover[1] ? 'follow-through' : 'recovered';
       cap.textContent = 'k' + ki + ' t ' + key.t + ' ms (' + phase + ') pos ' + key.pos.join(', ') + ' rot ' + key.rot.join(', ');
       wrap.appendChild(cap); row.appendChild(wrap);
       strips.push({ spec, grid, name, key, ver: -1, bgVer: -1, bg: null });
@@ -630,15 +720,16 @@ function pickupScene(now) {
 function buildSparks() {
   const host = $('sparkHost');
   const sp = VMOD.sparks;
-  for (const name of ['clink', 'hit']) {
+  for (const name of ['clink', 'hit', 'hitHeavy', 'chargeGlint']) {
     const s = sp[name];
+    const W = Math.max(...s.frames.map((f) => f.glyphs[0].length)) + 4, H = Math.max(...s.frames.map((f) => f.glyphs.length)) + 2;
     s.frames.forEach((fr, fi) => {
-      const w = fr.glyphs[0].length + 4, grid = makeCanvas(w, 3, 14, 21);
-      const B = newBuf(w * 3);
-      for (let i = 0; i < w * 3; i++) { B.bg[i * 3] = 20; B.bg[i * 3 + 1] = 22; B.bg[i * 3 + 2] = 30; }
-      for (let c = 0; c < fr.glyphs[0].length; c++) {
-        const ch = fr.glyphs[0][c], key = fr.fg[0][c];
-        if (ch !== ' ' && s.keys[key]) setEmissive(B, w + 2 + c, ch, s.keys[key].c);
+      const w = W, grid = makeCanvas(w, H, 14, 21);
+      const B = newBuf(w * H);
+      for (let i = 0; i < w * H; i++) { B.bg[i * 3] = 20; B.bg[i * 3 + 1] = 22; B.bg[i * 3 + 2] = 30; }
+      for (let r = 0; r < fr.glyphs.length; r++) for (let c = 0; c < fr.glyphs[r].length; c++) {
+        const ch = fr.glyphs[r][c], key = fr.fg[r][c];
+        if (ch !== ' ' && s.keys[key]) setEmissive(B, (r + 1) * w + 2 + c, ch, s.keys[key].c);
       }
       present(grid, B);
       const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
@@ -649,7 +740,12 @@ function buildSparks() {
   const pre = document.createElement('div'); pre.className = 'note';
   pre.innerHTML = 'Trail glyph by on-screen slope (pixels): flat <code>-</code> (head <code>=</code>), rising <code>/</code>, falling <code>\\</code>, steep <code>|</code>; ' +
     'colour by age: ' + VMOD.trail.colors.map((c) => '&lt;= ' + c[0] + ' ms <span style="color:' + P.colors[c[1]] + '">' + c[1] + '</span>').join(', ') +
-    '; ghost <code>' + VMOD.trail.ghost.glyph + '</code> ' + VMOD.trail.ghost.color + ' at ' + VMOD.trail.ghost.ageMs + ' ms. Target hit: white flash ' + VMOD.sparks.targetFlash.ms + ' ms + the 3-cell spark; world hit: clink + ' + VMOD.sparks.clink.hitStopMs + ' ms hit-stop.';
+    '; ghost <code>' + VMOD.trail.ghost.glyph + '</code> ' + VMOD.trail.ghost.color + ' at ' + VMOD.trail.ghost.ageMs + ' ms. Target hit: white flash ' + VMOD.sparks.targetFlash.ms + ' ms + the 3-cell spark; world hit: clink + ' + VMOD.sparks.clink.hitStopMs + ' ms hit-stop.<br>' +
+    '<b>trailHard</b> (swingHard): ' + VMOD.trailHard.samples + ' samples / ' + VMOD.trailHard.lifeMs + ' ms, body <code>' + [VMOD.trailHard.glyphs.h, VMOD.trailHard.glyphs.d1, VMOD.trailHard.glyphs.d2, VMOD.trailHard.glyphs.v].join(' ') +
+    '</code>, head <code>' + [VMOD.trailHard.glyphs.head.h, VMOD.trailHard.glyphs.head.d1, VMOD.trailHard.glyphs.head.d2, VMOD.trailHard.glyphs.head.v].join(' ') + '</code>; colour by age: ' +
+    VMOD.trailHard.colors.map((c) => '&lt;= ' + c[0] + ' ms <span style="color:' + P.colors[c[1]] + '">' + c[1] + '</span>').join(', ') +
+    '; ghost <code>' + VMOD.trailHard.ghost.glyph + '</code> ' + VMOD.trailHard.ghost.color + ' at ' + VMOD.trailHard.ghost.ageMs + ' ms. <b>hitHeavy</b>: 5x3 burst, ' + VMOD.sparks.hitHeavy.durations.join(' + ') +
+    ' ms (+ ' + VMOD.sparks.hitHeavy.hitStopMs + ' ms sim hit-stop). <b>chargeGlint</b>: 1 cell at the tip, ' + VMOD.sparks.chargeGlint.durations.join(' + ') + ' ms.';
   host.appendChild(pre);
 }
 
@@ -858,17 +954,69 @@ function runChecks() {
   }
   // view model
   const vm = VMOD;
-  for (const nm of ['swingLR', 'swingRL']) {
-    const c = vm.clips[nm], K = c.keys, T = K[K.length - 1].t;
+  // D-034 clip set: idle, swingLR (light), charge + swingHard (hard); no swingRL
+  ok(!vm.clips.swingRL && ['idle', 'swingLR', 'charge', 'swingHard'].every((n) => vm.clips[n]),
+     'clips (D-034): ' + Object.keys(vm.clips).join(', ') + ' (swingRL dropped)');
+  const ch = vm.chain;
+  ok(!ch.order && ch.max === 2 && ch.queueDuring === 'recover' && ch.restMs === 250 && ch.startAtMs === 270 && ch.blendMs === 80,
+     'chain (D-034): max ' + ch.max + ', queueDuring ' + ch.queueDuring + ', restMs ' + ch.restMs + ', startAtMs ' + ch.startAtMs + ', blendMs ' + ch.blendMs + ', no order');
+  const WANT = { swingLR: { T: 350, w: [80, 120, 150], dir: 'LR' }, swingHard: { T: 633, w: [67, 116, 450], dir: 'LR' } };
+  for (const nm of ['swingLR', 'swingHard']) {
+    const c = vm.clips[nm], K = c.keys, T = K[K.length - 1].t, W = WANT[nm];
     const poses = K.filter((k) => k.t > 0 && k.t < T).length;
-    ok(T === 350 && c.windup[1] - c.windup[0] === 80 && c.active[1] - c.active[0] === 120 && c.recover[1] - c.recover[0] === 150 && poses >= 5,
-       nm + ': ' + T + ' ms = windup ' + (c.windup[1] - c.windup[0]) + ' + active ' + (c.active[1] - c.active[0]) + ' + recover ' + (c.recover[1] - c.recover[0]) + ', ' + poses + ' poses between rest keys (>= 5)');
+    ok(!c.loop && T === W.T && c.windup[0] === 0 && c.windup[1] === c.active[0] && c.active[1] === c.recover[0] && c.recover[1] === T &&
+       c.windup[1] - c.windup[0] === W.w[0] && c.active[1] - c.active[0] === W.w[1] && c.recover[1] - c.recover[0] === W.w[2] && poses >= 5 && c.leadEdge === '+x',
+       nm + ': ' + T + ' ms = windup ' + (c.windup[1] - c.windup[0]) + ' + active ' + (c.active[1] - c.active[0]) + ' + recover ' + (c.recover[1] - c.recover[0]) + ', ' + poses + ' poses between the end keys (>= 5), leadEdge ' + c.leadEdge);
+    const steps = c.windup.concat(c.active, c.recover).map((ms) => Math.round(ms * 60 / 1000));
+    info(nm + ': windows in 60 Hz steps ' + steps.join(' / ') + ' (SWORD_CFG ' + (nm === 'swingLR' ? 'light 5 / 7 / 9' : 'hard 4 / 7 / 27') + ', within 1 step)');
     const tips = K.filter((k) => k.t >= c.active[0] && k.t <= c.active[1]).map((k) => eyePoint(k, H_TIP)[0]);
-    const mono = tips.every((x, i) => i === 0 || (nm === 'swingLR' ? x > tips[i - 1] : x < tips[i - 1]));
-    ok(mono, nm + ': blade tip moves ' + (nm === 'swingLR' ? 'left -> right' : 'right -> left') + ' through the active keys (x ' + tips.map((x) => x.toFixed(2)).join(' -> ') + ')');
+    const mono = tips.every((x, i) => i === 0 || x > tips[i - 1]);
+    ok(mono, nm + ': blade tip moves left -> right through the active keys (x ' + tips.map((x) => x.toFixed(2)).join(' -> ') + ')');
+  }
+  {
+    const L = vm.clips.swingLR, Hd = vm.clips.swingHard;
+    const span = (c) => { let a = 9, b = -9; for (let t = c.windup[1]; t <= c.recover[1]; t += 5) { const x = eyePoint(sampleKeys(c.keys, t, false), H_TIP)[0]; a = Math.min(a, x); b = Math.max(b, x); } return [a, b]; };
+    const sl = span(L), sh = span(Hd), rzL = L.keys.map((k) => k.rot[2]), rzH = Hd.keys.map((k) => k.rot[2]);
+    const turnL = Math.max(...rzL) - Math.min(...rzL), turnH = Math.max(...rzH) - Math.min(...rzH);
+    ok(sh[1] - sh[0] > sl[1] - sl[0] && turnH > turnL && Hd.recover[1] - Hd.recover[0] > L.recover[1] - L.recover[0],
+       'swingHard is bigger + heavier than swingLR: tip sweep ' + (sh[1] - sh[0]).toFixed(2) + ' vs ' + (sl[1] - sl[0]).toFixed(2) + ' m, blade turn ' + turnH + ' vs ' + turnL + ' deg, recover ' + (Hd.recover[1] - Hd.recover[0]) + ' vs ' + (L.recover[1] - L.recover[0]) + ' ms');
+    const k0 = Hd.keys[0], cEnd = vm.clips.charge.keys[vm.clips.charge.keys.length - 1];
+    ok(k0.pos.every((v, i) => v === cEnd.pos[i]) && k0.rot.every((v, i) => v === cEnd.rot[i]), 'swingHard key 0 = the charge end pose (' + k0.pos.join(', ') + ' / ' + k0.rot.join(', ') + ')');
+  }
+  {
+    const C = vm.clips.charge, K = C.keys, T = K[K.length - 1].t;
+    ok(!C.loop && T === 400 && K[0].pos.every((v, i) => v === vm.rest.pos[i]) && K[0].rot.every((v, i) => v === vm.rest.rot[i]),
+       'charge: loop false, REST at t 0 -> held pose at t ' + T + ' ms (clamped after)');
+    const p = sampleKeys(K, 100, false), dPos = Math.hypot(p.pos[0] - vm.rest.pos[0], p.pos[1] - vm.rest.pos[1], p.pos[2] - vm.rest.pos[2]);
+    const dRot = Math.max(...p.rot.map((v, i) => Math.abs(v - vm.rest.rot[i])));
+    const back = p.pos[1] - vm.rest.pos[1];
+    ok(dPos > 0.03 && dPos < 0.12 && dRot < 25 && back > 0.02, 'charge first 100 ms = a small pull-back: grip moves ' + (dPos * 100).toFixed(1) + ' cm (' + (back * 100).toFixed(1) + ' cm toward the eye), max rot change ' + dRot.toFixed(0) + ' deg (< 25)');
+    for (const spec of [{ cols: 160, rows: 60 }, { cols: 240, rows: 90 }]) {
+      const tp = project(spec, eyePoint(K[K.length - 1], H_TIP)), gd = project(spec, eyePoint(K[K.length - 1], H_GUARD));
+      ok(tp && tp.c >= 0 && tp.c < spec.cols && tp.r >= 0 && tp.r < spec.rows && gd && gd.c >= 0 && gd.c < spec.cols && gd.r >= 0 && gd.r < spec.rows,
+         spec.cols + 'x' + spec.rows + ' charge held pose: tip at col ' + (tp ? tp.c.toFixed(0) : '-') + ' row ' + (tp ? tp.r.toFixed(0) : '-') + ' and guard at col ' + (gd ? gd.c.toFixed(0) : '-') + ' row ' + (gd ? gd.r.toFixed(0) : '-') + ' on screen (chargeGlint visible)');
+    }
+  }
+  for (const nm of ['swingLR', 'charge', 'swingHard']) {
+    const K = vm.clips[nm].keys, T = K[K.length - 1].t;
     let minD = 9;
     for (let t = 0; t <= T; t += 5) { const p = sampleKeys(K, t, false); for (const m of [H_TIP, H_MID, H_GUARD, heldPoint([4.5, 1.5, 0])]) minD = Math.min(minD, -eyePoint(p, m)[1]); }
     ok(minD >= vm.depth.near, nm + ': nearest sampled point stays ' + minD.toFixed(3) + ' m in front of the eye (>= depth.near ' + vm.depth.near + ')');
+  }
+  {   // effects
+    const T1 = vm.trail, T2 = vm.trailHard, S = vm.sparks;
+    const sameSchema = Object.keys(T1).every((k) => k in T2) && Object.keys(T1.glyphs).every((k) => k in T2.glyphs) && Object.keys(T1.glyphs.head).every((k) => k in T2.glyphs.head);
+    ok(sameSchema && T2.samples > T1.samples && T2.lifeMs > T1.lifeMs && T2.colors.every((c) => P.colors[c[1]]) && P.colors[T2.ghost.color],
+       'trailHard: same schema as trail, ' + T2.samples + ' samples / ' + T2.lifeMs + ' ms (trail ' + T1.samples + ' / ' + T1.lifeMs + '), colours ' + T2.colors.map((c) => c[1]).join(' > '));
+    const cells = (sp) => sp.frames.map((f) => f.glyphs.join('').replace(/ /g, '').length);
+    const rowsOk = (sp) => sp.frames.every((f) => f.glyphs.length === f.fg.length && f.glyphs.every((r, i) => r.length === f.fg[i].length && r.split('').every((ch, j) => (ch === ' ') === (f.fg[i][j] === ' ') && (ch === ' ' || sp.keys[f.fg[i][j]]))));
+    const keysOk = (sp) => Object.values(sp.keys).every((v) => P.colors[v.c]);
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    const hh = S.hitHeavy, cg = S.chargeGlint;
+    ok(rowsOk(hh) && keysOk(hh) && hh.frames.length === 3 && hh.durations.length === 3 && sum(hh.durations) <= 150 && Math.max(...cells(hh)) > Math.max(...cells(S.hit)),
+       'sparks.hitHeavy: ' + hh.frames.length + ' frames, ' + sum(hh.durations) + ' ms (<= 150), cells ' + cells(hh).join(' / ') + ' vs hit ' + cells(S.hit).join(' / ') + ', rows + keys consistent');
+    ok(rowsOk(cg) && keysOk(cg) && cells(cg).every((n) => n === 1) && cg.frames.every((f) => f.glyphs.length === 1 && f.glyphs[0].length === 1) && sum(cg.durations) <= 100 && cg.mount === 'tip',
+       'sparks.chargeGlint: 1 cell at mount ' + cg.mount + ', ' + sum(cg.durations) + ' ms (<= 100)');
   }
   for (const spec of [{ cols: 160, rows: 60 }, { cols: 240, rows: 90 }]) {
     const g2 = project(spec, eyePoint(vm.rest, H_GUARD)), tp = project(spec, eyePoint(vm.rest, H_TIP));
@@ -877,7 +1025,8 @@ function runChecks() {
        ' (above the horizon, clear of the crosshair)');
   }
   const asc = (s) => s.split('').every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) <= 126);
-  const glyphs = JSON.stringify(vm.trail.glyphs) + vm.trail.ghost.glyph + vm.sparks.clink.frames.concat(vm.sparks.hit.frames).map((f) => f.glyphs.join('')).join('');
+  const glyphs = JSON.stringify(vm.trail.glyphs) + vm.trail.ghost.glyph + JSON.stringify(vm.trailHard.glyphs) + vm.trailHard.ghost.glyph +
+    vm.sparks.clink.frames.concat(vm.sparks.hit.frames, vm.sparks.hitHeavy.frames, vm.sparks.chargeGlint.frames).map((f) => f.glyphs.join('')).join('');
   ok(asc(glyphs) && asc(PATCH.decals.append[0].model) && asc(PATCH.interactables.append[0].prompt), 'trail / spark glyphs, scrawl and prompt are ASCII 32..126');
   ok(PATCH.props.append[0].x === A.voxelModels.sword.placement.x && PATCH.props.append[0].facing === A.voxelModels.sword.placement.facing && PATCH.interactables.append[0].prop === 'sword',
      'levelPatch.towerSword prop = placement; interactable links prop sword');
@@ -888,11 +1037,15 @@ function runChecks() {
 // ================================================================== main loop
 function frame() {
   const now = performance.now();
-  // view model
-  vmTick(now);
-  const t = (now - VS.t0) * ctl.speed, pose = currentPose(now);
-  for (const v of vmViews) renderVMView(v, pose, VS.name, VS.keys, VS.loop ? 0 : t);
-  $('vmInfo').textContent = VS.name + (VS.loop ? '' : ' t ' + Math.round(Math.min(t, 350)) + ' ms') + ' | pos ' + pose.pos.map((x) => x.toFixed(3)).join(', ') + ' rot ' + pose.rot.map((x) => x.toFixed(1)).join(', ');
+  // view model (virtual clock, scaled by the speed selector)
+  vt += Math.min(200, now - lastNow) * ctl.speed; lastNow = now;
+  let st = null;
+  for (const v of vmViews) st = renderPlayerView(v, MAIN);
+  if (st) $('vmInfo').textContent = st.s.label + ' | ' + st.s.clip + (st.clip.loop ? '' : ' t ' + Math.round(st.t) + ' ms') + ' | pos ' + st.pose.pos.map((x) => x.toFixed(3)).join(', ') + ' rot ' + st.pose.rot.map((x) => x.toFixed(1)).join(', ');
+  for (const v of pairViews) {
+    const s2 = renderPlayerView(v, v.P);
+    v.cap.textContent = s2.s.label + ' | ' + s2.s.clip + ' t ' + Math.round(s2.t) + ' ms';
+  }
   for (const s of strips) {
     if (s.ver === ctlVer) continue;
     if (s.bgVer !== ctlVer) { s.bg = shadeBackground(s.spec); s.bgVer = ctlVer; }

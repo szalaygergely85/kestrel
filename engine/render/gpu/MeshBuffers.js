@@ -152,6 +152,31 @@ export const TERRAIN_VERTEX_LAYOUT = Object.freeze([
   { name: 'aNrmBits', location: 1, components: 1, type: 'uint', offsetBytes: 12 },
 ]);
 
+/** CLOTH-1b2 (33.5): the cloth's dynamic vertex buffer is the terrain stride (pos f32x3 + oct normal u32); uv lives in a separate static buffer. */
+export const CLOTH_STRIDE_BYTES = TERRAIN_STRIDE_BYTES;
+/** Cloth vertex layout: location 0 aPos + 2 aNrmBits from the dynamic buffer (16 B stride), location 1 aUV from the uv buffer (vec2, tight). */
+export const CLOTH_DYN_LAYOUT = Object.freeze([
+  { name: 'aPos', location: 0, components: 3, type: 'float', offsetBytes: 0 },
+  { name: 'aNrmBits', location: 2, components: 1, type: 'uint', offsetBytes: 12 },
+]);
+export const CLOTH_UV_LAYOUT = Object.freeze([{ name: 'aUV', location: 1, components: 2, type: 'float', offsetBytes: 0 }]);
+/** Shadow pass: position only, same dynamic buffer and stride. */
+export const CLOTH_SHADOW_LAYOUT = Object.freeze([CLOTH_DYN_LAYOUT[0]]);
+
+/**
+ * Packs a cloth mesh's `pos` (f32x3) + `nrm` (u32) into the interleaved 16 B/vertex scratch (zero allocation when
+ * `f32`/`u32` views over a preallocated ArrayBuffer are passed).
+ * @param {any} mesh @param {Float32Array} f32 @param {Uint32Array} u32
+ */
+export function packClothVertices(mesh, f32, u32) {
+  const n = mesh.pos.length / 3;
+  for (let v = 0; v < n; v++) {
+    const b = v * 4;
+    f32[b] = mesh.pos[v * 3]; f32[b + 1] = mesh.pos[v * 3 + 1]; f32[b + 2] = mesh.pos[v * 3 + 2];
+    u32[b + 3] = mesh.nrm[v];
+  }
+}
+
 /**
  * Per-world-pipeline cache: one GPU vertex buffer per `mesh.id`, re-uploaded
  * only when `mesh.meshVersion` changes (level dynamics rebuild a `dyn[tag]`
@@ -167,6 +192,43 @@ export class MeshBuffers {
     this.cache = new Map();
     /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number}>} */
     this.voxelCache = new Map();
+    /** CLOTH-1b2: cloth entries (dynamic 16 B vertex buffer + static uv + static index), keyed by `mesh.id`. @type {Map<string, any>} */
+    this.clothCache = new Map();
+  }
+
+  /**
+   * CLOTH-1b2 (33.5): GPU buffers of a `'cloth'` MeshData. The first call creates the dynamic vertex buffer, the static uv
+   * and index buffers and a preallocated scratch; later calls `writeBuffer` ONCE when `mesh.meshVersion` differs from the
+   * entry's (never a new buffer per frame, nothing when unchanged). Call after `pushClothItem` ran (it refreshes the arrays).
+   * @param {any} mesh
+   * @returns {{vertexBuffer: any, uvBuffer: any, indexBuffer: any, indexCount: number, vertexCount: number, version: number}}
+   */
+  getCloth(mesh) {
+    let e = this.clothCache.get(mesh.id);
+    if (e && e.mesh !== mesh) { // same id, another MeshData (a second cloth system): rebuild
+      this.device.dispose(e.vertexBuffer); this.device.dispose(e.uvBuffer); this.device.dispose(e.indexBuffer);
+      this.clothCache.delete(mesh.id);
+      e = undefined;
+    }
+    if (!e) {
+      if (mesh.layout !== 'cloth') throw new Error(`MeshBuffers.getCloth: mesh "${mesh.id}" is not 'cloth' layout (got "${mesh.layout}")`);
+      const n = mesh.pos.length / 3;
+      const scratch = new ArrayBuffer(n * CLOTH_STRIDE_BYTES);
+      const f32 = new Float32Array(scratch), u32 = new Uint32Array(scratch);
+      packClothVertices(mesh, f32, u32);
+      e = {
+        mesh, version: mesh.meshVersion, vertexCount: n, indexCount: mesh.idx.length, f32, u32, bytes: new Uint8Array(scratch),
+        vertexBuffer: this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(scratch), dynamic: true }),
+        uvBuffer: this.device.createBuffer({ usage: 'vertex', data: mesh.uv }),
+        indexBuffer: this.device.createBuffer({ usage: 'index', data: mesh.idx }),
+      };
+      this.clothCache.set(mesh.id, e);
+    } else if (e.version !== mesh.meshVersion) {
+      packClothVertices(mesh, e.f32, e.u32);
+      this.device.writeBuffer(e.vertexBuffer, e.bytes, 0);
+      e.version = mesh.meshVersion;
+    }
+    return e;
   }
 
   /**
@@ -238,5 +300,11 @@ export class MeshBuffers {
       this.device.dispose(entry.indexBuffer);
     }
     this.voxelCache.clear();
+    for (const entry of this.clothCache.values()) {
+      this.device.dispose(entry.vertexBuffer);
+      this.device.dispose(entry.uvBuffer);
+      this.device.dispose(entry.indexBuffer);
+    }
+    this.clothCache.clear();
   }
 }

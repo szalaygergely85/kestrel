@@ -12,8 +12,9 @@ import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
-import { MESH_VERT_SRC, MESH_INST_VERT_SRC, meshVertSrc } from './glsl/mesh.vert.js';
-import { MESH_FRAG_SRC } from './glsl/mesh.frag.js';
+import { MESH_VERT_SRC, MESH_INST_VERT_SRC, MESH_CLOTH_VERT_SRC, meshVertSrc } from './glsl/mesh.vert.js';
+import { MESH_FRAG_SRC, MESH_CLOTH_FRAG_SRC, meshFragSrc } from './glsl/mesh.frag.js';
+import { SHADOW_FRAG_SRC } from './glsl/shadow.frag.js';
 import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { makeOk } from '../../test/assert.js';
@@ -220,6 +221,22 @@ ok('mesh.frag.js GI.w = vObjectId, kind 8 packs the normal for face 7', MESH_FRA
   ok('mesh.frag.js roundedFace body is string-equal with voxel.frag.js (whitespace-normalised)', vb !== null && vb === mb, String(mb));
 }
 
+
+// CLOTH-1b2 (docs/architecture.md 33.5): the cloth variant of the mesh vertex/fragment pair.
+{
+  const V = MESH_CLOTH_VERT_SRC, F = MESH_CLOTH_FRAG_SRC;
+  ok('cloth variants: meshVertSrc(false, true) / meshFragSrc(true) are the exported constants; static MESH_FRAG_SRC = meshFragSrc(false)', V === meshVertSrc(false, true) && F === meshFragSrc(true) && MESH_FRAG_SRC === meshFragSrc(false) && MESH_VERT_SRC === meshVertSrc(false));
+  ok('cloth vert declares exactly attributes 0 (aPos), 1 (aUV), 2 (aNrmBits) - no flat/aux attributes', [0, 1, 2].every((loc) => new RegExp(`layout\\(location = ${loc}\\) in`).test(V)) && !/layout\(location = [3-9]\) in/.test(V) && !V.includes('aFlat') && !V.includes('aAux'));
+  ok('cloth vert takes the flat data from the uFlat uvec2 uniform (x = planeId base, y = kind | face<<8 | mat<<16)', V.includes('uniform uvec2 uFlat;') && V.includes('uFlat.y & 0xffu') && V.includes('(uFlat.y >> 8u) & 0xfu') && V.includes('(uFlat.y >> 16u) & 0xffffu') && V.includes('int(uFlat.x) | uPlaneIdOr'));
+  ok('cloth vert outputs the smooth out vec3 vNrmS (not flat), no vNrmW', V.includes('out vec3 vNrmS;') && !V.includes('flat out vec3 vNrmS') && !V.includes('out vec3 vNrmW') && !V.includes('vNrmW ='));
+  ok('cloth vert: no instanced attributes/uniforms, vAxisAligned = 0, zBase from uZBase, world z from uModel', !V.includes('iRow0') && !V.includes('uTeamSlot') && V.includes('vAxisAligned = 0u;') && V.includes('vZBase = uZBase;') && V.includes('vWorldZ = worldPos.z;'));
+  ok('cloth vert does not build its own projection matrix', !/tan\(|sin\(|cos\(/.test(V));
+  ok('cloth frag: N = normalize(vNrmS); if (!gl_FrontFacing) N = -N (negate AFTER normalising, the twin of rasterJS flipN = twoSided && A2 < 0)', F.includes('vec3 nrmW = normalize(vNrmS);') && F.includes('if (!gl_FrontFacing) nrmW = -nrmW;') && F.indexOf('normalize(vNrmS)') < F.indexOf('!gl_FrontFacing'));
+  ok('cloth frag: face 7 + packNormalOct(N) into GI.z (nrmBits) and GA.w, from the flipped N only', F.includes('packNormalOct(nrmW)') && F.includes('face = roundedFace(nrmW)') && !F.includes('vNrmW') && F.includes('gaW = nrmBits;') && F.includes('nrmBits, vObjectId)'));
+  ok('cloth frag: reads smooth in vec3 vNrmS, gl_FragCoord only once (depth reciprocal), same 3 outputs', F.includes('\nin vec3 vNrmS;') && (F.match(/gl_FragCoord/g) || []).length === 1 && F.includes('out uvec4 outGI') && F.includes('out uvec4 outGA') && F.includes('out uint outDepth'));
+  ok('static mesh variants never mention gl_FrontFacing / vNrmS / uFlat', ![MESH_VERT_SRC, MESH_INST_VERT_SRC, MESH_FRAG_SRC].some((x) => /gl_FrontFacing|vNrmS|uFlat/.test(x)));
+  ok('shadow pass reuses the cloth vertex stage with the empty fragment stage (depth only)', /void main\(\) \{\}/.test(SHADOW_FRAG_SRC));
+}
 
 console.log(`\n[glsl.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

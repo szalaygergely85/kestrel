@@ -26,7 +26,10 @@ import {
   buildStaticVertexData, STATIC_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, MeshBuffers,
   buildTerrainVertexData, TERRAIN_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT,
   buildVoxelVertexData, VOXEL_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT,
+  CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES,
 } from './MeshBuffers.js';
+import { createCloth } from '../../physics/cloth.js';
+import { createClothMesh, updateClothMesh } from '../../mesh/clothMesh.js';
 import { AUX_STRIDE, FLAT_STRIDE } from '../../mesh/MeshData.js';
 import { LevelMeshCache } from '../../mesh/DrawList.js';
 import { loadLevel } from '../../world/Level.js';
@@ -310,6 +313,48 @@ function decode(buf, vertCount) {
   ok('getVoxel: new meshVersion re-uploads and frees both old buffers', mock.createCount - before === 4 && e1.vertexBuffer._disposed && e1.indexBuffer._disposed && e3 !== e1);
   buffers.dispose();
   ok('getVoxel: dispose() frees both buffers', mock.liveCount() === 0, String(mock.liveCount()));
+}
+
+// ---- CLOTH-1b2: getCloth - 1 create per buffer, 1 write per changed meshVersion, 0 writes asleep ----
+{
+  const mock = makeMockGpuDevice();
+  const buffers = new MeshBuffers(mock.device);
+  const cols = 4, rows = 3, n = cols * rows;
+  const rest = new Float64Array(3 * n);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const k = r * cols + c; rest[3 * k] = c * 0.1; rest[3 * k + 2] = 2 - r * 0.1; }
+  const cloth = createCloth({ cols, rows, rest, pins: [0, 1, 2, 3], seed: 1 });
+  const mesh = createClothMesh(cloth, 'bufTest', 3, [0, 0, 0]);
+  const c0 = mock.createCount;
+  const e1 = buffers.getCloth(mesh);
+  ok('getCloth: first call creates 3 buffers (dynamic vertex, static uv, static index)', mock.createCount - c0 === 3 && mock.writeCount === 0, String(mock.createCount - c0));
+  ok('getCloth: vertex buffer is dynamic 16 B/vertex, index = the cloth triangle list (u16)', e1.vertexBuffer.desc.dynamic === true && e1.vertexBuffer.desc.data.byteLength === n * 16 && e1.indexBuffer.desc.data === cloth.tri && e1.uvBuffer.desc.data === mesh.uv);
+  // bytes decode back to pos + packed normal
+  const f32 = new Float32Array(e1.vertexBuffer.desc.data.buffer, e1.vertexBuffer.desc.data.byteOffset, n * 4), u32 = new Uint32Array(e1.vertexBuffer.desc.data.buffer, e1.vertexBuffer.desc.data.byteOffset, n * 4);
+  let decOk = true;
+  for (let v = 0; v < n; v++) if (f32[v * 4] !== mesh.pos[v * 3] || f32[v * 4 + 1] !== mesh.pos[v * 3 + 1] || f32[v * 4 + 2] !== mesh.pos[v * 3 + 2] || u32[v * 4 + 3] !== mesh.nrm[v]) decOk = false;
+  ok('getCloth: vertex bytes decode to mesh.pos + mesh.nrm bits exactly', decOk);
+  const layoutByName = Object.fromEntries(CLOTH_DYN_LAYOUT.map((a) => [a.name, a]));
+  ok('CLOTH layouts: aPos@0 off 0, aNrmBits@2 off 12 (stride 16), aUV@1 from its own buffer', layoutByName.aPos.location === 0 && layoutByName.aPos.offsetBytes === 0 && layoutByName.aNrmBits.location === 2 && layoutByName.aNrmBits.offsetBytes === 12 && CLOTH_UV_LAYOUT[0].location === 1 && CLOTH_STRIDE_BYTES === 16);
+  for (let i = 0; i < 100; i++) buffers.getCloth(mesh);
+  ok('getCloth: 100 calls at the same meshVersion write nothing and create nothing', mock.writeCount === 0 && mock.createCount - c0 === 3, `${mock.writeCount} writes`);
+  // a sim step moves the cloth; the SYSTEM bumps meshVersion (here: by hand) -> exactly one write
+  cloth.step(6, 0, 0, null);
+  updateClothMesh(mesh, cloth);
+  mesh.meshVersion++;
+  const e2 = buffers.getCloth(mesh);
+  ok('getCloth: a changed meshVersion costs exactly one writeBuffer, same buffers', mock.writeCount === 1 && e2 === e1 && mock.createCount - c0 === 3);
+  ok('getCloth: the write carries the new positions at offset 0', e1.vertexBuffer._lastWrite.dstOffsetBytes === 0 && new Float32Array(e1.vertexBuffer._lastWrite.data.buffer, e1.vertexBuffer._lastWrite.data.byteOffset, 3)[0] === mesh.pos[0]);
+  buffers.getCloth(mesh); buffers.getCloth(mesh);
+  ok('getCloth: unchanged again -> still 1 write total (asleep cloth = 0 writes)', mock.writeCount === 1);
+  // another MeshData with the same id (a second cloth system) rebuilds and frees the old trio
+  const mesh2 = createClothMesh(cloth, 'bufTest', 3, [0, 0, 0]);
+  buffers.getCloth(mesh2);
+  ok('getCloth: same id, different mesh object -> old 3 buffers freed, new 3 created', e1.vertexBuffer._disposed && e1.uvBuffer._disposed && e1.indexBuffer._disposed && mock.createCount - c0 === 6);
+  let threw = false;
+  try { buffers.getCloth({ id: 'x', layout: 'static', meshVersion: 1 }); } catch (e) { threw = true; }
+  ok('getCloth rejects a non-cloth layout', threw);
+  buffers.dispose();
+  ok('getCloth: dispose() frees every cloth buffer', mock.liveCount() === 0, String(mock.liveCount()));
 }
 
 // ---- an unsupported layout throws clearly (voxel per-part instancing is ME-07/08) ----

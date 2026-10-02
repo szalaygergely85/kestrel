@@ -3679,6 +3679,50 @@ Sampling is linear per component between keys (no easing); loop clips use `tMs m
 - **main.js (PC-B main session, 5 lines):** (1) imports; (2) boot: `swordVm = engine.viewModel.load('sword', assets.viewModels.sword, registry)` + trail/spark styles in the merged `setStyles`; (3) world load: `sword = createSwordSim(engine.world, engine.events, SWORD_CFG, targetables)`; (4) update, after `beasts.step`: `sword.step(playerHandle.data, fwd[0], fwd[1], input.pressed('Mouse0') && look.locked && !uiLocked && !ending)`; (5) render, after `targeting.present`: `presentSword(...)` (it calls `vm.hide()` while the flag is unset).
 - **Do not:** pose the sword in game code (use `show`); add a second projection; use trig or float timers in `sim/`; emit a second hit event; allocate a payload per hit.
 
+#### 30.1 amendment (D-034): light tap / hard hold-release (architect, 2026-10-02) - normative for US-078d
+
+**Supersedes in US-078d above:** the LR -> RL chain (no `swingRL`; both lights use `swingLR` and the LR slice order), `attackPressed` (now `attackDown`), states windup/active/recover as top-level states. Everything else in US-078d stands (arc slices, `raySegment` world gate, `arcHits`, LOS check, hitMask, clink, targetables, view helpers, main.js lines, the "Do not" list). Still no engine change.
+
+**Input (sim-side, integer steps).** `step(player, fx, fy, attackDown)`; main.js passes `attackDown = (input.isDown('Mouse0') || input.pressed('Mouse0')) && look.locked && !uiLocked && !ending` once per sim step (the `pressed` term keeps a sub-step tap). The sim derives edges itself from its own `prevDown` (hashed); a **press** = `attackDown && !prevDown`. Only a press starts anything: a button held through `rest`/`hard`/`recover` does nothing until released and pressed again. `holdSteps` counts steps with the button down since the press (saturates at 9999). Threshold `cfg.holdSteps = 24` (0.4 s).
+
+**State machine** (`sword.state`, one `stateStep` counter, both hashed; 60 Hz):
+
+| state | entered by | steps | hit window (stateStep) | speedScale x | exits |
+|---|---|---|---|---|---|
+| idle | - | - | - | 1 | press (allowed, see gate) -> hold |
+| hold | press | 1..23 | none | 1 | release -> light; `holdSteps == 24` -> charge |
+| charge | holdSteps 24 | unbounded | none | 0.3 | release -> `spendMana(4)` true -> hard, false -> light |
+| light | release in hold, or mana-short release | windup 5, active 7, recover 9 = 21 (0.35 s) | 5..11 (slice i = stateStep-5) | 0.6 | end -> idle (chain 0), or rest if chain == 2; queued press -> see chain |
+| hard | release in charge with mana | windup 4, active 7, recover 27 = 38 (0.633 s) | 4..10 (slice i = stateStep-4) | 0.3 | end -> idle, chain 0 |
+| rest | end of the 2nd light | 15 | none | 0.6 | end -> idle, chain 0 |
+
+- **Gate (press and every hold/charge step):** `tower.sword.taken`, grounded, not blocking. Leaving the ground, `onBlockStart()` or `cancel()` during hold/charge -> idle, no mana spent, no swing. A release while not grounded = cancel.
+- **Chain (max 2 lights):** `chain` = lights in a row. A press in light #1's recover (stateStep 12..20) sets `queued`; presses in windup/active, in light #2, in hard, in rest are ignored. At `max(pressStep+1, chainStart 16)`: button already up -> light #2 (blend = true); still down -> hold, `holdSteps` keeps counting from the press (so a hard can follow a light; a hard resets chain to 0). Light #2 ends in rest 15. A light that ends with nothing queued -> idle, chain 0 (taps >= 21 steps apart are unlimited, as before).
+- **Release during recover** (light or hard): nothing, unless it is the queued press of light #1 (above).
+- **Hit-stop:** clink (world hit first, both swings) -> recover from the current step, `stateStep` frozen 3 steps. Entity hit: light 0, hard `hitStopHard 4` (freeze only, the swing continues). While frozen the view freezes tMs.
+- `speedScale`: multiply `body.speedScale` (after `resolveBodyContacts`), never assign.
+
+**Numbers live in data:** `game/js/quest/swordConfig.js` `SWORD_CFG` (one frozen object, seconds/ms in comments beside every step count, owner edits it at the feel check): `holdSteps 24, chainStart 16, rest 15, hitStop 3, hitStopHard 4, flash 6, light {windup 5, active 7, recover 9, damage 1, reach 1.6, speed 0.6}, hard {windup 4, active 7, recover 27, damageMul 3, reach 1.6, speed 0.3, mana 4, knock 3}` (`hard.speed` applies to charge and hard); arc slices shared. Beast-side numbers in `beastConfig.js` (seconds): `staggerSec 0.6, staggerKnock 4` (m/s). Test: the step windows match the clip windows in `ASSETS.viewModels.sword` within 1 step.
+
+**Mana:** spent **once, on release** (the commit point, hit or miss) via the 30.2 API: `createSwordSim(world, events, cfg, targetables, hooks)` with `hooks.spendMana(n) -> boolean` (main.js passes `(n) => vitals.spendMana(n)`, built once at load; no hook = hard is free, for tests). `false` -> a light swing instead (counts as chain +1; `spendMana` already sets `manaFlashTick`, the HUD flash is the feedback). Never checked or spent during charge.
+
+**Hits:** payload gains one number field: `p {source:'player', target, damage, heavy, dirX, dirY, px, py, pz}`, `heavy` 0|1, `damage` = light.damage or light.damage * hard.damageMul (3), `dirX/dirY` = unit 2D (target - player), fallback (fx, fy). Still one preallocated object, one channel. Once per target per swing (hitMask), both swings.
+- **Knockback, generic (sword sim, heavy only):** a target with `components.body` gets `applyImpulse(body, t.z, dirX*hard.knock, dirY*hard.knock, 0)` (engine export, US-136). Beasts have no body (position is the steer SoA), so they are skipped here and handled by their own listener; the practice target has neither (flash only).
+- **Stagger (beastSim, heavy only):** `beastSim` registers one `combat:hit` listener at create (ids -> slot via a prebuilt object lookup, no Map iteration). On `p.heavy && slot found`: new `STATE_STAGGER = 7`, `timer = staggerSteps (36)`, `steer.vx/vy = dir * staggerKnock` (assign, not add), `accel = DEFAULT_ACCEL`. Enters from **any** state; it interrupts windup and charge (charge contact damage is impossible while staggered), and the charge wall counter is cleared. In `setSteerTarget`: waypoint = own position, arrive 0, `maxSpeed = staggerKnock` (so the steer clamp keeps the shove; it decays by accel 12, ~0.67 m slide). Facing frozen. At timer 0: `seen` -> chase, else return. Light hits: no beast-side effect in 078d (beast HP/hurt = US-079 proper). `resetAll` clears stagger; save/hash already cover `state`/`timer`.
+- Listener order: the sword steps after `beasts.step`, so the stagger acts from the next beast step. Deterministic (synchronous emit).
+
+**View (`swordView.js`)**, clip per state: idle/rest -> `idle`; hold + charge -> `charge` with tMs = (steps since entering hold) * 1000/60 (blend true when entered from a light at chainStart); light -> `swingLR` (blend on light #2); hard -> `swingHard` (blend true: key 0 = the captured charge pose). `setBob` amount: charge/hard 0.2, light 0.4. Hard swings use `trailHard` and spark `hitHeavy`; clink shared. When `holdSteps` reaches 24 and `mana.mp >= hard.mana`, one `chargeGlint` at the tip (presentation only, reads `mana` at render; no glint = this will be a light).
+
+**Designer must deliver (in `design/models/sword.js`, `ASSETS.viewModels.sword`):**
+1. `clips.charge` - `loop:false`, keys from REST (t 0) to the cocked hold pose at **t 400 ms**, clamped after (the pose is held while charging); short taps show only its first keys as anticipation, so the first ~100 ms must read as a small pull-back.
+2. `clips.swingHard` - `loop:false`, same left -> right motion as `swingLR` but bigger/slower follow-through, windows `windup [0, 67]`, `active [67, 183]`, `recover [183, 633]`, key 0 = the charge end pose, `leadEdge '+x'`.
+3. `trailHard` (same schema as `trail`; heavier: e.g. more samples / heavier head glyphs / hotter colours) and `sparks.hitHeavy` (bigger than `hit`, e.g. 5 cells, 3 frames <= 150 ms) and `sparks.chargeGlint` (1 cell at the tip, <= 100 ms).
+4. Drop `swingRL`; `chain` becomes `{max:2, queueDuring:'recover', restMs:250, startAtMs:270, blendMs:80}` (no `order`). Update the preview page to show tap and hold.
+
+**Save / hash:** the sword sim is transient (not saved; load = idle, chain 0). `hashInto(h)`: state, stateStep, holdSteps, prevDown, chain, queued, pressStep, frozen, hitMask, spark ring. Beast stagger: in the existing beast hash/save (state + timer + steer).
+
+**Tests (`sim/sword.test.js`, + beastSim):** tap (down 1 step, 6 steps, 23 steps) -> light; 24 -> charge, release -> hard; hard with mp 3 -> light + `manaFlashTick` set, mp unchanged; mp spent once on release, also on a miss; L, queued L -> rest 15, 3rd press ignored; L then queued hold -> hard (chain reset); press held through rest does not start a swing; release in recover ignored; jump / block during charge cancels, no mana; speedScale 1 / 0.3 / 0.6 / 0.3 per state (multiplied); hit windows at the exact steps; `heavy` and `damage 3` in the payload; body target gets `applyImpulse`; beastSim: heavy hit in windup and in charge -> stagger 36 steps, no contact hit during it, displaced ~0.6-0.7 m, then chase; light hit -> no stagger; clink freezes 3, hard entity hit freezes 4; config windows vs clip windows; 600-step replay (with tap + hold input) hash equal twice; zero alloc over 10k steps.
+
 ### 30.2 US-080 HP + mana, damage, death/respawn (all PC-B game; no engine step)
 
 **Decision: `health`/`mana` are game components, not an engine module** (same reason as the beast brain, 29.1: the rules are game rules; an engine combat layer waits for a second game). Convention, documented for reuse: `components.health {hp, max, invuln}` and `components.mana {mp, max, regen, pause}` - integers, timers in steps, serialized with the entity (no `serialize.js` change). US-128b reads `health.hp/max` for its bar. The row's "PC-A health component" falls away; content/game only, so no arch-review (the PO reviews).
@@ -3977,7 +4021,7 @@ Notes for the rows flagged `NEEDS PC-A: architect note` in the epic header (back
 - **Nav:** `NavGrid.buildFromWorld` may later block cells with `depth >= 0.6` (option; not this story).
 - **Tests:** rect/circle in and out; overlap = highest z; level frame offset + `yawSteps 1`; depth over a stepped floor fixture; serialize round trip; validation throws.
 
-**US-055a2 (PC-A, ~1 d, engine/render -> arch-review; mesh only): render.**
+**US-055a2 (PC-A, ~1 d, engine/render -> arch-review; mesh only): render.** **Superseded in part by 35 (owner decision 2026-10-02, water mesh):** the per-cell ray-plane hit below is replaced by the water layer pass (055a2a, 35.3). The composite rules, look table, edge rule, tests and pose below still apply (055a2b).
 - **`engine/render/water.js`, per frame:**
   - `selectWater(world, cam, out)` copies the <= `WATER_MAX 8` regions that are on screen and nearest the camera into a `Float32Array(8*8)` uniform block (rect/circle params, z, look).
   - It skips regions with `eyeZ < z` (no underwater view in v1).
@@ -4459,3 +4503,358 @@ Order: 1a and 1b in parallel (disjoint files), then 1c. The PO checks the owner 
 
 ### 34.5 Do not
 Add per-axis scale; scale `pm.cellM` or rebuild/re-pack a voxel model per instance (one MeshData per model stays shared); add a scale uniform to the mesh shader (the part matrix already carries it); scale uv/texture coordinates; write `scale: 1` into content or saves; bump the save version; let the editor write an unclamped or unrounded value; add colliders for static props in this story.
+
+## 35. WATER-2: water mesh layer, flow, waves, waterfalls, underwater (architect, 2026-10-02; US-055a2 re-scope, US-141..144)
+
+**Owner decision (2026-10-02, relayed by the main session; the main session records it in `decisions.md`): US-143 waves use a displaced, see-through water MESH in the mesh renderer, not a shade-pass perturbation of the 32.2 plane.**
+
+The architect agrees on the merits. One geometry gives three things through one pass and one composite:
+- true silhouettes (crests hide troughs at grazing views);
+- the view from below (back faces);
+- the waterfall sheet.
+
+The cost is one extra cell-resolution pass (35.3).
+
+**No analytic-plane fallback is kept.** Water is mesh-only (32.0 item 3: a no-op on `dda`). Physics never used the plane; it uses `waterAt`.
+
+### 35.0 What changes in 32.2
+- **US-055a1 (in dev): no change.** `waterAt(x, y, out)`, the SoA, `find`, `collectWaterDefs` and the `waterDef` round trip stay as written.
+  - US-143a later adds `out.flatZ` and makes `surfaceZ` live (35.2).
+  - 141a/143a add the 35.1 keys to `collectWaterDefs`. 055a1 already ignores unknown keys, and `waterDef` is a raw clone, so saves round-trip them today.
+- **US-055a2 is re-scoped before it starts: 055a2a (water layer pass, flat) + 055a2b (composite).**
+  - The 32.2 composite rules stay: alpha by path length, shallow/deep mix, `seeThrough`, glint, `bg`, the three call sites, own fog, edge suppression, look table.
+  - Only **the hit** changes. It comes from the WATER texel (35.3), not from `dW = (z - eyeZ)/zDir`.
+  - The 32.2 do-nots still hold: no water in the main G-buffer, the draw list or the shadow list. Physics, picking and edges stay on the real floor.
+
+### 35.1 Data (content, validated at load in `water.js`; throws naming the id)
+- **Region keys added to the 32.2 shape:**
+  - `flow: [vx, vy]`: m/s, `|v| <= 6` (141a adds the cap).
+  - `flowRadial: s`: m/s, circle only, + is outward from `c`, `|s| <= 6`. For plunge pools; it adds to `flow`.
+  - `waves`: `"none"|"calm"|"breezy"|"storm"|"sea"`, default `"calm"`. `"sea"` follows the world sea state (35.2).
+  - `waveDirDeg`: compass bearing the waves travel toward, default 0. A level frame adds `90*yawSteps`.
+  - `seed`: int, default 1 (wave phases).
+- **`waterfalls: [{id, lip: [x0, y0, x1, y1], z, drop, outDeg, out, look}]`:**
+  - `drop` is 2..20 m.
+  - `outDeg` is the compass direction the water leaves the lip.
+  - `out` is the lip speed in m/s, default 1.5.
+  - Max 8 per world. Level blocks go through the frame like `water`.
+  - Content: `World.waterfallDef` round-trips like `waterDef`.
+- **Spectrum and states:**
+  - Engine defaults are frozen in `water.js`.
+  - Override: `assets.waterWaves` (designer data). `main.js` resolves it to numbers (32.0 item 6), and `World.load` validates it.
+```js
+WAVE_SPECTRUM = [{offDeg: 0, lambda: 24}, {offDeg: 25, lambda: 13}, {offDeg: -40, lambda: 6}, {offDeg: 70, lambda: 3}]; // speed = sqrt(9.81*lambda/(2*PI)) at load
+WAVE_STATES   = {calm: [0.012, 0.009, 0.006, 0.003], breezy: [0.05, 0.035, 0.022, 0.013], storm: [0.24, 0.12, 0.06, 0.03]}; // sums 0.03 / 0.12 / 0.45 m
+```
+  - The main wave has lambda 24 m, so its period is T = 3.9 s (the AC asks for 3-8 s).
+  - All regions share one spectrum, and a state is only an amplitude vector. Blending between states therefore never jumps phase.
+- **Per-region compile at load (may use trig and allocate):**
+  - `dir_i = forwardOf(waveDirDeg + offDeg_i)`;
+  - `kx_i, ky_i = dir_i / lambda_i` (cycles/m);
+  - `om_i = speed_i / lambda_i` (cycles/s);
+  - `phi_i` = 4 draws of `createRng(seed ^ fnv1a(id))`.
+  - These go into `wk: Float64Array(n*16)`. The live amplitudes go into `wa: Float64Array(n*4)`.
+- **World key `seaState`** (optional, default `"calm"`): the initial global state.
+
+### 35.2 Wave field + clock (`engine/world/waves.js`, new)
+The check-deps rule 15 scope adds this exact file: no trig, no `exp`, no `Math.random`, no wall clock.
+
+**Normative formula.** The JS and GLSL twins use the same expression order.
+```
+t = tick * STEP
+u_i = fract(kx_i*x + ky_i*y - om_i*t + phi_i);  w = 2u - 1     // fract(a) = a - floor(a)
+S(w) = 4w(1 - |w|);  dS(w) = 4 - 8|w|                          // parabolic sine: C1, |S| <= 1
+h  = sum A_i S(w_i);  hx = sum A_i dS(w_i) 2 kx_i;  hy = sum A_i dS(w_i) 2 ky_i;  n = normalize(-hx, -hy, 1)
+A_i = wa[i] (physics, waterAt)  |  wa[i] * fade_i (render geometry + normal, 35.3)
+```
+
+**API (zero allocation):**
+- `waveSampleInto(wt, r, x, y, tick, out) -> out {h, hx, hy}`
+- `waveHeight(wt, r, x, y, tick)`
+- `wt` = `world.water`, `r` = region index.
+
+**Clock.** `world.water.step()` runs once per fixed step. It is one `main.js` line in the update, before the player `integrate`.
+- It increments `tick` (a plain integer).
+- It advances the sea blend. `setSeaState(state, blendSec)` sets:
+  - `from` = current amps, `to` = the state's amps;
+  - `steps = max(1, round(blendSec/STEP))`.
+- Each step computes `s = step/steps`, `ss = s*s*(3 - 2s)`, `amps = from + (to - from)*ss`, and copies the result into the `wa` rows of the `"sea"` regions.
+- Other regions keep their own state's amps, set at load.
+
+**Live `waterAt` (143a):**
+- `surfaceZ = z + h`, `flatZ = z`, `depth = surfaceZ - floorZ`.
+- The floor probe still starts at `flatZ + 0.01`.
+- Budget: <= 0.01 ms for 32 regions.
+
+**`World.flowAt(x, y, out2) -> boolean` (141a):**
+- Uses the same `find`.
+- Result: `flow + flowRadial * (p - c)/|p - c|` (0 at the centre).
+- Outside water: `[0, 0]` and returns false.
+- Zero allocation, <= 0.005 ms.
+
+### 35.3 Render: the water layer (mesh only)
+
+**Files:**
+- `engine/mesh/waterMesh.js`: pure builders for the clipmap and the sheet.
+- `engine/render/water.js`: per-frame select, slot table, uniforms, the JS vertex twin, the under state (35.6).
+- `gpu/glsl/water.vert.js` + `water.frag.js`.
+- `GpuCellPipeline._passWater()`, on the mesh branch, right after `_passDeriv()` and before `_passLight()`.
+- rasterJS item type `DRAW_WATER`.
+- `waterComposite` (32.2) reads the layer.
+
+**Clipmap.** One static indexed mesh, built and uploaded once.
+- Geometry:
+  - 4 rings, 64 quads per side;
+  - steps 0.5 / 1 / 2 / 4 m, half-sizes 16 / 32 / 64 / 128 m;
+  - a flat skirt (8 triangles) from +-128 m to +-1900 m.
+- Vertex attributes:
+  - local `(lx, ly)`;
+  - `ring`;
+  - `stitch`: the neighbour direction for odd vertices on a ring's outer boundary, else 0.
+- Index ranges are kept per ring.
+- Size: about 13.6k vertices and 26.6k triangles.
+- **Origin `O` = the eye xy snapped to 8 m.**
+  - Every vertex sits on a fixed world grid, so the surface is world-anchored and does not swim.
+  - The rings nest exactly.
+  - The eye is always within 4 m of `O`, so the 0.5 m ring covers at least 12 m around it.
+
+**Draws.**
+- `selectWater(world, cam, out)` fills **slots 0..11**:
+  - up to 8 regions in the frustum (the region holding the eye first, then by nearest AABB);
+  - up to 4 sheets.
+- Each region gets one clipmap draw, using only the ring ranges that overlap its AABB.
+- Uniforms per draw:
+  - `O`, region `z`, the AABB grown by 0.5 m, shape params, slot;
+  - 4 x `(kx, ky, A, c)`, where `c_i = fract(kx*Ox + ky*Oy - om*t + phi)` is computed **in f64 on the CPU**. The GPU then only sees small local coordinates, which is f32-safe.
+- No per-frame vertex upload, ever.
+
+**Vertex stage** (GLSL and `waterVertexJS`, same expression order):
+1. `l' = clamp(O + l, aabb) - O`. Vertices outside the AABB collapse, so their triangles become degenerate.
+2. `u_i = fract(kx*l'x + ky*l'y + c_i)`, then the 35.2 formula.
+3. Fade by Chebyshev distance `q = max(|l'x|, |l'y|)`: `fade_i = clamp(2 - q/(8*lambda_i), 0, 1) * clamp((120 - q)/16, 0, 1)`.
+4. A stitch vertex takes the mean `z` of its two neighbours (2 extra evaluations). This makes the ring seams watertight.
+5. The skirt is flat.
+
+**Fragment stage:**
+1. World xy = interpolated `l'` + `O`.
+2. Region shape test (rect or circle); discard outside.
+3. **Occluder:** discard if `vD >= DEPTH(cell)` (the resolved scene depth, in DEPTH units).
+4. Analytic normal per fragment, with the same formula and the same fade.
+
+**Target WATER:**
+- RGBA32UI at **cell resolution** (`cols x rows`, n = 1).
+- The sample point is the cell's DEPTH sample (27.15.0 item 1).
+- It has its own depth24, cull none, and is cleared every frame.
+- Channels:
+  - `x` = `floatBits(vD)`;
+  - `y` = oct normal (always the up-facing one);
+  - `z` = `floatBits(h)` (sheets: arc metres `v`);
+  - `w` = `slot | back << 4 | sheet << 5`.
+- The water-vs-water depth test makes waves self-occlude. That gives the real silhouettes.
+
+**JS twin.** rasterJS `DRAW_WATER`:
+- vertex stage = `waterVertexJS`;
+- then the same clip, the occluder against `fb.depth.depth`, and the normal;
+- writes into `createRasterTarget(cols, rows, 1)`, which `waterComposite` reads.
+
+**Composite** (`waterComposite`, 32.2 rules) on the layer:
+- **Hit:** `dW < rawDepth` (sky counts as `Infinity`). `P = cellRayP(cell, dW)`.
+- **Slot table** `uWaterSlots[12]`: look, `ampSum`, flow data, kind.
+- **Sun term:** uses the WATER normal.
+- **Glint:** `dot(n, H) > look.glintCos`, with `H` computed per frame from the sun direction and the camera forward. This replaces the 32.2 "hash > 0.9" rule when `waves != none`.
+- **Glyph for opaque water:**
+  - when `ampSum >= 0.05`: `look.bands[floor(clamp(h/ampSum*0.5 + 0.5, 0, 0.999)*n)]`, so rolling bands move with the crests;
+  - otherwise the 32.2 hash ramp;
+  - flowing water uses 35.4.
+- **Shore foam (143b2):**
+  - column along the ray = `zW - P(rawDepth).z`;
+  - where it is below `look.foamDepth` (0.3): `look.foamRamp` (`* o .`), indexed by `column/foamDepth`;
+  - it pulses on its own because the surface moves.
+- **Crest foam:** where `h > look.crestK*ampSum` and `ampSum >= 0.2`.
+- **Foam fade:** from `look.foamFar` (40 m) to 1.5 times that distance.
+- **Light:**
+  - shadow on water in v1 = the floor cell's `sunlit` bit;
+  - point lights on water come later.
+- **Until 144a:** slots whose region holds the eye below `surfaceZ` are skipped, as in 32.2.
+
+### 35.4 Flow look (141a)
+
+**Per slot, on the CPU (f64):**
+- `fhat` and `|f|`;
+- `o = (|f|*t) mod (1024*L)`;
+- `L = look.streakLen` (1.0 m), `W = look.streakW` (0.35 m).
+
+**Shade, when `|f| >= 0.05`:**
+1. `a = dot(P.xy, fhat)`, `b = dot(P.xy, fperp)`.
+2. `key = hash(int(floor((a - o)/L)) & 1023, int(floor(b/W)) & 1023, SALT_FLOW)`.
+   - There is no time bucket.
+   - `& 1023` makes the hash periodic, so the wrap of `o` is seamless.
+3. If `key01 > look.streakK`, the glyph is `look.streak`; otherwise the wave ramp.
+
+**Radial regions:**
+- `a = |P - c|`, `b = r * dia(P - c)/W`, where `dia` is the diamond angle in [0, 4) (no atan).
+- `o` uses `flowRadial`.
+- In v1, radial wins when it is set.
+
+**Still water** (`|f| < 0.05`) keeps the 32.2 time-bucket hash.
+
+### 35.5 Waterfalls (142a1)
+The waterfall does need an engine hook. The hook is a sheet mesh in the same water layer.
+
+**Sheet mesh** (`buildSheetMesh(def)` at load; world coordinates; static):
+- columns every 0.5 m along the lip;
+- rows every 0.5 m of arc down the ballistic profile: `d(tau) = out*tau` toward `outDeg`, `z(tau) = z - 4.9 tau^2`, down to `drop`;
+- a 6 m x 20 m fall is about 1k triangles.
+
+**Drawing.** In `_passWater`, after the regions:
+- slots 8..11, with the sheet flag;
+- cull none;
+- same occluder rule;
+- no waves.
+
+**Composite for sheets:**
+- `uLip` = distance along the lip from `P`. The lip origin and direction are per slot.
+- Glyph = `look.fallRamp` (`| : '`), picked by `hash(floor(uLip/0.25) & 1023, floor((v - o)/0.6) & 1023, SALT_FALL)`.
+  - `o = (look.fallSpeed*t) mod (1024*0.6)`, computed in f64 on the CPU.
+  - `fallSpeed` >= 8.
+- 2-3 brightness levels from the hash.
+- Emissive highlight (`look.highlight`, unlit) when `hash01 > 0.92`.
+- `look.sheetAlpha` (0.75) over the scene cell behind the sheet:
+  - from outside, the alcove shows through;
+  - from inside, the landscape shows through;
+  - both sides use the same rule.
+
+**Content (142a2):** spray, mist, plunge-pool ripples and the radial-flow pool. These are particles plus a circle region with `flowRadial`.
+
+### 35.6 Underwater view (144a)
+
+**State** (CPU, `render/water.js`, presentation, not saved):
+- Per frame: `waterAt(eye)`.
+- **Enter** when `eyeZ < surfaceZ - 0.05 && depth >= 0.3`.
+- **Leave** when `eyeZ > surfaceZ + 0.05`, or when there is no water.
+- Result: uniform `uUnder` plus the under-look of the eye's region.
+- Both twins read the same flag, so the transition has parity by construction.
+
+**Shade when under** (all three call sites, after the cell's own colour):
+1. `L` = metres from the eye to `P(min(rawDepth, dW))`.
+2. `s = min(1, L/look.underFog)` (12 m), `f = s*(2 - s)`. This is an ease-out ramp with **no `exp`** (the parity rule of 32.6).
+3. `fg = mix(fg, tint*(ambient + sunTerm), f)`; `bg` the same, times `bgK`.
+4. If `f >= look.swapAt` (0.5): glyph = `look.bubbleRamp[floor(lum(fg)*n)]`.
+5. **Light shafts** (sun elevation > 0 only):
+   - `Pm = P(min(L, 6 m))`;
+   - if `hash(floor(dot(Pm.xy, sunPerp)/look.shaftW) & 1023, floor(t*0.5)) > look.shaftK`, then `fg += look.shaft*(1 - f)*0.5`.
+
+**Surface from below** (a back-face WATER texel):
+1. Glyph = `look.ceilRamp`, picked by the `h` band.
+2. Inside the Snell window (`|ray.z| >= 0.66`): `fg = mix(sceneFg, look.ceil*(ambient + sun*n.z), look.ceilAlpha)`.
+3. Outside the window: mirror-dark (`tint*0.6`), with no see-through.
+4. Then the under fog over `dW`.
+
+**Edges:** suppressed where `f >= swapAt`.
+
+**Sprites and particles (144a2):** their colour is computed on the CPU. `SpritePool.project` and `particleLayer.build` apply the shared `underFogK(L, look)` from `render/water.js`, so parity is exact.
+
+### 35.7 Physics and sim hooks
+
+**Current push (141b2, game; no engine change):**
+- Every step, when wading or swimming: `world.flowAt(x, y, f)`.
+- `body.pushX/pushY = windPush + k*f`, clamped at 3 m/s. `k` and the cap are game tuning.
+- It uses the 32.5 displacement path (US-138b), so walls block it as usual.
+
+**Particles (141b1, `engine/fx`):**
+- EmitterDef gains `flow` (0..1, default 0).
+- `particles.sampleFlow(field)`: for each live emitter with `def.flow > 0`, `field.flowAt(ex, ey, out)` gives the emitter's flow vector. `field` is duck-typed, so rule 16 still holds.
+- Drift target = `wind*def.wind + flow*def.flow`.
+
+**Bobbing (143c):** the 055b swim lock already reads `surfaceZ`, so bobbing is automatic once `surfaceZ` is live.
+- Floating entities are game code (`game/js/quest/sim/floaters.js`, PC-B): `components.floats {draft}` sets `transform.z = surfaceZ - draft` each step, with no tilt.
+- Props after US-051: the same push plus buoyancy on `surfaceZ` (seam only).
+
+**Render vs physics:**
+- Heights agree to float error within `8*lambda_i` of `O`. For the main wave that covers the whole clipmap.
+- Short waves fade from 24 m. A far floater can therefore be off by up to the faded amplitudes (storm: at most 0.09 m beyond 24 m).
+- Known and accepted.
+
+### 35.8 Save / hash
+- **Content, never hashed:** regions (`waterDef`), `waterfallDef`, the spectrum and states.
+- **State:** `water.tick` plus the sea state `{from[4], to[4], step, steps}`.
+  - Serialised as `waterState` **only when `water.count > 0`**, so old saves stay byte-identical.
+  - Restored before the first step, so the bob is continuous across a load.
+  - `water.hashInto(h)` covers the same fields, for the RE-14 replay hash. The game adds it where it hashes the world.
+- **Not saved:** the under flag, `O` and the slot selection. All three are derived per frame.
+
+### 35.9 Budgets (p95, 400x150, owner iGPU; the JS twin is warn-only)
+| Item | Bar |
+|---|---|
+| `_passWater` | 1 pond <= 0.1 ms; sea + 2 regions + 1 fall <= 0.25 ms |
+| Composite extra in shade | base 0.1 (32.2) + flow 0.05 + wave shading 0.05 + under 0.1 ms |
+| JS on the GPU path | `selectWater` + uniforms <= 0.05 ms; zero per-frame uploads; <= 12 draws (normally 1-3) |
+| `waterAt` live / `flowAt` / `water.step` | 0.01 / 0.005 / 0.002 ms |
+| JS twin (gpucompare and tests only) | <= 2 ms at 160x60 |
+
+- Zero allocation everywhere after load.
+- The 141a and 143b AC numbers (+0.05 / +0.15 ms) are measured in the shade pass only. The story reports the pass cost separately.
+
+### 35.10 gpucompare poses (mesh)
+**Bars:** the 27.7 bars, plus for the water layer: depth within 1 %, and flags equal on >= 99.5 % of cells (edge cells excluded).
+
+**Tick:** frozen with the dev hook `water.setTickForTest(tick)`. Never wall time.
+
+**Poses:**
+- `water`: test pool, grazing and top-down views, waves `none` and `calm` (055a2b). 141a adds a flowing region at tick 600.
+- `waves`: sea level, calm and storm at tick 600. One grazing view (crests hide troughs) and one beach view (foam).
+- `waterfall`: one view in front of the sheet, one from behind it.
+- `underwater`: eye 1.5 m below a pool surface, looking up 30 degrees (ceiling) and level (fog).
+
+Existing poses must stay unchanged when a world has no water.
+
+### 35.11 Steps (each <= ~1 programmer-day; Node suite + check-deps green; engine steps -> arch-review)
+| # | Step | Track | Size | Scope / tests |
+|---|---|---|---|---|
+| 1 | US-055a1 | PC-A (in dev) | 0.5 d | As 32.2, unchanged. |
+| 2 | US-055a2a water layer | PC-A | 1 d | Clipmap builder; `_passWater`, WATER target and shaders with flat `A = 0`; region clip; occluder; `DRAW_WATER` twin; `selectWater` slots and ring ranges. Tests: seams watertight (ring-seam fixture, every pixel written exactly once); vertex world positions unchanged while the eye moves < 4 m; a wall hides water; circle clip; no per-frame buffers on the mock device; zero allocation. |
+| 3 | US-055a2b composite | PC-A | 0.75 d | 32.2 composite on the layer; look bind; edge suppression; pose `water`. |
+| 4 | US-143a wave field | PC-A | 0.5 d | `waves.js`; spectrum/state compile; `water.step`, `setSeaState`, `hashInto`, `setTickForTest`; live `waterAt` + `flatZ`; `waterState` save. Node tests: same hash on 2 runs; `|h| <= ampSum`; blend continuity; save round trip; rule-15 scope. Can run in parallel with step 2 (disjoint files). |
+| 5 | US-141a flow | PC-A | 0.75 d | `flow` cap; `flowRadial`; `World.flowAt`; slot flow uniforms; streak hash (incl. radial); pose `water` + flow. |
+| 6 | US-141b1 particle flow | PC-A | 0.25 d | `def.flow` + `sampleFlow`. Tests: drift; zero allocation. |
+| 7 | US-141b2 currents in play | PC-B | 0.5 d | Push via `pushX/Y` (needs 138b and 055b); water emitters with flow; river test level. |
+| 8 | US-143b1 displacement | PC-A | 1 d | Vertex waves, fade, stitch; fragment normal; both twins. Tests: twin vs `waveHeight` at vertices within 1e-5 m; seams watertight with waves on; pose `waves` geometry. |
+| 9 | US-143b2 wave shading | PC-A + designer ramps | 0.75 d | Sun on N; `dot(n, H)` glint; bands; shore and crest foam; foam fade; pose `waves`. |
+| 10 | US-143c waves in play | PC-B | 0.75 d | Wind -> `setSeaState` mapping; floaters; debug storm key; sea test level; bob jitter <= 0.02 m test. |
+| 11 | US-142a1 waterfall sheet | PC-A | 0.75 d | `waterfalls` block; sheet mesh; sheet composite; pose `waterfall`. |
+| 12 | US-142a2 waterfall content | PC-B + designer | 0.75 d | Preset; lip and foot emitters; plunge pool (`flowRadial`); ripple rings; test cliff; preview page. |
+| 13 | US-144a1 underwater view | PC-A + designer | 1 d | Under state + hysteresis; fog, tint, glyph swap, shafts; ceiling; edges; pose `underwater`. |
+| 14 | US-144a2 under sprites/particles | PC-A | 0.5 d | `underFogK` in sprites and the particle layer, with tests. |
+
+**Order:**
+- Engine: 1 -> 2 -> 3 -> 5 -> 8 -> 9 -> 11 -> 13 -> 14, with step 4 running in parallel with step 2.
+- The game steps (7, 10, 12) follow their engine steps.
+- 142b and 144b stay as written (PC-B).
+
+### 35.12 Do not
+- Write water into the main G-buffer, the draw list, picking, physics or the shadow list.
+- Displace or upload water vertices on the CPU per frame.
+- Feed world-space phases or `t` to the GPU in f32. Fold `O` and `t` into `c_i` in f64 instead.
+- Use `Math.sin/cos/exp/random` or wall time in `waves.js`, `water.step` or the queries.
+- Use `exp` fog.
+- Save the under flag or the slot selection.
+- Move the clipmap unsnapped.
+- Give each region its own mesh. There is one shared clipmap; sheets are the only per-def meshes.
+
+### 35.13 AC changes for the PO (relay)
+1. **US-143b:**
+   - Replace "shade-pass normal/height perturbation or mesh vertex displacement, architect decides" with "displaced see-through water mesh (owner decision 2026-10-02, arch 35.3)".
+   - Split into 143b1 (displacement) and 143b2 (shading + foam).
+2. **US-143a:**
+   - `waves` = `none|calm|breezy|storm|sea`, default calm.
+   - All presets share one 4-wave spectrum; a state is an amplitude vector.
+   - `"sea"` regions follow `world.water.setSeaState(state, blendSec)`. This is engine work and lands in 143a, not 143c.
+   - Overrides come in as `assets.waterWaves`; engine defaults exist.
+   - The time base is the integer step tick (`water.step()`).
+3. **US-143c:** game side only: wind/weather -> `setSeaState`, floaters, test level.
+4. **US-142a:** needs an engine hook (a sheet in the water layer). Split into 142a1 (PC-A engine, 0.75 d) and 142a2 (PC-B content, 0.75 d).
+5. **US-141b:** split into 141b1 (PC-A fx, 0.25 d) and 141b2 (PC-B game, 0.5 d).
+6. **US-144a:**
+   - Replace "exponential fog reaching full at ~12 m" with "ease-out fog `s(2 - s)`, full at 12 m (no `exp`, parity)".
+   - Split into 144a1 and 144a2.
+7. **US-055a:** 055a2 becomes 055a2a (layer) + 055a2b (composite). The `water` pose and the 32.2 look ACs are unchanged.

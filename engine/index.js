@@ -203,3 +203,6 @@ export { createFireGrid } from './world/fireGrid.js';
 // ---- US-053a particle sim (docs/architecture.md 32.1) ----
 export { createParticles, PARTICLE_CAP, MAX_EMITTERS as PARTICLE_MAX_EMITTERS } from './fx/particles.js';
 export { createEntityEmitters } from './world/entityEmitters.js';
+
+// ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
+export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
