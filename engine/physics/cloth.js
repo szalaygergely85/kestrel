@@ -26,11 +26,13 @@ const MOVE_EPS = 1e-6; // m per step: below this the cloth did not "move" (versi
 export const COLLIDER_SPHERE = 0, COLLIDER_CAPSULE = 1, COLLIDER_BOX = 2, COLLIDER_PLANE = 3;
 export const MAX_CLOTH_COLLIDERS = 64;
 const BIG = 1e30;
+// 0.5^(1/s) for s = 0..8 (literal table: no Math.pow in this file)
+const FRICTION_KEEP = [1, 1, 0.7071067811865476, 0.7937005259840998, 0.8408964152537145, 0.8705505632961241, 0.8908987181403393, 0.9057236642639067, 0.9170040432046712];
 
 /** @param {number} [max=16] slots */
 export function createClothColliders(max = 16) {
   if (!(Number.isInteger(max) && max >= 1 && max <= MAX_CLOTH_COLLIDERS)) throw new Error(`createClothColliders: max must be an integer in [1, ${MAX_CLOTH_COLLIDERS}], got ${max}`);
-  return { count: 0, max, type: new Uint8Array(max), f: new Float64Array(12 * max), aabb: new Float64Array(6 * max) };
+  return { count: 0, staticCount: 0, max, type: new Uint8Array(max), f: new Float64Array(12 * max), aabb: new Float64Array(6 * max) };
 }
 function slot(c, i) {
   if (!(i >= 0 && i < c.max)) throw new Error(`cloth collider slot ${i} out of range [0, ${c.max})`);
@@ -259,7 +261,7 @@ export function createCloth(def) {
   let hasGround = false;
   const sv = new Uint8Array(MAX_CLOTH_COLLIDERS); // broadphase survivors (local list)
   let nsv = 0, calmSteps = 0;
-  const half = 0.5; // friction: tangential velocity kept on contact
+  const half = FRICTION_KEEP[substeps]; // friction: tangential velocity kept per substep so one 60 Hz step keeps ~0.5
 
   cloth.setPinTarget = function setPinTarget(p, x, y, z) {
     pinTarget[3 * p] = x; pinTarget[3 * p + 1] = y; pinTarget[3 * p + 2] = z;
@@ -449,7 +451,10 @@ export function createCloth(def) {
         sv[nsv++] = i;
       }
     }
-    calmSteps = nsv === 0 ? calmSteps + 1 : 0;
+    // static colliders (slots < staticCount) do not block rest-sleep
+    let dynSv = 0;
+    if (colliders) { const sc = colliders.staticCount || 0; for (let s = 0; s < nsv; s++) if (sv[s] >= sc) { dynSv = 1; break; } }
+    calmSteps = dynSv === 0 ? calmSteps + 1 : 0;
     cloth.survivors = nsv;
     const doCollide = nsv > 0 || hasGround;
 

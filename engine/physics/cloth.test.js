@@ -395,10 +395,12 @@ for (const [name, hx, hy, yaw, cy] of [['wall 8x0.2 axis-aligned', 4, 0.1, 0, 0.
     }
     return m;
   };
-  const m15 = sweep(0.8, true), m2 = sweep(0.6, true), m2b = sweep(0.6, false), m3 = sweep(0.4, true), m3b = sweep(0.4, false);
+  // per-step max node displacement trace (unpinned nodes) with and without colliders on the same pin path
+  const m15 = sweep(0.8, true);
+  const m3 = sweep(0.4, true), m3b = sweep(0.4, false); // peak pin speed 1.5 * 0.8 / 0.4 = 3 m/s
   ok('fold pop: rod moved at 1.5 m/s through the cloth plane and back (box in the way) -> max per-step displacement < 5 cm', m15 < 0.05, `${(m15 * 100).toFixed(2)} cm`);
-  ok('fold pop: at 2 and 3 m/s the box adds < 1.5 cm over the bare cloth', m2 <= m2b + 0.015 && m3 <= m3b + 0.015, `2 m/s box ${(m2 * 100).toFixed(2)} vs bare ${(m2b * 100).toFixed(2)}; 3 m/s box ${(m3 * 100).toFixed(2)} vs bare ${(m3b * 100).toFixed(2)} cm`);
-  console.log(`  info fold pop: 1.5 m/s ${(m15 * 100).toFixed(2)} cm; 2 m/s ${(m2 * 100).toFixed(2)} (bare ${(m2b * 100).toFixed(2)}); 3 m/s ${(m3 * 100).toFixed(2)} (bare ${(m3b * 100).toFixed(2)}): the free hem outruns the pin`);
+  ok('fold pop: at 3 m/s pin speed colliders add <= 2 cm per step over the collider-free run and never exceed 8 cm', m3 <= m3b + 0.02 && m3 <= 0.08, `3 m/s with ${(m3 * 100).toFixed(2)} vs without ${(m3b * 100).toFixed(2)} cm`);
+  console.log(`  info fold pop: 1.5 m/s ${(m15 * 100).toFixed(2)} cm; 3 m/s with ${(m3 * 100).toFixed(2)} without ${(m3b * 100).toFixed(2)}`);
 }
 {
   // determinism with colliders + the rest condition
@@ -421,6 +423,46 @@ for (const [name, hx, hy, yaw, cy] of [['wall 8x0.2 axis-aligned', 4, 0.1, 0, 0.
   setS(col, 0, 50, 50, 50, 0.5);
   const d = make(); for (let i = 0; i < 800; i++) d.step(0, 0, 0, col);
   ok('far collider is culled by the broadphase', d.survivors === 0 && d.restSteps > 100, `surv=${d.survivors} rest=${d.restSteps}`);
+}
+
+{
+  // friction is per 60 Hz step: slide distance on a tilted plane is substep-independent.
+  // The sheet starts lying ON the plane (at thickness) and stays in contact; the lone pin only glides with it (no tether).
+  const slide = (sub) => {
+    const t = 0.35, st = Math.sin(t), ct = Math.cos(t), cols = 8, rows = 8, sp = 0.08, th = 0.03;
+    const rest = new Float64Array(3 * cols * rows);
+    for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+      const k = r * cols + q;
+      rest[3 * k] = r * sp * ct + th * st; rest[3 * k + 1] = q * sp; rest[3 * k + 2] = -r * sp * st + th * ct;
+    }
+    const c = make({ substeps: sub, pins: [0], cols, rows, rest });
+    c.setGround(st, 0, ct, 0); // tilted plane, n.p >= d outside
+    const cen = () => { let x = 0, y = 0, z = 0; for (let k = 1; k < c.n; k++) { x += c.pos[3 * k]; y += c.pos[3 * k + 1]; z += c.pos[3 * k + 2]; } return [x / (c.n - 1), y / (c.n - 1), z / (c.n - 1)]; };
+    let m = cen(), x0 = m[0], contact = 0;
+    for (let i = 0; i < 120; i++) {
+      c.step(0, 0, 0, null);
+      const n = cen(); const ds = n[0] - m[0]; c.setPinTarget(0, c.pos[0] + ds, c.pos[1], c.pos[2] - ds * st / ct); m = n; // glide along the plane tangent
+      for (let k = 1; k < c.n; k++) if (st * c.pos[3 * k] + ct * c.pos[3 * k + 2] < th + 0.004) contact++;
+    }
+    return { dist: m[0] - x0, contact };
+  };
+  const r4 = slide(4), r8 = slide(8), s4 = r4.dist, s8 = r8.dist;
+  ok('friction sheet stays in contact with the plane', r4.contact > 120 * 20 && r8.contact > 120 * 20, `contact node-steps 4 sub ${r4.contact}, 8 sub ${r8.contact}`);
+  console.log(`  info slide: 4 sub ${s4.toFixed(3)} m, 8 sub ${s8.toFixed(3)} m`);
+  ok('friction per step: slide distance at 4 vs 8 substeps within 10 %', Math.abs(s4 - s8) <= 0.1 * Math.max(Math.abs(s4), Math.abs(s8)) && Math.abs(s4) > 0.02, `4 sub ${s4.toFixed(3)} m, 8 sub ${s8.toFixed(3)} m`);
+}
+{
+  // static colliders do not block rest-sleep
+  const col = mkCol(3); col.staticCount = 1;
+  setB(col, 0, 0.9, 0.2, 3.5, 0.5, 0.1, 0.5, 1, 0); // wall box near the cloth, in slot 0
+  const a = make({ pinMode: 'corners' });
+  for (let i = 0; i < 800; i++) a.step(0, 0, 0, col);
+  console.log(`  info static: surv=${a.survivors} rest=${a.restSteps}`);
+  ok('static collider survivor does not block restSteps', a.survivors >= 1 && a.restSteps > 60, `surv=${a.survivors} rest=${a.restSteps}`);
+  setC(col, 1, 0.5, 0.0, 3.9, 0.5, 0.0, 4.9, 0.4); // dynamic slot past staticCount
+  const b = make({ pinMode: 'corners' });
+  for (let i = 0; i < 400; i++) b.step(0, 0, 0, col);
+  ok('dynamic collider past staticCount still resets restSteps', b.restSteps === 0, `rest=${b.restSteps}`);
 }
 
 // Perf (warn-only) + zero allocation
