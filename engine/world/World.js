@@ -14,7 +14,8 @@ import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, refitDynCollider } from './colliders.js';
-import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector } from '../physics/meshCollide.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders } from '../physics/meshCollide.js';
+import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
@@ -116,6 +117,9 @@ function validateHorizon(list, assets) {
   // boundary keeps a saved file independent of the source asset.
   return structuredClone(list);
 }
+
+const RAY_STEP = 0.1, RAY_MAX_SAMPLES = 20, RAY_BISECT = 6;
+const _rayHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0, collider: -1 };
 
 export class World {
   constructor() {
@@ -732,6 +736,60 @@ export class World {
       tnx = n.x; tny = n.y; tnz = n.z;
     }
     return meshSupportSector(this._meshSupportScratch, terrainZ, tnx, tny, tnz, this._meshSectorScratch);
+  }
+
+  // ---- ray / segment query (US-078b, architecture.md 30.1) -------------------
+
+  /**
+   * First blocked point on the segment a -> b. `out {t, x, y, z}`, t in 0..1.
+   * mesh physics: nearest of `raycastColliders` and a terrain march
+   * (`groundAt` every 0.1 m, <= 20 samples, then 6 bisections; terrain is
+   * skipped inside a structure footprint, as `supportAt`). grid physics: the
+   * `hasLineOfSight` sector sampling + the same bisection. Pure, zero alloc.
+   * @param {number} ax @param {number} ay @param {number} az
+   * @param {number} bx @param {number} by @param {number} bz
+   * @param {{t:number,x:number,y:number,z:number}} out
+   * @returns {boolean} true on a hit (out filled); out untouched on a miss
+   */
+  raySegment(ax, ay, az, bx, by, bz, out) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let bestT = 2;
+    if (len < 1e-9) return false;
+    let steps = Math.ceil(len / RAY_STEP);
+    if (steps > RAY_MAX_SAMPLES) steps = RAY_MAX_SAMPLES;
+    const mesh = this.physicsMode === 'mesh';
+    if (mesh && raycastColliders(this.colliders, this.colliders.length, ax, ay, az, dx, dy, dz, 1, _rayHit)) {
+      bestT = _rayHit.t;
+    }
+    // March; in mesh mode only up to the collider hit (later samples cannot be nearer).
+    let prevT = 0;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      if (prevT >= bestT) break;
+      if (this._rayBlocked(mesh, ax + dx * t, ay + dy * t, az + dz * t)) {
+        let lo = prevT, hi = t;
+        for (let k = 0; k < RAY_BISECT; k++) {
+          const m = 0.5 * (lo + hi);
+          if (this._rayBlocked(mesh, ax + dx * m, ay + dy * m, az + dz * m)) hi = m; else lo = m;
+        }
+        if (hi < bestT) bestT = hi;
+        break;
+      }
+      prevT = t;
+    }
+    if (bestT > 1) return false;
+    out.t = bestT;
+    out.x = ax + dx * bestT; out.y = ay + dy * bestT; out.z = az + dz * bestT;
+    return true;
+  }
+
+  /** One raySegment sample: grid sector test, or (mesh) point below the terrain outside structures. */
+  _rayBlocked(mesh, x, y, z) {
+    if (!mesh) return pointBlocked(this, x, y, z);
+    if (!this.terrain || this.structureAt(x, y)) return false;
+    const g = this.terrain.groundAt(x, y);
+    return g === g && z < g; // NaN-safe
   }
 
   /** `{s, ch, sector}` for the structure whose legend has a `dynamic` sector tagged `tag`, or null. Uses the tag Map (US-014). */

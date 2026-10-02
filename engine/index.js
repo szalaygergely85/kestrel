@@ -139,6 +139,7 @@ export { createAStar, findPath, smoothPath, pathCrossesRect } from './nav/astar.
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
+export { arcHits } from './world/meleeArc.js'; // US-078b melee wedge query
 export { attachedLightPos } from './entities/attach.js';
 
 // ---- triggers + fade + restart (US-017) ------------------------------------

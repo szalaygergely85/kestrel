@@ -24,6 +24,33 @@ const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
 
 /**
+ * One grid-sector sample of `hasLineOfSight` (also used by `World.raySegment`
+ * on grid physics): true if the world point is inside solid / below the floor
+ * / above a numeric ceiling. Pure, zero allocation.
+ */
+export function pointBlocked(world, x, y, z) {
+  const s = world.structureAt(x, y);
+  let floorH, ceilH, solid;
+  if (s) {
+    const g = gridLocal(s, x, y, losGrid);
+    const sector = s.level.sectorAt(g.x, g.y);
+    if (!sector) return true;
+    solid = sector.solid;
+    floorH = sector.floorH + g.z;
+    ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + g.z : sector.ceilH;
+  } else {
+    const sector = world.outsideSector(x, y);
+    solid = sector.solid;
+    floorH = sector.floorH;
+    ceilH = sector.ceilH;
+  }
+  if (solid) return true;
+  if (z < floorH) return true;
+  if (typeof ceilH === 'number' && z > ceilH) return true;
+  return false;
+}
+
+/**
  * 0.1 m samples (<= 20, capped), WORLD heights (2026-09-24 review fix):
  * inside a structure footprint use that structure's level sector with
  * floorH/ceilH offset by the structure's origin.z (a null sector, or a
@@ -43,25 +70,7 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
     const t = i / steps;
     const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
 
-    const s = world.structureAt(x, y);
-    let floorH, ceilH, solid;
-    if (s) {
-      const g = gridLocal(s, x, y, losGrid);
-      const sector = s.level.sectorAt(g.x, g.y);
-      if (!sector) return false;
-      solid = sector.solid;
-      floorH = sector.floorH + g.z;
-      ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + g.z : sector.ceilH;
-    } else {
-      const sector = world.outsideSector(x, y);
-      solid = sector.solid;
-      floorH = sector.floorH;
-      ceilH = sector.ceilH;
-    }
-
-    if (solid) return false;
-    if (z < floorH) return false;
-    if (typeof ceilH === 'number' && z > ceilH) return false;
+    if (pointBlocked(world, x, y, z)) return false;
   }
   return true;
 }

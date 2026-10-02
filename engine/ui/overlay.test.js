@@ -190,6 +190,40 @@ function frame(ov, cb, depth, f, e, s, k) {
   ok('8b: frames produced cells', ov.stats.cells > 500 && ov.stats.dropped === 0, JSON.stringify(ov.stats));
 }
 
+// 10. US-078b: segment op (8-connected cells, slope glyphs, near-plane clip) + style refPush
+{
+  const ST = { ...STYLES, trail: { glyphs: '-|\\/', fg: [250, 250, 250] }, pushed: { glyph: '#', fg: [1, 2, 3], refPush: 0.3 } };
+  const ov = createOverlay(COLS, ROWS); ov.setStyles(ST);
+  const cam = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
+  ov.clear(); ov.segment(-1, -4, 1, 1.5, -6, 2, ov.styleId('trail')); ov.flush(cam);
+  const cells = cellsOf(ov), set = new Set(cells);
+  let bad = 0;
+  for (const i of cells) {
+    const c = i % COLS, r = (i / COLS) | 0;
+    let n = 0;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if ((dc || dr) && set.has((r + dr) * COLS + c + dc)) n++;
+    if (n < 1) bad++;
+  }
+  ok('10a: segment draws >= 5 cells, all 8-connected', cells.length >= 5 && bad === 0, `${cells.length} bad=${bad}`);
+  // behind the camera -> nothing; straddling the near plane -> clipped, no throw
+  ov.clear(); ov.segment(0, 5, 1, 0, 2, 1, ov.styleId('trail')); ov.flush(cam);
+  ok('10b: segment fully behind the camera draws nothing', ov.stats.cells === 0);
+  ov.clear(); ov.segment(0, 3, 1.6, 0, -5, 1.6, ov.styleId('trail')); ov.flush(cam);
+  ok('10c: segment straddling the near plane is clipped (draws)', ov.stats.cells > 0);
+  // refPush: a mark of a pushed style 0.2 m in front of a wall (scene depth) is hidden, an unpushed one is not
+  const cb = new CellBuffer(COLS, ROWS);
+  const wall = new Float32Array(COLS * ROWS).fill(4.8); // wall 0.2 m in front of the mark (ref 5.0)
+  const render = (style) => {
+    cb.glyphIdx.fill(0);
+    ov.clear(); ov.segment(-1, -5, 1.6, 1, -5, 1.6, ov.styleId(style)); ov.renderCpu(cam, cb, wall);
+    return ov.stats.cells;
+  };
+  const gOf = (style) => { let n = 0; const g = ov.styleGlyph[ov.styleId(style) * 4]; for (let i = 0; i < COLS * ROWS; i++) if (cb.glyphIdx[i] === g) n++; return n; };
+  render('trail'); const shown = gOf('trail');
+  render('pushed'); const hidden = gOf('pushed');
+  ok('10d: refPush 0.3 hides a mark 0.2 m in front of a wall; unpushed shows', shown > 0 && hidden === 0, `shown=${shown} hidden=${hidden}`);
+}
+
 // 9. perf (warn-only): 60+60 <= 0.3 ms, 200+200 <= 0.6 ms
 {
   const ov = mk();

@@ -472,3 +472,58 @@ export function moveSphereMesh(colliders, count, x, y, dx, dy, radius, z, opts, 
   opts.stepUpMax = 0;
   return moveCircleMesh(colliders, count, x, y, dx, dy, radius, z, /* grounded */ true, opts, out);
 }
+
+// ---------------------------------------------------------------------------
+// raycastColliders (US-078b, architecture.md 30.1)
+// ---------------------------------------------------------------------------
+
+const _rcHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
+
+/**
+ * Nearest hit of the ray `o + t*d`, t in [0, tMax), against the enabled
+ * trimesh colliders (AABB slab reject, then `bvh.raycast`). `d` need not be
+ * unit: `t` is in units of `d` (pass `d = b - a, tMax = 1` for a segment).
+ * Writes `out` (RayHit-shaped: t, tri, u, v, nx, ny, nz) + `out.collider` (index)
+ * and returns true on a hit; `out` is left untouched on a miss. Zero
+ * allocation, not re-entrant (module scratch).
+ * @param {MeshCollider[]} colliders @param {number} count
+ * @param {number} ox @param {number} oy @param {number} oz
+ * @param {number} dx @param {number} dy @param {number} dz
+ * @param {number} tMax
+ * @param {{t:number, tri:number, u:number, v:number, nx:number, ny:number, nz:number, collider?:number}} out
+ * @returns {boolean}
+ */
+export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax, out) {
+  let best = tMax;
+  let found = false;
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    // Slab test of the ray [0, best] against the collider AABB.
+    let t0 = 0, t1 = best;
+    const mn = c.min, mx = c.max;
+    let ok = true;
+    for (let a = 0; a < 3 && ok; a++) {
+      const o = a === 0 ? ox : a === 1 ? oy : oz;
+      const d = a === 0 ? dx : a === 1 ? dy : dz;
+      if (Math.abs(d) < 1e-12) {
+        if (o < mn[a] || o > mx[a]) ok = false;
+      } else {
+        let ta = (mn[a] - o) / d, tb = (mx[a] - o) / d;
+        if (ta > tb) { const s = ta; ta = tb; tb = s; }
+        if (ta > t0) t0 = ta;
+        if (tb < t1) t1 = tb;
+        if (t0 > t1) ok = false;
+      }
+    }
+    if (!ok) continue;
+    if (raycast(c.bvh, ox, oy, oz, dx, dy, dz, best, _rcHit)) {
+      best = _rcHit.t;
+      found = true;
+      out.t = _rcHit.t; out.tri = _rcHit.tri; out.u = _rcHit.u; out.v = _rcHit.v;
+      out.nx = _rcHit.nx; out.ny = _rcHit.ny; out.nz = _rcHit.nz;
+      out.collider = ci;
+    }
+  }
+  return found;
+}

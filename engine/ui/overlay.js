@@ -18,7 +18,7 @@ export const OVL_RING_SAMPLES = 24;
 
 function ov_empty8() { return new Uint8Array(0); }
 function ov_emptyF() { return new Float32Array(0); }
-const OP_RING = 1, OP_BAR = 2, OP_RECT = 3, OPW = 8;
+const OP_RING = 1, OP_BAR = 2, OP_RECT = 3, OP_SEG = 4, OPW = 8;
 const RING_COS = new Float64Array(OVL_RING_SAMPLES), RING_SIN = new Float64Array(OVL_RING_SAMPLES);
 for (let k = 0; k < OVL_RING_SAMPLES; k++) { RING_COS[k] = Math.cos((k / OVL_RING_SAMPLES) * Math.PI * 2); RING_SIN[k] = Math.sin((k / OVL_RING_SAMPLES) * Math.PI * 2); }
 // Segment-slope glyph slots of a style: horizontal, vertical, down-right, up-right.
@@ -35,6 +35,7 @@ export function createOverlay(cols = 0, rows = 0) {
   const ops = new Float64Array(OVL_MAX_OPS * OPW);
   const styleGlyph = new Uint8Array(OVL_MAX_STYLES * 4); // glyph indices (char code - 32)
   const styleRgb = new Uint8Array(OVL_MAX_STYLES * 3);
+  const stylePush = new Float64Array(OVL_MAX_STYLES); // refPush (m) per style, added to the ref of every non-screen cell
   const touched = new Int32Array(OVL_MAX_TOUCHED);
   const M = new Float64Array(16);
   const p4 = new Float64Array(4);
@@ -56,7 +57,7 @@ export function createOverlay(cols = 0, rows = 0) {
     stats: { ops: 0, dropped: 0, cells: 0 },
     styleGlyph, styleRgb,
 
-    /** @param {Object} styles {key: {glyph | glyphs(4 chars: - | \ /), fg:[r,g,b]}} */
+    /** @param {Object} styles {key: {glyph | glyphs(4 chars: - | \ /), fg:[r,g,b], refPush?: m (default 0)}} */
     setStyles(styles) {
       keyToId = new Map(); nStyles = 0;
       for (const key of Object.keys(styles)) {
@@ -70,6 +71,7 @@ export function createOverlay(cols = 0, rows = 0) {
           styleGlyph[nStyles * 4 + k] = code - 32;
         }
         styleRgb[nStyles * 3] = s.fg[0]; styleRgb[nStyles * 3 + 1] = s.fg[1]; styleRgb[nStyles * 3 + 2] = s.fg[2];
+        stylePush[nStyles] = s.refPush > 0 ? s.refPush : 0;
         keyToId.set(key, nStyles++);
       }
     },
@@ -102,6 +104,14 @@ export function createOverlay(cols = 0, rows = 0) {
       ops[o + 5] = frac; ops[o + 6] = width; ops[o + 7] = emptyStyle;
       nOps++; ov.stats.ops = nOps;
     },
+    /** US-078b: world segment, 4-glyph slope style, ref lerped per cell (perspective-correct end refs). */
+    segment(x0, y0, z0, x1, y1, z1, style) {
+      if (nOps >= OVL_MAX_OPS) { ov.stats.dropped++; return; }
+      const o = nOps * OPW;
+      ops[o] = OP_SEG; ops[o + 1] = style; ops[o + 2] = x0; ops[o + 3] = y0; ops[o + 4] = z0;
+      ops[o + 5] = x1; ops[o + 6] = y1; ops[o + 7] = z1;
+      nOps++; ov.stats.ops = nOps;
+    },
     rect(c0, r0, c1, r1, style) {
       if (nOps >= OVL_MAX_OPS) { ov.stats.dropped++; return; }
       const o = nOps * OPW;
@@ -132,6 +142,7 @@ export function createOverlay(cols = 0, rows = 0) {
         for (let k = 0; k < nOps; k++) {
           const o = k * OPW, type = ops[o], style = ops[o + 1] | 0;
           if (type === OP_RING) rasterRing(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], style);
+          else if (type === OP_SEG) rasterSegment(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], ops[o + 6], ops[o + 7], style);
           else if (type === OP_BAR) rasterBar(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], ops[o + 6] | 0, style, ops[o + 7] | 0);
           else rasterRect(ops[o + 2] | 0, ops[o + 3] | 0, ops[o + 4] | 0, ops[o + 5] | 0, style);
         }
@@ -157,6 +168,7 @@ export function createOverlay(cols = 0, rows = 0) {
   function put(c, r, glyph, style, ref) {
     if (c < 0 || r < 0 || c >= Lcols || r >= Lrows) return;
     const i = r * Lcols + c;
+    if (ref !== 0) ref += stylePush[style]; // refPush: a mark of this style sits that much nearer-to-hidden
     ref = Math.fround(ref); // compare at layer precision (ties stay ties)
     if (Lovl[i * 4 + 3] !== 0) {
       const cur = LovlZ[i];
@@ -218,6 +230,23 @@ export function createOverlay(cols = 0, rows = 0) {
       line(rc[a], rc[a + 1], rc[a + 2], rc[b], rc[b + 1], rc[b + 2], style, !prevDrawn);
       prevDrawn = true;
     }
+  }
+
+  // Segment: clip to the near plane in world space (w is linear in x,y,z), project, one cell line.
+  function rasterSegment(x0, y0, z0, x1, y1, z1, style) {
+    let w0 = M[3] * x0 + M[7] * y0 + M[11] * z0 + M[15];
+    let w1 = M[3] * x1 + M[7] * y1 + M[11] * z1 + M[15];
+    const nearW = PROJ_NEAR * 1.001;
+    if (w0 <= nearW && w1 <= nearW) return;
+    if (w0 <= nearW) { const t = (nearW - w0) / (w1 - w0); x0 += (x1 - x0) * t; y0 += (y1 - y0) * t; z0 += (z1 - z0) * t; w0 = nearW; }
+    else if (w1 <= nearW) { const t = (nearW - w1) / (w0 - w1); x1 += (x0 - x1) * t; y1 += (y0 - y1) * t; z1 += (z0 - z1) * t; w1 = nearW; }
+    const W2 = Lcols * 0.5, H2 = Lrows * 0.5;
+    const i0 = 1 / w0, i1 = 1 / w1;
+    const c0 = Math.floor(W2 * ((M[0] * x0 + M[4] * y0 + M[8] * z0 + M[12]) * i0) + W2);
+    const r0 = Math.floor(H2 * ((M[1] * x0 + M[5] * y0 + M[9] * z0 + M[13]) * i0) + H2);
+    const c1 = Math.floor(W2 * ((M[0] * x1 + M[4] * y1 + M[8] * z1 + M[12]) * i1) + W2);
+    const r1 = Math.floor(H2 * ((M[1] * x1 + M[5] * y1 + M[9] * z1 + M[13]) * i1) + H2);
+    line(c0, r0, w0, c1, r1, w1, style, true);
   }
 
   function rasterBar(x, y, z, frac, width, style, emptyStyle) {
