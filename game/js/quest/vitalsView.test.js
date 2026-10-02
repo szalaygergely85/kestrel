@@ -168,30 +168,39 @@ function fakeWorld(hp, max, mp, mpMax) {
 // ---------------------------------------------------------------------------------------------------------------
 {
   const ui = fakeUi();
-  drawHurtEdge(ui, { hurtTick: 0 }, 1.0, style);
+  drawHurtEdge(ui, { hurtTick: 0, tick: 60 }, 1.0, style);
   ok('hurtTick=0 (never hit): draws nothing', ui._cells.size === 0);
 
   const ui2 = fakeUi();
-  drawHurtEdge(ui2, { hurtTick: 60 }, 60 / 60, style); // hit exactly "now" (elapsed 0 ms)
+  drawHurtEdge(ui2, { hurtTick: 60, tick: 60 }, 60 / 60, style); // hit exactly "now" (elapsed 0 ms)
   ok('a fresh hit draws the top-left corner cell (ring 0, coverage 1.0)', ui2._cells.has('0,0'));
 
   const ui3 = fakeUi();
-  drawHurtEdge(ui3, { hurtTick: 60 }, 60 / 60 + 1, style); // 1 s later: well past the 150 ms window
+  drawHurtEdge(ui3, { hurtTick: 60, tick: 120 }, 60 / 60 + 1, style); // 1 s (60 steps) later: well past the 150 ms window
   ok('long after the hit: draws nothing', ui3._cells.size === 0);
+
+  // Q9 item 2a regression: `tick` resets to 0 on a restart while a continuous clock (the old `simTime` arg) would
+  // not - the age must come from `tick`, not from whatever large `simTime` is passed in.
+  const ui4 = fakeUi();
+  drawHurtEdge(ui4, { hurtTick: 2, tick: 2 }, 999, style); // fresh hit just after a restart; simTime is huge and stale
+  ok('ages off `tick`, not the unrelated `simTime` arg, after a restart', ui4._cells.has('0,0'));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // kickDeg: decays linearly from 2deg to 0 over 150 ms, 0 outside the window, never touches any object (pure).
 // ---------------------------------------------------------------------------------------------------------------
 {
-  ok('no hit: kick is 0', kickDeg({ hurtTick: 0 }, 5) === 0);
-  ok('t=hit instant: full 2 deg kick', Math.abs(kickDeg({ hurtTick: 60 }, 1.0) - 2) < 1e-9);
-  ok('halfway through 150 ms: 1 deg', Math.abs(kickDeg({ hurtTick: 60 }, 1.0 + 0.075) - 1) < 1e-6);
-  ok('past 150 ms: 0', kickDeg({ hurtTick: 60 }, 1.0 + 0.2) === 0);
+  ok('no hit: kick is 0', kickDeg({ hurtTick: 0, tick: 60 }, 5) === 0);
+  ok('t=hit instant: full 2 deg kick', Math.abs(kickDeg({ hurtTick: 60, tick: 60 }, 1.0) - 2) < 1e-9);
+  ok('halfway through 150 ms: 1 deg', Math.abs(kickDeg({ hurtTick: 60, tick: 64.5 }, 1.0 + 0.075) - 1) < 1e-6);
+  ok('past 150 ms: 0', kickDeg({ hurtTick: 60, tick: 72 }, 1.0 + 0.2) === 0);
   const look = { yawDeg: 10, pitchDeg: 5 };
   const before = JSON.stringify(look);
-  kickDeg({ hurtTick: 60 }, 1.02);
+  kickDeg({ hurtTick: 60, tick: 61.2 }, 1.02);
   ok('kickDeg never mutates a `look`-shaped object passed near it (it is never even given one)', JSON.stringify(look) === before);
+  // Q9 item 2a regression: ages off `tick`, not `simTime` - a huge stale `simTime` with a fresh small `tick` must
+  // still read as "just now", the way it does right after a restart.
+  ok('ages off `tick` after a restart, ignores the stale `simTime` arg', Math.abs(kickDeg({ hurtTick: 2, tick: 2 }, 999) - 2) < 1e-9);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

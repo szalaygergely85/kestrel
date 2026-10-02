@@ -51,9 +51,21 @@ import { playRelayHum } from '../audio/sfx.js';
 let beaconCache = null; // { key: "<structId>.<lightId>", world, growDur, targetIntensity } - built once per key, never per step
 
 export function beaconLight(ctx) {
-  const { world, def, entity } = ctx;
+  const { world, def, entity, actor } = ctx;
   if (entity) entity.play('wake');
   playRelayHum();
+
+  // Q9 item 1b: a woken relay is a save point (vitals.js's `respawn()` reads `save.x/y/z/yaw` off `world.state`,
+  // falling back to the very first spawn transform when these are absent) - write it here, once, right when the
+  // relay is lit, same "committed to the interaction" moment `tower.beacon.lit` is set at below. `actor` (the
+  // player handle) is only absent in a test that fires this behaviour directly with no `actor` in its ctx.
+  if (actor && actor.data && actor.data.transform) {
+    const t = actor.data.transform;
+    world.state['save.x'] = t.x;
+    world.state['save.y'] = t.y;
+    world.state['save.z'] = t.z;
+    world.state['save.yaw'] = t.yawDeg;
+  }
 
   // This quest's own record of the beat (7.4 "used flags" note: separate
   // from the engine's `used.<structId>.<id>` flag, which the generic

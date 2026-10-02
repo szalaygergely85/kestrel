@@ -164,6 +164,52 @@ let gpuProbe = gateTest === 'none' ? { supported: false, isSoftware: false, rend
 const gpuBlocked = !gpuDevSwitch && !gpuProbe.supported;
 if (gpuBlocked) showWebgl2RequiredScreen(canvas, assets);
 else if (!gpuDevSwitch && gpuProbe.isSoftware) showSoftwareRendererWarning(assets, gpuProbe.renderer);
+
+// BUG-BOOT-001 (Q9 item 3, architect ruling): a plain DOM fatal card (message + stack, no renderer dependency -
+// same "throwaway canvas, no engine state" precedent as webgl2Gate.js above) instead of a silent black screen.
+// Global `error`/`unhandledrejection` listeners catch anything a per-frame `update`/`render` throws (the
+// architect's ruling: NOT a per-listener try/catch inside engine/core/events.js); `guardLoad` below additionally
+// wraps the two synchronous load/restart call sites so their own throw (e.g. bad content JSON) is reported the
+// same way. `?strict=1` rethrows instead of showing the card, for dev/CI.
+function showFatalCard(err) {
+  if (document.getElementById('fatal-error')) return; // already up - first error wins, dedupe the rest
+  canvas.style.display = 'none';
+  const div = document.createElement('div');
+  div.id = 'fatal-error';
+  Object.assign(div.style, {
+    position: 'fixed', inset: '0', zIndex: '4000', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'flex-start', textAlign: 'center', padding: '2em',
+    background: '#000', color: '#f88', font: '14px "Courier New", monospace', lineHeight: '1.5',
+    overflow: 'auto', whiteSpace: 'pre-wrap',
+  });
+  const title = document.createElement('div');
+  Object.assign(title.style, { fontSize: '1.3em', color: '#fff', marginBottom: '0.6em' });
+  title.textContent = 'Something broke.';
+  const msg = document.createElement('div');
+  msg.style.maxWidth = '48em';
+  msg.textContent = (err && err.message) || String(err);
+  const stack = document.createElement('div');
+  Object.assign(stack.style, { maxWidth: '48em', opacity: '0.6', marginTop: '1em', fontSize: '0.85em' });
+  stack.textContent = (err && err.stack) || '';
+  div.appendChild(title); div.appendChild(msg); div.appendChild(stack);
+  document.body.appendChild(div);
+}
+
+function fatalError(err) {
+  console.error(err);
+  if (params.get('strict') === '1') throw err;
+  if (window.__debug && window.__debug.loop) window.__debug.loop.stop();
+  showFatalCard(err);
+}
+
+/** Wraps a synchronous load/restart call (`engine.loadWorld`/`engine.setWorld`) so its own throw is reported the
+ * same way as the global listeners below, instead of leaving a black screen behind a blank console error. */
+function guardLoad(fn) {
+  try { fn(); } catch (err) { fatalError(err); }
+}
+
+window.addEventListener('error', (evt) => fatalError(evt.error || evt.message));
+window.addEventListener('unhandledrejection', (evt) => fatalError(evt.reason));
 // US-012: crosshair/prompt colors, resolved once from the palette's `ui`
 // semantic keys (design/palette.js section 8) - `ASSETS.uiStyle` doesn't
 // exist yet (that's US-015's art), so this is the game's own small style
@@ -571,6 +617,7 @@ function runGame(mode) {
       playerHandle = world.get('player');
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting: null }); // US-128b adds targeting later
       resetPickups(); // US-080b (30.2): same "rebuilt on every load/restart" precedent as beasts/vitals above
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
@@ -636,7 +683,7 @@ function runGame(mode) {
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
     // collider path instead of the grid (default, unchanged when omitted).
     const physicsMode = params.get('physics') === 'mesh' ? 'mesh' : undefined;
-    engine.loadWorld(worldDef, physicsMode && { physics: physicsMode });
+    guardLoad(() => engine.loadWorld(worldDef, physicsMode && { physics: physicsMode }));
     // BUG-FP-001: on the mesh renderer the terrain mesh needs the far bake (streamed at 1 ms/frame = ~10-15 s) before
     // far tiles exist, so the ground stayed black after spawn. Bake + build the terrain mesh once at load, like rts-test.
     if (effRenderer === 'mesh' && engine.world.terrain) {
@@ -692,7 +739,7 @@ function runGame(mode) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed('KeyM');
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen();
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || (vitals && vitals.inputLocked);
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
@@ -719,7 +766,7 @@ function runGame(mode) {
       if (paused) duckAudio(); else { unduckAudio(); resetSimAccumulator(engine); }
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (ending || uiLocked) {
+      if (ending || uiLocked || (vitals && vitals.inputLocked)) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
         controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
@@ -762,6 +809,11 @@ function runGame(mode) {
       if (vitals) {
         vitals.step(playerHandle.data, input.pressed('KeyE')); // US-080a1 (30.2)
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
+        // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
+        if (params.get('debug') === '1') {
+          if (input.pressed('F8')) vitals.setGodMode(!vitals.godMode);
+          if (input.pressed('F9')) vitals.debugHit();
+        }
       }
       lap(SEC.physics);
       // US-020a: footsteps (distance accumulator + `body.landed`) and the
@@ -824,7 +876,7 @@ function runGame(mode) {
       if (ending && input.pressed('KeyR')) {
         const st = computeEndCardState(engine.world, assets.uiStyle);
         if (st.canRestart) {
-          engine.setWorld(deserialize(initialState, assets));
+          guardLoad(() => engine.setWorld(deserialize(initialState, assets)));
           input.endFrame();
           return;
         }
@@ -993,7 +1045,9 @@ function runGame(mode) {
         if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
         // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
-          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead, vitals);
+          // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
+          // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
+          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
         }

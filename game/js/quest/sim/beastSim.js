@@ -60,6 +60,14 @@ export function createBeastSim(world, opts) {
     console.warn(`createBeastSim: ${beastEntities.length} beast entities, only the first ${MAX_BEASTS} get a brain.`);
   }
 
+  // Q9 item 4 nit: a world with beast entities but no `nav` block (main.js only builds one when `worldDef.nav`
+  // exists) used to throw on `nav.grid` below instead of just skipping the brain, same "no brain = no beasts in
+  // this world" precedent as the `beastEntities.length === 0` early return above.
+  if (!nav || !nav.grid) {
+    console.warn('createBeastSim: beast entities present but no nav grid - skipping (no brain for this world).');
+    return null;
+  }
+
   const grid = nav.grid;
   const astar = nav.astar || createAStar(grid);
   const steer = createSteer({
