@@ -18,3 +18,8 @@ raw files are committed only when the licence clearly allows redistribution (CC0
 - Files: 4 raw `.vox` (`Raws/`) + 72 MagicaVoxel `.obj`/`.mtl`/palette `.png` exports (Bunny, Pig, Player, Terrain, Tools, Misc, Numbers, UI) - local only in git-ignored `design/vox/voxel-pack-2/`.
 - Terms: owner says "free to use" (2026-10-02); **no licence file in the zip** - record the author + download page URL (and whether commercial use / redistribution is allowed) before committing anything from it.
 
+## cozy_nature_free (FBX nature pack; author / source page not recorded yet)
+- Files: 20 `.fbx` (oak / pine trees in 3 seasons, grass, tulips, mushroom, rocks) + 11 texture `.png` - local only in git-ignored `design/meshes/source/cozy_nature_free/`.
+- Terms: owner says "free to use" (2026-10-02); **no licence file in the zip** - record the author + download page URL (commercial use / redistribution) before committing anything from it.
+- Format: FBX - no importer; convert to `.glb` in Blender for ME-13 (glTF), or use as designer reference for the ME-06c forest.
+
