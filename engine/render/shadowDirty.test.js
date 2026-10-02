@@ -46,6 +46,15 @@ ok('voxel part matrix change (lever moves) -> new key', h() !== base);
   const s2 = big(); s2.aabb.fill(0); s2.aabb[3] = 0.5; s2.matrix[1] = 0.001; const kS = h(); s2.matrix[1] = 0;
   ok('0.5 m item, same 1/1000 change stays quantised (no re-render)', h() === kS);
 }
+{ // ED-SCALE-1a (34.2 item 6): a 1.00 -> 1.01 scale on a ~4 m voxel prop (part matrix entries ~ cellM * s) must re-render
+  const prop = (sc) => { list.begin(); const b = list.push(meshB, DRAW_VOXEL); const c = 0.1 * sc;
+    b.aabb[0] = -2; b.aabb[3] = 2; b.aabb[1] = -2; b.aabb[4] = 2; b.aabb[2] = 0; b.aabb[5] = 4;
+    b.matrix[0] = 1; b.matrix[4] = 1; b.matrix[8] = 1;
+    b.partMatrices[0] = c; b.partMatrices[4] = c; b.partMatrices[8] = c; return b; };
+  prop(1); const k1 = h(); prop(1); const k1b = h(); prop(1.01); const k2 = h();
+  ok('scaled prop unchanged -> same key', k1 === k1b);
+  ok('prop scale 1.00 -> 1.01 -> new key', k1 !== k2);
+}
 it = fill(); it.ib.f32[19] = 0.5;
 ok('instance buffer content change -> new key', h() !== base);
 it = fill(); it.a.matrix[9] = 5.004; it.v.partMatrices[10] = 3.003; it.v.partMatrices[0] = 0.0005;

@@ -101,7 +101,7 @@ void main() {
     vec4 H1 = texelFetch(uVOXINST, ivec2(1, rowBase), 0);
     vec4 H2 = texelFetch(uVOXINST, ivec2(2, rowBase), 0);
     int partCount = int(H0.w);
-    float feetZ = H2.x, cellM = H2.y;
+    float feetZ = H2.x, cellM = H2.y, instScale = H2.z; // ED-SCALE-1a: H2.z = per-instance scale (normal only)
 
     float tIn, tOut;
     if (!slabWorld(e, d, H0.xyz, H1.xyz, tIn, tOut)) continue;
@@ -195,7 +195,7 @@ void main() {
                 : curFace == FACE_U ? vec3(0.0, 0.0, 1.0)
                 : vec3(0.0, 0.0, -1.0);
               // n_world = cellM * Amat^T * n_local (Amat rows are Arow0/1/2; Amat^T's rows are Amat's columns).
-              vec3 nWorld = cellM * vec3(
+              vec3 nWorld = (cellM * instScale) * vec3(
                 Arow0.x * nLocal.x + Arow1.x * nLocal.y + Arow2.x * nLocal.z,
                 Arow0.y * nLocal.x + Arow1.y * nLocal.y + Arow2.y * nLocal.z,
                 Arow0.z * nLocal.x + Arow1.z * nLocal.y + Arow2.z * nLocal.z);

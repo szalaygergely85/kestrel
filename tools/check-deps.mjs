@@ -379,6 +379,9 @@ const VISIBILITY_FILE = path.join(WORLD_DIR, 'Visibility.js');
 // exact file (not a folder) - the wind field's gust math must stay
 // trig-free/wall-clock-free, same reasoning as Visibility.js.
 const WIND_FILE = path.join(WORLD_DIR, 'wind.js');
+// CLOTH-1a1 (architecture.md 33.2): the cloth sim core joins rule 15 (no trig,
+// Math.random, exp/pow/hypot, wall clock).
+const CLOTH_FILE = path.join(ROOT, 'engine', 'physics', 'cloth.js');
 const RTS_SIM_DIR = path.join(GAME_DIR, 'js', 'rts', 'sim');
 // US-079a (architecture.md 29.1): the beast brain's sim/ leaves (beastSim.js,
 // beastNav.js, sight.js, beastConfig.js) are deterministic-sim code same as
@@ -390,6 +393,7 @@ function inDeterminismScope(file) {
   if (CORE_DETERMINISM_FILES.has(file)) return true;
   if (file === VISIBILITY_FILE) return true;
   if (file === WIND_FILE) return true;
+  if (file === CLOTH_FILE) return true;
   if (inDir(file, RTS_SIM_DIR)) return true;
   if (inDir(file, QUEST_SIM_DIR)) return true;
   return false;

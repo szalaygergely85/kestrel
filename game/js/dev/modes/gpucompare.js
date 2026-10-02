@@ -308,6 +308,13 @@ function buildCompareRuns(ctx) {
   // signal tower shadow on terrain: eye 9 m above the grass 28 m NNW of the tower looking SE-down (into the sun), the shadow lies on the grass between
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: towerShadowGrass (ME-15c, signal tower shadow on terrain, sun az 135 el 30)',
     cam: { x: 1474, y: 1006, z: groundZ(1474, 1006) + 9.0, yawDeg: 137, pitchDeg: -17 }, real: true, meshOnly: true, sun: SUN_135_30 });
+  // ED-SCALE-1a (34.2): per-instance scale - a lever at 2x and a lantern at 0.5x in one view (dda normal fix, mesh part matrices)
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: voxelScaled (ED-SCALE-1a, lever 2x + lantern 0.5x)',
+    cam: { x: 1496.2, y: 1026.0, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 35 },
+    before: () => {
+      compareVoxelPool.pushInstance('lever', LEVER_X, LEVER_Y, LEVER_Z, 90, -1, 0, 0, 2);
+      compareVoxelPool.pushInstance('lantern', LANTERN_X, LANTERN_Y, LANTERN_Z, 270, -1, 0, 0, 0.5);
+    } });
   // voxel lever lit through the tower doorway, part in shadow (existing lever feet position)
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: leverSunShaft (ME-15c, voxel lever through a doorway, sun az 135 el 30)',
     cam: { x: LEVER_X - 2.0, y: LEVER_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 40 }, meshOnly: true, sun: SUN_135_30,

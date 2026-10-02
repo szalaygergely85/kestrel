@@ -4126,6 +4126,7 @@ export const IMPULSE_MAX_V = 8;  // m/s; the ceiling clamp in integrate step 5 b
  *  the add is clamped to IMPULSE_MAX_H. Zero alloc. */
 export function applyImpulse(body, footZ, ix, iy, iz) {}
 ```
+- **Amendment (architect, 2026-10-02, US-136 review):** `peakZ = footZ` only when the body was grounded; an airborne body keeps `max(peakZ, footZ)` (a mid-fall blast must not cancel fall damage). `integrate` step 5 updates `peakZ` **after** the ceiling clamp (fixed in US-136).
 - **Same convention as the 30.2 knockback** (`body.vx/vy +=`). A horizontal-only kick on the ground dies in about 0.18 s (decel 43.75 m/s^2, so about 0.7 m), which is too weak for a blast. The lift moves the body into the air-control branch (decel x0.35), so an 8 m/s + 4 m/s blast carries about 2 m.
 - Walls and ceilings stay with `integrate` (`moveCapsule`/mesh, ceiling clamp). No new collision code.
 - **`engine/world/explosion.js`** (pure query, next to `meleeArc.js`):
@@ -4290,9 +4291,9 @@ Scope: CLOTH-1a (sim) and CLOTH-1b (render + content), split into steps in 33.6.
  * @property {number} [dt=1/60]                     fixed; step() takes no dt
  * @property {number} [substeps=4]                  2..8
  * @property {number} [shearCompliance=1e-6] @property {number} [bendCompliance=1e-4]   XPBD alpha; alphaTilde = alpha/h^2 at create
- * @property {number} [damping=0.6]                 1/s; per-substep factor computed at create
+ * @property {number} [damping=2.5]                 1/s; per-substep factor 1 - damping*h (amended 1a1: 0.6 failed settle/rest)
  * @property {number} [gravity=-9.81]
- * @property {number} [drag=1.2] @property {number} [lift=0.2]   aero coefficients (per triangle, 33.3)
+ * @property {number} [drag=1.2] @property {number} [lift=0.2]   aero coefficients, 1/s (amended 1a1: unit node mass, acceleration per m/s of relative wind, each node averages its adjacent triangles; area-independent)
  * @property {number} [flutter=0.25]                0..1 per-node turbulence share
  * @property {number} [maxSpeed=8]                  m/s, displacement clamp per substep (pop guard)
  * @property {number} [thickness=0.03]              m, collision margin around every collider */
@@ -4339,6 +4340,8 @@ Rules: boxes thinner than `2*(thickness + maxSpeed*h)` (0.12 m at the defaults) 
 | 24x16, 8 substeps | <= 0.10 ms (warn) |
 | system, 12 cloths placed, `maxAwake` 6 | <= 0.4 ms / step (12 awake <= 0.8 ms, warn) |
 
+**Amendment (architect, 2026-10-02, CLOTH-1a1 review):** the 3-4 ns/constraint assumption was wrong; a bare SoA constraint loop measures ~11 ns on the PC-A machine (store-to-load chain on `pos`), and the 1a1 step is ~0.04 ms fixed (forces/aero/bookkeeping) + ~0.04 ms per substep. New rows (replace rows 1-4): 24x16 @4 substeps bare **<= 0.20 ms**; + 1 box + 1 capsule **<= 0.25 ms**; @8 substeps **<= 0.35 ms (warn)**; system: `maxAwake` 6 **and** `maxAwakeNodes` 768 (sum of `n` over awake cloths, nearest first; = two 24x16 or four 16x12) **<= 0.4 ms / step**. Substeps (4), shear, bend and tethers stay (the sag/stretch ACs depend on them). Still warn-only unless `PERF_STRICT=1`.
+
 The sim budget (27.8) is 1.0 ms per step for everything incl. mesh collision, so the system caps awake cloths, not the content. Render (1b): `updateClothMesh` <= 0.005 ms per 24x16 cloth, upload 6 KB per awake cloth, cloth draws <= 0.05 ms GPU for two cloths at 240x90; the sun-map re-render while a casting cloth is awake is ME-15d's moving-caster cost, reported separately.
 
 ### 33.5 Render + content (CLOTH-1b)
@@ -4375,7 +4378,7 @@ Order: 1a1 -> 1a2 -> 1b1 -> 1b2 -> 1b3 -> 1b5; 1b4 in parallel after 1b1.
 2. **1a AC2:** "4-8 solver iterations" -> "2-8 substeps (XPBD small steps, 1 iteration each), default 4, plus one pin tether per node"; a preset must look the same at 4 and 8 substeps (steady-state sag within 2 cm).
 3. **1a AC7:** ground = a plane per cloth (tilted allowed) set by the caller, not a per-node heightfield callback (cost, 33.1 item 2); walls/pillars are boxes >= 0.2 m thick (tunnelling rule, 33.3).
 4. **1a AC8:** drop "min node spacing" (that is self-collision: O(n^2) or a spatial hash, over budget; 1c if capes need it). Keep the pop test, reworded: a pin moved at 3 m/s through the cloth plane and back gives max per-step displacement < 5 cm for unpinned nodes.
-5. **1a AC10:** 24x16 at 4 substeps <= 0.05 ms without colliders, <= 0.07 ms with 1 box + 1 capsule; "12 active <= 0.6 ms" -> the system keeps <= 6 awake (`maxAwake`), 6 awake <= 0.4 ms; "off screen sleep + wake without pop" moves to 1b3 (cloth.js has no camera); 1a1 tests wake-without-pop only.
+5. **1a AC10 (amended 2026-10-02, see 33.4 amendment):** 24x16 at 4 substeps <= 0.20 ms without colliders, <= 0.25 ms with 1 box + 1 capsule; "12 active <= 0.6 ms" -> the system keeps <= 6 awake (`maxAwake`) and <= 768 awake nodes (`maxAwakeNodes`), <= 0.4 ms; "off screen sleep + wake without pop" moves to 1b3 (cloth.js has no camera); 1a1 tests wake-without-pop only.
 6. **1b AC1:** "casts shadow" holds with sun shadows `map` (`?shadows=map` until the ME-15d default flip); receiving light/shadow/torch tint comes from the existing light pass (kind 8 face 7).
 7. **1b AC5:** 0.3 ms covers `updateClothMesh` + upload + cloth draws; the sun-map re-render while a casting cloth is awake is the ME-15d moving-caster cost, reported separately.
 8. **1b AC2 (designer):** glyphs come from the material/detail-pass path; glyph choice by fold slope would be a new detail-shader op = separate PC-A step, not part of 1b2.

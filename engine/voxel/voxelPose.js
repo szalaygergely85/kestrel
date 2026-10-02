@@ -158,7 +158,9 @@ function samplePose(pm, inst) {
  */
 export function computeVoxelPose(pm, inst, out) {
   const partCount = pm.partCount;
-  const cellM = pm.cellM;
+  // ED-SCALE-1a (34.2): uniform per-instance scale folded into the effective cell size; pivot stays the feet anchor.
+  const sc = inst.scale > 0 ? inst.scale : 1;
+  const cellM = sc === 1 ? pm.cellM : pm.cellM * sc;
   const invCellM = 1 / cellM;
   const yawDeg = inst.yawDeg;
 

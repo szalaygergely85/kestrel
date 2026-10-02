@@ -80,7 +80,7 @@ export function writeInstanceRows(pool, i, out) {
   const o1 = (rowBase * VOXINST_WIDTH + 1) * 4;
   out[o1] = rect.maxX; out[o1 + 1] = rect.maxY; out[o1 + 2] = rect.maxZ; out[o1 + 3] = inst.slot;
   const o2 = (rowBase * VOXINST_WIDTH + 2) * 4;
-  out[o2] = inst.z; out[o2 + 1] = pm.cellM; out[o2 + 2] = 0; out[o2 + 3] = 0;
+  out[o2] = inst.z; out[o2 + 1] = pm.cellM; out[o2 + 2] = inst.scale > 0 ? inst.scale : 1; out[o2 + 3] = 0;
   for (let t = 3; t < 8; t++) {
     const ot = (rowBase * VOXINST_WIDTH + t) * 4;
     out[ot] = 0; out[ot + 1] = 0; out[ot + 2] = 0; out[ot + 3] = 0;

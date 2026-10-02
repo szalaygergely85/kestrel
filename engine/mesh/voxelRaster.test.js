@@ -54,14 +54,17 @@ const POSES = [
   { name: 'lever', key: 'lever', yawDeg: 25 },
   { name: 'burner', key: 'burner', yawDeg: 140 },
   { name: 'boulder', key: 'boulder', yawDeg: 0 },
+  // ED-SCALE-1a: scaled props, mesh vs CPU oracle
+  { name: 'lever x2', key: 'lever', yawDeg: 25, scale: 2 },
+  { name: 'burner x0.5', key: 'burner', yawDeg: 140, scale: 0.5 },
 ];
 
 for (const pose of POSES) {
   const pm = pool.models.get(pose.key);
-  const h = pm.sz * pm.cellM;
+  const h = pm.sz * pm.cellM * (pose.scale || 1);
   const cam = { x: 0, y: 2.2 + h, z: 0.5 * h + 0.3137, yawDeg: 0, pitchDeg: 0 };
   pool.beginFrame();
-  pool.pushInstance(pose.key, 0, 0, 0, pose.yawDeg);
+  pool.pushInstance(pose.key, 0, 0, 0, pose.yawDeg, -1, 0, 0, pose.scale || 1);
   pool.project(cam, rt);
   ok(`${pose.name}: instance survives the pool cull`, pool.list.length === 1);
 

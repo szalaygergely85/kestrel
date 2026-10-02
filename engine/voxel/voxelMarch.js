@@ -323,9 +323,10 @@ export function castModels(fb, list, cam, opts) {
         const nx = _nLocal[0], ny = _nLocal[1], nz = _nLocal[2];
         // Amat^T columns are Amat's rows transposed: (Amat^T * n) uses Amat's
         // COLUMNS as rows here.
-        _nWorld[0] = pm.cellM * (a0 * nx + a3 * ny + a6 * nz);
-        _nWorld[1] = pm.cellM * (a1 * nx + a4 * ny + a7 * nz);
-        _nWorld[2] = pm.cellM * (a2 * nx + a5 * ny + a8 * nz);
+        const cellMEff = inst.scale > 0 ? pm.cellM * inst.scale : pm.cellM; // ED-SCALE-1a: |n| = 1 at any scale
+        _nWorld[0] = cellMEff * (a0 * nx + a3 * ny + a6 * nz);
+        _nWorld[1] = cellMEff * (a1 * nx + a4 * ny + a7 * nz);
+        _nWorld[2] = cellMEff * (a2 * nx + a5 * ny + a8 * nz);
 
         if ((axisAligned || faceMode === 'nearest')) {
           face = roundedFace(_nWorld[0], _nWorld[1], _nWorld[2]);

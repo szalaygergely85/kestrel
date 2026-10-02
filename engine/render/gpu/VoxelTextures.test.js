@@ -210,5 +210,23 @@ if (typeof globalThis.gc === 'function') {
   console.log('SKIP zero-alloc check (run with --expose-gc)');
 }
 
+// ED-SCALE-1a (34.2 item 4/5): per-instance scale reaches the pool records and header H2.z
+{
+  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
+  const rt = { cols: 160, rows: 60, pxCellW: 1, pxCellH: 2 };
+  pool.beginFrame();
+  pool.pushInstance('bear', 0, 0, 0, 180, -1, 0, 0);
+  pool.pushInstance('bear', 0, 0, 0, 180, -1, 0, 0, 2);
+  pool.project(cam, rt);
+  const o = new Float32Array(VOXINST_WIDTH * 4 * VOXINST_ROWS_PER_INSTANCE * 2);
+  writeInstanceRows(pool, 0, o); writeInstanceRows(pool, 1, o);
+  const h2 = (i) => (i * VOXINST_ROWS_PER_INSTANCE * VOXINST_WIDTH + 2) * 4;
+  ok('ED-SCALE-1a: default scale -> H2.z == 1', o[h2(0) + 2] === 1);
+  ok('ED-SCALE-1a: pushInstance scale 2 -> H2.z == 2, list record scale 2', o[h2(1) + 2] === 2 && pool.list[1].scale === 2);
+  pool.projectShadow();
+  ok('ED-SCALE-1a: shadow list record carries scale', pool.shadowList[1].scale === 2 && pool.shadowList[0].scale === 1);
+  ok('ED-SCALE-1a: scaled instance AABB is larger than unscaled', (pool.list[1].rect.maxX - pool.list[1].rect.minX) > (pool.list[0].rect.maxX - pool.list[0].rect.minX) * 1.9);
+}
+
 console.log(`\n[VoxelTextures.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

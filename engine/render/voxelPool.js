@@ -124,7 +124,7 @@ export class VoxelPool {
    * (clip -1 or omitted = rest pose, matching voxelPose.js's samplePose).
    * Past MAX_VOX_INSTANCES per frame, extra pushes are dropped (warn once) -
    * castModels applies the same cap. */
-  pushInstance(modelKey, x, y, z, yawDeg, clip, frame, tMs) {
+  pushInstance(modelKey, x, y, z, yawDeg, clip, frame, tMs, scale = 1) {
     const pm = this.models.get(modelKey);
     if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return; }
     if (this._rawCount >= MAX_VOX_INSTANCES) { warnOnce(this, 'VoxelPool.pushInstance: MAX_VOX_INSTANCES exceeded, extra instances dropped'); return; }
@@ -136,6 +136,7 @@ export class VoxelPool {
     slot.clip = clip === undefined ? -1 : clip;
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
+    slot.scale = scale > 0 ? scale : 1; // ED-SCALE-1a (34.2 item 5)
     this._rawCount++;
   }
 
@@ -168,6 +169,7 @@ export class VoxelPool {
     slot.clip = idx;
     slot.frame = v.frame || 0;
     slot.tMs = v.t || 0;
+    slot.scale = t.scale > 0 ? t.scale : 1;
     this._rawCount++;
   }
 
@@ -232,7 +234,7 @@ export class VoxelPool {
       const inst = this.raw[i];
       let out = this._shadowSlots[i];
       if (!out) {
-        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, slot: i,
+        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: i,
           pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
           rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
         this._shadowSlots[i] = out;
@@ -241,7 +243,7 @@ export class VoxelPool {
       instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
       out.slot = i;
     }
     this.shadowList.length = n;
@@ -278,7 +280,7 @@ export class VoxelPool {
       }
       let out = this.list[count];
       if (!out) {
-        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, slot: 0,
+        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0,
           pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
           rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
         this.list[count] = out;
@@ -287,7 +289,7 @@ export class VoxelPool {
       if (out.rect.empty) { culled++; continue; }
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
       out.slot = count;
       count++;
     }

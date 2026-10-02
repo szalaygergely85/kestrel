@@ -11,7 +11,8 @@ import {
   KIND_MODEL, FACE_PACKED, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS,
 } from './VoxelModel.js';
 import { packVoxelModel } from './voxelPack.js';
-import { cosSinDeg, computeVoxelPose, voxelMountWorld } from './voxelPose.js';
+import { cosSinDeg, computeVoxelPose, voxelMountWorld, FORWARD } from './voxelPose.js';
+import { instanceRect, computeProjection } from './instanceRect.js';
 import { marchVoxelRay, castModels, LAST_MAT_LOCAL } from './voxelMarch.js';
 import { packNormalOct, unpackNormalOct } from './octNormal.js';
 import { GBuffer } from '../render/GBuffer.js';
@@ -766,6 +767,73 @@ function makeLargeDef(sx, sy, sz, meshOnly) {
   ok('ME-22: meshOnly:false behaves exactly like omitted (byte-identical results)', JSON.stringify(rOmitted) === JSON.stringify(rFalse));
 }
 
+
+// =============================================================================
+// ED-SCALE-1a (architecture.md 34.2): per-instance uniform scale in the pose
+// =============================================================================
+{
+  const pa = new Float64Array(MAX_VOX_PARTS * 16), pb = new Float64Array(MAX_VOX_PARTS * 16), pc = new Float64Array(MAX_VOX_PARTS * 16);
+  const base = { model: pm, x: 3, y: -2, z: 1.5, yawDeg: 30, clip: -1, frame: 0, tMs: 0 };
+  computeVoxelPose(pm, base, pa);
+  const fa = Float64Array.from(FORWARD.subarray(0, pm.partCount * 12));
+  computeVoxelPose(pm, { ...base, scale: 1 }, pb);
+  const fb1 = Float64Array.from(FORWARD.subarray(0, pm.partCount * 12));
+  let same = true;
+  for (let i = 0; i < pm.partCount * 16; i++) if (!Object.is(pa[i], pb[i])) same = false;
+  for (let i = 0; i < fa.length; i++) if (!Object.is(fa[i], fb1[i])) same = false;
+  ok('ED-SCALE-1a: scale undefined vs 1 -> bit-identical L_k and FORWARD', same);
+  computeVoxelPose(pm, { ...base, scale: 2 }, pc);
+  // feet anchor world position stays put: FORWARD(anchor) == (x, y, z) for the root part at rest
+  const b0 = pm.anchor;
+  let wx = FORWARD[0] * b0[0] + FORWARD[1] * b0[1] + FORWARD[2] * b0[2] + FORWARD[9];
+  let wy = FORWARD[3] * b0[0] + FORWARD[4] * b0[1] + FORWARD[5] * b0[2] + FORWARD[10];
+  let wz = FORWARD[6] * b0[0] + FORWARD[7] * b0[1] + FORWARD[8] * b0[2] + FORWARD[11];
+  ok('ED-SCALE-1a: s=2 keeps the anchor (feet) at the instance position', approxEqual(wx, 3, 1e-9) && approxEqual(wy, -2, 1e-9) && approxEqual(wz, 1.5, 1e-9));
+  // extents double about the anchor
+  const r1 = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false };
+  const r2 = { ...r1 };
+    let got = false;
+  try {
+    const pr = computeProjection({ x: 0, y: -30, z: 1, yawDeg: 180, pitchDeg: 0 }, { cols: 160, rows: 60, pxCellW: 1, pxCellH: 2 }, {});
+    pr.eyeX = pr.eyeX ?? 0;
+    instanceRect(pr, pm, base, pa, null, r1);
+    instanceRect(pr, pm, { ...base, scale: 2 }, pc, null, r2);
+    got = true;
+  } catch (e) { got = false; }
+  if (got) {
+    ok('ED-SCALE-1a: s=2 doubles the AABB extents about the anchor',
+      approxEqual(r2.maxX - 3, 2 * (r1.maxX - 3), 1e-9) && approxEqual(3 - r2.minX, 2 * (3 - r1.minX), 1e-9) &&
+      approxEqual(r2.minZ, 1.5, 1e-9) && approxEqual(r1.minZ, 1.5, 1e-9) && approxEqual(r2.maxZ - 1.5, 2 * (r1.maxZ - 1.5), 1e-9));
+  } else ok('ED-SCALE-1a: instanceRect probe ran', false);
+  // march at s=2: analytic t and unit normals
+  const s2 = new Float64Array(16);
+  computeVoxelPose(smallPm, { model: smallPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 2 }, s2);
+  const out = new Float64Array(8);
+  const hit = marchVoxelRay(smallPm, 0, s2, 0, 0, -1, 0, 0, 1, 100, out);
+  ok('ED-SCALE-1a: voxelMarch at s=2 hits at the analytic t (model box spans z 0..0.6)', hit === 1 && approxEqual(out[0], 1, 1e-9), JSON.stringify(Array.from(out)));
+  const s2top = marchVoxelRay(smallPm, 0, s2, 0, 0, 2, 0, 0, -1, 100, out);
+  ok('ED-SCALE-1a: s=2 from above hits the top at t = 2 - 0.6', s2top === 1 && approxEqual(out[0], 1.4, 1e-9), out[0]);
+}
+{
+  // castModels: image of (scale 2, camera 2x farther) == image of (scale 1) -> identical face + packed normals
+  const run = (sc, camY, camZ) => {
+    const fb = makeFb(120, 50);
+    castModels(fb, [{ model: pm, x: 0, y: 0, z: 0, yawDeg: 30, clip: -1, frame: 0, tMs: 0, scale: sc }], { x: 0, y: camY, z: camZ, yawDeg: 180, pitchDeg: 0 }, {});
+    return fb;
+  };
+  const A = run(1, -3, 0.9), B = run(2, -6, 1.8);
+  let cells = 0, faceEq = true, nrmEq = true;
+  const aa = aoAlias(A.gbuf), ab = aoAlias(B.gbuf);
+  for (let i = 0; i < 120 * 50; i++) {
+    if (A.gbuf.kind[i] !== KIND_MODEL && B.gbuf.kind[i] !== KIND_MODEL) continue;
+    cells++;
+    if (A.gbuf.face[i] !== B.gbuf.face[i]) faceEq = false;
+    if (A.gbuf.face[i] === FACE_PACKED && aa[i] !== ab[i]) nrmEq = false;
+  }
+  ok('ED-SCALE-1a: scaled+camera-scaled cast writes cells', cells > 100, cells);
+  ok('ED-SCALE-1a: s=2 faces == s=1 faces (scale-invariant image)', faceEq);
+  ok('ED-SCALE-1a: s=2 packed normals == s=1 packed normals', nrmEq);
+}
 // =============================================================================
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) {
