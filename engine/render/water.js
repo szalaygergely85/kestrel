@@ -10,6 +10,7 @@
 // Do not (35.12): write water into the main G-buffer / draw list / picking / physics / shadow list, displace vertices
 // on the CPU, or move the clipmap unsnapped. This file only chooses regions and fills uniforms.
 import { classifyAABB, CULL_OUT } from '../mesh/culling.js';
+import { WATER_MAX } from '../world/water.js';
 import { DrawList, DRAW_WATER } from '../mesh/DrawList.js';
 import { createRasterTarget, clearRasterTarget, rasterDrawList } from '../mesh/rasterJS.js';
 import {
@@ -46,7 +47,7 @@ export function createWaterSelection() {
   return {
     count: 0, O: new Float64Array(2), region: new Int32Array(WATER_SLOTS),
     u: new Float64Array(WATER_SLOTS * WATER_U_STRIDE), runs: new Int32Array(WATER_SLOTS * RUNS_STRIDE),
-    dist: new Float64Array(32), cand: new Int32Array(32),
+    dist: new Float64Array(WATER_MAX), cand: new Int32Array(WATER_MAX),
   };
 }
 

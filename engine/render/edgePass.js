@@ -47,8 +47,9 @@ function farther(kind, planeId, depth, i, n) {
  *   `rt.cells` is the shared CellBuffer both back-ends expose (real game) or
  *   an equivalent shape (bench harness).
  * @param {object} edges - `DP.edges` (thresholds + `rules` glyph/gain table)
+ * @param {Uint8Array|null} [suppress] - US-055a2b: cells with a non-zero entry draw no outline (opaque water in front)
  */
-export function edgePass(gbuf, depth, rt, edges) {
+export function edgePass(gbuf, depth, rt, edges, suppress) {
   // US-029: no-op when the GPU cell pipeline is active (see the matching
   // guard in detailShade.js's shadeSurfaces - `edge.frag.js` runs this same
   // decision block on the GPU as pass 2 of the present hook instead).
@@ -61,7 +62,7 @@ export function edgePass(gbuf, depth, rt, edges) {
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
-      if (kind[i] === 0 || fogF[i] > fogMax) continue;
+      if (kind[i] === 0 || fogF[i] > fogMax || (suppress && suppress[i] !== 0)) continue;
       const up = y > 0 ? i - cols : -1;
       const dn = y < rows - 1 ? i + cols : -1;
       const lf = x > 0 ? i - 1 : -1;

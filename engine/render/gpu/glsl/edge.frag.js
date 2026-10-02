@@ -21,6 +21,9 @@ uniform ivec2 uGrid; // cols, rows
 uniform float uFogMax;
 uniform float uEdgeGlyph[8]; // rule glyph codes (already ASCII-32), index 0 = cap .. 7 = nosing
 uniform float uEdgeGain[8];
+uniform usampler2D uWater; // US-055a2b: the WATER layer (x = floatBits(vD), +Inf = none, w = slot | ...)
+uniform int uWaterOn;      // 1 = a water layer exists this frame (the edge input is then the composite output)
+uniform vec2 uWOS[12];     // per slot: opaqueAt, seeThrough (waterLook.js rows 3 / 7)
 uniform float uModelRim; // US-040 step 4 (15.2 item 5): kind-8 rule cells, fg AND bg x this. Default 1 = off.
 
 ${GBUF_UNPACK}
@@ -69,6 +72,17 @@ bool farther(ivec2 ic, ivec2 nc, bool validN) {
   return depthAt(nc) > depthAt(ic) * 1.18 + 0.35;
 }
 
+// US-055a2b (32.2 edge rule): a surface cell seen through OPAQUE water (alpha >= seeThrough) draws no outline - twin of waterMask.
+bool waterOpaque(ivec2 cell, float raw) {
+  if (uWaterOn == 0) return false;
+  uvec4 w = texelFetch(uWater, cell, 0);
+  if (w.x == 0x7f800000u) return false;
+  float dW = uintBitsToFloat(w.x);
+  if (!(dW < raw)) return false;
+  vec2 os = uWOS[int(w.w & 15u)];
+  return (raw - dW) / os.x >= os.y;
+}
+
 void main() {
   ivec2 cell = ivec2(gl_FragCoord.xy);
   vec4 sfg = texelFetch(uShadeFg, cell, 0);
@@ -85,7 +99,7 @@ void main() {
   float ff = kind == ${KIND_TERRAIN}u ? terrainFogF(dist) : fogF(dist);
 
   int rule = 0;
-  if (kind != 0u && ff <= uFogMax) {
+  if (kind != 0u && ff <= uFogMax && !waterOpaque(cell, distRaw)) {
     ivec2 up = cell + ivec2(0, -1), dn = cell + ivec2(0, 1), lf = cell + ivec2(-1, 0), rt2 = cell + ivec2(1, 0);
     bool okUp = up.y >= 0, okDn = dn.y < uGrid.y, okLf = lf.x >= 0, okRt = rt2.x < uGrid.x;
 

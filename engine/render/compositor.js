@@ -22,6 +22,7 @@ import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
+import { waterCompositeJS } from './waterComposite.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
 import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
@@ -283,6 +284,7 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
   meshPitched = false;
+  const meshWater = fb.renderer === 'mesh' && !!world.water && world.water.count > 0; // US-055a2b
   meshHashCell = 0;
 
   // ME-06 (27.15.5a item 6): `fb.renderer === 'mesh'` replaces the
@@ -384,10 +386,14 @@ export function renderWorld(fb, world, cam) {
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
-    if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges);
+    // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
+    if (meshWater) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, false);
+    else if (fb.waterMask) fb.waterMask = null;
+    if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null);
   }
 
   fillSky(fb, cam);
+  if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
 
   // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of
   // here to the call site right after `sprites.render(...)` (main.js) -

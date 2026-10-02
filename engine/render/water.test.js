@@ -281,11 +281,11 @@ function frame(cam) {
   ok('WaterLayer: clipmap = one vertex buffer + one index buffer, built once', afterBuild === 2 && clip.vertexBuffer && clip.indexBuffer && clip.indexType === 'u16');
   layer.resize(160, 60);
   const afterResize = mock.createCount;
-  ok('WaterLayer: target = texture + depth + target', afterResize === afterBuild + 3, `${afterResize - afterBuild}`);
+  ok('WaterLayer: WATER target + composite target = 3 + 3 handles (US-055a2b adds compFg/compBg/compTarget)', afterResize === afterBuild + 6, `${afterResize - afterBuild}`);
   for (let f = 0; f < 200; f++) { layer.clipmap(); layer.resize(160, 60); }
   ok('mock device: no buffer / texture / target created per frame', mock.createCount === afterResize && mock.writeCount === 0);
   layer.resize(200, 80);
-  ok('WaterLayer: a grid resize re-creates the target (3) and frees the old one', mock.createCount === afterResize + 3 && mock.liveCount() === 2 + 3);
+  ok('WaterLayer: a grid resize re-creates both targets (6) and frees the old ones', mock.createCount === afterResize + 6 && mock.liveCount() === 2 + 6);
   layer.dispose();
   ok('WaterLayer: dispose frees everything', mock.liveCount() === 0);
 }

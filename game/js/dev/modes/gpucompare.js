@@ -10,7 +10,7 @@
 import {
   bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim,
-  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf,
+  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
@@ -275,10 +275,11 @@ function buildCompareRuns(ctx) {
   // designer's unit model exists), yaws {0, 90, 37.5, 200}, teams {0, 1, 2}, mid-animation pose,
   // in the test_room start area (floor z 0). The dda renderer has no instanced path: it SKIPs
   // the pose (not counted), so `?gpucompare=1` stays 34/34 and `renderer=mesh` becomes 35/35.
+  const waterHomeM1 = worldM1.water; // US-055a2b: the `water` poses install a region set on worldM1; resetInstances puts the empty one back
   const compareInstances = engine.instances;
   compareInstances.bindPool(compareVoxelPool);
   const unitsGroup = compareInstances.group('lever', 20);
-  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; };
+  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; };
   runs.push({
     world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
     cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
@@ -371,6 +372,22 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: cloth (CLOTH-1b2, 16x12 banner built through the system, 6 m/s wind x 120 steps then frozen, sun az 135 el 30)',
     cam: { x: 1464.33, y: 1045.5, z: groundZ(1464.33, 1045.5) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -4 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
     before: () => { worldM1.cloths = buildClothPose(); } });
+
+  // US-055a2b (architecture.md 35.10): mesh-only `water` poses - the water layer (055a2a) + the composite (055a2b), flat water (waves
+  // are 143). A round pond (r 7 m, 0.9 m deep at the centre: shallow rim = floor glyph tinted, deep centre = ramp glyphs) on the open
+  // terrain west of the fpBoxEdge eye, seen grazing (shear) and top-down (pitched default), plus a flooded plain ("sea", 1 m below the
+  // eye, 800 x 700 m rect: clipmap rings + skirt + the own fog). Time is frozen (fb.timeSec 0 in both twins). Sun az 135 el 30.
+  const waterEye = { x: 1464.33, y: 1045.5 };
+  const poolC = { x: 1456, y: 1045.5 };
+  const waterPose = (list) => () => { worldM1.water = createWater(collectWaterDefs({ water: list }, [])); };
+  const pondSet = waterPose([{ id: 'cmp.pond', shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look: 'water' }]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water pond grazing (US-055a2b, r 7 m, 0.9 m deep, shear pitch -6, sun az 135 el 30)',
+    cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -6 }, real: true, meshOnly: true, sun: SUN_135_30, before: pondSet });
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water pond top-down (US-055a2b, pitched default, pitch -75, sun az 135 el 30)',
+    cam: { x: poolC.x + 1.5, y: poolC.y, z: groundZ(poolC.x, poolC.y) + 16, yawDeg: 270, pitchDeg: -75 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, before: pondSet });
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water sea (US-055a2b, flooded plain 1 m below the eye, shear pitch -3, sun az 135 el 30)',
+    cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30,
+    before: waterPose([{ id: 'cmp.sea', shape: 'rect', rect: [1100, 700, 1900, 1400], z: groundZ(waterEye.x, waterEye.y) - 1, look: 'water' }]) });
 
   // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
   // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).
@@ -521,7 +538,11 @@ function runGpuCompareDdaMode(ctx) {
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert } of runs) {
+  // `&pose=<text>` (US-055a2b): run only the poses whose name contains <text> (case-insensitive); the last one stays on the canvas = an owner look,
+  // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
+  const poseQ = (params.get('pose') || '').toLowerCase();
+  const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);

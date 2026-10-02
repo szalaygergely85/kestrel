@@ -83,6 +83,9 @@ import { CELL_VERT_SRC as SHADOW_COPY_VERT_SRC } from './glsl/cell.vert.js';
 // US-055a2a (35.3): the water layer pass (mesh renderer only): clipmap draws into the cell-resolution WATER target.
 import { WATER_VERT_SRC } from './glsl/water.vert.js';
 import { WATER_FRAG_SRC } from './glsl/water.frag.js';
+// US-055a2b (35.3): the water composite - its own fullscreen pass between shade and edge (shade is at the 16-sampler cap).
+import { WATER_COMPOSITE_FRAG_SRC } from './glsl/waterComposite.frag.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams } from '../waterLook.js';
 import { WaterLayer, WATER_CLEAR_X } from './waterLayer.js';
 import { selectWater, createWaterSelection, RUNS_STRIDE } from '../water.js';
 import { WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from '../../mesh/waterMesh.js';
@@ -93,8 +96,8 @@ const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither 
 // timing - `sprites` is tracked by its own existing GpuTimer (sprites.js),
 // reported alongside these, not a slot here. "resolve" covers both the
 // resolve and deriv draw calls (one query spans both, per the tech notes).
-export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water']);
-const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6, PASS_SHADOW = 7, PASS_WATER = 8;
+export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
+const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6, PASS_SHADOW = 7, PASS_WATER = 8, PASS_WCOMP = 9;
 const PASS_STATS_EVERY = 30; // matches GpuTimer's own STATS_EVERY - see _pollTerrainTs/_pollVoxelTs
 
 function sumFinite(arr) {
@@ -237,7 +240,13 @@ export class GpuCellPipeline {
       // US-055a2a (35.3): water layer - program, VAO (one vec4 attribute), static clipmap buffers + WATER target (lazy, WaterLayer)
       this.progWater = linkProgram(gl, WATER_VERT_SRC, WATER_FRAG_SRC);
       this._waterVao = gl.createVertexArray();
+      this.progWaterComp = linkProgram(gl, CELL_VERT_SRC, WATER_COMPOSITE_FRAG_SRC);
       this._water = null; // WaterLayer, created with the device below
+      this._waterLooks = defaultWaterLooks(); // US-055a2b: setWaterLooks() binds the designer table
+      this._waterTable = new Float32Array(WL_SLOTS * WL_STRIDE);
+      this._waterFog = new Float32Array(WFOG_LEN);
+      this._waterOS = new Float32Array(WL_SLOTS * 2); // edge pass: per slot (opaqueAt, seeThrough)
+      this._waterSun = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
       this._waterSel = createWaterSelection();
       this._waterActive = false;
       this._waterMvp = new Float32Array(16);
@@ -436,6 +445,7 @@ export class GpuCellPipeline {
     this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
     this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
     this._locsWater = this.progWater ? this._uniformLocs(this.progWater, WATER_UNIFORMS) : null;
+    this._locsWaterComp = this.progWaterComp ? this._uniformLocs(this.progWaterComp, WATER_COMP_UNIFORMS) : null;
     this._locsMeshCloth = this.progMeshCloth ? this._uniformLocs(this.progMeshCloth, MESH_CLOTH_UNIFORMS) : null;
     this._locsShadowCloth = this.progShadowCloth ? this._uniformLocs(this.progShadowCloth, ['uModel', 'uViewProj']) : null;
     this._locsMeshInst = this.progMeshInst ? this._uniformLocs(this.progMeshInst, MESH_INST_UNIFORMS) : null;
@@ -571,7 +581,13 @@ export class GpuCellPipeline {
     ]);
     this._edgeBinds = this._buildBindTable(this._locsEdge, [
       ['uGI', this.texGI], ['uShadeFg', this.texShadeFg], ['uDepth', this.texDepth], ['uShadeBg', this.texShadeBg],
+      ['uWater', null], // US-055a2b: entries 1 / 3 / 4 are re-pointed per frame (composite output + WATER) while a water layer exists
     ]);
+    // US-055a2b: the composite pass reads shade's output + GI/DEPTH/LIGHT; uWater (the 6th) is re-pointed per frame
+    this._waterCompBinds = this.progWaterComp ? this._buildBindTable(this._locsWaterComp, [
+      ['uShadeFg', this.texShadeFg], ['uShadeBg', this.texShadeBg], ['uGI', this.texGI], ['uDepth', this.texDepth],
+      ['uLightTex', this.texLight], ['uWater', null],
+    ]) : null;
     this._debugBinds = this._buildBindTable(this._locsDebug, [
       ['uGI', this.texGI], ['uShadeFg', this.texShadeFg],
     ]);
@@ -638,6 +654,7 @@ export class GpuCellPipeline {
     // identical - either table sets the same sampler-unit uniforms.
     this._setSamplerUniforms(this.progShade, this._shadeBindsSet1);
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
+    if (this.progWaterComp) this._setSamplerUniforms(this.progWaterComp, this._waterCompBinds);
     this._setSamplerUniforms(this.progDebug, this._debugBinds);
     this._setSamplerUniforms(this.progCast, this._castBinds);
     // US-016: both resolve source tables share the same sampler->unit
@@ -774,7 +791,7 @@ export class GpuCellPipeline {
       this.texVOX, this.texVOXINST]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth, this.progWater]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth, this.progWater, this.progWaterComp]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
@@ -1215,6 +1232,11 @@ export class GpuCellPipeline {
     if (passTimingOn) this.passTimer.begin(PASS_SHADE);
     this._passShade();
     if (passTimingOn) this.passTimer.end();
+    if (this._waterActive) { // US-055a2b: composite the water layer onto the shade output (the edge pass then reads the composite)
+      if (passTimingOn) this.passTimer.begin(PASS_WCOMP);
+      this._passWaterComposite();
+      if (passTimingOn) this.passTimer.end();
+    }
     if (passTimingOn) this.passTimer.begin(PASS_EDGE);
     this._passEdgeOrDebug();
     if (passTimingOn) this.passTimer.end();
@@ -1750,6 +1772,11 @@ export class GpuCellPipeline {
     selectWater(world, cam, this._meshFrustumPlanes, this._waterSel);
     this._waterActive = this._waterSel.count > 0 && !!this._water;
     this.stats.waterSlots = this._waterSel.count;
+    if (this._waterActive) { // US-055a2b: per-slot look rows + own fog (cheap f32 copies, no allocation)
+      fillWaterSlotTable(this._waterSel, world, this._waterLooks, this._waterTable);
+      waterFogParams(this._table, this._palette, !!world.terrain, this._waterFog);
+      for (let s = 0; s < WL_SLOTS; s++) { this._waterOS[s * 2] = this._waterTable[s * WL_STRIDE + 3]; this._waterOS[s * 2 + 1] = this._waterTable[s * WL_STRIDE + 7]; }
+    }
     if (!this._waterActive) this.stats.waterDraws = 0;
   }
 
@@ -2363,6 +2390,42 @@ export class GpuCellPipeline {
     gl.disable(gl.DEPTH_TEST);
   }
 
+  /**
+   * US-055a2b: binds the designer water look table (`assets.waterLooks`, `{name: look}`), resolved to numbers once. Absent -> the
+   * engine default look for every region. Throws naming a bad look.
+   */
+  setWaterLooks(table) { this._waterLooks = resolveWaterLooks(table); }
+
+  /**
+   * US-055a2b (32.2 / 35.3): composites the WATER layer onto the shade output (fullscreen, MRT fg/bg). Cells without water are copied.
+   * Its output (the layer's compFg/compBg) is what the edge pass reads this frame. Twin: engine/render/waterComposite.js.
+   */
+  _passWaterComposite() {
+    const gl = this.gl, loc = this._locsWaterComp, layer = this._water, cb = this._camBasis || this._ensureCamBasis();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.compTarget.handle);
+    gl.viewport(0, 0, this.cols, this.rows);
+    gl.useProgram(this.progWaterComp);
+    gl.bindVertexArray(this.vao);
+    const binds = this._waterCompBinds;
+    binds[5][1] = layer.texture.handle;
+    this._bindTextures(binds);
+    gl.uniform2i(loc.uGrid, this.cols, this.rows);
+    gl.uniform1f(loc.uTimeSec, this._fb.timeSec || 0);
+    gl.uniform1i(loc.uSunMapOn, this.shadowActive && this._light && this._light.sun && this._light.sun.on ? 1 : 0);
+    const sun = sunFromWorld(this._world, this._palette, this._waterSun);
+    gl.uniform3f(loc.uSunDir, sun.dirX, sun.dirY, sun.dirZ);
+    gl.uniform1f(loc.uAmbientI, sun.ambientI);
+    gl.uniform1f(loc.uSunI, sun.sunI);
+    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
+    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
+    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
+    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
+    gl.uniform4fv(loc.uWL, this._waterTable);
+    gl.uniform4fv(loc.uWFog, this._waterFog);
+    this._uploadPitchUniforms(loc);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
   /** US-055a2a: test-only readback of the WATER target (RGBA32UI, cols x rows x 4 words), null when no water drew. */
   readbackWater() {
     const gl = this.gl, layer = this._water;
@@ -2658,8 +2721,19 @@ export class GpuCellPipeline {
     gl.useProgram(program);
     gl.bindVertexArray(this.vao);
 
+    // US-055a2b: with a water layer the edge input is the composite output; WATER feeds the opaque-water outline suppression
+    const wl = !debug && this._waterActive ? this._water : null;
+    if (!debug) {
+      binds[1][1] = wl ? wl.compFg.handle : this.texShadeFg;
+      binds[3][1] = wl ? wl.compBg.handle : this.texShadeBg;
+      binds[4][1] = wl ? wl.texture.handle : null;
+    }
     this._bindTextures(binds);
-    if (!debug) this._uploadPitchUniforms(this._locsEdge); // RE-02a: fog distance scale
+    if (!debug) {
+      gl.uniform1i(this._locsEdge.uWaterOn, wl ? 1 : 0);
+      if (wl) gl.uniform2fv(this._locsEdge.uWOS, this._waterOS);
+      this._uploadPitchUniforms(this._locsEdge); // RE-02a: fog distance scale
+    }
     // uGrid/uFogMax/uEdgeGlyph/uEdgeGain/uFogStart/uFogFull (edge) and
     // uMode (debug) are all static once set - `_bindStaticUniforms()` /
     // `setDebugMode()`, not here (architect review 1 items 3/4a).
@@ -2684,7 +2758,7 @@ const SHADE_UNIFORMS = [
   // band/jitter/2 m-vs-8 m hash-cell switch, gated by uNearDetailOn).
   'uSunDir', 'uAmbientI', 'uSunI', 'uNearDetailOn', 'uHandover', 'uCloseBand', 'uHashCell',
 ];
-const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC'];
+const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', 'uWater', 'uWaterOn', 'uWOS'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
 // US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
 const CAST_UNIFORMS = [
@@ -2692,6 +2766,11 @@ const CAST_UNIFORMS = [
   'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
 ];
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
+const WATER_COMP_UNIFORMS = [
+  'uShadeFg', 'uShadeBg', 'uGI', 'uDepth', 'uWater', 'uLightTex', 'uGrid', 'uTimeSec', 'uSunMapOn', 'uSunDir', 'uAmbientI', 'uSunI',
+  'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY', 'uWL', 'uWFog',
+  'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC',
+];
 const WATER_UNIFORMS = ['uMVP', 'uAabb', 'uZ', 'uKind', 'uShape', 'uSlot', 'uSceneDepth'];
 const MESH_UNIFORMS = ['uModel', 'uViewProj', 'uPlaneIdOr', 'uZBase', 'uObjectId', 'uAxisAligned'];
 // RE-06: the instanced variant adds the team remap arrays (element 0 location for uniform1iv).

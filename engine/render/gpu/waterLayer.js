@@ -21,6 +21,8 @@ export class WaterLayer {
     this._clip = null;
     this.cols = 0; this.rows = 0;
     this.texture = null; this.depth = null; this.target = null;
+    // US-055a2b: the composite pass output (shade fg/bg composited with the water; the edge pass reads these instead of the shade output)
+    this.compFg = null; this.compBg = null; this.compTarget = null;
   }
 
   /** The static clipmap buffers; created on the first call, the same object afterwards. */
@@ -44,11 +46,15 @@ export class WaterLayer {
     this.texture = this.device.createTexture({ format: 'rgba32ui', width: cols, height: rows });
     this.depth = this.device.createTexture({ format: 'depth24', width: cols, height: rows });
     this.target = this.device.createTarget({ color: [this.texture], depth: this.depth });
+    this.compFg = this.device.createTexture({ format: 'rgba8', width: cols, height: rows });
+    this.compBg = this.device.createTexture({ format: 'rgba8', width: cols, height: rows });
+    this.compTarget = this.device.createTarget({ color: [this.compFg, this.compBg] });
   }
 
   _freeTarget() {
-    for (const h of [this.target, this.depth, this.texture]) if (h) this.device.dispose(h);
+    for (const h of [this.compTarget, this.compBg, this.compFg, this.target, this.depth, this.texture]) if (h) this.device.dispose(h);
     this.target = this.depth = this.texture = null;
+    this.compFg = this.compBg = this.compTarget = null;
     this.cols = this.rows = 0;
   }
 
