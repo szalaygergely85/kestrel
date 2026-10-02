@@ -248,12 +248,12 @@ export function integrate(entity, dt, controls, world, cfg) {
   if (!body.grounded) {
     body.vz -= P.gravity * dt;
     t.z += body.vz * dt;
-    if (t.z > body.peakZ) body.peakZ = t.z;
 
     if (sector.ceilH !== 'sky') {
       const maxZ = sector.ceilH - P.height;
       if (t.z > maxZ) { t.z = maxZ; if (body.vz > 0) body.vz = 0; }
     }
+    if (t.z > body.peakZ) body.peakZ = t.z; // after the ceiling clamp: a ceiling hit must not overstate fallDistance (32.4 amendment)
 
     if (t.z <= floorH) {
       t.z = floorH;
