@@ -271,8 +271,8 @@ export function shadowInputHash(list, M, structVersion, out, tStepM = 0.02) {
         // ED-SCALE-1a (34.6): part-matrix entries are ~cellM * scale (~0.1), so the fixed 256 quantum hid scale changes
         // under ~4 %; size the quantum by the world error q * r / colNorm instead.
         const o = p * 12, cn = Math.sqrt(pm[o] * pm[o] + pm[o + 3] * pm[o + 3] + pm[o + 6] * pm[o + 6]);
-        // colNorm is snapped DOWN to a power of two: the quantum must not follow the entries themselves
-        // (entries / quantum would then be scale-invariant and hide the very change we want to see).
+        // colNorm is snapped DOWN to a power of two: the quantum is constant within an octave (static props hash stably),
+        // at most 2x finer than the unsnapped one, and the world error stays <= tStepM (34.2 item 6).
         mixXform(pm, o, cn > 0 ? Math.max(_qA, r * _qT / Math.pow(2, Math.floor(Math.log2(cn)))) : _qA);
       }
     }

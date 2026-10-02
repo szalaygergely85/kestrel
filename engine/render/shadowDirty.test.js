@@ -48,7 +48,7 @@ ok('voxel part matrix change (lever moves) -> new key', h() !== base);
 }
 { // ED-SCALE-1a (34.2 item 6): a 1.00 -> 1.01 scale on a ~4 m voxel prop (part matrix entries ~ cellM * s) must re-render
   const prop = (sc) => { list.begin(); const b = list.push(meshB, DRAW_VOXEL); const c = 0.1 * sc;
-    b.aabb[0] = -2; b.aabb[3] = 2; b.aabb[1] = -2; b.aabb[4] = 2; b.aabb[2] = 0; b.aabb[5] = 4;
+    b.aabb[0] = -2 * sc; b.aabb[3] = 2 * sc; b.aabb[1] = -2 * sc; b.aabb[4] = 2 * sc; b.aabb[2] = 0; b.aabb[5] = 4 * sc; // real items scale the aabb too
     b.matrix[0] = 1; b.matrix[4] = 1; b.matrix[8] = 1;
     b.partMatrices[0] = c; b.partMatrices[4] = c; b.partMatrices[8] = c; return b; };
   prop(1); const k1 = h(); prop(1); const k1b = h(); prop(1.01); const k2 = h();

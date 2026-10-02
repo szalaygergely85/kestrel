@@ -127,12 +127,16 @@ for (const pose of POSES) {
   const list = new DrawList(16);
   list.begin();
   addVoxelInstances(list, pool, cache, partNamesFor); // warm
-  global.gc();
-  const before = process.memoryUsage().heapUsed;
-  for (let f = 0; f < 1000; f++) { list.begin(); addVoxelInstances(list, pool, cache, partNamesFor); }
-  global.gc();
-  const growth = process.memoryUsage().heapUsed - before;
-  ok('zero-alloc: 1000 addVoxelInstances calls grow the heap < 64 KB', growth < 65536, `growth=${growth}`);
+  // min of 3 trials x 10000 calls: GC noise is ~+-40 KB, a real 8 B/call leak still shows ~80 KB in every trial
+  let growth = Infinity;
+  for (let trial = 0; trial < 3; trial++) {
+    global.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 10000; f++) { list.begin(); addVoxelInstances(list, pool, cache, partNamesFor); }
+    global.gc();
+    growth = Math.min(growth, process.memoryUsage().heapUsed - before);
+  }
+  ok('zero-alloc: 10000 addVoxelInstances calls grow the heap < 64 KB (min of 3 trials)', growth < 65536, `growth=${growth}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
