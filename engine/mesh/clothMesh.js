@@ -16,17 +16,20 @@ import { packNormalOct } from '../voxel/octNormal.js';
  * @param {string} id
  * @param {number} matId - resolved MaterialTable id (kind-8 mat of every fragment)
  * @param {ArrayLike<number>} origin - [x, y, z] world offset subtracted from positions (the draw item translates by it back)
+ * @param {number} [du] - rest spacing along columns in metres (cloth system: size[0]/(cols-1)); omitted = measured from cloth.pos
+ * @param {number} [dv] - rest spacing along rows in metres
  * @returns {any} MeshData with layout 'cloth' (+ `origin`, `matId`, `clothVersion`, private scratch)
  */
-export function createClothMesh(cloth, id, matId, origin) {
+export function createClothMesh(cloth, id, matId, origin, du, dv) {
   const N = cloth.n, tri = cloth.tri;
   const cols = cloth.cols;
   const uv = new Float32Array(2 * N);
-  // Rest-space metres: u along columns, v along rows, from the first row / first column rest spacing at creation.
-  // (cloth.pos at creation IS the rest layout; the grid is regular, so |p(c+1)-p(c)| and |p(r+1)-p(r)| are the spacings.)
+  // Rest-space metres: u along columns, v along rows. The cloth system passes the exact rest spacing (du, dv).
+  // Fallback for system-less callers (tests): measured from cloth.pos NOW - only rest-space if the cloth has not
+  // moved yet (a lazily created mesh of a simulated cloth must get du/dv from the system).
   const p = cloth.pos;
-  const dc = cols > 1 ? Math.hypot(p[3] - p[0], p[4] - p[1], p[5] - p[2]) : 1;
-  const dr = cloth.rows > 1 ? Math.hypot(p[3 * cols] - p[0], p[3 * cols + 1] - p[1], p[3 * cols + 2] - p[2]) : 1;
+  const dc = du !== undefined ? du : cols > 1 ? Math.hypot(p[3] - p[0], p[4] - p[1], p[5] - p[2]) : 1;
+  const dr = dv !== undefined ? dv : cloth.rows > 1 ? Math.hypot(p[3 * cols] - p[0], p[3 * cols + 1] - p[1], p[3 * cols + 2] - p[2]) : 1;
   for (let i = 0; i < N; i++) { uv[2 * i] = (i % cols) * dc; uv[2 * i + 1] = Math.floor(i / cols) * dr; }
   const mesh = {
     version: 1,

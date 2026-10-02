@@ -320,11 +320,20 @@ export function pushClothItem(list, system, slot, matIdFor) {
     const bb = cloth.bbox;
     const key = system.mats[slot];
     const matId = key && matIdFor ? matIdFor(key) : 0;
-    mesh = createClothMesh(cloth, String(slot), matId, [Math.round((bb[0] + bb[3]) * 0.5), Math.round((bb[1] + bb[4]) * 0.5), Math.round((bb[2] + bb[5]) * 0.5)]);
+    const us = /** @type {any} */ (system).uvStep;
+    mesh = createClothMesh(cloth, String(slot), matId, [Math.round((bb[0] + bb[3]) * 0.5), Math.round((bb[1] + bb[4]) * 0.5), Math.round((bb[2] + bb[5]) * 0.5)],
+      us ? us[2 * slot] : undefined, us ? us[2 * slot + 1] : undefined);
+    mesh.matFor = matIdFor || null;
     system.meshes[slot] = mesh;
     if (typeof (/** @type {any} */ (system)).setMesh === 'function') /** @type {any} */ (system).setMesh(slot, mesh);
   } else {
     updateClothMesh(mesh, cloth);
+    // a mesh first pushed without matIdFor (or with another resolver) re-resolves its material once
+    if (matIdFor && mesh.matFor !== matIdFor) {
+      const key = system.mats[slot];
+      mesh.matId = key ? matIdFor(key) : 0;
+      mesh.matFor = matIdFor;
+    }
   }
   if (mesh.triCount <= 0) return null;
   const item = list.push(mesh, DRAW_CLOTH);

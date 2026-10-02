@@ -105,6 +105,7 @@ export function createClothSystem(defs, world, presets, opts) {
   const cand = new Int32Array(count);
   const windScratch = new Float64Array(3);
 
+  const uvStep = new Float64Array(2 * count); // rest spacing [dx, dy] per slot (mesh uv is rest-space metres, 33.5)
   const bodies = new Float64Array(5 * MAX_CLOTH_BODIES); // x y z r h
   let bodyCount = 0;
 
@@ -148,6 +149,7 @@ export function createClothSystem(defs, world, presets, opts) {
     // rest layout (33.5): vertical = cols along the yaw's right vector, rows down -z; horizontal = rows along forward
     rightOf(yaw, right2); forwardOf(yaw, fwd2);
     const dx = b.size[0] / (cols - 1), dy = b.size[1] / (rows - 1);
+    uvStep[2 * i] = dx; uvStep[2 * i + 1] = dy;
     const rest = new Float64Array(3 * cols * rows);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let r = 0; r < rows; r++) {
@@ -216,7 +218,7 @@ export function createClothSystem(defs, world, presets, opts) {
   const stats = { awake: 0, awakeNodes: 0, steps: 0 };
 
   const sys = {
-    count, cloths, meshes, ids, mats, castShadow, lastDrawn, stats, maxAwake, maxAwakeNodes,
+    count, cloths, meshes, ids, mats, uvStep, castShadow, lastDrawn, stats, maxAwake, maxAwakeNodes,
     get bodyCount() { return bodyCount; },
     /** Renderer hook (1b1/1b2 `addCloths`): this cloth was drawn this frame. Wakes it on the next tick. */
     markDrawn(slot) { lastDrawn[slot] = curTick; },

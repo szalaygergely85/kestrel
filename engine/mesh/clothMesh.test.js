@@ -15,6 +15,7 @@ import { KIND_MODEL, FACE_PACKED } from '../render/GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { dirFromAzEl } from '../core/transform.js';
 import { createCloth } from '../physics/cloth.js';
+import { createClothSystem } from '../world/cloths.js';
 import { makeOk } from '../test/assert.js';
 
 if (typeof global.gc !== 'function') {
@@ -236,6 +237,23 @@ function hitAtY(terms, col, row, planeY) {
   const h1 = hash();
   ok('and is stable again once it rests', hash() === h1);
   ok('the moved mesh arrays were refreshed (clothVersion follows)', mesh0.clothVersion === near.version);
+}
+
+// ---- 5. review fixes: system rest-space uv, matId re-resolve -------------------------------------
+{
+  const wind = { sampleInto: (x, y, z, t, o) => { o[0] = 0; o[1] = 6 + Math.sin(t * 0.3) * 3; o[2] = 0; } };
+  const sys = createClothSystem([{ id: 'b', mat: 'cloth_red', cols: 8, rows: 6, size: [1.4, 1], origin: [0, 0, 2], yawDeg: 0, plane: 'vertical', pins: [[0, 0], [7, 0]] }], { groundAt: () => 0 });
+  for (let t = 0; t < 30; t++) { sys.markDrawn(0); sys.tick(t, wind, 3, -3, 2); } // windy ticks BEFORE the lazy mesh creation
+  const l = new DrawList(4); l.begin();
+  pushClothItem(l, sys, 0); // no matIdFor
+  const m = sys.meshes[0];
+  const dx = 1.4 / 7, dy = 1 / 5;
+  ok('system cloth after warm-up + windy ticks: uv is exact rest-space', m.uv[2 * 5] === Math.fround(5 * dx) && m.uv[2 * (2 * 8) + 1] === Math.fround(2 * dy) && m.uv[2 * 5 + 1] === 0, `u5=${m.uv[10]} want ${Math.fround(5 * dx)}`);
+  ok('first push without matIdFor -> matId 0', m.matId === 0);
+  l.begin(); pushClothItem(l, sys, 0, (k) => (k === 'cloth_red' ? 9 : 1));
+  ok('a later push with matIdFor resolves the real id', m.matId === 9, `matId=${m.matId}`);
+  const idFor = (k) => 4; l.begin(); pushClothItem(l, sys, 0, idFor);
+  ok('a different resolver re-resolves once, the same one does not', m.matId === 4 && (l.begin(), pushClothItem(l, sys, 0, idFor), m.matId === 4));
 }
 
 console.log(`clothMesh tests: ${pass} passed, ${fail} failed`);
