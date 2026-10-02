@@ -26,7 +26,7 @@ Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in
 **Phase B - capture, ~2-3 days:** US-119 trailer tool pulled forward (camera paths + deterministic frame capture) -> 6-8 stills + 3-4 short clips (15-30 s): forest walk, tower fire at dusk, waterfall, grassland vista, sword swing.
 **Phase C - publish, ~2-3 days:** US-112 itch.io demo (tower + walk-out + first beast; page text by the writer, stills + clips), pay-what-you-want + Ko-fi link; post clips (X, TikTok/Shorts, r/gamedev, r/ASCII, r/proceduralgeneration); optional Steam "Coming Soon" ($100) pulled from M5.
 **Exit test:** the owner picks 6+ stills and 3+ clips they are proud to post; the demo runs in a fresh browser from itch.io start to first beast without a guide; credits include "Voxel assets by StickyBizcuit" if used (OWN-REQ-013).
-**Budget rule:** run on the owner's personal subscription (PC-A is a company account - no more game usage there); lean pipeline, one programmer at a time unless files are disjoint.
+**Budget rule:** PC-A (company account) capped at ~5-6 % weekly usage per day; bigger work on PC-B; lean pipeline, one programmer at a time unless files are disjoint.
 
 ## Milestone 1 – "The Awakening" (vertical slice) — status: DONE (2026-09-25, D-024)
 
