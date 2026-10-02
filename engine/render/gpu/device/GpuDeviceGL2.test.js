@@ -97,6 +97,21 @@ function makeMockGL() {
   ok('dispose() frees every handle this device created', allZero, JSON.stringify(live));
 }
 
+// ---- CLOTH-1b2: writeBuffer = bufferSubData into the existing buffer (no new GL buffer), dynamic hint ----
+{
+  const { gl, live, calls } = makeMockGL();
+  const device = new GpuDeviceGL2(/** @type {any} */(gl));
+  const h = device.createBuffer({ usage: 'vertex', data: new Uint8Array(32), dynamic: true });
+  ok('createBuffer({dynamic}) uses DYNAMIC_DRAW', calls.some((c) => c[0] === 'bufferData' && c[3] === gl.DYNAMIC_DRAW));
+  calls.length = 0;
+  const payload = new Uint8Array(16);
+  device.writeBuffer(h, payload, 8);
+  ok('writeBuffer: one bufferSubData(target, offset, data), no bufferData, no new buffer',
+    calls.filter((c) => c[0] === 'bufferSubData').length === 1 && !calls.some((c) => c[0] === 'bufferData') && live.buffer === 1);
+  const sub = calls.find((c) => c[0] === 'bufferSubData');
+  ok('writeBuffer passes the target, the byte offset and the data view', sub[1] === gl.ARRAY_BUFFER && sub[2] === 8 && sub[3] === payload);
+}
+
 // ---- ME-15b (27.9a item 7): depthBias, depth-only target, sampled depth24 ----
 {
   const { gl, live, calls } = makeMockGL();

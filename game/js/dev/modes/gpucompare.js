@@ -10,7 +10,7 @@
 import {
   bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim,
-  animComponent, ambientL, loadLevel,
+  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
@@ -278,7 +278,7 @@ function buildCompareRuns(ctx) {
   const compareInstances = engine.instances;
   compareInstances.bindPool(compareVoxelPool);
   const unitsGroup = compareInstances.group('lever', 20);
-  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); };
+  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; };
   runs.push({
     world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
     cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
@@ -347,6 +347,30 @@ function buildCompareRuns(ctx) {
   // first person at open terrain looking west: the box far edge (eye + 64 m + 96 m = 160 m ahead) lies inside the fog; no seam
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: fpBoxEdge (ME-15c, first person, sun box edge 160 m ahead, sun az 135 el 30)',
     cam: { x: 1464.33, y: 1045.5, z: groundZ(1464.33, 1045.5) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -2 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30 });
+
+  // CLOTH-1b2 (architecture.md 33.6): mesh-only `cloth` pose. A 16x12 banner (1.6 x 1.2 m, seed 1) built THROUGH the cloth
+  // system (rest-spacing uv), 5 top pins, 120 scripted steps in a 6 m/s wind, then frozen (nothing ticks it again): both twins
+  // draw the same frozen Float32 arrays, so parity is geometry only. Hangs in the open ~6 m ahead of the fpBoxEdge eye, turned
+  // 35 deg so folds show both faces; sun az 135 el 30 (the sun-map pose). The system lives on worldM1 for this pose only
+  // (`resetInstances` puts the empty system back before every pose).
+  const clothHomeM1 = worldM1.cloths, clothHomeTR = testRoom.cloths;
+  let clothSys = null;
+  const buildClothPose = () => {
+    if (clothSys) return clothSys;
+    const eye = { x: 1464.33, y: 1045.5 }, f = forwardOf(270, [0, 0]), yaw = 305, rg = rightOf(yaw, [0, 0]), nm = forwardOf(yaw, [0, 0]);
+    const cx = eye.x + f[0] * 6, cy = eye.y + f[1] * 6, W = 1.6;
+    const gz = worldM1.terrain ? worldM1.terrain.groundAt(cx, cy) : 0;
+    clothSys = createClothSystem([{ id: 'compare.banner', preset: 'banner', mat: 'canvas', cols: 16, rows: 12, size: [W, 1.2],
+      origin: [cx - rg[0] * W / 2, cy - rg[1] * W / 2, gz + 2.8], yawDeg: yaw, plane: 'vertical', seed: 1,
+      pins: [[0, 0], [3, 0], [7, 0], [11, 0], [15, 0]] }], { groundAt: (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0) }, null);
+    const wx = 6 * (0.8 * nm[0] + 0.6 * rg[0]), wy = 6 * (0.8 * nm[1] + 0.6 * rg[1]);
+    const wind = { sampleInto(x, y, z, tick, out) { out[0] = wx; out[1] = wy; out[2] = 0; } };
+    for (let t = 0; t < 120; t++) { clothSys.markDrawn(0); clothSys.tick(t, wind, cx, cy, gz + 1.6); }
+    return clothSys;
+  };
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: cloth (CLOTH-1b2, 16x12 banner built through the system, 6 m/s wind x 120 steps then frozen, sun az 135 el 30)',
+    cam: { x: 1464.33, y: 1045.5, z: groundZ(1464.33, 1045.5) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -4 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
+    before: () => { worldM1.cloths = buildClothPose(); } });
 
   // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
   // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).

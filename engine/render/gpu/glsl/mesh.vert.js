@@ -40,16 +40,20 @@ import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
 // variant is byte-for-byte the pre-RE-06 source plus the two new varyings
 // vObjectId/vAxisAligned (the fragment stage reads them instead of uniforms).
 
-export function meshVertSrc(instanced) {
+// CLOTH-1b2 (docs/architecture.md 33.5): `meshVertSrc(false, true)` is the cloth variant (progMeshCloth, also the shadow
+// pass' vertex stage): aPos(0) + aNrmBits(2) from the dynamic 16 B buffer, aUV(1) from the static uv buffer, no flat/aux
+// attributes - the flat data (planeId base, kind | face<<8 | mat<<16) comes from the `uFlat` uvec2 uniform, one value per
+// draw. The normal leaves as the smooth `vNrmS` (interpolated, the fragment stage normalises and flips it on back faces).
+export function meshVertSrc(instanced, cloth = false) {
   return `${GLSL_VERSION}${PRECISION}
 ${OCT_NORMAL}
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in uint aNrmBits;    // oct-packed normal - ME-08a: read for vNrmW (kind-8 voxel face rule); the vertex stride still matches MeshBuffers.js exactly
-layout(location = 3) in uvec2 aFlat;      // x = planeIdBase, y = kind | face<<8 | mat<<16
+${cloth ? '' : `layout(location = 3) in uvec2 aFlat;      // x = planeIdBase, y = kind | face<<8 | mat<<16
 layout(location = 4) in vec4 aAux0123;    // zRef, aoMode, aux2, aux3
 layout(location = 5) in vec4 aAux4567;    // aux4, aux5, unused, unused
-${instanced ? `layout(location = 6) in vec4 iRow0;       // RE-06: instance rigid transform rows [A_r0 A_r1 A_r2 t_r] (divisor 1)
+`}${instanced ? `layout(location = 6) in vec4 iRow0;       // RE-06: instance rigid transform rows [A_r0 A_r1 A_r2 t_r] (divisor 1)
 layout(location = 7) in vec4 iRow1;
 layout(location = 8) in vec4 iRow2;       // .w = zBase (G-buffer z = worldZ - inst z)
 layout(location = 9) in uvec2 iMeta;      // x = objectId, y = flags (bit0 yawAligned, bits 8-15 team)
@@ -60,20 +64,38 @@ uniform int uPlaneIdOr;  // DrawItem.planeIdOr (27.15.4): (structSeq&7)<<28 for 
 uniform float uZBase;    // DrawItem.zBase (G-buffer z = worldZ - zBase - aux.zRef)
 uniform int uObjectId;   // ME-08a: DrawItem.objectId -> GI.w (structSeq for levels, 0x8000|slot for voxels)
 uniform int uAxisAligned; // ME-08a: voxel part pose axis-aligned (partFlags[p] & 1); 0 for static draws
-${instanced ? `uniform int uTeamSlot[4];   // RE-06: table.team.slotIds (0 = unused slot)
+${cloth ? `uniform uvec2 uFlat;    // CLOTH-1b2: x = planeIdBase (0), y = KIND_MODEL | FACE_PACKED<<8 | matId<<16
+` : ''}${instanced ? `uniform int uTeamSlot[4];   // RE-06: table.team.slotIds (0 = unused slot)
 uniform int uTeamMat[32];   // table.team.mat: team*4 + slot
 ` : ''}
 flat out int vPlaneId;
 flat out uint vKind, vFace, vMat;
 flat out float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat out float vZBase;
-flat out vec3 vNrmW;     // ME-08a: world-space face normal (one per greedy quad)
+${cloth ? 'out vec3 vNrmS;          // CLOTH-1b2: smooth world-space vertex normal (perspective-correct, normalised per fragment)' : 'flat out vec3 vNrmW;     // ME-08a: world-space face normal (one per greedy quad)'}
 flat out uint vObjectId, vAxisAligned; // RE-06: were fragment uniforms; per-instance now
 out vec2 vUV;
 out float vWorldZ;
 
 void main() {
-${instanced ? `  vec3 lp = (uModel * vec4(aPos, 1.0)).xyz;
+${cloth ? `  vec4 worldPos = uModel * vec4(aPos, 1.0);
+  gl_Position = uViewProj * worldPos;
+
+  vPlaneId = int(uFlat.x) | uPlaneIdOr;
+  vKind = uFlat.y & 0xffu;
+  vFace = (uFlat.y >> 8u) & 0xfu;
+  vMat = (uFlat.y >> 16u) & 0xffffu;
+  vAoMode = 0.0;
+  vZRef = 0.0;
+  vAux2 = 0.0;
+  vAux3 = 0.0;
+  vAux4 = 0.0;
+  vAux5 = 0.0;
+  vZBase = uZBase;
+  vObjectId = uint(uObjectId);
+  vAxisAligned = 0u;
+  vNrmS = mat3(uModel) * unpackNormalOct(aNrmBits);
+` : instanced ? `  vec3 lp = (uModel * vec4(aPos, 1.0)).xyz;
   vec3 wp = vec3(dot(iRow0.xyz, lp) + iRow0.w, dot(iRow1.xyz, lp) + iRow1.w, dot(iRow2.xyz, lp) + iRow2.w);
   vec4 worldPos = vec4(wp, 1.0);
   gl_Position = uViewProj * worldPos;
@@ -116,7 +138,7 @@ ${instanced ? `  vec3 lp = (uModel * vec4(aPos, 1.0)).xyz;
   vAxisAligned = uint(uAxisAligned);
 `}
   // mat3(uModel) = rotation x uniform cellM, so normalising is exact.
-${instanced ? `  vec3 ln = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
+${cloth ? '' : instanced ? `  vec3 ln = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
   vNrmW = normalize(vec3(dot(iRow0.xyz, ln), dot(iRow1.xyz, ln), dot(iRow2.xyz, ln)));
 ` : `  vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
 `}
@@ -128,3 +150,4 @@ ${instanced ? `  vec3 ln = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
 
 export const MESH_VERT_SRC = meshVertSrc(false);
 export const MESH_INST_VERT_SRC = meshVertSrc(true);
+export const MESH_CLOTH_VERT_SRC = meshVertSrc(false, true); // CLOTH-1b2

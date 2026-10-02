@@ -39,7 +39,13 @@ import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED
 
 const AO_NONE = 0, AO_WALL = 1, AO_PLANE = 2;
 
-export const MESH_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
+// CLOTH-1b2 (docs/architecture.md 33.5): `meshFragSrc(true)` is the cloth variant - the SAME source except the shading normal:
+// the smooth interpolated `vNrmS`, normalised, negated on back faces (`!gl_FrontFacing`, the twin of rasterJS' `A2 < 0` rule:
+// the vertex normals follow the triangle winding, so a fragment seen from behind gets N = -N). vAxisAligned is 0 for cloth,
+// so kind 8 always takes the face-7 + packed-normal branch (GI.z and GA.w carry the packed N).
+export function meshFragSrc(cloth = false) {
+  const N = cloth ? 'nrmW' : 'vNrmW'; // the shading normal's name: the static variant's source stays byte-identical to pre-1b2
+  return `${GLSL_VERSION}${PRECISION}
 ${OCT_NORMAL}
 layout(location = 0) out uvec4 outGI;
 layout(location = 1) out uvec4 outGA;
@@ -54,7 +60,7 @@ flat in int vPlaneId;
 flat in uint vKind, vFace, vMat;
 flat in float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat in float vZBase;
-flat in vec3 vNrmW;
+${cloth ? 'in vec3 vNrmS;' : 'flat in vec3 vNrmW;'}
 flat in uint vObjectId, vAxisAligned; // RE-06: were uniforms; the vertex stage supplies them per draw / per instance
 in vec2 vUV;
 in float vWorldZ;
@@ -112,14 +118,16 @@ void main() {
   // both twins; GI.z carries it too for the future 27.4 reader, nothing reads
   // it for kind 8 in phase 1). Kinds 1-6: face alone decides, GI.z = 0.
   uint face = vFace;
-  uint nrmBits = 0u;
+${cloth ? `  vec3 nrmW = normalize(vNrmS);
+  if (!gl_FrontFacing) nrmW = -nrmW;
+` : ''}  uint nrmBits = 0u;
   uint gaW = floatBitsToUint(aoD);
   if (vKind == KIND_MODEL) {
     if (vAxisAligned != 0u) {
-      face = roundedFace(vNrmW);
+      face = roundedFace(${N});
     } else {
       face = uint(FACE_PACKED);
-      nrmBits = packNormalOct(vNrmW);
+      nrmBits = packNormalOct(${N});
       gaW = nrmBits;
     }
   }
@@ -130,3 +138,7 @@ void main() {
   outDepth = floatBitsToUint(dist);
 }
 `;
+}
+
+export const MESH_FRAG_SRC = meshFragSrc(false);
+export const MESH_CLOTH_FRAG_SRC = meshFragSrc(true);
