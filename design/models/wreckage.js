@@ -10,6 +10,8 @@
  *                                OWN-REQ-008: the game draws the VOXEL burner (voxel_tower.js attaches `.voxel`); this
  *                                billboard is the fallback only
  *   ASSETS.models.burnerFlame    the voxel burner's fire: flame tongues over an ember row, all emissive    9x5  (half 5x3)
+ *                                (legacy since 36.2: kept for old saves / the voxel-props preview)
+ *   ASSETS.models.burnerFire     36.2a: the burner's ~1 m Build-style fire body, 8 frames @ 12 fps, emissive  13x11 (half 7x6)
  *   ASSETS.models.rigging        a coil of rope and a snapped line on the floor                          14x4  (half 7x2)
  *   ASSETS.models.canvasHeap     the wake spot: crumpled envelope canvas                                  20x4  (half 10x2)
  *   ASSETS.models.rope           2 hanging snapped stays (variants)                                       3x16  (half 3x8)
@@ -318,6 +320,90 @@
                note: 'spawned as its own level prop (tower props.burnerFlame at the posed mount, 18.5, 6.5, 1.05); permanent' },
     animations: { burn: { fps: 10, loop: true, frames: fFull } },
     lods: { half: { size: { w: 5, h: 3 }, anchor: { x: 2, y: 2 }, animations: { burn: { fps: 10, loop: true, frames: fHalf } } } }
+  };
+
+  // =====================================================================================================
+  // BURNER FIRE 13x11 (US-053c / architecture.md 36.2a): the Build / Blood style fire BODY of the voxel burner.
+  // 1-cell particles cannot read as a fire body at burner distance, so the body is this animated, all-emissive
+  // billboard (~1 m tall) and the particles are only `embers` + `smoke` over it (design/models/particles.js).
+  // Build look: a white-yellow core LOW (rows 7-9: @ W M 8), yellow-orange mid (# % &), orange licking tongues
+  // whose edges are ( ) { } (the curl), ragged red tips (^ ' , .) and 1-2 DETACHED flicks above per frame; the
+  // tongue layout changes every frame (left-tall, centre-tall, split, right-tall, lean-left, gulp, squash) so the
+  // loop never reads as a stamp. Bottom row = the ember bed in the burner mouth (emberHot / emberDim).
+  // Colours come from the glyph (paint map below), so glyph and key rows can never drift. Glyph-only (no fill plate:
+  // the sprite pass keeps the scene bg; a glow plate would need BUG-OWN-003 `fill` support in sprites.js).
+  // Anchor bottom centre (6, 10) at the voxel burner mount `flame` (grate top, world z 1.05): x 18.5, y 6.5, z 1.05.
+  // `burnerFlame` above stays for old saves / the voxel-props preview; do not spawn both.
+  // =====================================================================================================
+  var FIRE_MAP = {
+    '@': '4', W: '4', M: '4', '8': '4',
+    '#': '3', '%': '3', '&': '3',
+    '*': '2', '(': '2', ')': '2', '{': '2', '}': '2', '/': '2', '\\': '2',
+    '^': '1', "'": '1', ',': '1', '.': '1', other: '2'
+  };
+  // the bed row (last row of each tier): bright coals vs cooling coals
+  var FIRE_BED = { '*': 'E', o: 'E', '@': 'E', '#': 'y', '=': 'y', '.': 'y', other: 'y' };
+  var FIRE_FULL = [
+    // f0 left tongue tall, centre mid, right short
+    ["    '     .", '    ^', '   (^)   ,', '   (*)  ^', '  (#*) (*)', '  (%#*)(#*)^', ' (*%#@%#%*)^',
+     '(*#@W@M@W%#*)', '{*#@WMWMW@#*}', ' )%#@WWW@#%( ', ' =*o#*@*#o*= '],
+    // f1 centre tall, left mid, right short
+    ["        '", '      ^', '     (^)', '  ^  (*)', ' (^) (#*)   .', ' (*)(%#*) ^', ' (*#%@@#%*)^',
+     '(*#@W@M@W#*)', '{*#@WMW8W@#*}', ' )%@WWMW@#%( ', ' =o*#@*#*o*= '],
+    // f2 centre split in two, right mid
+    ['   ,    ^', '     ^  ^  .', '    (^)(*)', '   (*#)(*)', '  ^(#%*)(#*)', ' (*#%@#%#*)^', ' (*%@W@%@#*)',
+     '(*#@WMW@W@#*)', '{*%@W8WMW@%*}', ' )#@WWMWW@#( ', ' =*o#*@*#o*= '],
+    // f3 right tongue tall, lean right
+    ["  .      '", '         ^', '        (^)', '     ^  (*)', '    (*)(#*)', '  ^(*#)(%#*)', '  (*#%@#@%#*)',
+     ' (*#@W@MW@#*)', '{*#@WMW8W@#*}', ' )%@WMWWW@%( ', ' =o*#@*#*o*= '],
+    // f4 right tongue leaning left, left mid, centre short
+    ["   '", '       ^', '      (^)  .', '  ^   (*)', ' (*)  (#*)', ' (#*)^(%#*)', ' (*#%#@%#*)',
+     '(*#@W@M@W%*)', '{*#@WMWMW@#*}', ' )%@WW8WM@%( ', ' =*o#*@*#o*= '],
+    // f5 left tall, centre + right mid
+    ["   ^      '", '  (^)', '  (*)   ^', '  (#)  (*)', '  (#*) (#)^', ' (*%#)(%#*)', ' (*#@%#@%#*)',
+     '(*#@W@WM@#*)', '{*%@W8WMW@%*}', ' )#@WMWWW@#( ', ' =o*#@*#*o*= '],
+    // f6 gulp: one big centre tongue, sides short
+    ['  .   ^', '     (^)', '     (*)', '    (*#*)', "    (#@#)   '", '  ^(%#@#%)^', ' (*#%@W@%#*)',
+     '(*#@WMWMW@#*)', '{*%@W8W8W@%*}', ' )#@WWWWW@#( ', ' =*o#*@*#o*= '],
+    // f7 squash: low and wide, two short tongues, sparks thrown high
+    ["    .    '", '', '', '   ^    ^', '  (*)  (*)^', ' (*#*)(%#*)', '(*#%@#%@#%*)^',
+     '(*#@W@WMW@#*)', '{*#@WMWMW@#*}', ' )%@WW8WW@%( ', ' =o*#@*#*o*= ']
+  ];
+  // half LOD 7x6 (same 8-frame cycle, same key logic; row 5 = the bed)
+  var FIRE_HALF = [
+    ['  ^  .', ' (*) ^', ' (#*#)^', '(*@W@*)', '{#WMW#}', ' =o@o= '],
+    ['   ^', "  (^) '", ' ^(#*)', '(*#W@#)', '{#WMW#}', ' =*#*= '],
+    [',   ^', '   (^)', '  (#*)^', '(*@W@*)', '{%W8W%}', ' =o@o= '],
+    [' .   ^', '    (^)', ' ^ (*#)', '(*#@W#)', '{#WMW#}', ' =*#*= '],
+    ['   ^', '  (^) .', ' (*#*)', '(*@W@*)', '{#W8W#}', ' =o@o= '],
+    [" ^    '", '(^) ^', '(#*(*)', '(*@W@#)', '{%WMW%}', ' =*#*= '],
+    ['   ^', ' .(*)', ' ^(#)^', '(*@W@*)', '{#W8W#}', ' =o@o= '],
+    [" '   .", '', ' ^ ^ ^', '(*@#@*)', '{#WMW#}', ' =*#*= ']
+  ];
+  function fireFrames(list, w, h) {
+    return list.map(function (rows) {
+      var g = fix(rows, w), rm = {};
+      rm[h - 1] = FIRE_BED;
+      return { S: { glyphs: g, fg: paint(g, FIRE_MAP, rm) } };
+    });
+  }
+  A.models.burnerFire = {
+    name: 'burnerFire',
+    desc: 'US-053c / 36.2: the burner\'s fire body, Build-engine style - a white-yellow core low in the mouth, ' +
+          'orange licking tongues with ragged red tips and detached flicks, over a bed of embers. All emissive. ' +
+          'Particles add embers + smoke above it.',
+    size: { w: 13, h: 11 }, anchor: { x: 6, y: 10 }, world: { w: 0.7, h: 1.0 },
+    directions: ['S'], billboard: true,
+    keys: {
+      '1': { c: 'flameTip', e: true }, '2': { c: 'flameOuter', e: true },
+      '3': { c: 'flameMid', e: true }, '4': { c: 'flameCore', e: true },
+      E: { c: 'emberHot', e: true }, y: { c: 'emberDim', e: true }
+    },
+    mountOn: { model: 'burner', mount: 'flame', clip: 'burn',
+               note: '36.2b: its own level prop `burnerFire` (model burnerFire, anim burn, x 18.5, y 6.5, z 1.05, no collide). ' +
+                     'Light = the existing lights.brazier (torch preset), unchanged.' },
+    animations: { burn: { fps: 12, loop: true, frames: fireFrames(FIRE_FULL, 13, 11) } },
+    lods: { half: { size: { w: 7, h: 6 }, anchor: { x: 3, y: 5 }, animations: { burn: { fps: 12, loop: true, frames: fireFrames(FIRE_HALF, 7, 6) } } } }
   };
 
   // =====================================================================================================

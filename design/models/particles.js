@@ -6,7 +6,9 @@
  * WHAT THIS FILE SETS
  *   ASSETS.particles.presets.<key>   one EmitterDef per preset, EXACTLY the 32.1 fields, except `colors`, which is
  *                                    an array of PALETTE KEYS (not [r,g,b]); the caller resolves them (32.1:
- *                                    "colours resolved by the CALLER"). Keys: flame, smoke, sparks, dust.
+ *                                    "colours resolved by the CALLER"). Keys: flame, embers, smoke, sparks, dust.
+ *                                    36.2: the burner = sprite `burnerFire` (wreckage.js) + `embers` + `smoke`;
+ *                                    `flame` is no longer placed at the burner (kept for small torches / tests).
  *   ASSETS.particles.toEmitterDef(key, rgb)
  *                                    -> a NEW plain EmitterDef with colors = rgb[k] triplets, ready for
  *                                    engine.particles.defineEmitter(key, def). `rgb` = ASSETS.palette.rgb
@@ -50,6 +52,21 @@
       glyphs:  "%#**^^^'':.",
       colors: ['flameCore', 'flameCore', 'flameCore', 'flameMid', 'flameMid', 'flameMid', 'flameOuter', 'flameOuter',
                'flameTip', 'ember', 'emberDark'],
+      emissive: true, emissiveFog: 0.15
+    },
+    // --- embers (36.2a): the particles OVER the burnerFire sprite (which is the fire body now). A few bright coals
+    // per second lifted out of the flames: 8/s, 0.8-1.4 s, start 0.6-1.2 m/s in a 25 deg cone, drag pulls them to a
+    // slow buoyant drift (accelZ/drag = 0.33 m/s) and the draught carries them (wind 0.6), so they climb ~0.6-0.9 m
+    // above their spawn and wander. Spawn box 0.3 x 0.3 m = the width of the sprite body. `*` hot -> `'` `.` cooling,
+    // emberHot -> ember -> emberDim -> emberDark. Emissive (fire), slight fog.
+    embers: {
+      rate: 8, burst: 0,
+      life: [0.8, 1.4], speed: [0.6, 1.2],
+      dir: [0, 0, 1], spreadDeg: 25, box: [0.15, 0.15, 0.05],
+      accelZ: 0.4, drag: 1.2, wind: 0.6,
+      maxLive: 16, killBelow: null,
+      glyphs:  "**+''..",
+      colors: ['emberHot', 'emberHot', 'ember', 'ember', 'emberDim', 'emberDim', 'emberDark'],
       emissive: true, emissiveFog: 0.15
     },
     // --- smoke: slow, dark, drifting. Buoyant (accelZ +0.6, terminal 0.75 m/s), takes the full wind (wind 1), lives
@@ -96,8 +113,13 @@
 
   // Placement hints for US-053c AC3-5 (content / game code). Not read by the engine.
   var mounts = {
-    flame:  { use: 'Kestrel burner: components.emitters on the burner entity, at its `flame` mount', offset: { right: 0, fwd: 0, up: 0.02 }, on: true },
-    smoke:  { use: 'same entity, one entry after flame; starts above the tongue tip so the two never overlap', offset: { right: 0, fwd: 0, up: 0.8 }, on: true },
+    flame:  { use: 'SPARE since 36.2 (the burner fire body is the burnerFire sprite); small torches / tests', offset: { right: 0, fwd: 0, up: 0.02 }, on: true },
+    // 36.2: offsets relative to the voxel burner `flame` mount (grate top, world z 1.05). The burnerFire sprite spans
+    // z 1.05 .. 2.05, so embers start mid-body (z 1.50) and rise out of the tips; smoke starts AT the tip (z 2.0) so the
+    // dark (lit, non-emissive) smoke never sits over the bright body. Level offsets are from the burner prop's feet
+    // (z 0.5): embers up 1.0, smoke up 1.5.
+    embers: { use: 'Kestrel burner: components.emitters on the burner entity (replaces `flame`), over the burnerFire sprite', offset: { right: 0, fwd: 0, up: 0.45 }, on: true },
+    smoke:  { use: 'same entity, after embers; starts at the sprite\'s tip so smoke never covers the fire body', offset: { right: 0, fwd: 0, up: 0.95 }, on: true },
     sparks: { use: 'combat:hit from the player sword: burstAt(sparks, hit point); setEmitterDir / burstAt dx,dy,dz = hit normal when known', n: 10, nHeavy: 14 },
     dust:   { use: 'landing with fall speed > LANDING_DUST_SPEED: burstAt(dust, feet x, y, z + 0.03)', n: 10, nHeavy: 14 }
   };
