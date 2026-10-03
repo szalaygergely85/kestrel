@@ -243,7 +243,11 @@ const hashOf = (sys) => { const h = createHasher(); sys.hashInto(h); return h.va
   const { assets } = await loadTestAssets();
   const def = assets.world('world_m1');
   const base = World.load(def, assets, {});
-  ok('World.load without cloths -> empty system, never null', !!base.cloths && base.cloths.count === 0);
+  // CLOTH-1b5 placed a real content cloth (tower.stairwell.canvas) in
+  // world_m1's own tower level, so the base system is no longer empty -
+  // this line now guards "system present, never null" (count >= 1 from
+  // the real content) rather than hard count === 0.
+  ok('World.load without extra cloths -> system present, never null, carries the real content cloth', !!base.cloths && base.cloths.count >= 1);
   ok('bare new World() has an empty system', new World().cloths.count === 0);
   const sIn = base.structures.find((x) => x.id === 'tower') || base.structures[0];
   const f = sIn.frame;
@@ -256,6 +260,8 @@ const hashOf = (sys) => { const h = createHasher(); sys.hashInto(h); return h.va
   };
   let w;
   try { w = World.load(wdef, assets, {}); } finally { assets.level = origLevel; }
+  // this override REPLACES tower's level-cloths array with just "lc" (the real
+  // "stairwell.canvas" content cloth is not part of this particular load): wc (world) + lc (level) = 2
   ok('World.load builds world + level cloths', w.cloths.count >= 2, String(w.cloths.count));
   const lcId = w.cloths.ids.find((id) => id.endsWith('.lc'));
   ok('level cloth id prefixed with the structure id', !!lcId, w.cloths.ids.join());
