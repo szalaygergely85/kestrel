@@ -909,6 +909,7 @@ function runGame(mode) {
       // collision this step already sees the grate's current ceiling.
       lap(SEC.input);
       stepSectorAnims(engine.world, dt);
+      engine.world.water.step(); // US-143a (35.2): wave clock tick, before `integrate` per the Q13 instruction
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
