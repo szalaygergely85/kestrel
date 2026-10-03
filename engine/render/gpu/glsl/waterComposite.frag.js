@@ -64,7 +64,7 @@ void main() {
 
   int lb = int(w.w & 15u) * ${WL_STRIDE / 4};
   vec4 r0 = uWL[lb], r1 = uWL[lb + 1], r2 = uWL[lb + 2], r3 = uWL[lb + 3];
-  float opaqueAt = r0.w, seeThrough = r1.w, waveHz = r2.w, bgK = r3.y;
+  float opaqueAt = r0.w, seeThrough = r1.w, bgK = r3.y;
   int nGlyph = int(r3.x);
   float a = isSky ? 1.0 : clamp((raw - dW) / opaqueAt, 0.0, 1.0);
 
@@ -78,11 +78,17 @@ void main() {
   float k = uAmbientI + uSunI * max(uSunDir.z, 0.0) * sunF;
   vec3 wc = clamp((r0.rgb + (r1.rgb - r0.rgb) * a) * k, 0.0, 255.0);
 
+  vec3 wb = wc * bgK; // background never receives the glint (36.1b)
   bool opaque = a >= seeThrough;
   float glyph = floor(sfg.a * 255.0 + 0.5);
   if (opaque) {
-    int tick = int(floor(uTimeSec * waveHz));
-    uint h = hashFastU(int(floor(P.x / 0.5)), int(floor(P.y / 0.5)), ${WATER_HASH_SALT} + 31 * tick);
+    vec4 r9 = uWL[lb + 9];
+    float u = (P.x * 0.8776 + P.y * 0.4794) / r3.z - r9.x;
+    float v = (-P.x * 0.4794 + P.y * 0.8776) / r3.z;
+    int iu = int(floor(u)), iv = int(floor(v + 0.5 * float(iu & 1)));
+    uint h0 = hashFastU(iu & 1023, iv & 1023, ${WATER_HASH_SALT});
+    int tick = int(floor(r9.y + float(h0 & 255u) / 256.0));
+    uint h = hashFastU(iu & 1023, iv & 1023, ${WATER_HASH_SALT} + 31 * tick);
     int gi = int(h % uint(nGlyph));
     vec4 gv = uWL[lb + 4 + (gi >> 2)];
     int gc = gi & 3;
@@ -103,7 +109,7 @@ void main() {
       uint fh = hashFastU(ia & 1023, int(fib) & 1023, ${WATER_FLOW_SALT});
       if (float(fh >> 8u) * (1.0 / 16777216.0) > r6.w) glyph = r6.x;
     }
-    if (float(h >> 8u) * (1.0 / 16777216.0) > 0.9) wc += (r2.rgb - wc) * 0.5;
+    if (float(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) wc += (r2.rgb - wc) * 0.5;
   }
 
   // own fog (distance dW x the pitched fog scale)
@@ -112,7 +118,6 @@ void main() {
   if (f > 0.0 && uWFog[0].z != 1.0) f = pow(f, uWFog[0].z);
   float fBg = min(uWFog[0].w * f, 1.0);
   vec3 fgc = wc + (uWFog[1].rgb + (uWFog[2].rgb - uWFog[1].rgb) * f - wc) * f;
-  vec3 wb = wc * bgK;
   vec3 bgc = wb + (uWFog[3].rgb + (uWFog[4].rgb - uWFog[3].rgb) * f - wb) * fBg;
   if (!opaque) { // see-through: tint the shaded floor cell by the opacity
     vec3 fgOld = floor(sfg.rgb * 255.0 + 0.5), bgOld = floor(sbg.rgb * 255.0 + 0.5);

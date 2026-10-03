@@ -10,7 +10,7 @@
 import {
   bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim,
-  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs,
+  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
@@ -385,6 +385,13 @@ function buildCompareRuns(ctx) {
     cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -6 }, real: true, meshOnly: true, sun: SUN_135_30, before: pondSet });
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water pond top-down (US-055a2b, pitched default, pitch -75, sun az 135 el 30)',
     cam: { x: poolC.x + 1.5, y: poolC.y, z: groundZ(poolC.x, poolC.y) + 16, yawDeg: 270, pitchDeg: -75 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, before: pondSet });
+  // 36.1b: exercise the designer pond and murky palettes as well as the default water look.
+  for (const look of ['pond', 'murky']) {
+    runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: water ${look} look top-down (36.1b, drift/glint)`,
+      cam: { x: poolC.x + 1.5, y: poolC.y, z: groundZ(poolC.x, poolC.y) + 16, yawDeg: 270, pitchDeg: -75 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
+      before: waterPose([{ id: `cmp.${look}`, shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look }]) });
+  }
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water sea (US-055a2b, flooded plain 1 m below the eye, shear pitch -3, sun az 135 el 30)',
     cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30,
     before: waterPose([{ id: 'cmp.sea', shape: 'rect', rect: [1100, 700, 1900, 1400], z: groundZ(waterEye.x, waterEye.y) - 1, look: 'water' }]) });
@@ -547,6 +554,7 @@ function runGpuCompareDdaMode(ctx) {
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
     instances: compareInstances,
+    waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // same designer table as the bound GPU pipeline
     viewModel: engine.viewModel, // US-078a: both twins draw the layer when a pose shows it
     // ME-15c: the JS twin renders the same sun shadow map as the GPU pass whenever the pipeline runs sun 'map'.
     shadowOpts: renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,

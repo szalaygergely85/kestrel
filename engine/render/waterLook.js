@@ -4,19 +4,22 @@
 //
 // A look (designer data, `assets.waterLooks[name]`; engine default below) is
 //   { ramp: '~-=', shallow: [r,g,b], deep: [r,g,b], opaqueAt: 1.5, seeThrough: 0.35, glint: [r,g,b], waveHz: 2, bgK: 0.6 }
+// Additional surface keys: cellM, glintP, drift, tintDepth, shoreW, rim, foamRamp, foamDepth, foamFar (36.1).
 // colours are 0..255 bytes, `ramp` is 1..8 printable ASCII glyphs, `opaqueAt` = metres of water path at which the water is opaque,
 // `seeThrough` = alpha below which the floor glyph stays visible (tinted), `waveHz` = glyph re-roll rate, `bgK` = bg = rgb * bgK.
 //
 // Packed row (WL_STRIDE floats, one per water slot; the SAME Float32Array feeds the JS twin and the GPU uniforms):
-//   0..3 shallow.rgb, opaqueAt | 4..7 deep.rgb, seeThrough | 8..11 glint.rgb, waveHz | 12 n, 13 bgK, 14..15 unused
+//   0..3 shallow.rgb, opaqueAt | 4..7 deep.rgb, seeThrough | 8..11 glint.rgb, waveHz | 12 n, 13 bgK, 14 cellM, 15 glintP
 //   16..19 ramp codes 0..3 | 20..23 ramp codes 4..7   (codes = ASCII - 32, the glyphIdx units of the cell buffer)
 //   US-141a (35.4) 24 streak code, 25 streakLen L, 26 streakW W, 27 streakK   (look; defaults '-', 1.0, 0.35, 0.7)
 //                  28..29 fhat (unit flow dir), 30 |f| (m/s; radial: |s|), 31 o = (signed speed * t) mod (1024 L)   (per slot, f64 -> f32)
 //                  32 mode (0 still, 1 linear, 2 radial), 33..34 circle centre, 35 nAng (radial angular streak count)
+//   36.1: 36 ou (packed drift until fill), 37 wavePhase, 38 tintDepth, 39 shoreW; 40..43 shape (rect bounds or circle centre/radius)
+//         44..46 foam codes, 47 foamN, 48..50 rim.rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar, 54..55 reserved
 
 import { hashFastU } from './terrainShade.js';
 
-export const WL_STRIDE = 36;
+export const WL_STRIDE = 56;
 export const WL_RAMP_MAX = 8;
 /** Salt of the water glyph hash (`hashFastU(x, y, WATER_HASH_SALT + 31 * tick)`); the shade salt list gets this new one. */
 export const WATER_HASH_SALT = 57;
@@ -31,6 +34,8 @@ export const WL_SLOTS = 12;
 export const DEFAULT_WATER_LOOK = Object.freeze({
   ramp: '~-=', shallow: [96, 176, 196], deep: [16, 56, 112], opaqueAt: 1.5, seeThrough: 0.35,
   glint: [235, 245, 255], waveHz: 2, bgK: 0.6,
+  cellM: 0.25, glintP: 0.04, drift: 0.12, tintDepth: 1.2, shoreW: 0.6, rim: [200, 220, 215],
+  foamRamp: '*o.', foamDepth: 0.3, foamFar: 40,
   streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7, // US-141a (35.4)
 });
 
@@ -56,12 +61,28 @@ export function packWaterLook(name, look) {
   if (!(L.streakLen > 0)) bad(name, '"streakLen" must be > 0');
   if (!(L.streakW > 0)) bad(name, '"streakW" must be > 0');
   if (!(L.streakK >= 0 && L.streakK <= 1)) bad(name, '"streakK" must be 0..1');
+  for (const key of ['cellM', 'tintDepth', 'shoreW', 'foamDepth', 'foamFar']) {
+    if (typeof L[key] !== 'number' || !Number.isFinite(L[key]) || !(L[key] > 0)) bad(name, `"${key}" must be finite and > 0`);
+  }
+  if (typeof L.drift !== 'number' || !Number.isFinite(L.drift) || L.drift < 0) bad(name, '"drift" must be finite and >= 0');
+  if (typeof L.glintP !== 'number' || !(L.glintP >= 0 && L.glintP <= 1)) bad(name, '"glintP" must be 0..1');
+  rgb3(name, 'rim', L.rim);
+  if (typeof L.foamRamp !== 'string' || L.foamRamp.length < 1 || L.foamRamp.length > 3) bad(name, '"foamRamp" must be 1..3 glyphs');
+  for (let i = 0; i < L.foamRamp.length; i++) {
+    const c = L.foamRamp.charCodeAt(i);
+    if (c < 33 || c > 126) bad(name, '"foamRamp" glyphs must be printable ASCII (no space)');
+  }
   const r = new Float32Array(WL_STRIDE);
   r[24] = L.streak.charCodeAt(0) - 32; r[25] = L.streakLen; r[26] = L.streakW; r[27] = L.streakK;
   r[0] = L.shallow[0]; r[1] = L.shallow[1]; r[2] = L.shallow[2]; r[3] = L.opaqueAt;
   r[4] = L.deep[0]; r[5] = L.deep[1]; r[6] = L.deep[2]; r[7] = L.seeThrough;
   r[8] = L.glint[0]; r[9] = L.glint[1]; r[10] = L.glint[2]; r[11] = L.waveHz;
-  r[12] = L.ramp.length; r[13] = L.bgK;
+  r[12] = L.ramp.length; r[13] = L.bgK; r[14] = L.cellM; r[15] = L.glintP;
+  // Slot 36 starts as drift m/s; fillWaterSlotTable folds it to the live phase.
+  r[36] = L.drift; r[38] = L.tintDepth; r[39] = L.shoreW;
+  for (let i = 0; i < L.foamRamp.length; i++) r[44 + i] = L.foamRamp.charCodeAt(i) - 32;
+  r[47] = L.foamRamp.length; r[48] = L.rim[0]; r[49] = L.rim[1]; r[50] = L.rim[2];
+  r[52] = L.foamDepth; r[53] = L.foamFar;
   for (let i = 0; i < L.ramp.length; i++) r[16 + i] = L.ramp.charCodeAt(i) - 32;
   return r;
 }
@@ -94,6 +115,9 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
     const name = wt.lookNames[wt.look[ri]];
     const b = s * WL_STRIDE;
     out.set(looks.byName.get(name) || looks.fallback, b);
+    // Fold both surface phases in f64 before the shared f32 upload (36.1b).
+    out[b + 36] = (out[b + 36] / out[b + 14] * timeSec) % 1024;
+    out[b + 37] = (timeSec * out[b + 11]) % 1024;
     // US-141a flow block (35.4): the streak offset is folded in f64 here, so the f32 side only sees a small phase.
     const period = 1024 * out[b + 25];
     const fx = wt.flow[ri * 2], fy = wt.flow[ri * 2 + 1], fr = wt.flowR[ri];
@@ -110,6 +134,19 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
       }
     }
   }
+}
+
+// Rotated brick lattice, advected in surface space with staggered cell re-rolls (36.1b).
+// GLSL repeats these expressions in the same order.
+export function waterSurfaceHash(t, lb, px, py) {
+  // Match shader float precision before discontinuous floor/hash decisions.
+  const f = Math.fround, x = f(px), y = f(py), c = f(0.8776), s = f(0.4794);
+  const u = f(f(f(f(x * c) + f(y * s)) / t[lb + 14]) - t[lb + 36]);
+  const v = f(f(f(-x * s) + f(y * c)) / t[lb + 14]);
+  const iu = Math.floor(u), iv = Math.floor(v + 0.5 * (iu & 1));
+  const h0 = hashFastU(iu & 1023, iv & 1023, WATER_HASH_SALT);
+  const tick = Math.floor(t[lb + 37] + (h0 & 255) / 256);
+  return hashFastU(iu & 1023, iv & 1023, WATER_HASH_SALT + 31 * tick);
 }
 
 // ---- own fog (35.3 "the water itself is fogged with its own distance") ----

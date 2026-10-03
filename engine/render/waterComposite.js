@@ -6,9 +6,9 @@
 // Per hit cell (dW < rawDepth, sky = Infinity):
 //   a    = sky ? 1 : clamp((rawDepth - dW) / opaqueAt, 0, 1)                      (water path length -> opacity)
 //   rgbW = clamp(mix(shallow, deep, a) * (ambientI + sunI * max(0, sunDir.z) * sunF), 0, 255)   (up normal, terrain `b` formula)
-//   a <  seeThrough: keep the floor glyph, fg = mix(fg, fogged rgbW, a), bg = mix(bg, fogged rgbW * bgK, a)
-//   a >= seeThrough: glyph = ramp[h % n] with h = hashFastU(floor(Px/0.5), floor(Py/0.5), SALT + 31 * floor(t * waveHz)),
-//                    fg = fogged rgbW (h/2^24 > 0.9: mixed halfway to glint first), bg = fogged rgbW * bgK
+//   a <  seeThrough: keep the floor glyph fg = mix(fg, fogged rgbW, a), bg = mix(bg, fogged rgbW * bgK, a)
+//   a >= seeThrough: glyph = ramp[h % n], using the rotated, drifting brick hash (36.1b).
+//                    fg mixes halfway to glint with probability glintP; bg uses the un-glinted rgbW * bgK.
 //   fog (own distance dW, x pitched fog scale): see waterLook.js `waterFogParams`.
 //   flow (US-141a, 35.4): a flowing slot replaces the ramp glyph by `look.streak` where the advected streak hash (waterLook.js `flowStreakHit`) says so.
 // Edge suppression: an opaque (a >= seeThrough) surface cell sets `fb.waterMask[i] = 1`; `edgePass` skips masked cells so a
@@ -17,10 +17,9 @@
 // Order in `renderWorld` (mesh): shade -> composite(surfaces) -> edgePass(mask) -> fillSky -> composite(sky). The GPU does the same
 // in `_passWaterComposite` (after shade, before edge; the sky is already in the shade output there). Zero allocation after warm.
 import { sunFromWorld } from './terrainCaster.js';
-import { hashFastU } from './terrainShade.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit } from './waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash } from './waterLook.js';
 
 const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
@@ -56,7 +55,6 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const kindArr = fb.gbuf.kind, depth = fb.depth.depth, wKind = wt.kind, wDepth = wt.depth, wObj = wt.objectId;
   const cells = fb.rt.cells || fb.rt;
   const gArr = cells.glyphIdx, fgArr = cells.fg, bgArr = cells.bg, mArr = cells.mask;
-  const timeSec = fb.timeSec || 0;
   const sunZ = sun.dirZ > 0 ? sun.dirZ : 0;
   const fStart = _fog[0], fFull = _fog[1], fCurve = _fog[2], fBgScale = _fog[3];
 
@@ -67,7 +65,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     const dW = wDepth[i], raw = isSky ? Infinity : depth[i];
     if (!(dW < raw)) continue;
     const slot = wObj[i] & 15, lb = slot * WL_STRIDE;
-    const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], waveHz = _table[lb + 11], bgK = _table[lb + 13];
+    const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], bgK = _table[lb + 13];
     let a = isSky ? 1 : (raw - dW) / opaqueAt;
     a = a < 0 ? 0 : a > 1 ? 1 : a;
     const col = i % cols, row = (i / cols) | 0;
@@ -79,15 +77,15 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     let wb = (_table[lb + 2] + (_table[lb + 6] - _table[lb + 2]) * a) * k;
     wr = wr < 0 ? 0 : wr > 255 ? 255 : wr; wg = wg < 0 ? 0 : wg > 255 ? 255 : wg; wb = wb < 0 ? 0 : wb > 255 ? 255 : wb;
 
+    const br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
     const fi = i * 4;
     const opaque = a >= seeThrough;
     let glyph = fgArr[fi + 3];
     if (opaque) {
-      const tick = Math.floor(timeSec * waveHz);
-      const h = hashFastU(Math.floor(_p[0] / 0.5), Math.floor(_p[1] / 0.5), WATER_HASH_SALT + 31 * tick);
+      const h = waterSurfaceHash(_table, lb, _p[0], _p[1]);
       glyph = _table[lb + 16 + (h % (_table[lb + 12] | 0))];
       if (flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4): flowing water streaks
-      if ((h >>> 8) * (1 / 16777216) > 0.9) {
+      if ((h >>> 8) * (1 / 16777216) > 1 - _table[lb + 15]) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }
     }
@@ -100,7 +98,6 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     let fr = wr + (_fog[4] + (_fog[8] - _fog[4]) * f - wr) * f;
     let fg = wg + (_fog[5] + (_fog[9] - _fog[5]) * f - wg) * f;
     let fb2 = wb + (_fog[6] + (_fog[10] - _fog[6]) * f - wb) * f;
-    const br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
     let br = br0 + (_fog[12] + (_fog[16] - _fog[12]) * f - br0) * fBg;
     let bg = bg0 + (_fog[13] + (_fog[17] - _fog[13]) * f - bg0) * fBg;
     let bb = bb0 + (_fog[14] + (_fog[18] - _fog[14]) * f - bb0) * fBg;

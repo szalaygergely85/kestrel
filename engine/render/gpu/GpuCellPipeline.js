@@ -240,6 +240,10 @@ export class GpuCellPipeline {
       // US-055a2a (35.3): water layer - program, VAO (one vec4 attribute), static clipmap buffers + WATER target (lazy, WaterLayer)
       this.progWater = linkProgram(gl, WATER_VERT_SRC, WATER_FRAG_SRC);
       this._waterVao = gl.createVertexArray();
+      // 36.1: slot/fog arrays plus a conservative 32-vector allowance for scalar/projection uniforms.
+      if (gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < WL_SLOTS * WL_STRIDE / 4 + WFOG_LEN / 4 + 32) {
+        throw new Error('water composite exceeds the fragment uniform vector budget');
+      }
       this.progWaterComp = linkProgram(gl, CELL_VERT_SRC, WATER_COMPOSITE_FRAG_SRC);
       this._water = null; // WaterLayer, created with the device below
       this._waterLooks = defaultWaterLooks(); // US-055a2b: setWaterLooks() binds the designer table
