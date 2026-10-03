@@ -75,8 +75,8 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
 export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
-/** Renderer used when `?renderer=` is absent (ME-12b flips it to 'mesh'; game main.js and the editor read it). */
-export const DEFAULT_RENDERER = 'dda';
+/** Renderer used when `?renderer=` is absent (owner 2026-10-03: 'mesh' is the default; '?renderer=dda' still selects the legacy caster; game main.js and the editor read it). */
+export const DEFAULT_RENDERER = 'mesh';
 export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
