@@ -64,5 +64,8 @@
   "water": [
     {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},
     {"id": "floodedCellar", "look": "murky", "rect": [1485, 995, 1495, 1005], "shape": "rect", "z": 2.45}
-  ]
+  ],
+  "wind": {
+    "zones": [{"id": "stairwell.draft", "dirDeg": 0, "edge": 0.5, "mode": "add", "push": false, "rect": [1495.8, 1020.5, 1499.2, 1023.5], "shape": "rect", "speed": 0.6}]
+  }
 }

@@ -173,6 +173,9 @@ export function deserialize(state, assets, opts = {}) {
   const def = {
     name: state.world,
     terrain: state.terrain ? state.terrain.recipe : null,
+    // Wind is authored content: rebuild it from the registered world on load.
+    wind: assets && typeof assets.has === 'function' && assets.has('world', state.world)
+      ? assets.world(state.world).wind : undefined,
     horizon: state.horizon || [],
     water: state.water || [],
     bounds: state.bounds || null,
