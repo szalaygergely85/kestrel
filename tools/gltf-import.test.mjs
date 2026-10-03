@@ -12,7 +12,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { importGltfBytes, runCli } from './gltf-import.mjs';
+import { importGltfBytes, runCli, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON } from './gltf-import.mjs';
 import { meshFromJSON, validateMesh } from '../engine/index.js';
 
 let passed = 0;
@@ -48,8 +48,7 @@ function pad4(buf, fill = 0x00) {
 /** Minimal valid .glb: one triangle, one node, default scene, one material
  * named "TestMat" (deliberately NOT in the engine's material map, so the
  * unmapped-material report has something to find). */
-function buildTriangleGlb() {
-  const positions = [[0, 0, 0], [1, 0, 0], [0, 1, 0]];
+function buildTriangleGlb(positions = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]) {
   const posBuf = Buffer.alloc(positions.length * 3 * 4);
   let o = 0;
   for (const p of positions) for (const c of p) { posBuf.writeFloatLE(c, o); o += 4; }
@@ -110,6 +109,50 @@ test('importGltfBytes: no unmapped report when materialKeys is null (engine mate
   assert.deepStrictEqual(report.unmapped, []);
 });
 
+test('rounded floats preserve valid geometry and packed integer attributes', () => {
+  const glb = buildTriangleGlb([[0.1234567, -0.2345678, 0.3456789], [1.7654321, 0, 0], [0, 1.4567891, 0]]);
+  const { mesh, json } = importGltfBytes(glb, 'test:rounded');
+  for (const key of ['pos', 'uv', 'aux', 'bbox']) {
+    for (let i = 0; i < json[key].length; i++) {
+      assert.strictEqual(json[key][i], Math.round(mesh[key][i] * 1e5) / 1e5);
+      assert.ok(Math.abs(json[key][i] - mesh[key][i]) <= 5.001e-6);
+    }
+  }
+  for (const key of ['flat', 'nrm']) assert.deepStrictEqual(json[key], Array.from(mesh[key]));
+  assert.deepStrictEqual(validateMesh(meshFromJSON(JSON.parse(stringifyMeshJSON(json)))).errors, []);
+});
+
+test('packed numeric arrays preserve JSON strings and stable output', () => {
+  const { json } = importGltfBytes(buildTriangleGlb(), 'test:[1,  2]');
+  json.matKeys = ['material [1,  2] "quoted"'];
+  const text = stringifyMeshJSON(json);
+  assert.deepStrictEqual(JSON.parse(text), JSON.parse(JSON.stringify(json)));
+  for (const key of ['pos', 'uv', 'nrm', 'flat', 'aux', 'bbox']) {
+    const line = text.split('\n').find((l) => l.startsWith(`  "${key}": [`));
+    assert.ok(line && /\],?$/.test(line), `${key} must occupy one line`);
+  }
+  assert.strictEqual(text, stringifyMeshJSON(json));
+  assert.ok(text.length < JSON.stringify(json, null, 2).length);
+});
+
+test('smoothing groups retain object identity and deduplicate repeated vertices', () => {
+  const mesh = { flat: Uint32Array.from([0xe0100001, 9, 0xe0100001, 9, 0xe0200001, 9, 0xe0200002, 9]) };
+  assert.strictEqual(countSmoothGroups(mesh), 3);
+});
+
+await testAsync('unavailable material tables emit a warning explaining the skipped check', async () => {
+  const warnings = [], original = console.warn;
+  console.warn = (message) => warnings.push(message);
+  try {
+    const keys = await loadEngineMaterialKeys(async () => { throw new Error('fixture unavailable'); });
+    assert.strictEqual(keys, null);
+    assert.strictEqual(warnings.length, 1);
+    assert.match(warnings[0], /WARNING.*unmapped-material check skipped.*fixture unavailable/);
+  } finally {
+    console.warn = original;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 2. runCli: writes content/meshes/<id>.mesh.json (to a temp --out path) and
 // the written file round-trips through meshFromJSON/validateMesh.
@@ -122,7 +165,9 @@ await testAsync('runCli: writes a .mesh.json that round-trips', async () => {
   const result = await runCli([glbPath, 'test:tri-cli', '--out', outPath]);
   assert.strictEqual(result.wrote, outPath);
   assert.strictEqual(result.report.triCount, 1);
-  const written = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+  const text = fs.readFileSync(outPath, 'utf8');
+  assert.match(text, /"pos": \[.*\]/);
+  const written = JSON.parse(text);
   const mesh = meshFromJSON(written);
   const { errors } = validateMesh(mesh);
   assert.deepStrictEqual(errors, []);

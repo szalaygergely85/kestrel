@@ -14,11 +14,9 @@
 // external-buffer file I/O is the CALLER's job, never engine/mesh/gltf.js's
 // (engine/mesh/* never touches the filesystem).
 //
-// Writes the resulting MeshData to content/meshes/<id>.mesh.json (creating
-// the directory if needed), using MeshData.js's own meshToJSON (plain
-// number arrays, stable key order - the same convention every other
-// content writer in this repo uses via JSON.stringify(obj, null, 2), see
-// tools/vox-export.mjs's map.json write).
+// Writes MeshData with floats rounded to 1e-5 and numeric arrays packed on
+// one line, preserving the engine's meshToJSON shape and stable key order.
+// The rounded file is validated through meshFromJSON before it is written.
 //
 // Prints a report: triangle count, smoothing-group count, and any material
 // names on the mesh that have NO entry in our engine material map (checked
@@ -32,7 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadGltf, meshToJSON, validateMesh } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { loadGltf, meshToJSON, meshFromJSON, validateMesh } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
 
@@ -96,14 +94,14 @@ function isGlb(buf) {
 }
 
 /** Counts distinct smoothing groups from `mesh.flat[0]` (planeId base,
- * low 20 bits = groupId per gltf.js's `meshPlaneIdBase`) - cheaper than
+ * full object + group identity per gltf.js's `meshPlaneIdBase`) - cheaper than
  * re-deriving groups from geometry, and exactly what the importer already
  * computed. */
-function countSmoothGroups(mesh) {
+export function countSmoothGroups(mesh) {
   const groups = new Set();
   const FLAT_STRIDE = 2;
   for (let v = 0; v < mesh.flat.length / FLAT_STRIDE; v++) {
-    groups.add(mesh.flat[v * FLAT_STRIDE] & 0xfffff);
+    groups.add(mesh.flat[v * FLAT_STRIDE]);
   }
   return groups.size;
 }
@@ -114,13 +112,13 @@ function countSmoothGroups(mesh) {
  * actually knows about - the same union engine/render/MaterialTable.js's
  * `hasKey` checks (`P.materials[key]` or `DP.materials[key]`/`DP.remap[key]`).
  * Best-effort: if design/ isn't loadable for some reason, returns null and
- * the caller skips the unmapped-material check (report, don't throw). */
-async function loadEngineMaterialKeys() {
+ * the caller skips the unmapped-material check after a warning (don't throw). */
+export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
   try {
     const root = new URL('../', import.meta.url);
     globalThis.ASSETS = globalThis.ASSETS || {};
-    await import(new URL('design/palette.js', root).href);
-    await import(new URL('design/detail-pass.js', root).href);
+    await load(new URL('design/palette.js', root));
+    await load(new URL('design/detail-pass.js', root));
     const P = globalThis.ASSETS.palette;
     const DP = globalThis.ASSETS.detailPass;
     const keys = new Set();
@@ -128,9 +126,19 @@ async function loadEngineMaterialKeys() {
     if (DP && DP.materials) for (const k of Object.keys(DP.materials)) keys.add(k);
     if (DP && DP.remap) for (const k of Object.keys(DP.remap)) keys.add(k);
     return keys;
-  } catch {
+  } catch (e) {
+    console.warn(`gltf-import: WARNING engine material tables unavailable; unmapped-material check skipped (${e.message})`);
     return null;
   }
+}
+
+/** Pack numeric arrays while leaving metadata and material strings readable. */
+export function stringifyMeshJSON(json) {
+  // Match a complete JSON string first so numeric-looking material names stay untouched.
+  return JSON.stringify(json, null, 2).replace(
+    /"(?:[^"\\]|\\.)*"|\[[\s\d.,eE+\-]*\]/g,
+    (token) => token[0] === '[' ? token.replace(/\s+/g, '') : token,
+  ) + '\n';
 }
 
 /**
@@ -149,7 +157,13 @@ export function importGltfBytes(bytes, id, opts = {}, materialKeys = null) {
   if (errors.length) throw new Error(`gltf-import: generated mesh failed validateMesh:\n${errors.join('\n')}`);
   const groupCount = countSmoothGroups(mesh);
   const unmapped = materialKeys ? mesh.matKeys.filter((k) => !materialKeys.has(k)) : [];
-  return { mesh, json: meshToJSON(mesh), report: { triCount: mesh.triCount, groupCount, unmapped } };
+  const json = meshToJSON(mesh);
+  for (const key of ['pos', 'uv', 'aux', 'bbox']) {
+    json[key] = json[key].map((v) => Math.round(v * 1e5) / 1e5);
+  }
+  const rounded = validateMesh(meshFromJSON(json));
+  if (rounded.errors.length) throw new Error(`gltf-import: rounded mesh failed validateMesh:\n${rounded.errors.join('\n')}`);
+  return { mesh, json, report: { triCount: mesh.triCount, groupCount, unmapped } };
 }
 
 /** Runs the CLI end-to-end (throws on error; caller prints/exits). */
@@ -180,7 +194,7 @@ export async function runCli(argv) {
   const outPath = args.out || path.join('content', 'meshes', `${id}.mesh.json`);
   if (!args.dryRun) {
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, JSON.stringify(meshJson, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(outPath, stringifyMeshJSON(meshJson), 'utf8');
   }
   return { help: false, wrote: args.dryRun ? null : outPath, report };
 }
