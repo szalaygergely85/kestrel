@@ -45,6 +45,10 @@ import { DEG2RAD } from '../core/transform.js';
 // so MeshData.flat[1] can carry the correct kind value today; whichever
 // story first touches engine/render/ for mesh rendering should move this
 // constant to GBuffer.js next to KIND_MODEL and re-export it from here.
+// TODO(ME-14): move this constant into engine/render/GBuffer.js next to
+// KIND_MODEL once ME-14 (content `structures[].mesh` + World wiring) does
+// the real G-buffer rendering integration for glTF meshes - kept local here
+// because ME-13a's scope explicitly excludes engine/render/ touches.
 export const KIND_MESH = 9;
 
 // Top nibble of the glTF planeId (27.4: `(0xE<<28)|(objectId&0xFF)<<20|groupId`)
@@ -119,6 +123,23 @@ function mat4TransformPoint(m, x, y, z, out) {
   out[0] = m[0] * x + m[4] * y + m[8] * z + m[12];
   out[1] = m[1] * x + m[5] * y + m[9] * z + m[13];
   out[2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+}
+
+/**
+ * Determinant of a column-major 4x4 matrix's upper-left 3x3 block (col0 =
+ * m[0..2], col1 = m[4..6], col2 = m[8..10]). Negative means the node's world
+ * transform flips handedness (e.g. Blender's `scale: [-1, 1, 1]` mirror) -
+ * ME-13a arch review item 1: triangle winding must be flipped to compensate,
+ * or a mirrored mesh renders inside-out.
+ * @param {number[]} m
+ * @returns {number}
+ */
+function det3(m) {
+  return (
+    m[0] * (m[5] * m[10] - m[6] * m[9]) -
+    m[4] * (m[1] * m[10] - m[2] * m[9]) +
+    m[8] * (m[1] * m[6] - m[2] * m[5])
+  );
 }
 
 /** glTF (x,y,z) -> world (x,-z,y) (27.3: Blender export convention, +Y up). Pure rotation (orthonormal), so points and the normals derived from transformed points both use it directly. */
@@ -542,6 +563,7 @@ export function loadGltf(buffer, id, opts = {}) {
 
   for (const { node, nodeIdx, world } of meshNodes) {
     const mesh = json.meshes[node.mesh];
+    const mirrored = det3(world) < 0; // per-node constant, computed once (not per triangle)
     for (let pi = 0; pi < mesh.primitives.length; pi++) {
       const prim = mesh.primitives[pi];
       const posRows = readAccessor(json, buffers, prim.attributes.POSITION, id);
@@ -567,7 +589,8 @@ export function loadGltf(buffer, id, opts = {}) {
       const triStart = allTris.length;
       const triCount = triIdx.length / 3;
       for (let t = 0; t < triCount; t++) {
-        const ia = triIdx[t * 3], ib = triIdx[t * 3 + 1], ic = triIdx[t * 3 + 2];
+        let ia = triIdx[t * 3], ib = triIdx[t * 3 + 1], ic = triIdx[t * 3 + 2];
+        if (mirrored) { const tmpI = ib; ib = ic; ic = tmpI; } // compensate the handedness flip
         const p0 = bakedPos[ia], p1 = bakedPos[ib], p2 = bakedPos[ic];
         // Flat face normal from the baked (world+axis-converted) triangle -
         // geometry already carries the node transform + axis swap, so a

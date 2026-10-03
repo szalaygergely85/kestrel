@@ -192,6 +192,31 @@ function simpleGlb({ positions, indices, uvs, material, node, extra }) {
 }
 
 // ---------------------------------------------------------------------------
+// 2b. Mirrored node (negative-determinant world transform, e.g. Blender's
+// `scale: [-1, 1, 1]`): winding must be flipped to compensate, so the
+// resulting face normal still reads as a correctly-oriented outward face
+// (matches the un-mirrored case), not inside-out.
+// ---------------------------------------------------------------------------
+{
+  const positions = [[0, 0, 0], [1, 0, 0], [0, 0, 1]];
+  const indices = [0, 1, 2];
+  const plainGlb = simpleGlb({ positions, indices });
+  const plainMesh = loadGltf(plainGlb, 'test:mirror-plain');
+  const nPlain = [0, 0, 0]; unpackNormalOct(plainMesh.nrm[0], nPlain);
+
+  const mirroredGlb = simpleGlb({ positions, indices, node: { scale: [-1, 1, 1] } });
+  const mirroredMesh = loadGltf(mirroredGlb, 'test:mirror-flip');
+  ok('mirrored node: validates', validateMesh(mirroredMesh).errors.length === 0, JSON.stringify(validateMesh(mirroredMesh).errors));
+  const nMirrored = [0, 0, 0]; unpackNormalOct(mirroredMesh.nrm[0], nMirrored);
+  ok('mirrored node: winding compensated (normal matches un-mirrored, not flipped)',
+    approxEqual(nMirrored[0], nPlain[0], 1e-4) && approxEqual(nMirrored[1], nPlain[1], 1e-4) && approxEqual(nMirrored[2], nPlain[2], 1e-4),
+    JSON.stringify({ nPlain, nMirrored }));
+  // Sanity: without the fix the mirrored normal would be the NEGATION of nPlain.
+  const looksNegated = approxEqual(nMirrored[0], -nPlain[0], 1e-4) && approxEqual(nMirrored[1], -nPlain[1], 1e-4) && approxEqual(nMirrored[2], -nPlain[2], 1e-4);
+  ok('mirrored node: normal is not simply negated', !looksNegated, JSON.stringify({ nPlain, nMirrored }));
+}
+
+// ---------------------------------------------------------------------------
 // 3. Smoothing groups: two coplanar triangles sharing an edge get smooth
 // (averaged, non-flat-matching) normals; two triangles at a sharp angle
 // (a right-angle fold) do not.
