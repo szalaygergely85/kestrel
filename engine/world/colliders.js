@@ -31,6 +31,7 @@
 // engine/world may import engine/mesh/levelMesh.js and
 // engine/physics/bvh.js at runtime (27.18: no rule against it - engine/mesh
 // never imports engine/world, so there is no cycle).
+import { makeFrame, localDirToWorld } from '../core/transform.js';
 import { buildLevelMesh } from '../mesh/levelMesh.js';
 import { buildBvh, buildBvhFromMesh, refit } from '../physics/bvh.js';
 
@@ -266,6 +267,21 @@ export function buildWorldColliders(world) {
   const colliders = [];
   for (const s of world.structures) {
     s._dynColliders = new Map();
+    // Imported meshes have no grid sectors or dynamic legend tags.
+    if (s.mesh) {
+      const mesh = typeof s.mesh === 'string' ? world.assets.mesh(s.mesh) : s.mesh;
+      const frame = s.frame || makeFrame(s.origin.x, s.origin.y, s.origin.z, 0, s.yawDeg || 0);
+      const xAxis = [0, 0], yAxis = [0, 0];
+      localDirToWorld(frame, 1, 0, xAxis);
+      localDirToWorld(frame, 0, 1, yAxis);
+      const matrix12 = Float64Array.from([
+        xAxis[0], yAxis[0], 0, xAxis[1], yAxis[1], 0, 0, 0, 1,
+        frame.x, frame.y, frame.z,
+      ]);
+      const collider = colliderFromMesh(s.id, mesh, matrix12);
+      if (collider) colliders.push(collider);
+      continue;
+    }
     const matrix12 = translationMatrix(s.origin);
     const set = buildLevelMesh(s.level);
 
