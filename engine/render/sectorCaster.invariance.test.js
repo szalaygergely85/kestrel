@@ -18,6 +18,7 @@
 // promoted to a live one.
 // Run: node engine/render/sectorCaster.invariance.test.js
 import { World } from '../world/World.js';
+import { createClothSystem } from '../world/cloths.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { OpenSpans } from './OpenSpans.js';
@@ -61,6 +62,10 @@ const DIAG = { Bint: { x: 1480, y: 1018, z: 0 }, Bz: { x: 1480, y: 1018, z: -3 }
 const worlds = {}, frames = {};
 function mk(key, origin) {
   const w = World.load({ terrain: null, structures: [{ id: 'tw', level: 'tower', origin, yawSteps: 0 }], entities: [] }, assets, {});
+  // BUG-CLOTH-001 (architect decision 2026-10-03): cloth sim runs in absolute f64 world
+  // coords and is not bit-translation-invariant (~1e-13 m survives f32 narrowing as 1
+  // ulp). CO-3 tests static structures; cloth is excluded from that guarantee by rule.
+  w.cloths = createClothSystem([], null, null);
   // 'ground' props resolve to terrain height and do NOT shift with the frame (spec
   // section 10 item 4); this world has no terrain (=> z 0), so put them at the same
   // structure-relative place in B/B' by hand, or the test would compare a z-shifted
