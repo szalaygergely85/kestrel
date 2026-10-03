@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - forest trees (ME-06c4): 3 species x 2 sizes, trunk colliders, forest config</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1200px; }
+  .fail { color:#ff3b3b; } .warn { color:#ffb04a; } .pass { color:#6fdc7a; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:30px; display:inline-block; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:12px; color:#bdb7a4; margin:3px 0 0; font-family:Consolas, monospace; }
+  table { border-collapse:collapse; font:12px Consolas, monospace; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:right; }
+  th { color:#ffc23c; background:#10121a; } td:first-child, th:first-child { text-align:left; }
+  button { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; border-radius:3px; padding:3px 9px; cursor:pointer; }
+  button.on { background:#3a3218; border-color:#ffd24a; color:#ffd24a; }
+  kbd { background:#1a1d28; border:1px solid #33384a; border-radius:3px; padding:0 4px; font-size:11px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : forest trees (ME-06c4) : 3 species x 2 sizes for the real walkable forest</h1>
+<div class="note">
+  Source: <code>design/models/forest_trees.js</code> (6 meshOnly voxel models built from the StickyBizcuit
+  <code>treeBig</code> / <code>treeBirch</code> / <code>treePine</code> in <code>sb_objects.js</code>: same voxels, bigger cellM,
+  leaf materials by height band, canopy specks cleaned, anchor on the trunk centre) and the forest config
+  <code>design/levels/overworld_far.js</code> <code>recipe.forest.trees</code> (architecture.md 37.2 item 7).
+  New materials <code>leaf</code> / <code>leaf_dark</code> / <code>leaf_light</code> (palette.js + detail-pass.js).
+  Tri counts use the engine mesher (<code>buildVoxelMesh</code> / <code>buildVoxelMeshLod1</code>); the views use a
+  reference voxel DDA + <code>palette.util.shade</code> (not the game renderer). The scatter uses the literal 37.2 <code>hash2</code>.
+  <b>Needs http</b> (ES modules): <code>python -m http.server</code> from the repo root, open <code>/design/preview/forest.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>sun azimuth <input type="range" id="az" min="-180" max="180" step="1" value="-35"><span class="val" id="azV"></span></label>
+  <label>sun elevation <input type="range" id="el" min="5" max="85" step="1" value="50"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="4" step="0.05" value="2.2"><span class="val" id="ambV"></span></label>
+  <label><input type="checkbox" id="shadows" checked> sun shadows</label>
+  <label>fog <select id="fog"><option value="far" selected>far (outdoor)</option><option value="interior">interior</option><option value="">off</option></select></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>Variants</h2>
+<div id="table"></div>
+
+<h2>Line-up (same scale: 1 row = 0.33 m; green bar = 1.8 m player; dim lines every 2 m)</h2>
+<div class="controls" style="position:static">
+  <label>orbit yaw <input type="range" id="luYaw" min="-180" max="180" step="1" value="-30"><span class="val" id="luYawV"></span></label>
+  <label><input type="checkbox" id="luCollider" checked> show trunk collider (red ring at ground)</label>
+</div>
+<div class="row" id="lineup"></div>
+
+<h2>Inside the forest (eye 1.6 m, flat all-forest patch scattered with the config)</h2>
+<div class="note">
+  <kbd>W</kbd><kbd>S</kbd> walk, <kbd>A</kbd><kbd>D</kbd> strafe, <kbd>Q</kbd><kbd>E</kbd> / arrows turn, <kbd>R</kbd><kbd>F</kbd> pitch
+  (click the view first). Walking collides with the trunk prisms (circumradius + 0.35 m player). Click the map to jump.
+  The patch is 12 x 12 scatter cells; trees within 1.5 m of the start point are skipped (preview only).
+</div>
+<div class="controls" style="position:static">
+  <label>yaw <input type="range" id="wYaw" min="-180" max="180" step="1" value="20"><span class="val" id="wYawV"></span></label>
+  <label>pitch <input type="range" id="wPitch" min="-20" max="70" step="1" value="10"><span class="val" id="wPitchV"></span></label>
+  <span>grid <button data-g="160">160x60</button><button data-g="240" class="on">240x90</button><button data-g="400">400x150</button></span>
+  <button id="look30">pitch +30 (canopy overhead)</button>
+  <span class="val" id="wPos"></span>
+</div>
+<div class="row">
+  <div><canvas id="walk" tabindex="0"></canvas><div class="cap" id="walkCap"></div></div>
+  <div><canvas id="map"></canvas><div class="cap" id="mapCap"></div></div>
+</div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/sb_objects.js"></script>
+<script src="../models/forest_trees.js"></script>
+<script src="../levels/overworld_far.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__ftOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). This page must be served over http: python -m http.server from the repo root.';
+  }, 3000);
+</script>
+<script type="module">
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { buildVoxelMesh, buildVoxelMeshLod1 } from '../../engine/mesh/voxelMesh.js';
+
+window.__ftOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, FT = A.forestTrees, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const COS225 = Math.cos(22.5 * D2R);
+const BARK = { timber_old: 1, linen: 1, iron_dark: 1 };
+const LOD0_MAX = 4000, LOD1_MAX = 1200;
+
+// ---------------------------------------------------------------------------------------------------------------
+// controls
+const ctl = {};
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.shadows = $('shadows').checked; ctl.fog = $('fog').value || null;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2); $('ambV').textContent = ctl.amb.toFixed(2);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  ctl.sun = [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)];
+}
+readCtl();
+
+// ---------------------------------------------------------------------------------------------------------------
+// checks output
+const checksEl = $('checks'); checksEl.innerHTML = '';
+let nFail = 0, nWarn = 0;
+function check(level, text) {
+  const d = document.createElement('div');
+  d.className = level; d.textContent = (level === 'pass' ? 'PASS ' : level === 'fail' ? 'FAIL ' : level === 'warn' ? 'WARN ' : 'INFO ') + text;
+  if (level === 'fail') nFail++; if (level === 'warn') nWarn++;
+  checksEl.appendChild(d);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// models: dense grids for the reference DDA
+function prepModel(key) {
+  const def = A.voxelModels[key], v = def.voxel, [sx, sy, sz] = v.size;
+  const idx = {}, mats = [null];
+  for (const ch of Object.keys(v.mats)) if (v.mats[ch] !== null) { idx[ch] = mats.length; mats.push(v.mats[ch]); }
+  const grid = new Uint8Array(sx * sy * sz);
+  for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) {
+    const row = v.layers[z][y];
+    for (let x = 0; x < sx; x++) { const m = idx[row[x]]; if (m) grid[x + sx * (y + sy * z)] = m; }
+  }
+  const cm = v.cellM, ax = v.anchor[0], ay = v.anchor[1], az = v.anchor[2];
+  const foot = Math.max(Math.hypot(ax, ay), Math.hypot(sx - ax, ay), Math.hypot(ax, sy - ay), Math.hypot(sx - ax, sy - ay)) * cm;
+  return { key, def, sx, sy, sz, cellM: cm, ax, ay, az, grid, mats, foot, info: FT ? FT.variants[key] : null };
+}
+
+const KEYS = FT ? FT.keys.slice() : [];
+const M = {};
+let matSeq = [];
+function matIdFor(k) { let i = matSeq.indexOf(k); if (i < 0) { matSeq.push(k); i = matSeq.length - 1; } return i + 1; }
+
+if (!FT) check('fail', 'ASSETS.forestTrees missing: forest_trees.js did not load (it throws if sb_objects.js is missing).');
+const rows = [];
+for (const key of KEYS) {
+  const def = A.voxelModels[key];
+  let pm = null, lod0 = NaN, lod1 = NaN, err = null;
+  try {
+    pm = packVoxelModel(def.voxel, matIdFor);
+    lod0 = buildVoxelMesh(pm, { id: key, partNames: ['body'] }).triCount;
+    lod1 = buildVoxelMeshLod1(pm, { id: key, partNames: ['body'] }).triCount;
+  } catch (e) { err = String(e.message || e); }
+  if (err) { check('fail', key + ': pack / mesh failed - ' + err); continue; }
+  M[key] = prepModel(key);
+  const src = A.voxelModels[def.forest.src];
+  let srcTris = NaN;
+  try { srcTris = buildVoxelMesh(packVoxelModel(src.voxel, matIdFor), { id: def.forest.src, partNames: ['body'] }).triCount; } catch (e) { /* info only */ }
+  rows.push({ key, info: def.forest, size: def.voxel.size, lod0, lod1, srcTris, meshOnly: def.voxel.meshOnly === true });
+}
+
+// trunk coverage: bark voxel centres on layers 2..trunkHVox inside the inscribed circle (conservative for any 8-gon yaw)
+function trunkCoverage(m) {
+  const r = m.info.trunkRVox; let n = 0, inside = 0, worst = 0;
+  for (let z = 2; z < Math.min(m.sz, m.info.trunkHVox); z++) for (let y = 0; y < m.sy; y++) for (let x = 0; x < m.sx; x++) {
+    const v = m.grid[x + m.sx * (y + m.sy * z)];
+    if (!v || !BARK[m.mats[v]]) continue;
+    const d = Math.hypot(x + 0.5 - m.ax, y + 0.5 - m.ay);
+    if (d > 6) continue;                     // a branch / root stub far from the trunk, not the trunk itself
+    n++; if (d <= r + 1e-9) inside++; else if (d > worst) worst = d;
+  }
+  return { n, pct: n ? 100 * inside / n : 100, worst };
+}
+
+for (const r of rows) {
+  const m = M[r.key], h = r.info.heightM;
+  r.cov = trunkCoverage(m);
+  check(r.meshOnly ? 'pass' : 'fail', r.key + ': validator + engine mesher OK, meshOnly ' + r.meshOnly + ' (' + r.size.join('x') + ' @ ' + r.info.cellM + ' m)');
+  check(h >= 8 && h <= 14 ? 'pass' : 'fail', r.key + ': height ' + h.toFixed(2) + ' m (bar 8..14 m)');
+  check(r.lod0 <= LOD0_MAX ? 'pass' : 'fail', r.key + ': LOD0 ' + r.lod0 + ' tris (bar ' + LOD0_MAX + ')' + (r.lod0 > LOD0_MAX ? ' - 37.2 item 8: raise lodCells / lower fill / designer trims the canopy' : ''));
+  check(r.lod1 <= LOD1_MAX ? 'pass' : 'fail', r.key + ': LOD1 ' + r.lod1 + ' tris (bar ' + LOD1_MAX + ')');
+  check(r.cov.pct >= 85 ? 'pass' : 'warn', r.key + ': trunk voxels inside trunkR ' + r.cov.pct.toFixed(1) + ' % of ' + r.cov.n +
+    (r.cov.worst ? ' (outermost bark centre ' + r.cov.worst.toFixed(2) + ' vox, inscribed r ' + r.info.trunkRVox + ', circumradius ' + (r.info.trunkRVox / COS225).toFixed(2) + ')' : ''));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// config
+const CFG = A.levels && A.levels.overworld_far && A.levels.overworld_far.recipe && A.levels.overworld_far.recipe.forest &&
+  A.levels.overworld_far.recipe.forest.trees;
+let maxRc = 0, wTotal = 0;
+if (!CFG) check('fail', 'overworld_far.js recipe.forest.trees missing');
+else {
+  for (const s of CFG.species) {
+    const vm = A.voxelModels[s.model], fi = FT && FT.variants[s.model];
+    if (!vm) { check('fail', 'config species ' + s.model + ': no ASSETS.voxelModels entry'); continue; }
+    check(A.models && A.models[s.model] ? 'pass' : 'fail', 'config species ' + s.model + ': in ASSETS.models (all materials known to palette + detailPass)');
+    const ok = fi && Math.abs(fi.trunkR - s.trunkR) < 1e-9 && Math.abs(fi.trunkH - s.trunkH) < 1e-9;
+    check(ok ? 'pass' : 'fail', 'config species ' + s.model + ': trunkR ' + s.trunkR + ' / trunkH ' + s.trunkH +
+      (ok ? ' = measured' : ' != measured ' + (fi ? fi.trunkR + ' / ' + fi.trunkH : '?')));
+    check(s.weight > 0 ? 'pass' : 'fail', 'config species ' + s.model + ': weight ' + s.weight);
+    maxRc = Math.max(maxRc, s.trunkR / COS225); wTotal += s.weight;
+  }
+  const lhs = CFG.cellM - 2 * CFG.jitter, rhs = 2 * maxRc + 1.2;
+  check(lhs >= rhs ? 'pass' : 'fail', 'gap rule (37.2 item 4): cellM - 2 jitter = ' + lhs.toFixed(3) + ' >= 2 maxRc + 1.2 = ' + rhs.toFixed(3));
+  check('info', 'config: seed ' + CFG.seed + ', cellM ' + CFG.cellM + ', jitter ' + CFG.jitter + ', fill ' + CFG.fill + ', maxTrees ' + CFG.maxTrees + ', lodCells ' + CFG.lodCells);
+}
+const pErr = U.validate(), dErr = A.detailPass ? A.detailPass.util.validate() : ['detailPass missing'];
+check(pErr.length ? 'fail' : 'pass', 'palette.util.validate(): ' + (pErr.length ? pErr.join('; ') : '0 errors'));
+check(dErr.length ? 'fail' : 'pass', 'detailPass.util.validate(): ' + (dErr.length ? dErr.join('; ') : '0 errors'));
+for (const k of ['leaf', 'leaf_dark', 'leaf_light']) {
+  check(P.materials[k] && A.detailPass.materials[k] && A.detailPass.remap[k] === k ? 'pass' : 'fail', 'material ' + k + ': v1 + v2 + remap');
+}
+
+// variants table
+(function table() {
+  let h = '<table><tr><th>model</th><th>source</th><th>voxels</th><th>cellM</th><th>height m</th><th>trunkR m</th><th>Rc m</th><th>trunkH m</th>' +
+    '<th>LOD0 tris</th><th>LOD1 tris</th><th>sb source LOD0</th><th>specks dropped / holes filled</th><th>trunk cover</th></tr>';
+  for (const r of rows) {
+    const i = r.info;
+    h += '<tr><td>' + r.key + '</td><td>' + i.src + '</td><td>' + r.size.join('x') + '</td><td>' + i.cellM + '</td><td>' + i.heightM.toFixed(2) +
+      '</td><td>' + i.trunkR.toFixed(2) + '</td><td>' + (i.trunkR / COS225).toFixed(3) + '</td><td>' + i.trunkH.toFixed(2) +
+      '</td><td class="' + (r.lod0 <= LOD0_MAX ? 'pass' : 'fail') + '">' + r.lod0 + '</td><td class="' + (r.lod1 <= LOD1_MAX ? 'pass' : 'fail') + '">' + r.lod1 +
+      '</td><td>' + r.srcTris + '</td><td>' + i.cleanStats.dropped + ' / ' + i.cleanStats.filled + '</td><td>' + r.cov.pct.toFixed(0) + ' %</td></tr>';
+  }
+  $('table').innerHTML = h + '</table>';
+})();
+
+// ---------------------------------------------------------------------------------------------------------------
+// reference voxel DDA (no step cap) against one placed tree {m, x, y, z, c, s}
+const HIT = { t: 0, axis: 0, sign: 0, mat: 0, lx: 0, ly: 0, lz: 0, tree: null, nx: 0, ny: 0, nz: 0 };
+function traceTree(tr, ox, oy, oz, dx, dy, dz, tBest, hit) {
+  const m = tr.m, inv = 1 / m.cellM, sx = m.sx, sy = m.sy, sz = m.sz;
+  const px = ox - tr.x, py = oy - tr.y, pz = oz - tr.z;
+  const lo = [(tr.c * px + tr.s * py) * inv + m.ax, (-tr.s * px + tr.c * py) * inv + m.ay, pz * inv + m.az];
+  const ld = [(tr.c * dx + tr.s * dy) * inv, (-tr.s * dx + tr.c * dy) * inv, dz * inv];
+  const size = [sx, sy, sz];
+  let t0 = 0, t1 = tBest, enter = -1;
+  for (let a = 0; a < 3; a++) {
+    if (Math.abs(ld[a]) < 1e-12) { if (lo[a] < 0 || lo[a] > size[a]) return false; continue; }
+    let ta = (0 - lo[a]) / ld[a], tb = (size[a] - lo[a]) / ld[a];
+    if (ta > tb) { const q = ta; ta = tb; tb = q; }
+    if (ta > t0) { t0 = ta; enter = a; }
+    if (tb < t1) t1 = tb;
+    if (t0 > t1) return false;
+  }
+  let t = t0;
+  const cl = (v, n) => (v < 0 ? 0 : v > n - 1 ? n - 1 : v);
+  let ix = cl(Math.floor(lo[0] + ld[0] * t), sx), iy = cl(Math.floor(lo[1] + ld[1] * t), sy), iz = cl(Math.floor(lo[2] + ld[2] * t), sz);
+  const stX = ld[0] > 0 ? 1 : -1, stY = ld[1] > 0 ? 1 : -1, stZ = ld[2] > 0 ? 1 : -1;
+  const tdX = ld[0] !== 0 ? Math.abs(1 / ld[0]) : Infinity, tdY = ld[1] !== 0 ? Math.abs(1 / ld[1]) : Infinity, tdZ = ld[2] !== 0 ? Math.abs(1 / ld[2]) : Infinity;
+  let tmX = ld[0] > 0 ? (ix + 1 - lo[0]) / ld[0] : ld[0] < 0 ? (ix - lo[0]) / ld[0] : Infinity;
+  let tmY = ld[1] > 0 ? (iy + 1 - lo[1]) / ld[1] : ld[1] < 0 ? (iy - lo[1]) / ld[1] : Infinity;
+  let tmZ = ld[2] > 0 ? (iz + 1 - lo[2]) / ld[2] : ld[2] < 0 ? (iz - lo[2]) / ld[2] : Infinity;
+  let axis = enter;
+  for (;;) {
+    const v = m.grid[ix + sx * (iy + sy * iz)];
+    if (v) {
+      if (axis < 0) { const ax = Math.abs(ld[0]), ay = Math.abs(ld[1]), az = Math.abs(ld[2]); axis = ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2; }
+      hit.t = t; hit.axis = axis; hit.sign = axis === 0 ? -stX : axis === 1 ? -stY : -stZ; hit.mat = v; hit.tree = tr;
+      hit.lx = lo[0] + ld[0] * t; hit.ly = lo[1] + ld[1] * t; hit.lz = lo[2] + ld[2] * t;
+      const lnx = axis === 0 ? hit.sign : 0, lny = axis === 1 ? hit.sign : 0;
+      hit.nx = tr.c * lnx - tr.s * lny; hit.ny = tr.s * lnx + tr.c * lny; hit.nz = axis === 2 ? hit.sign : 0;
+      return true;
+    }
+    if (tmX < tmY && tmX < tmZ) { ix += stX; t = tmX; tmX += tdX; axis = 0; if (ix < 0 || ix >= sx) return false; }
+    else if (tmY < tmZ) { iy += stY; t = tmY; tmY += tdY; axis = 1; if (iy < 0 || iy >= sy) return false; }
+    else { iz += stZ; t = tmZ; tmZ += tdZ; axis = 2; if (iz < 0 || iz >= sz) return false; }
+    if (t > t1) return false;
+  }
+}
+function aabbHit(b, ox, oy, oz, dx, dy, dz, tMax) {
+  let t0 = 0, t1 = tMax;
+  const o = [ox, oy, oz], d = [dx, dy, dz];
+  for (let a = 0; a < 3; a++) {
+    const lo = b[a], hi = b[a + 3];
+    if (Math.abs(d[a]) < 1e-12) { if (o[a] < lo || o[a] > hi) return false; continue; }
+    let ta = (lo - o[a]) / d[a], tb = (hi - o[a]) / d[a];
+    if (ta > tb) { const q = ta; ta = tb; tb = q; }
+    if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+const TMP = Object.assign({}, HIT);
+function traceAll(trees, ox, oy, oz, dx, dy, dz, tMax, hit, any) {
+  let best = tMax, got = false;
+  for (const tr of trees) {
+    if (!aabbHit(tr.box, ox, oy, oz, dx, dy, dz, best)) continue;
+    if (traceTree(tr, ox, oy, oz, dx, dy, dz, best, TMP)) {
+      got = true; best = TMP.t; Object.assign(hit, TMP);
+      if (any) return true;
+    }
+  }
+  return got;
+}
+function place(m, x, y, z, yawDeg, extra) {
+  const c = Math.cos(yawDeg * D2R), s = Math.sin(yawDeg * D2R), f = m.foot;
+  const tr = { m, x, y, z, yaw: yawDeg, c, s, box: [x - f, y - f, z, x + f, y + f, z + m.sz * m.cellM] };
+  return Object.assign(tr, extra || {});
+}
+
+// shading
+const Lacc = [0, 0, 0], SH = { fg: [0, 0, 0], bg: [0, 0, 0] }, SHD = Object.assign({}, HIT);
+function light(nx, ny, nz, wx, wy, wz, trees) {
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.12 * ctl.amb * (0.75 + 0.25 * nz));
+  const s = ctl.sun, ndl = nx * s[0] + ny * s[1] + nz * s[2];
+  if (ndl > 0) {
+    let vis = 1;
+    if (ctl.shadows && trees && traceAll(trees, wx + nx * 0.02, wy + ny * 0.02, wz + nz * 0.02, s[0], s[1], s[2], 80, SHD, true)) vis = 0;
+    if (vis) U.addLight(Lacc, 'sun', ctl.int * ndl);
+  }
+  return Lacc;
+}
+function shadeTreeHit(hit, dist, trees) {
+  const m = hit.tree.m, cm = m.cellM, mat = P.materials[m.mats[hit.mat]] || P.materials.stone;
+  let u, v;
+  if (hit.axis === 0) { u = hit.ly * cm; v = hit.lz * cm; } else if (hit.axis === 1) { u = hit.lx * cm; v = hit.lz * cm; } else { u = hit.lx * cm; v = hit.ly * cm; }
+  return { mat, u, v };
+}
+function putCell(ctx, c, r, cw, ch, out) {
+  const x = c * cw, y = r * ch;
+  ctx.fillStyle = 'rgb(' + (out.bg[0] | 0) + ',' + (out.bg[1] | 0) + ',' + (out.bg[2] | 0) + ')';
+  ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+  if (out.glyph && out.glyph !== ' ') {
+    ctx.fillStyle = 'rgb(' + (out.fg[0] | 0) + ',' + (out.fg[1] | 0) + ',' + (out.fg[2] | 0) + ')';
+    ctx.fillText(out.glyph, x + cw / 2, y + ch / 2 + 1);
+  }
+}
+function makeCanvas(cv, cols, rows, cw, ch) {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+function shadeGround(wx, wy, dist, trees, out) {
+  light(0, 0, 1, wx, wy, 0, trees);
+  return U.shade(P.materials.grass, Lacc, wx, wy, dist, out, { fog: ctl.fog });
+}
+function shadeSkyCell(dx, dy, dz, out) {
+  const az = Math.atan2(dx, -dy) / D2R, el = Math.asin(Math.max(-1, Math.min(1, dz))) / D2R;
+  return U.shadeSky(az, Math.max(0, el), out);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// line-up: one canvas per variant, same metres per row, side elevation (pitch 0)
+const LU = { rows: 45, cols: 72, cw: 6, ch: 12, chM: 15 / 45, cz: 7.2 };
+const luViews = [];
+for (const r of rows) {
+  const wrap = document.createElement('div');
+  const cv = document.createElement('canvas');
+  wrap.appendChild(cv);
+  const cap = document.createElement('div'); cap.className = 'cap';
+  cap.textContent = r.key + ': ' + r.info.heightM.toFixed(2) + ' m, trunkR ' + r.info.trunkR + ', LOD0 ' + r.lod0 + ' / LOD1 ' + r.lod1 + ' tris';
+  wrap.appendChild(cap);
+  $('lineup').appendChild(wrap);
+  luViews.push({ g: makeCanvas(cv, LU.cols, LU.rows, LU.cw, LU.ch), tree: place(M[r.key], 0, 0, -0.1, 0, { rc: r.info.trunkR / COS225 }) });
+}
+const PERSON = [3.9, -0.15, 0, 4.3, 0.15, 1.8];
+function renderLineup() {
+  const yaw = +$('luYaw').value * D2R; $('luYawV').textContent = $('luYaw').value;
+  const showCol = $('luCollider').checked;
+  const fwd = [-Math.sin(yaw), Math.cos(yaw), 0];           // looking from (sin, -cos) * R towards the origin
+  const right = [Math.cos(yaw), Math.sin(yaw), 0];
+  const cwM = LU.chM * LU.cw / LU.ch, Rd = 40, out = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  for (const v of luViews) {
+    const { ctx, cols, rows: nr, cw, ch } = v.g, trees = [v.tree];
+    for (let r = 0; r < nr; r++) for (let c = 0; c < cols; c++) {
+      const sx = (c + 0.5 - cols / 2) * cwM, sz = LU.cz + (nr / 2 - (r + 0.5)) * LU.chM;
+      const ox = -fwd[0] * Rd + right[0] * sx, oy = -fwd[1] * Rd + right[1] * sx, oz = sz;
+      let best = Infinity, kind = 0;
+      if (traceAll(trees, ox, oy, oz, fwd[0], fwd[1], fwd[2], 200, HIT, false)) { best = HIT.t; kind = 1; }
+      // person (screen-right of the tree, always faces the camera: placed in view space)
+      const px = right[0] * 4.1, py = right[1] * 4.1;
+      if (Math.abs(sx - 4.1) <= 0.2 && sz >= 0 && sz <= 1.8) { const tp = Rd + (px * fwd[0] + py * fwd[1]); if (tp < best) { best = tp; kind = 2; } }
+      if (kind === 1) {
+        const s = shadeTreeHit(HIT, 12, trees);
+        light(HIT.nx, HIT.ny, HIT.nz, ox + fwd[0] * best, oy + fwd[1] * best, oz, trees);
+        U.shade(s.mat, Lacc, s.u, s.v, 12, out, { fog: null });
+      } else if (kind === 2) {
+        out.glyph = sz > 1.5 ? 'O' : '#'; out.fg[0] = 79; out.fg[1] = 214; out.fg[2] = 106; out.bg[0] = 10; out.bg[1] = 40; out.bg[2] = 18;
+      } else if (sz < 0) {
+        out.glyph = '"'; out.fg[0] = 60; out.fg[1] = 96; out.fg[2] = 40; out.bg[0] = 14; out.bg[1] = 22; out.bg[2] = 12;
+      } else {
+        out.glyph = ' '; out.bg[0] = 7; out.bg[1] = 8; out.bg[2] = 12;
+      }
+      if (showCol && kind !== 1 && sz >= -0.35 && sz < 0 && Math.abs(sx) <= v.tree.rc) { out.glyph = '='; out.fg[0] = 255; out.fg[1] = 70; out.fg[2] = 60; }
+      putCell(ctx, c, r, cw, ch, out);
+    }
+    ctx.save(); ctx.strokeStyle = 'rgba(255,210,122,0.18)'; ctx.fillStyle = 'rgba(255,210,122,0.6)'; ctx.font = '10px ' + FONT; ctx.textAlign = 'left';
+    for (let h = 0; h <= 14; h += 2) {
+      const y = (nr / 2 - (h - LU.cz) / LU.chM) * ch;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cols * cw, y); ctx.stroke(); ctx.fillText(h + ' m', 2, y - 5);
+    }
+    ctx.restore();
+    ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center';
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// scatter (37.2 item 3, literal hash2) on a flat all-forest patch
+function hash2(ix, iy, seed) {
+  let h = Math.imul(ix | 0, 0x8da6b343) ^ Math.imul(iy | 0, 0xd8163841) ^ seed;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return (h ^ (h >>> 15)) >>> 0;
+}
+const U32 = 4294967296;
+function scatterCell(ix, iy) {
+  const u = (k) => hash2(ix, iy, CFG.seed + k) / U32;
+  if (!(u(0) < CFG.fill)) return null;
+  const x = (ix + 0.5) * CFG.cellM + (u(1) * 2 - 1) * CFG.jitter, y = (iy + 0.5) * CFG.cellM + (u(2) * 2 - 1) * CFG.jitter;
+  let pick = u(3) * wTotal, si = 0;
+  for (; si < CFG.species.length - 1; si++) { pick -= CFG.species[si].weight; if (pick < 0) break; }
+  return { x, y, si, yaw: Math.floor(u(4) * 360) };
+}
+const PATCH = 6, START = [0.0, 0.0];
+const forest = [];
+if (CFG) {
+  for (let iy = -PATCH; iy < PATCH; iy++) for (let ix = -PATCH; ix < PATCH; ix++) {
+    const p = scatterCell(ix, iy); if (!p) continue;
+    const sp = CFG.species[p.si], m = M[sp.model]; if (!m) continue;
+    const rc = sp.trunkR / COS225;
+    if (Math.hypot(p.x - START[0], p.y - START[1]) < rc + 1.5) continue;
+    forest.push(place(m, p.x, p.y, -0.1, p.yaw, { rc, si: p.si }));
+  }
+  let minGap = Infinity;
+  for (let i = 0; i < forest.length; i++) for (let j = i + 1; j < forest.length; j++) {
+    const a = forest[i], b = forest[j];
+    minGap = Math.min(minGap, Math.hypot(a.x - b.x, a.y - b.y) - a.rc - b.rc);
+  }
+  check(minGap >= 1.2 ? 'pass' : 'fail', 'preview patch: ' + forest.length + ' trees, smallest trunk-to-trunk gap ' + minGap.toFixed(2) + ' m (bar 1.2 m)');
+  // whole near band as if all forest (192 x 192 cells of 2 m = 384 m): density before the maxTrees thinning
+  const nb = Math.ceil(384 / CFG.cellM); let cnt = 0; const per = new Array(CFG.species.length).fill(0);
+  for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const p = scatterCell(ix + 200, iy + 140); if (p) { cnt++; per[p.si]++; } }
+  check('info', 'all-forest 384 m band: ' + cnt + ' trees before maxTrees thinning (' + (cnt / (384 * 384 / 10000)).toFixed(0) + ' / ha); per species ' +
+    CFG.species.map((s, i) => s.model.replace('forest', '') + ' ' + per[i]).join(', ') + '. The real band is part forest, so usually < maxTrees ' + CFG.maxTrees + '.');
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// walk view
+const W = { x: START[0], y: START[1], z: 1.6, cols: 240, rows: 90, cw: 5, ch: 10, fov: 90 };
+const GRIDS = { 160: [160, 60, 7, 14], 240: [240, 90, 5, 10], 400: [400, 150, 3, 6] };
+let walkG = makeCanvas($('walk'), W.cols, W.rows, W.cw, W.ch);
+document.querySelectorAll('button[data-g]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('button[data-g]').forEach((o) => o.classList.toggle('on', o === b));
+  const g = GRIDS[b.dataset.g]; W.cols = g[0]; W.rows = g[1]; W.cw = g[2]; W.ch = g[3];
+  walkG = makeCanvas($('walk'), W.cols, W.rows, W.cw, W.ch); dirty = true;
+}));
+function renderWalk() {
+  const yaw = +$('wYaw').value * D2R, pitch = +$('wPitch').value * D2R;
+  $('wYawV').textContent = $('wYaw').value; $('wPitchV').textContent = $('wPitch').value;
+  $('wPos').textContent = 'eye (' + W.x.toFixed(1) + ', ' + W.y.toFixed(1) + ', 1.6)';
+  const cp = Math.cos(pitch), fwd = [Math.sin(yaw) * cp, -Math.cos(yaw) * cp, Math.sin(pitch)];
+  const right = [Math.cos(yaw), Math.sin(yaw), 0];
+  const up = [fwd[1] * right[2] - fwd[2] * right[1], fwd[2] * right[0] - fwd[0] * right[2], fwd[0] * right[1] - fwd[1] * right[0]];
+  const { ctx, cols, rows: nr, cw, ch } = walkG, th = Math.tan(W.fov * D2R / 2), tv = th * (nr * ch) / (cols * cw);
+  const out = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  const t0 = performance.now();
+  for (let r = 0; r < nr; r++) for (let c = 0; c < cols; c++) {
+    const a = (2 * (c + 0.5) / cols - 1) * th, b = (1 - 2 * (r + 0.5) / nr) * tv;
+    let dx = fwd[0] + right[0] * a + up[0] * b, dy = fwd[1] + right[1] * a + up[1] * b, dz = fwd[2] + right[2] * a + up[2] * b;
+    const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
+    const tg = dz < -1e-6 ? (0 - W.z) / dz : Infinity;
+    const tMax = Math.min(tg, 140);
+    if (traceAll(forest, W.x, W.y, W.z, dx, dy, dz, tMax, HIT, false)) {
+      const s = shadeTreeHit(HIT, HIT.t, forest);
+      light(HIT.nx, HIT.ny, HIT.nz, W.x + dx * HIT.t, W.y + dy * HIT.t, W.z + dz * HIT.t, forest);
+      U.shade(s.mat, Lacc, s.u, s.v, HIT.t, out, { fog: ctl.fog });
+    } else if (tg < 140) {
+      shadeGround(W.x + dx * tg, W.y + dy * tg, tg, forest, out);
+    } else if (dz < 0) {
+      out.glyph = ' '; const fc = P.rgb.fogFarNear; out.bg[0] = fc[0] * 0.5; out.bg[1] = fc[1] * 0.5; out.bg[2] = fc[2] * 0.5;
+    } else {
+      shadeSkyCell(dx, dy, dz, out);
+    }
+    putCell(ctx, c, r, cw, ch, out);
+  }
+  $('walkCap').textContent = cols + 'x' + nr + ' cells, ' + forest.length + ' trees, ' + (performance.now() - t0).toFixed(0) + ' ms (reference DDA, not the game renderer)';
+}
+
+// map
+const MAP = { px: 6, half: PATCH * (CFG ? CFG.cellM : 6.5) };
+const mapCv = $('map'), mapCtx = (() => {
+  const s = Math.round(MAP.half * 2 * MAP.px), dpr = window.devicePixelRatio || 1;
+  mapCv.width = s * dpr; mapCv.height = s * dpr; mapCv.style.width = s + 'px'; mapCv.style.height = s + 'px';
+  const c = mapCv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); return c;
+})();
+const SPC = ['#c49a6c', '#8a5a34', '#e8e2d0', '#b8b0a0', '#6aa05a', '#3c7a44'];
+function renderMap() {
+  const k = MAP.px, o = MAP.half, ctx = mapCtx, S = o * 2 * k;
+  ctx.fillStyle = '#0e1a10'; ctx.fillRect(0, 0, S, S);
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  for (let g = -PATCH; g <= PATCH; g++) { const p = (g * CFG.cellM + o) * k; ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, S); ctx.moveTo(0, p); ctx.lineTo(S, p); ctx.stroke(); }
+  for (const t of forest) {   // canopy footprint (approx: half the grid width)
+    ctx.fillStyle = 'rgba(80,140,60,0.10)'; ctx.beginPath(); ctx.arc((t.x + o) * k, (t.y + o) * k, t.m.sx * t.m.cellM * 0.42 * k, 0, 7); ctx.fill();
+  }
+  for (const t of forest) {   // trunk 8-gon (circumradius rc), rotated by yaw
+    ctx.fillStyle = SPC[t.si % SPC.length]; ctx.beginPath();
+    for (let i = 0; i < 8; i++) { const a = (t.yaw + 22.5 + i * 45) * D2R; const X = (t.x + Math.cos(a) * t.rc + o) * k, Y = (t.y + Math.sin(a) * t.rc + o) * k; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }
+    ctx.closePath(); ctx.fill();
+  }
+  const yaw = +$('wYaw').value * D2R, ex = (W.x + o) * k, ey = (W.y + o) * k;
+  ctx.strokeStyle = '#ffd24a'; ctx.beginPath();
+  ctx.moveTo(ex, ey); ctx.lineTo(ex + Math.sin(yaw - 0.785) * 40, ey - Math.cos(yaw - 0.785) * 40);
+  ctx.moveTo(ex, ey); ctx.lineTo(ex + Math.sin(yaw + 0.785) * 40, ey - Math.cos(yaw + 0.785) * 40); ctx.stroke();
+  ctx.fillStyle = '#4fd66a'; ctx.beginPath(); ctx.arc(ex, ey, 0.35 * k, 0, 7); ctx.fill();
+  $('mapCap').textContent = 'top view ' + (o * 2).toFixed(0) + ' m, grid = scatter cellM ' + CFG.cellM + ' m; trunk 8-gons: ' +
+    CFG.species.map((s, i) => s.model.replace('forest', '') + ' ' + SPC[i]).join(', ');
+}
+function blocked(x, y) { for (const t of forest) if (Math.hypot(x - t.x, y - t.y) < t.rc + 0.35) return true; return false; }
+mapCv.addEventListener('click', (e) => {
+  const r = mapCv.getBoundingClientRect(), x = (e.clientX - r.left) / MAP.px - MAP.half, y = (e.clientY - r.top) / MAP.px - MAP.half;
+  if (!blocked(x, y)) { W.x = x; W.y = y; dirty = true; }
+});
+$('walk').addEventListener('keydown', (e) => {
+  const yaw = +$('wYaw').value * D2R, k = e.key.toLowerCase(), st = 0.5;
+  let nx = W.x, ny = W.y;
+  if (k === 'w') { nx += Math.sin(yaw) * st; ny -= Math.cos(yaw) * st; }
+  else if (k === 's') { nx -= Math.sin(yaw) * st; ny += Math.cos(yaw) * st; }
+  else if (k === 'a') { nx -= Math.cos(yaw) * st; ny -= Math.sin(yaw) * st; }
+  else if (k === 'd') { nx += Math.cos(yaw) * st; ny += Math.sin(yaw) * st; }
+  else if (k === 'q' || e.key === 'ArrowLeft') { $('wYaw').value = ((+$('wYaw').value - 10 + 540) % 360) - 180; }
+  else if (k === 'e' || e.key === 'ArrowRight') { $('wYaw').value = ((+$('wYaw').value + 10 + 540) % 360) - 180; }
+  else if (k === 'r' || e.key === 'ArrowUp') { $('wPitch').value = Math.min(70, +$('wPitch').value + 5); }
+  else if (k === 'f' || e.key === 'ArrowDown') { $('wPitch').value = Math.max(-20, +$('wPitch').value - 5); }
+  else return;
+  e.preventDefault();
+  if ((nx !== W.x || ny !== W.y) && !blocked(nx, ny) && Math.abs(nx) < MAP.half && Math.abs(ny) < MAP.half) { W.x = nx; W.y = ny; }
+  dirty = true;
+});
+$('look30').addEventListener('click', () => { $('wPitch').value = 30; dirty = true; });
+
+// ---------------------------------------------------------------------------------------------------------------
+let dirty = true, luDirty = true;
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl(); dirty = true; if (!el.id.startsWith('w')) luDirty = true;
+}));
+check(nFail ? 'fail' : 'pass', 'summary: ' + nFail + ' fail, ' + nWarn + ' warn');
+function loop() {
+  if (luDirty) { luDirty = false; renderLineup(); }
+  if (dirty && CFG) { dirty = false; renderWalk(); renderMap(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

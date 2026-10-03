@@ -801,6 +801,36 @@
       face: { set: 'clothFace', mid: 'clothFace', far: 'clothFace' },
       overlay: { set: 'soot', tints: ['linenDark', 'ashDark'], amount: 0.50, shade: 0.80, joint: 0.0, face: 0.05 },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // ME-06c4 forest tree canopies (design/models/forest_trees.js; palette.js v1 records of the same key).
+    leaf: {
+      v1: 'leaf', seed: 601,
+      desc: 'FOREST TREES (ME-06c4). Broadleaf crown: mid green clumps, lighter leaf tips, darker pockets. ivy glyphs ' +
+            '(lit levels & @ %), so a sunlit crown reads as leaves, never as turf.',
+      albedo: 0.82, bgK: 0.18, detail: 32, jitter: 0.08,
+      tones: [['leaf', 4], ['leafLight', 1], ['leafDark', 2]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'ivy', mid: 'ivy', far: 'ivy' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    leaf_dark: {
+      v1: 'leaf_dark', seed: 602,
+      desc: 'FOREST TREES (ME-06c4). Shaded lower crown + pine needles: cool deep green, forestDark pockets, a few ' +
+            'leaf-green tips. moss glyphs (denser, darker texture than the lit crown).',
+      albedo: 0.74, bgK: 0.14, detail: 32, jitter: 0.08,
+      tones: [['leafDark', 4], ['forestDark', 2], ['leaf', 1]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'moss', mid: 'moss', far: 'moss' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    leaf_light: {
+      v1: 'leaf_light', seed: 603,
+      desc: 'FOREST TREES (ME-06c4). Birch upper crown: light yellow-green, airy, leaf-green shade pockets. ivy glyphs.',
+      albedo: 0.88, bgK: 0.20, detail: 32, jitter: 0.08,
+      tones: [['leafLight', 4], ['grassLight', 1], ['leaf', 2]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'ivy', mid: 'ivy', far: 'ivy' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -829,7 +859,9 @@
     // US-078d pell (design/models/m3_props.js), same key in both files.
     straw_light: 'straw_light', straw: 'straw', straw_dark: 'straw_dark', timber_old: 'timber_old', hit_flash: 'hit_flash',
     // CLOTH-1b4 cloth (design/cloth.js), same key in both files.
-    'cloth.canvas': 'cloth.canvas', 'cloth.banner': 'cloth.banner', 'cloth.flag': 'cloth.flag', 'cloth.linen': 'cloth.linen'
+    'cloth.canvas': 'cloth.canvas', 'cloth.banner': 'cloth.banner', 'cloth.flag': 'cloth.flag', 'cloth.linen': 'cloth.linen',
+    // ME-06c4 forest tree canopies (design/models/forest_trees.js), same key in both files.
+    leaf: 'leaf', leaf_dark: 'leaf_dark', leaf_light: 'leaf_light'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
