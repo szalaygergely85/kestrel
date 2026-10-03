@@ -22,7 +22,7 @@
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
 import { fastShade, samplePowLUT } from './fastShade.js';
-import { KIND_MODEL, FACE_PACKED } from './GBuffer.js';
+import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
@@ -639,7 +639,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   // (`gbuf.aoD[i]` read as a float there is garbage) - force +Inf, same as
   // every OTHER kind-8 face already gets (voxelMarch.js writes it literally
   // for axis-aligned parts; this is the face-7 twin of that).
-  const aoD = (kind === KIND_MODEL && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
+  const aoD = ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
   return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out);

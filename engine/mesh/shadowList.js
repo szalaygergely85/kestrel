@@ -11,7 +11,7 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, pushClothItem, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 
 /** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
@@ -32,6 +32,7 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {number} [fogFarM] - structure distance cull (default 2000, as the camera feed)
  * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): full buffer, parts from the camera pass
  * @property {{count:number, cloths:any[], meshes:any[], mats:(string|null)[], castShadow?:ArrayLike<number>}|null} [cloths] - CLOTH-1b1 (33.5): the cloth system; every cloth with `castShadow` (drawn or not) is pushed, the sun-plane cull decides
+ * @property {import('./DrawList.js').MeshDrawCache} [meshCache] - ME-14c2: draw copies of placed glTF meshes (casters need `matIdFor` too)
  * @property {(key: string) => number} [matIdFor] - cloth mesh creation (material key -> id)
  */
 
@@ -48,6 +49,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   const c = src.centre;
   list.begin();
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
+  if (src.meshCache && src.matIdFor) addMeshStructures(list, world, c, src.meshCache, src.matIdFor, src.fogFarM || 2000); // ME-14c2 (37.1 item 6)
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {

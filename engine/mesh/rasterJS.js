@@ -18,7 +18,7 @@
 // destructuring inside the hot per-triangle/per-pixel path.
 import { PROJ_NEAR } from '../render/projection.js';
 import {
-  KIND_TERRAIN, KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, PLANEID_TERRAIN,
+  KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, PLANEID_TERRAIN,
 } from '../render/GBuffer.js';
 import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
@@ -153,7 +153,7 @@ const _info = {
   cullBack: false,
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
-  zBase: 0, objectId: 0, isTerrain: false, isVoxel: false,
+  zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
@@ -421,8 +421,11 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
           mat = info.kind7Mat ? info.kind7Mat(wx, wy) : 0;
         } else if (info.isVoxel) {
           face = info.partAxisAligned ? roundedFace(wnx, wny, wnz) : FACE_PACKED;
+        } else if (info.isMesh) {
+          // ME-14c2 (37.1 item 1): axis face when the world normal is within ~26 deg of an axis, else packed (face 7).
+          face = Math.max(Math.abs(wnx), Math.abs(wny), Math.abs(wnz)) >= 0.9 ? roundedFace(wnx, wny, wnz) : FACE_PACKED;
         }
-        const aoD = info.isTerrain ? Infinity : computeAoD(info.aoMode, u, v, info.zRef, info.aux2, info.aux3, info.aux4, info.aux5);
+        const aoD = (info.isTerrain || info.isMesh) ? Infinity : computeAoD(info.aoMode, u, v, info.zRef, info.aux2, info.aux3, info.aux4, info.aux5);
 
         target.kind[idx] = info.kind;
         target.face[idx] = face;
@@ -490,6 +493,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.aoMode = AO_NONE;
       _info.zRef = 0;
       _info.isVoxel = false;
+      _info.isMesh = false;
       _info.partAxisAligned = false;
       _info.kind7Mat = null;
       _info.biasFlag = 0;
@@ -506,6 +510,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.aoMode = AO_NONE;
       _info.zRef = 0;
       _info.isVoxel = false;
+      _info.isMesh = false;
       _info.partAxisAligned = false;
       _info.kind7Mat = ctx.kind7Mat || null;
       _info.structFoot = ctx.structFoot || null;
@@ -530,6 +535,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.aux4 = mesh.aux[v0 * AUX_STRIDE + 4];
       _info.aux5 = mesh.aux[v0 * AUX_STRIDE + 5];
       _info.isVoxel = kind === KIND_MODEL;
+      _info.isMesh = kind === KIND_MESH;
       _info.partAxisAligned = instAligned !== undefined ? instAligned : (isVoxelItem && (item.partFlags[partIdx] & 1) !== 0);
       _info.kind7Mat = null;
       _info.biasFlag = 0;

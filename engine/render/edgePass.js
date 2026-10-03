@@ -8,7 +8,7 @@
 // counter `shadeSurfaces` already incremented stays put - this pass only
 // ever touches cells `shadeSurfaces` wrote this same frame.
 //
-import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
+import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
 
 // Rule codes (gbuf.rule, 0 = none), in `DP.edges.rules` order:
 export const RULE_CAP = 1;
@@ -27,10 +27,10 @@ const RULE_NAMES = ['cap', 'lip', 'side', 'convex', 'concave', 'seamFloor', 'sea
 // 7, US-041a) counts as vertical too; face D (6) is neither.
 function isVert(kind, face) {
   return kind === 1 || kind === 2 || kind === 3 ||
-    (kind === KIND_MODEL && (face === FACE_N || face === FACE_E || face === FACE_S || face === FACE_W || face === FACE_PACKED));
+    ((kind === KIND_MODEL || kind === KIND_MESH) && (face === FACE_N || face === FACE_E || face === FACE_S || face === FACE_W || face === FACE_PACKED));
 }
 function isUp(kind, face) {
-  return kind === 4 || kind === 5 || (kind === KIND_MODEL && face === FACE_U);
+  return kind === 4 || kind === 5 || ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_U);
 }
 
 function farther(kind, planeId, depth, i, n) {
