@@ -76,7 +76,7 @@ bool farther(ivec2 ic, ivec2 nc, bool validN) {
 bool waterOpaque(ivec2 cell, float raw) {
   if (uWaterOn == 0) return false;
   uvec4 w = texelFetch(uWater, cell, 0);
-  if (w.x == 0x7f800000u) return false;
+  if (w.x == 0x7f800000u || (w.w & 32u) != 0u) return false;
   float dW = uintBitsToFloat(w.x);
   if (!(dW < raw)) return false;
   vec2 os = uWOS[int(w.w & 15u)];

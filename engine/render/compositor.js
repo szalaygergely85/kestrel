@@ -247,7 +247,7 @@ function renderWorldMesh(fb, world, cam) {
   }
   copyToGBuffer(target, fb.gbuf, fb.depth.depth);
   // US-055a2a (35.3): the water layer (own target, fb.water; the composite reads it from US-055a2b). No-op without regions.
-  if (world.water && world.water.count > 0) renderWaterJS(fb, world, cam, meshViewProj, meshFrustumPlanes);
+  if ((world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)) renderWaterJS(fb, world, cam, meshViewProj, meshFrustumPlanes);
   else if (fb.water) fb.water = null;
   renderSunShadowJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
 }
@@ -304,7 +304,7 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
   meshPitched = false;
-  const meshWater = fb.renderer === 'mesh' && !!world.water && world.water.count > 0; // US-055a2b
+  const meshWater = fb.renderer === 'mesh' && ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
   meshHashCell = 0;
 
   // ME-06 (27.15.5a item 6): `fb.renderer === 'mesh'` replaces the

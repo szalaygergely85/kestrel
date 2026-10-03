@@ -2,7 +2,7 @@
 // engine/render/water.js - US-055a2a (docs/architecture.md 35.3): the water layer's per-frame CPU side, mesh renderer only.
 //
 // - `selectWater(world, cam, planes, sel)`: which regions draw this frame (<= 8 regions -> slots 0..7; slots 8..11 are
-//   reserved for waterfall sheets, US-142a1), their uniforms (everything folded into f64 relative to the origin `O`),
+//   waterfall sheets, US-142a1), their uniforms (everything folded into f64 relative to the origin `O`),
 //   and which clipmap ring ranges each region needs. Zero allocation.
 // - `renderWaterJS(fb, world, cam, M, planes)`: the JS twin of `GpuCellPipeline._passWater` - rasterises the SAME clipmap
 //   (DRAW_WATER items) into a cell-resolution `RasterTarget` (fb.water) that `waterComposite` (US-055a2b) reads.
@@ -33,7 +33,9 @@ const RUNS_STRIDE = 7;
 
 /**
  * @typedef {Object} WaterSelection
- * @property {number} count - regions selected (slots 0..count-1)
+ * @property {number} sheetCount - selected sheets in slots 8..11
+ * @property {any[]} sheets - per-slot static sheet or null
+ * @property {number} count - regions selected (slots 0..count-1; sheetCount is separate)
  * @property {Float64Array} O - [ox, oy]: the eye xy snapped to WATER_SNAP (shared by every slot)
  * @property {Int32Array} region - slot -> index into `world.water`
  * @property {Float64Array} u - WATER_SLOTS * WATER_U_STRIDE per-slot block (f64, local to O; see waterMesh.js U_*)
@@ -45,7 +47,7 @@ const RUNS_STRIDE = 7;
 /** @returns {WaterSelection} */
 export function createWaterSelection() {
   return {
-    count: 0, O: new Float64Array(2), region: new Int32Array(WATER_SLOTS),
+    count: 0, sheetCount: 0, sheets: new Array(WATER_SLOTS).fill(null), O: new Float64Array(2), region: new Int32Array(WATER_SLOTS),
     u: new Float64Array(WATER_SLOTS * WATER_U_STRIDE), runs: new Int32Array(WATER_SLOTS * RUNS_STRIDE),
     dist: new Float64Array(WATER_MAX), cand: new Int32Array(WATER_MAX),
   };
@@ -64,7 +66,7 @@ function regionContains(wt, i, x, y) {
 /**
  * Fills `sel` for this frame: <= 8 regions inside the frustum, the region holding the eye first, then nearest AABB first.
  * `planes` = `frustumPlanes(viewProj)` (24 floats). Pure and allocation-free after `createWaterSelection`.
- * @param {{water: any}} world
+ * @param {{water: any, waterfalls?: any[]}} world
  * @param {{x:number,y:number,z:number}} cam
  * @param {Float64Array} planes
  * @param {WaterSelection} sel
@@ -72,15 +74,15 @@ function regionContains(wt, i, x, y) {
  */
 export function selectWater(world, cam, planes, sel) {
   const wt = world && world.water;
-  sel.count = 0;
-  if (!wt || wt.count === 0) return sel;
+  sel.count = 0; sel.sheetCount = 0;
+  sel.sheets.fill(null);
   const ex = cam.x, ey = cam.y;
   const ox = Math.floor(ex / WATER_SNAP + 0.5) * WATER_SNAP, oy = Math.floor(ey / WATER_SNAP + 0.5) * WATER_SNAP;
   sel.O[0] = ox; sel.O[1] = oy;
 
   // candidates: in frustum; key = 0 for the region holding the eye (nearest AABB otherwise)
   let n = 0;
-  for (let i = 0; i < wt.count; i++) {
+  for (let i = 0; i < (wt ? wt.count : 0); i++) {
     const z = wt.z[i];
     if (classifyAABB(planes, wt.x0[i], wt.y0[i], z - CULL_Z_PAD, wt.x1[i], wt.y1[i], z + CULL_Z_PAD, 0) === CULL_OUT) continue;
     let dx = wt.x0[i] - ex; if (dx < 0) dx = ex - wt.x1[i]; if (dx < 0) dx = 0; // distance from the eye to the AABB
@@ -100,6 +102,26 @@ export function selectWater(world, cam, planes, sel) {
     fillSlot(wt, sel, s, sel.cand[s], cam, ox, oy);
   }
   sel.count = take;
+  const falls = world && world.waterfalls;
+  n = 0;
+  for (let i = 0; falls && i < falls.length; i++) {
+    const m = falls[i].mesh;
+    if (classifyAABB(planes, m.x0, m.y0, m.z0, m.x1, m.y1, m.z1, 0) === CULL_OUT) continue;
+    const lip = falls[i].lip;
+    const dx = (lip[0] + lip[2]) * 0.5 - ex, dy = (lip[1] + lip[3]) * 0.5 - ey, dz = falls[i].z - cam.z;
+    sel.cand[n] = i; sel.dist[n++] = dx * dx + dy * dy + dz * dz;
+  }
+  sel.sheetCount = Math.min(n, 4);
+  for (let k = 0; k < sel.sheetCount; k++) {
+    let best = k;
+    for (let j = k + 1; j < n; j++) if (sel.dist[j] < sel.dist[best] || (sel.dist[j] === sel.dist[best] && sel.cand[j] < sel.cand[best])) best = j;
+    const d = sel.dist[k]; sel.dist[k] = sel.dist[best]; sel.dist[best] = d;
+    const i = sel.cand[k]; sel.cand[k] = sel.cand[best]; sel.cand[best] = i;
+    const slot = 8 + k, b = slot * WATER_U_STRIDE, fall = falls[sel.cand[k]];
+    sel.sheets[slot] = fall;
+    sel.u[b + U_KIND] = 2; sel.u[b + U_SLOT] = slot;
+    sel.u[b + U_SHAPE] = fall.lip[0] - ox; sel.u[b + U_SHAPE + 1] = fall.lip[1] - oy;
+  }
   return sel;
 }
 
@@ -175,12 +197,13 @@ let _target = null;
  */
 export function renderWaterJS(fb, world, cam, M, planes, countWrites) {
   const sel = selectWater(world, cam, planes, _sel);
-  if (sel.count === 0) { fb.water = null; return null; }
+  if (sel.count + sel.sheetCount === 0) { fb.water = null; return null; }
   const cols = fb.gbuf.cols, rows = fb.gbuf.rows;
   if (!_target || _target.cols !== cols || _target.rows !== rows || !!_target.writes !== !!countWrites) _target = createRasterTarget(cols, rows, 1, { countWrites: !!countWrites });
   else clearRasterTarget(_target);
   _list.begin();
-  for (let s = 0; s < sel.count; s++) {
+  for (let k = 0; k < sel.count + sel.sheetCount; k++) {
+    const s = k < sel.count ? k : 8 + k - sel.count;
     const item = _list.push(null, DRAW_WATER);
     item.objectId = s;
     item.water = sel;

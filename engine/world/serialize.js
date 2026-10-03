@@ -46,6 +46,7 @@ export function serialize(world) {
     // US-016 (architecture.md 14.4 item 13): content, not state, but still
     // round-tripped (never mutated at runtime, so this is a pure copy).
     horizon: structuredClone(world.horizon || []),
+    ...(world.waterfallDef && world.waterfallDef.length ? { waterfalls: structuredClone(world.waterfallDef) } : {}),
     ...(world.waterDef && world.waterDef.length ? { water: structuredClone(world.waterDef) } : {}), // US-055a1: only when present (old saves stay byte-identical)
     // US-026a (23.2, 23.7 S2): same "content, not state" treatment -
     // `world.bounds` is already a plain validated copy; `world.def.triggers`
@@ -178,6 +179,7 @@ export function deserialize(state, assets, opts = {}) {
       ? assets.world(state.world).wind : undefined,
     horizon: state.horizon || [],
     water: state.water || [],
+    waterfalls: state.waterfalls || [],
     bounds: state.bounds || null,
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,

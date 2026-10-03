@@ -12,10 +12,19 @@ export const WATER_VERT_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) in vec4 aL;   // lx, ly, ring, stitch
 uniform mat4 uMVP;                 // world -> clip, with the origin O folded in (f64 on the CPU)
 uniform vec4 uAabb;                // local region AABB x0, y0, x1, y1 (grown by 0.5 m)
+uniform int uKind;
+uniform vec4 uShape;
 uniform float uZ;                  // region z (world)
-out vec2 vL;                       // l' (local, clamped)
+out vec2 vL;
+out float vArc;                       // l' (local, clamped)
 
 void main() {
+  if (uKind == 2) {
+    vL = aL.xy + uShape.xy; vArc = aL.w;
+    gl_Position = uMVP * vec4(vL, aL.z, 1.0);
+    return;
+  }
+  vArc = 0.0;
   vec2 l = clamp(aL.xy, uAabb.xy, uAabb.zw);
   vL = l;
   gl_Position = uMVP * vec4(l, uZ, 1.0);

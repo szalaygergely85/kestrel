@@ -4,6 +4,7 @@
 //
 // A look (designer data, `assets.waterLooks[name]`; engine default below) is
 //   { ramp: '~-=', shallow: [r,g,b], deep: [r,g,b], opaqueAt: 1.5, seeThrough: 0.35, glint: [r,g,b], waveHz: 2, bgK: 0.6 }
+// Sheet keys: fallRamp, fallSpeed (>=8 m/s), highlight (unlit), sheetAlpha.
 // Additional surface keys: cellM, glintP, drift, tintDepth, shoreW, rim, foamRamp, foamDepth, foamFar (36.1).
 // colours are 0..255 bytes, `ramp` is 1..8 printable ASCII glyphs, `opaqueAt` = metres of water path at which the water is opaque,
 // `seeThrough` = alpha below which the floor glyph stays visible (tinted), `waveHz` = glyph re-roll rate, `bgK` = bg = rgb * bgK.
@@ -15,7 +16,7 @@
 //                  28..29 fhat (unit flow dir), 30 |f| (m/s; radial: |s|), 31 o = (signed speed * t) mod (1024 L)   (per slot, f64 -> f32)
 //                  32 mode (0 still, 1 linear, 2 radial), 33..34 circle centre, 35 nAng (radial angular streak count)
 //   36.1: 36 ou (packed drift until fill), 37 wavePhase, 38 tintDepth, 39 shoreW; 40..43 shape (rect bounds or circle centre/radius)
-//         44..46 foam codes, 47 foamN, 48..50 rim.rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar, 54..55 reserved
+//         44..46 foam codes, 47 foamN, 48..50 rim.rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar, 54..55 reserved for surfaces; sheets: fallSpeed, sheetAlpha
 
 import { hashFastU } from './terrainShade.js';
 
@@ -25,6 +26,7 @@ export const WL_RAMP_MAX = 8;
 export const WATER_HASH_SALT = 57;
 /** Salt of the flow streak hash (`hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT)`, 35.4). */
 export const WATER_FLOW_SALT = 59;
+export const WATER_FALL_SALT = 61;
 /** Flow below this speed (m/s) is still water: the 32.2 time-bucket hash, no streaks. */
 export const FLOW_MIN = 0.05;
 /** Waterfall sheets later take slots 8..11 (35.3). */
@@ -36,6 +38,7 @@ export const DEFAULT_WATER_LOOK = Object.freeze({
   glint: [235, 245, 255], waveHz: 2, bgK: 0.6,
   cellM: 0.25, glintP: 0.04, drift: 0.12, tintDepth: 1.2, shoreW: 0.6, rim: [200, 220, 215],
   foamRamp: '*o.', foamDepth: 0.3, foamFar: 40,
+  fallRamp: "|:'", fallSpeed: 8, highlight: [235, 245, 255], sheetAlpha: 0.75,
   streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7, // US-141a (35.4)
 });
 
@@ -46,9 +49,9 @@ function rgb3(name, key, v) {
 
 /**
  * Validates one look (throws naming it) and packs it into a fresh row. Load-time only (allocates).
- * @param {string} name @param {any} look @returns {Float32Array}
+ * @param {string} name @param {any} look @param {boolean} [sheet] @returns {Float32Array}
  */
-export function packWaterLook(name, look) {
+export function packWaterLook(name, look, sheet = false) {
   const L = { ...DEFAULT_WATER_LOOK, ...(look || {}) };
   if (typeof L.ramp !== 'string' || L.ramp.length < 1 || L.ramp.length > WL_RAMP_MAX) bad(name, `"ramp" must be 1..${WL_RAMP_MAX} glyphs`);
   for (let i = 0; i < L.ramp.length; i++) { const c = L.ramp.charCodeAt(i); if (c < 33 || c > 126) bad(name, '"ramp" glyphs must be printable ASCII (no space)'); }
@@ -72,6 +75,11 @@ export function packWaterLook(name, look) {
     const c = L.foamRamp.charCodeAt(i);
     if (c < 33 || c > 126) bad(name, '"foamRamp" glyphs must be printable ASCII (no space)');
   }
+  if (typeof L.fallRamp !== 'string' || L.fallRamp.length < 1 || L.fallRamp.length > WL_RAMP_MAX) bad(name, 'fallRamp must be 1..8 glyphs');
+  for (let i = 0; i < L.fallRamp.length; i++) if (L.fallRamp.charCodeAt(i) < 33 || L.fallRamp.charCodeAt(i) > 126) bad(name, 'fallRamp must be printable ASCII');
+  if (!Number.isFinite(L.fallSpeed) || L.fallSpeed < 8) bad(name, 'fallSpeed must be finite and >= 8');
+  if (!(L.sheetAlpha >= 0 && L.sheetAlpha <= 1)) bad(name, 'sheetAlpha must be 0..1');
+  rgb3(name, 'highlight', L.highlight);
   const r = new Float32Array(WL_STRIDE);
   r[24] = L.streak.charCodeAt(0) - 32; r[25] = L.streakLen; r[26] = L.streakW; r[27] = L.streakK;
   r[0] = L.shallow[0]; r[1] = L.shallow[1]; r[2] = L.shallow[2]; r[3] = L.opaqueAt;
@@ -84,21 +92,29 @@ export function packWaterLook(name, look) {
   r[47] = L.foamRamp.length; r[48] = L.rim[0]; r[49] = L.rim[1]; r[50] = L.rim[2];
   r[52] = L.foamDepth; r[53] = L.foamFar;
   for (let i = 0; i < L.ramp.length; i++) r[16 + i] = L.ramp.charCodeAt(i) - 32;
+  if (sheet) {
+    r[12] = L.fallRamp.length;
+    for (let i = 0; i < WL_RAMP_MAX; i++) r[16 + i] = i < L.fallRamp.length ? L.fallRamp.charCodeAt(i) - 32 : 0;
+    r[8] = L.highlight[0]; r[9] = L.highlight[1]; r[10] = L.highlight[2];
+    r[54] = L.fallSpeed; r[55] = L.sheetAlpha;
+  }
   return r;
 }
 
 /**
  * @typedef {Object} WaterLooks
  * @property {Map<string, Float32Array>} byName - packed rows by look name
+ * @property {Map<string, Float32Array>} fallByName - sheet look rows
+ * @property {Float32Array} fallFallback - default sheet look
  * @property {Float32Array} fallback - the packed engine default (any region whose look name is not in `byName`)
  */
 
 /** Resolves the designer table (`{name: look}`, may be absent) once. @param {Record<string, any>|null|undefined} table @returns {WaterLooks} */
 export function resolveWaterLooks(table) {
-  const byName = new Map();
+  const byName = new Map(), fallByName = new Map();
   const names = table ? Object.keys(table) : [];
-  for (const n of names) byName.set(n, packWaterLook(n, table[n]));
-  return { byName, fallback: packWaterLook('(default)', null) };
+  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); }
+  return { byName, fallByName, fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true) };
 }
 
 const _defaultLooks = resolveWaterLooks(null);
@@ -106,7 +122,7 @@ export function defaultWaterLooks() { return _defaultLooks; }
 
 /**
  * Copies the packed row of every selected slot's look into `out` (WL_SLOTS * WL_STRIDE floats). Zero allocation.
- * @param {{count:number, region:Int32Array}} sel @param {{water:any}} world @param {WaterLooks} looks @param {Float32Array} out
+ * @param {{count:number, region:Int32Array, sheetCount?:number, sheets?:any[]}} sel @param {{water:any}} world @param {WaterLooks} looks @param {Float32Array} out
  */
 export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
   const wt = world.water;
@@ -140,6 +156,15 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
       }
     }
   }
+  for (let k = 0; k < (sel.sheetCount || 0); k++) {
+    const s = 8 + k, fall = sel.sheets[s], b = s * WL_STRIDE;
+    out.set(looks.fallByName.get(fall.look) || looks.fallFallback, b);
+    // Sheet rows reuse the surface shape block for lip origin/direction.
+    const dx = fall.lip[2] - fall.lip[0], dy = fall.lip[3] - fall.lip[1], len = Math.hypot(dx, dy);
+    out[b + 40] = fall.lip[0]; out[b + 41] = fall.lip[1]; out[b + 42] = dx / len; out[b + 43] = dy / len;
+    out[b + 36] = (out[b + 54] * timeSec) % (1024 * 0.6);
+    out[b + 51] = 2;
+  }
 }
 
 // Distance inside the selected region's boundary (36.1c), world metres.
@@ -162,6 +187,13 @@ export function waterSurfaceHash(t, lb, px, py) {
   const h0 = hashFastU(iu & 1023, iv & 1023, WATER_HASH_SALT);
   const tick = Math.floor(t[lb + 37] + (h0 & 255) / 256);
   return hashFastU(iu & 1023, iv & 1023, WATER_HASH_SALT + 31 * tick);
+}
+
+export function waterfallHash(t, lb, px, py, arc) {
+  const f = Math.fround;
+  const u = f(f(f(f(px) - t[lb + 40]) * t[lb + 42]) + f(f(f(py) - t[lb + 41]) * t[lb + 43]));
+  const a = Math.floor(f(u / f(0.25))), b = Math.floor(f(f(f(arc) - t[lb + 36]) / f(0.6)));
+  return hashFastU(a & 1023, b & 1023, WATER_FALL_SALT);
 }
 
 // ---- own fog (35.3 "the water itself is fogged with its own distance") ----

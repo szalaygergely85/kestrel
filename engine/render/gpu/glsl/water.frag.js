@@ -17,10 +17,12 @@ uniform int uKind;                 // 0 rect, 1 circle
 uniform vec4 uShape;               // rect: x0, y0, x1, y1 | circle: cx, cy, r^2, -
 uniform uint uSlot;
 in vec2 vL;
+in float vArc;
 
 void main() {
   bool inside;
-  if (uKind == 0) {
+  if (uKind == 2) inside = true;
+  else if (uKind == 0) {
     inside = vL.x >= uShape.x && vL.x < uShape.z && vL.y >= uShape.y && vL.y < uShape.w;
   } else {
     vec2 d = vL - uShape.xy;
@@ -31,6 +33,6 @@ void main() {
   float sceneD = uintBitsToFloat(texelFetch(uSceneDepth, ivec2(gl_FragCoord.xy), 0).x);
   if (!(vD < sceneD)) discard;
   uint back = gl_FrontFacing ? 0u : 1u;
-  outWater = uvec4(floatBitsToUint(vD), packNormalOct(vec3(0.0, 0.0, 1.0)), floatBitsToUint(0.0), uSlot | (back << 4u));
+  outWater = uvec4(floatBitsToUint(vD), packNormalOct(vec3(0.0, 0.0, 1.0)), floatBitsToUint(vArc), uSlot | (back << 4u) | (uKind == 2 ? 32u : 0u));
 }
 `;

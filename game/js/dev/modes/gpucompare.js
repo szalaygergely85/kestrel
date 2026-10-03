@@ -10,7 +10,7 @@
 import {
   bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim,
-  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, resolveWaterLooks,
+  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
@@ -276,11 +276,12 @@ function buildCompareRuns(ctx) {
   // designer's unit model exists), yaws {0, 90, 37.5, 200}, teams {0, 1, 2}, mid-animation pose,
   // in the test_room start area (floor z 0). The dda renderer has no instanced path: it SKIPs
   // the pose (not counted), so `?gpucompare=1` stays 34/34 and `renderer=mesh` becomes 35/35.
+  const fallHomeM1 = worldM1.waterfalls;
   const waterHomeM1 = worldM1.water; // US-055a2b: the `water` poses install a region set on worldM1; resetInstances puts the empty one back
   const compareInstances = engine.instances;
   compareInstances.bindPool(compareVoxelPool);
   const unitsGroup = compareInstances.group('lever', 20);
-  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; };
+  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; worldM1.waterfalls = fallHomeM1; };
   runs.push({
     world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
     cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
@@ -396,6 +397,20 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water sea (US-055a2b, flooded plain 1 m below the eye, shear pitch -3, sun az 135 el 30)',
     cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30,
     before: waterPose([{ id: 'cmp.sea', shape: 'rect', rect: [1100, 700, 1900, 1400], z: groundZ(waterEye.x, waterEye.y) - 1, look: 'water' }]) });
+
+  // US-142a1: both sides of one static sheet, tick 600; no content placement.
+  const fallZ = groundZ(poolC.x, poolC.y) + 9;
+  const waterfallSet = () => {
+    worldM1.water = createWater([]); worldM1.water.setTickForTest(600);
+    worldM1.waterfalls = createWaterfalls(collectWaterfallDefs({ waterfalls: [
+      { id: 'cmp.fall', lip: [poolC.x, poolC.y - 3, poolC.x, poolC.y + 3], z: fallZ, drop: 8, outDeg: 90 },
+    ] }, []));
+  };
+  for (const [side, x, yaw] of [['front', poolC.x + 10, 270], ['back', poolC.x - 8, 90]]) {
+    runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: waterfall ${side} (US-142a1, tick 600)`,
+      cam: { x, y: poolC.y, z: fallZ - 4, yawDeg: yaw, pitchDeg: -4 }, real: true, meshOnly: true,
+      sun: SUN_135_30, timeSec: 10, before: waterfallSet });
+  }
 
   // US-141a (architecture.md 35.4, 35.10): flowing water at a frozen clock (t = 10 s; the tick-600 pose of 35.10 once waves.js exists).
   // A 3 m wide river (flow 4 m/s along +x, 2 m/s in the slow reach) seen grazing, and a circular plunge-pool style pool (flowRadial 2)
@@ -640,6 +655,7 @@ function runGpuCompareDdaMode(ctx) {
     const gpuFg = rb.fg, gpuBg = rb.bg;
     const { GI, GA, Depth } = gpuPipeline.readbackGeometry();
     const lightBuf = gpuPipeline.readbackLight();
+    const waterBits = poseName.includes('waterfall') ? gpuPipeline.readbackWater() : null;
     if (shadowRunner) {
       const sd = shadowRunner.run(gpuPipeline);
       if (sd) {
@@ -719,9 +735,26 @@ function runGpuCompareDdaMode(ctx) {
       vmOk = vmItemsGpu > 0 && vmItemsJs > 0;
       console.log(`[gpucompare] viewModel ${poseName}: itemsGpu=${vmItemsGpu} itemsJs=${vmItemsJs} ${vmOk ? 'OK' : 'FAIL'}`);
     }
-    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk;
+    let waterfall = null;
+    if (poseName.includes('waterfall')) {
+      const floats = waterBits ? new Float32Array(waterBits.buffer) : null, jt = fbCompare.water;
+      let tested = 0, flags = 0, depthOk = 0, hits = 0;
+      for (let i = 0; jt && waterBits && i < n; i++) {
+        if (!jt.kind[i] || (jt.objectId[i] & 32) === 0) continue;
+        hits++;
+        const x = i % cols, y = (i / cols) | 0;
+        if (x === 0 || y === 0 || x === cols - 1 || y === rows - 1) continue;
+        if (![i - 1, i + 1, i - cols, i + cols].every((j) => jt.kind[j] && (jt.objectId[j] & 32) !== 0)) continue;
+        tested++;
+        if (waterBits[i * 4 + 3] === jt.objectId[i]) flags++;
+        if (Math.abs(floats[i * 4] - jt.depth[i]) <= jt.depth[i] * 0.01) depthOk++;
+      }
+      waterfall = { hits, tested, flags, depthOk, pass: tested > 0 && flags / tested >= 0.995 && depthOk === tested };
+      console.log(`[gpucompare] waterfall layer ${poseName}: ${JSON.stringify(waterfall)}`);
+    }
+    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
+    rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
   overallOk = overallOk && sampledOwnTextures;

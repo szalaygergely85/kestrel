@@ -10,7 +10,7 @@
 // writes the composited bytes to the composite target; cells that are not water, or passthrough cells (shadeBg.a == 0), are copied.
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK, HASH_FAST, BYTE_OUT, PITCH_UNIFORMS, CELL_RAY, CELL_RAY_PITCHED } from './common.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT } from '../../waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT } from '../../waterLook.js';
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
 
@@ -62,11 +62,12 @@ void main() {
   float raw = isSky ? 1.0e30 : uintBitsToFloat(texelFetch(uDepth, cell, 0).r);
   if (!(dW < raw)) return;
 
+  bool sheet = (w.w & 32u) != 0u;
   int lb = int(w.w & 15u) * ${WL_STRIDE / 4};
   vec4 r0 = uWL[lb], r1 = uWL[lb + 1], r2 = uWL[lb + 2], r3 = uWL[lb + 3];
   float opaqueAt = r0.w, seeThrough = r1.w, bgK = r3.y;
   int nGlyph = int(r3.x);
-  float a = isSky ? 1.0 : clamp((raw - dW) / opaqueAt, 0.0, 1.0);
+  float a = sheet ? uWL[lb + 13].w : isSky ? 1.0 : clamp((raw - dW) / opaqueAt, 0.0, 1.0);
 
   vec3 P;
   if (uProjMode == 0) P = cellRayP(vec2(cell), uGrid, uPosX, uPosY, uEyeH, uDirX, uDirY, uPlaneX, uPlaneY, uHorizonRow, uPlaneDistY, dW);
@@ -88,7 +89,7 @@ void main() {
   vec3 wc = clamp((r0.rgb + (r1.rgb - r0.rgb) * tint) * k, 0.0, 255.0);
 
   vec3 wb = wc * bgK; // background never receives the glint (36.1b)
-  bool opaque = a >= seeThrough;
+  bool opaque = !sheet && a >= seeThrough;
   float glyph = floor(sfg.a * 255.0 + 0.5);
   if (opaque) {
     vec4 r9 = uWL[lb + 9];
@@ -121,6 +122,20 @@ void main() {
     if (float(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) wc += (r2.rgb - wc) * 0.5;
   }
 
+  if (sheet) {
+    vec4 lip = uWL[lb + 10];
+    float u = (P.x - lip.x) * lip.z + (P.y - lip.y) * lip.w;
+    int ia = int(floor(u / 0.25)), ib = int(floor((uintBitsToFloat(w.z) - uWL[lb + 9].x) / 0.6));
+    uint h = hashFastU(ia & 1023, ib & 1023, ${WATER_FALL_SALT});
+    int gi = int(h % uint(nGlyph));
+    vec4 gv = uWL[lb + 4 + (gi >> 2)];
+    int gc = gi & 3;
+    glyph = gc == 0 ? gv.x : (gc == 1 ? gv.y : (gc == 2 ? gv.z : gv.w));
+    float brightness = 0.6 + float(h % 3u) * 0.2;
+    wc = min(vec3(255.0), r0.rgb * k * brightness);
+    wb = wc * bgK;
+    if (float(h >> 8u) * (1.0 / 16777216.0) > 0.92) wc = r2.rgb;
+  }
   vec4 shape = uWL[lb + 10], foam = uWL[lb + 11], rim = uWL[lb + 12], shoreParams = uWL[lb + 13];
   float e;
   if (rim.w > 0.5) {
@@ -128,7 +143,7 @@ void main() {
     e = shape.z - sqrt(dx * dx + dy * dy);
   } else e = min(min(P.x - shape.x, P.y - shape.y), min(shape.z - P.x, shape.w - P.y));
   float shoreS = max(0.0, min(column / shoreParams.x, e / uWL[lb + 9].w));
-  bool shore = !isSky && shoreS < 1.0 && dW < shoreParams.y;
+  bool shore = !sheet && !isSky && shoreS < 1.0 && dW < shoreParams.y;
   if (shore) {
     int fi = min(int(floor(shoreS * foam.w)), int(foam.w) - 1);
     glyph = fi == 0 ? foam.x : (fi == 1 ? foam.y : foam.z);

@@ -19,6 +19,7 @@ import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
+import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
 import { waveHeight } from './waves.js';
 
 // Default answer for `World#outsideSector` when the world has no terrain at
@@ -173,6 +174,8 @@ export class World {
     // block as authored (what `serialize` round-trips, like `horizon`); level blocks come back from the level.
     this.water = createWater([]);
     this.waterDef = [];
+    this.waterfallDef = [];
+    this.waterfalls = [];
     // RE-11b (architecture.md 28.3, "Save" / CO-5 extension): the sight/fog
     // grid, or `null` (default - every world before this story, and most
     // worlds even after it: `Visibility` needs grid dimensions the GAME
@@ -305,6 +308,7 @@ export class World {
     // else in this function.
     w.horizon = validateHorizon(def.horizon, assets);
     w.waterDef = structuredClone(def.water || []);
+    w.waterfallDef = structuredClone(def.waterfalls || []);
 
     for (const s of def.structures || []) {
       const placed = s.mesh
@@ -612,6 +616,7 @@ export class World {
     const seaState = typeof def.seaState === 'string' ? def.seaState : 'calm';
     if (!SEA_STATES.has(seaState)) throw new Error(`World.load: "seaState" must be "calm" | "breezy" | "storm" (got "${seaState}")`);
     w.water = createWater(collectWaterDefs(def, w.structures), seaState);
+    w.waterfalls = createWaterfalls(collectWaterfallDefs(def, w.structures));
 
     // CLOTH-1b3 (33.5): world + level `cloths` blocks (content, not state: never saved, never hashed). Terrain is baked above.
     w.cloths = createClothSystem(collectClothDefs(def, w.structures), w, assets && assets.clothPresets);

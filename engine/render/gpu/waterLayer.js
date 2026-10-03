@@ -19,6 +19,7 @@ export class WaterLayer {
     this.device = device;
     /** @type {{vertexBuffer: any, indexBuffer: any, indexType: 'u16', indexCount: number}|null} */
     this._clip = null;
+    this._sheets = new Map();
     this.cols = 0; this.rows = 0;
     this.texture = null; this.depth = null; this.target = null;
     // US-055a2b: the composite pass output (shade fg/bg composited with the water; the edge pass reads these instead of the shade output)
@@ -36,6 +37,17 @@ export class WaterLayer {
       };
     }
     return this._clip;
+  }
+
+  // Static buffers cached by mesh identity; uploads happen only when a world first draws.
+  sheet(mesh) {
+    let buffers = this._sheets.get(mesh);
+    if (!buffers) {
+      buffers = { vertexBuffer: this.device.createBuffer({ usage: 'vertex', data: mesh.verts }),
+        indexBuffer: this.device.createBuffer({ usage: 'index', data: mesh.index }) };
+      this._sheets.set(mesh, buffers);
+    }
+    return buffers;
   }
 
   /** (Re)creates the WATER target for a `cols x rows` grid; a no-op when the size is unchanged. */
@@ -60,6 +72,8 @@ export class WaterLayer {
 
   dispose() {
     this._freeTarget();
+    for (const b of this._sheets.values()) { this.device.dispose(b.vertexBuffer); this.device.dispose(b.indexBuffer); }
+    this._sheets.clear();
     if (this._clip) { this.device.dispose(this._clip.vertexBuffer); this.device.dispose(this._clip.indexBuffer); this._clip = null; }
   }
 }

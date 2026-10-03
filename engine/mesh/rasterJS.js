@@ -644,31 +644,32 @@ function waterOutcode(buf, off) {
  * @param {RasterTarget} target @param {any} ctx
  */
 function rasterWaterSlot(sel, slot, target, ctx) {
-  const cm = getClipmap(), M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
+  const sheet = sel.sheets && sel.sheets[slot];
+  const cm = sheet ? sheet.mesh : getClipmap(), M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
   const verts = cm.verts, index = cm.index;
   const ox = sel.O[0], oy = sel.O[1];
-  const ro = slot * 7, nRuns = sel.runs[ro];
+  const ro = slot * 7, nRuns = sheet ? 1 : sel.runs[ro];
   const ax0 = u[ub + U_AABB], ay0 = u[ub + U_AABB + 1], ax1 = u[ub + U_AABB + 2], ay1 = u[ub + U_AABB + 3], zW = u[ub + U_Z];
   for (let r = 0; r < nRuns; r++) {
-    const first = sel.runs[ro + 1 + r * 2], end = first + sel.runs[ro + 2 + r * 2];
+    const first = sheet ? 0 : sel.runs[ro + 1 + r * 2], end = sheet ? index.length : first + sel.runs[ro + 2 + r * 2];
     for (let t = first; t < end; t += 3) {
       let sameX = true, sameY = true, px0 = 0, py0 = 0;
       for (let c = 0; c < 3; c++) {
         const vi = index[t + c] * 4;
         // = waterVertexJS (waterMesh.js), inlined: no double-argument calls in the per-vertex / per-pixel loops (allocation)
-        const lx = verts[vi] < ax0 ? ax0 : (verts[vi] > ax1 ? ax1 : verts[vi]);
-        const ly = verts[vi + 1] < ay0 ? ay0 : (verts[vi + 1] > ay1 ? ay1 : verts[vi + 1]);
+        const lx = sheet ? verts[vi] + u[ub + U_SHAPE] : verts[vi] < ax0 ? ax0 : (verts[vi] > ax1 ? ax1 : verts[vi]);
+        const ly = sheet ? verts[vi + 1] + u[ub + U_SHAPE + 1] : verts[vi + 1] < ay0 ? ay0 : (verts[vi + 1] > ay1 ? ay1 : verts[vi + 1]);
         if (c === 0) { px0 = lx; py0 = ly; } else { if (lx !== px0) sameX = false; if (ly !== py0) sameY = false; }
-        const wx = ox + lx, wy = oy + ly, wz = zW;
+        const wx = ox + lx, wy = oy + ly, wz = sheet ? verts[vi + 2] : zW;
         const o = c * STRIDE;
         _bufA[o] = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
         _bufA[o + 1] = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
         _bufA[o + 2] = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
         _bufA[o + 3] = M[3] * wx + M[7] * wy + M[11] * wz + M[15];
         _bufA[o + 4] = wx; _bufA[o + 5] = wy; _bufA[o + 6] = wz;
-        _bufA[o + 7] = lx; _bufA[o + 8] = ly; _bufA[o + 9] = 0; _bufA[o + 10] = 0; _bufA[o + 11] = 1;
+        _bufA[o + 7] = lx; _bufA[o + 8] = sheet ? verts[vi + 3] : ly; _bufA[o + 9] = 0; _bufA[o + 10] = 0; _bufA[o + 11] = 1;
       }
-      if (sameX || sameY) continue; // collapsed onto the AABB boundary: degenerate
+      if (!sheet && (sameX || sameY)) continue; // collapsed onto the AABB boundary: degenerate
       // Trivial reject (all three outside the same frustum plane / behind the near plane) and trivial accept (all inside
       // the frustum: nothing to clip) - the clipmap has ~27k triangles, most are off screen.
       const c0 = waterOutcode(_bufA, 0), c1 = waterOutcode(_bufA, STRIDE), c2 = waterOutcode(_bufA, 2 * STRIDE);
@@ -733,7 +734,8 @@ function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
 
   const sceneDepth = ctx.sceneDepth;
   const wr = target.writes;
-  const tagBase = sel.u[ub + U_SLOT] | (back << 4);
+  const sheet = sel.u[ub + U_KIND] === 2;
+  const tagBase = sel.u[ub + U_SLOT] | (back << 4) | (sheet ? 32 : 0);
   const isCircle = sel.u[ub + U_KIND] === 1, sA = sel.u[ub + U_SHAPE], sB = sel.u[ub + U_SHAPE + 1], sC = sel.u[ub + U_SHAPE + 2], sD = sel.u[ub + U_SHAPE + 3];
   for (let py = pyMin; py <= pyMax; py++) {
     const Py = py * 256 + 128;
@@ -756,7 +758,7 @@ function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
       const invq = 1 / q; // = vD, the perpendicular camera distance (GPU: 1 / gl_FragCoord.w)
       const lx = (l0 * lx0 * iw0 + l1 * lx1 * iw1 + l2 * lx2 * iw2) * invq;
       const ly = (l0 * ly0 * iw0 + l1 * ly1 * iw1 + l2 * ly2 * iw2) * invq;
-      if (isCircle) { // = waterInsideJS (waterMesh.js), inlined
+      if (sheet) { /* finite sheet mesh supplies the boundary */ } else if (isCircle) { // = waterInsideJS (waterMesh.js), inlined
         const dx = lx - sA, dy = ly - sB;
         if (dx * dx + dy * dy > sC) continue;
       } else if (!(lx >= sA && lx < sC && ly >= sB && ly < sD)) continue;
@@ -764,7 +766,7 @@ function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
       target.kind[idx] = 1;
       target.depth[idx] = invq;
       target.nrm[idx] = WATER_NRM_UP;
-      target.z[idx] = 0;
+      target.z[idx] = sheet ? ly : 0;
       target.objectId[idx] = tagBase;
       target.zbuf[idx] = zn;
     }

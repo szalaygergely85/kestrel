@@ -1775,8 +1775,8 @@ export class GpuCellPipeline {
     this._vmList = this._viewModel ? this._viewModel.buildList(cam, this._pitched) : null;
     // US-055a2a (35.3): which water regions draw this frame (<= 8; none = the pass is skipped, nothing allocated).
     selectWater(world, cam, this._meshFrustumPlanes, this._waterSel);
-    this._waterActive = this._waterSel.count > 0 && !!this._water;
-    this.stats.waterSlots = this._waterSel.count;
+    this._waterActive = (this._waterSel.count + this._waterSel.sheetCount) > 0 && !!this._water;
+    this.stats.waterSlots = this._waterSel.count + this._waterSel.sheetCount;
     if (this._waterActive) { // US-055a2b: per-slot look rows + own fog (cheap f32 copies, no allocation)
       fillWaterSlotTable(this._waterSel, world, this._waterLooks, this._waterTable, this._fb.timeSec || 0);
       waterFogParams(this._table, this._palette, !!world.terrain, this._waterFog);
@@ -2391,6 +2391,17 @@ export class GpuCellPipeline {
         gl.drawElements(gl.TRIANGLES, sel.runs[ro + 2 + r * 2], gl.UNSIGNED_SHORT, sel.runs[ro + 1 + r * 2] * 2);
         draws++;
       }
+    }
+    for (let k = 0; k < sel.sheetCount; k++) {
+      const slot = 8 + k, fall = sel.sheets[slot], buffers = layer.sheet(fall.mesh), b = slot * WATER_U_STRIDE;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertexBuffer.handle);
+      gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indexBuffer.handle);
+      gl.uniform1i(loc.uKind, 2);
+      gl.uniform4f(loc.uShape, u[b + U_SHAPE], u[b + U_SHAPE + 1], 0, 0);
+      gl.uniform1ui(loc.uSlot, slot);
+      gl.drawElements(gl.TRIANGLES, fall.mesh.index.length, gl.UNSIGNED_SHORT, 0);
+      draws++;
     }
     this.stats.waterDraws = draws;
     gl.disable(gl.DEPTH_TEST);

@@ -20,7 +20,7 @@
 import { sunFromWorld } from './terrainCaster.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance } from './waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash } from './waterLook.js';
 
 const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
@@ -66,9 +66,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (isSky !== skyPass) continue;
     const dW = wDepth[i], raw = isSky ? Infinity : depth[i];
     if (!(dW < raw)) continue;
-    const slot = wObj[i] & 15, lb = slot * WL_STRIDE;
+    const slot = wObj[i] & 15, lb = slot * WL_STRIDE, sheet = (wObj[i] & 32) !== 0;
     const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], bgK = _table[lb + 13];
-    let a = isSky ? 1 : (raw - dW) / opaqueAt;
+    let a = sheet ? _table[lb + 55] : isSky ? 1 : (raw - dW) / opaqueAt;
     a = a < 0 ? 0 : a > 1 ? 1 : a;
     const col = i % cols, row = (i / cols) | 0;
     if (pitched) unprojectPitched(pterms, col, row, dW, _p); else unprojectCell(terms, col, row, dW, _p);
@@ -85,9 +85,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     let wb = (_table[lb + 2] + (_table[lb + 6] - _table[lb + 2]) * tint) * k;
     wr = wr < 0 ? 0 : wr > 255 ? 255 : wr; wg = wg < 0 ? 0 : wg > 255 ? 255 : wg; wb = wb < 0 ? 0 : wb > 255 ? 255 : wb;
 
-    const br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
+    let br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
     const fi = i * 4;
-    const opaque = a >= seeThrough;
+    const opaque = !sheet && a >= seeThrough;
     let glyph = fgArr[fi + 3];
     if (opaque) {
       const h = waterSurfaceHash(_table, lb, _p[0], _p[1]);
@@ -97,9 +97,17 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }
     }
+    if (sheet) {
+      const h = waterfallHash(_table, lb, _p[0], _p[1], wt.z[i]);
+      glyph = _table[lb + 16 + h % (_table[lb + 12] | 0)];
+      const brightness = 0.6 + (h % 3) * 0.2;
+      wr = Math.min(255, _table[lb] * k * brightness); wg = Math.min(255, _table[lb + 1] * k * brightness); wb = Math.min(255, _table[lb + 2] * k * brightness);
+      br0 = wr * bgK; bg0 = wg * bgK; bb0 = wb * bgK;
+      if ((h >>> 8) * (1 / 16777216) > 0.92) { wr = _table[lb + 8]; wg = _table[lb + 9]; wb = _table[lb + 10]; }
+    }
     const e = waterEdgeDistance(_table, lb, _p[0], _p[1]);
     const shoreS = Math.max(0, Math.min(column / _table[lb + 52], e / _table[lb + 39]));
-    const shore = !isSky && shoreS < 1 && dW < _table[lb + 53];
+    const shore = !sheet && !isSky && shoreS < 1 && dW < _table[lb + 53];
     if (shore) {
       const nFoam = _table[lb + 47] | 0;
       glyph = _table[lb + 44 + Math.min(Math.floor(shoreS * nFoam), nFoam - 1)];
