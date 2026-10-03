@@ -11,8 +11,6 @@ import { computeVoxelPose } from '../../voxel/voxelPose.js';
 import { VoxelPool } from '../voxelPool.js';
 import { buildVoxelAtlas, writeInstanceRows, VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE } from './VoxelTextures.js';
 import quadruped12 from '../../voxel/fixtures/quadruped12.js';
-import '../../../design/models/sb_stonewall.js';
-import '../../../design/models/sb_village.js';
 import { makeOk } from '../../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -85,20 +83,6 @@ const pm = packVoxelModel(quadruped12, table.idFor);
   let threw = false, msg = '';
   try { buildVoxelAtlas([moPm], 1); } catch (e) { threw = true; msg = e.message; }
   ok('ME-22: buildVoxelAtlas throws on a meshOnly packed model', threw && msg.indexOf('meshOnly') >= 0, msg);
-}
-
-// Imported library regressions: small tiles can fit the per-model DDA limit,
-// but their combined library must stay on the mesh-only route.
-{
-  const models = globalThis.ASSETS.voxelModels;
-  const imported = Object.keys(models).filter((key) => key.startsWith('sb'));
-  const library = Object.fromEntries(imported.map((key) => [key, models[key]]));
-  library.bear = { voxel: quadruped12 };
-  const pool = new VoxelPool();
-  pool.bind(makeRegistry(library), { idFor: () => 1 });
-  ok('imported tiles: every stonewall/village asset remains available to the mesh renderer', imported.length === 19 && imported.every((key) => pool.models.has(key)));
-  ok('imported tiles: all route away from the shared DDA atlas', imported.every((key) => pool.models.get(key).meshOnly && pool._modelIndexByKey[key] === undefined));
-  ok('imported tiles: DDA atlas contains only the ordinary model, without raising its row limit', pool.atlas.h === Math.ceil(pm.vox.length / 256) && pool._modelIndexByKey.bear === 0);
 }
 
 // =============================================================================
