@@ -124,7 +124,8 @@ function cameraPlanes() {
       sink += buildShadowList(sl, null, world, sm.planes, src);
     }
   };
-  run(500);
+  // Warm the same workload and loop length before measuring retained heap.
+  run(20000);
   global.gc();
   const before = process.memoryUsage().heapUsed;
   run(20000);

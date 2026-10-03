@@ -16,6 +16,8 @@
  * NOT imported this pass (26 of 31 remain, plus the whole Roof/ subfolder of 12): VILL_H_RD_W_L, VILL_H_RF_W_L2,
  * VILL_H_RF_W_R(2), VILL_H_W_INV(_LR), VILL_H_W_LR, VILL_H_W_SBEAM, VILL_H_W_V1/V2(_INV)/V3/V4(.5).
  */
+// Imported library tiles stay mesh-only even when individual pieces fit the DDA per-model limit.
+// Binding the complete library otherwise exceeds the shared 256-row DDA atlas.
 (function (root) {
   'use strict';
   var A = root.ASSETS = root.ASSETS || {};
@@ -26,6 +28,7 @@ ASSETS.voxelModels.sbVillWall = {
   desc: 'Village house wall, timber-framed (Village House Stuff/VILL_H_W.vox): wattle-and-daub plaster -> straw (tan, closest existing match), timber beam -> timber_old, 1 accent colour -> bronze/block_dark. 16x16x16 @ 0.0625 m/cell (1 m wall tile).',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -66,6 +69,7 @@ ASSETS.voxelModels.sbVillWallPlain = {
   desc: 'Village house wall, plain plaster, no beam (Village House Stuff/VILL_H_W_PLN.vox): 3 plaster shades -> straw (bucketed by brightness). 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -103,6 +107,7 @@ ASSETS.voxelModels.sbVillCornerL = {
   desc: 'Village house wall corner, left (Village House Stuff/VILL_H_CNR_L.vox): same plaster/timber map as sbVillWall. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -143,6 +148,7 @@ ASSETS.voxelModels.sbVillCornerR = {
   desc: 'Village house wall corner, right (Village House Stuff/VILL_H_CNR_R.vox): mirror of sbVillCornerL, same map. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -183,6 +189,7 @@ ASSETS.voxelModels.sbChimney = {
   desc: 'Village house chimney stack (Village House Stuff/CHIMNEY.vox): stone/mortar greys -> block_dark/ash/iron_light, 1 warm highlight -> straw_light. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],

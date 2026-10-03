@@ -313,13 +313,17 @@ if (typeof globalThis.gc === 'function') {
   const h2 = p.createEmitter(def2, 0, 0, 0); p.setOn(h2, true);
   const field = { sampleInto(x, y, z, tick, out) { out[0] = 2 + (tick & 7) * 0.1; out[1] = 0.5; out[2] = 0; return out; } };
   const hh = createHasher();
-  for (let i = 0; i < 2000; i++) { p.sampleWind(field, i); p.step(); } // warm up JIT, reach steady state
+  const run = () => {
+    for (let i = 0; i < 10000; i++) {
+      p.sampleWind(field, i); p.burstAt(id, 0, 0, 0, 5);
+      if (i % 100 === 0) { hh.reset(); p.hashInto(hh); }
+      p.step();
+    }
+  };
+  // Warm the complete measured workload, including bursts/hash and this loop's JIT code.
+  run();
   gc(); const before = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 10000; i++) {
-    p.sampleWind(field, i); p.burstAt(id, 0, 0, 0, 5);
-    if (i % 100 === 0) { hh.reset(); p.hashInto(hh); }
-    p.step();
-  }
+  run();
   gc(); const grew = process.memoryUsage().heapUsed - before;
   ok('zero heap growth over 10k steps (bursts, wind sampling, hashing, recycling)', grew < 64 * 1024, `${grew} bytes`);
   ok('...while the pool was busy', p.stats.live > 500 && p.stats.recycled > 0, `live=${p.stats.live} recycled=${p.stats.recycled}`);

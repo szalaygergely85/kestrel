@@ -255,7 +255,7 @@ export class MeshBuffers {
 
   /**
    * @param {import('../../mesh/MeshData.js').MeshData} mesh
-   * @returns {{vertexBuffer: any, vertexCount: number, indexBuffer?: any, indexCount?: number}}
+   * @returns {{vertexBuffer: any, vertexCount: number, indexBuffer?: any, indexCount?: number, version: number, mesh: import('../../mesh/MeshData.js').MeshData}}
    */
   get(mesh) {
     const existing = this.cache.get(mesh.id);

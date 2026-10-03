@@ -191,6 +191,7 @@ export function createCommandQueue(opts = {}) {
    * (tick, player, seq), plus `tick` and the per-player seq counters. Not on
    * the zero-alloc hot path - allocation is fine here. */
   q.save = function save() {
+    /** @type {Array<[number, number, number, number, number, number, number, number[]]>} */
     const pending = [];
     for (let i = 0; i < maxRecords; i++) {
       if (!used[i]) continue;

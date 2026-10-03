@@ -25,6 +25,8 @@
  * HALF_3D/HALF_3D_TOP (5 moss-overlay variants), STN_PLR_DARK/_LNGER/_LNGR_DARK (3 pillar variants),
  * STN_WALL_BRKN_INV, STN_WALL_DARK_BRKN/_MID/_RBL/_sBRKN/_DRK_TOP (5 dark-wall variants), Stone Wall_INV.
  */
+// Imported library tiles stay mesh-only even when individual pieces fit the DDA per-model limit.
+// Binding the complete library otherwise exceeds the shared 256-row DDA atlas.
 (function (root) {
   'use strict';
   var A = root.ASSETS = root.ASSETS || {};
@@ -35,6 +37,7 @@ ASSETS.voxelModels.sbFG = {
   desc: 'Forest ground tile, base variant (Stone Wall And Ground/F_G.vox): one of 12 numbered F_G/F_G2../F_G12 ground-scatter tiles in the source pack (F_G3-12 not imported this pass, see header). 16x16x16 @ 0.0625 m/cell (1 m cube tile). 69 distinct AO-shaded colours bucketed by hue/brightness into 2 flat materials: dark saturated green patches -> grass, warm brown/tan scatter -> wood/bronze/straw/timber_old (brightness-bucketed) - the file\'s fine per-voxel gradient is flattened to these few materials, a consolidation (not a hue mismatch) given this project\'s flat-material voxel system.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -138,6 +141,7 @@ ASSETS.voxelModels.sbFG2 = {
   desc: 'Forest ground tile, variant 2 (Stone Wall And Ground/F_G2.vox): same bucketed grass/wood-family map as sbFG. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -243,6 +247,7 @@ ASSETS.voxelModels.sbFrstGrass = {
   desc: 'Forest grass tile, pure grass (no dirt scatter) (Stone Wall And Ground/FRST_GRASS.vox): all 36 colours are dark saturated greens -> grass (bucketed). 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -313,6 +318,7 @@ ASSETS.voxelModels.sbFrstGrassSand = {
   desc: 'Forest grass-to-sand transition tile (Stone Wall And Ground/FRST_GRASS_SAND.vox): grass greens -> grass, sand/dirt tones -> wood/bronze/straw family (bucketed, same scheme as sbFG). 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -422,6 +428,7 @@ ASSETS.voxelModels.sbFrstGrassSandCnr = {
   desc: 'Forest grass-to-sand transition tile, corner variant (Stone Wall And Ground/FRST_GRASS_SAND_CNR.vox): same bucketed map as sbFrstGrassSand. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -529,6 +536,7 @@ ASSETS.voxelModels.sbMoss = {
   desc: 'Moss ground patch (Stone Wall And Ground/Moss.vox): tiny 89-voxel sparse tile, 3 green shades -> grass (closest existing flat green; MISMATCH-lite: a touch brighter than the source\'s duller olive, same caveat as the gravestone moss patches). 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -566,6 +574,7 @@ ASSETS.voxelModels.sbStnFlr = {
   desc: 'Stone floor tile (Stone Wall And Ground/STN_FLR.vox): 7 colours, neutral greys bucketed by brightness: linen (near-white highlight), iron_light, ash, granite_dark, block_dark. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -607,6 +616,7 @@ ASSETS.voxelModels.sbStnFlrGrss = {
   desc: 'Stone floor tile with grass overgrowth (Stone Wall And Ground/STN_FLR_GRSS.vox): same grey stone map as sbStnFlr PLUS 30 dark-green overgrowth colours -> grass (bucketed). 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -678,6 +688,7 @@ ASSETS.voxelModels.sbStnWall = {
   desc: 'Stone wall tile, intact (Stone Wall And Ground/STN_WALL.vox): 7 neutral-grey colours bucketed by brightness (linen highlight down to granite_dark). 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -719,6 +730,7 @@ ASSETS.voxelModels.sbStnWallBrkn = {
   desc: 'Stone wall tile, broken (Stone Wall And Ground/STN_WALL_BRKN.vox): same grey bucket map as sbStnWall, different (partially demolished) shape. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -760,6 +772,7 @@ ASSETS.voxelModels.sbStnWallRbl = {
   desc: 'Stone wall tile, rubble (Stone Wall And Ground/STN_WALL_RBL.vox): same grey bucket map as sbStnWall, collapsed-rubble shape. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -800,6 +813,7 @@ ASSETS.voxelModels.sbStnCnr = {
   desc: 'Stone wall corner tile (Stone Wall And Ground/STN_CNR.vox): 9 grey/near-grey colours (incl. a faint blue-grey highlight) bucketed by brightness, same family as sbStnWall. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
@@ -843,6 +857,7 @@ ASSETS.voxelModels.sbStnPlr = {
   desc: 'Stone pillar tile (Stone Wall And Ground/STN_PLR.vox): 5 grey colours bucketed same as sbStnWall. 16x16x16 @ 0.0625 m/cell.',
   voxel: {
     version: 1,
+    meshOnly: true,
     cellM: 0.0625,
     size: [16, 16, 16],
     anchor: [8, 8, 0],
