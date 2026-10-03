@@ -28,7 +28,7 @@ export function run(ctx) {
   const level = loadLevel(assets.level('test_room'));
   bindLevel(matTable, level);
   const world = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
-  for (const s of world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+  for (const s of world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
 
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,

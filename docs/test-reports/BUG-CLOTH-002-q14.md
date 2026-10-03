@@ -37,3 +37,7 @@ Added owner-pose regressions to game/js/quest/clothPhysics.test.js: full step-by
 NEEDS PC-A: decide whether the authored solid cheek wall `c` is intended on this approach or revise the wall/canvas placement. Changing height semantics for all solid grid cells would contradict the existing physics contract and requires an architect specification. Owner walk-test still required; BUG-CLOTH-002 remains open for that decision.
 
 Verification: 202/202 suites PASS, no FAIL/TIMEOUT/WARN; check-deps OK (366 files, existing warnings). Temporary probes removed; only own browser/server processes stopped. Comparison checkout left clean at f49a714 for follow-up.
+
+## Post-sync verification (2026-10-04)
+
+Merged PC-A ME-14c1 bab88e6, preserving the uncommitted sword debug probe. Full runner 203/203 PASS. check-deps OK. Full mesh GPU comparison: 66 poses, same four earlier non-water FAIL rows, no new FAIL. Both browser routes reach the end trigger (mesh9592, dda9602, own no-cache servers). Mesh route flags falls on upper-steps/summit/outcrop/hillside legs; DDA reports no falls but uses the lever interaction fallback. These are recorded for PC-A and are not claimed as a clean owner playthrough. The first concurrently launched DDA route never exposed debug state; isolated DDA startup and the sequential fresh-profile retry succeed. All own servers/browsers stopped and generated capture removed.

@@ -518,7 +518,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
   matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
   if (gpuPipeline) gpuPipeline.bind(matTable, assets.palette);
-  if (engine.world) for (const s of engine.world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+  if (engine.world) for (const s of engine.world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
   if (fb) { fb.depth = engine.depthBuffer; fb.spans = engine.openSpans; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
 });
 
@@ -669,6 +669,7 @@ function runGame(mode) {
       }
       // ---- end US-010 ----
       for (const s of world.structures) {
+        if (s.kind === 'mesh') continue; // ME-14c1: no level
         bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
         repackMaterials(s.packed, s.level, matTable); // US-030a: packed.mats was built with matTable=null at placeStructure time
       }
@@ -1330,6 +1331,7 @@ function runVoxelBenchMode() {
   function loadBenchWorld(def) {
     const w = World.load(def, assets, {});
     for (const s of w.structures) {
+      if (s.kind === 'mesh') continue; // ME-14c1
       bindLevel(matTable, s.level);
       repackMaterials(s.packed, s.level, matTable);
     }

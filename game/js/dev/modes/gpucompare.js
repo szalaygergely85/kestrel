@@ -104,6 +104,7 @@ function buildCompareRuns(ctx) {
   function loadCompareWorld(def) {
     const w = World.load(def, assets, {});
     for (const s of w.structures) {
+      if (s.kind === 'mesh') continue; // ME-14c1
       bindLevel(matTable, s.level);
       repackMaterials(s.packed, s.level, matTable); // US-030a: see the runGame('world') call site
     }
@@ -502,7 +503,7 @@ function compareOverlayCells(ov, twinFg, gpuFg, depth) {
  * can pin e.g. az 135 el 30. Returns the restore closure.
  */
 function applySunOverride(world, lights, sun) {
-  const s0 = world.structures && world.structures[0];
+  const s0 = world.structures && world.structures.find((q) => q.kind !== 'mesh');
   const def = s0 && s0.level && s0.level.def;
   const hadDef = def && 'sun' in def, oldDef = def ? def.sun : undefined;
   const old = lights ? { elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: lights.sun.on } : null;

@@ -639,7 +639,7 @@ export class World {
     if (yawSteps) throw new Error('World.placeStructure: yawSteps != 0: not in M1');
     const level = loadLevel(levelDef);
     if (!level) throw new Error(`World.placeStructure: level "${levelDef && levelDef.name}" failed to load (see console)`);
-    const structSeq = this.structures.length;
+    const structSeq = this.structures.filter((q) => q.kind !== 'mesh').length; // ME-14c1: level index only (meshes have no struct slot)
     const structId = id || `struct_${structSeq}`;
     const frame = makeFrame(origin.x, origin.y, origin.z || 0, yawSteps);
     const bbox = frameBBox(frame, level.width, level.height, { x0: 0, y0: 0, x1: 0, y1: 0 });

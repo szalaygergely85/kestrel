@@ -506,6 +506,23 @@ expectThrow('rejects an external (non-data-URI) buffer with no opts.buffers over
   ok('meshPlaneIdBase: groupId round-trips in the low 20 bits', (base & 0xfffff) === 5);
 }
 
+// ---------------------------------------------------------------------------
+// 11. ME-14c1: uv option - planar (world metres, default) vs 'source' (TEXCOORD_0).
+// ---------------------------------------------------------------------------
+{
+  const positions = [[0, 0, 0], [2, 0, 0], [0, 0, 2]]; // 2 m right triangle in the horizontal plane
+  const uvs = [[0, 0], [0.25, 0], [0, 0.25]];          // colour-atlas style values, not metres
+  const glb = simpleGlb({ positions, indices: [0, 1, 2], uvs });
+  const span = (m) => {
+    let lo = Infinity, hi = -Infinity;
+    for (let v = 0; v < 3; v++) { lo = Math.min(lo, m.uv[v * 2]); hi = Math.max(hi, m.uv[v * 2]); }
+    return hi - lo;
+  };
+  ok('uv default (planar): 2 m edge -> uv span 2', Math.abs(span(loadGltf(glb, 'test:uvp')) - 2) < 1e-6);
+  ok("uv:'planar' explicit == default", Math.abs(span(loadGltf(glb, 'test:uvp2', { uv: 'planar' })) - 2) < 1e-6);
+  ok("uv:'source' keeps TEXCOORD_0", Math.abs(span(loadGltf(glb, 'test:uvs', { uv: 'source' })) - 0.25) < 1e-6);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

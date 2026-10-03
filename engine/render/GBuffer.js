@@ -21,6 +21,9 @@ export const KIND_TERRAIN = 7;
 // per 15.2 item 1 ("KIND_MODEL and FACE_PACKED move to GBuffer.js").
 export const KIND_MODEL = 8;
 
+// ME-14c1 (37.1): imported glTF meshes (engine/mesh/gltf.js re-exports it).
+export const KIND_MESH = 9;
+
 export const FACE_N = 1;
 export const FACE_E = 2;
 export const FACE_S = 3;

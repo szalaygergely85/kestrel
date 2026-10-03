@@ -359,7 +359,7 @@ export function buildLightSet(world, palette) {
   ls.ambient[2] = ambHue[2] * amb.intensity;
 
   // CO-2: the sun is a world property (`world.sun`, level fallback resolved in World.load).
-  const firstStruct = world.structures[0];
+  const firstStruct = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
   const sunDef = world.sun !== undefined ? world.sun
     : ((firstStruct && firstStruct.level && firstStruct.level.def && firstStruct.level.def.sun) || null);
   const sunPreset = palette.lights[(sunDef && sunDef.preset) || 'sun'];
@@ -777,6 +777,7 @@ export function sunVisible(world, x, y, z, dir) {
   let worldMaxH = 0;
   for (let i = 0; i < world.structures.length; i++) {
     const s = world.structures[i];
+    if (s.kind === 'mesh') continue; // ME-14c1: no sun-DDA grid for imported meshes
     const m = s.frame.z + s.packed.maxH;
     if (m > worldMaxH) worldMaxH = m;
   }

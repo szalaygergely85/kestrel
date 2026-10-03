@@ -68,7 +68,7 @@ engine.setTeamMaterials(RTS_TEAM_SPEC);
 
 // ---- world, nav, sim ------------------------------------------------------------------------------------------
 const world = engine.loadWorld(assets.world('world_m1'));
-for (const s of world.structures) { bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
+for (const s of world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
 const lightSet = buildLightSet(world, P);
 const terrain = world.terrain;
 const groundAt = (x, y) => terrain.groundAt(x, y);

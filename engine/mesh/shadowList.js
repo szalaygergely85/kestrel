@@ -124,7 +124,9 @@ export function shadowWorldZ(world, cache, out) {
     let lo = Infinity, hi = -Infinity;
     const structs = world.structures || [];
     for (let i = 0; i < structs.length; i++) {
-      const s = structs[i], set = cache.get(s), b = set.base.bbox;
+      const s = structs[i];
+      if (s.kind === 'mesh') { lo = Math.min(lo, s.bbox.z0); hi = Math.max(hi, s.bbox.z1); continue; } // ME-14c1: world-space bbox
+      const set = cache.get(s), b = set.base.bbox;
       const oz = s.origin.z; // z-only bbox lift (same as DrawList's item aabb)
       lo = Math.min(lo, oz + b[2]);
       hi = Math.max(hi, oz + b[5]);
