@@ -118,7 +118,7 @@ function lightAt(panel, x, y, z, tSec, L) {
 // ---------------------------------------------------------------- panels
 const PANELS = [
   { id: 'burner', title: 'burner: flame + smoke (as placed)', cols: 40, rows: 36, x0: -1.0, zTop: 3.4,
-    emit: [{ k: 'flame', x: 0, y: 0, z: 0.62 }, { k: 'smoke', x: 0, y: 0, z: 1.07 }], fire: { x: 0, y: 0, z: 0.75 }, burner: true },
+    emit: [{ k: 'flame', x: 0, y: 0, z: 0.62 }, { k: 'smoke', x: 0, y: 0, z: 1.42 }], fire: { x: 0, y: 0, z: 0.75 }, burner: true },
   { id: 'flame', title: 'flame (rate 40/s, emissive)', cols: 24, rows: 36, x0: -0.6, zTop: 3.4,
     emit: [{ k: 'flame', x: 0, y: 0, z: 0.3 }], fire: { x: 0, y: 0, z: 0.45 } },
   { id: 'smoke', title: 'smoke (lit by its emitter only)', cols: 40, rows: 36, x0: -1.0, zTop: 3.4,
@@ -194,8 +194,8 @@ function runChecks() {
   const rate = (s.stats.spawned - spawned0) / 5;
   hs.sort((a, b) => a - b);
   const p95 = hs[Math.floor(hs.length * 0.95)] || 0;
-  check(Math.abs(rate - 40) <= 1, `flame spawns ${rate.toFixed(1)}/s (AC ~40/s)`);
-  check(p95 >= 0.35 && p95 <= 0.8, `flame column height (p95 of live particles) ${p95.toFixed(2)} m (0.35-0.8 m: a tongue, not a fountain)`);
+  check(Math.abs(rate - 60) <= 1.5, `flame spawns ${rate.toFixed(1)}/s (retuned ~60/s)`);
+  check(p95 >= 0.5 && p95 <= 1.2, `flame column height (p95 of live particles) ${p95.toFixed(2)} m (0.5-1.2 m: a brazier fire, not a fountain)`);
   // smoke rise
   s.clear();
   const hsm = s.createEmitter(sid, 0, 0, 0); s.setOn(hsm, true);

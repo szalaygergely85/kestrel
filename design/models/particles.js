@@ -41,11 +41,12 @@
     // Narrow cone + a small spawn box = a flickering tongue, not a fountain. Dense hot core at the base (# % white-
     // yellow), the classic `^` tongue in the middle, wisps `'` `.` at the tip going ember-red.
     flame: {
-      rate: 40, burst: 0,
-      life: [0.4, 0.6], speed: [0.8, 1.2],
-      dir: [0, 0, 1], spreadDeg: 9, box: [0.05, 0.05, 0.02],
-      accelZ: 1.0, drag: 0.8, wind: 0.25,
-      maxLive: 40, killBelow: null,
+      // RETUNE 2026-10-03 (owner walk-test "too small"): 60/s, life 0.5-0.8, speed 1.2-1.8, terminal 1.6 m/s -> ~0.9 m tall.
+      rate: 60, burst: 0,
+      life: [0.5, 0.8], speed: [1.2, 1.8],
+      dir: [0, 0, 1], spreadDeg: 13, box: [0.09, 0.09, 0.03],
+      accelZ: 1.6, drag: 1.0, wind: 0.25,
+      maxLive: 52, killBelow: null,
       glyphs:  "%#**^^^'':.",
       colors: ['flameCore', 'flameCore', 'flameCore', 'flameMid', 'flameMid', 'flameMid', 'flameOuter', 'flameOuter',
                'flameTip', 'ember', 'emberDark'],
@@ -55,11 +56,11 @@
     // 3-4 s, so it climbs ~2-2.5 m past the burner and leans with any draught. Puffs `O o` near the source, thin
     // `; : ~ -` mid-life, dissolving to `' ` .` - while the colour darkens from warm ash to near-black soot.
     smoke: {
-      rate: 9, burst: 0,
-      life: [3.0, 4.0], speed: [0.25, 0.45],
-      dir: [0, 0, 1], spreadDeg: 14, box: [0.08, 0.08, 0.03],
+      rate: 12, burst: 0,
+      life: [3.0, 4.0], speed: [0.3, 0.5],
+      dir: [0, 0, 1], spreadDeg: 18, box: [0.12, 0.12, 0.03],
       accelZ: 0.6, drag: 0.8, wind: 1,
-      maxLive: 40, killBelow: null,
+      maxLive: 48, killBelow: null,
       glyphs:  "oOo%;:~-'`.",
       colors: ['ashDark', 'ashDark', 'ashDark', 'ironDark', 'ironDark', 'ironDark', 'mortar', 'mortar',
                'cinder', 'scorch', 'scorch'],
@@ -96,7 +97,7 @@
   // Placement hints for US-053c AC3-5 (content / game code). Not read by the engine.
   var mounts = {
     flame:  { use: 'Kestrel burner: components.emitters on the burner entity, at its `flame` mount', offset: { right: 0, fwd: 0, up: 0.02 }, on: true },
-    smoke:  { use: 'same entity, one entry after flame; starts above the tongue tip so the two never overlap', offset: { right: 0, fwd: 0, up: 0.45 }, on: true },
+    smoke:  { use: 'same entity, one entry after flame; starts above the tongue tip so the two never overlap', offset: { right: 0, fwd: 0, up: 0.8 }, on: true },
     sparks: { use: 'combat:hit from the player sword: burstAt(sparks, hit point); setEmitterDir / burstAt dx,dy,dz = hit normal when known', n: 10, nHeavy: 14 },
     dust:   { use: 'landing with fall speed > LANDING_DUST_SPEED: burstAt(dust, feet x, y, z + 0.03)', n: 10, nHeavy: 14 }
   };
