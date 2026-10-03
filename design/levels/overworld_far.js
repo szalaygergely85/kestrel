@@ -38,7 +38,24 @@
       valley:  { depth: 22, width: 160 },
       ridge:   { height: 30, x0: 700, x1: 150, scale: 300 },
       path:    { halfWidth: 3.0, points: [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]] },
-      forest:  { scale: 280, octaves: 3, threshold: 0.55, maxSlope: 0.5, riverClear: 30, pathClear: 12, homeClear: 110, canopy: 10 },
+      forest:  { scale: 280, octaves: 3, threshold: 0.55, maxSlope: 0.5, riverClear: 30, pathClear: 12, homeClear: 110, canopy: 10,
+                 // ME-06c (architecture.md 37.2 item 7): real trees in the near band (realTrees: renderer=mesh + physics=mesh).
+                 // Models = design/models/forest_trees.js (load after sb_objects.js). trunkR / trunkH are MEASURED there
+                 // (ASSETS.forestTrees.variants; preview/forest.html checks these literals against it). trunkR = inscribed
+                 // radius of the 8-gon prism (circumradius = trunkR / cos 22.5). Gap rule (item 4):
+                 // cellM - 2 * jitter = 3.5 >= 2 * (0.95 / 0.9239) + 1.2 = 3.26 (largest = forestOakLarge).
+                 // cellM 6.5 (not 6): the large oak's chunky voxel trunk needs trunkR 0.95.
+                 trees: {
+                   seed: 7349, cellM: 6.5, jitter: 1.5, fill: 0.72, maxTrees: 1500, lodCells: 6,
+                   species: [
+                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.70, trunkH: 3.40 },   //  9.00 m
+                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.95, trunkH: 4.59 },   // 12.15 m
+                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.63, trunkH: 4.32 },   //  8.40 m
+                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.84, trunkH: 5.76 },   // 11.20 m
+                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.59, trunkH: 2.60 },   //  9.62 m
+                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.81, trunkH: 3.60 }    // 13.32 m
+                   ]
+                 } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },
       slopeEps: 2.0                                   // m: typeAt slope = central difference of heightAt at +-2 m
     },
