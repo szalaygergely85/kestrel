@@ -73,8 +73,13 @@ function defineAllPresets(p) {
   applyPropEmitters(world);
   const list = handle.data.components.emitters;
   ok('applyPropEmitters adds components.emitters', Array.isArray(list) && list.length === 2);
-  ok('flame then smoke, both on', list[0].preset === 'flame' && list[1].preset === 'smoke' && list[0].on && list[1].on);
-  ok('smoke offset.up > flame offset.up (starts above the tongue tip)', list[1].offset.up > list[0].offset.up);
+  ok('embers then smoke, both on', list[0].preset === 'embers' && list[1].preset === 'smoke' && list[0].on && list[1].on);
+  ok('embers and smoke start above the fire body', list[0].offset.up === 1.0 && list[1].offset.up === 1.5);
+  const fire = world.get('tower.burnerFire');
+  ok('burnerFire loads at the grate without collision', !!fire && fire.data.transform.x === handle.data.transform.x && fire.data.transform.y === handle.data.transform.y && fire.data.transform.z === 1.05 && !fire.data.components.body);
+  const model = assets.model('burnerFire');
+  ok('burnerFire resolves the animated metre-high body', model.world.h === 1.0 && model.world.w === 0.7 && model.animations.burn.frames.length === 8);
+  ok('burnerFire content selects burn animation', fire.data.components.sprite.model === 'burnerFire' && fire.data.components.sprite.anim === 'burn' && fire.data.components.sprite.loop);
   ok('the old burnerFlame billboard prop is gone (removed, not hidden)', !world.get('tower.burnerFlame'));
 }
 {
@@ -105,7 +110,7 @@ function defineAllPresets(p) {
   ee.sync();
   ok('entityEmitters discovers both burner emitters with no engine change', ee.count === 2, ee.count);
   for (let i = 0; i < 5; i++) particles.step();
-  ok('the flame emitter is live (spawning) after a few steps', particles.stats.spawned > 0, particles.stats.spawned);
+  ok('the embers emitter is live (spawning) after a few steps', particles.stats.spawned > 0, particles.stats.spawned);
   ee.dispose();
 }
 

@@ -11,7 +11,7 @@ The full project rules are in **`CLAUDE.md`**; read it first. The rules below ar
 
 ## Git
 - Before starting an item and before pushing: `git fetch origin && git merge origin/master` into `pc-b`. Also check `git log origin/pc-a` so you never redo PC-A work.
-- **One commit per finished item** (code + tests + its `docs/backlog.md` row update together), then push `pc-b`. Commit messages start with the story id, e.g. `US-078d: ...`.
+- **One commit per finished item** (code + tests + its `docs/backlog.md` row update together), then immediately push to `origin/pc-b` before starting the next item. Do not batch finished items or wait for the owner to remind you to push. Commit messages start with the story id, e.g. `US-078d: ...`.
 - Never `git stash`, `git reset`, `git checkout -- <file>`, force-push or rewrite pushed history. Never commit to `master`: PC-A merges `pc-b` into `master`.
 - Never commit third-party assets unless they're listed as allowed in `THIRD_PARTY_NOTICES.md`.
 
