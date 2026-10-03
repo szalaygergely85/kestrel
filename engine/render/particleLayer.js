@@ -9,7 +9,8 @@
 // per cell - 500-2048 particles there would blow the per-cell budget; see
 // the architecture note's "Reason").
 //
-// 1 particle = 1 cell (a glyph); bigger puffs are more particles (designer).
+// 1 particle = 1 cell by default; an emitter def `sizeM` (world diameter, m) grows the footprint with
+// proximity to 1..3 x 1..3 cells (odd sizes centred, 2 -> anchor + right/down). Same glyph/colour/depth rule per cell.
 //
 // `build()` is called once per rendered frame, after `engine.particles.step()`:
 //   1. clears the cells touched LAST frame (tracks which rows that wiped);
@@ -151,20 +152,24 @@ export function createParticleLayer() {
         const glyphBase = d * MAX_RAMP;
         const code = defGlyphs[glyphBase + ri];
         if (code === 32) continue; // ' ' = invisible step
-        if (!projectSprite(cb, cam, px[i], py[i], pz[i], 0, _ps)) continue;
+        const sizeM = defRec[o + D.SIZE_M];
+        // sizeM > 0: worldH = sizeM makes rowsOnScreen the projected diameter in rows (aspect baked into planeDistY).
+        if (!projectSprite(cb, cam, px[i], py[i], pz[i], sizeM, _ps)) continue;
         // Compare at layer (f32) precision, like overlay's `put` - so two
         // particles whose f64 depths differ only below f32 precision are a
         // real tie (lower slot wins), not an arbitrary float64 ordering.
         const depth = Math.fround(_ps.depth);
         const c = Math.floor(_ps.colCenter), r = Math.floor(_ps.feetRow);
-        if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
-        const idx = r * cols + c;
-        const cur = partZ[idx];
-        if (cur !== 0) {
-          if (!(depth < cur)) continue; // strict: the lower slot (already written) wins a tie
-        } else {
-          touched[nTouched++] = idx;
+        // Footprint in cells (odd sizes centred, 2 -> anchor + right/down), clamped 1..3.
+        let nx = 1, ny = 1;
+        if (sizeM > 0) {
+          nx = Math.round(sizeM * cols / (2 * cb.tanHalfHFov * _ps.depth));
+          ny = Math.round(_ps.rowsOnScreen);
+          nx = nx < 1 ? 1 : nx > 3 ? 3 : nx;
+          ny = ny < 1 ? 1 : ny > 3 ? 3 : ny;
         }
+        const x0 = nx === 3 ? c - 1 : c, y0 = ny === 3 ? r - 1 : r;
+        if (x0 >= cols || x0 + nx <= 0 || y0 >= rows || y0 + ny <= 0) continue;
 
         const colorBase = (d * MAX_RAMP + ri) * 3;
         let rr = defColors[colorBase], gg = defColors[colorBase + 1], bb = defColors[colorBase + 2];
@@ -179,14 +184,26 @@ export function createParticleLayer() {
           rr *= mr; gg *= mg; bb *= mb;
           if (f > 0) { rr += (_fog3[0] - rr) * f; gg += (_fog3[1] - gg) * f; bb += (_fog3[2] - bb) * f; }
         }
-        const o4 = idx * 4;
-        part[o4] = toByte(rr); part[o4 + 1] = toByte(gg); part[o4 + 2] = toByte(bb);
-        part[o4 + 3] = code < 32 || code > 126 ? 0 : code - 32; // CellBuffer glyphIdx convention (printable ASCII only)
-        partZ[idx] = depth;
-
-        const row = r;
-        if (row < minRow) minRow = row;
-        if (row > maxRow) maxRow = row;
+        const br = toByte(rr), bg = toByte(gg), bbb = toByte(bb);
+        const gl = code < 32 || code > 126 ? 0 : code - 32; // CellBuffer glyphIdx convention (printable ASCII only)
+        for (let yy = y0; yy < y0 + ny; yy++) {
+          if (yy < 0 || yy >= rows) continue;
+          for (let xx = x0; xx < x0 + nx; xx++) {
+            if (xx < 0 || xx >= cols) continue;
+            const idx = yy * cols + xx;
+            const cur = partZ[idx];
+            if (cur !== 0) {
+              if (!(depth < cur)) continue; // strict: the lower slot (already written) wins a tie
+            } else {
+              touched[nTouched++] = idx;
+            }
+            const o4 = idx * 4;
+            part[o4] = br; part[o4 + 1] = bg; part[o4 + 2] = bbb; part[o4 + 3] = gl;
+            partZ[idx] = depth;
+            if (yy < minRow) minRow = yy;
+            if (yy > maxRow) maxRow = yy;
+          }
+        }
       }
       layer.minRow = minRow; layer.maxRow = maxRow;
       layer.stats.cells = nTouched;
