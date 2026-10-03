@@ -1766,7 +1766,8 @@ export class GpuCellPipeline {
     if (world && world.cloths && world.cloths.count > 0) addCloths(list, world.cloths, this._meshFrustumPlanes, this._table ? this._table.idFor : undefined);
     list.cull(this._meshFrustumPlanes);
     this._rasterTerrainSet = terrainMeshSet;
-    // US-078a: the view-model layer's own (never culled) list, null when hidden / pitched.
+    // US-078a: the view-model layer's own (never culled) list, null only when no model is bound (BUG-VM-001 fix:
+    // draws under a pitched camera too, since that's the mesh renderer's own default first-person mode).
     this._vmList = this._viewModel ? this._viewModel.buildList(cam, this._pitched) : null;
     // US-055a2a (35.3): which water regions draw this frame (<= 8; none = the pass is skipped, nothing allocated).
     selectWater(world, cam, this._meshFrustumPlanes, this._waterSel);

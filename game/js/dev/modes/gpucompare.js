@@ -406,6 +406,10 @@ function buildCompareRuns(ctx) {
   // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
   // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).
   // `resetInstances` hides the layer before every pose; `before` shows it.
+  // These poses run under the SHEAR camera (the auto `projection: 'shear'` fill below, since none sets
+  // `pitchedDefault`) - they never exercised the mesh renderer's own DEFAULT first-person camera (RE-02b/D-029's
+  // "pitched" projection), which is exactly how BUG-VM-001 (the sword never drawing in normal play) got through
+  // 53/53 mesh poses: the gate that hid the view model under a pitched camera was never hit by any pose here.
   if (globalThis.ASSETS && globalThis.ASSETS.viewModels && globalThis.ASSETS.viewModels.sword && compareVoxelPool.models.has('swordHeld')) {
     const vmLayer = engine.viewModel;
     const vmH = vmLayer.load('sword', globalThis.ASSETS.viewModels.sword, compareVoxelPool);
@@ -415,6 +419,17 @@ function buildCompareRuns(ctx) {
           cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: pitch }, real: true, meshOnly: true, needK8: true,
           before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, clip), tMs, false); } });
       }
+    }
+    // BUG-VM-001 (architect decision 2026-10-03, item 5): the real regression test - the mesh renderer's own
+    // DEFAULT first-person camera (`pitchedDefault: true`, no `cam.projection` override -> `resolveProjection`
+    // falls to 'pitched' for renderer === 'mesh', same as `game/js/main.js`'s unmodified `cam`). `vmAssert: true`
+    // asserts `engine.viewModel.stats.items > 0` on BOTH the GPU twin and the JS/mesh twin separately (captured
+    // right after each twin runs, below) - not just that the two twins agree (agreeing on "both draw nothing"
+    // is exactly the vacuous pass that let this bug ship).
+    for (const pitch of [0, 20]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: viewModel rest pitch ${pitch} PITCHED CAMERA (BUG-VM-001, held sword, crash room)`,
+        cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: pitch }, real: true, meshOnly: true, needK8: true, pitchedDefault: true, vmAssert: true,
+        before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, 'idle'), 0, false); } });
     }
   }
 
@@ -556,7 +571,7 @@ function runGpuCompareDdaMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -606,7 +621,11 @@ function runGpuCompareDdaMode(ctx) {
     renderWorld(fbCompare, world, cam);
     gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
     engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass composites inside present()
-    rt.present();
+    rt.present(); // the GPU twin's actual raster work (rt's registered cell-pass hook -> `_hook` -> `_prepRaster`'s
+    // `buildList` call) runs INSIDE this call, not inside `gpuPipeline.frame()` above (which only stashes cam/world
+    // refs) - `engine.viewModel.stats` is ONE shared object both twins write through, so this must be captured
+    // right here, after `present()`, before the JS/mesh twin below overwrites it (BUG-VM-001 item 5).
+    const vmItemsGpu = engine.viewModel ? engine.viewModel.stats.items : 0;
     const rb = rt.readbackPresent();
     sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
     const gpuFg = rb.fg, gpuBg = rb.bg;
@@ -626,6 +645,9 @@ function runGpuCompareDdaMode(ctx) {
     rt.gpuActive = false;
     fbCompare.gpuDda = false;
     renderWorld(fbCompare, world, cam);
+    // BUG-VM-001 (item 5): the JS/mesh twin's own `buildList` call (compositor.js's `renderWorldMesh`), right
+    // after `renderWorld` above runs it - before anything else touches `engine.viewModel.stats`.
+    const vmItemsJs = engine.viewModel ? engine.viewModel.stats.items : 0;
     drawSprites(fbCompare, sprites.pool, engine.particleLayer);
     if (fbCompare.fadeLut && typeof fbCompare.sceneFade === 'number') {
       clearMaskForSceneFade(fbCompare.rt);
@@ -681,9 +703,16 @@ function runGpuCompareDdaMode(ctx) {
       instNote = `[drawn ${st.instances} culled ${st.instancesCulled} lod1 ${st.instancesLod1}]`;
       console.log(`[gpucompare] instances ${poseName}: drawn=${st.instances} culled=${st.instancesCulled} lod1=${st.instancesLod1} total=${instAssert.total} ${instOk ? 'OK' : 'FAIL'}`);
     }
-    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk;
+    // BUG-VM-001 (item 5): the real visibility regression test - both twins must have built a non-empty view-model
+    // draw list for this pitched pose (not just "both agree", which is also true when both wrongly draw nothing).
+    let vmOk = true;
+    if (vmAssert) {
+      vmOk = vmItemsGpu > 0 && vmItemsJs > 0;
+      console.log(`[gpucompare] viewModel ${poseName}: itemsGpu=${vmItemsGpu} itemsJs=${vmItemsJs} ${vmOk ? 'OK' : 'FAIL'}`);
+    }
+    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk;
     overallOk = overallOk && ok;
-    rowsOut.push({ pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null });
+    rowsOut.push({ pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
   overallOk = overallOk && sampledOwnTextures;

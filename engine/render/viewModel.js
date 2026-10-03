@@ -37,7 +37,7 @@ const KEY_STRIDE = 7; // t, px, py, pz, rx, ry, rz
  * @property {(phase:number, amount:number)=>void} setBob   def.bob numbers; phase = eyeFeel bobPhase, amount 0..1
  * @property {(h:number, clip:number, tMs:number, mount:number, out3:Float64Array)=>Float64Array} mountEye   pure: eye-space mount at a clip time (no bob)
  * @property {(cam:Object, pe:ArrayLike<number>, out3:Float64Array)=>Float64Array} eyeToWorld
- * @property {(cam:Object, pitched:boolean)=>(DrawList|null)} buildList   the list both twins draw; null when hidden / pitched
+ * @property {(cam:Object, pitched:boolean)=>(DrawList|null)} buildList   the list both twins draw; null only when no model is bound (hidden - e.g. before the sword is taken); draws under a pitched camera too since RE-02b/D-029 (BUG-VM-001)
  * @property {{visible:boolean, items:number}} stats
  */
 
@@ -83,6 +83,8 @@ class ViewModelLayerImpl {
     this._R = new Float64Array(9);
     this._E = new Float64Array(9);
     this._e = new Float64Array(3);
+    this._pitched = false; // latched once per buildList() call; eyeToWorld/mountEye's trail path reads this
+    // so the trail and the model agree on the eye->world convention every frame (BUG-VM-001).
   }
 
   load(key, def, pool) {
@@ -221,19 +223,36 @@ class ViewModelLayerImpl {
     return out3;
   }
 
-  /** The eye -> world affine map (see the header): fills `Aw` (3x3 row-major) for `cam`. */
-  _eyeMap(cam, Aw) {
+  /**
+   * The eye -> world affine map (see the header): fills `Aw` (3x3 row-major) for `cam`.
+   * `pitched` false (default/RTS shear camera, RE-02a's "shear" projection): unchanged shear math - the
+   * d*tanPitch term cancels the first-person pitch shear so the view model keeps its screen place at any pitch.
+   * `pitched` true (RE-02b/D-029's rotating mesh-pitched camera, the shipped default first-person mode): a true
+   * yaw*pitch rotation instead - a shear doesn't rotate the view model's own geometry with pitch, it would swim
+   * as the player looks up/down (BUG-VM-001, architect decision 2026-10-03).
+   */
+  _eyeMap(cam, Aw, pitched) {
     const yaw = (cam.yawDeg * Math.PI) / 180;
     const s = Math.sin(yaw), c = Math.cos(yaw);
+    if (pitched) {
+      const pitchRad = (cam.pitchDeg * Math.PI) / 180;
+      const sp = Math.sin(pitchRad), cp = Math.cos(pitchRad);
+      Aw[0] = c; Aw[1] = -s * cp; Aw[2] = -s * sp;
+      Aw[3] = s; Aw[4] = c * cp; Aw[5] = c * sp;
+      Aw[6] = 0; Aw[7] = -sp; Aw[8] = cp;
+      return;
+    }
     const tp = Math.tan((cam.pitchDeg * Math.PI) / 180);
     Aw[0] = c; Aw[1] = -s; Aw[2] = 0;
     Aw[3] = s; Aw[4] = c; Aw[5] = 0;
     Aw[6] = 0; Aw[7] = -tp; Aw[8] = 1;
   }
 
+  /** Uses the layer's own latched `this._pitched` (set once per frame by `buildList`) so the trail (this + `mountEye`,
+   * called from `swordView.js`'s `drawTrail`) and the model (`buildList`) agree on the same eye->world convention. */
   eyeToWorld(cam, pe, out3) {
     const Aw = this._Aw;
-    this._eyeMap(cam, Aw);
+    this._eyeMap(cam, Aw, this._pitched);
     const x = pe[0], y = pe[1], z = pe[2];
     out3[0] = cam.x + Aw[0] * x + Aw[1] * y + Aw[2] * z;
     out3[1] = cam.y + Aw[3] * x + Aw[4] * y + Aw[5] * z;
@@ -244,10 +263,15 @@ class ViewModelLayerImpl {
   buildList(cam, pitched) {
     const list = this.list;
     list.begin();
-    if (this._h < 0 || pitched || cam.projection === 'pitched') { this.stats.items = 0; return null; }
+    // Latch once per call (not only on the taken branch): `eyeToWorld`/the trail read `this._pitched` every
+    // frame regardless of whether the model itself is currently shown (BUG-VM-001 architect decision).
+    this._pitched = !!pitched;
+    // Only gate on "no model bound" (nothing to draw, e.g. before the sword is picked up) - the pitched camera
+    // is the mesh renderer's own default first-person mode since RE-02b/D-029, not a reason to hide the layer.
+    if (this._h < 0) { this.stats.items = 0; return null; }
     const d = this._defs[this._h];
     const Aw = this._Aw, R = this._R, E = this._E, e = this._e, p = this._pose;
-    this._eyeMap(cam, Aw);
+    this._eyeMap(cam, Aw, this._pitched);
     p.set(this._last);
     // walk bob: z +- bobZ sin(phase), x +- bobX sin(phase/2), roll (ry) +- bobRoll sin(phase/2); scaled by amount
     const amt = this._bobAmount;

@@ -119,10 +119,54 @@ function worldTipFromList(list) {
   }
   ok('buildList part matrices carry the tip mount to eyeToWorld(mountEye(tip)) within 1e-5 m (float32 matrices)', maxErr < 1e-5, `maxErr=${maxErr}`);
   vm.show(h, idle, 0, false);
-  ok('buildList: pitched frame -> layer off (null)', vm.buildList(cam, true) === null);
-  ok('buildList: cam.projection pitched -> null', vm.buildList({ ...cam, projection: 'pitched' }, false) === null);
+  // BUG-VM-001: the pitched camera is the mesh renderer's own default first-person mode (RE-02b/D-029) - the
+  // view model must still draw under it, not just under the old shear/RTS camera.
+  const pitchedList = vm.buildList(cam, true);
+  ok('buildList: pitched frame -> non-null with items (BUG-VM-001)', pitchedList !== null && pitchedList.count === 1 && vm.stats.items === 1);
+  const unpitchedList = vm.buildList({ ...cam, projection: 'pitched' }, false);
+  ok('buildList: cam.projection alone no longer gates - only `pitched` arg / no model bound matter', unpitchedList !== null && unpitchedList.count === 1);
   vm.hide();
   ok('buildList: hidden -> null, stats.visible false', vm.buildList(cam, false) === null && vm.stats.visible === false);
+  ok('buildList: hidden + pitched -> still null (no model bound is the only gate)', vm.buildList(cam, true) === null);
+}
+
+// ---- pitched rotation map vs the shear map (small-angle convergence) -------------------------------------------
+// NOTE (flagged for architect re-review, BUG-VM-001 item 3): the architect's note asked for "the new pitched
+// rotation matrix equals the old shear matrix within 1e-3" at pitchDeg 0 and +-5. At pitchDeg=0 the two maps are
+// IDENTICAL (sp=0, cp=1, tp=0 - checked below, exact). At +-5 deg they are NOT within 1e-3 elementwise: the shear
+// map has no y<->z coupling at all (Aw[5] == 0 always), while the true rotation's Aw[5] = c*sin(pitchRad) - a
+// FIRST-order-in-pitch term (~0.087 at yaw=0, pitch=5deg), not a small-angle residual. That is expected/correct
+// (it's exactly why the shear was wrong for a rotating camera - no amount of "small angle" shrinks a first-order
+// difference to 1e-3 at 5 degrees). The two maps provably converge only as pitch -> 0 (checked below down to a
+// tenth of a degree). Implemented here: (1) exact equality at pitch=0 (1e-9), (2) the +-5 deg case checked against
+// an empirically-derived bound (~0.09, i.e. "same ballpark", not "1e-3") instead of the literal number, and (3) a
+// convergence check at a much smaller pitch (0.1 deg) where the difference IS within 1e-3, demonstrating the two
+// conventions agree in the small-angle limit as intended. Flagging the literal "1e-3 at +-5deg" instruction as
+// unachievable by construction - needs an architect decision on the intended metric/tolerance.
+{
+  const Aw = new Float64Array(9);
+  function eyeMapOf(pitched, pitchDeg, yawDeg) {
+    const c2 = { x: 0, y: 0, z: 0, yawDeg, pitchDeg };
+    vm._eyeMap(c2, Aw, pitched);
+    return Array.from(Aw);
+  }
+  const maxAbsDiff = (a, b) => { let m = 0; for (let i = 0; i < 9; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
+  {
+    const shear = eyeMapOf(false, 0, 37), rot = eyeMapOf(true, 0, 37);
+    const d = maxAbsDiff(shear, rot);
+    ok('pitched rotation map == shear map at pitchDeg=0 (exact, any yaw)', d < 1e-9, `maxAbsDiff=${d}`);
+  }
+  for (const pitchDeg of [5, -5]) {
+    const shear = eyeMapOf(false, pitchDeg, 0), rot = eyeMapOf(true, pitchDeg, 0);
+    const d = maxAbsDiff(shear, rot);
+    // see the NOTE above: 1e-3 is not achievable here by construction; 0.09 bounds the expected first-order gap.
+    ok(`pitched rotation map stays in the same ballpark as the shear map at pitchDeg=${pitchDeg} (< 0.09, not the literal 1e-3 - see NOTE)`, d < 0.09, `maxAbsDiff=${d}`);
+  }
+  for (const pitchDeg of [0.05, -0.05]) {
+    const shear = eyeMapOf(false, pitchDeg, 0), rot = eyeMapOf(true, pitchDeg, 0);
+    const d = maxAbsDiff(shear, rot);
+    ok(`small-angle convergence: rotation map -> shear map within 1e-3 at pitchDeg=${pitchDeg}`, d < 1e-3, `maxAbsDiff=${d}`);
+  }
 }
 
 // raster: tip lands within 1 cell of the projected mount; the blade overdraws a wall 0.2 m ahead
