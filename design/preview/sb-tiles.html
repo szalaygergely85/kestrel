@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - SB tiles (PC-B QUEUE 13 item 7, US-145): 19 StickyBizcuit stonewall/village tiles</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1200px; }
+  .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:30px; display:inline-block; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : SB tiles (PC-B QUEUE 13 item 7, US-145) : 14 stonewall + 5 village tiles from the StickyBizcuit pack</h1>
+<div class="note">
+  Sources: <code>design/models/sb_stonewall.js</code> + <code>design/models/sb_village.js</code> (each file's own
+  header comment explains the hue/brightness auto-bucketing used for their material maps - these tiles have far
+  more per-voxel AO-shading colours than this project has flat materials, so colours were bucketed, not hand-picked
+  one by one; not a hue mismatch, a consolidation). All 16x16x16 @ 0.0625 m/cell (1 m tile footprint), except
+  sbStnTreeGrnd (16x16x24, meshOnly). <b>Rendering uses the engine oracle</b>: <code>packVoxelModel</code>,
+  <code>computeVoxelPose</code> and <code>marchVoxelRay</code> from <code>engine/voxel/</code>.
+  <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/sb-tiles.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>azimuth <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elevation <input type="range" id="el" min="-20" max="85" step="1" value="35"><span class="val" id="elV"></span></label>
+  <label>intensity <input type="range" id="int" min="0" max="1.5" step="0.01" value="0.9"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1"><span class="val" id="ambV"></span></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<div id="groups"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/sb_stonewall.js"></script>
+<script src="../models/sb_village.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__vpOK) document.getElementById('fatal').textContent =
+      'Engine voxel modules did not load. This page must be served over http (ES modules): python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose, FORWARD } from '../../engine/voxel/voxelPose.js';
+import * as VM from '../../engine/voxel/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__vpOK = true;
+const A = window.ASSETS, P = A.palette, MODELS = A.voxelModels, U = P.util, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const NAMES = ['sbFG', 'sbFG2', 'sbFrstGrass', 'sbFrstGrassSand', 'sbFrstGrassSandCnr', 'sbMoss', 'sbStnFlr',
+  'sbStnFlrGrss', 'sbStnWall', 'sbStnWallBrkn', 'sbStnWallRbl', 'sbStnCnr', 'sbStnPlr', 'sbStnTreeGrnd',
+  'sbVillWall', 'sbVillWallPlain', 'sbVillCornerL', 'sbVillCornerR', 'sbChimney'];
+
+const ctl = {};
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2); $('ambV').textContent = ctl.amb.toFixed(2);
+}
+document.querySelectorAll('.controls input').forEach((el) => el.addEventListener('input', readCtl));
+readCtl();
+
+const matKeys = [];
+function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
+const packed = {}, errs = {};
+const checks = $('checks'); checks.innerHTML = '';
+for (const n of NAMES) {
+  const def = MODELS[n];
+  if (!def) { errs[n] = 'missing from ASSETS.voxelModels'; continue; }
+  try { packed[n] = packVoxelModel(def.voxel, matIdFor); }
+  catch (e) { errs[n] = String(e.message || e); }
+}
+for (const n of NAMES) {
+  const d = document.createElement('div');
+  if (errs[n]) { d.className = 'fail'; d.textContent = n + ': FAIL - ' + errs[n]; }
+  else { const pm = packed[n]; d.className = 'info'; d.textContent = n + ': OK - ' + pm.sx + 'x' + pm.sy + 'x' + pm.sz + ' voxels @ ' + pm.cellM + ' m/cell, ' + pm.partCount + ' part(s)'; }
+  checks.appendChild(d);
+}
+
+function posedInstance(name) {
+  const inst = { model: packed[name], x: 0, y: 0, z: 0, yawDeg: 0, clip: 0, frame: 0, tMs: 0 };
+  inst.pose = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+  computeVoxelPose(packed[name], inst, inst.pose);
+  inst.fwd = Float64Array.from(FORWARD);
+  return inst;
+}
+function modelBounds(name) {
+  const pm = packed[name], cm = pm.cellM, a = pm.anchor;
+  return { x0: -a[0] * cm, x1: (pm.sx - a[0]) * cm, y0: -a[1] * cm, y1: (pm.sy - a[1]) * cm, z0: -a[2] * cm, z1: (pm.sz - a[2]) * cm };
+}
+
+const HIT = new Float64Array(8), NL = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+  return o;
+}
+const RES = { k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0 };
+function trace(inst, pm, ox, oy, oz, dx, dy, dz) {
+  let best = Infinity, hit = false;
+  for (let k = 0; k < pm.partCount; k++) {
+    if (VM.marchVoxelRay(pm, k, inst.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+      best = HIT[0]; hit = true; RES.k = k; RES.face = HIT[4]; RES.lx = HIT[1]; RES.ly = HIT[2]; RES.lz = HIT[3]; RES.mat = VM.LAST_MAT_LOCAL;
+    }
+  }
+  RES.t = best;
+  return hit;
+}
+const Lacc = [0, 0, 0], SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+function shadeHit(pm, ox, oy, oz, dx, dy, dz, dist, out) {
+  const t = RES.t, cm = pm.cellM, A9 = packed.__inst.pose, b = RES.k * PART_STRIDE;
+  faceNormal(RES.face, NL);
+  let nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+  let ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+  let nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+  const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+  const mat = P.materials[matKeys[pm.matIds[RES.mat] - 1]] || P.materials.stone;
+  let u, v;
+  if (RES.face === FACE_E || RES.face === FACE_W) { u = RES.ly * cm; v = RES.lz * cm; }
+  else if (RES.face === FACE_N || RES.face === FACE_S) { u = RES.lx * cm; v = RES.lz * cm; }
+  else { u = RES.lx * cm; v = RES.ly * cm; }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.12 * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, 'sun', ctl.int * ndl);
+  U.shade(mat, Lacc, u, v, dist, out, { fog: null });
+}
+
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+
+const views = [];
+function buildGroups() {
+  const host = $('groups');
+  for (const name of NAMES) {
+    if (!packed[name]) continue;
+    const pm = packed[name], bb = modelBounds(name);
+    const center = [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2, (bb.z0 + bb.z1) / 2];
+    const radius = 0.5 * Math.hypot(bb.x1 - bb.x0, bb.y1 - bb.y0, bb.z1 - bb.z0) || 0.5;
+    const sec = document.createElement('div');
+    const def = MODELS[name];
+    sec.innerHTML = '<h2>' + name + '</h2><div class="note">' + def.desc + '<br>' + def.voxel.size.join(' x ') + ' voxels @ ' + def.voxel.cellM +
+      ' m = ' + def.voxel.size.map((v) => (v * def.voxel.cellM).toFixed(2)).join(' x ') + ' m.</div>';
+    const row = document.createElement('div'); row.className = 'row';
+    const rows = 40, grid = makeCanvas(rows * 2, rows, 7, 14);
+    const orbit = document.createElement('div');
+    orbit.innerHTML = '<div class="controls" style="position:static"><label>orbit yaw <input type="range" min="-180" max="180" value="-30" step="1"></label>' +
+                      '<label>pitch <input type="range" min="-10" max="80" value="20" step="1"></label><span class="val"></span></div>';
+    const [oy, op] = orbit.querySelectorAll('input'), ov = orbit.querySelector('.val');
+    const view = { grid, name, pm, inst: posedInstance(name) };
+    const upd = () => { ov.textContent = 'yaw ' + oy.value + ' / pitch ' + op.value; view.cam = orthoCam(center, +oy.value, +op.value, rows * 2, rows, radius * 2.2 / rows); };
+    oy.oninput = upd; op.oninput = upd; upd();
+    orbit.appendChild(grid.cv);
+    row.appendChild(orbit); sec.appendChild(row); host.appendChild(sec); views.push(view);
+  }
+}
+buildGroups();
+
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view) {
+  const { ctx, cols, rows, cw, ch } = view.grid, cam = view.cam, pm = view.pm;
+  packed.__inst = view.inst;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    cam.ray(c, r, Ov, Dv);
+    const hit = trace(view.inst, pm, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2]);
+    const x = c * cw, y = r * ch;
+    if (!hit) { ctx.fillStyle = 'rgb(7,8,12)'; ctx.fillRect(x, y, cw + 0.5, ch + 0.5); continue; }
+    shadeHit(pm, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], 3, SH);
+    ctx.fillStyle = 'rgb(' + (SH.bg[0] | 0) + ',' + (SH.bg[1] | 0) + ',' + (SH.bg[2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    if (SH.glyph && SH.glyph !== ' ') {
+      ctx.fillStyle = 'rgb(' + (SH.fg[0] | 0) + ',' + (SH.fg[1] | 0) + ',' + (SH.fg[2] | 0) + ')';
+      ctx.fillText(SH.glyph, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+}
+function loop() { for (const v of views) renderView(v); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
