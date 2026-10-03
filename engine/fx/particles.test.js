@@ -255,6 +255,8 @@ function firstLive(p) { for (let i = 0; i < p.cap; i++) if (p.alive[i]) return i
   ok('ramp > 16', throwsMsg(() => p.defineEmitter('x5', mk({ glyphs: 'abcdefghijklmnopq' })), /"x5".*"glyphs"/));
   ok('bad colour', throwsMsg(() => p.defineEmitter('x6', mk({ colors: [[1, 2, 300]] })), /"x6".*"colors"/));
   ok('wind > 1', throwsMsg(() => p.defineEmitter('x7', mk({ wind: 2 })), /"x7".*"wind"/));
+  ok('sizeM > 1', throwsMsg(() => p.defineEmitter('xs', mk({ sizeM: 2 })), /"xs".*"sizeM"/));
+  ok('sizeM < 0', throwsMsg(() => p.defineEmitter('xt', mk({ sizeM: -1 })), /"xt".*"sizeM"/));
   ok('zero dir', throwsMsg(() => p.defineEmitter('x8', mk({ dir: [0, 0, 0] })), /"x8".*"dir"/));
   const id = p.defineEmitter('ok', mk({ drag: 2, accelZ: 1 }));
   ok('define returns id; same key redefines in place', p.defineEmitter('ok', mk({})) === id && p.defIdOf('ok') === id && p.defIdOf('nope') === -1);

@@ -61,13 +61,13 @@
     // emberHot -> ember -> emberDim -> emberDark. Emissive (fire), slight fog.
     embers: {
       rate: 8, burst: 0,
-      life: [0.8, 1.4], speed: [0.6, 1.2],
+      life: [1.0, 1.8], speed: [0.6, 1.2],
       dir: [0, 0, 1], spreadDeg: 25, box: [0.15, 0.15, 0.05],
       accelZ: 0.4, drag: 1.2, wind: 0.6,
       maxLive: 16, killBelow: null,
-      glyphs:  "**+''..",
-      colors: ['emberHot', 'emberHot', 'ember', 'ember', 'emberDim', 'emberDim', 'emberDark'],
-      emissive: true, emissiveFog: 0.15
+      glyphs:  "**+o+o+o",
+      colors: ['emberHot', 'emberHot', 'flameMid', 'flameMid', 'ember', 'ember', 'emberDim', 'emberDim'],
+      emissive: true, emissiveFog: 0.15, sizeM: 0.08
     },
     // --- smoke: slow, dark, drifting. Buoyant (accelZ +0.6, terminal 0.75 m/s), takes the full wind (wind 1), lives
     // 3-4 s, so it climbs ~2-2.5 m past the burner and leans with any draught. Puffs `O o` near the source, thin
@@ -81,7 +81,7 @@
       glyphs:  "oOo%;:~-'`.",
       colors: ['ashDark', 'ashDark', 'ashDark', 'ironDark', 'ironDark', 'ironDark', 'mortar', 'mortar',
                'cinder', 'scorch', 'scorch'],
-      emissive: false, emissiveFog: 0
+      emissive: false, emissiveFog: 0, sizeM: 0.25
     },
     // --- sparks: the sword-hit burst (burstAt, cone along the hit normal via setEmitterDir; default axis = up).
     // 10 sparks at 2.5-5 m/s in a wide 50 deg cone, real gravity, 0.3-0.4 s: a short bright spray that arcs down.
@@ -94,7 +94,7 @@
       maxLive: 24, killBelow: 1.5,
       glyphs:  "**+*+''.",
       colors: ['white', 'flameCore', 'flameCore', 'flameMid', 'flameOuter', 'ember', 'emberDim', 'emberDark'],
-      emissive: true, emissiveFog: 0.1
+      emissive: true, emissiveFog: 0.1, sizeM: 0.05
     },
     // --- dust: the hard-landing puff at the feet (burstAt). 10 motes in an 80 deg cone around up = mostly a flat
     // ring that skids out 0.5-1.5 m/s and stops fast (drag 3), sinks a little (accelZ -0.4) and dies on the floor
@@ -107,7 +107,7 @@
       maxLive: 16, killBelow: 0.02,
       glyphs:  "o;::,,'.",
       colors: ['ashLight', 'flagWarm', 'flagWarm', 'ash', 'ash', 'flagstone', 'ashDark', 'ashDark'],
-      emissive: false, emissiveFog: 0
+      emissive: false, emissiveFog: 0, sizeM: 0.15
     }
   };
 
