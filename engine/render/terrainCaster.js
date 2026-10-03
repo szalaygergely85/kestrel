@@ -93,6 +93,7 @@ function slab2D(ex, ey, dx, dy, x0, y0, x1, y1, out, outOff) {
 function buildSkips(structures, ex, ey, dx, dy, skips) {
   let n = 0;
   for (let i = 0; i < structures.length && n < MAX_SKIPS; i++) {
+    if (structures[i].kind === 'mesh') continue; // ME-14c1: terrain is not carved under imported meshes
     const b = structures[i].bbox;
     if (slab2D(ex, ey, dx, dy, b.x0, b.y0, b.x1, b.y1, skips, n * 2)) n++;
   }
@@ -306,7 +307,7 @@ function terrainAoAlias(gbuf) {
 export function sunFromWorld(world, palette, out = _sunScratch) {
   const T = palette.timeOfDay[palette.defaultTime];
   let az = 112.5, elev = T.sunElev;
-  const s0 = world.structures[0];
+  const s0 = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
   if (s0 && s0.level && s0.level.def && s0.level.def.sun && s0.level.def.sun.azimuth != null) {
     az = s0.level.def.sun.azimuth; elev = s0.level.def.sun.elevation;
   }

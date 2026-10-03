@@ -48,7 +48,7 @@ function packUStruct(structures, yOffsets) {
  * @param {import('../../world/World.js').World} world
  */
 export function buildWorldTextures(world) {
-  const structures = world.structures.slice(0, MAX_STRUCTS);
+  const structures = world.structures.filter((s) => s.kind !== 'mesh').slice(0, MAX_STRUCTS); // ME-14c1: meshes have no packed grid
   assert(structures.length <= MAX_STRUCTS, `${structures.length} placed structures > ${MAX_STRUCTS}`);
 
   let width = 1, totalHeight = 0;
@@ -123,20 +123,22 @@ export function planFrameUpdate(world, atlas, out) {
   out.rebuildNeeded = false;
 
   const structures = world.structures;
-  for (let i = 0; i < structures.length && i < MAX_STRUCTS; i++) {
+  for (let i = 0, li = -1; i < structures.length && li + 1 < MAX_STRUCTS; i++) {
     const s = structures[i];
+    if (s.kind === 'mesh') continue; // ME-14c1
+    li++;
     const p = s.packed;
-    if (p.version === atlas.versions[i]) continue;
+    if (p.version === atlas.versions[li]) continue;
     // US-007 (14.3 item 3, architect review #1): `updateAnimatedSector` can
     // change a dynamic sector's ceilH/topH enough to move the structure's
     // sun-DDA escape height (`packed.maxH`) without necessarily touching
     // every dirty row's own geometry re-upload below - refresh the
     // `uStructB[i].w` slot (`packUStruct`'s layout) every time `version`
     // moved on, not only through the dirty-row texSubImage2D path.
-    atlas.uStruct[i * 8 + 7] = p.maxH;
+    atlas.uStruct[li * 8 + 7] = p.maxH;
     out.uStructDirty = true; // re-upload uStruct even with no dirty rows
     if (p.dirtyY0 >= 0 && p.dirtyY1 >= p.dirtyY0) {
-      const yOff = atlas.yOffsets[i];
+      const yOff = atlas.yOffsets[li];
       const y0 = yOff + p.dirtyY0, y1 = yOff + p.dirtyY1;
       for (let cy = p.dirtyY0; cy <= p.dirtyY1; cy++) {
         const srcRow = cy * p.w;
@@ -154,7 +156,7 @@ export function planFrameUpdate(world, atlas, out) {
       out.count++;
       p.dirtyY0 = -1; p.dirtyY1 = -1;
     }
-    atlas.versions[i] = p.version;
+    atlas.versions[li] = p.version;
   }
   return out;
 }

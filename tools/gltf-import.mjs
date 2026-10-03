@@ -47,6 +47,7 @@ Options:
   --out <path>        write the .mesh.json here instead of
                       content/meshes/<id>.mesh.json
   --mats <path>       material-name -> palette-key JSON map
+  --uv <planar|source>  UVs: world-metre planar (default) or the file's TEXCOORD_0
   --dry-run           parse and report only; write nothing
 
 Output: content/meshes/<id>.mesh.json (MeshData, meshToJSON shape) plus a
@@ -62,6 +63,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--help' || a === '-h') { args.help = true; continue; }
     if (a === '--mats') { args.mats = argv[++i]; if (!args.mats) throw new Error('--mats needs a path'); continue; }
+    if (a === '--uv') { args.uv = argv[++i]; if (args.uv !== 'planar' && args.uv !== 'source') throw new Error('--uv must be planar or source'); continue; }
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--dry-run') { args.dryRun = true; continue; }
     args._.push(a);
@@ -194,6 +196,7 @@ export async function runCli(argv) {
     opts.buffers = readExternalBuffers(inPath, json);
   }
 
+  if (args.uv) opts.uv = args.uv;
   if (args.mats) opts.mats = JSON.parse(fs.readFileSync(args.mats, 'utf8'));
   const materialKeys = await loadEngineMaterialKeys();
   const { json: meshJson, report } = importGltfBytes(raw, id, opts, materialKeys);

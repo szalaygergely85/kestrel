@@ -2091,6 +2091,7 @@ export class GpuCellPipeline {
     const foot = this._meshStructFoot;
     let structCount = 0;
     for (let i = 0; i < structs.length && structCount < MAX_STRUCTS; i++) {
+      if (structs[i].kind === 'mesh') continue; // ME-14c1
       const b = structs[i].bbox;
       if (!b) continue;
       const o4 = structCount * 4;

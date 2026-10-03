@@ -204,6 +204,7 @@ function renderWorldMesh(fb, world, cam) {
     const structs = world.structures || [];
     let structCount = 0;
     for (let i = 0; i < structs.length && structCount < MAX_STRUCTS; i++) {
+      if (structs[i].kind === 'mesh') continue; // ME-14c1: imported meshes carve no terrain footprint
       const b = structs[i].bbox;
       if (!b) continue;
       const o4 = structCount * 4;
@@ -301,6 +302,7 @@ export function renderWorld(fb, world, cam) {
     let count = 0;
 
     for (let i = 0; i < structs.length; i++) {
+      if (structs[i].kind === 'mesh') continue; // ME-14c1: no sectors (mesh draws via addMeshStructures)
       const d = bboxDist(cam, structs[i].bbox);
       if (d > fogFar) continue; // too far to matter this frame
       if (count < MAX_STRUCTS) {

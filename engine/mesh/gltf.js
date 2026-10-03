@@ -30,26 +30,15 @@
 // so this file assembles the typed arrays itself, in exactly the shape
 // `StaticMeshBuilder.build()` produces (same field types/order), and
 // validates the result with `assertMesh` before returning it.
-import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../render/GBuffer.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, KIND_MESH } from '../render/GBuffer.js';
 import { MESH_VERSION, AUX_STRIDE, FLAT_STRIDE, AO_NONE, packFlat1, assertMesh } from './MeshData.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { DEG2RAD } from '../core/transform.js';
 
 /** @typedef {import('./MeshData.js').MeshData} MeshData */
 
-// 27.4's G-buffer mapping table lists "9 = KIND_MESH (new)" for glTF
-// meshes, but GBuffer.js (engine/render/, out of this story's scope - the
-// task brief explicitly forbids touching engine/render/) does not define
-// it yet; that wiring is phase-3 GPU/rendering work for a later story.
-// DEVIATION (flagged in the handback): KIND_MESH is defined locally here
-// so MeshData.flat[1] can carry the correct kind value today; whichever
-// story first touches engine/render/ for mesh rendering should move this
-// constant to GBuffer.js next to KIND_MODEL and re-export it from here.
-// TODO(ME-14): move this constant into engine/render/GBuffer.js next to
-// KIND_MODEL once ME-14 (content `structures[].mesh` + World wiring) does
-// the real G-buffer rendering integration for glTF meshes - kept local here
-// because ME-13a's scope explicitly excludes engine/render/ touches.
-export const KIND_MESH = 9;
+// KIND_MESH (= 9) lives in engine/render/GBuffer.js (ME-14c1); re-exported here for existing importers.
+export { KIND_MESH };
 
 // Top nibble of the glTF planeId (27.4: `(0xE<<28)|(objectId&0xFF)<<20|groupId`)
 // - distinguishes it from packPlaneId's structSeq-based walls/planes (top 3
@@ -509,7 +498,7 @@ function planarUv(face, x, y, z) {
  * engine materials is a sidecar step (ME-13b), not this function's job.
  * @param {ArrayBuffer|Uint8Array|string} buffer
  * @param {string} id - MeshData id, e.g. `gltf:<file>/<localId>`
- * @param {{buffers?: Uint8Array[]}} [opts] - `buffers[i]`: bytes for
+ * @param {{buffers?: Uint8Array[], uv?: 'planar'|'source'}} [opts] - `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
  *   `json.buffers[i]` when its `uri` is an external file (not a data: URI
  *   and not GLB-embedded) - this module never reads a file itself.
  * @returns {MeshData}
@@ -649,7 +638,7 @@ export function loadGltf(buffer, id, opts = {}) {
     const flat1 = packFlat1(KIND_MESH, face, mi);
     const vn = vertexNormalsAll[t];
     const pts = [tri.p0, tri.p1, tri.p2];
-    const srcUv = tri.uv0 ? [tri.uv0, tri.uv1, tri.uv2] : null;
+    const srcUv = (opts.uv === 'source' && tri.uv0) ? [tri.uv0, tri.uv1, tri.uv2] : null;
 
     for (let c = 0; c < 3; c++) {
       const v = t * 3 + c;

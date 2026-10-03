@@ -16,6 +16,8 @@
 // never allocate. `addStructures`'s near-to-far sort scratch is module-level
 // (literal copy of `compositor.js`'s `renderWorld` insertion sort).
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
+import { resolveMats } from './MeshData.js';
+import { localDirToWorld } from '../core/transform.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
 import { createClothMesh, updateClothMesh } from './clothMesh.js';
@@ -281,6 +283,7 @@ export function addStructures(list, world, cam, cache, fogFarM) {
   const structs = world.structures;
   let count = 0;
   for (let i = 0; i < structs.length; i++) {
+    if (structs[i].kind === 'mesh') continue; // ME-14c1: imported meshes go through addMeshStructures
     const d = bboxDist(cam, structs[i].bbox);
     if (d > fogFarM) continue;
     if (count < MAX_STRUCTS) {
@@ -302,6 +305,101 @@ export function addStructures(list, world, cam, cache, fogFarM) {
     const set = cache.get(s);
     pushMeshItem(list, set.base, s);
     for (let d = 0; d < set.dyn.length; d++) pushMeshItem(list, set.dyn[d].mesh, s);
+  }
+}
+
+// ---- imported glTF mesh placements (ME-14c1, 37.1 items 3-5) ----------------------------------
+export const MAX_MESH_DRAWS = 64;
+
+const _xAx = [0, 0], _yAx = [0, 0];
+/**
+ * Row-major 3x3 (yaw about +Z) + translation, bvh.js's matrix12 layout, for a placed mesh `frame`.
+ * The ONE formula shared by the ME-14b collider (colliders.js) and the draw item.
+ * @param {import('../core/transform.js').Frame} frame
+ * @param {ArrayLike<number> & {[i:number]:number}} out length >= 12
+ */
+export function frameMatrix12(frame, out) {
+  localDirToWorld(frame, 1, 0, _xAx);
+  localDirToWorld(frame, 0, 1, _yAx);
+  out[0] = _xAx[0]; out[1] = _yAx[0]; out[2] = 0;
+  out[3] = _xAx[1]; out[4] = _yAx[1]; out[5] = 0;
+  out[6] = 0; out[7] = 0; out[8] = 1;
+  out[9] = frame.x; out[10] = frame.y; out[11] = frame.z;
+  return out;
+}
+
+/**
+ * Resolved-materials draw copies of registry `MeshData` (which stays unresolved, shared with colliders). Per mesh in a
+ * WeakMap, rebuilt when `idFor` changes. Allocates only on first use.
+ */
+export class MeshDrawCache {
+  constructor() { this._map = new WeakMap(); }
+  /**
+   * @param {import('./MeshData.js').MeshData} mesh registry mesh (`mats`: material name -> palette key)
+   * @param {(key: string) => number} idFor palette key -> material id
+   */
+  get(mesh, idFor) {
+    const hit = this._map.get(mesh);
+    if (hit && hit.idFor === idFor) return hit.copy;
+    const mats = mesh.mats || {};
+    const copy = { ...mesh, flat: mesh.flat.slice(), matsResolved: false };
+    resolveMats(copy, (name) => {
+      const key = mats[name];
+      if (key === undefined) throw new Error(`mesh "${mesh.id}": material "${name}" has no mats entry`);
+      return idFor(key);
+    });
+    this._map.set(mesh, { idFor, copy });
+    return copy;
+  }
+}
+
+const _mOrder = new Int32Array(MAX_MESH_DRAWS);
+const _mDist = new Float64Array(MAX_MESH_DRAWS);
+
+/**
+ * One `DRAW_STATIC` item per placed `kind:'mesh'` structure, nearest `MAX_MESH_DRAWS` within `fogFarM`, near -> far.
+ * planeIdOr = (slot & 0xFF) << 20 (draw order, neighbours outline), objectId = 0xA000 | structureIndex.
+ * @param {DrawList} list
+ * @param {import('../world/World.js').World} world
+ * @param {{x:number,y:number,z:number}} cam
+ * @param {MeshDrawCache} cache
+ * @param {(key: string) => number} idFor
+ * @param {number} fogFarM
+ */
+export function addMeshStructures(list, world, cam, cache, idFor, fogFarM) {
+  const structs = world.structures;
+  let count = 0;
+  for (let i = 0; i < structs.length; i++) {
+    if (structs[i].kind !== 'mesh') continue;
+    const d = bboxDist(cam, structs[i].bbox);
+    if (d > fogFarM) continue;
+    if (count < MAX_MESH_DRAWS) {
+      _mOrder[count] = i; _mDist[count] = d; count++;
+    } else {
+      let worst = 0, worstD = _mDist[0];
+      for (let k = 1; k < MAX_MESH_DRAWS; k++) if (_mDist[k] > worstD) { worstD = _mDist[k]; worst = k; }
+      if (d < worstD) { _mOrder[worst] = i; _mDist[worst] = d; }
+    }
+  }
+  for (let i = 1; i < count; i++) {
+    const oi = _mOrder[i], di = _mDist[i];
+    let j = i - 1;
+    while (j >= 0 && _mDist[j] > di) { _mOrder[j + 1] = _mOrder[j]; _mDist[j + 1] = _mDist[j]; j--; }
+    _mOrder[j + 1] = oi; _mDist[j + 1] = di;
+  }
+  for (let k = 0; k < count; k++) {
+    const si = _mOrder[k];
+    const s = structs[si];
+    const mesh = cache.get(s.mesh, idFor);
+    const item = list.push(mesh, DRAW_STATIC);
+    frameMatrix12(s.frame, item.matrix);
+    item.zBase = s.origin.z;
+    item.planeIdOr = (k & 0xFF) << 20;
+    item.objectId = 0xA000 | si;
+    item.rangeFirst = 0;
+    item.rangeCount = mesh.triCount;
+    const b = s.bbox, a = item.aabb;
+    a[0] = b.x0; a[1] = b.y0; a[2] = b.z0; a[3] = b.x1; a[4] = b.y1; a[5] = b.z1;
   }
 }
 
