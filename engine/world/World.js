@@ -78,6 +78,7 @@ function makeRingHAt(placed) {
 function nearBandKey(w, cx, cy) {
   let k = `${cx},${cy}`;
   for (const p of w.structures) {
+    if (p.kind === 'mesh') continue;
     const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
     k += `|${p.id}:${b.x0},${b.y0},${b.x1},${b.y1},${p.origin.x},${p.origin.y},${p.origin.z},${p.yawSteps}:`; // origin = what ringHAt reads (31 amendment 2)
     const f = (x, y) => { const s = lv.sectorAt(x, y); k += (s ? s.floorH : 'n') + ','; };
@@ -306,8 +307,10 @@ export class World {
     w.waterDef = structuredClone(def.water || []);
 
     for (const s of def.structures || []) {
-      const placed = w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
-      if (s.dynamics) {
+      const placed = s.mesh
+        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0)
+        : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
+      if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
           w._restoreDynamics(placed, tag, s.dynamics[tag]);
         }
@@ -337,7 +340,7 @@ export class World {
     if (w.terrain && w.terrain.recipe.structures) {
       for (const rs of w.terrain.recipe.structures) {
         const placed = w.structures.find((p) => p.id === rs.id);
-        if (placed) {
+        if (placed && placed.kind !== 'mesh') {
           rs.ringHAt = makeRingHAt(placed);
           // CO-2/CO-9: the placement has ONE source (the world file); the recipe
           // no longer carries its own x/y/w/h/ringH copy at all (that literal
@@ -376,7 +379,7 @@ export class World {
     }
 
     if (!w.sun) {
-      const first = w.structures[0];
+      const first = w.structures.find((s) => s.kind !== 'mesh');
       const lsun = first && first.level && first.level.def && first.level.def.sun;
       if (lsun) {
         w.sun = lsun;
@@ -395,6 +398,7 @@ export class World {
     // string concatenation.
     w.interactables = [];
     for (const s of w.structures) {
+      if (s.kind === 'mesh') continue;
       const def = s.level.def;
       for (const it of (def && def.interactables) || []) {
         localToWorld(s.frame, it.x, it.y, it.z, tmpW);
@@ -430,6 +434,7 @@ export class World {
     {
       const savedIds = new Set((def.entities || []).map((ed) => ed.id));
       for (const s of w.structures) {
+        if (s.kind === 'mesh') continue;
         const sdef = s.level.def;
         for (const p of (sdef && sdef.props) || []) {
           if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
@@ -571,7 +576,7 @@ export class World {
       } else if (ed.spawn) {
         const st = w.structures.find((s) => s.id === ed.spawn.structure);
         if (!st) throw new Error(`World.load: entity "${ed.id}" spawn.structure "${ed.spawn.structure}" not placed`);
-        const local = ed.spawn.from === 'start' ? st.level.start : null;
+        const local = ed.spawn.from === 'start' && st.kind !== 'mesh' ? st.level.start : null;
         if (!local) throw new Error(`World.load: entity "${ed.id}" spawn.from "${ed.spawn.from}" not supported`);
         localToWorld(st.frame, local.x, local.y, st.level.floorAt(local.x, local.y) ?? 0, tmpW);
         transform = {
@@ -671,6 +676,26 @@ export class World {
     return placed;
   }
 
+  /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
+  placeMesh(mesh, origin, id, yawDeg = 0) {
+    const frame = makeFrame(origin.x, origin.y, origin.z ?? 0, 0, yawDeg);
+    const bbox = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
+    const b = mesh.bbox;
+    for (let i = 0; i < 8; i++) {
+      localToWorld(frame, b[i & 1 ? 3 : 0], b[i & 2 ? 4 : 1], b[i & 4 ? 5 : 2], tmpW);
+      bbox.x0 = Math.min(bbox.x0, tmpW.x); bbox.x1 = Math.max(bbox.x1, tmpW.x);
+      bbox.y0 = Math.min(bbox.y0, tmpW.y); bbox.y1 = Math.max(bbox.y1, tmpW.y);
+      bbox.z0 = Math.min(bbox.z0, tmpW.z); bbox.z1 = Math.max(bbox.z1, tmpW.z);
+    }
+    const placed = { id: id || `struct_${this.structures.length}`, kind: 'mesh', mesh,
+      origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox };
+    this.structures.push(placed);
+    this.renderVersion++;
+    this.structVersion++;
+    if (this.events) this.events.emit('world:structurePlaced', { id: placed.id, origin: placed.origin });
+    return placed;
+  }
+
   /** Authored `Frame` of a placed structure by id (`null` if unknown). */
   frameOf(id) {
     for (let i = 0; i < this.structures.length; i++) if (this.structures[i].id === id) return this.structures[i].frame;
@@ -684,6 +709,7 @@ export class World {
   structureAt(x, y) {
     for (let i = 0; i < this.structures.length; i++) {
       const s = this.structures[i];
+      if (s.kind === 'mesh') continue;
       const b = s.bbox;
       if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
     }
@@ -900,6 +926,7 @@ export class World {
   /** `{s, ch, sector}` for the structure whose legend has a `dynamic` sector tagged `tag`, or null. Uses the tag Map (US-014). */
   _findDynamic(tag) {
     for (const s of this.structures) {
+      if (s.kind === 'mesh') continue;
       const ch = s.tagMap && s.tagMap.get(tag);
       if (ch !== undefined) return { s, ch, sector: s.level.legend[ch] };
     }
@@ -973,6 +1000,7 @@ export class World {
    * default to `d.t`/`0`, i.e. "at rest here" - old states still load).
    */
   _restoreDynamics(placed, tag, d) {
+    if (placed.kind === 'mesh') return;
     if (typeof d.t !== 'number') return;
     const t = clamp01(d.t);
     this.animateSector(tag, t);
@@ -1135,6 +1163,7 @@ export class World {
  */
 export function stepSectorAnims(world, dtSec) {
   for (const s of world.structures) {
+    if (s.kind === 'mesh') continue;
     if (!s.tagMap || s.tagMap.size === 0) continue;
     for (const tag in s.dynamics) {
       const d = s.dynamics[tag];

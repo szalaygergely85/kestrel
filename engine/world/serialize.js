@@ -53,7 +53,9 @@ export function serialize(world) {
     // every load, same as a structure's `def.triggers`).
     bounds: world.bounds ? { ...world.bounds } : null,
     triggers: structuredClone((world.def && world.def.triggers) || []),
-    structures: world.structures.map((s) => ({
+    structures: world.structures.map((s) => s.kind === 'mesh' ? {
+      id: s.id, mesh: s.mesh.id, origin: { ...s.origin }, yawDeg: s.frame.yawDeg,
+    } : ({
       id: s.id,
       level: s.level.name,
       origin: { x: s.origin.x, y: s.origin.y, z: s.origin.z },
@@ -131,7 +133,7 @@ export function deserialize(state, assets, opts = {}) {
     // what's "current content").
     const currentContentIds = new Set();
     for (const s of state.structures) {
-      if (!assets.has('level', s.level)) continue;
+      if (s.mesh || !assets.has('level', s.level)) continue;
       for (const p of assets.level(s.level).props || []) {
         if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
         if (p.from || p.to) continue;
@@ -176,7 +178,9 @@ export function deserialize(state, assets, opts = {}) {
     bounds: state.bounds || null,
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
-    structures: state.structures.map((s) => ({ id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps })),
+    structures: state.structures.map((s) => s.mesh
+      ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg }
+      : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
       // CO-5 follow-up: `parent` must travel through too - otherwise a
       // restored entity always lands on the `ed.spawn` branch's `null`
