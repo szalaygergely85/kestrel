@@ -15,7 +15,7 @@ import { castModels } from '../voxel/voxelMarch.js';
 // _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
 // mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
-import { DrawList, LevelMeshCache, addStructures, addCloths } from '../mesh/DrawList.js';
+import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
@@ -98,6 +98,8 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   src.fogFarM = sunShadowFogFar(fb.palette, so);
   src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
+  src.meshCache = sharedMeshDrawCache; // ME-14c2 (37.1 item 6)
+  if (fb.matTable) src.matIdFor = strictMatIdFor(fb.matTable);
   shadowWorldZ(world, cache, sunShadowWorldZ);
   const sm = shadowSunMatrix(sun.dir, sunShadowCentreV, so, sunShadowWorldZ, sunShadowMat);
   buildShadowList(sunShadowList, cameraList, world, sm.planes, src);
@@ -109,6 +111,21 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   fb.sunMap = sunMapState;
 }
 
+/** Resolved-materials draw copies of placed glTF meshes (ME-14c2); per mesh, rebuilt when the matTable's idFor changes. */
+const sharedMeshDrawCache = new MeshDrawCache();
+const _strictIdFor = new WeakMap();
+/** matTable.idFor that throws on a key the palette/detail pass does not define (idFor itself invents ids). Stable identity per table. */
+function strictMatIdFor(table) {
+  let f = _strictIdFor.get(table);
+  if (!f) {
+    f = (key) => {
+      if (!table.hasKey(key)) throw new Error(`mesh material: palette key "${key}" is not defined in the palette / detail pass`);
+      return table.idFor(key);
+    };
+    _strictIdFor.set(table, f);
+  }
+  return f;
+}
 function meshLevelMeshCacheFor(world, matTable) {
   let cache = _meshLevelMeshCaches.get(world);
   if (!cache) {
@@ -164,6 +181,8 @@ function renderWorldMesh(fb, world, cam) {
   list.begin();
   const cache = meshLevelMeshCacheFor(world, fb.matTable);
   addStructures(list, world, cam, cache, 2000);
+  // ME-14c2 (37.1 item 7): imported glTF meshes (kind 9), right after the level structures. Needs a palette-bound matTable.
+  if (fb.matTable) addMeshStructures(list, world, cam, sharedMeshDrawCache, strictMatIdFor(fb.matTable), 2000);
 
   let terrainMeshSet = null;
   if (fb.terrainEnabled !== false && world.terrain) {

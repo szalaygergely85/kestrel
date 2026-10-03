@@ -4,7 +4,7 @@
 //
 //   node engine/render/edgePass.test.js
 
-import { GBuffer, KIND_MODEL, KIND_WALL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from './GBuffer.js';
+import { GBuffer, KIND_MODEL, KIND_MESH, FACE_PACKED, KIND_WALL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from './GBuffer.js';
 import { edgePass, RULE_CAP, RULE_SIDE } from './edgePass.js';
 import detailPassMod from '../../design/detail-pass.js';
 import { makeOk } from '../test/assert.js';
@@ -130,6 +130,26 @@ function idx(x, y) { return y * COLS + x; }
   const bgEqual = Buffer.from(off.rt.cells.bg.buffer).equals(Buffer.from(on.rt.cells.bg.buffer));
   ok('wall cells: fg byte-identical whether modelRim is 0.55 or 1 (off)', fgEqual);
   ok('wall cells: bg byte-identical whether modelRim is 0.55 or 1 (off)', bgEqual);
+}
+
+// ---- 5. ME-14c2: kind 9 (KIND_MESH) like a solid rotated part, rim 1 ---------
+{
+  for (const [face, label] of [[FACE_E, 'face E'], [FACE_PACKED, 'face 7']]) {
+    const gbuf = new GBuffer(COLS, ROWS);
+    const depth = new Float32Array(COLS * ROWS).fill(2);
+    for (let y = 0; y < ROWS; y++) { gbuf.kind[idx(1, y)] = KIND_MESH; gbuf.face[idx(1, y)] = face; gbuf.planeId[idx(1, y)] = 1; }
+    const rt = makeRt(); rt.cells.fg.fill(200); rt.cells.bg.fill(150);
+    edgePass(gbuf, depth, rt, DP.edges);
+    ok(`kind-9 ${label} with sky to the left: RULE_SIDE`, gbuf.rule[idx(1, 1)] === RULE_SIDE);
+    const R = DP.edges.rules.side, fi = idx(1, 1) * 4;
+    ok(`kind-9 ${label}: rim 1 (fg = seed * gain, bg untouched)`, rt.cells.fg[fi] === Math.round(Math.min(255, 200 * R.gain)) && rt.cells.bg[fi] === 150);
+  }
+  const gbuf = new GBuffer(COLS, ROWS);
+  const depth = new Float32Array(COLS * ROWS).fill(2);
+  gbuf.kind[idx(1, 1)] = KIND_MESH; gbuf.face[idx(1, 1)] = FACE_U; gbuf.planeId[idx(1, 1)] = 1;
+  gbuf.kind[idx(1, 2)] = KIND_MESH; gbuf.face[idx(1, 2)] = FACE_U; gbuf.planeId[idx(1, 2)] = 1;
+  edgePass(gbuf, depth, makeRt(), DP.edges);
+  ok('kind-9 face U with sky above: RULE_CAP', gbuf.rule[idx(1, 1)] === RULE_CAP);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
