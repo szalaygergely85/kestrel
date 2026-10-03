@@ -5,10 +5,11 @@
 //
 // Per hit cell (dW < rawDepth, sky = Infinity):
 //   a    = sky ? 1 : clamp((rawDepth - dW) / opaqueAt, 0, 1)                      (water path length -> opacity)
-//   rgbW = clamp(mix(shallow, deep, a) * (ambientI + sunI * max(0, sunDir.z) * sunF), 0, 255)   (up normal, terrain `b` formula)
-//   a <  seeThrough: keep the floor glyph, fg = mix(fg, fogged rgbW, a), bg = mix(bg, fogged rgbW * bgK, a)
-//   a >= seeThrough: glyph = ramp[h % n] with h = hashFastU(floor(Px/0.5), floor(Py/0.5), SALT + 31 * floor(t * waveHz)),
-//                    fg = fogged rgbW (h/2^24 > 0.9: mixed halfway to glint first), bg = fogged rgbW * bgK
+//   rgbW = clamp(mix(shallow, deep, column/tintDepth) * (ambientI + sunI * max(0, sunDir.z) * sunF), 0, 255)   (up normal, terrain `b` formula)
+//   a <  seeThrough: keep the floor glyph outside the shore band, fg = mix(fg, fogged rgbW, a), bg = mix(bg, fogged rgbW * bgK, a)
+//   a >= seeThrough: glyph = ramp[h % n], using the rotated, drifting brick hash (36.1b).
+//                    fg mixes halfway to glint with probability glintP; bg uses the un-glinted rgbW * bgK.
+//   shore (36.1c): foam glyph and rim foreground from column depth / edge distance; background unchanged.
 //   fog (own distance dW, x pitched fog scale): see waterLook.js `waterFogParams`.
 //   flow (US-141a, 35.4): a flowing slot replaces the ramp glyph by `look.streak` where the advected streak hash (waterLook.js `flowStreakHit`) says so.
 // Edge suppression: an opaque (a >= seeThrough) surface cell sets `fb.waterMask[i] = 1`; `edgePass` skips masked cells so a
@@ -17,14 +18,14 @@
 // Order in `renderWorld` (mesh): shade -> composite(surfaces) -> edgePass(mask) -> fillSky -> composite(sky). The GPU does the same
 // in `_passWaterComposite` (after shade, before edge; the sky is already in the shade output there). Zero allocation after warm.
 import { sunFromWorld } from './terrainCaster.js';
-import { hashFastU } from './terrainShade.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit } from './waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance } from './waterLook.js';
 
 const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
 const _p = new Float64Array(3);
+const _floorP = new Float64Array(3);
 const _sun = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
 /** @type {Uint8Array|null} */
 let _mask = null;
@@ -56,7 +57,6 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const kindArr = fb.gbuf.kind, depth = fb.depth.depth, wKind = wt.kind, wDepth = wt.depth, wObj = wt.objectId;
   const cells = fb.rt.cells || fb.rt;
   const gArr = cells.glyphIdx, fgArr = cells.fg, bgArr = cells.bg, mArr = cells.mask;
-  const timeSec = fb.timeSec || 0;
   const sunZ = sun.dirZ > 0 ? sun.dirZ : 0;
   const fStart = _fog[0], fFull = _fog[1], fCurve = _fog[2], fBgScale = _fog[3];
 
@@ -67,29 +67,45 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     const dW = wDepth[i], raw = isSky ? Infinity : depth[i];
     if (!(dW < raw)) continue;
     const slot = wObj[i] & 15, lb = slot * WL_STRIDE;
-    const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], waveHz = _table[lb + 11], bgK = _table[lb + 13];
+    const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], bgK = _table[lb + 13];
     let a = isSky ? 1 : (raw - dW) / opaqueAt;
     a = a < 0 ? 0 : a > 1 ? 1 : a;
     const col = i % cols, row = (i / cols) | 0;
     if (pitched) unprojectPitched(pterms, col, row, dW, _p); else unprojectCell(terms, col, row, dW, _p);
 
+    let column = Infinity;
+    if (!isSky) {
+      if (pitched) unprojectPitched(pterms, col, row, raw, _floorP); else unprojectCell(terms, col, row, raw, _floorP);
+      column = Math.max(0, _p[2] - _floorP[2]);
+    }
+    const tint = isSky ? a : Math.min(column / _table[lb + 38], 1);
     const k = sun.ambientI + sun.sunI * sunZ * (sunMapOn ? light.sunN[i] * 0.25 : 1);
-    let wr = (_table[lb] + (_table[lb + 4] - _table[lb]) * a) * k;
-    let wg = (_table[lb + 1] + (_table[lb + 5] - _table[lb + 1]) * a) * k;
-    let wb = (_table[lb + 2] + (_table[lb + 6] - _table[lb + 2]) * a) * k;
+    let wr = (_table[lb] + (_table[lb + 4] - _table[lb]) * tint) * k;
+    let wg = (_table[lb + 1] + (_table[lb + 5] - _table[lb + 1]) * tint) * k;
+    let wb = (_table[lb + 2] + (_table[lb + 6] - _table[lb + 2]) * tint) * k;
     wr = wr < 0 ? 0 : wr > 255 ? 255 : wr; wg = wg < 0 ? 0 : wg > 255 ? 255 : wg; wb = wb < 0 ? 0 : wb > 255 ? 255 : wb;
 
+    const br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
     const fi = i * 4;
     const opaque = a >= seeThrough;
     let glyph = fgArr[fi + 3];
     if (opaque) {
-      const tick = Math.floor(timeSec * waveHz);
-      const h = hashFastU(Math.floor(_p[0] / 0.5), Math.floor(_p[1] / 0.5), WATER_HASH_SALT + 31 * tick);
+      const h = waterSurfaceHash(_table, lb, _p[0], _p[1]);
       glyph = _table[lb + 16 + (h % (_table[lb + 12] | 0))];
       if (flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4): flowing water streaks
-      if ((h >>> 8) * (1 / 16777216) > 0.9) {
+      if ((h >>> 8) * (1 / 16777216) > 1 - _table[lb + 15]) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }
+    }
+    const e = waterEdgeDistance(_table, lb, _p[0], _p[1]);
+    const shoreS = Math.max(0, Math.min(column / _table[lb + 52], e / _table[lb + 39]));
+    const shore = !isSky && shoreS < 1 && dW < _table[lb + 53];
+    if (shore) {
+      const nFoam = _table[lb + 47] | 0;
+      glyph = _table[lb + 44 + Math.min(Math.floor(shoreS * nFoam), nFoam - 1)];
+      wr = _table[lb + 48] + (wr - _table[lb + 48]) * shoreS;
+      wg = _table[lb + 49] + (wg - _table[lb + 49]) * shoreS;
+      wb = _table[lb + 50] + (wb - _table[lb + 50]) * shoreS;
     }
     // own fog (distance dW, x the pitched fog scale)
     const fd = pitched ? dW * pitchedFogScale(pterms, row) : dW;
@@ -100,12 +116,13 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     let fr = wr + (_fog[4] + (_fog[8] - _fog[4]) * f - wr) * f;
     let fg = wg + (_fog[5] + (_fog[9] - _fog[5]) * f - wg) * f;
     let fb2 = wb + (_fog[6] + (_fog[10] - _fog[6]) * f - wb) * f;
-    const br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
     let br = br0 + (_fog[12] + (_fog[16] - _fog[12]) * f - br0) * fBg;
     let bg = bg0 + (_fog[13] + (_fog[17] - _fog[13]) * f - bg0) * fBg;
     let bb = bb0 + (_fog[14] + (_fog[18] - _fog[14]) * f - bb0) * fBg;
     if (!opaque) { // see-through: tint the shaded floor cell by the opacity
-      fr = fgArr[fi] + (fr - fgArr[fi]) * a; fg = fgArr[fi + 1] + (fg - fgArr[fi + 1]) * a; fb2 = fgArr[fi + 2] + (fb2 - fgArr[fi + 2]) * a;
+      if (!shore) {
+        fr = fgArr[fi] + (fr - fgArr[fi]) * a; fg = fgArr[fi + 1] + (fg - fgArr[fi + 1]) * a; fb2 = fgArr[fi + 2] + (fb2 - fgArr[fi + 2]) * a;
+      }
       br = bgArr[fi] + (br - bgArr[fi]) * a; bg = bgArr[fi + 1] + (bg - bgArr[fi + 1]) * a; bb = bgArr[fi + 2] + (bb - bgArr[fi + 2]) * a;
     } else if (!isSky) _mask[i] = 1;
     gArr[i] = glyph;

@@ -14,8 +14,9 @@ import { hashFastU } from './terrainShade.js';
 import { unprojectCell } from './projection.js';
 import { sunFromWorld } from './terrainCaster.js';
 import {
-  DEFAULT_WATER_LOOK, WL_STRIDE, WATER_HASH_SALT, packWaterLook, resolveWaterLooks, fillWaterSlotTable, waterFogParams, WFOG_LEN,
+  DEFAULT_WATER_LOOK, WL_STRIDE, WATER_HASH_SALT, waterSurfaceHash, waterEdgeDistance, packWaterLook, resolveWaterLooks, fillWaterSlotTable, waterFogParams, WFOG_LEN,
 } from './waterLook.js';
+import { waterCompositeJS, lastWaterSlotTable } from './waterComposite.js';
 import { lastWaterSelection } from './water.js';
 import { WATER_COMPOSITE_FRAG_SRC } from './gpu/glsl/waterComposite.frag.js';
 import { EDGE_FRAG_SRC } from './gpu/glsl/edge.frag.js';
@@ -56,18 +57,29 @@ function snapshot(fb) {
   return { glyph: c.glyphIdx.slice(), fg: c.fg.slice(), bg: c.bg.slice() };
 }
 
+function expectedHash(px, py, L, time = 0) {
+  const ou = Math.fround((L.drift / Math.fround(L.cellM) * time) % 1024);
+  const phase = Math.fround((time * L.waveHz) % 1024);
+  const f = Math.fround;
+  const u = f(f(f(f(f(px) * f(0.8776)) + f(f(py) * f(0.4794))) / f(L.cellM)) - ou);
+  const v = f(f(f(-f(px) * f(0.4794)) + f(f(py) * f(0.8776))) / f(L.cellM));
+  const iu = Math.floor(u), iv = Math.floor(v + 0.5 * (iu & 1));
+  const h0 = hashFastU(iu & 1023, iv & 1023, WATER_HASH_SALT);
+  return hashFastU(iu & 1023, iv & 1023, WATER_HASH_SALT + 31 * Math.floor(phase + (h0 & 255) / 256));
+}
+
 // ---- 1. look table ----
 {
   const row = packWaterLook('t', null);
   ok('look: defaults pack to WL_STRIDE floats with ramp codes ASCII-32', row.length === WL_STRIDE && row[12] === 3 && row[16] === 126 - 32 && row[17] === 45 - 32 && row[18] === 61 - 32);
   ok('look: shallow / deep / glint / opaqueAt / seeThrough / waveHz / bgK land in their slots',
     row[0] === 96 && row[4] === 16 && row[8] === 235 && Math.abs(row[3] - 1.5) < 1e-6 && Math.abs(row[7] - 0.35) < 1e-6 && row[11] === 2 && Math.abs(row[13] - 0.6) < 1e-6);
-  const bads = [{ ramp: '' }, { ramp: '123456789' }, { ramp: 'a b' }, { shallow: [1, 2] }, { deep: [0, 0, 300] }, { opaqueAt: 0 }, { seeThrough: 2 }, { waveHz: -1 }, { bgK: 1.5 }];
+  const bads = [{ ramp: '' }, { ramp: '123456789' }, { ramp: 'a b' }, { shallow: [1, 2] }, { deep: [0, 0, 300] }, { opaqueAt: 0 }, { seeThrough: 2 }, { waveHz: -1 }, { bgK: 1.5 }, { cellM: 0 }, { cellM: Infinity }, { glintP: -0.1 }, { glintP: 2 }, { drift: NaN }, { drift: -1 }, { tintDepth: 0 }, { shoreW: -1 }, { rim: [1, 2, 999] }, { foamRamp: 'abcd' }, { foamRamp: 'a ' }, { foamDepth: 0 }, { foamFar: Infinity }];
   let allThrow = true, named = true;
   for (const b of bads) { try { packWaterLook('lava', b); allThrow = false; } catch (e) { if (!String(e.message).includes('lava')) named = false; } }
   ok('look: every invalid field throws, naming the look', allThrow && named);
   const looks = resolveWaterLooks({ lava: { ramp: '#@', shallow: [255, 80, 0], deep: [120, 20, 0] } });
-  const world = { water: { lookNames: ['water', 'lava', 'lava'], look: Uint8Array.from([0, 1, 2]), flow: new Float64Array(6), flowR: new Float64Array(3), kind: new Uint8Array(3) } };
+  const world = { water: { lookNames: ['water', 'lava', 'lava'], look: Uint8Array.from([0, 1, 2]), flow: new Float64Array(6), flowR: new Float64Array(3), kind: new Uint8Array(3), x0: new Float64Array(3), y0: new Float64Array(3), x1: new Float64Array(3), y1: new Float64Array(3) } };
   const out = new Float32Array(12 * WL_STRIDE);
   fillWaterSlotTable({ count: 3, region: Int32Array.from([1, 0, 2]) }, world, looks, out);
   ok('look: slot table = region look by name (designer table first, engine default for an unknown name)',
@@ -109,14 +121,18 @@ function snapshot(fb) {
       opaque++;
       if (!fb.waterMask || fb.waterMask[i] !== 1) maskBad++;
       unprojectCell(terms, i % COLS, (i / COLS) | 0, dW, P);
-      const h = hashFastU(Math.floor(P[0] / 0.5), Math.floor(P[1] / 0.5), WATER_HASH_SALT + 31 * Math.floor(0 * L.waveHz));
-      const code = L.ramp.charCodeAt(h % L.ramp.length) - 32;
+      const h = expectedHash(P[0], P[1], L);
+      const edge = Math.min(P[0] - 2, P[1] - 2, 9 - P[0], 9 - P[1]);
+      const shoreS = Math.max(0, Math.min(0.4 / L.foamDepth, edge / L.shoreW));
+      const shore = shoreS < 1 && dW < L.foamFar;
+      const code = shore ? L.foamRamp.charCodeAt(Math.min(Math.floor(shoreS * L.foamRamp.length), L.foamRamp.length - 1)) - 32
+        : L.ramp.charCodeAt(h % L.ramp.length) - 32;
       if (snap.glyph[i] !== code) formulaBad++;
-      const glint = (h >>> 8) / 16777216 > 0.9;
+      const glint = (h >>> 8) / 16777216 > 1 - Math.fround(L.glintP);
       if (glint) glintN++;
       // fg must sit between the water colours scaled by k (fog is ~0 at room distances) or toward the glint
       const hi = Math.min(255, Math.max(L.shallow[0], L.deep[0]) * k + 1), lo = Math.min(L.shallow[0], L.deep[0]) * k * 0 - 1;
-      if (!glint && !(snap.fg[i * 4] <= Math.max(hi, 1) && snap.fg[i * 4] >= lo)) formulaBad++;
+      if (!glint && !shore && !(snap.fg[i * 4] <= Math.max(hi, 1) && snap.fg[i * 4] >= lo)) formulaBad++;
     } else {
       seeThrough++;
       if (fb.waterMask && fb.waterMask[i] === 1) maskBad++;
@@ -125,19 +141,10 @@ function snapshot(fb) {
   }
   ok('twin: pool covers cells, both opaque and see-through ones occur', hits > 200 && opaque > 50 && seeThrough > 5, `hits ${hits} opaque ${opaque} see ${seeThrough}`);
   ok('twin: cells without water are bit-identical to the no-water render', untouchedOk);
-  ok('twin: opaque cells use the ramp glyph from hash(floor(P/0.5), t) - world anchored', formulaBad === 0, `${formulaBad}`);
+  ok('twin: opaque cells use the ramp glyph from the drifting brick hash - world anchored', formulaBad === 0, `${formulaBad}`);
   ok('twin: see-through (shallow) cells keep the floor glyph (floor visible through shallows)', seeBad === 0, `${seeBad}`);
   ok('twin: edge mask is set exactly on opaque surface cells', maskBad === 0, `${maskBad}`);
-  ok('twin: a glint cell exists (hash > 0.9, ~10 % of opaque cells)', glintN > 0 && glintN < opaque * 0.3, `${glintN}/${opaque}`);
-
-  // deep > shallow: the colour darkens with the path length (opaque cells far from the rim are deeper than near the shore)
-  let rShallow = 0, nSh = 0, rDeep = 0, nDp = 0;
-  for (let i = 0; i < N; i++) {
-    if (wt.kind[i] !== 1 || fb.gbuf.kind[i] === 0) continue;
-    const a = Math.min(1, (depth[i] - wt.depth[i]) / L.opaqueAt);
-    if (a >= L.seeThrough && a < 0.6) { rShallow += snap.bg[i * 4 + 2]; nSh++; } else if (a > 0.95) { rDeep += snap.bg[i * 4 + 2]; nDp++; }
-  }
-  ok('twin: depth tint - the long-path (deep) water bg blue is darker than the shallow-path one', nSh > 5 && nDp > 5 && rDeep / nDp < rShallow / nSh, `${rDeep / nDp} vs ${rShallow / nSh}`);
+  ok('twin: a glint cell exists (configured glint probability)', glintN > 0 && glintN < opaque * 0.3, `${glintN}/${opaque}`);
 
   // anchoring: another yaw, every opaque cell's glyph still equals the hash of ITS world point
   const cam2 = { ...CAM, yawDeg: 63, x: 5.9 };
@@ -149,9 +156,14 @@ function snapshot(fb) {
     const dW = fb.water.depth[i], a = Math.min(1, (fb.depth.depth[i] - dW) / L.opaqueAt);
     if (a < L.seeThrough) continue;
     unprojectCell(terms, i % COLS, (i / COLS) | 0, dW, P);
-    const h = hashFastU(Math.floor(P[0] / 0.5), Math.floor(P[1] / 0.5), WATER_HASH_SALT);
+    const h = expectedHash(P[0], P[1], L);
     n2++;
-    if (cellsOf(fb).glyphIdx[i] !== L.ramp.charCodeAt(h % L.ramp.length) - 32) bad2++;
+    const edge = Math.min(P[0] - 2, P[1] - 2, 9 - P[0], 9 - P[1]);
+    const shoreS = Math.max(0, Math.min(0.4 / L.foamDepth, edge / L.shoreW));
+    const code = shoreS < 1 && dW < L.foamFar
+      ? L.foamRamp.charCodeAt(Math.min(Math.floor(shoreS * L.foamRamp.length), L.foamRamp.length - 1)) - 32
+      : L.ramp.charCodeAt(h % L.ramp.length) - 32;
+    if (cellsOf(fb).glyphIdx[i] !== code) bad2++;
   }
   ok('twin: hash is world-anchored (same rule holds after the camera turned and moved)', n2 > 50 && bad2 === 0, `${bad2}/${n2}`);
 
@@ -161,7 +173,7 @@ function snapshot(fb) {
   renderWorld(fb, world, cam2);
   let diff = 0, tot = 0;
   for (let i = 0; i < N; i++) if (fb.water.kind[i] === 1 && fb.gbuf.kind[i] !== 0 && fb.waterMask[i] === 1) { tot++; if (cellsOf(fb).glyphIdx[i] !== f1.glyph[i]) diff++; }
-  ok('twin: the wave glyphs re-roll with time (tick = floor(t * waveHz))', tot > 50 && diff > tot * 0.3, `${diff}/${tot}`);
+  ok('twin: the wave glyphs re-roll with time (staggered phase plus drift)', tot > 50 && diff > tot * 0.2, `${diff}/${tot}`);
   fb.timeSec = 0;
 }
 
@@ -232,13 +244,100 @@ function snapshot(fb) {
 {
   const S = WATER_COMPOSITE_FRAG_SRC;
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  ok('glsl: the composite uses the shared water hash salt and the (x,y,salt+31*tick) key', S.includes(`${WATER_HASH_SALT} + 31 * tick`) && S.includes('hashFastU(int(floor(P.x / 0.5)), int(floor(P.y / 0.5))'));
-  ok('glsl: opacity / seeThrough / glint / bgK rules are the 32.2 ones', S.includes('clamp((raw - dW) / opaqueAt, 0.0, 1.0)') && S.includes('a >= seeThrough') && S.includes('> 0.9') && S.includes('* 0.5') && S.includes('wc * bgK'));
+  ok('glsl: the composite uses the shared water hash salt and the (x,y,salt+31*tick) key', S.includes(`${WATER_HASH_SALT} + 31 * tick`) && S.includes('hashFastU(iu & 1023, iv & 1023,'));
+  ok('glsl: opacity / seeThrough / glint / bgK rules are the 32.2 ones', S.includes('clamp((raw - dW) / opaqueAt, 0.0, 1.0)') && S.includes('a >= seeThrough') && S.includes('> 1.0 - r3.w') && S.includes('* 0.5') && S.includes('wc * bgK'));
   ok('glsl: gl_FragCoord only as the ivec2 cell address, no round(, no Infinity literal', (S.match(/gl_FragCoord/g) || []).length === 1 && /ivec2\s*\(\s*gl_FragCoord\.xy\s*\)/.test(S) && !strip(S).includes('round(') && !S.includes('Infinity'));
   ok('glsl: reads the +Inf WATER clear by bit pattern, passthrough cells (bg.a < 0.5) are copied', S.includes('0x7f800000u') && S.includes('sbg.a < 0.5'));
   ok('glsl: terrain sun term on an up normal with the cell sun-map bits', S.includes('max(uSunDir.z, 0.0)') && S.includes('uSunMapOn != 0'));
   ok('glsl: sampler budget - 6 samplers in the composite, and the edge pass adds only uWater', (S.match(/uniform u?sampler2D/g) || []).length === 6 && (EDGE_FRAG_SRC.match(/uniform u?sampler2D/g) || []).length === 5);
   ok('glsl: the edge pass suppresses outlines on opaque water (uWaterOn / waterOpaque)', EDGE_FRAG_SRC.includes('!waterOpaque(cell, distRaw)') && EDGE_FRAG_SRC.includes('(raw - dW) / os.x >= os.y'));
+}
+
+// ---- 36.1b: foreground-only glints, fine lattice, CPU phases, isolated drift ----
+{
+  const world = World.load(roomDef([POOL]), assets, {});
+  const fb = makeFb(world);
+  fb.waterLooks = resolveWaterLooks({ water: { glintP: 0 } });
+  for (let i = 0; i < 2; i++) renderWorld(fb, world, CAM);
+  const plain = snapshot(fb);
+  fb.waterLooks = resolveWaterLooks({ water: { glintP: 1 } });
+  renderWorld(fb, world, CAM);
+  const glinted = snapshot(fb);
+  ok('glint: every background byte equals the un-glinted render', plain.bg.every((v, i) => v === glinted.bg[i]));
+  ok('glint: foreground pixels brighten while glyph selection stays fixed', plain.fg.some((v, i) => i % 4 !== 3 && v !== glinted.fg[i]) && plain.glyph.every((v, i) => v === glinted.glyph[i]));
+  const looks = resolveWaterLooks({ water: { ramp: '~-=.:o*+', waveHz: 0 } });
+  const out = new Float32Array(12 * WL_STRIDE);
+  const selection = { count: 1, region: Int32Array.of(0) };
+  fillWaterSlotTable(selection, world, looks, out, 0);
+  let blocks = 0;
+  const before = [];
+  for (let sy = 0; sy < 2; sy += 0.5) for (let sx = 0; sx < 2; sx += 0.5) {
+    const glyphs = new Set();
+    for (let dy = 0; dy <= 0.5; dy += 0.25) for (let dx = 0; dx <= 0.5; dx += 0.25) {
+      const h = waterSurfaceHash(out, 0, sx + dx, sy + dy);
+      glyphs.add(h % 8); before.push(h % 8);
+    }
+    if (glyphs.size === 1) blocks++;
+  }
+  ok('lattice: every 0.5m square in a 2x2m patch has differing adjacent 0.25m samples', blocks === 0);
+  fillWaterSlotTable(selection, world, looks, out, 1);
+  let changed = 0, j = 0;
+  for (let sy = 0; sy < 2; sy += 0.5) for (let sx = 0; sx < 2; sx += 0.5)
+    for (let dy = 0; dy <= 0.5; dy += 0.25) for (let dx = 0; dx <= 0.5; dx += 0.25)
+      if (waterSurfaceHash(out, 0, sx + dx, sy + dy) % 8 !== before[j++]) changed++;
+  ok('drift: the map moves over 1s even when waveHz is zero', changed > 0 && out[37] === 0);
+  fillWaterSlotTable(selection, world, resolveWaterLooks({ water: { drift: 0.125, cellM: 0.25, waveHz: 2 } }), out, 1000000000.25);
+  ok('phase: long-running clocks fold in f64 before f32 packing', out[36] === 256.125 && out[37] === 0.5);
+  ok('slot table: 56-float stride reserves the shape/shore fields', WL_STRIDE === 56 && lastWaterSlotTable().length === 12 * 56);
+  const boundaryY = 1045.5, boundaryX = (500 * 0.25 - boundaryY * 0.4794) / 0.8776;
+  const still = packWaterLook('still', { drift: 0, waveHz: 0 });
+  ok('hash precision: sub-f32 offsets at a lattice boundary cannot flip a glint',
+    Math.fround(boundaryX - 1e-8) === Math.fround(boundaryX + 1e-8) &&
+    waterSurfaceHash(still, 0, boundaryX - 1e-8, boundaryY) === waterSurfaceHash(still, 0, boundaryX + 1e-8, boundaryY));
+
+  const staggerLooks = resolveWaterLooks({ water: { drift: 0, waveHz: 1 } });
+  fillWaterSlotTable(selection, world, staggerLooks, out, 0);
+  const hashes = [];
+  for (let y = 0; y < 2; y += 0.25) for (let x = 0; x < 2; x += 0.25) hashes.push(waterSurfaceHash(out, 0, x, y));
+  fillWaterSlotTable(selection, world, staggerLooks, out, 0.125);
+  let rerolled = 0, idx = 0;
+  for (let y = 0; y < 2; y += 0.25) for (let x = 0; x < 2; x += 0.25)
+    if (waterSurfaceHash(out, 0, x, y) !== hashes[idx++]) rerolled++;
+  ok('stagger: some cells re-roll within a tick while the others remain unchanged', rerolled > 0 && rerolled < hashes.length);
+
+}
+
+// ---- 36.1c: controlled scene columns, region edges, sky and grazing angles ----
+{
+  const world = World.load(roomDef([POOL]), assets, {});
+  renderWorld(makeFb(world), world, CAM); // selects slot 0 through the actual water layer
+  const looks = resolveWaterLooks({ water: { ramp: '~', glintP: 0, foamDepth: 0.05 } });
+  function sample(x, y, column, sky = false, slope = -0.2, dW = 4) {
+    const fb = { rt: new CellBuffer(1, 1), depth: new DepthBuffer(1, 1), gbuf: new GBuffer(1, 1),
+      water: { kind: Uint8Array.of(1), depth: Float32Array.of(dW), objectId: Uint32Array.of(0) },
+      palette: assets.palette, matTable: null, light: null, waterLooks: looks, timeSec: 0 };
+    fb.gbuf.kind[0] = sky ? 0 : KIND_MODEL;
+    fb.depth.depth[0] = dW + column / -slope;
+    const terms = { cols: 1, dirX: 0, dirY: 1, planeX: 0, planeY: 0,
+      horizonRow: slope, planeDistY: 1, eyeX: x, eyeY: y - dW, eyeZ: 0.4 - slope * dW };
+    waterCompositeJS(fb, world, terms, null, false, sky);
+    return snapshot(fb);
+  }
+  const edge = sample(2, 5.5, 0.2), centre = sample(5.5, 5.5, 0.2), deep = sample(5.5, 5.5, 2);
+  ok('shore rect: edge gets a foam glyph and centre keeps the surface ramp', edge.glyph[0] === '*'.charCodeAt(0) - 32 && centre.glyph[0] === '~'.charCodeAt(0) - 32);
+  ok('shore: foam changes only foreground, background equals the same-depth centre', edge.bg.every((v, i) => v === centre.bg[i]));
+  ok('column tint: shallow water is lighter than a column beyond tintDepth', centre.bg[2] > deep.bg[2]);
+  const grazing = sample(5.5, 5.5, 0.2, false, -0.1);
+  ok('column tint: equal vertical columns keep equal colours at different view slopes', centre.bg.every((v, i) => v === grazing.bg[i]));
+  const sky = sample(2, 5.5, 0, true);
+  ok('sky: keeps the deep path colour and surface ramp even at the edge', sky.glyph[0] === '~'.charCodeAt(0) - 32 && sky.bg.every((v, i) => v === deep.bg[i]));
+  const far = sample(2, 5.5, 0.2, false, -0.2, 50);
+  ok('shore: foam stops at foamFar', far.glyph[0] === '~'.charCodeAt(0) - 32);
+  const circle = World.load(roomDef([{ id: 'circle', shape: 'circle', c: [5, 5], r: 3, z: 0.4 }]), assets, {});
+  const table = new Float32Array(12 * WL_STRIDE);
+  fillWaterSlotTable({ count: 1, region: Int32Array.of(0) }, circle, looks, table);
+  ok('circle: packed radius gives exact zero edge distance at r', table[51] === 1 && table[42] === 3 && waterEdgeDistance(table, 0, 8, 5) === 0);
+  ok('circle: centre distance is r, diagonal boundary also has zero distance', waterEdgeDistance(table, 0, 5, 5) === 3 && Math.abs(waterEdgeDistance(table, 0, 5 + 3 / Math.sqrt(2), 5 + 3 / Math.sqrt(2))) < 1e-12);
 }
 
 // ---- 8. zero allocation after warm ----
