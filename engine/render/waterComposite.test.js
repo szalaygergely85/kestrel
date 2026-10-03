@@ -14,7 +14,7 @@ import { hashFastU } from './terrainShade.js';
 import { unprojectCell } from './projection.js';
 import { sunFromWorld } from './terrainCaster.js';
 import {
-  DEFAULT_WATER_LOOK, WL_STRIDE, WATER_HASH_SALT, waterSurfaceHash, packWaterLook, resolveWaterLooks, fillWaterSlotTable, waterFogParams, WFOG_LEN,
+  DEFAULT_WATER_LOOK, WL_STRIDE, WATER_HASH_SALT, waterSurfaceHash, waterEdgeDistance, packWaterLook, resolveWaterLooks, fillWaterSlotTable, waterFogParams, WFOG_LEN,
 } from './waterLook.js';
 import { waterCompositeJS, lastWaterSlotTable } from './waterComposite.js';
 import { lastWaterSelection } from './water.js';
@@ -122,13 +122,17 @@ function expectedHash(px, py, L, time = 0) {
       if (!fb.waterMask || fb.waterMask[i] !== 1) maskBad++;
       unprojectCell(terms, i % COLS, (i / COLS) | 0, dW, P);
       const h = expectedHash(P[0], P[1], L);
-      const code = L.ramp.charCodeAt(h % L.ramp.length) - 32;
+      const edge = Math.min(P[0] - 2, P[1] - 2, 9 - P[0], 9 - P[1]);
+      const shoreS = Math.max(0, Math.min(0.4 / L.foamDepth, edge / L.shoreW));
+      const shore = shoreS < 1 && dW < L.foamFar;
+      const code = shore ? L.foamRamp.charCodeAt(Math.min(Math.floor(shoreS * L.foamRamp.length), L.foamRamp.length - 1)) - 32
+        : L.ramp.charCodeAt(h % L.ramp.length) - 32;
       if (snap.glyph[i] !== code) formulaBad++;
       const glint = (h >>> 8) / 16777216 > 1 - Math.fround(L.glintP);
       if (glint) glintN++;
       // fg must sit between the water colours scaled by k (fog is ~0 at room distances) or toward the glint
       const hi = Math.min(255, Math.max(L.shallow[0], L.deep[0]) * k + 1), lo = Math.min(L.shallow[0], L.deep[0]) * k * 0 - 1;
-      if (!glint && !(snap.fg[i * 4] <= Math.max(hi, 1) && snap.fg[i * 4] >= lo)) formulaBad++;
+      if (!glint && !shore && !(snap.fg[i * 4] <= Math.max(hi, 1) && snap.fg[i * 4] >= lo)) formulaBad++;
     } else {
       seeThrough++;
       if (fb.waterMask && fb.waterMask[i] === 1) maskBad++;
@@ -154,7 +158,11 @@ function expectedHash(px, py, L, time = 0) {
     unprojectCell(terms, i % COLS, (i / COLS) | 0, dW, P);
     const h = expectedHash(P[0], P[1], L);
     n2++;
-    const code = L.ramp.charCodeAt(h % L.ramp.length) - 32;
+    const edge = Math.min(P[0] - 2, P[1] - 2, 9 - P[0], 9 - P[1]);
+    const shoreS = Math.max(0, Math.min(0.4 / L.foamDepth, edge / L.shoreW));
+    const code = shoreS < 1 && dW < L.foamFar
+      ? L.foamRamp.charCodeAt(Math.min(Math.floor(shoreS * L.foamRamp.length), L.foamRamp.length - 1)) - 32
+      : L.ramp.charCodeAt(h % L.ramp.length) - 32;
     if (cellsOf(fb).glyphIdx[i] !== code) bad2++;
   }
   ok('twin: hash is world-anchored (same rule holds after the camera turned and moved)', n2 > 50 && bad2 === 0, `${bad2}/${n2}`);
@@ -297,6 +305,39 @@ function expectedHash(px, py, L, time = 0) {
     if (waterSurfaceHash(out, 0, x, y) !== hashes[idx++]) rerolled++;
   ok('stagger: some cells re-roll within a tick while the others remain unchanged', rerolled > 0 && rerolled < hashes.length);
 
+}
+
+// ---- 36.1c: controlled scene columns, region edges, sky and grazing angles ----
+{
+  const world = World.load(roomDef([POOL]), assets, {});
+  renderWorld(makeFb(world), world, CAM); // selects slot 0 through the actual water layer
+  const looks = resolveWaterLooks({ water: { ramp: '~', glintP: 0, foamDepth: 0.05 } });
+  function sample(x, y, column, sky = false, slope = -0.2, dW = 4) {
+    const fb = { rt: new CellBuffer(1, 1), depth: new DepthBuffer(1, 1), gbuf: new GBuffer(1, 1),
+      water: { kind: Uint8Array.of(1), depth: Float32Array.of(dW), objectId: Uint32Array.of(0) },
+      palette: assets.palette, matTable: null, light: null, waterLooks: looks, timeSec: 0 };
+    fb.gbuf.kind[0] = sky ? 0 : KIND_MODEL;
+    fb.depth.depth[0] = dW + column / -slope;
+    const terms = { cols: 1, dirX: 0, dirY: 1, planeX: 0, planeY: 0,
+      horizonRow: slope, planeDistY: 1, eyeX: x, eyeY: y - dW, eyeZ: 0.4 - slope * dW };
+    waterCompositeJS(fb, world, terms, null, false, sky);
+    return snapshot(fb);
+  }
+  const edge = sample(2, 5.5, 0.2), centre = sample(5.5, 5.5, 0.2), deep = sample(5.5, 5.5, 2);
+  ok('shore rect: edge gets a foam glyph and centre keeps the surface ramp', edge.glyph[0] === '*'.charCodeAt(0) - 32 && centre.glyph[0] === '~'.charCodeAt(0) - 32);
+  ok('shore: foam changes only foreground, background equals the same-depth centre', edge.bg.every((v, i) => v === centre.bg[i]));
+  ok('column tint: shallow water is lighter than a column beyond tintDepth', centre.bg[2] > deep.bg[2]);
+  const grazing = sample(5.5, 5.5, 0.2, false, -0.1);
+  ok('column tint: equal vertical columns keep equal colours at different view slopes', centre.bg.every((v, i) => v === grazing.bg[i]));
+  const sky = sample(2, 5.5, 0, true);
+  ok('sky: keeps the deep path colour and surface ramp even at the edge', sky.glyph[0] === '~'.charCodeAt(0) - 32 && sky.bg.every((v, i) => v === deep.bg[i]));
+  const far = sample(2, 5.5, 0.2, false, -0.2, 50);
+  ok('shore: foam stops at foamFar', far.glyph[0] === '~'.charCodeAt(0) - 32);
+  const circle = World.load(roomDef([{ id: 'circle', shape: 'circle', c: [5, 5], r: 3, z: 0.4 }]), assets, {});
+  const table = new Float32Array(12 * WL_STRIDE);
+  fillWaterSlotTable({ count: 1, region: Int32Array.of(0) }, circle, looks, table);
+  ok('circle: packed radius gives exact zero edge distance at r', table[51] === 1 && table[42] === 3 && waterEdgeDistance(table, 0, 8, 5) === 0);
+  ok('circle: centre distance is r, diagonal boundary also has zero distance', waterEdgeDistance(table, 0, 5, 5) === 3 && Math.abs(waterEdgeDistance(table, 0, 5 + 3 / Math.sqrt(2), 5 + 3 / Math.sqrt(2))) < 1e-12);
 }
 
 // ---- 8. zero allocation after warm ----

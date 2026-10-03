@@ -115,6 +115,12 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
     const name = wt.lookNames[wt.look[ri]];
     const b = s * WL_STRIDE;
     out.set(looks.byName.get(name) || looks.fallback, b);
+    out[b + 51] = wt.kind[ri];
+    if (wt.kind[ri] === 1) {
+      out[b + 40] = wt.cx[ri]; out[b + 41] = wt.cy[ri]; out[b + 42] = Math.sqrt(wt.r2[ri]); out[b + 43] = 0;
+    } else {
+      out[b + 40] = wt.x0[ri]; out[b + 41] = wt.y0[ri]; out[b + 42] = wt.x1[ri]; out[b + 43] = wt.y1[ri];
+    }
     // Fold both surface phases in f64 before the shared f32 upload (36.1b).
     out[b + 36] = (out[b + 36] / out[b + 14] * timeSec) % 1024;
     out[b + 37] = (timeSec * out[b + 11]) % 1024;
@@ -134,6 +140,15 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
       }
     }
   }
+}
+
+// Distance inside the selected region's boundary (36.1c), world metres.
+export function waterEdgeDistance(t, lb, px, py) {
+  if (t[lb + 51] === 1) {
+    const dx = px - t[lb + 40], dy = py - t[lb + 41];
+    return t[lb + 42] - Math.sqrt(dx * dx + dy * dy);
+  }
+  return Math.min(px - t[lb + 40], py - t[lb + 41], t[lb + 42] - px, t[lb + 43] - py);
 }
 
 // Rotated brick lattice, advected in surface space with staggered cell re-rolls (36.1b).
