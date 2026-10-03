@@ -932,3 +932,8 @@ D-032 amendment 1 put ME-15 -> ME-16 -> ME-12b -> ME-19 back "as scheduled", i.e
 **Decision:** the next goal is a showcase: forest, tower, waterfall, grassland, fire and water shots, captured with the trailer tool (US-119, pulled forward), then an itch.io pay-what-you-want demo (US-112) plus a tip jar and short clips. Pulled forward for it: US-142a1/a2 waterfall, ME-06c walkable forest, US-119; terrain close-up fixes (BUG-FP-002, OWN-REQ-002) get priority. Steam "Coming Soon" optional now (was M5).
 **Why:** the owner needs income to pay for a bigger subscription; the ASCII 3D look is the hook and costs little to show. PC-A is a company Team account - owner caps it at ~5-6 % weekly usage per day (revised same night); bigger work goes to PC-B.
 **Plan:** docs/roadmap.md, section "NOW: Show it". Next PC-A session starts by turning Phase A into PC-B queue items (architect notes for ME-06c + US-142a1 deps first).
+
+## D-037 - Freeze the old `dda` renderer (owner, 2026-10-04)
+**Decision:** the `dda` renderer (sector/terrain/voxel casters, `?renderer=dda`) is frozen. Mesh is the default since 2026-10-03. From now on: no dda checks in the workflow (route-walk, gpucompare and browser passes run mesh only), new features don't need a dda path, and dda-only bugs are not fixed. `?renderer=dda` only has to keep booting (fallback) until ME-19 deletes the old renderers.
+**Why:** the double checks cost tokens and time on every main.js and render change, and mesh is the renderer that ships.
+**Follow-up:** ME-19 (delete the old renderers) moves up once the mesh path covers everything the dda path still does (architect to list the gaps at the next review). Rules updated in AGENTS.md and the PC-B queue text.
