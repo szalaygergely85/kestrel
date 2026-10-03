@@ -586,6 +586,7 @@ function runGame(mode) {
   setMuted(loadSettings().muted); // US-060: apply the remembered mute before any sound can play
 
   let simTime = 0;
+  let clothTick = 0; // CLOTH-1b3 (33.5): integer fixed-step counter for `w.cloths.tick`/`wind.sampleInto` (rule 15: no wall clock)
   let look = null;
   let playerHandle = null;
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
@@ -808,6 +809,7 @@ function runGame(mode) {
   function update(dt) {
     lapStart();
     simTime += dt;
+    clothTick++;
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
@@ -908,6 +910,13 @@ function runGame(mode) {
       lap(SEC.input);
       stepSectorAnims(engine.world, dt);
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
+      // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
+      {
+        const t = playerHandle.data.transform, body = playerHandle.data.components.body;
+        engine.world.cloths.setBody(0, t.x, t.y, t.z, body.radius, body.height);
+        engine.world.cloths.tick(clothTick, engine.world.wind, t.x, t.y, t.z + body.eyeH);
+      }
       // US-013 (7.4 fixed-step order item 3): after `integrate`, so the
       // player's this-step velocity is what a push is measured against.
       stepRollers(engine.world, dt, engine.physics);
