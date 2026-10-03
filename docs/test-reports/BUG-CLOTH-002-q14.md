@@ -19,3 +19,21 @@ The complete Node route walker, with all game-bound model registrations loaded, 
 Real-browser direct movement check on no-cache ports 9582 (mesh/mesh) and 9584 (dda/grid): set the player at world (1496.5,1021.5,0.3), face east and supply KeyW through the game input. Both advance across the cloth-covered steps to (1499.7,1021.5,1.2). The endpoint meets the existing wall where the route turns south. This establishes passage along the authored stair route, not every possible approach through the fabric. The longer browser route driver did not return its final report and was interrupted; no complete browser-route PASS is claimed.
 
 World.js builds burnerFire as a sprite without a body (only dynamic props receive bodies). World colliders derive from structure geometry; cloth collider boxes constrain fabric nodes only. No blocker fix was inferred from appearance. NEEDS PC-A: owner F3 position, approach direction and physics mode for the blocked case; if the desired route crosses the sheet at local y=4 instead of the stairs at y=3.5, provide the approved geometry/placement correction.
+
+## Exact owner pose and earlier-version comparison
+
+Investigated owner world (1500.14,1022.57,1.80), yaw276, pitch-17. Default game physics is grid even with renderer=mesh (main.js only opts into mesh physics with physics=mesh).
+
+The stop is reproduced transiently: grid clamps x to 1499.3 while the player slides north along the wall. This is radius 0.3 east of the col18/19 boundary. Tower col18,row4 is authored solid `c`, the 1.4m stair-cheek wall; its description explicitly limits entry to the stair base. capsule.js's existing MAP_FORMAT v2 contract blocks solid cells at ANY height. The eye is outside the cloth bbox during the blocked interval. BurnerFire has no body; cloth's collider boxes constrain the fabric, not world movement.
+
+Node simulation held forward for three fixed-step seconds (real integration + sector animation + rollers + body contacts, cloth tick before rollers / render mark after the step). Grid ends (1495.667855,1021.348128,0); mesh ends (1494.559448,1022.290559,-0.300000012). Both advance beyond the canvas area. Disabling cloth gives exactly the same full x/y/z trajectory in each mode. Grid has a temporary blocked-X interval; mesh has none on this approach.
+
+Baseline f49a714 compared in the specified isolated ../game_project_test checkout. All sampled movement steps and both final positions are exactly identical to the current version, with cloth both enabled and disabled. The baseline already clamps x1499.3 at steps30/60/90. There is no failing endpoint pair for a binary bisect, so no breaking commit can truthfully be named. No git bisect marks were invented.
+
+Normal browser URL (renderer=mesh, F3, default grid physics), own no-cache server9586/CDP9587, actual game input and loop: debug setup represents the owner already awake (wakeT100, map dismissed, look locked). A first three-wall-second check included a startup interval with zero sim steps, then reached the temporary wall stop; the extended check continues past it. Sample at wakeT103.2667 is (1494.739634,1021.3,-0.15), beyond the cloth, before reaching the next authored wall at x1494.3. Cloth awake/bodyCount become1 during movement; the eye is outside the fabric at the blocked samples. This is debug-assisted live movement evidence, not an owner walk-test verdict.
+
+Added owner-pose regressions to game/js/quest/clothPhysics.test.js: full step-by-step movement equality with/without cloth in grid and mesh, three-second passage beyond the cheek corner, and non-solid fire artwork. The existing sway/contact/save-load checks still pass. No runtime geometry, physics, collision or input change.
+
+NEEDS PC-A: decide whether the authored solid cheek wall `c` is intended on this approach or revise the wall/canvas placement. Changing height semantics for all solid grid cells would contradict the existing physics contract and requires an architect specification. Owner walk-test still required; BUG-CLOTH-002 remains open for that decision.
+
+Verification: 202/202 suites PASS, no FAIL/TIMEOUT/WARN; check-deps OK (366 files, existing warnings). Temporary probes removed; only own browser/server processes stopped. Comparison checkout left clean at f49a714 for follow-up.

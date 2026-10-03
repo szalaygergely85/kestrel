@@ -1,7 +1,7 @@
 // BUG-CLOTH-002: real tower draft, visibility sleep, capsule response and save/load.
 import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
-import { AssetRegistry, World, serialize, deserialize } from '../../../engine/index.js';
+import { AssetRegistry, World, serialize, deserialize, PHYSICS_DEFAULTS, integrate, stepRollers, resolveBodyContacts, stepSectorAnims } from '../../../engine/index.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 
 const root = new URL('../../../', import.meta.url);
@@ -52,4 +52,35 @@ assert.ok(displacement > 0.05, `capsule pushes the cloth aside (${displacement})
 const restored = deserialize(JSON.parse(JSON.stringify(serialize(world))), assets);
 restored.wind.sampleInto(...anchor, 0, wind);
 assert.ok(Math.abs(wind[1]) > 0, 'the authored draft survives save/load');
+// Owner pose: cloth contact must not alter the player's collision trajectory.
+const P = PHYSICS_DEFAULTS, steps = Math.round(3 / P.fixedDt);
+function walkOwnerPose(physics, clothOn) {
+  const w = World.load(assets.world('world_m1'), assets, { physics });
+  const player = { id: 'probe', transform: { x: 1500.14, y: 1022.57, z: 1.8, yawDeg: 276, pitchDeg: -17 },
+    components: { body: { radius: P.radius, height: P.height, eyeH: P.eyeHeight, vx: 0, vy: 0, vz: 0,
+      grounded: true, coyote: 0, buffer: 0, jumpHeldPrev: false, peakZ: 1.8 } } };
+  const t = player.transform, b = player.components.body;
+  const controls = { forward: 1, run: false, yawDeg: 276, pitchDeg: -17 };
+  const trace = new Float64Array(steps * 3);
+  assert.equal(w.get('tower.burnerFire').data.components.body, undefined, 'fire artwork has no physical body');
+  for (let i = 0; i < steps; i++) {
+    stepSectorAnims(w, P.fixedDt);
+    integrate(player, P.fixedDt, controls, w, P);
+    if (clothOn) {
+      w.cloths.setBody(0, t.x, t.y, t.z, b.radius, b.height);
+      w.cloths.tick(i + 1, w.wind, t.x, t.y, t.z + b.eyeH);
+    }
+    stepRollers(w, P.fixedDt, P);
+    resolveBodyContacts(w, player, P);
+    if (clothOn) w.cloths.markDrawn(0);
+    trace[i * 3] = t.x; trace[i * 3 + 1] = t.y; trace[i * 3 + 2] = t.z;
+  }
+  assert.ok(t.x < 1498, `${physics}: 3 seconds at the owner heading clears the cheek-wall corner`);
+  return trace;
+}
+for (const physics of ['grid', 'mesh']) {
+  assert.deepEqual(walkOwnerPose(physics, true), walkOwnerPose(physics, false),
+    `${physics}: cloth cannot block the player or change any movement step`);
+}
+
 console.log(`cloth physics: sway ${sway.toFixed(4)} m, capsule displacement ${displacement.toFixed(4)} m. ALL PASS`);
