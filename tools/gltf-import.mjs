@@ -46,6 +46,7 @@ Required:
 Options:
   --out <path>        write the .mesh.json here instead of
                       content/meshes/<id>.mesh.json
+  --mats <path>       material-name -> palette-key JSON map
   --dry-run           parse and report only; write nothing
 
 Output: content/meshes/<id>.mesh.json (MeshData, meshToJSON shape) plus a
@@ -60,6 +61,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') { args.help = true; continue; }
+    if (a === '--mats') { args.mats = argv[++i]; if (!args.mats) throw new Error('--mats needs a path'); continue; }
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--dry-run') { args.dryRun = true; continue; }
     args._.push(a);
@@ -147,7 +149,7 @@ export function stringifyMeshJSON(json) {
  * matching vox-import.mjs's runCli/core-function split).
  * @param {Buffer|Uint8Array} bytes
  * @param {string} id
- * @param {{buffers?: Buffer[]}} [opts]
+ * @param {{buffers?: Buffer[], mats?: Record<string,string>}} [opts]
  * @param {Set<string>|null} [materialKeys]
  * @returns {{mesh: Object, json: Object, report: {triCount:number, groupCount:number, unmapped:string[]}}}
  */
@@ -156,8 +158,12 @@ export function importGltfBytes(bytes, id, opts = {}, materialKeys = null) {
   const { errors } = validateMesh(mesh);
   if (errors.length) throw new Error(`gltf-import: generated mesh failed validateMesh:\n${errors.join('\n')}`);
   const groupCount = countSmoothGroups(mesh);
-  const unmapped = materialKeys ? mesh.matKeys.filter((k) => !materialKeys.has(k)) : [];
-  const json = meshToJSON(mesh);
+  const unmapped = materialKeys ? mesh.matKeys.filter((k) => !materialKeys.has(opts.mats?.[k] || k)) : [];
+  const json = { kind: 'mesh', schema: 1, id: mesh.id, nextId: 1, ...meshToJSON(mesh) };
+  const mats = opts.mats === undefined ? {} : opts.mats;
+  if (!mats || typeof mats !== 'object' || Array.isArray(mats) || Object.values(mats).some((v) => typeof v !== 'string' || !v)) throw new Error('gltf-import: --mats must be an object mapping material names to palette keys');
+  json.mats = { ...mats };
+  mesh.mats = json.mats;
   for (const key of ['pos', 'uv', 'aux', 'bbox']) {
     json[key] = json[key].map((v) => Math.round(v * 1e5) / 1e5);
   }
@@ -188,6 +194,7 @@ export async function runCli(argv) {
     opts.buffers = readExternalBuffers(inPath, json);
   }
 
+  if (args.mats) opts.mats = JSON.parse(fs.readFileSync(args.mats, 'utf8'));
   const materialKeys = await loadEngineMaterialKeys();
   const { json: meshJson, report } = importGltfBytes(raw, id, opts, materialKeys);
 

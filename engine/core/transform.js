@@ -6,7 +6,7 @@
 // out: 0 = north (-y), 90 = east (+x), clockwise seen from above.
 //
 // Frame = {x,y,z,yawSteps:0|1|2|3} — rigid quarter-turn frame (structures,
-// chunks). Transform = {x,y,z,yawDeg,pitchDeg?} — entity/camera pose, world
+// chunks); optional yawDeg is for mesh placements only. Transform = {x,y,z,yawDeg,pitchDeg?} — entity/camera pose, world
 // metres. Nothing here allocates on the hot path: every function that
 // returns a vector/point writes into the caller's `out`.
 
@@ -132,24 +132,29 @@ export function dirFromAzEl(azimuthDeg, elevationDeg, out) {
 // ---- Frame (local <-> world; rotation about the frame origin, then translation) ----
 
 /**
- * @typedef {{x: number, y: number, z: number, yawSteps: 0|1|2|3}} Frame
+ * @typedef {{x: number, y: number, z: number, yawSteps: 0|1|2|3, yawDeg?: number}} Frame
  * @typedef {{x: number, y: number, z: number, yawDeg: number, pitchDeg?: number}} Transform
  */
 
 /**
- * Build a validated plain Frame object. Throws on non-finite x/y/z or a non-0..3 integer yawSteps.
+ * Build a validated Frame. Grid frames use exact yawSteps; mesh frames may supply yawDeg.
  * @param {number} x
  * @param {number} y
  * @param {number} z
  * @param {0|1|2|3} [yawSteps]
+ * @param {number} [yawDeg] mesh placements only; mutually exclusive with nonzero yawSteps
  * @returns {Frame}
  */
-export function makeFrame(x, y, z, yawSteps = 0) {
+export function makeFrame(x, y, z, yawSteps = 0, yawDeg) {
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
     throw new Error(`makeFrame: x/y/z must be finite (got ${x}, ${y}, ${z})`);
   }
   if (!Number.isInteger(yawSteps) || yawSteps < 0 || yawSteps > 3) {
     throw new Error(`makeFrame: yawSteps must be an integer 0..3 (got ${yawSteps})`);
+  }
+  if (yawDeg !== undefined) {
+    if (!Number.isFinite(yawDeg) || yawSteps !== 0) throw new Error('makeFrame: mesh yawDeg must be finite and cannot combine with yawSteps');
+    return { x, y, z, yawSteps, yawDeg };
   }
   return { x, y, z, yawSteps };
 }
@@ -164,7 +169,8 @@ export function makeFrame(x, y, z, yawSteps = 0) {
  * @returns {{x: number, y: number, z: number}} `out`
  */
 export function localToWorld(frame, lx, ly, lz, out) {
-  const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
+  const c = frame.yawDeg === undefined ? QUARTER_COS[frame.yawSteps] : Math.cos(frame.yawDeg * DEG2RAD);
+  const s = frame.yawDeg === undefined ? QUARTER_SIN[frame.yawSteps] : Math.sin(frame.yawDeg * DEG2RAD);
   out.x = frame.x + c * lx - s * ly;
   out.y = frame.y + s * lx + c * ly;
   out.z = frame.z + lz;
@@ -181,7 +187,8 @@ export function localToWorld(frame, lx, ly, lz, out) {
  * @returns {{x: number, y: number, z: number}} `out`
  */
 export function worldToLocal(frame, wx, wy, wz, out) {
-  const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
+  const c = frame.yawDeg === undefined ? QUARTER_COS[frame.yawSteps] : Math.cos(frame.yawDeg * DEG2RAD);
+  const s = frame.yawDeg === undefined ? QUARTER_SIN[frame.yawSteps] : Math.sin(frame.yawDeg * DEG2RAD);
   const dx = wx - frame.x, dy = wy - frame.y;
   // Inverse rotation of [[c,-s],[s,c]] is [[c,s],[-s,c]] (orthonormal).
   out.x = c * dx + s * dy;
@@ -199,7 +206,8 @@ export function worldToLocal(frame, wx, wy, wz, out) {
  * @returns {number[]|Float32Array} `out`
  */
 export function localDirToWorld(frame, dx, dy, out) {
-  const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
+  const c = frame.yawDeg === undefined ? QUARTER_COS[frame.yawSteps] : Math.cos(frame.yawDeg * DEG2RAD);
+  const s = frame.yawDeg === undefined ? QUARTER_SIN[frame.yawSteps] : Math.sin(frame.yawDeg * DEG2RAD);
   out[0] = c * dx - s * dy;
   out[1] = s * dx + c * dy;
   return out;
@@ -212,7 +220,7 @@ export function localDirToWorld(frame, dx, dy, out) {
  * @returns {number}
  */
 export function localYawToWorld(frame, yawDeg) {
-  return wrapDeg(yawDeg + 90 * frame.yawSteps);
+  return wrapDeg(yawDeg + (frame.yawDeg === undefined ? 90 * frame.yawSteps : frame.yawDeg));
 }
 
 /**
@@ -222,7 +230,7 @@ export function localYawToWorld(frame, yawDeg) {
  * @returns {number}
  */
 export function worldYawToLocal(frame, yawDeg) {
-  return wrapDeg(yawDeg - 90 * frame.yawSteps);
+  return wrapDeg(yawDeg - (frame.yawDeg === undefined ? 90 * frame.yawSteps : frame.yawDeg));
 }
 
 /**
@@ -236,7 +244,8 @@ export function worldYawToLocal(frame, yawDeg) {
  * @returns {{x0: number, y0: number, x1: number, y1: number}} `out`
  */
 export function frameBBox(frame, w, h, out) {
-  const c = QUARTER_COS[frame.yawSteps], s = QUARTER_SIN[frame.yawSteps];
+  const c = frame.yawDeg === undefined ? QUARTER_COS[frame.yawSteps] : Math.cos(frame.yawDeg * DEG2RAD);
+  const s = frame.yawDeg === undefined ? QUARTER_SIN[frame.yawSteps] : Math.sin(frame.yawDeg * DEG2RAD);
   // Corners of [0,w]x[0,h] rotated by the frame, then translated (inlined: no allocation).
   const ax = frame.x, ay = frame.y;
   // (lx,ly) = (0,0),(w,0),(0,h),(w,h)
@@ -290,7 +299,7 @@ export function localCellToWorld(frame, col, row, out) {
  * @returns {boolean}
  */
 export function frameEquals(a, b) {
-  return a.x === b.x && a.y === b.y && a.z === b.z && a.yawSteps === b.yawSteps;
+  return a.x === b.x && a.y === b.y && a.z === b.z && a.yawSteps === b.yawSteps && a.yawDeg === b.yawDeg;
 }
 
 // ---- Transform sugar (entities/cameras; no matrices — yaw-only bodies) ----

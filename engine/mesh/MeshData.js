@@ -51,6 +51,7 @@ export const AO_FAR = 1e30;
  * @property {Float64Array} bbox - [x0,y0,z0,x1,y1,z1] mesh-local
  * @property {MeshRange[]} ranges - draw sub-ranges, triangle units, >= 1 range
  * @property {string[]} matKeys - mat bits index this list until resolveMats()
+ * @property {Record<string,string>} [mats] optional glTF material-name -> engine-material map
  * @property {boolean} matsResolved - true once mat bits are real MaterialTable ids
  * @property {number} meshVersion - bumped on every in-place rebuild
  */
@@ -400,6 +401,7 @@ export function meshToJSON(mesh) {
     bbox: arr(mesh.bbox),
     ranges: mesh.ranges.map((r) => (r.part !== undefined ? { start: r.start, count: r.count, part: r.part } : { start: r.start, count: r.count })),
     matKeys: mesh.matKeys.slice(),
+    ...(mesh.mats ? { mats: { ...mesh.mats } } : {}),
     matsResolved: mesh.matsResolved,
     meshVersion: mesh.meshVersion,
   };
@@ -422,6 +424,7 @@ export function meshFromJSON(obj) {
     bbox: Float64Array.from(obj.bbox),
     ranges: obj.ranges.map((r) => (r.part !== undefined ? { start: r.start, count: r.count, part: r.part } : { start: r.start, count: r.count })),
     matKeys: obj.matKeys.slice(),
+    ...(obj.mats ? { mats: { ...obj.mats } } : {}),
     matsResolved: obj.matsResolved,
     meshVersion: obj.meshVersion,
   };

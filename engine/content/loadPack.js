@@ -1,13 +1,14 @@
 // engine/content/loadPack.js (US-027a, docs/architecture.md section 21.4).
 // The engine hard-codes no `content/` path - the caller (game/tests) names
 // the manifest URL and injects the file reader.
+import { meshFromJSON, validateMesh } from '../mesh/MeshData.js';
 import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
 import { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS } from './schema.js';
 
 const FILE_ID_RE = /^[a-z][a-z0-9_]*$/;
 const LOCAL_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const KNOWN_KINDS = ['level', 'world'];
+const KNOWN_KINDS = ['level', 'world', 'mesh'];
 
 /** `globalId('tower', 'lamp_hook') -> 'tower/lamp_hook'` (21.3). Only used
  * where a field already says which collection it points into. */
@@ -96,7 +97,8 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     levels: {},
     worlds: {},
     models: {},
-    meta: { level: {}, world: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
+    meshes: {},
+    meta: { level: {}, world: {}, mesh: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
   };
 
   const errors = [];
@@ -133,7 +135,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
       continue;
     }
 
-    if (typeof migrated.id !== 'string' || !FILE_ID_RE.test(migrated.id)) {
+    if (typeof migrated.id !== 'string' || !(kind === 'mesh' ? /^[A-Za-z][A-Za-z0-9_-]*(?:\/[A-Za-z][A-Za-z0-9_-]*)*$/ : FILE_ID_RE).test(migrated.id)) {
       errors.push(new ContentError(href, 'id', `bad or missing id ${JSON.stringify(migrated.id)}`));
       continue;
     }
@@ -185,9 +187,26 @@ export async function loadContentPack(manifestUrl, opts = {}) {
 
     if (hadError) continue;
 
+    if (kind === 'mesh') {
+      try {
+        const mesh = meshFromJSON(migrated);
+        const checked = validateMesh(mesh);
+        if (checked.errors.length) throw new Error(checked.errors.join('; '));
+        const mats = migrated.mats === undefined ? {} : migrated.mats;
+        if (!mats || typeof mats !== 'object' || Array.isArray(mats)
+            || Object.values(mats).some((v) => typeof v !== 'string' || !v)) {
+          throw new Error('mats must map glTF material names to palette keys');
+        }
+        mesh.mats = { ...mats };
+        bundle.meshes[migrated.id] = mesh;
+      } catch (e) {
+        errors.push(asContentError(e, href, 'mesh'));
+        continue;
+      }
+    }
     bundle.meta[kind][migrated.id] = { url: href, schema: migrated.schema, nextId: migrated.nextId };
     const { kind: _k, schema: _s, id: _id, nextId: _n, ...rest } = migrated;
-    bundle[kind + 's'][migrated.id] = rest;
+    if (kind !== 'mesh') bundle[kind + 's'][migrated.id] = rest;
   }
 
   if (errors.length) {

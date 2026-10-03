@@ -101,6 +101,7 @@ export async function loadDesignAssets() {
   ASSETS.worlds = ASSETS.worlds || {};
   Object.assign(ASSETS.levels, bundle.levels);
   Object.assign(ASSETS.worlds, bundle.worlds);
+  ASSETS.meshes = { ...(ASSETS.meshes || {}), ...bundle.meshes };
   return ASSETS;
 }
 
@@ -210,7 +211,7 @@ const MAX_ENDTEXT_LINE = 40;
  * at the first) and counts every check attempted, whether it passed or not.
  * @returns {{ errors: string[], checks: number }}
  */
-export function validateContent(ASSETS) {
+export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
   let checks = 0;
@@ -231,6 +232,39 @@ export function validateContent(ASSETS) {
 
   const { levels } = splitLevels((ASSETS && ASSETS.levels) || {});
   const worlds = (ASSETS && ASSETS.worlds) || {};
+
+  // ME-14a: registered mesh assets resolve materials; unregistered import samples
+  // are geometry-checked by the optional filesystem pass below.
+  const meshes = ASSETS?.meshes || {};
+  for (const [id, def] of Object.entries(meshes)) {
+    const path = `meshes.${id}`;
+    try {
+      const mesh = def.pos instanceof Float32Array ? def : meshFromJSON(def);
+      const result = validateMesh(mesh);
+      check(result.errors.length === 0, path, result.errors.join('; '));
+      const mats = def.mats === undefined ? {} : def.mats;
+      const validMap = mats && typeof mats === 'object' && !Array.isArray(mats) && Object.values(mats).every((v) => typeof v === 'string' && v.length > 0);
+      check(!!validMap, `${path}.mats`, 'must be a material-name -> palette-key map');
+      for (const key of mesh.matKeys) {
+        const mapped = validMap ? (mats[key] ?? key) : key;
+        check(typeof mapped === 'string' && (Object.hasOwn(paletteMaterials, mapped)
+          || Object.hasOwn(detailMaterials, mapped) || Object.hasOwn(detailPass?.remap || {}, mapped)),
+          `${path}.matKeys[${key}]`, `material "${mapped}" does not resolve`);
+      }
+    } catch (e) { check(false, path, e.message); }
+  }
+  const checkMeshEntity = (entity, path) => {
+    const component = entity.components?.mesh;
+    if (!component) return;
+    check(typeof component.id === 'string' && Object.hasOwn(meshes, component.id), `${path}.components.mesh.id`, 'mesh id not found');
+    if (component.yawDeg !== undefined) check(Number.isFinite(component.yawDeg), `${path}.components.mesh.yawDeg`, 'must be finite');
+  };
+  for (const [id, world] of Object.entries(worlds)) {
+    for (const entity of world.entities || []) checkMeshEntity(entity, `worlds.${id}.entities[${entity.id}]`);
+  }
+  for (const [id, chunk] of Object.entries(ASSETS?.chunks || {})) {
+    for (const entity of chunk.entities || []) checkMeshEntity(entity, `chunks.${id}.entities[${entity.id}]`);
+  }
 
   // Every hint id this game can ever fire, from EITHER uiStyle.hints[] or
   // uiStyle.storyHints[] - a level trigger's `hint` field names one of
@@ -483,6 +517,16 @@ export function validateContent(ASSETS) {
     const base = `worlds.${worldKey}`;
     for (const s of world.structures || []) {
       const path = `${base}.structures[${s.id}]`;
+      const hasMesh = typeof s.mesh === 'string' && s.mesh.length > 0;
+      const hasLevel = typeof s.level === 'string' && s.level.length > 0;
+      check(hasMesh !== hasLevel && !(s.mesh !== undefined && s.level !== undefined), path, 'exactly one of mesh or level is required');
+      if (hasMesh) check(Object.hasOwn(meshes, s.mesh), `${path}.mesh`, `mesh "${s.mesh}" not found`);
+      if (hasLevel) check(Object.hasOwn(levels, s.level), `${path}.level`, `level "${s.level}" not found`);
+      if (s.yawDeg !== undefined) {
+        check(hasMesh && Number.isFinite(s.yawDeg), `${path}.yawDeg`, 'finite yawDeg is allowed only for mesh placements');
+        check(s.yawSteps === undefined || s.yawSteps === 0, `${path}.yawSteps`, 'cannot combine mesh yawDeg with nonzero yawSteps');
+      }
+
       if (s.origin) {
         check(Number.isFinite(s.origin.x), `${path}.origin.x`, `origin.x must be finite, got ${JSON.stringify(s.origin.x)}`);
         check(Number.isFinite(s.origin.y), `${path}.origin.y`, `origin.y must be finite, got ${JSON.stringify(s.origin.y)}`);
@@ -539,6 +583,11 @@ export function validateContent(ASSETS) {
     }
   }
 
+  if (opts.meshFilesDir) {
+    const scanned = validateMeshFiles(opts.meshFilesDir);
+    errors.push(...scanned.errors);
+    checks += scanned.checks;
+  }
   return { errors, warnings, checks, meshOnlyCount };
 }
 
@@ -552,17 +601,8 @@ function validateVoxelModelSafe(def, opts) {
 
 // ---------------------------------------------------------------------------
 // ME-13b: content/meshes/*.mesh.json schema sanity. This is a standalone
-// filesystem check, NOT part of validateContent(ASSETS) above - ME-14 (not
-// done yet) is what wires a `mesh` content kind into manifest.json/
-// loadContentPack/ID_COLLECTIONS, so there is no ASSETS-level place to hang
-// this check on today. Reuses validateMesh (engine/mesh/MeshData.js, via
-// engine/index.js) rather than re-deriving triCount/idx-range/etc checks
-// that already exist there.
-/**
- * @param {string} dir - directory to scan for `*.mesh.json` (default:
- *   content/meshes/ next to this file)
- * @returns {{ errors: string[], checks: number }}
- */
+// filesystem geometry check, also available through validateContent's
+// optional meshFilesDir. Registered assets receive material checks above.
 function findMeshFiles(dir, out) {
   let entries;
   try {
@@ -610,11 +650,8 @@ export function validateMeshFiles(dir) {
 // ---------------------------------------------------------------------------
 async function main() {
   const ASSETS = await loadDesignAssets();
-  const { errors, warnings, checks, meshOnlyCount } = validateContent(ASSETS);
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
-  const { errors: meshFileErrors, checks: meshFileChecks } = validateMeshFiles(meshFilesDir);
-  const allErrors = errors.concat(meshFileErrors);
-  const allChecks = checks + meshFileChecks;
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir });
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {

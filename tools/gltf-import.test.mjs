@@ -184,6 +184,33 @@ await testAsync('runCli: --dry-run writes nothing', async () => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+test('material sidecar maps glTF names in both MeshData and its content JSON', () => {
+  const mats = { TestMat: 'stone' };
+  const result = importGltfBytes(buildTriangleGlb(), 'test_mapped', { mats }, new Set(['stone']));
+  assert.deepStrictEqual(result.report.unmapped, []);
+  assert.deepStrictEqual(result.mesh.mats, mats);
+  assert.deepStrictEqual(result.json.mats, mats);
+  assert.equal(result.json.kind, 'mesh');
+  assert.equal(result.json.schema, 1);
+  assert.deepStrictEqual(meshFromJSON(result.json).mats, mats);
+  for (const invalid of [[], null, { TestMat: 7 }]) assert.throws(() => importGltfBytes(buildTriangleGlb(), 'test_badmap', { mats: invalid }), /must be an object/);
+});
+
+await testAsync('runCli: --mats reads and persists the sidecar', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-mats-'));
+  const glb = path.join(dir, 'tri.glb'), map = path.join(dir, 'tri.mats.json'), out = path.join(dir, 'tri.mesh.json');
+  try {
+    fs.writeFileSync(glb, buildTriangleGlb());
+    fs.writeFileSync(map, JSON.stringify({ TestMat: 'stone' }));
+    const result = await runCli([glb, 'test_mapped_cli', '--mats', map, '--out', out]);
+    assert.deepStrictEqual(result.report.unmapped, []);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).mats, { TestMat: 'stone' });
+  } finally {
+    for (const file of [glb, map, out]) if (fs.existsSync(file)) fs.unlinkSync(file);
+    fs.rmdirSync(dir);
+  }
+});
+
 await testAsync('runCli: --help with no args returns the help text', async () => {
   const result = await runCli([]);
   assert.strictEqual(result.help, true);

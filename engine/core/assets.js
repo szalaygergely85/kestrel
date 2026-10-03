@@ -5,7 +5,7 @@
 // them exactly once, via `AssetRegistry.fromGlobals`, and hands the registry
 // to `createEngine`.
 
-const KINDS = ['model', 'level', 'terrain', 'world'];
+const KINDS = ['model', 'level', 'terrain', 'world', 'mesh'];
 
 function throwUnknown(kind, key, map) {
   const known = Object.keys(map).join(', ') || '(none)';
@@ -53,6 +53,7 @@ export class AssetRegistry {
     this._levels = bundle.levels || {};
     this._terrain = bundle.terrain || {};
     this._worlds = bundle.worlds || {};
+    this._meshes = bundle.meshes || {};
     this._uiStyle = bundle.uiStyle || null;
     // US-028: the designer's v2 detail-pass proposal (design/detail-pass.js
     // `ASSETS.detailPass`), read through the registry like every other
@@ -78,6 +79,11 @@ export class AssetRegistry {
 
   get uiStyle() {
     return this._uiStyle;
+  }
+
+  mesh(key) {
+    if (!(key in this._meshes)) throwUnknown('mesh', key, this._meshes);
+    return this._meshes[key];
   }
 
   model(key) {
@@ -115,7 +121,7 @@ export class AssetRegistry {
    * no event is emitted (callers that need to react, e.g. the editor's
    * `rebuild()`, already know they just called this). Replaces the editor's
    * old in-place-replace workaround (`tools/editor/io.js`'s `loadFile`).
-   * @param {'model'|'level'|'terrain'|'world'} kind
+   * @param {'model'|'level'|'terrain'|'world'|'mesh'} kind
    * @param {string} key
    * @param {Object} def
    */
@@ -141,7 +147,7 @@ export class AssetRegistry {
    * existing entry instead - this method never overwrites). Used by the
    * editor's "Import .vox" flow to add an imported model to the running
    * registry at runtime, immediately visible without a page reload.
-   * @param {'model'|'level'|'terrain'|'world'} kind
+   * @param {'model'|'level'|'terrain'|'world'|'mesh'} kind
    * @param {string} key
    * @param {Object} def
    */
@@ -161,6 +167,7 @@ export class AssetRegistry {
       case 'level': return this._levels;
       case 'terrain': return this._terrain;
       case 'world': return this._worlds;
+      case 'mesh': return this._meshes;
       default: throw new Error(`AssetRegistry: unknown kind "${kind}" (expected one of ${KINDS.join(', ')})`);
     }
   }
@@ -189,6 +196,7 @@ export class AssetRegistry {
     return new AssetRegistry({
       palette: globals.palette,
       models: globals.models,
+      meshes: globals.meshes,
       levels,
       terrain,
       worlds: globals.worlds,
@@ -229,9 +237,15 @@ export class AssetRegistry {
       if (key in worlds) throw new Error(`AssetRegistry.fromJSON: world "${key}" is defined in both JS and JSON content`);
       worlds[key] = bundle.worlds[key];
     }
+    const meshes = { ...(codeParts.meshes || {}) };
+    for (const key of Object.keys(bundle.meshes || {})) {
+      if (key in meshes) throw new Error(`AssetRegistry.fromJSON: mesh "${key}" is defined in both JS and JSON content`);
+      meshes[key] = bundle.meshes[key];
+    }
     return new AssetRegistry({
       palette: codeParts.palette,
       models: codeParts.models,
+      meshes,
       levels,
       terrain,
       worlds,
