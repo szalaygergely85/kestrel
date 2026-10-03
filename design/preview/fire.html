@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - burner fire (36.2a): burnerFire sprite + embers + smoke</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; image-rendering:pixelated; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:120px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:3px; max-width:660px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : burner fire (architecture.md 36.2a) : <code>burnerFire</code> sprite + <code>embers</code> + <code>smoke</code></h1>
+<div class="note">
+  Data: <code>design/models/wreckage.js</code> <code>ASSETS.models.burnerFire</code> (13x11 cells, half 7x6, 8 frames <code>burn</code> @ 12 fps, world 0.7 x 1.0 m,
+  anchor bottom centre, every key emissive) and <code>design/models/particles.js</code> presets <code>embers</code> + <code>smoke</code> (the REAL engine sim,
+  <code>engine/fx/particles.js</code>). The two scene views are <b>crops at true pixel size on a 1920x1080 screen</b>: 80x45 cells of a 240x90 grid
+  (8x12 px cells) and 160x90 cells of a 480x180 grid (4x6 px cells) - the same patch of screen. Sprites use the engine rules (README section 4):
+  projected rows = <code>world.h * planeDistY / d</code>, nearest sampling, <code>lods.half</code> below scale 0.75, upscale cap <code>3 * rows / 60</code>.
+  The burner can under the fire is the billboard <code>burner</code> without its own flame rows (for scale; the game draws the voxel burner).
+  Particles in front of the sprite plane cover it, behind it are hidden (the engine's strict depth test). <b>Needs http</b>: <code>python -m http.server</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>distance <input type="range" id="dist" min="1.2" max="10" step="0.1" value="3"><span class="val" id="distV"></span></label>
+  <label>room <select id="room"><option value="dark">dark tower (fire light only + faint ambient)</option><option value="lit">lit (ambient + wall torch)</option></select></label>
+  <label>mode <select id="mode"><option value="new">NEW: burnerFire + embers + smoke</option><option value="old">OLD: flame particles + smoke + burnerFlame</option><option value="sprite">sprite only</option></select></label>
+  <label>wind x <input type="range" id="wind" min="-3" max="3" step="0.1" value="0.4"><span class="val" id="windV"></span></label>
+  <label>speed <select id="speed"><option>1</option><option>0.5</option><option>0.25</option><option>0.1</option></select></label>
+  <label>pixel zoom <select id="pz"><option value="1">1x (true size)</option><option value="2">2x (inspect)</option></select></label>
+  <button id="pause">pause</button>
+  <button id="step">step 1 frame</button>
+  <span class="val" id="stat"></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>1. In the scene (true pixel size crops)</h2>
+<div class="row" id="views"></div>
+
+<h2>2. The art: 8 frames full 13x11, half 7x6, and the live loop enlarged</h2>
+<div class="note">Read order per frame: ember bed (bottom row, emberHot / emberDim), white-yellow core low (@ W M 8), yellow-orange mid (# % &amp;), orange tongues
+  with curled edges ( ) { }, red ragged tips and detached flicks (^ ' , .). Each frame moves the tongues (left-tall, centre-tall, split, right-tall,
+  lean-left, left-tall, gulp, squash), so the 12 fps loop reads as licking fire, not a stamp.</div>
+<div class="row"><canvas id="art"></canvas></div>
+<div class="row"><canvas id="artHalf"></canvas></div>
+<div class="row"><div><canvas id="live"></canvas><div class="cap">live loop, 4x (each art cell = 4x4 font cells - the 480x180 look at ~1.5 m)</div></div></div>
+
+<script src="../palette.js"></script>
+<script src="../models/wreckage.js"></script>
+<script src="../models/particles.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__fireOK) document.getElementById('fatal').textContent =
+      'Engine particle modules did not load. This page must be served over http (ES modules): python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { createParticles } from '../../engine/fx/particles.js';
+import { D, DEF_STRIDE, MAX_RAMP } from '../../engine/fx/emitterDef.js';
+import { STEP } from '../../engine/core/loop.js';
+window.__fireOK = true;
+
+const P = window.ASSETS.palette, PS = window.ASSETS.particles, U = P.util, SH = P.shading, M = window.ASSETS.models;
+const FIRE = M.burnerFire, BURNER = M.burner, OLD = M.burnerFlame;
+const $ = (id) => document.getElementById(id);
+const checks = [];
+function check(ok, msg) { checks.push(`<div class="${ok === true ? 'pass' : ok === 'info' ? 'info' : 'fail'}">${ok === true ? 'PASS' : ok === 'info' ? 'INFO' : 'FAIL'} ${msg}</div>`); }
+
+// ---------------------------------------------------------------- placement (tower.level.json numbers, relative to the burner)
+const FEET_Z = 0.5;          // burner prop feet (stone ring top)
+const FIRE_Z = 1.05;         // burnerFire anchor = voxel burner `flame` mount (grate top)
+const LIGHT_Z = 1.2;         // lights.brazier
+const EYE_Z = 1.45;          // camera height used for the crops (centred on the fire)
+const EMIT = { embers: FIRE_Z + PS.mounts.embers.offset.up, smoke: FIRE_Z + PS.mounts.smoke.offset.up,
+               flameOld: FIRE_Z + 0.02, smokeOld: FIRE_Z + 0.45 };
+
+// ---------------------------------------------------------------- light (sprite gain rule, same as particles.html)
+function lightMul(L, out) {
+  const Lm = Math.max(L[0], L[1], L[2]);
+  let hr = 1, hg = 1, hb = 1;
+  if (Lm > 1e-6) { hr = L[0] / Lm; hg = L[1] / Lm; hb = L[2] / Lm; }
+  const b = Lm < 0 ? 0 : Lm;
+  let gain = SH.fgMin + (1 - SH.fgMin) * Math.pow(b > 1 ? 1 : b, SH.fgGamma);
+  if (b > 1) gain = Math.min(SH.fgMaxGain, gain + (b - 1) * 0.5);
+  const k = SH.tint;
+  out[0] = (1 + (hr - 1) * k) * gain; out[1] = (1 + (hg - 1) * k) * gain; out[2] = (1 + (hb - 1) * k) * gain;
+  return out;
+}
+function flicker(t) {
+  const fl = P.lights.torch.flicker;
+  return 1 + fl.amount * (0.6 * Math.sin(t * 2 * Math.PI * fl.hzMin) + 0.4 * Math.sin(t * 2 * Math.PI * fl.hzMax + 1.3));
+}
+function lightAt(x, y, z, f, L) {
+  L[0] = L[1] = L[2] = 0;
+  if ($('room').value === 'lit') {
+    U.addLight(L, 'ambient', P.lights.ambient.intensity);
+    const d = Math.hypot(x + 2.0, y + 0.5, z - 2.0);
+    U.addLight(L, 'torch', 0.8 * U.falloff(d, 6));
+  } else {
+    U.addLight(L, 'ambient', P.lights.ambient.intensity * 0.35);
+  }
+  const d = Math.hypot(x, y, z - LIGHT_Z);
+  U.addLight(L, 'torch', P.lights.torch.intensity * f * U.falloff(d, P.lights.torch.radius));
+  return L;
+}
+
+// ---------------------------------------------------------------- views
+const VIEWS = [
+  { id: 'v240', rows: 90, cropC: 80, cropR: 45, cw: 8, ch: 12, label: '240x90 grid: 80x45-cell crop, 8x12 px cells' },
+  { id: 'v480', rows: 180, cropC: 160, cropR: 90, cw: 4, ch: 6, label: '480x180 grid: 160x90-cell crop, 4x6 px cells' },
+];
+for (const v of VIEWS) {
+  v.pdy = 1.158 * v.rows;      // README section 4: planeDistY ~69.5 at 60 rows, ~104 at 90 (16:9)
+  v.pdx = v.pdy * 1.5;         // 16:9 with these grids: cell is 1.5x taller than wide
+  v.n = v.cropC * v.cropR;
+  v.glyph = new Uint8Array(v.n); v.fg = new Float32Array(v.n * 3); v.bg = new Float32Array(v.n * 3); v.depth = new Float32Array(v.n);
+  v.bGlyph = new Uint8Array(v.n); v.bFg = new Float32Array(v.n * 3); v.bBg = new Float32Array(v.n * 3); v.bDepth = new Float32Array(v.n);
+  const wrap = document.createElement('div');
+  v.canvas = document.createElement('canvas'); wrap.appendChild(v.canvas);
+  const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = v.label; wrap.appendChild(cap);
+  v.capEl = document.createElement('div'); v.capEl.className = 'cap'; wrap.appendChild(v.capEl);
+  $('views').appendChild(wrap);
+}
+const cellOut = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const L = [0, 0, 0], mul = [0, 0, 0];
+
+// background (wall 0.8 m behind the burner, floor = ring top plane) at flicker 1; the frame scales it by the flicker
+let bgKey = '';
+function buildBackground(v, d) {
+  const wallD = d + 0.8;
+  for (let r = 0; r < v.cropR; r++) for (let c = 0; c < v.cropC; c++) {
+    const i = r * v.cropC + c;
+    const sx = (c + 0.5 - v.cropC / 2) / v.pdx, sy = (r + 0.5 - v.cropR / 2) / v.pdy;  // sy > 0 = below the eye
+    let o, depth;
+    const tFloor = sy > 0 ? (EYE_Z - FEET_Z) / sy : Infinity;
+    if (tFloor < wallD) {
+      depth = tFloor; const x = sx * tFloor, y = d - tFloor;
+      lightAt(x, y, FEET_Z, 1, L);
+      o = U.shade('floor', L, x + 3, y + 3, depth, cellOut, { fog: null });
+    } else {
+      depth = wallD; const x = sx * wallD, z = EYE_Z - sy * wallD;
+      lightAt(x, -0.8, z, 1, L);
+      o = U.shade('stone', L, x + 3, z, depth, cellOut, { fog: null });
+    }
+    v.bGlyph[i] = o.glyph.charCodeAt(0);
+    v.bFg[i * 3] = o.fg[0] * 0.8; v.bFg[i * 3 + 1] = o.fg[1] * 0.8; v.bFg[i * 3 + 2] = o.fg[2] * 0.8;
+    v.bBg[i * 3] = o.bg[0]; v.bBg[i * 3 + 1] = o.bg[1]; v.bBg[i * 3 + 2] = o.bg[2];
+    v.bDepth[i] = depth;
+  }
+}
+
+// engine sprite rule: scale, LOD, cap -> {lod, scale}
+function spriteScale(model, d, rows) {
+  let scale = model.world.h * (1.158 * rows) / d / model.size.h;
+  let lod = model, half = false;
+  if (scale < 0.75 && model.lods && model.lods.half) { lod = model.lods.half; scale *= 2; half = true; }
+  const cap = 3 * rows / 60;
+  if (scale > cap) scale = cap;
+  return { lod, scale, half, cap };
+}
+function animFrame(lod, name, t) {
+  const a = lod.animations[name];
+  return a.frames[Math.floor(t * a.fps) % a.frames.length];
+}
+// draws one billboard frame into the view buffer; rowFrom = first art row drawn (burner: skip its own flame rows)
+function drawSprite(v, model, anim, t, d, zFeet, opts) {
+  const s = spriteScale(model, d, v.rows), lod = s.lod, fr = animFrame(lod, anim, t).S;
+  const keys = model.keys, scale = s.scale;
+  const footRow = v.cropR / 2 - (zFeet - EYE_Z) * v.pdy / d;
+  const x0 = v.cropC / 2 - (lod.anchor.x + 0.5) * scale;
+  const y0 = footRow - (lod.anchor.y + 1) * scale;
+  const rowFrom = opts.rowFrom ? (s.half ? Math.ceil(opts.rowFrom / 2) : opts.rowFrom) : 0;
+  const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(v.cropC, Math.ceil(x0 + lod.size.w * scale));
+  const r0 = Math.max(0, Math.floor(y0)), r1 = Math.min(v.cropR, Math.ceil(y0 + lod.size.h * scale));
+  for (let r = r0; r < r1; r++) {
+    const sy = Math.floor((r + 0.5 - y0) / scale); if (sy < rowFrom || sy >= lod.size.h) continue;
+    const gRow = fr.glyphs[sy] || '', kRow = fr.fg[sy] || '';
+    for (let c = c0; c < c1; c++) {
+      const sx = Math.floor((c + 0.5 - x0) / scale); if (sx < 0 || sx >= lod.size.w) continue;
+      const g = gRow.charAt(sx) || ' ', k = kRow.charAt(sx) || ' ';
+      if (g === ' ' || k === ' ') continue;
+      const i = r * v.cropC + c;
+      if (!(d < v.depth[i])) continue;
+      const def = keys[k], rgb = P.rgb[def.c];
+      let cr, cg, cb;
+      if (def.e) { cr = rgb[0]; cg = rgb[1]; cb = rgb[2]; }
+      else { const o = U.shadeSprite(def.c, opts.L, 0.8, false, 0, cellOut); cr = o.fg[0]; cg = o.fg[1]; cb = o.fg[2]; }
+      v.glyph[i] = g.charCodeAt(0);
+      v.fg[i * 3] = cr; v.fg[i * 3 + 1] = cg; v.fg[i * 3 + 2] = cb;
+      v.depth[i] = d;   // sprite depth (the strict particle test reads it); scene bg kept, like sprites.js
+    }
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------- particles (real engine sim)
+let ps, ids, handles;
+function buildSim() {
+  ps = createParticles({ capacity: 512, seed: 11 });
+  ids = {};
+  for (const k of Object.keys(PS.presets)) ids[k] = ps.defineEmitter(k, PS.toEmitterDef(k, P.rgb));
+  handles = {
+    embers: ps.createEmitter(ids.embers, 0, 0, EMIT.embers),
+    smoke: ps.createEmitter(ids.smoke, 0, 0, EMIT.smoke),
+    flameOld: ps.createEmitter(ids.flame, 0, 0, EMIT.flameOld),
+    smokeOld: ps.createEmitter(ids.smoke, 0, 0, EMIT.smokeOld),
+  };
+  applyMode();
+}
+function applyMode() {
+  const m = $('mode').value;
+  ps.setOn(handles.embers, m === 'new'); ps.setOn(handles.smoke, m === 'new');
+  ps.setOn(handles.flameOld, m === 'old'); ps.setOn(handles.smokeOld, m === 'old');
+}
+function drawParticles(v, d, f) {
+  const E = ps.emitters, muls = [];
+  for (let s = 0; s < 64; s++) {
+    if (!E.used[s]) { muls.push(null); continue; }
+    lightAt(E.x[s], E.y[s], E.z[s] + 0.1, f, L);
+    muls.push(lightMul(L, [0, 0, 0]));
+  }
+  for (let j = 0; j < ps.cap; j++) {
+    if (!ps.alive[j]) continue;
+    const dd = ps.def[j], o = dd * DEF_STRIDE, n = ps.defRec[o + D.RAMP_LEN];
+    const ri = Math.min(n - 1, Math.floor(ps.age[j] * n / ps.life[j]));
+    const code = ps.defGlyphs[dd * MAX_RAMP + ri]; if (code === 32) continue;
+    const depth = d - ps.py[j]; if (!(depth > 0.2)) continue;   // camera at +y, looking toward -y
+    const c = Math.floor(v.cropC / 2 + ps.px[j] * v.pdx / depth), r = Math.floor(v.cropR / 2 - (ps.pz[j] - EYE_Z) * v.pdy / depth);
+    if (c < 0 || c >= v.cropC || r < 0 || r >= v.cropR) continue;
+    const i = r * v.cropC + c;
+    if (!(depth < v.depth[i])) continue;   // strict, like sprites.js (behind the sprite plane -> hidden)
+    v.depth[i] = depth;
+    const ci = (dd * MAX_RAMP + ri) * 3;
+    let cr = ps.defColors[ci], cg = ps.defColors[ci + 1], cb = ps.defColors[ci + 2];
+    if (!ps.defRec[o + D.EMISSIVE]) { const m = muls[ps.em[j]] || [SH.fgMin, SH.fgMin, SH.fgMin]; cr *= m[0]; cg *= m[1]; cb *= m[2]; }
+    v.glyph[i] = code; v.fg[i * 3] = Math.min(255, cr); v.fg[i * 3 + 1] = Math.min(255, cg); v.fg[i * 3 + 2] = Math.min(255, cb);
+  }
+}
+
+// ---------------------------------------------------------------- frame
+function renderView(v, t, d, f) {
+  const key = `${d}|${$('room').value}`;
+  if (v.bgKey !== key) { buildBackground(v, d); v.bgKey = key; }
+  const k = $('room').value === 'dark' ? 0.25 + 0.75 * f : 0.6 + 0.4 * f;
+  for (let i = 0; i < v.n; i++) {
+    v.glyph[i] = v.bGlyph[i]; v.depth[i] = v.bDepth[i];
+    for (let q = 0; q < 3; q++) { v.fg[i * 3 + q] = v.bFg[i * 3 + q] * k; v.bg[i * 3 + q] = v.bBg[i * 3 + q] * k; }
+  }
+  lightAt(0, 0.3, 0.8, f, L);
+  const Lb = [L[0], L[1], L[2]];
+  // burner can (billboard body rows 4..10 = ember mouth + can; its own flame rows 0..3 skipped)
+  drawSprite(v, BURNER, 'burn', t, d + 0.001, FEET_Z, { rowFrom: 4, L: Lb });
+  const mode = $('mode').value;
+  let s = null;
+  if (mode === 'old') s = drawSprite(v, OLD, 'burn', t, d - 0.001, FIRE_Z, { L: Lb });
+  else s = drawSprite(v, FIRE, 'burn', t, d - 0.001, FIRE_Z, { L: Lb });
+  if (mode !== 'sprite') drawParticles(v, d, f);
+  // present
+  const z = +$('pz').value, cw = v.cw * z, ch = v.ch * z;
+  const cv = v.canvas;
+  if (cv.width !== v.cropC * cw || cv.height !== v.cropR * ch) { cv.width = v.cropC * cw; cv.height = v.cropR * ch; }
+  const g = cv.getContext('2d');
+  g.font = `${ch}px Consolas, monospace`; g.textBaseline = 'top'; g.textAlign = 'center';
+  for (let i = 0; i < v.n; i++) {
+    const x = (i % v.cropC) * cw, y = Math.floor(i / v.cropC) * ch;
+    g.fillStyle = `rgb(${v.bg[i * 3] | 0},${v.bg[i * 3 + 1] | 0},${v.bg[i * 3 + 2] | 0})`;
+    g.fillRect(x, y, cw, ch);
+    if (v.glyph[i] !== 32) {
+      g.fillStyle = `rgb(${Math.min(255, v.fg[i * 3]) | 0},${Math.min(255, v.fg[i * 3 + 1]) | 0},${Math.min(255, v.fg[i * 3 + 2]) | 0})`;
+      g.fillText(String.fromCharCode(v.glyph[i]), x + cw / 2, y);
+    }
+  }
+  const fs = spriteScale(mode === 'old' ? OLD : FIRE, d, v.rows);
+  v.capEl.textContent = `d ${d.toFixed(1)} m: fire ${(FIRE.world.h * v.pdy / d).toFixed(1)} rows on screen, art scale ${fs.scale.toFixed(2)} ` +
+    `(${fs.half ? 'HALF 7x6' : 'full 13x11'}${fs.scale >= fs.cap - 1e-9 ? ', CAPPED at ' + fs.cap : ''}), ${fs.half ? 7 : 13}x${fs.half ? 6 : 11} art -> ` +
+    `${Math.round((fs.half ? 7 : 13) * fs.scale)}x${Math.round((fs.half ? 6 : 11) * fs.scale)} cells`;
+}
+
+// ---------------------------------------------------------------- art strips
+function drawArt(canvasId, model, lod, cw, ch, t, scale) {
+  const cv = $(canvasId), frames = lod.animations.burn.frames, w = lod.size.w, h = lod.size.h, gap = 2;
+  const list = t == null ? frames : [animFrame(lod, 'burn', t)];
+  const s = scale || 1;
+  const W = list.length * (w * s + gap) * cw, H = (h * s + 1) * ch;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const g = cv.getContext('2d');
+  g.fillStyle = '#05060a'; g.fillRect(0, 0, W, H);
+  g.font = `${ch}px Consolas, monospace`; g.textBaseline = 'top'; g.textAlign = 'center';
+  list.forEach((fr, fi) => {
+    const ox = fi * (w * s + gap) * cw;
+    g.fillStyle = '#12141c'; g.fillRect(ox, 0, w * s * cw, h * s * ch);
+    for (let r = 0; r < h * s; r++) for (let c = 0; c < w * s; c++) {
+      const sr = Math.floor(r / s), sc = Math.floor(c / s);
+      const gl = (fr.S.glyphs[sr] || '').charAt(sc) || ' ', k = (fr.S.fg[sr] || '').charAt(sc) || ' ';
+      if (gl === ' ' || k === ' ') continue;
+      const rgb = P.rgb[model.keys[k].c];
+      g.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+      g.fillText(gl, ox + c * cw + cw / 2, r * ch);
+    }
+    if (t == null) { g.fillStyle = '#8a8778'; g.font = `11px Consolas, monospace`; g.fillText('f' + fi, ox + w * s * cw / 2, h * s * ch + 2); g.font = `${ch}px Consolas, monospace`; }
+  });
+}
+
+// ---------------------------------------------------------------- checks
+function frameErrors(model, lod, tag) {
+  const errs = [];
+  const a = lod.animations.burn;
+  a.frames.forEach((fr, fi) => {
+    const S = fr.S;
+    if (!S) { errs.push(`${tag} f${fi}: no S view`); return; }
+    if (S.glyphs.length !== lod.size.h || S.fg.length !== lod.size.h) errs.push(`${tag} f${fi}: ${S.glyphs.length} rows (want ${lod.size.h})`);
+    S.glyphs.forEach((row, r) => {
+      if (row.length !== lod.size.w) errs.push(`${tag} f${fi} r${r}: glyph row ${row.length} wide`);
+      if ((S.fg[r] || '').length !== row.length) errs.push(`${tag} f${fi} r${r}: fg row length differs`);
+      for (let c = 0; c < row.length; c++) {
+        const cc = row.charCodeAt(c), k = S.fg[r].charAt(c);
+        if (cc < 32 || cc > 126) errs.push(`${tag} f${fi} r${r} c${c}: non-ASCII`);
+        if (row.charAt(c) !== ' ' && k !== ' ' && !model.keys[k]) errs.push(`${tag} f${fi} r${r} c${c}: key "${k}" missing`);
+        if ((row.charAt(c) === ' ') !== (k === ' ')) errs.push(`${tag} f${fi} r${r} c${c}: glyph/key space mismatch`);
+      }
+    });
+  });
+  return errs;
+}
+function cells(fr) { const out = []; fr.S.glyphs.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row.charAt(c) !== ' ') out.push([r, c, fr.S.fg[r].charAt(c)]); }); return out; }
+function detached(fr, h, w) {   // 8-connected components that do not touch the bed row = detached flicks
+  const occ = fr.S.glyphs.map((row) => row.split('').map((ch) => ch !== ' '));
+  const seen = occ.map((row) => row.map(() => false));
+  let n = 0;
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    if (!occ[r][c] || seen[r][c]) continue;
+    const st = [[r, c]]; seen[r][c] = true; let bed = false;
+    while (st.length) {
+      const [y, x] = st.pop(); if (y === h - 1) bed = true;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const yy = y + dy, xx = x + dx;
+        if (yy < 0 || yy >= h || xx < 0 || xx >= w || seen[yy][xx] || !occ[yy][xx]) continue;
+        seen[yy][xx] = true; st.push([yy, xx]);
+      }
+    }
+    if (!bed) n++;
+  }
+  return n;
+}
+function runChecks() {
+  check(!!FIRE, 'ASSETS.models.burnerFire exists (wreckage.js); burnerFlame kept: ' + !!OLD);
+  const e1 = frameErrors(FIRE, FIRE, 'full'), e2 = frameErrors(FIRE, FIRE.lods.half, 'half');
+  check(e1.length + e2.length === 0, e1.length + e2.length ? e1.concat(e2).slice(0, 6).join('; ') :
+    'sprite format: every frame 13x11 / 7x6, glyph + fg rows line up, ASCII 32..126, every key defined, space glyph <=> space key');
+  const keysOk = Object.keys(FIRE.keys).every((k) => FIRE.keys[k].e === true && !!P.rgb[FIRE.keys[k].c]);
+  check(keysOk, 'all keys emissive and in the palette: ' + Object.keys(FIRE.keys).map((k) => k + '=' + FIRE.keys[k].c).join(' '));
+  const a = FIRE.animations.burn, ah = FIRE.lods.half.animations.burn;
+  check(a.frames.length === 8 && a.fps === 12 && a.loop && ah.frames.length === 8 && ah.fps === 12,
+    `burn: ${a.frames.length} frames @ ${a.fps} fps (half ${ah.frames.length} @ ${ah.fps}) - 36.2: 8 @ 12`);
+  check(FIRE.size.w === 13 && FIRE.size.h === 11 && FIRE.world.w === 0.7 && FIRE.world.h === 1.0 && FIRE.anchor.x === 6 && FIRE.anchor.y === 10 &&
+        FIRE.lods.half.size.w === 7 && FIRE.lods.half.size.h === 6 && FIRE.lods.half.anchor.x === 3 && FIRE.lods.half.anchor.y === 5,
+    'size 13x11, world 0.7 x 1.0 m, anchor bottom centre (6,10); half 7x6 anchor (3,5)');
+  // the engine atlas rule (spritesAtlas.js): every non-space cell with a non-space key must resolve
+  let minDiff = 1e9, coreLow = true, flicks = [];
+  for (let i = 0; i < 8; i++) {
+    const A = a.frames[i], B = a.frames[(i + 1) % 8];
+    let diff = 0;
+    for (let r = 0; r < 11; r++) for (let c = 0; c < 13; c++) if (A.S.glyphs[r].charAt(c) !== B.S.glyphs[r].charAt(c)) diff++;
+    minDiff = Math.min(minDiff, diff);
+    const cs = cells(A), avg = (k) => { const l = cs.filter((x) => x[2] === k); return l.reduce((s, x) => s + x[0], 0) / Math.max(1, l.length); };
+    if (!(avg('4') > avg('3') && avg('3') > avg('2') && avg('2') > avg('1'))) coreLow = false;
+    flicks.push(detached(A, 11, 13));
+  }
+  check(minDiff >= 8, `shape changes every frame: >= ${minDiff} cells differ between consecutive frames (incl. f7 -> f0)`);
+  check(coreLow, 'heat ladder by height in every frame: core (4) lowest, then mid (3), outer (2), tips (1) highest');
+  check(flicks.every((n) => n >= 1 && n <= 2), `detached flicks per frame (8-connected bits not touching the bed): ${flicks.join(' ')} (want 1-2)`);
+  for (const rows of [90, 180]) {
+    const ds = [1.5, 3, 5, 8].map((d) => { const s = spriteScale(FIRE, d, rows); return `${d} m: ${(rows * 1.158 / d).toFixed(0)} rows${s.half ? ' half' : ''} x${s.scale.toFixed(1)}`; });
+    check('info', `${rows === 90 ? '240x90' : '480x180'} fire height on screen (1.0 m): ${ds.join(' | ')}`);
+  }
+  // particles
+  const errs = PS.validate(P.rgb);
+  check(errs.length === 0, errs.length ? 'particles.validate(): ' + errs.join('; ') : 'particles.validate() clean (embers included)');
+  const probe = createParticles({ capacity: 64, seed: 1 });
+  for (const k of ['embers', 'smoke']) {
+    try { probe.defineEmitter(k, PS.toEmitterDef(k, P.rgb)); check(true, `engine defineEmitter("${k}") accepts the preset`); }
+    catch (e) { check(false, `engine defineEmitter("${k}") threw: ${e.message}`); }
+  }
+  const e = PS.presets.embers;
+  check(e.rate === 8 && e.life[0] === 0.8 && e.life[1] === 1.4 && e.speed[0] === 0.6 && e.speed[1] === 1.2 && e.spreadDeg === 25 && e.emissive &&
+        e.colors[0] === 'emberHot' && /Dark$/.test(e.colors[e.colors.length - 1]) && e.glyphs.length === e.colors.length,
+    `embers per 36.2: rate ${e.rate}, life ${e.life}, speed ${e.speed}, spread ${e.spreadDeg}, ${e.colors[0]} -> ${e.colors[e.colors.length - 1]}, 1:1 ramps`);
+  const s = createParticles({ capacity: 256, seed: 4 });
+  const id = s.defineEmitter('embers', PS.toEmitterDef('embers', P.rgb));
+  const h = s.createEmitter(id, 0, 0, EMIT.embers); s.setOn(h, true);
+  let sp0 = 0, above = 0, tot = 0, top = 0;
+  for (let i = 0; i < 900; i++) {
+    s.step(); if (i === 299) sp0 = s.stats.spawned;
+    if (i >= 300) for (let j = 0; j < s.cap; j++) if (s.alive[j]) { tot++; top = Math.max(top, s.pz[j]); if (s.pz[j] > FIRE_Z + FIRE.world.h) above++; }
+  }
+  const rate = (s.stats.spawned - sp0) / 10;
+  check(Math.abs(rate - 8) <= 1, `embers spawn ${rate.toFixed(1)}/s`);
+  check(above / tot > 0.15 && top < FIRE_Z + FIRE.world.h + 1.5, `embers rise out of the fire: ${(100 * above / tot).toFixed(0)} % of live embers above the sprite top (z ${(FIRE_Z + FIRE.world.h).toFixed(2)}), highest z ${top.toFixed(2)}`);
+  check(EMIT.smoke >= FIRE_Z + FIRE.world.h - 0.1, `smoke starts at z ${EMIT.smoke.toFixed(2)} = at the sprite tip (z ${(FIRE_Z + FIRE.world.h).toFixed(2)}): dark smoke never covers the body`);
+  check('info', `placement (36.2b): prop burnerFire x 18.5 y 6.5 z ${FIRE_Z}; brazier emitters offset.up from the burner feet (z ${FEET_Z}): embers ${(EMIT.embers - FEET_Z).toFixed(2)}, smoke ${(EMIT.smoke - FEET_Z).toFixed(2)}`);
+  $('checks').innerHTML = checks.join('');
+}
+
+// ---------------------------------------------------------------- loop
+let paused = false, acc = 0, last = performance.now(), simT = 0, lastDraw = 0;
+function stepSim() { ps.setWind(+$('wind').value, 0, 0); ps.step(); simT += STEP; }
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!paused) { acc += dt * +$('speed').value; while (acc >= STEP) { stepSim(); acc -= STEP; } }
+  if (now - lastDraw > 30) {   // ~30 Hz redraw (the 480 crop is 14 400 canvas cells)
+    lastDraw = now;
+    const d = +$('dist').value, f = flicker(simT);
+    for (const v of VIEWS) renderView(v, simT, d, f);
+    drawArt('live', FIRE, FIRE, 9, 12, simT, 4);
+    $('distV').textContent = d.toFixed(1) + ' m'; $('windV').textContent = (+$('wind').value).toFixed(1) + ' m/s';
+    $('stat').textContent = `t ${simT.toFixed(2)} s  frame ${Math.floor(simT * 12) % 8}`;
+  }
+  requestAnimationFrame(frame);
+}
+$('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); $('pause').textContent = paused ? 'play' : 'pause'; };
+$('step').onclick = () => { const n = Math.round(1 / 12 / STEP); for (let i = 0; i < n; i++) stepSim(); };
+$('mode').onchange = applyMode;
+
+try {
+  buildSim();
+  runChecks();
+  drawArt('art', FIRE, FIRE, 12, 18);
+  drawArt('artHalf', FIRE, FIRE.lods.half, 12, 18);
+  requestAnimationFrame(frame);
+} catch (e) {
+  $('fatal').textContent = 'Error: ' + e.message;
+  console.error(e);
+}
+</script>
+</body>
+</html>
