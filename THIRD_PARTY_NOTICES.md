@@ -9,7 +9,7 @@ raw files are committed only when the licence clearly allows redistribution (CC0
 - Attribution: not required.
 
 ## StickyBizcuit voxel asset pack ("Asset Pack For Itch", itch.io)
-- Files: ~106 `.vox` models (objects, stone wall and ground, village house) - raw `.vox` stay local in git-ignored `design/vox/stickybizcuit/` (readme does not cover re-publishing the raw files); only the converted game models (US-145) are committed.
+- Files: ~106 `.vox` models (objects, stone wall and ground, village house) - **committed** (owner decision 2026-10-03) in `design/vox-sb/` with the author's readme (`README-StickyBizcuit.txt`); PNG previews not committed.
 - Terms (author's readme, owner confirmed 2026-10-02 "free to use"): free to use, alter and edit; credit appreciated.
 - **Requirement:** the game must contain a hidden easter-egg reference to the author's username **StickyBizcuit**.
 - Credit: "Voxel assets by StickyBizcuit" in the credits, plus the easter egg (tracked in docs/backlog.md, OWN-REQ-013).
