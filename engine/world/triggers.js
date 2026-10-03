@@ -80,6 +80,7 @@ export function buildTriggers(world) {
   const out = [];
   const tmpW = { x: 0, y: 0, z: 0 };
   for (const s of world.structures) {
+    if (s.kind === 'mesh') continue;
     const def = s.level.def;
     for (const tr of (def && def.triggers) || []) {
       const usedKey = tr.once ? `used.${s.id}.${tr.id}` : null;
