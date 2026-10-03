@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -51,8 +51,8 @@ import { existsSync } from 'node:fs';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
-import { pathToFileURL } from 'node:url';
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, validateMesh } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
 const CLASSIC_SCRIPTS = [
@@ -551,19 +551,78 @@ function validateVoxelModelSafe(def, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// ME-13b: content/meshes/*.mesh.json schema sanity. This is a standalone
+// filesystem check, NOT part of validateContent(ASSETS) above - ME-14 (not
+// done yet) is what wires a `mesh` content kind into manifest.json/
+// loadContentPack/ID_COLLECTIONS, so there is no ASSETS-level place to hang
+// this check on today. Reuses validateMesh (engine/mesh/MeshData.js, via
+// engine/index.js) rather than re-deriving triCount/idx-range/etc checks
+// that already exist there.
+/**
+ * @param {string} dir - directory to scan for `*.mesh.json` (default:
+ *   content/meshes/ next to this file)
+ * @returns {{ errors: string[], checks: number }}
+ */
+function findMeshFiles(dir, out) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return; // no content/meshes/ yet - nothing to check
+    throw e;
+  }
+  for (const entry of entries) {
+    const full = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) findMeshFiles(full, out);
+    else if (entry.name.endsWith('.mesh.json')) out.push(full);
+  }
+}
+
+export function validateMeshFiles(dir) {
+  const errors = [];
+  let checks = 0;
+  const files = [];
+  findMeshFiles(dir, files);
+  for (const full of files) {
+    checks++;
+    let obj;
+    try {
+      obj = JSON.parse(readFileSync(full, 'utf8'));
+    } catch (e) {
+      errors.push(`${full}: JSON parse failed: ${e.message}`);
+      continue;
+    }
+    let mesh;
+    try {
+      mesh = meshFromJSON(obj);
+    } catch (e) {
+      errors.push(`${full}: meshFromJSON threw: ${e.message}`);
+      continue;
+    }
+    const { errors: meshErrors } = validateMesh(mesh);
+    for (const m of meshErrors) errors.push(`${full}: ${m}`);
+  }
+  return { errors, checks };
+}
+
+// ---------------------------------------------------------------------------
 // CLI entry point
 // ---------------------------------------------------------------------------
 async function main() {
   const ASSETS = await loadDesignAssets();
   const { errors, warnings, checks, meshOnlyCount } = validateContent(ASSETS);
+  const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
+  const { errors: meshFileErrors, checks: meshFileChecks } = validateMeshFiles(meshFilesDir);
+  const allErrors = errors.concat(meshFileErrors);
+  const allChecks = checks + meshFileChecks;
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
-  if (errors.length) {
-    for (const e of errors) console.error(e);
-    console.error(`content INVALID: ${errors.length} finding(s) out of ${checks} checks${meshOnlyText}`);
+  if (allErrors.length) {
+    for (const e of allErrors) console.error(e);
+    console.error(`content INVALID: ${allErrors.length} finding(s) out of ${allChecks} checks${meshOnlyText}`);
     process.exitCode = 1;
   } else {
-    console.log(`content OK (${checks} checks${warnings.length ? `, ${warnings.length} warning(s)` : ''}${meshOnlyText})`);
+    console.log(`content OK (${allChecks} checks${warnings.length ? `, ${warnings.length} warning(s)` : ''}${meshOnlyText})`);
   }
 }
 

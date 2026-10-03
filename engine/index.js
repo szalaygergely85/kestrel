@@ -75,6 +75,12 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
 export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
+// ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
+// needed by tools/gltf-import.mjs (and any future mesh-producing CLI tool)
+// to write/round-trip a MeshData; MeshData's own typedef is already the
+// documented public shape (27.3), these are just its (de)serialize/validate
+// functions.
+export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
 /** Renderer used when `?renderer=` is absent (owner 2026-10-03: 'mesh' is the default; '?renderer=dda' still selects the legacy caster; game main.js and the editor read it). */
 export const DEFAULT_RENDERER = 'mesh';
 export { castModels } from './voxel/voxelMarch.js';

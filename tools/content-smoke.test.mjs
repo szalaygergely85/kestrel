@@ -125,11 +125,17 @@ const allJsonFiles = listJsonFiles(CONTENT_DIR);
 // content/vox/*.map.json are voxel import maps (OWN-REQ-005a/b/c), not a
 // loadPack content kind ('level'/'world' only, engine/content/loadPack.js
 // KNOWN_KINDS) - they are read by tools/vox-import.mjs, not the manifest.
+// content/meshes/**/*.mesh.json (ME-13b) are glTF-import output: ME-14 is
+// the still-open story that wires a `mesh` content kind into
+// manifest.json/loadPack/ID_COLLECTIONS, so these aren't manifest-listed
+// yet either - they are written by tools/gltf-import.mjs and checked by
+// tools/validate-content.mjs's own validateMeshFiles(), not loadPack.
 // Everything else under content/ must be either the manifest itself or one
 // of its listed files.
 const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'manifest.json') return false;
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;
+  if (rel.startsWith('meshes/') && rel.endsWith('.mesh.json')) return false;
   return !manifest.files.includes(rel);
 });
 ok(
