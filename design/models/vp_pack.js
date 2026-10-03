@@ -429,6 +429,17 @@ A.voxelModels.toolPlate = {
     }
   }
 };
+  // ATTACH (same guard as voxel_world.js): list each model in ASSETS.models (Assets tab, levels) once every
+  // material key is known to palette.materials + detailPass.materials.
+  if (A.palette && A.detailPass) {
+    A.models = A.models || {};
+    ["pig", "bunny", "bush", "grassPatch", "campfire", "tree", "stump", "toolPlate"].forEach(function (k) {
+      var m = A.voxelModels[k], ok = true, i;
+      if (!m || A.models[k]) return;
+      for (i in m.voxel.mats) if (!A.palette.materials[m.voxel.mats[i]] || !A.detailPass.materials[m.voxel.mats[i]]) ok = false;
+      if (ok) A.models[k] = m;
+    });
+  }
   if (typeof module === 'object' && module && module.exports) {
     module.exports = {
       pig: A.voxelModels.pig,

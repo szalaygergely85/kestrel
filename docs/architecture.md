@@ -4858,3 +4858,58 @@ Existing poses must stay unchanged when a world has no water.
    - Replace "exponential fog reaching full at ~12 m" with "ease-out fog `s(2 - s)`, full at 12 m (no `exp`, parity)".
    - Split into 144a1 and 144a2.
 7. **US-055a:** 055a2 becomes 055a2a (layer) + 055a2b (composite). The `water` pose and the 32.2 look ACs are unchanged.
+
+## 36. Show-it look fixes (2026-10-03)
+
+Owner walk-test 2026-10-03: pond/cellar water, burner fire, editor asset icons. Steps are self-contained for the PC-B programmer (OpenAI Codex): files, exact change, tests, done-when.
+
+### 36.1 Water look (US-055a2c owner notes; all 3 looks water / pond / murky)
+
+**Diagnosis (`waterComposite.js` + glsl twin).** (1) The glint is mixed into `wr/wg/wb` BEFORE `bg = rgb * bgK`, so ~10 % of the 0.5 m hash cells also get a light-grey **bg**: close up, one 0.5 m cell covers many screen cells -> grey rectangles. (2) Axis-aligned 0.5 m lattice -> same-glyph blocks with straight edges. (3) Colour uses the **path** alpha along the view ray; at grazing angles it saturates to 1 almost everywhere -> no depth tint. (4) No shore term (143b2 not built). (5) `floor(t*waveHz)` re-rolls the whole sheet at once -> flicker, not motion. 143b1 waves are **not** needed for these shots.
+
+**Fix (both twins, same expressions in the same order, zero-alloc):**
+- **Glint fg only:** `bg` from the un-glinted rgb; glint mixes fg only, with probability `look.glintP` (default 0.04, was 0.1).
+- **Lattice:** `u = (Px*0.8776 + Py*0.4794)/cellM - ou`, `v = (-Px*0.4794 + Py*0.8776)/cellM` (fixed 0.5 rad rotation), `iu = floor(u)`, `iv = floor(v + 0.5*(iu & 1))` (brick offset). `cellM` default 0.25. `ou = (look.drift/cellM * t) mod 1024`, folded on the CPU (f64) -> ripples slide.
+- **Staggered re-roll:** `h0 = hash(iu&1023, iv&1023, SALT)`; `tick = floor(wavePhase + (h0 & 255)/256)` with `wavePhase = (t*waveHz) mod 1024` folded on the CPU; `h = hash(iu&1023, iv&1023, SALT + 31*tick)`. Cells change one by one.
+- **Depth tint by column:** `zF = P(rawDepth).z` (one extra unproject; sky -> column = inf), `col = zW - zF`; colour = `mix(shallow, deep, clamp(col/tintDepth, 0, 1))`. Path alpha `a` still decides see-through (unchanged).
+- **Shore band (the 143b2 shore part, now, without waves):** `e` = distance to the region edge (rect: min of 4 sides; circle: `r - |P-c|`); `s = min(col/foamDepth, e/shoreW)`; if `s < 1` and `dW < foamFar`: glyph = `foamRamp[min(floor(s*n), n-1)]`, fg = `mix(rim, fgWater, s)`, bg unchanged. Crest foam stays in 143b2.
+- **Slot table:** `WL_STRIDE` 36 -> 56 (14 vec4; 12 slots = 168 vec4, under the WebGL2 minimum of 224 - assert at link). New: 14 cellM, 15 glintP, 36 ou, 37 wavePhase, 38 tintDepth, 39 shoreW, 40..43 shape (rect x0,y0,x1,y1 | circle cx,cy,r,0), 44..46 foam codes, 47 foamN, 48..50 rim rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar. New look keys + engine defaults: `cellM 0.25, glintP 0.04, drift 0.12 (m/s), tintDepth 1.2, shoreW 0.6, rim [200,220,215]`; `foamRamp` (1..3 glyphs, default '*o.'), `foamDepth 0.3`, `foamFar 40` become live.
+
+| Step | Track | Size | Files / change | Tests / done-when |
+|---|---|---|---|---|
+| 36.1a | PC-A designer | 0.25 d | `design/water-looks.js`: add `cellM, glintP, drift, tintDepth, shoreW, rim` to water / pond / murky (murky: muddy rim, drift ~0.03, tintDepth 0.5); trim `foamRamp` to <= 3 glyphs; design/README "Water looks" field list | `node tools/run-tests.mjs --filter water` PASS (today's packer ignores unknown keys) |
+| 36.1b | PC-B programmer | 0.5 d | `engine/render/waterLook.js` (stride 56; pack + validate the new keys; fold `ou`, `wavePhase` in `fillWaterSlotTable`), `engine/render/waterComposite.js` + `engine/render/gpu/glsl/waterComposite.frag.js`: glint fg-only, rotated brick lattice, drift, staggered re-roll | `waterComposite.test.js` new cases: a glinted cell's bg == the un-glinted bg; glyph map over a 2x2 m patch has no 0.5 m axis-aligned blocks (adjacent 0.25 m samples differ somewhere in every 0.5 m square); `ou` changes the glyph map over 1 s; validator rejects bad keys. `?gpucompare=1&renderer=mesh&pose=water` 0 FAIL; run-tests + check-deps green |
+| 36.1c | PC-B programmer | 0.75 d | same 3 files: shape + foam + rim + tintDepth in the slot (shape from `world.water` x0/y0/x1/y1 or cx/cy/r2), column depth tint, shore band | tests: rect edge cell -> foam glyph, centre -> ramp glyph; circle `e` exact at r; `col < tintDepth` lighter than `col >= tintDepth`; sky cell keeps the old path. gpucompare water poses 0 FAIL; one headless `?f3=1` reading `wcomp` p95 <= 0.1 ms. Print the terrain height under quietPond (centre + 8 rim points): if the column is < 0.3 m everywhere, write `NEEDS PC-A: designer pond bowl` (don't edit terrain) |
+
+### 36.2 Flame (US-053c)
+
+**Decision:** 1-cell particles cannot read as a fire body at burner distance. Particles larger than 1 cell would be a new engine feature (layer + both twins) and would not look better. Cheapest convincing fix = the owner's Build-engine style: an **animated emissive billboard sprite for the fire body**, with particles only as **embers + smoke** on top. The sprite pass already works on both renderers; the old `burnerFlame` was just too small (9x5 cells, 0.5 m). Light: `lights.brazier` (preset `torch`, flicker 8-12 Hz, amount 0.15) already exists and stays unchanged.
+
+| Step | Track | Size | Files / change | Tests / done-when |
+|---|---|---|---|---|
+| 36.2a | PC-A designer | 0.5 d | New `A.models.burnerFire` in `design/models/wreckage.js` (keep `burnerFlame` for old saves): billboard, 8 frames `burn` @ 12 fps, full 13w x 11h cells, `world {w: 0.7, h: 1.0}`, anchor bottom-centre, half LOD 7x6; keys flameTip/Outer/Mid/Core + ember, all `e: true`. Build look: wide licking tongues, white-yellow core low, ragged red tips, 1-2 detached flicks per frame, shape changes every frame. `design/models/particles.js`: new preset `embers` (rate ~8, life 0.8-1.4 s, speed 0.6-1.2, spread 25, emberHot -> dark); smoke unchanged. Preview page shows the fire on the burner model for scale | sprite + emitter validators PASS; owner OK on the preview |
+| 36.2b | PC-B programmer | 0.25 d | `content/levels/tower.level.json`: add prop `burnerFire` (model `burnerFire`, anim `burn`, x 18.5, y 6.5, z 1.05, no collide); brazier `emitters`: `flame` -> `embers`, keep `smoke` | level-load test: the prop exists and its model resolves; run-tests green; one headless `tools/capture-browser.mjs` shot at the burner (`?renderer=mesh`) shows a ~1 m fire body. If the sprite does not draw under `renderer=mesh`: stop, `ASK ARCHITECT` |
+
+### 36.3 Asset icons (OWN-REQ-014)
+
+**Decision: offscreen render with the real engine, CPU twin (no second WebGL context).**
+- **Setup:** hidden canvas + `createEngine({canvas, assets, cols: 160, gpu: false, inputTarget: <detached div>})` + `createFrame({engine, assets, rt, gpuParam: false, renderer: 'mesh'})`.
+- **Mini world:** a level doc built in memory (one open-sky 6x6 m sector, neutral floor, palette sun, ONE prop of the model at the centre, facing 180), loaded with `World.load(doc, assets, {})` -> `engine.setWorld`.
+- **Camera:** 3/4 view, yaw 45 (from the SW looking NE), pitch -30. Distance: the bounding sphere (from the model bounds) fits the vertical FOV with a 10 % margin.
+- **Crop:** project the 8 bbox corners to cells -> pixel rect of the 2D canvas -> `drawImage` letterboxed into a **96x96** icon canvas (bg #101418) -> data URL.
+- **Budget:** a 160x60 CPU frame costs ~5-20 ms, so render **1 icon per rAF**, only while the Assets tab is visible. The ASCII thumbnail (`thumbnails.js`) stays as the placeholder/fallback (if the render throws, keep it).
+- **Cache key** = `model key + '|' + fnv1a32(JSON.stringify(model def)) + '|' + ICON_VERSION`. Stored in a memory Map + `localStorage['kestrel.icon.v1.' + key]` (~5 KB each). A .vox import/rebind changes the hash -> re-render.
+- Tools only: imports `engine/index.js` only.
+
+| Step | Track | Size | Files / change | Tests / done-when |
+|---|---|---|---|---|
+| 36.3a | PC-B programmer | 0.5 d | New pure `tools/editor/iconFit.js`: `modelBounds(model)` -> `{w, d, h}` m (voxel dims x cell x scale; sprite world.w/w/h; mesh .vox bounds); `fitIconCamera(bounds, fovDeg, aspect)` -> `{x, y, z, yawDeg: 45, pitchDeg: -30}`; `iconCacheKey(key, model)`; `createIconQueue(perFrame = 1)` (enqueue / dedupe / next) | `tools/editor/iconFit.test.mjs`: all 8 corners project inside the grid with >= 5 % margin for a 0.2 m, a 2 m and a 20 m model; the key changes when one voxel changes; the queue never yields > perFrame per tick |
+| 36.3b | PC-B programmer | 0.75 d | New `tools/editor/iconRender.js`: `createIconRenderer(assets)` (the hidden engine above, made once) with `renderIcon(key) -> string` (data URL); a `?icontest=1` debug strip in `tools/editor/main.js` that draws 6 icons | one headless `capture-browser.mjs` shot of the strip: 6 non-empty, same-size icons; the editor main viewport is unaffected; run-tests + check-deps green |
+| 36.3c | PC-B programmer | 0.5 d | `tools/editor/main.js` Assets tab (around line 870): `<img>` 48x48 CSS from the cache, otherwise the ASCII placeholder + enqueue; rAF pump 1/frame while the tab is visible; localStorage cache | the owner ACs below |
+
+**Owner ACs:**
+1. Every model in the Assets tab shows a 3D 3/4-view icon, and all icons are the same size.
+2. A tiny prop (e.g. lever) and a big one (e.g. far_tower) both fill their icon (auto-fit, nothing cut off).
+3. The editor stays responsive while icons fill in (no freeze > 0.1 s).
+4. Reopening the editor shows the icons at once (cached).
+5. Importing a .vox shows its icon within a second; re-importing a changed .vox updates it.

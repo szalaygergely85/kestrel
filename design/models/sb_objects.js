@@ -600,8 +600,8 @@ ASSETS.voxelModels.treeTrunk = {
   }
 };
 
-ASSETS.voxelModels.tree = {
-  name: 'tree',
+ASSETS.voxelModels.sbTree = {
+  name: 'sbTree',
   desc: 'Tree, oak-ish canopy (Objects/Tree.vox): ANIMATED in the source (the readme: \'the trees are animated\') - 9 scene placements split into 6 unique frames with tools/vox-split.mjs (3 were exact duplicates); THIS IMPORTS FRAME 1 OF 6 ONLY, no animation wiring (split .vox frames are not committed by this story - regenerate with vox-split design/vox-sb/Objects/Tree.vox if the other 5 sway frames are wanted). 32x32x42 @ 0.15 m/cell (~4.8 x 4.8 x 6.3 m). Canopy (3 dark olive-green shades) -> grass (closest existing flat green; brighter/more saturated than the source colour - flagged); bark -> timber_old.',
   voxel: {
     version: 1,
@@ -1118,5 +1118,17 @@ ASSETS.voxelModels.torchLongBlue = {
     }
   }
 };
+
+// ATTACH (same guard as voxel_world.js): list each model in ASSETS.models (Assets tab, levels) once every
+// material key is known to palette.materials + detailPass.materials.
+if (A.palette && A.detailPass) {
+  A.models = A.models || {};
+  ["barrel", "crate", "cratesMultiple", "gravestone1", "gravestone1Weathered", "gravestone2", "gravestone2Weathered", "gravestone3", "gravestone3Weathered", "treeTrunk", "sbTree", "treeBig", "treeBirch", "treePine", "fire", "fireBlue", "torchLong", "torchLongBlue"].forEach(function (k) {
+    var m = A.voxelModels[k], ok = true, i;
+    if (!m || A.models[k]) return;
+    for (i in m.voxel.mats) if (!A.palette.materials[m.voxel.mats[i]] || !A.detailPass.materials[m.voxel.mats[i]]) ok = false;
+    if (ok) A.models[k] = m;
+  });
+}
 
 })(typeof window !== "undefined" ? window : globalThis);
