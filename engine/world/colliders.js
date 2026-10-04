@@ -296,6 +296,43 @@ export function buildWorldColliders(world) {
 }
 
 /**
+ * ME-06c2 (37.2): one load-time BVH of open eight-sided trunk prisms.
+ * @param {{count:number,x:Float64Array,y:Float64Array,z:Float64Array,yawDeg:Int16Array,species:Uint8Array}} scatter
+ * @param {{species:Array<{trunkR:number,trunkH:number}>}} cfg
+ * @returns {MeshCollider|null}
+ */
+export function buildTrunkCollider(scatter, cfg) {
+  if (!scatter || scatter.count === 0) return null;
+  const pos = new Float64Array(scatter.count * 8 * 2 * 9);
+  let o = 0;
+  for (let i = 0; i < scatter.count; i++) {
+    const s = cfg.species[scatter.species[i]];
+    const r = s.trunkR / Math.cos(Math.PI / 8);
+    const yaw = scatter.yawDeg[i] * Math.PI / 180;
+    const zb = scatter.z[i] - 0.5, zt = scatter.z[i] + s.trunkH;
+    for (let side = 0; side < 8; side++) {
+      const a = yaw + side * Math.PI / 4, b = yaw + (side + 1) * Math.PI / 4;
+      const ax = scatter.x[i] + r * Math.cos(a), ay = scatter.y[i] + r * Math.sin(a);
+      const bx = scatter.x[i] + r * Math.cos(b), by = scatter.y[i] + r * Math.sin(b);
+      // CCW ring, outward winding; no top/bottom faces to invent support.
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zb;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
+    }
+  }
+  const bvh = buildBvh(pos, null, null);
+  return {
+    id: 'scatter:trunks', kind: 'trimesh', bvh,
+    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
+    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
+    enabled: true,
+  };
+}
+
+/**
  * Refits (or, on the rare sentinel-mismatch fallback path, fully rebuilds)
  * `${structure.id}:${tag}`'s collider to the tag's CURRENT `ceilH`. No-op if
  * that tag never got a collider (e.g. it had 0 triangles at load). Zero

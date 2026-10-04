@@ -14,7 +14,7 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildTrunkCollider, refitDynCollider } from './colliders.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
@@ -387,6 +387,10 @@ export class World {
     }
 
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
+    if (w.physicsMode === 'mesh' && w.scatter) {
+      const trunks = buildTrunkCollider(w.scatter, w.terrain.recipe.recipe.forest.trees);
+      if (trunks) w.colliders.push(trunks);
+    }
 
     if (!w.sun) {
       const first = w.structures.find((s) => s.kind !== 'mesh');
