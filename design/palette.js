@@ -215,7 +215,23 @@
     // keys so a canopy never reads as a lawn; leafDark is the cool shade under the crowns + pine needles.
     leafLight: '#93bf52',
     leaf: '#4f8c36',
-    leafDark: '#25502e'
+    leafDark: '#25502e',
+    // ENV-01d ground detail (design/models/ground_detail.js): flower petals = warm specks on the grass (never danger
+    // red: the pink is light and cool, not the red family), toadstool caps (orange-brown), sawn / broken wood ends.
+    petalYellowLight: '#fff09a',
+    petalYellow: '#f2c62e',
+    petalYellowDark: '#a87c14',
+    petalWhite: '#f6f3ea',
+    petalWhiteDark: '#aeb0a8',
+    petalPinkLight: '#ffc4dc',
+    petalPink: '#e8709e',
+    petalPinkDark: '#8c3458',
+    mushroomCapLight: '#e8925a',
+    mushroomCap: '#c25a2a',
+    mushroomCapDark: '#6e2c14',
+    woodCutLight: '#e2c48e',
+    woodCut: '#c09a64',
+    woodCutDark: '#7a5a34'
   };
 
   // ---------------------------------------------------------------------------
@@ -298,7 +314,11 @@
     // The Kestrel burner keeps the `torch` preset (D-011: "same light preset").
     relay:   { color: 'aether', intensity: 0.9, type: 'point', radius: 10, falloff: 'smooth',
                flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 },
-               grow: { duration: 1.0, note: 'intensity ramps 0 -> 1 with the relay "wake" animation (light on at wake frame 2)' } }
+               grow: { duration: 1.0, note: 'intensity ramps 0 -> 1 with the relay "wake" animation (light on at wake frame 2)' } },
+    // ENV-02 (D-038, v1.31): SPARE preset for a candle / small coal glow (not placed: the keeper's candle stub in the
+    // tower is cold, canon). A small warm pool, well under the hook lamp (0.55 / 3.5 m). Editor light list + previews.
+    candle:  { color: 'torch', intensity: 0.32, type: 'point', radius: 2.2, falloff: 'smooth',
+               flicker: { hzMin: 5, hzMax: 9, amount: 0.12, jitter: 0.03 } }
   };
 
   // ---------------------------------------------------------------------------
@@ -1035,6 +1055,47 @@
     texture: { w: 4, h: 4, scale: [8, 8], key: {
       a: { shade: 1.00 }, s: { shade: 1.08, tint: 'grassLight', amount: 0.4, glyph: "'" }, d: { shade: 0.80, tint: 'leaf', amount: 0.55, glyph: '%' }
     }, rows: ['asad', 'daas', 'aasa', 'sdaa'] }
+  };
+  // ENV-01d ground detail (design/models/ground_detail.js), appended last so no material id moves.
+  materials.petal_yellow = {
+    desc: 'GROUND DETAIL (ENV-01d). Buttercup heads: saturated warm yellow, bright `*` blooms, a darker ochre heart. ' +
+          'The strongest speck on the grass (hue AND value against grass*).',
+    base: 'petalYellow', albedo: 0.95, ramp: 'foliage', bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [20, 20], key: {
+      a: { shade: 1.00, glyph: '*' }, l: { shade: 1.10, tint: 'petalYellowLight', amount: 0.5, glyph: '*' }, d: { shade: 0.80, tint: 'petalYellowDark', amount: 0.6, glyph: 'o' }
+    }, rows: ['al', 'da'] }
+  };
+  materials.petal_white = {
+    desc: 'GROUND DETAIL (ENV-01d). Daisy heads: warm white petals, cool grey under-petals. Reads by value on grass and ' +
+          'on the dark forest floor.',
+    base: 'petalWhite', albedo: 0.92, ramp: 'foliage', bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [20, 20], key: {
+      a: { shade: 1.00, glyph: '*' }, d: { shade: 0.82, tint: 'petalWhiteDark', amount: 0.5, glyph: '+' }, y: { shade: 1.00, tint: 'petalYellow', amount: 0.55, glyph: 'o' }
+    }, rows: ['ad', 'ya'] }
+  };
+  materials.petal_pink = {
+    desc: 'GROUND DETAIL (ENV-01d). Campion heads: light cool pink, darker magenta-rose pockets. Lighter and cooler than ' +
+          'danger / vital red, so a pink speck never reads as a threat or a heart.',
+    base: 'petalPink', albedo: 0.90, ramp: 'foliage', bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [20, 20], key: {
+      a: { shade: 1.00, glyph: '*' }, l: { shade: 1.10, tint: 'petalPinkLight', amount: 0.5, glyph: '*' }, d: { shade: 0.78, tint: 'petalPinkDark', amount: 0.55, glyph: '+' }
+    }, rows: ['la', 'ad'] }
+  };
+  materials.mushroom_cap = {
+    desc: 'GROUND DETAIL (ENV-01d). Toadstool caps: orange-brown dome, lighter crown, dark rim. Round `o O` glyphs; ' +
+          'the pale spots are separate linen voxels. Warm, so it pops on the cool forest floor.',
+    base: 'mushroomCap', albedo: 0.86, ramp: 'rubble', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [24, 24], key: {
+      a: { shade: 1.00 }, l: { shade: 1.10, tint: 'mushroomCapLight', amount: 0.45, glyph: 'O' }, d: { shade: 0.78, tint: 'mushroomCapDark', amount: 0.55, glyph: 'o' }
+    }, rows: ['alad', 'aala', 'daal', 'laaa'] }
+  };
+  materials.wood_cut = {
+    desc: 'GROUND DETAIL (ENV-01d). Sawn / broken wood: the pale end of a fallen log or a stump top, growth rings `o` ' +
+          'in woodCutDark, lighter heartwood flecks. Much lighter than timber_old bark, so a log reads end-on.',
+    base: 'woodCut', albedo: 0.88, ramp: 'wood', bg: { mode: 'darken', k: 0.16 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [20, 20], key: {
+      a: { shade: 1.00 }, r: { shade: 0.72, tint: 'woodCutDark', amount: 0.6, glyph: 'o' }, l: { shade: 1.08, tint: 'woodCutLight', amount: 0.45 }
+    }, rows: ['arla', 'raar', 'lara', 'arar'] }
   };
 
   // ---------------------------------------------------------------------------

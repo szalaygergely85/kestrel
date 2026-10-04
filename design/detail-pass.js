@@ -831,6 +831,53 @@
       grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
       face: { set: 'ivy', mid: 'ivy', far: 'ivy' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // ENV-01d ground detail (design/models/ground_detail.js; palette.js v1 records of the same key). Tiny voxels
+    // (5-11 cm): fine tone grid, existing sets only (petals = the star set `glint`, cap + sawn wood = round rubble set).
+    petal_yellow: {
+      v1: 'petal_yellow', seed: 701,
+      desc: 'GROUND DETAIL (ENV-01d). Buttercup heads: yellow `* +` stars, ochre heart tone. Not emissive.',
+      albedo: 0.95, bgK: 0.20, detail: 40, jitter: 0.06,
+      tones: [['petalYellow', 4], ['petalYellowLight', 2], ['petalYellowDark', 1]],
+      grid: { u: 0.03, v: 0.03, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    petal_white: {
+      v1: 'petal_white', seed: 702,
+      desc: 'GROUND DETAIL (ENV-01d). Daisy heads: white `* +` stars, grey under-petals, a yellow heart tone. Not emissive.',
+      albedo: 0.92, bgK: 0.20, detail: 40, jitter: 0.06,
+      tones: [['petalWhite', 4], ['petalWhiteDark', 1], ['petalYellow', 1]],
+      grid: { u: 0.03, v: 0.03, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    petal_pink: {
+      v1: 'petal_pink', seed: 703,
+      desc: 'GROUND DETAIL (ENV-01d). Campion heads: light cool pink `* +` stars, rose pockets. Not emissive.',
+      albedo: 0.90, bgK: 0.20, detail: 40, jitter: 0.06,
+      tones: [['petalPink', 4], ['petalPinkLight', 2], ['petalPinkDark', 1]],
+      grid: { u: 0.03, v: 0.03, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    mushroom_cap: {
+      v1: 'mushroom_cap', seed: 704,
+      desc: 'GROUND DETAIL (ENV-01d). Toadstool caps: orange-brown, light crown / dark rim tones, round `o O` rubble glyphs.',
+      albedo: 0.86, bgK: 0.18, detail: 40, jitter: 0.06,
+      tones: [['mushroomCap', 4], ['mushroomCapLight', 2], ['mushroomCapDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    wood_cut: {
+      v1: 'wood_cut', seed: 705,
+      desc: 'GROUND DETAIL (ENV-01d). Sawn / broken wood ends (logs, stump tops): pale tan, dark ring tone, `o O @` rings.',
+      albedo: 0.88, bgK: 0.16, detail: 30, jitter: 0.08,
+      tones: [['woodCut', 4], ['woodCutLight', 2], ['woodCutDark', 2]],
+      grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -861,7 +908,9 @@
     // CLOTH-1b4 cloth (design/cloth.js), same key in both files.
     'cloth.canvas': 'cloth.canvas', 'cloth.banner': 'cloth.banner', 'cloth.flag': 'cloth.flag', 'cloth.linen': 'cloth.linen',
     // ME-06c4 forest tree canopies (design/models/forest_trees.js), same key in both files.
-    leaf: 'leaf', leaf_dark: 'leaf_dark', leaf_light: 'leaf_light'
+    leaf: 'leaf', leaf_dark: 'leaf_dark', leaf_light: 'leaf_light',
+    // ENV-01d ground detail (design/models/ground_detail.js), same key in both files.
+    petal_yellow: 'petal_yellow', petal_white: 'petal_white', petal_pink: 'petal_pink', mushroom_cap: 'mushroom_cap', wood_cut: 'wood_cut'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

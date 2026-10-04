@@ -57,7 +57,72 @@
                    ]
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },
-      slopeEps: 2.0                                   // m: typeAt slope = central difference of heightAt at +-2 m
+      // ENV-01 (architecture.md 37.4 item 2): ground detail scatter in the near band (detail: renderer=mesh + physics=mesh,
+      // ?detail=0 off). Models = design/models/ground_detail.js (ENV-01d). Collider literals are MEASURED there
+      // (ASSETS.groundDetail.variants; preview/ground-detail.html checks these literals against it). prism r = inscribed
+      // radius of the 8-gon (circumradius r / cos 22.5), h = standing top above z = ground - sinkM; box = half sizes.
+      // Gap rule for collider species (rocks layer only): cellM - 2 * jitter = 11 - 6 = 5.0 >= 2 * 1.47 + 1.2 = 4.14
+      // (largest = logLong, box half-diagonal hypot(1.43, 0.33) = 1.47; rockLargeB circumradius 1.10 / 0.9239 = 1.19).
+      // Water / path have no species (the walk-out path is type path, halfWidth 3, + clearM). Flag + doors are inside the
+      // tower bbox (structClearM covers them). Expected near-band counts (384 m band, ~all land): tufts ~13k,
+      // shrubs ~2.9k, rocks ~0.6k = ~16.5k <= maxPlacements; fed per frame (full drawM discs) ~240 + ~130 + ~65 <= maxDraw.
+      detail: {
+        tileM: 16, maxDraw: 768, refeedM: 4, maxPlacements: 40000, structClearM: 2, entityClearM: 1.5,
+        exclude: [
+          { shape: 'capsule', ax: 1479, ay: 1025, bx: 1420, by: 1032, r: 4.5 },   // walk-out: tower west foot -> path bend (path halfWidth 3 + 1.5 m verge)
+          { shape: 'capsule', ax: 1420, ay: 1032, bx: 1428, by: 1040, r: 3.5 },   // path bend -> waystone
+          { shape: 'disc', x: 1428, y: 1040, r: 4.5 },                            // waystone + end trigger (r 2.5) + walkTo (1429.86, 1038.33)
+          { shape: 'capsule', ax: 1461, ay: 1031, bx: 1444, by: 1035, r: 4 },     // boar route (boar1 -> boar2 homes)
+          { shape: 'disc', x: 1478, y: 1025, r: 5 },                              // breach landing at the tower's west foot
+          { shape: 'disc', x: 1500, y: 1010, r: 5.5 },                            // quietPond (world water region r 4: not a terrain water type)
+          { shape: 'capsule', ax: 1487, ay: 1000, bx: 1493, by: 1000, r: 6 }      // floodedCellar water rect [1485, 995, 1495, 1005]
+        ],
+        layers: [
+          { name: 'tufts', seed: 38101, cellM: 2.5, jitter: 1.0, fill: 0.6, maxSlope: 0.7, clearM: 0.8, drawM: 28, lodCells: 4,
+            ground: {
+              grass:  [ { model: 'tuftMeadow', weight: 35, sinkM: 0.02 }, { model: 'tuftLush', weight: 30, sinkM: 0.02 },
+                        { model: 'tuftShort', weight: 35, sinkM: 0.02 } ],
+              forest: [ { model: 'tuftLush', weight: 50, sinkM: 0.02 }, { model: 'tuftShort', weight: 30, sinkM: 0.02 },
+                        { model: 'pebbles', weight: 20, sinkM: 0.03 } ],
+              rock:   [ { model: 'pebbles', weight: 50, sinkM: 0.03 }, { model: 'tuftShort', weight: 30, sinkM: 0.02 },
+                        { model: 'rockSmallB', weight: 20, sinkM: 0.03 } ]
+            } },
+          { name: 'shrubs', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.5, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
+            ground: {
+              grass:  [ { model: 'flowersYellow', weight: 20, sinkM: 0.02 }, { model: 'flowersWhite', weight: 16, sinkM: 0.02 },
+                        { model: 'flowersPink', weight: 12, sinkM: 0.02 }, { model: 'bushRound', weight: 18, sinkM: 0.04, shadow: true },
+                        { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
+                        { model: 'pebbles', weight: 12, sinkM: 0.03 } ],
+              forest: [ { model: 'fern', weight: 40, sinkM: 0.02 }, { model: 'mushrooms', weight: 16, sinkM: 0.01 },
+                        { model: 'bushRound', weight: 20, sinkM: 0.04, shadow: true }, { model: 'flowersWhite', weight: 8, sinkM: 0.02 },
+                        { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
+              rock:   [ { model: 'rockSmallA', weight: 35, sinkM: 0.03 }, { model: 'rockSmallB', weight: 35, sinkM: 0.03 },
+                        { model: 'pebbles', weight: 20, sinkM: 0.03 }, { model: 'tuftShort', weight: 10, sinkM: 0.02 } ]
+            } },
+          // rocks: maxSlope 0.35 + large sinkM 0.20 (half the 0.32-0.40 m foot layer): props are not tilted to the slope
+          // (37.4: yaw only), so a 2.8 m flat-bottomed boulder must not show a gap on the downhill side.
+          { name: 'rocks', seed: 38307, cellM: 11, jitter: 3.0, fill: 0.5, maxSlope: 0.35, clearM: 1.6, drawM: 70, lodCells: 4,
+            ground: {
+              grass:  [ { model: 'rockMedA',   weight: 28, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.44, h: 0.76 } } },
+                        { model: 'rockMedB',   weight: 22, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.55, h: 0.75 } } },
+                        { model: 'rockLargeA', weight: 10, sinkM: 0.20, shadow: true, collider: { prism: { r: 0.88, h: 1.52 } } },
+                        { model: 'rockLargeB', weight: 6,  sinkM: 0.20, shadow: true, collider: { prism: { r: 1.10, h: 1.50 } } },
+                        { model: 'logShort',   weight: 10, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
+                        { model: 'stumpCut',   weight: 12, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } } ],
+              forest: [ { model: 'logShort',   weight: 20, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
+                        { model: 'logLong',    weight: 16, sinkM: 0.10, shadow: true, collider: { box: { hx: 1.43, hy: 0.33, h: 0.72 } } },
+                        { model: 'stumpCut',   weight: 22, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } },
+                        { model: 'rockMedB',   weight: 18, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.55, h: 0.75 } } },
+                        { model: 'rockMedA',   weight: 10, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.44, h: 0.76 } } },
+                        { model: 'rockLargeB', weight: 8,  sinkM: 0.20, shadow: true, collider: { prism: { r: 1.10, h: 1.50 } } } ],
+              rock:   [ { model: 'rockLargeA', weight: 30, sinkM: 0.20, shadow: true, collider: { prism: { r: 0.88, h: 1.52 } } },
+                        { model: 'rockLargeB', weight: 22, sinkM: 0.20, shadow: true, collider: { prism: { r: 1.10, h: 1.50 } } },
+                        { model: 'rockMedA',   weight: 26, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.44, h: 0.76 } } },
+                        { model: 'rockMedB',   weight: 22, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.55, h: 0.75 } } } ]
+            } }
+        ]
+      },
+      slopeEps: 2.0                                  // m: typeAt slope = central difference of heightAt at +-2 m
     },
 
     // ---- US-016b d: authored overrides, per 128 m chunk, plain JSON (future editor writes these) ----

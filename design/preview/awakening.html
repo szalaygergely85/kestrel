@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - The Awakening: tower hall dressing (ENV-02)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 8px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1200px; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  button.v { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.v.on { border-color:#ffd24a; color:#ffd24a; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .warn { color:#ffb23c; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .key { font-family:Consolas, monospace; font-size:12px; line-height:1.6; }
+</style>
+</head>
+<body>
+<h1>Kestrel : The Awakening - tower hall dressing (ENV-02, D-038)</h1>
+<div class="note">
+  Loads <code>../palette.js</code>, <code>../detail-pass.js</code>, the tower prop models and <code>../models/m3_props.js</code>
+  (the two composite sets <code>awakeningCrates</code> / <code>awakeningKeeper</code>, README 7.6), plus the real tower level
+  (<code>content/levels/tower.level.json</code> through <code>content-shim.js</code>). Needs http (the shim fetches the JSON).
+  The view is a reference raymarch, NOT the game renderer: level cells as height columns, the real voxel models of the burner,
+  lamp, lever, canvas heap, gondola, strut, boulder and rubble (rest pose), the two composites, stand-in boxes for the pell and
+  the sword, the level lights (burner torch, hook lamp) with the reference <code>palette.util.shade</code> and the morning sun
+  (light-direction sliders). Emissive flames are drawn as glyph dots. "lit candle (option)" previews the canon call that is NOT
+  in the level (the keeper's candle stub is cold: a lit one would say someone was here recently). Use it for composition, light pools and
+  clearances; check the final look in the game (<code>?renderer=mesh</code>, then <code>?gpucompare=1</code>).
+</div>
+
+<div class="controls">
+  <span>View:</span><span id="views"></span>
+  <label>yaw <input type="range" id="yaw" min="0" max="359" step="1" value="330"><span class="val" id="yawV"></span></label>
+  <label>pitch <input type="range" id="pitch" min="-45" max="30" step="1" value="-8"><span class="val" id="pitchV"></span></label>
+  <label>grid <select id="grid"><option value="160x60">160x60</option><option value="240x90" selected>240x90</option></select></label>
+  <label>sun az <input type="range" id="az" min="0" max="360" step="1" value="112"><span class="val" id="azV"></span></label>
+  <label>sun el <input type="range" id="el" min="10" max="85" step="1" value="60"><span class="val" id="elV"></span></label>
+  <label><input type="checkbox" id="dress" checked> ENV-02 dressing</label>
+  <label><input type="checkbox" id="lBurner" checked> burner</label>
+  <label><input type="checkbox" id="lLamp" checked> lamp</label>
+  <label title="NOT in the level: canon says the keeper's candle is cold. Shows the PO / writer option (lampFlame + palette preset candle)"><input type="checkbox" id="lCandle"> lit candle (option)</label>
+  <label><input type="checkbox" id="lSun" checked> sun</label>
+</div>
+
+<h2>Checks (computed from the data)</h2>
+<div id="validator" style="font-family:Consolas,monospace;font-size:12px"></div>
+<div id="checks"></div>
+
+<h2>View</h2>
+<div class="note" id="viewNote"></div>
+<canvas id="view"></canvas>
+
+<h2>Plan (hall, 0.2 m rows / 0.1 m columns, north up)</h2>
+<div class="row">
+  <canvas id="plan"></canvas>
+  <div class="key" id="planKey"></div>
+</div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/title.js"></script>
+<script src="../models/lantern.js"></script>
+<script src="../models/brazier.js"></script>
+<script src="../models/lever.js"></script>
+<script src="../models/boulder.js"></script>
+<script src="../models/rubble.js"></script>
+<script src="../models/wreckage.js"></script>
+<script src="../models/relay.js"></script>
+<script src="../models/voxel_props.js"></script>
+<script src="../models/voxel_tower.js"></script>
+<script src="../models/sword.js"></script>
+<script src="../models/m3_props.js"></script>
+<script src="content-shim.js"></script>
+<script type="module">
+  // The real engine validator (needs http). Classic checks below run without it.
+  const box = document.getElementById('validator');
+  try {
+    const { validateVoxelModel } = await import('../../engine/voxel/VoxelModel.js');
+    const P = window.ASSETS.palette, keys = Object.keys(P.materials);
+    box.innerHTML = ['awakeningCrates', 'awakeningKeeper'].map((k) => {
+      const r = validateVoxelModel(window.ASSETS.voxelModels[k].voxel, { materialKeys: keys });
+      return r.errors.length
+        ? `<div><span class="fail">FAIL</span> validateVoxelModel(${k}): ${r.errors.slice(0, 6).join('; ').replace(/</g, '&lt;')}</div>`
+        : `<div><span class="pass">PASS</span> validateVoxelModel(${k}): 0 errors, ${r.warnings.length} warnings</div>`;
+    }).join('');
+  } catch (e) {
+    box.innerHTML = `<span class="note">engine validator skipped: ${String(e.message || e).replace(/</g, '&lt;')} (open over http)</span>`;
+  }
+</script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS || {}, P = A.palette, LV = A.levels && A.levels.tower, VM = A.voxelModels || {}, WM = A.worlds && A.worlds.world_m1;
+  if (!P || !LV) { document.body.innerHTML = '<p class="fail">palette.js or the tower level did not load (open over http).</p>'; return; }
+  var U = P.util, T = P.timeOfDay.morning, D2R = Math.PI / 180;
+  var W = LV.size.w, H = LV.size.h;
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+  var AWK = ['awakeningCrates', 'awakeningKeeper'];
+
+  function makeGrid(canvas, cols, rows, px) {
+    var ctx = canvas.getContext('2d'); ctx.font = px + 'px ' + FONT;
+    var cw = Math.ceil(ctx.measureText('M').width), ch = Math.ceil(px * 1.25), dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cw * dpr; canvas.height = rows * ch * dpr;
+    canvas.style.width = cols * cw + 'px'; canvas.style.height = rows * ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = px + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    return { cols: cols, rows: rows, cw: cw, ch: ch,
+      cell: function (x, y, g, fg, bg) {
+        ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch);
+        if (g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1); }
+      }
+    };
+  }
+
+  // ---------------- level ----------------
+  function def(cx, cy) { if (cx < 0 || cy < 0 || cx >= W || cy >= H) return null; return LV.legend[LV.rows[cy].charAt(cx)] || null; }
+  function levelSolid(d, z) {
+    if (!d) return false;
+    if (z < d.floorH) return true;
+    return d.ceilH !== 'sky' && z > d.ceilH && z < (d.topH || d.ceilH);
+  }
+
+  // ---------------- voxel instances (real models, rest pose) ----------------
+  var REAL = { pallet: 1, brazier: 1, lantern: 1, boulder: 1, lever: 1, gondola: 1, strut: 1, dressCrates: 1, dressKeeper: 1,
+               rubble1: 1, rubble2: 1, rubble3: 1, rubble4: 1, rubble5: 1 };
+  var insts = [];
+  LV.props.forEach(function (p) {
+    if (!REAL[p.id] || typeof p.z !== 'number') return;
+    var key = typeof p.variant === 'number' ? p.model + p.variant : p.model;
+    if (p.model === 'burner') key = 'burner';
+    var m = VM[key]; if (!m || !m.voxel) return;
+    var v = m.voxel, sx = v.size[0], sy = v.size[1], sz = v.size[2], data = new Uint8Array(sx * sy * sz), mats = [], idx = {}, z, y, x, ch, row;
+    for (z = 0; z < sz; z++) for (y = 0; y < sy; y++) {
+      row = v.layers[z][y];
+      for (x = 0; x < sx; x++) {
+        ch = row.charAt(x);
+        if (ch === '.' || ch === ' ' || !v.mats[ch]) continue;
+        if (idx[ch] === undefined) { idx[ch] = mats.length; mats.push(P.materials[v.mats[ch]] ? v.mats[ch] : 'stone'); }
+        data[x + sx * (y + sy * z)] = idx[ch] + 1;
+      }
+    }
+    var th = (p.facing || 0) * D2R, c = Math.cos(th), s = Math.sin(th), cell = v.cellM, r = Math.hypot(sx, sy) * cell;
+    insts.push({ id: p.id, dress: AWK.indexOf(p.model) >= 0, x: p.x, y: p.y, z: p.z, ax: v.anchor[0], ay: v.anchor[1], az: v.anchor[2],
+                 c: c, s: s, cell: cell, sx: sx, sy: sy, sz: sz, data: data, mats: mats,
+                 bx0: p.x - r, bx1: p.x + r, by0: p.y - r, by1: p.y + r, bz0: p.z - v.anchor[2] * cell, bz1: p.z + (sz - v.anchor[2]) * cell });
+  });
+  // world -> model voxel coords (inverse yaw; world = anchor + R(yaw) (v - anchor) cell, y south, yaw clockwise)
+  var MV = [0, 0, 0];
+  function toModel(it, x, y, z) {
+    var dx = (x - it.x) / it.cell, dy = (y - it.y) / it.cell;
+    MV[0] = it.ax + dx * it.c + dy * it.s; MV[1] = it.ay - dx * it.s + dy * it.c; MV[2] = it.az + (z - it.z) / it.cell;
+    return MV;
+  }
+  function voxAt(it, x, y, z) {
+    var m = toModel(it, x, y, z), i = Math.floor(m[0]), j = Math.floor(m[1]), k = Math.floor(m[2]);
+    if (i < 0 || j < 0 || k < 0 || i >= it.sx || j >= it.sy || k >= it.sz) return 0;
+    return it.data[i + it.sx * (j + it.sy * k)];
+  }
+  // stand-ins (not the real models): pell (pose-dependent flash shell) and the planted sword
+  var STAND = [
+    { id: 'practiceTarget', mat: 'straw', cyl: [14.6, 6.6, 0.17, 0.0, 1.30] },
+    { id: 'practiceTarget', mat: 'iron_dark', cyl: [14.6, 6.6, 0.18, 1.30, 1.60] },
+    { id: 'sword', mat: 'steel_old', box: [12.82, 6.08, 0.9, 12.90, 6.16, 1.86] }
+  ];
+  function standAt(x, y, z) {
+    for (var i = 0; i < STAND.length; i++) {
+      var s = STAND[i];
+      if (s.cyl) { var dx = x - s.cyl[0], dy = y - s.cyl[1]; if (z >= s.cyl[3] && z < s.cyl[4] && dx * dx + dy * dy < s.cyl[2] * s.cyl[2]) return s; }
+      else if (x >= s.box[0] && x < s.box[3] && y >= s.box[1] && y < s.box[4] && z >= s.box[2] && z < s.box[5]) return s;
+    }
+    return null;
+  }
+
+  // ---------------- lights ----------------
+  function lightOn(l) {
+    if (!l.on) return false;
+    if (l.id === 'brazier') return S.lBurner;
+    if (l.id === 'lanternHook') return S.lLamp;
+    return true;
+  }
+  // the lit-candle OPTION (not in the level): light 0.1 m above the cold stub's top (18.72, 9.16, 0.56)
+  var CANDLE_OPTION = { id: 'keeperCandle', on: true, preset: 'candle', x: 18.72, y: 9.16, z: 0.66 };
+  function clearPath(x0, y0, z0, x1, y1, z1) {
+    var dx = x1 - x0, dy = y1 - y0, dz = z1 - z0, len = Math.sqrt(dx * dx + dy * dy + dz * dz), n = Math.ceil(len / 0.1), i, t, x, y, z;
+    for (i = 1; i < n; i++) {
+      t = i / n; x = x0 + dx * t; y = y0 + dy * t; z = z0 + dz * t;
+      if (levelSolid(def(Math.floor(x), Math.floor(y)), z)) return false;
+    }
+    return true;
+  }
+  function sunLit(x, y, z, sd) {
+    for (var t = 0.08; t < 40; t += 0.1) {
+      var px = x + sd[0] * t, py = y + sd[1] * t, pz = z + sd[2] * t;
+      if (pz > 9.5) return true;
+      var d = def(Math.floor(px), Math.floor(py)); if (!d) return true;
+      if (levelSolid(d, pz)) return false;
+    }
+    return true;
+  }
+
+  // ---------------- view ----------------
+  var VIEWS = [
+    ['wake', 'wake point (default yaw)', 17.0, 9.5, 1.6, 330, -8],
+    ['wakeR', 'wake, turned to the burner', 17.0, 9.5, 1.6, 15, -10],
+    ['keeper', 'the keeper\'s corner', 17.3, 8.1, 1.6, 140, -28],
+    ['crates', 'crates by the stair', 16.0, 7.6, 1.6, 20, -14],
+    ['walkway', 'step 6 looking west (BUG-CLOTH-002)', 20.3, 4.55, 3.4, 276, -17],
+    ['baseBack', 'stair base looking back', 15.4, 4.6, 1.6, 160, -10]
+  ];
+  var S = { view: 0, eye: [17.0, 9.5, 1.6], yaw: 330, pitch: -8, grid: '240x90', az: 112, el: 60,
+            dress: true, lBurner: true, lLamp: true, lCandle: false, lSun: true };
+  var out = { fg: [0, 0, 0], bg: [0, 0, 0] }, L = [0, 0, 0];
+
+  function render() {
+    var dims = S.grid.split('x'), cols = +dims[0], rows = +dims[1];
+    var g = makeGrid(document.getElementById('view'), cols, rows, cols > 200 ? 9 : 12);
+    var aspect = g.ch / g.cw, focal = (cols / 2) / Math.tan(50 * D2R);
+    var yaw = S.yaw * D2R, pitch = S.pitch * D2R;
+    var f0 = [Math.sin(yaw), -Math.cos(yaw), 0], rt = [Math.cos(yaw), Math.sin(yaw), 0];
+    var fw = [f0[0] * Math.cos(pitch), f0[1] * Math.cos(pitch), Math.sin(pitch)];
+    var up = [-f0[0] * Math.sin(pitch), -f0[1] * Math.sin(pitch), Math.cos(pitch)];
+    var E = S.eye, sd = [Math.sin(S.az * D2R) * Math.cos(S.el * D2R), -Math.cos(S.az * D2R) * Math.cos(S.el * D2R), Math.sin(S.el * D2R)];
+    var lights = (LV.lights || []).filter(lightOn).concat(S.lCandle && P.lights.candle ? [CANDLE_OPTION] : [])
+      .map(function (l) { var pr = P.lights[l.preset]; return { x: l.x, y: l.y, z: l.z, pr: pr }; });
+    var active = insts.filter(function (it) { return S.dress || !it.dress; });
+    var depth = new Float32Array(cols * rows);
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+      var u = (c + 0.5 - cols / 2) / focal, v = (rows / 2 - r - 0.5) * aspect / focal;
+      var dx = fw[0] + rt[0] * u + up[0] * v, dy = fw[1] + rt[1] * u + up[1] * v, dz = fw[2] + rt[2] * u + up[2] * v;
+      var dl = Math.sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl;
+      var t = 0.05, px = E[0], py = E[1], pz = E[2], hit = null, mat = null, n = null, i, it;
+      while (t < 18) {
+        var x = E[0] + dx * t, y = E[1] + dy * t, z = E[2] + dz * t;
+        if (z > 9.6 && dz > 0) break;
+        var cx = Math.floor(x), cy = Math.floor(y), d = def(cx, cy);
+        if (levelSolid(d, z)) {
+          var pd = def(Math.floor(px), Math.floor(py));
+          if (pz >= d.floorH && Math.floor(px) === cx && Math.floor(py) === cy) { n = [0, 0, 1]; mat = d.floorMat; }
+          else if (d.ceilH !== 'sky' && z > d.ceilH) { n = [0, 0, -1]; mat = d.upperMat || d.ceilMat; }
+          else {
+            if (Math.floor(px) !== cx) n = [px < x ? -1 : 1, 0, 0]; else n = [0, py < y ? -1 : 1, 0];
+            mat = (d.solid || !pd || pd.floorH < d.floorH) ? d.wallMat : d.floorMat;
+          }
+          if (!P.materials[mat] || mat === 'grate') mat = mat === 'grate' ? 'iron' : 'stone';
+          hit = 'level'; break;
+        }
+        for (i = 0; i < active.length; i++) {
+          it = active[i];
+          if (x < it.bx0 || x > it.bx1 || y < it.by0 || y > it.by1 || z < it.bz0 || z > it.bz1) continue;
+          var vv = voxAt(it, x, y, z);
+          if (vv) {
+            var a = toModel(it, px, py, pz), ai = Math.floor(a[0]), aj = Math.floor(a[1]), ak = Math.floor(a[2]);
+            var b = toModel(it, x, y, z), bi = Math.floor(b[0]), bj = Math.floor(b[1]), bk = Math.floor(b[2]);
+            var nm = ak !== bk ? [0, 0, ak > bk ? 1 : -1] : (ai !== bi ? [ai > bi ? 1 : -1, 0, 0] : [0, aj > bj ? 1 : -1, 0]);
+            n = [nm[0] * it.c - nm[1] * it.s, nm[0] * it.s + nm[1] * it.c, nm[2]];
+            mat = it.mats[vv - 1]; hit = 'vox'; break;
+          }
+        }
+        if (hit) break;
+        var st = standAt(x, y, z);
+        if (st) { n = [-dx, -dy, 0]; mat = st.mat; hit = 'stand'; break; }
+        px = x; py = y; pz = z;
+        t += 0.012 + t * 0.004;
+      }
+      if (!hit) {
+        var az = Math.atan2(dx, -dy) / D2R, el = Math.asin(dz) / D2R;
+        U.shadeSky((az + 360) % 360, Math.max(0, el), out);
+        g.cell(c, r, out.glyph, U.css(out.fg), U.css(out.bg)); depth[r * cols + c] = 1e9; continue;
+      }
+      var hx = E[0] + dx * t - dx * 0.01, hy = E[1] + dy * t - dy * 0.01, hz = E[2] + dz * t - dz * 0.01;
+      L[0] = L[1] = L[2] = 0;
+      U.addLight(L, T.ambient, T.ambientI);
+      if (S.lSun) {
+        var ndl = n[0] * sd[0] + n[1] * sd[1] + n[2] * sd[2];
+        if (ndl > 0 && sunLit(hx, hy, hz, sd)) U.addLight(L, T.sun, T.sunI * ndl);
+      }
+      for (i = 0; i < lights.length; i++) {
+        var lt = lights[i], lx = lt.x - hx, ly = lt.y - hy, lz = lt.z - hz, ld = Math.sqrt(lx * lx + ly * ly + lz * lz);
+        var fo = U.falloff(ld, lt.pr.radius); if (fo <= 0) continue;
+        var nl = (n[0] * lx + n[1] * ly + n[2] * lz) / ld; if (nl <= 0) continue;
+        if (!clearPath(hx, hy, hz, lt.x, lt.y, lt.z)) continue;
+        U.addLight(L, lt.pr.color, lt.pr.intensity * fo * nl);
+      }
+      var uu, vv2;
+      if (n[2] !== 0) { uu = hx; vv2 = hy; } else if (n[0] !== 0) { uu = hy; vv2 = hz; } else { uu = hx; vv2 = hz; }
+      var dd = def(Math.floor(hx), Math.floor(hy));
+      U.shade(mat, L, uu, vv2, t, out, { z: hz - (dd && !dd.solid ? dd.floorH : 0) });
+      g.cell(c, r, out.glyph, U.css(out.fg), U.css(out.bg));
+      depth[r * cols + c] = t;
+    }
+    // emissive flames (glyph dots, depth-tested): burner fire body, lamp flame, candle flame
+    var FL = [];
+    if (S.lBurner) FL.push([18.5, 6.5, 1.35, 0.32, 'flameMid', '^'], [18.5, 6.5, 1.15, 0.36, 'flameCore', '*']);
+    if (S.lLamp) FL.push([19.72, 6.5, 1.5, 0.05, 'flameCore', '*']);
+    if (S.lCandle) FL.push([18.72, 9.16, 0.6, 0.04, 'flameCore', "'"]);
+    FL.forEach(function (q) {
+      var rx = q[0] - E[0], ry = q[1] - E[1], rz = q[2] - E[2];
+      var zf = rx * fw[0] + ry * fw[1] + rz * fw[2]; if (zf <= 0.1) return;
+      var xf = rx * rt[0] + ry * rt[1], yf = rx * up[0] + ry * up[1] + rz * up[2];
+      var col = cols / 2 + xf / zf * focal - 0.5, row = rows / 2 - 0.5 - yf / zf * focal / aspect;
+      var hw = Math.max(0, Math.round(q[3] / zf * focal)), hh = Math.max(0, Math.round(q[3] / zf * focal / aspect));
+      for (var j = -hh; j <= hh; j++) for (var k = -hw; k <= hw; k++) {
+        var cc = Math.round(col) + k, rr = Math.round(row) + j;
+        if (cc < 0 || rr < 0 || cc >= cols || rr >= rows || depth[rr * cols + cc] < zf - 0.1) continue;
+        g.cell(cc, rr, j < 0 ? q[5] : '*', P.colors[j < 0 ? 'flameOuter' : q[4]] || '#ffcc66', '#1a0d04');
+      }
+    });
+    document.getElementById('viewNote').textContent = 'Eye (' + E[0] + ', ' + E[1] + ', ' + E[2] + ' m), yaw ' + S.yaw +
+      ' (0 = north, clockwise), pitch ' + S.pitch + ', horizontal FOV 100 deg (reference value; the game FOV may differ). ' +
+      'Composites: ' + (S.dress ? 'on' : 'OFF (before)') + '.';
+  }
+
+  // ---------------- plan ----------------
+  var CORR = ['17,9', '16,8', '17,8', '18,8', '17,7', '18,7', '19,7', '16,6', '17,6', '16,5', '15,5', '15,4', '14,4', '15,3'];
+  var corrSet = {}; CORR.forEach(function (k) { corrSet[k] = 1; });
+  var routeSet = {}; LV.route.forEach(function (c) { routeSet[c[0] + ',' + c[1]] = 1; });
+  function topVox(it, x, y) {
+    for (var z = it.bz1 - 0.02; z >= it.bz0; z -= it.cell) { var v = voxAt(it, x, y, z); if (v) return { v: v, z: z }; }
+    return null;
+  }
+  function drawPlan() {
+    var X0 = 12, Y0 = 2, CW = 0.1, RH = 0.2, cols = 90, rows = 45, g = makeGrid(document.getElementById('plan'), cols, rows, 11);
+    var dressInsts = insts.filter(function (it) { return it.dress; }), otherInsts = insts.filter(function (it) { return !it.dress; });
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+      var x = X0 + (c + 0.5) * CW, y = Y0 + (r + 0.5) * RH, cx = Math.floor(x), cy = Math.floor(y), d = def(cx, cy), k = cx + ',' + cy;
+      var gl = '.', fg = '#3a3a3a', bg = '#000';
+      if (d && d.solid) { gl = '#'; fg = '#5a564e'; bg = '#141414'; }
+      else if (d) {
+        var hv = Math.max(0, Math.min(1, (d.floorH + 0.3) / 7)); fg = U.css([70 + 120 * hv, 66 + 110 * hv, 60 + 90 * hv]);
+        gl = d.zone === 'ground' ? '.' : (d.zone === 'stair' || d.zone === 'ledge' ? '=' : ':');
+        if (d.tag === 'stairBase' || d.tag === 'slope' || d.tag === 'hollow') bg = '#0d1838';
+        if (corrSet[k]) bg = '#3a2608';
+        if (routeSet[k]) gl = '+';
+      }
+      var i, tv = null, hitIt = null;
+      for (i = 0; i < dressInsts.length && S.dress; i++) { tv = topVox(dressInsts[i], x, y); if (tv) { hitIt = dressInsts[i]; break; } }
+      if (tv) {
+        var mk = hitIt.mats[tv.v - 1], base = P.rgb[P.materials[mk].base], lift = 0.55 + 0.45 * Math.min(1, tv.z / 0.9);
+        g.cell(c, r, tv.z > 0.13 ? '@' : 'o', U.css([base[0] * lift, base[1] * lift, base[2] * lift]), bg); continue;
+      }
+      for (i = 0; i < otherInsts.length; i++) { tv = topVox(otherInsts[i], x, y); if (tv) { gl = '%'; fg = '#8a7a5a'; break; } }
+      g.cell(c, r, gl, fg, bg);
+    }
+    function mark(wx, wy, ch, col) { var c = Math.floor((wx - X0) / CW), r = Math.floor((wy - Y0) / RH); if (c >= 0 && r >= 0 && c < cols && r < rows) g.cell(c, r, ch, col, '#000'); }
+    mark(LV.start.x, LV.start.y, 'S', P.colors.gold);
+    mark(18.5, 6.5, 'B', P.colors.flameMid); mark(19.85, 6.5, 'L', P.colors.brassLight); mark(18.72, 9.16, 'c', P.colors.flameCore);
+    mark(14.6, 6.6, 'P', P.colors.strawLight || '#e0c890'); mark(12.86, 6.12, 'X', P.colors.mirror || '#ccd'); mark(15.55, 3.5, 'O', P.colors.stoneLight);
+    // the default wake view cone (yaw 330 +- 50) as dots at 1.5 m steps
+    for (var a = 280; a <= 380; a += 10) for (var dist = 1.5; dist <= 7.5; dist += 1.5) {
+      var wx = LV.start.x + Math.sin(a * D2R) * dist, wy = LV.start.y - Math.cos(a * D2R) * dist;
+      var cc = Math.floor((wx - X0) / CW), rr = Math.floor((wy - Y0) / RH);
+      if (cc >= 0 && rr >= 0 && cc < cols && rr < rows && !(def(Math.floor(wx), Math.floor(wy)) || {}).solid) g.cell(cc, rr, '`', P.colors.gold, '#000');
+    }
+    document.getElementById('planKey').innerHTML = '<b>Key</b><br>' +
+      '<span style="color:#d8c08a">@</span> ENV-02 voxel &gt; 0.13 m (coloured by material), <span style="color:#d8c08a">o</span> low walk-over voxel<br>' +
+      '<span style="color:#8a7a5a">%</span> existing tower voxel prop (rest pose)<br>' +
+      '<span style="background:#3a2608">&nbsp;&nbsp;</span> wake -&gt; burner -&gt; stair corridor (legs 1 + 2)<br>' +
+      '<span style="background:#0d1838">&nbsp;&nbsp;</span> boulder roll line (stair base, slope, hollow)<br>' +
+      '+ route cell, = stair / ledge, : upper, # wall<br>' +
+      '<span style="color:' + P.colors.gold + '">S</span> wake point, ` default wake view cone (yaw 330 +- 50)<br>' +
+      'B burner, L lamp, c candle, P pell, X sword, O boulder';
+  }
+
+  // ---------------- checks ----------------
+  var checks = [];
+  function check(name, state, detail) { checks.push({ name: name, state: state === true ? 'pass' : state === false ? 'fail' : state, detail: detail || '' }); }
+  (function () {
+    var regs = AWK.filter(function (k) { return A.models && A.models[k] === VM[k]; });
+    check('attachM3 registered both composites in ASSETS.models (materials merged in palette + detail-pass)', regs.length === 2, regs.join(', '));
+    var dress = insts.filter(function (it) { return it.dress; });
+    check('level props dressCrates / dressKeeper found with numeric z and facing 0', dress.length === 2 && dress.every(function (it) { return it.c === 1; }), dress.map(function (it) { return it.id; }).join(', '));
+    var badCell = [], corrHi = [], corrLow = 0, roll = [], route = [], pell = 0, lamp = 0, faces = {}, vox = {};
+    dress.forEach(function (it) {
+      var x, y, z, i, j, k, wx, wy, wz, d, key, nb = 0;
+      faces[it.id] = 0; vox[it.id] = 0;
+      for (k = 0; k < it.sz; k++) for (j = 0; j < it.sy; j++) for (i = 0; i < it.sx; i++) {
+        if (!it.data[i + it.sx * (j + it.sy * k)]) continue;
+        vox[it.id]++;
+        [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].forEach(function (o) {
+          var a = i + o[0], b = j + o[1], e = k + o[2];
+          if (a < 0 || b < 0 || e < 0 || a >= it.sx || b >= it.sy || e >= it.sz || !it.data[a + it.sx * (b + it.sy * e)]) faces[it.id]++;
+        });
+        wx = it.x + (i + 0.5 - it.ax) * it.cell; wy = it.y + (j + 0.5 - it.ay) * it.cell; wz = it.z + (k + 0.5 - it.az) * it.cell;
+        x = Math.floor(wx); y = Math.floor(wy); d = def(x, y); key = x + ',' + y;
+        if (!d || d.solid || d.zone !== 'ground' || Math.abs(d.floorH) > 0.01 || wz < d.floorH) { if (badCell.indexOf(key) < 0) badCell.push(key); }
+        if (corrSet[key]) { if (wz > 0.13) { if (corrHi.indexOf(key) < 0) corrHi.push(key); } else corrLow++; }
+        if (d && (d.tag === 'stairBase' || d.tag === 'slope' || d.tag === 'hollow')) { if (roll.indexOf(key) < 0) roll.push(key); }
+        if (routeSet[key] && route.indexOf(key) < 0) route.push(key);
+        if (Math.hypot(wx - 14.6, wy - 6.6) < 0.6) pell++;
+        if (x === 19 && y === 6) lamp++;
+      }
+    });
+    check('every ENV-02 voxel stands in a flat ground cell (floor 0, not solid, not a step / ledge / rubble heap)', !badCell.length, badCell.join(' '));
+    check('nothing taller than 0.13 m on the wake -> burner -> stair corridor (' + CORR.length + ' cells); walk-over pebbles there: ' + corrLow + ' voxels', !corrHi.length, corrHi.join(' '));
+    check('nothing on the boulder roll line (stair base, slope apron, hollow)', !roll.length, roll.join(' '));
+    check('nothing on a route cell', !route.length, route.join(' '));
+    check('pell kept clear: no voxel within 0.6 m of the post (14.6, 6.6)', pell === 0, pell + ' voxels');
+    check('lamp approach cell (19,6) kept clear', lamp === 0, lamp + ' voxels');
+    dress.forEach(function (it) {
+      check(it.id + ': ' + vox[it.id] + ' voxels, ' + faces[it.id] + ' exposed faces (before greedy merge; mesh budget ~32768 quads)', faces[it.id] < 32768 ? 'pass' : 'fail');
+    });
+    // wake view: clutter items inside the default view cone (yaw 330 +- 50) and within 8 m
+    var ITEMS = [['crate stack', 17.65, 5.28], ['stove-in crate', 17.16, 5.24], ['fallen stones', 16.4, 5.08], ['water butt', 14.40, 7.60],
+                 ['fallen helm', 14.84, 7.44], ['grain sacks', 18.30, 5.36], ['sealed barrel + coil + shovel', 19.60, 5.42]];
+    var seen = ITEMS.filter(function (q) {
+      var b = (Math.atan2(q[1] - LV.start.x, -(q[2] - LV.start.y)) / D2R + 360) % 360, db = ((b - LV.start.facingDeg + 540) % 360) - 180;
+      return Math.abs(db) <= 50 && Math.hypot(q[1] - LV.start.x, q[2] - LV.start.y) < 8;
+    });
+    check('>= 3 lived-in clutter props inside the wake view cone (yaw ' + LV.start.facingDeg + ' +- 50 deg)', seen.length >= 3, seen.map(function (q) { return q[0]; }).join(', '));
+    // voxel instance budget (VoxelPool: nearest MAX_VOX_INSTANCES = 16 per frame)
+    var nTower = LV.props.filter(function (p) {
+      if (typeof p.model !== 'string' || p.model.indexOf('decal:') === 0 || p.from) return false;
+      var m = A.models && A.models[typeof p.variant === 'number' ? p.model + '#' + p.variant : p.model];
+      if (typeof p.variant === 'number') m = A.models && A.models[p.model] && A.models[p.model].variants && A.models[p.model].variants[p.variant];
+      return !!(m && m.voxel);
+    }).length;
+    var nWorld = WM ? (WM.entities || []).filter(function (e) { return e.components && e.components.voxel; }).length : 0;
+    check('voxel instance budget: tower ' + nTower + ' + world_m1 ' + nWorld + ' = ' + (nTower + nWorld) + ' voxel entities vs MAX_VOX_INSTANCES 16 (nearest 16 render)',
+          nTower + nWorld <= 16 ? 'pass' : 'warn', 'over 16: the farthest drop per frame (from the hall: relay, envelope heap, waystone, boars). NEEDS PC-A engine raise for the mesh path (README 7.6)');
+    check('level lights unchanged by ENV-02 (burner, relay, hook lamp); spare palette preset "candle" present for the lit-candle option',
+          LV.lights.length <= 16 && !LV.lights.some(function (l) { return l.id === 'keeperCandle'; }) && !!P.lights.candle,
+          LV.lights.map(function (l) { return l.id; }).join(', '));
+    check('palette.util.validate() is clean (new light preset)', P.util.validate().length === 0, P.util.validate().slice(0, 3).join('; '));
+    var c = LV.legend.c;
+    check('BUG-CLOTH-002: cheek cells (16-18, 4) walkable at 1.8 m (step 5 + 0.30), above the jump reach from floor (1.05) and burner ring (1.55)',
+          c && !c.solid && c.floorH === 1.8 && c.floorH - 1.5 <= 0.45 && c.floorH > 1.55, c ? 'floorH ' + c.floorH + ', solid ' + c.solid : 'no legend c');
+  })();
+  document.getElementById('checks').innerHTML = checks.map(function (c) {
+    return '<div><span class="' + c.state + '">' + c.state.toUpperCase() + '</span> ' + c.name +
+      (c.detail ? ' <span class="' + (c.state === 'pass' ? 'note' : c.state) + '">(' + c.detail + ')</span>' : '') + '</div>';
+  }).join('');
+
+  // ---------------- controls ----------------
+  function $(id) { return document.getElementById(id); }
+  var vbox = $('views');
+  VIEWS.forEach(function (v, i) {
+    var b = document.createElement('button'); b.className = 'v' + (i === 0 ? ' on' : ''); b.textContent = v[1];
+    b.onclick = function () {
+      S.view = i; S.eye = [v[2], v[3], v[4]]; S.yaw = v[5]; S.pitch = v[6];
+      $('yaw').value = S.yaw; $('pitch').value = S.pitch;
+      [].forEach.call(vbox.children, function (c) { c.classList.remove('on'); }); b.classList.add('on'); sync(); go();
+    };
+    vbox.appendChild(b); vbox.appendChild(document.createTextNode(' '));
+  });
+  function sync() { $('yawV').textContent = S.yaw + ' deg'; $('pitchV').textContent = S.pitch + ' deg'; $('azV').textContent = S.az + ' deg'; $('elV').textContent = S.el + ' deg'; }
+  var pending = 0;
+  function go() { if (pending) return; pending = requestAnimationFrame(function () { pending = 0; render(); drawPlan(); }); }
+  $('yaw').oninput = function () { S.yaw = +this.value; sync(); go(); };
+  $('pitch').oninput = function () { S.pitch = +this.value; sync(); go(); };
+  $('az').oninput = function () { S.az = +this.value; sync(); go(); };
+  $('el').oninput = function () { S.el = +this.value; sync(); go(); };
+  $('grid').onchange = function () { S.grid = this.value; go(); };
+  ['dress', 'lBurner', 'lLamp', 'lCandle', 'lSun'].forEach(function (id) { $(id).onchange = function () { S[id] = this.checked; go(); }; });
+  sync(); go();
+})();
+</script>
+</body>
+</html>
