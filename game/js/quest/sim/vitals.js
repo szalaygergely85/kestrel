@@ -30,8 +30,8 @@ function ensureMana(player, cfg) {
  * @param {any} world engine World (used only to resolve a `combat:hit`'s `source` entity for knockback direction)
  * @param {any} events engine.events (Events instance) - listens for `combat:hit`
  * @param {typeof import('./vitalsConfig.js').VITALS_DEFAULTS} cfg
- * @param {{beasts?: {resetAll: Function}, targeting?: {clear: Function}} | undefined} hooks null-safe: `targeting`
- *   does not exist yet (US-128b) - `respawn()` just skips it when absent.
+ * @param {{beasts?: {resetAll: Function}, targeting?: {clear: Function}, syncFacing?: Function} | undefined} hooks
+ *   null-safe; `syncFacing(transform)` keeps the camera's look source aligned after restoring the body.
  */
 export function createVitals(world, events, cfg, hooks) {
   const h = hooks || {};
@@ -156,6 +156,7 @@ export function createVitals(world, events, cfg, hooks) {
     sim.cardReady = false;
     if (h.beasts && typeof h.beasts.resetAll === 'function') h.beasts.resetAll();
     if (h.targeting && typeof h.targeting.clear === 'function') h.targeting.clear();
+    if (typeof h.syncFacing === 'function') h.syncFacing(t);
   }
 
   /** @param {any} p player entity data @param {boolean} usePressed [E] pressed this step */

@@ -733,7 +733,13 @@ function runGame(mode, cinematic = null) {
       // (`?level=<name>` ad-hoc, test_room) falls back to `rasterRing`'s own pre-existing flat-z branch.
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
-      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting });
+      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
+        syncFacing: (t) => {
+          if (!look) return;
+          look.clearLock();
+          look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg;
+        },
+      });
       resetPickups(); // US-080b (30.2): same "rebuilt on every load/restart" precedent as beasts/vitals above
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
       const startT = playerHandle.data.transform;
