@@ -33,7 +33,7 @@ export { loadContentPack, globalId } from './content/loadPack.js';
 
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
-export { scatterTrees, validateScatterConfig, hash2 } from './world/scatter.js';
+export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';

@@ -333,6 +333,76 @@ export function buildTrunkCollider(scatter, cfg) {
 }
 
 /**
+ * ENV-01a1 (37.4): optional rock/stump prisms and yawed log boxes, with
+ * upward-facing tops for support. Geometry is built only at world load.
+ * @param {import('./scatter.js').DetailSet} detail
+ * @returns {MeshCollider|null}
+ */
+export function buildDetailCollider(detail) {
+  if (!detail || detail.count === 0) return null;
+  let triCount = 0;
+  for (let i = 0; i < detail.count; i++) {
+    const c = detail.speciesDefs[detail.species[i]].collider;
+    if (c) triCount += c.prism ? 24 : 10;
+  }
+  if (!triCount) return null;
+  const pos = new Float64Array(triCount * 9);
+  let o = 0;
+  for (let i = 0; i < detail.count; i++) {
+    const c = detail.speciesDefs[detail.species[i]].collider;
+    if (!c) continue;
+    const shape = c.prism || c.box;
+    const sides = c.prism ? 8 : 4;
+    const yaw = detail.yawDeg[i] * Math.PI / 180;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const zb = detail.z[i] - 0.5, zt = detail.z[i] + shape.h;
+    const ring = new Float64Array(sides * 2);
+    for (let side = 0; side < sides; side++) {
+      let x, y;
+      if (c.prism) {
+        const r = c.prism.r / Math.cos(Math.PI / 8);
+        const angle = yaw + side * Math.PI / 4;
+        x = r * Math.cos(angle); y = r * Math.sin(angle);
+      } else {
+        const lx = side === 0 || side === 3 ? -c.box.hx : c.box.hx;
+        const ly = side < 2 ? -c.box.hy : c.box.hy;
+        x = lx * cos - ly * sin; y = lx * sin + ly * cos;
+      }
+      ring[side * 2] = detail.x[i] + x;
+      ring[side * 2 + 1] = detail.y[i] + y;
+    }
+    for (let side = 0; side < sides; side++) {
+      const next = (side + 1) % sides;
+      const ax = ring[side * 2], ay = ring[side * 2 + 1];
+      const bx = ring[next * 2], by = ring[next * 2 + 1];
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zb;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
+      if (c.prism) {
+        pos[o++] = detail.x[i]; pos[o++] = detail.y[i]; pos[o++] = zt;
+        pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
+        pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+      }
+    }
+    if (c.box) {
+      for (const corner of [0, 1, 2, 0, 2, 3]) {
+        pos[o++] = ring[corner * 2]; pos[o++] = ring[corner * 2 + 1]; pos[o++] = zt;
+      }
+    }
+  }
+  const bvh = buildBvh(pos, null, null);
+  return {
+    id: 'scatter:detail', kind: 'trimesh', bvh,
+    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
+    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
+    enabled: true,
+  };
+}
+
+/**
  * Refits (or, on the rare sentinel-mismatch fallback path, fully rebuilds)
  * `${structure.id}:${tag}`'s collider to the tag's CURRENT `ceilH`. No-op if
  * that tag never got a collider (e.g. it had 0 triangles at load). Zero
