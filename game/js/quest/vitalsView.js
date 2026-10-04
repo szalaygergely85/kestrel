@@ -88,7 +88,7 @@ export function shortFlashOn(elapsedMs, short) {
   return Math.floor(elapsedMs / segMs) % 2 === 0;
 }
 
-function drawBar(ui, key, value, max, style, def, row, simTime, flashTick) {
+function drawBar(ui, key, value, max, style, def, row, simTime, flashAgeMs = Infinity) {
   const L = style.layout;
   const totalCells = L.cells;
   const st = getBarState(key);
@@ -115,7 +115,7 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashTick) {
   // US-080b mana-short flash (uiStyle.vitals.mp.short): 2 blinks in 320 ms, driven by `manaFlashTick` the same
   // way the hurt edge/kick are driven by `hurtTick` - brackets, label and the empty cells switch to `def.short`;
   // the fill is unchanged (the design data's own rule).
-  const shortOn = !!(def.short && flashTick && shortFlashOn((simTime - flashTick / 60) * 1000, def.short));
+  const shortOn = !!(def.short && shortFlashOn(flashAgeMs, def.short));
 
   const labelX = L.x + (L.labelCol || 0);
   const openX = L.x + L.openCol;
@@ -172,7 +172,7 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashTick) {
  * @param {Object} style - `ASSETS.uiStyle.vitals`
  * @param {number} simTime - seconds, for the low-HP pulse / chip-gain timing
  * @param {boolean} visible - false on title/map/end/death cards (caller's call)
- * @param {{manaFlashTick?: number}} [vitals] - US-080b: the sim object, for the mana-short flash timing only
+ * @param {{tick:number, manaFlashTick?: number}} [vitals] - US-080b: the sim object, for the mana-short flash timing only
  */
 export function drawVitals(ui, world, style, simTime, visible, vitals) {
   if (!visible || !style) return;
@@ -183,7 +183,10 @@ export function drawVitals(ui, world, style, simTime, visible, vitals) {
   if (!health) return;
   drawBar(ui, 'hp', health.hp, health.max, style, style.hp, style.layout.hpRow, simTime);
   if (mana && style.mp) {
-    drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, vitals && vitals.manaFlashTick);
+    // BUG-MANA-001: both ticks share the vitals clock, which pauses and resets independently of simTime.
+    const flashAgeMs = vitals && vitals.manaFlashTick > 0
+      ? ((vitals.tick - vitals.manaFlashTick) / 60) * 1000 : Infinity;
+    drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs);
   }
 }
 

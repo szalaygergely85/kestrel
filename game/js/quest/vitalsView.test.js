@@ -4,6 +4,8 @@ import {
   deathFadeAmount, computeDeathCardState, drawVitals, drawHurtEdge, drawDeathCard, resetVitalsView,
 } from './vitalsView.js';
 import { makeOk } from '../../../engine/test/assert.js';
+import { createVitals } from './sim/vitals.js';
+import { VITALS_DEFAULTS } from './sim/vitalsConfig.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -295,6 +297,62 @@ function fakeWorld(hp, max, mp, mpMax) {
   try { drawVitals(ui, fakeWorld(30, 30, 11, 20), style, 0.05, true); drawVitals(ui, fakeWorld(30, 30, 11, 20), style, 0.1, true); }
   catch (e) { threw = e; }
   ok('MP drop with no chip style does not throw', threw === null && !style.mp.chip);
+}
+// BUG-MANA-001: drive the real sim's failure clock through the production HUD, including pause and reload.
+{
+  resetVitalsView();
+  const player = { transform: { x: 0, y: 0, z: 0, yawDeg: 0 }, components: {} };
+  const world = { get: (id) => id === 'player' ? { data: player } : null, state: {} };
+  const events = { on: () => () => {} };
+  const ui = fakeUi();
+  let vitals = createVitals(world, events, VITALS_DEFAULTS);
+  const step = (n) => { for (let i = 0; i < n; i++) vitals.step(player, false); };
+  const labelIs = (fg) => {
+    const c = ui._cells.get(`${style.layout.x},${style.layout.mpRow}`);
+    return c.r === fg[0] && c.g === fg[1] && c.b === fg[2];
+  };
+  const draw = (bootTime) => drawVitals(ui, world, style, bootTime, true, vitals);
+  const normal = style.mp.label.fg, warning = style.mp.short.label.fg;
+
+  step(2);
+  draw(999);
+  ok('fresh sim does not flash before a mana failure', labelIs(normal));
+  ok('insufficient spend records a failure at tick 2', !vitals.spendMana(vitals.mp + 1) && vitals.manaFlashTick === 2);
+  draw(2 / 60);
+  ok('fresh tick 2 failure lights MP label at matching boot time', labelIs(warning));
+  draw(999);
+  ok('fresh tick 2 failure lights MP label at unrelated boot time 999', labelIs(warning));
+  const first = ui._cells.get(`${style.layout.x + style.layout.firstCell},${style.layout.mpRow}`);
+  ok('mana warning preserves the filled MP cell', first.r === style.mp.fill.fg[0] && first.gi === '='.charCodeAt(0) - 32);
+  draw(1999); // Pause: boot time advances, no sim step runs.
+  ok('pause keeps warning age fixed despite boot time advancing', labelIs(warning));
+  step(5); draw(1999 + 5 / 60);
+  ok('resume reaches the first off segment after five vitals ticks', labelIs(normal));
+  step(5); draw(1999 + 10 / 60);
+  ok('second blink lights after ten vitals ticks', labelIs(warning));
+  draw(2999);
+  ok('pause during second blink keeps that blink lit', labelIs(warning));
+  step(5); draw(2999 + 15 / 60);
+  ok('second blink ends after fifteen vitals ticks', labelIs(normal));
+  step(5); draw(2999 + 20 / 60);
+  ok('warning expires after twenty vitals ticks (over 320 ms)', labelIs(normal));
+  step(10); draw(3999);
+  ok('expired warning remains off', labelIs(normal));
+  vitals.dispose();
+
+  // Restart creates a fresh clock; the boot-time origin and module view state remain untouched.
+  vitals = createVitals(world, events, VITALS_DEFAULTS);
+  step(2); draw(4999);
+  ok('restart has no stale flash before its first failure', labelIs(normal));
+  vitals.spendMana(vitals.mp + 1); draw(4999);
+  ok('restart failure lights immediately on the fresh tick clock', labelIs(warning));
+  step(5); draw(4999);
+  ok('restart first blink goes off', labelIs(normal));
+  step(5); draw(4999);
+  ok('restart second blink lights', labelIs(warning));
+  step(10); draw(4999);
+  ok('restart warning expires on its own clock', labelIs(normal));
+  vitals.dispose();
 }
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
