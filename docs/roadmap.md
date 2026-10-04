@@ -14,7 +14,10 @@ Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in
 
 **Previous (2026-09-25):** M1 **done** (D-024). Sprint 3 (D-026, `docs/sprints/sprint-3.md`) opens M2: US-027a/b content format, US-038a/b settings + grids (D-025), US-026a walk-out. Sprint 4: US-026b streaming + US-051a object physics; US-031 editor at the earliest.
 
-## NOW: "Show it" - showcase + first income (owner 2026-10-02, D-036) - runs before the rest of M3-M6
+## NOW (owner 2026-10-04, D-038): alive world -> combat -> demo + videos
+1. **Alive world:** forest in the game (ME-06c3), ground/environment detail scatter, the tower dressed as the first scene "The Awakening", stairwell flag walkable. 2. **Combat:** left-hand sword, knockback, the boar. 3. **Then** the D-036 demo + videos (first clip: the Awakening). Cinematic paths paused until reworked with the owner.
+
+## LATER (after D-038 items 1-2): "Show it" - showcase + first income (owner 2026-10-02, D-036) - runs before the rest of M3-M6
 **Goal:** a short list of beautiful, shareable shots (forest, tower, waterfall, grassland, fire, water) + an itch.io demo with pay-what-you-want and a tip jar, so the game finds players and pays for its own subscription. Everything else waits unless a shot needs it.
 **Why first:** the ASCII 3D look is the hook; clips and stills cost little and can start earning/wishlisting weeks before the full M3 exit.
 **Phase A - the shots (content + the engine steps they need), ~1.5-2 weeks:**
