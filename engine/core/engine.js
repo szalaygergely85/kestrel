@@ -3,7 +3,7 @@
 // implementation lives here.
 
 import { RenderTarget } from '../render/RenderTarget.js';
-import { InstanceGroups } from '../mesh/instances.js';
+import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance } from '../mesh/instances.js';
 import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
@@ -31,6 +31,43 @@ export const GRID_MAX_COLS = 480;
 // window (architect review 1's recommendation) is a future story, not built here.
 export const GRID_DEFAULT_COLS = 240; // US-030a 14.2 item 5: the default on the gl2 GPU path
 export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 480x180
+
+export const SCATTER_OBJECT_BASE = 0x20000;
+
+// ME-06c3 (37.2): load-time writes only; RE-15 owns per-frame cull/LOD.
+export function bindScatterInstances(world, instances, previous = []) {
+  const scatter = world?.scatter;
+  const cfg = world?.terrain?.recipe?.recipe?.forest?.trees;
+  const counts = cfg && scatter ? new Uint32Array(cfg.species.length) : null;
+  let needed = 0;
+  if (counts) {
+    for (let i = 0; i < scatter.count; i++) counts[scatter.species[i]]++;
+    for (let s = 0; s < counts.length; s++) {
+      if (!counts[s]) continue;
+      const key = cfg.species[s].model;
+      if (!instances.pool?.models.has(key)) throw new Error(`bindScatterInstances: missing voxel model ${key}`);
+      needed++;
+    }
+    if (instances.groups.length - previous.length + needed > MAX_INSTANCE_GROUPS) {
+      throw new Error(`bindScatterInstances: over ${MAX_INSTANCE_GROUPS} groups`);
+    }
+  }
+  for (const group of previous) instances.remove(group);
+  const groups = [];
+  if (!counts) return groups;
+  for (let s = 0; s < counts.length; s++) {
+    if (!counts[s]) continue;
+    const group = instances.group(cfg.species[s].model, counts[s]);
+    group.lodCells = cfg.lodCells;
+    for (let i = 0; i < scatter.count; i++) {
+      if (scatter.species[i] !== s) continue;
+      writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],
+        scatter.yawDeg[i], SCATTER_OBJECT_BASE | i, 0);
+    }
+    groups.push(group);
+  }
+  return groups;
+}
 
 /**
  * US-030a (docs/architecture.md 14.2 item 5), range widened by D-025
@@ -246,6 +283,10 @@ export function createEngine(opts) {
     },
   };
 
-  events.on('world:loaded', () => engine.particles.clear()); // US-053a: particles are transient, never saved
+  let scatterGroups = [];
+  events.on('world:loaded', ({ world }) => {
+    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups);
+    engine.particles.clear(); // US-053a: particles are transient, never saved
+  });
   return engine;
 }

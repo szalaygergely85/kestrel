@@ -101,8 +101,8 @@ function runGpuCompareShadeMode(ctx) {
 // pose list in sync with this one.
 function buildCompareRuns(ctx) {
   const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep, rt } = ctx;
-  function loadCompareWorld(def) {
-    const w = World.load(def, assets, {});
+  function loadCompareWorld(def, opts = {}) {
+    const w = World.load(def, assets, opts);
     for (const s of w.structures) {
       if (s.kind === 'mesh') continue; // ME-14c1
       bindLevel(matTable, s.level);
@@ -278,10 +278,11 @@ function buildCompareRuns(ctx) {
   // the pose (not counted), so `?gpucompare=1` stays 34/34 and `renderer=mesh` becomes 35/35.
   const fallHomeM1 = worldM1.waterfalls;
   const waterHomeM1 = worldM1.water; // US-055a2b: the `water` poses install a region set on worldM1; resetInstances puts the empty one back
+  let forestWorld = null;
   const compareInstances = engine.instances;
   compareInstances.bindPool(compareVoxelPool);
   const unitsGroup = compareInstances.group('lever', 20);
-  const resetInstances = () => { for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; worldM1.waterfalls = fallHomeM1; };
+  const resetInstances = () => { if (forestWorld && engine.world === forestWorld) engine.setWorld(worldM1); for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; worldM1.waterfalls = fallHomeM1; };
   runs.push({
     world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
     cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
@@ -478,6 +479,31 @@ function buildCompareRuns(ctx) {
         for (let i = 0; i < 120; i++) engine.particles.step();
       },
     });
+  }
+
+  // ME-06c3: tree-enabled world only for this mesh pose; old rows retain their worlds.
+  if (ctx.renderer === 'mesh') {
+    forestWorld = loadCompareWorld(assets.world('world_m1'), { realTrees: true, physics: 'mesh' });
+    forestWorld.terrain.bakeFarSync();
+    const sc = forestWorld.scatter, cfg = forestWorld.terrain.recipe.recipe.forest.trees;
+    let best = -1, bestN = -1, bestD = Infinity;
+    for (let i = 0; i < sc.count; i++) {
+      let n = 0;
+      for (let j = 0; j < sc.count; j++) if ((sc.x[j] - sc.x[i]) ** 2 + (sc.y[j] - sc.y[i]) ** 2 <= 900) n++;
+      const d = (sc.x[i] - m1Eye.x) ** 2 + (sc.y[i] - m1Eye.y) ** 2;
+      if (n > bestN || (n === bestN && d < bestD)) { best = i; bestN = n; bestD = d; }
+    }
+    if (best < 0) throw new Error('forestWalk: empty tree scatter');
+    let x = sc.x[best] + 2, y = sc.y[best] + 2;
+    for (let i = 0; i < sc.count; i++) {
+      const r = cfg.species[sc.species[i]].trunkR / Math.cos(Math.PI / 8) + .3;
+      if ((sc.x[i] - x) ** 2 + (sc.y[i] - y) ** 2 < r * r) throw new Error('forestWalk: eye inside trunk');
+    }
+    const forestLights = lightsEnabled ? buildLightSet(forestWorld, assets.palette) : null;
+    runs.push({ world: forestWorld, lights: forestLights, name: 'world_m1: forestWalk (ME-06c3, dense canopy)',
+      cam: { x, y, z: forestWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
+      before: () => engine.setWorld(forestWorld) });
   }
 
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
@@ -756,6 +782,7 @@ function runGpuCompareDdaMode(ctx) {
     rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
+  resetInstances();
   overallOk = overallOk && sampledOwnTextures;
   for (const r of shadowRows) overallOk = overallOk && r.ok;
   fbCompare.sceneFade = 1;

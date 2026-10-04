@@ -1,0 +1,99 @@
+// ME-06c3 (37.2). Run: node engine/core/scatterInstances.test.js
+import assert from 'node:assert/strict';
+import { bindScatterInstances, createEngine, SCATTER_OBJECT_BASE } from './engine.js';
+import { InstanceGroups, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
+  INST_OBJECT_ID, MAX_INSTANCE_GROUPS } from '../mesh/instances.js';
+import { serialize, deserialize } from '../world/serialize.js';
+
+let checks = 0;
+const ok = (v) => { assert.ok(v); checks++; };
+const cfg = { seed: 7349, cellM: 6, jitter: 1.5, fill: 0.8, maxTrees: 1500, lodCells: 6,
+  species: [{ model: 'oak', weight: 1, trunkR: 0.4, trunkH: 3 },
+    { model: 'birch', weight: 3, trunkR: 0.7, trunkH: 4 },
+    { model: 'unused', weight: 1, trunkR: 0.4, trunkH: 3 }] };
+const scatter = { count: 5, x: Float64Array.of(1.25, 3, -4, 5, 6),
+  y: Float64Array.of(2, -3.25, 4, 5, 6), z: Float64Array.of(-0.1, 8.75, -2, 5, 6),
+  yawDeg: Int16Array.of(0, 37, 90, 180, 359), species: Uint8Array.of(0, 1, 0, 1, 1) };
+const world = { scatter, terrain: { recipe: { recipe: { forest: { trees: cfg } } } } };
+const instances = new InstanceGroups();
+instances.bindPool({ models: new Map([['oak', {}], ['birch', {}]]) });
+const units = instances.group('units', 2);
+let groups = bindScatterInstances(world, instances);
+ok(groups.length === 2 && instances.groups.length === 3);
+ok(groups[0].modelKey === 'oak' && groups[1].modelKey === 'birch');
+ok(groups[0].count === 2 && groups[0].ib.capacity === 2);
+ok(groups[1].count === 3 && groups[1].ib.capacity === 3);
+ok(groups.every(g => g.lodCells === 6 && g.pose.clip === -1));
+const expected = createInstanceBuffer(1);
+const ids = new Set();
+for (const group of groups) {
+  let slot = 0;
+  for (let i = 0; i < scatter.count; i++) {
+    if (cfg.species[scatter.species[i]].model !== group.modelKey) continue;
+    writeUnitInstance(expected, 0, scatter.x[i], scatter.y[i], scatter.z[i], scatter.yawDeg[i],
+      SCATTER_OBJECT_BASE | i, 0);
+    for (let word = 0; word < INSTANCE_STRIDE; word++) {
+      assert.equal(group.ib.u32[slot * INSTANCE_STRIDE + word], expected.u32[word]);
+    }
+    ids.add(group.ib.u32[slot * INSTANCE_STRIDE + INST_OBJECT_ID]);
+    slot++;
+  }
+}
+ok(ids.size === scatter.count && Math.min(...ids) === SCATTER_OBJECT_BASE);
+const old = groups;
+groups = bindScatterInstances(world, instances, groups);
+ok(instances.groups.length === 3 && old.every(g => !instances.groups.includes(g)));
+groups = bindScatterInstances(null, instances, groups);
+ok(groups.length === 0 && instances.groups.length === 1 && instances.groups[0] === units);
+ok(bindScatterInstances({ scatter: null }, instances).length === 0);
+ok(bindScatterInstances({ ...world, scatter: { ...scatter, count: 0 } }, instances).length === 0);
+instances.pool.models.delete('birch');
+assert.throws(() => bindScatterInstances(world, instances), /missing voxel model birch/); checks++;
+ok(instances.groups.length === 1);
+instances.pool.models.set('birch', {});
+for (let i = 1; i < MAX_INSTANCE_GROUPS; i++) instances.group('units', 1);
+assert.throws(() => bindScatterInstances(world, instances), /over 32 groups/); checks++;
+ok(instances.groups.length === MAX_INSTANCE_GROUPS);
+
+// Exercise the real load/setWorld lifecycle without a browser renderer.
+const ctx = { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) };
+const canvas = () => ({ getContext: () => ctx });
+globalThis.window = { innerWidth: 0, innerHeight: 0, addEventListener() {} };
+globalThis.document = { createElement: canvas };
+const recipe = { map: { w: 192, h: 192, cell: 2 }, chunk: { size: 128, nearCell: 2 },
+  recipe: { forest: { canopy: 10, maxSlope: 0.5, trees: cfg } },
+  util: { heightAt: () => 0, typeAt: () => 1, gridHeight: () => 0,
+    bake: (x0, y0, cell, w, h) => ({ x0, y0, cell, w, h,
+      height: new Float32Array(w * h), type: new Uint8Array(w * h).fill(1) }) } };
+const level = { name: 'fixture', rows: ['.'], start: { x: 0.5, y: 0.5 }, legend: {
+  '.': { floorH: 0, ceilH: 'sky', solid: false, wallMat: 'stone', floorMat: 'grass', ceilMat: 'sky' },
+} };
+const assets = { terrain: () => recipe, level: () => level, contentVersion: null };
+const def = { name: 'fixture', terrain: 'fixture', sun: {},
+  structures: [{ id: 'fixture', level: 'fixture', origin: { x: 0, y: 0, z: 0 } }], entities: [] };
+const engine = createEngine({ canvas: canvas(), assets, force2d: true, inputTarget: window });
+engine.instances.bindPool({ models: new Map(cfg.species.map(s => [s.model, {}])) });
+let listenerCount = 0;
+engine.events.on('world:loaded', ({ world: loaded }) => {
+  assert.equal(engine.instances.groups.reduce((n, g) => n + g.count, 0), loaded.scatter?.count || 0);
+  listenerCount++;
+});
+const on = engine.loadWorld(def, { physics: 'mesh', realTrees: true });
+ok(on.scatter.count > 0 && engine.instances.groups.length === 3 && listenerCount === 1);
+const words = engine.instances.groups.map(g => Buffer.from(g.ib.u32.buffer));
+const saved = serialize(on);
+ok(!('scatter' in saved));
+const restored = deserialize(saved, assets, { physics: 'mesh', realTrees: true });
+engine.setWorld(restored);
+ok(engine.world === restored && restored.scatter.count === on.scatter.count && listenerCount === 2);
+ok(engine.instances.groups.every((g, i) => Buffer.from(g.ib.u32.buffer).equals(words[i])));
+ok(JSON.stringify(serialize(restored)) === JSON.stringify(saved));
+engine.loadWorld(def, { physics: 'mesh', realTrees: false });
+ok(engine.instances.groups.length === 0 && engine.world.scatter === null && listenerCount === 3);
+engine.setWorld(on);
+ok(engine.instances.groups.length === 3 && listenerCount === 4);
+engine.setWorld(deserialize(saved, assets, { physics: 'mesh', realTrees: false }));
+ok(engine.instances.groups.length === 0 && listenerCount === 5);
+engine.loadWorld({ name: 'empty', structures: [], entities: [], sun: {} });
+ok(engine.instances.groups.length === 0 && listenerCount === 6);
+console.log(`${checks} passed, 0 failed. ALL PASS`);

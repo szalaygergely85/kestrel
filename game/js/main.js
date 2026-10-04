@@ -597,6 +597,8 @@ if (gpuBlocked) {
 }
 
 function runGame(mode, cinematic = null) {
+  const worldLoadOpts = { physics: params.get('physics') === 'mesh' ? 'mesh' : undefined,
+    realTrees: renderer === 'mesh' && params.get('physics') === 'mesh' && params.get('trees') !== '0' };
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
@@ -826,8 +828,7 @@ function runGame(mode, cinematic = null) {
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
     // collider path instead of the grid (default, unchanged when omitted).
-    const physicsMode = params.get('physics') === 'mesh' ? 'mesh' : undefined;
-    guardLoad(() => engine.loadWorld(worldDef, physicsMode && { physics: physicsMode }));
+    guardLoad(() => engine.loadWorld(worldDef, worldLoadOpts));
     // BUG-FP-001: on the mesh renderer the terrain mesh needs the far bake (streamed at 1 ms/frame = ~10-15 s) before
     // far tiles exist, so the ground stayed black after spawn. Bake + build the terrain mesh once at load, like rts-test.
     if (effRenderer === 'mesh' && engine.world.terrain) {
@@ -1061,7 +1062,7 @@ function runGame(mode, cinematic = null) {
       if (ending && input.pressed('KeyR')) {
         const st = computeEndCardState(engine.world, assets.uiStyle);
         if (st.canRestart) {
-          guardLoad(() => engine.setWorld(deserialize(initialState, assets)));
+          guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
           input.endFrame();
           return;
         }
