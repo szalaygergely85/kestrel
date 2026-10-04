@@ -11,7 +11,9 @@ import { OpenSpans } from './OpenSpans.js';
 import { GBuffer, KIND_MESH, FACE_PACKED, FACE_U } from './GBuffer.js';
 import { bindShading } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
-import { makeLightBuffer } from './lighting.js';
+import { makeLightBuffer, LightSet } from './lighting.js';
+import { SUN_SHADOW_DEFAULTS } from './shadowSun.js';
+import { createClothSystem } from '../world/cloths.js';
 import { buildWorldColliders } from '../world/colliders.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import paletteMod from '../../design/palette.js';
@@ -59,17 +61,12 @@ function cells9(fb) {
   return { n, minX, maxX, minY, maxY, cx: n ? sx / n : -1 };
 }
 const eye = { x: 1000, y: 1000, z: 1.0, pitchDeg: -8 };
-// Find the yaw convention: probe the 4 compass yaws with the mesh 4 m along (sin, cos).
-let lookYaw = null;
-for (const yaw of [0, 90, 180, 270]) {
-  const rad = yaw * Math.PI / 180;
-  const w = mk([place(line, eye.x + 4 * Math.sin(rad), eye.y + 4 * Math.cos(rad), 0)]);
-  if (lookYaw === null && cells9(render(w, { ...eye, yawDeg: yaw })).n > 0) lookYaw = yaw;
-}
-ok('mesh straight ahead renders kind-9 cells for some compass yaw', lookYaw !== null);
+// D-028: forward = (sin yaw, -cos yaw), yaw 0 = north, world y increases south.
+const lookYaw = 0;
+ok('yaw 0: mesh four metres north renders kind-9 cells', cells9(render(mk([place(line, eye.x, eye.y - 4, 0)]), { ...eye, yawDeg: 0 })).n > 0);
 
-if (lookYaw !== null) {
-  const rad = lookYaw * Math.PI / 180, dx = Math.sin(rad), dy = Math.cos(rad);
+{
+  const rad = lookYaw * Math.PI / 180, dx = Math.sin(rad), dy = -Math.cos(rad);
   const cam = { ...eye, yawDeg: lookYaw };
   const at = (mesh, yaw, d = 4) => mk([place(mesh, eye.x + d * dx, eye.y + d * dy, yaw)], { physics: 'mesh' });
 
@@ -144,6 +141,25 @@ if (lookYaw !== null) {
   }
   ok('yaw 0: face 7 only on <= 10% of cells (bevels)', p0 <= c0.n * 0.1, `packed=${p0}/${c0.n}`);
   ok('kind 9 axis faces: aoD == Infinity', aoOk);
+
+  // Cloth keys may be resolved lazily by idFor: the strict imported-mesh resolver must never see them.
+  {
+    const world = at(line, 0), fb = makeFb(), table = fb.matTable;
+    const clothKey = 'testLazyCloth';
+    world.cloths = createClothSystem([{ id: 'banner', mat: clothKey, cols: 4, rows: 4, size: [1, 1],
+      origin: [eye.x - 1, eye.y - 3, 2], yawDeg: 0, plane: 'vertical', pins: [[0, 0], [3, 0]] }], { groundAt: () => 0 });
+    const idFor = table.idFor; let calls = 0;
+    table.idFor = (key) => { if (key === clothKey) { calls++; return idFor('canvas'); } return idFor(key); };
+    fb.lights = new LightSet(); fb.lights.setSun({ elevation: 50, azimuth: 135, on: true }); fb.lights.update(0, null);
+    fb.shadowOpts = { ...SUN_SHADOW_DEFAULTS, res: 64, boxM: 32, aheadM: 0 };
+    let error = null;
+    try { for (let i = 0; i < 8; i++) render(world, cam, fb); } catch (e) { error = e; }
+    const clothMesh = world.cloths.meshes[0];
+    ok('mesh + lazy cloth key: camera and sun shadow frames do not throw', !error, error?.stack);
+    ok('mesh + cloth: shadow map rendered', !!fb.sunMap);
+    ok('cloth resolver remains table.idFor across camera/shadow passes', clothMesh?.matFor === table.idFor);
+    ok('cloth material resolves once over eight camera/shadow frames', calls === 1, `calls=${calls}`);
+  }
 
   // 5. zero allocation per frame once warm
   const fbA = makeFb(), wA = at(line, 37);

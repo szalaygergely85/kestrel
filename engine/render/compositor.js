@@ -99,7 +99,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
   src.meshCache = sharedMeshDrawCache; // ME-14c2 (37.1 item 6)
-  if (fb.matTable) src.matIdFor = strictMatIdFor(fb.matTable);
+  src.meshIdFor = fb.matTable ? strictMatIdFor(fb.matTable) : undefined;
   shadowWorldZ(world, cache, sunShadowWorldZ);
   const sm = shadowSunMatrix(sun.dir, sunShadowCentreV, so, sunShadowWorldZ, sunShadowMat);
   buildShadowList(sunShadowList, cameraList, world, sm.planes, src);

@@ -32,7 +32,8 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {number} [fogFarM] - structure distance cull (default 2000, as the camera feed)
  * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): full buffer, parts from the camera pass
  * @property {{count:number, cloths:any[], meshes:any[], mats:(string|null)[], castShadow?:ArrayLike<number>}|null} [cloths] - CLOTH-1b1 (33.5): the cloth system; every cloth with `castShadow` (drawn or not) is pushed, the sun-plane cull decides
- * @property {import('./DrawList.js').MeshDrawCache} [meshCache] - ME-14c2: draw copies of placed glTF meshes (casters need `matIdFor` too)
+ * @property {import('./DrawList.js').MeshDrawCache} [meshCache] - ME-14c2: draw copies of placed glTF meshes (casters need `meshIdFor` too)
+ * @property {(key: string) => number} [meshIdFor] - strict resolver for imported mesh materials
  * @property {(key: string) => number} [matIdFor] - cloth mesh creation (material key -> id)
  */
 
@@ -49,7 +50,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   const c = src.centre;
   list.begin();
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
-  if (src.meshCache && src.matIdFor) addMeshStructures(list, world, c, src.meshCache, src.matIdFor, src.fogFarM || 2000); // ME-14c2 (37.1 item 6)
+  if (src.meshCache && src.meshIdFor) addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000); // ME-14c2 (37.1 item 6)
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
