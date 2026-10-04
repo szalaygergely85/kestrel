@@ -44,6 +44,8 @@ import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.js';
 import { autoMapColors } from '../voxAutoMap.js';
 import { deriveVoxModelName } from './voxImportName.js';
 import { createRebuildScheduler } from './rebuildScheduler.js';
+import { createIconCache, createIconQueue } from './iconFit.js';
+import { createIconRenderer } from './iconRender.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -837,6 +839,87 @@ renderProperties();
 
 // ---- US-067: Assets tab (model library) -------------------------------------
 
+let iconStorage = null;
+try { iconStorage = localStorage; } catch (_) { /* private browsing */ }
+const iconCache = createIconCache(iconStorage), iconQueue = createIconQueue(1);
+const iconRequests = new Map(), iconFailed = new Set();
+const iconStats = { rendered: 0, failures: 0, maxPerFrame: 0, lastMs: 0, maxMs: 0, setupMs: 0, warmupMs: 0, sceneWarmupMs: 0, slowestKey: null };
+let iconRenderer = null;
+function showIcon(host, url) {
+  host.textContent = '';
+  const img = document.createElement('img');
+  img.width = img.height = 96;
+  img.alt = host.dataset.iconKey;
+  img.src = url;
+  img.className = 'asset-icon';
+  host.appendChild(img);
+}
+function requestIcon(key, priority = false) {
+  const hash = iconCache.key(key, assets.model(key));
+  const previous = iconRequests.get(key);
+  const url = iconCache.get(hash);
+  iconRequests.set(key, hash);
+  if (!url && !iconFailed.has(hash)) iconQueue.enqueue(key, priority || (!!previous && previous !== hash));
+  return url;
+}
+function iconHost(key) {
+  const host = document.createElement('div');
+  host.className = 'asset-icon-host'; host.dataset.iconKey = key;
+  const url = requestIcon(key);
+  if (url) showIcon(host, url);
+  else {
+    let thumb;
+    try { thumb = getModelThumbnail(assets, key); } catch (_) { thumb = { w: 1, h: 1, cells: [{ ch: '?', fg: null }] }; }
+    host.appendChild(buildThumbEl(thumb));
+  }
+  return host;
+}
+function refreshIcons(key) {
+  if (key) requestIcon(key, true);
+  else for (const name of assets.keys('model')) requestIcon(name);
+  renderAssetsList(assetsSearchInput.value);
+}
+function pumpIcons() {
+  if (assetsPanelEl.classList.contains('active') && !leftDockEl.classList.contains('collapsed')) {
+    iconQueue.tick();
+    const key = iconQueue.next();
+    if (key !== null) {
+      const hash = iconCache.key(key, assets.model(key)), start = performance.now();
+      try {
+        let url = iconCache.get(hash);
+        if (!url && !iconRenderer) {
+          // Engine setup and the first CPU frame each get their own animation frame.
+          iconRenderer = createIconRenderer(assets);
+          iconStats.setupMs = performance.now() - start;
+          iconQueue.enqueue(key, true);
+        } else if (!url && !iconRenderer.warmed) {
+          iconRenderer.warmup();
+          iconStats.warmupMs = performance.now() - start;
+          iconQueue.enqueue(key, true);
+        } else if (!url && !iconRenderer.sceneWarmed) {
+          iconRenderer.warmupScene();
+          iconStats.sceneWarmupMs = performance.now() - start;
+          iconQueue.enqueue(key, true);
+        } else {
+          if (!url) url = iconRenderer.renderIcon(key);
+          iconCache.set(hash, url);
+          for (const host of document.querySelectorAll('[data-icon-key]')) if (host.dataset.iconKey === key) showIcon(host, url);
+          iconStats.rendered++; iconStats.maxPerFrame = Math.max(iconStats.maxPerFrame, 1);
+        }
+      } catch (e) {
+        iconFailed.add(hash); iconStats.failures++;
+        console.warn(`[editor icon] ${key}: ${e.message}`);
+      }
+      iconStats.lastMs = performance.now() - start;
+      if (iconStats.lastMs > iconStats.maxMs) {
+        iconStats.maxMs = iconStats.lastMs; iconStats.slowestKey = key;
+      }
+    }
+  }
+  requestAnimationFrame(pumpIcons);
+}
+requestAnimationFrame(pumpIcons);
+
 /** Builds a `<div class="asset-thumb">` grid of coloured `<span>`s for one `thumbnails.js` result. */
 function buildThumbEl(thumb) {
   const el = document.createElement('div');
@@ -866,9 +949,7 @@ function renderAssetsList(query) {
     const row = document.createElement('div');
     row.className = 'asset-row';
     if (armedModelKey === key) row.classList.add('armed');
-    let thumb;
-    try { thumb = getModelThumbnail(assets, key); } catch (e) { thumb = { w: 1, h: 1, cells: [{ ch: '?', fg: null }] }; }
-    row.appendChild(buildThumbEl(thumb));
+    row.appendChild(iconHost(key));
     const name = document.createElement('span');
     name.className = 'asset-name';
     name.textContent = key;
@@ -886,6 +967,18 @@ function renderAssetsList(query) {
 }
 renderAssetsList('');
 assetsSearchInput.addEventListener('input', () => renderAssetsList(assetsSearchInput.value));
+if (params.get('icontest') === '1') {
+  const strip = document.createElement('div'); strip.id = 'icon-test-strip';
+  const keys = listPlaceableModels(assets);
+  const sample = [...new Set(['lever', 'farTower', ...keys].filter(key => assets.has('model', key)))].slice(0, 6);
+  for (const key of sample) {
+    const host = iconHost(key);
+    if (!host.querySelector('img')) iconQueue.enqueue(key, true);
+    strip.appendChild(host);
+  }
+  document.body.appendChild(strip);
+  leftDockTabsEl.querySelector('[data-dock-tab="assets"]').click();
+}
 
 // ---- OWN-REQ-011: "Import .vox" (Assets tab) -------------------------------
 //
@@ -936,6 +1029,7 @@ async function doImportVox() {
     // the GPU re-uploads lazily.
     frame.voxelPool.bind(assets, frame.fb.matTable);
     frame.markDirty();
+    requestIcon(name, true);
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
     flash(def.meshOnly && frame.renderer !== 'mesh'
@@ -989,6 +1083,7 @@ async function doLoad() {
     undoStack.clear();
     selection = null;
     rebuild();
+    refreshIcons();
     flash(`loaded: ${fid}`);
   } catch (e) {
     flash(`load failed: ${e && e.message ? e.message : e}`);
@@ -1522,6 +1617,9 @@ window.__editor = {
   // US-067
   visState, toggleItemHidden, toggleItemLocked, armModelPlacement,
   get armedModelKey() { return armedModelKey; },
+  icons: { stats: iconStats, queue: iconQueue, cache: iconCache, refresh: refreshIcons,
+    get renderer() { return iconRenderer; } },
+  doImportVox,
 };
 
 if (!gpuBlocked) engine.run({ update, render });

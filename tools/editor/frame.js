@@ -42,9 +42,9 @@ export function editorRenderer(params, defaultRenderer = DEFAULT_RENDERER) {
 }
 
 /**
- * @param {{engine:Object, assets:Object, rt:Object, gpuParam?:boolean, renderer?:'mesh'|'dda'}} deps
+ * @param {{engine:Object, assets:Object, rt:Object, gpuParam?:boolean, renderer?:'mesh'|'dda', cpuMesh?:boolean}} deps
  */
-export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'dda' }) {
+export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'dda', cpuMesh = false }) {
   // D-025-style "no per-frame allocation" (24.14): everything below is built
   // once and reused every frame; only `bindLevel`/`repackMaterials` (which
   // run once per `world:loaded`, not per frame) touch it after that.
@@ -71,8 +71,8 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'd
     }
   }
   if (gpuPipeline) gpuPipeline.bindVoxels(voxelPool);
-  // 31.1: effective renderer - the CPU (`?gpu=0`) fallback stays dda/shear.
-  const effRenderer = renderer === 'mesh' && gpuPipeline ? 'mesh' : 'dda';
+  // 31.1: ordinary CPU fallback stays unchanged. 36.3 icons opt into the CPU mesh twin.
+  const effRenderer = renderer === 'mesh' && (gpuPipeline || cpuMesh) ? 'mesh' : 'dda';
   voxelPool.renderer = effRenderer;
   if (engine.instances) {
     engine.instances.bindPool(voxelPool);
@@ -87,6 +87,7 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'd
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, voxelPool,
     gpuDda: false, cpuLightCap: true, fadeLut: null, sceneFade: 1, terrainEnabled: true,
+    ...(cpuMesh ? { renderer: effRenderer } : {}),
   };
 
   let lightSet = null;

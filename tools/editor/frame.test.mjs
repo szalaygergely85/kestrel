@@ -6,8 +6,11 @@
 //
 //   node tools/editor/frame.test.mjs
 
-import { idleSkip, editorRenderer } from './frame.js';
+import { idleSkip, editorRenderer, createFrame } from './frame.js';
 import { createRebuildScheduler } from './rebuildScheduler.js';
+import { loadTestAssets } from '../testing/content-node.mjs';
+import '../../design/palette.js';
+import '../../design/detail-pass.js';
 import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
@@ -15,6 +18,18 @@ let fail = 0;
 const failures = [];
 
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
+
+// 36.3: icons use the mesh JS twin without changing the ordinary editor fallback.
+{
+  const { assets } = await loadTestAssets();
+  const rt = { backend: 'c2d-capped', cols: 160, rows: 60, pxCellW: 8, pxCellH: 16 };
+  const engine = { events: { on() {} } };
+  const icon = createFrame({ engine, assets, rt, renderer: 'mesh', gpuParam: false, cpuMesh: true });
+  ok('icon CPU frame has mesh renderer and compositor feed', icon.renderer === 'mesh' && icon.fb.renderer === 'mesh');
+  ok('icon CPU frame creates no GPU pipeline', icon.gpuPipeline === null);
+  const ordinary = createFrame({ engine, assets, rt, renderer: 'mesh', gpuParam: false });
+  ok('ordinary editor CPU renderer is unchanged', ordinary.renderer === 'dda');
+}
 
 // ---- ED-MESH-1b: editorRenderer (param x default) ----
 {
