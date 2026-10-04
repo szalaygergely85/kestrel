@@ -63,6 +63,7 @@ import { presentBeasts } from './quest/beastView.js';
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
 import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
+import { stepTargetingInput } from './quest/targetingInput.js';
 import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 30.1 + D-034 amendment)
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
@@ -878,13 +879,13 @@ function runGame(mode, cinematic = null) {
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() });
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || !!(vitals && vitals.inputLocked);
+    const paused = mode === 'world' && !isCaptureOrBench && isPaused({ ending, look, isMapOpen });
 
-    // US-128b (29.2): before `look.update(dt)` below, so a fresh `setLockPoint`
-    // this step is what `look.update` turns toward. `Q`/cycle are swallowed
-    // while `uiLocked` (wake/map/settings/dead), same as the mouse below.
-    if (mode === 'world' && playerHandle && !ending && targeting) {
-      const cycleDir = (input.pressed('Tab') ? (input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? -1 : 1) : 0) + input.consumeWheel();
-      targeting.step(dt, !uiLocked && input.pressed('KeyQ'), cycleDir, playerHandle.data, look);
+    // US-087 follow-up: drain blocked input without advancing targeting timers.
+    // An allowed lock update still precedes look.update so it turns toward the fresh point.
+    if (mode === 'world' && playerHandle && targeting) {
+      stepTargetingInput(targeting, dt, input, playerHandle.data, look, ending || uiLocked || paused);
     }
     if (look && !ending) {
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
@@ -900,7 +901,6 @@ function runGame(mode, cinematic = null) {
     // on the transition, not on every paused step. `render()` is untouched,
     // so the scene keeps drawing. Never true for `?bench=`/`?gpucompare=`/
     // `?voxelbench=` (`isCaptureOrBench`).
-    const paused = mode === 'world' && !isCaptureOrBench && isPaused({ ending, look, isMapOpen });
     if (paused !== wasPaused) {
       wasPaused = paused;
       if (paused) duckAudio(); else { unduckAudio(); resetSimAccumulator(engine); }
