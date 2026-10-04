@@ -104,4 +104,43 @@
       fl(["'", '*'], ['2', '4']), fl(['^', '*'], ['3', '4']), fl(['.', '*'], ['1', '4']), fl(['^', '*'], ['2', '4'])
     ] } } } }
   };
+
+  // ---- v1.33 (owner 2026-10-04 "the lanterns can stand on the floor"): floorLantern = a spare Kestrel brass lamp
+  // standing LIT on the flagstones. SPRITE ONLY (no voxel attach) on purpose: VoxelPool draws only the nearest 16 voxel
+  // entities and the tower already places ~21. Same brass language as the hook lamp (bright cap + cage, dark font) on a
+  // wide foot; the flame is drawn in the cage (no separate flame prop). Placed in corners the player rarely comes within
+  // 0.6 m of (the sprite near cull). Light = palette lights.lanternFloor at the cage (z + 0.32), one per lamp.
+  var FLN = { j: { c: 'iron' }, b: { c: 'brass' }, B: { c: 'brassLight' }, D: { c: 'brassDark' }, H: { c: 'brassHot' },
+              g: { c: 'mirror' }, L: { c: 'lantern', e: true }, c: { c: 'flameCore', e: true }, m: { c: 'flameMid', e: true },
+              t: { c: 'flameTip', e: true } };
+  function fln(g, k) { return { S: { glyphs: g, fg: k } }; }
+  A.models.floorLantern = {
+    name: 'floorLantern',
+    displayName: 'brass lamp',
+    desc: 'A spare Kestrel brass lamp standing lit on the floor: bail ring, bright cap, round brass cage with a flickering ' +
+          'flame, dark fuel font on a wide foot. Decoration (no pick-up, no collide).',
+    size: { w: 5, h: 6 }, anchor: { x: 2, y: 5 }, world: { w: 0.24, h: 0.4 },
+    directions: ['S'], billboard: true,
+    fill: { k: 0.45 }, outline: { k: 0.4 },
+    keys: FLN,
+    variants: ['lit', 'unlit'],
+    animations: {
+      lit: { fps: 8, loop: true, frames: [
+        fln(['  o  ', ' /=\\ ', '|(*)|', '|(+)|', ' \\_/ ', '(===)'], ['  j  ', ' BHB ', 'bLcLb', 'bLmLb', ' DbD ', 'DbBbD']),
+        fln(['  o  ', ' /=\\ ', '|(^)|', '|(*)|', ' \\_/ ', '(===)'], ['  j  ', ' BHB ', 'bLtLb', 'bLcLb', ' DbD ', 'DbBbD']),
+        fln(['  o  ', ' /=\\ ', '|(+)|', '|(*)|', ' \\_/ ', '(===)'], ['  j  ', ' BHB ', 'bLmLb', 'bLcLb', ' DbD ', 'DbBbD'])
+      ] },
+      // SPARE: a cold lamp (cage glass pale, no glow)
+      unlit: { fps: 1, loop: true, frames: [
+        fln(['  o  ', ' /=\\ ', '|( )|', '|(O)|', ' \\_/ ', '(===)'], ['  j  ', ' BHB ', 'bB Bb', 'bBgBb', ' DbD ', 'DbBbD'])
+      ] }
+    },
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: {
+      lit: { fps: 8, loop: true, frames: [
+        fln(['/=\\', '(*)', '\\_/'], ['BHB', 'LcL', 'DbD']),
+        fln(['/=\\', '(+)', '\\_/'], ['BHB', 'LmL', 'DbD'])
+      ] },
+      unlit: { fps: 1, loop: true, frames: [fln(['/=\\', '(O)', '\\_/'], ['BHB', 'BgB', 'DbD'])] }
+    } } }
+  };
 })(typeof window !== 'undefined' ? window : globalThis);

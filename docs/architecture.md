@@ -5066,3 +5066,204 @@ export function feedDetail(binding, eyeX, eyeY, force) // -> fed count
 | ENV-01c bench | PC-A | 0.25 d | none (`?bench=1` walk-out + forestWalk, detail on/off, shadows dda/map) | numbers in the row | item 7 bars met on the Arc (or tuned in item 7 order) |
 
 **gpucompare impact:** existing poses keep detail off and must not change; one new pose `detailWalkout`. If ME-06c3 ends up enabling `realTrees` for the whole compare run instead of per pose, detail follows the same switch and the changed rows are accepted once as a new baseline (listed in the ENV-01a2 row with before/after), never by widening thresholds.
+
+### 37.5 Sprites for ground details? (owner question; architect, 2026-10-04)
+
+**Decision: no billboard sprites for scatter. 37.4 stays as written (voxel instances); there is no `kind: 'sprite'` species.** Reasons, from the code:
+1. **Cap and per-cell cost.** `MAX_SPRITES` is 64 per frame (`engine/render/sprites.js`). Every entity sprite and the horizon lights share it, and the sprite shader loops over all 64 for every cell (`sprites.frag.js`; this is why particles got their own layer, 32.1). 37.4 feeds up to 768 details, 12x the cap. Raising the cap makes every cell pay O(N).
+2. **Near cull.** BUG-FIRE-001 culls sprites closer than `SPRITE_NEAR_DEPTH` 0.6 m. Tufts and flowers at your feet are exactly where detail matters, and they would pop out.
+3. **Look match.** A sprite gets one `lightAt` per sprite (flat), no per-cell normal, no sun-shadow-map receipt, no edge outline and no LOD. Instanced voxels get all of these for free and match the trees (37.2) and the terrain.
+4. **Cost.** Instances cost one draw per species group plus RE-15 cull + LOD1, about 0.6 ms GPU as budgeted in 37.4 item 7. Sprites would add a CPU projection per sprite plus the O(64) loop on every screen cell.
+
+Parity would not be a problem, because both twins read `pool.spr`. The four points above are why the answer is still no.
+
+**Card models give the owner the "painted sprite" look at instance cost (designer work, no engine change).** Tufts, flowers and ferns may be authored as **cross-card voxel models**: 2 or 3 one-voxel-thick planes crossed in an X (a star seen from above), painted like a sprite (grass/grassDark/grassLight, petal keys). They go through the 37.4 path unchanged: same `DetailSpecies` (`model`, `weight`, `yawStep 1`, `shadow false`), same feed, same groups. Rules for ENV-01d:
+- Card height 0.3-0.6 m; plane thickness 1 voxel.
+- LOD0 <= 150 tris (the item 7 bar; print it).
+- Yaw the planes 45 deg in the model, so no plane faces the camera edge-on in the preview's default views and the X reads from every side.
+- Ragged tops with holes read better than full rectangles.
+- Small stones stay solid voxels.
+
+**ENV-01a1/a2 are unchanged: no data split, no feed split.**
+
+**Where sprites stay the right tool:** animated fire bodies (36.2), the torch flame (37.8), and single hero props that need frame animation. Never scattered content.
+
+**Size / track:** 0 engine work. The designer folds card variants into ENV-01d (PC-A, within its 0.5 d).
+
+### 37.6 DECAL-01 wall decals (scrawls) on the mesh path (architect, 2026-10-04)
+
+**Finding confirmed:** `World.load` skips `decal:` props (`engine/world/World.js` ~l.454), and `serialize.js` skips them too. No renderer draws them, so KEEP THE LIGHT, STEEL FOR THE HUSH, the StickyBizcuit mason's mark (licence-required, OWN-REQ-013) and the keeper tally are all invisible.
+
+**Decision: draw decals as text through the RE-07 overlay layer (28.9), using one new op.**
+- The overlay is rasterised once in JS, and both twins read the same `ovl`/`ovlZ` arrays (the GPU overlay pass and `applyOverlay`), so parity holds by construction.
+- The overlay is depth-tested against the scene, so a wall or pillar in front hides the decal.
+- No shader change and no G-buffer change.
+- The mesh path is required (D-037). The overlay is renderer-agnostic, so dda also gets decals, but nothing is accepted or tested on dda.
+
+**Data (already in `content/levels/tower.level.json`, unchanged):**
+- Prop shape: `{id, model: 'decal:<TEXT>', facing, wall: {x0, x1, y, z0, z1}}` for facing 0/180, or `wall: {y0, y1, x, z0, z1}` for facing 90/270.
+- `facing` = compass direction of the face's outward normal, so `n = (sin f, -cos f, 0)`.
+- New optional field `style` (overlay style key, default `'decal'`).
+- Text = everything after `decal:`.
+
+**World.load** (keep the skip for entity spawn):
+- Collect each decal into `w.decals`. This is derived data: never serialized, and the hash is unchanged.
+- Map the corners to world space with the structure's `frame` (the same local->world map interactables use), and rotate `facing` by `yawSteps * 90`.
+- Entry shape: `{id, glyphs: Uint8Array (code - 32), ax, ay, bx, by, z0, z1, nx, ny, style: string}`.
+- **a -> b is the reading direction.** A viewer facing the wall looks along `-n`, so their right is `r = (-cos f, -sin f)`. `a` = the end with the smaller dot with `r`. Check: KEEP THE LIGHT (facing 0, y 10) reads from x 17.8 toward x 15.2.
+
+**Validation (throws naming `structId.propId`):** text is 1..64 printable ASCII characters; facing is one of 0/90/180/270; the wall keys match the facing (x0 < x1 with y, or y0 < y1 with x); z0 < z1; all values are finite.
+
+**Engine API:**
+```js
+// engine/ui/overlay.js: new op (OPW 8 -> 12; ops stay numbers only)
+/** Load time: registers glyph strings; returns ids. Throws past OVL_MAX_TEXTS 64 or 4096 glyphs in total. */
+ov.setTexts(glyphArrays)          // -> Int32Array ids (resets on each call; World load)
+/** Per frame. a->b = baseline in world (reading direction), z = baseline height, mul = rgb multiplier (lighting). */
+ov.text(textId, ax, ay, bx, by, z, mul, style)
+// engine/ui/decals.js (new; imports ../render/lighting.js lightAt only)
+/** Load: resolves style keys -> ids and calls ov.setTexts. Throws on an unknown style key. */
+export function bindDecals(overlay, decals)      // -> DecalBinding (preallocated)
+/** Per rendered frame, after overlay.clear(). Back-face, distance cull, one lightAt per decal, one ov.text per visible decal. */
+export function drawDecals(binding, overlay, cam, lights, world, drawM = 20) // -> drawn count
+```
+
+**Raster rule (`rasterText`, inside `flush`):**
+- Let `n` = the glyph count. Project `a` and `b`, each pushed 0.02 m along the normal, at `z = (z0+z1)/2`. `span` = the cell distance between the two projections; `per = span / n`.
+- **`per >= 0.75` (legible):** for glyph k, project the point at `u = (k+0.5)/n` along a->b, then `put(c, r, glyph, style, ref)` with that point's depth. Skip spaces (the wall shows through). If two glyphs land on one cell, the first wins (the existing rule).
+- **`per < 0.75` (too small to read):** draw the a->b segment with the existing `line()`, using the style's 4 slope glyphs (e.g. `"~~/\\"` or `"-|\\/"`), so a distant scrawl reads as scratch marks.
+- Every write multiplies the style rgb by `mul`: one closure variable set per op, `min(255, round(c*mul))`.
+- One row only: no glyph scaling, no wrapping.
+
+**`drawDecals`:**
+- Cull a decal when the eye is behind its face (`dot(eye - mid, n) <= 0.05`) or when `|eye - mid| > drawM`.
+- `mul` follows the 32.1 particle-emitter rule: `lightAt(lights, world, mid + 0.1 n, nx, ny, 0, out)` through the `shadeSprite` gain curve, luminance clamped to 0..1.5. A scrawl in the dark stays dark, and the lantern reveals it.
+- No fog (decals are near).
+
+**Host (main.js, 2 lines; PC-B main session):**
+- After the world loads: `decalBind = bindDecals(engine.overlay, engine.world.decals)`. Append the styles `decal` and `decalFaint` to the merged `setStyles`, with fg from palette keys the designer names (e.g. `scrawl`/`scrawlFaint`). The mason's mark uses `style: 'decalFaint'`.
+- Each frame, right after `engine.overlay.clear()`: `drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world)`.
+- Leave decals on during cinematics.
+
+**Budget:** <= 32 decals within drawM, <= 64 glyphs each. `drawDecals` + `rasterText` <= 0.05 ms JS per frame, 0 allocations per frame. One op per visible decal (OVL_MAX_OPS 1024 is ample).
+
+**Tests:**
+- `engine/ui/decals.test.js`, World.load fixture: `w.decals` has the right a/b order for facings 0/90/180/270 and for a `yawSteps 1` structure.
+- Validator: throws on a bad facing, wrong wall keys, non-ASCII text, and text that is too long.
+- A `serialize` round trip leaves `decals` out, and the world hash is unchanged.
+- Raster: at 1.5 m in front of the scrawl, the letters land in reading order left->right on screen; at 15 m the scratch glyphs are used; behind the face, nothing is drawn; a box in front hides the letters it covers (depth test); `mul` scales the rgb.
+- 0 allocations over 1000 frames.
+- `overlay.test.js` and the `rtsOverlay` pose are unchanged.
+- gpucompare (mesh): new pose `decalScrawl` (tower interior, eye 1.5 m north of KEEP THE LIGHT, looking S, lantern lit). The pose calls `drawDecals` itself after its `overlay.clear()`; every other pose stays unchanged.
+
+| Step | Track | Size | Files | Done when |
+|---|---|---|---|---|
+| DECAL-01 | PC-B (engine -> arch-review) | ~1 d | `engine/world/World.js` (collect + validate), `engine/ui/overlay.js` (`setTexts`, `text`, `rasterText`, OPW 12), `engine/ui/decals.js` (new), `engine/index.js`, `game/js/main.js` (2 lines + styles), `design/palette.js` (2 keys, append only), `game/js/dev/modes/gpucompare.js` (pose) | run-tests + check-deps green; `?gpucompare=1&renderer=mesh` 0 FAIL incl. `decalScrawl`; one headless capture showing KEEP THE LIGHT legible at the pallet and the mason's mark legible at knee height; ends in `arch-review` |
+
+**Do not:**
+- spawn decal entities or put decals in saves;
+- add a decal shader or a G-buffer channel;
+- draw text into the CellBuffer directly (no depth test, no twin parity);
+- allocate strings per frame.
+
+### 37.7 VOX-CAP-01 more voxel props on the mesh path (architect, 2026-10-04)
+
+**Finding:** `MAX_VOX_INSTANCES = 16` (`engine/voxel/VoxelModel.js`), and `VoxelPool.collect` keeps only the nearest 16 voxel entities. The tower now has 21, so 5 props drop out depending on where you stand.
+- The 16 is a **dda constraint**: the GPU voxel pass loops `for ii < MAX_VOX_INSTANCES` per cell (`voxel.frag.js`), and VOXINST is sized by it.
+- The mesh path does not need it: `addVoxelInstances` turns each pooled instance into ordinary `DrawList` items (`objectId 0x8000|k`).
+
+**Decision: a per-renderer cap. No global raise, and no move to instancing yet.**
+- New `MAX_VOX_INSTANCES_MESH = 48` in `VoxelModel.js`, exported via `engine/index.js`. `MAX_VOX_INSTANCES` stays 16 and keeps meaning "dda".
+- `VoxelPool` reads `this.cap = this.renderer === 'mesh' ? MAX_VOX_INSTANCES_MESH : MAX_VOX_INSTANCES`, refreshed whenever `renderer` is set (make `renderer` a setter, or read it at the top of `collect`).
+- Size all pool scratch for 48 once, in the constructor: `_nearIdx`, `_nearDist`, raw slots, shadow slots.
+- Replace every `MAX_VOX_INSTANCES` use in `voxelPool.js` with `this.cap` (collect, `pushInstance`, `project`, `projectShadow`, stats). The warn-once text names the cap that applies.
+- The dda GPU upload (`GpuCellPipeline._uploadVoxelInstances` / `writeInstanceRows`) only runs on dda. Add `if (count > MAX_VOX_INSTANCES) throw` there. It is a programmer-error guard (can't happen on dda), so a mesh-cap list can never overrun VOXINST.
+- `objectId 0x8000|k` with k < 48 stays below `0x10000` (units) and below the view-model ids (37.8). Update the comments in `viewModel.js` and `DrawList.js`.
+
+**Why not RE-06 instance groups for static props now:** props carry clips (`entity.play`, e.g. lantern variants, flag cloth anchors, `flash`), interactables remove them at runtime, and they are saved entities. Moving them to instance groups needs a static/animated split and group rebuilds on remove. That is a bigger story, and 48 covers the tower and the near overworld with headroom.
+
+**VOX-CAP-02 (later, only if needed):** when one area needs more than 48 voxel entities, props with no clip and no interactable go to per-model instance groups built at load (the 37.2 tree path), rebuilt on `entity:removed`. Not now.
+
+**Cost (mesh, owner Arc, 400x150):** each voxel instance costs one pose (`computeVoxelPose`, per part) plus the draws of its parts. Measured at the tower pose with all 21 in view, 48 vs 16:
+- JS collect + project + `addVoxelInstances` <= 0.35 ms.
+- GPU extra <= 0.3 ms p95.
+- Warn-only in Node; the main session reads F3 once.
+- Shadows (`shadows=map`): `projectShadow` uses the same cap, so props behind the player cast shadows again. This is expected and gets accepted in the review.
+
+**Tests (`voxelPool.test.js`, plus one in `voxelMesh.test.js`):**
+- `renderer 'mesh'` with 30 entities: all 30 queued, nearest-first order unchanged.
+- 60 entities: the nearest 48 win, and the warning fires once, naming 48.
+- `renderer 'dda'` with 30 entities: still 16 (unchanged behaviour; existing tests green).
+- Switching the renderer mid-session changes the cap without allocating.
+- `projectShadow` count == the cap-limited count.
+- `addVoxelInstances` objectIds are unique and < 0x10000 at k = 47.
+- 0 allocations over 1000 frames at 48.
+- gpucompare (mesh): the tower poses that see more than 16 voxel props change once. List them before/after in the row; never widen thresholds. dda rows are unchanged.
+
+| Step | Track | Size | Files | Done when |
+|---|---|---|---|---|
+| VOX-CAP-01 | PC-B (engine -> arch-review) | ~0.5 d | `engine/voxel/VoxelModel.js`, `engine/render/voxelPool.js`, `engine/render/gpu/GpuCellPipeline.js` (guard), `engine/index.js`, comments in `viewModel.js`/`DrawList.js`, tests | run-tests + check-deps green; `?renderer=mesh` tower shows all 21 props (headless capture from the stair landing); gpucompare mesh 0 FAIL with the changed rows listed; ends in `arch-review` |
+
+### 37.8 TORCH-01 torch in the right hand (architect, 2026-10-04)
+
+**Answer: mostly game-side, plus one small engine step.** The view-model layer (30.1, `engine/render/viewModel.js`) holds only **one** shown handle (`_h`, one `_last`/`_cap`, and `hide()` clears everything). The sword (left hand, after the BUG-VM-001 mirror) and the torch (right hand) need two at once.
+
+The flame and the carried light need **no** engine change:
+- **Flame:** an animated emissive billboard sprite (the 36.2 Build-style look the owner likes), pushed per frame with the public `SpritePool.push`.
+- **Light:** the existing carried light (`components.light`, `attach: 'eye'`, offset + sway), with its offset set to the flame mount.
+
+**TORCH-01a (engine, PC-B cross-track -> arch-review, ~0.5 d): multi-handle view model.**
+- Per-handle state: `visible`, `_last`, `_cap`, `bobAmount`. At most 4 handles (`VM_MAX_HANDLES 4`); `load` preallocates each handle's state.
+- `show(h, clip, tMs, blend)`: signature unchanged; marks h visible.
+- `hide(h)` hides one handle. `hide()` with no argument hides all (old behaviour kept for existing callers).
+- `capture(h)`.
+- `setBob(phase, amount, h)`: `h` omitted = all handles. The phase is shared.
+- `buildList` pushes one item per visible handle, in handle order (`DrawList(8)` is enough). `item.objectId = VM_OBJECT_ID - h` (0xFFFF, 0xFFFE, ...), so the edge pass outlines the torch against the sword.
+- `stats.items` = the total.
+- `mountEye`/`eyeToWorld` already work per handle / per camera; unchanged.
+- **Call sites to update in the same step (game, small):** in `swordView.js`/main.js, `vm.hide()` -> `vm.hide(swordH)` and `capture()` -> `capture(swordH)`. Otherwise the sword's hide call (while the sword is not taken) also hides the torch.
+- **Tests (`viewModel.test.js` additions):**
+  - Two handles shown -> 2 items, distinct objectIds, each with its own pose.
+  - `hide(0)` keeps handle 1 visible; `hide()` hides all.
+  - Per-handle `capture`/blend state does not leak between handles.
+  - JS twin with both handles: the cells of both win over a wall 0.2 m ahead.
+  - 0 allocations over 1000 frames with two handles.
+  - Existing sword tests unchanged; the gpucompare pose `viewModel` (one handle) unchanged.
+
+**TORCH-01b (game + content, PC-B, ~0.75 d).** Starts after 01a and after the BUG-VM-001 left-hand mirror is merged. No arch-review unless engine files change.
+- **Data (designer, in progress):** `design/models/torch.js` -> `ASSETS.viewModels.torch` (README 7.4 def, like the sword):
+  - `rest` in the **right** lower corner (`pos.x > 0`);
+  - clips `idle` (loop, slow sway) and `raise` (pick-up, 300 ms);
+  - `bob`;
+  - **mount `flame`** at the head top;
+  - `depth.near >= PROJ_NEAR`;
+  - **the flame mount's forward distance `-pe.y` must be >= 0.7 m** at rest and over the whole idle clip, because sprites closer than 0.6 m are culled (BUG-FIRE-001). A test checks this.
+  - An emissive billboard `torchFlame` (sprite format, README 4): 4-6 frames `burn` at ~12 fps, anchor bottom-centre, all keys `e: true`, about 0.12 x 0.22 m.
+  - A world prop model `torchProp` (voxel, on a wall bracket) that replaces the pick-up lantern.
+- **`game/js/quest/torchTake.js`** (`torch.take`), replacing `lantern.take` in the tower content: interactable `torch`, prompt `[E] Take torch`, prop and hook light switched off as today. It:
+  - sets `world.state['tower.torch.taken'] = true`;
+  - gives the player `components.light {preset: 'torch', on: true, attach: 'eye', offset: {right, down, fwd}, sway: {amp: 0.02}}`, where the offset is the flame mount at rest in eye space: right = pe.x, fwd = -pe.y, down = -pe.z.
+  - Remove the sword/lantern left-right flip from `swordTake.js`/`lantern.js`: the torch is always right, the sword always left.
+  - Keep `lantern.js` for old saves: on `world:loaded`, a save with the lantern taken maps to the torch flag (one line), so a carried light is never lost.
+  - Saves hold the flag and the light component only (state-only, as US-089).
+- **`game/js/quest/torchView.js` `presentTorch(vmH, spritePool, cam, simTime, moving)`**, per rendered frame:
+  - `vm.show(torchH, idle, tMs, false)` and `setBob(phase, moving ? 1 : 0, torchH)`.
+  - Flame world point = `eyeToWorld(cam, mountEye(torchH, idle, tMs, flameMount))`.
+  - `spritePool.push('torchFlame', 'burn', frame, x, y, z, null)` with `frame = floor(simTime * 12) mod n`.
+  - The push must sit **between `pool.collect` and `pool.project`**. Add an optional `extra(pool)` callback to `createSpriteSystem().render(fb, world, cam, extra)` in `game/js/dev/spriteDev.js` (a game file).
+  - Hidden while the flag is unset and during cinematics (as the sword).
+- **Optional embers:** `engine.particles.burstAt('embers', ...)` at the light's world position (`attachedLightPos`), 1 particle every ~10 sim steps, from the sim side. Never from the render pose, because the particle sim is hashed.
+- **Known limit (accepted):** the light offset is yaw-only (`attachedLightPos`). Under the pitched camera, the flame sprite follows the view-model pitch but the light does not: up to ~0.3 m drift at +-25 deg, which the shading does not show at these distances. If the owner sees it, a follow-up adds `pitch` to `attachedLightPos` (engine/entities, one term).
+- **Tests:**
+  - `torchTake.test.js`: take -> flag set, light preset `torch` at the mount offset, prop gone. A save round trip keeps both. An old save with the lantern taken loads with the torch light.
+  - `torchView.test.js` (Node, fake pool): the flame push lands between collect and project; the frame cycles at 12 fps; nothing is pushed while hidden.
+  - View-model data test: flame mount depth >= 0.7 m over the idle clip.
+  - Tower level-load test: the prop and the interactable resolve.
+  - One headless capture with `?renderer=mesh` after the take: torch lower right, flame drawn, sword lower left.
+  - Owner look at the end (game feel: PO first review on opus, per the PO rule).
+
+**Do not:**
+- add a second view-model layer or a sprite path inside `viewModel.js`;
+- move a world entity every frame to carry the flame (entities are saved state);
+- drive particles from the render pose;
+- lower `SPRITE_NEAR_DEPTH` for the flame (move the mount forward instead).

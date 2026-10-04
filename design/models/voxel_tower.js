@@ -620,15 +620,34 @@
     return G;
   }
   var gG = buildGondola();
+  // OWNER 2026-10-04 ("gondola, can you change it to cloth material?", v1.33): same voxels / shape / tilt, but the basket
+  // now reads as a stitched CANVAS gondola in the Kestrel's envelope cloth instead of wicker + brass. Per-char material
+  // override for this model only (the batch KEY table is shared, so it is not touched):
+  //   w walls + deck      wood         -> canvas        (ochre envelope canvas, the body)
+  //   R rim/frame/posts   brass_light  -> canvas_light  (padded canvas rim = the bright top edge, value ladder kept)
+  //   b top/bottom bands  brass_dark   -> gore_red      (a red livery band like the envelope gores: "Kestrel cloth")
+  //   B ribs              brass        -> rope          (rope load tapes sewn down the walls, read as seams)
+  //   d bottom plate/tank iron_dark    -> canvas_dark   (dark wet canvas floor; the tank becomes a dark bundle)
+  //   v dent spots        patina       -> canvas_burnt  (scorch marks from the crash)
+  //   H knobs/rivets/letters brass_hot -> brass_hot     (KEPT: brass eyelets + the name letters, like the heap's eyelets)
+  //   r rope, c/k sandbags, D/T chock: unchanged. All keys already merged (envelopeHeap / canvasHeap use them).
+  var GONDOLA_CLOTH = { w: 'canvas', R: 'canvas_light', b: 'gore_red', B: 'rope', d: 'canvas_dark', v: 'canvas_burnt' };
+  function gondolaMats(G) {
+    var o = matsOf(G), k;
+    for (k in GONDOLA_CLOTH) if (o[k]) o[k] = GONDOLA_CLOTH[k];
+    return o;
+  }
   function gondolaTilt() { return { rot: [8, 0, 0], pos: [0, 0, -1] }; }
   A.voxelModels.gondola = {
     name: 'gondola',
-    desc: 'Voxel gondola (the Kestrel\'s basket, ART-OWN-002 rework): a rectangular wicker basket with straight brass ribs, ' +
+    desc: 'Voxel gondola (the Kestrel\'s basket, ART-OWN-002 rework; owner 2026-10-04: CLOTH materials, see GONDOLA_CLOTH - ' +
+          'ochre canvas walls, padded canvas rim, red livery bands, rope seams, brass eyelets only). Shape: ' +
+          'a rectangular basket with straight ribs, ' +
           'brass_light corner posts with hot knobs, a bright padded rim one voxel proud all round, rope loops under the ' +
           'rim, 3 sandbags, the name board facing the wake spot, a verdigris dent, a rope coil / tank / sack inside; the ' +
           'whole basket tilted 8 deg (rigid) with its back edge on a stone chock.',
     voxel: {
-      version: 1, cellM: 0.085, size: [26, 11, 13], anchor: [21.5, 5.5, 0], mats: matsOf(gG), layers: gG.layers(),
+      version: 1, cellM: 0.085, size: [26, 11, 13], anchor: [21.5, 5.5, 0], mats: gondolaMats(gG), layers: gG.layers(),
       parts: {
         bow:   { box: [0, 0, 1, 13, 11, 13], pivot: [13, 1, 1] },       // extent 36; shared pivot = front bottom edge
         stern: { box: [13, 0, 1, 26, 11, 13], pivot: [13, 1, 1] },      // extent 36

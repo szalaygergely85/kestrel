@@ -139,6 +139,10 @@
     grassMid:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     grassFar:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
+    // v1.33 (owner 2026-10-04): calm TURF ladders for the grass ground (no " v w foliage glyphs; no '.' at levels 3-4)
+    turfFace:   [".", ".,", ",'", "',`", ",';", ";',", ";:'", ";:"],
+    turfMid:    [".,'", ",'.", "',`,", ",';'", ";',:", ";:',", ":;',", ";:;'"],
+    turfFar:    [".,'", ",'.", "',`,", ",';'", ";',:", ";:',", ":;',", ";:;'"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
     // US-029 content gap: tower materials iron / grate / ash / rock (were v1-only). Same rules: 3-4
     // alternates per level, no '.' at level 3 (ash is a floor: none at level 4 either).
@@ -301,12 +305,12 @@
     },
     grass: {
       v1: 'grass', seed: 71,
-      desc: 'Hill turf: patches of 3 greens (0.7 m, tones only, no lines), tufts " v w, sparse at a distance.',
-      albedo: 0.80, bgK: 0.24, detail: 16, jitter: 0.12,
-      tones: [['grass', 3], ['grassDark', 2], ['grassLight', 2]],
-      grid: { u: 0.7, v: 0.7, stagger: 0.5, lines: false },
-      face: { set: 'grassFace', mid: 'grassMid', far: 'grassFar' },
-      speckle: { set: 'tuft', chance: 0.05, shade: 1.15 },
+      desc: 'Hill turf (v1.33, owner 2026-10-04: "just green"): calm turf* tones in soft 1.4 m patches, quiet , \' ` ; ' +
+            'ladders, no tuft speckle - the ground_detail scatter supplies tufts / flowers / rocks.',
+      albedo: 0.80, bgK: 0.24, detail: 16, jitter: 0.08,
+      tones: [['turf', 4], ['turfDark', 1], ['turfLight', 1]],
+      grid: { u: 1.4, v: 1.4, stagger: 0.5, lines: false },
+      face: { set: 'turfFace', mid: 'turfMid', far: 'turfFar' },
       lod: { mid: 12, far: 25, dither: 3 }
     },
     // --- US-029 content gap: the last 4 tower materials (so bindShading's allV2 is true) -------------

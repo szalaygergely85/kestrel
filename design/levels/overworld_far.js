@@ -134,7 +134,20 @@
             note: 'US-016b c: flat 2.4 m crown under the whole tower footprint (24x14 incl. bastion + outcrop), smoothstep skirt 60 m' }
         ],
         paints: [
-          { id: 'crownGrass', shape: 'disc', x: 1492, y: 1025, r: 26, type: 'grass', mode: 'set', note: 'bare grass on the crown + handover band' }
+          { id: 'crownGrass', shape: 'disc', x: 1492, y: 1025, r: 26, type: 'grass', mode: 'set', note: 'bare grass on the crown + handover band' },
+          // OWNER 2026-10-04 "add some trees around the tower" (v1.33): three small forest groves painted INSIDE the
+          // world bounds (r 96; the recipe forest starts at homeClear 110 m, i.e. outside them). Listed AFTER crownGrass so
+          // they win where they overlap it (typeAt walks the paints last-first). scatterTrees plants real trees on these
+          // forest cells (cellM 6.5 / fill 0.72: ~3-6 trees per grove; trunks need all 4 corners of a 2 m cell forest, so
+          // they stand >= ~1.5 m inside the disc). Clearances (disc EDGE): tower bbox (1480..1504 x 1018..1032) >= 7 m,
+          // walk-out path centre line >= 10 m, boar homes >= 14 m, breach landing >= 15 m, quietPond / floodedCellar >= 16 m.
+          // Ground under them = forest floor (ferns / logs / mushrooms from recipe.detail). Trees render after ME-06c3.
+          { id: 'groveEast', shape: 'disc', x: 1521, y: 1028, r: 10, type: 'forest', mode: 'set',
+            note: 'behind the east wall, a little south of due ESE so it never shades the sun crack (sun elev 60: the shaft clears 17 m at 8 m out)' },
+          { id: 'groveSouth', shape: 'disc', x: 1494, y: 1048, r: 9, type: 'forest', mode: 'set',
+            note: 'south of the tower (edge 7 m from the south wall); seen on the left of the walk-out' },
+          { id: 'groveNorthWest', shape: 'disc', x: 1460, y: 1008, r: 9, type: 'forest', mode: 'set',
+            note: 'north of the walk-out, ~33 deg right of the breach view centre (yaw 270): the first trees you see from the breach' }
         ]
       },
       // Must stay AFTER '11,8' (stamps apply in key insertion order): the crown flatten would erase the bowl.
@@ -169,7 +182,9 @@
     // ---- look per terrain type (colors = palette keys dark/mid/light; glyph sets by distance band) ----
     bands: { near: 150, mid: 600 },                   // FAR view bands (8 m grid), metres
     terrain: {
-      grass:  { id: 0, colors: ['grassDark', 'grass', 'grassLight'], glyphs: { close: '"\',;`', near: '"\',;', mid: ",'.", far: '.,' }, face: ';:', albedo: 0.85 },
+      // v1.33 (owner 2026-10-04 "ground looks like tree colour"): calm turf* greens + quiet glyphs (no " tufts);
+      // the ENV-01 ground detail scatter brings the variety. Was colors grassDark/grass/grassLight, close '"\',;`', near '"\',;', face ';:'.
+      grass:  { id: 0, colors: ['turfDark', 'turf', 'turfLight'], glyphs: { close: ".,'`", near: ".,'", mid: ",'.", far: '.,' }, face: ',:', albedo: 0.85 },
       forest: { id: 1, colors: ['forestDark', 'forest', 'grassDark'], glyphs: { close: '&%@&', near: '&%@', mid: '%&', far: '%:' }, face: '&%', albedo: 0.70 },
       water:  { id: 2, colors: ['river', 'river', 'riverLight'], glyphs: { close: '~-~=', near: '~-', mid: '~-', far: '-~' }, face: '~', albedo: 0.90,
                 glint: { hz: 1.5, amount: 0.35 } },
@@ -194,7 +209,7 @@
       features: [
         { id: 'wildflower', on: 'grass', bands: ['close'], chance: 0.025, glyphs: '*,', colors: ['gold', 'strawLight', 'white'], note: 'warm specks = the land is alive (never danger red)' },
         { id: 'pebble', on: 'grass', bands: ['close', 'near'], chance: 0.012, glyphs: 'o.', colors: ['rock', 'stoneLight'] },
-        { id: 'tallGrass', on: 'grass', bands: ['close'], chance: 0.06, glyphs: '"', colors: ['grassLight'], note: 'drawn one row ABOVE the surface row (0.5 m tuft)' },
+        { id: 'tallGrass', on: 'grass', bands: ['close'], chance: 0.02, glyphs: '"', colors: ['grassLight'], note: 'drawn one row ABOVE the surface row (0.5 m tuft). v1.33: 0.06 -> 0.02 (calm turf; the scatter tufts carry it)' },
         { id: 'reed', on: 'grass', bands: ['close', 'near'], nearWater: 14, chance: 0.2, glyphs: '|!', colors: ['grass', 'strawDark'] },
         { id: 'foam', on: 'water', bands: ['close'], nearBank: 3, chance: 0.3, glyphs: '-=', colors: ['riverLight', 'white'] }
       ]

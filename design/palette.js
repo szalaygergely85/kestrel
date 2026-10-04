@@ -231,7 +231,14 @@
     mushroomCapDark: '#6e2c14',
     woodCutLight: '#e2c48e',
     woodCut: '#c09a64',
-    woodCutDark: '#7a5a34'
+    woodCutDark: '#7a5a34',
+    // OWNER 2026-10-04 (EP-ALIVE, v1.33): calm meadow TURF for the grass ground type (terrain recipe.terrain.grass +
+    // materials.grass). Yellower (hue ~81-88 deg) and less saturated than leaf* (~100 deg) / the old grass* keys, with a
+    // narrow dark->light span, so open ground reads as "plain green lawn" and never as canopy; the ground_detail
+    // scatter (tufts, flowers, rocks) brings the variety. grass* keys stay (tufts, reeds, features).
+    turfLight: '#a2c464',
+    turf: '#78a04a',
+    turfDark: '#5a7a36'
   };
 
   // ---------------------------------------------------------------------------
@@ -318,7 +325,16 @@
     // ENV-02 (D-038, v1.31): SPARE preset for a candle / small coal glow (not placed: the keeper's candle stub in the
     // tower is cold, canon). A small warm pool, well under the hook lamp (0.55 / 3.5 m). Editor light list + previews.
     candle:  { color: 'torch', intensity: 0.32, type: 'point', radius: 2.2, falloff: 'smooth',
-               flicker: { hzMin: 5, hzMax: 9, amount: 0.12, jitter: 0.03 } }
+               flicker: { hzMin: 5, hzMax: 9, amount: 0.12, jitter: 0.03 } },
+    // TORCH-01 (owner 2026-10-04, v1.33): the torch burning in its wall sconce (design/models/torch.js torchProp, light
+    // mount; replaces lanternHook in TORCH-01b). Pitch-fire orange with a lively flicker, smaller than the burner
+    // (torch 1.0 / 6 m, 1.34 m away) so the corner glows without out-shining it. Carried = the existing `torch` preset (37.8).
+    torchSconce: { color: 'torch', intensity: 0.6, type: 'point', radius: 4, falloff: 'smooth',
+                   flicker: { hzMin: 7, hzMax: 11, amount: 0.14, jitter: 0.05 } },
+    // v1.33: a brass lamp standing LIT on the floor (lantern.js floorLantern, tower floorLamp* props). Amber, a small
+    // low pool (light 0.32 m above the floor, at the cage), calm flicker - softer than the sconce torch.
+    lanternFloor: { color: 'lantern', intensity: 0.45, type: 'point', radius: 3, falloff: 'smooth',
+                    flicker: { hzMin: 6, hzMax: 9, amount: 0.05, jitter: 0.02 } }
   };
 
   // ---------------------------------------------------------------------------
@@ -553,15 +569,16 @@
       ] }
     },
     grass: {
-      desc: 'Hill turf outside the tower (US-010 outcrop path, outside ring). Sampled with world x,y.',
-      base: 'grass', albedo: 0.80, ramp: 'grass',
+      desc: 'Hill turf outside the tower (US-010 outcrop path, outside ring). Sampled with world x,y. v1.33 (owner ' +
+            '2026-10-04): calm turf* greens, softer patches, a plain tick instead of the " tuft (scatter brings the tufts).',
+      base: 'turf', albedo: 0.80, ramp: 'grass',
       bg: { mode: 'darken', k: 0.22 },
       textureFade: [5, 16],
       texture: { w: 8, h: 4, scale: [8, 8], key: {
         a: { shade: 1.00 },
-        l: { shade: 1.15, tint: 'grassLight', amount: 0.5 },
-        d: { shade: 0.75, tint: 'grassDark', amount: 0.6 },
-        f: { shade: 1.05, glyph: '"' }                       // tuft
+        l: { shade: 1.08, tint: 'turfLight', amount: 0.4 },
+        d: { shade: 0.88, tint: 'turfDark', amount: 0.4 },
+        f: { shade: 1.02, glyph: "'" }                       // quiet tick (was the " tuft)
       }, rows: [
         'aldaalda',
         'daalfdal',
