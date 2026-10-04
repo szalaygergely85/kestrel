@@ -1062,6 +1062,7 @@ export class GpuCellPipeline {
     this._light = light;
     this._cam = cam || null;
     this._world = world || null;
+    if (this.renderer === 'mesh' && this._water) this._water.bindWorld(this._world);
   }
 
   /** Test-only (14.2 item 7): forces the legacy 14.1 upload path even when `cam`/`world` are given - `?gpucompare=shade`. */

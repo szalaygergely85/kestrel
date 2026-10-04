@@ -6,6 +6,8 @@
   "files": [
     "worlds/world_m1.world.json",
     "levels/tower.level.json",
-    "levels/test_room.level.json"
+    "levels/test_room.level.json",
+    "levels/waterfall_cliff.level.json",
+    "worlds/waterfall_test.world.json"
   ]
 }

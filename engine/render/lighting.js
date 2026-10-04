@@ -29,6 +29,7 @@
 
 import { HFOV_DEG } from './sectorCaster.js';
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
+import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
 import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
@@ -41,6 +42,25 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 
 export const MAX_LIGHTS = 16;
+const worldSunScratch = { elevation: 0, azimuth: 0, on: true };
+const hourSunScratch = { elevationDeg: 0, azimuthDeg: 0 };
+
+/** US-122a: detach the shared level sun once, then update in place. */
+export function setWorldSun(world, lights, elevationDeg, azimuthDeg, on) {
+  worldSunScratch.elevation = elevationDeg; worldSunScratch.azimuth = azimuthDeg; worldSunScratch.on = on;
+  if (lights) lights.setSun(worldSunScratch);
+  if (world.sunSource !== 'time') {
+    world.sun = { ...world.sun, elevation: elevationDeg, azimuth: azimuthDeg };
+    world.sunSource = 'time';
+  } else {
+    world.sun.elevation = elevationDeg; world.sun.azimuth = azimuthDeg;
+  }
+}
+
+export function applySunHours(world, lights, h, path, on) {
+  sunFromHours(h, path, hourSunScratch);
+  setWorldSun(world, lights, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
+}
 // PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
 // nearest `on` lights per frame (tech notes item 7, "reduced light count
 // (max 4, nearest first)"). GPU/GLSL and `?gpucompare=1` are unaffected -

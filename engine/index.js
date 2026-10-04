@@ -33,7 +33,7 @@ export { loadContentPack, globalId } from './content/loadPack.js';
 
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
-export { scatterTrees, validateScatterConfig, hash2 } from './world/scatter.js';
+export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
@@ -45,6 +45,7 @@ export { serialize, deserialize } from './world/serialize.js';
 // path, tools/editor/*).
 export { ambientL, HFOV_DEG } from './render/sectorCaster.js';
 export { castTerrain, shadeTerrainCells, marchTerrainRay, sunFromWorld, FOG_FULL, T_START, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K } from './render/terrainCaster.js';
+export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
@@ -101,7 +102,7 @@ export { packLevel, repackMaterials } from './world/packed.js';
 
 // ---- US-006 lighting (ambient + point lights + flicker) -------------------
 export {
-  LightSet, buildLightSet, syncEntityLights, lightAt, lightSurfaces,
+  LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
   makeLightBuffer, MAX_LIGHTS,
 } from './render/lighting.js';

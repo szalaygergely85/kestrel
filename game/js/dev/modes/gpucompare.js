@@ -9,7 +9,7 @@
 // Programmer notes (docs/backlog.md US-048 row) for this call.
 import {
   bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim,
+  buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -514,18 +514,17 @@ function compareOverlayCells(ov, twinFg, gpuFg, depth) {
 
 /**
  * ME-15c: temporarily points BOTH sun sources at `sun = {azimuth, elevation}` for one pose - the light set (the shadow
- * map + the light pass) and the first structure's `def.sun` (the terrain's analytic sun, `sunFromWorld`) - so a pose
+ * map + the light pass) and `world.sun` (the terrain's analytic sun, `sunFromWorld`) - so a pose
  * can pin e.g. az 135 el 30. Returns the restore closure.
  */
 function applySunOverride(world, lights, sun) {
-  const s0 = world.structures && world.structures.find((q) => q.kind !== 'mesh');
-  const def = s0 && s0.level && s0.level.def;
-  const hadDef = def && 'sun' in def, oldDef = def ? def.sun : undefined;
+  const oldSun = world.sun, oldSource = world.sunSource, hadSource = 'sunSource' in world;
   const old = lights ? { elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: lights.sun.on } : null;
-  if (def) def.sun = { ...(def.sun || {}), azimuth: sun.azimuth, elevation: sun.elevation };
-  if (lights) lights.setSun({ elevation: sun.elevation, azimuth: sun.azimuth, on: true });
+  world.sunSource = null; // force a temporary copy even if this world already owns a time-driven sun
+  setWorldSun(world, lights, sun.elevation, sun.azimuth, true);
   return () => {
-    if (def) { if (hadDef) def.sun = oldDef; else delete def.sun; }
+    world.sun = oldSun;
+    if (hadSource) world.sunSource = oldSource; else delete world.sunSource;
     if (lights && old) lights.setSun(old);
   };
 }

@@ -4,7 +4,7 @@
 // for the build order this follows.
 import { loadLevel } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { scatterTrees } from './scatter.js';
+import { scatterTrees, scatterDetail } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
@@ -14,7 +14,7 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildTrunkCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, refitDynCollider } from './colliders.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
@@ -144,6 +144,7 @@ export class World {
     this.terrain = null;
     this.terrainKey = null;
     this.scatter = null; // Derived placements, never serialized.
+    this.detail = null; // ENV-01a1: derived ground detail, never serialized.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
     // `structuredClone(def.state)`/`serialize.js`, set once by `World.load`
@@ -266,7 +267,7 @@ export class World {
   /**
    * @param {Object} def - WorldDef (design/levels/world_m1.js shape) or an ephemeral equivalent (`?level=test_room`).
    * @param {import('../core/assets.js').AssetRegistry} assets
-   * @param {{events?: import('../core/events.js').Events, terrain?: import('./Terrain.js').Terrain, realTrees?: boolean}} [opts]
+   * @param {{events?: import('../core/events.js').Events, terrain?: import('./Terrain.js').Terrain, realTrees?: boolean, detail?: boolean}} [opts]
    * @returns {World}
    */
   static load(def, assets, opts = {}) {
@@ -387,9 +388,26 @@ export class World {
     }
 
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
+    if (opts.detail === true && w.terrain?.nearReady && w.terrain.recipe.recipe?.detail) {
+      const cfg = w.terrain.recipe.recipe.detail, keepOut = [];
+      // Only registered authored positions: saved/live entities must never move the grass.
+      if (assets && def.name && typeof assets.has === 'function' && assets.has('world', def.name)) {
+        for (const e of assets.world(def.name).entities || []) {
+          const p = e.transform || e;
+          if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+            keepOut.push({ shape: 'disc', x: p.x, y: p.y, r: cfg.entityClearM ?? 1.5 });
+          }
+        }
+      }
+      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg);
+    }
     if (w.physicsMode === 'mesh' && w.scatter) {
       const trunks = buildTrunkCollider(w.scatter, w.terrain.recipe.recipe.forest.trees);
       if (trunks) w.colliders.push(trunks);
+    }
+    if (w.physicsMode === 'mesh' && w.detail) {
+      const detailCollider = buildDetailCollider(w.detail);
+      if (detailCollider) w.colliders.push(detailCollider);
     }
 
     if (!w.sun) {
