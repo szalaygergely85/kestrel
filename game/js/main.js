@@ -16,7 +16,7 @@ import {
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
@@ -315,6 +315,8 @@ const lightsEnabled = params.get('lights') !== '0';
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
 const sunEnabled = params.get('sun') !== '0';
+const timeHour = params.has('time') ? parseFloat(params.get('time')) : NaN;
+if (params.has('time') && !Number.isFinite(timeHour)) console.warn('[time] expected finite clock hours');
 // ARCH CHANGES item 3 (14.4 item 8): `?terrain=0` dev A/B switch - skips
 // terrain on BOTH paths (GPU: `GpuCellPipeline`'s `_terrainActiveThisFrame`
 // gate; JS/CPU: `compositor.js`'s `castTerrain` call). Same shape as
@@ -605,6 +607,8 @@ function runGame(mode, cinematic = null) {
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
+  let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
+  const cinematicHours = cinematic && Number.isFinite(cinematic.keys[0].hour);
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
   if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
 
@@ -666,6 +670,7 @@ function runGame(mode, cinematic = null) {
 
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
+      if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
       // US-020a: reset every module-level audio counter (sector-anim rate
       // limit, footstep accumulator, boulder settle-watch) here - the one
       // place both the first load and every restart go through (7.4 rule).
@@ -691,6 +696,7 @@ function runGame(mode, cinematic = null) {
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
       }
+      if (Number.isFinite(timeHour)) applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled);
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
       // level's first light, so the tester can measure the "8 point lights"
@@ -832,6 +838,7 @@ function runGame(mode, cinematic = null) {
       const world = engine.world;
       stepSectorAnims(world, dt); world.water.step();
       evaluatePath(cinematic, simTime, cam);
+      if (cinematicHours) applySunHours(world, lightSet, cam.hour, worldSunPath, sunEnabled);
       if (world.cloths) world.cloths.tick(clothTick, world.wind, cam.x, cam.y, cam.z);
       stepAnimations(world, dt * 1000);
       entityEmitters.sync(); engine.particles.step();
@@ -852,8 +859,8 @@ function runGame(mode, cinematic = null) {
     // azimuth) to verify shadows move correctly" - +-5 deg, `setSun` is the
     // only mutator (docs/architecture.md 14.3 item 3).
     if (lightSet) {
-      if (input.pressed('F6')) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth - 5, on: sunEnabled });
-      if (input.pressed('F7')) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth + 5, on: sunEnabled });
+      if (input.pressed('F6')) setWorldSun(engine.world, lightSet, lightSet.sun.elevation, lightSet.sun.azimuth - 5, sunEnabled);
+      if (input.pressed('F7')) setWorldSun(engine.world, lightSet, lightSet.sun.elevation, lightSet.sun.azimuth + 5, sunEnabled);
     }
     // US-017 (7.4 item 2): "entering the end trigger locks input" - no
     // pointer-look, no WASD/jump, no `E`. `quest.endT` (world.state, set by
@@ -1109,6 +1116,7 @@ function runGame(mode, cinematic = null) {
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
       cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0); // US-080a2 (30.2): hurt pitch kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
+      if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep

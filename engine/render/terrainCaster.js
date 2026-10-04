@@ -307,9 +307,13 @@ function terrainAoAlias(gbuf) {
 export function sunFromWorld(world, palette, out = _sunScratch) {
   const T = palette.timeOfDay[palette.defaultTime];
   let az = 112.5, elev = T.sunElev;
-  const s0 = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
-  if (s0 && s0.level && s0.level.def && s0.level.def.sun && s0.level.def.sun.azimuth != null) {
-    az = s0.level.def.sun.azimuth; elev = s0.level.def.sun.elevation;
+  let sun = world.sun;
+  if (!sun) {
+    const s0 = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
+    sun = s0?.level?.def?.sun;
+  }
+  if (sun && sun.azimuth != null) {
+    az = sun.azimuth; elev = sun.elevation;
   }
   const azRad = az * Math.PI / 180, elRad = elev * Math.PI / 180, cosEl = Math.cos(elRad);
   out.dirX = Math.sin(azRad) * cosEl; out.dirY = -Math.cos(azRad) * cosEl; out.dirZ = Math.sin(elRad);

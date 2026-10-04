@@ -25,4 +25,16 @@ await playback.step(1); await playback.step(2);
 assert.equal(ticks, 4); assert.equal(renders, 3);
 await assert.rejects(() => playback.step(2));
 await assert.rejects(() => playback.step(4));
-console.log('cinematic: 33 assertions PASS');
+const hours = validatePath({ ...path, keys: [{ ...key(0, 0, 0), hour: 20 }, { ...key(1, 1, 0), hour: 26 }] });
+assert.equal(evaluatePath(hours, 0.5, out).hour, 23);
+assert.equal(evaluatePath({ ...hours, keys: hours.keys.map((k) => ({ ...k, ease: 'smooth' })) }, 0.25, out).hour, 20.9375);
+assert.equal(evaluatePath({ ...hours, keys: [{ ...hours.keys[0], hour: 6 }, { ...hours.keys[1], hour: 20 }] }, 0.5, out).hour, 13);
+assert.equal(evaluatePath({ ...hours, keys: [{ ...hours.keys[0], hour: 18 }, { ...hours.keys[1], hour: 6 }] }, 0.5, out).hour, 12);
+for (const badHour of [undefined, NaN, Infinity, '12', null]) {
+  assert.throws(() => validatePath({ ...hours, keys: [hours.keys[0], { ...hours.keys[1], hour: badHour }] }));
+}
+out.hour = 123;
+evaluatePath(path, 0.5, out);
+assert.equal(out.hour, 123);
+assert.throws(() => validatePath({ ...path, timeOfDay: {} }), /use per-key hour \(US-122a\)/);
+console.log('cinematic: 44 assertions PASS');

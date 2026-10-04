@@ -2,7 +2,7 @@
 // Headless Node unit tests for the JS reference lighting module.
 // Run: node engine/render/lighting.test.js
 import {
-  LightSet, buildLightSet, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
+  LightSet, buildLightSet, setWorldSun, applySunHours, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
   sampleVis, VIS_FLOOR_EPS, makeLightBuffer, syncEntityLights, clampLightToFree, ATTACH_WALL_MARGIN,
 } from './lighting.js';
@@ -16,6 +16,8 @@ import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { KIND_MODEL, KIND_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { makeOk } from '../test/assert.js';
+import { SUN_PATH_DEFAULT } from '../core/sunPath.js';
+import { sunFromWorld } from './terrainCaster.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod;
@@ -786,6 +788,35 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   const keyXBefore = ls._visKeyX[h];
   ls.setParams(h, { radius: 10 });
   ok('setParams with the SAME radius does not re-invalidate the vis key', ls._visKeyX[h] === keyXBefore);
+}
+
+// US-122a: world ownership, horizon cut and matching terrain/light directions.
+{
+  const defSun = Object.freeze({ elevation: 60, azimuth: 112.5, preset: 'sun' });
+  const world = { sun: defSun, sunSource: 'level', structures: [{ level: { def: { sun: defSun } } }] };
+  const ls = new LightSet(), reference = new LightSet();
+  reference.setSun({ elevation: 60, azimuth: 112.5, on: true });
+  applySunHours(world, ls, 2, SUN_PATH_DEFAULT, true);
+  ok('hour 2 disables sun below horizon', ls.sun.on === false);
+  ok('time detaches world.sun from level def', world.sun !== defSun && world.sunSource === 'time');
+  ok('level def.sun stays unchanged', defSun.elevation === 60 && defSun.azimuth === 112.5);
+  const owned = world.sun;
+  applySunHours(world, ls, SUN_PATH_DEFAULT.h0, SUN_PATH_DEFAULT, true);
+  ok('later time calls reuse owned sun', world.sun === owned);
+  for (let i = 0; i < 3; i++) ok(`h0 sun dir[${i}] matches fixed sun`, approx(ls.sun.dir[i], reference.sun.dir[i], 1e-12));
+  setWorldSun(world, ls, 35, 240, true);
+  const terrainSun = sunFromWorld(world, paletteMod);
+  for (const [field, i] of [['dirX', 0], ['dirY', 1], ['dirZ', 2]]) ok(`terrain ${field} follows world.sun`, approx(terrainSun[field], ls.sun.dir[i], 1e-7));
+  for (const hour of [6, 18]) {
+    applySunHours(world, ls, hour, SUN_PATH_DEFAULT, true);
+    ok(`hour ${hour} disables horizon sun`, ls.sun.on === false);
+  }
+  applySunHours(world, ls, 12, SUN_PATH_DEFAULT, false);
+  ok('hour respects explicit sun disable', ls.sun.on === false);
+  applySunHours(world, null, 8, SUN_PATH_DEFAULT, true);
+  ok('time without LightSet still reuses world-owned sun', world.sun === owned && world.sun.elevation > 0);
+  const fallbackSun = sunFromWorld({ structures: world.structures }, paletteMod, {});
+  ok('terrain without world.sun retains level fallback', approx(fallbackSun.dirX, reference.sun.dir[0], 1e-7));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
