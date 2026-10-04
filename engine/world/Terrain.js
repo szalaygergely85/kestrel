@@ -23,7 +23,7 @@ function now() {
 export class Terrain {
   /**
    * @param {Object} recipe - `assets.terrain(key)` (design/levels/overworld_far.js shape).
-   * @param {{structures?: Array}} [opts]
+   * @param {{structures?: Array, realTrees?: boolean}} [opts]
    */
   constructor(recipe, opts = {}) {
     if (!recipe || !recipe.util || typeof recipe.util.heightAt !== 'function') {
@@ -31,6 +31,7 @@ export class Terrain {
     }
     this.recipe = recipe;
     this.util = recipe.util;
+    this.realTrees = opts.realTrees === true;
 
     this.mapW = recipe.map.w;
     this.mapH = recipe.map.h;
@@ -166,7 +167,7 @@ export class Terrain {
     const G = this.util.bake(x0, y0, this.nearCell, w, h);
 
     const hDraw = new Float32Array(w * h);
-    const canopy = this._canopyM, forestId = this._forestTypeId;
+    const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
     let minH = Infinity, maxH = -Infinity;
     for (let i = 0; i < G.height.length; i++) {
       const hv = G.height[i] + (G.type[i] === forestId ? canopy : 0);

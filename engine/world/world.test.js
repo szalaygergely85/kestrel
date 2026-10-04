@@ -421,6 +421,42 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   t.bakeNearBand = orig;
 }
 
+// ME-06c1: opt-in scatter is derived data, and Terrain reuse must rebake the canopy policy.
+{
+  const def = assets.world('world_m1');
+  const original = World.load(def, assets);
+  const t = original.terrain;
+  t.bakeFarSync();
+  const forestIndices = [];
+  for (let i = 0; i < t.near.type.length; i++) if (t.near.type[i] === 1) forestIndices.push(i);
+  ok('world_m1 has forest cells in its near band', forestIndices.length > 0);
+  ok('scatter is opt-in', original.scatter === null);
+  const farBefore = Array.from(t.farHDraw);
+  const version = t.near.version;
+  const trees = World.load(def, assets, { terrain: t, realTrees: true });
+  ok('realTrees reuse rebakes near canopy', t.near.version === version + 1);
+  ok('realTrees near forest is ground', forestIndices.every(i => t.near.hDraw[i] === t.near.height[i]));
+  ok('world scatter has placements', trees.scatter && trees.scatter.count > 0);
+  const reload = World.load(def, assets, { terrain: t, realTrees: true });
+  ok('same realTrees policy reuses bake', t.near.version === version + 1);
+  ok('world scatter reload is byte-identical', ['x', 'y', 'z', 'yawDeg', 'species'].every(k =>
+    Buffer.from(trees.scatter[k].buffer).equals(Buffer.from(reload.scatter[k].buffer))));
+  World.load(def, assets, { terrain: t });
+  ok('turning realTrees off rebakes near canopy', t.near.version === version + 2);
+  ok('canopy restored in near forest', forestIndices.every(i => t.near.hDraw[i] === Math.fround(t.near.height[i] + t._canopyM)));
+  ok('realTrees does not change farHDraw', t.farHDraw.every((h, i) => h === farBefore[i]));
+  ok('scatter is not world state', !Object.hasOwn(trees.state, 'scatter'));
+  ok('scatter leaves serialized world state unchanged', JSON.stringify(serialize(trees)) === JSON.stringify(serialize(original)));
+  const forest = t.recipe.recipe.forest, cfg = forest.trees;
+  try {
+    delete forest.trees;
+    const absent = World.load(def, assets, { terrain: t, realTrees: true });
+    ok('missing trees config leaves canopy intact', absent.scatter === null && !t.realTrees &&
+      forestIndices.every(i => t.near.hDraw[i] === Math.fround(t.near.height[i] + t._canopyM)));
+  } finally { forest.trees = cfg; }
+  console.log(`ME-06c1 world_m1 scatter count=${trees.scatter.count}; species=${trees.terrain.recipe.recipe.forest.trees.species.length}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

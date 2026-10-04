@@ -4,6 +4,7 @@
 // for the build order this follows.
 import { loadLevel } from './Level.js';
 import { Terrain } from './Terrain.js';
+import { scatterTrees } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
@@ -142,6 +143,7 @@ export class World {
   constructor() {
     this.terrain = null;
     this.terrainKey = null;
+    this.scatter = null; // Derived placements, never serialized.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
     // `structuredClone(def.state)`/`serialize.js`, set once by `World.load`
@@ -264,7 +266,7 @@ export class World {
   /**
    * @param {Object} def - WorldDef (design/levels/world_m1.js shape) or an ephemeral equivalent (`?level=test_room`).
    * @param {import('../core/assets.js').AssetRegistry} assets
-   * @param {{events?: import('../core/events.js').Events, terrain?: import('./Terrain.js').Terrain}} [opts]
+   * @param {{events?: import('../core/events.js').Events, terrain?: import('./Terrain.js').Terrain, realTrees?: boolean}} [opts]
    * @returns {World}
    */
   static load(def, assets, opts = {}) {
@@ -289,6 +291,8 @@ export class World {
       // ED-MESH-1a (31.2): reuse a passed Terrain baked from the same recipe (a prop-only editor reload keeps the bake).
       const recipe = assets.terrain(def.terrain);
       w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe);
+      // Keep the old canopy until the recipe supplies real-tree content.
+      w.terrain.realTrees = opts.realTrees === true && !!recipe.recipe?.forest?.trees;
     }
     w.bounds = validateBounds(def.bounds);
     // US-138 (32.5): built once here, after bounds, before the sun block
@@ -375,12 +379,14 @@ export class World {
       const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
       // ED-MESH-1d: a reused Terrain whose band was baked for the same centre and the same
       // structure footprints (bbox + z + outer-ring floorH, all `ringHAt` can read) is still valid.
-      const key = nearBandKey(w, cx, cy);
+      const key = nearBandKey(w, cx, cy) + `|realTrees:${w.terrain.realTrees}`;
       if (!(w.terrain.nearReady && w.terrain._nearKey === key)) {
         w.terrain.bakeNearBand(cx, cy);
         w.terrain._nearKey = key;
       }
     }
+
+    if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
 
     if (!w.sun) {
       const first = w.structures.find((s) => s.kind !== 'mesh');
