@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "forest",
+  "fps": 30,
+  "note": "D-036 shot 'forest' - PROVISIONAL. Dolly from the gpucompare forestEdge pose (1401.8, 1038.3, eye -0.78, yaw 240) 76 m down-slope to the SW into the forest band, slowing down and tilting up (+28) into the canopy. Needs ME-06c3 (real trees, renderer=mesh&physics=mesh, realTrees) - without it the shot flies into the old +10 m canopy heightfield. Eye z after key 0 is an analytic ESTIMATE (ground + ~2.7 m, +-2 m): run `node tools/cine-check.mjs` and retarget the keys to the printed forest anchor / clearances before capturing. Intended hour (US-122): 16:00 afternoon, sun shafts through the canopy.",
+  "keys": [
+    { "t": 0,  "x": 1401.8, "y": 1038.3, "z": 0.2,  "yawDeg": 240, "pitchDeg": -4, "ease": "linear" },
+    { "t": 3,  "x": 1386.2, "y": 1047.3, "z": -1.6, "yawDeg": 240, "pitchDeg": -3, "ease": "linear" },
+    { "t": 6,  "x": 1368.9, "y": 1057.3, "z": -4.0, "yawDeg": 238, "pitchDeg": 0,  "ease": "linear" },
+    { "t": 9,  "x": 1353.3, "y": 1066.3, "z": -6.6, "yawDeg": 236, "pitchDeg": 6,  "ease": "linear" },
+    { "t": 12, "x": 1341.2, "y": 1073.3, "z": -8.6, "yawDeg": 234, "pitchDeg": 18, "ease": "linear" },
+    { "t": 14, "x": 1336.0, "y": 1076.3, "z": -9.3, "yawDeg": 232, "pitchDeg": 28, "ease": "linear" }
+  ]
+}

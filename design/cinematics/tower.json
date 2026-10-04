@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "tower",
+  "fps": 30,
+  "note": "D-036 shot 'tower': 120 deg descending orbit round the Hollow Watchtower (footprint x 1480..1504, y 1018..1032, walls up to 8.5 m), from the east (sun side, azimuth 112.5) round the lit south face to the SSW, always looking at ~(1492.5, 1025, 5). Radius 44 -> 31 m, eye 9.5 -> 6 m over the 2.4 m crown. Intended hour (US-122, not in data yet): 18:00 golden hour, sun low in the west-south-west.",
+  "keys": [
+    { "t": 0,    "x": 1536.5, "y": 1025.0, "z": 9.5, "yawDeg": 270, "pitchDeg": -6, "ease": "linear" },
+    { "t": 3.5,  "x": 1527.1, "y": 1045.0, "z": 8.5, "yawDeg": 300, "pitchDeg": -5, "ease": "linear" },
+    { "t": 7,    "x": 1510.5, "y": 1056.2, "z": 7.5, "yawDeg": 330, "pitchDeg": -4, "ease": "linear" },
+    { "t": 10.5, "x": 1492.5, "y": 1058.0, "z": 6.5, "yawDeg": 0,   "pitchDeg": -2, "ease": "linear" },
+    { "t": 14,   "x": 1477.0, "y": 1051.8, "z": 6.0, "yawDeg": 30,  "pitchDeg": 2,  "ease": "linear" }
+  ]
+}
