@@ -1,7 +1,7 @@
 // OWN-REQ-014: one detached Canvas2D engine, using the real mesh CPU twin.
-import { createEngine, World, HFOV_DEG, createPitchedTerms, pitchedTerms, worldToCell } from '../../engine/index.js';
+import { createEngine, World, HFOV_DEG, createPitchedTerms, pitchedTerms, worldToCell, KIND_MODEL } from '../../engine/index.js';
 import { createFrame } from './frame.js';
-import { modelBounds, fitIconCamera, iconCacheKey, iconModel } from './iconFit.js';
+import { modelBounds, fitIconCamera, iconCacheKey, iconModel, kindBounds } from './iconFit.js';
 
 export function createIconWorld(assets, key = null) {
   const source = key === null ? {} : assets.model(key), model = iconModel(source);
@@ -84,6 +84,18 @@ export function createIconRenderer(assets) {
         x0 = Math.min(x0, cell[0]); x1 = Math.max(x1, cell[0]);
         y0 = Math.min(y0, cell[1]); y1 = Math.max(y1, cell[1]);
       }
+      // Model cells (kind 8): blank every other cell (floor, walls, sky) and crop to the model's own cells.
+      const gbuf = frame.fb.gbuf;
+      const own = gbuf.cols === rt.cols && gbuf.rows === rt.rows
+        ? kindBounds(gbuf.kind, rt.cols, rt.rows, KIND_MODEL) : null;
+      if (own) {
+        const g = canvas.getContext('2d');
+        g.fillStyle = '#101418';
+        for (let r = 0; r < rt.rows; r++) for (let c = 0; c < rt.cols; c++) {
+          if (gbuf.kind[r * rt.cols + c] !== KIND_MODEL) g.fillRect(c * rt.pxCellW, r * rt.pxCellH, rt.pxCellW, rt.pxCellH);
+        }
+        x0 = own.x0; y0 = own.y0; x1 = own.x1; y1 = own.y1;
+      }
       // Two-cell padding includes edge glyphs at the projected bounds.
       const sx = Math.max(0, Math.floor(x0 - 2) * rt.pxCellW);
       const sy = Math.max(0, Math.floor(y0 - 2) * rt.pxCellH);
@@ -91,7 +103,10 @@ export function createIconRenderer(assets) {
       const sh = Math.min(canvas.height - sy, Math.ceil(y1 + 3) * rt.pxCellH - sy);
       const scale = 96 / Math.max(sw, sh);
       ctx.fillStyle = '#101418'; ctx.fillRect(0, 0, 96, 96);
+      // The icon scene is lit like a dim interior; lift it so small props read (owner 2026-10-04: "too dark").
+      ctx.filter = 'brightness(1.9) contrast(1.1)';
       ctx.drawImage(canvas, sx, sy, sw, sh, (96 - sw * scale) / 2, (96 - sh * scale) / 2, sw * scale, sh * scale);
+      ctx.filter = 'none';
       rendered++;
       return output.toDataURL('image/png');
     },
