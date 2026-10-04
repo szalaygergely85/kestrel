@@ -5,7 +5,7 @@
  *
  *   species  source      voxels (trimmed)  small                 large
  *   oak      treeBig     32 x 32 x 45      forestOakSmall  0.20  forestOakLarge  0.27 m/voxel
- *   birch    treeBirch   32 x 32 x 35      forestBirchSmall 0.24 forestBirchLarge 0.32
+ *   birch    treeBirch   32 x 32 x 35      forestBirchSmall 0.25 forestBirchLarge 0.32
  *   pine     treePine    32 x 32 x 37      forestPineSmall 0.26  forestPineLarge 0.36
  *
  * SAME VOXELS, bigger cellM (37.2: no per-instance scale). What this file changes vs the sb source:
@@ -16,6 +16,10 @@
  *   2. Canopy clean-up (`clean`): canopy voxels with <= 1 solid face-neighbour (floating specks, 5-6 quads each) are
  *      dropped, and empty cells with >= 5 canopy face-neighbours are filled (pin holes). One pass, read from the
  *      un-cleaned grid, so the result is order-independent. Silhouette unchanged at walking distance.
+ *      OAK + BIRCH (`canopyBlock: 2`, tri budget 37.2 item 8, v1.29) use blockCanopy() instead: the canopy is
+ *      rebuilt from 2x2x2 voxel blocks (>= 3/8 canopy), block-level speck/notch clean-up, enclosed pockets filled,
+ *      branches above the trunk as 2x2x2 bark blocks. Trunk bark below trunkHVox is never touched. Pine keeps the
+ *      per-voxel pass above (already inside the bars).
  *   3. Empty top layers trimmed (size z = top voxel + 1).
  *   4. Anchor = the measured TRUNK CENTRE (the sb trunks are off the grid centre by 0.5-1 voxel), so the engine's
  *      8-sided trunk prism (37.2 item 5), centred on the placement point, sits on the visible trunk.
@@ -52,7 +56,8 @@
       src: 'treeBig', label: 'Oak (broadleaf, wide crown)',
       map: { '!': 'b', '"': 'b', '#': 'b', '$': 'b', '%': 'b', '&': 'b', '\'': 'b', '(': 'b', ',': 'b', '-': 'b',
              ')': 'L', '*': 'L', '+': 'L', '/': 'r' },
-      leafSplitZ: 25, leafBelow: 'd', leafAbove: 'l',
+      leafSplitZ: 24, leafBelow: 'd', leafAbove: 'l', canopyBlock: 2, bark: 'b',
+      blockFill: 0.625, branchMass: true, minBranch: 3, rootClean: true,  // oak sweep 2026-10-04: LOD0 2198 / LOD1 1184 (canopyBlock 4 = ~1730/586 fallback, blockier)
       mats: { b: 'timber_old', d: 'leaf_dark', l: 'leaf', r: 'gore_red' },
       anchor: [16, 15.5, 0], trunkRVox: 3.5, trunkHVox: 17,
       sizes: { Small: 0.20, Large: 0.27 }
@@ -60,10 +65,10 @@
     birch: {
       src: 'treeBirch', label: 'Birch (white bark, light crown)',
       map: { '!': 'w', '"': 'k', '#': 'L', '$': 'L', '%': 'L' },
-      leafSplitZ: 24, leafBelow: 'l', leafAbove: 'y',
+      leafSplitZ: 24, leafBelow: 'l', leafAbove: 'y', canopyBlock: 2, bark: 'w',
       mats: { w: 'linen', k: 'iron_dark', l: 'leaf', y: 'leaf_light' },
       anchor: [15, 16.5, 0], trunkRVox: 2.6, trunkHVox: 18,
-      sizes: { Small: 0.24, Large: 0.32 }
+      sizes: { Small: 0.25, Large: 0.32 }   // Small 0.25 (was 0.24): blocking may trim the top by <= 2 voxels, keep >= 8 m
     },
     pine: {
       src: 'treePine', label: 'Pine (tall cone, needle skirts)',
@@ -103,12 +108,13 @@
         }
       }
     }
+    function isLeaf(ch) { return ch !== '.' && LEAF_MATS[sp.mats[ch]] === 1; }
+    if (sp.canopyBlock) return blockCanopy(spKey, sp, grid, sx, sy, szIn, srcCount, isLeaf);
     // Clean-up pass (read `grid`, write `out`).
     function at(g, xx, yy, zz) {
       if (xx < 0 || yy < 0 || zz < 0 || xx >= sx || yy >= sy || zz >= szIn) return '.';
       return g[xx + sx * (yy + sy * zz)];
     }
-    function isLeaf(ch) { return ch !== '.' && LEAF_MATS[sp.mats[ch]] === 1; }
     var out = grid.slice(), dropped = 0, filled = 0;
     var N = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
     for (z = 0; z < szIn; z++) for (y = 0; y < sy; y++) for (x = 0; x < sx; x++) {
@@ -122,7 +128,12 @@
       if (c !== '.' && isLeaf(c) && solid <= 1) { out[i] = '.'; dropped++; }
       else if (c === '.' && leafN >= 5) { out[i] = z < sp.leafSplitZ ? sp.leafBelow : sp.leafAbove; filled++; }
     }
-    // Strings + top trim.
+    return finishLayers(out, sx, sy, szIn, { srcVoxels: srcCount, dropped: dropped, filled: filled });
+  }
+
+  // Strings + top trim of a dense char grid.
+  function finishLayers(out, sx, sy, szIn, stats) {
+    var x, y, z, c;
     var layers = [], top = -1;
     for (z = 0; z < szIn; z++) {
       var rows = new Array(sy), any = false;
@@ -135,8 +146,122 @@
       if (any) top = z;
     }
     layers.length = top + 1;
-    return { layers: layers, sx: sx, sy: sy, sz: top + 1,
-      stats: { srcVoxels: srcCount, dropped: dropped, filled: filled } };
+    return { layers: layers, sx: sx, sy: sy, sz: top + 1, stats: stats };
+  }
+
+  // CANOPY BLOCKING (oak, birch; tri budget 37.2 item 8). The canopy is rebuilt on a coarse grid of B x B x B voxel
+  // blocks, aligned to model-grid multiples of B (so the engine's even-grid LOD1 downsample merges whole blocks):
+  //   1. per block: canopy block when >= `blockFill` (default 3/8) of its in-range cells are canopy (`branchMass`:
+  //      for blocks fully above the trunk, bark counts as canopy mass too, so branches inside a crown clump vanish
+  //      into it); else it keeps only its bark. Bark-only blocks fully above the trunk (z0 >= trunkHVox) with
+  //      >= `minBranch` (default 2) bark cells become one solid bark block (chunky branches); with `branchMass`,
+  //      fewer bark cells there = a speck, dropped. Bark below trunkHVox is NEVER changed by blocking: trunk shape /
+  //      trunkR / trunkH stay as measured (`rootClean` only trims stray z0-1 root specks outside the trunk).
+  //      Clean-up with `branchMass` also drops bark blocks with <= 1 solid block-neighbour.
+  //   2. block clean-up (read the step-1 grid): drop canopy blocks with <= 1 solid block-neighbour, fill empty blocks
+  //      with >= 4 canopy block-neighbours (notches, pin holes).
+  //   3. cavity fill: empty blocks not reachable from the grid boundary through empty blocks become canopy
+  //      (enclosed pockets only add hidden tris).
+  //   4. write back: a canopy block sets every cell that is not trunk bark (bark with z < trunkHVox) to the leaf
+  //      material of its height band (leafSplitZ must be a multiple of B, so one block = one material).
+  // ROOT CLEAN (oak `rootClean`): the sb oak's z0-1 root flare is a scatter of single bark voxels (each ~5 quads at
+  // LOD0 and a full 2x2x2 block at LOD1). Two passes, each read from the previous grid: on layers z < 2 (below the
+  // layers trunkR is measured on), a bark voxel farther than trunkRVox + 1 from the anchor with <= 1 solid
+  // face-neighbour is dropped. Connected roots stay; the trunk and its collider are unchanged.
+  function cleanRoots(sp, grid, sx, sy, szIn, isLeaf) {
+    var N = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], pass, x, y, z, k, i, c;
+    var rMin = sp.trunkRVox + 1, ax = sp.anchor[0], ay = sp.anchor[1];
+    for (pass = 0; pass < 2; pass++) {
+      var out = grid.slice();
+      for (z = 0; z < Math.min(2, szIn); z++) for (y = 0; y < sy; y++) for (x = 0; x < sx; x++) {
+        i = x + sx * (y + sy * z); c = grid[i];
+        if (c === '.' || isLeaf(c) || Math.hypot(x + 0.5 - ax, y + 0.5 - ay) <= rMin) continue;
+        var solid = 0;
+        for (k = 0; k < 6; k++) {
+          var xx = x + N[k][0], yy = y + N[k][1], zz = z + N[k][2];
+          if (xx < 0 || yy < 0 || zz < 0 || xx >= sx || yy >= sy || zz >= szIn) continue;
+          if (grid[xx + sx * (yy + sy * zz)] !== '.') solid++;
+        }
+        if (solid <= 1) out[i] = '.';
+      }
+      grid = out;
+    }
+    return grid;
+  }
+
+  function blockCanopy(spKey, sp, grid, sx, sy, szIn, srcCount, isLeaf) {
+    var B = sp.canopyBlock;
+    if (sp.leafSplitZ % B !== 0) throw new Error('forest_trees.js: ' + spKey + ' leafSplitZ ' + sp.leafSplitZ + ' not a multiple of canopyBlock ' + B);
+    var nbx = Math.ceil(sx / B), nby = Math.ceil(sy / B), nbz = Math.ceil(szIn / B);
+    var NB = nbx * nby * nbz, blk = new Uint8Array(NB), barkCh = new Array(NB);  // 0 empty, 1 canopy, 2 bark, 3 bark block
+    var bx, by, bz, x, y, z, i, c, b;
+    var fill = sp.blockFill || 3 / 8, minBranch = sp.minBranch || 2;
+    if (sp.rootClean) grid = cleanRoots(sp, grid, sx, sy, szIn, isLeaf);
+    for (bz = 0; bz < nbz; bz++) for (by = 0; by < nby; by++) for (bx = 0; bx < nbx; bx++) {
+      var n = 0, leafN = 0, barkN = 0, ch = null;
+      for (z = bz * B; z < Math.min(szIn, bz * B + B); z++) for (y = by * B; y < Math.min(sy, by * B + B); y++)
+        for (x = bx * B; x < Math.min(sx, bx * B + B); x++) {
+          c = grid[x + sx * (y + sy * z)]; n++;
+          if (c === '.') continue;
+          if (isLeaf(c)) leafN++; else { barkN++; if (ch === null) ch = c; }
+        }
+      b = bx + nbx * (by + nby * bz);
+      barkCh[b] = ch;
+      var above = bz * B >= sp.trunkHVox;                 // block fully above the trunk collider
+      var mass = leafN + (above && sp.branchMass ? barkN : 0);
+      if (leafN > 0 && mass >= fill * n) blk[b] = 1;
+      else if (above && barkN >= minBranch) { blk[b] = 3; barkCh[b] = sp.bark; }
+      else if (above && sp.branchMass) blk[b] = 0;        // stray branch speck above the trunk: dropped
+      else if (barkN > 0) blk[b] = 2;
+    }
+    // 2. clean-up
+    var snap = blk.slice(), dropped = 0, filled = 0, cavities = 0;
+    var D = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    function bAt(g, xx, yy, zz) {
+      if (xx < 0 || yy < 0 || zz < 0 || xx >= nbx || yy >= nby || zz >= nbz) return 0;
+      return g[xx + nbx * (yy + nby * zz)];
+    }
+    for (bz = 0; bz < nbz; bz++) for (by = 0; by < nby; by++) for (bx = 0; bx < nbx; bx++) {
+      b = bx + nbx * (by + nby * bz);
+      var solid = 0, can = 0, k, v;
+      for (k = 0; k < 6; k++) { v = bAt(snap, bx + D[k][0], by + D[k][1], bz + D[k][2]); if (v) solid++; if (v === 1) can++; }
+      if (snap[b] === 1 && solid <= 1) { blk[b] = barkCh[b] !== null && !(sp.branchMass && bz * B >= sp.trunkHVox) ? 2 : 0; dropped++; }
+      else if (snap[b] === 3 && solid <= 1 && sp.branchMass) { blk[b] = 0; dropped++; }
+      else if (snap[b] === 0 && can >= 4) { blk[b] = 1; filled++; }
+    }
+    // 3. cavity fill (flood the empty blocks from the boundary)
+    var seen = new Uint8Array(NB), stack = [];
+    for (bz = 0; bz < nbz; bz++) for (by = 0; by < nby; by++) for (bx = 0; bx < nbx; bx++) {
+      if (bx && by && bz && bx < nbx - 1 && by < nby - 1 && bz < nbz - 1) continue;
+      b = bx + nbx * (by + nby * bz);
+      if (blk[b] === 0 && !seen[b]) { seen[b] = 1; stack.push(b); }
+    }
+    while (stack.length) {
+      b = stack.pop();
+      bx = b % nbx; by = ((b - bx) / nbx) % nby; bz = (b - bx - nbx * by) / (nbx * nby);
+      for (var q = 0; q < 6; q++) {
+        var ax = bx + D[q][0], ay = by + D[q][1], az = bz + D[q][2];
+        if (ax < 0 || ay < 0 || az < 0 || ax >= nbx || ay >= nby || az >= nbz) continue;
+        var nb = ax + nbx * (ay + nby * az);
+        if (!seen[nb] && blk[nb] === 0) { seen[nb] = 1; stack.push(nb); }
+      }
+    }
+    for (b = 0; b < NB; b++) if (blk[b] === 0 && !seen[b]) { blk[b] = 1; cavities++; }
+    // 4. write back
+    var out = new Array(sx * sy * szIn);
+    for (z = 0; z < szIn; z++) for (y = 0; y < sy; y++) for (x = 0; x < sx; x++) {
+      i = x + sx * (y + sy * z);
+      c = grid[i];
+      b = Math.floor(x / B) + nbx * (Math.floor(y / B) + nby * Math.floor(z / B));
+      var trunkBark = c !== '.' && !isLeaf(c) && z < sp.trunkHVox;
+      if (trunkBark) { out[i] = c; continue; }
+      if (blk[b] === 1) out[i] = z < sp.leafSplitZ ? sp.leafBelow : sp.leafAbove;
+      else if (blk[b] === 3) out[i] = barkCh[b];
+      else if (blk[b] === 2) out[i] = (c !== '.' && !isLeaf(c)) ? c : '.';
+      else out[i] = '.';
+    }
+    return finishLayers(out, sx, sy, szIn,
+      { srcVoxels: srcCount, canopyBlock: B, dropped: dropped, filled: filled + cavities, cavities: cavities });
   }
 
   var keys = [], variants = {};

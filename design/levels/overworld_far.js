@@ -50,7 +50,7 @@
                    species: [
                      { model: 'forestOakSmall',   weight: 22, trunkR: 0.70, trunkH: 3.40 },   //  9.00 m
                      { model: 'forestOakLarge',   weight: 18, trunkR: 0.95, trunkH: 4.59 },   // 12.15 m
-                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.63, trunkH: 4.32 },   //  8.40 m
+                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.65, trunkH: 4.50 },   // ~8.5 m
                      { model: 'forestBirchLarge', weight: 10, trunkR: 0.84, trunkH: 5.76 },   // 11.20 m
                      { model: 'forestPineSmall',  weight: 20, trunkR: 0.59, trunkH: 2.60 },   //  9.62 m
                      { model: 'forestPineLarge',  weight: 15, trunkR: 0.81, trunkH: 3.60 }    // 13.32 m
@@ -70,6 +70,16 @@
         ],
         paints: [
           { id: 'crownGrass', shape: 'disc', x: 1492, y: 1025, r: 26, type: 'grass', mode: 'set', note: 'bare grass on the crown + handover band' }
+        ]
+      },
+      // Must stay AFTER '11,8' (stamps apply in key insertion order): the crown flatten would erase the bowl.
+      '11,7': {
+        stamps: [
+          { id: 'quietPondBowl', shape: 'disc', x: 1500, y: 1010, r: 1, falloff: 3, mode: 'add', h: -0.75,
+            note: 'Q14 / 36.1c pond bowl under world_m1 water quietPond (c 1500,1010, r 4, z 2.5) on the 2.4 m crown. ' +
+                  'Flat deep floor r <= 1 m at 1.65 m (column 0.85 m >= pond tintDepth 0.8 -> full deep colour), smoothstep ' +
+                  'rise to 0 at r = 4 m (rim column 0.10 m, unchanged). Column < pond foamDepth 0.25 from r ~3.1 m -> shallow foam shelf. ' +
+                  'Slope <= ~0.4 (about 20 deg), walkable. Move/resize together with the quietPond water region.' }
         ]
       }
     },
