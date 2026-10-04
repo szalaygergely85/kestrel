@@ -48,12 +48,12 @@
                  trees: {
                    seed: 7349, cellM: 6.5, jitter: 1.5, fill: 0.72, maxTrees: 1500, lodCells: 6,
                    species: [
-                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.70, trunkH: 3.40 },   //  9.00 m
-                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.95, trunkH: 4.59 },   // 12.15 m
-                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.65, trunkH: 4.50 },   // ~8.5 m
-                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.84, trunkH: 5.76 },   // 11.20 m
-                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.59, trunkH: 2.60 },   //  9.62 m
-                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.81, trunkH: 3.60 }    // 13.32 m
+                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55 },   // 7.20 m (raw import, owner 2026-10-04)
+                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.63, trunkH: 3.06 },   // 8.64 m (raw import, owner 2026-10-04)
+                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.39, trunkH: 2.70 },   // 6.00 m (raw import, owner 2026-10-04)
+                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.47, trunkH: 3.24 },   // 7.20 m (raw import, owner 2026-10-04)
+                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50 },   // 6.00 m (raw import, owner 2026-10-04)
+                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80 }    // 7.20 m (raw import, owner 2026-10-04)
                    ]
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },

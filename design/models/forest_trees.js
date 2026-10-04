@@ -60,7 +60,7 @@
       blockFill: 0.625, branchMass: true, minBranch: 3, rootClean: true,  // oak sweep 2026-10-04: LOD0 2198 / LOD1 1184 (canopyBlock 4 = ~1730/586 fallback, blockier)
       mats: { b: 'timber_old', d: 'leaf_dark', l: 'leaf', r: 'gore_red' },
       anchor: [16, 15.5, 0], trunkRVox: 3.5, trunkHVox: 17,
-      sizes: { Small: 0.20, Large: 0.27 }
+      raw: true, sizes: { Small: 0.15, Large: 0.18 }   // owner 2026-10-04: imported voxels as-is, only scaled a little (blocked canopy rejected)
     },
     birch: {
       src: 'treeBirch', label: 'Birch (white bark, light crown)',
@@ -68,7 +68,7 @@
       leafSplitZ: 24, leafBelow: 'l', leafAbove: 'y', canopyBlock: 2, bark: 'w',
       mats: { w: 'linen', k: 'iron_dark', l: 'leaf', y: 'leaf_light' },
       anchor: [15, 16.5, 0], trunkRVox: 2.6, trunkHVox: 18,
-      sizes: { Small: 0.25, Large: 0.32 }   // Small 0.25 (was 0.24): blocking may trim the top by <= 2 voxels, keep >= 8 m
+      raw: true, sizes: { Small: 0.15, Large: 0.18 }
     },
     pine: {
       src: 'treePine', label: 'Pine (tall cone, needle skirts)',
@@ -76,7 +76,7 @@
       leafSplitZ: 24, leafBelow: 'd', leafAbove: 'l',
       mats: { b: 'timber_old', d: 'leaf_dark', l: 'leaf' },
       anchor: [16, 16, 0], trunkRVox: 2.25, trunkHVox: 10,
-      sizes: { Small: 0.26, Large: 0.36 }
+      raw: true, sizes: { Small: 0.15, Large: 0.18 }
     }
   };
   var LEAF_MATS = { leaf: 1, leaf_dark: 1, leaf_light: 1 };
@@ -264,9 +264,18 @@
       { srcVoxels: srcCount, canopyBlock: B, dropped: dropped, filled: filled + cavities, cavities: cavities });
   }
 
+  // RAW (owner 2026-10-04): the imported StickyBizcuit tree exactly as authored - its own layers and materials, no
+  // remap, no clean-up, no canopy blocking; only cellM (scale) differs per size.
+  function rawLayers(sp) {
+    var src = VM[sp.src];
+    if (!src || !src.voxel || !src.voxel.layers) throw new Error('forest_trees.js: ASSETS.voxelModels.' + sp.src + ' missing - load design/models/sb_objects.js first');
+    var sv = src.voxel;
+    return { layers: sv.layers, sx: sv.size[0], sy: sv.size[1], sz: sv.size[2], mats: sv.mats, stats: { raw: true } };
+  }
+
   var keys = [], variants = {};
   Object.keys(SPECIES).forEach(function (spKey) {
-    var sp = SPECIES[spKey], L = buildLayers(spKey, sp);
+    var sp = SPECIES[spKey], L = sp.raw ? rawLayers(sp) : buildLayers(spKey, sp);
     Object.keys(sp.sizes).forEach(function (sizeKey) {
       var cellM = sp.sizes[sizeKey];
       var key = 'forest' + spKey.charAt(0).toUpperCase() + spKey.slice(1) + sizeKey;
@@ -288,7 +297,7 @@
           cellM: cellM,
           size: [L.sx, L.sy, L.sz],
           anchor: sp.anchor.slice(),
-          mats: sp.mats,
+          mats: L.mats || sp.mats,
           layers: L.layers,
           parts: { body: { box: [0, 0, 0, L.sx, L.sy, L.sz], pivot: sp.anchor.slice() } }
         }
