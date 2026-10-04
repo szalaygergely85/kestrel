@@ -1,5 +1,5 @@
 // OWN-REQ-014: pure sizing, definition hashes and the one-icon-per-frame queue.
-export const ICON_VERSION = 2; // 2: voxel icons show only the model's cells (owner 2026-10-04: no floor/room behind)
+export const ICON_VERSION = 3; // 2: voxel icons show only the model's cells (owner 2026-10-04: no floor/room behind); 3: brightened
 
 /** Cell bounds of `keepKind` cells in a cols x rows kind grid, or null if there are none. */
 export function kindBounds(kind, cols, rows, keepKind) {

@@ -103,7 +103,10 @@ export function createIconRenderer(assets) {
       const sh = Math.min(canvas.height - sy, Math.ceil(y1 + 3) * rt.pxCellH - sy);
       const scale = 96 / Math.max(sw, sh);
       ctx.fillStyle = '#101418'; ctx.fillRect(0, 0, 96, 96);
+      // The icon scene is lit like a dim interior; lift it so small props read (owner 2026-10-04: "too dark").
+      ctx.filter = 'brightness(1.9) contrast(1.1)';
       ctx.drawImage(canvas, sx, sy, sw, sh, (96 - sw * scale) / 2, (96 - sh * scale) / 2, sw * scale, sh * scale);
+      ctx.filter = 'none';
       rendered++;
       return output.toDataURL('image/png');
     },
