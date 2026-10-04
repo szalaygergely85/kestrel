@@ -30,6 +30,7 @@ They are applied in this order: recipe, stamps, structure handover (the handover
 - **The editor** only ever adds, moves or deletes these small objects and re-bakes the affected chunks. Since generation is deterministic, regeneration is the only "streaming".
 - **Saving** serialises `overrides` as-is, with no binary heightmaps: the seed plus overrides is the whole world.
 - The tower crown is the first real override, and the preview checks that overrides round-trip through JSON.
+- **Pond bowl (Q14, 36.1c):** chunk `'11,7'` stamp `quietPondBowl`, disc r 1 m + falloff 3 m at (1500, 1010), `add` -0.75 m, under the world_m1 `quietPond` water (r 4, z 2.5). Column depth: 0.85 m at the centre, 0.10 m at the rim, about 0.25 m at r 3.1 m (the foam shelf). Stamps apply in chunk-key insertion order, so `'11,7'` must stay after `'11,8'`: otherwise the crown flatten erases the bowl.
 
 ---
 
