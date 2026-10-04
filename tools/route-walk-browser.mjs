@@ -132,7 +132,7 @@ process.once('SIGINT', () => { cleanup(); process.exit(1); });
 try {
   const binary = findBrowserBinary();
   if (!binary) throw new Error('no Chrome/Edge binary');
-  handles.s = spawn('python', ['-m', 'http.server', String(port)], { cwd: ROOT, stdio: 'ignore' });
+  handles.s = spawn('python', ['tools/serve.py', String(port)], { cwd: ROOT, stdio: 'ignore' });
   await waitForHttp(`http://127.0.0.1:${port}/`, 10000);
   const dbg = port + 1; validatePort(dbg);
   handles.dir = path.join(os.tmpdir(), 'kestrel-routewalk-' + port);

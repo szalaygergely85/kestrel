@@ -38,6 +38,7 @@ import {
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
 import { MODES } from './dev/modes/index.js';
+import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
 import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
@@ -121,7 +122,7 @@ if (gridParam) {
 // ?voxelbench=, ?gpucompare=), which must stay comparable across runs
 // regardless of what the player last saved (PC-A PO REJECT, backlog row 30f).
 const savedSettings = loadSettings();
-const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare');
+const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic');
 if (!gridParam && !isCaptureOrBench) {
   const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
   if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
@@ -574,11 +575,18 @@ if (gpuBlocked) {
   modeByName.get('glyphs').run(ctx);
 } else if (params.get('demo') === '1') {
   modeByName.get('demo').run(ctx);
+} else if (params.has('cinematic')) {
+  if (renderer !== 'mesh') throw new Error('cinematic requires renderer=mesh');
+  loadCinematic(params.get('cinematic')).then((path) => runGame('world', path)).catch((error) => {
+    window.__cineError = error.message;
+    overlay.visible = true; overlay.el.style.display = 'block'; overlay.el.textContent = error.message;
+    console.error(error);
+  });
 } else {
   runGame('world'); // default: US-025 World (world_m1, or ?level=<name> for a bare single-level world)
 }
 
-function runGame(mode) {
+function runGame(mode, cinematic = null) {
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
@@ -745,11 +753,12 @@ function runGame(mode) {
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg, { pitchClampDeg }); // RE-02b: 70 on the pitched mesh camera, 35 shear
       look.sensDegPerPx = savedSettings.mouseSensitivity; // US-038b (no-op until PlayerLook reads instance fields, see NEEDS PC-A)
       look.invertY = savedSettings.invertY;
+      if (cinematic) look.dispose(); // update's cinematic branch never reads game input
       // US-030c (ARCH CHANGES item 1): `?sprite=1` spawns the three test props in test_room.
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
 
       // ---- US-015: wake sequence + title card + map card + hints (7.6 item 6: runtime rebuilt here, every load AND every restart) ----
-      questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose;
+      questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose && !cinematic;
       if (questUiActive && assets.uiStyle) {
         const spawnDef = (worldDef.entities || []).find((e) => e.id === 'player' && e.spawn);
         const spawnStruct = spawnDef && world.structures.find((s) => s.id === spawnDef.spawn.structure);
@@ -811,6 +820,16 @@ function runGame(mode) {
     lapStart();
     simTime += dt;
     clothTick++;
+    if (cinematic) {
+      simTime = clothTick / 60;
+      const world = engine.world;
+      stepSectorAnims(world, dt); world.water.step();
+      evaluatePath(cinematic, simTime, cam);
+      if (world.cloths) world.cloths.tick(clothTick, world.wind, cam.x, cam.y, cam.z);
+      stepAnimations(world, dt * 1000);
+      entityEmitters.sync(); engine.particles.step();
+      return;
+    }
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
@@ -1083,6 +1102,7 @@ function runGame(mode) {
       const eye = Camera.fromEntityInto(playerHandle.data, vitals ? vitals.eyeH() : undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera); US-080a2: eyeH sinks while dead
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
       cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0); // US-080a2 (30.2): hurt pitch kick, render eye only - never written into `look`
+      if (cinematic) evaluatePath(cinematic, simTime, cam);
       fb.timeSec = simTime;
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep
@@ -1143,11 +1163,11 @@ function runGame(mode) {
       }
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
-      if (beasts) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
-      if (targeting) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
+      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
+      if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
-      if (sword && swordVmH) {
+      if (sword && swordVmH && !cinematic) {
         if (engine.world.state['tower.sword.taken']) {
           const body = playerHandle.data.components.body;
           const swordMoving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
@@ -1187,7 +1207,7 @@ function runGame(mode) {
       // OWN-REQ-003 (17.4): drawn into the fixed UI layer (`ui`), not the
       // scene (`rt`), so every one of these reads at the same physical size
       // regardless of `?grid=`.
-      if (!ending && !uiLockedNow) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
+      if (!ending && !uiLockedNow && !cinematic) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
         drawHints(ui, assets.uiStyle, fadeLut);
         drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen); // 17.4: stays in the scene grid (an eyelid over the 3D view, not UI text)
@@ -1221,9 +1241,9 @@ function runGame(mode) {
     }
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
-    if (mode === 'world' && !look.locked && !isMapOpen()) drawPauseOverlay(ui, rt, assets);
+    if (mode === 'world' && !look.locked && !isMapOpen() && !cinematic) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
-    drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
+    if (!cinematic) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
@@ -1292,6 +1312,10 @@ function runGame(mode) {
   }
 
   const loop = engine.run({ update, render });
+  if (cinematic && params.get('capture') === '1') {
+    loop.stop();
+    window.__cine = createPlayback(cinematic, update, render);
+  }
   loop.profiler = prof; // US-018 spike hunt (`?bench=1` only, else null)
   window.__debug.loop = loop;
   window.__debug.world = engine.world;
