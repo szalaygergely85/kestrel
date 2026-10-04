@@ -17,6 +17,8 @@
  *                                      (LOAD AFTER title.js: title.js assigns ASSETS.uiStyle = {...}.)
  *   ASSETS.m3Kit                       PROPOSED colours (7), materials (5, v1 + v2 + remap) and 1 glyph set, for the
  *                                      merge step into palette.js / detail-pass.js (shared hot files, main session).
+ *   ASSETS.voxelModels.awakeningCrates / awakeningKeeper   ENV-02 (D-038, v1.31, README 7.6): two composite clutter
+ *                                      sets for the tower hall (section 6b), one voxel instance each, world-oriented.
  *   ASSETS.voxelModels.attachM3()      registers models.practiceTarget (all 11 mats merged in BOTH palette.materials and
  *                                      detailPass.materials) and models.pickupHp / pickupMp / strawPuff (all colour keys
  *                                      in palette.colors). Before the merge it registers nothing, so the game is unaffected.
@@ -592,16 +594,293 @@
   };
 
   // ===================================================================================================================
+  // 6b. ENV-02 "THE AWAKENING" HALL DRESSING (D-038, README 7.6, v1.31)
+  //     Two COMPOSITE clutter sets, ONE voxel instance each. Why: VoxelPool draws only the nearest MAX_VOX_INSTANCES
+  //     (16) voxel entities per frame and the tower already places 16 (world_m1 adds the waystone + 2 boars), so every
+  //     extra instance pushes a far one out of the frame. Each set is a meshOnly grid authored in WORLD orientation
+  //     (place it with facing 0: x east, y south), 0.04 m voxels (chunky Build-engine props), built by the small
+  //     deterministic builders below (integer hash3, no Math.random). Materials: already merged keys only.
+  //     Kept in THIS file on purpose: World.load throws on an unregistered prop model, and every Node suite / tool that
+  //     loads the tower already loads m3_props.js (for the pell); a new file would need ~40 loader lines first.
+  //       awakeningCrates  north + west of the hall: crate stack + stove-in crate against the stair walkway (cells
+  //                        17,5 / 16,5), fallen cheek stones, the garrison's open water butt (14,7), a fallen helm.
+  //       awakeningKeeper  east + south-east: grain sacks + sealed barrel with a rope coil, a shovel leaning on the
+  //                        step-7 face + a heap of chain (18,5 / 19,5), the relay-keeper's corner by KEEP THE LIGHT (18,9):
+  //                        straw mat, bedroll, log book, a stool with a snapped leg, a cold candle stub, a tin cup.
+  // ===================================================================================================================
+  var AWK_CELL = 0.04;
+  var AWK_MATS = { W: 'wood', w: 'timber_old', I: 'iron_dark', i: 'iron_light', S: 'steel_old', r: 'rope',
+                   L: 'linen_light', l: 'linen', d: 'linen_dark', T: 'straw_light', t: 'straw', u: 'straw_dark',
+                   B: 'block_light', b: 'block_dark', m: 'moss_cap', h: 'leather', c: 'canvas_dark' };
+  var AWK_KEYS = ['awakeningCrates', 'awakeningKeeper'];
+
+  // A voxel grid whose voxel (0,0,0) sits at world (x0m, y0m, 0); all builder inputs are WORLD metres.
+  function awkGrid(x0m, y0m, wM, dM, hM) {
+    var sx = Math.round(wM / AWK_CELL), sy = Math.round(dM / AWK_CELL), sz = Math.round(hM / AWK_CELL);
+    var a = new Array(sx * sy * sz), i;
+    for (i = 0; i < a.length; i++) a[i] = '.';
+    return {
+      x0m: x0m, y0m: y0m, sx: sx, sy: sy, sz: sz,
+      vx: function (m) { return Math.round((m - x0m) / AWK_CELL); },
+      vy: function (m) { return Math.round((m - y0m) / AWK_CELL); },
+      vz: function (m) { return Math.round(m / AWK_CELL); },
+      fx: function (m) { return (m - x0m) / AWK_CELL; },
+      fy: function (m) { return (m - y0m) / AWK_CELL; },
+      put: function (x, y, z, ch) { if (x >= 0 && y >= 0 && z >= 0 && x < sx && y < sy && z < sz) a[x + sx * (y + sy * z)] = ch; },
+      layers: function () {
+        var out = [], z, y, L, s;
+        for (z = 0; z < sz; z++) {
+          L = [];
+          for (y = 0; y < sy; y++) { s = sx * (y + sy * z); L.push(a.slice(s, s + sx).join('')); }
+          out.push(L);
+        }
+        return out;
+      }
+    };
+  }
+  // A plank crate, HOLLOW (a knocked-out plank shows the dark inside): box [x0, x1) x [y0, y1) x [z0, z1) in metres.
+  // Side planks run horizontally, lid planks north-south (seams every 4 voxels), dark battens on the edges, iron caps on
+  // the corners. opts: openWest (two planks knocked out of the west face), mossSouth / mossWest (damp foot).
+  function awkCrate(g, x0, y0, z0, x1, y1, z1, opts) {
+    var X0 = g.vx(x0), X1 = g.vx(x1), Y0 = g.vy(y0), Y1 = g.vy(y1), Z0 = g.vz(z0), Z1 = g.vz(z1), x, y, z, ex, ey, ez, n, ch;
+    opts = opts || {};
+    for (z = Z0; z < Z1; z++) for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
+      ex = (x === X0 || x === X1 - 1); ey = (y === Y0 || y === Y1 - 1); ez = (z === Z0 || z === Z1 - 1);
+      n = (ex ? 1 : 0) + (ey ? 1 : 0) + (ez ? 1 : 0);
+      if (n === 0) continue;
+      if (n === 3) ch = 'I';
+      else if (n === 2) ch = 'w';
+      else if (ez) ch = ((x - X0) % 4 === 0) ? 'w' : 'W';
+      else ch = ((z - Z0) % 4 === 0) ? 'w' : 'W';
+      if (ch === 'W' && hash3(x, y, z) < 70) ch = 'w';
+      if (opts.openWest && x === X0 && !ey && !ez && z - Z0 >= 2 && z - Z0 <= 5) continue;
+      if (opts.mossSouth && y === Y1 - 1 && z - Z0 <= 1 && hash3(x, y, z) < 450) ch = 'm';
+      if (opts.mossWest && x === X0 && z - Z0 <= 1 && hash3(x, y, z) < 450) ch = 'm';
+      g.put(x, y, z, ch);
+    }
+  }
+  // A stave barrel on z0: radius r with a 12 % belly, iron hoops at the given heights (metres above z0), alternating
+  // light / dark staves (18 sectors). opts.open: no lid, dark water 2 voxels under the rim. opts.moss: north foot.
+  function awkBarrel(g, cx, cy, z0, r, h, opts) {
+    var CX = g.fx(cx), CY = g.fy(cy), R = r / AWK_CELL, Z0 = g.vz(z0), H = g.vz(h), hoops = {}, x, y, k, t, rr, dx, dy, d, rim, ch, top;
+    opts = opts || {};
+    (opts.hoops || [0.08, 0.6]).forEach(function (m) { var hz = g.vz(m); hoops[hz] = 1; hoops[hz + 1] = 1; });
+    for (k = 0; k < H; k++) {
+      t = (k + 0.5) / H; rr = R * (0.88 + 0.12 * Math.sin(Math.PI * t)); top = (k === H - 1);
+      for (y = Math.floor(CY - R - 1); y <= Math.ceil(CY + R + 1); y++) for (x = Math.floor(CX - R - 1); x <= Math.ceil(CX + R + 1); x++) {
+        dx = x + 0.5 - CX; dy = y + 0.5 - CY; d = Math.sqrt(dx * dx + dy * dy);
+        if (d > rr) continue;
+        rim = d > rr - 1.15;
+        if (opts.open && !rim && k >= H - 3) { if (k === H - 3) g.put(x, y, Z0 + k, 'I'); continue; }
+        if (rim) {
+          if (top) ch = 'w';
+          else if (hoops[k]) ch = 'I';
+          else ch = (Math.floor((Math.atan2(dy, dx) + Math.PI) / (2 * Math.PI) * 18) % 2) ? 'w' : 'W';
+        } else ch = top ? ((x % 3 === 0) ? 'w' : 'W') : 'w';
+        if (opts.moss && rim && k <= 1 && dy < 0 && hash3(x, y, k) < 500) ch = 'm';
+        g.put(x, y, Z0 + k, ch);
+      }
+    }
+  }
+  // A grain sack slumped on z0: squashed ellipsoid with a flat foot, pale crest, linen body, dark underside; neck =
+  // a tied top (linen, rope band, a pale tuft).
+  function awkSack(g, cx, cy, z0, rx, ry, rz, neck) {
+    var CX = g.fx(cx), CY = g.fy(cy), Z0 = g.vz(z0), RX = rx / AWK_CELL, RY = ry / AWK_CELL, RZ = rz / AWK_CELL;
+    var ZN = Math.floor(2 * RZ - 0.5), x, y, z, dx, dy, dz, hgt, hh, nx, ny, top = 0;
+    nx = Math.floor(CX); ny = Math.floor(CY);
+    for (z = 0; z <= ZN; z++) for (y = Math.floor(CY - RY); y <= Math.ceil(CY + RY); y++) for (x = Math.floor(CX - RX); x <= Math.ceil(CX + RX); x++) {
+      dx = (x + 0.5 - CX) / RX; dy = (y + 0.5 - CY) / RY; dz = (z + 0.5 - RZ) / RZ;
+      if (dz < -0.75) dz = -0.75;
+      if (dx * dx + dy * dy + dz * dz > 1) continue;
+      hgt = (z + 0.5) / (2 * RZ); hh = hash3(x, y, z);
+      g.put(x, y, Z0 + z, hgt > 0.72 ? (hh < 600 ? 'L' : 'l') : (hgt < 0.25 ? 'd' : (hh < 120 ? 'd' : 'l')));
+      if (x === nx && y === ny && z > top) top = z;              // the neck stands on the highest centre voxel
+    }
+    if (neck) {
+      ZN = top;
+      g.put(nx, ny, Z0 + ZN + 1, 'l'); g.put(nx, ny, Z0 + ZN + 2, 'r'); g.put(nx + 1, ny, Z0 + ZN + 2, 'r'); g.put(nx, ny, Z0 + ZN + 3, 'L');
+    }
+  }
+  // A rolled bedroll along x: linen top, dark underside, leather straps 3 voxels in from each end, the rolled layers
+  // (canvas_dark rings) on the end faces.
+  function awkRollX(g, x0, x1, cy, cz, r) {
+    var X0 = g.vx(x0), X1 = g.vx(x1), CY = g.fy(cy), CZ = cz / AWK_CELL, R = r / AWK_CELL, x, y, z, dy, dz, d, ch;
+    for (x = X0; x < X1; x++) for (y = Math.floor(CY - R); y <= Math.ceil(CY + R); y++) for (z = Math.max(0, Math.floor(CZ - R)); z <= Math.ceil(CZ + R); z++) {
+      dy = y + 0.5 - CY; dz = z + 0.5 - CZ; d = Math.sqrt(dy * dy + dz * dz);
+      if (d > R) continue;
+      if ((x - X0 === 3 || X1 - 1 - x === 3) && d > R - 1.1) ch = 'h';
+      else if (x === X0 || x === X1 - 1) ch = (d < R * 0.45 || (d > R * 0.7 && d < R * 0.9)) ? 'c' : 'd';
+      else ch = (dz > R * 0.3) ? 'l' : 'd';
+      g.put(x, y, z, ch);
+    }
+  }
+  // A low stone chunk (fallen wall stone / pebble): pale top with moss flecks, dark sides. At least 1 voxel per axis.
+  function awkBlock(g, x0, y0, z0, x1, y1, z1) {
+    var X0 = g.vx(x0), Y0 = g.vy(y0), Z0 = g.vz(z0), X1 = Math.max(g.vx(x1), X0 + 1), Y1 = Math.max(g.vy(y1), Y0 + 1), Z1 = Math.max(g.vz(z1), Z0 + 1), x, y, z;
+    for (z = Z0; z < Z1; z++) for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
+      g.put(x, y, z, z === Z1 - 1 ? (hash3(x, y, z) < 260 ? 'm' : 'B') : 'b');
+    }
+  }
+  // A dented iron kettle helm lying upright on the floor: steel brim ring, iron bowl narrowing upward.
+  function awkHelm(g, cx, cy) {
+    var CX = g.fx(cx), CY = g.fy(cy), RAD = [3.6, 2.7, 2.3, 1.6], x, y, z, dx, dy, d;
+    for (z = 0; z < RAD.length; z++) for (y = Math.floor(CY - 4); y <= Math.ceil(CY + 4); y++) for (x = Math.floor(CX - 4); x <= Math.ceil(CX + 4); x++) {
+      dx = x + 0.5 - CX; dy = y + 0.5 - CY; d = Math.sqrt(dx * dx + dy * dy);
+      if (d > RAD[z]) continue;
+      if (z === 0 && d < 2.0) continue;
+      if (z === 2 && dx > 1.2 && dy < -0.5) continue;
+      g.put(x, y, z, z === 0 ? 'S' : 'I');
+    }
+  }
+  // A rope coil lying on a lid at height z: two concentric rings.
+  function awkCoil(g, cx, cy, z, r) {
+    var CX = g.fx(cx), CY = g.fy(cy), R = r / AWK_CELL, Z = g.vz(z), x, y, dx, dy, d;
+    for (y = Math.floor(CY - R - 1); y <= Math.ceil(CY + R + 1); y++) for (x = Math.floor(CX - R - 1); x <= Math.ceil(CX + R + 1); x++) {
+      dx = x + 0.5 - CX; dy = y + 0.5 - CY; d = Math.sqrt(dx * dx + dy * dy);
+      if ((d >= R - 1 && d <= R + 0.4) || (d >= R - 2.4 && d < R - 1.4)) g.put(x, y, Z, 'r');
+    }
+  }
+  // A shovel leaning on the wall east of it: a 1-voxel blade plate (y-z plane, steel edge rows at the foot) and a
+  // 1x1 voxel shaft from the blade top (0.30 m) to the wall (x 19.94, 1.04 m), T grip at the top.
+  function awkShovel(g, bx, by) {
+    var X = g.vx(bx), Y0 = g.vy(by - 0.11), Y1 = g.vy(by + 0.11), Z1 = g.vz(0.30), YC = g.vy(by), x, y, z, k, t;
+    for (z = 0; z < Z1; z++) for (y = Y0; y < Y1; y++) {
+      if (z === 0 && (y === Y0 || y === Y1 - 1)) continue;
+      g.put(X, y, z, z <= 1 ? 'S' : 'I');
+    }
+    for (k = 0; k <= 60; k++) { t = k / 60; g.put(g.vx(bx + 0.02 + (19.94 - bx - 0.02) * t), YC, g.vz(0.30 + 0.74 * t), 'w'); }
+    x = g.vx(19.94); z = g.vz(1.04);
+    for (y = YC - 2; y <= YC + 2; y++) g.put(x, y, z, 'w');
+  }
+  // A low heap of rusty chain: alternating light / dark link voxels with gaps, 2 layers.
+  function awkChain(g, cx, cy, r) {
+    var CX = g.fx(cx), CY = g.fy(cy), R = r / AWK_CELL, x, y, z, dx, dy;
+    for (z = 0; z <= 1; z++) for (y = Math.floor(CY - R); y <= Math.ceil(CY + R); y++) for (x = Math.floor(CX - R); x <= Math.ceil(CX + R); x++) {
+      dx = x + 0.5 - CX; dy = y + 0.5 - CY;
+      if (Math.sqrt(dx * dx + dy * dy) > R - z * 1.2 || hash3(x, y, z + 40) < 280) continue;
+      g.put(x, y, z, ((x + y + z) % 2) ? 'I' : 'i');
+    }
+  }
+  // The keeper's straw mat (one layer, frayed edge).
+  function awkMat(g, x0, y0, x1, y1) {
+    var X0 = g.vx(x0), X1 = g.vx(x1), Y0 = g.vy(y0), Y1 = g.vy(y1), x, y, edge, hh;
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
+      edge = (x === X0 || x === X1 - 1 || y === Y0 || y === Y1 - 1); hh = hash3(x, y, 7);
+      if (edge && hh < 200) continue;
+      g.put(x, y, 0, edge ? 'u' : (hh < 180 ? 'T' : (hh > 880 ? 'u' : 't')));
+    }
+  }
+  // The keeper's log book: leather covers, a pale page block showing on three edges, spine on the west.
+  function awkBook(g, x0, y0, x1, y1, z0) {
+    var X0 = g.vx(x0), X1 = g.vx(x1), Y0 = g.vy(y0), Y1 = g.vy(y1), Z0 = g.vz(z0), x, y, z;
+    for (z = Z0; z < Z0 + 3; z++) for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) g.put(x, y, z, (z === Z0 + 1 && x !== X0) ? 'L' : 'h');
+  }
+  // A square stool (1-voxel seat at seatZ), the south-east leg snapped: stubs left, the broken piece on the floor.
+  function awkStool(g, cx, cy, seatZ, half) {
+    var X0 = g.vx(cx - half), X1 = g.vx(cx + half), Y0 = g.vy(cy - half), Y1 = g.vy(cy + half), ZS = g.vz(seatZ), x, y, z, k;
+    var legs = [[X0, Y0], [X1 - 1, Y0], [X0, Y1 - 1], [X1 - 1, Y1 - 1]];
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) g.put(x, y, ZS, (x === X0 || x === X1 - 1 || y === Y0 || y === Y1 - 1) ? 'w' : 'W');
+    for (k = 0; k < 4; k++) for (z = 0; z < ZS; z++) {
+      if (k === 3 && z >= 2 && z < ZS - 3) continue;
+      g.put(legs[k][0], legs[k][1], z, 'w');
+    }
+    for (x = X0 - 5; x < X0 - 1; x++) g.put(x, Y1 - 1, 0, 'w');
+  }
+  // A COLD candle stub (2x2x3 voxels, linen_light wax) standing at z0, wax run onto what it stands on: burnt down long
+  // ago (canon: the keeper's log is old, nobody has been here for years). Option for the PO / writer, not in the level:
+  // a lit candle = `lampFlame` billboard at the candle top (z0 + 0.12) + palette light preset `candle` 0.1 m above it.
+  function awkCandle(g, cx, cy, z0) {
+    var X = g.vx(cx), Y = g.vy(cy), Z = g.vz(z0), z;
+    for (z = Z; z < Z + 3; z++) { g.put(X - 1, Y - 1, z, 'L'); g.put(X, Y - 1, z, 'L'); g.put(X - 1, Y, z, 'L'); g.put(X, Y, z, 'L'); }
+    g.put(X + 1, Y, Z, 'L'); g.put(X - 1, Y + 1, Z, 'L');
+  }
+  function awkCup(g, cx, cy) {
+    var X = g.vx(cx), Y = g.vy(cy);
+    g.put(X, Y, 0, 'i'); g.put(X, Y, 1, 'i'); g.put(X + 1, Y, 1, 'I');
+  }
+
+  function buildAwakeningCrates() {
+    var g = awkGrid(14.0, 5.0, 4.0, 3.0, 1.0);
+    // against the stair walkway's south face beside the burner: a big crate, a smaller one stacked on it, a stove-in
+    // crate to the west (two planks knocked out of its west face, moss at its foot)
+    awkCrate(g, 17.34, 5.02, 0.00, 17.96, 5.54, 0.52, { mossSouth: true });
+    awkCrate(g, 17.44, 5.06, 0.52, 17.92, 5.46, 0.88, {});
+    awkCrate(g, 17.02, 5.06, 0.00, 17.30, 5.42, 0.32, { openWest: true, mossWest: true });
+    // fallen cheek stones + pebbles along the wall foot and toward the stair base (all <= 0.12 m: walk-over)
+    [[16.02, 5.01, 0.18, 0.14, 0.08], [16.22, 5.02, 0.12, 0.12, 0.12], [16.38, 5.00, 0.22, 0.16, 0.08],
+     [16.64, 5.03, 0.12, 0.10, 0.04], [16.76, 5.02, 0.14, 0.14, 0.08], [16.48, 5.26, 0.04, 0.04, 0.04],
+     [15.66, 5.10, 0.12, 0.10, 0.04], [17.12, 5.56, 0.08, 0.08, 0.04]].forEach(function (s) {
+      awkBlock(g, s[0], s[1], 0, s[0] + s[2], s[1] + s[3], s[4]);
+    });
+    // the garrison's water butt against the upper-stair column (cell 14,7): lid gone, dark water, moss at its foot
+    awkBarrel(g, 14.40, 7.60, 0, 0.27, 0.76, { open: true, hoops: [0.08, 0.36, 0.64], moss: true });
+    // a second rusty kettle helm, fallen off the pell long ago
+    awkHelm(g, 14.84, 7.44);
+    return g;
+  }
+  function buildAwakeningKeeper() {
+    var g = awkGrid(18.0, 5.0, 2.0, 5.0, 1.12);
+    // the crate stack's east flank (cell 18,5) and the NE pocket (19,5): grain sacks, a sealed barrel + rope coil
+    awkSack(g, 18.24, 5.28, 0, 0.22, 0.20, 0.17, true);
+    awkSack(g, 18.48, 5.50, 0, 0.14, 0.19, 0.10, false);
+    awkBarrel(g, 19.60, 5.42, 0, 0.28, 0.80, { hoops: [0.10, 0.40, 0.70], moss: true });
+    awkCoil(g, 19.60, 5.42, 0.80, 0.13);
+    awkSack(g, 19.17, 5.80, 0, 0.15, 0.14, 0.15, true);
+    // same pocket, against the step-7 face: a shovel leaning on the wall, a heap of chain at its foot. (Cell 19,7 under
+    // the lamp stays empty: it is a wake -> burner arrival cell and the lamp approach.)
+    awkShovel(g, 19.72, 5.86);
+    awkChain(g, 19.48, 5.86, 0.10);
+    // SE corner (cell 18,9) = the relay-keeper's corner by KEEP THE LIGHT: mat, bedroll, log book, stool, candle, cup
+    awkMat(g, 18.06, 9.30, 18.94, 9.96);
+    awkRollX(g, 18.10, 18.88, 9.80, 0.14, 0.10);
+    awkBook(g, 18.30, 9.40, 18.50, 9.52, 0.04);
+    awkStool(g, 18.72, 9.16, 0.40, 0.14);
+    awkCandle(g, 18.72, 9.16, 0.44);
+    awkCup(g, 18.46, 9.12);
+    return g;
+  }
+  function awkModel(key, displayName, desc, g, ax, ay, placement) {
+    var anchor = [(ax - g.x0m) / AWK_CELL, (ay - g.y0m) / AWK_CELL, 0];
+    return {
+      name: key, displayName: displayName, desc: desc,
+      voxel: {
+        version: 1, meshOnly: true, cellM: AWK_CELL, size: [g.sx, g.sy, g.sz], anchor: anchor, mats: AWK_MATS,
+        layers: g.layers(),
+        parts: { body: { box: [0, 0, 0, g.sx, g.sy, g.sz], pivot: anchor } },
+        animations: { idle: { durations: [1000], loop: true, frames: [{ body: { rot: [0, 0, 0] } }] } }
+      },
+      placement: placement
+    };
+  }
+  A.voxelModels.awakeningCrates = awkModel('awakeningCrates', 'crates by the stair',
+    'ENV-02 composite (tower hall, north + west): crate stack + stove-in crate against the stair walkway beside the ' +
+    'burner, fallen cheek stones, the garrison water butt (open, dark water), a fallen kettle helm. 4.0 x 3.0 x 1.0 m ' +
+    'grid at 0.04 m, world orientation (facing 0).', buildAwakeningCrates(), 16.0, 6.5,
+    { level: 'tower', prop: 'dressCrates', x: 16.0, y: 6.5, z: 0, facing: 0,
+      note: 'grid origin = world (14.0, 5.0, 0); anchor = the placement point (16.0, 6.5). Never rotate: authored in world axes.' });
+  A.voxelModels.awakeningKeeper = awkModel('awakeningKeeper', 'the keeper\'s corner',
+    'ENV-02 composite (tower hall, east + south-east): grain sacks, a sealed barrel with a rope coil, a shovel + chain ' +
+    'in the NE pocket, the relay-keeper\'s corner (straw mat, bedroll, log book, stool with a snapped leg, cold candle stub, ' +
+    'tin cup). 2.0 x 5.0 x 1.12 m grid at 0.04 m, world orientation (facing 0).', buildAwakeningKeeper(), 19.0, 7.5,
+    { level: 'tower', prop: 'dressKeeper', x: 19.0, y: 7.5, z: 0, facing: 0,
+      note: 'grid origin = world (18.0, 5.0, 0); anchor = the placement point (19.0, 7.5). Candle top = (18.72, 9.16, 0.56).' });
+
+  // ===================================================================================================================
   // 7. ATTACH: only once the materials / colours are merged (a missing v2 record would switch the GPU path off).
   // ===================================================================================================================
   A.voxelModels.attachM3 = function attachM3() {
-    var P = A.palette, DP = A.detailPass, done = [], k, ok, n, keys;
+    var P = A.palette, DP = A.detailPass, done = [], k, ok, n, keys, a;
     if (!P) return done;
     A.models = A.models || {};
     if (DP) {
       ok = true;
       for (k in PELL_MATS) if (!P.materials[PELL_MATS[k]] || !DP.materials[PELL_MATS[k]]) ok = false;
       if (ok && !A.models.practiceTarget) { A.models.practiceTarget = A.voxelModels.practiceTarget; done.push('practiceTarget'); }
+      ok = true;
+      for (k in AWK_MATS) if (!P.materials[AWK_MATS[k]] || !DP.materials[AWK_MATS[k]]) ok = false;
+      for (a = 0; a < AWK_KEYS.length; a++) {
+        if (ok && !A.models[AWK_KEYS[a]]) { A.models[AWK_KEYS[a]] = A.voxelModels[AWK_KEYS[a]]; done.push(AWK_KEYS[a]); }
+      }
     }
     for (n in A.m3Sprites) {
       keys = A.m3Sprites[n].keys; ok = true;

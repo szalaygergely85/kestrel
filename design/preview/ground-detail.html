@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - ground detail (ENV-01d): rocks, tufts, flowers, fern, toadstools, logs, stumps, pebbles + recipe.detail</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1200px; }
+  .fail { color:#ff3b3b; } .warn { color:#ffb04a; } .pass { color:#6fdc7a; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:30px; display:inline-block; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin:6px 0 12px; }
+  .cap { font-size:12px; color:#bdb7a4; margin:3px 0 0; font-family:Consolas, monospace; max-width:900px; }
+  table { border-collapse:collapse; font:12px Consolas, monospace; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:right; }
+  th { color:#ffc23c; background:#10121a; } td:first-child, th:first-child { text-align:left; }
+  button { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; border-radius:3px; padding:3px 9px; cursor:pointer; }
+  button.on { background:#3a3218; border-color:#ffd24a; color:#ffd24a; }
+</style>
+</head>
+<body>
+<h1>Kestrel : ground detail (ENV-01d) : the "alive world" scatter props + the first recipe.detail</h1>
+<div class="note">
+  Source: <code>design/models/ground_detail.js</code> (19 meshOnly voxel models built from data: heightfield rocks / bush,
+  crossed-sheet tufts, boxes for flowers / toadstools / pebbles, a round-section log and stump builder) and
+  <code>design/levels/overworld_far.js</code> <code>recipe.detail</code> (architecture.md 37.4 item 2). New materials
+  <code>petal_yellow</code> / <code>petal_white</code> / <code>petal_pink</code> / <code>mushroom_cap</code> / <code>wood_cut</code>
+  (palette.js + detail-pass.js). Tri counts use the engine mesher (<code>buildVoxelMesh</code> / <code>buildVoxelMeshLod1</code>);
+  views use a reference voxel DDA + <code>palette.util.shade</code> (not the game renderer; ground = an approximation of the
+  terrain-type look). Scatter = the 37.4 item 3 rules with the literal 37.2 <code>hash2</code>.
+  <b>Needs http</b> (ES modules): <code>python -m http.server</code> from the repo root, open <code>/design/preview/ground-detail.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>sun azimuth <input type="range" id="az" min="-180" max="180" step="1" value="-35"><span class="val" id="azV"></span></label>
+  <label>sun elevation <input type="range" id="el" min="5" max="85" step="1" value="50"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="4" step="0.05" value="2.2"><span class="val" id="ambV"></span></label>
+  <label><input type="checkbox" id="shadows" checked> sun shadows (shadow:true species only)</label>
+  <label>fog <select id="fog"><option value="far" selected>far (outdoor)</option><option value="">off</option></select></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>Models (LOD0 / LOD1 from the engine mesher; cap = 37.4 item 7)</h2>
+<div id="table"></div>
+
+<h2>Line-up (same scale on every card; green bar = 1.8 m player; red = collider outline on the ground)</h2>
+<div class="controls" style="position:static">
+  <label>orbit yaw <input type="range" id="luYaw" min="-180" max="180" step="1" value="-30"><span class="val" id="luYawV"></span></label>
+  <label>pitch <input type="range" id="luPitch" min="0" max="60" step="1" value="18"><span class="val" id="luPitchV"></span></label>
+  <label>scale <select id="luScale"><option value="0.04" selected>1 row = 0.04 m (player fits)</option><option value="0.02">1 row = 0.02 m (close-up)</option></select></label>
+  <label>ground <select id="luGround"><option value="grass" selected>grass</option><option value="forest">forest</option><option value="rock">rock</option><option value="none">none (dark)</option></select></label>
+  <label><input type="checkbox" id="luCollider" checked> collider outline</label>
+</div>
+<div class="row" id="lineup"></div>
+
+<h2>Ground patches (eye 1.6 m on a flat patch of one terrain type, the recipe.detail mix for that type)</h2>
+<div class="note">
+  All 3 layers scattered with the config (seed, cellM, fill, jitter, weights, sinkM, yaw) on an 80 x 80 m patch; placements within
+  1.5 m of the eye are skipped (preview only). "fade ring" = the per-placement draw radius r = drawM x (0.85 + 0.15 u5) from the eye
+  (what feedDetail keeps). Ground = the terrain type's colours + glyphs (approximation of the terrain shader).
+</div>
+<div class="controls" style="position:static">
+  <label>yaw <input type="range" id="pYaw" min="-180" max="180" step="1" value="20"><span class="val" id="pYawV"></span></label>
+  <label>pitch <input type="range" id="pPitch" min="-35" max="20" step="1" value="-12"><span class="val" id="pPitchV"></span></label>
+  <span>grid <button data-g="240" class="on">240x90</button><button data-g="400">400x150</button></span>
+  <label><input type="checkbox" id="pFade" checked> fade ring (drawM)</label>
+  <label>show <select id="pLayers"><option value="all" selected>all layers</option><option value="0">tufts only</option><option value="1">shrubs only</option><option value="2">rocks only</option></select></label>
+</div>
+<div class="row" id="patches"></div>
+
+<h2>World map: recipe.detail around the tower (reference scatter on the real terrain types, 2 m cells)</h2>
+<div class="note">
+  Window x 1396..1600, y 922..1126 (the playable bounds r 96 around the tower). Tower bbox white, exclusions cyan, content
+  entities magenta (+ entityClearM disc), path brown. Dots: tufts green, shrubs (flowers yellow / white / pink, fern + bush green,
+  toadstools orange, stones grey), rocks layer grey squares (collider species red ring).
+</div>
+<div class="row"><div><canvas id="map"></canvas><div class="cap" id="mapCap"></div></div></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/ground_detail.js"></script>
+<script src="../levels/overworld_far.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__gdOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). This page must be served over http: python -m http.server from the repo root.';
+  }, 3000);
+</script>
+<script type="module">
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { validateVoxelModel } from '../../engine/voxel/VoxelModel.js';
+import { buildVoxelMesh, buildVoxelMeshLod1 } from '../../engine/mesh/voxelMesh.js';
+
+window.__gdOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, GD = A.groundDetail, D2R = Math.PI / 180;
+const LV = A.levels && A.levels.overworld_far, CFG = LV && LV.recipe && LV.recipe.detail;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const COS225 = Math.cos(22.5 * D2R);
+const TYPES = ['grass', 'forest', 'water', 'rock', 'path'];
+const NEW_MATS = ['petal_yellow', 'petal_white', 'petal_pink', 'mushroom_cap', 'wood_cut'];
+const NO_COLLIDER_GROUPS = { tuft: 1, flower: 1, pebble: 1, mushroom: 1 };
+
+// ---------------------------------------------------------------------------------------------------------------
+// controls
+const ctl = {};
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.shadows = $('shadows').checked; ctl.fog = $('fog').value || null;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2); $('ambV').textContent = ctl.amb.toFixed(2);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  ctl.sun = [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)];
+}
+readCtl();
+
+// ---------------------------------------------------------------------------------------------------------------
+// checks output
+const checksEl = $('checks'); checksEl.innerHTML = '';
+let nFail = 0, nWarn = 0;
+function check(level, text) {
+  const d = document.createElement('div');
+  d.className = level; d.textContent = (level === 'pass' ? 'PASS ' : level === 'fail' ? 'FAIL ' : level === 'warn' ? 'WARN ' : 'INFO ') + text;
+  if (level === 'fail') nFail++; if (level === 'warn') nWarn++;
+  checksEl.appendChild(d);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// models: engine mesher counts + dense grids for the reference DDA
+function prepModel(key) {
+  const def = A.voxelModels[key], v = def.voxel, [sx, sy, sz] = v.size;
+  const idx = {}, mats = [null];
+  for (const ch of Object.keys(v.mats)) if (v.mats[ch] !== null) { idx[ch] = mats.length; mats.push(v.mats[ch]); }
+  const grid = new Uint8Array(sx * sy * sz);
+  for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) {
+    const row = v.layers[z][y];
+    for (let x = 0; x < sx; x++) { const m = idx[row[x]]; if (m) grid[x + sx * (y + sy * z)] = m; }
+  }
+  const cm = v.cellM, ax = v.anchor[0], ay = v.anchor[1], az = v.anchor[2];
+  const foot = Math.max(Math.hypot(ax, ay), Math.hypot(sx - ax, ay), Math.hypot(ax, sy - ay), Math.hypot(sx - ax, sy - ay)) * cm;
+  return { key, def, sx, sy, sz, cellM: cm, ax, ay, az, grid, mats, foot, info: GD.variants[key] };
+}
+const solidAt = (m, x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < m.sx && y < m.sy && z < m.sz && m.grid[x + m.sx * (y + m.sy * z)] !== 0;
+
+if (!GD) check('fail', 'ASSETS.groundDetail missing: ground_detail.js did not load or threw (see the console).');
+const KEYS = GD ? GD.keys.slice() : [];
+const M = {}, rows = [];
+let matSeq = [];
+function matIdFor(k) { let i = matSeq.indexOf(k); if (i < 0) { matSeq.push(k); i = matSeq.length - 1; } return i + 1; }
+for (const key of KEYS) {
+  const def = A.voxelModels[key], info = GD.variants[key];
+  const val = validateVoxelModel(def.voxel, { materialKeys: Object.keys(P.materials) });
+  if (val.errors.length) { check('fail', key + ': validator - ' + val.errors.slice(0, 4).join('; ')); continue; }
+  let lod0 = NaN, lod1 = NaN, err = null;
+  try {
+    const pm = packVoxelModel(def.voxel, matIdFor);
+    lod0 = buildVoxelMesh(pm, { id: key, partNames: ['body'] }).triCount;
+    lod1 = buildVoxelMeshLod1(pm, { id: key, partNames: ['body'] }).triCount;
+  } catch (e) { err = String(e.message || e); }
+  if (err) { check('fail', key + ': pack / mesh failed - ' + err); continue; }
+  M[key] = prepModel(key);
+  let voxels = 0; for (const g of M[key].grid) if (g) voxels++;
+  rows.push({ key, info, def, lod0, lod1, voxels, warns: val.warnings.length });
+  check(def.voxel.meshOnly === true ? 'pass' : 'fail', key + ': validator + engine mesher OK, meshOnly ' + (def.voxel.meshOnly === true) +
+    ' (' + def.voxel.size.join('x') + ' @ ' + info.cellM + ' m = ' + info.widthM + ' x ' + info.depthM + ' x ' + info.heightM + ' m)');
+  check(lod0 <= info.capTris ? 'pass' : 'fail', key + ': LOD0 ' + lod0 + ' tris (cap ' + info.capTris + ', hand estimate ~' + info.estTris + '), LOD1 ' + lod1 +
+    (lod0 > info.capTris ? ' - 37.4 item 7: lower drawM / maxDraw / fill, else the designer trims the model' : ''));
+  check(A.models && A.models[key] ? 'pass' : 'fail', key + ': in ASSETS.models (every material known to palette + detailPass)');
+}
+
+// collider measures (prism: solid core + rock-clip share; box: inside the trunk)
+function prismCoverage(m) {
+  const rV = m.info.rVox, rcV = rV / COS225;
+  let core = 0, coreSolid = 0, vox = 0, outside = 0;
+  for (let y = 0; y < m.sy; y++) for (let x = 0; x < m.sx; x++) {
+    const d = Math.hypot(x + 0.5 - m.ax, y + 0.5 - m.ay);
+    if (d <= rV) { core++; if (solidAt(m, x, y, 1)) coreSolid++; }
+    for (let z = 1; z < m.sz; z++) if (solidAt(m, x, y, z)) { vox++; if (d > rcV) outside++; }
+  }
+  return { corePct: core ? 100 * coreSolid / core : 0, clipPct: vox ? 100 * outside / vox : 0 };
+}
+for (const r of rows) {
+  const c = r.info.collider, m = M[r.key];
+  if (!c) continue;
+  if (c.prism) {
+    const cov = prismCoverage(m); r.cov = cov;
+    check(cov.corePct >= 85 ? 'pass' : 'warn', r.key + ': prism r ' + c.prism.r + ' m (rVox ' + r.info.rVox + '): ' + cov.corePct.toFixed(0) +
+      ' % of the core (cells within r) solid at z1 = no invisible wall; ' + cov.clipPct.toFixed(0) + ' % of the z>=1 voxels lie outside the circumradius (walk-into share)');
+    check(c.prism.h <= r.info.heightM + 1e-9 ? 'pass' : 'fail', r.key + ': prism h ' + c.prism.h + ' <= model height ' + r.info.heightM);
+  } else if (c.box) {
+    const halfL = m.sx * m.cellM / 2;
+    check(c.box.hx <= halfL && c.box.hy <= 3.5 * m.cellM && c.box.h <= r.info.heightM ? 'pass' : 'fail',
+      r.key + ': box hx ' + c.box.hx + ' / hy ' + c.box.hy + ' / h ' + c.box.h + ' inside the log (half length ' + halfL.toFixed(2) + ', half section ' + (3.5 * m.cellM).toFixed(2) + ')');
+  }
+}
+
+// materials + validators
+const pErr = U.validate(), dErr = A.detailPass ? A.detailPass.util.validate() : ['detailPass missing'];
+check(pErr.length ? 'fail' : 'pass', 'palette.util.validate(): ' + (pErr.length ? pErr.join('; ') : '0 errors'));
+check(dErr.length ? 'fail' : 'pass', 'detailPass.util.validate(): ' + (dErr.length ? dErr.join('; ') : '0 errors'));
+for (const k of NEW_MATS) check(P.materials[k] && A.detailPass.materials[k] && A.detailPass.remap[k] === k ? 'pass' : 'fail', 'material ' + k + ': v1 + v2 + remap');
+
+// ---------------------------------------------------------------------------------------------------------------
+// config checks
+function rcOf(col) { return col.prism ? col.prism.r / COS225 : Math.hypot(col.box.hx, col.box.hy); }
+let estBand = 0, estFed = 0;
+if (!CFG) check('fail', 'overworld_far.js recipe.detail missing');
+else {
+  for (const k of ['tileM', 'maxDraw', 'refeedM', 'maxPlacements', 'structClearM', 'entityClearM'])
+    check(Number.isFinite(CFG[k]) && CFG[k] > 0 ? 'pass' : 'fail', 'detail.' + k + ' = ' + CFG[k]);
+  check(CFG.maxPlacements <= 65536 ? 'pass' : 'fail', 'detail.maxPlacements ' + CFG.maxPlacements + ' <= 65536 (37.4 item 2 hard cap)');
+  (CFG.exclude || []).forEach((e, i) => {
+    const ok = e.shape === 'disc' ? [e.x, e.y, e.r].every(Number.isFinite) && e.r > 0
+      : e.shape === 'capsule' ? [e.ax, e.ay, e.bx, e.by, e.r].every(Number.isFinite) && e.r > 0 : false;
+    check(ok ? 'pass' : 'fail', 'detail.exclude[' + i + ']: ' + e.shape + ' ' + JSON.stringify(e));
+  });
+  CFG.layers.forEach((L, li) => {
+    const p = 'detail.layers[' + li + '] ' + L.name;
+    const nums = ['seed', 'cellM', 'jitter', 'fill', 'maxSlope', 'clearM', 'drawM', 'lodCells'];
+    const bad = nums.filter((k) => !Number.isFinite(L[k]) || L[k] < 0);
+    check(!bad.length && Number.isInteger(L.seed) && L.fill <= 1 && L.cellM > 0 ? 'pass' : 'fail', p + ': numbers ' + (bad.length ? 'bad ' + bad.join(',') : 'OK') +
+      ' (cellM ' + L.cellM + ', jitter ' + L.jitter + ', fill ' + L.fill + ', maxSlope ' + L.maxSlope + ', clearM ' + L.clearM + ', drawM ' + L.drawM + ')');
+    let maxRc = 0;
+    for (const t of Object.keys(L.ground)) {
+      check(TYPES.indexOf(t) >= 0 ? 'pass' : 'fail', p + '.ground.' + t + ': ' + (TYPES.indexOf(t) >= 0 ? 'known ground type' : 'unknown ground type'));
+      const list = L.ground[t];
+      if (!list || !list.length) { check('fail', p + '.ground.' + t + ': empty species'); continue; }
+      for (const s of list) {
+        const info = GD.variants[s.model], q = p + '.ground.' + t + ' ' + s.model;
+        if (!info) { check('fail', q + ': no ground_detail model (a non-ENV-01d model needs its own checks)'); continue; }
+        if (!(s.weight > 0)) check('fail', q + ': weight ' + s.weight);
+        if (s.collider && NO_COLLIDER_GROUPS[info.group]) check('fail', q + ': collider on a ' + info.group + ' (37.4 Do not)');
+        if (info.collider && !s.collider) check('warn', q + ': model has measured collider ' + JSON.stringify(info.collider) + ' but the species has none');
+        if (s.collider && info.collider) {
+          const a = s.collider, b = info.collider;
+          const same = a.prism && b.prism ? Math.abs(a.prism.r - b.prism.r) < 0.0051 && Math.abs(a.prism.h - b.prism.h) < 0.0051
+            : a.box && b.box ? Math.abs(a.box.hx - b.box.hx) < 0.0051 && Math.abs(a.box.hy - b.box.hy) < 0.0051 && Math.abs(a.box.h - b.box.h) < 0.0051 : false;
+          check(same ? 'pass' : 'fail', q + ': collider ' + JSON.stringify(a) + (same ? ' = measured' : ' != measured ' + JSON.stringify(b)));
+          maxRc = Math.max(maxRc, rcOf(a));
+        }
+      }
+    }
+    if (maxRc > 0) {
+      const lhs = L.cellM - 2 * L.jitter, rhs = 2 * maxRc + 1.2;
+      check(lhs >= rhs ? 'pass' : 'fail', p + ': collider gap rule cellM - 2 jitter = ' + lhs.toFixed(2) + ' >= 2 maxRc + 1.2 = ' + rhs.toFixed(2));
+    }
+    const band = L.fill * Math.pow(384 / L.cellM, 2), fed = L.fill * Math.PI * L.drawM * L.drawM / (L.cellM * L.cellM);
+    estBand += band; estFed += fed;
+    check('info', p + ': ~' + Math.round(band) + ' placements in an all-land 384 m band, ~' + Math.round(fed) + ' inside drawM ' + L.drawM + ' m');
+  });
+  check(estBand <= CFG.maxPlacements ? 'pass' : 'fail', 'band estimate ~' + Math.round(estBand) + ' <= maxPlacements ' + CFG.maxPlacements);
+  check(estFed <= CFG.maxDraw ? 'pass' : 'warn', 'fed estimate (full drawM discs, flat land) ~' + Math.round(estFed) + ' <= maxDraw ' + CFG.maxDraw);
+}
+
+// table
+(function table() {
+  let h = '<table><tr><th>model</th><th>group</th><th>voxels</th><th>cellM</th><th>w x d x h m</th><th>solid voxels</th>' +
+    '<th>LOD0 tris</th><th>LOD1 tris</th><th>cap</th><th>est.</th><th>collider</th><th>materials</th></tr>';
+  for (const r of rows) {
+    const i = r.info, col = i.collider ? (i.collider.prism ? 'prism r ' + i.collider.prism.r + ' h ' + i.collider.prism.h
+      : 'box ' + i.collider.box.hx + ' / ' + i.collider.box.hy + ' / ' + i.collider.box.h) : '-';
+    h += '<tr><td>' + r.key + '</td><td>' + i.group + '</td><td>' + i.size.join('x') + '</td><td>' + i.cellM + '</td><td>' +
+      i.widthM + ' x ' + i.depthM + ' x ' + i.heightM + '</td><td>' + r.voxels + '</td><td class="' + (r.lod0 <= i.capTris ? 'pass' : 'fail') + '">' + r.lod0 +
+      '</td><td>' + r.lod1 + '</td><td>' + i.capTris + '</td><td>~' + i.estTris + '</td><td>' + col + '</td><td>' +
+      Object.values(r.def.voxel.mats).join(', ') + '</td></tr>';
+  }
+  $('table').innerHTML = h + '</table>';
+})();
+
+// ---------------------------------------------------------------------------------------------------------------
+// reference voxel DDA against one placed model {m, x, y, z, c, s}
+const HIT = { t: 0, axis: 0, sign: 0, mat: 0, lx: 0, ly: 0, lz: 0, tree: null, nx: 0, ny: 0, nz: 0 };
+function traceTree(tr, ox, oy, oz, dx, dy, dz, tBest, hit) {
+  const m = tr.m, inv = 1 / m.cellM, sx = m.sx, sy = m.sy, sz = m.sz;
+  const px = ox - tr.x, py = oy - tr.y, pz = oz - tr.z;
+  const lo = [(tr.c * px + tr.s * py) * inv + m.ax, (-tr.s * px + tr.c * py) * inv + m.ay, pz * inv + m.az];
+  const ld = [(tr.c * dx + tr.s * dy) * inv, (-tr.s * dx + tr.c * dy) * inv, dz * inv];
+  const size = [sx, sy, sz];
+  let t0 = 0, t1 = tBest, enter = -1;
+  for (let a = 0; a < 3; a++) {
+    if (Math.abs(ld[a]) < 1e-12) { if (lo[a] < 0 || lo[a] > size[a]) return false; continue; }
+    let ta = (0 - lo[a]) / ld[a], tb = (size[a] - lo[a]) / ld[a];
+    if (ta > tb) { const q = ta; ta = tb; tb = q; }
+    if (ta > t0) { t0 = ta; enter = a; }
+    if (tb < t1) t1 = tb;
+    if (t0 > t1) return false;
+  }
+  let t = t0;
+  const cl = (v, n) => (v < 0 ? 0 : v > n - 1 ? n - 1 : v);
+  let ix = cl(Math.floor(lo[0] + ld[0] * t), sx), iy = cl(Math.floor(lo[1] + ld[1] * t), sy), iz = cl(Math.floor(lo[2] + ld[2] * t), sz);
+  const stX = ld[0] > 0 ? 1 : -1, stY = ld[1] > 0 ? 1 : -1, stZ = ld[2] > 0 ? 1 : -1;
+  const tdX = ld[0] !== 0 ? Math.abs(1 / ld[0]) : Infinity, tdY = ld[1] !== 0 ? Math.abs(1 / ld[1]) : Infinity, tdZ = ld[2] !== 0 ? Math.abs(1 / ld[2]) : Infinity;
+  let tmX = ld[0] > 0 ? (ix + 1 - lo[0]) / ld[0] : ld[0] < 0 ? (ix - lo[0]) / ld[0] : Infinity;
+  let tmY = ld[1] > 0 ? (iy + 1 - lo[1]) / ld[1] : ld[1] < 0 ? (iy - lo[1]) / ld[1] : Infinity;
+  let tmZ = ld[2] > 0 ? (iz + 1 - lo[2]) / ld[2] : ld[2] < 0 ? (iz - lo[2]) / ld[2] : Infinity;
+  let axis = enter;
+  for (;;) {
+    const v = m.grid[ix + sx * (iy + sy * iz)];
+    if (v) {
+      if (axis < 0) { const ax = Math.abs(ld[0]), ay = Math.abs(ld[1]), az = Math.abs(ld[2]); axis = ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2; }
+      hit.t = t; hit.axis = axis; hit.sign = axis === 0 ? -stX : axis === 1 ? -stY : -stZ; hit.mat = v; hit.tree = tr;
+      hit.lx = lo[0] + ld[0] * t; hit.ly = lo[1] + ld[1] * t; hit.lz = lo[2] + ld[2] * t;
+      const lnx = axis === 0 ? hit.sign : 0, lny = axis === 1 ? hit.sign : 0;
+      hit.nx = tr.c * lnx - tr.s * lny; hit.ny = tr.s * lnx + tr.c * lny; hit.nz = axis === 2 ? hit.sign : 0;
+      return true;
+    }
+    if (tmX < tmY && tmX < tmZ) { ix += stX; t = tmX; tmX += tdX; axis = 0; if (ix < 0 || ix >= sx) return false; }
+    else if (tmY < tmZ) { iy += stY; t = tmY; tmY += tdY; axis = 1; if (iy < 0 || iy >= sy) return false; }
+    else { iz += stZ; t = tmZ; tmZ += tdZ; axis = 2; if (iz < 0 || iz >= sz) return false; }
+    if (t > t1) return false;
+  }
+}
+function aabbHit(b, ox, oy, oz, dx, dy, dz, tMax) {
+  let t0 = 0, t1 = tMax;
+  const o = [ox, oy, oz], d = [dx, dy, dz];
+  for (let a = 0; a < 3; a++) {
+    const lo = b[a], hi = b[a + 3];
+    if (Math.abs(d[a]) < 1e-12) { if (o[a] < lo || o[a] > hi) return false; continue; }
+    let ta = (lo - o[a]) / d[a], tb = (hi - o[a]) / d[a];
+    if (ta > tb) { const q = ta; ta = tb; tb = q; }
+    if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+function place(m, x, y, z, yawDeg, extra) {
+  const c = Math.cos(yawDeg * D2R), s = Math.sin(yawDeg * D2R), f = m.foot;
+  return Object.assign({ m, x, y, z, yaw: yawDeg, c, s, box: [x - f, y - f, z, x + f, y + f, z + m.sz * m.cellM] }, extra || {});
+}
+const TMP = Object.assign({}, HIT);
+// 2D bucket grid over the placements (B m cells); a ray walks the buckets near-to-far and stops once the best hit
+// is nearer than the current bucket's exit.
+function buildAccel(list, x0, y0, x1, y1, B) {
+  const nx = Math.max(1, Math.ceil((x1 - x0) / B)), ny = Math.max(1, Math.ceil((y1 - y0) / B));
+  const cells = new Array(nx * ny);
+  list.forEach((tr, i) => {
+    const a0 = Math.max(0, Math.floor((tr.box[0] - x0) / B)), a1 = Math.min(nx - 1, Math.floor((tr.box[3] - x0) / B));
+    const b0 = Math.max(0, Math.floor((tr.box[1] - y0) / B)), b1 = Math.min(ny - 1, Math.floor((tr.box[4] - y0) / B));
+    for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) (cells[a + b * nx] = cells[a + b * nx] || []).push(i);
+  });
+  return { list, x0, y0, nx, ny, B, cells, seen: new Uint32Array(list.length), stamp: 0 };
+}
+function traceAccel(acc, ox, oy, oz, dx, dy, dz, tMax, hit, any) {
+  if (!acc || !acc.list.length) return false;
+  if (++acc.stamp >= 0xFFFFFFF0) { acc.seen.fill(0); acc.stamp = 1; }
+  const B = acc.B;
+  let cx = Math.floor((ox - acc.x0) / B), cy = Math.floor((oy - acc.y0) / B);
+  const stX = dx > 0 ? 1 : -1, stY = dy > 0 ? 1 : -1;
+  const tdX = Math.abs(dx) > 1e-12 ? Math.abs(B / dx) : Infinity, tdY = Math.abs(dy) > 1e-12 ? Math.abs(B / dy) : Infinity;
+  let tmX = Math.abs(dx) > 1e-12 ? ((acc.x0 + (cx + (dx > 0 ? 1 : 0)) * B) - ox) / dx : Infinity;
+  let tmY = Math.abs(dy) > 1e-12 ? ((acc.y0 + (cy + (dy > 0 ? 1 : 0)) * B) - oy) / dy : Infinity;
+  let best = tMax, got = false;
+  for (let guard = 0; guard < 4096; guard++) {
+    const inX = cx >= 0 && cx < acc.nx, inY = cy >= 0 && cy < acc.ny;
+    if (inX && inY) {
+      const cell = acc.cells[cx + cy * acc.nx];
+      if (cell) for (const i of cell) {
+        if (acc.seen[i] === acc.stamp) continue;
+        acc.seen[i] = acc.stamp;
+        const tr = acc.list[i];
+        if (!aabbHit(tr.box, ox, oy, oz, dx, dy, dz, best)) continue;
+        if (traceTree(tr, ox, oy, oz, dx, dy, dz, best, TMP)) { got = true; best = TMP.t; Object.assign(hit, TMP); if (any) return true; }
+      }
+    } else if ((!inX && (cx < 0 ? stX < 0 || tdX === Infinity : stX > 0 || tdX === Infinity)) ||
+               (!inY && (cy < 0 ? stY < 0 || tdY === Infinity : stY > 0 || tdY === Infinity))) break;
+    const tExit = Math.min(tmX, tmY);
+    if (best <= tExit || tExit > tMax) break;
+    if (tmX < tmY) { cx += stX; tmX += tdX; } else { cy += stY; tmY += tdY; }
+  }
+  return got;
+}
+
+// shading
+const Lacc = [0, 0, 0], SHD = Object.assign({}, HIT);
+function light(nx, ny, nz, wx, wy, wz, casters) {
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.12 * ctl.amb * (0.75 + 0.25 * nz));
+  const s = ctl.sun, ndl = nx * s[0] + ny * s[1] + nz * s[2];
+  if (ndl > 0) {
+    let vis = 1;
+    if (ctl.shadows && casters && traceAccel(casters, wx + nx * 0.02, wy + ny * 0.02, wz + nz * 0.02, s[0], s[1], s[2], 40, SHD, true)) vis = 0;
+    if (vis) U.addLight(Lacc, 'sun', ctl.int * ndl);
+  }
+  return Lacc;
+}
+function shadeModelHit(hit, dist, casters, out) {
+  const m = hit.tree.m, cm = m.cellM, mat = P.materials[m.mats[hit.mat]] || P.materials.stone;
+  let u, v;
+  if (hit.axis === 0) { u = hit.ly * cm; v = hit.lz * cm; } else if (hit.axis === 1) { u = hit.lx * cm; v = hit.lz * cm; } else { u = hit.lx * cm; v = hit.ly * cm; }
+  const tr = hit.tree;
+  const wx = tr.x + (tr.c * (hit.lx - m.ax) - tr.s * (hit.ly - m.ay)) * cm, wy = tr.y + (tr.s * (hit.lx - m.ax) + tr.c * (hit.ly - m.ay)) * cm, wz = tr.z + hit.lz * cm;
+  light(hit.nx, hit.ny, hit.nz, wx, wy, wz, casters);
+  return U.shade(mat, Lacc, u, v, dist, out, { fog: ctl.fog });
+}
+// ground looks: grass = the turf material, rock = the rock material, forest = a stand-in built from the
+// overworld_far terrain.forest look (forestDark / forest / grassDark, glyphs & % @).
+const GROUND_MAT = {
+  grass: P.materials.grass,
+  rock: P.materials.rock,
+  forest: { base: 'forest', albedo: 0.70, ramp: 'foliage', bg: { mode: 'darken', k: 0.22 }, textureFade: [5, 16],
+    texture: { w: 4, h: 4, scale: [3, 3], key: { a: { shade: 1.0 }, d: { shade: 0.72, tint: 'forestDark', amount: 0.65, glyph: '%' },
+      l: { shade: 1.08, tint: 'grassDark', amount: 0.45, glyph: '&' } }, rows: ['adal', 'laad', 'adla', 'dala'] } }
+};
+function shadeGround(type, wx, wy, dist, casters, out) {
+  light(0, 0, 1, wx, wy, 0, casters);
+  return U.shade(GROUND_MAT[type] || GROUND_MAT.grass, Lacc, wx, wy, dist, out, { fog: ctl.fog });
+}
+function shadeSkyCell(dx, dy, dz, out) {
+  const az = Math.atan2(dx, -dy) / D2R, el = Math.asin(Math.max(-1, Math.min(1, dz))) / D2R;
+  return U.shadeSky(az, Math.max(0, el), out);
+}
+function putCell(ctx, c, r, cw, ch, out) {
+  const x = c * cw, y = r * ch;
+  ctx.fillStyle = 'rgb(' + (out.bg[0] | 0) + ',' + (out.bg[1] | 0) + ',' + (out.bg[2] | 0) + ')';
+  ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+  if (out.glyph && out.glyph !== ' ') {
+    ctx.fillStyle = 'rgb(' + (out.fg[0] | 0) + ',' + (out.fg[1] | 0) + ',' + (out.fg[2] | 0) + ')';
+    ctx.fillText(out.glyph, x + cw / 2, y + ch / 2 + 1);
+  }
+}
+function makeCanvas(cv, cols, rows, cw, ch) {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// LINE-UP: one card per model, orthographic, same metres per row on every card, player bar to the right
+const luCards = [];
+for (const r of rows) {
+  const wrap = document.createElement('div'), cv = document.createElement('canvas'), cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.textContent = r.key + ': ' + r.info.widthM + ' x ' + r.info.depthM + ' x ' + r.info.heightM + ' m, LOD0 ' + r.lod0 + ' / LOD1 ' + r.lod1 + ' tris';
+  wrap.appendChild(cv); wrap.appendChild(cap); $('lineup').appendChild(wrap);
+  const tr = place(M[r.key], 0, 0, 0, 0);
+  luCards.push({ r, cv, cap, tr, acc: buildAccel([tr], -4, -4, 4, 4, 8) });
+}
+function cylHit(px, py, rad, zTop, ox, oy, oz, dx, dy, dz) {      // vertical cylinder, returns t or Infinity
+  const fx = ox - px, fy = oy - py, a = dx * dx + dy * dy, b = 2 * (fx * dx + fy * dy), c = fx * fx + fy * fy - rad * rad;
+  if (a < 1e-12) return Infinity;
+  const disc = b * b - 4 * a * c; if (disc < 0) return Infinity;
+  const t = (-b - Math.sqrt(disc)) / (2 * a), z = oz + dz * t;
+  return t > 0 && z >= 0 && z <= zTop ? t : Infinity;
+}
+function onColliderEdge(col, x, y, w) {
+  if (!col) return false;
+  if (col.prism) {                                          // 8-gon, flats on the axes (yaw 0)
+    const rc = col.prism.r / COS225;
+    let a = Math.atan2(y, x); a = ((a % (Math.PI / 4)) + Math.PI / 4) % (Math.PI / 4) - Math.PI / 8;
+    const rEdge = col.prism.r / Math.cos(a);
+    return Math.abs(Math.hypot(x, y) - Math.min(rEdge, rc)) < w;
+  }
+  const ex = Math.abs(x) - col.box.hx, ey = Math.abs(y) - col.box.hy;
+  return (Math.abs(ex) < w && ey <= w) || (Math.abs(ey) < w && ex <= w);
+}
+function renderLineup() {
+  const yaw = +$('luYaw').value * D2R, pitch = +$('luPitch').value * D2R, chM = +$('luScale').value, ground = $('luGround').value;
+  $('luYawV').textContent = $('luYaw').value; $('luPitchV').textContent = $('luPitch').value;
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const fwd = [Math.sin(yaw) * cp, -Math.cos(yaw) * cp, -sp], right = [Math.cos(yaw), Math.sin(yaw), 0];
+  const up = [fwd[1] * right[2] - fwd[2] * right[1], fwd[2] * right[0] - fwd[0] * right[2], fwd[0] * right[1] - fwd[1] * right[0]];
+  const cw = 6, ch = 12, cwM = chM * cw / ch, nr = 50, out = { fg: [0, 0, 0], bg: [0, 0, 0] }, showCol = $('luCollider').checked;
+  for (const card of luCards) {
+    const m = card.tr.m, span = Math.max(m.sx, m.sy) * m.cellM;
+    const playerX = span / 2 + 0.45, cols = Math.min(260, Math.ceil((span + 1.4) / cwM));
+    const g = makeCanvas(card.cv, cols, nr, cw, ch), ctx = g.ctx, Rd = 30;
+    const tzC = nr * chM * 0.42;                             // view centre height: ground near the bottom
+    const cx0 = (playerX + 0.3 - span / 2 - 0.15) / 2;        // screen centre between model and player
+    for (let r = 0; r < nr; r++) for (let c = 0; c < cols; c++) {
+      const sx = cx0 + (c + 0.5 - cols / 2) * cwM, sy = (nr / 2 - (r + 0.5)) * chM;
+      const ox = right[0] * sx + up[0] * sy - fwd[0] * Rd, oy = right[1] * sx + up[1] * sy - fwd[1] * Rd, oz = tzC + up[2] * sy - fwd[2] * Rd;
+      let best = Infinity, kind = 0;
+      if (traceAccel(card.acc, ox, oy, oz, fwd[0], fwd[1], fwd[2], 200, HIT, false)) { best = HIT.t; kind = 1; }
+      const tp = cylHit(right[0] * playerX, right[1] * playerX, 0.2, 1.8, ox, oy, oz, fwd[0], fwd[1], fwd[2]);
+      if (tp < best) { best = tp; kind = 2; }
+      const tg = fwd[2] < -1e-6 ? -oz / fwd[2] : Infinity;
+      if (tg < best && ground !== 'none') { best = tg; kind = 3; }
+      if (kind === 1) shadeModelHit(HIT, 12, card.acc, out);
+      else if (kind === 2) {
+        const z = oz + fwd[2] * best;
+        out.glyph = z > 1.5 ? 'O' : '#'; out.fg[0] = 79; out.fg[1] = 214; out.fg[2] = 106; out.bg[0] = 10; out.bg[1] = 40; out.bg[2] = 18;
+      } else if (kind === 3) {
+        const gx = ox + fwd[0] * best, gy = oy + fwd[1] * best;
+        shadeGround(ground, gx, gy, 12, card.acc, out);
+        if (showCol && onColliderEdge(card.r.info.collider, gx, gy, cwM * 0.9)) { out.glyph = '='; out.fg[0] = 255; out.fg[1] = 70; out.fg[2] = 60; }
+      } else { out.glyph = ' '; out.bg[0] = 7; out.bg[1] = 8; out.bg[2] = 12; }
+      putCell(ctx, c, r, cw, ch, out);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// SCATTER (37.4 item 3 rules; literal 37.2 hash2)
+function hash2(ix, iy, seed) {
+  let h = Math.imul(ix | 0, 0x8da6b343) ^ Math.imul(iy | 0, 0xd8163841) ^ seed;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return (h ^ (h >>> 15)) >>> 0;
+}
+const U32 = 4294967296;
+function distSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(ax + dx * t - px, ay + dy * t - py);
+}
+function inKeepOut(x, y, keepOut) {
+  for (const e of keepOut) {
+    if (e.shape === 'disc' ? Math.hypot(x - e.x, y - e.y) < e.r : distSeg(x, y, e.ax, e.ay, e.bx, e.by) < e.r) return true;
+  }
+  return false;
+}
+// env: { typeAt(x,y) -> name, slopeAt(x,y), structures: [{x0,y0,x1,y1}], keepOut: [...] }
+function scatter(env, x0, y0, x1, y1) {
+  const outL = [];
+  CFG.layers.forEach((L, li) => {
+    const u = (ix, iy, k) => hash2(ix, iy, L.seed + k) / U32;
+    for (let iy = Math.floor(y0 / L.cellM); iy < Math.ceil(y1 / L.cellM); iy++) for (let ix = Math.floor(x0 / L.cellM); ix < Math.ceil(x1 / L.cellM); ix++) {
+      if (u(ix, iy, 0) >= L.fill) continue;
+      const x = (ix + 0.5) * L.cellM + (u(ix, iy, 1) * 2 - 1) * L.jitter, y = (iy + 0.5) * L.cellM + (u(ix, iy, 2) * 2 - 1) * L.jitter;
+      if (x < x0 || y < y0 || x >= x1 || y >= y1) continue;
+      const t = env.typeAt(x, y), list = L.ground[t];
+      if (!list || !list.length) continue;
+      const cm = L.clearM;
+      if (env.typeAt(x - cm, y - cm) !== t || env.typeAt(x + cm, y - cm) !== t || env.typeAt(x - cm, y + cm) !== t || env.typeAt(x + cm, y + cm) !== t) continue;
+      if (env.slopeAt(x, y) > L.maxSlope) continue;
+      let bad = false;
+      for (const b of env.structures) if (x >= b.x0 - CFG.structClearM && x <= b.x1 + CFG.structClearM && y >= b.y0 - CFG.structClearM && y <= b.y1 + CFG.structClearM) { bad = true; break; }
+      if (bad || inKeepOut(x, y, env.keepOut)) continue;
+      let wsum = 0; for (const s of list) wsum += s.weight;
+      let pick = u(ix, iy, 3) * wsum, sp = list[list.length - 1];
+      for (const s of list) { pick -= s.weight; if (pick < 0) { sp = s; break; } }
+      const yawStep = sp.yawStep || 1;
+      outL.push({ x, y, layer: li, sp, type: t, yaw: Math.floor(u(ix, iy, 4) * 360 / yawStep) * yawStep, r: L.drawM * (0.85 + 0.15 * u(ix, iy, 5)) });
+    }
+  });
+  return outL;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// PATCHES: flat 80 x 80 m of one terrain type, eye 1.6 m at the centre
+const PATCH_TYPES = [['grass', 1000, 1000], ['forest', 3000, 1000], ['rock', 5000, 1000]];
+const GRIDS = { 240: [240, 90, 5, 10], 400: [400, 150, 3, 6] };
+let PG = GRIDS[240];
+const patches = [];
+if (CFG) for (const [type, cx, cy] of PATCH_TYPES) {
+  const half = 40;
+  const pts = scatter({ typeAt: () => type, slopeAt: () => 0, structures: [], keepOut: [{ shape: 'disc', x: cx, y: cy, r: 1.5 }] },
+    cx - half, cy - half, cx + half, cy + half);
+  const insts = [];
+  for (const p of pts) {
+    const m = M[p.sp.model]; if (!m) continue;
+    insts.push(place(m, p.x, p.y, -(p.sp.sinkM != null ? p.sp.sinkM : 0.05), p.yaw, { layer: p.layer, shadow: !!p.sp.shadow, r: p.r }));
+  }
+  const wrap = document.createElement('div'), cv = document.createElement('canvas'), cap = document.createElement('div');
+  cap.className = 'cap'; wrap.appendChild(cv); wrap.appendChild(cap); $('patches').appendChild(wrap);
+  const perLayer = CFG.layers.map((L, li) => insts.filter((t) => t.layer === li).length);
+  check('info', 'patch ' + type + ': ' + insts.length + ' placements on 80 x 80 m (' + CFG.layers.map((L, li) => L.name + ' ' + perLayer[li]).join(', ') + ')');
+  patches.push({ type, cx, cy, half, insts, cv, cap });
+}
+function renderPatches() {
+  const yaw = +$('pYaw').value * D2R, pitch = +$('pPitch').value * D2R, fade = $('pFade').checked, show = $('pLayers').value;
+  $('pYawV').textContent = $('pYaw').value; $('pPitchV').textContent = $('pPitch').value;
+  const cp = Math.cos(pitch), fwd = [Math.sin(yaw) * cp, -Math.cos(yaw) * cp, Math.sin(pitch)], right = [Math.cos(yaw), Math.sin(yaw), 0];
+  const up = [fwd[1] * right[2] - fwd[2] * right[1], fwd[2] * right[0] - fwd[0] * right[2], fwd[0] * right[1] - fwd[1] * right[0]];
+  const [cols, nr, cw, ch] = PG, out = { fg: [0, 0, 0], bg: [0, 0, 0] };
+  for (const pa of patches) {
+    const t0 = performance.now(), ex = pa.cx, ey = pa.cy, ez = 1.6;
+    const vis = pa.insts.filter((t) => (show === 'all' || +show === t.layer) && (!fade || Math.hypot(t.x - ex, t.y - ey) < t.r));
+    const acc = buildAccel(vis, ex - pa.half, ey - pa.half, ex + pa.half, ey + pa.half, 2);
+    const casters = buildAccel(vis.filter((t) => t.shadow), ex - pa.half, ey - pa.half, ex + pa.half, ey + pa.half, 2);
+    const g = makeCanvas(pa.cv, cols, nr, cw, ch), ctx = g.ctx;
+    const th = Math.tan(90 * D2R / 2), tv = th * (nr * ch) / (cols * cw);
+    for (let r = 0; r < nr; r++) for (let c = 0; c < cols; c++) {
+      const a = (2 * (c + 0.5) / cols - 1) * th, b = (1 - 2 * (r + 0.5) / nr) * tv;
+      let dx = fwd[0] + right[0] * a + up[0] * b, dy = fwd[1] + right[1] * a + up[1] * b, dz = fwd[2] + right[2] * a + up[2] * b;
+      const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
+      const tg = dz < -1e-6 ? -ez / dz : Infinity, tMax = Math.min(tg, 120);
+      if (traceAccel(acc, ex, ey, ez, dx, dy, dz, tMax, HIT, false)) shadeModelHit(HIT, HIT.t, casters, out);
+      else if (tg < 120 && Math.abs(dx * tg) < pa.half && Math.abs(dy * tg) < pa.half) shadeGround(pa.type, ex + dx * tg, ey + dy * tg, tg, casters, out);
+      else if (dz < 0) { out.glyph = ' '; const fc = P.rgb.fogFarNear; out.bg[0] = fc[0] * 0.5; out.bg[1] = fc[1] * 0.5; out.bg[2] = fc[2] * 0.5; }
+      else shadeSkyCell(dx, dy, dz, out);
+      putCell(ctx, c, r, cw, ch, out);
+    }
+    pa.cap.textContent = pa.type + ': ' + cols + 'x' + nr + ', ' + vis.length + ' of ' + pa.insts.length + ' placements drawn' +
+      (fade ? ' (inside their fade ring)' : '') + ', ' + (performance.now() - t0).toFixed(0) + ' ms (reference DDA, not the game renderer)';
+  }
+}
+document.querySelectorAll('button[data-g]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('button[data-g]').forEach((o) => o.classList.toggle('on', o === b));
+  PG = GRIDS[b.dataset.g]; pDirty = true;
+}));
+
+// ---------------------------------------------------------------------------------------------------------------
+// WORLD MAP around the tower (real terrain types, baked at 2 m like the engine's near band)
+const MAPW = { x0: 1396, y0: 922, cell: 2, n: 102, px: 4 };
+const TOWER = { x0: 1480, y0: 1018, x1: 1504, y1: 1032 };
+const ENTITIES = [{ id: 'endMarker', x: 1428, y: 1040 }, { id: 'boar1', x: 1461.01, y: 1031 }, { id: 'boar2', x: 1444.02, y: 1035 }];
+const TYPE_RGB = { grass: '#3f7a2a', forest: '#1c3a1e', water: '#3f7fc4', rock: '#77797c', path: '#9c7e34' };
+const DOT = { tuftMeadow: '#cbe08a', tuftLush: '#9fd46a', tuftShort: '#7fbf55', flowersYellow: '#f2c62e', flowersWhite: '#f6f3ea',
+  flowersPink: '#e8709e', fern: '#5fae46', bushRound: '#2f7a2e', mushrooms: '#e07a3a', pebbles: '#c8c4bc', rockSmallA: '#b9b5ae', rockSmallB: '#cfc8b2' };
+function renderMap() {
+  if (!CFG || !LV || !LV.util) return;
+  const S = LV.structures && LV.structures[0];
+  if (S && !S.bbox) { S.bbox = TOWER; S.ringHAt = () => 2.4; }       // preview-only stub (World.load injects the real one)
+  let G;
+  try { G = LV.util.bake(MAPW.x0, MAPW.y0, MAPW.cell, MAPW.n, MAPW.n); }
+  catch (e) { check('fail', 'map: overworld_far.util.bake threw - ' + (e.message || e)); return; }
+  const cellAt = (x, y) => {
+    const i = Math.min(MAPW.n - 1, Math.max(0, Math.floor((x - MAPW.x0) / MAPW.cell))), j = Math.min(MAPW.n - 1, Math.max(0, Math.floor((y - MAPW.y0) / MAPW.cell)));
+    return i + j * MAPW.n;
+  };
+  const typeAt = (x, y) => G.TYPES[G.type[cellAt(x, y)]];
+  const slopeAt = (x, y) => {
+    const i = Math.min(MAPW.n - 2, Math.max(1, Math.floor((x - MAPW.x0) / MAPW.cell))), j = Math.min(MAPW.n - 2, Math.max(1, Math.floor((y - MAPW.y0) / MAPW.cell)));
+    const H = G.height, n = MAPW.n, c2 = 2 * MAPW.cell;
+    return Math.hypot((H[i + 1 + j * n] - H[i - 1 + j * n]) / c2, (H[i + (j + 1) * n] - H[i + (j - 1) * n]) / c2);
+  };
+  const keepOut = CFG.exclude.concat(ENTITIES.map((e) => ({ shape: 'disc', x: e.x, y: e.y, r: CFG.entityClearM })));
+  const W = MAPW.n * MAPW.cell, pts = scatter({ typeAt, slopeAt, structures: [TOWER], keepOut }, MAPW.x0, MAPW.y0, MAPW.x0 + W, MAPW.y0 + W);
+  const k = MAPW.px / MAPW.cell, cv = $('map'), dpr = window.devicePixelRatio || 1, Spx = MAPW.n * MAPW.px;
+  cv.width = Spx * dpr; cv.height = Spx * dpr; cv.style.width = Spx + 'px'; cv.style.height = Spx + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (let j = 0; j < MAPW.n; j++) for (let i = 0; i < MAPW.n; i++) {
+    ctx.fillStyle = TYPE_RGB[G.TYPES[G.type[i + j * MAPW.n]]] || '#000'; ctx.fillRect(i * MAPW.px, j * MAPW.px, MAPW.px, MAPW.px);
+  }
+  const X = (x) => (x - MAPW.x0) * k, Y = (y) => (y - MAPW.y0) * k;
+  const per = CFG.layers.map(() => 0); let inBoar = 0, inWalk = 0, colliders = [];
+  for (const p of pts) {
+    per[p.layer]++;
+    if (distSeg(p.x, p.y, 1461, 1031, 1444, 1035) < 4) inBoar++;
+    if (distSeg(p.x, p.y, 1479, 1025, 1420, 1032) < 4.5) inWalk++;
+    if (p.layer === 0) { ctx.fillStyle = DOT[p.sp.model] || '#9fd46a'; ctx.fillRect(X(p.x) - 0.5, Y(p.y) - 0.5, 1.2, 1.2); }
+    else if (p.layer === 1) { ctx.fillStyle = DOT[p.sp.model] || '#ddd'; ctx.fillRect(X(p.x) - 1, Y(p.y) - 1, 2.2, 2.2); }
+    else {
+      const info = GD.variants[p.sp.model], s = info ? Math.max(2, info.widthM * k) : 3;
+      ctx.fillStyle = p.sp.model.startsWith('log') || p.sp.model.startsWith('stump') ? '#8a6a44' : '#b9b5ae';
+      ctx.fillRect(X(p.x) - s / 2, Y(p.y) - s / 2, s, s);
+      if (p.sp.collider) {
+        const rc = rcOf(p.sp.collider); colliders.push({ x: p.x, y: p.y, rc });
+        ctx.strokeStyle = '#ff4a3c'; ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), rc * k, 0, 7); ctx.stroke();
+      }
+    }
+  }
+  ctx.strokeStyle = '#ffffff'; ctx.strokeRect(X(TOWER.x0), Y(TOWER.y0), (TOWER.x1 - TOWER.x0) * k, (TOWER.y1 - TOWER.y0) * k);
+  ctx.strokeStyle = '#3ce8ff';
+  for (const e of CFG.exclude) {
+    ctx.beginPath();
+    if (e.shape === 'disc') ctx.arc(X(e.x), Y(e.y), e.r * k, 0, 7);
+    else {
+      const a = Math.atan2(e.by - e.ay, e.bx - e.ax), nx = -Math.sin(a) * e.r * k, ny = Math.cos(a) * e.r * k;
+      ctx.moveTo(X(e.ax) + nx, Y(e.ay) + ny); ctx.lineTo(X(e.bx) + nx, Y(e.by) + ny);
+      ctx.arc(X(e.bx), Y(e.by), e.r * k, a + Math.PI / 2, a - Math.PI / 2, true);
+      ctx.lineTo(X(e.ax) - nx, Y(e.ay) - ny);
+      ctx.arc(X(e.ax), Y(e.ay), e.r * k, a - Math.PI / 2, a + Math.PI / 2, true);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#ff5cf0'; ctx.fillStyle = '#ff5cf0';
+  for (const e of ENTITIES) { ctx.beginPath(); ctx.arc(X(e.x), Y(e.y), CFG.entityClearM * k, 0, 7); ctx.stroke(); ctx.fillRect(X(e.x) - 1.5, Y(e.y) - 1.5, 3, 3); }
+  let minGap = Infinity;
+  for (let i = 0; i < colliders.length; i++) for (let j = i + 1; j < colliders.length; j++) {
+    const a = colliders[i], b = colliders[j]; minGap = Math.min(minGap, Math.hypot(a.x - b.x, a.y - b.y) - a.rc - b.rc);
+  }
+  check(inBoar === 0 ? 'pass' : 'fail', 'map: ' + inBoar + ' placements inside the boar-route capsule (1461,1031)-(1444,1035) r 4');
+  check(inWalk === 0 ? 'pass' : 'fail', 'map: ' + inWalk + ' placements inside the walk-out capsule r 4.5');
+  check(colliders.length < 2 || minGap >= 1.2 ? 'pass' : 'fail', 'map: ' + colliders.length + ' collider props, smallest surface gap ' +
+    (colliders.length < 2 ? '-' : minGap.toFixed(2) + ' m') + ' (bar 1.2 m, circumradius approx.)');
+  check('info', 'map window ' + W + ' x ' + W + ' m: ' + pts.length + ' placements (' + CFG.layers.map((L, li) => L.name + ' ' + per[li]).join(', ') + ')');
+  $('mapCap').textContent = 'window ' + W + ' m, 1 px = ' + (1 / k).toFixed(2) + ' m; ' + pts.length + ' placements; types: grass, forest, water, rock (grey), path (brown)';
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+let luDirty = true, pDirty = true;
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl();
+  if (el.id.startsWith('lu')) luDirty = true; else if (el.id.startsWith('p')) pDirty = true; else { luDirty = true; pDirty = true; }
+}));
+try { renderMap(); } catch (e) { check('fail', 'map render threw - ' + (e.message || e)); console.error(e); }
+check(nFail ? 'fail' : 'pass', 'summary: ' + nFail + ' fail, ' + nWarn + ' warn');
+function loop() {
+  try {
+    if (luDirty) { luDirty = false; renderLineup(); }
+    if (pDirty && CFG) { pDirty = false; renderPatches(); }
+  } catch (e) { $('fatal').textContent = 'render threw: ' + (e.message || e); console.error(e); return; }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -40,6 +40,17 @@
         "9132"
       ],
       "port": 9132
+    },
+    {
+      "name": "pcb-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "tools/serve.py",
+        "9140",
+        "--directory",
+        "C:/dev/projects/game_project_test"
+      ],
+      "port": 9140
     }
   ]
 }
