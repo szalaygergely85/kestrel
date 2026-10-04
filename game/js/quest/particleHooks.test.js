@@ -78,7 +78,7 @@ function defineAllPresets(p) {
   const fire = world.get('tower.burnerFire');
   ok('burnerFire loads at the grate without collision', !!fire && fire.data.transform.x === handle.data.transform.x && fire.data.transform.y === handle.data.transform.y && fire.data.transform.z === 1.05 && !fire.data.components.body);
   const model = assets.model('burnerFire');
-  ok('burnerFire resolves the animated metre-high body', model.world.h === 1.0 && model.world.w === 0.7 && model.animations.burn.frames.length === 8);
+  ok('burnerFire resolves the resized animated body', model.world.h === 0.75 && model.world.w === 0.5 && model.animations.burn.frames.length === 8);
   ok('burnerFire content selects burn animation', fire.data.components.sprite.model === 'burnerFire' && fire.data.components.sprite.anim === 'burn' && fire.data.components.sprite.loop);
   ok('the old burnerFlame billboard prop is gone (removed, not hidden)', !world.get('tower.burnerFlame'));
 }

@@ -392,7 +392,7 @@
     desc: 'US-053c / 36.2: the burner\'s fire body, Build-engine style - a white-yellow core low in the mouth, ' +
           'orange licking tongues with ragged red tips and detached flicks, over a bed of embers. All emissive. ' +
           'Particles add embers + smoke above it.',
-    size: { w: 13, h: 11 }, anchor: { x: 6, y: 10 }, world: { w: 0.7, h: 1.0 },
+    size: { w: 13, h: 11 }, anchor: { x: 6, y: 10 }, world: { w: 0.5, h: 0.75 },
     directions: ['S'], billboard: true,
     keys: {
       '1': { c: 'flameTip', e: true }, '2': { c: 'flameOuter', e: true },

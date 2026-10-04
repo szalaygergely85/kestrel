@@ -28,7 +28,7 @@
 // mirroring `applySceneFade` exactly. `uSceneFade >= 1.0` is skipped
 // entirely (identity, matches `fadeGlyph`'s `a >= 1` fast path).
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK, BYTE_OUT } from './common.js';
-import { MAX_SPRITES } from '../../sprites.js';
+import { MAX_SPRITES, SPRITE_NEAR_DEPTH } from '../../sprites.js';
 
 export function spritesFragSrc({ depthUint = true } = {}) {
   const depthDecl = depthUint
@@ -74,6 +74,7 @@ uniform sampler2D uPart;   // RGBA8: rgb colour, a = glyph index / 255 (CellBuff
 uniform sampler2D uPartZ;  // R32F: depth (0 = empty)
 
 const int MAX_SPRITES = ${MAX_SPRITES};
+const float SPRITE_NEAR_DEPTH = ${SPRITE_NEAR_DEPTH};
 
 ${GBUF_UNPACK}
 ${BYTE_OUT}
@@ -102,6 +103,7 @@ void main() {
     int x0 = int(r.x), y0 = int(r.y);
     if (cell.x < x0 || cell.x >= x0 + int(r.z) || cell.y < y0 || cell.y >= y0 + int(r.w)) continue;
     vec4 p = texelFetch(uSpr, ivec2(1, s), 0);
+    if (p.y < SPRITE_NEAR_DEPTH) continue; // BUG-FIRE-001: same cutoff for lit and emissive sprites.
     if (!(p.y < cellDepth) || !(p.y < best)) continue;
     vec4 a = texelFetch(uSpr, ivec2(2, s), 0);
     int sx = int(floor(float(cell.x - x0) * p.x));

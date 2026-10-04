@@ -67,7 +67,7 @@
       maxLive: 16, killBelow: null,
       glyphs:  "**+o+o+o",
       colors: ['emberHot', 'emberHot', 'flameMid', 'flameMid', 'ember', 'ember', 'emberDim', 'emberDim'],
-      emissive: true, emissiveFog: 0.15, sizeM: 0.08
+      emissive: true, emissiveFog: 0.15, sizeM: 0.06
     },
     // --- smoke: slow, dark, drifting. Buoyant (accelZ +0.6, terminal 0.75 m/s), takes the full wind (wind 1), lives
     // 3-4 s, so it climbs ~2-2.5 m past the burner and leans with any draught. Puffs `O o` near the source, thin

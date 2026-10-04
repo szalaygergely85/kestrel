@@ -47,6 +47,7 @@ export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
 export const SPR_STRIDE = SPR_TEXELS * 4; // floats per sprite
 export const HORIZON_DEPTH = 1e6; // architecture.md 14.4 item 13: farther than any finite depth (terrain <= 1500 m)
+export const SPRITE_NEAR_DEPTH = Math.fround(0.6); // BUG-FIRE-001: match the GLSL f32 cutoff.
 const MIN_DEPTH = 0.1;
 const DEG2RAD = Math.PI / 180;
 const LOD_HALF_BELOW = 0.75;
@@ -505,6 +506,7 @@ export function drawSprites(fb, pool, layer) {
     const o = s * SPR_STRIDE;
     const x0 = spr[o], y0 = spr[o + 1], w = spr[o + 2], h = spr[o + 3];
     const invScale = spr[o + 4], sDepth = spr[o + 5], fogF = spr[o + 6], visible = spr[o + 7] !== 0;
+    if (sDepth < SPRITE_NEAR_DEPTH) continue; // Cull even emissive texels when the eye enters a sprite.
     const ax = spr[o + 8], ay = spr[o + 9], srcW = spr[o + 10], srcH = spr[o + 11];
     const mulR = spr[o + 12], mulG = spr[o + 13], mulB = spr[o + 14];
     // US-016 (architecture.md 14.4 item 14): per-sprite fog colour (T4), not
