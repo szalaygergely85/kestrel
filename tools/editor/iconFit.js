@@ -1,5 +1,15 @@
 // OWN-REQ-014: pure sizing, definition hashes and the one-icon-per-frame queue.
-export const ICON_VERSION = 1;
+export const ICON_VERSION = 2; // 2: voxel icons show only the model's cells (owner 2026-10-04: no floor/room behind)
+
+/** Cell bounds of `keepKind` cells in a cols x rows kind grid, or null if there are none. */
+export function kindBounds(kind, cols, rows, keepKind) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (kind[r * cols + c] !== keepKind) continue;
+    if (c < x0) x0 = c; if (c > x1) x1 = c; if (r < y0) y0 = r; if (r > y1) y1 = r;
+  }
+  return x1 < 0 ? null : { x0, y0, x1, y1 };
+}
 
 /** Numeric billboard containers use the same #0 entry as a prop's variant:0. */
 export function iconModel(model) {

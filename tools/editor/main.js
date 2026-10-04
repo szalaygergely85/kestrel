@@ -44,7 +44,7 @@ import { parseVox, buildVoxelModel, usedPaletteEntries } from '../voxParse.js';
 import { autoMapColors } from '../voxAutoMap.js';
 import { deriveVoxModelName } from './voxImportName.js';
 import { createRebuildScheduler } from './rebuildScheduler.js';
-import { createIconCache, createIconQueue } from './iconFit.js';
+import { createIconCache, createIconQueue, iconModel } from './iconFit.js';
 import { createIconRenderer } from './iconRender.js';
 
 const params = new URLSearchParams(location.search);
@@ -855,6 +855,9 @@ function showIcon(host, url) {
   host.appendChild(img);
 }
 function requestIcon(key, priority = false) {
+  // Sprite (billboard) models keep their ASCII thumbnail: they are flat glyph art, and in the
+  // 3D icon scene they would sit small in front of the floor/room (owner 2026-10-04).
+  if (!iconModel(assets.model(key)).voxel) return null;
   const hash = iconCache.key(key, assets.model(key));
   const previous = iconRequests.get(key);
   const url = iconCache.get(hash);
