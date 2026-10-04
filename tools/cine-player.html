@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ASCII Quest cinematic player</title>
+<style>
+body{background:#141818;color:#ddd;font:15px system-ui;margin:24px}button,input{font:inherit;margin:4px}#screen{font:10px/1 'Courier New',monospace;white-space:pre;width:max-content}#screen span{display:inline-block;width:1ch}#status{margin:12px 0}#seek{width:min(600px,80vw)}
+</style>
+<h1>Cinematic player</h1>
+<p>Open a captured frames.jsonl file.</p>
+<input id="file" type="file" accept=".jsonl">
+<button id="play" disabled>Play</button>
+<input id="seek" type="range" min="0" max="0" value="0" disabled aria-label="Frame">
+<div id="status" role="status">No capture loaded.</div>
+<div id="screen" aria-label="ASCII animation"></div>
+<script type="module">
+const file = document.getElementById('file'), play = document.getElementById('play');
+const seek = document.getElementById('seek'), status = document.getElementById('status'), screen = document.getElementById('screen');
+let frames = [], cells = [], timer = null;
+function stop() { clearInterval(timer); timer = null; play.textContent = 'Play'; }
+function show(i) {
+  const frame = frames[i];
+  for (let n = 0; n < cells.length; n++) {
+    const p = n * 4, cell = cells[n];
+    cell.textContent = String.fromCharCode(32 + frame.fg[p + 3]);
+    cell.style.color = `rgb(${frame.fg[p]},${frame.fg[p + 1]},${frame.fg[p + 2]})`;
+    cell.style.backgroundColor = `rgb(${frame.bg[p]},${frame.bg[p + 1]},${frame.bg[p + 2]})`;
+  }
+  seek.value = i; status.textContent = `Frame ${i + 1} / ${frames.length} · ${frame.t.toFixed(2)} s · ${frame.fps} fps`;
+}
+file.addEventListener('change', async () => {
+  stop(); play.disabled = seek.disabled = true;
+  try {
+    frames = (await file.files[0].text()).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    const first = frames[0];
+    if (!first || !Number.isInteger(first.cols) || !Number.isInteger(first.rows) || first.cols < 1 || first.cols > 480 || first.rows < 1 || first.rows > 180 || !Number.isFinite(first.fps) || first.fps < 1 || first.fps > 60) throw new Error('Invalid capture dimensions/fps');
+    const size = first.cols * first.rows * 4;
+    for (const f of frames) {
+      if (f.cols !== first.cols || f.rows !== first.rows || f.fps !== first.fps || !Number.isFinite(f.t) || f.fg?.length !== size || f.bg?.length !== size || [...f.fg, ...f.bg].some((v) => !Number.isInteger(v) || v < 0 || v > 255)) throw new Error('Invalid frame cells');
+    }
+    screen.replaceChildren(); cells = [];
+    for (let y = 0; y < first.rows; y++) {
+      for (let x = 0; x < first.cols; x++) { const cell = document.createElement('span'); cells.push(cell); screen.append(cell); }
+      screen.append(document.createTextNode('\n'));
+    }
+    seek.max = frames.length - 1; play.disabled = seek.disabled = false; show(0);
+  } catch (error) { frames = []; screen.replaceChildren(); status.textContent = error.message; }
+});
+seek.addEventListener('input', () => { stop(); show(Number(seek.value)); });
+play.addEventListener('click', () => {
+  if (timer) { stop(); return; }
+  if (Number(seek.value) === frames.length - 1) show(0);
+  play.textContent = 'Pause';
+  timer = setInterval(() => { const next = Number(seek.value) + 1; if (next >= frames.length) stop(); else show(next); }, 1000 / frames[0].fps);
+});
+</script>
+</html>
