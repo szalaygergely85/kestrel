@@ -1,0 +1,64 @@
+{
+  "kind": "level",
+  "schema": 1,
+  "id": "waterfall_cliff",
+  "nextId": 1,
+  "name": "waterfall_cliff",
+  "title": "Waterfall cliff",
+  "version": 1,
+  "cellSize": 1,
+  "size": {
+    "h": 26,
+    "w": 18
+  },
+  "rows": [
+    "##################",
+    "##################",
+    "##################",
+    "##################",
+    "####aaaaaaaaaa####",
+    "####aaaaaaaaaa####",
+    "####aaaaaaaaaa####",
+    "######......######",
+    ".....pppppppp.....",
+    ".....pppppppp.....",
+    ".....pppppppp.....",
+    ".....pppppppp.....",
+    ".....pppppppp.....",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    "..................",
+    ".................."
+  ],
+  "legend": {
+    ".": {"ceilH": "sky", "ceilMat": "sky", "floorH": 0.15, "floorMat": "floor", "solid": false, "wallMat": "stone"},
+    "#": {"ceilH": "sky", "ceilMat": "sky", "floorH": 8, "floorMat": "moss_top", "solid": true, "wallMat": "stone_moss"},
+    "a": {"ceilH": 4.5, "ceilMat": "stone", "floorH": 0.15, "floorMat": "floor", "solid": false, "topH": 8, "upperMat": "stone_moss", "wallMat": "stone"},
+    "p": {"ceilH": "sky", "ceilMat": "sky", "floorH": -0.9, "floorMat": "rubble", "solid": false, "wallMat": "stone"}
+  },
+  "start": {
+    "eyeH": 1.6,
+    "facingDeg": 0,
+    "pitchDeg": 7,
+    "pose": "standing",
+    "x": 9,
+    "y": 23
+  },
+  "props": [],
+  "triggers": [],
+  "water": [
+    {"id": "plunge", "c": [9, 8.91662969499982], "flowRadial": 0.7, "look": "water", "r": 3.2, "shape": "circle", "waves": "none", "z": 0}
+  ],
+  "waterfalls": [
+    {"id": "waterfall", "drop": 8, "lip": [6, 7, 12, 7], "look": "waterfall", "out": 1.5, "outDeg": 180, "z": 8}
+  ]
+}

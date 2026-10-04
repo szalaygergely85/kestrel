@@ -1,0 +1,27 @@
+{
+  "kind": "world",
+  "schema": 1,
+  "id": "waterfall_test",
+  "nextId": 1,
+  "name": "waterfall_test",
+  "version": 1,
+  "title": "Waterfall cliff",
+  "sun": {
+    "azimuth": 135,
+    "elevation": 55,
+    "preset": "sun"
+  },
+  "structures": [
+    {"id": "cliff", "level": "waterfall_cliff", "origin": {"x": 0, "y": 0, "z": 0}, "yawSteps": 0}
+  ],
+  "entities": [
+    {"id": "player", "spawn": {"from": "start", "structure": "cliff"}, "type": "player"}
+  ],
+  "state": {},
+  "bounds": {
+    "r": 30,
+    "shape": "circle",
+    "x": 9,
+    "y": 9
+  }
+}

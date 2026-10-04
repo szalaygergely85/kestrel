@@ -69,6 +69,7 @@ import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
+import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -123,7 +124,8 @@ if (gridParam) {
 // ?voxelbench=, ?gpucompare=), which must stay comparable across runs
 // regardless of what the player last saved (PC-A PO REJECT, backlog row 30f).
 const savedSettings = loadSettings();
-const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic');
+const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test' && params.get('renderer') === 'mesh';
+const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic') || isWaterfallPreview;
 if (!gridParam && !isCaptureOrBench) {
   const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
   if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
@@ -327,6 +329,8 @@ const terrainEnabled = params.get('terrain') !== '0';
 // pass (tower only, this story); default 'dda' is every existing pass,
 // completely unchanged.
 const renderer = (params.get('renderer') || DEFAULT_RENDERER) === 'mesh' ? 'mesh' : 'dda';
+const waterfallPreset = renderer === 'mesh' ? window.ASSETS.waterfall : null;
+if (waterfallPreset) window.ASSETS.waterLooks.waterfall = waterfallPreset.look;
 // RE-02b (28.1 A2 item 6): first person is pitched on the mesh renderer (look clamp 70), shear on dda (35).
 // Set from the EFFECTIVE renderer once the GPU pipeline is known (review: ?renderer=mesh can fall back to CPU = shear).
 let pitchClampDeg = 35;
@@ -422,6 +426,9 @@ if (particlePresets) {
   for (const k of Object.keys(particlePresets.presets)) {
     engine.particles.defineEmitter(k, particlePresets.toEmitterDef(k, assets.palette.rgb));
   }
+}
+if (waterfallPreset) {
+  for (const k of Object.keys(waterfallPreset.presets)) engine.particles.defineEmitter(k, waterfallPreset.toEmitterDef(k, assets.palette.rgb));
 }
 // US-053a: created once for the page's lifetime (not per world load) - it follows 'world:loaded'/
 // 'entity:added'/'entity:removed' internally and needs no dispose/recreate from this session.
@@ -606,6 +613,7 @@ function runGame(mode, cinematic = null) {
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
+  let waterfallHooks = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
   const cinematicHours = cinematic && Number.isFinite(cinematic.keys[0].hour);
@@ -725,6 +733,8 @@ function runGame(mode, cinematic = null) {
       applyPropEmitters(world); // US-053c: content `emitters` -> components.emitters, same timing rule as applyPropTargetables above
       if (particleHooks) particleHooks.dispose();
       particleHooks = createParticleHooks(world, engine.events, engine.particles, particlePresets, engine.physics.gravity);
+      if (waterfallHooks) waterfallHooks.dispose();
+      waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -760,6 +770,11 @@ function runGame(mode, cinematic = null) {
         const c = typeof gatePose.cam === 'function' ? gatePose.cam(rt, world) : gatePose.cam; // RE-02a: rtsHill58's eye depends on the live grid aspect
         const gz = c.groundEye && world.terrain ? world.terrain.groundAt(c.x, c.y) + c.z : c.z;
         Object.assign(startT, { x: c.x, y: c.y, z: gz - engine.physics.eyeHeight, yawDeg: c.yawDeg, pitchDeg: c.pitchDeg });
+        playerHandle.data.components.body.peakZ = startT.z;
+      }
+      const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
+      if (waterfallView) {
+        Object.assign(startT, waterfallView);
         playerHandle.data.components.body.peakZ = startT.z;
       }
       if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
@@ -841,7 +856,9 @@ function runGame(mode, cinematic = null) {
       if (cinematicHours) applySunHours(world, lightSet, cam.hour, worldSunPath, sunEnabled);
       if (world.cloths) world.cloths.tick(clothTick, world.wind, cam.x, cam.y, cam.z);
       stepAnimations(world, dt * 1000);
+      if (waterfallHooks) waterfallHooks.step();
       entityEmitters.sync(); engine.particles.step();
+      if (waterfallHooks) waterfallHooks.afterStep();
       return;
     }
     // US-020a: `N` = mute toggle, always available (does not conflict with
@@ -980,7 +997,9 @@ function runGame(mode, cinematic = null) {
       }
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
+      if (waterfallHooks) waterfallHooks.step();
       entityEmitters.sync(); engine.particles.step();
+      if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
       // US-020a: footsteps (distance accumulator + `body.landed`) and the
       // boulder-thud speed watch - after physics settles this step's
@@ -1221,7 +1240,7 @@ function runGame(mode, cinematic = null) {
       // OWN-REQ-003 (17.4): drawn into the fixed UI layer (`ui`), not the
       // scene (`rt`), so every one of these reads at the same physical size
       // regardless of `?grid=`.
-      if (!ending && !uiLockedNow && !cinematic) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
+      if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
         drawHints(ui, assets.uiStyle, fadeLut);
         drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen); // 17.4: stays in the scene grid (an eyelid over the 3D view, not UI text)
@@ -1255,9 +1274,9 @@ function runGame(mode, cinematic = null) {
     }
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
-    if (mode === 'world' && !look.locked && !isMapOpen() && !cinematic) drawPauseOverlay(ui, rt, assets);
+    if (mode === 'world' && !look.locked && !isMapOpen() && !cinematic && !isWaterfallPreview) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
-    if (!cinematic) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
+    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel waterfall views</title>
+<style>
+body{margin:24px;background:#07080c;color:#d8d2c0;font:15px/1.5 system-ui}h1{font-size:24px}a{color:#8fc8f0}.views{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:20px}iframe{width:100%;height:480px;border:1px solid #34373d;background:#000}h2{font-size:18px}table{border-collapse:collapse}td,th{padding:6px 12px;border:1px solid #34373d;text-align:left}
+</style></head>
+<body><h1>Waterfall cliff</h1>
+<p>Walk the cliff and the sheltered alcove in the game. The same sheet can be seen from both sides; spray and mist meet the plunge pool.</p>
+<div class="views">
+<section><h2>Front: sheet, spray and plunge pool</h2><iframe title="Waterfall front" src="../../game/index.html?world=waterfall_test&amp;renderer=mesh&amp;waterfallview=front&amp;waterfallpreview=1"></iframe><p><a href="../../game/index.html?world=waterfall_test&amp;renderer=mesh&amp;waterfallview=front" target="_blank">Open front view to walk</a></p></section>
+<section><h2>Back: inside the alcove</h2><iframe title="Waterfall back" src="../../game/index.html?world=waterfall_test&amp;renderer=mesh&amp;waterfallview=back&amp;waterfallpreview=1"></iframe><p><a href="../../game/index.html?world=waterfall_test&amp;renderer=mesh&amp;waterfallview=back" target="_blank">Open alcove view to walk</a></p></section>
+</div>
+<details><summary>Waterfall tuning numbers</summary>
+<table><tr><th>Part</th><th>Numbers</th></tr>
+<tr><td>Sheet</td><td>6 m wide; 8 m drop; out 1.5 m/s south; 10 m/s glyph scroll; ramp |:'; alpha .75; highlight RGB 196/220/239</td></tr>
+<tr><td>Lip splash</td><td>12/s; .35–.65 s life; .3–.6 m/s; 40° spread; 12 live cap; :'. ramp; existing riverLight/skyHorizon/river colours</td></tr>
+<tr><td>Foot spray</td><td>48/s; .45–.9 s life; 1.5–2.8 m/s; 65° spread; 48 live cap; *+:'. ramp</td></tr>
+<tr><td>Mist</td><td>16/s; 1.2–2 s life; .15–.4 m/s; 32 live cap; :'. ramp; riverLight → river → ironDark</td></tr>
+<tr><td>Pool</td><td>3.2 m radius; surface 0 m, bed −.9 m; outward flow .7 m/s; no waves</td></tr>
+<tr><td>Ripple rings</td><td>One every .7 s; 32 points; .18 m initial radius; expand at 1.6 m/s; 1.5 s life; maximum radius 2.58 m; o:'. ramp fades white → riverLight → river → ironDark; 96 live cap</td></tr>
+<tr><td>Foot</td><td>Exact ballistic landing x9, y8.91663, z0; tau = sqrt(8/4.9) s</td></tr>
+<tr><td>Budget</td><td>188 particles + 4 emitters per fall; maximum 8 falls = 1504 particles, 32 emitters, within shared 2048/64 pools</td></tr>
+</table></details>
+</body></html>
