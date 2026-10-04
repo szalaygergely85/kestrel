@@ -740,7 +740,7 @@ function runGame(mode, cinematic = null) {
           look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg;
         },
       });
-      resetPickups(); // US-080b (30.2): same "rebuilt on every load/restart" precedent as beasts/vitals above
+      resetPickups(world); // BUG-PICKUP-001: reindex retained drops on every load/restart.
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {

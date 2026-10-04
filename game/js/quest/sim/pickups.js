@@ -21,13 +21,21 @@ export const MAX_DROPS = 16;
 
 const slots = new Array(MAX_DROPS).fill(null); // entity id per slot, null = empty
 
-/** Rebuilds runtime-only state. Call from the 'world:loaded' handler (first load AND every restart/reload). */
-export function resetPickups() {
+/** Rebuilds runtime-only state from retained drops on every world load; no world clears fixture state. */
+export function resetPickups(world) {
   for (let i = 0; i < MAX_DROPS; i++) slots[i] = null;
+  if (!world) return;
+  world.forEachEntity((e, id) => {
+    const p = e.components && e.components.pickup;
+    if (!p) return;
+    const slot = findSlot(world, p.life);
+    if (slot < 0) world.remove(id);
+    else slots[slot] = id;
+  });
 }
 
-/** Finds a free slot, or evicts the oldest (least `life` remaining) live one when the table is full. */
-function findSlot(world) {
+/** Finds a free slot or evicts the least-life drop. On load, reject an incoming drop older than all slots. */
+function findSlot(world, incomingLife = Infinity) {
   for (let i = 0; i < MAX_DROPS; i++) if (slots[i] === null) return i;
   let minI = 0, minLife = Infinity;
   for (let i = 0; i < MAX_DROPS; i++) {
@@ -35,6 +43,7 @@ function findSlot(world) {
     const life = e && e.components.pickup ? e.components.pickup.life : -1;
     if (life < minLife) { minLife = life; minI = i; }
   }
+  if (incomingLife < minLife) return -1;
   if (world.entity(slots[minI])) world.remove(slots[minI]);
   return minI;
 }
@@ -48,8 +57,9 @@ let nextId = 1;
  * @param {'hp'|'mp'} kind
  */
 export function spawnDrop(world, kind, x, y, z) {
+  let id;
+  do { id = `pickup_${nextId++}`; } while (world.entity(id));
   const slot = findSlot(world);
-  const id = `pickup_${nextId++}`;
   slots[slot] = id;
   world.spawn('pickup', { x, y, z, yawDeg: 0, pitchDeg: 0 }, {
     // `baseZ` = the drop point's own z, kept separate from `transform.z` so the view's hover/bob (presentPickups,
