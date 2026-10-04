@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "grassland",
+  "fps": 30,
+  "note": "D-036 shot 'grassland': crane-up lateral sweep along the west edge of the crown (x ~1465, 15 m west of the tower bbox), moving north while panning 225 -> 293 over the land falling ~70 m to the west: path, boars (1461/1031, 1444/1035), waystone (1428, 1040), river glint, signal tower on the horizon at yaw ~255. Eye 7 -> 11.8 m over ~2.3 m ground. Intended hour (US-122): 10:00 clear morning.",
+  "keys": [
+    { "t": 0,    "x": 1468.0, "y": 1042.0, "z": 7.0,  "yawDeg": 225, "pitchDeg": -6,   "ease": "linear" },
+    { "t": 3.25, "x": 1466.5, "y": 1033.0, "z": 8.2,  "yawDeg": 243, "pitchDeg": -5,   "ease": "linear" },
+    { "t": 6.5,  "x": 1465.0, "y": 1024.0, "z": 9.4,  "yawDeg": 260, "pitchDeg": -4,   "ease": "linear" },
+    { "t": 9.75, "x": 1465.5, "y": 1015.0, "z": 10.6, "yawDeg": 277, "pitchDeg": -3.5, "ease": "linear" },
+    { "t": 13,   "x": 1467.0, "y": 1006.0, "z": 11.8, "yawDeg": 293, "pitchDeg": -3,   "ease": "linear" }
+  ]
+}

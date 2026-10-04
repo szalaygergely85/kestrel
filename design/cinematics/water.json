@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "water",
+  "fps": 30,
+  "note": "D-036 shot 'water': low glide across quietPond (c 1500, 1010, r 4, surface z 2.5) from the NE towards the tower's north wall (y 1019, x 1494..1499, top 8.5 m). Eye 3.6 -> 2.95 m (0.45 m over the water at the pond centre), then rises to 3.4 m and tilts up (+30) at the wall. Intended hour (US-122): 08:00 morning, low sun from the east for glints.",
+  "keys": [
+    { "t": 0,   "x": 1509.0, "y": 1001.0, "z": 3.6,  "yawDeg": 225, "pitchDeg": -12, "ease": "linear" },
+    { "t": 2.6, "x": 1505.0, "y": 1005.2, "z": 3.1,  "yawDeg": 222, "pitchDeg": -10, "ease": "linear" },
+    { "t": 5.2, "x": 1501.2, "y": 1009.0, "z": 2.95, "yawDeg": 215, "pitchDeg": -4,  "ease": "linear" },
+    { "t": 7.6, "x": 1498.0, "y": 1012.5, "z": 3.1,  "yawDeg": 205, "pitchDeg": 8,   "ease": "linear" },
+    { "t": 10,  "x": 1495.5, "y": 1014.5, "z": 3.4,  "yawDeg": 195, "pitchDeg": 30,  "ease": "linear" }
+  ]
+}

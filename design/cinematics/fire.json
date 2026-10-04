@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "fire",
+  "fps": 30,
+  "note": "D-036 shot 'fire': slow push-in on the Kestrel burner inside the tower (burner world 1498.5, 1024.5; fire body z 1.05, torch light z 1.2; lit lamp behind it at 1499.9). Camera stays on the floor-0 cells x 1495..1498, y 1025..1027 (south of the stairwell canvas at y 1022, clear of the practice target 1494.6/1024.6 and the gondola 1495.4/1026.7), eye 1.7 -> 1.1 m, arcs from WSW to S of the fire and tilts up with the smoke (+38) at the end. Intended hour (US-122): 19:30 dusk, so the fire light dominates.",
+  "keys": [
+    { "t": 0,  "x": 1495.2, "y": 1025.6,  "z": 1.6,  "yawDeg": 71.6, "pitchDeg": -5, "ease": "linear" },
+    { "t": 3,  "x": 1496.0, "y": 1025.9,  "z": 1.35, "yawDeg": 60.8, "pitchDeg": -2, "ease": "linear" },
+    { "t": 6,  "x": 1496.7, "y": 1026.25, "z": 1.15, "yawDeg": 45.8, "pitchDeg": 0,  "ease": "linear" },
+    { "t": 9,  "x": 1497.5, "y": 1026.5,  "z": 1.1,  "yawDeg": 26.6, "pitchDeg": 8,  "ease": "linear" },
+    { "t": 12, "x": 1498.0, "y": 1026.6,  "z": 1.2,  "yawDeg": 13.4, "pitchDeg": 38, "ease": "linear" }
+  ]
+}
