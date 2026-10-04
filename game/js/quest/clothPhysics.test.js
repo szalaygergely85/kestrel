@@ -52,8 +52,14 @@ assert.ok(displacement > 0.05, `capsule pushes the cloth aside (${displacement})
 const restored = deserialize(JSON.parse(JSON.stringify(serialize(world))), assets);
 restored.wind.sampleInto(...anchor, 0, wind);
 assert.ok(Math.abs(wind[1]) > 0, 'the authored draft survives save/load');
-// Owner pose: cloth contact must not alter the player's collision trajectory.
+// Owner pose: the removed cheek-wall cell lets the player cross the canvas row.
+const tower = assets.level('tower');
+assert.equal(tower.rows[4][18], '3', 'the removed cheek wall becomes the adjacent 0.9 m stair landing');
+assert.equal(tower.legend['3'].solid, false);
+assert.equal(tower.rows[3].slice(16, 20), '1234', 'the original stair run stays intact');
+assert.equal(tower.rows[4].slice(16, 18), 'cc', 'the remaining cheek wall and mason mark stay intact');
 const P = PHYSICS_DEFAULTS, steps = Math.round(3 / P.fixedDt);
+const passage = [];
 function walkOwnerPose(physics, clothOn) {
   const w = World.load(assets.world('world_m1'), assets, { physics });
   const player = { id: 'probe', transform: { x: 1500.14, y: 1022.57, z: 1.8, yawDeg: 276, pitchDeg: -17 },
@@ -62,25 +68,38 @@ function walkOwnerPose(physics, clothOn) {
   const t = player.transform, b = player.components.body;
   const controls = { forward: 1, run: false, yawDeg: 276, pitchDeg: -17 };
   const trace = new Float64Array(steps * 3);
+  const clothTrace = new Float32Array(steps * w.cloths.cloths[0].pos.length);
+  let crossedAt = -1;
   assert.equal(w.get('tower.burnerFire').data.components.body, undefined, 'fire artwork has no physical body');
   for (let i = 0; i < steps; i++) {
     stepSectorAnims(w, P.fixedDt);
     integrate(player, P.fixedDt, controls, w, P);
-    if (clothOn) {
-      w.cloths.setBody(0, t.x, t.y, t.z, b.radius, b.height);
-      w.cloths.tick(i + 1, w.wind, t.x, t.y, t.z + b.eyeH);
-    }
+    if (clothOn) w.cloths.setBody(0, t.x, t.y, t.z, b.radius, b.height);
+    else w.cloths.clearBodies();
+    w.cloths.tick(i + 1, w.wind, t.x, t.y, t.z + b.eyeH);
     stepRollers(w, P.fixedDt, P);
     resolveBodyContacts(w, player, P);
-    if (clothOn) w.cloths.markDrawn(0);
+    w.cloths.markDrawn(0);
+    clothTrace.set(w.cloths.cloths[0].pos, i * w.cloths.cloths[0].pos.length);
+    if (crossedAt < 0 && t.y + b.radius < 1022) crossedAt = i + 1;
     trace[i * 3] = t.x; trace[i * 3 + 1] = t.y; trace[i * 3 + 2] = t.z;
   }
-  assert.ok(t.x < 1498, `${physics}: 3 seconds at the owner heading clears the cheek-wall corner`);
-  return trace;
+  assert.ok(crossedAt > 0 && crossedAt <= steps, `${physics}: the whole capsule crosses the canvas row within 3 seconds`);
+  assert.ok(t.x < 1498 && t.y + b.radius < 1022, `${physics}: the owner heading continues through to the stair lane`);
+  if (clothOn) passage.push(`${physics} ${(crossedAt * P.fixedDt).toFixed(3)} s to clear row, end (${t.x.toFixed(6)}, ${t.y.toFixed(6)}, ${t.z.toFixed(6)})`);
+  return { trace, clothTrace };
 }
 for (const physics of ['grid', 'mesh']) {
-  assert.deepEqual(walkOwnerPose(physics, true), walkOwnerPose(physics, false),
+  const contact = walkOwnerPose(physics, true), noContact = walkOwnerPose(physics, false);
+  assert.deepEqual(contact.trace, noContact.trace,
     `${physics}: cloth cannot block the player or change any movement step`);
+  let parting = 0;
+  for (let i = 0; i < contact.clothTrace.length; i++) {
+    parting = Math.max(parting, Math.abs(contact.clothTrace[i] - noContact.clothTrace[i]));
+  }
+  assert.ok(parting > 0.05, `${physics}: the crossing capsule parts the cloth beyond wind-only motion (${parting})`);
+  passage.push(`${physics} contact parting ${parting.toFixed(4)} m`);
 }
 
+console.log(passage.join('\n'));
 console.log(`cloth physics: sway ${sway.toFixed(4)} m, capsule displacement ${displacement.toFixed(4)} m. ALL PASS`);
