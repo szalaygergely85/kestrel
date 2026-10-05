@@ -1193,7 +1193,7 @@ function runGame(mode, cinematic = null) {
           const swordMoving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
           presentSword(sword, swordVmH, engine.overlay, cam, swordStyleIds, simTime, simTime, swordMoving);
         } else {
-          swordVmH.vm.hide();
+          swordVmH.vm.hide(swordVmH.h);
         }
       }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).

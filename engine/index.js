@@ -86,7 +86,7 @@ export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
-export { createViewModelLayer, VM_OBJECT_ID, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
+export { createViewModelLayer, VM_OBJECT_ID, VM_MAX_HANDLES, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
 export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_BASE, MAX_INSTANCES_PER_FRAME } from './mesh/instances.js';
 export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './mesh/scatterFeed.js';
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
