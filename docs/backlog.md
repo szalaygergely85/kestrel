@@ -137,6 +137,7 @@ Suggested priorities only; these findings are not approved development stories. 
 > 4. **VOX-CAP-01** mesh path 48 voxel entities (37.7). -> `arch-review`; re-baseline the tower rows once (dressing + lanterns + cloth gondola + lamp-empty AO = known-FAIL per D-039 -> PREC-03).
 > 5. **DECAL-01** wall scrawl/decals drawn (37.6). -> `arch-review` + owner look (KEEP THE LIGHT, mason's mark visible).
 > 6. **BUG-VM-001 left-hand sword - publish now** (D-039: scene kind-1 AO at yaw 40 = known-FAIL baseline -> PREC-03). -> `arch-review` + owner walk-test (sword left, swing right-to-left).
+> 7-pre. **D-040 (owner 2026-10-05): two hands, any item in either hand, inventory first, magic now.** BUG-VM-001 left-hand mirror (item 6) and TORCH-01a may proceed but keep them hand-agnostic (`hand: 'left'|'right'` parameter, no hard-coded side); **TORCH-01b waits for the EP-HANDS spec** (PC-A PO + architect + designer).
 > 7. **TORCH-01a** view-model multi-handle (37.8) -> `arch-review`; then **TORCH-01b** torch pick-up in the right hand (apply `levelPatch.towerTorch` from design/models/torch.js + script tags + `torch.take` + the listed test updates) -> owner walk-test.
 > 8. **US-078d knockback** (after 6) -> `arch-review`.
 > 9. **ME-14c3 Ruins - publish now** (D-039: parapetSky 8 equal-key cells = known-FAIL baseline -> PREC-02), then **ME-14c4** Ruins content. -> `arch-review`.
