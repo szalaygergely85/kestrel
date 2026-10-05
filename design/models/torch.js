@@ -6,8 +6,9 @@
  * Look (Blood / Build-engine prop + sprite fire, the owner's taste): a long pine haft (0.48 m), a rope grip wrap, a
  * dark iron ferrule at the butt and an iron collar under the head, an oily rag head (dark linen) bound with a rope band,
  * charred black on top. The fire is NOT voxels: an animated emissive billboard `torchFlame` sits on the head top.
- * In the tower it stands in an iron WALL SCONCE (ring + arm + brace + wall plate) on step 8's west face, exactly where
- * the brass lamp hung, leaning 12 deg out from the wall, burning. Taking it hides the torch; the sconce stays.
+ * In the tower it stands in an iron WALL SCONCE (ring + arm + brace + wall plate) on the mid ledge's west face in the
+ * keeper's corner, where the keeper's wall lantern hangs today (v1.36, owner 2026-10-05: "change one of [the wall
+ * lanterns] to a torch"), leaning 12 deg out from the wall, burning. Taking it hides the torch; the sconce stays.
  *
  * WHAT THIS FILE SETS
  *   ASSETS.voxelModels.torchProp   the world / pick-up model: torch in its wall sconce. Clips lit (default), empty (after
@@ -136,8 +137,9 @@
         grip:   { at: [3, 6, 6.5], part: 'haft' }
       }
     },
-    placement: { level: 'tower', prop: 'torch', x: 19.9, y: 6.5, z: 1.15, facing: 270, wallX: 20.0,
-                 note: 'same x / y / facing as the brass lamp; z 1.15 puts the sconce ring at ~1.47 m and the flame base at 1.75 m' },
+    placement: { level: 'tower', prop: 'torch', x: 18.9, y: 9.3, z: 1.15, facing: 270, wallX: 19.0,
+                 note: 'v1.36: the keeper\'s-corner wall lantern spot (was the burner lamp spot x 19.9, y 6.5, wall 20.0: every ' +
+                       'world point below is -1.0 in x, y 9.3); z 1.15 puts the sconce ring at ~1.47 m and the flame base at 1.75 m' },
     readability: { note: 'At 2.5 m on 160x60 ~12 rows tall incl. flame; the flame + warm sconce light are the "take me" ' +
                    'cue (no glint, as the lit lamp, OWN-REQ-006).' }
   };
@@ -271,28 +273,44 @@
   // 6. TOWER CONTENT SWAP (TORCH-01b copies these by hand into content/levels/tower.level.json, keys alphabetical as the
   //    canonical writer wants, then runs node tools/content-canonical.test.mjs). Replaces the lamp entries 1:1.
   // ===================================================================================================================
+  // v1.36 (owner 2026-10-05: "copy the wall lantern around, and change ONE of them to a torch, so I can pick it up"):
+  // the torch now takes the place of the keeper's-corner wall lantern (props.keeperLamp, west face of the mid ledge L,
+  // wall x 19.0, y 9.3), NOT the burner lamp. The burner lamp stays a lit wall lantern (decoration: its interactable
+  // goes). Same sconce rule as before: anchor 0.1 m off the wall at facing 270, so every number is the old one - 1.0 in x
+  // with y 6.5 -> 9.3 (flame x 18.84, light x 18.823, prompt x 18.864).
   A.levelPatch.towerTorch = {
     story: 'TORCH-01b',
     stateFlag: 'tower.torch.taken',
     replace: {
-      'props[id=lantern]':   { facing: 270, id: 'torch', interactable: 'torch', model: 'torchProp', variant: 'lit', x: 19.9, y: 6.5, z: 1.15,
-                               note: 'TORCH-01 (owner 2026-10-04): pitch torch in an iron wall sconce where the brass lamp hung (step 8 west face). torch.take plays `empty` (torch hidden, sconce stays), removes torchFlame, switches the torchSconce light off' },
-      'props[id=lampFlame]': { facing: 270, id: 'torchFlame', model: 'torchFlame', variant: 'burn', x: 19.84, y: 6.5, z: 1.754,
-                               note: 'TORCH-01: the torch flame sprite at torchProp mount flame (posed lit); removed by torch.take' },
-      'lights[id=lanternHook]': { id: 'torchSconce', on: true, preset: 'torchSconce', x: 19.823, y: 6.5, z: 1.832 },
+      'props[id=keeperLamp]':      { facing: 270, id: 'torch', interactable: 'torch', model: 'torchProp', variant: 'lit', x: 18.9, y: 9.3, z: 1.15,
+                                     note: 'TORCH-01 (owner 2026-10-05): pitch torch in an iron wall sconce where the keeper\'s-corner wall lantern hung (mid ledge L west face, wall x 19.0), over the keeper\'s stool. torch.take plays `empty` (torch hidden, sconce stays), removes torchFlame, switches the torchSconce light off' },
+      'props[id=keeperLampFlame]': { facing: 270, id: 'torchFlame', model: 'torchFlame', variant: 'burn', x: 18.84, y: 9.3, z: 1.754,
+                                     note: 'TORCH-01: the torch flame sprite at torchProp mount flame (posed lit); removed by torch.take' },
+      'lights[id=keeperLamp]':     { id: 'torchSconce', on: true, preset: 'torchSconce', x: 18.823, y: 9.3, z: 1.832 },
       'interactables[id=lantern]': { flameProp: 'torchFlame', id: 'torch', interact: 'torch.take', light: 'torchSconce', once: true,
-                                     prompt: '[E] Take torch', prop: 'torch', radius: 1.8, x: 19.86, y: 6.5, z: 1.54,
+                                     prompt: '[E] Take torch', prop: 'torch', radius: 1.8, x: 18.86, y: 9.3, z: 1.54,
                                      note: 'TORCH-01b (37.8): sets tower.torch.taken, hides the torch (clip empty), removes torchFlame, sconce light off, carried light preset torch at the held flame mount, view model raise -> idle (right hand)' }
+    },
+    // the burner lamp becomes decoration (it stays lit on its hook; nothing removes its flame / light any more)
+    edit: {
+      'props[id=lantern]': { removeKeys: ['interactable'],
+                             note: 'v1.36: the brass lamp by the burner = a lit wall lantern like keeperLamp / stairLamp / swordLamp; lampFlame + lights.lanternHook stay' }
     },
     alsoUpdate: [
       'interactables[id=beacon].requires: tower.lantern.taken -> tower.torch.taken (or keep the lantern flag mapped, 37.8 old saves)',
       'triggers[id=hintBurner].note: skipIfState flag name (uiStyle.storyHints burner.on.skipIfState) -> tower.torch.taken',
       'world_m1.world.json state: add "tower.torch.taken": false',
       'tests pinning the lamp ids / model / prompt: game/js/quest/tower.test.js 3b (lines ~211-271) + section 10 (~683), ' +
-        'swordTake.test.js (lantern prop/interactable), restart.test.js (lantern rec), hints.test.js (skip flag)'
+        'swordTake.test.js (lantern prop/interactable), restart.test.js (lantern rec), hints.test.js (skip flag)',
+      'writer / PO (optional): the burner hint "The burner still glows. Take what light you can." still fires within 3 m ' +
+        'of the burner; the torch is inside that circle (2.82 m) but behind the player\'s back from the burner - reword ' +
+        'or keep (the torch is the brightest flame in the keeper\'s corner, 1.9 m from the wake spot)'
     ],
-    checks: { lampSpot: { x: 19.9, y: 6.5 }, burnerDistM: 1.34, hintBurnerR: 3, approachCell: [19, 6],
-              note: 'the torch stays inside hintBurner (r 3 round 18.5, 6.5) like the lamp; cell 19,7 / 19,6 stay clear' }
+    checks: { torchSpot: { x: 18.9, y: 9.3 }, wallX: 19.0, burnerDistM: 2.82, hintBurnerR: 3, wakeDistM: 1.91,
+              approachCell: [18, 9],
+              note: 'inside hintBurner (r 3 round 18.5, 6.5); the sconce hangs over the keeper\'s stool (18.58-18.86, 9.02-9.30, ' +
+                    'seat z 0.40) and the cold candle (top z 0.56): torch butt z ~1.16 clears both. The lever on the ledge above ' +
+                    '(19.25, 9.3, z 3.0) is 1.2 m higher. Cell 18,9 is not on the wake -> burner cells or the gap walk-off (19,8)' }
   };
 
   // ===================================================================================================================

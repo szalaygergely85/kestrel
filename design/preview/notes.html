@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Notes - READ-01 preview</title>
+<style>
+  body { background: #0b0a09; color: #cfc8b4; font: 13px/1.35 Consolas, monospace; margin: 16px; }
+  pre { margin: 0; line-height: 1; font-size: 11px; letter-spacing: 0; }
+  .ui { display: inline-block; border: 1px solid #333; }
+  h2 { font-size: 14px; color: #f0ddaa; margin: 18px 0 6px; }
+  .ok { color: #4fd66a; } .bad { color: #ff5a4a; }
+  select, button { background: #1d1914; color: #eee; border: 1px solid #554; font: inherit; }
+</style></head>
+<body>
+<h1 style="font-size:16px">READ-01 notes: <code>ASSETS.uiStyle.note</code> panel, <code>ASSETS.notes</code>, voxel <code>note</code> / <code>notePinned</code></h1>
+<div>Note: <select id="sel"></select> <label><input type="checkbox" id="dim" checked> dim scene behind (x 0.35)</label></div>
+<h2>Reading panel on the fixed 160x60 UI layer (1 UI cell = 1 char here)</h2>
+<div class="ui"><pre id="ui"></pre></div>
+<h2>Voxel pages (flat: top view, y0 = front row at the bottom of the listing is the BACK edge; pinned: front view, top row = z15)</h2>
+<div style="display:flex;gap:40px"><div><pre id="flat"></pre></div><div><pre id="pin"></pre></div></div>
+<h2>Checks</h2><div id="checks"></div>
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/title.js"></script>
+<script src="../models/notes.js"></script>
+<script>
+(function () {
+  var A = window.ASSETS, S = A.uiStyle.note, N = A.notes, R = S.rgb;
+  var W = 160, H = 60, sel = document.getElementById('sel');
+  Object.keys(N).forEach(function (k) { var o = document.createElement('option'); o.value = o.textContent = k; sel.appendChild(o); });
+  function css(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+  function esc(ch) { return ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch; }
+  function wrap(lines, w) {
+    var out = [];
+    lines.forEach(function (ln) {
+      if (ln.length <= w) { out.push(ln); return; }
+      var words = ln.split(' '), cur = '';
+      words.forEach(function (wd) {
+        while (wd.length > w) { if (cur) { out.push(cur); cur = ''; } out.push(wd.slice(0, w)); wd = wd.slice(w); }
+        if (!cur) cur = wd; else if (cur.length + 1 + wd.length <= w) cur += ' ' + wd; else { out.push(cur); cur = wd; }
+      });
+      out.push(cur);
+    });
+    return out;
+  }
+  function draw() {
+    var id = sel.value, note = N[id], g = [], x, y;
+    for (y = 0; y < H; y++) { g.push([]); for (x = 0; x < W; x++) {
+      // a fake dim scene: stone wall noise
+      var v = ((x * 7 + y * 13) % 11) / 11, ch = ' .:-=+#%'[Math.floor(v * 8)], k = document.getElementById('dim').checked ? 0.35 : 1;
+      g[y].push({ c: ch, fg: [Math.round(120 * v * k + 20 * k), Math.round(110 * v * k + 18 * k), Math.round(95 * v * k + 15 * k)], bg: [Math.round(14 * k), Math.round(12 * k), Math.round(10 * k)] });
+    } }
+    var rows = wrap(note.lines, S.text.wrap), h = Math.max(S.panel.minH, Math.min(S.panel.maxH, 8 + rows.length));
+    var px = S.panel.x, py = Math.floor((H - h) / 2), pw = S.panel.w;
+    function put(cx, cy, ch, fg, bg) { if (cx >= 0 && cx < W && cy >= 0 && cy < H) g[cy][cx] = { c: ch, fg: fg, bg: bg }; }
+    for (y = 1; y <= h; y++) put(px + pw, py + y, ' ', R.shadow, R.shadow);
+    for (x = 1; x <= pw; x++) put(px + x, py + h, ' ', R.shadow, R.shadow);
+    for (y = 0; y < h; y++) for (x = 0; x < pw; x++) put(px + x, py + y, ' ', R.ink, S.panel.bg);
+    var tp = S.frame.top.pattern, bp = S.frame.bottom.pattern;
+    for (x = 0; x < pw; x++) { put(px + x, py, tp[x % tp.length], S.frame.top.fg, S.frame.top.bg); put(px + x, py + h - 1, bp[x % bp.length], S.frame.bottom.fg, S.frame.bottom.bg); }
+    for (y = 1; y < h - 1; y++) { put(px, py + y, '|', S.frame.side.fg, S.frame.side.bg); put(px + pw - 1, py + y, '|', S.frame.side.fg, S.frame.side.bg); }
+    var t = note.title, tx = px + 1 + Math.floor((pw - 2 - t.length) / 2);
+    for (x = 0; x < t.length; x++) put(tx + x, py + S.title.row, t[x], S.title.fg, S.panel.bg);
+    for (x = S.rule.from; x <= S.rule.to; x++) put(px + x, py + S.rule.row, S.rule.glyph, S.rule.fg, S.panel.bg);
+    rows.slice(0, S.panel.maxH - 8).forEach(function (r, i) { for (x = 0; x < r.length; x++) put(px + S.text.col + x, py + S.text.row + i, r[x], S.text.fg, S.panel.bg); });
+    var foot = S.footer.parts, len = foot.reduce(function (s, p) { return s + p.text.length; }, 0), fx = px + S.footer.alignRight - len + 1;
+    foot.forEach(function (p) { for (x = 0; x < p.text.length; x++) put(fx++, py + h - 2, p.text[x], p.fg, S.panel.bg); });
+    document.getElementById('ui').innerHTML = g.map(function (row) {
+      return row.map(function (c) { return '<span style="color:' + css(c.fg) + ';background:' + css(c.bg) + '">' + esc(c.c) + '</span>'; }).join('');
+    }).join('\n');
+  }
+  // voxel slices, coloured by material char (approximate base colours)
+  var VC = { P: ['#', '#e9e2cf'], p: ['%', '#d8c493'], k: ['=', '#6c685e'], K: ['@', '#2e2b28'] };
+  function slice(rows, title) {
+    return '<span style="color:#f0ddaa">' + title + '</span>\n' + rows.map(function (r) {
+      return r.split('').map(function (ch) { var c = VC[ch]; return c ? '<span style="color:' + c[1] + '">' + c[0] + c[0] + '</span>' : '<span style="color:#333">. </span>'; }).join('');
+    }).join('\n');
+  }
+  var F = A.voxelModels.note.voxel, Pn = A.voxelModels.notePinned.voxel;
+  var top = F.layers[0].map(function (r, y) { return r.split('').map(function (ch, x) { var u = F.layers[1][y][x]; return u !== '.' ? u : ch; }).join(''); });
+  document.getElementById('flat').innerHTML = slice(top, 'note (flat), top view, y0 (front) first; z1 dog-ear merged');
+  var front = []; for (var z = Pn.size[2] - 1; z >= 0; z--) front.push(Pn.layers[z][2].split('').map(function (ch, x) { var n = Pn.layers[z][1][x]; return n !== '.' ? n : ch; }).join(''));
+  document.getElementById('pin').innerHTML = slice(front, 'notePinned, front view (z15 top), nail + curl merged');
+  var checks = [];
+  function ck(c, m) { checks.push('<div class="' + (c ? 'ok' : 'bad') + '">' + (c ? 'ok   ' : 'FAIL ') + m + '</div>'); }
+  ck(A.models.note && A.models.notePinned, 'attachNotes() registered models.note / notePinned (materials merged)');
+  Object.keys(N).forEach(function (k) {
+    var all = N[k].lines.concat([N[k].title]);
+    ck(all.every(function (s) { return /^[\x20-\x7e]*$/.test(s); }), k + ': ASCII 32-126 only, ' + wrap(N[k].lines, S.text.wrap).length + ' wrapped rows');
+  });
+  ck(N.masonChit.lines.join(' ').indexOf('StickyBizcuit') >= 0, 'OWN-REQ-013: exact "StickyBizcuit" kept');
+  ck(S.panel.x + S.panel.w + 1 <= 160 && S.text.col + S.text.wrap <= S.panel.w - 4, 'panel + shadow inside 160 cols, text 56 cols inside the frame');
+  document.getElementById('checks').innerHTML = checks.join('');
+  sel.onchange = draw; document.getElementById('dim').onchange = draw; draw();
+})();
+</script>
+</body></html>

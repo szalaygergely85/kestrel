@@ -865,6 +865,117 @@
     { level: 'tower', prop: 'dressKeeper', x: 19.0, y: 7.5, z: 0, facing: 0,
       note: 'grid origin = world (18.0, 5.0, 0); anchor = the placement point (19.0, 7.5). Candle top = (18.72, 9.16, 0.56).' });
 
+  // 6c. READ-01 note pages (owner 2026-10-05: readable notes replace the wall scrawls; texts + read panel in notes.js).
+  //     Moved here from notes.js so every loader that knows the tower knows these prop models (World.load throws otherwise).
+  (function () {
+    var CELL = 0.015;
+    // P paper (near-white linen), p aged paper edge / back of the fold (pale ochre), k faded ink, K dark ink (title) + nail
+    var MATS = { P: 'linen_light', p: 'canvas_light', k: 'linen_dark', K: 'iron_dark' };
+
+    // ===================================================================================================================
+    // 1. note: flat page, 16 x 12 x 2 voxels (0.24 x 0.18 x 0.03 m). Layer z0 = the sheet (ink is drawn INTO the sheet's
+    //    top face, so lines never stand proud); z1 = only the dog-ear: the front-right corner (x14-15, y0-1) is folded back
+    //    over the page and shows its aged back (p). Anchor = bottom centre [8, 6, 0]: level z = the surface it lies on.
+    // ===================================================================================================================
+    var FLAT_Z0 = [
+      'pPPPPPPPPPPPPP..',   // y0 (front edge): x14-15 folded away
+      'PPKKKKKKPPPPPPP.',   // title stroke (dark ink); x15 folded away
+      'PPPPPPPPPPPPPPPP',
+      'PPkkPkkkkPkkkPPp',
+      'PPPPPPPPPPPPPPPP',
+      'PPkkkPkkPkkkkkPP',
+      'PPPPPPPPPPPPPPPP',
+      'PPkkkkPkkkPkkPPP',
+      'PPPPPPPPPPPPPPPP',
+      'PPkkPkkkkkPPPPPP',   // short last line
+      'PPPPPPPPPPPPPpPP',
+      '.pPPPPPPPPPPPpp.'    // y11 (back edge): soft worn corners
+    ];
+    var FLAT_Z1 = [
+      '................',
+      '.............p..',   // the folded flap, lying on the page (its aged back up)
+      '.............pp.',
+      '................', '................', '................', '................', '................',
+      '................', '................', '................', '................'
+    ];
+    A.voxelModels.note = {
+      name: 'note',
+      displayName: 'page',
+      desc: 'A loose page lying flat: pale linen paper with faded ink lines and a darker title stroke, worn corners, the ' +
+            'front-right corner dog-eared back over the sheet. 0.24 x 0.18 m. Read with [E] (note.read, ASSETS.notes).',
+      voxel: {
+        version: 1,
+        cellM: CELL,
+        size: [16, 12, 2],
+        anchor: [8, 6, 0],
+        mats: MATS,
+        layers: [FLAT_Z0, FLAT_Z1],
+        parts: { page: { box: [0, 0, 0, 16, 12, 2], pivot: [8, 6, 0] } },      // extent 30
+        animations: { idle: { durations: [1000], loop: true, frames: [{}] } },
+        mounts: { prompt: { at: [8, 6, 1], part: 'page' } }                   // = the interactable aim point (z + 0.015)
+      },
+      readability: { note: 'At 1.5 m on 400x150 ~8 x 5 cells (top-down it is foreshortened): the pale sheet against a dark ' +
+                     'mat / floor is the cue; the ink stripes show from ~1 m.' }
+    };
+
+    // ===================================================================================================================
+    // 2. notePinned: upright page, 12 x 3 x 16 voxels (0.18 wide x 0.045 deep x 0.24 tall). The sheet is the BACK row y2
+    //    (touching the wall), ink in its front face. y1: the nail head (K) near the top centre + the bottom-right corner
+    //    curling forward off the wall (p, its aged back). y0: empty (front clearance). Anchor = [6, 3, 0] = back face,
+    //    bottom centre: the level x / y is the wall face, z = the page's bottom edge.
+    //    Rows below are drawn TOP-DOWN for reading (z15 first); the code reverses them into layers[z].
+    // ===================================================================================================================
+    var PIN_SHEET_TOPDOWN = [
+      '.PPPPP.PPPP.',   // z15 torn top edge
+      'PPPPPPPPPPPP',   // z14
+      'PPPPPPPPPPPP',   // z13 (nail in front, y1)
+      'PKKKKKKKPPPP',   // z12 title stroke
+      'PPPPPPPPPPPP',
+      'PkkPkkkkPkkP',   // z10
+      'PPPPPPPPPPPP',
+      'PkkkPkkPkkkP',   // z8
+      'PPPPPPPPPPPP',
+      'PkkkkPkkkPPP',   // z6
+      'PPPPPPPPPPPP',
+      'PkkPkkkkkkPP',   // z4
+      'PPPPPPPPPPPP',
+      'PPPPPPPPPPpp',   // z2
+      'pPPPPPPPPP..',   // z1: bottom-right corner lifts off the wall (see y1)
+      '.pPPPPPPPp..'    // z0
+    ];
+    var E12 = '............';
+    function pinLayers() {
+      var layers = [], z, row, y1;
+      for (z = 0; z < 16; z++) {
+        row = PIN_SHEET_TOPDOWN[15 - z];
+        y1 = E12;
+        if (z === 13) y1 = '.....K......';              // nail head, 1.5 cm proud of the sheet
+        if (z === 1) y1 = '..........pp';               // the curl (aged back of the corner)
+        if (z === 0) y1 = '..........p.';
+        layers.push([E12, y1, row]);
+      }
+      return layers;
+    }
+    A.voxelModels.notePinned = {
+      name: 'notePinned',
+      displayName: 'page',
+      desc: 'A page nailed to the wall: pale linen paper, faded ink lines under a darker title stroke, a torn top edge, a ' +
+            'dark iron nail head, the bottom-right corner curling off the stone. 0.18 x 0.24 m. Read with [E].',
+      voxel: {
+        version: 1,
+        cellM: CELL,
+        size: [12, 3, 16],
+        anchor: [6, 3, 0],
+        mats: MATS,
+        layers: pinLayers(),
+        parts: { page: { box: [0, 0, 0, 12, 3, 16], pivot: [6, 3, 0] } },      // extent 31
+        animations: { idle: { durations: [1000], loop: true, frames: [{}] } },
+        mounts: { prompt: { at: [6, 2, 8], part: 'page' } }                   // front of the sheet, mid height (z + 0.12)
+      },
+      readability: { note: 'At 2 m on 400x150 ~6 x 8 cells: a pale upright rectangle on dark stone, stripes visible from ~1.5 m.' }
+    };
+  })();
+
   // ===================================================================================================================
   // 7. ATTACH: only once the materials / colours are merged (a missing v2 record would switch the GPU path off).
   // ===================================================================================================================
@@ -878,6 +989,11 @@
       if (ok && !A.models.practiceTarget) { A.models.practiceTarget = A.voxelModels.practiceTarget; done.push('practiceTarget'); }
       ok = true;
       for (k in AWK_MATS) if (!P.materials[AWK_MATS[k]] || !DP.materials[AWK_MATS[k]]) ok = false;
+      for (a = 0; a < 2; a++) {   // 6c note pages: linen_light / canvas_light / linen_dark / iron_dark
+        var nk = a ? 'notePinned' : 'note', nm = A.voxelModels[nk].voxel.mats, nok = true;
+        for (k in nm) if (!P.materials[nm[k]] || !DP.materials[nm[k]]) nok = false;
+        if (nok && !A.models[nk]) { A.models[nk] = A.voxelModels[nk]; done.push(nk); }
+      }
       for (a = 0; a < AWK_KEYS.length; a++) {
         if (ok && !A.models[AWK_KEYS[a]]) { A.models[AWK_KEYS[a]] = A.voxelModels[AWK_KEYS[a]]; done.push(AWK_KEYS[a]); }
       }
