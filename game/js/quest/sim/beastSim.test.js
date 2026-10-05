@@ -7,7 +7,7 @@
 // a stub.
 //
 import {
-  World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight,
+  World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight, integrate, PHYSICS,
 } from '../../../../engine/index.js';
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
@@ -25,6 +25,8 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { buildBeastNav } from './beastNav.js';
 import { canSee } from './sight.js';
+import { SWORD_CFG } from '../swordConfig.js';
+import { createSwordSim, ST_HARD } from './sword.js';
 import {
   createBeastSim, STATE_WANDER, STATE_NOTICE, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN,
   STATE_STAGGER,
@@ -51,14 +53,14 @@ function beastEntity(id, x, y, home) {
   };
 }
 
-function buildWorld(entities) {
+function buildWorld(entities, physics = 'grid') {
   const errs = [];
   const orig = console.warn; console.warn = () => {};
   const w = World.load({
     name: 'beastSimTest', terrain: 'overworld_far',
     structures: [{ id: 'tower', level: 'tower', origin: TOWER_ORIGIN, yawSteps: 0 }],
     entities, state: {},
-  }, assets, {});
+  }, assets, { physics });
   console.warn = orig;
   void errs;
   return w;
@@ -85,8 +87,8 @@ function makeEvents() {
 }
 
 /** Builds a fresh world + nav + sim over `entities`, seeded rng. */
-function freshSim(entities, seed = 1) {
-  const world = buildWorld(entities);
+function freshSim(entities, seed = 1, physics = 'grid') {
+  const world = buildWorld(entities, physics);
   const nav = buildBeastNav(world, NAV_CFG);
   const { events, hits } = makeEvents();
   const rng = createRng(seed);
@@ -481,6 +483,163 @@ function emitHeavyHit(events, targetId, dirX, dirY) {
   sim.state[0] = STATE_WANDER;
   emitHeavyHit(events, 'b1', 1, 0);
   ok('dispose() drops the combat:hit listener', sim.state[0] === STATE_WANDER, `state=${sim.state[0]}`);
+}
+
+// Q16 US-078d: drive real sword hits through mesh World queries and the beast's listener/steering.
+function swordPlayer(world, x, y) {
+  return { id: 'player', transform: { x, y, z: groundZ(world, x, y), yawDeg: 0 },
+    components: { body: { grounded: true, speedScale: 1, eyeH: PHYSICS.eyeHeight } } };
+}
+
+for (const hand of ['left', 'right']) for (const initialState of [STATE_WINDUP, STATE_CHARGE]) {
+  const { world, sim, hits, events } = freshSim([beastEntity('b1', 1461, 1031)], 71, 'mesh');
+  const fx = 0.6, fy = 0.8;
+  const p = swordPlayer(world, 1461 - fx * 0.9, 1031 - fy * 0.9);
+  world.state['tower.sword.taken'] = true;
+  let manaCalls = 0;
+  const sword = createSwordSim(world, events, { ...SWORD_CFG, hand }, {
+    spendMana(n) { manaCalls++; return n === 4; },
+  });
+  sword.step(p, fx, fy, true);
+  for (let i = 0; i < SWORD_CFG.holdSteps; i++) sword.step(p, fx, fy, true);
+  sword.step(p, fx, fy, false);
+  const label = `${hand} hard from state ${initialState}`;
+  ok(`${label}: release enters hard and spends mana once`, sword.state === ST_HARD && manaCalls === 1);
+  sim.state[0] = initialState;
+  sim.timer[0] = initialState === STATE_CHARGE ? sim.cfgSteps.chargeMax : sim.cfgSteps.windup;
+  sim.cdx[0] = fx; sim.cdy[0] = fy; // charge away from the player until the sword interrupts it
+  let facingX = 0, facingY = 0, hitX = 0, hitY = 0;
+  for (let i = 0; i < 16 && sim.state[0] !== STATE_STAGGER; i++) {
+    sim.step(p.transform.x, p.transform.y, p.transform.z); // actual main.js order
+    facingX = sim.fx[0]; facingY = sim.fy[0];
+    hitX = sim.steer.x[0]; hitY = sim.steer.y[0];
+    sword.step(p, fx, fy, false);
+  }
+  const hit = hits.find(h => h.source === 'player');
+  ok(`${label}: real arc/LOS hit enters stagger synchronously`, !!hit && sim.state[0] === STATE_STAGGER);
+  ok(`${label}: payload is heavy damage 3 with a unit direction away from the player`, !!hit
+    && hit.target === 'b1' && hit.damage === 3 && hit.heavy === 1
+    && Math.abs(hit.dirX * hit.dirX + hit.dirY * hit.dirY - 1) < 1e-12
+    && hit.dirX > 0 && hit.dirY > 0);
+  ok(`${label}: timer 36, accel 12, no same-step displacement`, sim.timer[0] === 36
+    && sim.steer.accel[0] === 12 && sim.steer.x[0] === hitX && sim.steer.y[0] === hitY);
+  ok(`${label}: assigns 4 m/s rather than adding prior charge velocity`, !!hit
+    && Math.abs(sim.steer.vx[0] - hit.dirX * 4) < 1e-12
+    && Math.abs(sim.steer.vy[0] - hit.dirY * 4) < 1e-12);
+  let frozenFacing = true;
+  for (let i = 1; i <= 35; i++) {
+    sim.step(p.transform.x, p.transform.y, p.transform.z);
+    sword.step(p, fx, fy, false);
+    if (sim.fx[0] !== facingX || sim.fy[0] !== facingY) frozenFacing = false;
+  }
+  const distance = Math.hypot(sim.steer.x[0] - hitX, sim.steer.y[0] - hitY);
+  // Euler deceleration: speeds 3.8, 3.6, ... 0.2 m/s over 19 moving steps; sum / 60 = 19/30 m.
+  ok(`${label}: open-ground shove is 19/30 m and stops`, Math.abs(distance - 19 / 30) < 1e-9
+    && Math.hypot(sim.steer.vx[0], sim.steer.vy[0]) < 1e-12, `distance=${distance}`);
+  ok(`${label}: frozen facing and exactly 35 stagger steps so far`, frozenFacing
+    && sim.state[0] === STATE_STAGGER && sim.timer[0] === 1);
+  ok(`${label}: own-position waypoint, arrive 0, maxSpeed 4`, sim.steer.tx[0] === sim.steer.x[0]
+    && sim.steer.ty[0] === sim.steer.y[0] && sim.steer.arriveR[0] === 0 && sim.steer.maxSpeed[0] === 4);
+  ok(`${label}: one player hit, no charge contact, no repeat impulse during hit-stop`, hits.length === 1 && manaCalls === 1);
+  sim.step(p.transform.x, p.transform.y, p.transform.z);
+  ok(`${label}: seen target resumes chase on step 36`, sim.state[0] === STATE_CHASE);
+  sword.dispose(); sim.dispose();
+}
+
+for (const manaShort of [false, true]) {
+  const { world, sim, hits, events } = freshSim([beastEntity('b1', 1461, 1031)], 74, 'mesh');
+  const p = swordPlayer(world, 1460.1, 1031);
+  world.state['tower.sword.taken'] = true;
+  let manaCalls = 0;
+  const sword = createSwordSim(world, events, SWORD_CFG, { spendMana() { manaCalls++; return false; } });
+  sword.step(p, 1, 0, true);
+  if (manaShort) for (let i = 0; i < SWORD_CFG.holdSteps; i++) sword.step(p, 1, 0, true);
+  sword.step(p, 1, 0, false);
+  sim.state[0] = STATE_WINDUP; sim.timer[0] = sim.cfgSteps.windup;
+  let brainUntouched = true;
+  for (let i = 0; i < 16 && hits.length === 0; i++) {
+    sim.step(p.transform.x, p.transform.y, p.transform.z);
+    const state = sim.state[0], timer = sim.timer[0], vx = sim.steer.vx[0], vy = sim.steer.vy[0];
+    sword.step(p, 1, 0, false);
+    if (state !== sim.state[0] || timer !== sim.timer[0] || vx !== sim.steer.vx[0] || vy !== sim.steer.vy[0]) brainUntouched = false;
+  }
+  const label = manaShort ? 'mana-short charged release' : 'tap';
+  ok(`${label}: real sword hit is light damage 1 and does not interrupt windup`, hits.length === 1
+    && hits[0].heavy === 0 && hits[0].damage === 1 && brainUntouched && sim.state[0] === STATE_WINDUP);
+  ok(`${label}: mana hook called only for charged release, no hard hit-stop`, manaCalls === (manaShort ? 1 : 0)
+    && sword.frozen === 0);
+  sword.dispose(); sim.dispose();
+}
+
+// Every prior state, including an already-staggered beast: heavy replaces velocity and resets the full timer.
+{
+  const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)], 81, 'mesh');
+  for (let state = STATE_WANDER; state <= STATE_STAGGER; state++) {
+    sim.state[0] = state; sim.timer[0] = 7; sim.unseen[0] = 1;
+    sim.steer.vx[0] = -7; sim.steer.vy[0] = 5; sim.steer.accel[0] = 70;
+    events.emit('combat:hit', { source: 'player', target: 'b1', heavy: 0, dirX: 0.6, dirY: 0.8 });
+    ok(`state ${state}: light leaves brain/timer/velocity untouched`, sim.state[0] === state && sim.timer[0] === 7
+      && sim.steer.vx[0] === -7 && sim.steer.vy[0] === 5 && sim.unseen[0] === 1 && sim.steer.accel[0] === 70);
+    emitHeavyHit(events, 'b1', 0.6, 0.8);
+    ok(`state ${state}: heavy restarts stagger and clears charge wall counter`, sim.state[0] === STATE_STAGGER
+      && sim.timer[0] === 36 && sim.unseen[0] === 0 && sim.steer.vx[0] === 2.4
+      && sim.steer.vy[0] === 3.2 && sim.steer.accel[0] === 12);
+  }
+  for (let i = 0; i < 35; i++) sim.step(1e6, 1e6, 0);
+  ok('unseen stagger remains active through step 35', sim.state[0] === STATE_STAGGER && sim.timer[0] === 1);
+  sim.step(1e6, 1e6, 0);
+  ok('unseen stagger resumes return on step 36', sim.state[0] === STATE_RETURN);
+  sim.dispose();
+}
+
+{
+  const a = freshSim([beastEntity('b1', 1461, 1031)], 82, 'mesh');
+  emitHeavyHit(a.events, 'b1', 0.6, 0.8);
+  for (let i = 0; i < 7; i++) a.sim.step(1460, 1030, groundZ(a.world, 1460, 1030));
+  const b = freshSim([beastEntity('b1', 1461, 1031)], 82, 'mesh');
+  b.rng.load(a.rng.save());
+  b.sim.load(a.sim.save());
+  ok('save/load mid-slide preserves stagger timer and current shove velocity', b.sim.state[0] === STATE_STAGGER
+    && b.sim.timer[0] === 29 && b.sim.steer.vx[0] === a.sim.steer.vx[0] && b.sim.steer.vy[0] === a.sim.steer.vy[0]);
+  let replayEqual = true;
+  for (let i = 0; i < 29; i++) {
+    a.sim.step(1460, 1030, groundZ(a.world, 1460, 1030));
+    b.sim.step(1460, 1030, groundZ(b.world, 1460, 1030));
+    if (hashAt(a.sim, a.sim.steer, a.sim.tick, a.rng) !== hashAt(b.sim, b.sim.steer, b.sim.tick, b.rng)) replayEqual = false;
+  }
+  ok('save/load mid-slide remains hash-identical through stagger end', replayEqual && b.sim.state[0] === STATE_CHASE);
+  a.sim.dispose(); b.sim.dispose();
+}
+
+// Body targets use the generic 3 m/s impulse, then collide through the actual mesh capsule integrator.
+{
+  const def = { id: 'bodyTarget', type: 'npc', x: 1479.62, y: 1025, z: 'ground',
+    components: { targetable: { radius: 0.3, height: 1.7 },
+      body: { radius: PHYSICS.radius, height: PHYSICS.height, eyeH: PHYSICS.eyeHeight } } };
+  const world = buildWorld([def], 'mesh');
+  const target = world.get('bodyTarget').data;
+  integrate(target, SIM_STEP, null, world, PHYSICS);
+  const p = swordPlayer(world, target.transform.x - 0.9, target.transform.y);
+  p.transform.z = target.transform.z;
+  const { events, hits } = makeEvents();
+  world.state['tower.sword.taken'] = true;
+  const sword = createSwordSim(world, events, SWORD_CFG);
+  sword.step(p, 1, 0, true);
+  for (let i = 0; i < SWORD_CFG.holdSteps; i++) sword.step(p, 1, 0, true);
+  sword.step(p, 1, 0, false);
+  for (let i = 0; i < 16 && hits.length === 0; i++) sword.step(p, 1, 0, false);
+  ok('generic mesh body receives exact 3 m/s horizontal impulse without lift', hits.length === 1
+    && target.components.body.vx === 3 && target.components.body.vy === 0
+    && target.components.body.vz === 0 && target.components.body.grounded);
+  const startX = target.transform.x;
+  let maxX = startX;
+  for (let i = 0; i < 60; i++) {
+    integrate(target, SIM_STEP, null, world, PHYSICS);
+    maxX = Math.max(maxX, target.transform.x);
+  }
+  ok('generic heavy shove moves the body but cannot cross the tower mesh wall', maxX > startX
+    && maxX < 1480 - PHYSICS.radius + 1e-4, `startX=${startX}, maxX=${maxX}`);
+  sword.dispose();
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
