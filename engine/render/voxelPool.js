@@ -33,7 +33,7 @@ function projectedSlot() {
 export class VoxelPool {
   constructor() {
     /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
-    this.renderer = 'dda';
+    this.renderer = 'mesh';
     /** modelKey -> PackedVoxelModel (packed at bind()). */
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by

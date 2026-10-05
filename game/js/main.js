@@ -20,7 +20,7 @@ import {
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
-  loadContentPack, createRng, prebuildTerrainMesh, DEFAULT_RENDERER,
+  loadContentPack, createRng, prebuildTerrainMesh,
   forwardOf, hexToRgb, resolveWaterLooks, createEntityEmitters,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
@@ -92,14 +92,8 @@ const params = new URLSearchParams(window.location.search);
 // (US-038a, architecture.md 22.2): `?grid=WxH` clamped to 160x60..480x180
 // (8:3 aspect kept, see `clampGrid`), logged once here on the user-facing
 // param (the RenderTarget-internal cpu-fallback log is separate).
-// `?gpucompare=1` (this story's DDA parity page, 14.2 item 8)
-// always forces 160x60 regardless of `?grid=` - `?gpucompare=shade` (the
-// unchanged US-029 shading-only page) keeps whatever grid was requested.
-const isDdaCompare = params.get('gpucompare') === '1';
-// ME-06 (27.7 item 3): `?gpucompare=mesh` (GPU dda vs GPU mesh) needs the
-// same fixed 160x60/n=1/reference-box treatment as `?gpucompare=1` - both
-// are geometry-parity pages comparing two GPU renders pixel for pixel.
-const isMeshMigrationCompare = params.get('gpucompare') === 'mesh';
+// ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
+const isGeometryCompare = params.get('gpucompare') === '1';
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
 // gap can be split into "voxel props (ME-08)" vs "everything else".
@@ -111,7 +105,7 @@ const compareNearStep = params.get('nearstep') === '1';
 // BUG-GPU-002 tooling fix: both compare pages (`=1` and `=shade`) need the
 // window-independent fixed camera box, not just the DDA/geometry one - see
 // the `rt.resize(GPU_COMPARE_REF_*)` comment below.
-const isGpuCompareMode = isDdaCompare || isMeshMigrationCompare || params.get('gpucompare') === 'shade';
+const isGpuCompareMode = isGeometryCompare || params.get('gpucompare') === 'shade';
 const gridParam = params.get('grid');
 let reqCols = GRID_DEFAULT_COLS, reqRows;
 if (gridParam) {
@@ -124,13 +118,13 @@ if (gridParam) {
 // ?voxelbench=, ?gpucompare=), which must stay comparable across runs
 // regardless of what the player last saved (PC-A PO REJECT, backlog row 30f).
 const savedSettings = loadSettings();
-const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test' && params.get('renderer') === 'mesh';
+const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test';
 const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic') || isWaterfallPreview;
 if (!gridParam && !isCaptureOrBench) {
   const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
   if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
 }
-if (isDdaCompare || isMeshMigrationCompare) { reqCols = 160; reqRows = 60; }
+if (isGeometryCompare) { reqCols = 160; reqRows = 60; }
 const gridResult = clampGrid(reqCols, reqRows);
 if (gridParam && gridResult.clamped) {
   console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..480x180, 8:3 aspect - D-025)`);
@@ -144,7 +138,7 @@ const rayParam = Number(params.get('rays'));
 // no-op, which it already is at n=1 - forcing it here just keeps the page's
 // intent explicit and immune to a stray `?rays=` in the URL.
 let rays = Number.isFinite(rayParam) && rayParam >= 1 && rayParam <= 4 ? Math.round(rayParam) : 2;
-if (isDdaCompare) rays = 1;
+if (isGeometryCompare) rays = 1;
 
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
@@ -249,8 +243,8 @@ const engine = createEngine({
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
-  // ME-15c (27.9a): sun shadow map is opt-in (`?renderer=mesh&shadows=map`) until the owner walk-tests ME-12; default keeps the sun DDA.
-  shadows: { sun: params.get('renderer') === 'mesh' && params.get('shadows') === 'map' ? 'map' : 'dda' },
+  // ME-15c (27.9a): sun shadow map is opt-in (`?shadows=map`) until the owner walk-tests ME-12; default keeps the sun DDA.
+  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' },
 });
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
@@ -324,16 +318,11 @@ if (params.has('time') && !Number.isFinite(timeHour)) console.warn('[time] expec
 // gate; JS/CPU: `compositor.js`'s `castTerrain` call). Same shape as
 // `?lights=0`/`?sun=0` above. Needed for item 4's GPU-ms A/B measurement.
 const terrainEnabled = params.get('terrain') !== '0';
-// ME-04 (docs/backlog.md, architecture.md 27.11 ME-04 AC "createEngine({
-// renderer: 'mesh' | 'dda' })"): `?renderer=mesh` opts into the GPU raster
-// pass (tower only, this story); default 'dda' is every existing pass,
-// completely unchanged.
-const renderer = (params.get('renderer') || DEFAULT_RENDERER) === 'mesh' ? 'mesh' : 'dda';
-const waterfallPreset = renderer === 'mesh' ? window.ASSETS.waterfall : null;
+// ME-19a: renderer query values are ignored; GPU and CPU both use mesh.
+const renderer = 'mesh';
+const waterfallPreset = window.ASSETS.waterfall;
 if (waterfallPreset) window.ASSETS.waterLooks.waterfall = waterfallPreset.look;
-// RE-02b (28.1 A2 item 6): first person is pitched on the mesh renderer (look clamp 70), shear on dda (35).
-// Set from the EFFECTIVE renderer once the GPU pipeline is known (review: ?renderer=mesh can fall back to CPU = shear).
-let pitchClampDeg = 35;
+const pitchClampDeg = PITCH_CLAMP_PITCHED_DEG;
 // `matTable` always resolves against the REAL detail-pass module (so a
 // v2-only material key, e.g. `ceiling_timber`, still finds its `.v1`
 // fallback) - `useDetail` alone decides whether `shadeSurfaces` is allowed
@@ -365,7 +354,7 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // world/* (US-025, off-limits this story).
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, renderer, shadows: engine.shadows });
+  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, shadows: engine.shadows });
   if (candidate.ready) {
     candidate.bind(matTable, assets.palette);
     candidate.setWaterLooks(window.ASSETS.waterLooks); // US-055a2c (Q12 item 8)
@@ -378,7 +367,7 @@ if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.
 // cell pipeline actually compiled/linked (`candidate.ready` above, or
 // `detailPass`/`matTable.allV2` not holding). When the gate above didn't
 // produce a `gpuPipeline`, the CPU caster is about to run every frame
-// (`fb.gpuDda` stays false, see `runGame`'s render()) - left at the
+// (`fb.gpu` stays false, see `runGame`'s render()) - left at the
 // default/`?grid=` grid it would cast at up to 320x120, 4x the CPU budget.
 // Force the same `cpuGrid` RenderTarget.js already uses for `?gpu=0` and
 // the software-renderer case (default 160x60), via `engine.setGrid`, and
@@ -439,7 +428,7 @@ const entityEmitters = createEntityEmitters(null, engine.particles, engine.event
 // no entity state itself, just this frame's projected instance list); the
 // GPU path's own `gpuPipeline.frame()` calls `.project()` on it internally
 // once bound (see GpuCellPipeline.js's `_passVoxel`), so only the CPU/JS
-// oracle path (fb.gpuDda === false) needs an explicit `.project()` call
+// oracle path (fb.gpu === false) needs an explicit `.project()` call
 // here too (mirrors compositor.js reading `fb.voxelPool.list` pre-projected,
 // same as the `?gpucompare=1` harness above does by hand). No live prop has
 // a `.voxel` component yet (US-056 does the actual swap), so this is a
@@ -454,10 +443,8 @@ if (swordHeldDef && !assets.has('model', 'swordHeld')) {
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
-const effRenderer = renderer === 'mesh' && gpuPipeline ? 'mesh' : 'dda';
-pitchClampDeg = effRenderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35;
-gameVoxelPool.renderer = effRenderer;
-engine.overlay.renderer = effRenderer;
+gameVoxelPool.renderer = renderer;
+engine.overlay.renderer = renderer;
 // US-078d: trail/ghost/spark style ids, resolved from the designer's palette colour keys (design/models/sword.js
 // `viewModels.sword.trail`/`trailHard`/`sparks`) via the same hexToRgb(palette.colors[key]) convention hints.js/
 // panel.js use - merged into the ONE setStyles call below (setStyles replaces the whole table, never additive).
@@ -493,7 +480,7 @@ const swordStyleIds = {
   sparkHeavy: engine.overlay.styleId('sparkHeavy'), sparkHeavyEmpty: engine.overlay.styleId('sparkHeavyEmpty'),
   sparkClink: engine.overlay.styleId('sparkClink'),
 };
-sprites.pool.renderer = effRenderer; // review item 1: sprite rects follow the pitched scene
+sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
 // US-078d (30.1): the held sword's view-model handle, resolved once (gameVoxelPool already carries the
@@ -588,7 +575,6 @@ if (gpuBlocked) {
 } else if (params.get('demo') === '1') {
   modeByName.get('demo').run(ctx);
 } else if (params.has('cinematic')) {
-  if (renderer !== 'mesh') throw new Error('cinematic requires renderer=mesh');
   loadCinematic(params.get('cinematic')).then((path) => runGame('world', path)).catch((error) => {
     window.__cineError = error.message;
     overlay.visible = true; overlay.el.style.display = 'block'; overlay.el.textContent = error.message;
@@ -779,7 +765,7 @@ function runGame(mode, cinematic = null) {
         playerHandle.data.components.body.peakZ = startT.z;
       }
       if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
-      look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg, { pitchClampDeg }); // RE-02b: 70 on the pitched mesh camera, 35 shear
+      look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg, { pitchClampDeg }); // Mesh first-person pitch clamp.
       look.sensDegPerPx = savedSettings.mouseSensitivity; // US-038b (no-op until PlayerLook reads instance fields, see NEEDS PC-A)
       look.invertY = savedSettings.invertY;
       if (cinematic) look.dispose(); // update's cinematic branch never reads game input
@@ -830,7 +816,7 @@ function runGame(mode, cinematic = null) {
     guardLoad(() => engine.loadWorld(worldDef, worldLoadOpts));
     // BUG-FP-001: on the mesh renderer the terrain mesh needs the far bake (streamed at 1 ms/frame = ~10-15 s) before
     // far tiles exist, so the ground stayed black after spawn. Bake + build the terrain mesh once at load, like rts-test.
-    if (effRenderer === 'mesh' && engine.world.terrain) {
+    if (renderer === 'mesh' && engine.world.terrain) {
       const tb = performance.now();
       engine.world.terrain.bakeFarSync();
       prebuildTerrainMesh(engine.world.terrain);
@@ -1088,7 +1074,7 @@ function runGame(mode, cinematic = null) {
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
-    gpuDda: false,
+    gpu: false, renderer: 'mesh',
     // PO REJECT item 1: this is the ONE real gameplay frame buffer, so
     // `lightSurfaces` (lighting.js) caps to the 4 nearest `on` lights
     // whenever this object's CPU path actually runs (`?gpu=0`, or the GPU
@@ -1159,24 +1145,24 @@ function runGame(mode, cinematic = null) {
       // `gpuPipeline` itself is still the same (now-dead) object, so without
       // this check `renderWorld` would keep skipping the CPU cast -> black
       // world instead of falling back to it.
-      fb.gpuDda = !!gpuPipeline && rt.gpuActive;
+      fb.gpu = !!gpuPipeline && rt.gpuActive;
       // US-041a (15.3 item 1): `collect(world, cam)` every frame (cheap - the
       // entity ref list is cached by `world.renderVersion`, only distance is
       // recomputed); the GPU path projects internally, the CPU/JS oracle
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
-      if (!fb.gpuDda) gameVoxelPool.project(cam, rt, effRenderer); // RE-02b re-review: effective renderer (CPU fallback = shear)
+      if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
-      // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
+      // only (compositor.js's early-out on `fb.gpu`) - see US-017-gpu.
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
       engine.feedDetail(cam); // ENV-01a2: shared fed set before either render twin.
       fb.frameNo = (fb.frameNo || 0) + 1; // RE-15a: one host-owned counter for instances.js addToDrawList's memo
       renderWorld(fb, engine.world, cam);
       // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
       // cells right after its own sprite loop).
-      engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, effRenderer);
+      engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
@@ -1190,7 +1176,7 @@ function runGame(mode, cinematic = null) {
       // clears that before fading (no UI has been drawn yet this frame), or
       // `applySceneFade`'s `if (mask[i]) continue` would skip the entire 3D
       // view (the scene never visibly faded on `?gpu=0`).
-      if (!fb.gpuDda && fb.fadeLut && typeof fb.sceneFade === 'number') {
+      if (!fb.gpu && fb.fadeLut && typeof fb.sceneFade === 'number') {
         clearMaskForSceneFade(fb.rt);
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
@@ -1211,7 +1197,7 @@ function runGame(mode, cinematic = null) {
         }
       }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
-      if (fb.gpuDda) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
+      if (fb.gpu) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
       lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
@@ -1232,7 +1218,7 @@ function runGame(mode, cinematic = null) {
         if (mapPanel) mapPanel.pushDim(sceneDim, ui);
         pushHintDim(ui, assets.uiStyle, sceneDim);
       }
-      if (!fb.gpuDda) applySceneDim(rt, sceneDim);
+      if (!fb.gpu) applySceneDim(rt, sceneDim);
       if (sprites.pass) sprites.pass.setSceneDim(sceneDim);
       // US-012 (7.4): crosshair + "[E] ..." prompt, emissive UI drawn after
       // the world/sprite passes, never depth-tested (architecture.md 8).
@@ -1265,7 +1251,7 @@ function runGame(mode, cinematic = null) {
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
       if (vitals && vitals.dead) {
-        if (!fb.gpuDda) applyDeathFade(fb.rt, vitals, fb.fadeLut);
+        if (!fb.gpu) applyDeathFade(fb.rt, vitals, fb.fadeLut);
         const deathCardState = computeDeathCardState(vitals, assets.uiStyle.vitals);
         drawDeathCard(ui, assets.uiStyle.vitals, deathCardState);
       }
@@ -1280,7 +1266,7 @@ function runGame(mode, cinematic = null) {
     if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
-    // 'world' mode (fb.gpuDda is false otherwise, so the pipeline falls
+    // 'world' mode (fb.gpu is false otherwise, so the pipeline falls
     // back to the legacy `_repackAndUpload` path, harmlessly, in 'demo'/
     // 'glyphs' mode - gbuf is simply empty there).
     // US-006: `fb.lights` (a real LightSet) on the main game loop; every
@@ -1385,7 +1371,7 @@ function runVoxelBenchMode() {
     console.error('[voxelbench] no active GpuCellPipeline (backend=' + rt.backend + ') - nothing to measure.');
     return;
   }
-  gpuPipeline.setSource('dda');
+  gpuPipeline.setSource('scene');
 
   function loadBenchWorld(def) {
     const w = World.load(def, assets, {});
@@ -1423,14 +1409,14 @@ function runVoxelBenchMode() {
 
   const fb = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
-    lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: true, voxelPool: pool,
+    lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true, renderer: 'mesh', voxelPool: pool,
   };
 
   const FRAMES = 300;
   for (let i = 0; i < FRAMES; i++) {
     pool.collect(world, cam);
     pool.project(cam, rt);
-    renderWorld(fb, world, cam); // fb.gpuDda = true: primes ambientL only
+    renderWorld(fb, world, cam); // fb.gpu = true: primes ambientL only
     gpuPipeline.frame(fb, lights || ambientL, cam, world);
     rt.present();
   }
@@ -1453,7 +1439,7 @@ function runVoxelBenchMode() {
     `gpu total:  p50 ${result.gpuMsP50} ms  p95 ${result.gpuMsP95} ms  (gate: <= 4 ms p95)`;
 }
 
-// `?gpucompare=1` (isDdaCompare) forced `rt` to the fixed reference box
+// `?gpucompare=1` (isGeometryCompare) forced `rt` to the fixed reference box
 // above - keep it fixed even if the real window resizes/re-shows mid-run
 // (see the comment above the `rt.resize(GPU_COMPARE_REF_*)` call).
 const doResize = () => (isGpuCompareMode

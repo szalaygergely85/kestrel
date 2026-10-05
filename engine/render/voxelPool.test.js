@@ -30,6 +30,8 @@ const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, nextId++); retu
 
 // ---- bind() ----------------------------------------------------------------
 const pool = new VoxelPool();
+ok('default renderer is mesh with 48 slots', pool.renderer === 'mesh' && pool.cap === MAX_VOX_INSTANCES_MESH);
+pool.renderer = 'dda'; // Existing 16-slot caster oracle fixture, until ME-19b.
 pool.bind(registry, table);
 ok('bind: packs voxel models only', pool.models.has('bear') && !pool.models.has('notVoxel'));
 ok('bind: matIds resolved via table.idFor', pool.models.get('bear').matIds[1] > 0);
@@ -102,7 +104,7 @@ if (global.gc) {
     };
   }
 
-  const poolC = new VoxelPool();
+  const poolC = new VoxelPool(); poolC.renderer = 'dda'; // Existing nearest-16 oracle fixture.
   poolC.bind(registry, table);
   const camC = { x: 0, y: 0, z: 0 };
 

@@ -53,7 +53,7 @@ export function createOverlay(cols = 0, rows = 0) {
 
   const ov = {
     cols: 0, rows: 0,
-    renderer: 'dda', // RE-02b F1: the host sets 'mesh' so an unset cam.projection resolves to pitched
+    renderer: 'mesh', // ME-19a: an unset cam.projection resolves to pitched.
     ovl: new Uint8Array(0), ovlZ: new Float32Array(0),
     touched, // first `stats.cells` entries are valid
     // RE-07b seam: dirty row span = union of this frame's and last frame's touched rows.

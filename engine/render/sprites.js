@@ -239,7 +239,7 @@ export class SpritePool {
    */
   constructor(atlas, palette) {
     /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
-    this.renderer = 'dda';
+    this.renderer = 'mesh';
     this.atlas = atlas;
     this.palette = palette;
     this.count = 0;             // projected sprites this frame (rows 0..count-1 of `spr` are valid)

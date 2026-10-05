@@ -6,7 +6,7 @@
 import {
   GBuffer, bindShading, bindLevel, GpuCellPipeline, VoxelPool, repackMaterials,
   renderWorld, buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos,
-  stepAnimations, stepSectorAnims, ambientL, DEFAULT_RENDERER, prebuildTerrainMesh,
+  stepAnimations, stepSectorAnims, ambientL, prebuildTerrainMesh,
 } from '../../engine/index.js';
 import { createEditorSprites } from './sprites.js';
 
@@ -28,23 +28,13 @@ export function idleSkip(dirty, animate, farBaking) {
   return { shouldRender: dirty || animate || farBaking, nextDirty: animate || farBaking };
 }
 
-/**
- * ED-MESH-1b (architecture.md 31.1): requested renderer. `?renderer=mesh|dda`
- * wins, else the engine default (`DEFAULT_RENDERER`). Pure, Node-testable.
- * @param {{get:(k:string)=>string|null}|null} params URLSearchParams-like
- * @param {string} [defaultRenderer]
- * @returns {'mesh'|'dda'}
- */
-export function editorRenderer(params, defaultRenderer = DEFAULT_RENDERER) {
-  const v = params && params.get ? params.get('renderer') : null;
-  if (v === 'mesh' || v === 'dda') return v;
-  return defaultRenderer === 'mesh' ? 'mesh' : 'dda';
-}
+/** ME-19a: old renderer query values are ignored. Kept for editor callers until 19d-ed. */
+export function editorRenderer(_params) { return 'mesh'; }
 
 /**
- * @param {{engine:Object, assets:Object, rt:Object, gpuParam?:boolean, renderer?:'mesh'|'dda', cpuMesh?:boolean}} deps
+ * @param {{engine:Object, assets:Object, rt:Object, gpuParam?:boolean, renderer?:string, cpuMesh?:boolean}} deps
  */
-export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'dda', cpuMesh = false }) {
+export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'mesh', cpuMesh = false }) {
   // D-025-style "no per-frame allocation" (24.14): everything below is built
   // once and reused every frame; only `bindLevel`/`repackMaterials` (which
   // run once per `world:loaded`, not per frame) touch it after that.
@@ -64,30 +54,30 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'd
   // claiming "`?gpu=0` is handled by RenderTarget itself" was wrong.
   let gpuPipeline = null;
   if (gpuParam && rt.backend === 'gl2' && detailPass && matTable.allV2) {
-    const candidate = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, renderer, shadows: engine.shadows });
+    const candidate = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, shadows: engine.shadows });
     if (candidate.ready) {
       candidate.bind(matTable, assets.palette);
       gpuPipeline = candidate;
     }
   }
   if (gpuPipeline) gpuPipeline.bindVoxels(voxelPool);
-  // 31.1: ordinary CPU fallback stays unchanged. 36.3 icons opt into the CPU mesh twin.
-  const effRenderer = renderer === 'mesh' && (gpuPipeline || cpuMesh) ? 'mesh' : 'dda';
-  voxelPool.renderer = effRenderer;
+  // ME-19a: CPU reference and GPU frames use the same mesh renderer.
+  const rendererPath = 'mesh';
+  voxelPool.renderer = rendererPath;
   if (engine.instances) {
     engine.instances.bindPool(voxelPool);
     if (gpuPipeline) gpuPipeline.bindInstances(engine.instances);
   }
 
   const sprites = createEditorSprites({ assets, rt, gpuPipeline });
-  sprites.pool.renderer = effRenderer;
+  sprites.pool.renderer = rendererPath;
 
   const fb = {
     rt, depth: engine.depthBuffer, spans: engine.openSpans, palette: assets.palette,
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, voxelPool,
-    gpuDda: false, cpuLightCap: true, fadeLut: null, sceneFade: 1, terrainEnabled: true,
-    ...(cpuMesh ? { renderer: effRenderer } : {}),
+    gpu: false, cpuLightCap: true, fadeLut: null, sceneFade: 1, terrainEnabled: true,
+    renderer: rendererPath,
   };
 
   let lightSet = null;
@@ -107,7 +97,7 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'd
       repackMaterials(s.packed, s.level, matTable);
     }
     // 31.3: the mesh terrain needs the far bake up front (else the ground stays black).
-    if (effRenderer === 'mesh' && world.terrain && !prebuilt.has(world.terrain)) {
+    if (rendererPath === 'mesh' && world.terrain && !prebuilt.has(world.terrain)) {
       prebuilt.add(world.terrain);
       const tb = performance.now();
       world.terrain.bakeFarSync();
@@ -120,8 +110,8 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'd
 
   return {
     fb, gpuPipeline, sprites, voxelPool,
-    /** Effective renderer ('mesh' only when the mesh GpuCellPipeline is active). */
-    renderer: effRenderer,
+    /** Geometry path, including the CPU reference. */
+    renderer: rendererPath,
     get presented() { return presented; },
     // US-064: the live `LightSet` (built once per `world:loaded`, not
     // per-frame) - main.js patches a moved/toggled light's handle directly
@@ -174,9 +164,9 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'd
         syncEntityLights(fb.lights, world, assets.palette, attachedLightPos, lightSyncScratch);
         fb.lights.update(fb.timeSec, world);
       }
-      fb.gpuDda = !!gpuPipeline && rt.gpuActive;
+      fb.gpu = !!gpuPipeline && rt.gpuActive;
       voxelPool.collect(world, cam);
-      if (!fb.gpuDda) voxelPool.project(cam, rt, effRenderer);
+      if (!fb.gpu) voxelPool.project(cam, rt, rendererPath);
       renderWorld(fb, world, cam);
       sprites.render(fb, world, cam);
       // US-032 (24.4/24.7): an optional overlay hook (highlight/markers/

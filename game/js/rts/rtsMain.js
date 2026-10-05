@@ -54,7 +54,7 @@ if (rt.backend !== 'gl2') fail('RTS spike needs a real WebGL2 GPU (renderer mesh
 const P = assets.palette;
 const matTable = bindShading(P, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const gbuf = new GBuffer(rt.cols, rt.rows);
-const gpuPipeline = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, renderer: 'mesh', shadows: { sun: 'dda' } /* ME-15c: pinned until the default flips */ });
+const gpuPipeline = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, shadows: { sun: 'dda' } /* ME-15c: pinned until the default flips */ });
 if (!gpuPipeline.ready || !matTable.allV2) fail('GpuCellPipeline not ready (missingV2: ' + (matTable.missingV2 || []).join(',') + ')');
 gpuPipeline.bind(matTable, P);
 new GpuOverlayPass(rt, gpuPipeline, engine.overlay);
@@ -115,7 +115,7 @@ ov.setGroundFn(groundAt);
 const fb = {
   rt, depth: engine.depthBuffer, spans: engine.openSpans, palette: P, lights: lightSet,
   light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gbuf, matTable, detailPass: assets.detailPass,
-  voxelPool, instances: engine.instances, gpuDda: true, cpuLightCap: false, sceneFade: 1, terrainEnabled: true,
+  voxelPool, instances: engine.instances, gpu: true, renderer: 'mesh', cpuLightCap: false, sceneFade: 1, terrainEnabled: true,
 };
 
 // ---- HUD / stats ------------------------------------------------------------------------------------------------

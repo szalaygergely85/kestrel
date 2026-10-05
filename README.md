@@ -41,6 +41,8 @@ Then open **http://localhost:8000/game/index.html**. Click into the game to capt
 
 ## Useful URL options
 
+Rendering uses mesh on both GPU and CPU. Legacy `?renderer=` values are ignored.
+
 Add these to the address, for example `index.html?debug=1&grid=240x90`.
 
 | Option | What it does |
@@ -50,7 +52,7 @@ Add these to the address, for example `index.html?debug=1&grid=240x90`.
 | `?level=test_room` | Loads the small test room instead of the tower world |
 | `?detail=0` | Uses the old, simpler shading |
 | `?force2d=1` | CPU renderer with a Canvas2D fallback (for machines without WebGL2) |
-| `?gpu=0` | WebGL present, but CPU shading |
+| `?gpu=0` | WebGL present with the rasterJS mesh reference |
 | `?gpucompare=1` | Checks the GPU image against the JavaScript reference, cell by cell |
 | `?shadetest=1` | Shader self-test |
 | `?bench=1` | Screen-drawing benchmark |

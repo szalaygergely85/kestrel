@@ -83,8 +83,6 @@ export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md
 // documented public shape (27.3), these are just its (de)serialize/validate
 // functions.
 export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
-/** Renderer used when `?renderer=` is absent (owner 2026-10-03: 'mesh' is the default; '?renderer=dda' still selects the legacy caster; game main.js and the editor read it). */
-export const DEFAULT_RENDERER = 'mesh';
 export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';

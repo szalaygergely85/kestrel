@@ -74,7 +74,7 @@ export function createParticleLayer() {
   const cb = { dirX: 0, dirY: 0, rightX: 0, rightY: 0, tanHalfHFov: 0, planeDistY: 0, horizonRow: 0, cols: 0, rows: 0 };
 
   const layer = {
-    renderer: 'dda',
+    renderer: 'mesh',
     cols: 0, rows: 0,
     part: partEmpty8(), partZ: partEmptyF(),
     touched: partEmptyI(), // first `stats.cells` entries are valid (RE-07 precedent)

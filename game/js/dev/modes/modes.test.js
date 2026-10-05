@@ -7,6 +7,10 @@
 import assert from 'node:assert/strict';
 import { MODES } from './index.js';
 
+import { run as runGpuCompareMode } from './gpucompare.js';
+
+assert.throws(() => runGpuCompareMode({ params: new URLSearchParams('gpucompare=mesh') }), /mode must be 1/, 'removed migration compare cannot start another renderer');
+
 const EXPECTED_NAMES = ['bench', 'shadetest', 'gpucompare', 'flicker', 'glyphs', 'demo'];
 
 let failures = 0;

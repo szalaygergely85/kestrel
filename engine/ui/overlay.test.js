@@ -22,7 +22,7 @@ function mk(cols = COLS, rows = ROWS) {
   return ov;
 }
 const PITCHED = { x: 0, y: 40, z: 60, yawDeg: 0, pitchDeg: -58, vfovDeg: 36, projection: 'pitched' };
-const SHEAR = { x: 0, y: 0, z: 2, yawDeg: 0, pitchDeg: -5 };
+const SHEAR = { x: 0, y: 0, z: 2, yawDeg: 0, pitchDeg: -5, projection: 'shear' };
 
 function cellsOf(ov) {
   const out = [];
