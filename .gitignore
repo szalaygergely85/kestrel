@@ -5,6 +5,10 @@ Thumbs.db
 node_modules/
 /captures/
 
+# Local agent checkpoints/probes and generated browser captures; existing tracked reports stay tracked.
+/.codex/
+/docs/test-reports/captures/
+
 # Third-party asset packs with unverified licences - local only, never pushed (repo is public)
 design/local/
 design/vox/
