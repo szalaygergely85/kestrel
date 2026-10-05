@@ -95,12 +95,26 @@ export function defaultItemForKind(kind, id, pos, opts = {}) {
 /**
  * ED-SNAP-1: a world prop's z should be the terrain surface, not the raw ray-pick z (US-063's "props placed on
  * forest float" - a pick ray can hit canopy/foliage well above the real ground). Pure, so it is the same under
- * either renderer (the snap comes from `World.groundAt`, not from how the pick ray itself was cast).
+ * either renderer (the snap comes from `World.floorAt`, not from how the pick ray itself was cast).
  * @param {{x:number,y:number,z:number}} pos the raw pick point
- * @param {number|null|undefined} groundZ `world.groundAt(pos.x, pos.y)` - null with no terrain
+ * @param {number|null|undefined} groundZ `world.floorAt(pos.x, pos.y)` - null with no terrain
  */
 export function snappedWorldPos(pos, groundZ) {
   return typeof groundZ === 'number' ? { x: pos.x, y: pos.y, z: groundZ } : pos;
+}
+
+/**
+ * ED-PLACE-BUG: the ground z a world-entity placement snap samples. `World`
+ * exposes `floorAt(x, y)` (engine/world/World.js) - the structure floor inside
+ * a structure, `terrain.groundAt` outside - it has NO `groundAt` method (that
+ * lives on `Terrain`). Sampling through `floorAt` makes a terrain click place on
+ * the ground instead of throwing `world.groundAt is not a function`. Null (no
+ * terrain) makes `snappedWorldPos` fall back to the raw pick point.
+ * @param {{floorAt:(x:number,y:number)=>(number|null)}|null} world
+ * @returns {number|null}
+ */
+export function worldGroundZ(world, x, y) {
+  return world && typeof world.floorAt === 'function' ? world.floorAt(x, y) : null;
 }
 
 /**

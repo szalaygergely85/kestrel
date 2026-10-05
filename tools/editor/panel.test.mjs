@@ -4,7 +4,7 @@
 // bottom is browser-only, same split as pick.js/select.js).
 import {
   isValidId, lightPresetNames, countLights, harvestBehaviourNames,
-  defaultItemForKind, defaultWorldPropItem, snappedWorldPos, kindForSelection, validateItem,
+  defaultItemForKind, defaultWorldPropItem, snappedWorldPos, worldGroundZ, kindForSelection, validateItem,
   classifyPlacement, listPlaceableModels, filterModelKeys,
 } from './panel.js';
 import { registerBehaviour, unregisterBehaviour } from '../../engine/index.js';
@@ -91,6 +91,18 @@ ok('isValidId: rejects empty/non-string', !isValidId('') && !isValidId(undefined
   ok('snappedWorldPos: undefined groundZ falls back the same way', snappedWorldPos(pos, undefined) === pos);
   const worldPropSnapped = defaultWorldPropItem('prop_3', snappedWorldPos(pos, 2.5), 'waystone');
   ok('defaultWorldPropItem fed a snapped pos gets the ground z, not the raw pick z', worldPropSnapped.z === 2.5);
+}
+
+// ---- ED-PLACE-BUG: worldGroundZ (world-entity placement snap) -------------------
+// World exposes `floorAt`; it has no `groundAt` method (that is Terrain's).
+// A terrain click used to throw `world.groundAt is not a function`.
+{
+  ok('worldGroundZ: samples World.floorAt', worldGroundZ({ floorAt: (x, y) => 7.5 }, 10, 20) === 7.5);
+  ok('worldGroundZ: a floorAt that returns null (no terrain) passes null through',
+    worldGroundZ({ floorAt: () => null }, 10, 20) === null);
+  ok('worldGroundZ: never depends on world.groundAt (a World with only groundAt -> null, no throw)',
+    worldGroundZ({ groundAt: () => 99 }, 10, 20) === null);
+  ok('worldGroundZ: null/undefined world -> null', worldGroundZ(null, 10, 20) === null && worldGroundZ(undefined, 10, 20) === null);
 }
 
 // ---- kindForSelection ---------------------------------------------------------

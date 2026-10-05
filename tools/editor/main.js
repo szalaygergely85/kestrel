@@ -24,7 +24,7 @@ import { createStack } from './undo.js';
 import { isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle } from './livepatch.js';
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
-  defaultWorldPropItem, snappedWorldPos, kindForSelection, validateItem, renderPropertyPanel,
+  defaultWorldPropItem, snappedWorldPos, worldGroundZ, kindForSelection, validateItem, renderPropertyPanel,
   classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS, isVoxelScaleItem,
 } from './panel.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
@@ -1169,8 +1169,8 @@ function placeAt(kind, pt, modelKeyOverride) {
     const file = doc.files.get(fileId);
     const id = mintId(file, 'prop');
     // ED-SNAP-1: snap to the terrain surface instead of the raw ray-pick z (both renderers - the snap comes from
-    // World.groundAt, not the pick ray).
-    item = defaultWorldPropItem(id, snappedWorldPos(pt, world.groundAt(pt.x, pt.y)), modelKey);
+    // World.floorAt, not the pick ray).
+    item = defaultWorldPropItem(id, snappedWorldPos(pt, worldGroundZ(world, pt.x, pt.y)), modelKey);
   }
 
   const file = doc.files.get(fileId);
