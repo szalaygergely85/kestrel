@@ -52,7 +52,7 @@ const MAX_STRUCTS = 8;
  * @property {number} rangeFirst - triangles (static/terrain); voxel items use mesh.ranges per part
  * @property {number} rangeCount
  * @property {number} planeIdOr - levels (structSeq&7)<<28; voxels (slot&0xF)<<24; terrain 0
- * @property {number} objectId - levels structSeq; terrain 0x7000|chunkIndex; voxels 0x8000|slot
+ * @property {number} objectId - levels structSeq; terrain 0x7000|chunkIndex; voxels 0x8000|slot (slot < 48; units >= 0x10000, view models near 0xFFFF)
  * @property {number} zBase - G-buffer z = worldZ - zBase - aux.zRef
  * @property {number} flags - DRAW_FLAG_*
  * @property {Float64Array} aabb - 6, world, for culling

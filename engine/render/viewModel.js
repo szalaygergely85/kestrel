@@ -20,7 +20,7 @@ import { computeVoxelPose, FORWARD, setRot } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { PROJ_NEAR } from './projection.js';
 
-/** G-buffer objectId of the view model (props use 0x8000|k with k < 16, units >= 0x10000). */
+/** G-buffer objectId of the view model (props use 0x8000|k with k < 48, units >= 0x10000). */
 export const VM_OBJECT_ID = 0xFFFF;
 /** The model's `zBase` is the eye z minus this (a feet-height stand-in; both twins use the same value). */
 export const VM_FEET_BELOW_EYE = 1.6;

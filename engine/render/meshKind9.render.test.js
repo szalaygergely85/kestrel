@@ -169,10 +169,10 @@ ok('yaw 0: mesh four metres north renders kind-9 cells', cells9(render(mk([place
   global.gc(); const grew = process.memoryUsage().heapUsed - b0;
   ok('no heap growth over 200 mesh frames', grew < 128 * 1024, `grew=${grew}`);
 
-  // 6. GPU path stays clean: with fb.gpuDda set the JS twin returns early and writes no kind-9 cells
-  const fbG = makeFb(); fbG.gpuDda = {};
+  // 6. GPU path stays clean: with fb.gpu set the JS twin returns early and writes no kind-9 cells
+  const fbG = makeFb(); fbG.gpu = {};
   renderWorld(fbG, at(line, 0), cam);
-  ok('gpuDda frame writes no kind-9 cells (GLSL twin = ME-14c3)', cells9(fbG).n === 0);
+  ok('gpu frame writes no kind-9 cells (GLSL twin = ME-14c3)', cells9(fbG).n === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

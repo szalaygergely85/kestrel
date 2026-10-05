@@ -199,7 +199,7 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 const engine = createEngine({
   canvas, assets, cols: gridFromParam(params, GRID_DEFAULT_COLS), rays: 1,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
-  shadows: { sun: editorRenderer(params) === 'mesh' && params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
+  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
@@ -456,6 +456,7 @@ function patchLive(rec) {
   const data = world.entity(entId);
   if (!data) return false;
   applyPropTransformPatch(data.transform, item, sFrame);
+  world.rebuildPropColliders(); // PROP-COLLIDE-01: committed move/undo/redo, never the drag preview.
   world.renderVersion++;
   frame.markDirty();
   return true;

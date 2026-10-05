@@ -332,6 +332,62 @@ export function buildTrunkCollider(scatter, cfg) {
   };
 }
 
+function colliderRing(cx, cy, yaw, prism, radius, hx, hy) {
+  const sides = prism ? 8 : 4, ring = new Float64Array(sides * 2);
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  for (let side = 0; side < sides; side++) {
+    let x, y;
+    if (prism) {
+      const r = radius / Math.cos(Math.PI / 8);
+      const angle = yaw + side * Math.PI / 4;
+      x = r * Math.cos(angle); y = r * Math.sin(angle);
+    } else {
+      const lx = side === 0 || side === 3 ? -hx : hx;
+      const ly = side < 2 ? -hy : hy;
+      x = lx * cos - ly * sin; y = lx * sin + ly * cos;
+    }
+    ring[side * 2] = cx + x;
+    ring[side * 2 + 1] = cy + y;
+  }
+  return ring;
+}
+
+function emitColliderFaces(pos, o, ring, cx, cy, zb, zt, prism, bottom) {
+  const sides = ring.length / 2;
+  for (let side = 0; side < sides; side++) {
+    const next = (side + 1) % sides;
+    const ax = ring[side * 2], ay = ring[side * 2 + 1];
+    const bx = ring[next * 2], by = ring[next * 2 + 1];
+    pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+    pos[o++] = bx; pos[o++] = by; pos[o++] = zb;
+    pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+    pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+    pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+    pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
+    if (prism) {
+      pos[o++] = cx; pos[o++] = cy; pos[o++] = zt;
+      pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
+      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
+      if (bottom) {
+        pos[o++] = cx; pos[o++] = cy; pos[o++] = zb;
+        pos[o++] = bx; pos[o++] = by; pos[o++] = zb;
+        pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
+      }
+    }
+  }
+  if (!prism) {
+    for (const corner of [0, 1, 2, 0, 2, 3]) {
+      pos[o++] = ring[corner * 2]; pos[o++] = ring[corner * 2 + 1]; pos[o++] = zt;
+    }
+    if (bottom) {
+      for (const corner of [0, 2, 1, 0, 3, 2]) {
+        pos[o++] = ring[corner * 2]; pos[o++] = ring[corner * 2 + 1]; pos[o++] = zb;
+      }
+    }
+  }
+  return o;
+}
+
 /**
  * ENV-01a1 (37.4): optional rock/stump prisms and yawed log boxes, with
  * upward-facing tops for support. Geometry is built only at world load.
@@ -352,46 +408,11 @@ export function buildDetailCollider(detail) {
     const c = detail.speciesDefs[detail.species[i]].collider;
     if (!c) continue;
     const shape = c.prism || c.box;
-    const sides = c.prism ? 8 : 4;
     const yaw = detail.yawDeg[i] * Math.PI / 180;
-    const cos = Math.cos(yaw), sin = Math.sin(yaw);
     const zb = detail.z[i] - 0.5, zt = detail.z[i] + shape.h;
-    const ring = new Float64Array(sides * 2);
-    for (let side = 0; side < sides; side++) {
-      let x, y;
-      if (c.prism) {
-        const r = c.prism.r / Math.cos(Math.PI / 8);
-        const angle = yaw + side * Math.PI / 4;
-        x = r * Math.cos(angle); y = r * Math.sin(angle);
-      } else {
-        const lx = side === 0 || side === 3 ? -c.box.hx : c.box.hx;
-        const ly = side < 2 ? -c.box.hy : c.box.hy;
-        x = lx * cos - ly * sin; y = lx * sin + ly * cos;
-      }
-      ring[side * 2] = detail.x[i] + x;
-      ring[side * 2 + 1] = detail.y[i] + y;
-    }
-    for (let side = 0; side < sides; side++) {
-      const next = (side + 1) % sides;
-      const ax = ring[side * 2], ay = ring[side * 2 + 1];
-      const bx = ring[next * 2], by = ring[next * 2 + 1];
-      pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
-      pos[o++] = bx; pos[o++] = by; pos[o++] = zb;
-      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
-      pos[o++] = ax; pos[o++] = ay; pos[o++] = zb;
-      pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
-      pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
-      if (c.prism) {
-        pos[o++] = detail.x[i]; pos[o++] = detail.y[i]; pos[o++] = zt;
-        pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
-        pos[o++] = bx; pos[o++] = by; pos[o++] = zt;
-      }
-    }
-    if (c.box) {
-      for (const corner of [0, 1, 2, 0, 2, 3]) {
-        pos[o++] = ring[corner * 2]; pos[o++] = ring[corner * 2 + 1]; pos[o++] = zt;
-      }
-    }
+    const ring = colliderRing(detail.x[i], detail.y[i], yaw, !!c.prism,
+      c.prism ? c.prism.r : 0, c.box ? c.box.hx : 0, c.box ? c.box.hy : 0);
+    o = emitColliderFaces(pos, o, ring, detail.x[i], detail.y[i], zb, zt, !!c.prism, false);
   }
   const bvh = buildBvh(pos, null, null);
   return {
@@ -400,6 +421,30 @@ export function buildDetailCollider(detail) {
     max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
     enabled: true,
   };
+}
+
+/**
+ * PROP-COLLIDE-01 (37.10): one closed, static prop BVH in world metres.
+ * @param {Array<{kind:number,x:number,y:number,zc:number,hx:number,hy:number,hz:number,r:number,h:number,yawRad:number}>} shapes
+ * @param {number} count
+ * @returns {MeshCollider|null}
+ */
+export function buildPropCollider(shapes, count) {
+  if (!count) return null;
+  let triCount = 0;
+  for (let i = 0; i < count; i++) triCount += shapes[i].kind === 1 ? 32 : 12;
+  const pos = new Float64Array(triCount * 9);
+  let o = 0;
+  for (let i = 0; i < count; i++) {
+    const s = shapes[i], prism = s.kind === 1;
+    const halfH = prism ? s.h / 2 : s.hz;
+    const ring = colliderRing(s.x, s.y, s.yawRad, prism, s.r, s.hx, s.hy);
+    o = emitColliderFaces(pos, o, ring, s.x, s.y, s.zc - halfH, s.zc + halfH, prism, true);
+  }
+  const bvh = buildBvh(pos, null, null);
+  return { id: 'props:static', kind: 'trimesh', bvh,
+    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
+    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)), enabled: true };
 }
 
 /**

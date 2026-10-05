@@ -122,12 +122,8 @@ export class GpuCellPipeline {
     // default true (terrain on), main.js passes `false` to force pass A2 off
     // regardless of `world.terrain.farReady` (see `_terrainActiveThisFrame`).
     this.terrainEnabled = opts.terrainEnabled !== false;
-    // ME-04 (27.11 ME-04 AC "createEngine({ renderer: 'mesh' | 'dda' })"):
-    // 'dda' (default) is every pass this class had before this story,
-    // completely untouched; 'mesh' additionally builds the raster-pass
-    // program/device/caches below and swaps pass A for `_passRaster()` in
-    // `_hook()` - resolve/deriv/light/shade/edge run unchanged either way.
-    this.renderer = opts.renderer === 'mesh' ? 'mesh' : 'dda';
+    // ME-19a: the legacy opts.renderer value is ignored.
+    this.renderer = 'mesh';
     // ME-15b (27.9a item 1): `createEngine({ shadows })` (main.js passes `engine.shadows`) merged over
     // SUN_SHADOW_DEFAULTS once; `sun` defaults to 'map' on the mesh renderer, 'dda' otherwise.
     this.shadowOpts = resolveSunShadowOptions(opts.shadows, this.renderer);
@@ -425,7 +421,7 @@ export class GpuCellPipeline {
     const depthBuf = new ArrayBuffer(4 * n);
     this._DepthF = new Float32Array(depthBuf); this._Depth = new Uint32Array(depthBuf);
     this._MASK = new Uint8Array(n);
-    this._source = 'dda'; // US-030a default; 'upload' is test-only (see setSource)
+    this._source = 'scene'; // US-030a default; 'upload' is test-only (see setSource)
     // US-030b: mirror buffers for the legacy 'upload' test source (14.2 item
     // 7's `?gpucompare=shade`) - it feeds the CPU-cast G-buffer straight into
     // the resolved GI/GA/Depth, bypassing cast/resolve; the shade pass now
@@ -1050,7 +1046,7 @@ export class GpuCellPipeline {
    * Stores refs for this frame; the actual GPU work happens inside
    * RenderTargetGL.present()'s hook. US-030a: `cam`/`world` are new
    * (optional, back-compat) - when both are given, the hook casts via the
-   * GLSL DDA (`this._source` must be `'dda'`, the default); when either is
+   * mesh raster pass (`this._source` defaults to `'scene'`); when either is
    * missing, it falls back to the legacy `_repackAndUpload` path (needs
    * `fb.gbuf` already filled by the CPU caster - `?gpucompare=shade`'s own
    * `fbCompare`, which never passes `cam`/`world`, keeps working unchanged).
@@ -1144,9 +1140,9 @@ export class GpuCellPipeline {
     // is illegal - see the constructor comment above `this.timer`).
     const passTimingOn = this._passTimingOn && this.passTimer.available;
     if (!passTimingOn) this.timer.begin();
-    const useDda = this._source !== 'upload' && !!this._cam && !!this._world;
-    this._useDdaThisFrame = useDda;
-    if (useDda) {
+    const useScene = this._source !== 'upload' && !!this._cam && !!this._world;
+    this._useSceneThisFrame = useScene;
+    if (useScene) {
       this._uploadMask();
       this._ensureWorldTextures(this._world);
       this._ensureTerrainTextures(this._world);
@@ -1158,21 +1154,21 @@ export class GpuCellPipeline {
     // US-016 (14.4 item 8): pass A2 runs only when the bound world has
     // terrain AND its far bake is ready - otherwise resolve reads set 1
     // untouched, same as before this story.
-    this._terrainActiveThisFrame = useDda && this.terrainEnabled && !!(this._world && this._world.terrain && this._world.terrain.farReady);
+    this._terrainActiveThisFrame = useScene && this.terrainEnabled && !!(this._world && this._world.terrain && this._world.terrain.farReady);
     // US-040 (15.2 item 2): project this frame's queued voxel instances
     // (pose -> AABB -> screen rect -> cull) - the SAME instanceRect step
     // castModels uses, so the two paths can never disagree. `pool.beginFrame
     // ()`/`pushInstance()` are the caller's responsibility (US-040 has no
     // entity binding yet); this only consumes what is already queued.
     this._voxelActiveThisFrame = false;
-    if (useDda && this._voxelPool) {
+    if (useScene && this._voxelPool) {
       // ME-08a (27.16 item 6): the mesh path draws voxels as triangles in
       // `_passRaster`, so the DDA voxel atlas (VRAM + upload) is skipped.
       if (this.renderer !== 'mesh') this._ensureVoxelAtlas(this._voxelPool);
       this._voxelPool.project(this._cam, this.rt, this.renderer);
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
-    if (useDda && this.renderer === 'mesh') {
+    if (useScene && this.renderer === 'mesh') {
       // ME-04: pass A entirely replaced by the raster pass (27.11 ME-04 AC
       // "'mesh' skips A1-A3") - no terrain/voxel pass this story (ME-06/08
       // add their own draws to `_passRaster` later); `_subSetCur = 1`
@@ -1200,7 +1196,7 @@ export class GpuCellPipeline {
         this._passWater();
         if (passTimingOn) this.passTimer.end();
       }
-    } else if (useDda) {
+    } else if (useScene) {
       if (passTimingOn) this.passTimer.begin(PASS_CAST);
       this._passCast();
       if (passTimingOn) this.passTimer.end();
@@ -1533,6 +1529,7 @@ export class GpuCellPipeline {
   _uploadVoxelInstances(pool) {
     const gl = this.gl;
     const count = pool.list.length;
+    if (count > MAX_VOX_INSTANCES) throw new Error(`Voxel instance upload exceeds DDA cap (${MAX_VOX_INSTANCES}): ${count}`);
     const rectF = this._voxRectF;
     for (let i = 0; i < count; i++) {
       writeInstanceRows(pool, i, this._voxInstF);
@@ -1658,7 +1655,7 @@ export class GpuCellPipeline {
   /** RE-02a: `uProjMode` + the pitched basis for a program (light/shade/edge). Program must be in use. */
   _uploadPitchUniforms(loc) {
     const gl = this.gl;
-    const on = !!this._pitched && this._useDdaThisFrame;
+    const on = !!this._pitched && this._useSceneThisFrame;
     gl.uniform1i(loc.uProjMode, on ? 1 : 0);
     if (on) {
       gl.uniform4fv(loc.uPitchA, this._pitchA);
@@ -2702,11 +2699,11 @@ export class GpuCellPipeline {
     // (DDA path: JS `fillSky` never runs, see the module doc) vs. the 14.1
     // passthrough (legacy 'upload'/CPU-fed source, where `fillSky` already
     // painted `fgTex`/`bgTex` for those cells - unchanged behaviour).
-    const useDda = this._useDdaThisFrame;
-    gl.uniform1i(loc.uGpuSky, useDda ? 1 : 0);
+    const useScene = this._useSceneThisFrame;
+    gl.uniform1i(loc.uGpuSky, useScene ? 1 : 0);
     this._uploadPitchUniforms(loc); // RE-02a
-    if (loc.uHashCell) gl.uniform1f(loc.uHashCell, this._pitched && this._useDdaThisFrame ? (this._hashCell || 0) : 0); // BUG-RTS-001 (28.11a): per frame (not version-gated)
-    if (useDda) {
+    if (loc.uHashCell) gl.uniform1f(loc.uHashCell, this._pitched && this._useSceneThisFrame ? (this._hashCell || 0) : 0); // BUG-RTS-001 (28.11a): per frame (not version-gated)
+    if (useScene) {
       const cb = this._camBasis;
       gl.uniform1f(loc.uHorizonRow, cb.horizonRow);
       gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);

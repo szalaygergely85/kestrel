@@ -6,7 +6,7 @@
 // its "JS (1-ray)" row is directly comparable to bench-cast.mjs's own
 // printed numbers (the CPU shading path is identical - see castJsFrame
 // below) without a second implementation to keep in sync. Reports one row
-// per path: JS (CPU, `renderWorld` with `fb.gpuDda = false`) and GPU at
+// per path: JS (CPU, `renderWorld` with `fb.gpu = false`) and GPU at
 // whatever `rays` this page loaded with.
 import {
   loadLevel, bindLevel, World, repackMaterials, renderWorld, ambientL, flickerStep,
@@ -32,7 +32,7 @@ export function run(ctx) {
 
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
-    timeSec: 0, gpuDda: false,
+    timeSec: 0, gpu: false, renderer: 'mesh',
   };
   const n = rt.cols * rt.rows;
 
@@ -46,7 +46,7 @@ export function run(ctx) {
   // shaded fg layer's alpha channel already carries the byte glyph code,
   // see CellBuffer.js) - no extra readback needed, this IS the final buffer.
   function castJsFrame(cam) {
-    fbCompare.gpuDda = false;
+    fbCompare.gpu = false;
     const wasActive = rt.gpuActive;
     rt.gpuActive = false; // force the CPU shade/edge passes to actually run
     renderWorld(fbCompare, world, cam);
@@ -61,7 +61,7 @@ export function run(ctx) {
 
   // --- GPU (DDA, n = gpuPipeline.rays) path: real present()+readback. ---
   function castGpuFrame(cam) {
-    fbCompare.gpuDda = true;
+    fbCompare.gpu = true;
     renderWorld(fbCompare, world, cam); // primes ambientL; the DDA itself runs in present()
     gpuPipeline.frame(fbCompare, ambientL, cam, world);
     rt.present();

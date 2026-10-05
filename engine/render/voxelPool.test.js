@@ -6,6 +6,8 @@
 //
 //   node engine/render/voxelPool.test.js
 
+import { MAX_VOX_INSTANCES_MESH } from '../index.js';
+import { GpuCellPipeline } from './gpu/GpuCellPipeline.js';
 import { VoxelPool } from './voxelPool.js';
 import { castModels } from '../voxel/voxelMarch.js';
 import { GBuffer, KIND_MODEL } from './GBuffer.js';
@@ -28,6 +30,8 @@ const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, nextId++); retu
 
 // ---- bind() ----------------------------------------------------------------
 const pool = new VoxelPool();
+ok('default renderer is mesh with 48 slots', pool.renderer === 'mesh' && pool.cap === MAX_VOX_INSTANCES_MESH);
+pool.renderer = 'dda'; // Existing 16-slot caster oracle fixture, until ME-19b.
 pool.bind(registry, table);
 ok('bind: packs voxel models only', pool.models.has('bear') && !pool.models.has('notVoxel'));
 ok('bind: matIds resolved via table.idFor', pool.models.get('bear').matIds[1] > 0);
@@ -100,7 +104,7 @@ if (global.gc) {
     };
   }
 
-  const poolC = new VoxelPool();
+  const poolC = new VoxelPool(); poolC.renderer = 'dda'; // Existing nearest-16 oracle fixture.
   poolC.bind(registry, table);
   const camC = { x: 0, y: 0, z: 0 };
 
@@ -214,6 +218,64 @@ if (global.gc) {
   for (let i = 0; i < 6; i++) sp.pushInstance('bear', i, 0, 2, 0);
   sp.projectShadow();
   ok('ME-15d projectShadow: growing back reuses the same 6 records (no alloc)', sp.shadowList.length === 6 && recs.every((r, i) => sp.shadowList[i] === r));
+}
+
+// VOX-CAP-01: mesh selection, cap switches and constructor-owned storage.
+{
+  const p = new VoxelPool(); p.renderer = 'mesh'; p.bind(registry, table);
+  const entities = Array.from({ length: 60 }, (_, i) => ({
+    components: { voxel: { model: 'bear' } },
+    transform: { x: 0, y: -(60 - i), z: 0, yawDeg: 0 },
+  }));
+  const w = { renderVersion: 1, forEachEntity(fn) { for (const e of entities) fn(e); } };
+  const c = { x: 0, y: 1, z: 1, yawDeg: 0, pitchDeg: 0 };
+  const refs = { raw: p.raw.slice(), slots: p._slots.slice(), shadows: p._shadowSlots.slice(), idx: p._nearIdx, dist: p._nearDist };
+  ok('mesh cap is public and scratch is preallocated for 48', MAX_VOX_INSTANCES_MESH === 48 && p.cap === 48 && p.raw.length === 48 && p._slots.length === 48 && p._shadowSlots.length === 48);
+  entities.length = 30;
+  p.collect(w, c);
+  ok('mesh queues all 30 in unchanged entity order below cap', p._rawCount === 30 && p.raw.slice(0, 30).every((r, i) => r.y === entities[i].transform.y));
+  p.project(c, rt);
+  ok('mesh projects all 30 visible props', p.list.length === 30 && p.stats.count === 30);
+  ok('mesh shadows include all 30', p.projectShadow() === 30);
+  for (let i = 30; i < 60; i++) entities.push({ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -(60 - i), z: 0 } });
+  w.renderVersion++;
+  const warnings = [], saveWarn = console.warn;
+  console.warn = msg => warnings.push(msg);
+  try { p.collect(w, c); p.collect(w, c); } finally { console.warn = saveWarn; }
+  ok('60 entities choose nearest 48 in increasing distance order', p._rawCount === 48 && p.raw.every((r, i) => r.y === -(i + 1)));
+  ok('overflow warning fires once and names 48', warnings.length === 1 && warnings[0].includes('(48)'));
+  p.project(c, rt);
+  ok('mesh projects and shadows the full 48 cap', p.list.length === 48 && p.projectShadow() === 48);
+  // Switching back is covered by the existing frozen-path suites; here verify
+  // renderer assignment updates only the cap, retaining every scratch record.
+  p.renderer = 'dda';
+  ok('renderer switch updates cap immediately', p.cap === 16);
+  p.renderer = 'mesh';
+  entities.length = 48; w.renderVersion++;
+  p.collect(w, c); p.project(c, rt); p.projectShadow();
+  let growth = 0;
+  if (global.gc) {
+    for (let trial = 0; trial < 3; trial++) {
+      global.gc(); const before = process.memoryUsage().heapUsed;
+      for (let f = 0; f < 1000; f++) {
+        p.renderer = f & 1 ? 'dda' : 'mesh'; p.renderer = 'mesh';
+        p.collect(w, c); p.project(c, rt); p.projectShadow();
+      }
+      global.gc(); const delta = process.memoryUsage().heapUsed - before;
+      growth = trial === 0 ? delta : Math.min(growth, delta);
+    }
+    ok('1000 frames at 48 including renderer switches grow heap <64KB', growth < 65536, String(growth));
+    console.log(`[VOX-CAP-01] heap growth ${growth} bytes`);
+  }
+  p.beginFrame(); p.pushInstance('bear', 0, -1, 0, 0); p.project(c, rt); p.projectShadow();
+  p.collect(w, c); p.project(c, rt); p.projectShadow();
+  ok('shrink/regrow and switches reuse all raw/project/shadow records', p.raw.every((r, i) => r === refs.raw[i]) && p.list.every((r, i) => r === refs.slots[i]) && p.shadowList.every((r, i) => r === refs.shadows[i]) && p._nearIdx === refs.idx && p._nearDist === refs.dist);
+  p.beginFrame(); for (let i = 0; i < 48; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
+  ok('mesh pushInstance accepts all 48', p._rawCount === 48);
+  p.project(c, rt);
+  let guarded = false;
+  try { GpuCellPipeline.prototype._uploadVoxelInstances.call({}, p); } catch (e) { guarded = e.message.includes('exceeds DDA cap (16): 48'); }
+  ok('GPU upload rejects mesh-sized list before writing texture scratch', guarded);
 }
 
 console.log(`${pass} pass, ${fail} fail`);

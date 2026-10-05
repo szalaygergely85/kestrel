@@ -282,13 +282,13 @@ function bboxDist(cam, bbox) {
 export function renderWorld(fb, world, cam) {
   assertProjectionRenderer(cam, fb.renderer); // RE-02a: 'pitched' needs renderer 'mesh'
   // US-030a AC "the CPU caster no longer runs on the gl2 path": when a
-  // ready GPU pipeline owns this frame's cast (`fb.gpuDda`, set by
+  // ready GPU pipeline owns this frame's cast (`fb.gpu`, set by
   // main.js), skip the entire CPU cast/derivative/shade/edge/sky sequence
   // below - `GpuCellPipeline.js`'s present hook does all of it itself
   // (`_passCast`/`_passDeriv`/`_passShade`/`_passEdgeOrDebug`), fed by
   // `world`/`cam` via `pipeline.frame(fb, light, cam, world)` (main.js).
   // The legacy CPU sequence stays exactly as-is for the JS oracle/fallback
-  // (`fb.gpuDda` unset - `?gpu=0`, `?force2d=1`, no WebGL2, or the
+  // (`fb.gpu` unset - `?gpu=0`, `?force2d=1`, no WebGL2, or the
   // `?gpucompare=shade` test's own separate `fbCompare`).
   //
   // Bug fix (US-030a, "colour blocks, no glyphs" on the GPU path): the
@@ -297,7 +297,7 @@ export function renderWorld(fb, world, cam) {
   // skips - so on the GPU path it stayed [0,0,0], `uLight` was zero and the
   // shade pass resolved every cell to glyph 0. Prime it here, once per
   // frame, from the live palette - same call, same source of truth.
-  if (fb.gpuDda) {
+  if (fb.gpu) {
     if (fb.palette) primeAmbientLight(fb.palette);
     return;
   }
@@ -372,7 +372,7 @@ export function renderWorld(fb, world, cam) {
   // terrain, before the shading passes - `fb.voxelPool` is optional (US-040
   // has no entity binding; harness callers set it via `pool.project(cam,
   // rt)`, US-041a's `collect(world)` fills it from entities instead). Only
-  // the JS oracle path reaches here (`fb.gpuDda` early-out above covers the
+  // the JS oracle path reaches here (`fb.gpu` early-out above covers the
   // GPU path). US-041a (15.3 item 3): default `faceMode: 'packed'` now (US-040
   // forced 'nearest' - "face 7 is US-041a" - the rotated-normal GPU/light
   // pass work this story adds; `voxelMarch.js`'s own default is 'packed').

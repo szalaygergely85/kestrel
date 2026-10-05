@@ -90,7 +90,7 @@ const pm = packVoxelModel(quadruped12, table.idFor);
 // =============================================================================
 
 const registry = makeRegistry({ bear: { voxel: quadruped12 } });
-const pool = new VoxelPool();
+const pool = new VoxelPool(); pool.renderer = 'dda'; // Frozen atlas fixture until ME-19b.
 pool.bind(registry, table);
 
 {

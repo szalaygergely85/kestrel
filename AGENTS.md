@@ -28,7 +28,7 @@ The full project rules are in **`CLAUDE.md`**; read it first. The rules below ar
 - `node tools/check-deps.mjs`: must print `check-deps OK` (warnings are fine).
 - Any change to `game/js/main.js`: also run `node tools/route-walk-browser.mjs --port <95xx>` (mesh, the default). It must reach the end trigger.
 - **The old `dda` renderer is frozen (D-037, owner 2026-10-04):** never run dda checks, never add dda support to new features, never fix dda-only bugs. Only `?renderer=dda` must still boot. It gets deleted in ME-19.
-- Engine render changes: `?gpucompare=1&renderer=mesh` must show no new FAIL rows. Headless: `node tools/capture-browser.mjs --mode gpucompare --variant mesh --port <95xx> --timeout-ms 300000`. Delete the capture JSON/PNG it writes.
+- Engine render changes: `?gpucompare=1` must show no new FAIL rows. Headless: `node tools/capture-browser.mjs --mode gpucompare --port <95xx> --timeout-ms 300000`. Delete the capture JSON/PNG it writes.
 - Browser checks: serve with `python tools/serve.py <port>` (no-cache headers), on a port in **9500-9999**. Never use 8000 (the owner's server). Stop only the server you started.
 
 ## Reporting

@@ -205,9 +205,9 @@ function makeLcg(seed) {
   ok("a5: assertProjectionRenderer(pitched, 'dda') throws the 28.1 message",
     throwsMsg(() => assertProjectionRenderer(pitchedCam, 'dda')) === "cam.projection 'pitched' requires renderer 'mesh'");
   ok("a5: renderWorld({renderer:'dda'}, pitched cam) throws at the entry",
-    throwsMsg(() => renderWorld({ renderer: 'dda', gpuDda: true }, null, pitchedCam)).includes("requires renderer 'mesh'"));
+    throwsMsg(() => renderWorld({ renderer: 'dda', gpu: true }, null, pitchedCam)).includes("requires renderer 'mesh'"));
   ok('a5: renderWorld without a renderer field (dda default) throws on pitched',
-    throwsMsg(() => renderWorld({ gpuDda: true }, null, pitchedCam)).includes("requires renderer 'mesh'"));
+    throwsMsg(() => renderWorld({ gpu: true }, null, pitchedCam)).includes("requires renderer 'mesh'"));
   ok("pitched + 'mesh' and shear + either renderer do not throw",
     throwsMsg(() => { assertProjectionRenderer(pitchedCam, 'mesh'); assertProjectionRenderer(shearCam, 'dda'); assertProjectionRenderer(shearCam, 'mesh'); }) === '');
   ok('resolveProjection: unset -> pitched on mesh (RE-02b), shear on dda, explicit wins',

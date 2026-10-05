@@ -39,6 +39,8 @@
     skyHorizon:     '#c4dcef',
     cloudLit:       '#fff8ea',
     // --- stone ---
+    scrawl:         '#b8ab94', // DECAL-01: existing stoneLight colour.
+    scrawlFaint:    '#8a7f6e', // Existing stoneMid; shallow mason mark.
     stoneLight:     '#b8ab94',
     stoneMid:       '#8a7f6e',
     stoneDark:      '#4e4840',

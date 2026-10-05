@@ -95,6 +95,8 @@ check('buildQuery bench', buildQuery('bench', {}) === 'bench=present');
 check('buildQuery voxelbench default grid/rays', buildQuery('voxelbench', {}) === 'voxelbench=1&grid=240x90&rays=2');
 check('buildQuery voxelbench custom grid/rays', buildQuery('voxelbench', { grid: '160x60', rays: 1 }) === 'voxelbench=1&grid=160x60&rays=1');
 check('buildQuery gpucompare with grid', buildQuery('gpucompare', { grid: '160x60' }) === 'gpucompare=1&grid=160x60');
+throws('buildQuery rejects removed migration variant', () => buildQuery('gpucompare', { variant: 'mesh' }));
+throws('buildQuery rejects old dda variant', () => buildQuery('gpucompare', { variant: 'dda' }));
 throws('buildQuery rejects unknown mode', () => buildQuery('bogus', {}));
 
 check('resultGlobalFor gpucompare', resultGlobalFor('gpucompare') === '__gpuCompare');
@@ -117,13 +119,13 @@ throws('resultGlobalFor rejects unknown mode', () => resultGlobalFor('bogus'));
   check('normalize gpucompare metric flattened', n.rows[0].metrics.glyphMatchPct === 99.9);
 }
 {
-  // dda-variant window.__gpuCompare shape (game/js/main.js line 1543)
+  // mesh-variant window.__gpuCompare shape (game/js/main.js line 1543)
   const raw = { rows: [
     { pose: 'p1', ok: true, cmpGeom: { kindMatchPct: 100, holes: 0, k8Cpu: 2, k8Gpu: 2 }, cmpCells: { glyphMatchPct: 99, fgMax: 1 }, cmpLight: { pass: true, dLViol: 0 } },
   ], ok: true, infoRows: [] };
-  const n = normalizeLiveResult('gpucompare', raw, { variant: 'dda' });
-  check('normalize dda nested flatten', n.rows[0].metrics['cmpGeom.kindMatchPct'] === 100);
-  check('normalize dda nested light', n.rows[0].metrics['cmpLight.pass'] === true);
+  const n = normalizeLiveResult('gpucompare', raw, { variant: 'mesh' });
+  check('normalize mesh nested flatten', n.rows[0].metrics['cmpGeom.kindMatchPct'] === 100);
+  check('normalize mesh nested light', n.rows[0].metrics['cmpLight.pass'] === true);
 }
 {
   // window.__bench shape (game/js/main.js line 1712-1722)
@@ -175,7 +177,7 @@ throws('resultGlobalFor rejects unknown mode', () => resultGlobalFor('bogus'));
   check('import shade headless false', p.headless === false);
 }
 {
-  // ?gpucompare=1 (dda) overlay text (game/js/main.js lines 1507-1527)
+  // ?gpucompare=1 (mesh) overlay text (game/js/main.js lines 1507-1527)
   const text =
     `?gpucompare=1  GpuCellPipeline: WebGL2 (NVIDIA)  grid: 160x60  rays: 1  readback: present() units 0/1\n` +
     `ref: 800x600 @dpr 1  cell: 8x14px  aspect=1.3333  fov=66 deg (fixed, window-independent)\n` +
@@ -185,14 +187,14 @@ throws('resultGlobalFor rejects unknown mode', () => resultGlobalFor('bogus'));
     `  shading: glyph 99.50%  fgOut 0  bgOut 0  outside 0.100% (<=0.5%, 1 cells)  fgMax 2  bgMax 2 (<=64)  poisonedSurvivors 0\n` +
     `  light: OK  sunlit 0.000% (<=0.5%, 0/500)  dLMax 0.0004  dLViol 0 (<=1e-3/chan)\n` +
     `\nALL PASS`;
-  check('detectImportMode dda', JSON.stringify(detectImportMode(text)) === JSON.stringify({ mode: 'gpucompare', variant: 'dda' }));
+  check('detectImportMode mesh', JSON.stringify(detectImportMode(text)) === JSON.stringify({ mode: 'gpucompare', variant: 'mesh' }));
   const p = parseImportText(text);
-  check('import dda rows count', p.rows.length === 1);
-  check('import dda geom metric', p.rows[0].metrics['cmpGeom.kindMatchPct'] === 99.8);
-  check('import dda k8 metric', p.rows[0].metrics['cmpGeom.k8Cpu'] === 4 && p.rows[0].metrics['cmpGeom.k8Gpu'] === 4);
-  check('import dda shading metric', p.rows[0].metrics['cmpCells.glyphMatchPct'] === 99.5);
-  check('import dda light metric', p.rows[0].metrics['cmpLight.pass'] === true);
-  check('import dda overall ok', p.ok === true);
+  check('import mesh rows count', p.rows.length === 1);
+  check('import mesh geom metric', p.rows[0].metrics['cmpGeom.kindMatchPct'] === 99.8);
+  check('import mesh k8 metric', p.rows[0].metrics['cmpGeom.k8Cpu'] === 4 && p.rows[0].metrics['cmpGeom.k8Gpu'] === 4);
+  check('import mesh shading metric', p.rows[0].metrics['cmpCells.glyphMatchPct'] === 99.5);
+  check('import mesh light metric', p.rows[0].metrics['cmpLight.pass'] === true);
+  check('import mesh overall ok', p.ok === true);
 }
 {
   // BENCH overlay text (game/js/main.js lines 1730-1735)

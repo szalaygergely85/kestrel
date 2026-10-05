@@ -42,7 +42,7 @@ window.__debug = { input, overlay, rt, engine, gpuPipeline, sprites };
 
 const fb = {
   rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0,
-  gbuf, matTable, detailPass, gpuDda: false,
+  gbuf, matTable, detailPass, gpu: false, renderer: 'mesh',
 };
 
 // `?source=upload`: US-029 path (CPU cast + G-buffer upload, GPU shade/edge/sprites) - see runWorld/runCompare.
@@ -93,7 +93,7 @@ function runWorld() {
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
       // `?source=upload`: US-029 path (CPU cast + G-buffer upload, GPU shade/edge/sprites).
-      fb.gpuDda = !!gpuPipeline && !upload;
+      fb.gpu = !!gpuPipeline && !upload;
       renderWorld(fb, world, cam);
       sprites.render(fb, world, cam); // US-030c: after the surfaces, before present()
       if (gpuPipeline) { if (upload) gpuPipeline.frame(fb, ambientL); else gpuPipeline.frame(fb, ambientL, cam, world); }
@@ -109,8 +109,8 @@ function runWorld() {
 }
 
 // `?spritecompare=1`: both paths render test_room as a World from the bench
-// poses; the CPU frame (`fb.gpuDda = false`) is the oracle, then the GPU
-// frame (`gpuDda = true` + pipeline.frame + present, sprite pass inside).
+// poses; the CPU frame (`fb.gpu = false`) is the oracle, then the GPU
+// frame (`gpu = true` + pipeline.frame + present, sprite pass inside).
 function runCompare() {
   if (!gpuPipeline || !sprites.pass) {
     overlay.visible = true; overlay.el.style.display = 'block';
@@ -123,16 +123,16 @@ function runCompare() {
   // `?source=upload`: the US-029 path (CPU cast -> G-buffer upload -> GPU
   // shade/edge -> sprite pass) - the sprite pass only shares the DEPTH texture
   // with the caster, so its parity can be measured independently of the
-  // US-030a DDA state. Default: the DDA path (`gpuDda`, pipeline.frame with cam/world).
+  // US-030a DDA state. Default: the mesh scene path (`gpu`, pipeline.frame with cam/world).
   runSpriteCompareMode({
-    sprites, fb, poses: POSES, overlay, rendererString: `${gpuPipeline.rendererString} (source: ${upload ? 'upload' : 'dda'})`,
-    renderCpu(cam) { fb.gpuDda = false; renderWorld(fb, world, cam); },
+    sprites, fb, poses: POSES, overlay, rendererString: `${gpuPipeline.rendererString} (source: ${upload ? 'upload' : 'scene'})`,
+    renderCpu(cam) { fb.gpu = false; renderWorld(fb, world, cam); },
     renderGpu(cam) {
       if (upload) {
         gpuPipeline.frame(fb, ambientL); // fb.gbuf/depth still hold the CPU cast of this very pose
       } else {
-        fb.gpuDda = true;
-        renderWorld(fb, world, cam); // no-op on the DDA path
+        fb.gpu = true;
+        renderWorld(fb, world, cam); // GPU scene frame: prime ambient light only
         gpuPipeline.frame(fb, ambientL, cam, world);
       }
       rt.present(); // cell pass + sprite pass

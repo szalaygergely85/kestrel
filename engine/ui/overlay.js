@@ -11,6 +11,8 @@ import { frameMatrix, projectPoint, PROJ_NEAR } from '../render/projection.js';
 export const OVL_MAX_OPS = 1024;
 export const OVL_MAX_TOUCHED = 16384;
 export const OVL_MAX_STYLES = 64;
+export const OVL_MAX_TEXTS = 64;
+export const OVL_MAX_GLYPHS = 4096;
 export const OVL_BIAS_M = 0.25;
 export const OVL_BIAS_REL = 0.01;
 export const OVL_RING_LIFT = 0.05;
@@ -18,7 +20,7 @@ export const OVL_RING_SAMPLES = 24;
 
 function ov_empty8() { return new Uint8Array(0); }
 function ov_emptyF() { return new Float32Array(0); }
-const OP_RING = 1, OP_BAR = 2, OP_RECT = 3, OP_SEG = 4, OPW = 8;
+const OP_RING = 1, OP_BAR = 2, OP_RECT = 3, OP_SEG = 4, OP_TEXT = 5, OPW = 12;
 const RING_COS = new Float64Array(OVL_RING_SAMPLES), RING_SIN = new Float64Array(OVL_RING_SAMPLES);
 for (let k = 0; k < OVL_RING_SAMPLES; k++) { RING_COS[k] = Math.cos((k / OVL_RING_SAMPLES) * Math.PI * 2); RING_SIN[k] = Math.sin((k / OVL_RING_SAMPLES) * Math.PI * 2); }
 // Segment-slope glyph slots of a style: horizontal, vertical, down-right, up-right.
@@ -44,12 +46,14 @@ export function createOverlay(cols = 0, rows = 0) {
   let nStyles = 0;
   let nOps = 0, nTouched = 0;
   let groundFn = null;
+  let texts = [];
+  let rgbMul = 1; // Per-op colour gain; non-text ops retain their original rgb.
   let Lcols = 0, Lrows = 0, Lovl = ov_empty8(), LovlZ = ov_emptyF(); // closure copies of the layer (hot path)
   const rc = new Float64Array(OVL_RING_SAMPLES * 3); // ring scratch: cell col, row, ref per sample
 
   const ov = {
     cols: 0, rows: 0,
-    renderer: 'dda', // RE-02b F1: the host sets 'mesh' so an unset cam.projection resolves to pitched
+    renderer: 'mesh', // ME-19a: an unset cam.projection resolves to pitched.
     ovl: new Uint8Array(0), ovlZ: new Float32Array(0),
     touched, // first `stats.cells` entries are valid
     // RE-07b seam: dirty row span = union of this frame's and last frame's touched rows.
@@ -80,6 +84,27 @@ export function createOverlay(cols = 0, rows = 0) {
       const id = keyToId.get(key);
       if (id === undefined) throw new Error(`overlay.styleId: unknown style '${key}'`);
       return id;
+    },
+    /** Load-only text table. Copies glyph indices, resets ids, caps total storage. */
+    setTexts(glyphArrays) {
+      if (glyphArrays.length > OVL_MAX_TEXTS) throw new Error('overlay.setTexts: too many texts');
+      let count = 0;
+      for (const glyphs of glyphArrays) {
+        count += glyphs.length;
+        if (glyphs.length < 1 || glyphs.length > 64 || glyphs.some(g => !Number.isInteger(g) || g < 0 || g > 94)) throw new Error('overlay.setTexts: invalid glyphs');
+      }
+      if (count > OVL_MAX_GLYPHS) throw new Error('overlay.setTexts: too many glyphs');
+      texts = glyphArrays.map(g => Uint8Array.from(g));
+      return Int32Array.from(texts, (_, i) => i);
+    },
+    /** World baseline, pre-bound text/style ids; numbers only in the op buffer. */
+    text(textId, ax, ay, bx, by, z, mul, style) {
+      if (nOps >= OVL_MAX_OPS) { ov.stats.dropped++; return; }
+      const o = nOps * OPW;
+      ops[o] = OP_TEXT; ops[o + 1] = style; ops[o + 2] = textId;
+      ops[o + 3] = ax; ops[o + 4] = ay; ops[o + 5] = bx; ops[o + 6] = by;
+      ops[o + 7] = z; ops[o + 8] = mul;
+      nOps++; ov.stats.ops = nOps;
     },
     /** (Re)allocates the layer for a scene grid (engine grid:changed). */
     bind(c, r, pxW = 1, pxH = 1) {
@@ -141,7 +166,9 @@ export function createOverlay(cols = 0, rows = 0) {
         frameMatrix(cam, grid, M, ov.renderer);
         for (let k = 0; k < nOps; k++) {
           const o = k * OPW, type = ops[o], style = ops[o + 1] | 0;
-          if (type === OP_RING) rasterRing(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], style);
+          rgbMul = type === OP_TEXT ? ops[o + 8] : 1;
+          if (type === OP_TEXT) rasterText(ops[o + 2] | 0, ops[o + 3], ops[o + 4], ops[o + 5], ops[o + 6], ops[o + 7], style);
+          else if (type === OP_RING) rasterRing(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], style);
           else if (type === OP_SEG) rasterSegment(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], ops[o + 6], ops[o + 7], style);
           else if (type === OP_BAR) rasterBar(ops[o + 2], ops[o + 3], ops[o + 4], ops[o + 5], ops[o + 6] | 0, style, ops[o + 7] | 0);
           else rasterRect(ops[o + 2] | 0, ops[o + 3] | 0, ops[o + 4] | 0, ops[o + 5] | 0, style);
@@ -179,7 +206,7 @@ export function createOverlay(cols = 0, rows = 0) {
       touched[nTouched++] = i;
     }
     const s3 = style * 3, i4 = i * 4;
-    Lovl[i4] = styleRgb[s3]; Lovl[i4 + 1] = styleRgb[s3 + 1]; Lovl[i4 + 2] = styleRgb[s3 + 2];
+    Lovl[i4] = Math.min(255, Math.round(styleRgb[s3] * rgbMul)); Lovl[i4 + 1] = Math.min(255, Math.round(styleRgb[s3 + 1] * rgbMul)); Lovl[i4 + 2] = Math.min(255, Math.round(styleRgb[s3 + 2] * rgbMul));
     Lovl[i4 + 3] = glyph;
     LovlZ[i] = ref;
   }
@@ -247,6 +274,30 @@ export function createOverlay(cols = 0, rows = 0) {
     const c1 = Math.floor(W2 * ((M[0] * x1 + M[4] * y1 + M[8] * z1 + M[12]) * i1) + W2);
     const r1 = Math.floor(H2 * ((M[1] * x1 + M[5] * y1 + M[9] * z1 + M[13]) * i1) + H2);
     line(c0, r0, w0, c1, r1, w1, style, true);
+  }
+
+  function rasterText(textId, ax, ay, bx, by, z, style) {
+    const glyphs = texts[textId];
+    if (!glyphs) return;
+    projectPoint(M, Lcols, Lrows, ax, ay, z, p4);
+    if (p4[3] <= PROJ_NEAR) return;
+    const ac = p4[0], ar = p4[1];
+    projectPoint(M, Lcols, Lrows, bx, by, z, p4);
+    if (p4[3] <= PROJ_NEAR) return;
+    if (Math.hypot(p4[0] - ac, p4[1] - ar) / glyphs.length < 0.75) {
+      rasterSegment(ax, ay, z, bx, by, z, style);
+      return;
+    }
+    let prevC = -1, prevR = -1;
+    for (let k = 0; k < glyphs.length; k++) {
+      if (glyphs[k] === 0) continue; // Space: the wall shows through.
+      const u = (k + 0.5) / glyphs.length;
+      projectPoint(M, Lcols, Lrows, ax + (bx - ax) * u, ay + (by - ay) * u, z, p4);
+      const c = Math.floor(p4[0]), r = Math.floor(p4[1]);
+      if (c === prevC && r === prevR) continue; // Two letters in one cell: first wins.
+      prevC = c; prevR = r;
+      if (p4[3] > PROJ_NEAR) put(c, r, glyphs[k], style, p4[3]);
+    }
   }
 
   function rasterBar(x, y, z, frac, width, style, emptyStyle) {

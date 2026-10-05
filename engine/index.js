@@ -72,7 +72,7 @@ export {
 // ---- US-039/US-040 voxel models (architecture.md 15.1/15.2) ---------------
 // Exported now (15.2 item 1 supersedes 15.1's "no exports until US-041"):
 // the gpucompare harness needs them.
-export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
+export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
 export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
@@ -83,8 +83,6 @@ export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md
 // documented public shape (27.3), these are just its (de)serialize/validate
 // functions.
 export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
-/** Renderer used when `?renderer=` is absent (owner 2026-10-03: 'mesh' is the default; '?renderer=dda' still selects the legacy caster; game main.js and the editor read it). */
-export const DEFAULT_RENDERER = 'mesh';
 export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
@@ -218,3 +216,6 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
 export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
+
+// DECAL-01: wall-text bindings over the shared overlay layer.
+export { bindDecals, drawDecals } from './ui/decals.js';

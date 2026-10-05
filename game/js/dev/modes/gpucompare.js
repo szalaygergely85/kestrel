@@ -1,20 +1,11 @@
-// US-048: `?gpucompare=1|shade|mesh`, moved verbatim (behaviour-identical)
-// out of game/js/main.js. All three variants share `buildCompareRuns()`
-// (the DDA and mesh variants both cast the same world/pose list; the shade
-// variant is a separate, simpler test_room-only path) so they stay in one
-// module rather than being split across three files per the letter of the
-// backlog row - splitting would mean either duplicating buildCompareRuns/
-// makeDiffPngPainter or introducing a cross-module import between two dev
-// modes, both worse than one cohesive "gpucompare" module. See the story's
-// Programmer notes (docs/backlog.md US-048 row) for this call.
 import {
-  bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
+  bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
+  bindDecals, drawDecals, hexToRgb, animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
-  classifyMigrationCells, MIGRATION_CATS, terrainMeshSetFor, beginFrame, castSectors, fillSky,
+  terrainMeshSetFor, beginFrame, castSectors, fillSky,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
@@ -93,7 +84,7 @@ function runGpuCompareShadeMode(ctx) {
 // `?gpucompare=1` (US-030a AC "Parity: with N = 1 the GPU cast matches the
 // JS caster"; docs/architecture.md 14.2 item 8): the DDA parity page. Runs
 // at 160x60/n=1 (forced at bootstrap - see main.js's `isDdaCompare` block),
-// casting `test_room` as a real `World` (so `renderWorld`'s `fb.gpuDda`
+// casting `test_room` as a real `World` (so `renderWorld`'s `fb.gpu`
 // branch is exercised exactly as gameplay uses it) through both paths from
 // the same camera poses. ME-06 (27.15.5a item 6): the two worlds + fixed
 // pose list `?gpucompare=1` and `?gpucompare=mesh` both need - factored out
@@ -189,6 +180,7 @@ function buildCompareRuns(ctx) {
   const swordHeldDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.swordHeld;
   if (swordHeldDef && !assets.has('model', 'swordHeld')) assets.add('model', 'swordHeld', { ...swordHeldDef, voxel: { ...swordHeldDef.voxel, meshOnly: true } });
   const compareVoxelPool = new VoxelPool();
+  compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
   const LEVER_X = 1499.25, LEVER_Y = 1027.3, LEVER_Z = 3.0;
   const LANTERN_X = 1499.9, LANTERN_Y = 1024.5, LANTERN_Z = 1.3;
@@ -519,6 +511,20 @@ function buildCompareRuns(ctx) {
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 
+  // DECAL-01: isolated overlay probe; every earlier pose retains its old ops.
+  const scrawl = worldM1.decals.find(d => d.id === 'tower.scrawl');
+  if (ctx.renderer === 'mesh' && scrawl) {
+    const x = (scrawl.ax + scrawl.bx) * 0.5, y = (scrawl.ay + scrawl.by) * 0.5, z = (scrawl.z0 + scrawl.z1) * 0.5;
+    const decalCam = { x, y: y - 1.5, z: z + 0.65, yawDeg: 180, pitchDeg: -23.4 };
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: decalScrawl (DECAL-01, KEEP THE LIGHT, lantern lit)',
+      cam: decalCam, real: true, meshOnly: true, decalAssert: scrawl.glyphs.filter(g => g !== 0).length, overlayOps: ov => {
+        ov.setStyles({ decal: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawl) },
+          decalFaint: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawlFaint) } });
+        const binding = bindDecals(ov, worldM1.decals);
+        drawDecals(binding, ov, decalCam, worldM1Lights, worldM1);
+      } });
+  }
+
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -565,7 +571,7 @@ function applySunOverride(world, lights, sun) {
   };
 }
 
-function runGpuCompareDdaMode(ctx) {
+function runGpuCompareSceneMode(ctx) {
   const {
     gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, openSpans, gbuf, overlay, sprites, engine,
     compareNoVoxels, renderer, terrainEnabled, rayParam, params, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR, fadeLut,
@@ -575,7 +581,7 @@ function runGpuCompareDdaMode(ctx) {
     console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
   }
 
-  gpuPipeline.setSource('dda');
+  gpuPipeline.setSource('scene');
 
   const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);
@@ -600,7 +606,7 @@ function runGpuCompareDdaMode(ctx) {
 
   const fbCompare = {
     rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
-    lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpuDda: false,
+    lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: false,
     renderer, terrainEnabled,
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
@@ -630,7 +636,7 @@ function runGpuCompareDdaMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -677,7 +683,7 @@ function runGpuCompareDdaMode(ctx) {
     poisonAllCells(rt.cells, n);
     engine.feedDetail(cam, true); // ENV-01a2: one shared fed set for both twins.
     fbCompare.frameNo++; // RE-15a fixes: once per pose, before both twins run (see fbCompare init above)
-    fbCompare.gpuDda = true;
+    fbCompare.gpu = true;
     renderWorld(fbCompare, world, cam);
     gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
     engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass composites inside present()
@@ -704,7 +710,7 @@ function runGpuCompareDdaMode(ctx) {
 
     const wasActive = rt.gpuActive;
     rt.gpuActive = false;
-    fbCompare.gpuDda = false;
+    fbCompare.gpu = false;
     renderWorld(fbCompare, world, cam);
     // BUG-VM-001 (item 5): the JS/mesh twin's own `buildList` call (compositor.js's `renderWorldMesh`), right
     // after `renderWorld` above runs it - before anything else touches `engine.viewModel.stats`.
@@ -738,7 +744,9 @@ function runGpuCompareDdaMode(ctx) {
     const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
       cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
     if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${poseName}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);
-    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 && ovlRes.hidden > 0 && ovlRes.shownGpu > 0);
+    // RTS tests both shown/hidden marks; this frontal scrawl must show every letter.
+    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 &&
+      (decalAssert ? ovlRes.shownGpu >= decalAssert && ovlRes.shownTwin >= decalAssert : ovlRes.hidden > 0 && ovlRes.shownGpu > 0));
     // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
     // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
     // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
@@ -749,7 +757,7 @@ function runGpuCompareDdaMode(ctx) {
     if (anchorShear && renderer === 'mesh') {
       const shearCam = { ...cam, projection: 'shear' };
       compareVoxelPool.project(shearCam, rt, renderer);
-      rt.gpuActive = false; fbCompare.gpuDda = false;
+      rt.gpuActive = false; fbCompare.gpu = false;
       renderWorld(fbCompare, world, shearCam);
       drawSprites(fbCompare, sprites.pool);
       rt.gpuActive = wasActive;
@@ -806,7 +814,7 @@ function runGpuCompareDdaMode(ctx) {
     const pipeline2 = new GpuCellPipeline(rt, { rays: 2 });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
-      pipeline2.setSource('dda');
+      pipeline2.setSource('scene');
       infoRows = [];
       resetInstances();
       for (const { world, lights, name: poseName, cam, real, before, meshOnly } of runs) {
@@ -826,7 +834,7 @@ function runGpuCompareDdaMode(ctx) {
         sprites.pool.project(cam, rt, lights || ambientL, world);
 
         poisonAllCells(rt.cells, n);
-        fbCompare.gpuDda = true;
+        fbCompare.gpu = true;
         renderWorld(fbCompare, world, cam);
         pipeline2.frame(fbCompare, lights || ambientL, cam, world);
         rt.present();
@@ -835,7 +843,7 @@ function runGpuCompareDdaMode(ctx) {
 
         const wasActive2 = rt.gpuActive;
         rt.gpuActive = false;
-        fbCompare.gpuDda = false;
+        fbCompare.gpu = false;
         renderWorld(fbCompare, world, cam);
         drawSprites(fbCompare, sprites.pool);
         rt.gpuActive = wasActive2;
@@ -894,150 +902,9 @@ function runGpuCompareDdaMode(ctx) {
   window.__gpuCompare = { rows: rowsOut.concat(shadowRows), ok: overallOk, infoRows };
 }
 
-// Diff-PNG painter for `?gpucompare=mesh`: 3 panels (dda fg, mesh fg,
-// category map), 4x8 px per cell, 2 px gaps. One canvas/ImageData per page run.
-function makeDiffPngPainter(cols, rows) {
-  const DIFF_CAT_RGB = [null, [255, 0, 255], [0, 255, 255], [255, 0, 0], [255, 255, 0], [255, 140, 0]];
-  const CW = 4, CH = 8, GAP = 2;
-  const w = cols * CW * 3 + GAP * 2, h = rows * CH;
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx2d = canvas.getContext('2d');
-  const img = ctx2d.createImageData(w, h);
-  return function paint(ddaFg, meshFg, cat) {
-    const d = img.data;
-    d.fill(0);
-    for (let i = 3; i < d.length; i += 4) d[i] = 255;
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const i = y * cols + x, fi = i * 4, c = cat[i];
-        const ov = DIFF_CAT_RGB[c];
-        for (let p = 0; p < 3; p++) {
-          let r, g, b;
-          if (p === 0) { r = ddaFg[fi]; g = ddaFg[fi + 1]; b = ddaFg[fi + 2]; }
-          else if (p === 1) { r = meshFg[fi]; g = meshFg[fi + 1]; b = meshFg[fi + 2]; }
-          else if (ov) { r = ov[0]; g = ov[1]; b = ov[2]; }
-          else { r = ddaFg[fi] >> 2; g = ddaFg[fi + 1] >> 2; b = ddaFg[fi + 2] >> 2; }
-          const x0 = p * (cols * CW + GAP) + x * CW;
-          for (let yy = 0; yy < CH; yy++) {
-            let o = ((y * CH + yy) * w + x0) * 4;
-            for (let xx = 0; xx < CW; xx++, o += 4) { d[o] = r; d[o + 1] = g; d[o + 2] = b; }
-          }
-        }
-      }
-    }
-    ctx2d.putImageData(img, 0, 0);
-    return canvas.toDataURL('image/png');
-  };
-}
-
-function runGpuCompareMeshMode(ctx) {
-  const { gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, openSpans, gbuf, overlay, terrainEnabled, compareNoVoxels } = ctx;
-  if (!gpuPipeline) { noPipelineMsg(ctx); return; }
-  if (rt.cols !== 160 || rt.rows !== 60) {
-    console.warn(`[gpucompare] expected 160x60 for ?gpucompare=mesh, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
-  }
-
-  const pipelineDda = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'dda' });
-  const pipelineMesh = new GpuCellPipeline(rt, { rays: 1, terrainEnabled, renderer: 'mesh', shadows: { sun: 'dda' } }); // ME-15c: dda-vs-mesh pins the sun DDA
-  if (!pipelineDda.ready || !pipelineMesh.ready) {
-    const msg = `[gpucompare] mesh-migration pipelines failed to compile (dda ready=${pipelineDda.ready}, mesh ready=${pipelineMesh.ready}) - nothing to compare.`;
-    console.error(msg);
-    overlay.visible = true; overlay.el.style.display = 'block';
-    overlay.el.textContent = msg;
-    return;
-  }
-  pipelineDda.bind(matTable, assets.palette);
-  pipelineMesh.bind(matTable, assets.palette);
-  pipelineDda.setSource('dda');
-  pipelineMesh.setSource('dda');
-
-  const { m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool } = buildCompareRuns(ctx);
-  pipelineDda.bindVoxels(compareVoxelPool);
-  pipelineMesh.bindVoxels(compareVoxelPool);
-  void m1Eye; void testRoomLights; void worldM1Lights;
-
-  const cols = rt.cols, rows = rt.rows;
-  const fbCompare = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
-    lights: null, light: makeLightBuffer(cols, rows), timeSec: 0, gpuDda: true, terrainEnabled,
-    voxelPool: compareVoxelPool,
-  };
-
-  const rbDdaFg = new Uint8Array(cols * rows * 4), rbDdaBg = new Uint8Array(cols * rows * 4);
-  const rowsOut = [];
-  let overallOk = true;
-  const paintDiff = makeDiffPngPainter(cols, rows);
-  for (const { world, lights, name: poseName, cam, real, before, meshOnly } of runs) {
-    if (meshOnly) continue; // RE-06: the dda pipeline has no instanced path
-    if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
-    if (real) {
-      if (before) before();
-      compareVoxelPool.collect(world, cam);
-    } else {
-      compareVoxelPool.beginFrame();
-      if (before) before();
-    }
-    if (compareNoVoxels) compareVoxelPool.beginFrame();
-    fbCompare.lights = lights;
-    if (lights) lights.update(0, world);
-
-    compareVoxelPool.project(cam, rt, 'dda');
-    fbCompare.gpuDda = true;
-    renderWorld(fbCompare, world, cam);
-    pipelineDda.setEnabled(true);
-    pipelineDda.frame(fbCompare, lights || ambientL, cam, world);
-    rt.present();
-    const rbDda = rt.readbackPresent(rbDdaFg, rbDdaBg);
-    const { GI: giDda, GA: gaDda, Depth: depthDda } = pipelineDda.readbackGeometry();
-
-    compareVoxelPool.project(cam, rt, 'mesh');
-    pipelineMesh.setEnabled(true);
-    pipelineMesh.frame(fbCompare, lights || ambientL, cam, world);
-    rt.present();
-    const rbMesh = rt.readbackPresent();
-    const { GI: giMesh, GA: gaMesh, Depth: depthMesh } = pipelineMesh.readbackGeometry();
-
-    const ddaSide = unpackReadback(giDda, gaDda, depthDda, cols, rows);
-    const cmpGeom = compareGeometry(ddaSide, ddaSide.depth, giMesh, gaMesh, depthMesh, cols, rows);
-    const cmpCells = compareCells(rbDda.fg, rbDda.bg, rbMesh.fg, rbMesh.bg, ddaSide.kind, cols, rows, undefined, ddaSide.mat, 0.02);
-
-    const kindOk = cmpGeom.kindMatchPct >= 98;
-    const glyphOk = cmpCells.glyphMatchPct >= 97;
-    const ok = kindOk && glyphOk;
-    overallOk = overallOk && ok;
-    const meshKind = new Uint8Array(cols * rows);
-    for (let i = 0; i < meshKind.length; i++) meshKind[i] = giMesh[i * 4 + 1] & 0xff;
-    const mig = classifyMigrationCells(ddaSide.kind, meshKind, rbDda.fg, rbDda.bg, rbMesh.fg, rbMesh.bg, cols * rows);
-    const diffCats = { counts: mig.counts, pct: {} };
-    for (const k of MIGRATION_CATS) diffCats.pct[k] = +mig.pct[k].toFixed(3);
-    const diffPng = paintDiff(rbDda.fg, rbMesh.fg, mig.cat);
-    rowsOut.push({ pose: poseName, ok, cmpGeom, cmpCells, diffCats, diffPng });
-    const catStr = MIGRATION_CATS.slice(1).map((k) => `${k}=${diffCats.pct[k].toFixed(2)}%`).join(' ');
-    console.log(`[gpucompare=mesh] diffCats ${poseName}: ${catStr}`);
-    console.log(`[gpucompare=mesh] ${ok ? 'PASS' : 'FAIL'} ${poseName}: kind=${cmpGeom.kindMatchPct.toFixed(2)}% kindExclK8=${cmpGeom.kindMatchPctExclK8.toFixed(2)}% glyph=${cmpCells.glyphMatchPct.toFixed(2)}%(>=97%) holes=${cmpGeom.holes} holesExclK8=${cmpGeom.holesExclK8} k8dda=${cmpGeom.k8Cpu} k8mesh=${cmpGeom.k8Gpu} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol}`);
-  }
-
-  let text = `?gpucompare=mesh  dda: ${pipelineDda.rendererString}  mesh: ${pipelineMesh.rendererString}  grid: ${cols}x${rows}\n`;
-  for (const r of rowsOut) {
-    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
-      `  kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%(raw) ${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}%(excl. voxel, >=98% required)  glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%(>=97% required)\n` +
-      `  holes ${r.cmpGeom.holes} (${r.cmpGeom.holesExclK8} excl. voxel)  k8 dda ${r.cmpGeom.k8Cpu} mesh ${r.cmpGeom.k8Gpu}  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}\n`;
-  }
-  text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
-  console.log(`[gpucompare=mesh] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
-
-  overlay.visible = true;
-  overlay.el.style.display = 'block';
-  overlay.el.style.font = '13px "Courier New", monospace';
-  overlay.el.style.whiteSpace = 'pre';
-  overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut, ok: overallOk };
-}
-
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
-  if (mode === '1') runGpuCompareDdaMode(ctx);
+  if (mode === '1') runGpuCompareSceneMode(ctx);
   else if (mode === 'shade') runGpuCompareShadeMode(ctx);
-  else if (mode === 'mesh') runGpuCompareMeshMode(ctx);
+  else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
 }

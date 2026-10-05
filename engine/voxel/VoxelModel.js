@@ -14,7 +14,8 @@ export { KIND_MODEL, FACE_PACKED } from '../render/GBuffer.js';
 export const MAX_VOX_PARTS = 8;
 export const MAX_VOX_STEPS = 48;
 export const MAX_VOX_DIM = 32;
-export const MAX_VOX_INSTANCES = 16;
+export const MAX_VOX_INSTANCES = 16; // DDA texture/slot budget.
+export const MAX_VOX_INSTANCES_MESH = 48;
 // ME-22 (architecture.md 28.12): mesh-renderer-only bounds, unlocked by the
 // explicit `voxel.meshOnly: true` opt-in flag. Never used by voxelMarch.js/
 // VoxelTextures (the DDA path) - see voxelPool.js's bind()/project() router

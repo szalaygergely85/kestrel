@@ -11,6 +11,7 @@ import { createRebuildScheduler } from './rebuildScheduler.js';
 import { loadTestAssets } from '../testing/content-node.mjs';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
+import { GpuCellPipeline } from '../../engine/index.js';
 import { makeOk } from '../../engine/test/assert.js';
 
 let pass = 0;
@@ -19,7 +20,7 @@ const failures = [];
 
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-// 36.3: icons use the mesh JS twin without changing the ordinary editor fallback.
+// 36.3: icons use the mesh JS twin without changing the ordinary editor reference.
 {
   const { assets } = await loadTestAssets();
   const rt = { backend: 'c2d-capped', cols: 160, rows: 60, pxCellW: 8, pxCellH: 16 };
@@ -27,18 +28,19 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   const icon = createFrame({ engine, assets, rt, renderer: 'mesh', gpuParam: false, cpuMesh: true });
   ok('icon CPU frame has mesh renderer and compositor feed', icon.renderer === 'mesh' && icon.fb.renderer === 'mesh');
   ok('icon CPU frame creates no GPU pipeline', icon.gpuPipeline === null);
-  const ordinary = createFrame({ engine, assets, rt, renderer: 'mesh', gpuParam: false });
-  ok('ordinary editor CPU renderer is unchanged', ordinary.renderer === 'dda');
+  const ordinary = createFrame({ engine, assets, rt, renderer: 'dda', gpuParam: false });
+  ok('ordinary editor CPU reference uses mesh', ordinary.renderer === 'mesh' && ordinary.fb.renderer === 'mesh');
 }
 
-// ---- ED-MESH-1b: editorRenderer (param x default) ----
+// ---- ME-19a: renderer selection is ignored, even without a GPU ----
 {
-  const P = (v) => new URLSearchParams(v ? `renderer=${v}` : '');
-  ok('?renderer=mesh, default dda -> mesh', editorRenderer(P('mesh'), 'dda') === 'mesh');
-  ok('?renderer=dda, default mesh -> dda', editorRenderer(P('dda'), 'mesh') === 'dda');
-  ok('absent, default dda -> dda', editorRenderer(P(''), 'dda') === 'dda');
-  ok('absent, default mesh -> mesh', editorRenderer(P(''), 'mesh') === 'mesh');
-  ok('junk value falls back to the default', editorRenderer(P('x'), 'mesh') === 'mesh');
+  // Constructor routing probe; GL allocation is covered by the browser pass.
+  class PipelineProbe extends GpuCellPipeline { _initGL() {} _rebindLastTable() {} setEnabled() {} }
+  for (const value of ['', 'mesh', 'dda', 'junk']) {
+    ok('editor renderer flag ignored: ' + value, editorRenderer(new URLSearchParams('renderer=' + value)) === 'mesh');
+    const pipeline = new PipelineProbe({ canvas: { addEventListener() {} } }, { renderer: value, shadows: { sun: 'dda' } });
+    ok('pipeline renderer option ignored: ' + value, pipeline.renderer === 'mesh' && pipeline.ready);
+  }
 }
 
 // ---- ED-MESH-1d: 5 nudges in one frame -> 1 rebuild ----

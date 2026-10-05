@@ -12,9 +12,10 @@ import { EventRing } from '../entities/eventRing.js';
 import { getBehaviour, validateBehaviours } from '../core/behaviours.js';
 import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
-import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
+import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
+import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
@@ -33,6 +34,29 @@ const SOLID_OUTSIDE = Object.freeze({
 });
 
 const tmpW = { x: 0, y: 0, z: 0 }; // localToWorld scratch (load-time only)
+
+// DECAL-01: load-only derived data; scrawls never become entities or save state.
+function collectDecal(s, p) {
+  const id = `${s.id}.${p.id}`, text = p.model.slice(6), wall = p.wall;
+  const bad = reason => { throw new Error(`World.load: decal "${id}" ${reason}`); };
+  if (text.length < 1 || text.length > 64 || !/^[\x20-\x7e]+$/.test(text)) bad('text must be 1..64 printable ASCII characters');
+  if (![0, 90, 180, 270].includes(p.facing)) bad('facing must be 0/90/180/270');
+  const alongX = p.facing === 0 || p.facing === 180;
+  const keys = alongX ? ['x0', 'x1', 'y', 'z0', 'z1'] : ['y0', 'y1', 'x', 'z0', 'z1'];
+  if (!wall || keys.some(k => typeof wall[k] !== 'number' || !Number.isFinite(wall[k]))) bad('wall keys must match facing and be finite');
+  if ((alongX ? ('x' in wall || 'y0' in wall || 'y1' in wall) : ('y' in wall || 'x0' in wall || 'x1' in wall))
+    || !(wall[keys[0]] < wall[keys[1]]) || !(wall.z0 < wall.z1)) bad('wall keys/order must match facing, with z0 < z1');
+  if (p.style !== undefined && (typeof p.style !== 'string' || !p.style)) bad('style must be a nonempty key');
+  const reverse = p.facing === 0 || p.facing === 90;
+  const a = reverse ? wall[keys[1]] : wall[keys[0]], b = reverse ? wall[keys[0]] : wall[keys[1]];
+  localToWorld(s.frame, alongX ? a : wall.x, alongX ? wall.y : a, wall.z0, tmpW);
+  const ax = tmpW.x, ay = tmpW.y, z0 = tmpW.z;
+  localToWorld(s.frame, alongX ? b : wall.x, alongX ? wall.y : b, wall.z1, tmpW);
+  const normal = [0, 0], turn = p.facing / 90;
+  localDirToWorld(s.frame, QUARTER_SIN[turn], -QUARTER_COS[turn], normal);
+  return { id, glyphs: Uint8Array.from(text, ch => ch.charCodeAt(0) - 32), ax, ay, bx: tmpW.x, by: tmpW.y,
+    z0, z1: tmpW.z, nx: normal[0], ny: normal[1], style: p.style || 'decal' };
+}
 
 /** ED-SCALE-1 (architecture.md 34.1): allowed per-object uniform scale range. */
 export const PROP_SCALE_MIN = 0.25;
@@ -144,6 +168,7 @@ export class World {
     this.terrain = null;
     this.terrainKey = null;
     this.scatter = null; // Derived placements, never serialized.
+    this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
@@ -469,7 +494,7 @@ export class World {
         if (s.kind === 'mesh') continue;
         const sdef = s.level.def;
         for (const p of (sdef && sdef.props) || []) {
-          if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
+          if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) { w.decals.push(collectDecal(s, p)); continue; }
           if (p.from || p.to) continue;
           const entId = `${s.id}.${p.id}`;
           // US-027a (21.8): a content id regardless of whether it's spawned
@@ -638,6 +663,10 @@ export class World {
       }
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
+
+    // Saved prop transforms exist only after the entities loop; derived colliders
+    // must use those live poses, just like fresh content props.
+    w.rebuildPropColliders();
 
     // US-055a1 (32.2): world + level `water` blocks (validated; throws naming the region).
     // US-143a (35.1): world key `seaState` (default "calm") seeds the "sea" regions' amplitude at load.
@@ -815,6 +844,54 @@ export class World {
   /** `moveCircleMesh` over `world.colliders` (empty on 'grid' - always a well-defined, if trivial, call). */
   collideCircle(x, y, dx, dy, radius, footZ, grounded, opts, out) {
     return moveCircleMesh(this.colliders, this.colliders.length, x, y, dx, dy, radius, footZ, grounded, opts, out);
+  }
+
+  /** PROP-COLLIDE-01: load/committed edit only; one BVH, never per drag frame. */
+  rebuildPropColliders() {
+    if (this.physicsMode !== 'mesh') return;
+    const shapes = [], cs = new Float64Array(2);
+    for (const s of this.structures) {
+      if (s.kind === 'mesh') continue;
+      for (const p of s.level.def.props || []) {
+        const id = `${s.id}.${p.id}`, e = this.entity(id);
+        if (!e || !e.components.voxel || e.components.sprite) continue;
+        const model = this.assets.model(e.components.voxel.model);
+        const defs = Object.hasOwn(p, 'colliders') ? p.colliders : model.colliders;
+        if (defs === undefined) continue;
+        if (!Array.isArray(defs)) throw new Error(`World.load: prop "${id}" colliders must be an array`);
+        if (!defs.length) continue;
+        if (p.dynamic || e.components.roller) {
+          console.warn(`[World] prop "${id}" colliders skipped: dynamic prop`);
+          continue;
+        }
+        const t = e.transform, scale = t.scale || 1;
+        cosSinDeg(t.yawDeg || 0, cs);
+        for (const d of defs) {
+          const vec = v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+          if (!d || !vec(d.c) || (d.type !== 'box' && d.type !== 'prism')
+            || (d.type === 'box' && (!vec(d.half) || d.half.some(v => v <= 0) || !Number.isFinite(d.yawDeg ?? 0)))
+            || (d.type === 'prism' && (!Number.isFinite(d.r) || d.r <= 0 || !Number.isFinite(d.h) || d.h <= 0))) {
+            throw new Error(`World.load: prop "${id}" invalid collider shape`);
+          }
+          shapes.push({ kind: d.type === 'box' ? 0 : 1,
+            x: t.x + (cs[0] * d.c[0] - cs[1] * d.c[1]) * scale,
+            y: t.y + (cs[1] * d.c[0] + cs[0] * d.c[1]) * scale,
+            zc: t.z + d.c[2] * scale,
+            hx: d.type === 'box' ? d.half[0] * scale : 0,
+            hy: d.type === 'box' ? d.half[1] * scale : 0,
+            hz: d.type === 'box' ? d.half[2] * scale : 0,
+            r: d.type === 'prism' ? d.r * scale : 0,
+            h: d.type === 'prism' ? d.h * scale : 0,
+            yawRad: ((t.yawDeg || 0) + (d.type === 'box' ? d.yawDeg || 0 : 0)) * Math.PI / 180 });
+        }
+      }
+    }
+    const collider = buildPropCollider(shapes, shapes.length);
+    const index = this.colliders.findIndex(c => c.id === 'props:static');
+    if (index >= 0) {
+      if (collider) this.colliders[index] = collider;
+      else this.colliders.splice(index, 1);
+    } else if (collider) this.colliders.push(collider);
   }
 
   /** `moveSphereMesh` over `world.colliders` (roller.js wiring is ME-11b - not called from here yet). */

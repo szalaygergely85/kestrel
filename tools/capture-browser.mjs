@@ -133,11 +133,8 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 export function buildQuery(mode, { grid, variant, rays } = {}) {
   const parts = [];
   if (mode === 'gpucompare') {
-    // ME-06 (27.7 item 3): `--variant mesh` requests the migration oracle
-    // (`?gpucompare=mesh`, GPU dda vs GPU mesh - `window.__gpuCompare`'s
-    // shape is the same as the default `dda` variant, so `normalizeLiveResult`
-    // needs no change).
-    parts.push(variant === 'shade' ? 'gpucompare=shade' : variant === 'mesh' ? 'gpucompare=mesh' : 'gpucompare=1');
+    if (variant && variant !== 'shade') throw new Error('gpucompare has only the default mesh twin or --variant shade');
+    parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
   } else if (mode === 'bench') {
     // ME-06 (docs/architecture.md 27.11 ME-06 row): `--variant world`
     // requests the real US-018 `?bench=1` pass-timing bench (3 fixed views
@@ -192,7 +189,7 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
   if (mode === 'gpucompare') {
     const rows = (raw.rows || []).map((r) => {
       const metrics = {};
-      // dda variant rows carry cmpGeom/cmpCells/cmpLight/k8Ok/isVoxelPose;
+      // mesh variant rows carry cmpGeom/cmpCells/cmpLight/k8Ok/isVoxelPose;
       // shade variant rows are flat (glyphMatchPct, fgOutside, ...).
       const { pose, ok, ...rest } = r;
       flatten(rest, '', metrics);
@@ -229,10 +226,10 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
 
 const RE = {
   poseHeader: /^(PASS|FAIL)\s+(.+)$/,
-  ddaGeom: /^geometry: kind ([\d.]+)%\s+matEq (\d+)\/(\d+)\s+planeEq (\d+)\/(\d+)\s+depthViol (\d+)\s+uvViol (\d+)\s+holes (\d+) \(must be 0\)\s+edgeKindMismatch (\d+)\/(\d+)$/,
-  ddaK8: /^k8 cpu (\d+)\s+gpu (\d+)/,
-  ddaShading: /^shading: glyph ([\d.]+)%\s+fgOut (\d+)\s+bgOut (\d+)\s+outside ([\d.]+)% \(<=0\.5%, (\d+) cells\)\s+fgMax (\d+)\s+bgMax (\d+) \(<=64\)\s+poisonedSurvivors (\d+)$/,
-  ddaLight: /^light: (OK|MISMATCH)\s+sunlit ([\d.]+)% \(<=0\.5%, (\d+)\/(\d+)\)\s+dLMax ([\d.]+)\s+dLViol (\d+) \(<=1e-3\/chan\)$/,
+  meshGeom: /^geometry: kind ([\d.]+)%\s+matEq (\d+)\/(\d+)\s+planeEq (\d+)\/(\d+)\s+depthViol (\d+)\s+uvViol (\d+)\s+holes (\d+) \(must be 0\)\s+edgeKindMismatch (\d+)\/(\d+)$/,
+  meshK8: /^k8 cpu (\d+)\s+gpu (\d+)/,
+  meshShading: /^shading: glyph ([\d.]+)%\s+fgOut (\d+)\s+bgOut (\d+)\s+outside ([\d.]+)% \(<=0\.5%, (\d+) cells\)\s+fgMax (\d+)\s+bgMax (\d+) \(<=64\)\s+poisonedSurvivors (\d+)$/,
+  meshLight: /^light: (OK|MISMATCH)\s+sunlit ([\d.]+)% \(<=0\.5%, (\d+)\/(\d+)\)\s+dLMax ([\d.]+)\s+dLViol (\d+) \(<=1e-3\/chan\)$/,
   shadeGlyph: /^glyph match \(non-edge\): ([\d.]+)%\s+edge cells excluded: (\d+)$/,
   shadeFgBg: /^fg outside \+-4: (\d+)\s+bg outside \+-4: (\d+)\s+fgMax (\d+) bgMax (\d+)$/,
   shadeDepth: /^depth match: (\d+)%\s+mat==0 cells: (\d+)$/,
@@ -248,7 +245,7 @@ const RE = {
 export function detectImportMode(text) {
   const first = text.split('\n')[0].trim();
   if (first.startsWith('?gpucompare=shade')) return { mode: 'gpucompare', variant: 'shade' };
-  if (first.startsWith('?gpucompare=1')) return { mode: 'gpucompare', variant: 'dda' };
+  if (first.startsWith('?gpucompare=1')) return { mode: 'gpucompare', variant: 'mesh' };
   if (first.startsWith('BENCH (')) return { mode: 'bench' };
   if (first.startsWith('VOXELBENCH (')) return { mode: 'voxelbench' };
   return null;
@@ -277,10 +274,10 @@ export function parseImportText(text, modeHint) {
         if (b) { metrics.fgOutside = Number(b[1]); metrics.bgOutside = Number(b[2]); metrics.fgMax = Number(b[3]); metrics.bgMax = Number(b[4]); }
         if (c) { metrics.depthMatchPct = Number(c[1]); metrics.matZeroCount = Number(c[2]); }
       } else {
-        const a = RE.ddaGeom.exec(lines[i + 1]);
-        const b = RE.ddaK8.exec(lines[i + 2]);
-        const c = RE.ddaShading.exec(lines[i + 3]);
-        const d = RE.ddaLight.exec(lines[i + 4]);
+        const a = RE.meshGeom.exec(lines[i + 1]);
+        const b = RE.meshK8.exec(lines[i + 2]);
+        const c = RE.meshShading.exec(lines[i + 3]);
+        const d = RE.meshLight.exec(lines[i + 4]);
         if (a) {
           metrics['cmpGeom.kindMatchPct'] = Number(a[1]);
           metrics['cmpGeom.matEqual'] = Number(a[2]); metrics['cmpGeom.matched'] = Number(a[3]);
@@ -641,7 +638,7 @@ export async function runLiveCapture(opts) {
   process.once('SIGTERM', onSignal);
 
   try {
-    handles.serverProc = spawn('python', ['-m', 'http.server', String(opts.port)], {
+    handles.serverProc = spawn('python', ['tools/serve.py', String(opts.port)], {
       cwd: ROOT, stdio: 'ignore',
     });
     await waitForHttp(`http://127.0.0.1:${opts.port}/`, 10000);
