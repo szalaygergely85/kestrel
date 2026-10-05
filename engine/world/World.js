@@ -12,7 +12,7 @@ import { EventRing } from '../entities/eventRing.js';
 import { getBehaviour, validateBehaviours } from '../core/behaviours.js';
 import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
-import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
+import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
@@ -34,6 +34,29 @@ const SOLID_OUTSIDE = Object.freeze({
 });
 
 const tmpW = { x: 0, y: 0, z: 0 }; // localToWorld scratch (load-time only)
+
+// DECAL-01: load-only derived data; scrawls never become entities or save state.
+function collectDecal(s, p) {
+  const id = `${s.id}.${p.id}`, text = p.model.slice(6), wall = p.wall;
+  const bad = reason => { throw new Error(`World.load: decal "${id}" ${reason}`); };
+  if (text.length < 1 || text.length > 64 || !/^[\x20-\x7e]+$/.test(text)) bad('text must be 1..64 printable ASCII characters');
+  if (![0, 90, 180, 270].includes(p.facing)) bad('facing must be 0/90/180/270');
+  const alongX = p.facing === 0 || p.facing === 180;
+  const keys = alongX ? ['x0', 'x1', 'y', 'z0', 'z1'] : ['y0', 'y1', 'x', 'z0', 'z1'];
+  if (!wall || keys.some(k => typeof wall[k] !== 'number' || !Number.isFinite(wall[k]))) bad('wall keys must match facing and be finite');
+  if ((alongX ? ('x' in wall || 'y0' in wall || 'y1' in wall) : ('y' in wall || 'x0' in wall || 'x1' in wall))
+    || !(wall[keys[0]] < wall[keys[1]]) || !(wall.z0 < wall.z1)) bad('wall keys/order must match facing, with z0 < z1');
+  if (p.style !== undefined && (typeof p.style !== 'string' || !p.style)) bad('style must be a nonempty key');
+  const reverse = p.facing === 0 || p.facing === 90;
+  const a = reverse ? wall[keys[1]] : wall[keys[0]], b = reverse ? wall[keys[0]] : wall[keys[1]];
+  localToWorld(s.frame, alongX ? a : wall.x, alongX ? wall.y : a, wall.z0, tmpW);
+  const ax = tmpW.x, ay = tmpW.y, z0 = tmpW.z;
+  localToWorld(s.frame, alongX ? b : wall.x, alongX ? wall.y : b, wall.z1, tmpW);
+  const normal = [0, 0], turn = p.facing / 90;
+  localDirToWorld(s.frame, QUARTER_SIN[turn], -QUARTER_COS[turn], normal);
+  return { id, glyphs: Uint8Array.from(text, ch => ch.charCodeAt(0) - 32), ax, ay, bx: tmpW.x, by: tmpW.y,
+    z0, z1: tmpW.z, nx: normal[0], ny: normal[1], style: p.style || 'decal' };
+}
 
 /** ED-SCALE-1 (architecture.md 34.1): allowed per-object uniform scale range. */
 export const PROP_SCALE_MIN = 0.25;
@@ -145,6 +168,7 @@ export class World {
     this.terrain = null;
     this.terrainKey = null;
     this.scatter = null; // Derived placements, never serialized.
+    this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
@@ -470,7 +494,7 @@ export class World {
         if (s.kind === 'mesh') continue;
         const sdef = s.level.def;
         for (const p of (sdef && sdef.props) || []) {
-          if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
+          if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) { w.decals.push(collectDecal(s, p)); continue; }
           if (p.from || p.to) continue;
           const entId = `${s.id}.${p.id}`;
           // US-027a (21.8): a content id regardless of whether it's spawned

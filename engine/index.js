@@ -218,3 +218,6 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
 export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
+
+// DECAL-01: wall-text bindings over the shared overlay layer.
+export { bindDecals, drawDecals } from './ui/decals.js';

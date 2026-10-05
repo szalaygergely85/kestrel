@@ -10,7 +10,7 @@
 import {
   bindLevel, Camera, renderWorld, GpuCellPipeline, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
+  bindDecals, drawDecals, hexToRgb, animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
@@ -520,6 +520,20 @@ function buildCompareRuns(ctx) {
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 
+  // DECAL-01: isolated overlay probe; every earlier pose retains its old ops.
+  const scrawl = worldM1.decals.find(d => d.id === 'tower.scrawl');
+  if (ctx.renderer === 'mesh' && scrawl) {
+    const x = (scrawl.ax + scrawl.bx) * 0.5, y = (scrawl.ay + scrawl.by) * 0.5, z = (scrawl.z0 + scrawl.z1) * 0.5;
+    const decalCam = { x, y: y - 1.5, z: z + 0.65, yawDeg: 180, pitchDeg: -23.4 };
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: decalScrawl (DECAL-01, KEEP THE LIGHT, lantern lit)',
+      cam: decalCam, real: true, meshOnly: true, decalAssert: scrawl.glyphs.filter(g => g !== 0).length, overlayOps: ov => {
+        ov.setStyles({ decal: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawl) },
+          decalFaint: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawlFaint) } });
+        const binding = bindDecals(ov, worldM1.decals);
+        drawDecals(binding, ov, decalCam, worldM1Lights, worldM1);
+      } });
+  }
+
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -631,7 +645,7 @@ function runGpuCompareDdaMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -739,7 +753,9 @@ function runGpuCompareDdaMode(ctx) {
     const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
       cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
     if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${poseName}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);
-    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 && ovlRes.hidden > 0 && ovlRes.shownGpu > 0);
+    // RTS tests both shown/hidden marks; this frontal scrawl must show every letter.
+    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 &&
+      (decalAssert ? ovlRes.shownGpu >= decalAssert && ovlRes.shownTwin >= decalAssert : ovlRes.hidden > 0 && ovlRes.shownGpu > 0));
     // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
     // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
     // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.

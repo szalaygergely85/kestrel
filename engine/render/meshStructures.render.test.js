@@ -160,8 +160,9 @@ const idFor = (key) => (key === 'stone' ? 7 : 3);
   const idx = []; for (let i = 0; i < list.count; i++) idx.push(list.items[i].objectId & 0xFFF);
   ok('nearest 64 are the first 64, near -> far', idx.every((x, i) => x === i));
   const cache = new MeshDrawCache();
-  const frame = () => { list.begin(); addMeshStructures(list, world, { x: 100, y: 0, z: 1.6 }, cache, idFor, 5000); };
-  for (let i = 0; i < 50; i++) frame();
+  const cam = { x: 100, y: 0, z: 1.6 };
+  const frame = () => { list.begin(); addMeshStructures(list, world, cam, cache, idFor, 5000); };
+  for (let i = 0; i < 1000; i++) frame(); // Warm JIT before measuring retained heap.
   global.gc(); const b0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 1000; i++) frame();
   global.gc(); const grew = process.memoryUsage().heapUsed - b0;

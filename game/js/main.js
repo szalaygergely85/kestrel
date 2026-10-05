@@ -12,7 +12,7 @@ import {
   DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
   GpuCellPipeline, GpuOverlayPass, PASS_NAMES,
-  VoxelPool,
+  VoxelPool, bindDecals, drawDecals,
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
@@ -473,7 +473,9 @@ const swordOverlayStyles = {
   sparkHeavyEmpty: { glyph: '.', fg: hexToRgb(P.colors.emberDim) },
   sparkClink: { glyph: '+', fg: hexToRgb(P.colors.flameCore) },
 };
-engine.overlay.setStyles({ ...questOverlayStyles(assets.uiStyle), ...swordOverlayStyles }); // US-079a/US-128/US-078d: beastNotice + target* + sword trail/spark overlay styles
+engine.overlay.setStyles({ ...questOverlayStyles(assets.uiStyle), ...swordOverlayStyles,
+  decal: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawl) },
+  decalFaint: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawlFaint) } }); // US-079a/US-128/US-078d: beastNotice + target* + sword trail/spark overlay styles
 const ovlStyles = {
   beastNotice: engine.overlay.styleId('beastNotice'), // US-079a (29.1): resolved once, not per frame
   // US-128b (29.2): resolved once, not per frame.
@@ -611,6 +613,7 @@ function runGame(mode, cinematic = null) {
   let clothTick = 0; // CLOTH-1b3 (33.5): integer fixed-step counter for `w.cloths.tick`/`wind.sampleInto` (rule 15: no wall clock)
   let look = null;
   let playerHandle = null;
+  let decalBind = null; // DECAL-01: refreshed on load/restart.
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
@@ -675,6 +678,7 @@ function runGame(mode, cinematic = null) {
     // the 'world:loaded' handler" rule).
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
+      decalBind = bindDecals(engine.overlay, world.decals);
       if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
       // US-020a: reset every module-level audio counter (sector-anim rate
       // limit, footstep accumulator, boulder settle-watch) here - the one
@@ -1192,6 +1196,7 @@ function runGame(mode, cinematic = null) {
       }
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
+      drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
       if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
