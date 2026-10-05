@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/route-walk-browser.mjs (ME-12 phase-2 gate, AC 1, 6, 7). Headless Chrome over CDP, own server on --port.
-//   node tools/route-walk-browser.mjs --port 9230 --grid 400x150 --renderer mesh --physics mesh [--shadows map] [--out file.json]
+//   node tools/route-walk-browser.mjs --port 9510 [--grid 400x150] [--renderer mesh] [--physics mesh|grid] [--shadows map] [--out file.json]
 // Loads game/index.html?voxelbench=0&... (any truthy voxelbench/bench param = isCaptureOrBench = no pause overlay, so no
 // pointer lock is needed; =0 does not start the voxel bench), waits for the player, then F3 (GPU pass timing) and walks the whole M1 route by
 // writing the game's own Input (KeyW/ShiftLeft/Space/KeyE) and look.yawDeg each frame. Per frame it samples
@@ -17,10 +17,10 @@ import {
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port);
 validatePort(port);
-const grid = args.grid || '400x150', renderer = args.renderer || 'mesh', physics = args.physics || 'mesh';
+const grid = args.grid || '400x150', renderer = args.renderer || 'mesh', physics = args.physics;
 const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
-const query = `voxelbench=0&grid=${grid}&renderer=${renderer}&physics=${physics}${shadows ? `&shadows=${shadows}` : ''}`;
+const query = `voxelbench=0&grid=${grid}&renderer=${renderer}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.
@@ -37,6 +37,7 @@ const DRIVER = `(async () => {
   const world = () => window.__debug.world || eng.world;
   for (let i = 0; i < 4000 && !(window.__debug.playerHandle); i++) await sleepF();
   const out = { grid: D.rt.cols + 'x' + D.rt.rows, backend: D.rt.backend, physicsMode: world().physicsMode, legs: [], info: {} };
+  out.info.initialGeometry = { trees: world().scatter ? world().scatter.count : 0, detail: world().detail ? world().detail.count : 0, colliders: world().colliders.map(c => c.id) };
   const sim = [], js = [], gpu = [], ivl = [], shp = [], shc = [];
   const gp0 = D.gpuPipeline; if (NOSKIP && gp0 && gp0.shadowOpts) gp0.shadowOpts.dirtySkip = false;
   let sampling = false;
@@ -135,6 +136,7 @@ try {
   const r = await cdp.send('Runtime.evaluate', { expression: DRIVER, returnByValue: true, awaitPromise: true, timeout: 400000 });
   if (r.exceptionDetails) throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800));
   const res = { query, ...r.result.value };
+  if (renderer === 'mesh' && res.physicsMode !== (physics === 'grid' ? 'grid' : 'mesh')) throw new Error('mesh physics default/override mismatch: ' + res.physicsMode);
   if (args.out) writeFileSync(args.out, JSON.stringify(res, null, 1));
   console.log(JSON.stringify(res));
   cdp.close();
