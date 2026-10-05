@@ -39,8 +39,8 @@
     skyHorizon:     '#c4dcef',
     cloudLit:       '#fff8ea',
     // --- stone ---
-    scrawl:         '#b8ab94', // DECAL-01: existing stoneLight colour.
-    scrawlFaint:    '#8a7f6e', // Existing stoneMid; shallow mason mark.
+    scrawl:         '#f4ead2', // DECAL-01 (owner 2026-10-05 "I don't see writings on wall"): chalk-white, was stoneLight = invisible on stone.
+    scrawlFaint:    '#d8c9a4', // Pale chalk for the shallow mason mark (was stoneMid).
     stoneLight:     '#b8ab94',
     stoneMid:       '#8a7f6e',
     stoneDark:      '#4e4840',
