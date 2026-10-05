@@ -129,10 +129,11 @@ function routeRun(physics, { reload = false } = {}) {
   // 1 wake: settle on the pallet, then walk out to the room.
   let r = { name: '1 wake', steps: 0, completed: true, trace: [], fell: false, minGap: Infinity };
   idle(sim, 120, r); r.end = { ...sim.player.transform }; info.wakeZ = sim.player.transform.z;
-  const r1b = runLeg(sim, '1 wake (walk out)', [W([15, 9])]); r.trace.push(...r1b.trace); r.steps += r1b.steps; r.completed = r1b.completed; r.stuckAt = r1b.stuckAt; r.fell = r1b.fell; r.minGap = r1b.minGap; r.end = r1b.end;
+  const r1b = runLeg(sim, '1 wake (walk out)', [W([17, 8])]); r.trace.push(...r1b.trace); r.steps += r1b.steps; r.completed = r1b.completed; r.stuckAt = r1b.stuckAt; r.fell = r1b.fell; r.minGap = r1b.minGap; r.end = r1b.end;
   legs.push(r);
-  // 2 boulder: walk north into the stair base; the boulder is pushed / rolls into the hollow.
-  r = runLeg(sim, '2 boulder (push to hollow)', [W([15, 5]), W([15, 3])]);
+  // PROP-COLLIDE-01b: PC-A approved the eastern wake -> burner -> stair corridor; the gondola stays solid.
+  // 2 boulder: enter the stair base from the east corridor; the boulder is pushed / rolls into the hollow.
+  r = runLeg(sim, '2 boulder (push to hollow)', [W([17, 7]), W([18, 7]), W([17, 7]), W([16, 6]), W([16, 5]), W([15, 5]), W([15, 3])]);
   idle(sim, 480, r);
   info.boulder = boulderPos(sim);
   info.boulderSleeping = findBoulder(sim.world).components.roller.sleeping;

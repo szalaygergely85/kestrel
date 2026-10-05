@@ -101,7 +101,7 @@ const tower = world.structures.find((s) => s.id === 'tower');
 
 ok('world.physicsMode === "mesh"', world.physicsMode === 'mesh');
 ok('world.colliders is non-empty', world.colliders.length > 0);
-ok('deterministic ids/order: [tower, tower:grate]', world.colliders.map((c) => c.id).join(',') === 'tower,tower:grate',
+ok('deterministic ids/order: level colliders then authored props', world.colliders.map((c) => c.id).join(',') === 'tower,tower:grate,props:static',
   world.colliders.map((c) => c.id).join(','));
 
 {

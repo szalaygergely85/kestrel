@@ -617,16 +617,30 @@
   // A voxel grid whose voxel (0,0,0) sits at world (x0m, y0m, 0); all builder inputs are WORLD metres.
   function awkGrid(x0m, y0m, wM, dM, hM) {
     var sx = Math.round(wM / AWK_CELL), sy = Math.round(dM / AWK_CELL), sz = Math.round(hM / AWK_CELL);
-    var a = new Array(sx * sy * sz), i;
+    var a = new Array(sx * sy * sz), i, bounds = null, pieces = [];
     for (i = 0; i < a.length; i++) a[i] = '.';
     return {
-      x0m: x0m, y0m: y0m, sx: sx, sy: sy, sz: sz,
+      x0m: x0m, y0m: y0m, sx: sx, sy: sy, sz: sz, pieces: pieces,
       vx: function (m) { return Math.round((m - x0m) / AWK_CELL); },
       vy: function (m) { return Math.round((m - y0m) / AWK_CELL); },
       vz: function (m) { return Math.round(m / AWK_CELL); },
       fx: function (m) { return (m - x0m) / AWK_CELL; },
       fy: function (m) { return (m - y0m) / AWK_CELL; },
-      put: function (x, y, z, ch) { if (x >= 0 && y >= 0 && z >= 0 && x < sx && y < sy && z < sz) a[x + sx * (y + sy * z)] = ch; },
+      put: function (x, y, z, ch) {
+        if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return;
+        a[x + sx * (y + sy * z)] = ch;
+        if (bounds && ch !== '.') {
+          bounds[0] = Math.min(bounds[0], x); bounds[1] = Math.min(bounds[1], y); bounds[2] = Math.min(bounds[2], z);
+          bounds[3] = Math.max(bounds[3], x + 1); bounds[4] = Math.max(bounds[4], y + 1); bounds[5] = Math.max(bounds[5], z + 1);
+        }
+      },
+      // PROP-COLLIDE-01b: authored pieces only, using the voxels actually emitted (exclusive upper bounds).
+      piece: function (build, args) {
+        bounds = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+        build.apply(null, [this].concat(args));
+        if (bounds[5] - bounds[2] > 3) pieces.push(bounds); // <= 0.12 m remains walk-over
+        bounds = null;
+      },
       layers: function () {
         var out = [], z, y, L, s;
         for (z = 0; z < sz; z++) {
@@ -803,9 +817,9 @@
     var g = awkGrid(14.0, 5.0, 4.0, 3.0, 1.0);
     // against the stair walkway's south face beside the burner: a big crate, a smaller one stacked on it, a stove-in
     // crate to the west (two planks knocked out of its west face, moss at its foot)
-    awkCrate(g, 17.34, 5.02, 0.00, 17.96, 5.54, 0.52, { mossSouth: true });
-    awkCrate(g, 17.44, 5.06, 0.52, 17.92, 5.46, 0.88, {});
-    awkCrate(g, 17.02, 5.06, 0.00, 17.30, 5.42, 0.32, { openWest: true, mossWest: true });
+    g.piece(awkCrate, [17.34, 5.02, 0.00, 17.96, 5.54, 0.52, { mossSouth: true }]);
+    g.piece(awkCrate, [17.44, 5.06, 0.52, 17.92, 5.46, 0.88, {}]);
+    g.piece(awkCrate, [17.02, 5.06, 0.00, 17.30, 5.42, 0.32, { openWest: true, mossWest: true }]);
     // fallen cheek stones + pebbles along the wall foot and toward the stair base (all <= 0.12 m: walk-over)
     [[16.02, 5.01, 0.18, 0.14, 0.08], [16.22, 5.02, 0.12, 0.12, 0.12], [16.38, 5.00, 0.22, 0.16, 0.08],
      [16.64, 5.03, 0.12, 0.10, 0.04], [16.76, 5.02, 0.14, 0.14, 0.08], [16.48, 5.26, 0.04, 0.04, 0.04],
@@ -813,36 +827,41 @@
       awkBlock(g, s[0], s[1], 0, s[0] + s[2], s[1] + s[3], s[4]);
     });
     // the garrison's water butt against the upper-stair column (cell 14,7): lid gone, dark water, moss at its foot
-    awkBarrel(g, 14.40, 7.60, 0, 0.27, 0.76, { open: true, hoops: [0.08, 0.36, 0.64], moss: true });
+    g.piece(awkBarrel, [14.40, 7.60, 0, 0.27, 0.76, { open: true, hoops: [0.08, 0.36, 0.64], moss: true }]);
     // a second rusty kettle helm, fallen off the pell long ago
-    awkHelm(g, 14.84, 7.44);
+    g.piece(awkHelm, [14.84, 7.44]);
     return g;
   }
   function buildAwakeningKeeper() {
     var g = awkGrid(18.0, 5.0, 2.0, 5.0, 1.12);
     // the crate stack's east flank (cell 18,5) and the NE pocket (19,5): grain sacks, a sealed barrel + rope coil
-    awkSack(g, 18.24, 5.28, 0, 0.22, 0.20, 0.17, true);
-    awkSack(g, 18.48, 5.50, 0, 0.14, 0.19, 0.10, false);
-    awkBarrel(g, 19.60, 5.42, 0, 0.28, 0.80, { hoops: [0.10, 0.40, 0.70], moss: true });
-    awkCoil(g, 19.60, 5.42, 0.80, 0.13);
-    awkSack(g, 19.17, 5.80, 0, 0.15, 0.14, 0.15, true);
+    g.piece(awkSack, [18.24, 5.28, 0, 0.22, 0.20, 0.17, true]);
+    g.piece(awkSack, [18.48, 5.50, 0, 0.14, 0.19, 0.10, false]);
+    g.piece(awkBarrel, [19.60, 5.42, 0, 0.28, 0.80, { hoops: [0.10, 0.40, 0.70], moss: true }]);
+    g.piece(awkCoil, [19.60, 5.42, 0.80, 0.13]);
+    g.piece(awkSack, [19.17, 5.80, 0, 0.15, 0.14, 0.15, true]);
     // same pocket, against the step-7 face: a shovel leaning on the wall, a heap of chain at its foot. (Cell 19,7 under
     // the lamp stays empty: it is a wake -> burner arrival cell and the lamp approach.)
-    awkShovel(g, 19.72, 5.86);
-    awkChain(g, 19.48, 5.86, 0.10);
+    g.piece(awkShovel, [19.72, 5.86]);
+    g.piece(awkChain, [19.48, 5.86, 0.10]);
     // SE corner (cell 18,9) = the relay-keeper's corner by KEEP THE LIGHT: mat, bedroll, log book, stool, candle, cup
-    awkMat(g, 18.06, 9.30, 18.94, 9.96);
+    g.piece(awkMat, [18.06, 9.30, 18.94, 9.96]);
     awkRollX(g, 18.10, 18.88, 9.80, 0.14, 0.10);
-    awkBook(g, 18.30, 9.40, 18.50, 9.52, 0.04);
-    awkStool(g, 18.72, 9.16, 0.40, 0.14);
-    awkCandle(g, 18.72, 9.16, 0.44);
-    awkCup(g, 18.46, 9.12);
+    g.piece(awkBook, [18.30, 9.40, 18.50, 9.52, 0.04]);
+    g.piece(awkStool, [18.72, 9.16, 0.40, 0.14]);
+    g.piece(awkCandle, [18.72, 9.16, 0.44]);
+    g.piece(awkCup, [18.46, 9.12]);
     return g;
   }
   function awkModel(key, displayName, desc, g, ax, ay, placement) {
     var anchor = [(ax - g.x0m) / AWK_CELL, (ay - g.y0m) / AWK_CELL, 0];
+    var colliders = g.pieces.map(function (b) {
+      return { type: 'box', c: [(0.5 * (b[0] + b[3]) - anchor[0]) * AWK_CELL,
+                               (0.5 * (b[1] + b[4]) - anchor[1]) * AWK_CELL, 0.5 * (b[2] + b[5]) * AWK_CELL],
+               half: [0.5 * (b[3] - b[0]) * AWK_CELL, 0.5 * (b[4] - b[1]) * AWK_CELL, 0.5 * (b[5] - b[2]) * AWK_CELL] };
+    });
     return {
-      name: key, displayName: displayName, desc: desc,
+      name: key, displayName: displayName, desc: desc, colliders: colliders,
       voxel: {
         version: 1, meshOnly: true, cellM: AWK_CELL, size: [g.sx, g.sy, g.sz], anchor: anchor, mats: AWK_MATS,
         layers: g.layers(),

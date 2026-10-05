@@ -403,8 +403,16 @@ const PARITY_STEPS = 600;
 const near1 = (v) => Math.abs(v - Math.round(v)) < 1e-9; // cell-boundary steps excluded, same rule as meshCollide.parity.test.js
 const PARITY_TOL = 0.01; // 1 cm, per the ME-11c spec
 {
-  const wg = loadWorld();
-  const wm = loadWorld({ physics: 'mesh' });
+  // PROP-COLLIDE-01b: authored props are mesh-only, so this structural parity fixture explicitly opts out.
+  // Perf and determinism above/below still load the unchanged real solid-prop content.
+  const parityAssets = Object.create(assets);
+  parityAssets.level = key => {
+    const level = assets.level(key);
+    return { ...level, props: (level.props || []).map(p => ({ ...p, colliders: [] })) };
+  };
+  const wg = World.load(assets.world('world_m1'), parityAssets, {});
+  const wm = World.load(assets.world('world_m1'), parityAssets, { physics: 'mesh' });
+  ok('structural parity fixture explicitly opts out of authored prop colliders', !wm.colliders.some(c => c.id === 'props:static'));
   ok('grid-mode world_m1 loads with physicsMode "grid"', wg.physicsMode === 'grid', `physicsMode=${wg.physicsMode}`);
   const pg = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
   const pm = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);

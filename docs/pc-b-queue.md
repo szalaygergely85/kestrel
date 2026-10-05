@@ -14,7 +14,6 @@ Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md`
 ## 1. Ready now (in this order)
 | # | Item | Spec | Ends in |
 |---|---|---|---|
-| 1 | **PROP-COLLIDE-01b** tower collision content - publish (reroute via the east corridor approved by PC-A) | backlog row, architecture 37.10 | owner walk-test |
 | 2 | **TOWER-BOULDER-01** remove the boulder (prop, roller, route-walk leg 2, tests, poses) | backlog row | main-session check |
 | 3 | **READ-01** readable notes: register `note.read`, apply `ASSETS.levelPatch.towerNotes` (design/models/notes.js), read panel from `uiStyle.note`, notes.js script tag in game + editor, update tower/content-smoke/restart tests | backlog row, design/preview/notes.html | owner walk-test |
 | 4 | **UI-XHAIR-01** bigger crosshair with transparent background | backlog row | arch-review + owner look |

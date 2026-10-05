@@ -85,8 +85,9 @@ const DRIVER = `(async () => {
     out.legs.push(rec); return rec;
   }
   const idle = async (frames) => { keys(false, false, false); for (let i = 0; i < frames; i++) { await sleepF(); sample(); } };
-  await leg('1b walk out', [W(15, 9)]);
-  await leg('2 boulder push', [W(15, 5), W(15, 3)]);
+  // PROP-COLLIDE-01b: same PC-A-approved eastern corridor as the Node route; keep the gondola solid.
+  await leg('1b walk out', [W(17, 8)]);
+  await leg('2 boulder push', [W(17, 7), W(18, 7), W(17, 7), W(16, 6), W(16, 5), W(15, 5), W(15, 3)]);
   await idle(480);
   { let bx = null; world().forEachEntity((e) => { if (e.components && e.components.roller) bx = { x: e.transform.x - O.x, y: e.transform.y - O.y, z: e.transform.z, sleeping: e.components.roller.sleeping }; }); out.info.boulder = bx; }
   // ME-15d AC2: after the boulder push (player still, boulder asleep) -> the shadow map must not re-render (counter delta over 120 idle frames)

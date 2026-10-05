@@ -118,8 +118,9 @@
     name: 'floorLantern',
     displayName: 'brass lamp',
     desc: 'A spare Kestrel brass lamp standing lit on the floor: bail ring, bright cap, round brass cage with a flickering ' +
-          'flame, dark fuel font on a wide foot. Decoration (no pick-up, no collide).',
+          'flame, dark fuel font on a wide foot. Static decoration (no pick-up).',
     size: { w: 5, h: 6 }, anchor: { x: 2, y: 5 }, world: { w: 0.24, h: 0.4 },
+    colliders: [{ type: 'prism', c: [0, 0, 0.2], r: 0.12, h: 0.4 }],
     directions: ['S'], billboard: true,
     fill: { k: 0.45 }, outline: { k: 0.4 },
     keys: FLN,
