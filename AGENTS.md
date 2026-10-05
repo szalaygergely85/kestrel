@@ -5,8 +5,9 @@ The full project rules are in **`CLAUDE.md`**; read it first. The rules below ar
 
 ## Your role
 - You are the **programmer on PC-B**, working on branch `pc-b`. Reviews (architect, PO), design assets and story text come from PC-A. You never do those yourself.
-- Your work list is the **newest `PC-B QUEUE` block at the top of `docs/backlog.md`**. Do its items in order. Each item names the files to touch, the spec (usually a `docs/architecture.md` section) and the checks.
-- If an item needs a decision you can't find in the spec, don't guess. Write `NEEDS PC-A: <question>` in that story's row in `docs/backlog.md`, push it, and go on to the next item.
+- Your work list is **`docs/pc-b-queue.md`** (since 2026-10-06; the QUEUE blocks in `docs/backlog.md` are history). Re-read it after every `git fetch` - PC-A reorders it when the owner changes priorities. Do its items in order. Each item names the files to touch, the spec (usually a `docs/architecture.md` section) and the checks.
+- If an item needs a decision you can't find in the spec, don't guess. Write `NEEDS PC-A: <question>` at the END of that story's row in `docs/backlog.md` (never in the ID column), push it, and go on to the next item. **Always add your recommended answer and the alternative** ("recommend A because ...; B would ..."), so PC-A can reply with one word.
+- **Decide small things yourself** (owner 2026-10-06): under D-039 a NEW gpucompare pose that fails only on JS/GPU precision (raster ties, f32 vs f64, look-hash colour outliers, AO seams) is NOT a stop - record its exact metrics as a known-FAIL baseline in the row and report, check no previously passing row regressed, and carry on. Stop only for a real twin bug (missing/wrong geometry, crash), a spec contradiction, or an owner-visible look decision.
 - Stop rule: if you're stuck on one bug for about 30 minutes or 40 tool calls, stop and write `ASK ARCHITECT: <what you tried, what fails>` in the story's row.
 
 ## Git
@@ -23,6 +24,9 @@ The full project rules are in **`CLAUDE.md`**; read it first. The rules below ar
 - Match the surrounding code style and comment density.
 - Shared hot files: `game/js/main.js`, `design/palette.js`, `design/detail-pass.js`, `docs/backlog.md`, `game/index.html`, `docs/decisions.md`. Keep those edits small and local: append rows/lines, never reflow tables or rewrite paragraphs.
 
+## Owner-visible check (owner 2026-10-06)
+- Tests prove the code works; they don't prove the owner can **see** it. For any change the owner will look at (content, colours, UI, effects, props, text), take one real-GPU screenshot at 400x150 from where the player normally stands and look at it: is it visible, readable, does it stand out from what's behind it, is it the right size? Write one line about it in the report ("visible: yes - chalk text on dark stone, readable from 2 m"). If it is not clearly visible, say so in the row as `LOOK RISK: ...` instead of reporting done. (Lesson: DECAL-01 passed every test while drawing wall-coloured text that the owner could not see.)
+
 ## Checks before every commit
 - `node tools/run-tests.mjs`: every suite must PASS (`--filter <name>` for a quick subset while working).
 - `node tools/check-deps.mjs`: must print `check-deps OK` (warnings are fine).
@@ -37,4 +41,5 @@ The full project rules are in **`CLAUDE.md`**; read it first. The rules below ar
   - the files changed;
   - the test counts;
   - any deviation from the spec, with the reason.
-- At the end of a session, write a short `PC-B handoff <date>` block at the top of `docs/backlog.md`: done items, blockers, and open questions for PC-A.
+- At the end of a session, write a short `PC-B handoff <date>` block at the top of `docs/backlog.md`. **Write it for a human** (the owner reads it): normal spaces and sentences, max ~5 short lines - 1) what the owner can now see or play, 2) what is done for review, 3) blockers with your recommended answer, 4) what's next. Put the long numbers (suite counts, GPU rows, p95) in the test report, not the handoff.
+- **Publish promptly:** don't keep finished or half-finished local work unpublished for more than a day. Either finish and push it, or commit it to a `wip/pc-b-<topic>` branch and push that, and note the branch in the row. Long-lived local edits make every later merge risky.
