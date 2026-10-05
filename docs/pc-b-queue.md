@@ -18,6 +18,7 @@ Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md`
 | 2 | **TOWER-BOULDER-01** remove the boulder (prop, roller, route-walk leg 2, tests, poses) | backlog row | main-session check |
 | 3 | **READ-01** readable notes: register `note.read`, apply `ASSETS.levelPatch.towerNotes` (design/models/notes.js), read panel from `uiStyle.note`, notes.js script tag in game + editor, update tower/content-smoke/restart tests | backlog row, design/preview/notes.html | owner walk-test |
 | 4 | **UI-XHAIR-01** bigger crosshair with transparent background | backlog row | arch-review + owner look |
+| 4b | **ME-19c** remove the GPU dda passes + world atlas + sun DDA (shadow maps are now the default, D-043) | architecture 37.13.2 + 37.13.5 | arch-review |
 | 5 | **ED-PLACE-BUG** editor: armed Assets model must place on the next viewport click | backlog row | main-session check |
 
 ## 2. Sprint 6 - boar demo (`docs/sprints/sprint-6.md`)
@@ -34,7 +35,6 @@ Two programmers at once only on disjoint files: lane A and lane B are disjoint e
 
 ## Waiting on PC-A or the owner - do not start
 - **ME-15f** tree shadow casters by distance - PC-A is doing it.
-- **ME-19c** removing the GPU dda passes - waits for the shadow-map default (ME-15e/15f).
 - **TORCH-01b** torch pick-up - waits for HANDS-01b.
 - **ENV-04** / cinematics - waits for an owner talk.
 - **ED-GROUP-1**, **ED-TERRAIN-1c** - P2, after the boar demo (terrain 1a/1b are PC-A engine steps).
