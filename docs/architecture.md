@@ -5301,3 +5301,109 @@ The flame and the carried light need **no** engine change:
 | **PREC-03b** (conditional) lamp-empty light dLMax .304 | PC-A (diagnostic) | ~2 h | none (diagnostic) | Dump the worst dL cells: kind/plane/normal/world pos/light list per twin. | Only if lamp-empty still fails on **light** after 01a. The verdict decides the fix: a light-pass twin difference (e.g. prop occlusion of the lantern in one twin) gets its own story. |
 
 **Stop rule:** if a target row still fails after 01a(+b), the programmer does **not** add epsilons. They report the residual cells (kind, plane, u/v/depth both twins, distance to the nearest edge/seam/threshold) as `ASK ARCHITECT`. A residual below ~1e-5 m is a true tie and goes into a known-FAIL baseline under D-039.
+
+### 37.10 PROP-COLLIDE-01 solid level props (architect, 2026-10-05)
+
+**Data format (prop-local metres, origin = the prop's feet `transform`, axes turned by the prop's world yaw, scaled by its `scale`):**
+```js
+/** @typedef {{type:'box', c:[number,number,number], half:[number,number,number], yawDeg?:number}
+ *          | {type:'prism', c:[number,number,number], r:number, h:number}} PropColliderShape
+ *  box: c = centre, half = half extents, yawDeg = extra yaw on top of the prop's.
+ *  prism: c = centre, r = inscribed radius of the 8-sided prism (same rule as ENV-01a1), h = FULL height. */
+```
+- Same key/shape as cloth colliders (`stairwell.canvas.colliders`, `c` always the centre), but **prop-local**, not level-local.
+- Where it comes from: `prop.colliders` if the key is present (`[]` = explicit "not solid"), else the model's default `model.colliders` (voxel model def in `design/models/*.js`, same shape, model-local = the same frame), else none. The engine never infers colliders from voxels (pebbles would become solid). The existing free-text `collide` fields (`collide: 'sector'`, wreckage notes) are ignored and stay notes.
+- **Composite props** (`awakeningCrates`, `awakeningKeeper`, README 7.6): the designer's `awkModel` builder in `m3_props.js` writes `model.colliders` itself: one box per piece taller than 0.12 m, from that piece's voxel bbox (anchor-relative, voxel size -> metres). Skip pebbles, papers and bedroll. That is content code, not engine code.
+- **Not solid:** `dynamic: true` props (the boulder is a roller with its own body). They get a `console.warn` and are skipped. Sprite/billboard props are skipped too. Rule for content: only put colliders on props that never move or despawn (the BVH is static; a removed prop leaves its box behind).
+
+**Build (engine/world/colliders.js + World.js):**
+- New `buildPropCollider(shapes, count) -> MeshCollider|null`, id `props:static`. Input is a flat world-space list built by World.load: `{kind:0|1, x, y, zc, hx, hy, hz, r, h, yawRad}`. Boxes are **closed** (12 tris). Prisms are 8 walls + top + bottom (32 tris). Props can stand on walkways, so there is no ENV-01a1 -0.5 m ground skirt. Factor the ring/wall emitter out of `buildDetailCollider` and share it, but `buildDetailCollider`'s output must stay **bit-identical** (`detailColliders.test.js` unchanged).
+- World.load: inside the prop spawn loop, collect the resolved shapes per prop. Transform with `cosSinDeg` (engine/voxel/voxelPose.js, exact at multiples of 90; same matrix as `writeUnitInstance`: `x' = c*lx - s*ly, y' = s*lx + c*ly`) from the **spawned entity's transform** (x, y, z, yawDeg, scale). After the loop, if `physicsMode === 'mesh'`, push one collider. It is derived data: not serialized, rebuilt on every load/deserialize, so it is deterministic.
+- Editor: `World.rebuildPropColliders()` (same code, replaces the `props:static` entry in place). The editor calls it once on a prop-move commit, never per drag frame. Cost: tower ~25 boxes, ~400 tris, <1 ms.
+- **Grid physics: skip.** Under D-037 mesh is the path that ships. Grid cells are 1 m, so cell blockers would close the 1.0 m wake corridor. Note for PO/main session: `game/js/main.js` still defaults to `physics: grid` when `?physics=mesh` is absent. The owner walks on `?renderer=mesh&physics=mesh`. Recommend a separate one-line story: "mesh physics is the default when the renderer is mesh". It is cheap to reverse, so it is a PO call, not a manager one.
+
+**Do not:** add a per-prop BVH (one static BVH), refit per frame, put colliders on `dynamic` props, infer boxes from voxels in the engine, or use grid cell blockers.
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **01a** engine: format, model fallback, builder, World wiring | PC-B (cross-track) -> arch-review (opus) | ~0.5 d | `engine/world/colliders.js`, `World.js`, new `engine/world/propColliders.test.js` | Box at facing 0/90/37, scale 1.5 -> expected world AABB (1e-9). Prism AABB. Capsule (`moveCircleMesh`) stops at a 0.5 m crate from 8 directions with gap = radius +-1e-6. `[]` opt-out over a model default. `dynamic` prop is skipped with a warning. Build twice -> identical `pos`. Load -> serialize -> deserialize -> 200 seeded `collideCircle` probes bit-equal. `detailColliders.test.js` unchanged. | Full runner + check-deps green |
+| **01b** content: tower colliders | PC-B | ~0.25 d | `design/models/m3_props.js` (awk model colliders, floorLantern prism default), `content/levels/tower.level.json` (gondola, practiceTarget if not solid) | Tower load test: `props:static` exists. Route-walk legs green on mesh physics. Scripted walk through the wake -> burner -> stair corridor (>= 1.0 m clear, capsule passes). | Owner walk-test: crates/barrels/sacks/lanterns block, corridor walkable |
+
+### 37.11 ED-GROUP-1 editor multi-select, groups, prefabs (architect, 2026-10-05)
+
+**Decisions.**
+- **Selection becomes a set.** `selection: SelItem | null` becomes `sel = { items: SelItem[], primary: number }`, where `SelItem = {fileId, collection, id, structId}` (today's shape). All single-item code reads `sel.items[sel.primary]`. Click = replace. Shift/Ctrl+click = toggle. Drag on empty space = **box select**: project each item's pivot with the current camera (the same projection `select.js` already uses for highlight rects); items whose pivot is inside the rect join the set. Only props and lights in v1 (no structures, triggers or interactables).
+- **Group ops = one batch record = one undo step.** The existing `{label, batch:[EditRecord...]}` path in `commands.js` already applies and inverts batches across files. Move: a world-space delta applied to every item through its own frame (`itemToWorld`/`worldToItem`, so level props and world entities mix). Rotate: about the set's pivot (centroid xy, min z) by the yaw step. Rotate the position, add to `facing`/`yawDeg`, and use `localYawToWorld` for structure frames. Duplicate: mint new ids (`mintId`) and insert copies offset by +1 m x, then the copies become the selection. Delete: a batch of `makeDeleteRecord`. **Refuse the whole delete** if any member has referrers (`findReferrers`, same rule as single delete). Drag: livepatch every member per frame (`applyPropTransformPatch`/`applyLightPatch`). Commit one batch on release. `isPatchableRecord(batch)` = every sub-record is patchable.
+- **Persistent group = a `group` field on items** (`group: 'g7'`, id from `mintId(file, 'group')`). Ctrl+G sets it on the selection (one batch of field edits). Ctrl+Shift+G clears it. A click on a grouped item selects all members. Alt+click selects one member. The engine ignores the key (unknown item keys are already tolerated). Groups live inside one file. A selection that spans files cannot be grouped (flash a message).
+- **Prefab = a content file, stamped as plain items (no live link in v1).** We do not use a composite voxel model: it cannot hold lights, emitters or colliders, and it would bake art into one model. File `content/prefabs/<id>.prefab.json`, new kind `prefab` (schema 1, listed in the manifest):
+  ```json
+  { "kind":"prefab", "schema":1, "id":"crateCorner", "nextId":3, "title":"crate corner",
+    "items":[ {"id":"p1","type":"prop","model":"crate","x":0.4,"y":-0.2,"z":0,"facing":90,"colliders":[...]},
+              {"id":"p2","type":"light","preset":"lantern","x":0,"y":0,"z":1.3} ] }
+  ```
+  Items are in **prefab-local metres**: pivot at (0,0,0), yaw 0, z up from the feet. Item fields are the prop/light item fields minus ids and refs. `type` selects the collection.
+  - **Save** (Assets tab "Save selection as prefab"): world positions minus the pivot, rotated by 0.
+  - **Place** (Assets tab, prefab entry, click on the ground): pivot + yaw -> world -> `worldToItem(frame)` per item -> one insert batch. All inserted items share a new `group` id and get `prefab: '<id>'` (provenance only). Each item goes through `validateItem`, the same rules as `placeAt`. Example: a light outside a structure is refused, so it is dropped with a flash and the rest of the prefab is still placed.
+  - **The game loads nothing new.** Stamped items are ordinary props/lights. `engine/content/schema.js` only learns the kind (`LATEST_SCHEMA.prefab`, `ID_COLLECTIONS.prefab = ['items']`, key order) so the manifest validates. The game never reads prefab files.
+  - Linked instances (edit the prefab, update every copy) can come later as a `prefabs` instance collection that World.load expands. Nothing here blocks that.
+- Thumbnail v1: a generic prefab icon + title. A rendered thumbnail is a later nicety.
+
+**Do not:** add a second undo mechanism, rebuild the World per drag frame for a group, write prefab files from engine code, or put prefab expansion into World.load in v1.
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **ED-GROUP-1a** multi-select (click toggle, box select, highlight all, outliner shows the set) | PC-B tools | ~0.5 d | new pure `tools/editor/multiSelect.js`; `select.js`, `main.js` | `multiSelect.test.mjs`: toggle/replace/box hit with a fixed camera (pivot in/out of rect, behind-camera items excluded) | Main session: one browser pass, box-select 5 tower props |
+| **ED-GROUP-1b** group ops + `group` field (move/rotate/duplicate/delete, Ctrl+G) | PC-B tools | ~1 d | new pure `tools/editor/groupOps.js`; `main.js`, `livepatch.js` (batch patchable) | `groupOps.test.mjs`: move/rotate batch across a level file + world file round-trips (apply, invert -> identical doc); rotate 4x90 = identity (1e-9); duplicate mints unique ids; delete refused with a referrer; one undo step restores everything | Owner: group the crate corner, move/rotate/undo |
+| **ED-GROUP-1c** prefabs (kind, save, Assets tab entry, place) | PC-B tools + tiny engine schema touch -> opus arch-review | ~0.75 d | new pure `tools/editor/prefab.js`; `io.js` (new file save), `engine/content/schema.js`, `content/manifest.json` | `prefab.test.mjs`: selection -> prefab (pivot/yaw normalised) -> place at (x, y, yaw 90) -> world positions match the expected values (1e-9); placed items share one group; content loader accepts kind `prefab`; `validate-content` green | Owner: save a group as a prefab, place it twice, reload the game, both copies present |
+
+### 37.12 ED-TERRAIN-1 terrain brush (architect, 2026-10-05; D-007)
+
+**Decision: a sparse height-delta + type-paint grid layer (an edit layer), not stamps.**
+- Stamps (`overrides[].stamps`) are evaluated per sample over one flat list. `typeAt` calls `heightAt` 5x, and the near band is 36.9k samples, so a brush stroke of ~200 dabs as stamps would make every bake (near, far, and every chunk forever) ~200x slower. Smoothing also cannot be expressed as stamps. A grid layer costs O(1) per sample no matter how many edits there are.
+- Stamps stay for authored, semantic shapes (tower crown, pond bowl). Editing those as gizmos is a later story.
+
+**Layer (engine/world/terrainEdits.js, engine-owned, pure):**
+```js
+/** @typedef {{cell:number, chunkSize:number,
+ *   chunks: Map<string, {dh:Int16Array, type:Uint8Array}>}} TerrainEditLayer
+ *  Per touched 128 m chunk "cx,cy": 64x64 samples at x = cx*128 + i*cell (cell 2 = the near grid).
+ *  dh in centimetres (Int16, +-327 m). type: 255 = no paint, else a TYPE_IDS value.
+ *  heightDelta(x,y): bilinear over the samples (a missing chunk/neighbour = 0). typePaint(x,y): nearest sample or -1. */
+export function createEditLayer(cell, chunkSize) {}
+export function editLayerFromJSON(obj) {}  // base64 LE Int16 / Uint8 per chunk; validated
+export function editLayerToJSON(layer) {}  // chunks sorted by key, all-zero chunks dropped -> deterministic bytes
+export function applyDab(layer, terrain, op, x, y, r, strength, outRect) {} // op: raise|lower|flatten|smooth|paint; writes the touched sample rect
+```
+- Integer cm storage means the editor's in-memory values are exactly what gets saved (deterministic, no float drift through JSON).
+- Dab ops edit `dh` so that the **total** height moves:
+  - raise/lower: `+-strength * falloff`.
+  - flatten: toward the height at the stroke start, `target - groundAt`.
+  - smooth: toward the 3x3 mean of `groundAt`.
+  - paint: sets `type` inside r (hard edge, 2 m cells).
+  - Falloff is the recipe's `smooth()` curve.
+- **Recipe hook (contract v2.1, `design/levels/overworld_far.js`):** add `util.setEditLayer(layer|null)`, duck-typed: only `heightDelta`/`typePaint` are called. `heightAt = structureBlend(applyStamps(recipe) + layer.heightDelta)`. structureBlend stays last, so the structure ring handover stays exact and a brush can never move a footprint. `typeAt`: river first, then `typePaint >= 0`, then path, then paints, then the rest. The edit paint wins over path and old paints, never over the river.
+- `Terrain` constructor always calls `util.setEditLayer(opts.edits || null)`, so a reload without edits clears it. The layer is module-global in the recipe, like the structure injection. Tests that build two Terrains must set it explicitly.
+- **Empty layer = today's terrain, bit-identical** (`checksum()` unchanged).
+
+**Save/load:** `content/terrain/<terrainKey>.edits.json`, kind `terrainEdits` (schema 1, in the manifest):
+```json
+{"kind":"terrainEdits","schema":1,"id":"overworld_far","cell":2,"chunks":{"11,8":{"dh":"<b64>","type":"<b64>"}}}
+```
+- The editor never rewrites the `.js` recipe.
+- Registry: `assets.terrainEdits(key)` (absent = none). World.load passes it to `new Terrain(recipe, {edits})` before any bake.
+- Edits are content: saves keep only the terrain key (no save-format change). Changing edits bumps `contentVersion` as any content change does.
+
+**Live re-bake (only what is dirty):**
+- `Terrain.rebakeRect(x0, y0, x1, y1)` re-bakes near-band samples in the rect + 2 m margin (typeAt slope eps) via `util.bake` on the sub-grid and copies them into `near.height/type/hDraw`. It widens `minH/maxH` (exact recompute on stroke end), bumps `near.version`, and records `near.dirty = {i0, j0, i1, j1}`. It also re-bakes the far texels under the rect (`farH/farType/farHDraw`, `farVersion++`).
+- Budget: a r <= 8 m dab <= 1.5 ms JS. The GPU repack on `near.version` is the existing full 192x192 path (<1 ms), so keep it.
+- `TerrainMeshSet.markNearDirty(rect)` rebuilds only the near chunk meshes that the rect overlaps (+ stitch if an edge chunk). It must not use the band-flip identity path, which rebuilds the whole band row by row.
+- On **stroke end** (mouse-up), not per dab: re-run `scatterTrees`/`scatterDetail` + trunk/detail colliders, and re-snap `z:'ground'` props. Budget <= 150 ms, editor only. If it is slower, restrict it to the dirty chunks in a later step.
+- Undo: one record per stroke, `{kind:'terrain', key, rect, before:Int16/Uint8 sub-arrays, after}`. Add it to `commands.js` applyEdit/invert. It marks the edits file dirty and calls `rebakeRect`.
+
+**Do not:** write stamps per dab, regenerate the far bake or the whole near band per dab, edit the `.js` recipe from the editor, let the brush act inside structure footprints (structureBlend wins by construction anyway), or put a float `dh` in JSON.
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **ED-TERRAIN-1a** edit layer + format + recipe hook + load | PC-A engine (or PC-B cross-track) -> arch-review | ~1 d | new `engine/world/terrainEdits.js` (+test), `design/levels/overworld_far.js` (hook), `engine/world/Terrain.js` (opts.edits), `World.js`, `engine/content/schema.js` + registry accessor | Empty layer -> `checksum()` equals today. Each dab op gives the expected values on a flat stub recipe. JSON round trip is byte-identical. The ring height at a structure edge is unchanged under a raise dab. typeAt order (river > paint > path). A hand-written edits file loads in world_m1 and `groundAt` shows the delta. | Full runner + check-deps + validate-content green |
+| **ED-TERRAIN-1b** live dirty re-bake | PC-A engine -> arch-review | ~1 d | `Terrain.js` (`rebakeRect`), `engine/mesh/terrainMesh.js` (`markNearDirty`) | After dabs, `rebakeRect` == fresh `bakeNearBand` (bit-identical height/type/hDraw) and far texels == `bakeFarSync`. A rebuilt chunk mesh == the fresh-build mesh. Timing: 100 dabs r 8 m, p95 <= 1.5 ms (Node). | `?gpucompare=1` unchanged (empty layer) |
+| **ED-TERRAIN-1c** editor brush tool + undo + save | PC-B tools | ~1 d | `tools/editor/main.js`, new pure `tools/editor/terrainBrush.js`, `commands.js`, `io.js`, `content/manifest.json` | `terrainBrush.test.mjs`: dab spacing along a drag (fixed-step, deterministic), one stroke = one record, undo restores bytes exactly. io round trip of the edits file. | Owner: raise a hill, flatten, smooth, paint path, undo, save, reload the game: same terrain |

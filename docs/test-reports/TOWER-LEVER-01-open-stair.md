@@ -19,4 +19,6 @@ The dynamic-sector packing, refit, animation, serialization and scaling suites p
 
 Legacy saves may retain an inert `grate` dynamics record and old state key through generic deserialization; neither can restore gate geometry or its removed content entity. No generic save migration is introduced.
 
-Status: **NEEDS PC-A: PO review / owner walk-test**. Next queue item: **PROP-COLLIDE-01 (3b)**. Cinematic captures remain on hold. Generated GPU capture JSON files are removed after verification; diagnostic copies stay outside the commit.
+Final sync includes PC-A `5c6dfac`: keeper scrawl retains all three writer-authored decals; only their location notes now name the open landing. New architecture/PO notes and both PCs' handoffs are preserved. A repeat isolated mesh comparison after sync has all 70 rows and metrics identical to the proposed-commit check. Final merged working-tree runner: 226/226 suites PASS; dependency check OK. Both Node physics routes still reach the end; save/load has zero probe mismatches and identical continued mesh end positions.
+
+Status: **NEEDS PC-A: PO review / owner walk-test**. The updated queue inserts **MESH-PHYS-DEFAULT (3a)** before **PROP-COLLIDE-01 (3b)**. Cinematic captures remain on hold. Generated GPU capture JSON files are removed after verification; diagnostic copies stay outside the commit.
