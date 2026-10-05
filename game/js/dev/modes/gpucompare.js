@@ -5,7 +5,7 @@ import {
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
-  terrainMeshSetFor, beginFrame, castSectors, fillSky,
+  terrainMeshSetFor,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
@@ -27,31 +27,30 @@ function noPipelineMsg(ctx) {
 
 // `?gpucompare=shade` (US-029 AC "Parity page", tech notes item 7; US-030a
 // 14.2 item 7 keeps this test-only mode: `pipeline.setSource('upload')`
-// feeds the CPU-cast G-buffer into the same uint textures the DDA cast pass
-// now writes, isolating the shading/edge passes from the DDA itself). Casts
-// the same bench-cast.mjs pose set (content/dev-poses.js) against
+// feeds the mesh JS G-buffer into the same uint textures, isolating
+// shading/edge parity from raster precision). Uses the shared pose set against
 // `test_room` on both paths and reports glyph/fg/bg parity. Shows PASS/FAIL
 // on screen (the overlay) and in the console. Requires a working GPU
 // pipeline - prints a clear message and does nothing else if one isn't active.
 function runGpuCompareShadeMode(ctx) {
-  const { gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, openSpans, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
+  const { gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
 
   gpuPipeline.setSource('upload'); // 14.2 item 7: force the legacy CPU-fed G-buffer path for this test
 
   const level = loadLevel(assets.level('test_room'));
   bindLevel(matTable, level);
+  const compareWorld = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
   const fbCompare = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
     timeSec: 0, light: ambientL, jsShade: shadeSurfaces, jsEdge: edgePass,
   };
 
+  const sceneFb = { ...fbCompare, renderer: 'mesh', light: makeLightBuffer(rt.cols, rt.rows) };
+
   function castFrame(pose) {
     const cam = { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg };
-    beginFrame(fbCompare);
-    castSectors(fbCompare, level, cam, { x: 0, y: 0, z: 0 });
-    computeDerivatives(fbCompare.gbuf, fbCompare.depth.depth);
-    fillSky(fbCompare, cam);
+    renderWorld(sceneFb, compareWorld, cam);
     return cam;
   }
 
@@ -443,7 +442,7 @@ function buildCompareRuns(ctx) {
     // is exactly the vacuous pass that let this bug ship).
     for (const pitch of [0, 20]) {
       runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: viewModel rest pitch ${pitch} PITCHED CAMERA (BUG-VM-001, held sword, crash room)`,
-        cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 30, pitchDeg: pitch }, real: true, meshOnly: true, needK8: true, pitchedDefault: true, vmAssert: true,
+        cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 40, pitchDeg: pitch }, real: true, meshOnly: true, needK8: true, pitchedDefault: true, vmAssert: true,
         before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, 'idle'), 0, false); } });
     }
   }
@@ -573,7 +572,7 @@ function applySunOverride(world, lights, sun) {
 
 function runGpuCompareSceneMode(ctx) {
   const {
-    gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, openSpans, gbuf, overlay, sprites, engine,
+    gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
     compareNoVoxels, renderer, terrainEnabled, rayParam, params, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR, fadeLut,
   } = ctx;
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
@@ -605,7 +604,7 @@ function runGpuCompareSceneMode(ctx) {
   }
 
   const fbCompare = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: false,
     renderer, terrainEnabled,
     fadeLut, sceneFade: 1,

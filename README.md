@@ -63,7 +63,7 @@ Add these to the address, for example `index.html?debug=1&grid=240x90`.
 node tools/check-deps.mjs                       # engine must not import game/ or design/
 node engine/physics/physics.test.js             # collision
 node engine/physics/jump.test.js                # jumping
-node --expose-gc tools/bench-cast.mjs --gc      # renderer benchmark + image checksums
+node --expose-gc tools/bench-shadow.mjs --gc    # sun-shadow CPU frame benchmark
 node tools/compare-detail-export.mjs            # detail shader vs. the designer's reference
 ```
 

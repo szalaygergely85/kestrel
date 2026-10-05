@@ -39,12 +39,12 @@ export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 
 // ---- render passes --------------------------------------------------------
-// US-047 (architecture.md section 5): beginFrame/castSectors/fillSky are
-// sector-cast pass internals used only by parity/bench tooling - moved to
-// engine/dev.js. ambientL/HFOV_DEG stay here (stable clients: main.js render
-// path, tools/editor/*).
-export { ambientL, HFOV_DEG } from './render/sectorCaster.js';
-export { castTerrain, shadeTerrainCells, marchTerrainRay, sunFromWorld, FOG_FULL, T_START, MAX_TERRAIN_STEPS, STEP_MIN, STEP_K } from './render/terrainCaster.js';
+// Frame/sky pass internals stay in engine/dev.js. ambientL/HFOV_DEG
+// remain stable clients of the mesh render path and editor.
+export { ambientL } from './render/sky.js';
+export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
+export { sunFromWorld } from './render/lighting.js';
+export { shadeTerrainCells } from './render/terrainShade.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
@@ -83,11 +83,10 @@ export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md
 // documented public shape (27.3), these are just its (de)serialize/validate
 // functions.
 export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
-export { castModels } from './voxel/voxelMarch.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
-export { createViewModelLayer, VM_OBJECT_ID, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
+export { createViewModelLayer, VM_OBJECT_ID, VM_MAX_HANDLES, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
 export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_BASE, MAX_INSTANCES_PER_FRAME } from './mesh/instances.js';
 export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './mesh/scatterFeed.js';
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';

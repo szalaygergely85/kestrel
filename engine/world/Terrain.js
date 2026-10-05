@@ -362,3 +362,23 @@ export class Terrain {
     }
   }
 }
+
+// ME-19b: shared sampling activation and height bounds, moved from terrainCaster.
+export function activeNearLOD(terrain) {
+  const nl = terrain.recipe && terrain.recipe.nearLOD;
+  if (!terrain.nearReady || !nl || !nl.handover || !nl.step) return null;
+  return nl;
+}
+
+/**
+ * US-026a S5: the combined near+far height-draw bounds (`{minH, maxH}`),
+ * gated by the SAME `activeNearLOD` check as the march itself - the single
+ * source of truth for both `marchTerrainRay`'s early-outs (below) and the
+ * GLSL uniform upload (`GpuCellPipeline.js`'s `_uploadTerrainUniforms`,
+ * `uTerrainMaxH`), so the two never compute this differently.
+ */
+export function terrainHBounds(terrain) {
+  const nl = activeNearLOD(terrain);
+  if (nl) return { maxH: Math.max(terrain.farMaxH, terrain.near.maxH), minH: Math.min(terrain.farMinH, terrain.near.minH) };
+  return { maxH: terrain.farMaxH, minH: terrain.farMinH };
+}

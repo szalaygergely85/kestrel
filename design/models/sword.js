@@ -301,21 +301,28 @@
   // in the upper-left of the screen (camX ~ -0.89, z/s ~ 0.34: on screen at 160x60 and 240x90, so `chargeGlint` at the tip
   // is visible). Reads as "loaded": the whole screen is crossed by steel, edge toward the swing.
   var CHARGE_END = { pos: [0.05, -0.36, -0.17], rot: [58, 0, -55] };
-  function k(t, pos, rot) { return { t: t, pos: pos, rot: rot }; }
-  A.viewModels.sword = {
+  // S R S, S = diag(-1, 1, 1); authored right-hand numbers stay readable. Built once per binding.
+  A.swordForHand = function swordForHand(hand) {
+    if (hand !== 'left' && hand !== 'right') throw new Error('swordForHand: hand must be left or right');
+    var sign = hand === 'left' ? -1 : 1;
+    function mx(pos, rot) { return { pos: [sign * pos[0], pos[1], pos[2]], rot: [rot[0], sign * rot[1], sign * rot[2]] }; }
+    function k(t, pos, rot) { var pose = mx(pos, rot); return { t: t, pos: pose.pos, rot: pose.rot }; }
+    return {
+    hand: hand,
     model: 'swordHeld',
     space: 'eye: x right, y back (forward = -y), z up, metres; yaw-0 / pitch-0 camera frame at the eye',
     rotOrder: 'R = Rz(rz) * Ry(ry) * Rx(rx), degrees (= engine voxelPose setRot)',
     projection: 'same as the scene (75 deg HFOV, 16:9); drawn in its own depth range after the scene (never clips walls)',
     depth: { near: 0.05, far: 1.5 },
-    rest: REST,
+    rest: mx(REST.pos, REST.rot),
     clips: {
       idle: { loop: true, keys: [
         k(0, REST.pos, REST.rot),
         k(1100, [0.274, -0.42, -0.212], [66.5, -8, 4]),     // slow breath: up 8 mm, a hair right, tip dips 1.5 deg
         k(2200, REST.pos, REST.rot)
       ] },
-      swingLR: { loop: false, windup: [0, 80], active: [80, 200], recover: [200, 350], leadEdge: '+x', keys: [
+      // Keep the clip key: in the left hand swingLR sweeps right to left on screen.
+      swingLR: { loop: false, windup: [0, 80], active: [80, 200], recover: [200, 350], leadEdge: sign < 0 ? '-x' : '+x', keys: [
         k(0,   REST.pos, REST.rot),
         k(80,  [-0.10, -0.32, -0.10], [70, 0, -80]),       // windup end: pulled back to the left, blade pointing left, raised
         k(120, [-0.08, -0.40, -0.18], [78, 0, -45]),       // active 1: left-forward, eye height
@@ -336,7 +343,7 @@
       ] },
       // HARD, part 2: release in charge with mana. Same left -> right motion as swingLR, wider and heavier.
       // windup 0-67 (4 steps), active 67-183 (7 steps), recover 183-633 (27 steps) = SWORD_CFG.hard.
-      swingHard: { loop: false, windup: [0, 67], active: [67, 183], recover: [183, 633], leadEdge: '+x', keys: [
+      swingHard: { loop: false, windup: [0, 67], active: [67, 183], recover: [183, 633], leadEdge: sign < 0 ? '-x' : '+x', keys: [
         k(0,   CHARGE_END.pos, CHARGE_END.rot),             // the charge end pose (blend: replaced by the captured pose)
         k(67,  [-0.24, -0.30, -0.04], [50, -4, -95]),      // windup end: the heave - hand far up-left, blade thrown back
         k(100, [-0.10, -0.40, -0.12], [74, 0, -50]),       // active 1: hammering in from the far left
@@ -355,7 +362,7 @@
                    'windup); after 2 lights, 250 ms rest in idle. A queued press still held at 270 ms goes to charge ' +
                    '(blend from the current pose), which can end in a hard swing.' },
     bob: { note: 'engine-side walk bob while moving (not in the keys): z +-0.012 m, x +-0.006 m, roll +-1 deg, ' +
-                 'one cycle per 2 steps; x0.4 during a light swing, x0.2 during charge / swingHard (D-034)', z: 0.012, x: 0.006, rollDeg: 1.0 },
+                 'one cycle per 2 steps; x0.4 during a light swing, x0.2 during charge / swingHard (D-034)', z: 0.012, x: sign * 0.006, rollDeg: sign * 1.0 },
     carriedLight: { heldOffsetX: -0.3, note: 'US-078 AC: with the sword taken the carried lamp light moves to the LEFT ' +
                                             '(0.3 m left of the eye instead of right, GDD 7.3)' },
     trail: {
@@ -415,7 +422,9 @@
                      anchor: { x: 0, y: 0 } },
       targetFlash: { color: 'white', ms: 100 }
     }
+    };
   };
+  A.viewModels.sword = A.swordForHand('left');
 
   // ===================================================================================================================
   // 6. TOWER PLACEMENT (data only; NOT applied to content/levels/tower.level.json - there is no pickup system yet and
@@ -467,5 +476,5 @@
   };
   A.voxelModels.attachSword();
 
-  if (typeof module === 'object' && module && module.exports) module.exports = { sword: A.voxelModels.sword, swordHeld: A.voxelModels.swordHeld, viewModel: A.viewModels.sword, kit: A.swordKit };
+  if (typeof module === 'object' && module && module.exports) module.exports = { sword: A.voxelModels.sword, swordHeld: A.voxelModels.swordHeld, viewModel: A.viewModels.sword, forHand: A.swordForHand, kit: A.swordKit };
 })(typeof window !== 'undefined' ? window : globalThis);

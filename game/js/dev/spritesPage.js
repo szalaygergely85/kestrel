@@ -23,7 +23,7 @@ const engine = createEngine({
   cols: isCompare ? 160 : (gridParam ? Number(gridParam[1]) : 160), rows: isCompare ? 60 : (gridParam ? Number(gridParam[2]) : 60),
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0',
 });
-const { renderTarget: rt, depthBuffer, openSpans, input } = engine;
+const { renderTarget: rt, depthBuffer, input } = engine;
 const overlay = new DebugOverlay(document.body);
 const matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const detailPass = params.get('detail') !== '0' ? assets.detailPass : null;
@@ -41,7 +41,7 @@ const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 window.__debug = { input, overlay, rt, engine, gpuPipeline, sprites };
 
 const fb = {
-  rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: null, timeSec: 0,
+  rt, depth: depthBuffer, palette: assets.palette, lights: null, timeSec: 0,
   gbuf, matTable, detailPass, gpu: false, renderer: 'mesh',
 };
 

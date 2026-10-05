@@ -1,10 +1,11 @@
 // engine/render/viewModel.test.js - US-078a (docs/architecture.md 30.1).
 // Run: node engine/render/viewModel.test.js  (re-spawns itself with --expose-gc)
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { VoxelPool } from './voxelPool.js';
-import { createViewModelLayer, VM_OBJECT_ID } from './viewModel.js';
-import { projTerms, shearProjection, projectPoint } from './projection.js';
+import { createViewModelLayer, VM_OBJECT_ID, VM_MAX_HANDLES } from './viewModel.js';
+import { projTerms, shearProjection, projectPoint, pitchedTerms, createPitchedTerms } from './projection.js';
 import { DrawList } from '../mesh/DrawList.js';
 import { addVoxelInstances, VoxelMeshCache, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { rasterDrawList, createRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
@@ -54,29 +55,29 @@ const tip = vm.mountId(h, 'tip');
 }
 
 // ---- sampling --------------------------------------------------------------------------------------------------
-const P = vm._last;
+const P = vm._defs[h].last;
 const near = (a, b, e = 1e-9) => Math.abs(a - b) <= e;
 {
   vm.show(h, swingLR, 80, false);
-  ok('key time 80 = key 1 pos/rot', near(P[0], -0.10) && near(P[1], -0.32) && near(P[2], -0.10) && near(P[3], 70) && near(P[4], 0) && near(P[5], -80), Array.from(P).join(','));
+  ok('key time 80 = key 1 pos/rot', near(P[0], 0.10) && near(P[1], -0.32) && near(P[2], -0.10) && near(P[3], 70) && near(P[4], 0) && near(P[5], 80), Array.from(P).join(','));
   vm.show(h, swingLR, 100, false);
-  ok('mid time 100 = linear mid of keys 80/120', near(P[0], -0.09) && near(P[1], -0.36) && near(P[2], -0.14) && near(P[3], 74) && near(P[5], -62.5), Array.from(P).join(','));
+  ok('mid time 100 = linear mid of keys 80/120', near(P[0], 0.09) && near(P[1], -0.36) && near(P[2], -0.14) && near(P[3], 74) && near(P[5], 62.5), Array.from(P).join(','));
   vm.show(h, swingLR, 9999, false);
-  ok('non-loop clip clamps to its last key', near(P[0], 0.27) && near(P[5], 5));
+  ok('non-loop clip clamps to its last key', near(P[0], -0.27) && near(P[5], -5));
   vm.show(h, idle, 1100, false);
   ok('loop idle key 1', near(P[2], -0.212) && near(P[3], 66.5));
   vm.show(h, idle, 2200 + 1100, false);
   ok('loop wraps (t mod 2200)', near(P[2], -0.212) && near(P[3], 66.5));
 }
 { // blend: key 0 replaced by the captured pose, only in the first segment
-  vm.show(h, swingLR, 40, false); vm.capture();               // some mid-windup pose
+  vm.show(h, swingLR, 40, false); vm.capture(h);               // some mid-windup pose
   const cap = Array.from(P);
   vm.show(h, swingLR, 0, true);
   ok('blend t=0 = captured pose', cap.every((v, i) => near(P[i], v)));
   vm.show(h, swingLR, 40, true);
-  ok('blend t=40 = halfway captured -> key 1', near(P[0], (cap[0] + -0.10) / 2) && near(P[5], (cap[5] + -80) / 2));
+  ok('blend t=40 = halfway captured -> key 1', near(P[0], (cap[0] + 0.10) / 2) && near(P[5], (cap[5] + 80) / 2));
   vm.show(h, swingLR, 100, true);
-  ok('blend leaves later segments alone', near(P[0], -0.09) && near(P[5], -62.5));
+  ok('blend leaves later segments alone', near(P[0], 0.09) && near(P[5], 62.5));
 }
 
 // ---- eye -> world ----------------------------------------------------------------------------------------------
@@ -130,43 +131,38 @@ function worldTipFromList(list) {
   ok('buildList: hidden + pitched -> still null (no model bound is the only gate)', vm.buildList(cam, true) === null);
 }
 
-// ---- pitched rotation map vs the shear map (small-angle convergence) -------------------------------------------
-// NOTE (flagged for architect re-review, BUG-VM-001 item 3): the architect's note asked for "the new pitched
-// rotation matrix equals the old shear matrix within 1e-3" at pitchDeg 0 and +-5. At pitchDeg=0 the two maps are
-// IDENTICAL (sp=0, cp=1, tp=0 - checked below, exact). At +-5 deg they are NOT within 1e-3 elementwise: the shear
-// map has no y<->z coupling at all (Aw[5] == 0 always), while the true rotation's Aw[5] = c*sin(pitchRad) - a
-// FIRST-order-in-pitch term (~0.087 at yaw=0, pitch=5deg), not a small-angle residual. That is expected/correct
-// (it's exactly why the shear was wrong for a rotating camera - no amount of "small angle" shrinks a first-order
-// difference to 1e-3 at 5 degrees). The two maps provably converge only as pitch -> 0 (checked below down to a
-// tenth of a degree). Implemented here: (1) exact equality at pitch=0 (1e-9), (2) the +-5 deg case checked against
-// an empirically-derived bound (~0.09, i.e. "same ballpark", not "1e-3") instead of the literal number, and (3) a
-// convergence check at a much smaller pitch (0.1 deg) where the difference IS within 1e-3, demonstrating the two
-// conventions agree in the small-angle limit as intended. Flagging the literal "1e-3 at +-5deg" instruction as
-// unachievable by construction - needs an architect decision on the intended metric/tolerance.
+// ---- pitched rotation invariants + screen lock (BUG-VM-001 re-review) -------------------------------------------
 {
-  const Aw = new Float64Array(9);
-  function eyeMapOf(pitched, pitchDeg, yawDeg) {
-    const c2 = { x: 0, y: 0, z: 0, yawDeg, pitchDeg };
-    vm._eyeMap(c2, Aw, pitched);
-    return Array.from(Aw);
+  const Aw = new Float64Array(9), pt = createPitchedTerms();
+  vm.setBob(0, 0);
+  vm.show(h, idle, 0, false);
+  vm.mountEye(h, idle, 0, tip, pe);
+  for (const yawDeg of [0, 37, 225]) {
+    let ref = null;
+    for (const pitchDeg of [0, -20, 20]) {
+      const c = { x: 12.3, y: -4.1, z: 1.6, yawDeg, pitchDeg };
+      vm._eyeMap(c, Aw, true);
+      let error = 0;
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        let dot = 0;
+        for (let k = 0; k < 3; k++) dot += Aw[k * 3 + i] * Aw[k * 3 + j];
+        error = Math.max(error, Math.abs(dot - (i === j ? 1 : 0)));
+      }
+      const det = Aw[0] * (Aw[4] * Aw[8] - Aw[5] * Aw[7])
+        - Aw[1] * (Aw[3] * Aw[8] - Aw[5] * Aw[6])
+        + Aw[2] * (Aw[3] * Aw[7] - Aw[4] * Aw[6]);
+      ok(`pitched map orthonormal, yaw ${yawDeg} pitch ${pitchDeg}`, error < 1e-9, String(error));
+      ok(`pitched map determinant +1, yaw ${yawDeg} pitch ${pitchDeg}`, Math.abs(det - 1) < 1e-9, String(det));
+      vm.buildList(c, true); // latch the same map used by the model and trail
+      vm.eyeToWorld(c, pe, w3);
+      pitchedTerms(c, grid, pt);
+      projectPoint(pt.M, COLS, ROWS, w3[0], w3[1], w3[2], out4);
+      if (!ref) ref = [out4[0], out4[1]];
+      const dev = Math.max(Math.abs(out4[0] - ref[0]), Math.abs(out4[1] - ref[1]));
+      ok(`pitched tip screen-lock, yaw ${yawDeg} pitch ${pitchDeg}`, Number.isFinite(dev) && dev <= 0.5, String(dev));
+    }
   }
-  const maxAbsDiff = (a, b) => { let m = 0; for (let i = 0; i < 9; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
-  {
-    const shear = eyeMapOf(false, 0, 37), rot = eyeMapOf(true, 0, 37);
-    const d = maxAbsDiff(shear, rot);
-    ok('pitched rotation map == shear map at pitchDeg=0 (exact, any yaw)', d < 1e-9, `maxAbsDiff=${d}`);
-  }
-  for (const pitchDeg of [5, -5]) {
-    const shear = eyeMapOf(false, pitchDeg, 0), rot = eyeMapOf(true, pitchDeg, 0);
-    const d = maxAbsDiff(shear, rot);
-    // see the NOTE above: 1e-3 is not achievable here by construction; 0.09 bounds the expected first-order gap.
-    ok(`pitched rotation map stays in the same ballpark as the shear map at pitchDeg=${pitchDeg} (< 0.09, not the literal 1e-3 - see NOTE)`, d < 0.09, `maxAbsDiff=${d}`);
-  }
-  for (const pitchDeg of [0.05, -0.05]) {
-    const shear = eyeMapOf(false, pitchDeg, 0), rot = eyeMapOf(true, pitchDeg, 0);
-    const d = maxAbsDiff(shear, rot);
-    ok(`small-angle convergence: rotation map -> shear map within 1e-3 at pitchDeg=${pitchDeg}`, d < 1e-3, `maxAbsDiff=${d}`);
-  }
+  vm.buildList(cam, false); // restore shear mode for the raster fixture below
 }
 
 // raster: tip lands within 1 cell of the projected mount; the blade overdraws a wall 0.2 m ahead
@@ -217,6 +213,125 @@ function worldTipFromList(list) {
   let dOk = true;
   for (let i = 0; i < COLS * ROWS; i++) if (t3.objectId[i] === VM_OBJECT_ID && !(t3.depth[i] > 0.3 && t3.depth[i] < 1.2)) dOk = false;
   ok('sword cells carry true view distance (0.3..1.2 m)', dOk);
+}
+
+// ---- single-handle output baseline (pre TORCH-01a) ----------------------------------------------------------
+{
+  const hash = createHash('sha256');
+  const target = createRasterTarget(COLS, ROWS, 1, {});
+  const pt = createPitchedTerms();
+  for (const pitched of [false, true]) for (const tMs of [0, 40, 100, 160]) for (const amount of [0, 0.7]) {
+    const c = { x: 2, y: -3, z: 1.7, yawDeg: 37, pitchDeg: 20 };
+    vm.show(h, swingLR, 80, false); vm.capture(h);
+    vm.show(h, swingLR, tMs, true); vm.setBob(1.3, amount);
+    const list = vm.buildList(c, pitched);
+    hash.update(new Uint8Array(list.items[0].partMatrices.buffer));
+    hash.update(new Uint8Array(list.items[0].partFlags.buffer));
+    if (pitched) { pitchedTerms(c, grid, pt); M.set(pt.M); }
+    else { projTerms(c, grid, terms); shearProjection(terms, M); }
+    target.kind.fill(0); clearRasterDepth(target);
+    rasterDrawList(list, target, { M, kind7Mat: null, structFoot: null, structCount: 0, team: null });
+    for (const key of Object.keys(target)) {
+      const a = target[key];
+      if (ArrayBuffer.isView(a)) hash.update(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+    }
+  }
+  ok('one-handle matrices and raster remain byte-identical across 16 poses', hash.digest('hex') === 'b16abe27bfe1d16803e12d7d91ef9bf66bdec1982d7e94e733355cb6d0e20d1f');
+}
+
+// ---- independent handles (TORCH-01a, 37.8) ------------------------------------------------------------------
+{
+  const multi = createViewModelLayer();
+  const secondDef = JSON.parse(JSON.stringify(def));
+  secondDef.rest.pos[0] += 0.54;
+  for (const c of Object.values(secondDef.clips)) for (const k of c.keys) k.pos[0] += 0.54;
+  const a = multi.load('left-item', def, pool), b = multi.load('right-item', secondDef, pool);
+  const ac = multi.clipId(a, 'swingLR'), bc = multi.clipId(b, 'swingLR');
+  const ai = multi.clipId(a, 'idle'), bi = multi.clipId(b, 'idle');
+  const only = createViewModelLayer(), oh = only.load('right-item', secondDef, pool);
+  const oc = only.clipId(oh, 'swingLR');
+  multi.show(b, bc, 140, false); multi.show(a, ac, 40, false);
+  const both = multi.buildList(cam, false);
+  only.show(oh, oc, 140, false);
+  const expectedB = only.buildList(cam, false).items[0].partMatrices;
+  vm.setBob(0, 0); vm.show(h, swingLR, 40, false);
+  const expectedA = vm.buildList(cam, false).items[0].partMatrices;
+  ok('two shown handles draw in handle order with distinct objectIds', both.count === 2 && both.items[0].objectId === VM_OBJECT_ID - a && both.items[1].objectId === VM_OBJECT_ID - b);
+  ok('two handles retain their independently sampled poses', both.items[0].partMatrices.every((v, i) => v === expectedA[i]) && both.items[1].partMatrices.every((v, i) => v === expectedB[i]));
+  ok('stats.items totals the shown items', multi.stats.visible && multi.stats.items === 2);
+  multi.hide(a);
+  const remaining = multi.buildList(cam, false);
+  ok('hide(handle) leaves the other handle visible', remaining.count === 1 && remaining.items[0].objectId === VM_OBJECT_ID - b && multi.stats.items === 1);
+  multi.hide();
+  ok('hide() hides all handles', multi.buildList(cam, true) === null && !multi.stats.visible && multi.stats.items === 0);
+  multi.show(a, ac, 40, false); multi.capture(a);
+  multi.show(b, bc, 140, false); multi.capture(b);
+  const ca = Array.from(multi._defs[a].cap), cb = Array.from(multi._defs[b].cap);
+  multi.show(a, ac, 0, true); multi.show(b, bc, 0, true);
+  ok('capture and blend use each handle own pose', multi._defs[a].last.every((v, i) => v === ca[i]) && multi._defs[b].last.every((v, i) => v === cb[i]));
+  multi.show(b, bc, 20, false); multi.capture(b); multi.show(a, ac, 40, true);
+  ok('capturing the second item does not replace the first blend source', near(multi._defs[a].last[0], (ca[0] + 0.10) / 2) && multi._defs[a].cap.every((v, i) => v === ca[i]));
+  const beforeMount = Array.from(multi._defs[a].last);
+  multi.mountEye(a, ac, 160, multi.mountId(a, 'tip'), pe);
+  ok('mount sampling leaves both handle pose/capture states intact', multi._defs[a].last.every((v, i) => v === beforeMount[i]) && multi._defs[a].cap.every((v, i) => v === ca[i]));
+  multi.show(a, ai, 0, false); multi.show(b, bi, 0, false);
+  multi.setBob(1.3, 0);
+  const noBobB = Array.from(multi.buildList(cam, false).items[1].partMatrices);
+  const noBobA = Array.from(multi.list.items[0].partMatrices);
+  multi.setBob(1.3, 1, a);
+  multi.buildList(cam, false);
+  ok('per-handle bob changes only that item', multi.list.items[1].partMatrices.every((v, i) => v === noBobB[i]) && multi.list.items[0].partMatrices.some((v, i) => v !== noBobA[i]));
+  multi.setBob(1.3, 0.5);
+  multi.buildList(cam, false);
+  ok('setBob without handle updates both amounts on a shared phase', multi._defs[a].bobAmount === 0.5 && multi._defs[b].bobAmount === 0.5 && multi._bobPhase === 1.3 && multi.list.items[1].partMatrices.some((v, i) => v !== noBobB[i]));
+
+  // Both held items win the same depth-clear overlay against a wall 0.2 m ahead.
+  multi.setBob(0, 0); multi.show(a, ai, 0, false); multi.show(b, bi, 0, false);
+  const list = multi.buildList(cam, false);
+  projTerms(cam, grid, terms); shearProjection(terms, M);
+  const ctx = { M, kind7Mat: null, structFoot: null, structCount: 0, team: null };
+  const wallList = new DrawList(4);
+  addVoxelInstances(wallList, { list: [{ model: pool.models.get('wall'), modelKey: 'wall', x: 0, y: -0.2, z: 0.1, yawDeg: 0, clip: -1, frame: 0, tMs: 0, rect: { minX: -1.6, minY: -0.3, minZ: 0.1, maxX: 1.6, maxY: -0.1, maxZ: 3.3 } }] }, new VoxelMeshCache(), pool.partNamesFor);
+  const bare = createRasterTarget(COLS, ROWS, 1, {}), behind = createRasterTarget(COLS, ROWS, 1, {}), overlay = createRasterTarget(COLS, ROWS, 1, {});
+  rasterDrawList(list, bare, ctx);
+  rasterDrawList(wallList, behind, ctx); rasterDrawList(list, behind, ctx);
+  rasterDrawList(wallList, overlay, ctx); clearRasterDepth(overlay); rasterDrawList(list, overlay, ctx);
+  for (const handle of [a, b]) {
+    const id = VM_OBJECT_ID - handle;
+    let n = 0, blocked = 0, drawn = 0;
+    for (let i = 0; i < COLS * ROWS; i++) {
+      if (bare.kind[i] && bare.objectId[i] === id) n++;
+      if (behind.kind[i] && behind.objectId[i] === id) blocked++;
+      if (overlay.kind[i] && overlay.objectId[i] === id) drawn++;
+    }
+    ok(`two-handle JS raster: handle ${handle} wins wall after depth clear`, n > 30 && blocked === 0 && drawn === n, `bare=${n} blocked=${blocked} overlay=${drawn}`);
+  }
+
+  const lastA = multi._defs[a].last, lastB = multi._defs[b].last, capA = multi._defs[a].cap, capB = multi._defs[b].cap;
+  const item0 = multi.list.items[0], item1 = multi.list.items[1], mats0 = item0.partMatrices, mats1 = item1.partMatrices;
+  function frame(f) {
+    multi.show(a, ac, f % 350, f % 7 === 0); multi.capture(b);
+    multi.show(b, bc, (f + 50) % 350, f % 3 === 0);
+    multi.setBob(f * 0.1, 1, a); multi.setBob(f * 0.1, 0.2, b);
+    multi.buildList(cam, false);
+  }
+  for (let f = 0; f < 2000; f++) frame(f);
+  let growth = Infinity;
+  for (let round = 0; round < 3; round++) {
+    global.gc(); global.gc(); const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 1000; f++) frame(f);
+    global.gc(); global.gc(); growth = Math.min(growth, process.memoryUsage().heapUsed - before);
+  }
+  ok('zero-alloc: 1000 two-handle frames grow the heap < 64 KB', growth < 65536, `growth=${growth}`);
+  ok('two-handle frame loop keeps all pose/capture/item buffers', multi._defs[a].last === lastA && multi._defs[b].last === lastB && multi._defs[a].cap === capA && multi._defs[b].cap === capB && multi.list.items[0] === item0 && multi.list.items[1] === item1 && item0.partMatrices === mats0 && item1.partMatrices === mats1);
+  multi.load('third', def, pool); multi.load('fourth', def, pool);
+  let overflow = false;
+  try { multi.load('fifth', def, pool); } catch (e) { overflow = /at most 4 handles/.test(e.message); }
+  ok('load enforces VM_MAX_HANDLES = 4', VM_MAX_HANDLES === 4 && multi._defs.length === 4 && overflow);
+  multi.setBob(0, 0);
+  for (let handle = 0; handle < VM_MAX_HANDLES; handle++) multi.show(handle, multi.clipId(handle, 'idle'), 0, false);
+  const full = multi.buildList(cam, true);
+  ok('all four preallocated handles draw and report total stats', full.count === VM_MAX_HANDLES && multi.stats.items === VM_MAX_HANDLES && full.items.slice(0, full.count).every((it, i) => it.objectId === VM_OBJECT_ID - i));
 }
 
 // ---- perf + zero allocation --------------------------------------------------------------------------------------

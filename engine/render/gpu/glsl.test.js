@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 // engine/render/gpu/glsl.test.js (US-029 tech notes item 10). Shader
 // SOURCE-STRING checks only (no `gl` - can't compile headless): the five
 // hash constants, '1.18'/'0.35' (edgePass.js's `farther()` constants), no
@@ -22,6 +23,11 @@ import { makeOk } from '../../test/assert.js';
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
+
+// ME-19b/37.13.5: frozen program strings captured at a24ab04 (unchanged since ME-19a).
+ok('ME-19b: dda source hash unchanged', createHash('sha256').update(DDA_FRAG_SRC).digest('hex') === '915306986f4b3c6ff427e3f7e9734583c566ccb6a6f4495ab1c370989bfa3749');
+ok('ME-19b: terrain source hash unchanged', createHash('sha256').update(TERRAIN_FRAG_SRC).digest('hex') === 'd256d14c21bb316c5c58968384f9cd02325bdceae02cc40f620eb3c53f4b38e0');
+ok('ME-19b: voxel source hash unchanged', createHash('sha256').update(VOXEL_FRAG_SRC).digest('hex') === 'a9871e8136295aebdc4a68ace00ab8699366584a0b89473c55002864afec94a2');
 
 const HASH_CONSTANTS = ['0x27d4eb2d', '0x165667b1', '0x9e3779b1', '0x85ebca6b', '0xc2b2ae35'];
 

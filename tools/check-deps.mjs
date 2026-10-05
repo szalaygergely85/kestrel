@@ -209,23 +209,11 @@ function checkEngineFile(file, src) {
   }
 }
 
-// tools/bench-cast.mjs is testing tooling for the sector caster's internal
-// shader-parity/probe options (opts.shader, opts.skyFallback) that are
-// deliberately NOT part of the public FrameBuffers API (castSectors always
-// runs with skyFallback:false) - it needs engine/render/sectorCaster.js and
-// engine/world/Level.js directly (a tool-only exception to rule 3).
-// tools/compare-detail-export.mjs (US-028) is the same kind of tool-only
-// exception: it needs the G-buffer/detail-shade/edge-pass internals
-// directly to reproduce the exact render pipeline the designer's export
-// JSON was captured from (a correctness oracle, not a game/main.js consumer).
-// tools/bench-voxel.mjs (US-039): engine/voxel/** gets no engine/index.js
-// exports until US-041 (architect tech notes item 1 - "tests import the
-// files directly"), so this bench needs the same kind of tool-only
-// exception in the meantime.
+// ME-19b: the retained shadow CPU benchmark and detail export comparison
+// are tool-only exceptions for mesh/shadow pass internals (rule 3).
 const RULE3_TOOL_ALLOWLIST = new Set([
-  'tools/bench-cast.mjs',
+  'tools/bench-shadow.mjs',
   'tools/compare-detail-export.mjs',
-  'tools/bench-voxel.mjs',
 ].map((p) => p.split('/').join(path.sep)));
 
 const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');

@@ -1,3 +1,6 @@
+import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('rasterJS');
+let oracleIndex = 0;
 // engine/mesh/rasterJS.test.js (ME-03, docs/backlog.md ME-03 ACs,
 // docs/architecture.md 27.7 items 1/2/4, 27.15.4). Run: node engine/mesh/rasterJS.test.js
 import { spawnSync } from 'node:child_process';
@@ -17,10 +20,6 @@ import {
   GBuffer, KIND_FLOOR, KIND_WALL, KIND_MODEL, FACE_U, FACE_S, FACE_E, FACE_PACKED,
 } from '../render/GBuffer.js';
 import { loadLevel } from '../world/Level.js';
-import { castSectors, beginFrame } from '../render/sectorCaster.js';
-import { DepthBuffer } from '../render/DepthBuffer.js';
-import { OpenSpans } from '../render/OpenSpans.js';
-import { CellBuffer } from '../render/CellBuffer.js';
 import { bindShading, bindLevel } from '../render/MaterialTable.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
@@ -456,15 +455,9 @@ const { assets } = await loadTestAssets();
   let totalChecked = 0, totalMismatch = 0;
   const detail = [];
   for (const cam of poses) {
-    // CPU DDA reference.
-    const fb = {
-      rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS),
-      palette: assets.palette, gbuf: new GBuffer(COLS, ROWS), matTable,
-    };
-    fb.rt.pxCellW = 1; fb.rt.pxCellH = 1;
-    beginFrame(fb);
-    castSectors(fb, tower, cam, { x: 0, y: 0, z: 0 });
-    const refKind = fb.gbuf.kind;
+    const sample = golden.frames[oracleIndex++];
+    if (JSON.stringify(sample.cam) !== JSON.stringify(cam)) throw new Error('Raster oracle camera changed; ARCH OK required');
+    const refKind = goldenFrame(sample).gbuf.kind;
 
     // Mesh path.
     const { terms, M } = camTerms(cam, { cols: COLS, rows: ROWS, pxCellW: 1, pxCellH: 1 });
@@ -701,6 +694,8 @@ const { assets } = await loadTestAssets();
   const grew = process.memoryUsage().heapUsed - before;
   ok('rasterDrawList DRAW_INSTANCED: no significant heap growth over 100 frames', grew < 64 * 1024, `grew=${grew}`);
 }
+
+ok('all frozen oracle frames were checked', oracleIndex === golden.frames.length, `${oracleIndex}/${golden.frames.length}`);
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

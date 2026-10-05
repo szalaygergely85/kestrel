@@ -378,6 +378,49 @@ function tapLight(sim, p) { sim.step(p, ...FWD, true); sim.step(p, ...FWD, false
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// BUG-VM-001: the mirrored sword reaches right-forward before left-forward, in light and hard swings.
+for (const hand of ['left', 'right', undefined]) {
+  const sweepRtoL = hand !== 'right';
+  for (const hard of [false, true]) for (const swapMidSwing of [false, true]) {
+    const p = player();
+    const right = target('right', -0.8, 1.0), left = target('left', 0.8, 1.0);
+    right.components.targetable.radius = left.components.targetable.radius = 0.05;
+    const world = makeWorld([p, right, left], null);
+    world.state['tower.sword.taken'] = true;
+    const { events, hits } = makeEvents();
+    const cfg = { ...SWORD_CFG, hand };
+    if (hand === undefined) delete cfg.hand;
+    const sim = createSwordSim(world, events, cfg);
+    sim.step(p, ...FWD, true);
+    if (hard) stepN(sim, p, ...FWD, true, SWORD_CFG.holdSteps);
+    sim.step(p, ...FWD, false);
+    const hitSteps = new Map();
+    if (swapMidSwing) sim.setHand(sweepRtoL ? 'right' : 'left'); // entered swing already latched the original hand
+    for (let k = 0; k < 50 && sim.state !== ST_IDLE; k++) {
+      const step = sim.stateStep, oldCount = hits.length;
+      sim.step(p, ...FWD, false);
+      for (let i = oldCount; i < hits.length; i++) hitSteps.set(hits[i].target, step);
+    }
+    const first = sweepRtoL ? 'right' : 'left', second = sweepRtoL ? 'left' : 'right';
+    ok(`${hard ? 'hard' : 'light'} hand=${hand}, mid-swap=${swapMidSwing}: both targets hit once`,
+      hits.length === 2 && hitSteps.size === 2, `hits=${JSON.stringify(hits)}`);
+    ok(`${hard ? 'hard' : 'light'} hand=${hand}, mid-swap=${swapMidSwing}: ${first} hit earlier`,
+      hitSteps.get(first) < hitSteps.get(second), `steps=${JSON.stringify([...hitSteps])}`);
+    if (swapMidSwing) {
+      hits.length = 0;
+      tapLight(sim, p);
+      for (let k = 0; k < 50 && sim.state !== ST_IDLE; k++) sim.step(p, ...FWD, false);
+      ok(`hand=${hand}: swap changes the next swing's first hit`, hits.length === 2 && hits[0].target === second);
+    }
+  }
+}
+{
+  const sim = freshSim([]).sim;
+  let rejected = false;
+  try { sim.setHand('bad'); } catch (e) { rejected = true; }
+  ok('setHand rejects an unknown hand', rejected);
+}
+
 // 7. Hit windows at the exact steps (light: 5..11; hard: 4..10).
 // ---------------------------------------------------------------------------------------------------------------
 // A target directly ahead (within the arc's radius-widened centre slices) is caught by the FIRST slice of the

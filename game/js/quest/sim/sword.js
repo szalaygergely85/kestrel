@@ -6,7 +6,7 @@
 // swordConfig.js, outside sim/**; this file only rotates two already-unit vectors by (fx, fy), a plain 2D
 // rotation = multiply/add, no trig call), no wall clock, integer step counters only, zero allocation after create.
 import { arcHits, applyImpulse, PHYSICS } from '../../../../engine/index.js';
-import { ARC_BOUNDS } from '../swordConfig.js';
+import { ARC_BOUNDS_L, ARC_BOUNDS_R } from '../swordConfig.js';
 
 export const ST_IDLE = 0;
 export const ST_HOLD = 1;
@@ -34,6 +34,9 @@ const AGE_NONE = 1 << 30; // "never fired yet" sentinel for a ring slot's age
  * @param {{spendMana?: (n:number)=>boolean}} [hooks] `spendMana` missing = hard swings are free (tests)
  */
 export function createSwordSim(world, events, cfg, hooks) {
+  let hand = cfg.hand || 'left';
+  if (hand !== 'left' && hand !== 'right') throw new Error('createSwordSim: hand must be left or right');
+  let swingHand = hand;
   const h = hooks || {};
   const spendMana = (n) => (typeof h.spendMana === 'function' ? h.spendMana(n) : true);
 
@@ -141,6 +144,7 @@ export function createSwordSim(world, events, cfg, hooks) {
    * a row", so the light about to start is the 2nd exactly when `chain === 1` already (amendment: "blend on light
    * #2" - applies uniformly regardless of which path got here, including a mana-short release after a queue). */
   function enterLight() {
+    swingHand = hand;
     const isSecond = chain === 1;
     state = ST_LIGHT; stateStep = 0; frozen = 0; queued = false;
     hitMask.fill(0, 0, tCount);
@@ -149,6 +153,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     justEntered = true;
   }
   function enterHard() {
+    swingHand = hand;
     state = ST_HARD; stateStep = 0; frozen = 0; queued = false;
     hitMask.fill(0, 0, tCount);
     chain = 0; // "a hard resets chain to 0"
@@ -218,8 +223,9 @@ export function createSwordSim(world, events, cfg, hooks) {
   function doHitCheck(player, fx, fy, sliceIdx, S) {
     eyeOf(player, _eye);
     const bIdx = sliceIdx * 2;
-    const alx = ARC_BOUNDS[bIdx], aly = ARC_BOUNDS[bIdx + 1];
-    const blx = ARC_BOUNDS[bIdx + 2], bly = ARC_BOUNDS[bIdx + 3];
+    const bounds = swingHand === 'left' ? ARC_BOUNDS_L : ARC_BOUNDS_R;
+    const alx = bounds[bIdx], aly = bounds[bIdx + 1];
+    const blx = bounds[bIdx + 2], bly = bounds[bIdx + 3];
     // local (lx = right, ly = forward) -> world, right = (-fy, fx) for unit forward (fx, fy) - swordConfig.js header.
     const ax = alx * -fy + aly * fx, ay = alx * fx + aly * fy;
     const bx = blx * -fy + bly * fx, by = blx * fx + bly * fy;
@@ -287,6 +293,10 @@ export function createSwordSim(world, events, cfg, hooks) {
 
   // ---- public surface ------------------------------------------------------------------------------------------
   const sim = {};
+  sim.setHand = function setHand(next) {
+    if (next !== 'left' && next !== 'right') throw new Error('sword.setHand: hand must be left or right');
+    hand = next;
+  };
   Object.defineProperty(sim, 'state', { enumerable: true, get: () => state });
   Object.defineProperty(sim, 'stateStep', { enumerable: true, get: () => stateStep });
   Object.defineProperty(sim, 'holdSteps', { enumerable: true, get: () => holdSteps });
@@ -338,6 +348,7 @@ export function createSwordSim(world, events, cfg, hooks) {
 
   // ---- hash (transient: not saved - a reload always comes back idle, chain 0) ----------------------------------
   sim.hashInto = function hashInto(hh) {
+    hh.u32(hand === 'left' ? 0 : 1); hh.u32(swingHand === 'left' ? 0 : 1);
     hh.u32(state); hh.u32(stateStep); hh.u32(holdSteps); hh.u32(prevDown);
     hh.u32(chain); hh.u32(queued ? 1 : 0); hh.u32(pressStep); hh.u32(frozen);
     hh.u8Array(hitMask, 0, MAX_TARGETS);

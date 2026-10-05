@@ -22,6 +22,7 @@ export const SWORD_CFG = Object.freeze({
   zBandHigh: 0.3,       // m above eye: arc z band high (zMax = eye.z + zBandHigh)
   arcDeg: 100,          // total horizontal cone (wedge), split into `slices` equal slices
   slices: 7,
+  hand: 'left',         // binding parameter; either hand uses the same arc bounds and authored clips
 
   light: Object.freeze({ windup: 5, active: 7, recover: 9, damage: 1, reach: 1.6, speed: 0.6 }),
   hard: Object.freeze({ windup: 4, active: 7, recover: 27, damageMul: 3, reach: 1.6, speed: 0.3, mana: 4, knock: 3 }),
@@ -35,7 +36,7 @@ export const SWORD_CFG = Object.freeze({
  * `sword.js` rotates only the TWO edges of the active slice per step (`sliceIdx*2` .. `sliceIdx*2+3`), not all 8.
  * Precomputed once at module load (trig here is fine - this file is outside sim/**).
  */
-export const ARC_BOUNDS = (() => {
+export const ARC_BOUNDS_R = (() => {
   const n = SWORD_CFG.slices;
   const half = SWORD_CFG.arcDeg / 2;
   const out = new Float64Array((n + 1) * 2);
@@ -47,3 +48,7 @@ export const ARC_BOUNDS = (() => {
   }
   return out;
 })();
+
+// 37.8a: same slice order, reflected local right component; old imports keep the right-hand table.
+export const ARC_BOUNDS_L = Float64Array.from(ARC_BOUNDS_R, (v, i) => (i & 1) ? v : -v);
+export const ARC_BOUNDS = ARC_BOUNDS_R;

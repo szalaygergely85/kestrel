@@ -17,7 +17,7 @@
 //
 // Order in `renderWorld` (mesh): shade -> composite(surfaces) -> edgePass(mask) -> fillSky -> composite(sky). The GPU does the same
 // in `_passWaterComposite` (after shade, before edge; the sky is already in the shade output there). Zero allocation after warm.
-import { sunFromWorld } from './terrainCaster.js';
+import { sunFromWorld } from './lighting.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
 import { WL_STRIDE, WL_SLOTS, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash } from './waterLook.js';

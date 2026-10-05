@@ -8,7 +8,6 @@ import { World } from '../world/World.js';
 import { meshFromJSON, createHasher } from '../index.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
-import { OpenSpans } from './OpenSpans.js';
 import { GBuffer, KIND_MESH } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
@@ -61,11 +60,11 @@ const towerDef = { id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0
 const meshPl = (id, x, y, yaw) => ({ id, mesh: lineMesh.id, origin: { x, y, z: 0 }, yawDeg: yaw });
 const mk = (structures, opts = {}) => World.load({ terrain: null, structures, entities: [] }, assets, opts);
 
-// ---- 1. JS frame path: tower renders identically with a mesh structure present ----
+// ---- 1. Mesh JS frame path: level + mesh structures render in either placement order ----
 const COLS = 60, ROWS = 24;
 function makeFb(world) {
   const fb = {
-    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS),
+    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS),
     palette: baseAssets.palette, gbuf: new GBuffer(COLS, ROWS), matTable: bindShading(baseAssets.palette, baseAssets.detailPass, 1),
     detailPass: null, lights: null, light: makeLightBuffer(COLS, ROWS), timeSec: 0, loop: { stats: {} },
   };
@@ -80,7 +79,12 @@ function frameHash(world, cam) {
     h.u32(fb.rt.glyphIdx[i]);
     for (let k = 0; k < 4; k++) { h.u32(fb.rt.fg[i * 4 + k]); h.u32(fb.rt.bg[i * 4 + k]); }
   }
-  return h.value();
+  let meshCells = 0, levelCells = 0;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (fb.gbuf.kind[i] === KIND_MESH) meshCells++;
+    else if (fb.gbuf.kind[i] !== 0) levelCells++;
+  }
+  return { hash: h.value(), meshCells, levelCells };
 }
 {
   const start = baseAssets.level('tower').start;
@@ -91,8 +95,8 @@ function frameHash(world, cam) {
   let threw = null, h0, h1, h2;
   try { h0 = frameHash(plain, cam); h1 = frameHash(mixed, cam); h2 = frameHash(mixedFirst, cam); } catch (e) { threw = e; }
   ok('compositor frame with a mesh structure does not throw', !threw, threw && threw.stack);
-  ok('tower cell buffer hash unchanged by a mesh structure (mesh after tower)', h0 === h1, `${h0} vs ${h1}`);
-  ok('tower cell buffer hash unchanged by a mesh structure (mesh before tower)', h0 === h2, `${h0} vs ${h2}`);
+  ok('mesh CPU frame retains tower geometry with a nearby mesh placement', !threw && h0.levelCells > 0 && h1.levelCells > 0 && h2.levelCells > 0, JSON.stringify([h0, h1, h2]));
+  ok('mesh-before/after-tower: identical cell output and geometry counts', !threw && h1.hash === h2.hash && h1.meshCells === h2.meshCells && h1.levelCells === h2.levelCells, JSON.stringify([h1, h2]));
   ok('mesh-before-tower: level keeps structSeq 0', mixedFirst.structures.find((s) => s.id === 'tower').structSeq === 0);
 }
 

@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "source": "ME-19b pre-deletion CPU oracle, 2026-10-05",
+  "approval": "ARCH OK required to replace; no regeneration command is committed",
+  "payload": "eJy9l0luHTcQhu/Sa5lgjWRpbQS+QhBkoRiyY8BDECujobvno/Rku+3epgEBkl6/JqtY/8RP26vfb97dftyuf/q0vbx5t11/2v7ermU009HFw0bolBhX2z/b9Wxj9OkxTDOEn6vtX77ckqc3fz2/fc0/fTbz7qYWIbPbvNp+e3P38teHp880mo5Mlq1SnTbur7bXv/zxau172f7u5v2Lm7evXvzw4c/tureRa7eao8as7H61vfzwlnpNWfjtzfvb528+3v3IxtKGVmfNiKDKuL+/v9r1lG14soxMoYJZjz1Jb27uPWmUbUTt+6bUq6X2MSanMtfvr5vS0XrNFBeVMYfGqT1pqbOEaiVf9cucpFv5HM7qMv1gTm6NdefUVYnw1djNiRWs2xDmlJndTmwpwI8q+87IFPkyptSYHfQIxfY6GNPsrboE4HK+OhZov2oJTPOqsgKTTB6f2lNJCDiT6sGpPrWkyUfDratqN/++pcgGVJkAvFIolV+3JNYWmoGeZWT1eeaYsj3gnUHB5KqRF+RpF/HOLtHddRwohLchHMegYBHIuBeI0SqcfYFkDzmXTUFPfbjbnOBnjM9zmn0V1BkEIKwDgRjZRKKMAkJN9FvksaUx+4waJnkuneSB52xP9e7x2JMgERB8ljMFUz+gk6Q0H2hjDCSmonZdqaHkCkmD7XsXzXMHlWWJHEhZqMYFfJG93GALU6h5oHrQCQkwA69hVXuFUGmWNnoyTtygx5nYAyNoXVrgRMm5fsZedDEYNQ1eaebBnKY3DMDEwnKZwN5yoVtRohhSE4uYpzaFy8MpM6ZUMOQyp5wyOH9K0qVgBz0FAB3prNwrK3e696yaziJaRI6VMM41J8IA/ZCOHP48+S0yiN+UZGGodtBQrgBRjMCAF53vkEcqipJh0AjNlO7ncmlVPLCRilwgeQIezFdeSMuBGx8oOarRCmABzaKtPnZTUm195cQxaWgiFOe6UzxApwcJx+2RTNVw/TLhM+ZA6jkScmsPe1MHhPpWIJjTCiZLE8lX3U8dE9EzYAQsSoMTT2OSwIZtnb6gewf6oHCJI8CcEIfS0F3UE7RjKQ5pHOnEuc8VPa9R/qBO8QV56LpP94lA09mRM1UDcZg0fTMr33WEDRTbrZy4wtGpCWJJ2wpkQIdok1+ya8gyW2Ip944Drw1rSPf6cUKu1D4/FHbHExBrIajImYpHsIHAFlUwiWnkhUrgSQOv1QUfOchEAf8xMxY3HMr3dyZWzc6Fq89OIO4n35k4Q5BFJiIMPIVxvB+bgQK8OPnzYEiGpCVZaCXXsSRtp3cELaRw4NRDFhPP9VnneoC9IOCCz3wm0roHUlUWr40DW1KgtZ5y7yXJIejf3Jm4HHvntBhhCLfb/1fxfr7/Dw7FPEc=",
+  "oracleSources": {
+    "render/sectorCaster.js": "3621dad6c66e1c360b09a0d31e3c029b69232584465500c7d99ba309c695967c",
+    "voxel/voxelMarch.js": "b64272c0342f7dee405d71172d48fce5be4902d9862d66c03b1a43db0a587e40"
+  },
+  "counts": {
+    "frames": 20
+  },
+  "payloadEncoding": "base64(zlib(JSON)); typed-array bytes are base64 and preserve IEEE Infinity/normal alias bits",
+  "payloadSha256": "9c6ded35b0da195c40103edbd3984a3d3c633ace0949ea36162ab684500b84a6"
+}

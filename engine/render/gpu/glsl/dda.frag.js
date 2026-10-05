@@ -28,7 +28,7 @@
 //    (nearest-candidate-wins) does not depend on order, only the early-out's
 //    effectiveness does.
 import { GLSL_VERSION, PRECISION } from './common.js';
-import { MAX_RAY_STEPS, MAX_DIST } from '../../sectorCaster.js';
+import { MAX_RAY_STEPS, MAX_DIST } from './ddaConstants.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 
 // Kind/face codes (engine/render/GBuffer.js) - numeric literals, matching

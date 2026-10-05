@@ -15,7 +15,7 @@ import {
 export const name = 'flicker';
 
 export function run(ctx) {
-  const { rt, overlay, assets, matTable, gbuf, depthBuffer, openSpans, detailPass, engine, gpuPipeline, params } = ctx;
+  const { rt, overlay, assets, matTable, gbuf, depthBuffer, detailPass, engine, gpuPipeline, params } = ctx;
 
   if (!gpuPipeline) {
     const msg = '[flicker] no active GpuCellPipeline (backend=' + rt.backend + ') - nothing to measure.';
@@ -31,7 +31,7 @@ export function run(ctx) {
   for (const s of world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
 
   const fbCompare = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
     timeSec: 0, gpu: false, renderer: 'mesh',
   };
   const n = rt.cols * rt.rows;

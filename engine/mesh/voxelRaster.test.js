@@ -1,3 +1,6 @@
+import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('voxelRaster');
+let oracleIndex = 0;
 // engine/mesh/voxelRaster.test.js (ME-07 review item 3, docs/architecture.md
 // 27.15.6 step 4): voxel props through the mesh raster path (`VoxelPool` ->
 // `addVoxelInstances` -> `rasterDrawList`) vs the CPU march (`castModels`) at
@@ -6,9 +9,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { VoxelPool } from '../render/voxelPool.js';
-import { castModels } from '../voxel/voxelMarch.js';
 import { GBuffer, KIND_MODEL } from '../render/GBuffer.js';
-import { DepthBuffer } from '../render/DepthBuffer.js';
 import { projTerms, shearProjection } from '../render/projection.js';
 import { DrawList } from './DrawList.js';
 import { addVoxelInstances, VoxelMeshCache } from './voxelMesh.js';
@@ -68,10 +69,9 @@ for (const pose of POSES) {
   pool.project(cam, rt);
   ok(`${pose.name}: instance survives the pool cull`, pool.list.length === 1);
 
-  // CPU oracle.
-  const fb = { rt, depth: new DepthBuffer(COLS, ROWS).depth, gbuf: new GBuffer(COLS, ROWS) };
-  fb.gbuf.beginFrame();
-  castModels(fb, pool.list, cam, { faceMode: 'nearest' });
+  const sample = golden.frames[oracleIndex++];
+  if (JSON.stringify(sample.cam) !== JSON.stringify(cam)) throw new Error('Voxel oracle camera changed; ARCH OK required');
+  const fb = goldenFrame(sample);
   const ref = fb.gbuf;
 
   // Mesh path.
@@ -138,6 +138,8 @@ for (const pose of POSES) {
   }
   ok('zero-alloc: 10000 addVoxelInstances calls grow the heap < 64 KB (min of 3 trials)', growth < 65536, `growth=${growth}`);
 }
+
+ok('all frozen oracle frames were checked', oracleIndex === golden.frames.length, `${oracleIndex}/${golden.frames.length}`);
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

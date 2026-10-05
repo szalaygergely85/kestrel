@@ -113,7 +113,7 @@ const S_FILL = ov.styleId('barFill'), S_EMPTY = ov.styleId('barEmpty'), S_BOX = 
 ov.setGroundFn(groundAt);
 
 const fb = {
-  rt, depth: engine.depthBuffer, spans: engine.openSpans, palette: P, lights: lightSet,
+  rt, depth: engine.depthBuffer, palette: P, lights: lightSet,
   light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gbuf, matTable, detailPass: assets.detailPass,
   voxelPool, instances: engine.instances, gpu: true, renderer: 'mesh', cpuLightCap: false, sceneFade: 1, terrainEnabled: true,
 };

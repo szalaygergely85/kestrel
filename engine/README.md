@@ -10,9 +10,8 @@ Reusable ASCII 3D engine (D-006). `index.js` is the only public entry point -
   `playerLook.js`, `assets.js` (`AssetRegistry`), `events.js` (tiny emitter),
   `behaviours.js` (named behaviour registry).
 - `render/` - `RenderTarget`/`RenderTargetGL`/`RenderTargetCanvas2D`,
-  `CellBuffer`, `glyphMetrics`, `DepthBuffer`, `OpenSpans`, `sectorCaster.js`
-  (`castScene`/`castSectors`/`beginFrame`/`fillSky`), `terrainCaster.js`
-  (stub, US-016), `sprites.js` (stub, US-011), `textDraw.js`, `fastShade.js`,
+  `CellBuffer`, `glyphMetrics`, `DepthBuffer`, `compositor.js` (mesh twin),
+  `sky.js`, `terrainShade.js`, `sprites.js` (stub, US-011), `textDraw.js`, `fastShade.js`,
   `shadeTest.js`.
 - `world/` - `Level.js` (sector grid, `MAP_FORMAT.md`), `World.js`/`Terrain.js`
   /`serialize.js` (stubs, US-025).

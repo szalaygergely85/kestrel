@@ -73,7 +73,7 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'm
   sprites.pool.renderer = rendererPath;
 
   const fb = {
-    rt, depth: engine.depthBuffer, spans: engine.openSpans, palette: assets.palette,
+    rt, depth: engine.depthBuffer, palette: assets.palette,
     lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, voxelPool,
     gpu: false, cpuLightCap: true, fadeLut: null, sceneFade: 1, terrainEnabled: true,

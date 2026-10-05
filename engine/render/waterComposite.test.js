@@ -4,7 +4,6 @@
 import { World } from '../world/World.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
-import { OpenSpans } from './OpenSpans.js';
 import { GBuffer, KIND_MODEL, FACE_E } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
@@ -12,7 +11,7 @@ import { makeLightBuffer } from './lighting.js';
 import { edgePass } from './edgePass.js';
 import { hashFastU } from './terrainShade.js';
 import { unprojectCell } from './projection.js';
-import { sunFromWorld } from './terrainCaster.js';
+import { sunFromWorld } from './lighting.js';
 import {
   DEFAULT_WATER_LOOK, WL_STRIDE, WATER_HASH_SALT, waterSurfaceHash, waterEdgeDistance, packWaterLook, resolveWaterLooks, fillWaterSlotTable, waterFogParams, WFOG_LEN,
 } from './waterLook.js';
@@ -41,7 +40,7 @@ function makeFb(world) {
   const matTable = bindShading(assets.palette, assets.detailPass, 1);
   if (world.structures[0]) bindLevel(matTable, world.structures[0].level);
   return {
-    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS), palette: assets.palette,
+    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), palette: assets.palette,
     gbuf: new GBuffer(COLS, ROWS), matTable, detailPass: null, lights: null, light: makeLightBuffer(COLS, ROWS),
     timeSec: 0, loop: { stats: {} }, renderer: 'mesh',
   };

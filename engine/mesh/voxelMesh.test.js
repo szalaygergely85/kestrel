@@ -1,3 +1,6 @@
+import { loadGolden } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('voxelMesh');
+let oracleIndex = 0;
 // engine/mesh/voxelMesh.test.js (ME-07, docs/backlog.md, docs/architecture.md
 // 27.7 item 4, 27.15.6). Plain Node ESM, no framework.
 // Run: node engine/mesh/voxelMesh.test.js
@@ -7,9 +10,7 @@ import { validateMesh } from './MeshData.js';
 import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { computeVoxelPose, FORWARD } from '../voxel/voxelPose.js';
-// 27.15.0: "never import a caster... tests may" - voxelMarch.js is the
-// march oracle this file checks the mesher's geometry against.
-import { marchVoxelRay } from '../voxel/voxelMarch.js';
+// ME-19b: compare generated quad rays with frozen independent marcher hits.
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { makeOk } from '../test/assert.js';
 
@@ -299,7 +300,14 @@ function marchOracle(name, def, inst) {
       const ox = wx + wnx * D, oy = wy + wny * D, oz = wz + wnz * D;
       const dx = -wnx, dy = -wny, dz = -wnz;
       const hit = new Float64Array(8);
-      const hitOk = marchVoxelRay(pm, p, pose, ox, oy, oz, dx, dy, dz, D + 0.1, hit);
+      const sample = golden.rays[oracleIndex++];
+      const query = [ox, oy, oz, dx, dy, dz, D + 0.1];
+      if (!sample || sample.p !== p || query.some((v, i) => Math.abs(v - sample.query[i]) > 1e-12)
+        || Array.from(pose).some((v, i) => Math.abs(v - sample.pose[i]) > 1e-12)) {
+        throw new Error(`${name}: quad ray differs from the frozen oracle; ARCH OK required`);
+      }
+      const hitOk = sample.hit;
+      hit.set(sample.out);
       checked++;
       // t tolerance: the 1e-3 (local units) nudge is scaled by the part's
       // world matrix (~cellM), so the world-space t can be off from D by up
@@ -642,6 +650,8 @@ for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
   const ids = list.items.slice(0, list.count).map(item => item.objectId);
   ok('48 mesh voxel draws have unique prop ids below unit/view-model ranges', ids.length === 48 && new Set(ids).size === 48 && ids[47] === (0x8000 | 47) && ids.every(id => id < 0xFFFF && id < 0x10000));
 }
+
+ok('all frozen oracle rays were checked', oracleIndex === golden.rays.length, `${oracleIndex}/${golden.rays.length}`);
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

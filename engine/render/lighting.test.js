@@ -17,7 +17,7 @@ import { KIND_MODEL, KIND_TERRAIN, FACE_PACKED } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { makeOk } from '../test/assert.js';
 import { SUN_PATH_DEFAULT } from '../core/sunPath.js';
-import { sunFromWorld } from './terrainCaster.js';
+import { sunFromWorld } from './lighting.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod;

@@ -47,12 +47,11 @@ const _gmW = new Float64Array(3), _gtW = new Float64Array(3);
  * @param {boolean} moving player is moving this frame (walk-bob amount while idle)
  */
 export function presentSword(sim, vmh, overlay, cam, ids, simTime, bobPhase, moving) {
-  const { vm } = vmh;
-  if (!sim || !vmh || sim.state === undefined) { if (vm) vm.hide(); return; }
+  if (!vmh) return;
+  const { vm, h, clip } = vmh;
+  if (!sim || sim.state === undefined) { if (vm) vm.hide(h); return; }
 
-  if (sim.justEntered && sim.blend) vm.capture();
-
-  const { h, clip, mount } = vmh;
+  if (sim.justEntered && sim.blend) vm.capture(h);
   let clipId, tMs, bobAmount;
   switch (sim.state) {
     case ST_HOLD:
@@ -70,7 +69,7 @@ export function presentSword(sim, vmh, overlay, cam, ids, simTime, bobPhase, mov
 
   const blendNow = sim.blend && (sim.state === ST_LIGHT || sim.state === ST_HARD);
   vm.show(h, clipId, tMs, blendNow);
-  vm.setBob(bobPhase, bobAmount);
+  vm.setBob(bobPhase, bobAmount, h);
 
   drawTrail(sim, vmh, cam, tMs, ids, overlay);
   drawSparks(sim, overlay, ids);
