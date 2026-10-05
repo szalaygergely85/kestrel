@@ -170,6 +170,43 @@ Maren was fined twice for "stone-talk". One winter night she didn't come down fr
 |---|---|---|
 | Hollow Watchtower, north face of the stair column, beside the ruin-steel sword in the rubble (US-078) | `STEEL FOR THE HUSH` | Kept as the designer proposed. Knife-scratched capitals, shallow and old, with moss in the grooves and no signature. "Hush" is Ferrum's word for the wild, so whoever cut it came from inside the Wall, long ago. It fits B (the keeper) and the Maren hooks, and it doesn't contradict A or C. It says nothing about the signal. |
 
+### The keeper's corner (ENV-02, decal `scrawlKeeper`)
+
+Scratched on the north face of the grate column, by the bedroll, the log book, the broken stool and the cold candle, just beside KEEP THE LIGHT. It is the same knife hand, cut lower and smaller, as if the keeper did it sitting on the floor. One glyph per cell, 3 lines, 24 chars or fewer.
+
+**Chosen:**
+```
+IIII IIII IIII IIII IIII
+IIII IIII IIII IIII III
+... --- ...  STILL
+```
+- The tallies are nights. Two rows of them show a long vigil without any number to pin the reveal to.
+- The last group stops at `III`. The count was never finished. That is enough, and it doesn't say why.
+- `STILL` points two ways: it is still calling, and he is still waiting. It fits all three M4 candidates and doesn't name a sender.
+- Wick can read the signal line at a glance. It is the pattern he charted for a month, cut here long before he flew.
+
+**Alternatives:**
+1. Nobody came, with a little hope left in it:
+```
+IIII IIII IIII IIII IIII
+IIII IIII II
+... --- ...  NO ONE YET
+```
+2. The pattern never changes:
+```
+... --- ...
+IIII IIII IIII IIII IIII
+SAME. SAME. SAME.
+```
+
+**Keeper's log book (later readable item, not placed; lines <= 60 chars):**
+```
+Ink gone. The wall keeps the count now.
+Stool broke. Watched it from the floor. Same hour, same blink.
+If it ever stops, someone answered. It has not stopped.
+```
+It uses the same hand and voice as the section 4 log. It doesn't know Wick or Maren, has no dates, and says nothing about who is calling. The first line explains the tallies, so the wall reads as the log's continuation.
+
 ## Credits / easter eggs
 
 OWN-REQ-013: the StickyBizcuit voxel pack licence asks for a hidden in-game nod to the username. It must contain the exact string `StickyBizcuit` (keep the case), stay legible, be skippable and never be pointed at by any hint.
