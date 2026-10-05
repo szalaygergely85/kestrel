@@ -463,6 +463,24 @@ for (const hand of ['left', 'right', undefined]) {
 // ---------------------------------------------------------------------------------------------------------------
 // 8. Knockback (applyImpulse on a body target, heavy only) + hit-stop (clink 3, hard entity hit 4).
 // ---------------------------------------------------------------------------------------------------------------
+for (const hard of [false, true]) {
+  const p = player();
+  const tgt = target('movingBody', 0.6, 0.8, 0.9, true);
+  const body = tgt.components.body;
+  body.vx = 1; body.vy = -0.5; body.vz = 2;
+  const { sim, hits } = freshSim([p, tgt]);
+  sim.step(p, ...FWD, true);
+  if (hard) stepN(sim, p, ...FWD, true, SWORD_CFG.holdSteps);
+  sim.step(p, ...FWD, false);
+  for (let i = 0; i < 45 && sim.state !== ST_IDLE; i++) sim.step(p, ...FWD, false);
+  const label = hard ? 'hard' : 'light';
+  ok(`${label} moving body: one hit with normalized radial direction`, hits.length === 1
+    && Math.abs(hits[0].dirX - 0.6) < 1e-12 && Math.abs(hits[0].dirY - 0.8) < 1e-12);
+  ok(`${label} moving body: ${hard ? 'adds exactly 3 m/s once' : 'preserves horizontal velocity'}`,
+    Math.abs(body.vx - (hard ? 2.8 : 1)) < 1e-12 && Math.abs(body.vy - (hard ? 1.9 : -0.5)) < 1e-12);
+  ok(`${label} moving body: zero vertical impulse keeps vertical velocity and grounded flag`, body.vz === 2 && body.grounded);
+  sim.dispose();
+}
 {
   const p = player();
   const hooks = makeManaHook(10);
