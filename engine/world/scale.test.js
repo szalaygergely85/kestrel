@@ -1,3 +1,4 @@
+import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 // ED-SCALE-1b (architecture.md 34): per-prop uniform scale, data + save.
 // Run: node engine/world/scale.test.js
 import { World, PROP_SCALE_MIN, PROP_SCALE_MAX } from './World.js';
@@ -21,7 +22,8 @@ import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod; terrainDef; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod; farTowerMod; ferrumLightsMod;
-const { assets } = await loadTestAssets();
+const { assets: canonicalAssets } = await loadTestAssets();
+const assets = dynamicTowerAssets(canonicalAssets);
 
 let pass = 0, fail = 0;
 const failures = [];

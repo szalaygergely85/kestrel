@@ -1,3 +1,4 @@
+import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 // engine/world/serialize.test.js (US-025, docs/architecture.md section 10).
 // Headless Node ESM, no framework. Run: node engine/world/serialize.test.js
 import { World } from './World.js';
@@ -25,7 +26,8 @@ globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod; terrainDef;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod;
 farTowerMod; ferrumLightsMod;
-const { assets } = await loadTestAssets();
+const { assets: canonicalAssets } = await loadTestAssets();
+const assets = dynamicTowerAssets(canonicalAssets);
 
 let pass = 0, fail = 0;
 const failures = [];

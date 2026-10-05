@@ -1,3 +1,4 @@
+import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 // engine/world/colliders.test.js (ME-11a, docs/architecture.md 27.18 "Test
 // matrix"). Headless Node ESM, no framework. Run: node engine/world/colliders.test.js
 //
@@ -42,7 +43,8 @@ globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod; terrainDef;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod;
 farTowerMod; ferrumLightsMod;
-const { assets } = await loadTestAssets();
+const { assets: canonicalAssets } = await loadTestAssets();
+const assets = dynamicTowerAssets(canonicalAssets);
 
 let pass = 0, fail = 0;
 const failures = [];

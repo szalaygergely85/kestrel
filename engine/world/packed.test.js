@@ -1,3 +1,4 @@
+import { dynamicTowerFixture } from '../../tools/testing/dynamic-tower.mjs';
 // engine/world/packed.test.js (US-025). Headless Node ESM, no framework.
 // Run: node engine/world/packed.test.js
 import { loadLevel } from './Level.js';
@@ -7,7 +8,7 @@ import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { makeOk } from '../test/assert.js';
 
 const { globals } = await loadTestAssets();
-const towerRawDef = globals.levels.tower;
+const towerRawDef = dynamicTowerFixture(globals.levels.tower);
 const testRoomRawDef = globals.levels.test_room;
 
 let pass = 0, fail = 0;

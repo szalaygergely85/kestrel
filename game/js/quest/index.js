@@ -4,13 +4,12 @@
 // sees the names; the meaning lives here.
 //
 // US-010 ships stubs: each logs `not implemented (US-0xx)` once and returns
-// false. US-012/014/015/017/022 replace the BODIES, never the names.
+// false. Landed stories replace the bodies; retired interactions are removed.
 //
 // Rule (architect, US-010 tech note 1): no literal coordinate anywhere under
 // game/js/quest/. Positions come from `world.structures[i].origin` +
 // `structure.level.def.*` at call time, never from constants.
 import { registerBehaviour } from '../../../engine/index.js';
-import { leverPull } from './lever.js';
 import { lanternTake } from './lantern.js';
 import { swordTake } from './swordTake.js';
 import { beaconLight } from './beacon.js';
@@ -20,7 +19,6 @@ import { request as requestHint } from './hints.js';
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
   'lantern.take': 'US-012',
-  'lever.pull': 'US-014',
   'beacon.light': 'US-022',
   'quest.end': 'US-017',
   'hint.show': 'US-015',
@@ -54,9 +52,8 @@ function hintShow(ctx) {
   return true;
 }
 
-/** name -> real implementation, for the stories that have landed (US-014: `lever.pull`). Everything else stays a stub. */
+/** name -> real implementation, for the stories that have landed. Everything else stays a stub. */
 const REAL_BEHAVIOURS = {
-  'lever.pull': leverPull,
   'lantern.take': lanternTake,
   'beacon.light': beaconLight,
   'quest.end': questEnd,

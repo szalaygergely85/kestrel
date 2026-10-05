@@ -5,13 +5,14 @@
 // scripted seek-walker inputs the game's step order uses (stepSectorAnims, integrate, stepRollers,
 // stepAnimations, resolveBodyContacts, updateTriggers) and prints, per leg: completed y/n, stuck waypoint,
 // fall-through (z below world.floorAt), end position grid vs mesh, max trace difference, boulder rest cell.
-// The lever is the real `lever.pull` behaviour (fireInteraction). Rendering is irrelevant to physics, so this
+// The upper stair is permanently open. Rendering is irrelevant to physics, so this
 // is valid for both `?renderer=` values. Physics is renderer-independent JS; GPU numbers need the browser.
 import { performance } from 'node:perf_hooks';
 import {
   World, serialize, deserialize, PHYSICS_DEFAULTS, integrate, stepRollers, resolveBodyContacts, stepAnimations, stepSectorAnims, updateTriggers,
 } from '../engine/index.js';
 import paletteMod from '../design/palette.js';
+import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
 import lanternMod from '../design/models/lantern.js';
 import leverMod from '../design/models/lever.js';
@@ -20,6 +21,8 @@ import boulderMod from '../design/models/boulder.js';
 import rubbleMod from '../design/models/rubble.js';
 import wreckageMod from '../design/models/wreckage.js';
 import relayMod from '../design/models/relay.js';
+import swordMod from '../design/models/sword.js';
+import m3PropsMod from '../design/models/m3_props.js';
 import farTowerMod from '../design/models/far_tower.js';
 import ferrumLightsMod from '../design/models/ferrum_lights.js';
 import titleMod from '../design/models/title.js';
@@ -29,6 +32,7 @@ import { registerQuestBehaviours } from '../game/js/quest/index.js';
 
 globalThis.window = globalThis.window || globalThis;
 paletteMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+detailPassMod; swordMod; m3PropsMod;
 farTowerMod; ferrumLightsMod; titleMod; voxelWorldMod;
 const { assets } = await loadTestAssets();
 registerQuestBehaviours();
@@ -116,8 +120,7 @@ function idle(sim, steps, rec) {
 
 function findBoulder(w) { let f = null; w.forEachEntity((e, id) => { if (e.components && e.components.roller) f = e; }); return f; }
 const boulderPos = (sim) => { const b = findBoulder(sim.world); return b ? { x: b.transform.x, y: b.transform.y, z: b.transform.z } : null; };
-const leverDef = assets.level('tower').interactables.find((i) => i.id === 'lever');
-const grateClear = (sim) => { const s = sim.world.structures[0].level.sectorAt(18.5, 10.5); return s.ceilH - s.floorH; };
+const upperStairOpen = (sim) => sim.world.structures[0].level.sectorAt(18.5, 10.5).ceilH === 'sky';
 
 function routeRun(physics, { reload = false } = {}) {
   const sim = setup(physics);
@@ -139,23 +142,16 @@ function routeRun(physics, { reload = false } = {}) {
   legs.push(runLeg(sim, '3 stairs (to step 9)', stairs));
   // 4 gap jump to the mid ledge.
   legs.push(runLeg(sim, '4 gap jump + ledge', [{ ...W([20, 9]), jump: true }, W([19, 9])]));
-  // 5a grate closed: must block.
-  info.grateClosedClear = grateClear(sim);
-  const blocked = runLeg(sim, '5a grate closed (must block)', [W([19, 10]), W([17, 10])], { expectBlocked: true });
-  legs.push(blocked);
-  // 5b lever (real behaviour) -> grate opens -> pass through.
-  sim.controls.forward = 0;
-  const played = { v: null };
-  const ok = sim.world.fireInteraction('lever.pull', { def: leverDef, entity: { play(a) { played.v = a; } }, actor: sim.world.get('player') });
-  info.leverFired = ok === true;
-  const tmp = { trace: [] }; idle(sim, 150, tmp);
-  info.grateOpenClear = grateClear(sim);
-  legs.push(runLeg(sim, '5b grate open + upper steps', [W([18, 10]), W([17, 10]), W([16, 10]), W([15, 10]), W([14, 10]), W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
+  // TOWER-LEVER-01: pass the landing and upper flight without an interaction.
+  info.upperStairOpen = upperStairOpen(sim);
+  info.leverAbsent = !sim.world.get('tower.lever') && !sim.world.interactables.some(r => r.id === 'lever');
+  legs.push(runLeg(sim, '5a open landing', [W([19, 10]), W([18, 10])]));
+  legs.push(runLeg(sim, '5b upper steps', [W([17, 10]), W([16, 10]), W([15, 10]), W([14, 10]), W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
   if (reload) {
-    // AC 4: save mid-route (grate open, boulder moved), reload on the same physics mode, probes bit-equal, walk continues.
+    // AC 4: save mid-route (upper stair open, boulder moved), reload on the same physics mode, probes bit-equal, walk continues.
     const w1 = sim.world, w2 = deserialize(serialize(w1), assets, { physics });
     const b1 = boulderPos(sim); sim.world = w2; const b2 = boulderPos(sim);
-    info.reload = { boulderEqual: b1.x === b2.x && b1.y === b2.y && b1.z === b2.z, grateClear: grateClear(sim), colliders: w2.colliders.map((c) => c.id).join(',') };
+    info.reload = { boulderEqual: b1.x === b2.x && b1.y === b2.y && b1.z === b2.z, upperStairOpen: upperStairOpen(sim), colliders: w2.colliders.map((c) => c.id).join(',') };
     let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
     const o1 = {}, o2 = {}, opts = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) };
     let bad = 0;
@@ -237,7 +233,7 @@ else {
   }
   console.log('info grid:', JSON.stringify(G.info));
   console.log('info mesh:', JSON.stringify(M.info));
-  console.log('save round trip (mid-route, after grate open + boulder moved):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
+  console.log('save round trip (mid-route, after upper stair + boulder moved):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));
   console.log(`sim ms/step p50 p95 max  grid: ${pct(G.ms, 0.5).toFixed(4)} ${pct(G.ms, 0.95).toFixed(4)} ${Math.max(...G.ms).toFixed(4)}   mesh: ${pct(M.ms, 0.5).toFixed(4)} ${pct(M.ms, 0.95).toFixed(4)} ${Math.max(...M.ms).toFixed(4)}`);

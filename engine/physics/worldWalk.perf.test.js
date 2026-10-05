@@ -118,12 +118,6 @@ function makePlayer(x, y, z) {
 
 function loadWorld({ physics } = {}) {
   const w = World.load(assets.world('world_m1'), assets, { physics });
-  // Bypass the lever quest-gate directly (a physics probe, not a quest
-  // test) - `animateSector` is the same real API `lever.pull` calls, just
-  // invoked without the interaction/behaviour layer, so the scripted walk
-  // can use the tower's real upper-stair route instead of detouring around
-  // quest-gated content.
-  w.animateSector('grate', 1);
   return w;
 }
 
@@ -245,7 +239,7 @@ function walk(world, player, waypoints, steps, onStep) {
 const world = World.load(assets.world('world_m1'), assets, {});
 ok('world_m1 near band ready', world.terrain.nearReady === true);
 ok('world_m1 has bounds (23.2 content)', !!world.bounds);
-ok('grate dynamic sector found and opened', world.animateSector('grate', 1) === true);
+ok('upper stair landing is open without animation', world.structures.find(s => s.id === 'tower').level.sectorAt(18.5, 10.5).ceilH === 'sky');
 
 const waypoints = buildWaypoints(world);
 const player = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);

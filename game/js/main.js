@@ -44,7 +44,7 @@ import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
-import { onSectorAnimated, onSectorAnimDone, resetGameAudio, stepGameAudio } from './audio/sfx.js';
+import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { loadSettings, saveSettings } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
@@ -672,13 +672,6 @@ function runGame(mode, cinematic = null) {
     // way the first load did, with no separate hand-written reset path
     // (architecture.md 7.4's "module-level game variables are reset only in
     // the 'world:loaded' handler" rule).
-    // US-020a: gear ratchet + grate rattle. Registered once here (runGame
-    // itself only runs once per page load - a restart swaps `engine.world`
-    // via `engine.setWorld`, it does not re-run this function or re-emit
-    // `engine.events`), same precedent as the 'world:loaded' listener below.
-    engine.events.on('world:sectorAnimated', onSectorAnimated);
-    engine.events.on('world:sectorAnimDone', onSectorAnimDone);
-
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
       if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
@@ -957,8 +950,7 @@ function runGame(mode, cinematic = null) {
         controls.yawDeg = look.yawDeg;
         controls.pitchDeg = look.pitchDeg;
       }
-      // US-014 (7.4 fixed-step order item 1): before `integrate`, so
-      // collision this step already sees the grate's current ceiling.
+      // Sector animations update collision before player integration.
       lap(SEC.input);
       stepSectorAnims(engine.world, dt);
       engine.world.water.step(); // US-143a (35.2): wave clock tick, before `integrate` per the Q13 instruction

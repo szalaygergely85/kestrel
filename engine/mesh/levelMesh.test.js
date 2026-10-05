@@ -1,3 +1,4 @@
+import { dynamicTowerFixture } from '../../tools/testing/dynamic-tower.mjs';
 // engine/mesh/levelMesh.test.js (ME-01, docs/architecture.md 27.15.2 step 2-5).
 // Synthetic-grid unit tests for the plane/boundary rules, plus a caster-
 // oracle test on the real `tower`/`test_room` content: for a handful of
@@ -356,14 +357,14 @@ function runOracle(name, poses) {
 // the oracle still agrees at poses facing the grate.
 // ---------------------------------------------------------------------------
 {
-  const level = loadLevel(assets.level('tower'));
+  const level = loadLevel(dynamicTowerFixture(assets.level('tower')));
   const matTable = bindShading(assets.palette, assets.detailPass, PXH / PXW);
   bindLevel(matTable, level);
   const set = buildLevelMesh(level, { matIdFor: matTable.idFor });
   const baseBefore = Buffer.from(set.base.pos.buffer.slice(0)).toString('base64') + '|' + Buffer.from(set.base.aux.buffer.slice(0)).toString('base64');
 
   const grateCh = Object.keys(level.legend).find((ch) => level.legend[ch].dynamic && level.legend[ch].tag === 'grate');
-  ok('tower has a grate legend entry', !!grateCh);
+  ok('dynamic fixture has a grate legend entry', !!grateCh);
   if (grateCh) {
     const grateSector = level.legend[grateCh];
     const before = grateSector.ceilH;

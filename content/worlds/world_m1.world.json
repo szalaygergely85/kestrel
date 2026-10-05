@@ -28,7 +28,6 @@
   ],
   "state": {
     "tower.lantern.taken": false,
-    "tower.lever.pulled": false,
     "tower.beacon.lit": false,
     "hints.shown": [],
     "hints.done": [],

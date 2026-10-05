@@ -2,18 +2,18 @@
 // Run: node game/js/quest/restart.test.js
 //
 // Per the architect's tech notes (docs/backlog.md US-017 item 5): take the
-// lamp, pull the lever, stop mid-open, push the boulder, fire `quest.end` -
+// lamp, verify the open stair, push the boulder, fire `quest.end` -
 // all on a REAL `world_m1` (architect tech note 4's precedent, same as
 // boulder.test.js/tower.test.js) - then prove `initialState` (captured
 // right after `World.load`, BEFORE any of that) is unaffected: a fresh
 // `serialize(deserialize(initialState))` round trip deep-equals it, and a
 // world rebuilt from it has the SAME tower `packed.geom` as a totally
 // independent fresh `World.load` - i.e. none of this story's live-world
-// mutation (the lever's mid-tween `animateSector`, `quest.end`) ever leaked
+// mutation (`quest.end` and the boulder) ever leaked
 // into the shared level def/legend objects other loads read from.
 import {
   World, serialize, deserialize, validateBehaviours,
-  stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS, stepSectorAnims,
+  stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS,
   updateTriggers,
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
@@ -33,8 +33,9 @@ import m3PropsMod from '../../../design/models/m3_props.js';
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
-import './index.js'; // registers every quest.* behaviour (lantern.take, lever.pull, quest.end, ...)
+import './index.js'; // registers every quest.* behaviour (lantern.take, quest.end, ...)
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
+import { dynamicTowerAssets } from '../../../tools/testing/dynamic-tower.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 
 paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
@@ -71,18 +72,11 @@ world.fireInteraction(lanternRec.name, { engine: {}, def: lanternRec.def, entity
 ok('1b: lantern taken', world.state['tower.lantern.taken'] === true);
 
 // ---------------------------------------------------------------------------
-// 2. Pull the lever, then step the grate open partway - "stop mid-open".
+// 2. Upper stair starts open without a lever or dynamic gate.
 // ---------------------------------------------------------------------------
-const leverRec = world.interactables.find((r) => r.id === 'lever');
-ok('2a: world has the lever interactable', !!leverRec);
-world.fireInteraction(leverRec.name, { engine: {}, def: leverRec.def, entity: world.get(leverRec.propId), actor: player });
-ok('2b: lever pulled', world.state['tower.lever.pulled'] === true);
-// Consume the 0.4 s delay, then run partway through the open tween (well
-// short of the grate's own openTime) so `structure.dynamics.grate.t` is a
-// genuine mid-open fraction, not 0 or 1.
-for (let i = 0; i < 30; i++) stepSectorAnims(world, PHYSICS_DEFAULTS.fixedDt);
-const grateT = tower.dynamics.grate && tower.dynamics.grate.t;
-ok('2c: grate stopped mid-open', typeof grateT === 'number' && grateT > 0 && grateT < 1, `t=${grateT}`);
+ok('2a: no lever entity or interaction', !world.get('tower.lever') && !world.interactables.some(r => r.id === 'lever'));
+ok('2b: landing is open on first load', tower.level.sectorAt(18.5, 10.5).ceilH === 'sky');
+ok('2c: no gate dynamics', !tower.dynamics.grate);
 
 // ---------------------------------------------------------------------------
 // 3. Push the boulder (same approach as boulder.test.js: spawn the real
@@ -122,7 +116,7 @@ ok('4b: quest.endT set', world.state['quest.endT'] === 0);
 // ---------------------------------------------------------------------------
 ok('5a: initialState itself never changed', deepEqual(initialState, initialStateSnapshot));
 ok('5b: initialState.state.quest.endT is still -1', initialState.state['quest.endT'] === -1);
-ok('5c: initialState has no tower dynamics (grate never opened at capture time)',
+ok('5c: initialState has no grate dynamics',
   !initialState.structures.find((s) => s.id === 'tower').dynamics.grate
   || initialState.structures.find((s) => s.id === 'tower').dynamics.grate.t === 0);
 
@@ -135,14 +129,14 @@ ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqua
 // ---------------------------------------------------------------------------
 // 7. A world rebuilt from `initialState` has the SAME tower packed.geom as
 // a totally independent fresh World.load - the live world's mutations
-// (lever mid-tween, quest.end) never touched the shared def/legend objects.
+// (boulder motion, quest.end) never touched the shared def/legend objects.
 // ---------------------------------------------------------------------------
 const restored = deserialize(initialState, assets);
 const restoredTower = restored.structures.find((s) => s.id === 'tower');
 const freshWorld = World.load(worldDef, assets, {});
 const freshTower = freshWorld.structures.find((s) => s.id === 'tower');
 ok('7a: restored tower packed.geom equals a fresh load', geomEqual(restoredTower.packed.geom, freshTower.packed.geom));
-ok('7b: restored tower dynamics.grate is at rest (t=0), unlike the mutated live world', !restoredTower.dynamics.grate || restoredTower.dynamics.grate.t === 0);
+ok('7b: restored tower has no grate dynamics', !restoredTower.dynamics.grate && restoredTower.level.sectorAt(18.5, 10.5).ceilH === 'sky');
 ok('7c: validateBehaviours is empty on the restored world too', validateBehaviours(restored).length === 0);
 
 function geomEqual(a, b) {
@@ -213,6 +207,21 @@ function geomEqual(a, b) {
   updateTriggers(restored, engineStub, p2.data); // still inside - no edge, must not refire
   ok('8k: a second updateTriggers call (still inside) does not touch hints state again',
     JSON.stringify(restored.state['hints.shown'] || []) === shownAfterFirst);
+}
+
+// TOWER-LEVER-01: saves from before removal cannot resurrect the content prop
+// or re-close the landing. Unknown legacy dynamics may remain inert in state.
+{
+  const legacy = World.load(worldDef, dynamicTowerAssets(assets));
+  legacy.animateSector('grate', 0.37);
+  legacy.state['tower.lever.pulled'] = true;
+  const saved = serialize(legacy);
+  const snapshot = structuredClone(saved);
+  const restored = deserialize(saved, assets);
+  const landing = restored.structures.find(s => s.id === 'tower').level.sectorAt(18.5, 10.5);
+  ok('9a: older save does not restore the removed lever', !restored.get('tower.lever'));
+  ok('9b: older grate animation cannot close the open landing', landing.floorH === 3 && landing.ceilH === 'sky' && !landing.solid);
+  ok('9c: restoring older content does not mutate the save', deepEqual(saved, snapshot));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

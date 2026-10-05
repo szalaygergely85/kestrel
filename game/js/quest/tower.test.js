@@ -9,7 +9,7 @@
 // in, per the "no literal coordinate under game/js/quest/" rule.
 import {
   World, loadLevel, integrate, isSectorPassable, PHYSICS_DEFAULTS,
-  validateBehaviours, unregisterBehaviour, stepSectorAnims, packLevel, serialize, deserialize, stepAnimations,
+  validateBehaviours, unregisterBehaviour, stepAnimations,
   updateTriggers,
 } from '../../../engine/index.js';
 import { registerQuestBehaviours, QUEST_BEHAVIOURS } from './index.js';
@@ -48,24 +48,6 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
-// US-014 helpers (generic over any `Level`, unlike section 7's `cellsWhere`/`cellSector` which close over the shared `L`).
-function cellsForZoneWhere(level, pred) {
-  const out = [];
-  for (let cy = 0; cy < level.height; cy++) {
-    for (let cx = 0; cx < level.width; cx++) {
-      const s = level.sectorAt(cx + 0.5, cy + 0.5);
-      if (s && pred(s)) out.push([cx, cy]);
-    }
-  }
-  return out;
-}
-function arraysEqual(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-const packLevelFresh = (level) => packLevel(level, null);
-
 const P = PHYSICS_DEFAULTS;
 const DT = P.fixedDt;
 const OPTS = { height: P.height, stepUpMax: P.stepUpMax };
@@ -123,7 +105,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ok('def.layers.tilt present, same grid size', Array.isArray(d.layers && d.layers.tilt) && d.layers.tilt.length === towerFull.level.height);
   const ids = (d.interactables || []).map((i) => i.id).sort();
   // US-078c: + the "sword" interactable (content/levels/tower.level.json, copied in from design/models/sword.js's levelPatch.towerSword).
-  ok('interactables ids = beacon, lantern, lever, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'lever', 'sword']), ids.join(','));
+  ok('interactables ids = beacon, lantern, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'sword']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
   // US-026a-content: the tower's own 'end' trigger is gone - the ending
   // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
@@ -174,8 +156,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ]);
   ok('quest/index.js registers exactly the names the tower + world_m1 data references',
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);
-  unregisterBehaviour('lever.pull');
-  ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["lever.pull"]');
+  unregisterBehaviour('lantern.take');
+  ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["lantern.take"]');
   // World.load warns (once, one line) with the same list. `terrain: null`
   // also makes the prop spawn warn once for `envelopeHeap`'s `z: 'ground'`
   // (7.5 item 1: no terrain -> warn + 0) - filter to the behaviour line so
@@ -185,7 +167,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   World.load({ name: 'w', terrain: null, structures: [{ id: 'tower', level: 'tower', origin: placement.origin }], entities: [], state: {} }, assets, {});
   console.warn = origWarn;
   const behaviourWarns = warns.filter((w) => w.includes('behaviour(s) referenced'));
-  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /lever\.pull/.test(behaviourWarns[0]), warns.join(' | '));
+  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /lantern\.take/.test(behaviourWarns[0]), warns.join(' | '));
   registerQuestBehaviours();
   ok('re-registration restores an empty list', validateBehaviours(worldFull).length === 0);
   // Every name QUEST_BEHAVIOURS lists now has a real body (US-012/US-014/
@@ -415,7 +397,6 @@ ok('the landing is at least 2 cells deep (PO note)', (() => {
 })());
 
 {
-  world.animateSector('grate', 1); // the lever (US-014) opens it in play; the route test opens it directly
   const ent = makeBody(wx(route[0][0]), wy(route[0][1]), cellFloor(route[0][0], route[0][1]));
   let allReached = true, allRises = true;
   for (let i = 1; i < route.length; i++) {
@@ -429,18 +410,18 @@ ok('the landing is at least 2 cells deep (PO note)', (() => {
     if (!good) { allReached = false; failures.push(`route cell ${i} (${cx},${cy}) not reached: steps=${steps} at (${t.x.toFixed(2)},${t.y.toFixed(2)},${t.z.toFixed(2)})`); }
   }
   ok('every stair step on the route rises <= stepUpMax', allRises);
-  ok('route walk: every route cell reached grounded at its floorH (gap jumped, grate open)', allReached);
-  world.animateSector('grate', 0);
+  ok('route walk: every route cell reached grounded at its floorH (gap jumped, upper stair always open)', allReached);
 }
 
-// Grate closed: the route cannot pass the grate cell.
+// TOWER-LEVER-01: no quest interaction is required at the landing.
 {
-  const gIdx = route.findIndex(([x, y]) => (cellSector(x, y).tag === 'grate'));
-  ok('the route passes through the grate cell', gIdx > 0);
-  const before = route[gIdx - 1], g = route[gIdx];
-  const ent = makeBody(wx(before[0]), wy(before[1]), cellFloor(before[0], before[1]));
-  const steps = driveTo(ent, wx(g[0]), wy(g[1]), { maxSteps: 240 });
-  ok('grate closed: driving into the grate cell is blocked', steps === -1 && Math.abs(ent.transform.x - wx(g[0])) > 0.5);
+  ok('tower props omit lever and chains', !towerDef.props.some(p => p.id === 'lever' || p.id === 'chains'));
+  ok('quest registry omits lever.pull', !Object.hasOwn(QUEST_BEHAVIOURS, 'lever.pull'));
+  ok('no grate tag or dynamic ceiling in the tower', !Object.values(towerDef.legend).some(s => s.tag === 'grate' || s.dynamic));
+  const stair = cellSector(18, 10);
+  ok('landing retains its 3 m floor and open sky ceiling', stair.floorH === 3 && stair.ceilH === 'sky' && !stair.solid);
+  const ent = makeBody(wx(19), wy(10), cellFloor(19, 10));
+  ok('landing passes from the ledge without an interaction', driveTo(ent, wx(17), wy(10), { maxSteps: 240 }) >= 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -531,13 +512,8 @@ const cellsWhere = (pred) => {
   const ledge = cellsWhere((s) => s.zone === 'ledge');
   const summit = cellsWhere((s) => s.zone === 'summit');
   ok('ledge and summit cells exist', ledge.length >= 4 && summit.length > 0);
-  world.animateSector('grate', 0);
-  const closed = reachable(ledge);
-  ok('grate closed: no summit cell is reachable from the ledge', summit.every(([x, y]) => !closed.has(`${x},${y}`)),
-    summit.filter(([x, y]) => closed.has(`${x},${y}`)).join(' '));
-  world.animateSector('grate', 1);
   const open = reachable(ledge);
-  ok('grate open: the summit is reachable from the ledge', summit.some(([x, y]) => open.has(`${x},${y}`)));
+  ok('upper stair: summit reachable from the ledge on first load', summit.some(([x, y]) => open.has(`${x},${y}`)));
 
   // Whole slice: pallet -> breach, structurally lantern-free (the BFS has no lantern input;
   // toggling the world's lantern state changes nothing).
@@ -551,117 +527,9 @@ const cellsWhere = (pred) => {
   const a = reachable([startCell]);
   world.state['tower.lantern.taken'] = true;
   const b = reachable([startCell]);
-  ok('no trap: the breach is reachable from the wake pallet (grate open)', breach.length > 0 && breach.every(([x, y]) => a.has(`${x},${y}`)));
+  ok('no trap: the breach is reachable from the wake pallet (upper stair open)', breach.length > 0 && breach.every(([x, y]) => a.has(`${x},${y}`)));
   ok('lantern-free: reachability is identical with and without the lantern', a.size === b.size && [...a].every((k) => b.has(k)));
-  world.animateSector('grate', 0);
-  const c = reachable([startCell]);
-  ok('grate closed: the ledge IS reachable from the pallet (the gap jump works) but the summit is not',
-    ledge.every(([x, y]) => c.has(`${x},${y}`)) && summit.every(([x, y]) => !c.has(`${x},${y}`)));
-}
 
-// ---------------------------------------------------------------------------
-// 8. US-014: `lever.pull` behaviour body on the real tower data. The
-//    interaction system itself (US-012, `findInteractTarget`/
-//    `updateInteraction`) doesn't exist yet, so this calls
-//    `world.fireInteraction('lever.pull', ctx)` directly, the same way
-//    `updateInteraction` will once US-012 lands - the "no second target"
-//    (used-flag/prompt-hiding) part of the story is generic `once` handling
-//    that lives in `updateInteraction`, so it isn't tested here.
-// ---------------------------------------------------------------------------
-{
-  const leverWorld = World.load({
-    name: 'tower_lever_test', terrain: null,
-    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
-    entities: [], state: { 'tower.lever.pulled': false },
-  }, assets, {});
-  const leverStruct = leverWorld.structures[0];
-  const leverDef = towerDef.interactables.find((i) => i.id === 'lever');
-  ok('lever interactable data: once, target.tag = grate', leverDef.once === true && leverDef.target && leverDef.target.tag === 'grate');
-
-  const grateCell = cellsForZoneWhere(leverStruct.level, (s) => s.tag === 'grate')[0];
-  const grateSector = () => leverStruct.level.sectorAt(grateCell[0] + 0.5, grateCell[1] + 0.5);
-  const clearance = () => grateSector().ceilH - grateSector().floorH;
-  ok('grate starts closed (no clearance)', clearance() < 1.70);
-
-  let played = null;
-  const fakeEntity = { play(anim) { played = anim; } };
-  const r = leverWorld.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
-  ok('lever.pull returns true (consumes the once-flag path)', r === true);
-  ok('lever.pull plays the "pull" clip on the prop entity', played === 'pull');
-  ok('lever.pull sets tower.lever.pulled', leverWorld.state['tower.lever.pulled'] === true);
-  ok('lever.pull does not move the grate immediately (0.4 s delay)', clearance() < 1.70);
-
-  const dt = PHYSICS_DEFAULTS.fixedDt;
-  for (let i = 0; i < 10; i++) stepSectorAnims(leverWorld, dt); // well inside the 0.4 s delay (24 steps @ 60 Hz)
-  ok('mid-delay, the grate has not started moving yet', clearance() < 1.70);
-  for (let i = 0; i < 200; i++) stepSectorAnims(leverWorld, dt); // generous margin past delay(0.4s)+openTime(1.5s) = 114 steps
-  ok('grate fully open: clearance >= 1.70 m (passable)', clearance() >= 1.70);
-  ok('grate fully open: isSectorPassable is true at the grate cell', isSectorPassable(grateSector(), grateSector().floorH, true, OPTS));
-  ok('dynamics.grate landed exactly on target 1', leverStruct.dynamics.grate.t === 1 && leverStruct.dynamics.grate.target === 1);
-
-  // A second call while already-open re-targets (no-op geometrically) - not
-  // part of the AC (that's the `once` flag, US-012), just checked so this
-  // behaviour body never throws on a repeat call.
-  played = null;
-  const r2 = leverWorld.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
-  ok('a second lever.pull call does not throw and still returns true', r2 === true && played === 'pull');
-}
-
-// ---------------------------------------------------------------------------
-// 8b. US-011 (7.5 item 7): the animation player over the REAL lever prop -
-//    `lever.pull` -> `sprite.anim === 'pull'`, held on frame 4 (5 frames at
-//    12.5 fps = 0.4 s, `loop: false`) once `stepAnimations` has run 0.4 s.
-// ---------------------------------------------------------------------------
-{
-  const leverWorld2 = World.load({
-    name: 'tower_lever_anim_test', terrain: null,
-    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
-    entities: [], state: {},
-  }, assets, {});
-  const leverDef2 = towerDef.interactables.find((i) => i.id === 'lever');
-  const leverProp = leverWorld2.get('tower.lever');
-  ok('World.load auto-spawns the real lever prop, initial anim "idle" (variant, was legacy pose "up")',
-    !!leverProp && leverProp.getComponent('sprite').anim === 'idle', leverProp && JSON.stringify(leverProp.getComponent('sprite')));
-
-  leverWorld2.fireInteraction('lever.pull', { def: leverDef2, entity: leverProp, actor: leverWorld2.get('player') });
-  ok('lever.pull (real entity) sets sprite.anim to "pull"', leverProp.getComponent('sprite').anim === 'pull');
-
-  const dt2 = PHYSICS_DEFAULTS.fixedDt;
-  for (let i = 0; i < 24; i++) stepAnimations(leverWorld2, dt2 * 1000); // 24 steps @ 60 Hz = 0.4 s
-  const s2 = leverProp.getComponent('sprite');
-  ok('after 0.4 s the pull clip holds on frame 4, not playing', s2.anim === 'pull' && s2.frame === 4 && s2.playing === false, JSON.stringify(s2));
-}
-
-// ---------------------------------------------------------------------------
-// 9. Determinism: `serialize`/`deserialize` mid-open resumes and finishes
-//    bit-identical to an uninterrupted run (US-014 tech note 6).
-// ---------------------------------------------------------------------------
-{
-  const dt = PHYSICS_DEFAULTS.fixedDt;
-  const runA = World.load({
-    name: 'tower_lever_determinism', terrain: null,
-    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
-    entities: [], state: {},
-  }, assets, {});
-  runA.animateSectorTo('grate', 1, { delay: 0.4 });
-  for (let i = 0; i < 40; i++) stepSectorAnims(runA, dt); // stop mid-open (16 steps into the 90-step tween)
-
-  const saved = JSON.parse(JSON.stringify(serialize(runA)));
-  const runB = deserialize(saved, assets, {});
-  const gA = runA.structures[0], gB = runB.structures[0];
-  ok('save mid-open: dynamics.grate.t/target/delay round-trip exactly',
-    gB.dynamics.grate.t === gA.dynamics.grate.t && gB.dynamics.grate.target === gA.dynamics.grate.target && gB.dynamics.grate.delay === gA.dynamics.grate.delay,
-    JSON.stringify(gB.dynamics.grate) + ' vs ' + JSON.stringify(gA.dynamics.grate));
-
-  for (let i = 0; i < 150; i++) { stepSectorAnims(runA, dt); stepSectorAnims(runB, dt); } // generous margin: finish both the same way
-  const cellG = cellsForZoneWhere(gA.level, (s) => s.tag === 'grate')[0];
-  const secA = gA.level.sectorAt(cellG[0] + 0.5, cellG[1] + 0.5);
-  const secB = gB.level.sectorAt(cellG[0] + 0.5, cellG[1] + 0.5);
-  ok('resumed run finishes bit-identical to the uninterrupted run (ceilH)', secA.ceilH === secB.ceilH, `${secA.ceilH} vs ${secB.ceilH}`);
-  ok('resumed run: packed geom/flags/relief equal a fresh packLevel of the mutated level', (() => {
-    const fresh = packLevelFresh(gB.level);
-    return arraysEqual(gB.packed.geom, fresh.geom) && arraysEqual(gB.packed.flags, fresh.flags) && arraysEqual(gB.packed.relief, fresh.relief);
-  })());
 }
 
 // ---------------------------------------------------------------------------
@@ -689,9 +557,7 @@ const cellsWhere = (pred) => {
 }
 
 // ---------------------------------------------------------------------------
-// 11. BUG-OWN-005 (docs/backlog.md row 25j): the lever-pull hint ('grate')
-//    and the summit hint ('exit') both fire, once, through the real quest
-//    behaviours (hint.show / lever.pull), on the real tower data.
+// 11. Summit hint fires once through hint.show on the real tower data.
 // ---------------------------------------------------------------------------
 function hintUiStyleFixture() {
   const s = {
@@ -699,7 +565,6 @@ function hintUiStyleFixture() {
       text: 'uiHint', key: 'gold', plate: { pad: 1, bgMul: 0.35 }, fadeIn: 0.3, fadeOut: 0.5, timeout: 8.0 },
     hints: [],
     storyHints: [
-      { id: 'grate', text: 'Something rattles above.', keys: [], on: { type: 'event', event: 'lever.pull' } },
       { id: 'exit', text: 'Out there. Step through the breach.', keys: [], on: { type: 'zone', zone: 'hintExit' } },
     ],
   };
@@ -768,35 +633,6 @@ function hintUiStyleFixture() {
   ok('re-entering hintExit does not fire it a second time', JSON.stringify(exitWorld.state['hints.shown']) === JSON.stringify(beforeShown));
 }
 
-{
-  // ---- 11c: pulling the real lever requests the 'grate' hint (once, no zone - the interaction is the trigger) ----
-  const uiStyle = hintUiStyleFixture();
-  const leverWorld = World.load({
-    name: 'tower_lever_hint_test', terrain: null,
-    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
-    entities: [], state: {},
-  }, assets, {});
-  const leverDef = towerDef.interactables.find((i) => i.id === 'lever');
-  const fakeEntity = { play() {} };
-  const fakeEngine = { assets: { uiStyle } };
-
-  resetHints();
-  ok('sanity: "grate" not queued/shown before the pull', currentHintId() !== 'grate');
-  leverWorld.fireInteraction('lever.pull', { engine: fakeEngine, def: leverDef, entity: fakeEntity, actor: leverWorld.get('player') });
-  stepHints(leverWorld, uiStyle, 0.001, noHintSignals);
-  ok('"grate" is requested right on the pull (hints.shown or currently showing)',
-    (leverWorld.state['hints.shown'] || []).includes('grate') || currentHintId() === 'grate');
-
-  // No engine.assets on the ctx (e.g. the older headless callers, restart.test.js item 2) must stay a no-op, not throw.
-  resetHints();
-  const leverWorld2 = World.load({
-    name: 'tower_lever_hint_test2', terrain: null,
-    structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
-    entities: [], state: {},
-  }, assets, {});
-  const r = leverWorld2.fireInteraction('lever.pull', { def: leverDef, entity: fakeEntity, actor: leverWorld2.get('player') });
-  ok('lever.pull without engine.assets does not throw and still returns true', r === true);
-}
 resetHints(); // leave the module-level singleton clean for any test runner that loads more than one file in-process
 
 console.log(`${pass} passed, ${fail} failed.`);

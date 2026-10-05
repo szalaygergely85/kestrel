@@ -92,21 +92,11 @@ const DRIVER = `(async () => {
     await idle(120); out.info.staticShadow = gp ? { frames: 120, renders: gp.shadowRenders - r0, skips: gp.shadowSkips - s0 } : null; }
   await leg('3 stairs', [W(16, 3), W(17, 3), W(18, 3), W(19, 3), W(19, 4), W(20, 4), W(20, 5), W(20, 6), W(20, 7)]);
   await leg('4 gap jump + ledge', [{ ...W(20, 9), jump: true }, W(19, 9)]);
-  await leg('5a grate closed (must block)', [W(19, 10), W(17, 10)], { expectBlocked: true, maxFrames: 300 });
-  // mesh BUG (known difference 2): the closed grate is walk-through. Put the player back on the mid ledge so the rest of the route is comparable.
-  if (T().x - O.x < 18.9 && T().y - O.y > 9.9) { out.info.resetAfterGrate = { from: { x: T().x - O.x, y: T().y - O.y, z: T().z } }; T().x = O.x + 19.57; T().y = O.y + 9.89; T().z = 3; B().vx = B().vy = B().vz = 0; B().grounded = true; await idle(10); }
-  // lever: stand near it, face it, press E (real interaction path) until pulled
-  { const lv = { x: O.x + 19.25, y: O.y + 9.3 }; await leg('5b0 to lever', [W(19, 9)], { maxFrames: 300 });
-    let pulled = false;
-    for (let a = 0; a < 6 && !pulled; a++) {
-      const tr = T(); D.look.yawDeg = yawTo(tr.x, tr.y, lv.x, lv.y); D.look.pitchDeg = [-35, -20, -50, -10, -60, 0][a];
-      await sleepF(); for (let k = 0; k < 8; k++) { input._pressedThisFrame.add('KeyE'); await sleepF(); } await idle(10); // re-arm the edge each frame: a frame with 0 sim steps would otherwise swallow it
-      pulled = world().state['tower.lever.pulled'] === true; }
-    out.info.leverPulledByE = pulled; out.info.leverTarget = world().interaction && world().interaction.targetKey;
-    if (!pulled) { const rec = world().interactables.find((r) => r.id === 'lever'); world().fireInteraction('lever.pull', { engine: eng, def: rec.def, entity: rec.propId ? world().get(rec.propId) : null, actor: world().get('player'), structId: rec.structId }); world().state[rec.usedKey || 'x'] = true; out.info.leverFallbackFire = true; }
-    await idle(150);
-    const s = world().structures[0].level.sectorAt(18.5, 10.5); out.info.grateClearAfterLever = s.ceilH - s.floorH; }
-  await leg('5b grate open + upper steps', [W(18, 10), W(17, 10), W(16, 10), W(15, 10), W(14, 10), W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
+  // TOWER-LEVER-01: upper stair is open from the first load; no E interaction.
+  out.info.upperStairOpen = world().structures[0].level.sectorAt(18.5, 10.5).ceilH === 'sky';
+  out.info.leverAbsent = !world().get('tower.lever') && !world().interactables.some(r => r.id === 'lever');
+  await leg('5a open landing', [W(19, 10), W(18, 10)]);
+  await leg('5b upper steps', [W(17, 10), W(16, 10), W(15, 10), W(14, 10), W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
   await leg('6 doorway + summit', [W(11, 7), W(10, 7), W(10, 8), W(9, 8), W(8, 8), W(7, 8), W(7, 7)]);
   await leg('7a breach + outcrop', [W(6, 7), W(5, 7)]);
   await leg('7b hillside -> waystone', [NEAR, WAY], { detour: true, maxFrames: 2400, untilEnd: true });

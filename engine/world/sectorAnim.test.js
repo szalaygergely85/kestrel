@@ -1,3 +1,4 @@
+import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 // engine/world/sectorAnim.test.js (US-014). Headless Node ESM, no framework.
 // Run: node engine/world/sectorAnim.test.js
 //
@@ -33,7 +34,8 @@ import { makeOk } from '../test/assert.js';
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod; terrainDef;
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod;
-const { assets } = await loadTestAssets();
+const { assets: canonicalAssets } = await loadTestAssets();
+const assets = dynamicTowerAssets(canonicalAssets);
 
 let pass = 0, fail = 0;
 const failures = [];
