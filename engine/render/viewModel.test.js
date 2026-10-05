@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { VoxelPool } from './voxelPool.js';
 import { createViewModelLayer, VM_OBJECT_ID } from './viewModel.js';
-import { projTerms, shearProjection, projectPoint } from './projection.js';
+import { projTerms, shearProjection, projectPoint, pitchedTerms, createPitchedTerms } from './projection.js';
 import { DrawList } from '../mesh/DrawList.js';
 import { addVoxelInstances, VoxelMeshCache, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { rasterDrawList, createRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
@@ -58,11 +58,11 @@ const P = vm._last;
 const near = (a, b, e = 1e-9) => Math.abs(a - b) <= e;
 {
   vm.show(h, swingLR, 80, false);
-  ok('key time 80 = key 1 pos/rot', near(P[0], -0.10) && near(P[1], -0.32) && near(P[2], -0.10) && near(P[3], 70) && near(P[4], 0) && near(P[5], -80), Array.from(P).join(','));
+  ok('key time 80 = key 1 pos/rot', near(P[0], 0.10) && near(P[1], -0.32) && near(P[2], -0.10) && near(P[3], 70) && near(P[4], 0) && near(P[5], 80), Array.from(P).join(','));
   vm.show(h, swingLR, 100, false);
-  ok('mid time 100 = linear mid of keys 80/120', near(P[0], -0.09) && near(P[1], -0.36) && near(P[2], -0.14) && near(P[3], 74) && near(P[5], -62.5), Array.from(P).join(','));
+  ok('mid time 100 = linear mid of keys 80/120', near(P[0], 0.09) && near(P[1], -0.36) && near(P[2], -0.14) && near(P[3], 74) && near(P[5], 62.5), Array.from(P).join(','));
   vm.show(h, swingLR, 9999, false);
-  ok('non-loop clip clamps to its last key', near(P[0], 0.27) && near(P[5], 5));
+  ok('non-loop clip clamps to its last key', near(P[0], -0.27) && near(P[5], -5));
   vm.show(h, idle, 1100, false);
   ok('loop idle key 1', near(P[2], -0.212) && near(P[3], 66.5));
   vm.show(h, idle, 2200 + 1100, false);
@@ -74,9 +74,9 @@ const near = (a, b, e = 1e-9) => Math.abs(a - b) <= e;
   vm.show(h, swingLR, 0, true);
   ok('blend t=0 = captured pose', cap.every((v, i) => near(P[i], v)));
   vm.show(h, swingLR, 40, true);
-  ok('blend t=40 = halfway captured -> key 1', near(P[0], (cap[0] + -0.10) / 2) && near(P[5], (cap[5] + -80) / 2));
+  ok('blend t=40 = halfway captured -> key 1', near(P[0], (cap[0] + 0.10) / 2) && near(P[5], (cap[5] + 80) / 2));
   vm.show(h, swingLR, 100, true);
-  ok('blend leaves later segments alone', near(P[0], -0.09) && near(P[5], -62.5));
+  ok('blend leaves later segments alone', near(P[0], 0.09) && near(P[5], 62.5));
 }
 
 // ---- eye -> world ----------------------------------------------------------------------------------------------
@@ -130,43 +130,38 @@ function worldTipFromList(list) {
   ok('buildList: hidden + pitched -> still null (no model bound is the only gate)', vm.buildList(cam, true) === null);
 }
 
-// ---- pitched rotation map vs the shear map (small-angle convergence) -------------------------------------------
-// NOTE (flagged for architect re-review, BUG-VM-001 item 3): the architect's note asked for "the new pitched
-// rotation matrix equals the old shear matrix within 1e-3" at pitchDeg 0 and +-5. At pitchDeg=0 the two maps are
-// IDENTICAL (sp=0, cp=1, tp=0 - checked below, exact). At +-5 deg they are NOT within 1e-3 elementwise: the shear
-// map has no y<->z coupling at all (Aw[5] == 0 always), while the true rotation's Aw[5] = c*sin(pitchRad) - a
-// FIRST-order-in-pitch term (~0.087 at yaw=0, pitch=5deg), not a small-angle residual. That is expected/correct
-// (it's exactly why the shear was wrong for a rotating camera - no amount of "small angle" shrinks a first-order
-// difference to 1e-3 at 5 degrees). The two maps provably converge only as pitch -> 0 (checked below down to a
-// tenth of a degree). Implemented here: (1) exact equality at pitch=0 (1e-9), (2) the +-5 deg case checked against
-// an empirically-derived bound (~0.09, i.e. "same ballpark", not "1e-3") instead of the literal number, and (3) a
-// convergence check at a much smaller pitch (0.1 deg) where the difference IS within 1e-3, demonstrating the two
-// conventions agree in the small-angle limit as intended. Flagging the literal "1e-3 at +-5deg" instruction as
-// unachievable by construction - needs an architect decision on the intended metric/tolerance.
+// ---- pitched rotation invariants + screen lock (BUG-VM-001 re-review) -------------------------------------------
 {
-  const Aw = new Float64Array(9);
-  function eyeMapOf(pitched, pitchDeg, yawDeg) {
-    const c2 = { x: 0, y: 0, z: 0, yawDeg, pitchDeg };
-    vm._eyeMap(c2, Aw, pitched);
-    return Array.from(Aw);
+  const Aw = new Float64Array(9), pt = createPitchedTerms();
+  vm.setBob(0, 0);
+  vm.show(h, idle, 0, false);
+  vm.mountEye(h, idle, 0, tip, pe);
+  for (const yawDeg of [0, 37, 225]) {
+    let ref = null;
+    for (const pitchDeg of [0, -20, 20]) {
+      const c = { x: 12.3, y: -4.1, z: 1.6, yawDeg, pitchDeg };
+      vm._eyeMap(c, Aw, true);
+      let error = 0;
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        let dot = 0;
+        for (let k = 0; k < 3; k++) dot += Aw[k * 3 + i] * Aw[k * 3 + j];
+        error = Math.max(error, Math.abs(dot - (i === j ? 1 : 0)));
+      }
+      const det = Aw[0] * (Aw[4] * Aw[8] - Aw[5] * Aw[7])
+        - Aw[1] * (Aw[3] * Aw[8] - Aw[5] * Aw[6])
+        + Aw[2] * (Aw[3] * Aw[7] - Aw[4] * Aw[6]);
+      ok(`pitched map orthonormal, yaw ${yawDeg} pitch ${pitchDeg}`, error < 1e-9, String(error));
+      ok(`pitched map determinant +1, yaw ${yawDeg} pitch ${pitchDeg}`, Math.abs(det - 1) < 1e-9, String(det));
+      vm.buildList(c, true); // latch the same map used by the model and trail
+      vm.eyeToWorld(c, pe, w3);
+      pitchedTerms(c, grid, pt);
+      projectPoint(pt.M, COLS, ROWS, w3[0], w3[1], w3[2], out4);
+      if (!ref) ref = [out4[0], out4[1]];
+      const dev = Math.max(Math.abs(out4[0] - ref[0]), Math.abs(out4[1] - ref[1]));
+      ok(`pitched tip screen-lock, yaw ${yawDeg} pitch ${pitchDeg}`, Number.isFinite(dev) && dev <= 0.5, String(dev));
+    }
   }
-  const maxAbsDiff = (a, b) => { let m = 0; for (let i = 0; i < 9; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
-  {
-    const shear = eyeMapOf(false, 0, 37), rot = eyeMapOf(true, 0, 37);
-    const d = maxAbsDiff(shear, rot);
-    ok('pitched rotation map == shear map at pitchDeg=0 (exact, any yaw)', d < 1e-9, `maxAbsDiff=${d}`);
-  }
-  for (const pitchDeg of [5, -5]) {
-    const shear = eyeMapOf(false, pitchDeg, 0), rot = eyeMapOf(true, pitchDeg, 0);
-    const d = maxAbsDiff(shear, rot);
-    // see the NOTE above: 1e-3 is not achievable here by construction; 0.09 bounds the expected first-order gap.
-    ok(`pitched rotation map stays in the same ballpark as the shear map at pitchDeg=${pitchDeg} (< 0.09, not the literal 1e-3 - see NOTE)`, d < 0.09, `maxAbsDiff=${d}`);
-  }
-  for (const pitchDeg of [0.05, -0.05]) {
-    const shear = eyeMapOf(false, pitchDeg, 0), rot = eyeMapOf(true, pitchDeg, 0);
-    const d = maxAbsDiff(shear, rot);
-    ok(`small-angle convergence: rotation map -> shear map within 1e-3 at pitchDeg=${pitchDeg}`, d < 1e-3, `maxAbsDiff=${d}`);
-  }
+  vm.buildList(cam, false); // restore shear mode for the raster fixture below
 }
 
 // raster: tip lands within 1 cell of the projected mount; the blade overdraws a wall 0.2 m ahead

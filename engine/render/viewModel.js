@@ -12,6 +12,7 @@
 // Eye space (README 7.4): x right, y BACK (forward = -y), z up, metres, yaw-0 / pitch-0 camera frame at the eye.
 // Eye -> world (`eyeToWorld`, one helper for both twins + the trail), with fwd = (sinY, -cosY, 0), right =
 // (cosY, sinY, 0), d = -pe.y:  world = eye + pe.x*right + d*fwd + (pe.z + d*tanPitch)*up.
+// Pitched cameras use a true yaw/pitch rotation instead, keeping the model and trail screen-locked.
 // The d*tanPitch term cancels the first-person pitch shear, so the sword keeps its screen place at any pitch.
 
 import { DrawList, DRAW_VOXEL } from '../mesh/DrawList.js';

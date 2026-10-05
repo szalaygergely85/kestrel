@@ -487,7 +487,8 @@ engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); 
 // mesh-only `swordHeld` model registered above). `window.ASSETS.viewModels.sword` is the raw classic-script
 // def (same `globalThis.ASSETS.viewModels.sword` gpucompare.js reads - not part of the AssetRegistry's own
 // JSON-sourced fields).
-const swordAssetDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.sword;
+const swordAssetDef = window.ASSETS && window.ASSETS.swordForHand
+  ? window.ASSETS.swordForHand(SWORD_CFG.hand) : window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.sword;
 const swordVmH = swordAssetDef ? (() => {
   const h = engine.viewModel.load('sword', swordAssetDef, gameVoxelPool);
   return {
