@@ -84,6 +84,7 @@ export function parseArgs(argv) {
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
     else if (a === '--query') opts.query = next();
+    else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|dda> to the mode's own query
     else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--import') {
@@ -130,7 +131,7 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 // Mode -> query string / result global
 // ---------------------------------------------------------------------
 
-export function buildQuery(mode, { grid, variant, rays } = {}) {
+export function buildQuery(mode, { grid, variant, rays, shadows } = {}) {
   const parts = [];
   if (mode === 'gpucompare') {
     if (variant && variant !== 'shade') throw new Error('gpucompare has only the default mesh twin or --variant shade');
@@ -158,6 +159,7 @@ export function buildQuery(mode, { grid, variant, rays } = {}) {
     throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker)`);
   }
   if (grid && mode !== 'voxelbench') parts.push(`grid=${grid}`);
+  if (shadows) parts.push(`shadows=${shadows}`);
   return parts.join('&');
 }
 
@@ -672,6 +674,11 @@ export async function runLiveCapture(opts) {
     });
 
     const query = opts.query || buildQuery(opts.mode, opts); // ME-08c: `--query <raw>` override
+    // BUG-BENCH-01: `--query` REPLACES the whole query (mode param included); `--query "shadows=map"` alone loads the plain game and
+    // waits for a result that never comes. Use `--shadows map` to add a flag to the mode's query instead.
+    if (opts.query && opts.mode && !/(^|&)(gpucompare|bench|voxelbench|flicker)=/.test(opts.query)) {
+      console.error(`capture-browser: WARNING --query '${opts.query}' has no ${opts.mode} parameter, so window.${opts.global || resultGlobalFor(opts.mode)} will never appear (use --shadows <v> or put the mode flag in --query)`);
+    }
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
     // game/index.html, not at the root.

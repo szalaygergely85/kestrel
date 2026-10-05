@@ -95,6 +95,7 @@ check('buildQuery bench', buildQuery('bench', {}) === 'bench=present');
 check('buildQuery voxelbench default grid/rays', buildQuery('voxelbench', {}) === 'voxelbench=1&grid=240x90&rays=2');
 check('buildQuery voxelbench custom grid/rays', buildQuery('voxelbench', { grid: '160x60', rays: 1 }) === 'voxelbench=1&grid=160x60&rays=1');
 check('buildQuery gpucompare with grid', buildQuery('gpucompare', { grid: '160x60' }) === 'gpucompare=1&grid=160x60');
+check('buildQuery shadows flag', buildQuery('gpucompare', { shadows: 'map' }) === 'gpucompare=1&shadows=map');
 throws('buildQuery rejects removed migration variant', () => buildQuery('gpucompare', { variant: 'mesh' }));
 throws('buildQuery rejects old dda variant', () => buildQuery('gpucompare', { variant: 'dda' }));
 throws('buildQuery rejects unknown mode', () => buildQuery('bogus', {}));

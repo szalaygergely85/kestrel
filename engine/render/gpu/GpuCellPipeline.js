@@ -1791,6 +1791,10 @@ export class GpuCellPipeline {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRasterSub);
     gl.viewport(0, 0, this.subCols, this.subRows);
+    // ME-15e: a masked depth write also masks the depth clear. With the shadow pass skipped (dirty-skip) nothing before this
+    // point re-enables the mask, and a previous test-only/device pass (shadow depth copy, depthMask(false)) left it off -> the
+    // stale depth from the last frame blanked the whole GPU frame. Always clear with the mask on.
+    gl.depthMask(true);
     // Sentinel clear (14.2 item 3's "kind 0 = nothing drawn"): GI/GA all
     // zero, DEPTH = 0x7f800000 (the +Inf bit pattern dda.frag.js's own
     // kind==0 branch writes) - shade.frag.js's `kindU == 0u` branch (sky)

@@ -21,7 +21,7 @@ if (args.renderer !== undefined) throw new Error('--renderer was removed; the ge
 const grid = args.grid || '400x150', physics = args.physics;
 const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
-const query = `voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}`;
+const query = `voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`; // --extra "shadowres=1536" (ME-15e)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.
