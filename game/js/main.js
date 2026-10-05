@@ -600,7 +600,7 @@ function runGame(mode, cinematic = null) {
   const physics = params.get('physics') === 'grid' ? 'grid' : params.get('physics') === 'mesh' || renderer === 'mesh' ? 'mesh' : 'grid';
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
-    detail: renderer === 'mesh' && physics === 'mesh' && params.get('detail') !== '0' };
+    detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.

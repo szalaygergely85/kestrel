@@ -14,7 +14,8 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
+import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
@@ -639,6 +640,10 @@ export class World {
       w.spawn(ed.type, transform, components || {}, ed.id, parent);
     }
 
+    // Saved prop transforms exist only after the entities loop; derived colliders
+    // must use those live poses, just like fresh content props.
+    w.rebuildPropColliders();
+
     // US-055a1 (32.2): world + level `water` blocks (validated; throws naming the region).
     // US-143a (35.1): world key `seaState` (default "calm") seeds the "sea" regions' amplitude at load.
     const seaState = typeof def.seaState === 'string' ? def.seaState : 'calm';
@@ -815,6 +820,54 @@ export class World {
   /** `moveCircleMesh` over `world.colliders` (empty on 'grid' - always a well-defined, if trivial, call). */
   collideCircle(x, y, dx, dy, radius, footZ, grounded, opts, out) {
     return moveCircleMesh(this.colliders, this.colliders.length, x, y, dx, dy, radius, footZ, grounded, opts, out);
+  }
+
+  /** PROP-COLLIDE-01: load/committed edit only; one BVH, never per drag frame. */
+  rebuildPropColliders() {
+    if (this.physicsMode !== 'mesh') return;
+    const shapes = [], cs = new Float64Array(2);
+    for (const s of this.structures) {
+      if (s.kind === 'mesh') continue;
+      for (const p of s.level.def.props || []) {
+        const id = `${s.id}.${p.id}`, e = this.entity(id);
+        if (!e || !e.components.voxel || e.components.sprite) continue;
+        const model = this.assets.model(e.components.voxel.model);
+        const defs = Object.hasOwn(p, 'colliders') ? p.colliders : model.colliders;
+        if (defs === undefined) continue;
+        if (!Array.isArray(defs)) throw new Error(`World.load: prop "${id}" colliders must be an array`);
+        if (!defs.length) continue;
+        if (p.dynamic || e.components.roller) {
+          console.warn(`[World] prop "${id}" colliders skipped: dynamic prop`);
+          continue;
+        }
+        const t = e.transform, scale = t.scale || 1;
+        cosSinDeg(t.yawDeg || 0, cs);
+        for (const d of defs) {
+          const vec = v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+          if (!d || !vec(d.c) || (d.type !== 'box' && d.type !== 'prism')
+            || (d.type === 'box' && (!vec(d.half) || d.half.some(v => v <= 0) || !Number.isFinite(d.yawDeg ?? 0)))
+            || (d.type === 'prism' && (!Number.isFinite(d.r) || d.r <= 0 || !Number.isFinite(d.h) || d.h <= 0))) {
+            throw new Error(`World.load: prop "${id}" invalid collider shape`);
+          }
+          shapes.push({ kind: d.type === 'box' ? 0 : 1,
+            x: t.x + (cs[0] * d.c[0] - cs[1] * d.c[1]) * scale,
+            y: t.y + (cs[1] * d.c[0] + cs[0] * d.c[1]) * scale,
+            zc: t.z + d.c[2] * scale,
+            hx: d.type === 'box' ? d.half[0] * scale : 0,
+            hy: d.type === 'box' ? d.half[1] * scale : 0,
+            hz: d.type === 'box' ? d.half[2] * scale : 0,
+            r: d.type === 'prism' ? d.r * scale : 0,
+            h: d.type === 'prism' ? d.h * scale : 0,
+            yawRad: ((t.yawDeg || 0) + (d.type === 'box' ? d.yawDeg || 0 : 0)) * Math.PI / 180 });
+        }
+      }
+    }
+    const collider = buildPropCollider(shapes, shapes.length);
+    const index = this.colliders.findIndex(c => c.id === 'props:static');
+    if (index >= 0) {
+      if (collider) this.colliders[index] = collider;
+      else this.colliders.splice(index, 1);
+    } else if (collider) this.colliders.push(collider);
   }
 
   /** `moveSphereMesh` over `world.colliders` (roller.js wiring is ME-11b - not called from here yet). */

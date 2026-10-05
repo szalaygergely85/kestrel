@@ -456,6 +456,7 @@ function patchLive(rec) {
   const data = world.entity(entId);
   if (!data) return false;
   applyPropTransformPatch(data.transform, item, sFrame);
+  world.rebuildPropColliders(); // PROP-COLLIDE-01: committed move/undo/redo, never the drag preview.
   world.renderVersion++;
   frame.markDirty();
   return true;
