@@ -29,7 +29,7 @@ export const UNIT_OBJECT_BASE = 0x10000;
 
 /** Groups the registry can hold / instances the GPU uploads per frame. */
 export const MAX_INSTANCE_GROUPS = 32;
-export const MAX_INSTANCES_PER_FRAME = 2048;
+export const MAX_INSTANCES_PER_FRAME = 4096;
 
 /**
  * @typedef {Object} InstanceBuffer
@@ -186,6 +186,7 @@ function compactGroup(g, planes, R, vp, rows) {
  * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a/c: engine-owned compacted scratch, 0 = LOD0, 1 = LOD1
  * @property {number} _R - cached group radius (both LODs) for the memoized frame
  * @property {number} lodCells - RE-15c: projected-size LOD threshold in cells; 0 (default) = LOD off
+ * @property {boolean} castShadow - ENV-01a2: false excludes the group from the sun caster list; default true
  * @property {Uint8Array} lodPrev - RE-15c: previous LOD per game slot (hysteresis)
  * @property {[number, number]} drawCount - survivor counts into `drawIb[0]`/`drawIb[1]`
  * @property {number|null} _memoFrameNo - RE-15a: the `frameNo` this group's `drawIb`/`drawCount` were last computed for
@@ -227,7 +228,7 @@ export class InstanceGroups {
       // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
       drawIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
       drawCount: /** @type {[number, number]} */ ([0, 0]),
-      lodCells: 0, lodPrev: new Uint8Array(capacity), _R: 0,
+      lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
       _memoFrameNo: /** @type {number|null} */ (null),
     };
     this.groups.push(g);

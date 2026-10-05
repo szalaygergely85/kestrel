@@ -75,7 +75,7 @@ const engine = createEngine({ canvas: canvas(), assets, force2d: true, inputTarg
 engine.instances.bindPool({ models: new Map(cfg.species.map(s => [s.model, {}])) });
 let listenerCount = 0;
 engine.events.on('world:loaded', ({ world: loaded }) => {
-  assert.equal(engine.instances.groups.reduce((n, g) => n + g.count, 0), loaded.scatter?.count || 0);
+  assert.equal(engine.instances.groups.reduce((n, g) => n + g.count, 0), (loaded.scatter?.count || 0) + (engine._detail?.fed || 0));
   listenerCount++;
 });
 const on = engine.loadWorld(def, { physics: 'mesh', realTrees: true });
@@ -96,4 +96,41 @@ engine.setWorld(deserialize(saved, assets, { physics: 'mesh', realTrees: false }
 ok(engine.instances.groups.length === 0 && listenerCount === 5);
 engine.loadWorld({ name: 'empty', structures: [], entities: [], sun: {} });
 ok(engine.instances.groups.length === 0 && listenerCount === 6);
+const detail = { count: 1, x: Float64Array.of(2), y: Float64Array.of(2), z: Float64Array.of(0),
+  yawDeg: Int16Array.of(37), species: Uint16Array.of(0), r2: Float32Array.of(100),
+  speciesDefs: [{ model: 'oak', shadow: false, lodCells: 4 }],
+  tileM: 16, tx0: 0, ty0: 0, tilesX: 1, tilesY: 1, tileStart: Uint32Array.of(0, 1) };
+const owner = { _detail: null };
+const detailRegistry = new InstanceGroups();
+detailRegistry.bindPool({ models: new Map([['oak', {}]]) });
+const retainedUnit = detailRegistry.group('units', 1);
+const detailWorld = { detail, def: { spawn: { x: 2, y: 2 } },
+  terrain: { recipe: { recipe: { detail: { maxDraw: 2, refeedM: 4 } } } } };
+const treeGroups = bindScatterInstances(detailWorld, detailRegistry, [], owner);
+ok(treeGroups.length === 0 && owner._detail.fed === 1);
+ok(owner._detail.groups[0].castShadow === false);
+const oldDetailGroup = owner._detail.groups[0];
+bindScatterInstances({ scatter: null }, detailRegistry, treeGroups, owner);
+ok(owner._detail === null && !detailRegistry.groups.includes(oldDetailGroup) && detailRegistry.groups.includes(retainedUnit));
+detailRegistry.pool.models.set('birch', {});
+let previousTrees = bindScatterInstances(world, detailRegistry);
+detailRegistry.pool.models.delete('birch');
+assert.throws(() => bindScatterInstances(world, detailRegistry, previousTrees), /missing voxel model birch/); checks++;
+ok(detailRegistry.groups.length === 1 && previousTrees.every(g => !detailRegistry.groups.includes(g)));
+detailRegistry.pool.models.set('birch', {});
+previousTrees = bindScatterInstances(world, detailRegistry);
+const missingDetail = { ...detailWorld, scatter, terrain: { recipe: { recipe: {
+  forest: { trees: cfg }, detail: { maxDraw: 2, refeedM: 4 } } } },
+  detail: { ...detail, speciesDefs: [{ model: 'missing', shadow: false, lodCells: 4 }] } };
+assert.throws(() => bindScatterInstances(missingDetail, detailRegistry, previousTrees, owner), /missing voxel model missing/); checks++;
+ok(owner._detail === null && detailRegistry.groups.length === 1);
+const realDetailWorld = { ...detailWorld, events: engine.events, structures: [], entities: [] };
+engine.setWorld(realDetailWorld);
+ok(engine._detail?.groups.length === 1);
+engine.feedDetail({ x: 2, y: 2 }, true);
+engine._detail.groups[0].ib.u32.fill(0xdeadbeef);
+engine.feedDetail({ x: 2, y: 2, teleport: true });
+ok(engine._detail.groups[0].ib.u32[0] !== 0xdeadbeef && engine._detail.fed === 1);
+engine.setWorld({ events: engine.events, structures: [], entities: [] });
+ok(engine._detail === null && engine.instances.groups.length === 0);
 console.log(`${checks} passed, 0 failed. ALL PASS`);

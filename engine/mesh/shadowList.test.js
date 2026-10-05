@@ -10,6 +10,7 @@ import { projTerms, shearProjection } from '../render/projection.js';
 import { createSunShadowMatrix, shadowSunMatrix, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
 import { dirFromAzEl } from '../core/transform.js';
 import { makeOk } from '../test/assert.js';
+import { InstanceGroups, writeUnitInstance } from './instances.js';
 
 if (typeof global.gc !== 'function') {
   const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
@@ -103,6 +104,34 @@ function cameraPlanes() {
   ok('trim keeps MAX_DRAW_ITEMS', l.count === MAX_DRAW_ITEMS, 'count=' + l.count);
   ok('trim drops the farthest first (item 10, then ids 257..260)', !ids.has(10) && !ids.has(257) && !ids.has(258) && !ids.has(259) && !ids.has(260) && ids.has(256) && ids.has(9));
   ok('trim keeps relative order', (() => { let prev = -1; for (let i = 0; i < l.count; i++) { if (l.items[i].objectId < prev) return false; prev = l.items[i].objectId; } return true; })());
+}
+
+// ---- ENV-01a2: per-group shadow opt-out preserves default casters -----------
+{
+  const groups = new InstanceGroups();
+  const pm = {};
+  groups.bindPool({ models: new Map([['detail', pm]]), partNamesFor: () => [] });
+  const defaults = groups.group('detail', 2), grass = groups.group('detail', 1), rock = groups.group('detail', 1);
+  grass.castShadow = false;
+  rock.castShadow = true;
+  for (const g of groups.groups) {
+    g.parts.count = 1;
+    g.parts.m[0] = g.parts.m[4] = g.parts.m[8] = 1;
+    g.parts.flags[0] = 1;
+    g.count = g.ib.capacity;
+    for (let i = 0; i < g.count; i++) writeUnitInstance(g.ib, i, i, 0, 0, 0, 0x40000 | i, 0);
+  }
+  const mesh = { bbox: new Float64Array([-0.5, -0.5, 0, 0.5, 0.5, 1]) };
+  let gets = 0;
+  const src = { centre: { x: 0, y: 0, z: 0 }, cache: new LevelMeshCache(), instances: groups,
+    voxelMeshCache: { get() { gets++; return mesh; } } };
+  const sl = createShadowList();
+  buildShadowList(sl, null, { structures: [], structVersion: 1, terrain: null }, new Float64Array(24), src);
+  ok('castShadow false: group absent, no mesh lookup', sl.count === 2 && gets === 2 && sl.items[0].instBuf === defaults.ib && sl.items[1].instBuf === rock.ib);
+  ok('default and explicit true groups keep full instance buffers', sl.items[0].instCount === 2 && sl.items[1].instCount === 1);
+  grass.castShadow = true;
+  buildShadowList(sl, null, { structures: [], structVersion: 1, terrain: null }, new Float64Array(24), src);
+  ok('re-enabling castShadow restores the group in registry order', sl.count === 3 && sl.items[1].instBuf === grass.ib);
 }
 
 // ---- AC 5: zero allocation over N frames ---------------------------------------

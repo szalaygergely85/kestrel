@@ -61,7 +61,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
     const groups = ig.groups;
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
-      if (g.count <= 0) continue;
+      if (g.count <= 0 || g.castShadow === false) continue;
       const pm = ig.pool.models.get(g.modelKey);
       if (!pm) continue;
       list.addInstances(src.voxelMeshCache.get(pm, g.modelKey, ig.pool.partNamesFor(g.modelKey)), g.parts, g.ib, g.count);

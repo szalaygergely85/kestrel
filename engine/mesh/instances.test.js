@@ -11,7 +11,7 @@ import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { DrawList, DRAW_INSTANCED } from './DrawList.js';
 import { VoxelMeshCache } from './voxelMesh.js';
 import {
-  INSTANCE_STRIDE, INSTANCE_BYTES, INST_OBJECT_ID, INST_FLAGS, UNIT_OBJECT_BASE, MAX_INSTANCE_GROUPS,
+  INSTANCE_STRIDE, INSTANCE_BYTES, INST_OBJECT_ID, INST_FLAGS, UNIT_OBJECT_BASE, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME,
   createInstanceBuffer, createInstanceParts, writeUnitInstance, computeGroupParts, InstanceGroups, groupRadius,
 } from './instances.js';
 import { frustumPlanes } from './culling.js';
@@ -50,6 +50,7 @@ pool.bind(registry, table);
 
 // ---- layout constants -----------------------------------------------------
 ok('INSTANCE_STRIDE = 16 words = 64 B', INSTANCE_STRIDE === 16 && INSTANCE_BYTES === 64);
+ok('ENV-01a2: frame capacity = 4096 instances = 256 KB', MAX_INSTANCES_PER_FRAME === 4096 && MAX_INSTANCES_PER_FRAME * INSTANCE_BYTES === 256 * 1024);
 ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS === 13);
 {
   const ib = createInstanceBuffer(4);
@@ -139,6 +140,7 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   const cache = new VoxelMeshCache();
   const g = groups.group('lever', 8);
   ok('group starts empty', g.count === 0 && g.modelKey === 'lever' && g.ib.capacity === 8);
+  ok('instance groups cast shadows by default', g.castShadow === true);
   ok('drawIb[0]/[1] both allocated at group capacity (RE-15a point 3)', g.drawIb[0].capacity === 8 && g.drawIb[1].capacity === 8);
   const list = new DrawList(8);
   list.begin();
@@ -146,6 +148,7 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   ok('empty group adds no item', list.count === 0);
   for (let i = 0; i < 5; i++) writeUnitInstance(g.ib, i, i * 2, 10, 0, i * 30, UNIT_OBJECT_BASE | i, i % 3);
   g.count = 5;
+  g.castShadow = false; // The shadow flag must not suppress the camera draw.
   list.begin();
   groups.addToDrawList(list, cache, null, 2);
   const it = list.items[0];

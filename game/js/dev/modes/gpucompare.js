@@ -282,7 +282,7 @@ function buildCompareRuns(ctx) {
   const compareInstances = engine.instances;
   compareInstances.bindPool(compareVoxelPool);
   const unitsGroup = compareInstances.group('lever', 20);
-  const resetInstances = () => { if (forestWorld && engine.world === forestWorld) engine.setWorld(worldM1); for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; worldM1.waterfalls = fallHomeM1; };
+  const resetInstances = () => { if (engine._detail || (forestWorld && engine.world === forestWorld)) engine.setWorld(worldM1); for (const g of compareInstances.groups) g.count = 0; engine.viewModel.hide(); worldM1.cloths = clothHomeM1; testRoom.cloths = clothHomeTR; worldM1.water = waterHomeM1; worldM1.waterfalls = fallHomeM1; };
   runs.push({
     world: testRoom, lights: testRoomLights, name: 'test_room: voxel units instanced (RE-06: 20 x lever, yaws 0/90/37.5/200, teams 0/1/2, mid-pull)',
     cam: { x: 2.5, y: 2.5, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: -12 }, meshOnly: true,
@@ -506,6 +506,17 @@ function buildCompareRuns(ctx) {
       before: () => engine.setWorld(forestWorld) });
   }
 
+  // ENV-01a2: existing comparison worlds retain detail off.
+  if (ctx.renderer === 'mesh') {
+    const detailWorld = loadCompareWorld(assets.world('world_m1'), { detail: true, physics: 'mesh' });
+    detailWorld.terrain.bakeFarSync();
+    const x = 1474.5, y = 1025;
+    const detailLights = lightsEnabled ? buildLightSet(detailWorld, assets.palette) : null;
+    runs.push({ world: detailWorld, lights: detailLights, name: 'world_m1: detailWalkout (ENV-01a2, ground scatter)',
+      cam: { x, y, z: detailWorld.terrain.groundAt(x, y) + 1.6, yawDeg: 270, pitchDeg: -15 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
+      before: () => engine.setWorld(detailWorld) });
+  }
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 
@@ -665,6 +676,7 @@ function runGpuCompareDdaMode(ctx) {
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
     if (overlayOps) overlayOps(engine.overlay);
     poisonAllCells(rt.cells, n);
+    engine.feedDetail(cam, true); // ENV-01a2: one shared fed set for both twins.
     fbCompare.frameNo++; // RE-15a fixes: once per pose, before both twins run (see fbCompare init above)
     fbCompare.gpuDda = true;
     renderWorld(fbCompare, world, cam);

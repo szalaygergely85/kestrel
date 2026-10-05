@@ -598,7 +598,8 @@ if (gpuBlocked) {
 
 function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics: params.get('physics') === 'mesh' ? 'mesh' : undefined,
-    realTrees: renderer === 'mesh' && params.get('physics') === 'mesh' && params.get('trees') !== '0' };
+    realTrees: renderer === 'mesh' && params.get('physics') === 'mesh' && params.get('trees') !== '0',
+    detail: renderer === 'mesh' && params.get('physics') === 'mesh' && params.get('detail') !== '0' };
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
@@ -1173,6 +1174,7 @@ function runGame(mode, cinematic = null) {
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpuDda`) - see US-017-gpu.
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
+      engine.feedDetail(cam); // ENV-01a2: shared fed set before either render twin.
       fb.frameNo = (fb.frameNo || 0) + 1; // RE-15a: one host-owned counter for instances.js addToDrawList's memo
       renderWorld(fb, engine.world, cam);
       // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
@@ -1321,6 +1323,7 @@ function runGame(mode, cinematic = null) {
         // D-025 (US-038a, architecture.md 22.6): last live grid-switch cost (F4).
         `  grid ${rt.cols}x${rt.rows}${Number.isNaN(engine.stats.lastGridSwitchMs) ? '' : ` (switch ${engine.stats.lastGridSwitchMs.toFixed(1)}ms)`}`;
       if (gpuPipeline) {
+        if (engine._detail) extra += `\ndetail fed ${engine._detail.fed}  culled ${engine.instances.stats.instancesCulled}  lod1 ${engine.instances.stats.instancesLod1}`;
         extra += '\npass ms: ' + PASS_NAMES.map((name, i) => {
           const v = gpuPipeline.stats.passMsP50[i];
           return `${name} ${Number.isNaN(v) ? 'n/a' : v.toFixed(2)}`;

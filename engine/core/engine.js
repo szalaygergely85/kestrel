@@ -4,6 +4,7 @@
 
 import { RenderTarget } from '../render/RenderTarget.js';
 import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance } from '../mesh/instances.js';
+import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/scatterFeed.js';
 import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
@@ -35,7 +36,12 @@ export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .
 export const SCATTER_OBJECT_BASE = 0x20000;
 
 // ME-06c3 (37.2): load-time writes only; RE-15 owns per-frame cull/LOD.
-export function bindScatterInstances(world, instances, previous = []) {
+export function bindScatterInstances(world, instances, previous = [], owner = null) {
+  if (owner?._detail) {
+    removeDetailInstances(owner._detail, instances);
+    owner._detail = null;
+  }
+  for (const group of previous) instances.remove(group);
   const scatter = world?.scatter;
   const cfg = world?.terrain?.recipe?.recipe?.forest?.trees;
   const counts = cfg && scatter ? new Uint32Array(cfg.species.length) : null;
@@ -48,14 +54,12 @@ export function bindScatterInstances(world, instances, previous = []) {
       if (!instances.pool?.models.has(key)) throw new Error(`bindScatterInstances: missing voxel model ${key}`);
       needed++;
     }
-    if (instances.groups.length - previous.length + needed > MAX_INSTANCE_GROUPS) {
+    if (instances.groups.length + needed > MAX_INSTANCE_GROUPS) {
       throw new Error(`bindScatterInstances: over ${MAX_INSTANCE_GROUPS} groups`);
     }
   }
-  for (const group of previous) instances.remove(group);
   const groups = [];
-  if (!counts) return groups;
-  for (let s = 0; s < counts.length; s++) {
+  for (let s = 0; counts && s < counts.length; s++) {
     if (!counts[s]) continue;
     const group = instances.group(cfg.species[s].model, counts[s]);
     group.lodCells = cfg.lodCells;
@@ -65,6 +69,15 @@ export function bindScatterInstances(world, instances, previous = []) {
         scatter.yawDeg[i], SCATTER_OBJECT_BASE | i, 0);
     }
     groups.push(group);
+  }
+  if (owner && world?.detail) {
+    try {
+      owner._detail = bindDetailInstances(world.detail, instances, world.terrain.recipe.recipe.detail, scatter?.count || 0);
+      feedDetail(owner._detail, world.def?.spawn?.x || 0, world.def?.spawn?.y || 0, true);
+    } catch (error) {
+      for (const group of groups) instances.remove(group);
+      throw error;
+    }
   }
   return groups;
 }
@@ -172,6 +185,11 @@ export function createEngine(opts) {
   }
 
   const engine = {
+    _detail: null,
+    feedDetail(cam, force = false) {
+      if (engine._detail) return feedDetail(engine._detail, cam.x, cam.y, force || !!cam.teleport);
+      return 0;
+    },
     renderTarget,
     depthBuffer,
     openSpans,
@@ -285,7 +303,7 @@ export function createEngine(opts) {
 
   let scatterGroups = [];
   events.on('world:loaded', ({ world }) => {
-    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups);
+    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine);
     engine.particles.clear(); // US-053a: particles are transient, never saved
   });
   return engine;
