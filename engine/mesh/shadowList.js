@@ -13,6 +13,7 @@
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
 import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
+import { fillShadowBands, groupRadius } from './instances.js';
 
 /** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
 export const SHADOW_BUILD_CAPACITY = 1024;
@@ -30,7 +31,10 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {{list: any[], partNamesFor: (k: string) => string[]}|null} [voxelPool]
  * @property {import('./voxelMesh.js').VoxelMeshCache} [voxelMeshCache]
  * @property {number} [fogFarM] - structure distance cull (default 2000, as the camera feed)
- * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): full buffer, parts from the camera pass
+ * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): parts from the camera pass
+ * @property {{x:number,y:number}} [eye] - ME-15f: camera eye xy; with it instanced groups are distance-banded (LOD0 <= meshLod0M, LOD1 <= instCastM, none beyond) into engine-owned `g.shadowIb`; without it the full `g.ib` at LOD0 (old behaviour)
+ * @property {number} [meshLod0M] - ME-15f (default 25)
+ * @property {number} [instCastM] - ME-15f (default 48)
  * @property {{count:number, cloths:any[], meshes:any[], mats:(string|null)[], castShadow?:ArrayLike<number>}|null} [cloths] - CLOTH-1b1 (33.5): the cloth system; every cloth with `castShadow` (drawn or not) is pushed, the sun-plane cull decides
  * @property {import('./DrawList.js').MeshDrawCache} [meshCache] - ME-14c2: draw copies of placed glTF meshes (casters need `meshIdFor` too)
  * @property {(key: string) => number} [meshIdFor] - strict resolver for imported mesh materials
@@ -64,7 +68,17 @@ export function buildShadowList(list, cameraList, world, planes, src) {
       if (g.count <= 0 || g.castShadow === false) continue;
       const pm = ig.pool.models.get(g.modelKey);
       if (!pm) continue;
-      list.addInstances(src.voxelMeshCache.get(pm, g.modelKey, ig.pool.partNamesFor(g.modelKey)), g.parts, g.ib, g.count);
+      const names = ig.pool.partNamesFor(g.modelKey);
+      const mesh0 = src.voxelMeshCache.get(pm, g.modelKey, names);
+      const eye = src.eye;
+      if (!eye) { list.addInstances(mesh0, g.parts, g.ib, g.count); continue; }
+      // ME-15f (27.9a amendment 5): bands from the eye + shadow-plane cull; the camera's drawIb/drawCount stay untouched.
+      const mesh1 = src.voxelMeshCache.get(pm, g.modelKey, names, 1) || mesh0;
+      let R = groupRadius(mesh0, g.parts);
+      if (mesh1 !== mesh0) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
+      fillShadowBands(g, eye.x, eye.y, src.meshLod0M || 25, src.instCastM || 48, planes, R);
+      if (g.shadowCount[0] > 0) list.addInstances(mesh0, g.parts, g.shadowIb[0], g.shadowCount[0], R);
+      if (g.shadowCount[1] > 0) list.addInstances(mesh1, g.parts, g.shadowIb[1], g.shadowCount[1], R);
     }
   }
   const cs = src.cloths;

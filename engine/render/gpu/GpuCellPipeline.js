@@ -322,7 +322,7 @@ export class GpuCellPipeline {
         this._shadowKey = new Int32Array(2); this._shadowKeyPrev = new Int32Array(2); this._shadowKeyValid = false; // ME-15d dirty-skip
         this.shadowRenders = 0; this.shadowSkips = 0; // ME-15d counters (AC 2)
         this._shadowWorldZ = { min: 0, max: 0 };
-        this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined };
+        this._shadowSrc = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined };
       }
     }
 
@@ -2143,6 +2143,7 @@ export class GpuCellPipeline {
     const vp = this._voxelPool;
     if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
     src.instances = this._instances || null;
+    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; // ME-15f (27.9a amendment 5)
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b2
     src.matIdFor = this._table ? this._table.idFor : undefined;
     src.fogFarM = sunShadowFogFar(this._palette, so);

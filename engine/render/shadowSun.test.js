@@ -33,6 +33,8 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   let threw = false;
   try { resolveSunShadowOptions({ sun: 'map' }, 'dda'); } catch (e) { threw = true; }
   ok("'map' on the dda renderer throws", threw);
+  ok('ME-15f defaults meshLod0M 25 / instCastM 48; instCastM override', SUN_SHADOW_DEFAULTS.meshLod0M === 25 && SUN_SHADOW_DEFAULTS.instCastM === 48 && resolveSunShadowOptions({ instCastM: 32 }, 'mesh').instCastM === 32);
+  { let t = false; try { resolveSunShadowOptions({ meshLod0M: 60 }, 'mesh'); } catch (e) { t = true; } ok('ME-15f: meshLod0M > instCastM throws', t); }
   ok('sun:false passes through', resolveSunShadowOptions({ sun: false }, 'mesh').sun === false);
   ok('user res overrides, rest default', resolveSunShadowOptions({ res: 512 }, 'mesh').res === 512 && resolveSunShadowOptions({ res: 512 }, 'mesh').boxM === 192);
 }

@@ -244,7 +244,7 @@ const engine = createEngine({
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
   // ME-15c (27.9a): sun shadow map is opt-in (`?shadows=map`) until the owner walk-tests ME-12; default keeps the sun DDA.
-  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda', ...(params.get('shadowres') ? { res: Number(params.get('shadowres')) } : {}) }, // ME-15e: `?shadowres=1536` perf experiment
+  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda', ...(params.get('shadowres') ? { res: Number(params.get('shadowres')) } : {}), ...(params.get('shadowinst') ? { instCastM: Number(params.get('shadowinst')) } : {}) }, // ME-15e: `?shadowres=1536` perf experiment; ME-15f: `?shadowinst=32` instanced-caster range (m, default 48)
 });
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`

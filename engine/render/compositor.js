@@ -59,7 +59,7 @@ const sunShadowList = createShadowList();
 const sunShadowMat = createSunShadowMatrix();
 const sunShadowCentreV = new Float64Array(3);
 const sunShadowWorldZ = { min: 0, max: 0 };
-const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined) };
+const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined) };
 const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0 };
 /** What `lightSurfaces` reads (`fb.sunMap`): {map, M, opts}. */
 const sunMapState = { map: /** @type {any} */ (null), M: sunShadowMat.M, opts: /** @type {any} */ (null) };
@@ -85,6 +85,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const vp = fb.voxelPool;
   if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
   src.instances = fb.instances || null;
+  src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; // ME-15f
   src.fogFarM = sunShadowFogFar(fb.palette, so);
   src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;

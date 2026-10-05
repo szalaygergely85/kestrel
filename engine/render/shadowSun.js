@@ -18,6 +18,8 @@ import { forwardOf } from '../core/transform.js';
  * @property {readonly [number, number]} depthBias - polygon offset [factor, units] on the caster side
  * @property {number} biasM - receiver offset toward the sun, metres
  * @property {number} normalOffsetTexels - receiver offset along the surface normal, in texels
+ * @property {number} meshLod0M - ME-15f: instanced casters within this eye distance use LOD0 (also the ALPHA-01e mesh-group LOD option)
+ * @property {number} instCastM - ME-15f: instanced casters up to this eye distance use LOD1; none beyond
  * @property {boolean} dirtySkip - ME-15d: skip the depth pass while the input hash is unchanged
  */
 
@@ -30,6 +32,8 @@ export const SUN_SHADOW_DEFAULTS = Object.freeze({
   depthBias: Object.freeze(/** @type {[number, number]} */ ([2, 4])),
   biasM: 0.04,
   normalOffsetTexels: 1.5,
+  meshLod0M: 25, // ME-15f (27.9a amendment 5)
+  instCastM: 48,
   dirtySkip: true, // ME-15d: re-render the map only when its inputs changed (false = every frame, the perf worst case)
 });
 
@@ -45,6 +49,7 @@ export function resolveSunShadowOptions(user, renderer) {
   if (!user || user.sun === undefined) o.sun = renderer === 'mesh' ? 'map' : 'dda';
   if (o.sun === 'map' && renderer !== 'mesh') throw new Error(`shadows.sun 'map' needs renderer 'mesh' (got '${renderer}')`);
   if (!(o.res > 0) || (o.res & 1)) throw new Error(`shadows.res must be a positive even integer (got ${o.res})`);
+  if (!(o.meshLod0M > 0) || !(o.meshLod0M <= o.instCastM)) throw new Error(`shadows: need 0 < meshLod0M <= instCastM (got ${o.meshLod0M}, ${o.instCastM})`);
   return o;
 }
 

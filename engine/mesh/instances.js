@@ -176,6 +176,53 @@ function compactGroup(g, planes, R, vp, rows) {
   return w0 + w1;
 }
 
+/** ME-15f (27.9a amendment 5): hysteresis half-width (m) of the shadow distance bands. */
+export const SHADOW_BAND_HYST_M = 2;
+
+/**
+ * ME-15f: buckets the instances of `g` for the sun shadow pass by horizontal distance from the eye:
+ * band 0 (d <= lod0M) -> `g.shadowIb[0]` (LOD0 mesh), band 1 (d <= castM) -> `g.shadowIb[1]` (LOD1 mesh),
+ * band 2 -> no shadow. +-SHADOW_BAND_HYST_M hysteresis via `g.shadowBand` (per game slot, like `lodPrev`).
+ * Instances whose sphere (t +- R) is fully outside the shadow `planes` are dropped (planes null = keep).
+ * Reads `g.ib` (never written), writes only the engine-owned `g.shadowIb`/`g.shadowCount`.
+ * Compacted rows are copied through the u32 view (bit-exact). Zero allocation.
+ * @param {InstanceGroup} g
+ * @param {number} ex @param {number} ey - eye xy
+ * @param {number} lod0M @param {number} castM
+ * @param {Float64Array|null} planes
+ * @param {number} R - conservative radius over both LOD meshes
+ * @returns {number} kept instances (both bands)
+ */
+export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
+  const srcF = g.ib.f32, srcU = g.ib.u32;
+  const dst0 = g.shadowIb[0].u32, dst1 = g.shadowIb[1].u32;
+  const band = g.shadowBand;
+  const h = SHADOW_BAND_HYST_M;
+  const n = g.count;
+  let w0 = 0, w1 = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * INSTANCE_STRIDE;
+    const tx = srcF[o + 3], ty = srcF[o + 7];
+    const dx = tx - ex, dy = ty - ey;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    let b = band[i];
+    if (b === 2 && d < castM - h) b = 1;
+    if (b === 1 && d < lod0M - h) b = 0;
+    if (b === 0 && d > lod0M + h) b = 1;
+    if (b === 1 && d > castM + h) b = 2;
+    band[i] = b;
+    if (b === 2) continue;
+    const tz = srcF[o + 11];
+    if (planes && classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
+    const dst = b ? dst1 : dst0;
+    const wo = (b ? w1 : w0) * INSTANCE_STRIDE;
+    for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
+    if (b) w1++; else w0++;
+  }
+  g.shadowCount[0] = w0; g.shadowCount[1] = w1;
+  return w0 + w1;
+}
+
 /**
  * @typedef {Object} InstanceGroup
  * @property {string} modelKey
@@ -190,6 +237,9 @@ function compactGroup(g, planes, R, vp, rows) {
  * @property {Uint8Array} lodPrev - RE-15c: previous LOD per game slot (hysteresis)
  * @property {[number, number]} drawCount - survivor counts into `drawIb[0]`/`drawIb[1]`
  * @property {number|null} _memoFrameNo - RE-15a: the `frameNo` this group's `drawIb`/`drawCount` were last computed for
+ * @property {[InstanceBuffer, InstanceBuffer]} shadowIb - ME-15f: engine-owned sun-shadow buckets, 0 = LOD0 band, 1 = LOD1 band
+ * @property {[number, number]} shadowCount - ME-15f: counts in `shadowIb[0]`/`[1]` (filled by `fillShadowBands`)
+ * @property {Uint8Array} shadowBand - ME-15f: previous distance band per game slot (0 LOD0, 1 LOD1, 2 none), hysteresis state
  * @property {boolean} used
  */
 
@@ -228,6 +278,8 @@ export class InstanceGroups {
       // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
       drawIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
       drawCount: /** @type {[number, number]} */ ([0, 0]),
+      shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
+      shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
       lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
       _memoFrameNo: /** @type {number|null} */ (null),
     };

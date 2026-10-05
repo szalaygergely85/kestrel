@@ -134,6 +134,76 @@ function cameraPlanes() {
   ok('re-enabling castShadow restores the group in registry order', sl.count === 3 && sl.items[1].instBuf === grass.ib);
 }
 
+// ---- ME-15f: instanced casters banded by eye distance (27.9a amendment 5) -------
+{
+  const groups = new InstanceGroups();
+  groups.bindPool({ models: new Map([['tree', {}]]), partNamesFor: () => [] });
+  const g = groups.group('tree', 8);
+  g.parts.count = 1; g.parts.m[0] = g.parts.m[4] = g.parts.m[8] = 1; g.parts.flags[0] = 1;
+  const meshes = { 0: { bbox: new Float64Array([-0.5, -0.5, 0, 0.5, 0.5, 4]), id: 'm0' }, 1: { bbox: new Float64Array([-0.5, -0.5, 0, 0.5, 0.5, 4]), id: 'm1' } };
+  const vmc = { get(pm, key, names, lod = 0) { return meshes[lod]; } };
+  const eye = { x: 0, y: 0 };
+  const src = { centre: { x: 0, y: 0, z: 0 }, cache: new LevelMeshCache(), instances: groups, voxelMeshCache: vmc, eye, meshLod0M: 25, instCastM: 48 };
+  const world = { structures: [], structVersion: 1, terrain: null };
+  const sl = createShadowList();
+  const all = new Float64Array(24); // no plane constraint (all zeros keeps everything)
+  const setX = (xs) => { g.count = xs.length; xs.forEach((x, i) => writeUnitInstance(g.ib, i, x, 0, 0, 0, 0x40000 | i, 0)); };
+  const counts = () => { let a = 0, b = 0; for (let i = 0; i < sl.count; i++) { const it = sl.items[i]; if (it.mesh === meshes[0]) a += it.instCount; else if (it.mesh === meshes[1]) b += it.instCount; } return [a, b]; };
+  const camCopy = g.drawIb[0].u32.slice(); const camCount = [g.drawCount[0], g.drawCount[1]];
+
+  setX([5, 10, 24, 30, 47, 60, 100, 200]);
+  buildShadowList(sl, null, world, all, src);
+  ok('bands: 3 LOD0 (<=25), 2 LOD1 (<=48), 3 none', counts().join() === '3,2', counts().join());
+  // compacted rows bit-equal to source rows (order kept)
+  const u = g.shadowIb[0].u32, su = g.ib.u32;
+  let eq = true; for (let i = 0; i < 3; i++) for (let c = 0; c < 16; c++) if (u[i * 16 + c] !== su[i * 16 + c]) eq = false;
+  const u1 = g.shadowIb[1].u32; for (let i = 0; i < 2; i++) for (let c = 0; c < 16; c++) if (u1[i * 16 + c] !== su[(3 + i) * 16 + c]) eq = false;
+  ok('compacted rows are bit-equal to the source rows', eq);
+  ok('camera drawIb/drawCount untouched', g.drawCount[0] === camCount[0] && g.drawCount[1] === camCount[1] && g.drawIb[0].u32.every((v, i) => v === camCopy[i]));
+  // hysteresis: instance at 26 m after being LOD0 stays LOD0; at 27.5 -> LOD1; coming back to 24 stays LOD1, 22.5 -> LOD0
+  setX([24]); buildShadowList(sl, null, world, all, src);
+  setX([26]); buildShadowList(sl, null, world, all, src);
+  ok('hysteresis: 24 -> 26 m stays LOD0', counts().join() === '1,0', counts().join());
+  setX([27.5]); buildShadowList(sl, null, world, all, src);
+  ok('27.5 m (> 25 + 2) -> LOD1', counts().join() === '0,1', counts().join());
+  setX([24]); buildShadowList(sl, null, world, all, src);
+  ok('hysteresis: 27.5 -> 24 m stays LOD1', counts().join() === '0,1', counts().join());
+  setX([22.5]); buildShadowList(sl, null, world, all, src);
+  ok('22.5 m (< 25 - 2) -> LOD0', counts().join() === '1,0', counts().join());
+  setX([49]); buildShadowList(sl, null, world, all, src);
+  ok('hysteresis at 48: LOD0 -> 49 m jumps to LOD1 (not past cast range)', counts().join() === '0,1', counts().join());
+  setX([51]); buildShadowList(sl, null, world, all, src);
+  ok('51 m (> 48 + 2) -> none', counts().join() === '0,0' && sl.count === 0, counts().join());
+  setX([47]); buildShadowList(sl, null, world, all, src);
+  ok('hysteresis: none -> 47 m stays none', sl.count === 0);
+  setX([45]); buildShadowList(sl, null, world, all, src);
+  ok('45 m (< 48 - 2) -> LOD1 again', counts().join() === '0,1', counts().join());
+  // shadow-plane cull: a box far to +x excludes instances at x=5..10 and keeps x=-5
+  {
+    const sm = createSunShadowMatrix();
+    shadowSunMatrix(sunDir, [-5, 0, 0], { ...OPTS, boxM: 8 }, { min: 0, max: 4 }, sm);
+    setX([-5, 30, 40, -4]);
+    eye.x = -5;
+    buildShadowList(sl, null, world, sm.planes, src);
+    ok('instances outside the shadow planes are dropped', counts().join() === '2,0', counts().join());
+    eye.x = 0;
+  }
+  // no eye -> old behaviour (full g.ib at LOD0)
+  setX([5, 100]); const srcNoEye = { ...src, eye: undefined };
+  buildShadowList(sl, null, world, all, srcNoEye);
+  ok('without src.eye: full buffer at LOD0 (old path)', sl.count === 1 && sl.items[0].instBuf === g.ib && sl.items[0].instCount === 2);
+  // zero allocation over 1000 builds
+  setX([5, 10, 24, 30, 47, 60, 100, 200]);
+  for (let i = 0; i < 3000; i++) buildShadowList(sl, null, world, all, src);
+  global.gc(); const h0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1000; i++) { eye.x = (i % 7) * 3; buildShadowList(sl, null, world, all, src); }
+  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
+  ok('0 allocation over 1000 banded builds', grew < 32 * 1024, `grew ${grew}`);
+  eye.x = 0;
+  g.castShadow = false; buildShadowList(sl, null, world, all, src);
+  ok('castShadow false: still absent with bands', sl.count === 0);
+}
+
 // ---- AC 5: zero allocation over N frames ---------------------------------------
 {
   const world = { structures: [struct(0, 0, -20), struct(1, 0, 30), struct(2, 10, 10), struct(3, -15, 5)], structVersion: 1, terrain: null };
