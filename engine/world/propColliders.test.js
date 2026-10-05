@@ -1,4 +1,4 @@
-// PROP-COLLIDE-01a (architecture.md 37.10). Run: node engine/world/propColliders.test.js
+// PROP-COLLIDE-01a/01b0 (architecture.md 37.10). Run: node engine/world/propColliders.test.js
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { World } from './World.js';
@@ -11,9 +11,11 @@ let checks = 0;
 const ok = v => { assert.ok(v); checks++; };
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 const box = { type: 'box', c: [0.2, -0.3, 0.4], half: [0.5, 0.25, 0.4], yawDeg: 11 };
+const spritePrism = { type: 'prism', c: [0.2, -0.3, 0.21], r: 0.12, h: 0.42 };
 const models = {
   crate: { voxel: { animations: { idle: {} } }, colliders: [box] },
-  sprite: { animations: { idle: {} }, colliders: [box] },
+  sprite: { animations: { idle: {} }, colliders: [spritePrism] },
+  spriteBare: { animations: { idle: {} } },
 };
 function fixture(props) {
   const level = { name: 'fixture', rows: Array(12).fill('.'.repeat(12)), start: { x: 1.5, y: 1.5 },
@@ -78,12 +80,51 @@ ok(support.ceilHit && support.ceilZ === 2);
 
 const optedOut = fixture([prop({ colliders: [] })]);
 ok(!collider(optedOut.load()));
-ok(!collider(fixture([prop({ model: 'sprite' })]).load()));
+// Static sprite props use authored shapes only, in the same live-pose frame as voxels.
+const spriteWorld = fixture([prop({ model: 'sprite', facing: 37 })]).load(), spriteCollider = collider(spriteWorld);
+ok(spriteWorld.entity('room.crate').components.sprite && spriteCollider.bvh.triCount === 32);
+const spriteYaw = 37 * Math.PI / 180;
+const spriteCentreAngle = Math.atan2(spritePrism.c[1], spritePrism.c[0]) + spriteYaw;
+const spriteCentreRadius = Math.hypot(spritePrism.c[0], spritePrism.c[1]);
+const spriteX = 12 + spriteCentreRadius * Math.cos(spriteCentreAngle);
+const spriteY = 22 + spriteCentreRadius * Math.sin(spriteCentreAngle);
+const spriteRingRadius = spritePrism.r / Math.cos(Math.PI / 8), sx = [], sy = [];
+for (let i = 0; i < 8; i++) {
+  sx.push(spriteX + spriteRingRadius * Math.cos(spriteYaw + i * Math.PI / 4));
+  sy.push(spriteY + spriteRingRadius * Math.sin(spriteYaw + i * Math.PI / 4));
+}
+ok([Math.min(...sx), Math.min(...sy), 4].every((v, i) => near(v, spriteCollider.min[i]))
+  && [Math.max(...sx), Math.max(...sy), 4.42].every((v, i) => near(v, spriteCollider.max[i])));
+ok(!collider(fixture([prop({ model: 'spriteBare' })]).load()));
+ok(!collider(fixture([prop({ model: 'sprite', colliders: [] })]).load()));
+ok(collider(fixture([prop({ model: 'sprite', colliders: [box] })]).load()).bvh.triCount === 12);
+ok(collider(fixture([prop({ model: 'spriteBare', colliders: [box] })]).load()).bvh.triCount === 12);
 const warnings = [], warn = console.warn;
 console.warn = m => warnings.push(m);
 let dynamic;
 try { dynamic = fixture([prop({ dynamic: true, radius: 0.3 })]).load(); } finally { console.warn = warn; }
 ok(!collider(dynamic) && warnings.length === 1 && warnings[0].includes('room.crate') && warnings[0].includes('dynamic'));
+warnings.length = 0;
+console.warn = m => warnings.push(m);
+let dynamicSprite, rollerSprite;
+try {
+  dynamicSprite = fixture([prop({ model: 'sprite', dynamic: true, radius: 0.12 })]).load();
+  rollerSprite = fixture([prop({ model: 'sprite' })]).load();
+  rollerSprite.entity('room.crate').components.roller = {};
+  rollerSprite.rebuildPropColliders();
+} finally { console.warn = warn; }
+ok(!collider(dynamicSprite) && !collider(rollerSprite) && warnings.length === 2
+  && warnings.every(m => m.includes('room.crate') && m.includes('dynamic')));
+// A saved entity with a prop's id still must be a prop; billboards never contribute shapes.
+for (const type of ['billboard', 'unit', 'item', 'boar']) {
+  const sf = fixture([prop({ model: 'sprite' })]);
+  sf.def.entities.push({ id: 'room.crate', type, transform: { x: 12, y: 22, z: 4 },
+    components: { sprite: { model: 'sprite' } } });
+  ok(!collider(sf.load()));
+}
+spriteWorld.entity('room.crate').components.billboard = {};
+spriteWorld.rebuildPropColliders();
+ok(!collider(spriteWorld));
 ok(!collider(fixture([prop({})]).load('grid')));
 assert.throws(() => fixture([prop({ colliders: [{ type: 'box', c: [0, 0, 0], half: [0, 1, 1] }] })]).load(), /room.crate.*invalid collider/); checks++;
 
@@ -123,4 +164,4 @@ ok(replay(w) === replay(restored));
 f.level.props.forEach(p => { p.colliders = []; });
 w.rebuildPropColliders();
 ok(!collider(w) && w.colliders.length === 1);
-console.log(`PROP-COLLIDE-01a: ${checks} checks PASS; two-shape rebuild ${rebuildMs.toFixed(3)} ms`);
+console.log(`PROP-COLLIDE-01a/01b0: ${checks} checks PASS; two-shape rebuild ${rebuildMs.toFixed(3)} ms`);

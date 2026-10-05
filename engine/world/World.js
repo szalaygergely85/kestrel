@@ -854,8 +854,10 @@ export class World {
       if (s.kind === 'mesh') continue;
       for (const p of s.level.def.props || []) {
         const id = `${s.id}.${p.id}`, e = this.entity(id);
-        if (!e || !e.components.voxel || e.components.sprite) continue;
-        const model = this.assets.model(e.components.voxel.model);
+        if (!e || e.type !== 'prop' || e.components.billboard) continue;
+        const component = e.components.voxel || e.components.sprite;
+        if (!component) continue;
+        const model = this.assets.model(component.model);
         const defs = Object.hasOwn(p, 'colliders') ? p.colliders : model.colliders;
         if (defs === undefined) continue;
         if (!Array.isArray(defs)) throw new Error(`World.load: prop "${id}" colliders must be an array`);
