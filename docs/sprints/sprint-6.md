@@ -24,7 +24,7 @@ Count: 7 stories, each <= ~1 programmer-day. All PC-B; PC-A only preps (notes, a
 **Prerequisites already queued (not duplicated here, PC-B QUEUE 16):** MESH-PHYS-DEFAULT (item 3a: the plain URL must use mesh physics so boars and the player collide with trunks/rocks), PROP-COLLIDE-01a/b (3b), BUG-VM-001 left-hand publish (6), TORCH-01a multi-handle view model (7), US-078d knockback (8), UI-XHAIR-01 bigger crosshair (10c, aiming the fireball). BUG-BOAR-OVERLAP (10b) is folded into US-079c (its row stays the bug record; close it with US-079c).
 
 ## Order
-- **PC-A first (before PC-B reaches each story):** (1) architect note 37.13 boar death -> unblocks US-079b; (2) designer pass A: boar hurt/die + dust, `ui.alert`, `design/items.js` with icons + loot sprites + toast style -> unblocks US-079b/c, US-091a; (3) architect 37.8 amendment "hands" + 37.14 fireball (one opus session, both notes) -> unblocks HANDS-01, SPELL-01a; (4) designer pass B: `spellHand` view model, fireball sprite/presets/lights + preview, `uiStyle.inventory` -> unblocks HANDS-01 (spell hand look), SPELL-01b, US-091b. Then PC-A reviews as items land (arch-review HANDS-01; PO reviews; owner looks).
+- **PC-A first (before PC-B reaches each story):** (1) architect note 37.16 boar death -> unblocks US-079b; (2) designer pass A: boar hurt/die + dust, `ui.alert`, `design/items.js` with icons + loot sprites + toast style -> unblocks US-079b/c, US-091a; (3) architect 37.8 amendment "hands" + 37.14 fireball (one opus session, both notes) -> unblocks HANDS-01, SPELL-01a; (4) designer pass B: `spellHand` view model, fireball sprite/presets/lights + preview, `uiStyle.inventory` -> unblocks HANDS-01 (spell hand look), SPELL-01b, US-091b. Then PC-A reviews as items land (arch-review HANDS-01; PO reviews; owner looks).
 - **PC-B:** finish the prerequisites in QUEUE 16 order (3a MESH-PHYS-DEFAULT, 6 BUG-VM-001 publish, 7 TORCH-01a, 8 US-078d knockback; 3b PROP-COLLIDE-01 can run beside) -> **lane A:** US-079b -> US-079c -> US-091a -> US-091b; **lane B (second programmer, no shared files with lane A except main.js, which the PC-B main session wires):** HANDS-01 -> SPELL-01a -> SPELL-01b. US-091b waits HANDS-01 (hand state). SPELL-01a waits US-079b (boar health).
 - TORCH-01b (torch pick-up) becomes "torch as an item in either hand" after HANDS-01; it is not in this sprint (only its item def exists in `design/items.js`).
 
@@ -40,10 +40,11 @@ Count: 7 stories, each <= ~1 programmer-day. All PC-B; PC-A only preps (notes, a
 - `sword.js` / `swordConfig.js`: HANDS-01 only (US-078d knockback must be merged first).
 - `design/items.js`: designer creates it; programmers read it (US-091a adds no gameplay numbers there that the designer owns; gameplay numbers live in `game/js/quest/*Config.js`).
 
-## Open questions for the owner (max 3)
-1. **Looting:** walk over the drops to collect them (proposed, Zelda-like), or press E at the dead boar to loot it?
-2. **Where the fireball comes from:** known from a new game, in the right hand (proposed), or found as an item (e.g. next to the sword)?
-3. **Own fireball:** knockback but no damage to yourself (proposed), or should you get hurt if you blast a boar right in front of you?
+## Owner answers (2026-10-05)
+1. **Looting: press E at the dead boar** (not walk-over). The body stays until looted (or a timeout), `[E] Loot boar` prompt, loot goes straight into the inventory with the toast; US-079b death keeps the body (no instant dust) and US-091a uses an interactable on the corpse instead of ground drops (HP/MP orbs may still drop on the ground).
+2. **Fireball: found later in the full game, but for the demo known from the start** (right hand at new game behind a demo flag/start state; a later story places a fireball pickup).
+3. **Own fireball: no damage to yourself** (knockback only).
+4. **Note numbering:** 37.13 is ME-19 and 37.15 low-poly trees, so the boar-death note is **37.16** and the fireball note **37.14**.
 
 ## Review
 (PO fills in at sprint end: done / not done / bugs, "missing to be playable", owner walk-test request with the demo script above.)

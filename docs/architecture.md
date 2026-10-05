@@ -5506,3 +5506,362 @@ Risks (what could silently break):
 9. **gpucompare re-baseline in 19d** can hide a regression: re-baseline only the rows whose camera changed (former auto-shear rows), never `pitchedDefault` rows; record old/new counts in the step row.
 
 Do not: delete across step boundaries (one step id per commit, each leaving boot + suites green); keep `?renderer=dda` "booting" after 19a (D-037's fallback promise ends with 19a - the flag is ignored, not an error); touch `engine/physics/**` (`?physics=grid` is physics, not render - separate story if ever); start the `GpuDevice` migration of the 1279 `gl.*` calls inside ME-19 (item 24).
+
+### 37.8a TORCH-01 amendment "hands" (HANDS-01; architect, 2026-10-05; D-040)
+
+**Supersedes in 37.8 / BUG-VM-001:** "the torch is always right, the sword always left" and the `SWORD_CFG.sweepRtoL` flag. TORCH-01a (multi-handle layer: `show/hide(h)/capture(h)/setBob(.., h)`, `VM_MAX_HANDLES 4`, `objectId = VM_OBJECT_ID - h`) stays the base and must be merged first. Three hand items exist (sword, spell hand, torch later) = 3 handles. **One handle per item, not per hand** (one item can never be in both hands), and the hand is a per-handle runtime flag.
+
+**Mirror (engine, `engine/render/viewModel.js`).**
+- Each def has an **authored hand**: `def.hand: 'left'|'right'`. If it is missing: `rest.pos[0] < 0 ? 'left' : 'right'`. So the BUG-VM-001 left-hand sword data needs no edit, and the designer's `spellHand` is authored left.
+- `setHand(h, hand)` sets `mirror[h] = hand !== authored[h] ? 1 : 0`. `handOf(h)` returns the hand. Default = the authored hand. It is a flag write with no allocation. The view calls it when it binds the hand (on change; calling it every frame is harmless).
+- **All per-handle state stays in authored space** (`_last`, `_cap`, blend, bob). The mirror is one final step, S = diag(-1,1,1) on the whole eye-space object:
+  - `buildList`: after the per-part `E`, `e` (pose + bob already applied), if `mirror[h]`: `E[0] = -E[0]; E[1] = -E[1]; E[2] = -E[2]; e[0] = -e[0]`. Then do the Aw/world composition as today. Set `item.mirror = 1`.
+  - `mountEye(h, ...)`: if `mirror[h]`, then `out3[0] = -out3[0]`. The trail and the spell origin check follow automatically.
+  - This gives exact mirroring of the pose, swing arc, bob roll and the asymmetric geometry (hand, thumb). The BUG-VM-001 design helper `mx()` stays as authored data. Do not mirror twice.
+- **Winding:** mirrored part matrices have det < 0, so the front faces turn CW on screen (28.10 item 4 predicted this). `DrawList` `resetDrawItem` gets `item.mirror = 0`. Both twins:
+  - GPU: in the view-model voxel loop, call `gl.frontFace(item.mirror ? gl.CW : gl.CCW)` per item, and restore `gl.CCW` after the loop.
+  - JS (`rasterJS.js` l.332): `if (info.cullBack && (info.mirror ? A2 > 0 : A2 < 0)) return;`, with `_info.mirror = item.mirror` set where `cullBack` is set.
+  - Nothing else in the mesh path depends on the winding sign. Normals are `mat3(uModel) * n`, and a reflection keeps them outward. `flipN` is cloth-only.
+  - The view model is not in the shadow pass. If it is ever added there, the flip goes there too.
+- **Typedef additions** (`ViewModelLayer`): `@property {(h:number, hand:'left'|'right')=>void} setHand`, `@property {(h:number)=>('left'|'right')} handOf`, and the `DrawItem.mirror` (0|1) doc line.
+
+**Input (engine, `engine/core/input.js`).**
+- `mousedown`/`mouseup`: button 0 = `'Mouse0'` (unchanged), button 2 = `'Mouse2'`. Ignore the other buttons. Same consumed/blur rules.
+- New `blockContextMenu(el) -> off()`: a `contextmenu` listener on `el` (the game canvas, never `window`) that calls `preventDefault()`. main.js calls it once with the canvas. Under pointer lock the canvas is the event target.
+- No new `GAME_KEYS` entries are needed (`KeyH`/`KeyI` have no browser default).
+
+**Hands (game, new `game/js/quest/sim/hands.js`; rule 15 scope, so it lives under `sim/` instead of the row's `quest/hands.js`).**
+- Source of truth: `player.components.inventory.left/right` (item id or null, serialized; shape in 37.16.4). HANDS-01 creates `sim/inventory.js` with `ensureInventory`, `assignHand`, `swapHands` and the full data shape. US-091a1 adds the pack functions to that file later; the two must be sequential, not parallel.
+- `createHands(events)` returns:
+  - `register(itemId, itemSim)`. `itemSim` needs `cancel()` and `setHand(hand)`.
+  - `step(player, rawL, rawR, gateOpen)`. `rawX` = `input.isDown(btn) || input.pressed(btn)` for 'Mouse0' / 'Mouse2'.
+  - `downOf(itemId) -> boolean`.
+  - `handOf(itemId) -> 'left'|'right'|null`.
+  - `disarm()`, `swap()` (dev), `hashInto(h)`.
+- `step` order:
+  1. Read left/right and compare them with the cached ids (string `===`, no allocation). On a change: `cancel()` the items involved, `setHand()` on the moved items, emit one preallocated `hands:changed {left, right}`.
+  2. Gate. If `!gateOpen`: `disarm()`.
+  3. Per hand, `down = gateOpen && armed && raw`. `armed` comes back only when the physical button has been seen up while the gate is open.
+- `disarm()` = `cancel()` on both items, then `armed = false` for both. **Cancel comes first:** an item sim then sees a release edge while idle, which does nothing. Without the cancel, a held charge would fire on the release.
+- Callers of `disarm()`: `hands.step` whenever the gate is closed, and every opener of a pause/inventory/map/settings screen (the sim does not step while paused, so the opener must disarm at once).
+- Gate (main.js): `look.locked && !uiLocked && !ending && !paused && !inventoryOpen && !cinematic && !(vitals && vitals.inputLocked)`.
+- **Tap/hold belongs to the item, not the router.** `hands` passes the raw `down` per step, and each item sim derives its own edges, as `sword.js` already does with `prevDown/holdSteps`. Sword threshold 24 steps (D-034); fireball 36 (SPELL-01a). Every item sim is stepped **every** step (`down = false` when it is in no hand), so ring ages and timers keep running.
+- Both hands may act at once (independent sims). Their `speedScale` factors multiply.
+
+**Sword (`swordConfig.js` + `sim/sword.js`).**
+- `swordConfig.js` exports `ARC_BOUNDS_R` = today's `ARC_BOUNDS` (left -> right) and `ARC_BOUNDS_L`. `ARC_BOUNDS_L` keeps the same index order with every `lx` negated (an exact mirror; `arcHits` does not depend on orientation). Keep `ARC_BOUNDS` as an alias of `_R` for old imports.
+- `sword.setHand(hand)`. `enterLight`/`enterHard` latch `swingHand`, and `doHitCheck` reads the latched table. A hand swap mid-swing therefore only affects the next swing.
+- Remove `sweepRtoL` and the `hitEnd - stateStep` index. The left hand then sweeps right -> left through the mirrored table, which is the same thing BUG-VM-001 does.
+- `swordView.js`: `vm.setHand(swordH, hands.handOf('sword'))`, and `vm.hide(swordH)` when the hand is null.
+
+**Demo start state:** `game/js/quest/startConfig.js` `START_DEMO = {pack: [{id: 'spell.fireball', n: 1}], left: null, right: 'spell.fireball'}` and `START_FULL = {pack: [], left: null, right: null}`.
+- main.js picks `params.get('demo') === '0' ? START_FULL : START_DEMO`. Demo is the default this sprint (owner answer 2).
+- `ensureInventory(player, start)` runs in the `world:loaded` handler **before** `initialState = serialize(...)`, so `R` restarts keep the start pack. It only creates the component when it is missing.
+- Migration: if `world.state['tower.sword.taken']` is set and the pack has no sword, add it and set `left = 'sword'` when left is empty.
+
+**Dev:** with `?debug=1`, `KeyH` calls `hands.swap()` (= `swapHands(inv)`). List it in the F3 help.
+
+**Spell hand (HANDS-01 shows idle only):** `presentSpellHand(vm, spellH, hand, simTime, moving)` shows `idle` (loop) with its own `setBob(.., spellH)`. The cast/charge clips come with SPELL-01b. Load it with `vm.load('spellHand', ASSETS.viewModels.spellHand, gameVoxelPool)` next to the sword.
+
+**gpucompare pose `handsSwapped`:** tower interior, mesh pitched, yaw 35 / pitch 0 (the BUG-VM-001 pose framing; avoids the pitch-20 AO tie). Sword `setHand('right')` (mirrored, det < 0: this tests the front-face flip on both twins) + spellHand `setHand('left')`. `vmAssert`: `stats.items === 2` on both twins. Existing view-model rows must not change (no handle mirrored there). A precision-only fail is a D-039 known-FAIL baseline.
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **HANDS-01a** view-model mirror + winding flip | PC-B cross-track -> arch-review (first review, core render) | ~0.5 d | `engine/render/viewModel.js`, `engine/mesh/DrawList.js` (`mirror` reset), `engine/mesh/rasterJS.js` (cull sign), `engine/render/gpu/GpuCellPipeline.js` (frontFace in the vm loop), `viewModel.test.js` | Authored hand from `def.hand` and from the rest sign. `setHand` toggles `mirror`. Mirrored list: det < 0 for every part; the mirrored point = S * the unmirrored point within 1e-12 at 3 clip times incl. bob. `mountEye` x negated. Mirror twice = identity. JS twin: a mirrored sword with cull on is bit-identical to cull off (closed model, no back face wins) and > 0 cells. Two handles, one mirrored: 2 items, distinct objectIds. 0 alloc over 1000 frames. Existing view-model tests unchanged. | Full runner + check-deps green |
+| **HANDS-01b** input + hands router + sword hand + start state | PC-B cross-track -> arch-review (opus; `input.js` is engine) | ~0.75 d | `engine/core/input.js` (+ new `input.test.js` with a fake EventTarget), `game/js/quest/sim/hands.js` (+test), `sim/inventory.js` (shape + hand rules), `startConfig.js`, `swordConfig.js`, `sim/sword.js` (+test), `swordView.js`, main.js (PC-B main session) | Mouse2 down/up/pressed; contextmenu prevented only on the given element. Router: L/R mapping, the empty hand does nothing, a gate close cancels a held charge with no cast/swing, re-arm only after button-up, a change cancels + `setHand`, one item never in both hands, swap. Sword: with the right hand, a left-forward target is hit on an earlier step than a right-forward one, and the left hand is the reverse. The mid-swing swap keeps the latched table. 600-step replay hash with L/R input stable twice. 0 alloc over 10k steps. | Suites green; the PC-B main session checks LMB/RMB in a browser |
+| **HANDS-01c** spell-hand idle + gpucompare pose | PC-B | ~0.25 d | `game/js/quest/spellHandView.js`, main.js, `game/js/dev/gpucompare.js` (pose) | Node: the spell hand is hidden when not in a hand and shown in the bound hand. | `?gpucompare=1&renderer=mesh`: `handsSwapped` vmOk on both twins (or a D-039 baseline); no old row regresses. Owner walk-test per the row |
+
+**Do not:**
+- load a def twice per hand;
+- mirror in game code (`show` stays authored);
+- negate a determinant by scaling a part;
+- add `CULL_FACE` off for the view model (it would hide the bug, and back faces would win);
+- put the context-menu block on `window`;
+- route input through the item sims' own `input` reads;
+- let a gate close produce a release edge on a held item.
+
+### 37.14 Fireball SPELL-01a/b (architect, 2026-10-05; D-040, owner answers 2026-10-05: known at start in the demo, no self-damage)
+
+**Decision: game-side sim** (`game/js/quest/sim/fireball.js`, rule 15). There is one projectile, and its rules are game rules (the 29.1/30.2 precedent). The engine already has every query it needs: `World.raySegment`, `explosionHits`, `applyImpulse`, `LightSet.add/move/setOn/setParams`, `particles.burstAt`, `SpritePool.push`. **No engine change in SPELL-01a/b.** A generic engine projectile module waits for a second projectile kind.
+
+**Numbers (`game/js/quest/spellConfig.js`, outside `sim/`, one frozen `FIREBALL_CFG`, seconds in comments):**
+- `holdSteps 36` (0.6 s), `cooldown 30` (0.5 s), `maxRange 24`, `maxAlive 4`, `hitPad 0.2`.
+- `tap {mana 5, speed 16, radius 2.0, damage 3, knock 6}`; `charged {mana 10, speed 12, radius 3.0, damage 5, knock 6}`.
+- `self {knockH 6, knockV 3}` (owner tunes).
+- `castOffset {right 0.25, fwd 0.45, down 0.30}` in metres, eye frame. A data test checks that it matches the designer's `spellHand` `ember` mount at rest within 0.05 m (mirrored x for the other hand).
+
+**Shared targetables:** extract `game/js/quest/sim/targetables.js` `createTargetables(world, events)`:
+- returns SoA `{count, x, y, z, r, h, ent[]}` plus `refresh()` (positions, called once per step by the user) and `dispose()`;
+- rebuilt on load and on `entity:added/removed`, the 30.1 convention;
+- **alive filter in `refresh`:** an entity with `components.health.hp <= 0` gets `r = -1` and every query skips `r < 0`.
+
+The fireball uses it. Migrating the sword/targeting lists onto it is optional (not in this sprint).
+
+**Sim API:** `createFireballSim(world, events, cfg, targetables, hooks {spendMana})` returns:
+- `setHand(hand)`, `cancel()`;
+- `step(player, down, fx, fy, ax, ay, az)`. `(fx, fy)` = the horizontal unit forward (main.js `swordFwd`), and `(ax, ay, az)` = the unit 3D aim from `look` yaw/pitch, computed in main.js (trig outside `sim/`);
+- read-outs for the view `state` (idle/hold/charge), `holdSteps`, `castTick`, `charged`, and the slot SoA;
+- `hashInto(h)`.
+
+The sim is transient: not saved, a reload has no fireballs in flight.
+
+**Per-step order (fixed 60 Hz; main.js update order: `beasts.step` -> `hands.step` -> `sword.step` -> `fireball.step` -> `vitals.step` -> `stepPickups`):**
+1. **Input edges** from its own `prevDown`, as the sword does:
+   - a press while `cooldown > 0` is ignored (it must be pressed again);
+   - press -> `hold`, `holdSteps` counts; at 36 -> `charge`;
+   - release in `hold` = tap cast; release in `charge` = charged cast;
+   - `cancel()` -> idle, no cast, no mana.
+2. **Cast:**
+   - if `alive == maxAlive`, refuse (no mana, no flash);
+   - mana is spent on release, once: charged needs `spendMana(10)`; if that fails, fall back to `spendMana(5)` = a tap (the sword precedent); if that fails, nothing (the 30.2 `manaFlashTick` is the feedback). `cooldown = 30`;
+   - **origin** = `eye + right*(+-castOffset.right) + aimH*castOffset.fwd - z*castOffset.down`, with `right = (-fy, fx)` and the sign from the hand (left = negative);
+   - **aim point:** `world.raySegment(eye, eye + aim*maxRange)` gives `P` (the hit, or the end). Then `dir = unit(P - origin)` (fallback `aim` if `|P - origin| < 0.5`), so the ball lands under the crosshair despite the hand offset;
+   - **point-blank sweep** from `eye` to `origin` (world + targets, as in step 3): on a hit, burst there at once. This stops a cast from spawning through a wall or inside a boar;
+   - emit `fireball:cast {hand, charged, x, y, z}`.
+3. **Flight**, per alive slot in slot order:
+   - `next = pos + dir*speed*SIM_STEP`, clamped to the remaining range;
+   - world: `world.raySegment(pos -> next)` gives `tw`;
+   - targets: `targetables.refresh()` once per step, then a segment vs vertical cylinder per candidate (radius `r + hitPad`, slab `[z - hitPad, z + h + hitPad]`). Take the parameter interval inside the infinite cylinder (2D quadratic; `t = 0` if the start is inside), intersect it with the interval inside the slab and with `[0, 1]`. Non-empty = hit at its start `tt`;
+   - nearest of `tw`/`tt` (tie -> target): burst at the target point, or for a world hit at `hit - dir*0.1` (so the blast centre is not inside the wall, which would block LOS at t of about 0). No hit and range used up -> burst in the air;
+   - 16 m/s = 0.27 m/step: `raySegment` stays inside its 20-sample/0.1 m march (32.4 / 30.1), so nothing tunnels.
+4. **Burst** (one function):
+   - candidates = the alive targetables + **the player last** (`r = PHYSICS.radius`, `h = body height`) in a preallocated 17-row SoA;
+   - `explosionHits(world, c, radius, cand, outIdx, outF, outDir, ray)`;
+   - per hit: if it is a target, `damage = round(cfg.damage * f)`, with a floor of 1 for the directly hit index. Skip it if 0. Emit one preallocated `combat:hit {source: 'player', target: id, damage, heavy: 1, cause: 'fire', knock: cfg.knock * f, dirX, dirY, px, py, pz}`. `dirX`/`dirY` = horizontal unit of `outDir` (fallback `dir`). If the target has `components.body` (not a beast): `applyImpulse(body, z, dirX*knock, dirY*knock, 0)`;
+   - **the player gets no damage event at all** (owner answer 3), only `applyImpulse(body, pz, hx*self.knockH*f, hy*self.knockH*f, self.knockV*f)`, where `hx`/`hy` = horizontal unit of `outDir` (0 if shorter than 1e-6);
+   - emit `fireball:burst {x, y, z, radius, charged}` and free the slot.
+   - Beasts react through their own `combat:hit` listener (37.16.2: stagger with `p.knock`, damage cooldown).
+
+**Determinism:** no RNG. Slots are SoA (`alive, x, y, z, dx, dy, dz, speed, radius, damage, knock, travelled, charged, hand`). They are hashed with `state, holdSteps, prevDown, cooldown, castTick`. 600-step replay with tap + hold casts and a kill in it: hash equal twice.
+
+**Budget (Node, warn-only unless `PERF_STRICT=1`):** `step` with 4 in flight and 16 targets <= 0.03 ms. A burst <= 0.35 ms (one-off; the 32.4 number). Zero allocation over 10k steps.
+
+**View (SPELL-01b, `game/js/quest/fireballView.js`, game only).**
+- `createFireballView({particles, lightPresets, palette})` resolves particle def ids (`fireTrail`, `fireballBurst`) and light presets (`fireballLight`, `fireballFlash`) once.
+- `bindLights(lightSet)` runs on every `world:loaded`, **right after `buildLightSet`**:
+  - add 4 flight + 2 flash lights `on: false` at their preset radius;
+  - if `MAX_LIGHTS (16) - lightSet.count < 6`, warn once and bind fewer (flash first, then flight; the cap rule below still holds);
+  - **never `remove`** (it swaps handles);
+  - **never change `radius` per frame** (it invalidates the LVIS box). The flash fades by `setParams({intensity})` only.
+- `stepFx(sim, tick)`, **sim side**, called right after `fireball.step` (the particle sim is hashed, so this never runs from the render pose):
+  - trail: `burstAt(fireTrail, x, y, z, 1, -dir*1)` every 2nd step per alive ball (30/s);
+  - on `fireball:burst` (the listener records it): `burstAt(fireballBurst, ...)` with the designer's numbers (embers ~20, smoke ~8), and a flash in a 2-slot ring (the oldest is overwritten) with its tick.
+- `present(sim, lightSet, cam, tick)` per render frame, **before `lightSet.update`**:
+  - flight light i = slot i: `setOn(alive)` and `move(x, y, z)`;
+  - flash intensity = base * (1 - age/9 steps) (0.15 s), then `setOn(false)`.
+  - Light cap = 4 + 2 by construction.
+- **Sprites:** `fireballCore` (4 frames, ~12 fps; the charged ball uses the bigger designer variant) pushed through the 37.8 `extra(pool)` callback between `pool.collect` and `pool.project`. If TORCH-01b has not added the callback yet, SPELL-01b adds it (`game/js/dev/spriteDev.js`).
+  - A sprite closer than 0.6 m is culled (BUG-FIRE-001). The ball spawns ~0.5 m out, so the first 1-2 frames are covered by the hand glow. Accepted; do not lower the cull.
+- **Camera kick:** `fireballKickDeg(view, tick, px, py, pz)` = 1.5 deg decaying over 9 steps when the last burst was <= 6 m from the player. Added at the same call site as `kickDeg` (render eye only, never `look`).
+- **Spell-hand clips** (`spellHandView.js`): `idle` loop; `charge` with tMs = `min(holdSteps, 36) * 1000/60` (glow grows; the designer clip/sprite frame); `cast` with tMs = steps since `castTick`, <= 167 ms.
+
+**View budget:**
+- JS view <= 0.1 ms/frame;
+- `LightSet.update` with 6 idle lights <= +0.05 ms (off lights skip LVIS);
+- with 4 moving lights, the LVIS recompute (one per cell crossing) <= 0.2 ms p95, JS bench warn-only. ME-19e will remove LVIS;
+- GPU +0.5 ms at 400x150 with 4 in flight (AC).
+
+**gpucompare `fireballInFlight`:** tower interior, mesh pitched, one scripted ball 3 m ahead (fixed slot data, light on) + one flash light at 50 %. Compare the light/sprite rows; a D-039 known-FAIL baseline if precision-only.
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **SPELL-01a1** cast + flight + sweep | PC-B | ~0.5 d | `spellConfig.js`, `sim/fireball.js`, `sim/targetables.js`, `sim/fireball.test.js`, main.js (PC-B main session) | Tap/hold edges (35 vs 36 steps). Mana 5/10, charged with 7 MP -> tap, 4 MP -> refused + flash, cooldown 30, cap 4 (5th refused, MP unchanged). Wall fixture at 16 m/s: no tunnelling at 20 seeded angles, burst point in front of the wall. Cylinder hit incl. top/bottom slab edges and the start inside. Dead target ignored. Range 24 -> air burst. Point-blank wall -> immediate burst. Aim point vs hand offset: lands within 0.05 m of the crosshair ray hit at 10 m. Replay hash; 0 alloc. | Suites + check-deps green |
+| **SPELL-01a2** burst wiring | PC-B | ~0.25 d | `sim/fireball.js`, `sim/fireball.test.js` | Falloff 3 / round(1.5) / 0 at 0, r/2, r. Direct hit floor 1. LOS-blocked target untouched. Payload `cause 'fire'`, `knock 6f`. Player: no `combat:hit` to `'player'`, HP unchanged, impulse applied (vz > 0). Beast gets stagger + damage via 37.16 (real `beastSim`). Replay with a fire kill. | Suites green; PO (sonnet) |
+| **SPELL-01b** view | PC-B | ~0.75 d | `fireballView.js`, `spellHandView.js`, `spriteDev.js` (`extra` if missing), main.js, `game/js/dev/gpucompare.js` | Node fake pool/lightSet: 6 slots bound after `buildLightSet`, never removed, radius constant, the flash fade reaches 0 at 9 steps, the trail cadence is sim-side, sprite pushes land between collect and project, the kick is only within 6 m. | Main session `?gpucompare=1` `fireballInFlight` pass or baseline; bench delta in the row; owner look |
+
+**Do not:**
+- put projectile or damage code in `engine/`;
+- move the ball in render;
+- spawn world entities for balls or lights (entity events rebuild lists);
+- `lightSet.remove`;
+- emit particles from `present`;
+- give the player a `combat:hit` from the own ball;
+- use trig or `Math.random` in `sim/`.
+
+### 37.16 Boar death, corpse and looting (US-079b + US-091a; architect, 2026-10-05; owner answers 2026-10-05 items 1 + 3)
+
+#### 37.16.1 Decisions
+- **Hide, never remove.** The boar entity, its steer slot, and its place in the sword/targeting/fireball lists stay for the whole world load. Death is sim state plus `components.health.hp <= 0`.
+  - Why: the lists are snapshotted at creation and rebuilt only on `entity:added/removed`. `resetAll` must bring the boar back in the same slot. Removing and re-spawning would churn three lists and all the ids.
+  - **Everything that targets reads the one convention "a `targetable` with `health.hp <= 0` is not a target":**
+    - targeting.js already does (`isAlive`; the lock breaks in `maintainLock`);
+    - sword.js: one line in the `doHitCheck` loop, before `hitMask`: `if (h && h.hp <= 0) continue;`;
+    - fireball: the `targetables.refresh` `r = -1` rule (37.14).
+- **Hurt flash without an engine material override.** A per-instance tint would mean new instance words in both twins plus gpucompare work, for one enemy, so it is rejected for now. Use the proven lamp-glint trick (`hit_flash` material shell hidden under the floor except during the clip, practice target, m3_props.js). The designer adds the clips to the boar model (pass A):
+  - `hurt` (shell 0-100 ms, then the idle pose; 167 ms);
+  - `die` (shell 0-100 ms + roll onto the side over 400 ms, clamped at the end);
+  - `dead` (lying, 1 frame).
+  - The shell must ride the rolling part.
+- **The view drives the clip** (`beastView.js`): `voxel.playing = false`, `voxel.anim`/`voxel.t` from sim counters, `voxel.hidden` from the state. This amends 29.1's "beastView writes only `yawDeg`": it may also write `components.voxel.{anim, t, playing, hidden}` (presentation only, never read by the sim).
+- **Engine seams (small, one step US-079b0):**
+  1. `VoxelPool` skips an entity whose `components.voxel.hidden === true`, in both collect branches (the <= 16 path and the nearest-16 selection) and in any other `components.voxel` collector (grep). Hidden instances do not take one of the 16 slots.
+  2. `World.addInteractable(spec) -> rec` / `World.removeInteractable(key)` (the 7.4 record shape; `spec {key, name, x, y, z, radius, prompt, requires?, propId?, def?}`; `once: false`, `usedKey: null`, `structId: null`; throws on a duplicate key or a missing name). `rec.x/y/z` may be rewritten by the owner at any time (the find loop reads them live). The list is rebuilt by `World.load`/deserialize, so the game re-adds on every `world:loaded`.
+     - Editor/engine value: runtime interactables for NPCs, chests and corpses. A game-side push into `world.interactables` is not allowed.
+
+#### 37.16.2 Beast sim (US-079b, `beastSim.js`, `beastConfig.js`)
+
+**Config (seconds -> `toSteps` once):** `hp 4, dmgCooldownSec 0.2 (12), flashSec 0.1 (6), flinchSec 0.25 (15), dieSec 0.4 (24), corpseSec 60 (3600), sinkSec 0.5 (30), sinkM 0.3`.
+
+**Health:** at create, every boar gets a **fresh** `components.health = {hp: cfg.hp, max: cfg.hp, invuln: 0}`, overwriting a serialized one. Boars always come back alive on load/restart (AC). US-128's bar reads it.
+
+**New states:**
+
+| state | enter | steps | per step | exit |
+|---|---|---|---|---|
+| `STATE_FLINCH 8` | damaging non-heavy hit in wander/notice/chase/recover/return/flinch | 15 | stop (waypoint = self, maxSpeed 0) | -> chase |
+| `STATE_DYING 9` | hp <= 0 | 24 | nothing (no perception/path/steer); `die` clip | -> CORPSE |
+| `STATE_CORPSE 10` | after DYING | 3600 | lies at the death point; `dead` clip | `despawnCorpse` or timeout -> SINK |
+| `STATE_SINK 11` | from CORPSE | 30 | `z = deathZ - sinkM * k/30` | -> GONE |
+| `STATE_GONE 12` | | - | hidden (view), skipped everywhere | `resetAll` |
+
+**New SoA (16 each):**
+- `dmgCd Int32`;
+- `hurtT Int32` (steps since the last damage, saturating at 9999; the view shows `hurt` while < 10);
+- `deathZ Float64`;
+- `pendingDied Uint8`, `despawnReq Uint8`;
+- `cause Uint8` (0 sword, 1 fire);
+- `knockV Float64` (the stagger clamp speed per slot, replacing the shared `cfg.staggerKnock` in `setSteerTarget`).
+
+**Hit listener** (the existing `combat:hit` one, now for every hit on a boar id; still synchronous, deterministic):
+1. Slot not found, or `state >= DYING` -> ignore.
+2. `dmgCd > 0` -> ignore damage, flash and flinch. Heavy knockback still applies (it is physical): `enterStagger` as below.
+3. `p.damage > 0`: `hp -= damage`, `dmgCd = 12`, `hurtT = 0`, `cause = p.cause === 'fire' ? 1 : 0`, **aggro** (`seen = 1, unseen = 0`, so being hit from behind leads to chase, not return).
+4. `hp <= 0` -> `enterDying`:
+   - state DYING, timer 24;
+   - `deathZ = transform.z`;
+   - `steer.vx = steer.vy = 0`, then `steer.removeAgent(i)` (no separation, not stepped). The x/y freeze in `transform`;
+   - `pendingDied = 1`;
+   - **no emit inside the listener.** The sword is still iterating its own target list, and a loot spawn would fire `entity:added` -> list rebuild mid-loop. `beast:died` goes out at the start of the next `beasts.step` (16 ms later).
+5. Else, by kind:
+   - heavy (`p.heavy`, sword hard or fire) with `knock = p.knock > 0 ? p.knock : cfg.staggerKnock` and `knock >= 1` -> `enterStagger(i, dirX, dirY, min(knock, 12))` (store `knockV`). Fire with tiny falloff (`knock < 1`) -> flinch;
+   - light in WINDUP -> `enterRecover` (AC: cancels the charge);
+   - light in CHARGE or STAGGER -> flash only (D-034: only a hard hit stops a charge);
+   - otherwise -> FLINCH 15.
+
+**`step` additions:**
+- First, for slots with `pendingDied`: emit one preallocated `beast:died {id, x, y, z, cause: 'sword'|'fire'}` (a string from a 2-entry const table) and clear the flag. Exactly once per death.
+- `dmgCd--` / `hurtT++` for all slots.
+- Perception/transition/path/steer-target/post skip `state >= DYING`. A small `stepDead(i)` runs the timers:
+  - CORPSE: `despawnReq || timer == 0` -> SINK, emit `beast:sink {id, x, y, z}` (the dust burst via `particleHooks`, designer numbers, n ~14);
+  - SINK: writes z;
+  - GONE at 0.
+  - `despawnReq` set during DYING is honoured at CORPSE entry (no minimum lie time after looting).
+- **US-079c note:** its pairwise de-overlap must skip inactive steer slots.
+
+**API:**
+- `despawnCorpse(id) -> boolean` (true if the slot was DYING/CORPSE; sets `despawnReq`);
+- `isDead(slot)`, `slotOf(id)`.
+
+**`resetAll`** (vitals respawn), per slot:
+- if the steer agent is inactive, re-add the dead slots **in ascending slot order** with `steer.addAgent(home, radius, 0, DEFAULT_ACCEL)` and assert that the returned slot `=== i`. The lowest free slot is always the lowest dead one, because live slots stay active and slots >= count are never used;
+- `hp = max`; clear `dmgCd`, `hurtT`, `pendingDied`, `despawnReq`;
+- then the existing reset;
+- emit one `beasts:reset` (loot clears its state).
+
+**Save/hash:** `hashSim` and `save/load` gain the new SoA, `steer.active` (missing today: `loadSim` must restore it, or a dead slot comes back as a ghost agent) and `health.hp` per slot. World saves do not persist beasts beyond this (AC: back alive after a reload), so `save/load` serves the 300/600 replay test only.
+
+**Sword (2 small edits, US-079b; HANDS-01b starts its `sword.js` work after this merge):**
+- the dead skip above;
+- payload gains `cause: 'sword'` and `knock: 0` (one preallocated object; `knock 0` = use the beast default).
+
+**Tests (`beastSim.test.js` + `sword.test.js`):**
+- 4 light hits 12+ steps apart -> hp 0 and DYING on the 4th; two hits 5 steps apart -> 1 damage; hard 3 + light 1 kills;
+- flinch 15 then chase, windup hit -> recover, charge light hit -> still charging, stagger with `p.knock` 6 slides ~1.5 m;
+- `beast:died` exactly once, one step after the kill, `cause` right;
+- the dead boar is skipped by sword arcs and targeting (the lock breaks on the kill step); the steer agent is inactive;
+- DYING 24 -> CORPSE -> `despawnCorpse` -> SINK 30 -> GONE; timeout 3600 -> SINK;
+- `resetAll` restores slot ids, hp, positions and `active`;
+- 600-step replay with a kill + save at 300 / load: hash equal;
+- 0 alloc over 10k steps.
+- View test: `hurt` for 10 steps after a hit, `die` t = (24 - timer)*16.7, hidden at GONE.
+
+#### 37.16.3 Loot (US-091a2, new `game/js/quest/sim/loot.js` + `lootConfig.js`)
+- `createLoot(world, events, {items, beasts, rng, inventoryOf, table})`, created on every `world:loaded` after `createBeastSim`. `rng = createRng(((nav.seed ?? 1) ^ 0x10075) >>> 0)` is its own stream, so the beast wander RNG is never perturbed.
+- **Roll at death** (`beast:died` listener), in a fixed draw order, always 5 draws (the stream shape does not depend on results):
+  - meat 1 @ 100 %, hide @ 60 %, tusk @ 25 %;
+  - orb @ 50 %, orb kind `int(2)` (hp/mp).
+  - Orbs go on the ground (`spawnDrop`, US-080b; the owner allows that). Meat/hide/tusk stay in the corpse: `corpseN Int8Array(16*3)` per beast slot.
+- **Interactable:** per boar, once per load, `world.addInteractable({key: 'loot.' + id, name: 'beast.loot', x, y, z, radius: 1.8, prompt: LOOT_PROMPT.boar, requires: 'loot.' + id, propId: id, def: {beastId: id}})`.
+  - On `beast:died`: rewrite `rec.x/y/z` to the body (`z + 0.35`) and set `world.state['loot.' + id] = true`.
+  - On `beast:sink` / `beasts:reset`: delete the flag and zero the counts.
+  - At create: delete any stale `loot.*` flag from a save.
+  - The prompt text is a writer placeholder in `lootConfig.js`.
+- **`beast.loot` behaviour** (registered in `quest/index.js`, calls the module-level `lootApi`, set by main.js at load; the hints/pickups module-state precedent):
+  - for meat, hide, tusk in order: `added = addItem(inv, defs, id, n)`, `corpseN -= added`, and a toast `+added Name` per kind with `added > 0`;
+  - anything left -> toast `Pack full`, the corpse stays lootable;
+  - else -> clear the flag + `beasts.despawnCorpse(id)` (sink + dust);
+  - returns `false` (no used flag).
+- **Toast:** `game/js/quest/toastView.js`, queue max 3, 1.5 s render time, newest at the bottom, top-centre. Events `inventory:added {id, n}` / `inventory:full` are emitted by loot. The string is built on the event (rare), never per frame. Designer toast style.
+
+#### 37.16.4 Inventory data (US-091a1, `game/js/quest/sim/inventory.js`; shape created by HANDS-01b)
+- `player.components.inventory = {slots: [{id: string|null, n: int}] x 24, left: string|null, right: string|null}`: plain JSON, serialized with the entity (the vitals convention). Death respawn keeps it; `R` restart restores the start state.
+- Pure functions:
+  - `ensureInventory(player, start)`, `addItem(inv, defs, id, n) -> added` (stacks first in slot order up to `stack`, then the first empty slot), `removeItem(inv, id, n) -> removed`, `countOf(inv, id)`;
+  - `assignHand(inv, hand, id|null) -> boolean`: the id must be in the pack with a kind in `weapon|spell|tool`; it empties the other hand if it held the same id;
+  - `swapHands(inv)`;
+  - `hashInto(inv, h)` (FNV over the id chars, no allocation).
+  - A hand item whose count drops to 0 empties its hand.
+- Item defs: `design/items.js` -> `ASSETS.items` (designer, plus a `module.exports` for Node tests), passed in by main.js. The game validates each def at load (id/name/kind/stack/icon) and throws naming the id. Gameplay numbers stay in `game/js/quest/*Config.js`.
+- `swordTake.js`: `addItem('sword', 1)`, and `left = 'sword'` if left is empty (else right if empty).
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **US-079b0** engine seams: `voxel.hidden` + `World.addInteractable` | PC-B cross-track -> arch-review (opus batch) | ~0.3 d | `engine/render/voxelPool.js`, `engine/world/World.js`, `engine/world/interaction.js` (doc only), tests in `voxelPool.test.js` / `world.test.js` | Hidden voxel skipped in both branches and frees its nearest-16 slot. `addInteractable` is found by `findInteractTarget` and fires its behaviour; live x/y rewrite is respected; `requires` gating; duplicate key throws; `removeInteractable`; deserialize drops it (the game re-adds). 0 alloc in `findInteractTarget` unchanged. | Full runner + check-deps green |
+| **US-079b** HP, hurt, death, corpse | PC-B | ~0.75 d | `beastSim.js`, `beastConfig.js`, `beastView.js`, `sim/sword.js` (2 lines), `particleHooks.js` (`beast:sink` dust), tests | 37.16.2 list | PO (opus, owner-visible) -> owner look |
+| **US-091a1** inventory data + start + sword take | PC-B | ~0.5 d | `sim/inventory.js` (extends HANDS-01b), `swordTake.js`, main.js | Stacking/full/hand rules, save round trip, death keeps items, old save with the sword taken -> sword in pack + left. | Suites green |
+| **US-091a2** loot roll + corpse interactable + toast | PC-B | ~0.5 d | `sim/loot.js`, `lootConfig.js`, `toastView.js`, `quest/index.js`, main.js | Seeded table over 1000 deaths ~ 100/60/25/50 % and the exact sequence for seed 1. The prompt appears only on a dead body. E -> items + toasts; pack full -> leftovers stay + "Pack full"; empty -> sink. Timeout clears the flag. `resetAll` clears. Toast queue max 3. 0 alloc per step. | PO (sonnet) -> owner look |
+
+**AC changes for the PO (relay; the architect does not edit rows):**
+1. US-079b: "lies still 1.0 s, then sinks ... and is removed" becomes "lies as a corpse until looted (E) or 60 s, then sinks 0.3 m with dust over 0.5 s and is hidden". A light hit during a charge only flashes (D-034). Any damaging hit aggroes.
+2. US-091a: walk-over item drops and the ground hop are replaced by the corpse loot on E (owner answer 1). HP/MP orbs stay ground drops. The row splits into a1/a2 as above.
+3. HANDS-01: "D-034 threshold for both buttons" becomes "each item owns its tap/hold threshold (sword 0.4 s, fireball 0.6 s)". The row splits into 01a/b/c.
+4. SPELL-01a:
+   - a cast at the cap of 4 is refused without spending mana;
+   - a charged release with 5-9 MP casts a tap;
+   - player self-knock 6 m/s horizontal + 3 m/s up at the centre, scaled by the falloff.
+
+**Do not:**
+- `world.remove` a boar;
+- emit `beast:died` inside the hit listener;
+- push into `world.interactables` from game code;
+- add a per-instance material/tint path to the engine for this;
+- persist dead boars or corpse loot in saves;
+- draw loot from the beast wander RNG.
+
+### 37.17 ALPHA-01 alpha-cutout materials for imported meshes (architect, 2026-10-05; D-041 Quaternius Stylized Nature)
+
+**Probe (2026-10-05, Node, `design/meshes/source/quaternius_stylized_nature/glTF/`, all 68 files + 20 PNGs decoded):** every material is `doubleSided`, one sampler (linear/mipmap). `alphaMode MASK @0.2` on: all `Leaves_*` / `Leaf_Pine` (texture alpha 0 on 70-75 %, 255 on 14-43 %, 1-9 % soft in between), `Flowers` (49.5 % alpha 0), `Leaves` (small plants, fern, clover, Flower_* leaves) - **and `Bark_NormalTree`, whose texture is 100 % alpha 255 (a mislabel: it is opaque)**. OPAQUE: `Bark_DeadTree`, `Bark_TwistedTree`, `Grass` (512^2, blades are geometry, UV is a 2 %-wide colour strip), `Mushrooms`, `PathRocks`, `Rocks`. Geometry: CommonTree_1 = 4,345 bark tris + 1,920 leaf tris (960 cards, median 0.54 m^2 => ~1 m cards, crown 4.3 x 4.7 x 4.7 m); Pine_1 = 3,177 + 770 (median 0.08 m^2 => ~0.3 m cards); Bush_Common 900 leaf tris (0.09 m^2); Flower_3_Group leaves are real geometry (0.002 m^2) with 45 petal cards; Petal_* are 13-30-tri cards. Textures 1024^2-2048^2; bark UV v runs to -10 (repeat). The Kenney Nature Kit is **not on disk** (only `Kenney.url`) - the far LOD cannot assume it.
+
+**Design (10 lines).**
+1. **Data.** A masked material is a `MeshRange` with `mask: {tex, cutoff}`; the importer emits one range per (primitive, material), **opaque ranges first**, then masked ranges grouped by material. The mesh keeps **planar UVs in `uv` for every vertex (A4 / 37.1 item 2 unchanged: glyph detail, GA.u/v, AO twins untouched)** and carries the source `TEXCOORD_0` in a new optional per-vertex `uvMask: Float32Array(V*2)` (zeros on opaque ranges, omitted when no range is masked). Mask textures are stored as 8-bit alpha, downsampled at import (`content/masks/<name>.mask.json`), packed at load into **one R8UI atlas** (`MaskAtlas`, max 2048^2, no mips, nearest / `texelFetch` only - parity).
+2. **Addressing (both twins, exact):** `ub = fround(u); tu = ub - floor(ub); tx = min(w-1, floor(fround(tu*w)))` (same for v; glTF v = 0 is image row 0, no flip); `a = atlas[(y0+ty)*W + x0+tx]`; **discard iff `a < cutoffByte`**, `cutoffByte = round(cutoff*255)` stored on the range (integer compare, no normalised-float texel). The residual twin difference is f32-vs-f64 interpolation of `uvMask` -> a D-039 tie class (`maskTies`, item 9).
+3. **Raster:** the JS twin (`rasterFanTri`) samples at the fragment and `continue`s before any G-buffer write; GLSL `mesh.frag` `discard`s before the MRT writes (the hardware depth write goes with it). The shadow pass gets the same test (`SHADOW_FRAG_SRC` gains the mask block under `uMaskOn`, still no colour output), so leaves cast leaf-shaped shadows, and the JS depth-only twin (`ctx.depthBias` path, same `rasterFanTri`) agrees by construction.
+4. **Two-sided:** kind 9 already draws cull NONE in both twins (27.15.2); instanced kind 9 (TREES-LP-b) must do the same - `cullBack = false` for kind-9 ranges in `rasterRange`, `gl.disable(CULL_FACE)` around mesh-group draws. Masked ranges flip the normal on back faces exactly like cloth (`twoSided` + `A2 < 0` / `!gl_FrontFacing`); opaque kind-9 ranges keep today's behaviour (no row changes).
+5. **Look:** glyph/colour come from the palette material the `mats` sidecar maps the glTF material to (`leaf`, `leaf_dark`, `leaf_light`, `bark` / `timber_old`), never from the texture RGB. Planar UVs drive the detail hash, so cards get the existing `&` / `%` leaf glyphs. A card contributes no colour of its own: the mask only decides which fragments exist.
+6. **Edges:** new material flag `edge: 'soft'` (palette `materials.leaf*.edge = 'soft'`; `ShadeTextures.packMaterial` bit `F_SOFT_EDGE` in the existing `flags` lane; JS `MaterialTable` exposes `softEdge(matId)`). A soft cell only takes `cap` / `lip` / `side` against **sky or a non-soft neighbour** (crown silhouette, ragged by the mask), never `convex` / `concave` / `seam*` / `nosing`, and the rule gain is `edges.softGain` (default 0.85, `detail-pass.js`) with the glyph kept. Same decision block in `edgePass.js` and `edge.frag.js` (edge.frag binds `uMatI` for the flag). Non-soft cells are bit-identical to today. The A1 crease gate is unchanged (and still same-placement-scoped per 37.15 item 4). Without this, neighbouring leaf cards (own planeIds, normals > 30 deg apart) would draw a convex/concave wireframe through every crown.
+7. **Coverage:** at 400 cols / ~90 deg HFOV a cell is ~d/255 m wide (a 1 m card = 25 cells at 10 m, 8 at 30 m, 2.5 at 100 m). CommonTree crowns stack ~20-30 card layers along a ray (960 m^2 of cards over a ~16 m^2 cross-section), so the crown is optically solid inside and has holes only at the silhouette: it reads as a leafy mass. Pine (0.3 m cards, ~1 layer) is the sparse risk species. Rule: **LOD0 only while the median card is >= 3 cells wide**, i.e. per species `lodCells >= 3 * treeH / cardW` cells of projected height (CommonTree ~24, Bush ~12, Pine ~70 - pines swap to LOD1 at ~12-15 m unless the preview says otherwise). Below that the mask becomes per-cell noise.
+8. **LOD / perf.** 1,500 trees x 4-6k tris is ~9 M tris before the cull and ~1.8 M in view: 3-5x over the 1.0 ms bar, so **37.15 item 6 ("no LOD") is amended**: mesh groups get LOD1 through the existing RE-15c mechanism (`g.lodCells`, `drawIb[1]`, hysteresis) with `g.meshFar` = a second MeshData (the TREES-LP-a generator tree, 300-600 tris, no mask; or a Kenney tree once downloaded; never the same mesh). Shadow list: LOD1 for every mesh-group instance farther than `shadows.meshLod0M` (25 m) from the camera, LOD0 inside. Expected in view: ~45 LOD0 trees (fill 1 per 36 m^2 inside 45 m) ~220k tris + ~250 LOD1 ~75k tris. Overdraw: 6-30 layers over the crown's screen area x one `texelFetch` each - cheap next to the vertex load; `discard` costs the early-z write, accepted. Bars stay those of 37.2 item 8 / 37.15 item 8 (+1.0 ms, +0.5 ms with shadows, Arc iGPU p95).
+9. **gpucompare (D-039 tie class, harness only):** a mismatched cell is a **mask tie** when on either twin it is kind 9 with a masked range's material and the JS twin's own `uvMask` texel or any of its 8 neighbours lies on the other side of `cutoffByte`. Mask ties are excluded from `kindMatchPct`, glyph/colour counts and `violNonMesh`, reported per row (`maskTies` + a cell list), cap 2 % of geometry cells per pose (else FAIL). Thresholds otherwise unchanged; a mismatched masked cell whose 3x3 texels all lie on one side is a twin bug (STOP, report kind / uv on both twins / texel / cutoff).
+10. **Asset flow:** `content/manifest.json` gains `masks: [...]`; `loadContentPack` loads them into `AssetRegistry` kind `'mask'` (`assets.mask(id)` -> `{id, w, h, data: Uint8Array}`); `engine.loadWorld` builds `engine.maskAtlas = buildMaskAtlas(assets)` once (ids sorted, shelf packing, deterministic); `MeshDrawCache.get(mesh, idFor, atlas)` resolves `copy.maskRanges: Int32Array(ranges.length*5)` = `[x0, y0, w, h, cutoffByte]` per range (`w = -1` = opaque) and throws `mesh "<id>": mask "<tex>" not in the atlas`. The GPU uploads `texMask` (R8UI) when `atlas.version` changes - never per frame.
+
+**Formats.**
+- `.mesh.json` additions: `ranges[i] = {start, count, part, mask?: {tex: 'quaternius/Leaves_NormalTree', cutoff: 0.2}}`; top-level `uvMask?: number[]` (V*2, rounded 1e-5 like `uv`). `validateMesh`: `uvMask` length = `pos.length/3*2` when present; a `mask` range requires `uvMask`; `cutoff` in (0,1); masked ranges after every opaque range. `meshToJSON` / `meshFromJSON` round-trip both.
+- `content/masks/<name>.mask.json`: `{kind:'mask', schema:1, id:'quaternius/Leaves_NormalTree', w:256, h:256, cutoffDefault:0.2, data:'<base64 of w*h bytes>'}`. Downsample = box average of the source alpha over each cell (f64, `Math.round`), `--mask-res 256` default, 512 allowed (`Leaves.png`, `Leaf_Pine` fine detail), power of two <= 1024. Atlas budget: 2048^2 R8UI = 4 MB = 64 slots of 256^2; the Quaternius set needs 6.
+- MaskAtlas API (`engine/render/MaskAtlas.js`, pure, imports nothing): `class MaskAtlas { W, H, data: Uint8Array, rects: Map<id,{x0,y0,w,h}>, version }`, `add(id, w, h, bytes)` (throws when full or on a duplicate id), `rect(id)`, `sample(x0, y0, w, h, u, v) -> byte` implementing item 2 literally (the JS twin calls it per fragment: no allocation, no closures), `static texel(u, w) -> int` (the exported addressing helper the Node tests hit directly).
+- GPU: the `MeshBuffers` entry gets an optional `uvMaskBuffer` (separate VBO, 8 B/vertex) bound at **attribute location 10 (`vec2 aUVMask`)** in the static and instanced variants; meshes without `uvMask` leave location 10 disabled with `vertexAttrib2f(10, 0, 0)`. Fragment uniforms (static, instanced and both shadow programs): `uMaskOn (int)`, `uMaskRect (ivec4 x0,y0,w,h)`, `uMaskCutoff (uint)`, `usampler2D uMask`. Draw loops: a kind-9 item whose mesh has `maskRanges` draws per range (`uMaskOn` 0 for opaque ranges, 1 + rect/cutoff for masked) instead of one `drawArrays` over the whole mesh; instanced mesh-group draws already loop ranges. The 64-byte static vertex stride is **not** changed.
+- Importer (`tools/gltf-import.mjs`): `--masks content/masks` (default) writes/refreshes the `.mask.json` files it needs (dedup by texture file name; a re-import is byte-identical); `--mask-res`; `--opaque <matName>` forces a MASK material opaque. **Auto-opaque rule:** a MASK material whose downsampled mask has no texel `< cutoffByte` inside the UV bbox of its own triangles is imported as opaque with a WARN (`Bark_NormalTree` -> opaque, no `uvMask` for it). Plain `tools/png.mjs` decoder (8-bit G/GA/RGB/RGBA, filters 0-4, non-interlaced; rejects palette/16-bit/interlaced naming the file) - zlib only, no dependency. `loadGltf(buffer, id, {uv, alpha: true})` reads `materials[i].alphaMode/alphaCutoff` and `baseColorTexture -> images[].uri`; the file I/O stays in the tool (it passes `opts.textures[name] = {w, h, alpha: Uint8Array}`; gltf.js never reads files).
+
+**Do not:** sample texture RGB for colour; put the mask UV in `uv` (planar stays); use `sampler2D` + a normalised compare, mips or linear filtering for the mask; flip normals on opaque kind-9 ranges; change the 64 B static stride or `writeUnitInstance`; add per-instance mask parameters; LOD by a second instance-word format (use `g.meshFar` + RE-15c); widen any gpucompare threshold (the `maskTies` class and its 2 % cap are the only harness change); draw the whole mesh in one call when ranges differ in mask state; import TwistedTree_* (9-10k tris) before an LOD exists.
+
+**Order with TREES-LP / ME-19:** ME-19a -> TREES-LP-a (`buildMeshFromTris`; ALPHA-01a builds on it: tris carry `uvMask`) -> ALPHA-01a (tools, parallel with ME-19b) -> TREES-LP-b (mesh groups) -> ALPHA-01b (JS twin + atlas) -> ALPHA-01c (GPU; after ME-19c if 19c is in flight - both edit the `GpuCellPipeline.js` draw loops) -> ALPHA-01d (edges) -> ALPHA-01e (content + LOD, replaces TREES-LP-c's species switch) -> ALPHA-01f (bench; TREES-LP-e folds into it). **TREES-LP-d becomes the LOD1 / fallback species** (generator trees, no mask); the owner preview compares Quaternius LOD0 vs generator LOD1 at 10 / 30 / 60 m. **Imports that need no ALPHA-01 (after TREES-LP-a, `--uv planar --mats`):** DeadTree_1..5 (5.6-6.6k tris: over the 4k A3 piece cap, allowed only as `forest.trees.species` with low weight under the TREES-LP bars), Rock_Medium_1..3, Pebble_* (48-136), RockPath_* (<= 3.5k, under the piece cap), Mushroom_Common (880; Laetiporus 3.2k), Grass_* (OPAQUE geometry blades, 155-622 tris - ground detail via TREES-LP-f / `scatterFeed`). **Need ALPHA-01:** all CommonTree / Pine / Bush / Petal and the `Leaves`- / `Flowers`-textured plants (Fern, Clover, Plant_*, Flower_*) - run the importer dry-run with the auto-opaque rule first: a plant whose `Leaves` UV region is fully opaque (likely Clover: geometry leaves) imports now.
+
+| Step | Track | Size | Files | Tests | Done when |
+|---|---|---|---|---|---|
+| **ALPHA-01a** import + formats | PC-B tools | ~0.75 d | `tools/png.mjs` (+test; the test writes 4 tiny fixture PNGs itself via zlib), `engine/mesh/gltf.js` (`alpha` opt, materials, `uvMask`, range order), `engine/mesh/MeshData.js` (`uvMask`, `MeshRange.mask`, validate/JSON), `tools/gltf-import.mjs` (`--masks`, `--mask-res`, `--opaque`, auto-opaque rule, mask writer), `tools/validate-content.mjs` + `mesh-content.test.mjs` (masks), `content/manifest.json` (`masks`) | `gltf.test.js`: synthetic 2-material glTF (opaque quad + MASK quad, 4x4 RGBA data-URI PNG): ranges opaque-first, `mask.tex/cutoff`, `uvMask` = TEXCOORD_0 on the masked range and 0 elsewhere, `uv` planar on both; an all-255 MASK texture -> opaque + WARN; Ruins re-import byte-identical. `MeshData.test.js`: JSON round trip, validator errors (missing `uvMask`, masked-before-opaque, cutoff 1.0). `gltf-import.test.mjs`: `.mask.json` box-averaged bytes (hand-checked 2x2 -> 1x1 case), re-run byte-identical | run-tests + check-deps green; `CommonTree_1` dry-run prints 2 ranges (bark opaque by the auto rule, leaves masked) |
+| **ALPHA-01b** atlas + JS twin | PC-B cross-track engine -> arch-review (PC-A) | ~0.75 d | `engine/render/MaskAtlas.js` (+test), `engine/core/assets.js` (`'mask'` kind), `engine/core/engine.js` (`maskAtlas` built on `loadWorld`), `engine/mesh/DrawList.js` (`MeshDrawCache.get(mesh, idFor, atlas)` -> `maskRanges`), `engine/mesh/rasterJS.js` (`uvMask` interpolation via 2 more scratch lanes, `info.mask*`, discard, two-sided flip for masked ranges, kind-9 `cullBack = false` in the instanced path, per-range loop for static kind-9 items), `engine/index.js` exports | `MaskAtlas.test.js`: `texel()` table incl. u = 1.0, -0.25, 2.5 and the f32 rounding case (u = 0.1 + 0.2 in f64 vs fround); packing deterministic by sorted id; a full atlas throws. `rasterJS.test.js`: a 2 m masked quad with a 4x4 checker mask at 3 m, brute-force oracle (ray vs quad + the same texel rule) over 400x150: kind/planeId/depth cells equal; the back view has flipped normals (face 7 packed n = -n); the opaque range is unaffected; 0 allocations over 1000 frames. `rasterDepthOnly.test.js`: the shadow twin skips the same fragments | run-tests + check-deps green |
+| **ALPHA-01c** GPU twin + harness + poses | PC-A engine (GPU verification on the Arc) | ~1 d | `engine/render/gpu/MeshBuffers.js` (`uvMaskBuffer`), `glsl/mesh.vert.js` (`aUVMask` / `vUVMask`, static + instanced; cloth untouched), `glsl/mesh.frag.js` (mask block + `!gl_FrontFacing` flip under `uMaskOn`), `glsl/shadow.frag.js` (mask block), `GpuCellPipeline.js` (`texMask` R8UI upload on `atlas.version`, per-range draws in the static / instanced / shadow loops, uniforms), `engine/render/gpu/gpuCompare.js` + `game/js/dev/modes/gpucompare.js` (`maskTies`, item 9), `content/worlds/world_m1.world.json` (2 CommonTree + 1 Pine + 1 Bush as `kind:'mesh'` placements ~15 m east of the Ruins pieces, off the boar route) | `glsl.test.js`: location 10 in static + instanced only, cloth source unchanged, shadow frag has the mask block, `uMask` is a `usampler2D`. `gpuCompare.test.js`: maskTies rule - (a) masked cell with a boundary texel in the 3x3 -> tie; (b) all-same 3x3 -> violation; (c) cap 2 % -> FAIL; non-masked rows unchanged. `MeshBuffers.test.js`: entry with / without `uvMaskBuffer` | `?gpucompare=1` new poses `world_m1: alphaLeaves` (eye 6 m, pitch +20 at a crown) and `alphaLeavesFar` (30 m) PASS or recorded known-FAIL per D-039 (maskTies count in the row); `&shadows=map` rows PASS (leaf-shaped shadow on the ground in a headless capture); no previously passing row regresses; 0 uploads/frame after warm-up |
+| **ALPHA-01d** soft edges | PC-B cross-track -> arch-review | ~0.5 d | `engine/render/MaterialTable.js` (`edge: 'soft'` -> `softEdge(id)`), `gpu/ShadeTextures.js` (`F_SOFT_EDGE`), `engine/render/edgePass.js`, `glsl/edge.frag.js` (bind `uMatI`), `design/palette.js` (`leaf*.edge = 'soft'`), `design/detail-pass.js` (`edges.softGain`) | `edgePass.test.js`: soft cell next to sky -> cap/lip/side with gain 0.85 and its own glyph; soft-soft neighbours at any depth/normal -> no rule; soft next to a non-soft vertical -> side only; all non-soft fixtures bit-identical. `glsl.test.js` string check for the `uMatI` bind | `?gpucompare=1` rows unchanged except the two alphaLeaves poses; owner one-look: crowns outlined only at the silhouette |
+| **ALPHA-01e** content + LOD1 | PC-B content/engine -> arch-review | ~0.75 d | `content/meshes/quaternius/**` (CommonTree_1..5, Pine_1..5, Bush_Common, Bush_Common_Flowers, DeadTree_1..3, Rock_Medium_1..3, 6 pebbles, 4 rock paths, Mushroom_Common; `--mats` sidecars -> `bark` / `timber_old`, `leaf`, `leaf_dark`, `leaf_light`, `stone*`, mushroom key), `content/masks/*.mask.json`, `engine/mesh/instances.js` (`meshGroup(mesh, capacity, {meshFar, lodCells})` -> the RE-15c LOD1 bucket draws `meshFar`), `engine/mesh/shadowList.js` (`shadows.meshLod0M`), `engine/world/scatter.js` validator (`meshFar` optional, `lodCells`), `design/levels/overworld_far.js` species (CommonTree x3, Pine x2, DeadTree x1 low weight; `meshFar` = TREES-LP-d generator trees), `THIRD_PARTY_NOTICES.md` (Quaternius CC0 line) | `instances.test.js`: LOD split by projected height with hysteresis, LOD1 draws `meshFar`, shadow LOD by distance; `scatter.test.js` validator; `mesh-content.test.mjs` covers every file (tris, flat normals, masked ranges last) | forestWalk re-baselined (old/new rows recorded); headless capture inside the forest at 3 distances; owner look |
+| **ALPHA-01f** bench (absorbs TREES-LP-e) | PC-A | ~0.25 d | none | Arc `?bench=1` forestWalk trees on/off x `shadows` map/off, `lodCells` x 0.5 / x 2 | bars of 37.15 item 8 met or tuned in this order: raise `lodCells`, lower `fill`, drop the Pine LOD0 range; recorded in the row; owner walk-test "stylized forest" |
+
+**Reusable beyond trees (D-041 "real engine feature"):** any `.mesh.json` range may carry `mask` - fences, grates, torn cloth banners (static), ivy cards on the tower. The same `MaskAtlas` can later back sprite cutouts; keep it in `engine/render/` with no mesh import.

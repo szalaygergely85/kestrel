@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - the ember spell hand, the fireball, the pack screen (Sprint 6 designer pass B)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e8c060; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:100px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  pre.spr { font:13px/13px Consolas, monospace; margin:0; background:#0b0c12; padding:4px; letter-spacing:1px; }
+  textarea { width:100%; height:160px; background:#0b0c12; color:#cfc8b2; font:11px Consolas, monospace; border:1px solid #22252e; }
+  #inv:focus { outline:1px solid #ffd24a; }
+</style>
+</head>
+<body>
+<h1>Kestrel : the ember spell hand, the fireball and the pack screen (Sprint 6 designer pass B)</h1>
+<div class="note">
+  Data: <code>design/models/spell.js</code> (<code>voxelModels.spellHandL</code>, <code>viewModels.spellHand</code>, <code>spellSprites</code>, <code>spellFx</code>),
+  <code>design/models/inventory_ui.js</code> (<code>uiStyle.inventory</code>), light presets + <code>ember_core</code> / <code>ember_glow</code> in <code>palette.js</code> / <code>detail-pass.js</code>,
+  item icons from <code>design/items.js</code>. Tech: architecture.md 37.8a (one def, authored LEFT, the engine mirrors it for the right hand) + 37.14 (fireball).
+  The first-person view uses the <b>engine oracle</b> (<code>packVoxelModel</code> / <code>computeVoxelPose</code> / <code>marchVoxelRay</code>) for the glove, the v1 reference shader,
+  the real particle sim (<code>engine/fx/particles.js</code>) for trail / burst / smoke / cinders, and the sprite rules of README 4 (scale, half LOD, 0.6 m near cull).
+  Draw order = the game's: scene, sprites, particles, then the view model over everything. <b>Needs http</b>: <code>python -m http.server</code> from the repo root.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>grid <select id="grid"><option value="160">160x60</option><option value="240" selected>240x90</option><option value="400">400x150</option></select></label>
+  <label>hand <select id="hand"><option value="right" selected>right (mirrored, demo default)</option><option value="left">left (authored)</option></select></label>
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="-20" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>int <input type="range" id="int" min="0" max="1.5" step="0.01" value="0.35"><span class="val" id="intV"></span></label>
+  <label>colour <select id="lcol"><option>sun</option><option>moon</option><option>torch</option></select></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="0.6"><span class="val" id="ambV"></span></label>
+  <label>wall at <input type="range" id="wall" min="3" max="22" step="0.5" value="7"><span class="val" id="wallV"></span></label>
+  <label>speed <select id="speed"><option>1</option><option>0.5</option><option>0.25</option><option>0.1</option></select></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>1. First person: the spell glove, casting, the fireball in flight and the burst</h2>
+<div class="note">A stone hall: floor 1.6 m below the eye, side walls 2.5 m left/right, the end wall at the "wall at" distance (the crosshair target). Lights: the light sliders
+  (ambient + one directional), the <b>spellEmber</b> glow at the coal (scaled by <code>glow</code> per state), the moving <b>fireballLight</b> / <b>fireballLightBig</b>, the
+  <b>fireballFlash</b> / <b>Big</b> (9 steps, <code>(1 - age/9)^2</code>). The ball starts at <code>castOffset</code> (eye frame, hand sign) and flies to the crosshair hit at 16 m/s (tap) /
+  12 m/s (charged); the trail is <code>burstAt(fireTrail, 1 or 2)</code> every 2nd step; the burst = <code>fireballBlast</code> sprite + <code>fireballBurst</code> + <code>fireballSmoke</code>
+  (+ <code>fireballCinders</code> on a floor hit) + the flash + the camera kick (within 6 m). The glove is drawn last, mirrored for the right hand exactly like 37.8a (S = diag(-1,1,1)).</div>
+<div class="row" id="seqButtons"></div>
+<div class="row" id="fpHost"></div>
+<div class="cap" id="fpInfo"></div>
+
+<h2>2. Clip key poses (160x60, glove only)</h2>
+<div id="strips"></div>
+
+<h2>3. Sprites (art cells, palette colours; live loop on the right)</h2>
+<div id="sprites"></div>
+
+<h2>4. The pack screen (uiStyle.inventory on the fixed 160x60 UI layer)</h2>
+<div class="note">Click the screen to focus it. <b>I</b> / <b>Esc</b> open/close, <b>W/A/S/D</b> or arrows select (W from the top grid row goes to the hands strip), <b>Q</b> / LMB = left hand,
+  <b>E</b> / RMB = right hand, <b>Enter</b> / <b>U</b> = use (meat +10 HP, "Not hurt" at full HP), LMB / RMB / Enter on a hand slot empties it. Mouse hover selects.
+  The scene grid toggle only changes the scene behind (plate + dim map to more scene cells); the UI cells are identical at every grid size (US-091b AC).</div>
+<div class="controls" style="position:static">
+  <label>scene behind <select id="invGrid"><option value="240">240x90</option><option value="400">400x150</option></select></label>
+  <button id="invReset">reset pack</button><button id="invHurt">HP 12</button><button id="invFull">HP full</button>
+</div>
+<canvas id="inv" tabindex="0"></canvas>
+<div class="cap" id="invInfo"></div>
+
+<h2>5. JSON</h2>
+<div class="row"><select id="dumpSel"><option>spellHand</option><option>spellFx</option><option>inventory</option><option>spellHandL</option></select><button id="dumpBtn">dump</button></div>
+<textarea id="dump" readonly></textarea>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/title.js"></script>
+<script src="../items.js"></script>
+<script src="../models/particles.js"></script>
+<script src="../models/spell.js"></script>
+<script src="../models/inventory_ui.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__fbOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load. This page must be served over http (ES modules): python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose, FORWARD } from '../../engine/voxel/voxelPose.js';
+import * as VM from '../../engine/voxel/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from '../../engine/render/GBuffer.js';
+import { createParticles } from '../../engine/fx/particles.js';
+import { D } from '../../engine/fx/emitterDef.js';
+
+window.__fbOK = true;
+const A = window.ASSETS, P = A.palette, DP = A.detailPass, U = P.util, SFX = A.spellFx, SPR = A.spellSprites;
+const VMD = A.viewModels.spellHand, INV = A.uiStyle.inventory, IT = A.items, UT = SFX.util;
+const D2R = Math.PI / 180, TAN_HALF = Math.tan(37.5 * D2R), STEP_MS = 1000 / 60;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+SFX.attach();
+
+// ------------------------------------------------------------------ controls
+const ctl = {};
+function readCtl() {
+  ctl.grid = +$('grid').value; ctl.hand = $('hand').value; ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value;
+  ctl.lcol = $('lcol').value; ctl.amb = +$('amb').value; ctl.wall = +$('wall').value; ctl.speed = +$('speed').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('wallV').textContent = ctl.wall + ' m';
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => { readCtl(); fpView = null; }));
+readCtl();
+
+// ------------------------------------------------------------------ engine packing
+const HAND = A.voxelModels.spellHandL.voxel;
+const matKeys = [];
+function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
+let PM = null, packErr = '';
+try { PM = packVoxelModel(HAND, matIdFor); } catch (e) { packErr = String(e.message || e); }
+let HELD = null;
+if (PM) {
+  const ci = PM.clipIndex.held;
+  HELD = { model: PM, x: 0, y: 0, z: 0, yawDeg: 0, clip: ci === undefined ? -1 : ci, frame: 0, tMs: 0 };
+  HELD.pose = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+  computeVoxelPose(PM, HELD, HELD.pose);
+}
+const HCM = HAND.cellM, HAN = HAND.anchor;
+const hp = (v) => [(v[0] - HAN[0]) * HCM, (v[1] - HAN[1]) * HCM, (v[2] - HAN[2]) * HCM];
+const H_CENTRE = hp([HAND.size[0] / 2, HAND.size[1] / 2, HAND.size[2] / 2]);
+const H_RADIUS = 0.5 * HCM * Math.hypot(HAND.size[0], HAND.size[1], HAND.size[2]) + 0.01;
+
+// ------------------------------------------------------------------ math
+function rotMat(r) {
+  const cx = Math.cos(r[0] * D2R), sx = Math.sin(r[0] * D2R), cy = Math.cos(r[1] * D2R), sy = Math.sin(r[1] * D2R);
+  const cz = Math.cos(r[2] * D2R), sz = Math.sin(r[2] * D2R);
+  const Rx = [1, 0, 0, 0, cx, -sx, 0, sx, cx], Ry = [cy, 0, sy, 0, 1, 0, -sy, 0, cy], Rz = [cz, -sz, 0, sz, cz, 0, 0, 0, 1];
+  return mul3(Rz, mul3(Ry, Rx));
+}
+function mul3(a, b) { const o = new Array(9); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) o[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j]; return o; }
+function apply(R, v) { return [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[3] * v[0] + R[4] * v[1] + R[5] * v[2], R[6] * v[0] + R[7] * v[1] + R[8] * v[2]]; }
+function applyT(R, v) { return [R[0] * v[0] + R[3] * v[1] + R[6] * v[2], R[1] * v[0] + R[4] * v[1] + R[7] * v[2], R[2] * v[0] + R[5] * v[1] + R[8] * v[2]]; }
+function eyePoint(pose, m) { const q = apply(rotMat(pose.rot), m); return [pose.pos[0] + q[0], pose.pos[1] + q[1], pose.pos[2] + q[2]]; }
+const mirrorOn = () => ctl.hand === 'right';
+function specOf(cols) { return cols === 160 ? { cols: 160, rows: 60, cw: 6, ch: 9 } : cols === 240 ? { cols: 240, rows: 90, cw: 4, ch: 6 } : { cols: 400, rows: 150, cw: 2.4, ch: 3.6 }; }
+function pdOf(spec) { return (spec.rows / 2) * (16 / 9) / TAN_HALF; }
+function project(spec, p, kickT) {
+  const s = -p[1]; if (s < 0.01) return null;
+  return { c: ((p[0] / s) / TAN_HALF + 1) * spec.cols / 2 - 0.5, r: spec.rows / 2 - 0.5 - pdOf(spec) * (p[2] / s - (kickT || 0)), s };
+}
+
+// ------------------------------------------------------------------ buffers + present
+function makeCanvas(cols, rows, cw, ch, cv) {
+  cv = cv || document.createElement('canvas'); const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.max(3, Math.round(ch * 0.9)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+function newBuf(n) { return { n, kind: new Int8Array(n), depth: new Float64Array(n).fill(1e9), glyph: new Array(n).fill(' '), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) }; }
+function present(g, B) {
+  const { ctx, cols, rows, cw, ch } = g;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') { ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')'; ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1); }
+  }
+}
+const SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+function setCell(B, i, kind, depth, sh) {
+  B.kind[i] = kind; B.depth[i] = depth; B.glyph[i] = sh.glyph;
+  B.fg[i * 3] = sh.fg[0]; B.fg[i * 3 + 1] = sh.fg[1]; B.fg[i * 3 + 2] = sh.fg[2];
+  B.bg[i * 3] = sh.bg[0]; B.bg[i * 3 + 1] = sh.bg[1]; B.bg[i * 3 + 2] = sh.bg[2];
+}
+function setRGB(B, i, glyph, c, mul) {
+  B.glyph[i] = glyph; const m = mul || [1, 1, 1];
+  B.fg[i * 3] = Math.min(255, c[0] * m[0]); B.fg[i * 3 + 1] = Math.min(255, c[1] * m[1]); B.fg[i * 3 + 2] = Math.min(255, c[2] * m[2]);
+}
+
+// ------------------------------------------------------------------ lights
+const Lacc = [0, 0, 0];
+function gatherLight(nx, ny, nz, px, py, pz, pts) {
+  Lacc[0] = Lacc[1] = Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.12 * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0 && ctl.int > 0) U.addLight(Lacc, ctl.lcol, ctl.int * ndl);
+  for (const L of pts) {
+    const lx = L.x - px, ly = L.y - py, lz = L.z - pz, d = Math.hypot(lx, ly, lz) || 1e-6;
+    const f = U.falloff(d, L.r), nd = nx === 0 && ny === 0 && nz === 0 ? 1 : (nx * lx + ny * ly + nz * lz) / d;
+    if (f > 0 && nd > 0) U.addLight(Lacc, L.col, L.int * f * nd);
+  }
+  return Lacc;
+}
+function lightMul(L) {
+  const S = P.shading, Lm = Math.max(L[0], L[1], L[2]); let h = [1, 1, 1];
+  if (Lm > 1e-6) h = [L[0] / Lm, L[1] / Lm, L[2] / Lm];
+  const b = Math.max(0, Lm); let gain = S.fgMin + (1 - S.fgMin) * Math.pow(Math.min(1, b), S.fgGamma);
+  if (b > 1) gain = Math.min(S.fgMaxGain, gain + (b - 1) * 0.5);
+  return [(1 + (h[0] - 1) * S.tint) * gain, (1 + (h[1] - 1) * S.tint) * gain, (1 + (h[2] - 1) * S.tint) * gain];
+}
+function flick(fl, t, seed) { if (!fl) return 1; return 1 + fl.amount * (0.6 * Math.sin(t * 2 * Math.PI * fl.hzMin + seed) + 0.4 * Math.sin(t * 2 * Math.PI * fl.hzMax + 1.3 + seed)); }
+function presetLight(key, x, y, z, mul, t, seed) {
+  const L = P.lights[key];
+  return { x, y, z, col: L.color, r: L.radius, int: L.intensity * (mul === undefined ? 1 : mul) * flick(L.flicker, t, seed || 0) };
+}
+
+// ------------------------------------------------------------------ scene: the hall (eye frame = world frame here)
+function shadeBackground(spec, pts, kickT) {
+  const { cols, rows } = spec, n = cols * rows, B = newBuf(n), pd = pdOf(spec), W = ctl.wall;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, camX = 2 * (c + 0.5) / cols - 1;
+    const dx = camX * TAN_HALF, dy = -1, dz = (rows / 2 - (r + 0.5)) / pd + kickT;
+    let t = W, kind = 2;
+    if (dz < 0) { const tf = -1.6 / dz; if (tf < t) { t = tf; kind = 1; } }
+    if (dz > 0) { const tc = 1.6 / dz; if (tc < t) { t = tc; kind = 5; } }
+    if (dx < 0) { const tw = -2.5 / dx; if (tw < t) { t = tw; kind = 3; } }
+    if (dx > 0) { const tw = 2.5 / dx; if (tw < t) { t = tw; kind = 4; } }
+    const px = dx * t, py = dy * t, pz = dz * t, dist = t * Math.hypot(dx, dy, dz);
+    let mat, u, v, nx = 0, ny = 0, nz = 0;
+    if (kind === 1) { mat = P.materials.floor; u = px; v = py; nz = 1; }
+    else if (kind === 5) { mat = P.materials.stone; u = px; v = py; nz = -1; }
+    else if (kind === 2) { mat = P.materials.stone; u = px; v = pz + 1.6; ny = 1; }
+    else if (kind === 3) { mat = P.materials.stone_ivy || P.materials.stone; u = py; v = pz + 1.6; nx = 1; }
+    else { mat = P.materials.stone; u = py; v = pz + 1.6; nx = -1; }
+    gatherLight(nx, ny, nz, px, py, pz, pts);
+    U.shade(mat, Lacc, u, v, dist, SH, { fog: 'interior', z: v });
+    setCell(B, i, kind, t, SH);
+  }
+  return B;
+}
+
+// ------------------------------------------------------------------ sprites (README 4 rules)
+function frameOfDur(anim, ms) { let e = ms; for (let f = 0; f < anim.durations.length; f++) { if (e < anim.durations[f]) return f; e -= anim.durations[f]; } return -1; }
+function drawSprite(B, spec, model, animName, frameIdx, wp, kickT, info) {
+  const pr = project(spec, wp, kickT); if (!pr) return;
+  if (pr.s < 0.6) { if (info) info.culled = (info.culled || 0) + 1; return; }   // BUG-FIRE-001 near cull
+  let tier = model, scale = model.world.h * pdOf(spec) / pr.s / model.size.h;
+  scale = Math.min(scale, 3 * spec.rows / 60);
+  if (scale < 0.75 && model.lods && model.lods.half) { tier = model.lods.half; scale *= 2; }
+  const an = tier.animations[animName]; const fr = an.frames[Math.max(0, Math.min(an.frames.length - 1, frameIdx))].S;
+  const left = pr.c + 0.5 - (tier.anchor.x + 0.5) * scale, top = pr.r + 0.5 - (tier.anchor.y + 0.5) * scale;
+  const c0 = Math.max(0, Math.floor(left)), c1 = Math.min(spec.cols - 1, Math.ceil(left + tier.size.w * scale));
+  const r0 = Math.max(0, Math.floor(top)), r1 = Math.min(spec.rows - 1, Math.ceil(top + tier.size.h * scale));
+  const L = gatherLight(0, 0, 0, wp[0], wp[1], wp[2], curPts).slice(), mul = lightMul(L);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const ax = Math.floor((c + 0.5 - left) / scale), ay = Math.floor((r + 0.5 - top) / scale);
+    if (ax < 0 || ay < 0 || ax >= tier.size.w || ay >= tier.size.h) continue;
+    const gl = fr.glyphs[ay][ax], k = fr.fg[ay][ax];
+    if (gl === ' ' || k === ' ') continue;
+    const i = r * spec.cols + c; if (B.depth[i] < pr.s) continue;
+    const key = model.keys[k], col = P.rgb[key.c];
+    setRGB(B, i, gl, col, key.e ? null : mul); B.depth[i] = pr.s; B.kind[i] = 7;
+  }
+  if (info) { info.rows = Math.round(tier.size.h * scale); info.lod = tier === model ? 'full' : 'half'; }
+}
+
+// ------------------------------------------------------------------ particles (engine sim)
+const PS = createParticles({ capacity: 1024, seed: 5 });
+const PID = {};
+for (const k of Object.keys(A.particles.presets)) PID[k] = PS.defineEmitter(k, A.particles.toEmitterDef(k, P.rgb));
+function drawParticles(B, spec, kickT) {
+  for (let j = 0; j < PS.cap; j++) {
+    if (!PS.alive[j]) continue;
+    const pr = project(spec, [PS.px[j], PS.py[j], PS.pz[j]], kickT); if (!pr) continue;
+    const c = Math.round(pr.c), r = Math.round(pr.r);
+    if (c < 0 || r < 0 || c >= spec.cols || r >= spec.rows) continue;
+    const i = r * spec.cols + c; if (B.depth[i] < pr.s) continue;
+    const def = PS.def[j], o = def * PS.DEF_STRIDE, len = PS.defRec[o + D.RAMP_LEN];
+    const k = Math.min(len - 1, Math.floor(PS.age[j] / PS.life[j] * len));
+    const g = String.fromCharCode(PS.defGlyphs[def * PS.MAX_RAMP + k]), cb = (def * PS.MAX_RAMP + k) * 3;
+    const col = [PS.defColors[cb], PS.defColors[cb + 1], PS.defColors[cb + 2]];
+    const mul = PS.defRec[o + D.EMISSIVE] ? null : lightMul(gatherLight(0, 0, 0, PS.px[j], PS.py[j], PS.pz[j], curPts));
+    setRGB(B, i, g, col, mul); B.depth[i] = pr.s;
+  }
+}
+
+// ------------------------------------------------------------------ the glove (view model over everything)
+const HIT = new Float64Array(8), NL = [0, 0, 0];
+function faceNormal(face) {
+  NL[0] = NL[1] = NL[2] = 0;
+  if (face === FACE_N) NL[1] = -1; else if (face === FACE_S) NL[1] = 1; else if (face === FACE_E) NL[0] = 1;
+  else if (face === FACE_W) NL[0] = -1; else if (face === FACE_U) NL[2] = 1; else NL[2] = -1;
+  return NL;
+}
+function drawHand(spec, B, pose, mirror, pts) {
+  if (!PM) return;
+  const { cols, rows } = spec, pd = pdOf(spec), sx = mirror ? -1 : 1;
+  const R = rotMat(pose.rot), C = eyePoint(pose, H_CENTRE);
+  const CC = C[0] * C[0] + C[1] * C[1] + C[2] * C[2] - H_RADIUS * H_RADIUS;
+  const o = applyT(R, [-pose.pos[0], -pose.pos[1], -pose.pos[2]]);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const camX = 2 * (c + 0.5) / cols - 1, dxS = camX * TAN_HALF, dy = -1, dz = (rows / 2 - (r + 0.5)) / pd;
+    const dx = dxS * sx;                                    // the mirrored glove = the authored glove seen through x -> -x
+    const dc = dx * C[0] + dy * C[1] + dz * C[2], dd = dx * dx + dy * dy + dz * dz;
+    if (dc * dc - dd * CC < 0) continue;
+    const d = applyT(R, [dx, dy, dz]);
+    if (!VM.marchVoxelRay(PM, 0, HELD.pose, o[0], o[1], o[2], d[0], d[1], d[2], Infinity, HIT)) continue;
+    const t = HIT[0], face = HIT[4], matKey = matKeys[PM.matIds[VM.LAST_MAT_LOCAL] - 1];
+    if (t * Math.sqrt(dd) < VMD.depth.near) continue;
+    const nv = apply(R, faceNormal(face));
+    const px = dxS * t, py = dy * t, pz = dz * t;           // screen-space (mirrored) eye point
+    let u, v;
+    if (face === FACE_E || face === FACE_W) { u = HIT[2] * HCM; v = HIT[3] * HCM; }
+    else if (face === FACE_N || face === FACE_S) { u = HIT[1] * HCM; v = HIT[3] * HCM; }
+    else { u = HIT[1] * HCM; v = HIT[2] * HCM; }
+    gatherLight(nv[0] * sx, nv[1], nv[2], px, py, pz, pts);
+    U.shade(P.materials[matKey] || P.materials.iron, Lacc, u, v, 0.5, SH, { fog: null, z: v });
+    setCell(B, r * cols + c, 8, t, SH);
+  }
+}
+function edgePass(B, cols, rows) {
+  const E = DP.edges, rim = (A.voxelMaterials && A.voxelMaterials.edges) ? A.voxelMaterials.edges.modelRim : 0.55, n = cols * rows;
+  const far = (i, j) => B.kind[j] !== 8 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+  const rule = new Int8Array(n);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c; if (B.kind[i] !== 8) continue;
+    if (r > 0 && far(i, i - cols)) rule[i] = 1;
+    else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+    else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+  }
+  for (let i = 0; i < n; i++) {
+    if (!rule[i]) continue;
+    const Rr = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+    if (B.glyph[i] !== ' ') B.glyph[i] = Rr.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * Rr.gain) * rim; B.bg[i * 3 + k] *= rim; }
+  }
+}
+
+// ------------------------------------------------------------------ sequences (virtual clock, 60 Hz sim steps)
+const SEQS = {
+  idle:   [{ clip: 'idle', dur: Infinity }],
+  tap:    [{ clip: 'idle', dur: 700 }, { clip: 'charge', dur: 100, blend: true }, { clip: 'cast', blend: true, cast: 'tap' }, { clip: 'idle', dur: 1500 }],
+  hold:   [{ clip: 'idle', dur: 700 }, { clip: 'charge', dur: 600, blend: true }, { clip: 'chargeHold', dur: 900 }, { clip: 'castHard', blend: true, cast: 'hard' }, { clip: 'idle', dur: 1500 }],
+  floor:  [{ clip: 'idle', dur: 700 }, { clip: 'charge', dur: 100, blend: true }, { clip: 'cast', blend: true, cast: 'tap', aimDown: true }, { clip: 'idle', dur: 1800 }],
+  fizzle: [{ clip: 'idle', dur: 700 }, { clip: 'fizzle' }, { clip: 'idle', dur: 900 }],
+  equip:  [{ clip: 'lower' }, { clip: 'idle', dur: 300, hidden: true }, { clip: 'raise' }, { clip: 'idle', dur: 1200 }]
+};
+SEQS.auto = [].concat(SEQS.tap, SEQS.hold, SEQS.floor, SEQS.fizzle);
+let vt = 0, simAcc = 0, lastNow = performance.now();
+const segDur = (s) => s.dur !== undefined ? s.dur : VMD.clips[s.clip].keys[VMD.clips[s.clip].keys.length - 1].t;
+let PL = null;
+function makePlayer(seq) { const p = { seq, i: 0, start: vt, keys: null, cap: null, cast: false, segStartT: 0 }; startSeg(p, vt); return p; }
+function startSeg(p, at) {
+  const s = p.seq[p.i], clip = VMD.clips[s.clip];
+  p.keys = s.blend && p.cap ? [{ t: 0, pos: p.cap.pos, rot: p.cap.rot }].concat(clip.keys.slice(1)) : clip.keys;
+  p.start = at; p.cast = false;
+}
+function tickPlayer(p) {
+  for (let g = 0; g < 16; g++) {
+    const s = p.seq[p.i], d = segDur(s);
+    if (!(vt - p.start >= d)) break;
+    p.cap = UT.sampleKeys(p.keys, d, VMD.clips[s.clip].loop);
+    p.i = (p.i + 1) % p.seq.length; startSeg(p, p.start + d);
+  }
+  const s = p.seq[p.i], t = vt - p.start;
+  if (s.cast && !p.cast) { p.cast = true; castFireball(s.cast === 'hard', !!s.aimDown); }
+  return { s, t, pose: UT.sampleKeys(p.keys, t, VMD.clips[s.clip].loop) };
+}
+function glowMul(st) {
+  const g = VMD.glow, n = st.s.clip, t = st.t;
+  if (n === 'charge') return g.charge.from + (g.charge.to - g.charge.from) * Math.min(1, t / 600);
+  if (n === 'chargeHold') return g.chargeHold.mul + g.chargeHold.pulse.amp * Math.sin(2 * Math.PI * g.chargeHold.pulse.hz * t / 1000);
+  const ks = g[n] && g[n].keys;
+  if (ks) { if (t >= ks[ks.length - 1][0]) return ks[ks.length - 1][1]; for (let i = 0; i < ks.length - 1; i++) if (t < ks[i + 1][0]) return ks[i][1] + (ks[i + 1][1] - ks[i][1]) * (t - ks[i][0]) / (ks[i + 1][0] - ks[i][0]); }
+  return 1;
+}
+
+// ------------------------------------------------------------------ the preview's stand-in fireball sim (37.14 shape)
+const balls = [], bursts = [];
+let simTick = 0, lastBurstFor = null;
+function castFireball(charged, aimDown) {
+  const co = VMD.castOffset, sgn = mirrorOn() ? 1 : -1;
+  const o = [sgn * co.right, -co.fwd, -co.down];
+  const target = aimDown ? [0, -4.0, -1.6] : [0, -ctl.wall, 0];
+  const dx = target[0] - o[0], dy = target[1] - o[1], dz = target[2] - o[2], l = Math.hypot(dx, dy, dz);
+  const sp = charged ? 12 : 16;
+  balls.push({ x: o[0], y: o[1], z: o[2], dx: dx / l, dy: dy / l, dz: dz / l, sp, charged, travelled: 0, slot: balls.length, born: simTick });
+  PS.burstAt(PID.handSparks, o[0], o[1], o[2], VMD.sparks.castN, dx / l, dy / l, dz / l);
+}
+function burst(b, nx, ny, nz) {
+  const F = SFX.burst, ch = b.charged;
+  PS.burstAt(PID.fireballBurst, b.x, b.y, b.z, ch ? F.particles[0].nCharged : F.particles[0].n, nx, ny, nz);
+  PS.burstAt(PID.fireballSmoke, b.x, b.y, b.z, ch ? F.particles[1].nCharged : F.particles[1].n);
+  if (nz >= 0.7) PS.burstAt(PID.fireballCinders, b.x, b.y, -1.6 + 0.03, ch ? F.particles[2].nCharged : F.particles[2].n);
+  const d = Math.hypot(b.x, b.y, b.z);
+  bursts.push({ x: b.x + nx * 0.25, y: b.y + ny * 0.25, z: b.z + nz * 0.25, fx: b.x + nx * 0.3, fy: b.y + ny * 0.3, fz: b.z + nz * 0.3,
+                tick: simTick, charged: ch, kick: d <= F.kick.withinM ? (ch ? F.kick.degCharged : F.kick.deg) * (1 - d / F.kick.withinM) : 0, dist: d });
+  lastBurstFor = { dist: d, charged: ch };
+}
+function simStep() {
+  simTick++;
+  for (let i = balls.length - 1; i >= 0; i--) {
+    const b = balls[i], st = b.sp * STEP_MS / 1000;
+    b.x += b.dx * st; b.y += b.dy * st; b.z += b.dz * st; b.travelled += st;
+    if ((simTick - b.born) % 2 === 0) PS.burstAt(PID.fireTrail, b.x, b.y, b.z, b.charged ? 2 : 1, -b.dx, -b.dy, -b.dz);
+    let hit = null;
+    if (b.y <= -ctl.wall + 0.1) { b.y = -ctl.wall + 0.1; hit = [0, 1, 0]; }
+    else if (b.z <= -1.6 + 0.1) { b.z = -1.6 + 0.1; hit = [0, 0, 1]; }
+    else if (Math.abs(b.x) >= 2.4) hit = [-Math.sign(b.x), 0, 0];
+    else if (b.travelled >= 24) hit = [-b.dx, -b.dy, -b.dz];
+    if (hit) { burst(b, hit[0], hit[1], hit[2]); balls.splice(i, 1); }
+  }
+  // idle / charge hand sparks (sim side, at eye + castOffset)
+  if (PL) {
+    const s = PL.seq[PL.i], every = s.clip === 'charge' || s.clip === 'chargeHold' ? VMD.sparks.chargeEvery : VMD.sparks.idleEvery;
+    if (!s.hidden && s.clip !== 'lower' && simTick % every === 0) {
+      const co = VMD.castOffset, sgn = mirrorOn() ? 1 : -1;
+      PS.burstAt(PID.handSparks, sgn * co.right, -co.fwd, -co.down + 0.03, 1);
+    }
+  }
+  PS.step();
+}
+
+// ------------------------------------------------------------------ first-person view
+let fpView = null, curPts = [];
+function buildFP() {
+  const spec = specOf(ctl.grid);
+  const host = $('fpHost'); host.innerHTML = '';
+  const g = makeCanvas(spec.cols, spec.rows, spec.cw, spec.ch); host.appendChild(g.cv);
+  fpView = { spec, g };
+}
+function renderFP() {
+  if (!fpView) buildFP();
+  const { spec, g } = fpView, mirror = mirrorOn(), sgn = mirror ? 1 : -1;
+  const st = tickPlayer(PL), simT = vt / 1000;
+  // kick
+  let kickDeg = 0;
+  for (const bu of bursts) { const age = simTick - bu.tick; if (bu.kick > 0 && age < SFX.burst.kick.steps) kickDeg = Math.max(kickDeg, bu.kick * (1 - age / SFX.burst.kick.steps)); }
+  const kickT = Math.tan(kickDeg * D2R);
+  // lights
+  const pts = [];
+  const hidden = st.s.hidden || st.s.clip === 'lower';
+  if (!hidden) { const co = VMD.carriedLight.offset; pts.push(presetLight('spellEmber', mirror ? -co.right : co.right, -co.fwd, -co.down, glowMul(st), simT, 0)); }
+  for (const b of balls) pts.push(presetLight(b.charged ? 'fireballLightBig' : 'fireballLight', b.x, b.y, b.z, 1, simT, b.slot * 1.7));
+  for (let i = bursts.length - 1; i >= 0; i--) {
+    const bu = bursts[i], age = simTick - bu.tick;
+    if (age > 40) { bursts.splice(i, 1); continue; }
+    if (age < SFX.burst.flash.steps) { const k = 1 - age / SFX.burst.flash.steps; pts.push(presetLight(bu.charged ? 'fireballFlashBig' : 'fireballFlash', bu.fx, bu.fy, bu.fz, k * k, simT, 0)); }
+  }
+  curPts = pts;
+  const B = shadeBackground(spec, pts, kickT);
+  const info = {};
+  for (const b of balls) {
+    const m = b.charged ? SPR.fireballCoreCharged : SPR.fireballCore;
+    drawSprite(B, spec, m, 'fly', (Math.floor(simT * 12) + b.slot * 3) % 4, [b.x, b.y, b.z], kickT, info);
+  }
+  for (const bu of bursts) {
+    const ms = (simTick - bu.tick) * STEP_MS, m = bu.charged ? SPR.fireballBlastCharged : SPR.fireballBlast;
+    const f = frameOfDur(m.animations.burst, ms); if (f >= 0) drawSprite(B, spec, m, 'burst', f, [bu.x, bu.y, bu.z], kickT, info);
+  }
+  drawParticles(B, spec, kickT);
+  if (!hidden) drawHand(spec, B, st.pose, mirror, pts);
+  edgePass(B, spec.cols, spec.rows);
+  // chargeReady glint at the ember mount
+  if (st.s.clip === 'chargeHold' && st.t < 100) {
+    const e = UT.mountEye(VMD, st.pose, 'ember', mirror), pr = project(spec, e, 0), cr = VMD.chargeReady;
+    const f = frameOfDur(cr, st.t);
+    if (pr && f >= 0) { const fr = cr.frames[f], key = cr.keys[fr.fg[0]]; const c = Math.round(pr.c), r = Math.round(pr.r) - 2;
+      if (c >= 0 && r >= 0 && c < spec.cols && r < spec.rows) setRGB(B, r * spec.cols + c, fr.glyphs[0], P.rgb[key.c]); }
+  }
+  const ci = Math.floor(spec.rows / 2) * spec.cols + Math.floor(spec.cols / 2); setRGB(B, ci, '+', P.rgb.uiDim);
+  present(g, B);
+  const e0 = UT.mountEye(VMD, st.pose, 'ember', mirror);
+  $('fpInfo').textContent = `${spec.cols}x${spec.rows}  clip ${st.s.clip} t ${st.t.toFixed(0)} ms  glow x${glowMul(st).toFixed(2)}  ember eye (${e0.map((v) => v.toFixed(3)).join(', ')})` +
+    `  balls ${balls.length}  particles live ${PS.stats.live}  ball sprite rows ${info.rows || '-'} (${info.lod || '-'})${info.culled ? '  near-culled sprite this frame' : ''}` +
+    `  kick ${kickDeg.toFixed(2)} deg` + (lastBurstFor ? `  last burst at ${lastBurstFor.dist.toFixed(1)} m` : '');
+}
+function buildSeqButtons() {
+  const bar = $('seqButtons');
+  for (const [id, label] of [['idle', 'idle'], ['tap', 'tap cast'], ['hold', 'hold -> charged cast'], ['floor', 'tap at the floor (cinders)'], ['fizzle', 'no mana (fizzle)'], ['equip', 'lower / raise'], ['auto', 'auto demo']]) {
+    const b = document.createElement('button'); b.textContent = label; if (id === 'auto') b.className = 'on';
+    b.onclick = () => { PL = makePlayer(SEQS[id]); bar.querySelectorAll('button').forEach((x) => x.className = x === b ? 'on' : ''); };
+    bar.appendChild(b);
+  }
+  PL = makePlayer(SEQS.auto);
+}
+
+// ------------------------------------------------------------------ key-pose strips
+function buildStrips() {
+  const host = $('strips');
+  for (const name of ['idle', 'charge', 'cast', 'castHard', 'fizzle', 'raise']) {
+    const h = document.createElement('h3'); h.textContent = name; host.appendChild(h);
+    const row = document.createElement('div'); row.className = 'row'; host.appendChild(row);
+    VMD.clips[name].keys.forEach((key, ki) => {
+      const spec = { cols: 160, rows: 60, cw: 2.6, ch: 3.9 }, g = makeCanvas(spec.cols, spec.rows, spec.cw, spec.ch);
+      const pts = [presetLight('spellEmber', VMD.carriedLight.offset.right, -VMD.carriedLight.offset.fwd, -VMD.carriedLight.offset.down, 1, 0, 0)];
+      curPts = pts;
+      const B = shadeBackground(spec, pts, 0); drawHand(spec, B, key, false, pts); edgePass(B, spec.cols, spec.rows); present(g, B);
+      const w = document.createElement('div'); w.appendChild(g.cv);
+      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = 'k' + ki + ' t ' + key.t + ' pos ' + key.pos.join(', ') + ' rot ' + key.rot.join(', ');
+      w.appendChild(cap); row.appendChild(w);
+    });
+  }
+}
+
+// ------------------------------------------------------------------ sprite sheets
+const liveSprites = [];
+function sprHTML(model, fr) {
+  let h = '';
+  for (let r = 0; r < fr.glyphs.length; r++) {
+    for (let c = 0; c < fr.glyphs[r].length; c++) {
+      const g = fr.glyphs[r][c], k = fr.fg[r][c];
+      if (g === ' ') { h += ' '; continue; }
+      const col = P.rgb[model.keys[k].c];
+      h += `<span style="color:rgb(${col[0]},${col[1]},${col[2]})">${g.replace('&', '&amp;').replace('<', '&lt;')}</span>`;
+    }
+    h += '\n';
+  }
+  return h;
+}
+function buildSprites() {
+  const host = $('sprites');
+  for (const n of Object.keys(SPR)) {
+    const m = SPR[n];
+    const h = document.createElement('h3'); h.textContent = `${n} - ${m.size.w}x${m.size.h}, world ${m.world.w} x ${m.world.h} m`; host.appendChild(h);
+    const nd = document.createElement('div'); nd.className = 'note'; nd.textContent = m.desc; host.appendChild(nd);
+    for (const [tierName, tier] of [['full', m]].concat(m.lods && m.lods.half ? [['half', m.lods.half]] : [])) {
+      for (const an of Object.keys(tier.animations)) {
+        const anim = tier.animations[an], row = document.createElement('div'); row.className = 'row';
+        anim.frames.forEach((f) => { const pre = document.createElement('pre'); pre.className = 'spr'; pre.innerHTML = sprHTML(m, f.S); row.appendChild(pre); });
+        const live = document.createElement('pre'); live.className = 'spr'; live.style.outline = '1px solid #333'; row.appendChild(live);
+        const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = `${tierName} ${an}: ${anim.frames.length} frames, ${anim.fps ? anim.fps + ' fps' : anim.durations.join(' + ') + ' ms'}${anim.loop ? ', loop' : ''}`;
+        host.appendChild(cap); host.appendChild(row);
+        liveSprites.push({ m, anim, live, last: -1 });
+      }
+    }
+  }
+}
+function tickSprites(now) {
+  for (const L of liveSprites) {
+    let f;
+    if (L.anim.fps) f = Math.floor(now / 1000 * L.anim.fps) % L.anim.frames.length;
+    else { const tot = L.anim.durations.reduce((a, b) => a + b, 0) + 400; f = frameOfDur(L.anim, now % tot); if (f < 0) f = L.anim.frames.length - 1; }
+    if (f !== L.last) { L.live.innerHTML = sprHTML(L.m, L.anim.frames[f].S); L.last = f; }
+  }
+}
+
+// ================================================================== 4. THE PACK SCREEN
+const IC = { cols: 160, rows: 60, cw: 7, ch: 10.5 };
+const invG = makeCanvas(IC.cols, IC.rows, IC.cw, IC.ch, $('inv'));
+let inv;
+function invReset() {
+  const m = INV.mock;
+  inv = { open: true, slots: new Array(24).fill(null), left: m.left, right: m.right, hp: m.hp, hpMax: m.hpMax,
+          cur: { zone: 'grid', i: 0 }, flashes: [], toasts: [], now: 0 };
+  m.slots.forEach((s, i) => { inv.slots[i] = { id: s.id, n: s.n }; });
+}
+invReset();
+const UIB = { glyph: new Array(160 * 60), fg: new Array(160 * 60), bg: new Array(160 * 60) };
+function uiClear() { UIB.glyph.fill(null); UIB.fg.fill(null); UIB.bg.fill(null); }
+function put(x, y, ch, fg, bg) { if (x < 0 || y < 0 || x >= 160 || y >= 60) return; const i = y * 160 + x; UIB.glyph[i] = ch; UIB.fg[i] = fg; UIB.bg[i] = bg || UIB.bg[i] || INV.panel.bg; }
+function text(x, y, s, fg, bg) { for (let k = 0; k < s.length; k++) put(x + k, y, s[k], fg, bg); }
+function box(x, y, w, h, st, fgOver, inner) {
+  const fg = fgOver || st.fg, cf = fgOver || st.cornerFg || st.fg;
+  for (let c = 0; c < w; c++) { put(x + c, y, c === 0 || c === w - 1 ? st.corner : st.h, c === 0 || c === w - 1 ? cf : fg); put(x + c, y + h - 1, c === 0 || c === w - 1 ? st.corner : st.h, c === 0 || c === w - 1 ? cf : fg); }
+  for (let r = 1; r < h - 1; r++) { put(x, y + r, st.v, fg); put(x + w - 1, y + r, st.v, fg); }
+  if (inner) for (let r = 1; r < h - 1; r++) for (let c = 1; c < w - 1; c++) put(x + c, y + r, ' ', fg, inner);
+}
+function iconAt(x, y, id, bg) {
+  const d = IT.defs[id]; if (!d) return;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
+    const g = d.icon.glyphs[r][c], k = d.icon.fg[r][c]; if (g === ' ') continue;
+    put(x + c, y + r, g, P.rgb[IT.keys[k].c], bg);
+  }
+}
+function flashOf(target) { for (const f of inv.flashes) if (f.target === target && inv.now < f.until) return f; return null; }
+function wrap(s, w) { const out = []; let line = ''; for (const word of s.split(' ')) { if ((line + (line ? ' ' : '') + word).length > w) { if (line) out.push(line); line = word.slice(0, w); } else line += (line ? ' ' : '') + word; } if (line) out.push(line); return out; }
+function selItem() {
+  if (inv.cur.zone === 'hand') return inv[inv.cur.hand];
+  const s = inv.slots[inv.cur.i]; return s ? s.id : null;
+}
+function drawInv() {
+  uiClear();
+  const R = INV.rgb, px = INV.panel.x, py = INV.panel.y, W = INV.panel.w, H = INV.panel.h;
+  // HUD (rows 1-2, simplified uiStyle.vitals)
+  const V = A.uiStyle.vitals;
+  const hpCells = Math.round(inv.hp * 20 / inv.hpMax);
+  text(2, 1, 'HP [', [255, 143, 126], [10, 11, 16]); for (let c = 0; c < 20; c++) put(6 + c, 1, c < hpCells ? '#' : '.', c < hpCells ? [216, 52, 74] : [110, 40, 48], [10, 11, 16]);
+  text(26, 1, '] ' + inv.hp + '/' + inv.hpMax, [232, 226, 208], [10, 11, 16]);
+  text(2, 2, 'MP [', [156, 194, 255], [10, 11, 16]); for (let c = 0; c < 20; c++) put(6 + c, 2, '=', [76, 132, 242], [10, 11, 16]); text(26, 2, '] 20/20', [232, 226, 208], [10, 11, 16]);
+  // toasts (items.toast)
+  inv.toasts = inv.toasts.filter((t) => inv.now < t.until);
+  inv.toasts.forEach((t, k) => text(80 - (t.text.length >> 1), IT.toast.anchor.row + k, t.text, t.fg, IT.toast.colors.plate));
+  if (!inv.open) { text(62, 30, '[I] open the pack', R.uiHint, [10, 11, 16]); return; }
+  // panel + frame
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) put(px + c, py + r, ' ', R.uiText, INV.panel.bg);
+  box(px, py, W, H, INV.frame);
+  const T = ' ' + INV.frame.title.text + ' '; text(px + ((W - T.length) >> 1), py, T, INV.frame.title.fg);
+  const pt = ' ' + INV.frame.pausedTag.text + ' '; text(px + INV.frame.pausedTag.col, py + INV.frame.pausedTag.row, pt, INV.frame.pausedTag.fg);
+  for (const s of INV.separators) {
+    if (s.row !== undefined) for (let c = s.from; c <= s.to; c++) put(px + c, py + s.row, s.glyph, s.fg);
+    else for (let r = s.from; r <= s.to; r++) put(px + s.col, py + r, s.glyph, s.fg);
+  }
+  // hands strip
+  const HS = INV.hands;
+  for (const side of ['left', 'right']) {
+    const L = HS[side], id = inv[side], sel = inv.cur.zone === 'hand' && inv.cur.hand === side, fl = flashOf('hand:' + side);
+    const st = sel ? INV.slot.selected : HS.frame;
+    box(px + L.box.x, py + L.box.y, 9, 5, st, fl ? fl.fg : null, sel ? INV.slot.selected.innerBg : INV.slot.innerBg);
+    const inBg = sel ? INV.slot.selected.innerBg : INV.slot.innerBg;
+    if (id) iconAt(px + L.box.x + INV.slot.icon.x, py + L.box.y + INV.slot.icon.y, id, inBg);
+    else HS.emptyGlyph[side].forEach((row, r) => { for (let c = 0; c < 7; c++) if (row[c] !== ' ') put(px + L.box.x + 1 + c, py + L.box.y + 1 + r, row[c], HS.emptyGlyph.fg, inBg); });
+    text(px + L.label.x, py + L.label.y, L.label.text, HS.label.fg);
+    text(px + L.label.x + L.label.text.length + L.button.gap, py + L.label.y, L.button.text, HS.button.fg);
+    if (id) { text(px + L.name.x, py + L.name.y, IT.defs[id].name, HS.name.fg); text(px + L.kind.x, py + L.kind.y, HS.kindText[IT.defs[id].kind] || IT.defs[id].kind, HS.kind.fg); }
+    else text(px + L.name.x, py + L.name.y, HS.emptyName.text, HS.emptyName.fg);
+    if (sel) text(px + L.hint.x, py + L.hint.y, HS.hint.text, HS.hint.fg);
+  }
+  // grid
+  const G = INV.grid, S = INV.slot;
+  const slotXY = (i) => [px + G.x + (i % G.cols) * G.pitchX, py + G.y + Math.floor(i / G.cols) * G.pitchY];
+  const drawSlot = (i, selected) => {
+    const [x, y] = slotXY(i), it = inv.slots[i], fl = flashOf('slot:' + i);
+    const inner = fl && fl.innerBg ? fl.innerBg : selected ? S.selected.innerBg : S.innerBg;
+    box(x, y, 9, 5, selected ? S.selected : S.border, fl && fl.fg ? fl.fg : null, inner);
+    if (!it) { put(x + S.empty.x, y + S.empty.y, S.empty.glyph, S.empty.fg, inner); return; }
+    iconAt(x + S.icon.x, y + S.icon.y, it.id, inner);
+    if (it.n >= S.count.minN) { const t = S.count.format.replace('{n}', it.n); text(x + 8 - t.length, y + 4, t, S.count.fg, S.count.bg); }
+    if (inv.left === it.id) put(x + S.equippedTag.col, y, S.equippedTag.left, S.equippedTag.fg, S.equippedTag.bg);
+    if (inv.right === it.id) put(x + S.equippedTag.col, y, S.equippedTag.right, S.equippedTag.fg, S.equippedTag.bg);
+  };
+  for (let i = 0; i < 24; i++) drawSlot(i, false);
+  if (inv.cur.zone === 'grid') drawSlot(inv.cur.i, true);
+  // details
+  const Dt = INV.details, id = selItem();
+  if (inv.cur.zone === 'hand') {
+    text(px + Dt.handSlotSelected.x, py + Dt.handSlotSelected.y, Dt.handSlotSelected.text, Dt.handSlotSelected.fg);
+  }
+  box(px + Dt.iconBox.x, py + Dt.iconBox.y, 9, 5, S.border, null, S.innerBg);
+  if (!id) text(px + Dt.emptySlot.x, py + Dt.emptySlot.y, Dt.emptySlot.text, Dt.emptySlot.fg);
+  else {
+    const d = IT.defs[id], it = inv.cur.zone === 'grid' ? inv.slots[inv.cur.i] : null;
+    iconAt(px + Dt.iconBox.x + S.icon.x, py + Dt.iconBox.y + S.icon.y, id, S.innerBg);
+    text(px + Dt.name.x, py + Dt.name.y, d.name, Dt.name.fg);
+    text(px + Dt.kind.x, py + Dt.kind.y, Dt.kind.text[d.kind] || d.kind, Dt.kind.fg);
+    if (inv.left === id) text(px + Dt.status.x, py + Dt.status.y, Dt.status.inLeft, Dt.status.fg);
+    else if (inv.right === id) text(px + Dt.status.x, py + Dt.status.y, Dt.status.inRight, Dt.status.fg);
+    else if (it && it.n > 1) text(px + Dt.status.x, py + Dt.status.y, Dt.status.count.format.replace('{n}', it.n), Dt.status.count.fg);
+    wrap(d.desc, Dt.desc.w).slice(0, Dt.desc.maxLines).forEach((ln, k) => text(px + Dt.desc.x, py + Dt.desc.y + k, ln, Dt.desc.fg));
+    if (inv.cur.zone === 'grid') {
+      const AC = Dt.actions, rows = d.hand ? AC.byKind.hand : AC.byKind[d.kind] || [];
+      rows.forEach((a, k) => {
+        const y = py + AC.y + k * (1 + AC.gapRows);
+        if (a.keys) text(px + AC.x, y, a.keys, AC.keyFg);
+        const tx = (a.text || '').replace('{heal}', d.use && d.use.heal);
+        text(px + AC.x + (a.keys ? 12 : 0), y, tx, a.fg || AC.textFg);
+        if (a.hand && inv[a.hand] === id) text(px + AC.x + 12 + tx.length + 1, y, AC.here.text, AC.here.fg);
+      });
+    }
+  }
+  // key hints
+  const KH = INV.keyHints, kx = px + ((W - KH.text.length) >> 1);
+  text(kx, py + KH.row, KH.text, KH.fg);
+  for (const k of KH.keys) { const at = KH.text.indexOf(k); if (at >= 0) text(kx + at, py + KH.row, k, KH.keyFg); }
+}
+function invScene() {
+  const sc = +$('invGrid').value, sr = sc === 240 ? 90 : 150, cw = IC.cols * IC.cw / sc, ch = IC.rows * IC.ch / sr, ctx = invG.ctx;
+  ctx.save(); ctx.font = Math.max(3, Math.round(ch * 0.9)) + 'px ' + FONT;
+  const s = sc / 160, PX = INV.panel, pad = INV.plate.pad;
+  const pc0 = Math.floor((PX.x - pad) * s), pc1 = Math.ceil((PX.x + PX.w + pad) * s) - 1, pr0 = Math.floor((PX.y - pad) * s), pr1 = Math.ceil((PX.y + PX.h + pad) * s) - 1;
+  for (let r = 0; r < sr; r++) for (let c = 0; c < sc; c++) {
+    const sky = r < sr * 0.42, h = ((c * 7 + r * 13) % 11) / 11;
+    let fg = sky ? [196, 220, 239] : [120 + 40 * h, 170 + 30 * h, 74], bg = sky ? [111, 163, 220] : [60, 100, 40];
+    const g = sky ? (h > 0.85 ? '~' : ' ') : '",\';:'[(c * 3 + r) % 5];
+    let k = 1;
+    if (inv.open) { k = INV.sceneDim.bgMul; if (c >= pc0 && c <= pc1 && r >= pr0 && r <= pr1) k = INV.plate.bgMul; }
+    ctx.fillStyle = `rgb(${bg[0] * k | 0},${bg[1] * k | 0},${bg[2] * k | 0})`; ctx.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
+    if (g !== ' ') { ctx.fillStyle = `rgb(${fg[0] * k | 0},${fg[1] * k | 0},${fg[2] * k | 0})`; ctx.fillText(g, c * cw + cw / 2, r * ch + ch / 2 + 1); }
+  }
+  ctx.restore();
+}
+function invRender() {
+  inv.now = performance.now();
+  invScene(); drawInv();
+  const ctx = invG.ctx;
+  for (let i = 0; i < 160 * 60; i++) {
+    if (UIB.glyph[i] === null) continue;
+    const x = (i % 160) * IC.cw, y = Math.floor(i / 160) * IC.ch, bg = UIB.bg[i], fg = UIB.fg[i];
+    ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`; ctx.fillRect(x, y, IC.cw + 0.5, IC.ch + 0.5);
+    if (UIB.glyph[i] !== ' ') { ctx.fillStyle = `rgb(${fg[0]},${fg[1]},${fg[2]})`; ctx.fillText(UIB.glyph[i], x + IC.cw / 2, y + IC.ch / 2 + 1); }
+  }
+}
+function flash(target, kind) {
+  const F = INV.slot.flash[kind];
+  inv.flashes.push({ target, until: performance.now() + F.ms, fg: F.borderFg || null, innerBg: F.innerBg || null });
+}
+function toast(t) { inv.toasts.push({ text: t.text, fg: t.fg, until: performance.now() + IT.toast.lifeSteps * STEP_MS }); }
+function assign(hand) {
+  if (inv.cur.zone !== 'grid') return;
+  const s = inv.slots[inv.cur.i]; if (!s) return;
+  const d = IT.defs[s.id];
+  if (!d.hand) { flash('slot:' + inv.cur.i, 'refuse'); return; }
+  const other = hand === 'left' ? 'right' : 'left';
+  if (inv[other] === s.id) { inv[other] = null; flash('hand:' + other, 'cleared'); }
+  inv[hand] = s.id; flash('hand:' + hand, 'assign');
+}
+function emptyHand(hand) { if (inv[hand]) { inv[hand] = null; flash('hand:' + hand, 'cleared'); } }
+function useItem() {
+  if (inv.cur.zone === 'hand') { emptyHand(inv.cur.hand); return; }
+  const s = inv.slots[inv.cur.i]; if (!s) return;
+  const d = IT.defs[s.id];
+  if (d.kind === 'food') {
+    if (inv.hp >= inv.hpMax) { toast(IT.toast.messages.notHurt); return; }
+    inv.hp = Math.min(inv.hpMax, inv.hp + d.use.heal); s.n--; flash('slot:' + inv.cur.i, 'use');
+    if (s.n <= 0) inv.slots[inv.cur.i] = null;
+  } else if (d.kind === 'material') { toast(IT.toast.messages.material); flash('slot:' + inv.cur.i, 'refuse'); }
+  else flash('slot:' + inv.cur.i, 'refuse');
+}
+function nav(dx, dy) {
+  const G = INV.grid;
+  if (inv.cur.zone === 'hand') {
+    if (dy > 0) inv.cur = { zone: 'grid', i: inv.cur.hand === 'left' ? 0 : 3 };
+    else if (dx !== 0) inv.cur = { zone: 'hand', hand: inv.cur.hand === 'left' ? 'right' : 'left' };
+    return;
+  }
+  const c = inv.cur.i % G.cols, r = Math.floor(inv.cur.i / G.cols);
+  if (dy < 0 && r === 0) { inv.cur = { zone: 'hand', hand: c < 3 ? 'left' : 'right' }; return; }
+  const nc = Math.max(0, Math.min(G.cols - 1, c + dx)), nr = Math.max(0, Math.min(G.rows - 1, r + dy));
+  inv.cur = { zone: 'grid', i: nr * G.cols + nc };
+}
+$('inv').addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'i') inv.open = !inv.open;
+  else if (k === 'escape') inv.open = false;
+  else if (!inv.open) return;
+  else if (k === 'w' || k === 'arrowup') nav(0, -1);
+  else if (k === 's' || k === 'arrowdown') nav(0, 1);
+  else if (k === 'a' || k === 'arrowleft') nav(-1, 0);
+  else if (k === 'd' || k === 'arrowright') nav(1, 0);
+  else if (k === 'q') assign('left');
+  else if (k === 'e') assign('right');
+  else if (k === 'enter' || k === 'u') useItem();
+  else return;
+  e.preventDefault();
+});
+function cellAt(e) { const r = $('inv').getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / IC.cw), Math.floor((e.clientY - r.top) / IC.ch)]; }
+function hoverAt(x, y) {
+  const px = INV.panel.x, py = INV.panel.y, G = INV.grid;
+  for (const side of ['left', 'right']) { const b = INV.hands[side].box; if (x >= px + b.x && x < px + b.x + 9 && y >= py + b.y && y < py + b.y + 5) return { zone: 'hand', hand: side }; }
+  const gx = x - px - G.x, gy = y - py - G.y;
+  if (gx >= 0 && gy >= 0 && gx < G.cols * G.pitchX + 1 && gy < G.rows * G.pitchY + 1) {
+    const c = Math.min(G.cols - 1, Math.floor(gx / G.pitchX)), r = Math.min(G.rows - 1, Math.floor(gy / G.pitchY));
+    return { zone: 'grid', i: r * G.cols + c };
+  }
+  return null;
+}
+$('inv').addEventListener('mousemove', (e) => { if (!inv.open) return; const h = hoverAt(...cellAt(e)); if (h) inv.cur = h; });
+$('inv').addEventListener('contextmenu', (e) => e.preventDefault());
+$('inv').addEventListener('mousedown', (e) => {
+  $('inv').focus(); if (!inv.open) return;
+  const h = hoverAt(...cellAt(e)); if (!h) return; inv.cur = h;
+  if (h.zone === 'hand') emptyHand(h.hand); else assign(e.button === 2 ? 'right' : 'left');
+  e.preventDefault();
+});
+$('invReset').onclick = () => invReset();
+$('invHurt').onclick = () => { inv.hp = 12; };
+$('invFull').onclick = () => { inv.hp = inv.hpMax; };
+
+// ================================================================== checks
+function runChecks() {
+  const out = [], check = (ok, msg) => out.push(`<div class="${ok === true ? 'pass' : ok === 'info' ? 'info' : 'fail'}">${ok === true ? 'PASS' : ok === 'info' ? 'INFO' : 'FAIL'} ${msg}</div>`);
+  const errs = SFX.validate(P);
+  check(errs.length === 0, errs.length ? 'spellFx.validate(): ' + errs.join('; ') : 'spellFx.validate(): sprites (sizes, keys, ASCII, glyph/fg spaces), particle ramps + smoke <= 35 %, 5 light presets, glove materials in palette + detail-pass, castOffset = ember mount at rest, carried light = ember, ember on screen in idle / charge / chargeHold / fizzle');
+  const vr = validateVoxelModel(HAND, { materialKeys: Object.keys(P.materials) });
+  check(vr.errors.length === 0, vr.errors.length ? 'validateVoxelModel(spellHandL): ' + vr.errors.join('; ') : 'engine validateVoxelModel(spellHandL) clean' + (vr.warnings.length ? ' (warnings: ' + vr.warnings.join('; ') + ')' : ''));
+  check(!!PM, PM ? 'engine packVoxelModel(spellHandL) ok' : 'packVoxelModel threw: ' + packErr);
+  for (const k of Object.keys(SFX.particles)) {
+    try { createParticles({ capacity: 8 }).defineEmitter(k, A.particles.toEmitterDef(k, P.rgb)); check(true, `engine defineEmitter("${k}")`); }
+    catch (e) { check(false, `defineEmitter("${k}") threw ${e.message}`); }
+  }
+  const pv = U.validate(); check(pv.length === 0, pv.length ? 'palette.validate(): ' + pv.join('; ') : 'palette.validate() clean (incl. ember_core / ember_glow, the 5 lights)');
+  const iv = IT.validate(P); check(iv.length === 0, iv.length ? 'items.validate(): ' + iv.join('; ') : 'items.validate() clean');
+  check(VMD.hand === 'left' && VMD.rest.pos[0] < 0, 'spellHand authored LEFT (hand: left, rest.pos.x < 0): the engine mirrors it for the right hand (37.8a)');
+  const e0 = UT.mountEye(VMD, VMD.rest, 'ember');
+  check('info', `ember mount at rest (eye) = (${e0.map((v) => v.toFixed(3)).join(', ')}); spellConfig castOffset = {right ${VMD.castOffset.right}, fwd ${VMD.castOffset.fwd}, down ${VMD.castOffset.down}} (37.14 proposed 0.25 / 0.45 / 0.30: off-screen, see spell.js section 2)`);
+  // ember screen position + glove size
+  for (const cols of [160, 240, 400]) {
+    const spec = specOf(cols), pr = project(spec, e0, 0);
+    check(pr && pr.r > 0 && pr.r < spec.rows - 1 && pr.c > 0 && pr.c < spec.cols - 1, `${cols}x${spec.rows}: the coal is on screen at rest (col ${pr.c.toFixed(0)}, row ${pr.r.toFixed(0)})`);
+  }
+  // cast clip: every sampled glove point in front of the near plane
+  let minS = 9;
+  for (const cn of Object.keys(VMD.clips)) { const cl = VMD.clips[cn], T = cl.keys[cl.keys.length - 1].t; for (let t = 0; t <= T; t += 10) { const pose = UT.sampleKeys(cl.keys, t, cl.loop); for (const v of [[3, 4, 17], [3, 2, 22], [3, 1, 0], [6, 2, 18]]) minS = Math.min(minS, -eyePoint(pose, hp(v))[1]); } }
+  check(minS >= VMD.depth.near, `every clip keeps the sampled glove points (coal, fingertip, sleeve end, thumb) >= depth.near ${VMD.depth.near} m in front of the eye (min ${minS.toFixed(3)} m)`);
+  // fireball sprite sizes
+  for (const d of [3, 6, 10, 20]) {
+    const spec = specOf(240), rows = SPR.fireballCore.world.h * pdOf(spec) / d, sc = rows / SPR.fireballCore.size.h;
+    check('info', `240x90: fireballCore at ${d} m = ${rows.toFixed(1)} rows (${sc < 0.75 ? 'half LOD' : 'full'}); blast ${(SPR.fireballBlast.world.h * pdOf(spec) / d).toFixed(1)} rows`);
+  }
+  // light presets vs 37.14
+  const L = P.lights;
+  check(L.fireballLight.radius === 4 && L.fireballFlash.radius === 6 && L.fireballFlash.durationMs === 150, 'fireballLight r 4 m, fireballFlash r 6 m / 150 ms (SPELL-01b AC); charged twins r 5 / r 8');
+  // inventory layout
+  const PX = INV.panel, rects = [];
+  check(PX.x >= 0 && PX.y >= 3 && PX.x + PX.w <= 160 && PX.y + PX.h <= 60, `pack panel ${PX.w}x${PX.h} at (${PX.x}, ${PX.y}) inside the 160x60 UI grid, below the HUD rows 1-2 and the toast rows 4-6`);
+  rects.push(['left hand box', INV.hands.left.box.x, INV.hands.left.box.y, 9, 5], ['right hand box', INV.hands.right.box.x, INV.hands.right.box.y, 9, 5],
+             ['left labels', INV.hands.left.label.x, 2, 37, 4], ['right labels', INV.hands.right.label.x, 2, 33, 4],
+             ['grid', INV.grid.x, INV.grid.y, INV.grid.cols * INV.grid.pitchX + 1, INV.grid.rows * INV.grid.pitchY + 1],
+             ['details', INV.details.x, INV.details.y, INV.details.w, INV.details.h]);
+  let ov = [];
+  for (let a = 0; a < rects.length; a++) for (let b = a + 1; b < rects.length; b++) {
+    const A1 = rects[a], B1 = rects[b];
+    if (A1[1] < B1[1] + B1[3] && B1[1] < A1[1] + A1[3] && A1[2] < B1[2] + B1[4] && B1[2] < A1[2] + A1[4]) ov.push(A1[0] + ' / ' + B1[0]);
+  }
+  const inside = rects.every((r) => r[1] >= 1 && r[2] >= 1 && r[1] + r[3] <= PX.w - 1 && r[2] + r[4] <= PX.h - 1);
+  check(ov.length === 0 && inside, ov.length ? 'layout overlaps: ' + ov.join(', ') : 'hands boxes, labels, grid and details do not overlap and stay inside the frame');
+  const names = Object.values(IT.defs).filter((d) => d.inPack);
+  const maxName = Math.max(...names.map((d) => d.name.length));
+  check(INV.details.name.x + maxName <= PX.w - 2 && INV.hands.right.name.x + maxName <= PX.w - 2, `longest pack item name (${maxName} chars) fits the details panel and the right-hand strip`);
+  const descOk = names.every((d) => wrap(d.desc, INV.details.desc.w).length <= INV.details.desc.maxLines);
+  check(descOk, `every item desc wraps into <= ${INV.details.desc.maxLines} lines at ${INV.details.desc.w} cols`);
+  check(INV.keyHints.text.length <= PX.w - 4, `key hint line ${INV.keyHints.text.length} cols fits the panel`);
+  check(names.every((d) => d.icon.glyphs.every((r) => r.length <= INV.slot.icon.w) && d.icon.glyphs.length <= INV.slot.icon.h), 'every item icon fits the 5x3 icon box inside the 7x3 slot interior');
+  check([...INV.keyHints.text, ...INV.hands.emptyGlyph.left.join(''), ...INV.hands.emptyGlyph.right.join('')].every((ch) => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) <= 126), 'pack screen text + empty-hand glyph are printable ASCII');
+  $('checks').innerHTML = out.join('');
+}
+
+// ================================================================== loop
+function frame(now) {
+  const dt = Math.min(100, now - lastNow); lastNow = now;
+  vt += dt * ctl.speed; simAcc += dt * ctl.speed;
+  while (simAcc >= STEP_MS) { simAcc -= STEP_MS; simStep(); }
+  renderFP(); tickSprites(now); invRender();
+  requestAnimationFrame(frame);
+}
+$('dumpBtn').onclick = () => {
+  const v = $('dumpSel').value;
+  const o = v === 'spellHand' ? VMD : v === 'spellFx' ? Object.assign({}, SFX, { util: undefined }) : v === 'inventory' ? INV : A.voxelModels.spellHandL;
+  $('dump').value = JSON.stringify(o, (k, x) => typeof x === 'function' ? undefined : x, 1);
+};
+try {
+  runChecks(); buildSeqButtons(); buildStrips(); buildSprites(); requestAnimationFrame(frame);
+} catch (e) { $('fatal').textContent = 'preview error: ' + (e.stack || e); }
+</script>
+</body>
+</html>
