@@ -882,6 +882,25 @@
       grid: { u: 0.04, v: 0.04, stagger: 0, lines: false },
       face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // v1.35 spell hand ember coal (design/models/spell.js; palette.js v1 records of the same key). Emissive, star set.
+    ember_core: {
+      v1: 'ember_core', seed: 801,
+      desc: 'SPELL HAND (HANDS-01). The ember coal\'s white-hot heart: flameCore with flameMid flecks, emissive 1.0.',
+      albedo: 1.00, bgK: 0.35, detail: 40, jitter: 0.05,
+      tones: [['flameCore', 3], ['flameMid', 1]],
+      grid: { u: 0.02, v: 0.02, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 1.0
+    },
+    ember_glow: {
+      v1: 'ember_glow', seed: 802,
+      desc: 'SPELL HAND (HANDS-01). The ember coal\'s burning skin + flame tongues: flameOuter / flameMid / flameTip, emissive 0.9.',
+      albedo: 1.00, bgK: 0.30, detail: 40, jitter: 0.05,
+      tones: [['flameOuter', 3], ['flameMid', 2], ['flameTip', 1]],
+      grid: { u: 0.02, v: 0.02, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.9
     }
   };
 
@@ -914,7 +933,9 @@
     // ME-06c4 forest tree canopies (design/models/forest_trees.js), same key in both files.
     leaf: 'leaf', leaf_dark: 'leaf_dark', leaf_light: 'leaf_light',
     // ENV-01d ground detail (design/models/ground_detail.js), same key in both files.
-    petal_yellow: 'petal_yellow', petal_white: 'petal_white', petal_pink: 'petal_pink', mushroom_cap: 'mushroom_cap', wood_cut: 'wood_cut'
+    petal_yellow: 'petal_yellow', petal_white: 'petal_white', petal_pink: 'petal_pink', mushroom_cap: 'mushroom_cap', wood_cut: 'wood_cut',
+    // v1.35 spell hand ember coal (design/models/spell.js), same key in both files.
+    ember_core: 'ember_core', ember_glow: 'ember_glow'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

@@ -240,7 +240,12 @@
     // scatter (tufts, flowers, rocks) brings the variety. grass* keys stay (tufts, reeds, features).
     turfLight: '#a2c464',
     turf: '#78a04a',
-    turfDark: '#5a7a36'
+    turfDark: '#5a7a36',
+    // Sprint 6 pass A (US-079c): beast ALERT yellow for the `!` notice (overlay, literal RGB in boarFx.overlay). A touch
+    // greener than `gold` (#ffd24a, the [E] key colour); alertLight = the 6-step pop, alertDark = spare outline/shadow.
+    alertLight: '#fff6c4',
+    alert: '#ffd23a',
+    alertDark: '#8a6a10'
   };
 
   // ---------------------------------------------------------------------------
@@ -336,7 +341,18 @@
     // v1.33: a brass lamp standing LIT on the floor (lantern.js floorLantern, tower floorLamp* props). Amber, a small
     // low pool (light 0.32 m above the floor, at the cage), calm flicker - softer than the sconce torch.
     lanternFloor: { color: 'lantern', intensity: 0.45, type: 'point', radius: 3, falloff: 'smooth',
-                    flicker: { hzMin: 6, hzMax: 9, amount: 0.05, jitter: 0.02 } }
+                    flicker: { hzMin: 6, hzMax: 9, amount: 0.05, jitter: 0.02 } },
+    // v1.35 SPELL-01b (design/models/spell.js, spellFx): the fireball's MOVING light (deeper orange than the torch, fast
+    // lively flicker), its charged twin, the burst flash (hot yellow-white, short: spellFx.burst.flash ms 150, envelope
+    // (1 - t/150)^2) and the small glow of the ember in the spell hand (carried, attach 'eye').
+    fireballLight:    { color: 'flameOuter', intensity: 0.9, type: 'point', radius: 4, falloff: 'smooth', moving: true,
+                        flicker: { hzMin: 10, hzMax: 16, amount: 0.18, jitter: 0.05 } },
+    fireballLightBig: { color: 'flameOuter', intensity: 1.1, type: 'point', radius: 5, falloff: 'smooth', moving: true,
+                        flicker: { hzMin: 10, hzMax: 16, amount: 0.20, jitter: 0.05 } },
+    fireballFlash:    { color: 'flameCore', intensity: 1.6, type: 'point', radius: 6, falloff: 'smooth', durationMs: 150 },
+    fireballFlashBig: { color: 'flameCore', intensity: 2.0, type: 'point', radius: 8, falloff: 'smooth', durationMs: 150 },
+    spellEmber:       { color: 'flameMid', intensity: 0.35, type: 'point', radius: 2.0, falloff: 'smooth',
+                        flicker: { hzMin: 9, hzMax: 14, amount: 0.12, jitter: 0.04 } }
   };
 
   // ---------------------------------------------------------------------------
@@ -1116,6 +1132,24 @@
       a: { shade: 1.00 }, r: { shade: 0.72, tint: 'woodCutDark', amount: 0.6, glyph: 'o' }, l: { shade: 1.08, tint: 'woodCutLight', amount: 0.45 }
     }, rows: ['arla', 'raar', 'lara', 'arar'] }
   };
+  // v1.35 SPELL hand (design/models/spell.js spellHandL): the ember coal held in the glove, appended last so no id moves.
+  materials.ember_core = {
+    desc: 'SPELL HAND (HANDS-01 / SPELL-01b). The white-hot heart of the ember coal floating over the spell glove: ' +
+          'flameCore, fully emissive, dense `@ #` with `*` flecks. Static voxels (the view model has no part clips): the ' +
+          'flicker comes from the spellEmber light on the glove.',
+    base: 'flameCore', albedo: 1.00, ramp: 'fire', spec: 0, emissive: 1.0, bg: { mode: 'darken', k: 0.35 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [50, 50], key: {
+      a: { shade: 1.00, glyph: '@' }, h: { shade: 1.00, tint: 'flameMid', amount: 0.35, glyph: '#' }
+    }, rows: ['ah', 'ha'] }
+  };
+  materials.ember_glow = {
+    desc: 'SPELL HAND (HANDS-01 / SPELL-01b). The ember coal\'s burning skin + the two flame tongues: flameOuter / ' +
+          'flameMid, emissive 0.9, `* % ^` so it reads as fire round the white core.',
+    base: 'flameOuter', albedo: 1.00, ramp: 'fire', spec: 0, emissive: 0.9, bg: { mode: 'darken', k: 0.30 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [50, 50], key: {
+      a: { shade: 1.00, glyph: '*' }, m: { shade: 1.00, tint: 'flameMid', amount: 0.5, glyph: '%' }
+    }, rows: ['am', 'ma'] }
+  };
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
@@ -1130,7 +1164,8 @@
     crosshair: 'uiDim', crosshairActive: 'gold',
     prompt: 'uiText', promptKey: 'gold',
     title: ['brassHot', 'brassLight', 'brass', 'copperLight', 'copper'], // top -> bottom rows of the KESTREL logo (D-011)
-    subtitle: 'uiText', endText: 'uiText'
+    subtitle: 'uiText', endText: 'uiText',
+    alert: 'alert', alertPop: 'alertLight'   // Sprint 6 pass A: beast notice `!` (design/models/voxel_beast.js boarFx)
   };
 
   // ---------------------------------------------------------------------------
