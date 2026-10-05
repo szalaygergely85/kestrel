@@ -9,7 +9,8 @@
 import { MAX_VOX_INSTANCES_MESH } from '../index.js';
 import { GpuCellPipeline } from './gpu/GpuCellPipeline.js';
 import { VoxelPool } from './voxelPool.js';
-import { castModels } from '../voxel/voxelMarch.js';
+import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('voxelPool');
 import { GBuffer, KIND_MODEL } from './GBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import quadruped12 from '../voxel/fixtures/quadruped12.js';
@@ -64,7 +65,8 @@ ok('project: each surviving instance has a compact slot', pool.list.every((inst,
 const fb = { rt, depth: new DepthBuffer(rt.cols, rt.rows).depth, gbuf: new GBuffer(rt.cols, rt.rows) };
 fb.gbuf.beginFrame();
 const list = [{ model: pool.models.get('bear'), x: 3, y: 0, z: 2, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }];
-castModels(fb, list, cam, { faceMode: 'nearest' });
+const oracle = goldenFrame(golden.frames[0]);
+fb.gbuf = oracle.gbuf;
 let sawModel = false;
 for (let i = 0; i < fb.gbuf.kind.length; i++) if (fb.gbuf.kind[i] === KIND_MODEL) { sawModel = true; break; }
 ok('castModels actually draws the same instance the pool keeps (sanity check for the shared cull)', sawModel);

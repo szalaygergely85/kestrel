@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // US-028 parity tool (docs/backlog.md tech notes item 11 / architect
 // ruling 2, rework 2026-09-23). Renders `test_room` through the full v2
-// pipeline (castSectors's G-buffer path -> computeDerivatives ->
+// pipeline (mesh JS G-buffer path -> computeDerivatives ->
 // shadeSurfaces -> edgePass) at the pose/grid recorded in the designer's
 // exported JSON (`design/preview/detail_pass.html` -> "export proposed
 // JSON", format `ascii-quest/detail-pass-export` v2, per-cell `samples`;
@@ -25,12 +25,12 @@
 
 import fs from 'node:fs';
 import { loadLevel } from '../engine/world/Level.js';
-import { castScene } from '../engine/render/sectorCaster.js';
+import { World, renderWorld } from '../engine/index.js';
 import { GBuffer } from '../engine/render/GBuffer.js';
 import { bindShading, bindLevel } from '../engine/render/MaterialTable.js';
 import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.js';
 import { edgePass } from '../engine/render/edgePass.js';
-import { ambientL } from '../engine/render/sectorCaster.js';
+import { ambientL } from '../engine/render/sky.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from './testing/content-node.mjs';
 import paletteModule from '../design/palette.js';
@@ -66,6 +66,7 @@ class RT {
 class DepthBuf {
   constructor(cols, rows) { this.cols = cols; this.depth = new Float32Array(cols * rows); this.reset(); }
   reset() { this.depth.fill(Infinity); }
+  clear() { this.reset(); }
   set(x, y, d) { this.depth[y * this.cols + x] = d; }
 }
 
@@ -97,13 +98,14 @@ function main() {
   const gbuf = new GBuffer(cols, rows);
   const matTable = bindShading(palette, detailPass, cellH / cellW);
   bindLevel(matTable, level);
-  const fb = { rt, depth, palette, gbuf, matTable };
+  const fb = { rt, depth, palette, gbuf, matTable, detailPass, renderer: 'mesh' };
+  const world = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, { level: () => testRoomDef }, {});
 
   const camera = { x: exp.pose.x, y: exp.pose.y, z: exp.pose.z, yawDeg: exp.pose.yaw, pitchDeg: exp.pose.pitch };
 
   gbuf.beginFrame();
   depth.reset();
-  castScene(rt, level, camera, palette, { skyFallback: true, gbuf, matTable, depthBuffer: depth, detailPass });
+  renderWorld(fb, world, camera);
   computeDerivatives(gbuf, depth.depth);
   shadeSurfaces(fb, gbuf, matTable, detailPass, ambientL);
   edgePass(gbuf, depth.depth, rt, detailPass.edges);

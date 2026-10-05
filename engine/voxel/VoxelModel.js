@@ -16,10 +16,8 @@ export const MAX_VOX_STEPS = 48;
 export const MAX_VOX_DIM = 32;
 export const MAX_VOX_INSTANCES = 16; // DDA texture/slot budget.
 export const MAX_VOX_INSTANCES_MESH = 48;
-// ME-22 (architecture.md 28.12): mesh-renderer-only bounds, unlocked by the
-// explicit `voxel.meshOnly: true` opt-in flag. Never used by voxelMarch.js/
-// VoxelTextures (the DDA path) - see voxelPool.js's bind()/project() router
-// and VoxelTextures.js's buildVoxelAtlas() assert-guard.
+// ME-19b: mesh bounds are the only validation limits. Frozen atlas upload
+// constants remain until ME-19c; meshOnly is accepted for content compatibility.
 export const MESH_ONLY_MAX_DIM = 256;
 export const MESH_ONLY_MAX_CELLS = 2097152;
 export const RESERVED_EVENTS = ['animEnd', 'arrive', 'interact', 'removed'];
@@ -35,7 +33,7 @@ const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,15}$/;
  * @typedef {Object} VoxelModelDef
  * @property {1} version
  * @property {number} cellM                       metres per voxel, 0.01..1
- * @property {[number,number,number]} size         [sx, sy, sz] ints 1..32, sx*sy*sz <= 4096
+ * @property {[number,number,number]} size         [sx, sy, sz] ints 1..256, sx*sy*sz <= 2097152
  * @property {[number,number,number]} anchor       voxel units, feet centre
  * @property {Object<string,string|null>} mats     1 char (0x21..0x7E) -> material key, or null
  * @property {string[][]} layers                   layers[z][y] = row string of sx chars
@@ -122,15 +120,12 @@ export function validateVoxelModel(def, opts) {
     errors.push(`voxel.cellM: expected a number in [0.01, 1], got ${JSON.stringify(def.cellM)}`);
   }
 
-  // ME-22: explicit opt-in, never inferred - a def over the OLD limits
-  // without this flag stays an error (message below names the flag, so a
-  // typo'd oversized model never silently vanishes from ?renderer=dda).
+  // Retain the legacy flag shape, but it no longer selects validation limits.
   if (def.meshOnly !== undefined && typeof def.meshOnly !== 'boolean') {
     errors.push(`voxel.meshOnly: expected a boolean, got ${JSON.stringify(def.meshOnly)}`);
   }
-  const meshOnly = def.meshOnly === true;
-  const maxDim = meshOnly ? MESH_ONLY_MAX_DIM : MAX_VOX_DIM;
-  const maxCells = meshOnly ? MESH_ONLY_MAX_CELLS : 4096;
+  const maxDim = MESH_ONLY_MAX_DIM;
+  const maxCells = MESH_ONLY_MAX_CELLS;
 
   let sx = 0, sy = 0, sz = 0, sizeOk = false;
   if (Array.isArray(def.size) && def.size.length === 3) {
@@ -138,14 +133,14 @@ export function validateVoxelModel(def, opts) {
     for (let i = 0; i < 3; i++) {
       const v = def.size[i];
       if (!Number.isInteger(v) || v < 1 || v > maxDim) {
-        errors.push(`voxel.size[${i}]: expected an int in [1, ${maxDim}]${meshOnly ? '' : ' (set voxel.meshOnly: true to allow up to ' + MESH_ONLY_MAX_DIM + ', mesh renderer only)'}, got ${JSON.stringify(v)}`);
+        errors.push(`voxel.size[${i}]: expected an int in [1, ${maxDim}], got ${JSON.stringify(v)}`);
         sizeOk = false;
       }
     }
     if (sizeOk) {
       sx = def.size[0]; sy = def.size[1]; sz = def.size[2];
       if (sx * sy * sz > maxCells) {
-        errors.push(`voxel.size: product ${sx * sy * sz} exceeds ${maxCells}${meshOnly ? '' : ' (set voxel.meshOnly: true to allow up to ' + MESH_ONLY_MAX_CELLS + ', mesh renderer only)'}`);
+        errors.push(`voxel.size: product ${sx * sy * sz} exceeds ${maxCells}`);
         sizeOk = false;
       }
     }
@@ -257,11 +252,6 @@ export function validateVoxelModel(def, opts) {
           errors.push(`${path}.box: part box outside the grid`);
         } else {
           boxOk = true;
-          const bx = x1 - x0, by = y1 - y0, bz = z1 - z0;
-          // ME-22: the axis-sum-48 rule is a DDA/voxelMarch step-budget rule
-          // (MAX_VOX_STEPS) - skipped for a meshOnly model (mesh renderer
-          // only, never raymarched).
-          if (!meshOnly && bx + by + bz > 48) errors.push(`${path}.box: box extent ${bx + by + bz} exceeds 48 (set voxel.meshOnly: true to allow larger parts, mesh renderer only)`);
           if (claimedOwner && sizeOk) {
             let owns = 0;
             for (let z = z0; z < z1; z++) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {

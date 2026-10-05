@@ -13,9 +13,9 @@ import {
 import { packVoxelModel } from './voxelPack.js';
 import { cosSinDeg, computeVoxelPose, voxelMountWorld, FORWARD } from './voxelPose.js';
 import { instanceRect, computeProjection } from './instanceRect.js';
-import { marchVoxelRay, castModels, LAST_MAT_LOCAL } from './voxelMarch.js';
+import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
+import { voxelFrame } from '../mesh/fixtures/voxelFrame.js';
 import { packNormalOct, unpackNormalOct } from './octNormal.js';
-import { GBuffer } from '../render/GBuffer.js';
 import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D } from '../render/GBuffer.js';
 import quadruped12 from './fixtures/quadruped12.js';
 import { makeOk, approxEqual as approxEqualCore } from '../test/assert.js';
@@ -66,14 +66,8 @@ expectError('unknown material key', set(clone(quadruped12), ['mats', '#'], 'not_
 expectError('unknown voxel char', (() => { const d = clone(quadruped12); const row = d.layers[3][2].split(''); row[2] = 'q'; d.layers[3][2] = row.join(''); return d; })(), 'unknown voxel char');
 expectError('row length mismatch', (() => { const d = clone(quadruped12); d.layers[3][2] = d.layers[3][2] + '.'; return d; })(), 'row length');
 expectError('wrong layer count', (() => { const d = clone(quadruped12); d.layers.push(d.layers[0]); return d; })(), 'layers:');
-expectError('size > 32', set(clone(quadruped12), ['size', 0], 33), 'expected an int in [1, 32]');
+expectError('size > 256', set(clone(quadruped12), ['size', 0], 257), 'expected an int in [1, 256]');
 expectError('part box outside the grid', set(clone(quadruped12), ['parts', 'body', 'box'], [2, 2, 3, 20, 7, 8]), 'part box outside the grid');
-expectError('box extent > 48', {
-  version: 1, cellM: 0.1, size: [20, 20, 10], anchor: [0, 0, 0],
-  mats: { '#': 'mat_a' },
-  layers: Array.from({ length: 10 }, () => Array.from({ length: 20 }, () => '#'.repeat(20))),
-  parts: { root: { box: [0, 0, 0, 20, 20, 10], pivot: [0, 0, 0] } },
-}, 'box extent', { materialKeys: MATERIAL_KEYS });
 expectError('> 8 parts', (() => {
   const d = clone(quadruped12);
   for (let i = 0; i < 5; i++) d.parts['extra' + i] = { box: [0, 0, 0, 1, 1, 1], pivot: [0, 0, 0], parent: 'body' };
@@ -360,257 +354,62 @@ for (const yaw of [0, 90, 180, 270]) {
 }
 
 // =============================================================================
-// MARCH (hand cases on a 3x3x3 one-part model)
+// ME-19b: mesh raster versus frozen pre-deletion voxel caster samples.
+// Same non-edge 98% kind / 99% plane, material and 1%-depth gates as voxelRaster.
 // =============================================================================
-
-const smallDef = {
-  version: 1, cellM: 0.1, size: [3, 3, 3], anchor: [1.5, 1.5, 0],
-  mats: { '#': 'm' },
-  layers: [
-    ['###', '###', '###'],
-    ['###', '###', '###'],
-    ['###', '###', '###'],
-  ],
-  parts: { root: { box: [0, 0, 0, 3, 3, 3], pivot: [0, 0, 0] } },
-};
-const smallPm = packVoxelModel(smallDef, () => 1);
-const smallPose = new Float64Array(16);
-computeVoxelPose(smallPm, { model: smallPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }, smallPose);
-
 {
-  // World ray straight up through the solid model's centre column: eye
-  // below the model at z=-1, moving +z. anchor is [1.5,1.5,0] so model
-  // world box spans x/y in [-0.15,0.15], z in [0, 0.3].
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(smallPm, 0, smallPose, 0, 0, -1, 0, 0, 1, 100, out);
-  ok('axis ray hits at the analytic t', hit === 1 && approxEqual(out[0], 1, 1e-6), JSON.stringify(Array.from(out)));
-  ok('axis ray entry face is Down (entering from below, +z)', out[4] === FACE_D, out[4]);
-}
-
-{
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(smallPm, 0, smallPose, 10, 10, 0.15, 0, 0, 1, 100, out);
-  ok('a ray passing beside the model misses', hit === 0);
-}
-
-{
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(smallPm, 0, smallPose, 0, 0, -1, 0, 0, 0, 100, out);
-  ok('a ray whose d has a 0 component produces no NaN', !Number.isNaN(out[0]) && Number.isFinite(hit));
-}
-
-{
-  // Edge-tie: a ray aimed exactly at a voxel corner/edge on the box.
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(smallPm, 0, smallPose, -1, -1, 0.15, 1, 1, 0, 100, out);
-  ok('edge-tie ray produces a deterministic result (no throw/NaN)', Number.isFinite(hit) && !Number.isNaN(out[0]));
-}
-
-{
-  // Eye inside a solid voxel: origin placed inside the model, aimed out.
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(smallPm, 0, smallPose, 0, 0, 0.15, 0, 0, 1, 100, out);
-  ok('eye inside a solid voxel is skipped (not drawn from inside)', hit === 1 ? out[0] > 1e-6 : true);
-}
-
-{
-  // Diagonal through a hollow part box whose extent is exactly 48: since
-  // the box is fully solid here, use an EMPTY box of extent 48 to confirm
-  // a full traversal terminates as a miss without exceeding MAX_VOX_STEPS.
-  const bigDef = {
-    version: 1, cellM: 0.1, size: [16, 16, 16], anchor: [0, 0, 0],
-    mats: { '#': 'm' },
-    layers: Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => '.'.repeat(16))),
-    parts: { root: { box: [0, 0, 0, 16, 16, 16], pivot: [0, 0, 0] } }, // bx+by+bz = 48
-  };
-  const bigPm = packVoxelModel(bigDef, () => 1);
-  const bigPose = new Float64Array(16);
-  computeVoxelPose(bigPm, { model: bigPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }, bigPose);
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(bigPm, 0, bigPose, -0.5, -0.5, -0.5, 1, 1, 1, 1000, out);
-  ok('diagonal through a hollow box of extent 48 terminates as a miss', hit === 0);
-}
-
-// axis-choice verbatim rule smoke test: a ray with tMaxX < tMaxY < tMaxZ
-// picks X; ties between Y and Z pick per the else-branch rule.
-{
-  const out = new Float64Array(8);
-  // 1-part 4x4x4 solid box, ray entering diagonally.
-  const axisDef = {
-    version: 1, cellM: 0.1, size: [4, 4, 4], anchor: [0, 0, 0],
-    mats: { '#': 'm' },
-    layers: Array.from({ length: 4 }, () => Array.from({ length: 4 }, () => '####')),
-    parts: { root: { box: [0, 0, 0, 4, 4, 4], pivot: [0, 0, 0] } },
-  };
-  const axisPm = packVoxelModel(axisDef, () => 1);
-  const axisPose = new Float64Array(16);
-  computeVoxelPose(axisPm, { model: axisPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0 }, axisPose);
-  const hit = marchVoxelRay(axisPm, 0, axisPose, -1, -1, -1, 1, 1, 1, 100, out);
-  ok('axis-choice smoke test hits without error', hit === 1);
-}
-
-// =============================================================================
-// castModels
-// =============================================================================
-
-function makeFb(cols, rows) {
-  const gbuf = new GBuffer(cols, rows);
-  const depth = new Float32Array(cols * rows).fill(Infinity);
-  return { rt: { cols, rows, pxCellW: 1, pxCellH: 2 }, depth, gbuf };
-}
-
-const AO_ALIAS_CACHE = new WeakMap();
-function aoAlias(gbuf) {
-  let a = AO_ALIAS_CACHE.get(gbuf);
-  if (!a) { a = new Uint32Array(gbuf.aoD.buffer, gbuf.aoD.byteOffset, gbuf.aoD.length); AO_ALIAS_CACHE.set(gbuf, a); }
-  return a;
-}
-
-{
-  const fb = makeFb(160, 60);
-  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
-  const inst = { model: pm, x: 0, y: 0, z: 0, yawDeg: 180, clip: -1, frame: 0, tMs: 0 };
-  castModels(fb, [inst], cam, {});
-  let written = 0, allKind8 = true, allMatOk = true, allFaceOk = true, faceNCells = 0, allDepthEqT = true;
-  for (let i = 0; i < 160 * 60; i++) {
-    if (fb.gbuf.kind[i] !== KIND_MODEL) continue;
-    written++;
-    if (fb.gbuf.mat[i] < 1 || fb.gbuf.mat[i] > 3) allMatOk = false;
-    const f = fb.gbuf.face[i];
-    if (!(f >= 1 && f <= 7)) allFaceOk = false;
-    if (f === FACE_N) faceNCells++;
-    if (((fb.gbuf.planeId[i] >>> 28) & 0xF) !== 0xF) { allKind8 = false; }
-    if (f !== FACE_PACKED && fb.gbuf.aoD[i] !== Infinity) allDepthEqT = false;
-  }
-  ok('rest pose facing camera: writes cells', written > 0);
-  ok('every written cell has kind 8', allKind8);
-  ok('every written cell has mat in {1,2,3}', allMatOk);
-  ok('every written cell has face in 1..6 or 7', allFaceOk);
-  ok('every written cell has the 0xF planeId nibble', allKind8);
-  ok('axis-aligned faces have aoD === Infinity', allDepthEqT);
-  ok('front-facing cells include face N (1)', faceNCells > 0);
-}
-
-{
-  const fb = makeFb(160, 60);
-  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
-  const inst = { model: pm, x: 0, y: 0, z: 0, yawDeg: 30, clip: -1, frame: 0, tMs: 0 };
-  castModels(fb, [inst], cam, {});
-  let any7 = false, allUnit = true, allDotNeg = true;
-  const n = new Float64Array(3);
-  const alias = aoAlias(fb.gbuf);
-  const yawRad = (cam.yawDeg * Math.PI) / 180;
-  const dirX = Math.sin(yawRad), dirY = -Math.cos(yawRad);
-  const hFovRad = (75 * Math.PI) / 180;
-  const tanHalfHFov = Math.tan(hFovRad / 2);
-  const planeX = -dirY * tanHalfHFov, planeY = dirX * tanHalfHFov;
-  for (let row = 0; row < 60; row++) {
-    for (let col = 0; col < 160; col++) {
-      const i = row * 160 + col;
-      if (fb.gbuf.kind[i] !== KIND_MODEL || fb.gbuf.face[i] !== FACE_PACKED) continue;
-      any7 = true;
-      unpackNormalOct(alias[i], n);
-      const len = Math.hypot(n[0], n[1], n[2]);
-      if (Math.abs(len - 1) > 1e-4) allUnit = false;
-      const cameraX = (2 * (col + 0.5)) / 160 - 1;
-      const rdx = dirX + planeX * cameraX, rdy = dirY + planeY * cameraX;
-      const dot = n[0] * rdx + n[1] * rdy; // (z component omitted - rdz varies by row but sign check on xy is enough here)
-      if (dot >= 1e-6) allDotNeg = false;
+  const golden = loadGolden('voxel');
+  // Keep the pre-existing ARCH-controlled bearClose fingerprint as a
+  // fixture integrity gate; the live mesh parity checks follow below.
+  const bearClose = goldenFrame(golden.frames[6]).gbuf;
+  let fingerprint = 0x811c9dc5;
+  for (const field of ['kind', 'mat', 'face', 'planeId']) {
+    for (const byte of Buffer.from(bearClose[field].buffer)) {
+      fingerprint ^= byte;
+      fingerprint = Math.imul(fingerprint, 0x01000193);
     }
   }
-  ok('yaw 30: some cells are face 7', any7);
-  ok('yaw 30: decoded normal is unit within 1e-4', allUnit);
-  ok('yaw 30: dot(n,d) < 0 (xy component)', allDotNeg);
-}
-
-// US-040 arch review 1 item 4 (15.2 item 8, "owed since US-039"): the SAME
-// yaw-30 pose as above, but with `faceMode: 'nearest'` (US-040's own scope -
-// it never writes face 7/packed normals, per 15.2 item 1's "faceMode:
-// 'nearest' only"). Every written cell must round to a world axis face
-// (1..6), never FACE_PACKED (7), even for a non-axis-aligned part.
-{
-  const fb = makeFb(160, 60);
-  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
-  const inst = { model: pm, x: 0, y: 0, z: 0, yawDeg: 30, clip: -1, frame: 0, tMs: 0 };
-  castModels(fb, [inst], cam, { faceMode: 'nearest' });
-  let written = 0, any7 = false, allFaceOk = true, allAoInf = true;
-  for (let i = 0; i < 160 * 60; i++) {
-    if (fb.gbuf.kind[i] !== KIND_MODEL) continue;
-    written++;
-    const f = fb.gbuf.face[i];
-    if (f === FACE_PACKED) any7 = true;
-    if (!(f >= 1 && f <= 6)) allFaceOk = false;
-    if (fb.gbuf.aoD[i] !== Infinity) allAoInf = false;
-  }
-  ok('faceMode nearest: writes cells', written > 0);
-  ok('faceMode nearest: never writes face 7 (FACE_PACKED), even off-axis', !any7);
-  ok('faceMode nearest: every written cell has a world axis face 1..6', allFaceOk);
-  ok('faceMode nearest: aoD stays Infinity (no packed normal written)', allAoInf);
-}
-
-{
-  const fb = makeFb(160, 60);
-  fb.depth.fill(0.01); // nearer than the model everywhere
-  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
-  const inst = { model: pm, x: 0, y: 0, z: 0, yawDeg: 180, clip: -1, frame: 0, tMs: 0 };
-  castModels(fb, [inst], cam, {});
-  let written = 0;
-  for (let i = 0; i < 160 * 60; i++) if (fb.gbuf.kind[i] === KIND_MODEL) written++;
-  ok('a depth buffer pre-filled nearer than the model gives 0 writes', written === 0);
-}
-
-{
-  const fb = makeFb(160, 60);
-  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
-  const near = { model: pm, x: 0, y: 0, z: 0, yawDeg: 180, clip: -1, frame: 0, tMs: 0 };
-  const far = { model: pm, x: 0, y: 2, z: 0, yawDeg: 180, clip: -1, frame: 0, tMs: 0 };
-  castModels(fb, [far, near], cam, {}); // far listed first, nearer instance should still win
-  const fb2 = makeFb(160, 60);
-  castModels(fb2, [near, far], cam, {});
-  let sameDepthEverywhere = true;
-  for (let i = 0; i < 160 * 60; i++) {
-    if (fb.depth[i] !== fb2.depth[i] && Number.isFinite(fb.depth[i]) && Number.isFinite(fb2.depth[i])) sameDepthEverywhere = false;
-  }
-  ok('two instances: the nearer one wins regardless of list order', sameDepthEverywhere);
-}
-
-// =============================================================================
-// DETERMINISM
-// =============================================================================
-
-{
-  const fb1 = makeFb(160, 60);
-  const fb2 = makeFb(160, 60);
-  const cam = { x: 2.2, y: -2.2, z: 1.6, yawDeg: 200, pitchDeg: 0 };
-  const inst1 = { model: pm, x: 0, y: 0, z: 0, yawDeg: 0, clip: pm.clipIndex.walk, frame: 1, tMs: 40 };
-  const inst2 = { model: pm, x: 0, y: 0, z: 0, yawDeg: 0, clip: pm.clipIndex.walk, frame: 1, tMs: 40 };
-  castModels(fb1, [inst1], cam, {});
-  castModels(fb2, [inst2], cam, {});
-  const bufsEqual = ['kind', 'mat', 'face', 'planeId', 'u', 'v', 'z'].every((f) => Buffer.from(fb1.gbuf[f].buffer).equals(Buffer.from(fb2.gbuf[f].buffer)));
-  const depthEqual = Buffer.from(fb1.depth.buffer).equals(Buffer.from(fb2.depth.buffer));
-  ok('two runs on fresh buffers are byte-identical (gbuf)', bufsEqual);
-  ok('two runs on fresh buffers are byte-identical (depth)', depthEqual);
-
-  // FNV-1a golden for the bearClose pose (architect OK required to change).
-  function fnv1a(buffers) {
-    let h = 0x811c9dc5;
-    for (const buf of buffers) {
-      for (let i = 0; i < buf.length; i++) {
-        h ^= buf[i];
-        h = Math.imul(h, 0x01000193);
-      }
+  ok('frozen bearClose preserves the existing ARCH-controlled FNV golden',
+    (fingerprint >>> 0).toString(16) === '3bdbc98a', (fingerprint >>> 0).toString(16));
+  const probes = [
+    { index: 0, yawDeg: 180 },
+    { index: 2, yawDeg: 30 },
+    { index: 6, yawDeg: 0, clip: pm.clipIndex.walk, frame: 1, tMs: 40 },
+    { index: 8, yawDeg: 30, scale: 1 },
+    { index: 9, yawDeg: 30, scale: 2 },
+  ];
+  for (const probe of probes) {
+    const sample = golden.frames[probe.index];
+    const ref = goldenFrame(sample);
+    const inst = { model: pm, x: 0, y: 0, z: 0, clip: -1, frame: 0, tMs: 0, ...probe };
+    const got = voxelFrame(pm, Object.keys(quadruped12.parts), inst, sample.cam,
+      { cols: sample.cols, rows: sample.rows, pxCellW: 1, pxCellH: 2 });
+    let checked = 0, kinds = 0, matched = 0, planes = 0, mats = 0, depths = 0;
+    const { cols, rows } = sample;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const i = y * cols + x, k = ref.gbuf.kind[i];
+      if (k !== KIND_MODEL && got.gbuf.kind[i] !== KIND_MODEL) continue;
+      if ((x > 0 && ref.gbuf.kind[i - 1] !== k) || (x + 1 < cols && ref.gbuf.kind[i + 1] !== k)
+        || (y > 0 && ref.gbuf.kind[i - cols] !== k) || (y + 1 < rows && ref.gbuf.kind[i + cols] !== k)) continue;
+      checked++;
+      if (k !== got.gbuf.kind[i]) continue;
+      kinds++;
+      if (k !== KIND_MODEL) continue;
+      matched++;
+      if (ref.gbuf.planeId[i] === got.gbuf.planeId[i]) planes++;
+      if (ref.gbuf.mat[i] === got.gbuf.mat[i]) mats++;
+      if (Math.abs(ref.depth[i] - got.depth[i]) <= ref.depth[i] * 0.01) depths++;
     }
-    return (h >>> 0).toString(16);
+    ok(`voxel golden ${probe.index}: populated reference`, checked > 40 && matched > 40);
+    ok(`voxel golden ${probe.index}: kind >= 98%`, kinds / checked >= 0.98, `${kinds}/${checked}`);
+    ok(`voxel golden ${probe.index}: plane/material/depth >= 99%`, planes / matched >= 0.99
+      && mats / matched >= 0.99 && depths / matched >= 0.99, `${planes}/${matched},${mats}/${matched},${depths}/${matched}`);
+    const again = voxelFrame(pm, Object.keys(quadruped12.parts), inst, sample.cam,
+      { cols, rows, pxCellW: 1, pxCellH: 2 });
+    ok(`voxel golden ${probe.index}: mesh repeats byte-identically`, ['kind','mat','face','planeId','u','v','z','aoD'].every(
+      (f) => Buffer.from(got.gbuf[f].buffer).equals(Buffer.from(again.gbuf[f].buffer)))
+      && Buffer.from(got.depth.buffer).equals(Buffer.from(again.depth.buffer)));
   }
-  const golden = fnv1a([
-    Buffer.from(fb1.gbuf.kind.buffer), Buffer.from(fb1.gbuf.mat.buffer),
-    Buffer.from(fb1.gbuf.face.buffer), Buffer.from(fb1.gbuf.planeId.buffer),
-  ]);
-  // Recorded 2026-09-23; re-recorded 2026-09-25 (architect, US-040 re-review:
-  // castModels ray moved to the engine row convention, horizonRow - row). Changing it needs an
-  // architect OK per the backlog tech notes.
-  const RECORDED_GOLDEN = '3bdbc98a';
-  ok('bearClose FNV-1a golden matches the recorded value', golden === RECORDED_GOLDEN, `got ${golden}, recorded ${RECORDED_GOLDEN}`);
 }
 
 // =============================================================================
@@ -671,35 +470,22 @@ function aoAlias(gbuf) {
 }
 
 // =============================================================================
-// ZERO-ALLOC
+// ZERO-ALLOC: mesh submission/raster gates live in voxelRaster; retain pose here.
 // =============================================================================
-
 if (typeof globalThis.gc === 'function') {
-  const fb = makeFb(160, 60);
-  const cam = { x: 0, y: -3, z: 0.9, yawDeg: 180, pitchDeg: 0 };
   const inst = { model: pm, x: 0, y: 0, z: 0, yawDeg: 180, clip: pm.clipIndex.walk, frame: 1, tMs: 40 };
-  const list = [inst];
-  const poseScratch = new Float64Array(MAX_VOX_PARTS * 16);
-  const castOpts = {}; // reused - a fresh {} literal per call would itself allocate
-  for (let i = 0; i < 50; i++) { castModels(fb, list, cam, castOpts); computeVoxelPose(pm, inst, poseScratch); fb.depth.fill(Infinity); fb.gbuf.beginFrame(); }
-  globalThis.gc();
-  const before = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 1000; i++) {
-    castModels(fb, list, cam, castOpts);
-    computeVoxelPose(pm, inst, poseScratch);
-    fb.depth.fill(Infinity);
-    fb.gbuf.beginFrame();
+  const scratch = new Float64Array(MAX_VOX_PARTS * 16);
+  for (let i = 0; i < 1000; i++) computeVoxelPose(pm, inst, scratch);
+  let delta = Infinity;
+  for (let trial = 0; trial < 3; trial++) {
+    globalThis.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 10000; i++) computeVoxelPose(pm, inst, scratch);
+    globalThis.gc();
+    delta = Math.min(delta, process.memoryUsage().heapUsed - before);
   }
-  globalThis.gc();
-  const after = process.memoryUsage().heapUsed;
-  const delta = after - before;
-  ok('1000 castModels+computeVoxelPose calls: heapUsed delta < 64 KB', delta < 65536, `delta=${delta}`);
-} else {
-  console.log('SKIP zero-alloc check (run with --expose-gc)');
+  ok('10000 computeVoxelPose calls: heapUsed delta < 64 KB', delta < 65536, `delta=${delta}`);
 }
-
-void FACE_N; void FACE_E; void FACE_S; void FACE_W; void FACE_U;
-void LAST_MAT_LOCAL;
 
 // =============================================================================
 // ME-22 (docs/architecture.md 28.12): mesh-only large voxel models.
@@ -726,14 +512,21 @@ function makeLargeDef(sx, sy, sz, meshOnly) {
 }
 
 {
-  // 1. 40^3 without the flag -> error naming `meshOnly`.
+  // ME-19b: mesh limits apply whether the compatibility flag is present or not.
   const r1 = validateVoxelModel(makeLargeDef(40, 40, 40), { materialKeys: MATERIAL_KEYS });
-  ok('ME-22: 40^3 without meshOnly flag errors', r1.errors.length > 0);
-  ok('ME-22: 40^3 without meshOnly flag names the flag', r1.errors.some((e) => e.indexOf('meshOnly') >= 0), JSON.stringify(r1.errors));
+  ok('ME-19b: 40^3 without meshOnly flag validates', r1.errors.length === 0, JSON.stringify(r1.errors));
+  ok('ME-19b: legacy flag does not change validation', JSON.stringify(r1) === JSON.stringify(validateVoxelModel(makeLargeDef(40, 40, 40, true), { materialKeys: MATERIAL_KEYS })));
 
   // 2. 40^3 WITH the flag -> ok (0 errors).
   const r2 = validateVoxelModel(makeLargeDef(40, 40, 40, true), { materialKeys: MATERIAL_KEYS });
   ok('ME-22: 40^3 with meshOnly:true validates with 0 errors', r2.errors.length === 0, JSON.stringify(r2.errors));
+
+  const r256 = validateVoxelModel(makeLargeDef(256, 1, 1), { materialKeys: MATERIAL_KEYS });
+  ok('ME-19b: 256/axis without flag is accepted', r256.errors.length === 0, JSON.stringify(r256.errors));
+  const rCap = validateVoxelModel(makeLargeDef(128, 128, 128), { materialKeys: MATERIAL_KEYS });
+  ok('ME-19b: exactly 2097152 cells without flag is accepted', rCap.errors.length === 0, JSON.stringify(rCap.errors));
+  const rOver = validateVoxelModel(makeLargeDef(200, 200, 53), { materialKeys: MATERIAL_KEYS });
+  ok('ME-19b: product over 2097152 without flag is rejected', rOver.errors.some((e) => e.includes('voxel.size')), JSON.stringify(rOver.errors));
 
   // 3. 257/axis (flagged) -> error.
   const r3 = validateVoxelModel(makeLargeDef(257, 1, 1, true), { materialKeys: MATERIAL_KEYS });
@@ -805,34 +598,6 @@ function makeLargeDef(sx, sy, sz, meshOnly) {
       approxEqual(r2.maxX - 3, 2 * (r1.maxX - 3), 1e-9) && approxEqual(3 - r2.minX, 2 * (3 - r1.minX), 1e-9) &&
       approxEqual(r2.minZ, 1.5, 1e-9) && approxEqual(r1.minZ, 1.5, 1e-9) && approxEqual(r2.maxZ - 1.5, 2 * (r1.maxZ - 1.5), 1e-9));
   } else ok('ED-SCALE-1a: instanceRect probe ran', false);
-  // march at s=2: analytic t and unit normals
-  const s2 = new Float64Array(16);
-  computeVoxelPose(smallPm, { model: smallPm, x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 2 }, s2);
-  const out = new Float64Array(8);
-  const hit = marchVoxelRay(smallPm, 0, s2, 0, 0, -1, 0, 0, 1, 100, out);
-  ok('ED-SCALE-1a: voxelMarch at s=2 hits at the analytic t (model box spans z 0..0.6)', hit === 1 && approxEqual(out[0], 1, 1e-9), JSON.stringify(Array.from(out)));
-  const s2top = marchVoxelRay(smallPm, 0, s2, 0, 0, 2, 0, 0, -1, 100, out);
-  ok('ED-SCALE-1a: s=2 from above hits the top at t = 2 - 0.6', s2top === 1 && approxEqual(out[0], 1.4, 1e-9), out[0]);
-}
-{
-  // castModels: image of (scale 2, camera 2x farther) == image of (scale 1) -> identical face + packed normals
-  const run = (sc, camY, camZ) => {
-    const fb = makeFb(120, 50);
-    castModels(fb, [{ model: pm, x: 0, y: 0, z: 0, yawDeg: 30, clip: -1, frame: 0, tMs: 0, scale: sc }], { x: 0, y: camY, z: camZ, yawDeg: 180, pitchDeg: 0 }, {});
-    return fb;
-  };
-  const A = run(1, -3, 0.9), B = run(2, -6, 1.8);
-  let cells = 0, faceEq = true, nrmEq = true;
-  const aa = aoAlias(A.gbuf), ab = aoAlias(B.gbuf);
-  for (let i = 0; i < 120 * 50; i++) {
-    if (A.gbuf.kind[i] !== KIND_MODEL && B.gbuf.kind[i] !== KIND_MODEL) continue;
-    cells++;
-    if (A.gbuf.face[i] !== B.gbuf.face[i]) faceEq = false;
-    if (A.gbuf.face[i] === FACE_PACKED && aa[i] !== ab[i]) nrmEq = false;
-  }
-  ok('ED-SCALE-1a: scaled+camera-scaled cast writes cells', cells > 100, cells);
-  ok('ED-SCALE-1a: s=2 faces == s=1 faces (scale-invariant image)', faceEq);
-  ok('ED-SCALE-1a: s=2 packed normals == s=1 packed normals', nrmEq);
 }
 // =============================================================================
 console.log(`${pass} pass, ${fail} fail`);

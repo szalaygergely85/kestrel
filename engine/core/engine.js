@@ -8,7 +8,6 @@ import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/
 import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
-import { OpenSpans } from '../render/OpenSpans.js';
 import { Input } from './input.js';
 import { Loop } from './loop.js';
 import { Events } from './events.js';
@@ -132,7 +131,6 @@ export function createEngine(opts) {
   const grid = clampGrid(cols, rows);
   const renderTarget = RenderTarget(canvas, grid.cols, grid.rows, { force2d, cpuGrid, gpu });
   const depthBuffer = new DepthBuffer(renderTarget.cols, renderTarget.rows);
-  const openSpans = new OpenSpans(renderTarget.cols);
   const input = new Input(inputTarget);
   const events = new Events();
   const camera = new Camera();
@@ -172,7 +170,6 @@ export function createEngine(opts) {
     const before = `${rt.cols}x${rt.rows}`;
     rt.setGrid(request.cols, request.rows);
     engine.depthBuffer = new DepthBuffer(rt.cols, rt.rows);
-    engine.openSpans = new OpenSpans(rt.cols);
     ui.bindScene(rt.cols, rt.rows);
     if (rt.setUiLayer) rt.setUiLayer(ui);
     overlay.bind(rt.cols, rt.rows, rt.pxCellW || 1, rt.pxCellH || 1);
@@ -192,7 +189,6 @@ export function createEngine(opts) {
     },
     renderTarget,
     depthBuffer,
-    openSpans,
     overlay, // RE-07a: world-anchored selection marks (engine/ui/overlay.js)
     particleLayer, // US-053b (32.1): JS-rasterised particle layer, read by the sprite pass
     ui, // OWN-REQ-003: the fixed UI glyph layer (engine/ui/uiLayer.js)

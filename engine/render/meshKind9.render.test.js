@@ -7,7 +7,6 @@ import { World } from '../world/World.js';
 import { meshFromJSON } from '../index.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
-import { OpenSpans } from './OpenSpans.js';
 import { GBuffer, KIND_MESH, FACE_PACKED, FACE_U } from './GBuffer.js';
 import { bindShading } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
@@ -44,7 +43,7 @@ const COLS = 80, ROWS = 30;
 function makeFb() {
   return {
     renderer: 'mesh',
-    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS),
+    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS),
     palette: assets.palette, gbuf: new GBuffer(COLS, ROWS), matTable: bindShading(assets.palette, assets.detailPass, 1),
     detailPass: null, lights: null, light: makeLightBuffer(COLS, ROWS), timeSec: 0, loop: { stats: {} },
   };

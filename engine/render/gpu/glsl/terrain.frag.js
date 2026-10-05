@@ -23,7 +23,7 @@ import { MAX_STRUCTS } from '../WorldTextures.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import {
   MAX_TERRAIN_STEPS, STEP_MIN, STEP_K, T_START, FOG_FULL, DITHER_SEED,
-} from '../../terrainCaster.js';
+} from './ddaConstants.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 

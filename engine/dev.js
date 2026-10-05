@@ -5,7 +5,7 @@
 // re-exports from, just a different curated surface.
 //
 // What lives here: render-pass internals used only by parity/bench tooling
-// (beginFrame/castSectors/fillSky, computeDerivatives/shadeSurfaces/shadeV2,
+// (beginFrame/fillSky, computeDerivatives/shadeSurfaces/shadeV2,
 // edgePass), the shading and GPU/CPU parity harnesses (runShadeTest/
 // runDetailShadeTest, runGpuCompare/compareCells/compareGeometry/
 // compareLight/poisonNonSky/poisonAllCells), and the handful of "may change
@@ -17,8 +17,9 @@
 // game/js/ui/* and tools/editor/** must not - they get only the stable
 // engine/index.js surface.
 
-// ---- sector-cast pass internals (parity/bench tooling only) --------------
-export { beginFrame, castSectors, fillSky } from './render/sectorCaster.js';
+// ---- mesh frame/sky pass internals (parity/bench tooling only) ------------
+export { beginFrame } from './render/compositor.js';
+export { fillSky } from './render/sky.js';
 
 // ---- shading parity harness (US-028 detail pass v2) ------------------------
 export { runShadeTest, runDetailShadeTest } from './render/shadeTest.js';

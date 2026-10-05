@@ -27,7 +27,7 @@
 // (`light.frag.js`) *does* need the explicit loop (no `sectorAt` there),
 // and documents its own version of this deviation.
 
-import { HFOV_DEG } from './sectorCaster.js';
+import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
@@ -1008,4 +1008,23 @@ export function makeLightBuffer(cols, rows) {
     // ME-15c: per-cell PCF tap count n (LIGHT.w bits 16..18) + parity boundary flag; `sunMapOn` = this frame used the map.
     sunN: new Uint8Array(cols * rows), sunBoundary: new Uint8Array(cols * rows), sunMapOn: false,
   };
+}
+
+// ME-19b: shared sun uniform source, moved from terrainCaster.
+const _sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
+export function sunFromWorld(world, palette, out = _sunScratch) {
+  const T = palette.timeOfDay[palette.defaultTime];
+  let az = 112.5, elev = T.sunElev;
+  let sun = world.sun;
+  if (!sun) {
+    const s0 = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
+    sun = s0?.level?.def?.sun;
+  }
+  if (sun && sun.azimuth != null) {
+    az = sun.azimuth; elev = sun.elevation;
+  }
+  const azRad = az * Math.PI / 180, elRad = elev * Math.PI / 180, cosEl = Math.cos(elRad);
+  out.dirX = Math.sin(azRad) * cosEl; out.dirY = -Math.cos(azRad) * cosEl; out.dirZ = Math.sin(elRad);
+  out.ambientI = T.ambientI; out.sunI = T.sunI;
+  return out;
 }

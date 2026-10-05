@@ -248,14 +248,14 @@ const engine = createEngine({
 });
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
-// only because `depthBuffer`/`openSpans`/`gbuf` are still replaced with new
+// only because `depthBuffer`/`gbuf` are still replaced with new
 // (small, CPU-side) objects, by the fallback gate below (architect review 1
 // item 2) and by any later live grid change (the `grid:changed` handler).
-let { renderTarget: rt, depthBuffer, openSpans } = engine;
+let { renderTarget: rt, depthBuffer } = engine;
 const { input } = engine;
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
-// so capturing it once here (unlike `depthBuffer`/`openSpans`) stays valid
+// so capturing it once here (unlike `depthBuffer`) stays valid
 // across any later grid change.
 const ui = engine.ui;
 const overlay = new DebugOverlay(document.body);
@@ -372,7 +372,7 @@ if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.
 // Force the same `cpuGrid` RenderTarget.js already uses for `?gpu=0` and
 // the software-renderer case (default 160x60), via `engine.setGrid`, and
 // rebuild the CPU-side state that depends on grid size (`gbuf`; `rt`/
-// `depthBuffer`/`openSpans` come straight off `engine`, which `setGrid`
+// `depthBuffer` come straight off `engine`, which `setGrid`
 // already replaced - this is the `grid:changed` event's payload, applied
 // synchronously here since nothing GPU-side has consumed the old sizes yet).
 if (rt.backend === 'gl2' && !gpuPipeline) {
@@ -384,7 +384,6 @@ if (rt.backend === 'gl2' && !gpuPipeline) {
     // the small CPU-side objects `applyGrid` replaced need re-reading.
     engine.setGrid(cpuCols, cpuRows, { immediate: true });
     depthBuffer = engine.depthBuffer;
-    openSpans = engine.openSpans;
     gbuf = new GBuffer(rt.cols, rt.rows);
   }
 }
@@ -520,7 +519,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
   if (gpuPipeline) gpuPipeline.bind(matTable, assets.palette);
   if (engine.world) for (const s of engine.world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
-  if (fb) { fb.depth = engine.depthBuffer; fb.spans = engine.openSpans; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
+  if (fb) { fb.depth = engine.depthBuffer; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
 });
 
 // Internal hook for manual/automated smoke-testing in a console - not part
@@ -536,7 +535,7 @@ window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambi
 // `matTable`/`gbuf` - could happen), so passing them by value like this is
 // behaviour-identical to the old closures.
 const ctx = {
-  params, assets, rt, overlay, gpuPipeline, matTable, gbuf, depthBuffer, openSpans, detailPass,
+  params, assets, rt, overlay, gpuPipeline, matTable, gbuf, depthBuffer, detailPass,
   engine, sprites, fadeLut,
   lightsEnabled, sunEnabled, terrainEnabled, renderer, rayParam, compareNoVoxels, compareNearStep,
   GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR,
@@ -1063,9 +1062,9 @@ function runGame(mode, cinematic = null) {
   const lightSyncPos = new Float64Array(3);
   // D-025 (US-038a): assigned (not `const`-declared) into the module-scope
   // `fb` above, so the top-level `grid:changed` handler can refresh its
-  // grid-sized fields (`depth`/`spans`/`gbuf`/`matTable`/`light`) in place.
+  // grid-sized fields (`depth`/`gbuf`/`matTable`/`light`) in place.
   fb = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, lights: lightSet,
+    rt, depth: depthBuffer, palette: assets.palette, lights: lightSet,
     light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, // US-028
     voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
@@ -1409,7 +1408,7 @@ function runVoxelBenchMode() {
   const cam = { x: 1494.0, y: 1020.0, z: engine.physics.eyeHeight, yawDeg: 150, pitchDeg: 5 };
 
   const fb = {
-    rt, depth: depthBuffer, spans: openSpans, palette: assets.palette, gbuf, matTable, detailPass,
+    rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
     lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true, renderer: 'mesh', voxelPool: pool,
   };
 

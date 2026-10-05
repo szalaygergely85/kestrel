@@ -4,12 +4,11 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
-import { beginFrame, castSectors, fillSky, ambientL, primeAmbientLight } from './sectorCaster.js';
-import { castTerrain, shadeTerrainCells } from './terrainCaster.js';
+import { fillSky, ambientL, primeAmbientLight } from './sky.js';
+import { shadeTerrainCells } from './terrainShade.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
 import { lightSurfaces } from './lighting.js';
-import { castModels } from '../voxel/voxelMarch.js';
 // ME-06 (27.15.5a item 6): the JS-twin oracle for `fb.renderer === 'mesh'` -
 // same `DrawList`/`rasterJS` path the GPU raster pass (`GpuCellPipeline.
 // _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
@@ -28,15 +27,6 @@ import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFa
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
-// Preallocated (architecture.md section 9: no per-frame allocation in renderWorld).
-const order = new Int8Array(MAX_STRUCTS);
-const distScratch = new Float32Array(MAX_STRUCTS);
-// US-040 step 5 (architecture.md 15.2 item 5): `castModels` takes a
-// `{rt, depth:Float32Array, gbuf}` shim, not the real `fb` (whose `depth` is
-// a `DepthBuffer` object, `.depth` its typed array) - reused, never
-// reallocated (architecture.md section 9).
-const modelsFbShim = { rt: null, depth: null, gbuf: null };
-
 // ---------------------------------------------------------------------------
 // ME-06 mesh JS twin (27.15.5a item 6) - module-level scratch, zero
 // allocation per frame (27.7 item 5). Same fog-far cull constant
@@ -267,15 +257,14 @@ function scaleDepthForShade(depth, cols, rows, toShade) {
   }
 }
 
-function bboxDist(cam, bbox) {
-  const cx = Math.min(Math.max(cam.x, bbox.x0), bbox.x1);
-  const cy = Math.min(Math.max(cam.y, bbox.y0), bbox.y1);
-  const dx = cam.x - cx, dy = cam.y - cy;
-  return Math.hypot(dx, dy); // 0 when the camera is inside the footprint
+/** Clears the mesh frame buffers; no column spans remain. */
+export function beginFrame(fb) {
+  fb.depth.clear();
+  if (fb.gbuf) fb.gbuf.beginFrame();
 }
 
 /**
- * @param {Object} fb - FrameBuffers ({ rt, depth, spans, palette, gbuf?, matTable?, detailPass?, lights, timeSec, loop? })
+ * @param {Object} fb - FrameBuffers ({ rt, depth, palette, gbuf?, matTable?, detailPass?, lights, timeSec, loop? })
  * @param {import('../world/World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
  */
@@ -292,7 +281,7 @@ export function renderWorld(fb, world, cam) {
   // `?gpucompare=shade` test's own separate `fbCompare`).
   //
   // Bug fix (US-030a, "colour blocks, no glyphs" on the GPU path): the
-  // per-frame ambient light `ambientL` (sectorCaster.js) used to be primed
+  // per-frame ambient light `ambientL` (sky.js) used to be primed
   // only inside `castScene`, i.e. only by the CPU caster this early-out
   // skips - so on the GPU path it stayed [0,0,0], `uLight` was zero and the
   // shade pass resolved every cell to glyph 0. Prime it here, once per
@@ -304,82 +293,10 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
   meshPitched = false;
-  const meshWater = fb.renderer === 'mesh' && ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
+  const meshWater = ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
   meshHashCell = 0;
 
-  // ME-06 (27.15.5a item 6): `fb.renderer === 'mesh'` replaces the
-  // structs-loop + `castTerrain` geometry below with the JS mesh twin
-  // (`renderWorldMesh`) - same `DrawList`/`TerrainMeshSet` the GPU raster
-  // pass draws. Everything after this block (models, derivatives, light,
-  // shade, edge, sky) is unchanged and runs on top of whichever geometry
-  // path just filled `fb.gbuf`/`fb.depth`.
-  if (fb.renderer === 'mesh') {
-    renderWorldMesh(fb, world, cam);
-  } else {
-    const structs = world.structures;
-    const fogFar = (fb.palette && fb.palette.fog && fb.palette.fog.far) || 2000;
-    let count = 0;
-
-    for (let i = 0; i < structs.length; i++) {
-      if (structs[i].kind === 'mesh') continue; // ME-14c1: no sectors (mesh draws via addMeshStructures)
-      const d = bboxDist(cam, structs[i].bbox);
-      if (d > fogFar) continue; // too far to matter this frame
-      if (count < MAX_STRUCTS) {
-        order[count] = i;
-        distScratch[count] = d;
-        count++;
-      } else {
-        let worst = 0, worstD = distScratch[0];
-        for (let k = 1; k < MAX_STRUCTS; k++) {
-          if (distScratch[k] > worstD) { worstD = distScratch[k]; worst = k; }
-        }
-        if (d < worstD) { order[worst] = i; distScratch[worst] = d; }
-        if (fb.loop && fb.loop.stats) fb.loop.stats.structuresCulled = (fb.loop.stats.structuresCulled || 0) + 1;
-      }
-    }
-
-    // Insertion sort near -> far (count <= 8, so this is cheap and allocation-free).
-    for (let i = 1; i < count; i++) {
-      const oi = order[i], di = distScratch[i];
-      let j = i - 1;
-      while (j >= 0 && distScratch[j] > di) {
-        order[j + 1] = order[j];
-        distScratch[j + 1] = distScratch[j];
-        j--;
-      }
-      order[j + 1] = oi;
-      distScratch[j + 1] = di;
-    }
-
-    for (let k = 0; k < count; k++) {
-      const s = structs[order[k]];
-      castSectors(fb, s.level, cam, s.origin);
-    }
-
-    // US-016: writes fb.gbuf/fb.depth for every open span it can resolve (a
-    // no-op until `world.terrain.farReady`); `shadeTerrainCells` below paints
-    // those kind-7 cells (a separate look-up from `shadeSurfaces`'s
-    // MaterialTable), and only what's left open after both goes to `fillSky`.
-    // ARCH CHANGES item 3: `fb.terrainEnabled === false` (`?terrain=0`, set by
-    // main.js) skips terrain on this (CPU/JS oracle) path too, the same way
-    // `GpuCellPipeline`'s `terrainEnabled` gates pass A2 - `castTerrain`
-    // already no-ops on a null/not-ready terrain, so passing `null` here reuses
-    // that same early-out with no new branch inside terrainCaster.js.
-    castTerrain(fb, fb.terrainEnabled === false ? null : world.terrain, cam, world);
-  }
-
-  // US-040 step 5 (architecture.md 15.2 item 5): `castModels` runs after
-  // terrain, before the shading passes - `fb.voxelPool` is optional (US-040
-  // has no entity binding; harness callers set it via `pool.project(cam,
-  // rt)`, US-041a's `collect(world)` fills it from entities instead). Only
-  // the JS oracle path reaches here (`fb.gpu` early-out above covers the
-  // GPU path). US-041a (15.3 item 3): default `faceMode: 'packed'` now (US-040
-  // forced 'nearest' - "face 7 is US-041a" - the rotated-normal GPU/light
-  // pass work this story adds; `voxelMarch.js`'s own default is 'packed').
-  if (fb.gbuf && fb.voxelPool && fb.voxelPool.list.length && fb.renderer !== 'mesh') {
-    modelsFbShim.rt = fb.rt; modelsFbShim.depth = fb.depth.depth; modelsFbShim.gbuf = fb.gbuf;
-    castModels(modelsFbShim, fb.voxelPool.list, cam);
-  }
+  renderWorldMesh(fb, world, cam);
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);

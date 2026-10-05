@@ -1,3 +1,6 @@
+import { loadGolden, goldenFrame, goldenRelief } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('levelMesh');
+let oracleIndex = 0;
 import { dynamicTowerFixture } from '../../tools/testing/dynamic-tower.mjs';
 // engine/mesh/levelMesh.test.js (ME-01, docs/architecture.md 27.15.2 step 2-5).
 // Synthetic-grid unit tests for the plane/boundary rules, plus a caster-
@@ -11,14 +14,9 @@ import { dynamicTowerFixture } from '../../tools/testing/dynamic-tower.mjs';
 import { loadLevel } from '../world/Level.js';
 import { buildLevelMesh, computeRelief, rebuildLevelMeshDyn } from './levelMesh.js';
 import { validateMesh, flatKind, flatFace, flatMat, AO_WALL, AO_PLANE, AO_FAR } from './MeshData.js';
-import {
-  castSectors, beginFrame, HFOV_DEG,
-} from '../render/sectorCaster.js';
-import { GBuffer, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D,
+import { PROJ_HFOV_DEG as HFOV_DEG } from '../render/projection.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D,
   KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL } from '../render/GBuffer.js';
-import { DepthBuffer } from '../render/DepthBuffer.js';
-import { OpenSpans } from '../render/OpenSpans.js';
-import { CellBuffer } from '../render/CellBuffer.js';
 import { bindShading, bindLevel } from '../render/MaterialTable.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
@@ -164,24 +162,12 @@ function quadsOfKind(mesh, kind) {
 const { assets } = await loadTestAssets();
 const COLS = 32, ROWS = 18, PXW = 9, PXH = 16;
 
-function makeFb(matTable) {
-  return {
-    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS),
-    palette: assets.palette, gbuf: new GBuffer(COLS, ROWS), matTable,
-  };
-}
-
 for (const name of ['tower', 'test_room']) {
   const level = loadLevel(assets.level(name));
   const matTable = bindShading(assets.palette, assets.detailPass, PXH / PXW);
   bindLevel(matTable, level);
-  const fb = makeFb(matTable);
-  fb.rt.pxCellW = PXW; fb.rt.pxCellH = PXH;
-  beginFrame(fb);
-  const cam = { x: level.start.x, y: level.start.y, z: level.start.z !== undefined ? level.start.z : level.sectorAt(level.start.x, level.start.y).floorH + 1.6, yawDeg: 0, pitchDeg: 0 };
-  castSectors(fb, level, cam, { x: 0, y: 0, z: 0 });
+  const ref = goldenRelief(golden.frames[oracleIndex++]);
   const r = computeRelief(level);
-  const ref = level._relief028;
   let match = ref && ref.w === r.w && ref.h === r.h;
   if (match) {
     for (let i = 0; i < r.floorRise.length && match; i++) {
@@ -293,10 +279,9 @@ function runOracle(name, poses) {
   const detail = [];
 
   for (const cam of poses) {
-    const fb = makeFb(matTable);
-    fb.rt.pxCellW = PXW; fb.rt.pxCellH = PXH;
-    beginFrame(fb);
-    castSectors(fb, level, cam, { x: 0, y: 0, z: 0 });
+    const sample = golden.frames[oracleIndex++];
+    if (JSON.stringify(sample.cam) !== JSON.stringify(cam)) throw new Error('Level oracle camera changed; ARCH OK required');
+    const fb = goldenFrame(sample);
 
     const yaw = cam.yawDeg * Math.PI / 180;
     const dirX = Math.sin(yaw), dirY = -Math.cos(yaw);
@@ -310,7 +295,7 @@ function runOracle(name, poses) {
         const i = row * COLS + x;
         const kind = fb.gbuf.kind[i];
         if (kind === 0) continue;
-        const dist = fb.depth.get(x, row);
+        const dist = fb.depth[i];
         if (!Number.isFinite(dist)) continue;
         const slope = -(row - horizonRow) / planeDistY;
         const P = [cam.x + rdx * dist, cam.y + rdy * dist, cam.z + slope * dist];
@@ -391,6 +376,8 @@ function runOracle(name, poses) {
     && Buffer.from(set1.base.aux.buffer).equals(Buffer.from(set2.base.aux.buffer));
   ok('two builds of test_room are byte-identical', same);
 }
+
+ok('all frozen oracle frames were checked', oracleIndex === golden.frames.length, `${oracleIndex}/${golden.frames.length}`);
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

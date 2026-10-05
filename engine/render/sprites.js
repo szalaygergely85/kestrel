@@ -39,7 +39,7 @@
 // so the existing `sDepth < depth[i]` test alone keeps them off every
 // terrain/structure cell and only ever draws them where the depth buffer is
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
-import { HFOV_DEG } from './sectorCaster.js';
+import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { lightAt } from './lighting.js';
 import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection } from './projection.js';
 

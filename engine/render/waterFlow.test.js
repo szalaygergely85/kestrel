@@ -4,7 +4,6 @@
 import { World } from '../world/World.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
-import { OpenSpans } from './OpenSpans.js';
 import { GBuffer } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
 import { renderWorld } from './compositor.js';
@@ -37,7 +36,7 @@ function makeFb(world, looks) {
   const matTable = bindShading(assets.palette, assets.detailPass, 1);
   if (world.structures[0]) bindLevel(matTable, world.structures[0].level);
   return {
-    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS), palette: assets.palette,
+    rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), palette: assets.palette,
     gbuf: new GBuffer(COLS, ROWS), matTable, detailPass: null, lights: null, light: makeLightBuffer(COLS, ROWS),
     timeSec: 0, loop: { stats: {} }, renderer: 'mesh', waterLooks: looks,
   };

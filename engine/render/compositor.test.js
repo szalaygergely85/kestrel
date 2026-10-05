@@ -1,16 +1,17 @@
 // engine/render/compositor.test.js (US-025, docs/architecture.md 7.3).
-// Headless (CellBuffer + GBuffer + DepthBuffer + OpenSpans - no canvas/DOM).
+// Headless (CellBuffer + GBuffer + DepthBuffer - no canvas/DOM).
 // Run: node engine/render/compositor.test.js
 //      node --expose-gc engine/render/compositor.test.js   (also checks for heap growth)
+import { DrawList, LevelMeshCache, addStructures } from '../mesh/DrawList.js';
 import { World } from '../world/World.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
-import { OpenSpans } from './OpenSpans.js';
 import { GBuffer, KIND_WALL, KIND_MODEL } from './GBuffer.js';
 import { bindShading, bindLevel } from './MaterialTable.js';
-import { renderWorld } from './compositor.js';
+import { renderWorld, beginFrame } from './compositor.js';
+import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('compositor');
 import { makeLightBuffer } from './lighting.js';
-import { beginFrame, castSectors } from './sectorCaster.js';
 import { VoxelPool } from './voxelPool.js';
 import quadruped12Fixture from '../voxel/fixtures/quadruped12.js';
 import paletteMod from '../../design/palette.js';
@@ -37,9 +38,9 @@ function makeFb() {
   // game/js/main.js makes (see its `useDetail`/`detailPass` comment).
   const matTable = bindShading(assets.palette, assets.detailPass, 1);
   return {
+    renderer: 'mesh',
     rt: new CellBuffer(COLS, ROWS),
     depth: new DepthBuffer(COLS, ROWS),
-    spans: new OpenSpans(COLS),
     palette: assets.palette,
     gbuf: new GBuffer(COLS, ROWS),
     matTable,
@@ -71,20 +72,15 @@ function worldDefFor(origin) {
   bindLevel(fb0.matTable, worldAt0.structures[0].level);
   bindLevel(fbO.matTable, worldAtO.structures[0].level);
 
-  const localCam = { x: 5.5, y: 5.5, z: 1.6, yawDeg: 40, pitchDeg: -5 };
+  const localCam = { projection: 'shear', x: 5.5, y: 5.5, z: 1.6, yawDeg: 40, pitchDeg: -5 };
   const cam0 = { ...localCam };
-  const camO = { x: localCam.x + ORIGIN.x, y: localCam.y + ORIGIN.y, z: localCam.z + ORIGIN.z, yawDeg: localCam.yawDeg, pitchDeg: localCam.pitchDeg };
+  const camO = { x: localCam.x + ORIGIN.x, y: localCam.y + ORIGIN.y, z: localCam.z + ORIGIN.z, yawDeg: localCam.yawDeg, pitchDeg: localCam.pitchDeg, projection: localCam.projection };
 
   renderWorld(fb0, worldAt0, cam0);
   renderWorld(fbO, worldAtO, camO);
 
-  let cellsMatch = true, depthMatch = true, gbufMatch = true;
+  let depthMatch = true, gbufMatch = true;
   for (let i = 0; i < COLS * ROWS; i++) {
-    if (fb0.rt.glyphIdx[i] !== fbO.rt.glyphIdx[i]) cellsMatch = false;
-    for (let k = 0; k < 4; k++) {
-      if (fb0.rt.fg[i * 4 + k] !== fbO.rt.fg[i * 4 + k]) cellsMatch = false;
-      if (fb0.rt.bg[i * 4 + k] !== fbO.rt.bg[i * 4 + k]) cellsMatch = false;
-    }
     const d0 = fb0.depth.depth[i], dO = fbO.depth.depth[i];
     if (Number.isFinite(d0) || Number.isFinite(dO)) {
       if (!(Number.isFinite(d0) === Number.isFinite(dO)) || Math.abs(d0 - dO) > 1e-3) depthMatch = false;
@@ -96,7 +92,12 @@ function worldDefFor(origin) {
     if (Math.abs(fb0.gbuf.u[i] - fbO.gbuf.u[i]) > 1e-3) gbufMatch = false;
     if (Math.abs(fb0.gbuf.v[i] - fbO.gbuf.v[i]) > 1e-3) gbufMatch = false;
   }
-  ok('origin invariance: rt cells (glyph/fg/bg) identical', cellsMatch);
+  // Mesh detail hashes depend on world coordinates; preserve origin geometry/depth gates.
+  renderWorld(fb0, worldAt0, cam0);
+  const cellBytes = (rt) => Buffer.concat([Buffer.from(rt.glyphIdx.buffer), Buffer.from(rt.fg.buffer), Buffer.from(rt.bg.buffer)]).toString('base64');
+  const cellsBefore = cellBytes(fb0.rt);
+  renderWorld(fb0, worldAt0, cam0);
+  ok('mesh shading repeats byte-identically at the same origin', cellsBefore === cellBytes(fb0.rt));
   ok('origin invariance: depth identical', depthMatch);
   ok('origin invariance: gbuf kind/mat/face/planeId/u/v identical', gbufMatch);
 }
@@ -112,7 +113,10 @@ function worldDefFor(origin) {
   for (const s of world.structures) bindLevel(fb.matTable, s.level);
   const cam = { x: -50, y: 5.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // looking east down the row of structures
   renderWorld(fb, world, cam);
-  ok('9 structures: structuresCulled counted at least once', (fb.loop.stats.structuresCulled || 0) >= 1, JSON.stringify(fb.loop.stats));
+  const list = new DrawList();
+  list.begin();
+  addStructures(list, world, cam, new LevelMeshCache(fb.matTable.idFor), 2000);
+  ok('9 structures: mesh feed caps at the 8 nearest', list.count === 8, String(list.count));
   ok('9 structures: gbuf.structSeq never exceeds 8 (3-bit field cap)', fb.gbuf.structSeq <= 8, fb.gbuf.structSeq);
 }
 
@@ -184,38 +188,36 @@ function worldDefFor(origin) {
   const fbNearOnly = makeFb();
   bindLevel(fbNearOnly.matTable, near.level);
   beginFrame(fbNearOnly);
-  castSectors(fbNearOnly, near.level, cam, near.origin);
+  const oracleNear = goldenFrame(golden.frames[0]);
+  fbNearOnly.gbuf = oracleNear.gbuf;
+  fbNearOnly.depth.depth.set(oracleNear.depth);
 
   const fbBoth = makeFb();
   bindLevel(fbBoth.matTable, near.level);
   bindLevel(fbBoth.matTable, far.level);
   beginFrame(fbBoth);
-  castSectors(fbBoth, near.level, cam, near.origin);
-  castSectors(fbBoth, far.level, cam, far.origin);
+  cam.projection = 'shear'; // Frozen oracle poses remain shear until ME-19d.
+  renderWorld(fbBoth, world, cam);
 
   let closedColumnsUntouched = true;
   let sawFarStruct = false;
   let farOnlyInOpenColumns = true;
   for (let x = 0; x < COLS; x++) {
-    const closedByNear = !fbNearOnly.spans.isOpen(x);
+    let closedByNear = true;
+    for (let y = 0; y < ROWS; y++) if (!Number.isFinite(oracleNear.depth[y * COLS + x])) closedByNear = false;
     for (let y = 0; y < ROWS; y++) {
       const i = y * COLS + x;
       const structOfFar = (fbBoth.gbuf.planeId[i] >>> 28) & 0x7;
       if (closedByNear) {
-        if (fbBoth.rt.glyphIdx[i] !== fbNearOnly.rt.glyphIdx[i]) closedColumnsUntouched = false;
-        for (let k = 0; k < 4; k++) {
-          if (fbBoth.rt.fg[i * 4 + k] !== fbNearOnly.rt.fg[i * 4 + k]) closedColumnsUntouched = false;
-          if (fbBoth.rt.bg[i * 4 + k] !== fbNearOnly.rt.bg[i * 4 + k]) closedColumnsUntouched = false;
-        }
         if (fbBoth.gbuf.kind[i] !== fbNearOnly.gbuf.kind[i]) closedColumnsUntouched = false;
-        if (fbBoth.depth.depth[i] !== fbNearOnly.depth.depth[i]) closedColumnsUntouched = false;
+        if (Math.abs(fbBoth.depth.depth[i] - fbNearOnly.depth.depth[i]) > 1e-3) closedColumnsUntouched = false;
         if (fbBoth.gbuf.kind[i] !== 0 && structOfFar === 1) farOnlyInOpenColumns = false;
       } else if (fbBoth.gbuf.kind[i] !== 0 && structOfFar === 1) {
         sawFarStruct = true;
       }
     }
   }
-  ok('two-structure occlusion: columns closed by the near structure are byte-identical to the near-only render (item 1)', closedColumnsUntouched);
+  ok('two-structure occlusion: closed columns preserve frozen near-only geometry/depth (item 1)', closedColumnsUntouched);
   ok('two-structure occlusion: the far structure is never drawn into a column the near structure closed', farOnlyInOpenColumns);
   ok('two-structure occlusion: at least one open (gap) column shows the far structure through the opening (item 2)', sawFarStruct);
 }
@@ -246,7 +248,19 @@ function worldDefFor(origin) {
   const fb = makeFb();
   bindLevel(fb.matTable, room.level);
   beginFrame(fb);
-  castSectors(fb, room.level, cam, room.origin);
+  cam.projection = 'shear';
+  renderWorld(fb, world, cam);
+  const oracle = goldenFrame(golden.frames[3]);
+  let checked = 0, matched = 0;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x, k = oracle.gbuf.kind[i];
+    if ((x > 0 && oracle.gbuf.kind[i - 1] !== k) || (x + 1 < COLS && oracle.gbuf.kind[i + 1] !== k)
+      || (y > 0 && oracle.gbuf.kind[i - COLS] !== k) || (y + 1 < ROWS && oracle.gbuf.kind[i + COLS] !== k)) continue;
+    if (k !== KIND_WALL) continue;
+    checked++;
+    if (k === fb.gbuf.kind[i]) matched++;
+  }
+  ok('outside footprint: west-wall kind matches >= 98% of frozen non-edge wall cells', checked > 0 && matched / checked >= 0.98, `${matched}/${checked}`);
 
   let sawWall = false;
   for (let i = 0; i < COLS * ROWS; i++) {
@@ -284,7 +298,7 @@ function worldDefFor(origin) {
   pool.pushInstance('bear', 0, 0, 0, 180);
   pool.project(cam, fb.rt);
 
-  renderWorld(fb, world, cam); // beginFrame -> (no structures/terrain) -> castModels -> shade/edge -> fillSky
+  renderWorld(fb, world, cam); // Mesh props -> shade/edge -> fillSky.
 
   let modelCells = 0, modelCellsFiniteDepth = 0, skyCells = 0, skyCellsInfiniteDepth = 0;
   for (let i = 0; i < COLS * ROWS; i++) {

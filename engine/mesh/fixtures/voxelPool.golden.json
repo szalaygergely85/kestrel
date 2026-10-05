@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "source": "ME-19b pre-deletion CPU oracle, 2026-10-05",
+  "approval": "ARCH OK required to replace; no regeneration command is committed",
+  "payload": "eJzt3e9vmkAYB/D/5d5qgqhtwaQvwFOrq3q0uhaXvjit4C/EKIrS9H/fgc3W1K7DZZY5v59E5Uty5bmQXOFJlCdizbnTX5DCtyfS4w4pPJE1KWTSZEMKZ2kSkIIstrlP+3a0ezb0eoNteE6TnjsRQ/Ni/9z1xVZWbNndpRX+mfFw+hh+eptZnxRIezj1FG0+5xuSJt2NFx6TaPAH7Grx5bXHoB9jinsM2h4jGrdvkQB/0yUR643DvTdLinyONQUSomtaSdOMN58H8c5xjAMdyhbLvhb9a9l+RhkA4FRdRtcfFu/1cU9zCEZJ8+s0esVX0rWXMX78Qbpm0Jfj7V0lwF8UrSmzCZ/2q69bJdWpl8tiWQGA/12JiTed+uKetq6Ie1rKwnvbYCcnXedexHzEu/HRfLb5mOhGWO+YiSuo6s/z0QvP37WYr1FcKGJqc5ZchQAAAACQiKitsXzV0ChPXI6WBgD872qrTDnItReenWrdNb+yR21j04sGbSxSHavOWbZh31J1GNy3paRLja/YVfWeKl9fm2wsjyatnFF3tVRgBF3m3AeVkToyS7ZkLmSZHVGjxpGMe8abdzctuWGetdVoZ/lWuWjlUhUjozZ8s8JMW/4a5BOuFAAAAAA+WdTSWKGlAQCnp0olr2YZqbzJ6mxZoQG9GNiKv5OTrjM+3ek4ZkpdX3PWmkmNUebcCky1OVWyO/lQX7Q4gKC3rrOR08wH2Ww3b2xbGlV/2RydD+jSVT0nVWLdzmpAMwlXCgAAAACfLGppBGhpAMDpsamUK01cSWmXK0wq6zcjaW20zZ2cdJ3xFblzM5ZWbivLlhaTRxfTQDVTZ4p0t5OP6Od80NIAAAAAgF+IWhrcpWhqAMDpsa8UcXOsS+FvN1r+R/mIxJrPNh+P98/Hu/MDAAAAgFMSNTVeHs3i8ekVn1hXZXcVPY3l5/NXol8RpcOFZ4ZPZhEjHvszbxCnERLvwhoZGRn5KPLaMmZj2nqszcT6WWyH39+YhA/mqN28l5OvN16+z3zpaJncLf/NfKL8D9QbK5fVomM0Ghln/Pp8qLVZidbPOm/O3z9QLzIyMjIyMjIy8qflS/L8/JAmc74JH1f78PwdZe/mug==",
+  "oracleSources": {
+    "render/sectorCaster.js": "3621dad6c66e1c360b09a0d31e3c029b69232584465500c7d99ba309c695967c",
+    "voxel/voxelMarch.js": "b64272c0342f7dee405d71172d48fce5be4902d9862d66c03b1a43db0a587e40"
+  },
+  "counts": {
+    "frames": 1,
+    "rays": 0
+  },
+  "payloadEncoding": "base64(zlib(JSON)); typed-array bytes are base64 and preserve IEEE Infinity/normal alias bits",
+  "payloadSha256": "bf2e9b9b60fb6e704d73667f0b10e73f4d02272e0aa4fce715ab75b7e6dc29af"
+}

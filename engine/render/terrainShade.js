@@ -11,6 +11,11 @@
 // colour/glyph pick never drifts between the two languages.
 
 import { samplePowLUT } from './fastShade.js';
+import { KIND_TERRAIN } from './GBuffer.js';
+import { packTerrainTextures } from './gpu/TerrainTextures.js';
+import { unpackNormalOct } from '../voxel/octNormal.js';
+import { clampByte } from '../core/math.js';
+import { sunFromWorld } from './lighting.js';
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -275,4 +280,121 @@ export function makeTerrainShadeCtx(recipe, tlookPacked, palette) {
     handover: nearLOD && nearLOD.handover ? nearLOD.handover : undefined,
     features: buildFeatures(recipe, palette),
   };
+}
+
+// ME-19b: deferred terrain-cell shading moved without changing expression order.
+const shadeOut = { glyph: 32, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+const shadeNrm = new Float64Array(3);
+const _terrainAoAliasCache = new WeakMap();
+function terrainAoAlias(gbuf) {
+  let alias = _terrainAoAliasCache.get(gbuf);
+  if (!alias || alias.buffer !== gbuf.aoD.buffer) {
+    alias = new Uint32Array(gbuf.aoD.buffer, gbuf.aoD.byteOffset, gbuf.aoD.length);
+    _terrainAoAliasCache.set(gbuf, alias);
+  }
+  return alias;
+}
+
+const faceNrm = new Float32Array(3);
+/**
+ * ME-06b: 0 = normal surface look, 1 = background canopy FACE cell, 2 = the
+ * foot (lowest face row of the run: the cell below is not a face cell, or
+ * off-grid). Face cell = kind-7 cell of a type whose TLOOK row has face
+ * glyphs (forest) with a steep normal (N.z < FOREST_FACE_NZ). GLSL twin: the
+ * `forestFaceMode` helper in shade.frag.js. Zero allocation.
+ */
+export function forestFaceMode(gbuf, alias, ctx, i, t) {
+  const type = gbuf.mat[i];
+  const TL = ctx.tlook, base = type * ctx.tlookWidth * 4;
+  if (!(TL[base + 3 * 4 + 3] > 0) || t < ctx.bands.near) return 0;
+  unpackNormalOct(alias[i], faceNrm);
+  if (!(faceNrm[2] < FOREST_FACE_NZ)) return 0;
+  const j = i + gbuf.cols;
+  if (j >= gbuf.cols * gbuf.rows || gbuf.kind[j] !== KIND_TERRAIN || gbuf.mat[j] !== type) return 2;
+  unpackNormalOct(alias[j], faceNrm);
+  return faceNrm[2] < FOREST_FACE_NZ ? 1 : 2;
+}
+
+/** Lazily (re)builds and caches `terrain`'s shading context, keyed by `farVersion`. */
+function terrainShadingFor(matTable, ctx) {
+  if (!ctx._paletteShading) ctx._paletteShading = ctx.shading;
+  const ms = matTable && matTable.shading;
+  if (!ms || !matTable.gainLUT) return ctx._paletteShading;
+  if (!ctx._mtShading || ctx._mtShadingSrc !== matTable) {
+    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT };
+    ctx._mtShadingSrc = matTable;
+  }
+  return ctx._mtShading;
+}
+
+function ensureShadeCtx(terrain, palette) {
+  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) return terrain._shadeCtx;
+  const packed = packTerrainTextures(terrain, palette);
+  terrain._shadeCtx = makeTerrainShadeCtx(terrain.recipe, packed, palette);
+  terrain._shadeCtxVersion = terrain.farVersion;
+  return terrain._shadeCtx;
+}
+
+/**
+ * Shades every `KIND_TERRAIN` cell `castTerrain` wrote this frame - a
+ * separate pass from `shadeSurfaces` (`detailShade.js`) because terrain
+ * looks up colour/glyph through `TLOOK` (recipe-driven), never through a
+ * `MaterialTable`. Call right after `shadeSurfaces`, before `edgePass` (same
+ * ordering requirement: the edge pass reads the just-shaded `rt.cells`).
+ * No-op when the world has no terrain or nothing was cast this frame.
+ * US-026a 23.4 "Lighting"/"Shade pass" rework: `N` is now decoded from the
+ * packed normal `castTerrain` wrote (`aoD`, via `FACE_PACKED`) instead of
+ * being re-derived by a central difference here - exact for a near hit (the
+ * old code always used the c=8 far difference, even inside the near band).
+ * `b = ambientI + sunI*max(0,N.sunDir)` stays analytic/shadow-free (D-007:
+ * no terrain shadow rays); `Lc` is `fb.light`'s already-computed per-cell
+ * point-light contribution (`lightSurfaces` runs before this in
+ * `compositor.js` and now skips the sun term for kind 7 - lighting.js -
+ * so `Lc` never double-counts the sun `b` already adds). `bT = b +
+ * max(Lc.r,Lc.g,Lc.b)` picks the tier/gain; the lamp then tints `fg`
+ * directly (`+= Lc*0.5`, clamped) - a lit patch of grass reads warmer, not
+ * just brighter.
+ * @param {{rt, gbuf, palette, light}} fb
+ * @param {import('../world/Terrain.js').Terrain} terrain
+ * @param {import('../world/World.js').World} world
+ * @param {number} [timeSec]
+ * @param {number} [hashCell] BUG-RTS-001: pitched-view hash cell (m), 0 = off
+ */
+export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0) {
+  if (!terrain || !terrain.farReady || !fb.gbuf) return;
+  const gbuf = fb.gbuf, palette = fb.palette;
+  const ctx = ensureShadeCtx(terrain, palette);
+  ctx.hashCell = hashCell; // BUG-RTS-001 (28.11a): per-frame, 0 = fixed 2/8 m cell
+  // BUG-GPU-005: the GPU terrain branch takes fgMin/fgMaxGain + the gain LUT
+  // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
+  // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.
+  ctx.shading = terrainShadingFor(fb.matTable, ctx);
+  const sun = sunFromWorld(world, palette);
+  const cells = fb.rt.cells || fb.rt;
+  const n = gbuf.cols * gbuf.rows;
+  const light = fb.light;
+  const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
+  const alias = terrainAoAlias(gbuf);
+  for (let i = 0; i < n; i++) {
+    if (gbuf.kind[i] !== KIND_TERRAIN) continue;
+    const u = gbuf.u[i], v = gbuf.v[i], t = fb.depth.depth[i];
+    unpackNormalOct(alias[i], shadeNrm);
+    const ndotl = shadeNrm[0] * sun.dirX + shadeNrm[1] * sun.dirY + shadeNrm[2] * sun.dirZ;
+    // ME-15c (27.9a item 6, US-070b): with the sun shadow map the analytic sun term is scaled by n/4 (light pass PCF taps).
+    const b = sun.ambientI + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1);
+    let lr = 0, lg = 0, lb = 0;
+    if (light && !light.uniform) {
+      const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];
+    } else if (light && light.uniform) {
+      lr = light.rgb[0]; lg = light.rgb[1]; lb = light.rgb[2];
+    }
+    const bT = b + Math.max(lr, Math.max(lg, lb));
+    shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t));
+    gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
+    shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
+    shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);
+    shadeOut.fg[2] = clampByte(shadeOut.fg[2] + lb * 0.5 * 255);
+    const x = i % gbuf.cols, y = (i / gbuf.cols) | 0;
+    cells.setCellRGB(x, y, shadeOut.glyph, shadeOut.fg[0], shadeOut.fg[1], shadeOut.fg[2], shadeOut.bg[0], shadeOut.bg[1], shadeOut.bg[2]);
+  }
 }

@@ -1,12 +1,8 @@
 // engine/render/projection.test.js (ME-02, docs/architecture.md 27.15.3
 // step 1-2). Run: node engine/render/projection.test.js
 import { loadLevel } from '../world/Level.js';
-import { castSectors, beginFrame, HFOV_DEG } from './sectorCaster.js';
-import { GBuffer } from './GBuffer.js';
-import { DepthBuffer } from './DepthBuffer.js';
-import { OpenSpans } from './OpenSpans.js';
-import { CellBuffer } from './CellBuffer.js';
-import { bindShading, bindLevel } from './MaterialTable.js';
+import { loadGolden } from '../../tools/testing/mesh-golden.mjs';
+const golden = loadGolden('projection');
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import { computeProjection } from '../voxel/instanceRect.js';
@@ -35,19 +31,17 @@ function mulberry32(seed) {
 }
 const rnd = mulberry32(20260927);
 
-ok('PROJ_HFOV_DEG matches HFOV_DEG everywhere else', PROJ_HFOV_DEG === HFOV_DEG);
+ok('PROJ_HFOV_DEG matches HFOV_DEG everywhere else', PROJ_HFOV_DEG === 75);
 ok('PROJ_NEAR is 5 cm', PROJ_NEAR === 0.05);
 ok('PROJ_FAR is fogFull 2000 m', PROJ_FAR === 2000);
 
 // ---------------------------------------------------------------------------
-// Step 1: projTerms bit-identical to castScene (via fb.gbuf.cam.planeDistY)
+// Step 1: projTerms bit-identical to castScene (via ref.gbuf.cam.planeDistY)
 // and to instanceRect.computeProjection, on 20 seeded poses.
 // ---------------------------------------------------------------------------
 {
   const { assets } = await loadTestAssets();
   const level = loadLevel(assets.level('tower'));
-  const matTable = bindShading(assets.palette, assets.detailPass, 16 / 9);
-  bindLevel(matTable, level);
   const COLS = 32, ROWS = 18;
   const start = level.start;
 
@@ -59,19 +53,17 @@ ok('PROJ_FAR is fogFull 2000 m', PROJ_FAR === 2000);
       x: start.x + (rnd() - 0.5) * 4, y: start.y + (rnd() - 0.5) * 4, z: (start.z ?? level.sectorAt(start.x, start.y).floorH + 1.6),
       yawDeg: rnd() * 360, pitchDeg: (rnd() - 0.5) * 60,
     };
-    const fb = { rt: new CellBuffer(COLS, ROWS), depth: new DepthBuffer(COLS, ROWS), spans: new OpenSpans(COLS), palette: assets.palette, gbuf: new GBuffer(COLS, ROWS), matTable };
-    fb.rt.pxCellW = 9; fb.rt.pxCellH = 16;
-    beginFrame(fb);
-    castSectors(fb, level, cam, { x: 0, y: 0, z: 0 });
+    const ref = golden.frames[i];
+    if (JSON.stringify(ref.cam) !== JSON.stringify(cam)) throw new Error('Projection oracle camera changed; ARCH OK required');
 
     projTerms(cam, { cols: COLS, rows: ROWS, pxCellW: 9, pxCellH: 16 }, terms);
-    if (!approxEqual(terms.planeDistY, fb.gbuf.cam.planeDistY, 1e-9)) allPlaneDistY = false;
+    if (!approxEqual(terms.planeDistY, ref.gbuf.cam.planeDistY, 1e-9)) allPlaneDistY = false;
 
     computeProjection(cam, { cols: COLS, rows: ROWS, pxCellW: 9, pxCellH: 16 }, projOut);
     const fields = ['dirX', 'dirY', 'planeX', 'planeY', 'horizonRow', 'planeDistY', 'eyeX', 'eyeY', 'eyeZ'];
     for (const f of fields) if (!approxEqual(terms[f], projOut[f], 1e-9)) allMatchInstanceRect = false;
   }
-  ok('projTerms.planeDistY == fb.gbuf.cam.planeDistY (castScene) x20', allPlaneDistY);
+  ok('projTerms.planeDistY == ref.gbuf.cam.planeDistY (castScene) x20', allPlaneDistY);
   ok('projTerms matches instanceRect.computeProjection on every shared field x20', allMatchInstanceRect);
 }
 

@@ -44,7 +44,8 @@ import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 // (terrainCaster.js) and this pipeline's uniform upload use the SAME
 // `terrainHBounds` so `uTerrainMaxH` never drifts from the JS march's own
 // combined bound.
-import { sunFromWorld, terrainHBounds, activeNearLOD } from '../terrainCaster.js';
+import { sunFromWorld } from '../lighting.js';
+import { terrainHBounds, activeNearLOD } from '../../world/Terrain.js';
 // US-040 (15.2 items 3/4, build order step 3): pass A3 `voxel` - VOX/VOXINST
 // texture layout + the GLSL march itself.
 import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
@@ -52,7 +53,7 @@ import { VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE, writeInstanc
 import { MAX_VOX_INSTANCES } from '../../voxel/VoxelModel.js';
 import { GpuTimer, GpuPassTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
-import { HFOV_DEG } from '../sectorCaster.js';
+import { PROJ_HFOV_DEG as HFOV_DEG } from '../projection.js';
 import { SKY_LUT_N } from './glsl/common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
 // ME-04 (docs/backlog.md, docs/architecture.md 27.2/27.4/27.11 ME-04 row):
