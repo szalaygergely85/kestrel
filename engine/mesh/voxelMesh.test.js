@@ -1,7 +1,8 @@
 // engine/mesh/voxelMesh.test.js (ME-07, docs/backlog.md, docs/architecture.md
 // 27.7 item 4, 27.15.6). Plain Node ESM, no framework.
 // Run: node engine/mesh/voxelMesh.test.js
-import { buildVoxelMesh, VoxelMeshCache, MESH_ONLY_MAX_QUADS, downsamplePart, buildVoxelMeshLod1 } from './voxelMesh.js';
+import { buildVoxelMesh, VoxelMeshCache, addVoxelInstances, MESH_ONLY_MAX_QUADS, downsamplePart, buildVoxelMeshLod1 } from './voxelMesh.js';
+import { DrawList } from './DrawList.js';
 import { validateMesh } from './MeshData.js';
 import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
@@ -629,6 +630,17 @@ for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
     const ms2 = performance.now() - t1;
     ok('RE-15b: LOD1 second call is memoized (no rebuild)', ms2 < ms || ms2 < 0.5, `${ms2.toFixed(4)} ms`);
   }
+}
+
+// VOX-CAP-01: ordinary draws keep unique ids through the last mesh slot.
+{
+  const { pm, partNames } = pack(quadruped12);
+  const items = Array.from({ length: 48 }, (_, i) => ({ model: pm, modelKey: 'bear', x: i, y: 0, z: 0, yawDeg: 0,
+    clip: -1, frame: 0, tMs: 0, scale: 1, rect: { minX: i, minY: 0, minZ: 0, maxX: i + 1, maxY: 1, maxZ: 1 } }));
+  const list = new DrawList();
+  addVoxelInstances(list, { list: items }, new VoxelMeshCache(), () => partNames);
+  const ids = list.items.slice(0, list.count).map(item => item.objectId);
+  ok('48 mesh voxel draws have unique prop ids below unit/view-model ranges', ids.length === 48 && new Set(ids).size === 48 && ids[47] === (0x8000 | 47) && ids.every(id => id < 0xFFFF && id < 0x10000));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -72,7 +72,7 @@ export {
 // ---- US-039/US-040 voxel models (architecture.md 15.1/15.2) ---------------
 // Exported now (15.2 item 1 supersedes 15.1's "no exports until US-041"):
 // the gpucompare harness needs them.
-export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
+export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
 export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a

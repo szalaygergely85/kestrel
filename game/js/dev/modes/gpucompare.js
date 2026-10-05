@@ -189,6 +189,7 @@ function buildCompareRuns(ctx) {
   const swordHeldDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.swordHeld;
   if (swordHeldDef && !assets.has('model', 'swordHeld')) assets.add('model', 'swordHeld', { ...swordHeldDef, voxel: { ...swordHeldDef.voxel, meshOnly: true } });
   const compareVoxelPool = new VoxelPool();
+  compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
   const LEVER_X = 1499.25, LEVER_Y = 1027.3, LEVER_Z = 3.0;
   const LANTERN_X = 1499.9, LANTERN_Y = 1024.5, LANTERN_Z = 1.3;

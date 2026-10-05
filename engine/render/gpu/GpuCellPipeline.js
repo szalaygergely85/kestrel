@@ -1533,6 +1533,7 @@ export class GpuCellPipeline {
   _uploadVoxelInstances(pool) {
     const gl = this.gl;
     const count = pool.list.length;
+    if (count > MAX_VOX_INSTANCES) throw new Error(`Voxel instance upload exceeds DDA cap (${MAX_VOX_INSTANCES}): ${count}`);
     const rectF = this._voxRectF;
     for (let i = 0; i < count; i++) {
       writeInstanceRows(pool, i, this._voxInstF);

@@ -5,7 +5,7 @@
 // entities (`collect(world)`) is US-041a; US-040 only has the test/dev
 // harness feed `pushInstance(...)`.
 
-import { MAX_VOX_INSTANCES, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
+import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
 import { createPitchedTerms, pitchedTerms, resolveProjection } from './projection.js';
@@ -24,6 +24,12 @@ function warnOnce(pool, msg) {
   if (typeof console !== 'undefined' && console.warn) console.warn(msg);
 }
 
+function projectedSlot() {
+  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0,
+    pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
+    rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
+}
+
 export class VoxelPool {
   constructor() {
     /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
@@ -32,12 +38,13 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = [];
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1 }));
     this._rawCount = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
     // GPU instance rows / planeId's slot field key off.
     this.list = [];
+    this._slots = Array.from({ length: MAX_VOX_INSTANCES_MESH }, projectedSlot);
     this.stats = { count: 0, instancesCulled: 0 };
     // ME-08a (27.16 item 5): modelKey -> part-name array (voxelPack order),
     // recorded once at bind(); `partNamesFor` returns the stored array,
@@ -49,7 +56,7 @@ export class VoxelPool {
     // shadow list (props behind the player still cast). `shadowView` is the {list, partNamesFor} shape
     // `buildShadowList` feeds to `addVoxelInstances`.
     this.shadowList = []; // ME-15c/d: per-frame view (references), length = prop count
-    this._shadowSlots = []; // ME-15d: posed records, never shrink (zero alloc when the prop count grows back)
+    this._shadowSlots = Array.from({ length: MAX_VOX_INSTANCES_MESH }, projectedSlot); // ME-15d: posed records, never shrink (zero alloc when the prop count grows back)
     this.shadowView = { list: this.shadowList, partNamesFor: this.partNamesFor };
     // Camera eye position from this frame's project() call - VoxelTextures.js's
     // writeInstanceRows reads these to compute the part-local eye (oL = A*eye+b,
@@ -70,11 +77,17 @@ export class VoxelPool {
     this._ents = [];
     this._entVersion = -1;
     this._entWorld = null;
-    // Nearest-MAX_VOX_INSTANCES selection scratch (15.3 item 1: "the nearest
-    // 16 instances win") - fixed size (MAX_VOX_INSTANCES), never grows, so
-    // this never allocates regardless of how many voxel entities exist.
-    this._nearIdx = new Int32Array(MAX_VOX_INSTANCES);
-    this._nearDist = new Float64Array(MAX_VOX_INSTANCES);
+    // Per-renderer nearest selection; all storage covers the mesh cap once.
+    this._nearIdx = new Int32Array(MAX_VOX_INSTANCES_MESH);
+    this._nearDist = new Float64Array(MAX_VOX_INSTANCES_MESH);
+    this._collectWarned = 0;
+    this._pushWarned = 0;
+  }
+
+  get renderer() { return this._renderer; }
+  set renderer(value) {
+    this._renderer = value;
+    this.cap = value === 'mesh' ? MAX_VOX_INSTANCES_MESH : MAX_VOX_INSTANCES;
   }
 
   /** Packs every `ModelDef.voxel` in the registry (bind time, may allocate -
@@ -122,12 +135,18 @@ export class VoxelPool {
    * queues one instance of `modelKey` (must be bound, i.e. have `.voxel`) at
    * world feet position (x,y,z), yaw `yawDeg`, playing `clip`/`frame`/`tMs`
    * (clip -1 or omitted = rest pose, matching voxelPose.js's samplePose).
-   * Past MAX_VOX_INSTANCES per frame, extra pushes are dropped (warn once) -
-   * castModels applies the same cap. */
+   * Past the active renderer cap, extra pushes are dropped (warn once). */
   pushInstance(modelKey, x, y, z, yawDeg, clip, frame, tMs, scale = 1) {
     const pm = this.models.get(modelKey);
     if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return; }
-    if (this._rawCount >= MAX_VOX_INSTANCES) { warnOnce(this, 'VoxelPool.pushInstance: MAX_VOX_INSTANCES exceeded, extra instances dropped'); return; }
+    if (this._rawCount >= this.cap) {
+      const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
+      if (!(this._pushWarned & bit)) {
+        this._pushWarned |= bit;
+        warnOnce(this, `VoxelPool.pushInstance: cap (${this.cap}) exceeded, extra instances dropped`);
+      }
+      return;
+    }
     const slot = this._rawSlot(this._rawCount);
     slot.model = pm;
     slot.modelKey = modelKey;
@@ -142,9 +161,7 @@ export class VoxelPool {
 
   /** Reused per-slot raw-instance object at `this.raw[idx]` (no per-frame allocation once warm). */
   _rawSlot(idx) {
-    let slot = this.raw[idx];
-    if (!slot) { slot = {}; this.raw[idx] = slot; }
-    return slot;
+    return this.raw[idx];
   }
 
   /**
@@ -175,13 +192,13 @@ export class VoxelPool {
 
   /**
    * US-041a (15.3 item 1): fills the raw list from every entity with a
-   * `components.voxel`, nearest `MAX_VOX_INSTANCES` (16) to `cam` win when
+   * `components.voxel`, nearest renderer-cap instances to `cam` win when
    * there are more candidates than that (insertion-selection into fixed-size
    * scratch - same no-allocation pattern as `lighting.js`'s
    * `selectCpuLights`). The entity ref array itself is rebuilt only when
    * `world.renderVersion` changes (mirrors `SpritePool.collect`); `cam` may
    * be omitted (falls back to distance from the origin) for callers that
-   * only ever have <= 16 voxel entities and don't care about the ordering.
+   * only ever have <= the active cap of voxel entities and don't care about the ordering.
    */
   collect(world, cam) {
     this.beginFrame();
@@ -194,14 +211,16 @@ export class VoxelPool {
     }
     const ents = this._ents;
     const n = ents.length;
-    if (n <= MAX_VOX_INSTANCES) {
+    if (n <= this.cap) {
       for (let i = 0; i < n; i++) this._queueEntity(ents[i]);
       return;
     }
-    // Architect review 1 item 3 (fix round): more than MAX_VOX_INSTANCES (16)
-    // voxel entities in the world - only the nearest 16 render this frame.
-    // Warn once (15.3 item 1's "warn once"), not every frame.
-    warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed MAX_VOX_INSTANCES (${MAX_VOX_INSTANCES}); only the nearest ${MAX_VOX_INSTANCES} render`);
+    // Warn once per renderer cap, without formatting a message every frame.
+    const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
+    if (!(this._collectWarned & bit)) {
+      this._collectWarned |= bit;
+      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${this.cap}); only the nearest ${this.cap} render`);
+    }
     const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0, cz = cam ? cam.z : 0;
     const idx = this._nearIdx, dist = this._nearDist;
     let count = 0;
@@ -209,7 +228,7 @@ export class VoxelPool {
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (count < MAX_VOX_INSTANCES) {
+      if (count < this.cap) {
         let j = count - 1;
         while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
         dist[j + 1] = d2; idx[j + 1] = i;
@@ -229,16 +248,10 @@ export class VoxelPool {
    * Zero allocation once warm.
    */
   projectShadow() {
-    const n = Math.min(this._rawCount, MAX_VOX_INSTANCES);
+    const n = Math.min(this._rawCount, this.cap);
     for (let i = 0; i < n; i++) {
       const inst = this.raw[i];
-      let out = this._shadowSlots[i];
-      if (!out) {
-        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: i,
-          pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
-          rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
-        this._shadowSlots[i] = out;
-      }
+      const out = this._shadowSlots[i];
       this.shadowList[i] = out; // references only: the posed records live in the never-shrinking `_shadowSlots`
       instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
       out.model = inst.model; out.modelKey = inst.modelKey;
@@ -266,7 +279,7 @@ export class VoxelPool {
     this.eyeX = _proj.eyeX; this.eyeY = _proj.eyeY; this.eyeZ = _proj.eyeZ;
     let count = 0;
     let culled = 0;
-    for (let i = 0; i < this._rawCount; i++) {
+    for (let i = 0; i < Math.min(this._rawCount, this.cap); i++) {
       const inst = this.raw[i];
       // ME-22 (28.12 item 4): the single place instances are routed into
       // the per-frame DDA/CPU-oracle list - a meshOnly model is skipped
@@ -278,13 +291,8 @@ export class VoxelPool {
         warnOnce(this, `VoxelPool: model '${inst.modelKey}' is meshOnly, skipped for a non-mesh renderer (ME-22)`);
         continue;
       }
-      let out = this.list[count];
-      if (!out) {
-        out = { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0,
-          pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
-          rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
-        this.list[count] = out;
-      }
+      const out = this._slots[count];
+      this.list[count] = out;
       instanceRect(_proj, inst.model, inst, out.pose, null, out.rect);
       if (out.rect.empty) { culled++; continue; }
       out.model = inst.model; out.modelKey = inst.modelKey;
@@ -295,6 +303,6 @@ export class VoxelPool {
     }
     this.list.length = count;
     this.stats.count = count;
-    this.stats.instancesCulled = culled + Math.max(0, this._rawCount - MAX_VOX_INSTANCES);
+    this.stats.instancesCulled = culled + Math.max(0, this._rawCount - this.cap);
   }
 }
