@@ -1,7 +1,7 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  bindDecals, drawDecals, hexToRgb, animComponent, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
+  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, poisonAllCells, unpackReadback,
@@ -141,9 +141,6 @@ function buildCompareRuns(ctx) {
       before: () => { const h = worldM1.get('tower.lantern'); if (h) h.play('empty'); } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: upper stair landing (TOWER-LEVER-01, always open)',
       cam: { x: 1499.5, y: 1027.8, z: 4.6, yawDeg: 280, pitchDeg: -10 }, real: true },
-    { world: worldM1, lights: worldM1Lights, name: 'world_m1: boulder mid-roll',
-      cam: { x: 1493.5, y: 1022.5, z: engine.physics.eyeHeight, yawDeg: 64.5, pitchDeg: -20 }, real: true,
-      before: () => { const h = worldM1.get('tower.boulder'); if (h) animComponent(h.data).frame = 4; } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: summit east (relay plinth, yaw 87.6)',

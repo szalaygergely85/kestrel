@@ -4,7 +4,8 @@
 // Walks the M1 route on the REAL world_m1 twice - `physics: 'grid'` and `physics: 'mesh'` - with the same
 // scripted seek-walker inputs the game's step order uses (stepSectorAnims, integrate, stepRollers,
 // stepAnimations, resolveBodyContacts, updateTriggers) and prints, per leg: completed y/n, stuck waypoint,
-// fall-through (z below world.floorAt), end position grid vs mesh, max trace difference, boulder rest cell.
+// fall-through (z below world.floorAt), end position grid vs mesh, max trace difference, and that no roller
+// entity survives (TOWER-BOULDER-01 removed the tower boulder).
 // The upper stair is permanently open. Rendering is irrelevant to physics, so this
 // is valid for both `?renderer=` values. Physics is renderer-independent JS; GPU numbers need the browser.
 import { performance } from 'node:perf_hooks';
@@ -118,8 +119,8 @@ function idle(sim, steps, rec) {
   for (let i = 0; i < steps; i++) { stepOnce(sim); if (rec) rec.trace.push(sim.player.transform.x, sim.player.transform.y, sim.player.transform.z); }
 }
 
-function findBoulder(w) { let f = null; w.forEachEntity((e, id) => { if (e.components && e.components.roller) f = e; }); return f; }
-const boulderPos = (sim) => { const b = findBoulder(sim.world); return b ? { x: b.transform.x, y: b.transform.y, z: b.transform.z } : null; };
+/** TOWER-BOULDER-01: the tower no longer authors a `dynamic` prop, so no roller entity may exist. */
+function anyRoller(w) { let f = null; w.forEachEntity((e) => { if (e.components && e.components.roller) f = e; }); return f; }
 const upperStairOpen = (sim) => sim.world.structures[0].level.sectorAt(18.5, 10.5).ceilH === 'sky';
 
 function routeRun(physics, { reload = false } = {}) {
@@ -132,11 +133,11 @@ function routeRun(physics, { reload = false } = {}) {
   const r1b = runLeg(sim, '1 wake (walk out)', [W([17, 8])]); r.trace.push(...r1b.trace); r.steps += r1b.steps; r.completed = r1b.completed; r.stuckAt = r1b.stuckAt; r.fell = r1b.fell; r.minGap = r1b.minGap; r.end = r1b.end;
   legs.push(r);
   // PROP-COLLIDE-01b: PC-A approved the eastern wake -> burner -> stair corridor; the gondola stays solid.
-  // 2 boulder: enter the stair base from the east corridor; the boulder is pushed / rolls into the hollow.
-  r = runLeg(sim, '2 boulder (push to hollow)', [W([17, 7]), W([18, 7]), W([17, 7]), W([16, 6]), W([16, 5]), W([15, 5]), W([15, 3])]);
-  idle(sim, 480, r);
-  info.boulder = boulderPos(sim);
-  info.boulderSleeping = findBoulder(sim.world).components.roller.sleeping;
+  // 2 stair base: walk that corridor to the open stair entrance. TOWER-BOULDER-01 removed the roller boulder
+  // (its sphere physics moved it, but the voxel model never rotated, so it slid), so there is nothing to push
+  // and no settle wait - the leg is the corridor + open-entrance regression it always also carried.
+  r = runLeg(sim, '2 stair base (east corridor)', [W([17, 7]), W([18, 7]), W([17, 7]), W([16, 6]), W([16, 5]), W([15, 5]), W([15, 3])]);
+  info.stairBaseClear = !anyRoller(sim.world);
   r.end = { ...sim.player.transform }; legs.push(r);
   // 3 stairs: base -> top of the lower flight and the step before the gap.
   const stairs = [[16, 3], [17, 3], [18, 3], [19, 3], [19, 4], [20, 4], [20, 5], [20, 6], [20, 7]].map(W);
@@ -149,10 +150,10 @@ function routeRun(physics, { reload = false } = {}) {
   legs.push(runLeg(sim, '5a open landing', [W([19, 10]), W([18, 10])]));
   legs.push(runLeg(sim, '5b upper steps', [W([17, 10]), W([16, 10]), W([15, 10]), W([14, 10]), W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
   if (reload) {
-    // AC 4: save mid-route (upper stair open, boulder moved), reload on the same physics mode, probes bit-equal, walk continues.
+    // AC 4: save mid-route (upper stair open), reload on the same physics mode, probes bit-equal, walk continues.
     const w1 = sim.world, w2 = deserialize(serialize(w1), assets, { physics });
-    const b1 = boulderPos(sim); sim.world = w2; const b2 = boulderPos(sim);
-    info.reload = { boulderEqual: b1.x === b2.x && b1.y === b2.y && b1.z === b2.z, upperStairOpen: upperStairOpen(sim), colliders: w2.colliders.map((c) => c.id).join(',') };
+    const r1 = anyRoller(w1); sim.world = w2; const r2 = anyRoller(w2);
+    info.reload = { rollerAbsent: !r1 && !r2, upperStairOpen: upperStairOpen(sim), colliders: w2.colliders.map((c) => c.id).join(',') };
     let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
     const o1 = {}, o2 = {}, opts = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) };
     let bad = 0;
@@ -234,7 +235,7 @@ else {
   }
   console.log('info grid:', JSON.stringify(G.info));
   console.log('info mesh:', JSON.stringify(M.info));
-  console.log('save round trip (mid-route, after upper stair + boulder moved):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
+  console.log('save round trip (mid-route, after the upper stair):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));
   console.log(`sim ms/step p50 p95 max  grid: ${pct(G.ms, 0.5).toFixed(4)} ${pct(G.ms, 0.95).toFixed(4)} ${Math.max(...G.ms).toFixed(4)}   mesh: ${pct(M.ms, 0.5).toFixed(4)} ${pct(M.ms, 0.95).toFixed(4)} ${Math.max(...M.ms).toFixed(4)}`);

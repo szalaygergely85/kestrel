@@ -16,9 +16,12 @@ import { moveCapsule } from './capsule.js';
 import { stepRollers, resolveBodyContacts, rollFrame } from './roller.js';
 import { PHYSICS } from './config.js';
 import { makeOk, approxEqual } from '../test/assert.js';
-// ME-11b (27.18): the grid-vs-mesh boulder trace parity case below reuses
-// the real tower content, same pattern as game/js/quest/boulder.test.js and
-// engine/world/colliders.test.js (World.load with `{ physics: 'mesh' }`).
+// ME-11b (27.18): the grid-vs-mesh boulder trace parity case below runs the
+// real tower geometry, same pattern as engine/world/colliders.test.js
+// (World.load with `{ physics: 'mesh' }`). TOWER-BOULDER-01 removed the
+// boulder prop from shipping content (the voxel model never rotated, so it
+// slid), so the roller entity now comes from the test-only fixture - the
+// slope it rolls on (`layers.tilt`) is still real tower data.
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import lanternMod from '../../design/models/lantern.js';
@@ -31,9 +34,13 @@ import swordMod from '../../design/models/sword.js';
 import m3PropsMod from '../../design/models/m3_props.js';
 import terrainMod from '../../design/levels/overworld_far.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 
 paletteMod; detailPassMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; terrainMod;
 const { assets: towerAssets } = await loadTestAssets();
+// TOWER-BOULDER-01: the tower content keeps its `tilt` layer but no longer
+// authors the boulder prop, so the fixture supplies the roller entity.
+const fixtureAssets = dynamicTowerAssets(towerAssets);
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -374,14 +381,14 @@ const dt = PHYSICS.fixedDt;
 // every step within 1 cm.
 {
   function buildTowerWorld(opts) {
-    const towerDef = towerAssets.level('tower');
-    const worldM1 = towerAssets.world('world_m1');
+    const towerDef = fixtureAssets.level('tower');
+    const worldM1 = fixtureAssets.world('world_m1');
     const placement = worldM1.structures.find((s) => s.level === 'tower');
     const world = World.load({
       name: 'tower_only', terrain: null,
       structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
       entities: [], state: {},
-    }, towerAssets, opts);
+    }, fixtureAssets, opts);
     return { world, towerDef, origin: placement.origin };
   }
 

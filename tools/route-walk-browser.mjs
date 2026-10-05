@@ -87,10 +87,10 @@ const DRIVER = `(async () => {
   const idle = async (frames) => { keys(false, false, false); for (let i = 0; i < frames; i++) { await sleepF(); sample(); } };
   // PROP-COLLIDE-01b: same PC-A-approved eastern corridor as the Node route; keep the gondola solid.
   await leg('1b walk out', [W(17, 8)]);
-  await leg('2 boulder push', [W(17, 7), W(18, 7), W(17, 7), W(16, 6), W(16, 5), W(15, 5), W(15, 3)]);
-  await idle(480);
-  { let bx = null; world().forEachEntity((e) => { if (e.components && e.components.roller) bx = { x: e.transform.x - O.x, y: e.transform.y - O.y, z: e.transform.z, sleeping: e.components.roller.sleeping }; }); out.info.boulder = bx; }
-  // ME-15d AC2: after the boulder push (player still, boulder asleep) -> the shadow map must not re-render (counter delta over 120 idle frames)
+  // TOWER-BOULDER-01: the roller boulder is gone, so this is the corridor + open-entrance walk it also carried.
+  await leg('2 stair base', [W(17, 7), W(18, 7), W(17, 7), W(16, 6), W(16, 5), W(15, 5), W(15, 3)]);
+  { let roller = null; world().forEachEntity((e) => { if (e.components && e.components.roller) roller = { id: e.id, x: e.transform.x - O.x, y: e.transform.y - O.y, z: e.transform.z }; }); out.info.rollerAbsent = roller === null; out.info.roller = roller; }
+  // ME-15d AC2: player still and nothing rolling -> the shadow map must not re-render (counter delta over 120 idle frames)
   { const gp = D.gpuPipeline; keys(false, false, false); await idle(30); const r0 = gp ? gp.shadowRenders : 0, s0 = gp ? gp.shadowSkips : 0;
     await idle(120); out.info.staticShadow = gp ? { frames: 120, renders: gp.shadowRenders - r0, skips: gp.shadowSkips - s0 } : null; }
   await leg('3 stairs', [W(16, 3), W(17, 3), W(18, 3), W(19, 3), W(19, 4), W(20, 4), W(20, 5), W(20, 6), W(20, 7)]);

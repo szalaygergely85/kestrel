@@ -13,7 +13,6 @@
 // into the shared level def/legend objects other loads read from.
 import {
   World, serialize, deserialize, validateBehaviours,
-  stepRollers, resolveBodyContacts, PHYSICS_DEFAULTS,
   updateTriggers,
 } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
@@ -79,21 +78,17 @@ ok('2b: landing is open on first load', tower.level.sectorAt(18.5, 10.5).ceilH =
 ok('2c: no gate dynamics', !tower.dynamics.grate);
 
 // ---------------------------------------------------------------------------
-// 3. Push the boulder (same approach as boulder.test.js: spawn the real
-// tower.js boulder prop as a roller entity and drive it with stepRollers).
+// 3. TOWER-BOULDER-01: the roller boulder is gone from the tower (owner
+// 2026-10-05: the sphere physics moved it but the voxel model never rotated,
+// so it slid across the floor). The engine's dynamic-prop machinery is still
+// covered by engine/physics/roller.test.js against the test-only fixture.
 // ---------------------------------------------------------------------------
-// US-011 (7.5 item 1): `World.load` now auto-spawns `tower.boulder` itself
-// (body + roller, `dynamic: true`) - reuse it instead of spawning a second
-// entity under the same id (which now throws, `boulder.test.js`).
-const towerDef = assets.level('tower');
-const boulderProp = towerDef.props.find((p) => p.id === 'boulder');
-const bx = tower.origin.x + boulderProp.x, by = tower.origin.y + boulderProp.y;
-const boulder = world.entity('tower.boulder');
-boulder.components.body.vx = 2; boulder.components.body.vy = 0.5;
-for (let i = 0; i < 60; i++) {
-  stepRollers(world, PHYSICS_DEFAULTS.fixedDt, PHYSICS_DEFAULTS);
-}
-ok('3a: boulder moved from its start position', boulder.transform.x !== bx || boulder.transform.y !== by);
+const boulderProp = assets.level('tower').props.find((p) => p.id === 'boulder');
+ok('3a: the tower no longer authors a boulder prop', !boulderProp);
+ok('3b: no boulder entity is spawned', !world.get('tower.boulder'));
+ok('3c: no dynamic prop remains in the tower', !assets.level('tower').props.some((p) => p.dynamic === true));
+ok('3d: no roller entity anywhere in the loaded world',
+  (() => { let roller = null; world.forEachEntity((e) => { if (e.components && e.components.roller) roller = e; }); return roller === null; })());
 
 // ---------------------------------------------------------------------------
 // 4. Fire quest.end directly (same shape `updateTriggers` fires it with).
@@ -129,7 +124,7 @@ ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqua
 // ---------------------------------------------------------------------------
 // 7. A world rebuilt from `initialState` has the SAME tower packed.geom as
 // a totally independent fresh World.load - the live world's mutations
-// (boulder motion, quest.end) never touched the shared def/legend objects.
+// (lantern.take, quest.end) never touched the shared def/legend objects.
 // ---------------------------------------------------------------------------
 const restored = deserialize(initialState, assets);
 const restoredTower = restored.structures.find((s) => s.id === 'tower');
@@ -209,12 +204,17 @@ function geomEqual(a, b) {
     JSON.stringify(restored.state['hints.shown'] || []) === shownAfterFirst);
 }
 
-// TOWER-LEVER-01: saves from before removal cannot resurrect the content prop
-// or re-close the landing. Unknown legacy dynamics may remain inert in state.
+// TOWER-LEVER-01 / TOWER-BOULDER-01: saves from before those removals cannot
+// resurrect the content props or re-close the landing. Unknown legacy dynamics
+// may remain inert in state.
 {
   const legacy = World.load(worldDef, dynamicTowerAssets(assets));
   legacy.animateSector('grate', 0.37);
   legacy.state['tower.lever.pulled'] = true;
+  // Precondition: this really is a pre-removal save - the fixture still
+  // authors both props, so the snapshot below carries them.
+  ok('9-pre: the fixture world really has the removed lever and boulder',
+    !!legacy.get('tower.lever') && !!legacy.get('tower.boulder'));
   const saved = serialize(legacy);
   const snapshot = structuredClone(saved);
   const restored = deserialize(saved, assets);
@@ -222,6 +222,7 @@ function geomEqual(a, b) {
   ok('9a: older save does not restore the removed lever', !restored.get('tower.lever'));
   ok('9b: older grate animation cannot close the open landing', landing.floorH === 3 && landing.ceilH === 'sky' && !landing.solid);
   ok('9c: restoring older content does not mutate the save', deepEqual(saved, snapshot));
+  ok('9d: older save does not restore the removed boulder', !restored.get('tower.boulder'));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

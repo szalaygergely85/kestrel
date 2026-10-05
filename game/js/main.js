@@ -667,7 +667,7 @@ function runGame(mode, cinematic = null) {
       decalBind = bindDecals(engine.overlay, world.decals);
       if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
       // US-020a: reset every module-level audio counter (sector-anim rate
-      // limit, footstep accumulator, boulder settle-watch) here - the one
+      // limit, footstep accumulator) here - the one
       // place both the first load and every restart go through (7.4 rule).
       resetGameAudio(world);
       if (params.get('units')) import('./dev/unitsHarness.js').then((m) => m.startUnits(engine, matTable, params, world)); // RE-06 dev harness: ?units=N
@@ -956,10 +956,9 @@ function runGame(mode, cinematic = null) {
       // US-013 (7.4 fixed-step order item 3): after `integrate`, so the
       // player's this-step velocity is what a push is measured against.
       stepRollers(engine.world, dt, engine.physics);
-      // US-011 (7.5 item 3): the clip player, right after stepRollers (the
-      // boulder/lever's own gameplay-driven `fps:0` clips are untouched by
-      // this - it only advances timed clips like the burner flame / lantern
-      // glint / relay sparkle).
+      // US-011 (7.5 item 3): the clip player, right after stepRollers (any
+      // gameplay-driven `fps:0` clip is untouched by this - it only advances
+      // timed clips like the burner flame / lantern glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
@@ -986,9 +985,9 @@ function runGame(mode, cinematic = null) {
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
-      // US-020a: footsteps (distance accumulator + `body.landed`) and the
-      // boulder-thud speed watch - after physics settles this step's
-      // position/flags, same slot as the other post-physics polls below.
+      // US-020a: footsteps (distance accumulator + `body.landed`) - after
+      // physics settles this step's position/flags, same slot as the other
+      // post-physics polls below.
       stepGameAudio(playerHandle.data);
       // US-017 (7.4 fixed-step order item 4): after physics settles, before
       // interaction - an enter edge on the end trigger sets `quest.endT`.
@@ -1040,7 +1039,7 @@ function runGame(mode, cinematic = null) {
       // once `[R] Wake again` is showing (computeEndCardState's
       // `canRestart`) - never a bare `endT >= 0` check, so `R` can't cut the
       // walk/fade/typing short. `deserialize(initialState)` + `setWorld`
-      // rebuilds a brand-new World (lamp/boulder/lever/grate/relay/map-card/
+      // rebuilds a brand-new World (lamp/lever/grate/relay/map-card/
       // hints all come back from `initialState`, US-025's own round trip -
       // nothing is a hand-written reset list, per 7.4).
       if (ending && input.pressed('KeyR')) {
@@ -1358,7 +1357,7 @@ function round2(n) {
 }
 
 // `?voxelbench=1` (architecture.md 15.2 item 6, D-019 gate): renders every
-// real voxel prop the tower spawns (US-056: lever, lantern, boulder, rubble,
+// real voxel prop the tower spawns (US-056: lever, lantern, rubble,
 // canvasHeap, gondola, strut, envelopeHeap, relay - `pool.collect(world,
 // cam)`, not a single hand-pushed instance) for many frames back to back and
 // reads `gpuPipeline.stats.voxelMs*` (the same CPU submit-time bracket
@@ -1396,11 +1395,11 @@ function runVoxelBenchMode() {
   // `lever` instance - `World.load` above already spawned every tower prop
   // with a merged voxel `ModelDef` as a real `components.voxel` entity
   // (15.3 item 1's spawn rule), so this now measures "with all props"
-  // (lever, lantern, boulder, rubble x5, canvasHeap, gondola, strut - 10 of
-  // the 12 total are in the wreck-room cluster, well under the 16-instance
+  // (lever, lantern, rubble x5, canvasHeap, gondola, strut - 9 of
+  // the 11 total are in the wreck-room cluster, well under the 16-instance
   // cap; envelopeHeap and the summit relay sit apart). Cam (tower origin
   // 1480, 1018, 0 + local 14.0, 2.0, yaw 150, pitch 5) stands south-west of
-  // the cluster looking across it - 11 of the 12 land on screen at once
+  // the cluster looking across it - 10 of the 11 land on screen at once
   // (`?voxelbench` "instances" line), a harder GPU-upload case than any
   // single-prop framing while `collect` (cam-independent: gathers every
   // voxel entity in the world, nearest 16 win only past the cap) still pays
