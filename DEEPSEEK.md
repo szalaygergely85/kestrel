@@ -20,6 +20,8 @@ Done 2026-10-06 (round 1): TOWER-BOULDER-01 (Flash), ED-PLACE-BUG (V4 Pro) - $0.
 | 4b | **ED-DND-01** editor drag and drop from the Assets tab into the viewport (ghost marker at the snapped point, drop = same `placeAt` path, one undo) | ~0.5 d, tools/editor | backlog row ED-DND-01 | main-session check + owner try |
 | 5 | Filler if time is left: Quaternius imports that need no alpha cutout (dead trees, rocks, pebbles, rock paths, mushrooms, grass) via `tools/gltf-import.mjs --uv planar --mats`, into `content/meshes/quaternius/`, + THIRD_PARTY_NOTICES.md line (CC0) | ~0.5 d, tools/content | architecture 37.17 "imports now" list | main-session check |
 
+Next round (after the afternoon list): **ART-01a** (look.js + roofMap.js + LightSet fields + `?look=`, JS only, no pixel change, architecture 37.18) then **ART-04a** (clouds JS twin) - see docs/pc-b-queue.md section 2b.
+
 Stop after item 4 if the day is over; log each item in the trial log before starting the next.
 
 **Still not for DeepSeek:** ME-19c/d (renderer core), HANDS-01a (view-model mirror, core render), ALPHA-01b/c, PREC-01a, ME-15g, TREES-LP-b. Codex/Claude keep those.
