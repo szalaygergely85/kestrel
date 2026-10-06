@@ -28,7 +28,7 @@ import { canSee } from './sight.js';
 import { SWORD_CFG } from '../swordConfig.js';
 import { createSwordSim, ST_HARD } from './sword.js';
 import { createTargeting } from '../targeting.js';
-import { presentBeasts } from '../beastView.js';
+import { presentBeasts, frameTFromElapsed, DIE_DURATIONS } from '../beastView.js';
 import {
   createBeastSim, STATE_WANDER, STATE_NOTICE, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN,
   STATE_STAGGER, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE,
@@ -866,22 +866,24 @@ const hpOf = (sim, slot) => sim.entities[slot].components.health.hp;
   presentBeasts(a.sim, null, overlay, styleIds);
   ok('view: flinch clip after the 10-step hurt window', vA.anim === 'flinch', `anim=${vA.anim}`);
 
-  // die t = (24 - timer) * 16.7 across DYING.
+  // die (frame, t within frame) across DYING, converted through the clip durations (US-079b ARCH).
   const b = freshSim([beastEntity('b1', 1461, 1031)]);
   b.events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
   const vB = b.sim.entities[0].components.voxel;
   presentBeasts(b.sim, null, overlay, styleIds);
-  ok('view: die clip at DYING entry (t = 0)', vB.anim === 'die' && vB.t === 0, `anim=${vB.anim} t=${vB.t}`);
+  ok('view: die clip at DYING entry (frame 0, t 0)', vB.anim === 'die' && vB.frame === 0 && vB.t === 0, `anim=${vB.anim} frame=${vB.frame} t=${vB.t}`);
   let dieTracks = true;
+  const expect = { frame: -1, t: -1 };
   for (let k = 0; k < b.sim.cfgSteps.die; k++) {
     b.sim.step(1e6, 1e6, 0);
     if (b.sim.state[0] === STATE_DYING) {
       presentBeasts(b.sim, null, overlay, styleIds);
-      const expectT = (b.sim.cfgSteps.die - b.sim.timer[0]) * (1000 / 60);
-      if (vB.anim !== 'die' || Math.abs(vB.t - expectT) > 1e-9) dieTracks = false;
+      const elapsed = (b.sim.cfgSteps.die - b.sim.timer[0]) * (1000 / 60);
+      frameTFromElapsed(elapsed, DIE_DURATIONS, expect);
+      if (vB.anim !== 'die' || vB.frame !== expect.frame || Math.abs(vB.t - expect.t) > 1e-9) dieTracks = false;
     }
   }
-  ok('view: die t = (24 - timer) * 16.7 across DYING', dieTracks);
+  ok('view: die (frame, t) matches frameTFromElapsed across DYING', dieTracks);
 
   // hidden at GONE (and not hidden during SINK).
   const c = freshSim([beastEntity('b1', 1461, 1031)]);

@@ -116,6 +116,7 @@ export function createBeastSim(world, opts) {
     repathT: new Int32Array(MAX_BEASTS),
     homeX: new Float64Array(MAX_BEASTS),
     homeY: new Float64Array(MAX_BEASTS),
+    homeZ: new Float64Array(MAX_BEASTS), // US-079b ARCH: the respawn z (restored by resetAll; a sunk corpse respawns 0.3 m low otherwise)
     fx: new Float64Array(MAX_BEASTS),
     fy: new Float64Array(MAX_BEASTS),
     cdx: new Float64Array(MAX_BEASTS),
@@ -157,6 +158,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    sim.homeZ[i] = e.transform.z; // US-079b ARCH: the authored spawn z (restored on resetAll)
     sim.fx[i] = 0; sim.fy[i] = -1; // facing north by default
     sim.state[i] = STATE_WANDER;
     sim.timer[i] = sim.cfgSteps.pauseMin; // short initial pause before the first wander leg
@@ -720,7 +722,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.unseen, 0, n);
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
-    h.f64(sim.homeX[i]); h.f64(sim.homeY[i]);
+    h.f64(sim.homeX[i]); h.f64(sim.homeY[i]); h.f64(sim.homeZ[i]);
     h.f64(sim.fx[i]); h.f64(sim.fy[i]);
     h.f64(sim.cdx[i]); h.f64(sim.cdy[i]);
     h.f64(sim.goalX[i]); h.f64(sim.goalY[i]);
@@ -748,7 +750,7 @@ function saveSim(sim) {
     lastServed: sim.lastServed,
     state: slice(sim.state), timer: slice(sim.timer), unseen: slice(sim.unseen), repathT: slice(sim.repathT),
     dmgCd: slice(sim.dmgCd), hurtT: slice(sim.hurtT),
-    homeX: slice(sim.homeX), homeY: slice(sim.homeY), fx: slice(sim.fx), fy: slice(sim.fy),
+    homeX: slice(sim.homeX), homeY: slice(sim.homeY), homeZ: slice(sim.homeZ), fx: slice(sim.fx), fy: slice(sim.fy),
     cdx: slice(sim.cdx), cdy: slice(sim.cdy), goalX: slice(sim.goalX), goalY: slice(sim.goalY),
     prevX: slice(sim.prevX), prevY: slice(sim.prevY),
     deathZ: slice(sim.deathZ), knockV: slice(sim.knockV),
@@ -772,7 +774,7 @@ function loadSim(sim, obj) {
   for (let i = 0; i < n; i++) {
     sim.state[i] = obj.state[i]; sim.timer[i] = obj.timer[i]; sim.unseen[i] = obj.unseen[i]; sim.repathT[i] = obj.repathT[i];
     sim.dmgCd[i] = obj.dmgCd[i]; sim.hurtT[i] = obj.hurtT[i];
-    sim.homeX[i] = obj.homeX[i]; sim.homeY[i] = obj.homeY[i]; sim.fx[i] = obj.fx[i]; sim.fy[i] = obj.fy[i];
+    sim.homeX[i] = obj.homeX[i]; sim.homeY[i] = obj.homeY[i]; sim.homeZ[i] = obj.homeZ[i]; sim.fx[i] = obj.fx[i]; sim.fy[i] = obj.fy[i];
     sim.cdx[i] = obj.cdx[i]; sim.cdy[i] = obj.cdy[i]; sim.goalX[i] = obj.goalX[i]; sim.goalY[i] = obj.goalY[i];
     sim.prevX[i] = obj.prevX[i]; sim.prevY[i] = obj.prevY[i];
     sim.deathZ[i] = obj.deathZ[i]; sim.knockV[i] = obj.knockV[i];
@@ -810,6 +812,7 @@ function resetAllSim(sim) {
     sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
     sim.entities[i].transform.x = sim.homeX[i];
     sim.entities[i].transform.y = sim.homeY[i];
+    sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
   }
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
