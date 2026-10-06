@@ -56,18 +56,18 @@ const style = {
   const ui = createUiLayer({ cols: 320, rows: 120 });
   drawCrosshair(ui, style, { targetKey: 'E', prompt: '' });
   const cx = ui.cols >> 1, cy = ui.rows >> 1;
-  ok('320: centre glyph is .', glyphAt(ui, cx, cy) === '.'.charCodeAt(0) - 32);
+  ok('320: centre cell is empty (owner: no off-centre dot)', ui.cells.bg[(cy * ui.cols + cx) * 4 + 3] === 0);
   ok('320: above glyph is |', glyphAt(ui, cx, cy - 1) === '|'.charCodeAt(0) - 32);
   ok('320: below glyph is |', glyphAt(ui, cx, cy + 1) === '|'.charCodeAt(0) - 32);
   ok('320: left glyph is -', glyphAt(ui, cx - 1, cy) === '-'.charCodeAt(0) - 32);
   ok('320: right glyph is -', glyphAt(ui, cx + 1, cy) === '-'.charCodeAt(0) - 32);
   ok('320: 4 corners empty',
     maskAt(ui, cx - 1, cy - 1) === 0 && maskAt(ui, cx + 1, cy - 1) === 0 && maskAt(ui, cx - 1, cy + 1) === 0 && maskAt(ui, cx + 1, cy + 1) === 0);
-  ok('320: all 5 cells glyph-only',
-    [bgAlphaAt(ui, cx, cy), bgAlphaAt(ui, cx, cy - 1), bgAlphaAt(ui, cx, cy + 1), bgAlphaAt(ui, cx - 1, cy), bgAlphaAt(ui, cx + 1, cy)].every((a) => a === GLYPH_BG_ALPHA));
-  ok('320: all 5 cells use the active colour',
-    [fgAt(ui, cx, cy), fgAt(ui, cx, cy - 1), fgAt(ui, cx, cy + 1), fgAt(ui, cx - 1, cy), fgAt(ui, cx + 1, cy)].every((c) => c.join(',') === '255,0,0'));
-  ok('320: exactly 5 crosshair cells written', countMask(ui) === 5);
+  ok('320: all 4 arm cells glyph-only',
+    [bgAlphaAt(ui, cx, cy - 1), bgAlphaAt(ui, cx, cy + 1), bgAlphaAt(ui, cx - 1, cy), bgAlphaAt(ui, cx + 1, cy)].every((a) => a === GLYPH_BG_ALPHA));
+  ok('320: all 4 arm cells use the active colour',
+    [fgAt(ui, cx, cy - 1), fgAt(ui, cx, cy + 1), fgAt(ui, cx - 1, cy), fgAt(ui, cx + 1, cy)].every((c) => c.join(',') === '255,0,0'));
+  ok('320: exactly 4 crosshair cells written (empty centre)', countMask(ui) === 4);
 }
 
 // ---- dim vs active colour selection from style.crosshair ----
@@ -88,8 +88,8 @@ const style = {
 
   const at320 = createUiLayer({ cols: 160, rows: 60 }); at320.bindScene(320, 120);
   drawCrosshair(at320, style, { targetKey: 'E', prompt: '' });
-  ok('scene 320x120 (ui 160): 3x3 open cross (5 glyph-only cells)',
-    countMask(at320) === 5 && glyphAt(at320, at320.cols >> 1, at320.rows >> 1) === '.'.charCodeAt(0) - 32);
+  ok('scene 320x120 (ui 160): 3x3 open cross (4 glyph-only arm cells, empty centre)',
+    countMask(at320) === 4);
 }
 
 // ---- prompt stays OPAQUE (plate + text), below the crosshair ----
@@ -102,7 +102,7 @@ const style = {
   const py = cy + 2;
   ok('prompt: plate cell at cy+2 is opaque (bg alpha 255)', bgAlphaAt(ui, px, py) === 255);
   ok('prompt: key text drawn over the plate (leading [)', glyphAt(ui, px, py) === '['.charCodeAt(0) - 32);
-  ok('prompt: crosshair centre stays glyph-only (128)', bgAlphaAt(ui, cx, cy) === GLYPH_BG_ALPHA);
+  ok('prompt: crosshair arm stays glyph-only (128)', bgAlphaAt(ui, cx, cy - 1) === GLYPH_BG_ALPHA);
 }
 
 // ---- Canvas2D present path: glyph-only keeps the scene bg, opaque replaces ----

@@ -13,7 +13,7 @@ import { drawText } from '../render/textDraw.js';
 // (see uiLayer.js `setGlyph` - the scene's background shows through around the
 // glyphs, no black box). It scales by the SCENE grid: a single `+` below 320
 // scene cols (e.g. 240x90), a 3x3 open cross (`|` above/below, `-` left/right,
-// `.` centre - the small dot keeps the centre visually open) at >= 320 scene
+// empty centre - owner 2026-10-06: a `.` sits at the cell bottom, not centred) at >= 320 scene
 // cols. `rt` is the fixed 160x60 UI layer (uiStyle.uiGrid), so the scene width
 // comes from its `sx` scale (sx = sceneCols/uiCols, set by bindScene); a plain
 // rt without `sx` (a scene RenderTarget / test fake) already carries the scene
@@ -22,7 +22,6 @@ import { drawText } from '../render/textDraw.js';
 const CROSSHAIR_GLYPH = '+';
 const CROSSHAIR_ARM_V = '|';
 const CROSSHAIR_ARM_H = '-';
-const CROSSHAIR_CENTRE = '.';
 const CROSSHAIR_3X3_MIN_COLS = 320;
 const PROMPT_ROW_GAP = 2; // "2 rows below" (US-012 AC)
 
@@ -49,7 +48,6 @@ export function drawCrosshair(rt, style, state) {
     rt.setGlyph(cx, cy + 1, CROSSHAIR_ARM_V, chColor);
     rt.setGlyph(cx - 1, cy, CROSSHAIR_ARM_H, chColor);
     rt.setGlyph(cx + 1, cy, CROSSHAIR_ARM_H, chColor);
-    rt.setGlyph(cx, cy, CROSSHAIR_CENTRE, chColor);
   } else {
     // Single-cell crosshair (240x90 and below) - still glyph-only, so no box.
     rt.setGlyph(cx, cy, CROSSHAIR_GLYPH, chColor);
