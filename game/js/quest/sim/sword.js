@@ -78,6 +78,16 @@ export function createSwordSim(world, events, cfg, hooks) {
   const offRemoved = events.on('entity:removed', rebuildTargetables);
 
   /** Refreshes the SoA cylinders from the live entities (feet z; cr = radius; ch = height). Cheap, <= 16 entries. */
+  /** True when a world-ray hit point (hx, hy) lies on a targetable's own body (its radius + 0.25 m): that is the
+   *  target's own prop collider (PROP-COLLIDE-01b), not an occluder. `only` = that target index, or -1 for any. */
+  function hitsOwnShape(hx, hy, only) {
+    for (let k = only < 0 ? 0 : only, end = only < 0 ? tCount : only + 1; k < end; k++) {
+      const dx = hx - tcx[k], dy = hy - tcy[k], r = tcr[k] + 0.25;
+      if (dx * dx + dy * dy <= r * r) return true;
+    }
+    return false;
+  }
+
   function refreshTargetables() {
     for (let i = 0; i < tCount; i++) {
       const e = tEntities[i], tg = e.components.targetable;
@@ -239,10 +249,13 @@ export function createSwordSim(world, events, cfg, hooks) {
     if (mlen > 1e-9) { mx /= mlen; my /= mlen; } else { mx = fx; my = fy; }
     const rayZ = _eye.z - 0.35;
     const bxw = _eye.x + mx * S.reach, byw = _eye.y + my * S.reach;
-    const worldHit = world.raySegment(_eye.x, _eye.y, rayZ, bxw, byw, rayZ, _rayOut);
+    refreshTargetables();
+    // PROP-COLLIDE-01b regression (owner 2026-10-06 "practice statue doesn't get damage"): a solid prop target (the
+    // practice post) now has its OWN collider, so a ray that stops at that target's own shape is not a wall.
+    let worldHit = world.raySegment(_eye.x, _eye.y, rayZ, bxw, byw, rayZ, _rayOut);
+    if (worldHit && hitsOwnShape(_rayOut.x, _rayOut.y, -1)) worldHit = false;
     const twM = worldHit ? _rayOut.t * S.reach : S.reach;
 
-    refreshTargetables();
     const n = arcHits(_arc, tcx, tcy, tcz, tcr, tch, tCount, _outIdx, _outT);
     let anyEntity = false;
     for (let k = 0; k < n; k++) {
@@ -251,7 +264,7 @@ export function createSwordSim(world, events, cfg, hooks) {
       if (hitMask[idx]) continue;
       const e = tEntities[idx];
       const ex = e.transform.x, ey = e.transform.y, ez = e.transform.z + tch[idx] * 0.5;
-      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut)) continue; // blocked LOS to this entity - skip
+      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut) && !hitsOwnShape(_losOut.x, _losOut.y, idx)) continue; // blocked LOS (not by the target's own collider) - skip
       hitMask[idx] = 1;
       anyEntity = true;
       emitHit(e, S, ex, ey, ez, fx, fy);
