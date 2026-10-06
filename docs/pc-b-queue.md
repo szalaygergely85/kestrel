@@ -12,13 +12,12 @@ Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md`
 - Ports 9500-9999. Never stop the owner's server on 8000.
 
 ## 1. Ready now (in this order)
+Done 2026-10-05/06: PROP-COLLIDE-01b, TOWER-BOULDER-01, ED-PLACE-BUG. **DeepSeek afternoon list: see `DEEPSEEK.md` (UI-XHAIR-01, READ-01, US-079b0, US-079b, Quaternius imports) - Codex takes the rest, never the same item.**
 | # | Item | Spec | Ends in |
 |---|---|---|---|
-| 2 | **TOWER-BOULDER-01** remove the boulder (prop, roller, route-walk leg 2, tests, poses) | backlog row | main-session check |
 | 3 | **READ-01** readable notes: register `note.read`, apply `ASSETS.levelPatch.towerNotes` (design/models/notes.js), read panel from `uiStyle.note`, notes.js script tag in game + editor, update tower/content-smoke/restart tests | backlog row, design/preview/notes.html | owner walk-test |
 | 4 | **UI-XHAIR-01** bigger crosshair with transparent background | backlog row | arch-review + owner look |
 | 4b | **ME-19c** remove the GPU dda passes + world atlas + sun DDA (shadow maps are now the default, D-043) | architecture 37.13.2 + 37.13.5 | arch-review |
-| 5 | **ED-PLACE-BUG** editor: armed Assets model must place on the next viewport click | backlog row | main-session check |
 
 ## 2. Sprint 6 - boar demo (`docs/sprints/sprint-6.md`)
 Lane A: **US-079b0** (engine: `voxel.hidden`, add/removeInteractable) -> **US-079b** (boar HP, hurt, death, lootable corpse) -> **US-079c** (fight readability, BUG-BOAR-OVERLAP) -> **US-091a1** (inventory data) -> **US-091a2** (loot on E, toast) -> **US-091b** (inventory screen).
@@ -33,7 +32,6 @@ Two programmers at once only on disjoint files: lane A and lane B are disjoint e
 - **ME-19d-ed** editor ray/select/pick plumbing (after PC-A's 19c/19d).
 
 ## Waiting on PC-A or the owner - do not start
-- **ME-15f** tree shadow casters by distance - PC-A is doing it.
 - **TORCH-01b** torch pick-up - waits for HANDS-01b.
 - **ENV-04** / cinematics - waits for an owner talk.
 - **ED-GROUP-1**, **ED-TERRAIN-1c** - P2, after the boar demo (terrain 1a/1b are PC-A engine steps).
