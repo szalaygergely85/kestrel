@@ -243,6 +243,7 @@ function checkTriggerBehaviours(worldKey, world) {
   // Interactables aren't on `world.triggers` - check every placed
   // structure's own def directly (same source `validateBehaviours` reads).
   for (const s of world.structures || []) {
+    if (s.kind === 'mesh') continue; // road-side Quaternius meshes have no level def
     for (const ia of (s.level.def.interactables || [])) {
       const { result: fn, warnings } = captured(() => getBehaviour(ia.interact));
       ok(

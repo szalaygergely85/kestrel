@@ -422,7 +422,8 @@ for (const depthUint of [true, false]) {
   // a sprite right next to the burner torch (18.5, 6.5, 1.2, preset
   // 'torch', on) should be brighter than the SAME model far from every
   // light (structTable / ambient-only), same T3 slot (12..14).
-  const world2 = World.load(assets2.world('world_m1'), assets2, {});
+  const m1def = assets2.world('world_m1'); // assets2 (globals) has no meshes: drop the road-side mesh structures
+  const world2 = World.load({ ...m1def, structures: m1def.structures.filter((q) => !q.mesh) }, assets2, {});
   const lights2 = buildLightSet(world2, assets2.palette);
   lights2.sun.on = false; // isolate the torch's own falloff from daylight (both points stay indoors, same tower)
   lights2.update(0, world2);

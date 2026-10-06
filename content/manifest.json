@@ -8,6 +8,16 @@
     "levels/tower.level.json",
     "levels/test_room.level.json",
     "levels/waterfall_cliff.level.json",
-    "worlds/waterfall_test.world.json"
+    "worlds/waterfall_test.world.json",
+    "meshes/quaternius/DeadTree_1.mesh.json",
+    "meshes/quaternius/Mushroom_Common.mesh.json",
+    "meshes/quaternius/Pebble_Round_1.mesh.json",
+    "meshes/quaternius/Pebble_Round_3.mesh.json",
+    "meshes/quaternius/Pebble_Square_2.mesh.json",
+    "meshes/quaternius/RockPath_Round_Small_1.mesh.json",
+    "meshes/quaternius/RockPath_Square_Wide.mesh.json",
+    "meshes/quaternius/Rock_Medium_1.mesh.json",
+    "meshes/quaternius/Rock_Medium_2.mesh.json",
+    "meshes/quaternius/Rock_Medium_3.mesh.json"
   ]
 }

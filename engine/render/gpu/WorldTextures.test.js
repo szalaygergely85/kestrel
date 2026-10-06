@@ -34,20 +34,21 @@ const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 const world = World.load(assets.world('world_m1'), assets, {});
+const gridStructs = world.structures.filter((q) => q.kind !== 'mesh'); // meshes have no packed grid (ME-14c1)
 const atlas = buildWorldTextures(world);
 
 // --- layout sanity -----------------------------------------------------------
 let expectWidth = 0, expectHeight = 0;
-for (const s of world.structures) { expectWidth = Math.max(expectWidth, s.packed.w); expectHeight += s.packed.h; }
+for (const s of gridStructs) { expectWidth = Math.max(expectWidth, s.packed.w); expectHeight += s.packed.h; }
 ok('atlas.width == max placed structure width', atlas.width === expectWidth);
 ok('atlas.height == sum of placed structure heights', atlas.height === expectHeight);
-ok('structCount == world.structures.length', atlas.structCount === world.structures.length);
+ok('structCount == gridStructs.length', atlas.structCount === gridStructs.length);
 ok('never more than MAX_STRUCTS rows in uStruct', atlas.structCount <= MAX_STRUCTS);
 
 // --- every placed structure's cells round-trip into the atlas ---------------
 let allMatch = true;
-for (let i = 0; i < world.structures.length; i++) {
-  const s = world.structures[i];
+for (let i = 0; i < gridStructs.length; i++) {
+  const s = gridStructs[i];
   const p = s.packed;
   const yOff = atlas.yOffsets[i];
   for (let cy = 0; cy < p.h && allMatch; cy++) {
@@ -67,8 +68,8 @@ ok('every placed structure cell (geom/mats/flags/relief) round-trips into the at
 
 // --- uStruct rows -------------------------------------------------------------
 let uStructOk = true;
-for (let i = 0; i < world.structures.length; i++) {
-  const s = world.structures[i];
+for (let i = 0; i < gridStructs.length; i++) {
+  const s = gridStructs[i];
   const o = i * 8;
   if (atlas.uStruct[o] !== s.origin.x) uStructOk = false;
   if (atlas.uStruct[o + 1] !== s.origin.y) uStructOk = false;
@@ -103,12 +104,12 @@ if (tower && tower.level.legend['G']) {
     for (let gy = y0; gy <= y1 && dirtyMatches; gy++) {
       // Find which structure this global row belongs to.
       let si = -1;
-      for (let i = 0; i < world.structures.length; i++) {
-        const yOff = atlas.yOffsets[i], h = world.structures[i].packed.h;
+      for (let i = 0; i < gridStructs.length; i++) {
+        const yOff = atlas.yOffsets[i], h = gridStructs[i].packed.h;
         if (gy >= yOff && gy < yOff + h) { si = i; break; }
       }
       if (si < 0) { dirtyMatches = false; break; }
-      const p = world.structures[si].packed;
+      const p = gridStructs[si].packed;
       const cy = gy - atlas.yOffsets[si];
       for (let cx = 0; cx < p.w; cx++) {
         const glI = gy * atlas.width + cx, pI = cy * p.w + cx;
