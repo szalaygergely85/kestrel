@@ -1243,6 +1243,60 @@ export class World {
     if (this.events) this.events.emit('entity:removed', { id });
   }
 
+  /**
+   * US-079b0 (architecture.md 37.16.1 item 2): adds a RUNTIME interactable
+   * (corpse, NPC, chest) to `world.interactables` and returns its record.
+   * `World.load`/`deserialize` rebuild the list from content, so the game
+   * calls this on every `world:loaded` - a game-side push into
+   * `world.interactables` is NOT allowed (this is the engine-owned seam).
+   *
+   * @param {{key:string, name:string, x:number, y:number, z:number,
+   *   radius:number, prompt:string, requires?:string, propId?:string,
+   *   def?:Object}} spec
+   * @returns {Object} the added 7.4 InteractableRec - `once: false`,
+   *   `usedKey: null`, `structId: null` - with `rec.x/y/z` LIVE: the owner
+   *   may rewrite them at any time and `findInteractTarget` reads the
+   *   current values (no captured copy). Throws on a duplicate `key` or a
+   *   missing `name`.
+   */
+  addInteractable(spec) {
+    if (!spec.name) throw new Error('World.addInteractable: "name" is required');
+    const list = this.interactables;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].key === spec.key) throw new Error(`World.addInteractable: duplicate key "${spec.key}"`);
+    }
+    const rec = {
+      key: spec.key,
+      name: spec.name,
+      x: spec.x,
+      y: spec.y,
+      z: spec.z,
+      radius: spec.radius,
+      prompt: spec.prompt || '',
+      requires: spec.requires || null,
+      propId: spec.propId || null,
+      def: spec.def,
+      once: false,
+      usedKey: null,
+      structId: null,
+    };
+    list.push(rec);
+    return rec;
+  }
+
+  /**
+   * US-079b0 (37.16.1 item 2): removes the runtime interactable with `key`.
+   * @param {string} key
+   * @returns {boolean} true if a record was removed, false if `key` was unknown.
+   */
+  removeInteractable(key) {
+    const list = this.interactables;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].key === key) { list.splice(i, 1); return true; }
+    }
+    return false;
+  }
+
   /** Look up (by name, via `def.interactables`/`def.triggers`) and call a registered behaviour (D-006/D-008). */
   fireInteraction(id, ctx) {
     const fn = getBehaviour(id);

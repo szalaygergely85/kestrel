@@ -199,6 +199,12 @@ export class VoxelPool {
    * `world.renderVersion` changes (mirrors `SpritePool.collect`); `cam` may
    * be omitted (falls back to distance from the origin) for callers that
    * only ever have <= the active cap of voxel entities and don't care about the ordering.
+   *
+   * US-079b0 (37.16.1 item 1): an entity whose `components.voxel.hidden ===
+   * true` is skipped in BOTH branches below - the <= cap path and the
+   * nearest-cap selection - so a hidden instance never renders and never
+   * takes one of the nearest slots. The flag is read LIVE each frame (not
+   * cached by `renderVersion`), since the view toggles it per state.
    */
   collect(world, cam) {
     this.beginFrame();
@@ -212,7 +218,11 @@ export class VoxelPool {
     const ents = this._ents;
     const n = ents.length;
     if (n <= this.cap) {
-      for (let i = 0; i < n; i++) this._queueEntity(ents[i]);
+      for (let i = 0; i < n; i++) {
+        // US-079b0 (37.16.1 item 1): a hidden voxel entity renders nothing.
+        if (ents[i].components.voxel.hidden === true) continue;
+        this._queueEntity(ents[i]);
+      }
       return;
     }
     // Warn once per renderer cap, without formatting a message every frame.
@@ -225,6 +235,10 @@ export class VoxelPool {
     const idx = this._nearIdx, dist = this._nearDist;
     let count = 0;
     for (let i = 0; i < n; i++) {
+      // US-079b0 (37.16.1 item 1): a hidden entity does not take one of the
+      // nearest `cap` slots (checked before the distance sort, so it can't
+      // displace a visible entity).
+      if (ents[i].components.voxel.hidden === true) continue;
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
       const d2 = dx * dx + dy * dy + dz * dz;

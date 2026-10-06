@@ -166,6 +166,43 @@ if (global.gc) {
   }
 }
 
+// ---- US-079b0 (37.16.1 item 1): `components.voxel.hidden` skip -------------
+{
+  function fakeWorld(entities) {
+    return {
+      renderVersion: 1,
+      forEachEntity(fn) { for (const [id, e] of entities) fn(e, id); },
+    };
+  }
+
+  const poolH = new VoxelPool(); poolH.renderer = 'dda'; // 16-slot selection.
+  poolH.bind(registry, table);
+  const camH = { x: 0, y: 0, z: 0 };
+
+  // <= cap: a hidden entity is skipped, every visible one still queues.
+  const few = new Map();
+  for (let i = 0; i < 3; i++) few.set(`v${i}`, { components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true } }, transform: { x: 0, y: i, z: 0, yawDeg: 0 } });
+  few.set('hidden', { components: { voxel: { model: 'bear', hidden: true } }, transform: { x: 0, y: 0.5, z: 0, yawDeg: 0 } });
+  poolH.collect(fakeWorld(few), camH);
+  ok('US-079b0 collect (<= cap): hidden voxel entity is skipped, visible ones queue',
+    poolH._rawCount === 3 && poolH.raw.slice(0, 3).every((r, i) => r.y === i), String(poolH._rawCount));
+
+  // > cap: a hidden entity among the nearest must NOT take a slot - the
+  // next-farthest visible entity takes its place. 17 on +y (y=0..16); the
+  // nearest (y=0) is hidden, so the nearest 16 VISIBLE are y=1..16.
+  const ents = new Map();
+  ents.set('hidden0', { components: { voxel: { model: 'bear', hidden: true } }, transform: { x: 0, y: 0, z: 0, yawDeg: 0 } });
+  for (let i = 1; i <= 16; i++) ents.set(`e${i}`, { components: { voxel: { model: 'bear', anim: undefined, frame: 0, t: 0, playing: true } }, transform: { x: 0, y: i, z: 0, yawDeg: 0 } });
+  poolH.collect(fakeWorld(ents), camH);
+  const hiddenYs = [];
+  for (let i = 0; i < poolH._rawCount; i++) hiddenYs.push(poolH.raw[i].y);
+  ok('US-079b0 collect (nearest-16): the hidden nearest entity is skipped',
+    poolH._rawCount === 16 && !hiddenYs.includes(0), hiddenYs.join(','));
+  const hiddenYsSorted = hiddenYs.slice().sort((a, b) => a - b);
+  ok('US-079b0 collect (nearest-16): its freed slot goes to the next visible entity (y=16)',
+    JSON.stringify(hiddenYsSorted) === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]), hiddenYsSorted.join(','));
+}
+
 // ---- ME-22 (28.12 item 4): meshOnly router - dda never receives a mesh-
 // only model: no pool entry, no throw, exactly one console.warn per modelKey.
 {

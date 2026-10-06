@@ -4,6 +4,8 @@ import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
 import { updateTriggers } from './triggers.js';
+import { findInteractTarget } from './interaction.js';
+import { registerBehaviour, unregisterBehaviour } from '../core/behaviours.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
@@ -457,6 +459,81 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
       forestIndices.every(i => t.near.hDraw[i] === Math.fround(t.near.height[i] + t._canopyM)));
   } finally { forest.trees = cfg; }
   console.log(`ME-06c1 world_m1 scatter count=${trees.scatter.count}; species=${trees.terrain.recipe.recipe.forest.trees.species.length}`);
+}
+
+// ---------------------------------------------------------------------------
+// US-079b0 (architecture.md 37.16.1 item 2): World.addInteractable /
+// removeInteractable - runtime interactables (corpses, NPCs, chests).
+// ---------------------------------------------------------------------------
+{
+  // A small open world (test_room) so findInteractTarget's LOS check has a
+  // clear line of sight. No world `name` -> treated as ephemeral.
+  const w = World.load({
+    terrain: null,
+    structures: [{ id: 'room', level: 'test_room', origin: { x: 0, y: 0, z: 0 }, yawSteps: 0 }],
+    entities: [],
+  }, assets, {});
+
+  // --- addInteractable returns the runtime 7.4 record (runtime defaults) ---
+  const rec = w.addInteractable({ key: 'loot.boar1', name: 'beast.loot', x: 1, y: 2, z: 0, radius: 1.8, prompt: '[E] Loot boar', def: { beastId: 'boar1' } });
+  ok('addInteractable returns the runtime record', !!rec && rec.key === 'loot.boar1' && rec.name === 'beast.loot' &&
+    rec.x === 1 && rec.y === 2 && rec.z === 0 && rec.radius === 1.8 && rec.prompt === '[E] Loot boar' &&
+    rec.once === false && rec.usedKey === null && rec.structId === null && rec.requires === null && rec.propId === null &&
+    rec.def && rec.def.beastId === 'boar1', JSON.stringify(rec));
+
+  // --- found by findInteractTarget (eye at the rec point -> clear LOS) ---
+  const eye = { x: 1, y: 2, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  findInteractTarget(w, eye, null, out);
+  ok('findInteractTarget resolves the added rec', out.targetKey === 'loot.boar1', JSON.stringify(out));
+
+  // --- fires its behaviour through World.fireInteraction ---
+  let firedCtx = null;
+  registerBehaviour('beast.loot', (ctx) => { firedCtx = ctx; return false; });
+  try {
+    const result = w.fireInteraction('beast.loot', { def: rec.def, entity: null, actor: null, structId: rec.structId });
+    ok('World.fireInteraction dispatches to the registered behaviour', firedCtx !== null && result === false);
+    ok('behaviour ctx carries the runtime rec fields (structId null, def passthrough)',
+      !!firedCtx && firedCtx.structId === null && firedCtx.def === rec.def && firedCtx.world === w);
+  } finally {
+    unregisterBehaviour('beast.loot');
+  }
+
+  // --- live x/y rewrite: rec.x/y may change after add, find reads them live ---
+  rec.x = 5; rec.y = 6;
+  const outMoved = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  findInteractTarget(w, { x: 5, y: 6, z: 0, yawDeg: 0, pitchDeg: 0 }, null, outMoved);
+  ok('findInteractTarget reads rec.x/y LIVE (rewrite respected)', outMoved.targetKey === 'loot.boar1');
+  const outOld = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  findInteractTarget(w, { x: 1, y: 2, z: 0, yawDeg: 0, pitchDeg: 0 }, null, outOld);
+  ok('the old point no longer resolves (no captured copy)', outOld.targetKey === null);
+
+  // --- requires gating ---
+  w.addInteractable({ key: 'loot.gated', name: 'beast.loot', x: 9, y: 9, z: 0, radius: 1.8, prompt: '[E] Gated', requires: 'loot.gated.ready' });
+  const eyeGated = { x: 9, y: 9, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const outGated = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  findInteractTarget(w, eyeGated, null, outGated);
+  ok('requires-gated rec is not offered while its state key is unset', outGated.targetKey === null);
+  w.state['loot.gated.ready'] = true;
+  findInteractTarget(w, eyeGated, null, outGated);
+  ok('requires-gated rec is offered once its state key is set', outGated.targetKey === 'loot.gated');
+
+  // --- duplicate key / missing name throw ---
+  let dupThrew = false, nameThrew = false;
+  try { w.addInteractable({ key: 'loot.boar1', name: 'beast.loot', x: 0, y: 0, z: 0, radius: 1, prompt: '' }); } catch (e) { dupThrew = /duplicate key/.test(e.message); }
+  try { w.addInteractable({ key: 'loot.noname', x: 0, y: 0, z: 0, radius: 1, prompt: '' }); } catch (e) { nameThrew = /"name" is required/.test(e.message); }
+  ok('addInteractable throws on a duplicate key', dupThrew);
+  ok('addInteractable throws on a missing name', nameThrew);
+
+  // --- removeInteractable ---
+  ok('removeInteractable removes the rec and returns true',
+    w.removeInteractable('loot.boar1') === true && !w.interactables.some((r) => r.key === 'loot.boar1'));
+  ok('removeInteractable(unknown) returns false', w.removeInteractable('loot.nope') === false);
+
+  // --- deserialize drops a runtime-added interactable (the game re-adds on world:loaded) ---
+  const state = serialize(w);
+  const w2 = deserialize(state, assets, {});
+  ok('deserialize drops a runtime-added interactable', !w2.interactables.some((r) => r.key === 'loot.gated'));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -1,8 +1,16 @@
 // engine/world/interaction.js (US-012, D-006/D-008). Generic interaction
 // targeting + firing. The engine has no idea what a lantern, a lever or a
-// beacon is - it only knows `world.interactables` (built by `World.load`
-// from every placed structure's `def.interactables`) and named behaviours
+// beacon is - it only knows `world.interactables` and named behaviours
 // (`engine/core/behaviours.js`). Normative API: docs/architecture.md 7.4.
+//
+// `world.interactables` is built by `World.load` from every placed
+// structure's `def.interactables`, and extended at runtime through
+// `World.addInteractable(spec)` / `World.removeInteractable(key)` (US-079b0,
+// architecture.md 37.16.1 item 2) - corpses, NPCs, chests. The game goes
+// through that seam (never pushes into `world.interactables` itself), and it
+// re-adds on every `world:loaded` because `World.load`/`deserialize` rebuild
+// the list from content. `rec.x/y/z` may be rewritten by the owner at any
+// time: `findInteractTarget` reads them LIVE (no captured copy).
 //
 // Allocation rule (9): `findInteractTarget` runs every fixed step (7.4 item
 // 5) and must not allocate. `world.interactables[i].usedKey` is precomputed
@@ -10,9 +18,13 @@
 import { gridLocal } from './gridLocal.js';
 
 /**
- * @typedef {{key:string, structId:string, id:string, name:string, x:number,
+ * @typedef {{key:string, structId:string|null, id?:string, name:string, x:number,
  *   y:number, z:number, radius:number, prompt:string, once:boolean,
- *   requires:string|null, propId:string|null, def:Object, usedKey:string|null}} InteractableRec
+ *   requires:string|null, propId:string|null, def?:Object, usedKey:string|null}} InteractableRec
+ *   World coords. `structId`/`id` are set only by `World.load` (level data);
+ *   a runtime rec from `World.addInteractable` has `structId: null`, `usedKey:
+ *   null`, `once: false` and no `id`. `x/y/z` are LIVE - the owner may rewrite
+ *   them after add and `findInteractTarget` reads the current values.
  */
 
 /** @typedef {{targetKey:string|null, prompt:string, dist:number, angleDeg:number}} InteractionState */
@@ -79,7 +91,8 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
  * Finds the interaction target (a candidate is: not used, `requires` met,
  * `|p - eye| <= min(rec.radius, reach)`, `angle(viewDir, p - eye) <= coneDeg`,
  * has line of sight). Winner: smallest angle, then smaller distance, then
- * array order. Fills and returns `out` - never allocates.
+ * array order. Fills and returns `out` - never allocates. Reads `rec.x/y/z`
+ * LIVE (a runtime rec may be moved by its owner after add, US-079b0).
  * @param {import('./World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} eye
  * @param {{reach?:number, coneDeg?:number}} [cfg]
