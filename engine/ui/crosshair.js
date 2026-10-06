@@ -22,7 +22,7 @@ import { drawText } from '../render/textDraw.js';
 const CROSSHAIR_GLYPH = '+';
 const CROSSHAIR_ARM_V = '|';
 const CROSSHAIR_ARM_H = '-';
-const CROSSHAIR_3X3_MIN_COLS = 320;
+const CROSSHAIR_3X3_MIN_COLS = Infinity; // owner 2026-10-06: the 3x3 arms sit a whole (scaled) UI cell apart at high res - always the single glyph-only '+' (connected at every size). 3x3 code kept but off.
 const PROMPT_ROW_GAP = 2; // "2 rows below" (US-012 AC)
 
 // Non-blocking cleanup (arch review, 2026-09-24): cache the key/rest split
