@@ -118,7 +118,9 @@ export function createSwordSim(world, events, cfg, hooks) {
   const _outIdx = new Int32Array(MAX_TARGETS);
   const _outT = new Float64Array(MAX_TARGETS);
   const _arc = { ex: 0, ey: 0, zMin: 0, zMax: 0, ax: 0, ay: 0, bx: 0, by: 0, reach: 0 };
-  const _hitPayload = { source: 'player', target: null, damage: 0, heavy: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
+  // US-079b: `cause: 'sword'` and `knock: 0` ride on the one preallocated payload (knock 0 = the beast uses its own
+  // default stagger knock). The heavy body impulse below still uses `S.knock`; this `knock` is only for the beast.
+  const _hitPayload = { source: 'player', target: null, damage: 0, heavy: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword', knock: 0 };
 
   function eyeOf(player, out) {
     const t = player.transform, body = player.components && player.components.body;
@@ -248,8 +250,10 @@ export function createSwordSim(world, events, cfg, hooks) {
     for (let k = 0; k < n; k++) {
       const idx = _outIdx[k], tE = _outT[k];
       if (tE >= twM) break; // sorted ascending by t: nothing further qualifies (the wall is nearer) either
-      if (hitMask[idx]) continue;
       const e = tEntities[idx];
+      const h = e.components && e.components.health;
+      if (h && h.hp <= 0) continue; // US-079b: a dead boar is skipped by the arc (before hitMask)
+      if (hitMask[idx]) continue;
       const ex = e.transform.x, ey = e.transform.y, ez = e.transform.z + tch[idx] * 0.5;
       if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut)) continue; // blocked LOS to this entity - skip
       hitMask[idx] = 1;

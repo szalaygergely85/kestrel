@@ -43,11 +43,16 @@
 export function createParticleHooks(world, events, particles, cfg, gravity = 20) {
   const sparksDefId = particles.defIdOf('sparks');
   const dustDefId = particles.defIdOf('dust');
+  const corpseDustDefId = particles.defIdOf('corpseDust'); // US-079b (design/models/voxel_beast.js boarFx.attach)
   const sparksN = (cfg.mounts && cfg.mounts.sparks && cfg.mounts.sparks.n) || 10;
   const sparksNHeavy = (cfg.mounts && cfg.mounts.sparks && cfg.mounts.sparks.nHeavy) || sparksN;
   const dustN = (cfg.mounts && cfg.mounts.dust && cfg.mounts.dust.n) || 10;
   const landingDustSpeed = typeof cfg.LANDING_DUST_SPEED === 'number' ? cfg.LANDING_DUST_SPEED : 6;
   const twoG = 2 * gravity;
+  // US-079b: the corpse "turns to dust" as it sinks - boarFx.death.sink.dust wants two bursts (8 at sink step 0 +
+  // 6 at step 15 = 14). The sim emits one `beast:sink` at the CORPSE->SINK transition and this hook is stateless, so
+  // the two designer bursts collapse into a single 14-dust burst at the sink start (same total, noted deviation).
+  const corpseDustN = 14;
 
   function onHit(p) {
     if (!p || p.source !== 'player' || sparksDefId < 0) return;
@@ -55,6 +60,12 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
     particles.burstAt(sparksDefId, p.px, p.py, p.pz, n, p.dirX || 0, p.dirY || 0, 0);
   }
   const off = events.on('combat:hit', onHit);
+
+  function onSink(p) {
+    if (!p || corpseDustDefId < 0) return; // no-op unless boarFx.attach() added the preset before create
+    particles.burstAt(corpseDustDefId, p.x, p.y, p.z, corpseDustN, 0, 0, 1);
+  }
+  const offSink = events.on('beast:sink', onSink);
 
   /**
    * Per fixed step (main.js: alongside vitals.step's slot, after integrate/resolveBodyContacts
@@ -74,7 +85,7 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
     particles.burstAt(dustDefId, t.x, t.y, t.z + 0.03, dustN); // feet + a touch above the floor
   }
 
-  return { step, dispose: () => off() };
+  return { step, dispose: () => { off(); offSink(); } };
 }
 
 /**

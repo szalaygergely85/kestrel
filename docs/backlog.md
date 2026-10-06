@@ -1,5 +1,17 @@
 # Kestrel – Product Backlog
 
+> **PC-B handoff 2026-10-06 (evening):** The round-2 queue is cleared. Boars now have HP - hit one and it flinches,
+> tips over dead, then sinks; it comes back on restart. You can drag a model from the editor's Assets tab straight
+> into the viewport. The crosshair is bigger with a transparent background, and the tower has 4 readable notes (E).
+> 35 Quaternius models (rocks, pebbles, paths, mushrooms, grass, dead trees) are imported for the stylized forest.
+>
+> Done this session (all pushed): TOWER-BOULDER-01, ED-PLACE-BUG, UI-XHAIR-01, READ-01, US-079b0, ED-DND-01,
+> US-079b, Quaternius imports. 226/226 suites pass; mesh route reaches the ending.
+>
+> For review/owner: US-079b0, US-079b (arch-review); ED-DND-01 (owner try); READ-01 + TOWER-BOULDER-01 +
+> ED-PLACE-BUG + UI-XHAIR-01 (owner walk-test). Screenshots under docs/test-reports/captures/. Trial log:
+> docs/test-reports/deepseek-trial.md.
+
 > **PC-B handoff 2026-10-06:** Two owner-visible UI items are done. The crosshair is bigger on large windows
 > (3x3 open cross at 320+ scene cols) and no longer has a black box behind it. The tower's wall writing is now
 > 4 readable notes - walk up and press E to open a paper page, Esc/E to close.
@@ -219,7 +231,7 @@ Suggested priorities only; these findings are not approved development stories. 
 ### Sprint 6 "Boar demo" + EP-HANDS (PO 2026-10-05, owner goal; D-038 item 2, D-040) - plan: docs/sprints/sprint-6.md
 | ID | Title | Priority | Status | [PC] main files |
 |---|---|---|---|---|
-| US-079b | Boar HP + hurt + death lifecycle (4 HP, flash/flinch, tip over -> dust -> removed, `beast:died`, untargetable when dead, back on respawn/reload) | P0 | todo - NEEDS PC-A: architect note 37.13 + designer hurt/die | [PC-B game, ~0.75 d] `beastSim.js`, `beastConfig.js`, main.js hook **Arch 2026-10-05: architecture.md 37.16 (steps US-079b0 engine seams -> arch-review, then US-079b).** **PO 2026-10-05 AC change: corpse stays until looted (E) or 60 s, then sinks; light hit in a charge only flashes; any hit aggroes. Needs US-079b0 first (row below).** |
+| US-079b | Boar HP + hurt + death lifecycle (4 HP, flash/flinch, tip over -> dust -> removed, `beast:died`, untargetable when dead, back on respawn/reload) | P0 | **arch-review [PC-B game, 2026-10-06]** + owner walk-test. Boar HP/death lifecycle per 37.16.2: `components.health` (hp 4, fresh on create/reset), states FLINCH 8(15)/DYING 9(24)/CORPSE 10(3600)/SINK 11(30)/GONE 12, new SoA (dmgCd/hurtT/deathZ/pendingDied/despawnReq/cause/knockV), full combat:hit listener, deferred `beast:died`, `stepDead` timeline, `despawnCorpse`/`isDead`/`slotOf`, resetAll re-adds dead steer slots, save/hash/load (+steer.active/radius). beastView drives `voxel.{anim,t,playing,hidden}` (hurt/die/dead/sink, hidden at GONE); sword dead-skip + `cause:'sword'`; particleHooks `beast:sink` corpseDust. main.js wires `ASSETS.boarFx.attach()` before the emitter loop. Tests: beastSim 135/0 (--expose-gc), sword 100/0, particleHooks 27/0. Deviations (non-blocking, see report): hurt window = spec's 10 steps (not boarFx.flashSteps 6); sink dust = one 14-burst; beastView hardcodes the clip-name map. | `game/js/quest/sim/beastSim.js`, `beastConfig.js`, `beastView.js`, `sim/sword.js` (2 lines), `particleHooks.js`, `game/js/main.js`, `beastSim.test.js`, `sword.test.js`, `particleHooks.test.js` |
 | US-079b0 | Engine seams: `components.voxel.hidden` skipped by VoxelPool (both collect branches) + `World.addInteractable` / `removeInteractable` | P0 | **arch-review [PC-B engine, 2026-10-06]**. `VoxelPool.collect` skips `components.voxel.hidden === true` in BOTH branches (<=cap loop + nearest-16 selection, checked before the distance sort so a hidden instance never takes a slot), flag read live each frame. `World.addInteractable(spec)->rec` / `removeInteractable(key)->bool` per 37.16.1 (7.4 shape, `once:false`/`usedKey:null`/`structId:null`, live x/y/z, throws on dup key/missing name). voxelPool.test.js 41/0 (44/0 --expose-gc, 0-alloc), world.test.js 109/0, interaction.test.js 21/0 (0-alloc unchanged). | `engine/render/voxelPool.js`, `engine/world/World.js`, `engine/world/interaction.js` (doc only), `engine/render/voxelPool.test.js`, `engine/world/world.test.js` |
 | US-079c | Boar fight reads: BUG-BOAR-OVERLAP de-overlap + `!` notice + windup scrape + one charger at a time | P0 | todo - after US-079b; designer `ui.alert` (defaults in the section) | [PC-B game, ~0.75 d; steer.js -> arch-review] `beastSim.js`, overlay call **Arch 2026-10-05: de-overlap skips inactive (dead) steer slots, 37.16.2.** |
 | US-091a | Loot + inventory data: item defs, player inventory component, boar drop table, walk-over pickup + toast, save/load + death safe | P0 | todo - after US-079b; NEEDS PC-A: designer `design/items.js` + loot sprites | [PC-B game, ~0.75 d] `sim/inventory.js`, `sim/loot.js`, `pickups.js`, main.js **Arch 2026-10-05: architecture.md 37.16.3-4 (E-loot on the corpse; split US-091a1 data / US-091a2 loot+toast).** **PO 2026-10-05: SPLIT into US-091a1 + US-091a2 below; this row stays as the umbrella (close when both are done). Loot = press E at the corpse, not walk-over.** |

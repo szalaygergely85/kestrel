@@ -8,6 +8,10 @@ One line per trial item, per `DEEPSEEK.md`. Order taken from `docs/pc-b-queue.md
 | 2026-10-06 | ED-PLACE-BUG | deepseek-v4-pro (agent: DSH) | off-peak | 0 code-test failures. Root cause needed a live-browser repro (DOM `dispatchEvent` swallows listener exceptions, which hid the real `TypeError`); the fix itself passed its suites first try. | owner: fill in from the DeepSeek dashboard | not yet |
 | 2026-10-06 | UI-XHAIR-01 | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; subagent pass reviewed by the main session. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
 | 2026-10-06 | READ-01 | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; subagent finished all but noteRead.test.js, which the main session wrote (1 assertion fix). Main session also fixed a perf-test fake (`setGlyph`) and the crosshair size source (`rt.sx`). | owner: fill in from the DeepSeek dashboard | not yet |
+| 2026-10-06 | US-079b0 | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
+| 2026-10-06 | ED-DND-01 | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet |
+| 2026-10-06 | US-079b | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; main session added the missing `main.js` `boarFx.attach()` wiring. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
+| 2026-10-06 | Quaternius imports (round-2 item 5) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet |
 
 ## Notes for this item
 

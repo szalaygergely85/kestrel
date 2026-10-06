@@ -14,15 +14,19 @@ import swordMod from '../../../design/models/sword.js';
 import m3PropsMod from '../../../design/models/m3_props.js';
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
+import boarMod from '../../../design/models/voxel_beast.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 import { createParticleHooks, applyPropEmitters } from './particleHooks.js';
 
 paletteMod; detailPassMod; particlesMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod;
-relayMod; swordMod; m3PropsMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
+relayMod; swordMod; m3PropsMod; farTowerMod; ferrumLightsMod; boarMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets();
 const PS = globalThis.ASSETS.particles; // design/models/particles.js
+// US-079b: copy boarFx's corpseDust/scrapeDust/hurtBristle presets into ASSETS.particles.presets, same as main.js
+// does before its own defineEmitter loop (boarFx.attach() is the one place those presets enter the particle table).
+globalThis.ASSETS.boarFx.attach();
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -180,6 +184,26 @@ function defineAllPresets(p) {
   ok('null playerData: no-op, no throw', particles.stats.spawned === 10);
 
   hooks.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// US-079b: beast:sink -> corpse dust burst (boarFx.death.sink.dust 8 + 6 = 14, collapsed into one burst).
+// ---------------------------------------------------------------------------
+{
+  const world = freshWorld();
+  const events = makeEvents();
+  const particles = createParticles();
+  defineAllPresets(particles);
+  const hooks = createParticleHooks(world, events, particles, PS, 20);
+
+  events.emit('beast:sink', { id: 'b1', x: 5, y: 6, z: 0 });
+  particles.step(); // burstAt's pending count spawns on the next step()
+  ok('a beast:sink bursts the corpse dust (14)', particles.stats.spawned === 14, particles.stats.spawned);
+
+  hooks.dispose();
+  events.emit('beast:sink', { id: 'b1', x: 5, y: 6, z: 0 });
+  particles.step();
+  ok('dispose() drops the beast:sink listener - a sink after dispose spawns nothing new', particles.stats.spawned === 14);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

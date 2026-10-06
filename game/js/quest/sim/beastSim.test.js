@@ -27,9 +27,11 @@ import { buildBeastNav } from './beastNav.js';
 import { canSee } from './sight.js';
 import { SWORD_CFG } from '../swordConfig.js';
 import { createSwordSim, ST_HARD } from './sword.js';
+import { createTargeting } from '../targeting.js';
+import { presentBeasts } from '../beastView.js';
 import {
   createBeastSim, STATE_WANDER, STATE_NOTICE, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN,
-  STATE_STAGGER,
+  STATE_STAGGER, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE,
 } from './beastSim.js';
 
 paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; boarMod;
@@ -68,6 +70,8 @@ function buildWorld(entities, physics = 'grid') {
 
 function makeEvents() {
   const hits = [];
+  const died = [];
+  const sinks = [];
   const listeners = new Map();
   const events = {
     on(name, fn) {
@@ -78,22 +82,24 @@ function makeEvents() {
     },
     emit(name, p) {
       if (name === 'combat:hit') hits.push({ source: p.source, target: p.target, damage: p.damage, heavy: p.heavy, dirX: p.dirX, dirY: p.dirY });
+      if (name === 'beast:died') died.push({ id: p.id, x: p.x, y: p.y, z: p.z, cause: p.cause });
+      if (name === 'beast:sink') sinks.push({ id: p.id, x: p.x, y: p.y, z: p.z });
       const s = listeners.get(name);
       if (!s) return;
       for (const fn of Array.from(s)) fn(p);
     },
   };
-  return { hits, events };
+  return { hits, died, sinks, events };
 }
 
 /** Builds a fresh world + nav + sim over `entities`, seeded rng. */
 function freshSim(entities, seed = 1, physics = 'grid') {
   const world = buildWorld(entities, physics);
   const nav = buildBeastNav(world, NAV_CFG);
-  const { events, hits } = makeEvents();
+  const { events, hits, died, sinks } = makeEvents();
   const rng = createRng(seed);
   const sim = createBeastSim(world, { nav, rng, events });
-  return { world, nav, sim, hits, rng, events };
+  return { world, nav, sim, hits, died, sinks, rng, events };
 }
 
 const groundZ = (world, x, y) => world.terrain.heightAt(x, y);
@@ -453,13 +459,15 @@ function emitHeavyHit(events, targetId, dirX, dirY) {
 }
 
 {
-  // A light hit has no beast-side effect (no stagger) in this story.
+  // US-079b: a damaging light hit flinches the beast (stagger is heavy-only), deals 1 HP, and aggroes.
   const bx = 1461, by = 1031;
   const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
   sim.steer.x[0] = bx; sim.steer.y[0] = by;
   sim.state[0] = STATE_WANDER;
-  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 1, heavy: 0, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0 });
-  ok('a light hit does not stagger the beast', sim.state[0] === STATE_WANDER, `state=${sim.state[0]}`);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 1, heavy: 0, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  ok('a light hit flinches the beast (not a stagger)', sim.state[0] === STATE_FLINCH && sim.timer[0] === sim.cfgSteps.flinch, `state=${sim.state[0]}`);
+  ok('a light hit deals 1 HP and aggroes', sim.entities[0].components.health.hp === 3
+    && sim.seen[0] === 1 && sim.unseen[0] === 0 && sim.dmgCd[0] === sim.cfgSteps.dmgCooldown && sim.hurtT[0] === 0);
 }
 
 {
@@ -556,30 +564,27 @@ for (const manaShort of [false, true]) {
   if (manaShort) for (let i = 0; i < SWORD_CFG.holdSteps; i++) sword.step(p, 1, 0, true);
   sword.step(p, 1, 0, false);
   sim.state[0] = STATE_WINDUP; sim.timer[0] = sim.cfgSteps.windup;
-  let brainUntouched = true;
   for (let i = 0; i < 16 && hits.length === 0; i++) {
     sim.step(p.transform.x, p.transform.y, p.transform.z);
-    const state = sim.state[0], timer = sim.timer[0], vx = sim.steer.vx[0], vy = sim.steer.vy[0];
     sword.step(p, 1, 0, false);
-    if (state !== sim.state[0] || timer !== sim.timer[0] || vx !== sim.steer.vx[0] || vy !== sim.steer.vy[0]) brainUntouched = false;
   }
   const label = manaShort ? 'mana-short charged release' : 'tap';
-  ok(`${label}: real sword hit is light damage 1 and does not interrupt windup`, hits.length === 1
-    && hits[0].heavy === 0 && hits[0].damage === 1 && brainUntouched && sim.state[0] === STATE_WINDUP);
+  // US-079b: a light hit during WINDUP cancels the charge (enterRecover) rather than leaving the brain untouched.
+  ok(`${label}: real sword hit is light damage 1 and cancels the windup (-> recover)`, hits.length === 1
+    && hits[0].heavy === 0 && hits[0].damage === 1 && sim.state[0] === STATE_RECOVER);
   ok(`${label}: mana hook called only for charged release, no hard hit-stop`, manaCalls === (manaShort ? 1 : 0)
     && sword.frozen === 0);
   sword.dispose(); sim.dispose();
 }
 
-// Every prior state, including an already-staggered beast: heavy replaces velocity and resets the full timer.
+// Every prior alive state, including an already-staggered beast: heavy replaces velocity and resets the full timer.
+// (The light-hit behaviour per state is US-079b now and covered by its own tests below; heavy knocks back from any
+// state regardless.)
 {
   const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)], 81, 'mesh');
   for (let state = STATE_WANDER; state <= STATE_STAGGER; state++) {
     sim.state[0] = state; sim.timer[0] = 7; sim.unseen[0] = 1;
     sim.steer.vx[0] = -7; sim.steer.vy[0] = 5; sim.steer.accel[0] = 70;
-    events.emit('combat:hit', { source: 'player', target: 'b1', heavy: 0, dirX: 0.6, dirY: 0.8 });
-    ok(`state ${state}: light leaves brain/timer/velocity untouched`, sim.state[0] === state && sim.timer[0] === 7
-      && sim.steer.vx[0] === -7 && sim.steer.vy[0] === 5 && sim.unseen[0] === 1 && sim.steer.accel[0] === 70);
     emitHeavyHit(events, 'b1', 0.6, 0.8);
     ok(`state ${state}: heavy restarts stagger and clears charge wall counter`, sim.state[0] === STATE_STAGGER
       && sim.timer[0] === 36 && sim.unseen[0] === 0 && sim.steer.vx[0] === 2.4
@@ -640,6 +645,256 @@ for (const manaShort of [false, true]) {
   ok('generic heavy shove moves the body but cannot cross the tower mesh wall', maxX > startX
     && maxX < 1480 - PHYSICS.radius + 1e-4, `startX=${startX}, maxX=${maxX}`);
   sword.dispose();
+}
+
+// ===============================================================================================================
+// US-079b (37.16.2): HP, hurt, death, corpse.
+// ===============================================================================================================
+const LIGHT_HIT = (target, opts = {}) => ({ source: 'player', target, damage: 1, heavy: 0, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword', ...opts });
+const HEAVY_HIT = (target, opts = {}) => ({ source: 'player', target, damage: 3, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword', ...opts });
+const hpOf = (sim, slot) => sim.entities[slot].components.health.hp;
+
+{
+  // Fresh health component on create (overwrites any serialized one).
+  const { sim } = freshSim([beastEntity('b1', 1461, 1031)]);
+  const health = sim.entities[0].components.health;
+  ok('fresh components.health = {hp:4, max:4, invuln:0}', health.hp === 4 && health.max === 4 && health.invuln === 0, JSON.stringify(health));
+}
+
+{
+  // 4 light hits >= 12 steps apart -> hp 0 and DYING on the 4th (cooldown cleared each time).
+  const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('1st light hit: hp 3, alive', hpOf(sim, 0) === 3 && sim.state[0] !== STATE_DYING);
+  for (let k = 0; k < 12; k++) sim.step(1e6, 1e6, 0);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('2nd light hit (12 steps later): hp 2, alive', hpOf(sim, 0) === 2 && sim.state[0] !== STATE_DYING);
+  for (let k = 0; k < 12; k++) sim.step(1e6, 1e6, 0);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('3rd light hit: hp 1, alive', hpOf(sim, 0) === 1 && sim.state[0] !== STATE_DYING);
+  for (let k = 0; k < 12; k++) sim.step(1e6, 1e6, 0);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('4th light hit: hp 0 and DYING', hpOf(sim, 0) === 0 && sim.state[0] === STATE_DYING, `hp=${hpOf(sim, 0)} state=${sim.state[0]}`);
+}
+
+{
+  // Two hits 5 steps apart -> only the first damages (the second is inside the 12-step cooldown).
+  const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  for (let k = 0; k < 5; k++) sim.step(1e6, 1e6, 0);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('two hits 5 steps apart -> 1 damage (hp 3, not 2)', hpOf(sim, 0) === 3, `hp=${hpOf(sim, 0)}`);
+}
+
+{
+  // hard 3 + light 1 (after the cooldown) kills.
+  const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', HEAVY_HIT('b1'));
+  ok('hard 3: hp 1, staggered (alive)', hpOf(sim, 0) === 1 && sim.state[0] === STATE_STAGGER, `hp=${hpOf(sim, 0)} state=${sim.state[0]}`);
+  for (let k = 0; k < 12; k++) sim.step(1e6, 1e6, 0);
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('then light 1 kills (hp 0, DYING)', hpOf(sim, 0) === 0 && sim.state[0] === STATE_DYING, `hp=${hpOf(sim, 0)} state=${sim.state[0]}`);
+}
+
+{
+  // flinch 15 then chase (aggro on the hit makes it chase, not return).
+  const bx = 1461, by = 1031, px = bx + 2, py = by;
+  const { world, sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('light hit -> FLINCH 15', sim.state[0] === STATE_FLINCH && sim.timer[0] === sim.cfgSteps.flinch, `state=${sim.state[0]} timer=${sim.timer[0]}`);
+  for (let k = 0; k < sim.cfgSteps.flinch; k++) sim.step(px, py, groundZ(world, px, py));
+  ok('flinch 15 -> chase', sim.state[0] === STATE_CHASE, `state=${sim.state[0]}`);
+}
+
+{
+  // A light hit during CHARGE only flashes (still charging, still took the damage).
+  const bx = 1461, by = 1031;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  sim.state[0] = STATE_CHARGE; sim.timer[0] = sim.cfgSteps.chargeMax; sim.cdx[0] = 1; sim.cdy[0] = 0;
+  events.emit('combat:hit', LIGHT_HIT('b1'));
+  ok('a light hit during charge: still charging (flash only)', sim.state[0] === STATE_CHARGE, `state=${sim.state[0]}`);
+  ok('...but it still took 1 damage and flashed', hpOf(sim, 0) === 3 && sim.hurtT[0] === 0);
+}
+
+{
+  // Heavy knock 6 slides ~1.5 m (knockV 6 decaying by accel 12; ~29 moving steps).
+  const bx = 1461, by = 1031;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 1, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword', knock: 6 });
+  ok('heavy knock 6 -> stagger with knockV 6', sim.state[0] === STATE_STAGGER && sim.knockV[0] === 6, `knockV=${sim.knockV[0]}`);
+  const startX = sim.steer.x[0];
+  for (let k = 0; k < sim.cfgSteps.stagger; k++) sim.step(1e6, 1e6, 0);
+  const dx = sim.steer.x[0] - startX;
+  ok('stagger knock 6 slides ~1.5 m', dx > 1.3 && dx < 1.6, `dx=${dx.toFixed(3)}`);
+}
+
+{
+  // beast:died exactly once, one step after the kill, with the right cause.
+  const { sim, events, died } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  ok('no beast:died inside the listener (pendingDied set)', died.length === 0 && sim.state[0] === STATE_DYING && sim.pendingDied[0] === 1);
+  sim.step(1e6, 1e6, 0);
+  ok('beast:died exactly once, one step after the kill, cause sword', died.length === 1 && died[0].id === 'b1' && died[0].cause === 'sword', JSON.stringify(died));
+  sim.step(1e6, 1e6, 0);
+  ok('beast:died not emitted again', died.length === 1);
+}
+
+{
+  // A fire kill reports cause 'fire'.
+  const { sim, events, died } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'fire', knock: 0.5 });
+  sim.step(1e6, 1e6, 0);
+  ok('a fire kill reports cause "fire"', died.length === 1 && died[0].cause === 'fire', JSON.stringify(died));
+}
+
+{
+  // API: slotOf / isDead / despawnCorpse edge cases.
+  const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)]);
+  ok('slotOf resolves the slot and -1 for an unknown id', sim.slotOf('b1') === 0 && sim.slotOf('nope') === -1);
+  ok('isDead false while alive', sim.isDead(0) === false);
+  ok('despawnCorpse false while alive', sim.despawnCorpse('b1') === false);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  ok('isDead true while DYING; despawnCorpse true during DYING (sets despawnReq)', sim.isDead(0) === true
+    && sim.despawnCorpse('b1') === true && sim.despawnReq[0] === 1);
+}
+
+{
+  // Dead boar: steer agent inactive, and targeting breaks its lock (isAlive reads health.hp <= 0).
+  const bx = 1461, by = 1031;
+  const { world, sim, events } = freshSim([beastEntity('b1', bx, by)], 90, 'mesh');
+  const player = swordPlayer(world, bx, by + 2); // 2 m south of the beast, facing north
+  const look = { yawDeg: 0, pitchDeg: 0, setLockPoint() {}, clearLock() {} };
+  const targeting = createTargeting(world, events, { range: 15, losEvery: 1 });
+  targeting.step(0, true, 0, player, look); // Q -> lock
+  ok('targeting locks the alive beast', targeting.locked && targeting.targetId === 'b1', `targetId=${targeting.targetId}`);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  sim.step(player.transform.x, player.transform.y, player.transform.z);
+  ok('the steer agent is inactive once dead', sim.steer.active[0] === 0);
+  targeting.step(0, false, 0, player, look);
+  ok('the lock breaks on the kill step (isAlive reads health.hp <= 0)', !targeting.locked, `locked=${targeting.locked}`);
+  targeting.dispose(); sim.dispose();
+}
+
+{
+  // DYING 24 -> CORPSE -> despawnCorpse -> SINK 30 -> GONE.
+  const { sim, events, sinks } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  ok('kill -> DYING 24', sim.state[0] === STATE_DYING && sim.timer[0] === sim.cfgSteps.die, `state=${sim.state[0]} timer=${sim.timer[0]}`);
+  for (let k = 0; k < sim.cfgSteps.die; k++) sim.step(1e6, 1e6, 0);
+  ok('DYING 24 -> CORPSE', sim.state[0] === STATE_CORPSE && sim.timer[0] === sim.cfgSteps.corpse, `state=${sim.state[0]} timer=${sim.timer[0]}`);
+  ok('despawnCorpse returns true for a corpse', sim.despawnCorpse('b1') === true);
+  sim.step(1e6, 1e6, 0);
+  ok('despawn -> SINK 30 and one beast:sink', sim.state[0] === STATE_SINK && sim.timer[0] === sim.cfgSteps.sink && sinks.length === 1, `state=${sim.state[0]} timer=${sim.timer[0]} sinks=${sinks.length}`);
+  for (let k = 0; k < sim.cfgSteps.sink; k++) sim.step(1e6, 1e6, 0);
+  ok('SINK 30 -> GONE', sim.state[0] === STATE_GONE, `state=${sim.state[0]}`);
+}
+
+{
+  // timeout 3600 -> SINK (unlooted corpse sinks on its own).
+  const { sim, events, sinks } = freshSim([beastEntity('b1', 1461, 1031)]);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  for (let k = 0; k < sim.cfgSteps.die; k++) sim.step(1e6, 1e6, 0);
+  ok('corpse reached', sim.state[0] === STATE_CORPSE);
+  for (let k = 0; k < sim.cfgSteps.corpse; k++) sim.step(1e6, 1e6, 0);
+  ok('3600-step timeout -> SINK', sim.state[0] === STATE_SINK && sinks.length === 1, `state=${sim.state[0]} sinks=${sinks.length}`);
+}
+
+{
+  // resetAll restores slot id, hp, position and steer active.
+  const bx = 1461, by = 1031;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  sim.step(1e6, 1e6, 0);
+  ok('dead: steer inactive and hp 0', sim.steer.active[0] === 0 && hpOf(sim, 0) === 0);
+  sim.resetAll();
+  ok('resetAll restores hp, active, position and state', sim.slotOf('b1') === 0 && hpOf(sim, 0) === 4
+    && sim.steer.active[0] === 1 && sim.steer.x[0] === bx && sim.steer.y[0] === by && sim.state[0] === STATE_WANDER);
+}
+
+{
+  // 600-step replay with a kill + save@300 / load: hash equal (the new SoA + steer.active + health.hp round-trip).
+  const entities = () => [beastEntity('b1', 1461, 1031), beastEntity('b2', 1444, 1035)];
+  const { world: wA, sim: simA, rng: rngA, events: evA } = freshSim(entities(), 7);
+  for (let i = 1; i <= 300; i++) {
+    const p = scriptedPlayer(i);
+    if (i === 200) evA.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: p.x, py: p.y, pz: 0, cause: 'sword' });
+    simA.step(p.x, p.y, groundZ(wA, p.x, p.y));
+  }
+  const savedSim = simA.save();
+  const savedRng = rngA.save();
+  for (let i = 301; i <= 600; i++) {
+    const p = scriptedPlayer(i);
+    simA.step(p.x, p.y, groundZ(wA, p.x, p.y));
+  }
+  const hashA600 = hashAt(simA, simA.steer, 600, rngA);
+
+  const { world: wB, sim: simB, rng: rngB } = freshSim(entities(), 7);
+  rngB.load(savedRng);
+  simB.load(savedSim);
+  for (let i = 301; i <= 600; i++) {
+    const p = scriptedPlayer(i);
+    simB.step(p.x, p.y, groundZ(wB, p.x, p.y));
+  }
+  const hashB600 = hashAt(simB, simB.steer, 600, rngB);
+  ok('kill + save@300 / load: same hash at 600', hashA600 === hashB600, `A=${hashA600} B=${hashB600}`);
+}
+
+// ---- US-079b view (beastView.js) ------------------------------------------------------------------------------
+{
+  const overlay = { bar() {} };
+  const styleIds = { beastNotice: 0 };
+
+  // a fresh (never-hit) beast shows its state clip, not the hurt flash.
+  const z = freshSim([beastEntity('b1', 1461, 1031)]);
+  presentBeasts(z.sim, null, overlay, styleIds);
+  ok('view: a fresh beast shows idle (not hurt)', z.sim.entities[0].components.voxel.anim === 'idle', `anim=${z.sim.entities[0].components.voxel.anim}`);
+
+  // hurt clip for 10 steps after a hit.
+  const a = freshSim([beastEntity('b1', 1461, 1031)]);
+  a.events.emit('combat:hit', LIGHT_HIT('b1'));
+  const vA = a.sim.entities[0].components.voxel;
+  let hurtSteps = 0;
+  for (let k = 0; k < 10; k++) {
+    presentBeasts(a.sim, null, overlay, styleIds);
+    if (vA.anim === 'hurt') hurtSteps++;
+    a.sim.step(1e6, 1e6, 0);
+  }
+  ok('view: hurt clip for 10 steps after a hit', hurtSteps === 10, `hurtSteps=${hurtSteps}`);
+  presentBeasts(a.sim, null, overlay, styleIds);
+  ok('view: flinch clip after the 10-step hurt window', vA.anim === 'flinch', `anim=${vA.anim}`);
+
+  // die t = (24 - timer) * 16.7 across DYING.
+  const b = freshSim([beastEntity('b1', 1461, 1031)]);
+  b.events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  const vB = b.sim.entities[0].components.voxel;
+  presentBeasts(b.sim, null, overlay, styleIds);
+  ok('view: die clip at DYING entry (t = 0)', vB.anim === 'die' && vB.t === 0, `anim=${vB.anim} t=${vB.t}`);
+  let dieTracks = true;
+  for (let k = 0; k < b.sim.cfgSteps.die; k++) {
+    b.sim.step(1e6, 1e6, 0);
+    if (b.sim.state[0] === STATE_DYING) {
+      presentBeasts(b.sim, null, overlay, styleIds);
+      const expectT = (b.sim.cfgSteps.die - b.sim.timer[0]) * (1000 / 60);
+      if (vB.anim !== 'die' || Math.abs(vB.t - expectT) > 1e-9) dieTracks = false;
+    }
+  }
+  ok('view: die t = (24 - timer) * 16.7 across DYING', dieTracks);
+
+  // hidden at GONE (and not hidden during SINK).
+  const c = freshSim([beastEntity('b1', 1461, 1031)]);
+  c.events.emit('combat:hit', { source: 'player', target: 'b1', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  const vC = c.sim.entities[0].components.voxel;
+  for (let k = 0; k < c.sim.cfgSteps.die; k++) c.sim.step(1e6, 1e6, 0);
+  c.sim.despawnCorpse('b1');
+  c.sim.step(1e6, 1e6, 0);
+  presentBeasts(c.sim, null, overlay, styleIds);
+  ok('view: not hidden during SINK', vC.hidden !== true);
+  for (let k = 0; k < c.sim.cfgSteps.sink; k++) c.sim.step(1e6, 1e6, 0);
+  presentBeasts(c.sim, null, overlay, styleIds);
+  ok('view: hidden at GONE', vC.hidden === true);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

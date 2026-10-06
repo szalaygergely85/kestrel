@@ -584,5 +584,34 @@ if (typeof global.gc === 'function') {
   console.log('(skip) zero-allocation heap check needs --expose-gc');
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// 12. US-079b: a dead boar (components.health.hp <= 0) is skipped by the arc, and the payload carries
+//     `cause: 'sword'` + `knock: 0` (the beast uses its own default stagger knock when knock === 0).
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const p = player();
+  const dead = target('dead', 0, 1.0, 0.9);
+  dead.components.health = { hp: 0, max: 4, invuln: 0 };
+  const alive = target('alive', 0, 1.1, 0.9);
+  const { world, sim, hits } = freshSim([p, dead, alive]);
+  world.state['tower.sword.taken'] = true;
+  tapLight(sim, p);
+  let guard = 0;
+  while (sim.state === ST_LIGHT && guard++ < 30) sim.step(p, ...FWD, false);
+  ok('US-079b: a dead target (health.hp <= 0) is skipped, an alive one behind it is hit',
+    hits.length === 1 && hits[0].target === 'alive', `hits=${JSON.stringify(hits)}`);
+}
+{
+  const p = player();
+  const tgt = target('t1', 0, 1.0, 0.9);
+  const { world, sim, hits } = freshSim([p, tgt]);
+  world.state['tower.sword.taken'] = true;
+  tapLight(sim, p);
+  let guard = 0;
+  while (sim.state === ST_LIGHT && guard++ < 30) sim.step(p, ...FWD, false);
+  ok('US-079b: the combat:hit payload carries cause "sword" and knock 0',
+    hits.length === 1 && hits[0].cause === 'sword' && hits[0].knock === 0, `hits=${JSON.stringify(hits)}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log(failures.join('\n')); process.exitCode = 1; } else console.log('ALL PASS');

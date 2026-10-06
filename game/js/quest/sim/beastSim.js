@@ -24,6 +24,16 @@ export const STATE_CHARGE = 4;
 export const STATE_RECOVER = 5;
 export const STATE_RETURN = 6;
 export const STATE_STAGGER = 7; // US-078d amendment (D-034) "Stagger (beastSim, heavy only)"
+export const STATE_FLINCH = 8;   // US-079b (37.16.2): no-movement pause after a damaging non-heavy hit
+export const STATE_DYING = 9;    // US-079b: hp <= 0, tip-over clip, no perception/path/steer
+export const STATE_CORPSE = 10;  // US-079b: lies at the death point, lootable, until despawn/timeout
+export const STATE_SINK = 11;    // US-079b: sinks into the ground (z = deathZ - sinkM*k/30)
+export const STATE_GONE = 12;    // US-079b: hidden, skipped everywhere, back via resetAll
+
+const FIRST_DEAD_STATE = STATE_DYING; // states >= this skip perception/path/steer and run stepDead instead
+
+// US-079b: the 2-entry cause table for the `beast:died` payload's `cause` string (sim stores a Uint8 index).
+const CAUSE_STR = ['sword', 'fire'];
 
 const WALKING = -1; // sentinel for `timer` in STATE_WANDER: "currently walking to a chosen point" (not pausing)
 
@@ -89,6 +99,12 @@ export function createBeastSim(world, opts) {
       loseSight: toSteps(cfg.loseSightSec),
       repath: toSteps(cfg.repathSec),
       stagger: toSteps(cfg.staggerSec), // US-078d amendment (D-034)
+      dmgCooldown: toSteps(cfg.dmgCooldownSec), // US-079b (37.16.2)
+      flash: toSteps(cfg.flashSec),
+      flinch: toSteps(cfg.flinchSec),
+      die: toSteps(cfg.dieSec),
+      corpse: toSteps(cfg.corpseSec),
+      sink: toSteps(cfg.sinkSec),
     },
     count,
     entities: beastEntities.slice(0, count),
@@ -113,6 +129,13 @@ export function createBeastSim(world, opts) {
     pathIdx: new Int32Array(MAX_BEASTS),
     seen: new Uint8Array(MAX_BEASTS),
     pathReq: new Uint8Array(MAX_BEASTS),
+    dmgCd: new Int32Array(MAX_BEASTS),       // US-079b (37.16.2): steps left in the damage cooldown
+    hurtT: new Int32Array(MAX_BEASTS),       // US-079b: steps since the last damage (view flash window, saturating)
+    deathZ: new Float64Array(MAX_BEASTS),    // US-079b: the z the beast died at (corpse/sink anchor)
+    pendingDied: new Uint8Array(MAX_BEASTS), // US-079b: beast:died is deferred to the next step's start
+    despawnReq: new Uint8Array(MAX_BEASTS),  // US-079b: looted -> sink at the next CORPSE entry
+    cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
+    knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
 
     tick: 0,
     lastServed: -1,
@@ -123,6 +146,10 @@ export function createBeastSim(world, opts) {
     _cellPath: new Int32Array(grid.w * grid.h),
     _xy: new Float64Array(grid.w * grid.h * 2),
     _hitPayload: beastEntities.slice(0, count).map((e) => ({ source: e.id, target: 'player', damage: 1 })),
+    // US-079b: preallocated emit payloads (one per slot, never reallocated). `beast:died` carries the cause string
+    // resolved from the 2-entry CAUSE_STR table; `beast:sink` the dust-burst position for particleHooks.
+    _diedPayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, cause: 'sword' })),
+    _sinkPayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0 })),
   };
 
   for (let i = 0; i < count; i++) {
@@ -133,22 +160,41 @@ export function createBeastSim(world, opts) {
     sim.fx[i] = 0; sim.fy[i] = -1; // facing north by default
     sim.state[i] = STATE_WANDER;
     sim.timer[i] = sim.cfgSteps.pauseMin; // short initial pause before the first wander leg
+    sim.hurtT[i] = 9999; // US-079b: "never damaged" sentinel - the view shows `hurt` only while hurtT < 10
+    // US-079b (37.16.2): a FRESH health component on create, overwriting any serialized one - boars always come
+    // back alive on load/restart. US-128's bar / sword.js's dead skip / targeting.isAlive all read this.
+    e.components.health = { hp: cfg.hp, max: cfg.hp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
 
-  // US-078d amendment (D-034) "Stagger (beastSim, heavy only)": one `combat:hit` listener registered at create,
-  // id -> slot via a prebuilt plain-object lookup (no Map iteration in step()). Enters STATE_STAGGER from ANY
-  // state on a heavy hit. `events` is one persistent instance for the whole run (main.js never recreates it on a
-  // world reload, unlike `world`) - so, same precedent as `targeting.dispose()`/`vitals.dispose()`, this sim
-  // exposes `dispose()` and the caller MUST drop the old sim's listener before creating the next one on a world
-  // reload (flagged in the programmer report's main.js wiring section - this file alone cannot add that line).
+  // US-078d amendment (D-034) + US-079b (37.16.2): one `combat:hit` listener registered at create, id -> slot via
+  // a prebuilt plain-object lookup (no Map iteration in step()). US-079b widens it to every hit on a boar id (not
+  // just heavy): damage + cooldown + hurt/flinch/stagger + death. `events` is one persistent instance for the
+  // whole run (main.js never recreates it on a world reload, unlike `world`) - so, same precedent as
+  // `targeting.dispose()`/`vitals.dispose()`, this sim exposes `dispose()` and the caller MUST drop the old sim's
+  // listener before creating the next one on a world reload (flagged in the programmer report's main.js wiring
+  // section - this file alone cannot add that line).
   const idSlot = {};
   for (let i = 0; i < count; i++) idSlot[sim.ids[i]] = i;
   function onCombatHit(p) {
-    if (!p || !p.heavy) return;
+    if (!p) return;
     const i = idSlot[p.target];
     if (i === undefined) return;
-    enterStagger(sim, i, p.dirX, p.dirY);
+    if (sim.state[i] >= FIRST_DEAD_STATE) return; // 37.16.2 item 1: dead/corpse/sink/gone -> ignore
+    const health = sim.entities[i].components.health;
+    if (sim.dmgCd[i] > 0) { // 37.16.2 item 2: ignore damage, still flash/flinch; heavy knockback still applies
+      reactToHit(sim, i, p);
+      return;
+    }
+    if (p.damage > 0) { // 37.16.2 item 3: damage + cooldown + hurt + cause + aggro
+      health.hp -= p.damage;
+      sim.dmgCd[i] = sim.cfgSteps.dmgCooldown;
+      sim.hurtT[i] = 0;
+      sim.cause[i] = p.cause === 'fire' ? 1 : 0;
+      sim.seen[i] = 1; sim.unseen[i] = 0; // aggro: a hit from behind leads to chase, not return
+    }
+    if (health.hp <= 0) { enterDying(sim, i); return; } // 37.16.2 item 4 (no emit inside the listener)
+    reactToHit(sim, i, p); // 37.16.2 item 5
   }
   const offCombatHit = events.on('combat:hit', onCombatHit);
 
@@ -159,6 +205,17 @@ export function createBeastSim(world, opts) {
   sim.load = function load(obj) { loadSim(sim, obj); };
   /** US-080a1: every slot back to home, state wander, timers/paths cleared, steer positions reset. */
   sim.resetAll = function resetAll() { resetAllSim(sim); };
+  /** US-079b: request a corpse sink (loot emptied the body). True if the slot was DYING/CORPSE (sets despawnReq). */
+  sim.despawnCorpse = function despawnCorpse(id) {
+    const i = idSlot[id];
+    if (i === undefined) return false;
+    if (sim.state[i] === STATE_DYING || sim.state[i] === STATE_CORPSE) { sim.despawnReq[i] = 1; return true; }
+    return false;
+  };
+  /** US-079b: true once `slot` is dead (DYING/CORPSE/SINK/GONE). */
+  sim.isDead = function isDead(slot) { return sim.state[slot] >= FIRST_DEAD_STATE; };
+  /** US-079b: the slot index for a boar id, or -1 when not tracked. */
+  sim.slotOf = function slotOf(id) { const i = idSlot[id]; return i === undefined ? -1 : i; };
 
   return sim;
 }
@@ -167,13 +224,22 @@ export function createBeastSim(world, opts) {
 
 function stepSim(sim, px, py, pz) {
   const n = sim.count;
-  for (let i = 0; i < n; i++) perceiveOne(sim, i, px, py, pz);
-  for (let i = 0; i < n; i++) transitionOne(sim, i, px, py);
+  // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
+  // is never mid-iteration when a loot spawn would rebuild its target list.
+  for (let i = 0; i < n; i++) emitPendingDied(sim, i);
+  // US-079b: cooldown/hurt timers tick for every slot; dead slots run their own timeline (stepDead).
+  for (let i = 0; i < n; i++) {
+    if (sim.dmgCd[i] > 0) sim.dmgCd[i]--;
+    if (sim.hurtT[i] < 9999) sim.hurtT[i]++;
+    if (sim.state[i] >= FIRST_DEAD_STATE) stepDead(sim, i);
+  }
+  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) perceiveOne(sim, i, px, py, pz);
+  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) transitionOne(sim, i, px, py);
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
-  for (let i = 0; i < n; i++) setSteerTarget(sim, i);
+  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) setSteerTarget(sim, i);
   sim.steer.step(SIM_STEP, sim.grid);
-  for (let i = 0; i < n; i++) postOne(sim, i, px, py, pz);
+  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) postOne(sim, i, px, py, pz);
   sim.tick++;
 }
 
@@ -224,6 +290,7 @@ function transitionOne(sim, i, px, py) {
     case STATE_RECOVER: recoverStep(sim, i, px, py); break;
     case STATE_RETURN: returnStep(sim, i, px, py); break;
     case STATE_STAGGER: staggerStep(sim, i); break;
+    case STATE_FLINCH: flinchStep(sim, i); break;
     default: break;
   }
 }
@@ -231,6 +298,13 @@ function transitionOne(sim, i, px, py) {
 function staggerStep(sim, i) {
   sim.timer[i]--;
   if (sim.timer[i] <= 0) { if (sim.seen[i]) enterChase(sim, i); else enterReturn(sim, i); }
+}
+
+// US-079b (37.16.2): STATE_FLINCH is a fixed no-movement pause (the view's hurt->flinch follow-through); it always
+// exits to chase (the aggro on damage sets seen, so a hit from behind turns the boar around rather than returning).
+function flinchStep(sim, i) {
+  sim.timer[i]--;
+  if (sim.timer[i] <= 0) enterChase(sim, i);
 }
 
 function wanderStep(sim, i, px, py) {
@@ -332,21 +406,23 @@ function enterRecover(sim, i, wall) {
   sim.steer.accel[i] = DEFAULT_ACCEL;
 }
 
-/** US-078d amendment (D-034): a heavy sword hit staggers the beast from ANY state (interrupts windup/charge - the
- * charge wall-slow streak counter, `unseen`, is reused and so must be cleared here too, same field `enterCharge`
- * resets). `steer.vx/vy` is ASSIGNED (not added) to the knockback direction * `staggerKnock`; `setSteerTarget`'s
- * STAGGER branch gives `maxSpeed = staggerKnock` so the steer clamp keeps the shove, which then decays by
- * `DEFAULT_ACCEL` (~0.67 m slide, per the amendment's own worked number). `dirX/dirY` fall back to the beast's
- * current facing if the hit carried no direction (defensive; `sword.js` always sets one). */
-function enterStagger(sim, i, dirX, dirY) {
+/** US-078d amendment (D-034) + US-079b (37.16.2): a heavy hit staggers the beast from ANY state (interrupts
+ * windup/charge - the charge wall-slow streak counter, `unseen`, is reused and so must be cleared here too, same
+ * field `enterCharge` resets). `steer.vx/vy` is ASSIGNED (not added) to the knockback direction * `knock`
+ * (per-slot `knockV`, US-079b replaces the shared `cfg.staggerKnock` in `setSteerTarget`); `setSteerTarget`'s
+ * STAGGER branch gives `maxSpeed = knockV` so the steer clamp keeps the shove, which then decays by `DEFAULT_ACCEL`.
+ * `dirX/dirY` fall back to the beast's current facing if the hit carried no direction (defensive; `sword.js` always
+ * sets one). */
+function enterStagger(sim, i, dirX, dirY, knock) {
   const steer = sim.steer;
   const dx = typeof dirX === 'number' ? dirX : sim.fx[i];
   const dy = typeof dirY === 'number' ? dirY : sim.fy[i];
   sim.state[i] = STATE_STAGGER;
   sim.timer[i] = sim.cfgSteps.stagger;
   sim.unseen[i] = 0; // clears the charge wall-slow streak counter (reused field)
-  steer.vx[i] = dx * sim.cfg.staggerKnock;
-  steer.vy[i] = dy * sim.cfg.staggerKnock;
+  sim.knockV[i] = knock;
+  steer.vx[i] = dx * knock;
+  steer.vy[i] = dy * knock;
   steer.accel[i] = DEFAULT_ACCEL;
 }
 
@@ -363,11 +439,99 @@ function enterWander(sim, i) {
   sim.timer[i] = sim.cfgSteps.pauseMin + sim.rng.int(sim.cfgSteps.pauseMax - sim.cfgSteps.pauseMin + 1);
 }
 
+// ---- US-079b (37.16.2) hurt / death / corpse ---------------------------------------------------------------
+
+/** The reaction a hit provokes in a still-alive beast (37.16.2 item 5; also called from the dmgCd>0 item-2 branch,
+ * where the damage step was skipped but the physical/visual reaction still applies). `hurtT` was already reset for
+ * a damaging hit, so "flash only" below is just "no state change" - the view flashes off `hurtT`. */
+function reactToHit(sim, i, p) {
+  const st = sim.state[i];
+  if (p.heavy) {
+    const knock = p.knock > 0 ? p.knock : sim.cfg.staggerKnock;
+    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); return; }
+    enterFlinch(sim, i); // fire with a tiny falloff (knock < 1) -> flinch
+    return;
+  }
+  if (st === STATE_WINDUP) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
+  if (st === STATE_CHARGE || st === STATE_STAGGER) return;          // D-034: only a hard hit stops a charge
+  enterFlinch(sim, i);
+}
+
+function enterFlinch(sim, i) {
+  sim.state[i] = STATE_FLINCH;
+  sim.timer[i] = sim.cfgSteps.flinch;
+  sim.steer.vx[i] = 0; sim.steer.vy[i] = 0; // a clean stop: the flinch is a no-movement pause
+}
+
+function enterDying(sim, i) {
+  const steer = sim.steer;
+  sim.state[i] = STATE_DYING;
+  sim.timer[i] = sim.cfgSteps.die;
+  sim.deathZ[i] = sim.entities[i].transform.z;
+  // No separation, not stepped: drop the steer agent. transform.x/y keep the last postOne write (the death spot),
+  // and postOne is skipped for dead states, so the corpse freezes in place.
+  steer.vx[i] = 0; steer.vy[i] = 0;
+  steer.removeAgent(i);
+  sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0; // nothing left to serve for a dead slot
+  sim.pendingDied[i] = 1; // `beast:died` emits at the START of the next step (never inside this listener)
+}
+
+function enterCorpse(sim, i) {
+  sim.state[i] = STATE_CORPSE;
+  sim.timer[i] = sim.cfgSteps.corpse;
+}
+
+function enterSink(sim, i) {
+  sim.state[i] = STATE_SINK;
+  sim.timer[i] = sim.cfgSteps.sink;
+  sim.entities[i].transform.z = sim.deathZ[i]; // k = 0
+  const p = sim._sinkPayload[i];
+  p.x = sim.entities[i].transform.x;
+  p.y = sim.entities[i].transform.y;
+  p.z = sim.deathZ[i];
+  sim.events.emit('beast:sink', p); // particleHooks bursts the corpse dust here
+}
+
+/** Deferred `beast:died` (37.16.2): exactly once, at the start of the step AFTER the kill. */
+function emitPendingDied(sim, i) {
+  if (!sim.pendingDied[i]) return;
+  sim.pendingDied[i] = 0;
+  const p = sim._diedPayload[i];
+  p.x = sim.entities[i].transform.x;
+  p.y = sim.entities[i].transform.y;
+  p.z = sim.deathZ[i];
+  p.cause = CAUSE_STR[sim.cause[i]];
+  sim.events.emit('beast:died', p);
+}
+
+/** Runs the dead-state timeline in place of perception/path/steer/post (37.16.2). */
+function stepDead(sim, i) {
+  const st = sim.state[i];
+  if (st === STATE_DYING) {
+    sim.timer[i]--;
+    if (sim.timer[i] <= 0) {
+      // despawnReq set during DYING (looted the instant it died) is honoured at CORPSE entry: no minimum lie time.
+      if (sim.despawnReq[i]) enterSink(sim, i); else enterCorpse(sim, i);
+    }
+  } else if (st === STATE_CORPSE) {
+    sim.timer[i]--;
+    if (sim.despawnReq[i] || sim.timer[i] <= 0) enterSink(sim, i);
+  } else if (st === STATE_SINK) {
+    sim.timer[i]--;
+    if (sim.timer[i] < 0) sim.timer[i] = 0;
+    const k = sim.cfgSteps.sink - sim.timer[i]; // 1..30
+    sim.entities[i].transform.z = sim.deathZ[i] - sim.cfg.sinkM * (k / sim.cfgSteps.sink);
+    if (sim.timer[i] <= 0) sim.state[i] = STATE_GONE;
+  }
+  // STATE_GONE: nothing.
+}
+
 // ---- paths (29.1 step 3) -------------------------------------------------------------------------------------
 
 function updatePathRequests(sim, px, py) {
   const n = sim.count, cfg = sim.cfg;
   for (let i = 0; i < n; i++) {
+    if (sim.state[i] >= FIRST_DEAD_STATE) continue; // US-079b: dead slots don't path
     if (sim.repathT[i] > 0) sim.repathT[i]--;
     if (sim.pathReq[i]) continue;
     const st = sim.state[i];
@@ -395,7 +559,7 @@ function servePathRequest(sim, px, py) {
   if (n === 0) return;
   for (let k = 1; k <= n; k++) {
     const i = (sim.lastServed + k) % n;
-    if (sim.pathReq[i]) {
+    if (sim.pathReq[i] && sim.state[i] < FIRST_DEAD_STATE) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
       sim.repathT[i] = sim.cfgSteps.repath;
@@ -453,11 +617,12 @@ function setSteerTarget(sim, i) {
     return;
   }
 
-  // US-078d amendment: waypoint = own position (arrive 0), maxSpeed = staggerKnock - the steer clamp then keeps
-  // the knockback velocity `enterStagger` assigned, decaying it by `accel` (DEFAULT_ACCEL) toward 0.
+  // US-078d amendment + US-079b: waypoint = own position (arrive 0), maxSpeed = knockV (per-slot, replaces the
+  // shared cfg.staggerKnock) - the steer clamp then keeps the knockback velocity `enterStagger` assigned, decaying
+  // it by `accel` (DEFAULT_ACCEL) toward 0.
   if (st === STATE_STAGGER) {
     steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
-    steer.maxSpeed[i] = cfg.staggerKnock;
+    steer.maxSpeed[i] = sim.knockV[i];
     return;
   }
 
@@ -550,6 +715,8 @@ function hashSim(sim, h) {
   h.u32(sim.tick);
   h.u8Array(sim.state, 0, n);
   h.u32Array(sim.timer, 0, n);
+  h.u32Array(sim.dmgCd, 0, n);
+  h.u32Array(sim.hurtT, 0, n);
   h.u32Array(sim.unseen, 0, n);
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
@@ -558,30 +725,42 @@ function hashSim(sim, h) {
     h.f64(sim.cdx[i]); h.f64(sim.cdy[i]);
     h.f64(sim.goalX[i]); h.f64(sim.goalY[i]);
     h.f64(sim.prevX[i]); h.f64(sim.prevY[i]);
+    h.f64(sim.deathZ[i]); h.f64(sim.knockV[i]);
+    h.u32(sim.entities[i].components.health.hp);
   }
   h.u32Array(sim.pathLen, 0, n);
   h.u32Array(sim.pathIdx, 0, n);
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
+  h.u8Array(sim.pendingDied, 0, n);
+  h.u8Array(sim.despawnReq, 0, n);
+  h.u8Array(sim.cause, 0, n);
   sim.steer.hashInto(h);
 }
 
 function saveSim(sim) {
   const n = sim.count;
   const slice = (a) => Array.from(a.subarray(0, n));
+  const hp = new Array(n);
+  for (let i = 0; i < n; i++) hp[i] = sim.entities[i].components.health.hp;
   return {
     tick: sim.tick,
     lastServed: sim.lastServed,
     state: slice(sim.state), timer: slice(sim.timer), unseen: slice(sim.unseen), repathT: slice(sim.repathT),
+    dmgCd: slice(sim.dmgCd), hurtT: slice(sim.hurtT),
     homeX: slice(sim.homeX), homeY: slice(sim.homeY), fx: slice(sim.fx), fy: slice(sim.fy),
     cdx: slice(sim.cdx), cdy: slice(sim.cdy), goalX: slice(sim.goalX), goalY: slice(sim.goalY),
     prevX: slice(sim.prevX), prevY: slice(sim.prevY),
+    deathZ: slice(sim.deathZ), knockV: slice(sim.knockV),
     pathLen: slice(sim.pathLen), pathIdx: slice(sim.pathIdx), seen: slice(sim.seen), pathReq: slice(sim.pathReq),
+    pendingDied: slice(sim.pendingDied), despawnReq: slice(sim.despawnReq), cause: slice(sim.cause),
     path: Array.from(sim.path.subarray(0, n * PATH_SLOTS * 2)),
+    hp,
     steer: {
       x: slice(sim.steer.x), y: slice(sim.steer.y), vx: slice(sim.steer.vx), vy: slice(sim.steer.vy),
-      mode: slice(sim.steer.mode), tx: slice(sim.steer.tx), ty: slice(sim.steer.ty),
+      radius: slice(sim.steer.radius), mode: slice(sim.steer.mode), tx: slice(sim.steer.tx), ty: slice(sim.steer.ty),
       arriveR: slice(sim.steer.arriveR), maxSpeed: slice(sim.steer.maxSpeed), accel: slice(sim.steer.accel),
+      active: slice(sim.steer.active),
     },
   };
 }
@@ -592,13 +771,18 @@ function loadSim(sim, obj) {
   sim.lastServed = obj.lastServed;
   for (let i = 0; i < n; i++) {
     sim.state[i] = obj.state[i]; sim.timer[i] = obj.timer[i]; sim.unseen[i] = obj.unseen[i]; sim.repathT[i] = obj.repathT[i];
+    sim.dmgCd[i] = obj.dmgCd[i]; sim.hurtT[i] = obj.hurtT[i];
     sim.homeX[i] = obj.homeX[i]; sim.homeY[i] = obj.homeY[i]; sim.fx[i] = obj.fx[i]; sim.fy[i] = obj.fy[i];
     sim.cdx[i] = obj.cdx[i]; sim.cdy[i] = obj.cdy[i]; sim.goalX[i] = obj.goalX[i]; sim.goalY[i] = obj.goalY[i];
     sim.prevX[i] = obj.prevX[i]; sim.prevY[i] = obj.prevY[i];
+    sim.deathZ[i] = obj.deathZ[i]; sim.knockV[i] = obj.knockV[i];
     sim.pathLen[i] = obj.pathLen[i]; sim.pathIdx[i] = obj.pathIdx[i]; sim.seen[i] = obj.seen[i]; sim.pathReq[i] = obj.pathReq[i];
+    sim.pendingDied[i] = obj.pendingDied[i]; sim.despawnReq[i] = obj.despawnReq[i]; sim.cause[i] = obj.cause[i];
+    sim.entities[i].components.health.hp = obj.hp[i];
     sim.steer.x[i] = obj.steer.x[i]; sim.steer.y[i] = obj.steer.y[i]; sim.steer.vx[i] = obj.steer.vx[i]; sim.steer.vy[i] = obj.steer.vy[i];
-    sim.steer.mode[i] = obj.steer.mode[i]; sim.steer.tx[i] = obj.steer.tx[i]; sim.steer.ty[i] = obj.steer.ty[i];
+    sim.steer.radius[i] = obj.steer.radius[i]; sim.steer.mode[i] = obj.steer.mode[i]; sim.steer.tx[i] = obj.steer.tx[i]; sim.steer.ty[i] = obj.steer.ty[i];
     sim.steer.arriveR[i] = obj.steer.arriveR[i]; sim.steer.maxSpeed[i] = obj.steer.maxSpeed[i]; sim.steer.accel[i] = obj.steer.accel[i];
+    sim.steer.active[i] = obj.steer.active[i]; // US-079b: a dead slot must come back as inactive, not a ghost agent
     sim.entities[i].transform.x = sim.steer.x[i];
     sim.entities[i].transform.y = sim.steer.y[i];
   }
@@ -607,6 +791,15 @@ function loadSim(sim, obj) {
 
 function resetAllSim(sim) {
   for (let i = 0; i < sim.count; i++) {
+    // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
+    // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
+    if (!sim.steer.active[i]) {
+      const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
+      if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
+    }
+    const health = sim.entities[i].components.health;
+    health.hp = health.max; // US-079b: boars come back alive
+    sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0;
     sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
     sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
     sim.steer.setIdle(i);
@@ -618,4 +811,5 @@ function resetAllSim(sim) {
     sim.entities[i].transform.x = sim.homeX[i];
     sim.entities[i].transform.y = sim.homeY[i];
   }
+  sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }

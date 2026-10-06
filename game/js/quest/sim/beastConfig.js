@@ -33,6 +33,14 @@ export const BEAST_DEFAULTS = Object.freeze({
   losEvery: 6,          // steps between LOS samples per slot (round-robin by slot % losEvery)
   staggerSec: 0.6,      // s, US-078d amendment (D-034): heavy-hit stagger duration
   staggerKnock: 4,       // m/s, the stagger shove speed (steer.maxSpeed while staggered; decays by accel)
+  hp: 4,                 // US-079b (37.16.2): max HP per boar (also the fresh value on create/restart)
+  dmgCooldownSec: 0.2,   // s, ignore damage from a second hit within this (12 steps)
+  flashSec: 0.1,         // s, white hurt flash the view shows per damaging hit (6 steps)
+  flinchSec: 0.25,       // s, STATE_FLINCH no-movement pause after a light hit (15 steps)
+  dieSec: 0.4,           // s, STATE_DYING tip-over before the corpse (24 steps)
+  corpseSec: 60,         // s, STATE_CORPSE lie time before the timeout sink (3600 steps)
+  sinkSec: 0.5,          // s, STATE_SINK sinking into the ground (30 steps)
+  sinkM: 0.3,            // m, how far the corpse sinks (z = deathZ - sinkM * k/30)
 });
 
 /** `toSteps(sec) = Math.round(sec / SIM_STEP)` - the ONE place seconds become an integer step count (architecture.md

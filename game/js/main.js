@@ -411,6 +411,7 @@ if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass
 // already runs inside createEngine - US-053a's own precedent, nothing to do here for that). ----
 if (sprites.pass) sprites.pass.bindParticleLayer(engine.particleLayer);
 const particlePresets = window.ASSETS.particles;
+if (window.ASSETS.boarFx) window.ASSETS.boarFx.attach(); // US-079b: copy boarFx's corpseDust preset into particles.presets before the defineEmitter loop below
 if (particlePresets) {
   for (const k of Object.keys(particlePresets.presets)) {
     engine.particles.defineEmitter(k, particlePresets.toEmitterDef(k, assets.palette.rgb));
