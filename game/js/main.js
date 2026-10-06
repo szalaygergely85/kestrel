@@ -74,6 +74,7 @@ import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
+import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
@@ -229,6 +230,11 @@ function guardLoad(fn) {
 
 window.addEventListener('error', (evt) => fatalError(evt.error || evt.message));
 window.addEventListener('unhandledrejection', (evt) => fatalError(evt.reason));
+// US-091a1 (37.16.4): the designer item defs (design/items.js -> ASSETS.items). Validated once at boot
+// (id/name/kind/stackMax/icon); a bad def throws naming the id, which the fatal-card listeners above catch.
+// `null` (items.js script tag missing) skips validation - addItem/migrateSword then just no-op on unknown ids.
+const itemDefs = window.ASSETS && window.ASSETS.items ? window.ASSETS.items.defs : null;
+if (itemDefs) validateItemDefs(itemDefs);
 // US-012: crosshair/prompt colors, resolved once from the palette's `ui`
 // semantic keys (design/palette.js section 8) - `ASSETS.uiStyle` doesn't
 // exist yet (that's US-015's art), so this is the game's own small style
@@ -475,10 +481,12 @@ const swordOverlayStyles = {
   sparkClink: { glyph: '+', fg: hexToRgb(P.colors.flameCore) },
 };
 engine.overlay.setStyles({ ...questOverlayStyles(assets.uiStyle), ...swordOverlayStyles,
+  ...(window.ASSETS.boarFx && window.ASSETS.boarFx.overlay ? window.ASSETS.boarFx.overlay : {}), // US-079c: beastNotice (alert !) + beastNoticePop (white-hot first 6 steps), replacing the US-079a placeholder
   decal: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawl) },
   decalFaint: { glyphs: '-|\\/', fg: hexToRgb(assets.palette.colors.scrawlFaint) } }); // US-079a/US-128/US-078d: beastNotice + target* + sword trail/spark overlay styles
 const ovlStyles = {
   beastNotice: engine.overlay.styleId('beastNotice'), // US-079a (29.1): resolved once, not per frame
+  beastNoticePop: engine.overlay.styleId('beastNoticePop'), // US-079c: white-hot first 6 notice steps
   // US-128b (29.2): resolved once, not per frame.
   target: engine.overlay.styleId('target'),
   targetFade: engine.overlay.styleId('targetFade'),
@@ -761,6 +769,16 @@ function runGame(mode, cinematic = null) {
       });
       resetPickups(world); // BUG-PICKUP-001: reindex retained drops on every load/restart.
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
+      // US-091a1 (37.16.4 + 37.8a demo start): seed the pack only when missing, BEFORE
+      // `initialState = serialize(...)` below, so `R` restarts keep the start pack. Owner answer 2: the
+      // fireball is known from the start in the right hand; the sword is taken in the tower (swordTake.js
+      // adds it to the pack + left hand), so the demo pack holds the fireball only. `?demo=0` = empty pack.
+      // An old save whose sword flag is already set migrates: sword in the pack + left hand.
+      const startInv = params.get('demo') === '0'
+        ? { pack: [], left: null, right: null }
+        : { pack: [{ id: 'spell.fireball', n: 1 }], left: null, right: 'spell.fireball' };
+      ensureInventory(playerHandle.data, startInv);
+      if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       resetNoteRead(assets.uiStyle); // READ-01: a restart never carries an open note panel over (runtime-only state, 7.6 item 6)
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {

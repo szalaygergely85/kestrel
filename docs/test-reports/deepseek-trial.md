@@ -15,6 +15,9 @@ One line per trial item, per `DEEPSEEK.md`. Order taken from `docs/pc-b-queue.md
 | 2026-10-06 | ART-01a (look + roof map, JS) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
 | 2026-10-06 | ART-04a (clouds JS twin) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
 | 2026-10-06 | ED-FOLDERS-01 (asset folders) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; main session added a `content/editor/` exemption to content-smoke. | owner: fill in from the DeepSeek dashboard | not yet |
+| 2026-10-06 | US-079b ARCH fixes | deepseek-v4-pro (main session, no agent) | off-peak | 1 test-failure round (updated a stale die-t expectation to the new frame/t). | owner: fill in from the DeepSeek dashboard | re-review pending |
+| 2026-10-06 | US-079c (boar fight reads) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; main session added the main.js overlay styles. | owner: fill in from the DeepSeek dashboard | not yet |
+| 2026-10-06 | US-091a1 (inventory data) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet |
 
 ## Notes for this item
 

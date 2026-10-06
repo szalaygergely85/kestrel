@@ -50,6 +50,11 @@ const CONTACT_PAD = 0.1;         // m (29.1 step 6 "dist2D <= radius + PHYSICS.r
 const WALL_SPEED_FRAC = 0.35;    // 29.1 step 6 "moved < 0.35*charge*STEP on 2 steps in a row = wall"
 const WALL_STREAK = 2;
 
+// US-079c (design/models/voxel_beast.js `boarFx.scrape`): the windup kick steps (150/300/450 ms) at which the sim
+// emits one `beast:scrape` for particleHooks, and the forefeet offset (mount `forefeet` ~0.45 m in front, z + 0.03).
+const SCRAPE_KICKS = [9, 18, 27];
+const SCRAPE_FORE_M = 0.45;
+
 /**
  * @param {any} world engine World (terrain + structures; also the LOS/supportAt surface)
  * @param {{nav: {grid:any, astar:any}, rng: any, events: any, cfg?: Partial<typeof BEAST_DEFAULTS>}} opts
@@ -116,6 +121,7 @@ export function createBeastSim(world, opts) {
     repathT: new Int32Array(MAX_BEASTS),
     homeX: new Float64Array(MAX_BEASTS),
     homeY: new Float64Array(MAX_BEASTS),
+    homeZ: new Float64Array(MAX_BEASTS), // US-079b ARCH: the respawn z (restored by resetAll; a sunk corpse respawns 0.3 m low otherwise)
     fx: new Float64Array(MAX_BEASTS),
     fy: new Float64Array(MAX_BEASTS),
     cdx: new Float64Array(MAX_BEASTS),
@@ -136,6 +142,7 @@ export function createBeastSim(world, opts) {
     despawnReq: new Uint8Array(MAX_BEASTS),  // US-079b: looted -> sink at the next CORPSE entry
     cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
+    waiting: new Uint8Array(MAX_BEASTS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
 
     tick: 0,
     lastServed: -1,
@@ -145,11 +152,15 @@ export function createBeastSim(world, opts) {
     // contract); smoothPath's output is at most that many waypoints before truncation to PATH_SLOTS.
     _cellPath: new Int32Array(grid.w * grid.h),
     _xy: new Float64Array(grid.w * grid.h * 2),
+    // US-079c: a charge contact emits `damage: 1`; vitals scales it by `beastDamageScale` (5) -> 5 HP per charge
+    // hit (the AC's "6 hits from 30 HP kill"). Verified end-to-end in beastSim.test.js.
     _hitPayload: beastEntities.slice(0, count).map((e) => ({ source: e.id, target: 'player', damage: 1 })),
     // US-079b: preallocated emit payloads (one per slot, never reallocated). `beast:died` carries the cause string
     // resolved from the 2-entry CAUSE_STR table; `beast:sink` the dust-burst position for particleHooks.
     _diedPayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, cause: 'sword' })),
     _sinkPayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0 })),
+    // US-079c: preallocated windup scrape emit payload (forefeet position + backward kick direction).
+    _scrapePayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, dirX: 0, dirY: 0, dirZ: 0 })),
   };
 
   for (let i = 0; i < count; i++) {
@@ -157,6 +168,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    sim.homeZ[i] = e.transform.z; // US-079b ARCH: the authored spawn z (restored on resetAll)
     sim.fx[i] = 0; sim.fy[i] = -1; // facing north by default
     sim.state[i] = STATE_WANDER;
     sim.timer[i] = sim.cfgSteps.pauseMin; // short initial pause before the first wander leg
@@ -239,6 +251,7 @@ function stepSim(sim, px, py, pz) {
   servePathRequest(sim, px, py);
   for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) setSteerTarget(sim, i);
   sim.steer.step(SIM_STEP, sim.grid);
+  deOverlap(sim); // US-079c (BUG-BOAR-OVERLAP): hard pairwise push-apart, after the soft steer step, before post
   for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) postOne(sim, i, px, py, pz);
   sim.tick++;
 }
@@ -343,14 +356,47 @@ function checkChaseExit(sim, i, px, py) {
   const cfg = sim.cfg, steer = sim.steer;
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const d2 = dx * dx + dy * dy;
-  if (d2 <= cfg.windupR * cfg.windupR && sim.seen[i]) { enterWindup(sim, i); return; }
+  if (d2 <= cfg.windupR * cfg.windupR && sim.seen[i]) {
+    // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
+    if (hasActiveCharger(sim)) sim.waiting[i] = 1;
+    else { sim.waiting[i] = 0; enterWindup(sim, i); }
+    return;
+  }
+  sim.waiting[i] = 0;
   if (d2 > cfg.loseR * cfg.loseR || sim.unseen[i] >= sim.cfgSteps.loseSight) enterReturn(sim, i);
+}
+
+/** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
+function hasActiveCharger(sim) {
+  for (let k = 0; k < sim.count; k++) {
+    if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) return true;
+  }
+  return false;
 }
 
 function windupStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
+  // US-079c: kick a dust burst at the forefeet at 150/300/450 ms into the windup (boarFx.scrape.kickSteps).
+  const elapsed = sim.cfgSteps.windup - sim.timer[i];
+  if (elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2]) emitScrape(sim, i);
   if (sim.timer[i] <= 0) enterCharge(sim, i, px, py);
+}
+
+/** US-079c: emits one preallocated `beast:scrape` at the forefeet (z + 0.03), thrown backward - particleHooks
+ * bursts the scrapeDust clods (design/models/voxel_beast.js `boarFx.scrape`). Zero allocation. */
+function emitScrape(sim, i) {
+  const p = sim._scrapePayload[i];
+  const steer = sim.steer;
+  const fx = sim.fx[i], fy = sim.fy[i];
+  p.id = sim.ids[i];
+  p.x = steer.x[i] + fx * SCRAPE_FORE_M;
+  p.y = steer.y[i] + fy * SCRAPE_FORE_M;
+  p.z = sim.entities[i].transform.z + 0.03;
+  p.dirX = -fx * 0.8;
+  p.dirY = -fy * 0.8;
+  p.dirZ = 0.6;
+  sim.events.emit('beast:scrape', p);
 }
 
 function recoverStep(sim, i, px, py) {
@@ -377,6 +423,7 @@ function enterNotice(sim, i) {
 
 function enterChase(sim, i) {
   sim.state[i] = STATE_CHASE;
+  sim.waiting[i] = 0; // US-079c: a fresh chase is not waiting for the charger
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.repathT[i] = 0;
   sim.unseen[i] = 0;
@@ -385,6 +432,7 @@ function enterChase(sim, i) {
 
 function enterWindup(sim, i) {
   sim.state[i] = STATE_WINDUP;
+  sim.waiting[i] = 0; // US-079c: it is the charger now, not a waiter
   sim.timer[i] = sim.cfgSteps.windup;
 }
 
@@ -536,6 +584,7 @@ function updatePathRequests(sim, px, py) {
     if (sim.pathReq[i]) continue;
     const st = sim.state[i];
     if (st === STATE_CHASE) {
+      if (sim.waiting[i]) continue; // US-079c: a waiter holds position (no path into the player)
       if (sim.pathLen[i] === 0 || sim.pathIdx[i] >= sim.pathLen[i]) {
         sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1;
       } else if (sim.repathT[i] <= 0) {
@@ -626,6 +675,13 @@ function setSteerTarget(sim, i) {
     return;
   }
 
+  // US-079c: a CHASE boar waiting its turn (another boar is the charger) holds position at ~windup range.
+  if (st === STATE_CHASE && sim.waiting[i]) {
+    steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
+    steer.maxSpeed[i] = 0;
+    return;
+  }
+
   let speed = 0;
   if ((st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_CHASE || st === STATE_RETURN) {
     advanceWaypoint(sim, i);
@@ -669,7 +725,9 @@ function postOne(sim, i, px, py, pz) {
   // (US-078d amendment: "Facing frozen" - a knockback slide must not spin the beast to face the shove).
   if (sim.state[i] === STATE_STAGGER) {
     // frozen
-  } else if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP) {
+  } else if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP
+             || (sim.state[i] === STATE_CHASE && sim.waiting[i])) {
+    // US-079c: a waiting boar faces the player while holding (so it reads as aware, like notice/windup).
     const ddx = px - steer.x[i], ddy = py - steer.y[i];
     const d = Math.sqrt(ddx * ddx + ddy * ddy);
     if (d > 1e-9) { sim.fx[i] = ddx / d; sim.fy[i] = ddy / d; }
@@ -708,6 +766,59 @@ function chargePost(sim, i, px, py) {
   if (sim.timer[i] <= 0 && sim.state[i] === STATE_CHARGE) enterRecover(sim, i, false);
 }
 
+// ---- US-079c (BUG-BOAR-OVERLAP) hard pairwise de-overlap ------------------------------------------------------
+
+/** True if the centre point (x,y) lands in a walkable NavGrid cell - the exact check engine/nav/steer.js's step
+ * uses for its axis-sliding wall clamp (`cellWalkable`), re-stated here so the de-overlap can reuse it (steer.js
+ * does not export it). Zero allocation. */
+function walkable(grid, x, y) {
+  const cx = grid.cellX(x);
+  const cy = grid.cellY(y);
+  return grid.inBounds(cx, cy) && grid.cost[grid.index(cx, cy)] !== 0;
+}
+
+/** Applies a proposed (nx,ny) with the same axis-sliding wall clamp as steer.step: full move if walkable, else the
+ * x or y axis alone if that stays walkable, else stay put (no tunnelling through a cost-0 cell). */
+function applyPush(steer, grid, slot, nx, ny) {
+  const ox = steer.x[slot], oy = steer.y[slot];
+  if (walkable(grid, nx, ny)) { steer.x[slot] = nx; steer.y[slot] = ny; }
+  else if (walkable(grid, nx, oy)) { steer.x[slot] = nx; }
+  else if (walkable(grid, ox, ny)) { steer.y[slot] = ny; }
+  // else: blocked on both axes -> stay.
+}
+
+/**
+ * US-079c (BUG-BOAR-OVERLAP): after `steer.step`, push any two overlapping beasts apart to `rA + rB` with a
+ * mass-split (each moves by the OTHER's mass share; equal radius = half each). Fixed ascending index order (i < j,
+ * a Gauss-Seidel pass over the post-steer positions), deterministic, zero allocation, skips inactive (dead) steer
+ * slots, and every push is wall-clamped by `applyPush` so it can never tunnel through a cost-0 cell.
+ */
+function deOverlap(sim) {
+  const steer = sim.steer, grid = sim.grid;
+  const n = sim.count;
+  for (let i = 0; i < n; i++) {
+    if (!steer.active[i]) continue; // US-079c ARCH (37.16.2): skip inactive (dead) steer slots
+    for (let j = i + 1; j < n; j++) {
+      if (!steer.active[j]) continue;
+      const dx = steer.x[j] - steer.x[i];
+      const dy = steer.y[j] - steer.y[i];
+      const rSum = steer.radius[i] + steer.radius[j];
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= rSum * rSum) continue;
+      const d = Math.sqrt(d2);
+      let ux, uy;
+      if (d > 1e-9) { ux = dx / d; uy = dy / d; }
+      else { ux = 1; uy = 0; } // exactly coincident: fixed +x axis (deterministic)
+      const overlap = rSum - d;
+      const mi = steer.radius[i] * steer.radius[i];
+      const mj = steer.radius[j] * steer.radius[j];
+      const inv = 1 / (mi + mj);
+      applyPush(steer, grid, i, steer.x[i] - ux * overlap * mj * inv, steer.y[i] - uy * overlap * mj * inv);
+      applyPush(steer, grid, j, steer.x[j] + ux * overlap * mi * inv, steer.y[j] + uy * overlap * mi * inv);
+    }
+  }
+}
+
 // ---- hash / save / load / reset --------------------------------------------------------------------------------
 
 function hashSim(sim, h) {
@@ -720,7 +831,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.unseen, 0, n);
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
-    h.f64(sim.homeX[i]); h.f64(sim.homeY[i]);
+    h.f64(sim.homeX[i]); h.f64(sim.homeY[i]); h.f64(sim.homeZ[i]);
     h.f64(sim.fx[i]); h.f64(sim.fy[i]);
     h.f64(sim.cdx[i]); h.f64(sim.cdy[i]);
     h.f64(sim.goalX[i]); h.f64(sim.goalY[i]);
@@ -748,7 +859,7 @@ function saveSim(sim) {
     lastServed: sim.lastServed,
     state: slice(sim.state), timer: slice(sim.timer), unseen: slice(sim.unseen), repathT: slice(sim.repathT),
     dmgCd: slice(sim.dmgCd), hurtT: slice(sim.hurtT),
-    homeX: slice(sim.homeX), homeY: slice(sim.homeY), fx: slice(sim.fx), fy: slice(sim.fy),
+    homeX: slice(sim.homeX), homeY: slice(sim.homeY), homeZ: slice(sim.homeZ), fx: slice(sim.fx), fy: slice(sim.fy),
     cdx: slice(sim.cdx), cdy: slice(sim.cdy), goalX: slice(sim.goalX), goalY: slice(sim.goalY),
     prevX: slice(sim.prevX), prevY: slice(sim.prevY),
     deathZ: slice(sim.deathZ), knockV: slice(sim.knockV),
@@ -772,7 +883,7 @@ function loadSim(sim, obj) {
   for (let i = 0; i < n; i++) {
     sim.state[i] = obj.state[i]; sim.timer[i] = obj.timer[i]; sim.unseen[i] = obj.unseen[i]; sim.repathT[i] = obj.repathT[i];
     sim.dmgCd[i] = obj.dmgCd[i]; sim.hurtT[i] = obj.hurtT[i];
-    sim.homeX[i] = obj.homeX[i]; sim.homeY[i] = obj.homeY[i]; sim.fx[i] = obj.fx[i]; sim.fy[i] = obj.fy[i];
+    sim.homeX[i] = obj.homeX[i]; sim.homeY[i] = obj.homeY[i]; sim.homeZ[i] = obj.homeZ[i]; sim.fx[i] = obj.fx[i]; sim.fy[i] = obj.fy[i];
     sim.cdx[i] = obj.cdx[i]; sim.cdy[i] = obj.cdy[i]; sim.goalX[i] = obj.goalX[i]; sim.goalY[i] = obj.goalY[i];
     sim.prevX[i] = obj.prevX[i]; sim.prevY[i] = obj.prevY[i];
     sim.deathZ[i] = obj.deathZ[i]; sim.knockV[i] = obj.knockV[i];
@@ -807,9 +918,11 @@ function resetAllSim(sim) {
     sim.state[i] = STATE_WANDER;
     sim.timer[i] = sim.cfgSteps.pauseMin;
     sim.unseen[i] = 0; sim.repathT[i] = 0; sim.seen[i] = 0; sim.pathReq[i] = 0;
+    sim.waiting[i] = 0; // US-079c
     sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
     sim.entities[i].transform.x = sim.homeX[i];
     sim.entities[i].transform.y = sim.homeY[i];
+    sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
   }
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }

@@ -11,6 +11,7 @@ import {
 } from '../../../engine/index.js';
 import { registerQuestBehaviours } from './index.js';
 import { removeSwordIfTaken } from './swordTake.js';
+import { ensureInventory, countOf } from './sim/inventory.js'; // US-091a1 (37.16.4)
 
 import paletteMod from '../../../design/palette.js';
 import detailPassMod from '../../../design/detail-pass.js';
@@ -27,10 +28,11 @@ import m3PropsMod from '../../../design/models/m3_props.js';
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
+import itemsMod from '../../../design/items.js'; // US-091a1: ASSETS.items.defs (swordTake reads it off the global)
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 
-paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; itemsMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets();
 
 let pass = 0, fail = 0;
@@ -154,6 +156,28 @@ ok('tower.level.json has a "sword" interactable (US-078c content copy)', !!sword
   ok('4c: removeSwordIfTaken is a no-op when the flag is unset', !!world2.get('tower.sword'));
   removeSwordIfTaken(world2);
   ok('4d: removeSwordIfTaken on a world with no "tower" structure id match / already-gone prop never throws', true);
+}
+
+// ---------------------------------------------------------------------------
+// 5. US-091a1 (37.16.4): a successful sword take also puts the sword in the
+//    pack and the left hand (or right, if left is already occupied).
+// ---------------------------------------------------------------------------
+{
+  const world = freshWorld();
+  const player = world.get('player');
+  world.fireInteraction('sword.take', { def: swordDef, entity: world.get('tower.sword'), actor: player });
+  const inv = player.data.components.inventory;
+  ok('5a: swordTake puts the sword in the pack', !!inv && countOf(inv, 'sword') === 1);
+  ok('5b: swordTake sets the left hand when empty', inv && inv.left === 'sword' && inv.right === null);
+}
+{
+  // left hand already occupied -> the sword goes to the right hand instead.
+  const world = freshWorld();
+  const player = world.get('player');
+  const inv = ensureInventory(player.data, { pack: [{ id: 'spell.fireball', n: 1 }], left: 'spell.fireball', right: null });
+  world.fireInteraction('sword.take', { def: swordDef, entity: world.get('tower.sword'), actor: player });
+  ok('5c: swordTake sets the right hand when left is occupied', inv.left === 'spell.fireball' && inv.right === 'sword');
+  ok('5d: the sword is in the pack alongside the fireball', countOf(inv, 'sword') === 1 && countOf(inv, 'spell.fireball') === 1);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -60,6 +60,9 @@
        module below) so window.ASSETS.palette is always ready before
        js/render/palette.js's getPalette() is first called. -->
   <script src="../design/palette.js"></script>
+  <!-- US-091a (v1.34): item defs + inventory icons + loot sprites (ASSETS.items / ASSETS.lootSprites),
+       classic script loaded right after palette.js (design/README.md section 13). -->
+  <script src="../design/items.js"></script>
   <!-- US-053c: particle presets (flame/smoke/sparks/dust) - no load-order dependency on palette.js itself
        (toEmitterDef resolves palette.rgb at boot-wiring time, not at script-load time). -->
   <script src="../design/models/particles.js"></script>
