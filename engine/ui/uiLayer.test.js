@@ -58,6 +58,44 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   ok('mask set', ui.cells.mask[i] === 1);
 }
 
+// ---- setGlyph: glyph-only cell (UI-XHAIR-01): glyph + fg, bg alpha 128 ----
+{
+  const ui = createUiLayer({ cols: 160, rows: 60 });
+  ui.setGlyph(4, 5, '|', '#aabbcc');
+  const i = 5 * ui.cols + 4, fi = i * 4;
+  const gIdx = '|'.charCodeAt(0) - 32;
+  ok('setGlyph -> glyphIdx', ui.cells.glyphIdx[i] === gIdx);
+  ok('setGlyph -> fg rgb', ui.cells.fg[fi] === 0xaa && ui.cells.fg[fi + 1] === 0xbb && ui.cells.fg[fi + 2] === 0xcc);
+  ok('setGlyph -> fg alpha = glyphIdx', ui.cells.fg[fi + 3] === gIdx);
+  ok('setGlyph -> bg alpha 128 (glyph-only mask)', ui.cells.bg[fi + 3] === 128);
+  ok('setGlyph -> mask 1', ui.cells.mask[i] === 1);
+  // out of bounds is a no-op (same contract as setCell)
+  ui.setGlyph(-1, 0, '+', '#ffffff');
+  ui.setGlyph(0, 999, '+', '#ffffff');
+  ok('setGlyph out-of-bounds -> no write', ui.cells.mask[0] === 0);
+}
+
+// ---- clear() also zeroes a glyph-only cell (128 -> 0) ----
+{
+  const ui = createUiLayer({ cols: 96, rows: 36 });
+  ui.setGlyph(1, 1, '+', '#ffffff');
+  const i = 1 * ui.cols + 1;
+  ok('pre-clear: glyph-only bg alpha 128', ui.cells.bg[i * 4 + 3] === 128);
+  ui.clear();
+  ok('clear() -> glyph-only cell bg alpha 0', ui.cells.bg[i * 4 + 3] === 0);
+  ok('clear() -> glyph-only cell mask 0', ui.cells.mask[i] === 0);
+  ok('clear() -> glyph-only cell glyphIdx 0', ui.cells.glyphIdx[i] === 0);
+}
+
+// ---- setCell/setCellRGB still write bg alpha 255, never 128 ----
+{
+  const ui = createUiLayer({ cols: 160, rows: 60 });
+  ui.setCell(2, 2, 'A', '#ff0000', '#000000');
+  ui.setCellRGB(3, 3, 10, 1, 2, 3, 4, 5, 6);
+  ok('setCell -> bg alpha 255', ui.cells.bg[(2 * ui.cols + 2) * 4 + 3] === 255);
+  ok('setCellRGB -> bg alpha 255', ui.cells.bg[(3 * ui.cols + 3) * 4 + 3] === 255);
+}
+
 // ---- no per-frame allocation in clear() (rule 9) ----
 {
   const ui = createUiLayer({ cols: 160, rows: 60 });

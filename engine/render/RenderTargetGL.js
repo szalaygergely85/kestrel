@@ -33,7 +33,7 @@ void main() {
 }
 `;
 
-const FRAGMENT_SRC = `#version 300 es
+export const FRAGMENT_SRC = `#version 300 es
 precision highp float;
 precision highp int;
 
@@ -52,6 +52,9 @@ uniform vec2 uGrid;       // (cols, rows) - the SCENE grid on pass 0, the UI gri
 // so bg.a doubles as the per-cell "was this written" mask). No blending -
 // only discard - so a UI glyph keeps its own bg exactly (a hard cell edge,
 // same rule as the scene's own cells - 17.2's "no alpha blending").
+// UI-XHAIR-01 adds a third state: bg.a = 128/255 (~0.502, < 0.75) is a
+// glyph-only UI cell - draw ONLY the glyph's fg over the scene already on
+// the framebuffer, no bg box (see the second branch below).
 uniform int uLayer;
 
 const float GLYPH_COUNT = ${GLYPH_COUNT.toFixed(1)};
@@ -72,7 +75,16 @@ void main() {
   vec2 atlasUv = vec2((glyphIdx + cellFrac.x) / GLYPH_COUNT, cellFrac.y);
   float a = texture(uAtlas, atlasUv).a;
 
-  fragColor = vec4(mix(bg.rgb, fg.rgb, a), 1.0);
+  if (uLayer == 1 && bg.a < 0.75) {
+    // Glyph-only UI cell (bg.a = 128/255 ~ 0.502): the scene is already on
+    // the framebuffer from pass 0, so draw ONLY the glyph's fg where the
+    // glyph covers the cell (hard threshold - no bg box, no blending) and
+    // let the scene show through everywhere else.
+    if (a < 0.5) discard;
+    fragColor = vec4(fg.rgb, 1.0);
+  } else {
+    fragColor = vec4(mix(bg.rgb, fg.rgb, a), 1.0);
+  }
 }
 `;
 
@@ -463,8 +475,9 @@ export class RenderTargetGL {
     // OWN-REQ-003 (architecture.md 17.2): a second fullscreen-triangle draw
     // with the SAME program, over the scene just drawn - `uLayer=1` cells
     // with `bg.a < 0.5` (nothing written by the UI layer this frame) are
-    // discarded, so only the scene shows through there; every written UI
-    // cell replaces the scene pixel outright (no blending, per 17 "Do not").
+    // discarded, so only the scene shows through there; every written opaque
+    // UI cell replaces the scene pixel outright, and a glyph-only cell
+    // (bg.a = 128) draws only its glyph over the scene (see the shader).
     // Units 0/1/2 are rebound to the scene's own fg/bg/atlas right after, so
     // `readbackPresent` (called right after `present()` by `?gpucompare=1`)
     // still reads exactly the scene textures it always has (17.6: the UI

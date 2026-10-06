@@ -69,6 +69,7 @@ function makeSceneRt(cols, rows) {
   return {
     cols, rows, cells,
     setCell(x, y, glyph, fg, bg) { cells.setCell(x, y, glyph, fg, bg); },
+    setGlyph(x, y, glyph, fg) { cells.setCell(x, y, glyph, fg, '#000000'); }, // UI-XHAIR-01: drawCrosshair now uses the glyph-only API
     setCellRGB(x, y, gi, r, g, b, r2, g2, b2) { cells.setCellRGB(x, y, gi, r, g, b, r2, g2, b2); },
   };
 }
