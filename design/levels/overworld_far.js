@@ -338,18 +338,42 @@
       throw new TypeError('overworld_far.' + fn + '(x, y) needs two finite numbers (got ' + typeof x + ', ' + typeof y + '). ' +
                           'v2 is analytic: for a baked grid use util.gridHeight(G, x, y).');
   }
-  function heightAt(x, y) { checkXY('heightAt', x, y); return structureBlend(applyStamps(recipeHeight(x, y), x, y), x, y); }
+  // ED-TERRAIN-1a (arch 37.12): optional sparse edit layer (duck-typed: only heightDelta/typePaint are called),
+  // module-global like the structure injection; Terrain's constructor always sets it (null = none).
+  var EDITS = null;
+  function setEditLayer(layer) { EDITS = layer || null; }
+  function getEditLayer() { return EDITS; }
+  // The delta is added BEFORE structureBlend, so a structure's ring handover stays exact.
+  // baseHeightAt = stamps + delta WITHOUT the structure blend: what flatten/smooth must read (inside a footprint
+  // structureBlend ignores the delta, so reading heightAt there makes the brush run away).
+  function baseHeightAt(x, y) {
+    checkXY('baseHeightAt', x, y);
+    var h = applyStamps(recipeHeight(x, y), x, y);
+    if (EDITS !== null) h += EDITS.heightDelta(x, y);
+    return h;
+  }
+  function heightAt(x, y) {
+    checkXY('heightAt', x, y);
+    var h = applyStamps(recipeHeight(x, y), x, y);
+    if (EDITS !== null) h += EDITS.heightDelta(x, y);
+    return structureBlend(h, x, y);
+  }
 
   // ---------------- analytic type ----------------
   var TYPE_IDS = { grass: 0, forest: 1, water: 2, rock: 3, path: 4 };
-  function typeAt(x, y) {
+  // ED-TERRAIN-1b: optional hxp/hxm/hyp/hym = heightAt(x+e,y)/(x-e,y)/(x,y+e)/(x,y-e), e = slopeEps, handed in by a
+  // baker that already holds those heights (bit-identical to computing them here; saves 4 heightAt per sample).
+  function typeAt(x, y, hxp, hxm, hyp, hym) {
     checkXY('typeAt', x, y);
     var R = DEF.recipe, s = DEF.seed, T = DEF.tower, i;
     var dr = Math.abs(x - riverX(y));
     if (dr < R.river.halfWidth) return 2;
+    if (EDITS !== null) { var ep = EDITS.typePaint(x, y); if (ep >= 0) return ep; }   // edit paint: over path/old paints, never over the river
     if (pathDist(x, y) < R.path.halfWidth) return 4;
     for (i = PAINTS.length - 1; i >= 0; i--) { var p = PAINTS[i]; if (shapeDist(p, x, y) <= 0) { if (p.mode === 'set') return TYPE_IDS[p.type]; break; } }
-    var e = R.slopeEps, hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e), hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e);
+    var e = R.slopeEps, hx, hy;
+    if (hxp === undefined) { hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e); hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e); }
+    else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
     if (slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold)) return 3;
     if (fbm(x / F.scale + 17, y / F.scale - 9, s + 13, F.octaves, 0.5, 2) > F.threshold && slope < F.maxSlope &&
@@ -378,7 +402,7 @@
   function chunkKey(x, y) { return Math.floor(x / DEF.chunk.size) + ',' + Math.floor(y / DEF.chunk.size); }
 
   DEF.util = {
-    heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight,
+    heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight, setEditLayer: setEditLayer, getEditLayer: getEditLayer, baseHeightAt: baseHeightAt,
     generate: generate, bake: bake, bakeChunk: bakeChunk, gridHeight: gridHeight, chunkKey: chunkKey,
     reindexOverrides: indexOverrides, hash: hash, fbm: fbm, riverX: riverX, pathDist: pathDist
   };

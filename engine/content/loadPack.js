@@ -4,11 +4,12 @@
 import { meshFromJSON, validateMesh } from '../mesh/MeshData.js';
 import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
+import { editLayerFromJSON } from '../world/terrainEdits.js';
 import { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS } from './schema.js';
 
 const FILE_ID_RE = /^[a-z][a-z0-9_]*$/;
 const LOCAL_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const KNOWN_KINDS = ['level', 'world', 'mesh'];
+const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits'];
 
 /** `globalId('tower', 'lamp_hook') -> 'tower/lamp_hook'` (21.3). Only used
  * where a field already says which collection it points into. */
@@ -98,7 +99,8 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     worlds: {},
     models: {},
     meshes: {},
-    meta: { level: {}, world: {}, mesh: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
+    terrainEdits: {},
+    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
   };
 
   const errors = [];
@@ -173,6 +175,14 @@ export async function loadContentPack(manifestUrl, opts = {}) {
       });
     }
 
+    if (kind === 'terrainEdits') {
+      // ED-TERRAIN-1a: sparse grid file - no nextId/id collections; validated by building the layer.
+      try { editLayerFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'terrainEdits')); continue; }
+      bundle.meta[kind][migrated.id] = { url: href, schema: migrated.schema, nextId: null };
+      const { kind: _k2, schema: _s2, id: _id2, ...edits } = migrated;
+      bundle.terrainEdits[migrated.id] = edits;
+      continue;
+    }
     if (typeof migrated.nextId !== 'number' || !Number.isInteger(migrated.nextId) || migrated.nextId < 1) {
       errors.push(new ContentError(href, 'nextId', 'nextId is required and must be an integer >= 1'));
       hadError = true;

@@ -54,6 +54,8 @@ export class AssetRegistry {
     this._terrain = bundle.terrain || {};
     this._worlds = bundle.worlds || {};
     this._meshes = bundle.meshes || {};
+    // ED-TERRAIN-1a: parsed `terrainEdits` file bodies by terrain key (absent = unedited).
+    this._terrainEdits = bundle.terrainEdits || {};
     this._uiStyle = bundle.uiStyle || null;
     // US-028: the designer's v2 detail-pass proposal (design/detail-pass.js
     // `ASSETS.detailPass`), read through the registry like every other
@@ -99,6 +101,11 @@ export class AssetRegistry {
   terrain(key) {
     if (!(key in this._terrain)) throwUnknown('terrain', key, this._terrain);
     return this._terrain[key];
+  }
+
+  /** ED-TERRAIN-1a: the edit-layer JSON body for a terrain key, or null when that terrain has no edits file. */
+  terrainEdits(key) {
+    return Object.hasOwn(this._terrainEdits, key) ? this._terrainEdits[key] : null;
   }
 
   world(key) {
@@ -249,6 +256,7 @@ export class AssetRegistry {
       levels,
       terrain,
       worlds,
+      terrainEdits: { ...(bundle.terrainEdits || {}) },
       uiStyle: codeParts.uiStyle,
       detailPass: codeParts.detailPass || null,
       contentVersion: bundle.contentVersion,

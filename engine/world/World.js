@@ -23,6 +23,13 @@ import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
 import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
 import { waveHeight } from './waves.js';
+import { editLayerFromJSON } from './terrainEdits.js';
+
+// ED-TERRAIN-1a: the registry's edits-file body for a terrain key -> a layer (null = none / stub registry).
+function terrainEditsFor(assets, key) {
+  const body = assets && typeof assets.terrainEdits === 'function' ? assets.terrainEdits(key) : null;
+  return body ? editLayerFromJSON(body) : null;
+}
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -170,6 +177,8 @@ export class World {
     this.scatter = null; // Derived placements, never serialized.
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
+    this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
     // `structuredClone(def.state)`/`serialize.js`, set once by `World.load`
@@ -316,7 +325,7 @@ export class World {
       w.terrainKey = def.terrain;
       // ED-MESH-1a (31.2): reuse a passed Terrain baked from the same recipe (a prop-only editor reload keeps the bake).
       const recipe = assets.terrain(def.terrain);
-      w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe);
+      w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe, { edits: terrainEditsFor(assets, def.terrain) });
       // Keep the old canopy until the recipe supplies real-tree content.
       w.terrain.realTrees = opts.realTrees === true && !!recipe.recipe?.forest?.trees;
     }
@@ -424,6 +433,7 @@ export class World {
           }
         }
       }
+      w._detailCtx = { cfg, keepOut };
       w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg);
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
@@ -566,6 +576,7 @@ export class World {
           const pt = { x, y, z, yawDeg: p.facing || 0, pitchDeg: 0 };
           if (scale !== 1) pt.scale = scale;
           w.spawn('prop', pt, comps, entId, s.id);
+          if (p.z === 'ground' && !p.dynamic && w.terrain) w._groundSnap.push({ id: entId, x, y });
         }
       }
     }
@@ -661,7 +672,8 @@ export class World {
         }
         if (sc === 1) delete transform.scale; else transform.scale = sc;
       }
-      w.spawn(ed.type, transform, components || {}, ed.id, parent);
+      const spawned = w.spawn(ed.type, transform, components || {}, ed.id, parent);
+      if (ed.z === 'ground' && w.terrain && !(components && components.body)) w._groundSnap.push({ id: spawned.id, x: transform.x, y: transform.y });
     }
 
     // Saved prop transforms exist only after the entities loop; derived colliders
@@ -894,6 +906,42 @@ export class World {
       if (collider) this.colliders[index] = collider;
       else this.colliders.splice(index, 1);
     } else if (collider) this.colliders.push(collider);
+  }
+
+  /**
+   * ED-TERRAIN-1b (arch 37.12): the stroke-end rebuild after live terrain edits (`Terrain.rebakeRect` per dab).
+   * Recomputes the exact height bounds, re-runs the tree and ground-detail scatter, replaces their trunk/detail
+   * colliders (same slot in `colliders`), re-snaps `z: 'ground'` props/entities to `groundAt` and rebuilds the
+   * prop collider, then emits `world:scatter` so the instance bindings refresh. Editor only (<= 150 ms budget).
+   * @returns {{ms:number, trees:number, detail:number, snapped:number}}
+   */
+  refreshTerrainScatter() {
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const terrain = this.terrain;
+    if (!terrain || !terrain.nearReady) return { ms: 0, trees: 0, detail: 0, snapped: 0 };
+    terrain.recomputeBounds();
+    if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
+    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg);
+    if (this.physicsMode === 'mesh') {
+      const put = (id, collider) => {
+        const i = this.colliders.findIndex((c) => c.id === id);
+        if (i >= 0) { if (collider) this.colliders[i] = collider; else this.colliders.splice(i, 1); }
+        else if (collider) this.colliders.push(collider);
+      };
+      put('scatter:trunks', this.scatter ? buildTrunkCollider(this.scatter, terrain.recipe.recipe.forest.trees) : null);
+      put('scatter:detail', this.detail ? buildDetailCollider(this.detail) : null);
+    }
+    let snapped = 0;
+    for (const g of this._groundSnap) {
+      const e = this._entities.get(g.id);
+      if (!e) continue;
+      const z = terrain.groundAt(e.transform.x, e.transform.y);
+      if (e.transform.z !== z) { e.transform.z = z; snapped++; }
+    }
+    if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
+    if (this.events) this.events.emit('world:scatter', { world: this });
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return { ms, trees: this.scatter ? this.scatter.count : 0, detail: this.detail ? this.detail.count : 0, snapped };
   }
 
   /** `moveSphereMesh` over `world.colliders` (roller.js wiring is ME-11b - not called from here yet). */
