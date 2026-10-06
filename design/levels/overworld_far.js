@@ -352,7 +352,9 @@
 
   // ---------------- analytic type ----------------
   var TYPE_IDS = { grass: 0, forest: 1, water: 2, rock: 3, path: 4 };
-  function typeAt(x, y) {
+  // ED-TERRAIN-1b: optional hxp/hxm/hyp/hym = heightAt(x+e,y)/(x-e,y)/(x,y+e)/(x,y-e), e = slopeEps, handed in by a
+  // baker that already holds those heights (bit-identical to computing them here; saves 4 heightAt per sample).
+  function typeAt(x, y, hxp, hxm, hyp, hym) {
     checkXY('typeAt', x, y);
     var R = DEF.recipe, s = DEF.seed, T = DEF.tower, i;
     var dr = Math.abs(x - riverX(y));
@@ -360,7 +362,9 @@
     if (EDITS !== null) { var ep = EDITS.typePaint(x, y); if (ep >= 0) return ep; }   // edit paint: over path/old paints, never over the river
     if (pathDist(x, y) < R.path.halfWidth) return 4;
     for (i = PAINTS.length - 1; i >= 0; i--) { var p = PAINTS[i]; if (shapeDist(p, x, y) <= 0) { if (p.mode === 'set') return TYPE_IDS[p.type]; break; } }
-    var e = R.slopeEps, hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e), hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e);
+    var e = R.slopeEps, hx, hy;
+    if (hxp === undefined) { hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e); hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e); }
+    else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
     if (slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold)) return 3;
     if (fbm(x / F.scale + 17, y / F.scale - 9, s + 13, F.octaves, 0.5, 2) > F.threshold && slope < F.maxSlope &&

@@ -194,12 +194,34 @@ function fillFarLevel(terrain, level, cell, pos, nrm, idx, vertBase, idxMainOff,
 }
 
 /** @typedef {{cols: number[], rows: number[], perim: number[][]}} FarLodLayout */
-/** @typedef {import('./MeshData.js').MeshData & {_desc: Object, _lod0: FarLodLayout}} FarTileMesh */
+/** @typedef {import('./MeshData.js').MeshData & {_desc: Object, _lod0: FarLodLayout, _lod1: FarLodLayout}} FarTileMesh */
+
+/** Fills a far tile's whole vertex/index/bbox data (both LODs) into caller-owned arrays - shared by the first build and the in-place re-fill in `markNearDirty`. */
+function fillFarTile(terrain, lod0, lod1, pos, nrm, idx, bb) {
+  const cell = terrain.mapCell;
+  const nc0 = lod0.cols.length, nr0 = lod0.rows.length, perim0 = lod0.perim.length;
+  const nc1 = lod1.cols.length, nr1 = lod1.rows.length, perim1 = lod1.perim.length;
+  const vCount0 = nc0 * nr0 + perim0, vCount1 = nc1 * nr1 + perim1;
+  const totalV = vCount0 + vCount1;
+  const mainCap0 = (nc0 - 1) * (nr0 - 1) * 6, skirtCap0 = perim0 * 6;
+  const mainCap1 = (nc1 - 1) * (nr1 - 1) * 6;
+  const OFF_MAIN0 = 0, OFF_SKIRT0 = mainCap0;
+  const OFF_MAIN1 = mainCap0 + skirtCap0, OFF_SKIRT1 = OFF_MAIN1 + mainCap1;
+  const scratchN = { x: 0, y: 0, z: 1 };
+  fillFarLevel(terrain, lod0, cell, pos, nrm, idx, 0, OFF_MAIN0, OFF_SKIRT0, scratchN);
+  fillFarLevel(terrain, lod1, cell, pos, nrm, idx, vCount0, OFF_MAIN1, OFF_SKIRT1, scratchN);
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let v = 0; v < totalV; v++) {
+    const px = pos[v * 3], py = pos[v * 3 + 1], pz = pos[v * 3 + 2];
+    if (px < x0) x0 = px; if (py < y0) y0 = py; if (pz < z0) z0 = pz;
+    if (px > x1) x1 = px; if (py > y1) y1 = py; if (pz > z1) z1 = pz;
+  }
+  bb[0] = x0; bb[1] = y0; bb[2] = z0; bb[3] = x1; bb[4] = y1; bb[5] = z1;
+}
 
 /** Builds one far tile's MeshData (LOD0 + LOD1, both with skirts) once. Index layout is FIXED forever (`ranges` never change size): band-under exclusion (`applyFarExclusion`) only ever rewrites LOD0 main-quad index VALUES in place (real quad <-> degenerate 0,0,0 triangle), never resizes anything.
  * @returns {FarTileMesh} */
 function buildFarTileMesh(terrain, desc) {
-  const cell = terrain.mapCell;
   const lod0 = buildFarLodLayout(desc, 1);
   const lod1 = buildFarLodLayout(desc, FAR_LOD1_STEP);
   const nc0 = lod0.cols.length, nr0 = lod0.rows.length, perim0 = lod0.perim.length;
@@ -216,30 +238,21 @@ function buildFarTileMesh(terrain, desc) {
   const pos = new Float32Array(totalV * 3);
   const nrm = new Uint32Array(totalV);
   const idx = new Uint32Array(idxCap);
-  const scratchN = { x: 0, y: 0, z: 1 };
-
-  fillFarLevel(terrain, lod0, cell, pos, nrm, idx, 0, OFF_MAIN0, OFF_SKIRT0, scratchN);
-  fillFarLevel(terrain, lod1, cell, pos, nrm, idx, vCount0, OFF_MAIN1, OFF_SKIRT1, scratchN);
-
-  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
-  for (let v = 0; v < totalV; v++) {
-    const px = pos[v * 3], py = pos[v * 3 + 1], pz = pos[v * 3 + 2];
-    if (px < x0) x0 = px; if (py < y0) y0 = py; if (pz < z0) z0 = pz;
-    if (px > x1) x1 = px; if (py > y1) y1 = py; if (pz > z1) z1 = pz;
-  }
+  const bb = new Float64Array(6);
+  fillFarTile(terrain, lod0, lod1, pos, nrm, idx, bb);
 
   /** @type {FarTileMesh} */
   const mesh = {
     version: /** @type {1} */ (1), id: `terrain:far${desc.tileIndex}`, layout: /** @type {'terrain'} */ ('terrain'),
     pos, uv: new Float32Array(0), nrm, flat: new Uint32Array(0), aux: new Float32Array(0),
     idx, triCount: idxCap / 3,
-    bbox: new Float64Array([x0, y0, z0, x1, y1, z1]),
+    bbox: bb,
     ranges: [
       { start: OFF_MAIN0 / 3, count: (mainCap0 + skirtCap0) / 3 },
       { start: OFF_MAIN1 / 3, count: (mainCap1 + skirtCap1) / 3 },
     ],
     matKeys: [], matsResolved: true, meshVersion: 1,
-    _desc: desc, _lod0: lod0,
+    _desc: desc, _lod0: lod0, _lod1: lod1,
   };
   return mesh;
 }
@@ -635,6 +648,77 @@ export class TerrainMeshSet {
     this._excludedTileSet = nextExcluded;
   }
 
+  // -- live terrain edits (ED-TERRAIN-1b, arch 37.12) ------------------------
+
+  /**
+   * Rebuilds ONLY what a `Terrain.rebakeRect` dirtied: the near vertices/normals in the band-local sample
+   * rect (`terrain.near.dirty`, or the `rect` argument), the stitch when the rect is near the band edge, and the
+   * far tiles touching `terrain.farDirty`. Edits the published near chunks in place (new `meshVersion`);
+   * never takes the band-flip identity path. Consumes the dirty rects. Call right after `rebakeRect`.
+   * @param {{i0:number,j0:number,i1:number,j1:number}} [rect]
+   */
+  markNearDirty(rect) {
+    const terrain = this.terrain, g = terrain.near;
+    if (!g) return;
+    const r = rect || g.dirty;
+    const fd = terrain.farDirty;
+    g.dirty = null; terrain.farDirty = null;
+    if (this._builtFor !== g) { this._buildingFor = null; return; } // first/flip build pending: it reads the new data anyway
+    if (r) {
+      const w = g.w, cell = g.cell, sN = this._scratchN;
+      for (let j = r.j0; j <= r.j1; j++) {
+        const y = g.y0 + (j + 0.5) * cell;
+        for (let i = r.i0; i <= r.i1; i++) {
+          terrain.groundNormalAt(g.x0 + (i + 0.5) * cell, y, sN);
+          const o3 = (i + j * w) * 3;
+          this._bandNrm[o3] = sN.x; this._bandNrm[o3 + 1] = sN.y; this._bandNrm[o3 + 2] = sN.z;
+        }
+      }
+      for (let ky = 0; ky < 3; ky++) {
+        const rowInfo = this._chunkRow[ky];
+        if (r.j1 < rowInfo.start || r.j0 > rowInfo.end) continue;
+        for (let kx = 0; kx < 3; kx++) {
+          const colInfo = this._chunkCol[kx];
+          if (r.i1 < colInfo.start || r.i0 > colInfo.end) continue;
+          this._patchNearChunk(this.near[ky * 3 + kx], g, colInfo, rowInfo, r);
+        }
+      }
+      const m = 20; // samples (40 m): the far ring + far normals reach ~20 m past a rect
+      if (r.i0 <= m || r.j0 <= m || r.i1 >= w - 1 - m || r.j1 >= g.h - 1 - m) this._rebuildStitch(g);
+    }
+    if (fd && this._farBuilt) {
+      const tiles = this._farTiles;
+      for (let k = 0; k < tiles.length; k++) {
+        const t = tiles[k];
+        if (fd.i1 + 1 < t.colStart || fd.i0 - 1 > t.colEnd || fd.j1 + 1 < t.rowStart || fd.j0 - 1 > t.rowEnd) continue;
+        const mesh = this.far[k]; // refilled in place (no allocation); idx is rewritten, so re-carve below
+        fillFarTile(terrain, mesh._lod0, mesh._lod1, mesh.pos, mesh.nrm, mesh.idx, mesh.bbox);
+        mesh.meshVersion++;
+        if (this._excludedTileSet.has(k)) applyFarExclusion(terrain, mesh, this._bandRectFor(g));
+      }
+      this._farBuiltVersion = terrain.farVersion;
+    }
+  }
+
+  _patchNearChunk(mesh, g, colInfo, rowInfo, r) {
+    const cc = colInfo.count, rc = rowInfo.count;
+    const li0 = Math.max(r.i0, colInfo.start) - colInfo.start, li1 = Math.min(r.i1, colInfo.end) - colInfo.start;
+    const lj0 = Math.max(r.j0, rowInfo.start) - rowInfo.start, lj1 = Math.min(r.j1, rowInfo.end) - rowInfo.start;
+    for (let lj = lj0; lj <= lj1; lj++) {
+      const gj = rowInfo.start + lj;
+      for (let li = li0; li <= li1; li++) {
+        const srcIdx = colInfo.start + li + gj * g.w, dstV = li + lj * cc;
+        mesh.pos[dstV * 3 + 2] = g.hDraw[srcIdx];
+        const nOff = srcIdx * 3;
+        mesh.nrm[dstV] = packNormalOct(this._bandNrm[nOff], this._bandNrm[nOff + 1], this._bandNrm[nOff + 2]);
+      }
+    }
+    let minZ = Infinity, maxZ = -Infinity;
+    for (let v = 0; v < cc * rc; v++) { const z = mesh.pos[v * 3 + 2]; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z; }
+    mesh.bbox[2] = minZ; mesh.bbox[5] = maxZ;
+    mesh.meshVersion = ++this._nearVersion;
+  }
+
   // -- public API -----------------------------------------------------------
 
   /**
@@ -645,6 +729,8 @@ export class TerrainMeshSet {
   step(msBudget = 2) {
     const terrain = this.terrain;
     const t0 = now();
+
+    if (terrain.near && (terrain.near.dirty || terrain.farDirty)) this.markNearDirty(); // a rebakeRect nobody told us about
 
     if (terrain.farReady && (!this._farBuilt || this._farBuiltVersion !== terrain.farVersion)) {
       this._buildFarTiles();

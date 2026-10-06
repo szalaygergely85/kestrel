@@ -57,6 +57,8 @@ export class Terrain {
     this.farMinH = 0;
     this.farReady = false;
     this.farVersion = 0;
+    this._rbH = null; // rebakeRect height scratch (grow-only)
+    this.farDirty = null; // ED-TERRAIN-1b: far texel rect touched by rebakeRect, consumed by TerrainMeshSet.markNearDirty
     this._bakeRow = 0;
     // US-018 follow-up: column offset within `_bakeRow` - `bakeFarStep`
     // checks the time budget every `BAKE_CHECK_COLS` columns, not just once
@@ -186,6 +188,112 @@ export class Terrain {
       version: (this.near ? this.near.version : 0) + 1,
     };
     this.nearReady = true;
+  }
+
+  /**
+   * ED-TERRAIN-1b (arch 37.12): live dirty re-bake after a terrain edit. (x0,y0)-(x1,y1) is the world
+   * rect of the EDITED lattice samples (e.g. `{i0,j0,i1,j1} * editCell` from `applyDab`). Re-bakes only the
+   * near samples the edit can reach (rect + one cell of bilinear reach + the recipe's `slopeEps` for typeAt),
+   * and the far texels under it, writing exactly what a full bake would (bit-identical; same formulas).
+   * Sets `near.dirty` (band-local inclusive sample rect, unioned until `TerrainMeshSet.markNearDirty` consumes
+   * it) and `farDirty` (far texel rect), bumps `near.version`/`farVersion`, only WIDENS minH/maxH (call
+   * `recomputeBounds()` on stroke end). Allocation-free after the first call.
+   * @returns {{i0:number,j0:number,i1:number,j1:number}|null} the near dirty rect (band-local) or null
+   */
+  rebakeRect(x0, y0, x1, y1) {
+    if (this.nearReady) this._chunks.fill(null), this._centerCx = null; // 3x3 chunk cache is stale now
+    const eps = (this.recipe.recipe && this.recipe.recipe.slopeEps) || this.nearCell;
+    const g = this.near;
+    let out = null;
+    if (g) {
+      const c = g.cell, m = c + eps;
+      const i0 = Math.max(0, Math.ceil((x0 - m - g.x0) / c - 0.5)), i1 = Math.min(g.w - 1, Math.floor((x1 + m - g.x0) / c - 0.5));
+      const j0 = Math.max(0, Math.ceil((y0 - m - g.y0) / c - 0.5)), j1 = Math.min(g.h - 1, Math.floor((y1 + m - g.y0) / c - 0.5));
+      if (i1 >= i0 && j1 >= j0) {
+        const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId, util = this.util;
+        let minH = g.minH, maxH = g.maxH;
+        // Fast path: typeAt's slope reads heightAt at +-eps, which (eps == near cell) are the neighbour sample
+        // centres, so one double-precision height pass over the rect + 1 ring feeds both height and type
+        // (bit-identical: the same heightAt calls on the same coordinates). Otherwise plain typeAt.
+        const fast = eps === c, hw = i1 - i0 + 3, hh = j1 - j0 + 3;
+        if (fast) {
+          if (!this._rbH || this._rbH.length < hw * hh) this._rbH = new Float64Array(hw * hh);
+          const H = this._rbH;
+          for (let j = 0; j < hh; j++) {
+            const y = g.y0 + (j0 - 1 + j + 0.5) * c;
+            for (let i = 0; i < hw; i++) H[i + j * hw] = util.heightAt(g.x0 + (i0 - 1 + i + 0.5) * c, y);
+          }
+        }
+        for (let j = j0; j <= j1; j++) {
+          const y = g.y0 + (j + 0.5) * c;
+          for (let i = i0; i <= i1; i++) {
+            const x = g.x0 + (i + 0.5) * c, k = i + j * g.w;
+            let t;
+            if (fast) {
+              const q = (i - i0 + 1) + (j - j0 + 1) * hw, H = this._rbH;
+              t = util.typeAt(x, y, H[q + 1], H[q - 1], H[q + hw], H[q - hw]);
+              g.height[k] = H[q];
+            } else {
+              t = util.typeAt(x, y);
+              g.height[k] = util.heightAt(x, y);
+            }
+            g.type[k] = t;
+            const hv = g.height[k] + (t === forestId ? canopy : 0); // float32 height, double sum like bakeNearBand
+            g.hDraw[k] = hv;
+            if (hv < minH) minH = hv;
+            if (hv > maxH) maxH = hv;
+          }
+        }
+        g.minH = minH; g.maxH = maxH; g.version++;
+        const d = g.dirty || (g.dirty = { i0, j0, i1, j1 });
+        if (d.i0 > i0) d.i0 = i0; if (d.j0 > j0) d.j0 = j0; if (d.i1 < i1) d.i1 = i1; if (d.j1 < j1) d.j1 = j1;
+        out = d;
+      }
+    }
+    if (this.farReady) {
+      const c = this.mapCell, m = c + eps;
+      const i0 = Math.max(0, Math.ceil((x0 - m) / c - 0.5)), i1 = Math.min(this.mapW - 1, Math.floor((x1 + m) / c - 0.5));
+      const j0 = Math.max(0, Math.ceil((y0 - m) / c - 0.5)), j1 = Math.min(this.mapH - 1, Math.floor((y1 + m) / c - 0.5));
+      if (i1 >= i0 && j1 >= j0) {
+        const canopy = this._canopyM, forestId = this._forestTypeId, util = this.util;
+        const hi0 = Math.ceil((x0 - c) / c - 0.5), hi1 = Math.floor((x1 + c) / c - 0.5);
+        const hj0 = Math.ceil((y0 - c) / c - 0.5), hj1 = Math.floor((y1 + c) / c - 0.5);
+        for (let j = j0; j <= j1; j++) {
+          const y = (j + 0.5) * c, rowH = j >= hj0 && j <= hj1;
+          for (let i = i0; i <= i1; i++) {
+            const x = (i + 0.5) * c, k = i + j * this.mapW;
+            const t = util.typeAt(x, y);
+            if (rowH && i >= hi0 && i <= hi1) this.farH[k] = util.heightAt(x, y);
+            this.farType[k] = t;
+            const hv = this.farH[k] + (t === forestId ? canopy : 0);
+            this.farHDraw[k] = hv;
+            if (hv > this.farMaxH) this.farMaxH = hv;
+            if (hv < this.farMinH) this.farMinH = hv;
+          }
+        }
+        this.farVersion++;
+        const d = this.farDirty || (this.farDirty = { i0, j0, i1, j1 });
+        if (d.i0 > i0) d.i0 = i0; if (d.j0 > j0) d.j0 = j0; if (d.i1 < i1) d.i1 = i1; if (d.j1 < j1) d.j1 = j1;
+      }
+    }
+    return out;
+  }
+
+  /** Exact near/far height-draw bounds after a stroke (rebakeRect only widens them). */
+  recomputeBounds() {
+    const g = this.near;
+    if (g) {
+      let minH = Infinity, maxH = -Infinity;
+      const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId; // same double sums as bakeNearBand
+      for (let i = 0; i < g.hDraw.length; i++) { const v = g.height[i] + (g.type[i] === forestId ? canopy : 0); if (v < minH) minH = v; if (v > maxH) maxH = v; }
+      g.minH = minH; g.maxH = maxH; g.version++;
+    }
+    if (this.farReady) {
+      let minH = Infinity, maxH = -Infinity;
+      const canopy = this._canopyM, forestId = this._forestTypeId; // same double sums as _finishBake
+      for (let i = 0; i < this.farH.length; i++) { const v = this.farH[i] + (this.farType[i] === forestId ? canopy : 0); if (v < minH) minH = v; if (v > maxH) maxH = v; }
+      this.farMinH = minH; this.farMaxH = maxH; this.farVersion++;
+    }
   }
 
   /** Nearest (not bilinear) `near.type` texel at (x, y), or null outside the band/before `nearReady`. */

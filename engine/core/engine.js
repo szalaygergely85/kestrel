@@ -302,5 +302,9 @@ export function createEngine(opts) {
     scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine);
     engine.particles.clear(); // US-053a: particles are transient, never saved
   });
+  // ED-TERRAIN-1b: a terrain stroke re-scattered trees/detail (World#refreshTerrainScatter) - rebind the instance groups.
+  events.on('world:scatter', ({ world }) => {
+    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine);
+  });
   return engine;
 }
