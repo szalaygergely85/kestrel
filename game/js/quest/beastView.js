@@ -12,6 +12,8 @@ import { STATE_NOTICE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STAT
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
+const NOTICE_UP_M = 1.1;    // US-079c (boarFx.notice.noticeUpM): the `!` glyph 0.4 m over the ears
+const NOTICE_POP_STEPS = 6; // US-079c (boarFx.notice.popSteps): white-hot pop style for the first 6 steps
 
 // State -> clip for the alive, non-hurt/non-flinch fallback, mirroring boarFx.clipFor.state (wander/notice/recover/
 // return -> idle, chase/charge -> charge, windup -> windup, stagger -> flinch).
@@ -44,7 +46,8 @@ export function frameTFromElapsed(elapsed, durations, out) {
  * @param {ReturnType<import('./sim/beastSim.js').createBeastSim>} sim
  * @param {any} world
  * @param {any} overlay engine.overlay (RE-07)
- * @param {{beastNotice: number}} styleIds resolved overlay style ids (overlay.styleId('beastNotice'))
+ * @param {{beastNotice: number, beastNoticePop?: number}} styleIds resolved overlay style ids
+ *   (overlay.styleId('beastNotice') and overlay.styleId('beastNoticePop'))
  */
 export function presentBeasts(sim, world, overlay, styleIds) {
   if (!sim) return;
@@ -82,7 +85,12 @@ export function presentBeasts(sim, world, overlay, styleIds) {
     }
 
     if (st === STATE_NOTICE) {
-      overlay.bar(t.x, t.y, t.z + 1.1, 1, 1, styleIds.beastNotice, styleIds.beastNotice);
+      // US-079c (boarFx.notice): white-hot `!` pop for the first 6 steps, then the alert yellow `!` (falls back to
+      // beastNotice when main.js has not yet spread boarFx.overlay / resolved beastNoticePop).
+      const elapsed = sim.cfgSteps.notice - sim.timer[i];
+      const popStyle = styleIds.beastNoticePop !== undefined ? styleIds.beastNoticePop : styleIds.beastNotice;
+      const style = elapsed < NOTICE_POP_STEPS ? popStyle : styleIds.beastNotice;
+      overlay.bar(t.x, t.y, t.z + NOTICE_UP_M, 1, 1, style, style);
     }
   }
   void world;

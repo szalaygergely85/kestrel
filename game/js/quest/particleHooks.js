@@ -44,6 +44,7 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
   const sparksDefId = particles.defIdOf('sparks');
   const dustDefId = particles.defIdOf('dust');
   const corpseDustDefId = particles.defIdOf('corpseDust'); // US-079b (design/models/voxel_beast.js boarFx.attach)
+  const scrapeDustDefId = particles.defIdOf('scrapeDust'); // US-079c (boarFx.scrape.preset)
   const sparksN = (cfg.mounts && cfg.mounts.sparks && cfg.mounts.sparks.n) || 10;
   const sparksNHeavy = (cfg.mounts && cfg.mounts.sparks && cfg.mounts.sparks.nHeavy) || sparksN;
   const dustN = (cfg.mounts && cfg.mounts.dust && cfg.mounts.dust.n) || 10;
@@ -53,6 +54,7 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
   // 6 at step 15 = 14). The sim emits one `beast:sink` at the CORPSE->SINK transition and this hook is stateless, so
   // the two designer bursts collapse into a single 14-dust burst at the sink start (same total, noted deviation).
   const corpseDustN = 14;
+  const scrapeN = 4; // US-079c (boarFx.scrape.n): clods per windup kick
 
   function onHit(p) {
     if (!p || p.source !== 'player' || sparksDefId < 0) return;
@@ -66,6 +68,14 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
     particles.burstAt(corpseDustDefId, p.x, p.y, p.z, corpseDustN, 0, 0, 1);
   }
   const offSink = events.on('beast:sink', onSink);
+
+  // US-079c: a windup scrape kick (beastSim emits `beast:scrape` at boarFx.scrape.kickSteps) bursts scrapeDust at
+  // the forefeet, thrown backward along the stored dir (the sim precomputes -facing*0.8, z 0.6).
+  function onScrape(p) {
+    if (!p || scrapeDustDefId < 0) return;
+    particles.burstAt(scrapeDustDefId, p.x, p.y, p.z, scrapeN, p.dirX || 0, p.dirY || 0, p.dirZ || 0.6);
+  }
+  const offScrape = events.on('beast:scrape', onScrape);
 
   /**
    * Per fixed step (main.js: alongside vitals.step's slot, after integrate/resolveBodyContacts
@@ -85,7 +95,7 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
     particles.burstAt(dustDefId, t.x, t.y, t.z + 0.03, dustN); // feet + a touch above the floor
   }
 
-  return { step, dispose: () => { off(); offSink(); } };
+  return { step, dispose: () => { off(); offSink(); offScrape(); } };
 }
 
 /**

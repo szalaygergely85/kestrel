@@ -28,6 +28,8 @@ import { canSee } from './sight.js';
 import { SWORD_CFG } from '../swordConfig.js';
 import { createSwordSim, ST_HARD } from './sword.js';
 import { createTargeting } from '../targeting.js';
+import { createVitals } from './vitals.js';
+import { VITALS_DEFAULTS } from './vitalsConfig.js';
 import { presentBeasts, frameTFromElapsed, DIE_DURATIONS } from '../beastView.js';
 import {
   createBeastSim, STATE_WANDER, STATE_NOTICE, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN,
@@ -897,6 +899,141 @@ const hpOf = (sim, slot) => sim.entities[slot].components.health.hp;
   for (let k = 0; k < c.sim.cfgSteps.sink; k++) c.sim.step(1e6, 1e6, 0);
   presentBeasts(c.sim, null, overlay, styleIds);
   ok('view: hidden at GONE', vC.hidden === true);
+}
+
+// ===============================================================================================================
+// US-079c (backlog row US-079c + BUG-BOAR-OVERLAP): hard pairwise de-overlap, one charger at a time, 5 HP charge
+// contact, windup scrape emit.
+// ===============================================================================================================
+const BOAR_R = 0.45;
+
+{
+  // BUG-BOAR-OVERLAP: two boars charging the same point never get closer than rA+rB-1e-3.
+  const bx = 1461, by = 1031;
+  const px = bx - 30, py = by; // open field west of the tower: neither reaches the player in one charge
+  const { sim } = freshSim([beastEntity('b1', bx, by), beastEntity('b2', bx, by + 0.2)]);
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  sim.steer.x[1] = bx; sim.steer.y[1] = by + 0.2;
+  sim.state[0] = STATE_CHARGE; sim.state[1] = STATE_CHARGE;
+  sim.timer[0] = sim.cfgSteps.chargeMax; sim.timer[1] = sim.cfgSteps.chargeMax;
+  sim.cdx[0] = -1; sim.cdy[0] = 0;
+  sim.cdx[1] = -1; sim.cdy[1] = 0;
+  let minD = Infinity;
+  for (let k = 0; k < 240; k++) {
+    sim.step(px, py, 0);
+    const d = Math.hypot(sim.steer.x[1] - sim.steer.x[0], sim.steer.y[1] - sim.steer.y[0]);
+    if (d < minD) minD = d;
+  }
+  ok('two charging boars never closer than rA+rB-1e-3', minD >= 2 * BOAR_R - 1e-3, `minD=${minD.toFixed(6)}`);
+}
+
+{
+  // BUG-BOAR-OVERLAP: two idle boars spawned overlapping separate within 30 ticks.
+  const bx = 1461, by = 1031;
+  const { sim } = freshSim([beastEntity('b1', bx, by), beastEntity('b2', bx, by)]);
+  sim.timer[0] = 1000; sim.timer[1] = 1000; // keep them in the wander pause (no wander movement)
+  let separatedAt = -1;
+  for (let k = 1; k <= 30; k++) {
+    sim.step(1e6, 1e6, 0);
+    const d = Math.hypot(sim.steer.x[1] - sim.steer.x[0], sim.steer.y[1] - sim.steer.y[0]);
+    if (d >= 2 * BOAR_R - 1e-3) { separatedAt = k; break; }
+  }
+  ok('two idle overlapping boars separate within 30 ticks', separatedAt > 0, `separatedAt=${separatedAt}`);
+}
+
+{
+  // BUG-BOAR-OVERLAP: the de-overlap is deterministic (two fresh overlapping runs reach the same hash).
+  const bx = 1461, by = 1031;
+  const setup = (s) => {
+    s.steer.x[0] = bx; s.steer.y[0] = by;
+    s.steer.x[1] = bx; s.steer.y[1] = by + 0.2;
+    s.state[0] = STATE_CHARGE; s.state[1] = STATE_CHARGE;
+    s.timer[0] = s.cfgSteps.chargeMax; s.timer[1] = s.cfgSteps.chargeMax;
+    s.cdx[0] = -1; s.cdy[0] = 0;
+    s.cdx[1] = -1; s.cdy[1] = 0;
+  };
+  const a = freshSim([beastEntity('b1', bx, by), beastEntity('b2', bx, by)], 77);
+  const b = freshSim([beastEntity('b1', bx, by), beastEntity('b2', bx, by)], 77);
+  setup(a.sim); setup(b.sim);
+  for (let k = 0; k < 120; k++) {
+    a.sim.step(bx - 30, by, 0);
+    b.sim.step(bx - 30, by, 0);
+  }
+  ok('de-overlap replay hash stable (two fresh overlapping runs identical)',
+    hashAt(a.sim, a.sim.steer, a.sim.tick, a.rng) === hashAt(b.sim, b.sim.steer, b.sim.tick, b.rng));
+}
+
+{
+  // BUG-BOAR-OVERLAP / 37.16.2: the de-overlap skips inactive (dead) steer slots.
+  const bx = 1461, by = 1031;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by), beastEntity('b2', bx, by + 0.1)]);
+  events.emit('combat:hit', { source: 'player', target: 'b2', damage: 4, heavy: 1, dirX: 1, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword' });
+  sim.step(1e6, 1e6, 0); // emit beast:died + stepDead; b2's steer agent is removed (active 0, x/y zeroed)
+  ok('the killed slot is an inactive steer agent', sim.steer.active[1] === 0);
+  const deadX = sim.entities[1].transform.x, deadY = sim.entities[1].transform.y;
+  sim.state[0] = STATE_CHARGE; sim.timer[0] = sim.cfgSteps.chargeMax;
+  sim.cdx[0] = -1; sim.cdy[0] = 0; // charge west (open field)
+  for (let k = 0; k < 60; k++) sim.step(1431, 1031, 0);
+  ok('the dead slot is skipped by de-overlap (its transform stays at the death spot)',
+    sim.entities[1].transform.x === deadX && sim.entities[1].transform.y === deadY,
+    `moved to ${sim.entities[1].transform.x},${sim.entities[1].transform.y} from ${deadX},${deadY}`);
+}
+
+{
+  // Only one boar is in windup/charge at a time; the other waits (stays CHASE, holds position).
+  const bx = 1461, by = 1031;
+  const px = bx + 3, py = by; // 3 m east, within windupR (5 m), open field
+  const { world, sim } = freshSim([beastEntity('b1', bx, by), beastEntity('b2', bx, by + 1)]);
+  sim.state[0] = STATE_CHASE; sim.state[1] = STATE_CHASE;
+  sim.seen[0] = 1; sim.seen[1] = 1;
+  let everTwo = false, sawOne = false;
+  for (let k = 0; k < 300; k++) {
+    sim.step(px, py, groundZ(world, px, py));
+    let n = 0;
+    for (let i = 0; i < 2; i++) if (sim.state[i] === STATE_WINDUP || sim.state[i] === STATE_CHARGE) n++;
+    if (n > 1) everTwo = true;
+    if (n === 1) sawOne = true;
+  }
+  ok('never two boars in windup/charge at once (300 steps)', !everTwo);
+  ok('at least one boar winds up/charges (the fight actually runs)', sawOne);
+}
+
+{
+  // A charge contact costs the player 5 HP (damage 1 * vitals beastDamageScale 5).
+  const bx = 1461, by = 1031, px = bx, py = by - 0.5;
+  const { world, sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  const player = { id: 'player', transform: { x: px, y: py, z: groundZ(world, px, py) },
+    components: { body: { grounded: true, speedScale: 1 } } };
+  const vitals = createVitals(world, events, VITALS_DEFAULTS);
+  vitals.step(player, false); // establish the player ref + health before the hit
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  sim.state[0] = STATE_CHARGE; sim.timer[0] = sim.cfgSteps.chargeMax;
+  sim.cdx[0] = 0; sim.cdy[0] = -1; // straight north at the player
+  for (let k = 0; k < 10; k++) {
+    sim.step(px, py, groundZ(world, px, py));
+    vitals.step(player, false);
+  }
+  ok('a charge contact costs 5 HP (30 -> 25)', vitals.hp === 25, `hp=${vitals.hp}`);
+}
+
+{
+  // Windup emits beast:scrape at steps 9/18/27 (150/300/450 ms), thrown backward from the forefeet.
+  const bx = 1461, by = 1031;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  const scrapes = [];
+  events.on('beast:scrape', (p) => scrapes.push({ x: p.x, y: p.y, z: p.z, dirX: p.dirX, dirY: p.dirY, dirZ: p.dirZ, fx: sim.fx[0], fy: sim.fy[0] }));
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  sim.state[0] = STATE_WINDUP;
+  sim.timer[0] = sim.cfgSteps.windup;
+  for (let k = 0; k < sim.cfgSteps.windup; k++) sim.step(bx, by - 10, 0);
+  ok('windup emits exactly 3 beast:scrape events (150/300/450 ms)', scrapes.length === 3, `n=${scrapes.length}`);
+  const okScrape = scrapes.length === 3 && scrapes.every((s) =>
+    Math.abs(s.x - (bx + s.fx * 0.45)) < 1e-9
+    && Math.abs(s.y - (by + s.fy * 0.45)) < 1e-9
+    && Math.abs(s.dirX - (-s.fx * 0.8)) < 1e-9
+    && Math.abs(s.dirY - (-s.fy * 0.8)) < 1e-9
+    && Math.abs(s.dirZ - 0.6) < 1e-9);
+  ok('scrape is at the forefeet (0.45 m forward) thrown backward (-facing*0.8, z 0.6)', okScrape, JSON.stringify(scrapes));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

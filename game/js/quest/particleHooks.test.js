@@ -206,6 +206,26 @@ function defineAllPresets(p) {
   ok('dispose() drops the beast:sink listener - a sink after dispose spawns nothing new', particles.stats.spawned === 14);
 }
 
+// ---------------------------------------------------------------------------
+// US-079c: beast:scrape -> windup scrape dust (boarFx.scrape: 4 clods per kick).
+// ---------------------------------------------------------------------------
+{
+  const world = freshWorld();
+  const events = makeEvents();
+  const particles = createParticles();
+  defineAllPresets(particles);
+  const hooks = createParticleHooks(world, events, particles, PS, 20);
+
+  events.emit('beast:scrape', { id: 'b1', x: 5, y: 6, z: 0, dirX: 0, dirY: 0.8, dirZ: 0.6 });
+  particles.step(); // burstAt's pending count spawns on the next step()
+  ok('a beast:scrape bursts the windup scrape dust (4)', particles.stats.spawned === 4, particles.stats.spawned);
+
+  hooks.dispose();
+  events.emit('beast:scrape', { id: 'b1', x: 5, y: 6, z: 0, dirX: 0, dirY: 0.8, dirZ: 0.6 });
+  particles.step();
+  ok('dispose() drops the beast:scrape listener - a scrape after dispose spawns nothing new', particles.stats.spawned === 4);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
