@@ -28,6 +28,7 @@ import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 import swordMod from '../../../design/models/sword.js';
 import m3PropsMod from '../../../design/models/m3_props.js';
+import notesMod from '../../../design/models/notes.js'; // READ-01: ASSETS.notes + uiStyle.note (the note/notePinned prop models are m3_props.js 6c)
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
@@ -37,7 +38,7 @@ import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { dynamicTowerAssets } from '../../../tools/testing/dynamic-tower.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 
-paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; notesMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;

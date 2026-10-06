@@ -31,6 +31,7 @@ import wreckageMod from '../../../design/models/wreckage.js';
 import relayMod from '../../../design/models/relay.js';
 import swordMod from '../../../design/models/sword.js';
 import m3PropsMod from '../../../design/models/m3_props.js';
+import notesMod from '../../../design/models/notes.js'; // READ-01: ASSETS.notes + uiStyle.note (texts/panel; the note/notePinned prop models are m3_props.js 6c)
 // US-016: the `farTower` entity + `ferrumLights` horizon billboard world_m1.js references.
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
@@ -41,7 +42,7 @@ import titleMod from '../../../design/models/title.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
 
-paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; titleMod; // classic scripts: side effects on globalThis.ASSETS
+paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; farTowerMod; ferrumLightsMod; titleMod; notesMod; // classic scripts: side effects on globalThis.ASSETS
 const { assets } = await loadTestAssets(); // US-027b: tower/test_room/world_m1 now content/*.json
 
 let pass = 0, fail = 0;
@@ -105,7 +106,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ok('def.layers.tilt present, same grid size', Array.isArray(d.layers && d.layers.tilt) && d.layers.tilt.length === towerFull.level.height);
   const ids = (d.interactables || []).map((i) => i.id).sort();
   // US-078c: + the "sword" interactable (content/levels/tower.level.json, copied in from design/models/sword.js's levelPatch.towerSword).
-  ok('interactables ids = beacon, lantern, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'sword']), ids.join(','));
+  // READ-01: + the 4 "note*" interactables (hand-copied from design/models/notes.js's levelPatch.towerNotes.appendInteractables).
+  ok('interactables ids = beacon, lantern, note* x4, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'noteKeepLight', 'noteKeeperLog', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
   // US-026a-content: the tower's own 'end' trigger is gone - the ending
   // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
