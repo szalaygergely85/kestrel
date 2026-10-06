@@ -1,5 +1,17 @@
 # Kestrel – Product Backlog
 
+> **PC-B handoff 2026-10-06 (night, round 3 done):** Boars now have HP, fight legibly (no merging, one charger,
+> `!` telegraph + scrape), die, and respawn; the player has a 24-slot inventory with hands and a fireball start.
+> Everything from the DeepSeek trial list through round 3 is pushed and green.
+>
+> Done this session (all pushed): TOWER-BOULDER-01, ED-PLACE-BUG, UI-XHAIR-01, READ-01, US-079b0, US-079b
+> (incl. ARCH fixes), ED-DND-01, ED-FOLDERS-01, Quaternius imports, ART-01a, ART-04a, US-079c, US-091a1.
+> 232/232 suites pass; mesh route reaches the ending.
+>
+> For review/owner: US-079b (re-review after ARCH fixes), US-079c, US-091a1, ART-01a, ART-04a (arch-review / owner);
+> ED-DND-01 + ED-FOLDERS-01 (owner try). Trial log: docs/test-reports/deepseek-trial.md.
+> Next runnable DeepSeek item: VOID-RESPAWN-01 (fall-out safety net, "DeepSeek OK"). Paused for balance top-up.
+
 > **PC-B handoff 2026-10-06 (night):** The whole DeepSeek trial list is cleared. Boars have HP and die; the editor
 > has drag-and-drop AND asset folders; the crosshair/notes are in; 35 Quaternius models are imported; and the ART
 > look engine's JS foundation (look/roof map + clouds) is in, default OFF so nothing visibly changed yet.
