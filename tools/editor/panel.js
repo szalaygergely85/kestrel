@@ -158,6 +158,42 @@ export function classifyPlacement(world, pt) {
 }
 
 /**
+ * ED-DND-01: the world-space point a prop drop/placement actually lands on -
+ * the SAME snap `placeAt` applies to a click (ED-PLACE-BUG / ED-SNAP-1): a
+ * courtyard gap can't be placed (null); a structure cell keeps the raw pick
+ * point (the picked floor/wall surface IS the snap there); outside every
+ * structure the z snaps to the terrain surface via `worldGroundZ`/`floorAt`.
+ * Pure and renderer-agnostic (the snap reads `World.floorAt`, not the pick
+ * ray), so it is the same under either renderer and Node-testable. `placeAt`
+ * and the drag ghost both call this, so the ghost always matches where the
+ * item really lands.
+ * @param {{structureAt(x:number,y:number):Object|null, sectorAt(x:number,y:number):Object|null, floorAt(x:number,y:number):(number|null)}} world
+ * @param {{x:number,y:number,z:number}} pt the raw pick point
+ * @returns {{x:number,y:number,z:number}|null} null = no floor here (a gap)
+ */
+export function resolveDropPoint(world, pt) {
+  const { zone } = classifyPlacement(world, pt);
+  if (zone === 'gap') return null;
+  if (zone === 'structure') return { x: pt.x, y: pt.y, z: pt.z };
+  return snappedWorldPos(pt, worldGroundZ(world, pt.x, pt.y));
+}
+
+/**
+ * ED-DND-01: the pure drop decision for an asset drag's mouseup/Esc.
+ * `overView` = the pointer released over the viewport, `esc` = Esc was
+ * pressed. Returns 'place' (commit through `placeAt`) or 'cancel' (leave the
+ * doc untouched - main.js also un-arms the model). A courtyard gap/hole is
+ * NOT decided here: `placeAt` refuses it with its own message (the drop
+ * still passes the raw point so that refusal reads correctly).
+ * @param {boolean} overView
+ * @param {boolean} esc
+ * @returns {'place'|'cancel'}
+ */
+export function resolveAssetDrop(overView, esc) {
+  return (esc || !overView) ? 'cancel' : 'place';
+}
+
+/**
  * Model keys placeable as a world prop (US-063's place-a-prop model picker):
  * every registered model except UI-only sprites (`ui: true` - `title`/
  * `subtitle`/`mapCard` etc, design/models/title.js - not meant to be dropped

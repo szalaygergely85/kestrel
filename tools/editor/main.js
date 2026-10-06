@@ -13,7 +13,7 @@ import {
 } from './doc.js';
 import { createFrame, editorRenderer } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
-import { unprojectCell, rayPoint } from './ray.js';
+import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline } from './select.js';
 import {
@@ -24,8 +24,9 @@ import { createStack } from './undo.js';
 import { isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle } from './livepatch.js';
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
-  defaultWorldPropItem, snappedWorldPos, worldGroundZ, kindForSelection, validateItem, renderPropertyPanel,
+  defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
   classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS, isVoxelScaleItem,
+  resolveDropPoint, resolveAssetDrop,
 } from './panel.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile } from './io.js';
@@ -288,6 +289,12 @@ let yawDrag = null; // {entId, item, index, field, startYawDeg, startClientX} | 
 // ED-SCALE-1c (34.3): 'scale' drags to resize instead of move/spin - same
 // shape as yawDrag above.
 let scaleDrag = null; // {entId, item, index, startScale, startClientX} | null
+// ED-DND-01: asset drag-and-drop from the Assets tab. `moved` only flips once
+// the pointer travels past a small threshold, so a plain click on a row still
+// just ARMS the model (click-to-arm + click-to-place is untouched); a real
+// drag tracks `overView`/`rawPoint` (the pick point) / `ghostPoint` (the
+// snapped drop point, `resolveDropPoint`) for the viewport ghost marker.
+let assetDrag = null; // {modelKey, startClientX, startClientY, moved, overView, lastCol, lastRow, rawPoint, ghostPoint} | null
 
 function flash(msg) {
   lastPickText = msg;
@@ -965,6 +972,15 @@ function renderAssetsList(query) {
       e.preventDefault();
       armModelPlacement(key);
       renderAssetsList(assetsSearchInput.value); // refresh the "armed" highlight
+      // ED-DND-01: also arm a potential drag-and-drop. The drag only really
+      // begins once the pointer travels past a small threshold (see the
+      // window mousemove handler), so a plain click still just ARMS the model
+      // and the next viewport click places it, exactly as before.
+      assetDrag = {
+        modelKey: key,
+        startClientX: e.clientX, startClientY: e.clientY,
+        moved: false, overView: false, lastCol: -1, lastRow: -1, rawPoint: null, ghostPoint: null,
+      };
     });
     assetsListEl.appendChild(row);
   }
@@ -1168,9 +1184,10 @@ function placeAt(kind, pt, modelKeyOverride) {
     collection = 'entities';
     const file = doc.files.get(fileId);
     const id = mintId(file, 'prop');
-    // ED-SNAP-1: snap to the terrain surface instead of the raw ray-pick z (both renderers - the snap comes from
-    // World.floorAt, not the pick ray).
-    item = defaultWorldPropItem(id, snappedWorldPos(pt, worldGroundZ(world, pt.x, pt.y)), modelKey);
+    // ED-SNAP-1/ED-DND-01: snap to the terrain surface instead of the raw ray-pick z (both renderers - the snap
+    // comes from World.floorAt, not the pick ray). `resolveDropPoint` is the SAME pure helper the drag ghost uses,
+    // so a click and a drag land identically.
+    item = defaultWorldPropItem(id, resolveDropPoint(world, pt), modelKey);
   }
 
   const file = doc.files.get(fileId);
@@ -1352,6 +1369,40 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   const { col, row } = computeMouseCell(e);
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
+  // ED-DND-01: asset drag ghost. `moved` flips only past a 4px threshold, so
+  // a plain click on a row never enters this branch (click-to-arm is intact).
+  if (assetDrag) {
+    if (!assetDrag.moved) {
+      const dx = e.clientX - assetDrag.startClientX;
+      const dy = e.clientY - assetDrag.startClientY;
+      if (dx * dx + dy * dy < 16) return; // < 4px - still a click, not a drag yet
+      assetDrag.moved = true;
+    }
+    const overView = col >= 0 && col < rt.cols && row >= 0 && row < rt.rows;
+    if (!overView) {
+      assetDrag.overView = false;
+      assetDrag.rawPoint = null;
+      assetDrag.ghostPoint = null;
+      frame.markDirty();
+      return;
+    }
+    // Same pick a click makes (surface point, falling back 8 m out on open
+    // sky), then the same snap placeAt applies - so the ghost IS the drop
+    // point. Re-pick only when the cell changes: readback stays bounded to
+    // the drag gesture, never a per-frame cost.
+    if (!assetDrag.overView || assetDrag.lastCol !== col || assetDrag.lastRow !== row) {
+      assetDrag.overView = true;
+      assetDrag.lastCol = col;
+      assetDrag.lastRow = row;
+      const result = pickAt(col, row, pickCtx());
+      const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+      const point = result.world || rayPoint(ray, 8);
+      assetDrag.rawPoint = point;
+      assetDrag.ghostPoint = resolveDropPoint(world, point);
+    }
+    frame.markDirty();
+    return;
+  }
   if (yawDrag) {
     const data = world.entity(yawDrag.entId);
     if (data) {
@@ -1392,6 +1443,21 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
+  // ED-DND-01: finish an asset drag. A plain click (`!moved`) just clears the
+  // pending drag and leaves the model armed (click-to-arm + click-to-place,
+  // unchanged); a real drag drops through the SAME `placeAt` path or cancels.
+  if (assetDrag) {
+    const d = assetDrag;
+    assetDrag = null;
+    if (!d.moved) return;
+    if (resolveAssetDrop(d.overView, false) === 'place' && d.rawPoint) {
+      placeAt('prop', d.rawPoint, d.modelKey);
+    } else {
+      setPlaceMode(null);
+      flash('drag: cancelled');
+    }
+    return;
+  }
   if (yawDrag) {
     const data = world.entity(yawDrag.entId);
     const yd = yawDrag;
@@ -1489,6 +1555,12 @@ function update(dt) {
     scaleDrag = null;
     world.renderVersion++;
     frame.markDirty();
+  } else if (input.pressed('Escape') && assetDrag) {
+    // ED-DND-01: Esc cancels an in-progress asset drag (no commit, no record)
+    // and also un-arms the model - the whole gesture is abandoned.
+    assetDrag = null;
+    setPlaceMode(null);
+    flash('drag: cancelled');
   } else if (input.pressed('Escape') && placeMode) {
     setPlaceMode(null);
     flash('place: cancelled');
@@ -1565,10 +1637,32 @@ function drawHelpOverlay() {
   }
 }
 
+/**
+ * ED-DND-01: the drag-and-drop ghost - a `+` marker at the snapped drop point
+ * plus the model name, drawn into `rt` before `present()` (same route as the
+ * selection highlight). Only shown once the drag has actually started and the
+ * pointer is over a placeable cell; a gap (`ghostPoint === null`) shows
+ * nothing (the drop will refuse with placeAt's own message).
+ */
+function drawAssetGhost() {
+  if (!assetDrag || !assetDrag.moved || !assetDrag.overView || !assetDrag.ghostPoint) return;
+  const p = assetDrag.ghostPoint;
+  const proj = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, p, frame.renderer);
+  if (!(proj.depth > 0)) return;
+  const c = Math.round(proj.col), r = Math.round(proj.row);
+  if (c < 0 || c >= rt.cols || r < 0 || r >= rt.rows) return;
+  const goldHex = (assets.palette.colors && assets.palette.colors.gold) || '#ffd24a';
+  const dimHex = (assets.palette.colors && assets.palette.colors.uiDim) || '#8b949e';
+  const bgHex = '#0c120c'; // matches drawHelpOverlay's panel background
+  rt.setCell(c, r, '+', goldHex);
+  drawText(rt, c + 1, r, ` ${assetDrag.modelKey}`, dimHex, bgHex);
+}
+
 function drawOverlay(fb) {
   drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a', frame.renderer);
   if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer);
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
+  drawAssetGhost();
   if (helpOn) drawHelpOverlay();
   void fb;
 }
@@ -1614,13 +1708,14 @@ window.__editor = {
   undoStack,
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
-  placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), commitFieldEdit, renameSelected,
+  placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), resolveDropPoint: (pt) => resolveDropPoint(world, pt), commitFieldEdit, renameSelected,
   doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
   openModelPicker, closeModelPicker,
   rebuildNow: () => rebuildSched.flushNow(), get rebuildRuns() { return rebuildSched.runs; }, // ED-MESH-1d (headless measure)
   // US-067
   visState, toggleItemHidden, toggleItemLocked, armModelPlacement,
   get armedModelKey() { return armedModelKey; },
+  get assetDrag() { return assetDrag; },
   icons: { stats: iconStats, queue: iconQueue, cache: iconCache, refresh: refreshIcons,
     get renderer() { return iconRenderer; } },
   doImportVox,
