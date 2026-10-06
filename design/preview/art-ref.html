@@ -1,0 +1,1182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - ART-REF-01: the owner's two reference images drawn in coloured letters (palette / light / haze targets)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:30px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:16px 0 4px; color:#e8c27a; }
+  .note { color:#8a8778; font-size:12px; max-width:1220px; }
+  .fail { color:#ff3b3b; } .warn { color:#ffb04a; } .pass { color:#6fdc7a; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; image-rendering:pixelated; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls.local { position:static; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:34px; display:inline-block; }
+  table { border-collapse:collapse; font:12px Consolas, monospace; margin:4px 0 10px; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:left; vertical-align:top; }
+  th { color:#ffc23c; background:#10121a; }
+  .sw { display:inline-block; width:34px; height:14px; border:1px solid #333; vertical-align:middle; margin-right:4px; }
+  .cols { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .cols > div { flex:1 1 560px; }
+  ul, ol { margin:4px 0 8px 20px; padding:0; max-width:1220px; } li { margin:2px 0; }
+  code { color:#e8c27a; }
+  .tag { font:11px Consolas, monospace; padding:0 5px; border-radius:3px; }
+  .tag.ready { background:#1d3a22; color:#8fe09a; } .tag.small { background:#3a3218; color:#ffd27a; } .tag.new { background:#3a1d1d; color:#ff9a8a; }
+  button { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; border-radius:3px; padding:3px 9px; cursor:pointer; }
+</style>
+</head>
+<body>
+<h1>Kestrel : ART-REF-01 : the owner's two reference images, drawn in coloured letters</h1>
+<div class="note">
+  D-041 / D-042 item 3: ASCII stays; the art target is "the owner's two reference images drawn in coloured letters".
+  Both panels are <b>hand-composed mockups</b> (procedural painter in this page, not the game renderer) that only use what our
+  renderer can output per cell: <b>one ASCII glyph + fg colour + bg colour</b>. Glyphs come from the existing
+  <code>detail-pass.js</code> sets where possible (grassFace / grassMid / turfMid / ivy / moss / rockFace / stoneFace / gap /
+  brickFace / ironFace / strawFace / beam); four proposed sets are marked NEW. Shading uses the v2 rules
+  (<code>detailPass.shading</code>: lift 0.12, gamma 0.70, fgMin 0.55, tint 0.60) with sun + ambient + point lights + haze.
+  <b>Palette mode</b> "current" swaps every proposed colour for its nearest existing key and the light/haze values for today's
+  presets, so you can see what the same composition looks like with today's data; "split" shows current | proposed side by side.
+  Effects marked <span class="tag new">engine: not yet</span> (sun rays, emissive bloom halo) are only drawn in proposed mode.
+  <b>Proposals only: palette.js and game data are unchanged.</b> Works from file:// (classic scripts).
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>palette <select id="mode"><option value="proposed" selected>proposed</option><option value="current">current (today's keys)</option><option value="split">split: current | proposed</option></select></label>
+  <label>grid <select id="grid"><option value="160x60" selected>160 x 60</option><option value="240x90">240 x 90</option><option value="320x120">320 x 120</option><option value="400x150">400 x 150</option></select></label>
+  <label><input type="checkbox" id="anim" checked> animate (clouds, sway, flicker)</label>
+  <label><input type="checkbox" id="cshadow" checked> cloud shadows <span class="tag small">small engine</span></label>
+  <label><input type="checkbox" id="rays" checked> sun rays <span class="tag new">engine: not yet</span></label>
+  <label><input type="checkbox" id="bloom" checked> lantern bloom halo <span class="tag new">engine: not yet</span></label>
+  <span class="note" id="perf"></span>
+</div>
+
+<h2>A. Stylized autumn meadow - warm afternoon (Quaternius Stylized Nature look)</h2>
+<div class="controls local" id="ctlA"></div>
+<canvas id="cvA"></canvas>
+<div id="infoA"></div>
+
+<h2>B. Stylized fantasy house corner - low evening (Aurantia / Stylized Fantasy House Kit look)</h2>
+<div class="controls local" id="ctlB"></div>
+<canvas id="cvB"></canvas>
+<div id="infoB"></div>
+
+<h2>Current palette keys that look too dull / brown next to the references</h2>
+<div id="dull"></div>
+
+<h2>How to get there (proposals only - nothing is changed by this story)</h2>
+<ol id="howto">
+  <li><b>Palette additions</b> (append-only, ids never move): the NEW keys in the two tables above (sky cyan, meadow, lime,
+    moss rock, dirt, pebble, autumn yellow / orange / red, rust grass, birch, evening sun / ambient / bounce / haze, plaster,
+    timber beam, slate, terracotta, lantern warm, window glow, petalViolet). Then remap the outdoor materials:
+    <code>materials.grass</code> turf* -> meadow* (keep turf* for calm far ground), <code>leaf*</code> crowns -> lime* (near trees),
+    new autumn crown materials for the birch species, rocks -> mossRock* with mossCap tint on up-facing texels, path ground type -> dirt*.
+    Terracotta is needed because <code>copper*</code> is machine-only (style guide 2).</li>
+  <li><b>Outdoor light presets</b> <span class="tag ready">data</span> new <code>timeOfDay.afternoon</code> (sun sunAfternoon 1.15 @ elev 42,
+    ambient ambientSky 0.40) and <code>timeOfDay.evening</code> (sun sunEvening 0.95 @ elev 12, ambient ambientEvening 0.30);
+    light presets <code>lanternHang</code> (lanternWarm 0.9, r 3.0 m, flicker 6-10 Hz +-8 %) and <code>windowGlow</code>
+    (windowGlow 0.35, r 1.2 m). Outdoor ambient 0.12 is the single biggest reason today's world looks dark and brown:
+    shadows outdoors are lit by a bright sky.</li>
+  <li><b>Hemisphere ambient + shadow tint</b> <span class="tag small">small engine</span> ambient = sky colour from above,
+    ground-bounce colour from below (lerp by normal.z): sky blue 0.40 / grass green 0.12 by day, violet 0.30 / warm brown 0.10
+    in the evening. Optional <code>shadowTint</code> (shadowPurple, k 0.35) multiplied into sun-occluded fragments gives the
+    reference's purple-brown evening shadows. Both are a few lines in the light accumulation (JS + GPU twins).</li>
+  <li><b>Sky gradient + clouds</b> <span class="tag ready">data</span> + <span class="tag small">small engine</span>
+    sky stops skyCyanTop / skyCyanMid / skyCyanHorizon (day) and skyEveTop / skyEveMid / skyEveHorizon (evening);
+    <b>skyHorizon must equal the far haze colour</b> so hills melt into the sky. Clouds: a 2-octave fbm density in the sky pass
+    (threshold 0.5, band 2-35 deg elevation), glyph from the existing <code>sky</code> ramp, <b>bg carries the cloud body</b>
+    (lerp to cloudWhite by density), fg lit/shaded by comparing density above vs below (white tops, cool cloudShade
+    undersides), plus thin streaks (fbm stretched 3x horizontally) for the wisps. Cloud shadows = the same noise scrolled
+    on the ground, multiplied into the sun term (0.5 max).</li>
+  <li><b>Haze</b> <span class="tag small">small engine</span> warm distance haze instead of cool fog: day near colour hazeWarm
+    -> far colour skyCyanHorizon, start 15 m, full 700 m, curve 0.65, <b>max 0.78</b> (new cap: far hills keep their shape
+    and stay readable, never a flat wall); evening hazeEvening -> skyEveHorizon, 10 / 400 m, curve 0.7, max 0.6. fg goes to
+    the haze colour, bg to haze x 0.9, glyph level drops 1 step per 0.14 haze above 0.45 (thinner far glyphs).</li>
+  <li><b>Glyph sets</b> <span class="tag ready">data</span> NEW <code>crownClump</code> (round clumps for crowns and bushes,
+    shaded by a per-clump sphere normal blended 55/45 with the crown normal - the Quaternius clump look),
+    <code>bladeFace</code> (foreground grass blades <code>' | / \ v</code> that sway), <code>dirtFace</code> + pebble speckles
+    <code>o O .</code> for the path, <code>plasterFace</code> (smooth, sparse) for half-timber panels; timber uses the existing
+    oriented <code>beam</code> set. Flowers as single saturated specks <code>* @ o .</code> at every distance (dense flowers
+    read as coloured dots far away).</li>
+  <li><b>Houses: raking light relief</b> <span class="tag ready">engine has it</span> posts 0.16 m, beams 0.13 m, braces
+    0.10 m and the stone base proud of the plaster: with D-043 sun shadow maps the low evening sun draws the long shadow strip
+    right of every post and under every beam that makes reference B read. Modelling the depth is enough.</li>
+  <li><b>Not yet in the engine</b> <span class="tag new">new feature</span> (nice-to-have, after the above): screen-space
+    sun shafts (radial noise from the sun's screen position, added to bg); emissive bloom halo (bg += emissive colour x
+    0.42 x (1 - d/R)^2 around lanterns / windows, R 1.0 m). The mockup draws both only in proposed mode.</li>
+</ol>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">building ...</div></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script>
+(function () {
+'use strict';
+try {
+var P = window.ASSETS.palette, DP = window.ASSETS.detailPass, C = P.colors, S = DP.sets, DS = DP.shading;
+
+// ===========================================================================
+// 1. PROPOSED COLOURS  key: [hex, nearest CURRENT key (used in "current" mode), panel, note]
+// ===========================================================================
+var NEW = {
+  // --- A: sky, air, light ---
+  skyCyanTop:        ['#1c95e0', 'skyTop',          'A', 'day zenith: clear cyan-blue'],
+  skyCyanMid:        ['#52beef', 'skyMid',          'A', 'day sky middle'],
+  skyCyanHorizon:    ['#c8ecf3', 'skyHorizon',      'A', 'day horizon = far haze colour'],
+  cloudWhite:        ['#fbfdff', 'cloudLit',        'A', 'painterly cloud tops (bg carries the body)'],
+  cloudShade:        ['#b6cde2', 'steamDim',        'A', 'cloud undersides: cool, never grey'],
+  sunAfternoon:      ['#fff0c4', 'sun',             'A', 'warm afternoon sun, I 1.15'],
+  sunRay:            ['#fff4c8', 'sun',             'A', 'sun shafts (engine: not yet)'],
+  ambientSky:        ['#8ab8e6', 'ambient',         'A', 'outdoor sky fill (hemisphere top), I 0.40'],
+  bounceGrass:       ['#86a852', 'ambient',         'A', 'ground bounce (hemisphere bottom), I 0.12'],
+  hazeWarm:          ['#efe6c6', 'fogFarNear',      'A', 'distance haze near colour: warm, pale'],
+  // --- A: greens ---
+  meadowLight:       ['#b8ec5c', 'turfLight',       'A', 'sunlit grass tips'],
+  meadow:            ['#76c83a', 'turf',            'A', 'THE meadow green: saturated, yellow-green'],
+  meadowDark:        ['#3c8c2c', 'turfDark',        'A', 'grass in shade / clumps'],
+  meadowDeep:        ['#245a30', 'grassDark',       'A', 'deep pockets between blades'],
+  limeLight:         ['#dcf47a', 'leafLight',       'A', 'crown clump tops'],
+  lime:              ['#a4d83c', 'leaf',            'A', 'clumpy lime crowns + bushes'],
+  limeDark:          ['#5e9e2c', 'leafDark',        'A', 'crown undersides'],
+  fern:              ['#4ea83a', 'ivy',             'A', 'fern fronds, flower stems'],
+  // --- A: rock, path, bark ---
+  mossRockLight:     ['#bcc5a6', 'stoneLight',      'A', 'boulder lit facets: grey-green, not beige'],
+  mossRock:          ['#8f9a86', 'stoneMid',        'A', 'boulder body'],
+  mossRockDark:      ['#56625a', 'stoneDark',       'A', 'boulder foot / cracks'],
+  mossCap:           ['#88be46', 'moss',            'A', 'moss on up-facing rock + low stones'],
+  pebbleLight:       ['#d6d6ce', 'ashLight',        'A', 'path pebbles, lit'],
+  pebble:            ['#a4a49e', 'rock',            'A', 'path pebbles'],
+  dirtLight:         ['#e4b67c', 'woodCutLight',    'A', 'path, worn centre'],
+  dirt:              ['#c68c54', 'woodLight',       'A', 'dirt path'],
+  dirtDark:          ['#8e5e38', 'wood',            'A', 'path edges, ruts'],
+  barkGrey:          ['#6c6258', 'woodDark',        'A', 'slim tree trunks'],
+  // --- A: autumn ---
+  autumnYellowLight: ['#ffe874', 'petalYellowLight','A', 'yellow crown tops'],
+  autumnYellow:      ['#eab020', 'straw',           'A', 'yellow crowns (deeper + oranger than gold / alert)'],
+  autumnOrangeLight: ['#ffae4a', 'copperLight',     'A', 'orange crown tops'],
+  autumnOrange:      ['#f47a22', 'copper',          'A', 'THE autumn orange'],
+  autumnRed:         ['#c8422a', 'brick',           'A', 'red crowns (darker + oranger than danger)'],
+  autumnRedDark:     ['#8e2a24', 'brickDark',       'A', 'red crown undersides'],
+  rustGrassLight:    ['#f48e46', 'mushroomCapLight','A', 'orange-red grass tufts, lit'],
+  rustGrass:         ['#d8622c', 'mushroomCap',     'A', 'orange-red grass tufts'],
+  birchLight:        ['#f6f2e8', 'linenLight',      'A', 'white birch trunk, lit side'],
+  birch:             ['#d6d0c2', 'linen',           'A', 'birch trunk'],
+  birchMark:         ['#3e3836', 'mortar',          'A', 'birch bark marks'],
+  petalOrange:       ['#ff9a40', 'mushroomCapLight','A', 'orange flowers'],
+  mushroomOrange:    ['#f2742a', 'mushroomCap',     'A', 'orange mushroom caps'],
+  // --- B: evening light, sky, air ---
+  sunEvening:        ['#ffa24c', 'sunDusk',         'B', 'low evening sun, I 0.95 @ elev 12'],
+  ambientEvening:    ['#6a5a92', 'ambientDusk',     'B', 'evening sky fill: violet, I 0.30'],
+  bounceEvening:     ['#7c5c42', 'ambientDusk',     'B', 'warm ground bounce, I 0.10'],
+  shadowPurple:      ['#4a3048', 'ambientDusk',     'B', 'shadow tint target (purple-brown), k 0.35'],
+  hazeEvening:       ['#e4a682', 'fogDusk',         'B', 'evening haze: warm peach, not dark'],
+  skyEveTop:         ['#3e3c86', 'skyDuskTop',      'B', 'evening zenith'],
+  skyEveMid:         ['#c4708a', 'skyDuskMid',      'B', 'evening sky middle'],
+  skyEveHorizon:     ['#ffc07a', 'skyDuskHorizon',  'B', 'evening horizon = evening haze far colour'],
+  cloudEve:          ['#ffcf9e', 'cloudDusk',       'B', 'evening cloud tops'],
+  cloudEveShade:     ['#9a6a8e', 'skyDuskMid',      'B', 'evening cloud undersides'],
+  lanternWarm:       ['#ffc456', 'lantern',         'B', 'hanging lantern glass + light, I 0.9 r 3.0 m'],
+  lanternCore:       ['#fff2b4', 'flameCore',       'B', 'lantern flame core'],
+  windowGlow:        ['#ffb446', 'lantern',         'B', 'lit window glass + spill'],
+  // --- B: house materials ---
+  beamLight:         ['#7c5034', 'woodLight',       'B', 'timber beam, lit arris'],
+  beam:              ['#57361f', 'wood',            'B', 'THE half-timber beam: thick, dark brown'],
+  beamDark:          ['#33200f', 'woodDark',        'B', 'beam shade, soffit'],
+  plasterLight:      ['#f6e8c8', 'canvasLight',     'B', 'cream plaster, lit'],
+  plaster:           ['#e2cfa2', 'canvas',          'B', 'cream plaster panels'],
+  plasterDark:       ['#a68e66', 'canvasDark',      'B', 'plaster stains near beams'],
+  slateLight:        ['#a4b0bf', 'wayStoneLight',   'B', 'blue-grey base stones, lit'],
+  slate:             ['#717e90', 'wayStone',        'B', 'blue-grey base stones'],
+  slateDark:         ['#434b58', 'wayStoneDark',    'B', 'base stones shade + mortar'],
+  terracottaLight:   ['#ec9264', 'copperLight',     'B', 'flower pot rim (copper* is machine-only)'],
+  terracotta:        ['#c4643c', 'copper',          'B', 'terracotta pots, roof tiles'],
+  terracottaDark:    ['#7c3824', 'copperDark',      'B', 'pot shade, tile gaps'],
+  petalViolet:       ['#8f78e6', 'petalPink',       'B', "the reference's blue flowers, shifted to violet: mana blue stays reserved"],
+  doorDark:          ['#1e1418', 'mortar',          'B', 'dark doorway interior']
+};
+// Existing keys the mockups reuse UNCHANGED (they already fit the references).
+var REUSED = ['petalPink', 'petalYellow', 'petalYellowLight', 'petalWhite', 'straw', 'strawLight', 'strawDark', 'turf',
+              'iron', 'ironLight', 'ironDark', 'wood', 'woodLight', 'woodDark', 'leaf', 'leafDark', 'forest', 'forestDark'];
+
+// Proposed glyph sets (8 levels, ASCII only, no '.' at level 3 = the US-028 blank-share rule).
+var NS = {
+  crownClump:  ['.', '.:', ':*;', '*;o', 'o*%', '%o&', '&%@', '@&%'],
+  bladeFace:   ['.', ",'", "',`", "'|,", '|/\\', '/|\\"', '|\\/"', '\\|/v'],
+  dirtFace:    ['.', '.,', ",'`", ",:'", ":;,'", ';:,', ';=:', '=;:'],
+  plasterFace: ['.', ".'", "'`,", "`':", ":'`", ";:'", ':;=', ';=:']
+};
+var SET_POST = S.beam.dark.concat(S.beam.fam.v), SET_BEAM = S.beam.dark.concat(S.beam.fam.h);
+var SET_D1 = S.beam.dark.concat(S.beam.fam.d1), SET_D2 = S.beam.dark.concat(S.beam.fam.d2);
+var SKY_RAMP = P.ramps.sky;   // " .'-~=+*"
+
+// ===========================================================================
+// 2. LIGHT / HAZE PRESETS per panel: proposed targets vs today's values
+// ===========================================================================
+var PRESET = {
+  A: {
+    proposed: { sun: 'sunAfternoon', sunI: 1.15, az: -40, el: 42, amb: 'ambientSky', ambI: 0.40, gnd: 'bounceGrass', gndI: 0.12,
+                shadow: null, shadowK: 0,
+                hazeNear: 'hazeWarm', hazeFar: 'skyCyanHorizon', hazeStart: 15, hazeFull: 700, hazeMax: 0.78, hazeCurve: 0.65, hazeBlank: 9,
+                sky: ['skyCyanTop', 'skyCyanMid', 'skyCyanHorizon'], cloud: 'cloudWhite', cloudShade: 'cloudShade',
+                rays: 0.35, ray: 'sunRay', lantern: 'lanternWarm', lanternI: 0.9, lanternR: 3.0 },
+    current:  { sun: 'sun', sunI: 1.0, az: -40, el: 42, amb: 'ambient', ambI: 0.12, gnd: 'ambient', gndI: 0.12,
+                shadow: null, shadowK: 0,
+                hazeNear: 'fogFarNear', hazeFar: 'fogFar', hazeStart: 50, hazeFull: 1500, hazeMax: 1.0, hazeCurve: 0.7, hazeBlank: 0.85,
+                sky: ['skyTop', 'skyMid', 'skyHorizon'], cloud: 'cloudLit', cloudShade: 'steamDim',
+                rays: 0, ray: 'sun', lantern: 'lantern', lanternI: 0.55, lanternR: 3.5 }
+  },
+  B: {
+    proposed: { sun: 'sunEvening', sunI: 0.95, az: -68, el: 12, amb: 'ambientEvening', ambI: 0.30, gnd: 'bounceEvening', gndI: 0.10,
+                shadow: 'shadowPurple', shadowK: 0.35,
+                hazeNear: 'hazeEvening', hazeFar: 'skyEveHorizon', hazeStart: 10, hazeFull: 400, hazeMax: 0.6, hazeCurve: 0.7, hazeBlank: 9,
+                sky: ['skyEveTop', 'skyEveMid', 'skyEveHorizon'], cloud: 'cloudEve', cloudShade: 'cloudEveShade',
+                rays: 0.25, ray: 'sunEvening', lantern: 'lanternWarm', lanternI: 0.9, lanternR: 3.0 },
+    current:  { sun: 'sunDusk', sunI: 0.8, az: -68, el: 12, amb: 'ambientDusk', ambI: 0.10, gnd: 'ambientDusk', gndI: 0.10,
+                shadow: null, shadowK: 0,
+                hazeNear: 'fogDusk', hazeFar: 'fogDusk', hazeStart: 50, hazeFull: 1500, hazeMax: 1.0, hazeCurve: 0.7, hazeBlank: 0.85,
+                sky: ['skyDuskHorizon', 'skyDuskMid', 'skyDuskTop'].reverse(), cloud: 'cloudDusk', cloudShade: 'skyDuskMid',
+                rays: 0, ray: 'sunDusk', lantern: 'lantern', lanternI: 0.55, lanternR: 3.5 }
+  }
+};
+
+// ===========================================================================
+// 3. COLOUR LOOKUP, NOISE, MATH
+// ===========================================================================
+var CACHE = { proposed: {}, current: {} }, MISSING = {};
+function hexOfKey(key, mode) {
+  var e = NEW[key];
+  if (e) return mode === 'current' ? (C[e[1]] || null) : e[0];
+  return C[key] || null;
+}
+function col(key, mode) {
+  var m = CACHE[mode], v = m[key];
+  if (v) return v;
+  var h = hexOfKey(key, mode);
+  if (!h) { MISSING[key + ' (' + mode + ')'] = 1; h = '#ff00ff'; }
+  var n = parseInt(h.slice(1), 16);
+  return (m[key] = [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]);
+}
+function hash2(x, y) {
+  var h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y) {
+  var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  var a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, o) {
+  var s = 0, a = 0.5, f = 1, n = 0, i;
+  for (i = 0; i < (o || 4); i++) { s += a * vnoise(x * f + i * 17.3, y * f - i * 9.1); n += a; a *= 0.5; f *= 2.03; }
+  return s / n;
+}
+function mulberry32(a) {
+  return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+function smooth(e0, e1, x) { var t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); }
+function nrm(x, y, z) { var l = Math.sqrt(x * x + y * y + z * z) || 1; return [x / l, y / l, z / l]; }
+function lerp3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function lum(c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+function css(c) { return 'rgb(' + Math.round(clamp(c[0], 0, 1) * 255) + ',' + Math.round(clamp(c[1], 0, 1) * 255) + ',' + Math.round(clamp(c[2], 0, 1) * 255) + ')'; }
+function hexDist(a, b) {
+  var x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+  var dr = ((x >> 16) & 255) - ((y >> 16) & 255), dg = ((x >> 8) & 255) - ((y >> 8) & 255), db = (x & 255) - (y & 255);
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+// ===========================================================================
+// 4. GRID (16 x 9 "screen units" -> cells; units are isotropic at cell aspect 1.5)
+//    cell = { k:'lit'|'em'|'sky', s: glyph set (array) or fixed glyph (string), c: colour key, t: tone,
+//             n: normal [x right, y up, z to viewer], d: depth m (haze), a: albedo, ao, bgK,
+//             sway, gnd (receives caster + cloud shadows), cs (cloud shadows), wall (receives facade shadows),
+//             pz: protrusion out of the facade plane (units; facade shadow test), em/bgc/fl for emissive }
+// ===========================================================================
+function Grid(W, H) {
+  this.W = W; this.H = H; this.cells = new Array(W * H);
+  this.prot = new Float32Array(W * H).fill(-99);
+  this.casters = []; this.lights = []; this.emitters = [];
+}
+Grid.prototype.cx = function (X) { return Math.floor(X * this.W / 16); };
+Grid.prototype.cy = function (Y) { return Math.floor(Y * this.H / 9); };
+Grid.prototype.X = function (cx) { return (cx + 0.5) * 16 / this.W; };
+Grid.prototype.Y = function (cy) { return (cy + 0.5) * 9 / this.H; };
+Grid.prototype.each = function (x0, y0, x1, y1, fn) {
+  var a = Math.max(0, this.cx(x0)), b = Math.min(this.W - 1, this.cx(x1));
+  var c = Math.max(0, this.cy(y0)), d = Math.min(this.H - 1, this.cy(y1)), cx, cy;
+  for (cy = c; cy <= d; cy++) for (cx = a; cx <= b; cx++) fn(cx, cy, this.X(cx), this.Y(cy));
+};
+Grid.prototype.put = function (cx, cy, o) {
+  if (cx < 0 || cy < 0 || cx >= this.W || cy >= this.H || !o) return;
+  var i = cy * this.W + cx;
+  o.h = hash2(cx * 7 + 1, cy * 13 + 5);
+  this.cells[i] = o;
+  this.prot[i] = o.pz != null ? o.pz : -99;
+};
+Grid.prototype.get = function (cx, cy) {
+  if (cx < 0 || cy < 0 || cx >= this.W || cy >= this.H) return null;
+  return this.cells[cy * this.W + cx];
+};
+function ridge(g, top, bottom, mk) {
+  for (var cx = 0; cx < g.W; cx++) {
+    var X = g.X(cx), y0 = top(X);
+    if (y0 == null) continue;
+    var y1 = typeof bottom === 'function' ? bottom(X) : bottom;
+    for (var cy = Math.max(0, g.cy(y0)); cy <= Math.min(g.H - 1, g.cy(y1)); cy++) {
+      var Y = g.Y(cy);
+      if (Y < y0 || Y > y1) continue;
+      g.put(cx, cy, mk(X, Y, y0, cx, cy));
+    }
+  }
+}
+
+// --- shared painters -------------------------------------------------------
+// Clumpy crown / bush: union of sub-spheres; normal = 55 % own clump + 45 % whole crown (Quaternius clump look).
+function clumpBlob(g, X0, Y0, r, asp, fam, d, seed, opt) {
+  opt = opt || {};
+  var rnd = mulberry32(seed), subs = [{ x: X0, y: Y0, r: r * 0.78 }], n = 4 + Math.min(6, Math.floor(r * 8)), i;
+  for (i = 0; i < n; i++) {
+    var a = rnd() * Math.PI * 2;
+    subs.push({ x: X0 + Math.cos(a) * r * 0.5, y: Y0 + Math.sin(a) * r * 0.5 * asp, r: r * (0.42 + 0.32 * rnd()) });
+  }
+  subs.sort(function (p, q) { return p.y - q.y; });
+  subs.forEach(function (b, bi) {
+    var bry = b.r * asp;
+    g.each(b.x - b.r * 1.25, b.y - bry * 1.25, b.x + b.r * 1.25, b.y + bry * 1.25, function (cx, cy, X, Y) {
+      var dx = (X - b.x) / b.r, dy = (Y - b.y) / bry, ang = Math.atan2(dy, dx);
+      var rad = 1 + 0.22 * (vnoise(ang * 2.2 + bi * 7 + (seed % 97), seed * 0.013 + bi) - 0.5) * 2;
+      var q = Math.sqrt(dx * dx + dy * dy);
+      if (q > rad) return;
+      var sx = dx / rad, sy = -dy / rad, gx = (X - X0) / r, gy = -(Y - Y0) / (r * asp);
+      var nx = 0.55 * sx + 0.45 * gx, ny = 0.55 * sy + 0.45 * gy, l = nx * nx + ny * ny;
+      if (l > 0.96) { var k = Math.sqrt(0.96 / l); nx *= k; ny *= k; l = 0.96; }
+      var h = hash2(cx * 3 + seed, cy * 5 + bi), key = fam[1];
+      if (ny > 0.35 && h < 0.45) key = fam[0];
+      else if (ny < -0.25 || (q > rad * 0.85 && h < 0.35)) key = fam[2];
+      g.put(cx, cy, { k: 'lit', s: opt.set || NS.crownClump, c: key, t: 0.92 + 0.16 * h, n: [nx, ny, Math.sqrt(1 - l)],
+                      d: d, a: 0.85, ao: 0.62 + 0.38 * smooth(-0.8, 0.4, gy), bgK: 0.3, sway: opt.sway ? 1 : 0, pz: opt.pz });
+    });
+  });
+}
+function trunk(g, X, y0, y1, wU, d, birch, key) {
+  var w = Math.max(1, Math.round(wU * g.W / 16)), c0 = g.cx(X) - Math.floor((w - 1) / 2), cy, j;
+  for (cy = g.cy(y0); cy <= g.cy(y1); cy++) for (j = 0; j < w; j++) {
+    var cx = c0 + j, nx = w === 1 ? -0.3 : (j / (w - 1) * 2 - 1) * 0.75, h = hash2(cx * 5, cy * 7 + 3), o;
+    o = { k: 'lit', n: nrm(nx, 0, 1), d: d, a: 0.85, bgK: 0.22 };
+    if (birch) { o.s = h < 0.24 ? (h < 0.12 ? '=' : '-') : '|'; o.c = h < 0.24 ? 'birchMark' : (j === 0 ? 'birchLight' : 'birch'); }
+    else { o.s = h < 0.15 ? '!' : '|'; o.c = key; }
+    g.put(cx, cy, o);
+  }
+}
+// Blade tuft: 3 columns  \ | /  (centre tallest). keys = [light, mid].
+function tuft(g, X, Yb, hc, keys, d, wall) {
+  var c = g.cx(X), rb = g.cy(Yb), j, r;
+  for (j = -1; j <= 1; j++) {
+    var hj = j === 0 ? hc : hc - 1;
+    for (r = 0; r < hj; r++) {
+      var top = r === hj - 1, glyph = j < 0 ? '\\' : j > 0 ? '/' : (top ? "'" : '|');
+      if (!top && j !== 0) glyph = r === 0 ? ',' : (j < 0 ? '\\' : '/');
+      g.put(c + j, rb - r, { k: 'lit', s: glyph, c: top ? keys[0] : keys[1], n: nrm(j * 0.3, 0.6, 0.75), d: d, a: 0.85,
+                             bgK: 0.22, sway: 1 });
+    }
+  }
+}
+
+// ===========================================================================
+// 5. PANEL A - autumn meadow
+// ===========================================================================
+function buildMeadow(g) {
+  var HZ = 4.45, F = 7.2, sc = g.W * g.H / 9600, rnd = mulberry32(4242), i;
+  function groundD(Y) { return 1.6 * F / Math.max(0.05, Y - HZ); }
+  function Ym(X) { return 4.62 + 0.07 * Math.sin(X * 0.9 + 0.4); }
+  function ridgeA(X) { return X < 8.0 ? null : 4.6 - (X - 8.0) * 0.29 - 0.15 * Math.sin(X * 1.25) - 0.06 * vnoise(X * 6, 4); }
+  function ridgeL(X) { return X > 7.6 ? null : 3.35 + X * 0.27 + 0.16 * Math.sin(X * 1.6 + 0.5); }
+  function depthHill(Y) { return 65 + (4.65 - Y) * 50; }
+
+  // far ridges (pale with haze): forest + far autumn flecks
+  ridge(g, function (X) { return 3.72 + 0.22 * Math.sin(X * 0.6 + 1) + 0.1 * Math.sin(X * 1.9) - 0.09 * vnoise(X * 11, 1); }, HZ + 0.6,
+    function (X, Y, y0, cx, cy) { return { k: 'lit', s: S.ivy, c: hash2(cx, cy) < 0.5 ? 'forest' : 'leaf', n: nrm(0, 0.7, 0.7), d: 900, a: 0.8 }; });
+  ridge(g, function (X) { return 4.05 + 0.18 * Math.sin(X * 0.8 + 3) + 0.1 * Math.sin(X * 2.3) - 0.1 * vnoise(X * 9, 2); }, HZ + 0.6,
+    function (X, Y, y0, cx, cy) {
+      var nz = vnoise(X * 5, Y * 5);
+      return { k: 'lit', s: S.ivy, c: nz > 0.66 ? 'autumnOrange' : nz > 0.58 ? 'autumnYellow' : 'leaf', n: nrm(0.2, 0.7, 0.68), d: 420, a: 0.8 };
+    });
+  // autumn hillside ground (right)
+  ridge(g, ridgeA, function (X) { return Ym(X) + 0.02; }, function (X, Y, y0, cx, cy) {
+    var nz = fbm(X * 1.4, Y * 1.4, 3);
+    return { k: 'lit', s: S.grassMid, c: nz > 0.62 ? 'rustGrass' : nz > 0.5 ? 'meadowDark' : nz > 0.38 ? 'meadow' : 'autumnOrange',
+             n: nrm(-0.42, 0.8, 0.42), d: depthHill(Y), a: 0.8, gnd: 1, cs: 1 };
+  });
+  // left hill ground
+  ridge(g, ridgeL, function (X) { return Ym(X) + 0.02; }, function (X, Y, y0, cx, cy) {
+    var nz = fbm(X * 1.6, Y * 1.6, 3), d = 24 + (4.7 - Y) * 7;
+    return { k: 'lit', s: S.grassMid, c: nz > 0.64 ? 'meadowLight' : nz < 0.36 ? 'meadowDark' : nz < 0.42 ? 'mossCap' : 'meadow',
+             n: nrm(0.4, 0.84, 0.36), d: d, a: 0.82, gnd: 1, cs: 1 };
+  });
+  // meadow ground
+  ridge(g, Ym, 9.2, function (X, Y, y0, cx, cy) {
+    var d = groundD(Y), wx = (X - 8) * d / F, nz = fbm(wx * 0.25 + 3, d * 0.18, 3);
+    var key = nz > 0.6 ? 'meadowLight' : nz < 0.4 ? 'meadowDark' : 'meadow';
+    if (X > 10.5 && d < 14 && fbm(wx * 0.4, d * 0.4 + 5, 2) > 0.6) key = 'rustGrass';
+    if (d < 10 && hash2(cx, cy + 99) < 0.05) key = 'meadowDeep';
+    var set = d < 4.5 ? NS.bladeFace : d < 14 ? S.grassFace : d < 36 ? S.grassMid : S.turfMid;
+    return { k: 'lit', s: set, c: key, t: 0.94 + 0.12 * hash2(cx + 7, cy), n: nrm(0.05 * (nz - 0.5), 0.92, 0.38), d: d, a: 0.82,
+             bgK: 0.26, gnd: 1, sway: d < 8 ? 1 : 0, m: 1 };
+  });
+  // autumn trees on the hillside (white birch trunks, orange / red / yellow clump crowns)
+  var FAM = {
+    orange: ['autumnOrangeLight', 'autumnOrange', 'autumnRed'],
+    red:    ['autumnOrange', 'autumnRed', 'autumnRedDark'],
+    yellow: ['autumnYellowLight', 'autumnYellow', 'autumnOrange'],
+    lime:   ['limeLight', 'lime', 'limeDark'],
+    bush:   ['meadowLight', 'lime', 'meadowDark']
+  };
+  var trees = [], nT = Math.round(64 * Math.sqrt(sc));
+  for (i = 0; i < nT * 3 && trees.length < nT; i++) {
+    var X = 8.3 + rnd() * 7.9, rA = ridgeA(X);
+    if (rA == null || 4.7 - rA < 0.35) continue;
+    var Yb = rA + 0.25 + rnd() * (4.7 - rA - 0.25), u = rnd();
+    trees.push({ X: X, Yb: Yb, fam: u < 0.36 ? 'orange' : u < 0.6 ? 'red' : u < 0.88 ? 'yellow' : 'lime', seed: 100 + i });
+  }
+  trees.sort(function (a, b) { return a.Yb - b.Yb; });
+  trees.forEach(function (t) {
+    var d = depthHill(t.Yb), r = clamp(0.5 * (70 / d), 0.16, 0.55), Yc = t.Yb - r * 2.1;
+    trunk(g, t.X, Yc + r * 0.3, t.Yb, r * 0.16, d, true);
+    clumpBlob(g, t.X, Yc, r, 1.15, FAM[t.fam], d, t.seed);
+    g.casters.push({ X: t.X, Y: t.Yb, r: r * 0.8, h: r * 2.6 });
+  });
+  // dirt path with pebbles, winding into the meadow
+  for (var cy = g.cy(4.86); cy < g.H; cy++) {
+    var Y = g.Y(cy), d = groundD(Y);
+    if (d > 42) continue;
+    var xw = 0.6 + 2.8 * Math.sin(d / 7 - 0.3), Xc = 8 + xw * F / d;
+    var hw = 0.95 * F / d * (1 + 0.14 * (vnoise(d * 0.8, 3) - 0.5) * 2);
+    for (var cx = g.cx(Xc - hw); cx <= g.cx(Xc + hw); cx++) {
+      if (cx < 0 || cx >= g.W) continue;
+      var Xx = g.X(cx), e = Math.abs(Xx - Xc) / hw;
+      if (e > 1) continue;
+      var h = hash2(cx * 5 + 1, cy * 9 + 2), o = { k: 'lit', n: nrm(0, 0.95, 0.3), d: d, a: 0.8, bgK: 0.24, gnd: 1, cs: 1 };
+      if (e > 0.86 && h < 0.55) { o.s = S.grassFace; o.c = 'meadowDark'; }
+      else if (h < 0.035 + 0.10 * e * e) {
+        o.s = d < 7 ? (h < 0.02 ? 'O' : 'o') : d < 20 ? 'o' : '.';
+        o.c = hash2(cx, cy + 3) < 0.5 ? 'pebbleLight' : 'pebble'; o.a = 0.9; o.n = nrm(-0.2, 0.9, 0.4);
+      } else {
+        var dn = fbm(Xx * 1.2, d * 0.3, 2);
+        o.s = NS.dirtFace; o.c = e > 0.7 ? 'dirtDark' : dn > 0.6 ? 'dirtLight' : 'dirt'; o.t = 0.92 + 0.14 * hash2(cx + 3, cy);
+      }
+      g.put(cx, cy, o);
+    }
+  }
+  // left hill: slim lime trees + big rounded moss boulders, back to front
+  var objs = [
+    { t: 'tree', X: 0.95, Yb: 4.25, h: 3.7, r: 0.72 }, { t: 'tree', X: 2.75, Yb: 4.1, h: 3.0, r: 0.62 },
+    { t: 'tree', X: 5.55, Yb: 4.75, h: 2.7, r: 0.55 }, { t: 'tree', X: 6.75, Yb: 4.86, h: 2.1, r: 0.42 },
+    { t: 'rock', X: 1.55, Y: 4.55, r: 0.95 }, { t: 'rock', X: 3.45, Y: 4.85, r: 0.72 }, { t: 'rock', X: 0.2, Y: 5.05, r: 0.6 },
+    { t: 'rock', X: 4.75, Y: 5.15, r: 0.45 }, { t: 'rock', X: 13.3, Y: 5.35, r: 0.3 }
+  ];
+  objs.forEach(function (o) { o.base = o.t === 'tree' ? o.Yb : o.Y + o.r * 0.48; });
+  objs.sort(function (a, b) { return a.base - b.base; });
+  objs.forEach(function (o, k) {
+    if (o.t === 'tree') {
+      var d = 22 + (4.9 - o.Yb) * 6;
+      trunk(g, o.X, o.Yb - o.h * 0.62, o.Yb, 0.12, d, false, 'barkGrey');
+      clumpBlob(g, o.X, o.Yb - o.h * 0.7, o.r, 1.45, FAM.lime, d, 300 + k);
+      g.casters.push({ X: o.X, Y: o.Yb, r: o.r * 0.6, h: o.h * 0.9 });
+    } else {
+      boulder(g, o.X, o.Y, o.r, o.X > 10 ? 13 : 24 + (5.2 - o.Y) * 6, 500 + k);
+      g.casters.push({ X: o.X, Y: o.base, r: o.r, h: o.r * 1.2 });
+    }
+  });
+  // flowers (pink / orange / yellow / white specks), denser near
+  var nF = Math.round(240 * sc);
+  for (i = 0; i < nF; i++) {
+    var fx = rnd() * 16, fy = 4.75 + rnd() * 4.25, fd = groundD(fy);
+    if (rnd() > clamp(1.5 - fd / 22, 0.15, 1)) continue;
+    var u2 = rnd(), key = u2 < 0.38 ? 'petalPink' : u2 < 0.74 ? 'petalOrange' : u2 < 0.9 ? 'petalYellow' : 'petalWhite';
+    var nC = 1 + Math.floor(rnd() * 3), j;
+    for (j = 0; j < nC; j++) {
+      var px = g.cx(fx + (rnd() - 0.5) * 0.4), py = g.cy(fy + (rnd() - 0.5) * 0.15), cell = g.get(px, py);
+      if (!cell || !cell.m) continue;
+      var glyph = fd < 4.5 ? (rnd() < 0.5 ? '@' : '*') : fd < 14 ? '*' : fd < 30 ? 'o' : '.';
+      g.put(px, py, { k: 'lit', s: glyph, c: key, n: nrm(0, 0.6, 0.8), d: fd, a: 0.95, bgK: 0.25, gnd: 1 });
+      if (fd < 6) g.put(px, py + 1, { k: 'lit', s: '|', c: 'fern', n: nrm(0, 0.3, 0.95), d: fd, a: 0.85, bgK: 0.22, gnd: 1, sway: 1 });
+    }
+  }
+  // grass tufts in the foreground: green on the left, orange-red on the right
+  var nTu = Math.round(110 * sc);
+  for (i = 0; i < nTu; i++) {
+    var tx = rnd() * 16, ty = 6.4 + rnd() * 2.7, td = groundD(ty), c2 = g.get(g.cx(tx), g.cy(ty));
+    if (!c2 || !c2.m) continue;
+    var rust = tx > 9.5 ? rnd() < 0.65 : rnd() < 0.12;
+    tuft(g, tx, ty, clamp(Math.round((9.5 - td) / 2.2) + 1, 1, 4), rust ? ['rustGrassLight', 'rustGrass'] : ['meadowLight', 'meadow'], td);
+  }
+  // foreground bushes (left), ferns + mushrooms (right)
+  clumpBlob(g, 0.9, 8.25, 1.25, 0.72, FAM.bush, 3.4, 701, { sway: 1 });
+  clumpBlob(g, 2.95, 8.8, 0.95, 0.75, FAM.lime, 3.0, 702, { sway: 1 });
+  clumpBlob(g, 4.55, 9.0, 0.55, 0.8, FAM.bush, 2.7, 703, { sway: 1 });
+  fern(g, 14.75, 9.05, 1.35, 801);
+  fern(g, 15.75, 8.25, 0.95, 802);
+  fern(g, 6.2, 9.1, 0.7, 803);
+  mushroom(g, 13.25, 8.6, 0.42); mushroom(g, 13.8, 8.85, 0.32); mushroom(g, 12.95, 8.95, 0.26);
+  mushroom(g, 4.0, 8.4, 0.3); mushroom(g, 11.6, 6.5, 0.24);
+}
+function boulder(g, X0, Y0, r, d, seed) {
+  var ry = r * 0.78;
+  g.each(X0 - r * 1.25, Y0 - ry * 1.25, X0 + r * 1.25, Y0 + ry * 0.62, function (cx, cy, X, Y) {
+    var dx = (X - X0) / r, dy = (Y - Y0) / ry, ang = Math.atan2(dy, dx);
+    var rad = 1 + 0.12 * (vnoise(ang * 1.7 + seed, seed * 0.01) - 0.5) * 2, q = Math.sqrt(dx * dx + dy * dy);
+    if (q > rad || dy > 0.62) return;
+    // low-poly facets: quantised normal (flat-shaded Quaternius rock)
+    var nx = Math.round(dx / rad * 3) / 3, ny = Math.round(-dy / rad * 3) / 3, l = nx * nx + ny * ny;
+    if (l > 0.94) { var k = Math.sqrt(0.94 / l); nx *= k; ny *= k; l = 0.94; }
+    var h = hash2(cx * 11 + seed, cy * 3), mossN = fbm(X * 2.6 + seed, Y * 2.6, 3);
+    var o = { k: 'lit', n: [nx, ny, Math.sqrt(1 - l)], d: d, a: 0.82, ao: 0.7 + 0.3 * smooth(-0.9, 0.2, ny), bgK: 0.24 };
+    if (ny > 0.15 && mossN > 0.5 - ny * 0.25) { o.s = S.moss; o.c = h < 0.3 ? 'meadowDark' : 'mossCap'; }
+    else if (h > 0.965) { o.s = h > 0.982 ? '/' : '\\'; o.c = 'mossRockDark'; }
+    else { o.s = S.rockFace; o.c = h < 0.25 ? 'mossRockLight' : (ny < -0.3 ? 'mossRockDark' : 'mossRock'); }
+    g.put(cx, cy, o);
+  });
+}
+function fern(g, X0, Y0, size, seed) {
+  var rnd = mulberry32(seed), nF = 7, f;
+  for (f = 0; f < nF; f++) {
+    var a0 = -Math.PI * (0.12 + 0.76 * f / (nF - 1)), len = size * (0.75 + 0.35 * rnd());
+    var right = Math.cos(a0) > 0, droop = 0.9 * Math.abs(Math.cos(a0));
+    var steps = Math.max(4, Math.ceil(len * g.W / 16 * 1.6)), x = X0, y = Y0, lastI = -1, s;
+    for (s = 0; s <= steps; s++) {
+      var tt = s / steps, a = a0 + (right ? 1 : -1) * droop * tt * tt, ca = Math.cos(a), sa = Math.sin(a);
+      x += ca * len / steps; y += sa * len / steps;
+      var cx = g.cx(x), cy = g.cy(y), idx = cy * g.W + cx;
+      if (idx === lastI) continue;
+      lastI = idx;
+      var glyph = Math.abs(sa) > 0.85 ? '|' : Math.abs(ca) > 0.9 ? (s % 2 ? '~' : '-') : ((ca > 0) === (sa < 0) ? '/' : '\\');
+      var key = tt > 0.7 ? 'limeLight' : tt > 0.35 ? 'fern' : 'meadowDark';
+      g.put(cx, cy, { k: 'lit', s: glyph, c: key, n: nrm(ca * 0.3, 0.7, 0.6), d: 3, a: 0.88, bgK: 0.22, sway: 1 });
+      if (Math.abs(ca) > 0.5 && s % 2 === 0 && tt > 0.2)
+        g.put(cx, cy - 1, { k: 'lit', s: "'", c: 'fern', n: nrm(0, 0.8, 0.6), d: 3, a: 0.88, bgK: 0.22, sway: 1 });
+    }
+  }
+}
+function mushroom(g, X0, Yb, w) {
+  var wc = Math.max(3, Math.round(w * g.W / 16)), c0 = g.cx(X0) - Math.floor(wc / 2), rb = g.cy(Yb);
+  var stemRows = Math.max(1, Math.round(w * 0.42 * g.H / 9)), capRows = Math.max(1, Math.round(w * 0.38 * g.H / 9)), r, j;
+  for (r = 0; r < stemRows; r++) g.put(g.cx(X0), rb - r, { k: 'lit', s: '|', c: 'petalWhite', n: nrm(-0.3, 0, 1), d: 3, a: 0.9, bgK: 0.22 });
+  for (r = 0; r < capRows; r++) {
+    var cy = rb - stemRows - r, topRow = capRows > 1 && r === capRows - 1, sh = topRow ? 1 : 0;
+    for (j = sh; j < wc - sh; j++) {
+      var cx = c0 + j, h = hash2(cx * 3, cy * 11), eL = j === sh, eR = j === wc - 1 - sh, o;
+      o = { k: 'lit', c: 'mushroomOrange', n: topRow ? nrm(0, 0.8, 0.6) : nrm((j / (wc - 1) - 0.5) * 1.2, 0.5, 0.8), d: 3, a: 0.92, bgK: 0.24 };
+      if (topRow) o.s = '_';
+      else if (eL) o.s = '(';
+      else if (eR) o.s = ')';
+      else if (h < 0.3) { o.s = 'o'; o.c = 'petalWhite'; }
+      else o.s = '@';
+      g.put(cx, cy, o);
+    }
+  }
+}
+
+// ===========================================================================
+// 6. PANEL B - half-timbered house corner, evening
+// ===========================================================================
+var POSTS = [[4.0, 4.42], [8.3, 8.72], [12.55, 12.97], [15.75, 16.4]];
+var BEAMS = [[0.9, 1.22], [3.55, 3.85], [5.85, 6.15]];
+var DOOR = [13.15, 15.55, 3.85, 7.66];
+var WIN = [9.75, 11.55, 1.65, 3.15];
+var BRACES = [[4.42, 1.22, 8.3, 3.55], [4.42, 3.85, 8.3, 5.85], [4.42, 5.85, 8.3, 3.85], [12.97, 3.55, 15.75, 1.22]];
+function segHit(X, Y, b, wd) {
+  if (X < Math.min(b[0], b[2]) || X > Math.max(b[0], b[2]) || Y < Math.min(b[1], b[3]) || Y > Math.max(b[1], b[3])) return false;
+  var dx = b[2] - b[0], dy = b[3] - b[1], L = Math.sqrt(dx * dx + dy * dy);
+  return Math.abs(dx * (b[1] - Y) - (b[0] - X) * dy) / L < wd;
+}
+function beamCell(o, dir, u, pz, cx, cy) {
+  var h = hash2(cx * 3 + 1, cy * 7 + 2);
+  o.c = h < 0.2 ? 'beamLight' : h > 0.85 ? 'beamDark' : 'beam'; o.pz = pz; o.a = 0.8; o.t = 0.92 + 0.12 * hash2(cx, cy * 3);
+  if (dir === 'v') { o.s = SET_POST; o.n = u < 0.22 ? nrm(-0.75, 0, 0.66) : u > 0.78 ? nrm(0.75, 0, 0.66) : [0, 0, 1]; }
+  else { o.s = SET_BEAM; o.n = u < 0.3 ? nrm(0, 0.75, 0.66) : u > 0.75 ? nrm(0, -0.75, 0.66) : [0, 0, 1]; }
+  if (hash2(cx * 13, cy * 5 + 7) < 0.035) o.s = 'o';     // knot
+  return o;
+}
+function plasterCell(o, X, Y, cx, cy) {
+  var bl = fbm(X * 1.3, Y * 1.3, 3), h = hash2(cx * 7, cy * 3 + 1), stain = (Y > 5.45 && Y < 5.85) || (Y > 3.2 && Y < 3.55);
+  o.c = (bl > 0.64 || (stain && h < 0.45)) ? 'plasterDark' : bl < 0.42 ? 'plasterLight' : 'plaster';
+  o.s = h > 0.988 ? '/' : NS.plasterFace; o.pz = 0; o.t = 0.95 + 0.08 * hash2(cx + 5, cy);
+  o.n = nrm((vnoise(X * 6, Y * 6) - 0.5) * 0.15, 0, 1);
+  return o;
+}
+function stoneCell(o, X, Y, cx, cy, y0) {
+  var cv = (Y - y0) / 0.37, k = Math.floor(cv), fv = cv - k, off = hash2(k, 77) * 3.1;
+  var uu = (X + off) / (0.62 + 0.18 * hash2(k, 13)), j = Math.floor(uu), fu = uu - j;
+  if (fu < 0.09 || fv < 0.13) { o.c = 'slateDark'; o.t = 0.55; o.s = S.gap; o.pz = 0.02; o.a = 0.7; return o; }
+  var hs = hash2(j * 7 + k * 131, k * 17 + 3);
+  o.c = hs < 0.3 ? 'slateLight' : hs < 0.78 ? 'slate' : 'slateDark';
+  o.n = nrm((fu - 0.55) * 1.3, -(fv - 0.55) * 1.3, 1); o.pz = 0.08; o.s = S.stoneFace; o.t = 0.92 + 0.12 * hash2(cx, cy);
+  if (k >= 2 && fv > 0.5 && fbm(X * 2, Y * 2, 2) > 0.6) { o.c = 'mossCap'; o.s = S.moss; }
+  return o;
+}
+function eaveCell(o, X, Y, cx, cy, yTop) {
+  // yTop = eave bottom line at this column; roof tiles above yTop - 0.56
+  var rel = Y - (yTop - 0.9);
+  if (rel < 0.34) {
+    var course = Math.floor(rel / 0.12), fv = rel / 0.12 - course, h = hash2(cx * 3, course * 7);
+    o.c = h < 0.25 ? 'terracottaLight' : h > 0.8 ? 'terracottaDark' : 'terracotta';
+    o.s = fv > 0.75 ? '_' : S.brickFace; o.n = nrm(0, 0.6, 0.8); o.pz = 0.95;
+  } else {
+    var rx = (((X - 4.25) % 0.95) + 0.95) % 0.95;
+    if (rx < 0.28) { o.c = 'beam'; o.s = rel > 0.75 ? '#' : SET_POST; o.n = nrm(0, -0.3, 0.95); o.pz = 0.8; }
+    else { o.c = 'beamDark'; o.s = SET_BEAM; o.n = nrm(0, -0.9, 0.44); o.pz = 0.75; o.t = 0.85; }
+  }
+  return o;
+}
+function frontCell(X, Y, cx, cy) {
+  var o = { k: 'lit', n: [0, 0, 1], d: 7, a: 0.85, wall: 1, bgK: 0.22 }, i;
+  if (Y < 0.9) return eaveCell(o, X, Y, cx, cy, 0.9);
+  if (X >= DOOR[0] && X < DOOR[1] && Y >= DOOR[2] && Y < DOOR[3]) { o.c = 'doorDark'; o.s = S.gap; o.pz = -0.8; o.a = 0.7; o.n = nrm(0, 0.2, 1); return o; }
+  for (i = 0; i < POSTS.length; i++) if (X >= POSTS[i][0] && X < POSTS[i][1] && Y < 6.15)
+    return beamCell(o, 'v', (X - POSTS[i][0]) / (POSTS[i][1] - POSTS[i][0]), 0.16, cx, cy);
+  for (i = 0; i < BEAMS.length; i++) if (Y >= BEAMS[i][0] && Y < BEAMS[i][1])
+    return beamCell(o, 'h', (Y - BEAMS[i][0]) / (BEAMS[i][1] - BEAMS[i][0]), 0.13, cx, cy);
+  if (X >= WIN[0] - 0.12 && X < WIN[1] + 0.12 && Y >= WIN[2] - 0.12 && Y < WIN[3] + 0.16) {
+    if (X >= WIN[0] && X < WIN[1] && Y >= WIN[2] && Y < WIN[3]) {
+      if (Math.abs(X - 10.65) < 0.07) return beamCell(o, 'v', 0.5, 0.04, cx, cy);
+      if (Math.abs(Y - 2.4) < 0.08) return beamCell(o, 'h', 0.5, 0.04, cx, cy);
+      return { k: 'em', s: hash2(cx, cy) < 0.5 ? ':' : '=', c: 'windowGlow', em: 0.8, bgc: 'windowGlow', bgK: 0.5, fl: 2, d: 7, pz: -0.1 };
+    }
+    return beamCell(o, Y >= WIN[3] ? 'h' : (X < WIN[0] || X >= WIN[1]) ? 'v' : 'h', 0.5, 0.1, cx, cy);
+  }
+  if (Y >= 6.15) return stoneCell(o, X, Y, cx, cy, 6.15);
+  for (i = 0; i < BRACES.length; i++) if (segHit(X, Y, BRACES[i], 0.12)) {
+    var b = BRACES[i], down = (b[3] - b[1]) * (b[2] - b[0]) > 0;
+    o.c = 'beam'; o.s = down ? SET_D2 : SET_D1; o.pz = 0.1; o.a = 0.8; o.t = 0.92 + 0.12 * hash2(cx, cy);
+    return o;
+  }
+  return plasterCell(o, X, Y, cx, cy);
+}
+function leftCell(X, Y, cx, cy) {
+  var s = 0.86 + 0.14 * (X - 2.2) / 1.8, Yf = 4.25 + (Y - 4.25) / s, uL = (X - 2.2) / 1.8, xl = uL * 1.8;
+  if (Yf < 0 || Yf > 7.66) return null;
+  var o = { k: 'lit', n: nrm(-0.82, 0, 0.57), d: 7.5, a: 0.85, bgK: 0.22 }, i;
+  if (Yf < 0.9) { eaveCell(o, X, Yf, cx, cy, 0.9); o.n = o.c.indexOf('terracotta') === 0 ? nrm(-0.5, 0.6, 0.6) : nrm(-0.4, -0.8, 0.4); o.pz = null; return o; }
+  if (uL < 0.11 && Yf < 6.15) { beamCell(o, 'v', 0.5, null, cx, cy); o.n = nrm(-0.82, 0, 0.57); o.pz = null; return o; }
+  for (i = 0; i < BEAMS.length; i++) if (Yf >= BEAMS[i][0] && Yf < BEAMS[i][1]) {
+    beamCell(o, 'h', (Yf - BEAMS[i][0]) / (BEAMS[i][1] - BEAMS[i][0]), null, cx, cy); o.n = nrm(-0.82, 0.1, 0.57); o.pz = null; return o;
+  }
+  if (Yf >= 6.15) { stoneCell(o, xl * 1.4, Yf, cx, cy, 6.15); o.n = nrm(-0.82 + o.n[0] * 0.3, o.n[1] * 0.5, 0.57); o.pz = null; return o; }
+  if (segHit(xl, Yf, [0.2, 5.85, 1.8, 3.85], 0.12)) { o.c = 'beam'; o.s = SET_D1; o.a = 0.8; return o; }
+  plasterCell(o, X, Yf, cx, cy); o.n = nrm(-0.82, 0, 0.57); o.pz = null;
+  return o;
+}
+function lanternAt(g, X, yTop, yBody, w, h, li) {
+  var cx0 = g.cx(X), cy, cx;
+  for (cy = g.cy(yTop); cy < g.cy(yBody); cy++)
+    g.put(cx0, cy, { k: 'lit', s: cy % 2 ? ':' : '|', c: 'ironDark', n: [0, 0, 1], d: 7, a: 0.8, pz: 0.4 });
+  var x0 = X - w / 2;
+  for (cy = g.cy(yBody); cy <= g.cy(yBody + h); cy++) for (cx = g.cx(x0); cx <= g.cx(x0 + w); cx++) {
+    var u = (g.X(cx) - x0) / w, v = (g.Y(cy) - yBody) / h, o;
+    if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+    o = { k: 'lit', c: 'iron', n: [0, 0, 1], d: 7, a: 0.8, pz: 0.45, bgK: 0.22 };
+    if (v < 0.22) { o.s = u < 0.34 ? '/' : u > 0.66 ? '\\' : '^'; o.c = 'ironLight'; o.n = nrm(u < 0.5 ? -0.5 : 0.5, 0.6, 0.6); }
+    else if (v > 0.84) { o.s = (u > 0.35 && u < 0.65) ? 'v' : '-'; }
+    else if (u < 0.22 || u > 0.78) { o.s = '|'; o.c = 'ironDark'; }
+    else {
+      var core = Math.abs(u - 0.5) < 0.18 && Math.abs(v - 0.53) < 0.16;
+      o = { k: 'em', s: core ? '*' : (hash2(cx, cy) < 0.5 ? 'o' : '='), c: core ? 'lanternCore' : 'lanternWarm', em: core ? 1.0 : 0.85,
+            bgc: 'lanternWarm', bgK: 0.55, fl: li, d: 7, pz: 0.45 };
+    }
+    g.put(cx, cy, o);
+  }
+  g.lights.push({ X: X, Y: yBody + h * 0.5, z: 0.45, key: 'lanternWarm', ik: 1, rk: 1, lantern: 1 });
+  g.emitters.push({ X: X, Y: yBody + h * 0.5, R: 1.4, key: 'lanternWarm', ik: 1, li: li });
+}
+function barrel(g, x0, y0, w, h, pz) {
+  g.each(x0, y0, x0 + w, y0 + h, function (cx, cy, X, Y) {
+    var u = (X - x0) / w, v = (Y - y0) / h;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    var half = 0.5 - 0.1 * Math.pow(2 * v - 1, 2);
+    if (Math.abs(u - 0.5) > half) return;
+    var nx = clamp((u - 0.5) / half * 0.8, -0.8, 0.8), hh = hash2(cx * 3, cy * 5);
+    var o = { k: 'lit', n: nrm(nx, v < 0.1 ? 0.6 : 0, Math.sqrt(1 - nx * nx)), d: 7.5, a: 0.8, wall: 1, pz: pz, bgK: 0.22 };
+    if (v < 0.09) { o.c = 'wood'; o.s = SET_BEAM; }
+    else if ((v > 0.2 && v < 0.29) || (v > 0.71 && v < 0.8)) { o.c = 'iron'; o.s = S.ironFace; }
+    else { o.c = hh < 0.3 ? 'woodLight' : 'wood'; o.s = SET_POST; }
+    g.put(cx, cy, o);
+  });
+}
+function pot(g, X, Yb, w, h, flower) {
+  var x0 = X - w / 2, y0 = Yb - h;
+  g.each(x0, y0, x0 + w, Yb, function (cx, cy, XX, Y) {
+    var u = (XX - x0) / w, v = (Y - y0) / h;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    var rim = v < 0.22;
+    if (!rim && Math.abs(u - 0.5) > 0.42 - 0.12 * v) return;
+    var nx = clamp((u - 0.5) * 1.6, -0.8, 0.8);
+    var o = { k: 'lit', n: nrm(nx, rim ? 0.4 : 0, 1), d: 6.5, a: 0.85, pz: 0.6, bgK: 0.22 };
+    if (rim) { o.c = 'terracottaLight'; o.s = '='; }
+    else { o.c = v > 0.8 ? 'terracottaDark' : 'terracotta'; o.s = S.brickFace; }
+    g.put(cx, cy, o);
+  });
+  var fx = X, fy = y0 - h * 0.45, rx = w * 0.62, ry = h * 0.62;
+  g.each(fx - rx, fy - ry, fx + rx, y0, function (cx, cy, XX, Y) {
+    var dx = (XX - fx) / rx, dy = (Y - fy) / ry;
+    if (dx * dx + dy * dy > 1 + 0.3 * (vnoise(XX * 9, Y * 9) - 0.5)) return;
+    var hh = hash2(cx * 7, cy * 3 + 9), o = { k: 'lit', n: nrm(dx * 0.6, -dy * 0.6 + 0.3, 0.8), d: 6.5, a: 0.9, pz: 0.6, bgK: 0.25, sway: 1 };
+    if (hh < 0.4 && dy < 0.4) { o.s = hh < 0.15 ? '@' : '*'; o.c = flower; }
+    else { o.s = S.ivy; o.c = hh > 0.75 ? 'meadowDark' : 'fern'; }
+    g.put(cx, cy, o);
+  });
+}
+function buildHouse(g) {
+  var HZ = 5.3, F = 7.2, sc = g.W * g.H / 9600, rnd = mulberry32(777), i;
+  function gD(Y) { return 1.6 * F / Math.max(0.05, Y - HZ); }
+  // far hills + ground
+  ridge(g, function (X) { return X < 4.6 ? 4.55 + 0.22 * Math.sin(X * 1.1 + 0.6) + 0.08 * vnoise(X * 9, 2) : null; }, HZ + 0.5,
+    function (X, Y, y0, cx, cy) { return { k: 'lit', s: S.ivy, c: hash2(cx, cy) < 0.5 ? 'forest' : 'forestDark', n: nrm(-0.3, 0.7, 0.65), d: 600, a: 0.8 }; });
+  ridge(g, function () { return HZ + 0.08; }, 9.2, function (X, Y, y0, cx, cy) {
+    var d = gD(Y), h = hash2(cx, cy), nz = fbm(X * 0.8, d * 0.3, 2);
+    var key = nz > 0.62 ? 'strawLight' : nz < 0.4 ? 'strawDark' : 'straw';
+    if (h < 0.18) key = h < 0.08 ? 'meadowDark' : 'turf';
+    return { k: 'lit', s: d < 6 ? S.strawFace : d < 20 ? S.grassMid : S.turfMid, c: key, t: 0.94 + 0.12 * hash2(cx + 3, cy),
+             n: nrm(0, 0.94, 0.34), d: d, a: 0.8, bgK: 0.25, sway: d < 8 ? 1 : 0 };
+  });
+  // background trees (left, behind the house)
+  [[0.35, 5.75, 0.85, 60], [1.45, 5.6, 0.7, 75], [2.35, 5.5, 0.6, 90], [-0.3, 5.9, 0.7, 55]].forEach(function (t, k) {
+    trunk(g, t[0], t[1] - t[2] * 1.2, t[1], 0.1, t[3], false, 'woodDark');
+    clumpBlob(g, t[0], t[1] - t[2] * 1.9, t[2], 1.2, ['leaf', 'leafDark', 'forestDark'], t[3], 900 + k);
+  });
+  // house: left (receding) face, then the front face
+  g.each(2.2, 0, 3.999, 7.9, function (cx, cy, X, Y) { if (X >= 2.2 && X < 4.0) g.put(cx, cy, leftCell(X, Y, cx, cy)); });
+  g.each(4.0, 0, 16, 7.66, function (cx, cy, X, Y) { if (X >= 4.0 && Y < 7.66) g.put(cx, cy, frontCell(X, Y, cx, cy)); });
+  // doorway contents: two barrels in the dark
+  barrel(g, 13.35, 6.2, 0.95, 1.4, -0.5);
+  barrel(g, 14.35, 6.55, 1.05, 1.1, -0.4);
+  // lights: lantern A on the mid rail, lantern B on a bracket by the door, window spill
+  lanternAt(g, 10.65, 3.85, 4.12, 0.5, 0.8, 0);
+  g.each(12.05, 3.9, 12.5, 4.0, function (cx, cy) { g.put(cx, cy, { k: 'lit', s: '=', c: 'iron', n: nrm(0, 0.5, 0.86), d: 7, a: 0.8, pz: 0.3 }); });
+  lanternAt(g, 12.2, 4.0, 4.2, 0.46, 0.74, 1);
+  g.lights.push({ X: 10.65, Y: 2.4, z: 0.3, key: 'windowGlow', ik: 0.4, rk: 0.4 });
+  g.emitters.push({ X: 10.65, Y: 2.4, R: 1.2, key: 'windowGlow', ik: 0.5, li: 2 });
+  // ladder leaning on the wall
+  function rail(xb, yb, xt, yt, nx) {
+    var prev = null;
+    for (var cy = g.cy(yt); cy <= g.cy(yb); cy++) {
+      var tt = (yb - g.Y(cy)) / (yb - yt), cx = g.cx(xb + (xt - xb) * tt);
+      g.put(cx, cy, { k: 'lit', s: (prev !== null && prev !== cx) ? '/' : '|', c: 'woodLight', n: nrm(nx, 0, 1), d: 6.6, a: 0.85,
+                      pz: 0.12 + 0.5 * (1 - tt), bgK: 0.22 });
+      prev = cx;
+    }
+  }
+  rail(5.2, 8.75, 5.95, 2.55, -0.5); rail(6.3, 8.75, 7.05, 2.55, 0.3);
+  for (var yr = 8.35; yr > 2.9; yr -= 0.6) {
+    var tt = (8.75 - yr) / 6.2, cyr = g.cy(yr);
+    for (var cx = g.cx(5.2 + 0.75 * tt) + 1; cx < g.cx(6.3 + 0.75 * tt); cx++)
+      g.put(cx, cyr, { k: 'lit', s: '=', c: 'wood', n: nrm(0, 0.6, 0.8), d: 6.6, a: 0.85, pz: 0.12 + 0.5 * (1 - tt), bgK: 0.22 });
+  }
+  // wooden steps in front of the door
+  for (i = 0; i < 3; i++) (function (i) {
+    var x0 = 12.95 - 0.18 * i, x1 = 15.9 + 0.18 * i, yt = 7.42 + 0.42 * i;
+    g.each(x0, yt, x1, yt + 0.42, function (cx, cy, X, Y) {
+      if (X < x0 || X >= x1 || Y < yt || Y >= yt + 0.42) return;
+      var top = (Y - yt) < 0.16, h = hash2(cx * 5, cy);
+      g.put(cx, cy, { k: 'lit', s: top ? SET_BEAM : (h < 0.1 ? 'o' : SET_BEAM), c: top ? (h < 0.3 ? 'woodLight' : 'wood') : 'woodDark',
+                      n: top ? nrm(0, 0.95, 0.3) : [0, 0, 1], d: 6.5 - i * 0.4, a: 0.85, bgK: 0.22, t: 0.92 + 0.12 * h });
+    });
+  })(i);
+  // terracotta pots with yellow / violet flowers
+  pot(g, 9.55, 7.95, 0.75, 0.6, 'petalYellow');
+  pot(g, 10.55, 8.05, 0.6, 0.5, 'petalViolet');
+  pot(g, 12.0, 8.1, 0.62, 0.52, 'petalYellow');
+  pot(g, 15.35, 7.42, 0.55, 0.45, 'petalViolet');
+  // dry grass tufts along the wall foot + foreground, a few wildflowers
+  var nTu = Math.round(90 * sc);
+  for (i = 0; i < nTu; i++) {
+    var tx = rnd() * 16, ty = rnd() < 0.5 ? 7.55 + rnd() * 0.5 : 8.1 + rnd() * 0.95;
+    if (tx > 12.7 && ty < 8.75) continue;                          // keep the steps clear
+    var green = rnd() < 0.22;
+    tuft(g, tx, ty, clamp(Math.round((ty - 7.2) * 2.4), 1, 4), green ? ['meadowLight', 'meadowDark'] : ['strawLight', 'straw'], gD(Math.max(ty, 5.6)));
+  }
+  for (i = 0; i < Math.round(26 * sc); i++) {
+    var fx = rnd() * 16, fy = 7.7 + rnd() * 1.3;
+    if (fx > 12.7 && fy < 8.75) continue;
+    g.put(g.cx(fx), g.cy(fy), { k: 'lit', s: '*', c: rnd() < 0.6 ? 'petalYellow' : 'petalViolet', n: nrm(0, 0.6, 0.8), d: 4, a: 0.95, bgK: 0.25 });
+  }
+}
+
+// ===========================================================================
+// 7. SHADING (per frame)
+// ===========================================================================
+function params(panel, mode) {
+  var v = state.vals[panel.id][mode], az = v.az * Math.PI / 180, el = v.el * Math.PI / 180;
+  var p = { mode: mode, L: [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)],
+    sun: col(v.sun, mode), sunI: v.sunI, amb: col(v.amb, mode), ambI: v.ambI, gnd: col(v.gnd, mode), gndI: v.gndI,
+    shadow: null, shadowK: v.shadowK || 0,
+    hzN: col(v.hazeNear, mode), hzF: col(v.hazeFar, mode), hzS: v.hazeStart, hzE: v.hazeFull, hzM: v.hazeMax, hzC: v.hazeCurve, hzBlank: v.hazeBlank,
+    sky: [col(v.sky[0], mode), col(v.sky[1], mode), col(v.sky[2], mode)], cloud: col(v.cloud, mode), cloudSh: col(v.cloudShade, mode),
+    rays: mode === 'proposed' && state.rays ? v.rays : 0, ray: col(v.ray, mode),
+    lanI: v.lanternI, lanR: v.lanternR / 0.75, bloom: mode === 'proposed' && state.bloom };
+  if (v.shadow) { var s = col(v.shadow, mode), m = Math.max(s[0], s[1], s[2]) || 1; p.shadow = [s[0] / m, s[1] / m, s[2] / m]; }
+  return p;
+}
+function cloudDens(X, Y, t, hz, seed, eve) {
+  var y = Y / hz;
+  if (y > 1.05) return 0;
+  var band = smooth(0.02, 0.2, y) * (1 - smooth(0.62, 0.95, y)), x = X + t * 0.06;
+  if (eve) return clamp((fbm(x * 0.18 + seed, Y * 2.6, 4) - 0.52) * 3.4 * band, 0, 1);
+  var puff = (fbm(x * 0.32 + seed, Y * 0.9 + seed * 0.3, 5) - 0.5) * 3.0 * band;
+  var wisp = (fbm(x * 0.12 + seed + 40, Y * 3.8, 3) - 0.58) * 3.0 * smooth(0.05, 0.25, y) * (1 - smooth(0.4, 0.6, y));
+  return clamp(Math.max(puff, wisp * 0.55), 0, 1);
+}
+function casterShadow(g, X, Y, L) {
+  var ly = Math.max(0.18, L[1]), sx = -L[0] / ly, sz = -L[2] / ly, sh = 1, i;
+  for (i = 0; i < g.casters.length; i++) {
+    var k = g.casters[i], dxs = clamp(sx * k.h * 0.55, -3 * k.h, 3 * k.h), dys = clamp(sz * k.h * 0.16, -k.h, k.h);
+    var cxs = k.X + dxs * 0.5, cys = k.Y + dys * 0.5 + k.r * 0.05;
+    var rx = k.r * 0.9 + Math.abs(dxs) * 0.5, ry = k.r * 0.3 + Math.abs(dys) * 0.5 + 0.05;
+    var qx = (X - cxs) / rx, qy = (Y - cys) / ry, q = qx * qx + qy * qy;
+    if (q < 1) sh = Math.min(sh, 0.12 + 0.88 * smooth(0.55, 1, q));
+  }
+  return sh;
+}
+function facadeShadow(g, cx, cy, pz, L) {
+  if (L[2] < 0.05) return 0;
+  var kx = clamp(L[0] / L[2], -6, 6), ky = clamp(-L[1] / L[2], -6, 6), s;
+  for (s = 1; s <= 12; s++) {
+    var h = 0.95 * s / 12, ox = Math.round(kx * h * g.W / 16), oy = Math.round(ky * h * g.H / 9);
+    if (!ox && !oy) continue;
+    var nx = cx + ox, ny = cy + oy;
+    if (nx < 0 || ny < 0 || nx >= g.W || ny >= g.H) continue;
+    if (g.prot[ny * g.W + nx] >= pz + h) return 0;
+  }
+  return 1;
+}
+var OUT = { g: ' ', fg: [0, 0, 0], bg: [0, 0, 0], lit: false };
+function shadeCell(panel, g, cx, cy, p, t, flick) {
+  var c = g.cells[cy * g.W + cx], X = g.X(cx), Y = g.Y(cy), fg, bg, glyph = ' ', k;
+  OUT.lit = false;
+  if (!c || c.k === 'sky') {
+    var ty = clamp(Y / panel.horizon, 0, 1);
+    var base = ty < 0.55 ? lerp3(p.sky[0], p.sky[1], ty / 0.55) : lerp3(p.sky[1], p.sky[2], (ty - 0.55) / 0.45);
+    var dn = cloudDens(X, Y, t, panel.horizon, panel.cloudSeed, panel.eve);
+    bg = base; fg = base.slice();   // copies: the ray / bloom passes add into fg / bg in place
+    if (dn > 0.04) {
+      var lit = clamp(0.5 + (cloudDens(X, Y + 0.22, t, panel.horizon, panel.cloudSeed, panel.eve) -
+                             cloudDens(X, Y - 0.22, t, panel.horizon, panel.cloudSeed, panel.eve)) * 2.2, 0, 1);
+      var cc = lerp3(p.cloudSh, p.cloud, lit);
+      bg = lerp3(base, cc, Math.min(1, dn * 0.9)); fg = lerp3(cc, [1, 1, 1], 0.1 * lit);
+      glyph = SKY_RAMP.charAt(Math.min(SKY_RAMP.length - 1, 1 + Math.floor(dn * (SKY_RAMP.length - 1.01))));
+    }
+    if (panel.sunDisc) {
+      var dsx = X - panel.sun[0], dsy = Y - panel.sun[1], ds = Math.sqrt(dsx * dsx + dsy * dsy);
+      if (ds < 0.3) { glyph = ds < 0.15 ? '@' : 'O'; fg = [1, 1, 0.96]; bg = lerp3(bg, p.sun, 0.9); }
+      else if (ds < 0.95) {
+        var kk = 1 - (ds - 0.3) / 0.65; bg = lerp3(bg, p.sun, 0.55 * kk * kk);
+        if (glyph === ' ' && hash2(cx, cy) < 0.35 * kk) { glyph = "'"; fg = p.sun.slice(); }
+      }
+    }
+  } else if (c.k === 'em') {
+    var e = (c.em || 1) * (c.fl != null && flick[c.fl] ? flick[c.fl] : 1), cb = col(c.c, p.mode), cg = col(c.bgc || c.c, p.mode);
+    fg = [cb[0] * e, cb[1] * e, cb[2] * e]; bg = [cg[0] * (c.bgK || 0.35) * e, cg[1] * (c.bgK || 0.35) * e, cg[2] * (c.bgK || 0.35) * e];
+    glyph = c.s;
+  } else {
+    var n = c.n || [0, 1, 0], L = p.L, ndl = Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]), sh = c.sh == null ? 1 : c.sh;
+    if (c.gnd && g.casters.length) sh *= casterShadow(g, X, Y, L);
+    if (c.wall) sh *= facadeShadow(g, cx, cy, c.pz || 0, L);
+    if ((c.gnd || c.cs) && state.cshadow && panel.cloudShadows) {
+      var d0 = c.d || 10, wx = (X - 8) * d0 / 7.2;
+      sh *= 1 - 0.5 * smooth(0.56, 0.7, fbm(wx * 0.05 + t * 0.12, d0 * 0.05, 3));
+    }
+    var up = 0.5 + 0.5 * n[1], Lr = [0, 0, 0];
+    for (k = 0; k < 3; k++) Lr[k] = p.sun[k] * p.sunI * ndl * sh + p.amb[k] * p.ambI * up + p.gnd[k] * p.gndI * (1 - up);
+    if (p.shadow && sh < 1) { var s = (1 - sh) * p.shadowK; for (k = 0; k < 3; k++) Lr[k] *= (1 - s) + s * p.shadow[k]; }
+    for (var li = 0; li < g.lights.length; li++) {
+      var l = g.lights[li], dx = l.X - X, dy = Y - l.Y, dz = l.z - (c.pz || 0), dd = Math.sqrt(dx * dx + dy * dy + dz * dz), r = p.lanR * l.rk;
+      if (dd >= r) continue;
+      var q = dd / r, att = (1 - q * q); att *= att;
+      var nd = (n[0] * dx + n[1] * dy + n[2] * dz) / (dd || 1), I = p.lanI * l.ik * (flick[li] || 1) * att * (0.3 + 0.7 * Math.max(0, nd));
+      var lc = l.lantern ? col(PRESET[panel.id][p.mode].lantern, p.mode) : col(l.key, p.mode);
+      for (k = 0; k < 3; k++) Lr[k] += lc[k] * I;
+    }
+    var ao = c.ao || 1; Lr[0] *= ao; Lr[1] *= ao; Lr[2] *= ao;
+    var mL = Math.max(Lr[0], Lr[1], Lr[2]) || 1e-6, b = mL * (c.a || 0.85), hue = [Lr[0] / mL, Lr[1] / mL, Lr[2] / mL];
+    var bc = col(c.c, p.mode), tn = c.t || 1, gain = DS.fgMin + (1 - DS.fgMin) * Math.pow(Math.min(b, 1), DS.fgGamma);
+    if (b > 1) gain *= Math.min(DS.fgMaxGain, 1 + (b - 1) * 0.5);
+    fg = [0, 0, 0];
+    for (k = 0; k < 3; k++) fg[k] = bc[k] * tn * (1 + (hue[k] - 1) * DS.tint) * gain;
+    if (b > 1) { var hot = Math.min(DS.overbrightMax, (b - 1) * DS.overbright); fg = lerp3(fg, [0.5 + 0.5 * hue[0], 0.5 + 0.5 * hue[1], 0.5 + 0.5 * hue[2]], hot); }
+    var bk = c.bgK || 0.22; bg = [fg[0] * bk, fg[1] * bk, fg[2] * bk];
+    // haze
+    var d = c.d || 5, f = 0, ht = clamp((d - p.hzS) / (p.hzE - p.hzS), 0, 1);
+    if (d > p.hzS) f = p.hzM * Math.pow(ht, p.hzC);
+    var hc = lerp3(p.hzN, p.hzF, ht);
+    fg = lerp3(fg, hc, f); bg = lerp3(bg, [hc[0] * 0.9, hc[1] * 0.9, hc[2] * 0.9], Math.min(1, f * 1.1));
+    // glyph
+    if (b < DS.cutoff || f > p.hzBlank) glyph = ' ';
+    else if (typeof c.s === 'string') glyph = c.s;
+    else {
+      var set = c.s, N = set.length, gb = DS.lift + (1 - DS.lift) * Math.min(b, 1), lv = 1 + Math.floor(Math.pow(gb, DS.gamma) * N);
+      if (f > 0.45) lv -= Math.floor((f - 0.45) / 0.14);
+      lv = clamp(lv, 1, N);
+      var str = set[lv - 1], j = Math.floor(c.h * str.length);
+      if (c.sway && state.anim) j = (j + Math.floor(t * 1.6 + X * 0.9 + c.h * 3)) % str.length;
+      glyph = str.charAt(j);
+    }
+    OUT.lit = true;
+  }
+  // sun shafts (engine: not yet)
+  if (p.rays > 0 && panel.sun) {
+    var rx0 = X - panel.sun[0], ry0 = Y - panel.sun[1], rdist = Math.sqrt(rx0 * rx0 + ry0 * ry0), ang = Math.atan2(ry0, rx0);
+    var rr = clamp((fbm(ang * 5.0 + 2.0, t * 0.04, 2) - 0.42) * 2.4, 0, 1);
+    var amt = p.rays * rr * rr * Math.exp(-rdist * 0.16) * (OUT.lit ? 0.45 : 1);
+    for (k = 0; k < 3; k++) { bg[k] += p.ray[k] * amt * 0.55; fg[k] += p.ray[k] * amt * 0.25; }
+  }
+  // emissive bloom halo (engine: not yet)
+  if (p.bloom) for (var ei = 0; ei < g.emitters.length; ei++) {
+    var em = g.emitters[ei], ex = X - em.X, ey = Y - em.Y, ed = Math.sqrt(ex * ex + ey * ey);
+    if (ed >= em.R) continue;
+    var ek = 0.42 * em.ik * (flick[em.li] || 1) * Math.pow(1 - ed / em.R, 2), ecol = col(em.key, p.mode);
+    for (k = 0; k < 3; k++) bg[k] += ecol[k] * ek;
+  }
+  OUT.g = glyph; OUT.fg = fg; OUT.bg = bg;
+  return OUT;
+}
+
+// ===========================================================================
+// 8. PANELS, CONTROLS, RENDER LOOP
+// ===========================================================================
+var PANELS = [
+  { id: 'A', build: buildMeadow, horizon: 4.45, sun: [2.3, 0.5], sunDisc: true, cloudSeed: 3.7, eve: false, cloudShadows: true },
+  { id: 'B', build: buildHouse, horizon: 5.3, sun: [-0.8, 4.3], sunDisc: false, cloudSeed: 11.2, eve: true, cloudShadows: false }
+];
+var state = { W: 160, H: 60, mode: 'proposed', anim: true, rays: true, bloom: true, cshadow: true, vals: {} };
+PANELS.forEach(function (pn) {
+  state.vals[pn.id] = { proposed: JSON.parse(JSON.stringify(PRESET[pn.id].proposed)), current: JSON.parse(JSON.stringify(PRESET[pn.id].current)) };
+});
+var SLIDERS = [
+  { f: 'az', label: 'sun azimuth (- left / + right)', min: -180, max: 180, step: 1, shared: true },
+  { f: 'el', label: 'sun elevation', min: 3, max: 85, step: 1, shared: true },
+  { f: 'sunI', label: 'sun I', min: 0, max: 1.6, step: 0.01 },
+  { f: 'ambI', label: 'ambient I', min: 0, max: 0.8, step: 0.01 },
+  { f: 'hazeMax', label: 'haze max', min: 0, max: 1, step: 0.01 },
+  { f: 'lanternI', label: 'lantern I', min: 0, max: 1.6, step: 0.01, only: 'B' }
+];
+function editMode() { return state.mode === 'current' ? 'current' : 'proposed'; }
+function buildControls(pn) {
+  var box = document.getElementById('ctl' + pn.id), html = '';
+  SLIDERS.forEach(function (s) {
+    if (s.only && s.only !== pn.id) return;
+    html += '<label>' + s.label + ' <input type="range" data-f="' + s.f + '" min="' + s.min + '" max="' + s.max + '" step="' + s.step + '">' +
+            '<span class="val"></span></label>';
+  });
+  html += '<button data-reset="1">reset to preset</button><span class="note" data-edit="1"></span>';
+  box.innerHTML = html;
+  box.querySelectorAll('input[type=range]').forEach(function (inp) {
+    inp.addEventListener('input', function () {
+      var f = inp.dataset.f, v = parseFloat(inp.value), sl = SLIDERS.filter(function (s) { return s.f === f; })[0];
+      if (sl.shared) { state.vals[pn.id].proposed[f] = v; state.vals[pn.id].current[f] = v; }
+      else state.vals[pn.id][editMode()][f] = v;
+      inp.nextElementSibling.textContent = v;
+      render(pn);
+    });
+  });
+  box.querySelector('[data-reset]').addEventListener('click', function () {
+    state.vals[pn.id] = { proposed: JSON.parse(JSON.stringify(PRESET[pn.id].proposed)), current: JSON.parse(JSON.stringify(PRESET[pn.id].current)) };
+    syncControls(pn); render(pn);
+  });
+}
+function syncControls(pn) {
+  var box = document.getElementById('ctl' + pn.id), v = state.vals[pn.id][editMode()];
+  box.querySelectorAll('input[type=range]').forEach(function (inp) { inp.value = v[inp.dataset.f]; inp.nextElementSibling.textContent = v[inp.dataset.f]; });
+  box.querySelector('[data-edit]').textContent = state.mode === 'split'
+    ? 'split: sliders edit the proposed half; the current half uses today\'s preset (azimuth / elevation shared)'
+    : 'sliders edit the ' + editMode() + ' preset';
+}
+function buildPanel(pn) {
+  pn.grid = new Grid(state.W, state.H);
+  pn.build(pn.grid);
+  var cv = document.getElementById('cv' + pn.id), cw = 1200 / state.W, ch = cw * 1.5;
+  cv.width = Math.round(state.W * cw); cv.height = Math.round(state.H * ch);
+  pn.ctx = cv.getContext('2d'); pn.cw = cw; pn.ch = ch;
+}
+function render(pn) {
+  var g = pn.grid, ctx = pn.ctx, cw = pn.cw, ch = pn.ch, t = state.anim ? performance.now() / 1000 : 0;
+  var pP = params(pn, 'proposed'), pC = params(pn, 'current'), cx, cy, i;
+  var flick = [];
+  for (i = 0; i < 3; i++) flick.push(state.anim ? 1 + 0.16 * (vnoise(t * 7.3 + i * 31.7, i * 3.1) - 0.5) + 0.08 * (vnoise(t * 13.1 + i * 5, 7) - 0.5) : 1);
+  ctx.font = Math.max(3, Math.round(ch * 0.95)) + 'px Consolas, "Lucida Console", monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  var stats = { lit: 0, lowContrast: 0 };
+  for (cy = 0; cy < g.H; cy++) for (cx = 0; cx < g.W; cx++) {
+    var p = state.mode === 'current' ? pC : state.mode === 'split' ? (cx < g.W / 2 ? pC : pP) : pP;
+    var o = shadeCell(pn, g, cx, cy, p, t, flick), x = cx * cw, y = cy * ch;
+    ctx.fillStyle = css(o.bg); ctx.fillRect(x, y, cw + 0.6, ch + 0.6);
+    if (o.g !== ' ') { ctx.fillStyle = css(o.fg); ctx.fillText(o.g, x + cw / 2, y + ch / 2 + 0.5); }
+    if (o.lit && p.mode === 'proposed') { stats.lit++; if (lum(o.bg) > 0.3 * lum(o.fg) + 0.02) stats.lowContrast++; }
+  }
+  if (state.mode === 'split') { ctx.fillStyle = '#ffd24a'; ctx.fillRect(Math.round(g.W / 2 * cw) - 1, 0, 2, g.H * ch); }
+  pn.stats = stats;
+}
+function renderAll() { PANELS.forEach(render); }
+function rebuildAll() { PANELS.forEach(function (pn) { buildPanel(pn); }); renderAll(); runChecks(); }
+
+document.getElementById('mode').addEventListener('change', function (e) { state.mode = e.target.value; PANELS.forEach(syncControls); renderAll(); });
+document.getElementById('grid').addEventListener('change', function (e) { var s = e.target.value.split('x'); state.W = +s[0]; state.H = +s[1]; rebuildAll(); });
+['anim', 'rays', 'bloom', 'cshadow'].forEach(function (id) {
+  document.getElementById(id).addEventListener('change', function (e) { state[id] = e.target.checked; renderAll(); });
+});
+var lastFrame = 0, frameMs = 0;
+function loop(now) {
+  if (state.anim && now - lastFrame > Math.max(110, frameMs * 2.5)) {
+    var t0 = performance.now(); renderAll(); frameMs = performance.now() - t0; lastFrame = now;
+    document.getElementById('perf').textContent = 'mockup frame ' + frameMs.toFixed(0) + ' ms (page only, not engine cost)';
+  }
+  requestAnimationFrame(loop);
+}
+
+// ===========================================================================
+// 9. INFO TABLES (palette target, lighting, haze, dull keys)
+// ===========================================================================
+function sw(hex) { return '<span class="sw" style="background:' + hex + '"></span>'; }
+function paletteTable(panelId) {
+  var rows = '';
+  Object.keys(NEW).forEach(function (k) {
+    var e = NEW[k];
+    if (e[2] !== panelId) return;
+    rows += '<tr><td>' + sw(e[0]) + '<b>' + k + '</b></td><td>' + e[0] + '</td><td>' + sw(C[e[1]] || '#ff00ff') + e[1] + ' ' + (C[e[1]] || '?') + '</td><td>' + e[3] + '</td></tr>';
+  });
+  return '<table><tr><th>NEW key (proposed)</th><th>hex</th><th>nearest current key (used in "current" mode)</th><th>use</th></tr>' + rows + '</table>';
+}
+function lightTable(panelId) {
+  var P0 = PRESET[panelId].proposed, P1 = PRESET[panelId].current;
+  function c2(key) { var h = hexOfKey(key, 'proposed') || hexOfKey(key, 'current'); return sw(h) + key + ' ' + h; }
+  var r = [
+    ['sun', c2(P0.sun) + ' I ' + P0.sunI + ', elev ' + P0.el + ', az ' + P0.az, c2(P1.sun) + ' I ' + P1.sunI + (panelId === 'A' ? ' (palette: elev 60)' : '')],
+    ['ambient (sky, from above)', c2(P0.amb) + ' I ' + P0.ambI, c2(P1.amb) + ' I ' + P1.ambI],
+    ['ground bounce (from below)', c2(P0.gnd) + ' I ' + P0.gndI, 'none (uniform ambient)'],
+    ['shadow tint', P0.shadow ? c2(P0.shadow) + ' k ' + P0.shadowK : 'none (shadows lit by the bright sky fill)', 'none'],
+    ['sky stops (top / mid / horizon)', P0.sky.map(c2).join('<br>'), P1.sky.map(c2).join('<br>')],
+    ['clouds (lit / underside)', c2(P0.cloud) + '<br>' + c2(P0.cloudShade), c2(P1.cloud)],
+    ['haze colour near -> far', c2(P0.hazeNear) + '<br>' + c2(P0.hazeFar), c2(P1.hazeNear) + '<br>' + c2(P1.hazeFar)],
+    ['haze start / full / curve / max', P0.hazeStart + ' m / ' + P0.hazeFull + ' m / ' + P0.hazeCurve + ' / <b>' + P0.hazeMax + '</b>',
+       P1.hazeStart + ' m / ' + P1.hazeFull + ' m / ' + P1.hazeCurve + ' / 1.0 (glyph blank above 0.85)']
+  ];
+  if (panelId === 'B') {
+    r.push(['hanging lantern (new preset lanternHang)', c2('lanternWarm') + ' I 0.9, r 3.0 m, flicker 6-10 Hz +-8 %, glass emissive (lanternCore core)',
+            c2('lantern') + ' lanternHook I 0.55, r 3.5 m']);
+    r.push(['window glow (new preset windowGlow)', c2('windowGlow') + ' I 0.35, r 1.2 m, glass emissive 0.8', 'none']);
+  } else {
+    r.push(['sun shafts (engine: not yet)', c2('sunRay') + ' strength 0.35, radial noise from the sun\'s screen position', 'none']);
+    r.push(['cloud shadows (small engine)', 'sky cloud noise scrolled on the ground, sun term x (1 - 0.5 x cover)', 'none']);
+  }
+  return '<table><tr><th>target</th><th>proposed</th><th>today (palette.js)</th></tr>' +
+         r.map(function (x) { return '<tr><td>' + x[0] + '</td><td>' + x[1] + '</td><td>' + x[2] + '</td></tr>'; }).join('') + '</table>';
+}
+function infoBlock(panelId) {
+  var sets = panelId === 'A'
+    ? 'existing <code>grassFace</code> (near meadow), <code>grassMid</code> / <code>turfMid</code> (mid / far meadow), <code>ivy</code> (far forest ridges), ' +
+      '<code>moss</code> + <code>rockFace</code> (boulders), <code>sky</code> ramp (clouds); NEW <code>crownClump</code> (crowns, bushes), ' +
+      '<code>bladeFace</code> (foreground grass, sways), <code>dirtFace</code> (path) + <code>o O .</code> pebbles; flowers <code>@ * o .</code> by distance; ' +
+      'ferns <code>/ \\ | - ~ \'</code> along the frond; mushrooms <code>( @ o ) _ |</code>.'
+    : 'existing oriented <code>beam</code> set (posts <code>| #</code>, beams <code>- = #</code>, braces <code>/ \\</code>), <code>stoneFace</code> + <code>gap</code> ' +
+      '(slate base + mortar), <code>moss</code>, <code>brickFace</code> (roof tiles, pots), <code>ironFace</code> (barrel bands), <code>strawFace</code> (dry grass), ' +
+      '<code>ivy</code> (pot leaves, far forest); NEW <code>plasterFace</code>, <code>crownClump</code> (background trees). Lantern: <code>/^\\ |o*o| -v-</code>, glass emissive.';
+  return '<div class="cols"><div><h3>Palette target (NEW keys; ids append-only)</h3>' + paletteTable(panelId) + '</div>' +
+         '<div><h3>Lighting + haze targets</h3>' + lightTable(panelId) + '<h3>Glyph sets used</h3><div class="note">' + sets + '</div></div></div>';
+}
+var DULL = [
+  ['ambient', 'ambientSky (0.40)', 'outdoor fill 0.12 dark blue: every shadow goes blue-black; the references have bright, coloured shadows'],
+  ['turf', 'meadow', 'olive, low saturation: reads as a dry lawn next to the reference grass'],
+  ['turfLight', 'meadowLight', 'sunlit grass needs the yellow-green pop'],
+  ['grass', 'meadow', 'mid OK but darker and bluer than the reference'],
+  ['leaf', 'lime', 'canopy green is dull; reference crowns are lime'],
+  ['leafLight', 'limeLight', 'crown highlights too grey-green'],
+  ['moss', 'mossCap', 'brown-olive; reference moss is a fresh green'],
+  ['stoneMid', 'mossRock', 'beige-brown; reference boulders are grey-green'],
+  ['stoneLight', 'mossRockLight', 'beige'],
+  ['rubble', 'pebble', 'brown pebbles; reference pebbles are neutral light grey'],
+  ['skyTop', 'skyCyanTop', 'deep dull blue; reference sky is bright cyan'],
+  ['skyMid', 'skyCyanMid', 'greyish blue'],
+  ['fogFarNear', 'hazeWarm', 'cool blue-grey fog; reference haze is warm and pale'],
+  ['fogDusk', 'hazeEvening', 'dark purple: evening distance should glow warm, not go dark'],
+  ['ambientDusk', 'ambientEvening (0.30)', 'right hue, far too dark at 0.10'],
+  ['mushroomCap', 'mushroomOrange', 'brown-orange; reference mushrooms are bright orange'],
+  ['woodLight', 'beamLight / dirt', 'too orange-light for half-timber beams (reference beams are dark brown); fine for ladders, steps']
+];
+function dullTable() {
+  return '<table><tr><th>current key</th><th>proposed replacement</th><th>why</th></tr>' + DULL.map(function (d) {
+    var nk = d[1].split(' ')[0], nh = hexOfKey(nk, 'proposed') || '#ff00ff';
+    return '<tr><td>' + sw(C[d[0]]) + d[0] + ' ' + C[d[0]] + '</td><td>' + sw(nh) + d[1] + ' ' + nh + '</td><td>' + d[2] + '</td></tr>';
+  }).join('') + '</table><div class="note">Reused unchanged (already fit the references): ' + REUSED.map(function (k) { return sw(C[k]) + k; }).join(' ') + '</div>';
+}
+
+// ===========================================================================
+// 10. CHECKS
+// ===========================================================================
+function runChecks() {
+  var out = [], bad, k;
+  function line(ok, txt) { out.push('<div class="' + (ok === true ? 'pass' : ok === 'warn' ? 'warn' : 'fail') + '">' + (ok === true ? 'PASS ' : ok === 'warn' ? 'WARN ' : 'FAIL ') + txt + '</div>'); }
+  // glyphs
+  bad = [];
+  function chk(str, where) { for (var i = 0; i < str.length; i++) { var cc = str.charCodeAt(i); if (cc < 32 || cc > 126) bad.push(where + ' code ' + cc); } }
+  Object.keys(NS).forEach(function (s) { NS[s].forEach(function (lv) { chk(lv, 'NS.' + s); }); });
+  chk(SKY_RAMP, 'sky ramp');
+  PANELS.forEach(function (pn) { pn.grid.cells.forEach(function (c) { if (!c || !c.s) return; if (typeof c.s === 'string') chk(c.s, pn.id); else c.s.forEach(function (lv) { chk(lv, pn.id); }); }); });
+  line(bad.length === 0, 'every glyph (cells, NEW sets, sky ramp) is printable ASCII 32-126' + (bad.length ? ': ' + bad.slice(0, 5).join(', ') : ''));
+  // blank-share rule on new sets
+  bad = Object.keys(NS).filter(function (s) { return NS[s].length !== 8 || NS[s][2].indexOf('.') >= 0; });
+  line(bad.length === 0, 'NEW glyph sets have 8 levels and no "." at level 3 (US-028 blank-share rule)' + (bad.length ? ': ' + bad.join(', ') : ''));
+  // keys
+  bad = Object.keys(NEW).filter(function (k2) { return C[k2]; });
+  line(bad.length === 0, 'NEW keys do not collide with existing palette.colors keys' + (bad.length ? ': ' + bad.join(', ') : ''));
+  bad = Object.keys(NEW).filter(function (k2) { return !C[NEW[k2][1]]; });
+  line(bad.length === 0, 'every NEW key names an existing nearest key for "current" mode' + (bad.length ? ': ' + bad.join(', ') : ''));
+  bad = Object.keys(NEW).filter(function (k2) { return !/^#[0-9a-f]{6}$/.test(NEW[k2][0]); });
+  line(bad.length === 0, 'NEW hex values are #rrggbb lower-case' + (bad.length ? ': ' + bad.join(', ') : ''));
+  // used keys resolve
+  var used = {};
+  PANELS.forEach(function (pn) { pn.grid.cells.forEach(function (c) { if (c && c.c) used[c.c] = 1; if (c && c.bgc) used[c.bgc] = 1; }); });
+  bad = Object.keys(used).filter(function (k2) { return !hexOfKey(k2, 'proposed') || !hexOfKey(k2, 'current'); });
+  line(bad.length === 0 && Object.keys(MISSING).length === 0, Object.keys(used).length + ' colour keys used by the mockups resolve in both modes' +
+       (bad.length || Object.keys(MISSING).length ? ': ' + bad.concat(Object.keys(MISSING)).join(', ') : ''));
+  // reserved colours
+  var reserved = ['danger', 'heroGreen', 'magic', 'aether', 'aetherCore', 'aetherLight', 'aetherMid', 'aetherDim', 'mana', 'manaLight', 'manaCore', 'manaDark', 'vital'];
+  bad = reserved.filter(function (k2) { return used[k2]; });
+  line(bad.length === 0, 'reserved colours (danger, heroGreen, aether*, mana*, vital) are not used as scenery' + (bad.length ? ': ' + bad.join(', ') : ''));
+  var pairs = [['autumnRed', 'danger'], ['rustGrass', 'danger'], ['autumnOrange', 'danger'], ['petalViolet', 'mana'], ['autumnYellow', 'gold'], ['autumnYellow', 'alert']];
+  pairs.forEach(function (pr) {
+    var dd = hexDist(NEW[pr[0]][0], C[pr[1]]);
+    line(dd >= 45 ? true : 'warn', pr[0] + ' ' + NEW[pr[0]][0] + ' vs reserved ' + pr[1] + ' ' + C[pr[1]] + ': RGB distance ' + dd.toFixed(0) + ' (>= 45 wanted)');
+  });
+  // contrast (proposed cells)
+  PANELS.forEach(function (pn) {
+    if (!pn.stats || !pn.stats.lit) return;
+    var pct = 100 * pn.stats.lowContrast / pn.stats.lit;
+    line(pct < 3 ? true : 'warn', 'panel ' + pn.id + ': ' + pct.toFixed(1) + ' % of lit proposed cells have bg luminance > 30 % of fg (style guide 5.3; haze / bloom cells are the expected exceptions)');
+  });
+  document.getElementById('checks').innerHTML = out.join('');
+}
+
+// ===========================================================================
+// boot
+// ===========================================================================
+PANELS.forEach(function (pn) { buildControls(pn); syncControls(pn); });
+document.getElementById('infoA').innerHTML = infoBlock('A');
+document.getElementById('infoB').innerHTML = infoBlock('B');
+document.getElementById('dull').innerHTML = dullTable();
+rebuildAll();
+requestAnimationFrame(loop);
+} catch (err) {
+  document.getElementById('fatal').textContent = 'ERROR: ' + (err && err.stack || err);
+  throw err;
+}
+})();
+</script>
+</body>
+</html>
