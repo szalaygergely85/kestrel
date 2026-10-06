@@ -682,6 +682,23 @@
         'caadhaca'
       ] }
     },
+    rock_soft: {
+      desc: 'Stylized boulder stone for imported meshes (Quaternius): big soft patches, no wall-like facets.',
+      base: 'rock', albedo: 0.85, ramp: 'rubble',
+      bg: { mode: 'darken', k: 0.20 },
+      textureFade: [5, 16],
+      texture: { w: 8, h: 4, scale: [24, 24], key: {
+        h: { shade: 1.15, tint: 'stoneLight', amount: 0.3 },
+        a: { shade: 1.00 },
+        c: { shade: 0.80 },
+        d: { shade: 0.75, tint: 'stoneDark', amount: 0.3 }
+      }, rows: [
+        'haacdaha',
+        'acdhaacd',
+        'dahacdaa',
+        'caadhaca'
+      ] }
+    },
     sky: {
       kind: 'sky',
       desc: 'Open sky for "sky" ceilings. Emissive (not lit, not fogged). Color = vertical gradient ' +

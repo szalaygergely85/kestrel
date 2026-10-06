@@ -71,7 +71,7 @@ import { MESH_FRAG_SRC, MESH_CLOTH_FRAG_SRC } from './glsl/mesh.frag.js';
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../GBuffer.js';
-import { DrawList, LevelMeshCache, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, addCloths, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
+import { DrawList, LevelMeshCache, MeshDrawCache, addMeshStructures, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, addCloths, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
@@ -226,6 +226,8 @@ export class GpuCellPipeline {
     this._meshDevice = null;
     this._meshBuffers = null;
     this._levelMeshCache = null;
+    this._meshDrawCache = new MeshDrawCache(); // ME-14c3: placed glTF meshes (kind 9), per-GPU-pipeline copy
+    this._strictMatIdFor = null;               // ME-14c3: idFor that throws on an undefined palette key
     this._meshDrawList = null;
     if (this.renderer === 'mesh') {
       this.progMesh = linkProgram(gl, MESH_VERT_SRC, MESH_FRAG_SRC);
@@ -961,6 +963,10 @@ export class GpuCellPipeline {
     // rebuilds a structure's OWN mesh on its `packed.version` change, never
     // on a matIdFor change, so this is the one seam that must reset it).
     if (this.renderer === 'mesh') this._levelMeshCache = new LevelMeshCache(table.idFor);
+    this._strictMatIdFor = (key) => {
+      if (!table.hasKey(key)) throw new Error(`mesh material: palette key "${key}" is not defined in the palette / detail pass`);
+      return table.idFor(key);
+    };
   }
 
   /**
@@ -1734,6 +1740,8 @@ export class GpuCellPipeline {
     // recipe constant read here on purpose (this story's scope is the
     // tower; a real fogFarM wiring is ME-06's terrain-parity concern).
     addStructures(list, world, cam, this._levelMeshCache, 2000);
+    // ME-14c3 (37.1 item 7): imported glTF meshes (kind 9) right after the level structures, same as compositor.js.
+    if (this._strictMatIdFor) addMeshStructures(list, world, cam, this._meshDrawCache, this._strictMatIdFor, 2000);
     // ME-06 (27.15.5): one `TerrainMeshSet` per bound `Terrain` instance,
     // built lazily and advanced by at most 2 ms per RENDERED frame (never
     // inside a fixed step, never inside this draw loop itself) - the same
@@ -2146,6 +2154,7 @@ export class GpuCellPipeline {
     src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; // ME-15f (27.9a amendment 5)
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b2
     src.matIdFor = this._table ? this._table.idFor : undefined;
+    src.meshCache = this._meshDrawCache; src.meshIdFor = this._strictMatIdFor || undefined; // ME-14c3: meshes cast sun shadows
     src.fogFarM = sunShadowFogFar(this._palette, so);
     shadowWorldZ(world, this._levelMeshCache, this._shadowWorldZ);
     const sm = shadowSunMatrix(sun.dir, this._shadowCentre, so, this._shadowWorldZ, this._sunMat);

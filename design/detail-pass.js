@@ -367,6 +367,17 @@
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
       lod: { mid: 12, far: 25, dither: 3 }
     },
+    rock_soft: {
+      v1: 'rock_soft', seed: 112,
+      desc: 'Stylized boulder stone for imported Quaternius meshes: soft 2.6 x 1.9 m tone patches, few greys, light moss. Irregular facets 1.1 x 0.7 m (tones only, ' +
+            'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
+      albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
+      tones: [['rock', 5], ['stoneCool', 3], ['stoneLight', 1]],
+      grid: { u: 2.6, v: 1.9, stagger: 0.5, lines: false },
+      face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
+      overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.25, shade: 0.97, joint: 0.0, face: 0.08 },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
     // --- D-011 "Kestrel" reskin (v1.9): every new v1 material gets its v2 record (GPU path needs allV2) ------
     stone_ivy: ext(STONE, {
       v1: 'stone_ivy', seed: 14,
@@ -997,7 +1008,7 @@
   var remap = {
     stone: 'stone', stone_moss: 'stone_moss', stone_scorched: 'stone_scorched',
     floor: 'floor', wood: 'wood', rubble: 'rubble', grass: 'grass',
-    iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock',
+    iron: 'iron', grate: 'grate', ash: 'ash', rock: 'rock', rock_soft: 'rock_soft',
     stone_ivy: 'stone_ivy', moss_top: 'moss_top', brass: 'brass', copper: 'copper', canvas: 'canvas',
     // US-040 step 4: voxel prop materials (design/models/voxel_props.js), same key in both files.
     brass_light: 'brass_light', brass_hot: 'brass_hot', brass_dark: 'brass_dark', iron_light: 'iron_light', iron_dark: 'iron_dark',
