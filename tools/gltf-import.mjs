@@ -48,6 +48,7 @@ Options:
                       content/meshes/<id>.mesh.json
   --mats <path>       material-name -> palette-key JSON map
   --uv <planar|source>  UVs: world-metre planar (default) or the file's TEXCOORD_0
+  --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
   --dry-run           parse and report only; write nothing
 
 Output: content/meshes/<id>.mesh.json (MeshData, meshToJSON shape) plus a
@@ -65,6 +66,7 @@ function parseArgs(argv) {
     if (a === '--mats') { args.mats = argv[++i]; if (!args.mats) throw new Error('--mats needs a path'); continue; }
     if (a === '--uv') { args.uv = argv[++i]; if (args.uv !== 'planar' && args.uv !== 'source') throw new Error('--uv must be planar or source'); continue; }
     if (a === '--out') { args.out = argv[++i]; continue; }
+    if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
     if (a === '--dry-run') { args.dryRun = true; continue; }
     args._.push(a);
   }
@@ -197,6 +199,10 @@ export async function runCli(argv) {
   }
 
   if (args.uv) opts.uv = args.uv;
+  if (args.simplify) {
+    const full = loadGltf(raw, id, opts).triCount; // untouched count -> ratio
+    if (args.simplify < full) opts.simplifyRatio = args.simplify / full;
+  }
   if (args.mats) opts.mats = JSON.parse(fs.readFileSync(args.mats, 'utf8'));
   const materialKeys = await loadEngineMaterialKeys();
   const { json: meshJson, report } = importGltfBytes(raw, id, opts, materialKeys);

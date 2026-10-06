@@ -34,6 +34,7 @@ import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, KIND_MESH 
 import { MESH_VERSION, AUX_STRIDE, FLAT_STRIDE, AO_NONE, packFlat1, assertMesh } from './MeshData.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { DEG2RAD } from '../core/transform.js';
+import { simplifyTriangles } from './simplify.js'; // ME-SIMPLIFY-01
 
 /** @typedef {import('./MeshData.js').MeshData} MeshData */
 
@@ -498,7 +499,7 @@ function planarUv(face, x, y, z) {
  * engine materials is a sidecar step (ME-13b), not this function's job.
  * @param {ArrayBuffer|Uint8Array|string} buffer
  * @param {string} id - MeshData id, e.g. `gltf:<file>/<localId>`
- * @param {{buffers?: Uint8Array[], uv?: 'planar'|'source'}} [opts] - `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
+ * @param {{buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number}} [opts] - `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
  *   `json.buffers[i]` when its `uri` is an external file (not a data: URI
  *   and not GLB-embedded) - this module never reads a file itself.
  * @returns {MeshData}
@@ -569,16 +570,25 @@ export function loadGltf(buffer, id, opts = {}) {
         ? (json.materials && json.materials[prim.material] && json.materials[prim.material].name) || `material_${prim.material}`
         : 'default';
 
-      const bakedPos = new Array(vertCount);
+      let bakedPos = new Array(vertCount);
       for (let v = 0; v < vertCount; v++) {
         mat4TransformPoint(world, posRows[v][0], posRows[v][1], posRows[v][2], tmp);
         bakedPos[v] = axisConvert(tmp[0], tmp[1], tmp[2]);
       }
+      let triIdxUse = triIdx;
+      // ME-SIMPLIFY-01: `opts.simplifyRatio` (0 < r < 1) reduces each primitive to r x its triangles (quadric edge collapse,
+      // positions welded; planar UVs and smoothing groups are derived afterwards, so source UVs cannot be kept).
+      if (opts.simplifyRatio > 0 && opts.simplifyRatio < 1) {
+        if (opts.uv === 'source') bad(id, 'simplifyRatio cannot keep source UVs (use planar)');
+        const target = Math.max(4, Math.round((triIdx.length / 3) * opts.simplifyRatio));
+        const red = simplifyTriangles(bakedPos, triIdx, target);
+        bakedPos = red.positions; triIdxUse = red.idx;
+      }
 
       const triStart = allTris.length;
-      const triCount = triIdx.length / 3;
+      const triCount = triIdxUse.length / 3;
       for (let t = 0; t < triCount; t++) {
-        let ia = triIdx[t * 3], ib = triIdx[t * 3 + 1], ic = triIdx[t * 3 + 2];
+        let ia = triIdxUse[t * 3], ib = triIdxUse[t * 3 + 1], ic = triIdxUse[t * 3 + 2];
         if (mirrored) { const tmpI = ib; ib = ic; ic = tmpI; } // compensate the handedness flip
         const p0 = bakedPos[ia], p1 = bakedPos[ib], p2 = bakedPos[ic];
         // Flat face normal from the baked (world+axis-converted) triangle -
@@ -590,7 +600,7 @@ export function loadGltf(buffer, id, opts = {}) {
         normalize3(normal);
         allTris.push({
           p0, p1, p2, normal, matName,
-          uv0: uvRows ? uvRows[ia] : null, uv1: uvRows ? uvRows[ib] : null, uv2: uvRows ? uvRows[ic] : null,
+          uv0: uvRows && triIdxUse === triIdx ? uvRows[ia] : null, uv1: uvRows && triIdxUse === triIdx ? uvRows[ib] : null, uv2: uvRows && triIdxUse === triIdx ? uvRows[ic] : null,
         });
       }
       primRanges.push({ part: `${node.name || `node${nodeIdx}`}#${pi}`, triStart, triCount });
