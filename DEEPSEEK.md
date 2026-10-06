@@ -27,6 +27,16 @@ Stop after item 4 if the day is over; log each item in the trial log before star
 
 **Still not for DeepSeek:** ME-19c/d (renderer core), HANDS-01a (view-model mirror, core render), ALPHA-01b/c, PREC-01a, ME-15g, TREES-LP-b. Codex/Claude keep those.
 
+### Round 3 (2026-10-06 evening) - 2 items, V4 Pro, off-peak, one at a time
+Round 2 done: UI-XHAIR-01, READ-01, US-079b0, US-079b, ED-DND-01, ED-FOLDERS-01, Quaternius imports, ART-01a, ART-04a (EUR 7.50 total for 11 items, 0 code retries).
+
+| # | Item | Size | Spec | Ends in |
+|---|---|---|---|---|
+| 1 | **US-079c** boar fight readability: hard de-overlap so two boars never merge (BUG-BOAR-OVERLAP), `!` notice + windup scrape (designer data `ASSETS.boarFx` in design/models/voxel_beast.js), only one boar charges at a time, charge damage 5 HP | ~0.75 d, game | backlog rows US-079c + BUG-BOAR-OVERLAP, docs/sprints/sprint-6.md, architecture 37.16 | owner walk-test |
+| 2 | **US-091a1** inventory data: `design/items.js` defs (on master), player inventory 24 slots + left/right hand slots, demo start state (sword left, fireball right), sword take puts the sword in the pack/hand, save/load round trip | ~0.5 d, game | backlog row US-091a1, architecture 37.16 + 37.8a, sprint-6.md | main-session check |
+
+Do NOT start HANDS-01b at the same time as US-091a1 (both edit `sim/inventory.js`).
+
 ## Extra rules for the trial
 - Small steps: read only the files the item names; run the Node test for the file you touched before the full suite.
 - Stop rule: if one bug takes more than ~30 tool calls or 3 failed test runs, stop, write `NEEDS PC-A: <what failed>` at the END of the item's backlog row (never in the ID column), commit the note only, and stop.
