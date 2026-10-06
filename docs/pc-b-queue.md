@@ -25,6 +25,18 @@ Lane B: **HANDS-01a** (view-model model mirror + winding flip; see the 37.8a err
 Specs: architecture 37.16 (boar death), 37.8a (hands), 37.14 (fireball), D-040, D-042 item 2. Designer assets are on master (voxel_beast.js, items.js, spell.js, inventory_ui.js).
 Two programmers at once only on disjoint files: lane A and lane B are disjoint except `sim/inventory.js` (US-091a1 vs HANDS-01b - never at the same time) and `sword.js` (US-079b before HANDS-01b).
 
+## 2b. ART look engine (owner liked art-ref.html, D-041/D-042; architecture **37.18**) - default OFF, byte-identical until ART-ON
+| Step | Who | Size | Content | After |
+|---|---|---|---|---|
+| ART-01a | **DeepSeek** | 0.6 d | `look.js` + `roofMap.js` + LightSet fields + `?look=` (JS only, no pixel change) | - |
+| ART-04a | **DeepSeek** | 0.7 d | clouds JS twin (sky.js / fastShadeSky) | 01a |
+| ART-01b | Codex | 1 d | hemisphere ambient + shadow tint in the light pass, both twins, roof texture, outdoor bit | 01a |
+| ART-01c | Codex | 0.6 d | terrain hemisphere + tint, both twins | 01b |
+| ART-03a | Codex | 0.8 d | haze.js + GLSL, terrain haze, edge gate | 01a |
+| ART-03b | Codex | 1 d | material-path haze + glyph thinning | 01b |
+| ART-04b | Codex | 0.8 d | clouds GPU + gpucompare `sky` metric | 04a |
+All end in `arch-review`. ART-ON (designer colour keys + switch the default + owner look) is PC-A.
+
 ## 3. After that (or as fillers)
 - **TREES-LP-a** Kenney Nature Kit Collada importer (`tools/dae-import.mjs` -> `buildMeshFromTris`; source `design/meshes/kenney/dae/`) - architecture 37.15 + D-042 item 4.
 - **ALPHA-01a** alpha-cutout import + formats (architecture 37.17), then ALPHA-01b (after TREES-LP-b).

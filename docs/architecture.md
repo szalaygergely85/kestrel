@@ -5890,3 +5890,129 @@ The sim is transient: not saved, a reload has no fireballs in flight.
 | **ALPHA-01f** bench (absorbs TREES-LP-e) | PC-A | ~0.25 d | none | Arc `?bench=1` forestWalk trees on/off x `shadows` map/off, `lodCells` x 0.5 / x 2 | bars of 37.15 item 8 met or tuned in this order: raise `lodCells`, lower `fill`, drop the Pine LOD0 range; recorded in the row; owner walk-test "stylized forest" |
 
 **Reusable beyond trees (D-041 "real engine feature"):** any `.mesh.json` range may carry `mask` - fences, grates, torn cloth banners (static), ivy cards on the tower. The same `MaskAtlas` can later back sprite cutouts; keep it in `engine/render/` with no mesh import.
+
+### 37.18 ART look engine: hemisphere ambient, warm capped haze, sky gradient + clouds (architect, 2026-10-06; D-042 item 3, ART-REF-01 `design/preview/art-ref.html`, rows ART-01/03/04)
+
+Track: **PC-B cross-track** (engine, every step ends in `arch-review`). DeepSeek = JS-only, pure-function steps; Codex = GLSL twin + pipeline steps. Never both on one step.
+
+**0. Probed state (2026-10-06, `pc-a` d1e049c).**
+- A "look" is a `palette.timeOfDay[key]` record. The active look is `P.defaultTime` (`'morning'`), read by `sunFromWorld` (terrain `ambientI/sunI`), `fastShadeSky`, `_bakeSkyLUT`. There is no `looks` object; this note adds optional blocks to the timeOfDay records, it does not add a new table.
+- There are **two ambients**. Material path (kinds 1-6, 8, 9): `LightSet.ambient` = `P.lights.ambient` (0.12, `#2a3550`), added in `lightAt` / `light.frag` (`L = ambient + points + sun`). Terrain (kind 7): the scalar `T.ambientI + T.sunI * N.L * sunN/4` in `shadeTerrainCells` / the shade.frag terrain branch. There is no hue tint on terrain.
+- **Indoor vs outdoor is not known today.** Every cell gets the same ambient. Only the sun is occluded (shadow map; the sun DDA uses `ceilSky`, and ME-19c deletes it).
+- There are **two fogs**. Material path: `DP.fog` (detail-pass, 10-45 m linear, dark `fogV2`, glyph stipple). This applies to outdoor meshes and trees too. Terrain: `P.fog.far` (50-1500 m, curve 0.7, colour lerp near->far **by f**, `f > 0.85` -> blank). Edge pass: gates on `gbuf.fogF` / `terrainFogF`. Sprites: `resolveFogColor`.
+- Sky: the GPU (`shade.frag` kind 0, `uGpuSky`) is a flat 3-stop LUT with **no clouds**. JS `fillSky` -> `fastShadeSky` has the 32x8 texture clouds. `?gpucompare=1` excludes kind-0 cells. The 3-stop gradient format (`sky: [{t, c}]`, `t` 0 = horizon, `elevTop` 60) already exists, so the art-ref gradients are **data only**.
+
+**1. Common rule: block absent = today's code path.** Each feature is an optional block on the look record. When it is absent, both twins run the **unchanged** code (a uniform branch, no reordered float maths). So `?gpucompare=1` counts and the Node golden fixtures stay byte-identical until the palette switches a look on. Switching on means a one-time re-record of the gpucompare per-row counts. All rows must PASS at today's thresholds (twins agree). **No threshold widening.**
+
+**2. Data: look blocks** (in `design/palette.js` `timeOfDay[key]`, designer). Colour keys are the art-ref NEW keys. They come from a small designer data slice (ART-02a: light/sky/haze/cloud keys + `afternoon`/`evening` records). Engine steps test with inline fixture palettes and do not wait for it.
+```js
+afternoon: { ambient: 'ambientSky', ambientI: 0.40, sun: 'sunAfternoon', sunI: 1.15, sunElev: 42,
+  sky: [{ t: 0, c: 'skyCyanHorizon' }, { t: 0.45, c: 'skyCyanMid' }, { t: 1, c: 'skyCyanTop' }], cloud: 'cloudWhite', fog: 'fog',
+  hemi:   { sky: 'ambientSky', skyI: 0.40, ground: 'bounceGrass', groundI: 0.12, shadowTint: null, shadowK: 0,
+            sunFromLook: true, terrainTintK: 0.6 },
+  haze:   { near: 'hazeWarm', far: 'skyCyanHorizon', start: 15, full: 700, curve: 0.65, max: 0.78,
+            bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+  clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+            wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } },
+evening: { ... sun 'sunEvening' 0.95 @ 12, sky skyEve*, hemi { sky 'ambientEvening' 0.30, ground 'bounceEvening' 0.10,
+           shadowTint 'shadowPurple', shadowK 0.35 }, haze { near 'hazeEvening', far 'skyEveHorizon', 10, 400, 0.7, max 0.6 },
+           clouds { lit 'cloudEve', shade 'cloudEveShade', ... } }
+```
+- **`engine/render/look.js`** (new, imports nothing from design/game): `resolveLook(P, key = P.defaultTime) -> LookRec`. It is cached per `(P, key)` identity. It pre-resolves every colour to `P.rgb` 0..255 arrays and every `hue x I` to `Float32Array(3)`, and gives `hemi/haze/clouds` as `null` when absent. `validateLook(P, key) -> string[]` (errors) also emits warnings. Checks: colour keys exist; `skyI, groundI` in [0, 2]; `shadowK` in [0, 1]; haze `0 <= start < full`, `curve > 0`, **`0 < max < 1`** (never opaque), `bgK` in [0, 1], `blank` in (0, 2], `thin0` in [0, 1], `thinK >= 0`, `edgeMax` in (0, 1]; clouds: `scale, bias > 0`, `cover` in [0, 1], `wind` finite, `ramp` exists and is printable ASCII. **Warning:** `haze.far !== sky[t=0].c` (art-ref: the horizon colour must equal the far haze). `tools/validate-content.mjs` runs `validateLook` on every timeOfDay key.
+- **`?look=<key>`** (main.js, PC-B main session): sets `P.defaultTime` before `bind`/`buildLightSet` (unknown key -> `console.warn`, ignored). gpucompare honours it too. A runtime look switch is a later step (US-122); this one is load-time only.
+
+**3. ART-01 hemisphere ambient + shadow tint.**
+- **Outdoor test = roof map** (new `engine/render/roofMap.js`). This is a per-level-structure grid of world-z ceiling heights, packed as an R32F atlas (width = max `w`, rows stacked; boxes axis-aligned like `uStructA/B`; `MAX_ROOF_BOXES = 8`). Texel value: `origin.z + ceilH` for a non-solid sector with a numeric `ceilH`, else `-1e30` (sky ceiling, solid, no sector). `buildRoofMap(world, prev?) -> {count, box: Float32Array(32) [ox, oy, w, h], yOff: Int32Array(8), atlasW, atlasH, data: Float32Array, version}`. It is rebuilt only when the sum of `structVersion` + `packed.version` changes. It reuses `prev.data` when the size fits, and never runs per frame otherwise. `outdoorAt(map, x, y, z)`: first box containing `(x, y)` -> `r = data[(yOff + floor(ly)) * atlasW + floor(lx)]`; `return z > r + 0.02 ? 1 : 0`; no box -> 1. **Sample point = `P + N * 0.05`**: outer wall faces sample the open cell outside, inner faces the room, a ceiling face (`z == ceilH`) is indoor, the roof top (`topH`) is outdoor. Terrain (kind 7) is always outdoor, with no fetch. Mesh structures (glTF houses) are outdoor until a later `roof` prefab key stamps a box (not in this story). The same map is reusable later for rain/snow/cloud-shadow masking.
+- **`LightSet`** gets fields allocated once: `hemi = {on: false, sky: F32(3), ground: F32(3), tint: F32(3), tintK: 0}` and `roof = null`. `setLook(lights, look)` copies `look.hemi` (`sky = hue x skyI`, `ground = hue x groundI`, `tint = rgb / max(rgb)`, `tintK = shadowK`). When `hemi.sunFromLook`, it also sets `sun.col = hue(look.sun) x look.sunI`. Called by `buildLightSet` with `resolveLook(P)`. `LightSet.ambient` stays the **indoor** ambient (unchanged).
+- **Light pass, both twins (`lightAt` + `light.frag`), same expression order.** Hemi off = today's code, literally. Hemi on (`uHemiOn`):
+```
+L  = hemiOn ? vec3(0) : uAmbient;                      // the points loop below is unchanged, accumulates into L
+... points loop ...                                    // L == Lp when hemi on
+sunAdd = uSunCol * (<today's factor>);                 // map: ndotsun * sunN * 0.25; dda: ndotsun
+if (hemiOn) Ls += sunAdd; else L += sunAdd;            // off path adds exactly as today
+if (hemiOn) {
+  out = kind == TERRAIN || outdoorAt(P + N*0.05);      // roof fetch only for non-terrain
+  A = (out && kind != TERRAIN) ? uHemiGround + (uHemiSky - uHemiGround) * (0.5 + 0.5 * N.z) : uAmbient;
+  T = vec3(1);
+  if (out && kind != TERRAIN && uSunOn != 0 && uShadowK > 0) {
+    sf = ndotsun > 0 ? clamp(ndotsun * 4, 0, 1) * (map ? sunN * 0.25 : float(sunlit)) : 0;
+    s  = uShadowK * (1 - sf);
+    T  = 1 + (uShadowTint - 1) * s;
+  }
+  L = (A + Ls) * T + L;
+}
+LIGHT.w |= uint(out) << OUTDOOR_SHIFT   // OUTDOOR_SHIFT = 19 (exported from lighting.js); written when hemi OR haze is on, else 0
+```
+  Write `mix` out as `a + (b - a) * t` in both twins. Back faces (ndotsun <= 0) count as shadowed, so they get the tint too. This is a deliberate deviation from the mockup, which only tints caster shadows: the evening references show purple-brown shaded sides. Kind 0 still returns `uAmbient`. Terrain keeps `uAmbient + points` in `L` (its hemi is in the shade pass, below), so the lamp tint math is unchanged. The JS twin writes `lightFlags.outdoor` -> `fb.light.outdoor` (new `Uint8Array`, `makeLightBuffer`). Sprites, particles and decals call `lightAt` and inherit the hemi automatically (normal `0, 0, 1` -> full sky colour). That is accepted.
+- **GPU:** `texRoof` (R32F) + `uRoofBox[8]` (vec4) + `uRoofYOff[8]` (int) + `uRoofCount`, uploaded on `roof.version` change only. `uHemiOn, uHemiSky, uHemiGround, uShadowTint, uShadowK, uOutdoorOn` are set at bind / look change. This must not use `uWorldFlags` (ME-19c deletes it).
+- **Terrain (shade pass, both twins: `shadeTerrainCells` + shade.frag kind-7 branch).** Hemi off: unchanged. On:
+```
+sunF = <today's sunFT>;  ndl = max(0, N.sunDir);
+At = uHemiGround + (uHemiSky - uHemiGround) * (0.5 + 0.5 * N.z);
+Lt = At + uSunColT * (ndl * sunF);                     // uSunColT = hue(look.sun) * look.sunI
+if (uShadowK > 0 && sun on) { sf = clamp(ndl * 4, 0, 1) * sunF; Lt = Lt * (1 + (uShadowTint - 1) * (uShadowK * (1 - sf))); }
+mLt = max(Lt.r, Lt.g, Lt.b);
+bT = mLt + max(Lc)                                     // replaces ambientI + sunI * ...
+shadeTerrain(...) -> then fg *= 1 + (Lt / max(mLt, 1e-6) - 1) * uTerrainTintK, before the existing +Lc*0.5 lamp add
+```
+  The tint is applied after `shadeTerrain`'s byte quantise, the same as the lamp add. JS: `out.fg` floats, then `toByte`.
+- **Budget:** light pass +1 texelFetch + <= 8 box tests per non-terrain cell, <= +0.05 ms (owner iGPU). Terrain +~12 ALU. JS twin <= +0.3 ms at 160x50. No per-frame allocation.
+
+**4. ART-03 warm haze with a cap.**
+- **Formula** (new `engine/render/haze.js`, pure + GLSL `HAZE_GLSL` in `glsl/common.js`; `H` = resolved `look.haze`, colours 0..255):
+```
+ht = clamp((d - H.start) / (H.full - H.start), 0, 1)
+f  = d <= H.start ? 0 : H.max * pow(ht, H.curve)         // guard: no pow(0, c) on the GPU
+hc = H.near + (H.far - H.near) * ht                       // colour by DISTANCE (ht), not by f (today's terrain lerps by f)
+fg += (hc - fg) * f
+bg += (hc * H.bgK - bg) * min(1, f * 1.1)
+glyph: f > H.blank -> 0 (default 1.01 = never)
+```
+  `d` = today's fog distance (`dist`, or `* fogScaleCell` when pitched).
+- **Where:** terrain cells (always outdoor) replace `terrainFogF` + the colour lerp in `shadeTerrain` (JS) / `TERRAIN_SHADE_GLSL` (wherever it lives after ME-19c; it is in `terrain.frag.js` today). Material-path cells with `outdoor` = 1 (LIGHT.w bit 19, `fb.light.outdoor[i]` -> new trailing `outdoor` arg of `shadeDetailFast`) replace the `DP.fog` block in `shadeDetailFast` / shade.frag. **Indoor cells keep `DP.fog` unchanged.** Material haze cells: **no stipple**. The glyph pick uses `gbPick = gbAvg * (1 - H.thinK * max(0, f - H.thin0))` (thinner far glyphs; the `gbAvg <= 0` test is unchanged).
+- **Edge gate:** `gbuf.fogF` / the edge.frag gate value for haze cells = `f * (DP.edge.fogMax / H.edgeMax)`. With this, the existing `> fogMax` test drops edges past `H.edgeMax`. edge.frag gets `uLightTex` (outdoor bit) + the haze uniforms, and `terrainFogF` gets a haze twin.
+- **Uniforms:** `uHazeOn, uHazeNear, uHazeFar (0..255), uHazeStart, uHazeFull, uHazeCurve, uHazeMax, uHazeBgK, uHazeBlank, uHazeThin0, uHazeThinK, uHazeEdgeScale`. Off -> `uTerrainFog*` / `uFog*` paths untouched.
+- **Later (ART-03c):** sprites/particles (`resolveFogColor` + `sprites.frag`), water composite, and the view model follow the haze when outdoor. Do this after the owner look, only if the mismatch shows.
+- **Budget:** +1 pow per haze cell (the terrain pow already existed); <= +0.03 ms.
+
+**5. ART-04 sky gradient + clouds.**
+- **Gradient:** data only. The look's 3 stops (mid `t = 0.45` = art-ref's 55 % down), using the existing `fastShadeSky` / `_bakeSkyLUT` code. Nothing to code.
+- **Clouds** (`look.clouds` present; absent = today: JS texture clouds, GPU none). In `sky.js`, `cloudAt(dx, dy, dz, elevDeg, C, off, out)` is pure JS. It is twinned in the shade.frag kind-0 branch, with the same order:
+```
+q   = (d.xy / (d.z + C.bias)) * C.scale + off          // cloud deck; off = drift, computed ONCE per frame: (C.wind * timeSec) mod 256, Math.fround, uploaded as uCloudOff
+vn(p)  = value noise: smoothstep-bilinear of hashFast01(ix & 255, iy & 255, C.seed)   // existing hashFast twins, period 256
+puff   = vn(q) * 0.65 + vn(q * 2.03 + 17.0) * 0.35
+wisp   = vn(vec2(q.x * 0.33, q.y) * 1.7 + 41.0)        // stretched 3x along x (wind axis)
+band   = smoothstep(0, cb0, el) * (1 - smoothstep(cb1, cb2, el))      // existing materials.sky.cloudBand
+dn     = clamp(max((puff - C.cover) * C.puffK, (wisp - C.wispCover) * C.wispK * 0.55) * band, 0, 1)
+if (dn > 0.04):
+  qb = (d.xy / (d.z + C.bias)) * C.scale                // un-drifted part
+  lit = clamp(0.5 + (vn(qb * (1 + C.litDy) + off) - vn(qb * (1 - C.litDy) + off)) * C.litK, 0, 1)   // below minus above: white tops
+  cc  = C.shade + (C.lit - C.shade) * lit
+  bg  = base + (cc - base) * min(1, dn * C.bodyK)       // bg carries the body
+  fg  = cc + (255 - cc) * (0.1 * lit)
+  glyph = ramp[min(N - 1, 1 + floor(dn * (N - 1.01)))] // ramp codes as uCloudRamp[8] + uCloudRampN
+else fg = bg = base, glyph = 0
+```
+  `base` = the gradient (LUT on the GPU, stops in JS). `fillSky` (JS fallback) and `fastShadeSky` call `cloudAt` when `look.clouds`. The GPU writes the glyph into `shadeFg.a` instead of 0. The drift is deterministic (sim `timeSec`) and stays precision-safe for hours because of the mod-256 wrap.
+- **Cost bound:** <= 5 `vn` (= 20 hashes) per sky cell, the lit pair only for cloud cells. GPU <= 0.05 ms; JS fallback <= 1 ms at 200x60.
+- **Parity:** gpucompare gets a **new** `sky` metric for kind-0 cells, shown only when `look.clouds` is on: glyph mismatch <= 1 % of sky cells, max channel diff <= 3. A new metric is not a widening; existing rows are untouched.
+- **Later (ART-04c, cloud ground shadows):** in the light pass, for outdoor cells, project `P` along `sunDir` to the deck (`P.xy + sunDir.xy * (Hdeck - P.z) / sunDir.z`). Use a world-scale `q` with the same `vn`/`off`, and multiply the sun term by `1 - 0.5 * smoothstep(0.56, 0.7, puff)`. The roof map masks indoor cells. Terrain gets it via `sunF`. The ground and sky mappings only need to agree visually.
+
+**6. Steps (each <= ~1 programmer-day, one commit each, `arch-review` at the end).**
+
+| Step | Who | Size | What | Tests | Done when |
+|---|---|---|---|---|---|
+| **ART-01a** look + roof map (JS, no pixels) | PC-B, **DeepSeek** | ~0.6 d | `look.js` (`resolveLook`, `validateLook`), `roofMap.js` (`buildRoofMap`, `outdoorAt`), `LightSet.hemi/roof` + `setLook`, `buildLightSet` calls it, `fb.light.outdoor` buffer (zeros), `validate-content` hook, `?look=` in main.js + gpucompare | `look.test.js` (fixture palette: resolve, cache identity, every validation rule incl. `max >= 1` rejected, the haze.far warning); `roofMap.test.js` (sky/solid/numeric ceil, ceiling face indoor, roof top outdoor, outer wall via `+N*0.05` outdoor, two boxes, rebuild only on version change, no alloc on same size) | suites + check-deps green; gpucompare counts identical; `validate-content` passes on the real palette |
+| **ART-01b** hemi + tint, light pass | PC-B, **Codex** | ~1 d | item 3 light pass, both twins; `texRoof` + uniforms; OUTDOOR_SHIFT bit | `lighting.test.js`: hemi off == today bit-exact (fixture); `N.z = 1` -> sky colour, `-1` -> ground; indoor cell -> `LightSet.ambient`; tint only outdoor, sun on, scaled by `1 - sf`; a hemi block equal to `lights.ambient` with `shadowK` 0 reproduces today within 1e-6; `glsl.test` compiles | gpucompare counts identical (default look); `&look=<fixture-on look>` all rows PASS at today's thresholds; light pass delta recorded (<= 0.05 ms) |
+| **ART-01c** hemi + tint, terrain | PC-B, **Codex** | ~0.6 d | item 3 terrain block, both twins (`terrainShade.js`, shade.frag kind 7) | `terrainShade.test.js`: off bit-exact; on: flat ground `N.z = 1` uses sky, warm sun tints fg, shadow tint only where `sunF < 1` | as 01b |
+| **ART-03a** haze, terrain | PC-B, **Codex** | ~0.8 d | `haze.js` + `HAZE_GLSL`; terrain replaces fog when `look.haze`; edge terrain gate scaled | `haze.test.js` (f = 0 at start, = max at full, never > max, colour by ht, `blank` never hit at max 0.78); `terrainShade.test.js` off bit-exact, on far cell keeps a glyph | gpucompare counts identical (default); `&look=` PASS; capture shows far hills shaped, not a wall |
+| **ART-03b** haze, material path | PC-B, **Codex** (after 01b) | ~1 d | outdoor material cells: haze + thinning, no stipple; indoor `DP.fog` unchanged; `shadeDetailFast` `outdoor` arg; edge material gate | `detailShade` tests: indoor bit-exact vs today, outdoor haze colour/thin/no stipple; edge gate scaling | as 03a; tower interior capture unchanged with the look on |
+| **ART-04a** clouds, JS twin | PC-B, **DeepSeek** | ~0.7 d | `cloudAt` in `sky.js`, `fastShadeSky`/`fillSky` branch, drift offset helper, `clouds` validation | `sky.test.js`: deterministic (same t -> same cells), `dn` 0 outside the band, lit > 0.5 on top edges of a fixture puff, drift wraps at 256 with no jump in `vn`, no alloc per call | suites green; `?gpu=0&look=` shows clouds; default sky unchanged |
+| **ART-04b** clouds, GPU | PC-B, **Codex** | ~0.8 d | shade.frag kind-0 cloud branch, `uCloud*` uniforms, per-frame `uCloudOff`, glyph out; gpucompare `sky` metric | `glsl.test` compiles; gpucompare `sky` metric within its bound | owner look (below) |
+| **ART-ON** switch the look on | PC-A designer (ART-02a data) + main session | ~0.3 d | `afternoon`/`evening` records; `defaultTime = 'afternoon'`; re-record gpucompare counts once (old/new in the row) | `validate-content` | **owner look:** `?look=afternoon` and `?look=evening` in the meadow, forest edge and tower; the owner picks the default |
+| ART-03c / ART-04c | later | ~0.5 / 0.7 d | sprites/water haze; cloud ground shadows | | only if the owner look asks |
+
+Order: 01a -> 01b -> {01c, 03b}; 01a -> 03a; 01a -> 04a -> 04b; ART-ON last. Step IDs go in commit messages.
+
+**Do not:** read `uWorldFlags`/`ceilSky` textures for outdoor (ME-19c deletes them); change `LightSet.ambient` or `DP.fog` values; reorder today's float sums on the off path; widen any gpucompare threshold; allocate in `lightAt`/`cloudAt`/haze; hard-code art colours in engine files (only look data); reshape owner art to hit the look.
