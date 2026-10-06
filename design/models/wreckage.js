@@ -3,7 +3,8 @@
  * wall-ballistae, crashed through the tower's broken crown.
  * Format: design/README.md section 4 (+ 4.2). Plain script. Sets:
  *   ASSETS.models.gondola        brass gondola with the KESTREL name board, snapped rigging (sways)      34x9  (half 17x5)
- *   ASSETS.models.envelopeDrape  torn canvas hanging from a beam (stairwell), sways, burnt tear         10x8  (half 5x4)
+ *   ASSETS.models.envelopeDrape  torn envelope panel on 4 eyelets (stairwell): sagging swags, 3 gores,  18x16 (half 9x8)
+ *                                seam tapes, burnt tear, ragged swaying hem (v1.39; was 10x8 / 5x4)
  *   ASSETS.models.envelopeHeap   crumpled envelope on the ground (seen from the summit, snagged below)   14x4  (half 7x2)
  *   ASSETS.models.burner         the Kestrel's copper burner: flame + embers, brass gauge (@)           13x11 (half 7x6)
  *                                (replaces the iron `brazier` in the level; same `burn` anim name, same torch light)
@@ -146,44 +147,91 @@
   };
 
   // =====================================================================================================
-  // ENVELOPE DRAPE 10x8: torn canvas hanging from a beam; folds ) (, seam ~, a burnt tear, tattered hem sways
+  // ENVELOPE DRAPE 18x16 (v1.39, owner 2026-10-06 "the balloon should look like cloth"; was 10x8): a torn panel of
+  // the envelope hanging from 4 brass eyelets on a rope (row 0). The top edge SAGS between the eyelets (swags \_._/),
+  // three GORES (ochre | faded red | ochre, cols 0-5 / 6-11 / 12-17) with a rope load tape `:` sewn down each seam,
+  // hanging folds ) light / ( dark / ~ ` mid in each gore, a burnt tear (see-through, scorched rim) upper left, and a
+  // TORN, RAGGED HEM: the left gore ends short, the red gore hangs in a long tongue, frayed threads ' , below.
+  // Same world size 1.4 x 1.9 m and anchor rule (hem row = anchor, placement unchanged); half LOD 9x8.
+  // Colours come from the column (gore) + the glyph (fold light / dark), so they can't drift from the glyph rows.
   // =====================================================================================================
-  var DW = 10;
+  var DW = 18;
   var D_ROWS = fix([
-    '-==o==o==-',
-    ')~)(~)(~)(',
-    ')~)( )(~)(',
-    ')~)/  \\~)(',
-    ')~)(\\/)~)(',
-    ')~)( )(~) ',
-    ")~/ ')(\\  ",
-    "/' ' \\( ' "
+    'o-   -o-   -o-  -o',
+    ')\\_._/:\\_,_/:\\__/(',
+    '))~(~(:)~(~(:)~(((',
+    ")'~(`(:)'(`(:)~`()",
+    ')~,_,(:)`(~(:)`~()',
+    ")/  \\(:)~`((:)'`()",
+    ')(   ):)`(~(:)~`()',
+    ')\\  ,/:)~`((:)`~()',
+    ")~',`(:)`(~(:)~`()",
+    '))`~((:)~`((:)`~((',
+    ')~`(~(:))~`(:)~`()',
+    ')~(`)(:)~`((:)(`~)',
+    "\\(~/'(:)~`((:)~`(/",
+    " \\/ ',:)`~(\\:)~(/ ",
+    "      ')(~/  ')/  ",
+    "       \\(/' ,     "
   ], DW);
-  var D_MAP = { ')': 'C', '(': 'k', '~': 'c', '/': 'k', '\\': 'k', "'": 's', '-': 'r', '=': 'r', o: 'b', other: 'c' };
+  var DH = fix([
+    'o- o- o-o',
+    ')\\/:\\/:\\(',
+    ')~(:)~:)(',
+    ')  :)(:~(',
+    "),':`(:)(",
+    ')`(:~(:`)',
+    '\\(/:)(:~/',
+    "   '(/ ' "
+  ], 9);
+  // glyph + column -> key. red = the middle gore; ':' = the load tape on a seam; scorched rim round the tear (hole box)
+  function drapeKeys(red0, red1, hole) {
+    return function (g, r, c) {
+      if (g === ' ') return ' ';
+      if (r === 0) return g === 'o' ? 'b' : 'r';
+      if (g === ':') return 't';
+      var red = c >= red0 && c <= red1, L = red ? 'L' : 'C', M = red ? 'm' : 'c', K = red ? 'd' : 'k';
+      if (r >= hole[0] && r <= hole[1] && c >= hole[2] && c <= hole[3] && ",_'/\\".indexOf(g) >= 0) return 's';
+      if (r === 1 || g === ')' || g === "'") return L;          // the sagging top edge + lit folds + sheen
+      if (g === '(' || g === '/' || g === '\\' || g === '_') return K;
+      return M;                                                  // ~ ` , . = the gore's mid tone ('`' = opaque plate)
+    };
+  }
   function shiftRows(rows, from, d) {
     return rows.map(function (r, i) {
       if (i < from) return r;
       return d < 0 ? r.slice(1) + ' ' : ' ' + r.slice(0, -1);
     });
   }
-  var D_N = autoN(D_ROWS, [0], [], []);
-  var dFrames = [D_ROWS, shiftRows(D_ROWS, 6, -1), D_ROWS, shiftRows(D_ROWS, 6, 1)].map(function (g) { return frame(g, D_MAP, null, D_N); });
-  var DH = fix(['-=o=-', ')~(~)', ')/ \\(', "/' '\\"], 5);
-  var dhFrames = [DH, shiftRows(DH, 3, -1), DH, shiftRows(DH, 3, 1)].map(function (g) { return frame(g, D_MAP); });
+  // the hem sways: glyph AND colour rows from `from` down shift together (colour follows the cloth, not the column)
+  function drapeFrames(rows, keyFn, from, n) {
+    var fg = rows.map(function (row, r) { var o = '', c; for (c = 0; c < row.length; c++) o += keyFn(row.charAt(c), r, c); return o; });
+    return [0, -1, 0, 1].map(function (d) {
+      var g = d ? shiftRows(rows, from, d) : rows, f = d ? shiftRows(fg, from, d) : fg;
+      return { S: { glyphs: glyphsOf(g), fg: f, n: n } };
+    });
+  }
+  var dFrames = drapeFrames(D_ROWS, drapeKeys(6, 11, [4, 8, 1, 5]), 12, autoN(D_ROWS, [0], [], []));
+  var dhFrames = drapeFrames(DH, drapeKeys(3, 5, [2, 4, 0, 2]), 6);
 
   A.models.envelopeDrape = {
     name: 'envelopeDrape',
-    desc: 'A torn panel of the Kestrel\'s envelope hanging from a beam in the stairwell: pale ochre canvas, light folds ), ' +
-          'dark folds (, seams ~, a burnt tear you can see the wall through, tattered hem that sways in the draught.',
-    size: { w: DW, h: 8 }, anchor: { x: 5, y: 7 }, world: { w: 1.4, h: 1.9 },
+    desc: 'A torn panel of the Kestrel\'s envelope hanging from 4 brass eyelets on a rope in the stairwell (v1.39): the ' +
+          'top edge sags between the eyelets, three gores (ochre, faded red, ochre) with rope load tapes down the seams, ' +
+          'hanging folds ) ( ~, a burnt tear you can see the wall through, and a torn ragged hem (long red tongue, frayed ' +
+          'threads) that sways in the draught.',
+    size: { w: DW, h: 16 }, anchor: { x: 9, y: 15 }, world: { w: 1.4, h: 1.9 },
     directions: ['S'], billboard: true,
-    // BUG-OWN-003: solid canvas; the burnt tear (space KEYS, rows 2-5) stays the only see-through part (intended)
+    // BUG-OWN-003: solid canvas; the burnt tear (keyless spaces, rows 5-7) and the swags above the top edge stay the only
+    // see-through parts (intended)
     fill: { k: 0.45 },
-    keys: { C: { c: 'canvasLight' }, c: { c: 'canvas' }, k: { c: 'canvasDark' }, s: { c: 'canvasScorch' },
-            r: { c: 'rope', fill: false }, b: { c: 'brassDark' } },
+    keys: { C: { c: 'canvasLight' }, c: { c: 'canvas' }, k: { c: 'canvasDark' },
+            L: { c: 'goreRedLight' }, m: { c: 'goreRed' }, d: { c: 'goreRedDark' },
+            s: { c: 'canvasScorch' }, t: { c: 'rope' },
+            r: { c: 'rope', fill: false }, b: { c: 'brass' } },
     hangs: { note: 'anchor = the hem (bottom row). Place z = beam height - world.h (the top row is the rope hem on the beam)' },
     animations: { sway: { loop: true, durations: [900, 700, 900, 700], frames: dFrames } },
-    lods: { half: { size: { w: 5, h: 4 }, anchor: { x: 2, y: 3 }, animations: { sway: { loop: true, durations: [900, 700, 900, 700], frames: dhFrames } } } }
+    lods: { half: { size: { w: 9, h: 8 }, anchor: { x: 4, y: 7 }, animations: { sway: { loop: true, durations: [900, 700, 900, 700], frames: dhFrames } } } }
   };
 
   // =====================================================================================================

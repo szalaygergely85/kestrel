@@ -15,16 +15,19 @@
  *   ASSETS.voxelModels.gondola        the Kestrel's wicker-and-brass basket, 2.2 x 0.9 x 1.1 m, tilted 8 deg onto a stone
  *                                     chock (rim, ribs, corner posts, rope loops, sandbags, name board; v1.14)
  *   ASSETS.voxelModels.strut          bent brass gondola strut on the rubble, 0.9 x 0.2 x 0.5 m
- *   ASSETS.voxelModels.envelopeHeap   the envelope below the summit breach: a half-deflated red / ochre striped bag, 4 m +
- *                                     crown ring + mouth hoop + 3 ropes toward the tower, 5.0 x 2.2 x 1.5 m (+1.0 m skirt; v1.14)
+ *   ASSETS.voxelModels.envelopeHeap   the envelope below the summit breach: the collapsed red / ochre striped balloon as
+ *                                     draped cloth (soft crown dome, slack folds, torn hem) + crown ring + mouth hoop +
+ *                                     3 ropes toward the tower, 5.0 x 2.2 x 1.4 m (+1.0 m skirt; v1.14, v1.39 fabric rework)
  *   ASSETS.voxelModels.relay          the summit relay: brass tripod + bowl + cracked mirror + crystals (dead / wake / awake);
  *                                     the GLOW stays a billboard (US-022, a separate prop at relay.mounts.glow)
  *   ASSETS.voxelModels.burner         the Kestrel's copper burner on the stone ring: splayed iron legs, riveted brass
  *                                     mouth, coil band, front gauge, side handles, back valve + hose (OWN-REQ-008 part 1);
  *                                     the FIRE stays a billboard (ASSETS.models.burnerFlame, prop at burner.mounts.flame)
- *   ASSETS.voxelMaterials.*           + 18 new prop materials (v1 + v2 + remap + fallback), listed in `.batch2`
+ *   ASSETS.voxelMaterials.*           + 27 new prop materials (v1 + v2 + remap + fallback), listed in `.batch2`
  *                                     (12 of batch 2 + 6 of the ART-OWN-002 rework: linen_light, linen, linen_dark,
- *                                     gore_red, gore_red_dark, canvas_burnt)
+ *                                     gore_red, gore_red_dark, canvas_burnt + 9 balloon-fabric keys of v1.39:
+ *                                     balloon_light / balloon / balloon_dark, balloon_red_light / balloon_red /
+ *                                     balloon_red_dark, tarp_light / tarp / tarp_dark; glyph set `fabricFace`)
  *   ASSETS.voxelModels.attachTower()  puts `.voxel` onto the billboard models (per model, only when every one of ITS
  *                                     material keys is in palette.materials AND detailPass.materials). Called at load.
  *
@@ -102,8 +105,12 @@
     T: 'block_light', D: 'block_dark', L: 'granite_light', g: 'granite_dark', m: 'moss_cap',              // stone props
     x: 'crystal_dead', X: 'crystal_lit', M: 'mirror_dark',                                                // relay
     P: 'linen_light', p: 'linen', q: 'linen_dark',                                                        // wake-spot tarp
-    E: 'gore_red', e: 'gore_red_dark', z: 'canvas_burnt',                                                 // envelope
-    u: 'copper'                                                                                           // burner can (palette)
+    E: 'gore_red', e: 'gore_red_dark', z: 'canvas_burnt',                                                 // envelope (old)
+    u: 'copper',                                                                                          // burner can (palette)
+    // v1.39 balloon fabric (owner 2026-10-06 "the balloon should look like cloth"): own keys, soft `fabricFace` glyphs
+    A: 'balloon_light', a: 'balloon', n: 'balloon_dark',                                                  // ochre gores
+    F: 'balloon_red_light', f: 'balloon_red', h: 'balloon_red_dark',                                      // red gores
+    S: 'tarp_light', s: 'tarp', t: 'tarp_dark'                                                            // wake-spot tarp
   };
   function matsOf(G) {
     var used = {}, o = {}, k;
@@ -244,8 +251,36 @@
       base: 'canvasScorch', albedo: 0.50, ramp: 'ash', bg: { mode: 'darken', k: 0.10 }, textureFade: [4, 12],
       texture: tex({ a: { shade: 1.00 }, c: { shade: 0.70, tint: 'cinder', amount: 0.7, glyph: ',' }, e: { shade: 1.15, tint: 'emberDim', amount: 0.3, glyph: "'" } },
                    ['acae', 'caaa', 'aeac', 'aaca'])
-    }
+    },
+    // ---- v1.39 balloon fabric (owner 2026-10-06): the envelope heap + the wake-spot tarp get their own keys with the
+    //      soft `fabricFace` glyph set and ramp `fabric` (no = % #), so the shared canvas_* / linen* / gore_red* users
+    //      (walls, trees, objects, the gondola sandbags) keep their look. Same colours as before, fold light/dark ladder.
+    balloon_light: fab('Lit fold crests of the ochre envelope gores.', 'canvasLight', 0.92, 0.18,
+      { a: { shade: 1.00 }, f: { shade: 1.08, glyph: ')' }, s: { shade: 0.90, tint: 'canvas', amount: 0.5, glyph: '~' } }, ['aafa', 'asaa', 'faaa', 'aasf']),
+    balloon: fab('The ochre gores between crest and valley.', 'canvas', 0.86, 0.16,
+      { a: { shade: 1.00 }, w: { shade: 0.92, tint: 'canvasDark', amount: 0.3, glyph: '~' }, l: { shade: 1.06, tint: 'canvasLight', amount: 0.5, glyph: ')' } },
+      ['awal', 'laaw', 'waal', 'alwa']),
+    balloon_dark: fab('Ochre gores in the fold valleys, creases and the hem on the ground.', 'canvasDark', 0.66, 0.12,
+      { a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' }, t: { shade: 0.70, tint: 'canvasScorch', amount: 0.5, glyph: "'" } }, ['afat', 'aaaf', 'faaa', 'atfa']),
+    balloon_red_light: fab('Lit fold crests of the faded red gores.', 'goreRedLight', 0.90, 0.18,
+      { a: { shade: 1.00 }, f: { shade: 1.06, glyph: ')' }, s: { shade: 0.88, tint: 'goreRed', amount: 0.5, glyph: '~' } }, ['aafa', 'asaa', 'faaa', 'aasf']),
+    balloon_red: fab('The faded red gores that alternate with the ochre ones.', 'goreRed', 0.86, 0.16,
+      { a: { shade: 1.00 }, l: { shade: 1.12, tint: 'goreRedLight', amount: 0.6, glyph: ')' }, s: { shade: 0.74, tint: 'goreRedDark', amount: 0.5, glyph: '~' } },
+      ['alas', 'aasa', 'laaa', 'saal']),
+    balloon_red_dark: fab('Red gores in the fold valleys and creases.', 'goreRedDark', 0.62, 0.12,
+      { a: { shade: 1.00 }, t: { shade: 0.72, tint: 'canvasScorch', amount: 0.5, glyph: '(' } }, ['ataa', 'aaat', 'taaa', 'aata']),
+    tarp_light: fab('The wake-spot linen tarp: lit crests, lid shoulders, the rolled fold.', 'linenLight', 0.94, 0.18,
+      { a: { shade: 1.00 }, f: { shade: 1.06, glyph: ')' }, s: { shade: 0.90, tint: 'linen', amount: 0.5, glyph: '~' } }, ['aafa', 'asaa', 'faaa', 'aasf']),
+    tarp: fab('The tarp\'s flat parts: sheet, lid, folded flap. Faint weave ~.', 'linen', 0.86, 0.16,
+      { a: { shade: 1.00 }, w: { shade: 0.92, tint: 'linenDark', amount: 0.25, glyph: '~' }, l: { shade: 1.06, tint: 'linenLight', amount: 0.5 } },
+      ['awal', 'laaw', 'waal', 'alwa']),
+    tarp_dark: fab('The tarp in shadow: fold valleys, drape flanks, sewn panel seams.', 'linenDark', 0.66, 0.12,
+      { a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' } }, ['afaa', 'aaaf', 'faaa', 'aafa'])
   };
+  function fab(desc, base, albedo, k, key, rows) {
+    return { desc: 'BALLOON FABRIC (v1.39). ' + desc, base: base, albedo: albedo, ramp: 'fabric', bg: { mode: 'darken', k: k },
+             textureFade: [4, 12], texture: tex(key, rows) };
+  }
   // v2: the tone grid is about half a voxel of the model that uses the material (tones change inside a near voxel face);
   // lines: false (the edge pass draws the voxel steps, 15.2 item 5).
   function v2(key, seed, albedo, tones, set, g, extra) {
@@ -274,14 +309,26 @@
     linen_dark:    v2('linen_dark',    225, 0.66, [['linenDark', 3], ['canvasDark', 1]], 'canvasFace', 0.035),
     gore_red:      v2('gore_red',      226, 0.86, [['goreRed', 3], ['goreRedLight', 1], ['goreRedDark', 1]], 'canvasFace', 0.1),
     gore_red_dark: v2('gore_red_dark', 227, 0.62, [['goreRedDark', 3], ['canvasScorch', 1]], 'canvasFace', 0.1),
-    canvas_burnt:  v2('canvas_burnt',  228, 0.50, [['canvasScorch', 3], ['cinder', 2]], 'soot', 0.1)
+    canvas_burnt:  v2('canvas_burnt',  228, 0.50, [['canvasScorch', 3], ['cinder', 2]], 'soot', 0.1),
+    // v1.39 balloon fabric: tone grid ~1/3 of a 20 cm envelope voxel / ~1/2 of a 6.25 cm tarp voxel (a weave mottle)
+    balloon_light:     v2('balloon_light',     901, 0.92, [['canvasLight', 4], ['canvas', 1]], 'fabricFace', 0.07),
+    balloon:           v2('balloon',           902, 0.86, [['canvas', 4], ['canvasLight', 1], ['canvasDark', 1]], 'fabricFace', 0.07),
+    balloon_dark:      v2('balloon_dark',      903, 0.66, [['canvasDark', 3], ['canvas', 1], ['canvasScorch', 1]], 'fabricFace', 0.07),
+    balloon_red_light: v2('balloon_red_light', 904, 0.90, [['goreRedLight', 3], ['goreRed', 2]], 'fabricFace', 0.07),
+    balloon_red:       v2('balloon_red',       905, 0.86, [['goreRed', 4], ['goreRedLight', 1], ['goreRedDark', 1]], 'fabricFace', 0.07),
+    balloon_red_dark:  v2('balloon_red_dark',  906, 0.62, [['goreRedDark', 3], ['goreRed', 1], ['canvasScorch', 1]], 'fabricFace', 0.07),
+    tarp_light:        v2('tarp_light',        907, 0.94, [['linenLight', 4], ['linen', 1]], 'fabricFace', 0.025),
+    tarp:              v2('tarp',              908, 0.86, [['linen', 4], ['linenLight', 1]], 'fabricFace', 0.025),
+    tarp_dark:         v2('tarp_dark',         909, 0.66, [['linenDark', 3], ['canvasDark', 1]], 'fabricFace', 0.025)
   };
   // castModels / preview only, before the merge: nearest existing material per key (NOT the intended look)
   var FALLBACK = { canvas_light: 'canvas', canvas_dark: 'canvas', patina: 'copper', rope: 'wood', block_light: 'rubble',
                    block_dark: 'rubble', granite_light: 'rock', granite_dark: 'rock', moss_cap: 'moss_top',
                    crystal_dead: 'iron', crystal_lit: 'iron', mirror_dark: 'iron',
                    linen_light: 'canvas', linen: 'canvas', linen_dark: 'canvas', gore_red: 'canvas', gore_red_dark: 'canvas',
-                   canvas_burnt: 'ash' };
+                   canvas_burnt: 'ash',
+                   balloon_light: 'canvas_light', balloon: 'canvas', balloon_dark: 'canvas_dark', balloon_red_light: 'gore_red',
+                   balloon_red: 'gore_red', balloon_red_dark: 'gore_red_dark', tarp_light: 'linen_light', tarp: 'linen', tarp_dark: 'linen_dark' };
   var VM = A.voxelMaterials = A.voxelMaterials ||
     { status: 'PROPOSED', v1: {}, v2: {}, remap: {}, edges: { modelRim: 0.55 }, fallback: {} };
   VM.v1 = VM.v1 || {}; VM.v2 = VM.v2 || {}; VM.remap = VM.remap || {}; VM.fallback = VM.fallback || {};
@@ -454,6 +501,13 @@
   //        the long edges; a small ochre repair patch (envelope cloth) on the east half.
   //    Top voxel: linen_light on crests / lid edges / the rolled fold, linen on flats, linen_dark in fold valleys, rope on
   //    the hem, brass_hot eyelets; everything under the top is linen_dark (the drape flanks read as shadow).
+  //    v1.39 (owner 2026-10-06 "the balloon should look like cloth"): same footprint / grid / anchor / hollow, but softer:
+  //      - materials tarp_light / tarp / tarp_dark (= the linen colours, soft `fabricFace` glyphs, no = %);
+  //      - the crate lid's 4 corners drop one layer (cloth rounds a box's corners, no sharp arris);
+  //      - the long hems SAG between the eyelets (scallops: 3 of every 6 columns pull in by one voxel), more ragged
+  //        threads (22 %), a torn-off north-west corner;
+  //      - two sewn panel SEAMS along the sheet (tarp_dark lines on the flats at y 4 and y 10);
+  //      - the repair patch is real envelope cloth (balloon, ochre).
   // ===================================================================================================================
   function segDist(ax, ay, bx, by, px, py) {
     var dx = bx - ax, dy = by - ay, t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
@@ -471,17 +525,22 @@
     var P1 = [24, 13.5], P2 = [31.5, 7], PC = [25.07, 6.08];                       // fold line P1-P2, flap apex PC
     var TENSION = [[8, 4, 14, 1.6], [8, 10, 14, 12.4], [19, 1.8, 23, 11.5]];
     function tension(t) { if (segDist(t[0], t[1], t[2], t[3], px, py) < 0.75) h = Math.max(h, 2); }
+    // v1.39: the hem sags between two eyelets (eyelet columns x % 6 === 3): 3 of every 6 columns pull in by one voxel
+    function sag(x) { var m = ((x - 3) % 6 + 6) % 6; return Math.min(m, 6 - m) >= 2 ? 1 : 0; }
     for (y = 0; y < SY; y++) {
       H.push([]); F.push([]);
       for (x = 0; x < SX; x++) {
         px = x + 0.5; py = y + 0.5; h = 0;
-        var flap = false, inSheet = y >= 1 && y <= 12;
-        if ((y === 1 || y === 12 || x === 0 || x === SX - 1) && hash(x, y, 0, 24) < 0.18) inSheet = false;   // ragged hem
+        var flap = false, yN = 1 + sag(x), yS = 12 - sag(x), inSheet = y >= yN && y <= yS;
+        if ((y === yN || y === yS || x === 0 || x === SX - 1) && x % 6 !== 3 && hash(x, y, 0, 24) < 0.22) inSheet = false;   // ragged hem
+        if (x + y < 3) inSheet = false;                                          // torn-off north-west corner
         if ((px - 24) / 7.5 + (py - 7) / 6.5 > 1) inSheet = false;             // bare floor beyond the fold line
         if (inSheet) {
           var dx = Math.max(CX0 - px, 0, px - CX1), dy = Math.max(CY0 - py, 0, py - CY1), d = Math.sqrt(dx * dx + dy * dy);
-          if (d === 0) h = LID + (segDist(4, 5, 7, 9, px, py) < 0.6 ? 1 : 0);   // on the crate lid + one wrinkle
-          else {
+          if (d === 0) {                                                          // on the crate lid + one wrinkle
+            h = LID + (segDist(4, 5, 7, 9, px, py) < 0.6 ? 1 : 0);
+            if ((px < CX0 + 1 || px > CX1 - 1) && (py < CY0 + 1 || py > CY1 - 1)) h = LID - 1;   // rounded lid corners
+          } else {
             var rip = Math.cos(9 * Math.atan2(py - CCY, px - CCX) + 0.6);       // 9 radial folds round the crate
             if (d <= 1) h = 5 + (rip > 0.2 ? 1 : 0) - (rip < -0.5 ? 1 : 0);
             else if (d <= 2) h = 3 + (rip > 0.3 ? 1 : 0);
@@ -512,14 +571,15 @@
         var dHem = Math.min(segDist(P1[0], P1[1], PC[0], PC[1], px, py), segDist(P2[0], P2[1], PC[0], PC[1], px, py));
         if (Math.sqrt(Math.pow(px - PC[0], 2) + Math.pow(py - PC[1], 2)) < 1.0) top = 'H';   // corner eyelet, face up
         else if (dHem < 0.8) top = 'r';                                           // the flap's boltrope
-        else if (segDist(P1[0], P1[1], P2[0], P2[1], px, py) < 0.9) top = 'P';   // the rolled fold edge
-        else top = 'p';
+        else if (segDist(P1[0], P1[1], P2[0], P2[1], px, py) < 0.9) top = 'S';   // the rolled fold edge
+        else top = 's';
       } else if (hmin === 0) top = ((y <= 1 || y >= 12) && x % 6 === 3) ? 'H' : 'r';   // hem boltrope + eyelets
-      else if (n >= 3 && n >= hmax && n > hmin) top = 'P';                        // crests, lid edges
-      else if (n < hmax - 1) top = 'q';                                           // fold valleys
-      else top = 'p';
-      if (!F[y][x] && hmin > 0 && x >= 19 && x <= 21 && y >= 9 && y <= 10 && n === 1) top = 'c';   // repair patch
-      for (z = 0; z < n - 1; z++) G.set(x, y, z, 'q');
+      else if (n >= 3 && n >= hmax && n > hmin) top = 'S';                        // crests, lid shoulders
+      else if (n < hmax - 1) top = 't';                                           // fold valleys
+      else top = 's';
+      if (!F[y][x] && top === 's' && (y === 4 || y === 10)) top = 't';            // v1.39 sewn panel seams on the flats
+      if (!F[y][x] && hmin > 0 && x >= 19 && x <= 21 && y >= 8 && y <= 9 && n === 1) top = 'a';   // envelope-cloth repair patch
+      for (z = 0; z < n - 1; z++) G.set(x, y, z, 't');
       G.set(x, y, n - 1, top);
     }
     return G;
@@ -528,10 +588,11 @@
   A.voxelModels.canvasHeap = {
     name: 'canvasHeap',
     desc: 'Voxel canvas heap (the wake spot, ART-OWN-002 rework): a pale linen tarp thrown over a small crate at the west ' +
-          'end (box shape, lit lid edges, radial folds down its sides), pulled across the floor with two tension folds, ' +
-          'a straight ragged hem with a rope boltrope and brass eyelets, the south-east corner turned back over itself ' +
-          '(double flap, rolled fold, eyelet up), an ochre repair patch, and a flat hollow in the middle where Wick lay. ' +
-          'Walk-over (no collision).',
+          'end (box shape with cloth-rounded lid corners, radial folds down its sides), pulled across the floor with two ' +
+          'tension folds, a hem that sags between its brass eyelets (scalloped, ragged threads, a torn-off corner) with a ' +
+          'rope boltrope, two sewn panel seams, the south-east corner turned back over itself (double flap, rolled fold, ' +
+          'eyelet up), an ochre envelope-cloth repair patch, and a flat hollow in the middle where Wick lay. Soft fabric ' +
+          'glyphs (tarp_* materials, fabricFace, v1.39). Walk-over (no collision).',
     voxel: {
       version: 1, cellM: 0.0625, size: [32, 14, 7], anchor: [16, 7, 0], mats: matsOf(gCH), layers: gCH.layers(),
       parts: {
@@ -716,58 +777,90 @@
   //      - 3 ROPES (the suspension lines) from the mouth hoop, sagging to the ground and running east (local y 0) toward
   //        the tower, where the gondola is.
   // ===================================================================================================================
+  // v1.39 (owner 2026-10-06 "the balloon should look like cloth"): rebuilt as DRAPED FABRIC instead of a stiff
+  // ellipsoid shell. Same grid / cellM / anchor / parts / placement / footprint; new look:
+  //   - a HEIGHTFIELD of cloth lying on the ground: the crown (north) still holds some air (a soft dome, 1.4 m), the rest
+  //     has collapsed to ~0.6 m and sags toward its edges (cross-section (1 - u^2)^0.7, not a hard ellipse);
+  //   - two LENGTHWISE FOLDS that drift across the bag (a twisting drape) + 3 collapse CREASES across the slack part;
+  //   - every column top is shaded by its fold: crest (higher than its neighbours) -> *_light, valley / crease -> *_dark,
+  //     in between the mid tone; the voxel on the ground is the dark contact hem;
+  //   - 6 visible GORES (ochre `balloon*` / red `balloon_red*`) as stripes round the axis, so they run the length of the
+  //     bag and squeeze together toward the crown like the panels of a real envelope (the seams = the colour edges);
+  //   - a SAGGING, TORN HEM: the slack cloth spreads 1-2 voxels past the bag on the ground, scalloped, with gaps;
+  //   - the BURNT TEAR moved onto the crown's upper east flank (the side the breach sees): a 2-voxel-deep pit with a
+  //     canvas_burnt floor + charred rim; a few scorch blotches;
+  //   - crown ring + valve plate (north end), brass mouth hoop round the open dark throat (south end), 3 rope lines east.
   function buildEnvelopeHeap() {
     var SX = 25, SY = 11, SZ = 13, G = new Grid(SX, SY, SZ), x, y, z;
-    var ZB = 5, UC = 5.5, RMAX = 5.3, XH = 19, TEAR_S = 12.8, TEAR_PHI = 2.25, CREASES = [5.5, 10.5, 15.0];
+    var ZB = 5, UC = 5.5, XH = 19, TEAR_S = 7.0, TEAR_U = -0.45, CREASES = [9.5, 12.5, 15.5];
+    function groundZ(yy) { return ZB - Math.max(0, Math.min(5, yy - 3)); }        // the modelled hill (west = down), yy = row
     function rad(s) {                              // bag half-width along the axis (s = x + 0.5)
-      if (s < 7) return RMAX * Math.sqrt(Math.max(0, 1 - Math.pow((7 - s) / 7, 2)));   // crown cap
-      if (s < 12.5) return RMAX;                                                      // belly
-      if (s < 18.5) return RMAX - (RMAX - 2.6) * (s - 12.5) / 6;                      // taper
-      return 2.6;                                                                     // throat
+      if (s < 6) return 4.4 * Math.sqrt(Math.max(0, 1 - Math.pow((6 - s) / 6, 2)));   // crown cap
+      if (s < 12) return 4.4;                                                         // belly
+      if (s < 18.5) return 4.4 - 1.9 * (s - 12) / 6.5;                                // taper
+      return 2.5;                                                                     // throat
     }
-    function fold(s) {
-      var f = 1;
-      CREASES.forEach(function (c) { f -= 0.22 * Math.exp(-Math.pow(s - c, 2) / 1.2); });
-      return f;
+    function axisH(s) {                            // cloth height on the axis: air left in the crown, the rest slack
+      return 3.6 + 3.4 * Math.exp(-Math.pow((s - 4.5) / 3.6, 2)) - (s > 14 ? 0.8 * (s - 14) / 5 : 0);
     }
-    function groundZ(py) { return ZB - Math.max(0, Math.min(5, Math.floor(py) - 3)); }   // the modelled hill (west = down)
+    function crease(s) { var c = 0; CREASES.forEach(function (q) { c += 0.24 * Math.exp(-Math.pow(s - q, 2) / 1.1); }); return c; }
+    // 1. the heightfield: T = top in voxels above ZB (body >= 1, hem 0, none -1)
+    var T = [], KIND = [], TEAR = [], s, r, u, du;
+    for (x = 0; x < SX; x++) { T.push([]); KIND.push([]); TEAR.push([]); for (y = 0; y < SY; y++) { T[x].push(-1); KIND[x].push(''); TEAR[x].push(''); } }
     for (x = 0; x <= XH; x++) {
-      var s = x + 0.5, r = rad(s), rz = Math.min(7.2, 1.3 * r), fo = fold(s);
+      s = x + 0.5; r = rad(s);
       for (y = 0; y < SY; y++) {
-        var u = y + 0.5, du = (u - UC) / r;
-        if (Math.abs(du) > 1) continue;
-        for (z = groundZ(y); z < SZ; z++) {
-          var zz = z + 0.5 - ZB, wob = 1 + 0.08 * (hash(x, y, 5, 34) - 0.5);
-          var zt = zz > 0 ? zz / (rz * fo * wob) : 0, v = du * du + zt * zt;
-          if (v > 1) continue;
-          var phi = Math.atan2(zz, (u - UC) * rz / r);                             // 0 = west ground, pi = east ground
-          var red = Math.floor((phi + Math.PI) / (Math.PI / 6)) % 2 === 1;         // 12 gores round the axis
-          var c = red ? 'E' : 'c';
-          if (fo < 0.86) c = red ? 'e' : 'k';                                      // crease valleys
-          else if (fo > 0.97 && zz > 0.5 * rz) c = red ? 'E' : 'C';                // lit crests (ochre gores)
-          if (z === groundZ(y) && zz < 0) c = 'k';                                 // hem on the hillside
-          if (v > 0.6 && hash(x, y, z, 33) < 0.03) c = 'z';                        // scorch blotches
-          var ts = Math.abs(s - TEAR_S) / (2.0 + 0.6 * (hash(y, z, 0, 35) - 0.5)), tp = Math.abs(phi - TEAR_PHI) / 0.34;
-          if (ts < 1 && tp < 1) {                                                  // the burnt tear: hole + dark inside
-            if (v > 0.62) continue;
-            if (v > 0.38) c = 'z';
-          } else if (ts < 1.4 && tp < 1.4 && v > 0.62 && hash(x, y, z, 36) < 0.7) c = 'z';   // charred rim
-          if (x === 0) c = zz < 0 ? 'k' : (v > 0.45 ? 'd' : (v > 0.12 ? 'B' : 'H'));   // crown ring + valve plate + bolt
-          if (x === XH) {                                                          // mouth hoop, open inside
-            if (v <= 0.55 && zz >= 0) continue;
-            c = hash(x, y, z, 37) < 0.2 ? 'H' : 'B';
-          }
-          if (x === XH - 1 && v <= 0.55 && zz >= 0) c = 'z';                       // the dark throat seen through the hoop
-          G.set(x, y, z, c);
+        u = y + 0.5; du = (u - UC) / r;
+        if (Math.abs(du) <= 1) {
+          var ridge = 0.5 + 0.5 * Math.cos(6.0 * du + 0.45 * s);                  // 2 lengthwise folds, drifting
+          var top = axisH(s) * Math.pow(1 - du * du, 0.7) * (0.84 + 0.16 * ridge) * (1 - crease(s));
+          T[x][y] = Math.max(1, Math.round(top)); KIND[x][y] = 'body';
+          var ts = Math.abs(s - TEAR_S) / (1.8 + 0.5 * (hash(y, 0, 0, 35) - 0.5)), tu = Math.abs(du - TEAR_U) / 0.3;
+          if (ts < 1 && tu < 1 && T[x][y] >= 3) { T[x][y] -= 2; TEAR[x][y] = 'hole'; }   // the burnt tear: a pit
+          else if (ts < 1.45 && tu < 1.5 && hash(x, y, 0, 36) < 0.7) TEAR[x][y] = 'rim';   // charred rim
+        } else if (x < XH && Math.abs(u - UC) <= r + 1.3 + 0.7 * Math.sin(0.9 * s + 1.0) && hash(x, y, 2, 31) > 0.22) {
+          T[x][y] = 0; KIND[x][y] = 'hem';                                        // slack hem on the ground: scallops + gaps
         }
       }
     }
-    // suspension lines from the hoop (x 20..24): [x0, y0, z0, x1, y1, z1, sideways sag]
-    [[20.0, 3.0, 5.6, 24.6, 0.4, 5.5, 0.6], [20.0, 3.4, 7.0, 22.2, 0.3, 5.5, -0.5], [20.0, 5.5, 8.2, 23.8, 1.6, 5.5, 0.4]]
+    function TT(x, y) { return (x < 0 || y < 0 || x >= SX || y >= SY) ? -1 : T[x][y]; }
+    // 2. fill the columns
+    for (x = 0; x <= XH; x++) for (y = 0; y < SY; y++) {
+      var tc = T[x][y], g0 = groundZ(y);
+      if (tc < 0) continue;
+      if (KIND[x][y] === 'hem') { G.set(x, y, g0, 'n'); continue; }
+      s = x + 0.5; r = rad(s); du = (y + 0.5 - UC) / r;
+      var hs = axisH(s), ztop = ZB + tc - 1, nb = 0, nn = 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var q = TT(x + d[0], y + d[1]);
+        if (q > 0 && KIND[x + d[0]][y + d[1]] === 'body') { nb += q; nn++; }
+      });
+      var mean = nn ? nb / nn : tc, cls = tc > mean + 0.3 ? 'L' : (tc < mean - 0.3 || crease(s) > 0.12) ? 'D' : 'M';
+      for (z = g0; z <= ztop; z++) {
+        var zz = z + 0.5 - ZB, Z = Math.max(0, zz) / hs, v = du * du + Z * Z;
+        var gi = Math.min(5, Math.floor(Math.atan2(Z, du) / (Math.PI / 6)));    // 6 gores over the top half
+        var red = gi % 2 === 1, c;
+        if (z === ztop) c = cls === 'L' ? (red ? 'F' : 'A') : cls === 'D' ? (red ? 'h' : 'n') : (red ? 'f' : 'a');
+        else if (z === g0) c = red ? 'h' : 'n';                                   // ground contact
+        else c = red ? 'f' : 'a';
+        if (z >= ztop - 1 && TEAR[x][y] === 'hole') c = 'z';                       // dark pit floor of the tear
+        if (z === ztop && TEAR[x][y] === 'rim') c = 'z';                           // charred rim
+        if (z === ztop && hash(x, y, z, 33) < 0.02) c = 'z';                       // scorch blotches
+        if (x === 0) c = zz < 0 ? 'n' : (v > 0.45 ? 'd' : (v > 0.12 ? 'B' : 'H')); // crown ring + valve plate + bolt
+        if (x === XH) {                                                            // mouth hoop, open inside
+          if (v <= 0.5 && zz >= 0) continue;
+          c = zz < 0 ? 'n' : (hash(x, y, z, 37) < 0.2 ? 'H' : 'B');
+        }
+        if (x === XH - 1 && v <= 0.5 && zz >= 0) c = 'z';                         // the dark throat seen through the hoop
+        G.set(x, y, z, c);
+      }
+    }
+    // 3. suspension lines from the hoop (x 20..24): [x0, y0, z0, x1, y1, z1, sideways sag]
+    [[20.0, 3.0, 6.6, 24.6, 0.4, 5.5, 0.6], [20.0, 3.4, 7.2, 22.2, 0.3, 5.5, -0.5], [20.0, 5.5, 7.6, 23.8, 1.6, 5.5, 0.4]]
       .forEach(function (L) {
         for (var t = 0; t <= 1.0001; t += 1 / 48) {
           var px = L[0] + (L[3] - L[0]) * t, py = L[1] + (L[4] - L[1]) * t + L[6] * Math.sin(Math.PI * t);
-          var pz = Math.max(groundZ(py), L[2] + (L[5] - L[2]) * Math.min(1, t * 1.6));   // drops, then lies on the ground
+          var pz = Math.max(groundZ(Math.floor(py)), L[2] + (L[5] - L[2]) * Math.min(1, t * 1.6));   // drops, then lies on the ground
           G.set(Math.floor(px), Math.floor(py), Math.floor(pz), 'r');
         }
       });
@@ -776,10 +869,12 @@
   var gE = buildEnvelopeHeap();
   A.voxelModels.envelopeHeap = {
     name: 'envelopeHeap',
-    desc: 'Voxel envelope heap below the summit breach (ART-OWN-002 rework): the Kestrel\'s half-deflated balloon lying on ' +
-          'its side - a 4 m bag with 12 ochre / red gores converging to an iron crown ring, three collapse creases, a burnt ' +
-          'tear on the east flank, a brass mouth hoop with a dark throat at the south end, 3 suspension ropes running ' +
-          'east toward the tower, and the cloth hanging down the hillside on the downhill (west) side.',
+    desc: 'Voxel envelope heap below the summit breach (v1.39 draped-fabric rework): the Kestrel\'s collapsed balloon as ' +
+          'cloth lying on the ground - the crown still holds a soft dome of air, the rest is slack and sags to its edges, ' +
+          'two lengthwise folds drift across it, three creases, fold crests lit / valleys dark, ochre and red gores running ' +
+          'its length into an iron crown ring, a scalloped torn hem spread on the ground, a burnt tear on the crown\'s east ' +
+          'flank, a brass mouth hoop with a dark throat at the south end, 3 suspension ropes running east toward the tower, ' +
+          'and the cloth hanging down the hillside on the downhill (west) side. Soft fabricFace glyphs (balloon_* materials).',
     voxel: {
       version: 1, cellM: 0.2, size: [25, 11, 13], anchor: [12.5, 5.5, 5], mats: matsOf(gE), layers: gE.layers(),
       parts: {
@@ -791,8 +886,9 @@
     placement: { level: 'tower', prop: 'envelopeHeap', x: 3.0, y: 6.5, z: 'ground', facing: 90, levelEdit: false,
                  note: 'world y 4.0..9.0, x 1.9..4.1; the skirt covers up to 1.0 m of downhill drop (owner walk-check: look ' +
                        'from the breach; if the terrain there drops more, raise anchor z by 1-2 voxels, not a level edit)' },
-    readability: { note: 'From the breach (~4.5 m, eye ~2.4 m above the heap base): 160x60 ~25 rows tall; each gore stripe ' +
-                   '~0.6 m = 5-8 cells, so the ochre / red stripes + crown ring + hoop read as "balloon" first.' }
+    readability: { note: 'From the breach (~4.5 m, eye ~2.4 m above the heap base): 160x60 ~19 rows tall at the crown dome; ' +
+                   'each gore stripe ~0.4-0.6 m = 5-8 cells (400x150: 12-18), so the ochre / red stripes running into the ' +
+                   'crown ring + the hoop read as "balloon" and the slack folds + scalloped hem as "cloth".' }
   };
 
   // ===================================================================================================================

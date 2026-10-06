@@ -28,3 +28,13 @@ export function goldenRelief(record) {
   const r = record.relief;
   return { w: r.w, h: r.h, floorRise: array(r.floorRise), ceilDrop: array(r.ceilDrop) };
 }
+
+// Golden mat ids are MaterialTable ids of the capture commit; any new palette
+// material shifts later ids. Goldens therefore compare material KEYS: this
+// frozen id->key table (index = gbuf mat id at capture) maps the fixture side,
+// `table.records[id].key` maps the live side (architecture.md 37.13.5).
+export function loadGoldenMatKeys(name) {
+  const t = JSON.parse(readFileSync(new URL(`../../engine/mesh/fixtures/${name}.matkeys.json`, import.meta.url), 'utf8'));
+  if (t.format !== 1 || !Array.isArray(t.keys)) throw new Error(`Unknown mat-key fixture format: ${name}`);
+  return t.keys;
+}

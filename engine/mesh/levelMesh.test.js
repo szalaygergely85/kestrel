@@ -1,5 +1,6 @@
-import { loadGolden, goldenFrame, goldenRelief } from '../../tools/testing/mesh-golden.mjs';
+import { loadGolden, goldenFrame, goldenRelief, loadGoldenMatKeys } from '../../tools/testing/mesh-golden.mjs';
 const golden = loadGolden('levelMesh');
+const goldenMatKeys = loadGoldenMatKeys('levelMesh'); // frozen id->key (37.13.5): compare keys, not ids
 let oracleIndex = 0;
 import { dynamicTowerFixture } from '../../tools/testing/dynamic-tower.mjs';
 // engine/mesh/levelMesh.test.js (ME-01, docs/architecture.md 27.15.2 step 2-5).
@@ -306,7 +307,9 @@ function runOracle(name, poses) {
         }
         if (!match) { unlocated++; if (detail.length < 8) detail.push(`(${x},${row}) no mesh quad at P=${P.map((n) => n.toFixed(3))}, gbuf kind=${kind}`); continue; }
         const exp = expectedFromTri(match, P);
-        const gv = { kind, face: fb.gbuf.face[i], mat: fb.gbuf.mat[i], planeId: fb.gbuf.planeId[i], u: fb.gbuf.u[i], v: fb.gbuf.v[i], z: fb.gbuf.z[i], aoD: fb.gbuf.aoD[i] };
+        exp.mat = exp.mat === 0 ? '(none)' : matTable.records[exp.mat] ? matTable.records[exp.mat].key : `?live${exp.mat}`;
+        const gm = fb.gbuf.mat[i];
+        const gv = { kind, face: fb.gbuf.face[i], mat: gm === 0 ? '(none)' : goldenMatKeys[gm] || `?golden${gm}`, planeId: fb.gbuf.planeId[i], u: fb.gbuf.u[i], v: fb.gbuf.v[i], z: fb.gbuf.z[i], aoD: fb.gbuf.aoD[i] };
         const okKind = exp.kind === gv.kind && exp.face === gv.face && exp.mat === gv.mat && exp.planeId === gv.planeId;
         const okUv = closeEnough(exp.u, gv.u, 1e-3) && closeEnough(exp.v, gv.v, 1e-3) && closeEnough(exp.z, gv.z, 1e-3) && closeEnough(exp.aoD, gv.aoD, 1e-3);
         if (!okKind || !okUv) {
