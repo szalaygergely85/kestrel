@@ -66,8 +66,9 @@
 
 <div id="groups"></div>
 
-<h2 id="ingame">In-game size: 160x60 and 240x90 (engine projection, 75 deg HFOV, 16:9)</h2>
-<div class="note">The same 1920x1080 screen area at both grids: left a 60x30 crop of the 160x60 grid (12x18 px cells), right a 90x45 crop of 240x90 (8x12 px cells).
+<h2 id="ingame">In-game size: 160x60 and 240x90 (+ 400x150 for the balloon-fabric models) (engine projection, 75 deg HFOV, 16:9)</h2>
+<div class="note">The same 1920x1080 screen area at both grids: left a 60x30 crop of the 160x60 grid (12x18 px cells), right a 90x45 crop of 240x90 (8x12 px cells);
+  canvas heap + envelope heap (v1.39 fabric rework) add a 150x75 crop of 400x150 (4.8x7.2 px cells; use the zoom control to enlarge).
   Rays are the sector caster's (<code>d = dir + plane*cameraX, z = (horizonRow - row - 0.5) / planeDistY</code>, t = perpendicular distance), pitched to look at the prop.
   Each model has its typical in-game view (distance, eye height above the prop's floor, floor + backdrop material from tower.js); the slider scales the distance.
   Lever: on the ledge floor, backdrop selectable. Lamp: on the step-8 wall face. Envelope heap: seen from above (the summit breach), no backdrop.</div>
@@ -136,14 +137,14 @@ const ENTRIES = [
     view: { dist: 2, eye: 1.0 }, rim: ['block_light'], body: ['block_dark'] },
   { name: 'rubble2', title: 'Rubble variant 2 (small chunk)', clips: ['idle'], floorZ: 0, wallY: 1.5, wallMat: 'stone', floorMat: 'rubble',
     view: { dist: 2, eye: 0.7 }, rim: ['block_light'], body: ['block_dark'] },
-  { name: 'canvasHeap', title: 'Canvas heap (the wake spot: linen tarp over a crate; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
-    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['linen_light'], body: ['linen_dark'] },
+  { name: 'canvasHeap', title: 'Canvas heap (the wake spot: linen tarp over a crate, sagging scalloped hem, seams; fabric glyphs v1.39; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
+    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['tarp_light'], body: ['tarp_dark'], hiRes: true },
   { name: 'gondola', title: 'Gondola (bow + stern halves share one tilt pose; chock static)', clips: ['idle'], floorZ: 0, wallY: 1.4, wallMat: 'stone', floorMat: 'floor',
     view: { dist: 3, eye: 1.6 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'iron_dark'] },
   { name: 'strut', title: 'Bent strut (bar)', clips: ['idle'], floorZ: 0, wallY: 0.4, wallMat: 'stone', floorMat: 'rubble',
     view: { dist: 1.8, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'patina'] },
-  { name: 'envelopeHeap', title: 'Envelope heap below the breach (west + east halves; skirt under the anchor plane)', clips: ['idle'], floorZ: 0, wallY: null,
-    wallMat: 'rock', floorMat: 'grass', view: { dist: 4.5, eye: 2.4 }, rim: ['canvas_light'], body: ['canvas_dark'] },
+  { name: 'envelopeHeap', title: 'Envelope heap below the breach (v1.39 draped fabric: crown dome, slack folds, torn hem; west + east halves; skirt under the anchor plane)', clips: ['idle'], floorZ: 0, wallY: null,
+    wallMat: 'rock', floorMat: 'grass', view: { dist: 4.5, eye: 2.4 }, rim: ['balloon_light'], body: ['balloon_dark'], hiRes: true },
   { name: 'relay', title: 'Relay (crystalDead + crystalLit + mount; the glow is a billboard)', clips: ['dead', 'wake', 'awake'], floorZ: 0, wallY: null,
     wallMat: 'stone', floorMat: 'floor', view: { dist: 2.4, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'mirror_dark', 'crystal_dead'] },
   // OWN-REQ-008 part 1: the burner body is voxel, its fire the burnerFlame billboard on mounts.flame (drawn here with the
@@ -525,7 +526,10 @@ function buildIngame() {
     for (const vw of vws) {
       if (vws.length > 1) { const lab = document.createElement('div'); lab.className = 'cap'; lab.textContent = vw.label; sec.appendChild(lab); }
       const row = document.createElement('div'); row.className = 'row';
-      for (const spec of [{ cols: 160, rows: 60, cc: 60, cr: 30, cw: 12, ch: 18 }, { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }]) {
+      // v1.39: the balloon-fabric models also get the 400x150 grid (150x75 crop = the same 1920x1080 area, 4.8x7.2 px cells)
+      const specs = [{ cols: 160, rows: 60, cc: 60, cr: 30, cw: 12, ch: 18 }, { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }];
+      if (g.hiRes) specs.push({ cols: 400, rows: 150, cc: 150, cr: 75, cw: 4.8, ch: 7.2 });
+      for (const spec of specs) {
         const grid = makeCanvas(spec.cc, spec.cr, spec.cw * z, spec.ch * z);
         const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
         const cap = document.createElement('div'); cap.className = 'cap'; wrap.appendChild(cap);

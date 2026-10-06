@@ -305,7 +305,8 @@
     canvas:    " .'-~)(=%",      // balloon envelope: folds ) ( and seams ~
     aether:    " .'+*",           // aether sparkle (effects only; emissive)
     // US-016 D-011 addendum
-    cityLight: " .'*"             // Ferrum's horizon pinpoints (emissive, pairs with colorRamps.cityLight)
+    cityLight: " .'*",            // Ferrum's horizon pinpoints (emissive, pairs with colorRamps.cityLight)
+    fabric:    " .'`-~)(\""      // v1.39 static balloon fabric / tarp: soft folds, no = % (they read as stone). LAST: ramps are indexed by order
   };
 
   // ---------------------------------------------------------------------------
@@ -1210,6 +1211,40 @@
       a: { shade: 1.00, glyph: '*' }, m: { shade: 1.00, tint: 'flameMid', amount: 0.5, glyph: '%' }
     }, rows: ['am', 'ma'] }
   };
+  // v1.39 balloon fabric (owner 2026-10-06 "the balloon should look like cloth"; design/models/voxel_tower.js
+  // `voxelMaterials.v1`, designer merge): the envelope heap + the wake-spot tarp, appended last so no material id moves.
+  // Own keys (the shared canvas_* / linen* / gore_red* stay as they are for walls, trees, objects). Ramp `fabric`.
+  function fabricMat(desc, base, albedo, k, key, rows) {
+    return { desc: desc, base: base, albedo: albedo, ramp: 'fabric', bg: { mode: 'darken', k: k }, textureFade: [4, 12],
+             texture: { w: 4, h: 4, scale: [16, 16], key: key, rows: rows } };
+  }
+  materials.balloon_light = fabricMat('BALLOON FABRIC (v1.39). Lit fold crests of the ochre envelope gores.', 'canvasLight', 0.92, 0.18,
+    { a: { shade: 1.00 }, f: { shade: 1.08, glyph: ')' }, s: { shade: 0.90, tint: 'canvas', amount: 0.5, glyph: '~' } },
+    ['aafa', 'asaa', 'faaa', 'aasf']);
+  materials.balloon = fabricMat('BALLOON FABRIC (v1.39). The ochre gores between crest and valley.', 'canvas', 0.86, 0.16,
+    { a: { shade: 1.00 }, w: { shade: 0.92, tint: 'canvasDark', amount: 0.3, glyph: '~' }, l: { shade: 1.06, tint: 'canvasLight', amount: 0.5, glyph: ')' } },
+    ['awal', 'laaw', 'waal', 'alwa']);
+  materials.balloon_dark = fabricMat('BALLOON FABRIC (v1.39). Ochre gores in the fold valleys, creases and the hem on the ground.', 'canvasDark', 0.66, 0.12,
+    { a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' }, t: { shade: 0.70, tint: 'canvasScorch', amount: 0.5, glyph: "'" } },
+    ['afat', 'aaaf', 'faaa', 'atfa']);
+  materials.balloon_red_light = fabricMat('BALLOON FABRIC (v1.39). Lit fold crests of the faded red gores.', 'goreRedLight', 0.90, 0.18,
+    { a: { shade: 1.00 }, f: { shade: 1.06, glyph: ')' }, s: { shade: 0.88, tint: 'goreRed', amount: 0.5, glyph: '~' } },
+    ['aafa', 'asaa', 'faaa', 'aasf']);
+  materials.balloon_red = fabricMat('BALLOON FABRIC (v1.39). The faded red gores that alternate with the ochre ones.', 'goreRed', 0.86, 0.16,
+    { a: { shade: 1.00 }, l: { shade: 1.12, tint: 'goreRedLight', amount: 0.6, glyph: ')' }, s: { shade: 0.74, tint: 'goreRedDark', amount: 0.5, glyph: '~' } },
+    ['alas', 'aasa', 'laaa', 'saal']);
+  materials.balloon_red_dark = fabricMat('BALLOON FABRIC (v1.39). Red gores in the fold valleys and creases.', 'goreRedDark', 0.62, 0.12,
+    { a: { shade: 1.00 }, t: { shade: 0.72, tint: 'canvasScorch', amount: 0.5, glyph: '(' } },
+    ['ataa', 'aaat', 'taaa', 'aata']);
+  materials.tarp_light = fabricMat('BALLOON FABRIC (v1.39). The wake-spot linen tarp: lit crests, lid shoulders, the rolled fold.', 'linenLight', 0.94, 0.18,
+    { a: { shade: 1.00 }, f: { shade: 1.06, glyph: ')' }, s: { shade: 0.90, tint: 'linen', amount: 0.5, glyph: '~' } },
+    ['aafa', 'asaa', 'faaa', 'aasf']);
+  materials.tarp = fabricMat('BALLOON FABRIC (v1.39). The tarp\'s flat parts: sheet, lid, folded flap. Faint weave ~.', 'linen', 0.86, 0.16,
+    { a: { shade: 1.00 }, w: { shade: 0.92, tint: 'linenDark', amount: 0.25, glyph: '~' }, l: { shade: 1.06, tint: 'linenLight', amount: 0.5 } },
+    ['awal', 'laaw', 'waal', 'alwa']);
+  materials.tarp_dark = fabricMat('BALLOON FABRIC (v1.39). The tarp in shadow: fold valleys, drape flanks, sewn panel seams.', 'linenDark', 0.66, 0.12,
+    { a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' } },
+    ['afaa', 'aaaf', 'faaa', 'aafa']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)

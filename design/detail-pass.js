@@ -175,6 +175,10 @@
     // airy), bannerFace = heavy wool (denser `= : %` weave). No '.' at level 3 (blank-share rule).
     clothFace:  [".'", ".'~", "~-'", "~)-", ")~(", "()~", "(~)=", "()=%"],
     bannerFace: [".'", ".,'", ",~'", "~:,", "~=:", "=~)", ")=(", "(%)="],
+    // v1.39 (owner 2026-10-06 "the balloon should look like cloth"): STATIC fabric on voxel props (the envelope heap, the
+    // wake-spot tarp). Soft glyphs only - no = % # (they read as stone / planks on a flat voxel face): dark valley `. '`
+    // -> shaded flank `' ~ -` -> lit fold `) ( ~` -> crest sheen `" '`. No '.' at levels 3-4 (floor blank-share rule).
+    fabricFace: [".'", ".'`", "'`~", "~-'", "~)-(", ")~(-", "()~'", "()~\""],
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
     grainU: { orient: 'u', dark: ["."], fam: {
@@ -901,6 +905,90 @@
       grid: { u: 0.02, v: 0.02, stagger: 0, lines: false },
       face: { set: 'glint', mid: 'glint', far: 'glint' },
       lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.9
+    },
+    // v1.39 balloon fabric (design/models/voxel_tower.js `voxelMaterials.v2`; palette.js v1 records of the same key).
+    // Dedicated keys so the shared canvas_* / linen* / gore_red* users (walls, trees, objects) keep their look. All use
+    // the soft `fabricFace` set; the tone grid is ~1/3 of the model's voxel, so a big voxel face shows a weave mottle.
+    balloon_light: {
+      v1: 'balloon_light', seed: 901,
+      desc: 'BALLOON FABRIC (v1.39). Lit fold crests of the ochre envelope gores (envelope heap): pale ochre with a warm sheen.',
+      albedo: 0.92, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['canvasLight', 4], ['canvas', 1]],
+      grid: { u: 0.07, v: 0.07, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    balloon: {
+      v1: 'balloon', seed: 902,
+      desc: 'BALLOON FABRIC (v1.39). The ochre gores between crest and valley: canvas mid tone, light / dark mottle.',
+      albedo: 0.86, bgK: 0.16, detail: 32, jitter: 0.06,
+      tones: [['canvas', 4], ['canvasLight', 1], ['canvasDark', 1]],
+      grid: { u: 0.07, v: 0.07, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    balloon_dark: {
+      v1: 'balloon_dark', seed: 903,
+      desc: 'BALLOON FABRIC (v1.39). Ochre gores in the fold valleys, the creases and the hem on the ground (contact shadow).',
+      albedo: 0.66, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['canvasDark', 3], ['canvas', 1], ['canvasScorch', 1]],
+      grid: { u: 0.07, v: 0.07, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    balloon_red_light: {
+      v1: 'balloon_red_light', seed: 904,
+      desc: 'BALLOON FABRIC (v1.39). Lit fold crests of the faded red gores.',
+      albedo: 0.90, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['goreRedLight', 3], ['goreRed', 2]],
+      grid: { u: 0.07, v: 0.07, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    balloon_red: {
+      v1: 'balloon_red', seed: 905,
+      desc: 'BALLOON FABRIC (v1.39). The faded red gores that alternate with the ochre ones: the stripe that says "balloon".',
+      albedo: 0.86, bgK: 0.16, detail: 32, jitter: 0.06,
+      tones: [['goreRed', 4], ['goreRedLight', 1], ['goreRedDark', 1]],
+      grid: { u: 0.07, v: 0.07, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    balloon_red_dark: {
+      v1: 'balloon_red_dark', seed: 906,
+      desc: 'BALLOON FABRIC (v1.39). Red gores in the fold valleys and creases.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['goreRedDark', 3], ['goreRed', 1], ['canvasScorch', 1]],
+      grid: { u: 0.07, v: 0.07, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    tarp_light: {
+      v1: 'tarp_light', seed: 907,
+      desc: 'BALLOON FABRIC (v1.39). The wake-spot linen tarp\'s lit crests: rounded lid shoulders, fold ridges, the rolled fold.',
+      albedo: 0.94, bgK: 0.18, detail: 32, jitter: 0.06,
+      tones: [['linenLight', 4], ['linen', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    tarp: {
+      v1: 'tarp', seed: 908,
+      desc: 'BALLOON FABRIC (v1.39). The tarp\'s flat parts: the sheet on the floor, the lid, the folded flap. Faint weave.',
+      albedo: 0.86, bgK: 0.16, detail: 32, jitter: 0.06,
+      tones: [['linen', 4], ['linenLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    tarp_dark: {
+      v1: 'tarp_dark', seed: 909,
+      desc: 'BALLOON FABRIC (v1.39). The tarp in shadow: fold valleys, the drape flanks, the sewn panel seams.',
+      albedo: 0.66, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['linenDark', 3], ['canvasDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -935,7 +1023,10 @@
     // ENV-01d ground detail (design/models/ground_detail.js), same key in both files.
     petal_yellow: 'petal_yellow', petal_white: 'petal_white', petal_pink: 'petal_pink', mushroom_cap: 'mushroom_cap', wood_cut: 'wood_cut',
     // v1.35 spell hand ember coal (design/models/spell.js), same key in both files.
-    ember_core: 'ember_core', ember_glow: 'ember_glow'
+    ember_core: 'ember_core', ember_glow: 'ember_glow',
+    // v1.39 balloon fabric (design/models/voxel_tower.js), same key in both files.
+    balloon_light: 'balloon_light', balloon: 'balloon', balloon_dark: 'balloon_dark', balloon_red_light: 'balloon_red_light',
+    balloon_red: 'balloon_red', balloon_red_dark: 'balloon_red_dark', tarp_light: 'tarp_light', tarp: 'tarp', tarp_dark: 'tarp_dark'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
