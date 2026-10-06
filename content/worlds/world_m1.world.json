@@ -14,17 +14,7 @@
     "preset": "sun"
   },
   "structures": [
-    {"id": "tower", "level": "tower", "note": "level (0,0) -> world (1480, 1018); footprint 24 x 14 m = world x 1480..1504, y 1018..1032; matches overworld_far.structures[0]", "origin": {"x": 1480, "y": 1018, "z": 0}, "yawSteps": 0},
-    {"id": "roadS00", "mesh": "quaternius/DeadTree_1", "origin": {"x": 1440, "y": 1046, "z": 1.61}, "yawDeg": 40},
-    {"id": "roadS02", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 1457, "y": 1042, "z": 2.38}, "yawDeg": 15},
-    {"id": "roadS03", "mesh": "quaternius/Rock_Medium_2", "origin": {"x": 1433, "y": 1046, "z": 1}, "yawDeg": 120},
-    {"id": "roadS04", "mesh": "quaternius/Rock_Medium_3", "origin": {"x": 1412, "y": 1049, "z": -1.23}, "yawDeg": 300},
-    {"id": "roadS05", "mesh": "quaternius/Mushroom_Common", "origin": {"x": 1452, "y": 1041, "z": 2.11}, "yawDeg": 0},
-    {"id": "roadS08", "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1444.2, "y": 1041.2, "z": 1.75}, "yawDeg": 50},
-    {"id": "roadS09", "mesh": "quaternius/RockPath_Round_Small_1", "origin": {"x": 1441.5, "y": 1043, "z": 1.56}, "yawDeg": 100},
-    {"id": "roadS10", "mesh": "quaternius/Pebble_Round_1", "origin": {"x": 1462, "y": 1040, "z": 2.32}, "yawDeg": 0},
-    {"id": "roadS11", "mesh": "quaternius/Pebble_Square_2", "origin": {"x": 1437, "y": 1043, "z": 1.25}, "yawDeg": 90},
-    {"id": "roadS12", "mesh": "quaternius/Pebble_Round_3", "origin": {"x": 1418, "y": 1041, "z": -0.59}, "yawDeg": 30}
+    {"id": "tower", "level": "tower", "note": "level (0,0) -> world (1480, 1018); footprint 24 x 14 m = world x 1480..1504, y 1018..1032; matches overworld_far.structures[0]", "origin": {"x": 1480, "y": 1018, "z": 0}, "yawSteps": 0}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
