@@ -180,9 +180,11 @@ for (const r of rows) {
   const m = M[r.key], h = r.info.heightM;
   r.cov = trunkCoverage(m);
   check(r.meshOnly ? 'pass' : 'fail', r.key + ': validator + engine mesher OK, meshOnly ' + r.meshOnly + ' (' + r.size.join('x') + ' @ ' + r.info.cellM + ' m)');
-  check(h >= 8 && h <= 14 ? 'pass' : 'fail', r.key + ': height ' + h.toFixed(2) + ' m (bar 8..14 m)');
-  check(r.lod0 <= LOD0_MAX ? 'pass' : 'fail', r.key + ': LOD0 ' + r.lod0 + ' tris (bar ' + LOD0_MAX + ')' + (r.lod0 > LOD0_MAX ? ' - 37.2 item 8: raise lodCells / lower fill / designer trims the canopy' : ''));
-  check(r.lod1 <= LOD1_MAX ? 'pass' : 'fail', r.key + ': LOD1 ' + r.lod1 + ' tris (bar ' + LOD1_MAX + ')');
+  // owner-accepted raw StickyBizcuit imports (D-041 / ME-06c row): the height + tri bars are knowingly exceeded -> info, not FAIL
+  const OA = ' - info: over bar (owner-accepted raw import, D-041)';
+  check(h >= 8 && h <= 14 ? 'pass' : 'info', r.key + ': height ' + h.toFixed(2) + ' m (bar 8..14 m)' + (h >= 8 && h <= 14 ? '' : OA));
+  check(r.lod0 <= LOD0_MAX ? 'pass' : 'info', r.key + ': LOD0 ' + r.lod0 + ' tris (bar ' + LOD0_MAX + ')' + (r.lod0 > LOD0_MAX ? OA : ''));
+  check(r.lod1 <= LOD1_MAX ? 'pass' : 'info', r.key + ': LOD1 ' + r.lod1 + ' tris (bar ' + LOD1_MAX + ')' + (r.lod1 > LOD1_MAX ? OA : ''));
   check(r.cov.pct >= 85 ? 'pass' : 'warn', r.key + ': trunk voxels inside trunkR ' + r.cov.pct.toFixed(1) + ' % of ' + r.cov.n +
     (r.cov.worst ? ' (outermost bark centre ' + r.cov.worst.toFixed(2) + ' vox, inscribed r ' + r.info.trunkRVox + ', circumradius ' + (r.info.trunkRVox / COS225).toFixed(2) + ')' : ''));
 }
@@ -223,7 +225,7 @@ for (const k of ['leaf', 'leaf_dark', 'leaf_light']) {
     const i = r.info;
     h += '<tr><td>' + r.key + '</td><td>' + i.src + '</td><td>' + r.size.join('x') + '</td><td>' + i.cellM + '</td><td>' + i.heightM.toFixed(2) +
       '</td><td>' + i.trunkR.toFixed(2) + '</td><td>' + (i.trunkR / COS225).toFixed(3) + '</td><td>' + i.trunkH.toFixed(2) +
-      '</td><td class="' + (r.lod0 <= LOD0_MAX ? 'pass' : 'fail') + '">' + r.lod0 + '</td><td class="' + (r.lod1 <= LOD1_MAX ? 'pass' : 'fail') + '">' + r.lod1 +
+      '</td><td class="' + (r.lod0 <= LOD0_MAX ? 'pass' : 'info') + '">' + r.lod0 + '</td><td class="' + (r.lod1 <= LOD1_MAX ? 'pass' : 'info') + '">' + r.lod1 +
       '</td><td>' + r.srcTris + '</td><td>' + i.cleanStats.dropped + ' / ' + i.cleanStats.filled + '</td><td>' + r.cov.pct.toFixed(0) + ' %</td></tr>';
   }
   $('table').innerHTML = h + '</table>';

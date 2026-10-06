@@ -145,9 +145,7 @@
           { id: 'groveEast', shape: 'disc', x: 1521, y: 1028, r: 10, type: 'forest', mode: 'set',
             note: 'behind the east wall, a little south of due ESE so it never shades the sun crack (sun elev 60: the shaft clears 17 m at 8 m out)' },
           { id: 'groveSouth', shape: 'disc', x: 1494, y: 1048, r: 9, type: 'forest', mode: 'set',
-            note: 'south of the tower (edge 7 m from the south wall); seen on the left of the walk-out' },
-          { id: 'groveNorthWest', shape: 'disc', x: 1460, y: 1008, r: 9, type: 'forest', mode: 'set',
-            note: 'north of the walk-out, ~33 deg right of the breach view centre (yaw 270): the first trees you see from the breach' }
+            note: 'south of the tower (edge 7 m from the south wall); seen on the left of the walk-out' }
         ]
       },
       // Must stay AFTER '11,8' (stamps apply in key insertion order): the crown flatten would erase the bowl.
@@ -158,6 +156,11 @@
                   'Flat deep floor r <= 1 m at 1.65 m (column 0.85 m >= pond tintDepth 0.8 -> full deep colour), smoothstep ' +
                   'rise to 0 at r = 4 m (rim column 0.10 m, unchanged). Column < pond foamDepth 0.25 from r ~3.1 m -> shallow foam shelf. ' +
                   'Slope <= ~0.4 (about 20 deg), walkable. Move/resize together with the quietPond water region.' }
+        ],
+        paints: [
+          // groveNorthWest lives in chunk 11,7 (its centre); this chunk comes after 11,8 so it still wins over crownGrass.
+          { id: 'groveNorthWest', shape: 'disc', x: 1460, y: 1008, r: 9, type: 'forest', mode: 'set',
+            note: 'north of the walk-out, ~33 deg right of the breach view centre (yaw 270): the first trees you see from the breach' }
         ]
       }
     },

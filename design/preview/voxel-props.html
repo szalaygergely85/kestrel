@@ -100,6 +100,7 @@
 <script src="../models/voxel_tower.js"></script>
 <script src="../models/voxel_world.js"></script>
 <script src="../levels/overworld_far.js"></script>
+<script src="lib/structure-stub.js"></script>
 <script>
   setTimeout(function () {
     if (!window.__voxOK) document.getElementById('fatal').textContent =
@@ -138,7 +139,7 @@ const ENTRIES = [
   { name: 'canvasHeap', title: 'Canvas heap (the wake spot: linen tarp over a crate; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
     floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['linen_light'], body: ['linen_dark'] },
   { name: 'gondola', title: 'Gondola (bow + stern halves share one tilt pose; chock static)', clips: ['idle'], floorZ: 0, wallY: 1.4, wallMat: 'stone', floorMat: 'floor',
-    view: { dist: 3, eye: 1.6 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'iron_dark'] },
+    view: { dist: 3, eye: 1.6 }, rim: ['canvas_light', 'brass_hot'], body: ['gore_red', 'canvas_dark'] },
   { name: 'strut', title: 'Bent strut (bar)', clips: ['idle'], floorZ: 0, wallY: 0.4, wallMat: 'stone', floorMat: 'rubble',
     view: { dist: 1.8, eye: 1.0 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'patina'] },
   { name: 'envelopeHeap', title: 'Envelope heap below the breach (west + east halves; skirt under the anchor plane)', clips: ['idle'], floorZ: 0, wallY: null,
@@ -915,11 +916,11 @@ function runChecks() {
          ', y ' + (r.y0 - 0.025).toFixed(2) + '..' + (r.y1 + 0.025).toFixed(2));
       const BV = MODELS.burner, bi = posedInstance('burner', p.x, p.y, p.z, p.facing, clipState(packed.burner, 'burn', 0));
       const lp = worldPoint(bi, 0, BV.voxel.mounts.light.at), fp = worldPoint(bi, 0, BV.voxel.mounts.flame.at);
-      const bl = TOWER.lights.filter((l) => l.id === 'brazier')[0], fprop = prop(BV.flame.prop), BF = A.models.burnerFlame;
+      const bl = TOWER.lights.filter((l) => l.id === 'brazier')[0], fprop = prop('burnerFire') || prop(BV.flame.prop), BF = A.models.burnerFlame;
       ok(!!bl && Math.abs(lp[0] - bl.x) < 1e-6 && Math.abs(lp[1] - bl.y) < 1e-6 && Math.abs(lp[2] - bl.z) < 1e-6,
          'burner: mounts.light (' + lp.map((v) => v.toFixed(3)).join(', ') + ') = lights.brazier (' + (bl ? bl.x + ', ' + bl.y + ', ' + bl.z : 'missing') + '), light unchanged');
-      ok(!!fprop && fprop.model === 'burnerFlame' && fprop.variant === 'burn' && Math.abs(fprop.x - fp[0]) < 1e-6 && Math.abs(fprop.y - fp[1]) < 1e-6 && Math.abs(fprop.z - fp[2]) < 1e-6,
-         'burner: level prop ' + BV.flame.prop + ' (' + (fprop ? fprop.x + ', ' + fprop.y + ', ' + fprop.z + ', model ' + fprop.model : 'missing') + ') = posed mounts.flame (' + fp.map((v) => v.toFixed(3)).join(', ') + ')');
+      ok(!!fprop && (fprop.model === 'burnerFire' || fprop.model === 'burnerFlame') && fprop.variant === 'burn' && Math.abs(fprop.x - fp[0]) < 1e-6 && Math.abs(fprop.y - fp[1]) < 1e-6 && Math.abs(fprop.z - fp[2]) < 1e-6,
+         'burner: level prop ' + (fprop ? fprop.id : BV.flame.prop) + ' (' + (fprop ? fprop.x + ', ' + fprop.y + ', ' + fprop.z + ', model ' + fprop.model : 'missing') + ') = posed mounts.flame (' + fp.map((v) => v.toFixed(3)).join(', ') + ')');
       const rimTop = p.z + BV.voxel.size[2] * BV.voxel.cellM;
       ok(!!BF && BF.world.h > (rimTop - fp[2]) * 2 && fp[2] + BF.world.h / 5 <= rimTop + 1e-9,
          'burnerFlame: ' + (BF ? BF.world.w + ' x ' + BF.world.h : '?') + ' m; ember row (bottom 1/5) inside the mouth (top ' + (fp[2] + (BF ? BF.world.h / 5 : 0)).toFixed(3) + ' <= rim ' + rimTop.toFixed(2) + '), tongues rise ' + (BF ? (fp[2] + BF.world.h - rimTop).toFixed(2) : '?') + ' m over the rim');

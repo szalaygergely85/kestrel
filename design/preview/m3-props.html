@@ -1020,7 +1020,7 @@ function runChecks() {
     ok(angDiff(bS, PL.facing) <= 25, 'cut front faces the sword nook: facing ' + PL.facing + ' vs bearing to the stand spot ' + bS.toFixed(0) + ' deg');
     const lp = PATCH.props.append[0];
     ok(lp.x === PL.x && lp.y === PL.y && lp.facing === PL.facing && lp.model === 'practiceTarget' && lp.targetable.r === H.r, 'levelPatch.towerPracticeTarget prop = placement + the hurt cylinder');
-    ok(!TOWER.props.some((p) => p.id === 'practiceTarget'), 'tower.level.json not edited (the US-078d content step copies the prop)');
+    ok(TOWER.props.some((p) => p.id === 'practiceTarget'), 'tower.level.json has the practiceTarget prop (the US-078d content step copied it from the levelPatch)');
   }
   // ---- readability (analytic)
   for (const [cols, rows] of [[160, 60], [240, 90]]) {

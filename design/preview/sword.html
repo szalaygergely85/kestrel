@@ -965,13 +965,13 @@ function runChecks() {
     const c = vm.clips[nm], K = c.keys, T = K[K.length - 1].t, W = WANT[nm];
     const poses = K.filter((k) => k.t > 0 && k.t < T).length;
     ok(!c.loop && T === W.T && c.windup[0] === 0 && c.windup[1] === c.active[0] && c.active[1] === c.recover[0] && c.recover[1] === T &&
-       c.windup[1] - c.windup[0] === W.w[0] && c.active[1] - c.active[0] === W.w[1] && c.recover[1] - c.recover[0] === W.w[2] && poses >= 5 && c.leadEdge === '+x',
+       c.windup[1] - c.windup[0] === W.w[0] && c.active[1] - c.active[0] === W.w[1] && c.recover[1] - c.recover[0] === W.w[2] && poses >= 5 && c.leadEdge === '-x',   /* LEFT hand since BUG-VM-001 / D-040: the blade crosses right -> left */
        nm + ': ' + T + ' ms = windup ' + (c.windup[1] - c.windup[0]) + ' + active ' + (c.active[1] - c.active[0]) + ' + recover ' + (c.recover[1] - c.recover[0]) + ', ' + poses + ' poses between the end keys (>= 5), leadEdge ' + c.leadEdge);
     const steps = c.windup.concat(c.active, c.recover).map((ms) => Math.round(ms * 60 / 1000));
     info(nm + ': windows in 60 Hz steps ' + steps.join(' / ') + ' (SWORD_CFG ' + (nm === 'swingLR' ? 'light 5 / 7 / 9' : 'hard 4 / 7 / 27') + ', within 1 step)');
     const tips = K.filter((k) => k.t >= c.active[0] && k.t <= c.active[1]).map((k) => eyePoint(k, H_TIP)[0]);
-    const mono = tips.every((x, i) => i === 0 || x > tips[i - 1]);
-    ok(mono, nm + ': blade tip moves left -> right through the active keys (x ' + tips.map((x) => x.toFixed(2)).join(' -> ') + ')');
+    const mono = tips.every((x, i) => i === 0 || x < tips[i - 1]);
+    ok(mono, nm + ': blade tip moves right -> left (left hand, BUG-VM-001) through the active keys (x ' + tips.map((x) => x.toFixed(2)).join(' -> ') + ')');
   }
   {
     const L = vm.clips.swingLR, Hd = vm.clips.swingHard;
@@ -1020,8 +1020,8 @@ function runChecks() {
   }
   for (const spec of [{ cols: 160, rows: 60 }, { cols: 240, rows: 90 }]) {
     const g2 = project(spec, eyePoint(vm.rest, H_GUARD)), tp = project(spec, eyePoint(vm.rest, H_TIP));
-    ok(g2 && g2.r < spec.rows && g2.c < spec.cols && g2.c > spec.cols / 2 && tp && tp.r < spec.rows / 2 && Math.abs(tp.camX) >= 0.15,
-       spec.cols + 'x' + spec.rows + ' idle: guard at col ' + (g2 ? g2.c.toFixed(0) : '-') + ' row ' + (g2 ? g2.r.toFixed(0) : '-') + ' (lower right, on screen), tip at col ' + (tp ? tp.c.toFixed(0) : '-') + ' row ' + (tp ? tp.r.toFixed(0) : '-') +
+    ok(g2 && g2.r < spec.rows && g2.c < spec.cols && g2.c < spec.cols / 2 && tp && tp.r < spec.rows / 2 && Math.abs(tp.camX) >= 0.15,
+       spec.cols + 'x' + spec.rows + ' idle: guard at col ' + (g2 ? g2.c.toFixed(0) : '-') + ' row ' + (g2 ? g2.r.toFixed(0) : '-') + ' (lower left, on screen: left hand, BUG-VM-001), tip at col ' + (tp ? tp.c.toFixed(0) : '-') + ' row ' + (tp ? tp.r.toFixed(0) : '-') +
        ' (above the horizon, clear of the crosshair)');
   }
   const asc = (s) => s.split('').every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) <= 126);
@@ -1030,7 +1030,7 @@ function runChecks() {
   ok(asc(glyphs) && asc(PATCH.decals.append[0].model) && asc(PATCH.interactables.append[0].prompt), 'trail / spark glyphs, scrawl and prompt are ASCII 32..126');
   ok(PATCH.props.append[0].x === A.voxelModels.sword.placement.x && PATCH.props.append[0].facing === A.voxelModels.sword.placement.facing && PATCH.interactables.append[0].prop === 'sword',
      'levelPatch.towerSword prop = placement; interactable links prop sword');
-  ok(!TOWER || !TOWER.props.some((p) => p.id === 'sword'), 'tower.level.json not edited yet (the patch is applied by the US-078 content step)');
+  ok(!TOWER || TOWER.props.some((p) => p.id === 'sword'), 'tower.level.json has the sword prop (the US-078 content step applied the patch)');
   $('checks').innerHTML = out.map(([c, m]) => '<div class="' + c + '">' + m.replace(/</g, '&lt;') + '</div>').join('');
 }
 

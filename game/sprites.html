@@ -23,10 +23,25 @@
   <script src="../design/models/title.js"></script>
   <script src="../design/models/lantern.js"></script>
   <script src="../design/models/brazier.js"></script>
-  <script src="../design/levels/test_room.js"></script>
-  <script src="../design/levels/tower.js"></script>
+  <!-- US-027b: test_room/tower/world_m1 moved to content/*.json (design/levels/{test_room,tower,world_m1}.js are gone).
+       Dev page, so a blocking XHR shim reshapes them onto window.ASSETS exactly like the old classic scripts did
+       (same as design/preview/content-shim.js, but paths relative to game/). Not shipped game code. -->
+  <script>
+    (function () {
+      var A = window.ASSETS = window.ASSETS || {}; A.levels = A.levels || {}; A.worlds = A.worlds || {};
+      function get(url) {
+        var x = new XMLHttpRequest(); x.open('GET', url, false); x.send(null);
+        if (x.status !== 0 && x.status !== 200) throw new Error('sprites.html: ' + url + ' -> HTTP ' + x.status);
+        var o = JSON.parse(x.responseText), out = {};
+        for (var k in o) if (k !== 'kind' && k !== 'schema' && k !== 'id' && k !== 'nextId') out[k] = o[k];   // strip the US-027a envelope
+        return out;
+      }
+      // Loaded FROM content/ JSON (single source of truth) - the table drives the load, no hand-written level data here.
+      [['levels', 'test_room', '../content/levels/test_room.level.json'], ['levels', 'tower', '../content/levels/tower.level.json'],
+       ['worlds', 'world_m1', '../content/worlds/world_m1.world.json']].forEach(function (e) { A[e[0]][e[1]] = get(e[2]); });
+    })();
+  </script>
   <script src="../design/levels/overworld_far.js"></script>
-  <script src="../design/levels/world_m1.js"></script>
   <script type="module" src="js/dev/spritesPage.js"></script>
 </body>
 </html>

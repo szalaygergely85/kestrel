@@ -368,9 +368,9 @@ function runChecks() {
   const a = FIRE.animations.burn, ah = FIRE.lods.half.animations.burn;
   check(a.frames.length === 8 && a.fps === 12 && a.loop && ah.frames.length === 8 && ah.fps === 12,
     `burn: ${a.frames.length} frames @ ${a.fps} fps (half ${ah.frames.length} @ ${ah.fps}) - 36.2: 8 @ 12`);
-  check(FIRE.size.w === 13 && FIRE.size.h === 11 && FIRE.world.w === 0.7 && FIRE.world.h === 1.0 && FIRE.anchor.x === 6 && FIRE.anchor.y === 10 &&
+  check(FIRE.size.w === 13 && FIRE.size.h === 11 && FIRE.world.w === 0.5 && FIRE.world.h === 0.75 && FIRE.anchor.x === 6 && FIRE.anchor.y === 10 &&
         FIRE.lods.half.size.w === 7 && FIRE.lods.half.size.h === 6 && FIRE.lods.half.anchor.x === 3 && FIRE.lods.half.anchor.y === 5,
-    'size 13x11, world 0.7 x 1.0 m, anchor bottom centre (6,10); half 7x6 anchor (3,5)');
+    'size 13x11, world 0.5 x 0.75 m (BUG-FIRE-001 shrank it from 0.7 x 1.0), anchor bottom centre (6,10); half 7x6 anchor (3,5)');
   // the engine atlas rule (spritesAtlas.js): every non-space cell with a non-space key must resolve
   let minDiff = 1e9, coreLow = true, flicks = [];
   for (let i = 0; i < 8; i++) {
@@ -398,8 +398,8 @@ function runChecks() {
     catch (e) { check(false, `engine defineEmitter("${k}") threw: ${e.message}`); }
   }
   const e = PS.presets.embers;
-  check(e.rate === 8 && e.life[0] === 0.8 && e.life[1] === 1.4 && e.speed[0] === 0.6 && e.speed[1] === 1.2 && e.spreadDeg === 25 && e.emissive &&
-        e.colors[0] === 'emberHot' && /Dark$/.test(e.colors[e.colors.length - 1]) && e.glyphs.length === e.colors.length,
+  check(e.rate === 8 && e.life[0] === 1.0 && e.life[1] === 1.8 && e.speed[0] === 0.6 && e.speed[1] === 1.2 && e.spreadDeg === 25 && e.emissive &&
+        e.colors[0] === 'emberHot' && /(Dim|Dark)$/.test(e.colors[e.colors.length - 1]) && e.glyphs.length === e.colors.length,
     `embers per 36.2: rate ${e.rate}, life ${e.life}, speed ${e.speed}, spread ${e.spreadDeg}, ${e.colors[0]} -> ${e.colors[e.colors.length - 1]}, 1:1 ramps`);
   const s = createParticles({ capacity: 256, seed: 4 });
   const id = s.defineEmitter('embers', PS.toEmitterDef('embers', P.rgb));
@@ -421,7 +421,7 @@ function runChecks() {
 let paused = false, acc = 0, last = performance.now(), simT = 0, lastDraw = 0;
 function stepSim() { ps.setWind(+$('wind').value, 0, 0); ps.step(); simT += STEP; }
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;
   if (!paused) { acc += dt * +$('speed').value; while (acc >= STEP) { stepSim(); acc -= STEP; } }
   if (now - lastDraw > 30) {   // ~30 Hz redraw (the 480 crop is 14 400 canvas cells)
     lastDraw = now;

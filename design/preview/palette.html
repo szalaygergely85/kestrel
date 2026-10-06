@@ -275,7 +275,8 @@
 
   // ---------- 3. ramps ----------
   var RAMP_COLOR = { 'default': 'uiText', fine: 'uiText', stone: 'stoneMid', wood: 'woodLight', iron: 'ironLight', floor: 'flagstone',
-                     ash: 'ashLight', rubble: 'rubble', sky: 'cloudLit', fire: null, grass: 'grass', foliage: 'grassDark', water: 'riverLight' };
+                     ash: 'ashLight', rubble: 'rubble', sky: 'cloudLit', fire: null, grass: 'grass', foliage: 'grassDark', water: 'riverLight',
+                     brass: 'brassLight', copper: 'copperLight', canvas: 'canvasLight', aether: 'aetherLight', cityLight: 'cityLight' };
   function buildRamps() {
     var host = $('ramps');
     Object.keys(P.ramps).forEach(function (rk) {
@@ -284,7 +285,7 @@
       var cv = document.createElement('canvas'); d.appendChild(cv); host.appendChild(d);
       var cols = Math.max(72, r.length), g = makeGrid(cv, cols, 2, 16), x;
       g.clear('#000');
-      var base = RAMP_COLOR[rk] ? P.rgb[RAMP_COLOR[rk]] : null;
+      var base = (RAMP_COLOR[rk] && P.rgb[RAMP_COLOR[rk]]) || (rk === 'fire' ? null : P.rgb.uiText);   // unknown ramp -> neutral, never crash
       for (x = 0; x < r.length; x++) g.cell(x, 0, r.charAt(x), '#d8d2c0', '#101218');
       for (x = 0; x < cols; x++) {
         var b = x / (cols - 1), ch = U.rampGlyph(rk, b), fg;

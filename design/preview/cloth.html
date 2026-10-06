@@ -411,7 +411,7 @@ function stepSim() {
   simMs = simMs * 0.95 + (performance.now() - t0) * 0.05;
 }
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;
   const gsz = +$('grid').value;
   if (gsz !== COLS) { COLS = gsz; ROWS = gsz === 160 ? 60 : 90; CW = gsz === 160 ? 6 : 4; CH = gsz === 160 ? 12 : 8; alloc(); }
   const cv = $('view'); if (cv.width !== COLS * CW) { cv.width = COLS * CW; cv.height = ROWS * CH; }

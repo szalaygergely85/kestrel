@@ -572,7 +572,7 @@
   var last = performance.now();
   function frame(now) {
     requestAnimationFrame(frame);
-    var dt = Math.min(0.1, (now - last) / 1000); last = now;
+    var dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;
     if (!S.paused) S.t += dt * S.speed;
     if (frame.acc === undefined) frame.acc = 1;
     frame.acc += dt; if (frame.acc < 0.05) return; frame.acc = 0;
