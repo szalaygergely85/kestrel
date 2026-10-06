@@ -243,7 +243,7 @@ const engine = createEngine({
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
-  // ME-15c (27.9a): sun shadow map is opt-in (`?shadows=map`) until the owner walk-tests ME-12; default keeps the sun DDA.
+  // ME-15c/e/f (27.9a, D-043): the sun shadow MAP is the default; `?shadows=dda` keeps the old sun DDA until ME-19c.
   shadows: { sun: params.get('shadows') === 'dda' ? 'dda' : 'map', instCastM: params.get('shadowinst') ? Number(params.get('shadowinst')) : 32, ...(params.get('shadowres') ? { res: Number(params.get('shadowres')) } : {}) }, // ME-15e/f (owner 2026-10-06 "looks cool", D-043): sun shadow MAP is the default, trees cast to 32 m (+1.6 ms p95 accepted); `?shadows=dda` = old sun DDA until ME-19c, `?shadowinst=N` / `?shadowres=N` dev overrides
 });
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
