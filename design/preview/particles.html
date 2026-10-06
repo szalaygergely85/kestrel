@@ -348,7 +348,7 @@ function stepAll() {
   simT += STEP;
 }
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;
   if (!paused) {
     acc += dt * +$('speed').value;
     while (acc >= STEP) { stepAll(); acc -= STEP; }

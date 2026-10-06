@@ -23,3 +23,11 @@ raw files are committed only when the licence clearly allows redistribution (CC0
 - Licence: **CC0** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). Attribution not required. May be committed.
 - Format: FBX - no importer; convert to `.glb` in Blender for ME-13 (glTF), or use as designer reference for the ME-06c forest.
 
+
+## Quaternius - Stylized Nature MegaKit [Standard] (CC0)
+- Files: the free Standard tier's 68 glTF models + their `.bin` and textures, **committed** in `design/meshes/quaternius/glTF/` (~48 MB) so both PCs can import them; the zip's FBX/OBJ/previews stay in git-ignored `design/meshes/source/quaternius_stylized_nature/`.
+- Licence: **CC0 1.0** (public domain), see `design/meshes/quaternius/License_Standard.txt`. Author: Quaternius (quaternius.com). Credit appreciated, not required. D-041.
+
+## Kenney - Nature Kit 2.1 (CC0)
+- Files: the 329 Collada `.dae` models, **committed** in `design/meshes/kenney/dae/` (~8 MB) for the TREES-LP-a importer; the rest of the zip stays in git-ignored `design/meshes/source/kenney_nature-kit/`.
+- Licence: **CC0 1.0** (public domain), see `design/meshes/kenney/License.txt`. Author: Kenney (kenney.nl). D-042 item 4.

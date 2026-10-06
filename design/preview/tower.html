@@ -124,8 +124,9 @@
   // ---------------- level access ----------------
   function def(x, y) { if (x < 0 || y < 0 || x >= W || y >= H) return null; return LV.legend[LV.rows[y].charAt(x)] || null; }
   function ceilOf(d, open) { if (d.tag === 'grate') return open ? d.dynamic.ceilOpen : d.ceilH; return d.ceilH; }
+  var blockTag = null;   // check helper: treat cells with this tag as walls
   function passable(x, y, open) {
-    var d = def(x, y); if (!d || d.solid) return false;
+    var d = def(x, y); if (!d || d.solid || (blockTag && d.tag === blockTag)) return false;
     var c = ceilOf(d, open); return c === 'sky' || (c - d.floorH) >= RULES.headroom;
   }
   function key(x, y) { return x + ',' + y; }
@@ -187,11 +188,17 @@
 
     var closed = reach(sx, sy, false), open = reach(sx, sy, true);
     var leak = Object.keys(closed).filter(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'upper' || d.zone === 'summit' || d.zone === 'outside'; });
-    check('Grate closed: upper stair, summit and outcrop are unreachable (summit only via the grate path)', !leak.length, leak.join(' '));
-    var trig = LV.triggers[0].cells.some(function (c) { return open[key(c[0], c[1])]; });
-    check('Grate open: the end trigger is reachable from the start', trig);
-    var outs = Object.keys(open).filter(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'outside' && d.tag !== 'trigger:end'; });
-    check('Grate open: the only way outside is through the breach onto the trigger', !outs.length, outs.join(' '));
+    var hasGrate = Object.keys(LV.legend).some(function (k) { return LV.legend[k].tag === 'grate'; });   // grate + lever removed by the owner (TOWER-LEVER-01 / ME tower round 3)
+    check('Grate closed: upper stair, summit and outcrop are unreachable (summit only via the grate path)' + (hasGrate ? '' : ' - n/a: the grate was removed, the stair is free'), hasGrate ? !leak.length : true, hasGrate ? leak.join(' ') : 'info: no grate in the legend');
+    // the end trigger cells ('trigger:end') are gone (the exit is now the breach + hintExit circle); a breach cell reachable from the start is the new target
+    var endCells = []; LV.triggers.forEach(function (t) { if (t.cells) endCells = endCells.concat(t.cells); });
+    var trig = endCells.length ? endCells.some(function (c) { return open[key(c[0], c[1])]; })
+      : Object.keys(open).some(function (k) { var p = k.split(','); return def(+p[0], +p[1]).tag === 'breach'; });
+    check('Grate open: the ' + (endCells.length ? 'end trigger' : 'breach (exit)') + ' is reachable from the start', trig);
+    var outs;
+    if (endCells.length) outs = Object.keys(open).filter(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'outside' && d.tag !== 'trigger:end'; });
+    else { blockTag = 'breach'; outs = Object.keys(reach(sx, sy, true)).filter(function (k) { var p = k.split(','); return def(+p[0], +p[1]).zone === 'outside'; }); blockTag = null; }   // no end trigger any more: outside is the walkable exit, so with the breach walled off nothing outside may be reachable
+    check('Grate open: the only way outside is through the breach' + (endCells.length ? ' onto the trigger' : ''), !outs.length, outs.join(' '));
     var bowl = Object.keys(LV.legend).filter(function (k) { return LV.legend[k].tag === 'beaconBowl'; });
     check('Beacon bowl is on the summit and reachable', Object.keys(open).some(function (k) { var p = k.split(','); return def(+p[0], +p[1]).tag === 'beaconBowl'; }), bowl.join(''));
 
@@ -217,15 +224,16 @@
 
     // no traps
     var traps = Object.keys(open).filter(function (k) {
-      var p = k.split(','); if (isTerminal(+p[0], +p[1])) return false; return !reach(+p[0], +p[1], true)[key(sx, sy)];
+      var p = k.split(','); if (isTerminal(+p[0], +p[1]) || def(+p[0], +p[1]).zone === 'outside') return false;   /* outside = the one-way exit to the overworld */ return !reach(+p[0], +p[1], true)[key(sx, sy)];
     });
     check('No traps: from every reachable cell the player can walk/jump/fall back to the start (falls from any stair land on walkable ground)', !traps.length, traps.join(' '));
     // every stair/upper cell has a lower walkable neighbour (fall target)
     check('Completable without the lantern (movement model uses geometry only; the lantern is never required)', trig);
 
     // boulder: step threshold 0 -> may only move to cells with floor <= its current floor
-    var b0 = [Math.floor(LV.props.filter(function (p) { return p.id === 'boulder'; })[0].x), Math.floor(LV.props.filter(function (p) { return p.id === 'boulder'; })[0].y)];
-    var bseen = {}, bq = [b0]; bseen[key(b0[0], b0[1])] = true;
+    var boulderP = LV.props.filter(function (p) { return p.id === 'boulder'; })[0];   // TOWER-BOULDER-01: the boulder was removed -> its checks are skipped
+    var bseen = {}, bq = [];
+    if (boulderP) { var b0 = [Math.floor(boulderP.x), Math.floor(boulderP.y)]; bq.push(b0); bseen[key(b0[0], b0[1])] = true; }
     while (bq.length) {
       var c = bq.shift(), dc = def(c[0], c[1]);
       DIR8.forEach(function (dd) {
@@ -249,6 +257,7 @@
       }
       tiltBad.push(k + ' (tilt loop)');
     });
+    if (boulderP) {
     check('Boulder: from its start it can only reach ' + bcells.length + ' cells (base, slope apron, hollow). Stair and wake area are unreachable for it',
           bcells.every(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.tag === 'stairBase' || d.tag === 'slope' || d.tag === 'hollow'; }), bcells.join(' '));
     check('Boulder: every non-hollow cell it can reach tilts downhill into the hollow (never rests on the stair base)', !tiltBad.length, tiltBad.join('; '));
@@ -257,6 +266,7 @@
       return DIR8.some(function (dd) { var n = def(+p[0] + dd[0], +p[1] + dd[1]); return n && !n.solid && n.tag !== 'hollow' && n.floorH <= d.floorH; });
     });
     check('Boulder: once in the hollow (-0.3) every exit is uphill, so it cannot be pushed back out', !hollowExit);
+    } else check('Boulder checks skipped - n/a: the boulder prop was removed (TOWER-BOULDER-01)', true, 'info');
 
     // D-011 levelPatch props (models/wreckage.js): none on the wake -> burner -> stair corridor or the boulder roll line
     if (LP) {
@@ -508,7 +518,7 @@
         '</td><td>' + (p.facing !== undefined ? p.facing : '') + '</td><td>' + (p.interactable ? 'interactable: ' + p.interactable : '') + '</td><td>' + (p.note || '') + '</td></tr>';
     });
     LV.lights.forEach(function (l) { pr.push('<tr><td>light</td><td>' + l.id + '</td><td>' + l.preset + '</td><td>' + l.x + ', ' + l.y + ', z ' + l.z + '</td><td></td><td></td><td>' + (l.on ? 'on' : 'off at start') + ' ' + (l.note || '') + '</td></tr>'); });
-    pr.push('<tr><td>light</td><td>sun</td><td>sun</td><td>elev ' + LV.sun.elevation + ', az ' + LV.sun.azimuth + ' (ESE)</td><td></td><td></td><td>directional</td></tr>');
+    pr.push('<tr><td>light</td><td>sun</td><td>sun</td><td>' + (LV.sun ? 'elev ' + LV.sun.elevation + ', az ' + LV.sun.azimuth + ' (ESE)' : 'no level sun (the shared world sun is used)') + '</td><td></td><td></td><td>directional</td></tr>');
     pr.push('<tr><td>light</td><td>lantern</td><td>lantern</td><td>carried after pickup</td><td></td><td></td><td>US-012</td></tr>');
     (LV.interactables || []).forEach(function (it) { pr.push('<tr><td>interactable</td><td>' + it.id + '</td><td>' + it.interact + (it.target ? ' (target tag ' + it.target.tag + ')' : '') +
       '</td><td>' + it.x + ', ' + it.y + ', z ' + it.z + ' (r ' + it.radius + ' m)</td><td></td><td>' + it.prompt + '</td><td>' + (it.requires ? 'requires ' + it.requires + '. ' : '') + (it.note || '') + '</td></tr>'); });

@@ -86,6 +86,7 @@
      design/levels/{tower,world_m1}.js classic scripts used to. -->
 <script src="content-shim.js"></script>
 <script src="../levels/overworld_far.js"></script>
+<script src="lib/structure-stub.js"></script>
 <script src="../models/far_tower.js"></script>
 <script src="../models/ferrum_lights.js"></script>
 <script src="../models/wreckage.js"></script>
@@ -116,7 +117,8 @@
   // ---------------- far grid bake + lighting ----------------
   var t0 = performance.now(), G = OW.util.generate(), genMs = performance.now() - t0;
   var W = G.w, H = G.h, C = G.cell, TT = OW.terrain, TYPES = G.TYPES, Tm = P.timeOfDay.morning;
-  var sAz = LV.sun.azimuth * D2R, sEl = LV.sun.elevation * D2R;
+  var WM_SUN = (A.worlds && A.worlds.world_m1 && A.worlds.world_m1.sun) || { azimuth: 112.5, elevation: 60 };   // the tower level has no sun of its own any more: the world sun is used
+  var sAz = (LV.sun || WM_SUN).azimuth * D2R, sEl = (LV.sun || WM_SUN).elevation * D2R;
   var SUN = [Math.sin(sAz) * Math.cos(sEl), -Math.cos(sAz) * Math.cos(sEl), Math.sin(sEl)];
   function lightFromGrad(hx, hy) { var nl = Math.sqrt(hx * hx + hy * hy + 1); return Tm.ambientI + Tm.sunI * Math.max(0, (-hx * SUN[0] - hy * SUN[1] + SUN[2]) / nl); }
   var BR = new Float32Array(W * H);
@@ -428,9 +430,13 @@
     var flat = true, grass = true, crown = OW.overrides['11,8'].stamps[0];
     for (i = 0; i < 200; i++) {
       var an2 = R() * Math.PI * 2, rr = Math.sqrt(R()) * (crown.r - 0.5), qx = crown.x + Math.cos(an2) * rr, qy = crown.y + Math.sin(an2) * rr;
-      if (Math.abs(HA(qx, qy) - crown.h) > 1e-9) flat = false;
+      // the quiet-pond bowl (Q14, 'add' stamp in chunk 11,7) is carved into the crown on purpose -> not part of the flat claim
+      var inBowl = Object.keys(OW.overrides).some(function (ck) { return (OW.overrides[ck].stamps || []).some(function (ss) { return ss.mode === 'add' && Math.hypot(qx - ss.x, qy - ss.y) <= ss.r + (ss.falloff || 0); }); });
+      if (!inBowl && Math.abs(HA(qx, qy) - crown.h) > 1e-9) flat = false;
       var inFoot = qx >= st.x && qx <= st.x + st.w && qy >= st.y && qy <= st.y + st.h, dr = Math.abs(qx - OW.util.riverX(qy));
-      if (!inFoot && OW.util.pathDist(qx, qy) >= OW.recipe.path.halfWidth && TA(qx, qy) !== 0) grass = false;
+      // owner 2026-10-04 (v1.33): three forest groves are painted over the crown's edge on purpose -> those discs are not "bare grass"
+      var inGrove = Object.keys(OW.overrides).some(function (ck) { return (OW.overrides[ck].paints || []).some(function (pp) { return pp.type === 'forest' && Math.hypot(qx - pp.x, qy - pp.y) <= pp.r; }); });
+      if (!inFoot && !inGrove && OW.util.pathDist(qx, qy) >= OW.recipe.path.halfWidth && TA(qx, qy) !== 0) grass = false;
     }
     var covers = [[st.x, st.y], [st.x + st.w, st.y], [st.x, st.y + st.h], [st.x + st.w, st.y + st.h]].every(function (p) { return Math.hypot(p[0] - crown.x, p[1] - crown.y) <= crown.r; });
     check('(c) flat ' + crown.h + ' m crown (r ' + crown.r + ' m) covers the whole footprint incl. bastion + outcrop, and is bare grass (path excepted)', flat && grass && covers);

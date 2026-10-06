@@ -26,9 +26,9 @@ Specs: architecture 37.16 (boar death), 37.8a (hands), 37.14 (fireball), D-040, 
 Two programmers at once only on disjoint files: lane A and lane B are disjoint except `sim/inventory.js` (US-091a1 vs HANDS-01b - never at the same time) and `sword.js` (US-079b before HANDS-01b).
 
 ## 3. After that (or as fillers)
-- **TREES-LP-a** Kenney Nature Kit Collada importer (`tools/dae-import.mjs` -> `buildMeshFromTris`; source in git-ignored `design/meshes/source/kenney_nature-kit/`) - architecture 37.15 + D-042 item 4.
+- **TREES-LP-a** Kenney Nature Kit Collada importer (`tools/dae-import.mjs` -> `buildMeshFromTris`; source `design/meshes/kenney/dae/`) - architecture 37.15 + D-042 item 4.
 - **ALPHA-01a** alpha-cutout import + formats (architecture 37.17), then ALPHA-01b (after TREES-LP-b).
-- Quaternius imports that need no cutout: dead trees, rocks, pebbles, rock paths, mushrooms, grass (architecture 37.17 list; source `design/meshes/source/quaternius_stylized_nature/`).
+- Quaternius imports that need no cutout: dead trees, rocks, pebbles, rock paths, mushrooms, grass (architecture 37.17 list; source `design/meshes/quaternius/glTF/`).
 - **ME-19d-ed** editor ray/select/pick plumbing (after PC-A's 19c/19d).
 
 ## Waiting on PC-A or the owner - do not start

@@ -364,7 +364,7 @@
   var last = performance.now(), acc = 1;
   requestAnimationFrame(function loop(now) {
     requestAnimationFrame(loop);
-    var dt = Math.min(0.1, (now - last) / 1000); last = now;
+    var dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;
     if (!S.paused) S.t += dt;
     acc += dt; if (acc < 0.066) return; acc = 0;
     drawRoom(); drawSummit(); drawMats();
