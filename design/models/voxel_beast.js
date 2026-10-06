@@ -1,71 +1,137 @@
-/* design/models/voxel_beast.js - US-079a placeholder boar (architecture.md 29.1, AC 1)
- *                                + Sprint 6 designer pass A (v1.34): hurt / flinch / windup / charge / die / dead / sink
- *                                  clips, a hit-flash copy part, mounts, and ASSETS.boarFx (US-079b / US-079c data).
+/* design/models/voxel_beast.js - US-079 real wild boar (designer, v1.40), replacing the US-079a placeholder art.
+ *                                Sprint 6 designer pass A (v1.34) data kept: hurt / flinch / windup / charge / die / dead /
+ *                                sink clips, the hit-flash copy part, the mounts and ASSETS.boarFx (US-079b / US-079c).
  *
  * Classic script (no import/export, check-deps rule 4), same loading convention as design/models/rts_unit.js:
  *   <script src="../design/models/voxel_beast.js">     (browser, game/index.html)
  *   import '../../../design/models/voxel_beast.js';     (Node tests: side-effect import)
- * Sets ASSETS.models.boarPlaceholder directly (format: design/README.md section 4/7, architecture.md 15.1) using
- * only ALREADY-MERGED palette materials (leather, canvas_dark, hit_flash) - no merge step needed; usable on both
- * ?renderer=dda and ?renderer=mesh (7 x 12 x 16 = 1344 cells, 7 + 12 + 16 = 35 steps: inside the dda limits).
+ * Sets ASSETS.models.boarPlaceholder directly (format: design/README.md section 4/7, architecture.md 15.1). The model
+ * KEY stays `boarPlaceholder` (world files, tests and the editor folder table use it); only the art and the clip poses
+ * changed. Only ALREADY-MERGED palette materials (no merge step). v1.40: `meshOnly: true` (the game renders voxels
+ * through the mesh path only since ME-19a; the finer 12 x 25 x 29 grid would otherwise cost DDA atlas rows).
  *
  * Axes (15.1): x = east (= the boar's RIGHT at yaw 0), y = SOUTH with y0 = the model's FRONT row (faces north at
- * yaw 0), z = up. cellM 0.1. The BODY (unchanged art, 5 x 10 x 7 voxels = 0.5 x 1.0 x 0.7 m) now sits at grid
- * x 1..5, y 1..10, z 8..14 (one free voxel ring round it); anchor [3.5, 6, 8] = its feet = the same world placement
- * as before.
+ * yaw 0), z = up. v1.40: cellM 0.1 -> 0.05 (twice the detail, the SAME world size). The boar is 0.5 m wide, 1.05 m
+ * snout to rump (+ a 0.1 m curly tail), 0.7 m to the top of the shoulder mane: boar-local box 10 x 23 x 14 voxels at
+ * grid offset (1, 1, 15), one free voxel ring round it for the flash copy. Anchor [6, 11.5, 15] = the feet, centred
+ * under snout..rump = the same world placement as before. Clip `pos` values are VOXELS (so 0.05 m each now).
  *
- * v1.34 parts (2, MAX_VOX_PARTS 8):
- *   body   box [0,0,8, 7,12,16]  pivot [6, 6, 8] = the boar's RIGHT foot edge, mid-length, on the ground. Every clip
- *                                rotates about it: rx = pitch (+ = nose down), ry = roll (+ = top to the boar's
- *                                right; 90 = lying on its right side, legs out to the left).
- *   flash  box [0,0,0, 7,12,8]   pivot [6, 6, 0]: a WHITE (`hit_flash`, emissive 1.0) copy of the body grown by one
- *                                voxel to the sides and on top (the pell flash-shell trick, README 7.5, but a full
- *                                inflated copy because the boar is not a box). Stored BELOW the body in the grid (so
- *                                it is underground even with no clip); a clip shows it with pos [0,0,+8] (exactly
- *                                over the body, 1 voxel proud = a white "pop") and hides it with pos [0,0,-64]. It
- *                                always copies the body's rot, so it stays glued to the body in any pose.
+ * Look (owner taste: chunky Blood / Build-engine voxel props): wedge head held low, heavy shoulder hump with a dark
+ * bristle mane crest, back sloping to a smaller rump, short dark legs with iron-dark hooves, a small curly tail.
+ * Value ladder: pale tusks (linen_light) > tan muzzle (rope) > grey cheeks (linen_dark) > grizzled grey-brown hide
+ * (timber_old, `|` bristle texels) > brown belly (leather) > near-black mane / legs / ears (canvas_burnt) > hooves
+ * (iron_dark). Eyes: 1 voxel each of ember_glow (emissive) so the facing reads at 12 m in shade; swap EYE_MAT to
+ * 'iron_dark' for plain dark eyes.
  *
- * Clip -> state map (who plays what: ASSETS.boarFx.clipFor; view-only, beastView.js sets components.voxel.anim):
- *   idle (rest), hurt (6 steps, flash ON, step interp), flinch (9 steps, flash off), windup (0.5 s: back 0.15 m, head
- *   down 10 deg, 3 scrape dips at 150 / 300 / 450 ms), charge (head down, gallop bob loop), die (0.4 s tip-over onto the
- *   right side, overshoot thud), dead (held corpse pose, lootable), sink (0.5 s into the ground, from the dead pose).
+ * v1.40 parts (8 = MAX_VOX_PARTS; insertion order = part index; children list a parent EARLIER in the order):
+ *   body   box [0,8,19, 12,22,29]  pivot [11, 11.5, 15] = the boar's RIGHT body edge, mid-length, on the ground. Root.
+ *                                  rx = pitch (+ = nose down), ry = roll (+ = top to the boar's right; 90 = lying on
+ *                                  its right side, legs out to the left). Torso, mane, belly.
+ *   flash  box [0,0,0, 12,25,15]   pivot [11, 11.5, 0]: a WHITE (`hit_flash`, emissive 1.0) copy of the WHOLE rest-pose
+ *                                  boar grown by one voxel to the sides and on top, stored BELOW the body (underground
+ *                                  even with no clip). A clip shows it with pos body + [0,0,+15] and hides it with
+ *                                  [0,0,-64]; it always copies the body rot. Root. While it is shown (clip `hurt`) every
+ *                                  child part is at rest, so the shell covers the whole boar.
+ *   head   box [0,0,15, 12,8,29]   pivot [6, 8, 22] (the neck), parent body: snout, nose disc, tusks, eyes, ears, jowls.
+ *   legFL / legFR / legBL / legBR  box 2 x 2 x 4 under the belly (z 15..18), pivot at the hip / shoulder top (z 19),
+ *                                  parent body. rx - = foot forward, rx + = foot back. (L = x small = the boar's left.)
+ *   tail   box [5,22,22, 7,24,25]  pivot [6, 22, 24.5], parent body. rx + = raised (boars run tail-up), ry = wag.
+ *
+ * Clip -> state map (who plays what: ASSETS.boarFx.clipFor; view-only, beastView.js sets components.voxel.anim). Every
+ * clip name, key count used by boarFx and every duration is unchanged from v1.34 except `idle` (1 -> 4 keys, a free
+ * idle loop) and `charge` (2 x 100 -> 4 x 50 ms, same 200 ms loop):
+ *   idle (sniff + tail wag loop), hurt (6 steps, flash ON, step interp), flinch (9 steps, flash off), windup (0.5 s: back
+ *   0.15 m, head down, the LEFT forefoot scrapes back at 150 / 300 / 450 ms = boarFx.scrape kicks, tail up), charge
+ *   (gallop: legs reach / gather, body bob, head low, tail up; loop), die (0.4 s: squeal, legs buckle, roll onto the
+ *   right side, thud key at 320 ms with the legs kicking, settles), dead (held: stiff splayed legs, lootable), sink
+ *   (0.5 s, 0.55 m into the ground, from the dead pose). Spare: walk (trot loop for 1.5 m/s; needs a beastView line).
  */
 (function (root) {
   'use strict';
   var A = root.ASSETS = root.ASSETS || {};
   A.models = A.models || {};
 
-  // ---- the original 5 x 10 x 7 body art (US-079a), unchanged ----
-  var E = '.....';
-  var LEGS_FRONT = 'B...B'; // z0-1, y1: front leg pair
-  var LEGS_BACK = 'B...B';  // z0-1, y8: back leg pair
-  var SNOUT = '.BBB.';      // z1-3, y0: head/snout, held low like a boar's
-  var TORSO = 'BBBBB';      // z2-3, y1..y8: full torso
-  var TAIL = '..D..';       // z2-3, y9: short tail
-  var BACK = 'BBBBB';       // z4, y1..y7: body top, tapered at the ends
-  var EARS = '.D.D.';       // z5, y1: small ear nubs near the head
-  var RIDGE = '.DDD.';      // z5, y2..y6: low back ridge/bristle hump
-  var PEAK = '..D..';       // z6, y3..y4: ridge peak (top of the hump)
+  // ---- boar-local box (x 0..9, y 0..22 snout -> tail, z 0..13) and the grid around it ----
+  var BW = 10, BLEN = 23, BH = 14;
+  var OX = 1, OY = 1, FZ = BH + 1;                  // grid offset of the boar; FZ = flash layers (14 + the cap) = anchor z
+  var SX = BW + 2, SY = BLEN + 2, SZ = FZ + BH;     // 12 x 25 x 29
+  var EYE_MAT = 'ember_glow';                       // 'iron_dark' = plain dark eyes (see the header)
 
-  var BODY = [
-    /* z0 */ [E, LEGS_FRONT, E, E, E, E, E, E, LEGS_BACK, E],
-    /* z1 */ [SNOUT, LEGS_FRONT, E, E, E, E, E, E, LEGS_BACK, E],
-    /* z2 */ [SNOUT, TORSO, TORSO, TORSO, TORSO, TORSO, TORSO, TORSO, TORSO, TAIL],
-    /* z3 */ [SNOUT, TORSO, TORSO, TORSO, TORSO, TORSO, TORSO, TORSO, TORSO, TAIL],
-    /* z4 */ [E, BACK, BACK, BACK, BACK, BACK, BACK, BACK, E, E],
-    /* z5 */ [E, EARS, RIDGE, RIDGE, RIDGE, RIDGE, RIDGE, E, E, E],
-    /* z6 */ [E, E, E, PEAK, PEAK, E, E, E, E, E],
+  // Per-slice profile of head + torso, y 0 (snout) .. 20 (rump): [zLo, zHi, width]. Widths are even (centred on x 5).
+  var PROFILE = [
+    [3, 5, 4],  [3, 6, 4],  [3, 6, 4],  [3, 7, 6],  [2, 8, 6],  [2, 9, 6],  [2, 10, 8],     // y0..6  head (snout -> jowls)
+    [4, 11, 8], [4, 12, 10], [4, 12, 10], [4, 12, 10], [4, 12, 10],                         // y7..11 neck + shoulder hump
+    [4, 11, 10], [4, 11, 10], [4, 11, 10], [4, 10, 10], [4, 10, 10], [4, 10, 10],           // y12..17 barrel, back slopes
+    [4, 10, 8], [5, 9, 8], [5, 9, 6]                                                        // y18..20 rump
   ];
 
-  // ---- v1.34 grid: inflated white copy in z 0..7, the body at offset (1, 1, 8) above it. The anchor z is 8 (the
-  // body's feet), so with NO clip (zero pose) the copy sits 0..0.8 m under the ground = hidden even then. ----
-  var SX = 7, SY = 12, SZ = 16, FLASH_DZ = 8;
-  function bodyAt(x, y, z) {            // grid coords -> body char or '.'
-    var bx = x - 1, by = y - 1;
-    if (z < 0 || z >= BODY.length || by < 0 || by >= 10 || bx < 0 || bx >= 5) return '.';
-    return BODY[z][by].charAt(bx);
+  function blank() {
+    var g = [], z, y, x;
+    for (z = 0; z < BH; z++) { g.push([]); for (y = 0; y < BLEN; y++) { g[z].push([]); for (x = 0; x < BW; x++) g[z][y].push('.'); } }
+    return g;
   }
-  function solid(x, y, z) { return bodyAt(x, y, z) !== '.'; }
+  function rowWidth(p, z) {                        // rounded cross-section: narrower top rows and belly row
+    var w = p[2];
+    if (z === p[1]) w -= (w >= 8 ? 4 : w >= 4 ? 2 : 0);
+    else if (z === p[1] - 1 && w >= 8) w -= 2;
+    else if (z === p[0] && w >= 6) w -= 2;
+    return Math.max(2, w);
+  }
+  function buildBoar() {
+    var g = blank(), y, z, x, p, w, x0, c;
+    function put(px, py, pz, ch) { if (px >= 0 && px < BW && py >= 0 && py < BLEN && pz >= 0 && pz < BH) g[pz][py][px] = ch; }
+    for (y = 0; y < PROFILE.length; y++) {
+      p = PROFILE[y];
+      for (z = p[0]; z <= p[1]; z++) {
+        w = rowWidth(p, z); x0 = 5 - w / 2;
+        for (x = x0; x < x0 + w; x++) {
+          c = 'H';                                                    // grizzled grey-brown hide
+          if (y === 0) c = z >= 4 ? 'N' : 'S';                        // nose disc over a tan lip
+          else if (y <= 2 || (y === 3 && z <= 5)) c = 'S';            // long tan muzzle
+          else if (y <= 6) {                                          // head: grey cheeks + jaw
+            if (z === p[0] || (z <= p[0] + 2 && (x === x0 || x === x0 + w - 1))) c = 'C';
+          } else {                                                    // torso
+            if (z === p[0]) c = 'L';                                  // brown belly
+            else if (z === p[1] && y <= 12) c = 'M';                  // dark mane over the shoulders
+          }
+          put(x, y, z, c);
+        }
+      }
+    }
+    // mane crest: a 2-wide bristle ridge, solid over the hump, ragged down the back
+    for (y = 7; y <= 17; y++) {
+      if (y > 12 && (y % 2) === 0) continue;
+      put(4, y, PROFILE[y][1] + 1, 'M'); put(5, y, PROFILE[y][1] + 1, 'M');
+    }
+    // eyes (y5, z7: the outer columns of the head) and the ears (y6, over the brow, pointing up and out)
+    put(2, 5, 7, 'E'); put(7, 5, 7, 'E');
+    put(2, 6, 11, 'M'); put(3, 6, 11, 'M'); put(2, 6, 12, 'M');
+    put(6, 6, 11, 'M'); put(7, 6, 11, 'M'); put(7, 6, 12, 'M');
+    // tusks: from the jaw corner forward and hooking up beside the snout (outside the 4-wide muzzle)
+    var TUSK = [[3, 4], [2, 4], [2, 5], [1, 5], [1, 6]];
+    for (c = 0; c < TUSK.length; c++) { put(2, TUSK[c][0], TUSK[c][1], 'T'); put(7, TUSK[c][0], TUSK[c][1], 'T'); }
+    // legs: 2 x 2, hoof + 3 dark leg voxels; front pair under the shoulders, back pair under the haunch
+    var LEGS = [[1, 8], [7, 8], [1, 16], [7, 16]];
+    for (c = 0; c < LEGS.length; c++) {
+      for (z = 0; z < 4; z++) for (y = 0; y < 2; y++) for (x = 0; x < 2; x++) {
+        put(LEGS[c][0] + x, LEGS[c][1] + y, z, z === 0 ? 'K' : 'F');
+      }
+    }
+    // small curly tail off the rump top: back, down, a dark tuft curling forward
+    var TAIL = [[21, 9, 'H'], [22, 9, 'H'], [22, 8, 'H'], [22, 7, 'M'], [21, 7, 'M']];
+    for (c = 0; c < TAIL.length; c++) { put(4, TAIL[c][0], TAIL[c][1], TAIL[c][2]); put(5, TAIL[c][0], TAIL[c][1], TAIL[c][2]); }
+    return g;
+  }
+  var BOAR = buildBoar();
+
+  function boarAt(x, y, z) {            // grid coords (boar region, z >= FZ) -> char or '.'
+    var bx = x - OX, by = y - OY, bz = z - FZ;
+    if (bx < 0 || bx >= BW || by < 0 || by >= BLEN || bz < 0 || bz >= BH) return '.';
+    return BOAR[bz][by][bx];
+  }
+  function solidL(x, y, zb) {           // grid x/y, boar-local z
+    return boarAt(x, y, zb + FZ) !== '.';
+  }
   function buildLayers() {
     var out = [], x, y, z;
     for (z = 0; z < SZ; z++) {
@@ -74,12 +140,9 @@
         var r = '';
         for (x = 0; x < SX; x++) {
           var c = '.';
-          if (z >= FLASH_DZ) c = bodyAt(x, y, z - FLASH_DZ);
-          else {
-            // inflated copy (body layer zb = z): self + 4-neighbours in the layer + a cap one voxel up
-            if (solid(x, y, z) || solid(x - 1, y, z) || solid(x + 1, y, z) || solid(x, y - 1, z) ||
-                solid(x, y + 1, z) || solid(x, y, z - 1)) c = 'F';
-          }
+          if (z >= FZ) c = boarAt(x, y, z);
+          else if (solidL(x, y, z) || solidL(x - 1, y, z) || solidL(x + 1, y, z) || solidL(x, y - 1, z) ||
+                   solidL(x, y + 1, z) || solidL(x, y, z - 1)) c = 'W';   // inflated white copy (layer z = boar z)
           r += c;
         }
         rows.push(r);
@@ -89,79 +152,133 @@
     return out;
   }
 
-  // ---- pose helpers: flash part always copies the body rot; pos = body pos + [0,0,+8] (shown, exactly over the
-  // body) or -64 (hidden 6.4 m under the ground) ----
-  function pose(rx, ry, rz, px, py, pz, flashOn) {
-    var dz = flashOn ? FLASH_DZ : -64;
+  // ---- pose helper. o = { b: [rx, ry, rz, px, py, pz] body, h: head pitch, hz: head turn, fl/fr/bl/br: leg swing,
+  // t: [rx, ry] tail }. The flash part copies the body rot; pos = body pos + [0,0,+15] (shown) or -64 (hidden). ----
+  function pose(o, flashOn) {
+    var b = o.b || [0, 0, 0, 0, 0, 0], t = o.t || [0, 0];
+    var dz = flashOn ? FZ : -64;
     return {
-      body:  { rot: [rx, ry, rz], pos: [px, py, pz] },
-      flash: { rot: [rx, ry, rz], pos: [px, py, pz + dz] }
+      body:  { rot: [b[0], b[1], b[2]], pos: [b[3], b[4], b[5]] },
+      flash: { rot: [b[0], b[1], b[2]], pos: [b[3], b[4], b[5] + dz] },
+      head:  { rot: [o.h || 0, 0, o.hz || 0] },
+      legFL: { rot: [o.fl || 0, 0, 0] },
+      legFR: { rot: [o.fr || 0, 0, 0] },
+      legBL: { rot: [o.bl || 0, 0, 0] },
+      legBR: { rot: [o.br || 0, 0, 0] },
+      tail:  { rot: [t[0], t[1], 0] }
     };
   }
-  var REST = pose(0, 0, 0, 0, 0, 0, false);
-  var DEAD = pose(0, 90, 0, 0, 0, 0, false);
+  var REST = pose({}, false);
+  var DEAD_O = { b: [0, 90, 0, 0, 0, 0], h: -6, fl: -24, fr: -16, bl: 24, br: 16, t: [25, 0] };
+  var DEAD = pose(DEAD_O, false);
+  var SUNK = pose({ b: [0, 90, 0, 0, 0, -11], h: -6, fl: -24, fr: -16, bl: 24, br: 16, t: [25, 0] }, false);
+  // windup keys: crouch (left forefoot forward, ready) / scrape (forefoot swept back = the dust kick)
+  var W_READY = pose({ b: [6, 0, 0, 0, 3, 0], h: 12, fl: -28, bl: -10, br: -10, t: [60, 0] }, false);
+  var W_KICK = pose({ b: [7.5, 0, 0, 0, 3, -0.6], h: 15, fl: 32, bl: -10, br: -10, t: [60, 10] }, false);
 
   var animations = {
-    idle:   { durations: [1000], loop: true, frames: [REST] },
-    // US-079b hurt: every damaging hit. 6 steps (100 ms) white, the head snaps UP (rx -8) and the body jolts 0.1 m back.
-    hurt:   { durations: [50, 50], loop: false, interp: 'step', frames: [pose(-8, 0, 0, 0, 1, 0, true), pose(-5, 0, 0, 0, 1, 0, true)] },
-    // flinch follow-through: 9 steps (150 ms), flash off, the head drops past rest (rx +3) and settles. Hold = rest.
-    flinch: { durations: [60, 90, 100], loop: false, frames: [pose(-5, 0, 0, 0, 1, 0, false), pose(3, 0, 0, 0, 0.4, 0, false), REST] },
-    // US-079c windup (0.5 s = 30 steps): backs 0.15 m (pos y +1.5, VIEW-ONLY), head down 10 deg, and three scrape dips
-    // (rx 13, body 0.03 m down) at 150 / 300 / 450 ms = the moments boarFx.scrape kicks dust at the forefeet.
-    windup: { durations: [120, 30, 75, 75, 75, 75, 50, 100], loop: false, frames: [
-      REST,
-      pose(10, 0, 0, 0, 1.5, 0, false),
-      pose(13, 0, 0, 0, 1.5, -0.3, false),
-      pose(10, 0, 0, 0, 1.5, 0, false),
-      pose(13, 0, 0, 0, 1.5, -0.3, false),
-      pose(10, 0, 0, 0, 1.5, 0, false),
-      pose(13, 0, 0, 0, 1.5, -0.3, false),
-      pose(10, 0, 0, 0, 1.5, 0, false)
+    // free idle loop (2.4 s): sniffs down to the left, looks right, tail wags
+    idle:   { durations: [600, 500, 700, 600], loop: true, frames: [
+      pose({ t: [10, 0] }, false),
+      pose({ h: 7, hz: 6, t: [10, 25] }, false),
+      pose({ h: 4, hz: -5, t: [10, -20] }, false),
+      pose({ h: 1, t: [10, 0] }, false)
     ] },
-    // charge: head down, a 0.2 s gallop bob (body up 0.05 m, rocking 3 deg). Loop. The first key blends from windup.
-    charge: { durations: [100, 100], loop: true, frames: [pose(8, 0, 0, 0, 0, 0, false), pose(5, 0, 0, 0, 0, 0.5, false)] },
-    // US-079b die: 0.4 s (24 steps). Starts AFTER the killing hit's `hurt` (6 steps). Legs buckle (small sink), it rolls
-    // onto its right side about the right foot edge, overshoots 8 deg into the ground (the "thud" frame, dust n 6 here)
-    // and settles at 90. Linear keys 90 + 110 + 120 + 80 = 400 ms, then held.
+    // US-079b hurt: every damaging hit. 6 steps (100 ms) white, the whole boar snaps head-UP (body rx -8) and jolts
+    // 0.1 m back. Children at rest so the white shell covers everything.
+    hurt:   { durations: [50, 50], loop: false, interp: 'step', frames: [
+      pose({ b: [-8, 0, 0, 0, 2, 0] }, true), pose({ b: [-5, 0, 0, 0, 2, 0] }, true)
+    ] },
+    // flinch follow-through: 9 steps (150 ms), flash off; the head drops past rest, the forelegs brace, tail clamps.
+    flinch: { durations: [60, 90, 100], loop: false, frames: [
+      pose({ b: [-5, 0, 0, 0, 2, 0], h: -6, t: [40, 0] }, false),
+      pose({ b: [3, 0, 0, 0, 0.8, 0], h: 8, fl: 8, fr: 8, t: [20, 0] }, false),
+      REST
+    ] },
+    // US-079c windup (0.5 s = 30 steps): backs 0.15 m (pos y +3, VIEW-ONLY), head down, tail up, and the left forefoot
+    // scrapes back at 150 / 300 / 450 ms (keys 2 / 4 / 6) = the moments boarFx.scrape kicks dust at the forefeet.
+    windup: { durations: [120, 30, 75, 75, 75, 75, 50, 100], loop: false, frames: [
+      REST, W_READY, W_KICK, W_READY, W_KICK, W_READY, W_KICK,
+      pose({ b: [7, 0, 0, 0, 3, 0], h: 16, bl: -14, br: -14, t: [70, 0] }, false)
+    ] },
+    // charge (also chase): a 0.2 s bound gallop - legs reach (front fwd / back back), lift, gather under, lift. Head
+    // low, tail up and flicking. Loop. The first key blends from the windup end pose.
+    charge: { durations: [50, 50, 50, 50], loop: true, frames: [
+      pose({ b: [5, 0, 0, 0, 0, 0], h: 14, fl: -30, fr: -24, bl: 30, br: 24, t: [75, 8] }, false),
+      pose({ b: [3, 0, 0, 0, 0, 1.2], h: 12, fr: 6, br: -6, t: [75, 0] }, false),
+      pose({ b: [7, 0, 0, 0, 0, 0], h: 16, fl: 26, fr: 20, bl: -26, br: -20, t: [75, -8] }, false),
+      pose({ b: [5, 0, 0, 0, 0, 0.6], h: 14, fl: 6, bl: -6, t: [75, 0] }, false)
+    ] },
+    // spare (not wired): trot for wander / return at 1.5 m/s, diagonal pairs, 280 ms loop
+    walk:   { durations: [70, 70, 70, 70], loop: true, frames: [
+      pose({ h: 3, fl: -22, br: -22, fr: 18, bl: 18, t: [20, 8] }, false),
+      pose({ b: [0, 0, 0, 0, 0, 0.5], h: 4 }, false),
+      pose({ h: 3, fl: 18, br: 18, fr: -22, bl: -22, t: [20, -8] }, false),
+      pose({ b: [0, 0, 0, 0, 0, 0.5], h: 4 }, false)
+    ] },
+    // US-079b die: 0.4 s (24 steps). Starts AFTER the killing hit's `hurt` (6 steps). Squeal (head up), legs buckle,
+    // it rolls onto its right side about the right body edge, overshoots 8 deg into the ground with the legs kicking out
+    // (the "thud" key at 320 ms, dust n 6 here) and settles at 90 with stiff splayed legs. 90 + 110 + 120 + 80 = 400 ms.
     die:    { durations: [90, 110, 120, 80, 100], loop: false, frames: [
-      pose(-5, 0, 0, 0, 0, 0, false),
-      pose(4, 18, 0, 0, 0, -0.5, false),
-      pose(2, 62, 0, 0, 0, -0.3, false),
-      pose(0, 98, 0, 0, 0, 0, false),
+      pose({ b: [-5, 0, 0, 0, 0, 0], h: -12, t: [30, 0] }, false),
+      pose({ b: [4, 18, 0, 0, 0, -1], h: 6, fl: 25, fr: 25, bl: -20, br: -20 }, false),
+      pose({ b: [2, 62, 0, 0, 0, -0.6], fl: -10, fr: -5, bl: 15, br: 10 }, false),
+      pose({ b: [0, 98, 0, 0, 0, 0], h: -10, fl: -35, fr: -28, bl: 35, br: 28, t: [20, 0] }, false),
       DEAD
     ] },
     // the corpse, held while lootable (owner 2026-10-05: the body stays until looted or the timeout)
     dead:   { durations: [1000], loop: true, frames: [DEAD] },
-    // sink: 0.5 s from the dead pose 0.55 m into the ground (the lying body is 0.5 m tall, so nothing is left to pop
-    // when the entity is removed at the end). corpseDust bursts at 0 and 250 ms cover it.
-    sink:   { durations: [500, 100], loop: false, frames: [DEAD, pose(0, 90, 0, 0, 0, -5.5, false)] }
+    // sink: 0.5 s from the dead pose 0.55 m (11 voxels) into the ground (the lying body + legs are <= 0.55 m tall, so
+    // nothing is left to pop when the entity is hidden at the end). corpseDust bursts at 0 and 250 ms cover it.
+    sink:   { durations: [500, 100], loop: false, frames: [DEAD, SUNK] }
   };
 
   A.models.boarPlaceholder = {
     name: 'boarPlaceholder',
-    displayName: 'boar (placeholder)',
-    desc: 'US-079a placeholder beast: a low two-tone quadruped silhouette (leather hide, a darker back ridge/ears/ ' +
-          'tail), 1.0 m long, 0.7 m tall. v1.34: hurt flash (white inflated copy), flinch, windup scrape, charge bob, ' +
-          'tip-over death, lootable corpse, sink. Final art comes later; the clip names and timings are the contract.',
+    displayName: 'wild boar',
+    desc: 'US-079 wild boar (v1.40; key kept from the US-079a placeholder): low wedge head with a tan muzzle, nose disc ' +
+          'and pale hooked tusks, glowing eyes, heavy shoulder hump under a near-black bristle mane, grizzled grey-brown ' +
+          'hide, brown belly, short dark legs, a small curly tail. 0.5 x 1.05 x 0.7 m. 8 parts (body, hit-flash shell, ' +
+          'head, 4 legs, tail): sniff idle, hurt flash, flinch, hoof-scrape windup, gallop charge, roll-over death, ' +
+          'lootable corpse, sink, spare trot.',
     voxel: {
       version: 1,
-      cellM: 0.1,
+      meshOnly: true,
+      cellM: 0.05,
       size: [SX, SY, SZ],
-      anchor: [3.5, 6, FLASH_DZ],              // the body's feet (grid z 8); the flash copy below is underground
-      mats: { B: 'leather', D: 'canvas_dark', F: 'hit_flash' },
+      anchor: [6, 11.5, FZ],                  // the feet (grid z 15); the flash copy below is underground
+      mats: {
+        H: 'timber_old',      // hide: grizzled grey-brown, `|` bristle texels
+        L: 'leather',         // belly
+        M: 'canvas_burnt',    // mane crest, ears, tail tuft (near-black bristle)
+        F: 'canvas_burnt',    // legs
+        K: 'iron_dark',       // hooves
+        S: 'rope',            // muzzle (lighter tan)
+        N: 'gore_red_dark',   // nose disc
+        C: 'linen_dark',      // grey cheeks / jaw
+        T: 'linen_light',     // tusks
+        E: EYE_MAT,           // eyes
+        W: 'hit_flash'        // the flash shell
+      },
       layers: buildLayers(),
       parts: {
-        body:  { box: [0, 0, FLASH_DZ, SX, SY, SZ], pivot: [6, 6, FLASH_DZ] },
-        flash: { box: [0, 0, 0, SX, SY, FLASH_DZ], pivot: [6, 6, 0] }
+        body:  { box: [0, 8, FZ + 4, SX, 22, SZ], pivot: [11, 11.5, FZ] },
+        flash: { box: [0, 0, 0, SX, SY, FZ], pivot: [11, 11.5, 0] },
+        head:  { box: [0, 0, FZ, SX, 8, SZ], pivot: [6, 8, FZ + 7], parent: 'body' },
+        legFL: { box: [2, 9, FZ, 4, 11, FZ + 4], pivot: [3, 10, FZ + 4], parent: 'body' },
+        legFR: { box: [8, 9, FZ, 10, 11, FZ + 4], pivot: [9, 10, FZ + 4], parent: 'body' },
+        legBL: { box: [2, 17, FZ, 4, 19, FZ + 4], pivot: [3, 18, FZ + 4], parent: 'body' },
+        legBR: { box: [8, 17, FZ, 10, 19, FZ + 4], pivot: [9, 18, FZ + 4], parent: 'body' },
+        tail:  { box: [5, 22, FZ + 7, 7, 24, FZ + 10], pivot: [6, 22, FZ + 9.5], parent: 'body' }
       },
       animations: animations,
-      // grid coords, rest pose, on part `body` (posed with the part where the engine supports it). z 8 = ground.
+      // grid coords, rest pose, on part `body` (posed with the part where the engine supports it). z 15 = ground.
+      // Same world points as v1.34 (cellM halved, coordinates doubled round the new anchor).
       mounts: {
-        notice:   { at: [3.5, 2, 19], part: 'body' },   // 1.1 m: 0.4 m over the 0.7 m ear tops (= t.z + 1.1, as today)
-        forefeet: { at: [3.5, 1.5, 8.2], part: 'body' }, // scrape dust origin, between the front legs
-        hit:      { at: [3.5, 5, 11.5], part: 'body' }, // flank centre (0.35 m): spark / bristle fallback point
-        loot:     { at: [0.5, 6, 11.5], part: 'body' }  // the LEFT flank face = the top of the corpse after the roll
+        notice:   { at: [6, 4, FZ + 22], part: 'body' },     // 1.1 m: 0.4 m over the 0.7 m mane top (= t.z + 1.1)
+        forefeet: { at: [6, 10, FZ + 0.4], part: 'body' },   // scrape dust origin, between the front legs
+        hit:      { at: [6, 11.5, FZ + 7], part: 'body' },   // flank centre (0.35 m): spark / bristle fallback point
+        loot:     { at: [0, 11.5, FZ + 7], part: 'body' }    // 0.05 m off the LEFT flank = the top of the corpse (0.55 m)
       }
     }
   };
@@ -221,7 +338,8 @@
     clipFor: {
       state: { wander: 'idle', notice: 'idle', chase: 'charge', windup: 'windup', charge: 'charge', recover: 'idle',
                return: 'idle', stagger: 'flinch' },
-      note: 'chase uses the charge gallop too (a placeholder has no walk cycle); swap to a walk clip when the final art lands'
+      note: 'chase uses the charge gallop. v1.40: a spare `walk` trot clip (280 ms loop, tuned for walk 1.5 m/s) exists; ' +
+            'wiring it for wander / return while the boar moves is a beastView change (STATE_CLIPS), not done here'
     },
 
     // US-079b hurt (every damaging hit, incl. the killing one)
@@ -250,9 +368,9 @@
       sink: { clip: 'sink', steps: 30, depthM: 0.55,
               dust: [{ atStep: 0, preset: 'corpseDust', n: 8 }, { atStep: 15, preset: 'corpseDust', n: 6 }],
               removeAtStep: 30, note: 'entity removed (or hidden per architecture.md 37.16) at the end of the sink' },
-      // the lying body is NOT centred on the entity: it rolled onto its right side about the right foot edge
+      // the lying body is NOT centred on the entity: it rolled onto its right side about the right body edge
       corpseCentre: { rightM: 0.6, fwdM: 0, upM: 0.25, note: 'from the entity origin, in the boar\'s own frame ' +
-                      '(right = +x at yaw 0; the body rolled about its right foot edge, so the lying body spans 0.25 .. ' +
+                      '(right = +x at yaw 0; the body rolled about its right body edge, so the lying body spans 0.25 .. ' +
                       '0.95 m to the right, 0 .. 0.5 m up). Use it for the loot prompt aim, the dust bursts and the ' +
                       'interactable centre' },
       lootInteract: { prompt: '[E] Loot boar', radiusM: 1.6, aimUpM: 0.35,
@@ -264,7 +382,7 @@
 
     // US-079c notice `!` (overlay.bar 1 x 1 at t.z + noticeUpM, as beastView.js does today)
     notice: {
-      noticeUpM: 1.1,                           // 0.4 m above the 0.7 m ears (mount `notice`)
+      noticeUpM: 1.1,                           // 0.4 m above the 0.7 m mane top (mount `notice`)
       popSteps: 6, styles: ['beastNoticePop', 'beastNotice'],
       rule: 'first popSteps steps of the notice pause draw style beastNoticePop (white-hot), then beastNotice (alert ' +
             'yellow) until the notice pause ends. Not drawn in windup (the scrape is the windup read).',
@@ -276,7 +394,8 @@
     scrape: {
       clip: 'windup', kickSteps: [9, 18, 27], preset: 'scrapeDust', n: 4, at: 'mount forefeet (z + 0.03)',
       dir: 'backward: (-facing.x * 0.8, -facing.y * 0.8, 0.6)',
-      backM: 0.15, pitchDeg: 10, note: 'back-off and pitch are in the clip (view-only); the sim does not move the boar'
+      backM: 0.15, pitchDeg: 10, note: 'back-off, head dip and the left-forefoot scrape are in the clip (view-only); the ' +
+                                       'sim does not move the boar'
     },
 
     // overlay styles: spread into engine.overlay.setStyles AFTER questOverlayStyles(uiStyle) (they replace the US-079a
