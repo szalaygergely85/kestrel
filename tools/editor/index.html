@@ -147,6 +147,30 @@
 
     /* US-067: Assets tab list */
     #assets-list { flex: 1 1 auto; overflow-y: auto; padding: 4px; }
+    /* ED-FOLDERS-01: folder toolbar (create a user folder) + collapsible
+       folder sections in the Assets list. */
+    #assets-folder-bar { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; border-top: 1px solid var(--ed-line); }
+    #assets-new-folder-btn { width: 100%; }
+    #assets-new-folder-input { width: 100%; background: var(--ed-void); color: var(--ed-fg); border: 1px solid var(--ed-cyan); padding: 3px 4px; font: 11px var(--ed-font-mono); }
+    .folder-group { margin-bottom: 2px; }
+    .folder-header {
+      display: flex; align-items: center; gap: 5px; padding: 3px 4px; cursor: pointer;
+      color: var(--ed-fg); background: var(--ed-hover); border-bottom: 1px solid var(--ed-line);
+      user-select: none;
+    }
+    .folder-header:hover { color: var(--ed-fg-hi); }
+    .folder-header.drop-target { background: var(--ed-cyan); color: var(--ed-void); }
+    .folder-header.drop-target .folder-arrow,
+    .folder-header.drop-target .folder-count { color: var(--ed-void); }
+    .folder-arrow { flex: 0 0 auto; color: var(--ed-cyan); font-size: 11px; }
+    .folder-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+    .folder-name-input { flex: 1 1 auto; min-width: 0; background: var(--ed-void); color: var(--ed-fg-hi); border: 1px solid var(--ed-cyan); padding: 1px 3px; font: 11px var(--ed-font-mono); }
+    .folder-count { flex: 0 0 auto; color: var(--ed-fg-dim); font-size: 10px; }
+    .folder-actions { flex: 0 0 auto; display: flex; gap: 2px; }
+    .folder-icon-btn { background: none; border: none; color: var(--ed-fg-ghost); cursor: pointer; font: 11px var(--ed-font-mono); padding: 0 3px; line-height: 1; }
+    .folder-icon-btn:hover { color: var(--ed-amber); }
+    .folder-body { padding-left: 6px; }
+    .folder-body .asset-row { border-left: 1px solid var(--ed-line); }
     .asset-row { display: flex; align-items: center; gap: 6px; padding: 4px; cursor: pointer; border-bottom: 1px solid var(--ed-line); }
     .asset-row:hover { background: var(--ed-hover); }
     .asset-row.armed { background: var(--ed-hover); box-shadow: inset 2px 0 0 var(--ed-cyan); }
@@ -442,6 +466,13 @@
                  register it as a new model (AssetRegistry.add) - no CLI, no
                  hand-written map.json. -->
             <button type="button" id="assets-import-vox-btn" class="ed-btn" title="Import a MagicaVoxel .vox file as a new model">Import .vox</button>
+          </div>
+          <!-- ED-FOLDERS-01: create a user folder (the input is shown only while
+               creating; main.js swaps the two). The folder sections themselves
+               are rendered into #assets-list below. -->
+          <div id="assets-folder-bar">
+            <button type="button" id="assets-new-folder-btn" class="ed-btn" title="Create a folder">+ New folder</button>
+            <input type="text" id="assets-new-folder-input" class="folder-new-input" placeholder="folder name..." autocomplete="off" style="display:none" />
           </div>
           <div id="assets-list">(loading...)</div>
         </div>

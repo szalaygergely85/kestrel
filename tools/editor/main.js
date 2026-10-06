@@ -27,6 +27,9 @@ import {
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
   classifyPlacement, listPlaceableModels, filterModelKeys, KIND_GLYPHS, isVoxelScaleItem,
   resolveDropPoint, resolveAssetDrop,
+  // ED-FOLDERS-01 (docs/backlog.md): pure folder derivation + layout state.
+  createAssetFoldersState, parseAssetFolders, serializeAssetFolders, listUserFolders,
+  createUserFolder, renameUserFolder, deleteUserFolder, moveAssetToFolder, groupAssetFolders,
 } from './panel.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile } from './io.js';
@@ -96,6 +99,11 @@ const assetsSearchInput = document.getElementById('assets-search-input');
 const assetsListEl = document.getElementById('assets-list');
 const assetsImportVoxBtn = document.getElementById('assets-import-vox-btn'); // OWN-REQ-011
 const armedModelChipEl = document.getElementById('armed-model-chip');
+// ED-FOLDERS-01: the folder toolbar row above the Assets list (create a new
+// user folder; the input is shown only while creating).
+const folderBarEl = document.getElementById('assets-folder-bar');
+const newFolderBtnEl = document.getElementById('assets-new-folder-btn');
+const newFolderInputEl = document.getElementById('assets-new-folder-input');
 
 // ---- US-066: dock/drawer collapse state (design/editor-ui.md 2: "docks +
 // drawer collapsible, state remembered (localStorage in try/catch)"). Purely
@@ -946,6 +954,266 @@ function buildThumbEl(thumb) {
   return el;
 }
 
+// ---- ED-FOLDERS-01 (docs/backlog.md): collapsible asset folders -------------
+// The layout (user folders + their members) is editor-only data, kept OUT of
+// `doc` (the game never reads it). Default folders are derived at render time
+// by panel.js's `deriveFolderKey`; only user folders are stored, in
+// `content/editor/asset-folders.json` (loaded leniently, saved on change via
+// the FSA API with the same `<a download>` fallback io.js uses). Collapse
+// state is in-memory only (a fresh session shows every folder expanded).
+let foldersState = createAssetFoldersState();
+let foldersHandle = null; // the FSA handle for asset-folders.json, cached across saves
+const collapsedFolders = new Set();
+let folderHighlightEl = null; // the folder header currently lit as a drop target
+let foldersSaveTimer = null;
+
+async function loadAssetFolders() {
+  try {
+    const res = await fetch('../../content/editor/asset-folders.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    foldersState = parseAssetFolders(await res.text());
+  } catch (e) {
+    console.warn(`[editor] content/editor/asset-folders.json not found/invalid - starting with no user folders (${e && e.message ? e.message : e})`);
+    foldersState = createAssetFoldersState();
+  }
+}
+
+async function saveAssetFolders() {
+  const text = serializeAssetFolders(foldersState);
+  const name = 'asset-folders.json';
+  const canPicker = typeof window.showSaveFilePicker === 'function';
+  try {
+    if (canPicker) {
+      if (!foldersHandle) {
+        foldersHandle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: 'Kestrel editor folders', accept: { 'application/json': ['.json'] } }],
+        });
+      }
+      const writable = await foldersHandle.createWritable();
+      await writable.write(text);
+      await writable.close();
+    } else {
+      // Same `<a download>` fallback as io.js's saveFile (no FSA API).
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    flash('saved folders: content/editor/asset-folders.json');
+  } catch (e) {
+    if (e && e.name === 'AbortError') { flash('save folders: cancelled'); return; }
+    flash(`save folders failed: ${e && e.message ? e.message : e}`);
+  }
+}
+
+/** Debounced auto-save after a folder mutation (create/rename/delete/move). */
+function persistFolders() {
+  if (foldersSaveTimer) clearTimeout(foldersSaveTimer);
+  foldersSaveTimer = setTimeout(() => { foldersSaveTimer = null; saveAssetFolders(); }, 400);
+}
+
+function applyFolders(next) {
+  if (next === foldersState) return false;
+  foldersState = next;
+  persistFolders();
+  return true;
+}
+
+function folderHeaderEl(folderName) {
+  for (const group of assetsListEl.querySelectorAll('[data-folder-name]')) {
+    if (group.dataset.folderName === folderName) return group.querySelector('.folder-header');
+  }
+  return null;
+}
+
+function updateFolderDropHighlight(folderName) {
+  if (folderHighlightEl) { folderHighlightEl.classList.remove('drop-target'); folderHighlightEl = null; }
+  if (folderName) {
+    const el = folderHeaderEl(folderName);
+    if (el) { el.classList.add('drop-target'); folderHighlightEl = el; }
+  }
+}
+
+/** The folder under the pointer during a mouse-based asset drag (a row or its
+ * header both resolve to the folder), or null when over nothing folder-like. */
+function folderNameAtPoint(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY);
+  const group = el && el.closest ? el.closest('[data-folder-name]') : null;
+  return group ? group.dataset.folderName : null;
+}
+
+function dropAssetIntoFolder(modelKey, folderName) {
+  if (applyFolders(moveAssetToFolder(foldersState, modelKey, folderName))) {
+    flash(`"${modelKey}" -> ${folderName}`);
+  }
+  renderAssetsList(assetsSearchInput.value);
+}
+
+function removeUserFolder(folderName) {
+  if (applyFolders(deleteUserFolder(foldersState, folderName))) {
+    flash(`folder "${folderName}" deleted (assets back to their default folders)`);
+  }
+  renderAssetsList(assetsSearchInput.value);
+}
+
+/** Swaps a folder header's name for an inline input; Enter/blur commits, Esc cancels. */
+function startRenameFolder(folderName, headerEl) {
+  const labelEl = headerEl.querySelector('.folder-name');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'folder-name-input';
+  input.value = folderName;
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    if (save) {
+      if (applyFolders(renameUserFolder(foldersState, folderName, input.value))) {
+        flash(`folder renamed to "${input.value.trim()}"`);
+      }
+    }
+    renderAssetsList(assetsSearchInput.value);
+  };
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur();
+    else if (e.key === 'Escape') finish(false);
+  });
+  labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+function startCreateFolder() {
+  newFolderBtnEl.style.display = 'none';
+  newFolderInputEl.style.display = '';
+  newFolderInputEl.value = '';
+  newFolderInputEl.focus();
+}
+
+let createFolderDone = true;
+function finishCreateFolder(save) {
+  if (createFolderDone) return;
+  createFolderDone = true;
+  newFolderInputEl.style.display = 'none';
+  newFolderBtnEl.style.display = '';
+  if (save) {
+    if (applyFolders(createUserFolder(foldersState, newFolderInputEl.value))) {
+      flash(`folder "${newFolderInputEl.value.trim()}" created`);
+    } else {
+      flash(`folder not created (empty name, already exists, or a default folder)`);
+    }
+    renderAssetsList(assetsSearchInput.value);
+  }
+}
+
+newFolderBtnEl.addEventListener('click', () => { createFolderDone = false; startCreateFolder(); });
+newFolderInputEl.addEventListener('blur', () => finishCreateFolder(true));
+newFolderInputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') newFolderInputEl.blur();
+  else if (e.key === 'Escape') finishCreateFolder(false);
+});
+
+/** Builds one asset row (the shared leaf of both the flat search view and the
+ * grouped folder view) - same mousedown arm + ED-DND-01 drag as before, plus
+ * a `folderTarget` slot the mousemove/mouseup handlers use for folder drops. */
+function buildAssetRow(key) {
+  const row = document.createElement('div');
+  row.className = 'asset-row';
+  if (armedModelKey === key) row.classList.add('armed');
+  row.appendChild(iconHost(key));
+  const name = document.createElement('span');
+  name.className = 'asset-name';
+  name.textContent = key;
+  row.appendChild(name);
+  // mousedown (not click): same reasoning as the US-063 model-picker rows -
+  // fires before the search input's blur / the canvas's own mousedown
+  // handlers steal focus for this same event.
+  row.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    armModelPlacement(key);
+    renderAssetsList(assetsSearchInput.value); // refresh the "armed" highlight
+    // ED-DND-01: also arm a potential drag-and-drop. The drag only really
+    // begins once the pointer travels past a small threshold (see the
+    // window mousemove handler), so a plain click still just ARMS the model
+    // and the next viewport click places it, exactly as before.
+    assetDrag = {
+      modelKey: key,
+      startClientX: e.clientX, startClientY: e.clientY,
+      moved: false, overView: false, lastCol: -1, lastRow: -1, rawPoint: null, ghostPoint: null,
+      folderTarget: null,
+    };
+  });
+  return row;
+}
+
+/** One collapsible folder section: a header (arrow + name + count, and rename/
+ * delete for user folders) over its asset rows. The header click collapses. */
+function buildFolderSection(folderName, keys) {
+  const section = document.createElement('div');
+  section.className = 'folder-group';
+  section.dataset.folderName = folderName;
+
+  const header = document.createElement('div');
+  header.className = 'folder-header';
+  const isCollapsed = collapsedFolders.has(folderName);
+
+  const arrow = document.createElement('span');
+  arrow.className = 'folder-arrow';
+  arrow.textContent = isCollapsed ? '▸' : '▾';
+  const label = document.createElement('span');
+  label.className = 'folder-name';
+  label.textContent = folderName;
+  const count = document.createElement('span');
+  count.className = 'folder-count';
+  count.textContent = String(keys.length);
+
+  header.appendChild(arrow);
+  header.appendChild(label);
+  header.appendChild(count);
+
+  if (Object.prototype.hasOwnProperty.call(foldersState.userFolders, folderName)) {
+    const actions = document.createElement('span');
+    actions.className = 'folder-actions';
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'folder-icon-btn';
+    renameBtn.title = 'Rename folder';
+    renameBtn.textContent = '✎';
+    renameBtn.addEventListener('click', (e) => { e.stopPropagation(); startRenameFolder(folderName, header); });
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'folder-icon-btn';
+    delBtn.title = 'Delete folder (assets return to their default folders)';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', (e) => { e.stopPropagation(); removeUserFolder(folderName); });
+    actions.appendChild(renameBtn);
+    actions.appendChild(delBtn);
+    header.appendChild(actions);
+  }
+
+  header.addEventListener('click', () => {
+    if (collapsedFolders.has(folderName)) collapsedFolders.delete(folderName);
+    else collapsedFolders.add(folderName);
+    renderAssetsList(assetsSearchInput.value);
+  });
+  section.appendChild(header);
+
+  if (!isCollapsed) {
+    const body = document.createElement('div');
+    body.className = 'folder-body';
+    for (const key of keys) body.appendChild(buildAssetRow(key));
+    section.appendChild(body);
+  }
+  return section;
+}
+
 function renderAssetsList(query) {
   assetsListEl.textContent = '';
   const keys = filterModelKeys(listPlaceableModels(assets), query || '');
@@ -956,35 +1224,19 @@ function renderAssetsList(query) {
     assetsListEl.appendChild(empty);
     return;
   }
-  for (const key of keys) {
-    const row = document.createElement('div');
-    row.className = 'asset-row';
-    if (armedModelKey === key) row.classList.add('armed');
-    row.appendChild(iconHost(key));
-    const name = document.createElement('span');
-    name.className = 'asset-name';
-    name.textContent = key;
-    row.appendChild(name);
-    // mousedown (not click): same reasoning as the US-063 model-picker rows -
-    // fires before the search input's blur / the canvas's own mousedown
-    // handlers steal focus for this same event.
-    row.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      armModelPlacement(key);
-      renderAssetsList(assetsSearchInput.value); // refresh the "armed" highlight
-      // ED-DND-01: also arm a potential drag-and-drop. The drag only really
-      // begins once the pointer travels past a small threshold (see the
-      // window mousemove handler), so a plain click still just ARMS the model
-      // and the next viewport click places it, exactly as before.
-      assetDrag = {
-        modelKey: key,
-        startClientX: e.clientX, startClientY: e.clientY,
-        moved: false, overView: false, lastCol: -1, lastRow: -1, rawPoint: null, ghostPoint: null,
-      };
-    });
-    assetsListEl.appendChild(row);
+  // Search still searches ALL folders, flat (the story's AC 4): a non-empty
+  // query renders one ungrouped list, so a match in any folder is visible.
+  if ((query || '').trim()) {
+    for (const key of keys) assetsListEl.appendChild(buildAssetRow(key));
+    return;
   }
+  // No query: group into collapsible folders (user folders first, then
+  // defaults - panel.js's pure `groupAssetFolders`).
+  const groups = groupAssetFolders(keys, foldersState, (k) => assets.model(k));
+  for (const group of groups) assetsListEl.appendChild(buildFolderSection(group.folder, group.keys));
 }
+
+await loadAssetFolders();
 renderAssetsList('');
 assetsSearchInput.addEventListener('input', () => renderAssetsList(assetsSearchInput.value));
 if (params.get('icontest') === '1') {
@@ -1378,6 +1630,14 @@ window.addEventListener('mousemove', (e) => {
       if (dx * dx + dy * dy < 16) return; // < 4px - still a click, not a drag yet
       assetDrag.moved = true;
     }
+    // ED-FOLDERS-01: while dragging, track whether the pointer is over a
+    // folder header (a row or its header both resolve) - the mouseup handler
+    // then moves the asset into that folder instead of placing/cancelling.
+    const folderTarget = folderNameAtPoint(e.clientX, e.clientY);
+    if (folderTarget !== assetDrag.folderTarget) {
+      assetDrag.folderTarget = folderTarget;
+      updateFolderDropHighlight(folderTarget);
+    }
     const overView = col >= 0 && col < rt.cols && row >= 0 && row < rt.rows;
     if (!overView) {
       assetDrag.overView = false;
@@ -1449,7 +1709,15 @@ window.addEventListener('mouseup', (e) => {
   if (assetDrag) {
     const d = assetDrag;
     assetDrag = null;
+    updateFolderDropHighlight(null);
     if (!d.moved) return;
+    // ED-FOLDERS-01: a drop onto a folder moves the asset (onto a user folder
+    // = in; onto a default folder = back to its default, via panel.js's
+    // `moveAssetToFolder`), taking priority over the viewport place/cancel.
+    if (d.folderTarget != null) {
+      dropAssetIntoFolder(d.modelKey, d.folderTarget);
+      return;
+    }
     if (resolveAssetDrop(d.overView, false) === 'place' && d.rawPoint) {
       placeAt('prop', d.rawPoint, d.modelKey);
     } else {
@@ -1557,8 +1825,10 @@ function update(dt) {
     frame.markDirty();
   } else if (input.pressed('Escape') && assetDrag) {
     // ED-DND-01: Esc cancels an in-progress asset drag (no commit, no record)
-    // and also un-arms the model - the whole gesture is abandoned.
+    // and also un-arms the model - the whole gesture is abandoned. Any
+    // ED-FOLDERS-01 folder drop highlight is cleared with it.
     assetDrag = null;
+    updateFolderDropHighlight(null);
     setPlaceMode(null);
     flash('drag: cancelled');
   } else if (input.pressed('Escape') && placeMode) {

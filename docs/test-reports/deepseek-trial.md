@@ -14,6 +14,7 @@ One line per trial item, per `DEEPSEEK.md`. Order taken from `docs/pc-b-queue.md
 | 2026-10-06 | Quaternius imports (round-2 item 5) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet |
 | 2026-10-06 | ART-01a (look + roof map, JS) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
 | 2026-10-06 | ART-04a (clouds JS twin) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
+| 2026-10-06 | ED-FOLDERS-01 (asset folders) | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; main session added a `content/editor/` exemption to content-smoke. | owner: fill in from the DeepSeek dashboard | not yet |
 
 ## Notes for this item
 

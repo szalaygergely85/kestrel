@@ -304,6 +304,314 @@ export function validateItem(kind, item, ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// ED-FOLDERS-01 (docs/backlog.md): collapsible asset folders. Pure, Node-
+// tested (folders.test.mjs). `deriveFolderKey` maps a model key to its
+// DEFAULT folder; the rest is the folder layout's state model (create/rename/
+// delete/move) plus the byte-stable serializer for
+// `content/editor/asset-folders.json` (editor-only data, never loaded by the
+// game). The editor's DOM (main.js) owns the collapsible-list UI and the
+// load/save I/O - this block is pure, same split as the rest of this file's
+// top half.
+// ---------------------------------------------------------------------------
+
+/** The folder an unknown model key falls into (spec: "unknown key -> a fallback"). */
+export const FALLBACK_FOLDER = 'Other';
+
+/** Every DEFAULT folder name the editor can derive. Used to (a) refuse a user
+ * folder that would shadow a default folder (a "move out = back to default"
+ * folder must stay unambiguous) and (b) let `moveAssetToFolder` treat
+ * "dropped onto a default folder" as "back to its default folder". */
+export const DEFAULT_FOLDER_NAMES = new Set([
+  'Tower props', 'Ruins', 'StickyBizcuit', 'Voxel pack',
+  'Forest trees', 'Ground detail', 'Notes', 'Spell/FX', FALLBACK_FOLDER,
+]);
+
+/**
+ * The explicit key -> default-folder table: every model key that carries
+ * NEITHER a sidecar field (`forest`/`groundDetail`) NOR a pack prefix. The
+ * generic names shared across packs (`tree`/`fire`/`bush`/`stump` in
+ * sb_objects.js vs vp_pack.js) live here too - exactly why a pure prefix
+ * match alone cannot separate them. This is the "registry sidecar" the story
+ * allows: a small, committed table beside the derivation, kept alphabetical
+ * within each source file's group for review.
+ */
+const PACK_BY_KEY = {
+  // design/models/{lantern,lever,brazier,boulder,relay,torch,sword,voxel_props,
+  //               voxel_world,far_tower,ferrum_lights,voxel_beast,m3_props}.js
+  // - the game's own authored props (tower interior, equipment, world props).
+  awakeningCrates: 'Tower props', awakeningKeeper: 'Tower props', beaconBowl: 'Tower props',
+  beaconFire: 'Tower props', boarPlaceholder: 'Tower props', boulder: 'Tower props',
+  brazier: 'Tower props', farTower: 'Tower props', ferrumLights: 'Tower props',
+  floorLantern: 'Tower props', lampFlame: 'Tower props', lantern: 'Tower props',
+  lever: 'Tower props', pallet: 'Tower props', practiceTarget: 'Tower props',
+  relay: 'Tower props', sword: 'Tower props', swordHeld: 'Tower props',
+  torchFlame: 'Tower props', torchHeld: 'Tower props', torchProp: 'Tower props',
+  waystone: 'Tower props',
+  // design/models/{rubble,wreckage}.js - the Ruins (rubble + the Kestrel's wreckage).
+  burner: 'Ruins', burnerFire: 'Ruins', burnerFlame: 'Ruins', canvasHeap: 'Ruins',
+  envelopeDrape: 'Ruins', envelopeHeap: 'Ruins', gondola: 'Ruins', rigging: 'Ruins',
+  rope: 'Ruins', rubble: 'Ruins', strut: 'Ruins',
+  // design/models/m3_props.js 6c / notes.js - the readable note pages.
+  note: 'Notes', notePinned: 'Notes',
+  // design/models/spell.js + m3_props.js pickup/effect sprites.
+  fireballBlast: 'Spell/FX', fireballBlastCharged: 'Spell/FX', fireballCore: 'Spell/FX',
+  fireballCoreCharged: 'Spell/FX', pickupHp: 'Spell/FX', pickupMp: 'Spell/FX',
+  spellHandL: 'Spell/FX', spellHandR: 'Spell/FX', strawPuff: 'Spell/FX',
+  // design/models/sb_objects.js - StickyBizcuit objects whose keys carry no `sb` prefix.
+  barrel: 'StickyBizcuit', crate: 'StickyBizcuit', cratesMultiple: 'StickyBizcuit',
+  fire: 'StickyBizcuit', fireBlue: 'StickyBizcuit', gravestone1: 'StickyBizcuit',
+  gravestone1Weathered: 'StickyBizcuit', gravestone2: 'StickyBizcuit',
+  gravestone2Weathered: 'StickyBizcuit', gravestone3: 'StickyBizcuit',
+  gravestone3Weathered: 'StickyBizcuit', torchLong: 'StickyBizcuit',
+  torchLongBlue: 'StickyBizcuit', treeBig: 'StickyBizcuit', treeBirch: 'StickyBizcuit',
+  treePine: 'StickyBizcuit', treeTrunk: 'StickyBizcuit',
+  // design/models/vp_pack.js - the CC0 "Voxel Pack" (MagicaVoxel).
+  bunny: 'Voxel pack', bush: 'Voxel pack', campfire: 'Voxel pack', grassPatch: 'Voxel pack',
+  pig: 'Voxel pack', stump: 'Voxel pack', toolPlate: 'Voxel pack', tree: 'Voxel pack',
+};
+
+/**
+ * ED-FOLDERS-01: derives the DEFAULT folder for a model key (where it lives
+ * when not moved into a user folder). Precedence, documented here:
+ *   1. registry sidecar fields the source file already sets on the model def
+ *      (design/models/*.js): `def.forest` (forest_trees.js) -> "Forest trees";
+ *      `def.groundDetail` (ground_detail.js) -> "Ground detail".
+ *   2. key prefix (the pack authors' own prefixes): `forest*` -> "Forest
+ *      trees"; `sb*` -> "StickyBizcuit".
+ *   3. the explicit `PACK_BY_KEY` table above (generic names + the game's own
+ *      authored props, none of which carry a prefix or sidecar).
+ *   4. otherwise -> `FALLBACK_FOLDER`.
+ * A `#N` variant suffix (`rubble#0`, `rope#1` - the AssetRegistry's packed
+ * billboard variants, engine/core/assets.js) is stripped first, so a variant
+ * folds to its parent's folder.
+ * @param {string} modelKey
+ * @param {Object} [modelDef] the model's registry def (`assets.model(key)`);
+ *   optional - without it the sidecar fields are simply not checked.
+ * @returns {string} a default folder name
+ */
+export function deriveFolderKey(modelKey, modelDef) {
+  const key = String(modelKey).replace(/#\d+$/, '');
+  if (modelDef) {
+    if (modelDef.forest) return 'Forest trees';
+    if (modelDef.groundDetail) return 'Ground detail';
+  }
+  if (key.startsWith('forest')) return 'Forest trees';
+  if (key.startsWith('sb')) return 'StickyBizcuit';
+  return PACK_BY_KEY[key] || FALLBACK_FOLDER;
+}
+
+/** A new, empty folder layout: no user folders (every asset derives to its default folder). */
+export function createAssetFoldersState() {
+  return { schema: 1, userFolders: {} };
+}
+
+/**
+ * True when `name` is a valid user-folder name: a non-empty trimmed string
+ * that is not one of the derived default folder names (a user folder that
+ * shadowed a default would make "move out = back to default" ambiguous).
+ * @param {string} name
+ */
+export function isValidFolderName(name) {
+  const n = typeof name === 'string' ? name.trim() : '';
+  return n.length > 0 && !DEFAULT_FOLDER_NAMES.has(n);
+}
+
+/**
+ * Parses the JSON text of `content/editor/asset-folders.json` into a
+ * normalized layout. Lenient (matches the editor's "content not found"
+ * fallback, io.js): any parse/shape error returns an empty layout instead of
+ * throwing. Normalization: folder names sorted, member keys sorted and
+ * de-duplicated, and a key present in more than one folder is kept only in
+ * the first (sorted) folder - an asset sits in at most one user folder.
+ * @param {string} text
+ */
+export function parseAssetFolders(text) {
+  const empty = createAssetFoldersState();
+  if (typeof text !== 'string' || !text.trim()) return empty;
+  let obj;
+  try { obj = JSON.parse(text); } catch (_) { return empty; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return empty;
+  const raw = obj.userFolders;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
+  const userFolders = {};
+  const seen = new Set();
+  for (const name of Object.keys(raw).sort()) {
+    const members = Array.isArray(raw[name]) ? raw[name].filter((k) => typeof k === 'string' && k) : [];
+    const kept = [];
+    for (const k of [...new Set(members)].sort()) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+      kept.push(k);
+    }
+    userFolders[name] = kept;
+  }
+  return { schema: 1, userFolders };
+}
+
+/**
+ * Byte-stable JSON for `content/editor/asset-folders.json` (LF, trailing
+ * newline, 2-space indent, sorted keys - the story's "re-saving an unchanged
+ * layout writes byte-identical JSON"). Only user folders are stored; default
+ * folders are derived at load, so nothing re-derived is ever written and no
+ * timestamps appear.
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @returns {string}
+ */
+export function serializeAssetFolders(state) {
+  const src = (state && state.userFolders) || {};
+  const userFolders = {};
+  for (const name of Object.keys(src).sort()) {
+    userFolders[name] = [...(Array.isArray(src[name]) ? src[name] : [])].sort();
+  }
+  return JSON.stringify({ schema: 1, userFolders }, null, 2) + '\n';
+}
+
+/** The user-folder names of `state`, sorted (a stable display order). */
+export function listUserFolders(state) {
+  return Object.keys((state && state.userFolders) || {}).sort();
+}
+
+/**
+ * Adds a new, empty user folder. Returns a NEW state, or the SAME state
+ * reference when the name is invalid or already taken (a no-op - the editor
+ * validates first and flashes a message; this function never throws).
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @param {string} name
+ */
+export function createUserFolder(state, name) {
+  const n = typeof name === 'string' ? name.trim() : '';
+  const folders = (state && state.userFolders) || {};
+  if (!isValidFolderName(n) || Object.prototype.hasOwnProperty.call(folders, n)) return state;
+  const userFolders = { ...folders };
+  userFolders[n] = [];
+  return { schema: 1, userFolders };
+}
+
+/**
+ * Renames a user folder; its members follow (the membership is keyed by the
+ * folder name). Returns a NEW state, or the SAME state when `oldName` is
+ * unknown, `newName` is invalid, unchanged, or already taken.
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @param {string} oldName
+ * @param {string} newName
+ */
+export function renameUserFolder(state, oldName, newName) {
+  const folders = (state && state.userFolders) || {};
+  if (!Object.prototype.hasOwnProperty.call(folders, oldName)) return state;
+  const n = typeof newName === 'string' ? newName.trim() : '';
+  if (!isValidFolderName(n) || n === oldName || Object.prototype.hasOwnProperty.call(folders, n)) return state;
+  const userFolders = {};
+  for (const k of Object.keys(folders)) {
+    userFolders[k === oldName ? n : k] = [...folders[k]];
+  }
+  return { schema: 1, userFolders };
+}
+
+/**
+ * Deletes a user folder; its members simply fall back to their default
+ * folders (they are not lost). Returns a NEW state, or the SAME state when
+ * `name` is unknown.
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @param {string} name
+ */
+export function deleteUserFolder(state, name) {
+  const folders = (state && state.userFolders) || {};
+  if (!Object.prototype.hasOwnProperty.call(folders, name)) return state;
+  const userFolders = {};
+  for (const k of Object.keys(folders)) {
+    if (k !== name) userFolders[k] = [...folders[k]];
+  }
+  return { schema: 1, userFolders };
+}
+
+/**
+ * Moves `modelKey` into a user folder, or back to its default folder when
+ * `folderName` is null/empty/a DEFAULT folder name. An asset lives in at most
+ * one user folder: moving in removes it from every other user folder first
+ * (a not-yet-existing target folder is created, so the move is total).
+ * Returns a NEW state, or the SAME state reference when nothing changed.
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @param {string} modelKey
+ * @param {string|null} folderName a user folder name, or null/''/a default
+ *   folder name to move the asset back out
+ */
+export function moveAssetToFolder(state, modelKey, folderName) {
+  const key = String(modelKey);
+  const folders = (state && state.userFolders) || {};
+  const target = typeof folderName === 'string' ? folderName.trim() : '';
+  const isUser = target.length > 0 && !DEFAULT_FOLDER_NAMES.has(target);
+  const userFolders = {};
+  let changed = false;
+  for (const k of Object.keys(folders)) {
+    const members = Array.isArray(folders[k]) ? folders[k] : [];
+    const has = members.includes(key);
+    if (isUser && k === target) {
+      userFolders[k] = has ? members : [...members, key].sort();
+      if (!has) changed = true;
+    } else if (has) {
+      userFolders[k] = members.filter((m) => m !== key);
+      changed = true;
+    } else {
+      userFolders[k] = members;
+    }
+  }
+  if (isUser && !Object.prototype.hasOwnProperty.call(userFolders, target)) {
+    userFolders[target] = [key];
+    changed = true;
+  }
+  if (!changed) return state;
+  return { schema: 1, userFolders };
+}
+
+/**
+ * The folder `modelKey` is in right now: its user folder if assigned, else
+ * its derived default folder (`deriveFolderKey`).
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @param {string} modelKey
+ * @param {Object} [modelDef]
+ */
+export function assetFolderFor(state, modelKey, modelDef) {
+  const folders = (state && state.userFolders) || {};
+  for (const name of Object.keys(folders)) {
+    if (Array.isArray(folders[name]) && folders[name].includes(modelKey)) return name;
+  }
+  return deriveFolderKey(modelKey, modelDef);
+}
+
+/**
+ * Groups a flat, already-filtered list of model keys into `{ folder, keys }`
+ * entries for the Assets list: user folders first (sorted), then default
+ * folders (sorted), each folder's keys sorted, every key exactly once, and
+ * empty folders omitted. `modelDefFor(key)` resolves a key to its model def
+ * (the editor passes `assets.model`; tests pass a stub). Pure - main.js just
+ * renders each returned group as a collapsible section.
+ * @param {string[]} modelKeys
+ * @param {{schema:number, userFolders:Object<string,string[]>}} state
+ * @param {(key:string)=>(Object|undefined)} [modelDefFor]
+ * @returns {{folder:string, keys:string[]}[]}
+ */
+export function groupAssetFolders(modelKeys, state, modelDefFor) {
+  const folders = (state && state.userFolders) || {};
+  const userSet = new Set(Object.keys(folders));
+  const buckets = new Map();
+  for (const key of modelKeys) {
+    const folder = assetFolderFor(state, key, modelDefFor ? modelDefFor(key) : undefined);
+    if (!buckets.has(folder)) buckets.set(folder, []);
+    buckets.get(folder).push(key);
+  }
+  const user = [];
+  const defaults = [];
+  for (const [folder, keys] of buckets) {
+    keys.sort();
+    (userSet.has(folder) ? user : defaults).push({ folder, keys });
+  }
+  const byName = (a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0);
+  user.sort(byName);
+  defaults.sort(byName);
+  return [...user, ...defaults];
+}
+
+// ---------------------------------------------------------------------------
 // Below this line: DOM-touching (browser only, no Node test - same split as
 // pick.js/select.js). `renderPropertyPanel` regenerates the whole form on
 // every call (selection change, undo/redo, a committed field edit) - cheap,
