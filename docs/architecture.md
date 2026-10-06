@@ -3489,6 +3489,8 @@ Do not: delete across step boundaries (one step id per commit, each leaving boot
 - route input through the item sims' own `input` reads;
 - let a gate close produce a release edge on a held item.
 
+- **Golden material keys (2026-10-06):** frozen goldens compare material KEYS, never raw MaterialTable ids (a new palette material shifts every later id). Each fixture whose gbuf `mat` is a palette id ships `engine/mesh/fixtures/<name>.matkeys.json` (frozen id->key table built from palette.js + detail-pass.js at the capture commit, loaded by `loadGoldenMatKeys` in `tools/testing/mesh-golden.mjs`); the live side maps via `table.records[id].key`. Today: `levelMesh` (bced9b8). Synthetic-table goldens (voxel, voxelRaster) and kind-only users need none. ARCH OK required to change a matkeys file.
+
 ### 37.14 Fireball SPELL-01a/b (architect, 2026-10-05; D-040, owner answers 2026-10-05: known at start in the demo, no self-damage)
 
 **Decision: game-side sim** (`game/js/quest/sim/fireball.js`, rule 15). There is one projectile, and its rules are game rules (the 29.1/30.2 precedent). The engine already has every query it needs: `World.raySegment`, `explosionHits`, `applyImpulse`, `LightSet.add/move/setOn/setParams`, `particles.burstAt`, `SpritePool.push`. **No engine change in SPELL-01a/b.** A generic engine projectile module waits for a second projectile kind.
