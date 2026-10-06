@@ -35,6 +35,9 @@
 <div class="note"><b>v1.16 waystone</b> (<code>design/models/voxel_world.js</code>, show: waystone): the US-026a end marker on the terrain below the tower. In-game views: 20 m walking up
   (slider applies), from the breach (60.4 m, eye 7.07 m above the stone's ground) and the end camera (2.5 m); grass floor, far fog. The checks read the terrain recipe
   (<code>levels/overworld_far.js</code>): spot type / slope, foot vs terrain, facing the breach, sightline from the breach, the end trigger, the 1 m end walk and the end camera toward the signal tower.</div>
+<div class="note"><b>v1.40 wild boar</b> (<code>design/models/voxel_beast.js</code>, model key <code>boarPlaceholder</code>): the boar is an animated creature with
+  8 parts and its own clip set (idle, hurt, flinch, windup, charge, walk, die, dead, sink), so it has its own page: <a href="boar.html" style="color:#ffd24a">boar.html</a>
+  (every clip and the game's clip sequences, 8 directions + orbit, light sliders, 240x90 / 400x150 in-game crops at 4 / 8 / 12 m, engine tri count + contract checks).</div>
 <div class="note">
   Solid props as real 3D voxel models (architecture.md 15.1 format, 15.3 content contract), Blood-style: fixed in the world, bright rim over a dark body,
   dark contour. Data: <code>design/models/voxel_props.js</code> (batch 1: lever, lantern) and <code>design/models/voxel_tower.js</code> (batch 2: the rest),
