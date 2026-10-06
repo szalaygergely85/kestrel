@@ -24,6 +24,7 @@
 
 import { CellBuffer } from './CellBuffer.js';
 import { computeCellBox, FONT_STACK } from './glyphMetrics.js';
+import { GLYPH_BG_ALPHA } from '../ui/uiLayer.js'; // UI-XHAIR-01: glyph-only bg-alpha mask (128)
 
 const MAX_PX_CELL_H = 16; // D-005: cap the fallback's backing resolution, CSS-upscale
 
@@ -174,6 +175,10 @@ export class RenderTargetCanvas2D {
   // the pre-OWN-REQ-003 picture (the game used to draw straight into the
   // scene at these same coordinates). No allocation: reuses `this.cells`'
   // typed arrays.
+  // UI-XHAIR-01: a glyph-only cell (bg alpha = GLYPH_BG_ALPHA = 128) copies
+  // the glyph + fg but LEAVES the scene's bg colour in place, so the glyph
+  // composites over whatever the scene already shows there (no black box);
+  // an opaque cell (255) still replaces the bg exactly as before.
   _mergeUiLayer() {
     const ui = this._uiLayer;
     if (!ui) return;
@@ -186,7 +191,9 @@ export class RenderTargetCanvas2D {
         dst.glyphIdx[i] = src.glyphIdx[i];
         const fi = i * 4;
         dst.fg[fi] = src.fg[fi]; dst.fg[fi + 1] = src.fg[fi + 1]; dst.fg[fi + 2] = src.fg[fi + 2]; dst.fg[fi + 3] = src.fg[fi + 3];
-        dst.bg[fi] = src.bg[fi]; dst.bg[fi + 1] = src.bg[fi + 1]; dst.bg[fi + 2] = src.bg[fi + 2]; dst.bg[fi + 3] = 255;
+        if (src.bg[fi + 3] !== GLYPH_BG_ALPHA) {
+          dst.bg[fi] = src.bg[fi]; dst.bg[fi + 1] = src.bg[fi + 1]; dst.bg[fi + 2] = src.bg[fi + 2]; dst.bg[fi + 3] = 255;
+        }
         dst.mask[i] = 1;
       }
       return;
@@ -203,16 +210,32 @@ export class RenderTargetCanvas2D {
         if (!src.mask[ui_i]) continue;
         const x0 = Math.round(ux * sx), x1 = Math.min(this.cols, Math.round((ux + 1) * sx));
         const fi = ui_i * 4;
+        const glyphOnly = src.bg[fi + 3] === GLYPH_BG_ALPHA;
         const gIdx = src.glyphIdx[ui_i];
         const fr = src.fg[fi], fg1 = src.fg[fi + 1], fb = src.fg[fi + 2];
         const br = src.bg[fi], bgc = src.bg[fi + 1], bb = src.bg[fi + 2];
         for (let cy = y0; cy < y1; cy++) {
           for (let cx = x0; cx < x1; cx++) {
-            this.setCellRGB(cx, cy, gIdx, fr, fg1, fb, br, bgc, bb);
+            if (glyphOnly) this._setGlyphRGB(cx, cy, gIdx, fr, fg1, fb);
+            else this.setCellRGB(cx, cy, gIdx, fr, fg1, fb, br, bgc, bb);
           }
         }
       }
     }
+  }
+
+  // UI-XHAIR-01: the rare-path twin of the fast path's glyph-only branch -
+  // writes glyph + fg (+ mask) but leaves the scene cell's bg untouched, so
+  // a glyph-only UI cell still shows its glyph over the scene bg when the
+  // grids differ. Allocation-free, same shape as CellBuffer.setCellRGB.
+  _setGlyphRGB(x, y, glyphIdx, r, g, b) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
+    const i = y * this.cols + x;
+    const c = this.cells;
+    c.glyphIdx[i] = glyphIdx;
+    const fi = i * 4;
+    c.fg[fi] = r; c.fg[fi + 1] = g; c.fg[fi + 2] = b; c.fg[fi + 3] = glyphIdx;
+    c.mask[i] = 1;
   }
 
   present() {

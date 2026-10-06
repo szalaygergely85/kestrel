@@ -9,7 +9,21 @@
 //     prompt: { color: '#rrggbb', keyColor: '#rrggbb', plateBg: '#rrggbb' } }
 import { drawText } from '../render/textDraw.js';
 
+// UI-XHAIR-01: the crosshair is now an OPEN cross drawn with glyph-only cells
+// (see uiLayer.js `setGlyph` - the scene's background shows through around the
+// glyphs, no black box). It scales by the SCENE grid: a single `+` below 320
+// scene cols (e.g. 240x90), a 3x3 open cross (`|` above/below, `-` left/right,
+// `.` centre - the small dot keeps the centre visually open) at >= 320 scene
+// cols. `rt` is the fixed 160x60 UI layer (uiStyle.uiGrid), so the scene width
+// comes from its `sx` scale (sx = sceneCols/uiCols, set by bindScene); a plain
+// rt without `sx` (a scene RenderTarget / test fake) already carries the scene
+// cols in `rt.cols`. Every glyph is glyph-only (bg alpha 128); the `[E] prompt`
+// plate below stays opaque (setCell/drawText, bg alpha 255) exactly as before.
 const CROSSHAIR_GLYPH = '+';
+const CROSSHAIR_ARM_V = '|';
+const CROSSHAIR_ARM_H = '-';
+const CROSSHAIR_CENTRE = '.';
+const CROSSHAIR_3X3_MIN_COLS = 320;
 const PROMPT_ROW_GAP = 2; // "2 rows below" (US-012 AC)
 
 // Non-blocking cleanup (arch review, 2026-09-24): cache the key/rest split
@@ -26,7 +40,20 @@ export function drawCrosshair(rt, style, state) {
   const cx = rt.cols >> 1, cy = rt.rows >> 1;
   const active = !!(state && state.targetKey);
   const chColor = active ? style.crosshair.active : style.crosshair.dim;
-  rt.setCell(cx, cy, CROSSHAIR_GLYPH, chColor);
+  // Size scales with the SCENE grid (the fixed UI layer's sx ratio gives it).
+  const sceneCols = rt.sx ? Math.round(rt.cols * rt.sx) : rt.cols;
+
+  if (sceneCols >= CROSSHAIR_3X3_MIN_COLS) {
+    // 3x3 open cross (glyph-only cells - transparent background).
+    rt.setGlyph(cx, cy - 1, CROSSHAIR_ARM_V, chColor);
+    rt.setGlyph(cx, cy + 1, CROSSHAIR_ARM_V, chColor);
+    rt.setGlyph(cx - 1, cy, CROSSHAIR_ARM_H, chColor);
+    rt.setGlyph(cx + 1, cy, CROSSHAIR_ARM_H, chColor);
+    rt.setGlyph(cx, cy, CROSSHAIR_CENTRE, chColor);
+  } else {
+    // Single-cell crosshair (240x90 and below) - still glyph-only, so no box.
+    rt.setGlyph(cx, cy, CROSSHAIR_GLYPH, chColor);
+  }
 
   if (!active || !state.prompt) return;
 

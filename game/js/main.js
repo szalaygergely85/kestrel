@@ -54,6 +54,7 @@ import { stepEnd, endFadeAmount } from './quest/end.js';
 import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
+import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
 import { wakeFrame, drawEyelid } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
@@ -746,6 +747,7 @@ function runGame(mode, cinematic = null) {
       });
       resetPickups(world); // BUG-PICKUP-001: reindex retained drops on every load/restart.
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
+      resetNoteRead(assets.uiStyle); // READ-01: a restart never carries an open note panel over (runtime-only state, 7.6 item 6)
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
         radius: engine.physics.radius, height: engine.physics.height, eyeH: engine.physics.eyeHeight,
@@ -883,13 +885,13 @@ function runGame(mode, cinematic = null) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed('KeyM');
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || (vitals && vitals.inputLocked);
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || (vitals && vitals.inputLocked);
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || !!(vitals && vitals.inputLocked);
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || !!(vitals && vitals.inputLocked);
     const paused = mode === 'world' && !isCaptureOrBench && isPaused({ ending, look, isMapOpen });
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
@@ -997,6 +999,11 @@ function runGame(mode, cinematic = null) {
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
       updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed('KeyE'));
+      // READ-01: the open note's fade + `[E]`/`[Esc]` close, right after
+      // `updateInteraction` (which just fired `note.read` on the E edge). A
+      // no-op while no note is open; the close guard (`state === 'open'`)
+      // keeps the opening E press from also closing it.
+      stepNoteRead(dt, input);
       // US-022: the relay's own wake timer (clip switch wake -> awake, point
       // light on + 1.0 s grow) - a no-op every step before `beacon.light`
       // fires (game/js/quest/beacon.js), same "reads its own state key" split
@@ -1209,6 +1216,7 @@ function runGame(mode, cinematic = null) {
       // both read the same `sceneDim` object, same precedent as `fadeLut`/
       // `fb.sceneFade` just above.
       resetSceneDim(sceneDim);
+      pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();
         // OWN-REQ-003 (17.5): `pushDim`/`pushHintDim` convert their UI-cell
@@ -1247,6 +1255,11 @@ function runGame(mode, cinematic = null) {
       // second `applySceneFade` call (e.g. a future frame) never touches them.
       const endCardState = computeEndCardState(engine.world, assets.uiStyle);
       drawEndCard(ui, assets.uiStyle, P.colors, endCardState);
+      // READ-01: the paper note panel, drawn last (over the dimmed scene + any
+      // card) while open - a no-op otherwise. `notes` is `ASSETS.notes` (a raw
+      // classic-script global, not an AssetRegistry kind, same precedent as
+      // `window.ASSETS.particles`/`window.ASSETS.waterLooks` above).
+      drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
       if (vitals && vitals.dead) {

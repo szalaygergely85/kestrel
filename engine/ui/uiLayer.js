@@ -19,13 +19,23 @@
 // game didn't redraw. `bg`'s alpha channel doubles as that per-cell mask on
 // the GPU upload (`CellBuffer.setCell*` always writes `bg[..+3] = 255`, so a
 // written cell's bg alpha is already 255 the moment it's drawn - `clear()`
-// just has to zero it back out, no separate packing step needed).
+// just has to zero it back out, no separate packing step needed). UI-XHAIR-01
+// adds a third mask value via `setGlyph` (bg alpha 128 = glyph-only) - see
+// GLYPH_BG_ALPHA below.
 
 import { CellBuffer } from '../render/CellBuffer.js';
 
 export const UI_GRID_ASPECT = 3 / 8; // matches engine/core/engine.js's GRID_ASPECT
 export const UI_GRID_MIN_COLS = 96;
 export const UI_GRID_MAX_COLS = 320;
+
+// UI-XHAIR-01 (docs/backlog.md): the bg-alpha byte that marks a "glyph-only"
+// UI cell - draw the glyph + fg over the scene's background colour, NOT a
+// black box. The three mask states (read by BOTH present paths):
+//   0   = fully transparent (nothing written - `clear()`)
+//   255 = opaque cell (bg + glyph as today, every existing UI cell)
+//   128 = glyph-only (glyph + fg over the scene bg - only the crosshair uses it)
+export const GLYPH_BG_ALPHA = 128;
 
 /** Clamps `cols` to [96, 320] - the range the architecture note (17.1) calls for. */
 export function clampUiCols(cols) {
@@ -37,7 +47,8 @@ export function clampUiCols(cols) {
 
 /**
  * @typedef {{cols:number, rows:number, cells:CellBuffer, sx:number, sy:number,
- *   setCell:Function, setCellRGB:Function, clear:Function, bindScene:Function}} UiLayer
+ *   setCell:Function, setCellRGB:Function, setGlyph:Function, clear:Function,
+ *   bindScene:Function}} UiLayer
  */
 
 /**
@@ -62,6 +73,18 @@ export function createUiLayer(uiGrid) {
     // RenderTarget's), used by every hot UI drawer (panel.js, richText.js).
     setCellRGB(x, y, glyphIdx, r, g, b, r2, g2, b2) {
       cells.setCellRGB(x, y, glyphIdx, r, g, b, r2, g2, b2);
+    },
+
+    // UI-XHAIR-01: glyph-only cell (glyph + fg, no bg box). `setCell` writes
+    // an opaque cell (bg alpha 255); the single extra byte write below flips
+    // the mask to GLYPH_BG_ALPHA (128), which both present paths read as
+    // "draw the glyph, keep the scene's background colour". Opaque UI cells
+    // (prompt plate/text, panels, ...) keep calling setCell/setCellRGB and
+    // stay 255 - only the crosshair uses this.
+    setGlyph(x, y, glyph, fg) {
+      if (x < 0 || x >= cols || y < 0 || y >= rows) return;
+      cells.setCell(x, y, glyph, fg, '#000000');
+      cells.bg[(y * cols + x) * 4 + 3] = GLYPH_BG_ALPHA;
     },
 
     // Per-frame reset to fully transparent (mask=0), never allocates. Unlike

@@ -6,6 +6,8 @@ One line per trial item, per `DEEPSEEK.md`. Order taken from `docs/pc-b-queue.md
 |---|---|---|---|---|---|---|
 | 2026-10-06 | TOWER-BOULDER-01 | deepseek-flash (agent: DSH) | off-peak (00:13 CEST = 22:13 UTC) | 0 code-test failures. 1 environment retry: the first `capture-browser --mode gpucompare` timed out because a `route-walk-browser` run was still using the GPU; the same command run alone finished in 60 s. | owner: fill in from the DeepSeek dashboard | not yet (row is `testing`) |
 | 2026-10-06 | ED-PLACE-BUG | deepseek-v4-pro (agent: DSH) | off-peak | 0 code-test failures. Root cause needed a live-browser repro (DOM `dispatchEvent` swallows listener exceptions, which hid the real `TypeError`); the fix itself passed its suites first try. | owner: fill in from the DeepSeek dashboard | not yet |
+| 2026-10-06 | UI-XHAIR-01 | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; subagent pass reviewed by the main session. | owner: fill in from the DeepSeek dashboard | not yet (row `arch-review`) |
+| 2026-10-06 | READ-01 | deepseek-v4-pro (subagent) | off-peak | 0 code-test failures; subagent finished all but noteRead.test.js, which the main session wrote (1 assertion fix). Main session also fixed a perf-test fake (`setGlyph`) and the crosshair size source (`rt.sx`). | owner: fill in from the DeepSeek dashboard | not yet |
 
 ## Notes for this item
 

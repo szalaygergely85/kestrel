@@ -245,7 +245,37 @@
     // greener than `gold` (#ffd24a, the [E] key colour); alertLight = the 6-step pop, alertDark = spare outline/shadow.
     alertLight: '#fff6c4',
     alert: '#ffd23a',
-    alertDark: '#8a6a10'
+    alertDark: '#8a6a10',
+    // ART-02a (v1.38, owner-approved ART-REF-01 `preview/art-ref.html`, architecture.md 37.18): the LOOK colours for the
+    // `timeOfDay.afternoon` / `.evening` records (sky gradient, hemisphere sky/ground, shadow tint, haze, clouds) and the
+    // lantern / window light presets. Hex = the art-ref NEW table, unchanged. Material remap colours = ART-02b (later).
+    // Rule (37.18): a look's haze.far === its sky[t=0] colour (skyCyanHorizon / skyEveHorizon), so hills melt into the sky.
+    // Day sky / air / light (panel A, warm afternoon):
+    skyCyanTop: '#1c95e0',       // day zenith: clear cyan-blue (sky only; mana #4c84f2 stays the UI blue)
+    skyCyanMid: '#52beef',       // day sky middle
+    skyCyanHorizon: '#c8ecf3',   // day horizon = afternoon haze.far
+    cloudWhite: '#fbfdff',       // painterly cloud tops (bg carries the body)
+    cloudShade: '#b6cde2',       // cloud undersides: cool, never grey
+    sunAfternoon: '#fff0c4',     // warm afternoon sun, I 1.15 @ elev 42
+    sunRay: '#fff4c8',           // sun shafts (engine: not yet; spare)
+    ambientSky: '#8ab8e6',       // outdoor sky fill = hemisphere top, I 0.40
+    bounceGrass: '#86a852',      // ground bounce = hemisphere bottom, I 0.12
+    hazeWarm: '#efe6c6',         // distance haze near colour: warm, pale
+    // Evening sky / air / light (panel B, low evening):
+    sunEvening: '#ffa24c',       // low evening sun, I 0.95 @ elev 12
+    ambientEvening: '#6a5a92',   // evening sky fill: violet, I 0.30
+    bounceEvening: '#7c5c42',    // warm ground bounce, I 0.10
+    shadowPurple: '#4a3048',     // shadow tint target (purple-brown), k 0.35
+    hazeEvening: '#e4a682',      // evening haze: warm peach, not dark
+    skyEveTop: '#3e3c86',        // evening zenith
+    skyEveMid: '#c4708a',        // evening sky middle
+    skyEveHorizon: '#ffc07a',    // evening horizon = evening haze.far
+    cloudEve: '#ffcf9e',         // evening cloud tops
+    cloudEveShade: '#9a6a8e',    // evening cloud undersides
+    // Lamps (light presets lanternHang / windowGlow; emissive glass):
+    lanternWarm: '#ffc456',      // hanging lantern glass + light (oranger + paler-low than gold/alert: world light, not UI)
+    lanternCore: '#fff2b4',      // lantern flame core
+    windowGlow: '#ffb446'        // lit window glass + spill
   };
 
   // ---------------------------------------------------------------------------
@@ -352,7 +382,14 @@
     fireballFlash:    { color: 'flameCore', intensity: 1.6, type: 'point', radius: 6, falloff: 'smooth', durationMs: 150 },
     fireballFlashBig: { color: 'flameCore', intensity: 2.0, type: 'point', radius: 8, falloff: 'smooth', durationMs: 150 },
     spellEmber:       { color: 'flameMid', intensity: 0.35, type: 'point', radius: 2.0, falloff: 'smooth',
-                        flicker: { hzMin: 9, hzMax: 14, amount: 0.12, jitter: 0.04 } }
+                        flicker: { hzMin: 9, hzMax: 14, amount: 0.12, jitter: 0.04 } },
+    // ART-02a (v1.38, ART-REF-01 panel B): a lantern hanging OUTDOORS on a house rail / door bracket (warm, brighter than
+    // the tower hook lamp 0.55 / 3.5 m because it fights the evening hemi ambient), and the warm spill of a lit window
+    // (small pool on the facade below the glass; the glass itself is emissive windowGlow). Not placed yet.
+    lanternHang: { color: 'lanternWarm', intensity: 0.9, type: 'point', radius: 3.0, falloff: 'smooth',
+                   flicker: { hzMin: 6, hzMax: 10, amount: 0.08, jitter: 0.02 } },
+    windowGlow:  { color: 'windowGlow', intensity: 0.35, type: 'point', radius: 1.2, falloff: 'smooth',
+                   flicker: { hzMin: 3, hzMax: 6, amount: 0.05, jitter: 0.01 } }
   };
 
   // ---------------------------------------------------------------------------
@@ -379,7 +416,30 @@
                cloud: 'cloudDusk', fog: 'fogDusk' },
     night:   { ambient: 'ambientNight', ambientI: 0.06, sun: 'moon',    sunI: 0.25, sunElev: 40,
                sky: [{ t: 0, c: 'skyNightHorizon' }, { t: 0.3, c: 'skyNightMid' }, { t: 1, c: 'skyNightTop' }],
-               cloud: 'cloudNight', fog: 'fogNight' }
+               cloud: 'cloudNight', fog: 'fogNight' },
+    // ART-02a (v1.38): the two ART-REF-01 looks (architecture.md 37.18 item 2). Base fields as `morning` (read by today's
+    // code: sunFromWorld ambientI/sunI, sky gradient, cloud tint); the optional `hemi` / `haze` / `clouds` blocks are read
+    // by engine/render/look.js once ART-01/03/04 land (ignored until then). Opt in with `?look=afternoon` / `?look=evening`;
+    // `defaultTime` stays 'morning' until ART-ON (owner look). Units: I = intensity, sunElev deg, haze start/full metres,
+    // sky t 0 = horizon .. 1 = zenith (mid stop 0.45 = art-ref "55 % down"), clouds.wind = deck units per second.
+    afternoon: { ambient: 'ambientSky', ambientI: 0.40, sun: 'sunAfternoon', sunI: 1.15, sunElev: 42,
+                 sky: [{ t: 0, c: 'skyCyanHorizon' }, { t: 0.45, c: 'skyCyanMid' }, { t: 1, c: 'skyCyanTop' }],
+                 cloud: 'cloudWhite', fog: 'fog',
+                 hemi:   { sky: 'ambientSky', skyI: 0.40, ground: 'bounceGrass', groundI: 0.12, shadowTint: null, shadowK: 0,
+                           sunFromLook: true, terrainTintK: 0.6 },
+                 haze:   { near: 'hazeWarm', far: 'skyCyanHorizon', start: 15, full: 700, curve: 0.65, max: 0.78,
+                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+                 clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                           wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } },
+    evening:   { ambient: 'ambientEvening', ambientI: 0.30, sun: 'sunEvening', sunI: 0.95, sunElev: 12,
+                 sky: [{ t: 0, c: 'skyEveHorizon' }, { t: 0.45, c: 'skyEveMid' }, { t: 1, c: 'skyEveTop' }],
+                 cloud: 'cloudEve', fog: 'fogDusk',
+                 hemi:   { sky: 'ambientEvening', skyI: 0.30, ground: 'bounceEvening', groundI: 0.10, shadowTint: 'shadowPurple',
+                           shadowK: 0.35, sunFromLook: true, terrainTintK: 0.6 },
+                 haze:   { near: 'hazeEvening', far: 'skyEveHorizon', start: 10, full: 400, curve: 0.7, max: 0.6,
+                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+                 clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                           wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } }
   };
 
   // ---------------------------------------------------------------------------

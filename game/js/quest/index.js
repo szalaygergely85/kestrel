@@ -15,6 +15,7 @@ import { swordTake } from './swordTake.js';
 import { beaconLight } from './beacon.js';
 import { questEnd } from './end.js';
 import { request as requestHint } from './hints.js';
+import { noteRead } from './noteRead.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -23,6 +24,7 @@ export const QUEST_BEHAVIOURS = {
   'quest.end': 'US-017',
   'hint.show': 'US-015',
   'sword.take': 'US-078c',
+  'note.read': 'READ-01',
 };
 
 const logged = new Set();
@@ -59,6 +61,7 @@ const REAL_BEHAVIOURS = {
   'quest.end': questEnd,
   'hint.show': hintShow,
   'sword.take': swordTake,
+  'note.read': noteRead,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */
