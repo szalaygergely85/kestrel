@@ -155,6 +155,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     ...(towerDef.interactables || []).map((i) => i.interact),
     ...(towerDef.triggers || []).map((t) => t.trigger),
     ...(worldM1.triggers || []).map((t) => t.trigger),
+    'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
   ]);
   ok('quest/index.js registers exactly the names the tower + world_m1 data references',
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);
