@@ -72,6 +72,16 @@ const trunkTris = (x) => x.colliders.find((c) => c.id === 'scatter:trunks');
 ok('trunk collider rebuilt (new object, same triangle count)', trunkTris(w) && trunkTris(f) && trunkTris(w).bvh && trunkTris(w).bvh.triCount === trunkTris(f).bvh.triCount, 'tri count');
 ok('ground-snapped z == fresh load', w._groundSnap.every((g) => Object.is(w.entity(g.id).transform.z, f.entity(g.id).transform.z)));
 ok('terrain bounds exact == fresh', T.near.minH === f.terrain.near.minH && T.near.maxH === f.terrain.near.maxH && T.farMaxH === f.terrain.farMaxH && T.farMinH === f.terrain.farMinH);
+// item 4: a moved ground prop re-snaps at its CURRENT x/y, not the load-time spot
+{
+  const g = w._groundSnap[0], e = w.entity(g.id);
+  e.transform.x = g.x + 30; e.transform.y = g.y + 10;
+  const r2 = {};
+  applyDab(layer, T, 'raise', e.transform.x, e.transform.y, 8, 2, r2);
+  T.rebakeRect(r2.i0 * 2, r2.j0 * 2, r2.i1 * 2, r2.j1 * 2);
+  w.refreshTerrainScatter();
+  ok('moved ground prop: z follows the new spot', Object.is(e.transform.z, T.groundAt(e.transform.x, e.transform.y)) && !Object.is(e.transform.z, T.groundAt(g.x, g.y)), `${e.transform.z} vs ${T.groundAt(e.transform.x, e.transform.y)}`);
+}
 void groundIds; void sx; void sy;
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((x) => console.error('FAIL:', x)); process.exit(1); }

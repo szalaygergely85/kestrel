@@ -342,7 +342,16 @@
   // module-global like the structure injection; Terrain's constructor always sets it (null = none).
   var EDITS = null;
   function setEditLayer(layer) { EDITS = layer || null; }
+  function getEditLayer() { return EDITS; }
   // The delta is added BEFORE structureBlend, so a structure's ring handover stays exact.
+  // baseHeightAt = stamps + delta WITHOUT the structure blend: what flatten/smooth must read (inside a footprint
+  // structureBlend ignores the delta, so reading heightAt there makes the brush run away).
+  function baseHeightAt(x, y) {
+    checkXY('baseHeightAt', x, y);
+    var h = applyStamps(recipeHeight(x, y), x, y);
+    if (EDITS !== null) h += EDITS.heightDelta(x, y);
+    return h;
+  }
   function heightAt(x, y) {
     checkXY('heightAt', x, y);
     var h = applyStamps(recipeHeight(x, y), x, y);
@@ -393,7 +402,7 @@
   function chunkKey(x, y) { return Math.floor(x / DEF.chunk.size) + ',' + Math.floor(y / DEF.chunk.size); }
 
   DEF.util = {
-    heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight, setEditLayer: setEditLayer,
+    heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight, setEditLayer: setEditLayer, getEditLayer: getEditLayer, baseHeightAt: baseHeightAt,
     generate: generate, bake: bake, bakeChunk: bakeChunk, gridHeight: gridHeight, chunkKey: chunkKey,
     reindexOverrides: indexOverrides, hash: hash, fbm: fbm, riverX: riverX, pathDist: pathDist
   };

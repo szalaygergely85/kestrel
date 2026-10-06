@@ -100,13 +100,27 @@ export class Terrain {
     this._groundNormalScratch = { x: 0, y: 0, z: 1 };
   }
 
+  /** The recipe's edit layer is module-global: re-bind THIS terrain's layer before any call into the recipe (two Terrains, one recipe). */
+  _bindEdits() {
+    const u = this.util;
+    if (u.getEditLayer && u.getEditLayer() !== this.edits) u.setEditLayer(this.edits);
+  }
+
+  /** Installs (or clears with null) the edit layer, e.g. the editor when no edits file exists. Callers re-bake what they need. */
+  setEdits(layer) {
+    this.edits = layer || null;
+    this._bindEdits();
+  }
+
   /** Analytic height (meters) at any real (x, y) - near-LOD quality everywhere. */
   heightAt(x, y) {
+    this._bindEdits();
     return this.util.heightAt(x, y);
   }
 
   /** Analytic terrain type id at any real (x, y). */
   typeAt(x, y) {
+    this._bindEdits();
     return this.util.typeAt(x, y);
   }
 
@@ -166,6 +180,7 @@ export class Terrain {
    * escape bounds, mirrors `farMaxH`).
    */
   bakeNearBand(cx, cy) {
+    this._bindEdits();
     const n = this.chunkSize / this.nearCell; // 64 near-cells per 128 m chunk
     const w = 3 * n, h = 3 * n;
     const x0 = (cx - 1) * this.chunkSize;
@@ -201,6 +216,7 @@ export class Terrain {
    * @returns {{i0:number,j0:number,i1:number,j1:number}|null} the near dirty rect (band-local) or null
    */
   rebakeRect(x0, y0, x1, y1) {
+    this._bindEdits();
     if (this.nearReady) this._chunks.fill(null), this._centerCx = null; // 3x3 chunk cache is stale now
     const eps = (this.recipe.recipe && this.recipe.recipe.slopeEps) || this.nearCell;
     const g = this.near;
@@ -348,6 +364,7 @@ export class Terrain {
 
   /** Bakes the whole far grid synchronously (test/checksum oracle - AC "bit-identical to a synchronous bake"). */
   bakeFarSync() {
+    this._bindEdits();
     const G = this.util.generate();
     this.farH.set(G.height);
     this.farType.set(G.type);
@@ -367,6 +384,7 @@ export class Terrain {
    * chunk, not a whole row.
    */
   bakeFarStep(msBudget = 2) {
+    this._bindEdits();
     if (this.farReady) return;
     const t0 = now();
     const w = this.mapW, cell = this.mapCell;
@@ -465,6 +483,7 @@ export class Terrain {
 
   /** Bakes queued chunks, spending at most `msBudget` ms this call. */
   bakeChunkStep(msBudget = 5) {
+    this._bindEdits();
     const t0 = now();
     while (this._chunkQueue.length && now() - t0 < msBudget) {
       const { cx, cy } = this._chunkQueue.shift();

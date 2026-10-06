@@ -935,7 +935,7 @@ export class World {
     for (const g of this._groundSnap) {
       const e = this._entities.get(g.id);
       if (!e) continue;
-      const z = terrain.groundAt(g.x, g.y);
+      const z = terrain.groundAt(e.transform.x, e.transform.y);
       if (e.transform.z !== z) { e.transform.z = z; snapped++; }
     }
     if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }

@@ -144,6 +144,12 @@ function isEmptyChunk(c) {
 
 function smooth01(d, r) { const t = d >= r ? 1 : d <= 0 ? 0 : d / r; return 1 - t * t * (3 - 2 * t); } // 1 centre -> 0 at r (recipe smooth())
 
+/** Height the brush edits against: the recipe's `baseHeightAt` (no structure blend) when present, else `heightAt`. */
+export function editHeightAt(terrain, x, y) {
+  const u = terrain.util;
+  return u && typeof u.baseHeightAt === 'function' ? u.baseHeightAt(x, y) : terrain.heightAt(x, y);
+}
+
 /**
  * Applies one brush dab, editing `dh` so the TOTAL height moves (reads `terrain.heightAt`, which
  * must already see this layer through the recipe hook). Ops:
@@ -155,20 +161,22 @@ function smooth01(d, r) { const t = d >= r ? 1 : d <= 0 ? 0 : d / r; return 1 - 
  */
 export function applyDab(layer, terrain, op, x, y, r, strength, outRect, target) {
   const cell = layer.cell;
-  const i0 = Math.ceil((x - r) / cell), i1 = Math.floor((x + r) / cell);
-  const j0 = Math.ceil((y - r) / cell), j1 = Math.floor((y + r) / cell);
+  // Paint samples are cell CENTRES ((i+0.5)*cell, see typePaint); height samples are lattice points (i*cell).
+  const o = op === 'paint' ? 0.5 : 0;
+  const i0 = Math.ceil((x - r) / cell - o), i1 = Math.floor((x + r) / cell - o);
+  const j0 = Math.ceil((y - r) / cell - o), j1 = Math.floor((y + r) / cell - o);
   if (outRect) { outRect.i0 = i0; outRect.j0 = j0; outRect.i1 = i1; outRect.j1 = j1; }
   if (i1 < i0 || j1 < j0) return false;
   let changed = false;
   if (op === 'paint') {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      if (Math.hypot(i * cell - x, j * cell - y) > r) continue;
+      if (Math.hypot((i + 0.5) * cell - x, (j + 0.5) * cell - y) > r) continue;
       if (sampleType(layer, i, j) !== strength) { setSampleType(layer, i, j, strength); changed = true; }
     }
     return changed;
   }
   const w = i1 - i0 + 1, h = j1 - j0 + 1, add = new Float64Array(w * h);
-  if (op === 'flatten' && target === undefined) target = terrain.heightAt(x, y);
+  if (op === 'flatten' && target === undefined) target = editHeightAt(terrain, x, y);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const px = i * cell, py = j * cell, d = Math.hypot(px - x, py - y);
     if (d > r) continue;
@@ -176,11 +184,11 @@ export function applyDab(layer, terrain, op, x, y, r, strength, outRect, target)
     let dm; // metres
     if (op === 'raise') dm = strength * f;
     else if (op === 'lower') dm = -strength * f;
-    else if (op === 'flatten') dm = (target - terrain.heightAt(px, py)) * strength * f;
+    else if (op === 'flatten') dm = (target - editHeightAt(terrain, px, py)) * strength * f;
     else if (op === 'smooth') {
       let sum = 0;
-      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) sum += terrain.heightAt(px + di * cell, py + dj * cell);
-      dm = (sum / 9 - terrain.heightAt(px, py)) * strength * f;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) sum += editHeightAt(terrain, px + di * cell, py + dj * cell);
+      dm = (sum / 9 - editHeightAt(terrain, px, py)) * strength * f;
     } else throw new Error(`terrainEdits: unknown op "${op}"`);
     add[(i - i0) + (j - j0) * w] = dm * 100;
   }
