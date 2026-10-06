@@ -17,6 +17,7 @@ Done 2026-10-06 (round 1): TOWER-BOULDER-01 (Flash), ED-PLACE-BUG (V4 Pro) - $0.
 | 2 | **READ-01** readable notes: register `note.read`, apply `ASSETS.levelPatch.towerNotes`, paused read panel from `uiStyle.note`, notes.js script tag (game + editor), update tower/content-smoke/restart tests | ~0.5 d, game/UI | backlog row READ-01, design/models/notes.js, design/preview/notes.html | owner walk-test (screenshot check from AGENTS.md!) |
 | 3 | **US-079b0** engine seams for boar death: `voxel.hidden` flag skipped by the voxel renderer + `World.addInteractable` / `removeInteractable` | ~0.3 d, engine | architecture 37.16, backlog row | arch-review |
 | 4 | **US-079b** boar HP, hurt flash/flinch, death roll, lootable corpse (no loot yet), respawn on reset | ~0.75 d, game | architecture 37.16, sprint-6.md, design/models/voxel_beast.js (`boarFx`) | arch-review + owner walk-test |
+| 4b | **ED-DND-01** editor drag and drop from the Assets tab into the viewport (ghost marker at the snapped point, drop = same `placeAt` path, one undo) | ~0.5 d, tools/editor | backlog row ED-DND-01 | main-session check + owner try |
 | 5 | Filler if time is left: Quaternius imports that need no alpha cutout (dead trees, rocks, pebbles, rock paths, mushrooms, grass) via `tools/gltf-import.mjs --uv planar --mats`, into `content/meshes/quaternius/`, + THIRD_PARTY_NOTICES.md line (CC0) | ~0.5 d, tools/content | architecture 37.17 "imports now" list | main-session check |
 
 Stop after item 4 if the day is over; log each item in the trial log before starting the next.
