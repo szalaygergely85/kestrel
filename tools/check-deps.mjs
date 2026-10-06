@@ -16,7 +16,7 @@
 //      findings (outside comments).
 //   3. game/**/*.js and tools/**/*.js: an import that resolves inside
 //      engine/ must be exactly engine/index.js (deep imports are findings).
-//   4. design/**/*.js: any import/export statement is a finding.
+//   4. design/**/*.js: any import/export statement is a finding (except design/preview/lib/**: preview-only ES-module helpers).
 //   5. JSDoc `import('...')` inside comments is ignored (comments are
 //      stripped before rule 1/2/3 scan).
 //   6. tools/editor/**/*.js: an import that resolves inside game/ is a
@@ -271,6 +271,10 @@ function checkConsumerFile(file, src) {
 
 function checkDesignFile(file, src) {
   filesScanned++;
+  // Exception (PC-A 2026-10-06): design/preview/lib/** are preview-only ES-module helpers (e.g. the CPU voxel marcher
+  // ME-19b removed from the engine). Only design/preview/*.html loads them, and those pages import engine/ modules
+  // directly already; nothing in engine/, game/ or the content pipeline may import them.
+  if (rel(file).startsWith('design/preview/lib/')) return;
   const stripped = stripComments(src);
   const patterns = [
     /^\s*import\b/gm,
