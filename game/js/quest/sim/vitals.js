@@ -41,6 +41,7 @@ export function createVitals(world, events, cfg, hooks) {
   let mana = null;        // player.components.mana (same reference as the live entity's), US-080b
   let spawnDefault = null; // player's transform at the very first step() call, used when no save point is set
   let eyeHStart = 1.6;     // standing eyeH captured the instant death starts, for eyeH()'s sink lerp
+  let lastSafe = null;     // VOID-RESPAWN-01: the last grounded, not-falling spot {x,y,z,yawDeg,tick}
   let tick = 0;
 
   const sim = {
@@ -173,6 +174,21 @@ export function createVitals(world, events, cfg, hooks) {
     if (!sim.dead) {
       if (health.invuln > 0) health.invuln--;
       checkFall(player);
+      // VOID-RESPAWN-01: capture the last safe (grounded, not falling) spot, and if the player falls out of the
+      // world (past lastSafe.z - voidFallM, e.g. the BUG-GONDOLA-FALL z=-1977), teleport back with no damage.
+      const t = player.transform;
+      const body = player.components && player.components.body;
+      if (body && body.grounded && !body.fallDistance) {
+        if (!lastSafe || tick - lastSafe.tick >= cfg.voidSafeIntervalSteps) {
+          lastSafe = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg, tick };
+        }
+      }
+      if (lastSafe && t.z < lastSafe.z - cfg.voidFallM) {
+        t.x = lastSafe.x; t.y = lastSafe.y; t.z = lastSafe.z;
+        if (typeof lastSafe.yawDeg === 'number') t.yawDeg = lastSafe.yawDeg;
+        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; }
+        health.invuln = cfg.invulnSteps; // no damage, just the invuln window
+      }
       if (health.hp === 0) enterDead();
       // US-080b mana regen: paused `pause` steps after any spend, else +1 mp every `manaRegenSteps` steps.
       if (mana.pause > 0) mana.pause--;

@@ -11,6 +11,10 @@ export const VITALS_DEFAULTS = Object.freeze({
   fallThreshold10m: 10,  // m, the bigger fall damage threshold
   fallDamage10m: 10,     // hp, damage for a fall > fallThreshold10m
   knockbackSpeed: 2,     // m/s, added to the player's body velocity away from the hit's source, once per hit
+
+  // ---- VOID-RESPAWN-01 ----
+  voidFallM: 30,          // m, if the player falls this far below the last safe spot, teleport back (no damage)
+  voidSafeIntervalSteps: 30, // steps, re-capture the safe spot (grounded, not falling) this often (0.5 s @ 60 Hz)
   sinkSteps: 48,         // steps, death timeline: sink phase length
   fadeSteps: 90,         // steps, death timeline: fade phase length (after sink, before cardReady)
 

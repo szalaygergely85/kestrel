@@ -351,6 +351,28 @@ function scriptedRun() {
   ok('tick is the number of step() calls so far', vitals.tick === 3, `tick=${vitals.tick}`);
 }
 
+// ---- VOID-RESPAWN-01: falling out of the world returns you to the last safe spot ----
+{
+  const world = buildWorld([playerEntity(5, 6, 7)]);
+  const events = makeEvents();
+  const vitals = createVitals(world, events, CFG, {});
+  const player = world.get('player').data;
+  vitals.step(player, false); // grounded at (5,6,7) -> captures the safe spot
+  for (let i = 0; i < CFG.voidSafeIntervalSteps; i++) vitals.step(player, false); // stays grounded, keeps refreshing
+  // Simulate a fall out of the world (grounded false, far below the safe spot).
+  player.components.body.grounded = false;
+  player.transform.z = 7 - CFG.voidFallM - 10;
+  vitals.step(player, false);
+  ok('a fall past voidFallM restores the last safe spot', player.transform.x === 5 && player.transform.y === 6 && Math.abs(player.transform.z - 7) < 1e-9,
+    `z=${player.transform.z}`);
+  ok('restore zeroes velocity and re-grounds', player.components.body.vx === 0 && player.components.body.vy === 0 && player.components.body.vz === 0 && player.components.body.grounded === true);
+  ok('restore deals no damage (full HP)', vitals.hp === CFG.maxHp);
+  // A normal small drop never triggers it.
+  player.transform.z = 7 - 2; player.components.body.grounded = false;
+  vitals.step(player, false);
+  ok('a normal drop below 30 m does not teleport', player.transform.z === 5);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
