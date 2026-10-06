@@ -23,6 +23,9 @@ Done 2026-10-05/06: PROP-COLLIDE-01b, TOWER-BOULDER-01, ED-PLACE-BUG. **DeepSeek
 - **BUG-GONDOLA-FALL** (P0, Codex, physics): fell into the solid gondola and out of the world - see the row.
 - **VOID-RESPAWN-01** (P1, DeepSeek OK): falling far below the world puts you back at the last safe spot.
 
+- **US-079b fixes** (ARCH CHANGES 2026-10-06, see the row): reset frame/t/loop on every clip change + elapsed-ms -> frame for `die`/`sink` (Node test: die at 250 ms = frame 2, t 50); store/restore/save `homeZ` so a respawned boar is not 0.3 m low. Then a fresh opus re-review of that diff only. (DeepSeek OK)
+- **CLOTH-DRAPE-01** real hanging balloon cloth in the stairwell: the exact `cloths[]` entry is in the row (anchor on step I lip, 8x10 nodes, pins, holes, 2 step-column colliders). Mesh route walk only (dda is frozen). Owner look from the ground and steps H/I. (DeepSeek OK)
+
 ## 2. Sprint 6 - boar demo (`docs/sprints/sprint-6.md`)
 Lane A: **US-079b0** (engine: `voxel.hidden`, add/removeInteractable) -> **US-079b** (boar HP, hurt, death, lootable corpse) -> **US-079c** (fight readability, BUG-BOAR-OVERLAP) -> **US-091a1** (inventory data) -> **US-091a2** (loot on E, toast) -> **US-091b** (inventory screen).
 Lane B: **HANDS-01a** (view-model model mirror + winding flip; see the 37.8a erratum about `swordForHand`) -> **HANDS-01b** (LMB/RMB input router, `?demo=0`) -> **HANDS-01c** (spell-hand idle, `handsSwapped` pose) -> **SPELL-01a** (fireball sim) -> **SPELL-01b** (fireball look).
