@@ -1,5 +1,16 @@
 # Kestrel – Product Backlog
 
+> **PC-B handoff 2026-10-06 (night):** The whole DeepSeek trial list is cleared. Boars have HP and die; the editor
+> has drag-and-drop AND asset folders; the crosshair/notes are in; 35 Quaternius models are imported; and the ART
+> look engine's JS foundation (look/roof map + clouds) is in, default OFF so nothing visibly changed yet.
+>
+> Done this session (all pushed): TOWER-BOULDER-01, ED-PLACE-BUG, UI-XHAIR-01, READ-01, US-079b0, US-079b,
+> ED-DND-01, ED-FOLDERS-01, Quaternius imports, ART-01a, ART-04a. 230/230 suites pass; mesh route reaches the ending.
+>
+> For review/owner: US-079b0 + US-079b + ART-01a + ART-04a (arch-review); ED-DND-01 + ED-FOLDERS-01 (owner try);
+> TOWER-BOULDER-01 / ED-PLACE-BUG / UI-XHAIR-01 / READ-01 (owner-OK'd). Trial log: docs/test-reports/deepseek-trial.md.
+> Remaining ART steps (01b/c, 03a/b, 04b) are Codex/PC-A.
+
 > **PC-B handoff 2026-10-06:** Two owner-visible UI items are done. The crosshair is bigger on large windows
 > (3x3 open cross at 320+ scene cols) and no longer has a black box behind it. The tower's wall writing is now
 > 4 readable notes - walk up and press E to open a paper page, Esc/E to close.
