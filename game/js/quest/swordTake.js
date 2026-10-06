@@ -25,6 +25,19 @@
 // the prop gone across a save round trip, which this story's own required
 // test demands.
 //
+// US-091a1 (architecture.md 37.16.4): taking the sword also puts it in the pack (`addItem`) and into the
+// left hand (or the right, if the left is taken). Item defs come from `design/items.js` -> `ASSETS.items`,
+// read off the global like main.js reads `window.ASSETS.viewModels`/`swordForHand` (a named behaviour cannot
+// see `ASSETS` any other way - `engine.assets` is the AssetRegistry, which does not carry `.items`). The
+// fallback `{}` keeps `addItem` a no-op rather than a crash if items.js ever fails to load.
+import { ensureInventory, addItem } from './sim/inventory.js';
+
+const EMPTY_START = { pack: [], left: null, right: null };
+
+function itemDefs() {
+  return (globalThis.ASSETS && globalThis.ASSETS.items && globalThis.ASSETS.items.defs) || {};
+}
+
 // Carried-light offset collision (architecture.md 30.1): the lantern's
 // carried light and a drawn sword view model would otherwise sit on the same
 // (right) side of the screen. Taking the sword nudges an EXISTING carried
@@ -41,6 +54,14 @@ export function swordTake(ctx) {
     if (light) {
       actor.setComponent('light', { ...light, offset: { ...light.offset, right: -0.3 } });
     }
+
+    // US-091a1 (37.16.4): sword in the pack + left hand if empty (else right). `ensureInventory` only
+    // creates the component when it is missing, so a restart with the sword already in the pack never
+    // duplicates it; main.js seeds the demo pack before any interaction can fire here anyway.
+    const inv = ensureInventory(actor.data, EMPTY_START);
+    addItem(inv, itemDefs(), 'sword', 1);
+    if (inv.left === null) inv.left = 'sword';
+    else if (inv.right === null) inv.right = 'sword';
   }
 
   return true;
