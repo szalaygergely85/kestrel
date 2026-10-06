@@ -634,7 +634,8 @@
   var GONDOLA_CLOTH = { w: 'canvas', R: 'canvas_light', b: 'gore_red', B: 'rope', d: 'canvas_dark', v: 'canvas_burnt' };
   function gondolaMats(G) {
     var o = matsOf(G), k;
-    for (k in GONDOLA_CLOTH) if (o[k]) o[k] = GONDOLA_CLOTH[k];
+    // owner 2026-10-06: the cloth request meant the BALLOON fabric, not the basket - basket keeps its original materials.
+    if (A.gondolaClothRecolour) for (k in GONDOLA_CLOTH) if (o[k]) o[k] = GONDOLA_CLOTH[k];
     return o;
   }
   function gondolaTilt() { return { rot: [8, 0, 0], pos: [0, 0, -1] }; }
