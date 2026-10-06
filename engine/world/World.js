@@ -23,6 +23,13 @@ import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
 import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
 import { waveHeight } from './waves.js';
+import { editLayerFromJSON } from './terrainEdits.js';
+
+// ED-TERRAIN-1a: the registry's edits-file body for a terrain key -> a layer (null = none / stub registry).
+function terrainEditsFor(assets, key) {
+  const body = assets && typeof assets.terrainEdits === 'function' ? assets.terrainEdits(key) : null;
+  return body ? editLayerFromJSON(body) : null;
+}
 
 // Default answer for `World#outsideSector` when the world has no terrain at
 // all (`def.terrain` is null - `?level=test_room`'s ephemeral world): a
@@ -316,7 +323,7 @@ export class World {
       w.terrainKey = def.terrain;
       // ED-MESH-1a (31.2): reuse a passed Terrain baked from the same recipe (a prop-only editor reload keeps the bake).
       const recipe = assets.terrain(def.terrain);
-      w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe);
+      w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe, { edits: terrainEditsFor(assets, def.terrain) });
       // Keep the old canopy until the recipe supplies real-tree content.
       w.terrain.realTrees = opts.realTrees === true && !!recipe.recipe?.forest?.trees;
     }

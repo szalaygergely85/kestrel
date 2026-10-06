@@ -23,7 +23,7 @@ function now() {
 export class Terrain {
   /**
    * @param {Object} recipe - `assets.terrain(key)` (design/levels/overworld_far.js shape).
-   * @param {{structures?: Array, realTrees?: boolean}} [opts]
+   * @param {{structures?: Array, realTrees?: boolean, edits?: Object}} [opts]  edits: a TerrainEditLayer (engine/world/terrainEdits.js)
    */
   constructor(recipe, opts = {}) {
     if (!recipe || !recipe.util || typeof recipe.util.heightAt !== 'function') {
@@ -32,6 +32,10 @@ export class Terrain {
     this.recipe = recipe;
     this.util = recipe.util;
     this.realTrees = opts.realTrees === true;
+    // ED-TERRAIN-1a (arch 37.12): the recipe's edit layer is module-global, so ALWAYS set it here
+    // (a Terrain built without edits clears a previous one). Recipes without the hook are untouched.
+    this.edits = opts.edits || null;
+    if (typeof recipe.util.setEditLayer === 'function') recipe.util.setEditLayer(this.edits);
 
     this.mapW = recipe.map.w;
     this.mapH = recipe.map.h;
