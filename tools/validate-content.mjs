@@ -51,7 +51,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, validateMesh } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, validateMesh, validateLook } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
@@ -276,6 +276,18 @@ export function validateContent(ASSETS, opts = {}) {
     ...((uiStyle && uiStyle.hints) || []).map((h) => h.id),
     ...((uiStyle && uiStyle.storyHints) || []).map((h) => h.id),
   ]);
+
+  // ---- 0. ART-01a look records (architecture.md 37.18 item 2) ----
+  // Every timeOfDay key's optional hemi/haze/clouds blocks run through
+  // engine/render/look.js's `validateLook` (colour keys exist, ranges sane, the
+  // haze.far === sky[0].c horizon rule). Errors are findings; the horizon
+  // mismatch is a WARNING (surfaced, not fatal). One `checks` per key, same
+  // "validate call = one check" convention as validateMesh above.
+  for (const key of Object.keys(palette.timeOfDay || {})) {
+    checks++;
+    const lookErrors = validateLook(palette, key, (m) => warnings.push(m));
+    for (const e of lookErrors) errors.push(e);
+  }
 
   // ---- 1. Level props: model/variant refs, lights, interactables, triggers ----
   for (const levelKey of Object.keys(levels)) {

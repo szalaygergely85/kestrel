@@ -90,7 +90,16 @@ function runGpuCompareShadeMode(ctx) {
 // so a second GPU pipeline compare mode never has to keep a hand-copied
 // pose list in sync with this one.
 function buildCompareRuns(ctx) {
-  const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep, rt } = ctx;
+  const { assets, matTable, engine, lightsEnabled, sunEnabled, compareNearStep, rt, params } = ctx;
+  // ART-01a (architecture.md 37.18 item 2): `?look=<key>` also honoured on the
+  // compare page - set the active look before the buildLightSet calls below, so
+  // every parity row (and the terrain sun) resolves the same look the real page
+  // would. Load-time only, idempotent with main.js's own block.
+  const lookParam = params.get('look');
+  if (lookParam && assets.palette && assets.palette.timeOfDay) {
+    if (assets.palette.timeOfDay[lookParam]) assets.palette.defaultTime = lookParam;
+    else console.warn(`[look] ?look=${lookParam} is not a timeOfDay key - using "${assets.palette.defaultTime}"`);
+  }
   function loadCompareWorld(def, opts = {}) {
     const w = World.load(def, assets, opts);
     for (const s of w.structures) {

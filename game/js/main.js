@@ -155,6 +155,19 @@ const bundle = await loadContentPack('../content/manifest.json');
 applyPlaytestOverlay(bundle);
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 
+// ART-01a (architecture.md 37.18 item 2): `?look=<key>` selects the active
+// timeOfDay record BEFORE `bindShading`/`buildLightSet`/the terrain sun read it
+// (load-time only - no runtime look switching, that is US-122). Unknown key ->
+// warn + keep the default.
+const lookParam = params.get('look');
+if (lookParam) {
+  if (assets.palette && assets.palette.timeOfDay && assets.palette.timeOfDay[lookParam]) {
+    assets.palette.defaultTime = lookParam;
+  } else {
+    console.warn(`[look] ?look=${lookParam} is not a timeOfDay key - using "${assets.palette && assets.palette.defaultTime}"`);
+  }
+}
+
 // US-045 (D-017 item 2): no playable CPU fallback any more. `?gpu=0` and
 // `?force2d=1` are dev/debug switches (D-017 item 3/4) and stay unaffected -
 // they intentionally force the JS/Canvas2D reference path even on hardware

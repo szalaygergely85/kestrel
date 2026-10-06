@@ -35,6 +35,7 @@ import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
+import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -42,6 +43,9 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 
 export const MAX_LIGHTS = 16;
+// ART-01a (37.18 item 3/8): `LIGHT.w` bit written once the hemi/haze light pass
+// lands (ART-01b). Exported now so the pixel code can land without touching this file's API.
+export const OUTDOOR_SHIFT = 19;
 const worldSunScratch = { elevation: 0, azimuth: 0, on: true };
 const hourSunScratch = { elevationDeg: 0, azimuthDeg: 0 };
 
@@ -115,6 +119,12 @@ export class LightSet {
   constructor() {
     this.ambient = new Float32Array(3);
     this.sun = { on: false, elevation: 0, azimuth: 0, dir: new Float32Array(3), col: new Float32Array(3) };
+    // ART-01a (37.18 item 3): allocated once. `hemi` = the hemisphere-ambient
+    // look state (off until `setLook` turns it on); `roof` = the roof map the
+    // light pass samples for indoor/outdoor (null until a look needs it, set by
+    // the game's per-frame roof bind in ART-01b).
+    this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
+    this.roof = null;
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -411,7 +421,31 @@ export function buildLightSet(world, palette) {
       });
     }
   }
+  // ART-01a (37.18 item 3): the active look's hemi block (if any) is resolved
+  // once here and copied into the LightSet. Absent block = `setLook` no-op, so
+  // `ambient`/`sun.col` above are the byte-identical "today" values.
+  setLook(ls, resolveLook(palette));
   return ls;
+}
+
+/**
+ * ART-01a (37.18 item 3): copies the resolved look's hemi block into the
+ * LightSet's pre-allocated `hemi` fields, and (when `hemi.sunFromLook`) overrides
+ * `sun.col` with `hue(look.sun) * look.sunI` (already resolved as `look.sun`).
+ * `look`/`look.hemi` null (block absent) is a no-op - `hemi.on` stays false and
+ * the light pass stays on today's path (ART-01b). Load/bind-time only.
+ * @param {LightSet} lights
+ * @param {import('./look.js').LookRec|null} look
+ */
+export function setLook(lights, look) {
+  const hemi = look && look.hemi;
+  lights.hemi.on = !!hemi;
+  if (!hemi) return;
+  lights.hemi.sky.set(hemi.sky);
+  lights.hemi.ground.set(hemi.ground);
+  lights.hemi.tint.set(hemi.tint);
+  lights.hemi.tintK = hemi.tintK;
+  if (hemi.sunFromLook) lights.sun.col.set(look.sun);
 }
 
 /**
@@ -1007,6 +1041,9 @@ export function makeLightBuffer(cols, rows) {
     sunlit: new Uint8Array(cols * rows), litCount: new Uint8Array(cols * rows),
     // ME-15c: per-cell PCF tap count n (LIGHT.w bits 16..18) + parity boundary flag; `sunMapOn` = this frame used the map.
     sunN: new Uint8Array(cols * rows), sunBoundary: new Uint8Array(cols * rows), sunMapOn: false,
+    // ART-01a (37.18 item 5): per-cell outdoor flag (`LIGHT.w` bit OUTDOOR_SHIFT,
+    // JS twin). All zeros until ART-01b writes it - no pixel changes yet.
+    outdoor: new Uint8Array(cols * rows),
   };
 }
 

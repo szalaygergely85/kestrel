@@ -102,8 +102,12 @@ export { packLevel, repackMaterials } from './world/packed.js';
 export {
   LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
-  makeLightBuffer, MAX_LIGHTS,
+  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
 } from './render/lighting.js';
+
+// ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
+export { resolveLook, validateLook } from './render/look.js';
+export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
 export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
