@@ -76,6 +76,9 @@ import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardStat
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
+import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
+import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
+import { createToastView } from './quest/toastView.js';
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -629,6 +632,8 @@ function runGame(mode, cinematic = null) {
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
+  let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
+  let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let waterfallHooks = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -779,6 +784,15 @@ function runGame(mode, cinematic = null) {
         : { pack: [{ id: 'spell.fireball', n: 1 }], left: null, right: 'spell.fireball' };
       ensureInventory(playerHandle.data, startInv);
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
+      // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
+      // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
+      if (loot) loot.dispose();
+      loot = itemDefs ? createLoot(world, engine.events, { items: itemDefs, beasts, table: LOOT_TABLE.boar,
+        rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
+        inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
+      setLootApi(loot);
+      if (toasts) toasts.dispose();
+      toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
       resetNoteRead(assets.uiStyle); // READ-01: a restart never carries an open note panel over (runtime-only state, 7.6 item 6)
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
@@ -1280,6 +1294,7 @@ function runGame(mode, cinematic = null) {
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
+          if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
       }
       // US-017: the end card, drawn last (over the faded scene) - `setCell`

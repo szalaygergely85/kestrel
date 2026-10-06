@@ -16,6 +16,7 @@ import { beaconLight } from './beacon.js';
 import { questEnd } from './end.js';
 import { request as requestHint } from './hints.js';
 import { noteRead } from './noteRead.js';
+import { beastLoot } from './sim/loot.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -25,6 +26,7 @@ export const QUEST_BEHAVIOURS = {
   'hint.show': 'US-015',
   'sword.take': 'US-078c',
   'note.read': 'READ-01',
+  'beast.loot': 'US-091a2',
 };
 
 const logged = new Set();
@@ -62,6 +64,7 @@ const REAL_BEHAVIOURS = {
   'hint.show': hintShow,
   'sword.take': swordTake,
   'note.read': noteRead,
+  'beast.loot': beastLoot,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */
