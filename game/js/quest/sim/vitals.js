@@ -155,6 +155,7 @@ export function createVitals(world, events, cfg, hooks) {
     sim.dead = false;
     sim.deathStep = 0;
     sim.cardReady = false;
+    lastSafe = null; // the save point may be >voidFallM below the old safe spot
     if (h.beasts && typeof h.beasts.resetAll === 'function') h.beasts.resetAll();
     if (h.targeting && typeof h.targeting.clear === 'function') h.targeting.clear();
     if (typeof h.syncFacing === 'function') h.syncFacing(t);
@@ -186,7 +187,7 @@ export function createVitals(world, events, cfg, hooks) {
       if (lastSafe && t.z < lastSafe.z - cfg.voidFallM) {
         t.x = lastSafe.x; t.y = lastSafe.y; t.z = lastSafe.z;
         if (typeof lastSafe.yawDeg === 'number') t.yawDeg = lastSafe.yawDeg;
-        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; }
+        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; } // no fall damage for the void drop
         health.invuln = cfg.invulnSteps; // no damage, just the invuln window
       }
       if (health.hp === 0) enterDead();

@@ -366,6 +366,7 @@ function scriptedRun() {
   ok('a fall past voidFallM restores the last safe spot', player.transform.x === 5 && player.transform.y === 6 && Math.abs(player.transform.z - 7) < 1e-9,
     `z=${player.transform.z}`);
   ok('restore zeroes velocity and re-grounds', player.components.body.vx === 0 && player.components.body.vy === 0 && player.components.body.vz === 0 && player.components.body.grounded === true);
+  ok('restore clears fallDistance/landed (no fall damage after)', !player.components.body.fallDistance && !player.components.body.landed);
   ok('restore deals no damage (full HP)', vitals.hp === CFG.maxHp);
   // A normal small drop never triggers it.
   player.transform.z = 7 - 2; player.components.body.grounded = false;
