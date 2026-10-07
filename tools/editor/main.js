@@ -15,7 +15,7 @@ import { createFrame, editorRenderer } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
 import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
-import { drawSelectionHighlight, drawMarkers, drawHoverOutline } from './select.js';
+import { drawSelectionHighlight, drawMarkers, drawHoverOutline, computeMeshHighlightRect, drawMeshHighlightRect } from './select.js';
 import {
   makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
   applyEdit, invert, findReferrers,
@@ -287,6 +287,7 @@ const SNAP_OPTIONS = [0.05, 0.25, 0.5, 1];
 let snapIdx = 1; // default 0.25 m (24.8)
 let selection = null; // {fileId, collection, id} | null
 let drag = null; // {entId, item, index, startTransform} | null
+let meshDrag = null;
 let hoverCol = null, hoverRow = null;
 let markersOn = true;
 let helpOn = false; // US-063: `H` toggles the in-viewport key-help overlay (drawHelpOverlay below)
@@ -1757,6 +1758,17 @@ canvas.addEventListener('mousedown', (e) => {
   const result = pickAt(col, row, pickCtx());
   lastPickText = formatPickResult(result);
 
+  if (result.kind === 'meshStructure' && result.structureId) {
+    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:result.structureId, structId:null };
+    const already = selection?.collection === 'structures' && selection.id === item.id;
+    selectItem(item);
+    if (already && toolMode === 'move') {
+      const data = selectionItemData(doc,item), s=world.structures.find(s=>s.id===item.id);
+      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, bbox:s.bbox, point:result.world, origin:null };
+    }
+    return;
+  }
+
   if (result.kind === 'entity' && result.entityId) {
     const rawItem = selectionFromEntityId(doc, world, result.entityId);
     // US-067: "locked = skipped by viewport pick and drag" - a locked entity
@@ -1815,6 +1827,16 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   const { col, row } = computeMouseCell(e);
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
+  if (meshDrag) {
+    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+    if(Math.abs(ray.dz)<1e-4)return;
+    const distance=(meshDrag.point.z-cam.z)/ray.dz;
+    if(distance<=0)return;
+    const point=rayPoint(ray,distance), snap=SNAP_OPTIONS[snapIdx], item=selectionItemData(doc,meshDrag.item);
+    const x=snapTo(meshDrag.startOrigin.x+point.x-meshDrag.point.x,snap), y=snapTo(meshDrag.startOrigin.y+point.y-meshDrag.point.y,snap);
+    meshDrag.origin=snapMeshOrigin(world,assets.mesh(item.mesh),item.mesh,x,y);
+    frame.markDirty(); return;
+  }
   // ED-DND-01: asset drag ghost. `moved` flips only past a 4px threshold, so
   // a plain click on a row never enters this branch (click-to-arm is intact).
   if (assetDrag) {
@@ -1901,6 +1923,12 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
   if (tb.stroke) { terrainStrokeEnd(false); return; }
+  if (meshDrag) {
+    const d=meshDrag;meshDrag=null;
+    const item=selectionItemData(doc,d.item);
+    if(item && d.origin && Object.keys(d.origin).some(k=>d.origin[k]!==d.startOrigin[k])) commitMeshPatch(item,{origin:d.origin},'drag');
+    frame.markDirty();return;
+  }
   // ED-DND-01: finish an asset drag. A plain click (`!moved`) just clears the
   // pending drag and leaves the model armed (click-to-arm + click-to-place,
   // unchanged); a real drag drops through the SAME `placeAt` path or cancels.
@@ -2019,6 +2047,8 @@ function update(dt) {
   // would otherwise leave the live transform wherever the mouse last was.
   if (input.pressed('Escape') && tb.stroke) {
     terrainStrokeEnd(true); // ED-TERRAIN-1c: Esc reverts the stroke in progress (no record)
+  } else if (input.pressed('Escape') && meshDrag) {
+    meshDrag=null;frame.markDirty();
   } else if (input.pressed('Escape') && drag) {
     const data = world.entity(drag.entId);
     if (data) Object.assign(data.transform, drag.startTransform);
@@ -2146,6 +2176,11 @@ function drawOverlay(fb) {
   drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a', frame.renderer);
   if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer);
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
+  if (meshDrag?.origin) {
+    const o=meshDrag.origin,s=meshDrag.startOrigin;
+    const rect=computeMeshHighlightRect(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,meshDrag.bbox,o.x-s.x,o.y-s.y,o.z-s.z);
+    if(rect)drawMeshHighlightRect(rt,rect,'#ffd24a');
+  }
   drawAssetGhost();
   drawTerrainCursor();
   if (helpOn) drawHelpOverlay();

@@ -8,7 +8,7 @@
 // from engine/index.js - re-exported here (rather than hard-coded) so every
 // existing `from './ray.js'` import (pick.js, ray.test.mjs) keeps working.
 import {
-  HFOV_DEG, KIND_TERRAIN, KIND_MODEL,
+  HFOV_DEG, KIND_TERRAIN, KIND_MODEL, KIND_MESH,
   KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
   resolveProjection, createPitchedTerms, pitchedTerms, screenRay, worldToCell,
 } from '../../engine/index.js';
@@ -102,6 +102,7 @@ export function projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer 
  * @returns {{type:'sky'|'terrain'|'voxel'|'structure', slot?:number, structSeq?:number, tag?:number}}
  */
 export function decodePlaneId(kind, planeId) {
+  if (kind === KIND_MESH) return { type: (planeId >>> 28) === 0xD ? 'cloth' : 'mesh' };
   if (kind === KIND_NONE) return { type: 'sky' };
   if (kind === KIND_TERRAIN) return { type: 'terrain' };
   if (kind === KIND_MODEL && ((planeId >>> 28) & 0xf) === 0xf) {

@@ -8,7 +8,7 @@
 // Imports only engine/index.js + ray.js (the editor boundary rule).
 import { projectPoint, cameraBasis } from './ray.js';
 import { selectionEntityId, selectionItemData } from './doc.js';
-import { localToWorld } from '../../engine/index.js';
+import { localToWorld, createPitchedTerms, pitchedTerms, worldToCell } from '../../engine/index.js';
 import { EDITOR_PLATE_BG } from './overlayStyle.js';
 
 /**
@@ -59,6 +59,37 @@ export function computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, center, 
 
 const MAX_HIGHLIGHT_CELLS = 400; // 24.14 budget guard - a degenerate huge/close rect never spends unbounded per-frame cells
 
+const meshTerms = createPitchedTerms(), meshCell = new Float64Array(3);
+const meshGrid = { cols:0, rows:0, pxCellW:0, pxCellH:0 };
+const meshRect = { minCol:0, maxCol:0, minRow:0, maxRow:0 };
+/** World bbox corners, optionally translated for a doc-only drag ghost. */
+export function computeMeshHighlightRect(cam, cols, rows, pxCellW, pxCellH, bbox, dx=0, dy=0, dz=0) {
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  meshGrid.cols=cols;meshGrid.rows=rows;meshGrid.pxCellW=pxCellW;meshGrid.pxCellH=pxCellH;
+  pitchedTerms(cam,meshGrid,meshTerms);
+  for(let i=0;i<8;i++) {
+    worldToCell(meshTerms,(i&1?bbox.x1:bbox.x0)+dx,(i&2?bbox.y1:bbox.y0)+dy,(i&4?bbox.z1:bbox.z0)+dz,meshCell);
+    if(!(meshCell[2]>0))return null;
+    x0=Math.min(x0,meshCell[0]);x1=Math.max(x1,meshCell[0]);y0=Math.min(y0,meshCell[1]);y1=Math.max(y1,meshCell[1]);
+  }
+  meshRect.minCol=Math.round(x0);meshRect.maxCol=Math.round(x1);meshRect.minRow=Math.round(y0);meshRect.maxRow=Math.round(y1);
+  return meshRect;
+}
+
+/** Large mesh bounds get short corner brackets within the existing overlay budget. */
+export function drawMeshHighlightRect(rt, rect, fgHex) {
+  const {minCol,maxCol,minRow,maxRow}=rect;
+  const w=maxCol-minCol,h=maxRow-minRow;
+  if(w<0||h<0)return;
+  if(w*h<=MAX_HIGHLIGHT_CELLS && 2*(w+h)+8<=MAX_HIGHLIGHT_CELLS) { drawHighlightRect(rt,rect,fgHex);return; }
+  for(let i=0;i<4;i++) {
+    const right=!!(i&1), bottom=!!(i&2), x=right?maxCol+1:minCol-1,y=bottom?maxRow+1:minRow-1;
+    rt.setCell(x,y,'+',fgHex,EDITOR_PLATE_BG);
+    rt.setCell(x+(right?-1:1),y,'-',fgHex,EDITOR_PLATE_BG);
+    rt.setCell(x,y+(bottom?-1:1),'|',fgHex,EDITOR_PLATE_BG);
+  }
+}
+
 /** Draws a `+ - |` bracket just OUTSIDE `rect` (never inside - the sprite pass composites after the cell pass, 24.7). */
 export function drawHighlightRect(rt, rect, fgHex) {
   const { minCol, maxCol, minRow, maxRow } = rect;
@@ -86,6 +117,12 @@ export function drawHighlightRect(rt, rect, fgHex) {
  */
 export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex, renderer = 'dda') {
   if (!selection) return;
+  if (selection.collection === 'structures') {
+    const s=world.structures.find(s=>s.id===selection.id && s.kind==='mesh');
+    const rect=s && computeMeshHighlightRect(cam,cols,rows,pxCellW,pxCellH,s.bbox);
+    if(rect)drawMeshHighlightRect(rt,rect,fgHex);
+    return;
+  }
   const entId = selectionEntityId(world, selection);
   if (entId) {
     const data = world.entity(entId);

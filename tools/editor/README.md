@@ -72,8 +72,10 @@ previews and triangle counts in their tooltips. Click a mesh row and then the
 viewport, or drag the row onto a surface, to place it with footprint ground
 snapping. Select placed meshes from the Scene Tree's **Meshes** group to edit
 world position, yaw, shadow/collision overrides, or delete them. Arrow keys,
-PgUp/PgDn, Q/E, G and undo/redo also apply. Scene click-selection and dragging
-existing meshes are the next ED-MESH-01 step; mesh scale awaits engine support.
+PgUp/PgDn, Q/E, G and undo/redo also apply. Click a mesh in the scene to select
+it; click again with **Move** and drag to preview its new bounds. Release to
+commit, or press Esc to cancel. Geometry moves on release; live geometry
+preview and mesh scale await engine support.
 
 Press a number key to arm placement mode, then click a surface:
 
