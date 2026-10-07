@@ -1,0 +1,21 @@
+# GFX-01a preset data and resolver
+
+This step supplies the data/resolution API for the subsequent Settings and B1 boot wiring. It does not expose a working quality setting in the game yet.
+
+`content/settings/gfx-presets.json` follows D-047: Low 240x90; rays 1/2/2/4. The queue's grid/scatter/LOD scale values are retained. Shadow quality is independent (Off/Low/Mid/High), with Low defaulting to Low. Medium/Mid and High/Ultra/High are tier defaults only; no unmeasured shadow resolutions, caster caps/distances or PCF counts are invented. PC-A's measured shadow table is still required.
+
+`loadPresets` fetches relative to the module URL or accepts parsed data, validates every name/knob, freezes the loaded table and preserves the previous valid table on rejection. Call it before `knobsFor` or `resolveQuality`. Returned knob copies can be changed by boot code without mutating the shared presets.
+
+`resolveQuality({param,saved,auto,warn})` accepts URLSearchParams or a query string. Quality precedence is URL quality, saved choice, auto result, then High. An explicit Auto choice uses the supplied detector result, otherwise High; this module does not run a benchmark. Unknown quality names warn and select High. Valid individual URL knobs override each resolved field; invalid knobs warn without overriding. A saved independent shadow tier overrides the preset default, and its URL override wins. `source` reports preset selection; `knobSources` reports each field's origin. It recognises the table's grid/rays/shadowQuality/scatter/lodScale parameters; B1 must map these into runtime renderer/scatter settings and preserve existing dev aliases separately.
+
+`saveQuality(name,{load,save})` writes a partial settings blob through an injected merging adapter and verifies read-back. It returns `saved:false` for dropped fields or unavailable storage rather than claiming a remembered preference. It never accesses localStorage directly. The current platform adapter drops `quality`: its load/save whitelist needs extending by B1 before the Settings row can honestly persist this choice. No platform/main/engine files changed.
+
+Focused Node fixtures PASS: precedence, Auto/no detector, independent shadows, invalid names/knobs, D-047 data, immutable copies, failed/HTTP loads, failed storage/read-back and preservation of unrelated settings with a merging adapter. The content inventory recognises only `settings/gfx-presets.json` as standalone boot configuration, rather than introducing a content-pack kind; other unlisted JSON still fails.
+
+Validation: preliminary pre-merge run 282/286 PASS, three FAIL (collider heap, terrain timing, standalone config inventory) and one upstream typecheck WARN. The exact-file inventory integration is fixed here; PC-A's typecheck fix and batch b0b1424 are merged. Final merged run **290/292 PASS, two FAIL, no TIMEOUT/WARN**: meshInstances' 1000-frame heap measurement grew 35352 bytes, and terrain stroke end took 167.8 ms against 150 ms (warm 140.6 ms). Same-harness focused reruns each pass 1/1. The preset, content smoke and typecheck suites pass in the final full run. check-deps OK (506 files, 1353 existing warnings), diff-check clean. No thresholds or engine tests were changed by C. Saved on `codex/pc-c-gfx01a-review`; no green full-gate promotion claim.
+
+Screenshot not applicable: data/API only, no owner-visible UI in this step. Owner's world remains unchanged and excluded, SHA256 `3a6ef838193922afc30c0b7200fc7a78259b4796c06d1932ab128848bb5d3b40`.
+
+**NEEDS B1:** extend the existing platform load/save whitelist for validated quality/shadowQuality, retain them when other settings save, then wire GFX-01w after GFX-03. Recommend an adapter round-trip fixture covering quality -> mute -> reload; alternative keep the resolver module reviewable without exposing a nonpersistent setting. **NEEDS PC-A:** measured independent shadow tiers and Settings layout/labels (the existing 40x12 panel has three rows). After these seams, C adds the Quality row and verifies its real-GPU presentation.
+
+Lane scope follows `.claude/skills/parallel-lanes/SKILL.md`: "Needs a `main.js` or engine change -> write `NEEDS B1:` in its lane file." Queue item 8 scopes C to the new preset data/module and settings UI, not the platform whitelist. This is GFX-01a ready for review, not completion of GFX-01/GFX-01w.

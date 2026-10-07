@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "presets": {
+    "low": { "grid": "240x90", "rays": 1, "shadowQuality": "low", "scatter": 0.5, "lodScale": 0.6 },
+    "medium": { "grid": "240x90", "rays": 2, "shadowQuality": "mid", "scatter": 0.75, "lodScale": 0.8 },
+    "high": { "grid": "400x150", "rays": 2, "shadowQuality": "high", "scatter": 1, "lodScale": 1 },
+    "ultra": { "grid": "480x180", "rays": 4, "shadowQuality": "high", "scatter": 1, "lodScale": 1.25 }
+  }
+}

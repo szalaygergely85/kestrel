@@ -136,13 +136,15 @@ const allJsonFiles = listJsonFiles(CONTENT_DIR);
 // of its listed files.
 const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'manifest.json') return false;
+  // GFX-01: boot settings are validated/fetched by gfxPresets, not a content-pack kind.
+  if (rel === 'settings/gfx-presets.json') return false;
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;
   if (rel.startsWith('meshes/') && rel.endsWith('.mesh.json')) return false;
   if (rel.startsWith('editor/')) return false; // ED-FOLDERS-01: editor-only data (asset folder layout), never loaded by the game/loadPack
   return !manifest.files.includes(rel);
 });
 ok(
-  'every content/**/*.json file is either manifest.json, a vox/*.map.json import map, or listed in manifest.json\'s "files"',
+  'every content/**/*.json file is a known standalone config/import file or listed in manifest.json\'s "files"',
   unaccountedFor.length === 0,
   unaccountedFor.join(', ')
 );
