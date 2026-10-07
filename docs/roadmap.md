@@ -17,6 +17,17 @@ Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in
 ## NOW (owner 2026-10-04, D-038): alive world -> combat -> demo + videos
 1. **Alive world:** forest in the game (ME-06c3), ground/environment detail scatter, the tower dressed as the first scene "The Awakening", stairwell flag walkable. 2. **Combat:** left-hand sword, knockback, the boar. 3. **Then** the D-036 demo + videos (first clip: the Awakening). Cinematic paths paused until reworked with the owner.
 
+## EP-WEBGPU - full WebGPU, WebGL2 retires at parity (owner 2026-10-07, D-044) - status: WG-0 next
+Runs in parallel with the D-038 game work (which must not add GLSL). Cheapest-first; each step ends with `?gpucompare=1` on the WebGPU backend (JS twin = oracle) and a PC-A arch-review. Implementation on PC-B (cross-track), notes/reviews/gates on PC-A.
+- **Now, on WebGL2 (backend-neutral or gate-blocking):** MESH-GPUCMP-01 GLSL fix (unblocks master), MESH-FULL-01 (verify + merge `wip/mesh-full-parked`), MESH-PERF-01 baseline, shadow caster budget, MESH-INST-01 draw-list batching, MESH-BIN-01.
+- **WG-0 architect note** (0.5 d): WebGPU backend plan behind `GpuDevice` - format/binding map, WGSL conventions vs the JS twin, readback for gpucompare, headless capture flags, Electron Chromium target.
+- **WG-1 device + one pass** (ME-30, ~2-3 d): `GpuDeviceWebGPU` + self-test, `?backend=webgpu`, the final cell present pass (glyph atlas -> canvas) pixel-equal to WebGL2 on the existing poses.
+- **WG-2 mesh pass** (~3 d): mesh + terrain raster G-buffer in WGSL, instanced batches from MESH-INST-01, kind-9 smooth normals; gpucompare PASS set on mesh poses = WebGL2's.
+- **WG-3 cell + light passes** (~4-5 d): resolve/deriv/light/shade/edge, sprites, particles, cloth, water, sun + point shadow maps; full gpucompare PASS set = WebGL2's (D-039 baselines carried). From here new render features are WGSL-only.
+- **WG-4 compute culling** (~2-3 d): GPU frustum/distance/shadow-caster cull + LOD select + indirect draws; gate = owner walk at `?pose=roadSouth` with full-detail meshes and ~300 placements, no lag, F3 p95 vs the MESH-PERF-01 bar.
+- **WG-5 drop WebGL2** (~1 d): WebGPU default, delete `GpuDeviceWebGL2` + GLSL + `dda` (ME-19), "WebGPU required" screen, bench/capture tools on WebGPU.
+- **Later - EP-DESKTOP:** Electron packaging (pinned Chromium) with the D-012 Steam work; pulled forward only if browser WebGPU coverage blocks the demo.
+
 ## LATER (after D-038 items 1-2): "Show it" - showcase + first income (owner 2026-10-02, D-036) - runs before the rest of M3-M6
 **Goal:** a short list of beautiful, shareable shots (forest, tower, waterfall, grassland, fire, water) + an itch.io demo with pay-what-you-want and a tip jar, so the game finds players and pays for its own subscription. Everything else waits unless a shot needs it.
 **Why first:** the ASCII 3D look is the hook; clips and stills cost little and can start earning/wishlisting weeks before the full M3 exit.
