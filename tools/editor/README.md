@@ -50,6 +50,15 @@ only has a software GL renderer, use `?gpu=0`.
   or Scene Tree. Drag on empty space to box-select their pivots; hold Shift/Ctrl
   to add to the current selection. `Esc` cancels a box gesture. All selected
   items are highlighted; the inspector identifies the primary item it edits.
+- With multiple props/lights selected, arrows move the whole set, Q/E rotate
+  around its centre, and Delete removes it as one undo step (the whole delete
+  is refused if any member is referenced). Re-click a selected member and drag
+  in Move/Yaw mode to preview the whole set; release commits once, Esc restores.
+  Ctrl+D duplicates it one metre to the east and selects the copies.
+- Ctrl+G stores a group in one file; Ctrl+Shift+G removes it. Clicking a grouped
+  item selects its members; Alt+click selects just that member. Groups cannot
+  span files, but a mixed-file selection can move/rotate/duplicate/delete.
+  Two placements of the same shared content item cannot be edited together.
 - Lights and interactables have no visible mesh - they're picked as small
   markers (`*` for a light, `o` for an interactable) when **markers** are on
   (`M` toggles them, default on). You can also always select any item from

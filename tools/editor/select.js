@@ -115,7 +115,7 @@ export function drawHighlightRect(rt, rect, fgHex) {
  * (prop/world entity - projects its cylinder) and a marker-only item
  * (light/interactable - a single highlighted cell at its point).
  */
-export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex, renderer = 'dda') {
+export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex, renderer = 'dda', previewItems) {
   if (!selection) return;
   if (selection.collection === 'structures') {
     const s=world.structures.find(s=>s.id===selection.id && s.kind==='mesh');
@@ -142,7 +142,8 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
   // right frame; falls back to the level-name match for an older-shaped
   // selection with no `structId`.
   if (selection.collection === 'lights' || selection.collection === 'interactables') {
-    const item = selectionItemData(doc, selection);
+    const authored = selectionItemData(doc, selection);
+    const item = previewItems?.get(authored) || authored;
     const s = selection.structId != null
       ? world.structures.find((st) => st.id === selection.structId)
       : world.structures.find((st) => st.level && st.level.name === selection.fileId.slice('level/'.length));
@@ -162,7 +163,7 @@ const MAX_MARKER_CELLS = 200; // 24.7 budget
  * outliner is the way to select them, per the architecture note); this is a
  * documented limitation, not an oversight.
  */
-export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palette, selection, renderer = 'dda') {
+export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palette, selection, renderer = 'dda', previewItems) {
   let budget = MAX_MARKER_CELLS;
   const put = (x, y, z, glyph, fgHex) => {
     if (budget <= 0) return;
@@ -183,7 +184,8 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
     if (!s.level) continue; // mesh/road structures carry no level markers
     const def = s.level.def;
     const sameStruct = (sel) => sel.structId == null || sel.structId === s.id;
-    for (const l of def.lights || []) {
+    for (const authored of def.lights || []) {
+      const l=previewItems?.get(authored) || authored;
       const on = l.on !== false;
       const sel = selection && selection.collection === 'lights' && selection.id === l.id
         && selection.fileId === `level/${s.level.name}` && sameStruct(selection);
