@@ -1,17 +1,14 @@
-// WG-2a (docs/architecture.md 38.1, 38.4, 38.6, 38.8a): the device-only WebGPU cell pipeline, step 1 = skeleton.
+// WG-2a/2b (docs/architecture.md 38.1, 38.4, 38.6, 38.8a): device-only WebGPU cell pipeline, geometry first.
 // Same public surface as GpuCellPipeline (constructor(rt, opts), ready, stats, PASS_NAMES, frame, bind, bindVoxels,
 // bindViewModel, bindInstances, resizeGrid, setEnabled, setPassTiming, setDebugMode, readback*, dispose) but it talks
 // ONLY to `this.device.*` (rt.device); no navigator.gpu / GPU* here (check-deps rule 17).
 //
-// What exists in WG-2a: the G-buffer targets (targets.js) and a debug view of them (wgsl/debug.wgsl.js) written into the
-// render target's fg/bg textures from the cell-pass hook (RenderTargetWebGPU.present -> _cellPass). No world pass is ported
-// yet (mesh raster = WG-2b, shade/edge/light = WG-3), so the G-buffer stays at its cleared value and:
-//  - `ready` = "skeleton built, targets allocated, device not lost" (honest: it does NOT mean the scene is rendered);
-//  - `portedPasses` lists the passes that really run (only 'debug' for now); `frameComplete` stays false until WG-3,
-//    main.js must not drop the CPU shading (rt.gpuActive stays false, this class never sets it);
-//  - passes not ported are throw-free no-ops; the hook only draws when a debug mode is set (`?gpudebug=`).
+// The cell-pass hook writes geometry through passRaster then optionally displays its debug view. Terrain is WG-2c,
+// and the cloth multi-stream API needs PC-A's specification; encountering cloth disables this partial pipeline explicitly.
+// `frameComplete` stays false until WG-3: main.js keeps CPU shading and rt.gpuActive stays false.
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
+import { WgRasterPass } from './passRaster.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
@@ -36,7 +33,7 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
-    this.rendererString = 'webgpu (WG-2a skeleton)';
+    this.rendererString = 'webgpu (WG-2b geometry)';
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
@@ -55,6 +52,7 @@ export class WgCellPipeline {
     this._hookFn = () => this._hook();
     this._t = null;
     this._pipeDebug = null;
+    this._rasterPass = null;
     this._outTarget = null; this._outFg = null; this._outBg = null;
     this._gbufCleared = false;
     this._clearOpts = { clear: true };
@@ -69,7 +67,9 @@ export class WgCellPipeline {
         bindings: { uniformBytes: DEBUG_BLOCK.sizeBytes, textures: DEBUG_TEXTURES.slice() },
         targetFormats: ['rgba8', 'rgba8'],
       });
-      this.portedPasses.push('debug');
+      this._rasterPass = new WgRasterPass(this.device);
+      this._meshDrawList = this._rasterPass.list;
+      this.portedPasses.push('debug', 'raster');
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
@@ -123,14 +123,14 @@ export class WgCellPipeline {
   }
 
   // ---- binders: stored now, consumed by the passes WG-2b..WG-3 add ----
-  bind(table, palette) { this._table = table; this._palette = palette; }
+  bind(table, palette) { this._table = table; this._palette = palette; if (this._rasterPass) this._rasterPass.bind(table); }
   bindVoxels(pool) { this._voxelPool = pool; }
   bindViewModel(vm) { this._viewModel = vm; }
   bindInstances(groups) { this._instances = groups; }
   setWaterLooks(_looks) { /* WG-3 */ }
   setSource(_mode) { /* test-only switch of the GL path; nothing to switch yet */ }
 
-  /** Called once per frame by the main loop before present(): remembers the inputs (no GPU work in WG-2a). */
+  /** Called once per frame before present(): remembers inputs; GPU commands run in the render-target hook. */
   frame(fb, light, cam, world) {
     this._fb = fb; this._light = light; this._cam = cam || null; this._world = world || null;
     if (this.device.timer.writeStats) this.device.timer.writeStats(this.stats);
@@ -168,13 +168,16 @@ export class WgCellPipeline {
 
   // ---- hook (RenderTargetWebGPU.present calls it between the cell upload and its own present pass) ----
   _hook() {
-    if (!this.ready || this.debugMode < 0 || !this._t) return;
+    if (!this.ready || !this._t) return;
     const d = this.device, t = this._t, rt = this.rt;
-    if (!this._gbufCleared) { // the G-buffer has no writer yet: clear once (and after each resize)
+    if (this._cam && this._world) {
+      try { this._rasterPass.run(this); }
+      catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
+    } else {
       d.beginPass(t.targetRaster, this._clearOpts);
       d.endPass();
-      this._gbufCleared = true;
     }
+    if (this.debugMode < 0) return;
     if (!this._outTarget || this._outFg !== rt.fgTex || this._outBg !== rt.bgTex) {
       this._dropOutTarget();
       this._outFg = rt.fgTex; this._outBg = rt.bgTex;
@@ -203,6 +206,8 @@ export class WgCellPipeline {
     this._dropOutTarget();
     if (this._pipeDebug) { try { this.device.dispose(this._pipeDebug); } catch (_) { /* best effort */ } }
     this._pipeDebug = null;
+    if (this._rasterPass) this._rasterPass.dispose();
+    this._rasterPass = null;
     freeWgTargets(this.device, this._t);
     this._t = null;
   }

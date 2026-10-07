@@ -19,6 +19,7 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
     t.texSDepth = device.createTexture({ format: 'r32ui', width: subCols, height: subRows });
     t.texRasterDepth = device.createTexture({ format: 'depth24', width: subCols, height: subRows });
     t.targetRaster = device.createTarget({ color: [t.texSGI, t.texSGA, t.texSDepth], depth: t.texRasterDepth });
+    t.targetVmDepth = device.createTarget({ color: [], depth: t.texRasterDepth });
   } catch (e) {
     freeWgTargets(device, t);
     throw e;
@@ -29,7 +30,7 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
 /** @param {any} device @param {any} t result of allocWgTargets (partial is fine) */
 export function freeWgTargets(device, t) {
   if (!t) return;
-  for (const f of ['targetRaster', ...WG_TEXTURE_FIELDS]) {
+  for (const f of ['targetRaster', 'targetVmDepth', ...WG_TEXTURE_FIELDS]) {
     if (t[f]) { try { device.dispose(t[f]); } catch (_) { /* best effort */ } t[f] = null; }
   }
 }

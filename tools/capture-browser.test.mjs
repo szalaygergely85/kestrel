@@ -142,6 +142,8 @@ throws('resultGlobalFor rejects unknown mode', () => resultGlobalFor('bogus'));
   check('webgpu-present rejects GPU validation errors', !normalizeLiveResult('webgpu-present', { ...raw, gpuErrors: ['bad atlas'] }).ok);
   check('failed presenter gate exits 1', captureExitCode('webgpu-present', { ok: false }) === 1);
   check('passed presenter gate exits 0', captureExitCode('webgpu-present', { ok: true }) === 0);
+  check('failed shader compilation gate exits 1', captureExitCode('wgsl', { ok: false }) === 1);
+  check('passed shader compilation gate exits 0', captureExitCode('wgsl', { ok: true }) === 0);
   check('known-FAIL gpucompare remains report-only', captureExitCode('gpucompare', { ok: false }) === 0);
 }
 

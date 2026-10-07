@@ -242,7 +242,7 @@ export class GpuDeviceWebGPU {
     const pd = {
       layout,
       vertex: { module: this._module(v.src), entryPoint: /** @type {any} */ (v.src).entry || 'vs_main', buffers },
-      primitive: { topology: 'triangle-list', frontFace: 'cw', cullMode: desc.cull || 'none' },
+      primitive: { topology: 'triangle-list', frontFace: desc.frontFace || 'cw', cullMode: desc.cull || 'none' },
     };
     if (targetFormats.length) pd.fragment = { module: this._module(desc.fragment.src), entryPoint: /** @type {any} */ (desc.fragment.src).entry || 'fs_main', targets: targetFormats.map((format) => ({ format })) };
     if (desc.depthFormat) {

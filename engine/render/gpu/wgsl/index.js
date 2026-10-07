@@ -4,11 +4,16 @@
 
 import { PRESENT_WGSL } from './present.wgsl.js';
 import { DEBUG_WGSL } from './debug.wgsl.js';
+import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from './raster.wgsl.js';
 
 /** @type {ReadonlyArray<{name: string, code: string}>} */
 export const WGSL_MODULES = Object.freeze([
   { name: 'present', code: PRESENT_WGSL },
   { name: 'debug', code: DEBUG_WGSL },
+  { name: 'rasterStatic', code: RASTER_WGSL },
+  { name: 'rasterVoxel', code: RASTER_VOXEL_WGSL },
+  { name: 'rasterInstanced', code: RASTER_INSTANCED_WGSL },
+  { name: 'rasterCloth', code: RASTER_CLOTH_WGSL },
 ]);
 
 /**
