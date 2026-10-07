@@ -12,7 +12,9 @@ export function renderMeshPanel(container, item, { assets, onFieldCommit, onRena
     if (type === 'checkbox') input.checked = value; else input.value = value;
     if (type === 'number') input.step = label === 'yawDeg' ? '1' : '0.01';
     input.addEventListener(type === 'checkbox' ? 'change' : 'blur', () => {
-      const result = commit(type === 'checkbox' ? input.checked : type === 'number' ? (input.value.trim() ? Number(input.value) : NaN) : input.value);
+      const next = type === 'checkbox' ? input.checked : type === 'number' ? (input.value.trim() ? Number(input.value) : NaN) : input.value;
+      if (next === value) { error.textContent = ''; return; }
+      const result = commit(next);
       error.textContent = Array.isArray(result) ? result.join('; ') : '';
     });
     row.appendChild(input); container.appendChild(row);
