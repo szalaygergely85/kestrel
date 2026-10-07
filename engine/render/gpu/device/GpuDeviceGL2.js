@@ -63,6 +63,11 @@ export class GpuDeviceGL2 {
     this._activeSlot = -1;
     this._boundPipeline = null;
     this._boundTarget = null;
+    /** WG-1b1: read only by createRenderer.js / F3. */
+    this.backend = 'webgl2';
+    /** WG-1b1: GL context loss is handled by the page's own listener; never resolves here. @type {Promise<any>} */
+    this.lost = new Promise(() => {});
+    this._canvasTarget = null;
     this.timer = {
       begin: (slot) => { this._activeSlot = slot; this._passTimer.begin(slot); },
       end: () => { this._passTimer.end(); this._activeSlot = -1; },
@@ -130,9 +135,34 @@ export class GpuDeviceGL2 {
     }
     const internalFormat = glInternalFormat(gl, desc.format);
     const tex = createTexture2D(gl, internalFormat, desc.width, desc.height);
+    if (desc.filter === 'linear' && desc.format === 'rgba8') { // WG-1b1: glyph atlas (createTexture2D left the texture bound)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    }
     this._live.push({ obj: tex, free: (g, o) => deleteTexture2D(g, o) });
     return { kind: 'texture', handle: tex, width: desc.width, height: desc.height, format: desc.format };
   }
+
+  /**
+   * WG-1b1 (38.3): `texSubImage2D` into an existing colour texture; `rect` defaults to the whole texture.
+   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect]
+   */
+  writeTexture(tex, data, rect) {
+    const gl = this.gl;
+    const { format, type } = glUtilFormatFor(gl, glInternalFormat(gl, tex.format));
+    const r = rect || { x: 0, y: 0, w: tex.width, h: tex.height };
+    gl.bindTexture(gl.TEXTURE_2D, tex.handle);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, data);
+  }
+
+  /** WG-1b1 (38.3): the canvas back buffer = the default framebuffer (`beginPass` binds `handle: null`; width 0 keeps the viewport). */
+  canvasTarget() {
+    if (!this._canvasTarget) this._canvasTarget = { kind: 'target', handle: null, colorCount: 0, hasDepth: false, width: 0, height: 0 };
+    return this._canvasTarget;
+  }
+
+  /** WG-1b1 (38.3): end of frame - nothing to flush on WebGL2. */
+  submit() {}
 
   /** @param {TargetDesc} desc */
   createTarget(desc) {
@@ -270,7 +300,7 @@ export class GpuDeviceGL2 {
     this._boundTarget = null;
   }
 
-  /** Test-only synchronous readback. @param {GpuHandle} tex */
+  /** Test-only; synchronous here (WebGPU returns a Promise: callers `await`, a no-op on this plain return). @param {GpuHandle} tex */
   readback(tex, rect, out) {
     const gl = this.gl;
     const fbo = gl.createFramebuffer();
