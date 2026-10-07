@@ -1,5 +1,18 @@
 # Kestrel – Product Backlog
 
+> **PC-B handoff 2026-10-07:** Physics and the road meshes got cheaper and safer; the stairwell has a real cloth.
+> Merged `origin/pc-a` into `pc-b` first (the mesh queue builds on it), so pc-b also carries PC-A's open gpucompare FAIL.
+>
+> Done (all pushed): MESH-PHYS-01, BUG-LAMP-COLLIDE-02, MESH-SIMP-01, MESH-PHYS-02, MESH-SHADOW-01, MESH-GPUCMP-01
+> (investigated), MESH-UVMAP-01, CLOTH-DRAPE-01, BUG-GONDOLA-FALL. 243/243 suites; route walks reach the end.
+>
+> For PC-A: arch-review MESH-PHYS-01, BUG-LAMP-COLLIDE-02, MESH-PHYS-02, MESH-SHADOW-01, MESH-UVMAP-01 (gltf.js `triMat`),
+> BUG-GONDOLA-FALL (airborne `airStepUp`); **ASK ARCHITECT MESH-GPUCMP-01**: GLSL kind-9 smooth-normal port (exact change in
+> docs/test-reports/MESH-GPUCMP-01.md) - this is what blocks the gpucompare gate. Owner: road lag + moss look (`?pose=roadSouth`),
+> bump rocks/trees/wall lamp, stairwell cloth from the ground and steps H/I, retest the gondola fall.
+> Process: project skills now (CLAUDE.md rule): pc-b-sync-verify, engine-physics-colliders, mesh-import, gpucompare.
+> Next PC-B: ED-TERRAIN-1c, then the hands/spell lane; mesh LOD/INST/LOAD/ED-MESH wait for PC-A notes.
+
 > **PC-A handoff 2026-10-07 (night) - START HERE.** Done today: VOID-RESPAWN-01 reviewed + merged (2 fixes), collider on the 3 decoration wall lamps, road south verge cleaned + 29 Quaternius meshes, **ME-14c3 GPU wiring** (`GpuCellPipeline` draws mesh structures + sun shadows), `rock_soft` material, `?pose=roadSouth`, mesh simplifier (`engine/mesh/simplify.js`; the 12 placed meshes 16 MB -> 2.3 MB). Pushed to `pc-a`, NOT to `master`: the `?gpucompare=1` gate fails 29 rows vs 4 baseline (kind-9 light parity, MESH-GPUCMP-01). **PC-B queue for tomorrow, in this order:** MESH-PHYS-01 (P0), MESH-SIMP-01, MESH-SHADOW-01, MESH-GPUCMP-01, MESH-PHYS-02, BUG-LAMP-COLLIDE-02; after the PC-A notes: MESH-LOD-01, MESH-INST-01, MESH-LOAD-01, ED-MESH-01; ROAD-DECOR-01 last. **PC-A prep tomorrow:** architect notes for LOD / INST / LOAD / ED-MESH, ART-MESH-MATS (designer), decide the gpucompare baseline. **Owner to-dos:** walk-test VOID-RESPAWN-01; try ED-DND-01 / ED-FOLDERS-01 in the editor; look at the road (`?pose=roadSouth`, hard reload) and say whether the lag is gone; owner look for CLOTH-DRAPE-01 when it is done; retest BUG-GONDOLA-FALL.
 >
 > **PC-B handoff 2026-10-06 (night, round 3 done):** Boars now have HP, fight legibly (no merging, one charger,
