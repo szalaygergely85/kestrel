@@ -15,6 +15,15 @@ import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN
 import { addVoxelInstances } from './voxelMesh.js';
 import { fillShadowBands, groupRadius } from './instances.js';
 
+/**
+ * MESH-SHADOW-02 (37.19 option 1): placed kind-9 mesh props only (towers, terrain, cloth, voxel props, instanced groups are never
+ * budgeted). Cut-off = `src.meshLod0M` from the eye; `cap` = max props kept (nearest first, ties by object id). `cap` is a
+ * mutable tunable (probes/sweeps); both the GL pass and the JS twin read this one list, so parity is unaffected.
+ */
+export const MESH_SHADOW_CAP = 4;
+export const meshShadowBudget = { cap: MESH_SHADOW_CAP, cutM: /** @type {number|null} */ (null) }; // cutM null = src.meshLod0M (probe override only)
+const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MESH_SHADOW_CAP };
+
 /** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
 export const SHADOW_BUILD_CAPACITY = 1024;
 
@@ -54,7 +63,11 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   const c = src.centre;
   list.begin();
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
-  if (src.meshCache && src.meshIdFor) addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true); // ME-14c2 (37.1 item 6)
+  if (src.meshCache && src.meshIdFor) {
+    let b = null;
+    if (src.eye) { b = _budget; b.eye = src.eye; b.cutM = meshShadowBudget.cutM || src.meshLod0M || 25; b.cap = meshShadowBudget.cap; } // MESH-SHADOW-02; no eye = old behaviour
+    addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
+  }
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
