@@ -50,6 +50,7 @@
  * @property {number} [strideBytes] - vertex stage only: interleaved-buffer stride
  * @property {{name: string, location: number, components: number, type: 'float'|'uint', offsetBytes: number}[]} [instanceLayout] - WG-1b1 (38.3, MESH-INST-01 batches): per-instance attributes read from `BindDesc.instanceBuffer` (step mode instance)
  * @property {number} [instanceStrideBytes] - stride of the instance buffer
+ * @property {{layout: {name: string, location: number, components: number, type: 'float'|'uint', offsetBytes: number}[], strideBytes: number}[]} [extraLayouts] - WG-2b (WebGPU only; GL2 callers keep their own VAO): extra per-vertex streams after the mesh/instance buffers, bound from `BindDesc.extraBuffers` (cloth uv)
  */
 
 /**
@@ -77,6 +78,7 @@
  * @property {GpuHandle} [vertexBuffer]
  * @property {GpuHandle} [indexBuffer]
  * @property {GpuHandle} [instanceBuffer] - WG-1b1 (38.3): per-instance vertex buffer for `PipelineStageDesc.instanceLayout`
+ * @property {GpuHandle[]} [extraBuffers] - WG-2b: buffers for `PipelineStageDesc.extraLayouts`, same order
  * @property {number} [uniformOffsetBytes] - WG-1b1 (38.4): dynamic offset of this draw's block in the uniform ring (WebGPU; GL2 ignores)
  */
 

@@ -10,7 +10,7 @@ const mock = makeMockGpuDevice(), d = mock.device;
 const pass = new WgRasterPass(d), draws = [], clears = [];
 d.beginPass = (target, opts) => clears.push({ target, opts });
 d.draw = (count, first, instances) => draws.push({ pipe: d._activePipeline, count, first, instances,
-  uniforms: new Uint32Array(d._lastBind.uniforms.buffer).slice(), bind: d._lastBind });
+  uniforms: new Uint32Array(d._lastBind.uniforms.buffer).slice(), bind: d._lastBind, extra: d._lastBind.extraBuffers && d._lastBind.extraBuffers[0] });
 const builder = new StaticMeshBuilder('wg-raster-quad');
 builder.addQuad([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], [0, 0, 1, 0, 1, 1, 0, 1], 0, 0, 1, 0xf0000001, 9 | (5 << 8) | (3 << 16), [0, 0, 0, 0, 0, 0, 0, 0]);
 const mesh = builder.build(); mesh.ranges = [{ start: 0, count: 2 }];
@@ -44,7 +44,16 @@ for (let i = 0; i < 1000; i++) pass.run(p);
 assert.equal(mock.createCount, resources, 'warm frames allocate no buffers, textures, or pipelines');
 assert.equal(pass.u, uniforms); assert.equal(pass.bindDesc, bindDesc);
 assert.equal(mock.writeCount, 1000, 'instanced buffer is updated without recreation');
-const cloth = pass.list.push(); cloth.type = DRAW_CLOTH;
-assert.throws(() => pass.run(p), /WG-2b NEEDS PC-A: cloth/, 'unresolved stream interface is never silently ignored');
-pass.dispose(); assert.equal(mock.liveCount(), 0);
+// Cloth: dynamic pos/normal buffer + static uv as an extra vertex stream; two-sided; flat words from the mesh material.
+const uvBuf = d.createBuffer({ usage: 'vertex', bytes: 32 }), clothVb = d.createBuffer({ usage: 'vertex', bytes: 64 }), clothIb = d.createBuffer({ usage: 'index', bytes: 12 });
+pass.buffers.getCloth = () => ({ vertexBuffer: clothVb, uvBuffer: uvBuf, indexBuffer: clothIb });
+const cloth = pass.list.push(); cloth.type = DRAW_CLOTH; cloth.mesh = { matId: 7 }; cloth.rangeCount = 3; cloth.rangeFirst = 1; cloth.matrix.set(staticItem.matrix);
+draws.length = 0; pass.run(p);
+const cd = draws.find((x) => x.pipe === pass.clothPipe);
+assert.equal(cd.pipe, pass.clothPipe); assert.equal(cd.pipe.desc.cull, 'none'); assert.equal(cd.pipe.desc.frontFace, 'cw');
+assert.equal(cd.pipe.desc.vertex.extraLayouts[0].layout[0].location, 1, 'uv extra stream at location 1');
+assert.equal(cd.extra, uvBuf); assert.equal(cd.count, 9); assert.equal(cd.first, 3);
+assert.equal(cd.uniforms[RASTER_BLOCK.field('flat').word + 1] >>> 16, 7, 'cloth material in flat.y');
+assert.equal(p.stats.clothDraws, 1);
+pass.dispose(); d.dispose(uvBuf); d.dispose(clothVb); d.dispose(clothIb); assert.equal(mock.liveCount(), 0);
 console.log('passRaster.test.js: all checks passed.');
