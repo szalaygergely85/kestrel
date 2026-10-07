@@ -14,6 +14,7 @@
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { DRAW_FLAG_ONE_PART } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
 
 /** Words / bytes per instance. */
 export const INSTANCE_STRIDE = 16;
@@ -226,6 +227,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
 /**
  * @typedef {Object} InstanceGroup
  * @property {string} modelKey
+ * @property {any} [mesh] - TREES-LP-b: registry MeshData (kind 9, unresolved) for a `meshGroup`; undefined for voxel groups
  * @property {InstanceBuffer} ib - the game writes instances here, never written by the engine
  * @property {number} count - the game sets it each frame
  * @property {{clip: number, frame: number, tMs: number}} pose - one animation pose for the whole group
@@ -298,6 +300,26 @@ export class InstanceGroups {
     return g;
   }
 
+  /**
+   * TREES-LP-b (37.15 item 3): a group of N unscaled copies of one imported kind-9 mesh (`mesh` = registry MeshData,
+   * material keys unresolved). Same words as a voxel group (`writeUnitInstance`), one identity part, LOD off. Drawn only
+   * when `addToDrawList`/`buildShadowList` get a `meshDraw`/`meshCache` (otherwise skipped). Not back-face-safe for
+   * one-sided meshes (the instanced path culls back faces): use closed/solid meshes (trees). No masked ranges.
+   * @param {any} mesh @param {number} capacity - instances
+   * @returns {InstanceGroup}
+   */
+  meshGroup(mesh, capacity) {
+    if (!mesh || mesh.layout !== 'static' || !mesh.ranges || mesh.ranges.length < 1) throw new Error('InstanceGroups.meshGroup: needs a static kind-9 mesh');
+    for (let i = 0; i < mesh.ranges.length; i++) if (mesh.ranges[i].mask !== undefined) throw new Error('InstanceGroups.meshGroup: masked ranges are not supported');
+    if (this.groups.length >= MAX_INSTANCE_GROUPS) throw new Error(`InstanceGroups: over ${MAX_INSTANCE_GROUPS} groups`);
+    const g = makeInstanceGroup(mesh.id || 'mesh', capacity);
+    g.mesh = mesh;
+    g.parts.m[0] = 1; g.parts.m[4] = 1; g.parts.m[8] = 1; // identity part (the DRAW_FLAG_ONE_PART draw reads partMatrices[range])
+    g.parts.flags[0] = 1; g.parts.count = 1;
+    this.groups.push(g);
+    return g;
+  }
+
   /** @param {InstanceGroup} g */
   remove(g) {
     const i = this.groups.indexOf(g);
@@ -323,10 +345,10 @@ export class InstanceGroups {
    *   `undefined`-frameNo calls in a row see "unchanged" and wrongly reuse a stale memo).
    * @param {Float64Array|null} [viewProj] - RE-15c: column-major viewProj (same as `planes`'); with `rows` enables LOD where `g.lodCells > 0`
    * @param {number} [rows] - RE-15c: grid rows
+   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
    */
-  addToDrawList(list, cache, planes, frameNo, viewProj, rows) {
+  addToDrawList(list, cache, planes, frameNo, viewProj, rows, meshDraw) {
     const pool = this.pool;
-    if (!pool) return;
     const groups = this.groups;
     const memo = typeof frameNo === 'number';
     if (!memo || frameNo !== this._lastFrameNo) {
@@ -338,6 +360,20 @@ export class InstanceGroups {
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0) continue;
+      if (g.mesh) { // TREES-LP-b: kind-9 mesh group, one identity part, no LOD
+        if (!meshDraw || !meshDraw.idFor) continue;
+        const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
+        if (!memo || g._memoFrameNo !== frameNo) {
+          if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
+          const kept = compactGroup(g, planes, g._R, null, 0);
+          g._memoFrameNo = frameNo;
+          this.stats.instances += kept;
+          this.stats.instancesCulled += g.count - kept;
+        }
+        if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it) it.flags |= DRAW_FLAG_ONE_PART; }
+        continue;
+      }
+      if (!pool) continue;
       const pm = pool.models.get(g.modelKey);
       if (!pm) continue;
       const names = pool.partNamesFor(g.modelKey);

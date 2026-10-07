@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -311,6 +311,22 @@ function buildCompareRuns(ctx) {
       fillUnitGrid(cullLodGroup, 60, 1440 + CULL_LOD_DX - 18, 1040 - 10, 0, 4.0, 10, gz);
     },
   });
+
+  // TREES-LP-b (37.15 item 3): 6 instanced kind-9 trees (InstanceGroups.meshGroup), eye 8 m away, mesh renderer only.
+  if (ctx.lowpolyTreeMesh) {
+    const ltGroup = compareInstances.meshGroup(ctx.lowpolyTreeMesh, 6);
+    runs.push({
+      world: worldM1, lights: worldM1Lights, real: true, meshOnly: true, name: 'world_m1: lowpolyTrees (TREES-LP-b, 6 instanced kind-9 trees, eye 8 m)',
+      cam: { x: 1470, y: 1025, z: (worldM1.terrain ? worldM1.terrain.groundAt(1470, 1025) : 0) + 1.6, yawDeg: 270, pitchDeg: 8 },
+      before: () => {
+        const yaws = [0, 40, 95, 150, 210, 300];
+        for (let i = 0; i < 6; i++) {
+          const x = 1462 - (i % 2) * 3.5, y = 1025 + (i - 2.5) * 3.2;
+          writeUnitInstance(ltGroup.ib, ltGroup.count++, x, y, worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0, yaws[i], 0xB000 | i, 0);
+        }
+      },
+    });
+  }
 
   // RE-02b (28.1 A2 items 5, 8): mesh-only first-person poses on the DEFAULT projection (pitched on mesh; the
   // `pitchedDefault` flag keeps the shear pin below off them). fpLevel0 is additionally compared against the
@@ -644,6 +660,8 @@ async function runGpuCompareSceneMode(ctx) {
 
   gpuPipeline.setSource('scene');
 
+  // TREES-LP-b: the unplaced Kenney stub (test-only content) for the `lowpolyTrees` pose; missing file = pose skipped.
+  try { ctx.lowpolyTreeMesh = meshFromJSON(await (await fetch(new URL('../../../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url))).json()); } catch (e) { ctx.lowpolyTreeMesh = null; }
   const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);
   gpuPipeline.bindInstances(compareInstances);

@@ -232,6 +232,7 @@ export class GpuCellPipeline {
     this._meshBuffers = null;
     this._levelMeshCache = null;
     this._meshDrawCache = new MeshDrawCache(); // ME-14c3: placed glTF meshes (kind 9), per-GPU-pipeline copy
+    this._meshDrawArg = { cache: /** @type {any} */ (null), idFor: /** @type {any} */ (null) }; // TREES-LP-b
     this._meshGroups = new MeshGroupSet(); // MESH-INST-01: repeated placed meshes -> one instanced draw per mesh
     this._strictMatIdFor = null;               // ME-14c3: idFor that throws on an undefined palette key
     this._meshDrawList = null;
@@ -1774,7 +1775,8 @@ export class GpuCellPipeline {
     // render tick / gpucompare's per-pose bump - not by this pipeline), so the GPU pass and the JS mesh
     // twin (`compositor.js`'s `renderWorldMesh`) share one counter instead of two independent ones.
     if (this._instances) {
-      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo, this._meshViewProj, this.rows);
+      this._meshDrawArg.cache = this._meshDrawCache; this._meshDrawArg.idFor = this._strictMatIdFor || null; // TREES-LP-b: kind-9 mesh groups
+      this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo, this._meshViewProj, this.rows, this._meshDrawArg);
       this.stats.instancesCulled = this._instances.stats.instancesCulled;
       this.stats.instancesLod1 = this._instances.stats.instancesLod1;
     }
