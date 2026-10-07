@@ -499,9 +499,14 @@ function planarUv(face, x, y, z) {
  * engine materials is a sidecar step (ME-13b), not this function's job.
  * @param {ArrayBuffer|Uint8Array|string} buffer
  * @param {string} id - MeshData id, e.g. `gltf:<file>/<localId>`
- * @param {{buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number, triMat?: (uv0:number[],uv1:number[],uv2:number[],matName:string)=>string}} [opts] - `triMat`: per-triangle material name from the source UVs (MESH-UVMAP-01); `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
+ * @param {{alpha?: boolean, textures?: Record<string,{tex:string,w:number,h:number,alpha:Uint8Array}>, opaque?: string[], warnings?: string[], buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number, triMat?: (uv0:number[],uv1:number[],uv2:number[],matName:string)=>string}} [opts] - `triMat`: per-triangle material name from the source UVs (MESH-UVMAP-01); `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
  *   `json.buffers[i]` when its `uri` is an external file (not a data: URI
  *   and not GLB-embedded) - this module never reads a file itself.
+ * ALPHA-01a (37.17): `opts.alpha = true` turns every `alphaMode: 'MASK'` material into a masked range (`mask: {tex, cutoff}`, cutoff = alphaCutoff
+ *   or 0.5) and fills `uvMask` with the source TEXCOORD_0 of those triangles. `opts.textures[materialName]` = the downsampled 8-bit alpha plane
+ *   (+ its mask id `tex`; the tool reads the PNG, never this module). `opts.opaque` = material names forced opaque. Auto-opaque rule: a MASK
+ *   material whose texels (inside the UV bbox of its own triangles) are all >= cutoffByte is imported opaque, with a line in `opts.warnings`.
+ *   Masked ranges are ordered after every opaque range (triangles reordered to match, stable); masked primitives are never simplified.
  * @returns {MeshData}
  */
 export function loadGltf(buffer, id, opts = {}) {
@@ -542,12 +547,17 @@ export function loadGltf(buffer, id, opts = {}) {
   const meshNodes = collectMeshNodes(json, id);
   if (meshNodes.length === 0) bad(id, 'has no mesh-bearing nodes reachable from the default scene');
 
+  // ALPHA-01a: which materials are masked (decided once per material, after seeing the UV bbox of all its triangles)
+  /** @type {Map<number, {tex:string, cutoff:number}|null>} */
+  const maskOf = new Map();
+  if (opts.alpha) resolveMasks(json, meshNodes, buffers, opts, maskOf, id);
+
   // --- Pass 1: bake every primitive's triangles (world+axis-converted),
   // flat face normal, material name, source uv ----------------------------
   /** @typedef {{p0:number[],p1:number[],p2:number[],normal:number[],matName:string,uv0:number[]|null,uv1:number[]|null,uv2:number[]|null}} BakedTri */
   /** @type {BakedTri[]} */
   const allTris = [];
-  /** @type {{part: string, triStart: number, triCount: number}[]} */
+  /** @type {{part: string, triStart: number, triCount: number, mask?: {tex:string, cutoff:number}}[]} */
   const primRanges = [];
   const tmp = [0, 0, 0];
 
@@ -577,6 +587,8 @@ export function loadGltf(buffer, id, opts = {}) {
       }
       // MESH-UVMAP-01: `opts.triMat(uv0, uv1, uv2, matName)` (needs TEXCOORD_0) names a material per triangle; the primitive is split
       // into one group per name (first-appearance order) and each group is simplified on its own, so keys are never merged.
+      const primMask = (opts.alpha && prim.material !== undefined && maskOf.get(prim.material)) || null;
+      if (primMask && !uvRows) bad(id, `masked material "${matName}" needs TEXCOORD_0`);
       /** @type {{matName:string, idx:number[]}[]} */
       const groups = [];
       if (opts.triMat && uvRows) {
@@ -595,7 +607,7 @@ export function loadGltf(buffer, id, opts = {}) {
         let gPos = bakedPos;
         // ME-SIMPLIFY-01: `opts.simplifyRatio` (0 < r < 1) reduces each primitive to r x its triangles (quadric edge collapse,
         // positions welded; planar UVs and smoothing groups are derived afterwards, so source UVs cannot be kept).
-        if (opts.simplifyRatio > 0 && opts.simplifyRatio < 1) {
+        if (opts.simplifyRatio > 0 && opts.simplifyRatio < 1 && !primMask) {
           if (opts.uv === 'source') bad(id, 'simplifyRatio cannot keep source UVs (use planar)');
           const target = Math.max(4, Math.round((gIdx.length / 3) * opts.simplifyRatio));
           const red = simplifyTriangles(bakedPos, gIdx, target);
@@ -620,12 +632,92 @@ export function loadGltf(buffer, id, opts = {}) {
           });
         }
         const base = node.name || `node${nodeIdx}`;
-        primRanges.push({ part: groups.length > 1 ? `${base}#${pi}:${grp.matName}` : `${base}#${pi}`, triStart, triCount });
+        primRanges.push({ part: groups.length > 1 ? `${base}#${pi}:${grp.matName}` : `${base}#${pi}`, triStart, triCount, ...(primMask ? { mask: primMask } : {}) });
       }
     }
   }
 
+  if (primRanges.some((r) => r.mask)) {
+    const o = orderMaskedLast(allTris, primRanges);
+    return buildMeshFromTris(o.tris, o.ranges, id, opts);
+  }
   return buildMeshFromTris(allTris, primRanges, id, opts);
+}
+
+/** Stable reorder: opaque ranges first, then masked ranges grouped by mask texture + cutoff (first-appearance order). Triangles move with their range. */
+function orderMaskedLast(allTris, primRanges) {
+  const maskKey = (r) => `${r.mask.tex}@${r.mask.cutoff}`;
+  const order = [...primRanges.filter((r) => !r.mask)];
+  const seen = [];
+  for (const r of primRanges) if (r.mask && !seen.includes(maskKey(r))) seen.push(maskKey(r));
+  for (const k of seen) for (const r of primRanges) if (r.mask && maskKey(r) === k) order.push(r);
+  const tris = [];
+  const ranges = order.map((r) => {
+    const triStart = tris.length;
+    for (let t = 0; t < r.triCount; t++) tris.push(allTris[r.triStart + t]);
+    return { ...r, triStart };
+  });
+  return { tris, ranges };
+}
+
+/**
+ * ALPHA-01a: fills `maskOf` (material index -> {tex, cutoff} | null) for every MASK material that is used. Throws if `opts.textures[name]` is missing.
+ * Auto-opaque rule (37.17): no texel < cutoffByte inside the UV bbox of the material's own triangles -> opaque + warning.
+ */
+function resolveMasks(json, meshNodes, buffers, opts, maskOf, id) {
+  const mats = json.materials || [];
+  const bbox = new Map(); // material index -> [umin, vmin, umax, vmax]
+  for (const { node } of meshNodes) {
+    for (const prim of json.meshes[node.mesh].primitives) {
+      const mi = prim.material;
+      if (mi === undefined || !mats[mi] || mats[mi].alphaMode !== 'MASK' || prim.attributes.TEXCOORD_0 === undefined) continue;
+      const rows = readAccessor(json, buffers, prim.attributes.TEXCOORD_0, id);
+      let idx = null;
+      if (prim.indices !== undefined) idx = readAccessor(json, buffers, prim.indices, id, { allowIndexTypes: true }).map((r) => r[0]);
+      const use = idx || rows.map((_, i) => i);
+      let b = bbox.get(mi);
+      if (!b) { b = [Infinity, Infinity, -Infinity, -Infinity]; bbox.set(mi, b); }
+      for (const i of use) {
+        const r = rows[i];
+        if (r[0] < b[0]) b[0] = r[0];
+        if (r[1] < b[1]) b[1] = r[1];
+        if (r[0] > b[2]) b[2] = r[0];
+        if (r[1] > b[3]) b[3] = r[1];
+      }
+    }
+  }
+  const forced = new Set(opts.opaque || []);
+  for (const [mi, b] of bbox) {
+    const name = mats[mi].name || `material_${mi}`;
+    if (forced.has(name)) { maskOf.set(mi, null); continue; }
+    const t = opts.textures && opts.textures[name];
+    if (!t) bad(id, `masked material "${name}" needs opts.textures["${name}"] = {tex, w, h, alpha} (or force it opaque with opts.opaque)`);
+    const cutoff = typeof mats[mi].alphaCutoff === 'number' ? Math.round(mats[mi].alphaCutoff * 1e5) / 1e5 : 0.5; // f32 in the file: 1e-5 like the other floats
+    if (!(cutoff > 0 && cutoff < 1)) bad(id, `material "${name}" alphaCutoff ${cutoff} must be in (0,1)`);
+    const cutByte = Math.round(cutoff * 255);
+    if (texelsAllOpaque(t, b, cutByte)) {
+      maskOf.set(mi, null);
+      if (opts.warnings) opts.warnings.push(`material "${name}" is alphaMode MASK but has no texel < ${cutByte} in its UV region: imported opaque`);
+    } else maskOf.set(mi, { tex: t.tex, cutoff });
+  }
+}
+
+/** True when every texel covered by the UV bbox (wrapping, repeat) is >= cutByte. */
+function texelsAllOpaque(t, b, cutByte) {
+  const span = (lo, hi, n) => {
+    const a = Math.floor(lo * n), z = Math.floor(hi * n);
+    if (z - a + 1 >= n) return null; // whole axis
+    const out = [];
+    for (let i = a; i <= z; i++) out.push(((i % n) + n) % n);
+    return out;
+  };
+  const xs = span(b[0], b[2], t.w), ys = span(b[1], b[3], t.h);
+  const nx = xs ? xs.length : t.w, ny = ys ? ys.length : t.h;
+  for (let j = 0; j < ny; j++) {
+    const y = ys ? ys[j] : j;
+    for (let i = 0; i < nx; i++) if (t.alpha[y * t.w + (xs ? xs[i] : i)] < cutByte) return false;
+  }
+  return true;
 }
 
 /**
@@ -633,7 +725,7 @@ export function loadGltf(buffer, id, opts = {}) {
  * Smoothing groups per primitive range, per-vertex normals, planar (or source) UVs, typed arrays, assertMesh.
  * @param {{p0:number[],p1:number[],p2:number[],normal:number[],matName:string,uv0:number[]|null,uv1:number[]|null,uv2:number[]|null}[]} allTris
  *   world-space, axis-converted, winding already fixed, `normal` = unit flat face normal
- * @param {{part: string, triStart: number, triCount: number}[]} primRanges
+ * @param {{part: string, triStart: number, triCount: number, mask?: {tex: string, cutoff: number}}[]} primRanges
  * @param {string} id
  * @param {{uv?: 'planar'|'source'}} [opts]
  * @returns {MeshData}
@@ -668,8 +760,21 @@ export function buildMeshFromTris(allTris, primRanges, id, opts = {}) {
   const matIndex = new Map();
   const matKeys = [];
   const bbox = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-  /** @type {{start:number,count:number,part:string}[]} */
-  const ranges = primRanges.map((r) => ({ start: r.triStart, count: r.triCount, part: r.part }));
+  /** @type {import("./MeshData.js").MeshRange[]} */
+  const ranges = primRanges.map((r) => (r.mask ? { start: r.triStart, count: r.triCount, part: r.part, mask: { tex: r.mask.tex, cutoff: r.mask.cutoff } } : { start: r.triStart, count: r.triCount, part: r.part }));
+  // ALPHA-01a: uvMask (source TEXCOORD_0) only when some range is masked; zeros on the opaque triangles
+  const uvMask = ranges.some((r) => r.mask) ? new Float32Array(V * 2) : null;
+  if (uvMask) {
+    for (const r of ranges) {
+      if (!r.mask) continue;
+      for (let t = r.start; t < r.start + r.count; t++) {
+        const tri = allTris[t];
+        if (!tri.uv0) throw new Error(`glTF ${id}: masked range "${r.part}" has a triangle without TEXCOORD_0`);
+        const src = [tri.uv0, tri.uv1, tri.uv2];
+        for (let c = 0; c < 3; c++) { uvMask[(t * 3 + c) * 2] = src[c][0]; uvMask[(t * 3 + c) * 2 + 1] = src[c][1]; }
+      }
+    }
+  }
 
   for (let t = 0; t < triCount; t++) {
     const tri = allTris[t];
@@ -707,7 +812,7 @@ export function buildMeshFromTris(allTris, primRanges, id, opts = {}) {
     version: MESH_VERSION,
     id,
     layout: 'static',
-    pos, uv, nrm, flat, aux,
+    pos, uv, ...(uvMask ? { uvMask } : {}), nrm, flat, aux,
     idx: null,
     triCount,
     bbox: Float64Array.from(bbox),

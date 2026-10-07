@@ -34,6 +34,7 @@ export const AO_FAR = 1e30;
  * @property {number} start - first triangle index (triangle units, not vertex/index units)
  * @property {number} count - triangle count
  * @property {string} [part] - voxel part name / glTF primitive name
+ * @property {{tex: string, cutoff: number}} [mask] - ALPHA-01a (37.17): alpha-cutout range; `tex` = mask id (content/masks), `cutoff` in (0,1); needs `uvMask`; masked ranges come after every opaque range
  */
 
 /**
@@ -43,6 +44,7 @@ export const AO_FAR = 1e30;
  * @property {'static'|'terrain'|'cloth'} layout
  * @property {Float32Array} pos - 3 floats/vertex, mesh-local metres
  * @property {Float32Array} uv - static: 2 floats/vertex (metres); terrain: length 0
+ * @property {Float32Array} [uvMask] - ALPHA-01a: source TEXCOORD_0, 2 floats/vertex (zeros on opaque ranges); present only when some range is masked
  * @property {Uint32Array} nrm - 1 uint/vertex, packNormalOct of the mesh-local unit normal
  * @property {Uint32Array} flat - static: 2 uints/vertex [planeIdBase, kind|face<<8|mat<<16]; terrain: length 0
  * @property {Float32Array} aux - static: 8 floats/vertex (AO layout, see levelMesh.js); terrain: length 0
@@ -354,6 +356,23 @@ export function validateMesh(mesh) {
         push(`ranges[${i}]`, `[${r.start}, ${r.start + r.count}) outside [0, ${mesh.triCount}]`);
       }
     }
+    // ALPHA-01a (37.17): masked ranges need uvMask + a sane cutoff and sit after every opaque range
+    let seenMask = false;
+    for (let i = 0; i < mesh.ranges.length; i++) {
+      const r = mesh.ranges[i];
+      if (!r || r.mask === undefined) { if (seenMask && r) push(`ranges[${i}]`, 'opaque range after a masked range (masked ranges must come last)'); continue; }
+      seenMask = true;
+      const m = r.mask;
+      if (!m || typeof m.tex !== 'string' || !m.tex) push(`ranges[${i}].mask`, 'needs a non-empty string tex');
+      else if (typeof m.cutoff !== 'number' || !(m.cutoff > 0 && m.cutoff < 1)) push(`ranges[${i}].mask`, `cutoff ${m.cutoff} must be in (0,1)`);
+      if (!mesh.uvMask) push(`ranges[${i}].mask`, 'a masked range requires uvMask');
+    }
+  }
+  if (mesh.uvMask !== undefined) {
+    if (!(mesh.uvMask instanceof Float32Array)) push('uvMask', 'must be a Float32Array');
+    else if (mesh.layout !== 'static') push('uvMask', 'only on a static mesh');
+    else if (mesh.uvMask.length !== (mesh.pos.length / 3) * 2) push('uvMask', `length ${mesh.uvMask.length}, expected ${(mesh.pos.length / 3) * 2} (2/vertex)`);
+    else if (!isFiniteArray(mesh.uvMask)) push('uvMask', 'contains a non-finite value');
   }
 
   return { errors };
@@ -388,6 +407,13 @@ export function resolveMats(mesh, matIdFor) {
 }
 
 function arr(a) { return a ? Array.from(a) : a; }
+/** Range content form (shared by toJSON/fromJSON): key order start, count, part, mask. */
+function rangeJSON(r) {
+  const o = { start: r.start, count: r.count };
+  if (r.part !== undefined) o.part = r.part;
+  if (r.mask !== undefined) o.mask = { tex: r.mask.tex, cutoff: r.mask.cutoff };
+  return o;
+}
 
 /**
  * Content form (plain number arrays, stable key order) - not the canonical
@@ -402,13 +428,14 @@ export function meshToJSON(mesh) {
     layout: mesh.layout,
     pos: arr(mesh.pos),
     uv: arr(mesh.uv),
+    ...(mesh.uvMask ? { uvMask: arr(mesh.uvMask) } : {}),
     nrm: arr(mesh.nrm),
     flat: arr(mesh.flat),
     aux: arr(mesh.aux),
     idx: mesh.idx ? arr(mesh.idx) : null,
     triCount: mesh.triCount,
     bbox: arr(mesh.bbox),
-    ranges: mesh.ranges.map((r) => (r.part !== undefined ? { start: r.start, count: r.count, part: r.part } : { start: r.start, count: r.count })),
+    ranges: mesh.ranges.map(rangeJSON),
     matKeys: mesh.matKeys.slice(),
     ...(mesh.mats ? { mats: { ...mesh.mats } } : {}),
     matsResolved: mesh.matsResolved,
@@ -428,13 +455,14 @@ export function meshFromJSON(obj) {
     layout: obj.layout,
     pos: Float32Array.from(obj.pos),
     uv: Float32Array.from(obj.uv),
+    ...(obj.uvMask ? { uvMask: Float32Array.from(obj.uvMask) } : {}),
     nrm: Uint32Array.from(obj.nrm),
     flat: Uint32Array.from(obj.flat),
     aux: Float32Array.from(obj.aux),
     idx: obj.idx ? (isTerrain ? Uint32Array.from(obj.idx) : null) : null,
     triCount: obj.triCount,
     bbox: Float64Array.from(obj.bbox),
-    ranges: obj.ranges.map((r) => (r.part !== undefined ? { start: r.start, count: r.count, part: r.part } : { start: r.start, count: r.count })),
+    ranges: obj.ranges.map(rangeJSON),
     matKeys: obj.matKeys.slice(),
     ...(obj.mats ? { mats: { ...obj.mats } } : {}),
     matsResolved: obj.matsResolved,

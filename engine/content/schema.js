@@ -3,7 +3,7 @@
 // module reads these instead of hard-coding shapes twice.
 
 /** Highest schema version this engine understands, per file kind. */
-export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1 };
+export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, mask: 1 };
 
 /** Envelope keys every content file carries (21.2), first in `KEY_ORDER`. */
 export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
@@ -47,8 +47,10 @@ export const REF_FIELDS = {
  * alphabetically after these.
  */
 export const KEY_ORDER = {
-  manifest: [...ENVELOPE_KEYS, 'contentVersion', 'files'],
-  mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'pos', 'uv', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider', 'castShadow'],
+  manifest: [...ENVELOPE_KEYS, 'contentVersion', 'files', 'masks'],
+  // ALPHA-01a (37.17): alpha mask file (no nextId, no id collections)
+  mask: ['kind', 'schema', 'id', 'w', 'h', 'cutoffDefault', 'data'],
+  mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'pos', 'uv', 'uvMask', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider', 'castShadow'],
   level: [...ENVELOPE_KEYS, 'name', 'title', 'version', 'cellSize', 'size', 'rows', 'legend', 'layers', 'tilt', 'start', 'sun', 'ambient', 'lights', 'props', 'interactables', 'triggers', 'markers', 'route', 'routeNotes'],
   // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
   // optional keys - schema stays 1, a world file without them still loads.

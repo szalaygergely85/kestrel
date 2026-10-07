@@ -29,6 +29,7 @@ export { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS, KEY_ORDER, ORDERED_MAPS, ENV
 export { ContentError } from './content/ContentError.js';
 export { migrateContent, MIGRATIONS } from './content/migrate.js';
 export { stringifyContent } from './content/stringify.js';
+export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content/maskFile.js'; // ALPHA-01a
 export { loadContentPack, globalId } from './content/loadPack.js';
 
 // ---- world ----------------------------------------------------------------

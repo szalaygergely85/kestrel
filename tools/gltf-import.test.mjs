@@ -267,5 +267,65 @@ await testAsync('runCli: --help with no args returns the help text', async () =>
   assert.ok(result.text.includes('gltf-import'));
 });
 
+// ---- ALPHA-01a (37.17): alpha masks -------------------------------------------------------------------------------------------------
+import { downsampleAlpha, maskFromJSON, stringifyContent } from '../engine/index.js';
+const QGLTF = 'design/meshes/quaternius/glTF/CommonTree_1.gltf';
+
+test('mask downsample: hand-checked 2x2 -> 1x1 box average, rounded', () => {
+  assert.deepStrictEqual([...downsampleAlpha(Uint8Array.from([0, 255, 255, 255]), 2, 2, 1, 1)], [191]); // 765/4 = 191.25
+  assert.deepStrictEqual([...downsampleAlpha(Uint8Array.from([0, 0, 255, 1]), 2, 2, 1, 1)], [64]); // 256/4 = 64
+  assert.deepStrictEqual([...downsampleAlpha(Uint8Array.from([10, 20, 30, 40]), 2, 2, 2, 2)], [10, 20, 30, 40]); // same size = identity
+  assert.deepStrictEqual([...downsampleAlpha(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]), 4, 2, 2, 1)], [4, 6]); // (1+2+5+6)/4=3.5->4 , (3+4+7+8)/4=5.5->6
+});
+
+await testAsync('CommonTree_1 dry-run: 2 ranges (bark opaque by the auto rule, leaves masked), WARN, mask file named', async () => {
+  const r = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run']);
+  assert.strictEqual(r.report.ranges.length, 2);
+  assert.strictEqual(r.report.ranges[0].mask, undefined);
+  assert.strictEqual(r.report.ranges[0].count, 4345);
+  assert.deepStrictEqual(r.report.ranges[1].mask, { tex: 'quaternius/Leaves_NormalTree_C', cutoff: 0.2 });
+  assert.strictEqual(r.report.ranges[1].count, 1920);
+  assert.ok(r.report.warnings.some((w) => w.includes('"Bark_NormalTree"')), 'Bark_NormalTree WARN');
+  assert.strictEqual(r.report.maskFiles.length, 1);
+});
+
+await testAsync('CommonTree_1: .mesh.json + .mask.json written, re-run byte-identical, mask file canonical + loadable, --masks none = old output', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-mask-'));
+  try {
+    const run = async (n, extra = []) => runCli([QGLTF, 'quaternius/CommonTree_1', '--out', path.join(dir, `m${n}.json`), '--masks', path.join(dir, `masks${n}`), ...extra]);
+    await run(1); await run(2);
+    const a = fs.readFileSync(path.join(dir, 'm1.json'), 'utf8');
+    assert.strictEqual(a, fs.readFileSync(path.join(dir, 'm2.json'), 'utf8'));
+    const mf = path.join('masks1', 'quaternius', 'Leaves_NormalTree_C.mask.json');
+    const text = fs.readFileSync(path.join(dir, mf), 'utf8');
+    assert.strictEqual(text, fs.readFileSync(path.join(dir, 'masks2', 'quaternius', 'Leaves_NormalTree_C.mask.json'), 'utf8'));
+    assert.strictEqual(stringifyContent(JSON.parse(text)), text, 'mask file is in canonical stringifyContent form');
+    const mask = maskFromJSON(JSON.parse(text));
+    assert.strictEqual(mask.w, 256); assert.strictEqual(mask.h, 256); assert.strictEqual(mask.cutoffDefault, 0.2);
+    assert.ok(mask.data.some((b) => b < 51) && mask.data.some((b) => b === 255), 'leaf mask has holes and solid texels');
+    const mesh = meshFromJSON(JSON.parse(a));
+    assert.deepStrictEqual(validateMesh(mesh).errors, []);
+    assert.ok(mesh.uvMask && mesh.ranges[1].mask && !mesh.ranges[0].mask);
+    const none = await runCli([QGLTF, 'quaternius/CommonTree_1', '--out', path.join(dir, 'none.json'), '--masks', 'none']);
+    assert.strictEqual(none.report.ranges.length, 2);
+    assert.ok(!JSON.parse(fs.readFileSync(path.join(dir, 'none.json'), 'utf8')).uvMask, '--masks none imports as before (no uvMask)');
+    const low = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--mask-res', '64']);
+    assert.ok(low.report.maskFiles.length === 1);
+    const forced = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--opaque', 'Leaves_NormalTree']);
+    assert.ok(forced.report.ranges.every((r) => !r.mask), '--opaque forces the leaf material opaque');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+await testAsync('Ruins import unchanged by ALPHA-01a: no uvMask/mask, render data equals the committed content mesh', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-ruins-'));
+  try {
+    const out = path.join(dir, 'Line.json');
+    await runCli(['design/meshes/ruins/Fences/Line.glb', 'ruins/Fences/Line', '--out', out]);
+    const now = JSON.parse(fs.readFileSync(out, 'utf8')), was = JSON.parse(fs.readFileSync('content/meshes/ruins/Fences/Line.mesh.json', 'utf8'));
+    assert.ok(!('uvMask' in now));
+    for (const k of ['pos', 'uv', 'nrm', 'flat', 'aux', 'bbox', 'ranges', 'matKeys', 'triCount']) assert.deepStrictEqual(now[k], was[k], k);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 console.log(`${passed} passed, ${process.exitCode ? 'some failed' : '0 failed'}.`);
 if (!process.exitCode) console.log('ALL PASS');

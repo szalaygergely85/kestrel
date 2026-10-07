@@ -78,7 +78,7 @@ const manifest = JSON.parse(manifestText);
 
 // The manifest describes itself too (US-027a convention: it is also
 // canonical-form content), so check it alongside the files it lists.
-const filesToCheck = ['manifest.json', ...manifest.files];
+const filesToCheck = ['manifest.json', ...manifest.files, ...(manifest.masks || [])]; // ALPHA-01a: mask files are canonical content too
 
 for (const rel of filesToCheck) {
   const full = path.join(CONTENT_DIR, rel);
