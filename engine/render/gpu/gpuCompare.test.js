@@ -1,7 +1,7 @@
 // engine/render/gpu/gpuCompare.test.js (US-029 tech notes item 10).
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
-import { compareCells, compareGeometry } from './gpuCompare.js';
+import { compareCells, compareGeometry, compareLight, meshTieReaders, meshTiesCap } from './gpuCompare.js';
 import { makeOk } from '../../test/assert.js';
 
 // f32<->u32 bit-cast helper for building synthetic readbackGeometry() data.

@@ -1,3 +1,5 @@
+// MESH-FULL-01 (architecture 37.19): REPORT-ONLY. Budgets are warn thresholds, not targets; imported art keeps its authored detail
+// (reimport-quaternius.mjs --full never simplifies). `--budget` / `--simplify` stay as opt-in tool flags (far LODs, after an owner preview).
 // MESH-SIMP-01: per-mesh triangle budgets for imported Quaternius meshes. First matching rule wins (matched on the
 // mesh id's basename). `gltf-import.mjs --budget` uses it as the --simplify target; `reimport-quaternius.mjs` applies it
 // to every mesh in content/meshes/quaternius/ that is above its budget.

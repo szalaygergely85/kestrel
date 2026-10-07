@@ -15,4 +15,4 @@ description: Run and read kestrel's ?gpucompare=1 gate (GPU pipeline vs JS twin 
 - Shader (GLSL) changes need the architect: PC-B writes `ASK ARCHITECT:` / `NEEDS PC-A:` with the exact change.
 - Debug Node-first (probe both twins' math, e.g. `octNormal.js` pack/unpack), then one headless run to confirm.
 
-Known open (2026-10-07): MESH-GPUCMP-01 A6 smooth normals are in; 19 rows still fail vs the pre-road run on kind-9 cell colour/glyph (not normals) - see the backlog row. Failure counts differ per GPU: compare against a baseline from the same machine.
+Known open (2026-10-07): A6/A7 smooth-normal and edge fixes plus PREC-04 tie masking are in. PREC-04b (PC-A) owns remaining tie caps/colour outliers. D-045 full-detail baselines are in docs/test-reports/MESH-FULL-01.md. Counts differ by GPU: compare the same-machine branch baseline, never widen thresholds. WG-2 is not a complete scene pipeline yet; WebGPU timer numbers currently measure present only.

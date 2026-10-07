@@ -2,6 +2,10 @@
 
 Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md` / `CLAUDE.md`** (DeepSeek trial agents: also `DEEPSEEK.md`, which limits you to 4 trial items). It replaces the long QUEUE blocks at the top of `docs/backlog.md`; story details stay in the backlog rows and `docs/architecture.md`.
 
+## Current PC-A handover (2026-10-07, c0bf843; supersedes historical sections below)
+
+Order: QUAT-TREES-01, QUAT-GROUND-01, MESH-SHADOW-02, MESH-INST-01, BUG-GONDOLA-FALL-b, HANDS-01c-b, WG-2b/2c, WG-1b3, TEST-GAPS-WG, DIAG-SWIFTSHADER, EDITOR-LOAD-01, EP-DESKTOP-SPIKE, BACKLOG-TRIAGE. Full detail stays; no new GLSL. WG-2b starts after WG-2a ARCH review; its gate waits for PC-A PREC-04b. See the latest rows for pickup blockers and completed work. PC-A owns PREC-04b, OWNER-LOOK-ROADSOUTH and WG-4c.
+
 ## Rules (short)
 - `git fetch origin && git merge origin/master` before each item and before pushing.
 - One commit per item: code + its backlog row update. Push after each item.

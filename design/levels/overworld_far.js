@@ -84,7 +84,13 @@
           { shape: 'capsule', ax: 1350, ay: 1056, bx: 1260, by: 1051, r: 5 },
           { shape: 'capsule', ax: 1260, ay: 1051, bx: 1180, by: 1068, r: 5 },
           { shape: 'capsule', ax: 1180, ay: 1068, bx: 1090, by: 1076, r: 5 },
-          { shape: 'capsule', ax: 1090, ay: 1076, bx: 1000, by: 1072, r: 5 }
+          { shape: 'capsule', ax: 1090, ay: 1076, bx: 1000, by: 1072, r: 5 },
+          // OWNER 2026-10-07 road-left Quaternius scatter (tools/gen-roadside-meshes.mjs, world_m1 structures roadL###): the wider verge,
+          // 4.5..23.5 m south of the centre line (capsule centres = path + 14 m south, r 9.5), stays free of ground detail. Regenerate with the tool.
+          { shape: 'capsule', ax: 1474, ay: 1040, bx: 1422, by: 1046, r: 9.5 },
+          { shape: 'capsule', ax: 1422, ay: 1046, bx: 1353, by: 1064, r: 9.5 },
+          { shape: 'capsule', ax: 1353, ay: 1064, bx: 1259, by: 1059, r: 9.5 },
+          { shape: 'capsule', ax: 1259, ay: 1059, bx: 1230, by: 1066, r: 9.5 }
         ],
         layers: [
           { name: 'tufts', seed: 38101, cellM: 2.5, jitter: 1.0, fill: 0.6, maxSlope: 0.7, clearM: 0.8, drawM: 28, lodCells: 4,
