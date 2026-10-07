@@ -35,7 +35,7 @@
 // if (h<nbrALo) d=min(d,fr); if (h<nbrBLo) d=min(d,1-fr)`; AO_PLANE(2)
 // `fx=u-cellX0, fy=v-cellY0; W/E/N/S bits narrow a=min(a,...)`.
 import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './common.js';
-import { KIND_MODEL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
+import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const AO_NONE = 0, AO_WALL = 1, AO_PLANE = 2;
 
@@ -53,6 +53,8 @@ layout(location = 2) out uint outDepth;
 
 const int AO_NONE = ${AO_NONE}, AO_WALL = ${AO_WALL}, AO_PLANE = ${AO_PLANE};
 const uint KIND_MODEL = ${KIND_MODEL}u;
+${cloth ? '' : `const uint KIND_MESH = ${KIND_MESH}u;
+`}
 const int FACE_N = ${FACE_N}, FACE_E = ${FACE_E}, FACE_S = ${FACE_S}, FACE_W = ${FACE_W}, FACE_U = ${FACE_U}, FACE_D = ${FACE_D};
 const int FACE_PACKED = ${FACE_PACKED};
 
@@ -60,7 +62,8 @@ flat in int vPlaneId;
 flat in uint vKind, vFace, vMat;
 flat in float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat in float vZBase;
-${cloth ? 'in vec3 vNrmS;' : 'flat in vec3 vNrmW;'}
+${cloth ? 'in vec3 vNrmS;' : `flat in vec3 vNrmW;
+in vec3 vNrmS;         // MESH-GPUCMP-01 (A6): smooth normal, kind 9 only`}
 flat in uint vObjectId, vAxisAligned; // RE-06: were uniforms; the vertex stage supplies them per draw / per instance
 in vec2 vUV;
 in float vWorldZ;
@@ -131,7 +134,18 @@ ${cloth ? `  vec3 nrmW = normalize(vNrmS);
       gaW = nrmBits;
     }
   }
-  // GI.w = uObjectId (structSeq for levels = the old planeId top-3-bit
+${cloth ? '' : `  if (vKind == KIND_MESH) {
+    // MESH-GPUCMP-01 (A6): twin of rasterJS.js isMesh (smooth, single-sided: no back-face flip; nrm bits written for every kind-9 cell).
+    vec3 nm = normalize(vNrmS);
+    nrmBits = packNormalOct(nm);
+    if (max(abs(nm.x), max(abs(nm.y), abs(nm.z))) >= 0.9) {
+      face = roundedFace(nm);
+    } else {
+      face = uint(FACE_PACKED);
+      gaW = nrmBits;
+    }
+  }
+`}  // GI.w = uObjectId (structSeq for levels = the old planeId top-3-bit
   // decode; 0x8000|slot for voxels).
   outGI = uvec4(uint(vPlaneId), vKind | (face << 8u) | (vMat << 16u), nrmBits, vObjectId);
   outGA = uvec4(floatBitsToUint(vUV.x), floatBitsToUint(vUV.y), floatBitsToUint(z), gaW);

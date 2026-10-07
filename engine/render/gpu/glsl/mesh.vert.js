@@ -72,7 +72,8 @@ flat out int vPlaneId;
 flat out uint vKind, vFace, vMat;
 flat out float vAoMode, vZRef, vAux2, vAux3, vAux4, vAux5;
 flat out float vZBase;
-${cloth ? 'out vec3 vNrmS;          // CLOTH-1b2: smooth world-space vertex normal (perspective-correct, normalised per fragment)' : 'flat out vec3 vNrmW;     // ME-08a: world-space face normal (one per greedy quad)'}
+${cloth ? 'out vec3 vNrmS;          // CLOTH-1b2: smooth world-space vertex normal (perspective-correct, normalised per fragment)' : `flat out vec3 vNrmW;     // ME-08a: world-space face normal (one per greedy quad)
+out vec3 vNrmS;          // MESH-GPUCMP-01 (A6): smooth world-space vertex normal for kind 9 (perspective-correct, normalised per fragment)`}
 flat out uint vObjectId, vAxisAligned; // RE-06: were fragment uniforms; per-instance now
 out vec2 vUV;
 out float vWorldZ;
@@ -139,8 +140,11 @@ ${cloth ? `  vec4 worldPos = uModel * vec4(aPos, 1.0);
 `}
   // mat3(uModel) = rotation x uniform cellM, so normalising is exact.
 ${cloth ? '' : instanced ? `  vec3 ln = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
-  vNrmW = normalize(vec3(dot(iRow0.xyz, ln), dot(iRow1.xyz, ln), dot(iRow2.xyz, ln)));
+  vec3 nw = normalize(vec3(dot(iRow0.xyz, ln), dot(iRow1.xyz, ln), dot(iRow2.xyz, ln)));
+  vNrmW = nw;
+  vNrmS = nw;
 ` : `  vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
+  vNrmS = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));
 `}
   vUV = aUV;
   vWorldZ = worldPos.z;
