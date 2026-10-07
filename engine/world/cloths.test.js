@@ -239,8 +239,10 @@ const hashOf = (sys) => { const h = createHasher(); sys.hashInto(h); return h.va
 }
 
 // ---- World.load: world + level blocks, level-frame conversion, not saved ----
+let sharedAssets;
 {
   const { assets } = await loadTestAssets();
+  sharedAssets = assets;
   const def = assets.world('world_m1');
   const base = World.load(def, assets, {});
   // CLOTH-1b5 placed a real content cloth (tower.stairwell.canvas) in
@@ -276,6 +278,28 @@ const hashOf = (sys) => { const h = createHasher(); sys.hashInto(h); return h.va
   ok('cloths not in serialize', !/cloth/i.test(stringifySave(serialize(w))));
   const m = threw(() => { const bd = { ...def, cloths: [blk('bad', { pins: [] })] }; World.load(bd, assets, {}); });
   ok('World.load throws naming the bad cloth', !!m && m.includes('"bad"'), String(m));
+}
+
+// ---- CLOTH-DRAPE-01: the stairwell drape (tower.level.json) hangs from the step-I lip ----
+{
+  const assets = sharedAssets;
+  const w = World.load(assets.world('world_m1'), assets, {});
+  const sys = w.cloths;
+  const di = sys.ids.findIndex((n) => n.endsWith('stairwell.drape'));
+  ok('drape: loaded by id', di >= 0, sys.ids.join());
+  if (di >= 0) {
+    const c = sys.cloths[di];
+    ok('drape: 80 nodes', c.n === 80, String(c.n));
+    const fr = w.structures.find((x) => x.id === 'tower').frame;
+    // wake it (eye next to it, drawn) and settle 600 ticks
+    const ex = fr.x + 13, ey = fr.y + 7.4, ez = fr.z + 5.4;
+    let minZ = 1e9, pinZ = [];
+    for (let t = 1; t <= 600; t++) { sys.lastDrawn.fill(t); sys.tick(t, null, ex, ey, ez); }
+    for (let k = 0; k < c.n; k++) minZ = Math.min(minZ, c.pos[3 * k + 2]);
+    ok('drape: pinned nodes at the step-I lip (z 5.4, x 14.05)', [1, 3, 6].every((col) => Math.abs(c.pos[3 * col + 2] - (fr.z + 5.4)) < 0.05 && Math.abs(c.pos[3 * col] - (fr.x + 14.05)) < 0.05), String(c.pos.slice(0, 24)));
+    ok('drape: hem stays >= 3.45 m above the level floor after settling', minZ - fr.z >= 3.45, String(minZ - fr.z));
+    ok('drape: cloth budget holds (2 cloths awake, <= 768 nodes)', sys.stats.awake <= 6 && sys.stats.awakeNodes <= 768, JSON.stringify(sys.stats));
+  }
 }
 
 console.log(`cloths.test: ${pass} passed, ${fail} failed`);
