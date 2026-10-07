@@ -59,6 +59,18 @@ const consts = {
   tex: { TEXTURE_BINDING: 1, RENDER_ATTACHMENT: 2, COPY_SRC: 4, COPY_DST: 8 },
   stage: { VERTEX: 1, FRAGMENT: 2 }, map: { READ: 1 },
 };
+// WG-2b: clip-y-flipped default and mirrored pipeline winding are baked independently.
+{
+  const g = mockGpu(), descriptors = [];
+  const original = g.createRenderPipeline;
+  g.createRenderPipeline = (desc) => { descriptors.push(desc); return original(desc); };
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const base = { vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 }, targetFormats: ['rgba8'], cull: 'back' };
+  d.createPipeline(base); d.createPipeline({ ...base, frontFace: 'ccw' });
+  ok('default raster frontFace remains cw', descriptors[0].primitive.frontFace === 'cw');
+  ok('mirror frontFace override is ccw with back culling preserved', descriptors[1].primitive.frontFace === 'ccw' && descriptors[1].primitive.cullMode === 'back');
+  d.dispose();
+}
 {
   const g = mockGpu();
   const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });

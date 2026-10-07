@@ -26,7 +26,7 @@ assert.strictEqual(t0.targetRaster.desc.color.length, 3);
 assert.strictEqual(t0.targetRaster.desc.depth, t0.texRasterDepth);
 const before = liveCount();
 freeWgTargets(device, t0);
-assert.strictEqual(liveCount(), before - 5, 'free disposes 4 textures + target');
+assert.strictEqual(liveCount(), before - 6, 'free disposes 4 textures + raster and depth-only targets');
 // alloc failure frees the partial set
 {
   let n = 0; const orig = device.createTexture;
@@ -47,7 +47,7 @@ for (const m of SURFACE) {
 }
 assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
-assert.deepStrictEqual(p.portedPasses, ['debug']);
+assert.deepStrictEqual(p.portedPasses, ['debug', 'raster']);
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
 assert.strictEqual(typeof hook, 'function', 'cell-pass hook installed');
 assert.strictEqual(rt.gpuActive, undefined, 'never takes over the CPU shading');
@@ -58,11 +58,11 @@ assert.strictEqual(await p.readbackLight(), null);
 assert.strictEqual(await p.readbackWater(), null);
 
 // hook: no draw while debug off; with a mode: G-buffer clear pass once + one debug pass
-hook(); assert.strictEqual(drawn, 0);
+hook(); assert.strictEqual(drawn, 0); passes.length = 0;
 p.setDebugMode(0); hook();
 assert.strictEqual(drawn, 1); assert.strictEqual(passes.length, 2);
 assert.strictEqual(passes[0].t, p._t.targetRaster); assert.deepStrictEqual(passes[0].o, { clear: true });
-hook(); assert.strictEqual(passes.length, 3, 'G-buffer cleared only once');
+hook(); assert.strictEqual(passes.length, 4, 'G-buffer cleared each frame');
 const lastBind = device._lastBind;
 assert.strictEqual(lastBind.uniforms[1], 2, 'rays uniform');
 assert.strictEqual(lastBind.textures.length, 3);

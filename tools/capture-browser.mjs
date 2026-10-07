@@ -809,9 +809,9 @@ export async function runLiveCapture(opts) {
 // CLI entry
 // ---------------------------------------------------------------------
 
-// Existing gpucompare known-FAIL baselines remain report-only; this presenter gate must fail the command.
+// Existing gpucompare known-FAIL baselines remain report-only; shader compilation and presenter gates fail the command.
 export function captureExitCode(mode, normalized) {
-  return mode === 'webgpu-present' && normalized.ok !== true ? 1 : 0;
+  return (mode === 'webgpu-present' || mode === 'wgsl') && normalized.ok !== true ? 1 : 0;
 }
 
 async function main() {

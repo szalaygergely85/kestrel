@@ -58,6 +58,7 @@
  * @property {{src: {glsl?: string, wgsl?: string}, targets: number}} fragment - `targets` = number of colour draw buffers written (0 = depth-only, ME-15b)
  * @property {{test: boolean, write: boolean}} [depth]
  * @property {'none'|'back'|'front'} [cull]
+ * @property {'cw'|'ccw'} [frontFace] - WG-2b: baked raster winding, default cw after the clip-y flip; mirrored items use ccw
  * @property {{factor: number, units: number}} [depthBias] - ME-15b (27.9a item 7): polygon offset (GL2: `POLYGON_OFFSET_FILL` enabled on bind, disabled again by `endPass`); no hardware depth compare is ever used
  * @property {{uniformBytes: number, textures: ('uint'|'sint'|'float'|'depth'|'filtered')[]}} [bindings] - WG-1b1 (38.3/38.4): explicit WebGPU bind layout (`@group(0)` textures in slot order, `@group(1)` one dynamic-offset uniform block of `uniformBytes`); GL2 ignores it
  * @property {string[]} [targetFormats] - WG-1b1: colour attachment formats (TextureDesc names, or 'canvas'); GL2 ignores it
