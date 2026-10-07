@@ -22,7 +22,8 @@
 // fields, Uint32Array for the two uint32 ones) so `nrm`/`flat`'s exact bit
 // patterns survive the upload unchanged (never round-tripped through a
 // float).
-import { AUX_STRIDE, FLAT_STRIDE } from '../../mesh/MeshData.js';
+import { AUX_STRIDE, FLAT_STRIDE, flatKind } from '../../mesh/MeshData.js';
+import { KIND_MESH } from '../GBuffer.js';
 
 /** Bytes per vertex in the interleaved static buffer (27.15.0 amendment 2). */
 export const STATIC_STRIDE_BYTES = 64;
@@ -83,9 +84,10 @@ export const VOXEL_VERTEX_LAYOUT = Object.freeze(STATIC_VERTEX_LAYOUT.slice(0, 4
  * verts per quad + index pattern 4q+(0,1,2,0,2,3) = the exact unrolled triangle order, so
  * GPU primitive order equals rasterJS's. Validates the assumptions and throws with mesh.id.
  * @param {import('../../mesh/MeshData.js').MeshData} mesh
- * @returns {{vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount: number}}
+ * @returns {{vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount: number, vertexCount?: number, indexCount?: number}}
  */
 export function buildVoxelVertexData(mesh) {
+  if (mesh.layout === 'static' && mesh.triCount > 0 && flatKind(mesh.flat[1]) === KIND_MESH) return buildMeshTriVertexData(mesh); // MESH-INST-01
   if (mesh.layout !== 'static') throw new Error(`buildVoxelVertexData: mesh "${mesh.id}" is not 'static' layout (got "${mesh.layout}")`);
   if (mesh.triCount % 2 !== 0) throw new Error(`buildVoxelVertexData: mesh "${mesh.id}" has odd triCount ${mesh.triCount} (not quads)`);
   const quadCount = mesh.triCount / 2;
@@ -115,6 +117,31 @@ export function buildVoxelVertexData(mesh) {
     index[i] = b; index[i + 1] = b + 1; index[i + 2] = b + 2; index[i + 3] = b; index[i + 4] = b + 2; index[i + 5] = b + 3;
   }
   return { vertex, index, quadCount };
+}
+
+/**
+ * MESH-INST-01: the same 32 B voxel vertex for a placed kind-9 triangle mesh (not quads): 3 verts per triangle in source
+ * order + identity index, so the primitive order equals rasterJS's and `range.start * 3` addresses triangle starts.
+ * @param {import('../../mesh/MeshData.js').MeshData} mesh
+ * @returns {{vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount: number, vertexCount: number, indexCount: number}}
+ */
+export function buildMeshTriVertexData(mesh) {
+  for (let i = 0; i < mesh.aux.length; i++) {
+    if (mesh.aux[i] !== 0) throw new Error(`buildMeshTriVertexData: mesh "${mesh.id}" has non-zero aux at ${i}`);
+  }
+  const V = mesh.triCount * 3;
+  const vertex = new ArrayBuffer(V * VOXEL_STRIDE_BYTES);
+  const f32 = new Float32Array(vertex), u32 = new Uint32Array(vertex);
+  for (let v = 0; v < V; v++) {
+    const base = v * VOXEL_STRIDE_WORDS;
+    f32[base] = mesh.pos[v * 3]; f32[base + 1] = mesh.pos[v * 3 + 1]; f32[base + 2] = mesh.pos[v * 3 + 2];
+    f32[base + 3] = mesh.uv[v * 2]; f32[base + 4] = mesh.uv[v * 2 + 1];
+    u32[base + 5] = mesh.nrm[v];
+    u32[base + 6] = mesh.flat[v * FLAT_STRIDE]; u32[base + 7] = mesh.flat[v * FLAT_STRIDE + 1];
+  }
+  const index = V > 65536 ? new Uint32Array(V) : new Uint16Array(V);
+  for (let i = 0; i < V; i++) index[i] = i;
+  return { vertex, index, quadCount: 0, vertexCount: V, indexCount: V };
 }
 
 /** Bytes per vertex in the interleaved terrain buffer (ME-06, 27.3 "terrain layout has no uv"): pos(12) + nrm(4). */
@@ -247,7 +274,7 @@ export class MeshBuffers {
     const indexBuffer = this.device.createBuffer({ usage: 'index', data: d.index });
     const entry = {
       vertexBuffer, indexBuffer, indexType: /** @type {'u16'|'u32'} */ (d.index instanceof Uint16Array ? 'u16' : 'u32'),
-      version: mesh.meshVersion, mesh, vertexCount: d.quadCount * 4, indexCount: d.quadCount * 6,
+      version: mesh.meshVersion, mesh, vertexCount: d.vertexCount ?? d.quadCount * 4, indexCount: d.indexCount ?? d.quadCount * 6,
     };
     this.voxelCache.set(mesh.id, entry);
     return entry;
