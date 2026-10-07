@@ -185,6 +185,7 @@ function gridFromParam(p, def) {
 }
 
 // ---- content: JSON pack, with the "content/ not found" fallback (24.3) ----
+window.__editorBoot?.stage('content load', 'Loading content');
 let bundle = null;
 try {
   bundle = await loadContentPack('../../content/manifest.json');
@@ -192,6 +193,7 @@ try {
   if (!(e instanceof ContentError) || !/HTTP 404/.test(e.message)) throw e;
   console.warn('[editor] content/manifest.json not found - falling back to window.ASSETS (fromGlobals, read-only)');
 }
+window.__editorBoot?.stage('asset/world init', 'Preparing assets and world');
 const assets = bundle ? AssetRegistry.fromJSON(bundle, window.ASSETS) : AssetRegistry.fromGlobals(window.ASSETS);
 
 // `?world=<id>` (US-063): already just a normal `assets.world(id)` lookup
@@ -210,7 +212,9 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 
 // WG-1c2: `?backend=webgpu` presents through WebGPU on the CPU path (the editor's GPU gate below stays WebGL2-only until WG-2).
 const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
+window.__editorBoot?.stage('renderer init', 'Starting renderer');
 const { rt: builtRt } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgl2', gpu: params.get('gpu') !== '0' });
+window.__editorBoot?.stage('scene init', 'Preparing scene');
 const engine = createEngine({
   canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
