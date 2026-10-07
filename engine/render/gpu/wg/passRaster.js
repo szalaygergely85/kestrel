@@ -1,7 +1,9 @@
-// WG-2b: device-only mesh raster. Terrain/voxel coverage is resolved in WG-2c; cell shading stays on the CPU until WG-3c.
-import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
+// WG-2b/2c: device-only mesh + terrain raster (kind 7, ME-06 twin); cell shading stays on the CPU until WG-3c.
+import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
-import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
+import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
+import { MAX_STRUCTS } from '../WorldTextures.js';
+import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
@@ -14,6 +16,9 @@ const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('
 const OBJECT = RASTER_BLOCK.field('objectId').word, AXIS = RASTER_BLOCK.field('axisAligned').word;
 const FLAT = RASTER_BLOCK.field('flat').word;
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
+const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
+const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
+const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
 const INSTANCE_LAYOUT = [
   { name: 'iRow0', location: 6, components: 4, type: 'float', offsetBytes: 0 },
   { name: 'iRow1', location: 7, components: 4, type: 'float', offsetBytes: 16 },
@@ -38,7 +43,19 @@ export class WgRasterPass {
     this.instanceBuffers = new Map();
     this.pipes = [];
     this.clothStreams = [null];
+    // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
+    this.tu = new Float32Array(TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
+    this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }];
+    this.terrainBind = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTex };
+    this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null;
     try {
+      this.nearTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
+      this.farTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
+      this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
+      this.terrainPipe = device.createPipeline({ vertex: { src: { wgsl: TERRAIN_RASTER_WGSL }, layout: TERRAIN_VERTEX_LAYOUT, strideBytes: TERRAIN_STRIDE_BYTES },
+        fragment: { src: { wgsl: TERRAIN_RASTER_WGSL }, targets: 3 }, bindings: { uniformBytes: TERRAIN_BLOCK.sizeBytes, textures: TERRAIN_TEXTURES.slice() },
+        targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw' });
+      this.pipes.push(this.terrainPipe);
       this.staticPipe = this._pipeline(RASTER_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none');
       this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back');
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
@@ -57,6 +74,68 @@ export class WgRasterPass {
       targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull, frontFace });
     this.pipes.push(pipe);
     return pipe;
+  }
+
+  // Replace a 1-channel r8ui texture by a (w x h) one when the size differs (rare: bake changes), then upload `data`.
+  _uploadType(tex, dims, w, h, data) {
+    if (dims[0] !== w || dims[1] !== h) { this.device.dispose(tex); tex = this.device.createTexture({ format: 'r8ui', width: w, height: h }); dims[0] = w; dims[1] = h; }
+    this.device.writeTexture(tex, data);
+    return tex;
+  }
+
+  // GpuCellPipeline._ensureTerrainTextures twin: far type on (farVersion | world), near type on near.version; never per frame.
+  _terrainTextures(world) {
+    const terrain = world && world.terrain;
+    if (!terrain || !terrain.farReady) return;
+    if (this.farVersion !== terrain.farVersion || this.farWorld !== world) {
+      this.farTex = this._uploadType(this.farTex, this.farDims, terrain.mapW, terrain.mapH, terrain.farType);
+      this.farVersion = terrain.farVersion; this.farWorld = world;
+    }
+    if (terrain.nearReady && this.nearVersion !== terrain.near.version) {
+      this.nearTex = this._uploadType(this.nearTex, this.nearDims, terrain.near.w, terrain.near.h, terrain.near.type);
+      this.nearVersion = terrain.near.version;
+    }
+    this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
+  }
+
+  // Per-frame terrain uniforms (GpuCellPipeline._passRaster terrain block): maps, near gate, structure footprint carve.
+  _terrainUniforms(world) {
+    const terrain = world.terrain, tu = this.tu;
+    for (let i = 0; i < 16; i++) tu[T_VIEW + i] = this.view[i];
+    this.tbits[T_READY] = terrain.nearReady ? 1 : 0;
+    if (terrain.nearReady && terrain.near) {
+      const ng = terrain.near; tu[T_NEAR] = ng.x0; tu[T_NEAR + 1] = ng.y0; tu[T_NEAR + 2] = ng.cell; tu[T_NEAR + 3] = ng.w;
+    }
+    const fg = terrain._farGridDraw;
+    if (fg) { tu[T_FAR] = fg.x0; tu[T_FAR + 1] = fg.y0; tu[T_FAR + 2] = terrain.mapCell; tu[T_FAR + 3] = terrain.mapW; }
+    const structs = world.structures || [];
+    let n = 0;
+    for (let i = 0; i < structs.length && n < MAX_STRUCTS; i++) {
+      if (structs[i].kind === 'mesh') continue; // ME-14c1
+      const b = structs[i].bbox; if (!b) continue;
+      const o = T_FOOT + n * 4; tu[o] = b.x0; tu[o + 1] = b.y0; tu[o + 2] = b.x1; tu[o + 3] = b.y1; n++;
+    }
+    this.tbits[T_COUNT] = n;
+  }
+
+  _terrain(list) {
+    let draws = 0;
+    const b = this.terrainBind, tu = this.tu;
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
+      const entry = this.buffers.get(item.mesh), mm = item.matrix;
+      const n = T_MODEL;
+      tu[n] = mm[0]; tu[n + 1] = mm[3]; tu[n + 2] = mm[6]; tu[n + 3] = 0;
+      tu[n + 4] = mm[1]; tu[n + 5] = mm[4]; tu[n + 6] = mm[7]; tu[n + 7] = 0;
+      tu[n + 8] = mm[2]; tu[n + 9] = mm[5]; tu[n + 10] = mm[8]; tu[n + 11] = 0;
+      tu[n + 12] = mm[9]; tu[n + 13] = mm[10]; tu[n + 14] = mm[11]; tu[n + 15] = 1;
+      this.tbits[T_OBJECT] = item.objectId;
+      b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer;
+      this.device.bind(this.terrainPipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
+      draws++;
+    }
+    return draws;
   }
 
   bind(table) {
@@ -81,6 +160,7 @@ export class WgRasterPass {
     if (this.levelCache) addStructures(list, world, cam, this.levelCache, 2000);
     if (this.strictMatIdFor) addMeshStructures(list, world, cam, this.meshCache, this.strictMatIdFor, 2000);
     if (p.terrainEnabled && world.terrain) {
+      this._terrainTextures(world); this._terrainUniforms(world);
       const set = terrainMeshSetFor(world.terrain); set.step(2); set.addToDrawList(list, cam);
     }
     const pool = p._voxelPool;
@@ -180,6 +260,7 @@ export class WgRasterPass {
         }
       }
       p.stats.clothDraws = this._cloths(list);
+      p.stats.terrainDraws = this._terrain(list);
     } finally { d.endPass(); }
     if (this.vmList) {
       // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
@@ -195,6 +276,9 @@ export class WgRasterPass {
     this.buffers.dispose();
     for (const pipe of this.pipes) this.device.dispose(pipe);
     this.pipes.length = 0;
+    if (this.nearTex) this.device.dispose(this.nearTex);
+    if (this.farTex) this.device.dispose(this.farTex);
+    this.nearTex = this.farTex = null;
     for (const buffer of this.instanceBuffers.values()) this.device.dispose(buffer);
     this.instanceBuffers.clear();
   }

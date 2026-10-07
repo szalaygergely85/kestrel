@@ -13,7 +13,7 @@ export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
 ]);
 
-const OCT_NORMAL = `
+export const OCT_NORMAL = `
 fn packNormalOct(n: vec3f) -> u32 {
   let s = abs(n.x) + abs(n.y) + abs(n.z);
   var x = n.x / s; var y = n.y / s; let z = n.z / s;
