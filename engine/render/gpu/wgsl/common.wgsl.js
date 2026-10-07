@@ -95,3 +95,78 @@ fn unpackNormalOct(bits: u32) -> vec3f {
   return normalize(vec3f(x, y, z));
 }
 `;
+
+// WG-3c: GLSL `mod(x, y)` (floor-mod: x - y * floor(x / y)) and int `%` (truncated: a - b * (a / b), WGSL integer `/` truncates toward zero) without a raw `%` token.
+export const FMOD_WGSL = `
+fn fmodGlsl(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }
+fn imod(a: i32, b: i32) -> i32 { return a - b * (a / b); }
+fn umod(a: u32, b: u32) -> u32 { return a - b * (a / b); }
+`;
+
+// twin of glsl/common.js HASH_FAST (bit-exact u32 hash, detailShade.js hashFast). Signed ints enter as bit patterns (u32(i32)).
+export const HASH_FAST_WGSL = `
+fn hashFastU(x: i32, y: i32, s: i32) -> u32 {
+  var h: u32 = (u32(x) * 0x27d4eb2du) ^ (u32(y) * 0x165667b1u) ^ (u32(s) * 0x9e3779b1u); // GLSL precedence made explicit
+  h = (h ^ (h >> 15u)) * 0x85ebca6bu;
+  h = (h ^ (h >> 13u)) * 0xc2b2ae35u;
+  h ^= h >> 16u;
+  return h;
+}
+fn hashFast(x: i32, y: i32, s: i32) -> f32 {
+  return f32(hashFastU(x, y, s) >> 8u) * (1.0 / 16777216.0);
+}
+`;
+
+// twin of glsl/common.js BYTE_OUT: floor(v+0.5)/255, never round().
+export const BYTE_OUT_WGSL = `
+fn toByte01(v255: f32) -> f32 { return floor(clamp(v255, 0.0, 255.0) + 0.5) / 255.0; }
+`;
+
+// twin of glsl/common.js SMOOTHSTEP_FAST
+export const SMOOTHSTEP_FAST_WGSL = `
+fn smoothstepFast(a: f32, b: f32, x: f32) -> f32 {
+  let t = clamp((x - a) / (b - a), 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+fn coverFast(cx: f32, cy: f32) -> f32 { return abs(cx) + abs(cy); }
+`;
+
+// twin of glsl/common.js QFLOOR
+export const QFLOOR_WGSL = `
+fn qfloor(x: f32) -> f32 { return floor(x + (1.0 / 256.0)); }
+`;
+
+// twin of glsl/common.js ORIENT_AND_LINES (detailShade.js orientClassFast / crossLineFast / lineGlyphCodeFast)
+export const ORIENT_AND_LINES_WGSL = `
+const TAN22: f32 = 0.40403; // tan(22 deg)
+const TAN68: f32 = 2.47509; // tan(68 deg)
+
+fn orientClassCode(cx: f32, cy: f32, cellAspect: f32) -> i32 {
+  let gy = cy / cellAspect;
+  let dx = -gy; let dy = cx;
+  if (dx == 0.0 && dy == 0.0) { return 0; }
+  let adx = abs(dx); let ady = abs(dy);
+  if (ady <= TAN22 * adx) { return 0; }
+  if (ady >= TAN68 * adx) { return 1; }
+  return select(2, 3, dx * dy > 0.0);
+}
+
+// Returns fraction in [0,1] or -1.0 if no line crosses this cell's footprint.
+fn crossLineFast(c: f32, cx: f32, cy: f32, period: f32, offset: f32) -> f32 {
+  var hw = 0.5 * (abs(cx) + abs(cy));
+  if (!(hw > 1e-7)) { hw = 1e-7; }
+  let k = qfloor((c + hw - offset) / period);
+  let line = offset + k * period;
+  if (line < c - hw) { return -1.0; }
+  let fr = select(0.5, 0.5 + (line - c) / cy, abs(cy) > 1e-9);
+  return clamp(fr, 0.0, 1.0);
+}
+
+const LINE_DASH: i32 = 45 - 32; const LINE_UNDERSCORE: i32 = 95 - 32; const LINE_PIPE: i32 = 124 - 32;
+const LINE_SLASH: i32 = 47 - 32; const LINE_BACKSLASH: i32 = 92 - 32;
+fn lineGlyphCodeFast(cx: f32, cy: f32, fr: f32, cellAspect: f32) -> i32 {
+  let k = orientClassCode(cx, cy, cellAspect);
+  if (k == 0) { return select(LINE_DASH, LINE_UNDERSCORE, fr >= 0.5); }
+  return select(select(LINE_BACKSLASH, LINE_SLASH, k == 2), LINE_PIPE, k == 1);
+}
+`;
