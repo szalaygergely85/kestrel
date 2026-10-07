@@ -41,7 +41,7 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {import('./voxelMesh.js').VoxelMeshCache} [voxelMeshCache]
  * @property {number} [fogFarM] - structure distance cull (default 2000, as the camera feed)
  * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): parts from the camera pass
- * @property {{x:number,y:number}} [eye] - ME-15f: camera eye xy; with it instanced groups are distance-banded (LOD0 <= meshLod0M, LOD1 <= instCastM, none beyond) into engine-owned `g.shadowIb`; without it the full `g.ib` at LOD0 (old behaviour)
+ * @property {{x:number,y:number}} [eye] - ME-15f: camera eye xy; also the ranking point of the placed-mesh nearest-64 pick (SHADOW-ROT); with it instanced groups are distance-banded (LOD0 <= meshLod0M, LOD1 <= instCastM, none beyond) into engine-owned `g.shadowIb`; without it the full `g.ib` at LOD0 (old behaviour)
  * @property {number} [meshLod0M] - ME-15f (default 25)
  * @property {number} [instCastM] - ME-15f (default 48)
  * @property {{count:number, cloths:any[], meshes:any[], mats:(string|null)[], castShadow?:ArrayLike<number>}|null} [cloths] - CLOTH-1b1 (33.5): the cloth system; every cloth with `castShadow` (drawn or not) is pushed, the sun-plane cull decides
@@ -66,7 +66,10 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   if (src.meshCache && src.meshIdFor) {
     let b = null;
     if (src.eye && meshShadowBudget.enabled) { b = _budget; b.eye = src.eye; b.cutM = meshShadowBudget.cutM || src.meshLod0M || 25; b.cap = meshShadowBudget.cap; } // MESH-SHADOW-02; no eye = old behaviour
-    addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
+    // SHADOW-ROT fix: the nearest-MAX_MESH_DRAWS (64) pick is ranked from the EYE (as the camera feed), never from the
+    // yaw-dependent box centre (aheadM in front): ranking from the centre swapped out the props around the player when the
+    // camera turned (world_m1 has > 64 placements in range). Same set as the camera draws; the sun-plane cull decides.
+    addMeshStructures(list, world, src.eye || c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
   }
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
   const vp = src.voxelPool;
