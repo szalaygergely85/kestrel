@@ -12,12 +12,13 @@ export function rgbToLab(rgb) {
 }
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-/** Table entry for a texture name ("Rocks_Diffuse"), validated (1..6 keys, rgb triples). */
+/** Table entry for a texture name ("Rocks_Diffuse"), validated (1..6 keys, or map.maxKeys; rgb triples). */
 export function textureTable(map, texName) {
   const t = map.textures && map.textures[texName];
   if (!t) throw new Error(`uvmap: palette-map has no entry for texture "${texName}" (have: ${Object.keys(map.textures || {}).join(', ')})`);
   const keys = Object.keys(t);
-  if (!keys.length || keys.length > 6) throw new Error(`uvmap: texture "${texName}" lists ${keys.length} keys (1..6 allowed)`);
+  const maxKeys = map.maxKeys ?? 6; // CHAR-COL-01: a map may raise the per-texture key cap (character atlases)
+  if (!keys.length || keys.length > maxKeys) throw new Error(`uvmap: texture "${texName}" lists ${keys.length} keys (1..${maxKeys} allowed)`);
   for (const k of keys) if (!Array.isArray(t[k]) || t[k].length !== 3) throw new Error(`uvmap: "${texName}".${k} must be [r,g,b]`);
   return { keys, labs: keys.map((k) => rgbToLab(t[k])), maxDelta: map.maxDelta ?? 28 };
 }
