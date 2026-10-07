@@ -9,6 +9,7 @@
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
+import { WgCellPass } from './passCell.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
@@ -33,7 +34,7 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
-    this.rendererString = 'webgpu (WG-2b geometry)';
+    this.rendererString = 'webgpu (WG-3a resolve+deriv)';
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
@@ -53,6 +54,7 @@ export class WgCellPipeline {
     this._t = null;
     this._pipeDebug = null;
     this._rasterPass = null;
+    this._cellPass = null;
     this._outTarget = null; this._outFg = null; this._outBg = null;
     this._gbufCleared = false;
     this._clearOpts = { clear: true };
@@ -69,7 +71,8 @@ export class WgCellPipeline {
       });
       this._rasterPass = new WgRasterPass(this.device);
       this._meshDrawList = this._rasterPass.list;
-      this.portedPasses.push('debug', 'raster');
+      this._cellPass = new WgCellPass(this.device);
+      this.portedPasses.push('debug', 'raster', 'resolve', 'deriv');
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
@@ -138,20 +141,20 @@ export class WgCellPipeline {
 
   // ---- readbacks (test-only, never the frame loop): Promises, always `await` (38.6) ----
 
-  /** Async twin of GpuCellPipeline.readbackGeometry: `{GI, GA, Depth}` as 4-wide Uint32Arrays (Depth channel 0 = f32 bits). */
+  /** Async twin of GpuCellPipeline.readbackGeometry: the RESOLVED cell-res set `{GI, GA, Depth}` (cols*rows, 4-wide Uint32Arrays; Depth channel 0 = f32 bits). */
   async readbackGeometry() {
     const t = this._t;
     if (!t) throw new Error('WgCellPipeline.readbackGeometry: no targets');
-    if (this.rays > 1) throw new Error('readbackGeometry: rays > 1 needs the WG-3a resolve');
     const n = this.cols * this.rows;
     this._rbGI = this._rbGI && this._rbGI.length === 4 * n ? this._rbGI : new Uint32Array(4 * n);
     this._rbGA = this._rbGA && this._rbGA.length === 4 * n ? this._rbGA : new Uint32Array(4 * n);
     this._rbDepth = this._rbDepth && this._rbDepth.length === 4 * n ? this._rbDepth : new Uint32Array(4 * n);
     this._rbD1 = this._rbD1 && this._rbD1.length === n ? this._rbD1 : new Uint32Array(n);
     const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
-    await this.device.readback(t.texSGI, rect, this._rbGI);
-    await this.device.readback(t.texSGA, rect, this._rbGA);
-    await this.device.readback(t.texSDepth, rect, this._rbD1); // r32uint is 1-wide; GL's RGBA_INTEGER read is 4-wide: spread
+    await this.device.readback(t.texGI, rect, this._rbGI);
+    await this.device.readback(t.texGA, rect, this._rbGA);
+    await this.device.readback(t.texDepth, rect, this._rbD1); // r32uint is 1-wide; GL's RGBA_INTEGER read is 4-wide: spread
+    this._rbDepth.fill(0);
     for (let i = 0; i < n; i++) this._rbDepth[i * 4] = this._rbD1[i];
     return { GI: this._rbGI, GA: this._rbGA, Depth: this._rbDepth };
   }
@@ -177,6 +180,8 @@ export class WgCellPipeline {
       d.beginPass(t.targetRaster, this._clearOpts);
       d.endPass();
     }
+    try { this._cellPass.run(this, t); }
+    catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv disabled:', e); return; }
     if (this.debugMode < 0) return;
     if (!this._outTarget || this._outFg !== rt.fgTex || this._outBg !== rt.bgTex) {
       this._dropOutTarget();
@@ -208,6 +213,8 @@ export class WgCellPipeline {
     this._pipeDebug = null;
     if (this._rasterPass) this._rasterPass.dispose();
     this._rasterPass = null;
+    if (this._cellPass) this._cellPass.dispose();
+    this._cellPass = null;
     freeWgTargets(this.device, this._t);
     this._t = null;
   }

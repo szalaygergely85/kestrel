@@ -366,6 +366,19 @@ function decode(buf, vertCount) {
   ok('MeshBuffers.get rejects an unsupported layout', threw);
 }
 
+// ---- MESH-INST-01: kind-9 triangle meshes through the voxel (instanced) vertex builder ----
+{
+  const fs2 = await import('node:fs');
+  const { meshFromJSON } = await import('../../mesh/MeshData.js');
+  const rock = meshFromJSON(JSON.parse(fs2.readFileSync(new URL('../../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url), 'utf8')));
+  const e = buildVoxelVertexData(rock);
+  const V = rock.triCount * 3;
+  ok('kind-9 mesh: 3 verts + 3 sequential indices per triangle', e.vertexCount === V && e.indexCount === V && e.index.length === V && e.index[V - 1] === V - 1 && e.vertex.byteLength === V * VOXEL_STRIDE_BYTES);
+  const f = new Float32Array(e.vertex), u = new Uint32Array(e.vertex);
+  const v = 5 * 3 + 1;
+  ok('kind-9 mesh: vertex words = pos, uv, nrm, flat', f[v * 8] === rock.pos[v * 3] && f[v * 8 + 4] === rock.uv[v * 2 + 1] && u[v * 8 + 5] === rock.nrm[v] && u[v * 8 + 7] === rock.flat[v * FLAT_STRIDE + 1]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {
   console.log('Failures:');

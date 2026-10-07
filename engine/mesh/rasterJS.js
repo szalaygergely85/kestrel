@@ -24,7 +24,7 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART } from './DrawList.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
 /** Sub-pixel bits (1/256 px vertex snap, 27.7 item 1). */
@@ -556,6 +556,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
   }
 }
 
+const _oneRange = [{ start: 0, count: 0 }]; // MESH-INST-01: DRAW_FLAG_ONE_PART scratch (no per-call allocation)
 /**
  * RE-06 (28.6): part-major, then instance order - the GPU primitive order
  * (one instanced draw per part). Composes I_i * P_p in float64 per
@@ -563,7 +564,8 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
  * come from the instance words. Zero allocation.
  */
 function rasterInstanced(mesh, item, target, ctx) {
-  const ranges = mesh.ranges;
+  let ranges = mesh.ranges;
+  if (item.flags & DRAW_FLAG_ONE_PART) { _oneRange[0].count = mesh.triCount; ranges = _oneRange; } // one identity part: whole mesh, single-draw triangle order
   const ib = item.instBuf;
   if (!ib) return;
   const f = ib.f32, u = ib.u32, pm = item.partMatrices, n = item.instCount;

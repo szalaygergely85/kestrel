@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
-import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList } from './shadowList.js';
+import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList, meshShadowBudget } from './shadowList.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
 import { createSunShadowMatrix, shadowSunMatrix, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
@@ -224,6 +224,40 @@ function cameraPlanes() {
   ok('pebble + path stone skipped, rock + tree cast', count([pebble, 0], [path, 2], [rock, 4], [tree, 6]) === 2);
   ok('placement castShadow:true re-enables a flagged mesh', count([pebble, 0, true], [path, 2]) === 1);
   ok('placement castShadow:false disables a rock', count([rock, 0, false], [tree, 3]) === 1);
+}
+
+// ---- MESH-SHADOW-02: placed-mesh caster budget (distance cut + nearest-first cap) ------------
+{
+  const rock = meshFromJSON(JSON.parse(fs.readFileSync(new URL('../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url), 'utf8')));
+  const stub = { structures: [], renderVersion: 0, structVersion: 0, events: null };
+  const eye = { x: 0, y: 0 };
+  const run = (xs, opts = {}) => {
+    stub.structures.length = 0;
+    xs.forEach((x, i) => World.prototype.placeMesh.call(stub, rock, { x, y: 0, z: 0 }, `m${i}`, 0));
+    const sl = createShadowList(), sm = createSunShadowMatrix();
+    shadowSunMatrix(sunDir, new Float64Array(3), { ...OPTS, boxM: 400 }, { min: -1, max: 10 }, sm);
+    const src = { centre: { x: 0, y: 0, z: 0 }, eye, meshLod0M: 25, cache: new LevelMeshCache(), meshCache: new MeshDrawCache(), meshIdFor: () => 1, ...opts };
+    buildShadowList(sl, null, stub, sm.planes, src);
+    const ids = []; for (let i = 0; i < sl.count; i++) ids.push(sl.items[i].objectId & 0xFFF);
+    return ids;
+  };
+  const saved = meshShadowBudget.cap;
+  meshShadowBudget.cap = 3;
+  ok('distance cut: props beyond meshLod0M dropped', run([2, 10, 40, 90]).join() === '0,1');
+  ok('cap keeps the 3 nearest, nearest first', run([30, 5, 20, 1, 12].map((x) => x - 0)).join() === '3,1,4', run([30, 5, 20, 1, 12]).join());
+  ok('tie order by object id', run([6, 6, 6, 6, 3]).join() === '4,0,1', run([6, 6, 6, 6, 3]).join());
+  ok('cap 0 drops every prop', (meshShadowBudget.cap = 0, run([1, 2]).length === 0));
+  meshShadowBudget.cap = 3;
+  ok('no eye: old behaviour (all, no cut, no cap)', run([2, 10, 40, 90], { eye: undefined }).length === 4);
+  ok('deterministic across rebuilds', run([30, 5, 20, 1, 12]).join() === run([30, 5, 20, 1, 12]).join());
+  // protected kinds: voxel structures, terrain and cloth are not budgeted (feed is untouched) - structures list stays
+  stub.structures.length = 0;
+  const w2 = { structures: [struct(0, 0, 0), struct(1, 60, 0)], structVersion: 1, terrain: null };
+  const sl2 = createShadowList(), sm2 = createSunShadowMatrix();
+  shadowSunMatrix(sunDir, new Float64Array(3), { ...OPTS, boxM: 400 }, { min: -1, max: 10 }, sm2);
+  meshShadowBudget.cap = 0;
+  ok('voxel structures never budgeted (cap 0, 60 m away still cast)', buildShadowList(sl2, null, w2, sm2.planes, { centre: { x: 0, y: 0, z: 0 }, eye, meshLod0M: 25, cache: new LevelMeshCache() }) === 2);
+  meshShadowBudget.cap = saved;
 }
 
 // ---- AC 5: zero allocation over N frames ---------------------------------------

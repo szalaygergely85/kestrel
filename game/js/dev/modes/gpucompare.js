@@ -891,11 +891,14 @@ async function runGpuCompareSceneMode(ctx) {
   if (sprites.pass) sprites.pass.setSceneDim(compareSceneDim);
 
   let infoRows = null;
-  if (rayParam === 2 && !wg) {
-    const pipeline2 = new GpuCellPipeline(rt, { rays: 2 });
+  // WG-3a: with `?rays=2` the WebGPU pipeline also gets the INFO n=2 geometry rows (resolved cell-res set, kind%/holes vs the JS twin, no cells compare yet).
+  if (rayParam === 2) {
+    const base2 = wg || glPipeline; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline, so GL and WebGPU INFO rows compare like for like
+    const pipeline2 = new base2.constructor(rt, { rays: 2, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
       pipeline2.setSource('scene');
+      pipeline2.bindVoxels(base2._voxelPool); pipeline2.bindViewModel(base2._viewModel); pipeline2.bindInstances(base2._instances);
       infoRows = [];
       resetInstances();
       for (const { world, lights, name: poseName, cam, real, before, meshOnly } of runs) {
@@ -919,8 +922,8 @@ async function runGpuCompareSceneMode(ctx) {
         renderWorld(fbCompare, world, cam);
         pipeline2.frame(fbCompare, lights || ambientL, cam, world);
         rt.present();
-        const rb2 = rt.readbackPresent();
-        const { GI: GI2, GA: GA2, Depth: Depth2 } = pipeline2.readbackGeometry();
+        const rb2 = wg ? null : rt.readbackPresent();
+        const { GI: GI2, GA: GA2, Depth: Depth2 } = await pipeline2.readbackGeometry();
 
         const wasActive2 = rt.gpuActive;
         rt.gpuActive = false;
@@ -929,7 +932,7 @@ async function runGpuCompareSceneMode(ctx) {
         drawSprites(fbCompare, sprites.pool);
         rt.gpuActive = wasActive2;
 
-        const cmpCells2 = compareCells(rt.cells.fg, rt.cells.bg, rb2.fg, rb2.bg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
+        const cmpCells2 = wg ? { glyphMatchPct: NaN } : compareCells(rt.cells.fg, rt.cells.bg, rb2.fg, rb2.bg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
         const cmpGeom2 = compareGeometry(gbuf, depthBuffer.depth, GI2, GA2, Depth2, cols, rows);
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
         console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
