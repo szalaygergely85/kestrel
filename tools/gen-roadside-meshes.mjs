@@ -25,6 +25,7 @@ import titleMod from '../design/models/title.js';
 import voxelWorldMod from '../design/models/voxel_world.js';
 import { World, stringifyContent } from '../engine/index.js';
 import { loadTestAssets } from './testing/content-node.mjs';
+import { meshClass, LIFT, SHADOW } from './editor/meshPlace.js';
 
 const argv = process.argv.slice(2);
 const argN = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? Number(argv[i + 1]) : d; };
@@ -62,12 +63,9 @@ const T = world.terrain;
 
 // mesh classes
 const names = fs.readdirSync('content/meshes/quaternius').filter((f) => f.endsWith('.mesh.json')).map((f) => f.replace('.mesh.json', ''));
-const cls = (n) => /Tree/.test(n) ? 'tree' : /^Rock_/.test(n) ? 'rock' : /^RockPath/.test(n) ? 'rockpath' : /^Pebble/.test(n) ? 'pebble' : /^Grass/.test(n) ? 'grass' : /^Mushroom/.test(n) ? 'mushroom' : null;
-const LIFT = { tree: 0.2, rock: 0.15, rockpath: -0.02, pebble: -0.01, grass: 0, mushroom: 0 };
-const SHADOW = { tree: true, rock: true };   // small pieces: castShadow:false
 const pool = {}, info = {};
 for (const n of names) {
-  const c = cls(n); if (!c) continue;
+  const c = meshClass(n); if (c === 'other') continue;
   const b = assets.mesh('quaternius/' + n).bbox;   // [x0, y0, z0, x1, y1, z1]
   const ext = 0.5 * Math.max(b[3] - b[0], b[4] - b[1]);
   info[n] = { cls: c, r: (c === "tree" ? 0.45 : 0.65) * ext, ext };   // trees: trunk + inner crown only
