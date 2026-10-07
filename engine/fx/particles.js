@@ -189,8 +189,11 @@ export function createParticles(opts = {}) {
 
     step() {
       // 1. integrate live slots in slot order
-      for (let i = 0; i < cap; i++) {
+      // MESH-PHYS-02: stop once every slot that was live at entry has been visited (same slots, same order; 0 live = no scan).
+      let left = stats.live;
+      for (let i = 0; i < cap && left > 0; i++) {
         if (!alive[i]) continue;
+        left--;
         const a = age[i] + 1;
         const s = em[i];
         if (a >= life[i]) { alive[i] = 0; eLive[s]--; stats.live--; continue; }

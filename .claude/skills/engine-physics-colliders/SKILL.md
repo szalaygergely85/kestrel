@@ -20,6 +20,7 @@ Rules: `engine/physics/` imports only from itself; engine never imports `game/`/
 - Unit: `node engine/world/meshProxy.test.js`, `engine/world/meshColliders.test.js`, `engine/world/colliders.test.js`, `engine/physics/meshCollide.test.js` (+ `.parity`), `physics.test.js`, `jump.test.js`.
 - Tunnelling pattern (BUG-GONDOLA-FALL style): drop a capsule from 4-5 m at -14..-18 m/s onto the collider at many x/y offsets and yaws; assert grounded, never inside the shape, never below floor z.
 - Bench: `node tools/bench-mesh-collide.mjs` (29 road meshes; target collideCircle <= 1.5 us/call; was 3.5 -> 0.5).
+- Step cost: `node tools/bench-physics.mjs [--steps N] [--hash]` (one fixed sim step per part, p50/p95 us; `--hash` = bit-exact player-trace fingerprint per scenario, compare before/after a physics change; MESH-PHYS-02).
 - Route: `node tools/route-walk.mjs` (Node twin, grid vs mesh; must show `endTrigger:true` both) and `node tools/route-walk-browser.mjs --port 95xx` before pushing `game/js/main.js` changes. Known pre-existing quirk: `jump mesh run peak 0` at the wake spot.
 - Baseline comparisons: the clean worktree `../game_project_test` (`git checkout --detach <commit>` there), never stash/reset in the main repo.
 

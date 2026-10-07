@@ -851,6 +851,16 @@ export class World {
     return sc;
   }
 
+  /**
+   * MESH-PHYS-02: the floor-only twin of `outsideSector` for point probes that read just `floorH` (line of sight):
+   * `terrain.groundAt`, or null with no terrain (= `SOLID_OUTSIDE`: solid). Skips the normal/type/material work.
+   * undefined when `outsideSector` is overridden on this instance (test fixtures): the caller then asks the full query.
+   */
+  outsideFloorH(x, y) {
+    if (this.outsideSector !== World.prototype.outsideSector) return undefined;
+    return this.terrain ? this.terrain.groundAt(x, y) : null;
+  }
+
   // ---- mesh physics (ME-11a, 27.18) ------------------------------------------
 
   /** `moveCircleMesh` over `world.colliders` (empty on 'grid' - always a well-defined, if trivial, call). */
@@ -976,8 +986,11 @@ export class World {
     let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
     if (this.terrain && !this.structureAt(x, y)) {
       terrainZ = this.terrain.groundAt(x, y);
-      const n = this.terrain.groundNormalAt(x, y, this._meshTerrainNormalScratch);
-      tnx = n.x; tny = n.y; tnz = n.z;
+      // MESH-PHYS-02: the normal is read only when terrain wins (meshSupportSector's `terrainZ >= floorZ`); on a mesh floor it is dead.
+      if (terrainZ >= this._meshSupportScratch.floorZ) {
+        const n = this.terrain.groundNormalAt(x, y, this._meshTerrainNormalScratch);
+        tnx = n.x; tny = n.y; tnz = n.z;
+      }
     }
     return meshSupportSector(this._meshSupportScratch, terrainZ, tnx, tny, tnz, this._meshSectorScratch);
   }

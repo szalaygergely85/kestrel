@@ -51,6 +51,10 @@ export function pointBlocked(world, x, y, z) {
     floorH = sector.floorH + g.z;
     ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + g.z : sector.ceilH;
   } else {
+    // MESH-PHYS-02: LOS only needs floor/solid; `outsideSector` also computes the ground normal (4 more groundAt) + type + material.
+    // `outsideFloorH` answers undefined when unavailable (not a World, or `outsideSector` overridden) -> the full query.
+    const f = world.outsideFloorH ? world.outsideFloorH(x, y) : undefined;
+    if (f !== undefined) return f === null || z < f; // null = no terrain = solid outside; ceiling is 'sky'
     const sector = world.outsideSector(x, y);
     solid = sector.solid;
     floorH = sector.floorH;
