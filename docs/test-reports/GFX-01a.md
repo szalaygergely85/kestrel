@@ -16,6 +16,8 @@ Validation: preliminary pre-merge run 282/286 PASS, three FAIL (collider heap, t
 
 Screenshot not applicable: data/API only, no owner-visible UI in this step. Owner's world remains unchanged and excluded, SHA256 `3a6ef838193922afc30c0b7200fc7a78259b4796c06d1932ab128848bb5d3b40`.
 
+Gate follow-up during US-096a: full runner **293/293 PASS, no FAIL/TIMEOUT/WARN** on unchanged bars/counts. GFX-01a is promoted with the quest sim to `pc-c`; earlier measurement failures remain historical evidence. The Settings/storage/shadow-table dependencies below remain open.
+
 **NEEDS B1:** extend the existing platform load/save whitelist for validated quality/shadowQuality, retain them when other settings save, then wire GFX-01w after GFX-03. Recommend an adapter round-trip fixture covering quality -> mute -> reload; alternative keep the resolver module reviewable without exposing a nonpersistent setting. **NEEDS PC-A:** measured independent shadow tiers and Settings layout/labels (the existing 40x12 panel has three rows). After these seams, C adds the Quality row and verifies its real-GPU presentation.
 
 Lane scope follows `.claude/skills/parallel-lanes/SKILL.md`: "Needs a `main.js` or engine change -> write `NEEDS B1:` in its lane file." Queue item 8 scopes C to the new preset data/module and settings UI, not the platform whitelist. This is GFX-01a ready for review, not completion of GFX-01/GFX-01w.
