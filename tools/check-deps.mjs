@@ -66,6 +66,8 @@
 //       2) and game/js/rts/sim/** should not use Math.random, Date.now,
 //       performance.now or Math.sin|cos|tan|atan2|exp|pow|hypot (comments
 //       stripped first) - deterministic-sim leaves.
+//   17. (WG-1b2, architecture.md 38.2) `navigator.gpu`, GPUBufferUsage, GPUTextureUsage, GPUShaderStage, GPUMapMode
+//       (outside comments) are findings anywhere in engine/** or game/** except engine/render/gpu/device/**.
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -453,6 +455,27 @@ function checkDeterminismWarnRule(file, src) {
   }
 }
 
+// Rule 17 (WG-1b2, architecture.md 38.2): WebGPU globals live only under engine/render/gpu/device/.
+// Runs over every engine/ and game/ file (tests included); comments are stripped first.
+const WEBGPU_GLOBALS = [
+  [/\bnavigator\.gpu\b/g, 'navigator.gpu'],
+  [/\bGPUBufferUsage\b/g, 'GPUBufferUsage'],
+  [/\bGPUTextureUsage\b/g, 'GPUTextureUsage'],
+  [/\bGPUShaderStage\b/g, 'GPUShaderStage'],
+  [/\bGPUMapMode\b/g, 'GPUMapMode'],
+];
+function checkWebGpuGlobals(file, src) {
+  if (inDir(path.resolve(file), GPU_DEVICE_DIR)) return;
+  const stripped = stripComments(src);
+  for (const [re, label] of WEBGPU_GLOBALS) {
+    let m;
+    while ((m = re.exec(stripped))) {
+      const line = stripped.slice(0, m.index).split('\n').length;
+      findings.push(`${rel(file)}:${line}: "${label}" outside engine/render/gpu/device/ (architecture.md 38.2: WebGPU globals only under device/; game/ probes through probeWebGpu())`);
+    }
+  }
+}
+
 function rel(file) {
   return path.relative(ROOT, file).replace(/\\/g, '/');
 }
@@ -463,6 +486,9 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
   checkEngineFile(file, src);
   checkCoordMath(file, src);
   checkDeterminismWarnRule(file, src);
+}
+for (const file of [...walk(path.join(ROOT, 'engine')), ...walk(path.join(ROOT, 'game'))]) {
+  checkWebGpuGlobals(file, fs.readFileSync(file, 'utf8')); // rule 17 (tests included)
 }
 for (const file of walk(path.join(ROOT, 'engine'))) {
   // Rule 14 runs over every file, including *.test.js (see its own comment).

@@ -230,7 +230,9 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     return { rows: [{ name: 'voxelbench', pass, metrics }], ok: pass };
   }
   if (mode === 'webgpu-probe') {
-    return { rows: [{ name: 'webgpu-probe', pass: !!raw.requiredOk, metrics: {} }], ok: !!raw.requiredOk };
+    const stOk = !raw.selfTest || !!raw.selfTest.ok; // WG-1b2: selfTestDevice result rides on the probe JSON
+    const okAll = !!raw.requiredOk && stOk;
+    return { rows: [{ name: 'webgpu-probe', pass: okAll, metrics: {} }], ok: okAll };
   }
   if (mode === 'flicker') {
     const metrics = {};

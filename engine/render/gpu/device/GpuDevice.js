@@ -45,7 +45,7 @@
 
 /**
  * @typedef {Object} PipelineStageDesc
- * @property {{glsl?: string, wgsl?: string}} src - GL2 reads `glsl`, WebGPU reads `wgsl` (38.3)
+ * @property {{glsl?: string, wgsl?: string, entry?: string}} src - GL2 reads `glsl`, WebGPU reads `wgsl` (38.3); WebGPU entry point default `vs_main` (vertex) / `fs_main` (fragment), `entry` overrides (WG-1b2)
  * @property {{name: string, location: number, components: number, type: 'float'|'uint', offsetBytes: number}[]} [layout] - vertex stage only: interleaved-buffer attribute layout (stride is implicit: the caller's own upload stride)
  * @property {number} [strideBytes] - vertex stage only: interleaved-buffer stride
  * @property {{name: string, location: number, components: number, type: 'float'|'uint', offsetBytes: number}[]} [instanceLayout] - WG-1b1 (38.3, MESH-INST-01 batches): per-instance attributes read from `BindDesc.instanceBuffer` (step mode instance)
