@@ -131,7 +131,7 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
       const extent = modelExtent(assets, data.components || {}, scale);
       if (extent) {
         const rect = computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, data.transform, extent.radius, extent.height, renderer);
-        if (rect) drawHighlightRect(rt, rect, fgHex);
+        if (rect) drawMeshHighlightRect(rt, rect, fgHex);
         return;
       }
     }

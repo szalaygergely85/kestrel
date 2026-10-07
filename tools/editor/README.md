@@ -46,6 +46,10 @@ only has a software GL renderer, use `?gpu=0`.
 - Imported mesh geometry follows the cursor during a move drag, including
   its ground-snapped height. Release saves one move; `Esc` restores the original
   position. A drop with no valid floor cancels the move.
+- **Shift/Ctrl+click** toggles props and lights in the selection, in the viewport
+  or Scene Tree. Drag on empty space to box-select their pivots; hold Shift/Ctrl
+  to add to the current selection. `Esc` cancels a box gesture. All selected
+  items are highlighted; the inspector identifies the primary item it edits.
 - Lights and interactables have no visible mesh - they're picked as small
   markers (`*` for a light, `o` for an interactable) when **markers** are on
   (`M` toggles them, default on). You can also always select any item from
