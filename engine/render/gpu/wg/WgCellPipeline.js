@@ -130,6 +130,7 @@ export class WgCellPipeline {
   /** Called once per frame by the main loop before present(): remembers the inputs (no GPU work in WG-2a). */
   frame(fb, light, cam, world) {
     this._fb = fb; this._light = light; this._cam = cam || null; this._world = world || null;
+    if (this.device.timer.writeStats) this.device.timer.writeStats(this.stats);
   }
 
   // ---- readbacks (test-only, never the frame loop): Promises, always `await` (38.6) ----

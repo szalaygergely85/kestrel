@@ -11,6 +11,7 @@ import { CellBuffer } from './CellBuffer.js';
 import { computeCellBox } from './glyphMetrics.js';
 import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas.js';
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
+import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
 
 const GRID_W = PRESENT_BLOCK.field('grid').word;
 const SIZE_W = PRESENT_BLOCK.field('size').word;
@@ -35,6 +36,7 @@ export class RenderTargetWebGPU {
     this.fontSize = 16;
     this.dpr = 1;
     this.ready = true;
+    this.stats = { gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN };
     this._warnedLost = false;
     this._uiLayer = null;
     this._clearOpts = { clear: true }; // hoisted: present() runs every frame
@@ -187,6 +189,7 @@ export class RenderTargetWebGPU {
   present() {
     if (!this.ready) return;
     const d = this.device;
+    d.timer.begin(FRAME_TIMER_SLOT); // WG-1b3: whole GPU present, including the cell-pass hook.
     d.writeTexture(this.fgTex, this.cells.fg);
     d.writeTexture(this.bgTex, this.cells.bg);
     if (this._cellPass) this._cellPass();
@@ -206,7 +209,9 @@ export class RenderTargetWebGPU {
       this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
     }
     d.endPass();
+    d.timer.end();
     d.submit();
+    if (d.timer.writeStats) d.timer.writeStats(this.stats);
   }
 }
 

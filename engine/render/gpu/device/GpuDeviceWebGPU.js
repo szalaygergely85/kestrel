@@ -15,6 +15,7 @@
 import { createUniformRing, UNIFORM_SLOT_ALIGN } from '../wgsl/uniformBlock.js';
 import { MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { textureFormatFor, depthFormatFor, vertexFormatFor, readbackLayout, depadRows } from './webgpuFormats.js';
+import { WebGpuTimer } from './WebGpuTimer.js';
 
 /** @typedef {import('./GpuDevice.js').GpuHandle} GpuHandle */
 
@@ -57,7 +58,7 @@ export class GpuDeviceWebGPU {
       || /swiftshader/i.test(String(info.description || info.device || info.vendor || ''));
     /** WG-1c2: for the F3 backend line */
     this.adapterInfo = { vendor: String(info.vendor || ''), architecture: String(info.architecture || ''), description: String(info.description || ''), fallback: this._software };
-    this.timer = { begin: (/** @type {number} */ _slot) => {}, end: () => {} }; // timestamp-query: later WG step; caps.timerQueries=false
+    this.timer = new WebGpuTimer(gpuDevice, this._c);
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
@@ -84,7 +85,7 @@ export class GpuDeviceWebGPU {
 
   /** @returns {import('./GpuDevice.js').GpuDeviceCaps} */
   get caps() {
-    return { maxColorAttachments: this.gpu.limits ? this.gpu.limits.maxColorAttachments : 4, timerQueries: false, softwareRenderer: this._software };
+    return { maxColorAttachments: this.gpu.limits ? this.gpu.limits.maxColorAttachments : 4, timerQueries: this.timer.available, softwareRenderer: this._software };
   }
 
   // ---- resources ---------------------------------------------------------------------------------------------
@@ -260,6 +261,7 @@ export class GpuDeviceWebGPU {
       ds.depthLoadOp = clear ? 'clear' : 'load';
       ds.depthClearValue = clear === true || !clear ? 1 : (clear.depth != null ? clear.depth : 1);
     }
+    this.timer.attach(pd);
     this._pass = this._encoder.beginRenderPass(pd);
     this._curPipeline = null;
     this._boundTarget = target;
@@ -346,7 +348,11 @@ export class GpuDeviceWebGPU {
     const ring = this.uniformRing;
     if (ring.usedBytes > 0) this.gpu.queue.writeBuffer(this._ringBuf, 0, ring.buffer, 0, ring.usedBytes);
     ring.reset();
-    if (this._encoder) { this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null; }
+    if (this._encoder) {
+      const timing = this.timer.resolve(this._encoder);
+      this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
+      this.timer.collect(timing);
+    } else this.timer.resolve(null);
   }
 
   /**
@@ -399,6 +405,7 @@ export class GpuDeviceWebGPU {
       if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
       return;
     }
+    this.timer.dispose();
     for (const o of this._live) o.destroy();
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();

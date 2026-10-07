@@ -126,8 +126,11 @@ export const validatePcbPort = validatePort;
 export function buildLaunchFlags(opts = {}, platform = process.platform) {
   // WG-1a (architecture.md 38.7): WebGPU - Dawn picks D3D12/Metal/Vulkan itself, so no --use-angle.
   if (opts.backend === 'webgpu' || WEBGPU_PAGE_MODES.has(opts.mode) || opts.mode === 'presentdiff') {
-    if (opts.swiftshader) return ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader'];
-    return ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'];
+    const flags = opts.swiftshader
+      ? ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader']
+      : ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'];
+    if (opts.mode === 'bench') flags.push('--enable-webgpu-developer-features'); // 38.7: unquantised bench timestamps
+    return flags;
   }
   if (opts.swiftshader) {
     return ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];

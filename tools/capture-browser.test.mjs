@@ -94,6 +94,8 @@ check('parseArgs swiftshader defaults false', parseArgs([]).swiftshader === fals
   check('webgpu+swiftshader: no --use-angle / ignore-gpu-blocklist', !sw.some((x) => x.startsWith('--use-angle') || x === '--ignore-gpu-blocklist'));
   check('webgpu-probe mode implies webgpu flags', buildLaunchFlags({ mode: 'webgpu-probe' }, 'win32').includes('--enable-unsafe-webgpu'));
   check('webgl2 backend keeps d3d11', buildLaunchFlags({ backend: 'webgl2' }, 'win32').includes('--use-angle=d3d11'));
+  check('WebGPU bench timestamps are unquantised', buildLaunchFlags({ backend: 'webgpu', mode: 'bench' }, 'win32').includes('--enable-webgpu-developer-features'));
+  check('WebGPU correctness runs keep normal timestamps', !buildLaunchFlags({ backend: 'webgpu' }, 'win32').includes('--enable-webgpu-developer-features'));
   check('parseArgs --backend', parseArgs(['--backend', 'webgpu']).backend === 'webgpu' && parseArgs([]).backend === null);
   throws('parseArgs rejects bad --backend', () => parseArgs(['--backend', 'vulkan']));
   check('webgpu-probe page/global/query', pagePathFor('webgpu-probe') === 'game/webgpu-probe.html' && pagePathFor('bench') === 'game/index.html'
