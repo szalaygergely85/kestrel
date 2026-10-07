@@ -24,6 +24,6 @@ Rules: `engine/physics/` imports only from itself; engine never imports `game/`/
 - Route: `node tools/route-walk.mjs` (Node twin, grid vs mesh; must show `endTrigger:true` both) and `node tools/route-walk-browser.mjs --port 95xx` before pushing `game/js/main.js` changes. Known pre-existing quirk: `jump mesh run peak 0` at the wake spot.
 - Baseline comparisons: the clean worktree `../game_project_test` (`git checkout --detach <commit>` there), never stash/reset in the main repo.
 
-- Airborne support: `probeSupport` strict by default; the player body opts in via `opts.airStepUp` (BUG-GONDOLA-FALL: a depenetration squeeze left feet below a step top -> fell through). gondolaFall.test.js is the tunnelling/squeeze pattern on the real tower.
+- Airborne support: `probeSupport` strict by default; every body integrated by integrate.js opts in via `opts.airStepUp` (BUG-GONDOLA-FALL: a depenetration squeeze left feet below a step top -> fell through). gondolaFall.test.js is the tunnelling/squeeze pattern on the real tower.
 
 Detail: docs/architecture.md (search `meshCollide`, `MESH-PHYS`, `PROP-COLLIDE`, 37.10).
