@@ -21,7 +21,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
   loadContentPack, createRng, prebuildTerrainMesh,
-  forwardOf, hexToRgb, resolveWaterLooks, createEntityEmitters,
+  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -69,7 +69,10 @@ import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
-import { createHands, createStubItemSim } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
+import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
+import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
+import { createTargetables } from './quest/sim/targetables.js';
+import { FIREBALL_CFG } from './quest/spellConfig.js';
 import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
@@ -540,7 +543,8 @@ const swordVmH = swordAssetDef ? (() => {
     windows: { light: SWORD_CFG.light, hard: SWORD_CFG.hard },
   };
 })() : null;
-// HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
+
+// HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
 const spellVmH = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
   ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null;
 
@@ -644,7 +648,7 @@ function runGame(mode, cinematic = null) {
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
-  const fireballStub = createStubItemSim(); // SPELL-01a replaces this no-op with the real fireball sim
+  let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   blockContextMenu(canvas); // RMB must not open the browser menu over the game canvas (never the window)
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
@@ -775,7 +779,10 @@ function runGame(mode, cinematic = null) {
       sword = createSwordSim(world, engine.events, SWORD_CFG, { spendMana: (n) => vitals && vitals.spendMana(n) }); // US-078d (30.1)
       hands = createHands(engine.events); // HANDS-01b: fresh router per load (the inventory is seeded just below)
       hands.register('sword', sword);
-      hands.register('spell.fireball', fireballStub);
+      if (fbTargets) fbTargets.dispose();
+      fbTargets = createTargetables(world, engine.events);
+      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n) });
+      hands.register('spell.fireball', fireball);
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
       if (targeting) targeting.dispose(); // same "drop the old world's listeners first" precedent as vitals.dispose() below
@@ -873,7 +880,7 @@ function runGame(mode, cinematic = null) {
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
-      window.__debug.hands = hands; window.__debug.sword = sword; // HANDS-01b: test hooks
+      window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; // HANDS-01b: test hooks
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -1035,7 +1042,11 @@ function runGame(mode, cinematic = null) {
         if (params.get('debug') === '1' && input.pressed('KeyH')) hands.swap(); // dev: swap the two hands
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
         hands.step(playerHandle.data, input.isDown('Mouse0') || input.pressed('Mouse0'), input.isDown('Mouse2') || input.pressed('Mouse2'), gateOpen);
-        fireballStub.step(hands.downOf('spell.fireball')); // SPELL-01a hook (no-op until then)
+        if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
+          forwardOf(look.yawDeg, swordFwd);
+          const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
+          fireball.step(playerHandle.data, hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+        }
       }
       if (sword) {
         forwardOf(look.yawDeg, swordFwd);
