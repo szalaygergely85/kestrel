@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { importGltfBytes, runCli, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON } from './gltf-import.mjs';
 import { meshFromJSON, validateMesh } from '../engine/index.js';
+import { budgetFor } from './mesh-budgets.mjs';
 
 let passed = 0;
 function test(name, fn) {
@@ -48,12 +49,12 @@ function pad4(buf, fill = 0x00) {
 /** Minimal valid .glb: one triangle, one node, default scene, one material
  * named "TestMat" (deliberately NOT in the engine's material map, so the
  * unmapped-material report has something to find). */
-function buildTriangleGlb(positions = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]) {
+function buildTriangleGlb(positions = [[0, 0, 0], [1, 0, 0], [0, 1, 0]], indices = [0, 1, 2]) {
   const posBuf = Buffer.alloc(positions.length * 3 * 4);
   let o = 0;
   for (const p of positions) for (const c of p) { posBuf.writeFloatLE(c, o); o += 4; }
-  const idxBuf = Buffer.alloc(3 * 2);
-  [0, 1, 2].forEach((v, i) => idxBuf.writeUInt16LE(v, i * 2));
+  const idxBuf = pad4(Buffer.alloc(indices.length * 2));
+  indices.forEach((v, i) => idxBuf.writeUInt16LE(v, i * 2));
   const bin = Buffer.concat([posBuf, idxBuf]);
 
   const json = {
@@ -69,7 +70,7 @@ function buildTriangleGlb(positions = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]) {
     ],
     accessors: [
       { bufferView: 0, componentType: 5126, count: positions.length, type: 'VEC3' },
-      { bufferView: 1, componentType: 5123, count: 3, type: 'SCALAR' },
+      { bufferView: 1, componentType: 5123, count: indices.length, type: 'SCALAR' },
     ],
     buffers: [{ byteLength: bin.length }],
   };
@@ -209,6 +210,55 @@ await testAsync('runCli: --mats reads and persists the sidecar', async () => {
     for (const file of [glb, map, out]) if (fs.existsSync(file)) fs.unlinkSync(file);
     fs.rmdirSync(dir);
   }
+});
+
+// 3. --simplify / --budget (MESH-SIMP-01)
+/** Flat n x n grid, z = 0 (2 n^2 triangles). */
+function gridGlb(n) {
+  const pos = [], idx = [];
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) pos.push([i / n, j / n, 0]);
+  const v = (i, j) => j * (n + 1) + i;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) idx.push(v(i, j), v(i + 1, j), v(i + 1, j + 1), v(i, j), v(i + 1, j + 1), v(i, j + 1));
+  return buildTriangleGlb(pos, idx);
+}
+await testAsync('runCli: --simplify reaches about the target, stays valid and deterministic', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-simp-'));
+  const glb = path.join(dir, 'grid.glb'), a = path.join(dir, 'a.mesh.json'), b = path.join(dir, 'b.mesh.json');
+  try {
+    fs.writeFileSync(glb, gridGlb(16)); // 512 tris
+    const r = await runCli([glb, 'test_simp', '--simplify', '100', '--out', a]);
+    assert.ok(r.report.triCount >= 90 && r.report.triCount <= 110, `triCount ${r.report.triCount}`);
+    const json = JSON.parse(fs.readFileSync(a, 'utf8'));
+    assert.strictEqual(json.triCount, r.report.triCount);
+    assert.strictEqual(validateMesh(meshFromJSON(json)).errors.length, 0);
+    await runCli([glb, 'test_simp', '--simplify', '100', '--out', b]);
+    assert.strictEqual(fs.readFileSync(a, 'utf8'), fs.readFileSync(b, 'utf8'));
+    const full = await runCli([glb, 'test_simp', '--simplify', '5000', '--dry-run']); // target above the count: untouched
+    assert.strictEqual(full.report.triCount, 512);
+    await assert.rejects(() => runCli([glb, 'test_simp', '--simplify', '2', '--dry-run']), /triangle target/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+await testAsync('runCli: --budget picks the target from tools/mesh-budgets.mjs by id basename', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-budget-'));
+  const glb = path.join(dir, 'g.glb');
+  try {
+    fs.writeFileSync(glb, gridGlb(12)); // 288 tris
+    const pebble = await runCli([glb, 'quaternius/Pebble_Round_9', '--budget', '--dry-run']);
+    assert.ok(pebble.report.triCount <= 88 && pebble.report.triCount >= 72, `pebble ${pebble.report.triCount}`);
+    const unknown = await runCli([glb, 'quaternius/Whatever', '--budget', '--dry-run']); // no rule -> untouched
+    assert.strictEqual(unknown.report.triCount, 288);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('mesh-budgets: rules match the story table', () => {
+  assert.strictEqual(budgetFor('quaternius/DeadTree_2'), 2000);
+  assert.strictEqual(budgetFor('quaternius/Rock_Medium_3'), 400);
+  assert.strictEqual(budgetFor('quaternius/RockPath_Round_Thin'), 250);
+  assert.strictEqual(budgetFor('quaternius/Mushroom_Common'), 250);
+  assert.strictEqual(budgetFor('quaternius/Pebble_Square_1'), 80);
+  assert.strictEqual(budgetFor('quaternius/Grass_Wispy_Tall'), 60);
+  assert.strictEqual(budgetFor('ruins/BlockNormalMD'), null);
 });
 
 await testAsync('runCli: --help with no args returns the help text', async () => {

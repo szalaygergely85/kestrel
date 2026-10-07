@@ -30,6 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { budgetFor } from './mesh-budgets.mjs';
 import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
@@ -49,6 +50,7 @@ Options:
   --mats <path>       material-name -> palette-key JSON map
   --uv <planar|source>  UVs: world-metre planar (default) or the file's TEXCOORD_0
   --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
+  --budget            --simplify to the per-mesh triangle budget of tools/mesh-budgets.mjs (by id basename)
   --dry-run           parse and report only; write nothing
 
 Output: content/meshes/<id>.mesh.json (MeshData, meshToJSON shape) plus a
@@ -67,6 +69,7 @@ function parseArgs(argv) {
     if (a === '--uv') { args.uv = argv[++i]; if (args.uv !== 'planar' && args.uv !== 'source') throw new Error('--uv must be planar or source'); continue; }
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
+    if (a === '--budget') { args.budget = true; continue; }
     if (a === '--dry-run') { args.dryRun = true; continue; }
     args._.push(a);
   }
@@ -212,6 +215,7 @@ export async function runCli(argv) {
   }
 
   if (args.uv) opts.uv = args.uv;
+  if (args.budget && !args.simplify) args.simplify = budgetFor(id) || 0;
   if (args.simplify) {
     const full = loadGltf(raw, id, opts).triCount; // untouched count -> ratio
     if (args.simplify < full) opts.simplifyRatio = args.simplify / full;
