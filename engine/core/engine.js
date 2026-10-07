@@ -50,6 +50,10 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
     for (let s = 0; s < counts.length; s++) {
       if (!counts[s]) continue;
       const key = cfg.species[s].model;
+      if (cfg.species[s].mesh !== undefined) { // TREES-LP-b: kind-9 mesh species (World.load resolved it)
+        if (!world.scatterMeshes?.[s]) throw new Error(`bindScatterInstances: unresolved mesh ${cfg.species[s].mesh}`);
+        needed++; continue;
+      }
       if (!instances.pool?.models.has(key)) throw new Error(`bindScatterInstances: missing voxel model ${key}`);
       needed++;
     }
@@ -60,8 +64,10 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   const groups = [];
   for (let s = 0; counts && s < counts.length; s++) {
     if (!counts[s]) continue;
-    const group = instances.group(cfg.species[s].model, counts[s]);
-    group.lodCells = cfg.lodCells;
+    const sp = cfg.species[s];
+    const group = sp.mesh !== undefined ? instances.meshGroup(world.scatterMeshes[s], counts[s]) : instances.group(sp.model, counts[s]);
+    if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: no LOD (37.15 item 6)
+    else group.lodCells = cfg.lodCells;
     for (let i = 0; i < scatter.count; i++) {
       if (scatter.species[i] !== s) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],

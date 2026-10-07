@@ -22,7 +22,11 @@ export function validateScatterConfig(cfg) {
   let maxRc = 0, weight = 0;
   for (let i = 0; i < cfg.species.length; i++) {
     const s = cfg.species[i], key = `species[${i}]`;
-    if (!s || typeof s.model !== 'string' || !s.model) bad(`${key}.model`);
+    // TREES-LP-b (37.15 item 5): exactly one of `model` (voxel) / `mesh` (kind-9 registry mesh id)
+    const hasModel = !!s && s.model !== undefined, hasMesh = !!s && s.mesh !== undefined;
+    if (!s || hasModel === hasMesh) bad(`${key}: exactly one of model/mesh`);
+    if (hasModel && (typeof s.model !== 'string' || !s.model)) bad(`${key}.model`);
+    if (hasMesh && (typeof s.mesh !== 'string' || !s.mesh)) bad(`${key}.mesh`);
     if (!Number.isFinite(s.weight) || s.weight <= 0) bad(`${key}.weight`);
     if (!Number.isFinite(s.trunkR) || s.trunkR <= 0) bad(`${key}.trunkR`);
     if (!Number.isFinite(s.trunkH) || s.trunkH <= 0) bad(`${key}.trunkH`);
