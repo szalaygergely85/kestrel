@@ -114,6 +114,7 @@ export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
 export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
 export { isSoftwareRenderer } from './render/gpu/glUtil.js';
+export { probeWebGpu, evaluateWebGpuLimits } from './render/gpu/device/webgpuProbe.js'; // WG-1a
 export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item 8: main.js's fb.waterLooks (JS twin)
 // US-047: runGpuCompare/compareCells/compareGeometry/compareLight/poison*
 // (gpucompare parity harness) moved to engine/dev.js.

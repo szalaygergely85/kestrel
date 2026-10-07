@@ -73,7 +73,7 @@ export function parseArgs(argv) {
   const opts = {
     mode: null, grid: null, port: null, variant: null, rays: null,
     import: undefined, // string path, or true meaning "read stdin"
-    diff: null, timeoutMs: 120000, swiftshader: false,
+    diff: null, timeoutMs: 120000, swiftshader: false, backend: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -87,6 +87,10 @@ export function parseArgs(argv) {
     else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|dda> to the mode's own query
     else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
+    else if (a === '--backend') {
+      opts.backend = next();
+      if (opts.backend !== 'webgl2' && opts.backend !== 'webgpu') throw new Error(`--backend must be webgl2|webgpu, got '${opts.backend}'`);
+    }
     else if (a === '--import') {
       // `--import` alone (no path following, or followed by another flag)
       // means "read stdin".
@@ -120,6 +124,11 @@ export const validatePcbPort = validatePort;
 // ---------------------------------------------------------------------
 
 export function buildLaunchFlags(opts = {}, platform = process.platform) {
+  // WG-1a (architecture.md 38.7): WebGPU - Dawn picks D3D12/Metal/Vulkan itself, so no --use-angle.
+  if (opts.backend === 'webgpu' || opts.mode === 'webgpu-probe') {
+    if (opts.swiftshader) return ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader'];
+    return ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'];
+  }
   if (opts.swiftshader) {
     return ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
   }
@@ -131,8 +140,9 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 // Mode -> query string / result global
 // ---------------------------------------------------------------------
 
-export function buildQuery(mode, { grid, variant, rays, shadows } = {}) {
+export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {}) {
   const parts = [];
+  if (mode === 'webgpu-probe') return ''; // dedicated page, no query (see pagePathFor)
   if (mode === 'gpucompare') {
     if (variant && variant !== 'shade') throw new Error('gpucompare has only the default mesh twin or --variant shade');
     parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
@@ -156,19 +166,26 @@ export function buildQuery(mode, { grid, variant, rays, shadows } = {}) {
   } else if (mode === 'flicker') {
     parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
   } else {
-    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker)`);
+    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe)`);
   }
   if (grid && mode !== 'voxelbench') parts.push(`grid=${grid}`);
   if (shadows) parts.push(`shadows=${shadows}`);
+  if (backend === 'webgpu') parts.push('backend=webgpu'); // 38.7 switch (lands in WG-1c2)
   return parts.join('&');
 }
 
 export function resultGlobalFor(mode) {
+  if (mode === 'webgpu-probe') return '__webgpuProbe';
   if (mode === 'gpucompare') return '__gpuCompare';
   if (mode === 'bench') return '__bench';
   if (mode === 'voxelbench') return '__voxelBench';
   if (mode === 'flicker') return '__flicker';
   throw new Error(`unknown --mode '${mode}'`);
+}
+
+/** Page served for a mode (relative to the repo root). */
+export function pagePathFor(mode) {
+  return mode === 'webgpu-probe' ? 'game/webgpu-probe.html' : 'game/index.html';
 }
 
 // ---------------------------------------------------------------------
@@ -211,6 +228,9 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     // D-019 gate, per the overlay text this mode itself prints.
     const pass = raw.voxelMsP95 <= 0.5 && raw.gpuMsP95 <= 4;
     return { rows: [{ name: 'voxelbench', pass, metrics }], ok: pass };
+  }
+  if (mode === 'webgpu-probe') {
+    return { rows: [{ name: 'webgpu-probe', pass: !!raw.requiredOk, metrics: {} }], ok: !!raw.requiredOk };
   }
   if (mode === 'flicker') {
     const metrics = {};
@@ -676,13 +696,13 @@ export async function runLiveCapture(opts) {
     const query = opts.query || buildQuery(opts.mode, opts); // ME-08c: `--query <raw>` override
     // BUG-BENCH-01: `--query` REPLACES the whole query (mode param included); `--query "shadows=map"` alone loads the plain game and
     // waits for a result that never comes. Use `--shadows map` to add a flag to the mode's query instead.
-    if (opts.query && opts.mode && !/(^|&)(gpucompare|bench|voxelbench|flicker)=/.test(opts.query)) {
+    if (opts.query && opts.mode && opts.mode !== 'webgpu-probe' && !/(^|&)(gpucompare|bench|voxelbench|flicker)=/.test(opts.query)) {
       console.error(`capture-browser: WARNING --query '${opts.query}' has no ${opts.mode} parameter, so window.${opts.global || resultGlobalFor(opts.mode)} will never appear (use --shadows <v> or put the mode flag in --query)`);
     }
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
     // game/index.html, not at the root.
-    const url = `http://127.0.0.1:${opts.port}/game/index.html?${query}`;
+    const url = `http://127.0.0.1:${opts.port}/${pagePathFor(opts.mode)}${query ? '?' + query : ''}`;
     const navigated = new Promise((resolve) => {
       cdp.onEvent((method) => { if (method === 'Page.loadEventFired') resolve(); });
     });
@@ -772,6 +792,7 @@ async function main() {
     if (finalPath !== filePath) stripped.files = stripDiffPngs(live.raw, finalPath).files, payload.raw = stripDiffPngs(live.raw, finalPath).raw;
     writeCapture(finalPath, payload);
     writeDiffPngs(stripped.files);
+    if (mode === 'webgpu-probe') console.log(JSON.stringify(raw, null, 2)); // WG-1a: print the probe JSON
     console.log(`wrote ${path.relative(ROOT, finalPath)}` + (stripped.files.length ? ` + ${stripped.files.length} diff PNGs` : ''));
   }
 

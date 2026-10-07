@@ -14,7 +14,7 @@ import {
   parseArgs, validatePort, buildQuery, resultGlobalFor,
   normalizeLiveResult, parseImportText, detectImportMode,
   diffResults, formatDiff, formatSummary, todayStr, captureFilePath,
-  buildLaunchFlags, isSoftwareRendererLine, diffPngSlug, diffPngRelPath, stripDiffPngs,
+  buildLaunchFlags, pagePathFor, isSoftwareRendererLine, diffPngSlug, diffPngRelPath, stripDiffPngs,
 } from './capture-browser.mjs';
 
 let failures = 0;
@@ -83,6 +83,23 @@ throws('validatePort rejects non-integer', () => validatePort(9500.5));
 }
 check('parseArgs --swiftshader flag', parseArgs(['--swiftshader']).swiftshader === true);
 check('parseArgs swiftshader defaults false', parseArgs([]).swiftshader === false);
+
+// --- WG-1a: --backend webgpu flags (architecture.md 38.7) ---
+{
+  const f = buildLaunchFlags({ backend: 'webgpu' }, 'win32');
+  check('webgpu flags', f.includes('--enable-unsafe-webgpu') && f.includes('--ignore-gpu-blocklist'));
+  check('webgpu: no --use-angle', !f.some((x) => x.startsWith('--use-angle')));
+  const sw = buildLaunchFlags({ backend: 'webgpu', swiftshader: true }, 'linux');
+  check('webgpu+swiftshader flags', sw.length === 2 && sw.includes('--enable-unsafe-webgpu') && sw.includes('--use-webgpu-adapter=swiftshader'));
+  check('webgpu+swiftshader: no --use-angle / ignore-gpu-blocklist', !sw.some((x) => x.startsWith('--use-angle') || x === '--ignore-gpu-blocklist'));
+  check('webgpu-probe mode implies webgpu flags', buildLaunchFlags({ mode: 'webgpu-probe' }, 'win32').includes('--enable-unsafe-webgpu'));
+  check('webgl2 backend keeps d3d11', buildLaunchFlags({ backend: 'webgl2' }, 'win32').includes('--use-angle=d3d11'));
+  check('parseArgs --backend', parseArgs(['--backend', 'webgpu']).backend === 'webgpu' && parseArgs([]).backend === null);
+  throws('parseArgs rejects bad --backend', () => parseArgs(['--backend', 'vulkan']));
+  check('webgpu-probe page/global/query', pagePathFor('webgpu-probe') === 'game/webgpu-probe.html' && pagePathFor('bench') === 'game/index.html'
+    && resultGlobalFor('webgpu-probe') === '__webgpuProbe' && buildQuery('webgpu-probe', {}) === '');
+  check('buildQuery adds backend=webgpu', buildQuery('bench', { backend: 'webgpu' }) === 'bench=present&backend=webgpu');
+}
 
 // --- isSoftwareRendererLine: the fail-fast console-message match ---
 check('isSoftwareRendererLine matches the real webgl2Gate.js text', isSoftwareRendererLine('[webgl2Gate] software renderer detected (SwiftShader) - performance may be poor'));
