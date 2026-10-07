@@ -18,6 +18,8 @@ const W_PITCH_A = W('pitchA'), W_PITCH_B = W('pitchB'), W_PITCH_C = W('pitchC');
 const W_LIGHT_POS = W('lightPos'), W_LIGHT_COL = W('lightCol'), W_VIS_BOX = W('visBox');
 const W_STRUCT_A = W('structA'), W_STRUCT_B = W('structB');
 
+const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
+
 export class WgLightPass {
   constructor(device) {
     this.device = device;
@@ -141,9 +143,9 @@ export class WgLightPass {
   /** @param {any} p the WgCellPipeline (_light/_cam/_world/_rasterPass/rt/cols/rows) @param {any} t its targets */
   run(p, t) {
     const d = this.device, lu = this.lu, li = this.li;
-    this._ensureWorld(p._world);
+    if (p._world) this._ensureWorld(p._world); else this.li[W_STRUCT_COUNT] = 0; // no world (`?gpucompare=shade` upload source): the 1x1 dummy atlases stay bound
     this._uploadLight(p._light);
-    const cb = this._camBasis(p._cam, p.cols, p.rows, p.rt);
+    const cb = this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
     li[W_GRID_COLS] = p.cols; li[W_GRID_ROWS] = p.rows;
     lu[W_POSX] = cb.posX; lu[W_POSY] = cb.posY; lu[W_EYEH] = cb.eyeH;
     lu[W_DIRX] = cb.dirX; lu[W_DIRY] = cb.dirY; lu[W_PLANEX] = cb.planeX; lu[W_PLANEY] = cb.planeY;

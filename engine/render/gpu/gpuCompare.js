@@ -600,7 +600,7 @@ function isEdgeCellU32(giBuf, cols, rows, x, y, i) {
  * `castFrame(cam)` = beginFrame + castSectors + computeDerivatives, shared
  * by both paths (depth parity is by construction, still reported).
  */
-export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
+export async function runGpuCompare(pipeline, fb, castFrame, poses, report) {
   const cols = fb.gbuf.cols, rows = fb.gbuf.rows;
   const n = cols * rows;
   const jsFg = new Uint8Array(cols * rows * 4);
@@ -635,7 +635,8 @@ export function runGpuCompare(pipeline, fb, castFrame, poses, report) {
     // units 0/1 after the draw - `RenderTargetGL.readbackPresent`), not a
     // texture picked by name; `pipeline.readback()` is the same thing on a
     // real target, and the fallback for test doubles without it.
-    const { fg: gpuFg, bg: gpuBg } = fb.rt.readbackPresent ? fb.rt.readbackPresent() : pipeline.readback();
+    // WG-3c: the WebGPU pipeline keeps presenting the CPU cells, so its GPU-shaded cells come from its own final textures (async).
+    const { fg: gpuFg, bg: gpuBg } = pipeline.readbackCells ? await pipeline.readbackCells() : fb.rt.readbackPresent ? fb.rt.readbackPresent() : pipeline.readback();
 
     const depthMatchPct = 100; // by construction: same castFrame() feeds both paths
     const cmp = compareCells(jsFg, jsBg, gpuFg, gpuBg, fb.gbuf.kind, cols, rows, fb.gbuf.rule, fb.gbuf.mat);

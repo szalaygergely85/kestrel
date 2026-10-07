@@ -4,6 +4,8 @@
 import { RESOLVE_BLOCK, RESOLVE_WGSL, RESOLVE_TEXTURES } from '../wgsl/resolve.wgsl.js';
 import { DERIV_BLOCK, DERIV_WGSL, DERIV_TEXTURES } from '../wgsl/deriv.wgsl.js';
 import { WgLightPass } from './passLight.js';
+import { WgShadePass } from './passShade.js';
+import { WgUploadSource } from './passUpload.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const R_N = RESOLVE_BLOCK.field('n').word;
@@ -33,6 +35,9 @@ export class WgCellPass {
       targetFormats: ['rgba32ui'],
     });
     this.lightPass = new WgLightPass(device);
+    this.shadePass = new WgShadePass(device); // WG-3c: shade + edge after light
+    this.shaded = false; // true when this frame's shade + edge ran (final cells valid)
+    this.upload = new WgUploadSource(device);  // WG-3c: `?gpucompare=shade` test source
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);
     this.du = new Float32Array(DERIV_BLOCK.sizeWords); this.di = new Int32Array(this.du.buffer);
     this.rTex = [0, 1, 2, 3].map(slot => ({ slot, texture: null }));
@@ -42,9 +47,19 @@ export class WgCellPass {
     this.terms = { tanHalfHFov: 0, planeDistY: 0 };
   }
 
-  /** Runs resolve then deriv into the cell-res targets of `t`. @param {{rt:any, rays:number, cols:number, rows:number}} p */
+  /** Test hook: forwards the bound MaterialTable + palette (the shade pass packs lazily, only when they change). */
+  bind(table, palette) { this.shadePass.bind(table, palette); }
+
+  /** Runs resolve then deriv into the cell-res targets of `t`, then light, shade, edge. @param {{rt:any, rays:number, cols:number, rows:number}} p */
   run(p, t) {
     const d = this.device, rt = p.rt;
+    this.shaded = false;
+    if (p._source === 'upload') { // ?gpucompare=shade: CPU G-buffer straight into the cell-res set (no raster/resolve/deriv)
+      if (!this.upload.run(p, t)) return;
+      this.lightPass.run(p, t);
+      this.shaded = this.shadePass.run(p, t, this.lightPass.cam);
+      return;
+    }
     const rTex = this.rTex;
     rTex[0].texture = t.texSGI; rTex[1].texture = t.texSGA; rTex[2].texture = t.texSDepth; rTex[3].texture = t.texMask;
     this.ri[R_N] = p.rays;
@@ -62,11 +77,16 @@ export class WgCellPass {
     d.draw(3);
     d.endPass();
     // WG-3b: light (needs the camera + world; without them the frame has no lit content)
-    if (p._cam && p._world) this.lightPass.run(p, t);
+    if (p._cam && p._world) {
+      this.lightPass.run(p, t);
+      this.shaded = this.shadePass.run(p, t, this.lightPass.cam); // WG-3c
+    }
   }
 
   dispose() {
     if (this.lightPass) { this.lightPass.dispose(); this.lightPass = null; }
+    if (this.shadePass) { this.shadePass.dispose(); this.shadePass = null; }
+    this.upload = null;
     for (const k of ['pipeResolve', 'pipeDeriv']) { if (this[k]) { try { this.device.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; } }
   }
 }

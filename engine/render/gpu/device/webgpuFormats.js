@@ -10,6 +10,8 @@ const FORMATS = {
   rgba8: { gpu: 'rgba8unorm', bpp: 4, depth: false },
   rgba32f: { gpu: 'rgba32float', bpp: 16, depth: false }, // WG-3b: world geometry atlas (textureLoad only)
   rg8ui: { gpu: 'rg8uint', bpp: 2, depth: false }, // WG-3b: world flags atlas
+  rgba32i: { gpu: 'rgba32sint', bpp: 16, depth: false }, // WG-3c: shade MATI/SETI (textureLoad only)
+  r32f: { gpu: 'r32float', bpp: 4, depth: false }, // WG-3c: shade SETF/GAIN (textureLoad only)
   depth24: { gpu: 'depth24plus', bpp: 0, depth: true },
 };
 

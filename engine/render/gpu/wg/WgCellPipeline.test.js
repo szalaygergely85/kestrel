@@ -5,6 +5,14 @@ import { WgCellPipeline, PASS_NAMES } from './WgCellPipeline.js';
 import { GpuCellPipeline, PASS_NAMES as GL_PASS_NAMES } from '../GpuCellPipeline.js';
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK } from '../wgsl/debug.wgsl.js';
+import { SHADE_BLOCK } from '../wgsl/shade.wgsl.js';
+import { EDGE_BLOCK } from '../wgsl/edge.wgsl.js';
+import { bindShading, bindLevel } from '../../MaterialTable.js';
+import { MAT_F_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
+import { loadLevel } from '../../../world/Level.js';
+import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
+import paletteModule from '../../../../design/palette.js';
+import detailPassModule from '../../../../design/detail-pass.js';
 
 const { device, liveCount } = makeMockGpuDevice();
 device.backend = 'webgpu';
@@ -29,7 +37,7 @@ assert.strictEqual(t0.targetRaster.desc.color.length, 3);
 assert.strictEqual(t0.targetRaster.desc.depth, t0.texRasterDepth);
 const before = liveCount();
 freeWgTargets(device, t0);
-assert.strictEqual(liveCount(), before - 15, 'free disposes 10 textures + 5 targets');
+assert.strictEqual(liveCount(), before - 21, 'free disposes 14 textures + 7 targets');
 // alloc failure frees the partial set
 {
   let n = 0; const orig = device.createTexture;
@@ -50,7 +58,7 @@ for (const m of SURFACE) {
 }
 assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
-assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light']);
+assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge']);
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
 assert.strictEqual(typeof hook, 'function', 'cell-pass hook installed');
 assert.strictEqual(rt.gpuActive, undefined, 'never takes over the CPU shading');
@@ -110,6 +118,53 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   assert.strictEqual(lp.texLVis._texWrites, 1, 'dirty LVIS slot uploaded once');
   lp.run(host, t); assert.strictEqual(lp.texLVis._texWrites, 1, 'unchanged LVIS slot not re-uploaded');
   assert.strictEqual(liveCount(), made, 'warm light pass creates no resources');
+}
+
+
+// WG-3c: shade + edge (real content table; fake host without a world: the source-agnostic part of the pass)
+{
+  const palette = paletteModule.default || paletteModule, detailPass = detailPassModule.default || detailPassModule;
+  const { bundle } = await loadTestAssets();
+  const table = bindShading(palette, detailPass, 16 / 9);
+  bindLevel(table, loadLevel(bundle.levels.test_room));
+  const sp = p._cellPass.shadePass, t = p._t;
+  const host = { rt, _fb: { timeSec: 2.5 }, _cam: null, _world: null, _source: 'scene', _table: null, _palette: palette, rays: 1, cols: p.cols, rows: p.rows, _rasterPass: null };
+  passes.length = 0; drawn = 0;
+  assert.strictEqual(sp.run(host, t, null), false, 'no table bound: nothing runs');
+  assert.strictEqual(drawn, 0);
+  p.bind(table, palette); host._table = table;
+  assert.strictEqual(sp.run(host, t, null), true);
+  assert.deepStrictEqual(passes.map(x => x.t), [t.targetShade, t.targetFinal]); assert.strictEqual(drawn, 2);
+  assert.strictEqual(sp.stats.tableUploads, 1); assert.strictEqual(sp.stats.skyBakes, 1);
+  assert.deepStrictEqual([sp.texMatF.desc.width, sp.texMatF.desc.height], [MAT_F_WIDTH, table.records.length]);
+  assert.strictEqual(sp.texSetI.desc.width, SET_I_WIDTH);
+  assert.strictEqual(sp.texTlook.desc.width, 1, 'no terrain: TLOOK stays a 1x1 placeholder');
+  // shade binds: 16 textures, GI first, LIGHT 14 = texLight, CPU layer = rt.fgTex/bgTex; edge: 5 with the dummy WATER
+  const shBind = sp.shTex.map(x => x.texture);
+  assert.strictEqual(shBind.length, 16); assert.strictEqual(shBind[0], t.texGI); assert.strictEqual(shBind[6], rt.fgTex); assert.strictEqual(shBind[14], t.texLight);
+  assert.deepStrictEqual(sp.edTex.map(x => x.texture), [t.texGI, t.texDepth, t.texShadeFg, t.texShadeBg, sp.texWaterDummy]);
+  const U = table.fog;
+  assert.strictEqual(sp.su[SHADE_BLOCK.field('fogStart').word], Math.fround(U.start));
+  assert.strictEqual(sp.su[SHADE_BLOCK.field('timeSec').word], 2.5);
+  assert.strictEqual(sp.si[SHADE_BLOCK.field('n').word], 1); assert.strictEqual(sp.si[SHADE_BLOCK.field('gpuSky')?.word ?? 0], 0, 'no cam/world: passthrough sky');
+  for (let f = 1; f <= 6; f++) assert.strictEqual(sp.su[SHADE_BLOCK.field('faceK').word + f], Math.fround(table.faceK[f]));
+  assert.strictEqual(sp.eu[EDGE_BLOCK.field('edgeGlyph').word], detailPass.edges.rules.cap.glyph.charCodeAt(0) - 32);
+  assert.strictEqual(sp.ei[EDGE_BLOCK.field('waterOn').word], 0); assert.strictEqual(sp.ei[EDGE_BLOCK.field('gridCols').word], p.cols);
+  // warm frame: no re-pack, no sky bake, no new resources, no writes
+  const made = liveCount(), w0 = sp.texMatF._texWrites;
+  host._fb.timeSec = 3; sp.run(host, t, null); sp.run(host, t, null);
+  assert.strictEqual(sp.stats.tableUploads, 1); assert.strictEqual(sp.stats.skyBakes, 1); assert.strictEqual(sp.texMatF._texWrites, w0);
+  assert.strictEqual(liveCount(), made, 'warm shade pass creates no resources');
+  // palette time-of-day change re-bakes the sky only; a new table re-uploads
+  const t0 = palette.defaultTime, other = Object.keys(palette.timeOfDay).find(k => k !== t0);
+  if (other) { palette.defaultTime = other; sp.run(host, t, null); palette.defaultTime = t0; assert.strictEqual(sp.stats.skyBakes, 2); assert.strictEqual(sp.stats.tableUploads, 1); }
+  host._table = { ...table }; sp.run(host, t, null); assert.strictEqual(sp.stats.tableUploads, 2);
+  // pipeline-level: readbackCells is null until a frame shaded, then reads the FINAL textures
+  assert.strictEqual(await p.readbackCells(), null);
+  p._cellsShaded = true; const seen = [];
+  device.readback = (tex) => { seen.push(tex); };
+  await p.readbackCells(); assert.deepStrictEqual(seen, [t.texFinalFg, t.texFinalBg]);
+  p._cellsShaded = false;
 }
 
 // resizeGrid reallocates, frees old

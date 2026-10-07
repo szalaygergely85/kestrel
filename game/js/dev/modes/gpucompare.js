@@ -32,14 +32,16 @@ function noPipelineMsg(ctx) {
 // `test_room` on both paths and reports glyph/fg/bg parity. Shows PASS/FAIL
 // on screen (the overlay) and in the console. Requires a working GPU
 // pipeline - prints a clear message and does nothing else if one isn't active.
-function runGpuCompareShadeMode(ctx) {
-  const { gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
+async function runGpuCompareShadeMode(ctx) {
+  const { gpuPipeline: glPipeline, wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
+  const gpuPipeline = glPipeline || (wgPipeline && wgPipeline.ready ? wgPipeline : null); // WG-3c: the WebGPU pipeline runs this mode too (cells via readbackCells)
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
 
   gpuPipeline.setSource('upload'); // 14.2 item 7: force the legacy CPU-fed G-buffer path for this test
 
   const level = loadLevel(assets.level('test_room'));
   bindLevel(matTable, level);
+  if (!glPipeline) gpuPipeline.bind(matTable, assets.palette); // WebGPU: re-pack the shade data textures for the materials bindLevel just added
   const compareWorld = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
   const fbCompare = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
@@ -54,7 +56,7 @@ function runGpuCompareShadeMode(ctx) {
     return cam;
   }
 
-  const { rows, ok } = runGpuCompare(gpuPipeline, fbCompare, castFrame, GPU_COMPARE_POSES, null);
+  const { rows, ok } = await runGpuCompare(gpuPipeline, fbCompare, castFrame, GPU_COMPARE_POSES, null);
 
   // BUG-GPU-002 tooling fix: same fixed reference box as `?gpucompare=1`.
   const refScreenAspectShade = (rt.cols * rt.pxCellW) / (rt.rows * rt.pxCellH);
@@ -753,10 +755,12 @@ async function runGpuCompareSceneMode(ctx) {
     if (real) sprites.pool.collect(world);
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
     if (spritesExtra) spritesExtra(sprites.pool); // SPELL-01b: view-only billboards (fireball core / blast)
+    if (params.get('sprites') === '0') sprites.pool.reset(); // diagnostic (WG-3c): isolate shade/edge from the sprite layer WebGPU has not ported
     sprites.pool.project(cam, rt, lights || ambientL, world, renderer);
     // US-053b (32.1): particle layer, built once per pose from the current (just-cleared-
     // or-just-populated) engine.particles state - both twins below read the SAME layer.
-    if (engine.particleLayer) engine.particleLayer.build(engine.particles, cam, rt, lights || ambientL, world, assets.palette, renderer);
+    if (engine.particleLayer && params.get('sprites') === '0') engine.particleLayer.bind(cols, rows); // diagnostic: no particle cells either
+    else if (engine.particleLayer) engine.particleLayer.build(engine.particles, cam, rt, lights || ambientL, world, assets.palette, renderer);
 
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
     if (overlayOps) overlayOps(engine.overlay);
@@ -774,7 +778,9 @@ async function runGpuCompareSceneMode(ctx) {
     const vmItemsGpu = engine.viewModel ? engine.viewModel.stats.items : 0;
     const rb = wg ? null : await rt.readbackPresent();
     if (rb) sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
-    const gpuFg = rb ? rb.fg : null, gpuBg = rb ? rb.bg : null;
+    // WG-3c: the WebGPU path still PRESENTS the CPU cells, so its GPU-shaded cells come from the pipeline's own final textures
+    const rbw = wg ? await wg.readbackCells() : null;
+    const gpuFg = rb ? rb.fg : rbw ? rbw.fg : null, gpuBg = rb ? rb.bg : rbw ? rbw.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = !wg && poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null;
@@ -829,10 +835,28 @@ async function runGpuCompareSceneMode(ctx) {
       const cmpLightW = lightBuf ? compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask) : null;
       const lightWaits = !!(cmpLightW && cmpLightW.sunMap);
       const lightOkW = !cmpLightW || lightWaits || cmpLightW.pass;
-      const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW;
+      // WG-3c: shade + edge cell row, same bars as the WebGL2 rows. Poses whose JS twin includes layers WebGPU has not ported yet are
+      // recorded but not gated: sun-map poses (WG-3d), water (WG-3e), sprites/particles/overlay (WG-3f).
+      let cmpCellsW = null, cellsOkW = true, cellsWait = null;
+      if (gpuFg) {
+        cmpCellsW = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
+        const cmpCellsMeshW = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true, cmpGeom.excludeMask) : null;
+        const geomBaseOkW = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
+        const meshColourOkW = renderer === 'mesh' && geomBaseOkW && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
+          cmpCellsW.glyphMatchPct >= 99.5 && cmpCellsW.poisonedSurvivors === 0 && cmpCellsMeshW.pass;
+        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOkW &&
+          cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
+        cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
+        // only a row that would FAIL is held back, and only for a layer WebGPU has not ported (row passes keep their honest OK)
+        const wantWait = lightWaits ? 'WG-3d' : poseName.includes('water') ? 'WG-3e'
+          : (overlayOps || sprites.pool.count > 0 || (engine.particleLayer && engine.particleLayer.stats.cells > 0) || fbCompare.sceneFade < 1 || compareSceneDim.all < 1 || compareSceneDim.n > 0) ? 'WG-3f' : null;
+        // OPEN (WG-3c ASK ARCHITECT, docs/test-reports/WG-3c.md): towerShadowGrass mismatches on kind 7 with sprites/particles OFF too, so it is never excused as a layer wait.
+        if (!cellsOkW && wantWait && !poseName.includes('towerShadowGrass')) { cellsWait = wantWait; cellsOkW = true; }
+      }
+      const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW;
       overallOk = overallOk && okW;
-      console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, cloth: gpuPipeline.stats.clothDraws })}`);
-      rowsOut.push({ pose: poseName, cmpGeom, cmpLight: cmpLightW, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
+      console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) cells=${cmpCellsW ? (cellsWait ? 'WAIT-' + cellsWait + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ')' : (cellsOkW ? 'OK' : 'MISMATCH') + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ', bgOut ' + cmpCellsW.bgOutside + ', fgMax ' + cmpCellsW.fgMax + ', bgMax ' + cmpCellsW.bgMax + ', outside ' + (cmpCellsW.outsideFrac * 100).toFixed(3) + '%, poisoned ' + cmpCellsW.poisonedSurvivors + ')') : 'n/a'} light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, cloth: gpuPipeline.stats.clothDraws })}`);
+      rowsOut.push({ pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
       continue;
     }
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
@@ -1014,6 +1038,6 @@ async function runGpuCompareSceneMode(ctx) {
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
   if (mode === '1') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
-  else if (mode === 'shade') runGpuCompareShadeMode(ctx);
+  else if (mode === 'shade') return runGpuCompareShadeMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
 }

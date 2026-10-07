@@ -29,7 +29,7 @@
 
 /**
  * @typedef {Object} TextureDesc
- * @property {'rgba32ui'|'r32ui'|'rgba8'|'depth24'|'r8ui'|'rgba32f'|'rg8ui'} format
+ * @property {'rgba32ui'|'r32ui'|'rgba8'|'depth24'|'r8ui'|'rgba32f'|'rg8ui'|'rgba32i'|'r32f'} format
  * @property {number} width
  * @property {number} height
  * @property {number} [layers] - reserved (cube/array textures, phase 3); omit for a plain 2D texture

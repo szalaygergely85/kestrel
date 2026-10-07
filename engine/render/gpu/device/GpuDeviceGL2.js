@@ -38,6 +38,8 @@ function glInternalFormat(gl, format) {
     case 'r8ui': return gl.R8UI;
     case 'rgba32f': return gl.RGBA32F;
     case 'rg8ui': return gl.RG8UI;
+    case 'rgba32i': return gl.RGBA32I;
+    case 'r32f': return gl.R32F;
     case 'depth24': return gl.DEPTH_COMPONENT24;
     default: throw new Error(`GpuDeviceGL2.createTexture: unhandled format "${format}"`);
   }
