@@ -1,467 +1,473 @@
 # Backlog triage sheet
 
-Generated 2026-10-07 from docs/backlog.md (main session). 287 open story rows (status not done/closed/dropped). Fill the Decision column: keep / drop / archive. Rows protected by decisions D-044/D-045 (WG-*, QUAT-*, PREC-04b*) are active work: keep.
+Generated 2026-10-07 from `docs/backlog.md`. 285 open-looking table rows (Status does not begin done/closed/dropped). Source links are pinned to PC-A commit 3617a1c (2026-10-07); duplicate rows remain separate.
 
-## Duplicate IDs (same ID on several rows): MESH-INST-01 (lines [138, 453]), ED-MESH-01 (lines [140, 469])
+Recommendation is advisory: keep / drop / archive plus a reason. The Decision column is reserved for the owner and remains blank. Archive recommendations require owner sign-off; implementation evidence is not a new completion verdict. `docs/backlog.md` and its archive are unchanged.
 
-## US (128)
+Parsing follows each table header by name (ID, Title, Priority, Status), including Order/Milestone tables: Status may be column 4, 5 or 6. Escaped pipes and pipes inside inline code stay in the cell; truncated historical rows with unmatched backticks or missing final pipes are recovered without shifting the required columns. Status is taken only from that column, never inferred from Title or an old "Was: todo" note. Long status cells are shortened for readability; an ellipsis-led history cell says "Implementation recorded" and links to its full source rather than becoming "other".
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| US-026 | Walk out onto the terrain: near LOD, slope physics, chunk regeneration | P0 (M2 | todo | PC-A | 531 | |
-| US-027 | JSON content packs and world files | P1 (M2 | split | PC-A | 532 | |
-| US-031 | Editor shell + fly-cam + idle re-render skip | P0 (M1 | testing | PC-B | 364 | |
-| US-032 | Pick/select/move/delete | P0 (M1 | testing | PC-B | 365 | |
-| US-033 | Place props/lights/triggers + property panel + undo | P0 (M1 | testing | PC-B | 366 | |
-| US-034 | World JSON save/load + play-test | P0 (M1 | testing | PC-B | 367 | |
-| US-035 | Model frame editor | P0 (M5 | todo |  | 598 | |
-| US-036 | Animations + events + preview | P0 (M5 | todo |  | 599 | |
-| US-037 | ModelDef JSON save/load | P0 (M5 | todo |  | 600 | |
-| US-038 | Settings menu (grid 240/320/400/480 per D-025, fullscreen, mouse, mute; remember | P1 (M2 | todo | PC-A | 533 | |
-| US-041b | Creature clips (idle/walk) + bear voxel model + design/preview/voxel.html + walk | P0 (be | todo |  | 539 | |
-| US-042 | Talking animals + dialogue system (first animal M2, exile dialogue M3) | P1 (M2 | todo |  | 534 | |
-| US-043 | Steam release: Electron wrapper + Steamworks + store assets | P0 (M6 | todo |  | 593 | |
-| US-046 | Engine-owned frame renderer (createWorldRenderer) | P1 (M1 | todo | PC-A | 363 | |
-| US-049 | D-017 pruning of fallback-only render code | P1 | todo |  | 358 | |
-| US-051 | Dynamic rigid props: drop, fall, tumble, settle (box/cylinder bodies) (engine st | P0 | todo |  | 547 | |
-| US-052 | Pick up, carry, put down, throw (e.g. a branch) (engine + game story) | P0 | todo |  | 548 | |
-| US-053 | Particle system: smoke, dust, sparks, splash drops (engine story) | P1 | todo |  | 549 | |
-| US-053a | Particle sim core (engine): pooled emitters + particles on the fixed step (rate, | P1 | other | PC-A | 558 | |
-| US-053c | Particle presets as data + first placements: burner flame + smoke on the Kestrel | P1 | other |  | 559 | |
-| US-053d | Particle presets part 2: splash drops (for US-055b) + motes (US-019 sun-shaft du | P2 | todo | PC-B | 560 | |
-| US-054 | Cuttable tree -> trunk log + branches as physics pieces (engine + content story) | P0 | todo |  | 550 | |
-| US-055 | Water surface + splash + floating props (engine story) | P1 | todo |  | 551 | |
-| US-055a | Water surface render (engine): water regions as world data (sector or terrain re | P1 | todo? | PC-A | 561 | |
-| US-055a2c | Water wiring + first visible water: (a) engine/index.js exports resolveWaterLook | P1 | other |  | 562 | |
-| US-055b | Wade, swim, splash: player wades (< 0.6 m) / swims (>= 0.6 m), splash particles | P1 | todo | PC-B | 563 | |
-| US-063 | Editor v0.1 polish: model picker on prop placement, real per-cell "inside a stru | P1 | testing | PC-B | 371 | |
-| US-064 | Editor edit speed: live-patch prop/light move/rotate/on-off instead of World.loa | P1 | testing | PC-B | 372 | |
-| US-066 | Editor UI reskin to the Stitch "Retro-Terminal ASCII Studio" layout (ribbon, sce | P1 (M1 | testing | PC-B | 368 | |
-| US-067 | Editor asset library (model browser with ASCII thumbnails, click to place) + tre | P2 (M1 | po-review | PC-B | 369 | |
-| US-068 | Editor axis gizmo + TOP/FRONT/ISO ortho views | P2 (M5 | todo | PC-A | 370 | |
-| US-070a | Ray-traced hard shadows, sun + top-2 point lights (lamp/burner/relay), through s | P1 (M2 | frozen | PC-A | 378 | |
-| US-070b | Terrain (kind-7 cells) shows sun shadows cast by placed structures and voxel pro | P1 (M2 | todo | PC-A | 379 | |
-| US-070c/d | Terrain self-shadow (hills) + soft shadows (disc-sampled penumbra) - deferred by | P2 (rt | deferred |  | 380 | |
-| US-071 | Ray-traced ambient occlusion: a few short rays per cell for soft corner/contact | P2 (M2 | todo | PC-A | 381 | |
-| US-072 | One-bounce coloured light: lit walls tint their neighbours (burner orange on sto | P2 (M3 | todo | PC-A | 382 | |
-| US-073 | Temporal glyph stability: reuse previous-frame cell results to stop glyph crawl/ | P2 (M2 | other | PC-A | 383 | |
-| US-075 | MCP server for the engine (tools/mcp/server.mjs): tools to look (list assets/lev | P1 (af | todo | PC-B | 384 | |
-| US-076 | AI chat panel in the editor: chat drives the open editor live through the same c | P2 (af | todo | PC-B | 385 | |
-| US-077 | Text-authored mesh shapes: a JSON primitive/kit format (boxes, cylinders, wedges | P1 (me | todo | PC-A | 386 | |
-| US-078 | Sword swing + hit detection: as a player I swing a sword with the mouse and it h | P0 | other |  | 608 | |
-| US-078b | Engine queries: World.raySegment, raycastColliders, meleeArc.arcHits, overlay se | P0 | other | PC-A | 609 | |
-| US-078c | Sword pickup: tower.level.json patch, sword.take, flag tower.sword.taken, carrie | P0 | other | PC-B | 610 | |
-| US-078d | Swing sim (light tap + hard hold-release, one motion, D-034; no L/R chain) + hit | P0 | other |  | 611 | |
-| US-079 | First enemy with simple AI (Hush-touched beast): as a player I meet a beast that | P0 | todo | PC-A | 612 | |
-| US-079a | First beast, brain + nav chase (no damage): a placeholder boar wanders, notices, | P0 | arch-review? | PC-B | 654 | |
-| US-079b | Boar HP + hurt + death lifecycle (4 HP, flash/flinch, tip over -> dust -> remove | P0 | arch-review | PC-B | 86 | |
-| US-079b0 | Engine seams: components.voxel.hidden skipped by VoxelPool (both collect branche | P0 | arch-review | PC-B | 87 | |
-| US-080 | Hearts, damage, death + respawn: as a player I see my hearts, lose them when hit | P0 | todo | PC-B | 613 | |
-| US-080a1 | Vitals sim: health, combat:hit listener, falls, invuln, death timeline, respawn | P0 | other | PC-B | 614 | |
-| US-080a2 | Vitals view: HP bar (UI layer), hurt edge + kick, death fade + card | P0 | other |  | 615 | |
-| US-080b | Mana + HP/MP pickups (= PO 080b) | P0 | other | PC-B | 616 | |
-| US-081 | Lock-on / target focus: as a player I hold a key to keep the nearest enemy centr | P1 | todo | PC-A | 617 | |
-| US-082 | Combat feel: hit-stop (50-80 ms), knockback, camera kick, enemy flash, hit spark | P1 | todo | PC-B | 618 | |
-| US-083 | Character animation state machine (engine): named clip states (idle/walk/run/win | P0 | todo | PC-A | 619 | |
-| US-084 | NPC navigation (engine): walkable nav grid over terrain + meshes, A paths, steer | P1 | todo | PC-A | 620 | |
-| US-085 | AI behaviour component (engine): data-driven state machine with perception (sigh | P1 | todo | PC-A | 621 | |
-| US-086 | Guard / block with a shield (and optional parry window) | P2 | todo | PC-B | 622 | |
-| US-087 | Input action map (engine): actions (move/look/attack/interact/lock/use-tool/menu | P1 | todo | PC-A | 623 | |
-| US-089 | Save/load runtime: resting at a woken relay saves, autosave on area change, vers | P0 | todo | PC-B | 624 | |
-| US-090 | Title/start menu: New game, Continue, 3 save slots (label "Wick - place - play t | P0 | todo | PC-B | 625 | |
-| US-091 | Inventory + item data: items as content JSON, equip slots (sword, 2 tool slots), | P0 | todo | PC-B | 626 | |
-| US-091a | Loot + inventory data: item defs, player inventory component, boar drop table, w | P0 | todo | PC-B | 88 | |
-| US-091a2 | Loot roll at death + corpse [E] Loot boar interactable + toast ("+1 Boar Meat", | P0 | other | PC-B | 89 | |
-| US-091b | Inventory screen: I pauses, hands strip + 6x4 ASCII-icon grid + details, assign | P0 | po-review | PC-B | 96 | |
-| US-092 | Chests + pickups: small/big chests, open animation, item-get card, hidden chest | P1 | todo | PC-B | 627 | |
-| US-093 | First tool item that opens an area = the torch (PO 2026-10-01, D-030 amendment 1 | P0 | todo | PC-A | 628 | |
-| US-094 | First small dungeon: 3-5 rooms, one puzzle chain (plate + boulder/lever + light) | P0 | todo | PC-A | 629 | |
-| US-095 | Vessels + gear levels (PO 2026-10-01, D-030 amendment 1 Q7): a vessel (4 pieces | P1 | todo | PC-B | 630 | |
-| US-096 | Quest system (engine flags/objectives/events, save-safe) + journal page on the c | P1 | todo | PC-A | 631 | |
-| US-097 | Chart with live position, woken relays and discovered places (fast travel betwee | P2 | todo | PC-B | 632 | |
-| US-098 | Day/night cycle: sun path + sky/ambient colours over a 24 min day, relay and lam | P2 | todo | PC-A | 633 | |
-| US-099 | Exile village "Outwall": 3-5 NPCs with idle routines, talk via US-042, first to | P1 | todo | PC-B | 634 | |
-| US-100 | Chapter-two region: open area along the pencil line with 3 dead relays, landmark | P0 | todo | PC-A | 635 | |
-| US-101 | Artificer's gauntlet + Spark: first spell (light verb: lights braziers/relays, s | P0 | todo | PC-B | 636 | |
-| US-102 | Second enemy: stray Crown clockwork sentinel (patrol, ranged, weak spot) | P1 | todo | PC-B | 637 | |
-| US-103 | Ranged tool: bow or crossbow with arrows as physics bodies | P1 | todo | PC-A | 638 | |
-| US-104 | Secrets + collectibles pass: hidden chests, heart pieces, chart pieces in chapte | P2 | todo | PC-B | 639 | |
-| US-105 | The Signal Source dungeon + boss (reason for the SOS, D-013 deferred reveal) | P1 | todo | PC-A | 640 | |
-| US-106 | Crash intro: the Kestrel escape and crash as a short in-engine sequence before t | P2 | todo | PC-B | 641 | |
-| US-107 | Gamepad support: Steam Deck layout, look curve, UI navigation with the stick, bu | P0 | todo | PC-A | 642 | |
-| US-108 | Key remapping row in Settings (keyboard + gamepad), conflicts shown, remembered | P1 | todo | PC-B | 643 | |
-| US-109 | Music: procedural/adaptive score (exploration, combat, relay wake stinger, night | P1 | todo | PC-B | 644 | |
-| US-110 | Accessibility: cell-size / font scale, colourblind palette variants, toggle vs h | P1 | todo | PC-B | 645 | |
-| US-111 | Performance + Steam Deck pass: 60 fps at 240x90 on the Deck, load times, memory | P0 | todo | PC-A | 646 | |
-| US-112 | itch.io browser demo build (M1 + walk-out + combat slice), static bundle, page t | P1 | todo | PC-B | 647 | |
-| US-113 | Engine API reference generated from JSDoc (ME-00 types) + concept guide + conten | P1 | todo | PC-B | 648 | |
-| US-114 | Engine examples: 3 runnable samples in examples/ (lit room, terrain walk, props | P1 | todo | PC-B | 649 | |
-| US-115 | Public API freeze: @public/@internal tags, semver 0.x, CHANGELOG, deprecation ru | P1 | todo | PC-A | 650 | |
-| US-116 | Licences: engine licence, LICENSE + THIRDPARTYNOTICES (TypeScript devDep, Electr | P1 | todo |  | 651 | |
-| US-117 | Standalone engine package (ESM zip/npm, no build step) + engine name | P2 | todo | PC-B | 652 | |
-| US-118 | Localisation-ready strings: all UI/hint/dialogue text through one string table, | P2 | todo | PC-B | 653 | |
-| US-119 | Trailer tool: camera-path files (design/cinematics/.json: keyframes pos/yaw/pitc | P2 (af | other |  | 387 | |
-| US-121 | Look / shader preset library (friend feedback 2026-09-28: "pre-built library of | P2 (me | todo | PC-A | 390 | |
-| US-122 | Day/night cycle (friend question 2026-09-28 "can you add directional light, make | P1 (M3 | todo | PC-A | 391 | |
-| US-123 | Spot lights (owner 2026-09-28): cone light { dir or yaw/pitch, innerDeg, outerDe | P1 (me | todo | PC-A | 392 | |
-| US-124 | Area / strip lights (owner 2026-09-28): rectangle and line lights (windows, glow | P2 (po | todo | PC-A | 393 | |
-| US-125 | Emissive materials that light their surroundings (owner 2026-09-28): today emiss | P2 (M3 | todo | PC-A | 394 | |
-| US-126 | Light probes / baked indirect light (owner 2026-09-28): offline bake of soft bou | P2 (af | todo | PC-A | 395 | |
-| US-127 | Volumetric light shafts / light in fog (owner 2026-09-28): god rays through the | P2 (me | todo | PC-A | 396 | |
-| US-128 | Z-targeting: lock on to the nearest visible target, with a ring under it + a bar | P1 | testing? |  | 655 | |
-| US-129 | Enemy colour tiers: one beast model in 3 tiers (green / blue / red) via the team | P2 | todo | PC-B | 657 | |
-| US-130 | Map exploration: the chart card shows only the areas the player has seen (RE-11 | P1 | todo | PC-B | 658 | |
-| US-131 | Overworld minimap (RE-13), optional corner widget with fog from US-130 and a pla | P2 | todo | PC-B | 659 | |
-| US-132 | Burning status effect: as a player I can catch fire (and so can enemies and flam | P1 | todo | PC-A | 581 | |
-| US-133 | Fire spread (engine sim): flammable materials/props as data (fuel, ignite chance | P1 | other | PC-A | 582 | |
-| US-134 | Fire view: burning cells render flame glyphs + emissive + smoke particles, a cap | P1 | todo | PC-A | 583 | |
-| US-135 | Fire in the game: a fire test room - torch/burner ignites dry brush, fire spread | P1 | todo | PC-B | 584 | |
-| US-137 | Explosion view + content: burst preset (flash, debris, smoke), short-lived flash | P2 | todo | PC-B | 586 | |
-| US-139 | Height fog + fog banks (stretch): fog density that varies with height and with d | P2 (st | todo | PC-A | 587 | |
-| US-140 | Weather states (stretch): clear / rain / storm / snow as a world state with tran | P3 (st | todo | PC-B | 588 | |
-| US-141a | Flow data + scrolling surface (PO 2026-10-02, owner "water, waterfalls, waves"): | P1 | other |  | 564 | |
-| US-141b | Currents act: flow pushes the wading/swimming player (same pushX/pushY path as U | P1 | other | PC-A | 565 | |
-| US-141b1 | Particle flow (engine fx): def.flow + sampleFlow so water particles drift with t | P1 | todo | PC-A | 566 | |
-| US-141b2 | Currents in play (game): flow push via pushX/pushY, water emitters with flow, ri | P1 | todo | PC-B | 567 | |
-| US-142a | Waterfall view: a vertical falling sheet (animated glyph columns \/ : ', emissiv | P1 | other | PC-A | 568 | |
-| US-142a1 | Waterfall sheet (engine): waterfalls block, sheet mesh in the water layer, sheet | P1 | other |  | 569 | |
-| US-142a2 | Waterfall content: preset, lip + foot emitters, plunge pool (flowRadial), ripple | P1 | other |  | 570 | |
-| US-142b | Waterfall sound + cave: loud looping roar with distance falloff + pan (cf. US-02 | P2 | todo | PC-B | 571 | |
-| US-143a | Wave height field (engine, Node only): waveHeight(x,y,t,preset) = sum of <= 4 se | P1 | other |  | 572 | |
-| US-143b | Wave render + shoreline foam: surface visibly rises and falls (shade-pass normal | P1 | other | PC-A | 573 | |
-| US-143b1 | Wave displacement (engine): vertex waves on the water mesh, fade, stitch, fragme | P1 | todo | PC-A | 574 | |
-| US-143b2 | Wave shading + foam (engine + designer ramps): sun on N, glint, bands, shore + c | P1 | todo | PC-A | 575 | |
-| US-143c | Waves in play: floating objects (player swim bob, props after US-051, boat later | P2 | other | PC-B | 576 | |
-| US-144a | Underwater view: eye below surface gives blue-green tint + short fog, glyph swap | P1 | other | PC-A | 577 | |
-| US-144a1 | Underwater view (engine + designer): under state + hysteresis, fog, tint, glyph | P1 | todo | PC-A | 578 | |
-| US-144a2 | Under-fog for sprites + particles (engine): underFogK in the sprite pass and the | P1 | todo | PC-A | 579 | |
-| US-144b | Underwater play + sound: muffled low-pass audio, bubble particles on exhale, bre | P2 | todo | PC-B | 580 | |
+Policy: D-044 keeps the WG chain, backend-neutral mesh work and the JS oracle; future render features use WGSL, and frozen DDA/GLSL expansion is dropped or folded into the named replacement. D-045's temporary content regression exception has ended: preserve current parity gates and do not relax thresholds. Optional PX engine work is retained/deferred, not a decision to change the game's ASCII look.
+
+Implementation references checked against source rows and repository files: `tools/editor/README.md` and editor commands/doc/io/livepatch; `engine/fx/particles.js`, `engine/render/particleLayer.js`, quest particleHooks; quest sim beastSim/beastNav, beastView and voxel-hidden seams; quest sim vitals/pickups and vitalsView; swordTake/sword sim/view; NavGrid/A*/flowField/steer; water/waterfall/wave modules and tests; vox-import meshOnly handling; current backlog split-step notes and architecture 37.20. Scope still awaiting review/look/budget is retained even when a module exists.
+
+## Duplicate IDs
+
+- MESH-INST-01: lines 150, 465; reconcile before moving either row.
+- ED-MESH-01: lines 152, 481; reconcile before moving either row.
+
+US/ME/PX recommendations: 164 rows; keep 132, drop 9, archive 23. Other groups are regenerated for context; their recommendations are left to their lane/owner.
+
+## US (129)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| US-026 | Walk out onto the terrain: near LOD, slope physics, chunk regeneration | P0 (M2) | todo (sketch) - split D-026: US-026a bounded walk-out (near LOD band, slope walk/slide, end card on a terrain marker) [PC-A] sprint 3; US-026b ch… | PC-A | [L543](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L543) | keep - Walkable terrain/streaming acceptance remains relevant to the mesh world; reconcile with US-026b rather than revive DDA. |  |
+| US-027 | JSON content packs and world files | P1 (M2) | split D-023/D-026: US-027a engine loader [PC-A] done + US-027b converter + flip [PC-B] done (owner playthrough + gpucompare OK); was testing, spr… | PC-A, PC-B | [L544](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L544) | keep - Content pack/world JSON contract remains backend-neutral; reconcile completed CO-* splits before closure. |  |
+| US-031 | Editor shell + fly-cam + idle re-render skip | P0 (M1.5) | testing [PC-B] tools/editor/* - architecture.md 24 S1-S6 done, see ### US-031 for the implementation note. PO OK 2026-09-26 -> owner check now = … | PC-B | [L376](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L376) | archive - Editor shell, picking, commands/undo and JSON I/O exist in tools/editor; after owner editor sign-off. |  |
+| US-032 | Pick/select/move/delete | P0 (M1.5) | testing [PC-B] PO OK 2026-09-26 -> editor owner walk-through (see ### US-032); tools/editor/* - architecture.md 24 S1-S6 done, see ### US-032 for… | PC-B | [L377](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L377) | archive - Editor shell, picking, commands/undo and JSON I/O exist in tools/editor; after owner editor sign-off. |  |
+| US-033 | Place props/lights/triggers + property panel + undo | P0 (M1.5) | testing [PC-B] PO OK 2026-09-26 -> editor owner walk-through (see ### US-032); tools/editor/* - architecture.md 24.9 done, see ### US-033 for the… | PC-B | [L378](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L378) | archive - Editor shell, picking, commands/undo and JSON I/O exist in tools/editor; after owner editor sign-off. |  |
+| US-034 | World JSON save/load + play-test | P0 (M1.5) | testing [PC-B] PO OK 2026-09-26 -> editor owner walk-through (see ### US-032); tools/editor/* - architecture.md 24.10/24.11 done, see ### US-034 … | PC-B | [L379](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L379) | archive - Editor shell, picking, commands/undo and JSON I/O exist in tools/editor; after owner editor sign-off. |  |
+| US-035 | Model frame editor | P0 (M5) | todo (sketch) |  | [L610](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L610) | keep - Model authoring/animation tools remain distinct from the level editor; plan after current editor and WG work. |  |
+| US-036 | Animations + events + preview | P0 (M5) | todo (sketch) |  | [L611](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L611) | keep - Model authoring/animation tools remain distinct from the level editor; plan after current editor and WG work. |  |
+| US-037 | ModelDef JSON save/load | P0 (M5) | todo (sketch) |  | [L612](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L612) | keep - Model authoring/animation tools remain distinct from the level editor; plan after current editor and WG work. |  |
+| US-038 | Settings menu (grid 240/320/400/480 per D-025, fullscreen, mouse, mute; remembered per browser) | P1 (M2) | todo - sprint 3 (D-026); split 2026-09-25: US-038a live engine.setGrid [PC-A, architect notes], US-038b game-side panel [PC-B] (row 30f), storage… | PC-A, PC-B | [L545](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L545) | keep - Settings persistence/accessibility remain needed; audit existing menu against ACs before claiming completion. |  |
+| US-041b | Creature clips (idle/walk) + bear voxel model + design/preview/voxel.html + walking-loop test (split from US-0… | P0 (before M3) | todo (sketch) – after US-041a |  | [L551](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L551) | keep - Creature clips/content need their own acceptance; a working boar does not prove the bear/clip scope is complete. |  |
+| US-042 | Talking animals + dialogue system (first animal M2, exile dialogue M3) | P1 (M2/M3) | todo (sketch) |  | [L546](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L546) | keep - Dialogue/talking-animal gameplay remains a separate content and engine scope. |  |
+| US-043 | Steam release: Electron wrapper + Steamworks + store assets | P0 (M6) | todo (sketch) |  | [L605](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L605) | keep - D-044 selects Electron as reference runtime; consolidate with EP-DESKTOP before Steam packaging. |  |
+| US-046 | Engine-owned frame renderer (createWorldRenderer) | P1 (M1.5) | todo [PC-A] - blocks PC-B US-031 | PC-A, PC-B | [L375](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L375) | keep - Audit createWorldRenderer API scope against existing engine rendering orchestration; WG pass wiring alone does not close it. |  |
+| US-049 | D-017 pruning of fallback-only render code | P1 | todo |  | [L370](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L370) | drop - Old fallback pruning overlaps ME-19 and WG-5 deletion; retain those scoped cleanup gates under D-044. |  |
+| US-051 | Dynamic rigid props: drop, fall, tumble, settle (box/cylinder bodies) (engine story) | P0 | todo (sketch) - after the physics-engine decision |  | [L559](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L559) | keep - Dynamic rigid props/carrying/cut trees are beyond current static mesh colliders; await the physics decision and scoped notes. |  |
+| US-052 | Pick up, carry, put down, throw (e.g. a branch) (engine + game story) | P0 | todo (sketch) - after US-051, uses US-012 interaction |  | [L560](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L560) | keep - Dynamic rigid props/carrying/cut trees are beyond current static mesh colliders; await the physics decision and scoped notes. |  |
+| US-053 | Particle system: smoke, dust, sparks, splash drops (engine story) | P1 | todo (sketch) - folds in US-019 dust motes |  | [L561](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L561) | keep - Particle umbrella still includes unfinished splash/motes US-053d; archive implemented substeps separately. |  |
+| US-053a | Particle sim core (engine): pooled emitters + particles on the fixed step (rate, life, velocity + spread, grav… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L570](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L570) | archive - engine/fx/particles.js and its tests implement the pooled sim; after outstanding integration/acceptance checks. |  |
+| US-053c | Particle presets as data + first placements: burner flame + smoke on the *Kestrel* burner (replaces the OWN-RE… | P1 | Implementation recorded; see source review/remaining ACs |  | [L571](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L571) | archive - particleLayer.js and quest/particleHooks.js implement presets/presentation; after owner particle look sign-off. |  |
+| US-053d | Particle presets part 2: splash drops (for US-055b) + motes (US-019 sun-shaft dust rebuilt as a preset, closes… | P2 | todo (sketch) [PC-B content + designer ramps] - deps: US-053c. ~0.5 d | PC-B | [L572](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L572) | keep - Splash/motes content acceptance remains open despite the implemented particle sim and render layer. |  |
+| US-054 | Cuttable tree -> trunk log + branches as physics pieces (engine + content story) | P0 | todo (sketch) - after US-051/052, the M2 sword, US-041 voxel |  | [L562](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L562) | keep - Dynamic rigid props/carrying/cut trees are beyond current static mesh colliders; await the physics decision and scoped notes. |  |
+| US-055 | Water surface + splash + floating props (engine story) | P1 | todo (sketch) - after US-051, US-053, US-026 |  | [L563](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L563) | keep - Water umbrella still includes swim/splash and floating props; current water rendering does not close gameplay ACs. |  |
+| US-055a | Water surface render (engine): water regions as world data (sector or terrain region + surface height), animat… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L573](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L573) | keep - waterAt/data and render modules exist, but the umbrella has remaining look/parity scope; reconcile split water steps. |  |
+| US-055a2c | Water wiring + first visible water: (a) engine/index.js exports resolveWaterLooks; main.js gpuPipeline.setWate… | P1 | Implementation recorded; see source review/remaining ACs | PC-B | [L574](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L574) | keep - Visible water wiring is recorded, but the row retains an unresolved composition/perf measurement; verify WG-3e integration. |  |
+| US-055b | Wade, swim, splash: player wades (< 0.6 m) / swims (>= 0.6 m), splash particles + ripple ring on entry scaled … | P1 | todo (sketch) [PC-B game + PC-A waterAt query if 055a lacks it] - deps: US-055a, US-053c. ~1 d | PC-B, PC-A | [L575](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L575) | keep - Wading/swimming/splash gameplay is still a distinct open step; use the existing waterAt and particle seams. |  |
+| US-063 | Editor v0.1 polish: model picker on prop placement, real per-cell "inside a structure" test, ?world=, H key-he… | P1 | testing [PC-B] PC-A check 2026-09-26 -> owner editor walk-through tools/editor/* - PC-B QUEUE 2 item 5, see ### US-063 for the implementation not… | PC-B, PC-A | [L383](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L383) | archive - Editor panel/library/livepatch implementations and tests exist; after owner acceptance of this polish. |  |
+| US-064 | Editor edit speed: live-patch prop/light move/rotate/on-off instead of World.load per edit | P1 | testing [PC-B] PC-A check 2026-09-26 -> owner editor walk-through; median 0.013 ms/edit (was 73-90 ms); light preset edits still rebuild -> US-06… | PC-B, PC-A | [L384](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L384) | archive - Editor panel/library/livepatch implementations and tests exist; after owner acceptance of this polish. |  |
+| US-066 | Editor UI reskin to the Stitch "Retro-Terminal ASCII Studio" layout (ribbon, scene tree, inspector, place tool… | P1 (M1.5) | testing [PC-B, 2026-09-26, PO OK] tools/editor/index.html + tools/editor/panel.js/main.js (DOM/CSS only) - spec design/editor-ui.md, refs design/… | PC-B | [L380](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L380) | archive - Editor panel/library/livepatch implementations and tests exist; after owner acceptance of this polish. |  |
+| US-067 | Editor asset library (model browser with ASCII thumbnails, click to place) + tree visibility/lock | P2 (M1.5+) | po-review [PC-B] (2026-09-27): tools/editor/thumbnails.js+visibility.js (new) + main.js/index.html wiring; 96/96 suites, check-deps 210 files; li… | PC-B | [L381](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L381) | archive - Editor panel/library/livepatch implementations and tests exist; after owner acceptance of this polish. |  |
+| US-068 | Editor axis gizmo + TOP/FRONT/ISO ortho views | P2 (M5) | todo (sketch) [PC-A engine camera + PC-B UI] - NEEDS PC-A: architect (ortho camera mode = the owner's future 2D/2.5D camera idea) | PC-A, PC-B | [L382](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L382) | keep - Axis gizmo and TOP/FRONT/ISO views are explicitly next editor work; lane C first checks public projection support. |  |
+| US-070a | Ray-traced hard shadows, sun + top-2 point lights (lamp/burner/relay), through sectors and voxel props; ?shado… | P1 (M2) | frozen (D-029) until the phase-1 gate - superseded by ME-15/16 (shadow maps) if phase 1 is a go; resumes unchanged on a no-go. Was: todo [PC-A] -… | PC-A, PC-B | [L390](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L390) | drop - Frozen DDA/LVIS shadow story is superseded by mesh shadow maps ME-15/16 and WG-3d; D-037/D-044 forbid extending it. |  |
+| US-070b | Terrain (kind-7 cells) shows sun shadows cast by placed structures and voxel props onto grass (tower-shadow-on… | P1 (M2) | todo [PC-A] - after US-070a; ACs in ### US-070b below | PC-A | [L391](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L391) | keep - Terrain receiving shadows needs acceptance against current mesh maps and WG-3d, not new GLSL features. |  |
+| US-070c/d | Terrain self-shadow (hills) + soft shadows (disc-sampled penumbra) - deferred by D-027 to a later 'rt-high' mi… | P2 (rt-high, post-M2) | deferred (D-027) |  | [L392](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L392) | keep - Deferred terrain/soft-shadow look remains unaccepted; re-scope to WGSL after parity under D-044. |  |
+| US-071 | Ray-traced ambient occlusion: a few short rays per cell for soft corner/contact darkening (replaces or refines… | P2 (M2) | todo (sketch) [PC-A] - after US-070; architect estimate | PC-A | [L393](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L393) | keep - AO/bounce lighting remains mesh/WGSL work; reconcile US-071 with ME-20 and keep the JS oracle under D-044. |  |
+| US-072 | One-bounce coloured light: lit walls tint their neighbours (burner orange on stone, relay teal) | P2 (M3) | todo (sketch) [PC-A] - after US-070; architect estimate | PC-A | [L394](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L394) | keep - AO/bounce lighting remains mesh/WGSL work; reconcile US-071 with ME-20 and keep the JS oracle under D-044. |  |
+| US-073 | Temporal glyph stability: reuse previous-frame cell results to stop glyph crawl/flicker while the camera moves… | P2 (M2) | Implementation recorded; see source review/remaining ACs | PC-B, PC-A | [L395](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L395) | keep - Glyph stability acceptance is independent of the backend port; preserve its visual/perf gate. |  |
+| US-075 | MCP server for the engine (tools/mcp/server.mjs): tools to look (list assets/levels/objects, read content, ASC… | P1 (after mesh phase 2) | todo (sketch) [PC-B] - all edits through the editor command layer (undo + validation); read-only tools may come earlier; NEEDS PC-A: architect no… | PC-B, PC-A | [L396](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L396) | keep - MCP/editor chat interfaces are future tool scopes; reuse editor commands after public API acceptance. |  |
+| US-076 | AI chat panel in the editor: chat drives the open editor live through the same commands as the mouse (Ctrl+Z u… | P2 (after US-075) | todo (sketch) [PC-B] - after US-075 + editor on meshes (ME phase 3) | PC-B | [L397](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L397) | keep - MCP/editor chat interfaces are future tool scopes; reuse editor commands after public API acceptance. |  |
+| US-077 | Text-authored mesh shapes: a JSON primitive/kit format (boxes, cylinders, wedges, arches, extruded outlines, s… | P1 (mesh phase 3) | todo (sketch) [PC-A architect notes, PC-B tool] - pairs with the glTF importer | PC-A, PC-B | [L398](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L398) | keep - Primitive/kit text authoring is separate from glTF/mesh placement; no proof its full format/editor scope is delivered. |  |
+| US-078 | Sword swing + hit detection: as a player I swing a sword with the mouse and it hits what it visibly touches | P0 | Implementation recorded; see source review/remaining ACs | PC-A | [L620](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L620) | keep - Sword umbrella retains practice-target/art integration work; archive completed query/pickup/swing substeps separately. |  |
+| US-078b | Engine queries: World.raySegment, raycastColliders, meleeArc.arcHits, overlay segment op + style refPush | P0 | Implementation recorded; see source review/remaining ACs | PC-A, PC-B | [L621](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L621) | archive - World raySegment/meleeArc queries and overlay segments exist with tests; after acceptance of remaining review checks. |  |
+| US-078c | Sword pickup: tower.level.json patch, sword.take, flag tower.sword.taken, carried light left | P0 | Implementation recorded; see source review/remaining ACs | PC-B | [L622](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L622) | archive - swordTake.js and its tests are built with ARCH/PO approval; after final pickup sign-off. |  |
+| US-078d | Swing sim (light tap + hard hold-release, one motion, D-034; no L/R chain) + hits + combat:hit + view (trail, … | P0 | Implementation recorded; see source review/remaining ACs | PC-A | [L623](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L623) | archive - sword sim/view and own-shape hit regression exist; row records owner swing/knockback acceptance. |  |
+| US-079 | First enemy with simple AI (Hush-touched beast): as a player I meet a beast that notices me, telegraphs, charg… | P0 | todo (sketch, ACs below) [PC-A engine AI/entity hooks; PC-B brain + content] - needs architect notes + designer; after US-078, US-041b. 2026-09-3… | PC-A, PC-B | [L624](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L624) | keep - Boar substeps are implemented but enemy umbrella includes clips/drops acceptance; reconcile those remaining ACs before closure. |  |
+| US-079a | First beast, brain + nav chase (no damage): a placeholder boar wanders, notices, paths around rocks/tower with… | P0 | PO OK 2026-10-01 (sonnet batch) -> testing; owner checks: "does it feel like it hunts me" (charge seen OK), nav stuck cases on a longer walk; pla… | PC-B, PC-A | [L666](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L666) | archive - beastSim/beastNav/beastView and voxel-hidden seams are built and tested; after owner boar sign-off. |  |
+| US-079b | Boar HP + hurt + death lifecycle (4 HP, flash/flinch, tip over -> dust -> removed, beast:died, untargetable wh… | P0 | arch-review [PC-B game, 2026-10-06] + owner walk-test. HP/death per 37.16.2; beastView drives voxel anim/t/hidden; sword dead-skip + cause:'sword… | PC-B | [L98](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L98) | archive - beastSim/beastNav/beastView and voxel-hidden seams are built and tested; after owner boar sign-off. |  |
+| US-079b0 | Engine seams: components.voxel.hidden skipped by VoxelPool (both collect branches) + World.addInteractable / r… | P0 | arch-review [PC-B engine, 2026-10-06] - voxel.hidden skipped in both collect branches (live flag, before the distance sort); World.addInteractabl… | PC-B | [L99](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L99) | archive - beastSim/beastNav/beastView and voxel-hidden seams are built and tested; after owner boar sign-off. |  |
+| US-080 | Hearts, damage, death + respawn: as a player I see my hearts, lose them when hit and wake again at the last re… | P0 | todo (sketch, ACs below) [PC-B HUD/quest; PC-A health component + damage events] - needs architect notes + designer. (PO 2026-10-01) Now HP + man… | PC-B, PC-A | [L625](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L625) | archive - quest/sim/vitals.js, vitalsView.js and pickups.js cover HP/MP, death/respawn and pickups; after owner health sign-off. |  |
+| US-080a1 | Vitals sim: health, combat:hit listener, falls, invuln, death timeline, respawn at save point, beast resetAll,… | P0 | ARCH OK re-review 2026-10-07 (opus batch; 305e615) -> PO re-check. … No main.js wiring in this step (US-080a2's job). [PC-B game/js/quest/sim; ~0… | PC-B, PC-A | [L626](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L626) | archive - quest/sim/vitals.js, vitalsView.js and pickups.js cover HP/MP, death/respawn and pickups; after owner health sign-off. |  |
+| US-080a2 | Vitals view: HP bar (UI layer), hurt edge + kick, death fade + card | P0 | ARCH OK re-review 2026-10-07 (opus batch; 305e615 + 7d8d2ad). Nit, non-blocking: computeDeathCardState still pushes 1-2 {id,text,count} literals … | PC-B, PC-A | [L627](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L627) | archive - quest/sim/vitals.js, vitalsView.js and pickups.js cover HP/MP, death/respawn and pickups; after owner health sign-off. |  |
+| US-080b | Mana + HP/MP pickups (= PO 080b) | P0 | ARCH OK re-review 2026-10-07 (opus batch; a207938 chip fix, loot.js spawnDrop flow green, check-deps OK). … eyeball HP/MP bars + a pickup once m3… | PC-B | [L628](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L628) | archive - quest/sim/vitals.js, vitalsView.js and pickups.js cover HP/MP, death/respawn and pickups; after owner health sign-off. |  |
+| US-081 | Lock-on / target focus: as a player I hold a key to keep the nearest enemy centred so first-person melee stays… | P1 | todo (sketch) [PC-A camera + PC-B game] - after US-079. 2026-09-30: built as US-128 (Z-targeting on engine.overlay). This row closes when US-128 … | PC-A, PC-B | [L629](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L629) | drop - Duplicate lock-on sketch superseded explicitly by US-128; preserve the US-128 acceptance work. |  |
+| US-082 | Combat feel: hit-stop (50-80 ms), knockback, camera kick, enemy flash, hit sparks/death dust, so every hit fee… | P1 | todo (sketch) [PC-B game + PC-A particles] - uses US-053; sounds wait for M6 unless the owner lifts the freeze | PC-B, PC-A | [L630](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L630) | keep - Existing knockback/kick does not prove all combat-feel ACs; owner feel gate still needed for hit-stop/sparks/flash. |  |
+| US-083 | Character animation state machine (engine): named clip states (idle/walk/run/windup/attack/hurt/die) with rigi… | P0 | todo (sketch) [PC-A] - extends US-041b; needs architect notes | PC-A | [L631](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L631) | keep - Generic animation state-machine scope differs from hard-coded beast/sword state; audit then plan remaining clips/events. |  |
+| US-084 | NPC navigation (engine): walkable nav grid over terrain + meshes, A* paths, steering on the capsule physics, p… | P1 | todo (sketch) [PC-A] - after ME-11 (mesh colliders); Rust/WASM only if benched hot (D-015). 2026-09-30: A* / flow field / steering exist (RE-05/0… | PC-A | [L632](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L632) | keep - NavGrid/A*/flow/steer already exist; reconcile RE-* implementations against mesh-world navigation ACs before archiving. |  |
+| US-085 | AI behaviour component (engine): data-driven state machine with perception (sight cone + line of sight, hearin… | P1 | todo (sketch) [PC-A] - generalises the US-079 brain | PC-A | [L633](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L633) | keep - Beast brain exists but generic data-driven AI component is a broader API; avoid declaring it delivered from one enemy. |  |
+| US-086 | Guard / block with a shield (and optional parry window) | P2 | todo (sketch) [PC-B] - owner question 1 (roadmap) | PC-B | [L634](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L634) | keep - Shield/parry gameplay is an independent deferred combat feature. |  |
+| US-087 | Input action map (engine): actions (move/look/attack/interact/lock/use-tool/menu) instead of raw keys, rebinda… | P1 | todo (sketch) [PC-A] - basis for US-107/108. Scoped PC-B audit gate only: NEEDS PC-A: PO review, implemented 2026-10-04 in main.js + quest/target… | PC-A, PC-B | [L635](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L635) | keep - Action mapping remains needed, including the recorded pause-lock input nit from US-128. |  |
+| US-089 | Save/load runtime: resting at a woken relay saves, autosave on area change, versioned saves through the platfo… | P0 | todo (sketch) [PC-B game + PC-A engine save API] - after CO-5, US-080 | PC-B, PC-A | [L636](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L636) | keep - Relay runtime saves and title/save-slot UX need acceptance beyond editor JSON save/load. |  |
+| US-090 | Title/start menu: New game, Continue, 3 save slots (label "Wick - place - play time", D-013), delete slot, Set… | P0 | todo (sketch) [PC-B] - after US-089; designer title/menu style | PC-B | [L637](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L637) | keep - Relay runtime saves and title/save-slot UX need acceptance beyond editor JSON save/load. |  |
+| US-091 | Inventory + item data: items as content JSON, equip slots (sword, 2 tool slots), inventory panel, quick-select | P0 | todo (sketch) [PC-B] - designer uiStyle.inventory + item icons | PC-B | [L638](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L638) | keep - Active inventory epic is protected by the queue; inventory/loot implementations exist but retain owner acceptance and hand assignment checks. |  |
+| US-091a | Loot + inventory data: item defs, player inventory component, boar drop table, walk-over pickup + toast, save/… | P0 | todo - after US-079b; NEEDS PC-A: designer design/items.js + loot sprites | PC-A, PC-B | [L100](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L100) | keep - Active inventory epic is protected by the queue; inventory/loot implementations exist but retain owner acceptance and hand assignment checks. |  |
+| US-091a2 | Loot roll at death + corpse [E] Loot boar interactable + toast ("+1 Boar Meat", "Pack full") | P0 | PO OK 2026-10-07 - ready for owner look (all 6 ACs met per row; no reject). PO call: set interact radius 2.2 (about 1.9 m horizontal; 1.25 m is t… | PC-B | [L101](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L101) | keep - Active inventory epic is protected by the queue; inventory/loot implementations exist but retain owner acceptance and hand assignment checks. |  |
+| US-091b | Inventory screen: I pauses, hands strip + 6x4 ASCII-icon grid + details, assign to hands with LMB/RMB, use mea… | P0 | po-review + owner look [PC-B, 2026-10-07]. inventoryView.js per designer uiStyle.inventory: I opens (pauses, closes the hands gate, releases poin… | PC-B | [L108](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L108) | keep - Active inventory epic is protected by the queue; inventory/loot implementations exist but retain owner acceptance and hand assignment checks. |  |
+| US-092 | Chests + pickups: small/big chests, open animation, item-get card, hidden chest on the hillside (was M2 plan) | P1 | todo (sketch) [PC-B content + designer] - after US-091 | PC-B | [L639](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L639) | keep - Chest/secret/collectible content remains distinct from the existing boar loot implementation. |  |
+| US-093 | First tool item that opens an area = the torch (PO 2026-10-01, D-030 amendment 1 Q4; replaces the lamp/grapple… | P0 | todo (sketch) [PC-A engine if it needs physics/rope, PC-B game] - needs architect notes | PC-A, PC-B | [L640](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L640) | keep - Torch/Spark area-opening gameplay stays active with HANDS/SPELL work; no new GLSL under D-044. |  |
+| US-094 | First small dungeon: 3-5 rooms, one puzzle chain (plate + boulder/lever + light), small key + locked door, min… | P0 | todo (sketch) [PC-A designer level + PC-B behaviours] - after ME-21 (mesh buildings), US-091 | PC-A, PC-B | [L641](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L641) | keep - Dungeon/region/boss content remains future playable scope; level engine support is not content completion. |  |
+| US-095 | Vessels + gear levels (PO 2026-10-01, D-030 amendment 1 Q7): a vessel (4 pieces = 1 vessel) raises max HP by +… | P1 | todo (sketch) [PC-B] - after US-080a/b | PC-B | [L642](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L642) | keep - Vessel/gear progression is not covered by current HP/MP pickup sim; retain the progression story. |  |
+| US-096 | Quest system (engine flags/objectives/events, save-safe) + journal page on the chart card | P1 | todo (sketch) [PC-A engine + PC-B UI] - extends today's quest flags; pairs with US-042 | PC-A, PC-B | [L643](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L643) | keep - Quest flags exist but generic objectives/events and journal acceptance remain separate. |  |
+| US-097 | Chart with live position, woken relays and discovered places (fast travel between relays = owner question) | P2 | todo (sketch) [PC-B] | PC-B | [L644](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L644) | keep - Map/chart/fog/minimap need game acceptance; mapCard implementation alone does not establish all exploration ACs. |  |
+| US-098 | Day/night cycle: sun path + sky/ambient colours over a 24 min day, relay and lamp light matter at night | P2 | todo (sketch) [PC-A] - after ME-15 shadow maps | PC-A | [L645](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L645) | drop - Duplicate day/night sketch; consolidate remaining cycle/content acceptance in US-122. |  |
+| US-099 | Exile village "Outwall": 3-5 NPCs with idle routines, talk via US-042, first to say "Wick" (D-013) | P1 | todo (sketch) [PC-B content + designer + writer] - after US-042, US-084, US-085 | PC-B | [L646](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L646) | keep - Village NPC/routine/dialogue content remains future chapter scope. |  |
+| US-100 | Chapter-two region: open area along the pencil line with 3 dead relays, landmarks and terrain overrides as dat… | P0 | todo (sketch) [PC-A designer + PC-B content] - after US-026b; owner question 6 | PC-A, PC-B | [L647](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L647) | keep - Dungeon/region/boss content remains future playable scope; level engine support is not content completion. |  |
+| US-101 | Artificer's gauntlet + Spark: first spell (light verb: lights braziers/relays, stuns enemies), cooldown or aet… | P0 | todo (sketch) [PC-B game + PC-A particles/light] | PC-B, PC-A | [L648](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L648) | keep - Torch/Spark area-opening gameplay stays active with HANDS/SPELL work; no new GLSL under D-044. |  |
+| US-102 | Second enemy: stray Crown clockwork sentinel (patrol, ranged, weak spot) | P1 | todo (sketch) [PC-B brain + designer] - after US-085 | PC-B | [L649](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L649) | keep - Second enemy and ranged weapon need distinct content/physics ACs beyond the boar/melee slice. |  |
+| US-103 | Ranged tool: bow or crossbow with arrows as physics bodies | P1 | todo (sketch) [PC-A projectile physics + PC-B game] - unless it is the M4 tool | PC-A, PC-B | [L650](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L650) | keep - Second enemy and ranged weapon need distinct content/physics ACs beyond the boar/melee slice. |  |
+| US-104 | Secrets + collectibles pass: hidden chests, heart pieces, chart pieces in chapters one and two | P2 | todo (sketch) [PC-B content] | PC-B | [L651](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L651) | keep - Chest/secret/collectible content remains distinct from the existing boar loot implementation. |  |
+| US-105 | The Signal Source dungeon + boss (reason for the SOS, D-013 deferred reveal) | P1 | todo (sketch) [PC-A designer + writer] | PC-A | [L652](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L652) | keep - Dungeon/region/boss content remains future playable scope; level engine support is not content completion. |  |
+| US-106 | Crash intro: the *Kestrel* escape and crash as a short in-engine sequence before the wake (owner idea D-020) | P2 | todo (sketch) [PC-B + designer + writer] | PC-B | [L653](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L653) | keep - Cinematic tooling exists, but the playable crash intro sequence still needs authored content and acceptance. |  |
+| US-107 | Gamepad support: Steam Deck layout, look curve, UI navigation with the stick, button prompts | P0 | todo (sketch) [PC-A input + PC-B UI] - after US-087; US-043 needs it | PC-A, PC-B | [L654](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L654) | keep - Gamepad/remapping/accessibility remain release-facing scopes; preserve them for the Electron/Steam target. |  |
+| US-108 | Key remapping row in Settings (keyboard + gamepad), conflicts shown, remembered | P1 | todo (sketch) [PC-B] - after US-087 | PC-B | [L655](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L655) | keep - Gamepad/remapping/accessibility remain release-facing scopes; preserve them for the Electron/Steam target. |  |
+| US-109 | Music: procedural/adaptive score (exploration, combat, relay wake stinger, night) | P1 | todo (sketch) [PC-B] - owner deferred sound to M6 | PC-B | [L656](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L656) | keep - Adaptive score/music acceptance remains distinct from existing procedural SFX and ambient loops. |  |
+| US-110 | Accessibility: cell-size / font scale, colourblind palette variants, toggle vs hold, visual cues for sounds, r… | P1 | todo (sketch) [PC-B + designer palettes] | PC-B | [L657](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L657) | keep - Gamepad/remapping/accessibility remain release-facing scopes; preserve them for the Electron/Steam target. |  |
+| US-111 | Performance + Steam Deck pass: 60 fps at 240x90 on the Deck, load times, memory | P0 | todo (sketch) [PC-A] | PC-A | [L658](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L658) | keep - Release/Deck budgets remain required; measure the reference WebGPU/Electron runtime after parity under D-044. |  |
+| US-112 | itch.io browser demo build (M1 + walk-out + combat slice), static bundle, page text by the writer | P1 | todo (sketch) [PC-B] - was end of M2 (D-012) | PC-B | [L659](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L659) | keep - Browser demo still needs packaging/owner approval; re-scope the required-API screen to WebGPU per D-044. |  |
+| US-113 | Engine API reference generated from JSDoc (ME-00 types) + concept guide + content-format spec | P1 | todo (sketch) [PC-B tool + PC-A architect text] | PC-B, PC-A | [L660](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L660) | keep - Engine docs/examples/API/package release work remains separate from a working game; defer freeze until WG/public seams settle. |  |
+| US-114 | Engine examples: 3 runnable samples in examples/ (lit room, terrain walk, props + physics), smoke-tested in ru… | P1 | todo (sketch) [PC-B] - after ME-19 | PC-B | [L661](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L661) | keep - Engine docs/examples/API/package release work remains separate from a working game; defer freeze until WG/public seams settle. |  |
+| US-115 | Public API freeze: @public/@internal tags, semver 0.x, CHANGELOG, deprecation rule | P1 | todo (sketch) [PC-A architect] - after US-047, ME-00 | PC-A | [L662](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L662) | keep - Engine docs/examples/API/package release work remains separate from a working game; defer freeze until WG/public seams settle. |  |
+| US-116 | Licences: engine licence, LICENSE + THIRD_PARTY_NOTICES (TypeScript devDep, Electron/steamworks.js in the game… | P1 | todo (sketch) [owner decision + PC-B] - owner question 10 | PC-B | [L663](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L663) | keep - Licence inventory exists, but publisher provenance and engine/package licensing decisions remain unresolved. |  |
+| US-117 | Standalone engine package (ESM zip/npm, no build step) + engine name | P2 | todo (sketch) [PC-B] - after US-113..116 | PC-B | [L664](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L664) | keep - Engine docs/examples/API/package release work remains separate from a working game; defer freeze until WG/public seams settle. |  |
+| US-118 | Localisation-ready strings: all UI/hint/dialogue text through one string table, ASCII-safe per locale | P2 | todo (sketch) [PC-B + writer] | PC-B | [L665](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L665) | keep - Localisation-ready string extraction remains an independent future UI/content scope. |  |
+| US-119 | Trailer tool: camera-path files (design/cinematics/*.json: keyframes pos/yaw/pitch/time, easing, time-of-day),… | P2 (after mesh phase 1) | Implementation recorded; see source review/remaining ACs |  | [L399](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L399) | keep - capture-cinematic/cine-player exist; verify deterministic export and owner camera-path acceptance before archiving. |  |
+| US-120 | Engine UI toolkit (owner's friend feedback 2026-09-28: "engines usually lack easy UI; Unity UI was confusing, … | P1 (engine release track; widgets ~+6-8 d on top of the ~8-10 d core) | todo (sketch) [PC-A architect notes + PC-B runtime/editor] - after mesh phase 2; game menus US-090/096 should be built on it (dogfood). Advantage… | PC-A, PC-B | [L400](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L400) | keep - Generic data-driven UI toolkit is broader than existing game HUD/editor DOM panels; retain the public widget contract. |  |
+| US-121 | Look / shader preset library (friend feedback 2026-09-28: "pre-built library of shaders"): named, data-driven … | P2 (mesh phase 3 / release track) | todo (sketch) [PC-A architect + designer] - after ME-06/ME-15 settle shade.frag/light.frag; presets are uniforms/defines of existing passes, not … | PC-A | [L402](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L402) | keep - Future lighting/look features remain requested; re-scope shader work to WGSL after WG-3, retain JS oracle, no new GLSL (D-044). |  |
+| US-122 | Day/night cycle (friend question 2026-09-28 "can you add directional light, make it day or night?"): today = o… | P1 (M3) | todo (sketch) [PC-A engine + designer colour curves] - US-119 trailer tool uses time per keyframe; nights need readable light levels (PO sets a m… | PC-A | [L403](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L403) | keep - sunPath exists, but day/night save/events/colour curves and readable night acceptance need reconciliation. |  |
+| US-123 | Spot lights (owner 2026-09-28): cone light { dir or yaw/pitch, innerDeg, outerDeg } on top of the point-light … | P1 (mesh phase 3) | todo (sketch) [PC-A engine] ~1.5 d - after ME-16; pairs with the torch tool (roadmap owner answer 4) and night play (US-122) | PC-A | [L404](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L404) | keep - Future lighting/look features remain requested; re-scope shader work to WGSL after WG-3, retain JS oracle, no new GLSL (D-044). |  |
+| US-124 | Area / strip lights (owner 2026-09-28): rectangle and line lights (windows, glowing panels, neon strips, lava … | P2 (post phase 3) | todo (sketch) [PC-A engine] ~2-3 d - after US-123 | PC-A | [L405](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L405) | keep - Future lighting/look features remain requested; re-scope shader work to WGSL after WG-3, retain JS oracle, no new GLSL (D-044). |  |
+| US-125 | Emissive materials that light their surroundings (owner 2026-09-28): today emissive/glow surfaces only look br… | P2 (M3) | todo (sketch) [PC-A engine] ~2 d - best together with US-072 | PC-A | [L406](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L406) | keep - Future lighting/look features remain requested; re-scope shader work to WGSL after WG-3, retain JS oracle, no new GLSL (D-044). |  |
+| US-126 | Light probes / baked indirect light (owner 2026-09-28): offline bake of soft bounce light for large interiors … | P2 (after mesh phase 3) | todo (sketch) [PC-A architect + engine] ~4-5 d | PC-A | [L407](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L407) | keep - Future lighting/look features remain requested; re-scope shader work to WGSL after WG-3, retain JS oracle, no new GLSL (D-044). |  |
+| US-127 | Volumetric light shafts / light in fog (owner 2026-09-28): god rays through the breach and windows, lamp halos… | P2 (mesh phase 3 / release track) | todo (sketch) [PC-A engine + designer glyph ramp] ~3 d - after ME-15 (+US-123 for spots) | PC-A | [L408](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L408) | keep - Future lighting/look features remain requested; re-scope shader work to WGSL after WG-3, retain JS oracle, no new GLSL (D-044). |  |
+| US-128 | Z-targeting: lock on to the nearest visible target, with a ring under it + a bar through engine.overlay, targe… | P1 | Implementation recorded; see source review/remaining ACs |  | [L667](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L667) | keep - targeting/PlayerLook implementations exist; recorded owner feel/mesh walk and pause-input acceptance remain open. |  |
+| US-129 | Enemy colour tiers: one beast model in 3 tiers (green / blue / red) via the team remap (RE-06 setTeamMaterials… | P2 | todo (sketch) [PC-B content + designer tier materials] - after US-079. AC sketch: 3 tiers can be told apart at 10 m at 240x90, one instanced mode… | PC-B | [L669](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L669) | keep - Enemy colour-tier content remains independent of the accepted base boar model. |  |
+| US-130 | Map exploration: the chart card shows only the areas the player has seen (RE-11 Visibility grid over the overw… | P1 | todo (sketch) [PC-B chart UI + PC-A architect note (first-person reveal radius/cone vs RE-11 unit sight)] - pairs with US-097. AC sketch: an unse… | PC-B, PC-A | [L670](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L670) | keep - Map/chart/fog/minimap need game acceptance; mapCard implementation alone does not establish all exploration ACs. |  |
+| US-131 | Overworld minimap (RE-13), optional corner widget with fog from US-130 and a player arrow | P2 | todo (sketch) [PC-B] - owner question: minimap on screen, or chart card only (Zelda-style)? | PC-B | [L671](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L671) | keep - Map/chart/fog/minimap need game acceptance; mapCard implementation alone does not establish all exploration ACs. |  |
+| US-132 | Burning status effect: as a player I can catch fire (and so can enemies and flammable props): damage over time… | P1 | todo (sketch) [PC-A engine status-effect component + PC-B game tuning] - deps: US-053c, US-080a1 (damage). NEEDS PC-A: architect note (132+133). … | PC-A, PC-B | [L593](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L593) | keep - FireGrid exists, but status/view/game integration acceptance remains open; port visual work through WGSL (D-044). |  |
+| US-133 | Fire spread (engine sim): flammable materials/props as data (fuel, ignite chance), a coarse fire cell grid wit… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L594](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L594) | keep - FireGrid exists, but status/view/game integration acceptance remains open; port visual work through WGSL (D-044). |  |
+| US-134 | Fire view: burning cells render flame glyphs + emissive + smoke particles, a capped number of flicker lights p… | P1 | todo (sketch) [PC-A engine/render + designer fire/char ramps] - deps: US-133, US-053c. ~1 d | PC-A | [L595](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L595) | keep - FireGrid exists, but status/view/game integration acceptance remains open; port visual work through WGSL (D-044). |  |
+| US-135 | Fire in the game: a fire test room - torch/burner ignites dry brush, fire spreads across the patch, a wooden b… | P1 | todo (sketch) [PC-B content + game/js/quest] - deps: US-132, US-134; feeds US-093 (torch gates). ~0.5-1 d | PC-B | [L596](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L596) | keep - FireGrid exists, but status/view/game integration acceptance remains open; port visual work through WGSL (D-044). |  |
+| US-137 | Explosion view + content: burst preset (flash, debris, smoke), short-lived flash light, camera kick, ignites f… | P2 | todo (sketch) [PC-B content + game + designer] - deps: US-136, US-053c, US-133. ~1 d | PC-B | [L598](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L598) | keep - Explosion sim exists; burst/light/content view still needs its separate owner acceptance. |  |
+| US-139 | Height fog + fog banks (stretch): fog density that varies with height and with data-placed fog volumes (valley… | P2 (stretch) | todo (sketch) [PC-A engine/render light/shade pass + designer] - deps: US-138; pairs with US-127, US-121. NEEDS PC-A: architect note. ~1 d | PC-A | [L599](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L599) | keep - Fog/weather stretch scope is unaccepted; defer until WG parity and use WGSL for new render features. |  |
+| US-140 | Weather states (stretch): clear / rain / storm / snow as a world state with transitions; rain + snow particles… | P3 (stretch) | todo (sketch) [PC-B content/game + PC-A hooks if needed] - deps: US-053c, US-138, US-139, US-133; pairs with US-122. Split at planning if > 1 d | PC-B, PC-A | [L600](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L600) | keep - Fog/weather stretch scope is unaccepted; defer until WG parity and use WGSL for new render features. |  |
+| US-141a | Flow data + scrolling surface (PO 2026-10-02, owner "water, waterfalls, waves"): water regions get flow [vx,vy… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L576](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L576) | keep - Water flow data/tests exist; reconcile remaining scrolling/parity nits with WG-3e before closing the full story. |  |
+| US-141b | Currents act: flow pushes the wading/swimming player (same pushX/pushY path as US-138b), carries floating prop… | P1 | architect note (architecture.md 35.7) -> split 141b1 [PC-A engine/fx particle flow, 0.25 d] + 141b2 [PC-B game push + river level, 0.5 d] - deps:… | PC-A, PC-B | [L577](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L577) | keep - Current/particle/player flow is split work; preserve dependencies on swimming and wind, not just waterAt data. |  |
+| US-141b1 | Particle flow (engine fx): def.flow + sampleFlow so water particles drift with the current | P1 | todo [PC-A engine/fx] - 0.25 d - deps: US-141a. ACs: parent row + architecture.md 35.7, 35.11 step 6 (drift test, zero allocation) | PC-A | [L578](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L578) | keep - Current/particle/player flow is split work; preserve dependencies on swimming and wind, not just waterAt data. |  |
+| US-141b2 | Currents in play (game): flow push via pushX/pushY, water emitters with flow, river test level (strong + weak … | P1 | todo [PC-B game/js/quest + level] - 0.5 d - deps: US-141b1, US-138b, US-055b. ACs: parent row + architecture.md 35.7, 35.11 step 7 | PC-B | [L579](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L579) | keep - Current/particle/player flow is split work; preserve dependencies on swimming and wind, not just waterAt data. |  |
+| US-142a | Waterfall view: a vertical falling sheet (animated glyph columns / : ', emissive highlight streaks, fast scrol… | P1 | architect note (architecture.md 35.5: needs the engine hook) -> split 142a1 [PC-A engine sheet in the water layer, 0.75 d] + 142a2 [PC-B content … | PC-A, PC-B | [L580](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L580) | keep - Waterfall meshes/hooks/tests exist; reconcile recorded view/content look and WG-3e gates before closure. |  |
+| US-142a1 | Waterfall sheet (engine): waterfalls block, sheet mesh in the water layer, sheet composite, gpucompare pose wa… | P1 | Implementation recorded; see source review/remaining ACs |  | [L581](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L581) | keep - Waterfall meshes/hooks/tests exist; reconcile recorded view/content look and WG-3e gates before closure. |  |
+| US-142a2 | Waterfall content: preset, lip + foot emitters, plunge pool (flowRadial), ripple rings, test cliff, preview pa… | P1 | Implementation recorded; see source review/remaining ACs |  | [L582](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L582) | keep - Waterfall meshes/hooks/tests exist; reconcile recorded view/content look and WG-3e gates before closure. |  |
+| US-142b | Waterfall sound + cave: loud looping roar with distance falloff + pan (cf. US-020b), spray soaks the lens edge… | P2 | todo (sketch, sound deferred to M6 polish per owner 2026-09-25) [PC-B game/js/audio, game/js/quest] - deps: US-142a, US-020b. ~0.5 d | PC-B | [L583](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L583) | keep - Waterfall audio/cave acceptance is separate from the implemented sheet mesh and particle hooks. |  |
+| US-143a | Wave height field (engine, Node only): waveHeight(x,y,t,preset) = sum of <= 4 seeded directional waves (amp, w… | P1 | Implementation recorded; see source review/remaining ACs |  | [L584](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L584) | archive - waveHeight data/Node core is implemented and the queue records ARCH OK -> done; after owner sign-off of archival. |  |
+| US-143b | Wave render + shoreline foam: surface visibly rises and falls (shade-pass normal/height perturbation or mesh v… | P1 | architect note (architecture.md 35.3; owner decision 2026-10-02: displaced water mesh) -> split 143b1 [PC-A displacement, 1 d] + 143b2 [PC-A shad… | PC-A | [L585](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L585) | keep - Wave displacement/shading/foam remain open split steps; waveHeight alone does not prove rendered acceptance; WGSL per D-044. |  |
+| US-143b1 | Wave displacement (engine): vertex waves on the water mesh, fade, stitch, fragment normal, both twins, pose wa… | P1 | todo [PC-A engine/render] - 1 d - deps: US-143a, US-055a2b. ACs: parent row + architecture.md 35.3, 35.11 step 8 (twin vs waveHeight within 1e-5 … | PC-A | [L586](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L586) | keep - Wave displacement/shading/foam remain open split steps; waveHeight alone does not prove rendered acceptance; WGSL per D-044. |  |
+| US-143b2 | Wave shading + foam (engine + designer ramps): sun on N, glint, bands, shore + crest foam, foam fade, pose wav… | P1 | todo [PC-A engine/render + designer ramps] - 0.75 d - deps: US-143b1. ACs: parent row + architecture.md 35.3, 35.11 step 9 | PC-A | [L587](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L587) | keep - Wave displacement/shading/foam remain open split steps; waveHeight alone does not prove rendered acceptance; WGSL per D-044. |  |
+| US-143c | Waves in play: floating objects (player swim bob, props after US-051, boat later) follow the live surface; cal… | P2 | architect note (architecture.md 35.7, 35.11 step 10) -> game only [PC-B game/level; engine setSeaState lands in 143a] - deps: US-143a/b, US-055b,… | PC-B | [L588](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L588) | keep - Gameplay bob/floating-prop scope waits for swim/rigid-body work even though wave sampling exists. |  |
+| US-144a | Underwater view: eye below surface gives blue-green tint + short fog, glyph swap to a bubbly ramp, light-shaft… | P1 | architect note (architecture.md 35.6) -> split 144a1 [PC-A shade + designer, 1 d] + 144a2 [PC-A sprites/particles under fog, 0.5 d] - deps: US-05… | PC-A | [L589](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L589) | keep - Underwater view/sprite-fog/audio/gameplay retain independent acceptance; re-scope render additions to WGSL. |  |
+| US-144a1 | Underwater view (engine + designer): under state + hysteresis, fog, tint, glyph swap, shafts, ceiling, edges, … | P1 | todo [PC-A engine/render + designer] - 1 d - deps: US-055a2b, US-143a. ACs: parent row + architecture.md 35.6, 35.11 step 13 | PC-A | [L590](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L590) | keep - Underwater view/sprite-fog/audio/gameplay retain independent acceptance; re-scope render additions to WGSL. |  |
+| US-144a2 | Under-fog for sprites + particles (engine): underFogK in the sprite pass and the particle layer, with tests | P1 | todo [PC-A engine/render + fx] - 0.5 d - deps: US-144a1. ACs: parent row + architecture.md 35.6, 35.11 step 14 | PC-A | [L591](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L591) | keep - Underwater view/sprite-fog/audio/gameplay retain independent acceptance; re-scope render additions to WGSL. |  |
+| US-144b | Underwater play + sound: muffled low-pass audio, bubble particles on exhale, breath meter hook on the vitals s… | P2 | todo (sketch, audio part deferred to M6) [PC-B game + audio] - deps: US-144a, US-080a1, US-053c. ~0.5 d | PC-B | [L592](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L592) | keep - Underwater view/sprite-fog/audio/gameplay retain independent acceptance; re-scope render additions to WGSL. |  |
 
 ## ME (26)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| ME-06c | Real big trees in walkable forest (owner 2026-09-29: "I want real big trees, as | P1 (me | other |  | 397 | |
-| ME-12b | Mesh phase 2: mesh as default - renderer: 'mesh' + physics: 'mesh' default in ga | P1 (sp | todo | PC-A | 398 | |
-| ME-13b | Mesh phase 3: .obj (+ .mtl) static-mesh importer - tools/obj-import.mjs -> the s | P2 (ph | todo | PC-B | 399 | |
-| ME-14 | Mesh phase 3: content structures[].mesh (Frame + yawDeg), manifest kind mesh, lo | P1 (ph | todo | PC-B | 400 | |
-| ME-14c | Mesh render: a DrawItem per placement, resolveMats, KINDMESH moves into GBuffer. | P1 | other |  | 401 | |
-| ME-15 | Mesh phase 3: sun shadow map pass + light-pass lookup (replaces the sun DDA), ra | P1 (ph | todo | PC-A | 402 | |
-| ME-15b | Sun shadow GPU pass: GpuDevice depthBias + depth-only target, shadow.frag.js, pi | P1 (ph | other | PC-A | 403 | |
-| ME-15c | Sun shadow lookup: light pass GLSL + lighting.js twin, LIGHT.w bits 16..18, terr | P1 (ph | other | PC-A | 404 | |
-| ME-15d | Sun shadow perf: iGPU p95 bench, per-pass GPU timer, dirty-skip re-render key (2 | P1 (ph | other |  | 405 | |
-| ME-15f | Shadow pass: instanced tree groups cast sun shadows by distance - LOD0 within 25 | P0 | todo | PC-B | 127 | |
-| ME-15h | Shadow CPU cost: shadowCpuMs p95 0.6-0.7 ms vs the 0.15 ms bar, paid every frame | P2 | todo | PC-A | 128 | |
-| ME-16 | Mesh phase 3: point-light cube shadow maps for the top-2 lights, carried-lamp re | P1 (ph | todo | PC-A | 408 | |
-| ME-17 | Mesh phase 3: culling + terrain LOD rings + front-to-back + ?bench=1 at 240x90/3 | P1 (ph | todo | PC-A | 409 | |
-| ME-18 | Mesh phase 3: editor on meshes (pick via GI.w objectId readback, mesh structure | P2 (ph | todo | PC-B | 410 | |
-| ME-19 | Mesh phase 3: delete the old renderers (sectorCaster/terrainCaster/voxelMarch re | P1 (ph | other |  | 411 | |
-| ME-19c | [D-044: stays, shrinks the WGSL port surface; ME-19c..f before WG-2a ideally] GP | P1 | todo | PC-A | 412 | |
-| ME-19d | Shear camera out (projection.js, cellRayP/uProjMode, shear branches; keep the de | P1 | todo | PC-A | 413 | |
-| ME-19e | LVIS out - 37.13.2 | P2 | todo | PC-A | 414 | |
-| ME-19f | check-deps rule 9 FAIL-on-increase vs baseline, docs historical, AGENTS/README/C | P1 | todo | PC-B | 415 | |
-| ME-20 | Mesh phase 3: US-071 re-scoped - horizon AO over the G-buffer (light pass + JS t | P2 (ph | todo | PC-B | 416 | |
-| ME-21 | Mesh phase 3: proof content - 2-storey glTF building on the hillside with door + | P1 (ph | todo | PC-A | 417 | |
-| ME-22 | Large voxel models (mesh-only) (owner 2026-09-30: "can I import bigger vox files | P1 | other | PC-B | 418 | |
-| ME-30 | [CLOSED D-044 -> WG-1a/1b1/1b2] Phase 4 WebGPU: GpuDeviceWebGPU.js + self-test ( | P2 (ph | todo | PC-A | 419 | |
-| ME-31 | [CLOSED D-044 -> WG-2a..WG-3f] Phase 4 WebGPU: WGSL ports of raster + cell passe | P2 (ph | todo | PC-A | 420 | |
-| ME-32 | [CLOSED D-044 -> WG-1c2] Phase 4 WebGPU: runtime backend pick (backend: 'auto'\/ | P2 (ph | todo | PC-B | 421 | |
-| ME-33 | [CLOSED D-044 -> WG-3a..3f parity gates] Phase 4 WebGPU: cross-backend parity ?g | P2 (ph | todo | PC-A | 422 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| ME-06c | Real big trees in walkable forest (owner 2026-09-29: "I want real big trees, as I wanna go into the forest"): … | P1 (mesh phase 2, needs instancing ME-09+ and ME-08 props) | Implementation recorded; see source review/remaining ACs |  | [L409](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L409) | keep - Forest binding exists but owner forest walk/bench and Quaternius rollout remain open; retain TREES-LP/QUAT dependencies. |  |
+| ME-12b | Mesh phase 2: mesh as default - renderer: 'mesh' + physics: 'mesh' default in game/index.html and dev pages; ?… | P1 (sprint 5) | todo, ACs in ### ME-12b [PC-A] game/js/main.js, game/index.html, game/js/dev/*, tools/bench-poses.js - deps: ~~ME-12 gate GO~~ ME-15, ME-16 (owne… | PC-A | [L410](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L410) | archive - Game now defaults to mesh rendering/physics and row ME-19 calls this effectively done; after owner gate sign-off. |  |
+| ME-13b | Mesh phase 3: .obj (+ .mtl) static-mesh importer - tools/obj-import.mjs -> the same content/meshes/<id>.mesh.j… | P2 (phase 3) | todo [PC-B] - after ME-13 (shares its material map + mesh writer); ~1 day | PC-B | [L411](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L411) | keep - glTF importer exists, but the requested OBJ/MTL importer is a separate undelivered format scope. |  |
+| ME-14 | Mesh phase 3: content structures[].mesh (Frame + yawDeg), manifest kind mesh, loadPack, validator rules, chunk… | P1 (phase 3) | todo [PC-B] engine/content/*, engine/world/World.js, tools/validate-content.mjs - deps: ME-13, ME-11, CO-2 Split by architect 2026-10-03 -> ME-14… | PC-B, PC-A | [L412](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L412) | keep - World mesh structures/manifest/validator exist; reconcile a/b/c acceptance and archive only after all split gates close. |  |
+| ME-14c | Mesh render: a DrawItem per placement, resolveMats, KIND_MESH moves into GBuffer.js, kind 9 in rasterJS/detail… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L413](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L413) | keep - Kind-9 draw/raster exists, but row retains parity history; reconcile current gates with D-045 ended exception, never widen thresholds. |  |
+| ME-15 | Mesh phase 3: sun shadow map pass + light-pass lookup (replaces the sun DDA), rasterJS shadow twin, parity pos… | P1 (phase 3) | todo [PC-A] engine/render/gpu/glsl/shadow.*.js, light.frag.js, rasterJS.js - deps: ME-06; split: ME-15a/b/c/d, notes 27.9a | PC-A | [L414](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L414) | keep - Shadow map modules exist; umbrella still covers perf/point-light dependencies and acceptance, reconcile split steps. |  |
+| ME-15b | Sun shadow GPU pass: GpuDevice depthBias + depth-only target, shadow.frag.js, pipeline pass, createEngine({sha… | P1 (phase 3) | Implementation recorded; see source review/remaining ACs | PC-A | [L415](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L415) | keep - GPU shadow pass/lookup are implemented; preserve outstanding recorded parity/look acceptance and reconcile WG-3d integration. |  |
+| ME-15c | Sun shadow lookup: light pass GLSL + lighting.js twin, LIGHT.w bits 16..18, terrain receive, new parity poses … | P1 (phase 3) | Implementation recorded; see source review/remaining ACs | PC-A | [L416](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L416) | keep - GPU shadow pass/lookup are implemented; preserve outstanding recorded parity/look acceptance and reconcile WG-3d integration. |  |
+| ME-15d | Sun shadow perf: iGPU p95 bench, per-pass GPU timer, dirty-skip re-render key (27.9a item 12) | P1 (phase 3) | Implementation recorded; see source review/remaining ACs |  | [L417](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L417) | keep - Perf/dirty-skip code exists but iGPU budget acceptance must be evidenced; do not infer it from implementation. |  |
+| ME-15f | Shadow pass: instanced tree groups cast sun shadows by distance - LOD0 within 25 m (shadows.meshLod0M), LOD1 t… | P0 | todo [PC-B cross-track ~0.5 d] -> opus arch-review; then PC-A Arc bench: map p95 <= dda + 1.0 ms (dirty-skip) / + 1.5 ms (--noskip 1) + owner OK … | PC-B, PC-A | [L139](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L139) | keep - Caster budgets/CPU shadow cost remain active backend-neutral perf work; respect MESH-SHADOW-02 ARCH CHANGES. |  |
+| ME-15h | Shadow CPU cost: shadowCpuMs p95 0.6-0.7 ms vs the 0.15 ms bar, paid every frame incl. skipped shadow passes (… | P2 | todo [PC-A or PC-B ~0.5 d] -> arch-review (PC-A writes 27.9a amendment 6 when picked up) | PC-A, PC-B | [L140](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L140) | keep - Caster budgets/CPU shadow cost remain active backend-neutral perf work; respect MESH-SHADOW-02 ARCH CHANGES. |  |
+| ME-16 | Mesh phase 3: point-light cube shadow maps for the top-2 lights, carried-lamp re-render rule, LVIS retired fro… | P1 (phase 3) | todo [PC-A] - deps: ME-15 | PC-A | [L420](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L420) | keep - Point-light cube shadows/LVIS retirement remain separate from sun-map implementation; re-scope new shading to WGSL. |  |
+| ME-17 | Mesh phase 3: culling + terrain LOD rings + front-to-back + ?bench=1 at 240x90/320x120/400x150; 27.8 table fil… | P1 (phase 3) | todo [PC-A] - deps: ME-06 | PC-A | [L421](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L421) | keep - Culling/terrain LOD and measured budgets feed WG-4 compute cull; consolidate overlap without dropping acceptance. |  |
+| ME-18 | Mesh phase 3: editor on meshes (pick via GI.w objectId readback, mesh structure place/move/rotate yawDeg, libr… | P2 (phase 3) | todo [PC-B] tools/editor/*, pick.js - deps: ME-14, US-067 | PC-B | [L422](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L422) | drop - Duplicate mesh editor scope; ED-MESH-01 b/c/d are ARCH OK and e/f/g preserve remaining engine/live-preview/scale ACs. |  |
+| ME-19 | Mesh phase 3: delete the old renderers (sectorCaster/terrainCaster/voxelMarch render, dda/terrain/voxel.frag, … | P1 (phase 3) | Implementation recorded; see source review/remaining ACs | PC-A, PC-B | [L423](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L423) | keep - D-044 retains old-renderer cleanup; coordinate prerequisites and WG-5 deletion without extending frozen DDA. |  |
+| ME-19c | [D-044: stays, shrinks the WGSL port surface; ME-19c..f before WG-2a ideally] GPU dda passes out (_passCast/_p… | P1 | todo [PC-A ~1 d] -> arch-review; after 19b + ME-15e | PC-A | [L424](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L424) | keep - D-044 retains old-renderer cleanup; coordinate prerequisites and WG-5 deletion without extending frozen DDA. |  |
+| ME-19d | Shear camera out (projection.js, cellRayP/uProjMode, shear branches; keep the derivative scale as uDerivScale)… | P1 | todo [PC-A ~1 d] -> arch-review; after 19c | PC-B, PC-A | [L425](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L425) | keep - D-044 retains old-renderer cleanup; coordinate prerequisites and WG-5 deletion without extending frozen DDA. |  |
+| ME-19e | LVIS out - 37.13.2 | P2 | todo [PC-A ~0.5 d] after ME-16 | PC-A | [L426](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L426) | keep - D-044 retains old-renderer cleanup; coordinate prerequisites and WG-5 deletion without extending frozen DDA. |  |
+| ME-19f | check-deps rule 9 FAIL-on-increase vs baseline, docs historical, AGENTS/README/CLAUDE updates, delete origin/w… | P1 | todo [PC-B + main session ~0.5 d] after 19d | PC-B | [L427](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L427) | keep - D-044 retains old-renderer cleanup; coordinate prerequisites and WG-5 deletion without extending frozen DDA. |  |
+| ME-20 | Mesh phase 3: US-071 re-scoped - horizon AO over the G-buffer (light pass + JS twin) + importer vertex AO | P2 (phase 3) | todo [PC-B JS + PC-A GLSL 0.5 d] - deps: ME-15 | PC-B, PC-A | [L428](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L428) | keep - Horizon/vertex AO is still a mesh-engine feature; implement future GPU work in WGSL with JS oracle (D-044). |  |
+| ME-21 | Mesh phase 3: proof content - 2-storey glTF building on the hillside with door + stairs; walk in, up, out (des… | P1 (phase 3) | todo [PC-A] - deps: ME-14, ME-12 | PC-A | [L429](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L429) | keep - Imported geometry exists, but authored walkable two-storey proof content and owner route acceptance remain distinct. |  |
+| ME-22 | Large voxel models (mesh-only) (owner 2026-09-30: "can I import bigger vox files?") - explicit voxel.meshOnly:… | P1 | Implementation recorded; see source review/remaining ACs | PC-B | [L430](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L430) | archive - meshOnly limits/validator and vox-import tooling are built and ARCH OK is recorded; after remaining large-model owner look. |  |
+| ME-30 | [CLOSED D-044 -> WG-1a/1b1/1b2] Phase 4 WebGPU: GpuDeviceWebGPU.js + self-test (27.11 phase 4) | P2 (phase 4) | todo (sketch, phase 4 WebGPU) [PC-A] - deps: ME-19 + a recorded trigger (D-029 item 6) | PC-A | [L431](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L431) | drop - Explicitly CLOSED/re-cut by D-044 into WG milestones; keep WG device/pass/backend/parity stories as the source of work. |  |
+| ME-31 | [CLOSED D-044 -> WG-2a..WG-3f] Phase 4 WebGPU: WGSL ports of raster + cell passes | P2 (phase 4) | todo (sketch, phase 4 WebGPU) [PC-A] - deps: ME-30 | PC-A | [L432](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L432) | drop - Explicitly CLOSED/re-cut by D-044 into WG milestones; keep WG device/pass/backend/parity stories as the source of work. |  |
+| ME-32 | [CLOSED D-044 -> WG-1c2] Phase 4 WebGPU: runtime backend pick (backend: 'auto'/'webgl2'/'webgpu', ?backend=, F… | P2 (phase 4) | todo (sketch, phase 4 WebGPU) [PC-B] - deps: ME-30 | PC-B | [L433](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L433) | drop - Explicitly CLOSED/re-cut by D-044 into WG milestones; keep WG device/pass/backend/parity stories as the source of work. |  |
+| ME-33 | [CLOSED D-044 -> WG-3a..3f parity gates] Phase 4 WebGPU: cross-backend parity ?gpucompare=backends | P2 (phase 4) | todo (sketch, phase 4 WebGPU) [PC-A] - deps: ME-31, ME-32 | PC-A | [L434](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L434) | drop - Explicitly CLOSED/re-cut by D-044 into WG milestones; keep WG device/pass/backend/parity stories as the source of work. |  |
 
 ## WG (21)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| WG-1a | WebGPU probe + capture flags (first WebGPU story, needs no render knowledge) | P0 | arch-review? | PC-B | 428 | |
-| WG-1b1 | Device shape | P0 | po-review? | PC-B | 429 | |
-| WG-1b2 | GpuDeviceWebGPU | P0 | arch-review | PC-B | 430 | |
-| WG-1b3 | GPU timer: timestamp-query in GpuDeviceWebGPU | P0 | todo | PC-B | 456 | |
-| WG-1c1 | WebGPU present | P0 | po-review? | PC-B | 431 | |
-| WG-1c2 | Backend switch | P0 | arch-review | PC-A | 432 | |
-| WG-2a | Pipeline skeleton | P0 | arch-review? | PC-B | 433 | |
-| WG-2a-b | The 4 small ARCH CHANGES of WG-2a (architecture.md 38.8a item 20) | P0 | todo | PC-B | 465 | |
-| WG-2b | Mesh raster | P0 | handed | PC-B | 434 | |
-| WG-2c | Terrain + voxel-part raster | P0 | handed | PC-B | 435 | |
-| WG-3a | Resolve + deriv | P0 | todo | PC-B | 436 | |
-| WG-3b | Light | P0 | todo | PC-B | 437 | |
-| WG-3c | Shade + edge | P0 | todo | PC-B | 438 | |
-| WG-3d | Sun shadow map | P0 | todo | PC-B | 439 | |
-| WG-3e | Water | P1 | todo | PC-B | 440 | |
-| WG-3f | Sprites + overlay | P0 | todo | PC-B | 441 | |
-| WG-4a | Compute cull | P0 | todo | PC-B | 442 | |
-| WG-4b | Shadow-caster cull + LOD dither | P0 | todo | PC-B | 443 | |
-| WG-4c | Gate: full-detail walk | P0 | todo | PC-A | 444 | |
-| WG-5a | Delete WebGL2 | P1 | todo | PC-B | 445 | |
-| WG-5b | "WebGPU required" gate | P1 | todo | PC-B | 446 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| WG-1a | WebGPU probe + capture flags (first WebGPU story, needs no render knowledge) | P0 | ARCH OK 2026-10-07 -> po-review (engine-internal: PO may skip) [PC-B cross-track -> arch-review] ~1 d - deps: none | PC-B, PC-A | [L440](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L440) |  |  |
+| WG-1b1 | Device shape | P0 | ARCH OK 2026-10-07 -> po-review (engine-internal: PO may skip); ring variable-size alloc carried as WG-1b2 change 2 [PC-B cross-track] ~1 d - dep… | PC-B | [L441](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L441) |  |  |
+| WG-1b2 | GpuDeviceWebGPU | P0 | arch-review (fix-up done 2026-10-07): layout drops group 1 when uniformBytes==0; cached empty group 0 set on pipeline change without textures; ri… | PC-B | [L442](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L442) |  |  |
+| WG-1b3 | GPU timer: timestamp-query in GpuDeviceWebGPU | P1 | ARCH OK 2026-10-07 (opus batch; nesting rule for WG-2b/3 in 38.8a item 22) -> po-review [PC-B, 2026-10-07] ~0.5 d - deps: WG-1b2 | PC-B, PC-A | [L468](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L468) |  |  |
+| WG-1c1 | WebGPU present | P0 | ARCH OK 2026-10-07 -> po-review (engine-internal: PO may skip); carry-overs into WG-1c2 = architecture.md 38.8a addendum items 13 (Node test for … | PC-B | [L443](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L443) |  |  |
+| WG-1c2 | Backend switch | P0 | arch-review (fix-up done 2026-10-07: editor passes clampGrid(gridFromParam) cols/rows to createRenderer+createEngine; createRenderer disposes dev… | PC-A, PC-B | [L444](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L444) |  |  |
+| WG-2a | Pipeline skeleton | P0 | ARCH OK 2026-10-07 (opus batch; 2a77768 closes 38.8a item 20) -> po-review; WG-2b may build on it (read 38.8a item 22) [PC-B, corrections for 38.… | PC-B, PC-A | [L445](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L445) |  |  |
+| WG-2a-b | The 4 small ARCH CHANGES of WG-2a (architecture.md 38.8a item 20) | P0 | ARCH OK 2026-10-07 (opus batch) -> done (folded into WG-2a) [PC-B cross-track -> PC-A] | PC-B, PC-A | [L477](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L477) |  |  |
+| WG-2b | Mesh raster | P0 | ARCH OK 2026-10-07 (opus batch) -> po-review; decisions (a) extra vertex streams, (b) shipped geometry only, (c) setGrid via createEngine({render… | PC-B, PC-A | [L446](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L446) |  |  |
+| WG-2c | Terrain + voxel-part raster | P0 | ARCH CHANGES 2026-10-07 (small, B1; 38.8a item 24): terrain raster itself OK, WG-3 wiring may build on it; open = the 38.8a 23a carry-over (resiz… | PC-B | [L447](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L447) |  |  |
+| WG-3a | Resolve + deriv | P0 | modules ARCH OK 2026-10-07 (178e911, B2: resolve/deriv WGSL + probes); B1 plug-in 6bcff74 ARCH OK 2026-10-07 (38.8a item 25b; carry-overs 23a/24a… | PC-B | [L448](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L448) |  |  |
+| WG-3b | Light | P0 | module ARCH OK 2026-10-07 (178e911, light WGSL + 15200 probes); open: B1 plug-in + light-row gate incl. shadows=map sunN parity (38.8a item 23) [… | PC-B | [L449](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L449) |  |  |
+| WG-3c | Shade + edge | P0 | modules ARCH OK 2026-10-07 (6be95f1, B2); open: B1 plug-in + cell-row gate; ALPHA-01d ruling 38.8a item 24 [PC-B -> arch-review] ~1 d - deps: WG-… | PC-B | [L450](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L450) |  |  |
+| WG-3d | Sun shadow map | P0 | module ARCH CHANGES 2026-10-07 (6be95f1, B2; 38.8a item 24): (1) shadow vertex stages must map z to [0.5,1] (38.5 item 6) + light sunShadowTaps c… | PC-B | [L451](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L451) |  |  |
+| WG-3e | Water | P1 | modules ARCH OK 2026-10-07 (ed2fcbe, B2: water + waterComposite); open: B1 plug-in + water-row gate [PC-B -> arch-review] ~1 d - deps: WG-3d | PC-B | [L452](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L452) |  |  |
+| WG-3f | Sprites + overlay | P0 | modules ARCH OK 2026-10-07 (ed2fcbe, B2: sprites + overlay); open: B1 plug-in + full-PASS-set gate; carry: move wgsl/wgslProbe.js next to the tes… | PC-B | [L453](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L453) |  |  |
+| WG-4a | Compute cull | P0 | todo [PC-B cross-track -> arch-review] ~1 d - deps: WG-3f, MESH-INST-01 | PC-B | [L454](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L454) |  |  |
+| WG-4b | Shadow-caster cull + LOD dither | P0 | todo [PC-B cross-track -> arch-review] ~1 d - deps: WG-4a | PC-B | [L455](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L455) |  |  |
+| WG-4c | Gate: full-detail walk | P0 | todo [PC-A + owner; who picks up: PC-A runs it with the owner walk, PC-B does not] - deps: WG-4b, MESH-PERF-01 | PC-A, PC-B | [L456](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L456) |  |  |
+| WG-5a | Delete WebGL2 | P1 | todo [PC-B cross-track -> arch-review] ~1 d - deps: WG-4c | PC-B | [L457](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L457) |  |  |
+| WG-5b | "WebGPU required" gate | P1 | todo [PC-B cross-track -> arch-review] ~0.5 d - deps: WG-5a | PC-B | [L458](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L458) |  |  |
 
 ## MESH (16)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| MESH-BIN-01 | Binary mesh format / packing per architecture.md 37.19 | P2 | todo | PC-B | 474 | |
-| MESH-FULL-01 | Finish full-detail Quaternius import (owner 2026-10-07: ORIGINAL detail, no simp | P0 | needs | PC-B | 447 | |
-| MESH-GPU-01 | Draw mesh structures (imported glTF, kind 9) in the GPU path [2026-10-07 PC-A ma | P1 | todo |  | 129 | |
-| MESH-GPUCMP-01 | [D-044: STAYS, PC-B implements architecture.md 37.1 A6 (GLSL kind-9 smooth-norma | P1 | arch-review? | PC-B | 134 | |
-| MESH-INST-01 | Instanced draws for repeated meshes (owner: "we will have a lot"). The same mesh | P1 | todo |  | 138 | |
-| MESH-INST-01 | CPU-side instance batching only (no new GLSL, D-044 freeze) | P1 | todo | PC-B | 453 | |
-| MESH-LOAD-01 | Lighter mesh files and lazy loading (the 12 placed meshes were 16 MB of canonica | P2 | todo |  | 139 | |
-| MESH-LOD-01 | Mesh LODs + distance cut (how Unity/Unreal do it). The importer writes lods: [{t | P1 | todo |  | 137 | |
-| MESH-PERF-01 | Arc "before" numbers: full-detail mesh perf baseline (F3 p95, draw count, render | P1 | todo | PC-A | 473 | |
-| MESH-PHYS-01 | Cheap physics for placed meshes (owner 2026-10-07: physics must get better, cut | P0 | testing? |  | 130 | |
-| MESH-PHYS-02 | Physics cost pass for the whole step (owner 2026-10-07). Profile one fixed step | P1 | testing? |  | 135 | |
-| MESH-PHYS-DEFAULT | Mesh physics is the default whenever the mesh renderer runs (architect 2026-10-0 | P0 | needs |  | 120 | |
-| MESH-SHADOW-01 | Per-mesh shadow flag + budget: castShadow: false on small pieces (pebbles, stepp | P1 | testing? |  | 133 | |
-| MESH-SHADOW-02 | Shadow caster budget: distance cut-off + cap, ~50-70 % fewer shadow tris (37.19 | P1 | todo | PC-B | 452 | |
-| MESH-SIMP-01 | Tests + docs for the mesh simplifier, then simplify the rest (owner 2026-10-07: | P1 | owner | PC-B | 131 | |
-| MESH-UVMAP-01 | Per-triangle palette materials from the glTF colour texture (owner 2026-10-07: " | P2 | owner |  | 132 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| MESH-BIN-01 | Binary mesh format / packing per architecture.md 37.19 | P2 | todo [PC-B] - deps: MESH-FULL-01 | PC-B | [L486](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L486) |  |  |
+| MESH-FULL-01 | Finish full-detail Quaternius import (owner 2026-10-07: ORIGINAL detail, no simplification; engine gets faster… | P0 | NEEDS PC-A: owner 2026-10-07 - leave MESH-FULL-01 to PC-A (PC-B check results at the end of this row). ARCH 2026-10-07: do NOT merge yet; merge a… | PC-A, PC-B | [L459](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L459) |  |  |
+| MESH-GPU-01 | Draw mesh structures (imported glTF, kind 9) in the GPU path [2026-10-07 PC-A main session, ME-14c3 wiring DON… | P1 | todo NEEDS PC-A architect note (GPU mesh structures) | PC-A | [L141](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L141) |  |  |
+| MESH-GPUCMP-01 | [D-044: STAYS, PC-B implements architecture.md 37.1 A6 (GLSL kind-9 smooth-normal port, last GLSL change); unb… | P1 | ARCH 2026-10-07: port approved with 4 required changes, see architecture.md 37.1 A6 -> PC-B implements (~0.5 d, ends arch-review; vNrmS in both v… | PC-B, PC-A | [L146](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L146) |  |  |
+| MESH-INST-01 | [RE-CUT D-044: CPU-side batching only (group per mesh+LOD, instance buffers), NO new GLSL; GPU cull = WG-4a] I… | P1 | todo NEEDS PC-A architect note (37.x) then PC-B | PC-A, PC-B | [L150](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L150) |  |  |
+| MESH-INST-01 | CPU-side instance batching only (no new GLSL, D-044 freeze) | P1 | ARCH OK 2026-10-07 (f3f0a19, 38.8a item 25c; follow-up probe forestEdge kind-9) -> done (engine-internal, no PO) [PC-B cross-track -> PC-A review… | PC-B, PC-A | [L465](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L465) |  |  |
+| MESH-LOAD-01 | Lighter mesh files and lazy loading (the 12 placed meshes were 16 MB of canonical JSON, first load ~20 s in a … | P2 | todo NEEDS PC-A architect note (format) then PC-B | PC-A, PC-B | [L151](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L151) |  |  |
+| MESH-LOD-01 | [RE-CUT D-044 -> WG-4b; importer lods JS side stays, GPU pick/dither is WGSL] Mesh LODs + distance cut (how Un… | P1 | todo NEEDS PC-A architect note (data shape + shadow LOD) then PC-B | PC-A, PC-B | [L149](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L149) |  |  |
+| MESH-PERF-01 | Arc "before" numbers: full-detail mesh perf baseline (F3 p95, draw count, render JS ms) at ?pose=roadSouth on … | P1 | todo (measured 2026-10-07, simplified meshes; full-detail "before" still to do) [PC-A] ~0.25 d | PC-A | [L485](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L485) |  |  |
+| MESH-PHYS-01 | Cheap physics for placed meshes (owner 2026-10-07: physics must get better, cut wherever we can). Today every … | P0 | ARCH OK 2026-10-07; PO OK 2026-10-07 -> testing (owner walk-test: walk the road verge, drop onto a rock from the tower, no sticking/tunnelling; p… | PC-A | [L142](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L142) |  |  |
+| MESH-PHYS-02 | Physics cost pass for the whole step (owner 2026-10-07). Profile one fixed step in the tower and on the road (… | P1 | ARCH OK 2026-10-07; PO OK 2026-10-07 -> testing (3 cuts verified equivalent; walk-test: tower + road feel unchanged, no new hitches). tools/bench… |  | [L147](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L147) |  |  |
+| MESH-PHYS-DEFAULT | Mesh physics is the default whenever the mesh renderer runs (architect 2026-10-05, 37.10: game/js/main.js stil… | P0 | NEEDS PC-A: PO review / owner plain-URL walk-test (implemented 2026-10-05) ARCH OK (architect opus, 2026-10-05): only main.js physics resolution … | PC-A | [L132](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L132) |  |  |
+| MESH-SHADOW-01 | Per-mesh shadow flag + budget: castShadow: false on small pieces (pebbles, stepping stones, mushrooms) in stru… | P1 | ARCH OK 2026-10-07; PO OK 2026-10-07 -> testing (AC "GPU shadow ms before/after" is browser-only: owner/PC-A reads GPU ms at ?pose=roadSouth with… | PC-A | [L145](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L145) |  |  |
+| MESH-SHADOW-02 | Shadow caster budget: distance cut-off + cap, ~50-70 % fewer shadow tris (37.19 option 1) | P1 | ARCH CHANGES 2026-10-07 (c633f41, 38.8a item 25a): cap 4 drops shadows of NEAR props (owner rule: near unchanged); keep cut 25 m, cap = safety on… | PC-B, PC-A | [L464](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L464) |  |  |
+| MESH-SIMP-01 | Tests + docs for the mesh simplifier, then simplify the rest (owner 2026-10-07: cut triangles wherever we can)… | P1 | owner look [PC-B, 2026-10-07]. engine/mesh/simplify.test.js (plane/cube/sphere: target within 10 %, bbox within 2 %, no flipped/degenerate faces,… | PC-A, PC-B | [L143](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L143) |  |  |
+| MESH-UVMAP-01 | Per-triangle palette materials from the glTF colour texture (owner 2026-10-07: "make some map from the uv map … | P2 | owner look; ARCH OK 2026-10-07 (gltf.js triMat: engine stays pure, callback + deterministic first-appearance groups; note: per-group simplify can… | PC-A, PC-B | [L144](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L144) |  |  |
 
 ## PX (9)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| PX-01 | Output-mode switch createEngine({ output: 'ascii' \/ 'pixel' }), ?output= overri | P2 | todo | PC-A | 518 | |
-| PX-02 | Full-resolution targets decoupled from the cell grid - G-buffer at canvas px x r | P2 | todo | PC-A | 519 | |
-| PX-03 | Pixel shading pass - material base colour from MaterialTable/palette ramps, sun | P2 | todo | PC-A | 520 | |
-| PX-04 | Pixel-mode oracle - pixelShadeJS computes colour at a fixed sample lattice (ever | P2 | todo | PC-B | 521 | |
-| PX-05a | Voxel AO bake - voxelMesh.js per-vertex corner AO (3-neighbour rule) stored in t | P2 | todo | PC-B | 522 | |
-| PX-05b | Voxel look - per-voxel flat shading, world-anchored per-voxel colour jitter (has | P2 | todo | PC-A | 523 | |
-| PX-06 | Post - distance fog (same curve as ASCII), tonemap + exposure uniform, optional | P2 | todo | PC-A | 524 | |
-| PX-07 | UI and overlays in both modes - HUD/text layer (CellBuffer at its own cols/rows) | P2 | todo | PC-A | 525 | |
-| PX-08 | Pixel-mode budget + owner look page - bench poses at 1920x1080, renderScale 1.0/ | P2 (ep | todo | PC-A | 526 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| PX-01 | Output-mode switch createEngine({ output: 'ascii' / 'pixel' }), ?output= override; pipeline branches after lig… | P2 | todo (sketch) | PC-A | [L530](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L530) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-02 | Full-resolution targets decoupled from the cell grid - G-buffer at canvas px x renderScale (0.5-1.0), projecti… | P2 | todo (sketch) | PC-A | [L531](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L531) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-03 | Pixel shading pass - material base colour from MaterialTable/palette ramps, sun N.L + shadow map (ME-15), top-… | P2 | todo (sketch) | PC-A | [L532](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L532) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-04 | Pixel-mode oracle - pixelShadeJS computes colour at a fixed sample lattice (every 8th px) from the rasterJS G-… | P2 | todo (sketch) | PC-B, PC-A | [L533](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L533) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-05a | Voxel AO bake - voxelMesh.js per-vertex corner AO (3-neighbour rule) stored in the mesh, behind a flag | P2 | todo (sketch) - NEEDS PC-A: architect note (PC-B Q7 filler, 2026-10-01). Row too thin to hand to a programmer: no exact corner-AO formula (which … | PC-A, PC-B | [L534](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L534) | keep - Backend-neutral voxel AO bake remains possible, but exact formula/layout/flag need the recorded architect note first. |  |
+| PX-05b | Voxel look - per-voxel flat shading, world-anchored per-voxel colour jitter (hash of voxel coords), AO from PX… | P2 | todo (sketch) | PC-A | [L535](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L535) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-06 | Post - distance fog (same curve as ASCII), tonemap + exposure uniform, optional pixelate (low renderScale + ne… | P2 | todo (sketch) | PC-A | [L536](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L536) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-07 | UI and overlays in both modes - HUD/text layer (CellBuffer at its own cols/rows) composited as a transparent g… | P2 | todo (sketch) | PC-A | [L537](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L537) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
+| PX-08 | Pixel-mode budget + owner look page - bench poses at 1920x1080, renderScale 1.0/0.75/0.5, owner Intel iGPU; si… | P2 (epic close) | todo (sketch) | PC-A | [L538](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L538) | keep - Optional engine pixel-output scope is not cancelled by D-044; defer until WG parity, re-scope GLSL to WGSL, game stays ASCII pending owner decision. |  |
 
-## ENV (8)
+## HANDS (4)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| ENV-01a | Ground detail scatter: engine + data (rocks, grass tufts, bushes, flowers, falle | P0 | todo | PC-B | 104 | |
-| ENV-01a2 | Ground detail: draw feed (engine/mesh/scatterFeed.js, instance cap 4096, group c | P0 | other |  | 105 | |
-| ENV-01b | Ground detail: content, tuning + owner look | P0 | todo | PC-A | 108 | |
-| ENV-01c | Ground detail Arc bench vs 37.4 perf bars | P1 | todo | PC-A | 107 | |
-| ENV-01d | Ground detail models (rocks 3x2, tall tufts, flowers 3 colours, fern, mushrooms, | P0 | design |  | 106 | |
-| ENV-02 | Tower "Awakening" dressing pass | P0 | design |  | 109 | |
-| ENV-03 | Forest in the game (= ME-06c3, reference only) | P0 | other | PC-B | 110 | |
-| ENV-04 | First clip "The Awakening": readiness checklist | P1 | waits | PC-A | 111 | |
-
-## BUG (8)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| BUG-BENCH-01 | node tools/capture-browser.mjs --mode bench --variant world never produces windo | P1 | todo | PC-B | 124 | |
-| BUG-COORD-001 | Coordinates: light occlusion ignores the structure frame - (a) computeVisGrid/ce | P2 (la | other |  | 373 | |
-| BUG-GONDOLA-FALL | Fell into the gondola, then out of the world (owner walk-test 2026-10-06, F3: wo | P0 | other |  | 144 | |
-| BUG-GONDOLA-FALL-b | Fix ARCH CHANGES: test must run <= 5 s with the --full flag; fix wording | P1 | todo | PC-B | 454 | |
-| BUG-LAMP-COLLIDE-02 | The pick-up wall lamp (lantern, interactable) is still walk-through (PC-A 2026-1 | P2 | testing? |  | 136 | |
-| BUG-PERF-001 | JS spikes left after US-018 (owner real GPU 320x120, 2026-09-25): (a) ground flo | todo ( | other |  | 324 | |
-| BUG-RTS-002 | game/rts-test.html throws in World.load ("references unknown model") before rend | P1 | other | PC-B | 406 | |
-| BUG-WAYSTONE-CAM | voxel-props.html check (found 2026-10-06 once the page stopped crashing): the en | P3 | todo | PC-A | 150 | |
-
-## ART (7)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| ART-01 | Hemisphere ambient + evening shadow tint (ART-REF-01 top 1, owner liked the art | P1 | arch-review? |  | 145 | |
-| ART-02 | Saturated outdoor palette + material remap (ART-REF-01 top 2): add the proposed | P1 | todo | PC-A | 146 | |
-| ART-03 | Warm distance haze with a cap (ART-REF-01 top 3): haze colour near hazeWarm #efe | P1 | todo |  | 147 | |
-| ART-04 | Day + evening sky gradients and a cloud layer (ART-REF-01 top 4): day #1c95e0 to | P2 | arch-review? |  | 148 | |
-| ART-05 | New glyph sets + house depth (ART-REF-01 top 5): crownClump, bladeFace (swaying | P2 | todo | PC-A | 149 | |
-| ART-MESH-MATS | Material review for imported meshes (PC-A designer, opus): rocksoft (new, design | P2 | todo | PC-A | 141 | |
-| ART-REF-01 | ASCII mockups of the owner's two reference images (stylized autumn meadow; warm | P2 | todo | PC-A | 125 | |
-
-## ALPHA (7)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| ALPHA-01a | Import + formats: tools/png.mjs, gltf.js alpha (MASK ranges opaque-first, uvMask | P1 | arch-review | PC-B | 1549 | |
-| ALPHA-01b | MaskAtlas (R8UI, exact texel rule), registry kind mask, MeshDrawCache maskRanges | P1 | todo | PC-B | 1550 | |
-| ALPHA-01b-note | ALPHA-01b JS side is queued (row ALPHA-01b: rasterJS discard + two-sided flip + | - | other |  | 466 | |
-| ALPHA-01c | [FROZEN D-044: ported in WG-2b; keep 01a/01b JS side] GPU twin: aUVMask loc 10, | P1 | todo | PC-A | 1551 | |
-| ALPHA-01d | [FROZEN D-044: ported in WG-3c; no GLSL] Soft foliage edges: material edge: 'sof | P1 | todo | PC-B | 1552 | |
-| ALPHA-01e | Content + LOD1: Quaternius trees / bushes / rocks / pebbles / paths / mushrooms | P1 | todo | PC-B | 1553 | |
-| ALPHA-01f | Arc bench forestWalk trees on/off x shadows, lodCells sweep; absorbs TREES-LP-e | P1 | todo | PC-A | 1554 | |
-
-## PREC (6)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| PREC-01 | [D-044: fold into the WGSL port (WG-2b/3c); no GLSL fix] Forest instance precisi | P2 | todo |  | 117 | |
-| PREC-02 | [D-044: fold into the WGSL port] Ruins kind-9 parapetSky equal-key shade cells ( | P2 | todo |  | 118 | |
-| PREC-03 | [D-044: fold into the WGSL port] Scene AO mismatches: sword pitched pose kind-1 | P2 | todo |  | 119 | |
-| PREC-04 | gpucompare harness tie rule (architecture.md 37.1 A8, D-045) | P0 | arch-review | PC-A | 448 | |
-| PREC-04b | gpucompare: 9 rows need an architect decision after PREC-04 | P0 | arch-review | PC-A | 462 | |
-| PREC-04b2 | A9 items 4+5 (architecture.md 37.1 A9): texel/tone-key tie rule, capped at max(1 | P0 | todo | PC-B | 464 | |
-
-## OWN (6)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| OWN-REQ-002 | Terrain needs more resolution and detail (owner, 2026-09-24, after US-016): the | P1 | todo |  | 320 | |
-| OWN-REQ-004 | Content data files strategy (owner, 2026-09-25): decide how levels, entity/prop | P1 | other | PC-A | 321 | |
-| OWN-REQ-005 | MagicaVoxel .vox importer (owner, 2026-09-25): typing voxel layers as text is fi | P1 | testing |  | 322 | |
-| OWN-REQ-007 | Grid range: drop 160x60 for players, allow bigger than 320x120 (owner, 2026-09-2 | P1 | other | PC-A | 323 | |
-| OWN-REQ-008 | Voxel by default for everything solid (owner, 2026-09-25): 'fireplace should be | P1 | todo | PC-A | 325 | |
-| OWN-REQ-009 | Model storage format (proposal, extends D-023) (owner OK to propose, 2026-09-25) | P2 | todo | PC-A | 326 | |
-
-## HANDS (5)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| HANDS-01 | Two hand slots: LMB left / RMB right (tap/hold), sword in either hand (mirrored) | P0 | todo | PC-B | 90 | |
-| HANDS-01a | View-model mirror (setHand/handOf, authored hand, det<0 winding flip in both twi | P0 | po-review? | PC-B | 91 | |
-| HANDS-01b | Mouse2 + context-menu block, hands router, sword in either hand, inventory shape | P0 | arch-review? | PC-B | 92 | |
-| HANDS-01c | Spell-hand idle view + gpucompare pose handsSwapped | P0 | owner | PC-B | 93 | |
-| HANDS-01c-b | Add dLSample dump in gpuCompare compareLight; then record handsSwapped as a D-03 | P2 | todo | PC-B | 455 | |
-
-## ED (5)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| ED-GROUP-1 | Editor: group items (owner 2026-10-04: "how can I group items") - multi-select ( | P2 | todo |  | 152 | |
-| ED-MESH-01 | Editor: place imported meshes (owner 2026-10-07: "i havent find the new models i | P1 | todo |  | 140 | |
-| ED-MESH-01 | Editor mesh structures | P1 | todo | PC-B | 469 | |
-| ED-PLACE-BUG | Editor: placing an Assets-tab model does not work for the owner (owner 2026-10-0 | P1 | other |  | 151 | |
-| ED-TERRAIN-1 | Editor: terrain editing (owner 2026-10-04: "how can I edit the terrain?") - toda | P2 | todo |  | 153 | |
-
-## TREES (5)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| TREES-LP-a | Low-poly tree generator: buildMeshFromTris extracted from gltf.js, tools/treeGen | P1 | arch-review | PC-B | 1539 | |
-| TREES-LP-b | Instanced kind-9 mesh groups (InstanceGroups.meshGroup, meshDraw arg, shadow bra | P1 | todo | PC-B | 1540 | |
-| TREES-LP-c | Forest species mesh: key (validator, world.scatterMeshes, bindScatterInstances), | P1 | todo | PC-B | 1541 | |
-| TREES-LP-d | Designer: low-poly oak/birch/pine x 2 sizes params + meshes + design/preview/tre | P1 | todo | PC-A | 1542 | |
-| TREES-LP-e | Arc bench forestWalk trees on/off x shadows (tree half of ENV-01c) (37.15 item 8 | P1 | todo | PC-A | 1543 | |
-
-## CO (3)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| CO-4 | Coordinates: rotateLevel + yawSteps 1..3 | P2 | deferred | PC-A | 374 | |
-| CO-6 | Coordinates: terrain chunk/cell helpers | P1 | todo | PC-A | 376 | |
-| CO-8 | Coordinates: content/game/tools cleanup (sun into worldm1, recipe placement dupl | P1 (sp | other |  | 377 | |
-
-## QUAT (3)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| QUAT-GROUND-01 | Ground scatter: GrassCommon/Wispy Short/Tall, Flower3/4 (group+single), BushComm | P1 | todo | PC-B | 451 | |
-| QUAT-LOD-01 | LOD1 for CommonTree1-5 / Pine1-5 / TwistedTree1-5 | P1 | todo | PC-B | 470 | |
-| QUAT-TREES-01 | Place CommonTree1-5 / Pine1-5 / TwistedTree1-5 at full detail as forest trees; h | P1 | todo | PC-B | 450 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| HANDS-01 | Two hand slots: LMB left / RMB right (tap/hold), sword in either hand (mirrored), both hands drawn, dev swap | P0 | todo - after TORCH-01a + BUG-VM-001 left-hand; NEEDS PC-A: architecture.md 37.8 "hands" amendment + designer spellHand | PC-A, PC-B | [L102](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L102) |  |  |
+| HANDS-01a | View-model mirror (setHand/handOf, authored hand, det<0 winding flip in both twins) | P0 | ARCH OK 2026-10-07 -> po-review (engine-internal: skip PO per lean rule, main session closes) (nit: setHand does not validate hand; WGSL port: fr… | PC-B | [L103](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L103) |  |  |
+| HANDS-01b | Mouse2 + context-menu block, hands router, sword in either hand, inventory shape + demo start state, ?demo=0, … | P0 | ARCH OK 2026-10-07; PO OK 2026-10-07 (claims-only) -> testing + owner try. Was: arch-review [PC-B, 2026-10-07] (input.js). input.js: Mouse2 down/… | PC-B | [L104](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L104) |  |  |
+| HANDS-01c | Spell-hand idle view + gpucompare pose handsSwapped | P0 | ARCH OK 2026-10-07 (opus batch: 7859dd1 dLSample is the first violating cell, 90.004 deg tie, D-039 record freezes metrics, no threshold widened)… | PC-B | [L105](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L105) |  |  |
 
 ## SPELL (2)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| SPELL-01a | Fireball sim: cast (tap 5 MP / hold 10 MP), swept projectile, US-136 explosion d | P0 | testing? | PC-B | 94 | |
-| SPELL-01b | Fireball view: flame sprite + trail + moving light, spell-hand clips, burst + fl | P0 | owner | PC-B | 95 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| SPELL-01a | Fireball sim: cast (tap 5 MP / hold 10 MP), swept projectile, US-136 explosion damage + knockback, no self-dam… | P0 | PO OK 2026-10-07 (claims-only) -> testing + owner try [PC-B, 2026-10-07] (a1 + a2 done; PO note: 5 m light bound is SPELL-01b's cap, confirm it t… | PC-B | [L106](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L106) |  |  |
+| SPELL-01b | Fireball view: flame sprite + trail + moving light, spell-hand clips, burst + flash + kick, light cap, gpucomp… | P0 | owner look [PC-B, 2026-10-07]. fireballView.js per designer spellFx: core sprite (charged variant, 4-frame fly) interpolated by alpha; ONE persis… | PC-B | [L107](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L107) |  |  |
 
-## TORCH (2)
+## ENV (8)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| TORCH-01a | View-model: up to 4 held items with own handles/poses (hide/capture/setBob(h)), | P1 | arch-review | PC-B | 114 | |
-| TORCH-01b | Torch to pick up, held in the RIGHT hand (owner 2026-10-04: replaces the pick-up | P1 | todo | PC-B | 115 | |
-
-## TOWER (2)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| TOWER-BOULDER-01 | Remove the tower boulder (owner 2026-10-05: "what is that ball skiing around the | P2 | other |  | 123 | |
-| TOWER-LEVER-01 | Remove the lever and the grate it opens (owner 2026-10-04: "we don't need them") | P0 | testing |  | 116 | |
-
-## UI (2)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| UI-PLATE-01 | White plate behind UI text: audit undefined/invalid bg | P1 | todo | PC-B | 468 | |
-| UI-XHAIR-01 | Crosshair: bigger, transparent background (owner 2026-10-05: "crosshair looks ba | P1 | other |  | 122 | |
-
-## OWNER (2)
-
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| OWNER-LOOK-ROADSOUTH | Owner look at ?pose=roadSouth, full detail (kind-9 edge noise) | P1 | todo | PC-A | 463 | |
-| OWNER-WALK-FIXES | Triage checklist of owner walk-test findings | P1 | todo | PC-B | 471 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| ENV-01a | Ground detail scatter: engine + data (rocks, grass tufts, bushes, flowers, fallen logs, small props; density b… | P0 | todo - waits architecture.md 37.4 (architect writing); dev -> arch-review | PC-B | [L116](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L116) |  |  |
+| ENV-01a2 | Ground detail: draw feed (engine/mesh/scatterFeed.js, instance cap 4096, group castShadow, ?detail=0, gpucompa… | P0 | Implementation recorded; see source review/remaining ACs | PC-A | [L117](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L117) |  |  |
+| ENV-01b | Ground detail: content, tuning + owner look | P0 | todo - after ENV-01a ARCH OK | PC-A, PC-B | [L120](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L120) |  |  |
+| ENV-01c | Ground detail Arc bench vs 37.4 perf bars | P1 | todo [PC-A] after ENV-01b | PC-A | [L119](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L119) |  |  |
+| ENV-01d | Ground detail models (rocks 3x2, tall tufts, flowers 3 colours, fern, mushrooms, fallen logs, pebbles) + first… | P0 | design - PC-A designer running 2026-10-04 -> PO preview check | PC-A | [L118](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L118) |  |  |
+| ENV-02 | Tower "Awakening" dressing pass | P0 | design - designer pass in progress -> PO preview check -> owner walk-test | PC-B | [L121](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L121) |  |  |
+| ENV-03 | Forest in the game (= ME-06c3, reference only) | P0 | in PC-B Q15 item A (see ME-06c row) | PC-B | [L122](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L122) |  |  |
+| ENV-04 | First clip "The Awakening": readiness checklist | P1 | waits owner talk - no cinematic/path/capture work before it | PC-A | [L123](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L123) |  |  |
 
 ## VOX (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| VOX-CAP-01 | Mesh path draws up to 48 voxel entities (MAXVOXINSTANCESMESH), dda stays 16 with | P0 | other |  | 112 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| VOX-CAP-01 | Mesh path draws up to 48 voxel entities (MAX_VOX_INSTANCES_MESH), dda stays 16 with an upload guard (architect… | P0 | Implementation recorded; see source review/remaining ACs | PC-A | [L124](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L124) |  |  |
 
 ## DECAL (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| DECAL-01 | Wall scrawl/decals drawn (architecture.md 37.6): derived load data, lit depth-te | P0 | arch-review | PC-B | 113 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| DECAL-01 | Wall scrawl/decals drawn (architecture.md 37.6): derived load data, lit depth-tested numeric text overlay, scr… | P0 | arch-review [PC-B, 2026-10-05];80 decal/22 existing overlay/20 mesh checks;228/228 working,226/226 isolated suites PASS,deps/typecheck/content OK… | PC-B, PC-A | [L125](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L125) |  |  |
+
+## TORCH (2)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| TORCH-01a | View-model: up to 4 held items with own handles/poses (hide/capture/setBob(h)), sword passes its handle (archi… | P1 | arch-review [PC-B,2026-10-05].Four preallocated item handles;independent pose/capture/bob/visibility,ordered IDs; sword hide/capture/bob scoped.3… | PC-B, PC-A | [L126](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L126) |  |  |
+| TORCH-01b | Torch to pick up, held in the RIGHT hand (owner 2026-10-04: replaces the pick-up lantern; lanterns stand on th… | P1 | todo [PC-B game, ~0.75 d] - after TORCH-01a + BUG-VM-001 left-hand mirror; torch model from PC-A designer | PC-B, PC-A | [L127](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L127) |  |  |
+
+## TOWER (2)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| TOWER-BOULDER-01 | Remove the tower boulder (owner 2026-10-05: "what is that ball skiing around the floor? shouldn't it be rollin… | P2 | Implementation recorded; see source review/remaining ACs | PC-A | [L135](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L135) |  |  |
+| TOWER-LEVER-01 | Remove the lever and the grate it opens (owner 2026-10-04: "we don't need them"): delete the lever + grate pro… | P0 | testing - PO OK 2026-10-05, owner walk-test pending |  | [L128](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L128) |  |  |
+
+## PREC (6)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| PREC-01 | [D-044: fold into the WGSL port (WG-2b/3c); no GLSL fix] Forest instance precision: JS float64 I*P vs GLSL flo… | P2 | todo - NEEDS PC-A architect note | PC-A, PC-B | [L129](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L129) |  |  |
+| PREC-02 | [D-044: fold into the WGSL port] Ruins kind-9 parapetSky equal-key shade cells (8) - known-FAIL baseline per D… | P2 | todo - NEEDS PC-A architect note | PC-A | [L130](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L130) |  |  |
+| PREC-03 | [D-044: fold into the WGSL port] Scene AO mismatches: sword pitched pose kind-1 (87,8) at yaw 40; tower lamp-e… | P2 | todo - NEEDS PC-A architect note | PC-A | [L131](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L131) |  |  |
+| PREC-04 | gpucompare harness tie rule (architecture.md 37.1 A8, D-045) | P0 | arch-review [PC-A] 2026-10-07 - Files: engine/render/gpu/gpuCompare.js, game/js/dev/modes/gpucompare.js, gpuCompare.test.js. Impl: compareGeometr… | PC-A | [L460](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L460) |  |  |
+| PREC-04b | gpucompare: 9 rows need an architect decision after PREC-04 | P0 | arch-review [PC-A] (b1 built, b2 todo -> [PC-B cross-track], see row PREC-04b2) - ARCH 2026-10-07: rule = architecture.md 37.1 A9, split PREC-04b… | PC-A, PC-B | [L474](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L474) |  |  |
+| PREC-04b2 | A9 items 4+5 (architecture.md 37.1 A9): texel/tone-key tie rule, capped at max(16, 0.5 % of nonSky), found by … | P0 | ARCH OK 2026-10-07 (opus batch) -> po-review (harness only, PO may skip). PC-A Intel gate f2b1e3a vs 8dd8c23: 139/5 (was 138/6), only change wate… | PC-A, PC-B | [L476](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L476) |  |  |
 
 ## PROP (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| PROP-COLLIDE-01 | Props have no collision (owner walk-test 2026-10-04: "I can go through items in | {type: | arch-review? | PC-B | 121 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| PROP-COLLIDE-01 | Props have no collision (owner walk-test 2026-10-04: "I can go through items in the tower"). Today only struct… | {type:'prism', c, r, h}] in prop-local metres (same shape as stairwell.canvas.colliders), transformed by the prop pose at World.load into one props:static BVH (reuse the ENV-01a1 box/prism builders, not serialized, mesh physics); grid physics: mark the covered cells' blocker the same way … | 01a done; 01b0 arch-review [PC-B,2026-10-05];01b NEEDS PC-A: PO review / owner walk-test | PC-B, PC-A | [L133](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L133) |  |  |
+
+## UI (2)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| UI-PLATE-01 | White plate behind UI text: audit undefined/invalid bg | P1 | AC1 editor callers ARCH OK 2026-10-07 (lane C 3220f5a) -> owner look check (bracket readability); AC2 (CellBuffer invalid-colour dev warning + te… | PC-A | [L480](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L480) |  |  |
+| UI-XHAIR-01 | Crosshair: bigger, transparent background (owner 2026-10-05: "crosshair looks bad, could be a little bigger bu… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L134](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L134) |  |  |
+
+## ART (7)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| ART-01 | Hemisphere ambient + evening shadow tint (ART-REF-01 top 1, owner liked the art 2026-10-06): outdoor ambient =… | P1 | ART-01a (DeepSeek, 2026-10-06) done -> arch-review. look.js (resolveLook/validateLook) + roofMap.js + LightSet.hemi/roof + setLook + fb.light.out… | PC-B | [L157](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L157) |  |  |
+| ART-02 | Saturated outdoor palette + material remap (ART-REF-01 top 2): add the proposed colour families (meadow, lime … | P1 | todo [PC-A designer, then owner look in game] | PC-A | [L158](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L158) |  |  |
+| ART-03 | Warm distance haze with a cap (ART-REF-01 top 3): haze colour near hazeWarm #efe6c6 -> far = the sky horizon c… | P1 | todo - NEEDS PC-A architect note (fog params + max cap in shade/composite, both twins) then PC-B | PC-A, PC-B | [L159](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L159) |  |  |
+| ART-04 | Day + evening sky gradients and a cloud layer (ART-REF-01 top 4): day #1c95e0 top / #52beef mid / #c8ecf3 hori… | P2 | ART-04a (DeepSeek, 2026-10-06) done -> arch-review. cloudAt (37.18 item-5 order) + cloudDriftOffset + cloudValueNoise in sky.js; fillSky/shadeSky… | PC-A | [L160](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L160) |  |  |
+| ART-05 | New glyph sets + house depth (ART-REF-01 top 5): crownClump, bladeFace (swaying grass), dirtFace, plasterFace … | P2 | todo [PC-A designer] | PC-A | [L161](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L161) |  |  |
+| ART-MESH-MATS | Material review for imported meshes (PC-A designer, opus): rock_soft (new, design/palette.js + detail-pass.js)… | P2 | todo [PC-A designer] -> owner look | PC-A | [L153](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L153) |  |  |
+| ART-REF-01 | ASCII mockups of the owner's two reference images (stylized autumn meadow; warm half-timbered house) -> palett… | P2 | todo [PC-A designer] after Sprint 6 | PC-A | [L137](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L137) |  |  |
 
 ## READ (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| READ-01 | Readable notes (owner 2026-10-05, replaces wall writing: "it should be a documen | P0 | other |  | 126 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| READ-01 | Readable notes (owner 2026-10-05, replaces wall writing: "it should be a document, a letter or page somewhere,… | P0 | Implementation recorded; see source review/remaining ACs |  | [L138](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L138) |  |  |
+
+## BUG (7)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| BUG-COORD-001 | Coordinates: light occlusion ignores the structure frame - (a) computeVisGrid/cellBlocks compare world defZ wi… | P2 (latent: only placed structure is the tower at integer (1480,1018,0)) | Implementation recorded; see source review/remaining ACs |  | [L385](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L385) |  |  |
+| BUG-GONDOLA-FALL | Fell into the gondola, then out of the world (owner walk-test 2026-10-06, F3: world (1493.88, 1025.44, -1977.4… | P0 | ARCH CHANGES 2026-10-07 (fix itself OK): (1) engine/physics/gondolaFall.test.js takes 48 s alone and TIMEOUTs (60 s) in run-tests.mjs --filter ph… | PC-A | [L156](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L156) |  |  |
+| BUG-GONDOLA-FALL-b | Fix ARCH CHANGES: test must run <= 5 s with the --full flag; fix wording | P1 | ARCH OK 2026-10-07 (opus batch re-review; 1.37 s measured) -> done [PC-B, 2026-10-07] ~0.25 d: default run 1.3 s / 9,336 checks (coarse 0.2 m: z6… | PC-B | [L466](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L466) |  |  |
+| BUG-LAMP-COLLIDE-02 | The pick-up wall lamp (lantern, interactable) is still walk-through (PC-A 2026-10-07 put prism colliders on th… | P2 | ARCH OK 2026-10-07; PO OK 2026-10-07 -> testing (walk-test: walk into the pick-up wall lamp, it blocks you; take it from ~1.5 m, then the bracket… | PC-A | [L148](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L148) |  |  |
+| BUG-PERF-001 | JS spikes left after US-018 (owner real GPU 320x120, 2026-09-25): (a) ground floor: one sim.quest step 4.50 ms… | P2 | todo (b); (a2) po-review; (c) done (ARCH OK 2026-09-29 opus batch 2: 6b sceneDim bbox path + perf test moved to tools/perf/ verified; PO OK (PC-A… | PC-B, PC-A | [L336](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L336) |  |  |
+| BUG-RTS-002 | game/rts-test.html throws in World.load ("references unknown model") before rendering - its script list is sta… | P1 | Implementation recorded; see source review/remaining ACs | PC-A, PC-B | [L418](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L418) |  |  |
+| BUG-WAYSTONE-CAM | voxel-props.html check (found 2026-10-06 once the page stopped crashing): the end camera after the 1 m walk (1… | P3 | todo [PC-A designer] | PC-A | [L162](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L162) |  |  |
+
+## ED (5)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| ED-GROUP-1 | Editor: group items (owner 2026-10-04: "how can I group items") - multi-select (shift/ctrl click, box select),… | P2 | todo - PO ACs done, awaiting architect note (37.10+) | PC-B | [L164](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L164) |  |  |
+| ED-MESH-01 | Editor: place imported meshes (owner 2026-10-07: "i havent find the new models in editor"). The Assets tab get… | P1 | todo NEEDS PC-A architect quick look (mesh structures in the editor doc model) then PC-B | PC-A, PC-B | [L152](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L152) |  |  |
+| ED-MESH-01 | Editor mesh structures | P1 | 01b/01c/01d (81e263f, 4f953a3, cc381a6) ARCH OK 2026-10-07 -> po-review (38.8a item 25d); 01f blocked on 01e (B1/PC-A), 01g on placement scale. A… | PC-A, PC-B | [L481](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L481) |  |  |
+| ED-PLACE-BUG | Editor: placing an Assets-tab model does not work for the owner (owner 2026-10-04: "I can't add an item from t… | P1 | Implementation recorded; see source review/remaining ACs | PC-A | [L163](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L163) |  |  |
+| ED-TERRAIN-1 | Editor: terrain editing (owner 2026-10-04: "how can I edit the terrain?") - today terrain is only recipe data … | P2 | todo - PO ACs done, awaiting architect note (37.10+) | PC-A, PC-B | [L165](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L165) |  |  |
 
 ## ROAD (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| ROAD-DECOR-01 | Dress both sides of the walk-out road with meshes (owner look-dev): after ED-MES | P2 | todo | PC-B | 142 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| ROAD-DECOR-01 | Dress both sides of the walk-out road with meshes (owner look-dev): after ED-MESH-01 (or by hand in world_m1.w… | P2 | todo [PC-B content] after MESH-SIMP-01 and MESH-LOD-01 | PC-B | [L154](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L154) |  |  |
 
 ## CLOTH (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| CLOTH-DRAPE-01 | Stairwell balloon drape as a real cloth (owner 2026-10-06: the billboard drape " | P1 | owner | PC-B | 143 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| CLOTH-DRAPE-01 | Stairwell balloon drape as a real cloth (owner 2026-10-06: the billboard drape "doesn't look good, not an obje… | P1 | owner look; ARCH OK 2026-10-07 (content matches the arch entry) [PC-B, 2026-10-07] - stairwell.drape added to tower.level.json cloths[] exactly p… | PC-A, PC-B | [L155](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L155) |  |  |
+
+## OWN (6)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| OWN-REQ-002 | Terrain needs more resolution and detail (owner, 2026-09-24, after US-016): the far view through the breach "l… | P1 | todo |  | [L332](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L332) |  |  |
+| OWN-REQ-004 | Content data files strategy (owner, 2026-09-25): decide how levels, entity/prop positions, triggers, voxel mod… | P1 | decided (D-023) | PC-A, PC-B | [L333](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L333) |  |  |
+| OWN-REQ-005 | MagicaVoxel .vox importer (owner, 2026-09-25): typing voxel layers as text is fine for small props but not for… | P1 | testing |  | [L334](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L334) |  |  |
+| OWN-REQ-007 | Grid range: drop 160x60 for players, allow bigger than 320x120 (owner, 2026-09-25): 160x60 'looks like a blur'… | P1 | decided (D-025) | PC-A | [L335](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L335) |  |  |
+| OWN-REQ-008 | Voxel by default for everything solid (owner, 2026-09-25): 'fireplace should be voxel too, actually we can rea… | P1 | todo | PC-A | [L337](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L337) |  |  |
+| OWN-REQ-009 | Model storage format (proposal, extends D-023) (owner OK to propose, 2026-09-25): when models convert from des… | P2 | todo | PC-A, PC-B | [L338](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L338) |  |  |
+
+## CO (3)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| CO-4 | Coordinates: rotateLevel + yawSteps 1..3 | P2 | deferred (D-028: with the first rotated/second structure; throw stays) [PC-A] | PC-A | [L386](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L386) |  |  |
+| CO-6 | Coordinates: terrain chunk/cell helpers | P1 | todo [PC-A] inside US-026b S1 | PC-A | [L388](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L388) |  |  |
+| CO-8 | Coordinates: content/game/tools cleanup (sun into world_m1, recipe placement duplicate removed, end.js via ctx… | P1 (sprint 4) | Implementation recorded; see source review/remaining ACs |  | [L389](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L389) |  |  |
 
 ## RE (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| RE-15d | RE-15 binding bench: rts-test.html?bench=1 raster delta <= 0.44 ms on the iGPU, | P1 | todo | PC-A | 407 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| RE-15d | RE-15 binding bench: rts-test.html?bench=1 raster delta <= 0.44 ms on the iGPU, plus drawn/culled/lod1 next to… | P1 | todo [PC-A, ~0.1 d] - after BUG-RTS-002 | PC-A | [L419](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L419) |  |  |
+
+## QUAT (3)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| QUAT-GROUND-01 | Ground scatter: Grass_Common/Wispy Short/Tall, Flower_3/4 (group+single), Bush_Common(_Flowers), Fern_1, Clove… | P1 | todo [PC-B cross-track -> PC-A review, owner look gate] ~1 d - deps: MESH-FULL-01, ENV-01a scatter feed | PC-B, PC-A | [L463](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L463) |  |  |
+| QUAT-LOD-01 | LOD1 for CommonTree_1-5 / Pine_1-5 / TwistedTree_1-5 | P1 | todo, after QUAT-TREES-01 [PC-B cross-track -> arch-review PC-A] ~1 d | PC-B, PC-A | [L482](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L482) |  |  |
+| QUAT-TREES-01 | Place CommonTree_1-5 / Pine_1-5 / TwistedTree_1-5 at full detail as forest trees; hand-picked LOD1 (~25-35 % t… | P1 | todo [PC-B cross-track -> PC-A review, owner look gate] ~1 d - deps: MESH-FULL-01 | PC-B, PC-A | [L462](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L462) |  |  |
 
 ## TEST (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| TEST-GAPS-WG | Test gaps from WG-1c1/1c2 | P2 | todo | PC-B | 457 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| TEST-GAPS-WG | Test gaps from WG-1c1/1c2 | P2 | ARCH OK 2026-10-07 (opus batch: flip/mirror/index-shift now fail the gate, exit 1) -> po-review [PC-B, 2026-10-07] ~0.5 d - deps: WG-1c2 | PC-B | [L469](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L469) |  |  |
 
 ## DIAG (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| DIAG-SWIFTSHADER | Why the full game page crashes under --swiftshader --backend webgpu | P2 | todo | PC-B | 458 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| DIAG-SWIFTSHADER | Why the full game page crashes under --swiftshader --backend webgpu | P2 | ARCH 2026-10-07: diagnosis sound, no flag change justified; stays open. NEEDS PC-A: rerun the documented command on PC-A's failing Chrome (CAP_LO… | PC-A, PC-B | [L470](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L470) |  |  |
 
 ## EDITOR (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| EDITOR-LOAD-01 | Editor index.html stayed on "(loading...)" ~10 s, no console output, until the m | P2 | todo | PC-B | 459 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| EDITOR-LOAD-01 | Editor index.html stayed on "(loading...)" ~10 s, no console output, until the module was re-imported | P2 | ARCH OK 2026-10-07 (opus batch; grid/backend lines unchanged: 240x90 default, gl2 gate kept) -> NEEDS PC-A: PO review [PC-B startup fix] | PC-A, PC-B | [L471](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L471) |  |  |
 
 ## EP (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| EP-DESKTOP-SPIKE | Electron wrapper spike (report only, no engine change) | P2 | todo | PC-B | 460 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| EP-DESKTOP-SPIKE | Electron wrapper spike (report only, no engine change) | P2 | todo [PC-B cross-track -> PC-A review] ~0.5 d | PC-B, PC-A | [L472](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L472) |  |  |
 
 ## BACKLOG (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| BACKLOG-TRIAGE | Triage ~316 open-looking rows (413 KB; janitor archived only 12 with a strict "d | P2 | todo | PC-B | 461 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| BACKLOG-TRIAGE | Triage ~316 open-looking rows (413 KB; janitor archived only 12 with a strict "done" rule) | P2 | todo [PC-B cross-track -> PC-A review] ~0.5 d per batch | PC-B, PC-A | [L473](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L473) |  |  |
+
+## OWNER (2)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| OWNER-LOOK-ROADSOUTH | Owner look at ?pose=roadSouth, full detail (kind-9 edge noise) | P1 | todo [PC-A + owner] - deps: MESH-FULL-01 | PC-A | [L475](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L475) |  |  |
+| OWNER-WALK-FIXES | Triage checklist of owner walk-test findings | P1 | todo, trigger = owner reports [PC-B] | PC-B | [L483](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L483) |  |  |
+
+## ALPHA (7)
+
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| ALPHA-01a | Import + formats: tools/png.mjs, gltf.js alpha (MASK ranges opaque-first, uvMask, MeshRange.mask), MeshData va… | P1 | arch-review [PC-B, 2026-10-07] (step a only, no renderer change). MeshRange mask {tex, cutoff} + top-level uvMask (TEXCOORD_0 on masked tris, 0 e… | PC-B | [L1561](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1561) |  |  |
+| ALPHA-01b | MaskAtlas (R8UI, exact texel rule), registry kind mask, MeshDrawCache maskRanges, rasterJS discard + two-sided… | P1 | todo [PC-B cross-track engine -> arch-review PC-A] ~0.75 d - deps: a, TREES-LP-b | PC-B, PC-A | [L1562](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1562) |  |  |
+| ALPHA-01b-note | ALPHA-01b JS side is queued (row ALPHA-01b: rasterJS discard + two-sided flip + per-range kind-9 loop, JS twin… | - | queue slot (16) |  | [L478](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L478) |  |  |
+| ALPHA-01c | [FROZEN D-044: ported in WG-2b; keep 01a/01b JS side] GPU twin: aUVMask loc 10, mesh.frag / shadow.frag mask d… | P1 | todo [PC-A engine] ~1 d - deps: b; not parallel with ME-19c in GpuCellPipeline | PC-A | [L1563](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1563) |  |  |
+| ALPHA-01d | [FROZEN D-044: ported in WG-3c; no GLSL] Soft foliage edges: material edge: 'soft' flag, edgePass.js + edge.fr… | P1 | todo [PC-B cross-track -> arch-review] ~0.5 d - deps: c | PC-B | [L1564](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1564) |  |  |
+| ALPHA-01e | Content + LOD1: Quaternius trees / bushes / rocks / pebbles / paths / mushrooms imported with mats + masks, me… | P1 | todo [PC-B -> arch-review] ~0.75 d - deps: c, TREES-LP-d (LOD1 meshes) | PC-B | [L1565](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1565) |  |  |
+| ALPHA-01f | Arc bench forestWalk trees on/off x shadows, lodCells sweep; absorbs TREES-LP-e (37.17 step f) | P1 | todo [PC-A] ~0.25 d - deps: e; owner walk-test "stylized forest" | PC-A | [L1566](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1566) |  |  |
 
 ## LICENCE (1)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| LICENCE-AUDIT-01 | Audit every third-party asset in the repo | P1 | todo | PC-B | 467 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| LICENCE-AUDIT-01 | Audit every third-party asset in the repo | P1 | ARCH OK 2026-10-07 (lane C bda8e16, docs only) -> po-review; evidence follow-ups for owner/manager: Ruins + Voxel Pack source URL/licence, Cozy N… |  | [L479](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L479) |  |  |
 
-## QUEUE (1)
+## TREES (5)
 
-| ID | Title | Pri | Status | Tag | Line | Decision |
-|---|---|---|---|---|---|---|
-| QUEUE NOTE | WG-1c2 onward: PC-B must NOT start any WG row now - PC-A is implementing WG step | - | other |  | 472 | |
+| ID | Title | Pri | Status | Tag | Source | Recommendation | Decision |
+|---|---|---|---|---|---|---|---|
+| TREES-LP-a | Low-poly tree generator: buildMeshFromTris extracted from gltf.js, tools/treeGen.js + tree-gen.mjs, 2 stub mes… | P1 | arch-review (gltf.js buildMeshFromTris export) + owner look [PC-B, 2026-10-07] ~0.75 d D-042 item 4: now a Collada importer for the Kenney Nature… | PC-B | [L1551](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1551) |  |  |
+| TREES-LP-b | Instanced kind-9 mesh groups (InstanceGroups.meshGroup, meshDraw arg, shadow branch, gpucompare pose lowpolyTr… | P1 | todo [PC-B engine -> arch-review] ~1 d - deps: ME-14c3 published, PREC-01a preferred | PC-B | [L1552](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1552) |  |  |
+| TREES-LP-c | Forest species mesh: key (validator, world.scatterMeshes, bindScatterInstances), overworld_far species switch,… | P1 | todo [PC-B -> arch-review] ~0.5 d - deps: b, d | PC-B | [L1553](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1553) |  |  |
+| TREES-LP-d | Designer: low-poly oak/birch/pine x 2 sizes params + meshes + design/preview/trees-lowpoly.html side-by-side w… | P1 | todo [PC-A designer] ~0.75 d - deps: a; owner OK on preview | PC-A | [L1554](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1554) |  |  |
+| TREES-LP-e | Arc bench forestWalk trees on/off x shadows (tree half of ENV-01c) (37.15 item 8) | P1 | todo [PC-A] ~0.25 d - deps: c | PC-A | [L1555](https://github.com/szalaygergely85/kestrel/blob/3617a1c94fcfb2238afb20001e063a40b426146a/docs/backlog.md?plain=1#L1555) |  |  |

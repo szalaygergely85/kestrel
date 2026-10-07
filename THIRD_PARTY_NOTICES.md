@@ -6,8 +6,8 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 
 ## Ruins pack (RuinsGLB_CC0)
 - Files: 56 `.glb` models (altar, coins, chests, skulls, vases, ruin pieces) - **committed** in `design/meshes/ruins/` (17 MB); the `.blend`/`.fbx` sources stay in git-ignored `design/meshes/source/RuinsGLB_CC0/`.
-- Licence: **claimed CC0, publisher provenance unverified** (folder name `RuinsGLB_CC0`, owner confirmed 2026-10-02 "free to use"; no licence file in the zip). Original publisher URL and licence evidence still needed; a folder name does not verify terms.
-- Attribution: not required if the CC0 claim is established; currently not independently verified.
+- Licence: **unresolved publisher terms and archive identity**. [Makovice's Ancient Ruins pack](https://makovice.itch.io/ancient-ruins-assset-pack) is a strong candidate with matching archive name/themes. Its CC0 label conflicts with restrictions on standalone redistribution and other asset packs. See `docs/licences.md` for evidence; tracked files are not verified unrestricted CC0.
+- Attribution: candidate publisher makes credit optional; applicability to the tracked archive remains unconfirmed.
 
 ## StickyBizcuit voxel asset pack ("Asset Pack For Itch", itch.io)
 - Files: ~106 `.vox` models (objects, stone wall and ground, village house) - **committed** (owner decision 2026-10-03) in `design/vox-sb/` with the author's readme (`README-StickyBizcuit.txt`); PNG previews not committed.
@@ -22,9 +22,10 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 - Licence: **claimed CC0, publisher provenance unverified** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). Original URL/author and licence evidence needed before treating commercial use or standalone/public redistribution as independently verified.
 
 ## cozy_nature_free (FBX nature pack)
-- Files: 20 `.fbx` (oak / pine trees in 3 seasons, grass, tulips, mushroom, rocks) + 11 texture `.png` - **committed** in `design/meshes/cozy_nature/` (CC0).
+- Files: 20 `.fbx` (oak / pine trees in 3 seasons, grass, tulips, mushroom, rocks) + 11 texture `.png` - **committed** in `design/meshes/cozy_nature/` (licence unverified).
 - Licence: **earlier CC0 claim unverified** (owner confirmed from the download page, 2026-10-02; no licence file in the zip). The matching [VoxelNest publisher page](https://thomasgamboa.itch.io/cozy-nature-free-voxel-style-modular-enviorement-asset-pack-and-textures) offers the matching zip but does not state CC0 in the retrieved text. Commercial use, attribution, and standalone/public redistribution terms need publisher evidence.
 - Format: FBX - no importer; convert to `.glb` in Blender for ME-13 (glTF), or use as designer reference for the ME-06c forest.
+- Related evidence: publisher terms in the [FULL product comments](https://thomasgamboa.itch.io/cozy-nature-full-voxel-style-modular-enviorement-asset-pack-and-textures#comments) describe commercial project use and restrictions on raw redistribution. Their scope for these FREE files is unconfirmed; see `docs/licences.md`.
 
 
 ## Quaternius - Stylized Nature MegaKit [Standard] (CC0)

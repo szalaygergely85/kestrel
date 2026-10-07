@@ -15,7 +15,7 @@ import { createFrame, editorRenderer } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
 import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
-import { drawSelectionHighlight, drawMarkers, drawHoverOutline, computeMeshHighlightRect, drawMeshHighlightRect } from './select.js';
+import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
 import {
   makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
   applyEdit, invert, findReferrers,
@@ -57,6 +57,9 @@ import { EDITOR_PLATE_BG } from './overlayStyle.js';
 import { iconAsset, meshIconKey, meshKeyFromIcon, listMeshAssetGroups } from './meshAssets.js';
 import { createMeshPlacement, snapMeshOrigin, prepareMeshEdit, validateMeshRename } from './meshPlace.js';
 import { renderMeshPanel } from './meshPanel.js';
+import { replaceSelection, toggleSelection, renameSelection, selectionContains, canMultiSelect, selectionCandidates, boxSelection } from './multiSelect.js';
+import { beginMeshDragPreview, updateMeshDragPreview, cancelMeshDragPreview } from './meshDragPreview.js';
+import { groupSnapshot, updateGroupTransform, groupTransformRecord, groupFieldRecord, groupedItems, groupDeleteRecord, groupDuplicateRecord } from './groupOps.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -285,8 +288,11 @@ engine.events.on('world:loaded', (evt) => { world = evt.world; if (toolMode === 
 const undoStack = createStack(50);
 const SNAP_OPTIONS = [0.05, 0.25, 0.5, 1];
 let snapIdx = 1; // default 0.25 m (24.8)
-let selection = null; // {fileId, collection, id} | null
+let sel = replaceSelection();
+function primarySelection() { return sel.items[sel.primary] || null; }
+let boxDrag = null;
 let drag = null; // {entId, item, index, startTransform} | null
+let groupDrag = null;
 let meshDrag = null;
 let hoverCol = null, hoverRow = null;
 let markersOn = true;
@@ -584,27 +590,97 @@ function reapplyVisibility() {
  * @param {Object} rec a commands.js EditRecord (or its `invert()`), `before != null && after != null`
  */
 function patchLive(rec) {
-  const item = rec.after;
-  const s = structureForFile(rec.fileId);
-  const sFrame = s ? s.frame : null; // CO-7: `frame` (module scope) is the render frame - this is the coordinate Frame
-  if (rec.collection === 'lights') {
-    const ls = frame.lightSet;
-    if (!s || !ls) return false;
-    const handle = findLightHandle(ls, `${s.id}.${rec.id}`);
-    if (handle === -1) return false;
-    applyLightPatch(ls, handle, item, sFrame, assets.palette);
-    frame.markDirty();
-    return true;
+  const records=rec.batch || [rec], jobs=[];
+  for (const sub of records) {
+    const targets=liveTargets(sub);
+    if (!targets) return false;
+    for (const target of targets) jobs.push({sub,target});
   }
-  const entId = selectionEntityId(world, { fileId: rec.fileId, collection: rec.collection, id: rec.id, structId: s ? s.id : null });
-  if (!entId) return false;
-  const data = world.entity(entId);
-  if (!data) return false;
-  applyPropTransformPatch(data.transform, item, sFrame);
-  world.rebuildPropColliders(); // PROP-COLLIDE-01: committed move/undo/redo, never the drag preview.
+  let props=false;
+  for (const {sub,target} of jobs) {
+    if (target.transform) {applyPropTransformPatch(target.transform,sub.after,target.frame);props=true;}
+    else applyLightPatch(target.ls,target.handle,sub.after,target.frame,assets.palette);
+  }
+  if (props) world.rebuildPropColliders(); // Once per committed batch, never per preview frame.
   world.renderVersion++;
   frame.markDirty();
   return true;
+}
+
+/** Resolve every placement of shared content before touching any live member. */
+function liveTargets(rec) {
+  const file=doc.files.get(rec.fileId);
+  const structures=file?.kind==='level' ? world.structures.filter(s=>s.level?.name===file.id) : [null];
+  if (!structures.length) return null;
+  const targets=[];
+  for (const s of structures) {
+    if (rec.collection==='lights') {
+      const ls=frame.lightSet, handle=ls && s ? findLightHandle(ls,`${s.id}.${rec.id}`) : -1;
+      if (handle===-1) return null;
+      targets.push({ls,handle,frame:s.frame});
+    } else {
+      const data=world.entity(s ? `${s.id}.${rec.id}` : rec.id);
+      if (!data?.transform) return null;
+      targets.push({transform:data.transform,frame:s?.frame || null});
+    }
+  }
+  return targets;
+}
+
+function selectedGroupSnapshot() {
+  for (const item of sel.items) if (isLocked(visState,item) || isHidden(visState,item)) throw new Error('hidden/locked member');
+  return groupSnapshot(doc,world,sel.items);
+}
+
+function groupCommand(make) {
+  try {const rec=make(selectedGroupSnapshot());if(rec) commit(rec);}
+  catch(error) {flash(`group refused: ${error.message}`);}
+}
+
+function setSelectedGroup(clear=false) {groupCommand(snapshot=>groupFieldRecord(doc,snapshot,clear));}
+function duplicateSelected() {
+  try {
+    const {record,selection}=groupDuplicateRecord(doc,selectedGroupSnapshot());
+    commit(record);applySelection(selection);
+  } catch(error) {flash(`duplicate refused: ${error.message}`);}
+}
+
+function beginGroupDrag(e,col,row) {
+  try {
+    const snapshot=selectedGroupSnapshot(), jobs=[], previewItems=new Map();
+    for (const member of snapshot.members) {
+      previewItems.set(selectionItemData(doc,member.item),member.after);
+      const targets=liveTargets({...member.item,after:member.before});
+      if (!targets) throw new Error('member is not available for live preview');
+      for (const target of targets) {
+        const original=target.transform ? {...target.transform} : itemToWorld(target.frame,member.before.x,member.before.y,member.before.z);
+        jobs.push({member,target,original});
+      }
+    }
+    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+    const primary=snapshot.members[sel.primary], planeZ=primary.point.z;
+    if (toolMode==='move' && (Math.abs(ray.dz)<1e-4 || (planeZ-cam.z)/ray.dz<=0)) return;
+    const start=toolMode==='move' ? rayPoint(ray,(planeZ-cam.z)/ray.dz) : primary.point;
+    groupDrag={snapshot,jobs,previewItems,start,planeZ,startClientX:e.clientX,mode:toolMode,scratch:{x:0,y:0,z:0}};
+  } catch(error) {flash(`drag refused: ${error.message}`);}
+}
+
+function restoreGroupDrag(d) {
+  for (const {target,original} of d.jobs) {
+    if (target.transform) {
+      for (const key of Object.keys(target.transform)) if (!(key in original)) delete target.transform[key];
+      Object.assign(target.transform,original);
+    }
+    else target.ls.move(target.handle,original.x,original.y,original.z);
+  }
+  world.renderVersion++;frame.markDirty();
+}
+
+function selectMarker(e,col,row,marker) {
+  const already=selectionContains(sel,marker), modified=e.shiftKey || e.ctrlKey;
+  if (!(already && sel.items.length>1 && !modified && !e.altKey)) selectItem(marker,modified,e.altKey);
+  else {sel={items:sel.items,primary:sel.items.findIndex(it=>it.fileId===marker.fileId && it.collection===marker.collection && it.id===marker.id && it.structId===marker.structId)};renderProperties();}
+  if (already && !modified && sel.items.length>1 && (toolMode==='move' || toolMode==='yaw')) beginGroupDrag(e,col,row);
 }
 
 function normZero(v) { return v === 0 ? 0 : v; }
@@ -641,7 +717,7 @@ function commit(rec) {
     renderOutliner();
     renderProperties();
     refreshIoStatus();
-    flash(`${rec.label} "${rec.id}" (patched, no rebuild)`);
+    flash(`${rec.label}${rec.id ? ` "${rec.id}"` : ''} (patched, no rebuild)`);
     return;
   }
   lastRebuildFlash = `${rec.id ? `${rec.label} "${rec.id}"` : rec.label}`;
@@ -665,15 +741,16 @@ const rebuildSched = createRebuildScheduler(rebuild, (ms, folded) => {
  * `selection.id` would otherwise point at nothing after the edit applies.
  */
 function followRename(appliedRec) {
-  if (appliedRec.renameFrom === undefined) return;
-  if (selection && selection.fileId === appliedRec.fileId && selection.collection === appliedRec.collection
-    && selection.id === appliedRec.renameFrom) {
-    selection = { ...selection, id: appliedRec.renameTo };
-  }
+  sel = renameSelection(sel,appliedRec);
 }
 
 /** US-064: undo/redo skip the rebuild too when the record being (re)applied is itself patchable - only a boundary case (add/delete/rename/any other field) still crosses into a full `rebuild()`. */
 function applyAndSync(appliedRec) {
+  const primary=primarySelection(), items=sel.items.filter(it=>selectionItemData(doc,it));
+  if (items.length!==sel.items.length) {
+    const index=items.indexOf(primary);
+    sel={items,primary:index<0 ? items.length-1 : index};
+  }
   if (isPatchableRecord(appliedRec) && patchLive(appliedRec)) {
     renderOutliner();
     renderProperties();
@@ -704,15 +781,28 @@ function doRedo() {
   flash(`redo: ${rec.label}`);
 }
 
-function selectItem(item) {
-  selection = item;
+function applySelection(next) {
+  sel = next;
   renderOutliner();
   renderProperties();
   frame.markDirty();
+  flash(`${sel.items.length} selected`);
+}
+
+function selectItem(item, toggle = false, single = false) {
+  if (toggle && item && canMultiSelect(item, selectionItemData(doc,item))) {
+    const items = sel.items.filter(it => canMultiSelect(it,selectionItemData(doc,it)));
+    const primary = items.indexOf(primarySelection());
+    applySelection(toggleSelection({items,primary:primary < 0 ? items.length - 1 : primary},item));
+  } else if (item && !single && canMultiSelect(item,selectionItemData(doc,item))) {
+    const items=groupedItems(doc,item);
+    applySelection({items,primary:items.findIndex(it=>it.collection===item.collection && it.id===item.id)});
+  } else applySelection(replaceSelection(item));
 }
 
 /** Property-panel field edit: one `EditRecord` per committed field (24.9). */
 function commitMeshPatch(item, patch, label = 'edit') {
+  const selection = primarySelection();
   if (!item.mesh) return ['mesh: level structures are read-only'];
   const file = doc.files.get(selection.fileId);
   const { after, errors } = prepareMeshEdit(item, patch, { assets, world, file });
@@ -722,6 +812,7 @@ function commitMeshPatch(item, patch, label = 'edit') {
 }
 
 function commitFieldEdit(patch) {
+  const selection = primarySelection();
   if (!selection) return;
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -732,6 +823,7 @@ function commitFieldEdit(patch) {
 
 /** Property-panel Scale row commit (34.3): `raw` already clamped by panel.js's own `clampScale` call. */
 function commitScaleField(next) {
+  const selection = primarySelection();
   if (!selection) return;
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -741,6 +833,7 @@ function commitScaleField(next) {
 
 /** Property-panel id rename (24.9): validated here too (defence in depth - the form already checks), one batch record. */
 function renameSelected(newId, setError) {
+  const selection = primarySelection();
   if (!selection) return;
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -755,11 +848,12 @@ function renameSelected(newId, setError) {
   if (siblingIds.has(newId)) { setError(`id: "${newId}" is already used in this collection`); return; }
   const index = selectionItemIndex(doc, selection);
   const rec = makeRenameBatch(selection.fileId, file.kind, selection.collection, item, index, newId, file.def);
-  selection = { ...selection, id: newId };
+  followRename(rec);
   commit(rec);
 }
 
 function renderProperties() {
+  const selection = primarySelection();
   const meshItem = selection?.collection === 'structures' && selectionItemData(doc, selection);
   if (meshItem?.mesh) {
     renderMeshPanel(propertiesEl, meshItem, { assets, onFieldCommit: commitFieldEdit, onRename: renameSelected });
@@ -772,9 +866,19 @@ function renderProperties() {
     onRename: renameSelected,
     onScaleCommit: commitScaleField,
   });
+  if (sel.items.length > 1) {
+    const summary = document.createElement('div');
+    summary.className = 'insp-header';
+    summary.textContent = `${sel.items.length} selected · Fields edit primary: ${selection.id}`;
+    propertiesEl.prepend(summary);
+  }
 }
 
 function applyNudge(axis, sign) {
+  if (sel.items.length>1) {
+    groupCommand(snapshot=>{const d={x:0,y:0,z:0};d[axis]=sign*SNAP_OPTIONS[snapIdx];updateGroupTransform(snapshot,d.x,d.y,d.z);return groupTransformRecord(snapshot,'group nudge');});return;
+  }
+  const selection = primarySelection();
   if (!selection) { flash('nudge: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -799,6 +903,10 @@ function applyNudge(axis, sign) {
 }
 
 function applyYaw(deltaDeg) {
+  if (sel.items.length>1) {
+    groupCommand(snapshot=>{updateGroupTransform(snapshot,0,0,0,deltaDeg);return groupTransformRecord(snapshot,'group yaw');});return;
+  }
+  const selection = primarySelection();
   if (!selection) { flash('yaw: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -827,6 +935,7 @@ function commitScaleEdit(fileId, collection, item, index, next) {
 
 /** Minus/Equal (ladder) or Shift+Minus/Equal (fine +-0.05) key step (34.3). `dir` is -1/+1. */
 function applyScaleStep(dir, fine) {
+  const selection = primarySelection();
   if (!selection) { flash('scale: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -838,6 +947,7 @@ function applyScaleStep(dir, fine) {
 }
 
 function dropToFloor() {
+  const selection = primarySelection();
   if (!selection) { flash('drop: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -857,6 +967,11 @@ function dropToFloor() {
 }
 
 function deleteSelected() {
+  if (sel.items.length>1) {
+    try {const rec=groupDeleteRecord(doc,selectedGroupSnapshot());commit(rec);applySelection(replaceSelection());}
+    catch(error) {flash(`delete refused: ${error.message}`);}return;
+  }
+  const selection = primarySelection();
   if (!selection) { flash('delete: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
@@ -868,12 +983,13 @@ function deleteSelected() {
   }
   const index = selectionItemIndex(doc, selection);
   commit(makeDeleteRecord(selection.fileId, selection.collection, item, index));
-  selection = null;
+  sel = replaceSelection();
   renderOutliner();
   renderProperties();
 }
 
 function teleportToSelection() {
+  const selection = primarySelection();
   if (!selection) return;
   let point = null;
   const entId = selectionEntityId(world, selection);
@@ -967,7 +1083,8 @@ function renderOutliner() {
       const item = { fileId: o.fileId, collection: o.collection, id: o.id };
       const row = document.createElement('div');
       row.className = 'tree-row';
-      const isSel = selection && selection.fileId === o.fileId && selection.collection === o.collection && selection.id === o.id;
+      const isSel = sel.items.some(it => it.fileId === o.fileId && it.collection === o.collection && it.id === o.id);
+      row.setAttribute('aria-selected', String(isSel));
       if (isSel) row.classList.add('selected');
       const hidden = isHidden(visState, item);
       const locked = isLocked(visState, item);
@@ -1008,7 +1125,7 @@ function renderOutliner() {
       icons.appendChild(eyeBtn);
       icons.appendChild(lockBtn);
       if (o.collection !== 'structures') row.appendChild(icons);
-      row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }));
+      row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
       row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
       outlinerEl.appendChild(row);
     });
@@ -1530,7 +1647,7 @@ async function doLoad() {
     const fid = await loadFile(doc, assets, window.ASSETS);
     if (!fid) { flash('load: cancelled'); return; }
     undoStack.clear();
-    selection = null;
+    sel = replaceSelection();
     rebuild();
     refreshIcons();
     flash(`loaded: ${fid}`);
@@ -1556,7 +1673,7 @@ playtestBtn.addEventListener('click', doPlaytest);
 // level, regardless of `editorKeysActive()` (matches the browser's own
 // scope for these shortcuts).
 window.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.code === 'KeyP')) e.preventDefault();
+  if ((e.ctrlKey || e.metaKey) && ['KeyS','KeyP','KeyD','KeyG'].includes(e.code) && editorKeysActive()) e.preventDefault();
 });
 
 // 24.10: "beforeunload warns while any file is dirty".
@@ -1718,6 +1835,12 @@ function formatPickResult(r) {
     + `${r.structureId ? ` struct=${r.structureId}` : ''}${r.cell ? ` cell=(${r.cell.x},${r.cell.y})` : ''}${r.entityId ? ` entity=${r.entityId}` : ''}`;
 }
 
+function beginSelectionBox(e, col, row) {
+  boxDrag = { startCol:col, startRow:row, col, row, startX:e.clientX, startY:e.clientY,
+    additive:e.shiftKey || e.ctrlKey, initial:sel, moved:false,
+    rect:{minCol:col,maxCol:col,minRow:row,maxRow:row} };
+}
+
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
@@ -1760,11 +1883,11 @@ canvas.addEventListener('mousedown', (e) => {
 
   if (result.kind === 'meshStructure' && result.structureId) {
     const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:result.structureId, structId:null };
-    const already = selection?.collection === 'structures' && selection.id === item.id;
+    const already = primarySelection()?.collection === 'structures' && primarySelection().id === item.id;
     selectItem(item);
     if (already && toolMode === 'move') {
       const data = selectionItemData(doc,item), s=world.structures.find(s=>s.id===item.id);
-      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, bbox:s.bbox, point:result.world, origin:null };
+      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:result.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
     }
     return;
   }
@@ -1778,12 +1901,21 @@ canvas.addEventListener('mousedown', (e) => {
     const item = pickSelectionOrNull(visState, rawItem);
     if (!item) {
       const marker = pickMarkers(col, row, pickCtx());
-      if (marker) { selectItem(marker); return; }
-      selectItem(null);
+      if (marker) { selectMarker(e,col,row,marker); return; }
+      beginSelectionBox(e,col,row);
       return;
     }
-    const already = selection && selection.fileId === item.fileId && selection.collection === item.collection && selection.id === item.id;
-    selectItem(item);
+    const modified = e.shiftKey || e.ctrlKey;
+    const already = selectionContains(sel,item);
+    if (already && sel.items.length>1 && !modified && !e.altKey) {
+      sel={items:sel.items,primary:sel.items.findIndex(it=>it.fileId===item.fileId && it.collection===item.collection && it.id===item.id && it.structId===item.structId)};
+      renderProperties();
+    } else selectItem(item,modified,e.altKey);
+    if (modified) return;
+    if (sel.items.length>1 && (toolMode==='move' || toolMode==='yaw')) {
+      if (already) beginGroupDrag(e,col,row);
+      return;
+    }
     // US-066 ribbon tool mode: 'move' (the default) reproduces the pre-066
     // re-click-to-drag behaviour exactly; 'select' starts no drag at all;
     // 'yaw' drags to spin instead of translate (design/editor-ui.md 3).
@@ -1820,21 +1952,37 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
   const marker = pickMarkers(col, row, pickCtx());
-  if (marker) { selectItem(marker); return; }
-  selectItem(null);
+  if (marker) { selectMarker(e,col,row,marker); return; }
+  beginSelectionBox(e,col,row);
 });
 
 window.addEventListener('mousemove', (e) => {
   const { col, row } = computeMouseCell(e);
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
+  if (boxDrag) {
+    const dx=e.clientX-boxDrag.startX,dy=e.clientY-boxDrag.startY;
+    if (dx*dx+dy*dy >= 16) boxDrag.moved=true;
+    boxDrag.col=Math.max(0,Math.min(rt.cols-1,col));
+    boxDrag.row=Math.max(0,Math.min(rt.rows-1,row));
+    boxDrag.rect.minCol=Math.min(boxDrag.startCol,boxDrag.col);
+    boxDrag.rect.maxCol=Math.max(boxDrag.startCol,boxDrag.col);
+    boxDrag.rect.minRow=Math.min(boxDrag.startRow,boxDrag.row);
+    boxDrag.rect.maxRow=Math.max(boxDrag.startRow,boxDrag.row);
+    frame.markDirty();return;
+  }
   if (meshDrag) {
     const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
     if(Math.abs(ray.dz)<1e-4)return;
     const distance=(meshDrag.point.z-cam.z)/ray.dz;
     if(distance<=0)return;
     const point=rayPoint(ray,distance), snap=SNAP_OPTIONS[snapIdx], item=selectionItemData(doc,meshDrag.item);
+    if (!item || !world.structures.includes(meshDrag.preview?.placement)) {
+      cancelMeshDragPreview(world,meshDrag.preview);meshDrag=null;frame.markDirty();return;
+    }
     const x=snapTo(meshDrag.startOrigin.x+point.x-meshDrag.point.x,snap), y=snapTo(meshDrag.startOrigin.y+point.y-meshDrag.point.y,snap);
     meshDrag.origin=snapMeshOrigin(world,assets.mesh(item.mesh),item.mesh,x,y);
+    if (meshDrag.origin) updateMeshDragPreview(world,meshDrag.preview,meshDrag.origin);
+    else flash('move: no floor here; release cancels, Esc restores');
     frame.markDirty(); return;
   }
   // ED-DND-01: asset drag ghost. `moved` flips only past a 4px threshold, so
@@ -1905,6 +2053,21 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
+  if (groupDrag) {
+    const d=groupDrag;
+    if (d.mode==='yaw') updateGroupTransform(d.snapshot,0,0,0,(e.clientX-d.startClientX)*0.5);
+    else {
+      const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+      if (Math.abs(ray.dz)<1e-4 || (d.planeZ-cam.z)/ray.dz<=0) return;
+      const point=rayPoint(ray,(d.planeZ-cam.z)/ray.dz), snap=SNAP_OPTIONS[snapIdx];
+      updateGroupTransform(d.snapshot,snapTo(point.x-d.start.x,snap),snapTo(point.y-d.start.y,snap));
+    }
+    for (const {member,target} of d.jobs) {
+      if (target.transform) applyPropTransformPatch(target.transform,member.after,target.frame,d.scratch);
+      else applyLightPatch(target.ls,target.handle,member.after,target.frame,null,d.scratch,true);
+    }
+    world.renderVersion++;frame.markDirty();return;
+  }
   if (!drag) return;
   const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
   if (Math.abs(ray.dz) < 1e-4) return;
@@ -1922,11 +2085,31 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
+  if (groupDrag) {
+    const d=groupDrag;groupDrag=null;
+    const rec=groupTransformRecord(d.snapshot,d.mode==='yaw'?'group yaw drag':'group drag');
+    restoreGroupDrag(d);
+    if(rec) commit(rec);
+    return;
+  }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
+  if (boxDrag) {
+    const box=boxDrag;boxDrag=null;
+    if (box.moved) {
+      const candidates=selectionCandidates(doc,world).filter(c => !isHidden(visState,c.item) && !isLocked(visState,c.item));
+      const initial=box.additive ? box.initial : replaceSelection();
+      const eligible=initial.items.filter(it => canMultiSelect(it,selectionItemData(doc,it)));
+      const primary=eligible.indexOf(initial.items[initial.primary]);
+      applySelection(boxSelection(candidates,box,pickCtx(),{items:eligible,primary:primary<0?eligible.length-1:primary}));
+    } else if (!box.additive) selectItem(null);
+    frame.markDirty();return;
+  }
   if (meshDrag) {
     const d=meshDrag;meshDrag=null;
+    const active=world.structures.includes(d.preview?.placement);
+    cancelMeshDragPreview(world,d.preview);
     const item=selectionItemData(doc,d.item);
-    if(item && d.origin && Object.keys(d.origin).some(k=>d.origin[k]!==d.startOrigin[k])) commitMeshPatch(item,{origin:d.origin},'drag');
+    if(active && item && d.origin && Object.keys(d.origin).some(k=>d.origin[k]!==d.startOrigin[k])) commitMeshPatch(item,{origin:d.origin},'drag');
     frame.markDirty();return;
   }
   // ED-DND-01: finish an asset drag. A plain click (`!moved`) just clears the
@@ -2045,9 +2228,14 @@ function update(dt) {
   // US-032 (24.8): Esc cancels an in-progress drag (no record) instead of
   // committing it - checked before the drag's own mousemove/mouseup handlers
   // would otherwise leave the live transform wherever the mouse last was.
-  if (input.pressed('Escape') && tb.stroke) {
+  if (input.pressed('Escape') && groupDrag) {
+    restoreGroupDrag(groupDrag);groupDrag=null;
+  } else if (input.pressed('Escape') && boxDrag) {
+    boxDrag=null;frame.markDirty();
+  } else if (input.pressed('Escape') && tb.stroke) {
     terrainStrokeEnd(true); // ED-TERRAIN-1c: Esc reverts the stroke in progress (no record)
   } else if (input.pressed('Escape') && meshDrag) {
+    cancelMeshDragPreview(world,meshDrag.preview);
     meshDrag=null;frame.markDirty();
   } else if (input.pressed('Escape') && drag) {
     const data = world.entity(drag.entId);
@@ -2080,6 +2268,8 @@ function update(dt) {
     flash('place: cancelled');
   }
 
+  // Keep the gesture snapshot stable until release/cancel.
+  if (groupDrag) {input.consumeMouseDelta();input.endFrame();return;}
   // US-033 (24.9): `1`/`2`/`3`/`4` arm place mode; the next left click places
   // at the picked point (or the cursor ray on open sky, see the mousedown
   // handler above).
@@ -2101,9 +2291,10 @@ function update(dt) {
   const scaleShift = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
   if (input.pressed('Minus') || input.pressed('NumpadSubtract')) applyScaleStep(-1, scaleShift);
   if (input.pressed('Equal') || input.pressed('NumpadAdd')) applyScaleStep(1, scaleShift);
-  if (input.pressed('KeyG')) dropToFloor();
-  if (input.pressed('Delete') || input.pressed('Backspace')) deleteSelected();
   const ctrl = input.isDown('ControlLeft') || input.isDown('ControlRight');
+  if (input.pressed('KeyG')) {if(ctrl) setSelectedGroup(scaleShift);else dropToFloor();}
+  if (ctrl && input.pressed('KeyD')) duplicateSelected();
+  if (input.pressed('Delete') || input.pressed('Backspace')) deleteSelected();
   if (ctrl && input.pressed('KeyZ')) doUndo();
   if (ctrl && input.pressed('KeyY')) doRedo();
   if (ctrl && input.pressed('KeyS')) doSave(); // US-034 (24.10)
@@ -2129,7 +2320,10 @@ function update(dt) {
 // (24.4's "JS-written rt cells survive the GPU pass" note).
 const HELP_LINES = [
   'EDITOR KEYS (H to close)',
-  'LMB: select / drag        RMB drag: look',
+  'LMB: select / drag   Shift/Ctrl+click: toggle props/lights',
+  'Drag empty space: box select   Shift/Ctrl: add   RMB drag: look',
+  'Ctrl+G: group   Ctrl+Shift+G: ungroup   Alt+click: one member',
+  'Ctrl+D: duplicate   Multi-select: move/yaw/delete together',
   'WASD/R/F: fly   Shift: fast   Ctrl: slow   Wheel: fly speed',
   'Arrows: nudge x/y   PgUp/PgDn: nudge z   [ ]: cycle snap',
   'Q/E: yaw   -/=: scale (Shift: fine)   G: drop to floor   Del/Backspace: delete',
@@ -2137,6 +2331,7 @@ const HELP_LINES = [
   'M: toggle markers   F3: debug overlay',
   '1/2/3/4: place prop/light/trigger/interactable, then click',
   'Esc: cancel drag/place',
+  'Meshes: live Move drag; shadows/collision in inspector; scale unavailable',
   'Ctrl+S: save   P: play-test (new tab)',
 ];
 
@@ -2173,14 +2368,11 @@ function drawAssetGhost() {
 }
 
 function drawOverlay(fb) {
-  drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a', frame.renderer);
-  if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer);
+  const selection = primarySelection();
+  if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer, groupDrag?.previewItems);
+  for (const item of sel.items) drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', frame.renderer, groupDrag?.previewItems);
+  if (boxDrag?.moved) drawMeshHighlightRect(rt,boxDrag.rect,'#ffd24a');
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
-  if (meshDrag?.origin) {
-    const o=meshDrag.origin,s=meshDrag.startOrigin;
-    const rect=computeMeshHighlightRect(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,meshDrag.bbox,o.x-s.x,o.y-s.y,o.z-s.z);
-    if(rect)drawMeshHighlightRect(rt,rect,'#ffd24a');
-  }
   drawAssetGhost();
   drawTerrainCursor();
   if (helpOn) drawHelpOverlay();
@@ -2201,6 +2393,7 @@ function refreshViewportPlates(nowMs) {
 }
 
 function render() {
+  const selection = primarySelection();
   rebuildSched.flush(); // ED-MESH-1d: one coalesced rebuild per frame (31.3)
   const rendered = frame.step(world, cam, { animate, dt: 1 / 60, drawOverlay });
   if (rendered) lastPresented++;
@@ -2211,7 +2404,7 @@ function render() {
     overlay.update(fps, engine.loop.stats.jsMs,
       `pose: ${cam.x.toFixed(1)}, ${cam.y.toFixed(1)}, ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}\n`
       + `speed: ${speed.toFixed(1)} m/s  animate: ${animate}  snap: ${SNAP_OPTIONS[snapIdx]} m  cell: (${hoverCol ?? '-'},${hoverRow ?? '-'})\n`
-      + `selected: ${selText}${placeMode ? `  place: ${placeMode}` : ''}\n`
+      + `selected: ${sel.items.length} · ${selText}${placeMode ? `  place: ${placeMode}` : ''}\n`
       + `${lastPickText}\n`
       + `presented: ${lastPresented}  backend: ${rt.backend}${frame.gpuPipeline ? ' gpu' : ' js'}`);
   }
@@ -2222,12 +2415,15 @@ window.__editor = {
   engine, assets, doc, cam, frame,
   get world() { return world; },
   get rt() { return rt; },
-  get selection() { return selection; },
+  get selection() { return primarySelection(); },
+  get sel() { return sel; },
+  get boxDrag() { return boxDrag; },
+  get groupDrag() { return groupDrag; },
   get placeMode() { return placeMode; },
   get helpOn() { return helpOn; },
   undoStack, tb,
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
-  selectItem, deleteSelected, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
+  selectItem, deleteSelected, duplicateSelected, setSelectedGroup, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), resolveDropPoint: (pt) => resolveDropPoint(world, pt), commitFieldEdit, renameSelected,
   doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS, { reference: bundle }),
   openModelPicker, closeModelPicker,

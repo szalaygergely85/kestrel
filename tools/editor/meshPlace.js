@@ -60,7 +60,8 @@ export function prepareMeshEdit(item, patch, { assets, world, file }) {
       : Object.fromEntries(['x', 'y', 'z'].map(k => [k, roundMeshPosition(patch.origin[k])]));
     if (!after.origin) return { after: null, errors: ['origin: no floor under mesh footprint'] };
   }
-  for (const key of ['castShadow', 'collide']) if (after[key] === true) delete after[key];
+  // True can inherit only a true mesh default; shadows may override a false asset default.
+  for (const key of ['castShadow', 'collide']) if (after[key] === true && assets.mesh(item.mesh)[key] !== false) delete after[key];
   const siblingIds = new Set((file.def.structures || []).filter(s => s.id !== item.id).map(s => s.id));
   const errors = validateMeshStructure(after, { assets, siblingIds, nextId: file.meta.nextId });
   return { after: errors.length ? null : after, errors };
