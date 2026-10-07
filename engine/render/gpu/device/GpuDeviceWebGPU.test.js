@@ -36,19 +36,20 @@ ok('padTo256', padTo256(1) === 256 && padTo256(256) === 256 && padTo256(257) ===
 }
 
 // ---- mock GPUDevice: records calls
+let g_last = null;
 function mockGpu() {
-  const calls = [];
+  const calls = [], sets = [], layouts = [], samplers = [];
   const obj = (n) => ({
     n, createView: () => ({ view: n }), destroy() {},
-    setPipeline() { calls.push('setPipeline'); }, setBindGroup() { calls.push('setBindGroup'); }, setVertexBuffer() {}, setIndexBuffer() {},
+    setPipeline() { calls.push('setPipeline'); }, setBindGroup(i, g, dyn) { calls.push('setBindGroup'); sets.push({ i, dyn: dyn && Array.from(dyn) }); }, setVertexBuffer() {}, setIndexBuffer() {},
     draw() { calls.push('draw'); }, drawIndexed() { calls.push('drawIndexed'); }, end() { calls.push('end'); },
   });
   const rec = (n) => () => { calls.push(n); return obj(n); };
   const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture() { calls.push('writeTexture'); }, submit() { calls.push('submit'); } };
   return {
-    calls, queue, limits: { maxColorAttachments: 8 }, lost: new Promise(() => {}),
+    calls, sets, layouts, queue, limits: { maxColorAttachments: 8 }, lost: new Promise(() => {}),
     createBuffer: rec('createBuffer'), createTexture: rec('createTexture'), createSampler: rec('createSampler'),
-    createShaderModule: rec('createShaderModule'), createBindGroupLayout: rec('createBindGroupLayout'), createPipelineLayout: rec('createPipelineLayout'),
+    createShaderModule: rec('createShaderModule'), createBindGroupLayout: (d) => { calls.push('createBindGroupLayout'); layouts.push(d); return obj('bgl'); }, createPipelineLayout: (d) => { calls.push('createPipelineLayout'); g_last = d; return obj('pl'); },
     createBindGroup: rec('createBindGroup'), createRenderPipeline: rec('createRenderPipeline'),
     createCommandEncoder: () => ({ beginRenderPass: rec('beginRenderPass'), finish: () => ({}) }),
   };
@@ -89,6 +90,31 @@ const consts = {
   ok('canvasTarget without canvas throws at beginPass', throws(() => d.beginPass(d.canvasTarget())));
   ok('writeTexture rejects depth', throws(() => d.writeTexture(dep, new Uint8Array(4))));
   d.dispose();
+}
+
+{
+  // sampler binding numbers, uniformOffsetBytes path, no-uniform pipeline layout/group calls
+  const g = mockGpu();
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const a = d.createTexture({ format: 'rgba8', width: 4, height: 4 });
+  const tgt = d.createTarget({ color: [a] });
+  const base = { vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 }, targetFormats: ['rgba8'] };
+  const nl = g.layouts.length;
+  d.createPipeline({ ...base, bindings: { uniformBytes: 0, textures: ['float', 'filtered', 'uint', 'filtered'] } });
+  const e0 = g.layouts[nl].entries;
+  ok('sampler binding of k-th filtered slot = textures.length + k', e0.filter((e) => e.sampler).map((e) => e.binding).join() === '4,5');
+  ok('no uniforms: layout has only group 0', g_last.bindGroupLayouts.length === 1 && g.layouts.length === nl + 1);
+  const pU = d.createPipeline({ ...base, bindings: { uniformBytes: 64, textures: [] } });
+  ok('uniforms: layout has groups 0 and 1', g_last.bindGroupLayouts.length === 2);
+  const pN = d.createPipeline({ ...base, bindings: { uniformBytes: 0, textures: [] } });
+  d.beginPass(tgt, { clear: true });
+  g.sets.length = 0;
+  d.bind(pN, {});
+  ok('no uniforms/textures: only empty group 0 set, no group 1', g.sets.length === 1 && g.sets[0].i === 0);
+  g.sets.length = 0;
+  d.bind(pU, { uniformOffsetBytes: 768 });
+  ok('uniformOffsetBytes: no ring alloc, dynamic offset passed', d.uniformRing.usedBytes === 0 && g.sets.some((s) => s.i === 1 && s.dyn[0] === 768) && g.sets[0].i === 0);
+  d.endPass();
 }
 
 // ---- createGpuDevice failure / fallback paths

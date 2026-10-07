@@ -85,19 +85,21 @@ export function defineUniformBlock(name, fields) {
 export function createUniformRing(slots, slotBytes = UNIFORM_SLOT_ALIGN) {
   if (slotBytes % UNIFORM_SLOT_ALIGN !== 0) throw new Error('createUniformRing: slotBytes must be a multiple of 256');
   const buffer = new ArrayBuffer(slots * slotBytes);
-  let used = 0;
+  const capacity = slots * slotBytes;
+  let used = 0; // bytes, bump allocator stepping alignUp(size, 256)
   return {
     buffer, slots, slotBytes,
     f32: new Float32Array(buffer), i32: new Int32Array(buffer), u32: new Uint32Array(buffer),
     /** Reserve one slot for a block of `sizeBytes`; returns its byte offset (the dynamic offset). @param {number} sizeBytes */
     alloc(sizeBytes) {
-      if (sizeBytes > slotBytes) throw new Error(`uniform ring: block of ${sizeBytes} B exceeds slot ${slotBytes} B`);
-      if (used >= slots) throw new Error(`uniform ring overflow (${slots} slots)`);
-      return (used++) * slotBytes;
+            const step = alignUp(sizeBytes, UNIFORM_SLOT_ALIGN);
+      if (used + step > capacity) throw new Error(`uniform ring overflow (${capacity} B)`);
+      const off = used; used += step;
+      return off;
     },
     reset() { used = 0; },
-    get usedSlots() { return used; },
-    get usedBytes() { return used * slotBytes; },
+    get usedSlots() { return used / UNIFORM_SLOT_ALIGN; },
+    get usedBytes() { return used; },
     /** Word index of a slot byte offset in the f32/i32/u32 views. @param {number} byteOffset */
     word(byteOffset) { return byteOffset >> 2; },
   };

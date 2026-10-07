@@ -188,10 +188,11 @@ export class GpuDeviceWebGPU {
     });
     const bgl0 = this.gpu.createBindGroupLayout({ entries: e0 });
     const uBytes = bindings.uniformBytes || 0;
-    const bgl1 = this.gpu.createBindGroupLayout({
-      entries: uBytes > 0 ? [{ binding: 0, visibility: vis, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: uBytes } }] : [],
-    });
-    const layout = this.gpu.createPipelineLayout({ bindGroupLayouts: [bgl0, bgl1] });
+    // group 1 exists only when there is a uniform block: every group in the layout is set before draw (spec)
+    const bgl1 = uBytes > 0
+      ? this.gpu.createBindGroupLayout({ entries: [{ binding: 0, visibility: vis, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: uBytes } }] })
+      : null;
+    const layout = this.gpu.createPipelineLayout({ bindGroupLayouts: bgl1 ? [bgl0, bgl1] : [bgl0] });
     const uniformGroup = uBytes > 0
       ? this.gpu.createBindGroup({ layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
       : null;
@@ -261,7 +262,10 @@ export class GpuDeviceWebGPU {
     const pass = this._pass;
     if (!pass) throw new Error('GpuDeviceWebGPU.bind: no open pass');
     const p = pipeline;
-    if (p !== this._curPipeline) { pass.setPipeline(p.gpu); this._curPipeline = p; }
+    if (p !== this._curPipeline) {
+      pass.setPipeline(p.gpu); this._curPipeline = p;
+      if (p.texKinds.length === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set
+    }
     // textures: rebuild the cached bind group only when a handle differs (element-wise compare, no alloc)
     const texs = desc.textures;
     if (texs) {
@@ -294,6 +298,12 @@ export class GpuDeviceWebGPU {
     if (desc.instanceBuffer) pass.setVertexBuffer(1, desc.instanceBuffer.gpu);
     if (desc.indexBuffer) { pass.setIndexBuffer(desc.indexBuffer.gpu, desc.indexBuffer.indexFormat); p.indexed = true; }
     else if (desc.vertexBuffer) p.indexed = false;
+  }
+
+  /** Device-level cached empty bind group for pipelines without textures. */
+  _emptyGroup() {
+    if (!this._emptyBG) this._emptyBG = this.gpu.createBindGroup({ layout: this.gpu.createBindGroupLayout({ entries: [] }), entries: [] });
+    return this._emptyBG;
   }
 
   /** @param {any} p */

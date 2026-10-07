@@ -60,11 +60,18 @@ ok('unknown type rejected', throws(() => defineUniformBlock('E', [{ name: 'a', t
   ok('slots 256-aligned', o0 === 0 && o1 === 256 && o2 === 512);
   ok('used bytes', r.usedBytes === 768 && r.usedSlots === 3);
   ok('overflow throws', throws(() => r.alloc(4)));
-  ok('oversize block throws', throws(() => { r.reset(); r.alloc(257); }));
   r.reset();
   ok('reset empties', r.usedSlots === 0 && r.alloc(16) === 0);
   ok('word index', r.word(512) === 128);
   ok('ring views span buffer', r.f32.length === 3 * 64 && r.u32.buffer === r.buffer);
+  {
+    const q = createUniformRing(4); // capacity 1024 B
+    ok('300 B block takes 512 B', q.alloc(300) === 0 && q.usedBytes === 512);
+    ok('mixed sizes sequential', q.alloc(16) === 512 && q.alloc(256) === 768 && q.usedBytes === 1024);
+    ok('bump overflow throws', throws(() => q.alloc(1)));
+    q.reset();
+    ok('oversize vs remaining capacity throws', q.alloc(600) === 0 && throws(() => q.alloc(300)) && q.alloc(256) === 768);
+  }
   ok('non-256 slot rejected', throws(() => createUniformRing(2, 100)));
 }
 
