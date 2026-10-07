@@ -1,0 +1,6 @@
+# Lane B2 - WGSL modules (Claude, PC-B git worktree `../game_project_b2`, branch `pc-b2`)
+
+Skill: `parallel-lanes`, `wgsl-port`. Spec: architecture.md 38.5 (port rules), 38.8, 38.8a; JS twin is the oracle.
+Task: write the WGSL module for each pass as a NEW standalone file under `engine/render/gpu/wgsl/` (line-by-line port of the GLSL in `engine/render/gpu/glsl/`, constants interpolated from the same JS imports, no raw `%`, uniform block via `uniformBlock.js`), register it in `wgsl/index.js` (WGSL_MODULES), extend `wgsl.test.js` string rules, and pass `node tools/capture-browser.mjs --mode wgsl --backend webgpu --port 96xx` (0 compile errors). Order: 3a `resolve`+`deriv`, 3b `light`, 3c `shade`+`edge` (A6 kind-9 smooth normals, A7 kind 9 in isVert/isUp), 3d `shadow`, 3e `water`+`waterComposite`, 3f `sprites`+`overlay`. One commit per module on `pc-b2`; B1 plugs it into the pipeline and runs the gate. Do NOT touch `wg/*.js`, `main.js`, `capture-browser.mjs`, `backlog.md`.
+After the modules: MESH-INST-01 (CPU-side batching only, no GLSL; `engine/mesh/**`) and MESH-SHADOW-02 (caster budget; `engine/mesh/**`, shadowList.js), then QUAT-LOD-01 importer support (`lods`) if C has picked the LOD1 meshes.
+Status log (newest first): (none yet)

@@ -1,0 +1,6 @@
+# Lane C - content and tools (Codex, own clone `../kestrel_c`, branch `pc-c`)
+
+Read `AGENTS.md` (retargeted to this lane) and skill `parallel-lanes`. You never touch `engine/render/**`, `game/js/main.js`, `docs/backlog.md`, `design/palette.js` (ask), `docs/decisions.md`.
+Order: 1 LICENCE-AUDIT-01 (docs/licences.md + THIRD_PARTY_NOTICES.md; facts only); 2 UI-PLATE-01 (audit every drawText/setCell/UI text for undefined bg; reuse plate [10,11,16] from design/items.js; ask PC-A for new colours); 3 QUAT-TREES-01 (place CommonTree/Pine/TwistedTree at full detail; NO LOD change without an owner preview) in design/levels/overworld_far.js + content/worlds/world_m1.world.json; 4 QUAT-GROUND-01 (scatter data for grass/flowers/bushes/ferns/clover/petals/mushrooms/pebbles/rock paths via the ENV-01a scatter feed); 5 ED-MESH-01 (editor Assets tab lists meshes, place/move/yaw/scale, collider rebuild, round-trip save); 6 ALPHA-01b JS side only (rasterJS discard; PC-A reviews) if B1/B2 have not started it.
+Each item: one commit on `pc-c`, push, then a log entry here (commit, results, screenshots path, `NEEDS B1:`/`NEEDS PC-A:`). Owner-visible changes need one real-GPU screenshot at 400x150.
+Status log (newest first): (none yet)

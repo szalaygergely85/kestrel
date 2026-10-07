@@ -2,13 +2,9 @@
 
 Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md` / `CLAUDE.md`** (DeepSeek trial agents: also `DEEPSEEK.md`, which limits you to 4 trial items). It replaces the long QUEUE blocks at the top of `docs/backlog.md`; story details stay in the backlog rows and `docs/architecture.md`.
 
-## Current PC-A handover (2026-10-07, through 8cf06a3; supersedes historical sections below)
+## Current PC-A handover (2026-10-07 evening; owner: WG first, parallel lanes)
 
-Owner priority: FULL ON WG. Order: WG-2a-b, PREC-04b2, WG-1b3, WG-2b, WG-2c, WG-3a, WG-3b, WG-3c, WG-3d, WG-3e, WG-3f, MESH-INST-01 (WG-4a dependency), WG-4a, WG-4b, then WG-5a/5b only after PC-A + owner WG-4c. Full detail stays; no new GLSL. PC-A built PREC-04b1 and owns OWNER-LOOK-ROADSOUTH and WG-4c.
-
-One commit and push per WG step; PC-A reviews in batches of 2-3. PC-B may start the next step while review is pending, but must not build on ARCH CHANGES that touch its interfaces. Fold corrections into the next commit. WG-2a-b's four corrections are implemented in 2a77768; WG-1b3 is implemented in da34e69. WG-3a..3f are numerically fiddly: light/shade/shadow parity; expect fix-up loops.
-
-After the WG chain, or while blocked on a PC-A review/gate/owner decision: QUAT-TREES-01, QUAT-GROUND-01, MESH-SHADOW-02, MESH-INST-01, QUAT-LOD-01, BUG-GONDOLA-FALL-b, HANDS-01c-b; then TEST-GAPS-WG, DIAG-SWIFTSHADER, EDITOR-LOAD-01; then LICENCE-AUDIT-01, UI-PLATE-01, ED-MESH-01, ALPHA-01b JS side (GPU/WGSL part = WG-2b), EP-DESKTOP-SPIKE, BACKLOG-TRIAGE, OWNER-WALK-FIXES (when the owner reports). Read the newest backlog rows for specs and blockers.
+**The queue is now split into lanes: B1 `docs/lanes/pc-b1.md` (WebGPU spine, branch `pc-b`), B2 `docs/lanes/pc-b2.md` (WGSL modules, worktree `../game_project_b2`, branch `pc-b2`), C `docs/lanes/pc-c.md` (Codex, branch `pc-c`).** Read skill `parallel-lanes` first. This file's older ordering (Quaternius first) is superseded: WG chain first; Quaternius/content rows moved to lane C; MESH-INST-01/MESH-SHADOW-02 to lane B2.
 
 ## Rules (short)
 - `git fetch origin && git merge origin/master` before each item and before pushing.

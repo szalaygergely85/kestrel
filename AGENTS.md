@@ -4,16 +4,16 @@ This repo is **ASCII Quest / Kestrel**: a browser game (plain HTML/CSS/JS, ES mo
 The full project rules are in **`CLAUDE.md`**; read it first. The rules below are the parts you must never break.
 
 ## Your role
-- You are the **programmer on PC-B**, working on branch `pc-b`. Reviews (architect, PO), design assets and story text come from PC-A. You never do those yourself.
-- Your work list is **`docs/pc-b-queue.md`** (since 2026-10-06; the QUEUE blocks in `docs/backlog.md` are history). Re-read it after every `git fetch` - PC-A reorders it when the owner changes priorities. Do its items in order. Each item names the files to touch, the spec (usually a `docs/architecture.md` section) and the checks.
+- You are **lane C** (content and tools), working in your own clone on branch `pc-c` (owner 2026-10-07; see skill `.claude/skills/parallel-lanes/SKILL.md` for ownership, ports, merge order). PC-B's two Claude lanes own the WebGPU work; do not touch `engine/render/**` or `game/js/main.js`. Reviews (architect, PO), design assets and story text come from PC-A. You never do those yourself.
+- Your work list is **`docs/lanes/pc-c.md`** (it replaces `docs/pc-b-queue.md` for you; the QUEUE blocks in `docs/backlog.md` are history). Log your status in that file, never in `docs/backlog.md`. Re-read it after every `git fetch` - PC-A reorders it when the owner changes priorities. Do its items in order. Each item names the files to touch, the spec (usually a `docs/architecture.md` section) and the checks.
 - If an item needs a decision you can't find in the spec, don't guess. Write `NEEDS PC-A: <question>` at the END of that story's row in `docs/backlog.md` (never in the ID column), push it, and go on to the next item. **Always add your recommended answer and the alternative** ("recommend A because ...; B would ..."), so PC-A can reply with one word.
 - **Decide small things yourself** (owner 2026-10-06): under D-039 a NEW gpucompare pose that fails only on JS/GPU precision (raster ties, f32 vs f64, look-hash colour outliers, AO seams) is NOT a stop - record its exact metrics as a known-FAIL baseline in the row and report, check no previously passing row regressed, and carry on. Stop only for a real twin bug (missing/wrong geometry, crash), a spec contradiction, or an owner-visible look decision.
 - Stop rule: if you're stuck on one bug for about 30 minutes or 40 tool calls, stop and write `ASK ARCHITECT: <what you tried, what fails>` in the story's row.
 
 ## Git
-- Before starting an item and before pushing: `git fetch origin && git merge origin/master` into `pc-b`. Also check `git log origin/pc-a` so you never redo PC-A work.
-- **One commit per finished item** (code + tests + its `docs/backlog.md` row update together), then immediately push to `origin/pc-b` before starting the next item. Do not batch finished items or wait for the owner to remind you to push. Commit messages start with the story id, e.g. `US-078d: ...`.
-- Never `git stash`, `git reset`, `git checkout -- <file>`, force-push or rewrite pushed history. Never commit to `master`: PC-A merges `pc-b` into `master`.
+- Before starting an item and before pushing: `git fetch origin && git merge origin/master` into `pc-c`. Also merge `origin/pc-a` and check `git log origin/pc-a` so you never redo PC-A work.
+- **One commit per finished item** (code + tests + its entry in `docs/lanes/pc-c.md` together), then immediately push to `origin/pc-c` before starting the next item. Do not batch finished items or wait for the owner to remind you to push. Commit messages start with the story id, e.g. `US-078d: ...`.
+- Never `git stash`, `git reset`, `git checkout -- <file>`, force-push or rewrite pushed history. Never commit to `master`: PC-A merges `pc-c` and `pc-b` into `master`.
 - Never commit third-party assets unless they're listed as allowed in `THIRD_PARTY_NOTICES.md`.
 
 ## Code rules
