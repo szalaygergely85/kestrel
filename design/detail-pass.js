@@ -1000,6 +1000,25 @@
       grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
       face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // CHAR-COL-01 (owner 2026-10-08): character materials for imported NPC meshes (palette.js, same key in both files).
+    skin: {
+      v1: 'skin', seed: 910,
+      desc: 'CHARACTER (CHAR-COL-01). Face, hands, bare arms: muted warm skin, soft shade toward skinShade.',
+      albedo: 0.88, bgK: 0.16, detail: 32, jitter: 0.04,
+      tones: [['skin', 4], ['skinShade', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    hair_dark: {
+      v1: 'hair_dark', seed: 911,
+      desc: 'CHARACTER (CHAR-COL-01). Dark brown hair and beard, darker than leather.',
+      albedo: 0.70, bgK: 0.14, detail: 32, jitter: 0.06,
+      tones: [['hairDark', 4], ['woodDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -1037,7 +1056,9 @@
     ember_core: 'ember_core', ember_glow: 'ember_glow',
     // v1.39 balloon fabric (design/models/voxel_tower.js), same key in both files.
     balloon_light: 'balloon_light', balloon: 'balloon', balloon_dark: 'balloon_dark', balloon_red_light: 'balloon_red_light',
-    balloon_red: 'balloon_red', balloon_red_dark: 'balloon_red_dark', tarp_light: 'tarp_light', tarp: 'tarp', tarp_dark: 'tarp_dark'
+    balloon_red: 'balloon_red', balloon_red_dark: 'balloon_red_dark', tarp_light: 'tarp_light', tarp: 'tarp', tarp_dark: 'tarp_dark',
+    // CHAR-COL-01 character materials, same key in both files.
+    skin: 'skin', hair_dark: 'hair_dark'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
