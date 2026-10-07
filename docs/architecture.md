@@ -4020,3 +4020,5 @@ check-deps (WG-1b2): `navigator.gpu`, `GPUBufferUsage`, `GPUTextureUsage`, `GPUS
 | WG-5b "WebGPU required" | gate screen, tool defaults (`--backend webgpu`), docs | screen shown without WebGPU or on a failed self-test |
 
 **Do not:** port the dda/terrain-caster/voxel-caster shaders; add storage buffers before WG-4 (data textures stay textures, packers unchanged); write GLSL for anything new; touch `engine/physics/`; read `device.backend` outside `createRenderer.js` and F3; call `navigator.gpu` from `WgCellPipeline`; widen a gpucompare threshold to make a WGSL row pass.
+
+**37.8a note (architect review 2026-10-07, HANDS-01a):** on WebGPU `frontFace` is baked into the render pipeline, not set per draw. WG-2b must create a second view-model/voxel raster pipeline for mirrored (det<0) items with `frontFace:'cw'`, `cullMode:'back'` (WebGL2 flips `gl.frontFace` per item today). HANDS-01c `handsSwapped` fails only on a known edge-on voxel-face coverage tie (D-039 precision), not on the mirror math.
