@@ -625,6 +625,20 @@ export function loadGltf(buffer, id, opts = {}) {
     }
   }
 
+  return buildMeshFromTris(allTris, primRanges, id, opts);
+}
+
+/**
+ * Shared back end of the static-mesh importers (glTF here, Collada in tools/dae-import.mjs): baked triangles -> MeshData.
+ * Smoothing groups per primitive range, per-vertex normals, planar (or source) UVs, typed arrays, assertMesh.
+ * @param {{p0:number[],p1:number[],p2:number[],normal:number[],matName:string,uv0:number[]|null,uv1:number[]|null,uv2:number[]|null}[]} allTris
+ *   world-space, axis-converted, winding already fixed, `normal` = unit flat face normal
+ * @param {{part: string, triStart: number, triCount: number}[]} primRanges
+ * @param {string} id
+ * @param {{uv?: 'planar'|'source'}} [opts]
+ * @returns {MeshData}
+ */
+export function buildMeshFromTris(allTris, primRanges, id, opts = {}) {
   // --- Pass 2: smoothing groups (per primitive, then offset to a mesh-global id) --
   const groupIdAll = new Uint32Array(allTris.length);
   let groupOffset = 0;

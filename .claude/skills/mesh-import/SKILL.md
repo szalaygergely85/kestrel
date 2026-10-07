@@ -16,3 +16,5 @@ Sources: `design/meshes/quaternius/glTF/` (Kenney DAE: `design/meshes/kenney/dae
 6. Bench stays green: `node tools/bench-mesh-collide.mjs` (<= 1.5 us/call).
 
 Per-triangle palette keys from the colour texture (MESH-UVMAP-01): `node tools/reimport-quaternius.mjs --uvmap [names]` or `gltf-import.mjs --uvmap auto --budget`; table `design/meshes/quaternius/palette-map.json` (texture -> keys + reference colours; keys must exist in design/palette.js).
+
+Kenney Collada (.dae): `node tools/dae-import.mjs design/meshes/kenney/dae/<name>.dae kenney/<name> --budget` (colour -> key table `design/meshes/kenney/palette-map.json`, importer `scale`; trees budget 600 tris, trunk prism collider; test `tools/dae-import.test.mjs`).
