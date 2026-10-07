@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { StaticMeshBuilder } from '../../../mesh/MeshData.js';
-import { DrawList, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
+import { DrawList, DRAW_TERRAIN, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
 import { WgRasterPass } from './passRaster.js';
 import { RASTER_BLOCK } from '../wgsl/raster.wgsl.js';
+import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
 
 const mock = makeMockGpuDevice(), d = mock.device;
 const pass = new WgRasterPass(d), draws = [], clears = [];
@@ -55,5 +56,28 @@ assert.equal(cd.pipe.desc.vertex.extraLayouts[0].layout[0].location, 1, 'uv extr
 assert.equal(cd.extra, uvBuf); assert.equal(cd.count, 9); assert.equal(cd.first, 3);
 assert.equal(cd.uniforms[RASTER_BLOCK.field('flat').word + 1] >>> 16, 7, 'cloth material in flat.y');
 assert.equal(p.stats.clothDraws, 1);
-pass.dispose(); d.dispose(uvBuf); d.dispose(clothVb); d.dispose(clothIb); assert.equal(mock.liveCount(), 0);
+// Terrain (WG-2c): own pipeline (cull none, indexed), model/objectId words, r8ui type textures bound at slots 0/1.
+const tvb = d.createBuffer({ usage: 'vertex', bytes: 64 }), tib = d.createBuffer({ usage: 'index', bytes: 24 });
+const origGet = pass.buffers.get; pass.buffers.get = (m) => m === tmesh ? { vertexBuffer: tvb, indexBuffer: tib } : origGet.call(pass.buffers, m);
+const tmesh = { layout: 'terrain' };
+const terr = pass.list.push(); terr.type = DRAW_TERRAIN; terr.mesh = tmesh; terr.rangeCount = 2; terr.rangeFirst = 1; terr.objectId = 0x7003;
+terr.matrix.set([1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 32, 2]);
+draws.length = 0; pass.run(p);
+const td = draws.find((x) => x.pipe === pass.terrainPipe);
+assert.ok(td, 'terrain draw issued'); assert.equal(td.pipe.desc.cull, 'none'); assert.equal(td.pipe.desc.frontFace, 'cw');
+assert.equal(td.count, 6); assert.equal(td.first, 3); assert.equal(td.bind.indexBuffer, tib);
+assert.equal(td.uniforms[TERRAIN_BLOCK.field('objectId').word], 0x7003);
+assert.deepEqual([...new Float32Array(td.uniforms.buffer)].slice(TERRAIN_BLOCK.field('model').word + 12, TERRAIN_BLOCK.field('model').word + 16), [16, 32, 2, 1]);
+assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint']);
+assert.equal(p.stats.terrainDraws, 1);
+// Type textures: uploaded on version change only (r8ui, resized when the bake size differs), never per frame.
+const world = { terrain: { farReady: true, farVersion: 1, mapW: 4, mapH: 4, farType: new Uint8Array(16), nearReady: true, near: { version: 1, w: 3, h: 3, type: new Uint8Array(9) } } };
+let tw = 0; const ow = d.writeTexture; d.writeTexture = (...a) => { tw++; return ow && ow.apply(d, a); };
+pass._terrainTextures(world);
+assert.equal(tw, 2);
+assert.deepEqual(pass.farDims, [4, 4]); assert.deepEqual(pass.nearDims, [3, 3]);
+for (let i = 0; i < 10; i++) pass._terrainTextures(world);
+assert.equal(tw, 2, 'no re-upload while versions are unchanged');
+world.terrain.farVersion = 2; pass._terrainTextures(world); assert.equal(tw, 3); d.writeTexture = ow;
+pass.dispose(); d.dispose(tvb); d.dispose(tib); d.dispose(uvBuf); d.dispose(clothVb); d.dispose(clothIb); assert.equal(mock.liveCount(), 0);
 console.log('passRaster.test.js: all checks passed.');

@@ -1,0 +1,239 @@
+// WG-3c: shade.wgsl.js string rules, uniform layout, and JS-evaluated (wgslProbe) probes of the ported functions vs their JS twins:
+//  - hashFast / hashFastU (bit-exact, Math.imul stand-in for the u32 multiply) vs terrainShade.js hashFastU/hashFast01
+//  - shadeCore over the REAL content pack (every v2 material, random u/v/derivs/dist/face/kind/light) vs detailShade.js shadeCore
+//  - the glyph pick (pickGlyphCodeFast / levelFromThresholds / pickCode, assembled like fs_main for n = 1) vs shadeDetailFast glyphIdx
+//  - shadeTerrain (random TLOOK rows incl. close / faceMode / glint, 3 hash-cell modes) vs terrainShade.js shadeTerrain
+// Mutation-checked. Not probed (no vec3 shim): fs_main's group average + hue/gain/fog byte tail and the sky branch -> compile check
+// + the WG-3 gpucompare rows. node engine/render/gpu/wgsl/shade.wgsl.test.js
+import assert from 'node:assert/strict';
+import { SHADE_WGSL, SHADE_BLOCK, SHADE_TEXTURES, SHADE_TARGETS, TERRAIN_SHADE_WGSL } from './shade.wgsl.js';
+import { WGSL_MODULES } from './index.js';
+import { compileFn, makeTex, textureLoad as texLoad, shims } from './wgslProbe.js';
+import { bindShading, bindLevel } from '../../MaterialTable.js';
+import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
+import paletteModule from '../../../../design/palette.js';
+import detailPassModule from '../../../../design/detail-pass.js';
+import { loadLevel } from '../../../world/Level.js';
+import { shadeCore, shadeDetailFast } from '../../detailShade.js';
+import { shadeTerrain, hashFastU, hashFast01 } from '../../terrainShade.js';
+import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
+import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
+import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
+import { FOREST_FACE_NZ } from '../../terrainShade.js';
+
+// --- string rules (38.5) ---
+assert.ok(WGSL_MODULES.some((m) => m.name === 'shade' && m.code === SHADE_WGSL), 'registered');
+assert.ok(!/%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|\bmod\s*\(|ivec2|uvec|\bint\(|floatBitsToUint|uintBitsToFloat/.test(SHADE_WGSL), 'no raw % / GLSL names');
+assert.ok(/fn vs_main/.test(SHADE_WGSL) && /fn fs_main\(@builtin\(position\) frag: vec4f\) -> FO/.test(SHADE_WGSL));
+assert.equal(SHADE_TEXTURES.length, 16, 'exactly the WebGPU default sampled-texture limit');
+assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
+const wgslTypes = { uint: 'texture_2d<u32>', sint: 'texture_2d<i32>', float: 'texture_2d<f32>' };
+SHADE_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${wgslTypes[k].replace(/[<>]/g, '\\$&')}`).test(SHADE_WGSL), `binding ${i} ${k}`));
+assert.ok(/@group\(1\) @binding\(0\) var<uniform> su: ShadeU/.test(SHADE_WGSL));
+assert.ok(new RegExp(`kindU == ${KIND_MODEL}u \\|\\| kindU == ${KIND_MESH}u\\) && face == ${FACE_PACKED}`).test(SHADE_WGSL), 'kind 8/9 face-7 aoD force (A6)');
+assert.ok(new RegExp(`const MAX_LEVELS: i32 = ${MAX_LEVELS};`).test(SHADE_WGSL) && new RegExp(`const MAX_FEATURES_PER_TYPE: i32 = ${MAX_FEATURES_PER_TYPE};`).test(TERRAIN_SHADE_WGSL), 'constants interpolated');
+assert.ok(/\(u32\(x\) \* 0x27d4eb2du\) \^ \(u32\(y\) \* 0x165667b1u\) \^ \(u32\(s\) \* 0x9e3779b1u\)/.test(SHADE_WGSL), 'hash constants');
+assert.ok(/floor\(clamp\(v255, 0\.0, 255\.0\) \+ 0\.5\) \/ 255\.0/.test(SHADE_WGSL), 'byte quantise floor(v+0.5)');
+
+// --- uniform layout ---
+const w = (n) => SHADE_BLOCK.field(n).word;
+assert.deepEqual(['fogFg', 'fogStart', 'fogBg', 'sunDir', 'terrainFogNearRGB', 'terrainFogFarRGB', 'sunI', 'closeBand'].map(w), [0, 3, 4, 8, 12, 16, 20, 42]);
+assert.equal(SHADE_BLOCK.field('handover').offset % 8, 0);
+assert.equal(SHADE_BLOCK.field('pitchA').offset % 16, 0);
+assert.equal(SHADE_BLOCK.field('faceK').words, 8);
+assert.equal(SHADE_BLOCK.sizeBytes % 16, 0);
+
+// --- shared fixtures ---
+// wgslProbe textureLoad + the .r/.g/.b/.a swizzle aliases the terrain/gain/threshold code reads
+const textureLoad = (tex, c) => { const o = texLoad(tex, c); o.r = o.x; o.g = o.y; o.b = o.z; o.a = o.w; return o; };
+let seed = 12345;
+const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+const imul = Math.imul;
+// WGSL u32 multiply is exact; the JS-evaluated twin needs Math.imul for the same low 32 bits.
+function hashSrc(src) {
+  return src.replace('u32(x) * 0x27d4eb2du', 'imul(u32(x), 0x27d4eb2du)').replace('u32(y) * 0x165667b1u', 'imul(u32(y), 0x165667b1u)')
+    .replace('u32(s) * 0x9e3779b1u', 'imul(u32(s), 0x9e3779b1u)').replace('(h ^ (h >> 15u)) * 0x85ebca6bu', 'imul((h ^ (h >> 15u)), 0x85ebca6bu)')
+    .replace('(h ^ (h >> 13u)) * 0xc2b2ae35u', 'imul((h ^ (h >> 13u)), 0xc2b2ae35u)');
+}
+function mkHash(src) {
+  const hashFastU_w = compileFn(hashSrc(src), 'hashFastU', { ...shims, imul });
+  return { hashFastU: hashFastU_w, hashFast: compileFn(src, 'hashFast', { ...shims, hashFastU: hashFastU_w }) };
+}
+let probes = 0;
+{
+  const h = mkHash(SHADE_WGSL);
+  for (let i = 0; i < 4000; i++) {
+    const x = Math.floor(rand() * 200) - 100, y = Math.floor(rand() * 200) - 100, s = Math.floor(rand() * 5000) - 100;
+    assert.equal(h.hashFastU(x, y, s) >>> 0, hashFastU(x, y, s)); assert.equal(h.hashFast(x, y, s), hashFast01(x, y, s)); probes += 2;
+  }
+  const bad = SHADE_WGSL.replace('0x165667b1u', '0x165667b3u');
+  const hb = mkHash(bad);
+  let diff = 0; for (let i = 0; i < 50; i++) if (hb.hashFastU(i, i + 3, 7) >>> 0 !== hashFastU(i, i + 3, 7)) diff++;
+  assert.ok(diff > 40, 'mutation: hash constant caught');
+}
+
+// --- real content pack ---
+const palette = paletteModule.default || paletteModule;
+const detailPass = detailPassModule.default || detailPassModule;
+const { bundle } = await loadTestAssets();
+const level = loadLevel(bundle.levels.test_room);
+const table = bindShading(palette, detailPass, 16 / 9);
+bindLevel(table, level);
+const packed = packMaterialTable(table);
+const { nMat, nSet } = packed.dims;
+const toTex = (flat, width, height) => { const d = []; for (let i = 0; i < width * height; i++) d.push([flat[i * 4], flat[i * 4 + 1], flat[i * 4 + 2], flat[i * 4 + 3]]); return makeTex(width, height, d); };
+const f1Tex = (flat, width, height) => { const d = []; for (let i = 0; i < width * height; i++) d.push([flat[i], 0, 0, 0]); return makeTex(width, height, d); };
+const faceKRows = [[table.faceK[0], table.faceK[1], table.faceK[2], table.faceK[3]], [table.faceK[4], table.faceK[5], table.faceK[6], 0]];
+const shading = table.shading;
+const su = {
+  cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
+};
+assert.equal(su.cellAspect, shading.cellAspect, 'uniform cellAspect == shading.cellAspect');
+const POW2 = [0.125, 0.25, 0.5, 1, 2, 4];
+const consts = {
+  POW2, MAX_LEVELS, TAN22: 0.40403, TAN68: 2.47509, LINE_DASH: 13, LINE_UNDERSCORE: 63, LINE_PIPE: 92, LINE_SLASH: 15, LINE_BACKSLASH: 60,
+};
+function core(src) {
+  const base = {
+    ...shims, ...consts, textureLoad, su, imul,
+    uMatF: toTex(packed.matF, MAT_F_WIDTH, nMat), uMatI: toTex(packed.matI, MAT_I_WIDTH, nMat), uSetI: toTex(packed.setI, SET_I_WIDTH, nSet),
+    uSetF: f1Tex(packed.setF, SET_F_WIDTH, nSet),
+  };
+  Object.assign(base, mkHash(src));
+  for (const n of ['fmodGlsl', 'qfloor', 'smoothstepFast', 'coverFast', 'orientClassCode', 'crossLineFast', 'lineGlyphCodeFast', 'faceK', 'levelFromThresholds', 'pickCode', 'pickGlyphCodeFast']) base[n] = compileFn(src, n, base);
+  base.shadeCore = compileFn(src, 'shadeCore', base);
+  return base;
+}
+const lights = () => [rand() * 1.4, rand() * 1.2, rand() * 1.0];
+function runCore(src, trials) {
+  const fns = core(src);
+  let bad = 0, n = 0, joints = 0, lines = 0;
+  // detailShade.js hashFast divides the full 32 bits by 2^32, the GLSL/WGSL twin keeps 24 (>> 8): <= 2^-24 apart (accepted, D-039).
+  const closeF = (a, b) => Math.abs(a - b) <= 2e-5 * Math.max(1, Math.abs(a), Math.abs(b));
+  const matIds = []; for (let id = 1; id < nMat; id++) if (table.records[id] && table.records[id].v2) matIds.push(id);
+  for (let t = 0; t < trials; t++) {
+    const id = matIds[t % matIds.length], rec = table.records[id].v2;
+    const kind = [1, 2, 3, 4, 5, 8, 9][Math.floor(rand() * 7)], face = 1 + Math.floor(rand() * 7);
+    const u = rand() * 40 - 5, v = rand() * 40 - 5, z = rand() * 12, dist = 0.5 + rand() * 60;
+    const aoD = rand() < 0.3 ? 1e30 : rand() * 3;
+    const dd = () => (rand() < 0.2 ? 0 : (rand() - 0.5) * (rand() < 0.75 ? 0.05 : 4));
+    const dudx = dd(), dvdx = dd(), dudy = dd(), dvdy = dd();
+    const light = lights();
+    const want = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, {});
+    const got = fns.shadeCore(u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, id, Math.max(light[0], light[1], light[2]));
+    n++;
+    const ok = closeF(got.b, want.b) && closeF(got.gb, want.gb) && closeF(got.cr, want.cr) && closeF(got.cg, want.cg) && closeF(got.cb, want.cb) &&
+      closeF(got.bgK, want.bgK) && Math.abs(got.hA - want.hA) <= 2.5e-7 && Math.abs(got.hB - want.hB) <= 2.5e-7 && got.onJoint === want.onJoint && got.lineCode === want.lineCode && got.setId === want.setId;
+    if (!ok) { bad++; if (bad < 4 && src === SHADE_WGSL) console.error('shadeCore mismatch mat', id, JSON.stringify(got), JSON.stringify(want)); }
+    if (want.onJoint) joints++; if (want.lineCode >= 0) lines++;
+  }
+  return { bad, n, joints, lines };
+}
+const baseCore = runCore(SHADE_WGSL, 6000);
+// float32-packed constants (grid periods, thresholds) may flip a discrete floor at a tile boundary: allow 0.2 %, never more.
+assert.ok(baseCore.bad <= baseCore.n * 0.002, `shadeCore vs JS: ${baseCore.bad}/${baseCore.n} differ`);
+assert.ok(baseCore.joints > 100 && baseCore.lines > 80, `joint/line coverage ${baseCore.joints}/${baseCore.lines}`);
+probes += baseCore.n;
+const mutC = (a, b) => { assert.ok(SHADE_WGSL.includes(a), 'anchor ' + a); return SHADE_WGSL.replace(a, b); };
+assert.ok(runCore(mutC('if (kind != 8u && face >= 1 && face <= 6)', 'if (kind != 9u && face >= 1 && face <= 6)'), 1500).bad > 15, 'mutation: kind 8 fk rule');
+assert.ok(runCore(mutC('shadeK = mf3.x;', 'shadeK = mf3.y;'), 3000).bad > 5, 'mutation: grid joint shade');
+assert.ok(runCore(mutC('+ mf1.x;', '+ mf1.y;'), 1500).bad > 15, 'mutation: emissive slot');
+assert.ok(runCore(mutC('let jit = 1.0 + jitter * (hA * 2.0 - 1.0);', 'let jit = 1.0 + jitter * (hB * 2.0 - 1.0);'), 1500).bad > 15, 'mutation: jitter hash');
+assert.ok(runCore(mutC('uo = u - select(0.0, gstagger * gu, fmodGlsl(course, 2.0) != 0.0);', 'uo = u;'), 3000).bad > 5, 'mutation: brick stagger');
+
+const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
+// --- glyph pick vs shadeDetailFast (n = 1: lineWins == onJoint, count == 1), no fog stipple (dist < fog.start) ---
+{
+  const fns = core(SHADE_WGSL);
+  let bad = 0, n = 0, nonZero = 0, orientedSeen = 0;
+  const matIds = []; for (let id = 1; id < nMat; id++) if (table.records[id] && table.records[id].v2) matIds.push(id);
+  for (let t = 0; t < 4000; t++) {
+    const id = matIds[t % matIds.length], rec = table.records[id].v2;
+    const kind = 1 + Math.floor(rand() * 5), face = 1 + Math.floor(rand() * 6);
+    const u = rand() * 30, v = rand() * 30, z = rand() * 6, dist = rand() * Math.max(0.1, table.fog.start - 0.5);
+    const dudx = (rand() - 0.5) * 0.4, dvdx = (rand() - 0.5) * 0.4, dudy = (rand() - 0.5) * 0.4, dvdy = (rand() - 0.5) * 0.4;
+    const light = lights();
+    const gbuf = { u: [u], v: [v], z: [z], face: [face], kind: [kind], aoD: [1e30], dudx: [dudx], dvdx: [dvdx], dudy: [dudy], dvdy: [dvdy] };
+    const out = { glyphIdx: -1, fg: [0, 0, 0], bg: [0, 0, 0], f: 0, onJoint: false };
+    shadeDetailFast(table, rec, 0, gbuf, dist, light, out);
+    const c = fns.shadeCore(u, v, z, 1e30, dudx, dvdx, dudy, dvdy, dist, face, kind, id, Math.max(light[0], light[1], light[2]));
+    let glyph;
+    if (c.gb <= 0) glyph = 0;
+    else if (c.onJoint && c.lineCode >= 0) glyph = c.lineCode;
+    else {
+      const t0 = textureLoad(setITex, { x: 0, y: c.setId });
+      const oriented = t0.x, axis = t0.y;
+      let classIdx = 0;
+      if (oriented !== 0) { classIdx = fns.orientClassCode(axis === 0 ? dudx : dvdx, axis === 0 ? dudy : dvdy, su.cellAspect); orientedSeen++; }
+      const code = fns.pickGlyphCodeFast(c.setId, c.gb, c.hA, classIdx, su.cutoff);
+      glyph = code < 0 ? 0 : code;
+    }
+    n++; if (glyph !== 0) nonZero++;
+    if (glyph !== out.glyphIdx && out.f === 0) { bad++; if (bad < 6) console.error("glyph", id, glyph, out.glyphIdx, JSON.stringify(c)); }
+    probes++;
+  }
+  assert.ok(bad <= n * 0.002, `glyph pick vs shadeDetailFast: ${bad}/${n} differ`);
+  assert.ok(nonZero > n * 0.3 && orientedSeen > 50, `glyph coverage ${nonZero}/${n}, oriented ${orientedSeen}`);
+}
+
+// --- shadeTerrain vs terrainShade.js ---
+{
+  const rows = 4;
+  const tlook = new Float32Array(4 * TLOOK_WIDTH * rows);
+  const pack = (codes) => { let x = 0; for (let i = 0; i < codes.length; i++) x |= codes[i] << (8 * i); return x; };
+  for (let r = 0; r < rows; r++) {
+    const base = r * TLOOK_WIDTH * 4;
+    for (let tx = 0; tx < 3; tx++) for (let c = 0; c < 3; c++) tlook[base + tx * 4 + c] = rand();
+    tlook[base + 12] = 0.8; tlook[base + 13] = r === 1 ? 1 : 0; // albedo, glint flag
+    if (r === 2) { tlook[base + 14] = pack([40, 50]); tlook[base + 15] = 2; } // face glyphs + count (forest-like row)
+    for (let tx = 4; tx <= 7; tx++) { const n = 1 + Math.floor(rand() * 3); tlook[base + tx * 4] = pack(Array.from({ length: n }, () => 1 + Math.floor(rand() * 90))); tlook[base + tx * 4 + 1] = n; }
+    for (let c = 0; c < 3; c++) tlook[base + 16 * 4 + c] = rand(); // trunk colour
+  }
+  const gainLUT = new Float32Array(256); for (let i = 0; i < 256; i++) gainLUT[i] = Math.pow(i / 255, 0.6);
+  const shadingT = { fgMin: 0.15, fgGamma: 0.6, fgMaxGain: 1.6, gainLUT };
+  const bands = { near: 150, mid: 600 };
+  const fog = { start: 50, full: 1500, curve: 0.7, nearRGB: [143, 168, 196], farRGB: [196, 220, 239] };
+  const uTl = toTex(tlook, TLOOK_WIDTH, rows), uGain = f1Tex(gainLUT, 256, 1);
+  const makeSu = (hashCell) => ({
+    hashCell, nearDetailOn: 1, handover: { x: 40, y: 90 }, closeBand: 40, fgMin: shadingT.fgMin, fgMaxGain: shadingT.fgMaxGain, bandNear: bands.near, bandMid: bands.mid,
+    terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
+    terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
+  });
+  const MAX_F = MAX_FEATURES_PER_TYPE;
+  function runTerrain(src, trials) {
+    let bad = 0, n = 0, faces = 0, closeN = 0;
+    const h = mkHash(src);
+    for (const hashCell of [0, 3, -0.05]) {
+      const suT = makeSu(hashCell);
+      const base = { ...shims, textureLoad, su: suT, uTlook: uTl, uGain, imul, ...h, MAX_FEATURES_PER_TYPE: MAX_F, FOREST_FACE_NZ,
+        exp2: (x) => Math.pow(2, x), ceil: Math.ceil, log2: Math.log2, pow: Math.pow };
+      base.samplePowLUT = compileFn(SHADE_WGSL, 'samplePowLUT', base);
+      // WGSL integer / truncates; the JS evaluator divides in floats, so make the truncation explicit for this one helper
+      assert.ok(SHADE_WGSL.includes('fn imod(a: i32, b: i32) -> i32 { return a - b * (a / b); }'));
+      base.imod = compileFn(SHADE_WGSL.replace('fn imod(a: i32, b: i32) -> i32 { return a - b * (a / b); }', 'fn imod(a: i32, b: i32) -> i32 { return a - b * Math.trunc(a / b); }'), 'imod', { ...base, Math });
+      base.pickCodeFromPacked = compileFn(src, 'pickCodeFromPacked', base);
+      const st = compileFn(src, 'shadeTerrain', base);
+      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: shadingT, closeBand: 40, handover: [40, 90], features: null, hashCell };
+      for (let t = 0; t < trials; t++) {
+        const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
+        const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
+        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+        shadeTerrain(tt, type, b, u, v, time, ctx, o, faceMode);
+        const g = st(tt, type, b, u, v, time, faceMode);
+        const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
+        n++; if (tt < 40) closeN++; if (faceMode && type === 2) faces++;
+        if (g.glyph !== o.glyph || q(g.fr) !== o.fg[0] || q(g.fg) !== o.fg[1] || q(g.fb) !== o.fg[2] || q(g.br) !== o.bg[0] || q(g.bg) !== o.bg[1] || q(g.bb) !== o.bg[2]) { bad++; if (bad < 10 && src === SHADE_WGSL) console.error("terr", hashCell, JSON.stringify({ type, tt, b, u, v, time, faceMode }), JSON.stringify(g), o.glyph, Array.from(o.fg), Array.from(o.bg)); }
+      }
+    }
+    return { bad, n, faces, closeN };
+  }
+  const base = runTerrain(SHADE_WGSL, 1500);
+  assert.ok(base.bad <= base.n * 0.001, `shadeTerrain vs JS: ${base.bad}/${base.n} differ`);
+  assert.ok(base.faces > 100 && base.closeN > 300, `terrain coverage faces ${base.faces} close ${base.closeN}`);
+  probes += base.n;
+  const mutT = (a, b) => { assert.ok(SHADE_WGSL.includes(a), 'anchor ' + a); return SHADE_WGSL.replace(a, b); };
+  assert.ok(runTerrain(mutT('if (f > 0.85) { code = 0; }', 'if (f > 0.9) { code = 0; }'), 600).bad > 3, 'mutation: fog glyph cut');
+  assert.ok(runTerrain(mutT('var br = fr * 0.3;', 'var br = fr * 0.35;'), 300).bad > 20, 'mutation: bg factor');
+}
+
+console.log(`shade.wgsl.test.js: string/layout rules + ${probes} JS-evaluated probes (hash, shadeCore, glyph pick, shadeTerrain) vs JS twins passed, mutations caught (hash, 5 shadeCore, 2 terrain).`);
