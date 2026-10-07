@@ -224,6 +224,8 @@ export class World {
     this.visibility = null;
     // US-133 (architecture.md 32.3): the fire-spread grid (engine/world/fireGrid.js), or null; the game builds it and `serialize` saves it when set.
     this.fire = null;
+    /** @type {any} ALPHA-01b: MaskAtlas built by engine.loadWorld (null until then) */
+    this.maskAtlas = null;
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;

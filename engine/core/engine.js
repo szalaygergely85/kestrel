@@ -8,6 +8,7 @@ import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/
 import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
+import { buildMaskAtlas } from '../render/MaskAtlas.js';
 import { Input } from './input.js';
 import { Loop } from './loop.js';
 import { Events } from './events.js';
@@ -237,6 +238,9 @@ export function createEngine(opts) {
     },
     loadWorld(def, worldOpts) {
       engine.world = World.load(def, assets, { events, ...worldOpts });
+      // ALPHA-01b (37.17 item 10): one R8UI mask atlas per loaded world (ids sorted, deterministic); empty when no masks.
+      engine.maskAtlas = buildMaskAtlas(assets);
+      engine.world.maskAtlas = engine.maskAtlas;
       return engine.world;
     },
     /**

@@ -98,6 +98,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const ctx = sunShadowRasterCtx;
   ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
   ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
+  ctx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
   sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
   fb.sunMap = sunMapState;
@@ -234,6 +235,7 @@ function renderWorldMesh(fb, world, cam) {
     meshCtx.structFoot = null;
     meshCtx.structCount = 0;
   }
+  meshCtx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
   rasterDrawList(list, target, meshCtx);
   // US-078a (architecture.md 30.1): first-person view model, same pass after a depth-only clear (twin of the GPU
   // `_passRaster` tail); off on pitched frames and when nothing is shown.

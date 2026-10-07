@@ -5,7 +5,7 @@
 // them exactly once, via `AssetRegistry.fromGlobals`, and hands the registry
 // to `createEngine`.
 
-const KINDS = ['model', 'level', 'terrain', 'world', 'mesh'];
+const KINDS = ['model', 'level', 'terrain', 'world', 'mesh', 'mask'];
 
 function throwUnknown(kind, key, map) {
   const known = Object.keys(map).join(', ') || '(none)';
@@ -54,6 +54,7 @@ export class AssetRegistry {
     this._terrain = bundle.terrain || {};
     this._worlds = bundle.worlds || {};
     this._meshes = bundle.meshes || {};
+    this._masks = bundle.masks || {}; // ALPHA-01b: alpha masks {id, w, h, cutoffDefault, data} (content kind 'mask')
     // ED-TERRAIN-1a: parsed `terrainEdits` file bodies by terrain key (absent = unedited).
     this._terrainEdits = bundle.terrainEdits || {};
     this._uiStyle = bundle.uiStyle || null;
@@ -86,6 +87,12 @@ export class AssetRegistry {
   mesh(key) {
     if (!(key in this._meshes)) throwUnknown('mesh', key, this._meshes);
     return this._meshes[key];
+  }
+
+  /** ALPHA-01b: a loaded alpha mask `{id, w, h, cutoffDefault, data: Uint8Array}`. */
+  mask(key) {
+    if (!(key in this._masks)) throwUnknown('mask', key, this._masks);
+    return this._masks[key];
   }
 
   model(key) {
@@ -175,6 +182,7 @@ export class AssetRegistry {
       case 'terrain': return this._terrain;
       case 'world': return this._worlds;
       case 'mesh': return this._meshes;
+      case 'mask': return this._masks;
       default: throw new Error(`AssetRegistry: unknown kind "${kind}" (expected one of ${KINDS.join(', ')})`);
     }
   }
@@ -253,6 +261,7 @@ export class AssetRegistry {
       palette: codeParts.palette,
       models: codeParts.models,
       meshes,
+      masks: { ...(bundle.masks || {}) },
       levels,
       terrain,
       worlds,
