@@ -695,7 +695,7 @@ async function runGpuCompareSceneMode(ctx) {
     waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // same designer table as the bound GPU pipeline
     viewModel: engine.viewModel, // US-078a: both twins draw the layer when a pose shows it
     // ME-15c: the JS twin renders the same sun shadow map as the GPU pass whenever the pipeline runs sun 'map'.
-    shadowOpts: !wg && renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,
+    shadowOpts: renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,
     // RE-15a fixes (28.13 point 4, PC-B Q7 item 1): host-owned "rendered frame" counter,
     // bumped once per pose below, before both twins (GPU + JS) run for that pose - replaces
     // the two independent per-caller counters compositor.js/GpuCellPipeline.js used to keep.
@@ -710,7 +710,7 @@ async function runGpuCompareSceneMode(ctx) {
   let sampledOwnTextures = true;
   // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
   const shadowRows = [];
-  const shadowRunner = !wg && renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
+  const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
   // `&pose=<text>` (US-055a2b): run only the poses whose name contains <text> (case-insensitive); the last one stays on the canvas = an owner look,
@@ -785,7 +785,7 @@ async function runGpuCompareSceneMode(ctx) {
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = !wg && poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null;
     if (shadowRunner) {
-      const sd = shadowRunner.run(gpuPipeline);
+      const sd = wg ? await shadowRunner.runAsync(gpuPipeline) : shadowRunner.run(gpuPipeline);
       if (sd) {
         shadowRows.push({ pose: `${poseName} [shadow depth parity]`, ok: sd.pass, shadowDepth: sd });
         console.log(`[gpucompare] shadowDepth ${sd.pass ? 'PASS' : 'FAIL'} ${poseName}: items=${sd.items} both=${sd.both} slopeAwareWithin=${sd.withinPct.toFixed(4)}%(>=99.9) flat16=${sd.within16Pct.toFixed(3)}% maxUlp=${sd.maxUlp} covMismatch=${sd.covMismatchPct.toFixed(4)}%(<=0.3, union ${sd.covMismatchUnionPct.toFixed(3)}%) gpuOnly=${sd.gpuOnly} jsOnly=${sd.jsOnly} outside16: le64=${sd.hist.le64} le1024=${sd.hist.le1024} big=${sd.hist.big} ratioHist(<=.02/.05/.1/.25/1/>1 texel)=${sd.ratioHist}`);
@@ -831,12 +831,12 @@ async function runGpuCompareSceneMode(ctx) {
       let instOkW = true;
       if (instAssert) { const st = engine.instances.stats; instOkW = st.instances + st.instancesCulled === instAssert.total && st.instancesCulled > 0 && st.instancesLod1 > 0 && st.instances > st.instancesLod1; }
       const vmOkW = !vmAssert || (vmItemsGpu > 0 && vmItemsJs > 0);
-      // WG-3b: light row (JS twin fb.light vs texLight). Sun-map poses (twin uses the shadow map) wait for WG-3d: recorded, not gated.
+      // WG-3b/3d: light row (JS twin fb.light vs texLight), sun-map poses included (the WebGPU shadow map is ported: gated like WebGL2).
       const cmpLightW = lightBuf ? compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask) : null;
-      const lightWaits = !!(cmpLightW && cmpLightW.sunMap);
-      const lightOkW = !cmpLightW || lightWaits || cmpLightW.pass;
+      const lightWaits = false;
+      const lightOkW = !cmpLightW || cmpLightW.pass;
       // WG-3c: shade + edge cell row, same bars as the WebGL2 rows. Poses whose JS twin includes layers WebGPU has not ported yet are
-      // recorded but not gated: sun-map poses (WG-3d), water (WG-3e), sprites/particles/overlay (WG-3f).
+      // recorded but not gated: water (WG-3e), sprites/particles/overlay (WG-3f).
       let cmpCellsW = null, cellsOkW = true, cellsWait = null;
       if (gpuFg) {
         cmpCellsW = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
@@ -848,10 +848,10 @@ async function runGpuCompareSceneMode(ctx) {
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
         // only a row that would FAIL is held back, and only for a layer WebGPU has not ported (row passes keep their honest OK)
-        const wantWait = lightWaits ? 'WG-3d' : poseName.includes('water') ? 'WG-3e'
+        const waterCellsJs = !!(fbCompare.waterMask && fbCompare.waterMask.some((v) => v)); // JS twin water composite on cells (e.g. the world_m1 pond in towerShadowGrass)
+        const wantWait = (poseName.includes('water') || waterCellsJs) ? 'WG-3e'
           : (overlayOps || sprites.pool.count > 0 || (engine.particleLayer && engine.particleLayer.stats.cells > 0) || fbCompare.sceneFade < 1 || compareSceneDim.all < 1 || compareSceneDim.n > 0) ? 'WG-3f' : null;
-        // OPEN (WG-3c ASK ARCHITECT, docs/test-reports/WG-3c.md): towerShadowGrass mismatches on kind 7 with sprites/particles OFF too, so it is never excused as a layer wait.
-        if (!cellsOkW && wantWait && !poseName.includes('towerShadowGrass')) { cellsWait = wantWait; cellsOkW = true; }
+        if (!cellsOkW && wantWait) { cellsWait = wantWait; cellsOkW = true; }
       }
       const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW;
       overallOk = overallOk && okW;

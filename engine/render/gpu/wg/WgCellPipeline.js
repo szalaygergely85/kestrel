@@ -13,6 +13,7 @@ import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
 import { WgCellPass } from './passCell.js';
+import { WgShadowPass } from './passShadow.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
@@ -37,7 +38,7 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
-    this.rendererString = 'webgpu (WG-3c resolve+deriv+light+shade+edge)';
+    this.rendererString = 'webgpu (WG-3d resolve+deriv+shadow+light+shade+edge)';
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
@@ -59,6 +60,7 @@ export class WgCellPipeline {
     this._pipeDebug = null;
     this._rasterPass = null;
     this._cellPass = null;
+    this._shadowPass = null;
     this._outTarget = null; this._outFg = null; this._outBg = null;
     this._gbufCleared = false; this._cellsShaded = false;
     this._clearOpts = { clear: true };
@@ -75,8 +77,11 @@ export class WgCellPipeline {
       });
       this._rasterPass = new WgRasterPass(this.device);
       this._meshDrawList = this._rasterPass.list;
-      this._cellPass = new WgCellPass(this.device);
+      this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers });
+      this._cellPass = new WgCellPass(this.device, this._shadowPass);
+      this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
+      if (this._shadowPass.enabled) this.portedPasses.push('shadow');
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
@@ -199,7 +204,8 @@ export class WgCellPipeline {
     return { fg: outFg, bg: outBg };
   }
   async readbackWater() { return null; }
-  async readbackShadowDepthBits(_out) { return null; }
+  /** WG-3d: the sun map depth as float32 bits (res*res Uint32Array); false = no map rendered this frame (gpucompare shadowDepth row). */
+  async readbackShadowDepthBits(out) { return this._shadowPass ? this._shadowPass.readbackDepth(out) : false; }
 
   // ---- hook (RenderTargetWebGPU.present calls it between the cell upload and its own present pass) ----
   _hook() {
@@ -211,6 +217,13 @@ export class WgCellPipeline {
     } else {
       d.beginPass(t.targetRaster, this._clearOpts);
       d.endPass();
+      if (this._shadowPass) this._shadowPass.active = false; // no camera/world: no valid map (the light pass falls back to the dummy)
+    }
+    const sh = this._shadowPass;
+    if (sh && sh.enabled) {
+      try { sh.run(this, this._rasterPass); }
+      catch (e) { sh.active = false; console.warn('[WgCellPipeline] sun shadow map failed this frame (DDA sun):', e); }
+      this.stats.shadowItems = sh.stats.shadowItems; this.stats.shadowDraws = sh.stats.shadowDraws; this.stats.shadowCpuMs = sh.stats.shadowCpuMs;
     }
     try { this._cellPass.run(this, t); }
     catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
@@ -248,6 +261,8 @@ export class WgCellPipeline {
     this._rasterPass = null;
     if (this._cellPass) this._cellPass.dispose();
     this._cellPass = null;
+    if (this._shadowPass) this._shadowPass.dispose();
+    this._shadowPass = null;
     freeWgTargets(this.device, this._t);
     this._t = null;
   }

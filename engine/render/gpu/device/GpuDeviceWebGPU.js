@@ -249,7 +249,8 @@ export class GpuDeviceWebGPU {
       vertex: { module: this._module(v.src), entryPoint: /** @type {any} */ (v.src).entry || 'vs_main', buffers },
       primitive: { topology: 'triangle-list', frontFace: desc.frontFace || 'cw', cullMode: desc.cull || 'none' },
     };
-    if (targetFormats.length) pd.fragment = { module: this._module(desc.fragment.src), entryPoint: /** @type {any} */ (desc.fragment.src).entry || 'fs_main', targets: targetFormats.map((format) => ({ format })) };
+    // WG-3d: a depth-only pipeline still gets a fragment stage when the descriptor names an entry (terrain shadow carve `fs_shadow`, zero colour targets)
+    if (targetFormats.length || (desc.fragment.src && /** @type {any} */ (desc.fragment.src).entry)) pd.fragment = { module: this._module(desc.fragment.src), entryPoint: /** @type {any} */ (desc.fragment.src).entry || 'fs_main', targets: targetFormats.map((format) => ({ format })) };
     if (desc.depthFormat) {
       const d = desc.depth || { test: false, write: false };
       pd.depthStencil = { format: depthFormatFor(desc.depthFormat), depthWriteEnabled: !!d.write, depthCompare: d.test ? 'less' : 'always' };

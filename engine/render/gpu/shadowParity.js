@@ -10,18 +10,28 @@ export function createShadowParityRunner(res) {
   const bits = new Uint32Array(res * res);
   const target = createRasterTarget(res, res, 1, { depthOnly: true });
   const ctx = { M: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0 };
+  // shared JS-twin half: raster the same caster list / matrix / bias / carve footprints and compare with the GPU bits
+  const compare = (list, M, so, foot, count) => {
+    ctx.M = M;
+    ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
+    ctx.structFoot = foot; ctx.structCount = count;
+    clearRasterTarget(target);
+    rasterDrawList(list, target, ctx);
+    const r = compareShadowDepth(bits, target.zbuf, res);
+    return { ...r, items: list.count };
+  };
   return {
+    /** WG-3d: WebGPU twin of run() (readbacks are Promises). @param {import('./wg/WgCellPipeline.js').WgCellPipeline} pipeline @returns {Promise<object|null>} */
+    async runAsync(pipeline) {
+      const sh = pipeline._shadowPass;
+      if (!sh || !(await sh.readbackDepth(bits))) return null;
+      const fp = sh.footprints();
+      return compare(sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0);
+    },
     /** @param {import('./GpuCellPipeline.js').GpuCellPipeline} pipeline @returns {object|null} null when no sun pass ran this frame */
     run(pipeline) {
       if (!pipeline.readbackShadowDepthBits(bits)) return null;
-      const so = pipeline.shadowOpts;
-      ctx.M = pipeline._sunMat.M;
-      ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
-      ctx.structFoot = pipeline._meshStructFoot; ctx.structCount = pipeline._structCount;
-      clearRasterTarget(target);
-      rasterDrawList(pipeline._shadowList, target, ctx);
-      const r = compareShadowDepth(bits, target.zbuf, res);
-      return { ...r, items: pipeline._shadowList.count };
+      return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount);
     },
   };
 }

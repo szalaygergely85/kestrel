@@ -22,7 +22,7 @@ export function derivTerms(cols, rows, pxCellW, pxCellH, out) {
 }
 
 export class WgCellPass {
-  constructor(device) {
+  constructor(device, shadowPass = null) {
     this.device = device;
     this.pipeResolve = device.createPipeline({
       vertex: { src: { wgsl: RESOLVE_WGSL } }, fragment: { src: { wgsl: RESOLVE_WGSL }, targets: 3 },
@@ -34,7 +34,7 @@ export class WgCellPass {
       bindings: { uniformBytes: DERIV_BLOCK.sizeBytes, textures: DERIV_TEXTURES.slice() },
       targetFormats: ['rgba32ui'],
     });
-    this.lightPass = new WgLightPass(device);
+    this.lightPass = new WgLightPass(device, shadowPass);
     this.shadePass = new WgShadePass(device); // WG-3c: shade + edge after light
     this.shaded = false; // true when this frame's shade + edge ran (final cells valid)
     this.upload = new WgUploadSource(device);  // WG-3c: `?gpucompare=shade` test source

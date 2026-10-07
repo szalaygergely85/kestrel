@@ -14,8 +14,8 @@
 // `targetFormats.length || (desc.fragment.src && desc.fragment.src.entry)`.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
-import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL } from '../wgsl/terrainRaster.wgsl.js';
-import { SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES } from '../wgsl/shadow.wgsl.js';
+import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
+import { SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES, SHADOW_TERRAIN_PIPE_WGSL } from '../wgsl/shadow.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
 import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
@@ -34,20 +34,7 @@ const INSTANCE_LAYOUT = [
   { name: 'iMeta', location: 9, components: 2, type: 'uint', offsetBytes: 48 },
 ];
 
-/**
- * Terrain shadow fragment entry, appended to the terrain raster module so the vertex stage and this stage share ONE uniform block
- * (TerrainU): the stand-alone `shadowTerrain` module (ShadowTerrainU) has a different layout (structFoot at word 4, count at 0)
- * and cannot share binding 0 with the terrain vertex stage. Same test as shadow.wgsl.js inStructFoot / the terrain fs_main carve.
- */
-export const SHADOW_TERRAIN_PIPE_WGSL = `${TERRAIN_RASTER_WGSL}
-@fragment fn fs_shadow(v: VertexOut) {
-  for (var i = 0; i < ${MAX_STRUCTS}; i++) {
-    if (u32(i) >= u.structCount) { break; }
-    let b = u.structFoot[i];
-    if (v.vWorldPos.x >= b.x && v.vWorldPos.x < b.z && v.vWorldPos.y >= b.y && v.vWorldPos.y < b.w) { discard; }
-  }
-}
-`;
+export { SHADOW_TERRAIN_PIPE_WGSL };
 
 export class WgShadowPass {
   /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string}} [opts] */
@@ -120,6 +107,13 @@ export class WgShadowPass {
     return n;
   }
 
+  /** TEST-ONLY (shadowParity.js): the carve footprints of the last frame, same fields the JS twin ctx wants. @returns {{foot: Float32Array, count: number}|null} */
+  footprints() {
+    if (!this._world) return null;
+    const count = this._fillFoot(this._world);
+    return { foot: this.tu.subarray(T_FOOT, T_FOOT + count * 4), count };
+  }
+
   _model(m, o = 0) {
     const M = this.u, n = MODEL;
     M[n] = m[o]; M[n + 1] = m[o + 3]; M[n + 2] = m[o + 6]; M[n + 3] = 0;
@@ -143,6 +137,7 @@ export class WgShadowPass {
   run(p, raster) {
     this.active = false;
     if (!this.enabled) return false;
+    this._world = p._world;
     const so = this.shadowOpts, light = p._light, cam = p._cam, world = p._world, sun = light && light.sun;
     if (!sun || !sun.on || !cam || !world) return false;
     const list = this.list, src = this.src, st = this.stats;

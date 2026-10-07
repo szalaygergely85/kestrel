@@ -12,6 +12,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { FULLSCREEN_VS_WGSL } from './common.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
+import { TERRAIN_RASTER_WGSL } from './terrainRaster.wgsl.js';
 
 export const SHADOW_TERRAIN_BLOCK = defineUniformBlock('ShadowTerrainU', [
   { name: 'structCount', type: 'i32' }, { name: 'pad0', type: 'f32' }, { name: 'pad1', type: 'f32' }, { name: 'pad2', type: 'f32' },
@@ -59,3 +60,19 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   return vec4u(bits, 0u, 0u, 0u);
 }
 `;
+
+/**
+ * Terrain shadow fragment entry, appended to the terrain raster module so the vertex stage and this stage share ONE uniform block
+ * (TerrainU): the stand-alone `shadowTerrain` module (ShadowTerrainU) has a different layout (structFoot at word 4, count at 0)
+ * and cannot share binding 0 with the terrain vertex stage. Same test as shadow.wgsl.js inStructFoot / the terrain fs_main carve.
+ */
+export const SHADOW_TERRAIN_PIPE_WGSL = `${TERRAIN_RASTER_WGSL}
+@fragment fn fs_shadow(v: VertexOut) {
+  for (var i = 0; i < ${MAX_STRUCTS}; i++) {
+    if (u32(i) >= u.structCount) { break; }
+    let b = u.structFoot[i];
+    if (v.vWorldPos.x >= b.x && v.vWorldPos.x < b.z && v.vWorldPos.y >= b.y && v.vWorldPos.y < b.w) { discard; }
+  }
+}
+`;
+

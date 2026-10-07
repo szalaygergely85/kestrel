@@ -202,7 +202,8 @@ export class WgShadePass {
     const rp = p._rasterPass, pitched = useScene && !!(rp && rp.pitched);
     si[S_N] = p._source === 'upload' ? 1 : p.rays;
     si[S_GPUSKY] = useScene ? 1 : 0;
-    si[S_SUNMAP] = 0; // sun shadow MAP waits for WG-3d
+    const sh = p._shadowPass, sun = p._light && p._light.sun;
+    si[S_SUNMAP] = sh && sh.active && sun && sun.on ? 1 : 0; // WG-3d: GL uSunMapOn = shadowActive && sun.on (light runs sunMode 2)
     su[S_TIME] = (p._fb && p._fb.timeSec) || 0;
     su[S_SKY_ELEV] = this.skyElevTop;
     si[S_PROJ] = pitched ? 1 : 0; ei[E_PROJ] = pitched ? 1 : 0;
