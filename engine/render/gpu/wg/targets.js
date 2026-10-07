@@ -3,7 +3,7 @@
 // like the GL sub-sample set. `resizeGrid` = free + alloc (the pipeline commits the new set only after a successful alloc).
 // Pure device calls: Node-testable with makeMockGpuDevice.
 
-export const WG_TEXTURE_FIELDS = Object.freeze(['texSGI', 'texSGA', 'texSDepth', 'texRasterDepth', 'texGI', 'texGA', 'texGD', 'texDepth', 'texMask']);
+export const WG_TEXTURE_FIELDS = Object.freeze(['texSGI', 'texSGA', 'texSDepth', 'texRasterDepth', 'texGI', 'texGA', 'texGD', 'texDepth', 'texMask', 'texLight']);
 
 /**
  * @param {any} device a GpuDevice (mock or WebGPU)
@@ -28,6 +28,9 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
     t.texMask = device.createTexture({ format: 'r8ui', width: cols, height: rows });
     t.targetResolve = device.createTarget({ color: [t.texGI, t.texGA, t.texDepth] });
     t.targetDeriv = device.createTarget({ color: [t.texGD] });
+    // WG-3b: light output (rgba32uint, sunlit/litCount/sunN in .w)
+    t.texLight = device.createTexture({ format: 'rgba32ui', width: cols, height: rows });
+    t.targetLight = device.createTarget({ color: [t.texLight] });
   } catch (e) {
     freeWgTargets(device, t);
     throw e;
@@ -38,7 +41,7 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
 /** @param {any} device @param {any} t result of allocWgTargets (partial is fine) */
 export function freeWgTargets(device, t) {
   if (!t) return;
-  for (const f of ['targetRaster', 'targetVmDepth', 'targetResolve', 'targetDeriv', ...WG_TEXTURE_FIELDS]) {
+  for (const f of ['targetRaster', 'targetVmDepth', 'targetResolve', 'targetDeriv', 'targetLight', ...WG_TEXTURE_FIELDS]) {
     if (t[f]) { try { device.dispose(t[f]); } catch (_) { /* best effort */ } t[f] = null; }
   }
 }

@@ -758,7 +758,7 @@ async function runGpuCompareSceneMode(ctx) {
     if (rb) sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
     const gpuFg = rb ? rb.fg : null, gpuBg = rb ? rb.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
-    const lightBuf = wg ? null : await gpuPipeline.readbackLight();
+    const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = !wg && poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null;
     if (shadowRunner) {
       const sd = shadowRunner.run(gpuPipeline);
@@ -807,10 +807,14 @@ async function runGpuCompareSceneMode(ctx) {
       let instOkW = true;
       if (instAssert) { const st = engine.instances.stats; instOkW = st.instances + st.instancesCulled === instAssert.total && st.instancesCulled > 0 && st.instancesLod1 > 0 && st.instances > st.instancesLod1; }
       const vmOkW = !vmAssert || (vmItemsGpu > 0 && vmItemsJs > 0);
-      const okW = geomOk && k8OkW && instOkW && vmOkW;
+      // WG-3b: light row (JS twin fb.light vs texLight). Sun-map poses (twin uses the shadow map) wait for WG-3d: recorded, not gated.
+      const cmpLightW = lightBuf ? compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask) : null;
+      const lightWaits = !!(cmpLightW && cmpLightW.sunMap);
+      const lightOkW = !cmpLightW || lightWaits || cmpLightW.pass;
+      const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW;
       overallOk = overallOk && okW;
-      console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, cloth: gpuPipeline.stats.clothDraws })}`);
-      rowsOut.push({ pose: poseName, cmpGeom, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
+      console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, cloth: gpuPipeline.stats.clothDraws })}`);
+      rowsOut.push({ pose: poseName, cmpGeom, cmpLight: cmpLightW, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
       continue;
     }
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);

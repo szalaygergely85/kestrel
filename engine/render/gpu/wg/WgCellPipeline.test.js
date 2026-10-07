@@ -29,7 +29,7 @@ assert.strictEqual(t0.targetRaster.desc.color.length, 3);
 assert.strictEqual(t0.targetRaster.desc.depth, t0.texRasterDepth);
 const before = liveCount();
 freeWgTargets(device, t0);
-assert.strictEqual(liveCount(), before - 13, 'free disposes 9 textures + 4 targets');
+assert.strictEqual(liveCount(), before - 15, 'free disposes 10 textures + 5 targets');
 // alloc failure frees the partial set
 {
   let n = 0; const orig = device.createTexture;
@@ -50,14 +50,14 @@ for (const m of SURFACE) {
 }
 assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
-assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv']);
+assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light']);
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
 assert.strictEqual(typeof hook, 'function', 'cell-pass hook installed');
 assert.strictEqual(rt.gpuActive, undefined, 'never takes over the CPU shading');
 
 // stubs are safe
 p.bind({}, {}); p.bindVoxels({}); p.bindViewModel({}); p.bindInstances({}); p.setPassTiming(true); p.frame(null, null, null, null); p.setWaterLooks([]);
-assert.strictEqual(await p.readbackLight(), null);
+{ const rl = await p.readbackLight(); assert.strictEqual(rl.length, 4 * p.cols * p.rows, 'readbackLight is cols*rows 4-wide'); }
 assert.strictEqual(await p.readbackWater(), null);
 
 // hook: debug off = raster clear + resolve + deriv (2 draws); with a mode: + one debug pass
@@ -88,6 +88,28 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   assert.strictEqual(p._debugU, uniforms); assert.strictEqual(p._debugBind, bind); assert.strictEqual(p._debugTex, textures);
   assert.strictEqual(liveCount(), created, 'warm debug hook creates no resources');
   assert.deepStrictEqual([...uniforms].slice(0, 3), [3, 2, Math.fround(0.05)]);
+}
+
+// WG-3b: light pass (fake world: no structures; ambient-only light array, then a LightSet-shaped object with the sun on)
+{
+  const lp = p._cellPass.lightPass, t = p._t;
+  const world = { structures: [], structVersion: 1 };
+  const cam = { x: 1, y: 2, z: 1.5, yawDeg: 90, pitchDeg: 0 };
+  const host = { _world: world, _light: [0.1, 0.2, 0.3], _cam: cam, cols: p.cols, rows: p.rows, rt, _rasterPass: null };
+  passes.length = 0; drawn = 0;
+  lp.run(host, t);
+  assert.deepStrictEqual(passes.map(x => x.t), [t.targetLight]); assert.strictEqual(drawn, 1);
+  assert.strictEqual(device._lastBind.textures.length, 7);
+  assert.strictEqual(device._lastBind.textures[6].texture, lp.texSunDummy, 'dummy depth bound until WG-3d');
+  assert.strictEqual(device._lastBind.uniforms[0].toFixed(2), '0.10');
+  const made = liveCount();
+  const ls = { pos: new Float32Array(32), col: new Float32Array(32), count: 1, ambient: [0.5, 0.5, 0.5], sun: { on: true, dir: [0, 0, 1], col: [1, 1, 1] },
+    visOx: new Float32Array(8), visOy: new Float32Array(8), visW: new Float32Array(8).fill(33), visH: new Float32Array(8).fill(33),
+    visVersion: new Int32Array(8), vis: new Uint8Array(8 * 33 * 33) };
+  host._light = ls; lp.run(host, t);
+  assert.strictEqual(lp.texLVis._texWrites, 1, 'dirty LVIS slot uploaded once');
+  lp.run(host, t); assert.strictEqual(lp.texLVis._texWrites, 1, 'unchanged LVIS slot not re-uploaded');
+  assert.strictEqual(liveCount(), made, 'warm light pass creates no resources');
 }
 
 // resizeGrid reallocates, frees old

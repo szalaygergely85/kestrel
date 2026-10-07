@@ -34,7 +34,7 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
-    this.rendererString = 'webgpu (WG-3a resolve+deriv)';
+    this.rendererString = 'webgpu (WG-3b resolve+deriv+light)';
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
@@ -72,7 +72,7 @@ export class WgCellPipeline {
       this._rasterPass = new WgRasterPass(this.device);
       this._meshDrawList = this._rasterPass.list;
       this._cellPass = new WgCellPass(this.device);
-      this.portedPasses.push('debug', 'raster', 'resolve', 'deriv');
+      this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light');
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
@@ -165,7 +165,15 @@ export class WgCellPipeline {
     return { fg: r.fg, bg: r.bg };
   }
   // passes not ported yet: resolve to null so a caller's `await` works and can see "nothing here" (no throw)
-  async readbackLight() { return null; }
+  /** Async twin of GpuCellPipeline.readbackLight: LIGHT rgba32uint (xyz = bitcast L, w = sunlit | litCount << 8 | sunN << SUN_N_SHIFT), cols*rows 4-wide. */
+  async readbackLight() {
+    const t = this._t;
+    if (!t) throw new Error('WgCellPipeline.readbackLight: no targets');
+    const n = this.cols * this.rows;
+    this._rbLight = this._rbLight && this._rbLight.length === 4 * n ? this._rbLight : new Uint32Array(4 * n);
+    await this.device.readback(t.texLight, { x: 0, y: 0, w: this.cols, h: this.rows }, this._rbLight);
+    return this._rbLight;
+  }
   async readbackWater() { return null; }
   async readbackShadowDepthBits(_out) { return null; }
 

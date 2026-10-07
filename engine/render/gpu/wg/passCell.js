@@ -1,8 +1,9 @@
 // WG-3a (docs/architecture.md 38.8a items 20-22): resolve + deriv as fullscreen passes (GpuCellPipeline._passResolve/_passDeriv twin).
 // Resolve votes the raster sub-sample set (texSGI/SGA/SDepth) down to cell-res texGI/texGA/texDepth; deriv reads those and
-// writes texGD. Pipelines and bind descriptors are built once here (22b); per frame only uniform words change.
+// writes texGD; WG-3b then runs the light pass (passLight.js) into texLight. Pipelines and bind descriptors are built once here (22b); per frame only uniform words change.
 import { RESOLVE_BLOCK, RESOLVE_WGSL, RESOLVE_TEXTURES } from '../wgsl/resolve.wgsl.js';
 import { DERIV_BLOCK, DERIV_WGSL, DERIV_TEXTURES } from '../wgsl/deriv.wgsl.js';
+import { WgLightPass } from './passLight.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const R_N = RESOLVE_BLOCK.field('n').word;
@@ -31,6 +32,7 @@ export class WgCellPass {
       bindings: { uniformBytes: DERIV_BLOCK.sizeBytes, textures: DERIV_TEXTURES.slice() },
       targetFormats: ['rgba32ui'],
     });
+    this.lightPass = new WgLightPass(device);
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);
     this.du = new Float32Array(DERIV_BLOCK.sizeWords); this.di = new Int32Array(this.du.buffer);
     this.rTex = [0, 1, 2, 3].map(slot => ({ slot, texture: null }));
@@ -59,9 +61,12 @@ export class WgCellPass {
     d.bind(this.pipeDeriv, this.dBind);
     d.draw(3);
     d.endPass();
+    // WG-3b: light (needs the camera + world; without them the frame has no lit content)
+    if (p._cam && p._world) this.lightPass.run(p, t);
   }
 
   dispose() {
+    if (this.lightPass) { this.lightPass.dispose(); this.lightPass = null; }
     for (const k of ['pipeResolve', 'pipeDeriv']) { if (this[k]) { try { this.device.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; } }
   }
 }
