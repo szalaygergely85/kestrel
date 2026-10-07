@@ -89,9 +89,12 @@ viewport, or drag the row onto a surface, to place it with footprint ground
 snapping. Select placed meshes from the Scene Tree's **Meshes** group to edit
 world position, yaw, shadow/collision overrides, or delete them. Arrow keys,
 PgUp/PgDn, Q/E, G and undo/redo also apply. Click a mesh in the scene to select
-it; click again with **Move** and drag to preview its new bounds. Release to
-commit, or press Esc to cancel. Geometry moves on release; live geometry
-preview and mesh scale await engine support.
+it; click again with **Move** and drag to move its geometry live. Release to
+commit, or press Esc to restore its original position. Shadow and collision
+checkboxes save placement flags and support undo/redo. Shadows apply on reload;
+gameplay collision changes await the engine loader's placement-flag support.
+Collision is disabled in the inspector when the mesh asset itself disables
+collision. Mesh scale still awaits engine support; the scale keys apply to props.
 
 Press a number key to arm placement mode, then click a surface:
 

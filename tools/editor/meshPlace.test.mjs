@@ -64,6 +64,11 @@ assert.equal(prepareMeshEdit(valid,{origin:{...valid.origin,z:9.999}},editCtx).a
 assert.equal(prepareMeshEdit(valid,{castShadow:false,collide:false},editCtx).after.collide,false);
 const inherited=prepareMeshEdit({...valid,castShadow:false,collide:false},{castShadow:true,collide:true},editCtx).after;
 assert.equal('collide' in inherited,false); assert.equal('castShadow' in inherited,false);
+const shadowOffMesh = { ...mesh, castShadow: false };
+const shadowOverride = prepareMeshEdit(valid,{castShadow:true},{...editCtx,assets:{has:assets.has.bind(assets),mesh:()=>shadowOffMesh}}).after;
+assert.equal(shadowOverride.castShadow,true,'enabling shadows retains override of false asset default');
+const shadowWorld = new World(assets);
+assert.equal(shadowWorld.placeMesh(shadowOffMesh,valid.origin,valid.id,valid.yawDeg,shadowOverride.castShadow).castShadow,true,'runtime honours retained shadow override');
 assert.ok(prepareMeshEdit(valid,{yawDeg:1.1},editCtx).errors.length);
 assert.ok(prepareMeshEdit(valid,{origin:{...valid.origin,z:Infinity}},editCtx).errors.length);
 assert.ok(prepareMeshEdit(valid,{origin:{...valid.origin,x:221}}, {...editCtx,world:{...floor,floorAt:()=>null}}).errors.length);

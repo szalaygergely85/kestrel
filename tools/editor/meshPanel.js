@@ -18,10 +18,21 @@ export function renderMeshPanel(container, item, { assets, onFieldCommit, onRena
       error.textContent = Array.isArray(result) ? result.join('; ') : '';
     });
     row.appendChild(input); container.appendChild(row);
+    return input;
   };
   field('id', 'text', item.id, id => { let message = ''; onRename(id, msg => { message = msg; }); return message ? [message] : []; });
   const mesh = document.createElement('div'); mesh.className = 'insp-field-row'; mesh.textContent = item.mesh; container.appendChild(mesh);
   for (const axis of ['x', 'y', 'z']) field(axis, 'number', item.origin[axis], value => onFieldCommit({ origin: { ...item.origin, [axis]: value } }));
   field('yawDeg', 'number', item.yawDeg, value => onFieldCommit({ yawDeg: value }));
-  for (const key of ['castShadow', 'collide']) field(key, 'checkbox', item[key] ?? assets.mesh(item.mesh)[key] ?? true, value => onFieldCommit({ [key]: value }));
+  const meshDef = assets.mesh(item.mesh);
+  for (const key of ['castShadow', 'collide']) {
+    const unavailable = key === 'collide' && meshDef.collide === false;
+    const input = field(key, 'checkbox', unavailable ? false : item[key] ?? meshDef[key] ?? true, value => onFieldCommit({ [key]: value }));
+    input.disabled = unavailable;
+    input.title = unavailable ? 'This mesh asset has collision disabled; placement cannot enable it.'
+      : key === 'castShadow' ? 'Cast shadows from this placement.' : 'Saved to content; placement collision changes await gameplay support.';
+  }
+  const note = document.createElement('div'); note.className = 'insp-field-row';
+  note.textContent = 'Collision changes are saved; gameplay support pending.';
+  container.appendChild(note);
 }

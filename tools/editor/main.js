@@ -2331,6 +2331,7 @@ const HELP_LINES = [
   'M: toggle markers   F3: debug overlay',
   '1/2/3/4: place prop/light/trigger/interactable, then click',
   'Esc: cancel drag/place',
+  'Meshes: live Move drag; shadows/collision in inspector; scale unavailable',
   'Ctrl+S: save   P: play-test (new tab)',
 ];
 
