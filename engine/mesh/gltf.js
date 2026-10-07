@@ -499,7 +499,7 @@ function planarUv(face, x, y, z) {
  * engine materials is a sidecar step (ME-13b), not this function's job.
  * @param {ArrayBuffer|Uint8Array|string} buffer
  * @param {string} id - MeshData id, e.g. `gltf:<file>/<localId>`
- * @param {{buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number}} [opts] - `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
+ * @param {{buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number, triMat?: (uv0:number[],uv1:number[],uv2:number[],matName:string)=>string}} [opts] - `triMat`: per-triangle material name from the source UVs (MESH-UVMAP-01); `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
  *   `json.buffers[i]` when its `uri` is an external file (not a data: URI
  *   and not GLB-embedded) - this module never reads a file itself.
  * @returns {MeshData}
@@ -575,35 +575,53 @@ export function loadGltf(buffer, id, opts = {}) {
         mat4TransformPoint(world, posRows[v][0], posRows[v][1], posRows[v][2], tmp);
         bakedPos[v] = axisConvert(tmp[0], tmp[1], tmp[2]);
       }
-      let triIdxUse = triIdx;
-      // ME-SIMPLIFY-01: `opts.simplifyRatio` (0 < r < 1) reduces each primitive to r x its triangles (quadric edge collapse,
-      // positions welded; planar UVs and smoothing groups are derived afterwards, so source UVs cannot be kept).
-      if (opts.simplifyRatio > 0 && opts.simplifyRatio < 1) {
-        if (opts.uv === 'source') bad(id, 'simplifyRatio cannot keep source UVs (use planar)');
-        const target = Math.max(4, Math.round((triIdx.length / 3) * opts.simplifyRatio));
-        const red = simplifyTriangles(bakedPos, triIdx, target);
-        bakedPos = red.positions; triIdxUse = red.idx;
+      // MESH-UVMAP-01: `opts.triMat(uv0, uv1, uv2, matName)` (needs TEXCOORD_0) names a material per triangle; the primitive is split
+      // into one group per name (first-appearance order) and each group is simplified on its own, so keys are never merged.
+      /** @type {{matName:string, idx:number[]}[]} */
+      const groups = [];
+      if (opts.triMat && uvRows) {
+        const byName = new Map();
+        for (let t = 0; t < triIdx.length / 3; t++) {
+          const u0 = uvRows[triIdx[t * 3]], u1 = uvRows[triIdx[t * 3 + 1]], u2 = uvRows[triIdx[t * 3 + 2]];
+          const nm = opts.triMat(u0, u1, u2, matName);
+          let g = byName.get(nm);
+          if (!g) { g = { matName: nm, idx: [] }; byName.set(nm, g); groups.push(g); }
+          g.idx.push(triIdx[t * 3], triIdx[t * 3 + 1], triIdx[t * 3 + 2]);
+        }
+      } else groups.push({ matName, idx: triIdx });
+      for (const grp of groups) {
+        const gIdx = grp.idx;
+        let triIdxUse = gIdx;
+        let gPos = bakedPos;
+        // ME-SIMPLIFY-01: `opts.simplifyRatio` (0 < r < 1) reduces each primitive to r x its triangles (quadric edge collapse,
+        // positions welded; planar UVs and smoothing groups are derived afterwards, so source UVs cannot be kept).
+        if (opts.simplifyRatio > 0 && opts.simplifyRatio < 1) {
+          if (opts.uv === 'source') bad(id, 'simplifyRatio cannot keep source UVs (use planar)');
+          const target = Math.max(4, Math.round((gIdx.length / 3) * opts.simplifyRatio));
+          const red = simplifyTriangles(bakedPos, gIdx, target);
+          gPos = red.positions; triIdxUse = red.idx;
+        }
+        const triStart = allTris.length;
+        const triCount = triIdxUse.length / 3;
+        for (let t = 0; t < triCount; t++) {
+          let ia = triIdxUse[t * 3], ib = triIdxUse[t * 3 + 1], ic = triIdxUse[t * 3 + 2];
+          if (mirrored) { const tmpI = ib; ib = ic; ic = tmpI; } // compensate the handedness flip
+          const p0 = gPos[ia], p1 = gPos[ib], p2 = gPos[ic];
+          // Flat face normal from the baked (world+axis-converted) triangle - geometry already carries the node
+          // transform + axis swap, so a plain cross product here needs no separate normal-matrix step.
+          const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+          const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+          const normal = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+          normalize3(normal);
+          const keepUv = uvRows && triIdxUse === gIdx;
+          allTris.push({
+            p0, p1, p2, normal, matName: grp.matName,
+            uv0: keepUv ? uvRows[ia] : null, uv1: keepUv ? uvRows[ib] : null, uv2: keepUv ? uvRows[ic] : null,
+          });
+        }
+        const base = node.name || `node${nodeIdx}`;
+        primRanges.push({ part: groups.length > 1 ? `${base}#${pi}:${grp.matName}` : `${base}#${pi}`, triStart, triCount });
       }
-
-      const triStart = allTris.length;
-      const triCount = triIdxUse.length / 3;
-      for (let t = 0; t < triCount; t++) {
-        let ia = triIdxUse[t * 3], ib = triIdxUse[t * 3 + 1], ic = triIdxUse[t * 3 + 2];
-        if (mirrored) { const tmpI = ib; ib = ic; ic = tmpI; } // compensate the handedness flip
-        const p0 = bakedPos[ia], p1 = bakedPos[ib], p2 = bakedPos[ic];
-        // Flat face normal from the baked (world+axis-converted) triangle -
-        // geometry already carries the node transform + axis swap, so a
-        // plain cross product here needs no separate normal-matrix step.
-        const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
-        const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
-        const normal = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
-        normalize3(normal);
-        allTris.push({
-          p0, p1, p2, normal, matName,
-          uv0: uvRows && triIdxUse === triIdx ? uvRows[ia] : null, uv1: uvRows && triIdxUse === triIdx ? uvRows[ib] : null, uv2: uvRows && triIdxUse === triIdx ? uvRows[ic] : null,
-        });
-      }
-      primRanges.push({ part: `${node.name || `node${nodeIdx}`}#${pi}`, triStart, triCount });
     }
   }
 

@@ -31,6 +31,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { budgetFor } from './mesh-budgets.mjs';
+import { readPng } from './png-read.mjs';
+import { textureTable, classify } from './uvmap.mjs'; // MESH-UVMAP-01
 import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
@@ -49,6 +51,10 @@ Options:
                       content/meshes/<id>.mesh.json
   --mats <path>       material-name -> palette-key JSON map
   --uv <planar|source>  UVs: world-metre planar (default) or the file's TEXCOORD_0
+  --uvmap <tex.png|auto>  MESH-UVMAP-01: one palette material per triangle, from the colour texture sampled at the triangle's centroid UV
+                      ('auto' = the material's baseColorTexture of a .gltf). Overrides --mats; planar UVs are kept; works with --simplify/--budget
+                      (simplified per key range, keys are never merged)
+  --palette-map <json>  texture -> palette keys table for --uvmap (default design/meshes/quaternius/palette-map.json)
   --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
   --budget            --simplify to the per-mesh triangle budget of tools/mesh-budgets.mjs (by id basename)
   --dry-run           parse and report only; write nothing
@@ -67,6 +73,8 @@ function parseArgs(argv) {
     if (a === '--help' || a === '-h') { args.help = true; continue; }
     if (a === '--mats') { args.mats = argv[++i]; if (!args.mats) throw new Error('--mats needs a path'); continue; }
     if (a === '--uv') { args.uv = argv[++i]; if (args.uv !== 'planar' && args.uv !== 'source') throw new Error('--uv must be planar or source'); continue; }
+    if (a === '--uvmap') { args.uvmap = argv[++i]; if (!args.uvmap) throw new Error('--uvmap needs a png path or auto'); continue; }
+    if (a === '--palette-map') { args.paletteMap = argv[++i]; if (!args.paletteMap) throw new Error('--palette-map needs a path'); continue; }
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
     if (a === '--budget') { args.budget = true; continue; }
@@ -193,6 +201,14 @@ export function importGltfBytes(bytes, id, opts = {}, materialKeys = null) {
   return { mesh, json, report: { triCount: mesh.triCount, groupCount, unmapped } };
 }
 
+/** MESH-UVMAP-01: the colour texture a .gltf's first material points at (absolute path), or null. */
+function baseColorPng(gltfPath, raw) {
+  let j; try { j = JSON.parse(raw.toString('utf8')); } catch { return null; }
+  const ref = (j.materials || []).map((m) => m.pbrMetallicRoughness && m.pbrMetallicRoughness.baseColorTexture).find(Boolean);
+  const img = ref && j.images && j.textures && j.images[j.textures[ref.index].source];
+  return img && img.uri ? path.join(path.dirname(gltfPath), decodeURIComponent(img.uri)) : null;
+}
+
 /** Runs the CLI end-to-end (throws on error; caller prints/exits). */
 export async function runCli(argv) {
   const args = parseArgs(argv);
@@ -223,7 +239,43 @@ export async function runCli(argv) {
   }
   if (args.mats) opts.mats = JSON.parse(fs.readFileSync(args.mats, 'utf8'));
   const materialKeys = await loadEngineMaterialKeys();
-  const { json: meshJson, report } = importGltfBytes(raw, id, opts, materialKeys);
+  let uvInfo = null;
+  if (args.uvmap) {
+    if (args.mats) throw new Error('gltf-import: --uvmap and --mats are exclusive');
+    if (args.uv === 'source') throw new Error('gltf-import: --uvmap keeps planar UVs (drop --uv source)');
+    const pngPath = args.uvmap === 'auto' ? baseColorPng(inPath, raw) : args.uvmap;
+    if (!pngPath) throw new Error(`gltf-import: --uvmap auto: no baseColorTexture found in '${inPath}'`);
+    const texName = path.basename(pngPath).replace(/.png$/i, '');
+    const map = JSON.parse(fs.readFileSync(args.paletteMap || fileURLToPath(new URL('../design/meshes/quaternius/palette-map.json', import.meta.url)), 'utf8'));
+    const tab = textureTable(map, texName);
+    if (materialKeys) { const miss = tab.keys.filter((k) => !materialKeys.has(k)); if (miss.length) throw new Error(`gltf-import: palette-map keys missing in the palette: ${miss.join(', ')} (NEEDS PC-A: designer key)`); }
+    const img = readPng(fs.readFileSync(pngPath));
+    // pass 1: count the first-choice key per triangle; keys with < 3 triangles are speckle -> demoted to the next nearest key
+    const first = new Array(tab.keys.length).fill(0);
+    loadGltf(raw, id, { ...opts, simplifyRatio: 0, triMat: (a, b, c) => { first[classify(img, tab, a, b, c).order[0]]++; return 'x'; } });
+    const dead = new Set(first.map((n, i) => (n < 3 && first.some((m) => m >= 3) ? i : -1)).filter((i) => i >= 0));
+    const unmapped = new Map();
+    opts.triMat = (a, b, c) => {
+      const r = classify(img, tab, a, b, c);
+      if (r.d > tab.maxDelta) { const k = r.rgb.slice(0, 3).map((x) => (x >> 4) << 4).join(','); unmapped.set(k, (unmapped.get(k) || 0) + 1); }
+      return tab.keys[r.order.find((i) => !dead.has(i))];
+    };
+    opts.mats = Object.fromEntries(tab.keys.map((k) => [k, k]));
+    uvInfo = { texName, unmapped, dead: [...dead].map((i) => tab.keys[i]) };
+  }
+  let imp = importGltfBytes(raw, id, opts, materialKeys);
+  // grouped simplification rounds up per key (min 4 tris): tighten the ratio until the triangle target is met
+  for (let it = 0; uvInfo && args.simplify && imp.report.triCount > args.simplify && it < 6; it++) {
+    opts.simplifyRatio = (opts.simplifyRatio || 1) * (args.simplify / imp.report.triCount) * 0.98;
+    uvInfo.unmapped.clear();
+    imp = importGltfBytes(raw, id, opts, materialKeys);
+  }
+  const { json: meshJson, report } = imp;
+  if (uvInfo) {
+    const per = {};
+    for (const r of meshJson.ranges) { /* ranges are per key */ const k = r.part.split(':')[1] || meshJson.matKeys[0]; per[k] = (per[k] || 0) + r.count; }
+    report.uvmap = { texture: uvInfo.texName, tris: per, demoted: uvInfo.dead, unmapped: [...uvInfo.unmapped].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 5) };
+  }
 
   const outPath = args.out || path.join('content', 'meshes', `${id}.mesh.json`);
   if (!args.dryRun) {
@@ -235,6 +287,11 @@ export async function runCli(argv) {
 
 function printReport(label, report) {
   console.log(`gltf-import: ${label}: triCount=${report.triCount} groups=${report.groupCount}`);
+  if (report.uvmap) {
+    const u = report.uvmap;
+    console.log(`gltf-import: ${label}: uvmap ${u.texture}: ${Object.entries(u.tris).map(([k, n]) => `${k}=${n}`).join(' ')}${u.demoted.length ? ` (speckle demoted: ${u.demoted.join(',')})` : ''}`);
+    if (u.unmapped.length) console.log(`gltf-import: ${label}: uvmap unmapped colours (rgb/16 bucket: tris): ${u.unmapped.map(([k, n]) => `${k}:${n}`).join(' ')}`);
+  }
   if (report.unmapped.length) {
     console.log(`gltf-import: ${label}: WARNING unmapped material name(s) (no engine materials/detailPass entry): ${report.unmapped.join(', ')}`);
   }

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "doc": "MESH-UVMAP-01: per colour texture, the palette keys a triangle may snap to and the texture colour (sRGB) each key stands for. gltf-import --uvmap samples the texture at every triangle's centroid UV and picks the nearest ref by CIE Lab distance. At most 6 keys per texture; colours further than maxDelta (Lab) from every ref are reported as unmapped.",
+  "maxDelta": 28,
+  "textures": {
+    "Rocks_Diffuse": { "rock_soft": [112, 112, 114], "rock": [74, 76, 78], "moss_cap": [58, 78, 40] },
+    "PathRocks_Diffuse": { "rock_soft": [124, 124, 130], "rock": [84, 86, 90], "moss_cap": [48, 66, 34] },
+    "Mushrooms": { "mushroom_cap": [140, 92, 76], "wood": [172, 132, 76], "linen": [180, 166, 146], "straw": [204, 172, 92] },
+    "Bark_DeadTree": { "timber_old": [62, 50, 58], "ash": [70, 70, 72], "granite_dark": [38, 36, 40] }
+  }
+}

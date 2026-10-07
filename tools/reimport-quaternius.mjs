@@ -1,6 +1,8 @@
 // MESH-SIMP-01: re-import every content/meshes/quaternius/*.mesh.json that is above its triangle budget
 // (tools/mesh-budgets.mjs) from design/meshes/quaternius/glTF/<name>.gltf, keeping the file's existing `mats` map.
 // Usage: node tools/reimport-quaternius.mjs [--dry-run] [name ...]   (names without extension; default = all over budget).
+// MESH-UVMAP-01: --uvmap re-imports with per-triangle palette keys from the colour texture (--uvmap auto, tools/uvmap.mjs); default names =
+// the meshes placed in content/worlds/world_m1.world.json; every mesh is re-imported, within budget or not.
 // Meshes listed in content/manifest.json are written in canonical stringifyContent form, the others in the importer's packed form.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,7 +15,9 @@ const dir = 'content/meshes/quaternius';
 const src = 'design/meshes/quaternius/glTF';
 const argv = process.argv.slice(2);
 const dry = argv.includes('--dry-run');
-const only = argv.filter((a) => !a.startsWith('--'));
+const uvmap = argv.includes('--uvmap');
+let only = argv.filter((a) => !a.startsWith('--'));
+if (uvmap && !only.length) { const w = fs.readFileSync('content/worlds/world_m1.world.json', 'utf8'); only = [...new Set([...w.matchAll(/quaternius\/([A-Za-z0-9_]+)/g)].map((m) => m[1]))].sort(); }
 const names = fs.readdirSync(dir).filter((f) => f.endsWith('.mesh.json')).map((f) => f.replace('.mesh.json', '')).filter((n) => !only.length || only.includes(n));
 const listed = new Set(JSON.parse(fs.readFileSync('content/manifest.json', 'utf8')).files); // manifest files must stay in stringifyContent form (content-canonical test)
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reimport-'));
@@ -22,13 +26,14 @@ for (const name of names) {
   const file = path.join(dir, `${name}.mesh.json`);
   const cur = JSON.parse(fs.readFileSync(file, 'utf8'));
   const budget = budgetFor(name);
-  if (!budget || cur.triCount <= budget) { rows.push([name, cur.triCount, cur.triCount, budget, 'ok']); continue; }
+  if (!uvmap && (!budget || cur.triCount <= budget)) { rows.push([name, cur.triCount, cur.triCount, budget, 'ok']); continue; }
+  const t0 = Date.now();
   const matsPath = path.join(tmp, `${name}.mats.json`);
   fs.writeFileSync(matsPath, JSON.stringify(cur.mats || {}));
-  const r = await runCli([path.join(src, `${name}.gltf`), cur.id, '--mats', matsPath, '--simplify', String(budget), '--out', file, ...(dry ? ['--dry-run'] : [])]);
+  const r = await runCli([path.join(src, `${name}.gltf`), cur.id, ...(uvmap ? ['--uvmap', 'auto'] : ['--mats', matsPath]), ...(budget ? ['--simplify', String(budget)] : []), '--out', file, ...(dry ? ['--dry-run'] : [])]);
   if (!dry && listed.has(`meshes/quaternius/${name}.mesh.json`)) fs.writeFileSync(file, stringifyContent(JSON.parse(fs.readFileSync(file, 'utf8'))), 'utf8');
-  rows.push([name, cur.triCount, r.report.triCount, budget, dry ? 'dry' : 'reimported']);
+  rows.push([name, cur.triCount, r.report.triCount, budget, dry ? 'dry' : 'reimported', ...(uvmap ? [Object.entries(r.report.uvmap.tris).map(([k, n]) => `${k}=${n}`).join(' '), `${Date.now() - t0}ms`] : [])]);
 }
 fs.rmSync(tmp, { recursive: true, force: true });
-console.log('name\tbefore\tafter\tbudget\tstatus');
+console.log("name	before	after	budget	status" + (uvmap ? "	keys	time" : ""));
 for (const r of rows) console.log(r.join('\t'));
