@@ -21,6 +21,24 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   }
   ok('mock device exposes timer.begin/end', typeof device.timer.begin === 'function' && typeof device.timer.end === 'function');
   ok('mock device exposes caps', typeof device.caps === 'object' && typeof device.caps.maxColorAttachments === 'number');
+  ok('GPU_DEVICE_METHODS lists the WG-1b1 additions', ['writeTexture', 'canvasTarget', 'submit'].every((n) => GPU_DEVICE_METHODS.includes(n)));
+  ok('mock device backend + lost (WG-1b1)', device.backend === 'webgl2' && typeof device.lost.then === 'function');
+}
+
+// ---- WG-1b1: writeTexture / canvasTarget / submit / readback Promise-or-value ----
+{
+  const mock = makeMockGpuDevice();
+  const { device } = mock;
+  const tex = device.createTexture({ format: 'rgba8', width: 4, height: 4, filter: 'linear' });
+  device.writeTexture(tex, new Uint8Array(64));
+  device.writeTexture(tex, new Uint8Array(16), { x: 0, y: 0, w: 2, h: 2 });
+  ok('writeTexture counted + last rect kept', mock.texWriteCount === 2 && tex._texWrites === 2 && tex._lastTexWrite.rect.w === 2);
+  ok('canvasTarget is a stable target handle', device.canvasTarget() === device.canvasTarget() && device.canvasTarget().kind === 'target');
+  device.submit();
+  ok('submit counted', mock.submitCount === 1);
+  const out = new Uint8Array(4).fill(9);
+  const r = device.readback(tex, { x: 0, y: 0, w: 1, h: 1 }, out);
+  ok('readback is await-safe (value or Promise)', out[0] === 0 && (r === undefined || typeof r.then === 'function'));
 }
 
 // ---- alloc/free pairs ----

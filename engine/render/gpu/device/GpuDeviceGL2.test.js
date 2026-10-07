@@ -60,6 +60,34 @@ function makeMockGL() {
   const device = new GpuDeviceGL2(/** @type {any} */(gl));
   for (const name of GPU_DEVICE_METHODS) ok(`GpuDeviceGL2 exposes ${name}()`, typeof device[name] === 'function');
   ok('GpuDeviceGL2 exposes caps', typeof device.caps.maxColorAttachments === 'number');
+  ok('GpuDeviceGL2 backend + lost (WG-1b1)', device.backend === 'webgl2' && typeof device.lost.then === 'function');
+}
+
+// ---- WG-1b1: writeTexture (texSubImage2D), submit (no-op), canvasTarget (default framebuffer), filter ----
+{
+  const { gl, calls, live } = makeMockGL();
+  const device = new GpuDeviceGL2(/** @type {any} */(gl));
+  const tex = device.createTexture({ format: 'rgba8', width: 8, height: 4, filter: 'linear' });
+  ok('linear filter sets MIN+MAG LINEAR', calls.filter((c) => c[0] === 'texParameteri' && c[3] === gl.LINEAR).length === 2);
+  calls.length = 0;
+  device.writeTexture(tex, new Uint8Array(8 * 4 * 4));
+  const sub = calls.find((c) => c[0] === 'texSubImage2D');
+  ok('writeTexture -> texSubImage2D whole texture by default', !!sub && sub[3] === 0 && sub[4] === 0 && sub[5] === 8 && sub[6] === 4, JSON.stringify(sub && sub.slice(1, 7)));
+  calls.length = 0;
+  device.writeTexture(tex, new Uint8Array(16), { x: 2, y: 1, w: 2, h: 2 });
+  const sub2 = calls.find((c) => c[0] === 'texSubImage2D');
+  ok('writeTexture honours rect', !!sub2 && sub2[3] === 2 && sub2[4] === 1 && sub2[5] === 2 && sub2[6] === 2);
+  calls.length = 0;
+  device.submit();
+  ok('submit is a no-op on GL2', calls.length === 0);
+  const ct = device.canvasTarget();
+  ok('canvasTarget is stable, default framebuffer', ct === device.canvasTarget() && ct.handle === null && ct.width === 0);
+  calls.length = 0;
+  device.beginPass(ct);
+  ok('beginPass(canvasTarget) binds framebuffer null, no viewport', calls.some((c) => c[0] === 'bindFramebuffer' && c[2] === null) && !calls.some((c) => c[0] === 'viewport'));
+  const before = live.framebuffer;
+  device.dispose();
+  ok('canvasTarget owns no GL object', live.framebuffer === before);
 }
 
 // ---- createBuffer / createTexture / createTarget / createPipeline alloc + dispose() free ----

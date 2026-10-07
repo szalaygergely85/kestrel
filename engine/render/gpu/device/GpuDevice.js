@@ -34,6 +34,7 @@
  * @property {number} height
  * @property {number} [layers] - reserved (cube/array textures, phase 3); omit for a plain 2D texture
  * @property {boolean} [sampled] - `depth24` only (ME-15b, 27.9a item 7): a real texture (NEAREST, compare mode NONE, `texelFetch` on a `sampler2D`) instead of the default write-only renderbuffer
+ * @property {'nearest'|'linear'} [filter] - WG-1b1 (38.3): `rgba8` only (glyph atlas); default 'nearest'. Integer/depth textures are never filtered
  */
 
 /**
@@ -44,18 +45,23 @@
 
 /**
  * @typedef {Object} PipelineStageDesc
- * @property {{glsl: string, wgsl?: string}} src - `wgsl` is filled in phase 4 (ME-31); only `glsl` is read today
+ * @property {{glsl?: string, wgsl?: string, entry?: string}} src - GL2 reads `glsl`, WebGPU reads `wgsl` (38.3); WebGPU entry point default `vs_main` (vertex) / `fs_main` (fragment), `entry` overrides (WG-1b2)
  * @property {{name: string, location: number, components: number, type: 'float'|'uint', offsetBytes: number}[]} [layout] - vertex stage only: interleaved-buffer attribute layout (stride is implicit: the caller's own upload stride)
  * @property {number} [strideBytes] - vertex stage only: interleaved-buffer stride
+ * @property {{name: string, location: number, components: number, type: 'float'|'uint', offsetBytes: number}[]} [instanceLayout] - WG-1b1 (38.3, MESH-INST-01 batches): per-instance attributes read from `BindDesc.instanceBuffer` (step mode instance)
+ * @property {number} [instanceStrideBytes] - stride of the instance buffer
  */
 
 /**
  * @typedef {Object} PipelineDesc
  * @property {PipelineStageDesc} vertex
- * @property {{src: {glsl: string, wgsl?: string}, targets: number}} fragment - `targets` = number of colour draw buffers written (0 = depth-only, ME-15b)
+ * @property {{src: {glsl?: string, wgsl?: string}, targets: number}} fragment - `targets` = number of colour draw buffers written (0 = depth-only, ME-15b)
  * @property {{test: boolean, write: boolean}} [depth]
  * @property {'none'|'back'|'front'} [cull]
  * @property {{factor: number, units: number}} [depthBias] - ME-15b (27.9a item 7): polygon offset (GL2: `POLYGON_OFFSET_FILL` enabled on bind, disabled again by `endPass`); no hardware depth compare is ever used
+ * @property {{uniformBytes: number, textures: ('uint'|'sint'|'float'|'depth'|'filtered')[]}} [bindings] - WG-1b1 (38.3/38.4): explicit WebGPU bind layout (`@group(0)` textures in slot order, `@group(1)` one dynamic-offset uniform block of `uniformBytes`); GL2 ignores it
+ * @property {string[]} [targetFormats] - WG-1b1: colour attachment formats (TextureDesc names, or 'canvas'); GL2 ignores it
+ * @property {'depth24'|'depth32f'} [depthFormat] - WG-1b1: depth attachment format; GL2 ignores it
  */
 
 /**
@@ -69,6 +75,8 @@
  * @property {{slot: number, texture: GpuHandle}[]} [textures]
  * @property {GpuHandle} [vertexBuffer]
  * @property {GpuHandle} [indexBuffer]
+ * @property {GpuHandle} [instanceBuffer] - WG-1b1 (38.3): per-instance vertex buffer for `PipelineStageDesc.instanceLayout`
+ * @property {number} [uniformOffsetBytes] - WG-1b1 (38.4): dynamic offset of this draw's block in the uniform ring (WebGPU; GL2 ignores)
  */
 
 /** Opaque handle - never inspected outside device/* (27.2). @typedef {Object} GpuHandle */
@@ -79,6 +87,9 @@
  * @property {boolean} timerQueries
  * @property {boolean} softwareRenderer
  */
+
+/** WG-1b1 (38.3): `createGpuDevice` opts. Implemented in WG-1b2 (device/createGpuDevice.js); declared here so callers type against one shape. @typedef {{backend: 'webgl2'|'webgpu', canvas: any}} CreateGpuDeviceOpts */
+/** `async createGpuDevice(opts) -> Promise<GpuDevice>` (WebGPU init is async). @typedef {(opts: CreateGpuDeviceOpts) => Promise<GpuDevice>} CreateGpuDevice */
 
 /**
  * @typedef {Object} GpuDeviceTimer
@@ -116,8 +127,28 @@ export class GpuDevice {
   /** @param {number} count @param {number} [first] @param {number} [instances] */
   draw(count, first, instances) { throw new Error('GpuDevice.draw: not implemented'); }
   endPass() { throw new Error('GpuDevice.endPass: not implemented'); }
-  /** Test-only. @param {GpuHandle} tex @param {{x:number,y:number,w:number,h:number}} rect @param {ArrayBufferView} out */
+  /**
+   * WG-1b1 (38.3): upload `data` into (a rect of) an existing texture (GL2 `texSubImage2D`; WebGPU `queue.writeTexture`).
+   * `rect` defaults to the whole texture; `data` is tightly packed rows of the texture's format.
+   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect]
+   */
+  writeTexture(tex, data, rect) { throw new Error('GpuDevice.writeTexture: not implemented'); }
+  /** WG-1b1 (38.3): a target handle resolved to the canvas back buffer at `beginPass` (GL2: the default framebuffer). @returns {GpuHandle} */
+  canvasTarget() { throw new Error('GpuDevice.canvasTarget: not implemented'); }
+  /** WG-1b1 (38.3): end of frame (WebGPU: one uniform-ring `writeBuffer` + `queue.submit`; GL2: no-op). */
+  submit() { throw new Error('GpuDevice.submit: not implemented'); }
+  /**
+   * Test-only. WG-1b1: MAY return a Promise (WebGPU: always; GL2/mock: plain return) - callers always `await` it.
+   * @param {GpuHandle} tex @param {{x:number,y:number,w:number,h:number}} rect @param {ArrayBufferView} out
+   * @returns {void|Promise<void>}
+   */
   readback(tex, rect, out) { throw new Error('GpuDevice.readback: not implemented'); }
+  // WG-4a-LATER (38.3, typedef only, NOT in GPU_DEVICE_METHODS yet): createBuffer({usage:'storage'|'indirect'}),
+  // createComputePipeline(desc), dispatch(x, y, z), drawIndirect(buffer, offsetBytes).
+  /** @returns {Promise<any>} WG-1b1: resolves when the device is lost (WebGPU); never resolves on GL2/mock. */
+  get lost() { throw new Error('GpuDevice.lost: not implemented'); }
+  /** @returns {'webgl2'|'webgpu'} WG-1b1: read only by createRenderer.js and the F3 overlay (38.1). */
+  get backend() { throw new Error('GpuDevice.backend: not implemented'); }
   /** @returns {GpuDeviceTimer} */
   get timer() { throw new Error('GpuDevice.timer: not implemented'); }
   /** @returns {GpuDeviceCaps} */
@@ -141,4 +172,5 @@ export class GpuDevice {
 export const GPU_DEVICE_METHODS = Object.freeze([
   'createBuffer', 'writeBuffer', 'createTexture', 'createTarget', 'createPipeline',
   'beginPass', 'bind', 'draw', 'endPass', 'readback', 'dispose',
+  'writeTexture', 'canvasTarget', 'submit', // WG-1b1 (38.3)
 ]);

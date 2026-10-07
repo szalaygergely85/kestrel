@@ -14,11 +14,10 @@
 // cellW, cellH, backend, setCell, setCellRGB, clear, present, resize.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox, FONT_STACK } from './glyphMetrics.js';
+import { computeCellBox } from './glyphMetrics.js';
+import { GLYPH_COUNT, rasterizeGlyphAtlas } from './glyphAtlas.js'; // WG-1c1: shared with RenderTargetWebGPU
 import { compileShader, linkProgram, deleteTexture2D, glCounts } from './gpu/glUtil.js';
 import { computeGridLimits } from './gpu/gridTargets.js';
-
-const GLYPH_COUNT = 95; // printable ASCII 32-126
 
 const VERTEX_SRC = `#version 300 es
 // Fullscreen triangle from gl_VertexID alone - no vertex buffer needed.
@@ -190,22 +189,9 @@ export class RenderTargetGL {
   // on resize/DPR change (and on context restore).
   _rebuildAtlas() {
     const gl = this.gl;
-    const w = this.pxCellW * GLYPH_COUNT;
-    const h = this.pxCellH;
-    const ac = this._atlasCanvas;
-    ac.width = w;
-    ac.height = h;
-    const actx = this._atlasCtx;
-    actx.clearRect(0, 0, w, h);
-    actx.font = `${this.fontSize}px ${FONT_STACK}`;
-    actx.textBaseline = 'alphabetic';
-    actx.textAlign = 'left';
-    actx.fillStyle = '#ffffff';
-    for (let code = 32; code <= 126; code++) {
-      const idx = code - 32;
-      if (code === 32) continue; // space: leave fully transparent
-      actx.fillText(String.fromCharCode(code), idx * this.pxCellW, this.glyphAscent);
-    }
+    const ac = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, {
+      pxCellW: this.pxCellW, pxCellH: this.pxCellH, fontPx: this.fontSize, ascent: this.glyphAscent,
+    });
 
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
@@ -260,27 +246,10 @@ export class RenderTargetGL {
     const ui = this._uiLayer;
     if (!ui || this._contextLost) return;
     const gl = this.gl;
-    const uiFontPx = this.fontSize * ui.sy;
-    const uiPxCellW = this.pxCellW * ui.sx;
-    const uiPxCellH = this.pxCellH * ui.sy;
-    const uiGlyphAscent = this.glyphAscent * ui.sy;
-
-    const ac = this._atlasCanvas;
-    const w = uiPxCellW * GLYPH_COUNT;
-    const h = uiPxCellH;
-    ac.width = w;
-    ac.height = h;
-    const actx = this._atlasCtx;
-    actx.clearRect(0, 0, w, h);
-    actx.font = `${uiFontPx}px ${FONT_STACK}`;
-    actx.textBaseline = 'alphabetic';
-    actx.textAlign = 'left';
-    actx.fillStyle = '#ffffff';
-    for (let code = 32; code <= 126; code++) {
-      const idx = code - 32;
-      if (code === 32) continue;
-      actx.fillText(String.fromCharCode(code), idx * uiPxCellW, uiGlyphAscent);
-    }
+    const ac = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, {
+      pxCellW: this.pxCellW * ui.sx, pxCellH: this.pxCellH * ui.sy,
+      fontPx: this.fontSize * ui.sy, ascent: this.glyphAscent * ui.sy,
+    });
 
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, this._uiAtlasTex);

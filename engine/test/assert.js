@@ -67,11 +67,13 @@ export function approxEqual(a, b, eps) {
  *   liveCount: () => number,
  *   createCount: number,
  *   writeCount: number,
+ *   texWriteCount: number,
+ *   submitCount: number,
  * }}
  */
 export function makeMockGpuDevice() {
   const live = new Set();
-  const state = { createCount: 0, writeCount: 0 };
+  const state = { createCount: 0, writeCount: 0, texWriteCount: 0, submitCount: 0 };
   function makeHandle(kind, desc) {
     state.createCount++;
     const h = { kind, desc, _disposed: false };
@@ -93,6 +95,10 @@ export function makeMockGpuDevice() {
     },
     endPass() { device._activeTarget = null; },
     readback(tex, rect, out) { if (out && out.fill) out.fill(0); },
+    // WG-1b1 (38.3): the mock records, never computes.
+    writeTexture(tex, data, rect) { tex._texWrites = (tex._texWrites || 0) + 1; tex._lastTexWrite = { data, rect: rect || null }; state.texWriteCount++; },
+    canvasTarget() { if (!device._canvasTarget) device._canvasTarget = makeHandle('target', { canvas: true }); return device._canvasTarget; },
+    submit() { state.submitCount++; },
     dispose(handle) {
       // Two call shapes on purpose: `device.dispose()` (whole-device
       // teardown, GpuDevice.js's own contract) frees every live handle;
@@ -103,6 +109,8 @@ export function makeMockGpuDevice() {
       for (const h of live) h._disposed = true;
       live.clear();
     },
+    backend: 'webgl2',
+    lost: new Promise(() => {}), // never resolves, like a healthy device
     timer: { begin() {}, end() {} },
     caps: { maxColorAttachments: 4, timerQueries: false, softwareRenderer: false },
   };
@@ -111,5 +119,7 @@ export function makeMockGpuDevice() {
     liveCount: () => live.size,
     get createCount() { return state.createCount; },
     get writeCount() { return state.writeCount; },
+    get texWriteCount() { return state.texWriteCount; },
+    get submitCount() { return state.submitCount; },
   };
 }

@@ -30,6 +30,21 @@ function writeFile(root, rel, content) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-fixture-'));
+// Rule 17 (WG-1b2): WebGPU globals only under engine/render/gpu/device/.
+writeFile(tmp, 'engine/render/gpu/device/good17.js', `export const a = navigator.gpu; export const b = GPUBufferUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUShaderStage.FRAGMENT | GPUMapMode.READ;
+`);
+writeFile(tmp, 'engine/render/gpu/bad17a.js', `export const a = navigator.gpu;
+`);
+writeFile(tmp, 'engine/render/bad17b.js', `export const b = GPUBufferUsage.COPY_DST;
+export const c = GPUMapMode.READ;
+`);
+writeFile(tmp, 'engine/render/gpu/comment17.js', `// uses navigator.gpu and GPUTextureUsage only in a comment
+export const x = 1;
+`);
+writeFile(tmp, 'game/js/bad17c.js', `export const d = GPUShaderStage.VERTEX;
+`);
+writeFile(tmp, 'game/js/bad17d.test.js', `export const e = navigator.gpu;
+`);
 
 // Rule 1: engine file with a bare specifier + one that resolves outside engine/.
 writeFile(tmp, 'engine/render/bad1.js', `import fs from 'node:fs';\nimport { x } from '../../game/js/helper.js';\nexport const y = 1;\n`);
@@ -210,6 +225,14 @@ ok('rule 15: game/js/rts/sim/** Math.random WARNs', /WARN.*rts\/sim\/bad15\.js:1
 ok('rule 15: game/js/rts/ui/** (not sim/) NOT flagged', !/rts\/ui\/good15\.js/.test(output), output);
 ok('rule 15: game/js/quest/sim/** Math.random WARNs', /WARN.*quest\/sim\/bad15\.js:1:.*Math\.random/.test(output), output);
 ok('rule 15: game/js/quest/** (not sim/) NOT flagged', !/quest\/beastView\.js/.test(output), output);
+
+ok('rule 17: device/ file using all five NOT flagged', !/good17\.js/.test(output), output);
+ok('rule 17: engine/render/gpu non-device navigator.gpu flagged', /gpu\/bad17a\.js:1:.*navigator\.gpu/.test(output), output);
+ok('rule 17: engine/render GPUBufferUsage flagged', /bad17b\.js:1:.*GPUBufferUsage/.test(output), output);
+ok('rule 17: engine/render GPUMapMode flagged (line 2)', /bad17b\.js:2:.*GPUMapMode/.test(output), output);
+ok('rule 17: comment mention NOT flagged', !/comment17\.js/.test(output), output);
+ok('rule 17: game/ GPUShaderStage flagged', /game\/js\/bad17c\.js:1:.*GPUShaderStage/.test(output), output);
+ok('rule 17: game/ test file navigator.gpu flagged', /bad17d\.test\.js:1:.*navigator\.gpu/.test(output), output);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 
