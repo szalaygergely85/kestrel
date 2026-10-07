@@ -40,7 +40,9 @@ const KEY_STRIDE = 7; // t, px, py, pz, rx, ry, rz
  * @property {(phase:number, amount:number, h?:number)=>void} setBob   def.bob numbers; shared phase = eyeFeel bobPhase, amount 0..1; omitted handle sets every item
  * @property {(h:number, clip:number, tMs:number, mount:number, out3:Float64Array)=>Float64Array} mountEye   pure: eye-space mount at a clip time (no bob)
  * @property {(cam:Object, pe:ArrayLike<number>, out3:Float64Array)=>Float64Array} eyeToWorld
- * @property {(cam:Object, pitched:boolean)=>(DrawList|null)} buildList   the list both twins draw; null only when no model is bound (hidden - e.g. before the sword is taken); draws under a pitched camera too since RE-02b/D-029 (BUG-VM-001)
+ * @property {(h:number, hand:'left'|'right')=>void} setHand   HANDS-01a (37.8a): which hand holds handle h; differing from the authored hand mirrors the whole eye-space object (x -> -x, det<0, DrawItem.mirror = 1); a flag write, no allocation
+ * @property {(h:number)=>('left'|'right')} handOf   the hand set by setHand (default = the authored hand, def.hand or the sign of rest.pos[0])
+ * @property {(cam:Object, pitched:boolean)=>(DrawList|null)} buildList   the list both twins draw; null only when no handle is visible (hidden - e.g. before the sword is taken); draws under a pitched camera too since RE-02b/D-029 (BUG-VM-001)
  * @property {{visible:boolean, items:number}} stats
  */
 
@@ -67,6 +69,9 @@ function assertVec3(v, what) {
  * @property {Float64Array} mountAt  3 per mount (voxels)
  * @property {Int32Array} mountPart
  * @property {Float64Array} rest  pos3, rot3
+ * @property {'left'|'right'} authored  the hand the model geometry/pose was authored for (def.hand, else rest.pos[0] < 0 ? left : right)
+ * @property {'left'|'right'} hand  the hand set by setHand (default = authored)
+ * @property {number} mirror  1 when the bound hand differs from `authored` (HANDS-01a)
  * @property {boolean} visible
  * @property {Float64Array} last  last shown pose (no bob): pos3, rot3
  * @property {Float64Array} cap  captured pose = this handle's blend source
@@ -149,8 +154,10 @@ class ViewModelLayerImpl {
     const bob = def.bob || {};
     const rest = new Float64Array(6);
     for (let a = 0; a < 3; a++) { rest[a] = def.rest.pos[a]; rest[3 + a] = def.rest.rot[a]; }
+    if (def.hand !== undefined && def.hand !== 'left' && def.hand !== 'right') throw new Error(`viewModel.load('${key}'): def.hand must be 'left' or 'right'`);
+    const authored = def.hand || (def.rest.pos[0] < 0 ? 'left' : 'right');
     this._defs.push({
-      visible: false, last: new Float64Array(6), cap: new Float64Array(6), bobAmount: 0,
+      authored, hand: authored, mirror: 0, visible: false, last: new Float64Array(6), cap: new Float64Array(6), bobAmount: 0,
       key, pm, mesh, partCount, forward, keys, clipOff, clipN, clipLoop, clipEnd, clipNames, mountNames, mountAt, mountPart, rest,
       bobZ: Number.isFinite(bob.z) ? bob.z : 0, bobX: Number.isFinite(bob.x) ? bob.x : 0, bobRoll: Number.isFinite(bob.rollDeg) ? bob.rollDeg : 0,
     });
@@ -213,6 +220,15 @@ class ViewModelLayerImpl {
     this.stats.items = n;
   }
 
+  /** HANDS-01a (37.8a): bind handle h to a hand. All per-handle state stays in authored space; the mirror is the last step of buildList/mountEye. */
+  setHand(h, hand) {
+    const d = this._defs[h];
+    d.hand = hand;
+    d.mirror = hand !== d.authored ? 1 : 0;
+  }
+
+  handOf(h) { return this._defs[h].hand; }
+
   capture(h) { const d = this._defs[h]; d.cap.set(d.last); }
 
   setBob(phase, amount, h) {
@@ -238,6 +254,7 @@ class ViewModelLayerImpl {
     out3[0] = R[0] * mx + R[1] * my + R[2] * mz + p[0];
     out3[1] = R[3] * mx + R[4] * my + R[5] * mz + p[1];
     out3[2] = R[6] * mx + R[7] * my + R[8] * mz + p[2];
+    if (d.mirror) out3[0] = -out3[0]; // HANDS-01a: S = diag(-1,1,1) is the last step
     return out3;
   }
 
@@ -284,7 +301,7 @@ class ViewModelLayerImpl {
     // Latch once per call (not only on the taken branch): `eyeToWorld`/the trail read `this._pitched` every
     // frame regardless of whether the model itself is currently shown (BUG-VM-001 architect decision).
     this._pitched = !!pitched;
-    // Only gate on "no model bound" (nothing to draw, e.g. before the sword is picked up) - the pitched camera
+    // Only visible handles are drawn (none visible = nothing to draw, e.g. before the sword is picked up) - the pitched camera
     // is the mesh renderer's own default first-person mode since RE-02b/D-029, not a reason to hide the layer.
     const Aw = this._Aw, R = this._R, E = this._E, e = this._e, p = this._pose;
     this._eyeMap(cam, Aw, this._pitched);
@@ -313,6 +330,8 @@ class ViewModelLayerImpl {
           E[r * 3 + 2] = r0 * F[fo + 2] + r1 * F[fo + 5] + r2 * F[fo + 8];
           e[r] = r0 * F[fo + 9] + r1 * F[fo + 10] + r2 * F[fo + 11] + p[r];
         }
+        // HANDS-01a: hand mirror = S = diag(-1,1,1) on the whole eye-space object (E -> S*E, e -> S*e): det < 0.
+        if (d.mirror) { E[0] = -E[0]; E[1] = -E[1]; E[2] = -E[2]; e[0] = -e[0]; }
         // world: A = Aw * E, b = Aw * e + eye
         const o = q * 12;
         for (let r = 0; r < 3; r++) {
@@ -331,6 +350,7 @@ class ViewModelLayerImpl {
       }
       item.planeIdOr = 0xF << 24;
       item.objectId = VM_OBJECT_ID - h;
+      item.mirror = d.mirror;
       item.zBase = cam.z - VM_FEET_BELOW_EYE;
     }
     this.stats.items = list.count;

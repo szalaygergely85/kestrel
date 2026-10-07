@@ -2066,6 +2066,7 @@ export class GpuCellPipeline {
     for (let i = 0; i < list.count; i++) {
       const item = list.items[i];
       if (item.type !== DRAW_VOXEL || !item.mesh) continue;
+      gl.frontFace(item.mirror ? gl.CW : gl.CCW); // HANDS-01a: det<0 (mirrored view model) winds CW
       const mesh = item.mesh;
       const entry = this._meshBuffers.getVoxel(mesh);
       gl.bindBuffer(gl.ARRAY_BUFFER, entry.vertexBuffer.handle);
@@ -2097,6 +2098,7 @@ export class GpuCellPipeline {
         voxelDraws++;
       }
     }
+    gl.frontFace(gl.CCW);
     return voxelDraws;
   }
 

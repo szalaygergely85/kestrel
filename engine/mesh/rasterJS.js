@@ -151,6 +151,7 @@ let _team = 0; // team index of the instance being rasterised (0 outside DRAW_IN
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
   cullBack: false,
+  mirror: 0, // HANDS-01a: item.mirror (det<0 part matrices) flips the cullBack sign
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
@@ -329,7 +330,8 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
   let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
   if (A2 === 0) return;
-  if (A2 < 0 && info.cullBack) return; // RE-06c (28.10): voxel/instanced back faces, same snapped area as the GPU
+  // RE-06c (28.10): voxel/instanced back faces, same snapped area as the GPU. HANDS-01a: a mirrored item (det < 0) winds CW, so its back faces are A2 > 0.
+  if (info.cullBack && (info.mirror ? A2 > 0 : A2 < 0)) return;
   // CLOTH-1b1 (33.5): two-sided surface rule. The vertex normals follow the triangle winding (n = cross(b-a, c-a), A2 > 0 =
   // front, RE-06c). A fragment of a triangle whose snapped screen area is negative (seen from behind) gets N = -N, so the
   // lit normal always faces the eye. Captured BEFORE the vertex swap below; the GPU twin does the same with gl_FrontFacing.
@@ -547,6 +549,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.biasFactor = BIAS_FACTOR; _info.biasUnits = BIAS_UNITS;
     }
     _info.zBase = item.zBase;
+    _info.mirror = item.mirror | 0;
     _info.objectId = item.objectId;
 
     clipAndRasterTri(mesh, v0, v1, v2, target, ctx, _info);
