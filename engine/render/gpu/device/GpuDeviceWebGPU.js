@@ -235,6 +235,11 @@ export class GpuDeviceWebGPU {
       if (!buffers.length) buffers.push({ arrayStride: 0, stepMode: 'vertex', attributes: [] }); // keep instance buffer at slot 1
       buffers.push({ arrayStride: v.instanceStrideBytes || 0, stepMode: 'instance', attributes: v.instanceLayout.map((a) => ({ shaderLocation: a.location, offset: a.offsetBytes, format: vertexFormatFor(a.type, a.components) })) });
     }
+    // WG-2b: optional extra per-vertex streams (cloth uv) follow slot 0/1: BindDesc.extraBuffers[i] -> slot extraBase + i
+    const extraBase = buffers.length;
+    if (v.extraLayouts) for (const x of v.extraLayouts) {
+      buffers.push({ arrayStride: x.strideBytes || 0, stepMode: 'vertex', attributes: x.layout.map((a) => ({ shaderLocation: a.location, offset: a.offsetBytes, format: vertexFormatFor(a.type, a.components) })) });
+    }
     const canvasFmt = this._canvasFormat;
     const targetFormats = (desc.targetFormats || []).map((n) => n === 'canvas' ? canvasFmt : textureFormatFor(n).gpu);
     if (targetFormats.length !== desc.fragment.targets) throw new Error(`GpuDeviceWebGPU.createPipeline: targetFormats (${targetFormats.length}) != fragment.targets (${desc.fragment.targets})`);
@@ -242,7 +247,7 @@ export class GpuDeviceWebGPU {
     const pd = {
       layout,
       vertex: { module: this._module(v.src), entryPoint: /** @type {any} */ (v.src).entry || 'vs_main', buffers },
-      primitive: { topology: 'triangle-list', frontFace: 'cw', cullMode: desc.cull || 'none' },
+      primitive: { topology: 'triangle-list', frontFace: desc.frontFace || 'cw', cullMode: desc.cull || 'none' },
     };
     if (targetFormats.length) pd.fragment = { module: this._module(desc.fragment.src), entryPoint: /** @type {any} */ (desc.fragment.src).entry || 'fs_main', targets: targetFormats.map((format) => ({ format })) };
     if (desc.depthFormat) {
@@ -252,7 +257,7 @@ export class GpuDeviceWebGPU {
     }
     const gpu = this._validatedCreate('createRenderPipeline', pd);
     return {
-      kind: 'pipeline', gpu, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
+      kind: 'pipeline', gpu, extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
       texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
     };
   }
@@ -325,6 +330,8 @@ export class GpuDeviceWebGPU {
     }
     if (desc.vertexBuffer) pass.setVertexBuffer(0, desc.vertexBuffer.gpu);
     if (desc.instanceBuffer) pass.setVertexBuffer(1, desc.instanceBuffer.gpu);
+    const xb = desc.extraBuffers;
+    if (xb) for (let i = 0; i < xb.length; i++) pass.setVertexBuffer(p.extraBase + i, xb[i].gpu);
     if (desc.indexBuffer) { pass.setIndexBuffer(desc.indexBuffer.gpu, desc.indexBuffer.indexFormat); p.indexed = true; }
     else if (desc.vertexBuffer) p.indexed = false;
   }

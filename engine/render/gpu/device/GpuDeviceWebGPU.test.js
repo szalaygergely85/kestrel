@@ -41,7 +41,7 @@ function mockGpu() {
   const calls = [], sets = [], layouts = [], samplers = [];
   const obj = (n) => ({
     n, createView: () => ({ view: n }), destroy() {},
-    setPipeline() { calls.push('setPipeline'); }, setBindGroup(i, g, dyn) { calls.push('setBindGroup'); sets.push({ i, dyn: dyn && Array.from(dyn) }); }, setVertexBuffer() {}, setIndexBuffer() {},
+    setPipeline() { calls.push('setPipeline'); }, setBindGroup(i, g, dyn) { calls.push('setBindGroup'); sets.push({ i, dyn: dyn && Array.from(dyn) }); }, setVertexBuffer(i) { sets.push({ vb: i }); }, setIndexBuffer() {},
     draw() { calls.push('draw'); }, drawIndexed() { calls.push('drawIndexed'); }, end() { calls.push('end'); },
   });
   const rec = (n) => () => { calls.push(n); return obj(n); };
@@ -59,6 +59,43 @@ const consts = {
   tex: { TEXTURE_BINDING: 1, RENDER_ATTACHMENT: 2, COPY_SRC: 4, COPY_DST: 8 },
   stage: { VERTEX: 1, FRAGMENT: 2 }, map: { READ: 1 },
 };
+// WG-2b: clip-y-flipped default and mirrored pipeline winding are baked independently.
+{
+  const g = mockGpu(), descriptors = [];
+  const original = g.createRenderPipeline;
+  g.createRenderPipeline = (desc) => { descriptors.push(desc); return original(desc); };
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const base = { vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 }, targetFormats: ['rgba8'], cull: 'back' };
+  d.createPipeline(base); d.createPipeline({ ...base, frontFace: 'ccw' });
+  ok('default raster frontFace remains cw', descriptors[0].primitive.frontFace === 'cw');
+  ok('mirror frontFace override is ccw with back culling preserved', descriptors[1].primitive.frontFace === 'ccw' && descriptors[1].primitive.cullMode === 'back');
+  d.dispose();
+}
+// WG-2b: optional extra per-vertex streams (cloth uv) bind after slot 0/1.
+{
+  const g = mockGpu(), descriptors = [];
+  const original = g.createRenderPipeline;
+  g.createRenderPipeline = (desc) => { descriptors.push(desc); return original(desc); };
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const lay = [{ name: 'aPos', location: 0, components: 3, type: 'float', offsetBytes: 0 }];
+  const uv = [{ name: 'aUV', location: 1, components: 2, type: 'float', offsetBytes: 0 }];
+  const base = { vertex: { src: { wgsl: 'x' }, layout: lay, strideBytes: 16, extraLayouts: [{ layout: uv, strideBytes: 8 }] }, fragment: { src: { wgsl: 'x' }, targets: 1 }, targetFormats: ['rgba8'] };
+  const pipe = d.createPipeline(base);
+  const bufs = descriptors[0].vertex.buffers;
+  ok('extra layout appended as vertex-step buffer 1', bufs.length === 2 && bufs[1].stepMode === 'vertex' && bufs[1].arrayStride === 8 && bufs[1].attributes[0].shaderLocation === 1);
+  const inst = d.createPipeline({ ...base, vertex: { ...base.vertex, instanceLayout: uv, instanceStrideBytes: 8 } });
+  ok('extra stream follows the instance buffer (slot 2)', descriptors[1].vertex.buffers.length === 3 && inst.extraBase === 2 && pipe.extraBase === 1);
+  const plain = d.createPipeline({ ...base, vertex: { src: { wgsl: 'x' }, layout: lay, strideBytes: 16 } });
+  ok('no extra layouts: unchanged buffer list', descriptors[2].vertex.buffers.length === 1);
+  const b = d.createBuffer({ usage: 'vertex', bytes: 64 });
+  const tgt = d.createTarget({ color: [d.createTexture({ format: 'rgba8', width: 4, height: 4 })] });
+  d.beginPass(tgt);
+  g.sets.length = 0;
+  d.bind(pipe, { vertexBuffer: b, extraBuffers: [b] });
+  ok('extraBuffers bound at extraBase + i', g.sets.filter((x) => x.vb !== undefined).map((x) => x.vb).join() === '0,1');
+  d.endPass();
+  d.dispose();
+}
 {
   const g = mockGpu();
   const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });

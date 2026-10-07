@@ -107,6 +107,8 @@ export function clampGrid(cols, rows) {
  * @param {number} [opts.rows] - ignored except for the clamp's mismatch check; `rows` is always derived from `cols`.
  * @param {{cols:number, rows:number}} [opts.cpuGrid] - grid forced when the real back-end isn't a real gl2 GPU (default 160x60).
  * @param {any} [opts.renderTarget] - WG-1c2: a RenderTarget built by `createRenderer()` (else built here, WebGL2/Canvas2D).
+ * @param {any} [opts.renderPipeline] - WG-2b (38.8a item 21): a ready WebGPU `WgCellPipeline` built by `createRenderer()`; lets `setGrid` run on a
+ *   `webgpu` target (`rt.setGrid` + `renderPipeline.resizeGrid`). Absent = `setGrid` stays gl2-only.
  * @param {boolean} [opts.gpu] - `false` forces the CPU fallback grid even when WebGL2 would otherwise be used (`?gpu=0`).
  * @param {number} [opts.rays] - sub-ray count (per axis) for the GPU DDA's N-ray coverage vote
  *   (docs/architecture.md 14.2 item 3/US-030b); stored on the engine for `main.js`/the pipeline to read.
@@ -123,7 +125,7 @@ export function clampGrid(cols, rows) {
  */
 export function createEngine(opts) {
   const {
-    canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false, renderTarget: prebuiltRt = null,
+    canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false, renderTarget: prebuiltRt = null, renderPipeline = null,
     cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
     uiGrid = { cols: 160, rows: 60 },
     physics: physicsOverrides = {}, particles: particleOpts = {}, shadows = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
@@ -171,6 +173,7 @@ export function createEngine(opts) {
     const rt = engine.renderTarget;
     const before = `${rt.cols}x${rt.rows}`;
     rt.setGrid(request.cols, request.rows);
+    if (renderPipeline && rt.backend === 'webgpu') renderPipeline.resizeGrid(rt.cols, rt.rows);
     engine.depthBuffer = new DepthBuffer(rt.cols, rt.rows);
     ui.bindScene(rt.cols, rt.rows);
     if (rt.setUiLayer) rt.setUiLayer(ui);
@@ -278,7 +281,8 @@ export function createEngine(opts) {
       // by D-025) - everything else (CPU/Canvas2D fallback, `?gpu=0`) stays
       // put; a settings menu offering this grid on such a back-end is a
       // product bug upstream of this call, not something to crash over.
-      if (rt.backend !== 'gl2' || engine.gridRequest.gpu === false) {
+      const wgReady = rt.backend === 'webgpu' && !!renderPipeline && renderPipeline.ready;
+      if ((rt.backend !== 'gl2' && !wgReady) || engine.gridRequest.gpu === false) {
         console.warn(`[engine.setGrid] no GPU grid on this back-end (backend=${rt.backend}, gpu=${engine.gridRequest.gpu}) - staying at ${rt.cols}x${rt.rows}`);
         return { cols: rt.cols, rows: rt.rows, clamped: g.clamped, pending: false };
       }

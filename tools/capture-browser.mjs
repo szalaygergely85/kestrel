@@ -650,7 +650,7 @@ export function isSoftwareRendererLine(text) {
   return /\[webgl2Gate\] software renderer detected/.test(text);
 }
 
-async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine } = {}) {
+async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, expectBackend = 'gl2' } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (failFast) {
@@ -663,9 +663,9 @@ async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftware
         );
       }
       const backend = await evaluate(cdp, `(window.__debug && window.__debug.rt && window.__debug.rt.backend) || null`);
-      if (backend && backend !== 'gl2') {
+      if (backend && backend !== expectBackend) {
         throw new Error(
-          `capture-browser: backend is '${backend}', not 'gl2' - ${globalName} needs a real GPU/gl2 ` +
+          `capture-browser: backend is '${backend}', not '${expectBackend}' - ${globalName} needs a real GPU/${expectBackend} ` +
           `backend and will never appear. Pass --swiftshader only if you intend to test the software ` +
           `path (not meaningful for GPU perf gates); otherwise run on a machine with a real GPU.`
         );
@@ -786,7 +786,7 @@ export async function runLiveCapture(opts) {
     const globalName = opts.global || resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
-      failFast, getSoftwareRendererLine: () => softwareRendererLine,
+      failFast, getSoftwareRendererLine: () => softwareRendererLine, expectBackend: opts.backend === 'webgpu' ? 'webgpu' : 'gl2',
     });
 
     const ua = await evaluate(cdp, 'navigator.userAgent');
@@ -809,9 +809,9 @@ export async function runLiveCapture(opts) {
 // CLI entry
 // ---------------------------------------------------------------------
 
-// Existing gpucompare known-FAIL baselines remain report-only; this presenter gate must fail the command.
+// Existing gpucompare known-FAIL baselines remain report-only; shader compilation and presenter gates fail the command.
 export function captureExitCode(mode, normalized) {
-  return mode === 'webgpu-present' && normalized.ok !== true ? 1 : 0;
+  return (mode === 'webgpu-present' || mode === 'wgsl') && normalized.ok !== true ? 1 : 0;
 }
 
 async function main() {

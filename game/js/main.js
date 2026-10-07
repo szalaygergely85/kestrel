@@ -271,10 +271,11 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
-  force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays });
+  force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0' });
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   renderTarget: builtRt,
+  renderPipeline: wgPipeline, // WG-2b (38.8a item 21): lets engine.setGrid resize a webgpu target + its WgCellPipeline
   force2d: params.get('force2d') === '1',
   gpu: params.get('gpu') !== '0',
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
@@ -537,7 +538,10 @@ const swordStyleIds = {
 };
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
+const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
+if (wgActive) wgPipeline.bindInstances(engine.instances);
 // US-078d (30.1): the held sword's view-model handle, resolved once (gameVoxelPool already carries the
 // mesh-only `swordHeld` model registered above). `window.ASSETS.viewModels.sword` is the raw classic-script
 // def (same `globalThis.ASSETS.viewModels.sword` gpucompare.js reads - not part of the AssetRegistry's own
@@ -580,6 +584,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
   matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
   if (gpuPipeline) gpuPipeline.bind(matTable, assets.palette);
+  if (wgActive && wgPipeline.ready) wgPipeline.bind(matTable, assets.palette); // grid resize itself ran inside engine.applyGrid
   if (engine.world) for (const s of engine.world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
   if (fb) { fb.depth = engine.depthBuffer; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
 });
@@ -597,7 +602,7 @@ window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambi
 // `matTable`/`gbuf` - could happen), so passing them by value like this is
 // behaviour-identical to the old closures.
 const ctx = {
-  params, assets, rt, overlay, gpuPipeline, matTable, gbuf, depthBuffer, detailPass,
+  params, assets, rt, overlay, gpuPipeline, wgPipeline, matTable, gbuf, depthBuffer, detailPass,
   engine, sprites, fadeLut,
   lightsEnabled, sunEnabled, terrainEnabled, renderer, rayParam, compareNoVoxels, compareNearStep,
   GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR,
@@ -1084,7 +1089,7 @@ function runGame(mode, cinematic = null) {
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (params.get('debug') === '1' && input.pressed('KeyH')) hands.swap(); // dev: swap the two hands
+        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed('KeyH')) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
         hands.step(playerHandle.data, input.isDown('Mouse0') || input.pressed('Mouse0'), input.isDown('Mouse2') || input.pressed('Mouse2'), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
@@ -1431,6 +1436,7 @@ function runGame(mode, cinematic = null) {
     // 0 point lights - GpuCellPipeline.js's `_uploadLightUniforms` treats a
     // plain array as back-compat ambient-only input).
     lap(SEC.ui);
+    if (wgActive && wgPipeline.ready) wgPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     lap(SEC.gpuFrame);
     rt.present();
