@@ -5,7 +5,10 @@
 //
 // The cell-pass hook writes geometry through passRaster then optionally displays its debug view. Terrain is WG-2c,
 // cloth uses the device extra-vertex-stream API.
-// `frameComplete` stays false until WG-3: main.js keeps CPU shading and rt.gpuActive stays false.
+// WG-3c: after light the cell pass also runs shade + edge into pipeline-owned textures (t.texFinalFg/Bg). DECISION (38.8): the WebGPU
+// path keeps PRESENTING the CPU cells (rt.gpuActive false, frameComplete false) until sprites/overlay/water/shadow-map land (WG-3d..3f):
+// presenting GPU-shaded cells earlier would drop sprites, overlay, water and map shadows that only the CPU compositor draws. The GPU
+// result is observable through readbackCells() (`?gpucompare=1` / `=shade` cell rows).
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
@@ -34,7 +37,8 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
-    this.rendererString = 'webgpu (WG-3a resolve+deriv)';
+    this.rendererString = 'webgpu (WG-3c resolve+deriv+light+shade+edge)';
+    this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
@@ -56,7 +60,7 @@ export class WgCellPipeline {
     this._rasterPass = null;
     this._cellPass = null;
     this._outTarget = null; this._outFg = null; this._outBg = null;
-    this._gbufCleared = false;
+    this._gbufCleared = false; this._cellsShaded = false;
     this._clearOpts = { clear: true };
     this._debugU = new Float32Array(DEBUG_BLOCK.sizeWords);
     this._debugTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }];
@@ -72,7 +76,7 @@ export class WgCellPipeline {
       this._rasterPass = new WgRasterPass(this.device);
       this._meshDrawList = this._rasterPass.list;
       this._cellPass = new WgCellPass(this.device);
-      this.portedPasses.push('debug', 'raster', 'resolve', 'deriv');
+      this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
@@ -121,17 +125,22 @@ export class WgCellPipeline {
     freeWgTargets(this.device, this._t);
     this._t = t;
     this.cols = cols; this.rows = rows;
-    this._gbufCleared = false;
+    this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
   }
 
   // ---- binders: stored now, consumed by the passes WG-2b..WG-3 add ----
-  bind(table, palette) { this._table = table; this._palette = palette; if (this._rasterPass) this._rasterPass.bind(table); }
+  bind(table, palette) {
+    this._table = table; this._palette = palette;
+    if (this._rasterPass) this._rasterPass.bind(table);
+    if (this._cellPass) this._cellPass.bind(table, palette); // WG-3c: shade data textures re-pack lazily on the next frame
+  }
   bindVoxels(pool) { this._voxelPool = pool; }
   bindViewModel(vm) { this._viewModel = vm; }
   bindInstances(groups) { this._instances = groups; }
   setWaterLooks(_looks) { /* WG-3 */ }
-  setSource(_mode) { /* test-only switch of the GL path; nothing to switch yet */ }
+  /** Test-only (14.2 item 7): 'upload' feeds the CPU fb.gbuf into the cell-res textures (`?gpucompare=shade`); 'scene' = raster path. */
+  setSource(mode) { this._source = mode === 'upload' ? 'upload' : 'scene'; }
 
   /** Called once per frame before present(): remembers inputs; GPU commands run in the render-target hook. */
   frame(fb, light, cam, world) {
@@ -165,7 +174,30 @@ export class WgCellPipeline {
     return { fg: r.fg, bg: r.bg };
   }
   // passes not ported yet: resolve to null so a caller's `await` works and can see "nothing here" (no throw)
-  async readbackLight() { return null; }
+  /** Async twin of GpuCellPipeline.readbackLight: LIGHT rgba32uint (xyz = bitcast L, w = sunlit | litCount << 8 | sunN << SUN_N_SHIFT), cols*rows 4-wide. */
+  async readbackLight() {
+    const t = this._t;
+    if (!t) throw new Error('WgCellPipeline.readbackLight: no targets');
+    const n = this.cols * this.rows;
+    this._rbLight = this._rbLight && this._rbLight.length === 4 * n ? this._rbLight : new Uint32Array(4 * n);
+    await this.device.readback(t.texLight, { x: 0, y: 0, w: this.cols, h: this.rows }, this._rbLight);
+    return this._rbLight;
+  }
+  /**
+   * WG-3c: the FINAL cells shade + edge produced this frame (rgba8: r,g,b + glyph byte in .a, like RenderTargetGL.readbackPresent).
+   * Test-only, a frame boundary: call right after present(). Returns null when the passes did not run (nothing bound).
+   */
+  async readbackCells(outFg, outBg) {
+    const t = this._t;
+    if (!t || !this._cellsShaded) return null;
+    const n = this.cols * this.rows * 4;
+    outFg = outFg || (this._rbFg = this._rbFg && this._rbFg.length === n ? this._rbFg : new Uint8Array(n));
+    outBg = outBg || (this._rbBg = this._rbBg && this._rbBg.length === n ? this._rbBg : new Uint8Array(n));
+    const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
+    await this.device.readback(t.texFinalFg, rect, outFg);
+    await this.device.readback(t.texFinalBg, rect, outBg);
+    return { fg: outFg, bg: outBg };
+  }
   async readbackWater() { return null; }
   async readbackShadowDepthBits(_out) { return null; }
 
@@ -181,7 +213,8 @@ export class WgCellPipeline {
       d.endPass();
     }
     try { this._cellPass.run(this, t); }
-    catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv disabled:', e); return; }
+    catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
+    this._cellsShaded = this._cellPass.shaded;
     if (this.debugMode < 0) return;
     if (!this._outTarget || this._outFg !== rt.fgTex || this._outBg !== rt.bgTex) {
       this._dropOutTarget();

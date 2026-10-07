@@ -14,3 +14,6 @@ design/local/
 design/vox/
 design/meshes/source/
 desktop.ini
+
+# Local-only content overlay (licence forbids redistribution, e.g. Synty) - game/js/localOverlay.js
+content/local/

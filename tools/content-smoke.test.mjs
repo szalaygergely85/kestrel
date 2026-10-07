@@ -114,6 +114,7 @@ function listJsonFiles(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
+    if (entry.isDirectory() && dir === CONTENT_DIR && entry.name === 'local') continue; // git-ignored local-only overlay (game/js/localOverlay.js), own manifest
     if (entry.isDirectory()) out.push(...listJsonFiles(full));
     else if (entry.name.endsWith('.json')) out.push(path.relative(CONTENT_DIR, full).split(path.sep).join('/'));
   }

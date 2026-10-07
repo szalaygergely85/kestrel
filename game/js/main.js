@@ -47,6 +47,7 @@ import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { loadSettings, saveSettings } from './platform/index.js'; // US-060: remembered mute (D-012)
+import { applyLocalOverlay } from './localOverlay.js';
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
@@ -165,6 +166,7 @@ const bundle = await loadContentPack('../content/manifest.json');
 // the registry is built, so the rest of boot is unaware anything special
 // happened - same content shape either way.
 applyPlaytestOverlay(bundle);
+await applyLocalOverlay(bundle, params); // git-ignored content/local/ (licence-restricted assets, this PC only)
 if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 

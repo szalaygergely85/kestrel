@@ -175,6 +175,8 @@ export class World {
     this.terrain = null;
     this.terrainKey = null;
     this.scatter = null; // Derived placements, never serialized.
+    /** @type {any[]|null} TREES-LP-b: per forest species index, the resolved registry MeshData for `mesh` species (null for voxel `model` species) */
+    this.scatterMeshes = null;
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
@@ -222,6 +224,8 @@ export class World {
     this.visibility = null;
     // US-133 (architecture.md 32.3): the fire-spread grid (engine/world/fireGrid.js), or null; the game builds it and `serialize` saves it when set.
     this.fire = null;
+    /** @type {any} ALPHA-01b: MaskAtlas built by engine.loadWorld (null until then) */
+    this.maskAtlas = null;
     this.structures = [];
     this.structTable = new Float32Array(8 * 8);
     this.renderVersion = 0;
@@ -328,6 +332,15 @@ export class World {
       w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe, { edits: terrainEditsFor(assets, def.terrain) });
       // Keep the old canopy until the recipe supplies real-tree content.
       w.terrain.realTrees = opts.realTrees === true && !!recipe.recipe?.forest?.trees;
+      if (w.terrain.realTrees) { // TREES-LP-b (37.15 item 5): resolve `species[i].mesh` once; a missing id throws naming the species
+        const sp = recipe.recipe.forest.trees.species;
+        w.scatterMeshes = null;
+        for (let i = 0; Array.isArray(sp) && i < sp.length; i++) {
+          if (!sp[i] || typeof sp[i].mesh !== 'string') continue;
+          if (!assets || !assets.has('mesh', sp[i].mesh)) throw new Error(`World.load: forest.trees.species[${i}] references unknown mesh "${sp[i].mesh}"`);
+          (w.scatterMeshes || (w.scatterMeshes = new Array(sp.length).fill(null)))[i] = assets.mesh(sp[i].mesh);
+        }
+      }
     }
     w.bounds = validateBounds(def.bounds);
     // US-138 (32.5): built once here, after bounds, before the sun block

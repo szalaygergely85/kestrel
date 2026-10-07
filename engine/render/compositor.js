@@ -98,6 +98,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const ctx = sunShadowRasterCtx;
   ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
   ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
+  ctx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
   sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
   fb.sunMap = sunMapState;
@@ -107,6 +108,8 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
 const sharedMeshDrawCache = new MeshDrawCache();
 /** MESH-INST-01: CPU batching of repeated placed meshes (the JS twin of GpuCellPipeline's own set). */
 const sharedMeshGroups = new MeshGroupSet();
+/** TREES-LP-b: the `meshDraw` argument of `InstanceGroups.addToDrawList` (kind-9 mesh groups); idFor refreshed per frame. */
+const meshDrawArg = { cache: sharedMeshDrawCache, idFor: /** @type {any} */ (null) };
 const _strictIdFor = new WeakMap();
 /** matTable.idFor that throws on a key the palette/detail pass does not define (idFor itself invents ids). Stable identity per table. */
 function strictMatIdFor(table) {
@@ -199,7 +202,8 @@ function renderWorldMesh(fb, world, cam) {
   // uneven number of times. F3 stats copied onto `fb.loop.stats` (27.16 item 5 precedent:
   // `fb.loop.stats.structuresCulled` above, same "only when a Loop is wired" guard).
   if (fb.instances) {
-    fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo, meshViewProj, rows);
+    meshDrawArg.idFor = fb.matTable ? strictMatIdFor(fb.matTable) : null; // TREES-LP-b: kind-9 mesh groups
+    fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo, meshViewProj, rows, meshDrawArg);
     if (fb.loop && fb.loop.stats) {
       fb.loop.stats.instances = fb.instances.stats.instances;
       fb.loop.stats.instancesCulled = fb.instances.stats.instancesCulled;
@@ -231,6 +235,7 @@ function renderWorldMesh(fb, world, cam) {
     meshCtx.structFoot = null;
     meshCtx.structCount = 0;
   }
+  meshCtx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
   rasterDrawList(list, target, meshCtx);
   // US-078a (architecture.md 30.1): first-person view model, same pass after a depth-only clear (twin of the GPU
   // `_passRaster` tail); off on pitched frames and when nothing is shown.

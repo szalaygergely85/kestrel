@@ -1,0 +1,277 @@
+// WG-3d: device-only sun shadow map pass (WebGPU twin of GpuCellPipeline._passShadow, ME-15b/c/d, 27.9a). Depth only: the
+// caster list (mesh/shadowList.js, MESH-SHADOW-02 budget incl.) is drawn with the raster VERTEX stages and uViewProj = M_sun
+// into a sampled depth map (device format 'depth24' + sampled:true = depth32float on WebGPU).
+// B1 plug-in (WgCellPipeline), all objects built once at construct time (38.8a 22b), zero allocation per frame:
+//   const sh = new WgShadowPass(device, { shadows: opts.shadows, buffers: raster.buffers });   // sh.enabled === false when sun != 'map'
+//   per frame, AFTER raster.prepare(p) / raster.run(p) (needs raster.list, levelCache, meshCache, strictMatIdFor):  sh.run(p, raster);
+//   light pass: sunMode = sh.active ? 2 : 0 (GL: shadowActive && sun.on); light uSunShadow texture = sh.depthTex (kind 'depth', depth32float);
+//   uSunShadowM = sh.sunMatF32 (column-major mat4, GL layout), uSunShadowRes = shadowOpts.res, uSunShadowTexelM = sh.sunMat.texelM,
+//   uSunShadowBiasM = shadowOpts.biasM, uSunShadowNormalOff = shadowOpts.normalOffsetTexels (or read sh.lightParams()).
+//   gpucompare: `await sh.readbackDepth(out)` fills Uint32Array(res*res) with the float32 bits of depth (shadowParity.js contract).
+// The map is independent of the cell grid: no resize hook is needed. While `active` is false the light pass binds a dummy 1x1 depth texture.
+// NEEDS DEVICE (not edited here): GpuDeviceWebGPU.createPipeline drops the fragment stage when targets == 0, so the terrain
+// footprint carve (`fs_shadow`, named in fragment.src.entry) only runs after the condition becomes
+// `targetFormats.length || (desc.fragment.src && desc.fragment.src.entry)`.
+import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
+import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
+import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL } from '../wgsl/terrainRaster.wgsl.js';
+import { SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES } from '../wgsl/shadow.wgsl.js';
+import { MAX_STRUCTS } from '../WorldTextures.js';
+import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
+import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
+import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
+import { sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
+import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
+import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
+
+const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
+const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
+const T_FOOT = TERRAIN_BLOCK.field('structFoot').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
+const INSTANCE_LAYOUT = [
+  { name: 'iRow0', location: 6, components: 4, type: 'float', offsetBytes: 0 },
+  { name: 'iRow1', location: 7, components: 4, type: 'float', offsetBytes: 16 },
+  { name: 'iRow2', location: 8, components: 4, type: 'float', offsetBytes: 32 },
+  { name: 'iMeta', location: 9, components: 2, type: 'uint', offsetBytes: 48 },
+];
+
+/**
+ * Terrain shadow fragment entry, appended to the terrain raster module so the vertex stage and this stage share ONE uniform block
+ * (TerrainU): the stand-alone `shadowTerrain` module (ShadowTerrainU) has a different layout (structFoot at word 4, count at 0)
+ * and cannot share binding 0 with the terrain vertex stage. Same test as shadow.wgsl.js inStructFoot / the terrain fs_main carve.
+ */
+export const SHADOW_TERRAIN_PIPE_WGSL = `${TERRAIN_RASTER_WGSL}
+@fragment fn fs_shadow(v: VertexOut) {
+  for (var i = 0; i < ${MAX_STRUCTS}; i++) {
+    if (u32(i) >= u.structCount) { break; }
+    let b = u.structFoot[i];
+    if (v.vWorldPos.x >= b.x && v.vWorldPos.x < b.z && v.vWorldPos.y >= b.y && v.vWorldPos.y < b.w) { discard; }
+  }
+}
+`;
+
+export class WgShadowPass {
+  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string}} [opts] */
+  constructor(device, opts = {}) {
+    this.device = device;
+    const so = this.shadowOpts = resolveSunShadowOptions(opts.shadows, opts.renderer || 'mesh');
+    this.enabled = so.sun === 'map';
+    this.active = false;                 // this frame's map is valid (= GL shadowActive): light sunMode 2
+    this.renders = 0; this.skips = 0;
+    this.stats = { shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0 };
+    this.depthTex = null; this.target = null; this.pipes = [];
+    this.ownBuffers = !opts.buffers; this.buffers = opts.buffers || new MeshBuffers(device);
+    this.sunMat = createSunShadowMatrix(); this.sunMatF32 = new Float32Array(16);
+    this.list = createShadowList(); this.centre = new Float64Array(3); this.worldZ = { min: 0, max: 0 };
+    this.key = new Int32Array(2); this.keyPrev = new Int32Array(2); this.keyValid = false;
+    this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined };
+    this.u = new Float32Array(RASTER_BLOCK.sizeWords);
+    this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
+    this.tu = new Float32Array(TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
+    this.bindDesc = { uniforms: this.baseU, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null };
+    this.clothStreams = [null];
+    this.instanceBuffers = new Map();
+    this.passOpts = { clear: true };
+    this.copyTex = null; this.copyTarget = null; this.copyPipe = null; this.copyBind = null;
+    this.draws = 0; this._lp = null;
+    if (!this.enabled) return;
+    try {
+      const res = so.res;
+      this.depthTex = device.createTexture({ format: 'depth24', width: res, height: res, sampled: true });
+      this.target = device.createTarget({ color: [], depth: this.depthTex });
+      // GL polygonOffset(factor, units): factor = slope scale, units = constant (WebGPU: integer).
+      this.depthBias = { factor: so.depthBias[0], units: Math.round(so.depthBias[1]) };
+      this.staticPipe = this._pipeline(RASTER_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK);
+      this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BASE_BLOCK);
+      this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BLOCK, true);
+      this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK, false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
+      this.terrainPipe = this._pipeline(SHADOW_TERRAIN_PIPE_WGSL, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, 'none', TERRAIN_BLOCK, false, null, 'fs_shadow');
+    } catch (e) { this.dispose(); throw e; }
+  }
+
+  // Vertex stage from the raster module; fragment stage omitted (depth only) unless `fragEntry` names one (terrain carve).
+  _pipeline(code, layout, stride, cull, block, instanced = false, extraLayouts = null, fragEntry = null) {
+    const vertex = { src: { wgsl: code }, layout, strideBytes: stride };
+    if (instanced) { vertex.instanceLayout = INSTANCE_LAYOUT; vertex.instanceStrideBytes = INSTANCE_BYTES; }
+    if (extraLayouts) vertex.extraLayouts = extraLayouts;
+    const pipe = this.device.createPipeline({ vertex, fragment: { src: fragEntry ? { wgsl: code, entry: fragEntry } : null, targets: 0 },
+      bindings: { uniformBytes: block.sizeBytes, textures: [] }, targetFormats: [], depthFormat: 'depth32f',
+      depth: { test: true, write: true }, depthBias: this.depthBias, cull, frontFace: 'cw' });
+    this.pipes.push(pipe);
+    return pipe;
+  }
+
+  /** The light pass inputs for sunMode 2 (one reused object, refreshed per call). */
+  lightParams() {
+    const so = this.shadowOpts;
+    const o = this._lp || (this._lp = { active: false, texture: null, matrix: this.sunMatF32, res: 0, texelM: 0, biasM: 0, normalOffsetTexels: 0 });
+    o.active = this.active; o.texture = this.depthTex; o.res = so.res; o.texelM = this.sunMat.texelM; o.biasM = so.biasM; o.normalOffsetTexels = so.normalOffsetTexels;
+    return o;
+  }
+
+  _fillFoot(world) {
+    const structs = world.structures || [], tu = this.tu;
+    let n = 0;
+    for (let i = 0; i < structs.length && n < MAX_STRUCTS; i++) {
+      if (structs[i].kind === 'mesh') continue; // ME-14c1
+      const b = structs[i].bbox; if (!b) continue;
+      const o = T_FOOT + n * 4; tu[o] = b.x0; tu[o + 1] = b.y0; tu[o + 2] = b.x1; tu[o + 3] = b.y1; n++;
+    }
+    this.tbits[T_COUNT] = n;
+    return n;
+  }
+
+  _model(m, o = 0) {
+    const M = this.u, n = MODEL;
+    M[n] = m[o]; M[n + 1] = m[o + 3]; M[n + 2] = m[o + 6]; M[n + 3] = 0;
+    M[n + 4] = m[o + 1]; M[n + 5] = m[o + 4]; M[n + 6] = m[o + 7]; M[n + 7] = 0;
+    M[n + 8] = m[o + 2]; M[n + 9] = m[o + 5]; M[n + 10] = m[o + 8]; M[n + 11] = 0;
+    M[n + 12] = m[o + 9]; M[n + 13] = m[o + 10]; M[n + 14] = m[o + 11]; M[n + 15] = 1;
+  }
+
+  _draw(pipe, entry, count, first, instanceBuffer = null, instances = 1) {
+    const b = this.bindDesc;
+    b.uniforms = pipe === this.instancePipe ? this.u : this.baseU;
+    b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer; b.extraBuffers = null;
+    this.device.bind(pipe, b); this.device.draw(count, first, instances);
+    this.draws++;
+  }
+
+  /**
+   * Build the caster list + sun matrix, dirty-skip, then draw. `p` = the WgCellPipeline (_light/_cam/_world/_table/_palette/_voxelPool/_instances/terrainEnabled),
+   * `raster` = its WgRasterPass (prepared this frame: list, levelCache, meshCache, strictMatIdFor). @returns {boolean} map valid (= sunMode 2)
+   */
+  run(p, raster) {
+    this.active = false;
+    if (!this.enabled) return false;
+    const so = this.shadowOpts, light = p._light, cam = p._cam, world = p._world, sun = light && light.sun;
+    if (!sun || !sun.on || !cam || !world) return false;
+    const list = this.list, src = this.src, st = this.stats;
+    const tCpu0 = performance.now();
+    sunShadowCentre(cam, so, this.centre);
+    const c = src.centre; c.x = this.centre[0]; c.y = this.centre[1]; c.z = this.centre[2];
+    src.cache = raster.levelCache;
+    src.terrainSet = p.terrainEnabled && world.terrain ? terrainMeshSetFor(world.terrain) : null;
+    const vp = p._voxelPool;
+    if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
+    src.instances = p._instances || null;
+    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM;
+    src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
+    src.matIdFor = p._table ? p._table.idFor : undefined;
+    src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;
+    src.fogFarM = sunShadowFogFar(p._palette, so);
+    shadowWorldZ(world, raster.levelCache, this.worldZ);
+    const sm = shadowSunMatrix(sun.dir, this.centre, so, this.worldZ, this.sunMat);
+    const Mf = this.sunMatF32;
+    for (let i = 0; i < 16; i++) Mf[i] = sm.M[i];
+    buildShadowList(list, raster.list, world, sm.planes, src);
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key);
+    st.shadowCpuMs = performance.now() - tCpu0;
+    const prev = this.keyPrev;
+    if (so.dirtySkip && this.keyValid && key[0] === prev[0] && key[1] === prev[1]) {
+      this.active = true; this.skips++; st.shadowItems = list.count; st.shadowDraws = 0;
+      return true;
+    }
+    prev[0] = key[0]; prev[1] = key[1]; this.keyValid = true; this.renders++;
+    this._render(list, world, Mf);
+    this.active = true; st.shadowItems = list.count; st.shadowDraws = this.draws;
+    return true;
+  }
+
+  _render(list, world, Mf) {
+    const d = this.device, u = this.u, tu = this.tu;
+    for (let i = 0; i < 16; i++) { u[VIEW + i] = Mf[i]; tu[T_VIEW + i] = Mf[i]; }
+    this.draws = 0;
+    d.beginPass(this.target, this.passOpts); // clears depth to 1
+    try {
+      for (let i = 0; i < list.count; i++) { // static level quads
+        const item = list.items[i];
+        if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
+        this._model(item.matrix);
+        this._draw(this.staticPipe, this.buffers.get(item.mesh), item.rangeCount * 3, item.rangeFirst * 3);
+      }
+      for (let i = 0; i < list.count; i++) { // voxel props: one draw per part
+        const item = list.items[i];
+        if (item.type !== DRAW_VOXEL || !item.mesh) continue;
+        const entry = this.buffers.getVoxel(item.mesh), ranges = item.mesh.ranges;
+        for (let part = 0; part < ranges.length; part++) {
+          const r = ranges[part]; if (r.count <= 0) continue;
+          this._model(item.partMatrices, part * 12);
+          this._draw(this.voxelPipe, entry, r.count * 3, r.start * 3);
+        }
+      }
+      let instTotal = 0; // instanced casters; overflow past the per-frame cap drops the rest (never throw for a shadow)
+      for (let i = 0; i < list.count; i++) {
+        const item = list.items[i];
+        if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
+        const n = item.instCount;
+        if (instTotal + n > MAX_INSTANCES_PER_FRAME) break;
+        instTotal += n;
+        let buffer = this.instanceBuffers.get(item.instBuf);
+        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
+        else d.writeBuffer(buffer, item.instBuf.f32, 0);
+        const entry = this.buffers.getVoxel(item.mesh), ranges = item.mesh.ranges;
+        for (let part = 0; part < ranges.length; part++) {
+          const r = ranges[part]; if (r.count <= 0) continue;
+          this._model(item.partMatrices, part * 12);
+          this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, n);
+        }
+      }
+      const b = this.bindDesc;
+      for (let i = 0; i < list.count; i++) { // cloth: two-sided, position + uv stream like the raster pass
+        const item = list.items[i];
+        if (item.type !== DRAW_CLOTH || !item.mesh || item.rangeCount <= 0) continue;
+        const entry = this.buffers.getCloth(item.mesh);
+        this._model(item.matrix);
+        this.clothStreams[0] = entry.uvBuffer;
+        b.uniforms = this.baseU; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer; b.instanceBuffer = null; b.extraBuffers = this.clothStreams;
+        d.bind(this.clothPipe, b); d.draw(item.rangeCount * 3, item.rangeFirst * 3, 1); this.draws++;
+      }
+      let footDone = false; // terrain: footprint carve in the fragment stage
+      for (let i = 0; i < list.count; i++) {
+        const item = list.items[i];
+        if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
+        if (!footDone) { this._fillFoot(world); footDone = true; }
+        const entry = this.buffers.get(item.mesh), mm = item.matrix, n = T_MODEL;
+        tu[n] = mm[0]; tu[n + 1] = mm[3]; tu[n + 2] = mm[6]; tu[n + 3] = 0;
+        tu[n + 4] = mm[1]; tu[n + 5] = mm[4]; tu[n + 6] = mm[7]; tu[n + 7] = 0;
+        tu[n + 8] = mm[2]; tu[n + 9] = mm[5]; tu[n + 10] = mm[8]; tu[n + 11] = 0;
+        tu[n + 12] = mm[9]; tu[n + 13] = mm[10]; tu[n + 14] = mm[11]; tu[n + 15] = 1;
+        b.uniforms = tu; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer; b.instanceBuffer = null; b.extraBuffers = null;
+        d.bind(this.terrainPipe, b); d.draw(item.rangeCount * 3, item.rangeFirst * 3, 1); this.draws++;
+      }
+    } finally { d.endPass(); }
+  }
+
+  /**
+   * TEST-ONLY (gpucompare depth parity, shadowParity.js): copies the depth map into r32uint (shadowDepthCopy) and reads it back.
+   * Resources are created on first use, never on the frame path. @param {Uint32Array} out @returns {Promise<boolean>} false when no map was rendered this frame
+   */
+  async readbackDepth(out) {
+    if (!this.active || !this.depthTex) return false;
+    const d = this.device, res = this.shadowOpts.res;
+    if (!this.copyPipe) {
+      this.copyTex = d.createTexture({ format: 'r32ui', width: res, height: res });
+      this.copyTarget = d.createTarget({ color: [this.copyTex] });
+      this.copyPipe = d.createPipeline({ vertex: { src: { wgsl: SHADOW_DEPTH_COPY_WGSL } }, fragment: { src: { wgsl: SHADOW_DEPTH_COPY_WGSL }, targets: 1 },
+        bindings: { uniformBytes: 0, textures: SHADOW_DEPTH_COPY_TEXTURES.slice() }, targetFormats: ['r32ui'], cull: 'none' });
+      this.copyBind = { textures: [{ slot: 0, texture: this.depthTex }] };
+    }
+    d.beginPass(this.copyTarget, this.passOpts);
+    d.bind(this.copyPipe, this.copyBind); d.draw(3, 0, 1);
+    d.endPass();
+    await d.readback(this.copyTex, { x: 0, y: 0, w: res, h: res }, out);
+    return true;
+  }
+
+  dispose() {
+    const d = this.device;
+    for (const pipe of this.pipes) d.dispose(pipe);
+    this.pipes.length = 0;
+    for (const h of [this.copyPipe, this.copyTarget, this.copyTex, this.target, this.depthTex]) if (h) d.dispose(h);
+    this.copyPipe = this.copyTarget = this.copyTex = this.target = this.depthTex = null;
+    for (const buffer of this.instanceBuffers.values()) d.dispose(buffer);
+    this.instanceBuffers.clear();
+    if (this.ownBuffers) this.buffers.dispose();
+    this.active = false;
+  }
+}

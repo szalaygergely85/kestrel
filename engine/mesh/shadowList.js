@@ -11,7 +11,7 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 import { fillShadowBands, groupRadius } from './instances.js';
 
@@ -77,11 +77,26 @@ export function buildShadowList(list, cameraList, world, planes, src) {
     addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor);
   }
   const ig = src.instances;
-  if (ig && ig.pool && src.voxelMeshCache) {
+  if (ig && ((ig.pool && src.voxelMeshCache) || (src.meshCache && src.meshIdFor))) {
     const groups = ig.groups;
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0 || g.castShadow === false) continue;
+      if (g.mesh) { // TREES-LP-b: kind-9 mesh group; one band (<= instCastM), no LOD1
+        if (!src.meshCache || !src.meshIdFor) continue;
+        const draw = src.meshCache.get(g.mesh, src.meshIdFor);
+        let it = null;
+        if (!src.eye) it = list.addInstances(draw, g.parts, g.ib, g.count);
+        else {
+          if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
+          const cast = src.instCastM || 48;
+          fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R); // lod0M == castM: band 1 stays empty
+          if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], g._R);
+        }
+        if (it) it.flags |= DRAW_FLAG_ONE_PART;
+        continue;
+      }
+      if (!ig.pool || !src.voxelMeshCache) continue;
       const pm = ig.pool.models.get(g.modelKey);
       if (!pm) continue;
       const names = ig.pool.partNamesFor(g.modelKey);

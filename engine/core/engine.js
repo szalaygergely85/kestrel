@@ -8,6 +8,7 @@ import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/
 import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
+import { buildMaskAtlas } from '../render/MaskAtlas.js';
 import { Input } from './input.js';
 import { Loop } from './loop.js';
 import { Events } from './events.js';
@@ -50,6 +51,10 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
     for (let s = 0; s < counts.length; s++) {
       if (!counts[s]) continue;
       const key = cfg.species[s].model;
+      if (cfg.species[s].mesh !== undefined) { // TREES-LP-b: kind-9 mesh species (World.load resolved it)
+        if (!world.scatterMeshes?.[s]) throw new Error(`bindScatterInstances: unresolved mesh ${cfg.species[s].mesh}`);
+        needed++; continue;
+      }
       if (!instances.pool?.models.has(key)) throw new Error(`bindScatterInstances: missing voxel model ${key}`);
       needed++;
     }
@@ -60,8 +65,10 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   const groups = [];
   for (let s = 0; counts && s < counts.length; s++) {
     if (!counts[s]) continue;
-    const group = instances.group(cfg.species[s].model, counts[s]);
-    group.lodCells = cfg.lodCells;
+    const sp = cfg.species[s];
+    const group = sp.mesh !== undefined ? instances.meshGroup(world.scatterMeshes[s], counts[s]) : instances.group(sp.model, counts[s]);
+    if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: no LOD (37.15 item 6)
+    else group.lodCells = cfg.lodCells;
     for (let i = 0; i < scatter.count; i++) {
       if (scatter.species[i] !== s) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],
@@ -231,6 +238,9 @@ export function createEngine(opts) {
     },
     loadWorld(def, worldOpts) {
       engine.world = World.load(def, assets, { events, ...worldOpts });
+      // ALPHA-01b (37.17 item 10): one R8UI mask atlas per loaded world (ids sorted, deterministic); empty when no masks.
+      engine.maskAtlas = buildMaskAtlas(assets);
+      engine.world.maskAtlas = engine.maskAtlas;
       return engine.world;
     },
     /**

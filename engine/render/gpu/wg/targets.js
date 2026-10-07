@@ -3,7 +3,7 @@
 // like the GL sub-sample set. `resizeGrid` = free + alloc (the pipeline commits the new set only after a successful alloc).
 // Pure device calls: Node-testable with makeMockGpuDevice.
 
-export const WG_TEXTURE_FIELDS = Object.freeze(['texSGI', 'texSGA', 'texSDepth', 'texRasterDepth', 'texGI', 'texGA', 'texGD', 'texDepth', 'texMask']);
+export const WG_TEXTURE_FIELDS = Object.freeze(['texSGI', 'texSGA', 'texSDepth', 'texRasterDepth', 'texGI', 'texGA', 'texGD', 'texDepth', 'texMask', 'texLight', 'texShadeFg', 'texShadeBg', 'texFinalFg', 'texFinalBg']);
 
 /**
  * @param {any} device a GpuDevice (mock or WebGPU)
@@ -28,6 +28,16 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
     t.texMask = device.createTexture({ format: 'r8ui', width: cols, height: rows });
     t.targetResolve = device.createTarget({ color: [t.texGI, t.texGA, t.texDepth] });
     t.targetDeriv = device.createTarget({ color: [t.texGD] });
+    // WG-3b: light output (rgba32uint, sunlit/litCount/sunN in .w)
+    t.texLight = device.createTexture({ format: 'rgba32ui', width: cols, height: rows });
+    t.targetLight = device.createTarget({ color: [t.texLight] });
+    // WG-3c: shade output (pass 1) and the final edge output (pass 2, fg.a = glyph/255); the CPU present keeps using rt.fgTex/bgTex until WG-3f.
+    t.texShadeFg = device.createTexture({ format: 'rgba8', width: cols, height: rows });
+    t.texShadeBg = device.createTexture({ format: 'rgba8', width: cols, height: rows });
+    t.texFinalFg = device.createTexture({ format: 'rgba8', width: cols, height: rows });
+    t.texFinalBg = device.createTexture({ format: 'rgba8', width: cols, height: rows });
+    t.targetShade = device.createTarget({ color: [t.texShadeFg, t.texShadeBg] });
+    t.targetFinal = device.createTarget({ color: [t.texFinalFg, t.texFinalBg] });
   } catch (e) {
     freeWgTargets(device, t);
     throw e;
@@ -38,7 +48,7 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
 /** @param {any} device @param {any} t result of allocWgTargets (partial is fine) */
 export function freeWgTargets(device, t) {
   if (!t) return;
-  for (const f of ['targetRaster', 'targetVmDepth', 'targetResolve', 'targetDeriv', ...WG_TEXTURE_FIELDS]) {
+  for (const f of ['targetRaster', 'targetVmDepth', 'targetResolve', 'targetDeriv', 'targetLight', 'targetShade', 'targetFinal', ...WG_TEXTURE_FIELDS]) {
     if (t[f]) { try { device.dispose(t[f]); } catch (_) { /* best effort */ } t[f] = null; }
   }
 }
