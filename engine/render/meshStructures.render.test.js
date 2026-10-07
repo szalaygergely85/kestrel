@@ -125,8 +125,9 @@ const idFor = (key) => (key === 'stone' ? 7 : 3);
   list.begin();
   addMeshStructures(list, world, { x: 1500, y: 1040, z: 1.6 }, cache, idFor, 2000);
   ok('2 placements -> 2 items', list.count === 2);
-  const colliders = buildWorldColliders(world);
-  const colA = colliders.find((c) => c.id === 'a'), colB = colliders.find((c) => c.id === 'b');
+  // MESH-PHYS-01: placed meshes share one merged collider now; build each placement alone to get its own AABB.
+  const solo = (id) => buildWorldColliders({ structures: [world.structures.find((x) => x.id === id)], assets: world.assets })[0];
+  const colA = solo('a'), colB = solo('b');
   // The collider keeps only its BVH: transform the mesh by the item matrix and compare world AABBs (same matrix => same box).
   const worldBox = (m, pos) => {
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];

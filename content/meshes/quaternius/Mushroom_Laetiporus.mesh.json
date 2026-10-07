@@ -14435,5 +14435,6 @@
     "Mushrooms": "mushroom_cap"
   },
   "matsResolved": false,
-  "meshVersion": 1
+  "meshVersion": 1,
+  "collide": false
 }

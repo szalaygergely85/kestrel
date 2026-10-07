@@ -266,6 +266,7 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
  */
 export function buildWorldColliders(world) {
   const colliders = [];
+  const meshParts = [];
   for (const s of world.structures) {
     s._dynColliders = new Map();
     // Imported meshes have no grid sectors or dynamic legend tags.
@@ -273,8 +274,8 @@ export function buildWorldColliders(world) {
       const mesh = typeof s.mesh === 'string' ? world.assets.mesh(s.mesh) : s.mesh;
       const frame = s.frame || makeFrame(s.origin.x, s.origin.y, s.origin.z, 0, s.yawDeg || 0);
       const matrix12 = frameMatrix12(frame, new Float64Array(12));
-      const collider = colliderFromMesh(s.id, mesh, matrix12);
-      if (collider) colliders.push(collider);
+      const src = proxySource(mesh, s);
+      if (src) meshParts.push({ id: s.id, src, matrix12 });
       continue;
     }
     const matrix12 = translationMatrix(s.origin);
@@ -292,7 +293,64 @@ export function buildWorldColliders(world) {
       }
     }
   }
+  const merged = buildMergedMeshCollider(meshParts);
+  if (merged) colliders.push(merged);
   return colliders;
+}
+
+/** Mesh ids already warned about for colliding with > PROXY_WARN_TRIS render triangles (once per mesh). */
+const _warnedNoProxy = new Set();
+const PROXY_WARN_TRIS = 64;
+
+/**
+ * MESH-PHYS-01: what a placed mesh collides with - `null` (walk-over: `collide: false` on the mesh or the
+ * placement), its `collider` proxy (9 floats/tri), or, as a fallback, its render triangles.
+ * @returns {{pos: ArrayLike<number>, triCount: number}|null}
+ */
+function proxySource(mesh, placement) {
+  if (!mesh || mesh.collide === false || placement.collide === false) return null;
+  if (mesh.collider && mesh.collider.length >= 9) return { pos: mesh.collider, triCount: mesh.collider.length / 9 };
+  if (!mesh.triCount) return null;
+  if (mesh.triCount > PROXY_WARN_TRIS && !_warnedNoProxy.has(mesh.id)) {
+    _warnedNoProxy.add(mesh.id);
+    console.warn(`engine/world/colliders.js: mesh "${mesh.id}" collides with its ${mesh.triCount} render triangles - run tools/gen-mesh-colliders.mjs to add a proxy.`);
+  }
+  return { pos: mesh.pos, triCount: mesh.triCount };
+}
+
+/**
+ * MESH-PHYS-01 broad phase: ALL static placed-mesh proxies baked (world space) into ONE BVH built once at
+ * load, so a query costs one collider AABB test + a log-depth traversal that reaches only the few proxies
+ * near the player, instead of one AABB test (and one BVH) per placed mesh. `parts` records each source
+ * (id + triangle range in BVH source order) for debugging. Same MeshCollider shape as every other collider.
+ * @param {Array<{id:string, src:{pos:ArrayLike<number>, triCount:number}, matrix12:ArrayLike<number>}>} parts
+ * @returns {MeshCollider|null}
+ */
+function buildMergedMeshCollider(parts) {
+  let tris = 0;
+  for (const p of parts) tris += p.src.triCount;
+  if (!tris) return null;
+  const pos = new Float64Array(tris * 9);
+  const ranges = [];
+  let o = 0, tri = 0;
+  for (const { id, src, matrix12: m } of parts) {
+    for (let v = 0; v < src.triCount * 3; v++, o += 3) {
+      const x = src.pos[v * 3], y = src.pos[v * 3 + 1], z = src.pos[v * 3 + 2];
+      pos[o] = m[0] * x + m[1] * y + m[2] * z + m[9];
+      pos[o + 1] = m[3] * x + m[4] * y + m[5] * z + m[10];
+      pos[o + 2] = m[6] * x + m[7] * y + m[8] * z + m[11];
+    }
+    ranges.push({ id, start: tri, count: src.triCount });
+    tri += src.triCount;
+  }
+  const bvh = buildBvh(pos, null, null);
+  return {
+    id: 'meshes:static', kind: /** @type {'trimesh'} */ ('trimesh'), bvh,
+    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
+    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
+    enabled: true,
+    parts: ranges,
+  };
 }
 
 /**

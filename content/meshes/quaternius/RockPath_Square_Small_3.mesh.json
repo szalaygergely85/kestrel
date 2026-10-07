@@ -27,5 +27,6 @@
   "meshVersion": 1,
   "mats": {
     "PathRocks": "rock"
-  }
+  },
+  "collide": false
 }

@@ -17,7 +17,7 @@ for (const yaw of [0, 35, 90, -20, 225]) {
     const world = { structures: [placement, { id: 'empty', mesh: { ...mesh, triCount: 0 }, origin }],
       assets: { mesh: (id) => { assert.equal(id, 'wall_asset'); return mesh; } } };
     const colliders = buildWorldColliders(world);
-    assert.deepEqual(colliders.map((c) => c.id), ['wall']); checks++;
+    assert.deepEqual(colliders.map((c) => c.id), ['meshes:static']); checks++;
     assert.equal(placement._dynColliders.size, 0); checks++;
     const target = {}, start = {};
     localToWorld(frame, 0.5, 0, 0.5, target);

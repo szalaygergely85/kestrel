@@ -12035,5 +12035,6 @@
     "PathRocks": "rock_soft"
   },
   "matsResolved": false,
-  "meshVersion": 1
+  "meshVersion": 1,
+  "collide": false
 }

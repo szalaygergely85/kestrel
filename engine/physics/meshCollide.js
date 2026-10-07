@@ -24,7 +24,8 @@ import { queryAABB, raycast } from './bvh.js';
  * @property {import('./bvh.js').Bvh} bvh   world-space (matrix baked at build)
  * @property {Float64Array} min       3, world AABB = bvh.nodeMin[0..2] (refreshed after refit)
  * @property {Float64Array} max       3
- * @property {boolean} enabled */
+ * @property {boolean} enabled
+ * @property {Array<{id:string,start:number,count:number}>} [parts]  MESH-PHYS-01: per-structure triangle ranges of the merged `meshes:static` collider (debug/tools only) */
 
 /** @typedef {{x:number, y:number, blockedX:boolean, blockedY:boolean, nx:number, ny:number, overflow:boolean}} CircleMove   moveCapsule's out + overflow */
 

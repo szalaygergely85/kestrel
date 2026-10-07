@@ -59,3 +59,9 @@ export { FrameProfiler } from './core/FrameProfiler.js'; // US-018 spike hunt (w
 
 // ---- pitched camera helpers (RE-02a: gpucompare's focus-driven RTS poses) ----
 export { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from './render/projection.js';
+
+// ---- mesh-collision bench internals (MESH-PHYS-01, tools/bench-mesh-collide.mjs) ----
+export { buildWorldColliders } from './world/colliders.js';
+export { moveCircleMesh, probeSupport } from './physics/meshCollide.js';
+export { buildBvhFromMesh } from './physics/bvh.js';
+export { frameMatrix12 } from './mesh/DrawList.js';

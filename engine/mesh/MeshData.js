@@ -54,6 +54,8 @@ export const AO_FAR = 1e30;
  * @property {Record<string,string>} [mats] optional glTF material-name -> engine-material map
  * @property {boolean} matsResolved - true once mat bits are real MaterialTable ids
  * @property {number} meshVersion - bumped on every in-place rebuild
+ * @property {boolean} [collide] - MESH-PHYS-01: false = walk-over piece, no collider at all (absent = true)
+ * @property {Float32Array} [collider] - MESH-PHYS-01: collision proxy triangles (9 floats/tri, mesh-local); absent = collide against the render triangles
  */
 
 /**
@@ -316,6 +318,11 @@ export function validateMesh(mesh) {
     }
   }
 
+  if (mesh.collide !== undefined && typeof mesh.collide !== 'boolean') push('collide', 'must be a boolean');
+  if (mesh.collider !== undefined && (!(mesh.collider instanceof Float32Array) || mesh.collider.length % 9 !== 0 || !isFiniteArray(mesh.collider))) {
+    push('collider', 'must be a finite Float32Array, 9 floats per triangle');
+  }
+
   // bbox contains every position (1e-6 tolerance).
   if (mesh.bbox && mesh.bbox.length === 6) {
     const [x0, y0, z0, x1, y1, z1] = mesh.bbox;
@@ -404,6 +411,8 @@ export function meshToJSON(mesh) {
     ...(mesh.mats ? { mats: { ...mesh.mats } } : {}),
     matsResolved: mesh.matsResolved,
     meshVersion: mesh.meshVersion,
+    ...(mesh.collide === false ? { collide: false } : {}),
+    ...(mesh.collider ? { collider: arr(mesh.collider) } : {}),
   };
 }
 
@@ -427,5 +436,7 @@ export function meshFromJSON(obj) {
     ...(obj.mats ? { mats: { ...obj.mats } } : {}),
     matsResolved: obj.matsResolved,
     meshVersion: obj.meshVersion,
+    ...(obj.collide === false ? { collide: false } : {}),
+    ...(obj.collider ? { collider: Float32Array.from(obj.collider) } : {}),
   };
 }

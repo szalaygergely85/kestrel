@@ -30,7 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadGltf, meshToJSON, meshFromJSON, validateMesh } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
 
@@ -138,6 +138,19 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
   }
 }
 
+/**
+ * MESH-PHYS-01: add `collide: false` (walk-over piece) or the `collider` proxy (prism, <= 28 tris) to a static mesh json.
+ * Idempotent; the render data is untouched.
+ */
+export function withCollision(json) {
+  if (json.layout !== 'static') return json;
+  const plan = planMeshCollision(json.id, json.pos);
+  const next = { ...json };
+  delete next.collide; delete next.collider;
+  if (!plan.collide) next.collide = false; else next.collider = plan.collider;
+  return next;
+}
+
 /** Pack numeric arrays while leaving metadata and material strings readable. */
 export function stringifyMeshJSON(json) {
   // Match a complete JSON string first so numeric-looking material names stay untouched.
@@ -210,7 +223,7 @@ export async function runCli(argv) {
   const outPath = args.out || path.join('content', 'meshes', `${id}.mesh.json`);
   if (!args.dryRun) {
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, stringifyMeshJSON(meshJson), 'utf8');
+    fs.writeFileSync(outPath, stringifyMeshJSON(withCollision(meshJson)), 'utf8');
   }
   return { help: false, wrote: args.dryRun ? null : outPath, report };
 }

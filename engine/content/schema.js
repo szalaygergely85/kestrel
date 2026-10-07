@@ -48,7 +48,7 @@ export const REF_FIELDS = {
  */
 export const KEY_ORDER = {
   manifest: [...ENVELOPE_KEYS, 'contentVersion', 'files'],
-  mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'pos', 'uv', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion'],
+  mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'pos', 'uv', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider'],
   level: [...ENVELOPE_KEYS, 'name', 'title', 'version', 'cellSize', 'size', 'rows', 'legend', 'layers', 'tilt', 'start', 'sun', 'ambient', 'lights', 'props', 'interactables', 'triggers', 'markers', 'route', 'routeNotes'],
   // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
   // optional keys - schema stays 1, a world file without them still loads.
