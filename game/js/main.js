@@ -28,7 +28,7 @@ import {
 // paths (?bench=1, shadetest, ?gpucompare=1|shade) and the real-game mouse
 // look/perf-spike-hunt glue (PlayerLook/FrameProfiler) import from there.
 import {
-  PlayerLook, FrameProfiler,
+  PlayerLook, FrameProfiler, blockContextMenu,
 } from '../../engine/dev.js';
 // US-048 (PC-B QUEUE 4 item 2): pose data now lives in content/dev-poses.js
 // (a plain data module neither engine/game/tools' check-deps rules scan),
@@ -68,6 +68,8 @@ import { stepTargetingInput } from './quest/targetingInput.js';
 import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 30.1 + D-034 amendment)
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
+import { createHands, createStubItemSim } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
+import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
@@ -512,8 +514,10 @@ engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); 
 // mesh-only `swordHeld` model registered above). `window.ASSETS.viewModels.sword` is the raw classic-script
 // def (same `globalThis.ASSETS.viewModels.sword` gpucompare.js reads - not part of the AssetRegistry's own
 // JSON-sourced fields).
+// HANDS-01b (37.8a erratum): the held geometry is right-hand, so load `swordForHand('right')` (identity pose) ONCE and
+// mirror per hand with `vm.setHand` - never feed a pose-mirrored def to the engine mirror (it would mirror twice).
 const swordAssetDef = window.ASSETS && window.ASSETS.swordForHand
-  ? window.ASSETS.swordForHand(SWORD_CFG.hand) : window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.sword;
+  ? window.ASSETS.swordForHand('right') : window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.sword;
 const swordVmH = swordAssetDef ? (() => {
   const h = engine.viewModel.load('sword', swordAssetDef, gameVoxelPool);
   return {
@@ -630,6 +634,9 @@ function runGame(mode, cinematic = null) {
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
+  let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
+  const fireballStub = createStubItemSim(); // SPELL-01a replaces this no-op with the real fireball sim
+  blockContextMenu(canvas); // RMB must not open the browser menu over the game canvas (never the window)
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
@@ -757,6 +764,9 @@ function runGame(mode, cinematic = null) {
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
       if (sword) sword.dispose();
       sword = createSwordSim(world, engine.events, SWORD_CFG, { spendMana: (n) => vitals && vitals.spendMana(n) }); // US-078d (30.1)
+      hands = createHands(engine.events); // HANDS-01b: fresh router per load (the inventory is seeded just below)
+      hands.register('sword', sword);
+      hands.register('spell.fireball', fireballStub);
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
       if (targeting) targeting.dispose(); // same "drop the old world's listeners first" precedent as vitals.dispose() below
@@ -779,10 +789,7 @@ function runGame(mode, cinematic = null) {
       // fireball is known from the start in the right hand; the sword is taken in the tower (swordTake.js
       // adds it to the pack + left hand), so the demo pack holds the fireball only. `?demo=0` = empty pack.
       // An old save whose sword flag is already set migrates: sword in the pack + left hand.
-      const startInv = params.get('demo') === '0'
-        ? { pack: [], left: null, right: null }
-        : { pack: [{ id: 'spell.fireball', n: 1 }], left: null, right: 'spell.fireball' };
-      ensureInventory(playerHandle.data, startInv);
+      ensureInventory(playerHandle.data, params.get('demo') === '0' ? START_FULL : START_DEMO); // startConfig.js
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
@@ -857,6 +864,7 @@ function runGame(mode, cinematic = null) {
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
+      window.__debug.hands = hands; window.__debug.sword = sword; // HANDS-01b: test hooks
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -961,7 +969,7 @@ function runGame(mode, cinematic = null) {
     // `?voxelbench=` (`isCaptureOrBench`).
     if (paused !== wasPaused) {
       wasPaused = paused;
-      if (paused) duckAudio(); else { unduckAudio(); resetSimAccumulator(engine); }
+      if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
       if (ending || uiLocked || (vitals && vitals.inputLocked)) {
@@ -1012,10 +1020,17 @@ function runGame(mode, cinematic = null) {
       if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
+      if (hands) {
+        // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
+        // every step (down = false when it is in no hand).
+        if (params.get('debug') === '1' && input.pressed('KeyH')) hands.swap(); // dev: swap the two hands
+        const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
+        hands.step(playerHandle.data, input.isDown('Mouse0') || input.pressed('Mouse0'), input.isDown('Mouse2') || input.pressed('Mouse2'), gateOpen);
+        fireballStub.step(hands.downOf('spell.fireball')); // SPELL-01a hook (no-op until then)
+      }
       if (sword) {
         forwardOf(look.yawDeg, swordFwd);
-        const attackDown = (input.isDown('Mouse0') || input.pressed('Mouse0')) && look.locked && !uiLocked && !ending;
-        sword.step(playerHandle.data, swordFwd[0], swordFwd[1], attackDown);
+        sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? hands.downOf('sword') : false);
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
@@ -1240,9 +1255,10 @@ function runGame(mode, cinematic = null) {
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
       if (sword && swordVmH && !cinematic) {
-        if (engine.world.state['tower.sword.taken']) {
+        if (engine.world.state['tower.sword.taken'] && hands && hands.handOf('sword')) {
           const body = playerHandle.data.components.body;
           const swordMoving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
+          swordVmH.vm.setHand(swordVmH.h, hands.handOf('sword')); // flag write; the engine mirrors the authored-right model
           presentSword(sword, swordVmH, engine.overlay, cam, swordStyleIds, simTime, simTime, swordMoving);
         } else {
           swordVmH.vm.hide(swordVmH.h);

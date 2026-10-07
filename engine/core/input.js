@@ -59,16 +59,18 @@ export class Input {
       this._down.delete(e.code);
       this._consumed.delete(e.code);
     };
+    // Button 0 = 'Mouse0' (US-015), button 2 = 'Mouse2' (HANDS-01b, 37.8a); other buttons are ignored.
     this._onMouseDown = (e) => {
-      if (e.button !== 0) return; // US-015: only the left button is a game input ('Mouse0')
-      if (this._consumed.has('Mouse0')) return;
-      if (!this._down.has('Mouse0')) this._pressedThisFrame.add('Mouse0');
-      this._down.add('Mouse0');
+      const code = e.button === 0 ? 'Mouse0' : e.button === 2 ? 'Mouse2' : null;
+      if (!code || this._consumed.has(code)) return;
+      if (!this._down.has(code)) this._pressedThisFrame.add(code);
+      this._down.add(code);
     };
     this._onMouseUp = (e) => {
-      if (e.button !== 0) return;
-      this._down.delete('Mouse0');
-      this._consumed.delete('Mouse0');
+      const code = e.button === 0 ? 'Mouse0' : e.button === 2 ? 'Mouse2' : null;
+      if (!code) return;
+      this._down.delete(code);
+      this._consumed.delete(code);
     };
     this._onWheel = (e) => {
       this._wheel += Math.sign(e.deltaY || 0);
@@ -145,4 +147,16 @@ export class Input {
     this._wheel = 0;
     return w;
   }
+}
+
+/**
+ * HANDS-01b (37.8a): stops the browser context menu on `el` (the game canvas - never `window`, so the page
+ * outside the game keeps its menu). Returns `off()` to remove the listener.
+ * @param {EventTarget} el
+ * @returns {() => void}
+ */
+export function blockContextMenu(el) {
+  const fn = (e) => e.preventDefault();
+  el.addEventListener('contextmenu', fn);
+  return () => el.removeEventListener('contextmenu', fn);
 }
