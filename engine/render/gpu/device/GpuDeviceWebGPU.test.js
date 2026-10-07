@@ -179,6 +179,19 @@ await run('webgpu: requestDevice rejects -> fallback', {
   d.dispose();
 }
 
+// ---- WG-2a: checkErrors (error scope + uncaptured list)
+{
+  const g = mockGpu();
+  let popped = 0;
+  g.pushErrorScope = () => {}; g.popErrorScope = async () => { popped++; return popped === 2 ? { message: 'bad wgsl' } : null; };
+  g.queue.onSubmittedWorkDone = async () => {};
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const a = await d.checkErrors();
+  ok('checkErrors: clean device -> []', Array.isArray(a) && a.length === 0);
+  const b = await d.checkErrors();
+  ok('checkErrors: scope error reported', b.length === 1 && /bad wgsl/.test(b[0]));
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) { console.log('Failures:'); for (const f of failures) console.log(`  - ${f}`); process.exit(1); }
 console.log('ALL PASS');

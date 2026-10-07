@@ -266,8 +266,8 @@ const fadeLut = createFadeLut(defaultRamp, defaultRamp.length - 1, 0.12);
 const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
-const { rt: builtRt, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
-  force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0' });
+const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
+  force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays });
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   renderTarget: builtRt,
@@ -419,6 +419,14 @@ if (rt.backend === 'gl2' && !gpuPipeline) {
     depthBuffer = engine.depthBuffer;
     gbuf = new GBuffer(rt.cols, rt.rows);
   }
+}
+// WG-2a: the WebGPU skeleton pipeline (createRenderer built it) is NOT a gpuPipeline yet (no scene passes: the CPU path keeps
+// rendering); it only draws `?gpudebug=kind|plane|normal|depth` (G-buffer debug view) over the cells.
+if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') {
+  wgPipeline.bind(matTable, assets.palette);
+  const wgDebug = { kind: 0, plane: 1, normal: 2, depth: 3 }[params.get('gpudebug')];
+  if (wgDebug !== undefined) wgPipeline.setDebugMode(wgDebug);
+  console.log(`[WgCellPipeline] skeleton active (ported passes: ${wgPipeline.portedPasses.join(',')})${wgDebug !== undefined ? ', debug view ' + params.get('gpudebug') : ''}`);
 }
 const gpuDebugParam = params.get('gpudebug');
 if (gpuPipeline && gpuDebugParam) {

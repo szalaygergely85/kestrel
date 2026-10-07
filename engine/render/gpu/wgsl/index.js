@@ -3,10 +3,12 @@
 // steps append their `<pass>.wgsl.js` here. Pure data + helpers, no GPU globals.
 
 import { PRESENT_WGSL } from './present.wgsl.js';
+import { DEBUG_WGSL } from './debug.wgsl.js';
 
 /** @type {ReadonlyArray<{name: string, code: string}>} */
 export const WGSL_MODULES = Object.freeze([
   { name: 'present', code: PRESENT_WGSL },
+  { name: 'debug', code: DEBUG_WGSL },
 ]);
 
 /**

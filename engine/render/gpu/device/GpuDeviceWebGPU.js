@@ -374,6 +374,23 @@ export class GpuDeviceWebGPU {
     } finally { pool.push(staging); }
   }
 
+  /**
+   * WG-2a (38.8a item 18): async validation check. WebGPU reports shader/pipeline/resource errors asynchronously (no
+   * throw): a validation error scope round-trip flushes everything recorded so far, then the uncaptured-error list
+   * (filled by the 'uncapturederror' listener) is returned. Empty array = no error since device creation.
+   * @returns {Promise<string[]>}
+   */
+  async checkErrors() {
+    const g = this.gpu;
+    if (g.pushErrorScope) {
+      g.pushErrorScope('validation');
+      try { if (g.queue && g.queue.onSubmittedWorkDone) await g.queue.onSubmittedWorkDone(); } catch (_) { /* surfaced via the scope below */ }
+      const e = await g.popErrorScope();
+      if (e) this.gpuErrors.push(String(e.message || e));
+    }
+    return this.gpuErrors.slice();
+  }
+
   /** @param {GpuHandle} [handle] */
   dispose(handle) {
     if (handle) {

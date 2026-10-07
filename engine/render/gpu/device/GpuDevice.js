@@ -145,6 +145,8 @@ export class GpuDevice {
   readback(tex, rect, out) { throw new Error('GpuDevice.readback: not implemented'); }
   // WG-4a-LATER (38.3, typedef only, NOT in GPU_DEVICE_METHODS yet): createBuffer({usage:'storage'|'indirect'}),
   // createComputePipeline(desc), dispatch(x, y, z), drawIndirect(buffer, offsetBytes).
+  /** WG-2a (38.8a item 18), OPTIONAL (WebGPU only; callers test `typeof device.checkErrors === 'function'`): resolves to the validation error messages seen so far (empty = ok). @returns {Promise<string[]>} */
+  checkErrors() { return Promise.resolve([]); }
   /** @returns {Promise<any>} WG-1b1: resolves when the device is lost (WebGPU); never resolves on GL2/mock. */
   get lost() { throw new Error('GpuDevice.lost: not implemented'); }
   /** @returns {'webgl2'|'webgpu'} WG-1b1: read only by createRenderer.js and the F3 overlay (38.1). */
