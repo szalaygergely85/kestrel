@@ -18,10 +18,12 @@ function geom(kindVal) {
   gbuf.z = new Float32Array(n);
   return compareGeometry(gbuf, depth, gi, ga, db, cols, rows);
 }
-const g8 = geom(8), g1 = geom(1);
+const g8 = geom(8), g1 = geom(1), g9 = geom(9), g7 = geom(7);
 check('one cell, 3 fields -> geomViolCells 1', g1.depthViol + g1.uvViol + g1.zViol === 3 && g1.geomViolCells === 1 && g8.geomViolCells === 1);
 check('k8 violation counted, not non-k8', g8.uvViol === 1 && g8.violNonK8 === 0);
 check('non-k8 violation counted', g1.uvViol === 1 && g1.violNonK8 === 1);
+check('kind-9 violation not counted as non-k8 (A2)', g9.uvViol === 1 && g9.geomViolCells === 1 && g9.violNonK8 === 0);
+check('kind-7 violation still non-k8', g7.violNonK8 === 1);
 
 // compareCells: 2 cells, one kind 8 with big fg delta, one kind 1 clean.
 const kind = new Uint8Array([8, 1]);

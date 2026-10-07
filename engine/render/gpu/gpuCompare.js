@@ -352,7 +352,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
         }
       }
       if (gbuf.z && Number.isFinite(cpuDepth) && Math.abs(u32ToF32(gaBuf[i * 4 + 2]) - gbuf.z[i]) > 1e-3 * Math.max(1, Math.abs(cpuDepth))) zViol++;
-      if (depthViol + uvViol + aoViol + zViol + faceViol + nrmViol > violBefore) { geomViolCells++; if (kind[i] !== 8) violNonK8++; }
+      if (depthViol + uvViol + aoViol + zViol + faceViol + nrmViol > violBefore) { geomViolCells++; if (kind[i] !== 8 && kind[i] !== 9) violNonK8++ /* A2: kind 9 raster ties */; }
     }
   }
 
