@@ -37,6 +37,7 @@ export class RenderTargetWebGPU {
     this.ready = true;
     this._warnedLost = false;
     this._uiLayer = null;
+    this._clearOpts = { clear: true }; // hoisted: present() runs every frame
     this._cellPass = null; this._spritePass = null; this._overlayPass = null;
     this._measureCanvas = document.createElement('canvas');
     this._measureCtx = this._measureCanvas.getContext('2d', { willReadFrequently: true });
@@ -140,6 +141,7 @@ export class RenderTargetWebGPU {
     this.cols = cols;
     this.rows = rows;
     this.cells = new CellBuffer(cols, rows);
+    this._presentFg = null; this._presentBg = null; // 38.8a (17): the old textures are disposed below
     this.device.dispose(this.fgTex);
     this.device.dispose(this.bgTex);
     this.fgTex = this.device.createTexture({ format: 'rgba8', width: cols, height: rows });
@@ -191,7 +193,7 @@ export class RenderTargetWebGPU {
     if (this._spritePass) this._spritePass();
     if (this._overlayPass) this._overlayPass();
 
-    d.beginPass(this._target, { clear: true });
+    d.beginPass(this._target, this._clearOpts);
     this._grid = this._grid || [null, null, null];
     this._grid[0] = this.fgTex; this._grid[1] = this.bgTex; this._grid[2] = this.atlasTex;
     this._draw(this._pipeScene, this._bindScene, this._texScene, this._grid, this.cols, this.rows, 0);

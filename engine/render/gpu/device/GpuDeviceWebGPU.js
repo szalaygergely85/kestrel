@@ -55,6 +55,8 @@ export class GpuDeviceWebGPU {
     const info = (opts.adapter && (opts.adapter.info || {})) || {};
     this._software = !!(opts.adapter && (opts.adapter.isFallbackAdapter || info.isFallbackAdapter))
       || /swiftshader/i.test(String(info.description || info.device || info.vendor || ''));
+    /** WG-1c2: for the F3 backend line */
+    this.adapterInfo = { vendor: String(info.vendor || ''), architecture: String(info.architecture || ''), description: String(info.description || ''), fallback: this._software };
     this.timer = { begin: (/** @type {number} */ _slot) => {}, end: () => {} }; // timestamp-query: later WG step; caps.timerQueries=false
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     this._moduleCache = new Map();
@@ -132,8 +134,14 @@ export class GpuDeviceWebGPU {
    */
   writeTexture(tex, data, rect) {
     if (tex.isDepth) throw new Error('GpuDeviceWebGPU.writeTexture: depth textures cannot be written');
-    const r = rect || { x: 0, y: 0, w: tex.width, h: tex.height };
-    this.gpu.queue.writeTexture({ texture: tex.gpu, origin: [r.x, r.y, 0] }, data, { bytesPerRow: r.w * tex.bpp, rowsPerImage: r.h }, [r.w, r.h, 1]);
+    // zero-alloc (38.7 / 38.8a 17): the destination/layout/size descriptors live on the texture handle and are mutated
+    let wt = tex._wt;
+    if (!wt) wt = tex._wt = { dst: { texture: tex.gpu, origin: [0, 0, 0] }, layout: { bytesPerRow: 0, rowsPerImage: 0 }, size: [0, 0, 1] };
+    const x = rect ? rect.x : 0, y = rect ? rect.y : 0, w = rect ? rect.w : tex.width, h = rect ? rect.h : tex.height;
+    wt.dst.texture = tex.gpu; wt.dst.origin[0] = x; wt.dst.origin[1] = y;
+    wt.layout.bytesPerRow = w * tex.bpp; wt.layout.rowsPerImage = h;
+    wt.size[0] = w; wt.size[1] = h;
+    this.gpu.queue.writeTexture(wt.dst, data, wt.layout, wt.size);
   }
 
   /** @param {import('./GpuDevice.js').TargetDesc} desc */
@@ -364,6 +372,23 @@ export class GpuDeviceWebGPU {
       depadRows(new Uint8Array(staging.getMappedRange()), lay.paddedRowBytes, lay.rowBytes, rect.h, out);
       staging.unmap();
     } finally { pool.push(staging); }
+  }
+
+  /**
+   * WG-2a (38.8a item 18): async validation check. WebGPU reports shader/pipeline/resource errors asynchronously (no
+   * throw): a validation error scope round-trip flushes everything recorded so far, then the uncaptured-error list
+   * (filled by the 'uncapturederror' listener) is returned. Empty array = no error since device creation.
+   * @returns {Promise<string[]>}
+   */
+  async checkErrors() {
+    const g = this.gpu;
+    if (g.pushErrorScope) {
+      g.pushErrorScope('validation');
+      try { if (g.queue && g.queue.onSubmittedWorkDone) await g.queue.onSubmittedWorkDone(); } catch (_) { /* surfaced via the scope below */ }
+      const e = await g.popErrorScope();
+      if (e) this.gpuErrors.push(String(e.message || e));
+    }
+    return this.gpuErrors.slice();
   }
 
   /** @param {GpuHandle} [handle] */

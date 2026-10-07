@@ -3,7 +3,7 @@
 // engine/index.js (check-deps rule 3 + the editor boundary rule: no `game/`
 // import) - `design/` stays classic <script> tags, like game/index.html.
 import {
-  AssetRegistry, createEngine, GRID_DEFAULT_COLS, MAX_LIGHTS,
+  AssetRegistry, createEngine, createRenderer, GRID_DEFAULT_COLS, clampGrid, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
   DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG, createEditLayer,
 } from '../../engine/index.js';
@@ -208,8 +208,11 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
   registerBehaviour(name, () => {});
 }
 
+// WG-1c2: `?backend=webgpu` presents through WebGPU on the CPU path (the editor's GPU gate below stays WebGL2-only until WG-2).
+const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
+const { rt: builtRt } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgl2', gpu: params.get('gpu') !== '0' });
 const engine = createEngine({
-  canvas, assets, cols: gridFromParam(params, GRID_DEFAULT_COLS), rays: 1,
+  canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
   shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },

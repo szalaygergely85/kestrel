@@ -106,6 +106,7 @@ export function clampGrid(cols, rows) {
  * @param {number} [opts.cols] - desired grid width; clamped (see `clampGrid`) - default `GRID_DEFAULT_COLS` (240, the gl2 default; D-009 amendment 2).
  * @param {number} [opts.rows] - ignored except for the clamp's mismatch check; `rows` is always derived from `cols`.
  * @param {{cols:number, rows:number}} [opts.cpuGrid] - grid forced when the real back-end isn't a real gl2 GPU (default 160x60).
+ * @param {any} [opts.renderTarget] - WG-1c2: a RenderTarget built by `createRenderer()` (else built here, WebGL2/Canvas2D).
  * @param {boolean} [opts.gpu] - `false` forces the CPU fallback grid even when WebGL2 would otherwise be used (`?gpu=0`).
  * @param {number} [opts.rays] - sub-ray count (per axis) for the GPU DDA's N-ray coverage vote
  *   (docs/architecture.md 14.2 item 3/US-030b); stored on the engine for `main.js`/the pipeline to read.
@@ -122,14 +123,15 @@ export function clampGrid(cols, rows) {
  */
 export function createEngine(opts) {
   const {
-    canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false,
+    canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false, renderTarget: prebuiltRt = null,
     cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
     uiGrid = { cols: 160, rows: 60 },
     physics: physicsOverrides = {}, particles: particleOpts = {}, shadows = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
   const grid = clampGrid(cols, rows);
-  const renderTarget = RenderTarget(canvas, grid.cols, grid.rows, { force2d, cpuGrid, gpu });
+  // WG-1c2: a host may pass the target built by `createRenderer` (async, may be WebGPU); default = the WebGL2/Canvas2D factory.
+  const renderTarget = prebuiltRt || RenderTarget(canvas, grid.cols, grid.rows, { force2d, cpuGrid, gpu });
   const depthBuffer = new DepthBuffer(renderTarget.cols, renderTarget.rows);
   const input = new Input(inputTarget);
   const events = new Events();
