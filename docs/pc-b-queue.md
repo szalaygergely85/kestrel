@@ -2,11 +2,9 @@
 
 Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md` / `CLAUDE.md`** (DeepSeek trial agents: also `DEEPSEEK.md`, which limits you to 4 trial items). It replaces the long QUEUE blocks at the top of `docs/backlog.md`; story details stay in the backlog rows and `docs/architecture.md`.
 
-## Current PC-A handover (2026-10-07, through 1a2f092; supersedes historical sections below)
+## Current PC-A handover (2026-10-07 evening; owner: WG first, parallel lanes)
 
-Order: QUAT-TREES-01, QUAT-GROUND-01, MESH-SHADOW-02, MESH-INST-01, BUG-GONDOLA-FALL-b, HANDS-01c-b, WG-2a-b (before WG-2b), WG-2b/2c, WG-1b3, TEST-GAPS-WG, DIAG-SWIFTSHADER, EDITOR-LOAD-01, EP-DESKTOP-SPIKE, BACKLOG-TRIAGE. Full detail stays; no new GLSL. WG-2b starts after WG-2a ARCH review; its gate waits for PREC-04b2. PC-A built PREC-04b1 and owns OWNER-LOOK-ROADSOUTH and WG-4c.
-
-PC-A late additions, appended after that order: PREC-04b2 (before WG-2b gate runs), ALPHA-01b JS side (GPU/WGSL part = WG-2b), UI-PLATE-01, LICENCE-AUDIT-01, ED-MESH-01, QUAT-LOD-01 (after QUAT-TREES-01), OWNER-WALK-FIXES (when the owner reports). All PC-B cross-track, PC-A reviews. WG-2a-b's four corrections are implemented in 2a77768 and await re-review. Read the newest backlog rows for specs and blockers.
+**The queue is now split into lanes: B1 `docs/lanes/pc-b1.md` (WebGPU spine, branch `pc-b`), B2 `docs/lanes/pc-b2.md` (WGSL modules, worktree `../game_project_b2`, branch `pc-b2`), C `docs/lanes/pc-c.md` (Codex, branch `pc-c`).** Read skill `parallel-lanes` first. This file's older ordering (Quaternius first) is superseded: WG chain first; Quaternius/content rows moved to lane C; MESH-INST-01/MESH-SHADOW-02 to lane B2.
 
 ## Rules (short)
 - `git fetch origin && git merge origin/master` before each item and before pushing.
