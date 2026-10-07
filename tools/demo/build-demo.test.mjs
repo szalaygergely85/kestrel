@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { planDemo,zipFiles,buildDemo } from './build-demo.mjs';
+const base=fs.realpathSync(os.tmpdir()),root=fs.mkdtempSync(path.join(base,'kestrel-demo-test-'));
+try {
+  const write=(file,text)=>{const target=path.join(root,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,text);};
+  write('game/index.html','<script type="module" src="js/main.js"></script>');
+  write('game/js/main.js',"/* import '../../../outside.js'; */ import '../../engine/index.js';fetch('../content/manifest.json');");
+  write('engine/index.js','export const ready=true;');
+  write('content/manifest.json',JSON.stringify({files:['fixture.world.json']}));
+  write('content/fixture.world.json',JSON.stringify({kind:'world'}));
+  const tracked=['game/index.html','game/js/main.js','engine/index.js','content/manifest.json','content/fixture.world.json'];
+  const inventory={files:tracked.map(file=>({path:file,group:'project-content'}))};
+  const opts={root,inventory,trackedFiles:tracked,entries:['game/index.html']};
+  const plan=planDemo(opts);assert.equal(plan.length,5);assert.deepEqual(plan.map(f=>f.path),[...plan.map(f=>f.path)].sort());
+  assert.deepEqual(zipFiles(plan),zipFiles(planDemo(opts)),'deterministic archive');
+  const zip=zipFiles(plan);assert.equal(zip.readUInt32LE(0),0x04034b50);assert.equal(zip.readUInt32LE(zip.length-22),0x06054b50);
+  assert.equal(zip.readUInt16LE(zip.length-12),5,'central directory file count');
+  const extracted=JSON.parse(execFileSync('python',['-c',"import sys,io,json,zipfile; z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())); assert z.testzip() is None; print(json.dumps({n:z.read(n).decode('utf-8') for n in z.namelist()}))"],{input:zip,encoding:'utf8'}));
+  assert.equal(extracted['engine/index.js'],'export const ready=true;','independent ZIP/CRC reader extracts unchanged source');
+  const prohibited=structuredClone(inventory);prohibited.files[2].group='stickybizcuit';assert.throws(()=>planDemo({...opts,inventory:prohibited}),/unverified licence/);
+  assert.throws(()=>planDemo({...opts,trackedFiles:tracked.slice(0,-1)}),/missing or untracked/);
+  write('game/js/main.js',"import '../../design/nope.js';");assert.throws(()=>planDemo(opts),/missing or untracked/);
+  write('game/js/main.js',"import '../../../outside.js';");assert.throws(()=>planDemo(opts),/outside repo/);
+  write('game/js/main.js',"fetch('../content/local/manifest.json');");assert.equal(planDemo(opts).length,2,'optional local overlay omitted');
+  assert.equal(fs.existsSync(path.join(root,'dist')),false,'planning never writes output');
+  write('game/js/main.js',"import '../../engine/index.js';fetch('../content/manifest.json');");
+  write('THIRD_PARTY_NOTICES.md','Fixture notices');write('docs/licences.md','Fixture licence');
+  write('docs/licence-inventory.json',JSON.stringify(inventory));
+  execFileSync('git',['init','-q'],{cwd:root});execFileSync('git',['add','.'],{cwd:root});
+  assert.ok(buildDemo(root,{check:true}).files.some(f=>f.path==='index.html'));
+  assert.equal(fs.existsSync(path.join(root,'dist')),false,'check mode never writes');
+  buildDemo(root);assert.equal(fs.readFileSync(path.join(root,'dist/demo/engine/index.js'),'utf8'),'export const ready=true;');
+  assert.ok(fs.readFileSync(path.join(root,'dist/demo/index.html'),'utf8').includes('game/index.html'));
+  assert.throws(()=>buildDemo(root),/dist\/demo exists/,'existing output protected');
+  console.log('build-demo: dependency closure, licence/missing/path refusal, optional local overlay and deterministic ZIP PASS');
+}finally{
+  const relative=path.relative(base,root);
+  if(relative.startsWith('..') || path.isAbsolute(relative) || !path.basename(root).startsWith('kestrel-demo-test-'))throw Error('unsafe fixture cleanup');
+  fs.rmSync(root,{recursive:true,force:true});
+}
