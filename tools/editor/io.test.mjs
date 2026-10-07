@@ -104,6 +104,26 @@ const codeParts = { palette: {}, models: {}, worlds: {}, levels: {}, uiStyle: nu
   ok('validateDoc: a valid level+world doc returns null', err === null, err && err.message);
 }
 
+
+// ---- validateDoc: world structures[].mesh resolve via reference content (BUG: editor Save disabled on world_m1) ----
+{
+  const { readFileSync } = await import('node:fs');
+  const { loadContentPack } = await import('../../engine/index.js');
+  const meshText = readFileSync(new URL('../../content/meshes/quaternius/DeadTree_1.mesh.json', import.meta.url), 'utf8');
+  const mem = new Map([['m.json', JSON.stringify({ kind: 'manifest', schema: 1, id: 'm', contentVersion: 0, files: ['DeadTree_1.mesh.json'] })], ['DeadTree_1.mesh.json', meshText]]);
+  const reference = await loadContentPack('http://x.invalid/m.json', { fetchText: (u) => { const k = new URL(u).pathname.slice(1); return mem.has(k) ? Promise.resolve(mem.get(k)) : Promise.reject(new Error('HTTP 404')); } });
+  const meshId = Object.keys(reference.meshes)[0];
+  const doc = fixtureDoc();
+  doc.files.get('world/fixture_world').def.structures.push({ id: 'tree', mesh: meshId, origin: { x: 1, y: 1, z: 0 }, yawDeg: 0 });
+  const err = await validateDoc(doc, codeParts, { reference });
+  ok('validateDoc: world mesh structure validates with reference meshes', err === null, err && err.message);
+  const noRef = await validateDoc(doc, codeParts);
+  ok('validateDoc: mesh structure without reference errors (unknown mesh)', noRef instanceof ContentError && /unknown mesh/.test(noRef.message), noRef && noRef.message);
+  doc.files.get('world/fixture_world').def.structures[1].mesh = 'quaternius/Nope';
+  const bad = await validateDoc(doc, codeParts, { reference });
+  ok('validateDoc: an unknown mesh id still errors', bad instanceof ContentError, bad && bad.message);
+}
+
 // ---- validateDoc: catches a broken cross-file reference (structures[].level) ----
 {
   const doc = fixtureDoc();

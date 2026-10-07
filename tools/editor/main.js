@@ -1447,7 +1447,7 @@ assetsImportVoxBtn.addEventListener('click', doImportVox);
 let ioGeneration = 0;
 async function refreshIoStatus() {
   const gen = ++ioGeneration;
-  const err = await validateDoc(doc, window.ASSETS);
+  const err = await validateDoc(doc, window.ASSETS, { reference: bundle });
   if (gen !== ioGeneration) return; // a newer edit landed while this was in flight
   const dirty = anyDirty(doc) || tb.dirty;
   saveBtn.disabled = !!err;
@@ -2124,7 +2124,7 @@ window.__editor = {
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), resolveDropPoint: (pt) => resolveDropPoint(world, pt), commitFieldEdit, renameSelected,
-  doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS),
+  doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS, { reference: bundle }),
   openModelPicker, closeModelPicker,
   rebuildNow: () => rebuildSched.flushNow(), get rebuildRuns() { return rebuildSched.runs; }, // ED-MESH-1d (headless measure)
   // US-067
