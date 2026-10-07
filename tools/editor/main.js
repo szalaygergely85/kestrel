@@ -55,6 +55,8 @@ import { createIconCache, createIconQueue, iconModel } from './iconFit.js';
 import { createIconRenderer } from './iconRender.js';
 import { EDITOR_PLATE_BG } from './overlayStyle.js';
 import { iconAsset, meshIconKey, meshKeyFromIcon, listMeshAssetGroups } from './meshAssets.js';
+import { createMeshPlacement, snapMeshOrigin, prepareMeshEdit, validateMeshRename } from './meshPlace.js';
+import { renderMeshPanel } from './meshPanel.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -479,13 +481,13 @@ function setPlaceMode(k) {
 function armModelPlacement(key) {
   armedModelKey = key;
   setPlaceMode('prop');
-  flash(`place: prop "${key}" (click viewport to place, Esc to cancel)`);
+  flash(`place: ${meshKeyFromIcon(key) === null ? 'prop' : 'mesh'} "${meshKeyFromIcon(key) ?? key}" (click viewport to place, Esc to cancel)`);
 }
 
 /** US-067 AC: "the ribbon shows the currently-armed model name". */
 function updateArmedModelChip() {
   if (placeMode === 'prop' && armedModelKey) {
-    armedModelChipEl.textContent = `model: ${armedModelKey}`;
+    armedModelChipEl.textContent = `${meshKeyFromIcon(armedModelKey) === null ? 'model' : 'mesh'}: ${meshKeyFromIcon(armedModelKey) ?? armedModelKey}`;
     armedModelChipEl.style.display = '';
   } else {
     armedModelChipEl.style.display = 'none';
@@ -709,10 +711,20 @@ function selectItem(item) {
 }
 
 /** Property-panel field edit: one `EditRecord` per committed field (24.9). */
+function commitMeshPatch(item, patch, label = 'edit') {
+  if (!item.mesh) return ['mesh: level structures are read-only'];
+  const file = doc.files.get(selection.fileId);
+  const { after, errors } = prepareMeshEdit(item, patch, { assets, world, file });
+  if (errors.length) { flash(`${label} refused: ${errors.join('; ')}`); return errors; }
+  commit(makeRecord(label, selection.fileId, 'structures', item.id, selectionItemIndex(doc, selection), item, after));
+  return [];
+}
+
 function commitFieldEdit(patch) {
   if (!selection) return;
   const item = selectionItemData(doc, selection);
   if (!item) return;
+  if (selection.collection === 'structures') return commitMeshPatch(item, patch);
   const index = selectionItemIndex(doc, selection);
   commit(makeFieldEditRecord('edit', selection.fileId, selection.collection, item, index, patch));
 }
@@ -731,6 +743,10 @@ function renameSelected(newId, setError) {
   if (!selection) return;
   const item = selectionItemData(doc, selection);
   if (!item) return;
+  if (selection.collection === 'structures') {
+    const errors = validateMeshRename(newId);
+    if (errors.length) { setError(errors.join('; ')); return; }
+  }
   const file = doc.files.get(selection.fileId);
   const siblingIds = new Set((file.def[selection.collection] || []).map((it) => it.id));
   siblingIds.delete(item.id);
@@ -743,6 +759,11 @@ function renameSelected(newId, setError) {
 }
 
 function renderProperties() {
+  const meshItem = selection?.collection === 'structures' && selectionItemData(doc, selection);
+  if (meshItem?.mesh) {
+    renderMeshPanel(propertiesEl, meshItem, { assets, onFieldCommit: commitFieldEdit, onRename: renameSelected });
+    return;
+  }
   renderPropertyPanel(propertiesEl, {
     doc, selection, assets, palette: assets.palette,
     behaviourNames: harvestBehaviourNames(doc),
@@ -756,6 +777,10 @@ function applyNudge(axis, sign) {
   if (!selection) { flash('nudge: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
+  if (selection.collection === 'structures') {
+    const origin = { ...item.origin, [axis]: item.origin[axis] + sign * SNAP_OPTIONS[snapIdx] };
+    commitMeshPatch(item, { origin }, 'nudge'); return;
+  }
   if (axis === 'z' && typeof item.z !== 'number') { flash('nudge: z is not numeric (e.g. "ground") - left alone'); return; }
   const sFrame = frameFor(world, selection);
   const localZ = typeof item.z === 'number' ? item.z : 0;
@@ -779,6 +804,7 @@ function applyYaw(deltaDeg) {
   const field = typeof item.facing === 'number' ? 'facing' : (typeof item.yawDeg === 'number' ? 'yawDeg' : null);
   if (!field) { flash('yaw: item has no facing/yawDeg field'); return; }
   const next = ((item[field] + deltaDeg) % 360 + 360) % 360;
+  if (selection.collection === 'structures') { commitMeshPatch(item, { yawDeg: next }, 'yaw'); return; }
   const index = selectionItemIndex(doc, selection);
   commit(makeFieldEditRecord('yaw', selection.fileId, selection.collection, item, index, { [field]: next }));
 }
@@ -814,6 +840,11 @@ function dropToFloor() {
   if (!selection) { flash('drop: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
+  if (selection.collection === 'structures') {
+    const origin = snapMeshOrigin(world, assets.mesh(item.mesh), item.mesh, item.origin.x, item.origin.y);
+    if (!origin) { flash('drop refused: no floor under mesh footprint'); return; }
+    commitMeshPatch(item, { origin }, 'drop'); return;
+  }
   if (item.z === 'ground') { flash('drop: z is "ground" - left alone (24.8)'); return; }
   const sFrame = frameFor(world, selection);
   const worldPos = itemToWorld(sFrame, item.x, item.y, 0);
@@ -828,9 +859,10 @@ function deleteSelected() {
   if (!selection) { flash('delete: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
+  if (selection.collection === 'structures' && !item.mesh) { flash('delete refused: level structures are read-only'); return; }
   const file = doc.files.get(selection.fileId);
-  if (selection.collection === 'props') {
-    const referrers = findReferrers(file.def, file.kind, 'props', item.id);
+  if (selection.collection === 'props' || selection.collection === 'structures') {
+    const referrers = findReferrers(file.def, file.kind, selection.collection, item.id);
     if (referrers.length) { flash(`delete refused: referenced by ${referrers.join(', ')}`); return; }
   }
   const index = selectionItemIndex(doc, selection);
@@ -850,6 +882,7 @@ function teleportToSelection() {
   }
   if (!point) {
     const item = selectionItemData(doc, selection);
+    if (item?.mesh && item.origin) point = item.origin;
     if (item && typeof item.x === 'number' && typeof item.y === 'number') {
       const sFrame = frameFor(world, selection);
       const z = typeof item.z === 'number' ? item.z : 0;
@@ -867,7 +900,7 @@ function teleportToSelection() {
 
 function selectableLabel(o) {
   const it = o.item;
-  const desc = it.model || it.preset || it.type || '';
+  const desc = it.mesh || it.model || it.preset || it.type || '';
   return `${o.id}${desc ? ' (' + desc + ')' : ''}`;
 }
 
@@ -877,7 +910,7 @@ function selectableLabel(o) {
 // doc's other collection is per-level (props/lights/triggers/interactables).
 let treeFilter = 'all'; // 'all' | a listOutlinerItems() collection name
 let treeSearch = '';
-const TREE_CHIP_LABELS = { all: 'ALL', entities: 'STRUCT', props: 'PROPS', lights: 'LIGHTS', triggers: 'TRIGGERS', interactables: 'INTERACT' };
+const TREE_CHIP_LABELS = { all: 'ALL', entities: 'STRUCT', structures: 'MESHES', props: 'PROPS', lights: 'LIGHTS', triggers: 'TRIGGERS', interactables: 'INTERACT' };
 
 treeSearchInput.addEventListener('input', () => { treeSearch = treeSearchInput.value; renderOutliner(); });
 treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
@@ -920,8 +953,9 @@ function renderOutliner() {
   // `listOutlinerItems` data and the same `selectItem` click path as before.
   const groups = new Map();
   for (const o of filtered) {
-    if (!groups.has(o.fileId)) groups.set(o.fileId, []);
-    groups.get(o.fileId).push(o);
+    const group = o.collection === 'structures' ? `${o.fileId} / Meshes` : o.fileId;
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(o);
   }
   for (const [fileId, items] of groups) {
     const header = document.createElement('div');
@@ -972,7 +1006,7 @@ function renderOutliner() {
       lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleItemLocked(item); });
       icons.appendChild(eyeBtn);
       icons.appendChild(lockBtn);
-      row.appendChild(icons);
+      if (o.collection !== 'structures') row.appendChild(icons);
       row.addEventListener('click', () => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }));
       row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
       outlinerEl.appendChild(row);
@@ -1269,7 +1303,6 @@ function buildAssetRow(key, priority = false) {
     row.dataset.meshKey = meshKey;
     row.classList.add('mesh-asset-row');
     row.title = `Mesh: ${meshKey} (${assets.mesh(meshKey).triCount.toLocaleString()} triangles)`;
-    return row;
   }
   // mousedown (not click): same reasoning as the US-063 model-picker rows -
   // fires before the search input's blur / the canvas's own mousedown
@@ -1551,6 +1584,17 @@ window.addEventListener('beforeunload', (e) => {
  *   interactable placement never passes one).
  */
 function placeAt(kind, pt, modelKeyOverride) {
+  const meshKey = modelKeyOverride ? meshKeyFromIcon(modelKeyOverride) : null;
+  if (meshKey !== null) {
+    const fileId = fileKey('world', doc.worldId), file = doc.files.get(fileId);
+    const { item, errors, warnings } = createMeshPlacement(file, meshKey, pt, { assets, world, snapStep: SNAP_OPTIONS[snapIdx] });
+    if (errors.length) { flash(`place refused: ${errors.join('; ')}`); setPlaceMode(null); return; }
+    commit(makeInsertRecord(fileId, 'structures', item));
+    selectItem({ fileId, collection: 'structures', id: item.id, structId: null });
+    setPlaceMode(null);
+    if (warnings.length) flash(warnings.join('; '));
+    return;
+  }
   const { zone, structure: s } = classifyPlacement(world, pt);
   if (zone === 'gap') {
     flash('place refused: no floor here (a courtyard gap or hole inside the structure)');
@@ -1808,7 +1852,10 @@ window.addEventListener('mousemove', (e) => {
       const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
       const point = result.world || rayPoint(ray, 8);
       assetDrag.rawPoint = point;
-      assetDrag.ghostPoint = resolveDropPoint(world, point);
+      const meshKey = meshKeyFromIcon(assetDrag.modelKey);
+      const snap = SNAP_OPTIONS[snapIdx];
+      assetDrag.ghostPoint = meshKey === null ? resolveDropPoint(world, point)
+        : snapMeshOrigin(world, assets.mesh(meshKey), meshKey, snapTo(point.x, snap), snapTo(point.y, snap));
     }
     frame.markDirty();
     return;
@@ -1866,6 +1913,7 @@ window.addEventListener('mouseup', (e) => {
     // = in; onto a default folder = back to its default, via panel.js's
     // `moveAssetToFolder`), taking priority over the viewport place/cancel.
     if (d.folderTarget != null) {
+      if (meshKeyFromIcon(d.modelKey) !== null) { setPlaceMode(null); flash('mesh folders are grouped by pack'); return; }
       dropAssetIntoFolder(d.modelKey, d.folderTarget);
       return;
     }
@@ -2091,7 +2139,7 @@ function drawAssetGhost() {
   const dimHex = (assets.palette.colors && assets.palette.colors.uiDim) || '#8b949e';
   const bgHex = '#0c120c'; // matches drawHelpOverlay's panel background
   rt.setCell(c, r, '+', goldHex, bgHex);
-  drawText(rt, c + 1, r, ` ${assetDrag.modelKey}`, dimHex, bgHex);
+  drawText(rt, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
 }
 
 function drawOverlay(fb) {

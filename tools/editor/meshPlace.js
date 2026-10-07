@@ -49,6 +49,23 @@ export function validateMeshRename(id) {
   return /_\d+$/.test(id) ? ['id: numeric suffixes are reserved for minted ids'] : [];
 }
 
+/** Mesh field edits stay canonical; horizontal moves re-snap, explicit z edits do not. */
+export function prepareMeshEdit(item, patch, { assets, world, file }) {
+  let after = { ...item, ...patch };
+  if (patch.origin) {
+    if (!['x', 'y', 'z'].every(k => Number.isFinite(patch.origin[k]))) return { after: null, errors: ['origin: x, y and z must be finite'] };
+    const moved = patch.origin.x !== item.origin.x || patch.origin.y !== item.origin.y;
+    const typedZ = patch.origin.z !== item.origin.z;
+    after.origin = moved && !typedZ ? snapMeshOrigin(world, assets.mesh(item.mesh), item.mesh, patch.origin.x, patch.origin.y)
+      : Object.fromEntries(['x', 'y', 'z'].map(k => [k, roundMeshPosition(patch.origin[k])]));
+    if (!after.origin) return { after: null, errors: ['origin: no floor under mesh footprint'] };
+  }
+  for (const key of ['castShadow', 'collide']) if (after[key] === true) delete after[key];
+  const siblingIds = new Set((file.def.structures || []).filter(s => s.id !== item.id).map(s => s.id));
+  const errors = validateMeshStructure(after, { assets, siblingIds, nextId: file.meta.nextId });
+  return { after: errors.length ? null : after, errors };
+}
+
 /** Build + validate before minting. Does not insert into doc or mutate the runtime world. */
 export function createMeshPlacement(file, key, pt, { assets, world, yawDeg = 0, snapStep = 0 }) {
   if (!assets.has('mesh', key)) return { item: null, errors: ['mesh: unknown registered mesh'], warnings: [] };

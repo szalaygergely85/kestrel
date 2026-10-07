@@ -174,7 +174,6 @@
     .asset-row { display: flex; align-items: center; gap: 6px; padding: 4px; cursor: pointer; border-bottom: 1px solid var(--ed-line); }
     .asset-row:hover { background: var(--ed-hover); }
     .asset-row.armed { background: var(--ed-hover); box-shadow: inset 2px 0 0 var(--ed-cyan); }
-    .mesh-asset-row { cursor: default; }
     .asset-thumb {
       display: grid;
       flex: 0 0 auto;
@@ -457,6 +456,7 @@
           <div id="tree-chips">
             <button type="button" class="tree-chip active" data-filter="all">ALL (0)</button>
             <button type="button" class="tree-chip" data-filter="entities">STRUCT (0)</button>
+            <button type="button" class="tree-chip" data-filter="structures">MESHES (0)</button>
             <button type="button" class="tree-chip" data-filter="props">PROPS (0)</button>
             <button type="button" class="tree-chip" data-filter="lights">LIGHTS (0)</button>
             <button type="button" class="tree-chip" data-filter="triggers">TRIGGERS (0)</button>

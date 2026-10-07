@@ -12,7 +12,7 @@ import { clampScale } from './scale.js';
 export const PLACE_KEYS = { Digit1: 'prop', Digit2: 'light', Digit3: 'trigger', Digit4: 'interactable' };
 
 /** US-066 glyph icons (design/editor-ui.md 4, no icon font): one per `kindForSelection` kind, reused by the scene tree and the inspector header. */
-export const KIND_GLYPHS = { prop: '♣', light: '☼', trigger: '◇', interactable: '¤', entity: '▦' };
+export const KIND_GLYPHS = { prop: '♣', light: '☼', trigger: '◇', interactable: '¤', entity: '▦', mesh: '▦' };
 
 /** Id format (24.9): starts with a letter, then letters/digits/`_`/`-`. */
 export const ID_REGEX = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -225,6 +225,7 @@ export function filterModelKeys(keys, query) {
  * model/preset requirement unless the field is actually present).
  */
 export function kindForSelection(selection) {
+  if (selection.collection === 'structures') return 'mesh';
   switch (selection.collection) {
     case 'props': return 'prop';
     case 'lights': return 'light';

@@ -4,10 +4,10 @@ import { World, PHYSICS, stringifyContent } from '../../engine/index.js';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
 import { loadTestAssets } from '../testing/content-node.mjs';
-import { createDoc } from './doc.js';
+import { createDoc, listOutlinerItems } from './doc.js';
 import { toFileObject } from './io.js';
 import { applyEdit, invert, makeInsertRecord, makeFieldEditRecord, makeDeleteRecord } from './commands.js';
-import { meshClass, LIFT, SHADOW, snapMeshOrigin, validateMeshStructure, validateMeshRename, createMeshPlacement } from './meshPlace.js';
+import { meshClass, LIFT, SHADOW, snapMeshOrigin, validateMeshStructure, validateMeshRename, createMeshPlacement, prepareMeshEdit } from './meshPlace.js';
 
 const { assets, bundle } = await loadTestAssets();
 const key = 'quaternius/Rock_Medium_1', mesh = assets.mesh(key);
@@ -55,6 +55,18 @@ applyEdit(doc,del); assert.deepEqual(file.def.structures,before); applyEdit(doc,
 assert.equal(file.def.structures[index].yawDeg,90);
 
 const ctx={assets,siblingIds:new Set(),nextId:file.meta.nextId}, valid=file.def.structures[index];
+assert.ok(listOutlinerItems(doc).some(o=>o.collection==='structures' && o.id===valid.id && o.structId===null));
+assert.ok(!listOutlinerItems(doc).some(o=>o.collection==='structures' && !o.item.mesh), 'level structures remain absent from editable mesh rows');
+const editCtx={assets,world:floor,file};
+const horizontal=prepareMeshEdit(valid,{origin:{...valid.origin,x:221.234} },editCtx);
+assert.deepEqual(horizontal.after.origin,snapMeshOrigin(floor,mesh,key,221.234,valid.origin.y));
+assert.equal(prepareMeshEdit(valid,{origin:{...valid.origin,z:9.999}},editCtx).after.origin.z,10);
+assert.equal(prepareMeshEdit(valid,{castShadow:false,collide:false},editCtx).after.collide,false);
+const inherited=prepareMeshEdit({...valid,castShadow:false,collide:false},{castShadow:true,collide:true},editCtx).after;
+assert.equal('collide' in inherited,false); assert.equal('castShadow' in inherited,false);
+assert.ok(prepareMeshEdit(valid,{yawDeg:1.1},editCtx).errors.length);
+assert.ok(prepareMeshEdit(valid,{origin:{...valid.origin,z:Infinity}},editCtx).errors.length);
+assert.ok(prepareMeshEdit(valid,{origin:{...valid.origin,x:221}}, {...editCtx,world:{...floor,floorAt:()=>null}}).errors.length);
 assert.deepEqual(validateMeshStructure(valid,ctx),[]);
 for(const patch of [{id:'1bad'},{id:'mesh_999999'},{mesh:'missing'},{origin:{x:0,y:0,z:NaN}},{yawDeg:360},{yawDeg:0.5},{castShadow:'false'},{collide:0},{scale:1},{level:'tower'},{yawSteps:0},{dynamics:{}},{origin:{x:0,y:0,z:0,w:1}}]) assert.ok(validateMeshStructure({...valid,...patch},ctx).length,JSON.stringify(patch));
 assert.ok(validateMeshStructure(valid,{...ctx,siblingIds:new Set([valid.id])}).length);

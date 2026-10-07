@@ -68,8 +68,12 @@ only has a software GL renderer, use `?gpu=0`.
 
 The **Assets** tab also lists imported meshes in **Meshes / <pack>** folders.
 Search matches their asset ids and pack names. These rows show rendered mesh
-previews and triangle counts in their tooltips. Mesh rows currently support
-preview only; mesh placement and editing are a later ED-MESH-01 step.
+previews and triangle counts in their tooltips. Click a mesh row and then the
+viewport, or drag the row onto a surface, to place it with footprint ground
+snapping. Select placed meshes from the Scene Tree's **Meshes** group to edit
+world position, yaw, shadow/collision overrides, or delete them. Arrow keys,
+PgUp/PgDn, Q/E, G and undo/redo also apply. Scene click-selection and dragging
+existing meshes are the next ED-MESH-01 step; mesh scale awaits engine support.
 
 Press a number key to arm placement mode, then click a surface:
 

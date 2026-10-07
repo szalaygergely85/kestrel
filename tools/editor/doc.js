@@ -182,7 +182,7 @@ export function selectionItemIndex(doc, item) {
 }
 
 /** Every collection this kind of file carries an id-collection for (24.7's outliner grouping). */
-const OUTLINER_COLLECTIONS = { level: ['props', 'lights', 'interactables', 'triggers'], world: ['entities'] };
+const OUTLINER_COLLECTIONS = { level: ['props', 'lights', 'interactables', 'triggers'], world: ['entities', 'structures'] };
 
 /**
  * Flat `{fileId, collection, id, item, structId}[]` for every content item in
@@ -201,6 +201,7 @@ export function listOutlinerItems(doc, world) {
   for (const file of doc.files.values()) {
     for (const coll of OUTLINER_COLLECTIONS[file.kind] || []) {
       for (const it of file.def[coll] || []) {
+        if (coll === 'structures' && !it?.mesh) continue;
         if (it && it.id) {
           const struct = file.kind === 'level' && world ? world.structures.find((st) => st.level && st.level.name === file.id) : null;
           out.push({ fileId: fileKey(file.kind, file.id), collection: coll, id: it.id, item: it, structId: struct ? struct.id : null });
