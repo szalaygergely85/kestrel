@@ -15,7 +15,7 @@ import { createFrame, editorRenderer } from './frame.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
 import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
-import { drawSelectionHighlight, drawMarkers, drawHoverOutline, computeMeshHighlightRect, drawMeshHighlightRect } from './select.js';
+import { drawSelectionHighlight, drawMarkers, drawHoverOutline } from './select.js';
 import {
   makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
   applyEdit, invert, findReferrers,
@@ -57,6 +57,7 @@ import { EDITOR_PLATE_BG } from './overlayStyle.js';
 import { iconAsset, meshIconKey, meshKeyFromIcon, listMeshAssetGroups } from './meshAssets.js';
 import { createMeshPlacement, snapMeshOrigin, prepareMeshEdit, validateMeshRename } from './meshPlace.js';
 import { renderMeshPanel } from './meshPanel.js';
+import { beginMeshDragPreview, updateMeshDragPreview, cancelMeshDragPreview } from './meshDragPreview.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -1764,7 +1765,7 @@ canvas.addEventListener('mousedown', (e) => {
     selectItem(item);
     if (already && toolMode === 'move') {
       const data = selectionItemData(doc,item), s=world.structures.find(s=>s.id===item.id);
-      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, bbox:s.bbox, point:result.world, origin:null };
+      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:result.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
     }
     return;
   }
@@ -1833,8 +1834,13 @@ window.addEventListener('mousemove', (e) => {
     const distance=(meshDrag.point.z-cam.z)/ray.dz;
     if(distance<=0)return;
     const point=rayPoint(ray,distance), snap=SNAP_OPTIONS[snapIdx], item=selectionItemData(doc,meshDrag.item);
+    if (!item || !world.structures.includes(meshDrag.preview?.placement)) {
+      cancelMeshDragPreview(world,meshDrag.preview);meshDrag=null;frame.markDirty();return;
+    }
     const x=snapTo(meshDrag.startOrigin.x+point.x-meshDrag.point.x,snap), y=snapTo(meshDrag.startOrigin.y+point.y-meshDrag.point.y,snap);
     meshDrag.origin=snapMeshOrigin(world,assets.mesh(item.mesh),item.mesh,x,y);
+    if (meshDrag.origin) updateMeshDragPreview(world,meshDrag.preview,meshDrag.origin);
+    else flash('move: no floor here; release cancels, Esc restores');
     frame.markDirty(); return;
   }
   // ED-DND-01: asset drag ghost. `moved` flips only past a 4px threshold, so
@@ -1925,8 +1931,10 @@ window.addEventListener('mouseup', (e) => {
   if (tb.stroke) { terrainStrokeEnd(false); return; }
   if (meshDrag) {
     const d=meshDrag;meshDrag=null;
+    const active=world.structures.includes(d.preview?.placement);
+    cancelMeshDragPreview(world,d.preview);
     const item=selectionItemData(doc,d.item);
-    if(item && d.origin && Object.keys(d.origin).some(k=>d.origin[k]!==d.startOrigin[k])) commitMeshPatch(item,{origin:d.origin},'drag');
+    if(active && item && d.origin && Object.keys(d.origin).some(k=>d.origin[k]!==d.startOrigin[k])) commitMeshPatch(item,{origin:d.origin},'drag');
     frame.markDirty();return;
   }
   // ED-DND-01: finish an asset drag. A plain click (`!moved`) just clears the
@@ -2048,6 +2056,7 @@ function update(dt) {
   if (input.pressed('Escape') && tb.stroke) {
     terrainStrokeEnd(true); // ED-TERRAIN-1c: Esc reverts the stroke in progress (no record)
   } else if (input.pressed('Escape') && meshDrag) {
+    cancelMeshDragPreview(world,meshDrag.preview);
     meshDrag=null;frame.markDirty();
   } else if (input.pressed('Escape') && drag) {
     const data = world.entity(drag.entId);
@@ -2176,11 +2185,6 @@ function drawOverlay(fb) {
   drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, selection, '#ffd24a', frame.renderer);
   if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer);
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
-  if (meshDrag?.origin) {
-    const o=meshDrag.origin,s=meshDrag.startOrigin;
-    const rect=computeMeshHighlightRect(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,meshDrag.bbox,o.x-s.x,o.y-s.y,o.z-s.z);
-    if(rect)drawMeshHighlightRect(rt,rect,'#ffd24a');
-  }
   drawAssetGhost();
   drawTerrainCursor();
   if (helpOn) drawHelpOverlay();

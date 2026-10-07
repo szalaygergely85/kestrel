@@ -43,6 +43,9 @@ only has a software GL renderer, use `?gpu=0`.
 - **Left-click** an entity (a prop, a billboard, a voxel model) to select it;
   click again and drag to move it in the horizontal plane; release to commit.
   `Esc` while dragging cancels and snaps back.
+- Imported mesh geometry follows the cursor during a move drag, including
+  its ground-snapped height. Release saves one move; `Esc` restores the original
+  position. A drop with no valid floor cancels the move.
 - Lights and interactables have no visible mesh - they're picked as small
   markers (`*` for a light, `o` for an interactable) when **markers** are on
   (`M` toggles them, default on). You can also always select any item from
