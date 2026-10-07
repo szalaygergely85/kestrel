@@ -3,7 +3,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import { importDae, daeToJson, readCollada, parseXml } from './dae-import.mjs';
-import { loadEngineMaterialKeys } from './gltf-import.mjs';
+import { loadEngineMaterialKeys, withCollision } from './gltf-import.mjs';
 import { validateMesh, meshFromJSON } from '../engine/index.js';
 
 let n = 0; const ok = (m) => { n++; console.log(`ok - ${m}`); };
@@ -62,6 +62,12 @@ for (const [id, name] of Object.entries(REAL)) {
   const j = daeToJson(rr.mesh, rr.tab, keys);
   assert.ok(j.collider && j.collider.length / 9 <= 28 && j.collide !== false && j.castShadow !== false);
   if (fs.existsSync(out)) assert.strictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).triCount, j.triCount, 'committed mesh matches the importer');
+  // shared collision plan: re-planning the committed/imported json (gen-mesh-colliders path) is a no-op and the prism is trunk-thin
+  assert.ok(j.colliderParts && j.colliderParts.every((k) => map.trunk.includes(k)), `${id} colliderParts`);
+  assert.deepStrictEqual(withCollision(JSON.parse(JSON.stringify(j))).collider, j.collider, `${id} withCollision idempotent`);
+  const cx = j.collider.filter((_, i) => i % 3 === 0); assert.ok(Math.max(...cx) - Math.min(...cx) < 0.8 * w, `${id} prism trunk-thin`);
+  const noParts = { ...j }; delete noParts.colliderParts;
+  assert.notDeepStrictEqual(withCollision(noParts).collider, j.collider, `${id} without colliderParts the 2 m band differs`);
   ok(`${id}: ${rr.mesh.triCount} tris, ${h.toFixed(1)} m tall, keys ${rr.mesh.matKeys.join(',')}, collider ${j.collider.length / 9} tris`);
 }
 console.log(`dae-import.test: ${n} ok`);

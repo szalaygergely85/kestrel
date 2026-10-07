@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildMeshFromTris, simplifyTriangles, meshToJSON, meshFromJSON, validateMesh, buildPrismProxy } from '../engine/index.js';
+import { buildMeshFromTris, simplifyTriangles, meshToJSON, meshFromJSON, validateMesh } from '../engine/index.js';
 import { budgetFor } from './mesh-budgets.mjs';
 import { rgbToLab } from './uvmap.mjs';
 import { withCollision, stringifyMeshJSON, loadEngineMaterialKeys } from './gltf-import.mjs';
@@ -273,14 +273,9 @@ export function daeToJson(mesh, tab, materialKeys) {
   for (const key of ['pos', 'uv', 'aux', 'bbox']) json[key] = json[key].map((v) => Math.round(v * 1e5) / 1e5);
   const rounded = validateMesh(meshFromJSON(json));
   if (rounded.errors.length) throw new Error(`dae-import: mesh failed validateMesh:\n${rounded.errors.join('\n')}`);
+  // trees: footprint from the trunk-key triangles only (recorded as `colliderParts`; withCollision does the rest)
+  if (/tree/i.test(mesh.id.split('/').pop())) { const parts = mesh.matKeys.filter((k) => tab.trunk.includes(k)); if (parts.length) json.colliderParts = parts; }
   const out = withCollision(json);
-  // trees: footprint from the trunk-key triangles only (the crown must not make a fat collider)
-  if (/tree/i.test(mesh.id.split('/').pop()) && mesh.matKeys.some((k) => tab.trunk.includes(k))) {
-    const tp = [];
-    for (const r of json.ranges) if (tab.trunk.includes(r.part)) for (let v = r.start * 3; v < (r.start + r.count) * 3; v++) tp.push(json.pos[v * 3], json.pos[v * 3 + 1], json.pos[v * 3 + 2]);
-    const prism = buildPrismProxy(tp);
-    if (prism) { delete out.collide; out.collider = prism; delete out.castShadow; }
-  }
   return out;
 }
 

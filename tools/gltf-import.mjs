@@ -159,11 +159,11 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
 
 /**
  * MESH-PHYS-01: add `collide: false` (walk-over piece) or the `collider` proxy (prism, <= 28 tris) to a static mesh json.
- * Idempotent; the render data is untouched.
+ * Optional `colliderParts` (material keys, e.g. a tree's trunk keys) restricts the prism to those ranges. Idempotent; the render data is untouched.
  */
 export function withCollision(json) {
   if (json.layout !== 'static') return json;
-  const plan = planMeshCollision(json.id, json.pos);
+  const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges });
   const next = { ...json };
   delete next.collide; delete next.collider; delete next.castShadow;
   if (!plan.castShadow) next.castShadow = false; // MESH-SHADOW-01: same rule as walk-over
