@@ -2,6 +2,7 @@
 // Run: node engine/render/gpu/shadowDepthParity.test.js
 import { compareShadowDepth, SHADOW_DEPTH_MAX } from './gpuCompare.js';
 import { makeOk } from '../../test/assert.js';
+import { halfRangeDepthBitsToUnit, createShadowParityRunner } from './shadowParity.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -41,6 +42,23 @@ const k2z = (k) => (2 * k) / SHADOW_DEPTH_MAX - 1;        // 24-bit code -> NDC 
 { const { g, j } = build(() => {});
   const r = compareShadowDepth(g, j, RES);
   ok('empty maps (both cleared to 1) pass', r.pass && r.both === 0 && r.covGpu === 0); }
+
+// 38.5 item 6: WebGPU depth in [0.5, 1] converts back with (d - 0.5) * 2 before the 16-ULP compare (exact; clear value 1 stays 1)
+{ const codes = [0, 1, 123456, 8388607, 8388608, 12000000, 16777214];
+  const { g, j } = build((g, j) => { codes.forEach((k, i) => { g[i] = bits(0.5 + 0.5 * k2d(k)); j[i] = k2z(k); }); });
+  ok('half-range bits fail the compare unconverted', !compareShadowDepth(g, j, RES).pass);
+  const r = compareShadowDepth(halfRangeDepthBitsToUnit(g), j, RES);
+  ok('half-range bits pass once converted, 0 ULP', r.pass && r.both === codes.length && r.maxUlp <= 1, JSON.stringify(r));
+  const clr = new Uint32Array([bits(1)]); halfRangeDepthBitsToUnit(clr); ok('cleared depth 1.0 stays 1.0', clr[0] === bits(1)); }
+{ // runner: promise-returning WebGPU readback + shadowDepthHalfRange flag
+  const so = { depthBias: [0, 0] }, list = { count: 0, items: [] };
+  const mk = (half) => ({ shadowDepthHalfRange: half, shadowOpts: so, _sunMat: { M: new Float64Array(16) }, _shadowList: list, _meshStructFoot: null, _structCount: 0,
+    readbackShadowDepthBits(out) { out.fill(bits(half ? 0.75 : 0.5)); return half ? Promise.resolve(true) : true; } });
+  const runner = createShadowParityRunner(4);
+  const sync = runner.run(mk(false)); ok('sync GL2 path still returns the result', sync && sync.covGpu === 16 && typeof sync.then !== 'function');
+  const pr = runner.run(mk(true)); ok('WebGPU path returns a Promise', typeof pr.then === 'function');
+  const res = await pr; ok('half-range 0.75 converted to unit 0.5 (covered, same as the GL2 map)', res.covGpu === 16);
+}
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) { for (const f of failures) console.log(`  - ${f}`); process.exit(1); } else console.log('ALL PASS');

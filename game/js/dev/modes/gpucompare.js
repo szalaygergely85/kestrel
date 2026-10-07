@@ -848,10 +848,11 @@ async function runGpuCompareSceneMode(ctx) {
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
         // only a row that would FAIL is held back, and only for a layer WebGPU has not ported (row passes keep their honest OK)
-        const wantWait = lightWaits ? 'WG-3d' : poseName.includes('water') ? 'WG-3e'
+        // WG-3e: any pose whose JS twin composites water over cells (fbCompare.waterMask non-empty, e.g. the world_m1 pond in view of towerShadowGrass) waits, not only poses named 'water'
+        const waterCellsJs = !!(fbCompare.waterMask && fbCompare.waterMask.some((v) => v));
+        const wantWait = lightWaits ? 'WG-3d' : (poseName.includes('water') || waterCellsJs) ? 'WG-3e'
           : (overlayOps || sprites.pool.count > 0 || (engine.particleLayer && engine.particleLayer.stats.cells > 0) || fbCompare.sceneFade < 1 || compareSceneDim.all < 1 || compareSceneDim.n > 0) ? 'WG-3f' : null;
-        // OPEN (WG-3c ASK ARCHITECT, docs/test-reports/WG-3c.md): towerShadowGrass mismatches on kind 7 with sprites/particles OFF too, so it is never excused as a layer wait.
-        if (!cellsOkW && wantWait && !poseName.includes('towerShadowGrass')) { cellsWait = wantWait; cellsOkW = true; }
+        if (!cellsOkW && wantWait) { cellsWait = wantWait; cellsOkW = true; }
       }
       const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW;
       overallOk = overallOk && okW;
@@ -983,6 +984,9 @@ async function runGpuCompareSceneMode(ctx) {
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
         console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
       }
+      // 38.8a 26b: the constructor re-hooked rt.setCellPass; release pipeline2's GPU resources and give the hook back to the rays-1 pipeline
+      pipeline2.dispose();
+      if (base2.ready) base2.setEnabled(true);
     } else {
       console.warn('[gpucompare] ?rays=2 informational row requested but the second GpuCellPipeline failed to compile - skipped.');
     }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { StaticMeshBuilder } from '../../../mesh/MeshData.js';
 import { DrawList, DRAW_TERRAIN, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
-import { WgRasterPass } from './passRaster.js';
+import { WgRasterPass, NO_STRUCTURES } from './passRaster.js';
 import { RASTER_BLOCK } from '../wgsl/raster.wgsl.js';
 import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
 
@@ -92,4 +92,15 @@ console.log('passRaster.test.js: all checks passed.');
   const gd = draws.filter((x) => x.pipe === pass.instancePipe);
   assert.deepEqual(gd.map((x) => [x.count, x.first, x.instances]), [[6, 0, 3]], 'one-part group = one instanced draw over all triangles');
   assert.ok(pass.meshGroups && pass.meshDrawArg, 'raster pass owns the MeshGroupSet + meshDraw arg');
+}
+
+// 38.8a 26a: worlds without `structures` use ONE frozen module-level empty array (no `|| []` allocation per frame)
+{
+  assert.ok(Object.isFrozen(NO_STRUCTURES) && NO_STRUCTURES.length === 0);
+  const src = WgRasterPass.prototype._terrainUniforms.toString();
+  assert.ok(src.includes('NO_STRUCTURES') && !/\|\|\s*\[\]/.test(src), '_terrainUniforms must not allocate a fallback array');
+  const t = { nearReady: false, near: null, _farGridDraw: null, mapCell: 1, mapW: 1 };
+  pass.view = pass.view || new Float32Array(16);
+  pass._terrainUniforms({ terrain: t });
+  assert.equal(new Uint32Array(pass.tu.buffer)[TERRAIN_BLOCK.field('structCount').word], 0);
 }

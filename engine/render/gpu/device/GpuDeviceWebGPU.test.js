@@ -71,6 +71,20 @@ const consts = {
   ok('mirror frontFace override is ccw with back culling preserved', descriptors[1].primitive.frontFace === 'ccw' && descriptors[1].primitive.cullMode === 'back');
   d.dispose();
 }
+// WG-3d (38.8a 24b): a depth-only pipeline keeps its fragment stage when fragment.src.entry is named (terrain footprint carve).
+{
+  const g = mockGpu(), descriptors = [];
+  const original = g.createRenderPipeline;
+  g.createRenderPipeline = (desc) => { descriptors.push(desc); return original(desc); };
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const depthOnly = { vertex: { src: { wgsl: 'x' } }, targetFormats: [], depthFormat: 'depth32f', depth: { test: true, write: true } };
+  d.createPipeline({ ...depthOnly, fragment: { src: null, targets: 0 } });
+  d.createPipeline({ ...depthOnly, fragment: { src: { wgsl: 'x' }, targets: 0 } });
+  d.createPipeline({ ...depthOnly, fragment: { src: { wgsl: 'x', entry: 'fs_shadow' }, targets: 0 } });
+  ok('depth-only without entry: no fragment stage', !descriptors[0].fragment && !descriptors[1].fragment);
+  ok('depth-only with fragment.src.entry keeps the fragment stage (0 targets)', descriptors[2].fragment && descriptors[2].fragment.entryPoint === 'fs_shadow' && descriptors[2].fragment.targets.length === 0);
+  d.dispose();
+}
 // WG-2b: optional extra per-vertex streams (cloth uv) bind after slot 0/1.
 {
   const g = mockGpu(), descriptors = [];

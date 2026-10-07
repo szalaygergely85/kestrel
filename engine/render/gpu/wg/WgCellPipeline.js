@@ -37,6 +37,8 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
+    /** the sun map holds depth in [0.5, 1] (38.5 item 6): shadowParity converts `(d - 0.5) * 2` before the twin compare */
+    this.shadowDepthHalfRange = true;
     this.rendererString = 'webgpu (WG-3c resolve+deriv+light+shade+edge)';
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
@@ -111,7 +113,7 @@ export class WgCellPipeline {
 
   /**
    * Re-allocates the grid-sized targets. The new set is built before the old one is freed and committed only on success
-   * (a failed alloc leaves the old, still valid, set in place and the pipeline `ready`).
+   * (a failed alloc keeps the old set but sets `ready=false` + `setEnabled(false)`: rt and pipeline grids must not diverge).
    */
   resizeGrid(cols, rows) {
     if (!this.ready) return;
@@ -119,7 +121,10 @@ export class WgCellPipeline {
     try {
       t = allocWgTargets(this.device, cols, rows, this.rays);
     } catch (e) {
-      console.error('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, '- keeping the old grid:', e);
+      // rt and pipeline grids must never diverge (38.8a 23a/24a): a failed resize disables the pipeline (the CPU path keeps presenting)
+      console.warn('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, '- pipeline disabled:', e);
+      this.ready = false;
+      this.setEnabled(false);
       return;
     }
     freeWgTargets(this.device, this._t);
@@ -127,6 +132,10 @@ export class WgCellPipeline {
     this.cols = cols; this.rows = rows;
     this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
+    // async validation errors of the new targets surface only through the error scopes: drain them once (warn, never throw)
+    if (typeof this.device.checkErrors === 'function') {
+      this.device.checkErrors().then((errs) => { if (errs && errs.length) console.warn('[WgCellPipeline] resizeGrid validation errors:', errs); }, (e) => console.warn('[WgCellPipeline] resizeGrid checkErrors failed:', e));
+    }
   }
 
   // ---- binders: stored now, consumed by the passes WG-2b..WG-3 add ----
