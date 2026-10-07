@@ -162,6 +162,10 @@
     linenLight:     '#f6f1e4', // the spare tarp: near-white, cooler and paler than canvasLight
     linen:          '#d8d0bc',
     linenDark:      '#6c685e',
+    // CHAR-COL-01 (owner 2026-10-08 "more colour variety, not cartoonish"): muted character tones for imported NPC meshes
+    skin:           '#b98466', // weathered warm skin, kept muted (not pink)
+    skinShade:      '#7e5444',
+    hairDark:       '#3c2b22',
     // embers (the Kestrel burner) and steam
     emberHot:       '#ffa040', // glowing coal highlight (emissive)
     emberDim:       '#b43a14', // cooling coal (emissive)
@@ -1262,6 +1266,14 @@
   materials.tarp_dark = fabricMat('BALLOON FABRIC (v1.39). The tarp in shadow: fold valleys, drape flanks, sewn panel seams.', 'linenDark', 0.66, 0.12,
     { a: { shade: 1.00 }, f: { shade: 0.88, glyph: '(' } },
     ['afaa', 'aaaf', 'faaa', 'aafa']);
+  // CHAR-COL-01 (owner 2026-10-08): character materials for imported NPC meshes (skin, dark hair), appended last so no
+  // material id moves. Muted on purpose; clothing/armour reuse leather, canvas_dark, cloth.banner, steel_*, iron_dark, brass.
+  materials.skin = fabricMat('CHARACTER (CHAR-COL-01). Face, hands, bare arms: muted warm skin, soft shade toward skinShade.', 'skin', 0.88, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.90, tint: 'skinShade', amount: 0.3 } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.hair_dark = fabricMat('CHARACTER (CHAR-COL-01). Dark brown hair and beard: strand glyph |, darker than leather.', 'hairDark', 0.70, 0.14,
+    { a: { shade: 1.00 }, h: { shade: 1.12, glyph: '|' } },
+    ['ahaa', 'aaah', 'haaa', 'aaha']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
