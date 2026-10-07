@@ -22,9 +22,10 @@ export async function createRenderer(o) {
   if (o.backend && o.backend !== 'webgpu' && o.backend !== 'webgl2') warn(`[createRenderer] unknown ?backend=${o.backend} - using webgl2`);
   let failed = '';
   if (requested === 'webgpu') {
+    let device = null;
     try {
       // fallback:false -> we do the webgl2 fallback ourselves (createGpuDevice's own fallback would touch the canvas)
-      const device = await createGpuDevice({ backend: 'webgpu', canvas, fallback: false, warn });
+      device = await createGpuDevice({ backend: 'webgpu', canvas, fallback: false, warn });
       if (device.backend === 'webgpu') {
         const rt = new RenderTargetWebGPU(canvas, cpuGrid.cols, cpuGrid.rows, device);
         const a = device.adapterInfo || {};
@@ -32,6 +33,9 @@ export async function createRenderer(o) {
         return { rt, device, info: { requested, backend: 'webgpu', fallback: false, label } };
       }
     } catch (e) {
+      // If RenderTargetWebGPU threw after the device attached the canvas, free the device. The webgl2 build below then
+      // gets a cloned-node Canvas2D (a canvas already holding a webgpu context cannot give a gl2 context) - expected in this narrow case.
+      if (device && typeof device.dispose === 'function') { try { device.dispose(); } catch (_) { /* best effort */ } }
       failed = String(e && e.message || e);
       warn(`[createRenderer] webgpu failed (${failed}); falling back to webgl2`);
     }

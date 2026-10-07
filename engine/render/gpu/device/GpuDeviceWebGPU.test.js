@@ -149,6 +149,14 @@ await run('webgpu: requestDevice rejects -> fallback', {
   await run('webgpu: self-test failure (mock cannot readback) -> fallback to webgl2', {
     backend: 'webgpu', navigatorGpu: { requestAdapter: async () => adapter },
   }, (r) => r && r.backend === 'webgl2' && /self-test failed/.test(warns[0]));
+  // 38.8a: fallback:false must never touch canvas.getContext on a WebGPU failure (canvas stays free for the caller)
+  const calls = [];
+  const spyCanvas = { getContext: (k) => { calls.push(k); return null; } };
+  const runSpy = async (opts) => { try { await createGpuDevice({ canvas: spyCanvas, warn: () => {}, fallback: false, backend: 'webgpu', ...opts }); } catch (_) { /* expected */ } };
+  await runSpy({ navigatorGpu: { requestAdapter: async () => null } });
+  ok('fallback:false, no adapter: canvas.getContext never called', calls.length === 0, calls.join());
+  await runSpy({ navigatorGpu: { requestAdapter: async () => adapter } });
+  ok('fallback:false, self-test fails: canvas.getContext never called', calls.length === 0, calls.join());
   const st = await selfTestDevice({ backend: 'webgl2' });
   ok('selfTestDevice on webgl2 is skipped ok', st.ok && !!st.skipped);
 }
