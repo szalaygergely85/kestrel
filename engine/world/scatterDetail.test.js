@@ -37,6 +37,24 @@ for (let tile = 0; tile < a.tileStart.length - 1; tile++) {
 checks += 8;
 // Flat cells make stable layer/config and row-major source order observable within each tile.
 const flat = { ...terrain, groundTypeAt: () => 0, groundNormalAt: (x, y, out) => Object.assign(out, { x: 0, y: 0, z: 1 }) };
+// Roadside density: broad-phase output must equal a brute-force filter, including tile edges and outside boxes.
+{
+  const oracleCfg = { layers: [layer], tileM: 8, structClearM: 2 };
+  const boxes = Array.from({ length: 300 }, (_, i) => ({ kind: 'mesh', bbox: {
+    x0: (i % 30) * 8 - 100, x1: (i % 30) * 8 - 98,
+    y0: Math.floor(i / 30) * 8 - 30, y1: Math.floor(i / 30) * 8 - 28 } }));
+  boxes.push({ bbox: { x0: -30, x1: -16, y0: -10, y1: 8 } });
+  const all = scatterDetail(flat, [], [], oracleCfg), actual = scatterDetail(flat, boxes, [], oracleCfg);
+  const kept = [];
+  for (let i = 0; i < all.count; i++) {
+    const x = all.x[i], y = all.y[i];
+    if (!boxes.some(({ bbox: b }) => x >= b.x0 - 2 && x <= b.x1 + 2 && y >= b.y0 - 2 && y <= b.y1 + 2)) kept.push(i);
+  }
+  assert.equal(actual.count, kept.length); checks++;
+  for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2']) {
+    assert.deepEqual(Array.from(actual[k]), kept.map(i => all[k][i])); checks++;
+  }
+}
 const two = scatterDetail(flat, [], [], { layers: [layer, { ...layer, name: 'rocks', ground: { grass: [{ model: 'rock', weight: 1, collider: { prism: { r: 0.5, h: 0.8 } } }] } }] });
 for (let tile = 0; tile < two.tileStart.length - 1; tile++) {
   let lastLayer = -1, lastRow = -Infinity, lastCol = -Infinity;

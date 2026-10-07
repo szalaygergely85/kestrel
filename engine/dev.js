@@ -28,7 +28,7 @@ export { edgePass } from './render/edgePass.js';
 
 // ---- GPU/CPU parity harness (?gpucompare=1) --------------------------------
 export {
-  runGpuCompare, compareCells, compareGeometry, compareLight, poisonNonSky, poisonAllCells, unpackReadback,
+  runGpuCompare, compareCells, compareGeometry, compareLight, describeCellNormals, poisonNonSky, poisonAllCells, unpackReadback,
   classifyMigrationCells, MIGRATION_CATS, compareShadowDepth,
 } from './render/gpu/gpuCompare.js';
 // ME-15b (27.9a item 10): GPU sun shadow depth vs the rasterJS depth-only twin.

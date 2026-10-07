@@ -185,6 +185,19 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
   const x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell;
   const tx0 = Math.floor(g.x0 / cfg.tileM), ty0 = Math.floor(g.y0 / cfg.tileM);
   const tilesX = Math.ceil(x1 / cfg.tileM) - tx0, tilesY = Math.ceil(y1 / cfg.tileM) - ty0;
+  // Load/stroke-time broad phase: hundreds of roadside boxes need only touch their own tiles.
+  const structureTiles = new Array(tilesX * tilesY);
+  for (const s of structures) {
+    const b = s.bbox, m = cfg.structClearM;
+    const ix0 = Math.max(0, Math.floor((b.x0 - m) / cfg.tileM) - tx0);
+    const iy0 = Math.max(0, Math.floor((b.y0 - m) / cfg.tileM) - ty0);
+    const ix1 = Math.min(tilesX - 1, Math.floor((b.x1 + m) / cfg.tileM) - tx0);
+    const iy1 = Math.min(tilesY - 1, Math.floor((b.y1 + m) / cfg.tileM) - ty0);
+    for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
+      const i = ix + iy * tilesX;
+      (structureTiles[i] || (structureTiles[i] = [])).push(b);
+    }
+  }
   const points = [], speciesDefs = [], exclusions = cfg.exclude.concat(keepOut);
   for (let layer = 0; layer < cfg.layers.length; layer++) {
     const l = cfg.layers[layer], speciesByType = {};
@@ -210,8 +223,14 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
             terrain.groundTypeAt(x + l.clearM, y + l.clearM) !== t) continue;
         terrain.groundNormalAt(x, y, detailNormal);
         if (Math.hypot(detailNormal.x, detailNormal.y) / detailNormal.z > l.maxSlope) continue;
-        if (structures.some(s => x >= s.bbox.x0 - cfg.structClearM && x <= s.bbox.x1 + cfg.structClearM &&
-          y >= s.bbox.y0 - cfg.structClearM && y <= s.bbox.y1 + cfg.structClearM)) continue;
+        const tile = Math.floor(x / cfg.tileM) - tx0 + (Math.floor(y / cfg.tileM) - ty0) * tilesX;
+        const boxes = structureTiles[tile];
+        let blocked = false;
+        if (boxes) for (const b of boxes) {
+          if (x >= b.x0 - cfg.structClearM && x <= b.x1 + cfg.structClearM &&
+              y >= b.y0 - cfg.structClearM && y <= b.y1 + cfg.structClearM) { blocked = true; break; }
+        }
+        if (blocked) continue;
         if (exclusions.some(e => detailExcluded(x, y, e))) continue;
         let pick = u(ix, iy, 3) * list.reduce((sum, s) => sum + s.weight, 0), chosen = list.length - 1;
         for (let j = 0; j < list.length; j++) { pick -= list[j].weight; if (pick < 0) { chosen = j; break; } }
@@ -219,7 +238,7 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
         points.push({ x, y, z: terrain.groundAt(x, y) - s.sinkM,
           yawDeg: Math.floor(u(ix, iy, 4) * 360 / s.yawStep) * s.yawStep,
           species: speciesByType[type][chosen], r2: r * r,
-          tile: Math.floor(x / cfg.tileM) - tx0 + (Math.floor(y / cfg.tileM) - ty0) * tilesX });
+          tile });
         if (points.length > cfg.maxPlacements) throw new Error('detail.maxPlacements: placement cap exceeded');
       }
     }

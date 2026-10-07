@@ -30,7 +30,7 @@ function ensureScratch(body, cfg) {
   if (!body._collideOpts || body._collideOpts.height !== cfg.height || body._collideOpts.stepUpMax !== cfg.stepUpMax
     || body._collideOpts.maxSlopeDeg !== cfg.maxSlopeDeg || body._collideOpts.airStepUp !== cfg.stepUpMax) {
     body._collideOpts = {
-      height: cfg.height, stepUpMax: cfg.stepUpMax, airStepUp: cfg.stepUpMax, // BUG-GONDOLA-FALL: airborne support probe reaches stepUpMax above the feet
+      height: cfg.height, stepUpMax: cfg.stepUpMax, airStepUp: cfg.stepUpMax, // BUG-GONDOLA-FALL: airborne support probe reaches stepUpMax above the feet (every integrated body, not only the player)
       walkCos: Math.cos(cfg.maxSlopeDeg * Math.PI / 180), maxSlopeDeg: cfg.maxSlopeDeg,
     };
   }

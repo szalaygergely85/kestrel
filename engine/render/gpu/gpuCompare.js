@@ -447,10 +447,29 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
  * `lightBuf` = `GpuCellPipeline.readbackLight()`'s Uint32Array (4 per cell:
  * x,y,z = floatBitsToUint(L), w = sunlit | litCount << 8).
  */
+/**
+ * Diagnostic for one cell (JS-only, no gating): JS vs GPU packed normal, angle between them, planeId/objectId
+ * (TAG_MESH layout: objectId & 0xF in planeId bits 24-27). Used for cmpLight.dLSample. Null when the cell is not FACE_PACKED.
+ */
+export function describeCellNormals(gbuf, giBuf, i, cols) {
+  if (i < 0) return null;
+  const gpuFace = (giBuf[i * 4 + 1] >>> 8) & 0xf;
+  const out = { idx: i, col: i % cols, row: Math.floor(i / cols), kind: gbuf.kind[i], face: gbuf.face ? gbuf.face[i] : -1, gpuFace,
+    planeIdJs: gbuf.planeId ? gbuf.planeId[i] : 0, planeIdGpu: giBuf[i * 4] | 0 };
+  out.objectIdJs = (out.planeIdJs >>> 24) & 0xf; out.objectIdGpu = (out.planeIdGpu >>> 24) & 0xf;
+  if (gbuf.face && gbuf.face[i] === FACE_PACKED && gpuFace === FACE_PACKED && gbuf.aoD) {
+    const a = [0, 0, 0], b = [0, 0, 0];
+    unpackNormalOct(gbufAoBits(gbuf, i), a); unpackNormalOct(giBuf[i * 4 + 2] >>> 0, b);
+    out.nrmJs = a.map((v) => +v.toFixed(4)); out.nrmGpu = b.map((v) => +v.toFixed(4));
+    out.angleDeg = +(Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))) * 57.29578).toFixed(3);
+  }
+  return out;
+}
+
 export function compareLight(fbLight, lightBuf, kind, cols, rows, meshTieMask = null) {
   const n = cols * rows;
   let nonSky = 0, checked = 0, sunlitChecked = 0, sunlitMismatch = 0;
-  let dLMax = 0, dLViol = 0, litFlip = 0;
+  let dLMax = 0, dLViol = 0, litFlip = 0, dLSampleIdx = -1; // dLSampleIdx: first violating cell (diagnostic only)
   // ME-15c (27.9a item 10): with the sun shadow map (`fbLight.sunMapOn`) the sunlit metric excludes the boundary set
   // (cells where any PCF tap compares within 2 * biasM of the stored depth or the tap choice is within 0.01 texel of
   // flipping - float32 vs float64 may legitimately differ there, shadowSun.js `sunShadowInfo`), is taken over LIT cells
@@ -494,6 +513,7 @@ export function compareLight(fbLight, lightBuf, kind, cols, rows, meshTieMask = 
       // flip signal: the GPU counts OFF lights (col = 0) the CPU skips.
       if (fbLight.litCount && ((lightBuf[i * 4 + 3] >>> 8) & 0xff) !== fbLight.litCount[i]) { litFlip++; continue; }
       if (cellMax > dLMax) dLMax = cellMax;
+      if (dLSampleIdx < 0) dLSampleIdx = i;
       for (let k = 0; k < 3; k++) {
         if (Math.abs(u32ToF32(lightBuf[i * 4 + k]) - fbLight.rgb[o + k]) > 1e-3) dLViol++;
       }
@@ -504,14 +524,14 @@ export function compareLight(fbLight, lightBuf, kind, cols, rows, meshTieMask = 
     const sunlitMismatchFracLit = litCells ? sunlitMismatch / litCells : 0;
     const nMismatchFrac = nChecked ? nMismatch / nChecked : 0;
     return {
-      nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac: sunlitMismatchFracLit, dLMax, dLViol, litFlip, litFlipFrac,
+      nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac: sunlitMismatchFracLit, dLMax, dLViol, dLSampleIdx, litFlip, litFlipFrac,
       sunMap: true, boundaryCells, boundaryFrac: checked ? boundaryCells / checked : 0, litCells, nMismatch, nMismatchFrac,
       pass: sunlitMismatchFracLit <= 0.005 && nMismatchFrac <= 0.01 && litFlipFrac <= 0.005 && dLViol === 0,
     };
   }
   const sunlitMismatchFrac = nonSky ? sunlitMismatch / nonSky : 0;
   return {
-    nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac, dLMax, dLViol, litFlip, litFlipFrac,
+    nonSky, checked, sunlitChecked, sunlitMismatch, sunlitMismatchFrac, dLMax, dLViol, dLSampleIdx, litFlip, litFlipFrac,
     pass: sunlitMismatchFrac <= 0.005 && litFlipFrac <= 0.005 && dLViol === 0,
   };
 }

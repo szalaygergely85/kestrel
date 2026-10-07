@@ -361,6 +361,7 @@
       background: var(--ed-void);
       color: var(--ed-fg-hi);
       line-height: 1.6;
+      white-space: pre-wrap;
     }
     /* US-063: place-a-prop model picker - a searchable modal shown right
        after clicking a surface in place-prop mode (tools/editor/main.js
@@ -558,6 +559,7 @@
        js/main.js's module runs. The level/world content (tower, world_m1)
        now comes from content/*.json via loadContentPack, not a script tag
        (US-027b) - overworld_far stays a script (it's a code recipe, D-007). -->
+  <script src="boot.js"></script>
   <script src="../../design/palette.js"></script>
   <script src="../../design/detail-pass.js"></script>
   <script src="../../design/models/title.js"></script>
@@ -596,6 +598,6 @@
   <script src="../../design/models/ferrum_lights.js"></script>
   <script src="../../design/levels/overworld_far.js"></script>
 
-  <script type="module" src="main.js"></script>
+  <script>window.__editorBoot.start(() => import('./main.js'));</script>
 </body>
 </html>

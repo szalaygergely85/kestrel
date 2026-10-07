@@ -17,6 +17,9 @@ import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
 
 const DEPTH_FADE_K = 0.05; // debug depth view: 1 / (1 + d * K)
+const DEBUG_MODE_WORD = DEBUG_BLOCK.field('mode').word;
+const DEBUG_RAYS_WORD = DEBUG_BLOCK.field('rays').word;
+const DEBUG_DEPTH_WORD = DEBUG_BLOCK.field('depthK').word;
 
 export class WgCellPipeline {
   /** @param {any} rt a RenderTargetWebGPU @param {{rays?: number, terrainEnabled?: boolean, shadows?: any}} [opts] */
@@ -130,6 +133,7 @@ export class WgCellPipeline {
   /** Called once per frame by the main loop before present(): remembers the inputs (no GPU work in WG-2a). */
   frame(fb, light, cam, world) {
     this._fb = fb; this._light = light; this._cam = cam || null; this._world = world || null;
+    if (this.device.timer.writeStats) this.device.timer.writeStats(this.stats);
   }
 
   // ---- readbacks (test-only, never the frame loop): Promises, always `await` (38.6) ----
@@ -138,15 +142,16 @@ export class WgCellPipeline {
   async readbackGeometry() {
     const t = this._t;
     if (!t) throw new Error('WgCellPipeline.readbackGeometry: no targets');
-    const n = t.subCols * t.subRows;
+    if (this.rays > 1) throw new Error('readbackGeometry: rays > 1 needs the WG-3a resolve');
+    const n = this.cols * this.rows;
     this._rbGI = this._rbGI && this._rbGI.length === 4 * n ? this._rbGI : new Uint32Array(4 * n);
     this._rbGA = this._rbGA && this._rbGA.length === 4 * n ? this._rbGA : new Uint32Array(4 * n);
     this._rbDepth = this._rbDepth && this._rbDepth.length === 4 * n ? this._rbDepth : new Uint32Array(4 * n);
     this._rbD1 = this._rbD1 && this._rbD1.length === n ? this._rbD1 : new Uint32Array(n);
-    const rect = { x: 0, y: 0, w: t.subCols, h: t.subRows };
-    await this.device.readback(t.texGI, rect, this._rbGI);
-    await this.device.readback(t.texGA, rect, this._rbGA);
-    await this.device.readback(t.texDepth, rect, this._rbD1); // r32uint is 1-wide; GL's RGBA_INTEGER read is 4-wide: spread
+    const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
+    await this.device.readback(t.texSGI, rect, this._rbGI);
+    await this.device.readback(t.texSGA, rect, this._rbGA);
+    await this.device.readback(t.texSDepth, rect, this._rbD1); // r32uint is 1-wide; GL's RGBA_INTEGER read is 4-wide: spread
     for (let i = 0; i < n; i++) this._rbDepth[i * 4] = this._rbD1[i];
     return { GI: this._rbGI, GA: this._rbGA, Depth: this._rbDepth };
   }
@@ -176,10 +181,10 @@ export class WgCellPipeline {
       this._outTarget = d.createTarget({ color: [rt.fgTex, rt.bgTex] });
     }
     const u = this._debugU;
-    u[DEBUG_BLOCK.field('mode').word] = this.debugMode;
-    u[DEBUG_BLOCK.field('rays').word] = this.rays;
-    u[DEBUG_BLOCK.field('depthK').word] = DEPTH_FADE_K;
-    this._debugTex[0].texture = t.texGI; this._debugTex[1].texture = t.texGA; this._debugTex[2].texture = t.texDepth;
+    u[DEBUG_MODE_WORD] = this.debugMode;
+    u[DEBUG_RAYS_WORD] = this.rays;
+    u[DEBUG_DEPTH_WORD] = DEPTH_FADE_K;
+    this._debugTex[0].texture = t.texSGI; this._debugTex[1].texture = t.texSGA; this._debugTex[2].texture = t.texSDepth;
     d.beginPass(this._outTarget);
     d.bind(this._pipeDebug, this._debugBind);
     d.draw(3);
@@ -196,6 +201,8 @@ export class WgCellPipeline {
     if (this.rt && typeof this.rt.setCellPass === 'function') { try { this.rt.setCellPass(null); } catch (_) { /* best effort */ } }
     this._enabled = false;
     this._dropOutTarget();
+    if (this._pipeDebug) { try { this.device.dispose(this._pipeDebug); } catch (_) { /* best effort */ } }
+    this._pipeDebug = null;
     freeWgTargets(this.device, this._t);
     this._t = null;
   }

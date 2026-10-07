@@ -1454,6 +1454,7 @@ function runGame(mode, cinematic = null) {
           // `gpuMs` A/B delta with vs without `?terrain=0` (measured + recorded
           // in this story's Programmer notes, docs/backlog.md).
           `  terrain cpu ${Number.isNaN(gpuPipeline.stats.terrainSubmitMsP50) ? 'n/a' : gpuPipeline.stats.terrainSubmitMsP50.toFixed(2) + 'ms'}` : '') +
+        (!gpuPipeline && rt.stats ? `\nGPU present p50 ${Number.isNaN(rt.stats.gpuMsP50) ? 'n/a' : rt.stats.gpuMsP50.toFixed(2) + 'ms'}  p95 ${Number.isNaN(rt.stats.gpuMsP95) ? 'n/a' : rt.stats.gpuMsP95.toFixed(2) + 'ms'}` : '') +
         (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
       // US-018: JS split (sim/render/submit) from `loop.stats` + the
       // pipeline's own upload+draw submit time, and per-pass GPU ms

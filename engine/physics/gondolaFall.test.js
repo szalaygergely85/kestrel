@@ -4,7 +4,7 @@
 // edge of a small prop box (x 1494.12..1494.68, y 1025.32..1025.88, z 0..0.76) whose face is 0.12 m from a 0.6 m stepped
 // tower wall: depenetration squeezed the capsule through that wall, the airborne floor probe (up = 1e-6) missed the
 // step top above the feet and the player fell out of the world. Fix: probeSupport looks up to stepUpMax above the feet.
-// Run: node engine/physics/gondolaFall.test.js
+// Run: node engine/physics/gondolaFall.test.js [--full]   (default < 5 s; --full = the original 0.1 / 0.03 m sweep, ~50 s)
 import { World, PHYSICS_DEFAULTS, integrate, resolveBodyContacts } from '../index.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
@@ -28,6 +28,7 @@ globalThis.window = globalThis.window || globalThis;
 paletteMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 detailPassMod; swordMod; m3PropsMod; farTowerMod; ferrumLightsMod; titleMod; voxelWorldMod;
 const { assets } = await loadTestAssets();
+const FULL = process.argv.includes('--full');
 const P = PHYSICS_DEFAULTS, DT = P.fixedDt;
 const world = World.load(assets.world('world_m1'), assets, { physics: 'mesh' });
 
@@ -51,12 +52,17 @@ function makePlayer(x, y, z, vz, vx = 0, vy = 0) {
 /** Simulates `steps` fixed steps; returns {z, minZ, inside, grounded}. `ctl` = {forward,yawDeg,jump}. */
 function sim(p, steps, ctl) {
   const c = { forward: 0, strafe: 0, run: true, jump: false, yawDeg: 0, ...ctl };
-  let minZ = p.transform.z, inside = false;
+  let minZ = p.transform.z, inside = false, still = 0;
   for (let i = 0; i < steps; i++) {
     integrate(p, DT, c, world, P); resolveBodyContacts(world, p, P);
     const t = p.transform;
     if (t.z < minZ) minZ = t.z;
     if (insideBox(t.x, t.y, t.z)) inside = true;
+    if (ctl && ctl.settle) { // drops: stop once resting (grounded, ~no velocity) for 15 steps
+      const b = p.components.body;
+      still = b.grounded && Math.abs(b.vx) + Math.abs(b.vy) + Math.abs(b.vz) < 1e-3 ? still + 1 : 0;
+      if (still >= 15) break;
+    }
   }
   return { x: p.transform.x, y: p.transform.y, z: p.transform.z, minZ, inside, grounded: p.components.body.grounded };
 }
@@ -73,11 +79,18 @@ function check(tag, r, x, y) {
 const dropAt = (z0, vz, x, y) => {
   const fl0 = world.floorAt(x, y);
   if (fl0 == null || fl0 > 1.5) return; // upper stair cells / outside: not a ground landing spot
-  check(`drop z${z0} vz${vz} (${x.toFixed(2)},${y.toFixed(2)})`, sim(makePlayer(x, y, z0, vz), 300), x, y);
+  check(`drop z${z0} vz${vz} (${x.toFixed(2)},${y.toFixed(2)})`, sim(makePlayer(x, y, z0, vz), 300, { settle: true }), x, y);
 };
-for (const z0 of [5.4, 6]) for (const vz of [0, -14, -18]) {
-  for (let dx = -3; dx <= 1.5; dx += 0.1) for (let dy = -2.8; dy <= 2.2; dy += 0.1) dropAt(z0, vz, bcx + dx, bcy + dy);
-  for (let x = 1493.6; x <= 1495.2; x += 0.03) for (let y = 1025.0; y <= 1026.5; y += 0.03) dropAt(z0, vz, x, y);
+if (FULL) {
+  for (const z0 of [5.4, 6]) for (const vz of [0, -14, -18]) {
+    for (let dx = -3; dx <= 1.5; dx += 0.1) for (let dy = -2.8; dy <= 2.2; dy += 0.1) dropAt(z0, vz, bcx + dx, bcy + dy);
+    for (let x = 1493.6; x <= 1495.2; x += 0.03) for (let y = 1025.0; y <= 1026.5; y += 0.03) dropAt(z0, vz, x, y);
+  }
+} else { // fast default: coarse 0.2 m grid, fine 0.06 m squeeze grid only on z 6 at the fast falls (-14 / -18)
+  for (const [z0, vz] of [[6, 0], [6, -14], [5.4, -18]]) {
+    for (let dx = -3; dx <= 1.5; dx += 0.2) for (let dy = -2.8; dy <= 2.2; dy += 0.2) dropAt(z0, vz, bcx + dx, bcy + dy);
+  }
+  for (const vz of [-14, -18]) for (let x = 1493.6; x <= 1495.2; x += 0.06) for (let y = 1025.0; y <= 1026.5; y += 0.06) dropAt(6, vz, x, y);
 }
 
 // 2. Run-off: leave the upper stair edge (x 1493.9, y 1025.4, z 5.4) running in 16 directions at run speed.
