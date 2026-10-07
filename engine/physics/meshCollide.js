@@ -202,7 +202,7 @@ function closestOnPoly(buf, count, px, py) {
  * @param {number} radius
  * @param {number} footZ
  * @param {boolean} grounded
- * @param {{height:number, stepUpMax:number, walkCos:number}} opts
+ * @param {{height:number, stepUpMax:number, walkCos:number, airStepUp?:number}} opts
  * @param {CircleMove} out - caller-owned scratch, overwritten and returned
  * @returns {CircleMove}
  */
@@ -330,7 +330,7 @@ export function moveCircleMesh(colliders, count, x, y, dx, dy, radius, footZ, gr
  * `sectorAt`/`outsideSector` lookup, but by raycast instead of a cell index.
  *
  * Floor: straight down from `(x, y, footZ + up)`, `up = grounded ?
- * stepUpMax + SKIN : SKIN` (airborne never snaps up onto something above the
+ * stepUpMax + SKIN : (opts.airStepUp || 0) + SKIN` (airborne never snaps up, unless the body opts in, onto something above the
  * feet), `tMax = up + MESH_PROBE_DROP + SKIN`. Nearest hit wins (strictly
  * smaller t; a tie keeps the lower collider index, since a later collider's
  * raycast is called with the already-narrowed `tMax` and `intersectTri`
@@ -349,12 +349,16 @@ export function moveCircleMesh(colliders, count, x, y, dx, dy, radius, footZ, gr
  * @param {number} x @param {number} y
  * @param {number} footZ
  * @param {boolean} grounded
- * @param {{height:number, stepUpMax:number, walkCos:number}} opts
+ * @param {{height:number, stepUpMax:number, walkCos:number, airStepUp?:number}} opts
  * @param {MeshSupport} out
  * @returns {MeshSupport}
  */
 export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out) {
-  const up = grounded ? opts.stepUpMax + SKIN : SKIN;
+  // BUG-GONDOLA-FALL: a body may opt in (opts.airStepUp, integrate.js sets it) to probe up to that far above the feet while
+  // airborne. A depenetration squeeze (prop box face vs a stepped tower wall, gap < capsule width) can leave the feet a
+  // few cm BELOW a floor top they stand in; with up = SKIN that floor was missed and the player fell out of the world.
+  // Grid twin: airborne z <= floorH lands. Other callers (null opts, water, AI) keep the strict airborne probe.
+  const up = (grounded ? opts.stepUpMax : (opts && opts.airStepUp) || 0) + SKIN;
   const originZ = footZ + up;
   const tMaxDrop = up + MESH_PROBE_DROP + SKIN;
 
@@ -464,7 +468,7 @@ export function meshSupportSector(sup, terrainZ, tnx, tny, tnz, out) {
  * @param {number} dx @param {number} dy
  * @param {number} radius
  * @param {number} z - the sphere's bottom (moveCircleMesh's footZ convention)
- * @param {{height:number, stepUpMax:number, walkCos:number}} opts - caller-owned scratch, overwritten in place
+ * @param {{height:number, stepUpMax:number, walkCos:number, airStepUp?:number}} opts - caller-owned scratch, overwritten in place
  * @param {CircleMove} out
  * @returns {CircleMove}
  */
