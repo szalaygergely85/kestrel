@@ -125,7 +125,7 @@ export const validatePcbPort = validatePort;
 
 export function buildLaunchFlags(opts = {}, platform = process.platform) {
   // WG-1a (architecture.md 38.7): WebGPU - Dawn picks D3D12/Metal/Vulkan itself, so no --use-angle.
-  if (opts.backend === 'webgpu' || opts.mode === 'webgpu-probe') {
+  if (opts.backend === 'webgpu' || WEBGPU_PAGE_MODES.has(opts.mode)) {
     if (opts.swiftshader) return ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader'];
     return ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'];
   }
@@ -140,9 +140,12 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 // Mode -> query string / result global
 // ---------------------------------------------------------------------
 
+// WG-1a/WG-1c1: modes served by their own page (no game query): probe page, WGSL compile check, WebGPU present check.
+const WEBGPU_PAGE_MODES = new Set(['webgpu-probe', 'wgsl', 'webgpu-present']);
+
 export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {}) {
   const parts = [];
-  if (mode === 'webgpu-probe') return ''; // dedicated page, no query (see pagePathFor)
+  if (WEBGPU_PAGE_MODES.has(mode)) return ''; // dedicated page, no query (see pagePathFor)
   if (mode === 'gpucompare') {
     if (variant && variant !== 'shade') throw new Error('gpucompare has only the default mesh twin or --variant shade');
     parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
@@ -166,7 +169,7 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {})
   } else if (mode === 'flicker') {
     parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
   } else {
-    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe)`);
+    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe|wgsl|webgpu-present)`);
   }
   if (grid && mode !== 'voxelbench') parts.push(`grid=${grid}`);
   if (shadows) parts.push(`shadows=${shadows}`);
@@ -176,6 +179,8 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {})
 
 export function resultGlobalFor(mode) {
   if (mode === 'webgpu-probe') return '__webgpuProbe';
+  if (mode === 'wgsl') return '__wgsl'; // WG-1c1
+  if (mode === 'webgpu-present') return '__webgpuPresent'; // WG-1c1
   if (mode === 'gpucompare') return '__gpuCompare';
   if (mode === 'bench') return '__bench';
   if (mode === 'voxelbench') return '__voxelBench';
@@ -185,7 +190,9 @@ export function resultGlobalFor(mode) {
 
 /** Page served for a mode (relative to the repo root). */
 export function pagePathFor(mode) {
-  return mode === 'webgpu-probe' ? 'game/webgpu-probe.html' : 'game/index.html';
+  if (mode === 'webgpu-probe') return 'game/webgpu-probe.html';
+  if (mode === 'wgsl' || mode === 'webgpu-present') return 'game/webgpu-present.html'; // WG-1c1
+  return 'game/index.html';
 }
 
 // ---------------------------------------------------------------------
@@ -233,6 +240,15 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     const stOk = !raw.selfTest || !!raw.selfTest.ok; // WG-1b2: selfTestDevice result rides on the probe JSON
     const okAll = !!raw.requiredOk && stOk;
     return { rows: [{ name: 'webgpu-probe', pass: okAll, metrics: {} }], ok: okAll };
+  }
+  if (mode === 'wgsl') { // WG-1c1: every WGSL_MODULES entry compiled, 0 errors
+    const okAll = !!raw.ok && raw.errors === 0 && raw.modules > 0;
+    return { rows: [{ name: 'wgsl', pass: okAll, metrics: { modules: raw.modules, errors: raw.errors } }], ok: okAll };
+  }
+  if (mode === 'webgpu-present') { // WG-1c1: readbackPresent == CPU cells byte for byte + canvas pixel spot checks
+    const metrics = {};
+    flatten(raw, '', metrics);
+    return { rows: [{ name: 'webgpu-present', pass: !!raw.ok, metrics }], ok: !!raw.ok };
   }
   if (mode === 'flicker') {
     const metrics = {};
@@ -698,7 +714,7 @@ export async function runLiveCapture(opts) {
     const query = opts.query || buildQuery(opts.mode, opts); // ME-08c: `--query <raw>` override
     // BUG-BENCH-01: `--query` REPLACES the whole query (mode param included); `--query "shadows=map"` alone loads the plain game and
     // waits for a result that never comes. Use `--shadows map` to add a flag to the mode's query instead.
-    if (opts.query && opts.mode && opts.mode !== 'webgpu-probe' && !/(^|&)(gpucompare|bench|voxelbench|flicker)=/.test(opts.query)) {
+    if (opts.query && opts.mode && !WEBGPU_PAGE_MODES.has(opts.mode) && !/(^|&)(gpucompare|bench|voxelbench|flicker)=/.test(opts.query)) {
       console.error(`capture-browser: WARNING --query '${opts.query}' has no ${opts.mode} parameter, so window.${opts.global || resultGlobalFor(opts.mode)} will never appear (use --shadows <v> or put the mode flag in --query)`);
     }
     // Server is started at the repo root (matches CLAUDE.md's own
@@ -794,7 +810,7 @@ async function main() {
     if (finalPath !== filePath) stripped.files = stripDiffPngs(live.raw, finalPath).files, payload.raw = stripDiffPngs(live.raw, finalPath).raw;
     writeCapture(finalPath, payload);
     writeDiffPngs(stripped.files);
-    if (mode === 'webgpu-probe') console.log(JSON.stringify(raw, null, 2)); // WG-1a: print the probe JSON
+    if (WEBGPU_PAGE_MODES.has(mode)) console.log(JSON.stringify(raw, null, 2)); // WG-1a/1c1: print the probe/compile/present JSON
     console.log(`wrote ${path.relative(ROOT, finalPath)}` + (stripped.files.length ? ` + ${stripped.files.length} diff PNGs` : ''));
   }
 
