@@ -143,7 +143,9 @@ const baseH = pts.map(([x, y]) => recipe.util.heightAt(x, y)), baseT = pts.map((
   ok('loadContentPack rejects a malformed edits file', threw);
 
   const { assets } = await loadTestAssets();
-  ok('registry without edits file: terrainEdits() = null', assets.terrainEdits('overworld_far') === null);
+  // ED-TERRAIN-1c ships content/terrain/overworld_far.edits.json (empty layer = today's terrain); before it, terrainEdits() was null.
+  const shipped = assets.terrainEdits('overworld_far');
+  ok('registry: shipped edits file is an empty layer', shipped === null || Object.keys(shipped.chunks).length === 0);
   const w0 = World.load(assets.world('world_m1'), assets, {});
   const g0 = w0.terrain.groundAt(1400, 800);
   const withEdits = Object.create(assets); withEdits.terrainEdits = (k) => (k === 'overworld_far' ? bundle.terrainEdits[k] : null);

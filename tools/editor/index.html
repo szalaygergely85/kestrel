@@ -278,6 +278,15 @@
       padding: 4px;
     }
     #place-toolbar button { pointer-events: auto; }
+    /* ED-TERRAIN-1c: terrain brush controls (shown only in the Terrain tool mode) */
+    #terrain-toolbar {
+      bottom: 44px; left: 50%; transform: translateX(-50%);
+      display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; pointer-events: auto;
+    }
+    #terrain-toolbar.on { display: flex; }
+    #terrain-toolbar .tb-op.active { outline: 1px solid var(--ed-fg-hi); }
+    #terrain-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
+    #terrain-toolbar input[type=range] { width: 90px; }
 
     /* right dock: inspector */
     .insp-empty { padding: 8px; color: var(--ed-fg-dim); font-size: 11px; }
@@ -417,6 +426,7 @@
         <button type="button" class="ed-btn tool-mode-btn" data-mode="move" title="Move tool (LMB-drag)">&lt;-&gt; Move</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="yaw" title="Yaw tool (LMB-drag)">&#8635; Yaw</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="scale" title="Scale tool (LMB-drag)">&#8596; Scale</button>
+        <button type="button" class="ed-btn tool-mode-btn" data-mode="terrain" title="Terrain brush (LMB-drag paints a stroke; Ctrl+Z undoes it)">^ Terrain</button>
       </div>
       <button type="button" id="snap-btn" class="ed-btn" title="Cycle snap ([ ])"># Snap 0.25m</button>
       <div class="ed-sep"></div>
@@ -487,6 +497,18 @@
           <button type="button" class="ed-btn place-btn" data-kind="light" title="Place light (2)">&#9788; Light</button>
           <button type="button" class="ed-btn place-btn" data-kind="trigger" title="Place trigger (3)">&#9671; Trigger</button>
           <button type="button" class="ed-btn place-btn" data-kind="interactable" title="Place interactable (4)">&#164; Interact</button>
+        </div>
+        <div id="terrain-toolbar" class="ed-plate">
+          <button type="button" class="ed-btn tb-op" data-op="raise" title="Raise">Raise</button>
+          <button type="button" class="ed-btn tb-op" data-op="lower" title="Lower">Lower</button>
+          <button type="button" class="ed-btn tb-op" data-op="flatten" title="Flatten to the height at the stroke start">Flatten</button>
+          <button type="button" class="ed-btn tb-op" data-op="smooth" title="Smooth">Smooth</button>
+          <button type="button" class="ed-btn tb-op" data-op="paint" title="Paint ground type">Paint</button>
+          <select id="tb-paint" title="Ground type to paint"></select>
+          <label>Radius <input type="range" id="tb-radius" min="1" max="24" step="0.5" value="6" /><span id="tb-radius-val">6 m</span></label>
+          <label>Strength <input type="range" id="tb-strength" min="1" max="100" step="1" value="40" /><span id="tb-strength-val">40%</span></label>
+          <button type="button" id="tb-save" class="ed-btn" title="Save content/terrain/&lt;key&gt;.edits.json (also saved by Ctrl+S)">Save terrain</button>
+          <span id="tb-status" class="chip"></span>
         </div>
         <div id="stats-plate" class="ed-plate">fps -</div>
       </div>

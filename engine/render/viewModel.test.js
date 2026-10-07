@@ -334,6 +334,112 @@ function worldTipFromList(list) {
   ok('all four preallocated handles draw and report total stats', full.count === VM_MAX_HANDLES && multi.stats.items === VM_MAX_HANDLES && full.items.slice(0, full.count).every((it, i) => it.objectId === VM_OBJECT_ID - i));
 }
 
+// ---- HANDS-01a: hand mirror (37.8a) -------------------------------------------------------------------------------
+{
+  const mv = createViewModelLayer();
+  const m0 = mv.load('sword', def, pool);
+  const authored = def.hand || (def.rest.pos[0] < 0 ? 'left' : 'right');
+  const other = authored === 'left' ? 'right' : 'left';
+  ok('authored hand = def.hand else rest.pos sign; handOf defaults to it', mv.handOf(m0) === authored);
+  const noHand = JSON.parse(JSON.stringify(def)); delete noHand.hand;
+  for (const sx of [-0.3, 0.3]) {
+    noHand.rest.pos[0] = sx;
+    const hh = createViewModelLayer().load('probe', noHand, pool);
+    const l = createViewModelLayer(); const h2 = l.load('probe', noHand, pool);
+    ok(`no def.hand: rest.pos.x ${sx} -> ${sx < 0 ? 'left' : 'right'}`, hh === 0 && l.handOf(h2) === (sx < 0 ? 'left' : 'right'));
+  }
+  const explicit = { ...noHand, hand: 'left', rest: { ...noHand.rest, pos: [0.3, noHand.rest.pos[1], noHand.rest.pos[2]] } };
+  const mv2 = createViewModelLayer(); const e0 = mv2.load('x', explicit, pool);
+  ok('def.hand wins over the rest sign (geometry hand, erratum)', mv2.handOf(e0) === 'left');
+  let bad = false; try { createViewModelLayer().load('bad', { ...def, hand: 'up' }, pool); } catch (e) { bad = /def\.hand/.test(e.message); }
+  ok('load rejects an invalid def.hand', bad);
+
+  const c0 = { x: 0, y: 0, z: 1.6, yawDeg: 25, pitchDeg: 10 };
+  const clip = mv.clipId(m0, 'swingLR'), tipM = mv.mountId(m0, 'tip');
+  const det3 = (m, o) => m[o] * (m[o + 4] * m[o + 8] - m[o + 5] * m[o + 7]) - m[o + 1] * (m[o + 3] * m[o + 8] - m[o + 5] * m[o + 6]) + m[o + 2] * (m[o + 3] * m[o + 7] - m[o + 4] * m[o + 6]);
+  const pn = mv._defs[m0].partCount;
+  for (const pitched of [false, true]) {
+    for (const tMs of [0, 90, 200]) {
+      mv.setHand(m0, authored); mv.setBob(0.9, 0.8); mv.show(m0, clip, tMs, false);
+      const base = Float64Array.from(mv.buildList(c0, pitched).items[0].partMatrices);
+      ok('unmirrored item: mirror 0, det > 0', mv.list.items[0].mirror === 0 && det3(base, 0) > 0);
+      mv.setHand(m0, other);
+      const it = mv.buildList(c0, pitched).items[0], pm = it.partMatrices;
+      let allNeg = true; for (let q = 0; q < pn; q++) if (!(det3(pm, q * 12) < 0)) allNeg = false;
+      ok(`mirrored (pitched ${pitched}, t ${tMs}): item.mirror 1 and det < 0 for every part`, it.mirror === 1 && allNeg);
+      // mirrored = S in eye space. Map both through eyeToWorld's inverse is awkward; instead check the world matrices
+      // satisfy Aw^-1 * M' * (S) == Aw^-1 * M for the linear part and the eye-x flip of the translation.
+      const Aw = mv._Aw;
+      const det = det3(Aw, 0);
+      const inv = (b0, b1, b2) => [ // Aw^-1 * b by Cramer
+        (b0 * (Aw[4] * Aw[8] - Aw[5] * Aw[7]) - Aw[1] * (b1 * Aw[8] - Aw[5] * b2) + Aw[2] * (b1 * Aw[7] - Aw[4] * b2)) / det,
+        (Aw[0] * (b1 * Aw[8] - Aw[5] * b2) - b0 * (Aw[3] * Aw[8] - Aw[5] * Aw[6]) + Aw[2] * (Aw[3] * b2 - b1 * Aw[6])) / det,
+        (Aw[0] * (Aw[4] * b2 - b1 * Aw[7]) - Aw[1] * (Aw[3] * b2 - b1 * Aw[6]) + b0 * (Aw[3] * Aw[7] - Aw[4] * Aw[6])) / det];
+      let worst = 0;
+      for (let q = 0; q < pn; q++) {
+        const tb = inv(base[q * 12 + 9] - c0.x, base[q * 12 + 10] - c0.y, base[q * 12 + 11] - c0.z);
+        const tm = inv(pm[q * 12 + 9] - c0.x, pm[q * 12 + 10] - c0.y, pm[q * 12 + 11] - c0.z);
+        worst = Math.max(worst, Math.abs(tm[0] + tb[0]), Math.abs(tm[1] - tb[1]), Math.abs(tm[2] - tb[2]));
+        for (let col = 0; col < 3; col++) { // linear part: columns of Aw^-1*M, row 0 negated
+          const cb = inv(base[q * 12 + col], base[q * 12 + 3 + col], base[q * 12 + 6 + col]);
+          const cm = inv(pm[q * 12 + col], pm[q * 12 + 3 + col], pm[q * 12 + 6 + col]);
+          worst = Math.max(worst, Math.abs(cm[0] + cb[0]), Math.abs(cm[1] - cb[1]), Math.abs(cm[2] - cb[2]));
+        }
+      }
+      ok(`mirrored matrices = S * unmirrored in eye space (pitched ${pitched}, t ${tMs}; f32-rounded, < 1e-6)`, worst < 1e-6, `worst=${worst}`);
+    }
+  }
+  mv.setHand(m0, authored); const mA = mv.mountEye(m0, clip, 120, tipM, new Float64Array(3)).slice();
+  mv.setHand(m0, other); const mB = mv.mountEye(m0, clip, 120, tipM, new Float64Array(3)).slice();
+  ok('mountEye x is negated when mirrored, y/z unchanged', mB[0] === -mA[0] && mB[1] === mA[1] && mB[2] === mA[2]);
+  mv.setHand(m0, authored);
+  const mC = mv.mountEye(m0, clip, 120, tipM, new Float64Array(3));
+  ok('mirror twice = identity (mountEye)', mC[0] === mA[0] && mC[1] === mA[1] && mC[2] === mA[2] && mv.handOf(m0) === authored);
+  mv.show(m0, clip, 70, false); mv.setBob(0.9, 0.8);
+  const l1 = Float64Array.from(mv.buildList(c0, true).items[0].partMatrices);
+  mv.setHand(m0, other); mv.buildList(c0, true); mv.setHand(m0, authored);
+  const l2b = mv.buildList(c0, true).items[0];
+  ok('mirror there and back gives a bit-identical item', l2b.mirror === 0 && l2b.partMatrices.every((v, i) => v === l1[i]));
+
+  // JS twin: winding. A mirrored closed model must still show its front faces.
+  const cam0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
+  projTerms(cam0, grid, terms); shearProjection(terms, M);
+  const cx = { M, kind7Mat: null, structFoot: null, structCount: 0, team: null };
+  const idleM = mv.clipId(m0, 'idle');
+  const render = (hand, forceMirror) => {
+    mv.setHand(m0, hand); mv.setBob(0, 0); mv.show(m0, idleM, 0, false);
+    const li = mv.buildList(cam0, false); if (forceMirror !== undefined) li.items[0].mirror = forceMirror;
+    const t = createRasterTarget(COLS, ROWS, 1, {}); rasterDrawList(li, t, cx); return t;
+  };
+  const cells = (t) => { let n = 0; for (let i = 0; i < COLS * ROWS; i++) if (t.kind[i]) n++; return n; };
+  const tA = render(authored), tB = render(other), tBadFlip = render(other, 0);
+  ok('mirrored sword draws cells (> 30) with cull on', cells(tB) > 30 && cells(tA) > 30, `${cells(tA)}/${cells(tB)}`);
+  let same = 0, tot = 0, diffBad = 0;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x, j = y * COLS + (COLS - 1 - x);
+    if (tA.kind[i] || tB.kind[j]) { tot++; if (!!tA.kind[i] === !!tB.kind[j]) same++; }
+    if (!!tB.kind[i] !== !!tBadFlip.kind[i] || tB.zbuf[i] !== tBadFlip.zbuf[i]) diffBad++;
+  }
+  ok('mirrored render covers the reflected unmirrored cells (> 90%)', tot > 0 && same / tot > 0.9, `${same}/${tot}`);
+  ok('without the winding flip (mirror forced 0) the render differs (back faces would win)', diffBad > 10, `diff=${diffBad}`);
+
+  const two = createViewModelLayer();
+  const ta = two.load('a', def, pool), tb = two.load('b', def, pool);
+  two.setHand(tb, other); two.show(ta, clip, 0, false); two.show(tb, clip, 0, false);
+  const tl = two.buildList(cam0, true);
+  ok('two handles, one mirrored: 2 items, distinct objectIds, mirror 0/1', tl.count === 2 && tl.items[0].objectId !== tl.items[1].objectId && tl.items[0].mirror === 0 && tl.items[1].mirror === 1);
+  const dl = new DrawList(2); dl.push(null, 1).mirror = 1; dl.begin();
+  ok('DrawList.push resets item.mirror to 0', dl.push(null, 1).mirror === 0);
+  for (let i = 0; i < 300; i++) { two.setHand(tb, i & 1 ? 'left' : 'right'); two.buildList(cam0, true); two.mountEye(tb, clip, i, 0, pe); }
+  let growth = Infinity;
+  for (let round = 0; round < 3; round++) {
+    global.gc(); global.gc(); const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 1000; f++) { two.setHand(tb, f & 1 ? 'left' : 'right'); two.show(tb, clip, f, false); two.buildList(cam0, true); two.mountEye(tb, clip, f, 0, pe); two.handOf(tb); }
+    global.gc(); global.gc(); growth = Math.min(growth, process.memoryUsage().heapUsed - before);
+  }
+  ok('zero-alloc: 1000 mirrored frames with setHand toggling grow the heap < 64 KB', growth < 65536, `growth=${growth}`);
+}
+
 // ---- perf + zero allocation --------------------------------------------------------------------------------------
 {
   vm.setBob(1.3, 0.7);

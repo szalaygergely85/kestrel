@@ -164,6 +164,7 @@ export function pickMarkers(col, row, ctx) {
   // (was `+ s.origin`) - two placements of one level each convert through
   // their own structure, never mixed up (docs/coordinates.md section 10 item 7).
   for (const s of world.structures) {
+    if (!s.level) continue; // mesh/road structures have no level markers
     const def = s.level.def;
     for (const l of def.lights || []) {
       const p = localToWorld(s.frame, l.x, l.y, l.z, { x: 0, y: 0, z: 0 });

@@ -220,6 +220,7 @@ function makeQuadMesh(id) {
   ok('addInstances over the buffer capacity throws', threw);
   const it = list.addInstances(mesh, parts, ib, 2);
   ok('item type/instBuf/instCount/objectId', it.type === DRAW_INSTANCED && it.instBuf === ib && it.instCount === 2 && it.objectId === 0 && it.mesh === mesh);
+  ok('HANDS-01a: fresh items have mirror 0; push() resets a stale mirror flag', it.mirror === 0 && (() => { const l = new DrawList(2); l.push(mesh, 1).mirror = 1; l.begin(); return l.push(mesh, 1).mirror === 0; })());
   ok('partMatrices/partFlags copied', it.partMatrices[9] === 0 && it.partMatrices[12 + 9] === 1 && it.partFlags[0] === 1 && it.partFlags[1] === 0);
   // R = max |corner| of bbox (0..1,0..1,0) under part 1 (t=(1,0,0)) = |(2,1,0)| = sqrt(5)
   const R = Math.sqrt(5);

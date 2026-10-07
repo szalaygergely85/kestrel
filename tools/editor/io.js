@@ -10,6 +10,7 @@ import {
   AssetRegistry, World, ContentError, migrateContent, loadContentPack, stringifyContent,
 } from '../../engine/index.js';
 import { fileKey } from './doc.js';
+import { terrainEditsText } from './terrainBrush.js';
 
 /**
  * One file's full envelope + data (24.10): `{ kind, schema, id, nextId,
@@ -65,8 +66,9 @@ function buildMemoryPack(doc, opts = {}) {
  *   second argument (`window.ASSETS`: palette/models/detailPass/uiStyle and
  *   any code-recipe terrain, e.g. `overworld_far`) - supplies everything the
  *   edited level/world files don't carry themselves.
- * @param {{overrideFileId?: string, overrideText?: string}} [opts] - the
- *   Load flow's "substitute this file's text before validating" (24.10).
+ * @param {{overrideFileId?: string, overrideText?: string, reference?: {meshes?: Object, terrainEdits?: Object}}} [opts] - the
+ *   Load flow's "substitute this file's text before validating" (24.10); `reference` = the loaded content bundle whose
+ *   read-only `meshes`/`terrainEdits` sit under the doc's own (never edited or saved).
  * @returns {Promise<import('../../engine/index.js').ContentError|null>}
  */
 export async function validateDoc(doc, codeParts, opts = {}) {
@@ -74,6 +76,10 @@ export async function validateDoc(doc, codeParts, opts = {}) {
     const { manifestHref, mem } = buildMemoryPack(doc, opts);
     const fetchText = (u) => (mem.has(memPath(u)) ? Promise.resolve(mem.get(memPath(u))) : Promise.reject(new Error('HTTP 404')));
     const bundle = await loadContentPack(manifestHref, { fetchText });
+    // Read-only reference content the doc does not carry (loaded bundle meshes/terrainEdits): lets structures[].mesh ids resolve.
+    const ref = opts.reference || {};
+    bundle.meshes = { ...(ref.meshes || {}), ...(bundle.meshes || {}) };
+    bundle.terrainEdits = { ...(ref.terrainEdits || {}), ...(bundle.terrainEdits || {}) };
     const assets = AssetRegistry.fromJSON(bundle, codeParts);
     for (const worldId of Object.keys(bundle.worlds)) {
       World.load(assets.world(worldId), assets, {});
@@ -300,4 +306,29 @@ export function launchPlaytest(doc) {
     console.warn('[editor] play-test: localStorage write failed (private mode / quota?)', e);
   }
   window.open(`../../game/index.html?playtest=1&world=${encodeURIComponent(doc.worldId)}`, '_blank');
+}
+
+/**
+ * ED-TERRAIN-1c: saves the terrain edit layer to `<key>.edits.json` (the file lives at content/terrain/ - the
+ * File System Access picker remembers the handle in `state.handle`; otherwise a download). Clears `state.dirty`.
+ * @param {{layer:Object, key:string, handle:Object|null, dirty:boolean}} state
+ */
+export async function saveTerrainEdits(state, opts = {}) {
+  const text = terrainEditsText(state.layer, state.key);
+  const name = `${state.key}.edits.json`;
+  const canPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && !opts.forceDownload;
+  if (canPicker) {
+    if (!state.handle) {
+      state.handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: [{ description: 'Kestrel terrain edits', accept: { 'application/json': ['.json'] } }],
+      });
+    }
+    const writable = await state.handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+  } else {
+    downloadFallback(text, name);
+  }
+  state.dirty = false;
 }

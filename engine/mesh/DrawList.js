@@ -53,6 +53,7 @@ const MAX_STRUCTS = 8;
  * @property {number} rangeCount
  * @property {number} planeIdOr - levels (structSeq&7)<<28; voxels (slot&0xF)<<24; terrain 0
  * @property {number} objectId - levels structSeq; terrain 0x7000|chunkIndex; voxels 0x8000|slot (slot < 48; units >= 0x10000, view models near 0xFFFF)
+ * @property {number} mirror - 0|1: part matrices have det < 0 (HANDS-01a, view-model hand mirror); front faces wind CW on screen, both twins flip the cull sign
  * @property {number} zBase - G-buffer z = worldZ - zBase - aux.zRef
  * @property {number} flags - DRAW_FLAG_*
  * @property {Float64Array} aabb - 6, world, for culling
@@ -73,6 +74,7 @@ function makeDrawItem() {
     rangeCount: 0,
     planeIdOr: 0,
     objectId: 0,
+    mirror: 0,
     zBase: 0,
     flags: 0,
     aabb: new Float64Array(6),
@@ -97,6 +99,7 @@ function resetDrawItem(item) {
   item.rangeCount = 0;
   item.planeIdOr = 0;
   item.objectId = 0;
+  item.mirror = 0;
   item.zBase = 0;
   item.flags = 0;
   item.aabb.fill(0);
