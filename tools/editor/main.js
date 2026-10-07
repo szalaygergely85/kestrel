@@ -54,6 +54,7 @@ import { createRebuildScheduler } from './rebuildScheduler.js';
 import { createIconCache, createIconQueue, iconModel } from './iconFit.js';
 import { createIconRenderer } from './iconRender.js';
 import { EDITOR_PLATE_BG } from './overlayStyle.js';
+import { iconAsset, meshIconKey, meshKeyFromIcon, listMeshAssetGroups } from './meshAssets.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -993,7 +994,7 @@ function showIcon(host, url) {
   host.textContent = '';
   const img = document.createElement('img');
   img.width = img.height = 96;
-  img.alt = host.dataset.iconKey;
+  img.alt = meshKeyFromIcon(host.dataset.iconKey) ?? host.dataset.iconKey;
   img.src = url;
   img.className = 'asset-icon';
   host.appendChild(img);
@@ -1001,18 +1002,18 @@ function showIcon(host, url) {
 function requestIcon(key, priority = false) {
   // Sprite (billboard) models keep their ASCII thumbnail: they are flat glyph art, and in the
   // 3D icon scene they would sit small in front of the floor/room (owner 2026-10-04).
-  if (!iconModel(assets.model(key)).voxel) return null;
-  const hash = iconCache.key(key, assets.model(key));
+  if (meshKeyFromIcon(key) === null && !iconModel(assets.model(key)).voxel) return null;
+  const hash = iconCache.key(key, iconAsset(assets, key));
   const previous = iconRequests.get(key);
   const url = iconCache.get(hash);
   iconRequests.set(key, hash);
   if (!url && !iconFailed.has(hash)) iconQueue.enqueue(key, priority || (!!previous && previous !== hash));
   return url;
 }
-function iconHost(key) {
+function iconHost(key, priority = false) {
   const host = document.createElement('div');
   host.className = 'asset-icon-host'; host.dataset.iconKey = key;
-  const url = requestIcon(key);
+  const url = requestIcon(key, priority);
   if (url) showIcon(host, url);
   else {
     let thumb;
@@ -1023,7 +1024,10 @@ function iconHost(key) {
 }
 function refreshIcons(key) {
   if (key) requestIcon(key, true);
-  else for (const name of assets.keys('model')) requestIcon(name);
+  else {
+    for (const name of assets.keys('model')) requestIcon(name);
+    for (const name of assets.keys('mesh')) requestIcon(meshIconKey(name));
+  }
   renderAssetsList(assetsSearchInput.value);
 }
 function pumpIcons() {
@@ -1031,7 +1035,7 @@ function pumpIcons() {
     iconQueue.tick();
     const key = iconQueue.next();
     if (key !== null) {
-      const hash = iconCache.key(key, assets.model(key)), start = performance.now();
+      const hash = iconCache.key(key, iconAsset(assets, key)), start = performance.now();
       try {
         let url = iconCache.get(hash);
         if (!url && !iconRenderer) {
@@ -1251,15 +1255,22 @@ newFolderInputEl.addEventListener('keydown', (e) => {
 /** Builds one asset row (the shared leaf of both the flat search view and the
  * grouped folder view) - same mousedown arm + ED-DND-01 drag as before, plus
  * a `folderTarget` slot the mousemove/mouseup handlers use for folder drops. */
-function buildAssetRow(key) {
+function buildAssetRow(key, priority = false) {
   const row = document.createElement('div');
   row.className = 'asset-row';
+  const meshKey = meshKeyFromIcon(key);
   if (armedModelKey === key) row.classList.add('armed');
-  row.appendChild(iconHost(key));
+  row.appendChild(iconHost(key, priority));
   const name = document.createElement('span');
   name.className = 'asset-name';
-  name.textContent = key;
+  name.textContent = meshKey === null ? key : meshKey;
   row.appendChild(name);
+  if (meshKey !== null) {
+    row.dataset.meshKey = meshKey;
+    row.classList.add('mesh-asset-row');
+    row.title = `Mesh: ${meshKey} (${assets.mesh(meshKey).triCount.toLocaleString()} triangles)`;
+    return row;
+  }
   // mousedown (not click): same reasoning as the US-063 model-picker rows -
   // fires before the search input's blur / the canvas's own mousedown
   // handlers steal focus for this same event.
@@ -1345,23 +1356,26 @@ function buildFolderSection(folderName, keys) {
 function renderAssetsList(query) {
   assetsListEl.textContent = '';
   const keys = filterModelKeys(listPlaceableModels(assets), query || '');
-  if (!keys.length) {
+  const meshGroups = listMeshAssetGroups(assets, query || '');
+  if (!keys.length && !meshGroups.length) {
     const empty = document.createElement('div');
     empty.className = 'asset-empty';
-    empty.textContent = '(no matching models)';
+    empty.textContent = '(no matching assets)';
     assetsListEl.appendChild(empty);
     return;
   }
   // Search still searches ALL folders, flat (the story's AC 4): a non-empty
   // query renders one ungrouped list, so a match in any folder is visible.
   if ((query || '').trim()) {
-    for (const key of keys) assetsListEl.appendChild(buildAssetRow(key));
+    for (const key of keys) assetsListEl.appendChild(buildAssetRow(key, true));
+    for (const group of meshGroups) for (const key of group.keys) assetsListEl.appendChild(buildAssetRow(meshIconKey(key), true));
     return;
   }
   // No query: group into collapsible folders (user folders first, then
   // defaults - panel.js's pure `groupAssetFolders`).
   const groups = groupAssetFolders(keys, foldersState, (k) => assets.model(k));
   for (const group of groups) assetsListEl.appendChild(buildFolderSection(group.folder, group.keys));
+  for (const group of meshGroups) assetsListEl.appendChild(buildFolderSection(`Meshes / ${group.pack}`, group.keys.map(meshIconKey)));
 }
 
 await loadAssetFolders();

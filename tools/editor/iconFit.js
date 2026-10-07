@@ -17,6 +17,10 @@ export function iconModel(model) {
 }
 
 export function modelBounds(model) {
+  if (model.bbox?.length === 6) {
+    const b = model.bbox;
+    return { w: b[3] - b[0], d: b[4] - b[1], h: b[5] - b[2] };
+  }
   model = iconModel(model);
   const v = model.voxel;
   if (v) {
