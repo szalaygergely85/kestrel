@@ -1,24 +1,32 @@
 // OWN-REQ-014: one detached Canvas2D engine, using the real mesh CPU twin.
-import { createEngine, World, HFOV_DEG, createPitchedTerms, pitchedTerms, worldToCell, KIND_MODEL } from '../../engine/index.js';
+import { createEngine, World, HFOV_DEG, createPitchedTerms, pitchedTerms, worldToCell, KIND_MODEL, KIND_MESH } from '../../engine/index.js';
 import { createFrame } from './frame.js';
 import { modelBounds, fitIconCamera, iconCacheKey, iconModel, kindBounds } from './iconFit.js';
+import { iconAsset, meshKeyFromIcon } from './meshAssets.js';
 
 export function createIconWorld(assets, key = null) {
-  const source = key === null ? {} : assets.model(key), model = iconModel(source);
+  const meshKey = key === null ? null : meshKeyFromIcon(key);
+  const source = key === null ? {} : iconAsset(assets, key), model = iconModel(source);
   const voxel = model.voxel, anchor = voxel ? voxel.anchor : null;
   const level = { name: '__icon', start: { x: 3, y: 3 },
     rows: ['......', '......', '......', '......', '......', '......'],
     legend: { '.': { solid: false, floorH: 0, floorMat: 'floor', ceilH: 'sky', ceilMat: 'sky', wallMat: 'stone' } },
-    props: key === null ? [] : [{ id: 'icon', model: key, facing: 180, ...(source !== model ? { variant: 0 } : {}),
+    props: key === null || meshKey !== null ? [] : [{ id: 'icon', model: key, facing: 180, ...(source !== model ? { variant: 0 } : {}),
       x: 3 - (anchor ? (anchor[0] - voxel.size[0] / 2) * voxel.cellM : 0),
       y: 3 - (anchor ? (anchor[1] - voxel.size[1] / 2) * voxel.cellM : 0),
       z: anchor ? anchor[2] * voxel.cellM : 0 }] };
   // Registry facade keeps the in-memory sector out of the editor's asset library.
   const miniAssets = { palette: assets.palette, level: () => level,
-    model: name => assets.model(name), has: (kind, name) => kind === 'level' || assets.has(kind, name),
+    model: name => assets.model(name), mesh: name => assets.mesh(name), has: (kind, name) => kind === 'level' || assets.has(kind, name),
     keys: kind => assets.keys(kind) };
-  const world = World.load({ terrain: null, structures: [{ id: 'icon', level: '__icon',
-    origin: { x: 0, y: 0, z: 0 }, yawSteps: 0 }], entities: [] }, miniAssets, {});
+  const structures = [{ id: 'icon', level: '__icon', origin: { x: 0, y: 0, z: 0 }, yawSteps: 0 }];
+  if (meshKey !== null) {
+    const b = source.bbox;
+    structures.push({ id: 'iconMesh', mesh: meshKey, origin: {
+      x: 3 - (b[0] + b[3]) / 2, y: 3 - (b[1] + b[4]) / 2, z: -b[2],
+    }, yawDeg: 0, collide: false });
+  }
+  const world = World.load({ terrain: null, structures, entities: [] }, miniAssets, {});
   // The gameplay no-terrain default is a solid outside wall; preview lighting
   // and sector queries instead see the same open floor beyond this tiny sector.
   const open = world.structures[0].level.sectorAt(3, 3);
@@ -64,10 +72,10 @@ export function createIconRenderer(assets) {
       sceneWarmed = true;
     },
     renderIcon(key) {
-      const model = assets.model(key), bounds = modelBounds(model);
+      const model = iconAsset(assets, key), bounds = modelBounds(model);
       const world = createIconWorld(assets, key);
       const hash = iconCacheKey(key, model);
-      if (boundModels.get(key) !== hash || boundModels.size !== assets.keys('model').length) {
+      if ((meshKeyFromIcon(key) === null && boundModels.get(key) !== hash) || boundModels.size !== assets.keys('model').length) {
         frame.voxelPool.bind(assets, frame.fb.matTable);
         boundModels.clear();
         for (const name of assets.keys('model')) boundModels.set(name, iconCacheKey(name, assets.model(name)));
@@ -84,15 +92,16 @@ export function createIconRenderer(assets) {
         x0 = Math.min(x0, cell[0]); x1 = Math.max(x1, cell[0]);
         y0 = Math.min(y0, cell[1]); y1 = Math.max(y1, cell[1]);
       }
-      // Model cells (kind 8): blank every other cell (floor, walls, sky) and crop to the model's own cells.
+      // Blank floor/walls/sky and crop to the model or imported mesh cells.
       const gbuf = frame.fb.gbuf;
+      const keepKind = meshKeyFromIcon(key) === null ? KIND_MODEL : KIND_MESH;
       const own = gbuf.cols === rt.cols && gbuf.rows === rt.rows
-        ? kindBounds(gbuf.kind, rt.cols, rt.rows, KIND_MODEL) : null;
+        ? kindBounds(gbuf.kind, rt.cols, rt.rows, keepKind) : null;
       if (own) {
         const g = canvas.getContext('2d');
         g.fillStyle = '#101418';
         for (let r = 0; r < rt.rows; r++) for (let c = 0; c < rt.cols; c++) {
-          if (gbuf.kind[r * rt.cols + c] !== KIND_MODEL) g.fillRect(c * rt.pxCellW, r * rt.pxCellH, rt.pxCellW, rt.pxCellH);
+          if (gbuf.kind[r * rt.cols + c] !== keepKind) g.fillRect(c * rt.pxCellW, r * rt.pxCellH, rt.pxCellW, rt.pxCellH);
         }
         x0 = own.x0; y0 = own.y0; x1 = own.x1; y1 = own.y1;
       }

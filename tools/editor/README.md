@@ -66,6 +66,11 @@ only has a software GL renderer, use `?gpu=0`.
 
 ## Place new things
 
+The **Assets** tab also lists imported meshes in **Meshes / <pack>** folders.
+Search matches their asset ids and pack names. These rows show rendered mesh
+previews and triangle counts in their tooltips. Mesh rows currently support
+preview only; mesh placement and editing are a later ED-MESH-01 step.
+
 Press a number key to arm placement mode, then click a surface:
 
 - `1` - prop (opens a **searchable model picker** - type to filter, click a

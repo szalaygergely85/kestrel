@@ -9,6 +9,7 @@
 import { projectPoint, cameraBasis } from './ray.js';
 import { selectionEntityId, selectionItemData } from './doc.js';
 import { localToWorld } from '../../engine/index.js';
+import { EDITOR_PLATE_BG } from './overlayStyle.js';
 
 /**
  * Model world-space radius/height for the highlight box (same rule as
@@ -63,17 +64,17 @@ export function drawHighlightRect(rt, rect, fgHex) {
   const { minCol, maxCol, minRow, maxRow } = rect;
   const w = maxCol - minCol, h = maxRow - minRow;
   if (w < 0 || h < 0 || w * h > MAX_HIGHLIGHT_CELLS) return;
-  rt.setCell(minCol - 1, minRow - 1, '+', fgHex);
-  rt.setCell(maxCol + 1, minRow - 1, '+', fgHex);
-  rt.setCell(minCol - 1, maxRow + 1, '+', fgHex);
-  rt.setCell(maxCol + 1, maxRow + 1, '+', fgHex);
+  rt.setCell(minCol - 1, minRow - 1, '+', fgHex, EDITOR_PLATE_BG);
+  rt.setCell(maxCol + 1, minRow - 1, '+', fgHex, EDITOR_PLATE_BG);
+  rt.setCell(minCol - 1, maxRow + 1, '+', fgHex, EDITOR_PLATE_BG);
+  rt.setCell(maxCol + 1, maxRow + 1, '+', fgHex, EDITOR_PLATE_BG);
   for (let c = minCol; c <= maxCol; c++) {
-    rt.setCell(c, minRow - 1, '-', fgHex);
-    rt.setCell(c, maxRow + 1, '-', fgHex);
+    rt.setCell(c, minRow - 1, '-', fgHex, EDITOR_PLATE_BG);
+    rt.setCell(c, maxRow + 1, '-', fgHex, EDITOR_PLATE_BG);
   }
   for (let r = minRow; r <= maxRow; r++) {
-    rt.setCell(minCol - 1, r, '|', fgHex);
-    rt.setCell(maxCol + 1, r, '|', fgHex);
+    rt.setCell(minCol - 1, r, '|', fgHex, EDITOR_PLATE_BG);
+    rt.setCell(maxCol + 1, r, '|', fgHex, EDITOR_PLATE_BG);
   }
 }
 
@@ -111,7 +112,7 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
     if (item && s) {
       const point = localToWorld(s.frame, item.x, item.y, item.z || 0, { x: 0, y: 0, z: 0 });
       const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer);
-      if (proj.depth > 0) rt.setCell(Math.round(proj.col), Math.round(proj.row), '*', fgHex);
+      if (proj.depth > 0) rt.setCell(Math.round(proj.col), Math.round(proj.row), '*', fgHex, EDITOR_PLATE_BG);
     }
   }
 }
@@ -132,7 +133,7 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
     if (!(proj.depth > 0)) return;
     const c = Math.round(proj.col), r = Math.round(proj.row);
     if (c < 0 || c >= cols || r < 0 || r >= rows) return;
-    rt.setCell(c, r, glyph, fgHex);
+    rt.setCell(c, r, glyph, fgHex, EDITOR_PLATE_BG);
     budget--;
   };
   const dimHex = (palette.colors && palette.colors.uiDim) || '#666666';
@@ -169,5 +170,5 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
  */
 export function drawHoverOutline(rt, col, row, fgHex) {
   if (col == null || row == null) return;
-  rt.setCell(col, row, '.', fgHex);
+  rt.setCell(col, row, '.', fgHex, EDITOR_PLATE_BG);
 }
