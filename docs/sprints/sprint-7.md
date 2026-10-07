@@ -25,7 +25,7 @@ Stretch / later in the sprint: WG-4a / WG-4b kernels (B2) + host side (B1), ALPH
 - Merges pc-b + pc-c -> pc-a -> master (tests + check-deps + gpucompare), skill `pc-a-merge-master` (write it at the first merge).
 
 ## Owner decisions needed (open)
-1. **Ultra = rays 2:** 2 rays per cell changes the ASCII look (finer resolve, less shimmer, different glyph picks at edges). Accept on Ultra only, or keep rays 1 on every preset?
+1. **DECIDED (owner 2026-10-07): Ultra = rays 4** (4x4 = 16 sub-samples per cell; the engine default today is rays 2, so Medium and High keep 2 and Low uses 1). The owner liked rays 4 on the RTX 4060. Cost: G-buffer = rays^2 x the cell grid (rays 4 at 400x150 = 1600x600 = 960,000 samples per frame); raster pass is the biggest GPU cost, so GFX-04 must time Ultra on the 4060 and keep Arc/Low at rays 1. Only `?gpucompare=1` forces rays 1.
 2. **Low = 160x60:** D-025 made 160x60 dev-only for players. Allow it for the Low preset (amend D-025), or make Low = 240x90 with no shadows?
 3. **Preset names:** plain Low / Medium / High / Ultra, or themed names (writer proposal)?
 4. **Auto-pick:** a ~3 s benchmark on first launch (behind the loading card) is OK? Re-run only from Settings ("Detect again").
