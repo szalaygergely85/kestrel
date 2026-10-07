@@ -24,6 +24,9 @@ SPRINT 7 NEXT QUEUE (PC-A PO + manager, 2026-10-07 night; sprint file `docs/spri
 16. **US-090a title menu view (module only)**: NEW `game/js/ui/titleMenu.js` (+test): New game / Continue / 3 slots ("Wick - place - play time") / delete slot / Settings, keyboard + mouse, reads slots through US-089a's adapter. **NEEDS PC-A designer** title/menu style (owner-visible, PO opus review) + writer labels. **NEEDS B1:** US-090w boot wiring. ~0.75 d. Needs: 14.
 17. **US-112a demo bundle script**: NEW `tools/demo/build-demo.mjs`: copies the runtime files (game/, engine/, design/, content/ minus git-ignored sources and dev pages) into `dist/demo/`, writes a zip for itch.io, checks every referenced file exists and the bundle has no third-party file whose licence is unverified (reads `docs/licence-inventory.json`). Node test on a fixture. ~0.5 d. Page text = writer (US-112b, PC-A).
 18. **EP-DESKTOP-SPIKE** (report only): NEW `tools/desktop/` minimal Electron app loading `game/index.html` from disk with WebGPU on; list what breaks (fetch paths, `file://`, content loading, WebGPU flags, saves) in the row text via your log. No engine change. ~0.5 d. **Start only after B1 item 7 (WG-3f)** (D-044 item 6), unless the owner pulls it forward.
+19. **MAP-01b chart bake tool** (see backlog row): `tools/bake-chart.mjs` (+test) -> `content/chart/world_m1.chart.json`, deterministic, `--check`. Start now; plug in the MAP-01a glyph table when it lands. ~1 d.
+20. **MAP-01c chart live UI**: `game/js/quest/mapCard.js` only, player arrow, relays, `M`/Esc, zoom/pan optional, zero alloc. NO main.js edit (`NEEDS B1` if wiring). **Blocked on MAP-01a (PC-A designer + writer) and item 19.** Owner screenshot 400x150. ~1 d.
+21. **MAP-01d fog/reveal + pencil route + save** (sprint 8): after 20 + item 14 (US-089a). ~1 d.
 
 Status log (newest first):
 

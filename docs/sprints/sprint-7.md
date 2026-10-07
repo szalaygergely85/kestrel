@@ -15,6 +15,7 @@ Length: 1-2 weeks. Every lane has a numbered NEXT QUEUE in its lane file (`docs/
 | 4 | ED-MESH-01e -> 01f -> MESH-SCALE-01 -> 01g | B1 (01e engine hook), C (01f/01g editor), B2 (MESH-SCALE-01) | 01e before 01f; MESH-SCALE-01 before 01g | arch-review (01e, MESH-SCALE-01), PO review + owner editor check (01f/01g) | the owner places, drags (live), rotates and scales Quaternius meshes in the editor and they save, collide and render in the game |
 | 5 | MESH-BIN-01 + MESH-LOAD-01 | B2 | MESH-FULL-01 (done); no C re-import while MESH-BIN-01 is open | arch-review, suites, `gen-mesh-colliders --check`, gpucompare unchanged | mesh payload ~10x smaller on disk and in git diffs; far meshes load lazily, no hitch > 50 ms when walking roadSouth -> forest |
 | 6 | M4 openers, game side only: US-089a, US-090a, US-092a, US-096a (+ US-112a demo bundle) | C (pure sim/data/view modules + Node tests); main.js hooks = `NEEDS B1` rows (US-089w etc., next sprint) | designer (title + chest + item-get card), writer (objective/menu/demo text) on PC-A first | PO review (sonnet; opus for the owner-visible title menu) | each module has Node tests and a dev harness or preview; nothing wired into main.js yet unless B1 had time |
+| 7 | MAP-01a..d Chart v2 (live in-lore world map on `M`; owner 2026-10-07; 01e minimap = owner question) | PC-A designer+writer (01a), C (01b/01c; 01d sprint 8) | 01a before 01c; 01b parallel; 01d after 01c + US-089a | PO review (opus, owner-visible); real-GPU screenshot 400x150 | `M` shows the baked world chart with the live player arrow |
 
 Stretch / later in the sprint: WG-4a / WG-4b kernels (B2) + host side (B1), ALPHA-01b/c, EP-DESKTOP-SPIKE (C, after WG-3f per D-044 item 6), PREC-01a.
 
@@ -46,3 +47,11 @@ Stretch / later in the sprint: WG-4a / WG-4b kernels (B2) + host side (B1), ALPH
 ### Missing to be playable (placeholder, PO fills at review)
 - [ ] ...
 - Owner walk-test request: (to fill)
+
+## Owner decisions 2026-10-07 (D-046, D-047)
+- Presets: Low / Medium / High / Ultra; Low = 240x90; rays 1 / 2 / 2 / 4; shadows Off / Low / Mid / High (own setting).
+- Demo: WebGPU-only, web (Chrome/Edge) + Electron desktop.
+- Binary meshes: plain files, no Git LFS.
+- Auto-pick: lookup + ~3 s benchmark, overridable; GFX-02 also adds a runtime adaptive step (grid size is the dynamic-resolution knob via engine.setGrid).
+- Third-party unverified packs: keep in repo (D-046), exclude from release builds until licence evidence is on file.
+- Still open: which US rows to drop (see docs/backlog-triage-sheet.md).
