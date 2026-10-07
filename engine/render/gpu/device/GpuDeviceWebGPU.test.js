@@ -226,6 +226,15 @@ await run('webgpu: requestDevice rejects -> fallback', {
   const third = g.queue.objs;
   ok('writeTexture reuses dst/layout/size objects per texture', third[0] === first[0] && third[1] === first[1] && third[2] === first[2]);
   ok('writeTexture back to full rect resets origin', g.queue.lastWrite.ox === 0 && g.queue.lastWrite.w === 8);
+  // WG-3f: dataOffset (elements) -> layout.offset in bytes, reset to 0 when absent; rgba8ui format
+  d.writeTexture(t, new Uint32Array(64), { x: 0, y: 1, w: 2, h: 1 }, 8);
+  ok('writeTexture dataOffset -> byte offset (elements * BYTES_PER_ELEMENT)', g.queue.objs[1].offset === 32);
+  d.writeTexture(t, new Uint8Array(8 * 4 * 4));
+  ok('writeTexture without dataOffset resets offset 0, same layout object', g.queue.objs[1].offset === 0 && g.queue.objs[1] === first[1]);
+  const at = d.createTexture({ format: 'rgba8ui', width: 4, height: 2 });
+  ok('rgba8ui -> rgba8uint 4 B/texel', at.gpuFormat === 'rgba8uint' && at.bpp === 4);
+  d.writeTexture(at, new Uint8Array(32));
+  ok('rgba8ui writeTexture bytesPerRow 16', g.queue.lastWrite.bpr === 16);
   d.dispose();
 }
 

@@ -33,6 +33,8 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   device.writeTexture(tex, new Uint8Array(64));
   device.writeTexture(tex, new Uint8Array(16), { x: 0, y: 0, w: 2, h: 2 });
   ok('writeTexture counted + last rect kept', mock.texWriteCount === 2 && tex._texWrites === 2 && tex._lastTexWrite.rect.w === 2);
+  device.writeTexture(tex, new Uint8Array(64), { x: 0, y: 1, w: 4, h: 1 }, 16);
+  ok('mock records dataOffset (default 0)', tex._lastTexWrite.dataOffset === 16 && (device.writeTexture(tex, new Uint8Array(64)), tex._lastTexWrite.dataOffset === 0));
   ok('canvasTarget is a stable target handle', device.canvasTarget() === device.canvasTarget() && device.canvasTarget().kind === 'target');
   device.submit();
   ok('submit counted', mock.submitCount === 1);

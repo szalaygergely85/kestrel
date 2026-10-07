@@ -96,7 +96,7 @@ export function makeMockGpuDevice() {
     endPass() { device._activeTarget = null; },
     readback(tex, rect, out) { if (out && out.fill) out.fill(0); },
     // WG-1b1 (38.3): the mock records, never computes.
-    writeTexture(tex, data, rect) { tex._texWrites = (tex._texWrites || 0) + 1; tex._lastTexWrite = { data, rect: rect || null }; state.texWriteCount++; },
+    writeTexture(tex, data, rect, dataOffset) { tex._texWrites = (tex._texWrites || 0) + 1; tex._lastTexWrite = { data, rect: rect || null, dataOffset: dataOffset || 0 }; state.texWriteCount++; },
     canvasTarget() { if (!device._canvasTarget) device._canvasTarget = makeHandle('target', { canvas: true }); return device._canvasTarget; },
     submit() { state.submitCount++; },
     dispose(handle) {

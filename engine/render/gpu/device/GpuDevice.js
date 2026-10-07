@@ -133,9 +133,11 @@ export class GpuDevice {
   /**
    * WG-1b1 (38.3): upload `data` into (a rect of) an existing texture (GL2 `texSubImage2D`; WebGPU `queue.writeTexture`).
    * `rect` defaults to the whole texture; `data` is tightly packed rows of the texture's format.
-   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect]
+   * `dataOffset` (WG-3f, ELEMENTS of `data`'s typed array, default 0): the source read starts there, so a dirty-row slice of a
+   * big layer array uploads without a per-call subarray (GL2 `texSubImage2D(..., srcOffset)`; WebGPU `dataLayout.offset` = dataOffset * BYTES_PER_ELEMENT).
+   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect] @param {number} [dataOffset]
    */
-  writeTexture(tex, data, rect) { throw new Error('GpuDevice.writeTexture: not implemented'); }
+  writeTexture(tex, data, rect, dataOffset) { throw new Error('GpuDevice.writeTexture: not implemented'); }
   /** WG-1b1 (38.3): a target handle resolved to the canvas back buffer at `beginPass` (GL2: the default framebuffer). @returns {GpuHandle} */
   canvasTarget() { throw new Error('GpuDevice.canvasTarget: not implemented'); }
   /** WG-1b1 (38.3): end of frame (WebGPU: one uniform-ring `writeBuffer` + `queue.submit`; GL2: no-op). */

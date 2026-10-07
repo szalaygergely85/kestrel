@@ -133,15 +133,17 @@ export class GpuDeviceWebGPU {
 
   /**
    * `rect` defaults to the whole texture; `data` is tightly packed rows of the texture's format.
-   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect]
+   * `dataOffset` = source offset in ELEMENTS of `data` (-> `layout.offset` in bytes), no subarray allocation.
+   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect] @param {number} [dataOffset]
    */
-  writeTexture(tex, data, rect) {
+  writeTexture(tex, data, rect, dataOffset) {
     if (tex.isDepth) throw new Error('GpuDeviceWebGPU.writeTexture: depth textures cannot be written');
     // zero-alloc (38.7 / 38.8a 17): the destination/layout/size descriptors live on the texture handle and are mutated
     let wt = tex._wt;
-    if (!wt) wt = tex._wt = { dst: { texture: tex.gpu, origin: [0, 0, 0] }, layout: { bytesPerRow: 0, rowsPerImage: 0 }, size: [0, 0, 1] };
+    if (!wt) wt = tex._wt = { dst: { texture: tex.gpu, origin: [0, 0, 0] }, layout: { offset: 0, bytesPerRow: 0, rowsPerImage: 0 }, size: [0, 0, 1] };
     const x = rect ? rect.x : 0, y = rect ? rect.y : 0, w = rect ? rect.w : tex.width, h = rect ? rect.h : tex.height;
     wt.dst.texture = tex.gpu; wt.dst.origin[0] = x; wt.dst.origin[1] = y;
+    wt.layout.offset = dataOffset ? dataOffset * /** @type {any} */ (data).BYTES_PER_ELEMENT : 0;
     wt.layout.bytesPerRow = w * tex.bpp; wt.layout.rowsPerImage = h;
     wt.size[0] = w; wt.size[1] = h;
     this.gpu.queue.writeTexture(wt.dst, data, wt.layout, wt.size);
