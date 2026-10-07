@@ -2,7 +2,7 @@
 
 Owner: Architect. Created 2026-09-22. Works inside the manager's decisions D-002, D-005, D-006, D-007, D-008 (`docs/decisions.md`). Story-specific notes live in `docs/backlog.md` ("Tech notes (architect)"); anything reusable lives here. When this file and a story note disagree, this file wins and the story note gets fixed.
 
-Contents: Sections 1-26 (pre-mesh-engine design) moved to `architecture-history.md` · 27 Mesh engine (own renderer, ASCII as the final stage; GpuDevice backend, phases 0-4, gates, stories ME-00..ME-34) · 28 RTS engine capability · 29 M3 openers · 30 M3 sword + health · 31 ED-MESH-1 editor · 32 EP-ELEMENTS particles · 33 CLOTH-1 cloth · 34 ED-SCALE-1 scale · 35 WATER-2 water · 36 Show-it look fixes · 37 Show-it world content
+Contents: Sections 1-26 (pre-mesh-engine design) moved to `architecture-history.md` · 27 Mesh engine (own renderer, ASCII as the final stage; GpuDevice backend, phases 0-4, gates, stories ME-00..ME-34) · 28 RTS engine capability · 29 M3 openers · 30 M3 sword + health · 31 ED-MESH-1 editor · 32 EP-ELEMENTS particles · 33 CLOTH-1 cloth · 34 ED-SCALE-1 scale · 35 WATER-2 water · 36 Show-it look fixes · 37 Show-it world content · 38 EP-WEBGPU backend (WG-0)
 
 ---
 
@@ -3942,3 +3942,81 @@ Not worth it here: GPU occlusion queries / Hi-Z (latency, small cell grid), mesh
 | MESH-PERF-01 measure | PC-A | 0.25 d | Arc F3 deltas (raster, shadow, JS feed) full vs 4052af0 recorded in the row |
 | MESH-BIN-01 binary mesh payload | PC-B engine -> arch-review | 1 d | loader reads json+bin, bit-identical `MeshData` to the json path within quantisation (pos 1e-4 m of bbox), size table in the row |
 Then: shadow caster budget (opt 1), MESH-INST-01, authored LOD + dither (opt 3), ALPHA-01 continues as planned.
+
+---
+
+## 38. EP-WEBGPU: WebGPU backend behind `GpuDevice` (WG-0 note; architect, 2026-10-07; D-044, roadmap EP-WEBGPU)
+
+Normative for WG-1..WG-5. Amends 27.2 (device shape) and 27.11 phase 4 (ME-30..34 are re-cut into the WG steps in 38.8). The JS twin stays the only oracle (D-017); there is never a GLSL/WGSL twin pair.
+
+**38.1 Where the backend split lives (decision).** Today only the shadow map, its depth copy and `MeshBuffers` go through `GpuDevice`; `GpuCellPipeline.js` makes ~560 raw `gl.*` calls. Porting that file onto the device for both backends would rework frozen code that WG-5 deletes. So: **a second, device-only cell pipeline** `engine/render/gpu/wg/WgCellPipeline.js` with the **same public surface** as `GpuCellPipeline` (`constructor(rt, opts)`, `ready`, `stats`, `PASS_NAMES`, `frame`, `bind`, `bindVoxels`, `bindViewModel`, `bindInstances`, `resizeGrid`, `setEnabled`, `setPassTiming`, `setDebugMode`, `readback*`, `dispose`). It never touches `navigator.gpu`/`GPU*`, only `this.device.*`. `GpuCellPipeline` stays frozen (D-044 item 1) and dies in WG-5. One factory picks the pair: `engine/render/createRenderer.js` `async createRenderer(canvas, {backend, cols, rows, ...pipelineOpts}) -> {rt, pipeline, device}`; it is the only place outside `device/` that reads `device.backend` (`'webgl2'|'webgpu'`; F3 shows it). Shared backend-neutral CPU code is reused unchanged: `DrawList`, `MeshBuffers`, `ShadeTextures`/`TerrainTextures`/`WorldTextures` packers, `shadowList`, `shadowSun`, `projection`, `lighting`, `waterLook`. Inline uniform math in `GpuCellPipeline` longer than ~10 lines moves into a pure function both pipelines call (no-behaviour-change edit, proven by WebGL2 gpucompare); shorter math is duplicated with a `// twin of GpuCellPipeline._x` comment.
+
+**38.2 Layout.**
+```
+engine/render/gpu/device/GpuDevice.js          shape (typedef additions 38.3)
+engine/render/gpu/device/GpuDeviceWebGPU.js    the ONLY file using navigator.gpu / GPU* globals
+engine/render/gpu/device/createGpuDevice.js    async createGpuDevice({backend, canvas}) + selfTestDevice(device)
+engine/render/gpu/device/webgpuProbe.js        probeWebGpu() -> JSON (adapter info, features, limits, required check)
+engine/render/gpu/wgsl/uniformBlock.js         pure: field table -> WGSL struct text + word offsets + views (Node-tested)
+engine/render/gpu/wgsl/common.wgsl.js          helpers (fmodGlsl, imod, umod, hashes, octa pack) + shared constants
+engine/render/gpu/wgsl/<pass>.wgsl.js          one module per GLSL module it replaces; index.js = WGSL_MODULES list
+engine/render/gpu/wg/WgCellPipeline.js         orchestrator (<= ~800 lines); per-pass files wg/pass*.js
+engine/render/RenderTargetWebGPU.js            same public surface as RenderTargetGL; backend 'webgpu'
+engine/render/glyphAtlas.js                    glyph atlas build extracted from RenderTargetGL (used by both RTs)
+```
+check-deps (WG-1b2): `navigator.gpu`, `GPUBufferUsage`, `GPUTextureUsage`, `GPUShaderStage`, `GPUMapMode` allowed only under `engine/render/gpu/device/`; `game/` probes through the engine's `probeWebGpu()`.
+
+**38.3 `GpuDevice` additions (the whole list; JSON-safe; GL2 gets trivial versions, the Node mock all of them).**
+- `createGpuDevice(opts): Promise<GpuDevice>` (WebGPU init is async; `main.js` already uses top-level await). `device.backend`; `device.lost: Promise` (WebGPU device loss -> pipeline `ready=false` + warn; no restore, reload).
+- `writeTexture(tex, data, rect?)` (GL2 `texSubImage2D`): data textures, cells fg/bg each frame.
+- `TextureDesc.filter?: 'nearest'|'linear'` (`rgba8` only: glyph atlas). Every texture gets `TEXTURE_BINDING|RENDER_ATTACHMENT|COPY_SRC|COPY_DST`; views cached on the handle.
+- `PipelineDesc.bindings: {uniformBytes: number, textures: ('uint'|'sint'|'float'|'depth'|'filtered')[]}` (explicit layouts, never `layout:'auto'`), `PipelineDesc.targetFormats: string[]`, `depthFormat?`, `blend?` (only if a WG-3 pass needs it), `PipelineStageDesc.instanceLayout?/instanceStrideBytes?` + `BindDesc.instanceBuffer?` (MESH-INST-01 batches). On WebGPU `src` is `{wgsl}`.
+- `canvasTarget()`: a target handle resolved to `context.getCurrentTexture()` at `beginPass`.
+- `readback(tex, rect, out)` **may return a Promise** (WebGPU: always). Callers always `await` it (a no-op on GL2's plain return).
+- `submit()`: end of frame (GL2 no-op). WG-4a only: `createBuffer({usage:'storage'|'indirect'})`, `createComputePipeline`, `dispatch`, `drawIndirect`.
+
+**38.4 Formats, limits, bind groups.** `rgba32ui -> rgba32uint`, `r32ui -> r32uint`, `r8ui -> r8uint`, `rgba8 -> rgba8unorm` (canvas: `getPreferredCanvasFormat()`, `alphaMode:'opaque'`), `depth24 -> depth24plus`, `depth24 + sampled -> depth32float` (copyable, `textureLoad` on `texture_depth_2d`). Integer textures: `textureLoad` only, never a sampler (as `texelFetch` today). Required limits, requested from the adapter at create: **`maxColorAttachmentBytesPerSample >= 36`** (raster G-buffer = 2x rgba32uint + r32uint = 36 B; the WebGPU default 32 is NOT enough, request the adapter's value), `maxSampledTexturesPerShaderStage >= 16` (shade binds 15 today; a port that needs more packs small tables into one texture), `maxColorAttachments >= 4`. If the WG-1a probe shows a target adapter below these: ESCALATE (G-buffer repack), no silent workaround. Features: core + optional `timestamp-query`; no `shader-f16`/`subgroups` until EP-DESKTOP pins Chromium. **Bind groups:** `@group(0)` = the pipeline's textures (bind group cached per pipeline, rebuilt only when a handle in `BindDesc.textures` differs from the cached one: element-wise compare, no alloc); `@group(1) @binding(0)` = the pipeline's uniform block with a **dynamic offset** into one per-frame uniform ring (CPU `ArrayBuffer`, 256-B aligned slots; `bind()` copies the typed view in; `submit()` does one `queue.writeBuffer` of the used range, then `queue.submit`). Ring = `MAX_DRAW_ITEMS * 3 + 64` slots; overflow throws, never grows mid-frame. Uniform blocks come from `uniformBlock.js` (WGSL alignment: vec3/vec4/mat 16 B, uniform arrays as `array<vec4f,N>`); offsets are resolved at init into word-index constants (no string keys on the hot path).
+
+**38.5 GLSL -> WGSL port rules (string-checked by `engine/render/gpu/wgsl.test.js`).**
+1. Line-by-line translation: same function names, same float operation order, constants interpolated from the same JS imports (`${SKY_LUT_N}`), never retyped. No "improvements": an intentional change goes into the JS twin first, with an architect OK.
+2. Modulo: WGSL float `%` truncates, GLSL `mod` floors. Raw `%` is forbidden outside `common.wgsl.js`; use `fmodGlsl`/`imod`/`umod`. No `round` (WGSL rounds half-even), use `floor(x + 0.5)`. No `dpdx/dpdy/fwidth`, no `frag_depth`; `textureSample` only in the present pass. `atan(y,x) -> atan2`, `inversesqrt -> inverseSqrt`, `floatBitsToUint -> bitcast<u32>`, `texelFetch -> textureLoad(t, c, 0)`, `gl_FrontFacing -> @builtin(front_facing)`.
+3. Hash constants: `u32` runtime math with `u` literals (const-expression overflow is a WGSL compile error).
+4. **Y/Z conventions** (every texture's memory rows stay identical to WebGL2, so readbacks and the twin compare unchanged): fullscreen cell passes index by `@builtin(position).xy` exactly as GLSL uses `gl_FragCoord` (both are memory rows, no flip). Raster vertex shaders end with `pos.y = -pos.y; pos.z = 0.5 * (pos.z + pos.w);` (GL clip-y and [-1,1] depth to WebGPU) and those pipelines set `frontFace:'cw'`; JS matrices stay untouched. The present pass takes the cell row from `position.y` directly (canvas row 0 = top) and does not copy RenderTargetGL's flip.
+5. Flat varyings: the 3 vertices of a triangle carry identical flat data, so WGSL first-vertex vs GL last-vertex never matters; keep it that way.
+6. Sun shadow map (WG-3d): `depth32float`; the shadow vertex shader maps z into [0.5, 1] so the float depth-bias unit is 2^-24 everywhere (= the twin's 24-bit model); `shadowParity` converts GPU depth back to 24-bit units before the 16-ULP compare.
+7. Not ported: `dda.frag`, `terrain.frag` (caster), `voxel.frag` (caster) - dead on the mesh renderer, deleted in WG-5.
+
+**38.6 Readback and `?gpucompare=1`.** `readback()`, `readbackGeometry()`, `readbackLight()`, `readbackWater()`, `readbackShadowDepthBits()` and `rt.readbackPresent()` keep their payloads but return Promises on WebGPU: the device records `copyTextureToBuffer` into the current frame's encoder at call time (rows padded to 256 B, staging buffer cached per size), `mapAsync`, de-pads into `out`; later frames cannot change the result. `game/js/dev/modes/gpucompare.js` `await`s every readback (works on both backends); the `gpuCompare.js` comparators are unchanged. `readbackPresent().sampledOwnTextures` = the RT's last present bind group used its own fg/bg. WebGPU rows must reach the WebGL2 PASS set (D-039 baselines carried, never widened). Readbacks never run in the frame loop.
+
+**38.7 Switch, headless capture, Chromium target, timer.**
+- **`?backend=webgpu|webgl2`** (D-044 item 5; not `?gpu=webgpu`: `?gpu=0` keeps meaning "GPU cell pipeline off", which stays orthogonal and is how WG-1 runs the CPU path on a WebGPU present). Default `webgl2` until WG-5; a `webgpu` request that fails create/self-test warns and falls back to webgl2 until WG-5.
+- `tools/capture-browser.mjs --backend webgpu` adds the URL param and Chromium flags `--enable-unsafe-webgpu --ignore-gpu-blocklist` (plus `--enable-webgpu-developer-features` in `--mode bench`: unquantised timestamps); with `--swiftshader`: `--enable-unsafe-webgpu --use-webgpu-adapter=swiftshader` (CPU fallback adapter: correctness only, never bench numbers). `--use-angle=*` is not passed on WebGPU (Dawn picks D3D12/Metal/Vulkan). `caps.softwareRenderer` = fallback adapter or adapter info naming SwiftShader; the gate's software warning reads it. New modes: `--mode webgpu-probe` (WG-1a), `--mode wgsl` (WG-1c1: every `WGSL_MODULES` entry through `createShaderModule` + `getCompilationInfo`, exit 1 on any error), `--mode presentdiff` (WG-1c2).
+- **Target:** browser build Chrome/Edge desktop >= 128; Electron >= 32 (Chromium 128) is the floor; EP-DESKTOP pins the then-current stable Electron and adds `enable-unsafe-webgpu` only on Linux. Only core WebGPU + `timestamp-query` are used, so the floor holds.
+- **Timer:** `timestamp-query` through `timestampWrites` (the first pass in a `timer.begin(slot)` bracket writes the start index, every pass in the bracket writes the end index, last wins); resolved into a 3-deep map-buffer ring (no stalls); `caps.timerQueries=false` without the feature.
+- **Budgets.** JS: device cost <= 2 us per draw (setPipeline only on change, 2 setBindGroup, setVertexBuffer, draw), encoder + submit <= 0.2 ms/frame; total render JS on WebGPU <= the MESH-PERF-01 WebGL2 bar. Allocation: zero per draw; per frame only unavoidable API objects (1 encoder, 1 pass encoder per pass, 1 canvas view; <= ~20), pass descriptors built once and mutated. GPU: the 4 ms budget unchanged.
+
+**38.8 Steps** (each <= 1 programmer-day, one topic; all PC-B cross-track, ending in `arch-review` on PC-A; PC-A runs the gpucompare/bench gates; WG-1a needs no engine-render knowledge and goes first).
+
+| Step | Files | Done when |
+|---|---|---|
+| **WG-1a** WebGPU probe + capture flags | `engine/render/gpu/device/webgpuProbe.js` (+ `.test.js`), `game/webgpu-probe.html`, `game/js/dev/webgpuProbe.js`, `tools/capture-browser.mjs` (+ test) | `probeWebGpu()` returns `{available, adapter:{vendor, architecture, description, fallback}, features[], limits{38.4 list + maxTextureDimension2D, maxUniformBufferBindingSize, maxBindGroups, maxDynamicUniformBuffersPerPipelineLayout}, requiredOk, missing[]}`; pure `evaluateWebGpuLimits(limits, features)` Node-tested (all pass, each required limit short, no adapter); page sets `window.__webgpuProbe`; `--backend webgpu`/`--swiftshader` flag building Node-tested; `--mode webgpu-probe` prints the JSON; results on PC-B's GPU and on SwiftShader pasted into the row |
+| WG-1b1 device shape | `GpuDevice.js` typedefs (38.3), `wgsl/uniformBlock.js` (+ test), Node mock in `engine/test/assert.js`, GL2 `writeTexture/submit/canvasTarget` | `GPU_DEVICE_METHODS` + shape tests updated on mock and GL2; uniformBlock offsets match WGSL rules (f32/vec2/vec3/vec4/mat4/arrays); WebGL2 gpucompare unchanged |
+| WG-1b2 `GpuDeviceWebGPU` | `device/GpuDeviceWebGPU.js`, `device/createGpuDevice.js`, `tools/check-deps.mjs` rule (+ fixture test) | `selfTestDevice`: 4x4 MRT draw (2x rgba32uint + r32uint + depth) + uniform ring + async readback exact, run on the probe page; check-deps rule of 38.2 |
+| WG-1c1 WebGPU present | `glyphAtlas.js` (extract), `RenderTargetWebGPU.js`, `wgsl/present.wgsl.js`, `wgsl/index.js`, capture `--mode wgsl` | scene + UI layer present; `readbackPresent` equals the CPU cells byte for byte; `--mode wgsl` 0 errors |
+| WG-1c2 switch | `createRenderer.js`, `game/js/main.js` (edited by the PC-B main session), `tools/editor/frame.js`, `game/js/rts/rtsMain.js`, F3 backend line, capture `--mode presentdiff` | `?backend=webgpu&gpu=0` plays on the CPU path; presentdiff vs webgl2 at 3 poses: >= 99.5 % pixels identical, max channel diff <= 2 (LINEAR atlas) |
+| WG-2a pipeline skeleton | `wg/WgCellPipeline.js`, `wg/targets.js`, `wgsl/debug.wgsl.js` | public surface of 38.1, grid targets, debug view of the G-buffer, async `readbackGeometry` |
+| WG-2b mesh raster | `wg/passRaster.js`, `wgsl/mesh.wgsl.js` (static, instanced, cloth; kind-9 smooth normals) | gpucompare geometry rows on mesh poses = WebGL2 set |
+| WG-2c terrain + voxel-part raster | `wgsl/terrainRaster.wgsl.js`, `wg/passRaster.js` | geometry PASS set on all mesh poses = WebGL2 |
+| WG-3a resolve + deriv | `wg/passCell.js`, `wgsl/resolve.wgsl.js`, `wgsl/deriv.wgsl.js` | resolved geometry rows = WebGL2 |
+| WG-3b light | `wgsl/light.wgsl.js` | light rows = WebGL2 on shadow-free poses |
+| WG-3c shade + edge | `wgsl/shade.wgsl.js`, `wgsl/edge.wgsl.js` | `?gpucompare=1` and `=shade` cell rows = WebGL2 on shadow-free poses |
+| WG-3d sun shadow map | `wg/passShadow.js`, `wgsl/shadow.wgsl.js`, `shadowParity.js` conversion | shadow depth parity (38.5 item 6) + shadow poses = WebGL2 |
+| WG-3e water | `wg/passWater.js`, `wgsl/water.wgsl.js`, `wgsl/waterComposite.wgsl.js` | water rows = WebGL2 |
+| WG-3f sprites + overlay | `wg/passSprites.js`, `wgsl/sprites.wgsl.js`, overlay port | **full PASS set = WebGL2**; from here new render features are WGSL-only |
+| WG-4a compute cull | device compute additions (38.3), `wgsl/cull.wgsl.js`, `wg/passCull.js` | frustum + distance cull + LOD pick -> indirect args per MESH-INST-01 batch; drawn set equals the CPU cull on bench poses |
+| WG-4b shadow-caster cull + LOD dither | cull kernel, mesh/shadow WGSL | shadow PASS set unchanged; caster list from the GPU |
+| WG-4c gate (PC-A) | - | owner walk at `?pose=roadSouth`, full detail, ~300 placements; F3 p95 vs the MESH-PERF-01 bar |
+| WG-5a delete WebGL2 | remove `GpuCellPipeline`, `GpuDeviceGL2`, `glsl/`, `gridTargets`, `glUtil`, GL parts of `GpuTimer`, `RenderTargetGL`, dda | suites + check-deps green, default `webgpu` |
+| WG-5b "WebGPU required" | gate screen, tool defaults (`--backend webgpu`), docs | screen shown without WebGPU or on a failed self-test |
+
+**Do not:** port the dda/terrain-caster/voxel-caster shaders; add storage buffers before WG-4 (data textures stay textures, packers unchanged); write GLSL for anything new; touch `engine/physics/`; read `device.backend` outside `createRenderer.js` and F3; call `navigator.gpu` from `WgCellPipeline`; widen a gpucompare threshold to make a WGSL row pass.
