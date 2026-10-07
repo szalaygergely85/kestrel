@@ -66,3 +66,18 @@ export function textureLoad(tex, c) {
   if (!t || c.x < 0 || c.y < 0 || c.x >= tex.w || c.y >= tex.h) throw new Error(`textureLoad out of range ${c.x},${c.y}`);
   return { x: t[0], y: t[1], z: t[2], w: t[3] };
 }
+
+/**
+ * WG-3e/3f: distinct numeric literal values (hex, float, int; u/f suffix ignored; 0 and 1 dropped as structural) of a source text.
+ * Used to check that a WGSL body contains exactly the constants of its GLSL twin (a mutated or forgotten constant shows up as a set difference).
+ */
+export function numericLiterals(src) {
+  const out = new Set();
+  const re = /\b(0x[0-9a-fA-F]+)u?\b|(?<![\w.])(\d+\.\d*(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+|\d+)[uf]?(?![\w])|(?<![\w])(\.\d+)/g;
+  let m;
+  while ((m = re.exec(src.replace(/\/\/[^\n]*/g, '')))) {
+    const v = Number(m[1] ?? m[2] ?? m[3]);
+    if (v !== 0 && v !== 1) out.add(v);
+  }
+  return out;
+}
