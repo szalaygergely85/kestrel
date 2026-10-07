@@ -53,6 +53,7 @@ import { deriveVoxModelName } from './voxImportName.js';
 import { createRebuildScheduler } from './rebuildScheduler.js';
 import { createIconCache, createIconQueue, iconModel } from './iconFit.js';
 import { createIconRenderer } from './iconRender.js';
+import { EDITOR_PLATE_BG } from './overlayStyle.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -428,7 +429,7 @@ function drawTerrainCursor() {
     const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: tb.terrain.heightAt(x, y) + 0.15 }, frame.renderer);
     if (!(p.depth > 0)) continue;
     const c = Math.round(p.col), r = Math.round(p.row);
-    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) rt.setCell(c, r, 'o', hex);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) rt.setCell(c, r, 'o', hex, EDITOR_PLATE_BG);
   }
 }
 
@@ -2075,7 +2076,7 @@ function drawAssetGhost() {
   const goldHex = (assets.palette.colors && assets.palette.colors.gold) || '#ffd24a';
   const dimHex = (assets.palette.colors && assets.palette.colors.uiDim) || '#8b949e';
   const bgHex = '#0c120c'; // matches drawHelpOverlay's panel background
-  rt.setCell(c, r, '+', goldHex);
+  rt.setCell(c, r, '+', goldHex, bgHex);
   drawText(rt, c + 1, r, ` ${assetDrag.modelKey}`, dimHex, bgHex);
 }
 
