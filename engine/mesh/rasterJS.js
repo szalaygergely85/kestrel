@@ -25,6 +25,7 @@ import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
 import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART } from './DrawList.js';
+import { MaskAtlas } from '../render/MaskAtlas.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
 /** Sub-pixel bits (1/256 px vertex snap, 27.7 item 1). */
@@ -67,6 +68,7 @@ export const BIAS_UNITS = 1;
  * @property {Float64Array|Float32Array} [structFoot] - x0, y0, x1, y1 per placed structure (world m): terrain
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
+ * @property {import('../render/MaskAtlas.js').MaskAtlas|null} [maskAtlas] - ALPHA-01b: needed for meshes with `maskRanges`
  * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
  * @property {{factor: number, units: number}} [depthBias] - ME-15a (27.9a items 5, 9): GPU polygon-offset twin
  *   (`zn += factor * max(|dz/dx|, |dz/dy|) + 2 * units * 2^-24`, NDC z in [-1,1]) applied to EVERY item
@@ -136,7 +138,7 @@ export function clearRasterTarget(t) {
 // ---------------------------------------------------------------------------
 // Module scratch (zero allocation - 27.15.0)
 // ---------------------------------------------------------------------------
-const STRIDE = 12; // [xClip,yClip,zClip,wClip, wx,wy,wz, u,v, nx,ny,nz]
+const STRIDE = 14; // [xClip,yClip,zClip,wClip, wx,wy,wz, u,v, nx,ny,nz, mu,mv] (mu,mv = ALPHA-01b uvMask lanes)
 const CLIP_MAX = 16; // 3 input verts + <=5 planes -> <=8, generous margin
 const _bufA = new Float64Array(CLIP_MAX * STRIDE);
 const _bufB = new Float64Array(CLIP_MAX * STRIDE);
@@ -147,6 +149,9 @@ const _instItem = {
   matrix: _matScratch, planeIdOr: 0, objectId: 0, zBase: 0, flags: 0,
   partMatrices: /** @type {Float64Array|null} */ (null), partFlags: /** @type {Uint8Array|null} */ (null),
 };
+// ALPHA-01b (37.17): the current range's mask state (set per range by rasterDrawList, copied into _info per triangle)
+let _atlas = /** @type {MaskAtlas|null} */ (null);
+let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
@@ -157,6 +162,7 @@ const _info = {
   zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
+  maskW: -1, maskX0: 0, maskY0: 0, maskH: 0, maskCut: 0, // ALPHA-01b: maskW < 0 = opaque range (no discard)
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
 };
 
@@ -234,6 +240,9 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   let u = 0, v = 0;
   if (mesh.layout === 'static' || mesh.layout === 'cloth') { u = mesh.uv[vIdx * 2]; v = mesh.uv[vIdx * 2 + 1]; }
 
+  let mu = 0, mv = 0;
+  if (mesh.uvMask) { mu = mesh.uvMask[vIdx * 2]; mv = mesh.uvMask[vIdx * 2 + 1]; }
+
   const xClip = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
   const yClip = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
   const zClip = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
@@ -243,6 +252,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   outBuf[off + 4] = wx; outBuf[off + 5] = wy; outBuf[off + 6] = wz;
   outBuf[off + 7] = u; outBuf[off + 8] = v;
   outBuf[off + 9] = nx; outBuf[off + 10] = ny; outBuf[off + 11] = nz;
+  outBuf[off + 12] = mu; outBuf[off + 13] = mv;
 }
 
 /** Plane 0 = near (w - PROJ_NEAR >= 0); 1..4 = guard band (27.15.4). */
@@ -313,9 +323,9 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
   let X1 = (W / 2) * (buf[o1] / w1) + W / 2, Y1 = (H / 2) * (buf[o1 + 1] / w1) + H / 2, zn1 = buf[o1 + 2] / w1, iw1 = 1 / w1;
   let X2 = (W / 2) * (buf[o2] / w2) + W / 2, Y2 = (H / 2) * (buf[o2 + 1] / w2) + H / 2, zn2 = buf[o2 + 2] / w2, iw2 = 1 / w2;
 
-  let wx0 = buf[o0 + 4], wy0 = buf[o0 + 5], wz0 = buf[o0 + 6], u0a = buf[o0 + 7], v0a = buf[o0 + 8], nx0 = buf[o0 + 9], ny0 = buf[o0 + 10], nz0 = buf[o0 + 11];
-  let wx1 = buf[o1 + 4], wy1 = buf[o1 + 5], wz1 = buf[o1 + 6], u1a = buf[o1 + 7], v1a = buf[o1 + 8], nx1 = buf[o1 + 9], ny1 = buf[o1 + 10], nz1 = buf[o1 + 11];
-  let wx2 = buf[o2 + 4], wy2 = buf[o2 + 5], wz2 = buf[o2 + 6], u2a = buf[o2 + 7], v2a = buf[o2 + 8], nx2 = buf[o2 + 9], ny2 = buf[o2 + 10], nz2 = buf[o2 + 11];
+  let wx0 = buf[o0 + 4], wy0 = buf[o0 + 5], wz0 = buf[o0 + 6], u0a = buf[o0 + 7], v0a = buf[o0 + 8], nx0 = buf[o0 + 9], ny0 = buf[o0 + 10], nz0 = buf[o0 + 11], mu0 = buf[o0 + 12], mv0 = buf[o0 + 13];
+  let wx1 = buf[o1 + 4], wy1 = buf[o1 + 5], wz1 = buf[o1 + 6], u1a = buf[o1 + 7], v1a = buf[o1 + 8], nx1 = buf[o1 + 9], ny1 = buf[o1 + 10], nz1 = buf[o1 + 11], mu1 = buf[o1 + 12], mv1 = buf[o1 + 13];
+  let wx2 = buf[o2 + 4], wy2 = buf[o2 + 5], wz2 = buf[o2 + 6], u2a = buf[o2 + 7], v2a = buf[o2 + 8], nx2 = buf[o2 + 9], ny2 = buf[o2 + 10], nz2 = buf[o2 + 11], mu2 = buf[o2 + 12], mv2 = buf[o2 + 13];
 
   let Xs0, Ys0, Xs1, Ys1, Xs2, Ys2;
   if (ctx.snap === false) {
@@ -343,6 +353,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
     t = wx1; wx1 = wx2; wx2 = t; t = wy1; wy1 = wy2; wy2 = t; t = wz1; wz1 = wz2; wz2 = t;
     t = u1a; u1a = u2a; u2a = t; t = v1a; v1a = v2a; v2a = t;
     t = nx1; nx1 = nx2; nx2 = t; t = ny1; ny1 = ny2; ny2 = t; t = nz1; nz1 = nz2; nz2 = t;
+    t = mu1; mu1 = mu2; mu2 = t; t = mv1; mv1 = mv2; mv2 = t;
     A2 = -A2;
   }
 
@@ -390,6 +401,12 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       if (target.depthOnly) {
         if (zn < -1) continue; // GPU near-clip parity (depth-only path) // ME-15a shadow map: depth (+ terrain footprint carve) only
         if (zn < target.zbuf[idx]) {
+          if (info.maskW >= 0) { // ALPHA-01b: the shadow twin skips the same fragments as the colour pass
+            const iqm = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
+            const mU = (l0 * mu0 * iw0 + l1 * mu1 * iw1 + l2 * mu2 * iw2) * iqm;
+            const mV = (l0 * mv0 * iw0 + l1 * mv1 * iw1 + l2 * mv2 * iw2) * iqm;
+            if (_atlas.sample(info.maskX0, info.maskY0, info.maskW, info.maskH, mU, mV) < info.maskCut) continue;
+          }
           if (info.isTerrain && info.structCount > 0) {
             const iq = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
             const cwx = (l0 * wx0 * iw0 + l1 * wx1 * iw1 + l2 * wx2 * iw2) * iq;
@@ -414,6 +431,11 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         let wnz = (l0 * nz0 * iw0 + l1 * nz1 * iw1 + l2 * nz2 * iw2) * invq;
         const nlen = Math.hypot(wnx, wny, wnz) || 1;
         wnx /= nlen; wny /= nlen; wnz /= nlen;
+        if (info.maskW >= 0) { // ALPHA-01b (37.17 item 3): discard below the cutoff before any G-buffer write (zbuf untouched)
+          const mU = (l0 * mu0 * iw0 + l1 * mu1 * iw1 + l2 * mu2 * iw2) * invq;
+          const mV = (l0 * mv0 * iw0 + l1 * mv1 * iw1 + l2 * mv2 * iw2) * invq;
+          if (_atlas.sample(info.maskX0, info.maskY0, info.maskW, info.maskH, mU, mV) < info.maskCut) continue;
+        }
         if (flipN) { wnx = -wnx; wny = -wny; wnz = -wnz; }
 
         let face = info.face, mat = info.mat, outU = u, outV = v;
@@ -520,7 +542,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
       _info.cullBack = false;
     } else {
-      _info.twoSided = false;
+      _info.twoSided = _mW >= 0; // ALPHA-01b (37.17 item 4): masked ranges flip N on back faces like cloth
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;
       const flat0 = mesh.flat[v0 * FLAT_STRIDE];
       const flat1 = mesh.flat[v0 * FLAT_STRIDE + 1];
@@ -541,13 +563,14 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.partAxisAligned = instAligned !== undefined ? instAligned : (isVoxelItem && (item.partFlags[partIdx] & 1) !== 0);
       _info.kind7Mat = null;
       _info.biasFlag = 0;
-      _info.cullBack = isVoxelItem || instAligned !== undefined;
+      _info.cullBack = (isVoxelItem || instAligned !== undefined) && _mW < 0;
     }
     if (ctx.depthBias) { // ME-15a: the shadow pass biases every caster
       _info.biasFlag = 1; _info.biasFactor = ctx.depthBias.factor; _info.biasUnits = ctx.depthBias.units;
     } else {
       _info.biasFactor = BIAS_FACTOR; _info.biasUnits = BIAS_UNITS;
     }
+    if (isCloth || isTerrain) { _info.maskW = -1; } else { _info.maskW = _mW; _info.maskX0 = _mX0; _info.maskY0 = _mY0; _info.maskH = _mH; _info.maskCut = _mCut; }
     _info.zBase = item.zBase;
     _info.mirror = item.mirror | 0;
     _info.objectId = item.objectId;
@@ -609,6 +632,7 @@ function rasterInstanced(mesh, item, target, ctx) {
  * @param {RasterCtx} ctx
  */
 export function rasterDrawList(list, target, ctx) {
+  _atlas = ctx.maskAtlas || null; _mW = -1;
   for (let i = 0; i < list.count; i++) {
     const item = list.items[i];
     if (item.type === DRAW_WATER) { // US-055a2a: no MeshData; the shared clipmap + the frame's selection
@@ -624,6 +648,18 @@ export function rasterDrawList(list, target, ctx) {
       for (let p = 0; p < ranges.length; p++) {
         rasterRange(mesh, item, target, ctx, ranges[p].start, ranges[p].count, p, true);
       }
+    } else if (mesh.maskRanges && _atlas) {
+      // ALPHA-01b (37.17 item 10): masked static mesh -> one rasterRange per mesh range (GPU twin: one draw per range), same
+      // triangle order as one pass because the ranges are contiguous and ordered.
+      const mr = mesh.maskRanges, rs = mesh.ranges;
+      const first = item.rangeFirst, last = first + item.rangeCount;
+      for (let p = 0; p < rs.length; p++) {
+        const a = Math.max(first, rs[p].start), b = Math.min(last, rs[p].start + rs[p].count);
+        if (b <= a) continue;
+        _mW = mr[p * 5 + 2]; _mX0 = mr[p * 5]; _mY0 = mr[p * 5 + 1]; _mH = mr[p * 5 + 3]; _mCut = mr[p * 5 + 4];
+        rasterRange(mesh, item, target, ctx, a, b - a, 0, false);
+      }
+      _mW = -1;
     } else {
       rasterRange(mesh, item, target, ctx, item.rangeFirst, item.rangeCount, 0, false);
     }

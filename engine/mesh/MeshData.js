@@ -56,6 +56,7 @@ export const AO_FAR = 1e30;
  * @property {Record<string,string>} [mats] optional glTF material-name -> engine-material map
  * @property {boolean} matsResolved - true once mat bits are real MaterialTable ids
  * @property {number} meshVersion - bumped on every in-place rebuild
+ * @property {Int32Array} [maskRanges] - ALPHA-01b: draw copies only (MeshDrawCache), 5 ints per range: atlas x0,y0,w,h (w=-1 = opaque), cutoff byte
  * @property {boolean} [castShadow] - MESH-SHADOW-01: false = never in the sun shadow list (absent = true); a placement can override
  * @property {boolean} [collide] - MESH-PHYS-01: false = walk-over piece, no collider at all (absent = true)
  * @property {Float32Array} [collider] - MESH-PHYS-01: collision proxy triangles (9 floats/tri, mesh-local); absent = collide against the render triangles

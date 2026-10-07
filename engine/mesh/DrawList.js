@@ -17,6 +17,7 @@
 // (literal copy of `compositor.js`'s `renderWorld` insertion sort).
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
 import { resolveMats } from './MeshData.js';
+import { cutoffByte } from '../render/MaskAtlas.js';
 import { localDirToWorld } from '../core/transform.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
@@ -342,10 +343,13 @@ export class MeshDrawCache {
   /**
    * @param {import('./MeshData.js').MeshData} mesh registry mesh (`mats`: material name -> palette key)
    * @param {(key: string) => number} idFor palette key -> material id
+   * @param {import('../render/MaskAtlas.js').MaskAtlas|null} [atlas] ALPHA-01b: needed when a range carries `mask`
+   *   (-> `copy.maskRanges`, Int32Array(ranges*5) = [x0, y0, w, h, cutoffByte] per range, w = -1 opaque; absent when no
+   *   range is masked)
    */
-  get(mesh, idFor) {
+  get(mesh, idFor, atlas) {
     const hit = this._map.get(mesh);
-    if (hit && hit.idFor === idFor) return hit.copy;
+    if (hit && hit.idFor === idFor && (!hit.atlas || (hit.atlas === atlas && hit.atlasVersion === atlas.version))) return hit.copy;
     const mats = mesh.mats || {};
     const copy = { ...mesh, flat: mesh.flat.slice(), matsResolved: false };
     resolveMats(copy, (name) => {
@@ -353,7 +357,21 @@ export class MeshDrawCache {
       if (key === undefined) throw new Error(`mesh "${mesh.id}": material "${name}" has no mats entry`);
       return idFor(key);
     });
-    this._map.set(mesh, { idFor, copy });
+    let usedAtlas = null;
+    if (mesh.ranges.some((r) => r.mask)) {
+      if (!atlas) throw new Error(`mesh "${mesh.id}": masked ranges need a MaskAtlas (cache.get(mesh, idFor, atlas))`);
+      const mr = new Int32Array(mesh.ranges.length * 5);
+      for (let i = 0; i < mesh.ranges.length; i++) {
+        const m = mesh.ranges[i].mask, o = i * 5;
+        if (!m) { mr[o + 2] = -1; continue; }
+        const rc = atlas.rect(m.tex);
+        if (!rc) throw new Error(`mesh "${mesh.id}": mask "${m.tex}" not in the atlas`);
+        mr[o] = rc.x0; mr[o + 1] = rc.y0; mr[o + 2] = rc.w; mr[o + 3] = rc.h; mr[o + 4] = cutoffByte(m.cutoff);
+      }
+      copy.maskRanges = mr;
+      usedAtlas = atlas;
+    }
+    this._map.set(mesh, { idFor, copy, atlas: usedAtlas, atlasVersion: usedAtlas ? usedAtlas.version : -1 });
     return copy;
   }
 }
@@ -405,7 +423,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     const si = _mOrder[k];
     if (groups && groups.has(si)) { groups.chosen[si] = 1; continue; } // MESH-INST-01: drawn by its instanced group (same nearest-64 set as singles)
     const s = structs[si];
-    const mesh = cache.get(s.mesh, idFor);
+    const mesh = cache.get(s.mesh, idFor, world.maskAtlas);
     const item = list.push(mesh, DRAW_STATIC);
     frameMatrix12(s.frame, item.matrix);
     item.zBase = s.origin.z;
