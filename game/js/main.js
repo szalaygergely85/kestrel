@@ -71,6 +71,7 @@ import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
+import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
 import { START_DEMO, START_FULL } from './quest/startConfig.js';
@@ -163,6 +164,7 @@ const bundle = await loadContentPack('../content/manifest.json');
 // the registry is built, so the rest of boot is unaware anything special
 // happened - same content shape either way.
 applyPlaytestOverlay(bundle);
+if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 
 // ART-01a (architecture.md 37.18 item 2): `?look=<key>` selects the active
@@ -451,6 +453,9 @@ if (waterfallPreset) {
 // US-053a: created once for the page's lifetime (not per world load) - it follows 'world:loaded'/
 // 'entity:added'/'entity:removed' internally and needs no dispose/recreate from this session.
 const entityEmitters = createEntityEmitters(null, engine.particles, engine.events, (k) => engine.particles.defIdOf(k));
+// SPELL-01b: the fireball view lives for the page; `bind` runs on every 'world:loaded' (lights + sim are rebuilt per world).
+const fbView = window.ASSETS.spellFx ? createFireballView({ particles: engine.particles, palette: assets.palette, fx: window.ASSETS.spellFx, cfg: FIREBALL_CFG, events: engine.events }) : null;
+const _emberEye = new Float64Array(3), _emberWorld = new Float64Array(3);
 
 // ---- US-041a (15.3 item 1): the REAL gameplay voxel pool - `collect(world,
 // cam)` fills it from `components.voxel` entities each frame (renderer holds
@@ -783,6 +788,7 @@ function runGame(mode, cinematic = null) {
       fbTargets = createTargetables(world, engine.events);
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n) });
       hands.register('spell.fireball', fireball);
+      if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
       if (targeting) targeting.dispose(); // same "drop the old world's listeners first" precedent as vitals.dispose() below
@@ -1046,6 +1052,7 @@ function runGame(mode, cinematic = null) {
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
           fireball.step(playerHandle.data, hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+          if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
         }
       }
       if (sword) {
@@ -1205,7 +1212,7 @@ function runGame(mode, cinematic = null) {
       // each placed structure at its own origin internally (7.3).
       const eye = Camera.fromEntityInto(playerHandle.data, vitals ? vitals.eyeH() : undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera); US-080a2: eyeH sinks while dead
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
-      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0); // US-080a2 (30.2): hurt pitch kick, render eye only - never written into `look`
+      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
@@ -1213,6 +1220,15 @@ function runGame(mode, cinematic = null) {
       // handler on every restart - rebind it here, or `fb.lights` would keep
       // pointing at the previous world's LightSet (beacon state etc.).
       fb.lights = lightSet;
+      if (fbView) { // SPELL-01b: ball/flash lights + the spell-hand coal glow, before lights.update below (glow = last frame's, 1 frame lag)
+        fbView.present(alpha, cam);
+        const sh = hands && !cinematic && spellVmH ? hands.handOf(SPELL_HAND_ITEM) : null;
+        if (sh) {
+          _emberEye[0] = (sh === 'left' ? -1 : 1) * FIREBALL_CFG.castOffset.right; _emberEye[1] = -FIREBALL_CFG.castOffset.fwd; _emberEye[2] = -FIREBALL_CFG.castOffset.down;
+          spellVmH.vm.eyeToWorld(cam, _emberEye, _emberWorld);
+          fbView.presentEmber(true, spellVmH.glow, _emberWorld[0], _emberWorld[1], _emberWorld[2]);
+        } else fbView.presentEmber(false, 1, 0, 0, 0);
+      }
       // US-006: carried-light sync (US-012's lantern, `components.light`)
       // then flicker/vis-grid update, once per rendered frame, BEFORE either
       // the CPU (`renderWorld`) or GPU (`gpuPipeline.frame`) path reads
@@ -1250,7 +1266,7 @@ function runGame(mode, cinematic = null) {
       // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
-      sprites.render(fb, engine.world, cam); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      sprites.render(fb, engine.world, cam, fbView ? fbView.extra : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
@@ -1287,7 +1303,7 @@ function runGame(mode, cinematic = null) {
       if (spellVmH) {
         const sbody = playerHandle.data.components.body;
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
-        presentSpellHand(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving);
+        presentSpellHand(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpu) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()

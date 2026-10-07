@@ -28,9 +28,13 @@ export function createSpriteSystem({ assets, rt, gpuPipeline }) {
 
   return {
     atlas, pool, pass,
-    /** Per frame: collect + project; JS `drawSprites` unless the GPU pass composites them inside present(). */
-    render(fb, world, cam) {
+    /**
+     * Per frame: collect + project; JS `drawSprites` unless the GPU pass composites them inside present().
+     * `extra(pool)` (optional, SPELL-01b / 37.8): pushes view-only sprites (fireballs, blasts) between collect and project.
+     */
+    render(fb, world, cam, extra) {
       pool.collect(world);
+      if (extra) extra(pool);
       // US-011 (7.5 item 4): per-sprite light when a real LightSet is
       // active (`fb.lights`, built by main.js's `buildLightSet`), else the
       // old uniform ambient - same fallback `renderWorld`/`lightSurfaces` use.
