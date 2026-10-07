@@ -47,3 +47,9 @@ Known-FAIL baseline below is unchanged under D-039. Geometry columns are mesh8a 
 | world_m1: forestWalk (ME-06c3, dense canopy) | 10 / 3 / 0 | 0 | 3 | 120 / 0 / 0 | 115 / 97.71780115102203 |
 
 Both pitched view-model rows still have one item in each twin and vmOk=true. Sunlit mismatches are zero in all nine known-FAIL rows. Lit-flip fractions: fpLevel0 0.00010416666666666667; both viewModel pitch0 rows 0.00020833333333333335; viewModel pitch20 0.00020885547201336674; all others 0.
+
+## Addendum 2026-10-07 (HANDS-01c): `handsSwapped` recorded as D-039 known-FAIL
+
+Row `world_m1: viewModel handsSwapped (HANDS-01c, sword right = mirrored + spell glove left, crash room)`, 240x90 grid, RTX4060 ANGLE/D3D11, baseline = 8174d21 in the clean worktree (144 rows, 27 FAIL before and after, 0 status changes).
+Architect 2026-10-07: det<0 path is correct in both twins; the residue is the edge-on voxel-face coverage tie. Confirmed with `cmpLight.dLSample` (new, diagnostic only): first dL cell idx 8767 = col 127 / row 54, kind 8, face 7 (both twins), objectId 15 (both), JS normal (-0.388, 0.2096, 0.8975) vs GPU (-0.5993, 0.6824, -0.4186), angle 90.004 deg (not 180).
+Metrics (must not get worse): faceViol 1, depthViol 1, uvViol 5, nrmViol 5 (nrmMaxDeg 90.004), dLViol 3 (dLMax 0.0626), kind 100 %, fgMax 188 (fgMaxNonK8 4), vmItems 2/2, vmOk true.
