@@ -629,11 +629,14 @@ function applySunOverride(world, lights, sun) {
   };
 }
 
-function runGpuCompareSceneMode(ctx) {
+async function runGpuCompareSceneMode(ctx) {
   const {
-    gpuPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
+    gpuPipeline: glPipeline, wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
     compareNoVoxels, renderer, terrainEnabled, rayParam, params, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR, fadeLut,
   } = ctx;
+  // WG-2b: a ready WebGPU WgCellPipeline runs the GEOMETRY rows only (cells/light/shadow/overlay need WG-3); readbacks are awaited.
+  const wg = !glPipeline && wgPipeline && wgPipeline.ready ? wgPipeline : null;
+  const gpuPipeline = glPipeline || wg;
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
   if (rt.cols !== 160 || rt.rows !== 60) {
     console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
@@ -672,7 +675,7 @@ function runGpuCompareSceneMode(ctx) {
     waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // same designer table as the bound GPU pipeline
     viewModel: engine.viewModel, // US-078a: both twins draw the layer when a pose shows it
     // ME-15c: the JS twin renders the same sun shadow map as the GPU pass whenever the pipeline runs sun 'map'.
-    shadowOpts: renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,
+    shadowOpts: !wg && renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map' ? gpuPipeline.shadowOpts : null,
     // RE-15a fixes (28.13 point 4, PC-B Q7 item 1): host-owned "rendered frame" counter,
     // bumped once per pose below, before both twins (GPU + JS) run for that pose - replaces
     // the two independent per-caller counters compositor.js/GpuCellPipeline.js used to keep.
@@ -687,7 +690,7 @@ function runGpuCompareSceneMode(ctx) {
   let sampledOwnTextures = true;
   // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
   const shadowRows = [];
-  const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
+  const shadowRunner = !wg && renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
   // `&pose=<text>` (US-055a2b): run only the poses whose name contains <text> (case-insensitive); the last one stays on the canvas = an owner look,
@@ -745,18 +748,18 @@ function runGpuCompareSceneMode(ctx) {
     fbCompare.gpu = true;
     renderWorld(fbCompare, world, cam);
     gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
-    engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass composites inside present()
+    if (!wg) engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass composites inside present()
     rt.present(); // the GPU twin's actual raster work (rt's registered cell-pass hook -> `_hook` -> `_prepRaster`'s
     // `buildList` call) runs INSIDE this call, not inside `gpuPipeline.frame()` above (which only stashes cam/world
     // refs) - `engine.viewModel.stats` is ONE shared object both twins write through, so this must be captured
     // right here, after `present()`, before the JS/mesh twin below overwrites it (BUG-VM-001 item 5).
     const vmItemsGpu = engine.viewModel ? engine.viewModel.stats.items : 0;
-    const rb = rt.readbackPresent();
-    sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
-    const gpuFg = rb.fg, gpuBg = rb.bg;
-    const { GI, GA, Depth } = gpuPipeline.readbackGeometry();
-    const lightBuf = gpuPipeline.readbackLight();
-    const waterBits = poseName.includes('waterfall') ? gpuPipeline.readbackWater() : null;
+    const rb = wg ? null : await rt.readbackPresent();
+    if (rb) sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
+    const gpuFg = rb ? rb.fg : null, gpuBg = rb ? rb.bg : null;
+    const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
+    const lightBuf = wg ? null : await gpuPipeline.readbackLight();
+    const waterBits = !wg && poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null;
     if (shadowRunner) {
       const sd = shadowRunner.run(gpuPipeline);
       if (sd) {
@@ -782,7 +785,7 @@ function runGpuCompareSceneMode(ctx) {
     applySceneDim(fbCompare.rt, compareSceneDim);
     rt.gpuActive = wasActive;
     let ovlRes = null;
-    if (overlayOps) { // JS twin composite, then per-overlay-cell GPU-vs-twin check (28.9 bar)
+    if (overlayOps && !wg) { // JS twin composite, then per-overlay-cell GPU-vs-twin check (28.9 bar)
       engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth);
       ovlRes = compareOverlayCells(engine.overlay, rt.cells.fg, gpuFg, depthBuffer.depth);
       console.log(`[gpucompare] rtsOverlay: cells=${ovlRes.cells} shownTwin=${ovlRes.shownTwin} shownGpu=${ovlRes.shownGpu} hidden=${ovlRes.hidden} mismatch=${ovlRes.mismatch} boundary=${ovlRes.boundary} (${ovlRes.boundaryPct.toFixed(3)}% , <=0.5%)`);
@@ -796,6 +799,20 @@ function runGpuCompareSceneMode(ctx) {
       fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
       table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)),
     }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
+    const geomBaseOkG = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
+    // geometry-only verdict (same terms as the geometry half of the mesh gate below); recorded on both backends so a WebGL2 run is the WG-2b baseline
+    const geomOk = cmpGeom.pass || (geomBaseOkG && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0);
+    if (wg) {
+      const k8OkW = !(poseName.includes('voxel') || needK8) || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
+      let instOkW = true;
+      if (instAssert) { const st = engine.instances.stats; instOkW = st.instances + st.instancesCulled === instAssert.total && st.instancesCulled > 0 && st.instancesLod1 > 0 && st.instances > st.instancesLod1; }
+      const vmOkW = !vmAssert || (vmItemsGpu > 0 && vmItemsJs > 0);
+      const okW = geomOk && k8OkW && instOkW && vmOkW;
+      overallOk = overallOk && okW;
+      console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, cloth: gpuPipeline.stats.clothDraws })}`);
+      rowsOut.push({ pose: poseName, cmpGeom, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
+      continue;
+    }
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
     const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask);
     cmpLight.dLSample = describeCellNormals(gbuf, GI, cmpLight.dLSampleIdx, cols); // diagnostic only (HANDS-01c)
@@ -862,7 +879,7 @@ function runGpuCompareSceneMode(ctx) {
     }
     const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
     overallOk = overallOk && ok;
-    rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
+    rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, geomOk, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
   resetInstances();
@@ -874,7 +891,7 @@ function runGpuCompareSceneMode(ctx) {
   if (sprites.pass) sprites.pass.setSceneDim(compareSceneDim);
 
   let infoRows = null;
-  if (rayParam === 2) {
+  if (rayParam === 2 && !wg) {
     const pipeline2 = new GpuCellPipeline(rt, { rays: 2 });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
@@ -929,6 +946,8 @@ function runGpuCompareSceneMode(ctx) {
     `ref: ${GPU_COMPARE_REF_W}x${GPU_COMPARE_REF_H} @dpr ${GPU_COMPARE_REF_DPR}  cell: ${rt.pxCellW}x${rt.pxCellH}px` +
     `  aspect=${refScreenAspect.toFixed(4)}  fov=${HFOV_DEG} deg (fixed, window-independent)\n`;
   for (const r of rowsOut) {
+    if (r.wg) { text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose} [webgpu geometry]  kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  holes ${r.cmpGeom.holes}  geomViolCells ${r.cmpGeom.geomViolCells}  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}
+`; continue; }
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
       `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
       `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}  holes ${r.cmpGeom.holes} (must be 0)` +
@@ -940,6 +959,7 @@ function runGpuCompareSceneMode(ctx) {
       `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
       `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.sunMap ? r.cmpLight.litCells + ' lit' : r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)` +
       (r.cmpLight.sunMap ? `  [sun map] boundary ${r.cmpLight.boundaryCells} (${(r.cmpLight.boundaryFrac * 100).toFixed(2)}%)  n mismatch ${r.cmpLight.nMismatch} (${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%, <=1%)` : '') + '\n';
+    if (r.wg) continue;
     console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} meshTies=${r.cmpGeom.meshTies}/${r.cmpGeom.meshTiesMax}(k9=${r.cmpGeom.kind9Cells}${r.cmpGeom.meshTies ? ' cells ' + r.cmpGeom.meshTieCells.join(',') : ''}) edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip}${r.cmpLight.sunMap ? `, sunMap lit=${r.cmpLight.litCells} sunlitFrac=${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% boundary=${r.cmpLight.boundaryCells} nMismatch=${r.cmpLight.nMismatch}(${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%)` : ''})`);
   }
   for (const r of shadowRows) {
@@ -968,7 +988,7 @@ function runGpuCompareSceneMode(ctx) {
 
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
-  if (mode === '1') runGpuCompareSceneMode(ctx);
+  if (mode === '1') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else if (mode === 'shade') runGpuCompareShadeMode(ctx);
   else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
 }

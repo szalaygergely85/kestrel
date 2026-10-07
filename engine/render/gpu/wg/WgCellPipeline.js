@@ -4,7 +4,7 @@
 // ONLY to `this.device.*` (rt.device); no navigator.gpu / GPU* here (check-deps rule 17).
 //
 // The cell-pass hook writes geometry through passRaster then optionally displays its debug view. Terrain is WG-2c,
-// and the cloth multi-stream API needs PC-A's specification; encountering cloth disables this partial pipeline explicitly.
+// cloth uses the device extra-vertex-stream API.
 // `frameComplete` stays false until WG-3: main.js keeps CPU shading and rt.gpuActive stays false.
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
@@ -38,7 +38,7 @@ export class WgCellPipeline {
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
-      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0,
+      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, meshDraws: 0, vmDraws: 0, clothDraws: 0, instancedDraws: 0, instances: 0,
       waterSlots: 0, waterDraws: 0, shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, instancesCulled: 0, instancesLod1: 0,
       passMsP50: new Float32Array(PASS_NAMES.length).fill(NaN),
       passMsP95: new Float32Array(PASS_NAMES.length).fill(NaN),

@@ -1,16 +1,18 @@
 // WG-2b: device-only mesh raster. Terrain/voxel coverage is resolved in WG-2c; cell shading stays on the CPU until WG-3c.
-import { MeshBuffers, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
-import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL } from '../wgsl/raster.wgsl.js';
+import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
+import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
+import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
 const OBJECT = RASTER_BLOCK.field('objectId').word, AXIS = RASTER_BLOCK.field('axisAligned').word;
+const FLAT = RASTER_BLOCK.field('flat').word;
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
 const INSTANCE_LAYOUT = [
   { name: 'iRow0', location: 6, components: 4, type: 'float', offsetBytes: 0 },
@@ -35,17 +37,21 @@ export class WgRasterPass {
     this.vmClearOpts = { clear: { depth: 1 } };
     this.instanceBuffers = new Map();
     this.pipes = [];
+    this.clothStreams = [null];
     try {
       this.staticPipe = this._pipeline(RASTER_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none');
       this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back');
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
+      // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
+      this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
     } catch (e) { this.dispose(); throw e; }
   }
 
-  _pipeline(code, layout, stride, cull, frontFace = 'cw', instanced = false) {
+  _pipeline(code, layout, stride, cull, frontFace = 'cw', instanced = false, extraLayouts = null) {
     const vertex = { src: { wgsl: code }, layout, strideBytes: stride };
     if (instanced) { vertex.instanceLayout = INSTANCE_LAYOUT; vertex.instanceStrideBytes = INSTANCE_BYTES; }
+    if (extraLayouts) vertex.extraLayouts = extraLayouts;
     const pipe = this.device.createPipeline({ vertex, fragment: { src: { wgsl: code }, targets: 3 },
       bindings: { uniformBytes: (instanced ? RASTER_BLOCK : RASTER_BASE_BLOCK).sizeBytes, textures: [] },
       targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull, frontFace });
@@ -107,8 +113,25 @@ export class WgRasterPass {
   _draw(pipe, entry, count, first, instanceBuffer = null, instances = 1) {
     const b = this.bindDesc;
     b.uniforms = pipe === this.instancePipe ? this.u : this.baseU;
-    b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer;
+    b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer; b.extraBuffers = null;
     this.device.bind(pipe, b); this.device.draw(count, first, instances);
+  }
+
+  _cloths(list) {
+    let draws = 0;
+    const b = this.bindDesc;
+    for (let i = 0; i < list.count; i++) {
+      const item = list.items[i];
+      if (item.type !== DRAW_CLOTH || !item.mesh || item.rangeCount <= 0) continue;
+      const entry = this.buffers.getCloth(item.mesh);
+      this._item(item); this._model(item.matrix);
+      this.bits[FLAT] = 0; this.bits[FLAT + 1] = (KIND_MODEL | (FACE_PACKED << 8) | (item.mesh.matId << 16)) >>> 0;
+      this.clothStreams[0] = entry.uvBuffer;
+      b.uniforms = this.baseU; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer; b.instanceBuffer = null; b.extraBuffers = this.clothStreams;
+      this.device.bind(this.clothPipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
+      draws++;
+    }
+    return draws;
   }
 
   _voxels(list) {
@@ -130,10 +153,6 @@ export class WgRasterPass {
   run(p) {
     this.prepare(p);
     const list = this.list, d = this.device;
-    // Explicit blocker rather than silently disappearing deformable geometry.
-    for (let i = 0; i < list.count; i++) if (list.items[i].type === DRAW_CLOTH) {
-      throw new Error('WG-2b NEEDS PC-A: cloth requires the specified additional per-vertex buffer interface');
-    }
     d.beginPass(p._t.targetRaster, this.clearOpts);
     let staticDraws = 0, instancedDraws = 0, instances = 0;
     try {
@@ -160,6 +179,7 @@ export class WgRasterPass {
           this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
         }
       }
+      p.stats.clothDraws = this._cloths(list);
     } finally { d.endPass(); }
     if (this.vmList) {
       // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
