@@ -254,7 +254,8 @@ if (itemDefs) validateItemDefs(itemDefs);
 const P = assets.palette;
 const crosshairStyle = {
   crosshair: { dim: P.colors[P.ui.crosshair], active: P.colors[P.ui.crosshairActive] },
-  prompt: { color: P.colors[P.ui.prompt], keyColor: P.colors[P.ui.promptKey] },
+  // plateBg: same dark plate as the item toast (design/items.js plate [10,11,16]); without it drawText's bg falls back to opaque white
+  prompt: { color: P.colors[P.ui.prompt], keyColor: P.colors[P.ui.promptKey], plateBg: '#0a0b10' },
 };
 // US-017: same "ASSETS.uiStyle doesn't exist yet" fallback as crosshairStyle
 // above (US-012 precedent) - `uiStyle.fade`'s ramp/letterIndex/minGain and

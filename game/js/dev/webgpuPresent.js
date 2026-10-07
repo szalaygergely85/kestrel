@@ -1,7 +1,7 @@
 // game/js/dev/webgpuPresent.js - WG-1c1. Page harness for `tools/capture-browser.mjs --mode wgsl` (window.__wgsl: every
 // WGSL_MODULES entry through createShaderModule + getCompilationInfo) and `--mode webgpu-present` (window.__webgpuPresent:
 // a fixed synthetic cell grid + a UI layer presented by RenderTargetWebGPU; readbackPresent must equal the CPU cells byte
-// for byte, and canvas pixels of space-glyph cells must equal the cell bg exactly).
+// for byte, space-glyph cells equal their bg, and glyph pixels match an independent Canvas2D strip oracle).
 import { createGpuDevice, RenderTargetWebGPU, CellBuffer, WGSL_MODULES, summarizeCompilation } from '../../../engine/index.js';
 
 const out = document.getElementById('out');
@@ -40,12 +40,75 @@ async function compileCheck(device) {
   return { ok: errors === 0 && mods.length > 0, modules: mods.length, errors, results: mods };
 }
 
-async function presentCheck(device) {
+// Independent oracle: draw each character directly, without the shared atlas rasterizer.
+function glyphPixelCheck(rt, img, width, fg, bg) {
+  const cw = rt.pxCellW, ch = rt.pxCellH, tile = document.createElement('canvas');
+  tile.width = cw * 95; tile.height = ch;
+  const ctx = tile.getContext('2d', { willReadFrequently: true }), masks = [];
+  ctx.font = rt._measureCtx.font; // the exact font used to measure this cell box, independent of atlas rasterization.
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.fillStyle = '#ffffff';
+  // The documented atlas is a continuous strip: preserve glyph overhang into neighbouring slots.
+  // A cell-sized oracle would clip that ink, producing false mismatches at the slot boundaries.
+  ctx.clearRect(0, 0, tile.width, ch);
+  for (let g = 1; g < 95; g++) ctx.fillText(String.fromCharCode(g + 32), g * cw, rt.glyphAscent);
+  for (let g = 0; g < 95; g++) masks.push(ctx.getImageData(g * cw, 0, cw, ch).data);
+  let glyphPixels = 0, glyphMismatch = 0, glyphMaxChannelDiff = 0;
+  const glyphWorstPixels = [];
+  const glyphMutationMismatch = { flipY: 0, mirrorX: 0, indexShift: 0 }, seen = new Set();
+  for (let cy = 0; cy < 10; cy++) for (let cx = 0; cx < COLS; cx++) {
+    const ci = (cy * COLS + cx) * 4, g = fg[ci + 3], mask = masks[g];
+    seen.add(g);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+      const p = ((cy * ch + y) * width + cx * cw + x) * 4;
+      const a = mask[(y * cw + x) * 4 + 3] / 255;
+      const flip = mask[((ch - y - 1) * cw + x) * 4 + 3] / 255;
+      const mirror = mask[(y * cw + cw - x - 1) * 4 + 3] / 255;
+      const shifted = masks[(g + 1) % 95][(y * cw + x) * 4 + 3] / 255;
+      let max = 0, flipMax = 0, mirrorMax = 0, shiftMax = 0;
+      for (let k = 0; k < 3; k++) {
+        const b = bg[ci + k], d = fg[ci + k] - b, actual = img[p + k];
+        max = Math.max(max, Math.abs(actual - Math.round(b + a * d)));
+        flipMax = Math.max(flipMax, Math.abs(actual - Math.round(b + flip * d)));
+        mirrorMax = Math.max(mirrorMax, Math.abs(actual - Math.round(b + mirror * d)));
+        shiftMax = Math.max(shiftMax, Math.abs(actual - Math.round(b + shifted * d)));
+      }
+      glyphPixels++;
+      if (max > 2) {
+        glyphMismatch++;
+        if (glyphWorstPixels.length < 8) glyphWorstPixels.push({ cx, cy, glyph: String.fromCharCode(g + 32), x, y, max });
+      }
+      glyphMaxChannelDiff = Math.max(glyphMaxChannelDiff, max);
+      if (flipMax > 2) glyphMutationMismatch.flipY++;
+      if (mirrorMax > 2) glyphMutationMismatch.mirrorX++;
+      if (shiftMax > 2) glyphMutationMismatch.indexShift++;
+    }
+  }
+  return { glyphPixels, glyphMismatch, glyphMaxChannelDiff, glyphDistinct: seen.size, glyphMutationMismatch, glyphWorstPixels };
+}
+
+// Test-only fault injection into the actual GPU atlas; cell readback bytes stay unchanged.
+function mutateGlyphAtlas(rt, mutation) {
+  if (!mutation) return;
+  if (!['flipY', 'mirrorX', 'indexShift'].includes(mutation)) throw new Error('unknown glyph mutation ' + mutation);
+  rt._rebuildAtlas(); // the scratch canvas was last used for the UI atlas; recover the scene strip.
+  const ac = rt._atlasCanvas, src = rt._atlasCtx.getImageData(0, 0, ac.width, ac.height).data;
+  const dst = new Uint8Array(src.length), cw = rt.pxCellW, ch = rt.pxCellH;
+  for (let g = 0; g < 95; g++) for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const sg = mutation === 'indexShift' ? (g + 1) % 95 : g;
+    const sx = mutation === 'mirrorX' ? cw - x - 1 : x, sy = mutation === 'flipY' ? ch - y - 1 : y;
+    const a = (sy * ac.width + sg * cw + sx) * 4, b = (y * ac.width + g * cw + x) * 4;
+    for (let k = 0; k < 4; k++) dst[b + k] = src[a + k];
+  }
+  rt.device.writeTexture(rt.atlasTex, dst);
+}
+
+async function presentCheck(device, mutation = null) {
   const rt = new RenderTargetWebGPU(canvas, COLS, ROWS, device);
   rt.resize(1280, 720, 1); // fixed ref box: window-size independent
   const ui = { cols: UI_COLS, rows: UI_ROWS, cells: new CellBuffer(UI_COLS, UI_ROWS), sx: COLS / UI_COLS, sy: ROWS / UI_ROWS };
   rt.setUiLayer(ui);
   fillScene(rt.cells); fillUi(ui);
+  mutateGlyphAtlas(rt, mutation);
   const expFg = rt.cells.fg.slice(), expBg = rt.cells.bg.slice();
   rt.present();
   // canvas pixels right after present (same task: the drawn texture is still current)
@@ -71,16 +134,20 @@ async function presentCheck(device) {
     }
     if (cy < 10 && (cy * COLS + cx) % 95 !== 0) { glyphCells++; if (differs > 0) glyphCellsWithFg++; }
   }
-  const ok = fgBad === 0 && bgBad === 0 && rb.sampledOwnTextures && spaceBad === 0 && glyphCellsWithFg === glyphCells;
+  const glyph = glyphPixelCheck(rt, img, px.width, expFg, expBg);
+  const ok = fgBad === 0 && bgBad === 0 && rb.sampledOwnTextures && spaceBad === 0 && glyphCellsWithFg === glyphCells
+    && glyph.glyphPixels > 0 && glyph.glyphMismatch === 0 && glyph.glyphMaxChannelDiff <= 2;
   return {
     ok, cols: COLS, rows: ROWS, canvasW: canvas.width, canvasH: canvas.height, bytes: expFg.length * 2,
     fgMismatch: fgBad, bgMismatch: bgBad, sampledOwnTextures: rb.sampledOwnTextures,
     spacePixels: spacePx, spaceMismatch: spaceBad, glyphCells, glyphCellsWithFg, gpuErrors: device.gpuErrors.slice(),
+    ...glyph, mutation,
   };
 }
 
 try {
   const device = await createGpuDevice({ backend: 'webgpu', canvas, selfTest: false, fallback: false });
+  window.__webgpuPresentProbe = (mutation) => presentCheck(device, mutation); // CDP negative controls on the real GPU.
   window.__wgsl = await compileCheck(device);
   window.__webgpuPresent = await presentCheck(device);
   out.textContent = JSON.stringify({ wgsl: window.__wgsl, present: window.__webgpuPresent }, null, 2);

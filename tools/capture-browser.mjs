@@ -254,10 +254,13 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     const okAll = !!raw.ok && raw.errors === 0 && raw.modules > 0;
     return { rows: [{ name: 'wgsl', pass: okAll, metrics: { modules: raw.modules, errors: raw.errors } }], ok: okAll };
   }
-  if (mode === 'webgpu-present') { // WG-1c1: readbackPresent == CPU cells byte for byte + canvas pixel spot checks
+  if (mode === 'webgpu-present') { // TEST-GAPS-WG: cell bytes plus independent glyph shape/orientation/index oracle
     const metrics = {};
     flatten(raw, '', metrics);
-    return { rows: [{ name: 'webgpu-present', pass: !!raw.ok, metrics }], ok: !!raw.ok };
+    const ok = !!raw.ok && raw.glyphPixels > 0 && raw.glyphDistinct === 95 && raw.glyphMismatch === 0
+      && raw.glyphMaxChannelDiff <= 2 && (raw.gpuErrors || []).length === 0
+      && ['flipY', 'mirrorX', 'indexShift'].every((k) => raw.glyphMutationMismatch?.[k] > 0);
+    return { rows: [{ name: 'webgpu-present', pass: ok, metrics }], ok };
   }
   if (mode === 'presentdiff') { // WG-1c2: >= 99.5 % identical pixels and max channel diff <= 2 at every pose
     const rows = (raw.poses || []).map((p) => {
@@ -806,6 +809,11 @@ export async function runLiveCapture(opts) {
 // CLI entry
 // ---------------------------------------------------------------------
 
+// Existing gpucompare known-FAIL baselines remain report-only; this presenter gate must fail the command.
+export function captureExitCode(mode, normalized) {
+  return mode === 'webgpu-present' && normalized.ok !== true ? 1 : 0;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -858,6 +866,7 @@ async function main() {
   }
 
   console.log(formatSummary(mode, { ...normalized, headless }));
+  process.exitCode = captureExitCode(mode, normalized);
 
   if (opts.diff) {
     const oldPayload = JSON.parse(readFileSync(opts.diff, 'utf8'));

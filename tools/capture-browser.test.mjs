@@ -14,7 +14,7 @@ import {
   parseArgs, validatePort, buildQuery, resultGlobalFor,
   normalizeLiveResult, parseImportText, detectImportMode,
   diffResults, formatDiff, formatSummary, todayStr, captureFilePath,
-  buildLaunchFlags, pagePathFor, isSoftwareRendererLine, diffPngSlug, diffPngRelPath, stripDiffPngs,
+  buildLaunchFlags, pagePathFor, isSoftwareRendererLine, diffPngSlug, diffPngRelPath, stripDiffPngs, captureExitCode,
 } from './capture-browser.mjs';
 
 let failures = 0;
@@ -123,6 +123,27 @@ check('resultGlobalFor gpucompare', resultGlobalFor('gpucompare') === '__gpuComp
 check('resultGlobalFor bench', resultGlobalFor('bench') === '__bench');
 check('resultGlobalFor voxelbench', resultGlobalFor('voxelbench') === '__voxelBench');
 throws('resultGlobalFor rejects unknown mode', () => resultGlobalFor('bogus'));
+
+// TEST-GAPS-WG: stale fg/bg-only checks and a vacuous/symmetric glyph oracle cannot pass.
+{
+  const raw = { ok: true, fgMismatch: 0, bgMismatch: 0, sampledOwnTextures: true,
+    glyphPixels: 1200, glyphDistinct: 95, glyphMismatch: 0, glyphMaxChannelDiff: 1,
+    glyphMutationMismatch: { flipY: 250, mirrorX: 180, indexShift: 350 } };
+  check('webgpu-present requires independent glyph oracle', normalizeLiveResult('webgpu-present', raw).ok);
+  check('webgpu-present rejects old bytes-only result', !normalizeLiveResult('webgpu-present', { ok: true, fgMismatch: 0, bgMismatch: 0 }).ok);
+  check('webgpu-present rejects flipped/mirrored/index-shifted pixels even if raw.ok is stale',
+    !normalizeLiveResult('webgpu-present', { ...raw, glyphMismatch: 250, glyphMaxChannelDiff: 255 }).ok);
+  for (const k of ['flipY', 'mirrorX', 'indexShift']) {
+    check('webgpu-present proves sensitivity to ' + k,
+      !normalizeLiveResult('webgpu-present', { ...raw, glyphMutationMismatch: { ...raw.glyphMutationMismatch, [k]: 0 } }).ok);
+  }
+  check('webgpu-present rejects incomplete glyph census', !normalizeLiveResult('webgpu-present', { ...raw, glyphDistinct: 1 }).ok);
+  check('webgpu-present rejects missing glyph pixels', !normalizeLiveResult('webgpu-present', { ...raw, glyphPixels: 0 }).ok);
+  check('webgpu-present rejects GPU validation errors', !normalizeLiveResult('webgpu-present', { ...raw, gpuErrors: ['bad atlas'] }).ok);
+  check('failed presenter gate exits 1', captureExitCode('webgpu-present', { ok: false }) === 1);
+  check('passed presenter gate exits 0', captureExitCode('webgpu-present', { ok: true }) === 0);
+  check('known-FAIL gpucompare remains report-only', captureExitCode('gpucompare', { ok: false }) === 0);
+}
 
 // --- normalizeLiveResult: mirrors the real window.__gpuCompare/__bench/__voxelBench shapes ---
 {
