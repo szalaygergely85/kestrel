@@ -20,13 +20,16 @@ const rt = { device, cols: 160, rows: 60, fgTex, bgTex, setCellPass(f) { hook = 
 const t0 = allocWgTargets(device, 10, 5, 2);
 assert.deepStrictEqual([t0.texSGI.desc.format, t0.texSGA.desc.format, t0.texSDepth.desc.format, t0.texRasterDepth.desc.format], ['rgba32ui', 'rgba32ui', 'r32ui', 'depth24']);
 assert.deepStrictEqual([t0.texSGI.desc.width, t0.texSGI.desc.height], [20, 10]);
-assert.ok(!('texGI' in t0) && !('texGA' in t0) && !('texGD' in t0) && !('texDepth' in t0), 'cell-resolution names reserved for WG-3a');
+assert.deepStrictEqual([t0.texGI, t0.texGA, t0.texGD].map(x => [x.desc.format, x.desc.width, x.desc.height]), [['rgba32ui', 10, 5], ['rgba32ui', 10, 5], ['rgba32ui', 10, 5]], 'cell-res set (WG-3a)');
+assert.deepStrictEqual([t0.texDepth.desc.format, t0.texDepth.desc.width, t0.texMask.desc.format], ['r32ui', 10, 'r8ui']);
+assert.deepStrictEqual(t0.targetResolve.desc.color, [t0.texGI, t0.texGA, t0.texDepth]);
+assert.deepStrictEqual(t0.targetDeriv.desc.color, [t0.texGD]);
 assert.deepStrictEqual(t0.targetRaster.desc.color, [t0.texSGI, t0.texSGA, t0.texSDepth]);
 assert.strictEqual(t0.targetRaster.desc.color.length, 3);
 assert.strictEqual(t0.targetRaster.desc.depth, t0.texRasterDepth);
 const before = liveCount();
 freeWgTargets(device, t0);
-assert.strictEqual(liveCount(), before - 6, 'free disposes 4 textures + raster and depth-only targets');
+assert.strictEqual(liveCount(), before - 13, 'free disposes 9 textures + 4 targets');
 // alloc failure frees the partial set
 {
   let n = 0; const orig = device.createTexture;
@@ -47,7 +50,7 @@ for (const m of SURFACE) {
 }
 assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
-assert.deepStrictEqual(p.portedPasses, ['debug', 'raster']);
+assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv']);
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
 assert.strictEqual(typeof hook, 'function', 'cell-pass hook installed');
 assert.strictEqual(rt.gpuActive, undefined, 'never takes over the CPU shading');
@@ -57,12 +60,21 @@ p.bind({}, {}); p.bindVoxels({}); p.bindViewModel({}); p.bindInstances({}); p.se
 assert.strictEqual(await p.readbackLight(), null);
 assert.strictEqual(await p.readbackWater(), null);
 
-// hook: no draw while debug off; with a mode: G-buffer clear pass once + one debug pass
-hook(); assert.strictEqual(drawn, 0); passes.length = 0;
+// hook: debug off = raster clear + resolve + deriv (2 draws); with a mode: + one debug pass
+hook(); assert.strictEqual(drawn, 2); assert.deepStrictEqual(passes.map(x => x.t), [p._t.targetRaster, p._t.targetResolve, p._t.targetDeriv]);
+drawn = 0; passes.length = 0;
 p.setDebugMode(0); hook();
-assert.strictEqual(drawn, 1); assert.strictEqual(passes.length, 2);
+assert.strictEqual(drawn, 3); assert.strictEqual(passes.length, 4);
 assert.strictEqual(passes[0].t, p._t.targetRaster); assert.deepStrictEqual(passes[0].o, { clear: true });
-hook(); assert.strictEqual(passes.length, 4, 'G-buffer cleared each frame');
+hook(); assert.strictEqual(passes.length, 8, 'G-buffer cleared each frame');
+{
+  const pd = p._cellPass;
+  assert.deepStrictEqual(pd.rTex.map(x => x.texture), [p._t.texSGI, p._t.texSGA, p._t.texSDepth, p._t.texMask]);
+  assert.deepStrictEqual(pd.dTex.map(x => x.texture), [p._t.texGI, p._t.texGA, p._t.texDepth]);
+  assert.strictEqual(pd.ri[0], 2, 'resolve n = rays');
+  assert.deepStrictEqual([pd.di[0], pd.di[1]], [160, 60]);
+  assert.ok(pd.du[2] > 0 && pd.du[3] > 0, 'deriv tanHalfHFov / planeDistY');
+}
 const lastBind = device._lastBind;
 assert.strictEqual(lastBind.uniforms[1], 2, 'rays uniform');
 assert.strictEqual(lastBind.textures.length, 3);
@@ -84,7 +96,7 @@ p.resizeGrid(20, 10);
 assert.notStrictEqual(p._t.texSGI, oldGI); assert.strictEqual(oldGI._disposed, true);
 assert.deepStrictEqual([p._t.texSGI.desc.width, p.cols, p.rows], [40, 20, 10]);
 const beforeResizeHook = passes.length;
-hook(); assert.strictEqual(passes.length, beforeResizeHook + 2, 'cleared again after resize');
+hook(); assert.strictEqual(passes.length, beforeResizeHook + 4, 'cleared again after resize');
 // failed resize keeps the old set
 {
   const keep = p._t; const orig = device.createTexture;
@@ -99,13 +111,13 @@ hook(); assert.strictEqual(passes.length, beforeResizeHook + 2, 'cleared again a
 {
   let readCalls = 0;
   device.readback = () => { readCalls++; };
-  await assert.rejects(p.readbackGeometry(), { message: 'readbackGeometry: rays > 1 needs the WG-3a resolve' });
-  assert.strictEqual(readCalls, 0, 'no sub-resolution readback before resolve exists');
+  const g2 = await p.readbackGeometry(); // rays 2 reads the resolved cell-res set
+  assert.strictEqual(g2.GI.length, 4 * p.cols * p.rows); assert.strictEqual(readCalls, 3);
   const q = new WgCellPipeline({ ...rt, setCellPass() {} }, { rays: 1 });
   const cells = q.cols * q.rows;
   device.readback = (tex, rect, out) => {
     assert.deepStrictEqual(rect, { x: 0, y: 0, w: q.cols, h: q.rows });
-    if (tex === q._t.texSDepth) for (let i = 0; i < out.length; i++) out[i] = i + 7; else out.fill(1);
+    if (tex === q._t.texDepth) for (let i = 0; i < out.length; i++) out[i] = i + 7; else out.fill(1);
   };
   const g = await q.readbackGeometry();
   assert.strictEqual(g.GI.length, 4 * cells); assert.strictEqual(g.GA.length, 4 * cells); assert.strictEqual(g.Depth.length, 4 * cells);
