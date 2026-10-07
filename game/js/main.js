@@ -68,6 +68,7 @@ import { stepTargetingInput } from './quest/targetingInput.js';
 import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 30.1 + D-034 amendment)
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
+import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
 import { createHands, createStubItemSim } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
@@ -465,6 +466,11 @@ const swordHeldDef = window.ASSETS && window.ASSETS.voxelModels && window.ASSETS
 if (swordHeldDef && !assets.has('model', 'swordHeld')) {
   assets.add('model', 'swordHeld', { ...swordHeldDef, voxel: { ...swordHeldDef.voxel, meshOnly: true } });
 }
+// HANDS-01c: the spell glove (`voxelModels.spellHandL`, authored left) - same mesh-only registration as swordHeld.
+const spellHandLDef = window.ASSETS && window.ASSETS.voxelModels && window.ASSETS.voxelModels.spellHandL;
+if (spellHandLDef && !assets.has('model', 'spellHandL')) {
+  assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
+}
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
@@ -534,6 +540,9 @@ const swordVmH = swordAssetDef ? (() => {
     windows: { light: SWORD_CFG.light, hard: SWORD_CFG.hard },
   };
 })() : null;
+// HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
+const spellVmH = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
+  ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null;
 
 // D-025 (US-038a, architecture.md 22.3/22.7): the ONE `grid:changed`
 // listener that rebuilds every game-owned, grid-sized object - the render
@@ -1263,6 +1272,11 @@ function runGame(mode, cinematic = null) {
         } else {
           swordVmH.vm.hide(swordVmH.h);
         }
+      }
+      if (spellVmH) {
+        const sbody = playerHandle.data.components.body;
+        const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
+        presentSpellHand(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving);
       }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpu) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()

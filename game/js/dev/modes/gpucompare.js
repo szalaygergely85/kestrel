@@ -184,6 +184,9 @@ function buildCompareRuns(ctx) {
   // register a mesh-only copy for this harness so the pool packs it (kept out of the DDA atlas: existing poses unchanged).
   const swordHeldDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.swordHeld;
   if (swordHeldDef && !assets.has('model', 'swordHeld')) assets.add('model', 'swordHeld', { ...swordHeldDef, voxel: { ...swordHeldDef.voxel, meshOnly: true } });
+  // HANDS-01c: the spell glove (`voxelModels.spellHandL`, authored left), same mesh-only registration (pose `handsSwapped` below).
+  const spellHandLDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.spellHandL;
+  if (spellHandLDef && !assets.has('model', 'spellHandL')) assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
@@ -450,6 +453,19 @@ function buildCompareRuns(ctx) {
       runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: viewModel rest pitch ${pitch} PITCHED CAMERA (BUG-VM-001, held sword, crash room)`,
         cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 40, pitchDeg: pitch }, real: true, meshOnly: true, needK8: true, pitchedDefault: true, vmAssert: true,
         before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, 'idle'), 0, false); } });
+    }
+    // HANDS-01c (37.8a): `handsSwapped` - the winding-flip pose (HANDS-01a's GPU frontFace(CW) for det<0 items was never
+    // drawn by a pose). Two handles at once (VM_MAX_HANDLES 4 = main's sword + spell, this sword, the spell glove): the sword
+    // (authored left, vmH) in the RIGHT hand = mirrored (det<0), the spell glove (authored left) in the LEFT hand = unmirrored
+    // (per-item flip, restored between items). Default pitched camera, vmAssert.
+    if (globalThis.ASSETS.viewModels.spellHand && compareVoxelPool.models.has('spellHandL') && vmLayer.stats.items === 0) {
+      const spH = vmLayer.load('spellHand', globalThis.ASSETS.viewModels.spellHand, compareVoxelPool);
+      runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: viewModel handsSwapped (HANDS-01c, sword right = mirrored + spell glove left, crash room)',
+        cam: { x: 1497.5, y: 1026.5, z: engine.physics.eyeHeight, yawDeg: 40, pitchDeg: 0 }, real: true, meshOnly: true, needK8: true, pitchedDefault: true, vmAssert: true,
+        before: () => {
+          vmLayer.setBob(0, 0); vmLayer.setHand(vmH, 'right'); vmLayer.setHand(spH, 'left');
+          vmLayer.show(vmH, vmLayer.clipId(vmH, 'idle'), 0, false); vmLayer.show(spH, vmLayer.clipId(spH, 'idle'), 0, false);
+        } });
     }
   }
 
