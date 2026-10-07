@@ -17,3 +17,8 @@
 - No thresholds touched.
 
 **Open.** Sun-map mode (WG-3d); a WG-3b light row cannot exceed the geometry state of its pose (cells with wrong geometry are still compared). Captures are git-ignored.
+
+## Fix (MESH-INST-01 feed on WebGPU) - B1, 2026-10-07
+Cause confirmed: `wg/passRaster.js` still used plain `addMeshStructures` and no `meshDraw` arg, while GL pipeline + JS twin use `addMeshStructuresBatched` (MESH-INST-01) and `_instances.addToDrawList(..., meshDraw)` (TREES-LP-b): different kind-9 planeIds/draw set -> meshTies rows broke (69/72 -> 40/72).
+Change (`passRaster.js` only, no WGSL): own `MeshGroupSet` + `meshDrawArg`; `addMeshStructuresBatched(..., this.meshGroups, this.planes)`; meshDraw passed to instances; instanced draw honours `DRAW_FLAG_ONE_PART` (single range over `mesh.triCount`). The existing instanced WGSL needed nothing extra. Test: `passRaster.test.js` one-part group = one instanced draw.
+Results (RTX 4060, 160x60, ports 9521-9523): gpucompare WebGPU geomOk 70/73 (was 40/72; 73rd row = lowpolyTrees passes; the 3 fails = viewModel pitched pitch 20, handsSwapped, forestWalk, same rows GL fails). Light `--shadows dda`: WebGPU 68/73, no PASS->FAIL vs WG-3b; `--mode wgsl` 19 modules 0 errors. run-tests 278/279: `engine/world/colliders.test.js` failed once under load, passes alone (32/0). check-deps OK. No thresholds touched.

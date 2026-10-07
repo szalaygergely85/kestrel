@@ -81,3 +81,15 @@ assert.equal(tw, 2, 'no re-upload while versions are unchanged');
 world.terrain.farVersion = 2; pass._terrainTextures(world); assert.equal(tw, 3); d.writeTexture = ow;
 pass.dispose(); d.dispose(tvb); d.dispose(tib); d.dispose(uvBuf); d.dispose(clothVb); d.dispose(clothIb); assert.equal(mock.liveCount(), 0);
 console.log('passRaster.test.js: all checks passed.');
+// MESH-INST-01 feed: DRAW_FLAG_ONE_PART draws the whole mesh as one range (one draw per group), ranges ignored.
+{
+  const { DRAW_FLAG_ONE_PART } = await import('../../../mesh/DrawList.js');
+  const m2 = Object.assign(Object.create(Object.getPrototypeOf(mesh)), mesh); m2.ranges = [{ start: 0, count: 1 }, { start: 1, count: 1 }]; m2.triCount = 2;
+  pass.list.begin();
+  const g = pass.list.push(); g.type = DRAW_INSTANCED; g.mesh = m2; g.instBuf = { f32: new Float32Array(48) }; g.instCount = 3; g.flags = DRAW_FLAG_ONE_PART;
+  g.partMatrices.set(staticItem.matrix);
+  pass.vmList = null; draws.length = 0; pass.run(p);
+  const gd = draws.filter((x) => x.pipe === pass.instancePipe);
+  assert.deepEqual(gd.map((x) => [x.count, x.first, x.instances]), [[6, 0, 3]], 'one-part group = one instanced draw over all triangles');
+  assert.ok(pass.meshGroups && pass.meshDrawArg, 'raster pass owns the MeshGroupSet + meshDraw arg');
+}
