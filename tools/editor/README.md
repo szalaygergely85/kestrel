@@ -157,6 +157,17 @@ hovered cell, pick result, present count).
 - Closing or reloading the editor tab while any file has unsaved changes
   pops the browser's own "leave site?" warning.
 
+## Chart after editor saves
+
+After saving world structures or Terrain brush edits into `content/`, run
+`node tools/bake-chart.mjs`, then `node tools/bake-chart.mjs --check` before
+shipping the edit. The chart reads final terrain heights, including brush
+deltas, ring floors, roads and water. It stays below 100 KB at 240x120 cells.
+For a release from staged/tracked files, use `--index` on both commands;
+the Node freshness test checks that release snapshot. Working-file `--check`
+also detects unsaved owner placements that differ from the indexed chart.
+MAP-01a's final glyphs and MAP-01c's live map remain separate queue items.
+
 ## Known limits (as of US-063)
 
 - Placed structures can't be moved, rotated or created from the editor (M1.5
