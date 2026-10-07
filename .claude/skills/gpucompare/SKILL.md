@@ -15,4 +15,4 @@ description: Run and read kestrel's ?gpucompare=1 gate (GPU pipeline vs JS twin 
 - Shader (GLSL) changes need the architect: PC-B writes `ASK ARCHITECT:` / `NEEDS PC-A:` with the exact change.
 - Debug Node-first (probe both twins' math, e.g. `octNormal.js` pack/unpack), then one headless run to confirm.
 
-Known open (2026-10-07): MESH-GPUCMP-01 - GLSL has no kind-9 smooth-normal branch (report docs/test-reports/MESH-GPUCMP-01.md).
+Known open (2026-10-07): MESH-GPUCMP-01 A6 smooth normals are in; 19 rows still fail vs the pre-road run on kind-9 cell colour/glyph (not normals) - see the backlog row. Failure counts differ per GPU: compare against a baseline from the same machine.

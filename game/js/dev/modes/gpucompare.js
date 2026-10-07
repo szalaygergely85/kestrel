@@ -546,6 +546,43 @@ function buildCompareRuns(ctx) {
       } });
   }
 
+  // SPELL-01b (37.14): `fireballInFlight` + `fireballBurst` - the ball / blast billboards (SpritePool.push via `spritesExtra`, after
+  // collect) and the moving / flash lights, in the crash room. Appended LAST: the lights are added lazily in `before`, so no
+  // earlier pose sees them. The designer sprites + presets must have been attached (main.js boot does it).
+  if (ctx.renderer === 'mesh' && worldM1Lights && assets.palette.lights.fireballLightBig && globalThis.ASSETS.spellSprites) {
+    const P = assets.palette, lp = P.lights;
+    const eyeZ = engine.physics.eyeHeight, fwd = forwardOf(40, [0, 0]);
+    const fcam = { x: 1497.5, y: 1026.5, z: eyeZ, yawDeg: 40, pitchDeg: 0 };
+    const at = (d, dz) => [fcam.x + fwd[0] * d, fcam.y + fwd[1] * d, fcam.z + dz];
+    let ball = -1, flash = -1;
+    const mk = (preset, key) => worldM1Lights.add({ x: 0, y: 0, z: 0, hue: P.hue[preset.color], intensity: preset.intensity, radius: preset.radius, flicker: null, on: false, key });
+    const ensure = () => { if (ball < 0) { ball = mk(lp.fireballLightBig, 'cmp.fireball'); flash = mk(lp.fireballFlash, 'cmp.flash'); } };
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: fireballInFlight (SPELL-01b, core sprite 3 m ahead + moving light + flash at 50 %, crash room)',
+      cam: fcam, real: true, meshOnly: true, needK8: true, pitchedDefault: true,
+      before: () => {
+        ensure();
+        const b = at(3, -0.1);
+        worldM1Lights.move(ball, b[0], b[1], b[2]); worldM1Lights.setOn(ball, true);
+        worldM1Lights.move(flash, b[0], b[1], b[2] + 0.4); worldM1Lights.setParams(flash, { intensity: lp.fireballFlash.intensity * 0.25 }); worldM1Lights.setOn(flash, true); // (1 - 0.5)^2
+      },
+      spritesExtra: (pool) => { const b = at(3, -0.1); pool.push('fireballCore', 'fly', 1, b[0], b[1], b[2]); } });
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: fireballBurst (SPELL-01b, blast sprite frame 2 + embers/smoke frozen at 10 steps + flash light, crash room)',
+      cam: fcam, real: true, meshOnly: true, needK8: true, pitchedDefault: true,
+      before: () => {
+        ensure();
+        const b = at(3.5, -0.2);
+        worldM1Lights.setOn(ball, false);
+        worldM1Lights.move(flash, b[0], b[1], b[2]); worldM1Lights.setParams(flash, { intensity: lp.fireballFlash.intensity }); worldM1Lights.setOn(flash, true);
+        const ps = engine.particles;
+        if (ps && ps.defIdOf('fireballBurst') >= 0) {
+          ps.burstAt(ps.defIdOf('fireballBurst'), b[0], b[1], b[2], 20, 0, 0, 1);
+          ps.burstAt(ps.defIdOf('fireballSmoke'), b[0], b[1], b[2], 8, 0, 0, 1);
+          for (let i = 0; i < 10; i++) ps.step();
+        }
+      },
+      spritesExtra: (pool) => { const b = at(3.5, -0.2); pool.push('fireballBlast', 'burst', 2, b[0], b[1], b[2]); } });
+  }
+
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -657,7 +694,7 @@ function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -694,6 +731,7 @@ function runGpuCompareSceneMode(ctx) {
     }
     if (real) sprites.pool.collect(world);
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
+    if (spritesExtra) spritesExtra(sprites.pool); // SPELL-01b: view-only billboards (fireball core / blast)
     sprites.pool.project(cam, rt, lights || ambientL, world, renderer);
     // US-053b (32.1): particle layer, built once per pose from the current (just-cleared-
     // or-just-populated) engine.particles state - both twins below read the SAME layer.

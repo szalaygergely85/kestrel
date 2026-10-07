@@ -240,7 +240,13 @@ ok('mesh.frag.js GI.w = vObjectId, kind 8 packs the normal for face 7', MESH_FRA
   ok('cloth frag: N = normalize(vNrmS); if (!gl_FrontFacing) N = -N (negate AFTER normalising, the twin of rasterJS flipN = twoSided && A2 < 0)', F.includes('vec3 nrmW = normalize(vNrmS);') && F.includes('if (!gl_FrontFacing) nrmW = -nrmW;') && F.indexOf('normalize(vNrmS)') < F.indexOf('!gl_FrontFacing'));
   ok('cloth frag: face 7 + packNormalOct(N) into GI.z (nrmBits) and GA.w, from the flipped N only', F.includes('packNormalOct(nrmW)') && F.includes('face = roundedFace(nrmW)') && !F.includes('vNrmW') && F.includes('gaW = nrmBits;') && F.includes('nrmBits, vObjectId)'));
   ok('cloth frag: reads smooth in vec3 vNrmS, gl_FragCoord only once (depth reciprocal), same 3 outputs', F.includes('\nin vec3 vNrmS;') && (F.match(/gl_FragCoord/g) || []).length === 1 && F.includes('out uvec4 outGI') && F.includes('out uvec4 outGA') && F.includes('out uint outDepth'));
-  ok('static mesh variants never mention gl_FrontFacing / vNrmS / uFlat', ![MESH_VERT_SRC, MESH_INST_VERT_SRC, MESH_FRAG_SRC].some((x) => /gl_FrontFacing|vNrmS|uFlat/.test(x)));
+  ok('static mesh variants never mention gl_FrontFacing / uFlat (kind 9 is single-sided: no flip)', ![MESH_VERT_SRC, MESH_INST_VERT_SRC, MESH_FRAG_SRC].some((x) => /gl_FrontFacing|uFlat/.test(x)));
+  // MESH-GPUCMP-01 (A6): the kind-9 smooth-normal branch.
+  ok('A6 vert: BOTH non-cloth variants output smooth vNrmS next to the flat vNrmW (instanced rotated by iRow0..2 like vNrmW)', [MESH_VERT_SRC, MESH_INST_VERT_SRC].every((x) => x.includes('flat out vec3 vNrmW;') && /\nout vec3 vNrmS;/.test(x) && x.includes('vNrmS = ')) && MESH_VERT_SRC.includes('vNrmS = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));') && MESH_INST_VERT_SRC.includes('vNrmS = nw;') && MESH_INST_VERT_SRC.includes('dot(iRow0.xyz, ln)'));
+  const M9 = MESH_FRAG_SRC.slice(MESH_FRAG_SRC.indexOf('if (vKind == KIND_MESH)'));
+  ok('A6 frag: kind-9 branch - declares KIND_MESH, smooth vNrmS, packNormalOct for every cell, threshold >= 0.9, shared roundedFace, no flip, no epsilon', MESH_FRAG_SRC.includes('const uint KIND_MESH = 9u;') && MESH_FRAG_SRC.includes('\nin vec3 vNrmS;') && M9.includes('vec3 nm = normalize(vNrmS);') && M9.includes('nrmBits = packNormalOct(nm);') && M9.includes('>= 0.9') && !/0.9[0-9]|0.9s*[-+]/.test(M9) && M9.includes('face = roundedFace(nm);') && M9.includes('gaW = nrmBits;') && M9.indexOf('nrmBits = packNormalOct(nm);') < M9.indexOf('>= 0.9') && !MESH_FRAG_SRC.includes('gl_FrontFacing'));
+  ok('A6 frag: cloth variant has no kind-9 branch', !MESH_CLOTH_FRAG_SRC.includes('KIND_MESH') && !MESH_CLOTH_FRAG_SRC.includes('vNrmW'));
+  ok('A6 shade: aoD -> 1e30 for face 7 of KIND_MODEL || KIND_MESH', SHADE_FRAG_SRC.includes('(kindU == 8u || kindU == 9u) && face == 7'));
   ok('shadow pass reuses the cloth vertex stage with the empty fragment stage (depth only)', /void main\(\) \{\}/.test(SHADOW_FRAG_SRC));
 }
 

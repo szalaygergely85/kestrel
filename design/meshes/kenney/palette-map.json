@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "doc": "TREES-LP-a: Kenney Nature Kit (.dae) material -> palette key. keys = palette key -> the sRGB diffuse colour of the Kenney material it stands for (the kit exports odd diffuse values, e.g. leafsGreen = 41,201,171, so these are the file's values, not natural colours); tools/dae-import.mjs picks the nearest by CIE Lab. maxDelta = Lab distance above which a colour is reported as unmapped. byName overrides by material name. trunk = keys whose triangles shape the tree collision prism. scale = importer scale (Kenney trees are 1.2-1.7 m, the game's trees ~8-10 m).",
+  "maxDelta": 25,
+  "scale": 6,
+  "keys": {
+    "leaf": [41, 201, 171],
+    "leaf_dark": [43, 166, 170],
+    "straw": [255, 146, 65],
+    "wood": [226, 131, 87],
+    "timber_old": [204, 118, 94],
+    "linen_light": [255, 242, 222],
+    "rock_soft": [128, 128, 128]
+  },
+  "byName": {},
+  "trunk": ["wood", "timber_old", "linen_light"]
+}

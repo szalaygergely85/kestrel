@@ -8,7 +8,7 @@ import { LATEST_SCHEMA } from './schema.js';
  * version) - populated as the format grows. The engine table holds no test
  * kinds; a test's synthetic kind is passed through `opts.migrations`.
  */
-export const MIGRATIONS = { level: [], world: [], manifest: [], mesh: [], terrainEdits: [] };
+export const MIGRATIONS = { level: [], world: [], manifest: [], mesh: [], terrainEdits: [], mask: [] };
 
 /**
  * @param {string} kind

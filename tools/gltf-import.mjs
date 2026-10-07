@@ -33,7 +33,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { budgetFor } from './mesh-budgets.mjs';
 import { readPng } from './png-read.mjs';
 import { textureTable, classify } from './uvmap.mjs'; // MESH-UVMAP-01
-import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision, stringifyContent, maskToJSON, downsampleAlpha } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
 
@@ -57,6 +57,11 @@ Options:
   --palette-map <json>  texture -> palette keys table for --uvmap (default design/meshes/quaternius/palette-map.json)
   --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
   --budget            --simplify to the per-mesh triangle budget of tools/mesh-budgets.mjs (by id basename)
+  --masks <dir|none>  ALPHA-01a (arch 37.17): alpha-cutout materials (glTF alphaMode MASK) become masked ranges (opaque ranges first, uvMask = TEXCOORD_0);
+                      the 8-bit alpha masks are written to <dir>/<pack>/<texture>.mask.json (default content/masks; 'none' = ignore alpha, import as before).
+                      Auto-opaque rule: a MASK material with no texel under its cutoff inside its UV region is imported opaque with a WARN
+  --mask-res <n>      mask resolution, power of two <= 1024 (default 256; box-average downsample of the texture alpha)
+  --opaque <names>    comma list of material names forced opaque although alphaMode is MASK
   --dry-run           parse and report only; write nothing
 
 Output: content/meshes/<id>.mesh.json (MeshData, meshToJSON shape) plus a
@@ -78,6 +83,9 @@ function parseArgs(argv) {
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
     if (a === '--budget') { args.budget = true; continue; }
+    if (a === '--masks') { args.masks = argv[++i]; if (!args.masks) throw new Error('--masks needs a directory or none'); continue; }
+    if (a === '--mask-res') { args.maskRes = Number(argv[++i]); if (![16, 32, 64, 128, 256, 512, 1024].includes(args.maskRes)) throw new Error('--mask-res must be a power of two from 16 to 1024'); continue; }
+    if (a === '--opaque') { args.opaque = (args.opaque || []).concat(String(argv[++i] || '').split(',').filter(Boolean)); if (!args.opaque.length) throw new Error('--opaque needs material names'); continue; }
     if (a === '--dry-run') { args.dryRun = true; continue; }
     args._.push(a);
   }
@@ -151,11 +159,11 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
 
 /**
  * MESH-PHYS-01: add `collide: false` (walk-over piece) or the `collider` proxy (prism, <= 28 tris) to a static mesh json.
- * Idempotent; the render data is untouched.
+ * Optional `colliderParts` (material keys, e.g. a tree's trunk keys) restricts the prism to those ranges. Idempotent; the render data is untouched.
  */
 export function withCollision(json) {
   if (json.layout !== 'static') return json;
-  const plan = planMeshCollision(json.id, json.pos);
+  const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges });
   const next = { ...json };
   delete next.collide; delete next.collider; delete next.castShadow;
   if (!plan.castShadow) next.castShadow = false; // MESH-SHADOW-01: same rule as walk-over
@@ -193,12 +201,13 @@ export function importGltfBytes(bytes, id, opts = {}, materialKeys = null) {
   if (!mats || typeof mats !== 'object' || Array.isArray(mats) || Object.values(mats).some((v) => typeof v !== 'string' || !v)) throw new Error('gltf-import: --mats must be an object mapping material names to palette keys');
   json.mats = { ...mats };
   mesh.mats = json.mats;
-  for (const key of ['pos', 'uv', 'aux', 'bbox']) {
+  for (const key of ['pos', 'uv', 'uvMask', 'aux', 'bbox']) {
+    if (!json[key]) continue;
     json[key] = json[key].map((v) => Math.round(v * 1e5) / 1e5);
   }
   const rounded = validateMesh(meshFromJSON(json));
   if (rounded.errors.length) throw new Error(`gltf-import: rounded mesh failed validateMesh:\n${rounded.errors.join('\n')}`);
-  return { mesh, json, report: { triCount: mesh.triCount, groupCount, unmapped } };
+  return { mesh, json, report: { triCount: mesh.triCount, groupCount, unmapped, warnings: opts.warnings || [], ranges: mesh.ranges.map((r) => ({ part: r.part, count: r.count, ...(r.mask ? { mask: r.mask } : {}) })) } };
 }
 
 /** MESH-UVMAP-01: the colour texture a .gltf's first material points at (absolute path), or null. */
@@ -207,6 +216,37 @@ function baseColorPng(gltfPath, raw) {
   const ref = (j.materials || []).map((m) => m.pbrMetallicRoughness && m.pbrMetallicRoughness.baseColorTexture).find(Boolean);
   const img = ref && j.images && j.textures && j.images[j.textures[ref.index].source];
   return img && img.uri ? path.join(path.dirname(gltfPath), decodeURIComponent(img.uri)) : null;
+}
+
+/**
+ * ALPHA-01a: for a .gltf, the downsampled alpha plane of every alphaMode MASK material's baseColorTexture, keyed by material name
+ * (the shape loadGltf's opts.textures wants), plus the material's cutoff. PNG files are read here, never in the engine.
+ * @returns {Record<string,{tex:string,w:number,h:number,alpha:Uint8Array,cutoff:number}>}
+ */
+export function readMaskTextures(gltfPath, json, id, maskRes = 256, cache = new Map()) {
+  const out = {};
+  const pack = id.includes('/') ? id.split('/')[0] : '';
+  for (const m of json.materials || []) {
+    if (m.alphaMode !== 'MASK' || !m.name) continue;
+    const ref = m.pbrMetallicRoughness && m.pbrMetallicRoughness.baseColorTexture;
+    const img = ref && json.textures && json.images && json.images[json.textures[ref.index].source];
+    if (!img || !img.uri || img.uri.startsWith('data:')) throw new Error(`gltf-import: MASK material "${m.name}" has no external baseColorTexture file (use --opaque ${m.name} or --masks none)`);
+    const file = path.join(path.dirname(gltfPath), decodeURIComponent(img.uri));
+    const base = path.basename(file).replace(/\.png$/i, '');
+    const tex = pack ? `${pack}/${base}` : base;
+    let t = cache.get(file + '@' + maskRes);
+    if (!t) {
+      const png = readPng(fs.readFileSync(file));
+      const a = new Uint8Array(png.width * png.height);
+      for (let i = 0; i < a.length; i++) a[i] = png.data[i * 4 + 3];
+      const dw = Math.min(maskRes, png.width), dh = Math.min(maskRes, png.height);
+      if ((dw & (dw - 1)) || (dh & (dh - 1))) throw new Error(`gltf-import: ${file}: mask size ${dw}x${dh} is not a power of two (texture is ${png.width}x${png.height})`);
+      t = { tex, w: dw, h: dh, alpha: downsampleAlpha(a, png.width, png.height, dw, dh) };
+      cache.set(file + '@' + maskRes, t);
+    }
+    out[m.name] = { ...t, cutoff: typeof m.alphaCutoff === 'number' ? Math.round(m.alphaCutoff * 1e5) / 1e5 : 0.5 };
+  }
+  return out;
 }
 
 /** Runs the CLI end-to-end (throws on error; caller prints/exits). */
@@ -231,6 +271,15 @@ export async function runCli(argv) {
     opts.buffers = readExternalBuffers(inPath, json);
   }
 
+  // ALPHA-01a: alpha-cutout materials (a .gltf with external textures; --masks none = import as before)
+  let maskTextures = null;
+  if (!isGlb(raw) && args.masks !== 'none') {
+    const gj = JSON.parse(raw.toString('utf8'));
+    if ((gj.materials || []).some((m) => m.alphaMode === 'MASK')) {
+      maskTextures = readMaskTextures(inPath, gj, id, args.maskRes || 256);
+      opts.alpha = true; opts.textures = maskTextures; opts.opaque = args.opaque || []; opts.warnings = [];
+    }
+  } else if (args.opaque || args.maskRes) throw new Error('gltf-import: --opaque / --mask-res need a .gltf with MASK materials and no --masks none');
   if (args.uv) opts.uv = args.uv;
   if (args.budget && !args.simplify) args.simplify = budgetFor(id) || 0;
   if (args.simplify) {
@@ -278,10 +327,18 @@ export async function runCli(argv) {
   }
 
   const outPath = args.out || path.join('content', 'meshes', `${id}.mesh.json`);
+  const masksDir = args.masks && args.masks !== 'none' ? args.masks : 'content/masks';
+  const usedMasks = [...new Set(meshJson.ranges.filter((r) => r.mask).map((r) => r.mask.tex))].sort();
+  const maskFiles = usedMasks.map((tex) => {
+    const entry = Object.values(maskTextures || {}).find((t) => t.tex === tex);
+    return { file: path.join(masksDir, `${tex}.mask.json`), text: stringifyContent(maskToJSON(tex, entry.w, entry.h, entry.cutoff, entry.alpha)) };
+  });
   if (!args.dryRun) {
+    for (const mf of maskFiles) { fs.mkdirSync(path.dirname(mf.file), { recursive: true }); fs.writeFileSync(mf.file, mf.text, 'utf8'); }
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, stringifyMeshJSON(withCollision(meshJson)), 'utf8');
   }
+  report.maskFiles = maskFiles.map((m) => m.file);
   return { help: false, wrote: args.dryRun ? null : outPath, report };
 }
 
@@ -292,6 +349,11 @@ function printReport(label, report) {
     console.log(`gltf-import: ${label}: uvmap ${u.texture}: ${Object.entries(u.tris).map(([k, n]) => `${k}=${n}`).join(' ')}${u.demoted.length ? ` (speckle demoted: ${u.demoted.join(',')})` : ''}`);
     if (u.unmapped.length) console.log(`gltf-import: ${label}: uvmap unmapped colours (rgb/16 bucket: tris): ${u.unmapped.map(([k, n]) => `${k}:${n}`).join(' ')}`);
   }
+  if (report.ranges && report.ranges.some((r) => r.mask) || (report.warnings && report.warnings.length)) {
+    console.log(`gltf-import: ${label}: ${report.ranges.length} range(s): ${report.ranges.map((r) => `${r.part} ${r.count} tris ${r.mask ? `masked ${r.mask.tex}@${r.mask.cutoff}` : 'opaque'}`).join(' | ')}`);
+  }
+  for (const w of report.warnings || []) console.log(`gltf-import: ${label}: WARN ${w}`);
+  if (report.maskFiles && report.maskFiles.length) console.log(`gltf-import: ${label}: mask file(s): ${report.maskFiles.join(', ')}`);
   if (report.unmapped.length) {
     console.log(`gltf-import: ${label}: WARNING unmapped material name(s) (no engine materials/detailPass entry): ${report.unmapped.join(', ')}`);
   }

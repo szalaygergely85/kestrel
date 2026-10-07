@@ -50,7 +50,7 @@ import { MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 // out of the march pass - still no FARH/NEARH texture unit needed here,
 // since the normal is already resolved by the time it reaches this pass).
 import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
-import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
+import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
 
 export const MAX_SUB = 16; // 4x4, matches resolve.frag.js's cap
@@ -502,7 +502,7 @@ void main() {
       // US-041a (15.3 item 3): face 7 (FACE_PACKED) has the octahedral-
       // packed normal in this slot, not a real AO distance - force +Inf,
       // literal twin of detailShade.js's shadeDetailFast fix.
-      float aoDA = (kindU == ${KIND_MODEL}u && face == ${FACE_PACKED}) ? 1.0e30 : uintBitsToFloat(sgaU.w);
+      float aoDA = ((kindU == ${KIND_MODEL}u || kindU == ${KIND_MESH}u) && face == ${FACE_PACKED}) ? 1.0e30 : uintBitsToFloat(sgaU.w);
 
       Core c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, kindU, matId, Lm);
       bSum += c.b; gbSum += c.gb; crSum += c.cr; cgSum += c.cg; cbSum += c.cb; bgKSum += c.bgK;

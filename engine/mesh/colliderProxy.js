@@ -96,7 +96,9 @@ export function buildPrismProxy(pos, opts = {}) {
  * The importer/generator decision for one mesh.
  * @param {string} id mesh id (soft-name rule)
  * @param {ArrayLike<number>} pos mesh-local positions
- * @param {{walkOverH?:number}} [opts]
+ * @param {{walkOverH?:number, parts?:string[], ranges?:{part:string,start:number,count:number}[]}} [opts]
+ *   parts+ranges (mesh json `colliderParts` + `ranges`): the prism footprint/height come only from those material ranges
+ *   (trees: the trunk keys, so the crown never makes a fat collider); the walk-over decision still uses the whole mesh.
  * @returns {{collide:boolean, collider:number[]|null, castShadow:boolean}} collide false => no collider at all
  */
 export function planMeshCollision(id, pos, opts = {}) {
@@ -104,6 +106,12 @@ export function planMeshCollision(id, pos, opts = {}) {
   for (let i = 2; i < pos.length; i += 3) if (pos[i] > zMax) zMax = pos[i];
   // MESH-SHADOW-01: a walk-over / soft piece (pebble, path stone, mushroom, grass) also skips the sun shadow map.
   if (SOFT_NAME_RE.test(id) || zMax <= (opts.walkOverH ?? WALK_OVER_H)) return { collide: false, collider: null, castShadow: false };
-  const collider = buildPrismProxy(pos);
+  let src = pos;
+  if (opts.parts && opts.parts.length && opts.ranges) {
+    const tp = [];
+    for (const r of opts.ranges) if (opts.parts.includes(r.part)) for (let i = r.start * 9; i < (r.start + r.count) * 9; i++) tp.push(pos[i]);
+    if (tp.length) src = tp;
+  }
+  const collider = buildPrismProxy(src);
   return collider ? { collide: true, collider, castShadow: true } : { collide: false, collider: null, castShadow: false };
 }

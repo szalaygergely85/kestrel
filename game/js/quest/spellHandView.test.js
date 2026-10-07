@@ -67,6 +67,33 @@ const P = vm._defs[vmh.h].last, z0 = P[2];
 frame(1.0);
 ok('idle clip animates', Math.abs(P[2] - z0) > 1e-4, `${z0} -> ${P[2]}`);
 
+// SPELL-01b: charge / chargeHold / cast / castHard / fizzle clips + the coal glow multiplier, driven by a fake sim
+{
+  const fs = { state: 0, holdSteps: 0, tick: 100, castTick: -1000000, lastCharged: 0 };
+  const sh = (t = 1) => presentSpellHand(vmh, 'right', t, t, false, fs);
+  const g0 = sh();
+  ok('idle glow = 1', Math.abs(g0 - 1) < 1e-9, String(g0));
+  fs.state = 1; fs.holdSteps = 18; fs.tick++;
+  const g1 = sh();
+  ok('charge: glow grows (1 -> 2.2 over 0.6 s)', g1 > 1.5 && g1 < 1.8, String(g1));
+  fs.state = 2; fs.holdSteps = 40; fs.tick++;
+  const g2 = sh();
+  ok('chargeHold: glow ~2.2 +- 0.25 pulse', g2 > 1.9 && g2 < 2.5, String(g2));
+  fs.state = 0; fs.holdSteps = 0; fs.tick++; fs.castTick = fs.tick; fs.lastCharged = 1;
+  const g3 = sh();
+  ok('castHard just after release: glow dips to 0.15 and recovers', g3 < 0.3, String(g3));
+  fs.tick += 24;
+  ok('castHard glow rises over its clip', sh() > g3);
+  fs.tick += 40; fs.lastCharged = 0;
+  ok('back to idle after the clip: glow 1', Math.abs(sh() - 1) < 1e-9);
+  fs.state = 1; fs.holdSteps = 3; fs.tick++; sh();
+  fs.state = 0; fs.holdSteps = 0; fs.tick++; // released, castTick unchanged -> fizzle
+  const g4 = sh();
+  ok('release without a cast plays fizzle (glow 1.0 -> sputter)', Math.abs(g4 - 1) < 0.01 || g4 < 1.2, String(g4));
+  fs.tick += 8;
+  ok('fizzle sputters (glow < 0.6 around 60 ms)', sh() < 1.2);
+}
+
 // 0 allocation per frame in the view (shown left/right, hidden); hands.step has its own test
 if (typeof globalThis.gc === 'function') {
   const sides = ['right', 'left', 'right', null];

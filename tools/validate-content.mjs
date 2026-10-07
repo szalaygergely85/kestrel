@@ -51,7 +51,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, validateMesh, validateLook } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, validateMesh, validateLook, maskFromJSON } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
@@ -102,6 +102,7 @@ export async function loadDesignAssets() {
   Object.assign(ASSETS.levels, bundle.levels);
   Object.assign(ASSETS.worlds, bundle.worlds);
   ASSETS.meshes = { ...(ASSETS.meshes || {}), ...bundle.meshes };
+  ASSETS.masks = { ...(ASSETS.masks || {}), ...bundle.masks }; // ALPHA-01a
   return ASSETS;
 }
 
@@ -242,6 +243,8 @@ export function validateContent(ASSETS, opts = {}) {
       const mesh = def.pos instanceof Float32Array ? def : meshFromJSON(def);
       const result = validateMesh(mesh);
       check(result.errors.length === 0, path, result.errors.join('; '));
+      // ALPHA-01a (37.17): every masked range names a mask registered in the manifest
+      for (const r of mesh.ranges) if (r.mask) check(Object.hasOwn(ASSETS?.masks || {}, r.mask.tex), `${path}.ranges[${r.part}].mask`, `mask "${r.mask.tex}" is not in the manifest masks`);
       const mats = def.mats === undefined ? {} : def.mats;
       const validMap = mats && typeof mats === 'object' && !Array.isArray(mats) && Object.values(mats).every((v) => typeof v === 'string' && v.length > 0);
       check(!!validMap, `${path}.mats`, 'must be a material-name -> palette-key map');
@@ -595,8 +598,15 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  let maskIds = null;
+  if (opts.maskFilesDir) {
+    const scannedMasks = validateMaskFiles(opts.maskFilesDir);
+    errors.push(...scannedMasks.errors);
+    checks += scannedMasks.checks;
+    maskIds = scannedMasks.ids;
+  }
   if (opts.meshFilesDir) {
-    const scanned = validateMeshFiles(opts.meshFilesDir);
+    const scanned = validateMeshFiles(opts.meshFilesDir, maskIds);
     errors.push(...scanned.errors);
     checks += scanned.checks;
   }
@@ -630,7 +640,7 @@ function findMeshFiles(dir, out) {
   }
 }
 
-export function validateMeshFiles(dir) {
+export function validateMeshFiles(dir, maskIds = null) {
   const errors = [];
   let checks = 0;
   const files = [];
@@ -653,8 +663,36 @@ export function validateMeshFiles(dir) {
     }
     const { errors: meshErrors } = validateMesh(mesh);
     for (const m of meshErrors) errors.push(`${full}: ${m}`);
+    if (maskIds) for (const r of mesh.ranges) if (r.mask && !maskIds.has(r.mask.tex)) errors.push(`${full}: ranges[${r.part}].mask "${r.mask.tex}" has no content/masks file`);
   }
   return { errors, checks };
+}
+
+// ALPHA-01a (37.17): content/masks/**/*.mask.json - parse + shape (power-of-two size, data length = w*h) + id equals the path under the directory.
+export function validateMaskFiles(dir) {
+  const errors = [];
+  const ids = new Set();
+  let checks = 0;
+  const files = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
+    for (const entry of entries) {
+      const full = `${d}/${entry.name}`;
+      if (entry.isDirectory()) walk(full); else if (entry.name.endsWith('.mask.json')) files.push(full);
+    }
+  };
+  walk(dir);
+  for (const full of files) {
+    checks++;
+    try {
+      const mask = maskFromJSON(JSON.parse(readFileSync(full, 'utf8')));
+      const want = full.slice(dir.length + 1).replace(/.mask.json$/, '');
+      if (mask.id !== want) errors.push(`${full}: id "${mask.id}" does not match the file path (expected "${want}")`);
+      ids.add(mask.id);
+    } catch (e) { errors.push(`${full}: ${e.message}`); }
+  }
+  return { errors, checks, ids };
 }
 
 // ---------------------------------------------------------------------------
@@ -663,7 +701,8 @@ export function validateMeshFiles(dir) {
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir });
+  const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir });
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {

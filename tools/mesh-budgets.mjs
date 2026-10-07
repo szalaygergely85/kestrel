@@ -7,6 +7,7 @@ export const MESH_BUDGETS = [
   { re: /^Mushroom/, tris: 250, label: 'mushrooms' },
   { re: /^RockPath/, tris: 250, label: 'path stones' },
   { re: /^Rock/, tris: 400, label: 'rocks' },
+  { re: /^tree_/, tris: 600, label: 'Kenney low-poly trees (TREES-LP-a)' },
   { re: /Tree|Pine/, tris: 2000, label: 'trees' },
 ];
 

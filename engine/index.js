@@ -29,6 +29,7 @@ export { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS, KEY_ORDER, ORDERED_MAPS, ENV
 export { ContentError } from './content/ContentError.js';
 export { migrateContent, MIGRATIONS } from './content/migrate.js';
 export { stringifyContent } from './content/stringify.js';
+export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content/maskFile.js'; // ALPHA-01a
 export { loadContentPack, globalId } from './content/loadPack.js';
 
 // ---- world ----------------------------------------------------------------
@@ -77,13 +78,14 @@ export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES,
 export { packVoxelModel } from './voxel/voxelPack.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
-export { loadGltf, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
+export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
 // needed by tools/gltf-import.mjs (and any future mesh-producing CLI tool)
 // to write/round-trip a MeshData; MeshData's own typedef is already the
 // documented public shape (27.3), these are just its (de)serialize/validate
 // functions.
 export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
+export { simplifyTriangles } from './mesh/simplify.js'; // TREES-LP-a: tools/dae-import.mjs
 export { buildPrismProxy, planMeshCollision, PROXY_BAND_H, WALK_OVER_H } from './mesh/colliderProxy.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';

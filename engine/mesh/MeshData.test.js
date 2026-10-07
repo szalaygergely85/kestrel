@@ -136,6 +136,36 @@ function makeCleanMesh() {
   ok('resolveMats throws on a second call', threw);
 }
 
+// ---- ALPHA-01a (37.17): masked ranges + uvMask ------------------------------
+{
+  const mk = () => {
+    const b = new StaticMeshBuilder('level:maskfix');
+    for (let q = 0; q < 2; q++) {
+      b.addQuad([0, q, 0, 1, q, 0, 1, q, 1, 0, q, 1], [0, 0, 1, 0, 1, 1, 0, 1], 0, 1, 0, planePlaneIdBase(4, q), packFlat1(4, 5, 0), [0, AO_NONE, 0, 0, 0, 0, 0, 0]);
+    }
+    const m = b.build();
+    m.matKeys = ['stone'];
+    m.uvMask = new Float32Array(m.pos.length / 3 * 2).map((_, i) => (i >= 12 ? (i % 7) / 8 : 0));
+    m.ranges = [{ start: 0, count: 2, part: 'bark' }, { start: 2, count: 2, part: 'leaf', mask: { tex: 'pack/Leaf', cutoff: 0.2 } }];
+    return m;
+  };
+  const m = mk();
+  ok('mask: valid mesh has no errors', validateMesh(m).errors.length === 0);
+  const j = JSON.parse(JSON.stringify(meshToJSON(m)));
+  ok('mask: JSON carries uvMask + range.mask, key order start,count,part,mask', Array.isArray(j.uvMask) && JSON.stringify(Object.keys(j.ranges[1])) === '["start","count","part","mask"]' && j.ranges[1].mask.tex === 'pack/Leaf' && j.ranges[0].mask === undefined);
+  const r = meshFromJSON(j);
+  ok('mask: round trip equal (uvMask, ranges, validate)', validateMesh(r).errors.length === 0 && r.uvMask instanceof Float32Array && r.uvMask.every((x, i) => x === m.uvMask[i]) && JSON.stringify(r.ranges) === JSON.stringify(m.ranges));
+  ok('mask: a mesh without masks has no uvMask key in JSON', !('uvMask' in meshToJSON(new StaticMeshBuilder('level:plain').build())));
+  const err = (f) => { const x = mk(); f(x); return validateMesh(x).errors.join('|'); };
+  ok('mask: range mask without uvMask is an error', /requires uvMask/.test(err((x) => { delete x.uvMask; })));
+  ok('mask: wrong uvMask length is an error', /uvMask/.test(err((x) => { x.uvMask = new Float32Array(4); })));
+  ok('mask: masked range before an opaque range is an error', /after a masked range/.test(err((x) => { x.ranges.reverse(); x.ranges[0].start = 2; x.ranges[1].start = 0; })));
+  ok('mask: cutoff 1.0 is an error', /cutoff/.test(err((x) => { x.ranges[1].mask.cutoff = 1; })));
+  ok('mask: cutoff 0 is an error', /cutoff/.test(err((x) => { x.ranges[1].mask.cutoff = 0; })));
+  ok('mask: empty tex is an error', /tex/.test(err((x) => { x.ranges[1].mask.tex = ''; })));
+  ok('mask: non-finite uvMask is an error', /non-finite/.test(err((x) => { x.uvMask[13] = NaN; })));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

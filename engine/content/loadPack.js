@@ -5,11 +5,12 @@ import { meshFromJSON, validateMesh } from '../mesh/MeshData.js';
 import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
 import { editLayerFromJSON } from '../world/terrainEdits.js';
+import { maskFromJSON } from './maskFile.js';
 import { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS } from './schema.js';
 
 const FILE_ID_RE = /^[a-z][a-z0-9_]*$/;
 const LOCAL_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits'];
+const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask'];
 
 /** `globalId('tower', 'lamp_hook') -> 'tower/lamp_hook'` (21.3). Only used
  * where a field already says which collection it points into. */
@@ -81,7 +82,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     throw asContentError(e, manifestHref, 'schema');
   }
 
-  const fileRel = manifest.files || [];
+  const fileRel = [...(manifest.files || []), ...(manifest.masks || [])]; // ALPHA-01a: manifest.masks = alpha mask files (kind 'mask')
   const fileHrefs = fileRel.map((f) => new URL(f, manifestHref).href);
 
   const fetched = await Promise.all(fileHrefs.map(async (href) => {
@@ -100,7 +101,8 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     models: {},
     meshes: {},
     terrainEdits: {},
-    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
+    masks: {},
+    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
   };
 
   const errors = [];
@@ -137,7 +139,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
       continue;
     }
 
-    if (typeof migrated.id !== 'string' || !(kind === 'mesh' ? /^[A-Za-z][A-Za-z0-9_-]*(?:\/[A-Za-z][A-Za-z0-9_-]*)*$/ : FILE_ID_RE).test(migrated.id)) {
+    if (typeof migrated.id !== 'string' || !(kind === 'mesh' || kind === 'mask' ? /^[A-Za-z][A-Za-z0-9_-]*(?:\/[A-Za-z][A-Za-z0-9_-]*)*$/ : FILE_ID_RE).test(migrated.id)) {
       errors.push(new ContentError(href, 'id', `bad or missing id ${JSON.stringify(migrated.id)}`));
       continue;
     }
@@ -175,6 +177,11 @@ export async function loadContentPack(manifestUrl, opts = {}) {
       });
     }
 
+    if (kind === 'mask') {
+      try { bundle.masks[migrated.id] = maskFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'mask')); continue; }
+      bundle.meta.mask[migrated.id] = { url: href, schema: migrated.schema, nextId: null };
+      continue;
+    }
     if (kind === 'terrainEdits') {
       // ED-TERRAIN-1a: sparse grid file - no nextId/id collections; validated by building the layer.
       try { editLayerFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'terrainEdits')); continue; }
@@ -217,6 +224,13 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     bundle.meta[kind][migrated.id] = { url: href, schema: migrated.schema, nextId: migrated.nextId };
     const { kind: _k, schema: _s, id: _id, nextId: _n, ...rest } = migrated;
     if (kind !== 'mesh') bundle[kind + 's'][migrated.id] = rest;
+  }
+
+  // ALPHA-01a: every masked mesh range must name a loaded mask
+  for (const mesh of Object.values(bundle.meshes)) {
+    for (const r of mesh.ranges) {
+      if (r.mask && !bundle.masks[r.mask.tex]) errors.push(new ContentError(bundle.meta.mesh[mesh.id].url, 'mask', `mesh "${mesh.id}": mask "${r.mask.tex}" is not in the manifest masks`));
+    }
   }
 
   if (errors.length) {

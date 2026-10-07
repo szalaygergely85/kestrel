@@ -523,6 +523,83 @@ expectThrow('rejects an external (non-data-URI) buffer with no opts.buffers over
   ok("uv:'source' keeps TEXCOORD_0", Math.abs(span(loadGltf(glb, 'test:uvs', { uv: 'source' })) - 0.25) < 1e-6);
 }
 
+// ---------------------------------------------------------------------------
+// 12. ALPHA-01a (37.17): alpha-cutout materials -> masked ranges, opaque first, uvMask.
+// ---------------------------------------------------------------------------
+{
+  /** Two quads: a MASK material ("Leaf", first in the file) and an opaque one ("Bark"). */
+  function twoMatGlb({ leafUv = [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]], alphaCutoff = 0.2 } = {}) {
+    const quad = (y) => [[0, y, 0], [1, y, 0], [1, y, 1], [0, y, 1]];
+    const pos = [...quad(0), ...quad(1)];
+    const uv = [...leafUv, [0.1, 0.1], [0.2, 0.1], [0.2, 0.2], [0.1, 0.2]];
+    const idx = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
+    const posBuf = f32Buf(pos, 3), uvBuf = f32Buf(uv, 2), i0 = u16Buf(idx.slice(0, 6)), i1 = u16Buf(idx.slice(6));
+    const bin = Buffer.concat([posBuf, uvBuf, i0, i1]);
+    const json = {
+      asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name: 'Tree' }],
+      materials: [{ name: 'Leaf', alphaMode: 'MASK', alphaCutoff }, { name: 'Bark' }],
+      meshes: [{ primitives: [
+        { attributes: { POSITION: 0, TEXCOORD_0: 1 }, indices: 2, material: 0 },
+        { attributes: { POSITION: 0, TEXCOORD_0: 1 }, indices: 3, material: 1 },
+      ] }],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: posBuf.length },
+        { buffer: 0, byteOffset: posBuf.length, byteLength: uvBuf.length },
+        { buffer: 0, byteOffset: posBuf.length + uvBuf.length, byteLength: i0.length },
+        { buffer: 0, byteOffset: posBuf.length + uvBuf.length + i0.length, byteLength: i1.length },
+      ],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: 8, type: 'VEC3' },
+        { bufferView: 1, componentType: 5126, count: 8, type: 'VEC2' },
+        { bufferView: 2, componentType: 5123, count: 6, type: 'SCALAR' },
+        { bufferView: 3, componentType: 5123, count: 6, type: 'SCALAR' },
+      ],
+    };
+    return buildGlb(json, bin);
+  }
+  const alphaOf = (holes) => { const a = new Uint8Array(16).fill(255); for (const [x, y] of holes) a[y * 4 + x] = 0; return a; };
+  const tex = (holes) => ({ Leaf: { tex: 'pack/Leaf', w: 4, h: 4, alpha: alphaOf(holes) } });
+
+  const warn = [];
+  const m = loadGltf(twoMatGlb(), 'test:alpha', { alpha: true, textures: tex([[1, 1]]), warnings: warn });
+  ok('alpha: validateMesh clean', validateMesh(m).errors.length === 0);
+  ok('alpha: 2 ranges, opaque first (file order was masked first)', m.ranges.length === 2 && !m.ranges[0].mask && !!m.ranges[1].mask);
+  ok('alpha: opaque range = Bark (2 tris), masked = Leaf (2 tris), contiguous', m.ranges[0].start === 0 && m.ranges[0].count === 2 && m.ranges[1].start === 2 && m.ranges[1].count === 2 && /#1$/.test(m.ranges[0].part) && /#0$/.test(m.ranges[1].part));
+  ok('alpha: mask {tex, cutoff 0.2}', m.ranges[1].mask.tex === 'pack/Leaf' && m.ranges[1].mask.cutoff === 0.2);
+  ok('alpha: no warning when the mask has holes in its region', warn.length === 0);
+  ok('alpha: uvMask present, 2/vertex', m.uvMask instanceof Float32Array && m.uvMask.length === m.triCount * 3 * 2);
+  let zeroOpaque = true; for (let i = 0; i < 6 * 2; i++) if (m.uvMask[i] !== 0) zeroOpaque = false;
+  ok('alpha: uvMask is 0 on the opaque range', zeroOpaque);
+  const leafUvs = [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]];
+  let uvOk = true;
+  for (const [vi, src] of [[6, 0], [7, 1], [8, 2], [9, 0], [10, 2], [11, 3]]) { if (m.uvMask[vi * 2] !== leafUvs[src][0] || m.uvMask[vi * 2 + 1] !== leafUvs[src][1]) uvOk = false; }
+  ok('alpha: uvMask = TEXCOORD_0 on the masked range', uvOk);
+  let planarM = 0; for (let k = 12; k < 24; k++) planarM = Math.max(planarM, Math.abs(m.uv[k]));
+  ok('alpha: uv stays planar metres on the masked range (1 m quad -> |uv| reaches 1, source UVs only reach 0.5)', Math.abs(planarM - 1) < 1e-5);
+
+  // auto-opaque rule
+  const w2 = [];
+  const mo = loadGltf(twoMatGlb(), 'test:alpha2', { alpha: true, textures: tex([]), warnings: w2 });
+  ok('auto-opaque: an all-255 mask imports opaque (1 plain range set, no uvMask, no mask)', !mo.uvMask && mo.ranges.every((r) => !r.mask));
+  ok('auto-opaque: WARN names the material', w2.length === 1 && w2[0].includes('"Leaf"'));
+  const w3 = [];
+  const mb = loadGltf(twoMatGlb(), 'test:alpha3', { alpha: true, textures: tex([[3, 3]]), warnings: w3 });
+  ok('auto-opaque: a hole OUTSIDE the UV bbox of the material\'s own triangles does not keep it masked', !mb.uvMask && w3.length === 1);
+  const mw = loadGltf(twoMatGlb({ leafUv: [[0, 0], [1.5, 0], [1.5, 0.5], [0, 0.5]] }), 'test:alpha4', { alpha: true, textures: tex([[3, 0]]), warnings: [] });
+  ok('auto-opaque: UVs past 1 wrap (repeat) - a texel hole inside the wrapped span keeps it masked', !!mw.uvMask);
+  const mf = loadGltf(twoMatGlb(), 'test:alpha5', { alpha: true, textures: tex([[1, 1]]), opaque: ['Leaf'], warnings: [] });
+  ok('--opaque: forced opaque, no uvMask', !mf.uvMask && mf.ranges.every((r) => !r.mask));
+  let threw = '';
+  try { loadGltf(twoMatGlb(), 'test:alpha6', { alpha: true }); } catch (e) { threw = e.message; }
+  ok('alpha: missing opts.textures[name] throws naming the material', threw.includes('"Leaf"') && threw.includes('opts.textures'));
+  const mn = loadGltf(twoMatGlb(), 'test:alpha7', {});
+  ok('no opts.alpha: MASK is ignored, byte-compatible single-range-per-primitive output (no uvMask, file order)', !mn.uvMask && mn.ranges.length === 2 && /#0$/.test(mn.ranges[0].part));
+  const m2 = loadGltf(twoMatGlb(), 'test:alpha', { alpha: true, textures: tex([[1, 1]]), warnings: [] });
+  ok('alpha: deterministic (two loads equal)', m2.pos.every((x, i) => x === m.pos[i]) && m2.uvMask.every((x, i) => x === m.uvMask[i]) && JSON.stringify(m2.ranges) === JSON.stringify(m.ranges));
+  const ms = loadGltf(twoMatGlb(), 'test:alpha8', { alpha: true, textures: tex([[1, 1]]), simplifyRatio: 0.5, warnings: [] });
+  ok('alpha: masked primitives are never simplified (source UVs kept)', ms.ranges[1].count === 2 && !!ms.uvMask);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
