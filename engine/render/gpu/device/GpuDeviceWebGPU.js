@@ -41,8 +41,10 @@ export class GpuDeviceWebGPU {
     this._canvasFormat = opts.canvasFormat || 'bgra8unorm';
     /** @type {any} */ this._context = null;
     /** @type {any} */ this._canvas = null;
-    /** Uncaptured validation errors (WebGPU reports them asynchronously); self-test and tests read this. @type {string[]} */
+    /** Captured creation errors plus uncaptured asynchronous GPU errors; self-test and tests read this. @type {string[]} */
     this.gpuErrors = [];
+    this._pendingScopes = [];
+    this._checkingScopes = null;
     if (typeof gpuDevice.addEventListener === 'function') {
       gpuDevice.addEventListener('uncapturederror', (/** @type {any} */ ev) => {
         const msg = String(ev && ev.error && ev.error.message || ev);
@@ -169,8 +171,25 @@ export class GpuDeviceWebGPU {
   _module(src) {
     if (!src || !src.wgsl) throw new Error('GpuDeviceWebGPU.createPipeline: src.wgsl missing');
     let m = this._moduleCache.get(src.wgsl);
-    if (!m) { m = this.gpu.createShaderModule({ code: src.wgsl }); this._moduleCache.set(src.wgsl, m); }
+    if (!m) { m = this._validatedCreate('createShaderModule', { code: src.wgsl }); this._moduleCache.set(src.wgsl, m); }
     return m;
+  }
+
+  // Scope the work itself: pushing a scope later in checkErrors cannot capture an earlier creation error.
+  _validatedCreate(method, desc) {
+    const g = this.gpu, scoped = typeof g.pushErrorScope === 'function' && typeof g.popErrorScope === 'function';
+    if (scoped) g.pushErrorScope('validation');
+    try { return g[method](desc); }
+    finally {
+      if (scoped) {
+        const pending = g.popErrorScope().then((error) => {
+          if (error && this.gpuErrors.length < 20) this.gpuErrors.push(`${method}: ${String(error.message || error)}`);
+        }, (error) => {
+          if (this.gpuErrors.length < 20) this.gpuErrors.push(`${method} validation scope: ${String(error.message || error)}`);
+        });
+        this._pendingScopes.push(pending);
+      }
+    }
   }
 
   /** @param {import('./GpuDevice.js').PipelineDesc} desc */
@@ -203,7 +222,7 @@ export class GpuDeviceWebGPU {
       : null;
     const layout = this.gpu.createPipelineLayout({ bindGroupLayouts: bgl1 ? [bgl0, bgl1] : [bgl0] });
     const uniformGroup = uBytes > 0
-      ? this.gpu.createBindGroup({ layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
+      ? this._validatedCreate('createBindGroup', { layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
       : null;
 
     // vertex buffers: 0 = interleaved mesh buffer, 1 = per-instance buffer
@@ -231,7 +250,7 @@ export class GpuDeviceWebGPU {
       pd.depthStencil = { format: depthFormatFor(desc.depthFormat), depthWriteEnabled: !!d.write, depthCompare: d.test ? 'less' : 'always' };
       if (desc.depthBias) { pd.depthStencil.depthBias = desc.depthBias.units; pd.depthStencil.depthBiasSlopeScale = desc.depthBias.factor; }
     }
-    const gpu = this.gpu.createRenderPipeline(pd);
+    const gpu = this._validatedCreate('createRenderPipeline', pd);
     return {
       kind: 'pipeline', gpu, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
       texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
@@ -312,7 +331,7 @@ export class GpuDeviceWebGPU {
 
   /** Device-level cached empty bind group for pipelines without textures. */
   _emptyGroup() {
-    if (!this._emptyBG) this._emptyBG = this.gpu.createBindGroup({ layout: this.gpu.createBindGroupLayout({ entries: [] }), entries: [] });
+    if (!this._emptyBG) this._emptyBG = this._validatedCreate('createBindGroup', { layout: this.gpu.createBindGroupLayout({ entries: [] }), entries: [] });
     return this._emptyBG;
   }
 
@@ -325,7 +344,7 @@ export class GpuDeviceWebGPU {
       entries.push({ binding: i, resource: t.view });
       if (p.samplerBinding[i] >= 0) entries.push({ binding: p.samplerBinding[i], resource: t.sampler });
     }
-    p.texGroup = this.gpu.createBindGroup({ layout: p.bgl0, entries });
+    p.texGroup = this._validatedCreate('createBindGroup', { layout: p.bgl0, entries });
     p.texDirty = false;
   }
 
@@ -382,19 +401,26 @@ export class GpuDeviceWebGPU {
 
   /**
    * WG-2a (38.8a item 18): async validation check. WebGPU reports shader/pipeline/resource errors asynchronously (no
-   * throw): a validation error scope round-trip flushes everything recorded so far, then the uncaptured-error list
-   * (filled by the 'uncapturederror' listener) is returned. Empty array = no error since device creation.
+   * throw): await and drain the scopes recorded around creation, then return them with uncaptured errors.
+   * Empty array = no error since device creation. Never called from the frame loop.
    * @returns {Promise<string[]>}
    */
   async checkErrors() {
-    const g = this.gpu;
-    if (g.pushErrorScope) {
-      g.pushErrorScope('validation');
-      try { if (g.queue && g.queue.onSubmittedWorkDone) await g.queue.onSubmittedWorkDone(); } catch (_) { /* surfaced via the scope below */ }
-      const e = await g.popErrorScope();
-      if (e) this.gpuErrors.push(String(e.message || e));
+    if (this._checkingScopes) await this._checkingScopes;
+    else {
+      this._checkingScopes = this._drainScopes();
+      try { await this._checkingScopes; }
+      finally { this._checkingScopes = null; }
     }
     return this.gpuErrors.slice();
+  }
+
+  async _drainScopes() {
+    while (this._pendingScopes.length) await Promise.all(this._pendingScopes.splice(0));
+    // Keep the existing queue flush for runtime errors delivered through uncapturederror, without a late scope.
+    try { if (this.gpu.queue?.onSubmittedWorkDone) await this.gpu.queue.onSubmittedWorkDone(); }
+    catch (_) { /* surfaced by device loss / uncapturederror */ }
+    while (this._pendingScopes.length) await Promise.all(this._pendingScopes.splice(0));
   }
 
   /** @param {GpuHandle} [handle] */

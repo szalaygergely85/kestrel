@@ -179,17 +179,80 @@ await run('webgpu: requestDevice rejects -> fallback', {
   d.dispose();
 }
 
-// ---- WG-2a: checkErrors (error scope + uncaptured list)
+// ---- WG-2a: creation-time validation scopes, without relying on uncapturederror delivery
 {
   const g = mockGpu();
-  let popped = 0;
-  g.pushErrorScope = () => {}; g.popErrorScope = async () => { popped++; return popped === 2 ? { message: 'bad wgsl' } : null; };
-  g.queue.onSubmittedWorkDone = async () => {};
+  const stack = [], deferred = [], scopedCalls = [];
+  let flushed = 0;
+  g.queue.onSubmittedWorkDone = async () => { flushed++; };
+  g.pushErrorScope = (kind) => { stack.push({ kind, error: null }); };
+  g.popErrorScope = () => {
+    const scope = stack.pop();
+    return new Promise((resolve) => deferred.push(() => resolve(scope.error)));
+  };
+  for (const name of ['createShaderModule', 'createRenderPipeline', 'createBindGroup']) {
+    const original = g[name];
+    g[name] = (desc) => {
+      const scope = stack.at(-1);
+      if (!scope || scope.kind !== 'validation') throw new Error(name + ' outside a creation scope');
+      scopedCalls.push(name);
+      if (name === 'createRenderPipeline') scope.error = { message: 'bad pipeline layout' };
+      return original(desc);
+    };
+  }
   const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
   const a = await d.checkErrors();
   ok('checkErrors: clean device -> []', Array.isArray(a) && a.length === 0);
-  const b = await d.checkErrors();
-  ok('checkErrors: scope error reported', b.length === 1 && /bad wgsl/.test(b[0]));
+  ok('checkErrors preserves queue flush for uncaptured runtime errors', flushed === 1);
+  const p = d.createPipeline({ vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 },
+    bindings: { uniformBytes: 16, textures: [] }, targetFormats: ['rgba8'] });
+  ok('shader and pipeline creations are scoped; identical shader stays cached',
+    scopedCalls.join() === 'createBindGroup,createShaderModule,createRenderPipeline' && stack.length === 0);
+  let settled = false;
+  const first = d.checkErrors().then((errors) => { settled = true; return errors; });
+  const concurrent = d.checkErrors();
+  await Promise.resolve();
+  ok('checkErrors awaits unresolved creation pops', !settled);
+  for (const release of deferred.splice(0)) release();
+  const b = await first, c = await concurrent;
+  ok('pipeline scope error reported without uncaptured event', b.length === 1 && /createRenderPipeline: bad pipeline layout/.test(b[0]));
+  ok('concurrent checkErrors also awaits the pending scopes', c.length === 1 && c[0] === b[0]);
+  ok('checkErrors drains pending promises, keeps error history', d._pendingScopes.length === 0 && (await d.checkErrors()).length === 1);
+  const tgt = d.createTarget({ color: [] });
+  d.beginPass(tgt); d.bind(p, { uniforms: new Float32Array(4) });
+  const count = scopedCalls.length;
+  d.bind(p, { uniforms: new Float32Array(4) }); d.endPass();
+  ok('lazy empty bind group is scoped only once', scopedCalls.at(-1) === 'createBindGroup' && scopedCalls.length === count);
+  for (const release of deferred.splice(0)) release();
+  await d.checkErrors();
+  // A synchronous exception must still pop its creation scope.
+  g.createShaderModule = () => { throw new Error('sync shader error'); };
+  ok('sync creation failure pops scope', throws(() => d._module({ wgsl: 'bad' })) && stack.length === 0);
+  for (const release of deferred.splice(0)) release();
+  await d.checkErrors(); d.dispose();
+}
+{
+  // Texture bind groups built on first bind use the same scope mechanism; warm binds add no promise/resource.
+  const g = mockGpu(), stack = [];
+  g.pushErrorScope = () => stack.push(null);
+  g.popErrorScope = async () => stack.pop();
+  const original = g.createBindGroup;
+  g.createBindGroup = (desc) => { stack[stack.length - 1] = { message: 'bad texture binding' }; return original(desc); };
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const tex = d.createTexture({ format: 'rgba8', width: 1, height: 1 });
+  const p = d.createPipeline({ vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 },
+    bindings: { uniformBytes: 0, textures: ['float'] }, targetFormats: ['rgba8'] });
+  await d.checkErrors();
+  d.beginPass(d.createTarget({ color: [tex] }));
+  const bind = { textures: [{ slot: 0, texture: tex }] };
+  d.bind(p, bind);
+  const pending = d._pendingScopes.length, made = g.calls.filter((c) => c === 'createBindGroup').length;
+  for (let i = 0; i < 1000; i++) d.bind(p, bind);
+  d.endPass();
+  ok('warm texture binds allocate no new scopes or bind groups', d._pendingScopes.length === pending && g.calls.filter((c) => c === 'createBindGroup').length === made);
+  const errors = await d.checkErrors();
+  ok('texture bind-group scope error reported', errors.length === 1 && /createBindGroup: bad texture binding/.test(errors[0]));
+  d.dispose();
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);
