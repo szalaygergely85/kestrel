@@ -157,6 +157,12 @@ hovered cell, pick result, present count).
 - Closing or reloading the editor tab while any file has unsaved changes
   pops the browser's own "leave site?" warning.
 
+## Viewport help
+
+Press **H** with the viewport focused to toggle the in-viewport key-help panel.
+It uses the fixed UI layer and the canvas fits the centre pane, including when
+the window resizes, so the panel stays visible beside the docks.
+
 ## Chart after editor saves
 
 After saving world structures or Terrain brush edits into `content/`, run
