@@ -15,6 +15,7 @@ import { lightSurfaces } from './lighting.js';
 // mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
+import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
@@ -104,6 +105,8 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
 
 /** Resolved-materials draw copies of placed glTF meshes (ME-14c2); per mesh, rebuilt when the matTable's idFor changes. */
 const sharedMeshDrawCache = new MeshDrawCache();
+/** MESH-INST-01: CPU batching of repeated placed meshes (the JS twin of GpuCellPipeline's own set). */
+const sharedMeshGroups = new MeshGroupSet();
 const _strictIdFor = new WeakMap();
 /** matTable.idFor that throws on a key the palette/detail pass does not define (idFor itself invents ids). Stable identity per table. */
 function strictMatIdFor(table) {
@@ -173,7 +176,7 @@ function renderWorldMesh(fb, world, cam) {
   const cache = meshLevelMeshCacheFor(world, fb.matTable);
   addStructures(list, world, cam, cache, 2000);
   // ME-14c2 (37.1 item 7): imported glTF meshes (kind 9), right after the level structures. Needs a palette-bound matTable.
-  if (fb.matTable) addMeshStructures(list, world, cam, sharedMeshDrawCache, strictMatIdFor(fb.matTable), 2000);
+  if (fb.matTable) addMeshStructuresBatched(list, world, cam, sharedMeshDrawCache, strictMatIdFor(fb.matTable), 2000, sharedMeshGroups, meshFrustumPlanes);
 
   let terrainMeshSet = null;
   if (fb.terrainEnabled !== false && world.terrain) {

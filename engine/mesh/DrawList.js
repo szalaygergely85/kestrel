@@ -35,6 +35,8 @@ export const DRAW_WATER = 5;
 
 /** `DrawItem.flags` bits. Terrain only; off until ME-06 decides (27.5). */
 export const DRAW_FLAG_DEPTH_BIAS = 1;
+/** MESH-INST-01: DRAW_INSTANCED item whose mesh is ONE identity part: both twins draw `mesh.triCount` triangles as one range (one GL draw per group, the single-draw triangle order) instead of one per `mesh.ranges` entry. */
+export const DRAW_FLAG_ONE_PART = 2;
 
 /** Preallocated `DrawList` capacity (27.8: <= 60 draws expected in phase 1). */
 export const MAX_DRAW_ITEMS = 256;
@@ -369,20 +371,27 @@ const _mDist = new Float64Array(MAX_MESH_DRAWS);
  * @param {(key: string) => number} idFor
  * @param {number} fogFarM
  * @param {boolean} [shadowOnly] - MESH-SHADOW-01: skip placements with `castShadow === false` (the sun shadow feed)
+ * @param {any} [budget] - MESH-SHADOW-02 shadow budget {eye, cutM, cap}
+ * @param {{has: (si: number) => boolean, chosen: Uint8Array}|null} [groups] - MESH-INST-01 (meshGroups.js): grouped placements take part in the same nearest-MAX_MESH_DRAWS selection but are only marked in `groups.chosen`, not pushed
  */
-export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false) {
+export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false, budget = null, groups = null) {
   const structs = world.structures;
+  // MESH-SHADOW-02 (37.19 opt 1): shadow-only budget {eye, cutM, cap}: distance measured from the EYE (not the shadow box
+  // centre), props beyond cutM dropped, at most `cap` nearest kept (ties: lower structure index = lower object id).
+  const bEye = shadowOnly && budget ? budget.eye : null, bCut = bEye ? budget.cutM : 0;
+  const maxKeep = bEye ? Math.min(MAX_MESH_DRAWS, budget.cap) : MAX_MESH_DRAWS;
+  if (groups) groups.chosen.fill(0);
   let count = 0;
   for (let i = 0; i < structs.length; i++) {
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
-    const d = bboxDist(cam, structs[i].bbox);
-    if (d > fogFarM) continue;
-    if (count < MAX_MESH_DRAWS) {
+    const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
+    if (d > fogFarM || (bEye && d > bCut)) continue;
+    if (count < maxKeep) {
       _mOrder[count] = i; _mDist[count] = d; count++;
-    } else {
+    } else if (maxKeep > 0) {
       let worst = 0, worstD = _mDist[0];
-      for (let k = 1; k < MAX_MESH_DRAWS; k++) if (_mDist[k] > worstD) { worstD = _mDist[k]; worst = k; }
+      for (let k = 1; k < maxKeep; k++) if (_mDist[k] > worstD || (_mDist[k] === worstD && _mOrder[k] > _mOrder[worst])) { worstD = _mDist[k]; worst = k; } // ties: evict the highest object id (MESH-SHADOW-02)
       if (d < worstD) { _mOrder[worst] = i; _mDist[worst] = d; }
     }
   }
@@ -394,6 +403,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   }
   for (let k = 0; k < count; k++) {
     const si = _mOrder[k];
+    if (groups && groups.has(si)) { groups.chosen[si] = 1; continue; } // MESH-INST-01: drawn by its instanced group (same nearest-64 set as singles)
     const s = structs[si];
     const mesh = cache.get(s.mesh, idFor);
     const item = list.push(mesh, DRAW_STATIC);

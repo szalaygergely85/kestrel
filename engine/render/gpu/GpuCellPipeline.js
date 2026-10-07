@@ -71,6 +71,8 @@ import { MESH_FRAG_SRC, MESH_CLOTH_FRAG_SRC } from './glsl/mesh.frag.js';
 import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.js';
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../GBuffer.js';
+import { MeshGroupSet, addMeshStructuresBatched } from '../../mesh/meshGroups.js';
+import { DRAW_FLAG_ONE_PART } from '../../mesh/DrawList.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addMeshStructures, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, addCloths, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
@@ -106,6 +108,9 @@ function sumFinite(arr) {
   for (let i = 0; i < arr.length; i++) if (!Number.isNaN(arr[i])) s += arr[i];
   return s;
 }
+
+/** MESH-INST-01: scratch range for DRAW_FLAG_ONE_PART items (module-level: no per-frame allocation). */
+const _oneRange = [{ start: 0, count: 0 }];
 
 export class GpuCellPipeline {
   constructor(rt, opts = {}) {
@@ -227,6 +232,7 @@ export class GpuCellPipeline {
     this._meshBuffers = null;
     this._levelMeshCache = null;
     this._meshDrawCache = new MeshDrawCache(); // ME-14c3: placed glTF meshes (kind 9), per-GPU-pipeline copy
+    this._meshGroups = new MeshGroupSet(); // MESH-INST-01: repeated placed meshes -> one instanced draw per mesh
     this._strictMatIdFor = null;               // ME-14c3: idFor that throws on an undefined palette key
     this._meshDrawList = null;
     if (this.renderer === 'mesh') {
@@ -1741,7 +1747,7 @@ export class GpuCellPipeline {
     // tower; a real fogFarM wiring is ME-06's terrain-parity concern).
     addStructures(list, world, cam, this._levelMeshCache, 2000);
     // ME-14c3 (37.1 item 7): imported glTF meshes (kind 9) right after the level structures, same as compositor.js.
-    if (this._strictMatIdFor) addMeshStructures(list, world, cam, this._meshDrawCache, this._strictMatIdFor, 2000);
+    if (this._strictMatIdFor) addMeshStructuresBatched(list, world, cam, this._meshDrawCache, this._strictMatIdFor, 2000, this._meshGroups, this._meshFrustumPlanes);
     // ME-06 (27.15.5): one `TerrainMeshSet` per bound `Terrain` instance,
     // built lazily and advanced by at most 2 ms per RENDERED frame (never
     // inside a fixed step, never inside this draw loop itself) - the same
@@ -1897,7 +1903,8 @@ export class GpuCellPipeline {
           }
           const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
           const idxBytes = entry.indexType === 'u16' ? 2 : 4;
-          const ranges = mesh.ranges;
+          let ranges = mesh.ranges;
+          if (item.flags & DRAW_FLAG_ONE_PART) { _oneRange[0].count = mesh.triCount; ranges = _oneRange; } // MESH-INST-01: one identity part = one draw per group
           const pm = item.partMatrices;
           for (let p = 0; p < ranges.length; p++) {
             const range = ranges[p];

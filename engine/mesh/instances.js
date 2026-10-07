@@ -244,6 +244,28 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
  */
 
 /**
+ * One engine-owned `InstanceGroup` (buffers + scratch). `InstanceGroups.group` registers it; MESH-INST-01's `MeshGroupSet`
+ * (meshGroups.js) owns its own, outside the 32-group voxel registry.
+ * @param {string} modelKey @param {number} capacity - instances
+ * @returns {InstanceGroup}
+ */
+export function makeInstanceGroup(modelKey, capacity) {
+  const g = {
+    modelKey, ib: createInstanceBuffer(capacity), count: 0,
+    pose: { clip: -1, frame: 0, tMs: 0 }, parts: createInstanceParts(), used: true,
+    // RE-15a (28.13 point 3): both LOD buckets allocated now (index 1 is
+    // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
+    drawIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
+    drawCount: /** @type {[number, number]} */ ([0, 0]),
+    shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
+    shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
+    lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
+    _memoFrameNo: /** @type {number|null} */ (null),
+  };
+  return g;
+}
+
+/**
  * Registry of instance groups (`engine.instances`). The game creates a group
  * per (model, animation phase) and refills `ib`/`count`/`pose` every frame;
  * the engine turns each non-empty group into one `DRAW_INSTANCED` item.
@@ -271,18 +293,7 @@ export class InstanceGroups {
    */
   group(modelKey, capacity) {
     if (this.groups.length >= MAX_INSTANCE_GROUPS) throw new Error(`InstanceGroups: over ${MAX_INSTANCE_GROUPS} groups`);
-    const g = {
-      modelKey, ib: createInstanceBuffer(capacity), count: 0,
-      pose: { clip: -1, frame: 0, tMs: 0 }, parts: createInstanceParts(), used: true,
-      // RE-15a (28.13 point 3): both LOD buckets allocated now (index 1 is
-      // RE-15c's future LOD1 bucket - unused, always drawCount[1] === 0 here).
-      drawIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
-      drawCount: /** @type {[number, number]} */ ([0, 0]),
-      shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
-      shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
-      lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
-      _memoFrameNo: /** @type {number|null} */ (null),
-    };
+    const g = makeInstanceGroup(modelKey, capacity);
     this.groups.push(g);
     return g;
   }
