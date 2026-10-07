@@ -125,7 +125,7 @@ export const validatePcbPort = validatePort;
 
 export function buildLaunchFlags(opts = {}, platform = process.platform) {
   // WG-1a (architecture.md 38.7): WebGPU - Dawn picks D3D12/Metal/Vulkan itself, so no --use-angle.
-  if (opts.backend === 'webgpu' || WEBGPU_PAGE_MODES.has(opts.mode)) {
+  if (opts.backend === 'webgpu' || WEBGPU_PAGE_MODES.has(opts.mode) || opts.mode === 'presentdiff') {
     if (opts.swiftshader) return ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader'];
     return ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'];
   }
@@ -141,6 +141,8 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 // ---------------------------------------------------------------------
 
 // WG-1a/WG-1c1: modes served by their own page (no game query): probe page, WGSL compile check, WebGPU present check.
+// WG-1c2: GATE_POSES slugs (content/dev-poses.js) the presentdiff gate drives: interior, interior close-up, outdoor road.
+export const PRESENTDIFF_POSES = ['crash', 'brazier', 'roadSouth'];
 const WEBGPU_PAGE_MODES = new Set(['webgpu-probe', 'wgsl', 'webgpu-present']);
 
 export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {}) {
@@ -166,14 +168,17 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {})
     // gate's own grid must be requested explicitly.
     parts.push(`grid=${grid || '240x90'}`);
     parts.push(`rays=${rays || 2}`);
+  } else if (mode === 'presentdiff') {
+    // WG-1c2 (38.8a 12): the CPU path is the oracle; `&pose=<slug>` is appended per pose by runLiveCapture
+    parts.push('backend=webgl2', 'gpu=0');
   } else if (mode === 'flicker') {
     parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
   } else {
-    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe|wgsl|webgpu-present)`);
+    throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe|wgsl|webgpu-present|presentdiff)`);
   }
   if (grid && mode !== 'voxelbench') parts.push(`grid=${grid}`);
   if (shadows) parts.push(`shadows=${shadows}`);
-  if (backend === 'webgpu') parts.push('backend=webgpu'); // 38.7 switch (lands in WG-1c2)
+  if (backend === 'webgpu' && mode !== 'presentdiff') parts.push('backend=webgpu'); // 38.7 switch (WG-1c2)
   return parts.join('&');
 }
 
@@ -185,6 +190,7 @@ export function resultGlobalFor(mode) {
   if (mode === 'bench') return '__bench';
   if (mode === 'voxelbench') return '__voxelBench';
   if (mode === 'flicker') return '__flicker';
+  if (mode === 'presentdiff') return '__presentDiff'; // WG-1c2 (set by runLiveCapture's own loop)
   throw new Error(`unknown --mode '${mode}'`);
 }
 
@@ -249,6 +255,15 @@ export function normalizeLiveResult(mode, raw, { variant } = {}) {
     const metrics = {};
     flatten(raw, '', metrics);
     return { rows: [{ name: 'webgpu-present', pass: !!raw.ok, metrics }], ok: !!raw.ok };
+  }
+  if (mode === 'presentdiff') { // WG-1c2: >= 99.5 % identical pixels and max channel diff <= 2 at every pose
+    const rows = (raw.poses || []).map((p) => {
+      const pass = p.pctExact >= 99.5 && p.maxChannelDiff <= 2 && p.distinctGlyphs > 4 && (p.gpuErrors || []).length === 0;
+      const metrics = {}; flatten(p, '', metrics); delete metrics.label;
+      return { name: p.label, pass, metrics };
+    });
+    const okAll = rows.length > 0 && rows.every((r) => r.pass);
+    return { rows, ok: okAll };
   }
   if (mode === 'flicker') {
     const metrics = {};
@@ -607,6 +622,13 @@ export async function connectCdp(cdpPort, timeoutMs = 10000) {
   return { ws, send, onEvent, close: () => { try { ws.close(); } catch {} } };
 }
 
+/** Like `evaluate` but awaits a returned Promise (WG-1c2 presentdiff harness). */
+export async function evaluateAsync(cdp, expression) {
+  const result = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+  if (result.exceptionDetails) throw new Error('page eval threw: ' + JSON.stringify(result.exceptionDetails).slice(0, 800));
+  return result.result.value;
+}
+
 export async function evaluate(cdp, expression) {
   const result = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false });
   if (result.exceptionDetails) throw new Error('page eval threw: ' + JSON.stringify(result.exceptionDetails));
@@ -724,6 +746,24 @@ export async function runLiveCapture(opts) {
     const navigated = new Promise((resolve) => {
       cdp.onEvent((method) => { if (method === 'Page.loadEventFired') resolve(); });
     });
+    // WG-1c2: presentdiff drives the game page once per pose (CPU path) and runs the page-side harness on each.
+    if (opts.mode === 'presentdiff') {
+      const poses = [];
+      for (let pi = 0; pi < PRESENTDIFF_POSES.length; pi++) {
+        const slug = PRESENTDIFF_POSES[pi];
+        const loaded = pi === 0 ? navigated : new Promise((resolve) => { cdp.onEvent((m) => { if (m === 'Page.loadEventFired') resolve(); }); });
+        await cdp.send('Page.navigate', { url: `${url}&pose=${slug}` });
+        await loaded;
+        if (process.env.CAP_LOG) console.error('[presentdiff] loaded', slug);
+        await waitForGlobal(cdp, '(!!(window.__debug && window.__debug.engine))', opts.timeoutMs); // boolean: never serialize __debug itself
+        if (process.env.CAP_LOG) console.error('[presentdiff] __debug up', slug);
+        await sleep(2500); // a few frames so the pose is drawn
+        poses.push(await evaluateAsync(cdp, `import('/game/js/dev/presentDiff.js').then((m) => m.runPresentDiff(${JSON.stringify(slug)}))`));
+      }
+      const ua0 = await evaluate(cdp, 'navigator.userAgent');
+      cdp.close();
+      return { raw: { poses }, ua: ua0, gpuRenderer: null };
+    }
     await cdp.send('Page.navigate', { url });
     await navigated;
 

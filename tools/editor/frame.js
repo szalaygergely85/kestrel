@@ -53,6 +53,7 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'm
   // that same param) is checked here too - the old comment above this gate
   // claiming "`?gpu=0` is handled by RenderTarget itself" was wrong.
   let gpuPipeline = null;
+  // WG-1c2 (38.8a 15): gl2-only until the WG-2 cell pipeline exists; a webgpu target stays on the CPU path.
   if (gpuParam && rt.backend === 'gl2' && detailPass && matTable.allV2) {
     const candidate = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, shadows: engine.shadows });
     if (candidate.ready) {

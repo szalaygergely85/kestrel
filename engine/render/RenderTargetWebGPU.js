@@ -140,6 +140,7 @@ export class RenderTargetWebGPU {
     this.cols = cols;
     this.rows = rows;
     this.cells = new CellBuffer(cols, rows);
+    this._presentFg = null; this._presentBg = null; // 38.8a (17): the old textures are disposed below
     this.device.dispose(this.fgTex);
     this.device.dispose(this.bgTex);
     this.fgTex = this.device.createTexture({ format: 'rgba8', width: cols, height: rows });

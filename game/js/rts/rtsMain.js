@@ -44,6 +44,8 @@ assets.add('model', UNIT_MODEL_KEY, makeUnitModelDef());
 // ---- engine + GPU mesh pipeline -----------------------------------------------------------------------------
 const gridM = /^(\d+)x(\d+)$/i.exec((params.get('grid') || '400x150').trim());
 const grid = clampGrid(gridM ? Number(gridM[1]) : 400, gridM ? Number(gridM[2]) : 150);
+// WG-1c2 (38.8a 15): the RTS spike needs the GPU mesh renderer, so ?backend=webgpu warns and uses webgl2 until WG-2b.
+if (params.get('backend') === 'webgpu') console.warn('[rts] ?backend=webgpu is not supported until WG-2b - using webgl2');
 const engine = createEngine({ canvas, assets, cols: grid.cols, rows: grid.rows, rays: 2, gpu: true,
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 } });
 const rt = engine.renderTarget;

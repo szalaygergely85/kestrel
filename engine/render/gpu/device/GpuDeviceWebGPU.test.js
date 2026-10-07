@@ -45,7 +45,7 @@ function mockGpu() {
     draw() { calls.push('draw'); }, drawIndexed() { calls.push('drawIndexed'); }, end() { calls.push('end'); },
   });
   const rec = (n) => () => { calls.push(n); return obj(n); };
-  const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture() { calls.push('writeTexture'); }, submit() { calls.push('submit'); } };
+  const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture(dst, data, layout, size) { calls.push('writeTexture'); this.lastWrite = { ox: dst.origin[0], oy: dst.origin[1], bpr: layout.bytesPerRow, w: size[0], h: size[1] }; this.objs = [dst, layout, size]; }, submit() { calls.push('submit'); } };
   return {
     calls, sets, layouts, queue, limits: { maxColorAttachments: 8 }, lost: new Promise(() => {}),
     createBuffer: rec('createBuffer'), createTexture: rec('createTexture'), createSampler: rec('createSampler'),
@@ -151,6 +151,24 @@ await run('webgpu: requestDevice rejects -> fallback', {
   }, (r) => r && r.backend === 'webgl2' && /self-test failed/.test(warns[0]));
   const st = await selfTestDevice({ backend: 'webgl2' });
   ok('selfTestDevice on webgl2 is skipped ok', st.ok && !!st.skipped);
+}
+
+{
+  // 38.8a (17): writeTexture reuses its destination/layout/size objects per texture handle (zero-alloc), values still correct
+  const g = mockGpu();
+  const d = new GpuDeviceWebGPU(g, { consts, ringSlots: 8 });
+  const t = d.createTexture({ format: 'rgba8', width: 8, height: 4 });
+  d.writeTexture(t, new Uint8Array(8 * 4 * 4));
+  const first = g.queue.objs.slice(), w1 = g.queue.lastWrite;
+  ok('writeTexture full rect values', w1.ox === 0 && w1.oy === 0 && w1.bpr === 32 && w1.w === 8 && w1.h === 4);
+  d.writeTexture(t, new Uint8Array(2 * 2 * 4), { x: 3, y: 1, w: 2, h: 2 });
+  const w2 = g.queue.lastWrite;
+  ok('writeTexture sub rect values', w2.ox === 3 && w2.oy === 1 && w2.bpr === 8 && w2.w === 2 && w2.h === 2);
+  d.writeTexture(t, new Uint8Array(8 * 4 * 4));
+  const third = g.queue.objs;
+  ok('writeTexture reuses dst/layout/size objects per texture', third[0] === first[0] && third[1] === first[1] && third[2] === first[2]);
+  ok('writeTexture back to full rect resets origin', g.queue.lastWrite.ox === 0 && g.queue.lastWrite.w === 8);
+  d.dispose();
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);
