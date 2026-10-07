@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { World, PHYSICS_DEFAULTS as P, integrate, serialize, deserialize } from '../engine/index.js';
+import { World, PHYSICS_DEFAULTS as P, integrate, serialize, deserialize, updateInteraction } from '../engine/index.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
 import '../design/palette.js';
@@ -32,7 +32,7 @@ const w = World.load(def, assets, { physics: 'mesh' });
 const structure = w.structures.find(s => s.id === 'tower'), O = structure.origin;
 const c = w.colliders.find(c => c.id === 'props:static');
 ok(c && w.colliders.filter(c => c.id === 'props:static').length === 1, 'one static prop collider');
-ok(c.bvh.triCount === 176 + 3 * 32, '11 piece boxes, gondola box, practice-post prism, 3 wall-lamp prisms (BUG-LAMP-COLLIDE)');
+ok(c.bvh.triCount === 176 + 4 * 32, '11 piece boxes, gondola box, practice-post prism, 3 wall-lamp prisms (BUG-LAMP-COLLIDE) + the pick-up lamp (BUG-LAMP-COLLIDE-02)');
 const hashes = {
   gondola: 'bd66286192399a8c8ebf35ae625edd1f526e3c22d96fa8ce111468ff54134ce3', // owner 2026-10-06: basket back to its original wood/brass mats (cloth meant the balloon fabric),
   practiceTarget: 'be119136a64f6a554ed0297179999144e32cd758f1f23f6a97b2b5b351327a83',
@@ -81,7 +81,7 @@ ok(lp.type === 'prism' && lp.r*2 === lamp.world.w && lp.h === lamp.world.h && lp
 const target = level.props.find(p => p.id === 'practiceTarget').colliders[0];
 ok(target.r === assets.model('practiceTarget').target.collider.r && target.h === assets.model('practiceTarget').target.collider.h, 'practice post uses designer collider note');
 for (const p of level.props.filter(p => p.colliders?.length || (assets.has('model',p.model) && assets.model(p.model).colliders?.length))) {
-  ok(!p.dynamic && !p.interactable, p.id + ' remains static and never picked up');
+  ok(!p.dynamic && (!p.interactable || p.id === 'lantern'), p.id + ' remains static and never picked up (only the wall lamp is an interactable: the interact ray is sector-LOS, never collider-based)');
 }
 // Floor lanterns are spare content; PC-A replaced the production placements with wall lanterns.
 // Keep the static sprite model-default and explicit [] coverage on a synthetic placement.
@@ -146,5 +146,41 @@ for (const [x,y] of corridor.slice(1)) {
   }
   ok(n<600, 'capsule reaches corridor waypoint '+[x,y]);
   ok(player.transform.z>=O.z-.01, 'capsule stays above floor');
+}
+// BUG-LAMP-COLLIDE-02: the pick-up wall lamp is solid, still takeable from 1.5 m, and its collider goes away once taken.
+{
+  const lw2 = World.load(def, assets, { physics: 'mesh' });
+  const lantern = lw2.entity('tower.lantern'), lp2 = lantern.transform;
+  const lampShape = level.props.find(p => p.id === 'lantern').colliders[0];
+  const ang = (lp2.yawDeg || 0) * Math.PI / 180;
+  const lx = lp2.x + Math.cos(ang) * lampShape.c[0] - Math.sin(ang) * lampShape.c[1];
+  const ly = lp2.y + Math.sin(ang) * lampShape.c[0] + Math.cos(ang) * lampShape.c[1];
+  const lampTris = lw2.colliders.find(c => c.id === 'props:static').bvh.triCount;
+  // Walk straight at the lamp (from the burner side, along +x), body height covers the lamp z 1.3-1.75 only if
+  // the capsule is tall enough: use a ground-level airborne probe like the other props (blocks from 8 sides).
+  const o2 = { height: P.height, stepUpMax: P.stepUpMax, walkCos: Math.cos(P.maxSlopeDeg*Math.PI/180) }, r2 = {};
+  const probe = (zFoot) => {
+    let blocked = false, x = lx - 1.5, y = ly;
+    for (let i = 0; i < 200; i++) {
+      lw2.collideCircle(x, y, 0.01, 0, P.radius, zFoot, false, o2, r2);
+      blocked ||= Math.hypot(r2.x - (x + 0.01), r2.y - y) > 1e-8; x = r2.x; y = r2.y;
+    }
+    return { blocked, x, y };
+  };
+  const wallX = O.x + 20;
+  // feet 1.0 m above the floor: the capsule spans the lamp (1.3-1.75); wall at O.x+20, lamp 0.04..0.32 m off it
+  const before = probe(O.z + 1.0);
+  ok(before.blocked && Math.hypot(before.x - lx, before.y - ly) >= P.radius - 1e-5 && before.x < lx - 0.1, 'player cannot enter the hanging lamp');
+  // interact ray: lantern.take is offered from 1.5 m with the collider present (LOS is sector-based)
+  const eye = { x: lp2.x - 1.5, y: lp2.y, z: lp2.z + 0.1, yawDeg: 90, pitchDeg: 0 };
+  const st = lw2.interaction; updateInteraction(lw2, null, eye, false);
+  ok(st.targetKey && st.targetKey.endsWith('lantern'), 'lantern.take offered from 1.5 m through its own collider');
+  updateInteraction(lw2, null, eye, true);
+  ok(lw2.state['tower.lantern.taken'] === true, 'lantern taken');
+  ok(lw2.colliders.find(c => c.id === 'props:static').bvh.triCount === lampTris - 32, 'taken lamp: its collider is dropped from props:static');
+  const after = probe(O.z + 1.0);
+  ok(after.x > before.x + 0.4, 'after the take the spot is walkable (capsule reaches the wall, past the old lamp)');
+  const re = deserialize(serialize(lw2), assets, { physics: 'mesh' });
+  ok(re.colliders.find(c => c.id === 'props:static').bvh.triCount === lampTris - 32, 'save reload keeps the taken lamp collider-free');
 }
 console.log(`tower-prop-colliders: ${checks} PASS; ${clearanceSamples} clearance samples; ${walkSteps} capsule steps; ${c.bvh.triCount} triangles`);

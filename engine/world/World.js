@@ -869,6 +869,8 @@ export class World {
         if (!e || e.type !== 'prop' || e.components.billboard) continue;
         const component = e.components.voxel || e.components.sprite;
         if (!component) continue;
+        // BUG-LAMP-COLLIDE-02: a prop may drop its collider in one variant (the taken wall lamp: bracket only).
+        if (p.colliderOffVariant && component.variant === p.colliderOffVariant) continue;
         const model = this.assets.model(component.model);
         const defs = Object.hasOwn(p, 'colliders') ? p.colliders : model.colliders;
         if (defs === undefined) continue;

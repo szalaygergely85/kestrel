@@ -66,6 +66,9 @@ export function lanternTake(ctx) {
     const compName = entity.getComponent && entity.getComponent('voxel') ? 'voxel' : 'sprite';
     const comp = (entity.getComponent && entity.getComponent(compName)) || {};
     entity.setComponent(compName, { ...comp, variant: 'empty' });
+    // BUG-LAMP-COLLIDE-02: the lamp prop is solid while it hangs (props.lantern `colliders`); once taken only the
+    // bracket is left (`colliderOffVariant: 'empty'`), so rebuild the static prop BVH without it.
+    if (world.rebuildPropColliders) world.rebuildPropColliders();
   }
 
   // OWN-REQ-006: remove the flame prop (if this level names one via
