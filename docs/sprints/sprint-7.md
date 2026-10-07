@@ -46,3 +46,11 @@ Stretch / later in the sprint: WG-4a / WG-4b kernels (B2) + host side (B1), ALPH
 ### Missing to be playable (placeholder, PO fills at review)
 - [ ] ...
 - Owner walk-test request: (to fill)
+
+## Owner decisions 2026-10-07 (D-046, D-047)
+- Presets: Low / Medium / High / Ultra; Low = 240x90; rays 1 / 2 / 2 / 4; shadows Off / Low / Mid / High (own setting).
+- Demo: WebGPU-only, web (Chrome/Edge) + Electron desktop.
+- Binary meshes: plain files, no Git LFS.
+- Auto-pick: lookup + ~3 s benchmark, overridable; GFX-02 also adds a runtime adaptive step (grid size is the dynamic-resolution knob via engine.setGrid).
+- Third-party unverified packs: keep in repo (D-046), exclude from release builds until licence evidence is on file.
+- Still open: which US rows to drop (see docs/backlog-triage-sheet.md).

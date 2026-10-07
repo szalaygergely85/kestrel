@@ -167,7 +167,9 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   shadowSunMatrix(sunDir, new Float64Array(3), { ...SUN_SHADOW_DEFAULTS, res: 512, boxM: 400 }, { min: -1, max: 10 }, sm);
   const src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, cache: new LevelMeshCache(), meshCache: new MeshDrawCache(), meshIdFor: idFor };
   const sl = createShadowList();
+  const _budgetWas = meshShadowBudget.enabled; meshShadowBudget.enabled = true; // the budget is opt-in (owner 2026-10-07 hotfix): this test checks it when ON
   buildShadowList(sl, null, w, sm.planes, src);
+  meshShadowBudget.enabled = _budgetWas;
   const kinds = []; for (let i = 0; i < sl.count; i++) kinds.push(sl.items[i].type);
   ok('shadow list: cap-4 single draws, no instanced items', sl.count === meshShadowBudget.cap && kinds.every((k) => k === DRAW_STATIC), `count ${sl.count}`);
   const ids = []; for (let i = 0; i < sl.count; i++) ids.push(sl.items[i].objectId & 0xFFF);
