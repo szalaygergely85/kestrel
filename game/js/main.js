@@ -86,6 +86,7 @@ import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
+import { createInventoryView } from './quest/inventoryView.js'; // US-091b
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -654,11 +655,21 @@ function runGame(mode, cinematic = null) {
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
+  // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
+  // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
+  canvas.addEventListener('mousemove', (e) => {
+    if (!invView || !invView.isOpen || !ui) return;
+    const r = canvas.getBoundingClientRect();
+    invView.setPointer(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
+  });
+  window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
   blockContextMenu(canvas); // RMB must not open the browser menu over the game canvas (never the window)
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
+  let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
+  let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -822,6 +833,15 @@ function runGame(mode, cinematic = null) {
       setLootApi(loot);
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
+      if (invView && invView.isOpen) invView.close();
+      invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryView({
+        style: window.ASSETS.uiStyle.inventory, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
+        inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
+        healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
+        onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
+        onOpen: () => { invWasLocked = !!(look && look.locked); if (invWasLocked && document.exitPointerLock) document.exitPointerLock(); },
+        onClose: () => { if (invWasLocked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* click to resume */ } } },
+      }) : null;
       resetNoteRead(assets.uiStyle); // READ-01: a restart never carries an open note panel over (runtime-only state, 7.6 item 6)
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
@@ -886,7 +906,7 @@ function runGame(mode, cinematic = null) {
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
-      window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; // HANDS-01b: test hooks
+      window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -952,6 +972,12 @@ function runGame(mode, cinematic = null) {
     const ending = mode === 'world' && playerHandle
       && typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
 
+    // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
+    if (invView && mode === 'world' && playerHandle) {
+      invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
+        && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
+    }
+    const invOpen = !!(invView && invView.isOpen);
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
     let mPressedEdge = false;
@@ -961,14 +987,14 @@ function runGame(mode, cinematic = null) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed('KeyM');
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || (vitals && vitals.inputLocked);
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || (vitals && vitals.inputLocked);
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
-    updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || !!(vitals && vitals.inputLocked);
-    const paused = mode === 'world' && !isCaptureOrBench && isPaused({ ending, look, isMapOpen });
+    updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || !!(vitals && vitals.inputLocked);
+    const paused = mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || (invOpen && !ending));
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
     // An allowed lock update still precedes look.update so it turns toward the fresh point.
@@ -1319,6 +1345,7 @@ function runGame(mode, cinematic = null) {
       // both read the same `sceneDim` object, same precedent as `fadeLut`/
       // `fb.sceneFade` just above.
       resetSceneDim(sceneDim);
+      if (invView) invView.pushDim(sceneDim); // US-091b
       pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();
@@ -1364,6 +1391,7 @@ function runGame(mode, cinematic = null) {
       // classic-script global, not an AssetRegistry kind, same precedent as
       // `window.ASSETS.particles`/`window.ASSETS.waterLooks` above).
       drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
+      if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
       if (vitals && vitals.dead) {
@@ -1377,9 +1405,9 @@ function runGame(mode, cinematic = null) {
     }
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
-    if (mode === 'world' && !look.locked && !isMapOpen() && !cinematic && !isWaterfallPreview) drawPauseOverlay(ui, rt, assets);
+    if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
-    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() });
+    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpu is false otherwise, so the pipeline falls

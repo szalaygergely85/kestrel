@@ -67,11 +67,23 @@ export function createToastView(events, style, defs, rgb) {
     L.born = -1;
   }
 
+  /** US-091b: a one-line message toast (same plate, 1.5 s); the same text again restarts its line. Allocates on the event only. */
+  function say(text, fg) {
+    let L = findLine(2, text);
+    if (!L) {
+      L = nextLine();
+      L.kind = 2; L.id = text; L.n = 0; L.plus = ''; L.glyph = 0; L.glyphRgb = null;
+      L.text = text; L.fg = fg;
+    }
+    L.born = -1;
+  }
+
   const offs = [events.on('inventory:added', onAdded), events.on('inventory:full', onFull)];
 
   const view = {
     lines,
     get used() { return used; },
+    say,
     /** Clears every line (world load / restart: a toast never carries over). */
     reset() {
       for (let i = 0; i < max; i++) lines[i].kind = 0;
