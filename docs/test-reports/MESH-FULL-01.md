@@ -1,5 +1,7 @@
 # MESH-FULL-01 gpucompare known-FAIL baselines (D-045)
 
+**D-045 precision exception ended on PC-B, 2026-10-07:** PREC-04b1 + PREC-04b2 restore all 15 rows below to PASS on Chrome 154 / RTX 4060. The same-machine pre-b1 result was 124 PASS / 20 FAIL; b1 was 137/7; b2 is 138/6 with no PASS-to-FAIL regressions. Waterfall front now has zero geometry violations, foreground max difference 1, glyph match 100%, and 10 oracle texel ties within its cap of 38. OutsideNear has `aoViol=0`. The six remaining failures are prior voxel/light/coverage baselines, outside these 15 rows. This table remains historical evidence, not an active exception. Owner roadSouth look and PC-A review remain separate checks. Full implementation and validation: `docs/test-reports/PREC-04b2.md`.
+
 Merged state of origin/wip/mesh-full-parked on pc-a 792d590, same machine (Intel ANGLE D3D11), grid null. A8 classification: kind-9 raster ties. Later runs may not exceed these; PREC-04 restores PASS.
 
 | row | cmpGeom.geomViolCells | cmpCells.cellsOutside | cmpCells.glyphMatchPct | cmpGeom.faceViol | cmpGeom.nrmViol | cmpLight.dLViol |

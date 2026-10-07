@@ -792,7 +792,10 @@ function runGpuCompareSceneMode(ctx) {
       console.log(`[gpucompare] rtsOverlay pass ms: p50=${ovlRes.gpuMsP50} p95=${ovlRes.gpuMsP95} uploadRows=${ps ? ps.rows : -1}`);
     }
 
-    const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, { fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null }); // PREC-04b1: before cmpCells (exclude mask)
+    const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, {
+      fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
+      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)),
+    }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
     const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask);
     cmpLight.dLSample = describeCellNormals(gbuf, GI, cmpLight.dLSampleIdx, cols); // diagnostic only (HANDS-01c)
@@ -801,7 +804,7 @@ function runGpuCompareSceneMode(ctx) {
     const k8Ok = !(isVoxelPose || needK8) || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
     const geomViol = cmpGeom.depthViol + cmpGeom.uvViol + cmpGeom.aoViol + cmpGeom.zViol + cmpGeom.faceViol + cmpGeom.nrmViol;
     const cmpCellsMesh = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true, cmpGeom.excludeMask) : null;
-    const geomBaseOk = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk; // PREC-04: tie cap is its own gate
+    const geomBaseOk = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk; // PREC-04: both tie caps gate every fallback
     const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
       cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
     if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${poseName}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);

@@ -5,6 +5,9 @@ import { compareCells, compareGeometry, compareLight, meshTiesCap } from './gpuC
 import { FACE_E } from '../GBuffer.js';
 import { edgeRules } from '../edgePass.js';
 import { makeOk } from '../../test/assert.js';
+import { bindShading } from '../MaterialTable.js';
+import palette from '../../../design/palette.js';
+import detailPass from '../../../design/detail-pass.js';
 
 // f32<->u32 bit-cast helper for building synthetic readbackGeometry() data.
 const _bitBuf = new ArrayBuffer(4);
@@ -112,15 +115,15 @@ function makeCells(fill) {
 // --- compareGeometry (US-030a, 14.2 item 8) --------------------------------
 // A uniform 4x4 grid, no edges anywhere (every cell same kind) - isolates
 // each check from the edge-cell exclusion.
-function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal) {
-  const kind = new Uint8Array(N).fill(kindVal);
-  const mat = new Uint16Array(N).fill(matVal);
-  const planeId = new Int32Array(N).fill(planeIdVal);
-  const u = new Float32Array(N).fill(uVal);
-  const v = new Float32Array(N).fill(vVal);
-  const depth = new Float32Array(N).fill(depthVal);
-  const giBuf = new Uint32Array(4 * N), gaBuf = new Uint32Array(4 * N), depthBuf = new Uint32Array(4 * N);
-  for (let i = 0; i < N; i++) {
+function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal, n = N) {
+  const kind = new Uint8Array(n).fill(kindVal);
+  const mat = new Uint16Array(n).fill(matVal);
+  const planeId = new Int32Array(n).fill(planeIdVal);
+  const u = new Float32Array(n).fill(uVal);
+  const v = new Float32Array(n).fill(vVal);
+  const depth = new Float32Array(n).fill(depthVal);
+  const giBuf = new Uint32Array(4 * n), gaBuf = new Uint32Array(4 * n), depthBuf = new Uint32Array(4 * n);
+  for (let i = 0; i < n; i++) {
     giBuf[i * 4] = planeIdVal >>> 0;
     giBuf[i * 4 + 1] = (kindVal & 0xff) | ((matVal & 0xffff) << 16);
     gaBuf[i * 4] = f32Bits(uVal); gaBuf[i * 4 + 1] = f32Bits(vVal);
@@ -340,6 +343,84 @@ const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.d
   f.depthBuf[5 * 4] = f32Bits(14);
   const r = geom(f);
   ok('A9 non-tie kind-9 depth violation still counted', r.depthViol === 1 && r.meshTies === 0 && r.pass === false);
+}
+
+// PREC-04b2 A5: AO's precision bound applies only to equal planes; real differences still count.
+{
+  const makeAo = (plane, dao) => {
+    const f = makeGeomFixture(2, 5, 123, 2.126031, 0.5, 27.6);
+    f.gbuf.face = new Uint8Array(N); f.gbuf.aoD = new Float32Array(N).fill(0.873968);
+    for (let i = 0; i < N; i++) f.gaBuf[i * 4 + 3] = f32Bits(f.gbuf.aoD[i]);
+    f.giBuf[5 * 4] = plane; f.gaBuf[5 * 4 + 3] = f32Bits(f.gbuf.aoD[5] + dao);
+    f.gaBuf[5 * 4] = f32Bits(f.gbuf.u[5] - 0.0012);
+    return geom(f);
+  };
+  ok('A5 same plane, depth 27.6, dao .0012: no AO violation', makeAo(123, 0.0012).aoViol === 0);
+  ok('A5 different plane keeps old AO bound', makeAo(124, 0.0012).aoViol === 1);
+  ok('A5 du within uvTol but dao over uvTol counts', makeAo(123, 0.028).aoViol === 1);
+}
+// A9 item 4: real grid-material oracle, including failures that must never be excused.
+{
+  const table = bindShading(palette, detailPass, 1), id = table.idFor('stone');
+  const boundary = table.records[id].v2.grid.v;
+  const makeTexel = (n = N) => {
+    const f = makeGeomFixture(2, id, 123, 0.2, boundary - 0.00005, 10, n);
+    Object.assign(f.gbuf, { face: new Uint8Array(n), z: new Float32Array(n), aoD: new Float32Array(n).fill(Infinity),
+      dudx: new Float32Array(n).fill(0.01), dvdx: new Float32Array(n), dudy: new Float32Array(n), dvdy: new Float32Array(n).fill(0.01) });
+    for (let i = 0; i < n; i++) f.gaBuf[i * 4 + 3] = f32Bits(Infinity);
+    return f;
+  };
+  const opts = { table, jsLight: { uniform: true, rgb: [1, 1, 1] } };
+  const f = makeTexel(); f.gaBuf[5 * 4 + 1] = f32Bits(boundary + 0.00005);
+  const beforeU = f.gbuf.u.slice(), beforeV = f.gbuf.v.slice(), r = geom(f, opts);
+  ok('A9 course boundary dv .0001 is an oracle texel tie', r.texelTies === 1 && r.texelTieCells[0] === 5 && r.excludeMask[5] === 1);
+  ok('A9 oracle restores all u/v values', f.gbuf.u.every((v, i) => v === beforeU[i]) && f.gbuf.v.every((v, i) => v === beforeV[i]));
+  const js = makeCells(() => {}), wrong = makeCells((fg) => { fg[5 * 4] = 200; });
+  const tieCmp = compareCells(js.fg, js.bg, wrong.fg, wrong.bg, f.gbuf.kind, COLS, ROWS, undefined, undefined, 0, 64, false, r.excludeMask);
+  ok('A9 oracle exclusions report their class', tieCmp.texelTiesExcluded === 1 && tieCmp.cellsOutside === 0);
+  f.gaBuf[5 * 4 + 1] = f32Bits(f.gbuf.v[5]);
+  const same = geom(f, opts);
+  const bad = compareCells(js.fg, js.bg, wrong.fg, wrong.bg, f.gbuf.kind, COLS, ROWS, undefined, undefined, 0, 64, false, same.excludeMask);
+  ok('A9 identical uv with wrong GPU colour remains counted', same.texelTies === 0 && bad.cellsOutside === 1 && !bad.pass);
+  f.gaBuf[5 * 4 + 1] = f32Bits(boundary + 0.00005);
+  let zReads = 0, threw = false;
+  const z = f.gbuf.z;
+  f.gbuf.z = new Proxy(z, { get(target, key) {
+    if (key === '5' && ++zReads === 2) throw new Error('second shade fails');
+    return target[key];
+  } });
+  try { geom(f, opts); } catch (e) { threw = e.message === 'second shade fails'; }
+  ok('A9 finally restores u/v when second shade throws', threw && f.gbuf.u[5] === beforeU[5] && f.gbuf.v[5] === beforeV[5]);
+  f.gbuf.z = z;
+  for (const field of ['kind', 'plane', 'mat', 'face', 'uv']) {
+    const g = makeTexel(); g.gaBuf[5 * 4 + 1] = f32Bits(boundary + 0.00005);
+    if (field === 'kind') g.giBuf[5 * 4 + 1] ^= 1;
+    if (field === 'plane') g.giBuf[5 * 4]++;
+    if (field === 'mat') g.giBuf[5 * 4 + 1] += 1 << 16;
+    if (field === 'face') g.giBuf[5 * 4 + 1] |= FACE_E << 8;
+    if (field === 'uv') g.gaBuf[5 * 4] = f32Bits(g.gbuf.u[5] + 0.02);
+    ok('A9 unequal ' + field + ' is not a texel tie', geom(g, opts).texelTies === 0);
+  }
+  ok('A9 pitched oracle is disabled', geom(f, { ...opts, pitched: true }).texelTies === 0);
+  for (const k of [0, 7, 8]) {
+    f.gbuf.kind.fill(k); for (let i = 0; i < N; i++) f.giBuf[i * 4 + 1] = k | (id << 16);
+    ok('A9 kind ' + k + ' is never a texel tie', geom(f, opts).texelTies === 0);
+  }
+  const capFixture = makeTexel(17);
+  for (let i = 0; i < 17; i++) capFixture.gaBuf[i * 4 + 1] = f32Bits(boundary + 0.00005);
+  const cap = compareGeometry(capFixture.gbuf, capFixture.depth, capFixture.giBuf, capFixture.gaBuf, capFixture.depthBuf, 17, 1, opts);
+  ok('A9 17 ties exceed floor cap 16, geometry fails', cap.texelTies === 17 && cap.texelTiesMax === 16 && !cap.texelTiesOk && !cap.pass);
+  const identical = new Uint8Array(17 * 4);
+  ok('A9 excluded colours cannot override failed cap', !compareCells(identical, identical, identical, identical, capFixture.gbuf.kind, 17, 1, undefined, undefined, 0.01, 96, true, cap.excludeMask).pass);
+  capFixture.gaBuf[16 * 4 + 1] = f32Bits(capFixture.gbuf.v[16]);
+  const atCap = compareGeometry(capFixture.gbuf, capFixture.depth, capFixture.giBuf, capFixture.gaBuf, capFixture.depthBuf, 17, 1, opts);
+  ok('A9 16 ties are accepted at cap', atCap.texelTies === 16 && atCap.texelTiesOk && atCap.pass);
+  const large = makeTexel(3201);
+  const largeCap = compareGeometry(large.gbuf, large.depth, large.giBuf, large.gaBuf, large.depthBuf, 3201, 1, opts);
+  ok('A9 cap uses ceil(.005 nonSky) above floor', largeCap.texelTiesMax === 17);
+  large.gbuf.kind[0] = large.gbuf.kind[1] = 0; large.giBuf[1] = large.giBuf[5] = 0;
+  const nonSkyCap = compareGeometry(large.gbuf, large.depth, large.giBuf, large.gaBuf, large.depthBuf, 3201, 1, opts);
+  ok('A9 cap denominator excludes sky', nonSkyCap.texelTiesMax === 16);
 }
 
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);

@@ -1,6 +1,7 @@
 import { KIND_TERRAIN, FACE_PACKED } from '../GBuffer.js';
 import { unpackNormalOct } from '../../voxel/octNormal.js';
 import { edgeRules } from '../edgePass.js';
+import { shadeDetailFast } from '../detailShade.js';
 
 // US-029 tech notes item 7 / AC "Parity page": `compareCells` is the pure,
 // Node-testable comparison core; `runGpuCompare` drives it against a real
@@ -64,8 +65,8 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  */
 export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64, k8NoCap = false, excludeMask = null) {
   const n = cols * rows;
-  // PREC-04b1 (architecture.md 37.1 A9): `excludeMask` (from compareGeometry) = mesh coverage-tie cells | cells whose JS edge rule
-  // differs from the rule evaluated on the GPU G-buffer purely through ties / near-equal depth. They leave every glyph/colour count.
+  // PREC-04b (architecture.md 37.1 A9): excludeMask = coverage ties | excused rule flips | oracle texel ties.
+  // They leave every glyph/colour count; non-enumerable metadata keeps each class and its cap visible to callers.
   let tieReadersExcluded = 0;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
@@ -146,7 +147,10 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
     fgMeanAbs: fgSamples ? fgSumAbs / fgSamples : 0, bgMeanAbs: fgSamples ? bgSumAbs / fgSamples : 0,
     matZeroCount, ruleMismatch, ruleTotal, poisonedSurvivors, tieReadersExcluded,
     mismatchByKind, mismatchByRow6, outsideByKind, outsideSample,
-    pass: glyphMatchPct >= 99 && outsideOk && poisonedSurvivors === 0,
+    meshTiesExcluded: excludeMask?.counts?.meshTies || 0,
+    ruleFlipsExcluded: excludeMask?.counts?.ruleFlips || 0,
+    texelTiesExcluded: excludeMask?.counts?.texelTies || 0,
+    pass: glyphMatchPct >= 99 && outsideOk && poisonedSurvivors === 0 && excludeMask?.texelTiesOk !== false,
   };
 }
 
@@ -250,6 +254,8 @@ function gbufAoBits(gbuf, i) {
   return _aoAlias[i] >>> 0;
 }
 
+// Test-only options: fogMax/suppress run edge-rule parity; table/jsLight/pitched enable the A9 shade oracle.
+// jsLight has the same {uniform, rgb} layout consumed by shadeSurfaces; all other shade inputs stay on the JS side.
 export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, rows, opts = null) {
   const n = cols * rows;
   const kind = gbuf.kind, mat = gbuf.mat, planeId = gbuf.planeId, u = gbuf.u, v = gbuf.v;
@@ -378,7 +384,9 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
           // FACE_PACKED cells hold normal bits (CPU: aoD, mesh GPU: GI.z) - skipped.
           // GPU writes 1e30 for "no AO" where the JS side writes Infinity.
           const ca = gbuf.aoD[i], ga0 = u32ToF32(gaBuf[i * 4 + 3]), ga = ga0 >= 1e29 ? Infinity : ga0;
-          if (!(ca === ga || (Number.isFinite(ca) && Number.isFinite(ga) && Math.abs(ca - ga) <= 1e-3 * Math.max(1, Math.abs(ca))))) {
+          const baseAoTol = 1e-3 * Math.max(1, Math.abs(ca));
+          const aoTol = planeId[i] === gpuPlaneId ? Math.max(baseAoTol, uvTol) : baseAoTol;
+          if (!(ca === ga || (Number.isFinite(ca) && Number.isFinite(ga) && Math.abs(ca - ga) <= aoTol))) {
             if (!aoViol) { aoSampleCpu = ca; aoSampleGpu = ga; aoSampleIdx = i; }
             aoViol++;
           }
@@ -430,6 +438,40 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     }
   }
   res.ruleFlips = ruleFlips; res.ruleFlipsExcused = ruleFlipsExcused;
+  // A9 item 4: independent shades with only u/v changed. Harness-only scratch, never a frame-loop allocation.
+  let nonSky = 0, texelTies = 0;
+  const texelTieCells = [];
+  const table = opts?.table, jsLight = opts?.jsLight;
+  const a = { fg: [0, 0, 0], bg: [0, 0, 0] }, b = { fg: [0, 0, 0], bg: [0, 0, 0] }, light = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    const k = kind[i];
+    if (k !== 0) nonSky++;
+    if (!table || !jsLight || opts.pitched || ex[i] || k === 0 || k === 7 || k === 8) continue;
+    const packed = giBuf[i * 4 + 1], rec = table.records[mat[i]];
+    if (!rec?.v2 || !gbuf.face || k !== (packed & 0xff) || planeId[i] !== (giBuf[i * 4] | 0) ||
+      mat[i] !== (packed >>> 16) || gbuf.face[i] !== ((packed >>> 8) & 0xf)) continue;
+    const cu = u[i], cv = v[i], gu = u32ToF32(gaBuf[i * 4]), gv = u32ToF32(gaBuf[i * 4 + 1]);
+    const uvTol = 1e-3 * Math.max(1, Math.abs(depthArr[i]));
+    if (!Number.isFinite(depthArr[i]) || !(Math.abs(gu - cu) <= uvTol && Math.abs(gv - cv) <= uvTol)) continue;
+    const o = jsLight.uniform ? 0 : i * 3;
+    light[0] = jsLight.rgb[o]; light[1] = jsLight.rgb[o + 1]; light[2] = jsLight.rgb[o + 2];
+    shadeDetailFast(table, rec.v2, i, gbuf, depthArr[i], light, a);
+    try {
+      u[i] = gu; v[i] = gv;
+      shadeDetailFast(table, rec.v2, i, gbuf, depthArr[i], light, b);
+    } finally { u[i] = cu; v[i] = cv; }
+    let differs = a.glyphIdx !== b.glyphIdx;
+    for (let j = 0; j < 3; j++) if (Math.abs(a.fg[j] - b.fg[j]) > TOLERANCE || Math.abs(a.bg[j] - b.bg[j]) > TOLERANCE) differs = true;
+    if (differs) {
+      ex[i] = 1; texelTies++; texelTieCells.push(i);
+    }
+  }
+  res.texelTies = texelTies; res.texelTieCells = texelTieCells;
+  res.texelTiesMax = Math.max(16, Math.ceil(0.005 * nonSky));
+  res.texelTiesOk = texelTies <= res.texelTiesMax;
+  res.pass = res.pass && res.texelTiesOk;
+  Object.defineProperty(ex, 'counts', { value: { meshTies, ruleFlips: ruleFlipsExcused, texelTies } });
+  Object.defineProperty(ex, 'texelTiesOk', { value: res.texelTiesOk });
   Object.defineProperty(res, 'excludeMask', { value: ex, enumerable: false });
   return res;
 }
