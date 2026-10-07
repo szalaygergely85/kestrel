@@ -5,7 +5,7 @@
 import {
   AssetRegistry, createEngine, GRID_DEFAULT_COLS, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
-  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG,
+  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG, createEditLayer,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
@@ -32,7 +32,10 @@ import {
   createUserFolder, renameUserFolder, deleteUserFolder, moveAssetToFolder, groupAssetFolders,
 } from './panel.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile } from './io.js';
+import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits } from './io.js';
+import {
+  BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
+} from './terrainBrush.js';
 import { getModelThumbnail } from './thumbnails.js';
 import {
   createVisibilityState, isHidden, isLocked, setHiddenFlag, setLockedFlag,
@@ -265,7 +268,7 @@ const saved = loadSavedPose();
 let cam = saved ? createCameraPose(saved) : startPose();
 frame.markDirty();
 
-engine.events.on('world:loaded', (evt) => { world = evt.world; });
+engine.events.on('world:loaded', (evt) => { world = evt.world; if (toolMode === 'terrain') attachTerrain(); });
 
 // ---- US-032: selection, edits, undo (docs/architecture.md 24.7/24.8) -----
 const undoStack = createStack(50);
@@ -308,6 +311,120 @@ function flash(msg) {
   lastPickText = msg;
 }
 
+// ---- ED-TERRAIN-1c: terrain brush (docs/architecture.md 37.12) -------------
+// One stroke = beginStroke -> dab per fixed arc-length step (applyDab + rebakeRect) -> mouse-up: endStroke =
+// ONE undo record + refreshTerrainScatter. The layer is the engine's own; `tb.dirty` is the edits file's dirty flag.
+const tb = {
+  op: 'raise', radius: 6, pct: 40, paintId: PAINT_TYPES[PAINT_TYPES.length - 1].id,
+  layer: null, key: null, terrain: null, handle: null, dirty: false,
+  stroke: null, hover: null, // hover: {x, y} world point under the cursor (terrain hits only)
+};
+const terrainToolbarEl = document.getElementById('terrain-toolbar');
+const tbStatusEl = document.getElementById('tb-status');
+const tbRadiusEl = document.getElementById('tb-radius');
+const tbStrengthEl = document.getElementById('tb-strength');
+const tbPaintEl = document.getElementById('tb-paint');
+
+/** Binds the brush to the live world's Terrain: reuse the edit layer World.load built from the edits file, else a fresh one. */
+function attachTerrain() {
+  const t = world && world.terrain;
+  if (!t) { tb.terrain = null; return; }
+  if (tb.terrain === t) return;
+  if (tb.layer) t.setEdits(tb.layer); // a different Terrain instance (not the normal rebuild path): keep the unsaved layer
+  else { if (!t.edits) t.setEdits(createEditLayer(2, 128)); tb.layer = t.edits; }
+  tb.terrain = t;
+  tb.key = world.terrainKey;
+}
+
+function updateTerrainToolbar() {
+  terrainToolbarEl.classList.toggle('on', toolMode === 'terrain');
+  terrainToolbarEl.querySelectorAll('.tb-op').forEach((b) => b.classList.toggle('active', b.dataset.op === tb.op));
+  tbPaintEl.style.display = tb.op === 'paint' ? '' : 'none';
+  tbRadiusEl.nextElementSibling.textContent = `${tb.radius} m`;
+  tbStrengthEl.nextElementSibling.textContent = `${tb.pct}%`;
+  if (toolMode === 'terrain') { attachTerrain(); tbStatusEl.textContent = tb.terrain ? `terrain "${tb.key}"` : 'this world has no terrain'; }
+  frame.markDirty();
+}
+for (const t of PAINT_TYPES) { const o = document.createElement('option'); o.value = String(t.id); o.textContent = t.name; tbPaintEl.appendChild(o); }
+tbPaintEl.value = String(tb.paintId);
+tbPaintEl.addEventListener('change', () => { tb.paintId = Number(tbPaintEl.value); });
+tbRadiusEl.addEventListener('input', () => { tb.radius = Number(tbRadiusEl.value); updateTerrainToolbar(); });
+tbStrengthEl.addEventListener('input', () => { tb.pct = Number(tbStrengthEl.value); updateTerrainToolbar(); });
+document.getElementById('tb-save').addEventListener('click', async () => {
+  // Independent of the level/world validation (Save may be disabled while those are invalid): only the edits file.
+  if (!tb.layer) { flash('terrain: nothing to save'); return; }
+  try { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); flash(`saved: terrainEdits/${tb.key}`); } catch (e) { flash(`terrain save failed: ${e && e.message ? e.message : e}`); }
+  refreshIoStatus();
+});
+terrainToolbarEl.querySelectorAll('.tb-op').forEach((b) => b.addEventListener('click', () => {
+  if (BRUSH_OPS.includes(b.dataset.op)) { tb.op = b.dataset.op; updateTerrainToolbar(); }
+}));
+
+/** Re-bakes a sample rect after a dab / undo (the mesh set picks the dirty rect up on its next step). */
+function rebakeSampleRect(r) {
+  const [x0, y0, x1, y1] = rectToWorld(tb.layer, r);
+  tb.terrain.rebakeRect(x0, y0, x1, y1);
+  world.renderVersion++;
+  frame.markDirty();
+}
+
+function terrainStrokeStart(pt) {
+  attachTerrain();
+  if (!tb.terrain || !tb.terrain.nearReady) { flash('terrain: no baked terrain here'); return; }
+  const ctx = { layer: tb.layer, terrain: tb.terrain, key: tb.key };
+  tb.stroke = beginStroke(ctx, { op: tb.op, radius: tb.radius, strength: effectiveStrength(tb.op, tb.pct, tb.paintId), x: pt.x, y: pt.y });
+  terrainStrokeMove(pt);
+}
+
+function terrainStrokeMove(pt) {
+  const s = tb.stroke;
+  if (!s) return;
+  for (const [x, y] of s.points(pt.x, pt.y)) {
+    const r = s.dab(x, y);
+    if (r) rebakeSampleRect(r);
+  }
+}
+
+/** Finishes (or, with `cancel`, reverts) the stroke; a real stroke becomes ONE undo record. */
+function terrainStrokeEnd(cancel) {
+  const s = tb.stroke;
+  tb.stroke = null;
+  if (!s) return;
+  const rec = endStroke({ layer: tb.layer, terrain: tb.terrain, key: tb.key }, s);
+  if (!rec) return;
+  if (cancel) { applyTerrainSide(tb.layer, rec, rec.before); rebakeSampleRect(rec.rect); }
+  const t0 = performance.now();
+  const sc = world.refreshTerrainScatter();
+  if (cancel) { flash('terrain: stroke cancelled'); return; }
+  undoStack.push(rec);
+  tb.dirty = true;
+  refreshIoStatus();
+  flash(`terrain ${s.op}: ${s.dabs} dabs, scatter ${(performance.now() - t0).toFixed(0)} ms (${sc.trees} trees)`);
+}
+
+/** Undo/redo of a stroke record: write the side into the layer, rebake, refresh scatter. */
+function applyTerrainRecordSide(rec, side) {
+  attachTerrain();
+  if (!tb.terrain) return;
+  rebakeSampleRect(applyTerrainSide(tb.layer, rec, side));
+  world.refreshTerrainScatter();
+  tb.dirty = true;
+  refreshIoStatus();
+}
+
+/** Cursor ring on the terrain (projected 48-point circle just above the ground). */
+function drawTerrainCursor() {
+  if (toolMode !== 'terrain' || !tb.hover || !tb.terrain) return;
+  const radius = tb.stroke ? tb.stroke.radius : tb.radius;
+  const hex = tb.stroke ? '#ffd24a' : '#7CFC7C';
+  for (const [x, y] of ringPoints(tb.hover.x, tb.hover.y, radius)) {
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: tb.terrain.heightAt(x, y) + 0.15 }, frame.renderer);
+    if (!(p.depth > 0)) continue;
+    const c = Math.round(p.col), r = Math.round(p.row);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) rt.setCell(c, r, 'o', hex);
+  }
+}
+
 // ---- US-066: ribbon readouts (tool mode / snap / place toolbar) -----------
 function updateToolModeButtons() {
   toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
@@ -318,6 +435,7 @@ toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     toolMode = btn.dataset.mode;
     updateToolModeButtons();
+    updateTerrainToolbar();
   });
 });
 updateToolModeButtons();
@@ -378,7 +496,7 @@ updatePlaceToolbar();
 function structureForFile(fileId) {
   if (fileId.startsWith('world/')) return null;
   const levelId = fileId.slice('level/'.length);
-  return world.structures.find((st) => st.level.name === levelId) || null;
+  return world.structures.find((st) => st.level && st.level.name === levelId) || null;
 }
 
 // CO-7 (docs/coordinates.md 7): `originForFile` is deleted - every local<->
@@ -556,6 +674,7 @@ function applyAndSync(appliedRec) {
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
+  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); flash(`undo: ${rec.label}`); return; }
   const inv = invert(rec);
   followRename(inv);
   applyEdit(doc, inv);
@@ -566,6 +685,7 @@ function doUndo() {
 function doRedo() {
   const rec = undoStack.redo();
   if (!rec) { flash('redo: nothing to redo'); return; }
+  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); flash(`redo: ${rec.label}`); return; }
   followRename(rec);
   applyEdit(doc, rec);
   applyAndSync(rec);
@@ -1329,7 +1449,7 @@ async function refreshIoStatus() {
   const gen = ++ioGeneration;
   const err = await validateDoc(doc, window.ASSETS);
   if (gen !== ioGeneration) return; // a newer edit landed while this was in flight
-  const dirty = anyDirty(doc);
+  const dirty = anyDirty(doc) || tb.dirty;
   saveBtn.disabled = !!err;
   saveBtn.title = err ? err.message : '';
   ioStatusEl.textContent = err ? `invalid: ${err.message}` : (dirty ? 'unsaved changes' : 'saved');
@@ -1341,6 +1461,7 @@ refreshIoStatus();
 async function doSave() {
   try {
     const saved = await saveAll(doc);
+    if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
@@ -1384,7 +1505,7 @@ window.addEventListener('keydown', (e) => {
 
 // 24.10: "beforeunload warns while any file is dirty".
 window.addEventListener('beforeunload', (e) => {
-  if (!anyDirty(doc)) return;
+  if (!anyDirty(doc) && !tb.dirty) return;
   e.preventDefault();
   e.returnValue = '';
 });
@@ -1535,6 +1656,13 @@ canvas.addEventListener('mousedown', (e) => {
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
+
+  if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
+    const hit = pickAt(col, row, pickCtx());
+    if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
+    else flash('terrain: click on the terrain');
+    return;
+  }
 
   if (placeMode) {
     const result = pickAt(col, row, pickCtx());
@@ -1703,6 +1831,7 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
+  if (tb.stroke) { terrainStrokeEnd(false); return; }
   // ED-DND-01: finish an asset drag. A plain click (`!moved`) just clears the
   // pending drag and leaves the model armed (click-to-arm + click-to-place,
   // unchanged); a real drag drops through the SAME `placeAt` path or cancels.
@@ -1759,6 +1888,19 @@ window.addEventListener('mouseup', (e) => {
   commit(makeFieldEditRecord('drag', d.item.fileId, d.item.collection, before, d.index, { x: nextLocal.x, y: nextLocal.y }));
 });
 
+// ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
+canvas.addEventListener('mousemove', (e) => {
+  if (toolMode !== 'terrain') return;
+  const { col, row } = computeMouseCell(e);
+  if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
+  const hit = pickAt(col, row, pickCtx());
+  if (hit.kind === 'terrain' && hit.world) {
+    tb.hover = { x: hit.world.x, y: hit.world.y };
+    if (tb.stroke) terrainStrokeMove(tb.hover);
+    frame.markDirty();
+  }
+});
+
 // ---- overlay + mouse-look (RMB drag, per 24.5) --------------------------
 const overlay = new DebugOverlay(document.body);
 if (params.get('debug') === '1') overlay.toggle();
@@ -1805,7 +1947,9 @@ function update(dt) {
   // US-032 (24.8): Esc cancels an in-progress drag (no record) instead of
   // committing it - checked before the drag's own mousemove/mouseup handlers
   // would otherwise leave the live transform wherever the mouse last was.
-  if (input.pressed('Escape') && drag) {
+  if (input.pressed('Escape') && tb.stroke) {
+    terrainStrokeEnd(true); // ED-TERRAIN-1c: Esc reverts the stroke in progress (no record)
+  } else if (input.pressed('Escape') && drag) {
     const data = world.entity(drag.entId);
     if (data) Object.assign(data.transform, drag.startTransform);
     drag = null;
@@ -1933,6 +2077,7 @@ function drawOverlay(fb) {
   if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer);
   drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
   drawAssetGhost();
+  drawTerrainCursor();
   if (helpOn) drawHelpOverlay();
   void fb;
 }
@@ -1975,7 +2120,7 @@ window.__editor = {
   get selection() { return selection; },
   get placeMode() { return placeMode; },
   get helpOn() { return helpOn; },
-  undoStack,
+  undoStack, tb,
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), resolveDropPoint: (pt) => resolveDropPoint(world, pt), commitFieldEdit, renameSelected,

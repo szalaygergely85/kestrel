@@ -107,7 +107,7 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
     const item = selectionItemData(doc, selection);
     const s = selection.structId != null
       ? world.structures.find((st) => st.id === selection.structId)
-      : world.structures.find((st) => st.level.name === selection.fileId.slice('level/'.length));
+      : world.structures.find((st) => st.level && st.level.name === selection.fileId.slice('level/'.length));
     if (item && s) {
       const point = localToWorld(s.frame, item.x, item.y, item.z || 0, { x: 0, y: 0, z: 0 });
       const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer);
@@ -142,6 +142,7 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
   // when the selection carries one, so selecting a marker in ONE placement
   // never highlights the same-id marker in another placement of the same level.
   for (const s of world.structures) {
+    if (!s.level) continue; // mesh/road structures carry no level markers
     const def = s.level.def;
     const sameStruct = (sel) => sel.structId == null || sel.structId === s.id;
     for (const l of def.lights || []) {

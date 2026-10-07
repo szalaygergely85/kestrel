@@ -134,7 +134,7 @@ export function yawItemToWorld(frame, yawDeg) {
 export function selectionFromEntityId(doc, world, entityId) {
   for (const s of world.structures) {
     const prefix = `${s.id}.`;
-    if (entityId.startsWith(prefix)) {
+    if (s.level && entityId.startsWith(prefix)) { // mesh/road structures have no level file
       return { fileId: fileKey('level', s.level.name), collection: 'props', id: entityId.slice(prefix.length), structId: s.id };
     }
   }
@@ -202,7 +202,7 @@ export function listOutlinerItems(doc, world) {
     for (const coll of OUTLINER_COLLECTIONS[file.kind] || []) {
       for (const it of file.def[coll] || []) {
         if (it && it.id) {
-          const struct = file.kind === 'level' && world ? world.structures.find((st) => st.level.name === file.id) : null;
+          const struct = file.kind === 'level' && world ? world.structures.find((st) => st.level && st.level.name === file.id) : null;
           out.push({ fileId: fileKey(file.kind, file.id), collection: coll, id: it.id, item: it, structId: struct ? struct.id : null });
         }
       }

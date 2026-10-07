@@ -20,6 +20,7 @@
     "meshes/quaternius/Rock_Medium_2.mesh.json",
     "meshes/quaternius/Rock_Medium_3.mesh.json",
     "meshes/quaternius/Mushroom_Laetiporus.mesh.json",
-    "meshes/quaternius/RockPath_Round_Wide.mesh.json"
+    "meshes/quaternius/RockPath_Round_Wide.mesh.json",
+    "terrain/overworld_far.edits.json"
   ]
 }

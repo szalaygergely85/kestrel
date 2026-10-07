@@ -93,6 +93,7 @@ export function createFrame({ engine, assets, rt, gpuParam = true, renderer = 'm
   engine.events.on('world:loaded', (evt) => {
     const world = evt.world;
     for (const s of world.structures) {
+      if (s.kind === 'mesh') continue; // road/mesh structures have no Level (same guard as game/js/main.js)
       bindLevel(matTable, s.level); // US-028: pre-warm material ids per placed level
       repackMaterials(s.packed, s.level, matTable);
     }

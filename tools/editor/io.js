@@ -10,6 +10,7 @@ import {
   AssetRegistry, World, ContentError, migrateContent, loadContentPack, stringifyContent,
 } from '../../engine/index.js';
 import { fileKey } from './doc.js';
+import { terrainEditsText } from './terrainBrush.js';
 
 /**
  * One file's full envelope + data (24.10): `{ kind, schema, id, nextId,
@@ -300,4 +301,29 @@ export function launchPlaytest(doc) {
     console.warn('[editor] play-test: localStorage write failed (private mode / quota?)', e);
   }
   window.open(`../../game/index.html?playtest=1&world=${encodeURIComponent(doc.worldId)}`, '_blank');
+}
+
+/**
+ * ED-TERRAIN-1c: saves the terrain edit layer to `<key>.edits.json` (the file lives at content/terrain/ - the
+ * File System Access picker remembers the handle in `state.handle`; otherwise a download). Clears `state.dirty`.
+ * @param {{layer:Object, key:string, handle:Object|null, dirty:boolean}} state
+ */
+export async function saveTerrainEdits(state, opts = {}) {
+  const text = terrainEditsText(state.layer, state.key);
+  const name = `${state.key}.edits.json`;
+  const canPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && !opts.forceDownload;
+  if (canPicker) {
+    if (!state.handle) {
+      state.handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: [{ description: 'Kestrel terrain edits', accept: { 'application/json': ['.json'] } }],
+      });
+    }
+    const writable = await state.handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+  } else {
+    downloadFallback(text, name);
+  }
+  state.dirty = false;
 }
