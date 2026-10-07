@@ -14,3 +14,14 @@ Node scripts (no build step). Run from the repo root. Tests are `*.test.mjs` / `
 - `reimport-quaternius.mjs [--dry-run] [name ...]` re-imports every `content/meshes/quaternius/*` mesh that is above its budget from `design/meshes/quaternius/glTF/`, keeping its `mats`, and prints a before/after triangle table.
   - `reimport-quaternius.mjs --uvmap [names...]` re-imports with `--uvmap auto` (default names = the quaternius meshes placed in world_m1), per-key triangle table + ms per mesh.
 - `gen-mesh-colliders.mjs [paths] [--check]` (re)writes `collider` / `collide:false` on mesh json (idempotent); `--check` fails if anything would change (CI).
+
+### Unity character export (CHAR-IMPORT-01)
+
+For models that only exist as Unity assets (FBX + mask shaders, e.g. Synty POLYGON modular characters). Static only: the engine has no skinned animation, so a character is exported in its current pose.
+
+1. Copy `tools/unity/KestrelGltfExport.cs` into `<UnityProject>/Assets/Editor/`.
+2. In a scene, assemble the character (modular packs: only the wanted parts active; Play mode in a randomiser demo works too), select its root, then **Tools > Kestrel > Export character glTF**. First use asks for the output folder (use `design/local/<pack>/`, git-ignored). Output: `character.gltf` + `.bin` + the colour atlas png + `report.json` (parts, tris, materials). Models taller than 10 units are treated as cm (node scale 0.01).
+3. Write a palette map for the atlas (`design/local/<pack>/palette-map.json`, same format as `design/meshes/quaternius/palette-map.json`; `maxKeys` may raise the 6-key cap) and import:
+   `node tools/gltf-import.mjs design/local/<pack>/character.gltf <pack>/<Name> --uvmap auto --palette-map design/local/<pack>/palette-map.json --out content/local/meshes/<pack>/<Name>.mesh.json`
+4. Licence-restricted assets stay local: list the mesh in `content/local/manifest.json` (a normal manifest, `"files": ["meshes/<pack>/<Name>.mesh.json"]`) and place it in `content/local/placements.json` (`{"world": "world_m1", "structures": [{"id", "mesh", "origin": {x,y,z}, "yawDeg"}]}`). `game/js/localOverlay.js` merges both at boot on that PC only (`?nolocal=1` and `?gpucompare` skip it). Assets whose licence allows redistribution go into `content/meshes/` + `content/manifest.json` instead.
+5. Any new palette material needs a v1 record in `design/palette.js` AND a v2 record + `remap` entry in `design/detail-pass.js`; a missing v2 record switches the whole GPU cell pipeline off (console: `GpuCellPipeline inactive (missingV2: ...)`, F3 `path: cpu`).
