@@ -30,6 +30,31 @@ Real WebGL2/D3D11 on NVIDIA GeForce RTX 4060; editor scene grid **400x150**; scr
 
 First browser attempt failed transiently while fetching the editor module; fresh retries booted and captured successfully. Only the server/browser started by the probe were stopped.
 
+### Follow-up: selection visibility confirmed
+
+2026-10-07, same real GPU and 400x150 scene grid. The ordinary Scene Tree
+selection path selected `tower.lantern`; camera at (1499.9, 1030.5, 1.3), yaw
+0, pitch 0, six metres from the lantern. Screenshot:
+`docs/test-reports/captures/ui-plate-01-selection.png`; native browser detail
+capture: `docs/test-reports/captures/ui-plate-01-selection-detail.png`.
+Both inspected. **Visible: yes** — the gold selection bracket has a dark plate,
+four corner marks and dashed sides; it is thin at the full viewport size.
+The detail capture confirms the bracket is distinct against the brown wall.
+The earlier close-camera capture alone was insufficient to judge visibility.
+
+A read-only browser probe inspected the actual present textures immediately
+after `rt.present()`, using the pipeline's public test readback. GPU active and
+pipeline ready were both true. All **80/80** JS-written overlay cells matched
+their expected foreground AND background RGB. Sample cells 23790–23793:
+foreground [255,210,74], background [10,11,16], identical in GPU readback.
+No frame-order or renderer fix is indicated by this probe. It does not remove
+the existing 400-cell highlight-area guard, or establish visual acceptance for
+every selection size or terrain brush. AC2 parser diagnostics still belong to
+B1. Probe instrumentation was temporary; no runtime files changed.
+
+Follow-up validation: 266/266 suites PASS (0 FAIL/TIMEOUT/WARN),
+`check-deps OK` (468 files, 1309 existing warnings), diff-check clean.
+
 ## Validation
 
 Focused overlay test PASS. First full run: 263 PASS / 2 FAIL: the new test's deep import (fixed to public entry), and terrainStroke timing 157.9 ms against 150 ms during browser work (baseline audit run passed). Next full run: 264 PASS / 1 FAIL, pre-existing collider heap check (121,408 bytes / 65,536-byte bound); isolated rerun of both collider suites: 2/2 PASS. Final verification is recorded in `docs/lanes/pc-c.md`. No thresholds widened; renderer/world tests unchanged.
