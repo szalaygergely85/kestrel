@@ -351,7 +351,7 @@ export class World {
 
     for (const s of def.structures || []) {
       const placed = s.mesh
-        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0)
+        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow)
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
@@ -751,7 +751,7 @@ export class World {
   }
 
   /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
-  placeMesh(mesh, origin, id, yawDeg = 0) {
+  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined) {
     const frame = makeFrame(origin.x, origin.y, origin.z ?? 0, 0, yawDeg);
     const bbox = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
     const b = mesh.bbox;
@@ -762,7 +762,8 @@ export class World {
       bbox.z0 = Math.min(bbox.z0, tmpW.z); bbox.z1 = Math.max(bbox.z1, tmpW.z);
     }
     const placed = { id: id || `struct_${this.structures.length}`, kind: 'mesh', mesh,
-      origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox };
+      origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox,
+      castShadow: typeof castShadow === 'boolean' ? castShadow : mesh.castShadow !== false }; // MESH-SHADOW-01: placement overrides the mesh flag
     this.structures.push(placed);
     this.renderVersion++;
     this.structVersion++;

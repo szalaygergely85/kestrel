@@ -149,7 +149,8 @@ export function withCollision(json) {
   if (json.layout !== 'static') return json;
   const plan = planMeshCollision(json.id, json.pos);
   const next = { ...json };
-  delete next.collide; delete next.collider;
+  delete next.collide; delete next.collider; delete next.castShadow;
+  if (!plan.castShadow) next.castShadow = false; // MESH-SHADOW-01: same rule as walk-over
   if (!plan.collide) next.collide = false; else next.collider = plan.collider;
   return next;
 }

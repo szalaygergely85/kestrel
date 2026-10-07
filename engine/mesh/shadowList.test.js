@@ -3,13 +3,16 @@
 // Run: node engine/mesh/shadowList.test.js
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { DrawList, DRAW_STATIC, LevelMeshCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
 import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList } from './shadowList.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
 import { createSunShadowMatrix, shadowSunMatrix, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
 import { dirFromAzEl } from '../core/transform.js';
 import { makeOk } from '../test/assert.js';
+import fs from 'node:fs';
+import { World } from '../world/World.js';
+import { meshFromJSON } from './MeshData.js';
 import { InstanceGroups, writeUnitInstance } from './instances.js';
 
 if (typeof global.gc !== 'function') {
@@ -202,6 +205,25 @@ function cameraPlanes() {
   eye.x = 0;
   g.castShadow = false; buildShadowList(sl, null, world, all, src);
   ok('castShadow false: still absent with bands', sl.count === 0);
+}
+
+// ---- MESH-SHADOW-01: per-mesh / per-placement castShadow -------------------------
+{
+  const load = (n) => meshFromJSON(JSON.parse(fs.readFileSync(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url), 'utf8')));
+  const pebble = load('Pebble_Round_1'), path = load('RockPath_Round_Wide'), rock = load('Rock_Medium_1'), tree = load('DeadTree_1');
+  ok('import rule: pebble / path stone flagged, rock / tree not', pebble.castShadow === false && path.castShadow === false && rock.castShadow === undefined && tree.castShadow === undefined);
+  const stub = { structures: [], renderVersion: 0, structVersion: 0, events: null };
+  const place = (m, x, over) => World.prototype.placeMesh.call(stub, m, { x, y: 0, z: 0 }, `m${stub.structures.length}`, 0, over);
+  const count = (...specs) => {
+    stub.structures.length = 0;
+    for (const [m, x, over] of specs) place(m, x, over);
+    const sl = createShadowList(), sm = createSunShadowMatrix(), centre = new Float64Array(3);
+    shadowSunMatrix(sunDir, centre, OPTS, { min: -1, max: 10 }, sm);
+    return buildShadowList(sl, null, stub, sm.planes, { centre: { x: 0, y: 0, z: 0 }, cache: new LevelMeshCache(), meshCache: new MeshDrawCache(), meshIdFor: () => 1 });
+  };
+  ok('pebble + path stone skipped, rock + tree cast', count([pebble, 0], [path, 2], [rock, 4], [tree, 6]) === 2);
+  ok('placement castShadow:true re-enables a flagged mesh', count([pebble, 0, true], [path, 2]) === 1);
+  ok('placement castShadow:false disables a rock', count([rock, 0, false], [tree, 3]) === 1);
 }
 
 // ---- AC 5: zero allocation over N frames ---------------------------------------

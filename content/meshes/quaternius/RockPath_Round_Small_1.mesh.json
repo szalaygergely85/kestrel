@@ -9636,5 +9636,6 @@
   },
   "matsResolved": false,
   "meshVersion": 1,
-  "collide": false
+  "collide": false,
+  "castShadow": false
 }

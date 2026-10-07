@@ -365,12 +365,14 @@ const _mDist = new Float64Array(MAX_MESH_DRAWS);
  * @param {MeshDrawCache} cache
  * @param {(key: string) => number} idFor
  * @param {number} fogFarM
+ * @param {boolean} [shadowOnly] - MESH-SHADOW-01: skip placements with `castShadow === false` (the sun shadow feed)
  */
-export function addMeshStructures(list, world, cam, cache, idFor, fogFarM) {
+export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false) {
   const structs = world.structures;
   let count = 0;
   for (let i = 0; i < structs.length; i++) {
     if (structs[i].kind !== 'mesh') continue;
+    if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
     const d = bboxDist(cam, structs[i].bbox);
     if (d > fogFarM) continue;
     if (count < MAX_MESH_DRAWS) {

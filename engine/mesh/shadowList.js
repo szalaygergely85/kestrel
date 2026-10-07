@@ -54,7 +54,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   const c = src.centre;
   list.begin();
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
-  if (src.meshCache && src.meshIdFor) addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000); // ME-14c2 (37.1 item 6)
+  if (src.meshCache && src.meshIdFor) addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true); // ME-14c2 (37.1 item 6)
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {

@@ -54,6 +54,7 @@ export const AO_FAR = 1e30;
  * @property {Record<string,string>} [mats] optional glTF material-name -> engine-material map
  * @property {boolean} matsResolved - true once mat bits are real MaterialTable ids
  * @property {number} meshVersion - bumped on every in-place rebuild
+ * @property {boolean} [castShadow] - MESH-SHADOW-01: false = never in the sun shadow list (absent = true); a placement can override
  * @property {boolean} [collide] - MESH-PHYS-01: false = walk-over piece, no collider at all (absent = true)
  * @property {Float32Array} [collider] - MESH-PHYS-01: collision proxy triangles (9 floats/tri, mesh-local); absent = collide against the render triangles
  */
@@ -318,6 +319,7 @@ export function validateMesh(mesh) {
     }
   }
 
+  if (mesh.castShadow !== undefined && typeof mesh.castShadow !== 'boolean') push('castShadow', 'must be a boolean');
   if (mesh.collide !== undefined && typeof mesh.collide !== 'boolean') push('collide', 'must be a boolean');
   if (mesh.collider !== undefined && (!(mesh.collider instanceof Float32Array) || mesh.collider.length % 9 !== 0 || !isFiniteArray(mesh.collider))) {
     push('collider', 'must be a finite Float32Array, 9 floats per triangle');
@@ -411,6 +413,7 @@ export function meshToJSON(mesh) {
     ...(mesh.mats ? { mats: { ...mesh.mats } } : {}),
     matsResolved: mesh.matsResolved,
     meshVersion: mesh.meshVersion,
+    ...(mesh.castShadow === false ? { castShadow: false } : {}),
     ...(mesh.collide === false ? { collide: false } : {}),
     ...(mesh.collider ? { collider: arr(mesh.collider) } : {}),
   };
@@ -436,6 +439,7 @@ export function meshFromJSON(obj) {
     ...(obj.mats ? { mats: { ...obj.mats } } : {}),
     matsResolved: obj.matsResolved,
     meshVersion: obj.meshVersion,
+    ...(obj.castShadow === false ? { castShadow: false } : {}),
     ...(obj.collide === false ? { collide: false } : {}),
     ...(obj.collider ? { collider: Float32Array.from(obj.collider) } : {}),
   };

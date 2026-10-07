@@ -28,5 +28,6 @@
   "mats": {
     "PathRocks": "rock"
   },
+  "castShadow": false,
   "collide": false
 }

@@ -28,5 +28,6 @@
   "mats": {
     "Grass": "grass"
   },
+  "castShadow": false,
   "collide": false
 }

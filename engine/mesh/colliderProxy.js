@@ -97,12 +97,13 @@ export function buildPrismProxy(pos, opts = {}) {
  * @param {string} id mesh id (soft-name rule)
  * @param {ArrayLike<number>} pos mesh-local positions
  * @param {{walkOverH?:number}} [opts]
- * @returns {{collide:boolean, collider:number[]|null}} collide false => no collider at all
+ * @returns {{collide:boolean, collider:number[]|null, castShadow:boolean}} collide false => no collider at all
  */
 export function planMeshCollision(id, pos, opts = {}) {
   let zMax = -Infinity;
   for (let i = 2; i < pos.length; i += 3) if (pos[i] > zMax) zMax = pos[i];
-  if (SOFT_NAME_RE.test(id) || zMax <= (opts.walkOverH ?? WALK_OVER_H)) return { collide: false, collider: null };
+  // MESH-SHADOW-01: a walk-over / soft piece (pebble, path stone, mushroom, grass) also skips the sun shadow map.
+  if (SOFT_NAME_RE.test(id) || zMax <= (opts.walkOverH ?? WALK_OVER_H)) return { collide: false, collider: null, castShadow: false };
   const collider = buildPrismProxy(pos);
-  return collider ? { collide: true, collider } : { collide: false, collider: null };
+  return collider ? { collide: true, collider, castShadow: true } : { collide: false, collider: null, castShadow: false };
 }
