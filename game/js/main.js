@@ -1089,7 +1089,7 @@ function runGame(mode, cinematic = null) {
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (params.get('debug') === '1' && input.pressed('KeyH')) hands.swap(); // dev: swap the two hands
+        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed('KeyH')) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
         hands.step(playerHandle.data, input.isDown('Mouse0') || input.pressed('Mouse0'), input.isDown('Mouse2') || input.pressed('Mouse2'), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
