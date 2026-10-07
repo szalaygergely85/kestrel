@@ -21,7 +21,7 @@ import { fillShadowBands, groupRadius } from './instances.js';
  * mutable tunable (probes/sweeps); both the GL pass and the JS twin read this one list, so parity is unaffected.
  */
 export const MESH_SHADOW_CAP = 4;
-export const meshShadowBudget = { cap: MESH_SHADOW_CAP, cutM: /** @type {number|null} */ (null) }; // cutM null = src.meshLod0M (probe override only)
+export const meshShadowBudget = { enabled: false, cap: MESH_SHADOW_CAP, cutM: /** @type {number|null} */ (null) }; // enabled=false (owner 2026-10-07: props must keep shadows out to the sun box); the Low/Mid/High shadow setting (GFX-03) switches the budget on // cutM null = src.meshLod0M (probe override only)
 const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MESH_SHADOW_CAP };
 
 /** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
@@ -65,7 +65,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
   if (src.meshCache && src.meshIdFor) {
     let b = null;
-    if (src.eye) { b = _budget; b.eye = src.eye; b.cutM = meshShadowBudget.cutM || src.meshLod0M || 25; b.cap = meshShadowBudget.cap; } // MESH-SHADOW-02; no eye = old behaviour
+    if (src.eye && meshShadowBudget.enabled) { b = _budget; b.eye = src.eye; b.cutM = meshShadowBudget.cutM || src.meshLod0M || 25; b.cap = meshShadowBudget.cap; } // MESH-SHADOW-02; no eye = old behaviour
     addMeshStructures(list, world, c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
   }
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c);

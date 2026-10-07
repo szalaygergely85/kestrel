@@ -241,7 +241,7 @@ function cameraPlanes() {
     const ids = []; for (let i = 0; i < sl.count; i++) ids.push(sl.items[i].objectId & 0xFFF);
     return ids;
   };
-  const saved = meshShadowBudget.cap;
+  const saved = meshShadowBudget.cap; const savedEnabled = meshShadowBudget.enabled; meshShadowBudget.enabled = true;
   meshShadowBudget.cap = 3;
   ok('distance cut: props beyond meshLod0M dropped', run([2, 10, 40, 90]).join() === '0,1');
   ok('cap keeps the 3 nearest, nearest first', run([30, 5, 20, 1, 12].map((x) => x - 0)).join() === '3,1,4', run([30, 5, 20, 1, 12]).join());
@@ -257,7 +257,7 @@ function cameraPlanes() {
   shadowSunMatrix(sunDir, new Float64Array(3), { ...OPTS, boxM: 400 }, { min: -1, max: 10 }, sm2);
   meshShadowBudget.cap = 0;
   ok('voxel structures never budgeted (cap 0, 60 m away still cast)', buildShadowList(sl2, null, w2, sm2.planes, { centre: { x: 0, y: 0, z: 0 }, eye, meshLod0M: 25, cache: new LevelMeshCache() }) === 2);
-  meshShadowBudget.cap = saved;
+  meshShadowBudget.cap = saved; meshShadowBudget.enabled = savedEnabled;
 }
 
 // ---- AC 5: zero allocation over N frames ---------------------------------------

@@ -26,7 +26,7 @@ Stretch / later in the sprint: WG-4a / WG-4b kernels (B2) + host side (B1), ALPH
 
 ## Owner decisions needed (open)
 1. **DECIDED (owner 2026-10-07): Ultra = rays 4** (4x4 = 16 sub-samples per cell; the engine default today is rays 2, so Medium and High keep 2 and Low uses 1). The owner liked rays 4 on the RTX 4060. Cost: G-buffer = rays^2 x the cell grid (rays 4 at 400x150 = 1600x600 = 960,000 samples per frame); raster pass is the biggest GPU cost, so GFX-04 must time Ultra on the 4060 and keep Arc/Low at rays 1. Only `?gpucompare=1` forces rays 1.
-2. **Low = 160x60:** D-025 made 160x60 dev-only for players. Allow it for the Low preset (amend D-025), or make Low = 240x90 with no shadows?
+2. **Low = 160x60:** D-025 made 160x60 dev-only for players. Allow it for the Low preset (amend D-025), or make Low = 240x90 with no shadows? **DECIDED (owner 2026-10-07): Low = 240x90; shadows are a separate Off / Low / Mid / High setting.**
 3. **Preset names:** plain Low / Medium / High / Ultra, or themed names (writer proposal)?
 4. **Auto-pick:** a ~3 s benchmark on first launch (behind the loading card) is OK? Re-run only from Settings ("Detect again").
 5. **Unverified third-party packs in the public repo** (Ruins, Voxel Pack, Cozy Nature; StickyBizcuit custom terms; LICENCE-AUDIT-01): keep while evidence is collected, restrict (git-ignore + local only), or remove? (architect asked the manager; needs the owner). **DECIDED (owner 2026-10-07, D-046): KEEP in the public repo for now; release/demo builds exclude them until licence evidence is on file (architect recommendation, to be confirmed before US-112).**
