@@ -52,7 +52,7 @@ export { CellBuffer } from './render/CellBuffer.js';
 // folder table - it is DOM/canvas/pointer-lock first-person mouse-look
 // glue specific to this game's bootstrap - so it is re-exported here rather
 // than duplicated in game/.
-export { Input } from './core/input.js';
+export { Input, blockContextMenu } from './core/input.js';
 export { PlayerLook } from './core/playerLook.js';
 export { Events } from './core/events.js';
 export { FrameProfiler } from './core/FrameProfiler.js'; // US-018 spike hunt (worst-frame section breakdown)
