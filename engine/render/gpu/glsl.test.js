@@ -35,6 +35,8 @@ for (const c of HASH_CONSTANTS) {
   ok(`shade.frag.js contains hash constant ${c}`, SHADE_FRAG_SRC.includes(c));
 }
 
+ok('edge.frag.js isVert includes KIND_MESH (A7)', EDGE_FRAG_SRC.includes('(kind == 8u || kind == 9u) && (face =='));
+ok('edge.frag.js isUp includes KIND_MESH (A7)', EDGE_FRAG_SRC.includes('(kind == 8u || kind == 9u) && face =='));
 ok('edge.frag.js contains 1.18', EDGE_FRAG_SRC.includes('1.18'));
 ok('edge.frag.js contains 0.35', EDGE_FRAG_SRC.includes('0.35'));
 

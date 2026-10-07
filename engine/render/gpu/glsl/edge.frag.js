@@ -7,7 +7,7 @@
 // (quantisation happens at the same point as JS): `floor(min(255,
 // byte*gain)+0.5)`, min 1.
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK, PITCH_UNIFORMS, CELL_RAY_PITCHED } from './common.js';
-import { KIND_MODEL, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
+import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
 
 export const EDGE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out vec4 outFg;
@@ -34,9 +34,9 @@ ${CELL_RAY_PITCHED}
 // rule table via its world face - literal twin of edgePass.js's isVert/isUp.
 bool isVert(uint kind, uint face) {
   return kind == 1u || kind == 2u || kind == 3u ||
-    (kind == ${KIND_MODEL}u && (face == ${FACE_N}u || face == ${FACE_E}u || face == ${FACE_S}u || face == ${FACE_W}u || face == ${FACE_PACKED}u));
+    ((kind == ${KIND_MODEL}u || kind == ${KIND_MESH}u) && (face == ${FACE_N}u || face == ${FACE_E}u || face == ${FACE_S}u || face == ${FACE_W}u || face == ${FACE_PACKED}u));
 }
-bool isUp(uint kind, uint face) { return kind == 4u || kind == 5u || (kind == ${KIND_MODEL}u && face == ${FACE_U}u); }
+bool isUp(uint kind, uint face) { return kind == 4u || kind == 5u || ((kind == ${KIND_MODEL}u || kind == ${KIND_MESH}u) && face == ${FACE_U}u); }
 
 // fogF is not stored in a G-buffer texture (stage 1 recomputes fog from
 // depth in this pass, tech notes item 5 - "no float aux target"); the fog
