@@ -5,7 +5,7 @@
 //   node engine/render/edgePass.test.js
 
 import { GBuffer, KIND_MODEL, KIND_MESH, FACE_PACKED, KIND_WALL, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from './GBuffer.js';
-import { edgePass, RULE_CAP, RULE_SIDE } from './edgePass.js';
+import { edgePass, edgeRules, RULE_CAP, RULE_SIDE } from './edgePass.js';
 import detailPassMod from '../../design/detail-pass.js';
 import { makeOk } from '../test/assert.js';
 
@@ -150,6 +150,55 @@ function idx(x, y) { return y * COLS + x; }
   gbuf.kind[idx(1, 2)] = KIND_MESH; gbuf.face[idx(1, 2)] = FACE_U; gbuf.planeId[idx(1, 2)] = 1;
   edgePass(gbuf, depth, makeRt(), DP.edges);
   ok('kind-9 face U with sky above: RULE_CAP', gbuf.rule[idx(1, 1)] === RULE_CAP);
+}
+
+// ---- 6. PREC-04b1 (37.1 A9 item 7): edgeRules() is bit-identical to the pre-refactor decision loop ------------
+{
+  // Frozen copy of the loop as it was in edgePass() before the refactor (8dd8c23).
+  const vert = (k, f) => k === 1 || k === 2 || k === 3 || ((k === KIND_MODEL || k === KIND_MESH) && (f === FACE_N || f === FACE_E || f === FACE_S || f === FACE_W || f === FACE_PACKED));
+  const up_ = (k, f) => k === 4 || k === 5 || ((k === KIND_MODEL || k === KIND_MESH) && f === FACE_U);
+  function refRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, suppress) {
+    const far = (i, n) => n < 0 ? false : kind[n] === 0 ? true : planeId[n] === planeId[i] ? false : depth[n] > depth[i] * 1.18 + 0.35;
+    const out = new Uint8Array(cols * rows);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if (kind[i] === 0 || fogF[i] > fogMax || (suppress && suppress[i] !== 0)) continue;
+      const up = y > 0 ? i - cols : -1, dn = y < rows - 1 ? i + cols : -1, lf = x > 0 ? i - 1 : -1, rt2 = x < cols - 1 ? i + 1 : -1;
+      let r = 0;
+      if (far(i, up)) r = 1; else if (far(i, dn)) r = 2;
+      else if (vert(kind[i], face[i]) && (far(i, lf) || far(i, rt2))) r = 3;
+      else if (vert(kind[i], face[i]) && rt2 >= 0 && vert(kind[rt2], face[rt2]) && planeId[rt2] !== planeId[i]) {
+        const r2 = x < cols - 2 ? i + 2 : -1;
+        const dl = lf >= 0 && kind[lf] !== 0 ? depth[lf] : depth[i];
+        const dr = r2 >= 0 && kind[r2] !== 0 ? depth[r2] : depth[rt2];
+        if (depth[i] <= dl && depth[rt2] <= dr) r = 4; else if (depth[i] >= dl && depth[rt2] >= dr) r = 5;
+      }
+      if (!r && vert(kind[i], face[i]) && kind[i] !== 2 && dn >= 0 && up_(kind[dn], face[dn]) && depth[dn] <= depth[i] * 1.08) r = 6;
+      if (!r && vert(kind[i], face[i]) && up >= 0 && kind[up] === 6 && depth[up] <= depth[i] * 1.08) r = 7;
+      if (!r && kind[i] === 2 && up >= 0 && up_(kind[up], face[up])) r = 8;
+      out[i] = r;
+    }
+    return out;
+  }
+  let seed = 12345; const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+  const C = 17, R = 11, N = C * R;
+  let same = true, anyRule = new Set();
+  for (let t = 0; t < 40 && same; t++) {
+    const gbuf = new GBuffer(C, R), depth = new Float32Array(N), sup = t % 3 === 0 ? new Uint8Array(N) : null;
+    for (let i = 0; i < N; i++) {
+      gbuf.kind[i] = Math.floor(rnd() * 10); gbuf.face[i] = Math.floor(rnd() * 8); gbuf.planeId[i] = Math.floor(rnd() * 3);
+      depth[i] = 2 + Math.floor(rnd() * 4) * 0.5; gbuf.fogF[i] = rnd();
+      if (sup) sup[i] = rnd() < 0.2 ? 1 : 0;
+    }
+    const want = refRules(gbuf.kind, gbuf.planeId, gbuf.face, depth, gbuf.fogF, C, R, DP.edges.fogMax, sup);
+    const got = new Uint8Array(N).fill(9);
+    edgeRules(gbuf.kind, gbuf.planeId, gbuf.face, depth, gbuf.fogF, C, R, DP.edges.fogMax, sup, got);
+    const rtx = { gpuActive: false, cells: { glyphIdx: new Uint8Array(N), fg: new Uint8Array(N * 4), bg: new Uint8Array(N * 4) } };
+    edgePass(gbuf, depth, rtx, DP.edges, sup);
+    for (let i = 0; i < N; i++) { if (want[i] !== got[i] || want[i] !== gbuf.rule[i]) same = false; anyRule.add(want[i]); }
+  }
+  ok('edgeRules == pre-refactor loop == edgePass().rule on 40 random 17x11 fixtures (with/without suppress)', same);
+  ok('fixtures exercise rules 1..8', [1, 2, 3, 4, 5, 6, 7, 8].every((r) => anyRule.has(r)));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

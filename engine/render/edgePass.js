@@ -41,24 +41,13 @@ function farther(kind, planeId, depth, i, n) {
 }
 
 /**
- * @param {import('./GBuffer.js').GBuffer} gbuf
- * @param {Float32Array} depth - `fb.depth.depth`
- * @param {{cells:{glyphIdx:Uint8Array, fg:Uint8Array}}} rt - render target;
- *   `rt.cells` is the shared CellBuffer both back-ends expose (real game) or
- *   an equivalent shape (bench harness).
- * @param {object} edges - `DP.edges` (thresholds + `rules` glyph/gain table)
- * @param {Uint8Array|null} [suppress] - US-055a2b: cells with a non-zero entry draw no outline (opaque water in front)
+ * PREC-04b1 (architecture.md 37.1 A9 item 7): the rule decision block of `edgePass`, bit-identical, callable on any
+ * G-buffer-shaped arrays (gpuCompare runs it on the GPU readback). Fills `outRule` (0 = none) from the UNMODIFIED inputs.
+ * Reads only cells {i, i-cols, i+cols, i-1, i+1, i+2} (row-local for the x offsets).
  */
-export function edgePass(gbuf, depth, rt, edges, suppress) {
-  // US-029: no-op when the GPU cell pipeline is active (see the matching
-  // guard in detailShade.js's shadeSurfaces - `edge.frag.js` runs this same
-  // decision block on the GPU as pass 2 of the present hook instead).
-  if (rt.gpuActive) return;
-  const cols = gbuf.cols, rows = gbuf.rows;
-  const kind = gbuf.kind, planeId = gbuf.planeId, fogF = gbuf.fogF, rule = gbuf.rule, face = gbuf.face;
-  const fogMax = edges.fogMax;
+export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, suppress, outRule) {
+  const rule = outRule;
   rule.fill(0);
-
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -86,6 +75,25 @@ export function edgePass(gbuf, depth, rt, edges, suppress) {
       rule[i] = r;
     }
   }
+}
+
+/**
+ * @param {import('./GBuffer.js').GBuffer} gbuf
+ * @param {Float32Array} depth - `fb.depth.depth`
+ * @param {{cells:{glyphIdx:Uint8Array, fg:Uint8Array}}} rt - render target;
+ *   `rt.cells` is the shared CellBuffer both back-ends expose (real game) or
+ *   an equivalent shape (bench harness).
+ * @param {object} edges - `DP.edges` (thresholds + `rules` glyph/gain table)
+ * @param {Uint8Array|null} [suppress] - US-055a2b: cells with a non-zero entry draw no outline (opaque water in front)
+ */
+export function edgePass(gbuf, depth, rt, edges, suppress) {
+  // US-029: no-op when the GPU cell pipeline is active (see the matching
+  // guard in detailShade.js's shadeSurfaces - `edge.frag.js` runs this same
+  // decision block on the GPU as pass 2 of the present hook instead).
+  if (rt.gpuActive) return;
+  const cols = gbuf.cols, rows = gbuf.rows;
+  const kind = gbuf.kind, planeId = gbuf.planeId, fogF = gbuf.fogF, rule = gbuf.rule, face = gbuf.face;
+  edgeRules(kind, planeId, face, depth, fogF, cols, rows, edges.fogMax, suppress, rule);
 
   const cells = rt.cells;
   const glyphIdxArr = cells.glyphIdx, fgArr = cells.fg, bgArr = cells.bg;
