@@ -28,9 +28,9 @@ function ensureScratch(body, cfg) {
   if (!body._move) body._move = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0, overflow: false };
   if (!body.feel) body.feel = { stepOffset: 0, dipT: 0, dipAmount: 0, bobPhase: 0, offset: 0 };
   if (!body._collideOpts || body._collideOpts.height !== cfg.height || body._collideOpts.stepUpMax !== cfg.stepUpMax
-    || body._collideOpts.maxSlopeDeg !== cfg.maxSlopeDeg) {
+    || body._collideOpts.maxSlopeDeg !== cfg.maxSlopeDeg || body._collideOpts.airStepUp !== cfg.stepUpMax) {
     body._collideOpts = {
-      height: cfg.height, stepUpMax: cfg.stepUpMax,
+      height: cfg.height, stepUpMax: cfg.stepUpMax, airStepUp: cfg.stepUpMax, // BUG-GONDOLA-FALL: airborne support probe reaches stepUpMax above the feet
       walkCos: Math.cos(cfg.maxSlopeDeg * Math.PI / 180), maxSlopeDeg: cfg.maxSlopeDeg,
     };
   }
