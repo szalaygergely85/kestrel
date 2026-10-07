@@ -1,7 +1,9 @@
 // engine/render/gpu/gpuCompare.test.js (US-029 tech notes item 10).
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
-import { compareCells, compareGeometry, compareLight, meshTieReaders, meshTiesCap } from './gpuCompare.js';
+import { compareCells, compareGeometry, compareLight, meshTiesCap } from './gpuCompare.js';
+import { FACE_E } from '../GBuffer.js';
+import { edgeRules } from '../edgePass.js';
 import { makeOk } from '../../test/assert.js';
 
 // f32<->u32 bit-cast helper for building synthetic readbackGeometry() data.
@@ -254,6 +256,90 @@ function makeGeomFixture(kindVal, matVal, planeIdVal, uVal, vVal, depthVal) {
   const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
   const r = compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS);
   ok('no holes on identical geometry', r.holes === 0);
+}
+
+// --- PREC-04b1 (architecture.md 37.1 A9): mesh coverage ties, cap, exact rule flips -----------------------
+function setGpu(f, i, kindV, planeV, depthV) {
+  f.giBuf[i * 4] = planeV >>> 0; f.giBuf[i * 4 + 1] = (kindV & 0xff) | (5 << 16);
+  if (depthV !== undefined) f.depthBuf[i * 4] = f32Bits(depthV);
+}
+const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, COLS, ROWS, opts);
+// 9a. kind-crossing tie: JS kind 9 vs GPU kind 7 with a different planeId -> counted tie, no violation accounting for that cell.
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  f.gbuf.kind[5] = 9; f.gbuf.planeId[5] = 77; setGpu(f, 5, 7, 88, 25);
+  const r = geom(f);
+  ok('A9 kind-9 vs kind-7 tie: counted (meshTies 1)', r.meshTies === 1 && r.meshTieCells[0] === 5 && r.meshTieMask[5] === 1);
+  ok('A9 kind-crossing tie: no holes / violations', r.holes === 0 && r.geomViolCells === 0 && r.depthViol === 0);
+  const g = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10); // kind 1 vs kind 7: no kind 9 on either twin
+  g.gbuf.planeId[5] = 77; setGpu(g, 5, 7, 88, 25);
+  ok('A9 non-kind-9 kind crossing: not a tie', geom(g).meshTies === 0);
+  const h = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10); // GPU kind 9 vs JS kind 1: the other direction
+  h.gbuf.planeId[5] = 77; setGpu(h, 5, 9, 88, 10);
+  ok('A9 JS kind 1 vs GPU kind 9: tie (either twin)', geom(h).meshTies === 1);
+  const k = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  k.gbuf.kind[5] = 9; k.gbuf.planeId[5] = 77; setGpu(k, 5, 7, 77, 25);
+  ok('A9 equal planeId: not a tie', geom(k).meshTies === 0);
+}
+// 9b. silhouette: JS kind 9 edge cell where the GPU sees sky -> tie, not a hole; interior kind 9 vs sky and kind 1 vs sky stay holes.
+{
+  const f = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  f.gbuf.kind[5] = 9; f.gbuf.planeId[5] = 77; setGpu(f, 5, 0, 0);
+  const r = geom(f);
+  ok('A9 sky-vs-mesh silhouette cell: tie, no hole', r.meshTies === 1 && r.holes === 0);
+  const g = makeGeomFixture(9, 5, 12345, 1.5, 2.5, 10);
+  setGpu(g, 5, 0, 0); // interior JS kind-9 cell (all neighbours kind 9): not a silhouette
+  const rg = geom(g);
+  ok('A9 interior kind 9 vs sky: still a hole, no tie', rg.holes === 1 && rg.meshTies === 0);
+  const e = makeGeomFixture(1, 5, 12345, 1.5, 2.5, 10);
+  e.gbuf.planeId[5] = 77; setGpu(e, 5, 0, 0);
+  const re = geom(e);
+  ok('A9 non-kind-9 hole still fails', re.holes === 1 && re.meshTies === 0 && re.pass === false);
+}
+// 9c. cap formula max(4, ceil(0.03 * meshBoundaryCells)) and the boundary definition.
+{
+  ok('A9 cap: floor of 4', meshTiesCap(0) === 4 && meshTiesCap(100) === 4 && meshTiesCap(133) === 4);
+  ok('A9 cap: ceil(0.03 * b) above the floor', meshTiesCap(134) === 5 && meshTiesCap(200) === 6 && meshTiesCap(1080) === 33);
+  const mk = (nTies) => {
+    const f = makeGeomFixture(9, 5, 12345, 1.5, 2.5, 10);
+    for (let t = 0; t < nTies; t++) setGpu(f, t, 7, 999 + t, 10); // JS kind 9 plane 12345 vs GPU kind 7
+    return geom(f);
+  };
+  const r4 = mk(4), r5 = mk(5);
+  ok('A9 4 ties: at the cap (boundary 0 -> cap 4)', r4.meshTies === 4 && r4.meshTiesMax === 4 && r4.meshTiesOk && r4.meshBoundaryCells === 0);
+  ok('A9 5 ties: over the cap -> meshTiesOk false, pass false', r5.meshTies === 5 && !r5.meshTiesOk && r5.pass === false);
+  const f = makeGeomFixture(9, 5, 12345, 1.5, 2.5, 10); f.gbuf.planeId[5] = 1; f.giBuf[5 * 4] = 1;
+  ok('A9 meshBoundaryCells: odd-plane cell + its 4 neighbours = 5', geom(f).meshBoundaryCells === 5);
+}
+// 9d. exact rule flips (edgeRules on the GPU G-buffer): excluded only when every read cell is a tie or agrees within the depth tolerance.
+{
+  const mkMesh = (gpuDepth4) => {
+    const f = makeGeomFixture(9, 5, 1, 1.5, 2.5, 10);
+    for (let i = 0; i < N; i++) { f.gbuf.planeId[i] = i + 1; f.giBuf[i * 4] = i + 1; f.giBuf[i * 4 + 1] = 9 | (FACE_E << 8) | (5 << 16); }
+    f.gbuf.face = new Uint8Array(N).fill(FACE_E); f.gbuf.fogF = new Float32Array(N); f.gbuf.rule = new Uint8Array(N);
+    edgeRules(f.gbuf.kind, f.gbuf.planeId, f.gbuf.face, f.depth, f.gbuf.fogF, COLS, ROWS, 1e9, null, f.gbuf.rule);
+    f.depthBuf[4 * 4] = f32Bits(gpuDepth4);
+    return f;
+  };
+  const run = (f) => geom(f, { fogMax: 1e9, suppress: null });
+  const same = run(mkMesh(10));
+  ok('A9 no flip when both twins agree', same.ruleFlips === 0 && same.ruleFlipsExcused === 0);
+  const near = run(mkMesh(9.99)); // 0.1 % depth noise: convex (JS) vs concave (GPU) at cell 5
+  ok('A9 near-equal depth flip is counted and excused', near.ruleFlips > 0 && near.ruleFlipsExcused === near.ruleFlips && near.excludeMask[5] === 1);
+  const far = run(mkMesh(8)); // 20 % depth difference on a read cell: a real disagreement
+  ok('A9 flip reading a real depth mismatch is NOT excused', far.ruleFlips > 0 && far.ruleFlipsExcused < far.ruleFlips && far.excludeMask[5] === 0);
+  const jsC = makeCells(() => {}), gpuC = makeCells((fg) => { fg[5 * 4] = 200; });
+  const kindU = new Uint8Array(N).fill(1);
+  const mask = new Uint8Array(N); mask[5] = 1;
+  ok('A9 compareCells: excludeMask drops the cell from the colour counts', compareCells(jsC.fg, jsC.bg, gpuC.fg, gpuC.bg, kindU, COLS, ROWS, undefined, undefined, 0, 64, false, mask).cellsOutside === 0);
+  ok('A9 compareCells: the same cell without the mask counts', compareCells(jsC.fg, jsC.bg, gpuC.fg, gpuC.bg, kindU, COLS, ROWS, undefined, undefined, 0, 64, false, null).cellsOutside === 1);
+}
+// 9e. a real violation on a NON-tie kind-9 cell (same planeId, wrong depth) is still counted.
+{
+  const f = makeGeomFixture(9, 5, 12345, 1.5, 2.5, 10);
+  f.depthBuf[5 * 4] = f32Bits(14);
+  const r = geom(f);
+  ok('A9 non-tie kind-9 depth violation still counted', r.depthViol === 1 && r.meshTies === 0 && r.pass === false);
 }
 
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);

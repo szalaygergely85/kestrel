@@ -1,5 +1,6 @@
 import { KIND_TERRAIN, FACE_PACKED } from '../GBuffer.js';
 import { unpackNormalOct } from '../../voxel/octNormal.js';
+import { edgeRules } from '../edgePass.js';
 
 // US-029 tech notes item 7 / AC "Parity page": `compareCells` is the pure,
 // Node-testable comparison core; `runGpuCompare` drives it against a real
@@ -61,12 +62,10 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
  *   world_m1 spawn colour gap and the stair near-miss once BUG-OWN-001 (the
  *   DDA sky `break`) is fixed; a real bug still fails this bar.
  */
-export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64, k8NoCap = false, meshTieMask = null, ruleJs = null, ruleGpu = null) {
+export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, mat, maxOutsideFrac = 0, fgCap = 64, k8NoCap = false, excludeMask = null) {
   const n = cols * rows;
-  // PREC-04 (architecture.md 37.1 A8): edge readers of a mesh raster-tie cell t = {t, t+-1, t-2, t+-cols}. A reader is
-  // excluded from the glyph/colour counts only where the JS and GPU edge rule differ (ruleJs/ruleGpu when given, else
-  // the observable proxy: glyph or colour differs there). Everything else counts as before.
-  const readers = meshTieMask ? meshTieReaders(meshTieMask, cols, rows) : null;
+  // PREC-04b1 (architecture.md 37.1 A9): `excludeMask` (from compareGeometry) = mesh coverage-tie cells | cells whose JS edge rule
+  // differs from the rule evaluated on the GPU G-buffer purely through ties / near-equal depth. They leave every glyph/colour count.
   let tieReadersExcluded = 0;
   let nonSky = 0, edgeCells = 0, nonEdgeChecked = 0, glyphMismatchNonEdge = 0;
   let fgOutside = 0, bgOutside = 0, fgSumAbs = 0, bgSumAbs = 0, fgMax = 0, bgMax = 0, fgSamples = 0;
@@ -95,15 +94,7 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
 
       const fi = i * 4;
 
-      if (readers && readers[i]) {
-        let differs;
-        if (ruleJs && ruleGpu) differs = ruleJs[i] !== ruleGpu[i];
-        else {
-          differs = jsFg[fi + 3] !== gpuFg[fi + 3];
-          for (let k = 0; k < 3 && !differs; k++) differs = Math.abs(jsFg[fi + k] - gpuFg[fi + k]) > TOLERANCE || Math.abs(jsBg[fi + k] - gpuBg[fi + k]) > TOLERANCE;
-        }
-        if (differs) { tieReadersExcluded++; continue; }
-      }
+      if (excludeMask && excludeMask[i]) { tieReadersExcluded++; continue; }
 
       // Architect review 1 item 1: a surviving poison signature in the GPU
       // readback means this cell took the passthrough branch instead of
@@ -159,24 +150,12 @@ export function compareCells(jsFg, jsBg, gpuFg, gpuBg, kind, cols, rows, rule, m
   };
 }
 
-/** PREC-04: mark the edge readers {t, t+-1, t-2, t+-cols} of every set cell in `mask` (row-local for the x offsets). */
-export function meshTieReaders(mask, cols, rows) {
-  const out = new Uint8Array(cols * rows);
-  for (let t = 0; t < out.length; t++) {
-    if (!mask[t]) continue;
-    const x = t % cols;
-    out[t] = 1;
-    if (x > 0) out[t - 1] = 1;
-    if (x > 1) out[t - 2] = 1;
-    if (x < cols - 1) out[t + 1] = 1;
-    if (t - cols >= 0) out[t - cols] = 1;
-    if (t + cols < out.length) out[t + cols] = 1;
-  }
-  return out;
-}
-
-/** PREC-04 cap: meshTies <= max(4, 0.2 % of kind-9 cells) per pose. */
-export function meshTiesCap(kind9Cells) { return Math.max(4, Math.floor(kind9Cells * 0.002)); }
+/**
+ * PREC-04b1 (37.1 A9 item 2): cap on mesh coverage ties per pose: meshTies <= max(4, ceil(0.03 * meshBoundaryCells)).
+ * meshBoundaryCells = JS kind-9 cells with at least one 4-neighbour (up/down/left/right, in frame) whose JS kind is not 9
+ * or whose planeId differs (the cells where a coverage tie can happen at all).
+ */
+export function meshTiesCap(meshBoundaryCells) { return Math.max(4, Math.ceil(0.03 * meshBoundaryCells)); }
 
 /**
  * US-030a (14.2 item 8, `?gpucompare=1`): pure geometry-parity comparison
@@ -271,7 +250,7 @@ function gbufAoBits(gbuf, i) {
   return _aoAlias[i] >>> 0;
 }
 
-export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, rows) {
+export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, rows, opts = null) {
   const n = cols * rows;
   const kind = gbuf.kind, mat = gbuf.mat, planeId = gbuf.planeId, u = gbuf.u, v = gbuf.v;
   let kindChecked = 0, kindMismatch = 0;
@@ -310,8 +289,10 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   let kindCheckedExclK8 = 0, kindMismatchExclK8 = 0, holesExclK8 = 0;
   // ME-08b 8a (27.16): cells with any depth/uv/ao/z/face/nrm violation whose kind is not 8 (reported only).
   let violNonK8 = 0, geomViolCells = 0;
-  // PREC-04 (37.1 A8): kind 9 on BOTH twins with a different planeId = coverage tie; left out of every violation count.
-  let kind9Cells = 0, meshTies = 0, meshTiesEdge = 0;
+  // PREC-04b1 (37.1 A9 item 1): mesh coverage tie = planeId differs AND (i) both twins non-sky and either is kind 9 (kind-crossing:
+  // mesh over terrain/sector, buried base, ...) or (ii) JS kind 9, GPU sky, on a JS kind-edge cell (silhouette). Left out of holes,
+  // every geometry violation count, compareLight and the glyph/colour counts; counted in meshTies (cap below).
+  let kind9Cells = 0, meshTies = 0, meshTiesEdge = 0, meshBoundaryCells = 0;
   const meshTieMask = new Uint8Array(n), meshTieCells = []; // geomViolCells: distinct cells with any depth/uv/ao/z/face/nrm violation
 
   for (let y = 0; y < rows; y++) {
@@ -319,20 +300,26 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       const i = y * cols + x;
       const gpuKind = giBuf[i * 4 + 1] & 0xff;
       const cpuIsVoxel = kind[i] === 8;
-      if (kind[i] === 9) kind9Cells++; // PREC-04 cap denominator: every JS kind-9 cell, edge or not
+      if (kind[i] === 9) {
+        kind9Cells++;
+        // meshBoundaryCells: a JS kind-9 cell with a differing 4-neighbour (kind != 9 or other planeId); out-of-frame neighbours don't count
+        if ((x > 0 && (kind[i - 1] !== 9 || planeId[i - 1] !== planeId[i])) || (x < cols - 1 && (kind[i + 1] !== 9 || planeId[i + 1] !== planeId[i])) ||
+          (y > 0 && (kind[i - cols] !== 9 || planeId[i - cols] !== planeId[i])) || (y < rows - 1 && (kind[i + cols] !== 9 || planeId[i + cols] !== planeId[i]))) meshBoundaryCells++;
+      }
       if (cpuIsVoxel) k8Cpu++;
       if (gpuKind === 8) k8Gpu++;
-      if (gpuKind === 0 && kind[i] !== 0) {
+      const jsEdge = isEdgeCell(kind, cols, rows, x, y, i);
+      const edge = jsEdge || isEdgeCellU32(giBuf, cols, rows, x, y, i);
+      const planeDiffers = planeId[i] !== (giBuf[i * 4] | 0);
+      const isTie = planeDiffers && ((kind[i] !== 0 && gpuKind !== 0 && (kind[i] === 9 || gpuKind === 9)) || (kind[i] === 9 && gpuKind === 0 && jsEdge));
+      if (gpuKind === 0 && kind[i] !== 0 && !isTie) {
         holes++;
         if (!cpuIsVoxel) holesExclK8++;
       }
-      // PREC-04: a tie is kind 9 on both twins + different planeId, also on kind-edge cells (their readers matter too).
-      const isTie = kind[i] === 9 && gpuKind === 9 && planeId[i] !== (giBuf[i * 4] | 0);
-      const edge = isEdgeCell(kind, cols, rows, x, y, i) || isEdgeCellU32(giBuf, cols, rows, x, y, i);
       if (isTie) {
-        meshTieMask[i] = 1; // kind-edge ties feed the reader exclusion but are not capped (they are outside every geom check)
+        meshTieMask[i] = 1;
+        meshTies++; if (meshTieCells.length < 200) meshTieCells.push(i);
         if (edge) meshTiesEdge++;
-        else { meshTies++; if (meshTieCells.length < 200) meshTieCells.push(i); }
       }
       if (edge) {
         edgeCells++;
@@ -402,7 +389,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     }
   }
 
-  const meshTiesMax = meshTiesCap(kind9Cells), meshTiesOk = meshTies <= meshTiesMax;
+  const meshTiesMax = meshTiesCap(meshBoundaryCells), meshTiesOk = meshTies <= meshTiesMax;
   const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
   const kindMatchPctExclK8 = kindCheckedExclK8 ? 100 * (kindCheckedExclK8 - kindMismatchExclK8) / kindCheckedExclK8 : 100;
   const res = {
@@ -410,12 +397,40 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     kindCheckedExclK8, kindMismatchExclK8, kindMatchPctExclK8, holesExclK8, // ME-06: voxel (kind-8) cells excluded, see comment above
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
     faceViol, zViol, aoViol, violNonK8, geomViolCells, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
-    kind9Cells, meshTies, meshTiesEdge, meshTiesMax, meshTiesOk, meshTieCells, // PREC-04 (meshTieMask is attached non-enumerable below)
+    kind9Cells, meshBoundaryCells, meshTies, meshTiesEdge, meshTiesMax, meshTiesOk, meshTieCells, // PREC-04 (meshTieMask is attached non-enumerable below)
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
     pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0 && meshTiesOk,
   };
   Object.defineProperty(res, 'meshTieMask', { value: meshTieMask, enumerable: false }); // keeps capture JSON small
+  // A9 item 3: exact edge-rule flips. ruleGpu = edgeRules() on the GPU G-buffer (kind/planeId/face from GI, depth from Depth, JS fogF + waterMask).
+  const ex = new Uint8Array(meshTieMask); let ruleFlips = 0, ruleFlipsExcused = 0;
+  if (opts && opts.fogMax !== undefined && gbuf.rule && gbuf.fogF && gbuf.face) {
+    const gK = new Uint8Array(n), gP = new Int32Array(n), gF = new Uint8Array(n), gD = new Float32Array(n), ruleGpu = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      gK[i] = giBuf[i * 4 + 1] & 0xff; gP[i] = giBuf[i * 4] | 0; gF[i] = (giBuf[i * 4 + 1] >>> 8) & 0xf;
+      gD[i] = gK[i] ? u32ToF32(depthBuf[i * 4]) : Infinity;
+    }
+    edgeRules(gK, gP, gF, gD, gbuf.fogF, cols, rows, opts.fogMax, opts.suppress || null, ruleGpu);
+    // a read cell is "explained" when it is a tie, or both twins agree on kind/planeId/face and depth (within the depth tolerance above)
+    const same = (r) => {
+      if (meshTieMask[r]) return true;
+      if (kind[r] !== gK[r] || planeId[r] !== gP[r] || gbuf.face[r] !== gF[r]) return false;
+      const cd = depthArr[r], gd = gD[r];
+      return !Number.isFinite(cd) && !Number.isFinite(gd) || (Number.isFinite(cd) && Number.isFinite(gd) && Math.abs(gd - cd) <= 0.01 * Math.max(1, Math.abs(cd)));
+    };
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if (kind[i] === 0 || gbuf.rule[i] === ruleGpu[i]) continue;
+      ruleFlips++;
+      if (ex[i]) continue;
+      // cells the decision reads: {i, i-cols, i+cols, i-1, i+1, i+2}, row-local
+      let ok = same(i) && (y === 0 || same(i - cols)) && (y === rows - 1 || same(i + cols)) && (x === 0 || same(i - 1)) && (x === cols - 1 || same(i + 1)) && (x >= cols - 2 || same(i + 2));
+      if (ok) { ex[i] = 1; ruleFlipsExcused++; }
+    }
+  }
+  res.ruleFlips = ruleFlips; res.ruleFlipsExcused = ruleFlipsExcused;
+  Object.defineProperty(res, 'excludeMask', { value: ex, enumerable: false });
   return res;
 }
 
