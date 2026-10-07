@@ -249,7 +249,8 @@ export class GpuDeviceWebGPU {
       vertex: { module: this._module(v.src), entryPoint: /** @type {any} */ (v.src).entry || 'vs_main', buffers },
       primitive: { topology: 'triangle-list', frontFace: desc.frontFace || 'cw', cullMode: desc.cull || 'none' },
     };
-    if (targetFormats.length) pd.fragment = { module: this._module(desc.fragment.src), entryPoint: /** @type {any} */ (desc.fragment.src).entry || 'fs_main', targets: targetFormats.map((format) => ({ format })) };
+    // depth-only passes may still need a fragment stage (terrain shadow footprint carve: `discard`, 0 colour targets): keep it when an entry is named
+    if (targetFormats.length || (desc.fragment.src && /** @type {any} */ (desc.fragment.src).entry)) pd.fragment = { module: this._module(desc.fragment.src), entryPoint: /** @type {any} */ (desc.fragment.src).entry || 'fs_main', targets: targetFormats.map((format) => ({ format })) };
     if (desc.depthFormat) {
       const d = desc.depth || { test: false, write: false };
       pd.depthStencil = { format: depthFormatFor(desc.depthFormat), depthWriteEnabled: !!d.write, depthCompare: d.test ? 'less' : 'always' };

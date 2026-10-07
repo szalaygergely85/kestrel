@@ -169,6 +169,7 @@ fn sunShadowTaps(P: vec3f, N: vec3f) -> i32 {
   let c = u.sunShadowM * vec4f(Pp, 1.0);
   let su = (c.x + 1.0) * 0.5; let sv = (c.y + 1.0) * 0.5; let sd = (c.z + 1.0) * 0.5;
   if (su < 0.0 || su >= 1.0 || sv < 0.0 || sv >= 1.0 || sd < 0.0 || sd > 1.0) { return 4; }
+  let sdm = 0.5 + 0.5 * sd; // shadow vertex stages store depth in [0.5, 1] (38.5 item 6); the box test above stays on sd
   let t0 = vec2i(floor(vec2f(su, sv) * u.sunShadowRes - 0.5));
   let res = i32(u.sunShadowRes);
   var n = 0;
@@ -176,7 +177,7 @@ fn sunShadowTaps(P: vec3f, N: vec3f) -> i32 {
     for (var i = 0; i < 2; i++) {
       let t = t0 + vec2i(i, j);
       if (t.x < 0 || t.y < 0 || t.x >= res || t.y >= res) { n++; continue; }
-      if (sd <= textureLoad(uSunShadow, t, 0)) { n++; }
+      if (sdm <= textureLoad(uSunShadow, t, 0)) { n++; }
     }
   }
   return n;

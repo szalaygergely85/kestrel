@@ -8,9 +8,9 @@ import { DrawList, DRAW_STATIC, DRAW_TERRAIN, LevelMeshCache, addStructures } fr
 import { buildShadowList, createShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
 import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, resolveSunShadowOptions } from '../../shadowSun.js';
 import { dirFromAzEl } from '../../../core/transform.js';
-import { WgShadowPass, SHADOW_TERRAIN_PIPE_WGSL } from './passShadow.js';
-import { SHADOW_DEPTH_COPY_WGSL, SHADOW_TERRAIN_WGSL } from '../wgsl/shadow.wgsl.js';
-import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
+import { WgShadowPass } from './passShadow.js';
+import { SHADOW_DEPTH_COPY_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_TERRAIN_BLOCK as TERRAIN_BLOCK } from '../wgsl/shadow.wgsl.js';
+import { SHADOW_Z_LINE, RASTER_Z_LINE } from '../wgsl/raster.wgsl.js';
 
 if (typeof global.gc !== 'function') {
   const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
@@ -39,13 +39,16 @@ for (const pipe of sh.pipes) {
   assert.deepEqual(pd.depth, { test: true, write: true }); assert.deepEqual(pd.depthBias, { factor: 2, units: 4 });
 }
 assert.equal(sh.staticPipe.desc.fragment.src, null, 'depth only: no fragment stage');
-assert.equal(sh.terrainPipe.desc.fragment.src.entry, 'fs_shadow', 'terrain keeps the footprint carve');
+assert.equal(sh.terrainPipe.desc.fragment.src.entry, 'fs_main', 'terrain keeps the footprint carve');
 assert.equal(sh.voxelPipe.desc.cull, 'back'); assert.equal(sh.clothPipe.desc.cull, 'none');
 assert.equal(sh.terrainPipe.desc.bindings.uniformBytes, TERRAIN_BLOCK.sizeBytes);
-assert.ok(SHADOW_TERRAIN_PIPE_WGSL.includes('@vertex fn vs_main') && SHADOW_TERRAIN_PIPE_WGSL.includes('fn fs_shadow'));
-// the carve loop in the pipe module is the same test as the stand-alone shadowTerrain module
-const carve = (s) => s.match(/if \(wp\.x >= b\.x[^\n]*|if \(v\.vWorldPos\.x >= b\.x[^\n]*/)[0].replace(/v\.vWorldPos|wp/g, 'P');
-assert.equal(carve(SHADOW_TERRAIN_PIPE_WGSL).replace(/ \{ discard; \}/, ''), carve(SHADOW_TERRAIN_WGSL).replace(/ \{ return true; \}/, ''));
+// every shadow vertex stage ends with the [0.5, 1] depth line (38.5 item 6), none keeps the raster [0,1] one
+for (const pipe of sh.pipes) {
+  const code = pipe.desc.vertex.src.wgsl;
+  assert.ok(code.includes(SHADOW_Z_LINE) && !code.includes(RASTER_Z_LINE), 'shadow pipe uses the shadow z line');
+}
+assert.equal(sh.terrainPipe.desc.vertex.src.wgsl, SHADOW_TERRAIN_WGSL, 'terrain shadow: own module (vs_main + fs_main, one block)');
+assert.equal(sh.terrainPipe.desc.fragment.src.wgsl, SHADOW_TERRAIN_WGSL);
 assert.equal(new WgShadowPass(d, { shadows: { sun: 'dda' }, renderer: 'dda' }).enabled, false);
 
 // ---- fixtures: three structures (one behind the camera), a fake terrain draw item ----
