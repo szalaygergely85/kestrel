@@ -46,6 +46,10 @@ export class WgCullPass {
     /** @type {Map<any, any>} group -> batch state */
     this.batches = new Map();
     this._nextSlot = 0;
+    /** @type {Uint32Array} args words of the used slots; rebuilt only when _nextSlot changes (no per-frame subarray, arch 2026-10-08) */
+    this._argsView = this.argsCpu.subarray(0, 0);
+    /** @type {Set<any>} groups marked static before their first add() */
+    this._pendingStatic = new Set();
     const block = this.shadow ? CULL_SHADOW_BLOCK : CULL_BLOCK;
     this._ub = new ArrayBuffer(block.sizeBytes);
     this._uv = block.createViews(this._ub);
@@ -71,7 +75,7 @@ export class WgCullPass {
   }
 
   /** Marks a batch as static (rows uploaded once, then only on `invalidate`). @param {any} group @param {boolean} [on] */
-  setStatic(group, on = true) { const b = this.batches.get(group); if (b) b.static = on; else this._pendingStatic = on ? group : null; }
+  setStatic(group, on = true) { const b = this.batches.get(group); if (b) b.static = on; else if (on) this._pendingStatic.add(group); else this._pendingStatic.delete(group); }
   /** Forces the next frame to re-upload `group`'s rows. @param {any} group */
   invalidate(group) { const b = this.batches.get(group); if (b) b.uploaded = -1; }
 
@@ -123,7 +127,7 @@ export class WgCullPass {
     const d = this.device;
     const cap = g.ib.capacity;
     const b = {
-      g, cap, slot: this._nextSlot, static: this._pendingStatic === g, uploaded: -1, view: /** @type {any} */ (null), viewCount: -1,
+      g, cap, slot: this._nextSlot, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1,
       src: d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }),
       lodPrev: d.createBuffer({ usage: 'storage', data: new Uint32Array(cap) }),
       dst: [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })],
@@ -131,6 +135,7 @@ export class WgCullPass {
       entries: /** @type {CullEntry[]} */ ([]),
     };
     this._nextSlot += 2;
+    this._argsView = this.argsCpu.subarray(0, this._nextSlot * ARGS_WORDS);
     for (let lod = 0; lod < 2; lod++) {
       b.entries.push({ group: g, lod, mesh: null, instanceBuffer: b.dst[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot + lod) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
     }
@@ -160,7 +165,7 @@ export class WgCullPass {
     const d = this.device, fr = this.frame, uv = this._uv, f = uv.f32, u = uv.u32, s = this.stats;
     // args: every used slot is rewritten (instanceCount 0 again) with ONE writeBuffer of the used range
     const usedWords = this._nextSlot * ARGS_WORDS;
-    if (usedWords > 0) { d.writeBuffer(this.argsBuffer, this.argsCpu.subarray(0, usedWords), 0); s.argsBytes = usedWords * 4; }
+    if (usedWords > 0) { d.writeBuffer(this.argsBuffer, this._argsView, 0); s.argsBytes = usedWords * 4; }
     const planes = fr.planes;
     for (let q = 0; q < this.queue.length; q++) {
       const b = this.queue[q], g = b.g, n = g.count;
