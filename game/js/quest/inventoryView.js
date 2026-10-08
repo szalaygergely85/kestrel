@@ -24,12 +24,19 @@ const F_ASSIGN = 1, F_CLEARED = 2, F_USE = 3, F_REFUSE = 4;
  * @param {() => void} [o.onHandsChanged] called after a hand assignment (main.js re-steps the router)
  * @param {() => void} [o.onOpen]
  * @param {() => void} [o.onClose]
+ * @param {(index:number) => boolean} [o.isSlotDisabled] host-owned pack/cutscene locks; no inventory schema changes
+ * @param {(hand:string) => boolean} [o.isHandDisabled] host-owned charging/cutscene locks
  */
 export function createInventoryView(o) {
   const S = o.style, C = S.rgb, defs = o.items.defs, keyMap = o.items.keys;
   const P = S.panel;
   const slotCfg = S.slot, G = S.grid, H = S.hands, D = S.details;
   const cols = G.cols, rowsN = G.rows;
+  const styleAt = path => path.split('.').reduce((value,key)=>value[key],S);
+  const disabledSlot = S.states ? styleAt(S.states.slot.disabled) : slotCfg.disabled;
+  const disabledHand = S.states ? styleAt(S.states.hand.disabled) : H.disabled;
+  const slotDisabled = i => !!o.isSlotDisabled && o.isSlotDisabled(i);
+  const handDisabled = hand => !!o.isHandDisabled && o.isHandDisabled(hand);
 
   // ---- per-item prebuilt data (construct time) ----
   const info = {};
@@ -94,7 +101,7 @@ export function createInventoryView(o) {
     return s && s.id ? s.id : null;
   }
 
-  function flashHand(hand, kind) { const f = handFlash[hand === 'left' ? 0 : 1]; f.kind = kind; f.until = t + (kind === F_ASSIGN ? slotCfg.flash.assign.ms : slotCfg.flash.cleared.ms) / 1000; }
+  function flashHand(hand, kind) { const f = handFlash[hand === 'left' ? 0 : 1]; f.kind = kind; f.until = t + (kind === F_ASSIGN ? slotCfg.flash.assign.ms : kind === F_REFUSE ? slotCfg.flash.refuse.ms : slotCfg.flash.cleared.ms) / 1000; }
   function flashSlot(i, kind) {
     slotFlash.idx = i; slotFlash.kind = kind;
     slotFlash.until = t + (kind === F_USE ? slotCfg.flash.use.ms : slotCfg.flash.refuse.ms) / 1000;
@@ -103,7 +110,14 @@ export function createInventoryView(o) {
   function doOpen() {
     const v = inv();
     isOpen = true; zone = ZONE_GRID; idx = 0; pxLast = pyLast = -1;
-    if (v) for (let i = 0; i < SLOTS; i++) if (v.slots[i].id) { idx = i; break; }
+    if (v) {
+      let first = -1;
+      for (let i = 0; i < SLOTS; i++) if (!slotDisabled(i)) {
+        if(first<0)first=i;
+        if(v.slots[i].id){first=i;break;}
+      }
+      if(first>=0)idx=first;
+    }
     handFlash[0].kind = handFlash[1].kind = 0; slotFlash.kind = 0;
     if (o.onOpen) o.onOpen();
   }
@@ -115,10 +129,13 @@ export function createInventoryView(o) {
   // ---- actions ----
   function equip(hand) {
     const v = inv(), id = selectedId();
-    if (!v || !id || zone !== ZONE_GRID) return;
+    if (!v || !id || zone !== ZONE_GRID || slotDisabled(idx)) return;
+    const other = hand === 'left' ? 'right' : 'left';
+    if(handDisabled(hand) || (v[other]===id && handDisabled(other))) {
+      flashSlot(idx,F_REFUSE);flashHand(hand,F_REFUSE);return;
+    }
     if (!info[id] || info[id].def.hand !== true) { flashSlot(idx, F_REFUSE); return; }
     if (v[hand] === id) return;
-    const other = hand === 'left' ? 'right' : 'left';
     const moved = v[other] === id;
     if (!assignHand(v, hand, id)) return;
     flashHand(hand, F_ASSIGN);
@@ -127,6 +144,7 @@ export function createInventoryView(o) {
   }
   function emptyHand(hand) {
     const v = inv();
+    if(handDisabled(hand)){flashHand(hand,F_REFUSE);return;}
     if (!v || !v[hand]) return;
     assignHand(v, hand, null);
     flashHand(hand, F_CLEARED);
@@ -135,7 +153,7 @@ export function createInventoryView(o) {
   function say(text, fg) { if (o.toast && o.toast.say) o.toast.say(text, fg); }
   function useSelected() {
     const v = inv(), id = selectedId();
-    if (!v || !id || zone !== ZONE_GRID) return;
+    if (!v || !id || zone !== ZONE_GRID || slotDisabled(idx)) return;
     const d = info[id].def;
     if (d.kind === 'food' && d.use && d.use.heal) {
       const h = o.healthOf();
@@ -162,7 +180,9 @@ export function createInventoryView(o) {
     const rx = x - G.x, ry = y - G.y;
     if (rx >= 0 && ry >= 0 && rx <= G.pitchX * cols && ry <= G.pitchY * rowsN) {
       const c = Math.min(cols - 1, Math.floor(rx / G.pitchX)), r = Math.min(rowsN - 1, Math.floor(ry / G.pitchY));
-      zone = ZONE_GRID; idx = r * cols + c; return true;
+      const candidate=r*cols+c;
+      if(slotDisabled(candidate))return false;
+      zone = ZONE_GRID; idx = candidate; return true;
     }
     return false;
   }
@@ -171,11 +191,15 @@ export function createInventoryView(o) {
     if (zone === ZONE_GRID) {
       let c = idx % cols, r = (idx / cols) | 0;
       if (dy < 0 && r === 0) { zone = c < cols / 2 ? ZONE_LEFT : ZONE_RIGHT; return; }
-      c = Math.max(0, Math.min(cols - 1, c + dx));
-      r = Math.max(0, Math.min(rowsN - 1, r + dy));
-      idx = r * cols + c;
+      for(let n=0;n<SLOTS;n++) {
+        const nc=c+dx,nr=r+dy;
+        if(nc<0 || nc>=cols || nr<0 || nr>=rowsN)return;
+        c=nc;r=nr;
+        if(!slotDisabled(r*cols+c)){idx=r*cols+c;return;}
+      }
     } else if (dy > 0) {
-      idx = zone === ZONE_LEFT ? 0 : cols / 2; zone = ZONE_GRID;
+      const start=zone===ZONE_LEFT ? 0 : cols/2;
+      for(let i=start;i<SLOTS;i++)if(!slotDisabled(i)){idx=i;zone=ZONE_GRID;return;}
     } else if (dx !== 0) {
       zone = dx < 0 ? ZONE_LEFT : ZONE_RIGHT;
     }
@@ -192,13 +216,13 @@ export function createInventoryView(o) {
   }
   function text(x, y, s, fg, b) { for (let j = 0; j < s.length; j++) put(x + j, y, s.charCodeAt(j), fg, b); }
   // one 9x5 slot box. `sel` = gold cursor style, borderFg = border colour (flash override), innerBg = interior
-  function box(bx, by, id, sel, borderFg, innerBg, handBox, handTag, count) {
-        const bd = handBox ? H.frame : slotCfg.border;
+  function box(bx, by, id, sel, borderFg, innerBg, handBox, handTag, count, borderOverride) {
+        const bd = borderOverride || (handBox ? H.frame : slotCfg.border);
         const bc = sel ? slotCfg.selected.corner.charCodeAt(0) : bd.corner.charCodeAt(0);
         const bh = sel ? slotCfg.selected.h.charCodeAt(0) : bd.h.charCodeAt(0);
         const bv = sel ? slotCfg.selected.v.charCodeAt(0) : bd.v.charCodeAt(0);
         const fg = sel ? slotCfg.selected.fg : borderFg;
-        const cfg = sel ? slotCfg.selected.fg : (handBox ? H.frame.cornerFg : borderFg);
+        const cfg = sel ? slotCfg.selected.fg : (handBox ? bd.cornerFg : borderFg);
         for (let x = 1; x < sb.w - 1; x++) { put(bx + x, by, bh, fg, bg); put(bx + x, by + sb.h - 1, bh, fg, bg); }
         for (let y = 1; y < sb.h - 1; y++) { put(bx, by + y, bv, fg, bg); put(bx + sb.w - 1, by + y, bv, fg, bg); }
         put(bx, by, bc, cfg, bg); put(bx + sb.w - 1, by, bc, cfg, bg);
@@ -296,12 +320,18 @@ export function createInventoryView(o) {
 
       // ---- grid ----
       const flashOnSlot = slotFlash.kind !== 0 && t < slotFlash.until;
-      for (let pass = 0; pass < 2; pass++) {
+      for (let pass = 0; pass < 3; pass++) {
         for (let i = 0; i < SLOTS; i++) {
-          const isSel = zone === ZONE_GRID && i === idx;
-          if ((pass === 1) !== isSel) continue; // the cursor slot last, so its border wins the shared edges
+          const locked=slotDisabled(i);
+          const isSel = !locked && zone === ZONE_GRID && i === idx;
+          if(pass!==(locked ? 0 : isSel ? 2 : 1))continue; // disabled first, live borders then cursor win shared edges
           const s = v.slots[i];
           const bx = G.x + (i % cols) * G.pitchX, by = G.y + ((i / cols) | 0) * G.pitchY;
+          if(locked && disabledSlot) {
+            box(bx,by,null,false,disabledSlot.fg,disabledSlot.innerBg,false,null,0,disabledSlot);
+            put(bx+disabledSlot.x,by+disabledSlot.y,disabledSlot.glyph.charCodeAt(0),disabledSlot.glyphFg,disabledSlot.innerBg);
+            continue;
+          }
           let bf = slotCfg.border.fg, ibg = isSel ? slotCfg.selected.innerBg : slotCfg.innerBg;
           if (flashOnSlot && slotFlash.idx === i) {
             if (slotFlash.kind === F_REFUSE) bf = slotCfg.flash.refuse.borderFg;
@@ -316,26 +346,29 @@ export function createInventoryView(o) {
       // counts last: they sit on the bottom border, which the next row's top border would overwrite
       for (let i = 0; i < SLOTS; i++) {
         const s = v.slots[i];
-        if (s.id && s.n >= slotCfg.count.minN) text(G.x + (i % cols) * G.pitchX + 8 - cntStr[s.n > 99 ? 99 : s.n].length, G.y + ((i / cols) | 0) * G.pitchY + sb.h - 1, cntStr[s.n > 99 ? 99 : s.n], slotCfg.count.fg, bg);
+        if (!slotDisabled(i) && s.id && s.n >= slotCfg.count.minN) text(G.x + (i % cols) * G.pitchX + 8 - cntStr[s.n > 99 ? 99 : s.n].length, G.y + ((i / cols) | 0) * G.pitchY + sb.h - 1, cntStr[s.n > 99 ? 99 : s.n], slotCfg.count.fg, bg);
       }
 
       // ---- hands strip ----
       for (let h = 0; h < 2; h++) {
         const hc = h === 0 ? H.left : H.right, id = h === 0 ? v.left : v.right;
+        const busy=handDisabled(h===0 ? 'left' : 'right') && !!disabledHand;
         const isSel = zone === (h === 0 ? ZONE_LEFT : ZONE_RIGHT);
         const f = handFlash[h];
         let bf = H.frame.fg;
-        if (f.kind !== 0 && t < f.until) bf = f.kind === F_ASSIGN ? slotCfg.flash.assign.borderFg : slotCfg.flash.cleared.borderFg;
-        box(hc.box.x, hc.box.y, id, isSel, bf, isSel ? slotCfg.selected.innerBg : slotCfg.innerBg, true, null, 0);
+        if(busy)bf=disabledHand.frame.fg;
+        if (f.kind !== 0 && t < f.until) bf = f.kind === F_ASSIGN ? slotCfg.flash.assign.borderFg : f.kind===F_REFUSE ? slotCfg.flash.refuse.borderFg : slotCfg.flash.cleared.borderFg;
+        box(hc.box.x, hc.box.y, id, isSel && !busy, bf, isSel && !busy ? slotCfg.selected.innerBg : slotCfg.innerBg, true, null, 0,busy ? disabledHand.frame : null);
         if (!id) {
           const g = H.emptyGlyph[h === 0 ? 'left' : 'right'];
           for (let r = 0; r < 3; r++) for (let c = 0; c < 7; c++) {
             const ch = g[r].charCodeAt(c);
-            if (ch !== 32) put(hc.box.x + 1 + c, hc.box.y + 1 + r, ch, H.emptyGlyph.fg, isSel ? slotCfg.selected.innerBg : slotCfg.innerBg);
+            if (ch !== 32) put(hc.box.x + 1 + c, hc.box.y + 1 + r, ch, H.emptyGlyph.fg, isSel && !busy ? slotCfg.selected.innerBg : slotCfg.innerBg);
           }
         }
-        text(hc.label.x, hc.label.y, hc.label.text, H.label.fg, bg);
+        text(hc.label.x, hc.label.y, hc.label.text, busy ? disabledHand.label.fg : H.label.fg, bg);
         text(hc.label.x + hc.label.text.length + hc.button.gap, hc.label.y, hc.button.text, H.button.fg, bg);
+        if(busy)text(hc.label.x+hc.label.text.length+hc.button.gap+hc.button.text.length+disabledHand.tag.gap,hc.label.y,disabledHand.tag.text,disabledHand.tag.fg,bg);
         if (id && info[id]) {
           text(hc.name.x, hc.name.y, info[id].def.name, H.name.fg, bg);
           text(hc.kind.x, hc.kind.y, H.kindText[info[id].def.kind] || '', H.kind.fg, bg);
@@ -345,7 +378,9 @@ export function createInventoryView(o) {
 
       // ---- details ----
       const sid = selectedId();
-      if (!sid || !info[sid]) {
+      if(zone===ZONE_GRID && slotDisabled(idx)) {
+        text(D.emptySlot.x,D.emptySlot.y,S.states?.lockedText || 'Locked',D.emptySlot.fg,bg);
+      } else if (!sid || !info[sid]) {
         text(D.emptySlot.x, D.emptySlot.y, D.emptySlot.text, D.emptySlot.fg, bg);
         if (zone !== ZONE_GRID) text(D.handSlotSelected.x, D.handSlotSelected.y, D.handSlotSelected.text, D.handSlotSelected.fg, bg);
       } else {
