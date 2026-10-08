@@ -16,6 +16,7 @@ import { WATER_WGSL } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL } from './waterComposite.wgsl.js';
 import { SPRITES_WGSL } from './sprites.wgsl.js';
 import { OVERLAY_WGSL } from './overlay.wgsl.js';
+import { CULL_WGSL } from './cull.wgsl.js';
 
 /** @type {ReadonlyArray<{name: string, code: string}>} */
 export const WGSL_MODULES = Object.freeze([
@@ -39,6 +40,7 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'waterComposite', code: WATER_COMPOSITE_WGSL },
   { name: 'sprites', code: SPRITES_WGSL },
   { name: 'overlay', code: OVERLAY_WGSL },
+  { name: 'cull', code: CULL_WGSL }, // WG-4a compute (entry cs_main)
 ]);
 
 /**

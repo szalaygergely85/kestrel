@@ -19,10 +19,7 @@
 //   Stats: sp.stats.{sprites, uploadMs}. Readback (gpucompare): `await sp.readbackCells(outFg?, outBg?)` -> {fg, bg} Uint8Array(cols*rows*4) or null.
 //   dispose() frees everything.
 //
-// Deviations from the GL pass (flagged): (1) ATLAS is created as 'rgba32ui' (texels widened to u32 once per atlas change) because the device has no
-// 'rgba8ui' format and device files are out of scope; the WGSL reads .r/.g/.b/.a as u32 either way (set ATLAS_FORMAT = 'rgba8ui' + a 4-line device
-// format entry to save 3/4 of its memory). (2) Particle layer uploads as one whole-layer writeTexture when any row is dirty (the device API has no
-// source offset; a subarray per frame would allocate). (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
+// Deviations from the GL pass (flagged): (1) [fixed] ATLAS is 'rgba8ui' (uploaded as is, no widening); the WGSL reads .r/.g/.b/.a as u32 either way. (2) [fixed] the particle layer uploads only the dirty-row slice via writeTexture's dataOffset. (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
 import { SPRITES_BLOCK, SPRITES_WGSL, SPRITES_TEXTURES } from '../wgsl/sprites.wgsl.js';
 import { MAX_SPRITES, SPR_TEXELS } from '../../sprites.js';
 
@@ -30,7 +27,7 @@ const F = (n) => SPRITES_BLOCK.field(n).word;
 const W_COUNT = F('count'), W_FADE = F('sceneFade'), W_MING = F('fadeMinGain'), W_RAMP = F('fadeRampLen');
 const W_DIMALL = F('dimAll'), W_DIMN = F('dimCount'), W_DIMMUL = F('dimMul'), W_DIMRECT = F('dimRect');
 
-export const ATLAS_FORMAT = 'rgba32ui';
+export const ATLAS_FORMAT = 'rgba8ui';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -43,6 +40,7 @@ export class WgSpritesPass {
     this.cols = 0; this.rows = 0;
     this.stats = { sprites: 0, uploadMs: 0 };
     this.ran = false;
+    this._rowRect = { x: 0, y: 0, w: 0, h: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
     this.sceneFade = 1; this.fadeMinGain = 0; this.fadeRampLen = 1;
     this.dimAll = 1; this.dimCount = 0;
     this.dimRect = new Float32Array(16); this.dimMul = new Float32Array(4);
@@ -95,8 +93,7 @@ export class WgSpritesPass {
     if (this.texPal) { d.dispose(this.texPal); this.texPal = null; }
     const data = atlas.data;
     this.texAtlas = d.createTexture({ format: ATLAS_FORMAT, width: atlas.width, height: atlas.height });
-    if (ATLAS_FORMAT === 'rgba32ui') d.writeTexture(this.texAtlas, Uint32Array.from(data)); // one-time widening
-    else d.writeTexture(this.texAtlas, data);
+    d.writeTexture(this.texAtlas, data); // RGBA8UI: the Uint8Array uploads as is (no widening)
     const pn = atlas.pal.length / 4;
     this.texPal = d.createTexture({ format: 'rgba32f', width: pn, height: 1 });
     d.writeTexture(this.texPal, atlas.pal);
@@ -141,11 +138,18 @@ export class WgSpritesPass {
       this._partCols = l.cols; this._partRows = l.rows; this._partDirty = true;
     }
     if (l.part !== this._partRef) { this._partRef = l.part; this._partDirty = true; }
-    const dirty = this._partDirty || l.maxRow >= l.minRow || l.prevMaxRow >= l.prevMinRow;
-    if (!dirty) return;
-    this._partDirty = false;
-    d.writeTexture(this.texPart, l.part);
-    d.writeTexture(this.texPartZ, l.partZ);
+    const hasNow = l.maxRow >= l.minRow, hadPrev = l.prevMaxRow >= l.prevMinRow;
+    if (!this._partDirty && !hasNow && !hadPrev) return;
+    // dirty-row slice (like the GL pass): rows [r0, r1] of the layer, read from the arrays at dataOffset (no subarray)
+    let r0 = this._partRows, r1 = -1;
+    if (hasNow) { r0 = l.minRow; r1 = l.maxRow; }
+    if (hadPrev) { if (l.prevMinRow < r0) r0 = l.prevMinRow; if (l.prevMaxRow > r1) r1 = l.prevMaxRow; }
+    if (this._partDirty) { r0 = 0; r1 = this._partRows - 1; this._partDirty = false; }
+    if (r0 < 0) r0 = 0; if (r1 > this._partRows - 1) r1 = this._partRows - 1;
+    if (r1 < r0) return;
+    const rect = this._rowRect; rect.y = r0; rect.w = this._partCols; rect.h = r1 - r0 + 1;
+    d.writeTexture(this.texPart, l.part, rect, r0 * this._partCols * 4);
+    d.writeTexture(this.texPartZ, l.partZ, rect, r0 * this._partCols);
   }
 
   /**
