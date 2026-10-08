@@ -38,7 +38,7 @@ export function createShadowParityRunner(res) {
       if (!sh || !(await sh.readbackDepth(bits))) return null;
       if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
       const fp = sh.footprints();
-      return compare(sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0);
+      return compare(sh.casterList ? sh.casterList() : sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0);
     },
     /** @param {import('./GpuCellPipeline.js').GpuCellPipeline} pipeline @returns {object|null} null when no sun pass ran this frame */
     run(pipeline) {

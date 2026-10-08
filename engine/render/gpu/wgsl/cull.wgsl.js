@@ -32,16 +32,8 @@ export const CULL_BLOCK = defineUniformBlock('CullU', [
 /** Buffer access per slot of the compute pipeline (GpuDevice ComputePipelineDesc.bindings.buffers). */
 export const CULL_BUFFERS = Object.freeze(['read', 'rw', 'rw', 'rw', 'rw']);
 
-export const CULL_WGSL = `${CULL_BLOCK.wgsl}
-@group(0) @binding(0) var<storage, read> src: array<u32>;
-@group(0) @binding(1) var<storage, read_write> lodPrev: array<u32>;
-@group(0) @binding(2) var<storage, read_write> dst0: array<u32>;
-@group(0) @binding(3) var<storage, read_write> dst1: array<u32>;
-@group(0) @binding(4) var<storage, read_write> args: array<atomic<u32>>;
-@group(1) @binding(0) var<uniform> u: CullU;
-const STRIDE: u32 = ${INSTANCE_STRIDE}u;
-
-// culling.js classifyAABB(planes, t - R, t + R) === CULL_OUT: the AABB corner furthest along each plane normal is behind the plane
+/** Shared with cullShadow.wgsl.js: needs `u.planes` and `u.params.x` (= R) in the including module's uniform block. */
+export const CULL_AABB_FN = `// culling.js classifyAABB(planes, t - R, t + R) === CULL_OUT: the AABB corner furthest along each plane normal is behind the plane
 fn aabbOutside(tx: f32, ty: f32, tz: f32) -> bool {
   let R = u.params.x;
   for (var i = 0; i < 6; i++) {
@@ -54,6 +46,18 @@ fn aabbOutside(tx: f32, ty: f32, tz: f32) -> bool {
   return false;
 }
 
+`;
+
+export const CULL_WGSL = `${CULL_BLOCK.wgsl}
+@group(0) @binding(0) var<storage, read> src: array<u32>;
+@group(0) @binding(1) var<storage, read_write> lodPrev: array<u32>;
+@group(0) @binding(2) var<storage, read_write> dst0: array<u32>;
+@group(0) @binding(3) var<storage, read_write> dst1: array<u32>;
+@group(0) @binding(4) var<storage, read_write> args: array<atomic<u32>>;
+@group(1) @binding(0) var<uniform> u: CullU;
+const STRIDE: u32 = ${INSTANCE_STRIDE}u;
+
+${CULL_AABB_FN}
 // instances.js compactGroup LOD block (hysteresis band lodLo..lodHi keeps the previous choice)
 fn pickLod(tx: f32, ty: f32, tz: f32, prev: u32) -> u32 {
   if (u.lodOn == 0u) { return 0u; }

@@ -88,7 +88,7 @@ export class WgCellPipeline {
       });
       this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull });
       this._meshDrawList = this._rasterPass.list;
-      this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers });
+      this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers, gpuCull: this.gpuCull });
       this._waterPass = new WgWaterPass(this.device);
       this._waterPass.resize(this.cols, this.rows, this.rays);
       this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass);

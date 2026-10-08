@@ -48,6 +48,7 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {import('./DrawList.js').MeshDrawCache} [meshCache] - ME-14c2: draw copies of placed glTF meshes (casters need `meshIdFor` too)
  * @property {(key: string) => number} [meshIdFor] - strict resolver for imported mesh materials
  * @property {(key: string) => number} [matIdFor] - cloth mesh creation (material key -> id)
+ * @property {{accept: (g: any, mesh0: any, mesh1: any, R: number, lod0M: number) => boolean}|null} [gpu] - WG-4b: with `eye`, `accept(...)` true = the GPU shadow cull kernel owns that instanced group's banding + sun-plane cull (same bands/radius as below): no `fillShadowBands`, no list item
  */
 
 /**
@@ -79,6 +80,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   const ig = src.instances;
   if (ig && ((ig.pool && src.voxelMeshCache) || (src.meshCache && src.meshIdFor))) {
     const groups = ig.groups;
+    const gpu = (src.eye && src.gpu) || null;
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0 || g.castShadow === false) continue;
@@ -90,6 +92,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
         else {
           if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
           const cast = src.instCastM || 48;
+          if (gpu && gpu.accept(g, draw, null, g._R, cast)) continue;
           fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R); // lod0M == castM: band 1 stays empty
           if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], g._R);
         }
@@ -107,6 +110,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
       const mesh1 = src.voxelMeshCache.get(pm, g.modelKey, names, 1) || mesh0;
       let R = groupRadius(mesh0, g.parts);
       if (mesh1 !== mesh0) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
+      if (gpu && gpu.accept(g, mesh0, mesh1, R, src.meshLod0M || 25)) continue;
       fillShadowBands(g, eye.x, eye.y, src.meshLod0M || 25, src.instCastM || 48, planes, R);
       if (g.shadowCount[0] > 0) list.addInstances(mesh0, g.parts, g.shadowIb[0], g.shadowCount[0], R);
       if (g.shadowCount[1] > 0) list.addInstances(mesh1, g.parts, g.shadowIb[1], g.shadowCount[1], R);
