@@ -1,4 +1,7 @@
 // WG-2b: draw order/ranges, integer uniforms, mirrored winding, sentinel/depth clear, resource reuse.
+// Run: node engine/render/gpu/wg/passRaster.test.js  (re-spawns itself with --expose-gc for the heap check)
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { StaticMeshBuilder } from '../../../mesh/MeshData.js';
@@ -6,6 +9,11 @@ import { DrawList, DRAW_TERRAIN, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_C
 import { WgRasterPass, NO_STRUCTURES } from './passRaster.js';
 import { RASTER_BLOCK } from '../wgsl/raster.wgsl.js';
 import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
+
+if (typeof global.gc !== 'function') {
+  const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
+  process.exit(res.status ?? 1);
+}
 
 const mock = makeMockGpuDevice(), d = mock.device;
 const pass = new WgRasterPass(d), draws = [], clears = [];
@@ -151,9 +159,9 @@ console.log('passRaster.test.js: all checks passed.');
   recOn = false;
   const created = m2.createCount, bd = on.bindDesc;
   for (let i = 0; i < 2000; i++) on.run(pp);
-  const h0 = process.memoryUsage().heapUsed;
+  global.gc(); const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 20000; i++) on.run(pp);
-  const grew = process.memoryUsage().heapUsed - h0;
+  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   assert.equal(m2.createCount, created, 'no buffers/pipelines created on warm frames'); assert.equal(on.bindDesc, bd);
   assert.ok(grew < 4e6, 'heap growth over 20000 frames: ' + grew);
   // gpucull=0: everything on the CPU path, no compute
