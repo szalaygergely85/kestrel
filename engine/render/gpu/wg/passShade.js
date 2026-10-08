@@ -27,7 +27,7 @@ const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S
 const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK');
-const E_COLS = E('gridCols'), E_ROWS = E('gridRows'), E_FOGMAX = E('fogMax'), E_RIM = E('modelRim'), E_WATER_ON = E('waterOn'), E_PROJ = E('projMode');
+const E_COLS = E('gridCols'), E_ROWS = E('gridRows'), E_FOGMAX = E('fogMax'), E_RIM = E('modelRim'), E_WATER_ON = E('waterOn'), E_WOS = E('wos'), E_PROJ = E('projMode');
 const E_FOG_START = E('fogStart'), E_FOG_FULL = E('fogFull'), E_TFOG_START = E('terrainFogStart'), E_TFOG_FULL = E('terrainFogFull'), E_TFOG_CURVE = E('terrainFogCurve');
 const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain');
 
@@ -190,7 +190,7 @@ export class WgShadePass {
    * @param {any} t its targets (needs texShadeFg/Bg, texFinalFg/Bg, targetShade, targetFinal)
    * @param {{cam:any}} lightCam the light pass cam basis (horizonRow / planeDistY)
    */
-  run(p, t, lightCam) {
+  run(p, t, lightCam, water = null) {
     const d = this.device, rt = p.rt, su = this.su, si = this.si, eu = this.eu, ei = this.ei;
     if (p._table !== this.table || (p._palette && p._palette !== this.palette)) { this.table = p._table; this.palette = p._palette || this.palette; this.tableDirty = true; this.skyPalette = null; }
     if (this.table && this.table.records && this.table.records.length !== this.nRec) this.tableDirty = true; // bindLevel appended materials in place
@@ -202,7 +202,8 @@ export class WgShadePass {
     const rp = p._rasterPass, pitched = useScene && !!(rp && rp.pitched);
     si[S_N] = p._source === 'upload' ? 1 : p.rays;
     si[S_GPUSKY] = useScene ? 1 : 0;
-    si[S_SUNMAP] = 0; // sun shadow MAP waits for WG-3d
+    const sh = p._shadowPass, sun = p._light && p._light.sun;
+    si[S_SUNMAP] = sh && sh.active && sun && sun.on ? 1 : 0; // WG-3d: GL uSunMapOn = shadowActive && sun.on (light runs sunMode 2)
     su[S_TIME] = (p._fb && p._fb.timeSec) || 0;
     su[S_SKY_ELEV] = this.skyElevTop;
     si[S_PROJ] = pitched ? 1 : 0; ei[E_PROJ] = pitched ? 1 : 0;
@@ -230,10 +231,16 @@ export class WgShadePass {
     d.bind(this.pipeShade, this.shBind);
     d.draw(3);
     d.endPass();
+    // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
+    if (water && water.active) water.runComposite({ shadeFg: t.texShadeFg, shadeBg: t.texShadeBg, gi: t.texGI, depth: t.texDepth, light: t.texLight, shadowActive: !!(sh && sh.active) }, p);
 
-    ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = 0; // water composite is WG-3e
+    const wOn = !!(water && water.active); // WG-3e: composite output replaces the shade fg/bg; WATER texture + per-slot opaqueAt/seeThrough
+    ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = wOn ? 1 : 0;
+    if (wOn) eu.set(water.waterOS, E_WOS);
     const et = this.edTex;
-    et[0].texture = t.texGI; et[1].texture = t.texDepth; et[2].texture = t.texShadeFg; et[3].texture = t.texShadeBg; et[4].texture = this.texWaterDummy;
+    et[0].texture = t.texGI; et[1].texture = t.texDepth;
+    et[2].texture = wOn ? water.edgeFg : t.texShadeFg; et[3].texture = wOn ? water.edgeBg : t.texShadeBg;
+    et[4].texture = wOn ? water.edgeWaterTexture : this.texWaterDummy;
     d.beginPass(t.targetFinal);
     d.bind(this.pipeEdge, this.edBind);
     d.draw(3);

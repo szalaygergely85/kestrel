@@ -77,6 +77,16 @@ function makeMockGL() {
   device.writeTexture(tex, new Uint8Array(16), { x: 2, y: 1, w: 2, h: 2 });
   const sub2 = calls.find((c) => c[0] === 'texSubImage2D');
   ok('writeTexture honours rect', !!sub2 && sub2[3] === 2 && sub2[4] === 1 && sub2[5] === 2 && sub2[6] === 2);
+  ok('writeTexture default srcOffset 0', !!sub2 && sub2[10] === 0, JSON.stringify(sub2 && sub2.slice(9)));
+  calls.length = 0;
+  device.writeTexture(tex, new Uint8Array(64), { x: 0, y: 1, w: 4, h: 1 }, 16);
+  const sub3 = calls.find((c) => c[0] === 'texSubImage2D');
+  ok('writeTexture dataOffset -> srcOffset (elements, same array, no subarray)', !!sub3 && sub3[10] === 16 && sub3[9].length === 64, JSON.stringify(sub3 && sub3[10]));
+  // rgba8ui (sprite atlas): RGBA8UI / RGBA_INTEGER / UNSIGNED_BYTE
+  const atl = device.createTexture({ format: 'rgba8ui', width: 4, height: 2 });
+  calls.length = 0; device.writeTexture(atl, new Uint8Array(32));
+  const sub4 = calls.find((c) => c[0] === 'texSubImage2D');
+  ok('rgba8ui texSubImage2D format RGBA_INTEGER/UNSIGNED_BYTE', !!sub4 && sub4[7] === gl.RGBA_INTEGER && sub4[8] === gl.UNSIGNED_BYTE);
   calls.length = 0;
   device.submit();
   ok('submit is a no-op on GL2', calls.length === 0);

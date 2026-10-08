@@ -96,6 +96,7 @@ export function formatFor(gl, internalFormat) {
     case gl.R16UI: return { format: gl.RED_INTEGER, type: gl.UNSIGNED_SHORT }; // US-040: VOX atlas (15.2 item 2)
     case gl.RG8UI: return { format: gl.RG_INTEGER, type: gl.UNSIGNED_BYTE }; // US-030a: WorldTextures FLAGS atlas
     case gl.RGBA16UI: return { format: gl.RGBA_INTEGER, type: gl.UNSIGNED_SHORT }; // US-030a: WorldTextures MATS atlas
+    case gl.RGBA8UI: return { format: gl.RGBA_INTEGER, type: gl.UNSIGNED_BYTE }; // WG-3f: sprite atlas (4 B/texel: UNPACK_ALIGNMENT 4 is exact)
     case gl.RGBA8: return { format: gl.RGBA, type: gl.UNSIGNED_BYTE };
     case gl.DEPTH_COMPONENT24: return { format: gl.DEPTH_COMPONENT, type: gl.UNSIGNED_INT }; // ME-15b: sampled shadow map
     default: throw new Error('createTexture2D: unhandled internalFormat ' + internalFormat);

@@ -40,6 +40,7 @@ export class RenderTargetWebGPU {
     this._warnedLost = false;
     this._uiLayer = null;
     this._clearOpts = { clear: true }; // hoisted: present() runs every frame
+    this._pf = null; this._pb = null;
     this._cellPass = null; this._spritePass = null; this._overlayPass = null;
     this._measureCanvas = document.createElement('canvas');
     this._measureCtx = this._measureCanvas.getContext('2d', { willReadFrequently: true });
@@ -158,6 +159,8 @@ export class RenderTargetWebGPU {
   setCellPass(fn) { this._cellPass = fn || null; }
   setSpritePass(fn) { this._spritePass = fn || null; }
   setOverlayPass(fn) { this._overlayPass = fn || null; }
+  /** WG-3f: present these textures (pipeline sprite/overlay output) instead of the CPU cell textures; null = back to fgTex/bgTex. */
+  setPresentCells(fg, bg) { this._pf = fg || null; this._pb = bg || null; }
 
   /**
    * Test-only (never the frame loop). Reads back the two cell textures the last `present()` scene draw sampled.
@@ -198,9 +201,11 @@ export class RenderTargetWebGPU {
 
     d.beginPass(this._target, this._clearOpts);
     this._grid = this._grid || [null, null, null];
-    this._grid[0] = this.fgTex; this._grid[1] = this.bgTex; this._grid[2] = this.atlasTex;
+    const own = !(this._pf && this._pb); // WG-3f: the pipeline's sprite/overlay output replaces the CPU cell textures
+    const pf = own ? this.fgTex : this._pf, pb = own ? this.bgTex : this._pb;
+    this._grid[0] = pf; this._grid[1] = pb; this._grid[2] = this.atlasTex;
     this._draw(this._pipeScene, this._bindScene, this._texScene, this._grid, this.cols, this.rows, 0);
-    this._presentFg = this.fgTex; this._presentBg = this.bgTex;
+    this._presentFg = pf; this._presentBg = pb;
     if (this._uiLayer && this._uiFgTex) {
       const ui = this._uiLayer;
       d.writeTexture(this._uiFgTex, ui.cells.fg);

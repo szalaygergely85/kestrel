@@ -36,6 +36,7 @@ function glInternalFormat(gl, format) {
     case 'r32ui': return gl.R32UI;
     case 'rgba8': return gl.RGBA8;
     case 'r8ui': return gl.R8UI;
+    case 'rgba8ui': return gl.RGBA8UI;
     case 'rgba32f': return gl.RGBA32F;
     case 'rg8ui': return gl.RG8UI;
     case 'rgba32i': return gl.RGBA32I;
@@ -90,6 +91,7 @@ export class GpuDeviceGL2 {
 
   /** @param {BufferDesc} desc */
   createBuffer(desc) {
+    if (desc.usage === 'storage' || desc.usage === 'indirect') throw new Error('GpuDeviceGL2: compute not supported');
     const gl = this.gl;
     const target = gl[USAGE_TO_GL_TARGET[desc.usage]];
     const buf = gl.createBuffer();
@@ -149,14 +151,15 @@ export class GpuDeviceGL2 {
 
   /**
    * WG-1b1 (38.3): `texSubImage2D` into an existing colour texture; `rect` defaults to the whole texture.
-   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect]
+   * `dataOffset` = source offset in ELEMENTS (WebGL2 `srcOffset`, no subarray allocation).
+   * @param {GpuHandle} tex @param {ArrayBufferView} data @param {{x:number,y:number,w:number,h:number}} [rect] @param {number} [dataOffset]
    */
-  writeTexture(tex, data, rect) {
+  writeTexture(tex, data, rect, dataOffset) {
     const gl = this.gl;
     const { format, type } = glUtilFormatFor(gl, glInternalFormat(gl, tex.format));
     const r = rect || { x: 0, y: 0, w: tex.width, h: tex.height };
     gl.bindTexture(gl.TEXTURE_2D, tex.handle);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, data);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, /** @type {any} */ (data), dataOffset || 0);
   }
 
   /** WG-1b1 (38.3): the canvas back buffer = the default framebuffer (`beginPass` binds `handle: null`; width 0 keeps the viewport). */
@@ -167,6 +170,11 @@ export class GpuDeviceGL2 {
 
   /** WG-1b1 (38.3): end of frame - nothing to flush on WebGL2. */
   submit() {}
+
+  // WG-4a (38.3): compute is WebGPU only.
+  createComputePipeline() { throw new Error('GpuDeviceGL2: compute not supported'); }
+  dispatch() { throw new Error('GpuDeviceGL2: compute not supported'); }
+  drawIndirect() { throw new Error('GpuDeviceGL2: compute not supported'); }
 
   /** @param {TargetDesc} desc */
   createTarget(desc) {

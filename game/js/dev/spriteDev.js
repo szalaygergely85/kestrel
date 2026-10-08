@@ -16,7 +16,7 @@ import {
 // engine/dev.js, not the stable engine/index.js surface.
 import { runSpriteCompare } from '../../../engine/dev.js';
 
-export function createSpriteSystem({ assets, rt, gpuPipeline }) {
+export function createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline = null }) {
   const atlas = buildSpriteAtlas(assets, assets.palette);
   const pool = new SpritePool(atlas, assets.palette);
   let pass = null;
@@ -47,11 +47,11 @@ export function createSpriteSystem({ assets, rt, gpuPipeline }) {
         pass.sceneFade = typeof fb.sceneFade === 'number' ? fb.sceneFade : 1;
         if (fb.fadeLut) pass.setFadeLut(fb.fadeLut);
       }
-      if (!(pass && pass.active)) drawSprites(fb, pool);
+      if (!(pass && pass.active) && !(wgPipeline && wgPipeline.frameComplete && rt.gpuActive)) drawSprites(fb, pool); // WG-3f: the WebGPU sprite pass draws them
     },
     overlayLine() {
-      const gpu = pass && pass.active;
-      return `sprites: ${pool.count}${pool.dropped ? ` (+${pool.dropped} dropped)` : ''}  ${gpu ? `gpu ${Number.isNaN(pass.stats.gpuMsP50) ? 'n/a' : pass.stats.gpuMsP50.toFixed(2) + 'ms'}  upload ${pass.stats.uploadMs.toFixed(2)}ms` : 'js'}`;
+      const wgOn = !pass && wgPipeline && wgPipeline.frameComplete, gpu = (pass && pass.active) || wgOn;
+      return `sprites: ${pool.count}${pool.dropped ? ` (+${pool.dropped} dropped)` : ''}  ${wgOn ? `gpu (webgpu)` : gpu ? `gpu ${Number.isNaN(pass.stats.gpuMsP50) ? 'n/a' : pass.stats.gpuMsP50.toFixed(2) + 'ms'}  upload ${pass.stats.uploadMs.toFixed(2)}ms` : 'js'}`;
     },
   };
 }

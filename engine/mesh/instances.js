@@ -145,7 +145,7 @@ export function groupRadius(mesh, parts) {
  * @param {Float64Array|null} vp
  * @param {number} rows
  */
-function compactGroup(g, planes, R, vp, rows) {
+export function compactGroup(g, planes, R, vp, rows) {
   const srcF = g.ib.f32, srcU = g.ib.u32;
   const dst0 = g.drawIb[0].u32, dst1 = g.drawIb[1].u32;
   const n = g.count;

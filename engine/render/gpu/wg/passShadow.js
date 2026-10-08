@@ -104,6 +104,13 @@ export class WgShadowPass {
     return n;
   }
 
+  /** TEST-ONLY (shadowParity.js): the carve footprints of the last frame, same fields the JS twin ctx wants. @returns {{foot: Float32Array, count: number}|null} */
+  footprints() {
+    if (!this._world) return null;
+    const count = this._fillFoot(this._world);
+    return { foot: this.tu.subarray(T_FOOT, T_FOOT + count * 4), count };
+  }
+
   _model(m, o = 0) {
     const M = this.u, n = MODEL;
     M[n] = m[o]; M[n + 1] = m[o + 3]; M[n + 2] = m[o + 6]; M[n + 3] = 0;
@@ -127,6 +134,7 @@ export class WgShadowPass {
   run(p, raster) {
     this.active = false;
     if (!this.enabled) return false;
+    this._world = p._world;
     const so = this.shadowOpts, light = p._light, cam = p._cam, world = p._world, sun = light && light.sun;
     if (!sun || !sun.on || !cam || !world) return false;
     const list = this.list, src = this.src, st = this.stats;

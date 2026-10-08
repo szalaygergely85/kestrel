@@ -227,6 +227,15 @@ await run('webgpu: requestDevice rejects -> fallback', {
   const third = g.queue.objs;
   ok('writeTexture reuses dst/layout/size objects per texture', third[0] === first[0] && third[1] === first[1] && third[2] === first[2]);
   ok('writeTexture back to full rect resets origin', g.queue.lastWrite.ox === 0 && g.queue.lastWrite.w === 8);
+  // WG-3f: dataOffset (elements) -> layout.offset in bytes, reset to 0 when absent; rgba8ui format
+  d.writeTexture(t, new Uint32Array(64), { x: 0, y: 1, w: 2, h: 1 }, 8);
+  ok('writeTexture dataOffset -> byte offset (elements * BYTES_PER_ELEMENT)', g.queue.objs[1].offset === 32);
+  d.writeTexture(t, new Uint8Array(8 * 4 * 4));
+  ok('writeTexture without dataOffset resets offset 0, same layout object', g.queue.objs[1].offset === 0 && g.queue.objs[1] === first[1]);
+  const at = d.createTexture({ format: 'rgba8ui', width: 4, height: 2 });
+  ok('rgba8ui -> rgba8uint 4 B/texel', at.gpuFormat === 'rgba8uint' && at.bpp === 4);
+  d.writeTexture(at, new Uint8Array(32));
+  ok('rgba8ui writeTexture bytesPerRow 16', g.queue.lastWrite.bpr === 16);
   d.dispose();
 }
 
@@ -303,6 +312,43 @@ await run('webgpu: requestDevice rejects -> fallback', {
   ok('warm texture binds allocate no new scopes or bind groups', d._pendingScopes.length === pending && g.calls.filter((c) => c === 'createBindGroup').length === made);
   const errors = await d.checkErrors();
   ok('texture bind-group scope error reported', errors.length === 1 && /createBindGroup: bad texture binding/.test(errors[0]));
+  d.dispose();
+}
+
+// WG-4a: compute additions - buffer usages, compute pipeline layout, dispatch (bind group cache, uniform ring), drawIndirect.
+{
+  const g = mockGpu(), cdesc = [], bdesc = [], groups = [], dispatched = [], indirect = [];
+  g.createBuffer = (d) => { bdesc.push(d); return { destroy() {} }; };
+  g.createComputePipeline = (d) => { cdesc.push(d); return { cp: true }; };
+  g.createBindGroup = (d) => { groups.push(d); return { bg: groups.length }; };
+  const encoder = { beginRenderPass: () => ({}), beginComputePass: () => ({
+    setPipeline() {}, setBindGroup(i, grp, dyn) { dispatched.push({ i, dyn: dyn && Array.from(dyn) }); }, dispatchWorkgroups(x, y, z) { dispatched.push({ x, y, z }); }, end() {},
+  }), finish: () => ({}) };
+  g.createCommandEncoder = () => encoder;
+  const c2 = { buf: { ...consts.buf, STORAGE: 32, INDIRECT: 64, COPY_SRC: 128 }, tex: consts.tex, stage: { ...consts.stage, COMPUTE: 4 }, map: consts.map };
+  const d = new GpuDeviceWebGPU(g, { consts: c2, ringSlots: 8 });
+  const st = d.createBuffer({ usage: 'storage', bytes: 64 }), ind = d.createBuffer({ usage: 'indirect', bytes: 40 });
+  ok('storage usage = STORAGE|VERTEX|COPY_SRC|COPY_DST', bdesc[bdesc.length - 2].usage === (32 | 4 | 128 | 2));
+  ok('indirect usage = INDIRECT|STORAGE|COPY_SRC|COPY_DST', bdesc[bdesc.length - 1].usage === (64 | 32 | 128 | 2));
+  const p = d.createComputePipeline({ src: { wgsl: 'x' }, bindings: { uniformBytes: 32, buffers: ['read', 'rw', 'rw'] } });
+  ok('compute pipeline: entry cs_main, 3 storage binds (read-only / storage) + group 1 uniform',
+    cdesc[0].compute.entryPoint === 'cs_main' && g.layouts[g.layouts.length - 2].entries.map((e) => e.buffer.type).join() === 'read-only-storage,storage,storage'
+    && g.layouts[g.layouts.length - 2].entries[0].visibility === 4 && g.layouts[g.layouts.length - 1].entries[0].buffer.hasDynamicOffset === true);
+  const bind = { buffers: [{ slot: 0, buffer: st }, { slot: 1, buffer: st }, { slot: 2, buffer: ind }], uniforms: new Float32Array(8) };
+  const made = groups.length;
+  d.dispatch(p, bind, 3, 1, 1);
+  d.dispatch(p, bind, 4);
+  ok('dispatch: one buffer bind group per distinct handle set (second dispatch reuses it)', groups.length === made + 1);
+  ok('dispatch: group 0 + group 1 with a dynamic offset, then workgroups', dispatched[0].i === 0 && dispatched[1].i === 1 && dispatched[1].dyn.length === 1 && dispatched[2].x === 3 && dispatched[5].x === 4 && dispatched[5].y === 1);
+  ok('dispatch: second call uses the next ring slot (offset 256)', dispatched[4].dyn[0] === 256);
+  ok('dispatch with the wrong buffer count throws', throws(() => d.dispatch(p, { buffers: [{ slot: 0, buffer: st }] }, 1)));
+  d.beginPass(d.createTarget({ color: [d.createTexture({ format: 'rgba8', width: 4, height: 4 })] }));
+  ok('dispatch inside a render pass throws', throws(() => d.dispatch(p, bind, 1)));
+  d._pass.drawIndirect = (b, o) => indirect.push(['draw', o]); d._pass.drawIndexedIndirect = (b, o) => indirect.push(['indexed', o]);
+  d._curPipeline = { indexed: true }; d.drawIndirect(ind, 20);
+  d._curPipeline = { indexed: false }; d.drawIndirect(ind, 0);
+  ok('drawIndirect follows the bound pipeline (indexed -> drawIndexedIndirect)', indirect.length === 2 && indirect[0][0] === 'indexed' && indirect[0][1] === 20 && indirect[1][0] === 'draw');
+  d._pass = null;
   d.dispose();
 }
 
