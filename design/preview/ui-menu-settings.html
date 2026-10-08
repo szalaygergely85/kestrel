@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - title menu, settings and pack screen styles (S8-A-04 / S8-A-05)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  canvas:focus { outline:1px solid #ffd24a; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  textarea { width:100%; height:160px; background:#0b0c12; color:#cfc8b2; font:11px Consolas, monospace; border:1px solid #22252e; }
+</style>
+</head>
+<body>
+<h1>Kestrel : title menu, settings and pack screen styles (S8-A-04 / S8-A-05)</h1>
+<div class="note">
+  Data: <code>design/models/menu_ui.js</code> (<code>uiStyle.menu</code>, <code>uiStyle.settings.controls</code> / <code>.quality</code> / <code>.full</code>),
+  <code>design/models/inventory_ui.js</code> (<code>uiStyle.inventory</code> + the appended <code>slot.disabled</code> / <code>hands.disabled</code> / <code>states</code>),
+  icons from <code>design/items.js</code>, colours from <code>design/palette.js</code> (no palette change). Every screen is the fixed <b>160x60 UI layer</b>
+  (uiStyle.uiGrid) drawn over a stand-in scene; the scene grid toggle changes only the scene behind (dim + plate map to more cells), the UI cells are identical.
+  Two display sizes: small 6x9 px per UI cell (960x540) and large 8x12 px (1280x720; the game is 12x18 at 1920x1080). Opens from file:// (no engine).
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>scene behind <select id="sceneGrid"><option value="240">240x90</option><option value="400" selected>400x150</option></select></label>
+  <label>display size <select id="cell"><option value="6">small 6x9 px</option><option value="8" selected>large 8x12 px</option></select></label>
+  <label>time <select id="tod"><option value="night" selected>night backdrop</option><option value="day">day backdrop</option></select></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<h2>1. Title menu (uiStyle.menu) - New game / Continue / 3 slots / Delete / Settings</h2>
+<div class="note">Click to focus. <b>Arrows / W S</b> select, <b>Enter / Space</b> choose, <b>Del</b> delete the selected slot, <b>Esc</b> back. Mouse hover selects, click chooses.
+  Same rows and y values as the US-090a placeholder (<code>game/js/ui/titleMenu.js</code>): lane C only swaps colours / glyphs.</div>
+<div class="controls" style="position:static">
+  <label>saves <select id="saves"><option value="two" selected>slot 1 + slot 3 used</option><option value="none">no saves (Continue disabled)</option><option value="broken">slot 2 unreadable</option></select></label>
+  <span class="cap" id="menuInfo"></span>
+</div>
+<canvas id="menu" tabindex="0"></canvas>
+
+<h2>2. Settings panel (uiStyle.settings.full) with the Quality row</h2>
+<div class="note">Click to focus. <b>W/S</b> select, <b>A/D</b> change (no wrap, disabled choices skipped: Ultra is marked "not available" in this mock), <b>Enter</b> toggles, <b>Esc</b> resets.
+  Quality is a <i>strip</i> (every choice visible, current bracketed, Auto shows what it resolved to); Volume a slider; Mute / Reduce motion toggles; the rest selects.</div>
+<div class="controls" style="position:static">
+  <label><input type="checkbox" id="ultraOff" checked> Ultra not available</label>
+  <label><input type="checkbox" id="rowOff"> Shadows row disabled</label>
+</div>
+<canvas id="settings" tabindex="0"></canvas>
+
+<h2>3. Control states sheet (normal / focus / disabled)</h2>
+<canvas id="sheet"></canvas>
+
+<h2>4. Pack screen (uiStyle.inventory) with the new disabled states</h2>
+<div class="note">Click to focus. <b>W/A/S/D</b> select (disabled slots are skipped), W from the top row goes to the hands. The toggles show the S8-A-05 third state.</div>
+<div class="controls" style="position:static">
+  <label><input type="checkbox" id="capLock" checked> pack capacity 18 (last row locked)</label>
+  <label><input type="checkbox" id="handBusy"> right hand busy</label>
+</div>
+<canvas id="inv" tabindex="0"></canvas>
+
+<h2>5. JSON</h2>
+<div class="controls" style="position:static"><select id="dumpSel"><option>menu</option><option>settings.controls</option><option>settings.quality</option><option>settings.full</option><option>inventory.states</option></select><button id="dumpBtn">dump</button></div>
+<textarea id="dump" readonly></textarea>
+
+<script src="../palette.js"></script>
+<script src="../models/title.js"></script>
+<script src="../items.js"></script>
+<script src="../models/inventory_ui.js"></script>
+<script src="../models/menu_ui.js"></script>
+<script>
+(function () {
+'use strict';
+const A = window.ASSETS, P = A.palette, M = A.uiStyle.menu, SC = A.uiStyle.settings.controls, SQ = A.uiStyle.settings.quality,
+      SF = A.uiStyle.settings.full, INV = A.uiStyle.inventory, IT = A.items;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const COLS = 160, ROWS = 60;
+
+// ------------------------------------------------------------ colour resolve
+const BGN = Object.assign({}, M.bgRgb, SF.bgRgb);           // named bgs: plate, band, bandOff, softEmber, panel
+function C(k) {                                             // palette key | bg name | literal rgb -> rgb
+  if (Array.isArray(k)) return k;
+  if (P.rgb[k]) return P.rgb[k];
+  if (BGN[k]) return BGN[k];
+  throw new Error('unknown colour ' + k);
+}
+
+// ------------------------------------------------------------ UI buffer + canvas
+function makeUi() { return { g: new Array(COLS * ROWS).fill(null), fg: new Array(COLS * ROWS), bg: new Array(COLS * ROWS) }; }
+function put(U, x, y, ch, fg, bg) {
+  if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+  const i = y * COLS + x; U.g[i] = ch; U.fg[i] = C(fg); if (bg !== undefined) U.bg[i] = C(bg); else if (!U.bg[i]) U.bg[i] = U.defBg;
+}
+function text(U, x, y, s, fg, bg) { for (let k = 0; k < s.length; k++) put(U, x + k, y, s[k], fg, bg); }
+function fill(U, x, y, w, h, bg) { for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) put(U, x + c, y + r, ' ', 'uiText', bg); }
+function hiKeys(U, x, y, s, fg, keys, keyFg) { text(U, x, y, s, fg); for (const k of keys) { let at = s.indexOf(k); while (at >= 0) { text(U, x + at, y, k, keyFg); at = s.indexOf(k, at + k.length); } } }
+
+function canvasFor(id, rows) {
+  const cv = $(id), cw = +$('cell').value, ch = cw * 1.5, dpr = window.devicePixelRatio || 1;
+  rows = rows || ROWS;
+  cv.width = Math.round(COLS * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = COLS * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cw, ch, rows };
+}
+// stand-in scene at the chosen scene grid: sky, far hills, a tower, meadow; dimmed under an open panel
+const sceneCache = {};
+function scene(G, dim) {
+  const key = [G.cv.id, $('sceneGrid').value, $('cell').value, $('tod').value, G.rows].join('|');
+  let hit = sceneCache[G.cv.id];
+  if (!hit || hit.key !== key) {
+    const off = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+    off.width = G.cv.width; off.height = G.cv.height;
+    const octx = off.getContext('2d'); octx.setTransform(dpr, 0, 0, dpr, 0, 0); octx.textAlign = 'center'; octx.textBaseline = 'middle';
+    sceneDraw({ cw: G.cw, ch: G.ch, rows: G.rows, ctx: octx }, dim);
+    hit = sceneCache[G.cv.id] = { key, off };
+  }
+  G.ctx.save(); G.ctx.setTransform(1, 0, 0, 1, 0, 0); G.ctx.drawImage(hit.off, 0, 0); G.ctx.restore();
+}
+function sceneDraw(G, dim) {
+  const sc = +$('sceneGrid').value, sr = sc === 240 ? 90 : 150, cw = COLS * G.cw / sc, ch = G.rows * G.ch / sr, ctx = G.ctx;
+  const night = $('tod').value === 'night', s = sc / COLS;
+  ctx.font = Math.max(3, Math.round(ch * 0.9)) + 'px ' + FONT;
+  const sr2 = Math.round(sr * G.rows / ROWS);
+  for (let r = 0; r < sr2; r++) for (let c = 0; c < sc; c++) {
+    const v = r / sr, h = ((c * 7 + r * 13) % 11) / 11, hill = 0.46 + 0.05 * Math.sin(c / sc * 9) + 0.03 * Math.sin(c / sc * 23);
+    const tower = Math.abs(c / sc - 0.72) < 0.018 && v > 0.2 && v < hill + 0.02;
+    let fg, bg, g;
+    if (tower) { bg = night ? [24, 22, 30] : [92, 86, 80]; fg = night ? [60, 56, 70] : [150, 140, 128]; g = (r % 3) ? '#' : '='; }
+    else if (v < hill) { bg = night ? [10, 16, 34] : [111, 163, 220]; fg = night ? [180, 190, 220] : [196, 220, 239]; g = h > 0.93 ? (night ? '.' : '~') : ' '; }
+    else { bg = night ? [16, 30, 20] : [60, 100, 40]; fg = night ? [44, 80, 50] : [120 + 40 * h, 170 + 30 * h, 74]; g = '",\';:'[(c * 3 + r) % 5]; }
+    let k = 1;
+    if (dim) {
+      k = dim.sceneDim;
+      const p = dim.panel, pad = dim.pad;
+      if (c >= Math.floor((p.x - pad) * s) && c <= Math.ceil((p.x + p.w + pad) * s) - 1 && r >= Math.floor((p.y - pad) * s) && r <= Math.ceil((p.y + p.h + pad) * s) - 1) k = dim.plate;
+    }
+    ctx.fillStyle = `rgb(${bg[0] * k | 0},${bg[1] * k | 0},${bg[2] * k | 0})`; ctx.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
+    if (g !== ' ') { ctx.fillStyle = `rgb(${fg[0] * k | 0},${fg[1] * k | 0},${fg[2] * k | 0})`; ctx.fillText(g, c * cw + cw / 2, r * ch + ch / 2 + 1); }
+  }
+}
+function blit(G, U) {
+  const ctx = G.ctx; ctx.font = Math.round(G.ch * 0.9) + 'px ' + FONT;
+  for (let i = 0; i < COLS * G.rows; i++) {
+    if (U.g[i] === null) continue;
+    const x = (i % COLS) * G.cw, y = Math.floor(i / COLS) * G.ch, bg = U.bg[i], fg = U.fg[i];
+    ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`; ctx.fillRect(x, y, G.cw + 0.5, G.ch + 0.5);
+    if (U.g[i] !== ' ') { ctx.fillStyle = `rgb(${fg[0]},${fg[1]},${fg[2]})`; ctx.fillText(U.g[i], x + G.cw / 2, y + G.ch / 2 + 1); }
+  }
+}
+function cellAt(G, e) { const r = G.cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / G.cw), Math.floor((e.clientY - r.top) / G.ch)]; }
+
+// shared frame: corner / h / v + rivets
+function frame(U, x, y, w, h, f, fgKey, cornerKey, rivetCols, rivetKey) {
+  for (let c = 0; c < w; c++) {
+    const corner = c === 0 || c === w - 1, riv = rivetCols && rivetCols.includes(c);
+    for (const yy of [y, y + h - 1]) put(U, x + c, yy, corner ? f.corner : riv ? 'o' : f.h, corner ? cornerKey : riv ? rivetKey : fgKey);
+  }
+  for (let r = 1; r < h - 1; r++) { put(U, x, y + r, f.v, fgKey); put(U, x + w - 1, y + r, f.v, fgKey); }
+}
+
+// ============================================================ 1. title menu
+const menuState = { mode: 'main', selected: 0, selectedSlot: 0, confirm: null, message: '', msgErr: false, hover: -1, rows: [], slots: [], last: '' };
+function mockSlots() {
+  const v = $('saves').value;
+  const S = [
+    { slot: 0, ok: true, meta: { playerName: 'Wick', place: 'Watchtower', playTimeSec: 3661 } },
+    { slot: 1, ok: true, meta: null },
+    { slot: 2, ok: true, meta: { playerName: 'Wick', place: 'Waystone', playTimeSec: 824 } }
+  ];
+  if (v === 'none') { S[0].meta = null; S[2].meta = null; }
+  if (v === 'broken') { S[1].ok = false; }
+  return S;
+}
+function buildRows() {
+  const st = menuState, sl = st.slots;
+  if (st.mode === 'confirm') st.rows = [{ id: 'cancel', text: 'Cancel', y: 12, enabled: true }, { id: 'yes', text: 'Yes', y: 15, enabled: true }];
+  else if (st.mode === 'new') { st.rows = sl.map(s => ({ id: 'slot', slot: s.slot, y: 8 + s.slot * 3, enabled: true })); st.rows.push({ id: 'back', text: 'Back', y: 20, enabled: true }); }
+  else st.rows = [{ id: 'new', text: 'New game', y: 6, enabled: true },
+    { id: 'continue', text: 'Continue', y: 8, enabled: sl.some(s => s.ok && s.meta) },
+    ...sl.map(s => ({ id: 'slot', slot: s.slot, y: 12 + s.slot * 2, enabled: true })),
+    { id: 'delete', text: 'Delete selected slot', y: 19, enabled: !!(sl[st.selectedSlot].meta || !sl[st.selectedSlot].ok) },
+    { id: 'settings', text: 'Settings', y: 21, enabled: true }];
+  st.selected = Math.min(st.selected, st.rows.length - 1);
+  if (!st.rows[st.selected].enabled) st.selected = st.rows.findIndex(r => r.enabled);
+}
+function menuReset() { menuState.slots = mockSlots(); menuState.mode = 'main'; menuState.selected = 0; menuState.selectedSlot = 0; menuState.message = ''; buildRows(); }
+function menuRoot() { menuState.mode = 'main'; menuState.confirm = null; menuState.selected = 0; buildRows(); }
+function menuActivate() {
+  const st = menuState, row = st.rows[st.selected]; if (!row || !row.enabled) return;
+  st.message = ''; st.msgErr = false;
+  if (st.mode === 'confirm') {
+    if (row.id === 'yes') {
+      if (st.confirm.type === 'delete') { st.slots[st.confirm.slot].meta = null; st.slots[st.confirm.slot].ok = true; st.message = 'Slot deleted.'; }
+      else st.message = 'Action: newGame slot ' + (st.confirm.slot + 1);
+    }
+    menuRoot(); return;
+  }
+  if (row.id === 'back') menuRoot();
+  else if (row.id === 'new') { st.mode = 'new'; st.selected = Math.max(0, st.slots.findIndex(s => s.ok && !s.meta)); buildRows(); }
+  else if (row.id === 'continue') { const s = st.slots[st.selectedSlot].meta ? st.selectedSlot : st.slots.find(s => s.ok && s.meta).slot; st.message = 'Action: continue slot ' + (s + 1); }
+  else if (row.id === 'settings') st.message = 'Action: settings (section 2)';
+  else if (row.id === 'delete') ask('delete', st.selectedSlot);
+  else if (row.id === 'slot') {
+    st.selectedSlot = row.slot; const s = st.slots[row.slot];
+    if (st.mode !== 'new') { if (!s.ok) { st.message = 'Could not load this slot.'; st.msgErr = true; } else if (!s.meta) st.message = 'This slot is empty.'; else st.message = 'Action: continue slot ' + (row.slot + 1); buildRows(); }
+    else if (s.ok && !s.meta) { st.message = 'Action: newGame slot ' + (row.slot + 1); menuRoot(); }
+    else ask('replace', row.slot);
+  }
+}
+function ask(type, slot) { const st = menuState; st.mode = 'confirm'; st.confirm = { type, slot }; st.selected = 0; buildRows(); }
+function menuFocus(i) { const st = menuState; st.selected = i; if (st.rows[i].id === 'slot') { st.selectedSlot = st.rows[i].slot; buildRows(); } }
+
+function slotParts(s) {
+  const S = M.slot, n = s.slot + 1;
+  const time = s.meta ? (() => { const m = Math.floor(s.meta.playTimeSec / 60); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); })() : '';
+  return { icon: !s.ok ? S.icon.broken : s.meta ? S.icon.filled : S.icon.empty, iconKind: !s.ok ? 'broken' : s.meta ? 'filled' : 'empty',
+           label: S.label.format.replace('{n}', n), name: s.meta ? s.meta.playerName.slice(0, S.name.max) : null,
+           place: s.meta ? s.meta.place.slice(0, S.place.max) : null, time };
+}
+function drawMenu(U) {
+  const st = menuState, pw = M.panel.w, ph = M.panel.h, px = (COLS - pw) >> 1, py = (ROWS - ph) >> 1, R = M.row;
+  U.defBg = C('plate');
+  fill(U, px, py, pw, ph, 'plate');
+  frame(U, px, py, pw, ph, M.frame, M.frame.fg, M.frame.cornerFg, M.frame.rivets.cols, M.frame.rivets.fg);
+  // title: -=[  K E S T R E L  ]=-
+  const T = M.title, spaced = T.text.split('').join(' '), s = T.decor[0] + spaced + T.decor[1], tx = px + ((pw - s.length) >> 1);
+  for (let k = 0; k < s.length; k++) {
+    const ch = s[k]; if (ch === ' ') continue;
+    const inText = k >= T.decor[0].length && k < T.decor[0].length + spaced.length;
+    put(U, tx + k, py + T.row, ch, inText ? T.fg : ch === '-' ? 'brassDark' : ch === '=' ? 'brass' : T.bracketFg);
+  }
+  text(U, px + ((pw - M.subtitle.text.length) >> 1), py + M.subtitle.row, M.subtitle.text, M.subtitle.fg);
+  for (const sp of M.separators) { if (sp.row === 18 && st.mode !== 'main') continue; for (let c = sp.from; c <= sp.to; c++) put(U, px + c, py + sp.row, sp.glyph, sp.fg); }
+  // the SOS signal over the row-4 separator, pulsing in the title SOS rhythm
+  const sig = ' ' + M.signal.text + ' ', sx = px + ((pw - sig.length) >> 1), marks = [];
+  for (let k = 0; k < sig.length; k++) { put(U, sx + k, py + M.signal.row, sig[k], M.signal.fg); if (sig[k] !== ' ') marks.push(k); }
+  const ms = A.models.title.signal.ms, seq = [ms.short, ms.short, ms.short, ms.long, ms.long, ms.long, ms.short, ms.short, ms.short, ms.rest];
+  const tot = seq.reduce((a, b) => a + b, 0); let t = performance.now() % tot, lit = 0; while (t > seq[lit]) { t -= seq[lit]; lit++; }
+  if (lit < 9) put(U, sx + marks[lit], py + M.signal.row, sig[marks[lit]], M.signal.litFg);
+  // section labels / confirm text
+  if (st.mode === 'main') text(U, px + M.sectionLabel.saves.col, py + M.sectionLabel.saves.row, M.sectionLabel.saves.text, M.sectionLabel.saves.fg);
+  if (st.mode === 'new') text(U, px + M.sectionLabel.newGame.col, py + M.sectionLabel.newGame.row, M.sectionLabel.newGame.text, M.sectionLabel.newGame.fg);
+  if (st.mode === 'confirm') text(U, px + M.confirm.textCol, py + M.confirm.textRow, (st.confirm.type === 'delete' ? 'Delete' : 'Replace') + ' slot ' + (st.confirm.slot + 1) + '?', M.confirm.fg[st.confirm.type]);
+  // rows
+  const pulse = (Math.sin(performance.now() / 1000 * Math.PI * 2 / R.focus.pulse.periodSec) + 1) / 2;
+  st.rows.forEach((row, i) => {
+    const y = py + row.y, foc = i === st.selected && row.enabled, dis = !row.enabled;
+    const destr = row.id === 'delete' || (st.mode === 'confirm' && st.confirm.type === 'delete' && row.id === 'yes');
+    let fgK = dis ? R.disabled.fg : foc ? R.focus.fg : destr ? R.destructive.fg : R.normal.fg;
+    if (foc) for (let c = R.bandFrom; c <= R.bandTo; c++) put(U, px + c, y, ' ', 'uiText', R.focus.bg);
+    else if (dis && st.hover === i) for (let c = R.bandFrom; c <= R.bandTo; c++) put(U, px + c, y, ' ', 'uiText', R.disabled.hover.bg);
+    if (foc) {
+      const mk = pulse > 0.5 ? R.focus.pulse.to : R.focus.markerFg;
+      put(U, px + R.markerCol, y, R.focus.marker, mk); put(U, px + R.focus.markerRightCol, y, R.focus.markerRight, mk);
+    }
+    if (row.id === 'slot') {
+      const S = M.slot, sl = st.slots[row.slot], p = slotParts(sl);
+      text(U, px + S.cols.icon, y, p.icon[0] + ' ' + p.icon[2], S.icon.fg.bracket); put(U, px + S.cols.icon + 1, y, p.icon[1], S.icon.fg[p.iconKind]);
+      const pf = (k) => foc ? S.focus.allFg : k;
+      text(U, px + S.cols.label, y, p.label, pf(S.label.fg));
+      if (!sl.ok) text(U, px + S.cols.name, y, S.broken.text, pf(S.broken.fg));
+      else if (!sl.meta) text(U, px + S.cols.name, y, S.empty.text, pf(S.empty.fg));
+      else { text(U, px + S.cols.name, y, p.name, pf(S.name.fg)); text(U, px + S.cols.place, y, p.place, pf(S.place.fg)); text(U, px + S.cols.timeEnd - p.time.length + 1, y, p.time, pf(S.time.fg)); }
+      if (st.mode === 'main' && row.slot === st.selectedSlot && !foc) put(U, px + S.selectedMark.col, y, S.selectedMark.glyph, S.selectedMark.fg);
+    } else {
+      text(U, px + R.textCol, y, row.text, fgK);
+      if (dis) text(U, px + R.textCol + row.text.length, y, R.disabled.suffix, R.disabled.suffixFg);
+    }
+  });
+  if (st.message) { text(U, px + M.message.col, py + M.message.row, M.message.prefix, M.message.prefixFg); text(U, px + M.message.col + 2, py + M.message.row, st.message, st.msgErr ? M.message.error : M.message.info); }
+  const K = M.keyHints; hiKeys(U, px + ((pw - K.text.length) >> 1), py + K.row, K.text, K.fg, K.keys, K.keyFg);
+  const ver = ' v0.8 '; text(U, px + M.version.colEnd - ver.length + 1, py + M.version.row, ver, M.version.fg);
+  return { px, py, pw, ph };
+}
+let GM;
+function renderMenu() {
+  GM = canvasFor('menu'); const U = makeUi(); const b = drawMenu(U);
+  scene(GM, { sceneDim: M.sceneDim.bgMul, plate: M.plate.bgMul, pad: M.plate.pad, panel: { x: b.px, y: b.py, w: b.pw, h: b.ph } });
+  blit(GM, U);
+  $('menuInfo').textContent = `mode ${menuState.mode}, focus ${menuState.rows[menuState.selected] && menuState.rows[menuState.selected].id}, selected slot ${menuState.selectedSlot + 1}`;
+}
+$('menu').addEventListener('keydown', (e) => {
+  const st = menuState, k = e.code;
+  if (k === 'Escape') { if (st.mode !== 'main') { st.message = ''; menuRoot(); } }
+  else if (k === 'Enter' || k === 'Space') menuActivate();
+  else if (k === 'Delete' && st.mode === 'main' && (st.slots[st.selectedSlot].meta || !st.slots[st.selectedSlot].ok)) ask('delete', st.selectedSlot);
+  else {
+    const d = ['ArrowUp', 'KeyW', 'ArrowLeft'].includes(k) ? -1 : ['ArrowDown', 'KeyS', 'ArrowRight'].includes(k) ? 1 : 0;
+    if (!d) return;
+    for (let s = 1; s <= st.rows.length; s++) { const n = (st.selected + d * s + st.rows.length) % st.rows.length; if (st.rows[n].enabled) { menuFocus(n); break; } }
+  }
+  e.preventDefault();
+});
+function menuRowAt(e) {
+  const [x, y] = cellAt(GM, e), px = (COLS - M.panel.w) >> 1, py = (ROWS - M.panel.h) >> 1;
+  if (x <= px || x >= px + M.panel.w - 1) return -1;
+  return menuState.rows.findIndex(r => py + r.y === y);
+}
+$('menu').addEventListener('mousemove', (e) => { const i = menuRowAt(e); menuState.hover = i; if (i >= 0 && menuState.rows[i].enabled) menuFocus(i); });
+$('menu').addEventListener('click', (e) => { $('menu').focus(); const i = menuRowAt(e); if (i >= 0 && menuState.rows[i].enabled) { menuFocus(i); menuActivate(); } });
+$('saves').addEventListener('change', menuReset);
+
+// ============================================================ controls (shared by section 2 and 3)
+function drawSelect(U, x, y, state, t, atStart, atEnd) {
+  const S = SC.select[state], a = SC.select.arrows;
+  put(U, x, y, a[0], atStart && state !== 'disabled' ? SC.select.endStop.arrowFg : S.arrows);
+  text(U, x + 2, y, t, S.text);
+  put(U, x + 3 + t.length, y, a[1], atEnd && state !== 'disabled' ? SC.select.endStop.arrowFg : S.arrows);
+  return 4 + t.length;
+}
+function drawStrip(U, x, y, state, choices, current, disabledSet, resolved) {
+  const S = SC.strip[state], g = SC.strip.gap; let cx = x + SQ.lead;
+  for (const id of choices) {
+    let t = SQ.text[id] || id; if (id === 'auto' && current === 'auto' && resolved) t = SQ.autoResolved.format.replace('{name}', SQ.text[resolved]);
+    const cur = id === current, off = disabledSet.has(id);
+    if (cur) { put(U, cx - 1, y, SC.strip.bracket[0], S.bracket); put(U, cx + t.length, y, SC.strip.bracket[1], S.bracket); }
+    text(U, cx, y, t, off ? SC.strip.disabledChoice.fg : cur ? S.current : S.choice);
+    cx += t.length + g;
+  }
+  return cx - g + SQ.trail - x;
+}
+function drawSlider(U, x, y, state, v, max) {
+  const S = SC.slider[state], Sl = SC.slider, n = Math.round(v / max * Sl.cells);
+  put(U, x, y, Sl.left, S.bracket);
+  for (let c = 0; c < Sl.cells; c++) {
+    const knob = n === 0 ? c === 0 : c === n - 1;
+    put(U, x + 1 + c, y, knob ? Sl.knob : c < n ? Sl.fill : Sl.empty, knob ? S.knob : c < n ? S.fill : S.empty);
+  }
+  put(U, x + 1 + Sl.cells, y, Sl.right, S.bracket);
+  text(U, x + 2 + Sl.cells + Sl.valueGap, y, Sl.valueFormat.replace('{v}', v), S.value);
+}
+function drawToggle(U, x, y, state, on) {
+  const T = SC.toggle, S = T[state], o = on ? T.on : T.off;
+  put(U, x, y, o.box[0], S.bracket); put(U, x + 1, y, o.box[1], S.mark); put(U, x + 2, y, o.box[2], S.bracket);
+  text(U, x + 3 + T.gap, y, o.text, S.text);
+}
+
+// ============================================================ 2. settings full panel
+const SV = Object.assign({}, SF.mock.values); let sSel = 0;
+const CHOICES = { quality: SQ.choices, shadows: ['off', 'low', 'mid', 'high'], grid: ['240x90', '320x120', '400x150', '480x180'], textSize: ['small', 'normal', 'large'] };
+function sDisabledChoices(id) { return new Set(id === 'quality' && $('ultraOff').checked ? ['ultra'] : []); }
+function sRowDisabled(id) { return id === 'shadows' && $('rowOff').checked; }
+function selRows() { return SF.rowOrder.filter(id => !sRowDisabled(id)); }
+function drawSettings(U) {
+  const p = SF.panel, R = SF.rows, x0 = p.x, y0 = p.y, rows = selRows(), focId = rows[sSel];
+  U.defBg = C(SF.bgRgb.panel);
+  fill(U, x0, y0, p.w, p.h, SF.bgRgb.panel);
+  frame(U, x0, y0, p.w, p.h, SF.frame, SF.frame.color, SF.frame.cornerColor, SF.frame.rivets.cols, SF.frame.rivets.color);
+  const T = SF.title, tt = T.decor[0] + ' ' + T.text + ' ' + T.decor[1], tx = x0 + ((p.w - tt.length) >> 1);
+  text(U, tx, y0, tt, T.color); put(U, tx, y0, T.decor[0], T.decorColor); put(U, tx + tt.length - 1, y0, T.decor[1], T.decorColor);
+  for (const L of SF.layout) {
+    const y = y0 + L.y;
+    if (L.section) {
+      text(U, x0 + SF.section.col, y, L.section, SF.section.color);
+      for (let c = SF.section.col + L.section.length + SF.section.rule.gap; c <= SF.section.rule.toCol; c++) put(U, x0 + c, y, SF.section.rule.glyph, SF.section.rule.color);
+      continue;
+    }
+    const id = L.id, dis = sRowDisabled(id), foc = id === focId && !dis, state = dis ? 'disabled' : foc ? 'focus' : 'normal';
+    if (foc) { for (let c = R.bandFrom; c <= R.bandTo; c++) put(U, x0 + c, y, ' ', 'uiText', SF.bgRgb.band); put(U, x0 + R.markerCol, y, SC.marker.glyph, SC.marker.fg); }
+    text(U, x0 + R.labelCol, y, SF.labels[id], SC.label[state]);
+    const vx = x0 + R.valueCol, ctl = SF.controlOf[id];
+    if (ctl === 'strip') drawStrip(U, vx, y, state, CHOICES[id], SV[id], sDisabledChoices(id), SV.qualityResolved);
+    else if (ctl === 'select') {
+      const ch = CHOICES[id], i = ch.indexOf(SV[id]);
+      const w = drawSelect(U, vx, y, state, SF.valueText[id][SV[id]], i === 0, i === ch.length - 1);
+      if (dis) text(U, vx + w, y, SC.disabledSuffix.text, SC.disabledSuffix.fg);
+    } else if (ctl === 'slider') drawSlider(U, vx, y, state, SV[id], 10);
+    else if (ctl === 'toggle') drawToggle(U, vx, y, state, SV[id]);
+    if (foc) {
+      const nt = SF.notes[id]; let note = nt && (nt[String(SV[id])] !== undefined ? nt[String(SV[id])] : nt.default);
+      if (note) text(U, x0 + SF.note.col, y + R.noteOffset, note, SF.note.color);
+    }
+    if (dis) text(U, x0 + SF.note.col, y + R.noteOffset, SQ.notes.disabled, 'uiDim');
+  }
+  const sp = SF.separator; for (let c = sp.inset; c < p.w - sp.inset; c++) put(U, x0 + c, y0 + sp.row, sp.glyph, sp.color);
+  const K = SF.keyHints; hiKeys(U, x0 + ((p.w - K.text.length) >> 1), y0 + K.row, K.text, K.color, K.keys, K.key);
+}
+let GS;
+function renderSettings() {
+  GS = canvasFor('settings'); const U = makeUi(); drawSettings(U);
+  scene(GS, { sceneDim: SF.sceneDim.bgMul, plate: SF.plate.bgMul, pad: SF.plate.pad, panel: SF.panel }); blit(GS, U);
+}
+function sStep(d) {
+  const id = selRows()[sSel], ctl = SF.controlOf[id];
+  if (ctl === 'slider') SV[id] = Math.max(0, Math.min(10, SV[id] + d));
+  else if (ctl === 'toggle') SV[id] = d > 0;
+  else if (CHOICES[id]) {
+    const ch = CHOICES[id], off = sDisabledChoices(id); let i = ch.indexOf(SV[id]);
+    for (let j = i + d; j >= 0 && j < ch.length; j += d) if (!off.has(ch[j])) { SV[id] = ch[j]; break; }
+  }
+}
+$('settings').addEventListener('keydown', (e) => {
+  const k = e.code, n = selRows().length;
+  if (k === 'KeyW' || k === 'ArrowUp') sSel = (sSel - 1 + n) % n;
+  else if (k === 'KeyS' || k === 'ArrowDown') sSel = (sSel + 1) % n;
+  else if (k === 'KeyA' || k === 'ArrowLeft') sStep(-1);
+  else if (k === 'KeyD' || k === 'ArrowRight') sStep(1);
+  else if (k === 'Enter' || k === 'Space') { const id = selRows()[sSel]; if (SF.controlOf[id] === 'toggle') SV[id] = !SV[id]; }
+  else if (k === 'Escape') { Object.assign(SV, SF.mock.values); sSel = 0; }
+  else return;
+  e.preventDefault();
+});
+$('settings').addEventListener('mousemove', (e) => {
+  const [, y] = cellAt(GS, e), rows = selRows(), L = SF.layout.find(l => l.id && SF.panel.y + l.y === y);
+  if (L && rows.includes(L.id)) sSel = rows.indexOf(L.id);
+});
+$('settings').addEventListener('click', () => $('settings').focus());
+['ultraOff', 'rowOff'].forEach(id => $(id).addEventListener('change', () => { sSel = 0; if ($('ultraOff').checked && SV.quality === 'ultra') SV.quality = 'high'; }));
+
+// ============================================================ 3. states sheet
+function renderSheet() {
+  const G = canvasFor('sheet', 34), U = makeUi(); U.defBg = C('plate');
+  const x0 = 4, w = 152;
+  fill(U, x0, 0, w, 34, 'plate'); frame(U, x0, 0, w, 34, SF.frame, 'brass', 'brassLight', null, null);
+  text(U, x0 + 3, 0, ' CONTROL STATES ', 'brassHot');
+  const colX = [x0 + 22, x0 + 66, x0 + 110], states = ['normal', 'focus', 'disabled'];
+  states.forEach((s, i) => text(U, colX[i], 2, s.toUpperCase(), 'brassDark'));
+  const lines = [
+    ['select', (x, y, s) => drawSelect(U, x, y, s, 'Medium', false, false)],
+    ['select (end)', (x, y, s) => drawSelect(U, x, y, s, 'High', false, true)],
+    ['slider', (x, y, s) => drawSlider(U, x, y, s, 7, 10)],
+    ['toggle on', (x, y, s) => drawToggle(U, x, y, s, true)],
+    ['toggle off', (x, y, s) => drawToggle(U, x, y, s, false)],
+    ['action', (x, y, s) => text(U, x, y, 'Back', SC.action[s])]
+  ];
+  lines.forEach(([name, fn], r) => {
+    const y = 4 + r * 2; text(U, x0 + 3, y, name, 'uiHint');
+    states.forEach((s, i) => {
+      if (s === 'focus') { for (let c = -2; c < 40; c++) put(U, colX[i] + c, y, ' ', 'uiText', 'band'); put(U, colX[i] - 2, y, '>', 'gold'); }
+      fn(colX[i], y, s);
+    });
+  });
+  // quality strip: one line per state (too wide for a column)
+  states.forEach((s, i) => {
+    const y = 17 + i; text(U, x0 + 3, y, 'quality ' + s, 'uiHint');
+    if (s === 'focus') { for (let c = -2; c < 44; c++) put(U, colX[0] + c, y, ' ', 'uiText', 'band'); put(U, colX[0] - 2, y, '>', 'gold'); }
+    drawStrip(U, colX[0], y, s, SQ.choices, 'auto', new Set(['ultra']), 'high');
+  });
+  // menu rows
+  const MR = M.row, ys = 21;
+  text(U, x0 + 3, ys, 'menu row', 'uiHint');
+  text(U, colX[0], ys, 'Continue', MR.normal.fg);
+  for (let c = -2; c < 40; c++) put(U, colX[1] + c, ys, ' ', 'uiText', MR.focus.bg); put(U, colX[1] - 2, ys, '>', 'gold'); text(U, colX[1], ys, 'Continue', MR.focus.fg); put(U, colX[1] + 37, ys, '<', 'gold');
+  text(U, colX[2], ys, 'Continue' + MR.disabled.suffix, MR.disabled.fg);
+  text(U, x0 + 3, ys + 1, 'menu destructive', 'uiHint'); text(U, colX[0], ys + 1, 'Delete selected slot', MR.destructive.fg);
+  // inventory slot boxes
+  text(U, x0 + 3, 26, 'pack slot', 'uiHint');
+  const S = INV.slot;
+  const box = (x, y, st, inner, glyph) => {
+    for (let c = 0; c < 9; c++) { const cr = c === 0 || c === 8; put(U, x + c, y, cr ? st.corner : st.h, st.fg, INV.panel.bg); put(U, x + c, y + 4, cr ? st.corner : st.h, st.fg, INV.panel.bg); }
+    for (let r = 1; r < 4; r++) { put(U, x, y + r, st.v, st.fg, INV.panel.bg); put(U, x + 8, y + r, st.v, st.fg, INV.panel.bg); for (let c = 1; c < 8; c++) put(U, x + c, y + r, ' ', 'uiText', inner); }
+    if (glyph) put(U, x + glyph.x, y + glyph.y, glyph.g, glyph.fg, inner);
+  };
+  const icon = (x, y, id, bg) => { const d = IT.defs[id]; for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) { const g = d.icon.glyphs[r][c]; if (g !== ' ') put(U, x + c, y + r, g, P.rgb[IT.keys[d.icon.fg[r][c]].c], bg); } };
+  box(colX[0], 25, S.border, S.innerBg); icon(colX[0] + 2, 26, 'boar.meat', S.innerBg);
+  box(colX[1], 25, S.selected, S.selected.innerBg); icon(colX[1] + 2, 26, 'boar.meat', S.selected.innerBg);
+  box(colX[2], 25, S.disabled, S.disabled.innerBg, { x: S.disabled.x, y: S.disabled.y, g: S.disabled.glyph, fg: S.disabled.glyphFg });
+  blit(G, U);
+}
+
+// ============================================================ 4. pack screen
+const inv = { left: INV.mock.left, right: INV.mock.right, cur: { zone: 'grid', i: 0 }, slots: new Array(24).fill(null) };
+INV.mock.slots.forEach((s, i) => { inv.slots[i] = { id: s.id, n: s.n }; });
+const slotOff = (i) => $('capLock').checked && i >= 18;
+function drawInv(U) {
+  const R = INV.rgb, px = INV.panel.x, py = INV.panel.y, W = INV.panel.w, H = INV.panel.h, S = INV.slot;
+  U.defBg = INV.panel.bg;
+  fill(U, px, py, W, H, INV.panel.bg);
+  const F = INV.frame;
+  for (let c = 0; c < W; c++) { const cr = c === 0 || c === W - 1; put(U, px + c, py, cr ? F.corner : F.h, cr ? F.cornerFg : F.fg); put(U, px + c, py + H - 1, cr ? F.corner : F.h, cr ? F.cornerFg : F.fg); }
+  for (let r = 1; r < H - 1; r++) { put(U, px, py + r, F.v, F.fg); put(U, px + W - 1, py + r, F.v, F.fg); }
+  const T = ' ' + F.title.text + ' '; text(U, px + ((W - T.length) >> 1), py, T, F.title.fg);
+  text(U, px + F.pausedTag.col, py + F.pausedTag.row, ' ' + F.pausedTag.text + ' ', F.pausedTag.fg);
+  for (const s of INV.separators) { if (s.row !== undefined) for (let c = s.from; c <= s.to; c++) put(U, px + c, py + s.row, s.glyph, s.fg); else for (let r = s.from; r <= s.to; r++) put(U, px + s.col, py + r, s.glyph, s.fg); }
+  const box = (x, y, st, inner, fgOver) => {
+    const fg = fgOver || st.fg, cf = st.cornerFg || fg;
+    for (let c = 0; c < 9; c++) { const cr = c === 0 || c === 8; put(U, x + c, y, cr ? st.corner : st.h, cr ? cf : fg); put(U, x + c, y + 4, cr ? st.corner : st.h, cr ? cf : fg); }
+    for (let r = 1; r < 4; r++) { put(U, x, y + r, st.v, fg); put(U, x + 8, y + r, st.v, fg); for (let c = 1; c < 8; c++) put(U, x + c, y + r, ' ', 'uiText', inner); }
+  };
+  const icon = (x, y, id, bg) => { const d = IT.defs[id]; if (!d) return; for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) { const g = d.icon.glyphs[r][c]; if (g !== ' ') put(U, x + c, y + r, g, P.rgb[IT.keys[d.icon.fg[r][c]].c], bg); } };
+  // hands
+  const HS = INV.hands;
+  for (const side of ['left', 'right']) {
+    const L = HS[side], id = inv[side], sel = inv.cur.zone === 'hand' && inv.cur.hand === side, busy = side === 'right' && $('handBusy').checked;
+    const st = sel ? S.selected : busy ? HS.disabled.frame : HS.frame, inner = sel ? S.selected.innerBg : S.innerBg;
+    box(px + L.box.x, py + L.box.y, st, inner);
+    if (id) icon(px + L.box.x + S.icon.x, py + L.box.y + S.icon.y, id, inner);
+    else HS.emptyGlyph[side].forEach((row, r) => { for (let c = 0; c < 7; c++) if (row[c] !== ' ') put(U, px + L.box.x + 1 + c, py + L.box.y + 1 + r, row[c], HS.emptyGlyph.fg, inner); });
+    text(U, px + L.label.x, py + L.label.y, L.label.text, busy ? HS.disabled.label.fg : HS.label.fg);
+    const bx = px + L.label.x + L.label.text.length + L.button.gap; text(U, bx, py + L.label.y, L.button.text, busy ? HS.disabled.label.fg : HS.button.fg);
+    if (busy) text(U, bx + L.button.text.length + HS.disabled.tag.gap, py + L.label.y, HS.disabled.tag.text, HS.disabled.tag.fg);
+    if (id) { text(U, px + L.name.x, py + L.name.y, IT.defs[id].name, HS.name.fg); text(U, px + L.kind.x, py + L.kind.y, HS.kindText[IT.defs[id].kind] || IT.defs[id].kind, HS.kind.fg); }
+    else text(U, px + L.name.x, py + L.name.y, HS.emptyName.text, HS.emptyName.fg);
+    if (sel) text(U, px + L.hint.x, py + L.hint.y, HS.hint.text, HS.hint.fg);
+  }
+  // grid: disabled first, then live, then the cursor
+  const G = INV.grid, XY = (i) => [px + G.x + (i % G.cols) * G.pitchX, py + G.y + Math.floor(i / G.cols) * G.pitchY];
+  const drawSlot = (i, selected) => {
+    const [x, y] = XY(i), it = inv.slots[i];
+    if (slotOff(i)) { const D = S.disabled; box(x, y, D, D.innerBg); put(U, x + D.x, y + D.y, D.glyph, D.glyphFg, D.innerBg); return; }
+    const inner = selected ? S.selected.innerBg : S.innerBg;
+    box(x, y, selected ? S.selected : S.border, inner);
+    if (!it) { put(U, x + S.empty.x, y + S.empty.y, S.empty.glyph, S.empty.fg, inner); return; }
+    icon(x + S.icon.x, y + S.icon.y, it.id, inner);
+    if (it.n >= S.count.minN) { const t = S.count.format.replace('{n}', it.n); text(U, x + 8 - t.length, y + 4, t, S.count.fg, S.count.bg); }
+    if (inv.left === it.id) put(U, x + S.equippedTag.col, y, S.equippedTag.left, S.equippedTag.fg, S.equippedTag.bg);
+    if (inv.right === it.id) put(U, x + S.equippedTag.col, y, S.equippedTag.right, S.equippedTag.fg, S.equippedTag.bg);
+  };
+  for (let i = 0; i < 24; i++) if (slotOff(i)) drawSlot(i, false);
+  for (let i = 0; i < 24; i++) if (!slotOff(i)) drawSlot(i, false);
+  if (inv.cur.zone === 'grid') drawSlot(inv.cur.i, true);
+  // details
+  const Dt = INV.details, id = inv.cur.zone === 'hand' ? inv[inv.cur.hand] : inv.slots[inv.cur.i] && inv.slots[inv.cur.i].id;
+  box(px + Dt.iconBox.x, py + Dt.iconBox.y, S.border, S.innerBg);
+  if (!id) text(U, px + Dt.emptySlot.x, py + Dt.emptySlot.y, Dt.emptySlot.text, Dt.emptySlot.fg);
+  else {
+    const d = IT.defs[id]; icon(px + Dt.iconBox.x + S.icon.x, py + Dt.iconBox.y + S.icon.y, id, S.innerBg);
+    text(U, px + Dt.name.x, py + Dt.name.y, d.name, Dt.name.fg); text(U, px + Dt.kind.x, py + Dt.kind.y, Dt.kind.text[d.kind] || d.kind, Dt.kind.fg);
+    if (inv.left === id) text(U, px + Dt.status.x, py + Dt.status.y, Dt.status.inLeft, Dt.status.fg);
+    else if (inv.right === id) text(U, px + Dt.status.x, py + Dt.status.y, Dt.status.inRight, Dt.status.fg);
+    const words = d.desc.split(' '), lines = []; let ln = '';
+    for (const w of words) { if ((ln + (ln ? ' ' : '') + w).length > Dt.desc.w) { lines.push(ln); ln = w; } else ln += (ln ? ' ' : '') + w; } if (ln) lines.push(ln);
+    lines.slice(0, Dt.desc.maxLines).forEach((l, k) => text(U, px + Dt.desc.x, py + Dt.desc.y + k, l, Dt.desc.fg));
+    if (inv.cur.zone === 'grid') {
+      const AC = Dt.actions, rows = d.hand ? AC.byKind.hand : AC.byKind[d.kind] || [];
+      rows.forEach((a, k) => { const y = py + AC.y + k * (1 + AC.gapRows); if (a.keys) text(U, px + AC.x, y, a.keys, AC.keyFg); const t = (a.text || '').replace('{heal}', d.use && d.use.heal); text(U, px + AC.x + (a.keys ? 12 : 0), y, t, a.fg || AC.textFg); if (a.hand && inv[a.hand] === id) text(U, px + AC.x + 13 + t.length, y, AC.here.text, AC.here.fg); });
+    }
+  }
+  const KH = INV.keyHints; hiKeys(U, px + ((W - KH.text.length) >> 1), py + KH.row, KH.text, KH.fg, KH.keys, KH.keyFg);
+}
+let GI;
+function renderInv() { GI = canvasFor('inv'); const U = makeUi(); drawInv(U); scene(GI, { sceneDim: INV.sceneDim.bgMul, plate: INV.plate.bgMul, pad: INV.plate.pad, panel: INV.panel }); blit(GI, U); }
+$('inv').addEventListener('keydown', (e) => {
+  const k = e.code, G = INV.grid; let dx = 0, dy = 0;
+  if (k === 'KeyW' || k === 'ArrowUp') dy = -1; else if (k === 'KeyS' || k === 'ArrowDown') dy = 1; else if (k === 'KeyA' || k === 'ArrowLeft') dx = -1; else if (k === 'KeyD' || k === 'ArrowRight') dx = 1; else return;
+  e.preventDefault();
+  if (inv.cur.zone === 'hand') { if (dy > 0) inv.cur = { zone: 'grid', i: inv.cur.hand === 'left' ? 0 : 3 }; else if (dx) inv.cur = { zone: 'hand', hand: inv.cur.hand === 'left' ? 'right' : 'left' }; return; }
+  const c = inv.cur.i % G.cols, r = Math.floor(inv.cur.i / G.cols);
+  if (dy < 0 && r === 0) { inv.cur = { zone: 'hand', hand: c < 3 ? 'left' : 'right' }; return; }
+  const ni = Math.max(0, Math.min(G.rows - 1, r + dy)) * G.cols + Math.max(0, Math.min(G.cols - 1, c + dx));
+  if (!slotOff(ni)) inv.cur = { zone: 'grid', i: ni };
+});
+$('inv').addEventListener('click', () => $('inv').focus());
+$('capLock').addEventListener('change', () => { if (inv.cur.zone === 'grid' && slotOff(inv.cur.i)) inv.cur = { zone: 'grid', i: 0 }; });
+
+// ============================================================ checks
+function runChecks() {
+  const out = [], check = (ok, msg) => out.push(`<div class="${ok === true ? 'pass' : ok === 'info' ? 'info' : 'fail'}">${ok === true ? 'PASS' : ok === 'info' ? 'INFO' : 'FAIL'} ${msg}</div>`);
+  // 1. every colour reference resolves (palette key or named bg)
+  const COLPROP = /^(fg|bg|color|text|arrows|choice|current|bracket|fill|empty|knob|value|mark|label|focus|normal|disabled|info|error|litFg|key|keyFg|prefixFg|suffixFg|cornerFg|cornerColor|decorColor|bracketFg|markerFg|focusFg|focusBg|allFg|filled|broken|delete|replace|to|from|arrowFg|action)$/;
+  const bad = [];
+  (function walk(o, path) {
+    if (Array.isArray(o)) { o.forEach((v, i) => typeof v === 'object' && v && walk(v, path + '[' + i + ']')); return; }
+    for (const k in o) {
+      const v = o[k], p = path + '.' + k;
+      if (k === 'hex' || k === 'bg' && path === '.menu' || k === 'adopt' || k === 'mock' || k === 'quality' && path.endsWith('valueText') || k === 'notes' || k === 'valueText' || k === 'labels' || k === 'text' && typeof v === 'object') continue;
+      if (typeof v === 'string' && COLPROP.test(k) && /^[a-z][A-Za-z]*$/.test(v) && !['center', 'left', 'main', 'new', 'focus', 'selected'].includes(v) || (typeof v === 'string' && /Fg$|Color$/.test(k))) {
+        if (!P.rgb[v] && !BGN[v]) bad.push(p + '=' + v);
+      } else if (typeof v === 'object' && v) walk(v, p);
+    }
+  })({ menu: M, controls: SC, full: SF }, '');
+  check(bad.length === 0, 'every fg / colour field is a palette.js key or a named bg (plate / band / bandOff / softEmber / panel)' + (bad.length ? ': ' + bad.slice(0, 8).join(', ') : ''));
+  // 2. menu.hex == palette
+  const hexBad = Object.keys(M.hex).filter(k => { const r = P.rgb[k]; return !r || '#' + r.map(v => v.toString(16).padStart(2, '0')).join('') !== M.hex[k].toLowerCase(); });
+  check(hexBad.length === 0, 'uiStyle.menu.hex matches palette.js for ' + Object.keys(M.hex).length + ' keys' + (hexBad.length ? ': ' + hexBad.join(', ') : ''));
+  // 3. ASCII only
+  const nonAscii = []; (function walk(o, p) { if (typeof o === 'string') { if (/[^\x20-\x7e]/.test(o)) nonAscii.push(p); } else if (o && typeof o === 'object') for (const k in o) walk(o[k], p + '.' + k); })({ M, SC, SQ, SF, st: INV.states, sd: INV.slot.disabled, hd: INV.hands.disabled }, '');
+  check(nonAscii.length === 0, 'all strings ASCII 32-126' + (nonAscii.length ? ': ' + nonAscii.join(', ') : ''));
+  // 4. sizes
+  const pw = M.panel.w, ph = M.panel.h;
+  check(pw <= 100 && SF.panel.w <= 100 && INV.panel.w <= 100, `panel widths <= 100 UI cells (menu ${pw}, settings ${SF.panel.w}, pack ${INV.panel.w})`);
+  check(SF.panel.x >= 0 && SF.panel.x + SF.panel.w <= 160 && SF.panel.y + SF.panel.h <= 60, 'settings panel inside the 160x60 UI grid');
+  check(pw === 72 && ph === 28, 'menu card = the US-090a bounds 72 x 28 (geometry unchanged for lane C)');
+  const S = M.slot.cols;
+  check(S.icon + 3 < S.label && S.label + 7 < S.name && S.name + M.slot.name.max < S.place && S.place + M.slot.place.max < S.timeEnd - 5 && S.timeEnd < M.row.focus.markerRightCol, 'slot columns do not overlap (icon / label / name 14 / place 28 / time / right marker)');
+  check(M.row.bandTo === pw - 2 && M.separators.every(s => s.to <= pw - 2), 'focus band + separators stay inside the menu frame');
+  // 5. quality strip width
+  const U = makeUi(); U.defBg = C('plate');
+  const wStrip = drawStrip(U, 0, 0, 'focus', SQ.choices, 'auto', new Set(), 'high');
+  check(wStrip <= SF.rows.valueW && SF.rows.valueCol + SF.rows.valueW <= SF.panel.w - 2, `quality strip with "Auto (High)" = ${wStrip} cells <= valueW ${SF.rows.valueW}; value column ends inside the frame`);
+  // 6. settings layout consistency
+  const ids = SF.layout.filter(l => l.id).map(l => l.id);
+  check(JSON.stringify(ids) === JSON.stringify(SF.rowOrder), 'settings.full layout ids == rowOrder');
+  check(ids.every(id => SF.labels[id] && SF.controlOf[id]), 'every row has a label and a control');
+  check(SF.layout.every((l, i, a) => i === 0 || l.y > a[i - 1].y + (a[i - 1].id ? 1 : 0)), 'every selectable row keeps a free note line below it');
+  check(SF.layout.every(l => l.y < SF.separator.row) && SF.separator.row < SF.keyHints.row && SF.keyHints.row < SF.panel.h - 1, 'rows above separator above key hints inside the panel');
+  check(JSON.stringify(SQ.choices) === JSON.stringify(['low', 'medium', 'high', 'ultra', 'auto']), 'quality choices = gfxPresets.js QUALITY_CHOICES');
+  // 7. existing keys still present (append-only)
+  const old = A.uiStyle.settings;
+  check(old.panel && old.panel.w === 40 && JSON.stringify(old.rowOrder) === JSON.stringify(['grid', 'mute', 'back']), 'US-038b uiStyle.settings untouched (40 x 12, rowOrder grid / mute / back)');
+  check(INV.panel.w === 100 && INV.slot.selected.corner === '#', 'uiStyle.inventory existing values untouched');
+  // 8. contrast vs the plate (WCAG-ish; text roles only)
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const ratio = (a, b) => { const la = lum(a), lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
+  const rows = [['uiText', 'plate'], ['uiHint', 'plate'], ['uiDim', 'plate'], ['gold', 'band'], ['brassLight', 'plate'], ['softEmber', 'plate'], ['uiDim', 'bandOff']];
+  for (const [f, b] of rows) { const r = ratio(C(f), C(b)); check(r >= 3 ? true : 'info', `contrast ${f} on ${b}: ${r.toFixed(1)}:1` + (r >= 3 ? '' : ' (decorative / disabled only)')); }
+  $('checks').innerHTML = out.join('');
+}
+
+// ============================================================ loop
+function renderAll() { renderMenu(); renderSettings(); renderSheet(); renderInv(); }
+['sceneGrid', 'cell', 'tod'].forEach(id => $(id).addEventListener('change', renderAll));
+$('dumpBtn').onclick = () => {
+  const v = $('dumpSel').value, o = { menu: M, 'settings.controls': SC, 'settings.quality': SQ, 'settings.full': SF, 'inventory.states': { states: INV.states, slotDisabled: INV.slot.disabled, handsDisabled: INV.hands.disabled } }[v];
+  $('dump').value = JSON.stringify(o, null, 2);
+};
+try {
+  menuReset(); runChecks(); renderAll();
+  setInterval(() => { renderMenu(); renderSettings(); renderInv(); }, 60);
+} catch (err) { $('fatal').textContent = 'Error: ' + err.message; console.error(err); }
+})();
+</script>
+</body>
+</html>
