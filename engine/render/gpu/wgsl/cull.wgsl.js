@@ -27,6 +27,7 @@ export const CULL_BLOCK = defineUniformBlock('CullU', [
   { name: 'lodOn', type: 'u32' },             // 1 = LOD pick active
   { name: 'slot0', type: 'u32' },             // first word of the LOD0 args slot in `args`
   { name: 'slot1', type: 'u32' },             // first word of the LOD1 args slot
+  { name: 'lodDither', type: 'u32' },         // S8-B2-07: 1 = emit band instances to BOTH LOD lists with complementary dither bits (lodDither.js); 0 = off
 ]);
 
 /** Buffer access per slot of the compute pipeline (GpuDevice ComputePipelineDesc.bindings.buffers). */
@@ -71,6 +72,18 @@ fn pickLod(tx: f32, ty: f32, tz: f32, prev: u32) -> u32 {
   return 0u;
 }
 
+// S8-B2-07 (lodDither.js): LOD0 coverage 0..1 across the band, -1 = outside the band / dither off / behind the eye
+fn bandFrac(cw: f32) -> f32 {
+  if (u.lodOn == 0u || u.lodDither == 0u || cw <= 1e-6) { return -1.0; }
+  let cells = u.params.y / cw;
+  if (cells < u.params.z || cells > u.params.w) { return -1.0; }
+  return (cells - u.params.z) / (u.params.w - u.params.z);
+}
+fn ditherBits(f: f32, lod: u32) -> u32 {
+  let cov = min(u32(floor(f * 256.0)), 256u);
+  return 0x4000000u | (cov << 16u) | select(0u, 0x2000000u, lod == 1u);
+}
+
 fn distOut(tx: f32, ty: f32, tz: f32) -> bool {
   let m = u.eye.w;
   if (m <= 0.0) { return false; }
@@ -92,6 +105,17 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
   let lod = pickLod(tx, ty, tz, lodPrev[i]);
   if (u.lodOn != 0u) { lodPrev[i] = lod; }
   if (distOut(tx, ty, tz)) { return; }
+  let cwb = u.lodRow.x * tx + u.lodRow.y * ty + u.lodRow.z * tz + u.lodRow.w;
+  let bf = bandFrac(cwb);
+  if (bf >= 0.0) { // crossfade band: both copies, flags word (+13) gets the complementary dither bits
+    let wa = atomicAdd(&args[u.slot0 + 1u], 1u) * STRIDE;
+    let wb = atomicAdd(&args[u.slot1 + 1u], 1u) * STRIDE;
+    for (var c = 0u; c < STRIDE; c++) { dst0[wa + c] = src[o + c]; dst1[wb + c] = src[o + c]; }
+    dst0[wa + 13u] = src[o + 13u] | ditherBits(bf, 0u);
+    dst1[wb + 13u] = src[o + 13u] | ditherBits(bf, 1u);
+    lodPrev[i] = select(1u, 0u, bf >= 0.5);
+    return;
+  }
   if (lod == 1u) {
     let w1 = atomicAdd(&args[u.slot1 + 1u], 1u) * STRIDE;
     for (var c = 0u; c < STRIDE; c++) { dst1[w1 + c] = src[o + c]; }

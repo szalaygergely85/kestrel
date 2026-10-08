@@ -14,6 +14,7 @@
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { lodBandFrac, lodDitherBits } from './lodDither.js';
 import { requestMeshForGroup } from './lazyMesh.js';
 import { DRAW_FLAG_ONE_PART } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
 
@@ -174,6 +175,15 @@ export function compactGroup(g, planes, R, vp, rows) {
       if (cw > 1e-6) {
         const cells = k / cw;
         lod = cells < lo ? 1 : cells > hi ? 0 : lodPrev[i];
+        if (g.lodDither && cells >= lo && cells <= hi) { // S8-B2-07: screen-door crossfade, both copies with complementary coverage bits
+          const f = lodBandFrac(cells, lo, hi);
+          for (let c = 0; c < INSTANCE_STRIDE; c++) { dst0[w0 * INSTANCE_STRIDE + c] = srcU[o + c]; dst1[w1 * INSTANCE_STRIDE + c] = srcU[o + c]; }
+          dst0[w0 * INSTANCE_STRIDE + 13] = (srcU[o + 13] | lodDitherBits(f, 0)) >>> 0;
+          dst1[w1 * INSTANCE_STRIDE + 13] = (srcU[o + 13] | lodDitherBits(f, 1)) >>> 0;
+          w0++; w1++;
+          lodPrev[i] = f >= 0.5 ? 0 : 1;
+          continue;
+        }
       }
       lodPrev[i] = lod;
     }
@@ -244,6 +254,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
  * @property {InstanceParts} parts - engine-owned scratch
  * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a/c: engine-owned compacted scratch, 0 = LOD0, 1 = LOD1
  * @property {number} _R - cached group radius (both LODs) for the memoized frame
+ * @property {boolean} [lodDither] - S8-B2-07: crossfade the LOD hysteresis band by screen-door dither (lodDither.js); undefined/false = off
  * @property {number} lodCells - RE-15c: projected-size LOD threshold in cells; 0 (default) = LOD off
  * @property {boolean} castShadow - ENV-01a2: false excludes the group from the sun caster list; default true
  * @property {Uint8Array} lodPrev - RE-15c: previous LOD per game slot (hysteresis)

@@ -26,6 +26,8 @@ import {
 } from './MeshData.js';
 import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
+import { INST_FLAG_SWAY, swayOffset } from '../core/wind.js';
+import { ditherKeep } from './lodDither.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
 /** Sub-pixel bits (1/256 px vertex snap, 27.7 item 1). */
@@ -69,6 +71,7 @@ export const BIAS_UNITS = 1;
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
  * @property {import('../render/MaskAtlas.js').MaskAtlas|null} [maskAtlas] - ALPHA-01b: needed for meshes with `maskRanges`
+ * @property {{p: number[]|Float32Array|Float64Array, t: number}|null} [wind] - S8-B2-06: windParams() + seconds; instances flagged INST_FLAG_SWAY sway (absent/speed 0 = off)
  * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
  * @property {{factor: number, units: number}} [depthBias] - ME-15a (27.9a items 5, 9): GPU polygon-offset twin
  *   (`zn += factor * max(|dz/dx|, |dz/dy|) + 2 * units * 2^-24`, NDC z in [-1,1]) applied to EVERY item
@@ -152,6 +155,10 @@ const _instItem = {
 // ALPHA-01b (37.17): the current range's mask state (set per range by rasterDrawList, copied into _info per triangle)
 let _atlas = /** @type {MaskAtlas|null} */ (null);
 let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
+// S8-B2-06: foliage sway state of the instance being rasterised (off outside DRAW_INSTANCED / for unflagged instances / zero wind)
+let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayP = /** @type {number[]|Float32Array|Float64Array|null} */ (null);
+const _swayD = { x: 0, y: 0 };
+let _dither = 0; // S8-B2-07: (flags >>> 16) & 0x7ff of the instance being rasterised (0 = not dithered; lodDither.js)
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
@@ -159,7 +166,7 @@ const _info = {
   mirror: 0, // HANDS-01a: item.mirror (det<0 part matrices) flips the cullBack sign
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
-  zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
+  dither: 0, zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
   maskW: -1, maskX0: 0, maskY0: 0, maskH: 0, maskCut: 0, // ALPHA-01b: maskW < 0 = opaque range (no discard)
@@ -224,9 +231,10 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   const a10 = matArr[3], a11 = matArr[4], a12 = matArr[5];
   const a20 = matArr[6], a21 = matArr[7], a22 = matArr[8];
   const tx = matArr[9], ty = matArr[10], tz = matArr[11];
-  const wx = a00 * px + a01 * py + a02 * pz + tx;
-  const wy = a10 * px + a11 * py + a12 * pz + ty;
+  let wx = a00 * px + a01 * py + a02 * pz + tx;
+  let wy = a10 * px + a11 * py + a12 * pz + ty;
   const wz = a20 * px + a21 * py + a22 * pz + tz;
+  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {number[]|Float32Array|Float64Array} */ (_swayP), _swayD); wx += _swayD.x; wy += _swayD.y; }
 
   _nrmScratch[0] = 0; _nrmScratch[1] = 0; _nrmScratch[2] = 1;
   unpackNormalOct(mesh.nrm[vIdx], _nrmScratch);
@@ -396,6 +404,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       let zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
       if (info.biasFlag) zn += biasAdd;
       if (zn > 1) continue;
+      if (info.dither !== 0 && !ditherKeep(info.dither, px, py)) continue; // S8-B2-07: the GPU discards before the depth test, so does this
 
       const idx = rowBase + px;
       if (target.depthOnly) {
@@ -571,6 +580,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.biasFactor = BIAS_FACTOR; _info.biasUnits = BIAS_UNITS;
     }
     if (isCloth || isTerrain) { _info.maskW = -1; } else { _info.maskW = _mW; _info.maskX0 = _mX0; _info.maskY0 = _mY0; _info.maskH = _mH; _info.maskCut = _mCut; }
+    _info.dither = instAligned !== undefined ? _dither : 0;
     _info.zBase = item.zBase;
     _info.mirror = item.mirror | 0;
     _info.objectId = item.objectId;
@@ -593,6 +603,7 @@ function rasterInstanced(mesh, item, target, ctx) {
   if (!ib) return;
   const f = ib.f32, u = ib.u32, pm = item.partMatrices, n = item.instCount;
   const M = _matScratch;
+  const wind = ctx.wind, windOn = !!(wind && wind.p && wind.p[2] > 0);
   for (let p = 0; p < ranges.length; p++) {
     const range = ranges[p];
     if (range.count <= 0) continue;
@@ -619,10 +630,13 @@ function rasterInstanced(mesh, item, target, ctx) {
       _instItem.planeIdOr = (oid & 0xF) << 24;
       _instItem.zBase = itz;
       _team = (meta >>> 8) & 0xff;
+      _dither = (meta >>> 16) & 0x7ff;
+      _swayOn = windOn && (meta & INST_FLAG_SWAY) !== 0;
+      if (_swayOn) { _swayBx = itx; _swayBy = ity; _swayBz = itz; _swayT = wind.t; _swayP = wind.p; }
       rasterRange(mesh, _instItem, target, ctx, range.start, range.count, p, false, partAligned && (meta & 1) !== 0);
     }
   }
-  _team = 0;
+  _team = 0; _swayOn = false; _dither = 0;
 }
 
 /**

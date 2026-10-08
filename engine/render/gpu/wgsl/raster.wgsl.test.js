@@ -44,7 +44,7 @@ for (const src of [RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER
 }
 assert.ok(!RASTER_VOXEL_WGSL.includes('@location(4) aAux'), 'compact voxel vertices have no generic attributes in WebGPU');
 assert.ok(RASTER_CLOTH_WGSL.includes('if (!front) { nrmW = -nrmW; }'));
-assert.equal(RASTER_BASE_BLOCK.sizeBytes, 160); assert.equal(RASTER_BLOCK.sizeBytes, 304);
+assert.equal(RASTER_BASE_BLOCK.sizeBytes, 160); assert.equal(RASTER_BLOCK.sizeBytes, 336);
 assert.equal(RASTER_BLOCK.field('teamMat').word, 44, 'uniform vec4 team rows preserve GL team*4+slot addressing');
 // ALPHA-01c: the mask texel rule (maskTexel / maskDiscard) vs MaskAtlas.texel / MaskAtlas.sample (the rasterJS oracle) on a 4x4 checker.
 // The WGSL text is checked literally; its f32 evaluation is emulated with Math.fround at every WGSL op (u - floor(u) is exact in f32 except

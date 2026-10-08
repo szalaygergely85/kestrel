@@ -1,5 +1,7 @@
 // WG-2b: literal port of mesh.vert/frag.js. Static, compact voxel, instanced and cloth input layouts.
 import { defineUniformBlock } from './uniformBlock.js';
+import { WIND_AT_WGSL } from './common.wgsl.js';
+import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../core/wind.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const RASTER_FIELDS = [
@@ -17,7 +19,42 @@ export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS
 // (RASTER_BASE_BLOCK stays a prefix, size unchanged). Shadow passes leave it 0 (absolute, step 5).
 export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, { name: 'origin', type: 'vec2' },
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
+  // S8-B2-06 foliage sway (appended: earlier words keep their offsets). wind = windParams() (dirX, dirY, speed, gust); windT.x = seconds. All 0 = no sway.
+  { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' },
 ]);
+
+/** S8-B2-06: wind field + the horizontal sway displacement of one vertex (twin of engine/core/wind.js swayOffset); instanced variant only. */
+export const SWAY_WGSL = `${WIND_AT_WGSL}
+const SWAY_K: f32 = ${SWAY_K};
+const SWAY_MAX: f32 = ${SWAY_MAX};
+const INST_FLAG_SWAY: u32 = ${INST_FLAG_SWAY}u;
+fn swayDisp(bx: f32, by: f32, h: f32, t: f32, dirX: f32, dirY: f32, speed: f32, gust: f32) -> vec2f {
+  let wv = windAt(bx, by, t, dirX, dirY, speed, gust);
+  let k = max(h, 0.0) * max(h, 0.0) * SWAY_K;
+  let dx = wv.x * k; let dy = wv.y * k;
+  let dl = sqrt(dx * dx + dy * dy);
+  if (dl > SWAY_MAX) { let sc = SWAY_MAX / dl; return vec2f(dx * sc, dy * sc); }
+  return vec2f(dx, dy);
+}
+`;
+
+/** S8-B2-07: per-cell hash + keep rule of the LOD screen-door crossfade (twin of engine/mesh/lodDither.js ditherHash / ditherKeep). */
+export const LOD_DITHER_WGSL = `
+fn ditherHash(x: u32, y: u32) -> u32 {
+  var h = (x * 0x45d9f3bu) ^ (y * 0x27d4eb2du);
+  h = h ^ (h >> 15u);
+  h = h * 0x2c1b3c6du;
+  h = h ^ (h >> 12u);
+  return h;
+}
+fn ditherKeep(d: u32, x: u32, y: u32) -> bool {
+  if ((d & 0x400u) == 0u) { return true; }
+  let h = ditherHash(x, y) & 255u;
+  let cov = d & 0x1ffu;
+  if ((d & 0x200u) != 0u) { return h >= cov; }
+  return h < cov;
+}
+`;
 
 export const OCT_NORMAL = `
 fn packNormalOct(n: vec3f) -> u32 {
@@ -70,7 +107,7 @@ export function rasterWgsl(variant = 'static') {
   return `${(instanced ? RASTER_BLOCK : mask ? RASTER_MASK_BLOCK : RASTER_BASE_BLOCK).wgsl}
 @group(1) @binding(0) var<uniform> u: RasterU;
 ${mask ? '@group(0) @binding(0) var texMask: texture_2d<u32>;' : ''}
-${OCT_NORMAL}${mask ? MASK_TEXEL_WGSL : ''}
+${OCT_NORMAL}${instanced ? SWAY_WGSL + LOD_DITHER_WGSL : ''}${mask ? MASK_TEXEL_WGSL : ''}
 struct VertexIn {
   @location(0) aPos: vec3f,
   @location(1) aUV: vec2f,
@@ -95,7 +132,11 @@ ${mask ? '  @location(7) vUVMask: vec2f,' : ''}
   var o: VertexOut;
   let modelN = mat3x3f(u.model[0].xyz, u.model[1].xyz, u.model[2].xyz);
 ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
-  let wp = vec3f(dot(a.iRow0.xyz, lp) + (a.iRow0.w - u.origin.x), dot(a.iRow1.xyz, lp) + (a.iRow1.w - u.origin.y), dot(a.iRow2.xyz, lp) + a.iRow2.w);
+  var wp = vec3f(dot(a.iRow0.xyz, lp) + (a.iRow0.w - u.origin.x), dot(a.iRow1.xyz, lp) + (a.iRow1.w - u.origin.y), dot(a.iRow2.xyz, lp) + a.iRow2.w);
+  if ((a.iMeta.y & INST_FLAG_SWAY) != 0u && u.wind.z > 0.0) { // S8-B2-06: base fixed, crown moves by h^2; wind sampled at the absolute instance base
+    let sd = swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w, u.windT.x, u.wind.x, u.wind.y, u.wind.z, u.wind.w);
+    wp = vec3f(wp.x + sd.x, wp.y + sd.y, wp.z);
+  }
   let worldPos = vec4f(wp, 1.0);
   let planeId = a.aFlat.x | u.planeIdOr | ((a.iMeta.x & 0xFu) << 24u);
   var mat = (a.aFlat.y >> 16u) & 0xffffu;
@@ -105,7 +146,7 @@ ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
       if (u.teamSlot[s] != 0.0 && i32(mat) == i32(u.teamSlot[s])) { mat = u32(u.teamMat[team][s]); break; }
     }
   }
-  o.packed = vec4u(planeId, (a.aFlat.y & 0xffffu) | (mat << 16u), a.iMeta.x, u.axisAligned & (a.iMeta.y & 1u));
+  o.packed = vec4u(planeId, (a.aFlat.y & 0xffffu) | (mat << 16u), a.iMeta.x, (u.axisAligned & (a.iMeta.y & 1u)) | (((a.iMeta.y >> 16u) & 0x7ffu) << 1u)); // w: bit0 aligned, bits 1-11 LOD dither (lodDither.js)
   o.aux4567.z = a.iRow2.w;
   let ln = normalize(modelN * unpackNormalOct(a.aNrmBits));
   let nw = normalize(vec3f(dot(a.iRow0.xyz, ln), dot(a.iRow1.xyz, ln), dot(a.iRow2.xyz, ln)));
@@ -161,6 +202,7 @@ struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2
 @fragment fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> FragmentOut {
   var out: FragmentOut;
 ${mask ? '  if (maskDiscard(v.vUVMask, u.maskX0, u.maskY0, u.maskW, u.maskH, u.maskCut)) { discard; }' : ''}
+${instanced ? '  if (!ditherKeep(v.packed.w >> 1u, u32(v.pos.x), u32(v.pos.y))) { discard; }' : ''}
   let vKind = v.packed.y & 0xffu; let vFace = (v.packed.y >> 8u) & 0xfu; let vMat = (v.packed.y >> 16u) & 0xffffu;
   let aoD = computeAoD(v.aux0123.y, v.vUV.x, v.vUV.y, v.aux0123.x, v.aux0123.z, v.aux0123.w, v.aux4567.x, v.aux4567.y);
   let z = v.vWorldZ - v.aux4567.z - v.aux0123.x;
@@ -168,7 +210,7 @@ ${mask ? '  if (maskDiscard(v.vUVMask, u.maskX0, u.maskY0, u.maskW, u.maskH, u.m
   var face = vFace; var nrmBits = 0u; var gaW = bitcast<u32>(aoD);
 ${cloth ? '  var nrmW = normalize(v.vNrmS); if (!front) { nrmW = -nrmW; }' : '  let nrmW = v.vNrmW;'}
   if (vKind == KIND_MODEL) {
-    if (v.packed.w != 0u) { face = roundedFace(nrmW); }
+    if ((v.packed.w & 1u) != 0u) { face = roundedFace(nrmW); }
     else { face = FACE_PACKED; nrmBits = packNormalOct(nrmW); gaW = nrmBits; }
   }
 ${cloth ? '' : `  if (vKind == KIND_MESH) {
