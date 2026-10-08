@@ -6,12 +6,12 @@ import { createQuestLog } from './questLog.js';
 
 const def=JSON.parse(readFileSync(new URL('../../../content/quests/m1.quest.json',import.meta.url)));
 const state=createQuest(def), view=createQuestLog(def,{hudWidth:12}), ui=createUiLayer({cols:160});
-assert.equal(view.update(state),'Wake up');
+assert.equal(view.update(state),'Get up fr...');
 applyQuestEvent(state,{type:'flag:set',key:'wake',value:true},def);
 assert.equal(view.update(state),'Take the ...');
 assert.equal(view.snapshot()[0].status,'complete'); assert.equal(view.snapshot()[1].status,'active');
 applyQuestEvent(state,{type:'item:got',id:'lantern'},def);
-assert.equal(view.update(state),'Reach the...');
+assert.equal(view.update(state),'Climb to ...');
 view.drawHud(ui,1,1); assert.deepEqual([...ui.cells.bg.slice((ui.cols+1)*4,(ui.cols+1)*4+4)],[10,11,16,255]);
 const bounds=view.drawLog(ui); assert.equal(view.drawLog(ui),bounds,'layout object reused');
 const original=structuredClone(state);

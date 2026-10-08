@@ -5,7 +5,7 @@ import {createQuestLog} from './questLog.js';
 const def=await (await fetch('../../../content/quests/m1.quest.json')).json();
 const canvas=document.querySelector('#screen'), status=document.querySelector('#status');
 const backend=new URLSearchParams(location.search).get('backend') || 'webgpu';
-const {rt}=await createRenderer({canvas,backend,cols:400,rows:150,cpuGrid:{cols:400,rows:150},gpu:false});
+const {rt,info}=await createRenderer({canvas,backend,cols:400,rows:150,cpuGrid:{cols:400,rows:150},gpu:false});
 const ui=createUiLayer({cols:160}); ui.bindScene(rt.cols,rt.rows); rt.setUiLayer(ui);
 const view=createQuestLog(def); let state=createQuest(def); view.update(state);
 const steps=[[{type:'flag:set',key:'wake',value:true}],[{type:'item:got',id:'lantern'}],
@@ -19,10 +19,10 @@ function next() {
 document.querySelector('#next').addEventListener('click',next);
 document.querySelector('#reset').addEventListener('click',()=>{state=createQuest(def);view.update(state);});
 window.addEventListener('resize',()=>rt.resize());
-window.__questLogPreview={rt,ui,view,next,get state(){return state;}};
+window.__questLogPreview={rt,info,ui,view,next,get state(){return state;}};
 function frame() {
   rt.clear();ui.clear();view.drawLog(ui);view.drawHud(ui,3,2);rt.present();
-  status.textContent=`${state.completed.length}/${def.objectives.length} complete; placeholder objective text`;
+  status.textContent=`${state.completed.length}/${def.objectives.length} complete; approved objective text`;
   requestAnimationFrame(frame);
 }
 frame();
