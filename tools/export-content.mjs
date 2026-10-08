@@ -42,6 +42,7 @@ export const CLASSIC_SCRIPTS = [
   'design/palette.js',
   'design/detail-pass.js',
   'design/models/title.js',
+  'design/models/menu_ui.js',
   'design/models/lantern.js',
   'design/models/brazier.js',
   'design/models/lever.js',

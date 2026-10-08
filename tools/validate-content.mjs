@@ -61,6 +61,7 @@ const CLASSIC_SCRIPTS = [
   '../design/detail-pass.js',
   '../design/items.js',
   '../design/models/title.js',
+  '../design/models/menu_ui.js',
   '../design/models/lantern.js',
   '../design/models/brazier.js',
   '../design/models/lever.js',
