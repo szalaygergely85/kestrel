@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "recipes": [
+    {
+      "id": "torch.bind",
+      "inputs": [{ "item": "boar.hide", "n": 2 }, { "item": "brass.scrap", "n": 1 }],
+      "output": { "item": "torch", "n": 1 }
+    },
+    {
+      "id": "shield.rivet",
+      "inputs": [{ "item": "brass.scrap", "n": 4 }, { "item": "boar.hide", "n": 2 }],
+      "output": { "item": "shield", "n": 1 }
+    },
+    {
+      "id": "bow.bind",
+      "inputs": [{ "item": "torch", "n": 1 }, { "item": "boar.hide", "n": 3 }, { "item": "boar.tusk", "n": 1 }],
+      "output": { "item": "bow", "n": 1 }
+    }
+  ]
+}

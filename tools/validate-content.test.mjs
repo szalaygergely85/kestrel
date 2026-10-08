@@ -440,14 +440,21 @@ function questFixture() {
     { id: 'fight', text: 'Defeat a beast', when: { type: 'beasts', ids: ['boar1'], count: 1 } },
     { id: 'breach', text: 'Reach the breach', when: { type: 'area', id: 'breach' } },
   ] };
-  return { a, quests: [{ path: 'm1.quest.json', def }] };
+  a.levels.room.markers = { breach: { x: 0, y: 0, z: 0 } };
+  a.worlds.w1.structures = [{ id: 'roomPlacement', level: 'room', origin: { x: 0, y: 0, z: 0 } }];
+  a.worlds.w1.triggers = [{ id: 'end', shape: 'circle', x: 0, y: 0, r: 2 }];
+  const areas = { version: 1, areas: {
+    breach: { world: 'w1', structure: 'roomPlacement', marker: 'breach' },
+    waystone: { world: 'w1', trigger: 'end' },
+  } };
+  return { a, quests: [{ path: 'm1.quest.json', def }], areas };
 }
 {
-  const { a, quests } = questFixture();
-  const before = JSON.stringify({ a, quests });
-  const { errors } = validateContent(a, { quests });
-  ok('quest refs resolve inventory, pickup and beast ids; area checks deferred by D-049', errors.length === 0, JSON.stringify(errors));
-  ok('lint does not change content', JSON.stringify({ a, quests }) === before);
+  const { a, quests, areas } = questFixture();
+  const before = JSON.stringify({ a, quests, areas });
+  const { errors } = validateContent(a, { quests, areas });
+  ok('quest refs resolve inventory, pickup, beast and area ids', errors.length === 0, JSON.stringify(errors));
+  ok('lint does not change content', JSON.stringify({ a, quests, areas }) === before);
 }
 const questCases = [
   ['unknown item', (a, q) => { q[0].def.objectives[1].when.id = 'swrod'; }, ['objectives[steel].when.id', 'swrod', 'not found']],
@@ -463,9 +470,38 @@ const questCases = [
   ['loot ref', (a) => { a.items.loot.boar.entries[0].item = 'missing'; }, ['items.loot.boar.entries[0].item', 'not found']],
 ];
 for (const [name, breakFixture, finding] of questCases) {
-  const { a, quests } = questFixture(); breakFixture(a, quests);
-  const { errors } = validateContent(a, { quests });
+  const { a, quests, areas } = questFixture(); breakFixture(a, quests);
+  const { errors } = validateContent(a, { quests, areas });
   ok(`quest lint reports ${name}`, hasFinding(errors, finding), JSON.stringify(errors));
+}
+const areaCases = [
+  ['missing alias table', (f) => { delete f.areas; }, ['when.id', 'breach', 'not found']],
+  ['unknown semantic id', (f) => { f.quests[0].def.objectives[3].when.id = 'missing'; }, ['when.id', 'missing', 'not found']],
+  ['bad version', (f) => { f.areas.version = 2; }, ['areas.json', 'version 1']],
+  ['array table', (f) => { f.areas.areas = []; }, ['areas.json', 'areas object']],
+  ['null target', (f) => { f.areas.areas.breach = null; }, ['areas.breach', 'expected']],
+  ['ambiguous target kind', (f) => { f.areas.areas.breach.trigger = 'end'; }, ['areas.breach', 'expected']],
+  ['unknown world', (f) => { f.areas.areas.breach.world = 'missing'; }, ['areas.breach.world', 'missing', 'not found']],
+  ['unplaced landmark', (f) => { f.a.worlds.w1.structures = []; }, ['areas.breach.structure', 'exactly once']],
+  ['duplicate structure', (f) => { f.a.worlds.w1.structures.push({ ...f.a.worlds.w1.structures[0] }); }, ['areas.breach.structure', 'exactly once']],
+  ['mesh instead of level', (f) => { delete f.a.worlds.w1.structures[0].level; }, ['areas.breach.structure', 'placed level']],
+  ['missing marker', (f) => { delete f.a.levels.room.markers.breach; }, ['areas.breach.marker', 'not found']],
+  ['marker volume instead of point', (f) => { f.a.levels.room.markers.breach = { x0: 0, x1: 1 }; }, ['areas.breach.marker', 'finite x/y/z']],
+  ['nonfinite point', (f) => { f.a.levels.room.markers.breach.z = NaN; }, ['areas.breach.marker', 'finite x/y/z']],
+  ['missing trigger even if alias unused', (f) => { f.a.worlds.w1.triggers = []; }, ['areas.waystone.trigger', 'exactly once']],
+  ['duplicate trigger', (f) => { f.a.worlds.w1.triggers.push({ ...f.a.worlds.w1.triggers[0] }); }, ['areas.waystone.trigger', 'exactly once']],
+  ['target scoped to world', (f) => { f.a.worlds.other = { structures: [] }; f.areas.areas.waystone.world = 'other'; }, ['areas.waystone.trigger', 'exactly once']],
+];
+for (const [name, breakFixture, finding] of areaCases) {
+  const f = questFixture(); breakFixture(f);
+  const { errors } = validateContent(f.a, { quests: f.quests, areas: f.areas });
+  ok(`area lint reports ${name}`, hasFinding(errors, finding), JSON.stringify(errors));
+}
+{
+  const f = questFixture();
+  f.quests[0].def.objectives[3].when.id = 'waystone';
+  const { errors } = validateContent(f.a, { quests: f.quests, areas: f.areas });
+  ok('quest area resolves a world trigger as well as a placed point marker', errors.length === 0, JSON.stringify(errors));
 }
 {
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-quest-lint-'));
@@ -478,6 +514,13 @@ for (const [name, breakFixture, finding] of questCases) {
     const loaded = loadQuestFiles(dir);
     ok('quest scanner includes nested definitions and ignores unrelated files', loaded.quests.length === 1 && loaded.quests[0].def.id === 'm1');
     ok('quest scanner reports bad JSON without dropping other files', loaded.errors.length === 1 && loaded.errors[0].includes('bad.quest.json: JSON parse failed'));
+    const { areas } = questFixture();
+    writeFileSync(join(dir, 'areas.json'), JSON.stringify(areas));
+    const withAreas = loadQuestFiles(dir);
+    ok('scanner loads the separate area table without treating it as a quest', withAreas.quests.length === 1 && JSON.stringify(withAreas.areas) === JSON.stringify(areas));
+    writeFileSync(join(dir, 'areas.json'), '{');
+    const brokenAreas = loadQuestFiles(dir);
+    ok('scanner diagnoses malformed alias JSON and retains quests', brokenAreas.quests.length === 1 && brokenAreas.areas === null && hasFinding(brokenAreas.errors, ['areas.json', 'JSON parse failed']));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

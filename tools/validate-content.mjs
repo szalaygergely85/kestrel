@@ -56,6 +56,7 @@ import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, me
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
+import { createCrafting } from '../game/js/quest/sim/crafting.js';
 
 const CLASSIC_SCRIPTS = [
   '../design/palette.js',
@@ -561,6 +562,43 @@ export function validateContent(ASSETS, opts = {}) {
     for (const entity of world.entities || []) if (entity.type === 'beast') beastIds.add(entity.id);
   }
   const quests = opts.quests || [];
+  // AREAS-01: level landmarks are named `markers` in the shipped JSON.
+  // Qualify them by a world placement; trigger ids belong to that world.
+  const areaFile = opts.areas;
+  const areaPath = opts.areaPath || 'content/quests/areas.json';
+  const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const safeId = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value)
+    && !['constructor', 'prototype', '__proto__'].includes(value);
+  const validAreaFile = plain(areaFile) && areaFile.version === 1 && plain(areaFile.areas)
+    && Object.keys(areaFile).every(key => ['version', 'areas'].includes(key));
+  if (areaFile !== undefined && areaFile !== null) check(validAreaFile, areaPath, 'expected version 1 and an areas object');
+  const areas = validAreaFile ? areaFile.areas : {};
+  for (const [id, target] of Object.entries(areas)) {
+    const path = `${areaPath}.areas.${id}`;
+    check(safeId(id), path, 'invalid semantic area id');
+    const markerTarget = plain(target) && safeId(target.world) && safeId(target.structure) && safeId(target.marker)
+      && Object.keys(target).length === 3;
+    const triggerTarget = plain(target) && safeId(target.world) && safeId(target.trigger)
+      && Object.keys(target).length === 2;
+    check(markerTarget || triggerTarget, path, 'expected {world,structure,marker} or {world,trigger}');
+    if (!markerTarget && !triggerTarget) continue;
+    const world = Object.hasOwn(worlds, target.world) ? worlds[target.world] : null;
+    check(!!world, `${path}.world`, `world "${target.world}" not found`);
+    if (!world) continue;
+    if (triggerTarget) {
+      const matches = (world.triggers || []).filter(trigger => trigger.id === target.trigger);
+      check(matches.length === 1, `${path}.trigger`, `trigger "${target.trigger}" must resolve exactly once in world "${target.world}"`);
+    } else {
+      const matches = (world.structures || []).filter(structure => structure.id === target.structure);
+      check(matches.length === 1, `${path}.structure`, `structure "${target.structure}" must resolve exactly once in world "${target.world}"`);
+      if (matches.length !== 1) continue;
+      const level = Object.hasOwn(levels, matches[0].level) ? levels[matches[0].level] : null;
+      check(!!level, `${path}.structure`, 'target must be a placed level');
+      const marker = level?.markers && Object.hasOwn(level.markers, target.marker) ? level.markers[target.marker] : null;
+      check(!!marker && Number.isFinite(marker.x) && Number.isFinite(marker.y) && Number.isFinite(marker.z),
+        `${path}.marker`, `point marker "${target.marker}" not found or lacks finite x/y/z`);
+    }
+  }
   const questIds = new Set();
   for (const { path, def } of quests) {
     check(!questIds.has(def?.id), `${path}.id`, `duplicate quest id "${def?.id}"`);
@@ -570,12 +608,39 @@ export function validateContent(ASSETS, opts = {}) {
     for (const objective of def.objectives) {
       const base = `${path}.objectives[${objective.id}]`;
       inlineText(objective.text, `${base}.text`);
+      if (objective.when.type === 'area') {
+        check(Object.hasOwn(areas, objective.when.id), `${base}.when.id`, `area "${objective.when.id}" not found in ${areaPath}`);
+      }
       if (objective.when.type === 'item') {
         check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs or level pickups`);
       }
       if (objective.when.type === 'beasts') {
         for (const id of objective.when.ids) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
       }
+    }
+  }
+
+  // RECIPES-01: share the actual crafting schema, with path-specific ref findings.
+  const recipeFile = opts.recipeFile;
+  const recipePath = opts.recipePath || 'content/items/recipes.json';
+  if (recipeFile !== undefined && recipeFile !== null) {
+    const validFile = plain(recipeFile) && recipeFile.version === 1 && Array.isArray(recipeFile.recipes)
+      && Object.keys(recipeFile).every(key => ['version', 'recipes'].includes(key));
+    check(validFile, recipePath, 'expected version 1 and a recipes array');
+    if (validFile) {
+      for (const [i, recipe] of recipeFile.recipes.entries()) {
+        const base = `${recipePath}.recipes[${recipe?.id ?? i}]`;
+        const refs = Array.isArray(recipe?.inputs) ? recipe.inputs.map((row, n) => [row, `${base}.inputs[${n}]`]) : [];
+        refs.push([recipe?.output, `${base}.output`]);
+        for (const [row, path] of refs) {
+          const def = row && Object.hasOwn(itemDefs, row.item) ? itemDefs[row.item] : null;
+          check(!!def, `${path}.item`, `item "${row?.item}" not found in inventory defs`);
+          if (def) check(def.inPack === true && Number.isSafeInteger(def.stackMax) && def.stackMax > 0 && def.pending !== 'owner',
+            `${path}.item`, `item "${row.item}" must be a usable pack item, not pending owner approval`);
+        }
+      }
+      try { createCrafting(recipeFile.recipes, { items: itemDefs }); check(true, recipePath, ''); }
+      catch (e) { check(false, recipePath, e.message); }
     }
   }
 
@@ -757,6 +822,12 @@ export function validateMaskFiles(dir) {
 // ---------------------------------------------------------------------------
 export function loadQuestFiles(dir) {
   const quests = [], errors = [];
+  const areaPath = `${dir}/areas.json`;
+  let areas = null;
+  if (existsSync(areaPath)) {
+    try { areas = JSON.parse(readFileSync(areaPath, 'utf8')); }
+    catch (e) { errors.push(`${areaPath}: JSON parse failed: ${e.message}`); }
+  }
   const walk = (d) => {
     for (const entry of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const path = `${d}/${entry.name}`;
@@ -768,7 +839,12 @@ export function loadQuestFiles(dir) {
     }
   };
   if (existsSync(dir)) walk(dir);
-  return { quests, errors };
+  return { quests, errors, areas, areaPath };
+}
+
+export function loadRecipeFile(path) {
+  try { return { recipeFile: JSON.parse(readFileSync(path, 'utf8')), recipePath: path, errors: [] }; }
+  catch (e) { return { recipeFile: null, recipePath: path, errors: [`${path}: recipe JSON read/parse failed: ${e.message}`] }; }
 }
 
 async function main() {
@@ -776,8 +852,10 @@ async function main() {
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
   const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests });
+  const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile });
   allErrors.push(...questFiles.errors);
+  allErrors.push(...recipeFile.errors);
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {

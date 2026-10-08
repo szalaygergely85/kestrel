@@ -39,4 +39,53 @@ assert.equal(questHash(reversed,def),questHash(forward,def),'fact insertion orde
 const rows=questObjectives(state,def),first=rows[0];
 for(let i=0;i<1000;i++)assert.equal(questObjectives(state,def,rows),rows);
 assert.equal(rows[0],first,'journal projection reuses supplied rows');
+// S8-C-13: production M3 beats remain in m1, with stable objective/area/item ids.
+const areas=JSON.parse(readFileSync(new URL('../../../../content/quests/areas.json',import.meta.url)));
+const worldDef=JSON.parse(readFileSync(new URL('../../../../content/worlds/world_m1.world.json',import.meta.url)));
+const towerDef=JSON.parse(readFileSync(new URL('../../../../content/levels/tower.level.json',import.meta.url)));
+const breach=def.objectives.find(o=>o.id==='breach'),sword=def.objectives.find(o=>o.id==='sword');
+assert.equal(breach.text,'Climb to the breach at the top');
+assert.deepEqual(breach.when,{type:'area',id:'breach'});
+assert.equal(sword.text,'Take up the ruin steel');
+assert.deepEqual(sword.when,{type:'item',id:'sword'});
+const target=areas.areas[breach.when.id];
+assert.equal(target.world,worldDef.id);
+assert.equal(worldDef.structures.find(s=>s.id===target.structure).level,towerDef.id);
+assert.ok(towerDef.markers[target.marker], 'breach aliases a point on the placed tower');
+const pickup=towerDef.interactables.find(i=>i.id===sword.when.id);
+assert.equal(pickup.interact,'sword.take');
+assert.ok(towerDef.props.some(p=>p.id===pickup.prop),'quest sword names the existing real pickup');
+const waypoint=areas.areas.waystone;
+assert.ok(worldDef.triggers.some(t=>t.id===waypoint.trigger),'last beat references the existing waystone circle');
+function beginM3() {
+ const s=createQuest(def);
+ applyQuestEvent(s,events[0],def);applyQuestEvent(s,events[1],def);
+ return s;
+}
+function restore(s) {return createQuest(def,JSON.parse(stringifyQuest(s,def)));}
+function active(s) {return questObjectives(s,def).find(o=>o.status==='active')?.id;}
+let m3=beginM3();
+assert.equal(active(m3),'breach');
+applyQuestEvent(m3,{type:'area:entered',id:'end'},def);
+applyQuestEvent(m3,{type:'flag:set',key:'tower.sword.taken',value:true},def);
+assert.equal(active(m3),'breach','raw trigger ids and pickup flags alone cannot bypass the semantic area beat');
+m3=restore(m3);
+applyQuestEvent(m3,events[2],def);assert.equal(active(m3),'sword');
+m3=restore(m3);assert.equal(active(m3),'sword','reload between the breach and pickup preserves the active beat');
+applyQuestEvent(m3,events[3],def);assert.equal(active(m3),'beasts');
+m3=restore(m3);assert.equal(active(m3),'beasts');
+assert.equal(applyQuestEvent(m3,events[3],def),false,'replayed pickup is idempotent after reload');
+let earlySword=beginM3();
+applyQuestEvent(earlySword,events[3],def);assert.equal(active(earlySword),'breach','downstairs sword can be taken before reaching the summit');
+earlySword=restore(earlySword);applyQuestEvent(earlySword,events[2],def);
+assert.equal(active(earlySword),'beasts','early sword fact satisfies its beat as soon as breach completes');
+for(const s of [m3,earlySword]) {
+ applyQuestEvent(s,events[4],def);assert.equal(active(s),'beasts');
+ applyQuestEvent(s,events[5],def);assert.equal(active(s),'waystone');
+ applyQuestEvent(s,events[6],def);assert.equal(active(s),undefined);
+}
+// The unrelated raw end fact/real pickup flag may be present only in m3; both
+// paths still produce exactly the same completed objective prefix.
+assert.deepEqual(m3.completed,earlySword.completed);
+assert.deepEqual(m3.completed,def.objectives.map(o=>o.id));
 console.log('quest: ordered objectives, early facts, deduplicated deaths, atomic validation, canonical restore and 600-step replay PASS');
