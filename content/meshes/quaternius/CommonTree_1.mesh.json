@@ -1,0 +1,36 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/CommonTree_1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "CommonTree_1.mesh.bin",
+  "triCount": 6265,
+  "bbox": [
+    -2.19446,
+    -2.35319,
+    -0.24277,
+    2.11696,
+    2.22452,
+    7.02201
+  ],
+  "ranges": [
+    {"count": 4345, "part": "CommonTree_1#0", "start": 0},
+    {"count": 1920, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves_NormalTree_C"}, "part": "CommonTree_1#1", "start": 4345}
+  ],
+  "matKeys": [
+    "Bark_NormalTree",
+    "Leaves_NormalTree"
+  ],
+  "mats": {
+    "Bark_NormalTree": "timber_old",
+    "Leaves_NormalTree": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "z/czv99PDT7+1Hi+4XrUvmQ7H7/+1Hi+4XrUvmQ7H7/ufM9Az/czv99PDT7+1Hi+4XrUvmQ7H7/ufM9Az/czv99PDT7ufM9A4XrUvmQ7H7/+1Hi+4XrUPmQ7H7/+1Hi+4XrUPmQ7H7/ufM9A4XrUvmQ7H7/+1Hi+4XrUPmQ7H7/ufM9A4XrUvmQ7H7/ufM9A4XrUPmQ7H7/+1Hi+z/czP99PDT7+1Hi+z/czP99PDT7ufM9A4XrUPmQ7H7/+1Hi+z/czP99PDT7ufM9A4XrUPmQ7H7/ufM9Az/czP99PDT7+1Hi+8tItPylcjz7+1Hi+8tItPylcjz7ufM9Az/czP99PDT7+1Hi+8tItPylcjz7ufM9Az/czP99PDT7ufM9A8tItPylcjz7+1Hi+c2iRPf7UOD/+1Hi+c2iRPf7UOD/ufM9A8tItPylcjz7+1Hi+c2iRPf7UOD/ufM9A8tItPylcjz7ufM9Ac2iRPf7UOD/+1Hi+c2iRvf7UOD/+1Hi+c2iRvf7UOD/ufM9Ac2iRPf7UOD/+1Hi+c2iRvf7UOD/ufM9Ac2iRPf7UOD/ufM9Ac2iRvf7UOD/+1Hi+8tItvylcjz7+1Hi+8tItvylcjz7ufM9Ac2iRvf7UOD/+1Hi+8tItvylcjz7ufM9Ac2iRvf7UOD/ufM9A8tItvylcjz7+1Hi+z/czv99PDT7+1Hi+z/czv99PDT7ufM9A8tItvylcjz7+1Hi+z/czv99PDT7ufM9A8tItvylcjz7ufM9Az/czv99PDT7ufM9A4XrUvmQ7H7/ufM9A4XrUPmQ7H7/ufM9Az/czv99PDT7+1Hi+4XrUPmQ7H7/+1Hi+4XrUvmQ7H7/+1Hi+z/czv99PDT7ufM9A4XrUPmQ7H7/ufM9Az/czP99PDT7ufM9Az/czv99PDT7+1Hi+z/czP99PDT7+1Hi+4XrUPmQ7H7/+1Hi+z/czv99PDT7ufM9Az/czP99PDT7ufM9A8tItPylcjz7ufM9Az/czv99PDT7+1Hi+8tItPylcjz7+1Hi+z/czP99PDT7+1Hi+z/czv99PDT7ufM9A8tItPylcjz7ufM9Ac2iRPf7UOD/ufM9Az/czv99PDT7+1Hi+c2iRPf7UOD/+1Hi+8tItPylcjz7+1Hi+z/czv99PDT7ufM9Ac2iRPf7UOD/ufM9Ac2iRvf7UOD/ufM9Az/czv99PDT7+1Hi+c2iRvf7UOD/+1Hi+c2iRPf7UOD/+1Hi+z/czv99PDT7ufM9Ac2iRvf7UOD/ufM9A8tItvylcjz7ufM9Az/czv99PDT7+1Hi+8tItvylcjz7+1Hi+c2iRvf7UOD/+1Hi+",
+  "colliderParts": [
+    "CommonTree_1#0"
+  ]
+}

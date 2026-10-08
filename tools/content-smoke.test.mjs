@@ -144,6 +144,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;
   if (rel.startsWith('meshes/') && rel.endsWith('.mesh.json')) return false;
   if (rel.startsWith('editor/')) return false; // ED-FOLDERS-01: editor-only data (asset folder layout), never loaded by the game/loadPack
+  if ((manifest.masks || []).includes(rel)) return false; // ALPHA-01e: alpha masks are listed in manifest.masks
   return !manifest.files.includes(rel);
 });
 ok(

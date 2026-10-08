@@ -1159,6 +1159,7 @@
   };
   // ME-06c4 forest tree canopies (design/models/forest_trees.js), appended last so no material id moves.
   materials.leaf = {
+    edge: 'soft', // ALPHA-01e: leaf cards of the imported Quaternius trees/bushes (37.17 step d)
     desc: 'FOREST TREES (ME-06c4). Broadleaf crown (oak upper canopy, pine tips, birch lower crown): mid green, ' +
           'clumps `&` lighter, pockets `%` darker. Foliage ramp, so a lit crown climbs to & @.',
     base: 'leaf', albedo: 0.82, ramp: 'foliage', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 14],
@@ -1167,6 +1168,7 @@
     }, rows: ['alad', 'daal', 'adla', 'ldaa'] }
   };
   materials.leaf_dark = {
+    edge: 'soft', // ALPHA-01e: leaf cards of the imported Quaternius trees/bushes (37.17 step d)
     desc: 'FOREST TREES (ME-06c4). Shaded lower crown of the oak + the pine needles: cool deep green, darker pockets, ' +
           'few highlights, so the inside of the forest reads dark under a lit roof.',
     base: 'leafDark', albedo: 0.74, ramp: 'foliage', bg: { mode: 'darken', k: 0.14 }, textureFade: [4, 14],
@@ -1175,6 +1177,7 @@
     }, rows: ['adaa', 'aald', 'daaa', 'alad'] }
   };
   materials.leaf_light = {
+    edge: 'soft', // ALPHA-01e: leaf cards of the imported Quaternius trees/bushes (37.17 step d)
     desc: 'FOREST TREES (ME-06c4). Birch upper crown: light yellow-green, airy (small `\'` gaps), brighter than the ' +
           'oak so the birches pop between the darker trees.',
     base: 'leafLight', albedo: 0.88, ramp: 'foliage', bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 14],

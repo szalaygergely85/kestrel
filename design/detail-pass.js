@@ -824,7 +824,7 @@
     },
     // ME-06c4 forest tree canopies (design/models/forest_trees.js; palette.js v1 records of the same key).
     leaf: {
-      v1: 'leaf', seed: 601,
+      v1: 'leaf', seed: 601, edge: 'soft', // ALPHA-01e
       desc: 'FOREST TREES (ME-06c4). Broadleaf crown: mid green clumps, lighter leaf tips, darker pockets. ivy glyphs ' +
             '(lit levels & @ %), so a sunlit crown reads as leaves, never as turf.',
       albedo: 0.82, bgK: 0.18, detail: 32, jitter: 0.08,
@@ -834,7 +834,7 @@
       lod: { mid: 12, far: 25, dither: 3 }
     },
     leaf_dark: {
-      v1: 'leaf_dark', seed: 602,
+      v1: 'leaf_dark', seed: 602, edge: 'soft', // ALPHA-01e
       desc: 'FOREST TREES (ME-06c4). Shaded lower crown + pine needles: cool deep green, forestDark pockets, a few ' +
             'leaf-green tips. moss glyphs (denser, darker texture than the lit crown).',
       albedo: 0.74, bgK: 0.14, detail: 32, jitter: 0.08,
@@ -844,7 +844,7 @@
       lod: { mid: 12, far: 25, dither: 3 }
     },
     leaf_light: {
-      v1: 'leaf_light', seed: 603,
+      v1: 'leaf_light', seed: 603, edge: 'soft', // ALPHA-01e
       desc: 'FOREST TREES (ME-06c4). Birch upper crown: light yellow-green, airy, leaf-green shade pockets. ivy glyphs.',
       albedo: 0.88, bgK: 0.20, detail: 32, jitter: 0.08,
       tones: [['leafLight', 4], ['grassLight', 1], ['leaf', 2]],
