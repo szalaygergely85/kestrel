@@ -339,7 +339,7 @@ export function renderWorld(fb, world, cam) {
     // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
     if (meshWater) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, false);
     else if (fb.waterMask) fb.waterMask = null;
-    if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null);
+    if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null, fb.matTable ? fb.matTable.soft : null);
   }
 
   fillSky(fb, cam);

@@ -8,7 +8,7 @@
 // counter `shadeSurfaces` already incremented stays put - this pass only
 // ever touches cells `shadeSurfaces` wrote this same frame.
 //
-import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
+import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
 
 // Rule codes (gbuf.rule, 0 = none), in `DP.edges.rules` order:
 export const RULE_CAP = 1;
@@ -33,9 +33,12 @@ function isUp(kind, face) {
   return kind === 4 || kind === 5 || ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_U);
 }
 
-function farther(kind, planeId, depth, i, n) {
+// ALPHA-01d: `si` = cell i is a soft-edge (foliage) material. A soft cell never sees another soft cell as "farther" (no outline between
+// leaf cards of a crown, at any depth), only sky / a non-soft neighbour (the silhouette). `si` is false when no soft table is given.
+function farther(kind, planeId, depth, i, n, mat, soft, si) {
   if (n < 0) return false;
   if (kind[n] === 0) return true; // sky, or a cell never written this frame
+  if (si && kind[n] !== KIND_TERRAIN && soft[mat[n]] === 1) return false; // terrain cells carry a terrain type in `mat`, not a material id
   if (planeId[n] === planeId[i]) return false;
   return depth[n] > depth[i] * 1.18 + 0.35;
 }
@@ -44,8 +47,10 @@ function farther(kind, planeId, depth, i, n) {
  * PREC-04b1 (architecture.md 37.1 A9 item 7): the rule decision block of `edgePass`, bit-identical, callable on any
  * G-buffer-shaped arrays (gpuCompare runs it on the GPU readback). Fills `outRule` (0 = none) from the UNMODIFIED inputs.
  * Reads only cells {i, i-cols, i+cols, i-1, i+1, i+2} (row-local for the x offsets).
+ * ALPHA-01d: optional `mat` (per-cell material id) + `soft` (Uint8Array by material id, `MaterialTable.soft`): a soft cell takes only
+ * cap / lip / side (never convex / concave / seam* / nosing) and never against another soft cell. Without them: unchanged.
  */
-export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, suppress, outRule) {
+export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, suppress, outRule, mat, soft) {
   const rule = outRule;
   rule.fill(0);
   for (let y = 0; y < rows; y++) {
@@ -57,10 +62,12 @@ export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, 
       const lf = x > 0 ? i - 1 : -1;
       const rt2 = x < cols - 1 ? i + 1 : -1;
 
+      const si = !!(soft && mat) && kind[i] !== KIND_TERRAIN && soft[mat[i]] === 1;
       let r = 0;
-      if (farther(kind, planeId, depth, i, up)) r = RULE_CAP;
-      else if (farther(kind, planeId, depth, i, dn)) r = RULE_LIP;
-      else if (isVert(kind[i], face[i]) && (farther(kind, planeId, depth, i, lf) || farther(kind, planeId, depth, i, rt2))) r = RULE_SIDE;
+      if (farther(kind, planeId, depth, i, up, mat, soft, si)) r = RULE_CAP;
+      else if (farther(kind, planeId, depth, i, dn, mat, soft, si)) r = RULE_LIP;
+      else if (isVert(kind[i], face[i]) && (farther(kind, planeId, depth, i, lf, mat, soft, si) || farther(kind, planeId, depth, i, rt2, mat, soft, si))) r = RULE_SIDE;
+      else if (si) { /* soft: no convex / concave */ }
       else if (isVert(kind[i], face[i]) && rt2 >= 0 && isVert(kind[rt2], face[rt2]) && planeId[rt2] !== planeId[i]) {
         const l2 = lf;
         const r2 = x < cols - 2 ? i + 2 : -1;
@@ -69,6 +76,7 @@ export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, 
         if (depth[i] <= dl && depth[rt2] <= dr) r = RULE_CONVEX;
         else if (depth[i] >= dl && depth[rt2] >= dr) r = RULE_CONCAVE;
       }
+      if (si) { rule[i] = r; continue; }
       if (!r && isVert(kind[i], face[i]) && kind[i] !== 2 && dn >= 0 && isUp(kind[dn], face[dn]) && depth[dn] <= depth[i] * 1.08) r = RULE_SEAM_FLOOR;
       if (!r && isVert(kind[i], face[i]) && up >= 0 && kind[up] === 6 && depth[up] <= depth[i] * 1.08) r = RULE_SEAM_CEIL;
       if (!r && kind[i] === 2 && up >= 0 && isUp(kind[up], face[up])) r = RULE_NOSING;
@@ -85,15 +93,18 @@ export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, 
  *   an equivalent shape (bench harness).
  * @param {object} edges - `DP.edges` (thresholds + `rules` glyph/gain table)
  * @param {Uint8Array|null} [suppress] - US-055a2b: cells with a non-zero entry draw no outline (opaque water in front)
+ * @param {Uint8Array|null} [soft] - ALPHA-01d: `MaterialTable.soft` (edge: 'soft' flag by material id), gain `edges.softGain`
  */
-export function edgePass(gbuf, depth, rt, edges, suppress) {
+export function edgePass(gbuf, depth, rt, edges, suppress, soft) {
   // US-029: no-op when the GPU cell pipeline is active (see the matching
   // guard in detailShade.js's shadeSurfaces - `edge.frag.js` runs this same
   // decision block on the GPU as pass 2 of the present hook instead).
   if (rt.gpuActive) return;
   const cols = gbuf.cols, rows = gbuf.rows;
   const kind = gbuf.kind, planeId = gbuf.planeId, fogF = gbuf.fogF, rule = gbuf.rule, face = gbuf.face;
-  edgeRules(kind, planeId, face, depth, fogF, cols, rows, edges.fogMax, suppress, rule);
+  const mat = gbuf.mat, softT = soft || null;
+  edgeRules(kind, planeId, face, depth, fogF, cols, rows, edges.fogMax, suppress, rule, mat, softT);
+  const softGain = edges.softGain != null ? edges.softGain : 0.85;
 
   const cells = rt.cells;
   const glyphIdxArr = cells.glyphIdx, fgArr = cells.fg, bgArr = cells.bg;
@@ -110,8 +121,9 @@ export function edgePass(gbuf, depth, rt, edges, suppress) {
     glyphIdxArr[i] = code < 32 || code > 126 ? 0 : code - 32;
     const fi = i * 4;
     const rim = kind[i] === KIND_MODEL ? modelRim : 1;
+    const gain = softT !== null && kind[i] !== KIND_TERRAIN && softT[mat[i]] === 1 ? softGain : R.gain; // ALPHA-01d: soft cells keep the glyph, own gain
     for (let k = 0; k < 3; k++) {
-      let v = Math.round(Math.min(255, fgArr[fi + k] * R.gain * rim));
+      let v = Math.round(Math.min(255, fgArr[fi + k] * gain * rim));
       if (v < 1) v = 1; // AC: edge colors are never pure black.
       fgArr[fi + k] = v;
     }

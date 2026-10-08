@@ -634,7 +634,7 @@ function buildCompareRuns(ctx) {
     const mask = { tex: 'test/checker8', cutoff: 0.5 };
     const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
       { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
-    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' };
+    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf_softtest', leaf_dark: 'leaf_dark_softtest' }; // ALPHA-01d: test-only edge:'soft' clones of leaf / leaf_dark
     const cx = 1456, cy = 1046, gz = aw.terrain.groundAt(cx, cy);
     aw.placeMesh(alphaMesh, { x: cx, y: cy, z: gz }, 'test.alphaCards');
     const alphaLights = lightsEnabled ? buildLightSet(aw, assets.palette) : null;

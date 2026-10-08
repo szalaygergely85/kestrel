@@ -40,6 +40,7 @@ export const F_HAS_OVERLAY = 1 << 12;
 export const F_OV_BAND = 1 << 13;
 export const F_HAS_SPECKLE = 1 << 14;
 export const F_HAS_LOD = 1 << 15;
+export const F_SOFT_EDGE = 1 << 16; // ALPHA-01d: `edge: 'soft'` (read by edge.wgsl.js only; shade ignores the bit)
 
 function assert(cond, msg) { if (!cond) throw new Error('ShadeTextures: ' + msg); }
 
@@ -123,6 +124,7 @@ function packMaterial(rec, matFRow, matIRow, setIdOf) {
   }
   if (speckle) flags |= F_HAS_SPECKLE;
   if (lod) flags |= F_HAS_LOD;
+  if (rec.softEdge) flags |= F_SOFT_EDGE;
 
   // slot 0
   matFRow[0 * 4 + 0] = rec.albedo; matFRow[0 * 4 + 1] = rec.bgK; matFRow[0 * 4 + 2] = rec.detail; matFRow[0 * 4 + 3] = rec.jitter;
@@ -231,6 +233,7 @@ export function packMaterialTable(table) {
         .map((n) => edges.rules[n].gain),
       // US-040 step 4 (15.2 item 5): the dark model rim, default 1 = off.
       modelRim: edges.modelRim != null ? edges.modelRim : 1,
+      softGain: edges.softGain != null ? edges.softGain : 0.85, // ALPHA-01d
     } : null,
     cellAspect: table.cellAspect,
   };

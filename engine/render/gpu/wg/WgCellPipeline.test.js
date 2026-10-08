@@ -139,10 +139,10 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   assert.deepStrictEqual([sp.texMatF.desc.width, sp.texMatF.desc.height], [MAT_F_WIDTH, table.records.length]);
   assert.strictEqual(sp.texSetI.desc.width, SET_I_WIDTH);
   assert.strictEqual(sp.texTlook.desc.width, 1, 'no terrain: TLOOK stays a 1x1 placeholder');
-  // shade binds: 16 textures, GI first, LIGHT 14 = texLight, CPU layer = rt.fgTex/bgTex; edge: 5 with the dummy WATER
+  // shade binds: 16 textures, GI first, LIGHT 14 = texLight, CPU layer = rt.fgTex/bgTex; edge: 6 with the dummy WATER + MAT_I (ALPHA-01d)
   const shBind = sp.shTex.map(x => x.texture);
   assert.strictEqual(shBind.length, 16); assert.strictEqual(shBind[0], t.texGI); assert.strictEqual(shBind[6], rt.fgTex); assert.strictEqual(shBind[14], t.texLight);
-  assert.deepStrictEqual(sp.edTex.map(x => x.texture), [t.texGI, t.texDepth, t.texShadeFg, t.texShadeBg, sp.texWaterDummy]);
+  assert.deepStrictEqual(sp.edTex.map(x => x.texture), [t.texGI, t.texDepth, t.texShadeFg, t.texShadeBg, sp.texWaterDummy, sp.texMatI]);
   const U = table.fog;
   assert.strictEqual(sp.su[SHADE_BLOCK.field('fogStart').word], Math.fround(U.start));
   assert.strictEqual(sp.su[SHADE_BLOCK.field('timeSec').word], 2.5);

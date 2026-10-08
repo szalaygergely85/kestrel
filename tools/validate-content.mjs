@@ -480,6 +480,13 @@ export function validateContent(ASSETS, opts = {}) {
     check(Object.prototype.hasOwnProperty.call(paletteMaterials, fallback[key]), `voxelMaterials.fallback.${key}`, `fallback target "${fallback[key]}" not found in palette.js materials`);
   }
 
+  // ALPHA-01d: the material flag `edge` is optional and may only be 'soft' (silhouette-only outlines for foliage cards), in both files.
+  for (const [file, mats] of [['palette.js', paletteMaterials], ['detail-pass.js', detailMaterials]]) {
+    for (const key of Object.keys(mats)) {
+      if (mats[key] && mats[key].edge !== undefined) check(mats[key].edge === 'soft', `${file} materials.${key}.edge`, `must be 'soft' (got ${JSON.stringify(mats[key].edge)})`);
+    }
+  }
+
   // ---- 5. Outer-ring rule (docs/architecture.md 23.9, BUG-OWN-008) ----
   // A level placed (via world.structures[]) in a world that HAS terrain
   // (world.terrain truthy) must have a non-solid outer ring: from outside

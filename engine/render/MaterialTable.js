@@ -263,8 +263,16 @@ export function bindShading(P, DP, cellAspect) {
 
   // RE-06 (28.6 item 5): `hasKey` = does the palette/detail pass define it (idFor invents ids);
   // `team` = identity remap until engine.setTeamMaterials() rebuilds it (teamRemap.js).
+  // ALPHA-01d (37.17 step d): `edge: 'soft'` on the palette (v1) or detail-pass (v2) material = foliage cards, outlined only at the silhouette.
+  // `soft[matId]` (1/0, ids past the end = 0) is the table the edge twins (edgePass.js, edge.wgsl.js via the F_SOFT_EDGE flag) read.
+  const soft = new Uint8Array(records.length);
+  for (let id = 1; id < records.length; id++) {
+    const r = records[id];
+    const pm = P.materials[r.key], dm = DP && r.v2Key ? DP.materials[r.v2Key] : null;
+    if ((pm && pm.edge === 'soft') || (dm && dm.edge === 'soft')) { soft[id] = 1; r.softEdge = true; if (r.v2) r.v2.softEdge = true; }
+  }
   const hasKey = (key) => !!(P.materials[key] || (DP && (DP.materials[key] || DP.remap[key])));
-  const table = { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2, missingV2, hasKey, team: null };
+  const table = { idFor, records, sets, faceK, gainLUT, fog, ao, shading, lineCodes: LINE_CODES, cellAspect, DP, P, allV2, missingV2, hasKey, soft, softEdge: (id) => id < soft.length && soft[id] === 1, team: null };
   table.team = buildTeamRemap(table, null);
   return table;
 }

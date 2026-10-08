@@ -91,6 +91,7 @@
   var edges = {
     depthRatio: 1.18, depthAbs: 0.35,  // neighbour is "farther" if n.dist > d*ratio + abs (and a different plane, or sky)
     fogMax: 0.85,                      // no edge glyphs in cells with fog factor above this
+    softGain: 0.85,                    // ALPHA-01d: gain of the cap/lip/side rule on a material with edge:'soft' (foliage cards; silhouette only), glyph kept
     modelRim: 0.55,                    // US-040 step 4 / ART-OWN-001: kind-8 (voxel model) rule cells, fg+bg x this (dark contour)
     rules: {
       cap:       { glyph: '=', gain: 1.45, desc: 'top edge of a surface against something farther (wall top vs sky, platform lip from above)' },
@@ -1411,6 +1412,10 @@
     if (lo && lo[kind] && lo[kind][v1key]) return lo[kind][v1key];
     return remap[v1key] || null;
   }
+
+  // ALPHA-01d TEST-ONLY twins of leaf / leaf_dark (gpucompare alphaLeaves fixture), edge:'soft'; palette.js has the v1 records of the same key.
+  materials.leaf_softtest = Object.assign({}, materials.leaf, { v1: 'leaf_softtest', seed: 691, edge: 'soft' });
+  materials.leaf_dark_softtest = Object.assign({}, materials.leaf_dark, { v1: 'leaf_dark_softtest', seed: 692, edge: 'soft' });
 
   function validate() {
     var errs = [], k, m, i, j;

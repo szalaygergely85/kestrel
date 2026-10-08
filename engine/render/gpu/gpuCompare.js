@@ -436,12 +436,12 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   // A9 item 3: exact edge-rule flips. ruleGpu = edgeRules() on the GPU G-buffer (kind/planeId/face from GI, depth from Depth, JS fogF + waterMask).
   const ex = new Uint8Array(meshTieMask); let ruleFlips = 0, ruleFlipsExcused = 0;
   if (opts && opts.fogMax !== undefined && gbuf.rule && gbuf.fogF && gbuf.face) {
-    const gK = new Uint8Array(n), gP = new Int32Array(n), gF = new Uint8Array(n), gD = new Float32Array(n), ruleGpu = new Uint8Array(n);
+    const gK = new Uint8Array(n), gP = new Int32Array(n), gF = new Uint8Array(n), gM = new Uint16Array(n), gD = new Float32Array(n), ruleGpu = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
-      gK[i] = giBuf[i * 4 + 1] & 0xff; gP[i] = giBuf[i * 4] | 0; gF[i] = (giBuf[i * 4 + 1] >>> 8) & 0xf;
+      gK[i] = giBuf[i * 4 + 1] & 0xff; gP[i] = giBuf[i * 4] | 0; gF[i] = (giBuf[i * 4 + 1] >>> 8) & 0xf; gM[i] = giBuf[i * 4 + 1] >>> 16;
       gD[i] = gK[i] ? u32ToF32(depthBuf[i * 4]) : Infinity;
     }
-    edgeRules(gK, gP, gF, gD, gbuf.fogF, cols, rows, opts.fogMax, opts.suppress || null, ruleGpu);
+    edgeRules(gK, gP, gF, gD, gbuf.fogF, cols, rows, opts.fogMax, opts.suppress || null, ruleGpu, gM, opts.table ? opts.table.soft : null);
     // a read cell is "explained" when it is a tie, or both twins agree on kind/planeId/face and depth (within the depth tolerance above)
     const same = (r) => {
       if (meshTieMask[r]) return true;

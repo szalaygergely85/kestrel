@@ -201,6 +201,63 @@ function idx(x, y) { return y * COLS + x; }
   ok('fixtures exercise rules 1..8', [1, 2, 3, 4, 5, 6, 7, 8].every((r) => anyRule.has(r)));
 }
 
+// ---- 7. ALPHA-01d (37.17 step d): edge:'soft' foliage cards - silhouette only, own gain; non-soft bit-identical ------------------------------
+{
+  const C = 9, R = 7, N = C * R;
+  const build = () => {
+    const gbuf = new GBuffer(C, R), depth = new Float32Array(N).fill(5), mat = gbuf.mat;
+    for (let y = 1; y < R - 1; y++) for (let x = 1; x < C - 1; x++) { // a 7x5 crown block of mesh cards, sky around it
+      const i = y * C + x;
+      gbuf.kind[i] = KIND_MESH; gbuf.mat[i] = 2; gbuf.planeId[i] = 1 + ((x * 3 + y * 5) % 4);
+      gbuf.face[i] = [FACE_N, FACE_E, FACE_U, FACE_W][(x + y) % 4];
+      depth[i] = (x + y) % 3 === 0 ? 3 : (x + y) % 3 === 1 ? 5 : 9; // cards at different depths: farther() would fire inside a non-soft crown
+    }
+    void mat;
+    return { gbuf, depth };
+  };
+  const soft = new Uint8Array([0, 0, 1]); // material 2 = soft
+  const inner = (rule) => { let n = 0; for (let y = 2; y < R - 2; y++) for (let x = 2; x < C - 2; x++) if (rule[y * C + x]) n++; return n; };
+  const ring = (rule) => { let n = 0; for (let y = 1; y < R - 1; y++) for (let x = 1; x < C - 1; x++) if ((x === 1 || y === 1 || x === C - 2 || y === R - 2) && rule[y * C + x]) n++; return n; };
+
+  const a = build();
+  const plain = new Uint8Array(N), withSoft = new Uint8Array(N), noTable = new Uint8Array(N);
+  edgeRules(a.gbuf.kind, a.gbuf.planeId, a.gbuf.face, a.depth, a.gbuf.fogF, C, R, 1, null, plain);
+  edgeRules(a.gbuf.kind, a.gbuf.planeId, a.gbuf.face, a.depth, a.gbuf.fogF, C, R, 1, null, withSoft, a.gbuf.mat, soft);
+  edgeRules(a.gbuf.kind, a.gbuf.planeId, a.gbuf.face, a.depth, a.gbuf.fogF, C, R, 1, null, noTable, a.gbuf.mat, new Uint8Array([0, 0, 0]));
+  ok('soft: a non-soft crown has inner edges (fixture sanity)', inner(plain) > 0);
+  ok('soft: no table / all-zero table == today (bit-identical)', plain.every((v, i) => v === noTable[i]));
+  ok('soft: crown has no inner edges', inner(withSoft) === 0);
+  ok('soft: silhouette keeps outlines', ring(withSoft) > 0);
+  let onlyCls = true;
+  for (let i = 0; i < N; i++) if (withSoft[i] > RULE_SIDE) onlyCls = false;
+  ok('soft: only cap / lip / side rules', onlyCls);
+  ok('soft: top row against sky takes cap', withSoft[1 * C + 4] === RULE_CAP);
+
+  // soft cell next to a NON-soft vertical neighbour (farther away): still a side rule against it; the non-soft cell is unchanged
+  const b = build();
+  for (let y = 1; y < R - 1; y++) { b.gbuf.mat[y * C + 4] = 1; b.gbuf.face[y * C + 4] = FACE_E; }
+  const ruleB = new Uint8Array(N), ruleB0 = new Uint8Array(N);
+  edgeRules(b.gbuf.kind, b.gbuf.planeId, b.gbuf.face, b.depth, b.gbuf.fogF, C, R, 1, null, ruleB, b.gbuf.mat, soft);
+  edgeRules(b.gbuf.kind, b.gbuf.planeId, b.gbuf.face, b.depth, b.gbuf.fogF, C, R, 1, null, ruleB0);
+  let nonSoftSame = true;
+  for (let y = 2; y < R - 2; y++) { // the non-soft column: soft neighbours are ordinary neighbours for it
+    const i = y * C + 4; if (ruleB[i] !== ruleB0[i]) nonSoftSame = false;
+  }
+  ok('soft: non-soft cells next to soft ones decide exactly as before', nonSoftSame);
+  ok('soft: soft cells beside the non-soft column only take cap/lip/side', [3, 5].every((x) => { let g = true; for (let y = 1; y < R - 1; y++) { const r = ruleB[y * C + x]; if (r > RULE_SIDE) g = false; } return g; }));
+
+  // gain: soft rule cells use edges.softGain (default 0.85), glyph kept; same cell with the table off uses the rule gain
+  const run = (tbl, edges) => { const g = build(); const rt = makeRt2(); rt.cells.fg.fill(100); edgePass(g.gbuf, g.depth, rt, edges, null, tbl); return { rt, rule: g.gbuf.rule }; };
+  function makeRt2() { return { gpuActive: false, cells: { glyphIdx: new Uint8Array(N), fg: new Uint8Array(N * 4), bg: new Uint8Array(N * 4) } }; }
+  const i0 = 1 * C + 4;
+  const on = run(soft, DP.edges), off = run(null, DP.edges);
+  ok('soft: rule cell fg = round(100 * 0.85) with default softGain', on.rule[i0] === RULE_CAP && on.rt.cells.fg[i0 * 4] === 85, String(on.rt.cells.fg[i0 * 4]));
+  ok('soft: glyph kept (cap glyph)', on.rt.cells.glyphIdx[i0] === DP.edges.rules.cap.glyph.charCodeAt(0) - 32 && on.rt.cells.glyphIdx[i0] === off.rt.cells.glyphIdx[i0]);
+  ok('soft: no table -> cap gain 1.45', off.rt.cells.fg[i0 * 4] === 145);
+  const on2 = run(soft, { ...DP.edges, softGain: 0.5 });
+  ok('soft: edges.softGain overrides', on2.rt.cells.fg[i0 * 4] === 50);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

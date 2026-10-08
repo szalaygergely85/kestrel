@@ -4,8 +4,8 @@
 // textures and the light output; writes texShadeFg/Bg. Edge reads those and writes texFinalFg/Bg (fg.a = glyph/255).
 // Pipelines + bind descriptors are built once (22b); the material/sky/terrain-look textures upload only on change
 // (matTable bind, palette/time of day, terrain far-bake version); per frame only uniform words change.
-// The water layer is WG-3e: edge gets waterOn = 0 and a 1x1 dummy WATER texture. ALPHA-01d soft edges are NOT in the shipped GLSL
-// and therefore not ported (NEEDS in docs/lanes/pc-b2.md).
+// The water layer is WG-3e: edge gets waterOn = 0 and a 1x1 dummy WATER texture. ALPHA-01d soft edges are WGSL-only (edge.wgsl.js header, D-044), not in the shipped GLSL
+// (twin: edgePass.js).
 import { SHADE_BLOCK, SHADE_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
@@ -29,7 +29,7 @@ const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HA
 const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK');
 const E_COLS = E('gridCols'), E_ROWS = E('gridRows'), E_FOGMAX = E('fogMax'), E_RIM = E('modelRim'), E_WATER_ON = E('waterOn'), E_WOS = E('wos'), E_PROJ = E('projMode');
 const E_FOG_START = E('fogStart'), E_FOG_FULL = E('fogFull'), E_TFOG_START = E('terrainFogStart'), E_TFOG_FULL = E('terrainFogFull'), E_TFOG_CURVE = E('terrainFogCurve');
-const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain');
+const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain'), E_SOFTGAIN = E('softGain');
 
 /** SHADE_TEXTURES slot order (shade.wgsl.js header). */
 const SH = { GI: 0, GA: 1, GD: 2, DEPTH: 3, SGI: 4, SGA: 5, FG: 6, BG: 7, SKY: 8, MATF: 9, MATI: 10, SETI: 11, SETF: 12, GAIN: 13, LIGHT: 14, TLOOK: 15 };
@@ -123,6 +123,7 @@ export class WgShadePass {
     // edge statics
     eu[E_FOGMAX] = U.edges ? U.edges.fogMax : 1;
     eu[E_RIM] = U.edges ? U.edges.modelRim : 1;
+    eu[E_SOFTGAIN] = U.edges ? U.edges.softGain : 0.85; // ALPHA-01d
     eu[E_FOG_START] = U.fog.start; eu[E_FOG_FULL] = U.fog.full;
     for (let i = 0; i < 8; i++) { eu[E_GLYPH + i] = U.edges ? U.edges.ruleGlyph[i] : 0; eu[E_GAIN + i] = U.edges ? U.edges.ruleGain[i] : 1; }
   }
@@ -241,6 +242,7 @@ export class WgShadePass {
     et[0].texture = t.texGI; et[1].texture = t.texDepth;
     et[2].texture = wOn ? water.edgeFg : t.texShadeFg; et[3].texture = wOn ? water.edgeBg : t.texShadeBg;
     et[4].texture = wOn ? water.edgeWaterTexture : this.texWaterDummy;
+    et[5].texture = this.texMatI; // ALPHA-01d: F_SOFT_EDGE flag per material
     d.beginPass(t.targetFinal);
     d.bind(this.pipeEdge, this.edBind);
     d.draw(3);

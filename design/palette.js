@@ -1538,6 +1538,11 @@
     return errs;
   }
 
+  // ALPHA-01d TEST-ONLY materials (used only by the gpucompare alphaLeaves fixture; no committed world uses them): clones of leaf / leaf_dark
+  // with edge:'soft' (silhouette-only outlines). Real foliage materials stay un-flagged until the owner look (37.17 step d).
+  materials.leaf_softtest = Object.assign({}, materials.leaf, { edge: 'soft' });
+  materials.leaf_dark_softtest = Object.assign({}, materials.leaf_dark, { edge: 'soft' });
+
   var palette = {
     version: 1,
     colors: colors,

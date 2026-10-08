@@ -12,7 +12,7 @@ import { loadLevel } from '../../world/Level.js';
 import { makeOk } from '../../test/assert.js';
 import {
   packMaterialTable, unpackSetEntry, unpackMatF, unpackMatI,
-  MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH,
+  MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, F_SOFT_EDGE,
 } from './ShadeTextures.js';
 
 const palette = paletteModule.default || paletteModule;
@@ -63,6 +63,13 @@ for (let s = 0; s < table.sets.length; s++) {
   }
 }
 
+// ALPHA-01d: only the two test-only clones carry edge:'soft'; no real material is soft yet.
+{
+  const softKeys = table.records.filter((r, i) => r && table.soft[i] === 1).map((r) => r.key).sort();
+  ok('ALPHA-01d: soft materials are exactly the two test clones', softKeys.join(',') === 'leaf_dark_softtest,leaf_softtest', softKeys.join(','));
+  ok('ALPHA-01d: softEdge(id) past the table is false', table.softEdge(99999) === false && table.softEdge(0) === false);
+}
+
 // --- round-trip a representative material (tones + grid + face ids) ------
 let checkedOne = false;
 for (let id = 1; id < table.records.length; id++) {
@@ -76,6 +83,7 @@ for (let id = 1; id < table.records.length; id++) {
   const [seed, flags, nTones] = unpackMatI(packed.matI, id, 0, MAT_I_WIDTH);
   ok(`mat ${id} (${rec.key}) seed`, seed === (v2.seed | 0));
   ok(`mat ${id} (${rec.key}) nTones`, nTones === v2.toneRGB.length / 3);
+  ok(`mat ${id} (${rec.key}) SOFT_EDGE flag == table.soft (ALPHA-01d)`, !!(flags & F_SOFT_EDGE) === (table.soft[id] === 1) && table.softEdge(id) === (table.soft[id] === 1));
   ok(`mat ${id} (${rec.key}) HAS_GRID flag`, !!(flags & 1) === !!v2.grid);
   const [near] = unpackMatI(packed.matI, id, 1, MAT_I_WIDTH);
   ok(`mat ${id} (${rec.key}) face.near set id`, near === v2.face.near);
