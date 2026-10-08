@@ -364,7 +364,7 @@ export class World {
 
     for (const s of def.structures || []) {
       const placed = s.mesh
-        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow)
+        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`))
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
@@ -764,12 +764,13 @@ export class World {
   }
 
   /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
-  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined) {
+  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined, scale = 1) {
     const frame = makeFrame(origin.x, origin.y, origin.z ?? 0, 0, yawDeg);
+    const k = scale > 0 ? scale : 1; // MESH-SCALE-01: uniform placement scale about the placement origin
     const bbox = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
     const b = mesh.bbox;
     for (let i = 0; i < 8; i++) {
-      localToWorld(frame, b[i & 1 ? 3 : 0], b[i & 2 ? 4 : 1], b[i & 4 ? 5 : 2], tmpW);
+      localToWorld(frame, k * b[i & 1 ? 3 : 0], k * b[i & 2 ? 4 : 1], k * b[i & 4 ? 5 : 2], tmpW);
       bbox.x0 = Math.min(bbox.x0, tmpW.x); bbox.x1 = Math.max(bbox.x1, tmpW.x);
       bbox.y0 = Math.min(bbox.y0, tmpW.y); bbox.y1 = Math.max(bbox.y1, tmpW.y);
       bbox.z0 = Math.min(bbox.z0, tmpW.z); bbox.z1 = Math.max(bbox.z1, tmpW.z);
@@ -777,6 +778,7 @@ export class World {
     const placed = { id: id || `struct_${this.structures.length}`, kind: 'mesh', mesh,
       origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox,
       castShadow: typeof castShadow === 'boolean' ? castShadow : mesh.castShadow !== false }; // MESH-SHADOW-01: placement overrides the mesh flag
+    if (k !== 1) placed.scale = k; // absent = unscaled (old saves / world files stay identical)
     this.structures.push(placed);
     this.renderVersion++;
     this.structVersion++;

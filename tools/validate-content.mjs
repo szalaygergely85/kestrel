@@ -542,6 +542,7 @@ export function validateContent(ASSETS, opts = {}) {
         check(s.yawSteps === undefined || s.yawSteps === 0, `${path}.yawSteps`, 'cannot combine mesh yawDeg with nonzero yawSteps');
       }
 
+      if (s.scale !== undefined) check(hasMesh && Number.isFinite(s.scale) && s.scale >= 0.25 && s.scale <= 4, `${path}.scale`, `MESH-SCALE-01: scale is a mesh-placement number in [0.25, 4], got ${JSON.stringify(s.scale)}`);
       if (s.origin) {
         check(Number.isFinite(s.origin.x), `${path}.origin.x`, `origin.x must be finite, got ${JSON.stringify(s.origin.x)}`);
         check(Number.isFinite(s.origin.y), `${path}.origin.y`, `origin.y must be finite, got ${JSON.stringify(s.origin.y)}`);

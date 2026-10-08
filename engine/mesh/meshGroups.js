@@ -1,7 +1,7 @@
 // @ts-check
-// engine/mesh/meshGroups.js - MESH-INST-01 (docs/architecture.md 37.15 item 3, unscaled; 37.19 option 2).
+// engine/mesh/meshGroups.js - MESH-INST-01 (docs/architecture.md 37.15 item 3; 37.19 option 2) + MESH-SCALE-01 (placement `scale`).
 // CPU-side batching of placed kind-9 mesh props: placements that share one registry mesh (LOD 0 today: placements
-// have no LOD) and have unit scale become ONE `DRAW_INSTANCED` item per mesh instead of one `DRAW_STATIC` item each.
+// have no LOD) become ONE `DRAW_INSTANCED` item per mesh instead of one `DRAW_STATIC` item each.
 // No shader change: the existing instanced raster path (`progMeshInst` / `rasterInstanced`) draws them.
 //
 // Feed shape (what WG-4a will consume): per group a `DRAW_INSTANCED` item { mesh = resolved draw copy (MeshDrawCache),
@@ -10,8 +10,11 @@
 // objectId = 0xA000 | structureIndex (the same id the single draw gets, so picks are unchanged); the instanced path
 // derives planeId = flat.x | (objectId & 0xF) << 24 (static draws used a distance-order slot << 20).
 //
-// Not grouped (stay single `addMeshStructures` draws): placements with `scale` set and !== 1 (placement scale is
-// deferred, today no placement has one), meshes with a masked range, > MAX_VOX_PARTS ranges or thin one-sided geometry
+// MESH-SCALE-01: a placement `scale` (uniform, 0.25..4) is folded into the instance matrix's 3x3 (`placementMatrix12`, the same
+// matrix the single draw and the collider bake use); the twin and WGSL vertex stages renormalise normals, so no shader change.
+// The group's cull radius R uses the largest member scale (conservative). A scale change on a member rebuilds the set.
+//
+// Not grouped (stay single `addMeshStructures` draws): meshes with a masked range, > MAX_VOX_PARTS ranges or thin one-sided geometry
 // (grass cards; see `meshIsSolid`: the instanced path back-face culls), a mesh with only one
 // placement, and anything past MAX_GROUPED_INSTANCES. The shadow feed never uses groups (MESH-SHADOW-02 budget).
 //
@@ -19,7 +22,7 @@
 // and when any member's frame or object identity differs from the snapshot taken at build time (checked per feed).
 // Zero allocation per frame after a build.
 import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
-import { addMeshStructures, frameMatrix12, DRAW_FLAG_ONE_PART } from './DrawList.js';
+import { addMeshStructures, placementMatrix12, DRAW_FLAG_ONE_PART } from './DrawList.js';
 import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 
@@ -32,10 +35,7 @@ const _m12 = new Float64Array(12);
 
 /** @param {any} s @returns {boolean} eligible for grouping on its own (mesh-level checks happen at build). */
 function placementEligible(s) {
-  if (s.kind !== 'mesh' || !s.mesh) return false;
-  const sc = s.scale;
-  if (sc !== undefined && sc !== 1) return false; // placement scale: deferred, stays a single draw
-  return true;
+  return s.kind === 'mesh' && !!s.mesh;
 }
 
 /** Open-edge share (of all welded edges, boundary edges above the mesh base) up to which a mesh still counts as a solid prop. */
@@ -103,7 +103,7 @@ export class MeshGroupSet {
     /** @type {any} */ this._cache = null;
     /** F3 stats: placements grouped / instances kept by the last `push`. */
     this.stats = { groups: 0, members: 0, kept: 0, builds: 0 };
-    /** @type {Float64Array} per member x,y,z,yawDeg snapshot (4 each), concatenated over groups */
+    /** @type {Float64Array} per member x,y,z,yawDeg,scale snapshot (5 each), concatenated over groups */
     this._snap = new Float64Array(0);
   }
 
@@ -135,8 +135,8 @@ export class MeshGroupSet {
         if (s !== g.refs[j]) return false;
         const f = s.frame;
         if (f.x !== snap[w] || f.y !== snap[w + 1] || f.z !== snap[w + 2] || (f.yawDeg || 0) !== snap[w + 3] || f.yawSteps !== g.steps[j]) return false;
-        if (s.mesh !== g.mesh || (s.scale !== undefined && s.scale !== 1)) return false;
-        w += 4;
+        if (s.mesh !== g.mesh || (s.scale === undefined ? 1 : s.scale) !== snap[w + 4]) return false;
+        w += 5;
       }
     }
     return true;
@@ -166,7 +166,7 @@ export class MeshGroupSet {
       total += list.length; snapN += list.length;
       picked.push([mesh, list]);
     }
-    const snap = new Float64Array(snapN * 4);
+    const snap = new Float64Array(snapN * 5);
     let w = 0;
     for (let p = 0; p < picked.length; p++) {
       const [mesh, list] = picked[p];
@@ -176,6 +176,7 @@ export class MeshGroupSet {
       g.mesh = mesh; g.draw = draw; g.members = Int32Array.from(list);
       g.refs = new Array(n); g.steps = new Int32Array(n);
       g.count = n;
+      let maxScale = 1;
       // identity for every range index: both twins read `partMatrices[p]` per range (one voxel-style part per range)
       g.parts = createInstanceParts();
       for (let r = 0; r < mesh.ranges.length; r++) {
@@ -189,7 +190,9 @@ export class MeshGroupSet {
         const si = list[j], s = structs[si];
         this.grouped[si] = 1;
         g.refs[j] = s; g.steps[j] = s.frame.yawSteps;
-        frameMatrix12(s.frame, _m12);
+        placementMatrix12(s, _m12);
+        const sk = s.scale === undefined ? 1 : s.scale;
+        if (sk > maxScale) maxScale = sk;
         const o = j * INSTANCE_STRIDE;
         f[o] = _m12[0]; f[o + 1] = _m12[1]; f[o + 2] = _m12[2]; f[o + 3] = _m12[9];
         f[o + 4] = _m12[3]; f[o + 5] = _m12[4]; f[o + 6] = _m12[5]; f[o + 7] = _m12[10];
@@ -197,9 +200,9 @@ export class MeshGroupSet {
         u[o + INST_OBJECT_ID] = (0xA000 | si) >>> 0;
         u[o + INST_FLAGS] = 0; // not axis-aligned: the kind-9 face comes from the interpolated normal, as for single draws
         f[o + 14] = 0; f[o + 15] = 0;
-        snap[w++] = s.frame.x; snap[w++] = s.frame.y; snap[w++] = s.frame.z; snap[w++] = s.frame.yawDeg || 0;
+        snap[w++] = s.frame.x; snap[w++] = s.frame.y; snap[w++] = s.frame.z; snap[w++] = s.frame.yawDeg || 0; snap[w++] = sk;
       }
-      g._R = groupRadius(draw, g.parts);
+      g._R = groupRadius(draw, g.parts) * maxScale;
       this.groups.push(g);
     }
     this._snap = snap;

@@ -56,6 +56,7 @@ export function serialize(world) {
     triggers: structuredClone((world.def && world.def.triggers) || []),
     structures: world.structures.map((s) => s.kind === 'mesh' ? {
       id: s.id, mesh: s.mesh.id, origin: { ...s.origin }, yawDeg: s.frame.yawDeg,
+      ...(s.scale !== undefined && s.scale !== 1 ? { scale: s.scale } : {}),
     } : ({
       id: s.id,
       level: s.level.name,
@@ -184,7 +185,7 @@ export function deserialize(state, assets, opts = {}) {
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => s.mesh
-      ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg }
+      ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale }
       : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
       // CO-5 follow-up: `parent` must travel through too - otherwise a
