@@ -56,6 +56,7 @@ import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, me
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
+import { createCrafting } from '../game/js/quest/sim/crafting.js';
 
 const CLASSIC_SCRIPTS = [
   '../design/palette.js',
@@ -619,6 +620,30 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  // RECIPES-01: share the actual crafting schema, with path-specific ref findings.
+  const recipeFile = opts.recipeFile;
+  const recipePath = opts.recipePath || 'content/items/recipes.json';
+  if (recipeFile !== undefined && recipeFile !== null) {
+    const validFile = plain(recipeFile) && recipeFile.version === 1 && Array.isArray(recipeFile.recipes)
+      && Object.keys(recipeFile).every(key => ['version', 'recipes'].includes(key));
+    check(validFile, recipePath, 'expected version 1 and a recipes array');
+    if (validFile) {
+      for (const [i, recipe] of recipeFile.recipes.entries()) {
+        const base = `${recipePath}.recipes[${recipe?.id ?? i}]`;
+        const refs = Array.isArray(recipe?.inputs) ? recipe.inputs.map((row, n) => [row, `${base}.inputs[${n}]`]) : [];
+        refs.push([recipe?.output, `${base}.output`]);
+        for (const [row, path] of refs) {
+          const def = row && Object.hasOwn(itemDefs, row.item) ? itemDefs[row.item] : null;
+          check(!!def, `${path}.item`, `item "${row?.item}" not found in inventory defs`);
+          if (def) check(def.inPack === true && Number.isSafeInteger(def.stackMax) && def.stackMax > 0 && def.pending !== 'owner',
+            `${path}.item`, `item "${row.item}" must be a usable pack item, not pending owner approval`);
+        }
+      }
+      try { createCrafting(recipeFile.recipes, { items: itemDefs }); check(true, recipePath, ''); }
+      catch (e) { check(false, recipePath, e.message); }
+    }
+  }
+
   // ---- 6. CO-8 (docs/coordinates.md section 8): coordinate/frame content rules ----
   // World structures: origin.x/y/z finite, yawSteps an integer 0..3.
   for (const worldKey of Object.keys(worlds)) {
@@ -817,13 +842,20 @@ export function loadQuestFiles(dir) {
   return { quests, errors, areas, areaPath };
 }
 
+export function loadRecipeFile(path) {
+  try { return { recipeFile: JSON.parse(readFileSync(path, 'utf8')), recipePath: path, errors: [] }; }
+  catch (e) { return { recipeFile: null, recipePath: path, errors: [`${path}: recipe JSON read/parse failed: ${e.message}`] }; }
+}
+
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
   const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath });
+  const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile });
   allErrors.push(...questFiles.errors);
+  allErrors.push(...recipeFile.errors);
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {
