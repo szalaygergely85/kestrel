@@ -4134,3 +4134,31 @@ check-deps (WG-1b2): `navigator.gpu`, `GPUBufferUsage`, `GPUTextureUsage`, `GPUS
   - (g) **typecheck WARN:** `engine/mesh/shadowList.js(72)` passes `src.eye` (`{x,y}`) to `addMeshStructures(cam: {x,y,z})` - introduced by the PC-A SHADOW-ROT hotfix 99153a9; `z` is unused there, so fix the JSDoc to `{x:number,y:number,z?:number}` in `engine/mesh/DrawList.js` (PC-A main session, one line).
 
 **37.8a note (architect review 2026-10-07, HANDS-01a):** on WebGPU `frontFace` is baked into the render pipeline, not set per draw. WG-2b must create a second view-model/voxel raster pipeline for mirrored (det<0) items with `frontFace:'cw'`, `cullMode:'back'` (WebGL2 flips `gl.frontFace` per item today). HANDS-01c `handsSwapped` fails only on a known edge-on voxel-face coverage tie (D-039 precision), not on the mirror math.
+
+### 38.9 BUG-SHADOW-ONEPART-01: `DRAW_FLAG_ONE_PART` in the shadow caster loops (architect, 2026-10-08)
+
+**Findings (code at pc-a 63528f9).** The flag is honoured by every MAIN instanced loop (GL `_passRaster` ~1916 `_oneRange`, rasterJS `rasterInstanced` 591, WG `passRaster.js` 311) and the non-shadow kernel args (`passCull._fillEntries`: `triCount*3`, first 0). It is ignored by: (1) GL `_passShadow` instanced loop (~2291), (2) WG `passShadow.js` CPU instanced loop (~270), (3) `passCull._fillEntries` shadow branch (`ranges[0]`) + `supports()` shadow comment. **The JS twin is already correct**: compositor and `shadowParity` both raster the shadow list through `rasterDrawList -> rasterInstanced`, so it is the oracle here; the story row's "JS twin" item is void. Who is hit: only `InstanceGroups.meshGroup` (instances.js 316: ONE identity part, parts 1.. are ZERO matrices, so ranges 1.. collapse to the instance origin and still cost vertex work). `MeshGroupSet` (meshGroups.js 181) writes identity for every range and never enters the shadow list (`buildShadowList` calls `addMeshStructures` without `groups`), so placed props cast fully today. Content today: only the gpucompare `lowpolyTrees` pose (kenney `tree_oak`: ranges leaf 64 + wood 130 -> GL/WG cast the canopy only, no trunk); no world uses mesh scatter species yet, so the fix must land before TREES-LP planting.
+
+**Rule (normative).** A `DRAW_FLAG_ONE_PART` item is drawn in EVERY pass (camera, shadow, kernel) as one range `[0, mesh.triCount)` with part 0 (`partMatrices[0..11]`, `partFlags[0]`); `mesh.ranges` is ignored. Not "all ranges": InstanceGroups only fill part 0. Depth-only raster is order-independent, and masked ranges are refused by both group builders, so one draw is exact.
+
+**Changes.**
+1. `engine/mesh/DrawList.js`: export `instancedRanges(item)` -> `item.mesh.ranges`, or a module-level frozen-shape scratch `[{start:0,count:item.mesh.triCount}]` when the flag is set (zero alloc; caller iterates synchronously). Replace the three local `_oneRange` copies (GpuCellPipeline.js, rasterJS.js, passRaster.js) with it: one rule, one place.
+2. GL `_passShadow` instanced loop: `const ranges = instancedRanges(item)`. **JS-only edit in frozen `GpuCellPipeline.js`, no GLSL** (D-044 feed-only, as MESH-INST-01): the shader already draws whatever range/part it is given.
+3. WG `passShadow.js` CPU instanced loop: same helper.
+4. `passCull._fillEntries` shadow branch: for a meshGroup batch (`b.g.mesh`) write `[triCount*3, 0, 0, 0, 0]` like the camera branch; voxel units keep `ranges[0]` (`supports()` already demands one range). **No WGSL change and no args layout change:** the kernel only `atomicAdd`s word +1 (instanceCount); `ARGS_WORDS` 5, one slot per (batch, lod), one `drawIndirect` per active band stay as they are. Fix the `supports()` comment.
+
+**Cost.** Draws: -(ranges-1) per meshGroup per shadow render (tree_oak 2 -> 1). GL / WG-CPU vertex work unchanged (the zero-matrix ranges were already transformed); fragments + the real trunk depth added. Kernel path: vertex work x `triCount / ranges[0].count` (tree_oak 3.0x, 64 -> 194 tris/instance). The sun map only re-renders on `shadowInputHash` change, so steady-state frames pay nothing. Budget note for TREES-LP: a scatter species with a full-detail mesh (DeadTree_1 6169 tris, ranges[0] 1231 = 5x) at ~200 casters is ~1.2 M shadow tris per re-render: scatter meshGroups stay low-poly (37.15), checked at planting, not here.
+
+**Tests (Node first; each fails on the ranges[0]-only code).**
+- `engine/mesh/meshInstances.test.js`: `instancedRanges` on a 2-range mesh with ranges[0] = 1 tri, ranges[1] = 11 tris -> one range `{0, 12}` with the flag, `mesh.ranges` without; 0 allocations over 1000 calls.
+- `engine/render/gpu/wg/passShadow.test.js` (mock device records draws): an `InstanceGroups.meshGroup` with that mesh in `buildShadowList` -> exactly ONE instanced draw, `count = 36`, `first = 0` (today 2 draws, first count 3).
+- `passShadowCull.test.js`: change the tree args expectation to `[triCount*3, cnt, 0, 0, 0]`; add the asymmetric 2-range mesh so `ranges[0]`-only would give 3, not 36.
+- JS-twin parity: rasterJS depth-only of the shadow list vs the same mesh fed as one `DRAW_STATIC` item per instance (whole range) -> identical zbuf; covers the oracle side.
+- GL (no Node GL mock): source check in `engine/render/gpu/glsl.test.js` style that `_passShadow`, `_passRaster`, `rasterJS.rasterInstanced`, `passRaster` and `passShadow` call `instancedRanges(` and no `_oneRange` remains. Browser gate (PC-A, `gpucompare` skill): `lowpolyTrees [shadow depth parity]` `jsOnly`/`covMismatch` must drop (report before/after on WebGL2 and WebGPU); every other row 0 metric change; no threshold touched (D-039).
+
+**Steps (each <= 0.5 d, end in arch-review on PC-A).**
+- **ONEPART-a [B1]** items 1-2 + rasterJS/passRaster helper swap + the helper, source-check and JS-parity tests. Files: DrawList.js, rasterJS.js, GpuCellPipeline.js (JS only), passRaster.js.
+- **ONEPART-b [B1, after a and after B1's open passCull.js fixes]** items 3-4 + passShadow/passShadowCull tests. B1 owns `passCull.js`; B2 has nothing to do (no WGSL change).
+- PC-A: gpucompare gate on both backends after b.
+
+**Risk:** low. GL/WG shadows move TOWARDS the oracle; only the lowpolyTrees row changes today (more trunk coverage). Do not add identity parts to `InstanceGroups.meshGroup` instead: that keeps N draws and diverges from the camera pass.
