@@ -577,3 +577,14 @@ Diff-only review of the S8-B1-01 commit's `game/js/gameHooks.js` and its call po
 - [ ] `ARCH OK`/`ARCH CHANGES`: the six events, `onTick`, `drawHud`, `onRespawn` are called at fixed points; handler errors cannot break the frame; wire modules can register without touching main.js.
 - [ ] Confirms lane C can build WAYSTONE-01w, S8-C-HOOK-QUEST, S8-C-HOOK-CHEST on it unchanged; missing hook points listed for B1. Gates the three wire stories.
 Files: read-only. No owner look.
+
+## Quest markers + chain v2 (owner idea 2026-10-08, PC-A)
+Owner: WoW-style golden 3D '!' above the active quest note; note 1 "find something to defend yourself in the wild" -> take the sword; a second note on the way up "kill 5 boars"; after the 5th boar the next '!' is on the waystone. Today `content/quests/m1.quest.json` has wake -> lantern -> breach -> sword -> beasts (2: boar1, boar2) -> waystone; world_m1 has only 2 boars.
+### QUEST-MARK-01 asset [designer, IN PROGRESS 2026-10-08]
+`design/models/quest_mark.js`: `questMark` (gold '!'), `questMarkTurnIn` (gold '?', later), `ASSETS.questMarkFx` {floatM 0.35, bobM 0.08, spin 0.5 rev/s, popMs 300, fadeMs 250, visibleRangeM 40}, clips idle/pop/fade, preview design/preview/quest-mark.html.
+### QUEST-CHAIN-02 sim + content [lane C, ~0.75 d, deps: none for sim; NEEDS PC-A decision on boar count]
+(1) m1.quest.json: new objective `note1` "Read the note: find something to defend yourself" (flag/prop touch) before `sword`; `note2` (second note on the way up) before `beasts`; `beasts` count 2 -> 5 with boar ids boar1..boar5; waystone last. (2) `game/js/quest/sim/questMarkers.js` (+ Node test): `markerTargets()` returns the id(s) of the prop/area that should carry a '!' for the CURRENT objective only (note1 -> note prop id, sword -> sword prop, note2 -> note2 prop, beasts -> none or the nearest boar, waystone -> waystone prop); deterministic, save-safe, zero alloc per step. (3) content: 3 more boars (boar3..5) with home positions on the hillside path in world_m1.world.json (shared file: ask PC-A for the coordinates or propose them in the log), second note decal/prop `note2` text from the writer. Owner look: boar count/placement and note text.
+### QUEST-MARK-01w wire [lane C via gameHooks seam, ~0.5 d, deps: seam ARCH OK (B1), QUEST-MARK-01, QUEST-CHAIN-02]
+`game/js/quest/wire/questMarks.js` on `onBoot/onTick/onEvent(flag:set|item:got|beast:died|prop:touched)`: spawn/hide `questMark` voxel entities (`components.voxel.hidden` seam, US-079b0) at `markerTargets()` anchors, play pop/fade clips, cull beyond visibleRangeM. No main.js/engine edits (NEEDS B1 line if a hook point is missing). Owner look: marker readable at 3 m and 12 m, disappears on step complete.
+### QUEST-TEXT-02 [writer, ~0.25 d]
+Texts for note1, note2 ("kill 5 boars" in canon voice), objective lines for `note1/note2/beasts(5)`, HUD <= 38 chars. Append to docs/story.md '## Sprint 8 texts'.
