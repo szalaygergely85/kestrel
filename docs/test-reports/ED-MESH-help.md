@@ -1,0 +1,11 @@
+# ED-MESH-01 help visibility follow-up
+
+H-help wrote into scene cells before the GPU compositor, so its state toggled and text calls ran but the panel was absent in the physical GPU capture. Help now uses the existing fixed UI layer, cleared every rendered frame by the editor frame wrapper. Closing H clears the text and opaque plate. Colours, wording and game/engine files are unchanged.
+
+The first visible help capture exposed a second issue: the render target defaults to the whole window, while the editor centre pane is smaller. Its canvas was clipped behind docks/toolbars. The editor now fits that pane through the public resize API and scales both CSS axes equally when integer glyph sizes exceed the pane. A ResizeObserver refreshes the fit and frame buffers when the pane changes; the scene remains 400x150 and picking still uses the displayed canvas rectangle.
+
+Real NVIDIA RTX 4060 / ANGLE D3D11, editor `?grid=400x150`, camera on the road at (1468,1031), standing eye height: **visible yes** - full header, all fourteen key-help rows and mesh instructions are legible on a dark plate; no clipping. Screenshot `captures/editor-help-fixed.png` inspected. Physical H open/close yields UI alpha 255/0 respectively. Resizing the window from 1600x1000 to 1200x800 keeps the 680x510 canvas entirely inside its 680x624 pane with the 400x150 grid retained. All probe changes stay in browser memory; the owner world file remains byte-preserved.
+
+Focused existing editor frame suite passes. Final full gate: 300/300 PASS, 0 FAIL/TIMEOUT/WARN; check-deps OK (517 files, 1353 existing warnings), diff-check clean. Latest PC-A renderer carry-over fixes (`92b2133`) merged before testing. This resolves the earlier help LOOK RISK inside C-owned editor code; it does not supply the pending public mesh setter/collider/scale hooks or the other queue prerequisites. No engine, game boot, authored content or palette edits.
+
+Initial merged full run: 299/300 PASS, one terrain-stroke timing failure just above the unchanged 150 ms limit (reported rounded 150.0 ms; warm 124.1 ms), no TIMEOUT/WARN. The same-harness isolated terrain-stroke rerun passes. The final full rerun is recorded in the lane entry; no threshold, stress count or engine test change.

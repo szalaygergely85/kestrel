@@ -1,0 +1,797 @@
+# WebGPU-only gpucompare FAILs on PC-A (Intel Arc), 2026-10-08 (answer to B1 NEEDS PC-A)
+
+Tree: 9194a41 (pc-b merged through GFX-03, before GFX-01w / 27c68ca). Command: `node tools/capture-browser.mjs --mode gpucompare --backend webgpu|webgl2 --timeout-ms 400000`. Totals: webgl2 141/5, webgpu 137/9. Rows below: per-row metrics, webgpu then webgl2 (non-zero/false lines only).
+      cmpGeom.aoSampleGpu: 0
+      cmpGeom.k8Gpu: 0
+      cmpGeom.aoSampleGpu: 0
+
+## viewModel rest pitch 0 PITCHED CAMERA - webgpu
+```
+  FAIL  world_m1: viewModel rest pitch 0 PITCHED CAMERA (BUG-VM-001, held sword, crash room)
+      cmpGeom.kindChecked: 8781
+      cmpGeom.kindCheckedExclK8: 6659
+      cmpGeom.matched: 8781
+      cmpGeom.matEqual: 8776
+      cmpGeom.planeEqual: 8776
+      cmpGeom.depthViol: 3
+      cmpGeom.uvViol: 5
+      cmpGeom.faceViol: 1
+      cmpGeom.zViol: 4
+      cmpGeom.geomViolCells: 5
+      cmpGeom.faceSample: 772
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 3
+      cmpGeom.nrmMaxDeg: 90.00123454059204
+      cmpGeom.matSample: 41,37,51,22,0.15,0.451,40,38,51,22,0.15,0.43
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 819
+      cmpGeom.k8Cpu: 2419
+      cmpGeom.k8Gpu: 2419
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 3
+      cmpGeom.texelTieCells: 
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9600
+      cmpLight.checked: 8781
+      cmpLight.sunlitChecked: 8638
+      cmpLight.sunlitMismatch: 1
+      cmpLight.sunlitMismatchFrac: 0.0019305019305019305
+      cmpLight.dLMax: 0.0007027387619018555
+      cmpLight.dLSampleIdx: -1
+      cmpLight.litFlip: 2
+      cmpLight.litFlipFrac: 0.00020833333333333335
+      cmpLight.boundaryCells: 140
+      cmpLight.boundaryFrac: 0.015943514406104087
+      cmpLight.litCells: 518
+      cmpLight.nMismatch: 3
+      cmpLight.nMismatchFrac: 0.0003471820391158431
+      cmpCells.nonSky: 9600
+      cmpCells.edgeCells: 819
+      cmpCells.nonEdgeChecked: 8781
+      cmpCells.glyphMismatchNonEdge: 32
+      cmpCells.glyphMatchPct: 99.63557681357476
+      cmpCells.fgOutside: 44
+      cmpCells.bgOutside: 14
+      cmpCells.fgMax: 105
+      cmpCells.bgMax: 18
+      cmpCells.cellsOutside: 16
+      cmpCells.outsideFrac: 0.0016666666666666668
+      cmpCells.k8Outside: 15
+      cmpCells.fgMaxNonK8: 5
+      cmpCells.bgMaxNonK8: 1
+      cmpCells.fgMeanAbs: 0.0534375
+      cmpCells.bgMeanAbs: 0.007916666666666667
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.mismatchByKind: 0,0,15,0,0,0,0,0,17,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,0,0,18,8,6
+      cmpCells.outsideByKind: 0,0,1,0,0,0,0,0,15,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 148,5,95,82,71,100,86,74,27,28,41,37,122,131,142,55,58,65,20,7,40,38,123,131,143,31,33,38,20,4,39,39,55,57,65,31,33,39,7,4,62,45,4
+      cmpCells.pass: false
+      cellsWait: null
+      lightWaits: false
+      geomOk: false
+      vmItemsGpu: 1
+      vmItemsJs: 1
+  PASS  world_m1: viewModel rest pitch 0 PITCHED CAMERA (BUG-VM-001, held sword, crash room) [shadow depth parity]
+      shadowDepth.texels: 4194304
+      shadowDepth.covGpu: 4194303
+      shadowDepth.both: 4194303
+      shadowDepth.jsOnly: 1
+      shadowDepth.maxUlp: 832955
+      shadowDepth.withinPct: 99.99818801836682
+      shadowDepth.within16Pct: 99.16684607669022
+      shadowDepth.covMismatchPct: 0.00002384185791015625
+      shadowDepth.covMismatchUnionPct: 0.00002384185791015625
+      shadowDepth.hist.le64: 33182
+      shadowDepth.hist.le1024: 1721
+      shadowDepth.hist.big: 42
+      shadowDepth.ratioHist: 34668/187/45/15/15/15
+      shadowDepth.items: 61
+```
+
+## viewModel rest pitch 0 PITCHED CAMERA - webgl2
+```
+  PASS  world_m1: viewModel rest pitch 0 PITCHED CAMERA (BUG-VM-001, held sword, crash room)
+      cmpCells.nonSky: 9600
+      cmpCells.edgeCells: 819
+      cmpCells.nonEdgeChecked: 8781
+      cmpCells.glyphMismatchNonEdge: 34
+      cmpCells.glyphMatchPct: 99.61280036442318
+      cmpCells.fgOutside: 42
+      cmpCells.bgOutside: 14
+      cmpCells.fgMax: 105
+      cmpCells.bgMax: 18
+      cmpCells.cellsOutside: 14
+      cmpCells.outsideFrac: 0.0014583333333333334
+      cmpCells.k8Outside: 14
+      cmpCells.fgMaxNonK8: 4
+      cmpCells.bgMaxNonK8: 2
+      cmpCells.fgMeanAbs: 0.05260416666666667
+      cmpCells.bgMeanAbs: 0.008055555555555555
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.mismatchByKind: 0,0,17,0,0,0,0,0,17,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,0,0,19,7,8
+      cmpCells.outsideByKind: 0,0,0,0,0,0,0,0,14,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 41,37,122,131,142,55,58,65,20,7,40,38,123,131,143,31,33,38,20,4,39,39,55,57,65,31,33,39,7,4,62,45,47,35,14,78,59,25,7,11,62,46,47,
+      cmpCells.pass: false
+      cmpGeom.kindChecked: 8781
+      cmpGeom.kindCheckedExclK8: 6659
+      cmpGeom.matched: 8781
+      cmpGeom.matEqual: 8777
+      cmpGeom.planeEqual: 8778
+      cmpGeom.depthViol: 2
+      cmpGeom.uvViol: 3
+      cmpGeom.faceViol: 1
+      cmpGeom.zViol: 3
+      cmpGeom.geomViolCells: 3
+      cmpGeom.faceSample: 772
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 2
+      cmpGeom.nrmMaxDeg: 89.99728930842262
+      cmpGeom.matSample: 41,37,51,22,0.15,0.451,40,38,51,22,0.15,0.43
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 819
+      cmpGeom.k8Cpu: 2419
+      cmpGeom.k8Gpu: 2419
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 2
+      cmpGeom.texelTieCells: 
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9600
+      cmpLight.checked: 8781
+      cmpLight.sunlitChecked: 8639
+      cmpLight.sunlitMismatch: 1
+      cmpLight.sunlitMismatchFrac: 0.0019305019305019305
+      cmpLight.dLMax: 0.0007137656211853027
+      cmpLight.dLSampleIdx: -1
+      cmpLight.litFlip: 1
+      cmpLight.litFlipFrac: 0.00010416666666666667
+      cmpLight.boundaryCells: 140
+      cmpLight.boundaryFrac: 0.015943514406104087
+      cmpLight.litCells: 518
+      cmpLight.nMismatch: 2
+      cmpLight.nMismatchFrac: 0.0002314546927438954
+      cmpLight.dLSample: null
+      isVoxelPose: false
+      mesh8a.geomViol: 11
+      mesh8a.geomViolCells: 3
+      mesh8a.k8Outside: 14
+      mesh8a.fgMaxNonK8: 4
+      vmItemsGpu: 1
+      vmItemsJs: 1
+  PASS  world_m1: viewModel rest pitch 0 PITCHED CAMERA (BUG-VM-001, held sword, crash room) [shadow depth parity]
+      shadowDepth.texels: 4194304
+      shadowDepth.covGpu: 4194304
+      shadowDepth.both: 4194304
+      shadowDepth.maxUlp: 832958
+      shadowDepth.withinPct: 99.99830722808838
+      shadowDepth.within16Pct: 99.36540126800537
+      shadowDepth.hist.le64: 25242
+      shadowDepth.hist.le1024: 1331
+      shadowDepth.hist.big: 44
+      shadowDepth.ratioHist: 26345/185/43/13/15/16
+      shadowDepth.items: 61
+```
+
+## viewModel swingLR t=160 pitch 0 - webgpu
+```
+  FAIL  world_m1: viewModel swingLR t=160 pitch 0 (US-078a, held sword, crash room)
+      cmpGeom.kindChecked: 8538
+      cmpGeom.kindCheckedExclK8: 6415
+      cmpGeom.matched: 8538
+      cmpGeom.matEqual: 8537
+      cmpGeom.planeEqual: 8535
+      cmpGeom.depthViol: 2
+      cmpGeom.uvViol: 5
+      cmpGeom.faceViol: 1
+      cmpGeom.zViol: 4
+      cmpGeom.geomViolCells: 5
+      cmpGeom.faceSample: 1795
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 89.99990381210975
+      cmpGeom.matSample: 76,44,51,18,0.15,0.443
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 1062
+      cmpGeom.k8Cpu: 2489
+      cmpGeom.k8Gpu: 2489
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 30
+      cmpGeom.ruleFlipsExcused: 22
+      cmpGeom.texelTies: 23
+      cmpGeom.texelTieCells: 4938,4939,4940,4941,4942,4943,4944,4945,4947,4948,4949,4950,4951,4952,4953,4954,4955,4956,4957,4958,4959,6928,8140
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9600
+      cmpLight.checked: 8538
+      cmpLight.sunlitChecked: 8356
+      cmpLight.dLMax: 0.08469116687774658
+      cmpLight.dLViol: 6
+      cmpLight.dLSampleIdx: 7116
+      cmpLight.litFlip: 1
+      cmpLight.litFlipFrac: 0.00010416666666666667
+      cmpLight.boundaryCells: 182
+      cmpLight.boundaryFrac: 0.02131646755680487
+      cmpLight.litCells: 1415
+      cmpLight.pass: false
+      cmpCells.nonSky: 9600
+      cmpCells.edgeCells: 1062
+      cmpCells.nonEdgeChecked: 8497
+      cmpCells.glyphMismatchNonEdge: 6
+      cmpCells.glyphMatchPct: 99.92938684241497
+      cmpCells.fgOutside: 33
+      cmpCells.bgOutside: 9
+      cmpCells.fgMax: 59
+      cmpCells.bgMax: 12
+      cmpCells.cellsOutside: 11
+      cmpCells.outsideFrac: 0.0011458333333333333
+      cmpCells.k8Outside: 11
+      cmpCells.fgMaxNonK8: 1
+      cmpCells.bgMaxNonK8: 1
+      cmpCells.fgMeanAbs: 0.027001569858712715
+      cmpCells.bgMeanAbs: 0.003802546659689517
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 45
+      cmpCells.mismatchByKind: 0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,1,0,0,4,1
+      cmpCells.outsideByKind: 0,0,0,0,0,0,0,0,11,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 37,15,177,132,83,196,146,92,35,39,76,43,27,30,38,8,9,11,3,2,75,44,27,30,38,19,21,27,3,2,76,44,106,118,139,161,139,80,17,29,77,44,1
+      cmpCells.ruleFlipsExcluded: 22
+      cmpCells.texelTiesExcluded: 23
+      cellsWait: null
+      lightWaits: false
+      geomOk: false
+  PASS  world_m1: viewModel swingLR t=160 pitch 0 (US-078a, held sword, crash room) [shadow depth parity]
+      shadowDepth.texels: 4194304
+      shadowDepth.covGpu: 4194303
+      shadowDepth.both: 4194303
+      shadowDepth.jsOnly: 1
+      shadowDepth.maxUlp: 832952
+      shadowDepth.withinPct: 99.9982595439576
+      shadowDepth.within16Pct: 97.70212118676214
+      shadowDepth.covMismatchPct: 0.00002384185791015625
+      shadowDepth.covMismatchUnionPct: 0.00002384185791015625
+      shadowDepth.hist.le64: 94576
+      shadowDepth.hist.le1024: 1761
+      shadowDepth.hist.big: 43
+      shadowDepth.ratioHist: 96106/183/48/13/13/17
+      shadowDepth.items: 56
+```
+
+## viewModel swingLR t=160 pitch 0 - webgl2
+```
+  PASS  world_m1: viewModel swingLR t=160 pitch 0 (US-078a, held sword, crash room)
+      cmpCells.nonSky: 9600
+      cmpCells.edgeCells: 1062
+      cmpCells.nonEdgeChecked: 8483
+      cmpCells.glyphMismatchNonEdge: 4
+      cmpCells.glyphMatchPct: 99.952846870211
+      cmpCells.fgOutside: 21
+      cmpCells.bgOutside: 1
+      cmpCells.fgMax: 39
+      cmpCells.bgMax: 6
+      cmpCells.cellsOutside: 7
+      cmpCells.outsideFrac: 0.0007291666666666667
+      cmpCells.k8Outside: 7
+      cmpCells.fgMaxNonK8: 1
+      cmpCells.bgMaxNonK8: 1
+      cmpCells.fgMeanAbs: 0.011987139162647655
+      cmpCells.bgMeanAbs: 0.00181729223457049
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 62
+      cmpCells.mismatchByKind: 0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,1,0,1,0,2
+      cmpCells.outsideByKind: 0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 37,15,177,132,83,196,146,92,35,39,104,40,73,60,47,79,42,20,10,11,104,41,79,42,19,118,66,30,11,17,104,42,72,60,47,77,41,19,10,11,73
+      cmpCells.ruleFlipsExcluded: 39
+      cmpCells.texelTiesExcluded: 23
+      cmpGeom.kindChecked: 8538
+      cmpGeom.kindCheckedExclK8: 6415
+      cmpGeom.matched: 8538
+      cmpGeom.matEqual: 8538
+      cmpGeom.planeEqual: 8537
+      cmpGeom.uvViol: 3
+      cmpGeom.zViol: 2
+      cmpGeom.geomViolCells: 3
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 89.99990381210975
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 1062
+      cmpGeom.k8Cpu: 2489
+      cmpGeom.k8Gpu: 2489
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 41
+      cmpGeom.ruleFlipsExcused: 39
+      cmpGeom.texelTies: 23
+      cmpGeom.texelTieCells: 4938,4939,4940,4941,4942,4943,4944,4945,4947,4948,4949,4950,4951,4952,4953,4954,4955,4956,4957,4958,4959,6928,8140
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9600
+      cmpLight.checked: 8538
+      cmpLight.sunlitChecked: 8356
+      cmpLight.dLMax: 0.0006035566329956055
+      cmpLight.dLSampleIdx: -1
+      cmpLight.litFlip: 1
+      cmpLight.litFlipFrac: 0.00010416666666666667
+      cmpLight.boundaryCells: 182
+      cmpLight.boundaryFrac: 0.02131646755680487
+      cmpLight.litCells: 1415
+      cmpLight.dLSample: null
+      isVoxelPose: false
+      mesh8a.geomViol: 6
+      mesh8a.geomViolCells: 3
+      mesh8a.k8Outside: 7
+      mesh8a.fgMaxNonK8: 1
+  PASS  world_m1: viewModel swingLR t=160 pitch 0 (US-078a, held sword, crash room) [shadow depth parity]
+      shadowDepth.texels: 4194304
+      shadowDepth.covGpu: 4194304
+      shadowDepth.both: 4194304
+      shadowDepth.maxUlp: 832955
+      shadowDepth.withinPct: 99.99833106994629
+      shadowDepth.within16Pct: 99.36447143554688
+      shadowDepth.hist.le64: 25383
+      shadowDepth.hist.le1024: 1231
+      shadowDepth.hist.big: 42
+      shadowDepth.ratioHist: 26397/175/44/11/13/16
+      shadowDepth.items: 56
+```
+
+## viewModel swingLR t=160 pitch 30 - webgpu
+```
+  FAIL  world_m1: viewModel swingLR t=160 pitch 30 (US-078a, held sword, crash room)
+      cmpGeom.kindChecked: 8937
+      cmpGeom.kindCheckedExclK8: 7484
+      cmpGeom.matched: 8925
+      cmpGeom.matEqual: 8925
+      cmpGeom.planeEqual: 8923
+      cmpGeom.depthViol: 1
+      cmpGeom.uvViol: 4
+      cmpGeom.zViol: 1
+      cmpGeom.geomViolCells: 4
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 90.00190950369326
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 663
+      cmpGeom.edgeKindMismatch: 2
+      cmpGeom.k8Cpu: 1642
+      cmpGeom.k8Gpu: 1642
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 49
+      cmpGeom.ruleFlipsExcused: 37
+      cmpGeom.texelTies: 2
+      cmpGeom.texelTieCells: 4522,6338
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9559
+      cmpLight.checked: 8931
+      cmpLight.sunlitChecked: 8751
+      cmpLight.dLMax: 0.0024880170822143555
+      cmpLight.dLViol: 3
+      cmpLight.dLSampleIdx: 8850
+      cmpLight.boundaryCells: 178
+      cmpLight.boundaryFrac: 0.01993057888254395
+      cmpLight.litCells: 1633
+      cmpLight.nMismatch: 2
+      cmpLight.nMismatchFrac: 0.00022849308808408546
+      cmpLight.pass: false
+      cmpCells.nonSky: 9559
+      cmpCells.edgeCells: 628
+      cmpCells.nonEdgeChecked: 8900
+      cmpCells.glyphMismatchNonEdge: 10
+      cmpCells.glyphMatchPct: 99.88764044943821
+      cmpCells.fgOutside: 54
+      cmpCells.bgOutside: 19
+      cmpCells.fgMax: 142
+      cmpCells.bgMax: 18
+      cmpCells.cellsOutside: 19
+      cmpCells.outsideFrac: 0.001987655612511769
+      cmpCells.k8Outside: 14
+      cmpCells.fgMaxNonK8: 46
+      cmpCells.bgMaxNonK8: 16
+      cmpCells.fgMeanAbs: 0.05784313725490196
+      cmpCells.bgMeanAbs: 0.008368347338935574
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 39
+      cmpCells.mismatchByKind: 0,1,0,0,0,0,0,0,9,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 1,0,0,0,5,4
+      cmpCells.outsideByKind: 0,5,0,0,0,0,0,0,14,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 64,2,81,77,73,92,86,77,23,26,70,7,55,63,85,36,40,52,15,6,37,26,83,84,93,88,90,95,23,25,76,43,34,36,41,10,11,12,4,2,75,44,34,36,41,
+      cmpCells.ruleFlipsExcluded: 37
+      cmpCells.texelTiesExcluded: 2
+      cmpCells.pass: false
+      cellsWait: null
+      lightWaits: false
+  PASS  world_m1: viewModel swingLR t=160 pitch 30 (US-078a, held sword, crash room) [shadow depth parity]
+      shadowDepth.texels: 4194304
+      shadowDepth.covGpu: 4194303
+      shadowDepth.both: 4194303
+      shadowDepth.jsOnly: 1
+      shadowDepth.maxUlp: 832952
+      shadowDepth.withinPct: 99.9982595439576
+      shadowDepth.within16Pct: 97.70212118676214
+      shadowDepth.covMismatchPct: 0.00002384185791015625
+      shadowDepth.covMismatchUnionPct: 0.00002384185791015625
+      shadowDepth.hist.le64: 94576
+      shadowDepth.hist.le1024: 1761
+      shadowDepth.hist.big: 43
+      shadowDepth.ratioHist: 96106/183/48/13/13/17
+      shadowDepth.items: 56
+```
+
+## viewModel swingLR t=160 pitch 30 - webgl2
+```
+  PASS  world_m1: viewModel swingLR t=160 pitch 30 (US-078a, held sword, crash room)
+      cmpCells.nonSky: 9559
+      cmpCells.edgeCells: 628
+      cmpCells.nonEdgeChecked: 8894
+      cmpCells.glyphMismatchNonEdge: 6
+      cmpCells.glyphMatchPct: 99.93253879019564
+      cmpCells.fgOutside: 29
+      cmpCells.bgOutside: 7
+      cmpCells.fgMax: 46
+      cmpCells.bgMax: 16
+      cmpCells.cellsOutside: 11
+      cmpCells.outsideFrac: 0.0011507479861910242
+      cmpCells.k8Outside: 6
+      cmpCells.fgMaxNonK8: 46
+      cmpCells.bgMaxNonK8: 16
+      cmpCells.fgMeanAbs: 0.019438898812651047
+      cmpCells.bgMeanAbs: 0.0037827046338131764
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 42
+      cmpCells.mismatchByKind: 0,1,0,0,0,0,0,0,5,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 1,0,0,1,0,4
+      cmpCells.outsideByKind: 0,5,0,0,0,0,0,0,6,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 64,2,81,77,73,92,86,77,23,26,70,7,55,63,85,36,40,52,15,6,37,26,83,84,93,88,90,95,23,25,76,50,92,67,49,116,82,56,15,19,90,50,45,46,
+      cmpCells.ruleFlipsExcluded: 40
+      cmpCells.texelTiesExcluded: 2
+      cmpGeom.kindChecked: 8942
+      cmpGeom.kindCheckedExclK8: 7484
+      cmpGeom.matched: 8930
+      cmpGeom.matEqual: 8930
+      cmpGeom.planeEqual: 8929
+      cmpGeom.uvViol: 3
+      cmpGeom.geomViolCells: 3
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 90.00190950369326
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 658
+      cmpGeom.edgeKindMismatch: 1
+      cmpGeom.k8Cpu: 1642
+      cmpGeom.k8Gpu: 1643
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 46
+      cmpGeom.ruleFlipsExcused: 40
+      cmpGeom.texelTies: 2
+      cmpGeom.texelTieCells: 4522,6338
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9559
+      cmpLight.checked: 8931
+      cmpLight.sunlitChecked: 8752
+      cmpLight.dLMax: 0.0001977384090423584
+      cmpLight.dLSampleIdx: -1
+      cmpLight.boundaryCells: 178
+      cmpLight.boundaryFrac: 0.01993057888254395
+      cmpLight.litCells: 1633
+      cmpLight.nMismatch: 1
+      cmpLight.nMismatchFrac: 0.00011424654404204273
+      cmpLight.dLSample: null
+      isVoxelPose: false
+      mesh8a.geomViol: 4
+      mesh8a.geomViolCells: 3
+      mesh8a.k8Outside: 6
+      mesh8a.fgMaxNonK8: 46
+  PASS  world_m1: viewModel swingLR t=160 pitch 30 (US-078a, held sword, crash room) [shadow depth parity]
+      shadowDepth.texels: 4194304
+      shadowDepth.covGpu: 4194304
+      shadowDepth.both: 4194304
+      shadowDepth.maxUlp: 832955
+      shadowDepth.withinPct: 99.99833106994629
+      shadowDepth.within16Pct: 99.36447143554688
+      shadowDepth.hist.le64: 25383
+      shadowDepth.hist.le1024: 1231
+      shadowDepth.hist.big: 42
+      shadowDepth.ratioHist: 26397/175/44/11/13/16
+      shadowDepth.items: 56
+```
+
+## voxel yaw 45$ - webgpu
+```
+  FAIL  world_m1: voxel yaw 45
+      cmpGeom.kindChecked: 8965
+      cmpGeom.kindCheckedExclK8: 8678
+      cmpGeom.matched: 8813
+      cmpGeom.matEqual: 8813
+      cmpGeom.planeEqual: 8808
+      cmpGeom.uvViol: 5
+      cmpGeom.geomViolCells: 5
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 5
+      cmpGeom.nrmMaxDeg: 90.0012371989
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 635
+      cmpGeom.edgeKindMismatch: 1
+      cmpGeom.k8Cpu: 365
+      cmpGeom.k8Gpu: 366
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 15
+      cmpGeom.ruleFlipsExcused: 5
+      cmpGeom.texelTies: 5
+      cmpGeom.texelTieCells: 478,3109,4621,8140,8470
+      cmpGeom.texelTiesMax: 47
+      cmpLight.nonSky: 9381
+      cmpLight.checked: 8814
+      cmpLight.sunlitChecked: 8778
+      cmpLight.dLMax: 0.0000629425048828125
+      cmpLight.dLSampleIdx: -1
+      cmpLight.litFlip: 1
+      cmpLight.litFlipFrac: 0.00010659844366272253
+      cmpLight.boundaryCells: 36
+      cmpLight.boundaryFrac: 0.0040844111640571815
+      cmpLight.litCells: 19
+      cmpCells.nonSky: 9381
+      cmpCells.edgeCells: 567
+      cmpCells.nonEdgeChecked: 8806
+      cmpCells.glyphMismatchNonEdge: 10
+      cmpCells.glyphMatchPct: 99.88644106291166
+      cmpCells.fgOutside: 32
+      cmpCells.bgOutside: 3
+      cmpCells.fgMax: 40
+      cmpCells.bgMax: 20
+      cmpCells.cellsOutside: 11
+      cmpCells.outsideFrac: 0.0011725828802899478
+      cmpCells.k8Outside: 9
+      cmpCells.fgMaxNonK8: 40
+      cmpCells.bgMaxNonK8: 20
+      cmpCells.fgMeanAbs: 0.015651122256607263
+      cmpCells.bgMeanAbs: 0.003201365916124213
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 10
+      cmpCells.mismatchByKind: 0,0,1,0,0,0,0,0,9,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,0,0,4,6,0
+      cmpCells.outsideByKind: 0,0,2,0,0,0,0,0,9,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 138,34,53,48,42,28,31,38,5,3,138,35,17,20,27,23,27,37,2,3,139,39,17,20,27,23,27,37,2,3,138,40,23,27,37,17,20,27,3,2,139,40,17,20,2
+      cmpCells.ruleFlipsExcluded: 5
+      cmpCells.texelTiesExcluded: 5
+      cellsWait: null
+      lightWaits: false
+      geomOk: false
+```
+
+## voxel yaw 45$ - webgl2
+```
+  PASS  world_m1: voxel yaw 45
+      cmpCells.nonSky: 9381
+      cmpCells.edgeCells: 567
+      cmpCells.nonEdgeChecked: 8807
+      cmpCells.glyphMismatchNonEdge: 4
+      cmpCells.glyphMatchPct: 99.95458158283184
+      cmpCells.fgOutside: 17
+      cmpCells.bgOutside: 3
+      cmpCells.fgMax: 40
+      cmpCells.bgMax: 20
+      cmpCells.cellsOutside: 6
+      cmpCells.outsideFrac: 0.0006395906619763352
+      cmpCells.k8Outside: 4
+      cmpCells.fgMaxNonK8: 40
+      cmpCells.bgMaxNonK8: 20
+      cmpCells.fgMeanAbs: 0.011843790012804098
+      cmpCells.bgMeanAbs: 0.002311850903400199
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 9
+      cmpCells.mismatchByKind: 0,0,1,0,0,0,0,0,3,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,0,0,3,1,0
+      cmpCells.outsideByKind: 0,0,2,0,0,0,0,0,4,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 138,34,53,48,42,28,31,38,5,3,138,35,17,20,27,23,27,37,2,3,139,41,17,20,27,30,35,48,2,3,139,42,30,35,48,17,20,27,3,2,135,44,90,76,6
+      cmpCells.ruleFlipsExcluded: 5
+      cmpCells.texelTiesExcluded: 4
+      cmpGeom.kindChecked: 8965
+      cmpGeom.kindCheckedExclK8: 8678
+      cmpGeom.matched: 8813
+      cmpGeom.matEqual: 8813
+      cmpGeom.planeEqual: 8812
+      cmpGeom.uvViol: 1
+      cmpGeom.geomViolCells: 1
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 90.0012371989
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxAt: null
+      cmpGeom.meshTiesMax: 4
+      cmpGeom.meshTieCells: 
+      cmpGeom.edgeCells: 635
+      cmpGeom.edgeKindMismatch: 1
+      cmpGeom.k8Cpu: 365
+      cmpGeom.k8Gpu: 366
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 9
+      cmpGeom.ruleFlipsExcused: 5
+      cmpGeom.texelTies: 4
+      cmpGeom.texelTieCells: 478,4621,8140,8470
+      cmpGeom.texelTiesMax: 47
+      cmpLight.nonSky: 9381
+      cmpLight.checked: 8814
+      cmpLight.sunlitChecked: 8778
+      cmpLight.dLMax: 0.0000629425048828125
+      cmpLight.dLSampleIdx: -1
+      cmpLight.litFlip: 1
+      cmpLight.litFlipFrac: 0.00010659844366272253
+      cmpLight.boundaryCells: 36
+      cmpLight.boundaryFrac: 0.0040844111640571815
+      cmpLight.litCells: 19
+      cmpLight.dLSample: null
+      mesh8a.geomViol: 2
+      mesh8a.geomViolCells: 1
+      mesh8a.k8Outside: 4
+      mesh8a.fgMaxNonK8: 40
+```
+
+## waystoneDown$ - webgpu
+```
+  FAIL  world_m1: waystoneDown
+      cmpGeom.kindChecked: 9018
+      cmpGeom.kindCheckedExclK8: 5144
+      cmpGeom.matched: 9018
+      cmpGeom.matEqual: 9018
+      cmpGeom.planeEqual: 9015
+      cmpGeom.uvViol: 6
+      cmpGeom.zViol: 2
+      cmpGeom.geomViolCells: 6
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 89.99785918088506
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxErr: 0.000732421875
+      cmpGeom.terrainUvMaxAt: 158,2,1431.09619140625,1042.6195068359375,1431.095458984375,1042.619140625,4.37045431137085,4.369906902313232
+      cmpGeom.kind9Cells: 490
+      cmpGeom.meshBoundaryCells: 281
+      cmpGeom.meshTies: 5
+      cmpGeom.meshTiesEdge: 3
+      cmpGeom.meshTiesMax: 9
+      cmpGeom.meshTieCells: 7713,7873,7903,8378,8863
+      cmpGeom.edgeCells: 582
+      cmpGeom.edgeKindMismatch: 2
+      cmpGeom.k8Cpu: 4075
+      cmpGeom.k8Gpu: 4075
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 24
+      cmpGeom.ruleFlipsExcused: 19
+      cmpGeom.texelTieCells: 
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9600
+      cmpLight.checked: 9018
+      cmpLight.sunlitChecked: 8769
+      cmpLight.dLMax: 5.960464477539063e-8
+      cmpLight.dLSampleIdx: -1
+      cmpLight.boundaryCells: 249
+      cmpLight.boundaryFrac: 0.02761144377910845
+      cmpLight.litCells: 3638
+      cmpCells.nonSky: 9600
+      cmpCells.edgeCells: 580
+      cmpCells.nonEdgeChecked: 9001
+      cmpCells.glyphMismatchNonEdge: 2
+      cmpCells.glyphMatchPct: 99.97778024663926
+      cmpCells.fgOutside: 9
+      cmpCells.bgOutside: 6
+      cmpCells.fgMax: 41
+      cmpCells.bgMax: 10
+      cmpCells.cellsOutside: 3
+      cmpCells.outsideFrac: 0.0003125
+      cmpCells.k8Outside: 3
+      cmpCells.fgMeanAbs: 0.007066276803118908
+      cmpCells.bgMeanAbs: 0.0019145084934558618
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 24
+      cmpCells.mismatchByKind: 0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,0,0,0,2,0
+      cmpCells.outsideByKind: 0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 44,5,40,48,68,25,30,44,6,3,96,44,68,74,66,91,100,89,9,16,97,44,82,93,107,68,74,66,15,9
+      cmpCells.meshTiesExcluded: 5
+      cmpCells.ruleFlipsExcluded: 19
+      cellsWait: null
+      lightWaits: false
+      geomOk: false
+```
+
+## waystoneDown$ - webgl2
+```
+  PASS  world_m1: waystoneDown
+      cmpCells.nonSky: 9600
+      cmpCells.edgeCells: 580
+      cmpCells.nonEdgeChecked: 9002
+      cmpCells.glyphMismatchNonEdge: 2
+      cmpCells.glyphMatchPct: 99.97778271495223
+      cmpCells.fgOutside: 9
+      cmpCells.bgOutside: 6
+      cmpCells.fgMax: 41
+      cmpCells.bgMax: 10
+      cmpCells.cellsOutside: 3
+      cmpCells.outsideFrac: 0.0003125
+      cmpCells.k8Outside: 3
+      cmpCells.fgMeanAbs: 0.007065538964881139
+      cmpCells.bgMeanAbs: 0.001914308586544151
+      cmpCells.ruleMismatch: 0,0,0,0,0,0,0,0,0
+      cmpCells.ruleTotal: 0,0,0,0,0,0,0,0,0
+      cmpCells.tieReadersExcluded: 23
+      cmpCells.mismatchByKind: 0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0
+      cmpCells.mismatchByRow6: 0,0,0,0,2,0
+      cmpCells.outsideByKind: 0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0
+      cmpCells.outsideSample: 44,5,40,48,68,25,30,44,6,3,96,44,68,74,66,91,100,89,9,16,97,44,82,93,107,68,74,66,15,9
+      cmpCells.meshTiesExcluded: 5
+      cmpCells.ruleFlipsExcluded: 18
+      cmpGeom.kindChecked: 9018
+      cmpGeom.kindCheckedExclK8: 5144
+      cmpGeom.matched: 9018
+      cmpGeom.matEqual: 9018
+      cmpGeom.planeEqual: 9015
+      cmpGeom.uvViol: 1
+      cmpGeom.geomViolCells: 1
+      cmpGeom.faceSample: -1
+      cmpGeom.aoSampleIdx: -1
+      cmpGeom.nrmViol: 1
+      cmpGeom.nrmMaxDeg: 89.99785918088506
+      cmpGeom.matSample: 
+      cmpGeom.terrainUvMaxErr: 0.000732421875
+      cmpGeom.terrainUvMaxAt: 158,2,1431.09619140625,1042.6195068359375,1431.095458984375,1042.619140625,4.37045431137085,4.369906902313232
+      cmpGeom.kind9Cells: 490
+      cmpGeom.meshBoundaryCells: 281
+      cmpGeom.meshTies: 5
+      cmpGeom.meshTiesEdge: 3
+      cmpGeom.meshTiesMax: 9
+      cmpGeom.meshTieCells: 7713,7873,7903,8378,8863
+      cmpGeom.edgeCells: 582
+      cmpGeom.edgeKindMismatch: 2
+      cmpGeom.k8Cpu: 4075
+      cmpGeom.k8Gpu: 4075
+      cmpGeom.pass: false
+      cmpGeom.ruleFlips: 23
+      cmpGeom.ruleFlipsExcused: 18
+      cmpGeom.texelTieCells: 
+      cmpGeom.texelTiesMax: 48
+      cmpLight.nonSky: 9600
+      cmpLight.checked: 9018
+      cmpLight.sunlitChecked: 8769
+      cmpLight.dLMax: 5.960464477539063e-8
+      cmpLight.dLSampleIdx: -1
+      cmpLight.boundaryCells: 249
+      cmpLight.boundaryFrac: 0.02761144377910845
+      cmpLight.litCells: 3638
+      cmpLight.dLSample: null
+      isVoxelPose: false
+      mesh8a.geomViol: 2
+      mesh8a.geomViolCells: 1
+      mesh8a.k8Outside: 3
+```

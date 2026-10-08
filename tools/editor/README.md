@@ -157,6 +157,27 @@ hovered cell, pick result, present count).
 - Closing or reloading the editor tab while any file has unsaved changes
   pops the browser's own "leave site?" warning.
 
+## Viewport help
+
+Press **H** with the viewport focused to toggle the in-viewport key-help panel.
+It uses the fixed UI layer and the canvas fits the centre pane, including when
+the window resizes, so the panel stays visible beside the docks.
+
+## Chart after editor saves
+
+After saving world structures or Terrain brush edits into `content/`, run
+`node tools/bake-chart.mjs`, then `node tools/bake-chart.mjs --check` before
+shipping the edit. The chart reads final terrain heights, including brush
+deltas, ring floors, roads and water. It stays below 100 KB at 240x120 cells.
+For a release from staged/tracked files, use `--index` on both commands;
+run `node tools/bake-chart.mjs --check --index` as a separate merge-time gate.
+The default Node suite checks small fixtures, determinism and stale-input
+refusal; it does not rebake the full world. Any change to world_m1, its terrain
+recipe or terrain edits requires a rebake followed by this merge-time gate.
+Working-file `--check`
+also detects unsaved owner placements that differ from the indexed chart.
+MAP-01a's final glyphs and MAP-01c's live map remain separate queue items.
+
 ## Known limits (as of US-063)
 
 - Placed structures can't be moved, rotated or created from the editor (M1.5
