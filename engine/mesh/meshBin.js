@@ -14,6 +14,8 @@ import { MESH_VERSION } from './MeshData.js';
 export const MESH_BIN_MAGIC = 0x48534d4b; // bytes 'K','M','S','H'
 export const MESH_BIN_VERSION = 1;
 const HEADER = 32, ENTRY = 24;
+/** Sanity caps for decode (corrupt-file hardening); real meshes are far below. */
+const MAX_VERTS = 1 << 24, MAX_IDX = 1 << 26, MAX_COLLIDER = 1 << 20;
 
 /** Section ids. */
 export const SEC = { POS: 1, UV: 2, UVMASK: 3, NRM: 4, FLAT: 5, AUX: 6, IDX: 7, COLLIDER: 8 };
@@ -190,6 +192,7 @@ export function decodeMeshBin(bytes) {
   const vertCount = dv.getUint32(8, true), triCount = dv.getUint32(12, true), nSec = dv.getUint32(16, true), total = dv.getUint32(20, true);
   if (len < total) fail(`truncated (${len} of ${total} bytes)`);
   if (nSec > 64 || HEADER + nSec * ENTRY > len) fail(`bad section count ${nSec}`);
+  if (vertCount > MAX_VERTS) fail(`vertex count ${vertCount} over the cap ${MAX_VERTS}`);
   const out = /** @type {any} */ ({ vertCount, triCount });
   /** @type {Record<number, any>} */ const secs = {};
   for (let i = 0; i < nSec; i++) {
@@ -197,6 +200,14 @@ export function decodeMeshBin(bytes) {
     const sec = { id: dv.getUint32(e, true), enc: dv.getUint32(e + 4, true), off: dv.getUint32(e + 8, true), size: dv.getUint32(e + 12, true), count: dv.getUint32(e + 16, true), extra: dv.getUint32(e + 20, true) };
     if (!STREAMS[sec.id]) fail(`unknown section id ${sec.id}`);
     if (sec.off % 16 || sec.off + sec.size > total) fail(`section ${sec.id} out of bounds`);
+    // counts are checked BEFORE any allocation/loop: a corrupt count must not allocate gigabytes or spin
+    const st = STREAMS[sec.id];
+    if (sec.id === SEC.IDX) { if (sec.count > MAX_IDX) fail(`section ${sec.id}: count ${sec.count} over the cap`); }
+    else if (sec.id === SEC.COLLIDER) { if (sec.count > MAX_COLLIDER) fail(`section ${sec.id}: count ${sec.count} over the cap`); }
+    else if (sec.id === SEC.UV ? sec.count > vertCount : sec.count !== vertCount) fail(`section ${sec.id}: count ${sec.count} != vertex count ${vertCount}`);
+    if (sec.enc === ENC.RAW && sec.size < sec.count * st.stride * 4) fail(`section ${sec.id} too short`);
+    if ((sec.enc === ENC.DICT16 || sec.enc === ENC.DICT32) && sec.extra > sec.count) fail(`section ${sec.id}: dictionary of ${sec.extra} entries for ${sec.count} tuples`);
+    if (secs[sec.id]) fail(`duplicate section ${sec.id}`);
     secs[sec.id] = sec;
   }
   for (const need of [SEC.POS, SEC.UV, SEC.NRM, SEC.FLAT, SEC.AUX]) if (!secs[need]) fail(`missing section ${need}`);
@@ -204,6 +215,11 @@ export function decodeMeshBin(bytes) {
   const decode = (id) => {
     const sec = secs[id], st = STREAMS[id], T = ctor(st.f), n = sec.count * st.stride, o = base + sec.off;
     const need = (bytesNeeded) => { if (sec.size < bytesNeeded) fail(`section ${id} too short`); };
+    try { return decodeSec(); } catch (e) {
+      if (e instanceof RangeError) fail(`section ${id}: ${e.message}`); // typed-array view past the buffer
+      throw e;
+    }
+    function decodeSec() {
     switch (sec.enc) {
       case ENC.RAW: need(n * 4); return new T(buf, o, n);
       case ENC.CONST: {
@@ -245,6 +261,7 @@ export function decodeMeshBin(bytes) {
       }
       default: fail(`section ${id}: unknown encoding ${sec.enc}`);
     }
+    }
   };
   for (const id of [SEC.POS, SEC.UV, SEC.UVMASK, SEC.NRM, SEC.FLAT, SEC.AUX, SEC.IDX, SEC.COLLIDER]) {
     if (!secs[id]) continue;
@@ -252,7 +269,7 @@ export function decodeMeshBin(bytes) {
     out[STREAMS[id].key] = decoded[id];
   }
   if (out.pos.length !== vertCount * 3) fail(`pos has ${out.pos.length / 3} vertices, header says ${vertCount}`);
-  if (out.nrm.length !== out.pos.length / 3 && out.layout !== 'terrain') fail('nrm length does not match the vertex count');
+  if (out.nrm.length !== vertCount) fail('nrm length does not match the vertex count');
   return out;
 }
 

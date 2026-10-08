@@ -1,7 +1,7 @@
 // WG-2b: literal port of mesh.vert/frag.js. Static, compact voxel, instanced and cloth input layouts.
 import { defineUniformBlock } from './uniformBlock.js';
 import { WIND_AT_WGSL } from './common.wgsl.js';
-import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../core/wind.js';
+import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../mesh/sway.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const RASTER_FIELDS = [
@@ -19,17 +19,20 @@ export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS
 // (RASTER_BASE_BLOCK stays a prefix, size unchanged). Shadow passes leave it 0 (absolute, step 5).
 export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, { name: 'origin', type: 'vec2' },
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
-  // S8-B2-06 foliage sway (appended: earlier words keep their offsets). wind = windParams() (dirX, dirY, speed, gust); windT.x = seconds. All 0 = no sway.
-  { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' },
+  // S8-B2-06 foliage sway (appended: earlier words keep their offsets). World wind (engine/world/wind.js field.params, packWindUniforms):
+  // wind = (dirX, dirY, speed, amp); windT = (seconds, period ticks, travel, 0); windK = the 64-knot gust table. All 0 = no sway.
+  { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' }, { name: 'windK', type: 'vec4', count: 16 },
 ]);
 
-/** S8-B2-06: wind field + the horizontal sway displacement of one vertex (twin of engine/core/wind.js swayOffset); instanced variant only. */
-export const SWAY_WGSL = `${WIND_AT_WGSL}
+/** S8-B2-06: world wind + the horizontal sway displacement of one vertex (twin of engine/mesh/sway.js swayOffset); instanced variant only. */
+export const SWAY_WGSL = `
+fn windKnot(i: u32) -> f32 { return u.windK[i >> 2u][i & 3u]; }
+${WIND_AT_WGSL}
 const SWAY_K: f32 = ${SWAY_K};
 const SWAY_MAX: f32 = ${SWAY_MAX};
 const INST_FLAG_SWAY: u32 = ${INST_FLAG_SWAY}u;
-fn swayDisp(bx: f32, by: f32, h: f32, t: f32, dirX: f32, dirY: f32, speed: f32, gust: f32) -> vec2f {
-  let wv = windAt(bx, by, t, dirX, dirY, speed, gust);
+fn swayDisp(bx: f32, by: f32, h: f32, t: f32, dirX: f32, dirY: f32, speed: f32, amp: f32, period: f32, travel: f32) -> vec2f {
+  let wv = windAt(bx, by, t, dirX, dirY, speed, amp, period, travel);
   let k = max(h, 0.0) * max(h, 0.0) * SWAY_K;
   let dx = wv.x * k; let dy = wv.y * k;
   let dl = sqrt(dx * dx + dy * dy);
@@ -134,7 +137,7 @@ ${mask ? '  @location(7) vUVMask: vec2f,' : ''}
 ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
   var wp = vec3f(dot(a.iRow0.xyz, lp) + (a.iRow0.w - u.origin.x), dot(a.iRow1.xyz, lp) + (a.iRow1.w - u.origin.y), dot(a.iRow2.xyz, lp) + a.iRow2.w);
   if ((a.iMeta.y & INST_FLAG_SWAY) != 0u && u.wind.z > 0.0) { // S8-B2-06: base fixed, crown moves by h^2; wind sampled at the absolute instance base
-    let sd = swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w, u.windT.x, u.wind.x, u.wind.y, u.wind.z, u.wind.w);
+    let sd = swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w, u.windT.x, u.wind.x, u.wind.y, u.wind.z, u.wind.w, u.windT.y, u.windT.z);
     wp = vec3f(wp.x + sd.x, wp.y + sd.y, wp.z);
   }
   let worldPos = vec4f(wp, 1.0);

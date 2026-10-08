@@ -9,7 +9,7 @@ import { World } from '../world/World.js';
 import { buildWorldColliders } from '../world/colliders.js';
 import { DrawList, MeshDrawCache, addMeshStructures } from './DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from './meshGroups.js';
-import { LazyMeshStore, lazyEligible, meshReady, ensureMesh, requestMesh, pumpLazyMeshes, lazyMeshVersion, LOAD_MARGIN_M } from './lazyMesh.js';
+import { LazyMeshStore, MAX_ATTEMPTS, RETRY_AFTER_MS, lazyEligible, meshReady, ensureMesh, requestMesh, pumpLazyMeshes, lazyMeshVersion, LOAD_MARGIN_M } from './lazyMesh.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const manifestUrl = pathToFileURL(path.join(root, 'content/manifest.json')).href;
@@ -184,9 +184,72 @@ await test('failed fetch: warns, stays a placeholder, rejects ensure(), no unhan
   const warn = console.warn; let warned = 0; console.warn = () => { warned++; };
   try {
     st.request(s); await settle();
-    assert.equal(warned, 1); assert.ok(!meshReady(s)); assert.equal(st.stats.failed, 1);
+    assert.equal(warned, 0, 'retries are quiet, the last failure warns'); assert.ok(!meshReady(s)); assert.equal(st.stats.failed, 1);
     await assert.rejects(ensureMesh(s));
   } finally { console.warn = warn; }
+});
+
+const pebbleUrl = (n) => pathToFileURL(path.join(root, 'content', manifest.files.find((f) => f.endsWith(`Pebble_Round_${n}.mesh.json`)).replace('.mesh.json', '.mesh.bin'))).href;
+const pebbleMeta = (n) => metas.find((m) => m.id === `quaternius/Pebble_Round_${n}`);
+
+await test('retry: a fetch that fails once is retried no earlier than RETRY_AFTER_MS later, then loads', async () => {
+  let t = 1000, calls = 0;
+  const st = new LazyMeshStore({ fetchBytes: async (u) => { if (calls++ === 0) throw new Error('HTTP 503'); return lazyF.fetchBytes(u); }, log: null, now: () => t });
+  const s = st.makeShell(pebbleMeta(1), pebbleUrl(1));
+  const warn = console.warn; let warned = 0; console.warn = () => { warned++; };
+  try {
+    const p1 = st.request(s); await settle();
+    await assert.rejects(p1);
+    assert.equal(calls, 1);
+    const cool = st.request(s); await settle();
+    assert.equal(calls, 1, 'cooling down: no new fetch');
+    await assert.rejects(cool); assert.equal(st.request(s), cool, 'same cached rejection');
+    t += RETRY_AFTER_MS;
+    const p2 = st.request(s); await settle();
+    assert.equal(calls, 2); st.pump(); await p2;
+    assert.ok(meshReady(s)); assert.equal(warned, 0); assert.equal(st.stats.failed, 1);
+  } finally { console.warn = warn; }
+});
+
+await test('retry: gives up after MAX_ATTEMPTS, warns once, stays a shell', async () => {
+  let t = 0, calls = 0;
+  const st = new LazyMeshStore({ fetchBytes: async () => { calls++; throw new Error('HTTP 404'); }, log: null, now: () => t });
+  const s = st.makeShell(pebbleMeta(2), pebbleUrl(2));
+  const warn = console.warn; let warned = 0; console.warn = () => { warned++; };
+  try {
+    for (let i = 0; i < MAX_ATTEMPTS + 3; i++) { await st.request(s).catch(() => {}); await settle(); t += RETRY_AFTER_MS; }
+    assert.equal(calls, MAX_ATTEMPTS); assert.equal(warned, 1); assert.ok(!meshReady(s));
+  } finally { console.warn = warn; }
+});
+
+await test('validate after decode: a bin that decodes but fails validateMesh is a failed decode (stays a shell)', async () => {
+  const good = fs.readFileSync(fileURLToPath(pebbleUrl(3)));
+  const m0 = pebbleMeta(3);
+  const badMeta = { ...m0, ranges: [{ ...m0.ranges[0], count: m0.triCount + 5 }] }; // ranges run past the triangle list
+  const st = new LazyMeshStore({ fetchBytes: async () => good, log: null, now: () => 0 });
+  const s = st.makeShell(badMeta, pebbleUrl(3));
+  const p = st.request(s); await settle(); st.pump();
+  await assert.rejects(p, /invalid mesh/);
+  assert.ok(!meshReady(s)); assert.equal(st.stats.decoded, 0); assert.equal(s.pos.length, 0, 'streams untouched');
+  const st2 = new LazyMeshStore({ fetchBytes: async () => good, log: null, now: () => 0 });
+  const s2 = st2.makeShell(m0, pebbleUrl(3));
+  const p2 = st2.request(s2); await settle(); st2.pump(); await p2; assert.ok(meshReady(s2), 'the valid meta still loads');
+});
+
+await test('prefetchNear: loads the near structures (and opts.also) without pump(), resolves with the count', async () => {
+  const st = new LazyMeshStore({ fetchBytes: lazyF.fetchBytes, log: null });
+  const meshes = {};
+  for (const id of IDS) {
+    const meta = metas.find((m) => m.id === id);
+    meshes[id] = st.makeShell(meta, pathToFileURL(path.join(root, 'content', manifest.files.find((f) => f.endsWith(id + '.mesh.json')).replace('.mesh.json', '.mesh.bin'))).href);
+  }
+  const w = mkWorld(meshes, IDS); // x = 0,40,80,120,160
+  const n = await st.prefetchNear(w, 0, 0, 50);
+  assert.ok(n >= 2 && n <= 3, `near count ${n}`);
+  assert.equal(st.stats.decoded, n); assert.ok(meshReady(meshes[IDS[0]])); assert.ok(!meshReady(meshes[IDS[4]]));
+  const extra = await st.prefetchNear(w, 0, 0, 50, { also: [meshes[IDS[4]]] });
+  assert.equal(extra, 1); assert.ok(meshReady(meshes[IDS[4]]));
+  assert.equal(await st.prefetchNear(w, 0, 0, 50), 0, 'already loaded: nothing to do');
 });
 
 await test('log: one summary line once the queue drains', async () => {

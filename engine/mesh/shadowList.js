@@ -96,7 +96,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
           if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
           const cast = src.instCastM || 48;
           if (gpu && gpu.accept(g, draw, null, g._R, cast)) continue;
-          fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R); // lod0M == castM: band 1 stays empty
+          fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R, ig.swayPad); // lod0M == castM: band 1 stays empty
           if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], g._R);
         }
         if (it) it.flags |= DRAW_FLAG_ONE_PART;
@@ -114,7 +114,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
       let R = groupRadius(mesh0, g.parts);
       if (mesh1 !== mesh0) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
       if (gpu && gpu.accept(g, mesh0, mesh1, R, src.meshLod0M || 25)) continue;
-      fillShadowBands(g, eye.x, eye.y, src.meshLod0M || 25, src.instCastM || 48, planes, R);
+      fillShadowBands(g, eye.x, eye.y, src.meshLod0M || 25, src.instCastM || 48, planes, R, ig.swayPad);
       if (g.shadowCount[0] > 0) list.addInstances(mesh0, g.parts, g.shadowIb[0], g.shadowCount[0], R);
       if (g.shadowCount[1] > 0) list.addInstances(mesh1, g.parts, g.shadowIb[1], g.shadowCount[1], R);
     }

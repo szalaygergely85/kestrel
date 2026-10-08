@@ -291,7 +291,6 @@ export async function runCli(argv) {
     }
   } else if (args.opaque || args.maskRes) throw new Error('gltf-import: --opaque / --mask-res need a .gltf with MASK materials and without --masks <dir>');
   if (args.uv) opts.uv = args.uv;
-  if (args.ao) opts.ao = args.ao;
   if (args.budget && !args.simplify) args.simplify = budgetFor(id) || 0;
   if (args.simplify) {
     const full = loadGltf(raw, id, opts).triCount; // untouched count -> ratio
@@ -329,6 +328,10 @@ export async function runCli(argv) {
     opts.simplifyRatio = (opts.simplifyRatio || 1) * (args.simplify / imp.report.triCount) * 0.98;
     uvInfo.unmapped.clear();
     imp = importGltfBytes(raw, id, opts, materialKeys);
+  }
+  if (args.ao) { // ME-20a: bake ONCE on the final (simplified) geometry, not per simplify retry
+    if (uvInfo) uvInfo.unmapped.clear();
+    imp = importGltfBytes(raw, id, { ...opts, ao: args.ao }, materialKeys);
   }
   const { json: meshJson, report } = imp;
   if (uvInfo) {

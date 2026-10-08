@@ -32,11 +32,6 @@ async function defaultFetchText(url) {
   return r.text();
 }
 
-/** `?lazymesh=1` in the page url (browser only; the engine reads no URL params itself, so a plain regex on location.search). */
-function lazyFromLocation() {
-  return /[?&]lazymesh=1(?:&|$)/.test(globalThis.location?.search || '');
-}
-
 function failBin(name) { throw new Error(`mesh.bin "${name}" was not fetched`); }
 
 function asContentError(err, file, field) {
@@ -69,10 +64,8 @@ function checkRefField(obj, ref, href, errors, idSets) {
 export async function loadContentPack(manifestUrl, opts = {}) {
   const fetchText = opts.fetchText || defaultFetchText;
   const fetchBytes = opts.fetchBytes || defaultFetchBytes; // MESH-BIN-01: <id>.mesh.bin payloads
-  // MESH-LOAD-01: lazy payloads. Explicit option wins; undefined = off, unless the page url says `?lazymesh=1` (dev/headless opt-in; `?lazymesh=0` forces off)
-  const lazyOpt = opts.lazyMeshes !== undefined ? opts.lazyMeshes : lazyFromLocation();
-  const lazyStore = lazyOpt ? new LazyMeshStore({ fetchBytes, log: opts.lazyLog }) : null;
-  if (lazyStore && typeof window !== 'undefined') window.__lazyMeshStore = window.__lazyMeshStore || lazyStore; // debug/trace handle (tools/lazymesh-trace.mjs)
+  // MESH-LOAD-01: lazy payloads, opt-in through `opts.lazyMeshes` (the game parses `?lazymesh=` itself; the engine reads no URL/window). The store is returned as `lazyMeshes`.
+  const lazyStore = opts.lazyMeshes ? new LazyMeshStore({ fetchBytes, log: opts.lazyLog }) : null;
   const migrations = opts.migrations || MIGRATIONS;
   const latest = opts.latest || LATEST_SCHEMA;
 

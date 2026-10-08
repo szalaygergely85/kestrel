@@ -1,3 +1,6 @@
+import { STEP } from '../../../core/loop.js';
+import { WIND_K_SIZE } from '../../../world/wind.js';
+
 // WG-3a (docs/architecture.md 38.5): WGSL twins of the shared GLSL snippets in glsl/common.js that more than one
 // module needs. Pure strings, no GPU globals. No raw `%` anywhere (38.5 item 1); add fmodGlsl/imod/umod here when a
 // later pass needs them.
@@ -171,18 +174,25 @@ fn lineGlyphCodeFast(cx: f32, cy: f32, fr: f32, cellAspect: f32) -> i32 {
 }
 `;
 
-// S8-B2-05: twin of engine/core/wind.js windAtParams (the shared deterministic wind field). Args: world x/z, time in seconds,
-// then windParams() = (dirX, dirZ, speed, gust). Phase in turns wrapped with floor (f32-safe far from the origin).
+// S8-B2-05: twin of the world wind sampler engine/world/wind.js `createWind(..)._baseInto` (US-138, arch 32.5): base direction (forwardOf, ground axes
+// x east / y south), a gust that travels downwind through the 64-knot kernel table K with a smoothstep between knots; zones are off.
+// The including module defines `fn windKnot(i: u32) -> f32` (K[i], e.g. from a uniform vec4 array). Args: world x/y, time in seconds (= tick * STEP),
+// then field.params: dirX, dirY, speed, amp, period (ticks, P), travel. Returns the wind vector (m/s, x/y).
 export const WIND_AT_WGSL = `
-fn windAt(x: f32, z: f32, t: f32, dirX: f32, dirZ: f32, speed: f32, gust: f32) -> vec2f {
-  let along = x * dirX + z * dirZ;
-  let across = z * dirX - x * dirZ;
-  let p1 = along * 0.013 - t * 0.11;
-  let p2 = along * 0.041 + across * 0.023 - t * 0.27 + 0.37;
-  let g1 = sin(6.28318530718 * (p1 - floor(p1)));
-  let g2 = sin(6.28318530718 * (p2 - floor(p2)));
-  let mag = speed * max(0.0, 1.0 + gust * (0.65 * g1 + 0.35 * g2));
-  let side = speed * gust * 0.25 * g2;
-  return vec2f(dirX * mag - dirZ * side, dirZ * mag + dirX * side);
+const WIND_STEP: f32 = ${STEP};
+const WIND_K_SIZE: f32 = ${WIND_K_SIZE}.0;
+fn windAt(x: f32, y: f32, t: f32, dirX: f32, dirY: f32, speed: f32, amp: f32, period: f32, travel: f32) -> vec2f {
+  let tl = t / WIND_STEP - (x * dirX + y * dirY) / (travel * WIND_STEP);
+  let k = floor(tl / period);
+  let fr = (tl - k * period) / period;
+  let s = fr * fr * (3.0 - 2.0 * fr);
+  let m0 = k - WIND_K_SIZE * floor(k / WIND_K_SIZE);
+  let m1 = m0 + 1.0;
+  let k0 = u32(m0);
+  let k1 = select(u32(m1), 0u, m1 >= WIND_K_SIZE);
+  let a = windKnot(k0);
+  let g = a + (windKnot(k1) - a) * s;
+  let sp = speed * max(0.0, 1.0 + amp * (2.0 * g - 1.0));
+  return vec2f(dirX * sp, dirY * sp);
 }
 `;
