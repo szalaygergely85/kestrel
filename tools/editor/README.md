@@ -178,6 +178,17 @@ Working-file `--check`
 also detects unsaved owner placements that differ from the indexed chart.
 MAP-01a's final glyphs and MAP-01c's live map remain separate queue items.
 
+## Voxel import GPU check
+
+Run `node tools/editor/verify-vox-import.mjs 9880` (or another lane-C port
+9800..9998). It starts its own no-cache server and isolated real-GPU browser,
+imports generated small and meshOnly VOX cubes with the editor button, places
+them with physical mouse clicks, validates the document and checks undo/redo.
+It writes ignored screenshots, then stops its own processes and deletes its
+temporary browser profile. It changes only browser memory; no world file is
+saved. Imported model definitions remain session-only, as noted in the import
+handler. See `docs/test-reports/S8-C-20a.md` for current results.
+
 ## Known limits (as of US-063)
 
 - Placed structures can't be moved, rotated or created from the editor (M1.5
