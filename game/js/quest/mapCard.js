@@ -4,7 +4,7 @@
 // the first dismissal until the end trigger. Uses the generic
 // `engine/ui/panel.js` primitive - this module owns every game rule
 // (timing, gating, the `M` binding) the panel itself knows nothing about.
-import { buildPanelArt, createPanel, hexToRgb } from '../../../engine/index.js';
+import { buildPanelArt, createPanel, hexToRgb, drawPanel } from '../../../engine/index.js';
 import { request as requestHint } from './hints.js';
 
 let art = null;   // PanelArt, built once (palette/model are load-time constants)
@@ -19,12 +19,13 @@ export const CHART_GLYPHS = Object.freeze({
   steep: { glyph: '/', color: 'chartInk' },
   relay: { glyph: 'o', color: 'aetherDim' }, waystone: { glyph: 'O', color: 'aether' },
   player: { glyph: '^', color: 'gold' }, edge: { glyph: '+', color: 'chartEdge' },
+  route: { glyph: '*', color: 'pencil' }, print: { glyph: 'N', color: 'chartInk' },
 });
 
 /** Load-time raster of the baked semantic planes. Pose updates touch two cells,
  * retaining the marker underneath; no per-frame lists, strings or allocations.
  */
-export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40 } = {}) {
+export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null } = {}) {
   const bounds = chart?.bounds;
   if (chart?.chartVersion !== 1 || !Number.isInteger(chart.width) || chart.width < 1
     || !Number.isInteger(chart.rows) || chart.rows < 1 || chart.width * chart.rows > 524288
@@ -37,7 +38,7 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     || !Number.isInteger(width) || width < 16 || width > 128 || !Number.isInteger(rows) || rows < 8 || rows > 52)
     throw new Error('chart: invalid planes, bounds or card size');
   const colors = {}, codes = {};
-  for (const key of [...chart.categories, 'relay', 'waystone', 'player', 'edge']) {
+  for (const key of [...chart.categories, 'relay', 'waystone', 'player', 'edge', 'route', 'print']) {
     const token = glyphs[key];
     if (!token || typeof token.glyph !== 'string' || !/^[!-~]$/.test(token.glyph)
       || !/^#[0-9a-f]{6}$/i.test(palette.colors[token.color] || '')) throw new Error('chart: invalid glyph/colour');
@@ -67,22 +68,60 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     put(i,codes[category],colors[category],0.65+0.35*parseInt(chart.shades[sy][sx],16)/15);
   }
   const x0 = bounds.x0, y0 = bounds.y0, spanX = bounds.x1-x0, spanY = bounds.y1-y0;
+  if(fog && (fog.bounds?.x0!==x0||fog.bounds?.y0!==y0||fog.bounds?.x1!==bounds.x1||fog.bounds?.y1!==bounds.y1))
+    throw new Error('chart: incompatible fog bounds');
   function index(x,y) {
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < x0 || y < y0 || x > x0+spanX || y > y0+spanY) return -1;
     return (1+Math.min(innerH-1,Math.floor((y-y0)*innerH/spanY)))*w+1+Math.min(innerW-1,Math.floor((x-x0)*innerW/spanX));
   }
+  const markerCells = new Uint8Array(w*h);
   for (const marker of markers) {
     const i = marker ? index(marker.x,marker.y) : -1;
     if (i < 0 || !['relay','waystone'].includes(marker.kind)) throw new Error('chart: invalid marker');
     put(i,codes[marker.kind],colors[marker.kind]);
+    markerCells[i]=1;
   }
   const baseCodes = chartArt.codes.slice(), baseRgb = chartArt.rgb.slice();
+  const fullCodes = fog ? baseCodes.slice() : null, fullRgb = fog ? baseRgb.slice() : null;
+  let fogRevision = -1;
   let previous = -1;
+  function revealed(i){
+    const x=i%w,y=Math.floor(i/w);
+    return fog.isExplored(x0+(x-1+.5)*spanX/innerW,y0+(y-1+.5)*spanY/innerH);
+  }
+  function refreshFog(){
+    if(!fog||fogRevision===fog.revision)return;
+    chartArt.codes.set(fullCodes);chartArt.rgb.set(fullRgb);
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+      const i=y*w+x;
+      if(!revealed(i)){chartArt.codes[i]=32;chartArt.rgb[i*3]=0;chartArt.rgb[i*3+1]=0;chartArt.rgb[i*3+2]=0;}
+    }
+    for(let j=1;j<fog.routeCount;j++){
+      let a=index(fog.routeX(j-1),fog.routeY(j-1)),b=index(fog.routeX(j),fog.routeY(j));
+      if(a<0||b<0)continue;
+      let ax=a%w,ay=Math.floor(a/w);const bx=b%w,by=Math.floor(b/w);
+      const dx=Math.abs(bx-ax),dy=-Math.abs(by-ay),sx=ax<bx?1:-1,sy=ay<by?1:-1;let err=dx+dy;
+      for(;;){
+        const i=ay*w+ax;
+        if(!markerCells[i]&&revealed(i))put(i,codes.route,colors.route);
+        if(ax===bx&&ay===by)break;
+        const e=2*err;if(e>=dy){err+=dy;ax+=sx;}if(e<=dx){err+=dx;ay+=sy;}
+      }
+    }
+    const text='NOTHING', start=Math.floor((w-text.length)/2), row=Math.floor(h/2);
+    for(let x=0;x<text.length;x++){
+      const i=row*w+start+x;if(!revealed(i))put(i,text.charCodeAt(x),colors.print);
+    }
+    baseCodes.set(chartArt.codes);baseRgb.set(chartArt.rgb);
+    previous=-1;fogRevision=fog.revision;
+  }
+  refreshFog();
   const arrows = [94,62,118,60]; // yaw 0 north (-y), 90 east, 180 south, 270 west
   const position = { x: -1, y: -1, code: 0 };
   return {
-    art: chartArt, position,
+    art: chartArt, position, fog,
     updatePose(x,y,yawDeg) {
+      refreshFog();
       if (previous >= 0) {
         chartArt.codes[previous] = baseCodes[previous];
         chartArt.rgb[previous*3] = baseRgb[previous*3]; chartArt.rgb[previous*3+1] = baseRgb[previous*3+1]; chartArt.rgb[previous*3+2] = baseRgb[previous*3+2];
@@ -115,6 +154,17 @@ export function initMapCard(assets, sceneCols, sceneRows, chartOptions = null) {
 export function getMapPanel() { return panel; }
 export function isMapOpen() { return !!panel && panel.state !== 'closed'; }
 export function getMapChart() { return chartView; }
+
+/** Host draw seam: blank fog cells need an opaque plate too (drawPanel skips spaces). */
+export function drawMapCard(ui,timeMs,lut=null) {
+  if(!panel||panel.state==='closed')return;
+  if(chartView?.fog){
+    const a=panel.art;
+    for(let y=0;y<a.h;y++)for(let x=0;x<a.w;x++)if(a.codes[y*a.w+x]===32)
+      ui.setCellRGB(panel.x0+x,panel.y0+y,0,0,0,0,0,0,0);
+  }
+  drawPanel(ui,panel,timeMs,lut);
+}
 
 /**
  * `wakeTitleDoneAtSec` = the wake timeline's fixed "title has fully faded
