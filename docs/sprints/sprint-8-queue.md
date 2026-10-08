@@ -616,3 +616,12 @@ Strength = MEDIUM (lightGain 0.8, bleedGain 1.2, haloBg 0.45, haloMin 0.08, halo
 Owner on `game/index.html?backend=webgpu` (master): the wake-up eyelid blink is NOT visible (WebGL2 shows it). Cause (confirmed by code read): `drawEyelid(rt, uiStyle, open)` (game/js/quest/wake.js:79, called main.js:1396) writes CPU cells into `rt.cells`, but with `frameComplete` the WebGPU presenter shows the sprite-pass output (rt.setPresentCells, WgCellPipeline.js:9-10/125), so CPU scene-cell writes are never shown. Fix: draw the eyelid through the path the GPU frame DOES present (the engine ui/overlay layer, same as the editor help overlay fix, or a tiny eyelid overlay pass), keep the WebGL2 result identical. AC: Node test for the eyelid cells on the ui layer; headless capture at t=0.3 s on both backends shows the lid; owner look.
 ### BOOT-SPEED-01 (owner 2026-10-08: "slow, already taking 3 sec") [B1, P1]
 WebGPU boot takes ~3 s before the first frame: expected cause = synchronous pipeline compile (~25 pass constructors). This is S8-B1-09 (architecture.md 38.10b: compile batch + loading card, boot waits on all promises, log per-pipeline ms). Raise it to the top of B1's post-hook list; first step: a boot-time breakdown (`performance.now()` marks: adapter, device, each pass constructor, content load, mesh load, first frame) printed to the console and F3 so the 3 s is measured, then 09a/09b.
+
+### Owner to-dos after PO batch 1 (2026-10-08)
+1. Title menu: walk main menu + delete confirmation on WebGPU and Arc webgl2 (LOOK RISK: confirm screen loses frame/hints); decide on opus PO look.
+2. Item card, credits, inventory states, quest log: open each preview (`tools/verify-*.mjs 9886`), judge look on WebGPU and Arc webgl2 (icon/frame/footer holes).
+3. Leaf preview `game/leaf-preview.html?backend=webgpu`: is the leaf look good enough to unlock QUAT-TREES-01?
+4. Reload after wake-up (BUG-SAVE-WAKE-01) and Esc on a note (BUG-NOTE-ESC-01) in real Chrome.
+5. Editor: scale a rock (SCALE 1.35, undo/redo, save/reload); import one of your own .vox files.
+6. Not walkable until gameHooks ARCH OK: waystone, quest markers, chest/card, credits/title wiring, crafting. Boot time (BOOT-SPEED-01) and lazy mesh loading unmeasured.
+7. PC-A decisions owed: settings shadow values, boar roster/anchors, chest reward/anchor, spawn anchor, recipes. pc-b merge blocked on batch-14 fix (5).
