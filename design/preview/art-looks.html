@@ -1,0 +1,1094 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - S8-A-10: ART-02..05 look sheets (palette per area, warm capped haze, sky + clouds, glyph sets + house depth)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:34px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e8c27a; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .fail { color:#ff3b3b; } .warn { color:#ffb04a; } .pass { color:#6fdc7a; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; max-width:100%; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .sliders { background:#0d0f16; border:1px solid #22252e; border-radius:4px; padding:6px 10px; margin:8px 0;
+             display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12px; }
+  .sliders .grp { display:flex; flex-direction:column; gap:2px; min-width:250px; }
+  .sliders .grp b { color:#e8c27a; font-weight:600; }
+  .sl { display:flex; align-items:center; gap:6px; }
+  .sl span.k { font-family:Consolas, monospace; color:#b8b2a0; min-width:96px; display:inline-block; }
+  .sl input[type=range] { width:120px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  .pair { display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; margin:6px 0 10px; }
+  .pair > div { flex:1 1 560px; }
+  .cap { font:12px Consolas, monospace; color:#a9a390; margin:2px 0; }
+  .cap b { color:#ffd27a; }
+  table { border-collapse:collapse; font:12px Consolas, monospace; margin:4px 0 10px; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:left; vertical-align:top; }
+  th { color:#ffc23c; background:#10121a; }
+  .sw { display:inline-block; width:30px; height:13px; border:1px solid #333; vertical-align:middle; margin-right:4px; }
+  code { color:#e8c27a; }
+  pre.json { background:#0b0c12; border:1px solid #22252e; padding:8px; font:11px/1.35 Consolas, monospace; color:#cfe3c0;
+             max-height:260px; overflow:auto; white-space:pre; }
+  button { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; border-radius:3px; padding:3px 9px; cursor:pointer; }
+  button.copy { background:#1d3a22; color:#8fe09a; border-color:#2e5a35; }
+  input[type=color] { width:34px; height:18px; padding:0; border:1px solid #333; background:none; vertical-align:middle; }
+  input.set { width:420px; font:12px Consolas, monospace; background:#0b0c12; color:#d8d2c0; border:1px solid #33384a; }
+  ul { margin:4px 0 8px 20px; padding:0; max-width:1300px; } li { margin:2px 0; }
+  .tag { font:11px Consolas, monospace; padding:0 5px; border-radius:3px; }
+  .tag.ready { background:#1d3a22; color:#8fe09a; } .tag.small { background:#3a3218; color:#ffd27a; } .tag.new { background:#3a1d1d; color:#ff9a8a; }
+</style>
+</head>
+<body>
+<h1>Kestrel : S8-A-10 : ART-02 .. ART-05 look sheets</h1>
+<div class="note">
+  One sheet per ART row (docs/epics/ep-alive.md ART-02..05, architecture.md 37.18). Every panel is a <b>hand-composed
+  coloured-letter mockup</b> painted by this page (one ASCII glyph + fg + bg per cell, detail-pass v2 shading rules), not a
+  capture of the game renderer. <b>Before</b> = today's data (palette keys, today's two fogs, today's GPU sky without clouds,
+  today's glyph sets, flat house fronts). <b>After</b> = the same pose with only that sheet's change (tick
+  "after = all four" to stack every sheet). Three poses per sheet: <b>meadow</b>, <b>forest edge</b>, <b>house corner</b>.
+  The numbers are sliders; each sheet's <b>copy values</b> button emits the JSON a programmer / designer pastes (keys listed
+  under each sheet and in design/README.md section 19). <b>Proposals only: palette.js, detail-pass.js, levels and engine
+  are unchanged.</b> Works from file:// (classic scripts).
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>grid <select id="grid"><option value="100x38">100 x 38</option><option value="120x45" selected>120 x 45</option><option value="160x60">160 x 60</option></select></label>
+  <label>look <select id="look"><option value="afternoon" selected>afternoon (warm day)</option><option value="evening">evening (low sun)</option></select></label>
+  <label>light <select id="light"><option value="art01" selected>ART-01 hemi (look records, in progress)</option><option value="today">today (morning / dusk, ambient 0.12 / 0.10)</option></select></label>
+  <label><input type="checkbox" id="stack"> after = all four sheets together</label>
+  <label><input type="checkbox" id="anim" checked> animate (clouds, blade sway)</label>
+  <label>preview time x <input type="range" id="tscale" min="1" max="200" step="1" value="40"><span class="val" id="tscaleV">40</span></label>
+  <span class="note" id="perf"></span>
+</div>
+
+<!-- ======================= ART-02 ======================= -->
+<h2>ART-02 - saturated outdoor palette per area + material remap</h2>
+<div class="note">Fixes: the ~45 new colour keys (art-ref NEW table, hex unchanged by default) grouped in 6 areas, and which
+  material / terrain colour lists each area remaps. Per area: on / off (the owner may take only some areas), saturation and
+  value trims applied to that area's new keys, per-key colour pickers. Engine: nothing (data only), see the notes below.</div>
+<div class="sliders" id="ctl02"></div>
+<div id="poses02"></div>
+<h3>Area keys (current -> proposed)</h3>
+<div id="tab02"></div>
+<h3>Checks</h3><div id="chk02"></div>
+<h3>Copy values <button class="copy" data-sheet="02">copy values</button> <span class="note" id="cp02"></span></h3>
+<pre class="json" id="json02"></pre>
+<div class="note"><b>Keys:</b> <code>colors</code> = new palette colour keys (append to <code>palette.colors</code>; adjusted hex),
+  <code>remap</code> = <code>"&lt;file&gt;:&lt;path&gt;"</code> -> new value (only for areas that are on),
+  <code>areas</code> = which areas the owner switched on. <b>Engine must still provide:</b> nothing for the switch itself.
+  Optional: a near / far colour split for terrain types (the row's "keep turf* for calm far ground" - today a terrain type has
+  one colour list for every distance; the mock keeps the near colours at all distances).</div>
+
+<!-- ======================= ART-03 ======================= -->
+<h2>ART-03 - warm distance haze with a cap</h2>
+<div class="note">Fixes the <code>timeOfDay.&lt;look&gt;.haze</code> block (architecture.md 37.18 item 4): colour by distance
+  near -> far (far = the look's sky horizon), <code>f = max * ht^curve</code> after <code>start</code>, never above
+  <code>max</code>, thinner far glyphs. Sliders edit the look picked at the top (afternoon / evening); copy emits both.
+  Before = today: material path <code>DP.fog</code> 10-45 m dark <code>fogV2</code> + stipple (trees, rocks, house),
+  terrain <code>fog.far</code> 50-1500 m cool blue-grey, blank above 0.85.</div>
+<div class="sliders" id="ctl03"></div>
+<div class="pair"><div><canvas id="plot03" width="640" height="210"></canvas>
+  <div class="cap">haze factor f by distance (x = sqrt(d / 1500 m)): <b style="color:#ffb04a">new haze</b>,
+  <b style="color:#8fb4e0">today terrain fog.far</b> (blank above 0.85, dashed), <b style="color:#9a8aff">today DP.fog</b>
+  (material path); strip = haze colour by distance</div></div></div>
+<div id="poses03"></div>
+<h3>Checks</h3><div id="chk03"></div>
+<h3>Copy values <button class="copy" data-sheet="03">copy values</button> <span class="note" id="cp03"></span></h3>
+<pre class="json" id="json03"></pre>
+<div class="note"><b>Keys:</b> <code>timeOfDay.afternoon.haze</code> / <code>timeOfDay.evening.haze</code> =
+  <code>{near, far, start, full, curve, max, bgK, blank, thin0, thinK, edgeMax}</code> (37.18 names and units: metres, 0..1);
+  <code>colors.hazeWarm</code> / <code>colors.hazeEvening</code> = the near colours (only when changed from palette).
+  <b>Engine must still provide:</b> ART-03a (terrain haze, both twins) and ART-03b (material-path haze + glyph thinning,
+  outdoor bit from ART-01b); ART-03c (sprites / particles / water follow the haze) only if the owner look asks.
+  The edge-pass gate (<code>edgeMax</code>) is not drawn here (no edge pass in the mock).</div>
+
+<!-- ======================= ART-04 ======================= -->
+<h2>ART-04 - day + evening sky gradients and a cloud layer</h2>
+<div class="note">Fixes <code>timeOfDay.&lt;look&gt;.sky</code> (3 stops, t 0 = horizon .. 1 = zenith at 60 deg) and the
+  <code>clouds</code> block (37.18 item 5 incl. the per-octave drift amendment). Clouds use the 37.18 formula with this
+  page's own hash (shapes differ from the engine, behaviour is the same). Before = today's GPU sky: morning / dusk stops,
+  no clouds. Wind is in deck units per second, so the drift is slow: "preview time x" speeds the preview only.</div>
+<div class="sliders" id="ctl04"></div>
+<div class="pair"><div><canvas id="bar04" width="640" height="70"></canvas>
+  <div class="cap">gradients (horizon left -> zenith right): top row afternoon, bottom row evening; ticks = stops</div></div></div>
+<div id="poses04"></div>
+<h3>Checks</h3><div id="chk04"></div>
+<h3>Copy values <button class="copy" data-sheet="04">copy values</button> <span class="note" id="cp04"></span></h3>
+<pre class="json" id="json04"></pre>
+<div class="note"><b>Keys:</b> <code>timeOfDay.&lt;look&gt;.sky</code> = <code>[{t, c}]</code> (c = colour key),
+  <code>timeOfDay.&lt;look&gt;.clouds</code> = <code>{lit, shade, ramp, scale, bias, cover, puffK, wispCover, wispK, wind,
+  litK, litDy, bodyK, seed}</code>; <code>colors</code> = the sky / cloud colour keys whose hex changed. Cloud band stays
+  <code>materials.sky.cloudBand</code> (shown, not emitted). <b>Engine must still provide:</b> ART-04b (GPU kind-0 cloud
+  branch + the per-octave drift wrap, JS + GLSL), the gpucompare <code>sky</code> metric; ART-04c cloud ground shadows later.</div>
+
+<!-- ======================= ART-05 ======================= -->
+<h2>ART-05 - new glyph sets + house depth</h2>
+<div class="note">Fixes the four detail-pass sets <code>crownClump</code>, <code>bladeFace</code>, <code>dirtFace</code>,
+  <code>plasterFace</code> (8 levels, ASCII), the crown clump normal blend, blade sway, flower specks at every distance and
+  the house relief depths (posts / beams / braces / stone base) that the D-043 sun shadow maps turn into raking-light strips.
+  Before = today's sets (turf, ivy, path dots, canvas) and flat house fronts.</div>
+<div class="sliders" id="ctl05"></div>
+<div id="sets05"></div>
+<div id="poses05"></div>
+<h3>Checks</h3><div id="chk05"></div>
+<h3>Copy values <button class="copy" data-sheet="05">copy values</button> <span class="note" id="cp05"></span></h3>
+<pre class="json" id="json05"></pre>
+<div class="note"><b>Keys:</b> <code>detailPass.sets.{crownClump, bladeFace, dirtFace, plasterFace}</code> (append to
+  <code>detail-pass.js</code> sets), <code>detailPass.useSets</code> (which v2 material face uses which set),
+  <code>art05.crownClump.normalBlend</code>, <code>art05.bladeFace.{nearM, swayAmp, swayHz, waveM}</code>,
+  <code>art05.flowers.{density, glyphs}</code>, <code>art05.houseDepth.{post, beam, brace, base}</code> (metres proud of the
+  plaster plane). <b>Engine must still provide:</b> (1) blade sway = a per-cell glyph lean by a wind phase
+  (<code>\ | /</code> swap; nothing like it today); (2) flowers at every distance = a terrain speck layer (the ground_detail
+  scatter is near-band only); (3) the clump normal blend needs per-voxel / per-vertex normals on crowns (mesh crowns: model
+  work; voxel crowns: engine normal override). House depth is model work only (D-043 shadow maps already draw it).</div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script>
+(function () {
+'use strict';
+try {
+var P = window.ASSETS.palette, C = P.colors, DP = window.ASSETS.detailPass, S = DP.sets, TOD = P.timeOfDay;
+var CW = 6, CH = 11, FONT = '10px Consolas, "Courier New", monospace';
+var LOOKS = ['afternoon', 'evening'];
+
+// ===========================================================================
+// 1. DATA: proposed keys (ART-02), families (current -> proposed), sheet values
+// ===========================================================================
+// key: [hex (art-ref NEW table), area, note]
+var NEW02 = {
+  meadowLight: ['#b8ec5c', 'meadow', 'sunlit grass tips'], meadow: ['#76c83a', 'meadow', 'THE meadow green'],
+  meadowDark: ['#3c8c2c', 'meadow', 'grass in shade'], meadowDeep: ['#245a30', 'meadow', 'deep pockets'],
+  petalViolet: ['#8f78e6', 'meadow', 'blue flowers shifted to violet (mana blue reserved)'], petalOrange: ['#ff9a40', 'meadow', 'orange flowers'],
+  limeLight: ['#dcf47a', 'crowns', 'crown clump tops'], lime: ['#a4d83c', 'crowns', 'lime crowns + bushes'],
+  limeDark: ['#5e9e2c', 'crowns', 'crown undersides'], fern: ['#4ea83a', 'crowns', 'ferns, stems, far canopy'],
+  autumnYellowLight: ['#ffe874', 'autumn', 'yellow crown tops'], autumnYellow: ['#eab020', 'autumn', 'yellow crowns'],
+  autumnOrangeLight: ['#ffae4a', 'autumn', 'orange crown tops'], autumnOrange: ['#f47a22', 'autumn', 'THE autumn orange'],
+  autumnRed: ['#c8422a', 'autumn', 'red crowns'], autumnRedDark: ['#8e2a24', 'autumn', 'red crown undersides'],
+  rustGrassLight: ['#f48e46', 'autumn', 'rust tufts, lit'], rustGrass: ['#d8622c', 'autumn', 'rust tufts'],
+  birchLight: ['#f6f2e8', 'autumn', 'birch trunk lit'], birch: ['#d6d0c2', 'autumn', 'birch trunk'],
+  birchMark: ['#3e3836', 'autumn', 'birch marks'], barkGrey: ['#6c6258', 'autumn', 'slim trunks'],
+  mushroomOrange: ['#f2742a', 'autumn', 'orange toadstools'],
+  mossRockLight: ['#bcc5a6', 'rock', 'boulder lit facets'], mossRock: ['#8f9a86', 'rock', 'boulder body'],
+  mossRockDark: ['#56625a', 'rock', 'boulder foot'], mossCap: ['#88be46', 'rock', 'moss on up-facing rock'],
+  pebbleLight: ['#d6d6ce', 'path', 'path pebbles lit'], pebble: ['#a4a49e', 'path', 'path pebbles'],
+  dirtLight: ['#e4b67c', 'path', 'worn centre'], dirt: ['#c68c54', 'path', 'dirt path'], dirtDark: ['#8e5e38', 'path', 'edges, ruts'],
+  beamLight: ['#7c5034', 'house', 'beam lit arris'], beam: ['#57361f', 'house', 'half-timber beam'], beamDark: ['#33200f', 'house', 'beam shade'],
+  plasterLight: ['#f6e8c8', 'house', 'plaster lit'], plaster: ['#e2cfa2', 'house', 'plaster panels'], plasterDark: ['#a68e66', 'house', 'plaster stains'],
+  slateLight: ['#a4b0bf', 'house', 'base stones lit'], slate: ['#717e90', 'house', 'base stones'], slateDark: ['#434b58', 'house', 'base mortar'],
+  terracottaLight: ['#ec9264', 'house', 'pot rim'], terracotta: ['#c4643c', 'house', 'pots, roof tiles'], terracottaDark: ['#7c3824', 'house', 'tile gaps'],
+  doorDark: ['#1e1418', 'house', 'dark doorway']
+};
+var AREAS = ['meadow', 'crowns', 'autumn', 'rock', 'path', 'house'];
+var AREA_NOTE = { meadow: 'grass ground + flowers', crowns: 'near crowns, bushes, far canopy', autumn: 'birch / autumn crowns, rust tufts, trunks',
+                  rock: 'boulders + moss tops', path: 'dirt path + pebbles', house: 'beams, plaster, slate base, terracotta, door / window' };
+// family: cur = today's keys [dark, mid, light], neu = proposed, area = ART-02 area switch
+var FAM = {
+  grass:     { cur: ['turfDark', 'turf', 'turfLight'], neu: ['meadowDark', 'meadow', 'meadowLight'], area: 'meadow' },
+  hill:      { cur: ['turfDark', 'turf', 'turfLight'], neu: ['meadowDeep', 'meadowDark', 'meadow'], area: 'meadow' },
+  farForest: { cur: ['forestDark', 'forest', 'grassDark'], neu: ['meadowDeep', 'limeDark', 'fern'], area: 'crowns' },
+  crown:     { cur: ['leafDark', 'leaf', 'leafLight'], neu: ['limeDark', 'lime', 'limeLight'], area: 'crowns' },
+  autumnY:   { cur: ['leafDark', 'leaf', 'leafLight'], neu: ['autumnOrange', 'autumnYellow', 'autumnYellowLight'], area: 'autumn' },
+  autumnO:   { cur: ['leafDark', 'leaf', 'leafLight'], neu: ['autumnRed', 'autumnOrange', 'autumnOrangeLight'], area: 'autumn' },
+  autumnR:   { cur: ['leafDark', 'leaf', 'leafLight'], neu: ['autumnRedDark', 'autumnRed', 'autumnOrange'], area: 'autumn' },
+  rustGrass: { cur: ['turfDark', 'turf', 'turfLight'], neu: ['rustGrass', 'rustGrass', 'rustGrassLight'], area: 'autumn' },
+  bark:      { cur: ['woodDark', 'woodDark', 'wood'], neu: ['mossRockDark', 'barkGrey', 'barkGrey'], area: 'autumn' },
+  birch:     { cur: ['woodDark', 'woodDark', 'wood'], neu: ['birchMark', 'birch', 'birchLight'], area: 'autumn' },
+  rock:      { cur: ['stoneDark', 'rock', 'stoneLight'], neu: ['mossRockDark', 'mossRock', 'mossRockLight'], area: 'rock' },
+  mossCap:   { cur: ['mossDark', 'moss', 'moss'], neu: ['meadowDark', 'mossCap', 'mossCap'], area: 'rock' },
+  path:      { cur: ['strawDark', 'strawDark', 'straw'], neu: ['dirtDark', 'dirt', 'dirtLight'], area: 'path' },
+  pebble:    { cur: ['strawDark', 'strawDark', 'straw'], neu: ['pebble', 'pebble', 'pebbleLight'], area: 'path' },
+  beam:      { cur: ['woodDark', 'wood', 'woodLight'], neu: ['beamDark', 'beam', 'beamLight'], area: 'house' },
+  plaster:   { cur: ['canvasDark', 'canvas', 'canvasLight'], neu: ['plasterDark', 'plaster', 'plasterLight'], area: 'house' },
+  slate:     { cur: ['stoneDark', 'stoneMid', 'stoneLight'], neu: ['slateDark', 'slate', 'slateLight'], area: 'house' },
+  roof:      { cur: ['copperDark', 'copper', 'copperLight'], neu: ['terracottaDark', 'terracotta', 'terracottaLight'], area: 'house' },
+  door:      { cur: ['mortar', 'mortar', 'mortar'], neu: ['doorDark', 'doorDark', 'doorDark'], area: 'house' },
+  window:    { cur: ['lantern', 'lantern', 'lantern'], neu: ['windowGlow', 'windowGlow', 'windowGlow'], area: 'house', em: true },
+  flowerV:   { cur: ['petalPink', 'petalPink', 'petalPinkLight'], neu: ['petalViolet', 'petalViolet', 'petalViolet'], area: 'meadow' },
+  flowerO:   { cur: ['mushroomCap', 'mushroomCap', 'mushroomCapLight'], neu: ['petalOrange', 'petalOrange', 'petalOrange'], area: 'meadow' },
+  flowerY:   { cur: ['petalYellow', 'petalYellow', 'petalYellowLight'], neu: ['petalYellow', 'petalYellow', 'petalYellowLight'], area: 'meadow' },
+  flowerW:   { cur: ['petalWhite', 'petalWhite', 'petalWhite'], neu: ['petalWhite', 'petalWhite', 'petalWhite'], area: 'meadow' }
+};
+// ART-02 remap targets per area: "<file>:<path>" -> value (emitted for areas that are on)
+var REMAP = {
+  meadow: {
+    'design/palette.js:materials.grass': { base: 'meadow', tints: ['meadowDark', 'meadowLight'], note: 'v1 grass material' },
+    'design/detail-pass.js:materials.grass.tones': [['meadow', 4], ['meadowDark', 1], ['meadowLight', 1]],
+    'design/levels/overworld_far.js:terrain.grass.colors': ['meadowDark', 'meadow', 'meadowLight']
+  },
+  crowns: {
+    'design/detail-pass.js:materials.leaf.tones': [['lime', 4], ['limeLight', 1], ['limeDark', 2]],
+    'design/detail-pass.js:materials.leaf_light.tones': [['limeLight', 3], ['lime', 1]],
+    'design/detail-pass.js:materials.leaf_dark.tones': [['limeDark', 3], ['meadowDeep', 1]],
+    'design/levels/overworld_far.js:terrain.forest.colors': ['meadowDeep', 'limeDark', 'fern']
+  },
+  autumn: {
+    'design/detail-pass.js:materials.leaf_autumn_yellow (NEW record)': { tones: [['autumnYellow', 4], ['autumnYellowLight', 1], ['autumnOrange', 2]], from: 'leaf' },
+    'design/detail-pass.js:materials.leaf_autumn_orange (NEW record)': { tones: [['autumnOrange', 4], ['autumnOrangeLight', 1], ['autumnRed', 2]], from: 'leaf' },
+    'design/detail-pass.js:materials.leaf_autumn_red (NEW record)': { tones: [['autumnRed', 4], ['autumnOrange', 1], ['autumnRedDark', 2]], from: 'leaf' },
+    'design/detail-pass.js:materials.bark_birch (NEW record)': { tones: [['birch', 4], ['birchLight', 2], ['birchMark', 1]], from: 'timber_old' },
+    'design/models/forest_trees.js:birch crowns': 'leaf_autumn_* by tree seed (1/3 each); trunks bark_birch',
+    'design/models/ground_detail.js:tuft colours': 'one tuft variant -> rustGrass / rustGrassLight'
+  },
+  rock: {
+    'design/detail-pass.js:materials.rock.tones': [['mossRock', 4], ['mossRockDark', 2], ['mossRockLight', 1]],
+    'design/detail-pass.js:materials.rock.overlay.tints': ['meadowDark', 'mossCap'],
+    'design/detail-pass.js:materials.rock_soft.tones': [['mossRock', 5], ['mossRockDark', 2], ['mossRockLight', 1]],
+    'design/levels/overworld_far.js:terrain.rock.colors': ['mossRockDark', 'mossRock', 'mossRockLight']
+  },
+  path: {
+    'design/levels/overworld_far.js:terrain.path.colors': ['dirtDark', 'dirt', 'dirtLight'],
+    'design/detail-pass.js:materials.path (NEW record)': { tones: [['dirt', 4], ['dirtDark', 2], ['dirtLight', 1]], speckle: { tints: ['pebble', 'pebbleLight'], glyphs: 'oO.' } }
+  },
+  house: {
+    'design/detail-pass.js:materials.beam / plaster / slate_base / terracotta (NEW records, for house models)':
+      { beam: ['beam', 'beamDark', 'beamLight'], plaster: ['plaster', 'plasterDark', 'plasterLight'], slate_base: ['slate', 'slateDark', 'slateLight'],
+        terracotta: ['terracotta', 'terracottaDark', 'terracottaLight'], door: 'doorDark', windowGlass: 'windowGlow (emissive)' }
+  }
+};
+var RESERVED = ['danger', 'gold', 'alert', 'mana', 'aether', 'heroGreen', 'vital'];
+
+// sheet values (defaults = the rows / the palette look records)
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+var A02 = { areas: {}, sat: {}, val: {} };
+AREAS.forEach(function (a) { A02.areas[a] = true; A02.sat[a] = 1; A02.val[a] = 1; });
+var A03 = {}, A04 = {};
+LOOKS.forEach(function (lk) {
+  A03[lk] = clone(TOD[lk].haze);
+  A04[lk] = { sky: clone(TOD[lk].sky), clouds: clone(TOD[lk].clouds) };
+});
+var A05 = {
+  sets: {
+    crownClump:  ['.', '.:', ':*;', '*;o', 'o*%', '%o&', '&%@', '@&%'],
+    bladeFace:   ['.', ",'", "',`", "'|,", '|/\\', '/|\\"', '|\\/"', '\\|/v'],
+    dirtFace:    ['.', '.,', ",'`", ",:'", ":;,'", ';:,', ';=:', '=;:'],
+    plasterFace: ['.', ".'", "'`,", "`':", ":'`", ";:'", ':;=', ';=:']
+  },
+  crownClump: { normalBlend: 0.55 },
+  bladeFace: { nearM: 10, swayAmp: 0.7, swayHz: 0.6, waveM: 6 },
+  flowers: { density: 0.035, glyphs: '*@o.' },
+  houseDepth: { post: 0.16, beam: 0.13, brace: 0.10, base: 0.06 }
+};
+// colour overrides: NEW02 base hex + any picker edits (sky / haze / cloud keys)
+var OVR = {};
+Object.keys(NEW02).forEach(function (k) { OVR[k] = NEW02[k][0]; });
+var G = { grid: '120x45', look: 'afternoon', light: 'art01', stack: false, anim: true, tscale: 40 };
+
+// ===========================================================================
+// 2. COLOUR, NOISE, MATH
+// ===========================================================================
+function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+function smooth(e0, e1, x) { var t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); }
+function hex2rgb(h) { var n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgb2hex(c) { return '#' + c.map(function (v) { v = clamp(Math.round(v), 0, 255); return (v < 16 ? '0' : '') + v.toString(16); }).join(''); }
+function adjHex(h, sat, val) {
+  if (sat === 1 && val === 1) return h;
+  var c = hex2rgb(h), r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+  var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, hh = 0, s = mx ? d / mx : 0, v = mx;
+  if (d) { hh = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; hh *= 60; if (hh < 0) hh += 360; }
+  s = clamp(s * sat, 0, 1); v = clamp(v * val, 0, 1);
+  var cc = v * s, x = cc * (1 - Math.abs((hh / 60) % 2 - 1)), m = v - cc, o;
+  o = hh < 60 ? [cc, x, 0] : hh < 120 ? [x, cc, 0] : hh < 180 ? [0, cc, x] : hh < 240 ? [0, x, cc] : hh < 300 ? [x, 0, cc] : [cc, 0, x];
+  return rgb2hex([(o[0] + m) * 255, (o[1] + m) * 255, (o[2] + m) * 255]);
+}
+var MISSING = {};
+function hexOf(key) {
+  var h = OVR[key] || C[key];
+  if (!h) { MISSING[key] = 1; return '#ff00ff'; }
+  var e = NEW02[key];
+  if (e) h = adjHex(h, A02.sat[e[1]], A02.val[e[1]]);
+  return h;
+}
+var CC = {};
+function rgbOf(key) { return CC[key] || (CC[key] = hex2rgb(hexOf(key))); }
+function hueOf(c) { var m = Math.max(c[0], c[1], c[2]) || 1; return [c[0] / m, c[1] / m, c[2] / m]; }
+function hash2(x, y) {
+  var h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function hashS(x, y, s) { return hash2((x & 255) * 7 + s * 1013, (y & 255) * 13 - s * 71); }
+function vn(x, y, s) {   // period-256 value noise, smoothstep bilinear (sky.js cloudValueNoise shape, own hash)
+  var ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  var a = hashS(ix, iy, s), b = hashS(ix + 1, iy, s), c = hashS(ix, iy + 1, s), d = hashS(ix + 1, iy + 1, s);
+  var sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return a + (b - a) * sx + (c - a) * sy + (d - b - c + a) * sx * sy;
+}
+function vnoise(x, y) { return vn(x, y, 5); }
+function mulberry32(a) {
+  return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function nrm(v) { var l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
+function fmt(v) { return typeof v === 'number' ? (Math.round(v * 10000) / 10000) : v; }
+
+// ===========================================================================
+// 3. SCENES  (screen units: X in [0, AR], Y in [0, 1] down; normals n = [right, toward viewer, up])
+// ===========================================================================
+function Scene(W, H) {
+  this.W = W; this.H = H; this.AR = (W * CW) / (H * CH);
+  this.cells = new Array(W * H); this.trees = []; this.facade = null;
+}
+Scene.prototype.X = function (cx) { return (cx + 0.5) / this.W * this.AR; };
+Scene.prototype.Y = function (cy) { return (cy + 0.5) / this.H; };
+Scene.prototype.cx = function (X) { return Math.floor(X / this.AR * this.W); };
+Scene.prototype.cy = function (Y) { return Math.floor(Y * this.H); };
+Scene.prototype.put = function (cx, cy, o) {
+  if (cx < 0 || cy < 0 || cx >= this.W || cy >= this.H) return;
+  o.h = hash2(cx * 7 + 1, cy * 13 + 5); o.h2 = hash2(cx * 3 + 11, cy * 5 + 2); o.u = cx / this.W;
+  this.cells[cy * this.W + cx] = o;
+};
+Scene.prototype.each = function (X0, Y0, X1, Y1, fn) {
+  var a = Math.max(0, this.cx(X0)), b = Math.min(this.W - 1, this.cx(X1)), c = Math.max(0, this.cy(Y0)), d = Math.min(this.H - 1, this.cy(Y1)), x, y;
+  for (y = c; y <= d; y++) for (x = a; x <= b; x++) fn(x, y, this.X(x), this.Y(y));
+};
+function skyCell(sc, cx, cy, hz) {
+  var u = (cx + 0.5) / sc.W, v = (cy + 0.5) / sc.H;
+  sc.put(cx, cy, { k: 'sky', el: Math.max(0, (hz - v) * 80), az: (u - 0.5) * 95 });
+}
+// far ridge band + ground with distance d = 3 / (v - hz)
+function landscape(sc, hz, ridges, forestT) {
+  var cx, cy;
+  for (cy = 0; cy < sc.H; cy++) for (cx = 0; cx < sc.W; cx++) {
+    var u = (cx + 0.5) / sc.W, v = (cy + 0.5) / sc.H, i, done = false;
+    if (v >= hz) {
+      var d = Math.min(160, 3 / Math.max(0.004, v - hz)), wx = (u - 0.5) * 2.18 * d;
+      var p = vnoise(wx * 0.18 + 3, d * 0.18), tone = p > 0.66 ? 2 : p < 0.32 ? 0 : 1;
+      var nt = nrm([(vnoise(wx * 0.6, d * 0.6) - 0.5) * 0.3, (vnoise(wx * 0.6 + 9, d * 0.6) - 0.5) * 0.3 + 0.08, 1]);
+      sc.put(cx, cy, { k: 'lit', fam: 'grass', role: d < A05.bladeFace.nearM ? 'blade' : 'ground', n: nt, d: d, tone: tone,
+                       t: 0.94 + 0.12 * p, terrain: true, gnd: true, wx: wx, flower: true, rust: d < 40 && p > 0.62,
+                       sway: d < A05.bladeFace.nearM });
+      continue;
+    }
+    for (i = ridges.length - 1; i >= 0 && !done; i--) {
+      var R = ridges[i], top = R.top(u);
+      if (v >= top) {
+        var dd = R.d - (v - top) * R.k, fz = vnoise(u * R.f, v * R.f * 2.4 + i * 7);
+        var fam = fz > forestT[i] ? 'farForest' : 'hill';
+        sc.put(cx, cy, { k: 'lit', fam: fam, role: fam === 'farForest' ? 'crownFar' : 'ground',
+                         n: nrm([(vnoise(u * 40, v * 40) - 0.5) * 0.6, 0.45, 0.9]), d: Math.max(R.dMin, dd),
+                         tone: fz > 0.72 ? 0 : fz < 0.35 ? 2 : 1, t: 0.95 + 0.1 * fz, terrain: true, flower: true });
+        done = true;
+      }
+    }
+    if (!done) skyCell(sc, cx, cy, hz);
+  }
+}
+function path(sc, hz, uVan, bend, halfM) {
+  sc.cells.forEach(function (c, i) {
+    if (!c || !c.gnd) return;
+    var v = (Math.floor(i / sc.W) + 0.5) / sc.H, u = c.u + 0.5 / sc.W, dv = v - hz;
+    if (dv < 0.012) return;
+    var uc = uVan + bend * Math.pow(dv, 1.25), hw = halfM / (2.18 * c.d);
+    var e = Math.abs(u - uc) / hw;
+    if (e > 1) return;
+    c.fam = c.h < 0.07 && c.d < 30 ? 'pebble' : 'path'; c.role = c.fam === 'pebble' ? 'pebble' : 'path';
+    c.tone = e < 0.45 ? 2 : e > 0.85 ? 0 : 1; c.flower = false; c.rust = false;
+  });
+}
+function treeShadows(sc) {
+  sc.cells.forEach(function (c, i) {
+    if (!c || !c.gnd) return;
+    var X = sc.X(i % sc.W), Y = sc.Y(Math.floor(i / sc.W));
+    sc.trees.forEach(function (t) {
+      var dx = (X - (t.x + t.r * 0.55)) / (t.r * 1.15), dy = (Y - (t.base + t.r * 0.04)) / (t.r * 0.22);
+      if (dx * dx + dy * dy < 1) c.sh = Math.max(c.sh || 0, 0.85);
+    });
+  });
+}
+function clump(sc, X0, Y0, r, fam, d, seed, opt) {
+  opt = opt || {};
+  var rnd = mulberry32(seed), subs = [{ x: X0, y: Y0, r: r * 0.78 }], n = 4 + Math.min(6, Math.floor(r * 40)), i;
+  for (i = 0; i < n; i++) {
+    var a = rnd() * Math.PI * 2;
+    subs.push({ x: X0 + Math.cos(a) * r * 0.5, y: Y0 + Math.sin(a) * r * 0.45, r: r * (0.42 + 0.32 * rnd()) });
+  }
+  subs.sort(function (p, q) { return p.y - q.y; });
+  subs.forEach(function (b, bi) {
+    sc.each(b.x - b.r * 1.25, b.y - b.r * 1.25, b.x + b.r * 1.25, b.y + b.r * 1.25, function (cx, cy, X, Y) {
+      var dx = (X - b.x) / b.r, dy = (Y - b.y) / b.r, ang = Math.atan2(dy, dx);
+      var rad = 1 + 0.22 * (vnoise(ang * 2.2 + bi * 7 + (seed % 97), seed * 0.013 + bi) - 0.5) * 2, q = Math.sqrt(dx * dx + dy * dy);
+      if (q > rad) return;
+      var sx = dx / rad, sy = -dy / rad, gx = (X - X0) / r, gy = -(Y - Y0) / r, lg = gx * gx + gy * gy, lc = sx * sx + sy * sy;
+      if (lg > 0.96) { var k = Math.sqrt(0.96 / lg); gx *= k; gy *= k; lg = 0.96; }
+      if (lc > 0.96) { var k2 = Math.sqrt(0.96 / lc); sx *= k2; sy *= k2; lc = 0.96; }
+      var h = hash2(cx * 3 + seed, cy * 5 + bi), ny = 0.5 * (sy + gy), tone = 1;
+      if (ny > 0.35 && h < 0.45) tone = 2; else if (ny < -0.25 || (q > rad * 0.85 && h < 0.35)) tone = 0;
+      sc.put(cx, cy, { k: 'lit', fam: fam, role: 'crown', nc: [sx, Math.sqrt(1 - lc), sy], ng: [gx, Math.sqrt(1 - lg), gy],
+                       d: d, tone: tone, t: 0.92 + 0.16 * h, ao: 0.62 + 0.38 * smooth(-0.8, 0.4, gy), sway: !!opt.sway });
+    });
+  });
+}
+function trunk(sc, X, y0, y1, wU, d, fam) {
+  var w = Math.max(1, Math.round(wU / sc.AR * sc.W)), c0 = sc.cx(X) - Math.floor((w - 1) / 2), cy, j;
+  for (cy = sc.cy(y0); cy <= sc.cy(y1); cy++) for (j = 0; j < w; j++) {
+    var nx = w === 1 ? -0.3 : (j / (w - 1) * 2 - 1) * 0.75, h = hash2((c0 + j) * 5, cy * 7 + 3);
+    sc.put(c0 + j, cy, { k: 'lit', fam: fam, role: 'bark', n: nrm([nx, 1, 0]), d: d, tone: fam === 'birch' ? (h < 0.22 ? 0 : j === 0 ? 2 : 1) : (h < 0.3 ? 0 : 1), t: 1 });
+  }
+}
+function tree(sc, o) {
+  var top = o.base - o.r * 2.3;
+  trunk(sc, o.x, top + o.r, o.base, o.r * 0.16, o.d, o.trunk || 'bark');
+  clump(sc, o.x, top + o.r * 0.2, o.r, o.fam, o.d, o.seed, { sway: o.d < 30 });
+  sc.trees.push({ x: o.x, base: o.base, r: o.r });
+}
+function boulder(sc, X0, Y0, rx, ry, d) {
+  sc.each(X0 - rx, Y0 - ry, X0 + rx, Y0 + ry, function (cx, cy, X, Y) {
+    var dx = (X - X0) / rx, dy = (Y - Y0) / ry, w = 1 + 0.12 * (vnoise(Math.atan2(dy, dx) * 2 + X0 * 9, 3) - 0.5);
+    var q = dx * dx + dy * dy;
+    if (q > w * w || dy > 0.55) return;
+    var up = -dy * 0.9 + 0.1, nx = dx * 0.85, ny = Math.sqrt(Math.max(0.02, 1 - nx * nx - up * up)), h = hash2(cx * 9, cy * 3);
+    var cap = up > 0.5 && h < 0.75, n = nrm([nx, ny, up]);
+    sc.put(cx, cy, { k: 'lit', fam: cap ? 'mossCap' : 'rock', role: cap ? 'moss' : 'rock', n: n, d: d,
+                     tone: n[2] > 0.5 ? 2 : nx > 0.4 || up < -0.2 ? 0 : 1, t: 0.92 + 0.16 * h, ao: dy > 0.3 ? 0.7 : 1 });
+  });
+}
+function buildMeadow(sc) {
+  var hz = 0.42, AR = sc.AR;
+  landscape(sc, hz, [
+    { top: function (u) { return hz - 0.085 - 0.035 * Math.sin(u * 6.1 + 0.7) - 0.02 * Math.sin(u * 17 + 2); }, d: 700, k: 1500, dMin: 430, f: 14 },
+    { top: function (u) { return hz - 0.03 - 0.025 * Math.sin(u * 3.3 + 2.1); }, d: 260, k: 2400, dMin: 150, f: 10 }
+  ], [0.62, 0.58]);
+  path(sc, hz, 0.45, 0.55, 1.7);
+  tree(sc, { x: 0.18 * AR, base: hz + 0.035, r: 0.06, d: 70, fam: 'autumnO', trunk: 'bark', seed: 11 });
+  tree(sc, { x: 0.31 * AR, base: hz + 0.055, r: 0.085, d: 48, fam: 'autumnY', trunk: 'birch', seed: 12 });
+  tree(sc, { x: 0.71 * AR, base: hz + 0.03, r: 0.05, d: 85, fam: 'crown', trunk: 'bark', seed: 13 });
+  tree(sc, { x: 0.88 * AR, base: hz + 0.075, r: 0.105, d: 38, fam: 'autumnR', trunk: 'bark', seed: 14 });
+  treeShadows(sc);
+  boulder(sc, 0.66 * AR, 0.8, 0.11, 0.085, 9);
+  clump(sc, 0.06 * AR, 0.86, 0.1, 'crown', 5, 21, { sway: true });
+  return sc;
+}
+function buildForest(sc) {
+  var hz = 0.36, AR = sc.AR;
+  landscape(sc, hz, [
+    { top: function (u) { return hz - 0.1 - 0.04 * Math.sin(u * 4.3 + 1.2) - 0.015 * Math.sin(u * 21); }, d: 900, k: 1800, dMin: 520, f: 16 },
+    { top: function (u) { return hz - 0.045 - 0.02 * Math.sin(u * 7.7 + 0.4) - 0.01 * Math.sin(u * 31 + 1); }, d: 320, k: 2500, dMin: 170, f: 12 }
+  ], [0.34, 0.4]);
+  path(sc, hz, 0.62, 0.7, 1.6);
+  tree(sc, { x: 0.62 * AR, base: hz + 0.05, r: 0.055, d: 60, fam: 'crown', seed: 31 });
+  tree(sc, { x: 0.53 * AR, base: hz + 0.09, r: 0.08, d: 40, fam: 'autumnY', trunk: 'birch', seed: 32 });
+  tree(sc, { x: 0.38 * AR, base: hz + 0.16, r: 0.12, d: 28, fam: 'crown', seed: 33 });
+  tree(sc, { x: 0.21 * AR, base: hz + 0.24, r: 0.16, d: 20, fam: 'crown', seed: 34 });
+  tree(sc, { x: 0.03 * AR, base: hz + 0.3, r: 0.2, d: 16, fam: 'autumnO', seed: 35 });
+  treeShadows(sc);
+  boulder(sc, 0.8 * AR, 0.74, 0.13, 0.095, 12);
+  boulder(sc, 0.93 * AR, 0.84, 0.065, 0.05, 8);
+  clump(sc, 0.3 * AR, 0.92, 0.09, 'crown', 6, 41, { sway: true });
+  return sc;
+}
+function buildHouse(sc) {
+  var hz = 0.5, AR = sc.AR;
+  landscape(sc, hz, [
+    { top: function (u) { return hz - 0.09 - 0.03 * Math.sin(u * 5.1 + 0.3); }, d: 600, k: 1400, dMin: 380, f: 14 },
+    { top: function (u) { return hz - 0.035 - 0.02 * Math.sin(u * 8.3 + 2.4); }, d: 220, k: 2400, dMin: 130, f: 10 }
+  ], [0.5, 0.45]);
+  path(sc, hz, 0.8, -0.3, 1.4);
+  tree(sc, { x: 0.86 * AR, base: hz + 0.04, r: 0.07, d: 55, fam: 'autumnO', trunk: 'bark', seed: 51 });
+  treeShadows(sc);
+  // facade: 6.0 x 4.6 m, facing the viewer, d 7 m
+  var F = { x0: 0.02 * AR, x1: 0.57 * AR, yTop: 0.17, yBot: 0.88, Wm: 6.0, Hm: 4.6, d: 7 };
+  sc.facade = F;
+  var POSTS = [[0, 0.22], [1.9, 2.1], [3.8, 4.0], [5.78, 6.0]], BEAMS = [[0.8, 0.98], [2.5, 2.68], [4.42, 4.6]];
+  var BR = [[0.22, 0.98, 1.2, 2.5], [5.78, 0.98, 4.95, 2.5], [0.22, 2.68, 1.0, 4.42], [3.8, 2.68, 3.0, 4.42], [4.0, 2.68, 4.8, 4.42]];
+  sc.each(F.x0, F.yTop - 0.11, F.x1 + 0.03, F.yBot, function (cx, cy, X, Y) {
+    var lx = (X - F.x0) / (F.x1 - F.x0) * F.Wm, ly = (F.yBot - Y) / (F.yBot - F.yTop) * F.Hm, h = hash2(cx * 5, cy * 11), o, i;
+    if (ly > F.Hm) {   // roof eave band
+      sc.put(cx, cy, { k: 'lit', fam: 'roof', role: 'roof', n: nrm([0, 0.55, 0.83]), d: F.d + 0.3, tone: (cy % 2) ? 1 : (h < 0.5 ? 2 : 1), t: 0.95 + 0.1 * h, pzRole: 'roof' });
+      return;
+    }
+    if (lx < 0 || lx > F.Wm) return;
+    o = { k: 'lit', n: nrm([(h - 0.5) * 0.05, 1, 0]), d: F.d, t: 0.95 + 0.1 * h, facade: true, lx: lx, ly: ly };
+    var post = -1, beamI = -1, brace = -1;
+    for (i = 0; i < POSTS.length; i++) if (lx >= POSTS[i][0] && lx <= POSTS[i][1]) post = i;
+    for (i = 0; i < BEAMS.length; i++) if (ly >= BEAMS[i][0] && ly <= BEAMS[i][1]) beamI = i;
+    for (i = 0; i < BR.length; i++) {
+      var b = BR[i], vx = b[2] - b[0], vy = b[3] - b[1], L = Math.sqrt(vx * vx + vy * vy), tt = ((lx - b[0]) * vx + (ly - b[1]) * vy) / (L * L);
+      if (tt < 0 || tt > 1) continue;
+      var dist = Math.abs((lx - b[0]) * vy - (ly - b[1]) * vx) / L;
+      if (dist < 0.09) brace = (vx * vy > 0) ? 1 : 2;
+    }
+    var win = lx > 2.45 && lx < 3.45 && ly > 1.3 && ly < 2.25, winUp = lx > 2.45 && lx < 3.45 && ly > 3.1 && ly < 3.95;
+    var door = lx > 4.3 && lx < 5.45 && ly < 2.35;
+    if (door) { o.fam = 'door'; o.role = 'door'; o.tone = 1; o.pzRole = 'door'; }
+    else if (post >= 0) { o.fam = 'beam'; o.role = 'beamV'; o.tone = lx - POSTS[post][0] < 0.06 ? 2 : 1; o.pzRole = 'post'; }
+    else if (beamI >= 0) { o.fam = 'beam'; o.role = 'beamH'; o.tone = BEAMS[beamI][1] - ly < 0.05 ? 2 : 1; o.pzRole = 'beam'; }
+    else if ((win || winUp) && (Math.abs(lx - 2.95) < 0.05 || Math.abs(ly - (win ? 1.78 : 3.52)) < 0.05)) { o.fam = 'beam'; o.role = 'beamH'; o.tone = 0; o.pzRole = 'brace'; }
+    else if (win || winUp) { o.fam = 'window'; o.role = 'window'; o.tone = 1; o.em = win ? 1 : 0.55; o.pzRole = 'glass'; }
+    else if (brace > 0) { o.fam = 'beam'; o.role = brace === 1 ? 'braceD1' : 'braceD2'; o.tone = 1; o.pzRole = 'brace'; }
+    else if (ly < 0.8) {
+      var row = Math.floor(ly / 0.27), col = Math.floor((lx + (row % 2) * 0.22) / 0.44);
+      var mortar = (ly % 0.27) < 0.035 || ((lx + (row % 2) * 0.22) % 0.44) < 0.04, th = hash2(row * 31, col * 17);
+      o.fam = 'slate'; o.role = mortar ? 'gap' : 'slate'; o.tone = mortar ? 0 : th > 0.66 ? 2 : th < 0.25 ? 0 : 1; o.pzRole = mortar ? 'mortar' : 'base';
+    } else { o.fam = 'plaster'; o.role = 'plaster'; o.tone = h < 0.12 ? 0 : h > 0.8 ? 2 : 1; o.pzRole = 'plaster'; }
+    sc.put(cx, cy, o);
+  });
+  // pot + violet flowers by the door, a lime bush
+  var px = F.x1 + 0.05 * AR, py = F.yBot - 0.02;
+  sc.each(px - 0.035, py - 0.05, px + 0.035, py + 0.012, function (cx, cy, X, Y) {
+    var dx = (X - px) / 0.035; if (Math.abs(dx) > 1 - 0.3 * clamp((Y - (py - 0.05)) / 0.06, 0, 1)) return;
+    sc.put(cx, cy, { k: 'lit', fam: 'roof', role: 'roof', n: nrm([dx * 0.8, 1, 0]), d: 6.6, tone: Y < py - 0.04 ? 2 : 1, t: 1 });
+  });
+  sc.each(px - 0.05, py - 0.11, px + 0.05, py - 0.05, function (cx, cy, X, Y) {
+    var h = hash2(cx * 13, cy * 7);
+    if (h < 0.45) sc.put(cx, cy, { k: 'lit', fam: 'crown', role: 'crown', ng: [0, 0.8, 0.6], nc: [0, 0.8, 0.6], d: 6.6, tone: 1, t: 1, sway: true });
+    else if (h < 0.8) sc.put(cx, cy, { k: 'lit', fam: 'flowerV', role: 'flower', n: [0, 0.6, 0.8], d: 6.6, tone: 1, t: 1, fixedFlower: true });
+  });
+  clump(sc, F.x1 + 0.17 * AR, 0.86, 0.075, 'crown', 6, 61, { sway: true });
+  return sc;
+}
+var POSES = [
+  { id: 'meadow', label: 'meadow (open ground, path, autumn trees, boulder)', build: buildMeadow },
+  { id: 'forest', label: 'forest edge (crowns, birch, moss rocks)', build: buildForest },
+  { id: 'house', label: 'house corner (half-timber front, slate base, pot)', build: buildHouse }
+];
+var SCENES = {};
+function sceneFor(pi) {
+  var key = G.grid + ':' + pi + ':' + A05.bladeFace.nearM;
+  if (!SCENES[key]) { var wh = G.grid.split('x'); SCENES[key] = POSES[pi].build(new Scene(+wh[0], +wh[1])); }
+  return SCENES[key];
+}
+
+// ===========================================================================
+// 4. LIGHT RIG, GLYPH SETS, SHADER
+// ===========================================================================
+function lightRig(cfg) {
+  var lk = cfg.look, r, o = { hemi: null };
+  if (cfg.light === 'today') {
+    r = TOD[lk === 'afternoon' ? 'morning' : 'dusk'];
+    var a = hueOf(rgbOf(r.ambient));
+    o.amb = [a[0] * r.ambientI, a[1] * r.ambientI, a[2] * r.ambientI];
+  } else {
+    r = TOD[lk];
+    var hm = r.hemi, s = hueOf(rgbOf(hm.sky)), g = hueOf(rgbOf(hm.ground));
+    o.hemi = { sky: [s[0] * hm.skyI, s[1] * hm.skyI, s[2] * hm.skyI], ground: [g[0] * hm.groundI, g[1] * hm.groundI, g[2] * hm.groundI],
+               tint: hm.shadowTint ? hueOf(rgbOf(hm.shadowTint)) : [1, 1, 1], k: hm.shadowK || 0 };
+  }
+  var sh = hueOf(rgbOf(r.sun)), el = r.sunElev * Math.PI / 180, az = lk === 'afternoon' ? 0.78 : 0.86;
+  o.sun = [sh[0] * r.sunI, sh[1] * r.sunI, sh[2] * r.sunI];
+  o.S = nrm([-Math.cos(el) * az, Math.cos(el) * Math.sqrt(1 - az * az), Math.sin(el)]);
+  return o;
+}
+var FALLBACK = ['.', '.:', ':;', ';%', '%&', '&@', '@&', '@%'];
+function arr(s) { return Array.isArray(s) ? s : FALLBACK; }
+var SET_CUR = {
+  ground: function (d) { return d < 12 ? arr(S.turfFace) : arr(S.turfMid); },
+  blade: function (d) { return arr(S.turfFace); },
+  crown: function () { return arr(S.ivy); }, crownFar: function () { return ['.', '%', '%:', '%&', '&%', '&%@', '@&', '@&%']; },
+  rock: function () { return arr(S.rockFace); }, moss: function () { return arr(S.moss); },
+  path: function () { return ['.', '.', ':,', '.:', ':,', ',:', ':;', ';:']; }, pebble: function () { return ['.', '.', ':,', '.:', ':,', ',:', ':;', ';:']; },
+  plaster: function () { return arr(S.canvasFace); }, slate: function () { return arr(S.stoneFace); }, gap: function () { return arr(S.gap); },
+  roof: function () { return arr(S.brickFace); }, bark: function () { return ['.', '|', '|', '|!', '!|', '|', '|', '|']; },
+  door: function () { return ['.', '.', ':', ':', ':', ':', ':', ':']; }, flower: function () { return ['*', '*', '*', '*', '*@', '*@', '@*', '@*']; },
+  beamV: function () { return S.beam ? S.beam.dark.concat(S.beam.fam.v) : FALLBACK; }, beamH: function () { return S.beam ? S.beam.dark.concat(S.beam.fam.h) : FALLBACK; },
+  braceD1: function () { return S.beam ? S.beam.dark.concat(S.beam.fam.d1) : FALLBACK; }, braceD2: function () { return S.beam ? S.beam.dark.concat(S.beam.fam.d2) : FALLBACK; }
+};
+function setFor(role, glyphNew, d) {
+  if (glyphNew) {
+    if (role === 'crown') return A05.sets.crownClump;
+    if (role === 'blade') return A05.sets.bladeFace;
+    if (role === 'path') return A05.sets.dirtFace;
+    if (role === 'plaster') return A05.sets.plasterFace;
+  }
+  return (SET_CUR[role] || SET_CUR.ground)(d);
+}
+var PZ_ROLE = { post: 'post', beam: 'beam', brace: 'brace', base: 'base' };
+function pzOf(c, cfg) {
+  if (!c || !c.facade) return -9;
+  if (c.pzRole === 'door') return -0.12;
+  if (c.pzRole === 'glass') return -0.06;
+  if (cfg.glyph !== 'new') return 0;   // today: flat fronts (all 0)
+  var k = PZ_ROLE[c.pzRole];
+  return k ? A05.houseDepth[k] : 0;
+}
+// raking light on the facade: an occluder toward the sun with enough depth casts onto this cell
+function reliefShadow(sc, cfg, rig) {
+  var F = sc.facade; if (!F) return null;
+  var W = sc.W, H = sc.H, pz = new Float32Array(W * H), out = new Float32Array(W * H), i;
+  for (i = 0; i < W * H; i++) pz[i] = pzOf(sc.cells[i], cfg);
+  var cpmX = (W * (F.x1 - F.x0) / sc.AR) / F.Wm, cpmY = (H * (F.yBot - F.yTop)) / F.Hm, Sy = Math.max(0.05, rig.S[1]);
+  var kx = -rig.S[0] / Sy, ky = rig.S[2] / Sy;   // metres sideways (toward the sun) / up per metre of depth
+  for (i = 0; i < W * H; i++) {
+    var c = sc.cells[i]; if (!c || !c.facade) continue;
+    var cx = i % W, cy = Math.floor(i / W), p0 = pz[i], g;
+    for (g = 0.02; g <= 0.3; g += 0.02) {
+      var ox = Math.round(cx - g * kx * cpmX), oy = Math.round(cy - g * ky * cpmY);
+      if (ox < 0 || oy < 0 || ox >= W || oy >= H) break;
+      var q = pz[oy * W + ox];
+      if (q > -9 && q >= p0 + g) { out[i] = 1; break; }
+    }
+  }
+  return out;
+}
+var OUT = { g: ' ', fg: [0, 0, 0], bg: [0, 0, 0] };
+function gradAt(stops, t) {
+  var i;
+  for (i = 0; i < stops.length - 1; i++) if (t <= stops[i + 1].t) break;
+  i = Math.min(i, stops.length - 2);
+  var a = stops[i], b = stops[i + 1], k = clamp((t - a.t) / Math.max(1e-6, b.t - a.t), 0, 1), ca = rgbOf(a.c), cb = rgbOf(b.c);
+  return [ca[0] + (cb[0] - ca[0]) * k, ca[1] + (cb[1] - ca[1]) * k, ca[2] + (cb[2] - ca[2]) * k];
+}
+function fr(x) { return Math.fround(((x % 256) + 256) % 256); }
+function shadeSky(c, cfg, t) {
+  var el = c.el, lk = cfg.look;
+  if (cfg.sky !== 'new') {   // today's GPU sky: morning / dusk stops, no clouds
+    var base0 = gradAt(TOD[lk === 'afternoon' ? 'morning' : 'dusk'].sky, clamp(el / 60, 0, 1));
+    OUT.g = ' '; OUT.bg = base0; OUT.fg = base0; return;
+  }
+  t = t * G.tscale;   // preview-only speed-up of the (slow) real drift
+  var A = A04[lk], base = gradAt(A.sky, clamp(el / 60, 0, 1)), Cl = A.clouds, cb = (P.materials.sky && P.materials.sky.cloudBand) || [2, 35, 55];
+  var er = Math.max(0.2, el) * Math.PI / 180, ar = c.az * Math.PI / 180;
+  var dx = Math.sin(ar) * Math.cos(er), dy = Math.cos(ar) * Math.cos(er), dz = Math.sin(er);
+  var q0x = dx / (dz + Cl.bias) * Cl.scale, q0y = dy / (dz + Cl.bias) * Cl.scale, w = Cl.wind;
+  var o0x = fr(w[0] * t), o0y = fr(w[1] * t), o1x = fr(2.03 * w[0] * t), o1y = fr(2.03 * w[1] * t), owx = fr(0.561 * w[0] * t), owy = fr(1.7 * w[1] * t);
+  var sd = Cl.seed | 0;
+  var puff = vn(q0x + o0x, q0y + o0y, sd) * 0.65 + vn(q0x * 2.03 + 17 + o1x, q0y * 2.03 + 17 + o1y, sd) * 0.35;
+  var wisp = vn(q0x * 0.561 + 41 + owx, q0y * 1.7 + 41 + owy, sd);
+  var band = smooth(0, cb[0], el) * (1 - smooth(cb[1], cb[2], el));
+  var dn = clamp(Math.max((puff - Cl.cover) * Cl.puffK, (wisp - Cl.wispCover) * Cl.wispK * 0.55) * band, 0, 1);
+  if (dn > 0.04) {
+    var lit = clamp(0.5 + (vn(q0x * (1 + Cl.litDy) + o0x, q0y * (1 + Cl.litDy) + o0y, sd) - vn(q0x * (1 - Cl.litDy) + o0x, q0y * (1 - Cl.litDy) + o0y, sd)) * Cl.litK, 0, 1);
+    var L = rgbOf(Cl.lit), Sh = rgbOf(Cl.shade), cc = [Sh[0] + (L[0] - Sh[0]) * lit, Sh[1] + (L[1] - Sh[1]) * lit, Sh[2] + (L[2] - Sh[2]) * lit];
+    var body = Math.min(1, dn * Cl.bodyK), ramp = P.ramps[Cl.ramp] || " .'-~=+*", N = ramp.length;
+    OUT.bg = [base[0] + (cc[0] - base[0]) * body, base[1] + (cc[1] - base[1]) * body, base[2] + (cc[2] - base[2]) * body];
+    OUT.fg = [cc[0] + (255 - cc[0]) * 0.1 * lit, cc[1] + (255 - cc[1]) * 0.1 * lit, cc[2] + (255 - cc[2]) * 0.1 * lit];
+    OUT.g = ramp[Math.min(N - 1, 1 + Math.floor(dn * (N - 1.01)))];
+  } else { OUT.g = ' '; OUT.bg = base; OUT.fg = base; }
+}
+function pickChar(str, c, cfg, t) {
+  if (c.sway && cfg.glyph === 'new' && str.length > 1) {
+    var B = A05.bladeFace, ph = Math.sin(t * 2 * Math.PI * B.swayHz - (c.wx || c.u * 40) * 2 * Math.PI / B.waveM) * B.swayAmp + (c.h - 0.5) * 0.4;
+    if (ph > 0.33 && str.indexOf('/') >= 0) return '/';
+    if (ph < -0.33 && str.indexOf('\\') >= 0) return '\\';
+    if (Math.abs(ph) <= 0.33 && str.indexOf('|') >= 0) return '|';
+  }
+  return str.charAt(Math.floor(c.h2 * str.length) % str.length);
+}
+function shadeCell(c, cfg, rig, t, relief) {
+  if (c.k === 'sky') return shadeSky(c, cfg, t);
+  var fam = c.fam, role = c.role, glyphNew = cfg.glyph === 'new', palNew = cfg.pal === 'new';
+  // flowers (ART-05 density at every distance vs today's near scatter)
+  if (c.flower) {
+    var dens = glyphNew ? A05.flowers.density : (c.d < 30 ? 0.03 : 0);
+    if (c.h < dens) { var fk = c.h2; fam = fk < 0.35 ? 'flowerY' : fk < 0.6 ? 'flowerV' : fk < 0.8 ? 'flowerW' : 'flowerO'; role = 'flower'; }
+    else if (c.rust && c.h > 0.9) { fam = 'rustGrass'; role = 'blade'; }
+  }
+  var F = FAM[fam], useNew = palNew && (cfg.areas ? cfg.areas[F.area] : true), keys = useNew ? F.neu : F.cur;
+  var base = rgbOf(keys[c.tone == null ? 1 : c.tone]), d = c.d;
+  var n = c.n;
+  if (role === 'crown' || c.nc) {
+    var bl = glyphNew ? A05.crownClump.normalBlend : 0, a = c.nc || [0, 1, 0], g = c.ng || a;
+    n = nrm([a[0] * bl + g[0] * (1 - bl), a[1] * bl + g[1] * (1 - bl), a[2] * bl + g[2] * (1 - bl)]);
+  }
+  var fg, bg, gb, set;
+  if (F.em) {
+    var e = c.em || 1; fg = [base[0] * e, base[1] * e, base[2] * e]; bg = [fg[0] * 0.45, fg[1] * 0.45, fg[2] * 0.45]; gb = 0.9;
+    set = ['.', ':', '=', '=', '#=', '#=', '#', '#'];
+  } else {
+    var S3 = rig.S, ndl = Math.max(0, n[0] * S3[0] + n[1] * S3[1] + n[2] * S3[2]), sh = Math.max(c.sh || 0, relief || 0);
+    var sunF = ndl * (1 - sh), L;
+    if (rig.hemi) {
+      var Hm = rig.hemi, kz = 0.5 + 0.5 * n[2];
+      L = [Hm.ground[0] + (Hm.sky[0] - Hm.ground[0]) * kz + rig.sun[0] * sunF, Hm.ground[1] + (Hm.sky[1] - Hm.ground[1]) * kz + rig.sun[1] * sunF,
+           Hm.ground[2] + (Hm.sky[2] - Hm.ground[2]) * kz + rig.sun[2] * sunF];
+      if (Hm.k > 0) {
+        var sf = clamp(ndl * 4, 0, 1) * (1 - sh), s = Hm.k * (1 - sf);
+        L = [L[0] * (1 + (Hm.tint[0] - 1) * s), L[1] * (1 + (Hm.tint[1] - 1) * s), L[2] * (1 + (Hm.tint[2] - 1) * s)];
+      }
+    } else L = [rig.amb[0] + rig.sun[0] * sunF, rig.amb[1] + rig.sun[1] * sunF, rig.amb[2] + rig.sun[2] * sunF];
+    var ao = c.ao == null ? 1 : c.ao, mL = Math.max(L[0], L[1], L[2]) || 1e-6, b = mL * 0.85 * (c.t || 1) * ao;
+    var gain = Math.min(1.2, 0.55 + 0.45 * Math.pow(Math.min(b, 1.6), 0.75)), hu = [L[0] / mL, L[1] / mL, L[2] / mL];
+    fg = [base[0] * gain * (0.4 + 0.6 * hu[0]), base[1] * gain * (0.4 + 0.6 * hu[1]), base[2] * gain * (0.4 + 0.6 * hu[2])];
+    var bgK = role === 'crown' ? 0.3 : role === 'plaster' ? 0.32 : 0.24;
+    bg = [fg[0] * bgK, fg[1] * bgK, fg[2] * bgK];
+    gb = 0.12 + 0.88 * Math.min(b, 1);
+    set = setFor(role, glyphNew, d);
+  }
+  // haze / fog
+  var gPick = gb, blank = false, stip = null;
+  if (cfg.haze === 'new') {
+    var Hz = A03[cfg.look], ht = clamp((d - Hz.start) / (Hz.full - Hz.start), 0, 1), f = d <= Hz.start ? 0 : Hz.max * Math.pow(ht, Hz.curve);
+    var nr = rgbOf(Hz.near), far = rgbOf(Hz.far), hc = [nr[0] + (far[0] - nr[0]) * ht, nr[1] + (far[1] - nr[1]) * ht, nr[2] + (far[2] - nr[2]) * ht];
+    var fb = Math.min(1, f * 1.1);
+    fg = [fg[0] + (hc[0] - fg[0]) * f, fg[1] + (hc[1] - fg[1]) * f, fg[2] + (hc[2] - fg[2]) * f];
+    bg = [bg[0] + (hc[0] * Hz.bgK - bg[0]) * fb, bg[1] + (hc[1] * Hz.bgK - bg[1]) * fb, bg[2] + (hc[2] * Hz.bgK - bg[2]) * fb];
+    gPick = gb * (1 - Hz.thinK * Math.max(0, f - Hz.thin0));
+    if (f > Hz.blank) blank = true;
+  } else if (c.terrain) {   // today: fog.far on terrain (50-1500 m, colour by f, blank > 0.85)
+    var FF = P.fog.far, f2 = d <= FF.start ? 0 : Math.pow(clamp((d - FF.start) / (FF.full - FF.start), 0, 1), FF.curve);
+    var a1 = rgbOf(FF.color), a2 = rgbOf(FF.colorFar), fc = [a1[0] + (a2[0] - a1[0]) * f2, a1[1] + (a2[1] - a1[1]) * f2, a1[2] + (a2[2] - a1[2]) * f2];
+    fg = [fg[0] + (fc[0] - fg[0]) * f2, fg[1] + (fc[1] - fg[1]) * f2, fg[2] + (fc[2] - fg[2]) * f2];
+    bg = [bg[0] + (fc[0] - bg[0]) * f2, bg[1] + (fc[1] - bg[1]) * f2, bg[2] + (fc[2] - bg[2]) * f2];
+    if (f2 > 0.85) blank = true;
+  } else {   // today: DP.fog on the material path (trees, rocks, house), 10-45 m, dark fogV2, stipple
+    var DF = DP.fog, f3 = clamp((d - DF.start) / (DF.full - DF.start), 0, 1);
+    if (DF.curve && DF.curve !== 1) f3 = Math.pow(f3, DF.curve);
+    var fgT = rgbOf(DF.glyph), bgT = rgbOf(DF.color);
+    fg = [fg[0] + (fgT[0] - fg[0]) * f3, fg[1] + (fgT[1] - fg[1]) * f3, fg[2] + (fgT[2] - fg[2]) * f3];
+    bg = [bg[0] + (bgT[0] - bg[0]) * f3, bg[1] + (bgT[1] - bg[1]) * f3, bg[2] + (bgT[2] - bg[2]) * f3];
+    var st = DF.stipple || [0.6, 0.92];
+    if (f3 > st[0] && c.h < (f3 - st[0]) / (st[1] - st[0])) stip = (S[DF.set] || ['. ', '.:'])[f3 > (DF.sparse || 0.9) ? 0 : 1];
+  }
+  OUT.fg = fg; OUT.bg = bg;
+  if (blank) { OUT.g = ' '; return; }
+  if (stip) { OUT.g = stip.charAt(Math.floor(c.h2 * stip.length)); return; }
+  if (role === 'pebble' && glyphNew) { OUT.g = c.h2 < 0.3 ? 'O' : c.h2 < 0.75 ? 'o' : '.'; return; }
+  if (role === 'flower' && glyphNew) { var fl = A05.flowers.glyphs || '*'; OUT.g = fl.charAt(Math.floor(c.h2 * fl.length)); return; }
+  if (gPick <= 0) { OUT.g = ' '; return; }
+  var N = set.length, lv = Math.min(N, 1 + Math.floor(Math.pow(gPick, 0.7) * N));
+  OUT.g = pickChar(set[lv - 1], c, cfg, t);
+}
+function css(c) { return 'rgb(' + clamp(Math.round(c[0]), 0, 255) + ',' + clamp(Math.round(c[1]), 0, 255) + ',' + clamp(Math.round(c[2]), 0, 255) + ')'; }
+function renderTo(cv, sc, cfg, t) {
+  var W = sc.W, H = sc.H;
+  if (cv.width !== W * CW || cv.height !== H * CH) { cv.width = W * CW; cv.height = H * CH; }
+  var ctx = cv.getContext('2d'), rig = lightRig(cfg), rel = reliefShadow(sc, cfg, rig), i;
+  ctx.font = FONT; ctx.textBaseline = 'top';
+  for (i = 0; i < W * H; i++) {
+    var c = sc.cells[i], x = (i % W) * CW, y = Math.floor(i / W) * CH;
+    if (!c) { ctx.fillStyle = '#000'; ctx.fillRect(x, y, CW, CH); continue; }
+    shadeCell(c, cfg, rig, t, rel ? rel[i] : 0);
+    ctx.fillStyle = css(OUT.bg); ctx.fillRect(x, y, CW, CH);
+    if (OUT.g !== ' ') { ctx.fillStyle = css(OUT.fg); ctx.fillText(OUT.g, x, y); }
+  }
+}
+
+// ===========================================================================
+// 5. SHEETS (before / after per pose), controls, JSON, checks
+// ===========================================================================
+var SHEETS = {
+  '02': { feat: 'pal', title: 'ART-02 palette', anim: false },
+  '03': { feat: 'haze', title: 'ART-03 haze', anim: false },
+  '04': { feat: 'sky', title: 'ART-04 sky + clouds', anim: true },
+  '05': { feat: 'glyph', title: 'ART-05 glyph sets + house depth', anim: true }
+};
+var FEATS = ['pal', 'haze', 'sky', 'glyph'];
+function cfgOf(sheetId, after) {
+  var c = { look: G.look, light: G.light, pal: 'cur', haze: 'cur', sky: 'cur', glyph: 'cur', areas: A02.areas };
+  if (after) { if (G.stack) FEATS.forEach(function (f) { c[f] = 'new'; }); else c[SHEETS[sheetId].feat] = 'new'; }
+  return c;
+}
+Object.keys(SHEETS).forEach(function (id) {
+  var host = document.getElementById('poses' + id), sh = SHEETS[id];
+  sh.cv = [];
+  POSES.forEach(function (p, pi) {
+    var row = document.createElement('div'); row.className = 'pair';
+    var a = document.createElement('div'), b = document.createElement('div');
+    a.innerHTML = '<div class="cap"><b>before</b> (today) - ' + p.label + '</div>';
+    b.innerHTML = '<div class="cap"><b>after</b> (' + sh.title + ') - ' + p.label + '</div>';
+    var ca = document.createElement('canvas'), cb = document.createElement('canvas');
+    a.appendChild(ca); b.appendChild(cb); row.appendChild(a); row.appendChild(b); host.appendChild(row);
+    sh.cv.push([ca, cb]);
+  });
+  sh.dirty = true;
+});
+var T0 = performance.now();
+function simTime() { return (performance.now() - T0) / 1000; }
+function renderSheet(id) {
+  var sh = SHEETS[id], t = simTime();
+  POSES.forEach(function (p, pi) {
+    var sc = sceneFor(pi);
+    renderTo(sh.cv[pi][0], sc, cfgOf(id, false), t);
+    renderTo(sh.cv[pi][1], sc, cfgOf(id, true), t);
+  });
+  sh.dirty = false;
+}
+function markAll(skipTable) { CC = {}; Object.keys(SHEETS).forEach(function (id) { SHEETS[id].dirty = true; }); refreshAll(skipTable === true); }
+
+// ---- slider helpers ----
+function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+function slider(parent, label, obj, key, min, max, step, onCh) {
+  var w = el('label', 'sl'), k = el('span', 'k', label), r = document.createElement('input'), v = el('span', 'val');
+  r.type = 'range'; r.min = min; r.max = max; r.step = step; r.value = obj[key]; v.textContent = fmt(obj[key]);
+  r.oninput = function () { obj[key] = parseFloat(r.value); v.textContent = fmt(obj[key]); (onCh || markAll)(); };
+  w.appendChild(k); w.appendChild(r); w.appendChild(v); parent.appendChild(w);
+  return { r: r, v: v, set: function (o) { obj = o; r.value = o[key]; v.textContent = fmt(o[key]); } };
+}
+function colorPick(parent, label, key) {
+  var w = el('label', 'sl'), k = el('span', 'k', label), c = document.createElement('input');
+  c.type = 'color'; c.value = (OVR[key] || C[key] || '#000000').toLowerCase();
+  c.oninput = function () { OVR[key] = c.value; markAll(); };
+  w.appendChild(k); w.appendChild(c); parent.appendChild(w);
+  return c;
+}
+function grp(parent, title) { var g = el('div', 'grp'); g.appendChild(el('b', null, title)); parent.appendChild(g); return g; }
+
+// ---- ART-02 controls ----
+(function () {
+  var host = document.getElementById('ctl02');
+  AREAS.forEach(function (a) {
+    var g = grp(host, a + ' <span class="note">(' + AREA_NOTE[a] + ')</span>');
+    var lb = el('label', 'sl'), cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.onchange = function () { A02.areas[a] = cb.checked; markAll(); };
+    lb.appendChild(cb); lb.appendChild(document.createTextNode(' area on (after side + JSON)')); g.appendChild(lb);
+    slider(g, 'saturation x', A02.sat, a, 0.6, 1.4, 0.02);
+    slider(g, 'value x', A02.val, a, 0.7, 1.3, 0.02);
+  });
+})();
+function table02() {
+  var h = '<table><tr><th>area</th><th>family</th><th>today</th><th>proposed (adjusted)</th></tr>';
+  Object.keys(FAM).forEach(function (f) {
+    var F = FAM[f];
+    h += '<tr><td>' + F.area + '</td><td>' + f + '</td><td>' + F.cur.map(function (k) { return '<span class="sw" style="background:' + (C[k] || '#f0f') + '"></span>' + k; }).join(' ') +
+         '</td><td>' + F.neu.map(function (k, i) { return '<span class="sw" style="background:' + hexOf(k) + '"></span>' + k + (NEW02[k] ? ' <input type="color" data-k="' + k + '" value="' + OVR[k] + '">' : ''); }).join(' ') + '</td></tr>';
+  });
+  h += '</table>';
+  var t = document.getElementById('tab02'); t.innerHTML = h;
+  Array.prototype.forEach.call(t.querySelectorAll('input[type=color]'), function (inp) {
+    inp.oninput = function () { OVR[inp.getAttribute('data-k')] = inp.value; markAll(true); };
+    inp.onchange = function () { markAll(); };
+  });
+}
+// ---- ART-03 controls ----
+var S03 = [];
+(function () {
+  var host = document.getElementById('ctl03');
+  var g1 = grp(host, 'distance (metres) + cap'), g2 = grp(host, 'colour + glyph'), g3 = grp(host, 'near colours');
+  [['start', 0, 100, 1, g1], ['full', 100, 2000, 10, g1], ['curve', 0.2, 2, 0.01, g1], ['max', 0.2, 0.99, 0.01, g1],
+   ['bgK', 0, 1, 0.01, g2], ['thin0', 0, 1, 0.01, g2], ['thinK', 0, 3, 0.05, g2], ['edgeMax', 0.05, 1, 0.01, g2], ['blank', 0.5, 1.01, 0.01, g2]]
+    .forEach(function (s) { S03.push(slider(s[4], s[0], A03[G.look], s[0], s[1], s[2], s[3])); S03[S03.length - 1].key = s[0]; });
+  colorPick(g3, 'hazeWarm (day)', 'hazeWarm'); colorPick(g3, 'hazeEvening', 'hazeEvening');
+  g3.appendChild(el('div', 'note', 'far = the look\'s sky horizon key (ART-04 sheet), bound by the 37.18 rule'));
+})();
+function plot03() {
+  var cv = document.getElementById('plot03'), ctx = cv.getContext('2d'), W = cv.width, Hh = cv.height - 40, Hz = A03[G.look];
+  ctx.fillStyle = '#0b0c12'; ctx.fillRect(0, 0, W, cv.height);
+  function X(d) { return 30 + Math.sqrt(d / 1500) * (W - 40); }
+  function Y(f) { return 8 + (1 - f) * (Hh - 16); }
+  ctx.strokeStyle = '#22252e'; ctx.fillStyle = '#6a6a78'; ctx.font = '10px Consolas';
+  [0, 15, 45, 100, 250, 400, 700, 1000, 1500].forEach(function (d) { ctx.beginPath(); ctx.moveTo(X(d), 8); ctx.lineTo(X(d), Hh - 8); ctx.stroke(); ctx.fillText(d + '', X(d) - 6, Hh); });
+  [0, 0.5, 0.78, 1].forEach(function (f) { ctx.beginPath(); ctx.moveTo(30, Y(f)); ctx.lineTo(W - 10, Y(f)); ctx.stroke(); ctx.fillText(f + '', 2, Y(f) + 3); });
+  function curve(col, fn, dash) {
+    ctx.strokeStyle = col; ctx.setLineDash(dash || []); ctx.lineWidth = 2; ctx.beginPath();
+    for (var d = 0; d <= 1500; d += 3) { var f = fn(d); if (d === 0) ctx.moveTo(X(d), Y(f)); else ctx.lineTo(X(d), Y(f)); }
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1;
+  }
+  var FF = P.fog.far, DF = DP.fog;
+  curve('#8fb4e0', function (d) { return d <= FF.start ? 0 : Math.pow(clamp((d - FF.start) / (FF.full - FF.start), 0, 1), FF.curve); });
+  ctx.strokeStyle = '#8fb4e0'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(30, Y(0.85)); ctx.lineTo(W - 10, Y(0.85)); ctx.stroke(); ctx.setLineDash([]);
+  curve('#9a8aff', function (d) { return clamp((d - DF.start) / (DF.full - DF.start), 0, 1); });
+  curve('#ffb04a', function (d) { var ht = clamp((d - Hz.start) / (Hz.full - Hz.start), 0, 1); return d <= Hz.start ? 0 : Hz.max * Math.pow(ht, Hz.curve); });
+  var nr = rgbOf(Hz.near), far = rgbOf(Hz.far), x;
+  for (x = 30; x < W - 10; x++) {
+    var d = Math.pow((x - 30) / (W - 40), 2) * 1500, ht = clamp((d - Hz.start) / (Hz.full - Hz.start), 0, 1);
+    ctx.fillStyle = css([nr[0] + (far[0] - nr[0]) * ht, nr[1] + (far[1] - nr[1]) * ht, nr[2] + (far[2] - nr[2]) * ht]);
+    ctx.fillRect(x, Hh + 14, 1, 18);
+  }
+}
+// ---- ART-04 controls ----
+var S04 = [];
+(function () {
+  var host = document.getElementById('ctl04');
+  var g1 = grp(host, 'gradient (picked look)'), g2 = grp(host, 'cloud shape'), g3 = grp(host, 'cloud light + wind'), g4 = grp(host, 'colours');
+  S04.push(slider(g1, 'mid stop t', A04[G.look].sky[1], 't', 0.1, 0.9, 0.01)); S04[0].path = 'mid';
+  [['scale', 0.3, 4, 0.05, g2], ['bias', 0.02, 0.6, 0.01, g2], ['cover', 0.2, 0.8, 0.01, g2], ['puffK', 0.5, 8, 0.1, g2],
+   ['wispCover', 0.3, 0.9, 0.01, g2], ['wispK', 0, 8, 0.1, g2],
+   ['litK', 0, 6, 0.1, g3], ['litDy', 0.01, 0.2, 0.005, g3], ['bodyK', 0.2, 1.5, 0.01, g3], ['seed', 0, 20, 1, g3]]
+    .forEach(function (s) { var o = slider(s[4], s[0], A04[G.look].clouds, s[0], s[1], s[2], s[3]); o.key = s[0]; S04.push(o); });
+  var wobj = { wx: A04[G.look].clouds.wind[0], wy: A04[G.look].clouds.wind[1] };
+  var sw = slider(g3, 'wind x', wobj, 'wx', -0.03, 0.03, 0.0005, function () { A04[G.look].clouds.wind[0] = wobj.wx; markAll(); });
+  var sw2 = slider(g3, 'wind y', wobj, 'wy', -0.03, 0.03, 0.0005, function () { A04[G.look].clouds.wind[1] = wobj.wy; markAll(); });
+  S04.wind = function () { wobj.wx = A04[G.look].clouds.wind[0]; wobj.wy = A04[G.look].clouds.wind[1]; sw.set(wobj); sw2.set(wobj); };
+  ['skyCyanTop', 'skyCyanMid', 'skyCyanHorizon', 'cloudWhite', 'cloudShade', 'skyEveTop', 'skyEveMid', 'skyEveHorizon', 'cloudEve', 'cloudEveShade']
+    .forEach(function (k) { colorPick(g4, k, k); });
+  var cbd = (P.materials.sky && P.materials.sky.cloudBand) || [2, 35, 55];
+  g4.appendChild(el('div', 'note', 'cloud band (materials.sky.cloudBand, read-only): ' + cbd.join(' / ') + ' deg'));
+})();
+function bar04() {
+  var cv = document.getElementById('bar04'), ctx = cv.getContext('2d'), W = cv.width, x;
+  ctx.fillStyle = '#0b0c12'; ctx.fillRect(0, 0, W, cv.height);
+  LOOKS.forEach(function (lk, r) {
+    var st = A04[lk].sky;
+    for (x = 0; x < W; x++) { ctx.fillStyle = css(gradAt(st, x / (W - 1))); ctx.fillRect(x, 4 + r * 33, 1, 28); }
+    ctx.fillStyle = '#000';
+    st.forEach(function (s) { ctx.fillRect(Math.round(s.t * (W - 1)) - 1, 4 + r * 33, 2, 6); });
+  });
+}
+// ---- ART-05 controls ----
+(function () {
+  var host = document.getElementById('ctl05');
+  var g1 = grp(host, 'crowns + blades'), g2 = grp(host, 'flowers'), g3 = grp(host, 'house depth (m proud of the plaster)');
+  slider(g1, 'clump blend', A05.crownClump, 'normalBlend', 0, 1, 0.01);
+  slider(g1, 'blade nearM', A05.bladeFace, 'nearM', 2, 25, 1);
+  slider(g1, 'swayAmp', A05.bladeFace, 'swayAmp', 0, 1.5, 0.05);
+  slider(g1, 'swayHz', A05.bladeFace, 'swayHz', 0.1, 2, 0.05);
+  slider(g1, 'waveM', A05.bladeFace, 'waveM', 1, 20, 0.5);
+  slider(g2, 'density', A05.flowers, 'density', 0, 0.12, 0.005);
+  var lb = el('label', 'sl'), inp = document.createElement('input');
+  inp.className = 'set'; inp.style.width = '80px'; inp.value = A05.flowers.glyphs;
+  inp.oninput = function () { A05.flowers.glyphs = inp.value || '*'; markAll(); };
+  lb.appendChild(el('span', 'k', 'glyphs')); lb.appendChild(inp); g2.appendChild(lb);
+  ['post', 'beam', 'brace', 'base'].forEach(function (k) { slider(g3, k, A05.houseDepth, k, 0, 0.3, 0.01); });
+  var sh = document.getElementById('sets05'), t = '<table><tr><th>set</th><th>levels 1..8 (JSON array; edit to try)</th><th>ladder (today\'s meadow colours)</th></tr>';
+  Object.keys(A05.sets).forEach(function (k) { t += '<tr><td>' + k + '</td><td><input class="set" data-s="' + k + '"></td><td><canvas data-l="' + k + '" width="300" height="16"></canvas></td></tr>'; });
+  sh.innerHTML = t + '</table>';
+  Array.prototype.forEach.call(sh.querySelectorAll('input[data-s]'), function (inp2) {
+    var k = inp2.getAttribute('data-s'); inp2.value = JSON.stringify(A05.sets[k]);
+    inp2.oninput = function () {
+      try { var a = JSON.parse(inp2.value); if (Array.isArray(a) && a.length) { A05.sets[k] = a.map(String); inp2.style.borderColor = '#33384a'; markAll(); } }
+      catch (e) { inp2.style.borderColor = '#ff3b3b'; }
+    };
+  });
+})();
+function ladders05() {
+  Array.prototype.forEach.call(document.querySelectorAll('canvas[data-l]'), function (cv) {
+    var k = cv.getAttribute('data-l'), set = A05.sets[k], ctx = cv.getContext('2d'), i, j;
+    var cols = { crownClump: ['limeDark', 'lime', 'limeLight'], bladeFace: ['meadowDark', 'meadow', 'meadowLight'], dirtFace: ['dirtDark', 'dirt', 'dirtLight'], plasterFace: ['plasterDark', 'plaster', 'plasterLight'] }[k];
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.font = FONT; ctx.textBaseline = 'top';
+    for (i = 0; i < 48; i++) {
+      var lv = Math.floor(i / 6), s = set[Math.min(set.length - 1, lv)] || ' ', base = rgbOf(cols[lv < 3 ? 0 : lv < 6 ? 1 : 2]), g = 0.55 + 0.45 * (lv / 7);
+      ctx.fillStyle = css([base[0] * g * 0.25, base[1] * g * 0.25, base[2] * g * 0.25]); ctx.fillRect(i * CW, 2, CW, CH);
+      ctx.fillStyle = css([base[0] * g, base[1] * g, base[2] * g]); j = i % s.length; ctx.fillText(s.charAt(j), i * CW, 2);
+    }
+  });
+}
+
+// ---- JSON ----
+function changedColors(keys) {
+  var o = {}, n = 0;
+  keys.forEach(function (k) { var h = hexOf(k).toLowerCase(); if (!C[k] || C[k].toLowerCase() !== h) { o[k] = h; n++; } });
+  return n ? o : undefined;
+}
+function json02() {
+  var colors = {}, remap = {}, i;
+  Object.keys(NEW02).forEach(function (k) { if (A02.areas[NEW02[k][1]]) colors[k] = hexOf(k); });
+  AREAS.forEach(function (a) { if (A02.areas[a]) Object.keys(REMAP[a]).forEach(function (p) { remap[p] = REMAP[a][p]; }); });
+  return { story: 'ART-02b (designer data, after the owner pick)', areas: clone(A02.areas),
+           trims: { sat: clone(A02.sat), val: clone(A02.val), note: 'already applied to colors' }, colors: colors, remap: remap };
+}
+function round(o) { return JSON.parse(JSON.stringify(o, function (k, v) { return typeof v === 'number' ? fmt(v) : v; })); }
+function json03() {
+  var o = { story: 'ART-03 (values for timeOfDay.<look>.haze, architecture.md 37.18 item 4)', timeOfDay: {} };
+  LOOKS.forEach(function (lk) { o.timeOfDay[lk] = { haze: round(A03[lk]) }; });
+  var cc = changedColors(['hazeWarm', 'hazeEvening']); if (cc) o.colors = cc;
+  return o;
+}
+function json04() {
+  var o = { story: 'ART-04 (values for timeOfDay.<look>.sky + .clouds, architecture.md 37.18 item 5)', timeOfDay: {} };
+  LOOKS.forEach(function (lk) { o.timeOfDay[lk] = { sky: round(A04[lk].sky), clouds: round(A04[lk].clouds) }; });
+  var cc = changedColors(['skyCyanTop', 'skyCyanMid', 'skyCyanHorizon', 'cloudWhite', 'cloudShade', 'skyEveTop', 'skyEveMid', 'skyEveHorizon', 'cloudEve', 'cloudEveShade']);
+  if (cc) o.colors = cc;
+  return o;
+}
+function json05() {
+  return { story: 'ART-05 (detail-pass sets + house / crown / blade rules)',
+           detailPass: { sets: clone(A05.sets),
+                         useSets: { 'leaf / leaf_light / leaf_dark + autumn crowns face': 'crownClump', 'grass face (near, d < nearM)': 'bladeFace',
+                                    'path face': 'dirtFace', 'plaster face (house models)': 'plasterFace' } },
+           art05: round({ crownClump: A05.crownClump, bladeFace: A05.bladeFace, flowers: A05.flowers, houseDepth: A05.houseDepth }) };
+}
+var JSONS = { '02': json02, '03': json03, '04': json04, '05': json05 };
+function showJson() { Object.keys(JSONS).forEach(function (id) { document.getElementById('json' + id).textContent = JSON.stringify(JSONS[id](), null, 2); }); }
+Array.prototype.forEach.call(document.querySelectorAll('button.copy'), function (b) {
+  b.onclick = function () {
+    var id = b.getAttribute('data-sheet'), txt = JSON.stringify(JSONS[id](), null, 2), msg = document.getElementById('cp' + id);
+    function fallback() { var ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); msg.textContent = 'copied (' + txt.length + ' chars)'; } catch (e) { msg.textContent = 'select the box below and copy'; }
+      document.body.removeChild(ta); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { msg.textContent = 'copied (' + txt.length + ' chars)'; }, fallback);
+    else fallback();
+  };
+});
+
+// ---- checks ----
+function line(ok, txt) { return '<div class="' + (ok === true ? 'pass' : ok === 'warn' ? 'warn' : 'fail') + '">' + (ok === true ? 'PASS ' : ok === 'warn' ? 'WARN ' : 'FAIL ') + txt + '</div>'; }
+function hexDist(a, b) { var x = hex2rgb(a), y = hex2rgb(b); return Math.sqrt(Math.pow(x[0] - y[0], 2) + Math.pow(x[1] - y[1], 2) + Math.pow(x[2] - y[2], 2)); }
+function checks() {
+  var h = '', bad = [], clash = [], k;
+  // ART-02
+  Object.keys(NEW02).forEach(function (k2) { if (C[k2] && C[k2].toLowerCase() !== NEW02[k2][0]) bad.push(k2); });
+  h += line(!bad.length, 'append-only: no proposed key already in palette.colors with another value' + (bad.length ? ' (' + bad.join(', ') + ')' : ''));
+  Object.keys(NEW02).forEach(function (k2) {
+    if (!A02.areas[NEW02[k2][1]]) return;
+    RESERVED.forEach(function (r) { if (C[r] && hexDist(hexOf(k2), C[r]) < 40) clash.push(k2 + '~' + r + ' ' + Math.round(hexDist(hexOf(k2), C[r]))); });
+  });
+  h += line(!clash.length ? true : 'warn', 'reserved UI colours (' + RESERVED.join(', ') + ') stay >= 40 RGB away from every switched-on key' + (clash.length ? ': ' + clash.join('; ') : ''));
+  var miss = Object.keys(MISSING); h += line(!miss.length, 'every colour key resolves' + (miss.length ? ' (missing ' + miss.join(', ') + ')' : ''));
+  document.getElementById('chk02').innerHTML = h;
+  // ART-03 (validateLook haze rules)
+  h = '';
+  LOOKS.forEach(function (lk) {
+    var Hz = A03[lk], e = [];
+    if (!(Hz.start >= 0 && Hz.start < Hz.full)) e.push('0 <= start < full');
+    if (!(Hz.curve > 0)) e.push('curve > 0');
+    if (!(Hz.max > 0 && Hz.max < 1)) e.push('0 < max < 1');
+    if (!(Hz.bgK >= 0 && Hz.bgK <= 1)) e.push('bgK in [0,1]');
+    if (!(Hz.blank > 0 && Hz.blank <= 2)) e.push('blank in (0,2]');
+    if (!(Hz.thin0 >= 0 && Hz.thin0 <= 1)) e.push('thin0 in [0,1]');
+    if (!(Hz.thinK >= 0)) e.push('thinK >= 0');
+    if (!(Hz.edgeMax > 0 && Hz.edgeMax <= 1)) e.push('edgeMax in (0,1]');
+    h += line(!e.length, lk + ': validateLook haze rules' + (e.length ? ' broken: ' + e.join(', ') : ''));
+    h += line(Hz.far === A04[lk].sky[0].c ? true : 'warn', lk + ': haze.far (' + Hz.far + ') === sky[t=0] (' + A04[lk].sky[0].c + ')');
+    h += line(Hz.max < Hz.blank ? true : 'warn', lk + ': blank never hit at max (' + Hz.max + ' < ' + Hz.blank + ')');
+    var gp = 0.4 * (1 - Hz.thinK * Math.max(0, Hz.max - Hz.thin0));
+    h += line(gp > 0 ? true : 'warn', lk + ': a dim far cell (gb 0.4) keeps a glyph at full haze (gbPick ' + fmt(gp) + ')');
+  });
+  document.getElementById('chk03').innerHTML = h;
+  // ART-04
+  h = '';
+  LOOKS.forEach(function (lk) {
+    var st = A04[lk].sky, Cl = A04[lk].clouds, e = [];
+    h += line(st[0].t === 0 && st[st.length - 1].t === 1 && st[1].t > 0 && st[1].t < 1, lk + ': sky stops t 0 < mid ' + fmt(st[1].t) + ' < 1');
+    if (!(Cl.scale > 0 && Cl.bias > 0)) e.push('scale, bias > 0');
+    if (!(Cl.cover >= 0 && Cl.cover <= 1)) e.push('cover in [0,1]');
+    if (!(isFinite(Cl.wind[0]) && isFinite(Cl.wind[1]))) e.push('wind finite');
+    if (!P.ramps[Cl.ramp]) e.push('ramp exists');
+    h += line(!e.length, lk + ': validateLook cloud rules' + (e.length ? ' broken: ' + e.join(', ') : ''));
+    var dl = hexDist(hexOf(Cl.lit), hexOf(st[1].c));
+    h += line(dl > 60 ? true : 'warn', lk + ': cloud tops vs sky mid contrast ' + Math.round(dl) + ' RGB (> 60)');
+  });
+  document.getElementById('chk04').innerHTML = h;
+  // ART-05
+  h = '';
+  Object.keys(A05.sets).forEach(function (k2) {
+    var s = A05.sets[k2], e = [];
+    if (s.length !== 8) e.push(s.length + ' levels (want 8)');
+    s.forEach(function (lv) { for (var i = 0; i < lv.length; i++) { var c = lv.charCodeAt(i); if (c < 33 || c > 126) e.push('non-printable / space in "' + lv + '"'); } });
+    if (s[2] && s[2].indexOf('.') >= 0) e.push("'.' at level 3 (US-028 blank-share rule)");
+    h += line(!e.length, k2 + ': 8 levels, ASCII 33-126, no "." at level 3' + (e.length ? ' - ' + e.join('; ') : ''));
+  });
+  var hd = A05.houseDepth;
+  h += line(hd.post >= hd.beam && hd.beam >= hd.brace ? true : 'warn', 'house depth order post >= beam >= brace (' + hd.post + ' / ' + hd.beam + ' / ' + hd.brace + ' m)');
+  h += line(hd.base > 0 && hd.base < hd.brace ? true : 'warn', 'stone base proud of the plaster, flatter than the braces (' + hd.base + ' m)');
+  document.getElementById('chk05').innerHTML = h;
+}
+
+// ---- global controls, loop ----
+function syncLookSliders() {
+  S03.forEach(function (s) { s.set(A03[G.look]); });
+  S04[0].set(A04[G.look].sky[1]);
+  S04.slice(1).forEach(function (s) { s.set(A04[G.look].clouds); });
+  S04.wind();
+}
+function refreshAll(skipTable) { if (!skipTable) table02(); plot03(); bar04(); ladders05(); showJson(); checks(); }
+document.getElementById('grid').onchange = function (e) { G.grid = e.target.value; markAll(); };
+document.getElementById('look').onchange = function (e) { G.look = e.target.value; syncLookSliders(); markAll(); };
+document.getElementById('light').onchange = function (e) { G.light = e.target.value; markAll(); };
+document.getElementById('stack').onchange = function (e) { G.stack = e.target.checked; markAll(); };
+document.getElementById('anim').onchange = function (e) { G.anim = e.target.checked; };
+document.getElementById('tscale').oninput = function (e) { G.tscale = +e.target.value; document.getElementById('tscaleV').textContent = G.tscale; };
+function visible(id) { var r = document.getElementById('poses' + id).getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }
+var lastAnim = 0;
+function loop(now) {
+  if (G.anim && now - lastAnim > 160) {
+    lastAnim = now;
+    Object.keys(SHEETS).forEach(function (id) { if ((SHEETS[id].anim || G.stack) && visible(id)) SHEETS[id].dirty = true; });
+  }
+  var t0 = performance.now(), n = 0;
+  Object.keys(SHEETS).forEach(function (id) { if (SHEETS[id].dirty) { renderSheet(id); n++; } });
+  if (n) document.getElementById('perf').textContent = n + ' sheet(s) in ' + Math.round(performance.now() - t0) + ' ms';
+  requestAnimationFrame(loop);
+}
+refreshAll();
+requestAnimationFrame(loop);
+} catch (err) {
+  document.getElementById('fatal').textContent = 'ERROR: ' + (err && err.stack || err);
+}
+})();
+</script>
+</body>
+</html>
