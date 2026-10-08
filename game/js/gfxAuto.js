@@ -17,7 +17,7 @@ export function tierFromAdapter(info) {
   if (/nvidia|geforce|\brtx\b|\bgtx\b|quadro/.test(text)) return { tier: 'high', why: 'discrete NVIDIA' };
   if (/\barc\(?(tm)?\)?\s*[ab]\d{3}/.test(text)) return { tier: 'high', why: 'discrete Intel Arc' };
   if (/intel/.test(text)) {
-    if (/xe-lpg|xe2|arc\(?(tm)?\)? graphics|0x7d|0x64/.test(text)) return { tier: 'medium', why: 'Intel Arc integrated' };
+    if (/xe-lpg|xe2|arc\(?(tm)?\)? graphics|0x0*7d|0x0*64/.test(text)) return { tier: 'medium', why: 'Intel Arc integrated' };
     return { tier: 'low', why: 'integrated Intel' };
   }
   if (/amd|radeon|\bati\b/.test(text)) {

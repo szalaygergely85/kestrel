@@ -59,3 +59,10 @@ t('opts.at = measured preset (redetect)', () => {
   assert.equal(pickQuality(RTX4060, rep(20), { at: 'medium' }).name, 'low');
   assert.equal(pickQuality(RTX4060, rep(5), { at: 'medium' }).name, 'medium');
 });
+
+t('tiers from the WebGL label alone (no WebGPU adapter info, arch 2026-10-08)', () => {
+  // ANGLE zero-pads the device id: Intel Arc iGPUs (0x7Dxx / 0x64xx) must still be 'medium', not 'low'
+  assert.equal(tierFromAdapter({ label: 'ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)' }).tier, 'medium');
+  assert.equal(tierFromAdapter({ label: 'ANGLE (Intel, Intel(R) Graphics (0x000064A0) Direct3D11 vs_5_0 ps_5_0, D3D11)' }).tier, 'medium');
+  assert.equal(tierFromAdapter({ label: 'ANGLE (Intel, Intel(R) UHD Graphics 770 (0x00004680) Direct3D11 vs_5_0 ps_5_0, D3D11)' }).tier, 'low');
+});
