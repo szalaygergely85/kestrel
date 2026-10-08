@@ -1,6 +1,9 @@
 # Demo bundle builder
 
 Install the project's existing development dependency (`npm install`) for the TypeScript syntax parser. The game still runs without it; this is a packaging tool, not a runtime dependency.
+Importing the builder also works without TypeScript. The CLI refuses to build
+with a short `npm i first` instruction; its default fixture suite reports SKIP
+and exits successfully until the parser is installed.
 
 Run `node tools/demo/build-demo.mjs --check` to verify the tracked runtime dependency closure and licence gate without writing files. Run without `--check` to write `dist/demo/` and `dist/demo.zip` after a successful plan. An existing output directory is refused; use a clean build checkout. It never deletes source files or publishes the archive.
 

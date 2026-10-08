@@ -2,11 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { planDemo,zipFiles,buildDemo } from './build-demo.mjs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { planDemo,zipFiles,buildDemo,parserAvailable } from './build-demo.mjs';
+if (!parserAvailable) { console.log('SKIP build-demo: TypeScript unavailable; run npm i first'); process.exit(0); }
 const base=fs.realpathSync(os.tmpdir()),root=fs.mkdtempSync(path.join(base,'kestrel-demo-test-'));
 try {
   const write=(file,text)=>{const target=path.join(root,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,text);};
+  // Exercise the missing optional dependency without moving the owner's node_modules.
+  write('missing-ts.mjs',"export function resolve(s,c,next){if(s==='typescript'){const e=new Error('missing typescript');e.code='ERR_MODULE_NOT_FOUND';throw e;}return next(s,c);}");
+  const loader=pathToFileURL(path.join(root,'missing-ts.mjs')).href, cli=fileURLToPath(new URL('./build-demo.mjs',import.meta.url));
+  const missing=spawnSync(process.execPath,['--no-warnings','--experimental-loader',loader,cli,'--check'],{encoding:'utf8'});
+  assert.equal(missing.status,1);assert.match(missing.stderr,/npm i first/);
+  assert.doesNotMatch(missing.stderr,/ERR_MODULE_NOT_FOUND/);
+  const skipped=spawnSync(process.execPath,['--no-warnings','--experimental-loader',loader,fileURLToPath(import.meta.url)],{encoding:'utf8'});
+  assert.equal(skipped.status,0);assert.match(skipped.stdout,/SKIP build-demo/);
   write('game/index.html','<script type="module" src="js/main.js"></script>');
   write('game/js/main.js',"/* import '../../../outside.js'; */ import '../../engine/index.js';fetch('../content/manifest.json');");
   write('engine/index.js','export const ready=true;');

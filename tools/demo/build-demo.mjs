@@ -5,7 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import ts from 'typescript'; // Existing devDependency; parser keeps comments/examples out of the graph.
+// Optional devDependency: importing the tool must also work in a plain game checkout.
+let ts = null;
+try { ts = (await import('typescript')).default; }
+catch (error) { if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error; }
+export const parserAvailable = ts !== null;
 
 const VERIFIED = new Set(['project-content','project-design','project-marketing','quaternius','kenney']);
 const ROOTS = ['game/','engine/','design/','content/'];
@@ -54,6 +58,7 @@ function references(file, text, errors) {
 
 /** No filesystem mutation. Unknown/unverified asset inputs refuse the whole plan. */
 export function planDemo({root,inventory,trackedFiles,entries=['game/index.html','THIRD_PARTY_NOTICES.md','docs/licences.md']}) {
+  if (!parserAvailable) throw new Error('demo: TypeScript parser unavailable; run npm i first at the repository root');
   root=fs.realpathSync(root);
   const tracked=new Set(trackedFiles),groups=new Map(inventory.files.map(row=>[row.path,row.group]));
   const pending=[...entries],seen=new Set(),files=[],errors=[];
