@@ -14,7 +14,7 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import paletteModule from '../../../../design/palette.js';
 import detailPassModule from '../../../../design/detail-pass.js';
 import { loadLevel } from '../../../world/Level.js';
-import { shadeCore, shadeDetailFast } from '../../detailShade.js';
+import { shadeCore, shadeDetailFast, wetGain, WET_DARK } from '../../detailShade.js';
 import { shadeTerrain, hashFastU, hashFast01 } from '../../terrainShade.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
@@ -86,7 +86,7 @@ const f1Tex = (flat, width, height) => { const d = []; for (let i = 0; i < width
 const faceKRows = [[table.faceK[0], table.faceK[1], table.faceK[2], table.faceK[3]], [table.faceK[4], table.faceK[5], table.faceK[6], 0]];
 const shading = table.shading;
 const su = {
-  cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
+  wetness: 0, cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
 };
 assert.equal(su.cellAspect, shading.cellAspect, 'uniform cellAspect == shading.cellAspect');
 const POW2 = [0.125, 0.25, 0.5, 1, 2, 4];
@@ -234,6 +234,58 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const mutT = (a, b) => { assert.ok(SHADE_WGSL.includes(a), 'anchor ' + a); return SHADE_WGSL.replace(a, b); };
   assert.ok(runTerrain(mutT('if (f > 0.85) { code = 0; }', 'if (f > 0.9) { code = 0; }'), 600).bad > 3, 'mutation: fog glyph cut');
   assert.ok(runTerrain(mutT('var br = fr * 0.3;', 'var br = fr * 0.35;'), 300).bad > 20, 'mutation: bg factor');
+}
+
+// --- S8-B2-14 wetness: uniform slot replaces pad0 (layout unchanged), JS twin == WGSL, 0 = untouched, 1 darkens 10-25 % ---
+{
+  assert.equal(w('wetness'), 43, 'wetness takes the old pad0 word (closeBand 42 + 1)');
+  assert.equal(SHADE_BLOCK.field('closeBand').word + 1, w('wetness'));
+  su.fgMaxGain = shading.fgMaxGain;
+  const setWet = (x) => { su.wetness = x; shading.wetness = x; };
+  const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const matIds = []; for (let id = 1; id < nMat; id++) if (table.records[id] && table.records[id].v2) matIds.push(id);
+  const meanLum = (x) => {
+    setWet(x); let sum = 0, n = 0;
+    for (let t = 0; t < 3000; t++) {
+      const id = matIds[t % matIds.length], rec = table.records[id].v2;
+      const u = (t * 7.31) % 30, v = (t * 3.17) % 30;
+      const gbuf = { u: [u], v: [v], z: [1], face: [1 + (t % 6)], kind: [2], aoD: [1e30], dudx: [0.02], dvdx: [0], dudy: [0], dvdy: [0.02] };
+      const out = { glyphIdx: -1, fg: [0, 0, 0], bg: [0, 0, 0], f: 0, onJoint: false };
+      shadeDetailFast(table, rec, 0, gbuf, 4, [0.7, 0.66, 0.6], out);
+      if (out.glyphIdx !== 0) { sum += lum(out.fg); n++; }
+    }
+    return sum / n;
+  };
+  const l0 = meanLum(0), l1 = meanLum(1), lHalf = meanLum(0.5);
+  const drop = 1 - l1 / l0;
+  console.log(`wetness: mean fg luminance ${l0.toFixed(1)} -> ${lHalf.toFixed(1)} (0.5) -> ${l1.toFixed(1)} (1.0), drop ${(drop * 100).toFixed(1)} %`);
+  assert.ok(drop >= 0.10 && drop <= 0.25, `wetness 1 lowers luminance 10-25 %: ${(drop * 100).toFixed(1)} %`);
+  assert.ok(l0 > lHalf && lHalf > l1, 'monotonic in wetness');
+  // wetness 0 / absent: identical to the pre-S8-B2-14 formula (explicit, not via the same code path)
+  setWet(0); delete shading.wetness;
+  for (let t = 0; t < 200; t++) {
+    const id = matIds[t % matIds.length], rec = table.records[id].v2, light = lights();
+    const a = shadeCore(table, rec, t * 0.37, t * 0.21, 1, 1e30, 0.01, 0, 0, 0.01, 5, 1 + (t % 6), 2, light, {});
+    shading.wetness = 0;
+    const b0 = shadeCore(table, rec, t * 0.37, t * 0.21, 1, 1e30, 0.01, 0, 0, 0.01, 5, 1 + (t % 6), 2, light, {});
+    delete shading.wetness;
+    assert.deepEqual(a, b0, 'wetness 0 == absent');
+  }
+  // twin: shadeCore b/gb at wetness 0.5 and 1 vs the WGSL probe, and wetGain vs detailShade.wetGain
+  for (const x of [0.5, 1]) {
+    setWet(x);
+    const r = runCore(SHADE_WGSL, 1500); assert.ok(r.bad <= r.n * 0.002, `shadeCore wet ${x} vs JS: ${r.bad}/${r.n}`); probes += r.n;
+    const fns = core(SHADE_WGSL); fns.wetGain = compileFn(SHADE_WGSL, 'wetGain', fns);
+    for (let t = 0; t < 300; t++) {
+      const bc = rand() * 1.6, g0 = 0.15 + rand() * 0.85;
+      assert.ok(Math.abs(fns.wetGain(g0, bc) - wetGain(g0, bc, x, shading.fgMaxGain)) < 1e-5, 'wetGain twin');
+    }
+    probes += 300;
+  }
+  setWet(0); delete shading.wetness;
+  const mutW = SHADE_WGSL.replace(`jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness)`, 'jit * (1.0 - 0.1000 * su.wetness)');
+  assert.notEqual(mutW, SHADE_WGSL, 'mutation anchor wet dark');
+  setWet(1); assert.ok(runCore(mutW, 1500).bad > 15, 'mutation: wet darkening constant'); setWet(0); delete shading.wetness;
 }
 
 console.log(`shade.wgsl.test.js: string/layout rules + ${probes} JS-evaluated probes (hash, shadeCore, glyph pick, shadeTerrain) vs JS twins passed, mutations caught (hash, 5 shadeCore, 2 terrain).`);
