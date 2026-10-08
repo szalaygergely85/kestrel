@@ -944,6 +944,12 @@ function runGame(mode, cinematic = null) {
         Object.assign(startT, { x: c.x, y: c.y, z: gz - engine.physics.eyeHeight, yawDeg: c.yawDeg, pitchDeg: c.pitchDeg });
         playerHandle.data.components.body.peakZ = startT.z;
       }
+      // Dev: `?at=x,y,z,yaw,pitch` = the F3 `world (x, y, z) yaw pitch` line (z = eye height in world metres); no wake sequence.
+      const atParts = mode === 'world' && params.get('at') ? params.get('at').split(',').map(Number) : null;
+      if (atParts && atParts.length >= 3 && atParts.slice(0, 3).every(Number.isFinite)) {
+        Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2] - engine.physics.eyeHeight, yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
+        playerHandle.data.components.body.peakZ = startT.z;
+      }
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
       if (waterfallView) {
         Object.assign(startT, waterfallView);
@@ -958,7 +964,7 @@ function runGame(mode, cinematic = null) {
       if (params.get('sprite') === '1') spawnTestSprites(world, startT);
 
       // ---- US-015: wake sequence + title card + map card + hints (7.6 item 6: runtime rebuilt here, every load AND every restart) ----
-      questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose && !cinematic;
+      questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose && !atParts && !cinematic;
       if (questUiActive && assets.uiStyle) {
         const spawnDef = (worldDef.entities || []).find((e) => e.id === 'player' && e.spawn);
         const spawnStruct = spawnDef && world.structures.find((s) => s.id === spawnDef.spawn.structure);
