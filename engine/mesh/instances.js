@@ -375,7 +375,8 @@ export class InstanceGroups {
       if (g.count <= 0) continue;
       if (g.mesh) { // TREES-LP-b: kind-9 mesh group, one identity part, no LOD
         if (!meshDraw || !meshDraw.idFor) continue;
-        if (g.mesh.lazy) { requestMeshForGroup(g.mesh, g); continue; } // MESH-LOAD-01: payload not loaded = group draws nothing yet
+        if (g.mesh.lazy) { requestMeshForGroup(g.mesh, g); continue; }
+        if (g.mesh.lazyOrigin) requestMeshForGroup(g.mesh, g); // S8-B2-03: throttled LRU keep-alive (touch) for a ready lazy mesh // MESH-LOAD-01: payload not loaded = group draws nothing yet
         const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
         if (gpu && gpu.accept(g, draw, null)) continue;
         if (!memo || g._memoFrameNo !== frameNo) {

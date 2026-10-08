@@ -24,6 +24,7 @@
 // float).
 import { AUX_STRIDE, FLAT_STRIDE, flatKind } from '../../mesh/MeshData.js';
 import { KIND_MESH } from '../GBuffer.js';
+import { onMeshEvicted } from '../../mesh/lazyMesh.js';
 
 /** Bytes per vertex in the interleaved static buffer (27.15.0 amendment 2). */
 export const STATIC_STRIDE_BYTES = 64;
@@ -225,6 +226,18 @@ export class MeshBuffers {
     this.voxelCache = new Map();
     /** CLOTH-1b2: cloth entries (dynamic 16 B vertex buffer + static uv + static index), keyed by `mesh.id`. @type {Map<string, any>} */
     this.clothCache = new Map();
+    /** S8-B2-03: a lazy mesh whose payload was evicted frees its GPU buffers (re-uploaded by `get` when it loads again). */
+    this._unsubEvict = onMeshEvicted((m) => this.release(m));
+  }
+
+  /** Frees the static-layout GPU buffers of one mesh (no-op when absent). @param {any} mesh */
+  release(mesh) {
+    const e = this.cache.get(mesh.id);
+    if (!e) return; // keyed by id: the entry's mesh is the resolved draw copy of the registry mesh
+    this.device.dispose(e.vertexBuffer);
+    if (e.indexBuffer) this.device.dispose(e.indexBuffer);
+    if (e.uvMaskBuffer) this.device.dispose(e.uvMaskBuffer);
+    this.cache.delete(mesh.id);
   }
 
   /**
@@ -324,6 +337,7 @@ export class MeshBuffers {
 
   /** Frees every cached buffer (context loss / world unload). */
   dispose() {
+    if (this._unsubEvict) { this._unsubEvict(); this._unsubEvict = null; }
     for (const entry of this.cache.values()) {
       this.device.dispose(entry.vertexBuffer);
       if (entry.indexBuffer) this.device.dispose(entry.indexBuffer);
