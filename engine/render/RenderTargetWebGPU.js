@@ -8,7 +8,7 @@
 // its own cached bind group (no rebuild per frame). The atlas textures are rebuilt only on resize/DPR change.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox } from './glyphMetrics.js';
+import { computeCellBox, fitCssSize } from './glyphMetrics.js';
 import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas.js';
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
 import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
@@ -125,8 +125,9 @@ export class RenderTargetWebGPU {
     this.glyphAscent = box.glyphAscent;
     this.cellW = this.pxCellW / dpr;
     this.cellH = this.pxCellH / dpr;
-    this.canvas.style.width = this.cellW * this.cols + 'px';
-    this.canvas.style.height = this.cellH * this.rows + 'px';
+    const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH); // display-only fit
+    this.canvas.style.width = css.w + 'px';
+    this.canvas.style.height = css.h + 'px';
     this.canvas.width = this.pxCellW * this.cols; // the configured context follows the canvas size
     this.canvas.height = this.pxCellH * this.rows;
     this._rebuildAtlas();

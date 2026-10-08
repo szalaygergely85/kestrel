@@ -71,4 +71,14 @@ export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRo
   };
 }
 
+/**
+ * BUG-HUD-OFFSCREEN-01: CSS size of the canvas, uniformly scaled DOWN (never up) so cols*cellW x rows*cellH fits the
+ * window. Display-only: pxCellW/H, the backing buffer and everything the cast reads stay untouched (aspect preserved).
+ * @returns {{w:number,h:number}} CSS pixels
+ */
+export function fitCssSize(cssW, cssH, availW, availH) {
+  const s = Math.min(1, availW / cssW, availH / cssH);
+  return { w: cssW * s, h: cssH * s };
+}
+
 export { FONT_STACK };
