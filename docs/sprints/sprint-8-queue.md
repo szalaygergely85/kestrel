@@ -608,3 +608,6 @@ MatF `GLOW` column, `rt.emissive` flags + presets, `PASS_NAMES += 'bleed'` + fra
 edge.wgsl.js + edgePass.js twin: bg lift + `glyphRamps.halo` on space cells only. Ends in arch-review.
 ### EMIS-05 compare rows + perf table [PC-A, ~0.25 d, deps: EMIS-04]
 `?gpucompare=emissive` rows, perf table High 400x150 / Ultra 480x180 (target < 1 ms total), Low 240x90 night readability check (fallback: 1-cell halo at Low).
+
+### EMIS owner picks (2026-10-08)
+Strength = MEDIUM (lightGain 0.8, bleedGain 1.2, haloBg 0.45, haloMin 0.08, haloR 3, ramp ` .':`; designer: haloR >= 3 or the '!' gets no halo at 12 m). Glow hue = warm orange-gold (a little orange): approves `materials[k].glowColor` (small palette edit, append-only; e.g. emberHot/brassLight family). Owner wants the WHOLE quest '!' glowing (white-gold with a little orange), NOT a dark silhouette: QUEST-MARK rework (dark iron outline removed or one faint warm-dark rim voxel; whole glyph emissive). Still open for the owner: derived light off for chests/hook lamp?; wick/coal voxels for lamp+brazier?; bleed reach.

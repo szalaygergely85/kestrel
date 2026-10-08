@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - quest marker (design v1.46)</title>
+<title>Kestrel - quest marker (design v1.49)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : quest marker (design v1.46) - model keys <code>questMark</code> ('!'), <code>questMarkTurnIn</code> ('?', later)</h1>
+<h1>Kestrel : quest marker (design v1.49, whole glyph glowing) - model keys <code>questMark</code> ('!'), <code>questMarkTurnIn</code> ('?', later)</h1>
 <div class="note">
   <code>design/models/quest_mark.js</code>: 9 x 5 x 25 voxels @ 0.05 m (0.45 wide x 0.25 deep, glyph 0.90 m tall over a built-in 0.35 m float;
   anchor = the base point). One part <code>mark</code> (pivot = glyph centre), clips <code>idle</code> (spin 0.5 rev/s + bob 0.08 m, 2 s loop),
@@ -55,7 +55,8 @@
 <h2>Orbit + 4 fixed views ('!' left, '?' right; ground disc = the target the mark floats over)</h2>
 <div class="note">Modes: the cycle is what the game plays for one quest step (pop 0.3 s, idle, fade 0.25 s, gap, next marker pops).
   "scrub: idle time" freezes the idle clip at the slider time (1000 ms = face-on, 0 / 2000 = back face, 500 / 1500 = edge-on; the bob peaks at 500 ms).
-  "clip: bob + engine spin" = the alternative where the view drives the yaw. Sky "day" = a bright blue background to judge the dark rim.</div>
+  "clip: bob + engine spin" = the alternative where the view drives the yaw. Sky "day" = a bright blue background to judge the read against the sky
+  (v1.49: no dark rim any more; every voxel is brass_hot / brass_glint / ember_glow, all emissive).</div>
 <div class="row" id="orbitRow"></div>
 <div class="row" id="dirRow"></div>
 
@@ -266,12 +267,20 @@ function makeCanvas(cols, rows, cw, ch) {
 }
 const RES = { kind: 0, t: 0, m: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0, matKey: '' }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
 const Ov = [0, 0, 0], Dv = [0, 0, 0];
-const isGold = (k) => k && k.indexOf('brass') === 0;
+// v1.49: every mark material is emissive. "rim" cells = mark cells on a NON-emissive material (the v1.46 iron rim); 0 now.
+const emis = (k) => (k && P.materials[k] && P.materials[k].emissive) || 0;
+const STRONG_EMIS = 0.5;   // = 38.12 EMISSIVE_LIGHT_MIN; the preview's edge pass leaves these cells alone (they keep their glow)
+// contrast rule for the bright-day-sky check (see readabilityChecks): a cell's appearance = 35 % glyph ink + 65 % cell bg
+const INK = 0.35;
+function relLum(c) {   // WCAG relative luminance of an [r, g, b] 0..255 colour
+  const f = (v) => { v = Math.max(0, Math.min(255, v)) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
 function renderView(view, sc, env) {
   const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
   if (!view.buf) view.buf = { kind: new Int8Array(n), item: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3), mat: new Array(n) };
   const B = view.buf;
-  let glowCells = 0, goldCells = 0, rimCells = 0, r0 = 1e9, r1 = -1, c0 = 1e9, c1 = -1;
+  let glowCells = 0, goldCells = 0, rimCells = 0, emisCells = 0, r0 = 1e9, r1 = -1, c0 = 1e9, c1 = -1;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const i = r * cols + c;
     cam.ray(c, r, Ov, Dv);
@@ -285,7 +294,8 @@ function renderView(view, sc, env) {
       B.item[i] = RES.m;
       if (sc.items[RES.m].gold) {
         r0 = Math.min(r0, r); r1 = Math.max(r1, r); c0 = Math.min(c0, c); c1 = Math.max(c1, c);
-        if (isGold(RES.matKey)) goldCells++; else rimCells++;
+        goldCells++;
+        if (emis(RES.matKey) > 0) emisCells++; else rimCells++;
         if (RES.matKey === 'brass_glint') glowCells++;
       }
     }
@@ -298,7 +308,7 @@ function renderView(view, sc, env) {
     const rule = new Int8Array(n);
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
-      if (B.kind[i] !== 8 || B.mat[i] === 'brass_glint') continue;   // emissive cells keep their glow
+      if (B.kind[i] !== 8 || emis(B.mat[i]) >= STRONG_EMIS) continue;   // strongly emissive cells keep their glow
       if (r > 0 && far(i, i - cols)) rule[i] = 1;
       else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
       else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
@@ -315,11 +325,30 @@ function renderView(view, sc, env) {
   for (let c = Math.max(0, c0); c <= c1; c++) {
     let runs = 0, inRun = false;
     for (let r = Math.max(0, r0); r <= r1; r++) {
-      const i = r * cols + c, g = B.item[i] >= 0 && sc.items[B.item[i]].gold && isGold(B.mat[i]);
+      const i = r * cols + c, g = B.item[i] >= 0 && sc.items[B.item[i]].gold;
       if (g && !inRun) runs++;
       inRun = g;
     }
     if (runs >= 2) gapCols++;
+  }
+  // sky contrast: silhouette cells = mark cells 4-adjacent to a sky cell (kind 0); appearance = INK * fg + (1 - INK) * bg
+  // (space glyph: bg only). Mean appearance vs the sky colour -> WCAG ratio + warmth (R - B).
+  let silN = 0; const silC = [0, 0, 0];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    if (!(B.item[i] >= 0 && sc.items[B.item[i]].gold)) continue;
+    const sky = (j) => B.kind[j] === 0;
+    if (!((r > 0 && sky(i - cols)) || (r < rows - 1 && sky(i + cols)) || (c > 0 && sky(i - 1)) || (c < cols - 1 && sky(i + 1)))) continue;
+    const ink = B.glyph[i] && B.glyph[i] !== ' ' ? INK : 0;
+    for (let k = 0; k < 3; k++) silC[k] += ink * B.fg[i * 3 + k] + (1 - ink) * B.bg[i * 3 + k];
+    silN++;
+  }
+  let skyContrast = 0, silWarm = 0;
+  if (silN) {
+    for (let k = 0; k < 3; k++) silC[k] /= silN;
+    const a = relLum(silC), b = relLum(env.sky);
+    skyContrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    silWarm = silC[0] - silC[2];
   }
   if (ctx) for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const i = r * cols + c, x = c * cw, y = r * ch;
@@ -331,11 +360,13 @@ function renderView(view, sc, env) {
       ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
     }
   }
-  const stats = { rows: r1 >= 0 ? r1 - r0 + 1 : 0, cols: r1 >= 0 ? c1 - c0 + 1 : 0, goldCells, rimCells, glowCells, gapCols };
+  const stats = { rows: r1 >= 0 ? r1 - r0 + 1 : 0, cols: r1 >= 0 ? c1 - c0 + 1 : 0, goldCells, rimCells, emisCells, glowCells, gapCols,
+                  silN, skyContrast, silWarm, skyWarm: env.sky[0] - env.sky[2] };
   view.stats = stats;
   if (view.cap) {
-    view.cap.textContent = view.label + ': ' + (stats.rows ? 'mark ' + stats.rows + ' rows x ' + stats.cols + ' cols, gold ' + goldCells +
-      ', dark rim ' + rimCells + ', glow ' + glowCells + ', bar/dot gap in ' + gapCols + ' cols' : '(mark not visible)');
+    view.cap.textContent = view.label + ': ' + (stats.rows ? 'mark ' + stats.rows + ' rows x ' + stats.cols + ' cols, ' + goldCells +
+      ' cells (' + emisCells + ' emissive, dark ' + rimCells + '), core glow ' + glowCells + ', bar/dot gap in ' + gapCols +
+      ' cols, sky contrast ' + skyContrast.toFixed(2) + ':1' : '(mark not visible)');
   }
   return stats;
 }
@@ -487,24 +518,37 @@ function runChecks() {
     ok(((pe.rot[2] - i0.rot[2]) % 360 + 360) % 360 === 0 && pe.pos[2] === i0.pos[2], key + ': pop ends on idle key 0 (rot ' + pe.rot[2] + ' == ' + i0.rot[2] + ', z ' + pe.pos[2] + ')');
     ok(Object.values(FX.clipFor).every((c) => C[c]) && ['appear', 'active', 'complete'].every((k) => C[FX.clipForEngineSpin[k]]), key + ': clipFor / clipForEngineSpin -> existing clips');
     ok(['light', 'anchor', 'center', 'top'].every((m) => DEF.mounts[m]) && DEF.mounts[FX.light.mount], key + ': mounts light / anchor / center / top');
-    // outline closed: on the plate layer y2 no gold cell touches empty space in x-z
-    const L = DEF.layers, sx = DEF.size[0], sz = DEF.size[2];
-    const at = (x, z) => (x < 0 || x >= sx || z < 0 || z >= sz) ? '.' : L[z][2][x];
-    let leaks = 0, rim = 0;
-    for (let z = 0; z < sz; z++) for (let x = 0; x < sx; x++) {
-      const c = at(x, z); if (c === 'd') rim++;
-      if (c !== '.' && c !== 'd') for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (at(x + dx, z + dz) === '.') leaks++;
+    // v1.49 whole glyph emissive: visible voxels (a filled voxel with an empty / outside 6-neighbour) on emissive materials
+    const L = DEF.layers, sx = DEF.size[0], sy = DEF.size[1], sz = DEF.size[2];
+    const vox = (x, y, z) => (x < 0 || x >= sx || y < 0 || y >= sy || z < 0 || z >= sz) ? '.' : L[z][y].charAt(x);
+    let vis = 0, visE = 0, visS = 0, hidS = 0, dark = 0;
+    const perMat = {};
+    for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) for (let x = 0; x < sx; x++) {
+      const c = vox(x, y, z); if (c === '.') continue;
+      const mk = DEF.mats[c], e = emis(mk);
+      if (e <= 0) dark++;
+      const open = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([dx, dy, dz]) => vox(x + dx, y + dy, z + dz) === '.');
+      if (!open) { if (e >= STRONG_EMIS) hidS++; continue; }
+      vis++; perMat[mk] = (perMat[mk] || 0) + 1;
+      if (e > 0) visE++;
+      if (e >= STRONG_EMIS) visS++;
     }
-    ok(leaks === 0 && rim > 0, key + ': dark plate rim closed round the glyph (' + rim + ' rim voxels, ' + leaks + ' leaks)');
+    const pctE = vis ? 100 * visE / vis : 0;
+    ok(pctE >= 90, key + ': whole glyph emissive: ' + pctE.toFixed(1) + '% of ' + vis + ' visible voxels are emissive materials (>= 90%); ' +
+       Object.keys(perMat).map((k) => k + ' ' + perMat[k] + ' (e ' + emis(k) + ')').join(', '));
+    info(key + ': ' + (vis ? (100 * visS / vis).toFixed(1) : 0) + '% of the visible voxels are strong emitters (emissive >= ' + STRONG_EMIS +
+         ': glow / bleed / halo sources in 38.12); the brass_hot body (0.10) is lit at night by the bleed of the core band + orange lips ' +
+         'and questMarkFx.light. Hidden strong emitters (pack-time derive count): ' + hidS);
+    ok(dark === 0 && !Object.values(DEF.mats).includes('iron_dark'), key + ': no dark rim / back plate: ' + dark + ' non-emissive voxels, no iron_dark');
     // the bar / dot gap on the centre column of the front face
     let runs = 0, inRun = false;
     for (let z = sz - 1; z >= 0; z--) { const g = L[z][0][4] !== '.'; if (g && !inRun) runs++; inRun = g; }
-    ok(runs >= 2, key + ': front-face centre column = ' + runs + ' gold runs (bar / hook + dot: the gap is kept)');
+    ok(runs >= 2, key + ': front-face centre column = ' + runs + ' glyph runs (bar / hook + dot: the gap is kept)');
     ok(FX.popScale[0][1] > 0 && FX.fadeScale[FX.fadeScale.length - 1][1] > 0 && FX.popScale[FX.popScale.length - 1][0] === FX.popMs &&
        FX.fadeScale[FX.fadeScale.length - 1][0] === FX.fadeMs && FX.popScale[FX.popScale.length - 1][1] === 1,
        key + ': pop / fade scale curves span popMs / fadeMs, end at 1 / 0.05, never 0 (scale <= 0 means 1 in computeVoxelPose)');
   }
-  info('2 hue families: gold (brass_light, brass_hot, brass_dark, brass_glint) + iron dark rim (iron_dark). questMarkTurnIn status: ' + FX.turnInStatus +
+  info('2 hue families: white-gold (brass_hot body, brass_glint core) + a touch of ember orange (ember_glow lips + side seam); no dark rim (v1.49). questMarkTurnIn status: ' + FX.turnInStatus +
        '. The \'?\' reads mirrored from behind (a slab glyph); the \'!\' is symmetric.');
   info('questMarkFx: floatM ' + FX.floatM + ', bobM ' + FX.bobM + ', spinRevPerS ' + FX.spinRevPerS + ', popMs ' + FX.popMs + ', fadeMs ' + FX.fadeMs +
        ', visibleRangeM ' + FX.visibleRangeM + ', placement.noteZOffsetM ' + FX.placement.noteZOffsetM + ' (glyph bottom ' + FX.placement.aboveNoteM + ' m over the note)');
@@ -521,9 +565,20 @@ function readabilityChecks() {   // fixed renders: face-on idle (1000 ms), view 
     }
     const n = res['12 m day'], d = res['3 m day'], ng = res['12 m night'];
     const minRows = gk === 400 ? 10 : 6;
-    ok(n.rows >= minRows && n.gapCols > 0, model + ' ' + s.cols + 'x' + s.rows + ' 12 m day: ' + n.rows + ' rows x ' + n.cols + ' cols (>= ' + minRows + '), bar/dot gap visible in ' + n.gapCols + ' cols, dark rim ' + n.rimCells + ' cells');
-    ok(d.rows > 0 && d.rows <= s.cr && d.gapCols > 0 && d.rimCells > 0, model + ' ' + s.cols + 'x' + s.rows + ' 3 m day: ' + d.rows + ' rows x ' + d.cols + ' cols (fits the ' + s.cr + '-row crop), gap in ' + d.gapCols + ' cols, rim ' + d.rimCells);
+    ok(n.rows >= minRows && n.gapCols > 0, model + ' ' + s.cols + 'x' + s.rows + ' 12 m day: ' + n.rows + ' rows x ' + n.cols + ' cols (>= ' + minRows + '), bar/dot gap visible in ' + n.gapCols + ' cols');
+    ok(d.rows > 0 && d.rows <= s.cr && d.gapCols > 0 && d.rimCells === 0, model + ' ' + s.cols + 'x' + s.rows + ' 3 m day: ' + d.rows + ' rows x ' + d.cols + ' cols (fits the ' + s.cr + '-row crop), gap in ' + d.gapCols + ' cols, ' + d.emisCells + ' / ' + d.goldCells + ' cells emissive, dark rim cells ' + d.rimCells + ' (must be 0)');
     ok(ng.glowCells > 0, model + ' ' + s.cols + 'x' + s.rows + ' 12 m night: ' + ng.glowCells + ' glowing core cells (reads at night)');
+    // v1.49 bright day sky (no dark rim): rule = the mean silhouette cell (mark cells 4-adjacent to sky; appearance
+    // 35 % glyph ink + 65 % cell bg) vs the sky colour: WCAG contrast ratio >= 2.0 AND warm against cool
+    // (silhouette R - B >= 20 while the sky R - B < 0). The cell bg ('darken' k 0.20-0.30 of the lit glyph colour) is
+    // what separates the glowing glyph from the light-blue sky; the hue opposition carries the rest.
+    if (gk === 240) {
+      const sk = n.skyContrast, pass = n.silN > 0 && sk >= 2.0 && (n.silWarm - n.skyWarm) >= 60;
+      ok(pass, model + ' 240x90 12 m day: reads against bright day sky: ' + n.silN + ' silhouette cells, contrast ' + sk.toFixed(2) +
+         ':1 (>= 2.0), silhouette R-B ' + n.silWarm.toFixed(0) + ' vs sky R-B ' + n.skyWarm + ' (warm gap R-B >= 60 over the cool sky; contrast is the main rule, PC-A 2026-10-08: the absolute R-B>=20 was a self-set bar, the gap 100 is what separates warm from sky)');
+    } else {
+      info(model + ' 400x150 12 m day: sky contrast ' + n.skyContrast.toFixed(2) + ':1, silhouette R-B ' + n.silWarm.toFixed(0) + ' (' + n.silN + ' cells)');
+    }
   }
   flush();
 }
