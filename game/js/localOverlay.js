@@ -10,13 +10,14 @@ import { loadContentPack } from '../../engine/index.js';
  * @param {any} bundle - result of loadContentPack for the main manifest (mutated)
  * @param {URLSearchParams} params
  * @param {string} [base] - URL of the local folder, relative to the page
+ * @param {{lazyMeshes?: boolean}} [opts] - MESH-LOAD-01: same lazy setting as the main pack
  * @returns {Promise<boolean>} true when something was merged
  */
-export async function applyLocalOverlay(bundle, params, base = '../content/local/') {
+export async function applyLocalOverlay(bundle, params, base = '../content/local/', opts = {}) {
   if (params.get('nolocal') === '1' || params.get('gpucompare')) return false;
   let local;
   try {
-    local = await loadContentPack(base + 'manifest.json');
+    local = await loadContentPack(base + 'manifest.json', { lazyMeshes: !!opts.lazyMeshes });
   } catch (e) {
     return false; // no local folder on this PC
   }

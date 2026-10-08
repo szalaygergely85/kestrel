@@ -200,13 +200,15 @@ const canvas = document.getElementById('screen');
 // carries palette/models/detailPass/uiStyle and the overworld_far terrain
 // recipe (still a classic script - see game/index.html), passed as
 // `codeParts` so `fromJSON` can overlay the JSON levels/worlds on top.
-const bundle = await loadContentPack('../content/manifest.json');
+// MESH-LOAD-01: lazy mesh payloads in the game (colliders stay eager); capture/bench/compare pages stay eager so their results stay comparable. ?lazymesh=0 = eager.
+const lazyMeshes = !isCaptureOrBench && params.get('lazymesh') !== '0';
+const bundle = await loadContentPack('../content/manifest.json', { lazyMeshes });
 // US-034 (24.11): `?playtest=1` overlays the editor's in-memory (possibly
 // unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE
 // the registry is built, so the rest of boot is unaware anything special
 // happened - same content shape either way.
 applyPlaytestOverlay(bundle);
-await applyLocalOverlay(bundle, params); // git-ignored content/local/ (licence-restricted assets, this PC only)
+await applyLocalOverlay(bundle, params, undefined, { lazyMeshes }); // git-ignored content/local/ (licence-restricted assets, this PC only)
 if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 
