@@ -790,7 +790,7 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.gpu = true;
     renderWorld(fbCompare, world, cam);
     gpuPipeline.frame(fbCompare, lights || ambientL, cam, world);
-    if (!wg) engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass composites inside present()
+    engine.overlay.flush(cam); // GPU path: JS raster, GpuOverlayPass / WgOverlayPass composites inside present()
     rt.present(); // the GPU twin's actual raster work (rt's registered cell-pass hook -> `_hook` -> `_prepRaster`'s
     // `buildList` call) runs INSIDE this call, not inside `gpuPipeline.frame()` above (which only stashes cam/world
     // refs) - `engine.viewModel.stats` is ONE shared object both twins write through, so this must be captured
@@ -829,8 +829,8 @@ async function runGpuCompareSceneMode(ctx) {
     applySceneDim(fbCompare.rt, compareSceneDim);
     rt.gpuActive = wasActive;
     let ovlRes = null;
-    if (overlayOps && !wg) { // JS twin composite, then per-overlay-cell GPU-vs-twin check (28.9 bar)
-      engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth);
+    if (overlayOps) engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth); // JS twin composite (WebGPU: judged by the final cell row)
+    if (overlayOps && !wg) { // per-overlay-cell GPU-vs-twin check (28.9 bar)
       ovlRes = compareOverlayCells(engine.overlay, rt.cells.fg, gpuFg, depthBuffer.depth);
       console.log(`[gpucompare] rtsOverlay: cells=${ovlRes.cells} shownTwin=${ovlRes.shownTwin} shownGpu=${ovlRes.shownGpu} hidden=${ovlRes.hidden} mismatch=${ovlRes.mismatch} boundary=${ovlRes.boundary} (${ovlRes.boundaryPct.toFixed(3)}% , <=0.5%)`);
       // pass timer (async GpuTimer ring): repeat the composite so p50/p95 fill in (NaN if the timer extension is missing)
@@ -855,8 +855,7 @@ async function runGpuCompareSceneMode(ctx) {
       const cmpLightW = lightBuf ? compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask) : null;
       const lightWaits = false;
       const lightOkW = !cmpLightW || cmpLightW.pass;
-      // WG-3c: shade + edge cell row, same bars as the WebGL2 rows. Poses whose JS twin includes layers WebGPU has not ported yet are
-      // recorded but not gated: sprites/particles/overlay/fade/dim (WG-3f). Water is ported (WG-3e) and gated.
+      // WG-3c/3f: final cell row (shade + edge + sprites + particles + overlay + fade + dim), same bars as the WebGL2 rows, no waits.
       let cmpCellsW = null, cellsOkW = true, cellsWait = null;
       if (gpuFg) {
         cmpCellsW = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
@@ -867,9 +866,6 @@ async function runGpuCompareSceneMode(ctx) {
         const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOkW &&
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
-        // only a row that would FAIL is held back, and only for a layer WebGPU has not ported (row passes keep their honest OK)
-        const wantWait = (overlayOps || sprites.pool.count > 0 || (engine.particleLayer && engine.particleLayer.stats.cells > 0) || fbCompare.sceneFade < 1 || compareSceneDim.all < 1 || compareSceneDim.n > 0) ? 'WG-3f' : null;
-        if (!cellsOkW && wantWait) { cellsWait = wantWait; cellsOkW = true; }
       }
       const waterfallW = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
       const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);

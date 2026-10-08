@@ -5,6 +5,9 @@
 //
 // The cell-pass hook writes geometry through passRaster then optionally displays its debug view. Terrain is WG-2c,
 // cloth uses the device extra-vertex-stream API.
+// WG-3f: bindSprites() builds WgSpritesPass + WgOverlayPass (sprites/particles/fade/dim, then overlay, right after edge, every frame the
+// cell pass shaded). Once shadow MAP (3d) + water (3e) + sprites + overlay are wired, `frameComplete` = true: the pipeline sets `rt.gpuActive`
+// and the render target PRESENTS the sprite pass output (rt.setPresentCells), so the CPU compositor stops drawing (supersedes the DECISION below).
 // WG-3c: after light the cell pass also runs shade + edge into pipeline-owned textures (t.texFinalFg/Bg). DECISION (38.8): the WebGPU
 // path keeps PRESENTING the CPU cells (rt.gpuActive false, frameComplete false) until sprites/overlay/water/shadow-map land (WG-3d..3f):
 // presenting GPU-shaded cells earlier would drop sprites, overlay, water and map shadows that only the CPU compositor draws. The GPU
@@ -15,6 +18,8 @@ import { WgRasterPass } from './passRaster.js';
 import { WgCellPass } from './passCell.js';
 import { WgShadowPass } from './passShadow.js';
 import { WgWaterPass } from './passWater.js';
+import { WgSpritesPass } from './passSprites.js';
+import { WgOverlayPass } from './passOverlay.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
@@ -65,6 +70,7 @@ export class WgCellPipeline {
     this._cellPass = null;
     this._shadowPass = null;
     this._waterPass = null;
+    this._spritesPass = null; this._overlayPass = null; this._spritesBound = false; this._spritesRan = false;
     this._outTarget = null; this._outFg = null; this._outBg = null;
     this._gbufCleared = false; this._cellsShaded = false;
     this._clearOpts = { clear: true };
@@ -112,6 +118,48 @@ export class WgCellPipeline {
     if (enabled && !this.ready) return;
     this._enabled = !!enabled;
     if (typeof this.rt.setCellPass === 'function') this.rt.setCellPass(enabled ? this._hookFn : null);
+    this._syncActive();
+  }
+
+  /** WG-3f: `frameComplete` + `rt.gpuActive` follow the wiring (rt.gpuActive is left alone while the pipeline was never complete). */
+  _syncActive() {
+    const complete = !!(this.ready && this._enabled && this._spritesBound && this._spritesPass && this._overlayPass &&
+      this._waterPass && this._shadowPass && this._shadowPass.enabled && this._source === 'scene');
+    this.frameComplete = complete;
+    const rt = this.rt;
+    if (complete || rt.gpuActive) rt.gpuActive = complete;
+    if (!complete) this._setPresent(null, null);
+  }
+
+  _setPresent(fg, bg) { if (typeof this.rt.setPresentCells === 'function') this.rt.setPresentCells(fg, bg); }
+
+  /**
+   * WG-3f (mirrors createSpriteSystem + GpuOverlayPass wiring in GL): hands the pipeline the sprite pool/atlas/palette, the particle
+   * layer and the overlay. Call once at boot after the CPU-side sprite system exists. False = a pass failed to build (CPU path keeps presenting).
+   */
+  bindSprites({ pool, atlas, palette, particleLayer, overlay }) {
+    if (!this.ready || !pool || !overlay) return false;
+    try {
+      if (this._spritesPass) this._spritesPass.dispose();
+      if (this._overlayPass) this._overlayPass.dispose();
+      this._spritesPass = null; this._overlayPass = null;
+      this._spritesPass = new WgSpritesPass(this.device, { pool, atlas, palette });
+      this._spritesPass.resize(this.cols, this.rows);
+      if (particleLayer) this._spritesPass.bindParticleLayer(particleLayer);
+      this._overlayPass = new WgOverlayPass(this.device, overlay);
+      this._overlayPass.resize(this.cols, this.rows);
+      this._overlayPass.setTarget(this._spritesPass.outFg);
+    } catch (e) {
+      console.warn('[WgCellPipeline] sprites/overlay init failed (CPU compositor keeps drawing them):', e);
+      for (const k of ['_spritesPass', '_overlayPass']) { if (this[k]) { try { this[k].dispose(); } catch (_) { /* best effort */ } this[k] = null; } }
+      this._spritesBound = false;
+      this._syncActive();
+      return false;
+    }
+    this._spritesBound = true;
+    if (!this.portedPasses.includes('sprites')) this.portedPasses.push('sprites', 'overlay');
+    this._syncActive();
+    return true;
   }
 
   setPassTiming(on) { this._passTimingOn = !!on; }
@@ -143,6 +191,16 @@ export class WgCellPipeline {
     if (this._waterPass) this._waterPass.resize(cols, rows, this.rays);
     this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
+    if (this._spritesPass) {
+      try {
+        this._spritesPass.resize(cols, rows);
+        this._overlayPass.resize(cols, rows);
+        this._overlayPass.setTarget(this._spritesPass.outFg);
+      } catch (e) {
+        console.warn('[WgCellPipeline] sprites/overlay resize failed - pipeline disabled:', e);
+        this.ready = false; this.setEnabled(false); return;
+      }
+    }
     // async validation errors of the new targets surface only through the error scopes: drain them once (warn, never throw)
     if (typeof this.device.checkErrors === 'function') {
       this.device.checkErrors().then((errs) => { if (errs && errs.length) console.warn('[WgCellPipeline] resizeGrid validation errors:', errs); }, (e) => console.warn('[WgCellPipeline] resizeGrid checkErrors failed:', e));
@@ -164,6 +222,12 @@ export class WgCellPipeline {
 
   /** Called once per frame before present(): remembers inputs; GPU commands run in the render-target hook. */
   frame(fb, light, cam, world) {
+    const sp = this._spritesPass;
+    if (sp && fb) { // WG-3f: scene fade amount + LUT and scene dim: the same inputs the GL sprite pass gets
+      sp.sceneFade = typeof fb.sceneFade === 'number' ? fb.sceneFade : 1;
+      if (fb.fadeLut) sp.setFadeLut(fb.fadeLut);
+      if (fb.sceneDim) sp.setSceneDim(fb.sceneDim);
+    }
     this._fb = fb; this._light = light; this._cam = cam || null; this._world = world || null;
     if (this._waterPass && this._world) this._waterPass.bindWorld(this._world);
     this.stats.waterSlots = this._waterPass ? this._waterPass.stats.waterSlots : 0; this.stats.waterDraws = this._waterPass ? this._waterPass.stats.waterDraws : 0;
@@ -212,6 +276,7 @@ export class WgCellPipeline {
   async readbackCells(outFg, outBg) {
     const t = this._t;
     if (!t || !this._cellsShaded) return null;
+    if (this._spritesRan) return this._spritesPass.readbackCells(outFg, outBg); // WG-3f: final cells = sprites (+ overlay) output
     const n = this.cols * this.rows * 4;
     outFg = outFg || (this._rbFg = this._rbFg && this._rbFg.length === n ? this._rbFg : new Uint8Array(n));
     outBg = outBg || (this._rbBg = this._rbBg && this._rbBg.length === n ? this._rbBg : new Uint8Array(n));
@@ -246,6 +311,8 @@ export class WgCellPipeline {
     try { this._cellPass.run(this, t); }
     catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
+    this._runSprites(t);
+    if (!this.ready) return;
     if (this.debugMode < 0) return;
     if (!this._outTarget || this._outFg !== rt.fgTex || this._outBg !== rt.bgTex) {
       this._dropOutTarget();
@@ -261,6 +328,22 @@ export class WgCellPipeline {
     d.bind(this._pipeDebug, this._debugBind);
     d.draw(3);
     d.endPass();
+  }
+
+  /** WG-3f: sprites then overlay right after edge, every frame the cell pass shaded (also with 0 sprites). */
+  _runSprites(t) {
+    const sp = this._spritesPass;
+    this._spritesRan = false;
+    if (!sp || !this._cellsShaded) { this._setPresent(null, null); return; }
+    try {
+      sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg });
+      this._overlayPass.run(t.texDepth);
+    } catch (e) {
+      this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] sprites/overlay disabled:', e); return;
+    }
+    this._spritesRan = sp.ran;
+    this.stats.sprites = sp.stats.sprites;
+    if (this.frameComplete && sp.ran && this.debugMode < 0) this._setPresent(sp.outFg, sp.outBg); else this._setPresent(null, null);
   }
 
   _dropOutTarget() {
@@ -283,6 +366,11 @@ export class WgCellPipeline {
     this._shadowPass = null;
     if (this._waterPass) this._waterPass.dispose();
     this._waterPass = null;
+    if (this._overlayPass) this._overlayPass.dispose();
+    this._overlayPass = null;
+    if (this._spritesPass) this._spritesPass.dispose();
+    this._spritesPass = null; this._spritesBound = false;
+    this._syncActive();
     freeWgTargets(this.device, this._t);
     this._t = null;
   }

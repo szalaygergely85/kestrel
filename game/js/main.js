@@ -453,13 +453,15 @@ const inactiveReason = gpuPipeline
 console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive' + inactiveReason}`);
 
 // ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
-const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
+const sprites = createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline });
 if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass(rt, gpuPipeline, engine.overlay); // RE-07b (28.9)
 // ---- end US-030c ----
 
 // ---- US-053b/US-053c: particle presets + the draw layer (engine.particles.clear() on every 'world:loaded'
 // already runs inside createEngine - US-053a's own precedent, nothing to do here for that). ----
 if (sprites.pass) sprites.pass.bindParticleLayer(engine.particleLayer);
+// WG-3f: WebGPU sprites + particles + fade/dim + overlay passes (frameComplete -> rt.gpuActive -> the CPU compositor stops drawing them)
+if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') wgPipeline.bindSprites({ pool: sprites.pool, atlas: sprites.atlas, palette: assets.palette, particleLayer: engine.particleLayer, overlay: engine.overlay });
 const particlePresets = window.ASSETS.particles;
 if (window.ASSETS.boarFx) window.ASSETS.boarFx.attach(); // US-079b: copy boarFx's corpseDust preset into particles.presets before the defineEmitter loop below
 if (particlePresets) {
@@ -1229,6 +1231,7 @@ function runGame(mode, cinematic = null) {
     // render(), below.
     fadeLut,
     sceneFade: 1,
+    sceneDim, // WG-3f: the WebGPU sprite pass reads it in wgPipeline.frame (GL gets it through sprites.pass.setSceneDim)
     // ARCH CHANGES item 3: `?terrain=0` dev A/B switch, CPU/JS-oracle side
     // (compositor.js reads this; the GPU side is `gpuPipeline.terrainEnabled`).
     terrainEnabled,
@@ -1297,7 +1300,7 @@ function runGame(mode, cinematic = null) {
       // `gpuPipeline` itself is still the same (now-dead) object, so without
       // this check `renderWorld` would keep skipping the CPU cast -> black
       // world instead of falling back to it.
-      fb.gpu = !!gpuPipeline && rt.gpuActive;
+      fb.gpu = (!!gpuPipeline || (wgActive && wgPipeline.frameComplete)) && rt.gpuActive; // WG-3f: WebGPU owns the frame once shadow+water+sprites+overlay are wired
       // US-041a (15.3 item 1): `collect(world, cam)` every frame (cheap - the
       // entity ref list is cached by `world.renderVersion`, only distance is
       // recomputed); the GPU path projects internally, the CPU/JS oracle
