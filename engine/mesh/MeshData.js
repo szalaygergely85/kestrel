@@ -47,7 +47,7 @@ export const AO_FAR = 1e30;
  * @property {Float32Array} [uvMask] - ALPHA-01a: source TEXCOORD_0, 2 floats/vertex (zeros on opaque ranges); present only when some range is masked
  * @property {Uint32Array} nrm - 1 uint/vertex, packNormalOct of the mesh-local unit normal
  * @property {Uint32Array} flat - static: 2 uints/vertex [planeIdBase, kind|face<<8|mat<<16]; terrain: length 0
- * @property {Float32Array} aux - static: 8 floats/vertex (AO layout, see levelMesh.js); terrain: length 0
+ * @property {Float32Array} aux - static: 8 floats/vertex (AO layout, see levelMesh.js; AO_NONE importer meshes may carry baked vertex AO in aux[5..7], ME-20a tools/vertex-ao.mjs); terrain: length 0
  * @property {Uint16Array|Uint32Array|null} idx - terrain: 3/triangle; static: null
  * @property {number} triCount - total triangle count
  * @property {Float64Array} bbox - [x0,y0,z0,x1,y1,z1] mesh-local
