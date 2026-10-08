@@ -4,13 +4,15 @@ Open `/game/js/ui/titleMenu.preview.html` through the project's no-cache static
 server. The preview uses memory-only slots and public WebGPU presentation at
 400x150 with the standard 160x60 UI layer. Keyboard arrows/W/S, Enter/Space,
 Delete and Escape work; mouse movement selects a row and clicking activates it.
-The placeholder plate [10,11,16] was authorised in lane C's 2026-10-08 queue add.
-Final designer style and writer labels remain PC-A work.
+The preview adopts PC-A's `design/models/menu_ui.js` style and Sprint 8 writer
+labels. Use `?backend=webgl2` for the Arc or `?backend=webgpu` (default).
+Confirmation presentation has an open LOOK RISK in `docs/test-reports/S8-C-03.md`;
+navigation/storage checks pass on both backends, but visual acceptance is pending.
 
 Host integration (US-090w, B1):
 
 ```js
-const menu = createTitleMenu(createStorageAdapter(storage));
+const menu = createTitleMenu(createStorageAdapter(storage), {style: ASSETS.uiStyle.menu});
 menu.draw(engine.ui);
 menu.handleKey('ArrowDown');
 const action = menu.takeAction();
@@ -36,3 +38,6 @@ edit is included.
 Rows and labels are cached on input/refresh. `draw()` uses existing public
 text/cell methods and a reusable layout object; it does no storage I/O or
 menu-state allocation on the frame path.
+The `style` option is optional for existing hosts; supplied tokens control
+colours, borders, focus and disabled/destructive states without changing row ids
+or geometry. Load `menu_ui.js` after `title.js`, which creates `ASSETS.uiStyle`.

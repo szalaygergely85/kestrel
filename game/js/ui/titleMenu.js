@@ -6,7 +6,7 @@ const TEXT = '#e8e2d0'; // Existing title/file-notice foreground; final design i
 const ascii = value => String(value).replace(/[^\x20-\x7e]/g, '?');
 
 function slotLabel(slot) {
-  if (!slot.ok) return `Slot ${slot.slot + 1}: Unavailable`;
+  if (!slot.ok) return `Slot ${slot.slot + 1}: Unreadable`;
   if (!slot.meta) return `Slot ${slot.slot + 1}: Empty`;
   const minutes = Math.floor(slot.meta.playTimeSec / 60);
   const time = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
@@ -19,9 +19,19 @@ function slotLabel(slot) {
  * takeAction returns {type:'newGame'|'continue'|'settings', slot?, save?} once.
  * Storage reads, formatting and allocations happen on input/refresh, never in draw.
  */
-export function createTitleMenu(adapter, { title = 'Kestrel', fg = TEXT, bg = PLATE } = {}) {
+export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PLATE, style = null } = {}) {
   if (!adapter || ['listSlots','readSlot','deleteSlot'].some(key => typeof adapter[key] !== 'function')) throw new Error('titleMenu: save adapter required');
+  const colour = key => style?.hex[key] || style?.bg[key] || fg;
+  if (style) { fg = colour(style.row.normal.fg); bg = style.bg.plate; }
   const heading = ascii(title).slice(0, 66);
+  const titleText = style ? style.title.decor[0] + heading.split('').join(' '.repeat(style.title.letterSpace)) + style.title.decor[1] : heading;
+  const titleDecor = [];
+  if (style) for(let i=0;i<titleText.length;i++) {
+    const ch=titleText[i];
+    if ('-=[]'.includes(ch)) titleDecor.push({x:i,ch,fg:colour(ch==='-' ? style.title.decorFg[0] : ch==='=' ? style.frame.fg : style.title.bracketFg)});
+  }
+  const hints = 'Arrows select  Enter choose  Del delete  Esc back';
+  const hintParts = ['Arrows','Enter','Del','Esc'].map(text => ({text,x:hints.indexOf(text)}));
   const bounds = {x:0,y:0,w:72,h:28};
   let slots = [], rows = [], selected = 0, selectedSlot = 0, mode = 'main';
   let confirm = null, action = null, message = '', error = null;
@@ -37,11 +47,11 @@ export function createTitleMenu(adapter, { title = 'Kestrel', fg = TEXT, bg = PL
       rows = [{id:'new',text:'New game',y:6,enabled:true},
         {id:'continue',text:'Continue',y:8,enabled:slots.some(slot => slot.ok && slot.meta)},
         ...slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:12+slot.slot*2,enabled:true})),
-        {id:'delete',text:'Delete selected slot',y:19,enabled:!!slots[selectedSlot]?.meta || slots[selectedSlot]?.ok === false},
+        {id:'delete',text:'Delete slot',y:19,enabled:!!slots[selectedSlot]?.meta || slots[selectedSlot]?.ok === false},
         {id:'settings',text:'Settings',y:21,enabled:true}];
     }
     // Cache full clipped labels, including disabled hints, away from the frame loop.
-    for (const row of rows) row.display = (row.text + (row.enabled ? '' : ' (unavailable)')).slice(0,bounds.w-6);
+    for (const row of rows) row.display = (row.id === 'continue' && !row.enabled ? 'Continue (no save)' : row.text + (row.enabled ? '' : ' (unavailable)')).slice(0,bounds.w-6);
     selected = Math.min(selected, rows.length-1);
   }
 
@@ -69,23 +79,23 @@ export function createTitleMenu(adapter, { title = 'Kestrel', fg = TEXT, bg = PL
   }
   function ask(type, slot) {
     mode = 'confirm'; confirm = {type,slot}; selected = 0;
-    confirmText = `${type === 'delete' ? 'Delete' : 'Replace'} slot ${slot+1}?`;
+    confirmText = `${type === 'delete' ? 'Delete' : 'Overwrite'} slot ${slot+1}?`;
     message = ''; buildRows(); // Cancel is always selected first.
   }
   function load(slot) {
     try {
       const result = adapter.readSlot(slot);
-      if (!result.ok || !result.save) { message = result.ok ? 'This slot is empty.' : 'Could not load this slot.'; error = result.error || null; refresh(); return; }
+      if (!result.ok || !result.save) { message = result.ok ? 'This slot is empty.' : 'Could not read slot.'; error = result.error || null; refresh(); return; }
       emit('continue',slot,result.save);
-    } catch (e) { error = String(e); message = 'Could not load this slot.'; refresh(); }
+    } catch (e) { error = String(e); message = 'Could not read slot.'; refresh(); }
   }
   function acceptConfirmation() {
     if (confirm.type === 'replace') { emit('newGame',confirm.slot); return; }
     try {
       const result = adapter.deleteSlot(confirm.slot);
-      if (!result.ok) { message = 'Could not delete this slot. Try again.'; error = result.error || null; return; }
+      if (!result.ok) { message = 'Could not delete.'; error = result.error || null; return; }
       message = 'Slot deleted.'; root(); refresh();
-    } catch (e) { error = String(e); message = 'Could not delete this slot. Try again.'; }
+    } catch (e) { error = String(e); message = 'Could not delete.'; }
   }
   function activate() {
     if (action || !rows[selected].enabled) return false;
@@ -128,17 +138,52 @@ export function createTitleMenu(adapter, { title = 'Kestrel', fg = TEXT, bg = PL
   function draw(ui) {
     bounds.x = Math.floor((ui.cols-bounds.w)/2); bounds.y = Math.floor((ui.rows-bounds.h)/2);
     for (let y = bounds.y; y < bounds.y+bounds.h; y++) for (let x = bounds.x; x < bounds.x+bounds.w; x++) ui.setCell(x,y,' ',fg,bg);
-    for (let x = 1; x < bounds.w-1; x++) { ui.setCell(bounds.x+x,bounds.y,'-',fg,bg); ui.setCell(bounds.x+x,bounds.y+bounds.h-1,'-',fg,bg); }
-    for (let y = 0; y < bounds.h; y++) { ui.setCell(bounds.x,bounds.y+y,y===0 || y===bounds.h-1 ? '+' : '|',fg,bg); ui.setCell(bounds.x+bounds.w-1,bounds.y+y,y===0 || y===bounds.h-1 ? '+' : '|',fg,bg); }
-    drawText(ui,bounds.x+3,bounds.y+2,heading,fg,bg);
-    if (mode === 'new') drawText(ui,bounds.x+3,bounds.y+5,'Choose a slot for the new game',fg,bg);
-    if (mode === 'confirm') drawText(ui,bounds.x+3,bounds.y+7,confirmText,fg,bg);
-    for (let i = 0; i < rows.length; i++) {
-      drawText(ui,bounds.x+4,bounds.y+rows[i].y,rows[i].display,fg,bg);
-      if (i === selected) ui.setCell(bounds.x+2,bounds.y+rows[i].y,'>',fg,bg);
+    const frame = style?.frame;
+    for (let x = 1; x < bounds.w-1; x++) { ui.setCell(bounds.x+x,bounds.y,frame?.h || '-',frame ? colour(frame.fg) : fg,bg); ui.setCell(bounds.x+x,bounds.y+bounds.h-1,frame?.h || '-',frame ? colour(frame.fg) : fg,bg); }
+    for (let y = 0; y < bounds.h; y++) {
+      const corner = y===0 || y===bounds.h-1;
+      const glyph = corner ? frame?.corner || '+' : frame?.v || '|';
+      const ink = frame ? colour(corner ? frame.cornerFg : frame.fg) : fg;
+      ui.setCell(bounds.x,bounds.y+y,glyph,ink,bg); ui.setCell(bounds.x+bounds.w-1,bounds.y+y,glyph,ink,bg);
     }
-    if (message) drawText(ui,bounds.x+3,bounds.y+24,message,fg,bg);
-    drawText(ui,bounds.x+3,bounds.y+26,'Arrows: select   Enter: choose   Del: delete   Esc: back',fg,bg);
+    if (style) {
+      for (const x of frame.rivets.cols) {
+        ui.setCell(bounds.x+x,bounds.y,frame.rivets.glyph,colour(frame.rivets.fg),bg);
+        ui.setCell(bounds.x+x,bounds.y+bounds.h-1,frame.rivets.glyph,colour(frame.rivets.fg),bg);
+      }
+      for (const line of style.separators) {
+        if (line.row===18 && mode!=='main') continue;
+        for (let x=line.from;x<=line.to;x++) ui.setCell(bounds.x+x,bounds.y+line.row,line.glyph,colour(line.fg),bg);
+      }
+      drawText(ui,bounds.x+Math.floor((bounds.w-style.subtitle.text.length)/2),bounds.y+style.subtitle.row,style.subtitle.text,colour(style.subtitle.fg),bg);
+      drawText(ui,bounds.x+Math.floor((bounds.w-style.signal.text.length)/2),bounds.y+style.signal.row,style.signal.text,colour(style.signal.fg),bg);
+      if (mode==='main') { const s=style.sectionLabel.saves; drawText(ui,bounds.x+s.col,bounds.y+s.row,s.text,colour(s.fg),bg); }
+    }
+    drawText(ui,bounds.x+(style ? Math.floor((bounds.w-titleText.length)/2) : 3),bounds.y+2,titleText,style ? colour(style.title.fg) : fg,bg);
+    if(style) for(const part of titleDecor) ui.setCell(bounds.x+Math.floor((bounds.w-titleText.length)/2)+part.x,bounds.y+2,part.ch,part.fg,bg);
+    if (mode === 'new') drawText(ui,bounds.x+4,bounds.y+5,'Choose a slot',style ? colour(style.sectionLabel.newGame.fg) : fg,bg);
+    if (mode === 'confirm') drawText(ui,bounds.x+4,bounds.y+7,confirmText,style ? colour(style.confirm.fg[confirm.type]) : fg,bg);
+    for (let i = 0; i < rows.length; i++) {
+      const row=rows[i], focus=i===selected;
+      const state=style && (focus ? style.row.focus : row.enabled ? style.row.normal : style.row.disabled);
+      const destructive=style && (row.id==='delete' || row.id==='yes' && confirm?.type==='delete');
+      const ink=style ? colour(destructive && row.enabled ? (focus ? style.row.destructive.focusFg : style.row.destructive.fg) : state.fg) : fg;
+      const back=style ? style.bg[state.bg] : bg;
+      if (focus && style) for(let x=style.row.bandFrom;x<=style.row.bandTo;x++) ui.setCell(bounds.x+x,bounds.y+row.y,' ',ink,back);
+      drawText(ui,bounds.x+4,bounds.y+row.y,row.display,ink,back);
+      if(style && row.id==='slot' && row.slot===selectedSlot && !focus) ui.setCell(bounds.x+style.slot.selectedMark.col,bounds.y+row.y,style.slot.selectedMark.glyph,colour(style.slot.selectedMark.fg),back);
+      if (focus) {
+        ui.setCell(bounds.x+2,bounds.y+row.y,style ? state.marker : '>',style ? colour(state.markerFg) : fg,back);
+        if(style) ui.setCell(bounds.x+state.markerRightCol,bounds.y+row.y,state.markerRight,colour(state.markerFg),back);
+      }
+    }
+    if (message) {
+      drawText(ui,bounds.x+4,bounds.y+24,message,style ? colour(error ? style.message.error : style.message.info) : fg,bg);
+      if(style) ui.setCell(bounds.x+2,bounds.y+24,'>',colour(style.message.prefixFg),bg);
+    }
+    const hintX=bounds.x+Math.floor((bounds.w-hints.length)/2);
+    drawText(ui,hintX,bounds.y+26,hints,style ? colour(style.keyHints.fg) : fg,bg);
+    if(style) for(const part of hintParts) drawText(ui,hintX+part.x,bounds.y+26,part.text,colour(style.keyHints.keyFg),bg);
     return bounds;
   }
   refresh();

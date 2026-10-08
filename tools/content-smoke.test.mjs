@@ -41,6 +41,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/models/title.js'; // ASSETS.uiStyle (hints/storyHints referenced by triggers below)
+import '../design/models/menu_ui.js';
 import '../design/models/notes.js'; // READ-01: ASSETS.notes + uiStyle.note (texts/panel; the note/notePinned prop models are m3_props.js 6c)
 import '../design/models/lantern.js';
 import '../design/models/brazier.js';

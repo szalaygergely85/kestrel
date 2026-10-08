@@ -7,10 +7,11 @@ const canvas = document.querySelector('#screen'), status = document.querySelecto
 const adapter = createMemoryAdapter();
 for (const slot of [0,2]) adapter.writeSlot(slot,{saveVersion:1,world:{version:2,entities:[],structures:[]},
   game:{quest:null,openedChests:[],deadBeasts:[]},
-  meta:{playerName:'Wick',place:slot===0 ? 'Watchtower' : 'Waystone',playTimeSec:slot===0 ? 3661 : 824}});
-const {rt} = await createRenderer({canvas,backend:'webgpu',cols:400,rows:150,cpuGrid:{cols:400,rows:150},gpu:false});
+  meta:{playerName:'Wick',place:slot===0 ? 'Hollow Watchtower' : 'Waystone',playTimeSec:slot===0 ? 3661 : 824}});
+const backend = new URLSearchParams(location.search).get('backend') || 'webgpu';
+const {rt,info} = await createRenderer({canvas,backend,cols:400,rows:150,cpuGrid:{cols:400,rows:150},gpu:false});
 const ui = createUiLayer({cols:160}); ui.bindScene(rt.cols,rt.rows); rt.setUiLayer(ui);
-const menu = createTitleMenu(adapter);
+const menu = createTitleMenu(adapter,{style:globalThis.ASSETS.uiStyle.menu});
 function draw() {
   rt.clear(); ui.clear(); menu.draw(ui); rt.present();
   const action = menu.takeAction();
@@ -24,7 +25,7 @@ function point(event, activate) {
 canvas.addEventListener('pointermove',event=>point(event,false));
 canvas.addEventListener('click',event=>{canvas.focus();point(event,true);});
 window.addEventListener('resize',()=>{rt.resize();draw();});
-status.textContent = 'Placeholder menu preview: keyboard or mouse; memory-only slots';
-window.__titleMenuPreview = {menu,adapter,rt,ui,draw};
+status.textContent = `${info.label}: keyboard or mouse; memory-only slots`;
+window.__titleMenuPreview = {menu,adapter,rt,ui,draw,info};
 function frame() { draw(); requestAnimationFrame(frame); }
 frame(); canvas.focus();

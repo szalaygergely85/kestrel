@@ -7,6 +7,27 @@ export const SAVE_SLOTS = 3;
 const KEY_PREFIX = 'kestrel.save.slot.';
 const validId = id => typeof id === 'string' && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(id);
 
+/** S8-C-02: resume from save.meta.playTimeSec; pass seconds to collectSave at save time.
+ * The host supplies playing=false while paused, in menus or outside active gameplay.
+ * tick uses seconds, does not allocate, and returns the accumulated play time.
+ */
+export function createPlayTime(playTimeSec = 0) {
+  if (!Number.isFinite(playTimeSec) || playTimeSec < 0) throw new RangeError('save: invalid play time');
+  let seconds = playTimeSec;
+  return {
+    get seconds() { return seconds; },
+    tick(dt, playing) {
+      if (!Number.isFinite(dt) || dt < 0) throw new RangeError('save: invalid play-time dt');
+      if (playing === true) {
+        const next = seconds + dt;
+        if (!Number.isFinite(next)) throw new RangeError('save: play-time overflow');
+        seconds = next;
+      }
+      return seconds;
+    },
+  };
+}
+
 function canonical(value) {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
