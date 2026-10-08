@@ -91,3 +91,24 @@ export function drawEyelid(rt, uiStyle, openFrac) {
     }
   }
 }
+
+/**
+ * BUG-SAVE-WAKE-01: called on every world:loaded with the (possibly save-restored) state. `quest.wakeT` is saved with the
+ * world, so wakeT > 0 means "a run in progress": when its wake is done the sequence must not replay (standing eye height,
+ * title/map-card timeline skipped, input free). A fresh start (wakeT 0) keeps the lying pose. Returns true when restored-done.
+ * @param {Record<string, any>} state world.state
+ * @param {Parameters<typeof wakeFrame>[1]} cfg
+ * @param {WakeOut} out
+ * @param {{eyeH:number}} body player body component (eyeH written)
+ */
+export function applyWakeOnLoad(state, cfg, out, body) {
+  const t = state['quest.wakeT'];
+  wakeFrame(typeof t === 'number' ? t : 0, cfg, out);
+  if (typeof t === 'number' && t > 0 && !out.inputLocked) {
+    if (t < out.titleDoneAtSec) state['quest.wakeT'] = out.titleDoneAtSec; // no half-played title card after a load
+    wakeFrame(state['quest.wakeT'], cfg, out);
+    body.eyeH = cfg.bodyEyeH;
+    return true;
+  }
+  return false;
+}
