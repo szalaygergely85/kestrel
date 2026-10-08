@@ -18,6 +18,7 @@ import { SPRITES_WGSL } from './sprites.wgsl.js';
 import { OVERLAY_WGSL } from './overlay.wgsl.js';
 import { CULL_WGSL } from './cull.wgsl.js';
 import { CULL_SHADOW_WGSL } from './cullShadow.wgsl.js';
+import { HZB_WGSL } from './hzb.wgsl.js'; // S8-B2-09
 
 /** @type {ReadonlyArray<{name: string, code: string}>} */
 export const WGSL_MODULES = Object.freeze([
@@ -50,6 +51,7 @@ export const WGSL_MODULES = Object.freeze([
   // ALPHA-01c: mask-discard static mesh (location 10 uv stream + texMask) and its shadow variant (fragment entry fs_mask_shadow)
   { name: 'rasterMask', code: RASTER_MASK_WGSL },
   { name: 'rasterShadowMask', code: RASTER_MASK_SHADOW_WGSL },
+  { name: 'hzb', code: HZB_WGSL }, // S8-B2-09 compute (entry cs_main): HZB max-depth downsample
 ]);
 
 /**
