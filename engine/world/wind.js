@@ -239,5 +239,9 @@ export function createWind(def, seed) {
   // allocation and harmless to expose.
   field._baseInto = baseInto;
 
+  // S8-B2-06: the static config the GPU twin needs (engine/mesh/sway.js packs it; WIND_AT_WGSL in common.wgsl.js is the twin of
+  // `baseInto`: base vector from forwardOf, gust kernel table K, zones off). Read-only by convention.
+  field.params = { dirX, dirY, speed, amp, P, travel, K };
+
   return field;
 }

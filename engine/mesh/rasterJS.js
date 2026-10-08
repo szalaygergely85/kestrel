@@ -26,7 +26,7 @@ import {
 } from './MeshData.js';
 import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
-import { INST_FLAG_SWAY, swayOffset } from '../core/wind.js';
+import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
 import { ditherKeep } from './lodDither.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
@@ -71,7 +71,7 @@ export const BIAS_UNITS = 1;
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
  * @property {import('../render/MaskAtlas.js').MaskAtlas|null} [maskAtlas] - ALPHA-01b: needed for meshes with `maskRanges`
- * @property {{p: number[]|Float32Array|Float64Array, t: number}|null} [wind] - S8-B2-06: windParams() + seconds; instances flagged INST_FLAG_SWAY sway (absent/speed 0 = off)
+ * @property {{field: import('./sway.js').SwayWind, t: number}|null} [wind] - S8-B2-06: the world wind field (createWind) + seconds; instances flagged INST_FLAG_SWAY sway (absent/speed 0 = off)
  * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
  * @property {{factor: number, units: number}} [depthBias] - ME-15a (27.9a items 5, 9): GPU polygon-offset twin
  *   (`zn += factor * max(|dz/dx|, |dz/dy|) + 2 * units * 2^-24`, NDC z in [-1,1]) applied to EVERY item
@@ -156,7 +156,7 @@ const _instItem = {
 let _atlas = /** @type {MaskAtlas|null} */ (null);
 let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
 // S8-B2-06: foliage sway state of the instance being rasterised (off outside DRAW_INSTANCED / for unflagged instances / zero wind)
-let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayP = /** @type {number[]|Float32Array|Float64Array|null} */ (null);
+let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayF = /** @type {import('./sway.js').SwayWind|null} */ (null);
 const _swayD = { x: 0, y: 0 };
 let _dither = 0; // S8-B2-07: (flags >>> 16) & 0x7ff of the instance being rasterised (0 = not dithered; lodDither.js)
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
@@ -234,7 +234,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   let wx = a00 * px + a01 * py + a02 * pz + tx;
   let wy = a10 * px + a11 * py + a12 * pz + ty;
   const wz = a20 * px + a21 * py + a22 * pz + tz;
-  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {number[]|Float32Array|Float64Array} */ (_swayP), _swayD); wx += _swayD.x; wy += _swayD.y; }
+  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {import('./sway.js').SwayWind} */ (_swayF), _swayD); wx += _swayD.x; wy += _swayD.y; }
 
   _nrmScratch[0] = 0; _nrmScratch[1] = 0; _nrmScratch[2] = 1;
   unpackNormalOct(mesh.nrm[vIdx], _nrmScratch);
@@ -603,7 +603,7 @@ function rasterInstanced(mesh, item, target, ctx) {
   if (!ib) return;
   const f = ib.f32, u = ib.u32, pm = item.partMatrices, n = item.instCount;
   const M = _matScratch;
-  const wind = ctx.wind, windOn = !!(wind && wind.p && wind.p[2] > 0);
+  const wind = ctx.wind, windOn = !!(wind && windSwayOn(wind.field));
   for (let p = 0; p < ranges.length; p++) {
     const range = ranges[p];
     if (range.count <= 0) continue;
@@ -632,7 +632,7 @@ function rasterInstanced(mesh, item, target, ctx) {
       _team = (meta >>> 8) & 0xff;
       _dither = (meta >>> 16) & 0x7ff;
       _swayOn = windOn && (meta & INST_FLAG_SWAY) !== 0;
-      if (_swayOn) { _swayBx = itx; _swayBy = ity; _swayBz = itz; _swayT = wind.t; _swayP = wind.p; }
+      if (_swayOn) { _swayBx = itx; _swayBy = ity; _swayBz = itz; _swayT = wind.t; _swayF = wind.field; }
       rasterRange(mesh, _instItem, target, ctx, range.start, range.count, p, false, partAligned && (meta & 1) !== 0);
     }
   }

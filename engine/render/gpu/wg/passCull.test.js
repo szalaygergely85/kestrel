@@ -19,7 +19,7 @@ function execDispatch() {
   const uf = desc.uniforms, uu = new Uint32Array(uf.buffer, uf.byteOffset, uf.length);
   const W = (n) => CULL_BLOCK.field(n).word;
   const v4 = (w) => ({ x: uf[w], y: uf[w + 1], z: uf[w + 2], w: uf[w + 3] });
-  const u = { planes: [0, 1, 2, 3, 4, 5].map((i) => v4(W('planes') + i * 4)), eye: v4(W('eye')), lodRow: v4(W('lodRow')), params: v4(W('params')), count: uu[W('count')], lodOn: uu[W('lodOn')], slot0: uu[W('slot0')], slot1: uu[W('slot1')] };
+  const u = { planes: [0, 1, 2, 3, 4, 5].map((i) => v4(W('planes') + i * 4)), eye: v4(W('eye')), lodRow: v4(W('lodRow')), params: v4(W('params')), count: uu[W('count')], lodOn: uu[W('lodOn')], slot0: uu[W('slot0')], slot1: uu[W('slot1')], swayPad: uf[W('swayPad')] };
   const aabbOutside = compileFn(CULL_WGSL, 'aabbOutside', { u }), pickLod = compileFn(CULL_WGSL, 'pickLod', { u }), distOut = compileFn(CULL_WGSL, 'distOut', { u });
   const [src, lodPrev, dst0, dst1, args] = desc.buffers.map((b) => b.buffer);
   const sU = src._gpu.u32, sF = new Float32Array(sU.buffer, sU.byteOffset, sU.length);

@@ -40,6 +40,26 @@ function edgeInput() {
   ok('non-ASCII chars become ?', sanitize.rows[0] === 'caf?');
 }
 
+// ---- BUG-NOTE-ESC-01: pointer lock lost (Esc under lock never reaches the page) closes the note ----
+{
+  resetNoteRead({ note: { fadeIn: 0.12, fadeOut: 0.08, sceneDim: { bgMul: 0.35 } } });
+  const world = { state: {} };
+  const none = { pressed: () => false };
+  stepNoteRead(0.016, none, true); // locked, no note
+  noteRead({ world, def: { noteId: 'keeperLog' } });
+  stepNoteRead(0.2, none, true); // open, lock held
+  ok('lock held keeps the note open', isNoteOpen());
+  stepNoteRead(0.016, none, false); // lock released (Esc) -> closing
+  stepNoteRead(0.1, none, false);
+  ok('lock lost closes the note', !isNoteOpen() && getOpenNoteId() === null);
+  // never locked (capture page / no lock support): a note stays until E/Esc
+  noteRead({ world, def: { noteId: 'keeperLog' } });
+  stepNoteRead(0.2, none, false); stepNoteRead(0.2, none, false);
+  ok('no lock edge -> no close', isNoteOpen());
+  stepNoteRead(0.2, none); // undefined = old callers
+  ok('locked arg omitted -> unchanged', isNoteOpen());
+}
+
 // ---- noteRead / stepNoteRead / isNoteOpen (open/close/input gate) ----------
 {
   resetNoteRead({ note: { fadeIn: 0.12, fadeOut: 0.08, sceneDim: { bgMul: 0.35 } } });

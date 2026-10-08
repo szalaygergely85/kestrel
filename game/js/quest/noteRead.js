@@ -35,6 +35,7 @@ let noteId = null;        // ASSETS.notes key of the note currently open
 let noteA = 0;            // 0..1 fade alpha (uiStyle.note fadeIn/fadeOut)
 let fadeIn = 0.12;
 let fadeOut = 0.08;
+let prevLocked = false;   // pointer-lock state of the previous step (BUG-NOTE-ESC-01)
 let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open)
 
 // Per-note render cache, built once per open (NOT per frame - rule 9): the
@@ -139,8 +140,15 @@ export function resetNoteRead(uiStyle) {
  * A cheap no-op the rest of the time.
  * @param {number} dt - seconds
  * @param {{pressed:(code:string)=>boolean, consumePressed?:()=>void}} input
+ * @param {boolean} [locked] pointer-lock state this step (see BUG-NOTE-ESC-01 below)
  */
-export function stepNoteRead(dt, input) {
+export function stepNoteRead(dt, input, locked) {
+  // BUG-NOTE-ESC-01: under pointer lock Chrome eats Esc (releases the lock, no keydown reaches the page), so a lock-lost
+  // edge (true -> false) while a note is up closes it. `locked` undefined (old callers / no lock support) = never closes.
+  if (typeof locked === 'boolean') {
+    if (prevLocked && !locked && (noteState === 'open' || noteState === 'opening')) noteState = 'closing';
+    prevLocked = locked;
+  }
   if (noteState === 'opening') {
     noteA += fadeIn > 0 ? dt / fadeIn : 1;
     if (noteA >= 1) { noteA = 1; noteState = 'open'; }

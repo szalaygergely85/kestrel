@@ -19,6 +19,7 @@ export const CULL_SHADOW_BLOCK = defineUniformBlock('CullShadowU', [
   { name: 'slot0', type: 'u32' },             // first word of the band-0 args slot
   { name: 'slot1', type: 'u32' },             // first word of the band-1 args slot
   { name: 'pad', type: 'u32' },
+  { name: 'swayPad', type: 'f32' },           // S8-B2-06: metres added to R in the sun-box plane test (SWAY_MAX while sway is on, else 0)
 ]);
 
 export const CULL_SHADOW_BUFFERS = Object.freeze(['read', 'rw', 'rw', 'rw', 'rw']);

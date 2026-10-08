@@ -60,7 +60,7 @@ import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
-import { wakeFrame, drawEyelid } from './quest/wake.js';
+import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
@@ -204,6 +204,7 @@ const canvas = document.getElementById('screen');
 // MESH-LOAD-01: lazy mesh payloads in the game (colliders stay eager); capture/bench/compare pages stay eager so their results stay comparable. ?lazymesh=0 = eager.
 const lazyMeshes = !isCaptureOrBench && params.get('lazymesh') !== '0';
 const bundle = await loadContentPack('../content/manifest.json', { lazyMeshes });
+if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-01: dev handle (tools/lazymesh-trace.mjs, F3 debugging); the engine no longer sets it
 // US-034 (24.11): `?playtest=1` overlays the editor's in-memory (possibly
 // unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE
 // the registry is built, so the rest of boot is unaware anything special
@@ -979,7 +980,8 @@ function runGame(mode, cinematic = null) {
         // rise (main.js's own step() writes `body.eyeH` every fixed step
         // while `wakeOut.inputLocked`, overriding the standing default the
         // Object.assign above just set).
-        if (startPose && startPose.pose === 'lying') {
+        // BUG-SAVE-WAKE-01: a loaded save whose wake is done stays standing (no replay, no title card).
+        if (!applyWakeOnLoad(world.state, wakeCfg, wakeOut, playerHandle.data.components.body) && startPose && startPose.pose === 'lying') {
           playerHandle.data.components.body.eyeH = wakeCfg.startEyeH;
         }
         // OWN-REQ-003 (17.4): layout in the UI layer's OWN grid (identity
@@ -1219,7 +1221,7 @@ function runGame(mode, cinematic = null) {
       // `updateInteraction` (which just fired `note.read` on the E edge). A
       // no-op while no note is open; the close guard (`state === 'open'`)
       // keeps the opening E press from also closing it.
-      stepNoteRead(dt, input);
+      stepNoteRead(dt, input, !!(look && look.locked)); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
       // US-022: the relay's own wake timer (clip switch wake -> awake, point
       // light on + 1.0 s grow) - a no-op every step before `beacon.light`
       // fires (game/js/quest/beacon.js), same "reads its own state key" split

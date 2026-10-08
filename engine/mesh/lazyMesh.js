@@ -11,10 +11,14 @@
 // most MAX_DECODES_PER_FRAME meshes or BUDGET_MS per call, so a frame never pays for more than ~2 decodes. Promise de-dup:
 // `request()` returns the same Promise for the same mesh, and a mesh is fetched at most once.
 import { meshFromBin, base64ToF32 } from './meshBin.js';
+import { validateMesh } from './MeshData.js';
 
 export const MAX_DECODES_PER_FRAME = 2;
 export const BUDGET_MS = 4;
 export const MAX_INFLIGHT = 4;
+/** Failed fetch/decode: at most this many attempts per mesh, the next one no earlier than RETRY_AFTER_MS later (compared against `now()`, no timers). */
+export const MAX_ATTEMPTS = 3;
+export const RETRY_AFTER_MS = 2000;
 /** Extra metres beyond the draw distance (fogFarM) within which a shell is requested, so it is ready before it becomes visible. */
 export const LOAD_MARGIN_M = 20;
 /** S8-B2-03 LRU: a ready mesh is kept while some placement is within loadM + HOLD_MARGIN_M of the eye (hysteresis band, > 0 so a
@@ -124,7 +128,7 @@ export class LazyMeshStore {
    * @param {any} meta parsed .mesh.json (migrated) @param {string} binUrl absolute url of the .mesh.bin
    */
   makeShell(meta, binUrl) {
-    const rec = { store: this, meta, binUrl, state: 'idle', promise: null, resolve: null, reject: null, force: false, bytes: null, scanAt: 0 };
+    const rec = { store: this, meta, binUrl, state: 'idle', promise: null, resolve: null, reject: null, force: false, bytes: null, scanAt: 0, attempts: 0, retryAt: 0, failed: null };
     const shell = {
       version: meta.version, id: meta.id, layout: meta.layout,
       pos: EMPTY_F32, uv: EMPTY_F32, nrm: EMPTY_U32, flat: EMPTY_U32, aux: EMPTY_F32, idx: null,
@@ -152,6 +156,10 @@ export class LazyMeshStore {
     const rec = mesh.lazy;
     if (!rec) return Promise.resolve(mesh);
     if (rec.promise) return rec.promise;
+    if (rec.failed) { // cooling down after a failure (or out of attempts): the cached rejection, no new fetch yet
+      if (rec.attempts >= MAX_ATTEMPTS || this.now() < rec.retryAt) return rec.failed;
+      rec.failed = null;
+    }
     rec.promise = new Promise((res, rej) => { rec.resolve = res; rec.reject = rej; });
     rec.promise.catch(() => {}); // a failed background load is warned once, never an unhandled rejection
     rec.state = 'queued';
@@ -172,6 +180,25 @@ export class LazyMeshStore {
     return p;
   }
 
+  /**
+   * Boot hook (no frame budget): loads every lazy mesh of a placed structure within `radiusM` of (x, y) (bbox distance, the same
+   * test as `addMeshStructures`; typical radius = fogFarM + LOAD_MARGIN_M) plus the meshes in `opts.also` (e.g. the scatter species
+   * `world.scatterMeshes`, whose instances are positioned per camera). Pinned like `ensure`.
+   * @param {{structures: any[]}} world @param {number} x @param {number} y @param {number} radiusM @param {{also?: any[]}} [opts]
+   * @returns {Promise<number>} resolves with the number of payloads requested (failed ones count, they only warn)
+   */
+  prefetchNear(world, x, y, radiusM, opts = {}) {
+    const want = new Set();
+    for (const s of world.structures) {
+      if (s.kind !== 'mesh' || !s.mesh.lazy || s.mesh.lazy.store !== this) continue;
+      const b = s.bbox;
+      const dx = Math.max(b.x0 - x, 0, x - b.x1), dy = Math.max(b.y0 - y, 0, y - b.y1);
+      if (dx * dx + dy * dy <= radiusM * radiusM) want.add(s.mesh);
+    }
+    for (const m of opts.also || []) if (m && m.lazy && m.lazy.store === this) want.add(m);
+    return Promise.all([...want].map((m) => this.ensure(m).catch(() => null))).then(() => want.size);
+  }
+
   _startFetches() {
     while (this.inflight < this.maxInflight && this.fetchQueue.length) {
       const rec = this.fetchQueue.shift();
@@ -186,13 +213,27 @@ export class LazyMeshStore {
         this._startFetches();
       }, (err) => {
         this.inflight--;
-        rec.state = 'failed'; this.stats.failed++;
-        console.warn(`[lazymesh] fetch of "${rec.meta.id}" failed: ${err && err.message ? err.message : err}`);
-        rec.reject(err);
+        this._fail(rec, err, 'fetch');
         this._startFetches();
         this._idle();
       });
     }
+  }
+
+  /**
+   * A fetch or decode failed: reject the waiters, then go back to idle so a later request retries (at most MAX_ATTEMPTS, each at
+   * least RETRY_AFTER_MS after the previous failure). The mesh stays a shell; the last failure is warned once.
+   * @param {any} rec @param {unknown} err @param {string} what
+   */
+  _fail(rec, err, what) {
+    const msg = err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : String(err);
+    rec.attempts++; this.stats.failed++;
+    if (rec.attempts >= MAX_ATTEMPTS) console.warn(`[lazymesh] ${what} of "${rec.meta.id}" failed ${rec.attempts} times, giving up: ${msg}`);
+    const reject = rec.reject;
+    rec.failed = Promise.reject(err); rec.failed.catch(() => {}); // cached rejection returned while cooling down
+    rec.retryAt = this.now() + RETRY_AFTER_MS;
+    rec.state = 'idle'; rec.promise = null; rec.resolve = null; rec.reject = null;
+    if (reject) reject(err);
   }
 
   /** @param {any} rec @param {any} mesh */
@@ -200,14 +241,16 @@ export class LazyMeshStore {
     if (rec.state !== 'fetched') return;
     try {
       const full = meshFromBin(rec.meta, rec.bytes);
+      const { errors } = validateMesh(full); // the eager path validates too; a corrupt bin that decodes must not reach the feeds
+      if (errors.length) throw new Error(`invalid mesh: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`);
       for (const k of STREAMS) if (full[k] !== undefined && full[k] !== null) mesh[k] = full[k];
     } catch (err) {
-      rec.state = 'failed'; this.stats.failed++;
-      console.warn(`[lazymesh] decode of "${rec.meta.id}" failed: ${err && err.message ? err.message : err}`);
-      rec.bytes = null; rec.reject(err); this._idle();
+      rec.bytes = null;
+      this._fail(rec, err, 'decode');
+      this._idle();
       return;
     }
-    rec.bytes = null;
+    rec.bytes = null; rec.attempts = 0; rec.failed = null;
     rec.state = 'ready';
     rec.lastUsed = this.clock;
     delete mesh.lazy;

@@ -1,6 +1,6 @@
 // game/js/quest/wake.test.js (US-015). Headless Node ESM, no framework.
 // Run: node game/js/quest/wake.test.js
-import { wakeFrame } from './wake.js';
+import { wakeFrame, applyWakeOnLoad } from './wake.js';
 import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
@@ -51,6 +51,18 @@ ok('halfway through titleOut (1s): a=0.5', out.titleState === 'out' && near(out.
 wakeFrame(2.5 + 1.0 + 3.0 + 1.0, cfg, out);
 ok('titleOut done: state=done, a=0', out.titleState === 'done' && out.titleA === 0);
 ok('titleDoneAtSec = wakeDoneAtSec + 1+3+1', near(out.titleDoneAtSec, 2.5 + 5.0));
+
+// BUG-SAVE-WAKE-01: load a post-wake save -> wake done, standing eye height, input free, title skipped
+{
+  const o = {}, body = { eyeH: 0.3 }, st = { 'quest.wakeT': 3.0 }; // saved mid title card
+  ok('post-wake load restored', applyWakeOnLoad(st, cfg, o, body) === true);
+  ok('standing eye height', body.eyeH === cfg.bodyEyeH);
+  ok('input free (HUD visible)', o.inputLocked === false);
+  ok('title card skipped', st['quest.wakeT'] >= o.titleDoneAtSec && o.titleState === 'done');
+  const o2 = {}, b2 = { eyeH: 0.3 };
+  ok('fresh start (wakeT 0) not restored', applyWakeOnLoad({ 'quest.wakeT': 0 }, cfg, o2, b2) === false && o2.inputLocked === true && b2.eyeH === 0.3);
+  ok('no wakeT (other world) not restored', applyWakeOnLoad({}, cfg, {}, { eyeH: 1.6 }) === false);
+}
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

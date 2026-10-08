@@ -5,10 +5,10 @@ description: Importing or re-importing glTF meshes (Quaternius etc.) into kestre
 
 # Mesh import
 
-Sources: `design/meshes/quaternius/glTF/` (Kenney DAE: `design/meshes/kenney/dae/`, see architecture 37.15). Output: `content/meshes/<pack>/<Name>.mesh.json`. Tool docs: `tools/README.md`.
+Sources: `design/meshes/quaternius/glTF/` (Kenney DAE: `design/meshes/kenney/dae/`, see architecture 37.15). Output: a PAIR `content/meshes/<pack>/<Name>.mesh.json` (small meta: ranges, mats, bbox, flags, `bin`, `colliderB64` collision proxy) + `<Name>.mesh.bin` (KMSH streams, `docs/mesh-bin.md`, `engine/mesh/meshBin.js`). Never hand-edit the meta arrays or the bin. `gltf-import --json` writes the legacy all-JSON file (still loads). Tools read meshes through `tools/mesh-file.mjs` (`readMeshJSON`), tests through `engine/test/meshFile.test.js`; `node tools/mesh-to-bin.mjs` converts legacy json to the pair; `gen-mesh-colliders --check` compares both files. Tool docs: `tools/README.md`.
 
 ## Steps
-1. Import: `node tools/gltf-import.mjs <src.gltf> ... --budget` (target = `budgetFor(id)` from `tools/mesh-budgets.mjs`: trees 2000, rocks 400, path stones 250, mushrooms 250, pebbles 80, grass 60) or `--simplify <tris>`. Simplifier: `engine/mesh/simplify.js` (quadric edge collapse; tests `engine/mesh/simplify.test.js`).
+1. Import: `node tools/gltf-import.mjs <src.gltf> ... --budget` (target = `budgetFor(id)` from `tools/mesh-budgets.mjs`: trees 2000, rocks 400, path stones 250, mushrooms 250, pebbles 80, grass 60) or `--simplify <tris>`. `--budget`/`--simplify` are tool/report options (37.19 MESH-FULL), not the default: a plain import keeps the source triangle count. Simplifier: `engine/mesh/simplify.js` (quadric edge collapse; tests `engine/mesh/simplify.test.js`).
 2. Re-import a whole pack to budget, keeping existing `mats`: `node tools/reimport-quaternius.mjs [--dry-run] [names...]`.
 3. Collision: import applies `withCollision` (prism `collider` or `collide:false` walk-over). Check: `node tools/gen-mesh-colliders.mjs --check` (0 would change). Rules: skill `engine-physics-colliders`.
 4. Format: meshes listed in `content/manifest.json` must be `stringifyContent` canonical (the tools do this); `node tools/content-canonical.test.mjs`, `node tools/validate-content.mjs`.

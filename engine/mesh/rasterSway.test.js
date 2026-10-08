@@ -9,34 +9,48 @@ import { rasterDrawList, createRasterTarget } from './rasterJS.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
 import { lodDitherBits } from './lodDither.js';
-import { windAt, windParams, swayOffset, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../core/wind.js';
+import { createWind } from '../world/wind.js';
+import { STEP } from '../core/loop.js';
+import { swayOffset, windSwayOn, packWindUniforms, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './sway.js';
 import { RASTER_INSTANCED_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_WGSL, RASTER_BLOCK, SWAY_WGSL } from '../render/gpu/wgsl/raster.wgsl.js';
 import { WIND_AT_WGSL } from '../render/gpu/wgsl/common.wgsl.js';
 import { compileFn } from '../render/gpu/wgsl/wgslProbe.js';
 
-// 1. swayOffset == windAt * h^2 * K, base fixed, cap, zero wind
+const mkWind = (o, seed = 7) => createWind(o, seed);
+const WD = { dirDeg: 30, speed: 5, gust: { amp: 0.6, periodSec: 3, travel: 6 } };
+// 1. swayOffset == world wind (zone-free base vector) * h^2 * K, base fixed, cap, zero wind
 {
-  const p = windParams({ dirDeg: 30, speed: 5, gust: 0.7 });
-  const o = { x: 0, y: 0 };
-  swayOffset(10, 20, 3, 4.5, p, o);
-  const w = windAt(10, 20, 4.5, { dirDeg: 30, speed: 5, gust: 0.7 });
-  assert.ok(Math.abs(o.x - w.x * 9 * SWAY_K) < 1e-12 && Math.abs(o.y - w.z * 9 * SWAY_K) < 1e-12);
-  swayOffset(10, 20, 0, 4.5, p, o); assert.deepEqual([o.x, o.y], [0, 0], 'trunk base fixed');
-  swayOffset(10, 20, 1000, 4.5, p, o); assert.ok(Math.hypot(o.x, o.y) <= SWAY_MAX + 1e-9, 'capped');
-  swayOffset(10, 20, 3, 4.5, windParams({ speed: 0, gust: 1 }), o); assert.deepEqual([o.x, o.y], [0, 0], 'zero wind');
+  const f = mkWind(WD), o = { x: 0, y: 0 }, w = [0, 0];
+  swayOffset(10, 20, 3, 4.5, f, o);
+  f._baseInto(10, 20, 4.5 / STEP, w);
+  assert.ok(Math.hypot(w[0], w[1]) > 0.5, 'the field blows');
+  assert.ok(Math.abs(o.x - w[0] * 9 * SWAY_K) < 1e-12 && Math.abs(o.y - w[1] * 9 * SWAY_K) < 1e-12);
+  swayOffset(10, 20, 0, 4.5, f, o); assert.deepEqual([o.x, o.y], [0, 0], 'trunk base fixed');
+  swayOffset(10, 20, 1000, 4.5, f, o); assert.ok(Math.hypot(o.x, o.y) <= SWAY_MAX + 1e-9, 'capped');
+  const calm = mkWind(null);
+  swayOffset(10, 20, 3, 4.5, calm, o); assert.deepEqual([o.x, o.y], [0, 0], 'zero wind');
+  assert.ok(windSwayOn(f) && !windSwayOn(calm) && !windSwayOn(null));
+  // uniforms: dir from forwardOf (compass 30 deg clockwise from north: x east, y south), table copied as f32
+  const w4 = new Float32Array(4), t4 = new Float32Array(4), k = new Float32Array(64);
+  packWindUniforms(f, 12.5, w4, t4, k);
+  assert.ok(Math.abs(w4[0] - Math.sin(Math.PI / 6)) < 1e-6 && Math.abs(w4[1] + Math.cos(Math.PI / 6)) < 1e-6, `dir ${w4[0]},${w4[1]}`);
+  assert.equal(w4[2], 5); assert.equal(t4[0], 12.5); assert.equal(k[5], Math.fround(f.params.K[5]));
+  packWindUniforms(calm, 1, w4, t4, k); assert.deepEqual([...w4, ...t4], new Array(8).fill(0)); assert.equal(k[5], 0);
 }
 
 // 2. WGSL probe: swayDisp (f64 evaluation of the shipped text) vs swayOffset
 {
-  const wgslWind = compileFn(WIND_AT_WGSL, 'windAt', { sin: Math.sin });
-  const sway = compileFn(SWAY_WGSL, 'swayDisp', { windAt: wgslWind }, `const SWAY_K=${SWAY_K}, SWAY_MAX=${SWAY_MAX};`);
   let seed = 4242; const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-  let maxErr = 0; const o = { x: 0, y: 0 };
+  let maxErr = 0; const o = { x: 0, y: 0 }; let curK = null;
+  const wgslWind = compileFn(WIND_AT_WGSL, 'windAt', { windKnot: (n) => curK[n], WIND_STEP: STEP, WIND_K_SIZE: 64 });
+  const sway = compileFn(SWAY_WGSL, 'swayDisp', { windAt: wgslWind }, `const SWAY_K=${SWAY_K}, SWAY_MAX=${SWAY_MAX};`);
   for (let i = 0; i < 3000; i++) {
-    const p = windParams({ dirDeg: rnd() * 360, speed: rnd() * 12, gust: rnd() });
+    const f = mkWind({ dirDeg: rnd() * 360, speed: 0.5 + rnd() * 12, gust: { amp: rnd(), periodSec: 1 + rnd() * 6, travel: 1 + rnd() * 20 } }, i + 1);
+    const p = f.params;
+    curK = p.K;
     const bx = (rnd() - 0.5) * 3000, by = (rnd() - 0.5) * 3000, h = rnd() * 14, t = rnd() * 3600;
-    swayOffset(bx, by, h, t, p, o);
-    const g = sway(bx, by, h, t, p[0], p[1], p[2], p[3]);
+    swayOffset(bx, by, h, t, f, o);
+    const g = sway(bx, by, h, t, p.dirX, p.dirY, p.speed, p.amp, p.P, p.travel);
     maxErr = Math.max(maxErr, Math.abs(o.x - g.x), Math.abs(o.y - g.y));
   }
   assert.ok(maxErr < 1e-9, `swayDisp probe ${maxErr}`);
@@ -47,7 +61,7 @@ import { compileFn } from '../render/gpu/wgsl/wgslProbe.js';
 assert.ok(RASTER_INSTANCED_WGSL.includes('swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w'));
 assert.ok(RASTER_INSTANCED_SHADOW_WGSL.includes('swayDisp('));
 assert.ok(!RASTER_WGSL.includes('swayDisp') && !RASTER_WGSL.includes('windAt'));
-assert.equal(RASTER_BLOCK.field('wind').word, 76); assert.equal(RASTER_BLOCK.field('windT').word, 80);
+assert.equal(RASTER_BLOCK.field('wind').word, 76); assert.equal(RASTER_BLOCK.field('windT').word, 80); assert.equal(RASTER_BLOCK.field('windK').word, 84); assert.equal(RASTER_BLOCK.sizeBytes, 592);
 assert.ok(!/%|\bround\s*\(|\bmod\s*\(|fract/.test(RASTER_INSTANCED_WGSL));
 
 // 4. raster twin on a real mesh group
@@ -69,15 +83,15 @@ function draw(flagged, wind) {
 }
 const diff = (a, b) => { let n = 0, minRow = ROWS, maxRow = -1; for (let i = 0; i < COLS * ROWS; i++) if (a.kind[i] !== b.kind[i] || a.depth[i] !== b.depth[i] || a.nrm[i] !== b.nrm[i]) { n++; const r = (i / COLS) | 0; minRow = Math.min(minRow, r); maxRow = Math.max(maxRow, r); } return { n, minRow, maxRow }; };
 const base = draw(false, undefined);
-const P = windParams({ dirDeg: 0, speed: 8, gust: 0.5 });
+const P = mkWind({ dirDeg: 90, speed: 8, gust: { amp: 0.5, periodSec: 3, travel: 6 } });
 assert.equal(diff(base, draw(true, undefined)).n, 0, 'flagged, no wind = identical');
-assert.equal(diff(base, draw(true, { p: windParams({ speed: 0, gust: 1 }), t: 5 })).n, 0, 'flagged, zero wind = identical');
-assert.equal(diff(base, draw(false, { p: P, t: 5 })).n, 0, 'wind but unflagged instances = identical');
-const a = draw(true, { p: P, t: 5 }), b = draw(true, { p: P, t: 9.3 });
+assert.equal(diff(base, draw(true, { field: mkWind({ speed: 0 }), t: 5 })).n, 0, 'flagged, zero wind = identical');
+assert.equal(diff(base, draw(false, { field: P, t: 5 })).n, 0, 'wind but unflagged instances = identical');
+const a = draw(true, { field: P, t: 5 }), b = draw(true, { field: P, t: 9.3 });
 const dA = diff(base, a), dB = diff(a, b);
 assert.ok(dA.n > 20, `sway moves pixels (${dA.n})`);
 assert.ok(dB.n > 20, `different time moves again (${dB.n})`);
-assert.equal(diff(a, draw(true, { p: P, t: 5 })).n, 0, 'deterministic');
+assert.equal(diff(a, draw(true, { field: P, t: 5 })).n, 0, 'deterministic');
 // trunk base fixed: kind/depth changes concentrate in the crown (upper half of the covered rows), the bottom row of each trunk barely moves
 let lastRow = -1, firstRow = ROWS; for (let i = 0; i < COLS * ROWS; i++) if (base.kind[i]) { const r = (i / COLS) | 0; lastRow = Math.max(lastRow, r); firstRow = Math.min(firstRow, r); }
 const mid = (firstRow + lastRow) >> 1; let top = 0, bottom = 0;

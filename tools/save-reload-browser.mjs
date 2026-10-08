@@ -32,7 +32,8 @@ const STATE = `(() => { const D = window.__debug, p = D.playerHandle.data, t = p
   const r = D.saveRelay; const bs = D.beasts, bi = bs ? bs.slotOf('boar1') : -1;
   return { x: t.x, y: t.y, z: t.z, hp: p.components.health.hp, lantern: w.state['tower.lantern.taken'], objective: r.quest.objectiveText(),
     dead: r.deadBeasts, enabled: r.enabled, slot: localStorage.getItem('kestrel.save.slot.0') ? localStorage.getItem('kestrel.save.slot.0').length : 0,
-    boarState: bi >= 0 ? bs.state[bi] : null, last: r.lastResult }; })()`;
+    boarState: bi >= 0 ? bs.state[bi] : null, last: r.lastResult,
+    eyeH: p.components.body.eyeH, standEyeH: D.engine.physics.eyeHeight, wakeT: w.state['quest.wakeT'] }; })()`;
 
 async function evalIn(cdp, expression) {
   const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, timeout: 120000 });
@@ -64,7 +65,7 @@ try {
 
   // 1: first run
   await open(cdp, base + '&save=1');
-  await evalIn(cdp, `(async () => { const D = window.__debug, w = D.world, t = D.playerHandle.data.transform; w.state['quest.wakeT'] = 100;
+  await evalIn(cdp, `(async () => { const D = window.__debug, w = D.world, t = D.playerHandle.data.transform; w.state['quest.wakeT'] = 100; D.playerHandle.data.components.body.eyeH = D.engine.physics.eyeHeight; // as after a played wake
     const fr = () => new Promise((r) => requestAnimationFrame(r)); for (let i = 0; i < 20; i++) await fr();
     t.x += 1.5; t.y += 0.75; for (let i = 0; i < 90; i++) await fr();
     const hc = D.playerHandle.data.components; if (!hc.health) throw new Error('no health; keys=' + Object.keys(hc) + ' loop=' + JSON.stringify(D.engine.loop.stats)); hc.health.hp = Math.min(2, hc.health.max);
@@ -82,7 +83,8 @@ try {
   cdp.close();
 } finally { cleanup(); }
 const ok = res.posDelta < 0.01 && res.after.hp === res.before.hp && res.before.slot > 0 && res.after.lantern === true
-  && res.after.objective === 'Reach the breach' && res.after.dead.includes('boar1') && res.after.boarState === 12
+  && res.after.objective === 'Climb to the breach at the top' && res.after.dead.includes('boar1') && res.after.boarState === 12
+  && Math.abs(res.after.eyeH - res.after.standEyeH) < 1e-6 && res.after.wakeT >= 100 // BUG-SAVE-WAKE-01: standing after reload
   && res.plain.enabled === false && res.plain.lantern === false && res.errors.length === 0;
 console.log(JSON.stringify(res, null, 1));
 console.log(ok ? 'save-reload: PASS' : 'save-reload: FAIL');

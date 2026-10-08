@@ -28,15 +28,16 @@ export const CULL_BLOCK = defineUniformBlock('CullU', [
   { name: 'slot0', type: 'u32' },             // first word of the LOD0 args slot in `args`
   { name: 'slot1', type: 'u32' },             // first word of the LOD1 args slot
   { name: 'lodDither', type: 'u32' },         // S8-B2-07: 1 = emit band instances to BOTH LOD lists with complementary dither bits (lodDither.js); 0 = off
+  { name: 'swayPad', type: 'f32' },           // S8-B2-06: metres added to R in the frustum test (SWAY_MAX while foliage sway is on, else 0); the LOD cell estimate (params.y) is unchanged
 ]);
 
 /** Buffer access per slot of the compute pipeline (GpuDevice ComputePipelineDesc.bindings.buffers). */
 export const CULL_BUFFERS = Object.freeze(['read', 'rw', 'rw', 'rw', 'rw']);
 
-/** Shared with cullShadow.wgsl.js: needs `u.planes` and `u.params.x` (= R) in the including module's uniform block. */
+/** Shared with cullShadow.wgsl.js: needs `u.planes`, `u.params.x` (= R) and `u.swayPad` in the including module's uniform block. */
 export const CULL_AABB_FN = `// culling.js classifyAABB(planes, t - R, t + R) === CULL_OUT: the AABB corner furthest along each plane normal is behind the plane
 fn aabbOutside(tx: f32, ty: f32, tz: f32) -> bool {
-  let R = u.params.x;
+  let R = u.params.x + u.swayPad;
   for (var i = 0; i < 6; i++) {
     let pl = u.planes[i];
     let px = select(tx - R, tx + R, pl.x >= 0.0);

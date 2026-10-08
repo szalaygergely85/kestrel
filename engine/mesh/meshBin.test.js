@@ -108,9 +108,33 @@ test('header validation: bad magic / version / truncated / bad section', () => {
   bad((c, dv) => dv.setUint32(32, 77, true), /unknown section id 77/);
   bad((c, dv) => dv.setUint32(32 + 4, 42, true), /unknown encoding 42/);
   bad((c, dv) => dv.setUint32(32 + 8, 1 << 20, true), /out of bounds/);
-  bad((c, dv) => dv.setUint32(8, 7, true), /vertices, header says 7/);
+  bad((c, dv) => dv.setUint32(8, 7, true), /!= vertex count 7/);
   assert.equal(MESH_BIN_MAGIC, 0x48534d4b);
   assert.throws(() => meshFromBin({ ...meshBinMeta(m, 'x'), triCount: 5 }, good), /triCount/);
+});
+
+test('corrupt counts fail fast with a mesh.bin error (no huge allocation)', () => {
+  const good = encodeMeshBin(manual(6, 'planar'));
+  const c = Uint8Array.from(good), dv = new DataView(c.buffer);
+  dv.setUint32(32 + 16, 0xfffffff0, true); // first section count
+  assert.throws(() => decodeMeshBin(c), /^Error: mesh\.bin: /);
+});
+test('seeded fuzz: flips and truncations throw mesh.bin errors or decode, never hang', () => {
+  let seed = 12345;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const bins = [encodeMeshBin(manual(12, 'planar')), encodeMeshBin(manual(12, 'free'))];
+  const t0 = Date.now();
+  let threw = 0;
+  for (let i = 0; i < 600; i++) {
+    const c = Uint8Array.from(bins[i & 1]);
+    const mode = i % 3;
+    let input = c;
+    if (mode === 0) input = c.subarray(0, Math.floor(rnd() * c.length));
+    else { const n = 1 + Math.floor(rnd() * 4); for (let k = 0; k < n; k++) c[Math.floor(rnd() * (mode === 1 ? 200 : c.length))] ^= 1 << Math.floor(rnd() * 8); }
+    try { decodeMeshBin(input); } catch (e) { threw++; assert.match(e.message, /^mesh\.bin: /, `iteration ${i}: ${e.message}`); }
+  }
+  assert.ok(threw > 100, `${threw} rejections`);
+  assert.ok(Date.now() - t0 < 1000, `fuzz took ${Date.now() - t0} ms`);
 });
 
 // ---- every committed mesh ----
