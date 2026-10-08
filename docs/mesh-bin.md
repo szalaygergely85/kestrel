@@ -5,7 +5,7 @@ Decode is lossless: the loaded `MeshData` is byte-identical to the old all-JSON 
 (The architecture note proposed quantised int16/oct16; lossless dedupe was chosen instead because the AC demands byte-identical MeshData and it already reaches ~15x.)
 
 ## Meta (`*.mesh.json`, canonical `stringifyContent` form)
-`kind, schema, id, nextId, version, layout, bin, triCount, bbox, ranges, matKeys, mats, matsResolved, meshVersion, castShadow?, collide?, colliderParts?`.
+`kind, schema, id, nextId, version, layout, bin, triCount, bbox, ranges, matKeys, mats, matsResolved, meshVersion, castShadow?, collide?, colliderB64?, colliderParts?`. `colliderB64` (MESH-LOAD-01) = the collision proxy (9 f32 per tri, little endian) as base64, ~1.4 KB for 28 tris; the bin then has no section 8 (`encodeMeshBin(mesh, {collider:false})`; an old bin with section 8 still loads, the meta wins).
 `bin` = file name relative to the meta file. No `pos/uv/uvMask/nrm/flat/aux/idx/collider` keys. A file without `bin` is the legacy all-JSON form and still loads (`--json` writes it).
 
 ## `.mesh.bin` (little endian)
@@ -27,5 +27,5 @@ Typical glTF import: aux = CONST, flat = TRI, uv = UVPLANAR (1 byte/tri), pos/nr
 - `tools/gltf-import.mjs` / `dae-import.mjs`: write meta + bin when `--out` (or the default path) ends in `.mesh.json` (`--json` = legacy). `tools/reimport-quaternius.mjs` and `tools/gen-mesh-colliders.mjs [--check]` handle both forms (`--check` compares the meta text and the bin bytes).
 - `tools/mesh-to-bin.mjs [--dry] [paths]`: one-shot converter; verifies the decoded mesh against the JSON path before writing.
 
-## For lazy loading (MESH-LOAD-01)
-Meta is ~1-3 KB and the bin is one self-contained fetch per mesh, so a lazy loader can fetch the meta list eagerly (ranges, bbox, collider-flags) and the `.mesh.bin` on demand; `collider` is a section inside the bin (colliders stay eager = fetch those bins first, or split the collider section out later if the numbers ask for it).
+## Lazy loading (MESH-LOAD-01, engine/mesh/lazyMesh.js)
+`loadContentPack(url, { lazyMeshes: true })` (or `?lazymesh=1` in the page url; off by default, `?lazymesh=0` forces off) fetches every meta but only the bins of meshes that need render triangles for collision (no `colliderB64` and not `collide:false`: Fences/Line, GroundMossXS today). Every other mesh is a **shell**: the normal MeshData object (same identity all session) with empty streams and `mesh.lazy`. Colliders therefore stay eager (proxy in the meta). Feeds skip a shell (`addMeshStructures`, `MeshGroupSet`, scatter groups in `instances.js`, `shadowList.js`) and request it when its bbox is within fogFarM + 20 m of the eye (scatter groups: any instance within that radius). `LazyMeshStore`: Promise de-dup, max 4 fetches in flight, decode in `pump()` (called by the camera `addMeshStructures`): at most 2 decodes or 4 ms per frame (the first decode of a frame always runs). `AssetRegistry.loadMesh(id)` / `ensureMesh(mesh)` = editor/tool path (no frame budget). `window.__lazyMeshStore.stats` = counters. Trace: `node tools/lazymesh-trace.mjs --port 96xx [--lazy 0|1]`.

@@ -14,6 +14,7 @@
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { requestMeshForGroup } from './lazyMesh.js';
 import { DRAW_FLAG_ONE_PART } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
 
 /** Words / bytes per instance. */
@@ -374,6 +375,7 @@ export class InstanceGroups {
       if (g.count <= 0) continue;
       if (g.mesh) { // TREES-LP-b: kind-9 mesh group, one identity part, no LOD
         if (!meshDraw || !meshDraw.idFor) continue;
+        if (g.mesh.lazy) { requestMeshForGroup(g.mesh, g); continue; } // MESH-LOAD-01: payload not loaded = group draws nothing yet
         const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
         if (gpu && gpu.accept(g, draw, null)) continue;
         if (!memo || g._memoFrameNo !== frameNo) {

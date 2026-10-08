@@ -89,6 +89,9 @@ export class AssetRegistry {
     return this._meshes[key];
   }
 
+  /** MESH-LOAD-01: resolves with the mesh once its payload is loaded (immediately for an eager registry); the editor/tools path for lazy meshes. */
+  loadMesh(key) { const m = this.mesh(key); return m.lazy ? m.lazy.store.ensure(m) : Promise.resolve(m); }
+
   /** ALPHA-01b: a loaded alpha mask `{id, w, h, cutoffDefault, data: Uint8Array}`. */
   mask(key) {
     if (!(key in this._masks)) throwUnknown('mask', key, this._masks);

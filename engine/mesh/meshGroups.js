@@ -25,6 +25,7 @@ import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { addMeshStructures, placementMatrix12, DRAW_FLAG_ONE_PART } from './DrawList.js';
 import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { lazyMeshVersion } from './lazyMesh.js';
 
 /** Total grouped instances per set (the GL path uploads at most MAX_INSTANCES_PER_FRAME = 4096 incl. vegetation). */
 export const MAX_GROUPED_INSTANCES = 1024;
@@ -35,7 +36,7 @@ const _m12 = new Float64Array(12);
 
 /** @param {any} s @returns {boolean} eligible for grouping on its own (mesh-level checks happen at build). */
 function placementEligible(s) {
-  return s.kind === 'mesh' && !!s.mesh;
+  return s.kind === 'mesh' && !!s.mesh && !s.mesh.lazy; // MESH-LOAD-01: an unloaded shell stays a (skipped) single until its payload arrives
 }
 
 /** Open-edge share (of all welded edges, boundary edges above the mesh base) up to which a mesh still counts as a solid prop. */
@@ -99,6 +100,7 @@ export class MeshGroupSet {
     /** @type {any} */ this._structs = null;
     this._len = -1;
     this._ver = -1;
+    this._lazyVer = -1; // MESH-LOAD-01: lazyMeshVersion() at the last build
     /** @type {any} */ this._idFor = null;
     /** @type {any} */ this._cache = null;
     /** F3 stats: placements grouped / instances kept by the last `push`. */
@@ -119,7 +121,7 @@ export class MeshGroupSet {
   update(world, cache, idFor) {
     const structs = world.structures;
     const ver = /** @type {any} */ (world).structVersion | 0;
-    let dirty = structs !== this._structs || structs.length !== this._len || ver !== this._ver || idFor !== this._idFor || cache !== this._cache;
+    let dirty = lazyMeshVersion() !== this._lazyVer || structs !== this._structs || structs.length !== this._len || ver !== this._ver || idFor !== this._idFor || cache !== this._cache;
     if (!dirty) dirty = !this._snapshotValid(structs);
     if (dirty) this._build(structs, ver, cache, idFor);
   }
@@ -144,6 +146,7 @@ export class MeshGroupSet {
 
   /** @param {any[]} structs @param {number} ver */
   _build(structs, ver, cache, idFor) {
+    this._lazyVer = lazyMeshVersion();
     this._structs = structs; this._len = structs.length; this._ver = ver; this._idFor = idFor; this._cache = cache;
     this.stats.builds++;
     this.groups.length = 0;

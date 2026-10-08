@@ -21,6 +21,7 @@ import { cutoffByte } from '../render/MaskAtlas.js';
 import { localDirToWorld } from '../core/transform.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
+import { setLazyView, pumpLazyMeshes, requestMesh, LOAD_MARGIN_M } from './lazyMesh.js';
 import { createClothMesh, updateClothMesh } from './clothMesh.js';
 
 /** `DrawItem.type` values. */
@@ -361,6 +362,7 @@ export class MeshDrawCache {
    *   range is masked)
    */
   get(mesh, idFor, atlas) {
+    if (mesh.lazy) throw new Error(`MeshDrawCache.get: mesh "${mesh.id}" payload is not loaded (MESH-LOAD-01: feeds must skip shells)`);
     const hit = this._map.get(mesh);
     if (hit && hit.idFor === idFor && (!hit.atlas || (hit.atlas === atlas && hit.atlasVersion === atlas.version)) && !(hit.noAtlas && atlas)) return hit.copy;
     const mats = mesh.mats || {};
@@ -416,11 +418,16 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   const bEye = shadowOnly && budget ? budget.eye : null, bCut = bEye ? budget.cutM : 0;
   const maxKeep = bEye ? Math.min(MAX_MESH_DRAWS, budget.cap) : MAX_MESH_DRAWS;
   if (groups) groups.chosen.fill(0);
+  if (!shadowOnly) { setLazyView(cam.x, cam.y, fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
   let count = 0;
   for (let i = 0; i < structs.length; i++) {
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
     const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
+    if (structs[i].mesh.lazy) { // MESH-LOAD-01: payload not loaded = draws nothing; ask for it when within draw distance + margin
+      if (!shadowOnly && d <= fogFarM + LOAD_MARGIN_M) requestMesh(structs[i].mesh);
+      continue;
+    }
     if (d > fogFarM || (bEye && d > bCut)) continue;
     if (count < maxKeep) {
       _mOrder[count] = i; _mDist[count] = d; count++;

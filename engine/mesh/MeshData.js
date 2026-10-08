@@ -60,6 +60,7 @@ export const AO_FAR = 1e30;
  * @property {boolean} [castShadow] - MESH-SHADOW-01: false = never in the sun shadow list (absent = true); a placement can override
  * @property {boolean} [collide] - MESH-PHYS-01: false = walk-over piece, no collider at all (absent = true)
  * @property {Float32Array} [collider] - MESH-PHYS-01: collision proxy triangles (9 floats/tri, mesh-local); absent = collide against the render triangles
+ * @property {{store: any}} [lazy] - MESH-LOAD-01: present while the vertex payload is not loaded (a shell: empty streams, draws nothing); deleted when the payload arrives (lazyMesh.js)
  */
 
 /**
