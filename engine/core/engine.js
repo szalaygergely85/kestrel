@@ -5,6 +5,7 @@
 import { RenderTarget } from '../render/RenderTarget.js';
 import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance } from '../mesh/instances.js';
 import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/scatterFeed.js';
+import { resolveGfxKnobs, keepPlacement } from '../mesh/gfxKnobs.js';
 import { createViewModelLayer } from '../render/viewModel.js';
 import { buildTeamRemap } from '../render/teamRemap.js';
 import { DepthBuffer } from '../render/DepthBuffer.js';
@@ -36,7 +37,9 @@ export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .
 export const SCATTER_OBJECT_BASE = 0x20000;
 
 // ME-06c3 (37.2): load-time writes only; RE-15 owns per-frame cull/LOD.
-export function bindScatterInstances(world, instances, previous = [], owner = null) {
+// GFX-03: `gfx` = { scatterDensity, lodScale, tuftDrawScale } (mesh/gfxKnobs.js), defaults = unchanged.
+export function bindScatterInstances(world, instances, previous = [], owner = null, gfx = undefined) {
+  const knobs = resolveGfxKnobs(gfx);
   if (owner?._detail) {
     removeDetailInstances(owner._detail, instances);
     owner._detail = null;
@@ -46,8 +49,12 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   const cfg = world?.terrain?.recipe?.recipe?.forest?.trees;
   const counts = cfg && scatter ? new Uint32Array(cfg.species.length) : null;
   let needed = 0;
+  const keep = counts && knobs.scatterDensity < 1 ? new Uint8Array(scatter.count) : null; // GFX-03: hash-thinned placements (null = keep all)
   if (counts) {
-    for (let i = 0; i < scatter.count; i++) counts[scatter.species[i]]++;
+    for (let i = 0; i < scatter.count; i++) {
+      if (keep) { if (!keepPlacement(scatter.x[i], scatter.y[i], i, knobs.scatterDensity)) continue; keep[i] = 1; }
+      counts[scatter.species[i]]++;
+    }
     for (let s = 0; s < counts.length; s++) {
       if (!counts[s]) continue;
       const key = cfg.species[s].model;
@@ -68,9 +75,9 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
     const sp = cfg.species[s];
     const group = sp.mesh !== undefined ? instances.meshGroup(world.scatterMeshes[s], counts[s]) : instances.group(sp.model, counts[s]);
     if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: no LOD (37.15 item 6)
-    else group.lodCells = cfg.lodCells;
+    else group.lodCells = cfg.lodCells / knobs.lodScale; // GFX-03: switch distance x lodScale
     for (let i = 0; i < scatter.count; i++) {
-      if (scatter.species[i] !== s) continue;
+      if (scatter.species[i] !== s || (keep && !keep[i])) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],
         scatter.yawDeg[i], SCATTER_OBJECT_BASE | i, 0);
     }
@@ -78,7 +85,7 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   }
   if (owner && world?.detail) {
     try {
-      owner._detail = bindDetailInstances(world.detail, instances, world.terrain.recipe.recipe.detail, scatter?.count || 0);
+      owner._detail = bindDetailInstances(world.detail, instances, world.terrain.recipe.recipe.detail, keep ? keep.reduce((a, b) => a + b, 0) : scatter?.count || 0, knobs);
       feedDetail(owner._detail, world.def?.spawn?.x || 0, world.def?.spawn?.y || 0, true);
     } catch (error) {
       for (const group of groups) instances.remove(group);
@@ -126,6 +133,9 @@ export function clampGrid(cols, rows) {
  *   options ({ sun: 'map'|'dda'|false, res, boxM, aheadM, depthBias, biasM, normalOffsetTexels }); stored frozen as
  *   `engine.shadows` and handed to `new GpuCellPipeline(rt, { ..., shadows: engine.shadows })`, which merges it over
  *   `SUN_SHADOW_DEFAULTS` once (the default `sun` depends on the renderer, so the merge happens where the renderer is known).
+ * @param {{scatterDensity?:number, lodScale?:number, tuftDrawScale?:number}} [opts.gfx] - GFX-03 quality knobs (mesh/gfxKnobs.js; all 1 = unchanged, clamped):
+ *   scatter/detail density 0..1 (hash thinning), LOD switch-distance multiplier 0.25..4, detail tuft draw-distance multiplier 0.25..2. Resolved once into
+ *   `engine.gfx`, applied at world load/scatter (re)bind. Sun shadows are `opts.shadows` (`resolveShadowLevel`, `sun: 'off'`).
  * @param {{capacity?:number, seed?:number}} [opts.particles] - US-053a (architecture.md 32.1): pooled particle sim, owned as
  *   `engine.particles` (default 2048 slots, seed 1); cleared on every `world:loaded`. The game steps it (`entityEmitters.sync(); particles.step()`).
  * @returns {import('./engine.js').Engine}
@@ -135,7 +145,7 @@ export function createEngine(opts) {
     canvas, assets, cols = GRID_DEFAULT_COLS, rows, force2d = false, renderTarget: prebuiltRt = null, renderPipeline = null,
     cpuGrid = { cols: GRID_MIN_COLS, rows: 60 }, gpu = true, rays = 2,
     uiGrid = { cols: 160, rows: 60 },
-    physics: physicsOverrides = {}, particles: particleOpts = {}, shadows = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
+    physics: physicsOverrides = {}, particles: particleOpts = {}, shadows = undefined, gfx = undefined, inputTarget = typeof window !== 'undefined' ? window : undefined,
   } = opts;
 
   const grid = clampGrid(cols, rows);
@@ -211,6 +221,7 @@ export function createEngine(opts) {
     events,
     assets,
     rays,
+    gfx: Object.freeze(resolveGfxKnobs(gfx)), // GFX-03
     shadows: shadows ? Object.freeze({ ...shadows }) : undefined, // ME-15b: raw user options (see the doc above)
     gridRequest: { cols: grid.cols, rows: grid.rows, clamped: grid.clamped, cpuGrid, gpu, force2d },
     // D-025 (US-038a): a request accepted by `setGrid` but not yet applied
@@ -315,12 +326,12 @@ export function createEngine(opts) {
 
   let scatterGroups = [];
   events.on('world:loaded', ({ world }) => {
-    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine);
+    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine, engine.gfx);
     engine.particles.clear(); // US-053a: particles are transient, never saved
   });
   // ED-TERRAIN-1b: a terrain stroke re-scattered trees/detail (World#refreshTerrainScatter) - rebind the instance groups.
   events.on('world:scatter', ({ world }) => {
-    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine);
+    scatterGroups = bindScatterInstances(world, engine.instances, scatterGroups, engine, engine.gfx);
   });
   return engine;
 }

@@ -79,7 +79,7 @@ import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 // ME-15b (27.9a): sun shadow map pass (depth only, before the raster pass).
-import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../shadowSun.js';
+import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../mesh/shadowList.js';
 import { SHADOW_FRAG_SRC, SHADOW_TERRAIN_FRAG_SRC, SHADOW_DEPTH_COPY_FRAG_SRC } from './glsl/shadow.frag.js';
 import { CELL_VERT_SRC as SHADOW_COPY_VERT_SRC } from './glsl/cell.vert.js';
@@ -316,6 +316,12 @@ export class GpuCellPipeline {
       this._shadowTarget = null;
       this.progShadow = null; this.progShadowTerrain = null; this.progShadowInst = null; this.progShadowCloth = null;
       this._copyPipeline = null; this._copyTarget = null; this._copyTex = null;
+      this._sunOff = this.shadowOpts.sun === 'off'; // GFX-03: sunMode 2 with SUN_OFF_MATRIX, no depth map, no pass
+      if (this._sunOff) {
+        this._sunMat = createSunShadowMatrix(); this._sunMat.texelM = 1;
+        this._sunMatF32 = new Float32Array(16);
+        for (let i = 0; i < 16; i++) this._sunMatF32[i] = SUN_OFF_MATRIX[i];
+      }
       if (this.shadowOpts.sun === 'map') {
         const dev = this._meshDevice, res = this.shadowOpts.res;
         this._shadowDepthTex = dev.createTexture({ format: 'depth24', width: res, height: res, sampled: true });
@@ -1191,6 +1197,7 @@ export class GpuCellPipeline {
       // resolve/deriv below are byte-for-byte the same call they already are.
       this._prepRaster();
       this.shadowActive = false;
+      if (this._sunOff) this.shadowActive = !!(this._light && this._light.sun && this._light.sun.on); // GFX-03: no shadow pass at all
       if (this._shadowTarget) { // ME-15b: sun shadow map before the raster pass (27.9a)
         if (passTimingOn) this.passTimer.begin(PASS_SHADOW);
         this._passShadow();

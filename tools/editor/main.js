@@ -236,6 +236,21 @@ const gpuDevSwitch = params.get('gpu') === '0';
 // only shrinks the grid for it) - createFrame needs the raw param too, so it
 // can skip constructing GpuCellPipeline the same way main.js does.
 const frame = createFrame({ engine, assets, rt, gpuParam: !gpuDevSwitch, renderer: editorRenderer(params) });
+// The render target defaults to the full window. Fit the editor's centre pane
+// so its canvas and UI aren't cropped behind the docks/toolbars.
+const viewport = canvas.parentElement;
+function fitEditorViewport() {
+  rt.resize(viewport.clientWidth, viewport.clientHeight);
+  // Integer glyph sizes can still exceed a narrow pane; scale both axes equally.
+  const width = rt.cellW * rt.cols, height = rt.cellH * rt.rows;
+  const scale = Math.min(1, viewport.clientWidth / width, viewport.clientHeight / height);
+  canvas.style.width = `${width * scale}px`;
+  canvas.style.height = `${height * scale}px`;
+  frame.resize(rt.cols, rt.rows);
+  frame.markDirty();
+}
+fitEditorViewport();
+new ResizeObserver(fitEditorViewport).observe(viewport);
 const pitchClampDeg = frame.renderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35; // 31.4: per effective renderer
 const gpuReady = rt.backend === 'gl2' && frame.gpuPipeline && frame.gpuPipeline.ready;
 const gpuBlocked = !gpuDevSwitch && !gpuReady;
@@ -2314,10 +2329,9 @@ function update(dt) {
 
 // US-063: `H` key-help overlay - every editor key, drawn into the viewport
 // (not just the always-visible sidebar text in index.html, which a
-// fullscreen/kiosk-style pass of the editor would never show). Same route as
-// the selection highlight/markers above: plain `rt.setCell` writes (via
-// `drawText`) before `present()`, so they survive the GPU compositor pass
-// (24.4's "JS-written rt cells survive the GPU pass" note).
+// fullscreen/kiosk-style pass of the editor would never show). Use the fixed
+// UI layer: scene-cell text is overwritten by the GPU compositor. frame.js
+// clears this layer before drawing, so closing help removes its plate too.
 const HELP_LINES = [
   'EDITOR KEYS (H to close)',
   'LMB: select / drag   Shift/Ctrl+click: toggle props/lights',
@@ -2342,7 +2356,7 @@ function drawHelpOverlay() {
   let width = 0;
   for (const line of HELP_LINES) width = Math.max(width, line.length);
   for (let i = 0; i < HELP_LINES.length; i++) {
-    drawText(rt, x0, y0 + i, HELP_LINES[i].padEnd(width, ' '), fg, bg);
+    drawText(engine.ui, x0, y0 + i, HELP_LINES[i].padEnd(width, ' '), fg, bg);
   }
 }
 

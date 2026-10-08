@@ -161,7 +161,7 @@ export class WgLightPass {
       li[W_SUN_MODE] = 2;
       lu.set(lp.matrix, W_SUN_M);
       lu[W_SUN_RES] = lp.res; lu[W_SUN_TEXEL] = lp.texelM; lu[W_SUN_BIAS] = lp.biasM; lu[W_SUN_NOFF] = lp.normalOffsetTexels;
-      sunTex = lp.texture;
+      sunTex = lp.texture || this.texSunDummy; // GFX-03 'off': no map, the dummy is never sampled
     }
     const rp = p._rasterPass, pitched = !!(rp && rp.pitched);
     li[W_PROJ_MODE] = pitched ? 1 : 0;

@@ -11,7 +11,7 @@ import { forwardOf } from '../core/transform.js';
 
 /**
  * @typedef {Object} SunShadowOptions
- * @property {'map'|'dda'|false} sun - 'map' = shadow map, 'dda' = legacy sector/voxel ray march, false = sunlit everywhere
+ * @property {'map'|'dda'|'off'|false} sun - 'map' = shadow map, 'dda' = legacy sector/voxel ray march, 'off' (GFX-03) = sun lights but casts no shadows (no depth pass, no DDA), false = legacy
  * @property {number} res - shadow map side in texels (even)
  * @property {number} boxM - light-space box side in metres
  * @property {number} aheadM - first-person box centre offset along the horizontal view direction
@@ -27,7 +27,7 @@ import { forwardOf } from '../core/transform.js';
 
 /** 27.9a item 1 (frozen; `createEngine({ shadows })` merges over these once). `sun` also depends on the renderer, see `resolveSunShadowOptions`. */
 export const SUN_SHADOW_DEFAULTS = Object.freeze({
-  sun: /** @type {'map'|'dda'|false} */ ('map'),
+  sun: /** @type {'map'|'dda'|'off'|false} */ ('map'),
   res: 2048,
   boxM: 192,
   aheadM: 64,
@@ -51,12 +51,43 @@ export const SUN_SHADOW_DEFAULTS = Object.freeze({
 export function resolveSunShadowOptions(user, renderer) {
   const o = { ...SUN_SHADOW_DEFAULTS, ...(user || {}) };
   if (!user || user.sun === undefined) o.sun = renderer === 'mesh' ? 'map' : 'dda';
-  if (o.sun === 'map' && renderer !== 'mesh') throw new Error(`shadows.sun 'map' needs renderer 'mesh' (got '${renderer}')`);
+  if ((o.sun === 'map' || o.sun === 'off') && renderer !== 'mesh') throw new Error(`shadows.sun '${o.sun}' needs renderer 'mesh' (got '${renderer}')`);
   if (!(o.res > 0) || (o.res & 1)) throw new Error(`shadows.res must be a positive even integer (got ${o.res})`);
   if (!(o.meshLod0M > 0) || !(o.meshLod0M <= o.instCastM)) throw new Error(`shadows: need 0 < meshLod0M <= instCastM (got ${o.meshLod0M}, ${o.instCastM})`);
   o.meshCastM = Number.isFinite(o.meshCastM) && o.meshCastM > 0 ? Math.min(o.meshCastM, 2000) : 0;
   o.meshCastCap = Number.isFinite(o.meshCastCap) ? Math.max(0, Math.min(64, Math.floor(o.meshCastCap))) : 64;
   return o;
+}
+
+/**
+ * GFX-03: `shadows.sun: 'off'` runs the light pass in shadow-map mode (sunMode 2) with this matrix instead of a map: its clip x is
+ * always 4 (uv 2.5), so `sunShadowTaps` reports "receiver outside the box" = 4 taps = fully sunlit, N.L unchanged, no depth pass and
+ * no sun DDA on any path (WGSL/GLSL/JS twin share the same early return). Plain data, never written.
+ */
+export const SUN_OFF_MATRIX = (() => { const m = new Float64Array(16); m[12] = 4; m[15] = 1; return m; })();
+
+/** The shadow levels of the settings menu (GFX-03; owner 2026-10-07: shadows are their own setting). */
+export const SHADOW_LEVELS = Object.freeze(['off', 'low', 'mid', 'high']);
+
+/**
+ * GFX-03: shadow level -> plain shadow options (spread into `createEngine({ shadows })`). 'high' is exactly today's defaults.
+ * low/mid numbers are PROPOSED (not measured; the owner wants them from a measurement, GFX-04 on PC-A). There is no PCF tap knob:
+ * the 4-tap quantised PCF is fixed by the JS/GLSL/WGSL twins, so the level changes res, caster distances and the mesh budget only.
+ * @param {'off'|'low'|'mid'|'high'} level
+ * @returns {Partial<SunShadowOptions>}
+ */
+export function resolveShadowLevel(level) {
+  switch (level) {
+    case 'off': return { sun: 'off' };
+    // PROPOSED: 1024^2 map (0.19 m texel), props shadow within 24 m (LOD0 12 m), placed meshes within 25 m, at most 16 of them
+    case 'low': return { sun: 'map', res: 1024, meshLod0M: 12, instCastM: 24, meshCastM: 25, meshCastCap: 16 };
+    // PROPOSED: 1536^2 map (0.125 m texel), props within 36 m (LOD0 18 m), placed meshes within 40 m, at most 32
+    case 'mid': return { sun: 'map', res: 1536, meshLod0M: 18, instCastM: 36, meshCastM: 40, meshCastCap: 32 };
+    // = SUN_SHADOW_DEFAULTS (bit-identical to today)
+    case 'high': return { sun: 'map', res: SUN_SHADOW_DEFAULTS.res, meshLod0M: SUN_SHADOW_DEFAULTS.meshLod0M, instCastM: SUN_SHADOW_DEFAULTS.instCastM,
+      meshCastM: SUN_SHADOW_DEFAULTS.meshCastM, meshCastCap: SUN_SHADOW_DEFAULTS.meshCastCap };
+    default: throw new Error(`resolveShadowLevel: unknown level '${level}' (off|low|mid|high)`);
+  }
 }
 
 const _fwd = [0, 0];
