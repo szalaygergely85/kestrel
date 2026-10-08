@@ -2,6 +2,7 @@
 // rasterJS rasterises a yawed (33 deg) smooth mesh; for every kind-9 cell a JS transcription of the GLSL formulas
 // (normalize, `max|n_i| >= 0.9 ? roundedFace : FACE_PACKED`, packNormalOct) must give the same face and a packed
 // normal within the oct round-trip tolerance (1e-3) of what rasterJS wrote.
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { readFileSync } from 'node:fs';
 import { meshFromJSON, resolveMats } from '../mesh/MeshData.js';
 import { DrawList, DRAW_STATIC } from '../mesh/DrawList.js';
@@ -30,7 +31,7 @@ function glslKind9(nx, ny, nz) {
   return { face, bits: packNormalOct(x, y, z), n: [x, y, z] };
 }
 
-const mesh = meshFromJSON(JSON.parse(readFileSync(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url), 'utf8')));
+const mesh = meshFromJSON(readMeshJSON(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url)));
 resolveMats(mesh, () => 17);
 const COLS = 80, ROWS = 40, origin = [1000, 700, 0], yaw = 33 * Math.PI / 180;
 const c = Math.cos(yaw), s = Math.sin(yaw);

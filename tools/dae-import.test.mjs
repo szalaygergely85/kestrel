@@ -1,5 +1,6 @@
 // TREES-LP-a: Collada importer on an inline fixture (triangles + polylist + node matrix + 2 materials) and the 2 real Kenney trees.
 // node tools/dae-import.test.mjs
+import { readMeshJSON } from './mesh-file.mjs';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import { importDae, daeToJson, readCollada, parseXml } from './dae-import.mjs';
@@ -61,7 +62,7 @@ for (const [id, name] of Object.entries(REAL)) {
   assert.ok(rr.mesh.matKeys.every((k) => keys.has(k)) && rr.report.unmapped.length === 0);
   const j = daeToJson(rr.mesh, rr.tab, keys);
   assert.ok(j.collider && j.collider.length / 9 <= 28 && j.collide !== false && j.castShadow !== false);
-  if (fs.existsSync(out)) assert.strictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).triCount, j.triCount, 'committed mesh matches the importer');
+  if (fs.existsSync(out)) assert.strictEqual(readMeshJSON(out).triCount, j.triCount, 'committed mesh matches the importer');
   // shared collision plan: re-planning the committed/imported json (gen-mesh-colliders path) is a no-op and the prism is trunk-thin
   assert.ok(j.colliderParts && j.colliderParts.every((k) => map.trunk.includes(k)), `${id} colliderParts`);
   assert.deepStrictEqual(withCollision(JSON.parse(JSON.stringify(j))).collider, j.collider, `${id} withCollision idempotent`);

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+import { readMeshJSON } from '../mesh-file.mjs';
 import { readFileSync } from 'node:fs';
 import { AssetRegistry, meshFromJSON, createPitchedTerms, pitchedTerms, worldToCell } from '../../engine/index.js';
 import '../../design/palette.js';
@@ -9,7 +11,7 @@ import { modelBounds, fitIconCamera, iconCacheKey } from './iconFit.js';
 
 const meshes = {};
 for (const path of ['quaternius/Rock_Medium_1', 'quaternius/Pebble_Round_1', 'ruins/Fences/Line']) {
-  const json = JSON.parse(readFileSync(new URL(`../../content/meshes/${path}.mesh.json`, import.meta.url), 'utf8'));
+  const json = readMeshJSON(fileURLToPath(new URL(`../../content/meshes/${path}.mesh.json`, import.meta.url)));
   meshes[path] = meshFromJSON(json);
 }
 const assets = new AssetRegistry({ palette: globalThis.ASSETS.palette, detailPass: globalThis.ASSETS.detailPass,

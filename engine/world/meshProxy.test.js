@@ -1,5 +1,6 @@
 // MESH-PHYS-01: collision proxies, collide:false, merged broad phase, no tunnelling.
 // Run: node engine/world/meshProxy.test.js
+import { readMeshJSON } from '../test/meshFile.test.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AssetRegistry, World, PHYSICS, meshFromJSON, planMeshCollision, buildPrismProxy, WALK_OVER_H, makeFrame, localToWorld } from '../index.js';
@@ -9,7 +10,7 @@ import { moveCircleMesh, probeSupport } from '../physics/meshCollide.js';
 
 let checks = 0;
 const ok = (c, m) => { assert.ok(c, m); checks++; };
-const load = (n) => meshFromJSON(JSON.parse(readFileSync(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url), 'utf8')));
+const load = (n) => meshFromJSON(readMeshJSON(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url)));
 const rock = load('Rock_Medium_1'), tree = load('DeadTree_1'), pebble = load('Pebble_Round_1'), path = load('RockPath_Square_Wide');
 const strip = (m) => { const c = { ...m }; delete c.collider; delete c.collide; return c; };
 

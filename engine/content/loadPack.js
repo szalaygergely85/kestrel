@@ -2,6 +2,7 @@
 // The engine hard-codes no `content/` path - the caller (game/tests) names
 // the manifest URL and injects the file reader.
 import { meshFromJSON, validateMesh } from '../mesh/MeshData.js';
+import { meshFromBin } from '../mesh/meshBin.js';
 import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
 import { editLayerFromJSON } from '../world/terrainEdits.js';
@@ -18,11 +19,19 @@ export function globalId(fileId, localId) {
   return `${fileId}/${localId}`;
 }
 
+async function defaultFetchBytes(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new ContentError(url, 'fetch', `HTTP ${r.status}`);
+  return r.arrayBuffer();
+}
+
 async function defaultFetchText(url) {
   const r = await fetch(url);
   if (!r.ok) throw new ContentError(url, 'fetch', `HTTP ${r.status}`);
   return r.text();
 }
+
+function failBin(name) { throw new Error(`mesh.bin "${name}" was not fetched`); }
 
 function asContentError(err, file, field) {
   return err instanceof ContentError ? err : new ContentError(file, field, err && err.message ? err.message : String(err));
@@ -48,11 +57,12 @@ function checkRefField(obj, ref, href, errors, idSets) {
 
 /**
  * @param {string} manifestUrl
- * @param {{fetchText?: (url:string)=>Promise<string>, migrations?: Object, latest?: Object}} [opts]
+ * @param {{fetchText?: (url:string)=>Promise<string>, fetchBytes?: (url:string)=>Promise<ArrayBuffer|Uint8Array>, migrations?: Object, latest?: Object}} [opts]
  * @returns {Promise<Object>} ContentBundle (see architecture.md 21.4)
  */
 export async function loadContentPack(manifestUrl, opts = {}) {
   const fetchText = opts.fetchText || defaultFetchText;
+  const fetchBytes = opts.fetchBytes || defaultFetchBytes; // MESH-BIN-01: <id>.mesh.bin payloads
   const migrations = opts.migrations || MIGRATIONS;
   const latest = opts.latest || LATEST_SCHEMA;
 
@@ -87,7 +97,15 @@ export async function loadContentPack(manifestUrl, opts = {}) {
 
   const fetched = await Promise.all(fileHrefs.map(async (href) => {
     try {
-      return { href, text: await fetchText(href) };
+      const text = await fetchText(href);
+      // MESH-BIN-01: a small .mesh.json meta names its binary payload ("bin": relative url); fetch it in parallel with the others
+      let bytes;
+      if (href.endsWith('.mesh.json') && text.length < 262144 && text.includes('"bin"')) {
+        let meta = null;
+        try { meta = JSON.parse(text); } catch { /* reported by the parse below */ }
+        if (meta && typeof meta.bin === 'string') bytes = await fetchBytes(new URL(meta.bin, href).href);
+      }
+      return { href, text, bytes };
     } catch (e) {
       return { href, error: asContentError(e, href, 'fetch') };
     }
@@ -107,7 +125,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
 
   const errors = [];
 
-  for (const { href, text, error } of fetched) {
+  for (const { href, text, bytes, error } of fetched) {
     if (error) { errors.push(error); continue; }
 
     let obj;
@@ -206,7 +224,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
 
     if (kind === 'mesh') {
       try {
-        const mesh = meshFromJSON(migrated);
+        const mesh = typeof migrated.bin === 'string' ? meshFromBin(migrated, bytes ?? failBin(migrated.bin)) : meshFromJSON(migrated);
         const checked = validateMesh(mesh);
         if (checked.errors.length) throw new Error(checked.errors.join('; '));
         const mats = migrated.mats === undefined ? {} : migrated.mats;

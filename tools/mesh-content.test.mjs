@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readMeshJSON } from './mesh-file.mjs';
 import { validateContent } from './validate-content.mjs';
 
-const mesh = JSON.parse(fs.readFileSync(new URL('../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url), 'utf8'));
+const mesh = readMeshJSON(fileURLToPath(new URL('../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url)));
 mesh.mats = { [mesh.matKeys[0]]: 'stone' };
 function assets() {
   return { palette: { materials: { stone: {} } }, meshes: { [mesh.id]: structuredClone(mesh) },

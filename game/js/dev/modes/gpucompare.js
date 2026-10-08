@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, meshFromBin, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -683,7 +683,7 @@ async function runGpuCompareSceneMode(ctx) {
   gpuPipeline.setSource('scene');
 
   // TREES-LP-b: the unplaced Kenney stub (test-only content) for the `lowpolyTrees` pose; missing file = pose skipped.
-  try { ctx.lowpolyTreeMesh = meshFromJSON(await (await fetch(new URL('../../../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url))).json()); } catch (e) { ctx.lowpolyTreeMesh = null; }
+  try { const u = new URL('../../../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url), meta = await (await fetch(u)).json(); ctx.lowpolyTreeMesh = typeof meta.bin === 'string' ? meshFromBin(meta, await (await fetch(new URL(meta.bin, u))).arrayBuffer()) : meshFromJSON(meta); /* MESH-BIN-01 */ } catch (e) { ctx.lowpolyTreeMesh = null; }
   const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);
   gpuPipeline.bindInstances(compareInstances);

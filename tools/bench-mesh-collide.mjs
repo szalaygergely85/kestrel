@@ -6,13 +6,14 @@
 // Uses only the public engine entry; the "before" set is built by stripping `collider`/`collide` from the
 // mesh data and building one BVH per mesh exactly like the old colliders.js did.
 import fs from 'node:fs';
+import { readMeshJSON } from './mesh-file.mjs';
 import { meshFromJSON, makeFrame, PHYSICS } from '../engine/index.js';
 import { buildWorldColliders, moveCircleMesh, probeSupport, buildBvhFromMesh, frameMatrix12 } from '../engine/dev.js';
 
 const world = JSON.parse(fs.readFileSync('content/worlds/world_m1.world.json', 'utf8'));
 const placed = world.structures.filter((s) => s.mesh);
 const meshes = new Map();
-for (const s of placed) if (!meshes.has(s.mesh)) meshes.set(s.mesh, meshFromJSON(JSON.parse(fs.readFileSync(`content/meshes/${s.mesh}.mesh.json`, 'utf8'))));
+for (const s of placed) if (!meshes.has(s.mesh)) meshes.set(s.mesh, meshFromJSON(readMeshJSON(`content/meshes/${s.mesh}.mesh.json`)));
 
 function setup(strip) {
   const asset = (id) => {

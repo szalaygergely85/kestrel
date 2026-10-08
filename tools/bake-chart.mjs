@@ -108,6 +108,17 @@ export async function bakeRepository({ root = ROOT, index = false, check = false
     }
     return cache.get(file);
   };
+  // MESH-BIN-01: <id>.mesh.bin payloads are inputs too (hashed raw, no EOL normalisation)
+  const bytesCache = new Map();
+  const readBytes = file => {
+    if (!bytesCache.has(file)) {
+      const absolute = path.resolve(root,file), relative = path.relative(root,absolute);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('chart: input outside repo');
+      const bytes = index ? execFileSync('git',['show',`:${file}`],{cwd:root,maxBuffer:64*1024*1024}) : fs.readFileSync(absolute);
+      bytesCache.set(file,bytes); inputs[file] = sha(bytes);
+    }
+    return bytesCache.get(file);
+  };
   const manifest = JSON.parse(read('content/manifest.json'));
   const worldFile = 'worlds/world_m1.world.json', def = JSON.parse(read(`content/${worldFile}`));
   const required = new Set([worldFile, ...def.structures.map(s => s.mesh ? `meshes/${s.mesh}.mesh.json` : `levels/${s.level}.level.json`)]);
@@ -115,7 +126,7 @@ export async function bakeRepository({ root = ROOT, index = false, check = false
   for (const file of required) if (!manifest.files.includes(file)) throw new Error(`chart: input absent from manifest: ${file}`);
   const manifestURL = pathToFileURL(path.join(root,'content/manifest.json')).href;
   const filtered = { ...manifest, files:manifest.files.filter(file => required.has(file)) };
-  const bundle = await loadContentPack(manifestURL,{ fetchText:async url => url === manifestURL ? JSON.stringify(filtered) : read(path.relative(root,fileURLToPath(url)).replaceAll('\\','/')) });
+  const bundle = await loadContentPack(manifestURL,{ fetchText:async url => url === manifestURL ? JSON.stringify(filtered) : read(path.relative(root,fileURLToPath(url)).replaceAll('\\','/')), fetchBytes:async url => readBytes(path.relative(root,fileURLToPath(url)).replaceAll('\\','/')) });
   const recipeFile = `design/levels/${def.terrain}.js`, context = { window:{ ASSETS:{} }, Math };
   vm.runInNewContext(read(recipeFile),context,{ filename:recipeFile, timeout:5000 });
   const recipe = context.window.ASSETS.levels[def.terrain];

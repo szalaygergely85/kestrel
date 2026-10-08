@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -51,7 +52,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, validateMesh, validateLook, maskFromJSON } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
@@ -81,6 +82,7 @@ const CLASSIC_SCRIPTS = [
 
 const MANIFEST_URL = new URL('../content/manifest.json', import.meta.url).href;
 function fetchText(url) { return readFile(new URL(url), 'utf8'); }
+function fetchBytes(url) { return readFile(new URL(url)); } // MESH-BIN-01
 
 /** Dynamic-imports every design/ classic script above, in order (side effect:
  * builds up `globalThis.ASSETS`), then loads content/manifest.json (US-027a
@@ -96,7 +98,7 @@ export async function loadDesignAssets() {
     await import(rel);
   }
   const ASSETS = globalThis.ASSETS = globalThis.ASSETS || {};
-  const bundle = await loadContentPack(MANIFEST_URL, { fetchText });
+  const bundle = await loadContentPack(MANIFEST_URL, { fetchText, fetchBytes });
   ASSETS.levels = ASSETS.levels || {};
   ASSETS.worlds = ASSETS.worlds || {};
   Object.assign(ASSETS.levels, bundle.levels);
@@ -648,16 +650,17 @@ export function validateMeshFiles(dir, maskIds = null) {
   findMeshFiles(dir, files);
   for (const full of files) {
     checks++;
-    let obj;
+    let obj, binBytes = null;
     try {
       obj = JSON.parse(readFileSync(full, 'utf8'));
+      if (typeof obj.bin === 'string') binBytes = readFileSync(new URL(obj.bin, pathToFileURL(resolvePath(full)))); // MESH-BIN-01
     } catch (e) {
       errors.push(`${full}: JSON parse failed: ${e.message}`);
       continue;
     }
     let mesh;
     try {
-      mesh = meshFromJSON(obj);
+      mesh = binBytes ? meshFromBin(obj, binBytes) : meshFromJSON(obj);
     } catch (e) {
       errors.push(`${full}: meshFromJSON threw: ${e.message}`);
       continue;

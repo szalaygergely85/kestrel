@@ -1,5 +1,6 @@
 // engine/mesh/meshGroups.test.js (MESH-INST-01: CPU batching of repeated placed kind-9 meshes).
 // Run: node engine/mesh/meshGroups.test.js  (re-spawns itself with --expose-gc for the zero-alloc gate)
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
@@ -27,7 +28,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-const load = (n) => meshFromJSON(JSON.parse(fs.readFileSync(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url), 'utf8')));
+const load = (n) => meshFromJSON(readMeshJSON(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url)));
 const grass = load('Grass_Common_Tall');
 const rockA = load('Rock_Medium_1'), rockB = load('Rock_Medium_2'), tree = load('DeadTree_1');
 const idFor = () => 1;

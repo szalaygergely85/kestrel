@@ -21,6 +21,7 @@ const MANIFEST_URL = new URL('content/manifest.json', REPO_ROOT).href;
 async function fetchText(url) {
   return readFile(new URL(url), 'utf8');
 }
+async function fetchBytes(url) { return readFile(new URL(url)); } // MESH-BIN-01
 
 /**
  * @returns {Promise<{globals: Object, bundle: Object, assets: import('../../engine/core/assets.js').AssetRegistry}>}
@@ -43,7 +44,7 @@ async function fetchText(url) {
 export async function loadTestAssets() {
   globalThis.window = globalThis.window || globalThis;
   const globals = globalThis.ASSETS = globalThis.ASSETS || {};
-  const bundle = await loadContentPack(MANIFEST_URL, { fetchText });
+  const bundle = await loadContentPack(MANIFEST_URL, { fetchText, fetchBytes });
   // fromJSON's own "no dual source" check (D-023 item 4) must run against
   // `globals` BEFORE the convenience merge below adds tower/test_room/
   // world_m1 to it - merging first would make every call look like a

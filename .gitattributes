@@ -4,3 +4,4 @@
 *.glb binary
 *.gltf text
 *.fbx binary
+*.mesh.bin binary

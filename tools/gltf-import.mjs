@@ -33,6 +33,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { budgetFor } from './mesh-budgets.mjs';
 import { readPng } from './png-read.mjs';
 import { textureTable, classify } from './uvmap.mjs'; // MESH-UVMAP-01
+import { writeMeshFiles } from './mesh-file.mjs';
 import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision, stringifyContent, maskToJSON, downsampleAlpha } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
@@ -47,6 +48,7 @@ Required:
   <id>                MeshData id, e.g. "ruins/BlockNormalMD"
 
 Options:
+  --json              write the legacy single all-JSON file (default: <id>.mesh.json meta + <id>.mesh.bin, docs/mesh-bin.md)
   --out <path>        write the .mesh.json here instead of
                       content/meshes/<id>.mesh.json
   --mats <path>       material-name -> palette-key JSON map
@@ -88,6 +90,7 @@ function parseArgs(argv) {
     if (a === '--mask-res') { args.maskRes = Number(argv[++i]); if (![16, 32, 64, 128, 256, 512, 1024].includes(args.maskRes)) throw new Error('--mask-res must be a power of two from 16 to 1024'); continue; }
     if (a === '--opaque') { args.opaque = (args.opaque || []).concat(String(argv[++i] || '').split(',').filter(Boolean)); if (!args.opaque.length) throw new Error('--opaque needs material names'); continue; }
     if (a === '--dry-run') { args.dryRun = true; continue; }
+    if (a === '--json') { args.json = true; continue; } // MESH-BIN-01: legacy single all-JSON file instead of meta + .mesh.bin
     args._.push(a);
   }
   return args;
@@ -338,7 +341,9 @@ export async function runCli(argv) {
   if (!args.dryRun) {
     for (const mf of maskFiles) { fs.mkdirSync(path.dirname(mf.file), { recursive: true }); fs.writeFileSync(mf.file, mf.text, 'utf8'); }
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, stringifyMeshJSON(withCollision(meshJson)), 'utf8');
+    // MESH-BIN-01: <id>.mesh.json = meta + <id>.mesh.bin (docs/mesh-bin.md); `--json` or an --out not named *.mesh.json keeps the old all-JSON file
+    if (!args.json && outPath.endsWith('.mesh.json')) writeMeshFiles(outPath, withCollision(meshJson));
+    else fs.writeFileSync(outPath, stringifyMeshJSON(withCollision(meshJson)), 'utf8');
   }
   report.maskFiles = maskFiles.map((m) => m.file);
   return { help: false, wrote: args.dryRun ? null : outPath, report };

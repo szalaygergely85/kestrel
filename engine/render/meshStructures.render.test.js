@@ -1,6 +1,7 @@
 // ME-14c1 (docs/architecture.md 37.1): mesh structures next to a level in the JS frame path, plus the
 // DrawList side (MeshDrawCache, addMeshStructures). Re-runs itself with --expose-gc (zero-alloc gate).
 // Run: node engine/render/meshStructures.render.test.js
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
@@ -43,7 +44,7 @@ const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // Committed Ruins mesh via the content path (.mesh.json -> meshFromJSON), with a mats map for its one material.
-const json = JSON.parse(readFileSync(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url), 'utf8'));
+const json = readMeshJSON(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url));
 const lineMesh = meshFromJSON(json);
 lineMesh.mats = { [lineMesh.matKeys[0]]: 'stone' };
 const assets = baseAssets;
