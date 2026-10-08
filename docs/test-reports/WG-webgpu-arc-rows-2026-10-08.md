@@ -795,3 +795,19 @@ Tree: 9194a41 (pc-b merged through GFX-03, before GFX-01w / 27c68ca). Command: `
       mesh8a.geomViolCells: 1
       mesh8a.k8Outside: 3
 ```
+
+## B1 analysis (PC-B, 2026-10-08, tree 767355c)
+- **Where the rows fail.** All 4 rows fail `cmpGeom.pass` on BOTH backends. WebGL2 passes them through the same fallback (`geomBaseOk && geomViolCells <= 4 && violNonK8 === 0 && aoViol === 0`, gpucompare.js:848/886); WebGPU on the Arc misses it by a few cells. Per-row WebGPU vs WebGL2 deltas on the Arc:
+  - rest pitch 0: geomViolCells 5 (limit 4), +1 depth/uv/nrm viol.
+  - swingLR pitch 0: light dLViol 6 (dLMax 0.085 vs 0.0006), fgOutside 33 vs 21.
+  - swingLR pitch 30: dLViol 3, cells fgMax 142 vs 46.
+  - voxel yaw 45: uvViol/nrmViol 5 vs 1.
+  - waystoneDown: uvViol 6 vs 1, zViol 2.
+  All differences are 1-6 cells at held-item / voxel edges near the camera. No kind/hole/tie-cap differences.
+- **Not reproducible on the RTX 4060.** WebGPU 140/6 = WebGL2 140/6 with identical FAIL sets.
+- **Depth format ruled out.** Forcing `depth24` -> `depth32float` in webgpuFormats.js (texture + pipeline) still gives 140/6 on the 4060 with the same 6 FAILs, so a depth24plus = D32F mapping on Intel would not explain it on its own.
+- **Remaining candidates.** Arc WebGL2 runs ANGLE/D3D11, Arc WebGPU runs Dawn/D3D12:
+  - (a) shader float contraction / fma differences in the raster vertex/uv math (uvViol + nrmViol + one light row);
+  - (b) rasterizer sub-pixel precision / top-left rule at edge pixels;
+  - (c) the light dLMax 0.085 on swingLR pitch 0 = a few cells taking a different normal (nrm ties at the sword blade).
+- **Recommendation.** D-039 precision class for the WebGPU-on-Arc rows (record as known-FAIL per backend + adapter; WebGL2 rows unchanged), unless PC-A wants one probe: run `?gpucompare=1&backend=webgpu&pose=<row>` on the Arc with the WG raster `@invariant` on `@builtin(position)` (WGSL) to test (a)/(b). NEEDS PC-A decision.
