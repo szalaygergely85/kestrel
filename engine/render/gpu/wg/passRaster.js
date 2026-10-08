@@ -12,6 +12,7 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances
 import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
+import { WgCullPass } from './passCull.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
@@ -31,7 +32,8 @@ const INSTANCE_LAYOUT = [
 ];
 
 export class WgRasterPass {
-  constructor(device) {
+  /** @param {any} device @param {{gpuCull?: boolean}} [opts] gpuCull (default true, `?gpucull=0` = off): WG-4a compute cull for ONE_PART instance batches */
+  constructor(device, opts = {}) {
     this.device = device;
     this.buffers = new MeshBuffers(device);
     this.list = new DrawList(MAX_DRAW_ITEMS);
@@ -49,6 +51,11 @@ export class WgRasterPass {
     this.instanceBuffers = new Map();
     this.pipes = [];
     this.clothStreams = [null];
+    // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
+    // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
+    this.cull = null;
+    this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
+    this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
     this.tu = new Float32Array(TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
     this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }];
@@ -68,7 +75,45 @@ export class WgRasterPass {
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
+      if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') this.cull = new WgCullPass(device);
     } catch (e) { this.dispose(); throw e; }
+  }
+
+  _accept(g, m0, m1) {
+    const cull = this.cull, n = this.gpuN;
+    if (!cull) return false;
+    const pair = this._pair; pair[0] = m0; pair[1] = m1;
+    if (!cull.supports(g, pair)) return false;
+    this.gpuGroups[n] = g; this.gpuM0[n] = m0; this.gpuM1[n] = m1; this.gpuN = n + 1;
+    return true;
+  }
+
+  // Before the raster pass (outside any pass): queue the accepted batches and run the kernel (one dispatch each).
+  _cullRun(p) {
+    const n = this.gpuN, cull = this.cull, pair = this._pair;
+    if (!n) return;
+    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0 });
+    for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
+    cull.run();
+  }
+
+  _cullDraw() {
+    let draws = 0;
+    const b = this.bindDesc;
+    for (let i = 0; i < this.gpuN; i++) {
+      const entries = this.gpuEntries[i];
+      for (let lod = 0; lod < 2; lod++) {
+        const e = entries[lod];
+        if (!e.active) continue;
+        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+        this._model(e.parts.m, 0); this.bits[AXIS] = e.parts.flags[0] & 1;
+        const entry = this.buffers.getVoxel(e.mesh);
+        b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.extraBuffers = null;
+        this.device.bind(this.instancePipe, b); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+        draws++;
+      }
+    }
+    return draws;
   }
 
   _pipeline(code, layout, stride, cull, frontFace = 'cw', instanced = false, extraLayouts = null) {
@@ -163,6 +208,7 @@ export class WgRasterPass {
     frustumPlanes(this.view, this.planes);
     const list = this.list;
     list.begin();
+    this.gpuN = 0; this.meshDrawArg.gpu = this.cull ? this._gpuHook : null;
     if (this.levelCache) addStructures(list, world, cam, this.levelCache, 2000);
     if (this.strictMatIdFor) addMeshStructuresBatched(list, world, cam, this.meshCache, this.strictMatIdFor, 2000, this.meshGroups, this.planes);
     if (p.terrainEnabled && world.terrain) {
@@ -240,6 +286,7 @@ export class WgRasterPass {
   run(p) {
     this.prepare(p);
     const list = this.list, d = this.device;
+    this._cullRun(p);
     d.beginPass(p._t.targetRaster, this.clearOpts);
     let staticDraws = 0, instancedDraws = 0, instances = 0;
     try {
@@ -268,6 +315,7 @@ export class WgRasterPass {
           this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
         }
       }
+      if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
       p.stats.clothDraws = this._cloths(list);
       p.stats.terrainDraws = this._terrain(list);
     } finally { d.endPass(); }
@@ -288,6 +336,7 @@ export class WgRasterPass {
     if (this.nearTex) this.device.dispose(this.nearTex);
     if (this.farTex) this.device.dispose(this.farTex);
     this.nearTex = this.farTex = null;
+    if (this.cull) { this.cull.dispose(); this.cull = null; }
     for (const buffer of this.instanceBuffers.values()) this.device.dispose(buffer);
     this.instanceBuffers.clear();
   }

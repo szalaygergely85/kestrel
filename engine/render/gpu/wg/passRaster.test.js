@@ -104,3 +104,65 @@ console.log('passRaster.test.js: all checks passed.');
   pass._terrainUniforms({ terrain: t });
   assert.equal(new Uint32Array(pass.tu.buffer)[TERRAIN_BLOCK.field('structCount').word], 0);
 }
+
+// WG-4a: GPU cull path. Supported batches (meshGroup, single-range voxel unit) -> one dispatch each + drawIndirect per active LOD entry;
+// unsupported (multi-range voxel unit) keeps the CPU DRAW_INSTANCED item; gpuCull:false leaves every batch on the CPU path.
+{
+  const { makeInstanceGroup } = await import('../../../mesh/instances.js');
+  const { INSTANCE_BYTES } = await import('../../../mesh/instances.js');
+  const { DRAW_FLAG_ONE_PART } = await import('../../../mesh/DrawList.js');
+  const m2 = makeMockGpuDevice(), dev = m2.device;
+  const mk = (tris, ranges) => ({ triCount: tris, ranges, bbox: [-1, -1, 0, 1, 1, 2], layout: 'static' });
+  const one = mk(2, [{ start: 0, count: 2 }]), lod1 = mk(1, [{ start: 0, count: 1 }]), multi = mk(2, [{ start: 0, count: 1 }, { start: 1, count: 1 }]);
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), ib = dev.createBuffer({ usage: 'index', bytes: 24 });
+  const group = (n, lodCells, meshGroup) => {
+    const g = makeInstanceGroup('g' + n, 8); g.count = n; g.lodCells = lodCells;
+    g.parts.count = 1; g.parts.m[0] = g.parts.m[4] = g.parts.m[8] = 1; g.parts.flags[0] = 1;
+    if (meshGroup) g.mesh = {}; return g;
+  };
+  const gMesh = group(5, 0, true), gVox = group(6, 4, false), gMulti = group(3, 0, false);
+  const make = (opts) => {
+    const ps = new WgRasterPass(dev, opts);
+    ps.buffers.getVoxel = () => ({ vertexBuffer: vb, indexBuffer: ib });
+    ps.vmList = null;
+    ps.prepare = () => {
+      ps.list.begin(); ps.gpuN = 0;
+      const hook = ps.cull ? ps._gpuHook : null;
+      if (!(hook && hook.accept(gMesh, one, null))) { const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = one; it.instBuf = gMesh.ib; it.instCount = 5; it.flags = DRAW_FLAG_ONE_PART; }
+      if (!(hook && hook.accept(gVox, one, lod1))) { const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = one; it.instBuf = gVox.ib; it.instCount = 6; }
+      if (!(hook && hook.accept(gMulti, multi, null))) { const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = multi; it.instBuf = gMulti.ib; it.instCount = 3; }
+    };
+    return ps;
+  };
+  let recOn = true; const rec = []; const odraw = dev.draw; dev.draw = (c, f, i) => { if (recOn) rec.push(['draw', c, f, i]); return odraw.call(dev, c, f, i); };
+  const oind = dev.drawIndirect; dev.drawIndirect = (b, o) => { if (recOn) rec.push(['ind', o]); return oind.call(dev, b, o); };
+  const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {}, rows: 60 };
+  const on = make({});
+  assert.ok(on.cull, 'gpuCull defaults on');
+  dev._dispatches = 0; on.run(pp);
+  assert.equal(on.gpuN, 2, 'meshGroup + single-range voxel unit go to the kernel'); assert.equal(dev._dispatches, 2, 'one dispatch per supported batch');
+  assert.equal(rec.filter((r) => r[0] === 'ind').length, 3, 'drawIndirect per active entry: meshGroup LOD0 + voxel LOD0 + LOD1');
+  assert.equal(rec.filter((r) => r[0] === 'draw').length, 2, 'multi-range voxel unit falls back to the CPU path: one draw per range');
+  assert.equal(pp.stats.gpuCullDraws, 3);
+  // instance pipe vertex layout accepts the 64 B rows the kernel writes
+  assert.equal(on.instancePipe.desc.vertex.instanceStrideBytes, INSTANCE_BYTES);
+  assert.deepEqual(on.instancePipe.desc.vertex.instanceLayout.map((a) => a.offsetBytes), [0, 16, 32, 48]);
+  // zero allocation per warm frame
+  recOn = false;
+  const created = m2.createCount, bd = on.bindDesc;
+  for (let i = 0; i < 2000; i++) on.run(pp);
+  const h0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 20000; i++) on.run(pp);
+  const grew = process.memoryUsage().heapUsed - h0;
+  assert.equal(m2.createCount, created, 'no buffers/pipelines created on warm frames'); assert.equal(on.bindDesc, bd);
+  assert.ok(grew < 4e6, 'heap growth over 20000 frames: ' + grew);
+  // gpucull=0: everything on the CPU path, no compute
+  recOn = true;
+  rec.length = 0; dev._dispatches = 0; dev._indirectDraws = 0;
+  const off = make({ gpuCull: false });
+  assert.equal(off.cull, null); off.run(pp);
+  assert.equal(dev._dispatches, 0); assert.equal(dev._indirectDraws || 0, 0); assert.equal(off.gpuN, 0);
+  assert.equal(rec.filter((r) => r[0] === 'draw').length, 4, 'CPU path: 1 + 1 + 2 range draws');
+  on.dispose(); off.dispose();
+}
+console.log('passRaster.test.js (WG-4a): all checks passed.');

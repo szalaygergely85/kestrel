@@ -272,10 +272,10 @@ const fadeLut = createFadeLut(defaultRamp, defaultRamp.length - 1, 0.12);
 const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
-const shadowOpts = { sun: params.get('shadows') === 'dda' ? 'dda' : 'map', instCastM: params.get('shadowinst') ? Number(params.get('shadowinst')) : 32, ...(params.get('shadowres') ? { res: Number(params.get('shadowres')) } : {}) }; // ME-15e/f (owner 2026-10-06 "looks cool", D-043): sun shadow MAP is the default, trees cast to 32 m (+1.6 ms p95 accepted); `?shadows=dda` = old sun DDA until ME-19c, `?shadowinst=N` / `?shadowres=N` dev overrides
+const shadowOpts = { sun: params.get('shadows') === 'dda' ? 'dda' : 'map', instCastM: params.get('shadowinst') ? Number(params.get('shadowinst')) : 32, ...(params.get('shadowres') ? { res: Number(params.get('shadowres')) } : {}), ...(params.get('shadowcast') ? { meshCastM: Number(params.get('shadowcast')) } : {}) }; // ME-15e/f (owner 2026-10-06 "looks cool", D-043): sun shadow MAP is the default, trees cast to 32 m (+1.6 ms p95 accepted); `?shadows=dda` = old sun DDA until ME-19c, `?shadowinst=N` / `?shadowres=N` / `?shadowcast=M` (MESH-SHADOW-02 placed-mesh eye cut in m, default off) dev overrides
 const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts }); // WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0' }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   renderTarget: builtRt,

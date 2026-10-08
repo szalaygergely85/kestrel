@@ -135,4 +135,21 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   cull.dispose();
   assert.equal(mock.liveCount(), live0, 'dispose frees every handle');
 }
+// ---- arch 2026-10-08 (WG-4a ARCH CHANGES): two groups marked static before add() both stay static; the args view is cached ----
+{
+  const cull = new WgCullPass(d);
+  const ga = makeGroup(50, 3), gb = makeGroup(60, 4);
+  cull.setStatic(ga, true); cull.setStatic(gb, true);
+  cull.begin({ planes: null }); cull.add(ga, [mesh0, null]); cull.add(gb, [mesh0, null]); cull.run();
+  assert.equal(cull.stats.uploads, 2, 'first frame uploads both');
+  const view = cull._argsView;
+  cull.begin({ planes: null }); cull.add(ga, [mesh0, null]); cull.add(gb, [mesh0, null]); cull.run();
+  assert.equal(cull.stats.uploads, 0, 'both pending static groups kept static (no re-upload)');
+  assert.strictEqual(cull._argsView, view, 'args view reused across frames (no per-frame subarray)');
+  const gc = makeGroup(10, 5);
+  cull.begin({ planes: null }); cull.add(gc, [mesh0, null]); cull.run();
+  assert.notStrictEqual(cull._argsView, view, 'args view rebuilt when a batch slot is added');
+  assert.equal(cull._argsView.length, 6 * cull.argsCpu.length / (cull.maxBatches * 2), 'view covers the 6 used slots');
+  cull.dispose();
+}
 console.log('passCull.test OK');

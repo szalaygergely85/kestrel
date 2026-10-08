@@ -60,8 +60,11 @@ ok('opaque mesh has no maskRanges', !opaque.maskRanges);
   const m2 = buildMeshFromTris(tris, [{ part: 'leaf', triStart: 0, triCount: 2, mask: { tex: 'test/Missing', cutoff: 0.5 } }], 'test/bad'); m2.mats = { leaf: 'leaf' };
   let msg = ''; try { new MeshDrawCache().get(m2, idFor, atlas); } catch (e) { msg = e.message; }
   ok('missing mask throws naming mesh and tex', /mesh "test\/bad": mask "test\/Missing" not in the atlas/.test(msg), msg);
-  let msg2 = ''; try { new MeshDrawCache().get(m2, idFor, null); } catch (e) { msg2 = e.message; }
-  ok('no atlas throws', /need a MaskAtlas/.test(msg2), msg2);
+  // ALPHA-01b ARCH CHANGES: no atlas (world.maskAtlas null) must not throw: masked ranges draw opaque, one warning per mesh
+  const warns = []; const w0 = console.warn; console.warn = (m) => warns.push(String(m));
+  let c2 = null, threw = false; const dc = new MeshDrawCache();
+  try { c2 = dc.get(m2, idFor, null); dc.get(m2, idFor, undefined); } catch (e) { threw = true; } finally { console.warn = w0; }
+  ok('no atlas: does not throw, draws opaque (no maskRanges), warns once', !threw && c2 && !c2.maskRanges && warns.length === 1 && /mesh "test\/bad".*no MaskAtlas/.test(warns[0]), warns.join('|'));
 }
 
 function setup(cam, cols = COLS, rows = ROWS) {
