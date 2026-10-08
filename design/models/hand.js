@@ -459,6 +459,13 @@
       if (i < i0) i0 = i; if (j < j0) j0 = j; if (k < k0) k0 = k;
       if (i > i1) i1 = i; if (j > j1) j1 = j; if (k > k1) k1 = k;
     }
+    // the grid must contain every mount (the core point sits above the palm, outside a bare hand's tight box)
+    var pts = [add(PALM, mul(UP, 3.2)), tipPoint, PALM, [0, 0, 0]], q;
+    for (q = 0; q < pts.length; q++) {
+      var mi = Math.floor(pts[q][0] - GO[0]), mj = Math.floor(pts[q][1] - GO[1]), mk = Math.floor(pts[q][2] - GO[2]);
+      if (mi < i0) i0 = mi; if (mj < j0) j0 = mj; if (mk < k0) k0 = mk;
+      if (mi + 1 > i1) i1 = mi + 1; if (mj + 1 > j1) j1 = mj + 1; if (mk + 1 > k1) k1 = mk + 1;
+    }
     var sx = i1 - i0 + 1, sy = j1 - j0 + 1, sz = k1 - k0 + 1, layers = [];
     for (k = k0; k <= k1; k++) {
       var L = [];
