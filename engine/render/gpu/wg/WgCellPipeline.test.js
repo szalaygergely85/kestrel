@@ -58,7 +58,7 @@ for (const m of SURFACE) {
 }
 assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
-assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge']);
+assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge', 'shadow', 'water']); // WG-3d/3e: default sun mode = map
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
 assert.strictEqual(typeof hook, 'function', 'cell-pass hook installed');
 assert.strictEqual(rt.gpuActive, undefined, 'never takes over the CPU shading');
@@ -217,6 +217,66 @@ hook(); assert.strictEqual(passes.length, beforeResizeHook + 4, 'cleared again a
   const small = await q.readbackGeometry();
   assert.strictEqual(small.GI.length, 4 * 21); assert.strictEqual(small.GA.length, 4 * 21); assert.strictEqual(small.Depth.length, 4 * 21);
   q.dispose();
+}
+
+// WG-3f: sprites + overlay wiring (bindSprites), frameComplete / rt.gpuActive, presenter override, per-frame fade/dim, resize, dispose
+{
+  const { MAX_SPRITES, SPR_STRIDE } = await import('../../sprites.js');
+  const { createFadeLut } = await import('../../../ui/fade.js');
+  const { createSceneDim, resetSceneDim } = await import('../../../ui/sceneDim.js');
+  const present = []; let hook2 = null;
+  const rt2 = { device, cols: 16, rows: 8, fgTex, bgTex, setCellPass(f) { hook2 = f; }, setPresentCells(f, b) { present.push([f, b]); } };
+  const q = new WgCellPipeline(rt2, { rays: 1 });
+  assert.strictEqual(q.frameComplete, false); assert.strictEqual(rt2.gpuActive, undefined, 'not complete before bindSprites: gpuActive untouched');
+  const pool = { count: 0, spr: new Float32Array(MAX_SPRITES * SPR_STRIDE) };
+  const atlas = { width: 4, height: 2, data: new Uint8Array(32), pal: new Float32Array(8) };
+  const COLS = 16, ROWS = 8;
+  const overlay = { cols: COLS, rows: ROWS, ovl: new Uint8Array(COLS * ROWS * 4), ovlZ: new Float32Array(COLS * ROWS), stats: { cells: 0 }, minRow: 0, maxRow: -1, prevMinRow: 0, prevMaxRow: -1 };
+  assert.strictEqual(q.bindSprites({ pool, atlas, palette: {}, particleLayer: null, overlay }), true);
+  assert.deepStrictEqual(q.portedPasses.slice(-2), ['sprites', 'overlay']);
+  assert.strictEqual(q.frameComplete, true, 'shadow map + water + sprites + overlay wired');
+  assert.strictEqual(rt2.gpuActive, true);
+  const sp = q._spritesPass, ovp = q._overlayPass;
+  assert.deepStrictEqual([sp.cols, sp.rows, ovp.cols, ovp.rows], [COLS, ROWS, COLS, ROWS]);
+  assert.strictEqual(ovp._fg, sp.outFg, 'overlay draws into the sprite output');
+  // frame(): fade amount + LUT + dim from fb
+  const lut = createFadeLut(' .:-=+*#%@', 9, 0.25), dim = createSceneDim(); resetSceneDim(dim); dim.all = 0.7;
+  q.frame({ sceneFade: 0.4, fadeLut: lut, sceneDim: dim }, [0, 0, 0], null, null);
+  assert.strictEqual(sp.sceneFade, 0.4); assert.strictEqual(sp._lutRef, lut); assert.strictEqual(sp.dimAll, 0.7);
+  q.frame({}, [0, 0, 0], null, null); assert.strictEqual(sp.sceneFade, 1, 'no fb.sceneFade = off');
+  // hook: nothing shaded (no cam/world) -> sprites do not run, presenter keeps the CPU cells
+  present.length = 0; hook2();
+  assert.strictEqual(sp.ran, false); assert.deepStrictEqual(present.at(-1), [null, null]);
+  // shaded frame, 0 sprites: sprites still run (fade/dim/particles), then overlay skip rules; presenter gets sp.outFg/outBg
+  passes.length = 0; drawn = 0;
+  q._cellsShaded = true; q._runSprites(q._t);
+  assert.strictEqual(sp.ran, true); assert.strictEqual(passes.at(-1).t, sp.target); assert.strictEqual(drawn, 1, 'overlay idle: only the sprite pass');
+  assert.deepStrictEqual(present.at(-1), [sp.outFg, sp.outBg]);
+  assert.deepStrictEqual(device._lastBind.textures.slice(0, 4).map((x) => x.texture), [q._t.texGI, q._t.texDepth, q._t.texFinalFg, q._t.texFinalBg], 'reads the edge output');
+  // overlay cell: draws into the sprite output after sprites
+  overlay.stats.cells = 1; overlay.minRow = 2; overlay.maxRow = 2; passes.length = 0; drawn = 0;
+  q._runSprites(q._t);
+  assert.deepStrictEqual(passes.map((x) => x.t), [sp.target, ovp.target]); assert.strictEqual(drawn, 2);
+  // final cell readback is the sprite output
+  let rbTex = null; const rb0 = device.readback; device.readback = (tex) => { rbTex = tex; };
+  q._spritesRan = true; await q.readbackCells(); assert.strictEqual(rbTex, sp.outBg); device.readback = rb0;
+  // debug view or a non-map sun: the CPU cells stay presented
+  q.setDebugMode(1); q._runSprites(q._t); assert.deepStrictEqual(present.at(-1), [null, null], 'debug view not covered by the sprite output'); q.setDebugMode(-1);
+  // resize recreates the outputs and re-targets the overlay
+  const oldOut = sp.outFg; q.resizeGrid(20, 10);
+  assert.notStrictEqual(sp.outFg, oldOut); assert.strictEqual(sp.cols, 20); assert.strictEqual(ovp.cols, 20); assert.strictEqual(ovp._fg, sp.outFg);
+  // a failing pass disables the pipeline and hands the frame back to the CPU
+  const w = console.warn; console.warn = () => {};
+  sp.run = () => { throw new Error('boom'); }; q._cellsShaded = true; q._runSprites(q._t);
+  console.warn = w;
+  assert.strictEqual(q.ready, false); assert.strictEqual(q.frameComplete, false); assert.strictEqual(rt2.gpuActive, false); assert.deepStrictEqual(present.at(-1), [null, null]);
+  q.dispose();
+  assert.strictEqual(q._spritesPass, null); assert.strictEqual(q._overlayPass, null); assert.strictEqual(sp.pipe, null, 'sprites pass disposed');
+  // dda sun (no shadow map on WebGPU) -> never complete, CPU keeps compositing
+  const rt3 = { device, cols: 16, rows: 8, fgTex, bgTex, setCellPass() {}, setPresentCells() {} };
+  const q3 = new WgCellPipeline(rt3, { rays: 1, shadows: { sun: 'dda' } });
+  q3.bindSprites({ pool, atlas, palette: {}, overlay });
+  assert.strictEqual(q3.frameComplete, false); assert.notStrictEqual(rt3.gpuActive, true); q3.dispose();
 }
 
 // dispose

@@ -13,8 +13,7 @@
 //   Stats: ov.stats.{rows, runs, drawn}. Readback: read the target through sp.readbackCells (the overlay modifies sp.outFg in place).
 //   dispose() frees everything.
 //
-// Deviation from the GL pass (flagged): the dirty rows are NOT uploaded as a row slice (the device API has no source offset and a subarray per
-// frame would allocate); when any row is dirty the whole layer arrays go up (cols*rows*5 B). `stats.rows` still reports the dirty-row count.
+// Dirty rows upload as a row slice (writeTexture dataOffset, no subarray), like the GL pass; `stats.rows` = dirty-row count.
 import { OVERLAY_WGSL, OVERLAY_TEXTURES } from '../wgsl/overlay.wgsl.js';
 
 export class WgOverlayPass {
@@ -25,6 +24,7 @@ export class WgOverlayPass {
     this.cols = 0; this.rows = 0;
     this.stats = { rows: 0, runs: 0, drawn: 0 };
     this.ran = false;
+    this._rowRect = { x: 0, y: 0, w: 0, h: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
     this.texOvl = null; this.texOvlZ = null; this.target = null; this._fg = null; this._ovlRef = null; this._full = true;
     this.tex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }];
     this.bindDesc = { uniforms: null, textures: this.tex };
@@ -67,8 +67,9 @@ export class WgOverlayPass {
     if (hadPrev) { if (ov.prevMinRow < r0) r0 = ov.prevMinRow; if (ov.prevMaxRow > r1) r1 = ov.prevMaxRow; }
     if (this._full) { r0 = 0; r1 = this.rows - 1; this._full = false; }
     if (r1 >= r0) {
-      d.writeTexture(this.texOvl, ov.ovl);
-      d.writeTexture(this.texOvlZ, ov.ovlZ);
+      const rect = this._rowRect; rect.y = r0; rect.w = this.cols; rect.h = r1 - r0 + 1;
+      d.writeTexture(this.texOvl, ov.ovl, rect, r0 * this.cols * 4);
+      d.writeTexture(this.texOvlZ, ov.ovlZ, rect, r0 * this.cols);
       this.stats.rows = r1 - r0 + 1;
     }
     if (hasNow) {

@@ -1,7 +1,7 @@
 // WG-3b (docs/architecture.md 38.8a items 20-22): the light pass as a fullscreen WebGPU pass (GpuCellPipeline._passLight +
 // _uploadLightUniforms + _ensureWorldTextures twin). Reads the resolved GI/GA/Depth, the LVIS occlusion atlas and the world
-// geometry/flags atlas (sun DDA); writes texLight (rgba32uint). The sun shadow MAP pass is WG-3d: until then `sunMode` is never 2
-// and uSunShadow is bound to a 1x1 dummy depth texture (shadow-free path = the GL `--shadows dda` path).
+// geometry/flags atlas (sun DDA); writes texLight (rgba32uint). The sun shadow MAP (WG-3d, passShadow.js) switches sunMode to 2 and binds its depth
+// texture; without an active map uSunShadow is a 1x1 dummy depth texture (= the GL `--shadows dda` path).
 // Pipeline + bind descriptor are built once (22b); per frame only uniform words change, textures upload only on change.
 import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES } from '../wgsl/light.wgsl.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../../lighting.js';
@@ -17,12 +17,15 @@ const W_PLANEX = W('planeX'), W_PLANEY = W('planeY'), W_HORIZON = W('horizonRow'
 const W_PITCH_A = W('pitchA'), W_PITCH_B = W('pitchB'), W_PITCH_C = W('pitchC');
 const W_LIGHT_POS = W('lightPos'), W_LIGHT_COL = W('lightCol'), W_VIS_BOX = W('visBox');
 const W_STRUCT_A = W('structA'), W_STRUCT_B = W('structB');
+const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W('sunShadowTexelM'), W_SUN_BIAS = W('sunShadowBiasM'), W_SUN_NOFF = W('sunShadowNormalOff');
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
 export class WgLightPass {
-  constructor(device) {
+  /** @param {any} device @param {any} [shadowPass] WG-3d WgShadowPass: when its map is valid this frame the light runs sunMode 2 (GL shadowActive) */
+  constructor(device, shadowPass = null) {
     this.device = device;
+    this.shadowPass = shadowPass;
     this.pipe = device.createPipeline({
       vertex: { src: { wgsl: LIGHT_WGSL } }, fragment: { src: { wgsl: LIGHT_WGSL }, targets: 1 },
       bindings: { uniformBytes: LIGHT_BLOCK.sizeBytes, textures: LIGHT_TEXTURES.slice() },
@@ -103,7 +106,7 @@ export class WgLightPass {
     lu[W_WORLD_MAXH] = worldMaxH;
   }
 
-  // _uploadLightUniforms twin; sunMode is 1 (DDA) whenever the sun is on: the map mode (2) waits for WG-3d.
+  // _uploadLightUniforms twin; sunMode is 1 (DDA) whenever the sun is on; run() upgrades it to 2 when the shadow map is valid.
   _uploadLight(light) {
     const lu = this.lu, li = this.li;
     const isSet = light && typeof light === 'object' && light.pos && light.col && typeof light.count === 'number';
@@ -150,6 +153,16 @@ export class WgLightPass {
     lu[W_POSX] = cb.posX; lu[W_POSY] = cb.posY; lu[W_EYEH] = cb.eyeH;
     lu[W_DIRX] = cb.dirX; lu[W_DIRY] = cb.dirY; lu[W_PLANEX] = cb.planeX; lu[W_PLANEY] = cb.planeY;
     lu[W_HORIZON] = cb.horizonRow; lu[W_PLANEDY] = cb.planeDistY;
+    // WG-3d: sun shadow map (GL: mapOn = shadowActive && sun.on); the map texture is bound below, the dummy 1x1 otherwise
+    const sh = this.shadowPass;
+    let sunTex = this.texSunDummy;
+    if (sh && sh.active && li[W_SUN_ON]) {
+      const lp = sh.lightParams();
+      li[W_SUN_MODE] = 2;
+      lu.set(lp.matrix, W_SUN_M);
+      lu[W_SUN_RES] = lp.res; lu[W_SUN_TEXEL] = lp.texelM; lu[W_SUN_BIAS] = lp.biasM; lu[W_SUN_NOFF] = lp.normalOffsetTexels;
+      sunTex = lp.texture;
+    }
     const rp = p._rasterPass, pitched = !!(rp && rp.pitched);
     li[W_PROJ_MODE] = pitched ? 1 : 0;
     if (pitched) {
@@ -160,7 +173,7 @@ export class WgLightPass {
     }
     const tx = this.tex;
     tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texLVis;
-    tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = this.texSunDummy;
+    tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = sunTex;
     d.beginPass(t.targetLight);
     d.bind(this.pipe, this.bindDesc);
     d.draw(3);

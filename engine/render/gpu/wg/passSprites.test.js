@@ -39,9 +39,9 @@ const sp = new WgSpritesPass(d, { pool, atlas });
 const spd = sp.pipe.desc;
 assert.deepEqual(spd.targetFormats, ['rgba8', 'rgba8']); assert.deepEqual(spd.bindings.textures, [...SPRITES_TEXTURES]); assert.equal(spd.bindings.uniformBytes, SPRITES_BLOCK.sizeBytes);
 assert.equal(spd.fragment.targets, 2);
-// atlas uploaded once at construct, widened to u32 with the same texel values; palette as f32
-assert.equal(sp.texAtlas.desc.format, 'rgba32ui'); assert.equal(sp.texAtlas._texWrites, 1);
-assert.deepEqual([...sp.texAtlas._lastTexWrite.data], [...atlas.data]); assert.ok(sp.texAtlas._lastTexWrite.data instanceof Uint32Array);
+// atlas uploaded once at construct as rgba8ui; palette as f32
+assert.equal(sp.texAtlas.desc.format, 'rgba8ui'); assert.equal(sp.texAtlas._texWrites, 1);
+assert.equal(sp.texAtlas._lastTexWrite.data, atlas.data, 'atlas uploaded as is (Uint8Array, no widening copy)');
 assert.deepEqual([sp.texPal.desc.width, sp.texPal.desc.height], [2, 1]); assert.equal(sp.texPal._lastTexWrite.data, atlas.pal);
 sp.setAtlas(atlas); assert.equal(sp.texAtlas._texWrites, 1, 'same atlas: no re-upload');
 
@@ -78,6 +78,12 @@ assert.equal(sp.texPart._texWrites, 1);
 sp.run(inp); assert.equal(sp.texPart._texWrites, 1, 'clean particle layer: no upload');
 layer.part[(3 * COLS + 7) * 4 + 3] = 5; layer.partZ[3 * COLS + 7] = 2; layer.minRow = 3; layer.maxRow = 3;
 sp.run(inp); assert.equal(sp.texPart._texWrites, 2); assert.equal(sp.texPart._lastTexWrite.data, layer.part); assert.equal(sp.texPartZ._lastTexWrite.data, layer.partZ);
+// dirty-row slice with a source offset (no subarray): row 3 only
+assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 3, w: COLS, h: 1 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 3 * COLS * 4); assert.equal(sp.texPartZ._lastTexWrite.dataOffset, 3 * COLS);
+// current rows 5..6 + previous rows 2..4 -> union 2..6
+layer.minRow = 5; layer.maxRow = 6; layer.prevMinRow = 2; layer.prevMaxRow = 4; sp.run(inp);
+assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 2, w: COLS, h: 5 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 2 * COLS * 4);
+layer.prevMinRow = 0; layer.prevMaxRow = -1;
 layer.minRow = 0; layer.maxRow = -1;
 // a grid change of the layer recreates the two particle textures
 layer.bind(30, 12); const oldPart = sp.texPart; sp.run(inp);
@@ -108,8 +114,10 @@ assert.deepEqual(draws, [{ count: 3, first: 0, instances: 1 }]);
 assert.deepEqual(binds[0].textures, [ovp.texOvl, ovp.texOvlZ, depth]); assert.equal(binds[0].hasU, false);
 assert.equal(ovp.texOvl._lastTexWrite.data, ov.ovl); assert.equal(ovp.texOvlZ._lastTexWrite.data, ov.ovlZ);
 assert.deepEqual([...ovp.texOvl._lastTexWrite.data.slice(ci * 4, ci * 4 + 4)], [200, 100, 50, 33]);
-assert.equal(ovp.stats.rows, ROWS, 'first run is a full upload'); assert.equal(ovp.texOvl._texWrites, 1);
+assert.equal(ovp.stats.rows, ROWS, 'first run is a full upload'); assert.equal(ovp.texOvl._texWrites, 1); assert.equal(ovp.texOvl._lastTexWrite.dataOffset, 0);
 ovp.run(depth); assert.equal(ovp.stats.rows, 1); assert.equal(ovp.texOvl._texWrites, 2);
+// dirty-row upload: row 4 only, source offset = row start (elements), no subarray
+assert.deepEqual({ ...ovp.texOvl._lastTexWrite.rect }, { x: 0, y: 4, w: COLS, h: 1 }); assert.equal(ovp.texOvl._lastTexWrite.dataOffset, 4 * COLS * 4); assert.equal(ovp.texOvlZ._lastTexWrite.dataOffset, 4 * COLS);
 // cells gone: last frame rows are re-uploaded (cleared), no draw
 ov.ovl.fill(0); ov.ovlZ.fill(0); ov.stats.cells = 0; ov.minRow = 0; ov.maxRow = -1; ov.prevMinRow = 4; ov.prevMaxRow = 4;
 passes.length = 0; ovp.run(depth); assert.equal(ovp.ran, false); assert.equal(passes.length, 0); assert.equal(ovp.texOvl._texWrites, 3);

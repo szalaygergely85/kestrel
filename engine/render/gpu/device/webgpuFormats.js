@@ -6,6 +6,7 @@
 const FORMATS = {
   rgba32ui: { gpu: 'rgba32uint', bpp: 16, depth: false },
   r32ui: { gpu: 'r32uint', bpp: 4, depth: false },
+  rgba8ui: { gpu: 'rgba8uint', bpp: 4, depth: false }, // WG-3f: sprite atlas (textureLoad only)
   r8ui: { gpu: 'r8uint', bpp: 1, depth: false },
   rgba8: { gpu: 'rgba8unorm', bpp: 4, depth: false },
   rgba32f: { gpu: 'rgba32float', bpp: 16, depth: false }, // WG-3b: world geometry atlas (textureLoad only)
