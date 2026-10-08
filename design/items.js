@@ -150,6 +150,112 @@
   };
   for (var id in defs) defs[id].placeholderName = true;
 
+  // ==================================================================================================================
+  // S8-A-07 (appended, v1.43): the 12-icon set. 4 icons already exist above (sword, orb.hp = the "potion" icon - canon
+  // has no potions -, boar.hide, boar.tusk); the 8 below are NEW ids from the writer list (docs/story.md "S8-A-13
+  // Items"), names + lines are the writer's (final, placeholderName false). Defs are added after the placeholder loop
+  // and by assignment, so the block above is untouched.
+  // KINDS: the game's validateItemDefs (inventory.js) and validate() below accept only weapon / spell / tool / food /
+  // material / pickup, so every new def uses one of those; `kindNext` is the kind S8-C-08 should switch to once it adds
+  // it to both KINDS lists (key, upgrade, currency, shield). Until then these items are inert data: nothing grants them.
+  // ==================================================================================================================
+  // new icon colour keys (one char -> palette key; all existing palette colours)
+  keys.A = { c: 'brassLight' };  keys.B = { c: 'brass' };        keys.J = { c: 'brassDark' };
+  keys.j = { c: 'brassShadow' }; keys.V = { c: 'brassHot' };     keys.v = { c: 'verdigris' };
+  keys.K = { c: 'ironDark' };    keys.U = { c: 'rust' };
+  keys.F = { c: 'copperLight' }; keys.p = { c: 'copper' };       keys.o = { c: 'copperDark' };
+  keys.X = { c: 'lantern', e: true };
+
+  defs.shield = {
+    id: 'shield', name: 'Brass Buckler', kind: 'weapon', kindNext: 'shield', stackMax: 1, hand: true, inPack: true,
+    desc: 'Gondola plate, bent round a strap.',
+    glyph: { ch: 'O', c: 'brass' },
+    // /=o=\     rim + top rivet
+    // |:@:|     dented plate, bright boss
+    // \___/     lower rim in shadow
+    icon: icon(['/=o=\\', '|:@:|', '\\___/'],
+               ['ABVBA', 'BjAjJ', 'JjjjJ'])
+  };
+  defs.lantern = {
+    id: 'lantern', name: 'Kestrel Lamp', kind: 'tool', stackMax: 1, hand: true, inPack: true,
+    desc: "The gondola's lamp. It still burns.",
+    note: 'quest item id (M1 objective `lantern`); today lantern.take sets a flag, S8-C-08 decides if it also adds this item',
+    glyph: { ch: '#', c: 'lantern' },
+    //  ,^,      hood + carry ring
+    // [(*)]     brass cage, glowing glass, flame core
+    //  =#=      base
+    icon: icon([' ,^, ', '[(*)]', ' =#= '],
+               [' BAB ', 'BXCXB', ' JBJ '])
+  };
+  defs['key.small'] = {
+    id: 'key.small', name: 'Small Key', kind: 'tool', kindNext: 'key', stackMax: 9, hand: false, inPack: true,
+    desc: 'Iron, brown with rust. Fits one lock.',
+    use: { opens: 'lock', note: 'consumed by the lock it opens (door / chest story); no use from the pack' },
+    glyph: { ch: 'F', c: 'ironLight' },
+    // ,-.       bow (ring)
+    // (o)=E     hole, shaft, rusty bit
+    // `-'
+    icon: icon([',-.  ', '(o)=E', "`-'  "],
+               ['sss  ', 'sKUiU', 'iUi  '])
+  };
+  defs.bow = {
+    id: 'bow', name: "Hunter's Bow", kind: 'weapon', stackMax: 1, hand: true, inPack: true,
+    desc: 'Yew and gut. Quiet, and it reaches.',
+    glyph: { ch: '}', c: 'woodLight' },
+    //  /|       upper limb + string
+    // (-+->     grip, fletch, nock on the string, shaft, iron head
+    //  \|       lower limb + string
+    icon: icon([' /|  ', '(-+->', ' \\|  '],
+               [' Hu  ', 'hfuws', ' lu  '])
+  };
+  defs.bomb = {
+    id: 'bomb', name: 'Blast Pot', kind: 'tool', stackMax: 10, hand: true, inPack: true,
+    desc: 'Clay, black powder, a short fuse.',
+    use: { note: 'throw: a later story (no sim yet)' },
+    glyph: { ch: 'o', c: 'copper' },
+    //  .-'*     shoulder, fuse, spark
+    // (=#=)     fired clay, rope lashing
+    // `-=-'     foot in shadow
+    icon: icon([" .-'*", '(=#=)', "`-=-'"],
+               [' FpDE', 'FpDpo', 'oopoo'])
+  };
+  defs['heart.piece'] = {
+    id: 'heart.piece', name: 'Heart Piece', kind: 'material', kindNext: 'upgrade', stackMax: 3, hand: false, inPack: true,
+    desc: 'A warm red stone. Four make a heart.',
+    use: { note: 'the 4th piece is consumed at once: +1 heart (max HP), a later sim story; stackMax 3 = never 4 in the pack' },
+    glyph: { ch: 'v', c: 'vitalLight' },
+    // (#v#)     a heart outline; ONE quarter (top-left) glows, the rest is a dark ghost = "a piece of"
+    //  \#/
+    //   v
+    icon: icon(['(#v#)', ' \\#/ ', '  v  '],
+               ['LPddd', ' Ldd ', '  d  '])
+  };
+  defs.cog = {
+    id: 'cog', name: 'Brass Cog', kind: 'material', kindNext: 'currency', stackMax: 99, hand: false, inPack: true,
+    desc: "Ferrum's small change. Worth a trade.",
+    pending: 'owner', pendingNote: 'currency is an open owner question (GDD 10); icon + def ready, nothing grants it yet',
+    glyph: { ch: '@', c: 'brass' },
+    //  "#"      teeth
+    // =(o)=     rim, axle hole, teeth
+    //  "#"
+    icon: icon([' "#" ', '=(o)=', ' "#" '],
+               [' AVA ', 'BAjBJ', ' JBJ '])
+  };
+  defs['brass.scrap'] = {
+    id: 'brass.scrap', name: 'Brass Scrap', kind: 'material', stackMax: 20, hand: false, inPack: true,
+    desc: 'From the Kestrel. Ferrum, in pieces.',
+    use: { none: 'Material - no use yet' },
+    glyph: { ch: '=', c: 'brass' },
+    //  ._/|     torn plate edge
+    // /%o=/     green patina, a rivet
+    // `~-'      bent lower lip
+    icon: icon([' ._/|', '/%o=/', "`~-' "],
+               [' ABAB', 'BvVBJ', 'JvjJ '])
+  };
+  // the S8-A-07 icon list in sheet order (sword, shield, lantern, potion, key, bow, bomb, heart piece, currency, 3 materials)
+  var iconSet = ['sword', 'shield', 'lantern', 'orb.hp', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog',
+                 'boar.hide', 'boar.tusk', 'brass.scrap'];
+
   // ---- loot tables: one independent roll per entry (seeded, sim side). `n` = count when the roll succeeds. ----
   var loot = {
     boar: {
@@ -281,6 +387,10 @@
     attachSprites: attachSprites,
     validate: validate
   };
+
+  // S8-A-07 (appended): new ids at the end of the pack display order + the 12-icon set
+  A.items.order.push('shield', 'lantern', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog', 'brass.scrap');
+  A.items.iconSet = iconSet;
 
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };
 })(typeof window !== 'undefined' ? window : globalThis);

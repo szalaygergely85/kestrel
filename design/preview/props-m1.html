@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - M1 props set (S8-A-08, design v1.44)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:24px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  table { border-collapse:collapse; font-family:Consolas, monospace; font-size:12px; }
+  td, th { border:1px solid #22252e; padding:2px 8px; text-align:left; }
+  th { color:#ffc23c; }
+</style>
+</head>
+<body>
+<h1>Kestrel : M1 props set (S8-A-08, design v1.44) - <code>design/models/props_m1.js</code></h1>
+<div class="note">
+  Waystone variants <code>waystoneSmall</code> / <code>waystoneLeaning</code> / <code>waystoneFallen</code>, <code>lanternPost</code> (clips <code>lit</code> / <code>unlit</code>),
+  <code>breachRubble</code>, <code>swordPedestal</code> (shown with the real <code>sword</code> pickup in its slot). Rendering = engine <code>packVoxelModel</code> /
+  <code>computeVoxelPose</code> + the preview CPU march (<code>lib/voxelMarch.js</code>), v1 shader (<code>palette.util.shade</code>), approximate edge pass, no shadows.
+  Day = <code>timeOfDay.morning</code>, night = <code>timeOfDay.night</code> (moon); the lantern's point light (<code>lanternHang</code> at <code>mounts.light</code>) is simulated
+  here (a level light in game). <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/props-m1.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>model <select id="show"></select></label>
+  <label>time <select id="time"><option value="day" selected>day (morning)</option><option value="night">night (moon)</option></select></label>
+  <label>lantern <select id="lamp"><option value="lit" selected>lit</option><option value="unlit">unlit</option></select></label>
+  <label>lantern light <select id="glow"><option value="1" selected>on</option><option value="0">off</option></select></label>
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="-10" max="85" step="1" value="45"><span class="val" id="elV"></span></label>
+  <label>sun / moon x <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="4" step="0.05" value="1.4"><span class="val" id="ambV"></span></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label><input type="checkbox" id="swordOn" checked> sword in pedestal</label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+<div id="table"></div>
+
+<h2>Orbit + 5 fixed views (selected model, selected time)</h2>
+<div class="row" id="orbitRow"></div>
+<div class="row" id="dirRow"></div>
+
+<h2>Line-up at day and night (same scale; 3/4 view from the north-west; the light-direction sliders apply to both)</h2>
+<div class="note">Left to right: waystoneSmall, waystoneLeaning, waystoneFallen, lanternPost, breachRubble, swordPedestal (+ sword). At night the lantern's
+  pool lights its neighbours (lanternHang 0.9, r 3.0 m); the waystone marks stay cold (only the end waystone carries the aether mark).</div>
+<div id="lineup"></div>
+
+<h2>In-game size (engine projection, 75 deg HFOV, 16:9, eye 1.6 m, grass, far fog): selected model at 3 m and 10 m, day and night</h2>
+<div class="controls" style="position:static">
+  <label>grid <select id="igGrid"><option value="240">240x90 (90x45 crop, 8x12 px)</option><option value="400" selected>400x150 (150x75 crop, 4.8x7.2 px)</option></select></label>
+  <label>view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="-25"><span class="val" id="vazV"></span></label>
+  <label>zoom <select id="zoom"><option value="0.75" selected>0.75</option><option value="1">1.0 (real 1080p size)</option></select></label>
+</div>
+<div id="ingame"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/sword.js"></script>
+<script src="../models/props_m1.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__propsOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose } from '../../engine/voxel/voxelPose.js';
+import { buildVoxelMesh, buildVoxelMeshLod1 } from '../../engine/mesh/voxelMesh.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__propsOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, PM1 = A.propsM1, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const KEYS = PM1.keys, TIMES = { day: 'morning', night: 'night' };
+const EMISSIVE = new Set(['ember_glow', 'ember_core', 'steel_glint']);
+const LH = P.lights[PM1.lanternPost.light.preset];
+
+// ------------------------------------------------------------------ pack (engine)
+const matKeys = [];
+function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
+const MD = {};
+for (const key of KEYS.concat(['sword'])) {
+  const M = A.voxelModels[key], DEF = M.voxel;
+  MD[key] = { key, M, DEF, PM: packVoxelModel(DEF, matIdFor), PARTS: Object.keys(DEF.parts) };
+}
+for (const k of KEYS) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('show').appendChild(o); }
+
+// ------------------------------------------------------------------ controls
+const ctl = {};
+let ver = 1;
+function readCtl() {
+  ctl.show = $('show').value; ctl.time = $('time').value; ctl.lamp = $('lamp').value; ctl.glow = $('glow').value === '1';
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.sword = $('swordOn').checked;
+  ctl.vaz = +$('vaz').value; ctl.zoom = +$('zoom').value; ctl.igGrid = +$('igGrid').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('vazV').textContent = ctl.vaz;
+  ver++;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl();
+  if (el.id === 'show') buildOrbit();
+  if (el.id === 'zoom' || el.id === 'igGrid' || el.id === 'show') buildIngame();
+}));
+readCtl();
+
+// ------------------------------------------------------------------ posing
+// an item = { key, pm, pose, light } at world (x, y), yaw 0, anchor on the ground plane
+function poseItem(key, x, y) {
+  const d = MD[key], pm = d.PM, DEF = d.DEF;
+  const clipName = key === 'lanternPost' ? ctl.lamp : Object.keys(DEF.animations)[0];
+  const pose = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+  computeVoxelPose(pm, { x, y, z: 0, yawDeg: 0, scale: 1, clip: pm.clipIndex[clipName], frame: 0, tMs: 0 }, pose);
+  let light = null;
+  if (key === 'lanternPost' && ctl.glow && PM1.lanternPost.light.on[ctl.lamp]) {
+    const m = DEF.mounts[PM1.lanternPost.light.mount].at;
+    light = { I: LH.intensity, r: LH.radius, color: LH.color,
+              p: [x + (m[0] - DEF.anchor[0]) * DEF.cellM, y + (m[1] - DEF.anchor[1]) * DEF.cellM, (m[2] - DEF.anchor[2]) * DEF.cellM] };
+  }
+  return { key, pm, pose, light };
+}
+function itemsFor(key, x, y) {   // the pedestal brings its sword
+  const out = [poseItem(key, x, y)];
+  if (key === 'swordPedestal' && ctl.sword) {
+    const D = MD.swordPedestal.DEF, m = D.mounts.sword.at;
+    out.push(poseItem('sword', x + (m[0] - D.anchor[0]) * D.cellM, y + (m[1] - D.anchor[1]) * D.cellM));
+    // the sword anchor goes to the slab top: re-pose with z
+    const s = out[1], pm = MD.sword.PM;
+    computeVoxelPose(pm, { x: x + (m[0] - D.anchor[0]) * D.cellM, y: y + (m[1] - D.anchor[1]) * D.cellM, z: (m[2] - D.anchor[2]) * D.cellM,
+                           yawDeg: 0, scale: 1, clip: pm.clipIndex.idle, frame: 0, tMs: 0 }, s.pose);
+  }
+  return out;
+}
+function bboxM(key) {   // model-local metre AABB (x, y, z) relative to the anchor
+  const D = MD[key].DEF, a = D.anchor, c = D.cellM, s = D.size;
+  return [-a[0] * c, -a[1] * c, -a[2] * c, (s[0] - a[0]) * c, (s[1] - a[1]) * c, (s[2] - a[2]) * c];
+}
+
+// ------------------------------------------------------------------ trace + shade
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  for (let m = 0; m < sc.items.length; m++) {
+    const it = sc.items[m];
+    for (let k = 0; k < it.pm.partCount; k++) {
+      if (VM.marchVoxelRay(it.pm, k, it.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+        best = HIT[0]; kind = 8; res.m = m; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+      }
+    }
+  }
+  if (sc.ground && dz < 0) {
+    const t = -oz / dz;
+    if (t > 0 && t < best && (sc.ground === 'inf' || Math.hypot(ox + dx * t - sc.gc[0], oy + dy * t - sc.gc[1]) < sc.ground)) { best = t; kind = 1; }
+  }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fog, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const it = sc.items[res.m], A9 = it.pose, b = res.k * PART_STRIDE, cm = it.pm.cellM;
+    faceNormal(res.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    res.matKey = matKeys[it.pm.matIds[res.mat] - 1];
+    mat = P.materials[res.matKey];
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else { nx = 0; ny = 0; nz = 1; mat = P.materials.grass; u = px; v = py; res.matKey = 'grass'; }
+  const T = P.timeOfDay[TIMES[sc.time]];
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, T.ambient, T.ambientI * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, T.sun, T.sunI * ctl.int * ndl);
+  for (const it of sc.items) {   // point lights (no shadows here)
+    const L = it.light; if (!L) continue;
+    const lx = L.p[0] - px, ly = L.p[1] - py, lz = L.p[2] - pz, d = Math.hypot(lx, ly, lz) || 1;
+    const nd = (nx * lx + ny * ly + nz * lz) / d, f = U.falloff(d, L.r);
+    if (nd > 0 && f > 0) U.addLight(Lacc, L.color, L.I * f * nd);
+  }
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fog ? 'far' : null, z: v });
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, m: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0, matKey: '' }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view, sc) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3), mat: new Array(n) };
+  const B = view.buf, ext = sc.items.map(() => [1e9, -1, 1e9, -1]);
+  const T = P.timeOfDay[TIMES[sc.time]], skyBg = P.rgb[T.sky[0].c];
+  let glowCells = 0;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t; B.mat[i] = '';
+    if (!kind) {
+      if (cam.persp) {
+        const elev = Math.atan2(Dv[2], Math.hypot(Dv[0], Dv[1])) / D2R, az = Math.atan2(Dv[0], -Dv[1]) / D2R;
+        U.shadeSky((az + 360) % 360, Math.max(0, elev), SH, TIMES[sc.time]);
+        B.glyph[i] = SH.glyph; for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+      } else {
+        B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3);
+        for (let k = 0; k < 3; k++) B.bg[i * 3 + k] = skyBg[k] * 0.22;
+      }
+      continue;
+    }
+    if (kind === 8) { const x = ext[RES.m]; x[0] = Math.min(x[0], r); x[1] = Math.max(x[1], r); x[2] = Math.min(x[2], c); x[3] = Math.max(x[3], c); }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp, SH);
+    B.mat[i] = RES.matKey; if (EMISSIVE.has(RES.matKey)) glowCells++;
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+  }
+  if (ctl.edges !== 'off') {   // approximate engine edge pass on model cells (cap / side / lip vs farther neighbours)
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8 || EMISSIVE.has(B.mat[i])) continue;   // emissive cells keep their glow
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+  view.glowCells = glowCells;
+  if (view.cap) {
+    const parts = sc.items.map((it, m) => ext[m][1] >= 0 ? it.key + ' ' + (ext[m][1] - ext[m][0] + 1) + ' rows x ' + (ext[m][3] - ext[m][2] + 1) + ' cols' : '');
+    view.cap.textContent = view.label + ' [' + sc.time + ']: ' + (parts.filter(Boolean).join(', ') || '(not visible)') + (glowCells ? ', glow cells ' + glowCells : '');
+  }
+}
+
+// ------------------------------------------------------------------ cameras
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 20;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+const TAN_HALF = Math.tan(37.5 * D2R);
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+function centreOf(key) { const b = bboxM(key); return [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, Math.max(0.3, (Math.max(0, b[2]) + b[5]) / 2)]; }
+function spanOf(key) { const b = bboxM(key); return Math.max(b[3] - b[0], b[4] - b[1], b[5] - Math.max(0, b[2])); }
+
+// ------------------------------------------------------------------ views
+const views = [];
+function addView(host, v) {
+  const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap'; v.cap = cap;
+  wrap.appendChild(v.grid.cv); wrap.appendChild(cap); host.appendChild(wrap); views.push(v);
+  return wrap;
+}
+function dropViews(tag) { for (let i = views.length - 1; i >= 0; i--) if (views[i].tag === tag) views.splice(i, 1); }
+let orbitYaw = -35, orbitPitch = 22;
+function buildOrbit() {
+  dropViews('orbit'); $('orbitRow').innerHTML = ''; $('dirRow').innerHTML = '';
+  const key = ctl.show, C = centreOf(key), span = spanOf(key) * 1.25;
+  const rows = 48, g = makeCanvas(rows * 2, rows, 7, 14);
+  const v = { tag: 'orbit', kind: 'sel', grid: g, label: 'orbit ' + key, mk: () => orthoCam(C, orbitYaw, orbitPitch, rows * 2, rows, span / rows) };
+  v.cam = v.mk();
+  const wrap = addView($('orbitRow'), v);
+  const ctlDiv = document.createElement('div'); ctlDiv.className = 'controls'; ctlDiv.style.position = 'static';
+  ctlDiv.innerHTML = '<label>orbit yaw <input type="range" min="-180" max="180" value="' + orbitYaw + '" step="1"></label>' +
+                     '<label>pitch <input type="range" min="-5" max="85" value="' + orbitPitch + '" step="1"></label>';
+  const [oy, op] = ctlDiv.querySelectorAll('input');
+  oy.oninput = op.oninput = () => { orbitYaw = +oy.value; orbitPitch = +op.value; v.cam = v.mk(); v.key = ''; };
+  wrap.insertBefore(ctlDiv, wrap.firstChild);
+  for (const [yaw, pitch, lab] of [[0, 8, 'front (-y, north at yaw 0)'], [-45, 30, 'front-left 3/4'], [90, 12, 'east side'], [180, 15, 'back'], [-20, 75, 'top']]) {
+    const r2 = 28, g2 = makeCanvas(r2 * 2, r2, 5, 10);
+    addView($('dirRow'), { tag: 'orbit', kind: 'sel', grid: g2, label: lab, cam: orthoCam(C, yaw, pitch, r2 * 2, r2, span / r2) });
+  }
+}
+buildOrbit();
+// line-up: x positions chosen so the footprints never overlap (checked below)
+const LINEUP = { waystoneSmall: -4.4, waystoneLeaning: -3.0, waystoneFallen: -0.4, lanternPost: 1.6, breachRubble: 3.6, swordPedestal: 5.5 };
+for (const t of ['day', 'night']) {
+  const rows = 50, cols = 250, g = makeCanvas(cols, rows, 5, 10);
+  addView($('lineup'), { tag: 'lineup', kind: 'lineup', time: t, grid: g, label: 'line-up', cam: orthoCam([0.55, 0, 1.2], -30, 18, cols, rows, 5.0 / rows) });
+}
+function buildIngame() {
+  dropViews('ig'); $('ingame').innerHTML = '';
+  const s = ctl.igGrid === 240 ? { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 } : { cols: 400, rows: 150, cc: 150, cr: 75, cw: 4.8, ch: 7.2 };
+  for (const dist of [3, 10]) {
+    const row = document.createElement('div'); row.className = 'row';
+    for (const t of ['day', 'night']) {
+      const g = makeCanvas(s.cc, s.cr, s.cw * ctl.zoom, s.ch * ctl.zoom);
+      addView(row, { tag: 'ig', kind: 'ig', time: t, grid: g, label: s.cols + 'x' + s.rows + ' ' + dist + ' m ' + ctl.show, s, dist });
+    }
+    $('ingame').appendChild(row);
+  }
+}
+buildIngame();
+
+// ------------------------------------------------------------------ frame loop (re-render on change only)
+function frame() {
+  for (const v of views) {
+    const key = ver + '|' + (v.kind === 'sel' ? ctl.show : '');
+    if (v.key === key) continue;
+    if (v.kind === 'sel') {
+      renderView(v, { time: ctl.time, ground: spanOf(ctl.show) * 0.8 + 0.6, gc: [0, 0], items: itemsFor(ctl.show, 0, 0) });
+    } else if (v.kind === 'lineup') {
+      const items = []; for (const k of KEYS) items.push(...itemsFor(k, LINEUP[k], 0));
+      renderView(v, { time: v.time, ground: 'inf', items });
+    } else {
+      const C = centreOf(ctl.show);
+      v.cam = perspCam(v.s.cols, v.s.rows, v.s.cc, v.s.cr, [C[0], C[1], Math.min(C[2], 1.0)], ctl.vaz, v.dist, 1.6);
+      renderView(v, { time: v.time, ground: 'inf', items: itemsFor(ctl.show, 0, 0) });
+    }
+    v.key = key;
+    break;   // one view per tick keeps the page responsive
+  }
+  setTimeout(() => requestAnimationFrame(frame), 15);
+}
+
+// ------------------------------------------------------------------ checks
+function runChecks() {
+  const out = [], rowsT = [];
+  const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+  const info = (m) => out.push(['info', 'INFO ' + m]);
+  const both = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  const B = PM1.budget, RESERVED = /^(waystone_mark|crystal_lit|hit_flash|steel_glint|brass_glint|team\.)/;
+  const solid = (L, x, y, z) => !!(L[z] && L[z][y] && L[z][y][x] && L[z][y][x] !== '.' && L[z][y][x] !== ' ');
+  for (const key of KEYS) {
+    const { DEF, PM, PARTS, M } = MD[key];
+    const vr = validateVoxelModel(DEF, { materialKeys: both });
+    ok(vr.errors.length === 0, key + ': validateVoxelModel (palette + detail-pass materials): ' + (vr.errors.slice(0, 6).join(' ; ') || 'no errors') +
+       (vr.warnings && vr.warnings.length ? ' (warnings: ' + vr.warnings.slice(0, 3).join(' ; ') + ')' : ''));
+    ok(Object.values(DEF.mats).every((m) => P.materials[m] && DP.materials[m]), key + ': every material already merged (no palette / detail-pass edit)');
+    const lod0 = buildVoxelMesh(PM, { id: key, partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: key + '1', partNames: PARTS }).triCount;
+    ok(lod0 <= B.lod0Tris, key + ': engine mesher LOD0 ' + lod0 + ' tris (budget ' + B.lod0Tris + '), LOD1 ' + lod1 + ' tris');
+    const ext = PARTS.map((p) => { const b = DEF.parts[p].box; return p + ' ' + ((b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2])); });
+    ok(PARTS.length <= B.parts && PARTS.every((p) => { const b = DEF.parts[p].box; return (b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2]) <= B.partExtentSum; }),
+       key + ': ' + PARTS.length + ' parts, box extents sx+sy+sz <= ' + B.partExtentSum + ' [' + ext.join(', ') + ']');
+    const fams = new Set(Object.values(DEF.mats).map((m) => PM1.hueFamily[m] || ('?' + m)));
+    ok(fams.size <= B.hueFamilies && ![...fams].some((f) => f.charAt(0) === '?'), key + ': hue families ' + fams.size + ' [' + [...fams].join(', ') + '] (style guide 5.7: <= 3)');
+    ok(!Object.values(DEF.mats).some((m) => RESERVED.test(m)), key + ': no reserved hue (aether mark / glint / flash / team) on a scenery prop');
+    ok(A.models[key] === M, key + ': registered as ASSETS.models.' + key);
+    // colliders: present, 37.10 shape, inside the voxel bbox (+2 cm)
+    const bb = bboxM(key), tol = 0.02;
+    const cols = M.colliders || [];
+    const inside = cols.every((s) => {
+      const hx = s.type === 'box' ? s.half[0] : s.r / Math.cos(Math.PI / 8), hy = s.type === 'box' ? s.half[1] : hx, hz = s.type === 'box' ? s.half[2] : s.h / 2;
+      return (s.type === 'box' || s.type === 'prism') && s.c[0] - hx >= bb[0] - tol && s.c[0] + hx <= bb[3] + tol && s.c[1] - hy >= bb[1] - tol &&
+             s.c[1] + hy <= bb[4] + tol && s.c[2] - hz >= Math.max(0, bb[2]) - tol && s.c[2] + hz <= bb[5] + tol;
+    });
+    ok(cols.length > 0 && inside, key + ': ' + cols.length + ' collider shape(s) (architecture.md 37.10, prop-local m), all inside the voxel bbox');
+    const mountsOk = Object.values(DEF.mounts || {}).every((m) => m.at.every((v, i) => v >= -1 && v <= DEF.size[i] + 2));
+    ok(mountsOk, key + ': mounts [' + Object.keys(DEF.mounts || {}).join(', ') + '] inside the grid');
+    rowsT.push([key, M.displayName, DEF.size.join(' x '), DEF.cellM, M.world.w + ' x ' + M.world.d + ' x ' + M.world.h, PARTS.join(' '),
+                Object.keys(DEF.animations).join(' '), lod0, lod1, cols.map((s) => s.type).join(' ')]);
+  }
+  // lantern: sealed dark lamp, exact swap, light mount
+  {
+    const D = MD.lanternPost.DEF, L = D.layers, b = D.parts.lampDark.box, lb = D.parts.lampLit.box, fr = D.animations.unlit.frames[0];
+    let open = 0;
+    for (let z = b[2] - 1; z <= b[5]; z++) for (let y = b[1] - 1; y <= b[4]; y++) for (let x = b[0] - 1; x <= b[3]; x++) {
+      const inside = x >= b[0] && x < b[3] && y >= b[1] && y < b[4] && z >= b[2] && z < b[5];
+      if (!inside && !solid(L, x, y, z)) open++;
+    }
+    ok(open === 0, 'lanternPost: dark lamp sealed inside the stone foot at rest (' + open + ' open shell cells)');
+    const sw = fr.lampDark.pos;
+    ok(b[0] + sw[0] === lb[0] && b[1] + sw[1] === lb[1] && b[2] + sw[2] === lb[2] && b[3] - b[0] === lb[3] - lb[0] && fr.lampLit.pos[2] <= -50,
+       'lanternPost: clip unlit moves lampDark exactly onto lampLit (+' + sw.join(',') + ') and hides lampLit ' + fr.lampLit.pos[2] + ' voxels down');
+    const m = D.mounts.light.at;
+    ok(m[0] > lb[0] && m[0] < lb[3] && m[2] > lb[2] && m[2] < lb[5] && Object.values(PM1.lanternPost.clipFor).every((c) => D.animations[c]),
+       'lanternPost: light mount inside the lamp; clipFor -> clips; light preset ' + PM1.lanternPost.light.preset + ' (' + LH.intensity + ', r ' + LH.radius + ' m)');
+    let lit = 0; for (const row of L.slice(lb[2], lb[5])) for (const r of row) for (const ch of r) if (D.mats[ch] === 'ember_glow' || D.mats[ch] === 'ember_core') lit++;
+    ok(lit > 0, 'lanternPost: ' + lit + ' emissive pane voxels in the lit lamp');
+  }
+  // pedestal: slot empty + floor, sword depth fits
+  {
+    const D = MD.swordPedestal.DEF, L = D.layers, S = MD.sword.DEF, slotTop = D.mounts.sword.at[2], slotBot = D.mounts.slot.at[2];
+    let empty = true; for (let z = slotBot; z < slotTop; z++) for (let y = 8; y < 10; y++) for (let x = 8; x < 10; x++) if (solid(L, x, y, z)) empty = false;
+    const floor = solid(L, 8, 8, slotBot - 1) && solid(L, 9, 9, slotBot - 1);
+    const buried = S.anchor[2] * S.cellM, depth = (slotTop - slotBot) * D.cellM;
+    ok(empty && floor && buried <= depth + 1e-9, 'swordPedestal: slot 0.10 x 0.10 x ' + depth.toFixed(2) + ' m empty with a floor; the sword buries ' + buried.toFixed(2) + ' m (fits)');
+  }
+  // waystone variants: same cellM as the end waystone, mark cut cold
+  for (const k of PM1.groups.waystone) {
+    const D = MD[k].DEF;
+    ok(D.cellM === 0.125 && !Object.values(D.mats).includes('waystone_mark'), k + ': cellM 0.125 (= the end waystone), mark cut in waystone_dark (no aether)');
+  }
+  // line-up spacing (no voxel bbox overlap)
+  {
+    const xs = KEYS.map((k) => { const b = bboxM(k); return [k, LINEUP[k] + b[0], LINEUP[k] + b[3]]; }).sort((a, b) => a[1] - b[1]);
+    let clear = true; for (let i = 1; i < xs.length; i++) if (xs[i][1] < xs[i - 1][2]) clear = false;
+    ok(clear, 'line-up: footprints do not overlap');
+  }
+  info('ASCII only: every layer char is in its model\'s mats; no Unicode in the data (validator rule 3/4)');
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
+  const head = ['key', 'name', 'grid', 'cellM', 'world m (w x d x h)', 'parts', 'clips', 'LOD0 tris', 'LOD1 tris', 'colliders'];
+  $('table').innerHTML = '<table><tr>' + head.map((h) => '<th>' + h + '</th>').join('') + '</tr>' +
+    rowsT.map((r) => '<tr>' + r.map((c) => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</table>';
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+setTimeout(() => {   // the night line-up must show the lit lantern panes
+  const v = views.find((x) => x.kind === 'lineup' && x.time === 'night'); if (!v || v.glowCells === undefined) return;
+  const d = document.createElement('div'); const good = ctl.lamp !== 'lit' || v.glowCells > 0;
+  d.className = good ? 'pass' : 'fail';
+  d.textContent = (good ? 'PASS ' : 'FAIL ') + 'night line-up: ' + v.glowCells + ' emissive lantern cells visible';
+  $('checks').appendChild(d);
+}, 4000);
+</script>
+</body>
+</html>

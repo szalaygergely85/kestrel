@@ -13,6 +13,8 @@
  *                                     same field names as the US-038b `uiStyle.settings` (panel, frame, title, rows,
  *                                     labels, valueText, notes, marker, separator, keyHints...) plus `layout` (explicit
  *                                     row y per id, section labels). The old 40 x 12 `uiStyle.settings` stays as is.
+ *   ASSETS.uiStyle.itemGetCard        S8-A-07: the item-get card (56 x 11, title bar + glowing icon box), for S8-C-07.
+ *                                     Preview: design/preview/item-icons.html.
  *
  * COLOURS: every fg is an EXISTING palette.js key (no palette edit). `menu` also carries the hex of each key
  * (`hex`, checked against palette.js by the preview) because titleMenu.js draws with ui.setCell(x, y, g, '#hex', '#hex').
@@ -294,6 +296,111 @@
                 textSize: 'normal', reduceMotion: false },
       disabled: { quality: ['ultra'], rows: [] }
     }
+  };
+
+  // =====================================================================================================
+  // S8-A-07 (appended, v1.43)  uiStyle.itemGetCard  (game/js/ui/itemGetCard.js, S8-C-07; hook S8-B1-04)
+  // =====================================================================================================
+  // 56 x 11 card, centred on the 160 x 60 UI grid (x 52, y 24). Panel-relative layout:
+  //
+  //   col 0  3        12 15                                          52  55
+  //   r0   +==o===================[ FOUND ]=========================o==+
+  //   r1   |######################*  Brass Buckler  *###################|   title bar: band bg, name gold
+  //   r2   | .-----.----*-------------------------------------------- . |   separator (sparkles drawn over it)
+  //   r3   |  +-------+                                                 |
+  //   r4   |  | /=o=\ |  Gondola plate, bent round a strap.             |   desc (writer line, <= 38)
+  //   r5  *|  | |:@:| |*                                                |   (sparkle ring round the icon box)
+  //   r6   |  | \___/ |  Shield - either hand                           |   kind line
+  //   r7   |  +-------+  x3 in the pack                                 |   count / progress line (optional)
+  //   r8   |  .   +   .                                                 |
+  //   r9   |  2 / 3                                        - any key -  |   queue tag (n >= 2) + continue
+  //   r10  +==o=========================================================o==+
+  var CARD_BG = {
+    plate:   [10, 11, 16],   // = menu plate (cool night card under warm brass)
+    band:    [52, 42, 16],   // = menu focus band: the title bar
+    glow:    [64, 48, 14],   // icon box interior, the "lit from inside" warm gold (a step above band)
+    glowHot: [92, 70, 22]    // glow pulse peak
+  };
+  A.uiStyle.itemGetCard = {
+    story: 'S8-A-07 (for S8-C-07 itemGetCard.js)',
+    hex: {
+      brassHot: HEX.brassHot, brassLight: HEX.brassLight, brass: HEX.brass, brassDark: HEX.brassDark, brassShadow: HEX.brassShadow,
+      gold: HEX.gold, uiText: HEX.uiText, uiHint: HEX.uiHint, uiDim: HEX.uiDim, heroGreen: HEX.heroGreen, white: '#ffffff'
+    },
+    bgRgb: CARD_BG,
+    bg: { plate: hex(CARD_BG.plate), band: hex(CARD_BG.band), glow: hex(CARD_BG.glow), glowHot: hex(CARD_BG.glowHot) },
+    iconColours: 'icon cells: ASSETS.items.keys[fgChar].c -> ASSETS.palette.rgb (same as inventoryView.js); a space = the cell bg',
+
+    timing: {
+      holdSec: 1.5, keyLockSec: 0.25, fadeIn: 0.12, fadeOut: 0.10, gapSec: 0.10,
+      rule: 'game paused while a card shows. Auto-close after holdSec; any key / click closes it earlier, but keys in the ' +
+            'first keyLockSec are ignored (the E that opened the chest must not skip the card). Queue: the next card shows ' +
+            'gapSec after the previous fade-out (no re-fade of the scene dim between queued cards)'
+    },
+    sceneDim: { bgMul: 0.5, note: 'scene x 0.5 while a card shows (lighter than the pack: the world is still "there")' },
+    plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the card (+1) x 0.18; card cells are opaque' },
+
+    panel: { x: 52, y: 24, w: 56, h: 11, bg: 'plate', note: 'x = (160 - 56) / 2, y = (60 - 11) / 2 rounded down' },
+    frame: { corner: '+', h: '=', v: '|', fg: 'brass', cornerFg: 'brassLight',
+             rivets: { glyph: 'o', cols: [3, 52], rows: 'top and bottom', fg: 'brassLight' },
+             tag: { text: 'FOUND', row: 0, align: 'center', fg: 'brassHot', bracket: ['[ ', ' ]'], bracketFg: 'brassLight',
+                    note: '"[ FOUND ]" in the top frame row; writer may give a key (proposal card.title)' } },
+
+    // the title bar: the item NAME, the thing the player reads first
+    titleBar: {
+      row: 1, from: 1, to: 54, bg: 'band', align: 'center', fg: 'gold',
+      decor: ['*  ', '  *'], decorFg: 'brassHot',
+      pop: { sec: 0.07, fg: 'white', note: 'first ~4 frames the name is white, then gold (= items.toast pop)' },
+      src: 'items.defs[id].name (<= 14 chars)'
+    },
+    separator: { row: 2, from: 2, to: 53, glyph: '-', fg: 'brassShadow' },
+
+    // the glowing icon box (a slot box: 9 x 5, icon at box (2, 1))
+    iconBox: {
+      x: 3, y: 3, w: 9, h: 5, border: { corner: '+', h: '-', v: '|' }, icon: { x: 2, y: 1, w: 5, h: 3 },
+      fg: 'gold', cornerFg: 'brassHot', innerBg: 'glow',
+      pulse: { periodSec: 1.2, fg: ['gold', 'brassHot'], innerBg: ['glow', 'glowHot'],
+               rule: 'border fg and interior bg step between the two values on a sine (> 0.5 = second value); ' +
+                     'static gold + glow is the minimum' },
+      reduceMotion: 'no pulse, no sparkles (options.reduceMotion)'
+    },
+    // the glow: 8 sparkle cells round the icon box, twinkling out of phase
+    sparkles: {
+      cells: [[2, 2], [7, 2], [12, 2], [1, 5], [13, 5], [2, 8], [7, 8], [12, 8]],
+      frames: ['.', '+', '*', '+', '.', ' ', ' ', ' '],
+      fg: ['brassDark', 'brass', 'brassHot', 'gold', 'brassDark', null, null, null],
+      stepSec: 0.09, phase: 'cell i shows frames[(step + 3 * i) % 8]; a space = draw nothing (separator / plate shows)',
+      note: 'panel-relative cells; row 2 sits on the separator (a sparkle replaces the "-" while lit)'
+    },
+
+    // the body, right of the box
+    desc: { x: 15, y: 4, w: 38, maxLines: 1, fg: 'uiText', src: 'items.defs[id].desc (writer lines are <= 38)',
+            wrap: 'one line; a longer desc wraps once onto row 5' },
+    kind: {
+      x: 15, y: 6, fg: 'uiHint',
+      text: { weapon: 'Weapon', shield: 'Shield', spell: 'Spell', tool: 'Tool', food: 'Food', material: 'Material',
+              key: 'Key', upgrade: 'Heart piece', currency: 'Currency', pickup: 'Used on touch' },
+      handSuffix: ' - either hand',
+      rule: 'text[def.kindNext || def.kind] + (def.hand ? handSuffix : "")'
+    },
+    count: { x: 15, y: 7, format: 'x{n} in the pack', fg: 'uiDim', show: 'def.stackMax > 1 and n >= 2',
+             progress: { 'heart.piece': { format: '{n} of 4', fg: 'heroGreen' } },
+             full: { text: 'Pack full - left behind', fg: [214, 112, 64], note: 'soft ember (= toast packFull) when the grant failed' } },
+    pending: { show: 'def.pending', text: '(pending owner)', x: 15, y: 8, fg: 'uiDim', note: 'preview / dev builds only' },
+
+    footer: {
+      row: 9,
+      continue: { text: '- any key -', colEnd: 52, fg: 'uiDim', show: 'after keyLockSec',
+                  blink: { onSec: 0.7, offSec: 0.3, optional: true }, src: 'writer key card.continue' },
+      queue: { col: 3, format: '{i} / {n}', fg: 'brassDark', show: 'n >= 2' }
+    },
+
+    mock: { queue: [{ id: 'shield', n: 1 }, { id: 'cog', n: 12 }, { id: 'heart.piece', n: 2 }] },
+    adopt: [
+      'itemGetCard.js: createItemGetCard(adapter, { style: ASSETS.uiStyle.itemGetCard, items: ASSETS.items, rgb: palette.rgb })',
+      'fg = style.hex[key] (or palette rgb), bg = style.bg[name]; icons as inventoryView.js (items.keys -> palette.rgb)',
+      'title bar = name, desc / kind / count rows, glow box + sparkles, footer; timing + queue per `timing`'
+    ]
   };
 
   if (typeof module === 'object' && module && module.exports) module.exports = { menu: A.uiStyle.menu, settings: S };

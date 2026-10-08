@@ -185,3 +185,43 @@ Opus, diff-only. Probes: one temp detached worktree (removed after). The 4 new s
 - **MESH-LOAD-01 open ARCH CHANGES** (verdicts 11): **NO**. lazyMesh.js and loadPack.js are unchanged since b0414a8. There is no retry, no `validateMesh` in `_decode` and no `prefetchNear`. `lazyFromLocation()` and the `window.__lazyMeshStore` assignment are still in `engine/content/loadPack.js` (lines 36, 73, 75).
 
 Main session: B2 queue top = MESH-BIN-01 fixes -> MESH-LOAD-01 fixes -> the three one-line regex/flag fixes above (each ~15 min) before any new S8-B2 story. Re-review: opus, diff-only.
+
+## Architect verdicts 13 (B1 1a9d4c2; B2 6c016e7, 367b1db, 2b57c01, 5c7c7b3; C a0a45b5, 9f7ed02)
+Diff-only. Probes ran in a temporary detached worktree (now removed): every new or changed suite passes in under 2.2 s, check-deps OK on pc-b2 and pc-c, and validate-content on pc-c gives 3272 checks OK.
+
+- **PREC-01a 1a9d4c2 (B1): ARCH OK -> done** (engine-internal, no PO).
+  - What was checked: `viewProjAtOrigin` computes M*T(O) in f64 and stores it once as f32 (the test checks this). Every camera raster uniform is rebased: static, voxel, view model, cloth and mask (mask copies `baseU`). The instanced path uses `iRow.w - origin`, and its part matrices stay local. z is not rebased, so `vWorldZ`/`zBase` stay absolute.
+  - These stay absolute on purpose: `view`/`planes` (CPU cull plus the WG-4 kernels via `_cullRun`), `WgShadowPass` (its own `u`, origin 0) and water (O already folded into the mvp). Terrain: `model` stays absolute for kind-7 vWorldPos, and `modelRel` is only used for clip.
+  - No GLSL change, and WebGL2 output is byte-identical. `prepare` does not allocate. O snaps per 16 m, so it is deterministic.
+  - **Does it fix the x~1400 m class?** For the camera raster, yes: forestWalk (x 1364) and the lamp/viewModel rows went FAIL -> PASS on the 4060 (148/2). Not yet shown: the forestEdge kind-9 `nMismatch` delta and the 4 D-048 Arc rows. Both are the same f32 class and are expected to clear, but PC-A must confirm with `gpucompare` on the Arc against its same-adapter baseline. If they pass, remove those rows from the D-048 known-FAIL list.
+  - **ASK ARCHITECT answer (TERRAIN_REBASE):** keep `false`. No row needs it, and turning it on makes a grazing 700 m terrain cell on `signal tower` flip. Under D-039 that is a PASS->FAIL, and we do not accept it as a tie by decree. PREC-01b only turns it on if a near-terrain row fails, with a Node probe first. The `modelRel` mat4 (+64 B per chunk draw) may stay.
+  - Non-blocking: once B2-06 is wired, B1 must also write `wind`/`windT` into the shadow pass `u`, or shadows will not sway.
+- **GFX-02 open ARCH CHANGES: NO.** On origin/pc-b the last commit touching `game/js/gfxAuto*.js` / `gfxAutoRun.js` is still cb0bca2. `tierFromAdapter` still has `0x7d|0x64` with no `0x0*` prefix (gfxAuto.js:20), the test still matches labels only, and there is no AutoBench Node test.
+- **S8-B2-03 6c016e7 (LRU eviction): ARCH CHANGES:**
+  1. `MeshBuffers.release(mesh)` frees only `cache` (static). It must also free the `voxelCache` entry for `mesh.id`, which is the instanced meshGroup path (TREES-LP-b / MESH-INST-01 `getVoxel`). Today an evicted scatter/group mesh keeps its GPU buffers until it reloads. Add an evict-test case for a meshGroup mesh that asserts `gpuLive` drops.
+  2. `MeshBuffers.js` is a B1 render file and was edited without the requested note. The listener seam (`onMeshEvicted` + `release`) is ratified as it is. Further edits to it go through `ASK:` in the lane file.
+
+  Otherwise OK: the hold band (loadM + 60 m) is greater than the load radius so there is no thrash, `ensure()` pins, the same mesh object is kept, colliders and meta stay, `lazyOrigin` is non-enumerable (not serialized), the `hit.copy.pos === mesh.pos` stale check is right, and there are no per-frame allocations.
+- **S8-B2-05 367b1db (windAt): ARCH CHANGES.** The queue ARCH line says "Do NOT add `engine/core/wind.js`". This commit adds a second, incompatible wind source with axes `(x, z)` and `dirDeg 0 = +x`, which breaks the engine convention (x east, y south, compass 0 = N clockwise). It is also outside B2's file ownership.
+  1. Delete `engine/core/wind.js`, its test and the `engine/index.js` exports.
+  2. `WIND_AT_WGSL` becomes the twin of the existing `engine/world/wind.js` sampler: base vector from `forwardOf`, plus the gust kernel table `WIND_K_SIZE`; zones optional and off. Test: JS-vs-WGSL probe within 1e-5 over 5000 samples. Uniforms: base xy + speed + gust phase; kernel table as a small uniform array or storage buffer.
+- **S8-B2-09 2b57c01 (HZB module): ARCH OK -> done** (module only). Kernel and twin match (14293 texels), including odd edges and 1-wide sources. Non-blocking note for B1 wiring: the level-0 source must map empty/sky cells (cleared depth) to +Inf before reducing, otherwise sky counts as near and occludes too much. The previous-frame lag rule is still B2-10 (fable note first).
+- **S8-B2-06 5c7c7b3 (wind sway): ARCH CHANGES:**
+  1. Rebase on the B2-05 fix: sample the world wind (the `engine/world/wind.js` twin), not `core/wind.js`. Move `INST_FLAG_SWAY`/`SWAY_K`/`SWAY_MAX`/`swayOffset` into `engine/mesh/` (e.g. `sway.js`). Keep x,y as the ground axes.
+  2. The queue ARCH requirement is missing: when sway is on, the cull and shadow-cull bounds must grow by `SWAY_MAX`. That covers `compactGroup` R, `fillShadowBands`, and a `swayPad` uniform in `cull.wgsl.js` and `cullShadow.wgsl.js` (B2 files), each with a twin test, so a crown swinging at the frustum edge is never culled.
+  3. Add `NEEDS B1:` in the lane file for `wind`/`windT` in both the raster and the shadow-pass uniforms.
+
+  The rest is fine: zero wind gives bit-identical output, wind is sampled at the absolute base, and the block grows by appending (304 -> 336 B).
+- **S8-B2-07 5c7c7b3 (LOD dither crossfade): ARCH OK -> po-review** (owner look once B1 wires it). The two copies have exactly complementary coverage. `ditherHash` u32 maths matches between JS (`Math.imul`) and WGSL, and `discard` comes before the depth test in both twins. The cull kernel writes to both lists through separate atomics and the args layout is unchanged. `packed.w` bit 0 still drives face rounding. Off by default. Non-blocking: sun shadow casters in the band still come from `cullShadow`'s single-LOD pick (intended).
+- **B2 batch-12 open ARCH CHANGES: all five NO.**
+  - MESH-BIN-01: `meshBin.js` is untouched since 24b13dc. No count checks, no fuzz test, no skill update.
+  - MESH-LOAD-01: 6c016e7 touched `lazyMesh.js` only for the LRU. There is no retry, no `validateMesh` in `_decode` and no `prefetchNear`, and `lazyFromLocation`/`window.__lazyMeshStore` are still at loadPack.js 36/73/75.
+  - ME-20a: `/^d+$/` is still at gltf-import.mjs:92.
+  - S8-B2-01: `/@location((d+))/g` is still at limits.test.js:67.
+  - S8-B2-02: no `--strict` and no report-only default (no commit after 6d0fe56).
+
+  B2 started five new stories despite the batch-12 STOP. Main session: hold every new B2 item until these five and the three CHANGES above are done.
+- **S8-C-03 a0a45b5 (title menu design + backend flag): ARCH OK -> po-review** (opus PO first review, owner look). It stays within lane C ownership: game/js/ui plus the loader lists. The one-line `menu_ui.js` script tag in the hot file `game/index.html` is accepted; the main session takes it on merge. The `style` option is optional and the default API is unchanged. Draw does no formatting or row building. The preview takes `?backend=webgl2|webgpu`, and design files were read-only. Test 1.5 s. The open LOOK RISK (confirmation screen shows inconsistently on real GPUs) belongs under `NEEDS B1`, not this story.
+- **S8-C-17 9f7ed02 (quest/item ref lint): ARCH OK -> done** (tool-only). It extends `validate-content` (no second linter) and covers only the current inline refs, per D-049. Item ids come from the single source `ASSETS.items.defs` plus declared `.take` pickups, so `content-no-dual-source` passes. Reusing `validateQuestDefinition` from game/js/quest is fine for a tool. The quest-file scan reports bad JSON and keeps the other files. Tests 2.0 s.
+
+Next: B2 = the five batch-12 fixes -> S8-B2-03 (1) -> S8-B2-05 -> S8-B2-06 (re-review opus, diff-only). B1 = GFX-02 fixes, then the wiring notes (wind into both uniform sets, HZB +Inf). PC-A = Arc gpucompare for PREC-01a (D-048 rows, forestEdge kind-9).

@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - treasure chests (S8-A-06, design v1.42)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:24px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : treasure chests (S8-A-06, design v1.42) - model keys <code>chestSmall</code>, <code>chestBig</code></h1>
+<div class="note">
+  <code>design/models/chest.js</code>: small 14 x 9 x 11 and big 22 x 15 x 18 voxels @ 0.05 m, parts <code>glint</code> / <code>body</code> / <code>loot</code> / <code>lid</code>
+  (lid hinge on the back edge, rot x negative = open), clips <code>closed</code> (seam glow + hasp glint), <code>open</code> (0.6 s), <code>opened</code> (loot gone).
+  Rendering = engine <code>packVoxelModel</code> / <code>computeVoxelPose</code> + the preview CPU march (<code>lib/voxelMarch.js</code>), v1 shader
+  (<code>palette.util.shade</code>), approximate edge pass. The warm point light at <code>mounts.light</code> (<code>chestFx.light</code>) is simulated here
+  (an engine light in game). <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/chest.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>mode <select id="seq"></select></label>
+  <button id="replay">replay</button>
+  <label>open-clip time <input type="range" id="scrubT" min="0" max="600" step="5" value="210"><span class="val" id="scrubTV"></span></label>
+  <label>lid angle <input type="range" id="lidA" min="-118" max="0" step="1" value="-45"><span class="val" id="lidAV"></span></label>
+  <label><input type="checkbox" id="lootOn" checked> loot inside</label>
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="-10" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.2"><span class="val" id="ambV"></span></label>
+  <label>chest light <select id="glow"><option value="1" selected>on</option><option value="0">off</option></select></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label>speed <select id="speed"><option>0.1</option><option>0.25</option><option>0.5</option><option selected>1</option></select></label>
+  <span class="cap" id="now"></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>Orbit + 5 fixed views (both chests; small left, big right)</h2>
+<div class="note">Modes: the cycle is what the game plays (closed 2.5 s, open 0.6 s, item card ~1.5 s with the lid up and the light pool, then opened).
+  "scrub: open-clip time" samples the real open clip at the slider time; "scrub: lid angle" poses the lid directly (loot checkbox = the light layer on / off).
+  Try the sun slider at 0.1 and ambient 0.5 to see the closed seam glow and the open light pool at night.</div>
+<div class="row" id="orbitRow"></div>
+<div class="row" id="dirRow"></div>
+
+<h2>In-game size (engine projection, 75 deg HFOV, 16:9, eye 1.6 m, grass, far fog): closed / mid-open / open at 1.6 m (interact range) and 6 m</h2>
+<div class="controls" style="position:static">
+  <label>chest <select id="igModel"><option value="chestSmall">small</option><option value="chestBig">big</option></select></label>
+  <label>grid <select id="igGrid"><option value="240">240x90 (90x45 crop, 8x12 px)</option><option value="400" selected>400x150 (150x75 crop, 4.8x7.2 px)</option></select></label>
+  <label>view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="-20"><span class="val" id="vazV"></span></label>
+  <label>zoom <select id="zoom"><option value="0.75" selected>0.75</option><option value="1">1.0 (real 1080p size)</option></select></label>
+</div>
+<div id="ingame"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/chest.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__chestOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose } from '../../engine/voxel/voxelPose.js';
+import { buildVoxelMesh, buildVoxelMeshLod1 } from '../../engine/mesh/voxelMesh.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__chestOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, FX = A.chestFx, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+
+// ------------------------------------------------------------------ pack (engine), one entry per chest
+const matKeys = [];
+function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
+const CH = {};
+for (const key of FX.models) {
+  const M = A.models[key], DEF = M.voxel;
+  CH[key] = { key, M, DEF, PM: packVoxelModel(DEF, matIdFor), PARTS: Object.keys(DEF.parts), scrubPM: null, scrubSig: '',
+              pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE) };
+}
+function scrubPM(ch, deg, loot) {   // a copy of the def with one extra clip `scrub` (lid at `deg`, loot on / off)
+  const sig = deg + '|' + loot;
+  if (ch.scrubSig === sig) return ch.scrubPM;
+  const d = JSON.parse(JSON.stringify(ch.DEF));
+  d.animations.scrub = { durations: [1000], loop: true, frames: [{ lid: { rot: [deg, 0, 0] }, loot: { pos: [0, 0, loot ? 0 : -64] } }] };
+  ch.scrubPM = packVoxelModel(d, matIdFor); ch.scrubSig = sig;
+  return ch.scrubPM;
+}
+
+// ------------------------------------------------------------------ modes
+const SEQS = {
+  'cycle: closed -> open -> item card -> opened': [['closed', 2500], ['open', 600], ['open', 1500, 600], ['opened', 1500]],
+  'clip: closed (glint loop)': [['closed', 0]],
+  'clip: open (loops every 1.6 s here)': [['open', 600], ['open', 1000, 600]],
+  'clip: opened': [['opened', 0]],
+  'scrub: open-clip time': 'time',
+  'scrub: lid angle': 'angle'
+};
+for (const k of Object.keys(SEQS)) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('seq').appendChild(o); }
+let t0 = performance.now();
+$('replay').onclick = () => { t0 = performance.now(); };
+$('seq').oninput = () => { t0 = performance.now(); };
+
+function clipState(pm, name, e) {   // engine pose inputs for clip `name` at e ms (loop / clamp like the game)
+  const ci = pm.clipIndex[name], c = pm.clips[ci];
+  let total = 0; for (let i = 0; i < c.n; i++) total += c.durMs[i];
+  if (c.loop) e = e % total; else if (e >= total) return { clip: ci, frame: c.n - 1, tMs: 0 };
+  let f = 0; while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
+  return { clip: ci, frame: f, tMs: e };
+}
+// a "state" = { kind: 'clip', name, e } | { kind: 'angle', deg, loot }
+function liveState(now) {
+  const s = SEQS[$('seq').value];
+  if (s === 'time') return { kind: 'clip', name: 'open', e: ctl.scrubT };
+  if (s === 'angle') return { kind: 'angle', deg: ctl.lidA, loot: ctl.loot };
+  let e = (now - t0) * ctl.speed;
+  if (s.length === 1) return { kind: 'clip', name: s[0][0], e };
+  let total = 0; for (const x of s) total += x[1];
+  e = e % total;
+  for (const x of s) { if (e < x[1]) return { kind: 'clip', name: x[0], e: (x[2] || 0) + e }; e -= x[1]; }
+  return { kind: 'clip', name: 'closed', e: 0 };
+}
+function stateSig(st) { return st.kind === 'angle' ? 'a' + st.deg + st.loot : st.name + '|' + Math.round(st.e / 10); }
+// chest light (chestFx.light) for a state: closed glow while the loot is in and the lid shut, the burst once it lifts
+function lightFor(st) {
+  if (!ctl.glow) return null;
+  const L = FX.light;
+  if (st.kind === 'angle') return !st.loot ? null : st.deg < -5 ? L.open : L.closed;
+  if (st.name === 'opened') return null;
+  if (st.name === 'open') return st.e >= L.open.fromMs ? L.open : L.closed;
+  return L.closed;
+}
+function poseChest(ch, st, x, y, out) {
+  let pm = ch.PM, cs;
+  if (st.kind === 'angle') { pm = scrubPM(ch, st.deg, st.loot); cs = { clip: pm.clipIndex.scrub, frame: 0, tMs: 0 }; }
+  else cs = clipState(pm, st.name, st.e);
+  computeVoxelPose(pm, { x, y, z: 0, yawDeg: 0, scale: 1, clip: cs.clip, frame: cs.frame, tMs: cs.tMs }, out);
+  const lt = lightFor(st), D = ch.DEF, m = D.mounts.light.at;
+  return { pm, pose: out, key: ch.key,
+           light: lt && lt.intensity > 0 ? { I: lt.intensity, r: lt.radius,
+             p: [x + (m[0] - D.anchor[0]) * D.cellM, y + (m[1] - D.anchor[1]) * D.cellM, (m[2] - D.anchor[2]) * D.cellM] } : null };
+}
+
+// ------------------------------------------------------------------ controls
+const ctl = {};
+let ver = 1;
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.speed = +$('speed').value; ctl.vaz = +$('vaz').value; ctl.zoom = +$('zoom').value;
+  ctl.scrubT = +$('scrubT').value; ctl.lidA = +$('lidA').value; ctl.loot = $('lootOn').checked; ctl.glow = $('glow').value === '1';
+  ctl.igModel = $('igModel').value; ctl.igGrid = +$('igGrid').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('vazV').textContent = ctl.vaz;
+  $('scrubTV').textContent = ctl.scrubT + ' ms'; $('lidAV').textContent = ctl.lidA + ' deg';
+  ver++;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl();
+  if (el.id === 'scrubT') $('seq').value = 'scrub: open-clip time';
+  if (el.id === 'lidA' || el.id === 'lootOn') $('seq').value = 'scrub: lid angle';
+  if (el.id === 'zoom' || el.id === 'igModel' || el.id === 'igGrid') buildIngame();
+}));
+readCtl();
+
+// ------------------------------------------------------------------ trace + shade
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  for (let m = 0; m < sc.items.length; m++) {
+    const it = sc.items[m];
+    for (let k = 0; k < it.pm.partCount; k++) {
+      if (VM.marchVoxelRay(it.pm, k, it.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+        best = HIT[0]; kind = 8; res.m = m; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+      }
+    }
+  }
+  if (sc.ground && dz < 0) {
+    const t = -oz / dz;
+    if (t > 0 && t < best && (sc.ground === 'inf' || Math.hypot(ox + dx * t - sc.gc[0], oy + dy * t - sc.gc[1]) < sc.ground)) { best = t; kind = 1; }
+  }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fog, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const it = sc.items[res.m], A9 = it.pose, b = res.k * PART_STRIDE, cm = it.pm.cellM;
+    faceNormal(res.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    res.matKey = matKeys[it.pm.matIds[res.mat] - 1];
+    mat = P.materials[res.matKey];
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else { nx = 0; ny = 0; nz = 1; mat = P.materials.grass; u = px; v = py; res.matKey = 'grass'; }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, 'sun', ctl.int * ndl);
+  for (const it of sc.items) {   // chest point light (no shadows here)
+    const L = it.light; if (!L) continue;
+    const lx = L.p[0] - px, ly = L.p[1] - py, lz = L.p[2] - pz, d = Math.hypot(lx, ly, lz) || 1;
+    const nd = (nx * lx + ny * ly + nz * lz) / d, f = U.falloff(d, L.r);
+    if (nd > 0 && f > 0) U.addLight(Lacc, FX.light.color, L.I * f * nd);
+  }
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fog ? 'far' : null, z: v });
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, m: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0, matKey: '' }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view, sc) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3), mat: new Array(n) };
+  const B = view.buf, ext = sc.items.map(() => [1e9, -1, 1e9, -1]);
+  let glowCells = 0;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t; B.mat[i] = '';
+    if (!kind) { B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3); B.bg[i * 3] = 7; B.bg[i * 3 + 1] = 8; B.bg[i * 3 + 2] = 12; continue; }
+    if (kind === 8) { const x = ext[RES.m]; x[0] = Math.min(x[0], r); x[1] = Math.max(x[1], r); x[2] = Math.min(x[2], c); x[3] = Math.max(x[3], c); }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp, SH);
+    B.mat[i] = RES.matKey; if (RES.matKey === 'brass_glint') glowCells++;
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+  }
+  if (ctl.edges !== 'off') {   // approximate engine edge pass on model cells (cap / side / lip vs farther neighbours)
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8 || B.mat[i] === 'brass_glint') continue;   // emissive cells keep their glow
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+  view.glowCells = glowCells;
+  if (view.cap) {
+    const parts = sc.items.map((it, m) => ext[m][1] >= 0 ? (it.key === 'chestSmall' ? 'small ' : 'big ') + (ext[m][1] - ext[m][0] + 1) + ' rows x ' + (ext[m][3] - ext[m][2] + 1) + ' cols' : '');
+    view.cap.textContent = view.label + ': ' + (parts.filter(Boolean).join(', ') || '(not visible)') + (glowCells ? ', glow cells ' + glowCells : '');
+  }
+}
+
+// ------------------------------------------------------------------ cameras
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+const TAN_HALF = Math.tan(37.5 * D2R);
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+
+// ------------------------------------------------------------------ views
+const views = [];
+const PLACE = { chestSmall: [-0.62, 0], chestBig: [0.45, 0] }, CENTER = [-0.05, 0, 0.55];
+{
+  const rows = 46, g = makeCanvas(rows * 2, rows, 7, 14);
+  const wrap = document.createElement('div');
+  wrap.innerHTML = '<div class="controls" style="position:static"><label>orbit yaw <input type="range" min="-180" max="180" value="-35" step="1"></label>' +
+                   '<label>pitch <input type="range" min="-5" max="85" value="25" step="1"></label></div>';
+  const [oy, op] = wrap.querySelectorAll('input');
+  const v = { grid: g, label: 'orbit', live: true, mk: () => orthoCam(CENTER, +oy.value, +op.value, rows * 2, rows, 2.0 / rows) };
+  v.cam = v.mk(); oy.oninput = op.oninput = () => { v.cam = v.mk(); v.key = ''; };
+  const cap = document.createElement('div'); cap.className = 'cap'; v.cap = cap;
+  wrap.appendChild(g.cv); wrap.appendChild(cap); $('orbitRow').appendChild(wrap); views.push(v);
+}
+for (const [yaw, pitch, lab] of [[0, 10, 'front (lock side)'], [-40, 30, 'front-left 3/4'], [90, 15, 'right side (E)'], [180, 20, 'back (hinge)'], [-20, 70, 'top']]) {
+  const rows = 26, g = makeCanvas(rows * 2, rows, 5, 10);
+  const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+  wrap.appendChild(g.cv); wrap.appendChild(cap); $('dirRow').appendChild(wrap);
+  views.push({ grid: g, cap, live: true, label: lab, cam: orthoCam(CENTER, yaw, pitch, rows * 2, rows, 2.0 / rows) });
+}
+// in-game: the selected chest at the origin; fixed states
+const IG_STATES = [
+  ['closed', { kind: 'clip', name: 'closed', e: 0 }],
+  ['mid-open (open clip 210 ms, lid -65)', { kind: 'clip', name: 'open', e: 210 }],
+  ['open (held, light pool)', { kind: 'clip', name: 'open', e: 600 }]
+];
+const ingame = [];
+function buildIngame() {
+  for (const v of ingame) views.splice(views.indexOf(v), 1);
+  ingame.length = 0; $('ingame').innerHTML = '';
+  const s = ctl.igGrid === 240 ? { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 } : { cols: 400, rows: 150, cc: 150, cr: 75, cw: 4.8, ch: 7.2 };
+  for (const dist of [1.6, 6]) {
+    const row = document.createElement('div'); row.className = 'row';
+    for (const [lab, st] of IG_STATES) {
+      const g = makeCanvas(s.cc, s.cr, s.cw * ctl.zoom, s.ch * ctl.zoom);
+      const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+      wrap.appendChild(g.cv); wrap.appendChild(cap); row.appendChild(wrap);
+      const v = { grid: g, cap, label: s.cols + 'x' + s.rows + ' ' + dist + ' m ' + lab, ingame: true, s, dist, st, model: ctl.igModel };
+      ingame.push(v); views.push(v);
+    }
+    $('ingame').appendChild(row);
+  }
+}
+buildIngame();
+
+// ------------------------------------------------------------------ frame loop
+const IGPOSE = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+function frame() {
+  const now = performance.now(), live = liveState(now), sig = stateSig(live);
+  $('now').textContent = live.kind === 'angle' ? 'lid ' + live.deg + ' deg, loot ' + (live.loot ? 'in' : 'gone')
+    : live.name + ' ' + Math.round(live.e) + ' ms';
+  let liveScene = null;
+  for (const v of views) {
+    if (v.live) {
+      const key = sig + '|' + ver;
+      if (v.key === key) continue;
+      if (!liveScene) liveScene = { ground: 1.6, gc: [CENTER[0], 0], items: FX.models.map((k) => poseChest(CH[k], live, PLACE[k][0], PLACE[k][1], CH[k].pose)) };
+      renderView(v, liveScene); v.key = key;
+    } else {
+      const key = 'ig|' + ver;
+      if (v.key === key) continue;
+      v.cam = perspCam(v.s.cols, v.s.rows, v.s.cc, v.s.cr, [0, 0, 0.3], ctl.vaz, v.dist, 1.6);
+      renderView(v, { ground: 'inf', items: [poseChest(CH[v.model], v.st, 0, 0, IGPOSE)] });
+      v.key = key;
+    }
+  }
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+// ------------------------------------------------------------------ checks
+function runChecks() {
+  const out = [];
+  const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+  const info = (m) => out.push(['info', 'INFO ' + m]);
+  const both = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  const fxSum = (d, n) => d.slice(0, n).reduce((a, b) => a + b, 0);
+  for (const key of FX.models) {
+    const { DEF, PM, PARTS, M } = CH[key], C = DEF.animations;
+    const vr = validateVoxelModel(DEF, { materialKeys: both });
+    ok(vr.errors.length === 0, key + ': validateVoxelModel (palette + detail-pass materials): ' + (vr.errors.slice(0, 6).join(' ; ') || 'no errors') +
+       (vr.warnings && vr.warnings.length ? ' (warnings: ' + vr.warnings.slice(0, 3).join(' ; ') + ')' : ''));
+    ok(Object.values(DEF.mats).every((m) => P.materials[m] && DP.materials[m]), key + ': every material already merged (no palette / detail-pass edit)');
+    const lod0 = buildVoxelMesh(PM, { id: key, partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: key + '1', partNames: PARTS }).triCount;
+    ok(lod0 <= 2000, key + ': engine mesher LOD0 ' + lod0 + ' tris (budget 2000), LOD1 ' + lod1);
+    info(key + ': ' + DEF.size.join(' x ') + ' @ ' + DEF.cellM + ' m = ' + M.world.w + ' x ' + M.world.d + ' x ' + M.world.h + ' m, parts [' + PARTS.join(', ') + '], clips [' + Object.keys(C).join(', ') + ']');
+    ok(PARTS.join() === 'glint,body,loot,lid' && DEF.parts.lid.parent === 'body' && DEF.parts.loot.parent === 'body', key + ': parts glint, body, loot (body), lid (body)');
+    const od = C.open.durations;
+    ok(fxSum(od, od.length) === FX.openMs && FX.openMs === 600, key + ': open clip = ' + fxSum(od, od.length) + ' ms = chestFx.openMs');
+    ok(JSON.stringify(C.open.events) === JSON.stringify(FX.events) && fxSum(od, FX.events.reveal) === FX.revealMs, key + ': open events = chestFx.events, reveal at ' + FX.revealMs + ' ms');
+    ok(Object.values(FX.clipFor).every((c) => C[c]), key + ': chestFx.clipFor -> existing clips');
+    // glint sealed at rest: every cell of the 1-cell shell round the glint box is a solid voxel
+    const g = DEF.parts.glint.box, L = DEF.layers; let open = 0;
+    for (let z = g[2] - 1; z <= g[5]; z++) for (let y = g[1] - 1; y <= g[4]; y++) for (let x = g[0] - 1; x <= g[3]; x++) {
+      const inside = x >= g[0] && x < g[3] && y >= g[1] && y < g[4] && z >= g[2] && z < g[5];
+      if (!inside && (!L[z] || !L[z][y] || L[z][y][x] === '.' || L[z][y][x] === undefined)) open++;
+    }
+    ok(open === 0, key + ': glint sealed in the floor at rest (' + open + ' open shell cells)');
+    // hinge direction: the lid's front bottom edge in `opened`
+    const lp = DEF.parts.lid.pivot, a = C.opened.frames[0].lid.rot[0] * D2R, yr = 1 - lp[1];
+    const zf = lp[2] + Math.sin(a) * yr, yf = lp[1] + Math.cos(a) * yr;
+    ok(zf > lp[2] + 3 && yf > lp[1], key + ': opened lid front edge at y ' + yf.toFixed(1) + ', z ' + zf.toFixed(1) + ' voxels (up and behind the hinge y ' + lp[1] + ')');
+    ok(C.opened.frames[0].loot.pos[2] === -64, key + ': opened hides the loot layer (64 voxels down)');
+    const front = (DEF.size[1] - 1) / 2 * DEF.cellM;
+    ok(M.interact.radius === 1.6 && front < 0.5, key + ': interact radius 1.6 m; the front face is ' + front.toFixed(2) + ' m from the anchor');
+  }
+  info('3 hue families per chest: wood (wood, timber_old), iron (iron_dark), brass / gold (brass_light, brass_hot, brass_dark, brass_glint)');
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+setTimeout(() => {   // the closed 1.6 m view must show the seam glow
+  const v = ingame[0]; if (!v) return;
+  const d = document.createElement('div'); const good = v.glowCells > 0;
+  d.className = good ? 'pass' : 'fail';
+  d.textContent = (good ? 'PASS ' : 'FAIL ') + 'closed at 1.6 m: ' + v.glowCells + ' light-seam cells visible (glow when closed with loot)';
+  $('checks').appendChild(d);
+}, 1500);
+</script>
+</body>
+</html>
