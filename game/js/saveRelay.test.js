@@ -8,6 +8,8 @@ import { ensureInventory } from './quest/sim/inventory.js';
 import { createSaveRelay } from './saveRelay.js';
 
 const questDef = JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url)));
+// objective texts come from the content (writer pass may change them), not from this test
+const OBJ = Object.fromEntries(questDef.objectives.map((o) => [o.id, o.text]));
 const assets = new AssetRegistry({ palette: {} });
 const mkWorld = () => World.load({ name: 'relay_fixture', terrain: null, structures: [], entities: [], state: { 'tower.lantern.taken': false, 'quest.wakeT': 0 } }, assets, {});
 const mem = new Map();
@@ -25,24 +27,24 @@ A.onWorldLoaded();
 A.bindEvents(events);
 const breach = { x: 100, y: 50, z: 6 };
 const facts = (o) => ({ wakeDone: false, lanternTaken: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0, ...o });
-assert.equal(A.quest.objectiveText(), 'Wake up');
+assert.equal(A.quest.objectiveText(), OBJ.wake);
 A.quest.poll(facts({ wakeDone: true }), breach);
-assert.equal(A.quest.objectiveText(), 'Take the lantern');
+assert.equal(A.quest.objectiveText(), OBJ.lantern);
 A.quest.poll(facts({ wakeDone: true, lanternTaken: true }), breach);
-assert.equal(A.quest.objectiveText(), 'Reach the breach');
+assert.equal(A.quest.objectiveText(), OBJ.breach);
 A.quest.poll(facts({ wakeDone: true, lanternTaken: true, x: 120, y: 50, z: 6 }), breach); // too far
-assert.equal(A.quest.objectiveText(), 'Reach the breach');
+assert.equal(A.quest.objectiveText(), OBJ.breach);
 A.quest.poll(facts({ wakeDone: true, lanternTaken: true, x: 101, y: 51, z: 6.2 }), breach);
-assert.equal(A.quest.objectiveText(), 'Take the sword');
+assert.equal(A.quest.objectiveText(), OBJ.sword);
 A.quest.poll(facts({ swordTaken: true }), breach);
-assert.equal(A.quest.objectiveText(), 'Defeat two beasts');
+assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar1' });
 events.emit('beast:died', { id: 'boar1' }); // duplicate counts once
 events.emit('chest:opened', { id: 'chestA' });
 events.emit('inventory:added', { id: 'boar_meat', n: 1 });
-assert.equal(A.quest.objectiveText(), 'Defeat two beasts');
+assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar2' });
-assert.equal(A.quest.objectiveText(), 'Reach the waystone');
+assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.poll(facts({ endStarted: true }), breach);
 assert.equal(A.quest.done, true, 'scripted sequence completes the demo quest');
 assert.equal(A.quest.objectiveText(), 'All objectives complete');
@@ -54,7 +56,7 @@ assert.equal(A.quest.objectiveText(), 'All objectives complete');
   const R = createSaveRelay({ storage: null, questDef });
   R.quest.draw(C);
   let row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(1000 + x) ?? '';
-  assert.equal(row.trim(), '> Wake up', 'objective line at row 1');
+  assert.equal(row.trim(), ('> ' + OBJ.wake).slice(0, 40).trim(), 'objective line at row 1');
   A.quest.draw(C); // done quest: plain line
   row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(1000 + x) ?? '';
   assert.ok(row.includes('All objectives complete'));
