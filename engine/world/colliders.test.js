@@ -268,21 +268,21 @@ ok('deterministic ids/order: level colliders then authored props', world.collide
   ok('open (t=1) passes; closed..mid-anim blocks equal the grid at footZ = floorH (+-0.05 m)', allOk, detail);
   anim(world, 0);
 
-  // refit == fresh rebuild + barriers is covered in section 2; 1000 refits heap growth:
+  // refit == fresh rebuild + barriers is covered in section 2; 10000 refits heap growth:
+  for (let i = 0; i < 5000; i++) { sector.ceilH = sector.floorH + (i % 97) / 97 * 2.4; refitDynCollider(world, tower, 'grate'); }
+  global.gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 10000; i++) { sector.ceilH = sector.floorH + (i % 89) / 89 * 2.4; refitDynCollider(world, tower, 'grate'); }
+  global.gc();
+  const grew = process.memoryUsage().heapUsed - before;
+  sector.ceilH = saved; refitDynCollider(world, tower, 'grate');
+  ok('10000 refits with barriers: no significant heap growth', grew < 64 * 1024, `grew ${grew} bytes`);
+
   const warns = [];
   const w0 = console.warn; console.warn = (...a) => { warns.push(a.join(' ')); };
   World.load(assets.world('world_m1'), assets, { physics: 'mesh' });
   console.warn = w0;
   ok('no sentinel warning logged on world_m1 load', !warns.some((m) => /sentinel/.test(m)), warns.join(' | '));
-
-  for (let i = 0; i < 3000; i++) { sector.ceilH = sector.floorH + (i % 97) / 97 * 2.4; refitDynCollider(world, tower, 'grate'); }
-  global.gc();
-  const before = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 1000; i++) { sector.ceilH = sector.floorH + (i % 89) / 89 * 2.4; refitDynCollider(world, tower, 'grate'); }
-  global.gc();
-  const grew = process.memoryUsage().heapUsed - before;
-  sector.ceilH = saved; refitDynCollider(world, tower, 'grate');
-  ok('1000 refits with barriers: no significant heap growth', grew < 64 * 1024, `grew ${grew} bytes`);
 }
 
 // ---------------------------------------------------------------------------
