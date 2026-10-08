@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel inventory states preview</title>
+<style>
+html,body {margin:0;background:#000;color:#e8e2d0;font:16px monospace;overflow:hidden}
+canvas {display:block;margin:auto;max-width:100%;max-height:90vh;image-rendering:pixelated}
+#controls {position:fixed;left:8px;bottom:8px} button {font:inherit}
+</style>
+<canvas id="screen" aria-label="Inventory states preview"></canvas>
+<div id="controls"><button id="locks">Toggle locks</button><button id="open">Open pack</button>
+<span>Arrows select; Q/E equip; Enter use; Esc close. Memory fixture only.</span></div>
+<script src="../../../design/palette.js"></script><script src="../../../design/items.js"></script>
+<script src="../../../design/models/inventory_ui.js"></script>
+<script type="module" src="./inventoryView.preview.js"></script>
+</html>
