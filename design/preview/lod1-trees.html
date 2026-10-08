@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>LOD1 candidates - Quaternius trees (S8-B2-11)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{background:#0c0f14;color:#cfd6e0;font:13px/1.4 system-ui,sans-serif;margin:0;padding:12px 16px}
+  h1{font-size:18px;margin:0 0 4px} p{margin:4px 0;max-width:900px;color:#9aa6b6}
+  .bar{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  select,button,input{font:inherit}
+  table{border-collapse:collapse;margin-top:8px} td,th{padding:3px 6px;vertical-align:top;text-align:left}
+  th{color:#e8c070;font-weight:600} .tris{color:#8fd18f}
+  canvas{background:#10141a;display:block;border:1px solid #232a35}
+  #picks{background:#10141a;border:1px solid #232a35;padding:8px;white-space:pre;font:12px monospace;min-height:3em}
+  label.pick{cursor:pointer;color:#e8c070}
+</style></head><body>
+<h1>LOD1 candidates for the Quaternius trees</h1>
+<p>Each row is one tree: LOD0 (full import) next to three quadric-edge-collapse decimations (35 / 25 / 15 % of the triangles). Columns are camera distances.
+Nothing here is written to the game: pick the lowest triangle count that still reads as the same tree at the distance where the switch would happen, tick it, and hand the list below to QUAT-LOD-01.
+Colours are preview-only (bark = wood, leaves = leaf*); leaves are opaque cards here. Regenerate: <code>node tools/mesh-lod-preview.mjs</code>.</p>
+<div class="bar">
+  <label>Tree <select id="tree"></select></label>
+  <label>Distances (x tree height) <input id="dists" value="1.6,4,9" size="10"></label>
+  <label>Yaw <input id="yaw" type="range" min="0" max="360" value="25"> <span id="yawv">25</span>&deg;</label>
+  <label><input id="all" type="checkbox"> show all trees (slow)</label>
+</div>
+<div id="out"></div>
+<h1 style="margin-top:18px">Your picks</h1>
+<div id="picks">(none)</div>
+<script src="lib/asciiTriRaster.js"></script>
+<script src="lod1-trees.data.js"></script>
+<script>
+const COLS = 44, ROWS = 30, CW = 6, CH = 10, RAMP = ' .:-=+*#%@';
+const b64 = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const picks = {}; const cache = new Map();
+const trees = window.LOD1_TREES;
+const sel = document.getElementById('tree');
+trees.forEach((t, i) => sel.add(new Option(`${t.name} (${t.height} m)`, i)));
+
+function mesh(tree, ci) {
+  const key = tree.name + ci;
+  if (!cache.has(key)) { const c = tree.cands[ci]; const d = AsciiTriRaster.decode(c, b64); cache.set(key, d); }
+  return cache.get(key);
+}
+function draw(canvas, tree, ci, dist, yaw) {
+  const c = tree.cands[ci], m = mesh(tree, ci), bb = c.bbox;
+  const center = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2];
+  const r = AsciiTriRaster.rasterize(m.pos, m.idx, { cols: COLS, rows: ROWS, dist, yaw: yaw * Math.PI / 180, center, fov: 45 });
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#10141a'; g.fillRect(0, 0, canvas.width, canvas.height);
+  g.font = `${CH}px monospace`; g.textBaseline = 'top';
+  const cols = c.ranges.map((x) => hex(x.color));
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const t = r.tri[y * COLS + x]; if (t < 0) continue;
+    let ri = c.ranges.findIndex((q) => t >= q.start && t < q.start + q.count); if (ri < 0) ri = 0;
+    const s = r.shade[y * COLS + x], k = 0.35 + 0.65 * s, col = cols[ri];
+    g.fillStyle = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
+    g.fillText(RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(s * (RAMP.length - 1)))], x * CW, y * CH);
+  }
+}
+function render() {
+  const yaw = +document.getElementById('yaw').value; document.getElementById('yawv').textContent = yaw;
+  const dists = document.getElementById('dists').value.split(',').map(Number).filter((d) => d > 0);
+  const list = document.getElementById('all').checked ? trees : [trees[sel.value]];
+  const out = document.getElementById('out'); out.textContent = '';
+  for (const tree of list) {
+    const tbl = document.createElement('table');
+    const head = tbl.insertRow(); head.insertCell().outerHTML = `<th>${tree.name}</th>`;
+    tree.cands.forEach((c, ci) => {
+      const th = document.createElement('th');
+      th.innerHTML = `${c.label} <span class="tris">${c.tris} tris (${Math.round(c.tris / tree.cands[0].tris * 100)}%)</span><br><label class="pick"><input type="radio" name="p_${tree.name}" ${picks[tree.name] === ci ? 'checked' : ''}> pick</label>`;
+      th.querySelector('input').onchange = () => { picks[tree.name] = ci; showPicks(); };
+      head.appendChild(th);
+    });
+    for (const k of dists) {
+      const d = k * tree.height;
+      const row = tbl.insertRow(); row.insertCell().innerHTML = `<th>${d.toFixed(0)} m</th>`;
+      tree.cands.forEach((c, ci) => { const cv = document.createElement('canvas'); cv.width = COLS * CW; cv.height = ROWS * CH; row.insertCell().appendChild(cv); draw(cv, tree, ci, d, yaw); });
+    }
+    out.appendChild(tbl);
+  }
+}
+function showPicks() {
+  const lines = Object.entries(picks).map(([n, ci]) => { const t = trees.find((x) => x.name === n), c = t.cands[ci]; return `${n}: ${ci === 0 ? 'no LOD1 (keep LOD0)' : `${c.label} = ${c.tris} tris (target ${Math.round(c.ratio * 100)}%)`}`; });
+  document.getElementById('picks').textContent = lines.length ? lines.join('\n') : '(none)';
+}
+for (const id of ['tree', 'dists', 'yaw', 'all']) document.getElementById(id).addEventListener(id === 'yaw' ? 'input' : 'change', render);
+render();
+</script></body></html>
