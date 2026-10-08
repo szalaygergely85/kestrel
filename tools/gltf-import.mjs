@@ -171,6 +171,11 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
  */
 export function withCollision(json) {
   if (json.layout !== 'static') return json;
+  // ALPHA-01e: leafy trees (CommonTree/Pine/TwistedTree_n): the crown ranges are masked cards, so the prism comes from the opaque (bark) ranges only
+  if (!json.colliderParts && /^(CommonTree|Pine|TwistedTree)_\d/.test(String(json.id).split('/').pop()) && json.ranges) {
+    const trunk = json.ranges.filter((r) => !r.mask).map((r) => r.part);
+    if (trunk.length && trunk.length < json.ranges.length) json = { ...json, colliderParts: trunk };
+  }
   const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges });
   const next = { ...json };
   delete next.collide; delete next.collider; delete next.castShadow;
